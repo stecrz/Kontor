@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from mm_bridge import local_date, local_datetime
@@ -18,6 +19,7 @@ ROOT_NAMES = {"alle konten", "all accounts"}
 
 
 
+@lru_cache(maxsize=4096)
 def norm_cat(path: str) -> str:
     """Kategoriepfad vereinheitlichen: 'A\\B', 'A \\ B' und 'A / B' werden zu 'A / B' (Teile getrimmt)."""
     parts = [p.strip() for p in re.split(r"[\\/]", str(path or ""))]
@@ -286,6 +288,26 @@ class Ledger:
     def transactions(self, uuid: str, booked_only: bool = True) -> List[Tx]:
         txs = self._by_account.get(uuid, [])
         return [t for t in txs if t.booked] if booked_only else list(txs)
+
+    def month_end_balances(self, uuid: str, months: List[Tuple[int, int]]) -> Dict[str, float]:
+        """Saldo am Monatsende fuer viele Monate in einem Durchlauf (rueckwaerts vom aktuellen Saldo)."""
+        acc = self.accounts[uuid]
+        out: Dict[str, float] = {}
+        if acc.group:
+            for a in self.descendants(uuid):
+                for k, v in self.month_end_balances(a.uuid, months).items():
+                    out[k] = round(out.get(k, 0.0) + v, 2)
+            return out
+        txs = sorted(self.transactions(uuid), key=lambda t: t.booking_date, reverse=True)
+        later = 0.0
+        i = 0
+        for (y, m) in sorted(months, reverse=True):
+            end = date(y + (m == 12), 1 if m == 12 else m + 1, 1) - timedelta(days=1)
+            while i < len(txs) and txs[i].booking_date > end:
+                later += txs[i].amount
+                i += 1
+            out["%04d-%02d" % (y, m)] = round(acc.balance - later, 2)
+        return out
 
     def balance_at(self, uuid: str, day: date) -> float:
         """Saldo am Ende des Tages `day` (aus aktuellem Saldo rueckgerechnet)."""

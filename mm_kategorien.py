@@ -8,6 +8,7 @@ Pfade sind kanonisch 'A / B / C' (siehe mm_model.norm_cat)."""
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 import time
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
@@ -165,6 +166,7 @@ _WS = re.compile(r"\s+")
 _NUM = re.compile(r"\d[\d.,/-]*")
 
 
+@lru_cache(maxsize=8192)
 def norm_name(s: str) -> str:
     s = (s or "").lower()
     s = _NUM.sub(" ", s)

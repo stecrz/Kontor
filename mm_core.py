@@ -40,7 +40,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "kapitalfluss": {"beteiligungs_gruppen": [], "kategorie_zuordnung": {}, "kategorie_zu_konto": {},
                      "umbuchungs_kategorien": ["Umbuchung"], "umbuchung_paarung": True, "paarung_manuelle_konten": True},
     "steuer": {"vermietung_kategorie": "Vermietung", "objekt_darlehen": {}, "afa": {}, "positionen": {}, "entitaeten": []},
-    "belege": {"ordner": "~/Documents/Kontor-Belege", "unterordner": "{jahr}", "kommentar_schreiben": False},
+    "belege": {"ordner": "~/Documents/Kontor-Belege", "unterordner": "{jahr}", "kommentar_schreiben": False, "ordner_bestaetigt": False},
     "moneymoney": {"kategorisieren_erlauben": False, "aktualisieren_erlauben": True},
     "updates": {"repo": "stecrz/Kontor", "taeglich_pruefen": True},
     "oberflaeche": {"sperre_minuten": 15, "touchid": True, "port": 8765, "bind": "127.0.0.1", "tls_cert": "", "tls_key": ""},
@@ -383,11 +383,8 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         ref("Steuer: Darlehen für Objekt '%s'" % v, k)
     bel = config.get("belege", {}) or {}
     folder = os.path.expanduser(bel.get("ordner") or DEFAULT_CONFIG["belege"]["ordner"])
-    if os.path.isdir(folder):
-        if not os.access(folder, os.W_OK):
-            add("fehler", "Belegordner nicht beschreibbar: %s" % folder)
-    else:
-        add("hinweis", "Belegordner wird beim ersten Beleg angelegt: %s" % folder)
+    if os.path.isdir(folder) and not os.access(folder, os.W_OK):
+        add("fehler", "Belegordner nicht beschreibbar: %s" % folder)
     for h in ledger.hints:
         add("hinweis", h)
     return out
@@ -661,7 +658,9 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "konten_neu": neu,
     }
     store.save("dataset.json", dataset)
-    store.save("umsaetze.json", compact_transactions(ledger, bereiche, store))
+    ums = compact_transactions(ledger, bereiche, store)
+    store.save("umsaetze.json", ums)
+    dataset["_umsaetze"] = ums        # fuer den Dienst: Liste im Speicher behalten (teilt die Strings mit dem Ledger), nicht Teil der Datei
     return dataset
 
 
@@ -762,8 +761,9 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         warnings = list(result.warnings)
         if dry and bookings:
             warnings.insert(0, "Probelauf: %d vorgeschlagene Buchung(en) sind NICHT in MoneyMoney." % len(bookings))
+        ums = None
         if with_report:
-            build_report(store, ledger, config, state, today, warnings, categories)
+            ums = build_report(store, ledger, config, state, today, warnings, categories).pop("_umsaetze", None)
             state["kategorien_roh"] = categories or []
 
         summary = {"status": "fehler" if err else "ok", "zeit": datetime.now().strftime("%Y-%m-%d %H:%M"), "probelauf": dry,
@@ -772,13 +772,18 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                    "quellaenderungen": len(result.proposals) - len(bookings),
                    "geschrieben": written, "warnungen": result.warnings, "hinweise": result.info,
                    "fehler": str(err) if err else None}
-        state["fingerprint"] = fp if err is None else None
-        state["letzter_lauf"] = summary
-        state.setdefault("verlauf", []).append({"zeit": summary["zeit"], "probelauf": dry, "geschrieben": written,
-                                                "vorschlaege": len(bookings), "fehler": summary["fehler"],
-                                                "buchungen": [x.describe() for x in bookings][:50]})
-        state["verlauf"] = state["verlauf"][-100:]
-        store.save("state.json", state)
+        def _merge(cur: dict) -> None:
+            cur["fingerprint"] = fp if err is None else None
+            cur["letzter_lauf"] = summary
+            cur.setdefault("verlauf", []).append({"zeit": summary["zeit"], "probelauf": dry, "geschrieben": written,
+                                                  "vorschlaege": len(bookings), "fehler": summary["fehler"],
+                                                  "buchungen": [x.describe() for x in bookings][:50]})
+            cur["verlauf"] = cur["verlauf"][-100:]
+            if state.get("snapshots"):
+                cur["snapshots"] = state["snapshots"]
+            if state.get("kategorien_roh"):
+                cur["kategorien_roh"] = state["kategorien_roh"]
+        store.update("state.json", _merge, {})      # Verlauf-Eingaben waehrend des Laufs bleiben erhalten
 
         if config.get("mitteilungen", True):
             if err:
@@ -789,7 +794,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 notify("Kontor: Probelauf", "%d Buchung(en) warten auf Freigabe." % len(bookings))
             elif result.warnings and not dry:
                 notify("Kontor: Hinweis", result.warnings[0])
-        return dict(summary, _ledger=ledger, _kategorien=categories)
+        return dict(summary, _ledger=ledger, _kategorien=categories, _umsaetze=ums)
     finally:
         RUN_LOCK.release()
 

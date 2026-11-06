@@ -1,5 +1,23 @@
 # Änderungen
 
+## 3.4.0
+- Bericht 14× schneller (190.000 Umsätze: 154 s → 11 s; Umbuchungs-Paarung und Monatssalden ohne quadratischen Aufwand, Steuer nach Jahren gebündelt). Ergebnis bitgleich zur Vorversion geprüft.
+- Neubau nach Änderungen (Verlauf, Zuordnungen, Bereiche, Immobilien) läuft im Hintergrund; mehrere Änderungen werden zu einem Neubau zusammengefasst. Die Oberfläche bleibt bedienbar, unten links steht der Fortschritt, danach lädt die Ansicht selbst neu.
+- Entschlüsselte Dateien und die Umsatzliste bleiben im Speicher (nur neu gelesen, wenn sie sich ändern); parallele Lese-/Schreibzugriffe auf den Verlauf gehen nicht mehr verloren.
+- Kein „Offline-Ansicht“ mehr am Mac: am Mac selbst gibt es keine Offline-Kopie; am iPhone gilt ein langsamer Mac nicht als offline (Gegenprobe ohne Zeitlimit), im Offline-Modus wird die gespeicherte Kopie sofort angezeigt und alle 30 s geprüft, ob der Mac wieder da ist.
+- Seitenwechsel: Ladeanzeige, wenn der Dienst nicht sofort antwortet; Überschrift und Inhalt passen immer zusammen; „Erneut versuchen“ bei Fehlern.
+- Abgebrochene Verbindungen erzeugen keine Fehlerprotokolle mehr; „Verbindung prüfen“ läuft nicht doppelt.
+- Update-Hinweis als blauer Punkt im Menü „Updates“; Prüfung täglich im Hintergrund (bei fehlendem Netz nach 2 h erneut), blockiert nichts.
+- MoneyMoney-Status unten links alle 30 s aktuell, inkl. „gesperrt“; ist MoneyMoney gesperrt oder aus, wird der fällige Lauf jede Minute erneut versucht statt erst nach 30 Minuten.
+- Berechtigungen werden erklärt (wofür Kontor sie braucht), in der Verbindung und in der Hilfe.
+- „Verbindung prüfen“ mit Ladeanzeige, Knopf während der Prüfung gesperrt.
+- Belegordner wird erst beim ersten Beleg und nur nach Rückfrage angelegt (oder anderen Ordner in den Einstellungen wählen).
+- Tooltips bleiben immer im Fenster.
+- Bereiche: Art und Hauptbereich aus dem Namen vorbelegt (GmbH/GbR/AG … = Gesellschaft, der Rest privat), Anteil in Prozent, Gruppe wählen = alle Konten darunter (angezeigt und gesperrt), einzelnes Konto abwählen löst die Gruppe auf.
+- Einrichtung als geordnete Liste.
+- Bilanzpositionen & Verlauf kompakter (passt auf einen Bildschirm), Tooltips zu Position, Verlauf, Anzeige; „Verlauf …“ öffnet zuverlässig wiederholt.
+- Protokoll-Seite zeigt den Dateipfad und kann die Datei im Finder zeigen.
+
 ## 3.3.0
 - Installation mit einer Terminal-Zeile (`get.sh`: clone/pull + install.sh); `Installieren.command` entfällt (Gatekeeper blockiert heruntergeladene Skripte). Update aus der Oberfläche lädt das Archiv von github.com statt über die API (die mit 415 antwortete).
 - Protokoll ausführlich (DEBUG in der Datei): Anfragen, MoneyMoney-Aufrufe mit Dauer, Berichtsumfang, Konfigurationsänderungen, Update-Schritte, Fehler mit Rückverfolgung.

@@ -21,7 +21,7 @@ from collections import defaultdict
 from datetime import date
 from typing import Dict, List, Optional
 
-from mm_model import Account, Ledger
+from mm_model import Account, Ledger, Tx
 from mm_report import ASSET_ROLES, COST_WORDS, account_roles, _is_cost
 from mm_rules import TAG_RE
 
@@ -112,7 +112,11 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
         ents.append({"id": b["id"], "name": b["name"], "leaves": b["leaves"], "art": art,
                      "anteil": b.get("anteil") if b.get("anteil") not in (None, "", 0) else anteile.get(b["gruppen"][0].uuid) if b.get("gruppen") else None})
 
-    years = sorted({t.booking_date.year for t in ledger.txs if t.booked} | {today.year})
+    by_year: Dict[int, List[Tx]] = defaultdict(list)
+    for t in ledger.txs:
+        if t.booked:
+            by_year[t.booking_date.year].append(t)
+    years = sorted(set(by_year) | {today.year})
     out = {"jahre": years, "entitaeten": [], "vermietung_kategorie": st.get("vermietung_kategorie") or "Vermietung"}
 
     roles = roles if roles is not None else account_roles(ledger, config)
@@ -126,8 +130,8 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
             no_cat = {"betrag": 0.0, "anzahl": 0}
             objekte: Dict[str, dict] = {}
             schuldzinsen: Dict[str, float] = defaultdict(float)
-            for t in ledger.txs:
-                if not t.booked or t.booking_date.year != y or t.account_uuid not in leaf_ids:
+            for t in by_year.get(y, ()):
+                if t.account_uuid not in leaf_ids:
                     continue
                 acc = ledger.accounts[t.account_uuid]
                 role = roles.get(acc.uuid)

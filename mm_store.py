@@ -14,6 +14,7 @@ wie MoneyMoney mit "Passwort im Schluesselbund sichern".
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import json
@@ -21,8 +22,11 @@ import logging
 import os
 import secrets
 import subprocess
-from typing import Any, Optional, Tuple
+import threading
+from typing import Any, Dict, Optional, Tuple
 
+_MISSING = object()
+CACHE_MAX_BYTES = 24 * 1024 * 1024
 log = logging.getLogger("kontor.store")
 
 MAGIC = b"MMT1"
@@ -102,7 +106,7 @@ def _openssl(args, data: bytes, secret: str) -> bytes:
     env = dict(os.environ, MMTOOLS_SECRET=secret)
     try:
         r = subprocess.run(["openssl", "enc"] + args + ["-aes-256-cbc", "-md", "sha256", "-pass", "env:MMTOOLS_SECRET"],
-                           input=data, capture_output=True, timeout=60, env=env)
+                           input=data, capture_output=True, timeout=600, env=env)
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         raise StoreError("openssl nicht verfügbar: %s" % e)
     if r.returncode != 0:
@@ -154,6 +158,9 @@ class Store:
             os.chmod(data_dir, 0o700)
         except OSError:
             pass
+        self._cache: Dict[str, Tuple[Tuple[int, int], Any]] = {}     # name -> ((mtime_ns, size), Objekt)
+        self._cache_lock = threading.Lock()
+        self._file_locks: Dict[str, threading.RLock] = {}
         self._migrate_plaintext()
 
     # Pfade
@@ -164,17 +171,63 @@ class Store:
         return os.path.exists(self.path(name))
 
     # JSON
-    def load(self, name: str, default: Any = None) -> Any:
+    def _stamp(self, name: str) -> Optional[Tuple[int, int]]:
+        try:
+            st = os.stat(self.path(name))
+            return (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return None
+
+    def load_shared(self, name: str, default: Any = None) -> Any:
+        """Wie load, liefert aber das im Speicher gehaltene Objekt (nur lesen, nicht veraendern!). Entschluesselt
+        und parst eine Datei nur, wenn sie sich seit dem letzten Zugriff geaendert hat."""
+        stamp = self._stamp(name)
+        if stamp is None:
+            return default
+        with self._cache_lock:
+            hit = self._cache.get(name)
+            if hit and hit[0] == stamp:
+                return hit[1]
         raw = self.read_bytes(name)
         if raw is None:
             return default
         try:
-            return json.loads(raw.decode("utf-8"))
+            obj = json.loads(raw.decode("utf-8"))
         except ValueError as e:
             raise StoreError("%s ist kein gültiges JSON: %s" % (name, e))
+        if stamp[1] <= CACHE_MAX_BYTES:        # sehr grosse Dateien (Umsatzliste) nicht dauerhaft im Speicher halten
+            with self._cache_lock:
+                self._cache[name] = (stamp, obj)
+        return obj
+
+    def load(self, name: str, default: Any = None) -> Any:
+        """JSON-Dokument laden (eigene Kopie, darf veraendert werden)."""
+        obj = self.load_shared(name, _MISSING)
+        if obj is _MISSING:
+            return default
+        return copy.deepcopy(obj)
+
+    def update(self, name: str, fn, default: Any = None) -> Any:
+        """Lesen-Aendern-Schreiben in einem Schritt, je Datei serialisiert (kein verlorenes Update durch parallele Threads).
+        fn bekommt das geladene Objekt (bzw. default) und veraendert es in place; Rueckgabe ist das gespeicherte Objekt."""
+        with self._cache_lock:
+            lock = self._file_locks.setdefault(name, threading.RLock())
+        with lock:
+            obj = self.load(name, _MISSING)
+            if obj is _MISSING:
+                obj = copy.deepcopy(default) if default is not None else {}
+            fn(obj)
+            self.save(name, obj)
+            return obj
 
     def save(self, name: str, obj: Any) -> None:
         self.write_bytes(name, json.dumps(obj, ensure_ascii=False, indent=2, default=str).encode("utf-8"))
+        stamp = self._stamp(name)
+        with self._cache_lock:
+            if stamp is not None and stamp[1] <= CACHE_MAX_BYTES:
+                self._cache[name] = (stamp, copy.deepcopy(obj))
+            else:
+                self._cache.pop(name, None)
 
     # Bytes (z.B. bericht.html)
     def read_bytes(self, name: str) -> Optional[bytes]:
@@ -198,6 +251,8 @@ class Store:
         os.chmod(p, 0o600)
 
     def delete(self, name: str) -> None:
+        with self._cache_lock:
+            self._cache.pop(name, None)
         try:
             os.remove(self.path(name))
         except FileNotFoundError:

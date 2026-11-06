@@ -3,12 +3,16 @@
 // - Lesende API-Antworten (Bericht, Konfiguration, Konten, Umsaetze ...) werden nach jedem erfolgreichen Abruf gespeichert;
 //   ist der Mac nicht erreichbar, kommt die gespeicherte Antwort mit dem Kennzeichen X-Kontor-Offline.
 // - Sitzung, Protokoll, Exporte, Belegdateien werden nie gespeichert; Schreibzugriffe gehen nur zum Mac.
+// Steuerung durch die App ueber den Anfrage-Header X-Kontor-Net:
+//   direct = nur Netz, ohne Zeitlimit (am Mac selbst, und als Gegenprobe bei "langsam oder weg?")
+//   cache  = erst Speicher, dann Netz (Offline-Modus: Seiten sofort anzeigen)
+//   (leer) = Netz mit Zeitlimit, bei Ausfall Speicher
 const VERSION = '__VERSION__';
 const SHELL = 'kontor-shell-' + VERSION;
 const DATA = 'kontor-data';
 const SHELL_FILES = ['/', '/app.js', '/app.css', '/icon.svg', '/manifest.webmanifest'];
 const NO_CACHE = ['/api/session', '/api/log', '/api/update/', '/api/belege/datei', '/api/export/', '/api/diagnose', '/api/paket/export', '/api/sicherung', '/api/touchid'];
-const TIMEOUT_MS = 7000;
+let lastNetOk = 0;          // letzte erfolgreiche Netzantwort: kurz danach gilt ein grosszuegiges Zeitlimit (Server langsam ≠ weg)
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));
@@ -20,8 +24,9 @@ self.addEventListener('activate', e => {
 function withTimeout(req, ms) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
-  return fetch(req, {signal: ctl.signal}).finally(() => clearTimeout(t));
+  return fetch(req, {signal: ctl.signal}).then(r => { lastNetOk = Date.now(); return r; }).finally(() => clearTimeout(t));
 }
+function netTimeout() { return Date.now() - lastNetOk < 90000 ? 60000 : 8000; }
 function offlineJson(obj, status) {
   return new Response(JSON.stringify(obj), {status: status || 503, headers: {'Content-Type': 'application/json; charset=utf-8', 'X-Kontor-Offline': '1'}});
 }
@@ -35,31 +40,45 @@ function markOffline(resp) {
   const h = new Headers(resp.headers); h.set('X-Kontor-Offline', '1');
   return resp.arrayBuffer().then(b => new Response(b, {status: resp.status, headers: h}));
 }
+async function remember(req, resp) {
+  if (resp && resp.ok) { try { const c = await caches.open(DATA); await c.put(req, await stamp(resp)); } catch (e) {} }
+  return resp;
+}
+async function fromCache(req) {
+  const c = await caches.open(DATA);
+  const hit = await c.match(req, {ignoreVary: true});
+  return hit ? markOffline(hit) : null;
+}
 
 self.addEventListener('fetch', e => {
   const req = e.request;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (req.method !== 'GET') {
-    e.respondWith(fetch(req).catch(() => offlineJson({fehler: 'Offline – der Mac ist nicht erreichbar; die gespeicherte Ansicht kann nur gelesen werden.', offline: true})));
+    e.respondWith(fetch(req).then(r => { lastNetOk = Date.now(); return r; }).catch(() =>
+      offlineJson({fehler: 'Offline – der Mac ist nicht erreichbar; die gespeicherte Ansicht kann nur gelesen werden.', offline: true})));
     return;
   }
+  const mode = req.headers.get('X-Kontor-Net') || '';
   if (url.pathname.startsWith('/api/')) {
     if (NO_CACHE.some(p => url.pathname.startsWith(p))) {
+      if (mode === 'direct') { e.respondWith(fetch(req).then(r => { lastNetOk = Date.now(); return r; })); return; }
       e.respondWith(withTimeout(req, url.pathname === '/api/session' ? 5000 : 30000).catch(() =>
         url.pathname === '/api/session' ? offlineJson({angemeldet: false, offline: true, version: VERSION}, 200) : offlineJson({fehler: 'Offline – nicht verfügbar.', offline: true})));
       return;
     }
+    const key = req.url;          // Schluessel ist die Adresse (Steuer-Header gehoeren nicht dazu)
+    if (mode === 'direct') { e.respondWith(fetch(req).then(r => { lastNetOk = Date.now(); return remember(key, r); })); return; }
     e.respondWith((async () => {
+      if (mode === 'cache') {
+        const hit = await fromCache(key);
+        if (hit) return hit;
+      }
       try {
-        const resp = await withTimeout(req, TIMEOUT_MS);
-        if (resp.ok) { const c = await caches.open(DATA); c.put(req, await stamp(resp)); }
-        return resp;
+        const resp = await withTimeout(req, mode === 'cache' ? 8000 : netTimeout());
+        return await remember(key, resp);
       } catch (err) {
-        const c = await caches.open(DATA);
-        const hit = await c.match(req);
-        if (hit) return markOffline(hit);
-        return offlineJson({fehler: 'Offline – dafür liegen keine gespeicherten Daten vor.', offline: true});
+        return (await fromCache(key)) || offlineJson({fehler: 'Offline – dafür liegen keine gespeicherten Daten vor.', offline: true});
       }
     })());
     return;
@@ -67,7 +86,7 @@ self.addEventListener('fetch', e => {
   // App-Dateien: Netz zuerst, sonst Cache; Seitenaufrufe fallen auf / zurueck
   e.respondWith((async () => {
     try {
-      const resp = await withTimeout(req, TIMEOUT_MS);
+      const resp = await withTimeout(req, 6000);
       if (resp.ok) { const c = await caches.open(SHELL); c.put(req, resp.clone()); }
       return resp;
     } catch (err) {

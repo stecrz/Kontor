@@ -19,8 +19,13 @@ const ROLE_OPTS = [['liquiditaet', 'Liquidität'], ['wertpapiere', 'Wertpapiere 
 // Hilfetexte (Tooltips). Schluessel werden mit hq('schluessel') eingeblendet.
 const H = {
   bereich: 'Ein Bereich ist eine Menge von Konten, die zusammen bilanziert werden – meist eine Kontengruppe der obersten Ebene (Privat, eine Gesellschaft). Er bekommt eigene Bilanz, Kapitalfluss, Planung und Steuerübersicht. Die Gruppierung in MoneyMoney ist dafür keine Voraussetzung: Konten lassen sich frei zuordnen.',
-  haupt: 'Der Hauptbereich ist vorausgewählt und gilt als „privat“ in der Steuerübersicht.',
-  anteil: 'Dein Anteil an dieser Gesellschaft (0–1). Wird für die Steuerübersicht und die Beteiligungsregel verwendet. Leer = aus der Beteiligungsregel.',
+  haupt: 'Der Hauptbereich ist beim Öffnen vorausgewählt und gilt in der Steuerübersicht als „privat“. Vorschlag: der Bereich, dessen Name nach keiner Firma klingt.',
+  anteil: 'Dein Anteil an dieser Gesellschaft in Prozent (z. B. 49). Damit rechnet die Steuerübersicht deinen Teil des Ergebnisses, und die Beteiligungsregel bewertet dein Beteiligungskonto. Leer = 100 %.',
+  gruppenwahl: 'Eine Gruppe wählen heißt: alle Konten darunter gehören dazu – auch solche, die später in MoneyMoney in dieser Gruppe angelegt werden. Einzelne Konten lassen sich abwählen; dann gilt nicht mehr die Gruppe, sondern die verbleibenden Konten einzeln.',
+  anzeige: '„automatisch“ blendet Konten aus, die seit N Monaten keinen Bestand und keinen Umsatz haben. „ausblenden“ / „immer anzeigen“ überschreibt das je Konto. Ausgeblendete Konten bleiben in Summen und Verlauf enthalten.',
+  position_kurz: 'Wo das Konto in der Bilanz erscheint (Liquidität, Wertpapiere, Immobilien, Darlehen …) und wie seine Umsätze im Kapitalfluss zählen. Vorschlag aus Gruppenname und Kontotyp.',
+  verlauf_kurz: 'Woher die Monatsstände kommen: „Umsätze“ = vom aktuellen Saldo rückwärts gerechnet (Bankkonten). „Stände“ = Kontor merkt sich monatlich den Stand und du ergänzst ältere Werte (Depots, Konten ohne Umsatzhistorie).',
+  berechtigung: 'macOS fragt beim ersten Zugriff, ob Kontor (angezeigt als „python3“ oder „Terminal“) MoneyMoney steuern darf. Das ist der Lesezugriff auf Konten, Umsätze und Kategorien über die Skript-Schnittstelle von MoneyMoney – Zugangsdaten zu Banken sieht Kontor nie. Ohne diese Freigabe kann Kontor nichts auswerten. Buchungen schreibt Kontor nur in Offline-Konten, die du in Regeln benennst.',
   position: 'Die Bilanzposition eines Kontos. Sie bestimmt, wo das Konto in der Bilanz erscheint und wie Umsätze im Kapitalfluss behandelt werden (Liquidität: Einnahmen/Ausgaben; Darlehen: Zins/Tilgung; Wertpapiere, Immobilien, Beteiligungen, Sachwerte: Umschichtung/Bewertung). Vorschlag aus Gruppenname und Kontotyp, hier überschreibbar.',
   verlauf: '„Umsätze“: der Saldoverlauf wird aus dem aktuellen Saldo rückwärts über die Umsätze gerechnet (Startsalden spielen keine Rolle). „Stände“: für Depots und Konten ohne Umsatzhistorie – Kontor zeichnet ab dem ersten Lauf monatlich den Stand auf; ältere Monatsstände kannst du eintragen oder aus einem Saldenexport laden.',
   zuordnen: 'Hier landen alle Umsätze, die weder in Kontor noch in MoneyMoney eine Kategorie haben. Zuordnung je Gegenpartei; „Regel“ merkt sich die Zuordnung für künftige Umsätze. Kategorien tippen: neue werden angelegt (Oberkategorie / Unterkategorie).',
@@ -82,6 +87,27 @@ const H = {
   paket: 'Einstellungspaket: Regeln, Bereiche, Positionen, Kategorie- und Steuerzuordnungen, Immobilien – ohne Passwörter, Adresse/Port oder Daten.',
 };
 const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k])}">?</span>` : '';
+// Tooltip als eigenes Element: unterhalb, wenn oben kein Platz ist; nie ueber den Fensterrand hinaus
+(function tooltips() {
+  let tip = null, cur = null;
+  const hide = () => { if (tip) tip.remove(); tip = null; cur = null; };
+  const show = el => {
+    hide(); cur = el;
+    tip = document.createElement('div'); tip.className = 'tip'; tip.textContent = el.dataset.tip; document.body.appendChild(tip);
+    const r = el.getBoundingClientRect(), w = Math.min(340, window.innerWidth - 16); tip.style.maxWidth = w + 'px';
+    const tr = tip.getBoundingClientRect();
+    let left = r.left + r.width / 2 - tr.width / 2; left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
+    let top = r.top - tr.height - 8; if (top < 8) top = r.bottom + 8;
+    if (top + tr.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - tr.height - 8);
+    tip.style.left = left + 'px'; tip.style.top = top + 'px';
+  };
+  document.addEventListener('mouseover', e => { const el = e.target.closest && e.target.closest('.hq'); if (el && el !== cur) show(el); });
+  document.addEventListener('mouseout', e => { const el = e.target.closest && e.target.closest('.hq'); if (el && el === cur && !(e.relatedTarget && el.contains(e.relatedTarget))) hide(); });
+  document.addEventListener('focusin', e => { const el = e.target.closest && e.target.closest('.hq'); if (el) show(el); });
+  document.addEventListener('focusout', e => { if (e.target.closest && e.target.closest('.hq')) hide(); });
+  document.addEventListener('click', e => { const el = e.target.closest && e.target.closest('.hq'); if (el) { e.preventDefault(); if (cur === el && tip) hide(); else show(el); } else hide(); });
+  window.addEventListener('scroll', hide, true); window.addEventListener('resize', hide);
+})();
 
 const S = { tab: 'uebersicht', modus: 'monate', plan: true, real: false, nullzeilen: false, collapsed: {}, csrf: null, bereich: null,
             DATA: null, CFG: null, KONTEN: [], KATS: [], STATUS: null, steuerJahr: null, steuerEnt: null, vorschlag: false,
@@ -90,18 +116,33 @@ const S = { tab: 'uebersicht', modus: 'monate', plan: true, real: false, nullzei
 function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), ms); }
 function banner(msg, kind = '') { const b = $('#banner'); if (!msg) { b.classList.add('hidden'); return; } b.textContent = msg; b.className = 'banner ' + kind; }
 
-async function api(path, body, method) {
+// Am Mac selbst gibt es keine Offline-Ansicht: der Dienst ist erreichbar oder nicht (Tests können das Gerät als "entfernt" markieren)
+let IS_LOCAL = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(location.hostname);
+try { if (localStorage.getItem('kontor.testRemote') === '1') IS_LOCAL = false; } catch (e) {}
+async function api(path, body, method, netMode) {
   const opts = { method: method || (body === undefined ? 'GET' : 'POST'), headers: {}, credentials: 'same-origin' };
   if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   if (S.csrf) opts.headers['X-CSRF-Token'] = S.csrf;
+  const mode = netMode || (IS_LOCAL ? 'direct' : (OFFLINE.mode && opts.method === 'GET' ? 'cache' : ''));
+  if (mode) opts.headers['X-Kontor-Net'] = mode;
+  let ctl = null;
+  if (mode === 'direct' && !IS_LOCAL) { ctl = new AbortController(); opts.signal = ctl.signal; setTimeout(() => ctl.abort(), 20000); }
   let r;
-  try { r = await fetch(path, opts); } catch (e) { throw new Error('Kontor-Dienst nicht erreichbar (läuft er?).'); }
+  try { r = await fetch(path, opts); } catch (e) { throw new Error(IS_LOCAL ? 'Kontor-Dienst nicht erreichbar (läuft er? Terminal: bash install.sh).' : 'Der Mac ist nicht erreichbar.'); }
+  if (r.headers.get('X-Kontor-Offline') === '1' && opts.method === 'GET' && !OFFLINE.mode && !IS_LOCAL && mode !== 'direct' && path !== '/api/session') {
+    // Zwischengespeicherte Antwort, obwohl wir online waren: Server nur langsam? Gegenprobe ohne Zeitlimit
+    try { return await api(path, body, method, 'direct'); }
+    catch (e) { OFFLINE.mode = true; offlineBanner(); }
+  }
   let data = null;
   try { data = await r.json(); } catch (e) { data = {}; }
-  if (r.headers.get('X-Kontor-Offline') === '1') { const at = r.headers.get('X-Kontor-Cached-At'); if (at) OFFLINE.stand = at; if (!OFFLINE.mode && opts.method === 'GET') { OFFLINE.mode = true; offlineBanner(); } }
-  else if (OFFLINE.mode && opts.method === 'GET' && r.ok) { OFFLINE.mode = false; OFFLINE.stand = null; offlineBanner(); }
+  if (r.headers.get('X-Kontor-Offline') === '1') {
+    const at = r.headers.get('X-Kontor-Cached-At'); if (at) OFFLINE.stand = at;
+    if (IS_LOCAL) throw new Error('Der Kontor-Dienst antwortet nicht.');
+  } else if (OFFLINE.mode && opts.method === 'GET' && r.ok && path !== '/api/session') { OFFLINE.mode = false; OFFLINE.stand = null; offlineBanner(); }
   if (r.status === 401 && path !== '/api/session') { S.csrf = null; if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.stand = null; checkSession(); } else showLogin(); throw new Error('nicht angemeldet'); }
   if (!r.ok) { const e = new Error(data.fehler || ('Fehler ' + r.status)); e.data = data; throw e; }
+  if (opts.method !== 'GET' && data && data.bericht === 'angefordert') afterRebuild(data);
   return data;
 }
 function download(url) { const a = document.createElement('a'); a.href = url; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }
@@ -119,6 +160,12 @@ function idleReset() {
   if (OFFLINE.mode && S.csrf) OFFLINE.idle = setTimeout(() => { S.csrf = null; showLogin(); }, Math.max(1, ((S.CFG && S.CFG.oberflaeche) || {}).sperre_minuten || 15) * 60000);
 }
 for (const ev of ['pointerdown', 'keydown', 'touchstart']) document.addEventListener(ev, idleReset, {passive: true});
+async function offlinePing() {
+  // Im Offline-Modus alle 30 s prüfen, ob der Mac wieder da ist (Sitzung ist nie zwischengespeichert)
+  if (!OFFLINE.mode || document.hidden) return;
+  try { const s = await api('/api/session'); if (!s.offline) await revalidate(); } catch (e) {}
+}
+setInterval(offlinePing, 30000);
 const hexOf = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 const bytesOf = hex => new Uint8Array(hex.match(/../g).map(h => parseInt(h, 16)));
 async function offlineLogin(pw) {
@@ -136,8 +183,9 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').cat
 // ---------------------------------------------------------------- Anmeldung
 let SESSION = null;
 async function checkSession() {
-  try { SESSION = await api('/api/session'); } catch (e) { $('#login').classList.remove('hidden'); $('#login-err').textContent = e.message; return; }
+  try { SESSION = await api('/api/session'); } catch (e) { $('#login').classList.remove('hidden'); $('#login-err').textContent = e.message + ' Neuer Versuch in 5 s …'; setTimeout(checkSession, 5000); return; }
   $('#ver').textContent = 'v' + (SESSION.version || '');
+  if (SESSION.offline && IS_LOCAL) { $('#login').classList.remove('hidden'); $('#login-err').textContent = 'Der Kontor-Dienst antwortet nicht – läuft er? (Terminal: bash install.sh). Neuer Versuch in 5 s …'; setTimeout(checkSession, 5000); return; }
   if (SESSION.offline) { OFFLINE.mode = true; showLogin(); return; }
   OFFLINE.mode = false;
   if (SESSION.angemeldet) { S.csrf = SESSION.csrf; await enterApp(); } else showLogin();
@@ -174,7 +222,7 @@ async function revalidate() {
   let s;
   try { s = await fetch('/api/session', {credentials: 'same-origin'}).then(r => r.json()); } catch (e) { return; }
   const loginShown = !$('#login').classList.contains('hidden');
-  if (s.offline) { if (!OFFLINE.mode && !loginShown) { OFFLINE.mode = true; offlineBanner(); } return; }   // Mac weg: gespeicherte Ansicht bleibt offen
+  if (s.offline) { if (IS_LOCAL) return; if (!OFFLINE.mode && !loginShown) { OFFLINE.mode = true; offlineBanner(); } return; }   // Mac weg: gespeicherte Ansicht bleibt offen
   if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.stand = null; SESSION = s; S.csrf = s.angemeldet ? s.csrf : null; if (s.angemeldet) { await enterApp(); } else showLogin(); return; }
   if (!s.angemeldet && !loginShown) { SESSION = s; S.csrf = null; showLogin(); }
   else if (!s.angemeldet && loginShown && s.touchid && !s.einrichtung_noetig) { SESSION = s; tryTouchId(true); }
@@ -211,6 +259,7 @@ async function loadAll() {
   const [status, data, cfg, konten, kats] = await Promise.all([
     api('/api/status'), api('/api/dataset'), api('/api/config'), api('/api/konten'), api('/api/kategorien')]);
   S.STATUS = status; S.DATA = data.leer ? null : data; S.CFG = cfg; S.KONTEN = konten.konten || []; S.KATS = kats.kategorien || [];
+  if (!(status.bericht || {}).laeuft) BER.stand = (status.bericht || {}).stand || '';     // dieser Stand ist jetzt geladen
   S.einrichtung = data.einrichtung;
   if (S.DATA) { const keys = Object.keys(S.DATA.bereiche || {}); if (!S.bereich || !keys.includes(S.bereich)) S.bereich = S.DATA.haupt || keys[0]; }
   if (OFFLINE.mode) offlineBanner();
@@ -221,12 +270,40 @@ async function loadAll() {
 }
 const B = () => (S.DATA && S.DATA.bereiche && S.DATA.bereiche[S.bereich] && !S.DATA.bereiche[S.bereich].fehler) ? S.DATA.bereiche[S.bereich] : null;
 const BN = u => (S.DATA && S.DATA.bereich_namen && S.DATA.bereich_namen[u || S.bereich]) || '';
+function mmState(st) {
+  const m = st.moneymoney || {};
+  if (!m.laeuft) return {cls: 'off', text: 'MoneyMoney aus'};
+  if (m.gesperrt === true) return {cls: 'warn', text: 'MoneyMoney gesperrt'};
+  if (m.gesperrt === false) return {cls: 'ok', text: 'MoneyMoney läuft'};
+  return {cls: 'ok', text: 'MoneyMoney läuft'};
+}
 function statusMini() {
   const st = S.STATUS; if (!st) return;
-  const l = st.letzter_lauf;
-  $('#status-mini').innerHTML = `<span class="dot ${st.moneymoney.laeuft ? 'ok' : 'off'}"></span>MoneyMoney ${st.moneymoney.laeuft ? 'läuft' : 'aus'}<br>${st.probelauf ? '<b>Probelauf</b>' : '<b>Scharf</b>'} · nächster Lauf ${st.dienst.naechster_lauf || '–'}<br>${l ? 'letzter Lauf ' + l.zeit.slice(5) + (l.fehler ? ' ⚠' : '') : 'noch kein Lauf'}`;
+  const l = st.letzter_lauf, mm = mmState(st), b = st.bericht || {};
+  $('#status-mini').innerHTML = `<span class="dot ${mm.cls}"></span>${mm.text}<br>${st.probelauf ? '<b>Probelauf</b>' : '<b>Scharf</b>'} · nächster Lauf ${st.dienst.naechster_lauf || '–'}<br>${b.laeuft ? '<span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Bericht wird neu gebaut …' : (l ? 'letzter Lauf ' + l.zeit.slice(5) + (l.fehler ? ' ⚠' : '') : 'noch kein Lauf')}`;
+  const upd = $('#nav a[href="#updates"]'); if (upd) { let d = upd.querySelector('.nbadge'); const neu = !!(st.update && st.update.neuer); if (neu && !d) { d = document.createElement('span'); d.className = 'nbadge'; d.title = 'Update ' + st.update.verfuegbar + ' verfügbar'; upd.appendChild(d); } else if (!neu && d) d.remove(); }
   if (!st.ablage.verschluesselt) banner('Daten liegen unverschlüsselt (Verschlüsselung nicht verfügbar).', 'err');
   else if (st.ablage.schluessel === 'datei') banner('Datenschlüssel liegt als Datei (Schlüsselbund nicht verfügbar).');
+}
+const BER = {stand: '', timer: null};
+const DATA_TABS = ['uebersicht', 'bilanz', 'kapitalfluss', 'planung', 'steuer', 'depots', 'immobilien', 'umsaetze', 'zuordnen', 'buchungen'];
+async function pollStatus() {
+  // Status holen; läuft ein Berichtsneubau, öfter nachsehen und nach Abschluss die Daten frisch laden
+  S.STATUS = await api('/api/status'); statusMini();
+  const b = S.STATUS.bericht || {};
+  clearTimeout(BER.timer);
+  if (b.laeuft) { BER.timer = setTimeout(() => pollStatus().catch(() => {}), 3000); return; }
+  if ((b.stand || '') !== BER.stand) {
+    BER.stand = b.stand || '';
+    if (b.fehler) { toast('Bericht konnte nicht neu gebaut werden: ' + b.fehler, 6000); return; }
+    await loadAll();
+    if (DATA_TABS.includes(S.tab) && !$('#drawer').classList.contains('open')) route();
+    toast('Bericht aktualisiert');
+  }
+}
+function afterRebuild(r) {
+  // Antwort einer Änderung, die den Bericht neu baut: sofort Status prüfen (Hintergrund)
+  if (r && r.bericht === 'angefordert') pollStatus().catch(() => {});
 }
 function bereichSeg() {
   const seg = $('#bereich-seg'); if (!S.DATA) { seg.classList.add('hidden'); return; }
@@ -327,7 +404,7 @@ function statusStrip() {
   const st = S.STATUS, l = st.letzter_lauf;
   const upd = st.update && st.update.neuer ? `<a href="#updates" class="pill info">Update ${esc(st.update.verfuegbar)}</a>` : '';
   return `<div class="status-strip">
-    <span class="pill neutral"><span class="dot ${st.moneymoney.laeuft ? 'ok' : 'off'}"></span>MoneyMoney ${st.moneymoney.laeuft ? 'läuft' : 'nicht gestartet'}${S.DATA ? ' · Stand ' + esc(S.DATA.erstellt) : ''}</span>
+    <span class="pill neutral"><span class="dot ${mmState(st).cls}"></span>${mmState(st).text}${S.DATA ? ' · Stand ' + esc(S.DATA.erstellt) : ''}</span>${(st.bericht || {}).laeuft ? '<span class="pill info"><span class="spin" style="width:10px;height:10px;margin-right:5px"></span>Bericht wird neu gebaut</span>' : ''}
     <span class="pill ${st.probelauf ? 'warn' : 'ok'}">${st.probelauf ? 'Probelauf – es wird nichts gebucht' : 'Scharf – manuelle Konten werden bebucht'}</span>
     <span class="pill neutral">${st.dienst.automatisch ? 'automatisch alle ' + st.dienst.intervall_minuten + ' Min. · nächster ' + (st.dienst.naechster_lauf || '–') : 'kein automatischer Lauf'}</span>
     ${l ? `<a href="#buchungen" class="pill ${l.fehler ? 'err' : (l.vorschlaege && l.vorschlaege.length && l.probelauf ? 'warn' : 'ok')}">Letzter Lauf ${esc(l.zeit.slice(5))}: ${l.fehler ? 'Fehler' : (l.probelauf && l.vorschlaege && l.vorschlaege.length ? l.vorschlaege.length + ' Vorschläge offen' : l.geschrieben + ' gebucht')}</a>` : '<span class="pill neutral">noch kein Lauf</span>'}
@@ -417,11 +494,11 @@ function vEinrichtung(sub) {
   if (sub === 'konten') return vKontenEditor();
   if (sub === 'verbindung') return vVerbindung();
   const roots = S.KONTEN.filter(k => k.gruppe && k.ebene === 0);
-  let h = `<div class="note">Kontor besteht aus Bausteinen, die sich einzeln einrichten lassen. Pflicht sind nur Verbindung und Bereiche – alles andere kannst du jederzeit nachholen. ${S.KONTEN.length ? roots.length + ' Kontengruppen, ' + S.KONTEN.filter(k => !k.gruppe).length + ' Konten aus MoneyMoney bekannt.' : 'Noch keine Konten aus MoneyMoney gelesen – mit „Verbindung“ beginnen.'}</div><div class="modules">`;
-  for (const m of MODULES) {
+  let h = `<div class="note">In dieser Reihenfolge einrichten – die ersten drei Schritte bauen aufeinander auf (Konten lesen → Bereiche → Konten bestätigen), der Rest ist optional und jederzeit nachholbar. ${S.KONTEN.length ? roots.length + ' Kontengruppen, ' + S.KONTEN.filter(k => !k.gruppe).length + ' Konten aus MoneyMoney bekannt.' : 'Noch keine Konten aus MoneyMoney gelesen – mit Schritt 1 beginnen.'}</div><div class="setup-list">`;
+  MODULES.forEach((m, i) => {
     const ok = m.done();
-    h += `<div class="module"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? 'eingerichtet' : (m.optional ? 'optional' : 'offen')}</span></div><div class="d">${esc(m.d)}</div><div class="actions"><a href="${m.href || ('#einrichtung/' + m.id)}"><button class="small ${ok ? 'secondary' : ''}">${ok ? 'Anpassen' : 'Einrichten'}</button></a></div></div>`;
-  }
+    h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? 'eingerichtet' : (m.optional ? 'optional' : 'offen')}</span></div><div class="d">${esc(m.d)}</div></div><div class="a"><a href="${m.href || ('#einrichtung/' + m.id)}"><button class="small ${ok ? 'secondary' : ''}">${ok ? 'Anpassen' : 'Einrichten'}</button></a></div></div>`;
+  });
   h += '</div>';
   h += `<div class="card"><h3>Ersten Bericht erstellen</h3><div class="small muted">Liest alle Umsätze und baut Übersicht, Bilanz, Kapitalfluss, Planung und Steuer. Es wird nichts in MoneyMoney verändert. Danach: Buchungen → Probelauf, um die Regeln zu prüfen.</div><div class="actions"><button id="w-report" class="small">${S.DATA ? 'Bericht aktualisieren' : 'Bericht jetzt erstellen'}</button>${S.DATA ? '<a href="#uebersicht"><button class="small secondary">Zur Übersicht</button></a>' : ''}</div></div>`;
   return h;
@@ -430,34 +507,79 @@ function vVerbindung() {
   const st = S.STATUS;
   return `<h2>Verbindung zu MoneyMoney</h2><div class="steps">
     <div class="step ${st.moneymoney.laeuft ? 'done' : ''}"><div class="b"><b>MoneyMoney läuft</b>${st.moneymoney.laeuft ? 'MoneyMoney läuft.' : 'MoneyMoney starten und entsperren. Kontor startet es nicht selbst.'}</div></div>
-    <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>Zugriff erlauben und Konten lesen</b>Beim ersten Zugriff fragt macOS, ob das Programm (Terminal bzw. python3) MoneyMoney steuern darf – erlauben. Wenn der Dialog nicht erscheint: Systemeinstellungen → Datenschutz &amp; Sicherheit → Automation.<div class="actions"><button id="w-check" class="small">Verbindung prüfen</button></div><div id="w-findings" class="findings"></div></div></div>
+    <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>Zugriff erlauben und Konten lesen ${hq('berechtigung')}</b>Beim ersten Zugriff fragt macOS, ob das Programm (angezeigt als „python3“ oder „Terminal“) MoneyMoney steuern darf. <b>Wofür:</b> Kontor liest darüber Konten, Umsätze und Kategorien – nur lesend; Bank-Zugangsdaten bleiben in MoneyMoney. Geschrieben wird nur in Offline-Konten, die du später in Regeln benennst. Erscheint der Dialog nicht: Systemeinstellungen → Datenschutz &amp; Sicherheit → Automation.<div class="actions"><button id="w-check" class="small">Verbindung prüfen</button><span id="w-busy" class="working hidden"><span class="spin"></span>Lese Konten und Umsätze aus MoneyMoney … bei vielen Umsätzen bis zu einer Minute.</span></div><div id="w-findings" class="findings"></div></div></div>
     <div class="step"><div class="b"><b>Optional: Aktualisierung aus Kontor erlauben</b>Damit Kontor „Alle Konten aktualisieren“ anstoßen kann, zusätzlich unter Bedienungshilfen erlauben. ${hq('mm_refresh')}</div></div>
     <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>Weiter</b><a href="#einrichtung/bereiche">Bereiche festlegen</a> · <a href="#einrichtung">Zur Übersicht der Bausteine</a></div></div></div>`;
 }
+const FIRMA_RE = /\b(gmbh|ug|ag|se|kg|ohg|gbr|egbr|e\.?\s?k\.?|e\.?\s?v\.?|eg|ltd|inc|llc|holding|verwaltung|beteiligung|immobilien|stiftung|verein|genossenschaft|partner|&\s?co)\b/i;
+const guessArt = name => FIRMA_RE.test(name || '') || /(gmbh|gbr|holding)/i.test(name || '') ? 'gesellschaft' : 'privat';
+function anteilAusRegel(konten) {
+  // Beteiligungsregel, deren Gruppe zu diesem Bereich gehoert -> Anteil als Vorschlag
+  const ids = new Set((konten || []).map(r => r.split('|')[0].trim()));
+  const b = (S.CFG.beteiligungen || []).find(x => ids.has((x.gruppe || '').split('|')[0].trim()));
+  return b && b.anteil != null ? b.anteil : null;
+}
 function vBereicheEditor() {
   const roots = S.KONTEN.filter(k => k.gruppe && k.ebene === 0);
-  const list = (S.CFG.bereiche || []).length ? S.CFG.bereiche : roots.map((r, i) => ({id: r.uuid, name: r.name, konten: [r.uuid + ' | ' + r.name], haupt: i === 0, art: '', anteil: ''}));
-  let h = `<h2>Bereiche ${hq('bereich')}</h2><div class="note">Standard: jede Kontengruppe der obersten Ebene ist ein Bereich. Du kannst Bereiche umbenennen, löschen, zusammenlegen oder einzelne Konten und Gruppen frei zuordnen. ${S.KONTEN.length ? '' : '<b>Noch keine Konten geladen – zuerst die Verbindung prüfen.</b>'}</div><div class="list" id="bereiche">`;
+  let list = (S.CFG.bereiche || []).length ? S.CFG.bereiche : roots.map(r => ({id: r.uuid, name: r.name, konten: [r.uuid + ' | ' + r.name], haupt: false, art: guessArt(r.name), anteil: null}));
+  if (list.length && !list.some(b => b.haupt)) { const p = list.find(b => (b.art || guessArt(b.name)) === 'privat') || list[0]; p.haupt = true; }
+  let h = `<h2>Bereiche ${hq('bereich')}</h2><div class="note">Standard: jede Kontengruppe der obersten Ebene ist ein Bereich. Art und Hauptbereich sind aus den Namen vorbelegt – prüfen und bei Bedarf ändern. Bereiche lassen sich umbenennen, löschen, zusammenlegen oder aus einzelnen Konten und Gruppen zusammenstellen. ${S.KONTEN.length ? '' : '<b>Noch keine Konten geladen – zuerst die Verbindung prüfen.</b>'}</div><div class="list" id="bereiche">`;
   list.forEach((b, i) => { h += bereichForm(b, i); });
   h += '</div><div class="actions"><button id="add-bereich" class="secondary">Bereich hinzufügen</button><button id="save-bereiche">Bereiche speichern</button><a href="#einrichtung/konten"><button class="secondary">Weiter: Positionen & Verlauf</button></a></div><div id="findings-b" class="findings"></div>';
   return h;
 }
 function bereichForm(b, i) {
   const sel = new Set((b.konten || []).map(r => r.split('|')[0].trim()));
+  const art = b.art || guessArt(b.name);
+  const regel = anteilAusRegel(b.konten);
+  const pct = b.anteil != null && b.anteil !== '' ? Math.round(parseFloat(b.anteil) * 10000) / 100 : '';
+  // Konten unter einer gewaehlten Gruppe sind enthalten (angehakt, gesperrt)
+  const rows = []; let within = null;
+  for (const k of S.KONTEN) {
+    if (within !== null && k.ebene <= within) within = null;
+    const implied = within !== null;
+    const checked = sel.has(k.uuid) || implied;
+    if (k.gruppe && sel.has(k.uuid) && within === null) within = k.ebene;
+    rows.push(`<label class="chk small ${implied ? 'implied' : ''}" style="padding-left:${k.ebene * 14}px"><input type="checkbox" class="b-k" data-ebene="${k.ebene}" data-gruppe="${k.gruppe ? 1 : 0}" value="${k.uuid} | ${esc(k.name)}" ${checked ? 'checked' : ''} ${implied ? 'disabled' : ''}> ${esc(k.name)}${k.gruppe ? ' <span class="muted">(Gruppe – mit allen Konten darunter)</span>' : ''}</label>`);
+  }
   return `<div class="item" data-i="${i}"><div class="grow"><div class="form">
     <label>Name</label><input type="text" class="b-name" value="${esc(b.name || '')}">
     <label>Kennung</label><input type="text" class="b-id" value="${esc(b.id || '')}" placeholder="kurz, eindeutig (z. B. privat)">
-    <label>Art</label><select class="b-art"><option value="" ${!b.art ? 'selected' : ''}>automatisch (aus dem Namen)</option><option value="privat" ${b.art === 'privat' ? 'selected' : ''}>privat</option><option value="gesellschaft" ${b.art === 'gesellschaft' ? 'selected' : ''}>Gesellschaft (GbR, GmbH …)</option></select>
-    <label>Hauptbereich ${hq('haupt')}</label><label class="chk"><input type="radio" name="b-haupt" class="b-haupt" ${b.haupt ? 'checked' : ''}></label>
-    <label>Anteil ${hq('anteil')}</label><input type="number" step="0.01" min="0" max="1" class="b-anteil" value="${b.anteil ?? ''}" placeholder="aus Beteiligungsregel">
-    <label>Konten / Gruppen</label><div class="list b-konten" style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 10px">${S.KONTEN.map(k => `<label class="chk small" style="padding-left:${k.ebene * 14}px"><input type="checkbox" class="b-k" value="${k.uuid} | ${esc(k.name)}" ${sel.has(k.uuid) ? 'checked' : ''}> ${esc(k.name)}${k.gruppe ? ' <span class="muted">(Gruppe)</span>' : ''}</label>`).join('')}</div>
+    <label>Art</label><select class="b-art"><option value="privat" ${art === 'privat' ? 'selected' : ''}>privat</option><option value="gesellschaft" ${art === 'gesellschaft' ? 'selected' : ''}>Gesellschaft (GbR, GmbH …)</option></select>
+    <label>Hauptbereich ${hq('haupt')}</label><label class="chk"><input type="radio" name="b-haupt" class="b-haupt" ${b.haupt ? 'checked' : ''}> ${b.haupt ? 'ja' : 'nein'}</label>
+    <label>Anteil ${hq('anteil')}</label><div class="row tight"><input type="number" step="0.01" min="0" max="100" class="b-anteil" value="${pct}" placeholder="${regel != null ? Math.round(regel * 10000) / 100 : '100'}" style="width:110px"> %${regel != null && pct === '' ? `<span class="small muted">Vorschlag aus der Beteiligungsregel: ${Math.round(regel * 10000) / 100} %</span>` : ''}</div>
+    <label>Konten / Gruppen ${hq('gruppenwahl')}</label><div class="list b-konten" style="max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 10px">${rows.join('')}</div>
   </div></div><button class="danger small del">Entfernen</button></div>`;
+}
+function bindBereichKonten(main) {
+  // Gruppe anhaken -> alle Konten darunter enthalten (gesperrt); Konto darunter abwaehlen -> Gruppe wird abgewaehlt, die uebrigen bleiben einzeln gewaehlt
+  $$('.b-konten', main).forEach(box => box.addEventListener('change', e => {
+    const cb = e.target; if (!cb.classList.contains('b-k')) return;
+    const all = $$('.b-k', box), idx = all.indexOf(cb), lvl = +cb.dataset.ebene;
+    const below = []; for (let j = idx + 1; j < all.length && +all[j].dataset.ebene > lvl; j++) below.push(all[j]);
+    if (cb.dataset.gruppe === '1') {
+      below.forEach(c => { c.checked = cb.checked; c.disabled = cb.checked; c.closest('label').classList.toggle('implied', cb.checked); });
+    } else if (!cb.checked) {
+      // uebergeordnete, angehakte Gruppen aufloesen: die uebrigen Konten darunter bleiben einzeln gewaehlt
+      let cur = lvl;
+      for (let j = idx - 1; j >= 0; j--) {
+        const g = all[j]; if (+g.dataset.ebene >= cur) continue;
+        cur = +g.dataset.ebene;
+        if (g.dataset.gruppe === '1' && g.checked) { g.checked = false; for (let m = j + 1; m < all.length && +all[m].dataset.ebene > cur; m++) { all[m].disabled = false; all[m].closest('label').classList.remove('implied'); } }
+      }
+      cb.checked = false;
+    }
+  }));
+  $$('.b-haupt', main).forEach(r => r.addEventListener('change', () => $$('.b-haupt', main).forEach(x => { x.parentElement.lastChild.textContent = x.checked ? ' ja' : ' nein'; })));
+  $$('.b-name', main).forEach(inp => inp.addEventListener('input', () => { const sel = $('.b-art', inp.closest('.item')); if (sel && !sel.dataset.touched) sel.value = guessArt(inp.value); }));
+  $$('.b-art', main).forEach(sel => sel.addEventListener('change', () => { sel.dataset.touched = '1'; }));
 }
 function collectBereiche() {
   const cfg = JSON.parse(JSON.stringify(S.CFG));
   cfg.bereiche = $$('#bereiche .item').map(it => ({ id: $('.b-id', it).value.trim() || $('.b-name', it).value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: $('.b-name', it).value.trim(),
-    art: $('.b-art', it).value, haupt: $('.b-haupt', it).checked, anteil: $('.b-anteil', it).value === '' ? null : parseFloat($('.b-anteil', it).value), aktiv: true,
-    konten: $$('.b-k:checked', it).map(c => c.value) }));
+    art: $('.b-art', it).value || guessArt($('.b-name', it).value), haupt: $('.b-haupt', it).checked,
+    anteil: $('.b-anteil', it).value === '' ? null : Math.round(parseFloat($('.b-anteil', it).value) * 100) / 10000, aktiv: true,
+    konten: $$('.b-k:checked', it).filter(c => !c.disabled).map(c => c.value) }));
   if (cfg.bereiche.length && !cfg.bereiche.some(b => b.haupt)) cfg.bereiche[0].haupt = true;
   if (cfg.bilanz) delete cfg.bilanz.hauptbereich;
   return cfg;
@@ -473,16 +595,16 @@ function vKontenEditor() {
   let h = `<h2>Bilanzpositionen & Verlauf</h2><div class="note">Jedes Konto gehört zu einem Bereich und hat eine Position. Vorschläge kommen aus der Gruppierung in MoneyMoney, dem Gruppennamen und dem Kontotyp – hier bestätigst oder änderst du sie; neue Konten in MoneyMoney tauchen als „neu“ auf, bis du sie einmal gespeichert hast. ${hq('konten_zuordnung')} ${hq('position')} ${hq('verlauf')}</div>
   ${neu.length ? `<div class="banner info">${neu.length} Konto/Konten noch nicht bestätigt: ${esc(neu.slice(0, 6).map(k => k.name).join(', '))}${neu.length > 6 ? ' …' : ''} – Vorschläge prüfen und „Speichern“.</div>` : ''}
   <div class="row tight"><label>Inaktive Konten ausblenden nach <input type="number" id="k-inaktiv" min="0" value="${cfg.bilanz.inaktiv_monate ?? 12}" style="width:70px"> Monaten ${hq('inaktiv')}</label><label class="switch"><input type="checkbox" id="k-show-inactive"><i></i>inaktive anzeigen</label></div>
-  <div class="wrap auto"><table class="plain acct-table"><thead><tr><th>Konto</th><th>Bereich ${hq('bereich')}</th><th>Typ</th><th>Position</th><th>Verlauf</th><th>illiquide ${hq('illiquide')}</th><th>Anzeige</th><th class="num">Saldo</th></tr></thead><tbody>`;
+  <div class="wrap auto"><table class="plain acct-table"><thead><tr><th>Konto</th><th>Bereich ${hq('bereich')}</th><th>Position ${hq('position_kurz')}</th><th>Verlauf ${hq('verlauf_kurz')}</th><th title="zählt nicht zum liquiden Nettovermögen">illiquide ${hq('illiquide')}</th><th>Anzeige ${hq('anzeige')}</th><th class="num">Saldo</th></tr></thead><tbody>`;
   for (const k of leaves) {
     const cur = roleOf(k.uuid), ver = verOf(k.uuid);
     const zu = ((cfg.bilanz.konten_zuordnung || {})[k.uuid + ' | ' + k.name]) || Object.entries(cfg.bilanz.konten_zuordnung || {}).find(([r]) => r.split('|')[0].trim() === k.uuid)?.[1] || {};
     const bsel = zu.bereich || k.bereich_id || '';
-    h += `<tr data-uuid="${k.uuid}" data-ref="${k.uuid} | ${esc(k.name)}" class="${k.inaktiv ? 'inactive' : ''}${k.bestaetigt ? '' : ' neu'}"><td title="${esc(k.pfad)}">${esc(k.name)}${k.bestaetigt ? '' : '<span class="tag warn">neu</span>'}<div class="small muted">${esc(k.pfad.split(' / ').slice(0, -1).join(' / '))}</div></td><td><select class="k-bereich"><option value="">– keiner –</option>${bereiche.map(([id, n]) => `<option value="${esc(id)}" ${bsel === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td><td class="small">${k.depot ? 'Depot' : k.manuell ? 'manuell' : esc(k.typ || 'Bank')}</td>
-      <td><select class="k-rolle"><option value="">automatisch (${esc((ROLE[k.rolle] || [k.rolle])[0] || '–')})</option>${ROLE_OPTS.map(([v, l]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
-      <td><select class="k-verlauf"><option value="">automatisch (${k.depot ? 'Stände' : 'Umsätze'})</option><option value="umsaetze" ${ver === 'umsaetze' ? 'selected' : ''}>Umsätze</option><option value="stand" ${ver === 'stand' ? 'selected' : ''}>Stände</option></select> <button class="ghost small k-hist" title="Monatsstände bearbeiten">Verlauf…</button></td>
+    h += `<tr data-uuid="${k.uuid}" data-ref="${k.uuid} | ${esc(k.name)}" class="${k.inaktiv ? 'inactive' : ''}${k.bestaetigt ? '' : ' neu'}"><td title="${esc(k.pfad)}">${esc(k.name)}${k.bestaetigt ? '' : '<span class="tag warn">neu</span>'}<div class="small muted">${esc(k.pfad.split(' / ').slice(0, -1).join(' / '))} · ${k.depot ? 'Depot' : k.manuell ? 'manuell' : esc(k.typ || 'Bank')}</div></td><td><select class="k-bereich"><option value="">– keiner –</option>${bereiche.map(([id, n]) => `<option value="${esc(id)}" ${bsel === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td>
+      <td><select class="k-rolle"><option value="">auto (${esc((ROLE[k.rolle] || [k.rolle])[0] || '–')})</option>${ROLE_OPTS.map(([v, l]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
+      <td class="nowrap"><select class="k-verlauf"><option value="">auto (${k.depot ? 'Stände' : 'Umsätze'})</option><option value="umsaetze" ${ver === 'umsaetze' ? 'selected' : ''}>Umsätze</option><option value="stand" ${ver === 'stand' ? 'selected' : ''}>Stände</option></select> <button class="ghost small k-hist" title="Monatsstände ansehen und bearbeiten">Verlauf…</button></td>
       <td><input type="checkbox" class="k-ill" ${ill.has(k.uuid) ? 'checked' : ''}></td>
-      <td><select class="k-show"><option value="">automatisch${k.inaktiv ? ' (inaktiv)' : ''}</option><option value="hide" ${hide.has(k.uuid) ? 'selected' : ''}>ausblenden</option><option value="show" ${show.has(k.uuid) ? 'selected' : ''}>immer anzeigen</option></select></td>
+      <td><select class="k-show"><option value="">auto${k.inaktiv ? ' (inaktiv)' : ''}</option><option value="hide" ${hide.has(k.uuid) ? 'selected' : ''}>ausblenden</option><option value="show" ${show.has(k.uuid) ? 'selected' : ''}>immer zeigen</option></select></td>
       <td class="num ${(k.saldo || 0) < 0 ? 'neg' : 'pos'}">${F(k.saldo)}</td></tr>`;
   }
   h += '</tbody></table></div><div class="actions"><button id="save-konten">Speichern</button><button id="k-neu" class="secondary">Bericht aktualisieren</button><a href="#einrichtung"><button class="secondary">Zurück zur Einrichtung</button></a></div><div id="findings-k2" class="findings"></div>';
@@ -1040,6 +1162,15 @@ async function openDrawer(txId) {
   const cb = $('#dr-cat-btn', d); if (cb) cb.onclick = async () => { const kat = $('#dr-kat', d).value.trim(); const body = {ids: [txId], kategorie: kat, in_moneymoney: !!($('#dr-mm', d) && $('#dr-mm', d).checked)}; if ($('#dr-rule', d).checked && kat) body.regel = {name_enthaelt: u.name}; try { const r = await api('/api/kategorien/zuordnen', body); toast(kat ? 'Zugeordnet' + (r.regel ? ' · Regel angelegt' : '') : 'Zuordnung entfernt'); await loadAll(); await refreshUms(txId); } catch (e) { toast(e.message, 5000); } };
 }
 function closeDrawer() { $('#drawer').classList.remove('open'); S.drawerTx = null; }
+async function belegeApi(path, body) {
+  // Erster Beleg: Ordner nur nach Rueckfrage anlegen (oder anderen Ordner in den Einstellungen waehlen)
+  try { return await api(path, body); }
+  catch (e) {
+    if (!(e.data && e.data.ordner_bestaetigen)) throw e;
+    if (!confirm('Belege werden im Ordner\n' + e.data.ordner + '\nabgelegt. Den Ordner jetzt anlegen?\n\n(Abbrechen = anderen Ordner unter Einstellungen → Belege wählen)')) { location.hash = '#einstellungen'; throw new Error('Kein Belegordner – unter Einstellungen → Belege festlegen.'); }
+    return api(path, Object.assign({}, body, {ordner_anlegen: true}));
+  }
+}
 async function refreshUms(txId) { await route(); if (txId != null) await openDrawer(txId); }
 function pickFiles(txId, camera) {
   const inp = $('#file-input'); inp.value = '';
@@ -1053,7 +1184,7 @@ async function uploadFiles(txId, files) {
     toast('Lade ' + f.name + ' …', 60000);
     try {
       const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(f); });
-      await api('/api/belege/upload', {tx_id: txId, datei_name: f.name, inhalt: b64});
+      await belegeApi('/api/belege/upload', {tx_id: txId, datei_name: f.name, inhalt: b64});
       toast(f.name + ' abgelegt');
     } catch (e) { toast('Fehler: ' + e.message, 6000); }
   }
@@ -1274,7 +1405,7 @@ function vEinstellungen() {
     <label>Kategorisieren erlauben ${hq('mm_cat')}</label><label class="chk"><input type="checkbox" id="e-mm-cat" ${mm.kategorisieren_erlauben ? 'checked' : ''}> Umsätzen aus Kontor eine Kategorie zuweisen (ändert nur die Kategorie des gewählten Umsatzes, nie Regeln)</label>
   </div>
   <h2>Belege</h2><div class="form">
-    <label>Belegordner ${hq('belege_ordner')}</label><input type="text" id="e-bl-ordner" value="${esc(bl.ordner || '~/Documents/Kontor-Belege')}">
+    <label>Belegordner ${hq('belege_ordner')}</label><div><input type="text" id="e-bl-ordner" value="${esc(bl.ordner || '~/Documents/Kontor-Belege')}" style="width:100%"><div class="small muted">${bl.ordner_bestaetigt ? 'Wird beim ersten Beleg angelegt, falls er fehlt.' : 'Noch nicht angelegt – beim ersten Beleg fragt Kontor, ob dieser Ordner erstellt werden soll. Ein hier eingetragener Ordner gilt als gewählt.'}</div></div>
     <label>Unterordner-Muster ${hq('belege_sub')}</label><input type="text" id="e-bl-sub" value="${esc(bl.unterordner || '{jahr}')}" placeholder="{jahr} · {jahr}/{entitaet} · {entitaet}/{jahr}/{monat} · {konto}">
     <label>Verweis in MoneyMoney ${hq('belege_kommentar')}</label><label class="chk"><input type="checkbox" id="e-bl-comment" ${bl.kommentar_schreiben ? 'checked' : ''}> Dateipfad als Kommentar an den Umsatz schreiben (ändert das Kommentarfeld des Umsatzes)</label>
     <div class="full note">Belege werden als normale Dateien abgelegt (kein Datenbankformat) und können mit dem Finder, Time Machine oder iCloud genauso behandelt werden wie andere Dokumente. Der Index (Datei ↔ Umsatz) liegt verschlüsselt im Datenordner.</div>
@@ -1316,7 +1447,8 @@ function collectSettings() {
   cfg.bilanz = Object.assign(cfg.bilanz || {}, { monate_zurueck: parseInt($('#e-monate').value) || 0 });
   delete cfg.bilanz.wurzel;
   cfg.moneymoney = { aktualisieren_erlauben: $('#e-mm-refresh').checked, kategorisieren_erlauben: $('#e-mm-cat').checked };
-  cfg.belege = Object.assign(cfg.belege || {}, { ordner: $('#e-bl-ordner').value.trim() || '~/Documents/Kontor-Belege', unterordner: $('#e-bl-sub').value.trim() || '{jahr}', kommentar_schreiben: $('#e-bl-comment').checked });
+  cfg.belege = Object.assign(cfg.belege || {}, { ordner: $('#e-bl-ordner').value.trim() || '~/Documents/Kontor-Belege', unterordner: $('#e-bl-sub').value.trim() || '{jahr}', kommentar_schreiben: $('#e-bl-comment').checked,
+    ordner_bestaetigt: !!(cfg.belege || {}).ordner_bestaetigt || $('#e-bl-ordner').value.trim() !== ((S.CFG.belege || {}).ordner || '') });    // ein hier gewählter Ordner gilt als bestätigt
   cfg.steuer = Object.assign(cfg.steuer || {}, { vermietung_kategorie: $('#e-verm').value.trim() || 'Vermietung',
     objekt_darlehen: Object.fromEntries($$('.e-obj').map(i => [i.dataset.ref, i.value.trim()]).filter(([, v]) => v)),
     positionen: Object.fromEntries($$('.pos-row').map(r => [$('.p-kat', r).value.trim(), $('.p-pos', r).value.trim()]).filter(([k, v]) => k && v)) });
@@ -1386,7 +1518,9 @@ async function vUpdates() {
 // ---------------------------------------------------------------- Protokoll / Hilfe
 async function vProtokoll() {
   const r = await api('/api/log?n=500');
-  return '<div class="toolbar"><button id="log-refresh" class="secondary small">Aktualisieren</button><button id="diag2" class="secondary small">Diagnosedatei (maskiert)</button><button id="diag3" class="secondary small">Diagnosedatei (mit Kontonamen)</button><span class="muted small">Das Protokoll enthält keine IBANs, Salden oder Passwörter.</span></div><pre class="log">' + esc(r.zeilen.join('\n')) + '</pre>';
+  const ordner = (S.STATUS && S.STATUS.ablage && S.STATUS.ablage.ordner) || '~/Library/Application Support/Kontor';
+  return `<div class="toolbar"><button id="log-refresh" class="secondary small">Aktualisieren</button><button id="diag2" class="secondary small">Diagnosedatei (maskiert)</button><button id="diag3" class="secondary small">Diagnosedatei (mit Kontonamen)</button>${S.STATUS && S.STATUS.lokal ? '<button id="log-show" class="secondary small">Im Finder zeigen</button>' : ''}</div>
+    <div class="note">Datei: <code>${esc(ordner)}/kontor.log</code> (Klartext, rotiert bei 5 MB; daneben <code>dienst.err.log</code> für Abstürze des Dienstes). Zur Fehlersuche diese Datei oder die Diagnosedatei schicken – sie enthalten keine IBANs, Salden oder Passwörter. Ist die Oberfläche nicht erreichbar: Finder → Gehe zu → Ordner … → <code>~/Library/Application Support/Kontor</code>.</div><pre class="log">` + esc(r.zeilen.join('\n')) + '</pre>';
 }
 function vHilfe() {
   return `<div class="help">
@@ -1418,6 +1552,13 @@ function vHilfe() {
   <li>Optional schreibt Kontor eine Zuordnung auch nach MoneyMoney (Einstellung „Kategorisieren erlauben“, Häkchen „auch in MoneyMoney“) – nur das Kategoriefeld des Umsatzes.</li></ul>
   <h2>Planung: Ereignisse</h2>
   <p>Umschichtung = Betrag wandert von „Von“ nach „Nach“ (Konto leer = Liquidität des Bereichs): z. B. Darlehen auf einen Schlag aus dem Depot zurückzahlen (Von = Depot, Nach = Darlehenskonto). Einnahme/Ausgabe = zahlungswirksam. Wiederholung einmalig, monatlich, je Quartal, jährlich – bis zum Enddatum oder Horizont. Beteiligungskonten lassen sich an das geplante Nettovermögen eines anderen Bereichs koppeln (Wertentwicklung → Kopplung).</p>
+  <h2>Berechtigungen, die macOS abfragt</h2>
+  <ul><li><b>Automation → MoneyMoney</b> (beim ersten „Verbindung prüfen“ oder Lauf): Kontor liest darüber Konten, Umsätze, Kategorien und Depotpositionen aus MoneyMoney – nur lesend. Geschrieben wird ausschließlich in Offline-Konten, die du in Regeln benennst. Bank-Zugangsdaten sieht Kontor nie. Ohne diese Freigabe kann Kontor nichts auswerten.</li>
+  <li><b>Automation → System Events</b> („Datei wählen …“): öffnet den macOS-Dateidialog, damit du Belege oder Dokumente verknüpfen kannst.</li>
+  <li><b>Bedienungshilfen</b> (nur für „MoneyMoney aktualisieren“): Kontor löst damit in MoneyMoney „Alle Konten aktualisieren“ aus. Optional.</li>
+  <li><b>Schlüsselbund</b>: Der Schlüssel für die verschlüsselte Ablage liegt im Login-Schlüsselbund; macOS fragt ggf. einmal nach Zugriff.</li></ul>
+  <h2>Protokoll und Fehlersuche</h2>
+  <p>Das Protokoll liegt als Klartext unter <code>~/Library/Application Support/Kontor/kontor.log</code> (Finder → Gehe zu → Ordner …), daneben <code>dienst.err.log</code>. Seite „Protokoll“ zeigt die letzten Zeilen und kann die Datei im Finder zeigen; die Diagnosedatei enthält Protokoll plus maskierte Konfiguration. Beides enthält keine IBANs, Salden oder Passwörter. Ein Berichtsneubau nach Änderungen läuft im Hintergrund (Status unten links); die Ansicht lädt sich danach selbst neu.</p>
   <h2>iPhone und Offline-Ansicht</h2>
   <p>Tailscale auf Mac und iPhone, dann am Mac im Terminal <code>python3 ~/Kontor/kontor.py tls</code>: holt ein Zertifikat für den Tailscale-Namen des Macs, trägt Adresse und Zertifikat ein und startet den Dienst neu (in der Tailscale-Admin-Konsole müssen MagicDNS und „HTTPS Certificates“ an sein). Am iPhone die angezeigte https-Adresse öffnen und „Zum Home-Bildschirm“. Die App behält die zuletzt geladenen Daten: ist der Mac aus oder nicht erreichbar, öffnet das Passwort diese Kopie – nur lesen, Stand des letzten Abrufs. Sobald der Mac wieder erreichbar ist, lädt die App frische Daten. Einstellungen → „Gespeicherte Daten auf diesem Gerät löschen“ entfernt die Kopie.</p>
   <h2>Sicherung und Zurücksetzen</h2>
@@ -1457,6 +1598,8 @@ async function route() {
   $('.side').classList.remove('open');
   if (S.tab !== 'umsaetze') closeDrawer();
   const main = $('#main');
+  const myRoute = ++ROUTE_SEQ;
+  const slow = setTimeout(() => { if (ROUTE_SEQ === myRoute) main.innerHTML = `<div class="loading"><span class="spin"></span>${esc(TITLES[S.tab] || '')} wird geladen …<div class="note">Der Dienst antwortet noch nicht – er arbeitet gerade (z. B. Bericht wird neu gebaut) oder MoneyMoney liest.</div></div>`; }, 400);
   try {
     let h = '';
     if (S.tab === 'uebersicht') h = await vUebersicht();
@@ -1477,13 +1620,16 @@ async function route() {
     else if (S.tab === 'updates') h = await vUpdates();
     else if (S.tab === 'protokoll') h = await vProtokoll();
     else if (S.tab === 'hilfe') h = vHilfe();
+    clearTimeout(slow);
+    if (ROUTE_SEQ !== myRoute) return;          // inzwischen woanders hin geklickt
     main.innerHTML = `<div class="fade">${h}</div>`;
     bind(main);
     if (S.tab === 'immobilien') bindImmo(main);
     if (S.tab === 'zuordnen') bindZuordnen(main);
     if (S.tab === 'kategorien') { bindKontorKategorien(main); $$('.tabs button[data-kt]', main).forEach(b => b.addEventListener('click', () => { KZ.tab = b.dataset.kt; route(); })); }
-  } catch (e) { if (e.message !== 'nicht angemeldet') main.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+  } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== 'nicht angemeldet') main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" onclick="route()">Erneut versuchen</button></div>`; }
 }
+let ROUTE_SEQ = 0;
 function bind(main) {
   $$('tr.group[data-id]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.id] = !S.collapsed[tr.dataset.id]; route(); }));
   $$('tr.sub[data-gid]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.gid] = !S.collapsed[tr.dataset.gid]; route(); }));
@@ -1493,13 +1639,17 @@ function bind(main) {
   $$('[data-xlsx]', main).forEach(b => b.addEventListener('click', () => download(b.dataset.xlsx === 'immobilie' ? `/api/export/immobilie.xlsx?id=${encodeURIComponent(b.dataset.immo || '')}&kalkulation=${encodeURIComponent(b.dataset.kalk || '')}` : `/api/export/${b.dataset.xlsx}.xlsx?bereich=${encodeURIComponent(b.dataset.bereich || S.bereich || '')}&modus=${S.modus === 'jahre' ? 'jahre' : 'monate'}`)));
 
   // Einrichtung
-  const wc = $('#w-check', main); if (wc) wc.addEventListener('click', async () => { toast('Prüfe …'); let r; try { r = await api('/api/check', {}); } catch (e) { showFindings($('#w-findings'), [], e.message, 'fehler'); return; } if (!r.verfuegbar) { showFindings($('#w-findings'), [], r.text, 'fehler'); return; } S.KONTEN = r.konten; S.KATS = r.kategorien || S.KATS; await route(); showFindings($('#w-findings'), r.befunde, 'Verbindung steht: ' + r.konten.length + ' Konten gelesen.', 'ok'); });
+  const wc = $('#w-check', main); if (wc) wc.addEventListener('click', async () => {
+    wc.classList.add('busy'); wc.disabled = true; const busy = $('#w-busy'); if (busy) busy.classList.remove('hidden'); $('#w-findings').innerHTML = '';
+    let r; try { r = await api('/api/check', {}); } catch (e) { wc.classList.remove('busy'); wc.disabled = false; if (busy) busy.classList.add('hidden'); showFindings($('#w-findings'), [], e.message, 'fehler'); return; }
+    if (!r.verfuegbar) { wc.classList.remove('busy'); wc.disabled = false; if (busy) busy.classList.add('hidden'); showFindings($('#w-findings'), [], r.text, 'fehler'); return; }
+    S.KONTEN = r.konten; S.KATS = r.kategorien || S.KATS; await route(); showFindings($('#w-findings'), r.befunde, 'Verbindung steht: ' + r.konten.length + ' Konten gelesen.', 'ok'); });
   const wr = $('#w-report', main); if (wr) wr.addEventListener('click', () => rebuildReport(true));
-  const abr = $('#add-bereich', main); if (abr) abr.addEventListener('click', () => { $('#bereiche').insertAdjacentHTML('beforeend', bereichForm({name: 'Neuer Bereich', id: '', konten: [], haupt: false}, $$('#bereiche .item').length)); bindDel(main); });
+  const abr = $('#add-bereich', main); if (abr) { bindBereichKonten(main); abr.addEventListener('click', () => { $('#bereiche').insertAdjacentHTML('beforeend', bereichForm({name: 'Neuer Bereich', id: '', konten: [], haupt: false}, $$('#bereiche .item').length)); bindDel(main); bindBereichKonten($('#bereiche .item:last-child')); }); }
   const sbr = $('#save-bereiche', main); if (sbr) sbr.addEventListener('click', async () => { const cfg = collectBereiche(); if (!cfg.bereiche.length) return showFindings($('#findings-b'), [], 'Mindestens ein Bereich ist nötig.', 'fehler'); if (cfg.bereiche.some(b => !b.name)) return showFindings($('#findings-b'), [], 'Jeder Bereich braucht einen Namen.', 'fehler'); if (cfg.bereiche.some(b => !b.konten.length)) return showFindings($('#findings-b'), [], 'Jeder Bereich braucht mindestens ein Konto oder eine Gruppe.', 'fehler'); const ids = cfg.bereiche.map(b => b.id); if (new Set(ids).size !== ids.length) return showFindings($('#findings-b'), [], 'Kennungen müssen eindeutig sein.', 'fehler'); if (await saveConfig(cfg, $('#findings-b'))) { const box = $('#findings-b').innerHTML; await rebuildReport(false); const f = $('#findings-b'); if (f) f.innerHTML = box; } });
   const skn = $('#save-konten', main); if (skn) skn.addEventListener('click', async () => { if (await saveConfig(collectKonten(), $('#findings-k2'))) { const box = $('#findings-k2').innerHTML; await rebuildReport(false); const f = $('#findings-k2'); if (f) f.innerHTML = box; } });
   const knu = $('#k-neu', main); if (knu) knu.addEventListener('click', () => rebuildReport(true));
-  $$('.k-hist', main).forEach(b => b.addEventListener('click', e => openHistDrawer(e.target.closest('tr').dataset.uuid)));
+  $$('.k-hist', main).forEach(b => b.addEventListener('click', async e => { const btn = e.target; btn.classList.add('busy'); try { await openHistDrawer(btn.closest('tr').dataset.uuid); } catch (er) { toast('Verlauf konnte nicht geladen werden: ' + er.message, 6000); } finally { btn.classList.remove('busy'); } }));
   const hp = $('#hi-pick', main); if (hp) hp.addEventListener('click', () => { const inp = $('#file-input'); inp.value = ''; inp.setAttribute('accept', '.csv,.txt,.xlsx,.xlsm'); inp.removeAttribute('capture'); inp.onchange = () => { if (inp.files[0]) histImportPreview(inp.files[0]); }; inp.click(); });
   const hd = $('#hi-drop', main); if (hd) { hd.addEventListener('dragover', e => { e.preventDefault(); hd.classList.add('over'); }); hd.addEventListener('dragleave', () => hd.classList.remove('over')); hd.addEventListener('drop', e => { e.preventDefault(); hd.classList.remove('over'); if (e.dataTransfer.files[0]) histImportPreview(e.dataTransfer.files[0]); }); if (HI) renderHistImport(); }
   const ksi = $('#k-show-inactive', main); if (ksi) ksi.addEventListener('change', e => $$('tr.inactive', main).forEach(tr => tr.style.display = e.target.checked ? '' : 'none'));
@@ -1537,7 +1687,7 @@ function bind(main) {
   // Steuer
   const sj = $('#st-jahr', main); if (sj) sj.addEventListener('change', e => { S.steuerJahr = e.target.value; route(); });
   const se = $('#st-ent', main); if (se) se.addEventListener('change', e => { S.steuerEnt = e.target.value; route(); });
-  const sb = $('#st-belege', main); if (sb) sb.addEventListener('click', async () => { try { const r = await api('/api/belege/export', {jahr: S.steuerJahr, entitaet: S.steuerEnt}); toast('Export erstellt: ' + r.datei, 8000); } catch (e) { toast(e.message, 6000); } });
+  const sb = $('#st-belege', main); if (sb) sb.addEventListener('click', async () => { try { const r = await belegeApi('/api/belege/export', {jahr: S.steuerJahr, entitaet: S.steuerEnt}); toast('Export erstellt: ' + r.datei, 8000); } catch (e) { toast(e.message, 6000); } });
   const afa = $('#afa-save', main); if (afa) afa.addEventListener('click', async () => {
     const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.steuer = cfg.steuer || {}; cfg.steuer.afa = cfg.steuer.afa || {};
     $$('.afa', main).forEach(i => { const o = i.dataset.obj; cfg.steuer.afa[o] = typeof cfg.steuer.afa[o] === 'object' && cfg.steuer.afa[o] ? cfg.steuer.afa[o] : {}; if (i.value === '') delete cfg.steuer.afa[o][S.steuerJahr]; else cfg.steuer.afa[o][S.steuerJahr] = parseFloat(i.value); });
@@ -1564,8 +1714,8 @@ function bind(main) {
   }
   const bc = $('#bulk-clear', main); if (bc) bc.addEventListener('click', () => { S.sel.clear(); route(); });
   const bk = $('#bulk-cat-btn', main); if (bk) bk.addEventListener('click', async () => { const kat = $('#bulk-cat').value; if (!kat) return toast('Kategorie wählen'); if (!confirm(S.sel.size + ' Umsätzen die Kategorie „' + kat + '“ zuweisen?')) return; try { const r = await api('/api/umsaetze/kategorie', {ids: [...S.sel], kategorie: kat}); toast(r.anzahl + ' kategorisiert'); S.sel.clear(); route(); } catch (e) { toast(e.message, 6000); } });
-  const bf = $('#bl-folder', main); if (bf) bf.addEventListener('click', async () => { try { await api('/api/belege/oeffnen', {}); } catch (e) { toast(e.message, 5000); } });
-  const be = $('#bl-export', main); if (be) be.addEventListener('click', async () => { const jahr = prompt('Jahr (leer = alle):', uf.jahr || new Date().getFullYear()); if (jahr === null) return; try { const r = await api('/api/belege/export', {jahr, entitaet: uf.entitaet}); toast('Export erstellt: ' + r.datei, 9000); } catch (e) { toast(e.message, 6000); } });
+  const bf = $('#bl-folder', main); if (bf) bf.addEventListener('click', async () => { try { await belegeApi('/api/belege/oeffnen', {}); } catch (e) { toast(e.message, 5000); } });
+  const be = $('#bl-export', main); if (be) be.addEventListener('click', async () => { const jahr = prompt('Jahr (leer = alle):', uf.jahr || new Date().getFullYear()); if (jahr === null) return; try { const r = await belegeApi('/api/belege/export', {jahr, entitaet: uf.entitaet}); toast('Export erstellt: ' + r.datei, 9000); } catch (e) { toast(e.message, 6000); } });
 
   // Regeln
   const al = $('#add-loan', main); if (al) al.addEventListener('click', () => { $('#loans').insertAdjacentHTML('beforeend', loanForm({name: 'Neues Darlehen', ab_datum: new Date().toISOString().slice(0, 10), zins: {modell: 'jahresbasis', satz: [], buchungstag: 'mit_rate'}, buchung: {kategorie_tilgung: 'Umbuchung'}}, $$('#loans .item').length)); bindDel(main); });
@@ -1609,19 +1759,21 @@ function bind(main) {
   const uc = $('#up-check', main); if (uc) uc.addEventListener('click', async () => { toast('Prüfe …'); await api('/api/update/pruefen', {}); S.STATUS = await api('/api/status'); route(); });
   const ui = $('#up-install', main); if (ui) ui.addEventListener('click', async () => { if (!confirm('Update installieren und Dienst neu starten?')) return; toast('Update wird installiert …', 30000); try { const r = await api('/api/update/installieren', {}); toast(r.text, 8000); if (r.ok && r.neustart) setTimeout(() => location.reload(), 6000); } catch (e) { toast(e.message, 8000); } });
   const lr = $('#log-refresh', main); if (lr) lr.addEventListener('click', route);
+  const ls = $('#log-show', main); if (ls) ls.addEventListener('click', async () => { try { await api('/api/datei/zeigen', {pfad: ((S.STATUS.ablage || {}).ordner || '') + '/kontor.log'}); } catch (e) { toast(e.message, 5000); } });
 }
 function bindDel(main) {
   $$('.item .del', main).forEach(b => { b.onclick = e => e.target.closest('.item').remove(); });
   $$('.del-row', main).forEach(b => { b.onclick = e => e.target.closest('.row').remove(); });
 }
 async function rebuildReport(fresh) {
-  // fresh: zuerst MoneyMoney neu lesen; sonst aus dem letzten Stand neu rechnen (ohne MoneyMoney)
-  toast('Bericht wird erstellt …', 20000);
+  // fresh: zuerst MoneyMoney neu lesen (wartet); sonst aus dem letzten Stand neu rechnen -- läuft im Hintergrund,
+  // der Status unten links zeigt den Fortschritt, danach werden die Daten automatisch neu geladen
+  toast(fresh ? 'MoneyMoney wird gelesen, Bericht wird erstellt …' : 'Bericht wird im Hintergrund neu gebaut …', fresh ? 60000 : 4000);
   try {
     let r = fresh ? await api('/api/bericht', {}) : await api('/api/bericht/neu', {});
     if (!r.ok && fresh) r = await api('/api/bericht/neu', {});
-    if (!r.ok && !fresh) r = await api('/api/bericht', {});
     if (!r.ok) { toast(r.text || 'MoneyMoney nicht verfügbar – Bericht später erstellen', 7000); await loadAll(); route(); return false; }
+    if (r.ok === 'angefordert') { await pollStatus(); return true; }
   } catch (e) { toast(e.message, 7000); return false; }
   await loadAll(); route(); toast('Bericht aktualisiert'); return true;
 }
@@ -1645,5 +1797,5 @@ $('#menu-btn').addEventListener('click', () => $('.side').classList.toggle('open
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 try { const s = JSON.parse(localStorage.getItem('kontor.ui') || '{}'); Object.assign(S, {modus: s.modus || S.modus, plan: s.plan !== false, real: !!s.real, bereich: s.bereich || null}); $$('#modus-seg button').forEach(x => x.classList.toggle('on', x.dataset.m === S.modus)); $('#planan').checked = S.plan; $('#realan').checked = S.real; } catch (e) {}
 window.addEventListener('beforeunload', () => { try { localStorage.setItem('kontor.ui', JSON.stringify({modus: S.modus, plan: S.plan, real: S.real, bereich: S.bereich})); } catch (e) {} });
-setInterval(async () => { if (S.csrf && !document.hidden) { try { S.STATUS = await api('/api/status'); statusMini(); } catch (e) {} } }, 60000);
+setInterval(async () => { if (S.csrf && !document.hidden && !OFFLINE.mode) { try { await pollStatus(); } catch (e) {} } }, 30000);
 checkSession();

@@ -235,12 +235,13 @@ def balance_history(ledger: Ledger, leaves: List[Account], months: List[Tuple[in
                 warnings.append("'%s': Stände vor %s sind mit dem ersten bekannten Wert fortgeschrieben -- unter Bilanz → Verlauf "
                                 "lassen sich Monatsstände eintragen oder aus einem Saldenexport laden." % (acc.name, first_known or cur_key))
         else:
+            ends = ledger.month_end_balances(acc.uuid, [(y, m) for (y, m) in months if "%04d-%02d" % (y, m) < cur_key])
             for (y, m) in months:
                 k = "%04d-%02d" % (y, m)
                 if k in manual and k != cur_key:
                     h[k] = manual[k]
                 else:
-                    h[k] = acc.balance if k >= cur_key else ledger.balance_at(acc.uuid, month_end(y, m))
+                    h[k] = acc.balance if k >= cur_key else ends[k]
         hist[acc.uuid] = h
     return hist, warnings, quelle, geschaetzt
 
@@ -336,6 +337,14 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     by_id = {t.id: t for t in all_tx}
     # Konten mit Verlauf aus Staenden (Depots) liefern keine Zahlungsfluesse: ihre Wertaenderung ist Bewertung
     in_root = [t for t in all_tx if t.account_uuid in root_leaves and verlauf.get(t.account_uuid) != "stand"]
+    # Markierungen (#mm-tx-NNN) einmal indizieren statt je Treffer alle Umsaetze zu durchsuchen
+    tag_index: Dict[str, List[Tx]] = defaultdict(list)
+    for o in all_tx:
+        if "#mm-tx-" in o.purpose:
+            for tag in TAG_RE.findall(o.purpose):
+                if tag.startswith("#mm-tx-"):
+                    tag_index[tag].append(o)
+    transfer_set = set(transfer_cats)
 
     partner: Dict[int, Optional[str]] = {}
     is_transfer: Dict[int, bool] = {}
@@ -343,19 +352,19 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         p = None
         if t.counter_iban and t.counter_iban in own_ibans and own_ibans[t.counter_iban] != t.account_uuid:
             p = own_ibans[t.counter_iban]
-        if p is None:
+        if p is None and "#mm-" in t.purpose + t.comment:
             for tag in TAG_RE.findall(t.purpose + " " + t.comment):
                 if tag.startswith("#mm-tx-"):
                     src = by_id.get(int(tag[7:]))
                     if src and src.account_uuid != t.account_uuid:
                         p = src.account_uuid
                     else:
-                        for o in all_tx:
-                            if tag in o.purpose and o.account_uuid != t.account_uuid:
+                        for o in tag_index.get(tag, ()):
+                            if o.account_uuid != t.account_uuid:
                                 p = o.account_uuid
                                 break
         cat_low = t.category_path.lower()
-        transfer = p is not None or any(cat_low.split("\\")[-1] == c or cat_low == c for c in transfer_cats)
+        transfer = p is not None or cat_low in transfer_set or cat_low.rsplit("\\", 1)[-1] in transfer_set
         partner[t.id] = p
         is_transfer[t.id] = transfer
     if kf.get("umbuchung_paarung", True):
@@ -365,15 +374,24 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                        and (roles.get(t.account_uuid) in ("verbindlichkeiten", "forderungen") or roles.get(t.account_uuid) in ASSET_ROLES)
                        and ledger.accounts[t.account_uuid].offline and not _is_cost(t, cost_words)]
         liquid_side = [t for t in in_root if roles.get(t.account_uuid) == "liquiditaet" and partner[t.id] is None]
+        # Gegenstuecke nach Betrag (Cent, Vorzeichen gedreht) indizieren: statt n² nur die wenigen Kandidaten gleicher Hoehe pruefen
+        cents = lambda x: int(round(x * 100))
+        open_ids = {t.id for t in open_tx}
+        open_by_amt: Dict[int, List[Tx]] = defaultdict(list)
+        for o in open_tx:
+            open_by_amt[cents(o.amount)].append(o)
+        liquid_by_amt: Dict[int, List[Tx]] = defaultdict(list)
+        for o in liquid_side:
+            liquid_by_amt[cents(o.amount)].append(o)
         used: Set[int] = set()
         for t in open_tx + manual_side:
             if t.id in used:
                 continue
-            pool = open_tx if t in open_tx else liquid_side
+            pool = (open_by_amt if t.id in open_ids else liquid_by_amt).get(-cents(t.amount), ())
             for o in pool:
                 if o.id in used or o.id == t.id or o.account_uuid == t.account_uuid:
                     continue
-                if abs(o.amount + t.amount) < 0.005 and abs((o.booking_date - t.booking_date).days) <= 3:
+                if abs((o.booking_date - t.booking_date).days) <= 3:
                     partner[t.id], partner[o.id] = o.account_uuid, t.account_uuid
                     is_transfer[t.id] = is_transfer[o.id] = True
                     used.update({t.id, o.id})
