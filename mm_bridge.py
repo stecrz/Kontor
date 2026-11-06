@@ -1,0 +1,268 @@
+"""MoneyMoney-Anbindung ueber die offizielle Skript-Schnittstelle (osascript/JXA).
+
+Einzige Stelle, die mit MoneyMoney spricht. Alles andere arbeitet auf den
+hier gelieferten Python-Objekten (siehe mm_model.py).
+
+Eigenschaften:
+  * startet MoneyMoney nie selbst (pgrep-Pruefung vor jedem Aufruf)
+  * erkennt gesperrte Datenbank und fehlende Automations-Berechtigung
+  * jeder Aufruf mit Zeitlimit (ein offener Dialog in MoneyMoney blockiert sonst)
+  * Probelauf: Schreibbefehle werden nur protokolliert
+  * Datumsfelder: MoneyMoney exportiert lokale Mitternacht als UTC-Zeitpunkt;
+    hier wird in lokale Zeit zurueckgerechnet, sonst rutscht das Datum um
+    einen Tag (CET/CEST).
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import plistlib
+import subprocess
+from datetime import date, datetime, timezone
+from typing import Any, Dict, List, Optional
+
+log = logging.getLogger("kontor.bridge")
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+JXA_FILE = os.path.join(HERE, "mm_bridge.jxa")
+REFRESH_FILE = os.path.join(HERE, "mm_refresh.jxa")
+TIMEOUT_SECONDS = 120
+
+# Einzige Befehle, die an MoneyMoney gehen. Ueberweisungen/Lastschriften
+# (createBankTransfer, createDirectDebit) sind hier UND in mm_bridge.jxa gesperrt.
+ALLOWED_METHODS = frozenset(["exportAccounts", "exportCategories", "exportTransactions",
+                             "exportPortfolio", "addTransaction", "setTransaction"])
+
+
+class MoneyMoneyError(Exception):
+    """Allgemeiner Fehler der Skript-Schnittstelle."""
+
+
+class MoneyMoneyNotRunning(MoneyMoneyError):
+    pass
+
+
+class MoneyMoneyLocked(MoneyMoneyError):
+    pass
+
+
+class MoneyMoneyNotPermitted(MoneyMoneyError):
+    pass
+
+
+def is_running() -> bool:
+    try:
+        r = subprocess.run(["pgrep", "-x", "MoneyMoney"], capture_output=True, timeout=10)
+        return r.returncode == 0
+    except Exception:  # pragma: no cover - pgrep fehlt nur auf Nicht-macOS
+        return False
+
+
+def local_date(value: Any) -> Optional[date]:
+    """plist-Datum (naiv, UTC) -> lokales Datum."""
+    if value is None:
+        return None
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone().date()
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def local_datetime(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone()
+    return None
+
+
+class Bridge:
+    def __init__(self, dry_run: bool = True, timeout: int = TIMEOUT_SECONDS):
+        self.dry_run = dry_run
+        self.timeout = timeout
+        self.written: List[Dict[str, Any]] = []   # im Probelauf: was geschrieben worden waere
+
+    # -- Low level ---------------------------------------------------------
+
+    def _call(self, method: str, args: Optional[Dict[str, Any]]) -> str:
+        if method not in ALLOWED_METHODS:
+            raise MoneyMoneyError("Befehl nicht erlaubt: %s" % method)
+        if not is_running():
+            raise MoneyMoneyNotRunning("MoneyMoney laeuft nicht.")
+        payload = json.dumps({"method": method, "args": args}, ensure_ascii=False)
+        try:
+            r = subprocess.run(
+                ["osascript", "-l", "JavaScript", JXA_FILE, payload],
+                capture_output=True, text=True, timeout=self.timeout,
+            )
+        except subprocess.TimeoutExpired:
+            raise MoneyMoneyError(
+                "MoneyMoney antwortet nicht (Zeitlimit %ds) -- offener Dialog?" % self.timeout)
+        if r.returncode != 0:
+            err = (r.stderr or r.stdout or "").strip()
+            low = err.lower()
+            if "-1743" in err or "not permitted" in low or "nicht erlaubt" in low or "nicht berechtigt" in low:
+                raise MoneyMoneyNotPermitted(
+                    "Keine Berechtigung, MoneyMoney zu steuern (Systemeinstellungen > "
+                    "Datenschutz & Sicherheit > Automation). Original: " + err)
+            if "locked" in low or "gesperrt" in low or "verschl" in low or "password" in low or "passwort" in low:
+                raise MoneyMoneyLocked("MoneyMoney-Datenbank ist gesperrt. Original: " + err)
+            if "-600" in err or "-10810" in err:
+                raise MoneyMoneyNotRunning("MoneyMoney nicht erreichbar. Original: " + err)
+            raise MoneyMoneyError("MoneyMoney-Fehler bei %s: %s" % (method, err))
+        return r.stdout
+
+    @staticmethod
+    def _plist(text: str) -> Any:
+        text = text.strip()
+        if not text:
+            raise MoneyMoneyError("Leere Antwort von MoneyMoney.")
+        try:
+            return plistlib.loads(text.encode("utf-8"))
+        except Exception as e:
+            raise MoneyMoneyError("Antwort ist keine Property-List: %s" % e)
+
+    # -- Lesen -------------------------------------------------------------
+
+    def export_accounts(self) -> List[Dict[str, Any]]:
+        try:
+            raw = self._plist(self._call("exportAccounts", None))
+        except MoneyMoneyError:
+            raw = self._plist(self._call("exportAccounts", {"as": "plist"}))
+        if not isinstance(raw, list):
+            raise MoneyMoneyError("Kontenexport hat unerwartetes Format.")
+        return raw
+
+    def export_categories(self) -> List[Dict[str, Any]]:
+        try:
+            raw = self._plist(self._call("exportCategories", None))
+        except MoneyMoneyError:
+            raw = self._plist(self._call("exportCategories", {"as": "plist"}))
+        return raw if isinstance(raw, list) else []
+
+    def export_transactions(self, from_date: date, to_date: Optional[date] = None,
+                            account: Optional[str] = None) -> List[Dict[str, Any]]:
+        args: Dict[str, Any] = {"fromDate": from_date.isoformat(), "as": "plist"}
+        if to_date is not None:
+            args["toDate"] = to_date.isoformat()
+        if account:
+            args["fromAccount"] = account
+        raw = self._plist(self._call("exportTransactions", args))
+        if isinstance(raw, dict):
+            raw = raw.get("transactions", [])
+        if not isinstance(raw, list):
+            raise MoneyMoneyError("Umsatzexport hat unerwartetes Format.")
+        return raw
+
+    def export_portfolio(self, account: str) -> List[Dict[str, Any]]:
+        raw = self._plist(self._call("exportPortfolio", {"fromAccount": account, "as": "plist"}))
+        if isinstance(raw, dict):
+            raw = raw.get("portfolio", raw.get("securities", []))
+        return raw if isinstance(raw, list) else []
+
+    # -- Schreiben (nur manuelle Konten) ---------------------------------
+
+    def add_transaction(self, account_ref: str, booking_date: date, payee: str,
+                        amount: float, purpose: str = "", category: Optional[str] = None,
+                        fallback_refs: Optional[List[str]] = None) -> None:
+        args: Dict[str, Any] = {
+            "toAccount": account_ref,
+            "onDate": booking_date.isoformat(),
+            "to": payee,
+            "amount": round(float(amount), 2),
+        }
+        if purpose:
+            args["purpose"] = purpose
+        if category:
+            args["category"] = category
+        if self.dry_run:
+            log.info("PROBELAUF addTransaction %s", json.dumps(args, ensure_ascii=False))
+            self.written.append({"method": "addTransaction", "args": args})
+            return
+        refs = [account_ref] + [r for r in (fallback_refs or []) if r and r != account_ref]
+        last: Optional[Exception] = None
+        for ref in refs:
+            args["toAccount"] = ref
+            try:
+                self._call("addTransaction", args)
+                self.written.append({"method": "addTransaction", "args": dict(args)})
+                return
+            except (MoneyMoneyNotRunning, MoneyMoneyLocked, MoneyMoneyNotPermitted):
+                raise
+            except MoneyMoneyError as e:
+                last = e
+                log.warning("addTransaction mit Kontoreferenz %r abgelehnt: %s", ref, e)
+        raise MoneyMoneyError("Buchung konnte nicht angelegt werden: %s" % last)
+
+    def set_transaction(self, tx_id: int, category: Optional[str] = None,
+                        comment: Optional[str] = None, checkmark: Optional[bool] = None) -> None:
+        args: Dict[str, Any] = {"id": int(tx_id)}
+        if category is not None:
+            args["categoryTo"] = category
+        if comment is not None:
+            args["commentTo"] = comment
+        if checkmark is not None:
+            args["checkmarkTo"] = "on" if checkmark else "off"
+        if len(args) == 1:
+            return
+        if self.dry_run:
+            log.info("PROBELAUF setTransaction %s", json.dumps(args, ensure_ascii=False))
+            self.written.append({"method": "setTransaction", "args": args})
+            return
+        self._call("setTransaction", args)
+        self.written.append({"method": "setTransaction", "args": args})
+
+
+def restrict_permissions(path: str) -> None:
+    """Dateien/Ordner nur fuer den eigenen Benutzer lesbar (0600/0700)."""
+    try:
+        os.chmod(path, 0o700 if os.path.isdir(path) else 0o600)
+    except OSError:
+        pass
+
+
+def notify(title: str, text: str) -> None:
+    """macOS-Mitteilung (Mitteilungszentrale). Fehler werden ignoriert."""
+    try:
+        safe_title = title.replace('"', "'")
+        safe_text = text.replace('"', "'")[:200]
+        subprocess.run(
+            ["osascript", "-e", 'display notification "%s" with title "%s"' % (safe_text, safe_title)],
+            capture_output=True, timeout=10)
+    except Exception:
+        pass
+
+
+def refresh_moneymoney() -> "tuple[bool, str]":
+    """Loest in MoneyMoney "Alle Konten aktualisieren" aus (Menuebefehl ueber Bedienungshilfen).
+
+    Liefert (ok, Text). Braucht die Berechtigung "Bedienungshilfen" fuer das Programm,
+    das Kontor ausfuehrt (Terminal bzw. python3). Es wird nur ein Menuepunkt angeklickt.
+    """
+    if not is_running():
+        return False, "MoneyMoney laeuft nicht."
+    try:
+        r = subprocess.run(["osascript", "-l", "JavaScript", REFRESH_FILE], capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
+        return False, "osascript nicht gefunden (kein macOS?)."
+    except subprocess.TimeoutExpired:
+        return False, "MoneyMoney reagiert nicht (Zeitlimit)."
+    out = (r.stdout or "").strip()
+    if r.returncode != 0:
+        err = (r.stderr or "").strip()
+        if "1002" in err or "assistive" in err.lower() or "Bedienungshilfe" in err or "not allowed" in err.lower():
+            return False, ("Keine Berechtigung: Systemeinstellungen > Datenschutz & Sicherheit > Bedienungshilfen -- "
+                           "das Programm, das Kontor ausfuehrt (Terminal/python3), erlauben.")
+        return False, "Aktualisierung fehlgeschlagen: %s" % (err[:200] or "unbekannter Fehler")
+    if out.startswith("ok:"):
+        return True, out[3:]
+    return False, out[7:] if out.startswith("fehler:") else (out or "unbekannte Antwort")

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Kontor">
+<meta name="color-scheme" content="light dark">
+<title>Kontor</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="login" class="login hidden">
+  <div class="card">
+    <div class="brand"><svg width="30" height="30" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="8" fill="var(--accent)"/><path d="M10 9v14M10 16l9-7M11 17l9 6" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Kontor</span></div>
+    <div id="login-text" class="muted small"></div>
+    <form id="login-form">
+      <input id="login-pw" type="password" autocomplete="current-password" placeholder="Passwort" autofocus>
+      <input id="login-pw2" type="password" autocomplete="new-password" placeholder="Passwort wiederholen" class="hidden">
+      <button type="submit" id="login-btn">Anmelden</button>
+      <button type="button" id="touchid-btn" class="secondary hidden">Mit Touch ID entsperren</button>
+    </form>
+    <div id="login-err" class="err"></div>
+  </div>
+</div>
+<div id="shell" class="shell hidden">
+  <aside class="side">
+    <div class="brand"><svg width="22" height="22" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="8" fill="var(--accent)"/><path d="M10 9v14M10 16l9-7M11 17l9 6" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Kontor</span><span class="ver" id="ver"></span></div>
+    <nav id="nav">
+      <a href="#uebersicht"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h5v5H2zM9 3h5v3H9zM9 8h5v5H9zM2 10h5v3H2z"/></svg>Übersicht</a>
+      <a href="#bilanz"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v2H2zM2 6h8v2H2zM2 10h10v2H2z"/></svg>Bilanz</a>
+      <a href="#kapitalfluss"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 12l3-4 3 2 3-5 3 3v4H2z"/></svg>Kapitalfluss</a>
+      <a href="#planung"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 13h12v1H2zM3 11l3-3 3 2 4-5 1 1-5 6-3-2-3 3z"/></svg>Planung</a>
+      <a href="#immobilien"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 2l6 5v7H2V7zm0 2.4L4 7.6V12h8V7.6zM6 9h4v3H6z"/></svg>Immobilien</a>
+      <a href="#steuer"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 2h10v12H3zM5 5h6v1H5zM5 8h6v1H5zM5 11h4v1H5z"/></svg>Steuer</a>
+      <a href="#depots"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 12h2V6H2zM6 12h2V3H6zM10 12h2V8h-2zM1 13h14v1H1z"/></svg>Depots</a>
+      <a href="#umsaetze"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 1h7l3 3v11H3zM9 2v3h3zM5 8h6v1H5zM5 11h6v1H5z"/></svg>Umsätze &amp; Belege</a>
+      <a href="#zuordnen"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h5v4H2zM9 3h5v4H9zM2 9h5v4H2zM9 9h5v4H9zM4 5h1v1H4zm7 0h1v1h-1zM4 11h1v1H4zm7-1l1 1 2-2"/></svg>Zuordnen</a>
+      <a href="#buchungen"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 1-7 7h2a5 5 0 1 0 5-5V1zM1 1l4 4H1z"/></svg>Buchungen</a>
+      <div class="navsep">Verwaltung</div>
+      <a href="#einrichtung"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h12v2H2zm0 4h8v2H2zm0 4h5v2H2zm9-1l2 2 3-4"/></svg>Einrichtung</a>
+      <a href="#regeln"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h12v2H2zM4 7h8v2H4zM6 11h4v2H6z"/></svg>Regeln</a>
+      <a href="#kategorien"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z"/></svg>Kategorien</a>
+      <a href="#einstellungen"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm-6 3l1.5-.5L3 6l1-1 1.5.5L6 4h4l.5 1.5L12 5l1 1-.5 1.5L14 8l-1.5.5.5 1.5-1 1-1.5-.5L10 12H6l-.5-1.5L4 11l-1-1 .5-1.5z"/></svg>Einstellungen</a>
+      <a href="#pakete"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l6 3v8l-6 3-6-3V4zm0 2L4 5l4 2 4-2z"/></svg>Pakete</a>
+      <a href="#updates"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 2l4 4H9v4H7V6H4zM2 12h12v2H2z"/></svg>Updates</a>
+      <a href="#protokoll"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v12H2zm2 2v2h8V4zm0 4v1h8V8zm0 3v1h5v-1z"/></svg>Protokoll</a>
+      <a href="#hilfe"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1zm0 10.5a1 1 0 1 0 0 2 1 1 0 0 0 0-2zM8 4a3 3 0 0 0-3 3h2a1 1 0 1 1 1.6.8C8 8.3 7 8.8 7 10h2c0-.6.6-.9 1.2-1.4A3 3 0 0 0 8 4z"/></svg>Hilfe</a>
+    </nav>
+    <div class="side-foot">
+      <div id="status-mini"></div>
+      <button id="lock-btn" class="secondary small">Sperren</button>
+    </div>
+  </aside>
+  <main>
+    <header class="topbar">
+      <button id="menu-btn" class="icon" aria-label="Menü">☰</button>
+      <h1 id="page-title">Übersicht</h1>
+      <div id="bereich-seg" class="seg hidden"></div>
+      <div class="ctl" id="ctl">
+        <div class="seg" id="modus-seg"><button data-m="monate" class="on">Monate</button><button data-m="monate_jahre">Monate + Jahre</button><button data-m="jahre">Jahre</button></div>
+        <label class="switch"><input type="checkbox" id="planan" checked><i></i>Plan</label>
+        <label class="switch"><input type="checkbox" id="realan"><i></i>inflationsbereinigt</label>
+        <label class="switch"><input type="checkbox" id="nullzeilen"><i></i>leere Zeilen</label>
+      </div>
+    </header>
+    <div id="banner" class="banner hidden"></div>
+    <section id="main"></section>
+  </main>
+</div>
+<div id="drawer" class="drawer"></div>
+<div id="toast" class="toast hidden"></div>
+<input type="file" id="file-input" class="hidden" multiple>
+<script src="/app.js"></script>
+</body>
+</html>

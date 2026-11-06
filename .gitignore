@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+.alt/
+mm_touchid
+config.json
+*.kontor.json
+!vorlagen/*.kontor.json
+Claude outputs/
+Hinweise-*.md

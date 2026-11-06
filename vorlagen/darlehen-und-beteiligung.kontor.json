@@ -1,0 +1,180 @@
+{
+  "kontor_paket": 1,
+  "name": "Vorlage: privates Darlehen und Beteiligung",
+  "version": "3.2.0",
+  "erstellt": "2026-11-06",
+  "config": {
+    "probelauf": true,
+    "darlehen": [
+      {
+        "name": "Verkäuferdarlehen",
+        "darlehenskonto": "Verkäuferdarlehen",
+        "quellkonten": [
+          "Kontokorrent"
+        ],
+        "erkennung": {
+          "gegen_iban": "",
+          "text_enthaelt": [
+            "Annuität Darlehen"
+          ],
+          "ausschliessen_text": []
+        },
+        "art": "verbindlichkeit",
+        "ab_datum": "2026-01-01",
+        "zins": {
+          "modell": "jahresbasis",
+          "satz": [
+            {
+              "ab": "2026-01-01",
+              "prozent": 3.0
+            }
+          ],
+          "buchungstag": "mit_rate"
+        },
+        "buchung": {
+          "gegenpartei": "Darlehensgeber",
+          "kategorie_tilgung": "Umbuchung",
+          "kategorie_zins": "Zinsen"
+        }
+      }
+    ],
+    "beteiligungen": [
+      {
+        "name": "Beteiligung",
+        "beteiligungskonto": "Beteiligung an Gesellschaft",
+        "gruppe": "Gesellschaft",
+        "anteil": 0.5,
+        "schwelle": 0.01
+      }
+    ],
+    "saldo_spiegel": [],
+    "kapitalfluss": {
+      "kategorie_zuordnung": {
+        "Finanzierung": "Finanzierung/Tilgung",
+        "Zinsen": "Finanzierung/Zinsen"
+      },
+      "umbuchungs_kategorien": [
+        "Umbuchung"
+      ]
+    },
+    "steuer": {
+      "vermietung_kategorie": "Vermietung"
+    },
+    "bereiche": [
+      {
+        "id": "privat",
+        "name": "Privat",
+        "art": "privat",
+        "haupt": true,
+        "anteil": null,
+        "aktiv": true,
+        "konten": [
+          "Privat"
+        ]
+      },
+      {
+        "id": "gbr",
+        "name": "Musterfirma GbR",
+        "art": "gesellschaft",
+        "haupt": false,
+        "anteil": 0.5,
+        "aktiv": true,
+        "konten": [
+          "Musterfirma GbR"
+        ]
+      }
+    ],
+    "immobilien": [
+      {
+        "id": "im1",
+        "name": "Musterobjekt",
+        "bereich": "gbr",
+        "kategorie": "Vermietung \\ Musterobjekt",
+        "objekt_konto": "Musterfirma GbR / Anlagen / Immobilie Musterobjekt",
+        "darlehen_konten": {
+          "Bankdarlehen": "Musterfirma GbR / Verbindlichkeiten / Bankdarlehen"
+        },
+        "in_planung": true,
+        "notizen": "Beispiel – Werte anpassen.",
+        "kalkulationen": [
+          {
+            "id": "k1",
+            "name": "Basis",
+            "erstellt": "2026-11-06",
+            "aktiv": true,
+            "eingaben": {
+              "name": "Musterobjekt",
+              "art": "wohnen",
+              "kaufpreis": 600000,
+              "uebergang": "2026-01-01",
+              "horizont_jahre": 20,
+              "flaeche_qm": 240,
+              "einheiten": 3,
+              "nebenkosten": {
+                "grunderwerbsteuer_prozent": 3.5,
+                "notar": 6000,
+                "grundbuch": 1500,
+                "makler": 0,
+                "sonstige_afa": 0,
+                "sofort_abziehbar": 1200
+              },
+              "gebaeudeanteil_prozent": 70,
+              "afa_prozent": 2.0,
+              "miete": {
+                "nettokalt_monat": 3000,
+                "nebenkosten_monat": 500,
+                "leerstand_prozent": 2,
+                "index": {
+                  "art": "vpi",
+                  "vpi_basis": 122.7,
+                  "vpi_aktuell": 122.7,
+                  "vpi_steigerung_prozent": 2.0,
+                  "faktor": 0.75,
+                  "schwelle_prozent": 5
+                }
+              },
+              "kosten": {
+                "nicht_umlagefaehig_pa": 3600,
+                "ruecklage_pa": 2400,
+                "steigerung": "vpi"
+              },
+              "darlehen": [
+                {
+                  "name": "Bankdarlehen",
+                  "betrag": 480000,
+                  "zins_prozent": 3.6,
+                  "art": "annuitaet",
+                  "anfangstilgung_prozent": 2.0,
+                  "abrechnung": "monatlich",
+                  "abziehbar": true,
+                  "zinsbindung_bis": "2035-12",
+                  "anschluss_zins_prozent": 4.5
+                }
+              ],
+              "gesellschafter": [
+                {
+                  "name": "A",
+                  "anteil_prozent": 50,
+                  "steuersatz_prozent": 42
+                },
+                {
+                  "name": "B",
+                  "anteil_prozent": 50,
+                  "steuersatz_prozent": 42
+                }
+              ],
+              "ausschuettung_prozent": 45,
+              "steuererstattung_in_cashflow": true,
+              "wertentwicklung_prozent": 2.0,
+              "verkauf": {
+                "jahr": null,
+                "kosten_prozent": 2
+              }
+            }
+          }
+        ],
+        "dokumente": []
+      }
+    ]
+  }
+}

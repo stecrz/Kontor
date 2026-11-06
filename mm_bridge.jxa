@@ -1,0 +1,31 @@
+// mm_bridge.jxa -- Bruecke zwischen dem Python-Programm und MoneyMoney.
+//
+// Aufruf: osascript -l JavaScript mm_bridge.jxa '<json>'  mit {method, args}.
+// Rueckgabe = Text, den MoneyMoney liefert (Property-List), oder leer.
+//
+// SICHERHEIT: Nur die unten gelisteten Befehle werden an MoneyMoney weitergegeben.
+// "createBankTransfer" und "createDirectDebit" (Ueberweisung/Lastschrift vorbereiten)
+// sind bewusst NICHT enthalten -- auch nicht, wenn das Python-Programm sie anfordert.
+// addTransaction wirkt laut MoneyMoney nur auf manuell gefuehrte (Offline-)Konten.
+//
+// Application('MoneyMoney') wuerde MoneyMoney starten, falls es nicht laeuft;
+// mm_bridge.py prueft deshalb VORHER per pgrep, ob es laeuft.
+
+const ERLAUBT = {
+  exportAccounts: true, exportCategories: true, exportTransactions: true, exportPortfolio: true,
+  addTransaction: true, setTransaction: true
+};
+
+function run(argv) {
+  const params = JSON.parse(argv[0]);
+  if (!ERLAUBT[params.method]) throw new Error("Befehl nicht erlaubt: " + params.method);
+  const mm = Application('MoneyMoney');
+  let out;
+  if (params.args === null || params.args === undefined) {
+    out = mm[params.method]();
+  } else {
+    out = mm[params.method](params.args);
+  }
+  if (out === undefined || out === null) return "";
+  return String(out);
+}

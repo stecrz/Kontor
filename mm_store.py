@@ -1,0 +1,232 @@
+"""Verschluesselte Ablage der Programmdaten.
+
+Alle Dateien im Datenordner (Konfiguration, Planwerte, Zustand, Bericht) liegen
+verschluesselt: AES-256-CBC (ueber /usr/bin/openssl, auf jedem Mac vorhanden)
+plus HMAC-SHA256 ueber den Chiffretext (Encrypt-then-MAC). Der Hauptschluessel
+(32 Byte Zufall) liegt im macOS-Schluesselbund des Benutzers; ohne Schluesselbund
+(nicht-macOS, Zugriff verweigert) als Datei mit Rechten 0600 -- die Oberflaeche
+zeigt dann einen Hinweis.
+
+Dateiformat: b"MMT1" + openssl-Ausgabe ("Salted__" + Salt + Chiffretext) + 32 Byte HMAC.
+Das Passwort der Oberflaeche ist davon unabhaengig (es regelt den Zugang, nicht den
+Schluessel), damit der Dienst nach dem Anmelden am Mac ohne Eingabe laufen kann --
+wie MoneyMoney mit "Passwort im Schluesselbund sichern".
+"""
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import logging
+import os
+import secrets
+import subprocess
+from typing import Any, Optional, Tuple
+
+log = logging.getLogger("kontor.store")
+
+MAGIC = b"MMT1"
+KEYCHAIN_SERVICE = "kontor.datenschluessel"
+KEYCHAIN_ACCOUNT = "kontor"
+# Eintrag frueherer Versionen (mmtools): wird gelesen und unter dem neuen Namen uebernommen
+OLD_KEYCHAIN = ("mmtools.datenschluessel", "mmtools")
+
+
+class StoreError(Exception):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Schluessel
+# ---------------------------------------------------------------------------
+
+def _security(args, input_text: Optional[str] = None) -> Tuple[int, str, str]:
+    try:
+        r = subprocess.run(["security"] + args, capture_output=True, text=True, timeout=30, input=input_text)
+        return r.returncode, r.stdout, r.stderr
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        return 127, "", str(e)
+
+
+def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
+    """Liefert (Schluessel, Quelle). Quelle: 'schluesselbund' | 'datei'."""
+    rc, out, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
+    if rc == 0 and len(out.strip()) == 64:
+        return bytes.fromhex(out.strip()), "schluesselbund"
+    key_file = os.path.join(data_dir, "master.key")
+    if rc == 127:   # kein `security` (nicht macOS)
+        return _file_key(key_file), "datei"
+    # Eintrag einer frueheren Version (mmtools) uebernehmen
+    rc_old, out_old, _ = _security(["find-generic-password", "-s", OLD_KEYCHAIN[0], "-a", OLD_KEYCHAIN[1], "-w"])
+    if rc_old == 0 and len(out_old.strip()) == 64:
+        key = bytes.fromhex(out_old.strip())
+        log.info("Datenschluessel der Vorversion (mmtools) uebernommen.")
+    else:
+        # Schluesselbund vorhanden, aber kein Eintrag: neu anlegen
+        key = secrets.token_bytes(32)
+    rc2, _, err = _security(["add-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT,
+                             "-l", "Kontor Datenschluessel", "-w", key.hex(), "-U"])
+    if rc2 == 0:
+        rc3, out3, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
+        if rc3 == 0 and out3.strip() == key.hex():
+            return key, "schluesselbund"
+    log.warning("Schluesselbund nicht nutzbar (%s) -- Schluessel wird als Datei abgelegt.", err.strip()[:120])
+    return _file_key(key_file), "datei"
+
+
+def _file_key(path: str) -> bytes:
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            raw = f.read().strip()
+        if len(raw) == 64:
+            return bytes.fromhex(raw.decode())
+    key = secrets.token_bytes(32)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(key.hex())
+    os.chmod(path, 0o600)
+    return key
+
+
+def _subkeys(master: bytes) -> Tuple[str, bytes]:
+    enc_secret = hmac.new(master, b"mmtools-enc", hashlib.sha256).hexdigest()
+    mac_key = hmac.new(master, b"mmtools-mac", hashlib.sha256).digest()
+    return enc_secret, mac_key
+
+
+# ---------------------------------------------------------------------------
+# Verschluesselung
+# ---------------------------------------------------------------------------
+
+def _openssl(args, data: bytes, secret: str) -> bytes:
+    env = dict(os.environ, MMTOOLS_SECRET=secret)
+    try:
+        r = subprocess.run(["openssl", "enc"] + args + ["-aes-256-cbc", "-md", "sha256", "-pass", "env:MMTOOLS_SECRET"],
+                           input=data, capture_output=True, timeout=60, env=env)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        raise StoreError("openssl nicht verfuegbar: %s" % e)
+    if r.returncode != 0:
+        raise StoreError("openssl-Fehler: %s" % r.stderr.decode(errors="replace")[:200])
+    return r.stdout
+
+
+def encrypt(master: bytes, data: bytes) -> bytes:
+    enc_secret, mac_key = _subkeys(master)
+    ct = _openssl(["-salt"], data, enc_secret)
+    return MAGIC + ct + hmac.new(mac_key, ct, hashlib.sha256).digest()
+
+
+def decrypt(master: bytes, blob: bytes) -> bytes:
+    if not blob.startswith(MAGIC) or len(blob) < len(MAGIC) + 32 + 16:
+        raise StoreError("Datei hat nicht das erwartete Format.")
+    enc_secret, mac_key = _subkeys(master)
+    body, tag = blob[len(MAGIC):-32], blob[-32:]
+    if not hmac.compare_digest(hmac.new(mac_key, body, hashlib.sha256).digest(), tag):
+        raise StoreError("Pruefsumme stimmt nicht -- Datei veraendert oder falscher Schluessel.")
+    return _openssl(["-d"], body, enc_secret)
+
+
+def selftest(master: bytes) -> bool:
+    try:
+        probe = secrets.token_bytes(1000) + b"mmtools"
+        return decrypt(master, encrypt(master, probe)) == probe
+    except Exception as e:
+        log.warning("Selbsttest der Verschluesselung fehlgeschlagen: %s", e)
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Store
+# ---------------------------------------------------------------------------
+
+class Store:
+    """load/save von JSON-Dokumenten im Datenordner, verschluesselt wenn ein Schluessel vorliegt."""
+
+    def __init__(self, data_dir: str, master: Optional[bytes] = None, key_source: str = ""):
+        self.data_dir = data_dir
+        self.master = master
+        self.key_source = key_source
+        self.encrypted = master is not None and selftest(master)
+        if master is not None and not self.encrypted:
+            log.error("Verschluesselung nicht verfuegbar -- Daten werden UNVERSCHLUESSELT abgelegt.")
+        os.makedirs(data_dir, exist_ok=True)
+        try:
+            os.chmod(data_dir, 0o700)
+        except OSError:
+            pass
+        self._migrate_plaintext()
+
+    # Pfade
+    def path(self, name: str) -> str:
+        return os.path.join(self.data_dir, name + (".enc" if self.encrypted else ""))
+
+    def exists(self, name: str) -> bool:
+        return os.path.exists(self.path(name))
+
+    # JSON
+    def load(self, name: str, default: Any = None) -> Any:
+        raw = self.read_bytes(name)
+        if raw is None:
+            return default
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except ValueError as e:
+            raise StoreError("%s ist kein gueltiges JSON: %s" % (name, e))
+
+    def save(self, name: str, obj: Any) -> None:
+        self.write_bytes(name, json.dumps(obj, ensure_ascii=False, indent=2, default=str).encode("utf-8"))
+
+    # Bytes (z.B. bericht.html)
+    def read_bytes(self, name: str) -> Optional[bytes]:
+        p = self.path(name)
+        if not os.path.exists(p):
+            return None
+        with open(p, "rb") as f:
+            raw = f.read()
+        if self.encrypted:
+            return decrypt(self.master, raw)
+        return raw
+
+    def write_bytes(self, name: str, data: bytes) -> None:
+        p = self.path(name)
+        tmp = p + ".tmp"
+        payload = encrypt(self.master, data) if self.encrypted else data
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(payload)
+        os.replace(tmp, p)
+        os.chmod(p, 0o600)
+
+    def delete(self, name: str) -> None:
+        try:
+            os.remove(self.path(name))
+        except FileNotFoundError:
+            pass
+
+    def _migrate_plaintext(self) -> None:
+        """Klartextdateien frueherer Versionen in die verschluesselte Ablage uebernehmen."""
+        if not self.encrypted:
+            return
+        for name in ("config.json", "plan.json", "state.json", "dataset.json", "auth.json", "belege.json", "umsaetze.json"):
+            src = os.path.join(self.data_dir, name)
+            if os.path.exists(src) and not os.path.exists(self.path(name)):
+                with open(src, "rb") as f:
+                    raw = f.read()
+                try:
+                    if name.endswith(".json"):
+                        json.loads(raw.decode("utf-8"))
+                except ValueError:
+                    continue
+                self.write_bytes(name, raw)
+                if self.read_bytes(name) == raw:      # erst nach erfolgreicher Kontrolle den Klartext entfernen
+                    os.remove(src)
+                    log.info("%s in die verschluesselte Ablage uebernommen, Klartext geloescht.", name)
+        # Klartext-Reste aelterer Versionen (regenerierbar) entfernen
+        for name in ("bericht.html", "dataset.json", "umsaetze.json", "launchd.out.log", "launchd.err.log"):
+            src = os.path.join(self.data_dir, name)
+            if os.path.exists(src) and not (name.endswith(".json") and not os.path.exists(self.path(name))):
+                try:
+                    os.remove(src)
+                    log.info("Klartextdatei %s entfernt (wird verschluesselt neu erzeugt).", name)
+                except OSError:
+                    pass

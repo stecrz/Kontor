@@ -1,0 +1,1099 @@
+"""Bilanz, Kapitalflussrechnung und Planung je Bereich aus MoneyMoney-Daten.
+
+Ein Bereich ist eine Menge von Konten (meist eine Kontengruppe der obersten Ebene, kann aber
+beliebig zusammengestellt sein). Die Bilanz ist von der Gruppierung in MoneyMoney unabhaengig:
+jedes Konto bekommt eine Position (Rolle) -- Liquiditaet, Wertpapiere, Geldanlagen, Immobilien,
+Beteiligungen, Sachwerte, Forderungen, Sonstiges, Verbindlichkeiten -- aus Konfiguration,
+Gruppennamen oder Kontotyp.
+
+Saldoverlauf je Konto ("verlauf"):
+  umsaetze  aus dem aktuellen Saldo rueckwaerts ueber die Umsaetze (Startsalden spielen keine Rolle)
+  stand     Monatsend-Staende: von Kontor aufgezeichnet (ab dem ersten Lauf), von Hand eingetragen
+            oder aus einem Saldenexport importiert -- fuer Depots und alles ohne Umsatzhistorie
+Vor dem ersten bekannten Stand wird der erste bekannte Wert fortgeschrieben (Hinweis).
+
+Kapitalfluss:
+  Einnahmen / Ausgaben        je MoneyMoney-Kategorie, hierarchisch (Oberkategorie = Gruppe)
+  Investitionen               Umschichtungen in Wertpapiere/Anlagen/Immobilien/Sachwerte, Einlagen in
+                              Beteiligungen, Forderungen (Rueckzahlung / Zinsen)
+  Finanzierung                je Darlehen: Tilgung (= Zahlung - Zinsen) und Zinsen
+  Bewertung                   nicht zahlungswirksam: Wertaenderungen, manuelle Buchungen
+  Unklar                      Umbuchungen ohne erkennbaren Partner, Konten ohne Position
+Jede Zeile traegt nw=true, wenn sie das Nettovermoegen veraendert.
+
+Planung (apply_plan): Planwerte je Zeile, Ereignisse (einmalig/wiederkehrend), Darlehensplan,
+Immobilienkalkulationen (Monatsreihen), Fortschreibung je Konto und Position, Kennzahlen.
+"""
+from __future__ import annotations
+
+import re
+from collections import defaultdict
+from datetime import date
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+from mm_model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
+from mm_rules import TAG_RE
+
+ROLES = ["liquiditaet", "wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte", "forderungen", "sonstiges", "verbindlichkeiten", "ignorieren"]
+ROLE_LABELS = {"liquiditaet": "Liquidität", "wertpapiere": "Wertpapiere & Depots", "anlagen": "Geldanlagen", "immobilien": "Immobilien",
+               "beteiligungen": "Beteiligungen", "sachwerte": "Sachwerte", "forderungen": "Forderungen", "sonstiges": "Sonstiges",
+               "verbindlichkeiten": "Darlehen & Verbindlichkeiten", "ignorieren": "nicht bilanziert"}
+ASSET_ROLES = {"wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte"}
+ILLIQUID_DEFAULT = ["beteiligungen", "immobilien", "sachwerte"]
+GROUP_HINTS = [
+    ("off-balance", "ignorieren"), ("offbalance", "ignorieren"), ("nicht bilanz", "ignorieren"),
+    ("liquid", "liquiditaet"), ("cash", "liquiditaet"), ("giro", "liquiditaet"), ("tagesgeld", "liquiditaet"),
+    ("beteilig", "beteiligungen"), ("gesellschaft", "beteiligungen"),
+    ("immobil", "immobilien"), ("wohnung", "immobilien"), ("haus", "immobilien"), ("objekt", "immobilien"),
+    ("depot", "wertpapiere"), ("wertpapier", "wertpapiere"), ("etf", "wertpapiere"), ("aktien", "wertpapiere"), ("krypto", "wertpapiere"),
+    ("fahrzeug", "sachwerte"), ("auto", "sachwerte"), ("uhr", "sachwerte"), ("sachwert", "sachwerte"), ("schmuck", "sachwerte"), ("kunst", "sachwerte"),
+    ("anlage", "anlagen"), ("festgeld", "anlagen"), ("sparbrief", "anlagen"),
+    ("forderung", "forderungen"),
+    ("verbindlich", "verbindlichkeiten"), ("darlehen", "verbindlichkeiten"), ("schulden", "verbindlichkeiten"), ("kredit", "verbindlichkeiten"),
+]
+TYPE_ROLES = {"portfolio": "wertpapiere", "girokonto": "liquiditaet", "tagesgeld": "liquiditaet", "sparkonto": "liquiditaet", "kreditkarte": "liquiditaet",
+              "bargeld": "liquiditaet", "cash": "liquiditaet", "festgeld": "anlagen", "darlehenskonto": "verbindlichkeiten", "loan": "verbindlichkeiten"}
+COST_WORDS = ["zins", "interest", "gebühr", "gebuehr", "entgelt", "provision", "bereitstellung", "#mm-zins"]
+SECTIONS = ["Einnahmen", "Ausgaben", "Investitionen", "Finanzierung", "Bewertung", "Unklar"]
+CASH_SECTIONS = ["Einnahmen", "Ausgaben", "Investitionen", "Finanzierung", "Unklar"]
+PLAN_METHODS = ("gleitend12", "gleitend6", "vorjahr", "fix", "jahresbetrag", "budget", "keine")
+
+
+# ---------------------------------------------------------------------------
+# Positionen (Rollen)
+# ---------------------------------------------------------------------------
+
+def _hint_role(name: str) -> Optional[str]:
+    low = name.lower()
+    for hint, role in GROUP_HINTS:
+        if hint in low:
+            return role
+    return None
+
+
+def account_roles(ledger: Ledger, config: dict) -> Dict[str, str]:
+    """uuid -> Position fuer ALLE Konten: Konfiguration > Gruppenname (vererbt) > Kontotyp/Name > sonstiges."""
+    cfg_roles: Dict[str, str] = {}
+    for ref, role in (config.get("bilanz", {}).get("rollen") or {}).items():
+        if ref.startswith("_"):
+            continue
+        try:
+            cfg_roles[ledger.resolve(ref).uuid] = role
+        except KeyError:
+            pass
+    for ref, z in (config.get("bilanz", {}).get("konten_zuordnung") or {}).items():
+        if isinstance(z, dict) and z.get("position") in ROLES:
+            try:
+                cfg_roles[ledger.resolve(ref).uuid] = z["position"]
+            except KeyError:
+                pass
+    roles: Dict[str, str] = {}
+
+    def walk(acc: Account, inherited: Optional[str]):
+        if acc.group:
+            role = cfg_roles.get(acc.uuid) or _hint_role(acc.name) or inherited
+        else:
+            role = cfg_roles.get(acc.uuid)
+            if not role:
+                t = (acc.type or "").lower()
+                by_type = next((r for k, r in TYPE_ROLES.items() if k in t), None)
+                by_name = _hint_role(acc.name)
+                if acc.portfolio:
+                    role = "wertpapiere"
+                elif acc.offline:
+                    role = by_name or inherited or by_type
+                else:
+                    role = by_type or by_name or inherited
+                if role == "verbindlichkeiten" and acc.balance > 0.005 and ("darlehen" in acc.name.lower() or "forderung" in acc.name.lower()) and not acc.offline:
+                    role = "forderungen"
+            roles[acc.uuid] = role or "sonstiges"
+        for c in acc.children:
+            walk(ledger.accounts[c], role if acc.group else inherited)
+
+    for root in ledger.roots():
+        walk(root, None)
+    return roles
+
+
+# ---------------------------------------------------------------------------
+# Saldoverlauf
+# ---------------------------------------------------------------------------
+
+def verlauf_quelle(acc: Account, verlauf_cfg: Dict[str, str]) -> str:
+    v = verlauf_cfg.get(acc.uuid)
+    if v in ("umsaetze", "stand"):
+        return v
+    return "stand" if acc.portfolio else "umsaetze"
+
+
+_KAUF_RE = re.compile(r"kauf|sparplan|wertpapier|order|ausf(ü|ue)hrung|execution|buy", re.I)
+_VERKAUF_RE = re.compile(r"verkauf|sale|sell|r(ü|ue)ckzahlung.*wertpapier|einl(ö|oe)sung", re.I)
+_NICHT_RE = re.compile(r"dividende|aussch(ü|ue)ttung|zins|steuer|geb(ü|ue)hr|entgelt", re.I)
+
+
+def verrechnungskonto_fuer(ledger: Ledger, depot: Account, config: dict) -> Optional[str]:
+    """Verrechnungskonto eines Depots: konfiguriert (bilanz.verrechnung) oder erkannt an Kauf-/Verkaufsumsaetzen
+    eines Girokontos derselben Gruppe bzw. Bank."""
+    cfg = (config.get("bilanz") or {}).get("verrechnung") or {}
+    for dref, gref in cfg.items():
+        try:
+            if ledger.resolve(dref).uuid == depot.uuid:
+                return ledger.resolve(gref).uuid
+        except KeyError:
+            continue
+    parent = depot.path.rsplit(" / ", 1)[0] if " / " in depot.path else ""
+    best, best_n = None, 0
+    for a in ledger.accounts.values():
+        if a.group or a.portfolio or a.uuid == depot.uuid:
+            continue
+        same_group = parent and a.path.startswith(parent + " / ")
+        same_bank = depot.bank_code and a.bank_code == depot.bank_code
+        if not (same_group or same_bank):
+            continue
+        n = sum(1 for t in ledger.transactions(a.uuid) if _KAUF_RE.search(t.name + " " + t.purpose + " " + t.booking_text) and not _NICHT_RE.search(t.purpose))
+        if n > best_n:
+            best, best_n = a.uuid, n
+    return best if best_n >= 3 else None
+
+
+def depot_schaetzung(ledger: Ledger, depot: Account, giro_uuid: str, mkeys: List[str], first_known: str, known_value: float) -> Dict[str, float]:
+    """Depotwert vor dem ersten bekannten Stand aus Kaeufen/Verkaeufen des Verrechnungskontos schaetzen:
+    Einstandspfad (Kaeufe - Verkaeufe, nie unter 0), skaliert auf den ersten bekannten Wert."""
+    flows: Dict[str, float] = defaultdict(float)
+    for t in ledger.transactions(giro_uuid):
+        text = " ".join((t.name, t.purpose, t.booking_text))
+        if _NICHT_RE.search(t.purpose) and not _KAUF_RE.search(t.purpose):
+            continue
+        mk = month_key(t.booking_date)
+        if t.amount < 0 and _KAUF_RE.search(text) and not _VERKAUF_RE.search(text):
+            flows[mk] += -t.amount
+        elif t.amount > 0 and _VERKAUF_RE.search(text):
+            flows[mk] -= t.amount
+    if not flows:
+        return {}
+    cum = 0.0
+    path: Dict[str, float] = {}
+    for mk in sorted(set(mkeys) | set(flows)):
+        cum = max(0.0, cum + flows.get(mk, 0.0))
+        path[mk] = cum
+    base = path.get(first_known, 0.0)
+    if base <= 0.005:
+        return {}
+    f = known_value / base
+    if f <= 0:
+        return {}
+    return {mk: round(path.get(mk, 0.0) * f, 2) for mk in mkeys if mk < first_known}
+
+
+def balance_history(ledger: Ledger, leaves: List[Account], months: List[Tuple[int, int]], snapshots: Dict[str, Dict[str, float]],
+                    historie: Dict[str, Dict[str, float]], verlauf_cfg: Dict[str, str], today: date, config: Optional[dict] = None):
+    """uuid -> {JJJJ-MM: Saldo am Monatsende}. Liefert zusaetzlich Hinweise, die Quelle je Konto und
+    je Konto den letzten geschaetzten Monat (Depots ohne Historie: Schaetzung aus Kaeufen/Verkaeufen)."""
+    warnings: List[str] = []
+    hist: Dict[str, Dict[str, Optional[float]]] = {}
+    quelle: Dict[str, str] = {}
+    geschaetzt: Dict[str, str] = {}
+    cur_key = month_key(today)
+    mkeys = ["%04d-%02d" % ym for ym in months]
+    for acc in leaves:
+        h: Dict[str, Optional[float]] = {}
+        src = verlauf_quelle(acc, verlauf_cfg)
+        quelle[acc.uuid] = src
+        manual = {k: float(v) for k, v in (historie.get(acc.uuid) or {}).items() if v is not None}
+        if src == "stand":
+            known = dict(manual)
+            for k, v in snapshots.items():
+                if acc.uuid in v and k not in known:
+                    known[k] = v[acc.uuid]
+            if cur_key not in known:
+                known[cur_key] = acc.balance
+            first_known = min(known) if known else None
+            est: Dict[str, float] = {}
+            giro = None
+            if first_known and mkeys and mkeys[0] < first_known and abs(known[first_known]) > 0.005:
+                giro = verrechnungskonto_fuer(ledger, acc, config or {})
+                if giro:
+                    est = depot_schaetzung(ledger, acc, giro, mkeys, first_known, known[first_known])
+            for (y, m) in months:
+                k = "%04d-%02d" % (y, m)
+                if k == cur_key:
+                    h[k] = acc.balance
+                elif k in known:
+                    h[k] = known[k]
+                elif first_known and k < first_known:
+                    h[k] = est[k] if k in est else known[first_known]
+                elif known:
+                    prev = max((kk for kk in known if kk < k), default=None)
+                    h[k] = known[prev] if prev else known[first_known]
+                else:
+                    h[k] = acc.balance
+            if est:
+                geschaetzt[acc.uuid] = max(est)
+                warnings.append("'%s': Stände vor %s sind aus Käufen/Verkäufen auf '%s' geschätzt -- genauer: Monatsstände eintragen oder "
+                                "MoneyMoneys Kontostand-Bericht importieren (Einrichtung → Bilanzpositionen & Verlauf)." % (acc.name, first_known, ledger.accounts[giro].name))
+            elif mkeys and (not first_known or mkeys[0] < first_known) and abs(known.get(first_known or "", 0.0)) > 0.005:
+                warnings.append("'%s': Stände vor %s sind mit dem ersten bekannten Wert fortgeschrieben -- unter Bilanz → Verlauf "
+                                "lassen sich Monatsstände eintragen oder aus einem Saldenexport laden." % (acc.name, first_known or cur_key))
+        else:
+            for (y, m) in months:
+                k = "%04d-%02d" % (y, m)
+                if k in manual and k != cur_key:
+                    h[k] = manual[k]
+                else:
+                    h[k] = acc.balance if k >= cur_key else ledger.balance_at(acc.uuid, month_end(y, m))
+        hist[acc.uuid] = h
+    return hist, warnings, quelle, geschaetzt
+
+
+def inactive_accounts(ledger: Ledger, leaves: List[Account], hist: Dict[str, Dict[str, Optional[float]]], mkeys: List[str],
+                      config: dict, today: date) -> Set[str]:
+    """Konten ohne Bewegung und Bestand in den letzten N Monaten (Altdaten) -- ausgeblendet, aber in Summen enthalten."""
+    bcfg = config.get("bilanz", {}) or {}
+    n = int(bcfg.get("inaktiv_monate", 12) or 0)
+    out: Set[str] = set()
+    force_hide: Set[str] = set()
+    force_show: Set[str] = set()
+    for ref in bcfg.get("ausgeblendet") or []:
+        try:
+            force_hide.add(ledger.resolve(ref).uuid)
+        except KeyError:
+            pass
+    for ref in bcfg.get("immer_anzeigen") or []:
+        try:
+            force_show.add(ledger.resolve(ref).uuid)
+        except KeyError:
+            pass
+    y, m = add_months(today, -n)
+    cutoff = date(y, m, 1)
+    recent = mkeys[-n:] if n else []
+    for acc in leaves:
+        if acc.uuid in force_hide:
+            out.add(acc.uuid)
+            continue
+        if acc.uuid in force_show or not n:
+            continue
+        h = hist.get(acc.uuid, {})
+        if all(abs(h.get(k) or 0.0) < 0.005 for k in recent) and abs(acc.balance) < 0.005 \
+                and not any(t.booking_date >= cutoff for t in ledger.transactions(acc.uuid)):
+            out.add(acc.uuid)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Kapitalfluss
+# ---------------------------------------------------------------------------
+
+def _is_cost(t: Tx, cost_words: List[str]) -> bool:
+    low = t.text.lower()
+    return any(w in low for w in cost_words)
+
+
+class Rows:
+    """Sammelt Zeilen: (Sektion, Zeile) -> Monatswerte + Metadaten."""
+
+    def __init__(self):
+        self.vals: Dict[Tuple[str, str], Dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        self.meta: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+    def add(self, section: str, gruppe: str, zeile: str, mk: str, amount: float, *,
+            konto: Optional[str] = None, art: str = "kategorie", nw: bool = True):
+        key = (section, zeile)
+        self.vals[key][mk] += amount
+        self.meta.setdefault(key, {"gruppe": gruppe, "konto": konto, "art": art, "nw": nw})
+
+
+def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], config: dict, months: List[Tuple[int, int]],
+             verlauf: Dict[str, str]):
+    kf = config.get("kapitalfluss", {}) or {}
+    root_leaves = {a.uuid for a in leaves}
+    own_ibans = ledger.own_ibans()
+    transfer_cats = [c.lower() for c in (kf.get("umbuchungs_kategorien") or ["Umbuchung"])]
+    cost_words = [w.lower() for w in (kf.get("kosten_texte") or COST_WORDS)]
+    invest_cats = [c.lower() for c in (kf.get("investitions_kategorien") or ["invest", "wertpapier", "depot", "immobilienkauf", "beteiligung"])]
+    finance_cats = [c.lower() for c in (kf.get("finanzierungs_kategorien") or ["finanzierung", "tilgung", "kredit"])]
+    cost_cats = [c.lower() for c in (kf.get("finanzierungskosten_kategorien") or ["zinsen", "zinsaufwand", "finanzierungskosten"])]
+    income_cats = [c.lower() for c in (kf.get("einnahmen_kategorien") or [])]
+    kat_sektion: Dict[str, str] = {k.replace("\\", " / ").lower(): v for k, v in (kf.get("kategorie_zuordnung") or {}).items()
+                                   if not k.startswith("_")}
+    kat_zu_konto: Dict[str, str] = {}
+    for cat_name, ref in (kf.get("kategorie_zu_konto") or {}).items():
+        try:
+            kat_zu_konto[cat_name.replace("\\", " / ").lower()] = ledger.resolve(ref).uuid
+        except KeyError:
+            pass
+    beteiligungs_gruppen: Dict[str, str] = {}
+    for ref in kf.get("beteiligungs_gruppen") or []:
+        try:
+            g = ledger.resolve(ref)
+            for a in (ledger.descendants(g.uuid) if g.group else [g]):
+                beteiligungs_gruppen[a.uuid] = g.name
+        except KeyError:
+            pass
+    first = date(months[0][0], months[0][1], 1)
+    last = month_end(months[-1][0], months[-1][1])
+
+    all_tx = [t for t in ledger.txs if t.booked and first <= t.booking_date <= last]
+    by_id = {t.id: t for t in all_tx}
+    # Konten mit Verlauf aus Staenden (Depots) liefern keine Zahlungsfluesse: ihre Wertaenderung ist Bewertung
+    in_root = [t for t in all_tx if t.account_uuid in root_leaves and verlauf.get(t.account_uuid) != "stand"]
+
+    partner: Dict[int, Optional[str]] = {}
+    is_transfer: Dict[int, bool] = {}
+    for t in in_root:
+        p = None
+        if t.counter_iban and t.counter_iban in own_ibans and own_ibans[t.counter_iban] != t.account_uuid:
+            p = own_ibans[t.counter_iban]
+        if p is None:
+            for tag in TAG_RE.findall(t.purpose + " " + t.comment):
+                if tag.startswith("#mm-tx-"):
+                    src = by_id.get(int(tag[7:]))
+                    if src and src.account_uuid != t.account_uuid:
+                        p = src.account_uuid
+                    else:
+                        for o in all_tx:
+                            if tag in o.purpose and o.account_uuid != t.account_uuid:
+                                p = o.account_uuid
+                                break
+        cat_low = t.category_path.lower()
+        transfer = p is not None or any(cat_low.split("\\")[-1] == c or cat_low == c for c in transfer_cats)
+        partner[t.id] = p
+        is_transfer[t.id] = transfer
+    if kf.get("umbuchung_paarung", True):
+        manual_ok = kf.get("paarung_manuelle_konten", True)
+        open_tx = [t for t in in_root if is_transfer[t.id] and partner[t.id] is None]
+        manual_side = [t for t in in_root if manual_ok and not is_transfer[t.id]
+                       and (roles.get(t.account_uuid) in ("verbindlichkeiten", "forderungen") or roles.get(t.account_uuid) in ASSET_ROLES)
+                       and ledger.accounts[t.account_uuid].offline and not _is_cost(t, cost_words)]
+        liquid_side = [t for t in in_root if roles.get(t.account_uuid) == "liquiditaet" and partner[t.id] is None]
+        used: Set[int] = set()
+        for t in open_tx + manual_side:
+            if t.id in used:
+                continue
+            pool = open_tx if t in open_tx else liquid_side
+            for o in pool:
+                if o.id in used or o.id == t.id or o.account_uuid == t.account_uuid:
+                    continue
+                if abs(o.amount + t.amount) < 0.005 and abs((o.booking_date - t.booking_date).days) <= 3:
+                    partner[t.id], partner[o.id] = o.account_uuid, t.account_uuid
+                    is_transfer[t.id] = is_transfer[o.id] = True
+                    used.update({t.id, o.id})
+                    break
+
+    R = Rows()
+    warnings: List[str] = []
+    unclear = 0
+    inbound: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
+
+    for t in in_root:
+        acc = ledger.accounts[t.account_uuid]
+        role = roles.get(acc.uuid, "sonstiges")
+        mk = month_key(t.booking_date)
+        p = partner[t.id]
+        p_role = roles.get(p) if p in roles else None
+        cat = t.category_path.replace("\\", " / ") or "(ohne Kategorie)"
+        top = cat.split(" / ")[0]
+        if role == "ignorieren":
+            continue
+        if role == "liquiditaet":
+            if is_transfer[t.id]:
+                if p is not None and p in root_leaves:
+                    if p_role in ("liquiditaet", "ignorieren"):
+                        continue
+                    pacc = ledger.accounts[p]
+                    if p_role in ASSET_ROLES:
+                        R.add("Investitionen", pacc.name, pacc.name, mk, t.amount, konto=p, art="konto", nw=False)
+                        inbound[p][mk] += -t.amount
+                    elif p_role == "forderungen":
+                        R.add("Investitionen", pacc.name, pacc.name + " / Rückzahlung", mk, t.amount, konto=p, art="rueckzahlung", nw=False)
+                    elif p_role == "verbindlichkeiten":
+                        R.add("Finanzierung", pacc.name, pacc.name + " / Tilgung", mk, t.amount, konto=p, art="tilgung", nw=False)
+                    else:
+                        R.add("Unklar", "Umbuchung", "Umbuchung nach " + pacc.name, mk, t.amount, art="unklar"); unclear += 1
+                elif p is not None and p in beteiligungs_gruppen:
+                    g = beteiligungs_gruppen[p]
+                    R.add("Investitionen", "Einlagen/Entnahmen", "Einlage/Entnahme " + g, mk, t.amount, art="extern", nw=False)
+                elif p is not None:
+                    R.add("Unklar", "Umbuchung", "Umbuchung nach " + ledger.accounts[p].path, mk, t.amount, art="unklar"); unclear += 1
+                else:
+                    R.add("Unklar", "Umbuchung", "Umbuchung ohne erkannten Partner", mk, t.amount, art="unklar"); unclear += 1
+                continue
+            tl = top.lower()
+            zu = kat_sektion.get(cat.lower()) or kat_sektion.get(tl)
+            if zu:
+                sec, _, art = zu.partition("/")
+                if sec == "Finanzierung":
+                    R.add("Finanzierung", top, cat, mk, t.amount, art=("zins" if art.lower().startswith("zins") else "tilgung"),
+                          nw=art.lower().startswith("zins"))
+                elif sec == "Investitionen":
+                    target = kat_zu_konto.get(cat.lower()) or kat_zu_konto.get(tl)
+                    R.add("Investitionen", top, cat, mk, t.amount, konto=target, art="kategorie", nw=False)
+                    if target:
+                        inbound[target][mk] += -t.amount
+                elif sec in ("Einnahmen", "Ausgaben"):
+                    R.add(sec, top, cat, mk, t.amount)
+                elif sec == "Ignorieren":
+                    continue
+                else:
+                    R.add("__operativ__", top, cat, mk, t.amount)
+                continue
+            if any(k in tl for k in cost_cats):
+                R.add("Finanzierung", top, cat, mk, t.amount, art="zins", nw=True)
+            elif any(k in tl for k in finance_cats):
+                R.add("Finanzierung", top, cat, mk, t.amount, art="tilgung", nw=False)
+            elif any(k in tl for k in invest_cats) or cat.lower() in kat_zu_konto or tl in kat_zu_konto:
+                target = kat_zu_konto.get(cat.lower()) or kat_zu_konto.get(tl)
+                R.add("Investitionen", top, cat, mk, t.amount, konto=target, art="kategorie", nw=False)
+                if target:
+                    inbound[target][mk] += -t.amount
+            elif income_cats and any(k in tl for k in income_cats):
+                R.add("Einnahmen", top, cat, mk, t.amount)
+            else:
+                R.add("__operativ__", top, cat, mk, t.amount)
+        elif role == "verbindlichkeiten":
+            if is_transfer[t.id]:
+                continue
+            if _is_cost(t, cost_words):
+                R.add("Finanzierung", acc.name, acc.name + " / Zinsen", mk, t.amount, konto=acc.uuid, art="zins", nw=True)
+                R.add("Finanzierung", acc.name, acc.name + " / Tilgung", mk, -t.amount, konto=acc.uuid, art="tilgung", nw=False)
+            else:
+                R.add("Bewertung", acc.name, acc.name, mk, t.amount, konto=acc.uuid, art="konto", nw=True)
+        elif role == "forderungen":
+            if is_transfer[t.id]:
+                continue
+            if _is_cost(t, cost_words):
+                R.add("Investitionen", acc.name, acc.name + " / Zinsen", mk, t.amount, konto=acc.uuid, art="zins", nw=True)
+                R.add("Investitionen", acc.name, acc.name + " / Rückzahlung", mk, -t.amount, konto=acc.uuid, art="rueckzahlung", nw=False)
+            else:
+                R.add("Bewertung", acc.name, acc.name, mk, t.amount, konto=acc.uuid, art="konto", nw=True)
+        elif role in ASSET_ROLES:
+            if is_transfer[t.id]:
+                continue
+            R.add("Bewertung", acc.name, acc.name, mk, t.amount, konto=acc.uuid, art="konto", nw=True)
+        else:
+            R.add("Unklar", "Konto ohne Position", acc.name + " (Position unbekannt)", mk, t.amount, art="unklar"); unclear += 1
+
+    for key in [k for k in R.vals if k[0] == "__operativ__"]:
+        vals = R.vals.pop(key)
+        meta = R.meta.pop(key)
+        target = "Einnahmen" if sum(vals.values()) > 0 else "Ausgaben"
+        for mk, v in vals.items():
+            R.vals[(target, key[1])][mk] += v
+        R.meta.setdefault((target, key[1]), meta)
+
+    if unclear:
+        warnings.append("%d Umbuchung(en) ohne erkennbaren Partner oder Konto ohne Position (Sektion 'Unklar'). "
+                        "Kategorie 'Umbuchung' nur fuer Konto-zu-Konto-Transfers verwenden, Gegen-IBAN pruefen, "
+                        "Position unter Bilanz → Konten setzen." % unclear)
+    return R, inbound, warnings
+
+
+# ---------------------------------------------------------------------------
+# Bilanz je Bereich
+# ---------------------------------------------------------------------------
+
+def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereich: dict, roles: Dict[str, str],
+                  rule_warnings: Optional[List[str]] = None) -> dict:
+    """bereich: {"id", "name", "art", "anteil", "leaves": [Account]}"""
+    bcfg = config.get("bilanz", {}) or {}
+    leaves: List[Account] = [a for a in bereich["leaves"] if roles.get(a.uuid) != "ignorieren"]
+    leaf_ids = {a.uuid for a in leaves}
+    back = int(bcfg.get("monate_zurueck", 0) or 0)
+    if back <= 0:
+        first_tx = min((t.booking_date for t in ledger.txs if t.account_uuid in leaf_ids), default=today)
+        hist_cfg = state.get("historie") or {}
+        first_hist = min((k for u in leaf_ids for k in (hist_cfg.get(u) or {})), default=None)
+        if first_hist and first_hist < month_key(first_tx):
+            first_tx = date(int(first_hist[:4]), int(first_hist[5:]), 1)
+        y0, m0 = first_tx.year, first_tx.month
+    else:
+        y0, m0 = add_months(today, -back)
+    months = months_between(date(y0, m0, 1), today)
+    mkeys = ["%04d-%02d" % ym for ym in months]
+    snapshots = state.get("snapshots", {}) or {}
+    historie = state.get("historie", {}) or {}
+    verlauf_cfg: Dict[str, str] = {}
+    for ref, v in (bcfg.get("verlauf") or {}).items():
+        try:
+            verlauf_cfg[ledger.resolve(ref).uuid] = v
+        except KeyError:
+            pass
+
+    hist, warn_h, quelle, geschaetzt = balance_history(ledger, leaves, months, snapshots, historie, verlauf_cfg, today, config)
+    R, inbound, warn_c = classify(ledger, leaves, roles, config, months, quelle)
+    inactive = inactive_accounts(ledger, leaves, hist, mkeys, config, today)
+
+    # Konten mit Staende-Verlauf: Bewertung = Wertaenderung - Zufluesse
+    for acc in leaves:
+        if quelle.get(acc.uuid) == "stand":
+            h = hist[acc.uuid]
+            for i, mk in enumerate(mkeys):
+                if i == 0:
+                    continue
+                delta = (h[mk] or 0.0) - (h[mkeys[i - 1]] or 0.0)
+                val = round(delta - inbound[acc.uuid].get(mk, 0.0), 2)
+                if abs(val) >= 0.005:
+                    R.add("Bewertung", acc.name, acc.name, mk, val, konto=acc.uuid, art="depot", nw=True)
+
+    illiquid_roles = set(bcfg.get("illiquide_rollen") or ILLIQUID_DEFAULT)
+    illiquid_refs: Set[str] = set()
+    for ref in bcfg.get("illiquide_konten") or []:
+        try:
+            illiquid_refs.add(ledger.resolve(ref).uuid)
+        except KeyError:
+            pass
+
+    # Bilanzzeilen nach Positionen
+    bilanz_rows: List[dict] = []
+    pos_sums: Dict[str, Dict[str, float]] = {}
+    for role in ROLES:
+        if role == "ignorieren":
+            continue
+        accs = [a for a in leaves if roles.get(a.uuid) == role]
+        if not accs:
+            continue
+        werte = {mk: round(sum((hist[a.uuid][mk] or 0.0) for a in accs), 2) for mk in mkeys}
+        pos_sums[role] = werte
+        bilanz_rows.append({"id": "pos:" + role, "name": ROLE_LABELS[role], "pfad": ROLE_LABELS[role], "ebene": 0, "gruppe": True,
+                            "rolle": role, "illiquide": role in illiquid_roles, "depot": False, "offline": False, "inaktiv": False,
+                            "passiva": role == "verbindlichkeiten", "werte": werte, "anzahl": len(accs),
+                            "inaktive": sum(1 for a in accs if a.uuid in inactive)})
+        for a in sorted(accs, key=lambda x: x.path):
+            illiq = (role in illiquid_roles) or (a.uuid in illiquid_refs) or any(x.uuid in illiquid_refs for x in ledger.ancestors(a.uuid))
+            bilanz_rows.append({"id": a.uuid, "name": a.name, "pfad": a.path, "ebene": 1, "gruppe": False, "rolle": role,
+                                "illiquide": illiq, "depot": a.portfolio, "offline": a.offline, "inaktiv": a.uuid in inactive,
+                                "passiva": role == "verbindlichkeiten", "verlauf": quelle.get(a.uuid, "umsaetze"), "geschaetzt_bis": geschaetzt.get(a.uuid),
+                                "werte": {mk: hist[a.uuid][mk] for mk in mkeys}})
+    nw = {mk: round(sum(pos_sums[r][mk] for r in pos_sums), 2) for mk in mkeys}
+    aktiva = {mk: round(sum(pos_sums[r][mk] for r in pos_sums if r != "verbindlichkeiten"), 2) for mk in mkeys}
+    passiva = {mk: round(pos_sums.get("verbindlichkeiten", {}).get(mk, 0.0), 2) for mk in mkeys}
+    liquid_nw = {mk: round(nw[mk] - sum((r["werte"][mk] or 0.0) for r in bilanz_rows if not r["gruppe"] and r["illiquide"]), 2) for mk in mkeys}
+
+    # MoneyMoney-Gruppenbaum (zweite Sicht), nur Konten des Bereichs
+    baum: List[dict] = []
+    group_rows: Dict[str, dict] = {}
+    for a in sorted(leaves, key=lambda x: x.path):
+        anc = list(reversed(ledger.ancestors(a.uuid)))
+        for g in anc:
+            if g.uuid not in group_rows:
+                row = {"id": g.uuid, "name": g.name, "pfad": g.path, "ebene": g.path.count(" / "), "gruppe": True, "rolle": None,
+                       "illiquide": False, "depot": False, "offline": False, "inaktiv": False, "werte": {mk: 0.0 for mk in mkeys}}
+                group_rows[g.uuid] = row
+                baum.append(row)
+            for mk in mkeys:
+                group_rows[g.uuid]["werte"][mk] = round(group_rows[g.uuid]["werte"][mk] + (hist[a.uuid][mk] or 0.0), 2)
+        baum.append({"id": a.uuid, "name": a.name, "pfad": a.path, "ebene": a.path.count(" / "), "gruppe": False, "rolle": roles.get(a.uuid),
+                     "illiquide": any(r["id"] == a.uuid and r["illiquide"] for r in bilanz_rows), "depot": a.portfolio, "offline": a.offline,
+                     "inaktiv": a.uuid in inactive, "verlauf": quelle.get(a.uuid, "umsaetze"), "werte": {mk: hist[a.uuid][mk] for mk in mkeys}})
+
+    # Kapitalfluss-Sektionen
+    sektionen = []
+    for sec in SECTIONS:
+        zeilen = []
+        for (s, row), vals in R.vals.items():
+            if s != sec:
+                continue
+            m = R.meta[(s, row)]
+            zeilen.append({"zeile": row, "gruppe": m["gruppe"], "konto": m["konto"], "art": m["art"], "nw": m["nw"],
+                           "werte": {mk: round(vals.get(mk, 0.0), 2) for mk in mkeys}})
+        gsum = defaultdict(float)
+        for z in zeilen:
+            gsum[z["gruppe"]] += abs(sum(z["werte"].values()))
+        zeilen.sort(key=lambda z: (-gsum[z["gruppe"]], z["gruppe"], z["zeile"]))
+        sektionen.append({"name": sec, "zeilen": zeilen})
+
+    ueberleitung = {}
+    for i, mk in enumerate(mkeys):
+        if i == 0:
+            continue
+        explained = sum(z["werte"][mk] for sek in sektionen for z in sek["zeilen"] if z["nw"])
+        delta = round(nw[mk] - nw[mkeys[i - 1]], 2)
+        ueberleitung[mk] = {"delta_nw": delta, "erklaert": round(explained, 2), "unerklaert": round(delta - explained, 2)}
+
+    loans_cfg = {}
+    for l in config.get("darlehen", []) or []:
+        try:
+            a = ledger.resolve(l["darlehenskonto"])
+            z = l.get("zins") or {}
+            loans_cfg[a.uuid] = {"name": a.name, "modell": z.get("modell", "jahresbasis"), "satz": z.get("satz") or [], "art": l.get("art", "verbindlichkeit")}
+        except KeyError:
+            pass
+
+    warnings = list(rule_warnings or []) + warn_h + warn_c
+    return {
+        "erstellt": today.isoformat(),
+        "heute": today.isoformat(),
+        "monate": mkeys,
+        "ist_bis": month_key(today),
+        "wurzel": bereich["name"],
+        "bereich": {"id": bereich["id"], "name": bereich["name"], "art": bereich.get("art"), "anteil": bereich.get("anteil")},
+        "bilanz": {"zeilen": bilanz_rows, "baum": baum, "nettovermoegen": nw, "aktiva": aktiva, "passiva": passiva,
+                   "liquides_nettovermoegen": liquid_nw, "positionen": {r: ROLE_LABELS[r] for r in pos_sums}},
+        "kapitalfluss": {"sektionen": sektionen, "ueberleitung": ueberleitung},
+        "darlehen_konfig": loans_cfg,
+        "konten_inaktiv": sorted(inactive),
+        "warnungen": warnings,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Planung
+# ---------------------------------------------------------------------------
+
+def _rate_at(rates: List[dict], day: date) -> Optional[float]:
+    best = None
+    for r in sorted(rates, key=lambda x: x.get("ab", "0000-00-00")):
+        ab = date.fromisoformat(r["ab"]) if r.get("ab") else date(1900, 1, 1)
+        if ab <= day:
+            best = float(r["prozent"])
+    return best
+
+
+def _plan_value(method: str, hist_vals: List[float], same_month_last_year: Optional[float], betrag: Optional[float],
+                budget: Optional[float] = None) -> float:
+    if method == "keine":
+        return 0.0
+    if method == "budget":
+        return float(budget or 0.0)
+    if method == "fix":
+        return float(betrag or 0.0)
+    if method == "jahresbetrag":
+        return round(float(betrag or 0.0) / 12.0, 2)
+    if method == "vorjahr":
+        return float(same_month_last_year or 0.0)
+    n = 6 if method == "gleitend6" else 12
+    vals = hist_vals[-n:]
+    return round(sum(vals) / n, 2) if vals else 0.0
+
+
+def _event_months(ev: dict, future: List[str]) -> List[str]:
+    start = str(ev.get("monat") or "")[:7]
+    if len(start) != 7:
+        return []
+    rep = ev.get("wiederholung") or "einmalig"
+    bis = str(ev.get("bis") or "")[:7] or future[-1]
+    out = []
+    for mk in future:
+        if mk < start or mk > bis:
+            continue
+        if rep == "einmalig" and mk != start:
+            continue
+        if rep == "jaehrlich" and mk[5:] != start[5:]:
+            continue
+        if rep == "quartal" and (int(mk[5:]) - int(start[5:])) % 3 != 0:
+            continue
+        out.append(mk)
+    return out
+
+
+def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[str, Dict[str, float]]] = None,
+               immo: Optional[List[dict]] = None, ledger_resolve=None) -> dict:
+    """Planung auf einen Bereichs-Datensatz anwenden (in place).
+    fremd_nw: Nettovermoegensplan anderer Bereiche (id -> {mk: nw}) fuer Beteiligungskonten.
+    immo: Immobilienkalkulationen dieses Bereichs mit Planreihen (siehe mm_immo.planreihen) und Zuordnungen."""
+    horizon = max(1, min(240, int(plan.get("horizont_monate", 24))))
+    default_method = plan.get("standard_methode", "gleitend12")
+    inflation = float(plan.get("inflation_prozent_pa", 2.0) or 0.0)
+    growth_default = {"Ausgaben": float(plan.get("steigerung_ausgaben_prozent_pa", inflation) if plan.get("steigerung_ausgaben_prozent_pa") is not None else inflation),
+                      "Einnahmen": float(plan.get("steigerung_einnahmen_prozent_pa") or 0.0)}
+    rendite = float(plan.get("rendite_prozent_pa") or 0.0)
+    budgets: Dict[str, float] = dataset.get("budgets") or {}
+    rows_cfg: Dict[str, dict] = plan.get("zeilen", {}) or {}
+    loans_plan: Dict[str, dict] = plan.get("darlehen", {}) or {}
+    wert_cfg: Dict[str, dict] = plan.get("wertentwicklung", {}) or {}
+    events: List[dict] = [e for e in (plan.get("ereignisse") or []) if isinstance(e, dict) and e.get("aktiv", True)]
+    ist = dataset["monate"]
+    cur = dataset["ist_bis"]
+    full_months = [mk for mk in ist if mk < cur]
+    y, m = int(cur[:4]), int(cur[5:])
+    future = []
+    for _ in range(horizon):
+        y, m = add_months(date(y, m, 1), 1)
+        future.append("%04d-%02d" % (y, m))
+    dataset["plan_monate"] = future
+    sektionen = dataset["kapitalfluss"]["sektionen"]
+    rows_b = dataset["bilanz"]["zeilen"]
+    leaf_rows = [r for r in rows_b if not r["gruppe"]]
+    by_uuid = {r["id"]: r for r in leaf_rows}
+    by_name = {r["name"]: r for r in leaf_rows}
+    loans_cfg = dataset.get("darlehen_konfig", {})
+    sec_by_name = {s["name"]: s for s in sektionen}
+
+    def resolve_ref(ref: Optional[str]) -> Optional[str]:
+        if not ref:
+            return None
+        u = ref.split("|", 1)[0].strip()
+        if u in by_uuid:
+            return u
+        label = ref.split("|", 1)[1].strip() if "|" in ref else ref
+        if label in by_name:
+            return by_name[label]["id"]
+        if ledger_resolve:
+            try:
+                return ledger_resolve(ref).uuid
+            except KeyError:
+                return None
+        return None
+
+    # 0. Immobilienkalkulationen: Zuordnung Zeilen -> Reihen
+    immo_rows: Dict[Tuple[str, str], Dict[str, float]] = {}      # (Sektion, Zeile) -> {mk: wert}
+    immo_loans: Dict[str, dict] = {}                              # konto uuid -> {"zins": {mk}, "tilgung": {mk}, "saldo": {mk}}
+    immo_wert: Dict[str, Dict[str, float]] = {}                   # objekt konto -> {mk: wert}
+    immo_extra: List[dict] = []                                   # zusaetzliche Zeilen (Ausschuettung)
+    for im in immo or []:
+        reihen = im.get("reihen") or {}
+        cat = norm_cat(im.get("kategorie") or "").lower()
+        taken_e = taken_a = False
+        for sek in sektionen:
+            for z in sek["zeilen"]:
+                zl = norm_cat(z["zeile"]).lower()
+                if cat and (zl == cat or zl.startswith(cat + " / ")):
+                    if sek["name"] == "Einnahmen":
+                        immo_rows[(sek["name"], z["zeile"])] = reihen.get("miete", {}) if not taken_e else {}
+                        taken_e = True
+                    elif sek["name"] == "Ausgaben":
+                        immo_rows[(sek["name"], z["zeile"])] = ({mk: reihen.get("kosten", {}).get(mk, 0.0) + reihen.get("ruecklage", {}).get(mk, 0.0)
+                                                                 for mk in future} if not taken_a else {})
+                        taken_a = True
+        if cat and not taken_e:
+            immo_extra.append({"sektion": "Einnahmen", "gruppe": im.get("name", "Immobilie"), "zeile": "%s / Miete (Kalkulation)" % im.get("name", "Immobilie"),
+                               "art": "immobilie", "nw": True, "werte": reihen.get("miete", {})})
+        if cat and not taken_a:
+            immo_extra.append({"sektion": "Ausgaben", "gruppe": im.get("name", "Immobilie"), "zeile": "%s / Kosten (Kalkulation)" % im.get("name", "Immobilie"),
+                               "art": "immobilie", "nw": True, "werte": {mk: reihen.get("kosten", {}).get(mk, 0.0) + reihen.get("ruecklage", {}).get(mk, 0.0) for mk in future}})
+        for lname, ref in (im.get("darlehen_konten") or {}).items():
+            u = resolve_ref(ref)
+            if u and lname in (reihen.get("darlehen") or {}):
+                immo_loans[u] = reihen["darlehen"][lname]
+        ou = resolve_ref(im.get("objekt_konto"))
+        if ou and reihen.get("wert"):
+            immo_wert[ou] = reihen["wert"]
+        if reihen.get("ausschuettung") and any(abs(v) > 0.005 for v in reihen["ausschuettung"].values()):
+            immo_extra.append({"sektion": "Investitionen", "gruppe": "Einlagen/Entnahmen", "zeile": "Entnahmen Gesellschafter (%s)" % im.get("name", "Immobilie"),
+                               "art": "ereignis", "nw": False, "werte": reihen["ausschuettung"]})
+    for ex in immo_extra:
+        sek = sec_by_name[ex["sektion"]]
+        sek["zeilen"].append({"zeile": ex["zeile"], "gruppe": ex["gruppe"], "konto": None, "art": ex["art"], "nw": ex["nw"],
+                              "werte": {mk: 0.0 for mk in ist}, "synthetisch": True})
+        immo_rows[(ex["sektion"], ex["zeile"])] = ex["werte"]
+    fixed_rows: Dict[Tuple[str, str], Tuple[Dict[str, float], str]] = {k: (v, "immobilie") for k, v in immo_rows.items()}
+
+    # 0b. Ereignisse: Zeilen anlegen
+    event_moves: Dict[str, List[Tuple[Optional[str], Optional[str], float]]] = defaultdict(list)   # mk -> [(von, nach, betrag)]
+    liquid_ids = {r["id"] for r in leaf_rows if r["rolle"] == "liquiditaet"}
+    event_rows: Dict[Tuple[str, str], Dict[str, float]] = {}
+    for ev in events:
+        betrag = float(str(ev.get("betrag") or 0).replace(",", ".") or 0)
+        months_ = _event_months(ev, future)
+        if not betrag or not months_:
+            continue
+        art = ev.get("art") or "umschichtung"
+        text = ev.get("text") or "Ereignis"
+        von = resolve_ref(ev.get("von"))
+        nach = resolve_ref(ev.get("nach"))
+        if art in ("einnahme", "ausgabe"):
+            sec = "Einnahmen" if art == "einnahme" else "Ausgaben"
+            key = (sec, "Ereignis: " + text)
+            event_rows.setdefault(key, {})
+            for mk in months_:
+                event_rows[key][mk] = event_rows[key].get(mk, 0.0) + (betrag if art == "einnahme" else -betrag)
+            continue
+        von_liq = von is None or von in liquid_ids
+        nach_liq = nach is None or nach in liquid_ids
+        for mk in months_:
+            if not von_liq and von in by_uuid:
+                event_moves[mk].append((von, None, betrag))
+            if not nach_liq and nach in by_uuid:
+                event_moves[mk].append((None, nach, betrag))
+        if von_liq != nach_liq:
+            other = nach if von_liq else von
+            orow = by_uuid.get(other, {})
+            sec = "Finanzierung" if orow.get("rolle") == "verbindlichkeiten" else "Investitionen"
+            key = (sec, "Ereignis: " + text)
+            event_rows.setdefault(key, {})
+            for mk in months_:
+                event_rows[key][mk] = event_rows[key].get(mk, 0.0) + (-betrag if von_liq else betrag)
+    for (sec, zeile), vals in event_rows.items():
+        sek = sec_by_name[sec]
+        sek["zeilen"].append({"zeile": zeile, "gruppe": "Geplante Ereignisse", "konto": None, "art": "ereignis",
+                              "nw": sec in ("Einnahmen", "Ausgaben"), "werte": {mk: 0.0 for mk in ist}, "synthetisch": True})
+        fixed_rows[(sec, zeile)] = (vals, "ereignis")
+
+    # 1. Planwerte je Zeile
+    for sek in sektionen:
+        for z in sek["zeilen"]:
+            key = sek["name"] + "/" + z["zeile"]
+            cfg = rows_cfg.get(key, {})
+            fx = fixed_rows.get((sek["name"], z["zeile"]))
+            fixed = fx[0] if fx else None
+            if fx:
+                method = fx[1]
+            elif cfg.get("methode"):
+                method = cfg["methode"]
+            elif sek["name"] in ("Bewertung", "Unklar"):
+                method = "keine"
+            elif sek["name"] == "Investitionen" and z.get("art") in ("extern", "konto", "rueckzahlung", "zins"):
+                method = "keine" if z.get("art") in ("extern", "konto") else default_method
+            else:
+                method = default_method
+            growth = float(cfg.get("steigerung_prozent_pa", growth_default.get(sek["name"], 0.0)))
+            hist_vals = [z["werte"][mk] for mk in full_months]
+            overrides = cfg.get("werte", {}) or {}
+            budget = budgets.get(z["zeile"])
+            if budget is not None and sek["name"] == "Ausgaben":
+                budget = -abs(budget)
+            z["plan"] = {"methode": method, "betrag": cfg.get("betrag"), "steigerung_prozent_pa": growth, "budget": budget,
+                         "werte": {}, "vorschlag": {}, "ueberschrieben": sorted(k for k in overrides if k in future)}
+            if fixed is not None:
+                for mk in future:
+                    v = round(float(fixed.get(mk, 0.0)), 2)
+                    z["plan"]["vorschlag"][mk] = v
+                    z["plan"]["werte"][mk] = float(overrides[mk]) if mk in overrides else v
+                continue
+            base_val = _plan_value(method, hist_vals, None, cfg.get("betrag"), budget)
+            for i, mk in enumerate(future):
+                if method == "vorjahr":
+                    ly = "%04d-%02d" % (int(mk[:4]) - 1, int(mk[5:]))
+                    v = z["werte"].get(ly, z["plan"]["werte"].get(ly, 0.0)) * (1 + growth / 100.0)
+                else:
+                    v = base_val * ((1 + growth / 100.0) ** ((i + 1) / 12.0))
+                z["plan"]["vorschlag"][mk] = round(v, 2)
+                z["plan"]["werte"][mk] = float(overrides[mk]) if mk in overrides else round(v, 2)
+
+    # 2. Darlehensplan
+    fin = sec_by_name["Finanzierung"]
+    loan_groups: Dict[str, Dict[str, dict]] = defaultdict(dict)
+    for z in fin["zeilen"]:
+        if z.get("konto"):
+            loan_groups[z["konto"]][z["art"]] = z
+    loan_state: Dict[str, dict] = {}
+    for uuid, parts in loan_groups.items():
+        acc = by_uuid.get(uuid)
+        if acc is None:
+            continue
+        name = acc["name"]
+        if uuid in immo_loans:
+            series = immo_loans[uuid]
+            for part, key in (("zins", "zins"), ("tilgung", "tilgung")):
+                z = parts.get(part)
+                if z:
+                    for mk in future:
+                        v = round(float(series.get(key, {}).get(mk, 0.0)), 2)
+                        z["plan"]["vorschlag"][mk] = v
+                        if mk not in (rows_cfg.get("Finanzierung/" + z["zeile"], {}).get("werte") or {}):
+                            z["plan"]["werte"][mk] = v
+                    z["plan"]["methode"] = "immobilie"
+            continue
+        lp = dict(loans_cfg.get(uuid, {}))
+        lp.update(loans_plan.get(name, {}))
+        rate = None
+        if lp.get("zins_prozent_pa") is not None:
+            rate = float(lp["zins_prozent_pa"])
+        elif lp.get("satz"):
+            rate = _rate_at(lp["satz"], date(int(future[0][:4]), int(future[0][5:]), 1))
+        if rate is None:
+            continue
+        tilg, zins = parts.get("tilgung"), parts.get("zins")
+        pay_hist = [(tilg["werte"][mk] if tilg else 0.0) + (zins["werte"][mk] if zins else 0.0) for mk in full_months[-12:]]
+        payment = float(lp.get("zahlung") or (round(-sum(pay_hist) / len(pay_hist), 2) if pay_hist else 0.0))
+        loan_state[uuid] = {"rate": rate, "payment": payment, "modell": lp.get("modell", "restschuld_monatlich"),
+                            "tilg": tilg, "zins": zins, "name": name,
+                            "ov_t": (rows_cfg.get("Finanzierung/" + tilg["zeile"], {}).get("werte") or {}) if tilg else {},
+                            "ov_z": (rows_cfg.get("Finanzierung/" + zins["zeile"], {}).get("werte") or {}) if zins else {}}
+
+    # 3. Fortschreibung je Konto
+    liq_total = {mk: round(sum((r["werte"][mk] or 0.0) for r in leaf_rows if r["rolle"] == "liquiditaet"), 2) for mk in ist}
+    bal: Dict[str, float] = {r["id"]: (r["werte"][ist[-1]] or 0.0) for r in leaf_rows}
+    year_base: Dict[str, Dict[int, float]] = defaultdict(dict)
+    for r in leaf_rows:
+        if r["rolle"] == "liquiditaet":
+            continue
+        for mk in ist:
+            if mk.endswith("-12"):
+                year_base[r["id"]][int(mk[:4]) + 1] = r["werte"][mk] or 0.0
+    inv_rows = [z for sek in sektionen if sek["name"] == "Investitionen" for z in sek["zeilen"]]
+    growth_of: Dict[str, Tuple[float, Optional[float]]] = {}
+    fremd_link: Dict[str, Tuple[str, float]] = {}
+    for r in leaf_rows:
+        w = wert_cfg.get(r["name"]) or wert_cfg.get(r["pfad"]) or wert_cfg.get(r["id"])
+        if w and w.get("bereich"):
+            fremd_link[r["id"]] = (str(w["bereich"]), float(w.get("anteil", 1.0)))
+        elif w and (w.get("prozent_pa") not in (None, "") or w.get("basis") not in (None, "")):
+            growth_of[r["id"]] = (float(w.get("prozent_pa") or 0.0), (float(w["basis"]) if w.get("basis") not in (None, "") else None))
+        elif rendite and (r["depot"] or r["rolle"] in ("wertpapiere", "anlagen")):
+            growth_of[r["id"]] = (rendite, None)
+
+    plan_rows: Dict[str, Dict[str, float]] = defaultdict(dict)
+    einlagen_plan: Dict[str, float] = {}
+    for mk in future:
+        yr, mo = int(mk[:4]), int(mk[5:])
+        # Ereignisse: Umschichtungen zwischen Konten (vor den Zinsen des Monats)
+        for von, nach, betrag in event_moves.get(mk, []):
+            if von in bal:
+                bal[von] = round(bal[von] - betrag, 2)
+            if nach in bal:
+                b = bal[nach]
+                nb = b + betrag
+                if b < 0 < nb:      # Verbindlichkeit nicht ueber null hinaus tilgen
+                    nb = 0.0
+                bal[nach] = round(nb, 2)
+        # Darlehen mit Zinsmodell
+        for uuid, st in loan_state.items():
+            b = bal[uuid]
+            sign = -1.0 if b < 0 else 1.0
+            if st["modell"] == "jahresbasis":
+                if yr not in year_base[uuid]:
+                    year_base[uuid][yr] = b
+                base = abs(year_base[uuid][yr])
+            else:
+                base = abs(b)
+            interest = round(base * st["rate"] / 1200.0, 2) if abs(b) > 0.005 else 0.0
+            principal = min(max(st["payment"] - interest, 0.0), abs(b))
+            if st["zins"]:
+                st["zins"]["plan"]["vorschlag"][mk] = round(sign * interest, 2)
+                if mk in st["ov_z"]:
+                    interest = abs(float(st["ov_z"][mk]))
+                st["zins"]["plan"]["werte"][mk] = round(sign * interest, 2)
+                st["zins"]["plan"]["methode"] = "darlehen"
+            if st["tilg"]:
+                st["tilg"]["plan"]["vorschlag"][mk] = round(sign * principal, 2)
+                if mk in st["ov_t"]:
+                    principal = min(abs(float(st["ov_t"][mk])), abs(b))
+                st["tilg"]["plan"]["werte"][mk] = round(sign * principal, 2)
+                st["tilg"]["plan"]["methode"] = "darlehen"
+            bal[uuid] = round(b - sign * principal, 2)
+            if mo == 12:
+                year_base[uuid][yr + 1] = bal[uuid]
+        # Darlehen aus Immobilienkalkulation: Saldo direkt aus der Kalkulation
+        for uuid, series in immo_loans.items():
+            if uuid in bal and mk in (series.get("saldo") or {}):
+                bal[uuid] = round(float(series["saldo"][mk]), 2)
+        # Darlehen ohne bekannten Zinssatz: Saldo folgt der geplanten Tilgungszeile
+        for uuid, parts in loan_groups.items():
+            if uuid in loan_state or uuid in immo_loans or uuid not in bal or not parts.get("tilgung"):
+                continue
+            tilg = parts["tilgung"]
+            v = tilg["plan"]["werte"].get(mk, 0.0)
+            b = bal[uuid]
+            nb = b - v
+            if (b < 0 < nb) or (b > 0 > nb):
+                nb = 0.0
+                tilg["plan"]["werte"][mk] = round(b, 2)
+            bal[uuid] = round(nb, 2)
+        # Investitionen in Konten
+        for z in inv_rows:
+            v = z["plan"]["werte"].get(mk, 0.0)
+            if z.get("konto") and z["konto"] in bal and z["art"] in ("konto", "kategorie", "rueckzahlung"):
+                bal[z["konto"]] = round(bal[z["konto"]] - v, 2)
+            elif z["art"] == "extern":
+                einlagen_plan[mk] = einlagen_plan.get(mk, 0.0) - v
+        # Wertentwicklung / Kalkulation / Beteiligung an anderem Bereich
+        for uuid, (pct, basis) in growth_of.items():
+            if uuid in bal and pct and uuid not in immo_wert:
+                bal[uuid] = round(bal[uuid] + (basis if basis is not None else bal[uuid]) * pct / 1200.0, 2)
+        for uuid, series in immo_wert.items():
+            if uuid in bal and mk in series:
+                bal[uuid] = round(float(series[mk]), 2)
+        for uuid, (bid, anteil) in fremd_link.items():
+            src = (fremd_nw or {}).get(bid) or {}
+            if uuid in bal and mk in src:
+                bal[uuid] = round(float(src[mk]) * anteil, 2)
+        for uuid in bal:
+            if by_uuid[uuid]["rolle"] != "liquiditaet":
+                plan_rows[uuid][mk] = bal[uuid]
+
+    # Summen je Monat (Ist + Plan)
+    all_months = ist + future
+    sums: Dict[str, Dict[str, float]] = {}
+
+    def val_of(z, mk):
+        return z["werte"].get(mk, 0.0) if mk in z["werte"] else z.get("plan", {}).get("werte", {}).get(mk, 0.0)
+    for mk in all_months:
+        s = {}
+        for sek in sektionen:
+            s[sek["name"]] = round(sum(val_of(z, mk) for z in sek["zeilen"]), 2)
+        s["Zinsen"] = round(sum(val_of(z, mk) for sek in sektionen for z in sek["zeilen"] if z["art"] == "zins"), 2)
+        s["Operativ"] = round(s["Einnahmen"] + s["Ausgaben"], 2)
+        s["Cashflow"] = round(sum(s[k] for k in CASH_SECTIONS), 2)
+        s["Nettovermoegen_delta"] = round(sum(val_of(z, mk) for sek in sektionen for z in sek["zeilen"] if z["nw"]), 2)
+        sums[mk] = s
+    dataset["kapitalfluss"]["summen"] = sums
+
+    # Liquiditaet und Nettovermoegen fortschreiben; Rest als Bewertung ausweisen
+    liq_prev = liq_total[ist[-1]]
+    liq_plan: Dict[str, float] = {}
+    nw_plan: Dict[str, float] = {}
+    nw_prev = dataset["bilanz"]["nettovermoegen"][ist[-1]]
+    einl_cum = 0.0
+    for mk in future:
+        liq_prev = round(liq_prev + sums[mk]["Cashflow"], 2)
+        liq_plan[mk] = liq_prev
+        einl_cum += einlagen_plan.get(mk, 0.0)
+        total = liq_prev + sum(plan_rows[u][mk] for u in plan_rows) + einl_cum
+        nw_plan[mk] = round(total, 2)
+        prev_nw = nw_plan.get(prev_mk_of(future, mk), nw_prev)
+        bew = round(nw_plan[mk] - prev_nw - sums[mk]["Nettovermoegen_delta"], 2)
+        if abs(bew) >= 0.005:
+            sums[mk]["Bewertung"] = round(sums[mk]["Bewertung"] + bew, 2)
+            sums[mk]["Nettovermoegen_delta"] = round(sums[mk]["Nettovermoegen_delta"] + bew, 2)
+
+    # Projektion nach Positionen
+    proj_rows: List[dict] = []
+    for r in rows_b:
+        if r["gruppe"]:
+            role = r["rolle"]
+            members = [x for x in leaf_rows if x["rolle"] == role]
+            werte = {}
+            for mk in future:
+                if role == "liquiditaet":
+                    werte[mk] = liq_plan[mk]
+                else:
+                    werte[mk] = round(sum(plan_rows.get(x["id"], {}).get(mk, 0.0) for x in members), 2)
+            proj_rows.append({"id": r["id"], "name": r["name"], "ebene": 0, "gruppe": True, "rolle": role, "werte": werte})
+        elif r["rolle"] != "liquiditaet" and not r.get("inaktiv"):
+            proj_rows.append({"id": r["id"], "name": r["name"], "ebene": 1, "gruppe": False, "rolle": r["rolle"],
+                              "werte": {mk: plan_rows[r["id"]][mk] for mk in future}})
+    if any(einlagen_plan.values()):
+        proj_rows.append({"id": "einlagen", "name": "Einlagen/Entnahmen Beteiligungen (kumuliert, Plan)", "ebene": 1, "gruppe": False, "rolle": "beteiligungen",
+                          "werte": {mk: round(einl_cum_at(einlagen_plan, future, mk), 2) for mk in future}})
+
+    dataset["bilanz"]["projektion"] = {"zeilen": proj_rows, "liquiditaet": liq_plan, "nettovermoegen": nw_plan}
+    dataset["kennzahlen"] = kennzahlen(dataset, plan, liq_total, full_months)
+    dataset["plan"] = {"horizont_monate": horizon, "standard_methode": default_method, "inflation_prozent_pa": inflation,
+                       "steigerung_einnahmen_prozent_pa": growth_default["Einnahmen"], "steigerung_ausgaben_prozent_pa": growth_default["Ausgaben"],
+                       "rendite_prozent_pa": rendite, "fi_rendite_real_prozent": float(plan.get("fi_rendite_real_prozent") or 3.0),
+                       "zeilen": rows_cfg, "darlehen": loans_plan, "wertentwicklung": wert_cfg, "ereignisse": plan.get("ereignisse") or []}
+    return dataset
+
+
+def prev_mk_of(future: List[str], mk: str) -> str:
+    i = future.index(mk)
+    return future[i - 1] if i > 0 else ""
+
+
+def einl_cum_at(einlagen_plan: Dict[str, float], future: List[str], mk: str) -> float:
+    return sum(v for k, v in einlagen_plan.items() if k <= mk)
+
+
+def kennzahlen(dataset: dict, plan: dict, liq_total: Dict[str, float], full_months: List[str]) -> dict:
+    sums = dataset["kapitalfluss"]["summen"]
+    last12 = full_months[-12:]
+    n = max(1, len(last12))
+    ausgaben = -sum(sums[mk]["Ausgaben"] for mk in last12) / n
+    zinsen = -sum(sums[mk]["Zinsen"] for mk in last12) / n
+    operativ = sum(sums[mk]["Operativ"] for mk in last12)
+    cur = dataset["ist_bis"]
+    liq = liq_total.get(cur, 0.0)
+    real = float(plan.get("fi_rendite_real_prozent") or 3.0)
+    monatlich = ausgaben + zinsen
+    benoetigt = round(monatlich * 12 / (real / 100.0), 2) if real > 0 and monatlich > 0 else None
+    lnw = dataset["bilanz"]["liquides_nettovermoegen"][cur]
+    nw = dataset["bilanz"]["nettovermoegen"][cur]
+    ein = sum(sums[mk]["Einnahmen"] for mk in last12)
+    return {
+        "ausgaben_monat": round(ausgaben, 2), "zinsen_monat": round(zinsen, 2), "operativ_12m": round(operativ, 2),
+        "liquiditaet": liq, "reichweite_monate": round(liq / monatlich, 1) if monatlich > 0 else None,
+        "fi_rendite_real_prozent": real, "fi_benoetigt": benoetigt,
+        "fi_abdeckung_liquide": round(lnw / benoetigt, 3) if benoetigt else None,
+        "fi_abdeckung_gesamt": round(nw / benoetigt, 3) if benoetigt else None,
+        "sparquote": round(operativ / ein, 3) if ein > 0 else None,
+    }
