@@ -787,11 +787,23 @@ def make_handler(app: App):
             ist: Dict[str, Any] = {}
             quelle = None
             name = ""
-            for b in (app.store.load_shared("dataset.json", {}) or {}).get("bereiche", {}).values():
+            ds = app.store.load_shared("dataset.json", {}) or {}
+            for b in ds.get("bereiche", {}).values():
                 for r in (b.get("bilanz") or {}).get("zeilen") or []:
                     if r.get("id") == uuid:
                         ist = r.get("werte") or {}; quelle = r.get("verlauf"); name = r.get("name")
-            return {"konto": uuid, "name": name, "quelle": quelle, "manuell": hist, "aufgezeichnet": snaps, "ist": ist}
+            # Quelle aus der Konfiguration (gilt sofort), nicht aus dem letzten Bericht -- der wird ggf. gerade neu berechnet
+            vcfg = (app.config.get("bilanz") or {}).get("verlauf") or {}
+            explizit = next((v for ref, v in vcfg.items() if ref.split("|")[0].strip() == uuid and v in ("umsaetze", "stand")), None)
+            if explizit:
+                quelle = explizit
+            elif not quelle:
+                acc = app.ledger.accounts.get(uuid) if app.ledger is not None else None
+                k = next((x for x in ds.get("konten", []) if x.get("uuid") == uuid), {})
+                quelle = "stand" if ((acc and acc.portfolio) or k.get("depot")) else "umsaetze"
+                name = name or (acc.name if acc else k.get("name", ""))
+            return {"konto": uuid, "name": name, "quelle": quelle, "quelle_explizit": bool(explizit), "manuell": hist, "aufgezeichnet": snaps, "ist": ist,
+                    "bericht_laeuft": app.bericht_status().get("laeuft", False)}
 
         def _umsaetze(self, q: dict) -> dict:
             ums = app.umsatzliste()
@@ -1200,7 +1212,7 @@ def make_handler(app: App):
             if body.get("quelle") in ("umsaetze", "stand"):
                 cfg = copy.deepcopy(app.config)
                 cfg.setdefault("bilanz", {}).setdefault("verlauf", {})
-                ref = next((("%s | %s" % (k["uuid"], k["name"])) for k in (app.store.load("dataset.json", {}) or {}).get("konten", []) if k["uuid"] == uuid), uuid)
+                ref = next((("%s | %s" % (k["uuid"], k["name"])) for k in (app.store.load_shared("dataset.json", {}) or {}).get("konten", []) if k["uuid"] == uuid), uuid)
                 for k in list(cfg["bilanz"]["verlauf"]):
                     if k.split("|", 1)[0].strip() == uuid:
                         cfg["bilanz"]["verlauf"].pop(k)
@@ -1228,7 +1240,7 @@ def make_handler(app: App):
                 parsed = _parse_balance_csv(str(body.get("csv") or ""))
             if not parsed:
                 raise ValueError("Keine Werte erkannt. Erwartet: Datum, Konto (optional), Saldo -- oder eine Tabelle mit Stichtagen in einer Zeile oder Spalte.")
-            konten = {k["name"]: k["uuid"] for k in (app.store.load("dataset.json", {}) or {}).get("konten", []) if not k["gruppe"]}
+            konten = {k["name"]: k["uuid"] for k in (app.store.load_shared("dataset.json", {}) or {}).get("konten", []) if not k["gruppe"]}
             if app.ledger is not None:
                 konten.update({a.name: a.uuid for a in app.ledger.accounts.values() if not a.group})
             uuid_name = {v: k for k, v in konten.items()}
@@ -1446,7 +1458,7 @@ def make_handler(app: App):
 
         def _update_plan(self, body: dict) -> dict:
             plan_all = app.plan_all()
-            bereich = str(body.get("bereich") or (app.store.load("dataset.json", {}) or {}).get("haupt") or "")
+            bereich = str(body.get("bereich") or (app.store.load_shared("dataset.json", {}) or {}).get("haupt") or "")
             if not bereich:
                 raise ValueError("Kein Bereich angegeben.")
             plan = plan_all["bereiche"].setdefault(bereich, {})

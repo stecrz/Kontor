@@ -1231,7 +1231,14 @@ class BrowserTest(unittest.TestCase):
                     pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
                 # Im Verlauf-Fenster die Quelle wechseln (Umsätze <-> Stände), danach ein anderes Konto oeffnen
                 pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.giro")); pg.wait_for_selector("#drawer.open #h-grid")
-                pg.click("#drawer .hq-q[data-q='stand']"); pg.wait_for_selector("#drawer.open .hq-q.on[data-q='stand']", timeout=10000)
+                pg.click("#drawer .hq-q[data-q='stand']"); pg.wait_for_selector("#drawer.open .hq-q.on[data-q='stand']", timeout=1000)     # sofort
+                self.assertEqual(pg.eval_on_selector("tr[data-uuid='%s'] .k-verlauf" % F.uid("priv.giro"), "e => e.value"), "stand")          # Tabelle zieht mit
+                for _ in range(150):           # CSP verbietet wait_for_function mit Intervall -> selbst abfragen
+                    if not pg.evaluate("document.querySelector('#drawer .hq-q').disabled"):
+                        break
+                    pg.wait_for_timeout(100)
+                pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
+                pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.giro")); pg.wait_for_selector("#drawer.open .hq-q.on[data-q='stand']", timeout=10000)   # bleibt beim erneuten Oeffnen
                 pg.click("#drawer .hq-q[data-q='umsaetze']"); pg.wait_for_selector("#drawer.open .hq-q.on[data-q='umsaetze']", timeout=10000)
                 pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
                 pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.tr")); pg.wait_for_selector("#drawer.open #h-grid", timeout=10000)

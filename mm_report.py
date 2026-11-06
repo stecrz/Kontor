@@ -229,10 +229,10 @@ def balance_history(ledger: Ledger, leaves: List[Account], months: List[Tuple[in
                     h[k] = acc.balance
             if est:
                 geschaetzt[acc.uuid] = max(est)
-                warnings.append("'%s': Stände vor %s sind aus Käufen/Verkäufen auf '%s' geschätzt -- genauer: Monatsstände eintragen oder "
+                warnings.append("'%s': Kontostände vor %s sind aus Käufen/Verkäufen auf '%s' geschätzt -- genauer: Monatsstände eintragen oder "
                                 "MoneyMoneys Kontostand-Bericht importieren (Einrichtung → Bilanzpositionen & Verlauf)." % (acc.name, first_known, ledger.accounts[giro].name))
             elif mkeys and (not first_known or mkeys[0] < first_known) and abs(known.get(first_known or "", 0.0)) > 0.005:
-                warnings.append("'%s': Stände vor %s sind mit dem ersten bekannten Wert fortgeschrieben -- unter Bilanz → Verlauf "
+                warnings.append("'%s': Kontostände vor %s sind mit dem ersten bekannten Wert fortgeschrieben -- unter Bilanz → Verlauf "
                                 "lassen sich Monatsstände eintragen oder aus einem Saldenexport laden." % (acc.name, first_known or cur_key))
         else:
             ends = ledger.month_end_balances(acc.uuid, [(y, m) for (y, m) in months if "%04d-%02d" % (y, m) < cur_key])
