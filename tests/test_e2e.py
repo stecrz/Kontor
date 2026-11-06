@@ -280,23 +280,41 @@ class CoreTests(unittest.TestCase):
             mm_update._get("https://evil.example/x.zip")
 
     def test_update_check_uses_archive_urls(self):
-        """Archiv-Adressen zeigen auf github.com/.../archive (nicht auf die API-Zipball-Adresse, die 415 liefert)."""
+        """Quelle ist VERSION im Hauptzweig (Tags nicht noetig); Archiv ueber github.com/.../archive (nicht API-Zipball, 415).
+        Ohne lesbare VERSION: Release, sonst hoechster Tag."""
         calls = []
 
         def fake_get(url, accept="application/vnd.github+json"):
             calls.append(url)
-            if url.endswith("/releases/latest"):
-                raise urllib.error.HTTPError(url, 404, "nf", {}, None)
-            if url.endswith("/tags"):
-                return json.dumps([{"name": "v9.9.9", "zipball_url": "https://api.github.com/repos/x/y/zipball/refs/tags/v9.9.9"}]).encode()
+            if url.endswith("/main/VERSION"):
+                return b"9.9.9\n"
+            if url.endswith("/main/CHANGELOG.md"):
+                return "# Änderungen\n\n## 9.9.9\n- Neu A\n- Neu B\n\n## 9.9.8\n- alt\n".encode()
             raise AssertionError(url)
         old = mm_update._get; mm_update._get = fake_get
         try:
             info = mm_update.check("stecrz/Kontor")
         finally:
             mm_update._get = old
-        self.assertEqual(info["verfuegbar"], "v9.9.9"); self.assertTrue(info["neuer"]); self.assertEqual(info["quelle"], "tag")
-        self.assertEqual(info["zip"], "https://github.com/stecrz/Kontor/archive/refs/tags/v9.9.9.zip")
+        self.assertEqual(info["verfuegbar"], "9.9.9"); self.assertTrue(info["neuer"]); self.assertEqual(info["quelle"], "main")
+        self.assertEqual(info["zip"], "https://github.com/stecrz/Kontor/archive/refs/heads/main.zip")
+        self.assertEqual(info["notizen"], "- Neu A\n- Neu B")
+
+        def fake_get2(url, accept="application/vnd.github+json"):
+            if url.endswith("/main/VERSION"):
+                raise urllib.error.HTTPError(url, 404, "nf", {}, None)
+            if url.endswith("/releases/latest"):
+                raise urllib.error.HTTPError(url, 404, "nf", {}, None)
+            if url.endswith("/tags"):
+                return json.dumps([{"name": "v9.9.10"}, {"name": "v9.9.9"}, {"name": "v10.0.0"}]).encode()
+            raise AssertionError(url)
+        mm_update._get = fake_get2
+        try:
+            info = mm_update.check("stecrz/Kontor")
+        finally:
+            mm_update._get = old
+        self.assertEqual(info["verfuegbar"], "v10.0.0"); self.assertEqual(info["quelle"], "tag")
+        self.assertEqual(info["zip"], "https://github.com/stecrz/Kontor/archive/refs/tags/v10.0.0.zip")
         self.assertEqual(mm_update.archive_url("a/b", "main", "heads"), "https://github.com/a/b/archive/refs/heads/main.zip")
         self.assertIsNone(mm_update.install_via_git(restart=False)) if not os.path.isdir(os.path.join(mm_update.HERE, ".git")) else None
 

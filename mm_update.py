@@ -64,28 +64,53 @@ def archive_url(repo: str, ref: str, kind: str = "tags") -> str:
     return "https://github.com/%s/archive/refs/%s/%s.zip" % (repo, kind, ref)
 
 
+def _changelog_section(text: str, version: str) -> str:
+    """Abschnitt '## <version>' aus CHANGELOG.md (fuer die Anzeige der Neuerungen)."""
+    out, on = [], False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if on:
+                break
+            on = line[3:].strip().lstrip("v") == version.lstrip("v")
+            continue
+        if on:
+            out.append(line)
+    return "\n".join(out).strip()[:4000]
+
+
 def check(repo: str) -> Dict[str, object]:
-    """Neueste Version auf GitHub (Release, sonst Tag, sonst VERSION im Hauptzweig)."""
+    """Neueste Version auf GitHub: VERSION im Hauptzweig (eine kleine Datei, kein API-Limit); nur wenn das
+    nicht geht, Release bzw. Tag. Tags sind damit keine Voraussetzung mehr fuer ein Update."""
     cur = current_version()
     out: Dict[str, object] = {"aktuell": cur, "verfuegbar": None, "neuer": False, "notizen": "", "quelle": "", "fehler": None}
     log.info("Update-Prüfung: installiert %s, Repo %s", cur, repo)
     try:
         try:
-            rel = json.loads(_get("https://api.github.com/repos/%s/releases/latest" % repo).decode("utf-8"))
-            tag = str(rel.get("tag_name") or "")
-            out.update({"verfuegbar": tag, "notizen": (rel.get("body") or "")[:4000], "quelle": "release", "zip": archive_url(repo, tag)})
+            v = _get("https://raw.githubusercontent.com/%s/main/VERSION" % repo, "text/plain").decode("utf-8").strip()
+            if not re.match(r"^v?\d+(\.\d+)*$", v):
+                raise ValueError("VERSION im Hauptzweig unlesbar: %r" % v[:40])
+            out.update({"verfuegbar": v, "quelle": "main", "zip": archive_url(repo, "main", "heads")})
+            try:
+                cl = _get("https://raw.githubusercontent.com/%s/main/CHANGELOG.md" % repo, "text/plain").decode("utf-8", "replace")
+                out["notizen"] = _changelog_section(cl, v)
+            except Exception as e:      # Neuerungen sind nur Beiwerk
+                log.debug("CHANGELOG nicht lesbar: %s", e)
         except urllib.error.HTTPError as e:
-            if e.code != 404:
+            if e.code not in (404, 403):
                 raise
-            log.debug("Kein Release (404), prüfe Tags")
-            tags = json.loads(_get("https://api.github.com/repos/%s/tags" % repo).decode("utf-8"))
-            if tags:
-                tag = str(tags[0]["name"])
+            log.debug("VERSION im Hauptzweig nicht lesbar (%s), prüfe Releases/Tags", e.code)
+            try:
+                rel = json.loads(_get("https://api.github.com/repos/%s/releases/latest" % repo).decode("utf-8"))
+                tag = str(rel.get("tag_name") or "")
+                out.update({"verfuegbar": tag, "notizen": (rel.get("body") or "")[:4000], "quelle": "release", "zip": archive_url(repo, tag)})
+            except urllib.error.HTTPError as e2:
+                if e2.code != 404:
+                    raise
+                tags = json.loads(_get("https://api.github.com/repos/%s/tags" % repo).decode("utf-8"))
+                if not tags:
+                    raise
+                tag = max((str(t["name"]) for t in tags), key=_vtuple)
                 out.update({"verfuegbar": tag, "quelle": "tag", "zip": archive_url(repo, tag)})
-            else:
-                log.debug("Keine Tags, lese VERSION aus main")
-                v = _get("https://raw.githubusercontent.com/%s/main/VERSION" % repo, "text/plain").decode("utf-8").strip()
-                out.update({"verfuegbar": v, "quelle": "main", "zip": archive_url(repo, "main", "heads")})
         out["neuer"] = _vtuple(str(out["verfuegbar"])) > _vtuple(cur)
         log.info("Update-Prüfung: verfügbar %s (%s)%s", out["verfuegbar"], out["quelle"], " -- neuer als installiert" if out["neuer"] else "")
     except urllib.error.HTTPError as e:

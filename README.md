@@ -35,7 +35,7 @@ Voraussetzungen: macOS, MoneyMoney, Kommandozeilen-Werkzeuge von Apple (`xcode-s
 2. Der Browser öffnet `http://127.0.0.1:8765/`: Passwort festlegen, dann **Einrichtung** – modulare Bausteine, die sich einzeln und in beliebiger Reihenfolge einrichten lassen: Verbindung zu MoneyMoney, Bereiche (Pflicht), Konten (Bereich, Position, Verlauf), Kategorien & Zuordnen, Regeln, Immobilien, Planung, Steuer, Belege, Betrieb. Jeder Baustein zeigt, ob er eingerichtet ist; Hilfe-Knöpfe (?) erklären jedes Feld. Danach „Bericht erstellen“.
 3. Beim ersten Zugriff fragt macOS, ob das Programm MoneyMoney steuern darf (Automation) – erlauben. Für „MoneyMoney aktualisieren“ zusätzlich Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen.
 
-`install.sh` ist jederzeit wiederholbar: Es ersetzt den Dienst, lässt Datenordner und Einstellungen unangetastet. Updates gehen aus der Oberfläche (Updates → installieren; lädt das Archiv des neuesten Tags von github.com), per `python3 kontor.py update --installieren` oder mit der Terminal-Zeile von oben. Entfernen: `python3 kontor.py uninstall` oder `Deinstallieren.command` (fragt, ob Daten und Schlüssel gelöscht werden sollen).
+`install.sh` ist jederzeit wiederholbar: Es ersetzt den Dienst, lässt Datenordner und Einstellungen unangetastet. Updates gehen aus der Oberfläche (Updates → installieren; lädt den aktuellen Stand des Hauptzweigs von github.com, erkennbar an der Datei `VERSION`), per `python3 kontor.py update --installieren` oder mit der Terminal-Zeile von oben. Entfernen: `python3 kontor.py uninstall` oder `Deinstallieren.command` (fragt, ob Daten und Schlüssel gelöscht werden sollen).
 
 Der Dienst startet beim Anmelden, läuft dauerhaft und startet nach Abstürzen neu (launchd, Label `de.kontor.dienst`).
 
