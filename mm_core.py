@@ -102,12 +102,21 @@ def merged_config(cfg: Optional[dict]) -> dict:
     return out
 
 
-def version() -> str:
+def version_on_disk() -> str:
+    """Version laut Datei VERSION im Programmordner (aendert sich bei git pull / Update)."""
     try:
         with open(os.path.join(HERE, "VERSION"), encoding="utf-8") as f:
             return f.read().strip()
     except OSError:
         return "0"
+
+
+LOADED_VERSION = version_on_disk()      # Version des Codes, der in diesem Prozess tatsaechlich laeuft
+
+
+def version() -> str:
+    """Version des laufenden Codes (nicht der Datei -- die kann nach einem Update schon neuer sein)."""
+    return LOADED_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -320,8 +329,6 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         ref("Wert %s: Ziel" % n, b.get("zielkonto") or b.get("beteiligungskonto", ""), want_offline=True, group_ok=False)
         ref("Wert %s: Quelle" % n, b.get("gruppe") or b.get("quellkonto", ""), want_group=bool(b.get("gruppe")))
     bil = config.get("bilanz", {}) or {}
-    if not (config.get("bereiche") or []):
-        add("hinweis", "Keine Bereiche gewählt -- jede Kontengruppe der obersten Ebene wird als Bereich ausgewertet.")
     for b in config.get("bereiche") or []:
         if not isinstance(b, dict):
             continue
@@ -704,7 +711,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
              bridge_factory: Callable[[bool], Bridge] = Bridge, with_report: bool = True,
              categories: Optional[List[dict]] = None) -> dict:
     if not RUN_LOCK.acquire(blocking=False):
-        return {"status": "laeuft_bereits", "text": "Ein Lauf ist bereits aktiv."}
+        return {"status": "laeuft_bereits", "text": "Ein Abgleich läuft bereits."}
     try:
         state = store.load("state.json", {}) or {}
         bridge = bridge_factory(dry)

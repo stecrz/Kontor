@@ -38,7 +38,7 @@ import mm_update
 from mm_belege import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, is_running, refresh_moneymoney
 from mm_core import (RUN_LOCK, account_tree, bereiche_for, build_report, check_config, diagnose, export_package, fetch, immo_for_plan,
-                     immo_results, import_package, merged_config, run_once, unavailable_text, version)
+                     immo_results, import_package, merged_config, run_once, unavailable_text, version, version_on_disk)
 from mm_model import Ledger
 from mm_report import ROLE_LABELS, ROLES, apply_plan
 from mm_store import Store
@@ -92,6 +92,7 @@ class App:
         self.rebuild_reasons: List[str] = []
         self.bericht: dict = {"stand": None, "dauer": None, "fehler": None, "grund": None}
         self.check_lock = threading.Lock()
+        self.restart_allowed = False        # nur der echte Dienst (serve) startet sich bei neuem Code selbst neu
         self.mm_probe: Tuple[float, Optional[bool]] = (0.0, None)     # (Zeitpunkt, gesperrt?)
         self.mm_retry_at: Optional[float] = None
 
@@ -238,7 +239,7 @@ class App:
     def do_run(self, dry: Optional[bool], force: bool, with_report: bool = True) -> dict:
         with self.lock:
             if self.running:
-                return {"status": "laeuft_bereits", "text": "Ein Lauf ist bereits aktiv."}
+                return {"status": "laeuft_bereits", "text": "Ein Abgleich läuft bereits."}
             self.running = True
         try:
             d = self.config.get("probelauf", True) if dry is None else dry
@@ -265,9 +266,25 @@ class App:
         finally:
             self.running = False
 
+    def code_changed(self) -> Optional[str]:
+        """Neue Version im Programmordner (git pull, Update, Dateien ersetzt)? Liefert die neue Versionsnummer."""
+        disk = version_on_disk()
+        return disk if disk and disk != version() else None
+
+    def restart_if_code_changed(self) -> bool:
+        new = self.code_changed()
+        if not new or self.running or self.bericht_status().get("laeuft") or not self.restart_allowed:
+            return False
+        log.info("Neue Version %s im Programmordner (laufend %s) -- Dienst startet neu", new, version())
+        self.stop.set()
+        restart_process()
+        return True
+
     def scheduler(self) -> None:
         while not self.stop.is_set():
             try:
+                if self.restart_if_code_changed():
+                    return
                 self.reload_config_if_changed()
                 z = self.config.get("zeitplan", {}) or {}
                 interval = max(5, int(z.get("intervall_minuten", 30))) * 60
@@ -386,6 +403,7 @@ class App:
             "letzter_lauf": st.get("letzter_lauf"),
             "letztes_ergebnis": self.last_result,
             "bericht": self.bericht_status(),
+            "neustart_ausstehend": self.code_changed(),
             "update": self.update_info,
             "touchid": mm_auth.touchid_available() and loopback,
             "lokal": loopback,
@@ -605,15 +623,16 @@ def make_handler(app: App):
 
         def _static(self, path: str) -> None:
             name = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/app.css": "app.css",
-                    "/icon.svg": "icon.svg", "/manifest.webmanifest": "manifest.webmanifest", "/sw.js": "sw.js"}.get(path)
+                    "/icon.svg": "icon.svg", "/icon-180.png": "icon-180.png", "/icon-512.png": "icon-512.png",
+                    "/manifest.webmanifest": "manifest.webmanifest", "/sw.js": "sw.js"}.get(path)
             fp = os.path.join(WEB_DIR, name) if name else None
             if not fp or not os.path.exists(fp):
                 return self._raw(404, b"nicht gefunden", "text/plain; charset=utf-8")
             with open(fp, "rb") as f:
                 body = f.read()
-            if name == "sw.js":
+            if name in ("sw.js", "index.html"):
                 body = body.replace(b"__VERSION__", version().encode("utf-8"))
-            ctype = {"html": "text/html; charset=utf-8", "js": "application/javascript; charset=utf-8",
+            ctype = {"html": "text/html; charset=utf-8", "js": "application/javascript; charset=utf-8", "png": "image/png",
                      "css": "text/css; charset=utf-8", "svg": "image/svg+xml", "webmanifest": "application/manifest+json"}[name.rsplit(".", 1)[1]]
             self._raw(200, body, ctype, cache="no-cache")
 
@@ -943,9 +962,9 @@ def make_handler(app: App):
             if path == "/api/run":
                 dry = body.get("probelauf")
                 if dry is False and not local:
-                    return self._json(403, {"fehler": "Scharfe Läufe nur von diesem Mac aus."})
+                    return self._json(403, {"fehler": "Buchen nur von diesem Mac aus."})
                 if app.running:
-                    return self._json(409, {"fehler": "Ein Lauf ist bereits aktiv."})
+                    return self._json(409, {"fehler": "Ein Abgleich läuft bereits."})
                 threading.Thread(target=app.do_run, args=(dry, bool(body.get("force", True))), daemon=True).start()
                 return self._json(202, {"gestartet": True})
             if path == "/api/bericht":
@@ -1522,6 +1541,16 @@ def make_handler(app: App):
     return H
 
 
+def restart_process() -> None:
+    """Prozess durch sich selbst ersetzen (neuer Code). Gleiche Prozessnummer, launchd bemerkt nichts;
+    offene Sockets und die Sperrdatei werden dabei geschlossen (nicht vererbbar)."""
+    logging.shutdown()
+    try:
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except OSError:  # pragma: no cover - dann eben beenden; launchd (KeepAlive) startet neu
+        os._exit(0)
+
+
 class _Server(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
@@ -1567,6 +1596,7 @@ def serve(app: App) -> None:
             servers.append((scheme, extra, srv2))
         except OSError as e:
             log.error("Adresse %s:%d nicht nutzbar (%s) -- ist Tailscale verbunden? Oberfläche nur auf 127.0.0.1", extra, port, e)
+    app.restart_allowed = True
     threading.Thread(target=app.scheduler, daemon=True).start()
     log.info("Kontor %s: Oberfläche unter %s (Ablage %s)", version(),
              ", ".join("%s://%s:%d/" % (sc, h, port) for sc, h, _ in servers), "verschluesselt" if app.store.encrypted else "KLARTEXT")

@@ -1065,6 +1065,26 @@ class FeatureTests(_AppBase):
         self.assertEqual(p["Giro"]["2026-01"], -12.5)
         self.assertEqual(_parse_balance_csv("nur text"), {})
 
+    def test_icon_und_neustart_bei_neuem_code(self):
+        import mm_app
+        code, body, hdr = self.call("/icon-180.png", raw=True)
+        self.assertEqual(code, 200); self.assertEqual(hdr["Content-Type"], "image/png"); self.assertTrue(body.startswith(b"\x89PNG"))
+        code, body, hdr = self.call("/", raw=True)
+        self.assertIn(("/icon.svg?v=%s" % mm_core.version()).encode(), body); self.assertNotIn(b"__VERSION__", body)
+        code, body, hdr = self.call("/icon.svg", raw=True)
+        self.assertNotIn(b"c2pa", body); self.assertIn(b"#0a7aff", body)
+        self.assertIsNone(self.app.code_changed())
+        old = mm_app.version_on_disk
+        mm_app.version_on_disk = lambda: "99.0.0"
+        try:
+            self.assertEqual(self.app.code_changed(), "99.0.0")
+            self.assertFalse(self.app.restart_if_code_changed())      # Testserver: kein Selbst-Neustart
+            self.login()
+            code, st = self.call("/api/status")
+            self.assertEqual(st["neustart_ausstehend"], "99.0.0")
+        finally:
+            mm_app.version_on_disk = old
+
     def test_sicherung_offline_zuruecksetzen(self):
         import hashlib
         import mm_auth
@@ -1209,6 +1229,15 @@ class BrowserTest(unittest.TestCase):
                 for _ in range(2):          # "Verlauf..." laesst sich wiederholt oeffnen
                     pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.depot")); pg.wait_for_selector("#drawer.open #h-grid")
                     pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
+                # Im Verlauf-Fenster die Quelle wechseln (Umsätze <-> Stände), danach ein anderes Konto oeffnen
+                pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.giro")); pg.wait_for_selector("#drawer.open #h-grid")
+                pg.click("#drawer .hq-q[data-q='stand']"); pg.wait_for_selector("#drawer.open .hq-q.on[data-q='stand']", timeout=10000)
+                pg.click("#drawer .hq-q[data-q='umsaetze']"); pg.wait_for_selector("#drawer.open .hq-q.on[data-q='umsaetze']", timeout=10000)
+                pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
+                pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.tr")); pg.wait_for_selector("#drawer.open #h-grid", timeout=10000)
+                self.assertIn("Broker Giro", pg.query_selector("#drawer").inner_text())
+                pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
+                self.assertTrue(pg.query_selector("#k-show-inactive").is_checked())        # inaktive standardmaessig sichtbar
                 self.assertLessEqual(pg.evaluate("document.querySelector('.acct-table').scrollWidth"), pg.evaluate("document.querySelector('#main').clientWidth"))   # passt in die Breite
                 pg.select_option("tr[data-uuid='%s'] .k-rolle" % F.uid("priv.immo"), "immobilien")
                 pg.click("#save-konten"); pg.wait_for_selector("#findings-k2 .ok", timeout=20000); pg.wait_for_timeout(300)
@@ -1347,12 +1376,15 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertEqual(pg.query_selector(".srow .n").inner_text().strip(), "1")      # geordnete Liste, Schritt 1 offen
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_leer.png"), full_page=True)
                 pg.click(".srow a[href='#einrichtung/verbindung'] button"); pg.wait_for_selector(".steps")
-                self.assertIn("Wofür", pg.query_selector("#main").inner_text())              # Berechtigung wird erklaert
+                self.assertIn("Wofür", pg.evaluate("document.querySelector('.steps .hq').dataset.tip"))      # Erklaerung im Hilfe-Symbol
+                self.assertNotIn("Wofür", pg.query_selector("#main").inner_text())                            # nicht doppelt im Text
                 pg.click("#w-check")
                 self.assertTrue(pg.evaluate("document.querySelector('#w-check').disabled || document.querySelector('#w-check').classList.contains('busy') || !!document.querySelector('#w-findings .ok')"))
                 pg.wait_for_selector("#w-findings .ok")
                 self.assertIn("Konten gelesen", pg.query_selector("#w-findings").inner_text())
                 self.assertNotIn("Belegordner", pg.query_selector("#w-findings").inner_text())
+                self.assertNotIn("Keine Bereiche", pg.query_selector("#w-findings").inner_text())
+                self.assertTrue(pg.query_selector(".steps a[href='#einrichtung/bereiche'] button"))              # Knopf statt Link
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_verbindung.png"), full_page=True)
                 # Tooltip bleibt im Fenster (auch ganz oben)
                 pg.hover(".steps .hq"); pg.wait_for_selector(".tip")
@@ -1374,11 +1406,17 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertTrue(beta.query_selector(".b-k[value^='%s']" % F.uid("shs.kk")).is_checked())
                 pg.evaluate("[...document.querySelectorAll('#bereiche .item')].find(i => i.querySelector('.b-name').value === 'Beta GbR').querySelector('.del').click()")   # Beta GbR nicht als Bereich
                 pg.wait_for_timeout(100)
+                self.assertNotIn("Kennung", pg.query_selector("#bereiche").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_bereiche.png"), full_page=True)
-                pg.click("#save-bereiche"); pg.wait_for_selector("#findings-b .ok", timeout=20000); pg.wait_for_timeout(300)
-                self.assertIn("Gespeichert", pg.query_selector("#findings-b").inner_text())
+                # Ungespeichert weiter: Rueckfrage, "Speichern und weiter" speichert und wechselt die Seite
+                dialogs = []
+                pg.once("dialog", lambda dlg: (dialogs.append(dlg.message), dlg.accept()))
+                pg.click("button[data-next='#einrichtung/konten']"); pg.wait_for_selector("#save-konten", timeout=20000)
+                self.assertTrue(dialogs and "ungespeicherte" in dialogs[0])
                 cfg0 = store.load("config.json")
                 self.assertEqual(sorted(b["name"] for b in cfg0["bereiche"]), ["Alpha GbR", "Privat"]); self.assertEqual(sum(1 for b in cfg0["bereiche"] if b["haupt"]), 1)
+                self.assertTrue(all(b["id"] for b in cfg0["bereiche"]))
+                pg.goto("http://127.0.0.1:%d/#einrichtung/bereiche" % port); pg.wait_for_selector("#save-bereiche")
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Alpha GbR"][0]["anteil"], 0.49)       # Prozent -> Anteil
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Privat"][0]["art"], "privat")
                 # Paket laden mit Zuordnung

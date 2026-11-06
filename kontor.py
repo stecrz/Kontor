@@ -83,6 +83,23 @@ def setup_logging(quiet: bool) -> None:
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S")
     path = os.path.join(DATA_DIR, "kontor.log")
     fh = logging.handlers.RotatingFileHandler(path, maxBytes=5_000_000, backupCount=5, encoding="utf-8")
+    # Neue Version: frische Protokolldatei beginnen (die alte bleibt als kontor.log.1 usw.)
+    marker = os.path.join(DATA_DIR, "log.version")
+    try:
+        with open(marker, encoding="utf-8") as f:
+            last = f.read().strip()
+    except OSError:
+        last = ""
+    if last != version() and os.path.exists(path) and os.path.getsize(path) > 0:
+        try:
+            fh.doRollover()
+        except OSError:
+            pass
+    try:
+        with open(marker, "w", encoding="utf-8") as f:
+            f.write(version())
+    except OSError:
+        pass
     fh.setFormatter(fmt)
     fh.setLevel(logging.DEBUG)
     root = logging.getLogger()

@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.5.0
+- Dienst lädt neue Versionen selbst: liegt im Programmordner eine neue Version (Update, git pull), startet er sich neu, sobald kein Abgleich und keine Berechnung läuft; die geöffnete Seite lädt sich danach neu. Vorher lief nach einem Update der alte Code mit der neuen Oberfläche weiter (Ursache für Hänger beim Verlauf und die nicht funktionierende Update-Prüfung).
+- Protokoll beginnt bei jeder neuen Version eine frische Datei (ältere bleiben als kontor.log.1 … .5; je höchstens 5 MB).
+- Neues Symbol: weißes K auf Blau mit weißem Rand, auch als Symbol für den iPhone-Home-Bildschirm.
+- Verständlichere Begriffe: „Abgleich“ statt „Lauf“, „Testmodus“ statt „Probelauf“, „Jetzt buchen“ statt „Scharf ausführen“; Status unten links kompakt mit Erklärung.
+- Einrichtung: Verbindung ohne verwirrende Hinweise (Bereiche, Belegordner), Erklärung der Berechtigung nur im Hilfe-Symbol, Knöpfe statt Links; Bereiche ohne „Kennung“ (wird intern vergeben), Hauptbereich klar erklärt.
+- Ungespeicherte Änderungen: „Weiter“ fragt „Speichern und weiter?“, Wegnavigieren fragt „verwerfen?“.
+- Bilanzpositionen & Verlauf: inaktive Konten werden standardmäßig angezeigt.
+
 ## 3.4.1
 - Update-Prüfung liest die Version direkt aus dem Hauptzweig (Datei VERSION) statt aus Tags: neue Versionen werden erkannt, sobald sie gepusht sind; Neuerungen kommen aus CHANGELOG.md. Fallback auf Releases bzw. den höchsten Tag.
 

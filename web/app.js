@@ -19,15 +19,15 @@ const ROLE_OPTS = [['liquiditaet', 'Liquidität'], ['wertpapiere', 'Wertpapiere 
 // Hilfetexte (Tooltips). Schluessel werden mit hq('schluessel') eingeblendet.
 const H = {
   bereich: 'Ein Bereich ist eine Menge von Konten, die zusammen bilanziert werden – meist eine Kontengruppe der obersten Ebene (Privat, eine Gesellschaft). Er bekommt eigene Bilanz, Kapitalfluss, Planung und Steuerübersicht. Die Gruppierung in MoneyMoney ist dafür keine Voraussetzung: Konten lassen sich frei zuordnen.',
-  haupt: 'Der Hauptbereich ist beim Öffnen vorausgewählt und gilt in der Steuerübersicht als „privat“. Vorschlag: der Bereich, dessen Name nach keiner Firma klingt.',
+  haupt: 'Es gibt genau einen Hauptbereich – in der Regel du privat. Er ist beim Öffnen von Übersicht, Bilanz, Kapitalfluss und Planung vorausgewählt, die anderen Bereiche erscheinen dort als „weitere Bereiche“, und in der Steuerübersicht gilt er als Privatperson.',
   anteil: 'Dein Anteil an dieser Gesellschaft in Prozent (z. B. 49). Damit rechnet die Steuerübersicht deinen Teil des Ergebnisses, und die Beteiligungsregel bewertet dein Beteiligungskonto. Leer = 100 %.',
   gruppenwahl: 'Eine Gruppe wählen heißt: alle Konten darunter gehören dazu – auch solche, die später in MoneyMoney in dieser Gruppe angelegt werden. Einzelne Konten lassen sich abwählen; dann gilt nicht mehr die Gruppe, sondern die verbleibenden Konten einzeln.',
   anzeige: '„automatisch“ blendet Konten aus, die seit N Monaten keinen Bestand und keinen Umsatz haben. „ausblenden“ / „immer anzeigen“ überschreibt das je Konto. Ausgeblendete Konten bleiben in Summen und Verlauf enthalten.',
   position_kurz: 'Wo das Konto in der Bilanz erscheint (Liquidität, Wertpapiere, Immobilien, Darlehen …) und wie seine Umsätze im Kapitalfluss zählen. Vorschlag aus Gruppenname und Kontotyp.',
   verlauf_kurz: 'Woher die Monatsstände kommen: „Umsätze“ = vom aktuellen Saldo rückwärts gerechnet (Bankkonten). „Stände“ = Kontor merkt sich monatlich den Stand und du ergänzst ältere Werte (Depots, Konten ohne Umsatzhistorie).',
-  berechtigung: 'macOS fragt beim ersten Zugriff, ob Kontor (angezeigt als „python3“ oder „Terminal“) MoneyMoney steuern darf. Das ist der Lesezugriff auf Konten, Umsätze und Kategorien über die Skript-Schnittstelle von MoneyMoney – Zugangsdaten zu Banken sieht Kontor nie. Ohne diese Freigabe kann Kontor nichts auswerten. Buchungen schreibt Kontor nur in Offline-Konten, die du in Regeln benennst.',
+  berechtigung: 'Wofür: Kontor liest über die Skript-Schnittstelle von MoneyMoney Konten, Umsätze und Kategorien – nur lesend; Zugangsdaten zu Banken sieht Kontor nie. Ohne diese Freigabe kann Kontor nichts auswerten. Geschrieben wird nur in Offline-Konten, die du später in Regeln benennst. Erscheint die Abfrage nicht: Systemeinstellungen → Datenschutz & Sicherheit → Automation → python3 → MoneyMoney.',
   position: 'Die Bilanzposition eines Kontos. Sie bestimmt, wo das Konto in der Bilanz erscheint und wie Umsätze im Kapitalfluss behandelt werden (Liquidität: Einnahmen/Ausgaben; Darlehen: Zins/Tilgung; Wertpapiere, Immobilien, Beteiligungen, Sachwerte: Umschichtung/Bewertung). Vorschlag aus Gruppenname und Kontotyp, hier überschreibbar.',
-  verlauf: '„Umsätze“: der Saldoverlauf wird aus dem aktuellen Saldo rückwärts über die Umsätze gerechnet (Startsalden spielen keine Rolle). „Stände“: für Depots und Konten ohne Umsatzhistorie – Kontor zeichnet ab dem ersten Lauf monatlich den Stand auf; ältere Monatsstände kannst du eintragen oder aus einem Saldenexport laden.',
+  verlauf: '„Umsätze“: der Saldoverlauf wird aus dem aktuellen Saldo rückwärts über die Umsätze gerechnet (Startsalden spielen keine Rolle). „Stände“: für Depots und Konten ohne Umsatzhistorie – Kontor zeichnet ab dem ersten Abgleich monatlich den Stand auf; ältere Monatsstände kannst du eintragen oder aus einem Saldenexport laden.',
   zuordnen: 'Hier landen alle Umsätze, die weder in Kontor noch in MoneyMoney eine Kategorie haben. Zuordnung je Gegenpartei; „Regel“ merkt sich die Zuordnung für künftige Umsätze. Kategorien tippen: neue werden angelegt (Oberkategorie / Unterkategorie).',
   kontor_kategorien: 'Reihenfolge: manuelle Zuordnung > eigene Regel > gelernte Regel > Kategorie aus MoneyMoney. Gelernte Regeln entstehen aus Gegenpartei (IBAN oder Name, ggf. plus Zweckanfang), wenn mindestens 90 % der bisherigen Umsätze dieser Gegenpartei dieselbe Kategorie haben.',
   mm_ueberschreiben: 'Standard: Umsätze mit MoneyMoney-Kategorie behalten sie. Eingeschaltet: Kontor-Regeln gelten auch dort (MoneyMoney selbst wird nicht verändert).',
@@ -35,7 +35,9 @@ const H = {
   verlauf_import: 'Datei mit Monats- oder Tagesständen. Spalten werden automatisch erkannt; Kontonamen aus der Datei ordnest du den Konten in Kontor zu (Vorschlag per Namensähnlichkeit). Mehrere Werte je Monat: der letzte zählt.',
   inaktiv: 'Konten ohne Bestand und ohne Umsatz in den letzten N Monaten (z. B. Altdaten) werden ausgeblendet, bleiben aber in der Historie enthalten. 0 = nie ausblenden.',
   illiquide: 'Illiquide Positionen zählen nicht zum liquiden Nettovermögen (Reichweite, Unabhängigkeit).',
-  probelauf: 'Im Probelauf werden Buchungen nur vorgeschlagen, nicht in MoneyMoney angelegt. Zum Buchen „Scharf ausführen“ oder den Probelauf abschalten.',
+  probelauf: 'Im Testmodus schlägt Kontor die Buchungen aus deinen Regeln (z. B. Darlehenszinsen) nur vor und legt nichts in MoneyMoney an. Zum Anlegen unter „Buchungen“ auf „Jetzt buchen“ klicken oder den Testmodus abschalten.',
+  abgleich: 'Abgleich: Kontor liest regelmäßig (Standard alle 30 Minuten) Konten und Umsätze aus MoneyMoney, wendet deine Regeln an und aktualisiert alle Auswertungen. Ist MoneyMoney aus oder gesperrt, versucht Kontor es jede Minute erneut. Testmodus: Buchungen aus Regeln werden nur vorgeschlagen.',
+  kennung: 'Interne Kennung des Bereichs – wird automatisch vergeben und nirgends angezeigt.',
   intervall: 'Der Dienst liest alle N Minuten MoneyMoney (wenn es läuft und entsperrt ist) und führt die Regeln aus – nur wenn sich etwas geändert hat.',
   mm_refresh: 'Kontor klickt in MoneyMoney den Menüpunkt „Alle Konten aktualisieren“. Dafür braucht das Programm, das Kontor ausführt, die Berechtigung „Bedienungshilfen“ (Systemeinstellungen → Datenschutz & Sicherheit).',
   mm_cat: 'Erlaubt, einzelnen Umsätzen aus Kontor eine Kategorie zuzuweisen. Ändert nur das Kategoriefeld des gewählten Umsatzes – nie Regeln, nie andere Umsätze.',
@@ -52,7 +54,7 @@ const H = {
   zinsmodell: 'Jahresbasis: Zins = Satz × Stand am 31.12. des Vorjahres, 1/12 je Monat (typisch für private Darlehen mit jährlicher Abrechnung). Restschuld monatlich: Satz/12 × Stand des Vormonats (Bankdarlehen).',
   satz: 'Zinssätze mit Gültigkeitsbeginn, z. B. „2026-01-01: 3,3; 2028-01-01: 3,0“.',
   basis_override: 'Erzwingt die Zinsbasis für ein Jahr (z. B. wenn der Stand am 31.12. nicht der vertraglichen Basis entspricht).',
-  beteiligung: 'Zielkonto = Anteil × Nettowert der gewählten Kontengruppe (Summe aller Konten darin). Wird bei jedem Lauf nachgeführt, wenn die Abweichung über der Schwelle liegt.',
+  beteiligung: 'Zielkonto = Anteil × Nettowert der gewählten Kontengruppe (Summe aller Konten darin). Wird bei jedem Abgleich nachgeführt, wenn die Abweichung über der Schwelle liegt.',
   spiegel: 'Zielkonto = Faktor × Saldo des Quellkontos. Für Kapitalkonten: Faktor −1 spiegelt ein negatives Kapitalkonto der Gesellschaft als positiven Wert im Privatbereich.',
   methode: 'Ø 12/6 Monate: Durchschnitt der abgeschlossenen Monate. Vorjahresmonat: derselbe Monat ein Jahr zuvor. Fester Betrag je Monat. Jahresbetrag/12. MoneyMoney-Budget der Kategorie. Keine = 0.',
   inflation: 'Ausgaben steigen standardmäßig mit dieser Rate. Mit „inflationsbereinigt“ werden Planwerte in heutiger Kaufkraft gezeigt.',
@@ -277,10 +279,15 @@ function mmState(st) {
   if (m.gesperrt === false) return {cls: 'ok', text: 'MoneyMoney läuft'};
   return {cls: 'ok', text: 'MoneyMoney läuft'};
 }
+function hasRules() { const c = S.CFG || {}; return !!((c.darlehen || []).length || (c.beteiligungen || []).length || (c.saldo_spiegel || []).length); }
 function statusMini() {
   const st = S.STATUS; if (!st) return;
-  const l = st.letzter_lauf, mm = mmState(st), b = st.bericht || {};
-  $('#status-mini').innerHTML = `<span class="dot ${mm.cls}"></span>${mm.text}<br>${st.probelauf ? '<b>Probelauf</b>' : '<b>Scharf</b>'} · nächster Lauf ${st.dienst.naechster_lauf || '–'}<br>${b.laeuft ? '<span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Bericht wird neu gebaut …' : (l ? 'letzter Lauf ' + l.zeit.slice(5) + (l.fehler ? ' ⚠' : '') : 'noch kein Lauf')}`;
+  const mm = mmState(st), b = st.bericht || {}, l = st.letzter_lauf;
+  const stand = S.DATA && S.DATA.erstellt ? S.DATA.erstellt.slice(11, 16) : null;
+  let line2 = b.laeuft ? '<span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Auswertung wird neu berechnet …'
+    : (stand ? 'Stand ' + stand : 'noch keine Auswertung') + (st.dienst.automatisch ? ' · nächster Abgleich ' + (st.dienst.naechster_lauf || '–') : '');
+  if (st.neustart_ausstehend) line2 = '<span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Version ' + esc(st.neustart_ausstehend) + ' wird geladen …';
+  $('#status-mini').innerHTML = `<span class="dot ${mm.cls}"></span>${mm.text} ${hq('abgleich')}<br>${line2}${hasRules() && st.probelauf ? '<br><b>Testmodus</b> – Regeln buchen nichts' : ''}${l && l.fehler ? '<br><a href="#buchungen">⚠ letzter Abgleich mit Fehler</a>' : ''}`;
   const upd = $('#nav a[href="#updates"]'); if (upd) { let d = upd.querySelector('.nbadge'); const neu = !!(st.update && st.update.neuer); if (neu && !d) { d = document.createElement('span'); d.className = 'nbadge'; d.title = 'Update ' + st.update.verfuegbar + ' verfügbar'; upd.appendChild(d); } else if (!neu && d) d.remove(); }
   if (!st.ablage.verschluesselt) banner('Daten liegen unverschlüsselt (Verschlüsselung nicht verfügbar).', 'err');
   else if (st.ablage.schluessel === 'datei') banner('Datenschlüssel liegt als Datei (Schlüsselbund nicht verfügbar).');
@@ -290,6 +297,8 @@ const DATA_TABS = ['uebersicht', 'bilanz', 'kapitalfluss', 'planung', 'steuer', 
 async function pollStatus() {
   // Status holen; läuft ein Berichtsneubau, öfter nachsehen und nach Abschluss die Daten frisch laden
   S.STATUS = await api('/api/status'); statusMini();
+  if (S.STATUS.version && SESSION && SESSION.version && S.STATUS.version !== SESSION.version) { toast('Neue Version ' + S.STATUS.version + ' – Seite wird neu geladen …', 3000); setTimeout(() => location.reload(), 1200); return; }
+  if (S.STATUS.neustart_ausstehend) { clearTimeout(BER.timer); BER.timer = setTimeout(() => pollStatus().catch(() => setTimeout(() => location.reload(), 4000)), 3000); return; }
   const b = S.STATUS.bericht || {};
   clearTimeout(BER.timer);
   if (b.laeuft) { BER.timer = setTimeout(() => pollStatus().catch(() => {}), 3000); return; }
@@ -337,7 +346,7 @@ const lastOf = (vals, months) => { for (let i = months.length - 1; i >= 0; i--) 
 function cls(v, c) { let s = ''; if (c.plan) s += ' plan'; if (c.cur && S.modus !== 'jahre') s += ' cur'; if (c.year) s += ' year'; if (v == null || Math.abs(v) < 0.005) s += ' zero'; else s += v < 0 ? ' neg' : ' pos'; return s; }
 const cells = (C, fn) => C.map(c => { const v = fn(c); return `<td class="${cls(v, c)}">${F(v)}</td>`; }).join('');
 const thead = (first, C) => `<thead><tr><th>${first}</th>${C.map(c => `<th class="${c.year ? 'year' : ''}${c.plan ? ' plan' : ''}" title="${c.plan ? 'Plan' : c.mixed ? 'Ist + Plan' : 'Ist'}">${c.label}</th>`).join('')}</tr></thead>`;
-const noData = '<div class="card"><div class="v s">Noch keine Daten</div><div class="d">Unter „Buchungen“ einen Probelauf starten (MoneyMoney muss laufen und entsperrt sein) – danach erscheinen Übersicht, Bilanz, Kapitalfluss und Planung.</div></div>';
+const noData = '<div class="card"><div class="v s">Noch keine Daten</div><div class="d">Unter „Einrichtung“ den Bericht erstellen (MoneyMoney muss laufen und entsperrt sein) – danach erscheinen Übersicht, Bilanz, Kapitalfluss und Planung.</div></div>';
 const sumsOf = (D, name, months) => months.reduce((a, m) => a + (D.kapitalfluss.summen[m]?.[name] ?? 0) * defl(m), 0);
 
 // ---------------------------------------------------------------- Diagramme (SVG)
@@ -405,9 +414,9 @@ function statusStrip() {
   const upd = st.update && st.update.neuer ? `<a href="#updates" class="pill info">Update ${esc(st.update.verfuegbar)}</a>` : '';
   return `<div class="status-strip">
     <span class="pill neutral"><span class="dot ${mmState(st).cls}"></span>${mmState(st).text}${S.DATA ? ' · Stand ' + esc(S.DATA.erstellt) : ''}</span>${(st.bericht || {}).laeuft ? '<span class="pill info"><span class="spin" style="width:10px;height:10px;margin-right:5px"></span>Bericht wird neu gebaut</span>' : ''}
-    <span class="pill ${st.probelauf ? 'warn' : 'ok'}">${st.probelauf ? 'Probelauf – es wird nichts gebucht' : 'Scharf – manuelle Konten werden bebucht'}</span>
-    <span class="pill neutral">${st.dienst.automatisch ? 'automatisch alle ' + st.dienst.intervall_minuten + ' Min. · nächster ' + (st.dienst.naechster_lauf || '–') : 'kein automatischer Lauf'}</span>
-    ${l ? `<a href="#buchungen" class="pill ${l.fehler ? 'err' : (l.vorschlaege && l.vorschlaege.length && l.probelauf ? 'warn' : 'ok')}">Letzter Lauf ${esc(l.zeit.slice(5))}: ${l.fehler ? 'Fehler' : (l.probelauf && l.vorschlaege && l.vorschlaege.length ? l.vorschlaege.length + ' Vorschläge offen' : l.geschrieben + ' gebucht')}</a>` : '<span class="pill neutral">noch kein Lauf</span>'}
+    ${hasRules() ? `<span class="pill ${st.probelauf ? 'warn' : 'ok'}">${st.probelauf ? 'Testmodus – Regeln buchen nichts' : 'Regeln buchen in Offline-Konten'}</span>` : ''}
+    <span class="pill neutral">${st.dienst.automatisch ? 'Abgleich alle ' + st.dienst.intervall_minuten + ' Min. · nächster ' + (st.dienst.naechster_lauf || '–') : 'kein automatischer Abgleich'} ${hq('abgleich')}</span>
+    ${l ? `<a href="#buchungen" class="pill ${l.fehler ? 'err' : (l.vorschlaege && l.vorschlaege.length && l.probelauf ? 'warn' : 'ok')}">Letzter Abgleich ${esc(l.zeit.slice(5))}${l.fehler ? ': Fehler' : (l.probelauf && l.vorschlaege && l.vorschlaege.length ? ': ' + l.vorschlaege.length + ' Buchungsvorschläge' : (l.geschrieben ? ': ' + l.geschrieben + ' gebucht' : ''))}</a>` : ''}
     <span class="pill ${st.ablage.verschluesselt ? 'neutral' : 'err'}">${st.ablage.verschluesselt ? '🔒 verschlüsselt' : 'KLARTEXT'}</span>${upd}</div>`;
 }
 async function vUebersicht() {
@@ -452,7 +461,7 @@ async function vUebersicht() {
   const yr = cur.slice(0, 4);
   const [ok, ob] = await Promise.all([api(`/api/umsaetze?jahr=${yr}&ohne_kategorie=1&limit=1&entitaet=${S.bereich}`), api(`/api/umsaetze?jahr=${yr}&ohne_beleg=1&richtung=aus&limit=1&entitaet=${S.bereich}`)]);
   const lastRun = S.STATUS.letzter_lauf, items = [];
-  if (lastRun && lastRun.probelauf && lastRun.vorschlaege && lastRun.vorschlaege.length) items.push(['warn', lastRun.vorschlaege.length + ' Buchungsvorschläge warten (Probelauf)', '#buchungen']);
+  if (lastRun && lastRun.probelauf && lastRun.vorschlaege && lastRun.vorschlaege.length) items.push(['warn', lastRun.vorschlaege.length + ' Buchungsvorschläge warten (Testmodus)', '#buchungen']);
   if (ok.treffer) items.push(['warn', ok.treffer + ' Umsätze ' + yr + ' ohne Kategorie – zuordnen', '#zuordnen']);
   if ((S.DATA.konten_neu || []).length) items.push(['warn', S.DATA.konten_neu.length + ' Konto/Konten ohne bestätigte Zuordnung (Bereich, Position)', '#einrichtung/konten']);
   if (ob.treffer) items.push(['neutral', ob.treffer + ' Ausgaben ' + yr + ' ohne Beleg', '#umsaetze?ohne_beleg=1']);
@@ -487,7 +496,7 @@ const MODULES = [
   {id: 'planung', t: 'Planung', d: 'Horizont, Inflation, Steigerungen, Darlehensplan, Ereignisse (z. B. Rückzahlungen), Wertentwicklung.', done: () => !!S.DATA, href: '#planung', optional: true},
   {id: 'steuer', t: 'Steuer', d: 'Vermietungskategorie, Darlehen → Objekt, AfA, Kategorie → Steuerposition.', done: () => !!(S.CFG.steuer || {}).vermietung_kategorie, href: '#einstellungen', optional: true},
   {id: 'belege', t: 'Belege & Dokumente', d: 'Belegordner und Ablagemuster; Belege zu Umsätzen, Dateien vom Mac verknüpfen.', done: () => !!(S.CFG.belege || {}).ordner, href: '#einstellungen', optional: true},
-  {id: 'betrieb', t: 'Betrieb & Zugang', d: 'Probelauf, automatische Läufe, Mitteilungen, Updates, Adresse für das iPhone, Passwort.', done: () => true, href: '#einstellungen'},
+  {id: 'betrieb', t: 'Betrieb & Zugang', d: 'Testmodus, automatischer Abgleich, Mitteilungen, Updates, Adresse für das iPhone, Passwort.', done: () => true, href: '#einstellungen'},
 ];
 function vEinrichtung(sub) {
   if (sub === 'bereiche') return vBereicheEditor();
@@ -500,16 +509,16 @@ function vEinrichtung(sub) {
     h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? 'eingerichtet' : (m.optional ? 'optional' : 'offen')}</span></div><div class="d">${esc(m.d)}</div></div><div class="a"><a href="${m.href || ('#einrichtung/' + m.id)}"><button class="small ${ok ? 'secondary' : ''}">${ok ? 'Anpassen' : 'Einrichten'}</button></a></div></div>`;
   });
   h += '</div>';
-  h += `<div class="card"><h3>Ersten Bericht erstellen</h3><div class="small muted">Liest alle Umsätze und baut Übersicht, Bilanz, Kapitalfluss, Planung und Steuer. Es wird nichts in MoneyMoney verändert. Danach: Buchungen → Probelauf, um die Regeln zu prüfen.</div><div class="actions"><button id="w-report" class="small">${S.DATA ? 'Bericht aktualisieren' : 'Bericht jetzt erstellen'}</button>${S.DATA ? '<a href="#uebersicht"><button class="small secondary">Zur Übersicht</button></a>' : ''}</div></div>`;
+  h += `<div class="card"><h3>Ersten Bericht erstellen</h3><div class="small muted">Liest alle Umsätze und baut Übersicht, Bilanz, Kapitalfluss, Planung und Steuer. Es wird nichts in MoneyMoney verändert. Danach: Buchungen → „Abgleich jetzt (Test)“, um die Regeln zu prüfen.</div><div class="actions"><button id="w-report" class="small">${S.DATA ? 'Bericht aktualisieren' : 'Bericht jetzt erstellen'}</button>${S.DATA ? '<a href="#uebersicht"><button class="small secondary">Zur Übersicht</button></a>' : ''}</div></div>`;
   return h;
 }
 function vVerbindung() {
   const st = S.STATUS;
   return `<h2>Verbindung zu MoneyMoney</h2><div class="steps">
     <div class="step ${st.moneymoney.laeuft ? 'done' : ''}"><div class="b"><b>MoneyMoney läuft</b>${st.moneymoney.laeuft ? 'MoneyMoney läuft.' : 'MoneyMoney starten und entsperren. Kontor startet es nicht selbst.'}</div></div>
-    <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>Zugriff erlauben und Konten lesen ${hq('berechtigung')}</b>Beim ersten Zugriff fragt macOS, ob das Programm (angezeigt als „python3“ oder „Terminal“) MoneyMoney steuern darf. <b>Wofür:</b> Kontor liest darüber Konten, Umsätze und Kategorien – nur lesend; Bank-Zugangsdaten bleiben in MoneyMoney. Geschrieben wird nur in Offline-Konten, die du später in Regeln benennst. Erscheint der Dialog nicht: Systemeinstellungen → Datenschutz &amp; Sicherheit → Automation.<div class="actions"><button id="w-check" class="small">Verbindung prüfen</button><span id="w-busy" class="working hidden"><span class="spin"></span>Lese Konten und Umsätze aus MoneyMoney … bei vielen Umsätzen bis zu einer Minute.</span></div><div id="w-findings" class="findings"></div></div></div>
+    <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>Zugriff erlauben und Konten lesen ${hq('berechtigung')}</b>macOS fragt einmal, ob „python3“ MoneyMoney steuern darf – erlauben.<div class="actions"><button id="w-check" class="small">Verbindung prüfen</button><span id="w-busy" class="working hidden"><span class="spin"></span>Lese Konten und Umsätze aus MoneyMoney … bei vielen Umsätzen bis zu einer Minute.</span></div><div id="w-findings" class="findings"></div></div></div>
     <div class="step"><div class="b"><b>Optional: Aktualisierung aus Kontor erlauben</b>Damit Kontor „Alle Konten aktualisieren“ anstoßen kann, zusätzlich unter Bedienungshilfen erlauben. ${hq('mm_refresh')}</div></div>
-    <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>Weiter</b><a href="#einrichtung/bereiche">Bereiche festlegen</a> · <a href="#einrichtung">Zur Übersicht der Bausteine</a></div></div></div>`;
+    <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>Weiter</b><div class="actions"><a href="#einrichtung/bereiche"><button ${S.KONTEN.length ? '' : 'class="secondary"'}>Weiter: Bereiche</button></a><a href="#einrichtung"><button class="secondary">Zurück zur Einrichtung</button></a></div></div></div></div>`;
 }
 const FIRMA_RE = /\b(gmbh|ug|ag|se|kg|ohg|gbr|egbr|e\.?\s?k\.?|e\.?\s?v\.?|eg|ltd|inc|llc|holding|verwaltung|beteiligung|immobilien|stiftung|verein|genossenschaft|partner|&\s?co)\b/i;
 const guessArt = name => FIRMA_RE.test(name || '') || /(gmbh|gbr|holding)/i.test(name || '') ? 'gesellschaft' : 'privat';
@@ -525,7 +534,7 @@ function vBereicheEditor() {
   if (list.length && !list.some(b => b.haupt)) { const p = list.find(b => (b.art || guessArt(b.name)) === 'privat') || list[0]; p.haupt = true; }
   let h = `<h2>Bereiche ${hq('bereich')}</h2><div class="note">Standard: jede Kontengruppe der obersten Ebene ist ein Bereich. Art und Hauptbereich sind aus den Namen vorbelegt – prüfen und bei Bedarf ändern. Bereiche lassen sich umbenennen, löschen, zusammenlegen oder aus einzelnen Konten und Gruppen zusammenstellen. ${S.KONTEN.length ? '' : '<b>Noch keine Konten geladen – zuerst die Verbindung prüfen.</b>'}</div><div class="list" id="bereiche">`;
   list.forEach((b, i) => { h += bereichForm(b, i); });
-  h += '</div><div class="actions"><button id="add-bereich" class="secondary">Bereich hinzufügen</button><button id="save-bereiche">Bereiche speichern</button><a href="#einrichtung/konten"><button class="secondary">Weiter: Positionen & Verlauf</button></a></div><div id="findings-b" class="findings"></div>';
+  h += '</div><div class="actions"><button id="add-bereich" class="secondary">Bereich hinzufügen</button><button id="save-bereiche">Speichern</button><button class="secondary" data-next="#einrichtung/konten" data-save="#save-bereiche">Weiter: Positionen &amp; Verlauf</button></div><div id="findings-b" class="findings"></div>';
   return h;
 }
 function bereichForm(b, i) {
@@ -544,7 +553,7 @@ function bereichForm(b, i) {
   }
   return `<div class="item" data-i="${i}"><div class="grow"><div class="form">
     <label>Name</label><input type="text" class="b-name" value="${esc(b.name || '')}">
-    <label>Kennung</label><input type="text" class="b-id" value="${esc(b.id || '')}" placeholder="kurz, eindeutig (z. B. privat)">
+    <input type="hidden" class="b-id" value="${esc(b.id || '')}">
     <label>Art</label><select class="b-art"><option value="privat" ${art === 'privat' ? 'selected' : ''}>privat</option><option value="gesellschaft" ${art === 'gesellschaft' ? 'selected' : ''}>Gesellschaft (GbR, GmbH …)</option></select>
     <label>Hauptbereich ${hq('haupt')}</label><label class="chk"><input type="radio" name="b-haupt" class="b-haupt" ${b.haupt ? 'checked' : ''}> ${b.haupt ? 'ja' : 'nein'}</label>
     <label>Anteil ${hq('anteil')}</label><div class="row tight"><input type="number" step="0.01" min="0" max="100" class="b-anteil" value="${pct}" placeholder="${regel != null ? Math.round(regel * 10000) / 100 : '100'}" style="width:110px"> %${regel != null && pct === '' ? `<span class="small muted">Vorschlag aus der Beteiligungsregel: ${Math.round(regel * 10000) / 100} %</span>` : ''}</div>
@@ -576,7 +585,7 @@ function bindBereichKonten(main) {
 }
 function collectBereiche() {
   const cfg = JSON.parse(JSON.stringify(S.CFG));
-  cfg.bereiche = $$('#bereiche .item').map(it => ({ id: $('.b-id', it).value.trim() || $('.b-name', it).value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: $('.b-name', it).value.trim(),
+  cfg.bereiche = $$('#bereiche .item').map(it => ({ id: $('.b-id', it).value.trim() || ('b-' + Math.random().toString(36).slice(2, 10)), name: $('.b-name', it).value.trim(),
     art: $('.b-art', it).value || guessArt($('.b-name', it).value), haupt: $('.b-haupt', it).checked,
     anteil: $('.b-anteil', it).value === '' ? null : Math.round(parseFloat($('.b-anteil', it).value) * 100) / 10000, aktiv: true,
     konten: $$('.b-k:checked', it).filter(c => !c.disabled).map(c => c.value) }));
@@ -594,7 +603,7 @@ function vKontenEditor() {
   const neu = leaves.filter(k => !k.bestaetigt);
   let h = `<h2>Bilanzpositionen & Verlauf</h2><div class="note">Jedes Konto gehört zu einem Bereich und hat eine Position. Vorschläge kommen aus der Gruppierung in MoneyMoney, dem Gruppennamen und dem Kontotyp – hier bestätigst oder änderst du sie; neue Konten in MoneyMoney tauchen als „neu“ auf, bis du sie einmal gespeichert hast. ${hq('konten_zuordnung')} ${hq('position')} ${hq('verlauf')}</div>
   ${neu.length ? `<div class="banner info">${neu.length} Konto/Konten noch nicht bestätigt: ${esc(neu.slice(0, 6).map(k => k.name).join(', '))}${neu.length > 6 ? ' …' : ''} – Vorschläge prüfen und „Speichern“.</div>` : ''}
-  <div class="row tight"><label>Inaktive Konten ausblenden nach <input type="number" id="k-inaktiv" min="0" value="${cfg.bilanz.inaktiv_monate ?? 12}" style="width:70px"> Monaten ${hq('inaktiv')}</label><label class="switch"><input type="checkbox" id="k-show-inactive"><i></i>inaktive anzeigen</label></div>
+  <div class="row tight"><label>Inaktive Konten ausblenden nach <input type="number" id="k-inaktiv" min="0" value="${cfg.bilanz.inaktiv_monate ?? 12}" style="width:70px"> Monaten ${hq('inaktiv')}</label><label class="switch"><input type="checkbox" id="k-show-inactive" checked><i></i>inaktive anzeigen</label></div>
   <div class="wrap auto"><table class="plain acct-table"><thead><tr><th>Konto</th><th>Bereich ${hq('bereich')}</th><th>Position ${hq('position_kurz')}</th><th>Verlauf ${hq('verlauf_kurz')}</th><th title="zählt nicht zum liquiden Nettovermögen">illiquide ${hq('illiquide')}</th><th>Anzeige ${hq('anzeige')}</th><th class="num">Saldo</th></tr></thead><tbody>`;
   for (const k of leaves) {
     const cur = roleOf(k.uuid), ver = verOf(k.uuid);
@@ -607,7 +616,7 @@ function vKontenEditor() {
       <td><select class="k-show"><option value="">auto${k.inaktiv ? ' (inaktiv)' : ''}</option><option value="hide" ${hide.has(k.uuid) ? 'selected' : ''}>ausblenden</option><option value="show" ${show.has(k.uuid) ? 'selected' : ''}>immer zeigen</option></select></td>
       <td class="num ${(k.saldo || 0) < 0 ? 'neg' : 'pos'}">${F(k.saldo)}</td></tr>`;
   }
-  h += '</tbody></table></div><div class="actions"><button id="save-konten">Speichern</button><button id="k-neu" class="secondary">Bericht aktualisieren</button><a href="#einrichtung"><button class="secondary">Zurück zur Einrichtung</button></a></div><div id="findings-k2" class="findings"></div>';
+  h += '</tbody></table></div><div class="actions"><button id="save-konten">Speichern</button><button id="k-neu" class="secondary">Bericht aktualisieren</button><button class="secondary" data-next="#einrichtung" data-save="#save-konten">Zurück zur Einrichtung</button></div><div id="findings-k2" class="findings"></div>';
   h += `<h2>Saldenverlauf importieren ${hq('verlauf_import')}</h2><div class="note">Für Depots und Konten ohne Umsatzhistorie: Monatsstände aus einer Datei übernehmen. Erkannt werden CSV und Excel (.xlsx) – als Liste (Datum, Konto, Saldo), als Tabelle mit Stichtagen in der Kopfzeile (Konten als Zeilen, z. B. eine eigene Vermögensübersicht) oder mit Stichtagen in der ersten Spalte (Konten als Spalten, z. B. MoneyMoney → Berichte → Kontostand → exportieren). Je Monat zählt der letzte Wert. Umsatzkonten brauchen das nicht.</div>
     <div class="drop" id="hi-drop">Datei hierher ziehen<br><button id="hi-pick" class="small" style="margin-top:8px">Datei wählen</button></div><div id="hi-preview"></div>`;
   return h;
@@ -831,24 +840,24 @@ function vPlanExtras(D) {
 function vBuchungen(runs) {
   const st = S.STATUS, l = runs.letzter_lauf;
   let h = `<div class="toolbar">
-    <button id="run-dry">Probelauf jetzt</button>
-    <button id="run-live" class="${st.probelauf ? 'secondary' : ''}" ${st.lokal ? '' : 'disabled title="nur am Mac"'}>Scharf ausführen</button>
+    <button id="run-dry">Abgleich jetzt (Test)</button>
+    <button id="run-live" class="${st.probelauf ? 'secondary' : ''}" ${st.lokal ? '' : 'disabled title="nur am Mac"'}>Jetzt buchen</button>
     <button id="run-report" class="secondary">Nur Bericht aktualisieren</button>
     <button id="mm-refresh" class="secondary" ${st.lokal && st.moneymoney.aktualisieren_erlaubt ? '' : 'disabled title="nur am Mac und wenn in den Einstellungen erlaubt"'}>MoneyMoney aktualisieren</button>
-    <span class="muted small">${st.moneymoney.laeuft ? 'MoneyMoney läuft.' : 'MoneyMoney läuft nicht – ein Lauf wartet, bis es geöffnet und entsperrt ist.'}${st.moneymoney.aktualisiert_um ? ' Aktualisierung ausgelöst um ' + st.moneymoney.aktualisiert_um + '.' : ''}</span>
+    <span class="muted small">${st.moneymoney.laeuft ? 'MoneyMoney läuft.' : 'MoneyMoney läuft nicht – der Abgleich wartet, bis es geöffnet und entsperrt ist.'}${st.moneymoney.aktualisiert_um ? ' Aktualisierung ausgelöst um ' + st.moneymoney.aktualisiert_um + '.' : ''}</span>
   </div>`;
   if (l) {
-    h += `<h2>Letzter Lauf ${esc(l.zeit)} · ${l.probelauf ? '<span class="pill warn">Probelauf</span>' : '<span class="pill ok">scharf</span>'} · ${l.geschrieben} gebucht${l.fehler ? ' · <span class="pill err">' + esc(l.fehler) + '</span>' : ''}</h2>`;
+    h += `<h2>Letzter Abgleich ${esc(l.zeit)} · ${l.probelauf ? '<span class="pill warn">Testmodus</span>' : '<span class="pill ok">gebucht</span>'} · ${l.geschrieben} gebucht${l.fehler ? ' · <span class="pill err">' + esc(l.fehler) + '</span>' : ''}</h2>`;
     if (l.vorschlaege && l.vorschlaege.length) {
       h += '<div class="wrap auto"><table class="plain"><thead><tr><th>Datum</th><th>Konto</th><th>Art</th><th class="num">Betrag</th><th>Text</th><th>Kategorie</th></tr></thead><tbody>'
         + l.vorschlaege.map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto)}</td><td>${esc(v.art)}</td><td class="num ${v.betrag < 0 ? 'neg' : 'pos'}">${F(v.betrag)}</td><td>${esc(v.text)}</td><td>${esc(v.kategorie || '')}</td></tr>`).join('') + '</tbody></table></div>';
-      if (l.probelauf) h += '<div class="note">Diese Buchungen sind noch nicht in MoneyMoney. „Scharf ausführen“ legt sie an (nur manuelle Konten) – oder in den Einstellungen den Probelauf dauerhaft abschalten.</div>';
+      if (l.probelauf) h += '<div class="note">Diese Buchungen sind noch nicht in MoneyMoney. „Jetzt buchen“ legt sie an (nur Offline-Konten) – oder in den Einstellungen den Testmodus dauerhaft abschalten.</div>';
     } else h += '<div class="note">Keine Buchungen nötig.</div>';
     if (l.hinweise && l.hinweise.length) h += '<h3>Rechenwege</h3>' + l.hinweise.map(x => `<div class="small muted">${esc(x)}</div>`).join('');
     if (l.warnungen && l.warnungen.length) h += '<h3>Hinweise</h3>' + l.warnungen.map(x => `<div class="banner">${esc(x)}</div>`).join('');
   }
   h += '<h2>Verlauf</h2><div class="wrap auto"><table class="plain"><thead><tr><th>Zeit</th><th>Modus</th><th class="num">Vorschläge</th><th class="num">Gebucht</th><th>Fehler</th><th>Buchungen</th></tr></thead><tbody>'
-    + (runs.verlauf || []).map(v => `<tr><td>${esc(v.zeit)}</td><td>${v.probelauf ? 'Probelauf' : 'scharf'}</td><td class="num">${v.vorschlaege ?? ''}</td><td class="num">${v.geschrieben}</td><td>${esc(v.fehler || '')}</td><td class="small">${(v.buchungen || []).map(esc).join('<br>')}</td></tr>`).join('') + '</tbody></table></div>';
+    + (runs.verlauf || []).map(v => `<tr><td>${esc(v.zeit)}</td><td>${v.probelauf ? 'Test' : 'gebucht'}</td><td class="num">${v.vorschlaege ?? ''}</td><td class="num">${v.geschrieben}</td><td>${esc(v.fehler || '')}</td><td class="small">${(v.buchungen || []).map(esc).join('<br>')}</td></tr>`).join('') + '</tbody></table></div>';
   return h;
 }
 
@@ -1201,7 +1210,7 @@ function acctOptions(selected, filter) {
 const onlyManual = k => !k.gruppe && k.manuell, onlyGroups = k => k.gruppe, onlyLeaves = k => !k.gruppe;
 function vRegeln() {
   const C = S.CFG;
-  let h = '<div class="note">Regeln schreiben ausschließlich in manuell geführte Konten („Offline-Konten“ in MoneyMoney). Jede Buchung trägt eine Markierung im Verwendungszweck und wird nie doppelt angelegt; bestehende Buchungen werden nie geändert oder gelöscht. Änderungen werden erst nach „Speichern“ wirksam und vorher gegen MoneyMoney geprüft.' + (S.KONTEN.length ? '' : ' <b>Noch keine Konten geladen – unter Einstellungen „Konfiguration prüfen“ oder einen Lauf starten.</b>') + '</div>';
+  let h = '<div class="note">Regeln schreiben ausschließlich in manuell geführte Konten („Offline-Konten“ in MoneyMoney). Jede Buchung trägt eine Markierung im Verwendungszweck und wird nie doppelt angelegt; bestehende Buchungen werden nie geändert oder gelöscht. Änderungen werden erst nach „Speichern“ wirksam und vorher gegen MoneyMoney geprüft.' + (S.KONTEN.length ? '' : ' <b>Noch keine Konten geladen – unter Einstellungen „Konfiguration prüfen“ oder einen Abgleich starten.</b>') + '</div>';
   h += '<h2>Darlehen <span class="x">Rate erkennen, auf dem Darlehenskonto spiegeln, Zinsen berechnen</span></h2><div class="list" id="loans">';
   (C.darlehen || []).forEach((l, i) => { h += loanForm(l, i); });
   h += '</div><div class="actions"><button id="add-loan" class="secondary">Darlehen hinzufügen</button></div>';
@@ -1275,6 +1284,7 @@ function showFindings(el, befunde, extra, kind = 'hinweis') {
 async function saveConfig(cfg, findingsEl, trotzdem) {
   try {
     const r = await api('/api/config', {config: cfg, trotzdem: !!trotzdem}, 'PUT');
+    DIRTY.on = false;
     S.CFG = r.config; showFindings(findingsEl, r.befunde, 'Gespeichert.' + (S.KONTEN.length ? '' : ' (Noch nicht gegen MoneyMoney geprüft.)'), 'ok'); toast('Gespeichert');
     S.STATUS = await api('/api/status'); statusMini();
     return true;
@@ -1296,7 +1306,7 @@ function vKapitalflussZuordnung() {
   const kontorTops = KZ.kat ? [...new Set(KZ.kat.baum.map(k => k.pfad.split(' / ')[0]))] : [];
   const tops = S.KATS.filter(k => k.ebene === 0).map(k => ({name: k.name, budget: k.budget}));
   for (const n of kontorTops) if (!tops.some(t => t.name === n)) tops.push({name: n, budget: null});
-  let h = '<div class="note">Zuordnung der Oberkategorien (Kontor und MoneyMoney) zu den Abschnitten des Kapitalflusses. Ohne Zuordnung entscheidet das Vorzeichen (Einnahmen/Ausgaben) bzw. der Name (invest → Investitionen, tilgung/kredit → Finanzierung, zinsen → Zinsen). Kategorien in MoneyMoney werden von Kontor nie angelegt, umbenannt oder gelöscht.' + (tops.length ? '' : ' <b>Noch keine Kategorien geladen – Lauf starten oder Konfiguration prüfen.</b>') + '</div>';
+  let h = '<div class="note">Zuordnung der Oberkategorien (Kontor und MoneyMoney) zu den Abschnitten des Kapitalflusses. Ohne Zuordnung entscheidet das Vorzeichen (Einnahmen/Ausgaben) bzw. der Name (invest → Investitionen, tilgung/kredit → Finanzierung, zinsen → Zinsen). Kategorien in MoneyMoney werden von Kontor nie angelegt, umbenannt oder gelöscht.' + (tops.length ? '' : ' <b>Noch keine Kategorien geladen – Abgleich starten oder Konfiguration prüfen.</b>') + '</div>';
   h += '<div class="wrap auto"><table class="plain"><thead><tr><th>Oberkategorie</th><th>Abschnitt</th><th>Käufe fließen in Depot/Anlage</th><th class="num">Budget (MoneyMoney)</th></tr></thead><tbody>';
   for (const t of tops) {
     const cur = zu[t.name] || '';
@@ -1367,7 +1377,7 @@ function vKontorKategorien() {
   const kat = KZ.kat; if (!kat) return '<div class="note">Lade …</div>';
   const e = kat.einstellungen || {}, st = kat.statistik || {}, ges = st.gesamt || {};
   let h = `<div class="note">Kontor führt eigene Kategorien: Baum aus MoneyMoney übernommen (ergänzbar, umbenennbar), Zuordnung je Umsatz in Kontor, Regeln gelernt aus deinen bisherigen Zuordnungen plus eigene Regeln. Für Umsätze ohne Kontor-Zuordnung gilt weiterhin die Kategorie aus MoneyMoney – nichts geht verloren, und der Partner kommt ohne MoneyMoney-Kategorien aus. ${hq('kontor_kategorien')}</div>
-  <div class="row tight" style="margin-bottom:10px"><label class="switch"><input type="checkbox" id="kk-aktiv" ${e.aktiv !== false ? 'checked' : ''}><i></i>Kontor-Kategorien aktiv</label><label class="switch"><input type="checkbox" id="kk-lernen" ${e.lernen !== false ? 'checked' : ''}><i></i>bei jedem Lauf Regeln nachlernen</label><label class="switch"><input type="checkbox" id="kk-mm" ${e.mm_ueberschreiben ? 'checked' : ''}><i></i>Regeln auch auf MoneyMoney-kategorisierte Umsätze anwenden ${hq('mm_ueberschreiben')}</label>
+  <div class="row tight" style="margin-bottom:10px"><label class="switch"><input type="checkbox" id="kk-aktiv" ${e.aktiv !== false ? 'checked' : ''}><i></i>Kontor-Kategorien aktiv</label><label class="switch"><input type="checkbox" id="kk-lernen" ${e.lernen !== false ? 'checked' : ''}><i></i>bei jedem Abgleich Regeln nachlernen</label><label class="switch"><input type="checkbox" id="kk-mm" ${e.mm_ueberschreiben ? 'checked' : ''}><i></i>Regeln auch auf MoneyMoney-kategorisierte Umsätze anwenden ${hq('mm_ueberschreiben')}</label>
     <span class="small muted">${st.kategorien || 0} Kategorien · Regeln: ${(st.regeln || {}).manuell || 0} eigene, ${(st.regeln || {}).gelernt || 0} gelernt${st.gelernt_am ? ' (' + esc(st.gelernt_am) + ')' : ''} · Umsätze: ${ges.manuell || 0} manuell, ${ges.regel || 0} Regel, ${ges.moneymoney || 0} MoneyMoney, ${ges.ohne || 0} offen</span></div>`;
   h += `<h2>Kategorien <span class="x">${kat.baum.length}</span></h2><div class="row tight" style="margin-bottom:6px"><input type="text" id="kk-neu" placeholder="Neue Kategorie, z. B. Wohnen / Nebenkosten" style="min-width:320px"><button id="kk-add" class="small">Anlegen</button><button id="kk-mmsync" class="small secondary" title="Neue Kategorien aus MoneyMoney in den Kontor-Baum übernehmen">Aus MoneyMoney ergänzen</button></div>
     <div class="wrap auto" style="max-height:420px;overflow:auto"><table class="plain"><thead><tr><th>Kategorie</th><th>Quelle</th><th></th></tr></thead><tbody>${kat.baum.map(k => `<tr data-pfad="${esc(k.pfad)}"><td class="ind${Math.min(3, k.pfad.split(' / ').length - 1)}">${esc(k.name)}<span class="small muted"> · ${esc(k.pfad)}</span></td><td class="small">${k.quelle === 'moneymoney' ? 'MoneyMoney' : 'Kontor'}</td><td style="white-space:nowrap"><button class="ghost small kk-ren">Umbenennen</button><button class="ghost small kk-del">✕</button></td></tr>`).join('')}</tbody></table></div>`;
@@ -1392,8 +1402,8 @@ function vEinstellungen() {
   const C = S.CFG, z = C.zeitplan || {}, b = C.bilanz || {}, o = C.oberflaeche || {}, st = C.steuer || {}, bl = C.belege || {}, mm = C.moneymoney || {}, up = C.updates || {};
   const loans = S.KONTEN.filter(k => !k.gruppe && k.rolle === 'verbindlichkeiten');
   let h = `<h2>Betrieb</h2><div class="form">
-    <label>Probelauf ${hq('probelauf')}</label><label class="chk"><input type="checkbox" id="e-probelauf" ${C.probelauf ? 'checked' : ''}> nur vorschlagen, nichts buchen</label>
-    <label>Automatische Läufe ${hq('intervall')}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatisch !== false ? 'checked' : ''}> alle <input type="number" id="e-intervall" min="5" value="${z.intervall_minuten ?? 30}" style="width:70px"> Minuten (nur wenn MoneyMoney läuft und entsperrt ist)</label>
+    <label>Testmodus ${hq('probelauf')}</label><label class="chk"><input type="checkbox" id="e-probelauf" ${C.probelauf ? 'checked' : ''}> Buchungen aus Regeln nur vorschlagen, nichts in MoneyMoney anlegen</label>
+    <label>Automatischer Abgleich ${hq('abgleich')}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatisch !== false ? 'checked' : ''}> alle <input type="number" id="e-intervall" min="5" value="${z.intervall_minuten ?? 30}" style="width:70px"> Minuten (nur wenn MoneyMoney läuft und entsperrt ist)</label>
     <label>Mitteilungen (macOS)</label><label class="chk"><input type="checkbox" id="e-mitt" ${C.mitteilungen !== false ? 'checked' : ''}> bei Buchungen, Vorschlägen und Fehlern</label>
   </div>
   <h2>Bilanz</h2><div class="form">
@@ -1425,7 +1435,7 @@ function vEinstellungen() {
     <label>Port</label><input type="number" id="e-port" value="${o.port ?? 8765}" style="width:100px">
     <label>TLS-Zertifikat (optional) ${hq('tls')}</label><input type="text" id="e-cert" value="${esc(o.tls_cert || '')}" placeholder="/Pfad/zert.crt">
     <label>TLS-Schlüssel (optional)</label><input type="text" id="e-key" value="${esc(o.tls_key || '')}" placeholder="/Pfad/zert.key">
-    <div class="full note">Adresse und Port gelten nach einem Neustart des Dienstes. Erlaubt sind nur dieser Mac (127.0.0.1) oder eine Tailscale-Adresse (100.64.0.0/10) – nie das offene Netz. Dieser Mac bleibt immer unter 127.0.0.1 erreichbar. Vom iPhone aus: Tailscale auf beiden Geräten, dann am Mac im Terminal <code>python3 ~/Kontor/kontor.py tls</code> (https, nötig für die Offline-Ansicht) oder hier die Tailscale-Adresse eintragen und http://&lt;Tailscale-Adresse&gt;:${o.port ?? 8765}/ öffnen – Anmeldung dort nur per Passwort; scharfe Läufe, Updates, Zurücksetzen und Ordner öffnen nur am Mac.</div>
+    <div class="full note">Adresse und Port gelten nach einem Neustart des Dienstes. Erlaubt sind nur dieser Mac (127.0.0.1) oder eine Tailscale-Adresse (100.64.0.0/10) – nie das offene Netz. Dieser Mac bleibt immer unter 127.0.0.1 erreichbar. Vom iPhone aus: Tailscale auf beiden Geräten, dann am Mac im Terminal <code>python3 ~/Kontor/kontor.py tls</code> (https, nötig für die Offline-Ansicht) oder hier die Tailscale-Adresse eintragen und http://&lt;Tailscale-Adresse&gt;:${o.port ?? 8765}/ öffnen – Anmeldung dort nur per Passwort; Buchen, Updates, Zurücksetzen und Ordner öffnen nur am Mac.</div>
   </div>
   <div class="actions"><button id="save-settings">Einstellungen speichern</button><button id="check-btn" class="secondary">Konfiguration gegen MoneyMoney prüfen</button></div><div id="findings-e" class="findings"></div>
   <h2>Passwort</h2><div class="form"><label>Altes Passwort</label><input type="password" id="pw-alt" autocomplete="current-password"><label>Neues Passwort</label><input type="password" id="pw-neu" autocomplete="new-password"></div><div class="actions"><button id="pw-save" class="secondary">Passwort ändern</button></div>
@@ -1546,14 +1556,14 @@ function vHilfe() {
   <li>Verknüpfung mit MoneyMoney: Vermietungskategorie und Darlehenskonten → Soll/Ist je Jahr; Objektkonto → Wert in der Bilanz; „in Planung übernehmen“ → Planung des Bereichs. Dokumente werden nur verlinkt (Pfad auf dem Mac, auch iCloud Drive), nie kopiert oder gelöscht.</li></ul>
   <h2>Kategorien</h2>
   <ul><li>Kontor führt eigene Kategorien (Menü „Kategorien“): der Baum wird einmal aus MoneyMoney übernommen und ist frei erweiterbar. Zuordnung je Umsatz liegt in Kontor; Rangfolge: manuell &gt; eigene Regel &gt; gelernte Regel &gt; Kategorie aus MoneyMoney.</li>
-  <li>Regeln lernt Kontor aus den vorhandenen Zuordnungen (Gegen-IBAN, Name, Name + Zweckanfang; ab 2 Umsätzen und 90 % Eindeutigkeit) – bei jedem Lauf nach. Eigene Regeln: Name/Zweck enthält, IBAN, Richtung, Konto.</li>
+  <li>Regeln lernt Kontor aus den vorhandenen Zuordnungen (Gegen-IBAN, Name, Name + Zweckanfang; ab 2 Umsätzen und 90 % Eindeutigkeit) – bei jedem Abgleich nach. Eigene Regeln: Name/Zweck enthält, IBAN, Richtung, Konto.</li>
   <li>„Zuordnen“ zeigt alle Umsätze ohne Kategorie, gruppiert nach Gegenpartei mit Vorschlag; Zuordnen + Regel erledigt die Gegenpartei dauerhaft. „Umbuchung“ für Überträge zwischen eigenen Konten.</li>
   <li>Ohne Kategorien funktionieren Bilanz, Vermögensentwicklung, Immobilien und Darlehen vollständig; Einnahmen/Ausgaben gesamt ebenfalls (Umbuchungen werden an Gegen-IBAN und Betrag erkannt). Kategorien braucht es nur für die Aufteilung (Kapitalfluss-Zeilen, Planung je Zeile, Steuer).</li>
   <li>Optional schreibt Kontor eine Zuordnung auch nach MoneyMoney (Einstellung „Kategorisieren erlauben“, Häkchen „auch in MoneyMoney“) – nur das Kategoriefeld des Umsatzes.</li></ul>
   <h2>Planung: Ereignisse</h2>
   <p>Umschichtung = Betrag wandert von „Von“ nach „Nach“ (Konto leer = Liquidität des Bereichs): z. B. Darlehen auf einen Schlag aus dem Depot zurückzahlen (Von = Depot, Nach = Darlehenskonto). Einnahme/Ausgabe = zahlungswirksam. Wiederholung einmalig, monatlich, je Quartal, jährlich – bis zum Enddatum oder Horizont. Beteiligungskonten lassen sich an das geplante Nettovermögen eines anderen Bereichs koppeln (Wertentwicklung → Kopplung).</p>
   <h2>Berechtigungen, die macOS abfragt</h2>
-  <ul><li><b>Automation → MoneyMoney</b> (beim ersten „Verbindung prüfen“ oder Lauf): Kontor liest darüber Konten, Umsätze, Kategorien und Depotpositionen aus MoneyMoney – nur lesend. Geschrieben wird ausschließlich in Offline-Konten, die du in Regeln benennst. Bank-Zugangsdaten sieht Kontor nie. Ohne diese Freigabe kann Kontor nichts auswerten.</li>
+  <ul><li><b>Automation → MoneyMoney</b> (beim ersten „Verbindung prüfen“ oder Abgleich): Kontor liest darüber Konten, Umsätze, Kategorien und Depotpositionen aus MoneyMoney – nur lesend. Geschrieben wird ausschließlich in Offline-Konten, die du in Regeln benennst. Bank-Zugangsdaten sieht Kontor nie. Ohne diese Freigabe kann Kontor nichts auswerten.</li>
   <li><b>Automation → System Events</b> („Datei wählen …“): öffnet den macOS-Dateidialog, damit du Belege oder Dokumente verknüpfen kannst.</li>
   <li><b>Bedienungshilfen</b> (nur für „MoneyMoney aktualisieren“): Kontor löst damit in MoneyMoney „Alle Konten aktualisieren“ aus. Optional.</li>
   <li><b>Schlüsselbund</b>: Der Schlüssel für die verschlüsselte Ablage liegt im Login-Schlüsselbund; macOS fragt ggf. einmal nach Zugriff.</li></ul>
@@ -1567,7 +1577,7 @@ function vHilfe() {
   <ul><li>Die Oberfläche ist nur auf diesem Mac erreichbar (127.0.0.1) oder optional über eine Tailscale-Adresse – nie aus dem Internet.</li>
   <li>Alle Daten im Datenordner sind mit AES-256 verschlüsselt; der Schlüssel liegt im macOS-Schlüsselbund. Belege liegen als normale Dateien im Belegordner.</li>
   <li>Keine Verbindung zu externen Servern außer der abschaltbaren Update-Prüfung bei GitHub. Keine Telemetrie.</li>
-  <li>Passwort, Touch ID, automatische Sperre, Schutz gegen Rateversuche; scharfe Läufe, Updates und Dateizugriffe nur am Mac.</li>
+  <li>Passwort, Touch ID, automatische Sperre, Schutz gegen Rateversuche; Buchen, Updates und Dateizugriffe nur am Mac.</li>
   <li>Das Protokoll enthält keine IBANs, Salden oder Passwörter; die Diagnosedatei maskiert zusätzlich Kontonamen.</li></ul>
   <h2>Typische Meldungen</h2>
   <ul><li><b>MoneyMoney läuft nicht / Datenbank gesperrt</b> – MoneyMoney öffnen und entsperren; Kontor wartet.</li>
@@ -1586,6 +1596,10 @@ function vHilfe() {
 const TITLES = {uebersicht: 'Übersicht', bilanz: 'Bilanz', kapitalfluss: 'Kapitalfluss', planung: 'Planung', buchungen: 'Buchungen', steuer: 'Steuer', immobilien: 'Immobilien', depots: 'Depots', umsaetze: 'Umsätze & Belege', zuordnen: 'Zuordnen', einrichtung: 'Einrichtung', regeln: 'Regeln', kategorien: 'Kategorien', einstellungen: 'Einstellungen', pakete: 'Pakete', updates: 'Updates', protokoll: 'Protokoll', hilfe: 'Hilfe'};
 const SUBTITLES = {'einrichtung/verbindung': 'Einrichtung · Verbindung', 'einrichtung/bereiche': 'Einrichtung · Bereiche', 'einrichtung/konten': 'Einrichtung · Bilanzpositionen & Verlauf'};
 async function route() {
+  if (DIRTY.on && location.hash !== DIRTY.hash) {
+    if (!confirm('Ungespeicherte Änderungen verwerfen?')) { history.replaceState(null, '', DIRTY.hash || '#uebersicht'); return; }
+    DIRTY.on = false;
+  }
   const raw = (location.hash || '#uebersicht').slice(1), [path, qs] = raw.split('?'), [tab, sub] = path.split('/');
   S.tab = TITLES[tab] ? tab : 'uebersicht'; S.sub = sub || '';
   if (qs && S.tab === 'umsaetze') { const p = new URLSearchParams(qs); S.uf.ohne_kategorie = p.get('ohne_kategorie') === '1'; S.uf.ohne_beleg = p.get('ohne_beleg') === '1'; if (p.get('jahr')) S.uf.jahr = p.get('jahr'); if (p.get('entitaet')) S.uf.entitaet = p.get('entitaet'); history.replaceState(null, '', '#umsaetze'); }
@@ -1624,12 +1638,39 @@ async function route() {
     if (ROUTE_SEQ !== myRoute) return;          // inzwischen woanders hin geklickt
     main.innerHTML = `<div class="fade">${h}</div>`;
     bind(main);
+    guardDirty(main);
     if (S.tab === 'immobilien') bindImmo(main);
     if (S.tab === 'zuordnen') bindZuordnen(main);
     if (S.tab === 'kategorien') { bindKontorKategorien(main); $$('.tabs button[data-kt]', main).forEach(b => b.addEventListener('click', () => { KZ.tab = b.dataset.kt; route(); })); }
   } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== 'nicht angemeldet') main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" onclick="route()">Erneut versuchen</button></div>`; }
 }
 let ROUTE_SEQ = 0;
+// Ungespeicherte Aenderungen: Formulare auf Seiten mit Speichern-Knopf melden Aenderungen; Wegnavigieren fragt nach
+const DIRTY = {on: false, hash: location.hash};
+const GUARDED = ['einrichtung/bereiche', 'einrichtung/konten', 'einstellungen', 'regeln'];
+const guarded = () => GUARDED.includes(S.tab + (S.sub ? '/' + S.sub : ''));
+(function dirtyListeners() {
+  // einmal am Hauptbereich (bleibt bestehen); ob die Seite geschuetzt ist, wird beim Ereignis geprueft
+  const main = $('#main');
+  const mark = e => { if (!guarded() || e.target.closest('#hi-preview, .toolbar') || e.target.id === 'k-show-inactive') return; DIRTY.on = true; };
+  main.addEventListener('input', mark); main.addEventListener('change', mark);
+  main.addEventListener('click', e => { if (guarded() && e.target.closest('.del, #add-bereich, .add-item')) DIRTY.on = true; });
+})();
+function guardDirty(main) {
+  DIRTY.on = false; DIRTY.hash = location.hash;
+  if (!guarded()) return;
+  $$('[data-next]', main).forEach(b => b.addEventListener('click', async () => {
+    if (DIRTY.on) {
+      if (!confirm('Es gibt ungespeicherte Änderungen. Jetzt speichern und weiter?\n\nAbbrechen = auf dieser Seite bleiben.')) return;
+      $$('.findings', main).forEach(f => { f.innerHTML = ''; });
+      const sb = $(b.dataset.save, main); if (sb) sb.click();
+      for (let i = 0; i < 300 && DIRTY.on && !$('.findings .fehler', main); i++) await new Promise(r => setTimeout(r, 100));
+      if (DIRTY.on) return;      // Speichern fehlgeschlagen: Befunde stehen auf der Seite
+    }
+    location.hash = b.dataset.next;
+  }));
+}
+window.addEventListener('beforeunload', e => { if (DIRTY.on) { e.preventDefault(); e.returnValue = ''; } });
 function bind(main) {
   $$('tr.group[data-id]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.id] = !S.collapsed[tr.dataset.id]; route(); }));
   $$('tr.sub[data-gid]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.gid] = !S.collapsed[tr.dataset.gid]; route(); }));
@@ -1646,14 +1687,13 @@ function bind(main) {
     S.KONTEN = r.konten; S.KATS = r.kategorien || S.KATS; await route(); showFindings($('#w-findings'), r.befunde, 'Verbindung steht: ' + r.konten.length + ' Konten gelesen.', 'ok'); });
   const wr = $('#w-report', main); if (wr) wr.addEventListener('click', () => rebuildReport(true));
   const abr = $('#add-bereich', main); if (abr) { bindBereichKonten(main); abr.addEventListener('click', () => { $('#bereiche').insertAdjacentHTML('beforeend', bereichForm({name: 'Neuer Bereich', id: '', konten: [], haupt: false}, $$('#bereiche .item').length)); bindDel(main); bindBereichKonten($('#bereiche .item:last-child')); }); }
-  const sbr = $('#save-bereiche', main); if (sbr) sbr.addEventListener('click', async () => { const cfg = collectBereiche(); if (!cfg.bereiche.length) return showFindings($('#findings-b'), [], 'Mindestens ein Bereich ist nötig.', 'fehler'); if (cfg.bereiche.some(b => !b.name)) return showFindings($('#findings-b'), [], 'Jeder Bereich braucht einen Namen.', 'fehler'); if (cfg.bereiche.some(b => !b.konten.length)) return showFindings($('#findings-b'), [], 'Jeder Bereich braucht mindestens ein Konto oder eine Gruppe.', 'fehler'); const ids = cfg.bereiche.map(b => b.id); if (new Set(ids).size !== ids.length) return showFindings($('#findings-b'), [], 'Kennungen müssen eindeutig sein.', 'fehler'); if (await saveConfig(cfg, $('#findings-b'))) { const box = $('#findings-b').innerHTML; await rebuildReport(false); const f = $('#findings-b'); if (f) f.innerHTML = box; } });
+  const sbr = $('#save-bereiche', main); if (sbr) sbr.addEventListener('click', async () => { const cfg = collectBereiche(); if (!cfg.bereiche.length) return showFindings($('#findings-b'), [], 'Mindestens ein Bereich ist nötig.', 'fehler'); if (cfg.bereiche.some(b => !b.name)) return showFindings($('#findings-b'), [], 'Jeder Bereich braucht einen Namen.', 'fehler'); if (cfg.bereiche.some(b => !b.konten.length)) return showFindings($('#findings-b'), [], 'Jeder Bereich braucht mindestens ein Konto oder eine Gruppe.', 'fehler'); if (await saveConfig(cfg, $('#findings-b'))) { const box = $('#findings-b').innerHTML; await rebuildReport(false); const f = $('#findings-b'); if (f) f.innerHTML = box; } });
   const skn = $('#save-konten', main); if (skn) skn.addEventListener('click', async () => { if (await saveConfig(collectKonten(), $('#findings-k2'))) { const box = $('#findings-k2').innerHTML; await rebuildReport(false); const f = $('#findings-k2'); if (f) f.innerHTML = box; } });
   const knu = $('#k-neu', main); if (knu) knu.addEventListener('click', () => rebuildReport(true));
   $$('.k-hist', main).forEach(b => b.addEventListener('click', async e => { const btn = e.target; btn.classList.add('busy'); try { await openHistDrawer(btn.closest('tr').dataset.uuid); } catch (er) { toast('Verlauf konnte nicht geladen werden: ' + er.message, 6000); } finally { btn.classList.remove('busy'); } }));
   const hp = $('#hi-pick', main); if (hp) hp.addEventListener('click', () => { const inp = $('#file-input'); inp.value = ''; inp.setAttribute('accept', '.csv,.txt,.xlsx,.xlsm'); inp.removeAttribute('capture'); inp.onchange = () => { if (inp.files[0]) histImportPreview(inp.files[0]); }; inp.click(); });
   const hd = $('#hi-drop', main); if (hd) { hd.addEventListener('dragover', e => { e.preventDefault(); hd.classList.add('over'); }); hd.addEventListener('dragleave', () => hd.classList.remove('over')); hd.addEventListener('drop', e => { e.preventDefault(); hd.classList.remove('over'); if (e.dataTransfer.files[0]) histImportPreview(e.dataTransfer.files[0]); }); if (HI) renderHistImport(); }
   const ksi = $('#k-show-inactive', main); if (ksi) ksi.addEventListener('change', e => $$('tr.inactive', main).forEach(tr => tr.style.display = e.target.checked ? '' : 'none'));
-  if (ksi) $$('tr.inactive:not(.neu)', main).forEach(tr => tr.style.display = 'none');
 
   // Bilanz
   $$('tr.acct[data-id]', main).forEach(tr => tr.addEventListener('click', () => openHistDrawer(tr.dataset.id)));
@@ -1680,7 +1720,7 @@ function bind(main) {
 
   // Buchungen
   const rd = $('#run-dry', main); if (rd) rd.addEventListener('click', () => startRun(true));
-  const rl = $('#run-live', main); if (rl) rl.addEventListener('click', () => { if (confirm('Scharf ausführen: Buchungen werden jetzt in MoneyMoney angelegt (nur manuelle Konten). Fortfahren?')) startRun(false); });
+  const rl = $('#run-live', main); if (rl) rl.addEventListener('click', () => { if (confirm('Jetzt buchen: Buchungen werden jetzt in MoneyMoney angelegt (nur manuelle Konten). Fortfahren?')) startRun(false); });
   const rr = $('#run-report', main); if (rr) rr.addEventListener('click', async () => { toast('Bericht wird erstellt …', 20000); const r = await api('/api/bericht', {}); if (!r.ok) toast(r.text || 'MoneyMoney nicht verfügbar', 5000); await loadAll(); route(); });
   const mr = $('#mm-refresh', main); if (mr) mr.addEventListener('click', async () => { toast('Aktualisierung wird ausgelöst …'); try { const r = await api('/api/moneymoney/aktualisieren', {}); toast(r.ok ? 'MoneyMoney aktualisiert: ' + r.text : r.text, 7000); S.STATUS = await api('/api/status'); statusMini(); } catch (e) { toast(e.message, 7000); } });
 
@@ -1691,7 +1731,7 @@ function bind(main) {
   const afa = $('#afa-save', main); if (afa) afa.addEventListener('click', async () => {
     const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.steuer = cfg.steuer || {}; cfg.steuer.afa = cfg.steuer.afa || {};
     $$('.afa', main).forEach(i => { const o = i.dataset.obj; cfg.steuer.afa[o] = typeof cfg.steuer.afa[o] === 'object' && cfg.steuer.afa[o] ? cfg.steuer.afa[o] : {}; if (i.value === '') delete cfg.steuer.afa[o][S.steuerJahr]; else cfg.steuer.afa[o][S.steuerJahr] = parseFloat(i.value); });
-    await saveConfig(cfg, document.createElement('div')); toast('AfA gespeichert – wirkt nach dem nächsten Bericht/Lauf');
+    await saveConfig(cfg, document.createElement('div')); toast('AfA gespeichert – wirkt nach dem nächsten Abgleich');
   });
 
   // Umsaetze & Belege
@@ -1782,9 +1822,9 @@ async function plan(body) {
   catch (e) { toast('Fehler: ' + e.message, 4000); }
 }
 async function startRun(dry) {
-  try { await api('/api/run', {probelauf: dry, force: true}); toast(dry ? 'Probelauf gestartet …' : 'Lauf gestartet …'); } catch (e) { toast(e.message, 4000); return; }
+  try { await api('/api/run', {probelauf: dry, force: true}); toast(dry ? 'Abgleich gestartet (Test) …' : 'Abgleich mit Buchung gestartet …'); } catch (e) { toast(e.message, 4000); return; }
   let tries = 0;
-  const poll = async () => { S.STATUS = await api('/api/status'); statusMini(); if (S.STATUS.dienst.laeuft && tries++ < 150) return setTimeout(poll, 2000); await loadAll(); route(); const r = S.STATUS.letztes_ergebnis; toast(r && r.text ? r.text : 'Lauf beendet', 6000); };
+  const poll = async () => { S.STATUS = await api('/api/status'); statusMini(); if (S.STATUS.dienst.laeuft && tries++ < 150) return setTimeout(poll, 2000); await loadAll(); route(); const r = S.STATUS.letztes_ergebnis; toast(r && r.text ? r.text : 'Abgleich beendet', 6000); };
   setTimeout(poll, 1500);
 }
 
