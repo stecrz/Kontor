@@ -217,16 +217,16 @@ class Ledger:
             acc = self.accounts.get(ref.lower()) or self.accounts.get(ref) or self.accounts.get(ref.upper())
             if acc is not None:
                 if label and label != acc.name and not acc.path.endswith(label):
-                    self._hint("Konto '%s' heisst jetzt '%s' (UUID unveraendert) -- Beschriftung in config.json "
+                    self._hint("Konto '%s' heißt jetzt '%s' (UUID unverändert) -- Beschriftung in config.json "
                                "bei Gelegenheit anpassen." % (label, acc.path))
                 return acc
             if label:
                 try:
                     acc = self.resolve(label)
                 except KeyError:
-                    raise KeyError("Konto '%s' (UUID %s) nicht gefunden -- geloescht? 'kontor konten' zeigt die "
+                    raise KeyError("Konto '%s' (UUID %s) nicht gefunden -- gelöscht? 'kontor konten' zeigt die "
                                    "aktuelle Liste." % (label, ref))
-                self._hint("Konto '%s': UUID %s existiert nicht mehr, ueber den Namen gefunden (%s). Neue UUID in "
+                self._hint("Konto '%s': UUID %s existiert nicht mehr, über den Namen gefunden (%s). Neue UUID in "
                            "config.json eintragen: %s" % (label, ref, acc.path, acc.uuid))
                 return acc
             raise KeyError("Konto mit UUID %s nicht gefunden." % ref)

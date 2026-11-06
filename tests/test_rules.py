@@ -49,7 +49,7 @@ class TreeTests(unittest.TestCase):
         self.assertEqual(vd.name, "Verkäuferdarlehen"); self.assertEqual(led.hints, [])
         # umbenannt: UUID gilt, Hinweis
         led.resolve(F.uid("pb.vd") + " | Alter Name")
-        self.assertTrue(any("heisst jetzt" in h for h in led.hints))
+        self.assertTrue(any("heißt jetzt" in h for h in led.hints))
         # UUID weg, Name vorhanden: Rueckfall + Hinweis mit neuer UUID
         led2 = make_ledger({}, [])
         acc = led2.resolve("00000000-0000-0000-0000-000000000000 | Verkäuferdarlehen")
@@ -184,7 +184,7 @@ class LoanTests(unittest.TestCase):
         today = date(2026, 11, 4)
         led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(date(2026, 8, 1)))
         res = plan_loan(led, loan_cfg(), today)
-        self.assertTrue(any("seit ueber 35 Tagen" in w for w in res.warnings))
+        self.assertTrue(any("seit über 35 Tagen" in w for w in res.warnings))
         # Automatik gerade erst gestartet, Rate noch nicht gelaufen: nur Info
         led = make_ledger({"pb.vd": -1600000.0}, [F.tx("pb.vd", date(2025, 12, 1), -1600000.0, "V", "Start")])
         res = plan_loan(led, loan_cfg(ab_datum="2026-11-01"), today)

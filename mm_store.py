@@ -60,17 +60,17 @@ def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
     rc_old, out_old, _ = _security(["find-generic-password", "-s", OLD_KEYCHAIN[0], "-a", OLD_KEYCHAIN[1], "-w"])
     if rc_old == 0 and len(out_old.strip()) == 64:
         key = bytes.fromhex(out_old.strip())
-        log.info("Datenschluessel der Vorversion (mmtools) uebernommen.")
+        log.info("Datenschlüssel der Vorversion (mmtools) übernommen.")
     else:
         # Schluesselbund vorhanden, aber kein Eintrag: neu anlegen
         key = secrets.token_bytes(32)
     rc2, _, err = _security(["add-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT,
-                             "-l", "Kontor Datenschluessel", "-w", key.hex(), "-U"])
+                             "-l", "Kontor Datenschlüssel", "-w", key.hex(), "-U"])
     if rc2 == 0:
         rc3, out3, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
         if rc3 == 0 and out3.strip() == key.hex():
             return key, "schluesselbund"
-    log.warning("Schluesselbund nicht nutzbar (%s) -- Schluessel wird als Datei abgelegt.", err.strip()[:120])
+    log.warning("Schlüsselbund nicht nutzbar (%s) -- Schlüssel wird als Datei abgelegt.", err.strip()[:120])
     return _file_key(key_file), "datei"
 
 
@@ -104,7 +104,7 @@ def _openssl(args, data: bytes, secret: str) -> bytes:
         r = subprocess.run(["openssl", "enc"] + args + ["-aes-256-cbc", "-md", "sha256", "-pass", "env:MMTOOLS_SECRET"],
                            input=data, capture_output=True, timeout=60, env=env)
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-        raise StoreError("openssl nicht verfuegbar: %s" % e)
+        raise StoreError("openssl nicht verfügbar: %s" % e)
     if r.returncode != 0:
         raise StoreError("openssl-Fehler: %s" % r.stderr.decode(errors="replace")[:200])
     return r.stdout
@@ -122,7 +122,7 @@ def decrypt(master: bytes, blob: bytes) -> bytes:
     enc_secret, mac_key = _subkeys(master)
     body, tag = blob[len(MAGIC):-32], blob[-32:]
     if not hmac.compare_digest(hmac.new(mac_key, body, hashlib.sha256).digest(), tag):
-        raise StoreError("Pruefsumme stimmt nicht -- Datei veraendert oder falscher Schluessel.")
+        raise StoreError("Prüfsumme stimmt nicht -- Datei verändert oder falscher Schlüssel.")
     return _openssl(["-d"], body, enc_secret)
 
 
@@ -131,7 +131,7 @@ def selftest(master: bytes) -> bool:
         probe = secrets.token_bytes(1000) + b"mmtools"
         return decrypt(master, encrypt(master, probe)) == probe
     except Exception as e:
-        log.warning("Selbsttest der Verschluesselung fehlgeschlagen: %s", e)
+        log.warning("Selbsttest der Verschlüsselung fehlgeschlagen: %s", e)
         return False
 
 
@@ -148,7 +148,7 @@ class Store:
         self.key_source = key_source
         self.encrypted = master is not None and selftest(master)
         if master is not None and not self.encrypted:
-            log.error("Verschluesselung nicht verfuegbar -- Daten werden UNVERSCHLUESSELT abgelegt.")
+            log.error("Verschlüsselung nicht verfügbar -- Daten werden UNVERSCHLUESSELT abgelegt.")
         os.makedirs(data_dir, exist_ok=True)
         try:
             os.chmod(data_dir, 0o700)
@@ -171,7 +171,7 @@ class Store:
         try:
             return json.loads(raw.decode("utf-8"))
         except ValueError as e:
-            raise StoreError("%s ist kein gueltiges JSON: %s" % (name, e))
+            raise StoreError("%s ist kein gültiges JSON: %s" % (name, e))
 
     def save(self, name: str, obj: Any) -> None:
         self.write_bytes(name, json.dumps(obj, ensure_ascii=False, indent=2, default=str).encode("utf-8"))
@@ -220,13 +220,13 @@ class Store:
                 self.write_bytes(name, raw)
                 if self.read_bytes(name) == raw:      # erst nach erfolgreicher Kontrolle den Klartext entfernen
                     os.remove(src)
-                    log.info("%s in die verschluesselte Ablage uebernommen, Klartext geloescht.", name)
+                    log.info("%s in die verschlüsselte Ablage übernommen, Klartext gelöscht.", name)
         # Klartext-Reste aelterer Versionen (regenerierbar) entfernen
         for name in ("bericht.html", "dataset.json", "umsaetze.json", "launchd.out.log", "launchd.err.log"):
             src = os.path.join(self.data_dir, name)
             if os.path.exists(src) and not (name.endswith(".json") and not os.path.exists(self.path(name))):
                 try:
                     os.remove(src)
-                    log.info("Klartextdatei %s entfernt (wird verschluesselt neu erzeugt).", name)
+                    log.info("Klartextdatei %s entfernt (wird verschlüsselt neu erzeugt).", name)
                 except OSError:
                     pass

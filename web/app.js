@@ -38,7 +38,7 @@ const H = {
   belege_sub: 'Platzhalter: {jahr}, {monat}, {entitaet} (Bereichsname), {konto}. Beispiel: {jahr}/{entitaet}',
   belege_kommentar: 'Schreibt den Dateinamen des Belegs als Kommentar an den Umsatz in MoneyMoney (ändert das Kommentarfeld).',
   monate_zurueck: 'Wie viele Monate Historie gelesen und angezeigt werden. 0 = alles ab dem ältesten Umsatz.',
-  bind: '127.0.0.1 = nur dieser Mac. Eine Tailscale-Adresse (100.x.y.z) macht die Oberfläche in deinem privaten Gerätenetz erreichbar (iPhone). Nie das offene Netz.',
+  bind: 'Auf diesem Mac ist die Oberfläche immer unter 127.0.0.1 erreichbar. Eine Tailscale-Adresse (100.x.y.z) hier macht sie zusätzlich in deinem privaten Gerätenetz erreichbar (iPhone). Nie das offene Netz. Für https und die Offline-Ansicht: Terminal → python3 kontor.py tls (trägt Adresse und Zertifikat ein).',
   tls: 'Optional: Zertifikat/Schlüssel (PEM) für HTTPS, z. B. aus „tailscale cert“.',
   updates: 'Einzige Netzverbindung von Kontor: einmal täglich bei GitHub nachsehen, ob es eine neuere Version gibt. Installiert wird nur nach Klick.',
   darlehen_iban: 'Die Rate wird am Gegenkonto (IBAN des Zahlungsempfängers) erkannt. Alternativ ein Text, der im Verwendungszweck steht.',
@@ -78,6 +78,7 @@ const H = {
   immo_objektkonto: 'Das Offline-Konto, das den Objektwert in der Bilanz trägt (z. B. mit dem Kaufpreis).',
   immo_darlehen_konten: 'Zuordnung der Darlehen der Kalkulation zu den Darlehenskonten in MoneyMoney (für Soll/Ist und Planung).',
   dokumente: 'Verknüpfungen zu Dateien auf dem Mac (Kaufvertrag, Darlehensvertrag, Gutachten …). Die Dateien bleiben, wo sie sind – auch in iCloud Drive.',
+  offline: 'Als App auf dem iPhone (Zum Home-Bildschirm) speichert Kontor die zuletzt geladenen Daten auf dem Gerät. Ist der Mac aus oder nicht erreichbar, öffnet das Passwort diese Kopie – nur lesen, Stand des letzten Abrufs. Braucht https (Tailscale-Zertifikat, siehe Einstellungen).',
   paket: 'Einstellungspaket: Regeln, Bereiche, Positionen, Kategorie- und Steuerzuordnungen, Immobilien – ohne Passwörter, Adresse/Port oder Daten.',
 };
 const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k])}">?</span>` : '';
@@ -97,52 +98,114 @@ async function api(path, body, method) {
   try { r = await fetch(path, opts); } catch (e) { throw new Error('Kontor-Dienst nicht erreichbar (läuft er?).'); }
   let data = null;
   try { data = await r.json(); } catch (e) { data = {}; }
-  if (r.status === 401 && path !== '/api/session') { showLogin(); throw new Error('nicht angemeldet'); }
+  if (r.headers.get('X-Kontor-Offline') === '1') { const at = r.headers.get('X-Kontor-Cached-At'); if (at) OFFLINE.stand = at; if (!OFFLINE.mode && opts.method === 'GET') { OFFLINE.mode = true; offlineBanner(); } }
+  else if (OFFLINE.mode && opts.method === 'GET' && r.ok) { OFFLINE.mode = false; OFFLINE.stand = null; offlineBanner(); }
+  if (r.status === 401 && path !== '/api/session') { S.csrf = null; if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.stand = null; checkSession(); } else showLogin(); throw new Error('nicht angemeldet'); }
   if (!r.ok) { const e = new Error(data.fehler || ('Fehler ' + r.status)); e.data = data; throw e; }
   return data;
 }
 function download(url) { const a = document.createElement('a'); a.href = url; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }
 const xlsxBtn = (was, extra = '') => `<button class="xlsx small" data-xlsx="${was}" ${extra}>Excel</button>`;
 
+// ---------------------------------------------------------------- Offline (PWA am iPhone, Mac nicht erreichbar)
+const OFFLINE = {mode: false, stand: null, idle: null};
+function offlineBanner() {
+  if (OFFLINE.mode) { const b = $('#banner'); b.innerHTML = `Offline-Ansicht – der Mac ist nicht erreichbar. Stand ${OFFLINE.stand ? new Date(OFFLINE.stand).toLocaleString('de-DE', {dateStyle: 'short', timeStyle: 'short'}) : 'unbekannt'}; nur lesen. ${hq('offline')}`; b.className = 'banner info'; }
+  else if (S.DATA) banner('');
+  idleReset();
+}
+function idleReset() {
+  clearTimeout(OFFLINE.idle);
+  if (OFFLINE.mode && S.csrf) OFFLINE.idle = setTimeout(() => { S.csrf = null; showLogin(); }, Math.max(1, ((S.CFG && S.CFG.oberflaeche) || {}).sperre_minuten || 15) * 60000);
+}
+for (const ev of ['pointerdown', 'keydown', 'touchstart']) document.addEventListener(ev, idleReset, {passive: true});
+const hexOf = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+const bytesOf = hex => new Uint8Array(hex.match(/../g).map(h => parseInt(h, 16)));
+async function offlineLogin(pw) {
+  if (!(window.crypto && crypto.subtle)) throw new Error('Offline-Anmeldung braucht eine sichere Verbindung (https).');
+  const v = await api('/api/offline/verifier');
+  if (!v.offline) throw new Error('Für diese Installation ist noch kein Offline-Prüfwert gespeichert – einmal mit Passwort am Mac anmelden, dann wieder hier.');
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({name: 'PBKDF2', hash: 'SHA-256', salt: bytesOf(v.offline.salt), iterations: v.offline.rounds}, key, 256);
+  if (hexOf(bits) !== v.offline.hash) throw new Error('Passwort falsch.');
+  if (S.CFG) S.CFG.oberflaeche = Object.assign(S.CFG.oberflaeche || {}, {sperre_minuten: v.sperre_minuten});
+  return true;
+}
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
 // ---------------------------------------------------------------- Anmeldung
 let SESSION = null;
 async function checkSession() {
   try { SESSION = await api('/api/session'); } catch (e) { $('#login').classList.remove('hidden'); $('#login-err').textContent = e.message; return; }
   $('#ver').textContent = 'v' + (SESSION.version || '');
+  if (SESSION.offline) { OFFLINE.mode = true; showLogin(); return; }
+  OFFLINE.mode = false;
   if (SESSION.angemeldet) { S.csrf = SESSION.csrf; await enterApp(); } else showLogin();
 }
 function showLogin() {
   $('#shell').classList.add('hidden'); $('#login').classList.remove('hidden'); $('#drawer').classList.remove('open');
-  const setup = SESSION && SESSION.einrichtung_noetig;
-  $('#login-text').textContent = setup ? 'Erster Start: Passwort festlegen (mindestens 10 Zeichen). Es schützt den Zugang zur Oberfläche; die Daten liegen zusätzlich verschlüsselt auf diesem Mac.'
+  const setup = SESSION && SESSION.einrichtung_noetig && !OFFLINE.mode;
+  $('#login-text').textContent = OFFLINE.mode ? 'Der Mac ist nicht erreichbar. Passwort eingeben, um die auf diesem Gerät gespeicherte Ansicht zu öffnen (nur lesen).'
+    : setup ? 'Erster Start: Passwort festlegen (mindestens 10 Zeichen). Es schützt den Zugang zur Oberfläche; die Daten liegen zusätzlich verschlüsselt auf diesem Mac.'
     : (SESSION && SESSION.einrichtung_nur_lokal ? 'Noch kein Passwort festgelegt – die Einrichtung ist nur direkt am Mac möglich.' : 'Zugang gesperrt.');
   $('#login-pw2').classList.toggle('hidden', !setup);
   $('#login-btn').textContent = setup ? 'Passwort festlegen' : 'Anmelden';
-  $('#touchid-btn').classList.toggle('hidden', !(SESSION && SESSION.touchid && !setup));
+  $('#touchid-btn').classList.toggle('hidden', !(SESSION && SESSION.touchid && !setup) || OFFLINE.mode);
   $('#login-err').textContent = SESSION && SESSION.gesperrt_sekunden ? ('Gesperrt für ' + SESSION.gesperrt_sekunden + ' s nach Fehlversuchen.') : '';
   setTimeout(() => $('#login-pw').focus(), 50);
+  if (!setup && !OFFLINE.mode && SESSION && SESSION.touchid && !document.hidden) tryTouchId(true);     // Touch ID sofort anbieten, ohne Klick
 }
+const TID = {pending: false, lastTry: 0};
+async function tryTouchId(auto) {
+  if (TID.pending || !(SESSION && SESSION.touchid && !SESSION.einrichtung_noetig)) return;
+  if (auto && TID.skipNext) { TID.skipNext = false; return; }           // nach bewusstem Sperren nicht sofort wieder fragen
+  if (auto && Date.now() - TID.lastTry < 4000) return;
+  TID.pending = true; TID.lastTry = Date.now();
+  $('#login-err').textContent = 'Touch ID … bitte am Mac bestätigen.';
+  try { const r = await api('/api/touchid', {}); S.csrf = r.csrf; $('#login-err').textContent = ''; await enterApp(); }
+  catch (err) { $('#login-err').textContent = auto ? 'Touch ID nicht bestätigt – Knopf drücken oder Passwort eingeben.' : err.message; }
+  finally { TID.pending = false; }
+}
+let REVAL = 0;
+async function revalidate() {
+  // Beim Zurueckkehren zum Fenster: Sitzung pruefen; gesperrt -> Anmeldeseite (mit Touch ID), sonst nichts
+  if (document.hidden || Date.now() - REVAL < 2000) return;
+  REVAL = Date.now();
+  let s;
+  try { s = await fetch('/api/session', {credentials: 'same-origin'}).then(r => r.json()); } catch (e) { return; }
+  const loginShown = !$('#login').classList.contains('hidden');
+  if (s.offline) { if (!OFFLINE.mode && !loginShown) { OFFLINE.mode = true; offlineBanner(); } return; }   // Mac weg: gespeicherte Ansicht bleibt offen
+  if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.stand = null; SESSION = s; S.csrf = s.angemeldet ? s.csrf : null; if (s.angemeldet) { await enterApp(); } else showLogin(); return; }
+  if (!s.angemeldet && !loginShown) { SESSION = s; S.csrf = null; showLogin(); }
+  else if (!s.angemeldet && loginShown && s.touchid && !s.einrichtung_noetig) { SESSION = s; tryTouchId(true); }
+  else if (s.angemeldet && loginShown) { SESSION = s; S.csrf = s.csrf; await enterApp(); }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) revalidate(); });
+window.addEventListener('focus', revalidate);
 $('#login-form').addEventListener('submit', async e => {
   e.preventDefault();
-  const pw = $('#login-pw').value, setup = SESSION && SESSION.einrichtung_noetig;
+  const pw = $('#login-pw').value, setup = SESSION && SESSION.einrichtung_noetig && !OFFLINE.mode;
   if (setup && pw !== $('#login-pw2').value) { $('#login-err').textContent = 'Passwörter stimmen nicht überein.'; return; }
+  if (OFFLINE.mode) {
+    $('#login-err').textContent = 'Prüfe …';
+    try { await offlineLogin(pw); S.csrf = 'offline'; $('#login-pw').value = ''; $('#login-err').textContent = ''; await enterApp(); } catch (err) { $('#login-err').textContent = err.message; }
+    return;
+  }
   try {
     const r = await api(setup ? '/api/setup' : '/api/login', {passwort: pw});
     S.csrf = r.csrf; $('#login-pw').value = ''; $('#login-pw2').value = '';
     await enterApp();
   } catch (err) { $('#login-err').textContent = err.message; }
 });
-$('#touchid-btn').addEventListener('click', async () => {
-  $('#login-err').textContent = 'Touch ID … bitte am Mac bestätigen.';
-  try { const r = await api('/api/touchid', {}); S.csrf = r.csrf; await enterApp(); }
-  catch (err) { $('#login-err').textContent = err.message; }
-});
-$('#lock-btn').addEventListener('click', async () => { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; await checkSession(); });
+$('#touchid-btn').addEventListener('click', () => tryTouchId(false));
+$('#lock-btn').addEventListener('click', async () => { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; TID.skipNext = true; await checkSession(); });
 
 async function enterApp() {
   $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
   await loadAll();
   route();
+  if (!OFFLINE.mode) api('/api/offline/verifier').catch(() => {});       // für die Offline-Ansicht zwischenspeichern
+  offlineBanner();
 }
 async function loadAll() {
   const [status, data, cfg, konten, kats] = await Promise.all([
@@ -150,7 +213,8 @@ async function loadAll() {
   S.STATUS = status; S.DATA = data.leer ? null : data; S.CFG = cfg; S.KONTEN = konten.konten || []; S.KATS = kats.kategorien || [];
   S.einrichtung = data.einrichtung;
   if (S.DATA) { const keys = Object.keys(S.DATA.bereiche || {}); if (!S.bereich || !keys.includes(S.bereich)) S.bereich = S.DATA.haupt || keys[0]; }
-  if (status.update && status.update.neuer) banner('Kontor ' + status.update.verfuegbar + ' ist verfügbar – unter „Updates“ installieren.', 'info');
+  if (OFFLINE.mode) offlineBanner();
+  else if (status.update && status.update.neuer) banner('Kontor ' + status.update.verfuegbar + ' ist verfügbar – unter „Updates“ installieren.', 'info');
   else if (S.DATA && (S.DATA.konten_neu || []).length) { const b = $('#banner'); b.innerHTML = `Neue oder unbestätigte Konten: ${esc(S.DATA.konten_neu.slice(0, 4).map(k => k.name).join(', '))}${S.DATA.konten_neu.length > 4 ? ' …' : ''} – <a href="#einrichtung/konten">Bereich und Position bestätigen</a>`; b.className = 'banner info'; }
   else if (S.DATA) banner('');
   statusMini(); bereichSeg();
@@ -1230,10 +1294,15 @@ function vEinstellungen() {
     <label>Port</label><input type="number" id="e-port" value="${o.port ?? 8765}" style="width:100px">
     <label>TLS-Zertifikat (optional) ${hq('tls')}</label><input type="text" id="e-cert" value="${esc(o.tls_cert || '')}" placeholder="/Pfad/zert.crt">
     <label>TLS-Schlüssel (optional)</label><input type="text" id="e-key" value="${esc(o.tls_key || '')}" placeholder="/Pfad/zert.key">
-    <div class="full note">Adresse und Port gelten nach einem Neustart des Dienstes. Erlaubt sind nur dieser Mac (127.0.0.1) oder eine Tailscale-Adresse (100.64.0.0/10) – nie das offene Netz. Vom iPhone aus: Tailscale auf beiden Geräten, dann http(s)://&lt;Tailscale-Adresse&gt;:${o.port ?? 8765}/ – Anmeldung dort nur per Passwort; scharfe Läufe, Updates, Kategorisieren und Ordner öffnen nur am Mac.</div>
+    <div class="full note">Adresse und Port gelten nach einem Neustart des Dienstes. Erlaubt sind nur dieser Mac (127.0.0.1) oder eine Tailscale-Adresse (100.64.0.0/10) – nie das offene Netz. Dieser Mac bleibt immer unter 127.0.0.1 erreichbar. Vom iPhone aus: Tailscale auf beiden Geräten, dann am Mac im Terminal <code>python3 ~/Kontor/kontor.py tls</code> (https, nötig für die Offline-Ansicht) oder hier die Tailscale-Adresse eintragen und http://&lt;Tailscale-Adresse&gt;:${o.port ?? 8765}/ öffnen – Anmeldung dort nur per Passwort; scharfe Läufe, Updates, Zurücksetzen und Ordner öffnen nur am Mac.</div>
   </div>
   <div class="actions"><button id="save-settings">Einstellungen speichern</button><button id="check-btn" class="secondary">Konfiguration gegen MoneyMoney prüfen</button></div><div id="findings-e" class="findings"></div>
   <h2>Passwort</h2><div class="form"><label>Altes Passwort</label><input type="password" id="pw-alt" autocomplete="current-password"><label>Neues Passwort</label><input type="password" id="pw-neu" autocomplete="new-password"></div><div class="actions"><button id="pw-save" class="secondary">Passwort ändern</button></div>
+  <h2>Offline-Ansicht (iPhone) ${hq('offline')}</h2><div class="kv"><div>Auf diesem Gerät</div><div id="sw-state">${navigator.serviceWorker && navigator.serviceWorker.controller ? 'aktiv – die zuletzt geladenen Daten bleiben auf diesem Gerät und sind mit Passwort auch ohne Mac lesbar' : (location.protocol === 'https:' || location.hostname === '127.0.0.1' ? 'wird beim nächsten Laden aktiv' : 'nicht möglich über http – Tailscale-Zertifikat einrichten (Terminal: python3 kontor.py tls), dann https verwenden')}</div></div>
+  <div class="actions"><button id="sw-clear" class="secondary">Gespeicherte Daten auf diesem Gerät löschen</button></div>
+  <h2>Sicherung &amp; Zurücksetzen</h2><div class="note">Die Sicherung ist eine Datei mit allem, was du in Kontor eingestellt hast: Einstellungen, Bereiche, Regeln, Immobilien, Planung, Kontor-Kategorien und Zuordnungen, Monatsstände, Belegindex – ohne Passwort. Zurücksetzen löscht die Daten von Kontor auf diesem Mac (Belegdateien, verknüpfte Dokumente und das Protokoll bleiben); danach beginnt die Einrichtung von vorn, eine Sicherung lässt sich unter Pakete wieder laden.</div>
+  <div class="actions"><button id="bk-save" class="secondary">Sicherung herunterladen</button><a href="#pakete"><button class="secondary">Sicherung laden (Pakete)</button></a></div>
+  <div class="row tight" style="margin-top:8px"><input type="password" id="rs-pw" placeholder="Passwort zur Bestätigung" autocomplete="current-password" style="width:220px"><label class="chk"><input type="checkbox" id="rs-pw-reset"> Passwort ebenfalls zurücksetzen (Einrichtung mit neuem Passwort)</label><button id="rs-go" class="danger" ${S.STATUS.lokal ? '' : 'disabled title="nur am Mac"'}>Programm zurücksetzen</button></div><div id="rs-report" class="findings"></div>
   <h2>Daten</h2><div class="kv"><div>Datenordner</div><div>${esc(S.STATUS.ablage.ordner)}</div><div>Verschlüsselung</div><div>${S.STATUS.ablage.verschluesselt ? 'AES-256, Schlüssel im ' + (S.STATUS.ablage.schluessel === 'schluesselbund' ? 'macOS-Schlüsselbund' : 'Dateisystem (0600)') : 'KEINE'}</div><div>Belegordner</div><div>${esc(S.STATUS.belege.ordner)}</div><div>Touch ID</div><div>${S.STATUS.touchid ? 'verfügbar' : 'nicht verfügbar (Helfer nicht übersetzt oder nicht am Mac)'}</div><div>Version</div><div>${esc(S.STATUS.version)}</div></div>
   <div class="actions"><button id="tm-ex" class="secondary">Datenordner von Time Machine ausschließen</button><button id="tm-in" class="secondary">Ausschluss aufheben</button><button id="diag" class="secondary">Diagnosedatei (maskiert)</button></div>
   <div class="note">Die Diagnosedatei enthält Protokoll, Konfiguration und Status mit maskierten Kontonamen, ohne IBANs, Salden oder Passwörter – zum Weitergeben bei Problemen.</div>`;
@@ -1261,7 +1330,7 @@ function collectSettings() {
 let PKG = null, PKG_UNRES = null;
 function vPakete() {
   const C = S.CFG;
-  let h = `<div class="note">Ein Einstellungspaket ist eine Datei <code>Name.kontor.json</code> mit Regeln, Bereichen, Kategorie- und Steuerzuordnungen – ohne Passwörter, ohne Adresse/Port, ohne Daten. Damit lässt sich eine Konfiguration weitergeben (z. B. an einen Geschäftspartner mit ähnlicher Kontenstruktur) oder sichern. Beim Laden werden Konten über UUID oder Namen zugeordnet; was nicht gefunden wird, ordnest du hier zu.</div>
+  let h = `<div class="note">Ein Einstellungspaket ist eine Datei <code>Name.kontor.json</code> mit Regeln, Bereichen, Positionen, Immobilien, Kategorie- und Steuerzuordnungen – ohne Passwörter, ohne Adresse/Port, ohne Daten. Damit lässt sich eine Konfiguration weitergeben (z. B. an einen Geschäftspartner mit ähnlicher Kontenstruktur) oder sichern. Beim Laden werden Konten über UUID oder Namen zugeordnet; was nicht gefunden wird, ordnest du hier zu. Eine vollständige <b>Sicherung</b> (<code>….kontor-sicherung.json</code> aus Einstellungen → Sicherung) lädst du über dieselbe Fläche – sie ersetzt alles. ${hq('paket')}</div>
   <h2>Exportieren</h2><div class="row"><label>Name <input type="text" id="pk-name" value="Kontor-Einstellungen"></label><label class="chk"><input type="checkbox" id="pk-nouuid"> ohne UUIDs (nur Kontonamen – für andere MoneyMoney-Installationen)</label><label class="chk"><input type="checkbox" id="pk-plan"> Planung mitnehmen</label><button id="pk-export" class="small">Paket herunterladen</button></div>
   <div class="small muted">Aktuell: ${(C.darlehen || []).length} Darlehen, ${(C.beteiligungen || []).length} Beteiligungen, ${(C.saldo_spiegel || []).length} Spiegel, ${Object.keys((C.kapitalfluss || {}).kategorie_zuordnung || {}).length} Kategoriezuordnungen.</div>
   <h2>Laden</h2><div class="drop" id="pk-drop">Paketdatei hierher ziehen<br><button id="pk-pick" class="small" style="margin-top:8px">Datei wählen</button></div><div id="pk-preview"></div>`;
@@ -1291,7 +1360,15 @@ function pkgPreview() {
   const i3 = $('#pk-force'); if (i3) i3.onclick = () => doImport(Object.fromEntries($$('.pk-map').map(s => [s.dataset.ref, s.value]).filter(([, v]) => v)), true);
 }
 async function readPkgFile(file) {
-  try { PKG = JSON.parse(await file.text()); if (!PKG.config) { if (PKG.darlehen || PKG.bilanz) PKG = {kontor_paket: 1, name: file.name, config: PKG}; else throw new Error('kein Kontor-Paket'); } PKG_UNRES = null; pkgPreview(); }
+  try {
+    const obj = JSON.parse(await file.text());
+    if (obj.kontor_sicherung) {
+      const teile = ['Einstellungen', obj.plan ? 'Planung' : '', obj.kategorien ? 'Kategorien' : '', obj.historie ? 'Verlauf' : '', obj.belege ? 'Belegindex' : ''].filter(Boolean).join(', ');
+      if (!confirm('Sicherung vom ' + (obj.erstellt || '?') + ' (Version ' + (obj.version || '?') + ') wiederherstellen? Ersetzt: ' + teile + '.')) return;
+      const r = await api('/api/sicherung/laden', {sicherung: obj});
+      S.CFG = r.config; toast('Sicherung geladen: ' + r.teile.join(', '), 6000); await loadAll(); route(); return;
+    }
+    PKG = obj; if (!PKG.config) { if (PKG.darlehen || PKG.bilanz) PKG = {kontor_paket: 1, name: file.name, config: PKG}; else throw new Error('kein Kontor-Paket'); } PKG_UNRES = null; pkgPreview(); }
   catch (e) { toast('Datei unlesbar: ' + e.message, 5000); }
 }
 
@@ -1302,7 +1379,7 @@ async function vUpdates() {
     <div class="card"><div class="l">Verfügbar</div><div class="v">${info ? (info.fehler ? '<span class="pill err">?</span>' : esc(info.verfuegbar || '–')) : '–'}</div><div class="d">${info ? (info.fehler ? esc(info.fehler) : (info.neuer ? '<span class="pill ok">neuer als installiert</span>' : 'Kontor ist aktuell') + ' · Quelle: ' + esc(info.quelle || '')) : 'noch nicht geprüft'}${r.geprueft ? ' · geprüft ' + new Date(r.geprueft * 1000).toLocaleString('de-DE') : ''}</div></div></div>
     <div class="actions"><button id="up-check" class="secondary">Jetzt prüfen</button><button id="up-install" ${info && info.neuer && st.lokal ? '' : 'disabled'}>Update installieren und Dienst neu starten</button></div>
     ${info && info.notizen ? '<h2>Änderungen</h2><pre class="log">' + esc(info.notizen) + '</pre>' : ''}
-    <div class="note">Die Prüfung fragt nur GitHub (${esc((S.CFG.updates || {}).repo || 'stecrz/Kontor')}) nach der neuesten Version; sonst verbindet sich Kontor mit keinem Server. Beim Installieren wird das Archiv geladen, der Programmordner ersetzt (alte Dateien unter <code>.alt</code>) und der Dienst neu gestartet; die Seite lädt danach neu. Manuell geht es auch: im Programmordner <code>bash install.sh</code> ausführen – das ist jederzeit wiederholbar.</div>`;
+    <div class="note">Die Prüfung fragt nur GitHub (${esc((S.CFG.updates || {}).repo || 'stecrz/Kontor')}) nach der neuesten Version; sonst verbindet sich Kontor mit keinem Server. Beim Installieren wird das Archiv des neuesten Tags von github.com geladen, der Programmordner ersetzt (alte Dateien unter <code>.alt</code>) und der Dienst neu gestartet; ist der Programmordner ein Git-Klon, läuft stattdessen <code>git pull</code>. Die Seite lädt danach neu. Manuell: <code>bash &lt;(curl -fsSL https://raw.githubusercontent.com/${esc((S.CFG.updates || {}).repo || 'stecrz/Kontor')}/main/get.sh)</code> im Terminal – installiert und aktualisiert gleichermaßen. Alle Schritte stehen im Protokoll.</div>`;
   return h;
 }
 
@@ -1341,6 +1418,10 @@ function vHilfe() {
   <li>Optional schreibt Kontor eine Zuordnung auch nach MoneyMoney (Einstellung „Kategorisieren erlauben“, Häkchen „auch in MoneyMoney“) – nur das Kategoriefeld des Umsatzes.</li></ul>
   <h2>Planung: Ereignisse</h2>
   <p>Umschichtung = Betrag wandert von „Von“ nach „Nach“ (Konto leer = Liquidität des Bereichs): z. B. Darlehen auf einen Schlag aus dem Depot zurückzahlen (Von = Depot, Nach = Darlehenskonto). Einnahme/Ausgabe = zahlungswirksam. Wiederholung einmalig, monatlich, je Quartal, jährlich – bis zum Enddatum oder Horizont. Beteiligungskonten lassen sich an das geplante Nettovermögen eines anderen Bereichs koppeln (Wertentwicklung → Kopplung).</p>
+  <h2>iPhone und Offline-Ansicht</h2>
+  <p>Tailscale auf Mac und iPhone, dann am Mac im Terminal <code>python3 ~/Kontor/kontor.py tls</code>: holt ein Zertifikat für den Tailscale-Namen des Macs, trägt Adresse und Zertifikat ein und startet den Dienst neu (in der Tailscale-Admin-Konsole müssen MagicDNS und „HTTPS Certificates“ an sein). Am iPhone die angezeigte https-Adresse öffnen und „Zum Home-Bildschirm“. Die App behält die zuletzt geladenen Daten: ist der Mac aus oder nicht erreichbar, öffnet das Passwort diese Kopie – nur lesen, Stand des letzten Abrufs. Sobald der Mac wieder erreichbar ist, lädt die App frische Daten. Einstellungen → „Gespeicherte Daten auf diesem Gerät löschen“ entfernt die Kopie.</p>
+  <h2>Sicherung und Zurücksetzen</h2>
+  <p>Einstellungen → Sicherung herunterladen: eine Datei mit Konfiguration, Planung, Kategorien, Verlauf und Belegindex (ohne Passwort und Umsätze). Wieder einspielen unter Pakete (Datei wählen). Zurücksetzen löscht Konfiguration, Planung, Kategorien, Verlauf und Auswertungen (wahlweise auch das Passwort) – nur am Mac und mit Passwort; Belegdateien, Schlüssel und Protokoll bleiben.</p>
   <h2>Sicherheit</h2>
   <ul><li>Die Oberfläche ist nur auf diesem Mac erreichbar (127.0.0.1) oder optional über eine Tailscale-Adresse – nie aus dem Internet.</li>
   <li>Alle Daten im Datenordner sind mit AES-256 verschlüsselt; der Schlüssel liegt im macOS-Schlüsselbund. Belege liegen als normale Dateien im Belegordner.</li>
@@ -1510,7 +1591,14 @@ function bind(main) {
   const pw = $('#pw-save', main); if (pw) pw.addEventListener('click', async () => { try { await api('/api/passwort', {alt: $('#pw-alt').value, neu: $('#pw-neu').value}); toast('Passwort geändert'); $('#pw-alt').value = $('#pw-neu').value = ''; } catch (e) { toast(e.message, 4000); } });
   const tmx = $('#tm-ex', main); if (tmx) tmx.addEventListener('click', async () => { const r = await api('/api/tm-ausschluss', {ausschliessen: true}); toast(r.ok ? 'Vom Time-Machine-Backup ausgeschlossen' : 'Fehler: ' + r.text, 4000); });
   const tmi = $('#tm-in', main); if (tmi) tmi.addEventListener('click', async () => { const r = await api('/api/tm-ausschluss', {ausschliessen: false}); toast(r.ok ? 'Ausschluss aufgehoben' : 'Fehler: ' + r.text, 4000); });
-  for (const [id, url] of [['#diag', '/api/diagnose'], ['#diag2', '/api/diagnose'], ['#diag3', '/api/diagnose?namen=1']]) { const d = $(id, main); if (d) d.addEventListener('click', () => download(url)); }
+  for (const [id, url] of [['#diag', '/api/diagnose'], ['#diag2', '/api/diagnose'], ['#diag3', '/api/diagnose?namen=1'], ['#bk-save', '/api/sicherung']]) { const d = $(id, main); if (d) d.addEventListener('click', () => download(url)); }
+  const swc = $('#sw-clear', main); if (swc) swc.addEventListener('click', async () => { try { const ks = await caches.keys(); await Promise.all(ks.filter(k => k === 'kontor-data').map(k => caches.delete(k))); toast('Gespeicherte Daten gelöscht'); } catch (e) { toast('Nicht möglich: ' + e.message, 4000); } });
+  const rs = $('#rs-go', main); if (rs) rs.addEventListener('click', async () => {
+    const pw = $('#rs-pw').value, withPw = $('#rs-pw-reset').checked;
+    if (!pw) return showFindings($('#rs-report'), [], 'Passwort eingeben.', 'fehler');
+    if (!confirm('Wirklich alle Kontor-Daten auf diesem Mac löschen (Einstellungen, Regeln, Immobilien, Planung, Kategorien, Verlauf, Belegindex)' + (withPw ? ' und das Passwort zurücksetzen' : '') + '? Belegdateien und Protokoll bleiben. Vorher eine Sicherung herunterladen!')) return;
+    try { const r = await api('/api/zuruecksetzen', {passwort: pw, mit_passwort: withPw}); toast('Zurückgesetzt – Neustart der Oberfläche', 4000); setTimeout(() => location.reload(), 1200); }
+    catch (e) { showFindings($('#rs-report'), [], e.message, 'fehler'); } });
 
   // Pakete
   const pe = $('#pk-export', main); if (pe) pe.addEventListener('click', () => download(`/api/paket/export?name=${encodeURIComponent($('#pk-name').value || 'Kontor-Einstellungen')}&ohne_uuid=${$('#pk-nouuid').checked ? 1 : 0}&mit_plan=${$('#pk-plan').checked ? 1 : 0}`));

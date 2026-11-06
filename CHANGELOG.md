@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.3.0
+- Installation mit einer Terminal-Zeile (`get.sh`: clone/pull + install.sh); `Installieren.command` entfällt (Gatekeeper blockiert heruntergeladene Skripte). Update aus der Oberfläche lädt das Archiv von github.com statt über die API (die mit 415 antwortete).
+- Protokoll ausführlich (DEBUG in der Datei): Anfragen, MoneyMoney-Aufrufe mit Dauer, Berichtsumfang, Konfigurationsänderungen, Update-Schritte, Fehler mit Rückverfolgung.
+- Touch ID erscheint nach einer Sperre automatisch, sobald das Fenster wieder aktiv ist; Sitzung wird beim Zurückkehren geprüft.
+- iPhone: `python3 kontor.py tls` richtet https über ein Tailscale-Zertifikat ein (Erneuerung durch den Dienst); der Dienst hört immer auf 127.0.0.1 und zusätzlich auf der Tailscale-Adresse.
+- Offline-Ansicht als App am iPhone: zuletzt geladene Daten bleiben auf dem Gerät und sind mit Passwort lesbar, wenn der Mac aus oder nicht erreichbar ist (Service Worker; Passwortprüfung auf dem Gerät mit eigenem Prüfwert; nur lesen; Sperre nach Leerlauf).
+- Sicherung aller Einstellungen (Konfiguration, Planung, Kategorien, Verlauf, Belegindex) als eine Datei; Einspielen unter Pakete; Zurücksetzen des Programms über die Oberfläche (nur am Mac, mit Passwort, wahlweise samt Passwort).
+- Oberfläche durchgängig mit Umlauten (Protokoll und Code bleiben ASCII).
+
 ## 3.2.0
 - Kontor-eigene Kategorien: Baum aus MoneyMoney übernommen und erweiterbar, Zuordnung je Umsatz in Kontor, Regeln gelernt aus bisherigen Zuordnungen (IBAN, Gegenpartei, Gegenpartei + Zweck) plus eigene Regeln; Seite „Zuordnen“ für offene Umsätze je Gegenpartei; MoneyMoney-Kategorien bleiben Rückfall; Rückschreiben nach MoneyMoney optional.
 - Konten einmal bestätigen (Bereich, Position); neue Konten in MoneyMoney erscheinen als „neu“ mit Hinweis.

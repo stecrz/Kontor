@@ -19,6 +19,7 @@ import logging
 import os
 import plistlib
 import subprocess
+import time
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -97,18 +98,23 @@ class Bridge:
         if method not in ALLOWED_METHODS:
             raise MoneyMoneyError("Befehl nicht erlaubt: %s" % method)
         if not is_running():
-            raise MoneyMoneyNotRunning("MoneyMoney laeuft nicht.")
+            raise MoneyMoneyNotRunning("MoneyMoney läuft nicht.")
         payload = json.dumps({"method": method, "args": args}, ensure_ascii=False)
+        t0 = time.time()
+        log.debug("MoneyMoney %s %s", method, json.dumps({k: v for k, v in (args or {}).items() if k not in ("purpose", "payee")}, ensure_ascii=False)[:300])
         try:
             r = subprocess.run(
                 ["osascript", "-l", "JavaScript", JXA_FILE, payload],
                 capture_output=True, text=True, timeout=self.timeout,
             )
         except subprocess.TimeoutExpired:
+            log.error("MoneyMoney %s: Zeitlimit %ds überschritten", method, self.timeout)
             raise MoneyMoneyError(
                 "MoneyMoney antwortet nicht (Zeitlimit %ds) -- offener Dialog?" % self.timeout)
+        log.debug("MoneyMoney %s: Status %d, %d Zeichen, %.1f s", method, r.returncode, len(r.stdout or ""), time.time() - t0)
         if r.returncode != 0:
             err = (r.stderr or r.stdout or "").strip()
+            log.warning("MoneyMoney %s fehlgeschlagen: %s", method, err[:500])
             low = err.lower()
             if "-1743" in err or "not permitted" in low or "nicht erlaubt" in low or "nicht berechtigt" in low:
                 raise MoneyMoneyNotPermitted(
@@ -249,7 +255,7 @@ def refresh_moneymoney() -> "tuple[bool, str]":
     das Kontor ausfuehrt (Terminal bzw. python3). Es wird nur ein Menuepunkt angeklickt.
     """
     if not is_running():
-        return False, "MoneyMoney laeuft nicht."
+        return False, "MoneyMoney läuft nicht."
     try:
         r = subprocess.run(["osascript", "-l", "JavaScript", REFRESH_FILE], capture_output=True, text=True, timeout=30)
     except FileNotFoundError:
@@ -261,7 +267,7 @@ def refresh_moneymoney() -> "tuple[bool, str]":
         err = (r.stderr or "").strip()
         if "1002" in err or "assistive" in err.lower() or "Bedienungshilfe" in err or "not allowed" in err.lower():
             return False, ("Keine Berechtigung: Systemeinstellungen > Datenschutz & Sicherheit > Bedienungshilfen -- "
-                           "das Programm, das Kontor ausfuehrt (Terminal/python3), erlauben.")
+                           "das Programm, das Kontor ausführt (Terminal/python3), erlauben.")
         return False, "Aktualisierung fehlgeschlagen: %s" % (err[:200] or "unbekannter Fehler")
     if out.startswith("ok:"):
         return True, out[3:]

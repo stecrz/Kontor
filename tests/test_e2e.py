@@ -279,6 +279,27 @@ class CoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mm_update._get("https://evil.example/x.zip")
 
+    def test_update_check_uses_archive_urls(self):
+        """Archiv-Adressen zeigen auf github.com/.../archive (nicht auf die API-Zipball-Adresse, die 415 liefert)."""
+        calls = []
+
+        def fake_get(url, accept="application/vnd.github+json"):
+            calls.append(url)
+            if url.endswith("/releases/latest"):
+                raise urllib.error.HTTPError(url, 404, "nf", {}, None)
+            if url.endswith("/tags"):
+                return json.dumps([{"name": "v9.9.9", "zipball_url": "https://api.github.com/repos/x/y/zipball/refs/tags/v9.9.9"}]).encode()
+            raise AssertionError(url)
+        old = mm_update._get; mm_update._get = fake_get
+        try:
+            info = mm_update.check("stecrz/Kontor")
+        finally:
+            mm_update._get = old
+        self.assertEqual(info["verfuegbar"], "v9.9.9"); self.assertTrue(info["neuer"]); self.assertEqual(info["quelle"], "tag")
+        self.assertEqual(info["zip"], "https://github.com/stecrz/Kontor/archive/refs/tags/v9.9.9.zip")
+        self.assertEqual(mm_update.archive_url("a/b", "main", "heads"), "https://github.com/a/b/archive/refs/heads/main.zip")
+        self.assertIsNone(mm_update.install_via_git(restart=False)) if not os.path.isdir(os.path.join(mm_update.HERE, ".git")) else None
+
     def test_refresh_without_macos(self):
         ok, text = mm_bridge.refresh_moneymoney()
         self.assertFalse(ok); self.assertTrue(text)
@@ -1020,6 +1041,59 @@ class FeatureTests(_AppBase):
         self.assertEqual(p["Giro"]["2026-01"], -12.5)
         self.assertEqual(_parse_balance_csv("nur text"), {})
 
+    def test_sicherung_offline_zuruecksetzen(self):
+        import hashlib
+        import mm_auth
+        self.login()
+        # Offline-Pruefwert: eigener Salt, PBKDF2-SHA256, gleicher Hash wie WebCrypto im Browser
+        code, v = self.call("/api/offline/verifier")
+        self.assertEqual(code, 200); self.assertEqual(v["offline"]["rounds"], mm_auth.OFFLINE_ROUNDS); self.assertEqual(v["sperre_minuten"], 15)
+        h = hashlib.pbkdf2_hmac("sha256", b"sehr-geheimes-passwort", bytes.fromhex(v["offline"]["salt"]), v["offline"]["rounds"]).hex()
+        self.assertEqual(h, v["offline"]["hash"])
+        self.assertNotEqual(v["offline"]["salt"], self.app.auth_record()["salt"])
+        # Service Worker wird mit Versionsnummer ausgeliefert, Verifier und Sitzung werden nie zwischengespeichert
+        code, body, hdr = self.call("/sw.js", raw=True)
+        self.assertEqual(code, 200); self.assertIn("application/javascript", hdr["Content-Type"])
+        self.assertIn(("const VERSION = '%s'" % mm_core.version()).encode(), body); self.assertNotIn(b"__VERSION__", body)
+        self.assertIn(b"'/api/session'", body); self.assertIn(b"'/api/sicherung'", body)
+        code, mf = self.call("/manifest.webmanifest", raw=True)[:2]
+        self.assertEqual(code, 200)
+        # Sicherung: alles in einer Datei, wieder einspielbar
+        self.run_and_wait()
+        P = F.uid("priv")
+        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Einnahmen / Gehalt", "methode": "fix", "betrag": "7000", "steigerung": "2"})
+        code, body, hdr = self.call("/api/sicherung", raw=True)
+        self.assertEqual(code, 200); self.assertIn("kontor-sicherung.json", hdr["Content-Disposition"])
+        sich = json.loads(body.decode())
+        self.assertEqual(sich["kontor_sicherung"], 1); self.assertIn("config", sich); self.assertIn("plan", sich); self.assertIn("kategorien", sich)
+        self.assertEqual(sich["plan"]["bereiche"][P]["zeilen"]["Einnahmen/Einnahmen / Gehalt"]["methode"], "fix")
+        self.assertNotIn("auth", sich)
+        # Zuruecksetzen: nur lokal, nur mit Passwort; danach Einrichtung noetig, Passwort bleibt (ohne mit_passwort)
+        self.assertEqual(self.call("/api/zuruecksetzen", {"passwort": "falsch"})[0], 401)
+        code, r = self.call("/api/zuruecksetzen", {"passwort": "sehr-geheimes-passwort"})
+        self.assertEqual(code, 200); self.assertFalse(r["neu_einrichten"])
+        self.assertIsNone(self.store.load("config.json", None)); self.assertIsNone(self.store.load("plan.json", None))
+        self.assertIsNotNone(self.store.load("auth.json", None))
+        self.assertEqual(self.call("/api/status")[0], 401)      # Sitzungen verworfen
+        code, sess = self.call("/api/session")
+        self.assertFalse(sess["angemeldet"]); self.assertFalse(sess["einrichtung_noetig"])
+        code, r = self.call("/api/login", {"passwort": "sehr-geheimes-passwort"})
+        self.assertEqual(code, 200); self.csrf = r["csrf"]
+        code, cfg = self.call("/api/config")
+        self.assertEqual(cfg["bilanz"].get("bereiche"), mm_core.merged_config({})["bilanz"].get("bereiche"))
+        # Sicherung laden stellt Einstellungen und Plan wieder her
+        code, r = self.call("/api/sicherung/laden", {"sicherung": sich})
+        self.assertEqual(code, 200); self.assertIn("Planung", r["teile"]); self.assertIn("Einstellungen", r["teile"])
+        self.assertEqual(self.store.load("plan.json")["bereiche"][P]["zeilen"]["Einnahmen/Einnahmen / Gehalt"]["methode"], "fix")
+        self.assertEqual(self.call("/api/sicherung/laden", {"sicherung": {"x": 1}})[0], 400)
+
+    def test_tls_helpers(self):
+        import mm_tls
+        self.assertIsNone(mm_tls.cert_expiry(os.path.join(self.dir, "fehlt.crt")))
+        cfg = {"oberflaeche": {"tls_cert": "/irgendwo/fremd.crt"}}
+        self.assertFalse(mm_tls.renew_if_due(cfg, self.dir))                 # fremde Zertifikate werden nicht angefasst
+        self.assertFalse(mm_tls.renew_if_due({"oberflaeche": {}}, self.dir))
+
 
 class BrowserTest(unittest.TestCase):
     """Oberflaeche im echten Browser (Playwright, falls vorhanden)."""
@@ -1038,6 +1112,7 @@ class BrowserTest(unittest.TestCase):
         srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         shots = os.environ.get("KONTOR_SHOTS")
+        stopped = False
         try:
             with sync_playwright() as p:
                 b = p.chromium.launch(); pg = b.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=2 if shots else 1)
@@ -1143,10 +1218,35 @@ class BrowserTest(unittest.TestCase):
                 pg.set_viewport_size({"width": 390, "height": 844}); pg.click("#menu-btn"); pg.click("#nav a[href='#uebersicht']"); pg.wait_for_timeout(600)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_mobile.png"), full_page=True)
                 pg.click("#menu-btn"); pg.click("#lock-btn"); pg.wait_for_selector("#login:not(.hidden)")
+                # Offline-Ansicht: Service Worker speichert Oberflaeche und Daten; ohne Dienst oeffnet das Passwort die Kopie (nur lesen)
+                pg.set_viewport_size({"width": 1440, "height": 900})
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); pg.wait_for_selector("#shell:not(.hidden)")
+                pg.wait_for_function("navigator.serviceWorker && navigator.serviceWorker.controller !== null", timeout=15000)
+                pg.reload(); pg.wait_for_selector(".cards")           # jetzt laufen alle Abrufe durch den Service Worker
+                pg.wait_for_function("caches.open('kontor-data').then(c => c.keys()).then(k => k.some(r => r.url.endsWith('/api/offline/verifier')) && k.some(r => r.url.endsWith('/api/dataset')))", timeout=15000)
+                pg.click("#nav a[href='#einstellungen']"); pg.wait_for_selector("#sw-state")
+                self.assertIn("aktiv", pg.query_selector("#sw-state").inner_text())
+                pg.click("#nav a[href='#uebersicht']"); pg.wait_for_selector(".cards")
+                srv.shutdown(); srv.server_close(); stopped = True
+                pg.reload(); pg.wait_for_selector("#login:not(.hidden)")
+                self.assertIn("nicht erreichbar", pg.query_selector("#login-text").inner_text())
+                pg.fill("#login-pw", "falsches-passwort"); pg.click("#login-btn"); pg.wait_for_timeout(1500)
+                self.assertIn("falsch", pg.query_selector("#login-err").inner_text())
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); pg.wait_for_selector("#shell:not(.hidden)", timeout=20000)
+                pg.wait_for_selector(".cards")
+                self.assertIn("Offline-Ansicht", pg.query_selector("#banner").inner_text())
+                self.assertIn("nettovermögen", pg.query_selector("#main").inner_text().lower())
+                msg = pg.evaluate("api('/api/plan', {bereich: 'x'}).then(() => 'ok').catch(e => e.message)")
+                self.assertIn("Offline", msg)
+                pg.click("#nav a[href='#bilanz']"); pg.wait_for_selector("tr.acct")
+                self.assertIn("Liquidität", pg.query_selector("#main").inner_text())
+                if shots: pg.screenshot(path=os.path.join(shots, "ui_offline.png"), full_page=True)
                 self.assertEqual(errors, [])
                 b.close()
         finally:
-            srv.shutdown(); srv.server_close(); shutil.rmtree(d, ignore_errors=True)
+            if not stopped:
+                srv.shutdown(); srv.server_close()
+            shutil.rmtree(d, ignore_errors=True)
 
 
 class BrowserWizardTest(unittest.TestCase):

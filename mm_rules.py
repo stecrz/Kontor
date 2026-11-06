@@ -142,7 +142,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
         res.warnings.append("%s: Darlehenskonto ist eine Gruppe." % rule)
         return res
     if not loan.offline:
-        res.warnings.append("%s: Konto hat eine Bankanbindung -- es werden nur manuell gefuehrte Konten bebucht." % rule)
+        res.warnings.append("%s: Konto hat eine Bankanbindung -- es werden nur manuell geführte Konten bebucht." % rule)
         return res
 
     ab = date.fromisoformat(cfg["ab_datum"])
@@ -190,11 +190,11 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
         recent = [t for t in matched if t.booking_date >= today - timedelta(days=35)]
         if not matched:
             msg = "%s: seit %s keine passende Zahlung in den Quellkonten gefunden%s" % (
-                rule, ab.isoformat(), " -- Erkennung pruefen." if today - ab >= timedelta(days=35) else
-                " (noch keine 35 Tage; normal, falls die Rate spaeter im Monat laeuft).")
+                rule, ab.isoformat(), " -- Erkennung prüfen." if today - ab >= timedelta(days=35) else
+                " (noch keine 35 Tage; normal, falls die Rate später im Monat läuft).")
             (res.warnings if today - ab >= timedelta(days=35) else res.info).append(msg)
         elif not recent and today - timedelta(days=35) >= ab:
-            res.warnings.append("%s: letzte erkannte Zahlung am %s -- seit ueber 35 Tagen keine." %
+            res.warnings.append("%s: letzte erkannte Zahlung am %s -- seit über 35 Tagen keine." %
                                 (rule, max(t.booking_date for t in matched).isoformat()))
 
     # 2. Zinsen ------------------------------------------------------------
@@ -220,7 +220,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
             else:
                 base = None
             if base is None or rate is None:
-                res.warnings.append("%s: keine Jahresanfangsbasis/kein Zinssatz fuer %d -- "
+                res.warnings.append("%s: keine Jahresanfangsbasis/kein Zinssatz für %d -- "
                                     "zins.basis_override[\"%d\"] setzen." % (rule, y, y))
                 year_cache[y] = (0.0, 0.0, 0.0)
             else:
@@ -248,7 +248,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
         manual = [t for t in loan_txs if (t.booking_date.year, t.booking_date.month) == (y, m)
                   and "zins" in t.text.lower() and not TAG_RE.search(t.purpose + t.comment)]
         if manual:
-            res.warnings.append("%s: %04d-%02d enthaelt bereits eine manuelle Zinsbuchung (%s) -- "
+            res.warnings.append("%s: %04d-%02d enthält bereits eine manuelle Zinsbuchung (%s) -- "
                                 "uebersprungen." % (rule, y, m, fmt_eur(manual[0].amount)))
             continue
 
@@ -302,7 +302,7 @@ def plan_mirror(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
         res.warnings.append("%s: Zielkonto ist eine Gruppe." % rule)
         return res
     if not target.offline:
-        res.warnings.append("%s: Zielkonto hat eine Bankanbindung -- es werden nur manuell gefuehrte Konten bebucht." % rule)
+        res.warnings.append("%s: Zielkonto hat eine Bankanbindung -- es werden nur manuell geführte Konten bebucht." % rule)
         return res
     if source.group and any(a.uuid == target.uuid for a in ledger.descendants(source.uuid)):
         res.warnings.append("%s: Zielkonto liegt innerhalb der Quellgruppe (Zirkelbezug)." % rule)

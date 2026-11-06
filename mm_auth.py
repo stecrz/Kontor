@@ -30,6 +30,24 @@ def hash_password(password: str, salt: Optional[bytes] = None) -> Dict[str, str]
     return {"alg": "pbkdf2-sha256", "rounds": PBKDF2_ROUNDS, "salt": salt.hex(), "hash": dk.hex()}
 
 
+OFFLINE_ROUNDS = 200_000
+
+
+def offline_record(password: str) -> Dict[str, str]:
+    """Zweiter, unabhaengiger Pruefwert fuer die Offline-Ansicht am iPhone (WebCrypto-PBKDF2 im Browser).
+    Eigenes Salz, weniger Runden; wird nur an angemeldete Clients ausgeliefert und dort zwischengespeichert."""
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, OFFLINE_ROUNDS)
+    return {"alg": "pbkdf2-sha256", "rounds": OFFLINE_ROUNDS, "salt": salt.hex(), "hash": dk.hex()}
+
+
+def with_offline(rec: Dict[str, str], password: str) -> Dict[str, str]:
+    """Pruefwert fuer offline ergaenzen (bei Einrichtung, Passwortwechsel und Passwort-Anmeldung)."""
+    rec = dict(rec)
+    rec["offline"] = offline_record(password)
+    return rec
+
+
 def verify_password(password: str, rec: Dict[str, str]) -> bool:
     if not rec or rec.get("alg") != "pbkdf2-sha256":
         return False

@@ -144,7 +144,7 @@ def pruefe(o: dict) -> None:
         if lo is not None and x < lo:
             raise ValueError("%s: darf nicht kleiner als %s sein." % (label, lo))
         if hi is not None and x > hi:
-            raise ValueError("%s: darf nicht groesser als %s sein." % (label, hi))
+            raise ValueError("%s: darf nicht größer als %s sein." % (label, hi))
         return x
 
     def dat(v, label, required=False):
@@ -189,7 +189,7 @@ def pruefe(o: dict) -> None:
     names = set()
     for i, l in enumerate(o.get("darlehen") or []):
         if not isinstance(l, dict):
-            raise ValueError("Darlehen %d: ungueltig." % (i + 1))
+            raise ValueError("Darlehen %d: ungültig." % (i + 1))
         label = "Darlehen %s" % (l.get("name") or i + 1)
         if l.get("name") in names:
             raise ValueError("%s: Name doppelt." % label)
@@ -207,7 +207,7 @@ def pruefe(o: dict) -> None:
             dat(l.get(k), "%s %s" % (label, lab))
         for st in l.get("sondertilgungen") or []:
             if not isinstance(st, dict):
-                raise ValueError("%s: Sondertilgung ungueltig." % label)
+                raise ValueError("%s: Sondertilgung ungültig." % label)
             dat(st.get("datum"), label + " Sondertilgung Datum", required=True)
             num(st.get("betrag"), label + " Sondertilgung Betrag", 0)
         if (l.get("art") or "annuitaet") == "annuitaet" and _f(l.get("betrag")) > 0 and not _f(l.get("annuitaet_monat")) and l.get("anfangstilgung_prozent") in (None, ""):
@@ -218,7 +218,7 @@ def pruefe(o: dict) -> None:
     total = 0.0
     for g in ges:
         if not isinstance(g, dict):
-            raise ValueError("Gesellschafter: ungueltig.")
+            raise ValueError("Gesellschafter: ungültig.")
         total += num(g.get("anteil_prozent"), "Gesellschafter %s Anteil %%" % (g.get("name") or "?"), 0, 100)
         num(g.get("steuersatz_prozent"), "Gesellschafter %s Steuersatz %%" % (g.get("name") or "?"), 0, 100)
     if ges and abs(total - 100.0) > 0.05:

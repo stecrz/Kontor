@@ -482,7 +482,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
 
     if unclear:
         warnings.append("%d Umbuchung(en) ohne erkennbaren Partner oder Konto ohne Position (Sektion 'Unklar'). "
-                        "Kategorie 'Umbuchung' nur fuer Konto-zu-Konto-Transfers verwenden, Gegen-IBAN pruefen, "
+                        "Kategorie 'Umbuchung' nur für Konto-zu-Konto-Transfers verwenden, Gegen-IBAN prüfen, "
                         "Position unter Bilanz → Konten setzen." % unclear)
     return R, inbound, warnings
 

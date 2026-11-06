@@ -27,12 +27,15 @@ Kontor enthält keine Annahmen über deine Konten. Alles – Bereiche, Regeln, K
 
 Voraussetzungen: macOS, MoneyMoney, Kommandozeilen-Werkzeuge von Apple (`xcode-select --install`, liefert `python3` und `swiftc`).
 
-1. Programmordner anlegen, z. B. `~/Kontor`: `git clone https://github.com/stecrz/Kontor.git ~/Kontor` – oder das ZIP von GitHub laden und entpacken.
-2. Im Terminal: `cd ~/Kontor && bash install.sh`. (Der Doppelklick auf `Installieren.command` geht erst danach: Dateien aus einem Browser-Download tragen das Quarantäne-Attribut, und Gatekeeper blockiert Skripte per Doppelklick – `bash install.sh` ist davon nicht betroffen und entfernt das Attribut für den Ordner. Alternativ `xattr -dr com.apple.quarantine ~/Kontor` oder Systemeinstellungen → Datenschutz & Sicherheit → „Trotzdem öffnen“. Bei `git clone` tritt das nicht auf.)
-3. Der Browser öffnet `http://127.0.0.1:8765/`: Passwort festlegen, dann **Einrichtung** – modulare Bausteine, die sich einzeln und in beliebiger Reihenfolge einrichten lassen: Verbindung zu MoneyMoney, Bereiche (Pflicht), Bilanzpositionen & Verlauf, Kategorien, Regeln, Immobilien, Planung, Steuer, Belege, Betrieb. Jeder Baustein zeigt, ob er eingerichtet ist; Hilfe-Knöpfe (?) erklären jedes Feld. Danach „Bericht erstellen“.
-4. Beim ersten Zugriff fragt macOS, ob das Programm MoneyMoney steuern darf (Automation) – erlauben. Für „MoneyMoney aktualisieren“ zusätzlich Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen.
+1. Eine Zeile im Terminal (Programme → Dienstprogramme → Terminal), lädt nach `~/Kontor` und richtet alles ein:
+   ```
+   bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/get.sh)
+   ```
+   Dieselbe Zeile aktualisiert später auf den neuesten Stand. Alternativ von Hand: `git clone https://github.com/stecrz/Kontor.git ~/Kontor && cd ~/Kontor && bash install.sh`. (Ein ZIP aus dem Browser geht auch, aber Gatekeeper blockiert dann Skripte per Doppelklick – deshalb gibt es keine Installieren-Datei zum Anklicken; `bash install.sh` im entpackten Ordner entfernt die Sperre. Ein echter Doppelklick-Installer bräuchte eine Apple-Entwicklersignatur.)
+2. Der Browser öffnet `http://127.0.0.1:8765/`: Passwort festlegen, dann **Einrichtung** – modulare Bausteine, die sich einzeln und in beliebiger Reihenfolge einrichten lassen: Verbindung zu MoneyMoney, Bereiche (Pflicht), Konten (Bereich, Position, Verlauf), Kategorien & Zuordnen, Regeln, Immobilien, Planung, Steuer, Belege, Betrieb. Jeder Baustein zeigt, ob er eingerichtet ist; Hilfe-Knöpfe (?) erklären jedes Feld. Danach „Bericht erstellen“.
+3. Beim ersten Zugriff fragt macOS, ob das Programm MoneyMoney steuern darf (Automation) – erlauben. Für „MoneyMoney aktualisieren“ zusätzlich Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen.
 
-`install.sh` ist jederzeit wiederholbar: Es ersetzt den Dienst, lässt Datenordner und Einstellungen unangetastet. Updates gehen auch aus der Oberfläche (Updates → installieren) oder per `python3 kontor.py update --installieren`. Entfernen: `Deinstallieren.command` (fragt, ob Daten und Schlüssel gelöscht werden sollen).
+`install.sh` ist jederzeit wiederholbar: Es ersetzt den Dienst, lässt Datenordner und Einstellungen unangetastet. Updates gehen aus der Oberfläche (Updates → installieren; lädt das Archiv des neuesten Tags von github.com), per `python3 kontor.py update --installieren` oder mit der Terminal-Zeile von oben. Entfernen: `python3 kontor.py uninstall` oder `Deinstallieren.command` (fragt, ob Daten und Schlüssel gelöscht werden sollen).
 
 Der Dienst startet beim Anmelden, läuft dauerhaft und startet nach Abstürzen neu (launchd, Label `de.kontor.dienst`).
 
@@ -74,15 +77,21 @@ Der Dienst startet beim Anmelden, läuft dauerhaft und startet nach Abstürzen n
 
 ## Vom iPhone
 
-Standard: nicht erreichbar. Wenn gewünscht: Tailscale auf Mac und iPhone, in den Einstellungen die Tailscale-Adresse des Macs als Adresse eintragen, Dienst neu starten (`bash install.sh`), am iPhone `http://<Tailscale-Adresse>:8765/` öffnen und „Zum Home-Bildschirm“. Dort gilt: Anmeldung nur per Passwort; lesen, planen, Belege fotografieren – keine scharfen Läufe, keine Updates. Optional TLS mit `tailscale cert`.
+Standard: nicht erreichbar. Wenn gewünscht: Tailscale auf Mac und iPhone (gleiches Tailscale-Konto), dann am Mac im Terminal `python3 ~/Kontor/kontor.py tls`. Das holt über Tailscale ein echtes Zertifikat für den MagicDNS-Namen des Macs (in der Tailscale-Admin-Konsole unter DNS müssen MagicDNS und „HTTPS Certificates“ eingeschaltet sein), trägt Adresse und Zertifikat ein und startet den Dienst neu. Am iPhone `https://<mac-name>.<tailnet>.ts.net:8765/` öffnen (der Befehl zeigt die Adresse) und „Zum Home-Bildschirm“. Auf dem Mac bleibt die Oberfläche parallel unter `http://127.0.0.1:8765/` mit Touch ID. Ohne Zertifikat geht es auch über `http://<Tailscale-IP>:8765/` (Adresse in den Einstellungen eintragen) – dann ohne Offline-Ansicht.
+
+Am iPhone gilt: Anmeldung per Passwort; lesen, planen, Belege fotografieren – keine scharfen Läufe, keine Updates, kein Zurücksetzen. Der Mac muss dafür laufen (nicht im Ruhezustand) und mit Tailscale verbunden sein – egal in welchem Netz.
+
+**Offline-Ansicht.** Die als App gespeicherte Oberfläche behält die zuletzt geladenen Daten auf dem iPhone (Service Worker, nur über https). Ist der Mac aus, im Ruhezustand oder nicht verbunden, öffnet das Passwort diese Kopie: alle Seiten lesbar mit Stand des letzten Abrufs, Schreibzugriffe werden abgewiesen, die Sperre nach Leerlauf gilt auch hier. Das Passwort wird dabei auf dem Gerät gegen einen eigenen Prüfwert (PBKDF2-SHA256, 200 000 Runden, eigener Salt) geprüft; die Kopie selbst liegt im Speicher der App (durch die iPhone-Verschlüsselung geschützt, aber nicht zusätzlich mit dem Passwort verschlüsselt – wer das Gerät entsperrt in der Hand hat und mit Entwicklerwerkzeugen arbeitet, käme an die Daten). Einstellungen → „Gespeicherte Daten auf diesem Gerät löschen“ entfernt die Kopie; sobald der Mac wieder erreichbar ist, wird sie beim nächsten Öffnen aktualisiert. Das Zertifikat erneuert der Dienst selbst (Tailscale stellt es für 90 Tage aus).
+
+**Sicherung und Zurücksetzen.** Einstellungen → Sicherung lädt alle Einstellungen, Planung, Kategorien, Verlauf und den Belegindex als eine Datei (`….kontor-sicherung.json`, ohne Passwort, ohne Umsätze); unter Pakete lässt sie sich wieder einspielen. Zurücksetzen (nur am Mac, mit Passwort) löscht Konfiguration, Planung, Kategorien, Verlauf und Auswertungen – wahlweise auch das Passwort; Belegdateien, Schlüssel und Protokoll bleiben.
 
 ## Kommandozeile
 
-`python3 kontor.py …`: `start` (Dienst im Vordergrund), `oeffnen`, `run [--probelauf|--scharf] [--force]`, `konten` (Kontenbaum mit UUIDs, Typ, Rolle), `check` (Konfiguration gegen MoneyMoney prüfen), `status`, `aktualisieren`, `passwort` (zurücksetzen), `paket-export [DATEI] [--ohne-uuid] [--mit-plan]`, `paket-import DATEI [--ersetzen] [--trotzdem]`, `diagnose [DATEI]`, `update [--installieren]`, `install` / `uninstall`, `version`.
+`python3 kontor.py …`: `start` (Dienst im Vordergrund), `oeffnen`, `run [--probelauf|--scharf] [--force]`, `konten` (Kontenbaum mit UUIDs, Typ, Rolle), `check` (Konfiguration gegen MoneyMoney prüfen), `status`, `aktualisieren`, `passwort` (zurücksetzen), `paket-export [DATEI] [--ohne-uuid] [--mit-plan]`, `paket-import DATEI [--ersetzen] [--trotzdem]`, `diagnose [DATEI]`, `update [--installieren]`, `install` / `uninstall`, `tls [--aus]` (https über Tailscale einrichten), `version`.
 
 ## Datenordner
 
-`~/Library/Application Support/Kontor/` (Umgebungsvariable `KONTOR_DIR` ändert das): `config.json.enc`, `plan.json.enc`, `state.json.enc` (Verlauf, Depot-Monatsstände), `kategorien.json.enc` (Kontor-Kategorien, Zuordnungen, Regeln), `dataset.json.enc` (Auswertungen), `umsaetze.json.enc` (Umsatzliste ohne Gegen-IBAN), `belege.json.enc` (Belegindex), `auth.json.enc` (Passwort-Hash), `kontor.log` (Klartext, rotiert, ohne sensible Daten). Time Machine sichert den Ordner als Chiffretext; der Schlüssel liegt im Login-Schlüsselbund. Wer den Ordner nicht sichern will: Einstellungen → Time-Machine-Ausschluss. Daten der Vorversion „mmtools“ werden beim ersten Start übernommen.
+`~/Library/Application Support/Kontor/` (Umgebungsvariable `KONTOR_DIR` ändert das): `config.json.enc`, `plan.json.enc`, `state.json.enc` (Verlauf, Depot-Monatsstände), `kategorien.json.enc` (Kontor-Kategorien, Zuordnungen, Regeln), `dataset.json.enc` (Auswertungen), `umsaetze.json.enc` (Umsatzliste ohne Gegen-IBAN), `belege.json.enc` (Belegindex), `auth.json.enc` (Passwort-Hash), `kontor.log` (Klartext, rotiert bei 5 MB × 5, ausführlich: jede Anfrage, jeder MoneyMoney-Aufruf mit Dauer, Berichtsumfang, Update-Schritte, Fehler mit Rückverfolgung – ohne Passwörter, IBANs oder Beträge). Time Machine sichert den Ordner als Chiffretext; der Schlüssel liegt im Login-Schlüsselbund. Wer den Ordner nicht sichern will: Einstellungen → Time-Machine-Ausschluss. Daten der Vorversion „mmtools“ werden beim ersten Start übernommen.
 
 ## Fehlermeldungen
 

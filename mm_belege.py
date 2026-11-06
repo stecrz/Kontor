@@ -91,7 +91,7 @@ class Belege:
         if ext not in ALLOWED_EXT:
             raise ValueError("Dateityp %s nicht erlaubt (%s)." % (ext or "ohne Endung", ", ".join(sorted(ALLOWED_EXT))))
         if len(data) > MAX_FILE:
-            raise ValueError("Datei zu gross (max. %d MB)." % (MAX_FILE // (1024 * 1024)))
+            raise ValueError("Datei zu groß (max. %d MB)." % (MAX_FILE // (1024 * 1024)))
         if not data:
             raise ValueError("Leere Datei.")
         kennung = secrets.token_hex(3)
@@ -131,7 +131,7 @@ class Belege:
         """Verknuepfung auf eine Datei ausserhalb des Belegordners (z. B. iCloud Drive). Die Datei bleibt, wo sie ist."""
         full = os.path.normpath(os.path.expanduser(abs_path))
         if not os.path.isabs(full):
-            raise ValueError("Bitte einen vollstaendigen Pfad angeben.")
+            raise ValueError("Bitte einen vollständigen Pfad angeben.")
         st = file_status(full)
         if st == "fehlt":
             raise ValueError("Datei nicht gefunden: %s" % full)

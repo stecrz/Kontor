@@ -16,6 +16,7 @@ Befehle:
   update            Neue Version von GitHub pruefen (--installieren spielt sie ein)
   install           Dienst als Hintergrundprogramm einrichten (startet beim Anmelden, laeuft dauerhaft);
                     uebersetzt den Touch-ID-Helfer.   uninstall entfernt den Dienst wieder (Daten bleiben)
+  tls               https über Tailscale einrichten (Zertifikat holen, Adresse setzen) -- nötig für die Offline-Ansicht am iPhone
   version           Versionsnummer
 
 Datenordner: ~/Library/Application Support/Kontor (oder Umgebungsvariable KONTOR_DIR).
@@ -67,9 +68,9 @@ def migrate_old_data_dir() -> None:
                 os.remove(os.path.join(DATA_DIR, fn))
             except OSError:
                 pass
-        print("Daten der Vorversion uebernommen: %s -> %s (Original bleibt, kann geloescht werden)" % (OLD_DATA_DIR, DATA_DIR))
+        print("Daten der Vorversion übernommen: %s -> %s (Original bleibt, kann gelöscht werden)" % (OLD_DATA_DIR, DATA_DIR))
     except OSError as e:
-        print("Daten der Vorversion konnten nicht uebernommen werden: %s" % e)
+        print("Daten der Vorversion konnten nicht übernommen werden: %s" % e)
 
 
 def setup_logging(quiet: bool) -> None:
@@ -81,10 +82,11 @@ def setup_logging(quiet: bool) -> None:
         pass
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S")
     path = os.path.join(DATA_DIR, "kontor.log")
-    fh = logging.handlers.RotatingFileHandler(path, maxBytes=2_000_000, backupCount=3, encoding="utf-8")
+    fh = logging.handlers.RotatingFileHandler(path, maxBytes=5_000_000, backupCount=5, encoding="utf-8")
     fh.setFormatter(fmt)
+    fh.setLevel(logging.DEBUG)
     root = logging.getLogger()
-    root.setLevel(logging.INFO)
+    root.setLevel(logging.DEBUG)          # Datei: alles (ohne Zugangsdaten); Terminal: ab INFO
     root.addHandler(fh)
     try:
         os.chmod(path, 0o600)
@@ -93,6 +95,7 @@ def setup_logging(quiet: bool) -> None:
     if not quiet:
         sh = logging.StreamHandler(sys.stderr)
         sh.setFormatter(logging.Formatter("%(message)s"))
+        sh.setLevel(logging.INFO)
         root.addHandler(sh)
 
 
@@ -114,7 +117,7 @@ class Lock:
         try:
             fcntl.flock(self.f, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
-            sys.exit("Kontor laeuft bereits (%s)." % self.path)
+            sys.exit("Kontor läuft bereits (%s)." % self.path)
         return self
 
     def __exit__(self, *a):
@@ -161,7 +164,7 @@ def cmd_run(args) -> int:
     if st == "nicht_verfuegbar":
         print(res.get("text")); return 0
     if st == "unveraendert":
-        print("Keine Aenderung in MoneyMoney seit dem letzten Lauf (--force erzwingt einen Lauf)."); return 0
+        print("Keine Änderung in MoneyMoney seit dem letzten Lauf (--force erzwingt einen Lauf)."); return 0
     if st == "laeuft_bereits":
         print("Ein Lauf ist bereits aktiv."); return 1
     if st == "fehler":
@@ -170,9 +173,9 @@ def cmd_run(args) -> int:
         print("  %s  %-50s %14s  %s" % (v["datum"], v["konto"][-50:], fmt_eur(v["betrag"]), v["text"]))
     for w in res.get("warnungen", []):
         print("HINWEIS " + w)
-    print("%s: %d Vorschlag/Vorschlaege, %d gebucht%s" % ("Probelauf" if dry else "Lauf", len(res.get("vorschlaege", [])),
+    print("%s: %d Vorschlag/Vorschläge, %d gebucht%s" % ("Probelauf" if dry else "Lauf", len(res.get("vorschlaege", [])),
                                                         res.get("geschrieben", 0), (" -- FEHLER: " + res["fehler"]) if res.get("fehler") else ""))
-    print("Oberflaeche: python3 kontor.py oeffnen  (Dienst: python3 kontor.py start)")
+    print("Oberfläche: python3 kontor.py öffnen  (Dienst: python3 kontor.py start)")
     return 1 if res.get("fehler") else 0
 
 
@@ -224,20 +227,20 @@ def cmd_status(args) -> int:
 
 def cmd_aktualisieren(args) -> int:
     ok, text = refresh_moneymoney()
-    print(("Ausgeloest: %s" if ok else "Nicht moeglich: %s") % text)
+    print(("Ausgelöst: %s" if ok else "Nicht möglich: %s") % text)
     return 0 if ok else 1
 
 
 def cmd_passwort(args) -> int:
     store = open_store()
-    pw = getpass.getpass("Neues Passwort fuer die Oberflaeche: ")
+    pw = getpass.getpass("Neues Passwort für die Oberfläche: ")
     if pw != getpass.getpass("Wiederholen: "):
-        print("Stimmt nicht ueberein."); return 1
+        print("Stimmt nicht überein."); return 1
     err = mm_auth.password_ok(pw)
     if err:
         print(err); return 1
-    store.save("auth.json", mm_auth.hash_password(pw))
-    print("Passwort gesetzt. Laufende Sitzungen bleiben bis zur Sperre gueltig.")
+    store.save("auth.json", mm_auth.with_offline(mm_auth.hash_password(pw), pw))
+    print("Passwort gesetzt. Laufende Sitzungen bleiben bis zur Sperre gültig.")
     return 0
 
 
@@ -274,19 +277,19 @@ def cmd_paket_import(args) -> int:
     try:
         ledger = fetch(Bridge(dry_run=True), cfg, date.today())
     except MoneyMoneyError as e:
-        print("Hinweis: %s -- Kontoreferenzen werden nicht geprueft." % (unavailable_text(e) or e))
+        print("Hinweis: %s -- Kontoreferenzen werden nicht geprüft." % (unavailable_text(e) or e))
     new_cfg, unresolved, report = import_package(cfg, pkg, ledger, "ersetzen" if args.ersetzen else "ergaenzen")
     for line in report:
         print("  " + line)
     for u in unresolved:
         print("  NICHT GEFUNDEN: %s (%s)" % (u["label"], u["feld"]))
     if unresolved and not args.trotzdem:
-        print("Nicht uebernommen -- Konten in MoneyMoney pruefen oder --trotzdem (Referenzen bleiben als Name).")
+        print("Nicht übernommen -- Konten in MoneyMoney prüfen oder --trotzdem (Referenzen bleiben als Name).")
         return 1
     store.save("config.json", merged_config(new_cfg))
     if pkg.get("plan") and args.mit_plan:
         store.save("plan.json", pkg["plan"])
-    print("Einstellungen uebernommen. Pruefen: python3 kontor.py check  -- ein laufender Dienst uebernimmt sie binnen 20 Sekunden.")
+    print("Einstellungen übernommen. Prüfen: python3 kontor.py check  -- ein laufender Dienst übernimmt sie binnen 20 Sekunden.")
     return 0
 
 
@@ -310,7 +313,7 @@ def cmd_update(args) -> int:
     info = mm_update.check(repo)
     if info.get("fehler"):
         print(info["fehler"]); return 2
-    print("Installiert: %s   Verfuegbar: %s (%s)" % (info["aktuell"], info["verfuegbar"], info["quelle"]))
+    print("Installiert: %s   Verfügbar: %s (%s)" % (info["aktuell"], info["verfuegbar"], info["quelle"]))
     if not info["neuer"]:
         print("Kontor ist aktuell."); return 0
     if not args.installieren:
@@ -335,7 +338,7 @@ def build_touchid() -> str:
             return "ok"
         return "swiftc-Fehler: " + (r.stderr or r.stdout)[-300:]
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-        return "swiftc nicht verfuegbar (%s) -- Xcode Command Line Tools: xcode-select --install" % e
+        return "swiftc nicht verfügbar (%s) -- Xcode Command Line Tools: xcode-select --install" % e
 
 
 def cmd_install(args) -> int:
@@ -350,7 +353,7 @@ def cmd_install(args) -> int:
         except OSError:
             pass
     if not store.load("auth.json", None):
-        print("Noch kein Passwort: wird beim ersten Oeffnen der Oberflaeche am Mac festgelegt.")
+        print("Noch kein Passwort: wird beim ersten Öffnen der Oberfläche am Mac festgelegt.")
     print("Touch-ID-Helfer: %s" % build_touchid())
     plist = {
         "Label": LAUNCHD_LABEL,
@@ -367,10 +370,10 @@ def cmd_install(args) -> int:
         plistlib.dump(plist, f)
     subprocess.run(["launchctl", "unload", launchd_path()], capture_output=True)
     r = subprocess.run(["launchctl", "load", launchd_path()], capture_output=True, text=True)
-    print("Dienst eingerichtet (startet beim Anmelden, laeuft dauerhaft): %s" % launchd_path())
+    print("Dienst eingerichtet (startet beim Anmelden, läuft dauerhaft): %s" % launchd_path())
     if r.returncode != 0:
         print("launchctl: " + (r.stderr or r.stdout))
-    print("Oberflaeche: %s  (python3 kontor.py oeffnen)" % ui_url(cfg))
+    print("Oberfläche: %s  (python3 kontor.py öffnen)" % ui_url(cfg))
     print("Beim ersten Lauf fragt macOS, ob das Programm MoneyMoney steuern darf -- bitte erlauben.")
     return 0
 
@@ -381,7 +384,33 @@ def cmd_uninstall(args) -> int:
         os.remove(launchd_path())
     except FileNotFoundError:
         pass
-    print("Dienst entfernt. Daten bleiben in %s (bei Bedarf von Hand loeschen)." % DATA_DIR)
+    print("Dienst entfernt. Daten bleiben in %s (bei Bedarf von Hand löschen)." % DATA_DIR)
+    return 0
+
+
+def cmd_tls(args) -> int:
+    import mm_tls
+    store = open_store()
+    cfg = load_config(store)
+    if args.aus:
+        cfg["oberflaeche"].update({"tls_cert": "", "tls_key": ""})
+        store.save("config.json", cfg)
+        print("TLS abgeschaltet (Adresse bleibt %s)." % cfg["oberflaeche"].get("bind"))
+    else:
+        try:
+            r = mm_tls.setup(cfg, DATA_DIR)
+        except Exception as e:
+            print("Fehler: %s" % e); return 1
+        cfg["oberflaeche"] = r["oberflaeche"]
+        store.save("config.json", cfg)
+        print("Zertifikat für %s geholt (gültig bis %s), Adresse %s." % (r["name"], (r["gueltig_bis"] or "?")[:10], r["ip"]))
+        print("Oberfläche nach dem Neustart: %s  (am iPhone diese Adresse öffnen, dann „Zum Home-Bildschirm“)." % r["url"])
+        print("Das Zertifikat wird vom laufenden Dienst automatisch erneuert.")
+    if os.path.exists(launchd_path()):
+        r2 = subprocess.run(["launchctl", "kickstart", "-k", "gui/%d/%s" % (os.getuid(), LAUNCHD_LABEL)], capture_output=True, text=True)
+        print("Dienst neu gestartet." if r2.returncode == 0 else "Dienst bitte neu starten: bash install.sh")
+    else:
+        print("Dienst neu starten (bash install.sh), damit die Einstellung greift.")
     return 0
 
 
@@ -404,12 +433,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     pi.add_argument("--trotzdem", action="store_true"); pi.add_argument("--mit-plan", action="store_true")
     dg = sub.add_parser("diagnose"); dg.add_argument("datei", nargs="?"); dg.add_argument("--namen", action="store_true")
     up = sub.add_parser("update"); up.add_argument("--installieren", action="store_true")
+    tl = sub.add_parser("tls"); tl.add_argument("--aus", action="store_true", help="TLS wieder abschalten")
     args = ap.parse_args(argv)
     setup_logging(args.quiet)
     return {"start": cmd_start, "oeffnen": cmd_oeffnen, "run": cmd_run, "konten": cmd_konten, "check": cmd_check,
             "status": cmd_status, "aktualisieren": cmd_aktualisieren, "passwort": cmd_passwort,
             "paket-export": cmd_paket_export, "paket-import": cmd_paket_import, "diagnose": cmd_diagnose,
-            "update": cmd_update, "install": cmd_install, "uninstall": cmd_uninstall, "version": cmd_version}[args.cmd](args)
+            "update": cmd_update, "install": cmd_install, "uninstall": cmd_uninstall, "tls": cmd_tls, "version": cmd_version}[args.cmd](args)
 
 
 if __name__ == "__main__":
