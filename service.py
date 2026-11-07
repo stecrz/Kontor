@@ -190,7 +190,7 @@ class App:
             out.append({"name": c.get("name"), "pfad": str(c.get("path") or c.get("name") or "").replace("\\", " / "),
                         "roh": str(c.get("path") or c.get("name") or ""),
                         "gruppe": bool(c.get("group", False)), "ebene": int(c.get("indentation") or 0),
-                        "budget": b if b and b.get("amount") else None})
+                        "standard": bool(c.get("default", False)), "budget": b if b and b.get("amount") else None})
         return out
 
     def touchid_on(self) -> bool:
@@ -1224,9 +1224,16 @@ def make_handler(app: App):
                 return self._json(200, dict(app.mmh, letzte=st.get("mm_verlauf"), moneymoney_laeuft=is_running(), lokal=self._is_local(s)))
             if path == "/api/categories/kontor":
                 kat = categorize.load(app.store)
+                anzahl: Dict[str, int] = {}                # Umsaetze je Kategorie in MoneyMoney (fuer die Auswahl)
+                for t in (app.ledger.txs if app.ledger is not None else []):
+                    if t.id > 0:
+                        p = categorize.mm_of(t)
+                        if p:
+                            anzahl[p] = anzahl.get(p, 0) + 1
                 return self._json(200, {"baum": sorted(kat["baum"], key=lambda k: k["pfad"].lower()), "regeln": kat["regeln"],
                                         "statistik": categorize.stats(kat, app.ledger) if app.ledger is not None else {},
-                                        "einstellungen": app.config.get("kategorien") or {}, "mm_kategorien": [str(c.get("path") or c.get("name") or "") for c in app.categories_raw]})
+                                        "einstellungen": app.config.get("kategorien") or {}, "mm_kategorien": [str(c.get("path") or c.get("name") or "") for c in app.categories_raw],
+                                        "verwendung": kat.get("verwendung") or {}, "anzahl": anzahl})
             if path == "/api/categories/unassigned":
                 if app.ledger is None:
                     return self._json(200, {"offen": 0, "gruppen": [], "gruppen_gesamt": 0, "hinweis": tr("s_noch_kein_lauf_moneymoney_lesen")})
@@ -1880,6 +1887,15 @@ def make_handler(app: App):
                 categorize.save(app.store, kat)
                 ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="Kategoriebaum") if (app.ledger is not None and aktion != "anlegen") else (False, None)
                 return self._json(200, {"ok": True, "baum": sorted(kat["baum"], key=lambda k: k["pfad"].lower()), "bericht": ok})
+            if path == "/api/categories/usage":
+                categorize.set_usage(kat, body.get("verwendung") or {})
+                if app.ledger is not None:
+                    categorize.auto_assign(kat, app.ledger, overwrite_mm=bool((app.config.get("kategorien") or {}).get("mm_ueberschreiben")))
+                categorize.save(app.store, kat)
+                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund=tr("s_grund_kategorien_auswahl")) if app.ledger is not None else (False, None)
+                log.info("Category usage saved: %d combined, %d not used", sum(1 for v in kat["verwendung"].values() if v == "zusammen"),
+                         sum(1 for v in kat["verwendung"].values() if v == "ignorieren"))
+                return self._json(200, {"ok": True, "verwendung": kat["verwendung"], "bericht": ok})
             if path == "/api/categories/settings":
                 cfg = copy.deepcopy(app.config)
                 kc = cfg.setdefault("kategorien", {})

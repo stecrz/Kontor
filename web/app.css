@@ -371,3 +371,5 @@ h2.sub-h { margin-top:0; }
 .dlg { background:var(--head); color:var(--fg); border-radius:var(--radius); box-shadow:0 10px 40px rgba(0,0,0,.25); padding:18px 20px; max-width:540px; width:100%; }
 .dlg-t { line-height:1.45; margin-bottom:12px; }
 .dlg .actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+.ka-table td:last-child select { min-width:170px; }
+.ka-table tr.ka-inh td { color:var(--muted); }

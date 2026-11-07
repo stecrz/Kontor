@@ -36,6 +36,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
 from rules import TAG_RE
 from i18n import tr
+from categorize import fold as fold_category
 
 ROLES = ["liquiditaet", "wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte", "forderungen", "sonstiges", "verbindlichkeiten",
          "eigenkapital", "eventual", "ignorieren"]
@@ -540,6 +541,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             return ("Einnahmen",)
         return ("__operativ__",)
     cat_memo: Dict[str, tuple] = {}
+    zusammen: Dict[str, str] = kf.get("_zusammen") or {}
+    fold_memo: Dict[str, str] = {}
 
     for t in in_root:
         acc = ledger.accounts[t.account_uuid]
@@ -548,6 +551,11 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         p = partner[t.id]
         p_role = roles.get(p) if p in roles else None
         cat = t.category_path.replace("\\", " / ") or "(ohne Kategorie)"
+        if zusammen:                                     # Einrichtung: Unterkategorien zur Oberkategorie zusammenfassen
+            f = fold_memo.get(cat)
+            if f is None:
+                f = fold_memo[cat] = fold_category(zusammen, cat)
+            cat = f
         top = cat.split(" / ")[0]
         if role == "ignorieren":
             continue

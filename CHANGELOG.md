@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.9.26 (2026-11-07)
+- Kategorien → Auswahl (auch als Schritt in der Einrichtung): je Kategorie aus MoneyMoney „Eigene Zeile“, „Zur Oberkategorie“ (samt Unterkategorien; Kapitalfluss und Planung, Steuer bleibt genau) oder „Nicht verwenden“ (in Kontor wie ohne Kategorie, erscheint unter Zuordnen). Schnellwahl „Nur oberste Ebene als Zeile“. In MoneyMoney ändert sich nichts.
+
 ## 3.9.25 (2026-11-07)
 - Kategorien: MoneyMoney ist maßgeblich – hat ein Umsatz dort eine Kategorie, gilt sie. Umsätze ohne Kategorie ordnest du in Kontor zu.
 - „Kategorien zurückschreiben“ (Einstellungen oder „Einschalten“ unter Kategorien, nur am Mac): Zuordnungen aus Kontor setzt Kontor auch in MoneyMoney – nur das Kategoriefeld, direkt vorher neu gelesen und geprüft. Eine vorhandene andere Kategorie nur nach Rückfrage („In MoneyMoney ersetzen“ oder „Nur in Kontor“); von Kontor gesetzte lassen sich ohne Rückfrage ändern.

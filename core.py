@@ -789,6 +789,9 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
     step = progress or (lambda f, t: None)
     step(0.05, tr("s_schritt_kategorien"))
     kat = prepare_categories(store, ledger, config, categories, lambda f, t: step(0.05 + 0.2 * f, t))
+    zus = {k: v for k, v in (kat.get("verwendung") or {}).items() if v == "zusammen"}
+    if zus:                       # Kapitalfluss-Zeilen: zusammengefasste Kategorien (nur fuer die Berechnung, nicht gespeichert)
+        config = dict(config, kapitalfluss=dict(config.get("kapitalfluss") or {}, _zusammen=zus))
     record_snapshot(state.setdefault("snapshots", {}), ledger.accounts.values(), today)
     # aus MoneyMoney uebernommene Kontostand-Verlaeufe (verschluesselt abgelegt, nur im Speicher in den Zustand gelegt)
     mmh = store.load_shared(MM_HISTORY_FILE, {}) or {}
@@ -859,7 +862,8 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "immobilien": immobilien,
         "budgets": budgets,
         "warnungen": warnings,
-        "kategorien": (step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", ledger._kat_sig, lambda: categorize.stats(kat, ledger)))[1],
+        "kategorien": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", ledger._kat_sig, lambda: categorize.stats(kat, ledger)))[1],
+                           verwendung=len(kat.get("verwendung") or {})),
         "konten_neu": neu,
     }
     step(0.88, "Speichern")

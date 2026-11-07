@@ -542,6 +542,32 @@ class AppTests(_AppBase):
         finally:
             self.app.mm_write_allowed = orig
 
+    def test_kategorien_auswahl(self):
+        """Einrichtung -> Kategorien auswaehlen: zusammenfassen (Kapitalfluss-Zeile = Oberkategorie, Steuer unveraendert) und
+        nicht verwenden (in Kontor ohne Kategorie, erscheint unter Zuordnen); MoneyMoney bleibt unberuehrt."""
+        self.login(); self.run_and_wait()
+        def zeilen():
+            ds = self.store.load("dataset.json")
+            return {z["zeile"] for b in ds["bereiche"].values() for sek in b["kapitalfluss"]["sektionen"] for z in sek["zeilen"]}
+        self.assertIn("Vermietung / Parkweg / Mieteinnahmen", zeilen()); self.assertIn("Wohnen / Miete", zeilen())
+        steuer_vorher = json.dumps(self.store.load("dataset.json")["steuer"], sort_keys=True)
+        code, off = self.call("/api/categories/unassigned"); offen_vorher = off["offen"]
+        code, r = self.call("/api/categories/usage", {"verwendung": {"Vermietung / Parkweg": "zusammen", "Wohnen": "zusammen"}, "warten": True})
+        self.assertEqual(code, 200)
+        z = zeilen()
+        self.assertIn("Vermietung", z); self.assertFalse([x for x in z if "Parkweg" in x])
+        self.assertIn("Wohnen / Miete", z)                                                  # oberste Ebene nicht zusammenfassbar
+        self.assertEqual(json.dumps(self.store.load("dataset.json")["steuer"], sort_keys=True), steuer_vorher)   # Steuer: genaue Kategorie
+        code, r = self.call("/api/categories/usage", {"verwendung": {"Vermietung / Parkweg": "zusammen", "Wohnen": "zusammen",
+                                                                   "Lebensmittel": "ignorieren", "Einnahmen / Gehalt": "zeile"}, "warten": True})
+        self.assertEqual(r["verwendung"], {"Vermietung / Parkweg": "zusammen", "Lebensmittel": "ignorieren"})
+        code, off = self.call("/api/categories/unassigned")
+        self.assertGreater(off["offen"], offen_vorher); self.assertIn("Supermarkt", [g["name"] for g in off["gruppen"]])
+        code, k = self.call("/api/categories/kontor"); self.assertEqual(k["verwendung"]["Lebensmittel"], "ignorieren")
+        self.assertGreater(k["anzahl"]["Lebensmittel"], 0)
+        self.assertFalse([w for b in MockBridge.instances for w in b.written if w[0] == "set" and w[2] is not None])
+        self.assertEqual(self.store.load("dataset.json")["kategorien"]["verwendung"], 2)
+
     def test_abruf_offline_erkennung(self):
         """MoneyMoney setzt den Abrufzeitpunkt auch bei Offline-Konten: Regelziele und Konten ohne Nummern zaehlen nicht fuer den Datenstand."""
         self.login(); self.run_and_wait()

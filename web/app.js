@@ -77,6 +77,7 @@ const H = {
   touchid: t('eingeschaltet_die_anmeldung_am_mac'),
   bilanz_stand: t('salden_am_monatsende_der_laufende'),
   abgleich: t('datenstand_in_zwei_stufen_banken'),
+  kat_auswahl: t('kat_auswahl_tip'),
   voll_lesen: t('voll_lesen_tip'),
   kennung: t('interne_kennung_des_bereichs_wird'),
   intervall: t('der_dienst_liest_alle_n'),
@@ -588,8 +589,8 @@ const MODULES = [
   {id: 'bereiche', t: t('bereiche'), d: t('welche_konten_gehoeren_zusammen_privat'), done: () => (S.CFG.bereiche || []).length > 0 || !!S.DATA},
   {id: 'konten', t: t('konten_2'), d: t('jedes_konto_bestaetigen_bereich_und'), done: () => !!S.DATA && !((S.DATA.konten_neu || []).length)},
   {id: 'historie', t: t('kontostaende_aus_moneymoney'), d: t('bisherigen_verlauf_aller_konten_einmal'), done: () => !!((S.STATUS || {}).moneymoney || {}).historie},
+  {id: 'kategorien', t: t('kategorien_auswaehlen'), d: t('kategorien_auswaehlen_d'), done: () => !!((S.DATA && S.DATA.kategorien || {}).verwendung) || Object.keys((S.CFG.kapitalfluss || {}).kategorie_zuordnung || {}).length > 0, href: '#kategorien/auswahl', optional: true},
   {id: 'zuordnen', t: t('kategorien_zuordnen'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.kategorien || {}).gesamt || {}).ohne), href: '#kategorien', optional: true},
-  {id: 'kategorien', t: t('kategorien_kapitalfluss'), d: t('oberkategorien_den_abschnitten_zuordne'), done: () => Object.keys((S.CFG.kapitalfluss || {}).kategorie_zuordnung || {}).length > 0, href: '#kategorien', optional: true},
   {id: 'regeln', t: t('regeln_gegenbuchungen'), d: t('darlehen_spiegeln_und_verzinsen_beteil'), done: () => (S.CFG.darlehen || []).length + (S.CFG.beteiligungen || []).length + (S.CFG.saldo_spiegel || []).length > 0, href: '#regeln', optional: true},
   {id: 'immobilien', t: t('immobilien'), d: t('kalkulationen_anlegen_mit_konten_und'), done: () => (S.CFG.immobilien || []).length > 0, href: '#immobilien', optional: true},
   {id: 'planung', t: t('planung'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planung', optional: true},
@@ -1835,12 +1836,49 @@ async function saveConfig(cfg, findingsEl, trotzdem) {
 // ---------------------------------------------------------------- Kategorien
 const subTabs = (base, items) => `<div class="tabs">${items.map(([k, l]) => `<button data-next="#${base}${k ? '/' + k : ''}" class="${S.sub === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
 async function vKategorien() {
-  // Reiter: Zuordnen (offene Umsätze) · Kategorien & Regeln · Kapitalfluss-Zuordnung
+  // Reiter: Zuordnen (offene Umsätze) · Auswahl (welche Kategorien Kontor nutzt) · Kategorien & Regeln · Kapitalfluss-Zuordnung
   const offen = ((S.DATA && S.DATA.kategorien || {}).gesamt || {}).ohne;
-  const tabs = subTabs('kategorien', [['', t('zuordnen') + (offen ? ` (${offen})` : '')], ['regeln', t('kontor_kategorien_regeln')], ['kapitalfluss', t('kapitalfluss_zuordnung')]]);
+  const tabs = subTabs('kategorien', [['', t('zuordnen') + (offen ? ` (${offen})` : '')], ['auswahl', t('kat_auswahl')], ['regeln', t('kontor_kategorien_regeln')], ['kapitalfluss', t('kapitalfluss_zuordnung')]]);
+  if (S.sub === 'auswahl') { await loadKat(); return tabs + vKategorienAuswahl(); }
   if (S.sub === 'regeln') { await loadKat(); return tabs + vKontorKategorien(); }
   if (S.sub === 'kapitalfluss') { await loadKat(); return tabs + vKapitalflussZuordnung(); }
   return tabs + await vZuordnen();
+}
+function vKategorienAuswahl() {
+  // Je Kategorie aus MoneyMoney: eigene Zeile, zur Oberkategorie zusammenfassen oder in Kontor nicht verwenden
+  const v = (KZ.kat || {}).verwendung || {}, n = (KZ.kat || {}).anzahl || {};
+  const cats = S.KATS.filter(k => !k.standard);
+  if (!cats.length) return `<div class="card"><div class="d">${t('noch_keine_kategorien_geladen_abgleich')}</div></div>`;
+  const sum = p => Object.entries(n).reduce((s, [k, c]) => s + (k === p || k.startsWith(p + ' / ') ? c : 0), 0);    // mit Unterkategorien
+  let h = `<div class="note">${t('kat_auswahl_note', hq('kat_auswahl'))}</div>
+    <div class="toolbar"><button class="secondary small" id="ka-top">${t('nur_oberste_ebene')}</button><button class="secondary small" id="ka-alle">${t('alle_als_zeile')}</button><span class="sp"></span><button id="ka-save">${t('speichern')}</button></div>
+    <div class="wrap auto"><table class="plain ka-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num">${t('umsaetze_2')}</th><th>${t('in_kontor')}</th></tr></thead><tbody>`;
+  for (const k of cats) {
+    const p = k.pfad, root = !p.includes(' / '), cur = v[p] || 'zeile';
+    const opts = [['zeile', t('eigene_zeile')], ...(root ? [] : [['zusammen', t('zur_oberkategorie')]]), ['ignorieren', t('nicht_verwenden')]];
+    h += `<tr data-p="${esc(p)}"><td style="padding-left:${10 + 18 * (p.split(' / ').length - 1)}px">${k.gruppe ? `<b>${esc(k.name)}</b>` : esc(k.name)}</td><td class="num small">${sum(p) || ''}</td>
+      <td><select class="ka-v">${opts.map(([val, l]) => `<option value="${val}" ${cur === val ? 'selected' : ''}>${l}</option>`).join('')}</select></td></tr>`;
+  }
+  return h + '</tbody></table></div>';
+}
+function bindKatAuswahl(main) {
+  const rows = $$('.ka-table tr[data-p]', main); if (!rows.length) return;
+  // Unterkategorien folgen einer Oberkategorie, die zusammengefasst oder nicht verwendet wird
+  const upd = () => {
+    const val = Object.fromEntries(rows.map(r => [r.dataset.p, $('.ka-v', r).value]));
+    rows.forEach(r => {
+      const parts = r.dataset.p.split(' / '); let inh = null;
+      for (let i = 1; i < parts.length && !inh; i++) { const a = val[parts.slice(0, i).join(' / ')]; if (a && a !== 'zeile') inh = a; }
+      const sel = $('.ka-v', r); r.classList.toggle('ka-inh', !!inh); sel.disabled = !!inh; sel.title = inh ? t('folgt_der_oberkategorie') : '';
+    });
+  };
+  rows.forEach(r => $('.ka-v', r).addEventListener('change', upd)); upd();
+  $('#ka-top', main).onclick = () => { rows.forEach(r => { const sel = $('.ka-v', r); if (r.dataset.p.split(' / ').length === 2 && sel.value === 'zeile') sel.value = 'zusammen'; }); upd(); };
+  $('#ka-alle', main).onclick = () => { rows.forEach(r => { $('.ka-v', r).value = 'zeile'; }); upd(); };
+  $('#ka-save', main).onclick = async () => {
+    const verwendung = {}; rows.forEach(r => { const sel = $('.ka-v', r); if (!sel.disabled && sel.value !== 'zeile') verwendung[r.dataset.p] = sel.value; });
+    try { const r = await api('/api/categories/usage', {verwendung}); toast(t('gespeichert')); KZ.kat = null; afterRebuild(r); route(); } catch (e) { toast(e.message, 6000); }
+  };
 }
 function vKapitalflussZuordnung() {
   const kf = S.CFG.kapitalfluss || {}, zu = kf.kategorie_zuordnung || {}, zk = kf.kategorie_zu_konto || {}, umb = kf.umbuchungs_kategorien || ['Umbuchung'];
@@ -2251,7 +2289,7 @@ async function route() {
     guardDirty(main);
     vbPoll(); mmhPoll();
     if (S.tab === 'immobilien') bindImmo(main);
-    if (S.tab === 'kategorien') { bindZuordnen(main); bindKontorKategorien(main); }
+    if (S.tab === 'kategorien') { bindZuordnen(main); bindKontorKategorien(main); bindKatAuswahl(main); }
   } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== 'nicht angemeldet') main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" onclick="route()">${t('erneut_versuchen')}</button></div>`; }
 }
 let ROUTE_SEQ = 0;

@@ -33,7 +33,53 @@ def load(store) -> dict:
 
 
 def save(store, d: dict) -> None:
-    store.save(FILE, d)
+    store.save(FILE, {k: v for k, v in d.items() if not k.startswith("_")})      # "_..." = Zwischenspeicher, nicht ablegen
+
+
+# ---------------------------------------------------------------------------
+# Verwendung der Kategorien aus MoneyMoney in Kontor (Einrichtung -> Kategorien auswaehlen)
+#   fehlt/"zeile": eigene Zeile · "zusammen": zaehlt samt Unterkategorien zur Oberkategorie · "ignorieren": in Kontor wie
+#   ohne Kategorie (auch alle Unterkategorien)
+# ---------------------------------------------------------------------------
+VERWENDUNG = ("zeile", "zusammen", "ignorieren")
+
+
+def set_usage(d: dict, usage: Dict[str, str]) -> None:
+    clean = {}
+    for k, v in (usage or {}).items():
+        p = norm_cat(k)
+        if not p or v not in VERWENDUNG or v == "zeile":
+            continue
+        if v == "zusammen" and " / " not in p:
+            continue                                   # oberste Ebene hat keine Oberkategorie
+        clean[p] = v
+    d["verwendung"] = clean
+    d.pop("_ign", None)
+
+
+def ignored(d: dict, path: str) -> bool:
+    """Kategorie (oder eine ihrer Oberkategorien) soll in Kontor nicht verwendet werden."""
+    if not path:
+        return False
+    c = d.get("_ign")
+    if c is None:
+        c = d["_ign"] = {"__set__": {k for k, v in (d.get("verwendung") or {}).items() if v == "ignorieren"}}
+    hit = c.get(path)
+    if hit is None:
+        ign, parts = c["__set__"], path.split(" / ")
+        hit = c[path] = bool(ign) and any(" / ".join(parts[:i]) in ign for i in range(1, len(parts) + 1))
+    return hit
+
+
+def fold(usage: Dict[str, str], path: str) -> str:
+    """Zeile im Kapitalfluss: die erste Kategorie im Pfad, die zusammengefasst werden soll, zaehlt zu ihrer Oberkategorie."""
+    if not usage or " / " not in path:
+        return path
+    parts = path.split(" / ")
+    for i in range(1, len(parts)):
+        if usage.get(" / ".join(parts[:i + 1])) == "zusammen":
+            return " / ".join(parts[:i])
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -150,10 +196,16 @@ def mm_of(t: Tx) -> str:
     return norm_cat(t.mm_category_path if t.mm_category_path is not None else t.category_path)
 
 
+def mm_used(d: dict, t: Tx) -> str:
+    """Kategorie aus MoneyMoney, soweit Kontor sie verwendet ('' bei "nicht verwenden")."""
+    mm = mm_of(t)
+    return "" if mm and ignored(d, mm) else mm
+
+
 def effective(d: dict, t: Tx) -> Tuple[str, str]:
     """(Pfad, Quelle): Kategorie aus MoneyMoney; ohne (oder ausdruecklich uebersteuert) die Zuordnung in Kontor; sonst ''."""
     z = d["zuordnung"].get(str(t.id))
-    mm = mm_of(t)
+    mm = mm_used(d, t)
     if z and z.get("k") and (not mm or z.get("ov")):
         return z["k"], z.get("q", "manuell")
     return (mm, "moneymoney") if mm else ("", "")
@@ -169,9 +221,11 @@ def apply_to_ledger(d: dict, ledger: Ledger) -> Dict[str, int]:
         if q and q != "moneymoney":
             t.category_path = path.replace(" / ", "\\")
             t.category = path.split(" / ")[-1]
-        else:
+        elif q:
             t.category_path = t.mm_category_path
             t.category = norm_cat(t.mm_category_path).split(" / ")[-1] if t.mm_category_path else ""
+        else:                                            # ohne Kategorie (oder "nicht verwenden")
+            t.category_path, t.category = "", ""
         counts[q or "ohne"] += 1
     return dict(counts)
 
@@ -313,7 +367,7 @@ def auto_assign(d: dict, ledger: Ledger, overwrite_mm: bool = False, progress=No
         z = d["zuordnung"].get(tid)
         if z and z.get("q") == "manuell":
             continue
-        mm_path = mm_of(t)
+        mm_path = mm_used(d, t)
         if not overwrite_mm and mm_path:
             if z and z.get("q") == "regel":
                 del d["zuordnung"][tid]        # MoneyMoney-Kategorie gilt wieder
