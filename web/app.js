@@ -512,13 +512,30 @@ function vEinrichtung(sub) {
   if (!S.DATA) h += `<div class="card"><h3>Erste Auswertung erstellen</h3><div class="small muted">Liest alle Umsätze aus MoneyMoney und baut Übersicht, Bilanz, Kapitalfluss, Planung und Steuer. In MoneyMoney wird nichts verändert. Danach hält Kontor die Auswertung selbst aktuell (nach jeder Änderung und bei jedem Abgleich).</div><div class="actions"><button id="w-report" class="small">Auswertung erstellen</button></div></div>`;
   return h;
 }
+function mmStepDone(st) { return st.moneymoney.laeuft && st.moneymoney.gesperrt !== true; }
+function mmStepInner(st) {
+  const m = st.moneymoney;
+  const txt = !m.laeuft ? 'MoneyMoney starten und entsperren – Kontor startet es nicht selbst. Diese Anzeige prüft alle paar Sekunden.'
+    : m.gesperrt === true ? 'MoneyMoney läuft, ist aber gesperrt – bitte in MoneyMoney entsperren.' : 'MoneyMoney läuft und ist entsperrt.';
+  return `<div class="b"><b>MoneyMoney läuft</b><span class="dot ${!m.laeuft ? 'off' : m.gesperrt === true ? 'warn' : 'ok'}"></span>${txt}</div>`;
+}
+const VB = {timer: null};
+function vbPoll() {
+  // Auf der Seite "Verbindung" alle 3 s pruefen, ob MoneyMoney laeuft und entsperrt ist
+  clearTimeout(VB.timer);
+  if (!(S.tab === 'einrichtung' && S.sub === 'verbindung')) return;
+  VB.timer = setTimeout(async () => {
+    try { S.STATUS = await api('/api/status?frisch=1'); statusMini(); const el = $('#vb-mm'); if (el) { el.className = 'step ' + (mmStepDone(S.STATUS) ? 'done' : ''); el.innerHTML = mmStepInner(S.STATUS); } } catch (e) {}
+    vbPoll();
+  }, 3000);
+}
 function vVerbindung() {
   const st = S.STATUS;
   return `<h2>Verbindung zu MoneyMoney</h2><div class="steps">
-    <div class="step ${st.moneymoney.laeuft ? 'done' : ''}"><div class="b"><b>MoneyMoney läuft</b>${st.moneymoney.laeuft ? 'MoneyMoney läuft.' : 'MoneyMoney starten und entsperren. Kontor startet es nicht selbst.'}</div></div>
+    <div class="step ${mmStepDone(st) ? 'done' : ''}" id="vb-mm">${mmStepInner(st)}</div>
     <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>Zugriff erlauben und Konten lesen ${hq('berechtigung')}</b>macOS fragt einmal, ob „python3“ MoneyMoney steuern darf – erlauben.<div class="actions"><button id="w-check" class="small">Verbindung prüfen</button><span id="w-busy" class="working hidden"><span class="spin"></span>Lese Konten und Umsätze aus MoneyMoney … bei vielen Umsätzen bis zu einer Minute.</span></div><div id="w-findings" class="findings"></div></div></div>
     <div class="step"><div class="b"><b>Optional: Aktualisierung aus Kontor erlauben</b>Damit Kontor „Alle Konten aktualisieren“ anstoßen kann, zusätzlich unter Bedienungshilfen erlauben. ${hq('mm_refresh')}</div></div>
-    <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>Weiter</b><div class="actions"><a href="#einrichtung/bereiche"><button ${S.KONTEN.length ? '' : 'class="secondary"'}>Weiter: Bereiche</button></a><a href="#einrichtung"><button class="secondary">Zurück zur Einrichtung</button></a></div></div></div></div>`;
+    <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>Weiter</b><div class="actions"><button data-next="#einrichtung/bereiche" ${S.KONTEN.length ? '' : 'class="secondary"'}>Weiter: Bereiche</button><button class="secondary" data-next="#einrichtung">Zurück zur Einrichtung</button></div></div></div></div>`;
 }
 const FIRMA_RE = /\b(gmbh|ug|ag|se|kg|ohg|gbr|egbr|e\.?\s?k\.?|e\.?\s?v\.?|eg|ltd|inc|llc|holding|verwaltung|beteiligung|immobilien|stiftung|verein|genossenschaft|partner|&\s?co)\b/i;
 const guessArt = name => FIRMA_RE.test(name || '') || /(gmbh|gbr|holding)/i.test(name || '') ? 'gesellschaft' : 'privat';
@@ -534,7 +551,7 @@ function vBereicheEditor() {
   if (list.length && !list.some(b => b.haupt)) { const p = list.find(b => (b.art || guessArt(b.name)) === 'privat') || list[0]; p.haupt = true; }
   let h = `<h2>Bereiche ${hq('bereich')}</h2><div class="note">Standard: jede Kontengruppe der obersten Ebene ist ein Bereich. Art und Hauptbereich sind aus den Namen vorbelegt – prüfen und bei Bedarf ändern. Bereiche lassen sich umbenennen, löschen, zusammenlegen oder aus einzelnen Konten und Gruppen zusammenstellen. ${S.KONTEN.length ? '' : '<b>Noch keine Konten geladen – zuerst die Verbindung prüfen.</b>'}</div><div class="list" id="bereiche">`;
   list.forEach((b, i) => { h += bereichForm(b, i); });
-  h += '</div><div class="actions"><button id="add-bereich" class="secondary">Bereich hinzufügen</button><button id="save-bereiche">Speichern</button><button class="secondary" data-next="#einrichtung/konten" data-save="#save-bereiche">Weiter: Positionen &amp; Verlauf</button></div><div id="findings-b" class="findings"></div>';
+  h += '</div><div class="actions"><button id="add-bereich" class="secondary">Bereich hinzufügen</button><button id="save-bereiche" class="secondary">Speichern</button><button data-savenext="#einrichtung/konten" data-save="bereiche">Speichern und weiter: Positionen &amp; Verlauf</button><button class="secondary" data-next="#einrichtung">Zurück zur Einrichtung</button></div><div id="findings-b" class="findings"></div>';
   return h;
 }
 function bereichForm(b, i) {
@@ -556,7 +573,7 @@ function bereichForm(b, i) {
     <input type="hidden" class="b-id" value="${esc(b.id || '')}">
     <label>Art</label><select class="b-art"><option value="privat" ${art === 'privat' ? 'selected' : ''}>privat</option><option value="gesellschaft" ${art === 'gesellschaft' ? 'selected' : ''}>Gesellschaft (GbR, GmbH …)</option></select>
     <label>Hauptbereich ${hq('haupt')}</label><label class="chk"><input type="radio" name="b-haupt" class="b-haupt" ${b.haupt ? 'checked' : ''}> ${b.haupt ? 'ja' : 'nein'}</label>
-    <label>Anteil ${hq('anteil')}</label><div class="row tight"><input type="number" step="0.01" min="0" max="100" class="b-anteil" value="${pct}" placeholder="${regel != null ? Math.round(regel * 10000) / 100 : '100'}" style="width:110px"> %${regel != null && pct === '' ? `<span class="small muted">Vorschlag aus der Beteiligungsregel: ${Math.round(regel * 10000) / 100} %</span>` : ''}</div>
+    <label class="b-anteil-row ${art === 'privat' ? 'hidden' : ''}">Anteil ${hq('anteil')}</label><div class="row tight b-anteil-row ${art === 'privat' ? 'hidden' : ''}"><input type="number" step="0.01" min="0" max="100" class="b-anteil" value="${pct}" placeholder="${regel != null ? Math.round(regel * 10000) / 100 : '100'}" style="width:110px"> %${regel != null && pct === '' ? `<span class="small muted">Vorschlag aus der Beteiligungsregel: ${Math.round(regel * 10000) / 100} %</span>` : ''}</div>
     <label>Konten / Gruppen ${hq('gruppenwahl')}</label><div class="list b-konten" style="max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 10px">${rows.join('')}</div>
   </div></div><button class="danger small del">Entfernen</button></div>`;
 }
@@ -580,14 +597,15 @@ function bindBereichKonten(main) {
     }
   }));
   $$('.b-haupt', main).forEach(r => r.addEventListener('change', () => $$('.b-haupt', main).forEach(x => { x.parentElement.lastChild.textContent = x.checked ? ' ja' : ' nein'; })));
-  $$('.b-name', main).forEach(inp => inp.addEventListener('input', () => { const sel = $('.b-art', inp.closest('.item')); if (sel && !sel.dataset.touched) sel.value = guessArt(inp.value); }));
-  $$('.b-art', main).forEach(sel => sel.addEventListener('change', () => { sel.dataset.touched = '1'; }));
+  const anteilSichtbar = it => $$('.b-anteil-row', it).forEach(x => x.classList.toggle('hidden', $('.b-art', it).value === 'privat'));
+  $$('.b-name', main).forEach(inp => inp.addEventListener('input', () => { const it = inp.closest('.item'), sel = $('.b-art', it); if (sel && !sel.dataset.touched) { sel.value = guessArt(inp.value); anteilSichtbar(it); } }));
+  $$('.b-art', main).forEach(sel => sel.addEventListener('change', () => { sel.dataset.touched = '1'; anteilSichtbar(sel.closest('.item')); }));
 }
 function collectBereiche() {
   const cfg = JSON.parse(JSON.stringify(S.CFG));
   cfg.bereiche = $$('#bereiche .item').map(it => ({ id: $('.b-id', it).value.trim() || ('b-' + Math.random().toString(36).slice(2, 10)), name: $('.b-name', it).value.trim(),
     art: $('.b-art', it).value || guessArt($('.b-name', it).value), haupt: $('.b-haupt', it).checked,
-    anteil: $('.b-anteil', it).value === '' ? null : Math.round(parseFloat($('.b-anteil', it).value) * 100) / 10000, aktiv: true,
+    anteil: $('.b-art', it).value === 'privat' || $('.b-anteil', it).value === '' ? null : Math.round(parseFloat($('.b-anteil', it).value) * 100) / 10000, aktiv: true,
     konten: $$('.b-k:checked', it).filter(c => !c.disabled).map(c => c.value) }));
   if (cfg.bereiche.length && !cfg.bereiche.some(b => b.haupt)) cfg.bereiche[0].haupt = true;
   if (cfg.bilanz) delete cfg.bilanz.hauptbereich;
@@ -615,7 +633,7 @@ function vKontenEditor() {
       <td><select class="k-show"><option value="">auto${k.inaktiv ? ' (inaktiv)' : ''}</option><option value="hide" ${hide.has(k.uuid) ? 'selected' : ''}>ausblenden</option><option value="show" ${show.has(k.uuid) ? 'selected' : ''}>immer zeigen</option></select></td>
       <td class="num ${(k.saldo || 0) < 0 ? 'neg' : 'pos'}">${F(k.saldo)}</td></tr>`;
   }
-  h += '</tbody></table></div><div class="actions"><button id="save-konten">Speichern</button><button class="secondary" data-next="#einrichtung" data-save="#save-konten">Zurück zur Einrichtung</button></div><div id="findings-k2" class="findings"></div>';
+  h += '</tbody></table></div><div class="actions"><button id="save-konten" class="secondary">Speichern</button><button data-savenext="#zuordnen" data-save="konten">Speichern und weiter: Kategorien &amp; Zuordnen</button><button class="secondary" data-next="#einrichtung">Zurück zur Einrichtung</button></div><div id="findings-k2" class="findings"></div>';
   h += `<h2>Saldenverlauf importieren ${hq('verlauf_import')}</h2><div class="note">Für Depots und Konten ohne Umsatzhistorie: Monatsstände aus einer Datei übernehmen. Erkannt werden CSV und Excel (.xlsx) – als Liste (Datum, Konto, Saldo), als Tabelle mit Stichtagen in der Kopfzeile (Konten als Zeilen, z. B. eine eigene Vermögensübersicht) oder mit Stichtagen in der ersten Spalte (Konten als Spalten, z. B. MoneyMoney → Berichte → Kontostand → exportieren). Je Monat zählt der letzte Wert. Umsatzkonten brauchen das nicht.</div>
     <div class="drop" id="hi-drop">Datei hierher ziehen<br><button id="hi-pick" class="small" style="margin-top:8px">Datei wählen</button></div><div id="hi-preview"></div>`;
   return h;
@@ -1688,6 +1706,7 @@ async function route() {
     main.innerHTML = `<div class="fade">${h}</div>`;
     bind(main);
     guardDirty(main);
+    vbPoll();
     if (S.tab === 'immobilien') bindImmo(main);
     if (S.tab === 'zuordnen') bindZuordnen(main);
     if (S.tab === 'kategorien') { bindKontorKategorien(main); $$('.tabs button[data-kt]', main).forEach(b => b.addEventListener('click', () => { KZ.tab = b.dataset.kt; route(); })); }
@@ -1707,18 +1726,52 @@ const guarded = () => GUARDED.includes(S.tab + (S.sub ? '/' + S.sub : ''));
 })();
 function guardDirty(main) {
   DIRTY.on = false; DIRTY.hash = location.hash;
-  if (!guarded()) return;
-  $$('[data-next]', main).forEach(b => b.addEventListener('click', async () => {
-    if (DIRTY.on) {
-      if (!confirm('Es gibt ungespeicherte Änderungen. Jetzt speichern und weiter?\n\nAbbrechen = auf dieser Seite bleiben.')) return;
-      $$('.findings', main).forEach(f => { f.innerHTML = ''; });
-      const sb = $(b.dataset.save, main); if (sb) sb.click();
-      for (let i = 0; i < 300 && DIRTY.on && !$('.findings .fehler', main); i++) await new Promise(r => setTimeout(r, 100));
-      if (DIRTY.on) return;      // Speichern fehlgeschlagen: Befunde stehen auf der Seite
-    }
-    location.hash = b.dataset.next;
+  $$('[data-next]', main).forEach(b => b.addEventListener('click', () => { location.hash = b.dataset.next; }));     // Rueckfrage bei Ungespeichertem: route()
+  $$('[data-savenext]', main).forEach(b => b.addEventListener('click', async () => {
+    $$('.findings', main).forEach(f => { f.innerHTML = ''; });
+    b.disabled = true;
+    try {
+      if (!(await SAVE[b.dataset.save]())) return;          // Fehler stehen auf der Seite
+      await api('/api/bericht/neu', {});
+      if (!(await waitRebuild('Auswertung wird mit den gespeicherten Angaben aktualisiert'))) return;
+      await loadAll();
+      location.hash = b.dataset.savenext;
+    } finally { b.disabled = false; }
   }));
 }
+async function waitRebuild(title) {
+  // Ladeanzeige mit Fortschritt, bis die Auswertung im Hintergrund fertig ist
+  const ov = document.createElement('div'); ov.className = 'busy-ov';
+  ov.innerHTML = `<div class="box"><div class="t">${esc(title)} …</div><div class="bar"><i style="width:3%"></i></div><div class="s small muted">startet …</div></div>`;
+  document.body.appendChild(ov);
+  try {
+    for (let i = 0; i < 1500; i++) {
+      await new Promise(r => setTimeout(r, i < 5 ? 150 : 400));
+      let st; try { st = await api('/api/status'); } catch (e) { continue; }
+      S.STATUS = st; const b = st.bericht || {};
+      if (!b.laeuft) {
+        if (b.fehler) { toast('Auswertung konnte nicht aktualisiert werden: ' + b.fehler, 8000); return false; }
+        $('.bar i', ov).style.width = '100%'; await new Promise(r => setTimeout(r, 150));
+        BER.stand = b.stand || ''; return true;
+      }
+      const f = b.fortschritt || {};
+      $('.bar i', ov).style.width = Math.max(3, Math.round((f.anteil || 0) * 100)) + '%';
+      $('.s', ov).textContent = (f.schritt || 'läuft') + ' · ' + Math.round((f.anteil || 0) * 100) + ' %';
+    }
+    toast('Die Auswertung dauert ungewöhnlich lange – sie läuft im Hintergrund weiter.', 8000); return true;
+  } finally { ov.remove(); }
+}
+// Speichern je Einrichtungsschritt (true = gespeichert)
+const SAVE = {
+  bereiche: async () => {
+    const f = $('#findings-b'), cfg = collectBereiche();
+    if (!cfg.bereiche.length) { showFindings(f, [], 'Mindestens ein Bereich ist nötig.', 'fehler'); return false; }
+    if (cfg.bereiche.some(b => !b.name)) { showFindings(f, [], 'Jeder Bereich braucht einen Namen.', 'fehler'); return false; }
+    if (cfg.bereiche.some(b => !b.konten.length)) { showFindings(f, [], 'Jeder Bereich braucht mindestens ein Konto oder eine Gruppe.', 'fehler'); return false; }
+    return saveConfig(cfg, f);
+  },
+  konten: async () => saveConfig(collectKonten(), $('#findings-k2')),
+};
 window.addEventListener('beforeunload', e => { if (DIRTY.on) { e.preventDefault(); e.returnValue = ''; } });
 function bind(main) {
   $$('tr.group[data-id]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.id] = !S.collapsed[tr.dataset.id]; route(); }));
@@ -1736,8 +1789,8 @@ function bind(main) {
     S.KONTEN = r.konten; S.KATS = r.kategorien || S.KATS; await route(); showFindings($('#w-findings'), r.befunde, 'Verbindung steht: ' + r.konten.length + ' Konten gelesen.', 'ok'); });
   const wr = $('#w-report', main); if (wr) wr.addEventListener('click', () => rebuildReport(true));
   const abr = $('#add-bereich', main); if (abr) { bindBereichKonten(main); abr.addEventListener('click', () => { $('#bereiche').insertAdjacentHTML('beforeend', bereichForm({name: 'Neuer Bereich', id: '', konten: [], haupt: false}, $$('#bereiche .item').length)); bindDel(main); bindBereichKonten($('#bereiche .item:last-child')); }); }
-  const sbr = $('#save-bereiche', main); if (sbr) sbr.addEventListener('click', async () => { const cfg = collectBereiche(); if (!cfg.bereiche.length) return showFindings($('#findings-b'), [], 'Mindestens ein Bereich ist nötig.', 'fehler'); if (cfg.bereiche.some(b => !b.name)) return showFindings($('#findings-b'), [], 'Jeder Bereich braucht einen Namen.', 'fehler'); if (cfg.bereiche.some(b => !b.konten.length)) return showFindings($('#findings-b'), [], 'Jeder Bereich braucht mindestens ein Konto oder eine Gruppe.', 'fehler'); if (await saveConfig(cfg, $('#findings-b'))) { const box = $('#findings-b').innerHTML; await rebuildReport(false); const f = $('#findings-b'); if (f) f.innerHTML = box; } });
-  const skn = $('#save-konten', main); if (skn) skn.addEventListener('click', async () => { if (await saveConfig(collectKonten(), $('#findings-k2'))) { const box = $('#findings-k2').innerHTML; await rebuildReport(false); const f = $('#findings-k2'); if (f) f.innerHTML = box; } });
+  const sbr = $('#save-bereiche', main); if (sbr) sbr.addEventListener('click', async () => { if (await SAVE.bereiche()) { const box = $('#findings-b').innerHTML; await rebuildReport(false); const f = $('#findings-b'); if (f) f.innerHTML = box; } });
+  const skn = $('#save-konten', main); if (skn) skn.addEventListener('click', async () => { if (await SAVE.konten()) { const box = $('#findings-k2').innerHTML; await rebuildReport(false); const f = $('#findings-k2'); if (f) f.innerHTML = box; } });
   $$('.k-hist', main).forEach(b => b.addEventListener('click', async e => { const btn = e.target; btn.classList.add('busy'); try { await openHistDrawer(btn.closest('tr').dataset.uuid); } catch (er) { toast('Verlauf konnte nicht geladen werden: ' + er.message, 6000); } finally { btn.classList.remove('busy'); } }));
   const hp = $('#hi-pick', main); if (hp) hp.addEventListener('click', () => { const inp = $('#file-input'); inp.value = ''; inp.setAttribute('accept', '.csv,.txt,.xlsx,.xlsm'); inp.removeAttribute('capture'); inp.onchange = () => { if (inp.files[0]) histImportPreview(inp.files[0]); }; inp.click(); });
   const hd = $('#hi-drop', main); if (hd) { hd.addEventListener('dragover', e => { e.preventDefault(); hd.classList.add('over'); }); hd.addEventListener('dragleave', () => hd.classList.remove('over')); hd.addEventListener('drop', e => { e.preventDefault(); hd.classList.remove('over'); if (e.dataTransfer.files[0]) histImportPreview(e.dataTransfer.files[0]); }); if (HI) renderHistImport(); }

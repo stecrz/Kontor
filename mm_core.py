@@ -612,7 +612,9 @@ def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: 
 
 
 def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today: date, warnings: List[str],
-                 categories: Optional[List[dict]] = None) -> dict:
+                 categories: Optional[List[dict]] = None, progress: Optional[Callable[[float, str], None]] = None) -> dict:
+    step = progress or (lambda f, t: None)
+    step(0.05, "Kategorien")
     kat = prepare_categories(store, ledger, config, categories)
     snaps = state.setdefault("snapshots", {})
     snaps[month_key(today)] = {a.uuid: a.balance for a in ledger.accounts.values() if not a.group}
@@ -628,7 +630,8 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
               len(bereiche), ", ".join(b["name"] for b in bereiche), haupt["name"] if haupt else "-", len(roles), len(immo_res), len(budgets))
     ledger._kat_sig = repr(getattr(ledger, "_kat_cache", (None,))[0])      # fuer Zwischenergebnisse in build_dataset
     datasets: Dict[str, dict] = {}
-    for b in bereiche:
+    for i, b in enumerate(bereiche):
+        step(0.15 + 0.6 * i / max(1, len(bereiche)), "Bereich %s" % b["name"])
         try:
             ds = build_dataset(ledger, config, state, today, b, roles, warnings if (haupt and b["id"] == haupt["id"]) else [])
             ds["budgets"] = budgets
@@ -671,10 +674,10 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "bereich_info": {b["id"]: {"name": b["name"], "art": b["art"], "anteil": b["anteil"], "haupt": b["haupt"], "konten": b["konten"],
                                    "gruppen": [g.name for g in b["gruppen"]], "anzahl_konten": len(b["leaves"])} for b in bereiche},
         "konten": account_tree(ledger, config, roles, datasets),
-        "steuer": _cached(ledger, "_tax_cache", (ledger._kat_sig, today.isoformat(), _bereiche_sig(bereiche),
+        "steuer": (step(0.8, "Steuer"), _cached(ledger, "_tax_cache", (ledger._kat_sig, today.isoformat(), _bereiche_sig(bereiche),
                                                    json.dumps([config.get(k) for k in ("steuer", "kapitalfluss", "beteiligungen", "bereiche", "immobilien")]
                                                               + [(config.get("bilanz") or {}).get(k) for k in ("rollen", "konten_zuordnung")], sort_keys=True, default=str)),
-                          lambda: build_tax(ledger, config, today, bereiche, roles, immo_afa_map(config, immo_res))),
+                          lambda: build_tax(ledger, config, today, bereiche, roles, immo_afa_map(config, immo_res))))[1],
         "depots": portfolio_summary(ledger, bereiche),
         "immobilien": immobilien,
         "budgets": budgets,
@@ -682,6 +685,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "kategorien": _cached(ledger, "_katstats_cache", ledger._kat_sig, lambda: mm_kategorien.stats(kat, ledger)),
         "konten_neu": neu,
     }
+    step(0.9, "Speichern")
     store.save("dataset.json", dataset)
     sig = (ledger._kat_sig, _bereiche_sig(bereiche))
     cached = getattr(ledger, "_ums_cache", None)

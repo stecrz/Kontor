@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.7.1
+- Einrichtung · Verbindung: prüft auf der Seite alle 3 Sekunden, ob MoneyMoney läuft und entsperrt ist.
+- Einrichtung · Bereiche: Anteil nur bei Gesellschaften (bei „privat“ ausgeblendet).
+- Einrichtungsschritte einheitlich: „Speichern“, „Speichern und weiter: …“, „Zurück zur Einrichtung“. „Speichern und weiter“ wartet mit Fortschrittsanzeige, bis die Auswertung aktualisiert ist, und öffnet erst dann den nächsten Schritt (so stimmen dort die Vorschläge).
+- Neuberechnung meldet ihren Fortschritt (Schritt und Prozent).
+
 ## 3.7.0
 - Positionen: Vorschlag neu geordnet – Kontoname vor Kontotyp (z. B. „Immobilie …“ als Festgeldanlage → Immobilien), Gruppenname vor allgemeinem Kontotyp (Sparkonto in „Anlagen“ → Geldanlagen), Bausparer und Versicherungen → Geldanlagen; Darlehen und Kautionen nach Vorzeichen (Guthaben = Forderung, Schuld = Verbindlichkeit); Namen mit Wortgrenzen (z. B. „Haushaltskasse“ ist keine Immobilie).
 - Neue Positionen außerhalb des Nettovermögens: „Kapitalkonten (Eigenkapital)“ und „Avale & Bürgschaften“; in der Bilanz unter dem Nettovermögen ausgewiesen. Einlagen/Entnahmen über Kapitalkonten erscheinen im Kapitalfluss. Die Beteiligungsregel bewertet eine Gesellschaft ohne ihre Kapitalkonten (vorher ergab sich so ein Wert nahe 0).

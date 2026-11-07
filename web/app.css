@@ -261,3 +261,10 @@ textarea { width:100%; min-height:90px; font-family:ui-monospace, Menlo, monospa
 .tabs button.on { background:var(--head); color:var(--fg); box-shadow:0 1px 3px rgba(0,0,0,.12); font-weight:600; }
 @media (max-width: 1100px) { .immo-grid { grid-template-columns:1fr; } }
 @media (max-width: 600px) { .immo-form, .loan-box .immo-form { grid-template-columns:1fr; } }
+
+.busy-ov { position:fixed; inset:0; background:rgba(0,0,0,.28); display:flex; align-items:center; justify-content:center; z-index:300; animation:fade .15s ease-out; }
+.busy-ov .box { background:var(--head); border:1px solid var(--line); border-radius:14px; padding:22px 26px; width:min(440px, 90vw); box-shadow:0 20px 60px rgba(0,0,0,.25); }
+.busy-ov .t { font-weight:600; margin-bottom:12px; }
+.busy-ov .bar { height:8px; border-radius:999px; background:var(--group); overflow:hidden; margin-bottom:8px; }
+.busy-ov .bar i { display:block; height:100%; background:var(--accent); border-radius:999px; transition:width .3s ease; }
+.step .dot { margin-left:2px; }

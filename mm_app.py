@@ -91,6 +91,7 @@ class App:
         self.rebuild_running = False
         self.rebuild_reasons: List[str] = []
         self.bericht: dict = {"stand": None, "dauer": None, "fehler": None, "grund": None}
+        self.bericht_fortschritt: dict = {"anteil": 0.0, "schritt": ""}
         self.check_lock = threading.Lock()
         self.ledger_cache_fp: Optional[str] = None
         self.ledger_from_cache = False
@@ -184,15 +185,19 @@ class App:
 
     def _rebuild_now(self) -> Tuple[bool, Optional[str]]:
         """Bericht aus dem letzten bekannten Stand neu bauen (synchron; nur aus dem Hintergrund-Thread aufrufen)."""
+        def progress(f: float, text: str) -> None:
+            self.bericht_fortschritt = {"anteil": round(f, 2), "schritt": text}
         if self.ledger is None:
+            progress(0.02, "MoneyMoney wird gelesen")
             ledger, err = self.refresh_ledger()
             if ledger is None:
                 return False, err
         t0 = time.time()
+        progress(0.04, "wartet auf laufenden Abgleich")
         with RUN_LOCK:          # nicht gleichzeitig mit einem Lauf (beide schreiben dataset.json)
             st = self.store.load("state.json", {}) or {}
             try:
-                ds = build_report(self.store, self.ledger, self.config, st, date.today(), [], self.categories_raw)
+                ds = build_report(self.store, self.ledger, self.config, st, date.today(), [], self.categories_raw, progress)
                 self.umsaetze = ds.pop("_umsaetze", None)
             except Exception as e:  # pragma: no cover
                 log.exception("Bericht aus dem letzten Stand fehlgeschlagen")
@@ -241,7 +246,8 @@ class App:
 
     def bericht_status(self) -> dict:
         with self.rebuild_cv:
-            return {"laeuft": self.rebuild_running or self.rebuild_pending, **self.bericht}
+            laeuft = self.rebuild_running or self.rebuild_pending
+            return {"laeuft": laeuft, **self.bericht, "fortschritt": self.bericht_fortschritt if laeuft else None}
 
     def moneymoney_gesperrt(self, max_age: float = 45.0) -> Optional[bool]:
         """Ist MoneyMoney gesperrt? Kurzer Lesezugriff auf die Kontenliste, hoechstens alle max_age Sekunden; None = laeuft nicht."""
@@ -426,7 +432,7 @@ class App:
         ds["positionen"] = [{"id": r, "name": ROLE_LABELS[r]} for r in ROLES]
         return ds
 
-    def status(self, loopback: bool) -> dict:
+    def status(self, loopback: bool, frisch: bool = False) -> dict:
         st = self.store.load_shared("state.json", {}) or {}
         bcfg = self.config.get("belege") or {}
         return {
@@ -434,7 +440,7 @@ class App:
             "dienst": {"gestartet": self.started.strftime("%Y-%m-%d %H:%M"), "laeuft": self.running,
                        "naechster_lauf": self.next_run(), "automatisch": (self.config.get("zeitplan") or {}).get("automatisch", True),
                        "intervall_minuten": (self.config.get("zeitplan") or {}).get("intervall_minuten", 30)},
-            "moneymoney": {"laeuft": is_running(), "gesperrt": self.moneymoney_gesperrt(), "aus_zwischenspeicher": self.ledger_from_cache,
+            "moneymoney": {"laeuft": is_running(), "gesperrt": self.moneymoney_gesperrt(max_age=3.0 if frisch else 45.0), "aus_zwischenspeicher": self.ledger_from_cache,
                            "stand": self.ledger_time.strftime("%Y-%m-%d %H:%M") if self.ledger_time else None,
                            "aktualisieren_erlaubt": bool((self.config.get("moneymoney") or {}).get("aktualisieren_erlauben", True)),
                            "kategorisieren_erlaubt": bool((self.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False)),
@@ -710,7 +716,7 @@ def make_handler(app: App):
         def _get(self, path: str, q: dict, s: dict):
             if path == "/api/status":
                 app.reload_config_if_changed()
-                return self._json(200, app.status(self._loopback()))
+                return self._json(200, app.status(self._loopback(), frisch=q.get("frisch") == "1"))
             if path == "/api/dataset":
                 return self._json(200, app.dataset())
             if path == "/api/config":

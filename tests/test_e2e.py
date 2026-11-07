@@ -1475,6 +1475,7 @@ class BrowserWizardTest(unittest.TestCase):
             with sync_playwright() as p:
                 b = p.chromium.launch(); pg = b.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=2 if shots else 1)
                 errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+                reqs = []; pg.on("request", lambda r: reqs.append(r.url))
                 pg.goto("http://127.0.0.1:%d/" % port)
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
                 pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_selector("a[href='#einrichtung']")
@@ -1490,13 +1491,16 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertIn("Konten gelesen", pg.query_selector("#w-findings").inner_text())
                 self.assertNotIn("Belegordner", pg.query_selector("#w-findings").inner_text())
                 self.assertNotIn("Keine Bereiche", pg.query_selector("#w-findings").inner_text())
-                self.assertTrue(pg.query_selector(".steps a[href='#einrichtung/bereiche'] button"))              # Knopf statt Link
+                self.assertTrue(pg.query_selector(".steps button[data-next='#einrichtung/bereiche']"))           # Knopf statt Link
+                # Schritt 1 wird auf dieser Seite alle paar Sekunden neu geprueft
+                n0 = len([r for r in reqs if "/api/status?frisch=1" in r]); pg.wait_for_timeout(3500)
+                self.assertGreater(len([r for r in reqs if "/api/status?frisch=1" in r]), n0)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_verbindung.png"), full_page=True)
                 # Tooltip bleibt im Fenster (auch ganz oben)
                 pg.hover(".steps .hq"); pg.wait_for_selector(".tip")
                 box = pg.evaluate("(() => { const r = document.querySelector('.tip').getBoundingClientRect(); return [r.top, r.left, r.right, window.innerWidth]; })()")
                 self.assertGreaterEqual(box[0], 0); self.assertGreaterEqual(box[1], 0); self.assertLessEqual(box[2], box[3])
-                pg.click("a[href='#einrichtung/bereiche']"); pg.wait_for_selector("#save-bereiche")
+                pg.click(".steps button[data-next='#einrichtung/bereiche']"); pg.wait_for_selector("#save-bereiche")
                 self.assertEqual(len(pg.query_selector_all("#bereiche .item")), 3)          # Vorschlag: jede Gruppe der obersten Ebene
                 # Vorbelegung: Privat = Hauptbereich und privat, GbRs = Gesellschaft; Konten unter gewaehlter Gruppe sind enthalten
                 items = {pg.evaluate("i => i.querySelector('.b-name').value", it): it for it in pg.query_selector_all("#bereiche .item")}
@@ -1514,11 +1518,16 @@ class BrowserWizardTest(unittest.TestCase):
                 pg.wait_for_timeout(100)
                 self.assertNotIn("Kennung", pg.query_selector("#bereiche").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_bereiche.png"), full_page=True)
-                # Ungespeichert weiter: Rueckfrage, "Speichern und weiter" speichert und wechselt die Seite
-                dialogs = []
-                pg.once("dialog", lambda dlg: (dialogs.append(dlg.message), dlg.accept()))
-                pg.click("button[data-next='#einrichtung/konten']"); pg.wait_for_selector("#save-konten", timeout=20000)
-                self.assertTrue(dialogs and "ungespeicherte" in dialogs[0])
+                # Privat: kein Anteil; Gesellschaft: Anteil sichtbar
+                self.assertTrue(pg.evaluate("[...document.querySelectorAll('#bereiche .item')].find(i => i.querySelector('.b-name').value === 'Privat').querySelector('.b-anteil-row').classList.contains('hidden')"))
+                self.assertFalse(pg.evaluate("[...document.querySelectorAll('#bereiche .item')].find(i => i.querySelector('.b-name').value === 'Alpha GbR').querySelector('.b-anteil-row').classList.contains('hidden')"))
+                # "Speichern und weiter": speichert, wartet mit Ladeanzeige auf die Auswertung, dann erst Positionen & Verlauf
+                pg.click("button[data-savenext='#einrichtung/konten']")
+                pg.wait_for_selector(".busy-ov", timeout=5000)
+                pg.wait_for_selector("#save-konten", timeout=30000)
+                self.assertIsNone(pg.query_selector(".busy-ov"))
+                self.assertFalse(self.__class__ is None or app.bericht_status()["laeuft"])
+                self.assertTrue(pg.query_selector("button[data-savenext='#zuordnen']")); self.assertTrue(pg.query_selector("button[data-next='#einrichtung']"))
                 cfg0 = store.load("config.json")
                 self.assertEqual(sorted(b["name"] for b in cfg0["bereiche"]), ["Alpha GbR", "Privat"]); self.assertEqual(sum(1 for b in cfg0["bereiche"] if b["haupt"]), 1)
                 self.assertTrue(all(b["id"] for b in cfg0["bereiche"]))
@@ -1539,8 +1548,8 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertEqual(cfg["darlehen"][0]["darlehenskonto"].split(" | ")[0], F.uid("pb.vd"))
                 self.assertEqual(len(cfg["beteiligungen"]), 2)
                 # Bericht erstellen -> Uebersicht mit Kennzahlen
-                pg.click("#nav a[href='#einrichtung']"); pg.wait_for_selector("#w-report"); pg.click("#w-report")
-                pg.wait_for_selector("#w-report", state="detached", timeout=30000)          # Karte verschwindet, sobald die Auswertung da ist
+                pg.click("#nav a[href='#einrichtung']"); pg.wait_for_selector(".setup-list")
+                self.assertIsNone(pg.query_selector("#w-report"))      # Auswertung existiert schon ("Speichern und weiter" hat auf sie gewartet)
                 self.assertIn("eingerichtet", pg.query_selector(".setup-list").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung.png"), full_page=True)
                 pg.click("#nav a[href='#uebersicht']"); pg.wait_for_selector(".cards .spark", timeout=20000)
