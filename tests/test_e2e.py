@@ -540,8 +540,13 @@ class AppTests(_AppBase):
                     sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, %d);" % (i, ts(date(y, m, 19)), round(v - part, 2), 200 + i))
                     if (y, m) <= (2024, 6):
                         sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, 5000.0, %d);" % (i, ts(date(y, m, 8)), 300 + i))
+                    if depot == "gesamt":     # zusaetzlicher Eintrag mit dem Depotwert insgesamt (bei manchen Depots in MoneyMoney)
+                        sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, %d);" % (i, ts(date(y, m, 20)), round(v + (5000.0 if (y, m) <= (2024, 6) else 0.0), 2), 900 + i))
                     y, m = (y + 1, 1) if m == 12 else (y, m + 1)
                 part = round(a.balance * 0.6, 2)
+                if depot == "gesamt":
+                    sql += ["INSERT INTO securities VALUES(%d, %d, 1, 0, NULL);" % (900 + i, i),
+                            "INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, %d);" % (i, ts(date(2026, 11, 3)), a.balance, 900 + i)]
                 sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, %d);" % (i, ts(date(2026, 11, 3)), part, 100 + i))
                 sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, %d);" % (i, ts(date(2026, 11, 2)), round(a.balance - part, 2), 200 + i))
                 continue
@@ -647,6 +652,10 @@ class AppTests(_AppBase):
             code, r = self._mm_upload(self._mm_db(versatz=True)); self.assertTrue(r["ok"], r); self.assertEqual((r["konten"], r["depots"]), (1, 1))
             # aelteres Format (SQLCipher 3) und Cocoa-Zeit ebenso
             code, r = self._mm_upload(self._mm_db(compat=3, zeit="cocoa")); self.assertTrue(r["ok"], r); self.assertEqual(r["konten"], n)
+            # Depot mit zusaetzlichem Gesamt-Eintrag (Summe doppelt): der Gesamt-Eintrag gilt
+            code, r = self._mm_upload(self._mm_db(depot="gesamt")); self.assertTrue(r["ok"], r); self.assertEqual(r["depots"], 1)
+            gd = self.store.load(MM_HISTORY_FILE)["konten"][F.uid("priv.depot")]
+            self.assertEqual(gd["2025-06"], 70000.27); self.assertGreater(gd["2024-06"] - gd["2024-07"], 3000)
             # Depot als Wertveraenderung je Wertpapier ebenso
             code, r = self._mm_upload(self._mm_db(depot="delta")); self.assertTrue(r["ok"], r); self.assertEqual(r["depots"], 1)
             self.assertEqual(self.store.load(MM_HISTORY_FILE)["konten"][F.uid("priv.depot")]["2025-06"], 70000.27)

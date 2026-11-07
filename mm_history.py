@@ -475,13 +475,35 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
         delta_now = sum(v for r in per.values() for _d, v in r)
         fits = lambda x: abs(x - bal) <= max(1.0, 0.02 * abs(bal))
         art = "level" if fits(level_now) else "delta" if fits(delta_now) else None
+        total_key, check = None, ""
+        if art is None and fits(level_now / 2):
+            # doppelt: ein Eintrag fuehrt den Depotwert insgesamt (Summe der uebrigen). Er gilt, wenn er ueber seinen ganzen
+            # Verlauf zur Summe der uebrigen Wertpapiere passt (mindestens 70 % der Punkte, 5 % Abstand)
+            def others_at(skip: int, d: date) -> float:
+                tot = 0.0
+                for o, r in per.items():
+                    upto = [v for dd, v in r if dd <= d]
+                    if o != skip and upto and (o in now or r[-1][0] >= d):
+                        tot += upto[-1]
+                return tot
+            for sk in sorted((sk for sk in now if fits(per[sk][-1][1])), key=lambda sk: per[sk][0][0]):
+                pts = per[sk]
+                hits = sum(1 for d, v in pts if abs(others_at(sk, d) - v) <= max(1.0, 0.05 * abs(v)))
+                check = "total entry matches the other securities at %d %% of its points" % round(100.0 * hits / len(pts))
+                if hits >= 0.7 * len(pts):
+                    art, total_key = "total", sk
+                    break
         if art is None:
             pct = lambda x: "%d %%" % round(100.0 * x / bal) if abs(bal) >= 1.0 else "-"
             price_now = sum(r[-1][1] * qty[sk] for sk, r in per.items() if sk in now and sk in qty)
             last = max(r[-1][0] for r in per.values())
             out[k] = {"fehler": "%d securities (%d held), last point %d days ago; of the current value: values %s, sum of changes %s, "
-                                "value x quantity %s" % (len(per), len(now), (today - last).days, pct(level_now), pct(delta_now), pct(price_now))}
+                                "value x quantity %s%s" % (len(per), len(now), (today - last).days, pct(level_now), pct(delta_now), pct(price_now),
+                                                           "; " + check if check else "")}
             continue
+        if total_key is not None:
+            per = {total_key: per[total_key]}                  # Depotwert direkt aus dem Gesamt-Eintrag
+            now = {total_key}
         first = min(r[0][0] for r in per.values())
         werte: Dict[str, float] = {}
         y, m = first.year, first.month
@@ -498,7 +520,7 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
                     total += upto[-1]
             werte["%04d-%02d" % (y, m)] = round(total, 2)
             y, m = nxt.year, nxt.month
-        out[k] = {"werte": werte, "anfang": 0.0, "art": art}
+        out[k] = {"werte": werte, "anfang": 0.0, "art": "level" if art == "total" else art}
     return out
 
 

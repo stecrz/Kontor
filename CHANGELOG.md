@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.9.20 (2026-11-07)
+- Kontostände aus MoneyMoney, Depots: Manche Depots führen in MoneyMoney zusätzlich einen Eintrag mit dem Depotwert insgesamt (die Summe ergab deshalb genau das Doppelte). Kontor erkennt diesen Eintrag, prüft ihn über seinen ganzen Verlauf gegen die einzelnen Wertpapiere und nimmt dann ihn als Depotwert.
+
 ## 3.9.19 (2026-11-07)
 - Bilanz: Positionen „Verbindlichkeiten“ und „Gebundene Anlagen“ (Festgeld, Bausparvertrag, Lebens-/Rentenversicherung); „(rechts: Plan)“ entfällt. Englisch in gängiger Finanzsprache: Cash, Securities, Term deposits & pensions, Real estate, Private equity, Receivables, Liabilities.
 - Bilanz-Grafik: Standard 1 Jahr; Auswahl 1 J, 3 J, 10 J, Alle; Feld mit der Zahl der angezeigten Monate (eigene Zahl eingeben); Bedienhinweis nur noch im Fragezeichen.
