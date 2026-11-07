@@ -115,7 +115,6 @@ Für Hilfe bei Problemen: Protokoll → Diagnosedatei (maskiert). Sie enthält V
 - Depots und manche Konten liefern keine Wertehistorie; die Bilanz nutzt Monatsstände ab dem ersten Lauf, eigene Einträge oder einen Saldenexport.
 - Immobilienkalkulation: Steuer je Gesellschafter als Anteil × Ergebnis × Steuersatz (keine Progression, kein Verlustausgleich); AfA linear; keine Steuerberatung.
 - Zinsmodelle sind vereinfacht (30/360, monatlich); einmal jährlich mit der Zinsabrechnung abgleichen.
-- Kontostand-Historie aus MoneyMoney (in Arbeit): braucht `sqlcipher` (`brew install sqlcipher`); Kontor öffnet MoneyMoneys Datenbank nur lesend, das Passwort wird bei jedem Aufruf eingegeben und nicht gespeichert.
 - Touch ID braucht `swiftc` (Kommandozeilen-Werkzeuge); der Dienst übersetzt den Helfer selbst nach `.touchid/Kontor` (der Name erscheint im macOS-Dialog). Ohne Helfer gilt nur das Passwort.
 - MoneyMoney muss laufen und entsperrt sein – Kontor startet es nicht selbst.
 

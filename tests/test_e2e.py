@@ -455,30 +455,6 @@ class AppTests(_AppBase):
         self.assertEqual([x["uuid"] for x in k["konten"]], [a.uuid for a in led.accounts.values() if a.path])
         self.assertEqual([x for x in k["konten"] if x["uuid"] == F.uid("priv.giro")][0]["rolle_vorschlag"], "liquiditaet")
 
-    def test_mmdb_aufbau_pruefen(self):
-        """Historie aus MoneyMoney, Schritt 1: Aufbau einer SQLCipher-Datenbank lesen (nur Namen/Zeilenzahlen), Passwort nie gespeichert."""
-        import mm_mmdb, subprocess as sp
-        self.login()
-        if not mm_mmdb.find_sqlcipher():
-            code, r = self.call("/api/mmdb/pruefen", {"passwort": "x"}); self.assertFalse(r["ok"]); self.assertIn("brew install sqlcipher", r["text"])
-            self.skipTest("sqlcipher fehlt")
-        db = os.path.join(self.dir, "mm.sqlite")
-        sp.run([mm_mmdb.find_sqlcipher(), db], input="PRAGMA key = 'ge''heim';\nPRAGMA cipher_compatibility = 3;\nCREATE TABLE balances(account INTEGER, date REAL, balance REAL);\nINSERT INTO balances VALUES(1, 7e8, 4711.5);\n",
-               capture_output=True, text=True, check=True)
-        old = mm_mmdb.DB_PATH; mm_mmdb.DB_PATH = db
-        try:
-            code, r = self.call("/api/mmdb/pruefen", {"passwort": "falsch"}); self.assertFalse(r["ok"]); self.assertIn("Passwort falsch", r["text"])
-            code, r = self.call("/api/mmdb/pruefen", {"passwort": "ge'heim"}); self.assertTrue(r["ok"], r); self.assertEqual(r["kompatibilitaet"], 3)
-            txt = open(r["datei"], encoding="utf-8").read()
-            self.assertIn("balances  (1 Zeilen)", txt); self.assertNotIn("4711", txt); self.assertNotIn("ge'heim", txt)
-            self.assertNotIn("heim", open(os.path.join(self.dir, "kontor.log"), encoding="utf-8").read() if os.path.exists(os.path.join(self.dir, "kontor.log")) else "")
-            self.assertNotIn("ge'heim", json.dumps(self.store.load("config.json")))
-        finally:
-            mm_mmdb.DB_PATH = old
-            p = os.path.join(os.path.dirname(mm_mmdb.__file__), "mm-datenbank-aufbau.txt")
-            if os.path.exists(p):
-                os.remove(p)
-
     def test_bankabruf_zurueck(self):
         """Konten mit Saldo, die beim Bankabruf mehr als einen Tag zurückliegen, werden gemeldet; uralte (aufgelöste) nicht."""
         self.login()
@@ -1476,7 +1452,8 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#nav a[href='#uebersicht']"); pg.wait_for_selector(".cards")
                 # Status unten links fuehrt zur Seite Synchronisierung
                 pg.click("#status-mini .sm-link"); pg.wait_for_selector(".sync-table")
-                self.assertIn("Ohne Bankabruf", pg.query_selector("#main").inner_text()); self.assertIn("Verkäuferdarlehen", pg.query_selector_all(".sync-table")[1].inner_text())
+                self.assertIn("Ohne Bankabruf", pg.query_selector("#main").inner_text()); self.assertIn("Verkäuferdarlehen", pg.query_selector_all(".sync-table")[-1].inner_text())
+                self.assertIn("Depots: Wertverlauf", pg.query_selector("#main").inner_text()); self.assertTrue(pg.query_selector(".dep-hist"))
                 pg.click("#nav a[href='#uebersicht']"); pg.wait_for_selector(".cards")
                 # Bereich wechseln
                 pg.click("#bereich-seg button:nth-child(2)"); pg.wait_for_timeout(500)

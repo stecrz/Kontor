@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.9.4
+- Kein Zugriff auf MoneyMoneys Datenbank: die Prüfung aus 3.9.3 ist wieder entfernt. Kontor nutzt nur MoneyMoneys Skript-Schnittstelle (Freigabe „Automation → MoneyMoney“).
+- Synchronisierung: neuer Abschnitt „Depots: Wertverlauf“ – ab wann Stände bekannt sind (eigene Aufzeichnung bzw. eingetragene Werte), mit „Stände eintragen“ je Depot.
+
 ## 3.9.3
 - Kontostand-Historie aus MoneyMoney, Schritt 1: Unter Einrichtung → Konten liest „Aufbau prüfen“ den Aufbau von MoneyMoneys Datenbank (nur Tabellen- und Spaltennamen, keine Beträge) und legt ihn als „mm-datenbank-aufbau.txt“ in den Kontor-Ordner. Nur am Mac, nur lesend, Passwort wird weder gespeichert noch protokolliert. Voraussetzung: `brew install sqlcipher`.
 

@@ -805,7 +805,21 @@ def make_handler(app: App):
                 r = app.abruf() or {"neuester": None, "konten": [], "zurueck": [], "zurueck_anzahl": 0}
                 ds = app.store.load_shared("dataset.json", {}) or {}
                 bereich = {k["uuid"]: k.get("bereich") or "" for k in ds.get("konten") or []}
-                return self._json(200, dict(r, konten=[dict(k, bereich=bereich.get(k["uuid"], "")) for k in r["konten"]],
+                # Depots: MoneyMoney gibt ihren Wertverlauf nicht heraus -- Kontor zeichnet ihn selbst auf (Monatsende-Staende)
+                st = app.store.load_shared("state.json", {}) or {}
+                snaps, hist = st.get("snapshots") or {}, st.get("historie") or {}
+                depots = []
+                for a in (app.ledger.accounts.values() if app.ledger is not None else []):
+                    if a.group or not a.portfolio or not a.path:
+                        continue
+                    rec = sorted(mk for mk, v in snaps.items() if a.uuid in v)
+                    own = sorted(mk for mk, v in (hist.get(a.uuid) or {}).items() if v is not None)
+                    known = sorted(set(rec) | set(own))
+                    depots.append({"uuid": a.uuid, "name": a.name, "pfad": a.path, "bereich": bereich.get(a.uuid, ""),
+                                   "aufgezeichnet_seit": rec[0] if rec else None, "eigene": len(own), "erster_stand": known[0] if known else None,
+                                   "erste_buchung": None})
+                return self._json(200, dict(r, konten=[dict(k, bereich=bereich.get(k["uuid"], "")) for k in r["konten"]], depots=depots,
+                                            aufzeichnung_seit=min(snaps) if snaps else None,
                                             gelesen=app.ledger_time.strftime("%Y-%m-%d %H:%M") if app.ledger_time else None))
             if path == "/api/runs":
                 st = app.store.load("state.json", {}) or {}
@@ -1111,26 +1125,6 @@ def make_handler(app: App):
                                             "kategorien": app.categories()})
                 finally:
                     app.check_lock.release()
-            if path == "/api/mmdb/pruefen":
-                # Schritt 1 der Historie aus MoneyMoney: nur den Aufbau der Datenbank lesen (keine Inhalte), nur am Mac
-                if not local:
-                    return self._json(403, {"fehler": "Nur direkt am Mac möglich."})
-                import mm_mmdb
-                pw = str(body.get("passwort") or "")
-                if not pw:
-                    return self._json(400, {"fehler": "MoneyMoney-Passwort eingeben."})
-                try:
-                    info = mm_mmdb.schema(pw)
-                except mm_mmdb.MMDBError as e:
-                    log.info("MoneyMoney-Datenbank: Prüfung nicht möglich (%s)", str(e)[:120])
-                    return self._json(200, {"ok": False, "text": str(e), "sqlcipher": mm_mmdb.find_sqlcipher()})
-                finally:
-                    pw = ""
-                datei = os.path.join(HERE, "mm-datenbank-aufbau.txt")
-                with open(datei, "w", encoding="utf-8") as f:
-                    f.write(mm_mmdb.schema_text(info))
-                log.info("MoneyMoney-Datenbank geprüft: %d Tabellen, Aufbau in %s", len(info["tabellen"]), datei)
-                return self._json(200, {"ok": True, "tabellen": len(info["tabellen"]), "datei": datei, "kompatibilitaet": info["kompatibilitaet"]})
             if path == "/api/abruf":
                 if app.ledger is None:
                     return self._json(409, {"fehler": "Noch kein Stand aus MoneyMoney gelesen."})
