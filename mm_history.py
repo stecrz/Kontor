@@ -466,24 +466,51 @@ def _score(ser: List, u: str, scale: float, interp: Tuple[str, bool], balance_at
         if ref is None:
             return 0, 0
         n += 1
-        hits += abs(v * scale - ref) <= max(0.011, 0.001 * abs(ref))
+        hits += abs(v * scale - ref) <= max(0.011, 1e-6 * abs(ref))
     return hits, n
 
 
-def _diagnose(series: Dict[int, Tuple[str, List]], matched: Dict[int, Tuple[str, str]], results: Dict, today: date) -> None:
-    """Protokoll fuer die Fehlersuche, wenn nichts uebernommen wird: nur Anzahlen und Anteile, keine Betraege oder Namen."""
+def _diagnose(db: "MemDB", series: Dict[int, Tuple[str, List]], matched: Dict[int, Tuple[str, str]], results: Dict, failed: List[int],
+              balance_at: BalanceAt, since: Optional[date], today: date) -> None:
+    """Protokoll fuer die Fehlersuche (voruebergehend): nur Anzahlen und Anteile, keine Betraege, keine Namen.
+    Je nicht passendem Konto mit Umsaetzen wird geprueft, welcher Deutung die Werte folgen."""
+    try:
+        n_all, n_mid = db.one("SELECT count(*), sum(timestamp % 86400 = 0) FROM balance_chart")
+        log.info("MoneyMoney database (diagnostics): balance_chart %d rows, %d at 00:00 UTC", n_all, n_mid or 0)
+    except sqlite3.DatabaseError:
+        pass
     pts = [d for _t, ser in series.values() for d, _v in ser]
     if pts:
-        first = sum(1 for d in pts if d.day == 1) / len(pts)
-        last = sum(1 for d in pts if (d + timedelta(days=1)).day == 1) / len(pts)
         gaps = sorted((b[0] - a[0]).days for _t, ser in series.values() for a, b in zip(ser, ser[1:]))
-        log.info("MoneyMoney database (diagnostics): %d points, %.0f %% on the 1st, %.0f %% on the last day of a month, median gap %s days, latest %s days ago",
-                 len(pts), 100 * first, 100 * last, gaps[len(gaps) // 2] if gaps else "-", (today - max(pts)).days)
-    for key, (hits, n) in sorted(results.items(), key=lambda x: str(x[0])):
-        log.info("MoneyMoney database (diagnostics): interpretation %s: %d of %d points match", key, hits, n)
-    for i, (k, (t, ser)) in enumerate(sorted(series.items())):
-        if k in matched:
-            log.info("MoneyMoney database (diagnostics): account %d (%s, %s): %d points", i + 1, matched[k][1], t, len(ser))
+        log.info("MoneyMoney database (diagnostics): %d points, median gap %s days, %d points after today",
+                 len(pts), gaps[len(gaps) // 2] if gaps else "-", sum(1 for d in pts if d > today))
+    best = sorted(results.items(), key=lambda x: -x[1][0])[:3]
+    log.info("MoneyMoney database (diagnostics): best interpretations %s", "; ".join("%s %s/%s: %d of %d" % (sc, w, "value" if v else "booking", h, n) for (sc, (w, v)), (h, n) in best))
+    pct = lambda a, b: round(100.0 * a / b) if b else 0
+    order = {k: i + 1 for i, k in enumerate(sorted(series))}
+    for k in sorted(failed, key=lambda k: -len(series[k][1]))[:15]:
+        u = matched[k][0]
+        rows = []
+        for d, v in series[k][1]:
+            if d >= today or (since and d < since):
+                continue
+            ref, prev = balance_at(u, d, False), balance_at(u, d - timedelta(days=1), False)
+            if ref is not None and prev is not None:
+                rows.append((v, ref, prev))
+        if not rows:
+            continue
+        n = len(rows)
+        diffs: Dict[float, int] = {}
+        for v, ref, _p in rows:
+            diffs[round(v - ref, 2)] = diffs.get(round(v - ref, 2), 0) + 1
+        mode, cnt = max(diffs.items(), key=lambda x: x[1])
+        near = lambda a, b: abs(a - b) <= max(0.011, 1e-6 * abs(b))
+        tail = rows[-60:]
+        log.info("MoneyMoney database (diagnostics): account %d (%s): %d points; exact %d %%, same difference %d %% (%s), daily change %d %%, "
+                 "negated %d %%, previous day %d %%, last 60 exact %d %%",
+                 order[k], matched[k][1], n, pct(sum(near(v, r) for v, r, _p in rows), n), pct(cnt, n), "zero" if abs(mode) < 0.005 else "not zero",
+                 pct(sum(near(v, r - p) for v, r, p in rows), n), pct(sum(near(-v, r) for v, r, _p in rows), n),
+                 pct(sum(near(v, p) for v, _r, p in rows), n), pct(sum(near(v, r) for v, r, _p in tail), len(tail)))
 
 
 def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at: Optional[BalanceAt] = None,
@@ -523,6 +550,10 @@ def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at
                     tot[0] += h; tot[1] += n
             results[(scale, interp)] = tuple(tot)
     (scale, interp), (all_hits, all_n) = max(results.items(), key=lambda x: (x[1][0], x[0][0] == 1.0, x[0][1] == ("end", False)))
+    weak = all_hits < 0.5 * all_n
+    interp_months = ("end", False) if weak else interp     # Deutung nicht belegt: Zeitpunkt = Monat des Punkts
+    scale_dep = 1.0 if weak else scale                     # Massstab fuer Konten ohne Umsaetze (Depots)
+    plain_acc: set = set()
     good = lambda k, u: (lambda h, n: (n > 0 and h >= 0.7 * n, n))(*_score(series[k][1], u, scale, interp, balance_at, since, today))
     ok: Dict[int, bool] = {}
     for k in series:
@@ -532,32 +563,38 @@ def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at
                 ok[k] = fit
             elif series[k][1] and abs(info(k).get("saldo") or 0.0) >= 1.0:
                 # ohne Umsaetze (Depots): nur Plausibilitaet -- juengster Wert in der Groessenordnung des aktuellen Saldos
-                q = series[k][1][-1][1] * scale / info(k)["saldo"]
+                q = series[k][1][-1][1] * scale_dep / info(k)["saldo"]
                 if not 0.5 <= q <= 2.0:
                     ok[k] = False
+            if not n:
+                plain_acc.add(k)
     # mehrdeutige Namen: der Kandidat, dessen Verlauf zu den Salden dieses Kontos passt (genau einer)
     for u, ks in unclear.items():
         fits = [k for k in ks if k in series and k not in matched and good(k, u)[0]]
         if len(fits) == 1:
             matched[fits[0]] = (u, "name")
             ok[fits[0]] = True
-    hits, checked = sum(ok.values()), len(ok)
-    log.info("MoneyMoney database: scale %s, interpretation %s/%s: %d of %d points, %d of %d accounts with transactions match",
+    with_tx = [k for k in ok if _score(series[k][1], matched[k][0], scale, interp, balance_at, since, today)[1]]
+    failed = [k for k in with_tx if not ok[k]]
+    hits, checked = len(with_tx) - len(failed), len(with_tx)
+    log.info("MoneyMoney database: scale %s, interpretation %s/%s: %d of %d points; %d of %d accounts with transactions match "
+             "(the others keep the balances Kontor calculates from their transactions)",
              scale, interp[0], "value date" if interp[1] else "booking date", all_hits, all_n, hits, checked)
-    if checked and hits < 0.6 * checked:
-        _diagnose(series, matched, results, today)
-        return None
+    if failed:
+        _diagnose(db, series, matched, results, failed, balance_at, since, today)
     cur = "%04d-%02d" % (today.year, today.month)
     konten: Dict[str, Dict[str, float]] = {}
     for k, (_t, ser) in series.items():
         if k not in matched or ok.get(k) is False:
-            continue                                       # Konto mit Umsaetzen, dessen Verlauf nicht passt: nicht uebernehmen
-        u = matched[k][0]
+            continue                                       # Verlauf passt nicht (zu den Umsaetzen bzw. zum Saldo): nicht uebernehmen
+        u, f = matched[k][0], (scale_dep if k in plain_acc else scale)
         for d, v in ser:
-            day = _day(d, interp[0])
+            day = _day(d, interp_months[0])
             mk = "%04d-%02d" % (day.year, day.month)
             if mk < cur:                                   # laufender Monat kommt aus MoneyMoneys aktuellem Saldo
-                konten.setdefault(u, {})[mk] = round(v * scale, 2)       # spaeterer Wert im Monat ueberschreibt -> Monatsende
+                konten.setdefault(u, {})[mk] = round(v * f, 2)           # spaeterer Wert im Monat ueberschreibt -> Monatsende
+    if not konten:
+        return None
     tabellen = sorted({series[k][0] for k in series if k in matched})
     return {"tabelle": "+".join(tabellen), "spalten": ["account_key", "timestamp", "balance"], "konten": konten, "treffer": hits, "geprueft": checked}
 

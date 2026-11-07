@@ -395,21 +395,37 @@ class App:
 
     # -- MoneyMoney --------------------------------------------------------
     def refresh_ledger(self) -> Tuple[Optional[Ledger], Optional[str]]:
+        """MoneyMoney lesen. Der Fortschritt (Schritt, Beginn, Dauer der Schritte beim letzten Mal) steht in self.lesen."""
         t0 = time.time()
+        st = self.store.load_shared("state.json", {}) or {}
+        self.lesen = {"laeuft": True, "schritt": None, "seit": t0, "start": t0, "dauer": dict(st.get("lesen_dauer") or {})}
+        took: Dict[str, float] = {}
+
+        def step(name: str) -> None:
+            now = time.time()
+            if self.lesen.get("schritt"):
+                took[self.lesen["schritt"]] = round(now - self.lesen["seit"], 2)
+            self.lesen.update(schritt=name, seit=now)
         try:
             b = self.bridge_factory(True)
-            ledger = fetch(b, self.config, date.today(), with_portfolio=True)
+            ledger = fetch(b, self.config, date.today(), with_portfolio=True, progress=step)
             log.info("MoneyMoney read (%.1f s)", time.time() - t0)
+            step("categories")
             try:
                 self.categories_raw = b.export_categories()
                 self.store.update("state.json", lambda st: st.__setitem__("kategorien_roh", self.categories_raw), {})
             except MoneyMoneyError:
                 pass
+            step("save")
             self.set_ledger(ledger, reuse=True)
+            step("done")
+            self.store.update("state.json", lambda st: st.__setitem__("lesen_dauer", took), {})
             return self.ledger, None
         except MoneyMoneyError as e:
             log.warning("MoneyMoney not readable: %s", e)
             return None, unavailable_text(e) or (tr("s_moneymoney_fehler_s") % e)
+        finally:
+            self.lesen["laeuft"] = False
 
     def do_run(self, dry: Optional[bool], force: bool, with_report: bool = True) -> dict:
         with self.lock:
@@ -1060,6 +1076,8 @@ def make_handler(app: App):
                 txt = diagnose(app.store, app.data_dir, app.config, app.status(self._loopback()), mask_names=q.get("names") != "1")
                 return self._raw(200, txt.encode("utf-8"), "text/plain; charset=utf-8",
                                  {"Content-Disposition": 'attachment; filename="Kontor-Diagnose-%s.txt"' % date.today().isoformat()})
+            if path == "/api/check/status":
+                return self._json(200, dict(getattr(app, "lesen", {"laeuft": False}), jetzt=time.time()))
             if path == "/api/update/status":
                 return self._json(200, {"info": app.update_info, "geprueft": app.update_checked, "version": version(), "datum": updates.installed_date(),
                                         "changelog": updates.changelog()})

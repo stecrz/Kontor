@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.9.16 (2026-11-07)
+- Einrichtung → Verbindung: Fortschrittsbalken beim Lesen aus MoneyMoney (Konten, Umsätze, Depotbestände, Kategorien); die Dauer schätzt Kontor aus dem letzten Lesen.
+- Kontostände aus MoneyMoney: Konten, deren Verlauf nicht zu den Umsätzen passt, verhindern nicht mehr die Übernahme der übrigen (vor allem der Depots); sie behalten die Salden, die Kontor aus ihren Umsätzen rechnet. Vergleich jetzt auf den Cent genau. Das Protokoll prüft für solche Konten mehrere Deutungen (nur Anteile, keine Beträge).
+
 ## 3.9.15 (2026-11-07)
 - Kontostände aus MoneyMoney: Der Verlauf wird jetzt an den Salden geeicht, die Kontor aus den Umsätzen kennt (auch, ob ein Punkt den Stand vom Vortag zeigt, z. B. am Monatsersten). Ein Konto wird nur übernommen, wenn mindestens 70 % seiner Punkte passen. Gelesen wird ausschließlich (nur SELECT); ein Test stellt das sicher. Scheitert die Erkennung, nennt das Protokoll nur Anzahlen zur Fehlersuche.
 - Bilanz-Grafik: Waagerechtes Wischen verschiebt den Ausschnitt bei gleicher Länge (auch am Rand); Zusammen-/Auseinanderziehen zoomt (auch in Safari); Doppelklick vergrößert auf den halben Zeitraum. Die Grafik ist immer sichtbar.

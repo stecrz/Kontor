@@ -119,13 +119,21 @@ def earliest_needed(config: dict, today: date) -> date:
     return start
 
 
-def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = False) -> Ledger:
+def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = False, progress: Optional[Callable[[str], None]] = None) -> Ledger:
+    """Konten, Umsaetze und ggf. Depotbestaende aus MoneyMoney lesen. progress(schritt) meldet den laufenden Schritt."""
+    step = progress or (lambda _s: None)
+    step("accounts")
     accounts = accounts_from_export(bridge.export_accounts())
     since = earliest_needed(config, today)
-    txs = tx_from_export(bridge.export_transactions(since))
+    step("transactions")
+    raw = bridge.export_transactions(since)
+    step("parse")
+    txs = tx_from_export(raw)
+    del raw
     ledger = Ledger(accounts, txs)
     ledger.portfolios = {}
     if with_portfolio:
+        step("portfolios")
         for a in accounts.values():
             if a.portfolio and not a.group:
                 try:

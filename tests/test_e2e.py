@@ -487,7 +487,7 @@ class AppTests(_AppBase):
             import mm_bridge as MB
             MA.is_running = MB.is_running
 
-    def _mm_db(self, compat=None, mit_verlauf=True, passwort="ge'heim", zeit="unix"):
+    def _mm_db(self, compat=None, mit_verlauf=True, passwort="ge'heim", zeit="unix", versatz=False):
         """Erfundene MoneyMoney-Datenbank (SQLCipher) im Aufbau des Originals: accounts (ohne UUID; Zuordnung ueber IBAN,
         Kontonummer + BLZ oder Name), balance_chart (Saldo je Zeitpunkt), portfolio_chart (Wert je Wertpapier, fuer das Depot),
         Zugangsdaten, Umsaetze, Volltextsuche mit eigenem Tokenizer, eigene Sortierfolge."""
@@ -527,7 +527,7 @@ class AppTests(_AppBase):
                 elif a.uuid == F.uid("pb.immo"):
                     v = 123.0 * m                                       # passt nicht zu den Umsaetzen: wird nicht uebernommen
                 else:
-                    v = bal(a.uuid, d - timedelta(days=1), False)
+                    v = bal(a.uuid, d - timedelta(days=1), False) + (1000.0 if versatz else 0.0)
                 pts.append((d, v))
                 y, m = (y + 1, 1) if m == 12 else (y, m + 1)
             pts.append((date(2026, 11, 3), a.balance))
@@ -622,6 +622,8 @@ class AppTests(_AppBase):
             code, ds = self.call("/api/dataset")
             row = next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == F.uid("priv.depot"))
             self.assertEqual(row["werte"]["2025-06"], 70000.27)
+            # Verlauf der Konten mit Umsaetzen passt nirgends (versetzt): nur das Depot wird uebernommen, die Konten behalten Kontors Salden
+            code, r = self._mm_upload(self._mm_db(versatz=True)); self.assertTrue(r["ok"], r); self.assertEqual((r["konten"], r["depots"]), (1, 1))
             # aelteres Format (SQLCipher 3) und Cocoa-Zeit ebenso
             code, r = self._mm_upload(self._mm_db(compat=3, zeit="cocoa")); self.assertTrue(r["ok"], r); self.assertEqual(r["konten"], n - 1)
             # ohne Verlaufstabelle: nichts uebernommen, nur der Aufbau (Namen, keine Inhalte) als Hinweis
@@ -1635,6 +1637,10 @@ class FeatureTests(_AppBase):
         finally:
             self.app.check_lock.release()
         self.assertEqual(self.call("/api/check", {})[0], 200)
+        # Fortschritt beim Lesen: Schritte gemeldet, Dauer je Schritt fuer die naechste Schaetzung gemerkt
+        code, p = self.call("/api/check/status")
+        self.assertFalse(p["laeuft"]); self.assertEqual(p["schritt"], "done")
+        self.assertEqual(set(self.store.load("state.json")["lesen_dauer"]), {"accounts", "transactions", "parse", "portfolios", "categories", "save"})
 
     def test_tls_helpers(self):
         import tls_cert

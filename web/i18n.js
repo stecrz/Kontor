@@ -2,6 +2,12 @@
    Genutzt von der Oberflaeche (app.js: t()) und vom Dienst (i18n.py: tr()). */
 'use strict';
 const I18N = {
+"lesen_accounts":["Konten werden gelesen …", "Reading accounts …"],
+"lesen_transactions":["Umsätze werden gelesen …", "Reading transactions …"],
+"lesen_parse":["Umsätze werden verarbeitet …", "Processing transactions …"],
+"lesen_portfolios":["Depotbestände werden gelesen …", "Reading portfolio holdings …"],
+"lesen_categories":["Kategorien werden gelesen …", "Reading categories …"],
+"lesen_save":["Wird gespeichert …", "Saving …"],
 "xf_balance":["Bilanz", "Balance-sheet"],
 "xf_cashflow":["Kapitalfluss", "Cash-flow"],
 "xf_planning":["Planung", "Planning"],

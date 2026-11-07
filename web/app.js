@@ -643,6 +643,29 @@ function mmStepInner(st) {
   return `<div class="b"><b>${t('moneymoney_laeuft')}</b><span class="dot ${!m.laeuft ? 'off' : m.gesperrt === true ? 'warn' : 'ok'}"></span>${txt}</div>`;
 }
 const VB = {timer: null};
+const READ_STEPS = [['accounts', 1], ['transactions', 8], ['parse', 3], ['portfolios', 2], ['categories', 1], ['save', 2]];   // Schritt, Dauer ohne Erfahrungswert (s)
+const READ_LABEL = {accounts: t('lesen_accounts'), transactions: t('lesen_transactions'), parse: t('lesen_parse'), portfolios: t('lesen_portfolios'), categories: t('lesen_categories'), save: t('lesen_save')};
+function readProgress() {
+  // Fortschrittsbalken beim Lesen aus MoneyMoney: Schritte vom Dienst, Anteil nach der Dauer der Schritte beim letzten Mal
+  let on = true, timer = null;
+  const tick = async () => {
+    if (!on) return;
+    try {
+      const p = await api('/api/check/status'), bar = $('#w-prog'), lab = $('#w-prog-l');
+      if (bar && p.schritt && p.start) {
+        const est = Object.fromEntries(READ_STEPS.map(([k, d]) => [k, (p.dauer || {})[k] || d])), idx = READ_STEPS.findIndex(([k]) => k === p.schritt);
+        const inStep = Math.max(0, p.jetzt - p.seit), cur = idx >= 0 ? Math.max(est[p.schritt], inStep * 1.15) : 0;
+        const total = READ_STEPS.reduce((a, [k]) => a + est[k], 0) - (idx >= 0 ? est[p.schritt] - cur : 0);
+        const done = READ_STEPS.slice(0, Math.max(0, idx)).reduce((a, [k]) => a + est[k], 0) + Math.min(inStep, cur);
+        bar.style.width = (p.schritt === 'done' ? 100 : Math.min(99, 100 * done / Math.max(1, total))).toFixed(1) + '%';
+        if (lab) lab.textContent = (READ_LABEL[p.schritt] || t('lese_konten_und_umsaetze_aus')) + ' · ' + Math.round(p.jetzt - p.start) + ' s';
+      }
+    } catch (e) {}
+    if (on) timer = setTimeout(tick, 350);
+  };
+  timer = setTimeout(tick, 150);
+  return () => { on = false; clearTimeout(timer); const bar = $('#w-prog'); if (bar) bar.style.width = '100%'; };
+}
 function vbPoll() {
   // Auf der Seite "Verbindung" alle 3 s pruefen, ob MoneyMoney laeuft und entsperrt ist
   clearTimeout(VB.timer);
@@ -656,7 +679,7 @@ function vVerbindung() {
   const st = S.STATUS;
   return `<div class="steps">
     <div class="step ${mmStepDone(st) ? 'done' : ''}" id="vb-mm">${mmStepInner(st)}</div>
-    <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>${t('zugriff_erlauben_und_konten_lesen', hq('berechtigung'))}</b>${t('macos_fragt_einmal_ob_python3')}<div class="actions"><button id="w-check" class="small">${t('verbindung_pruefen')}</button><span id="w-busy" class="working hidden"><span class="spin"></span>${t('lese_konten_und_umsaetze_aus')}</span></div><div id="w-findings" class="findings"></div></div></div>
+    <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>${t('zugriff_erlauben_und_konten_lesen', hq('berechtigung'))}</b>${t('macos_fragt_einmal_ob_python3')}<div class="actions"><button id="w-check" class="small">${t('verbindung_pruefen')}</button></div><div id="w-busy" class="prog-wrap hidden"><div class="prog"><i id="w-prog"></i></div><span class="prog-l" id="w-prog-l">${t('lese_konten_und_umsaetze_aus')}</span></div><div id="w-findings" class="findings"></div></div></div>
     <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>${t('weiter')}</b><div class="actions"><button data-next="#einrichtung/bereiche" ${S.KONTEN.length ? '' : 'class="secondary"'}>${t('weiter_bereiche')}</button><button class="secondary" data-next="#einrichtung">${t('zurueck_zur_einrichtung')}</button></div></div></div></div>`;
 }
 const FIRMA_RE = /\b(gmbh|ug|ag|se|kg|ohg|gbr|egbr|e\.?\s?k\.?|e\.?\s?v\.?|eg|ltd|inc|llc|holding|verwaltung|beteiligung|immobilien|stiftung|verein|genossenschaft|partner|&\s?co)\b/i;
@@ -2201,7 +2224,9 @@ function bind(main) {
   // Einrichtung
   const wc = $('#w-check', main); if (wc) wc.addEventListener('click', async () => {
     wc.classList.add('busy'); wc.disabled = true; const busy = $('#w-busy'); if (busy) busy.classList.remove('hidden'); $('#w-findings').innerHTML = '';
-    let r; try { r = await api('/api/check', {}); } catch (e) { wc.classList.remove('busy'); wc.disabled = false; if (busy) busy.classList.add('hidden'); showFindings($('#w-findings'), [], e.message, 'fehler'); return; }
+    const stop = readProgress();
+    let r; try { r = await api('/api/check', {}); } catch (e) { stop(); wc.classList.remove('busy'); wc.disabled = false; if (busy) busy.classList.add('hidden'); showFindings($('#w-findings'), [], e.message, 'fehler'); return; }
+    stop();
     if (!r.verfuegbar) { wc.classList.remove('busy'); wc.disabled = false; if (busy) busy.classList.add('hidden'); showFindings($('#w-findings'), [], r.text, 'fehler'); return; }
     S.KONTEN = r.konten; S.KATS = r.kategorien || S.KATS; await route(); showFindings($('#w-findings'), r.befunde, t('verbindung_steht') + r.konten.length + t('konten_gelesen'), 'ok'); });
   const wr = $('#w-report', main); if (wr) wr.addEventListener('click', () => rebuildReport(true));
