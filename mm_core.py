@@ -41,7 +41,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                      "umbuchungs_kategorien": ["Umbuchung"], "umbuchung_paarung": True, "paarung_manuelle_konten": True},
     "steuer": {"vermietung_kategorie": "Vermietung", "objekt_darlehen": {}, "afa": {}, "positionen": {}, "entitaeten": []},
     "belege": {"ordner": "~/Documents/Kontor-Belege", "unterordner": "{jahr}", "kommentar_schreiben": False, "ordner_bestaetigt": False},
-    "moneymoney": {"kategorisieren_erlauben": False, "aktualisieren_erlauben": True},
+    "moneymoney": {"kategorisieren_erlauben": False},
     "updates": {"repo": "stecrz/Kontor", "taeglich_pruefen": True},
     "oberflaeche": {"sperre_minuten": 15, "touchid": True, "port": 8765, "bind": "127.0.0.1", "tls_cert": "", "tls_key": ""},
 }

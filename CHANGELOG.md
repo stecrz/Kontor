@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.7.3
+- Datenstand unten links in zwei Stufen: „Banken → MM“ (letzter Bankabruf in MoneyMoney) und „MM → Kontor“ (wann Kontor zuletzt gelesen hat). Konten mit Saldo, die beim Bankabruf mehr als einen Tag zurückliegen, werden gemeldet.
+- Neuer Knopf „Synchronisieren“ unten links: liest sofort aus MoneyMoney, wendet bei Änderungen die Regeln an (Testmodus laut Einstellung) und aktualisiert die Auswertungen.
+- „Nächster Abgleich“ wird nicht mehr angezeigt; die Infozeile oben in der Übersicht entfällt (alles steht unten links). Buchungsvorschläge erscheinen dort als Link.
+- „MoneyMoney aktualisieren“ entfernt (Knopf, Einstellung, Befehl `kontor.py aktualisieren`, Bedienungshilfen-Berechtigung).
+- Buchungen: Überschrift „Regeln zuletzt angewendet“ statt „Letzter Abgleich“ – ohne Änderung in MoneyMoney werden die Regeln nicht erneut angewendet.
+- Menü scrollt bei kleiner Fensterhöhe, Status und Knöpfe bleiben sichtbar.
+
 ## 3.7.2
 - Statuszeile zeigt, von wann die Daten aus MoneyMoney stammen („Daten vom …“), statt des Zeitpunkts der letzten Neuberechnung; ohne laufendes MoneyMoney kein „nächster Abgleich“.
 - Test: Arbeiten ohne MoneyMoney mit dem zwischengespeicherten Stand (Neustart, Neuberechnung, Verlauf).

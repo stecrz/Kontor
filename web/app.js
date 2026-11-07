@@ -36,10 +36,9 @@ const H = {
   verlauf_import: 'Datei mit Monats- oder Tagesständen. Spalten werden automatisch erkannt; Kontonamen aus der Datei ordnest du den Konten in Kontor zu (Vorschlag per Namensähnlichkeit). Mehrere Werte je Monat: der letzte zählt.',
   inaktiv: 'Konten ohne Bestand und ohne Umsatz in den letzten N Monaten (z. B. Altdaten) werden ausgeblendet, bleiben aber in der Historie enthalten. 0 = nie ausblenden.',
   probelauf: 'Im Testmodus schlägt Kontor die Buchungen aus deinen Regeln (z. B. Darlehenszinsen) nur vor und legt nichts in MoneyMoney an. Zum Anlegen unter „Buchungen“ auf „Jetzt buchen“ klicken oder den Testmodus abschalten.',
-  abgleich: 'Abgleich: Kontor liest regelmäßig (Standard alle 30 Minuten) Konten und Umsätze aus MoneyMoney, wendet deine Regeln an und aktualisiert alle Auswertungen. Ist MoneyMoney aus oder gesperrt, arbeitet Kontor mit dem zuletzt gelesenen Stand („Daten vom …“) weiter – alle Seiten, Einstellungen und Auswertungen funktionieren – und versucht es jede Minute erneut. Testmodus: Buchungen aus Regeln werden nur vorgeschlagen.',
+  abgleich: 'Datenstand in zwei Stufen: „Banken → MM“ = wann MoneyMoney zuletzt bei den Banken abgerufen hat – das löst du in MoneyMoney aus (von Hand oder per Zeitplan dort). „MM → Kontor“ = wann Kontor zuletzt aus MoneyMoney gelesen hat – automatisch im eingestellten Abstand oder sofort mit „Synchronisieren“; dabei werden auch die Regeln angewendet, falls sich etwas geändert hat. Ist MoneyMoney aus oder gesperrt, rechnet Kontor mit dem zuletzt gelesenen Stand weiter und versucht es jede Minute erneut. Bleiben Konten beim Bankabruf zurück (z. B. TAN nötig), steht das hier. Testmodus: Buchungen aus Regeln werden nur vorgeschlagen.',
   kennung: 'Interne Kennung des Bereichs – wird automatisch vergeben und nirgends angezeigt.',
   intervall: 'Der Dienst liest alle N Minuten MoneyMoney (wenn es läuft und entsperrt ist) und führt die Regeln aus – nur wenn sich etwas geändert hat.',
-  mm_refresh: 'Kontor klickt in MoneyMoney den Menüpunkt „Alle Konten aktualisieren“. Dafür braucht das Programm, das Kontor ausführt, die Berechtigung „Bedienungshilfen“ (Systemeinstellungen → Datenschutz & Sicherheit).',
   mm_cat: 'Erlaubt, einzelnen Umsätzen aus Kontor eine Kategorie zuzuweisen. Ändert nur das Kategoriefeld des gewählten Umsatzes – nie Regeln, nie andere Umsätze.',
   belege_ordner: 'Belege werden als normale Dateien in diesem Ordner abgelegt (kein Datenbankformat). Der Ordner kann in iCloud Drive liegen.',
   belege_sub: 'Platzhalter: {jahr}, {monat}, {entitaet} (Bereichsname), {konto}. Beispiel: {jahr}/{entitaet}',
@@ -247,6 +246,7 @@ $('#login-form').addEventListener('submit', async e => {
   } catch (err) { $('#login-err').textContent = err.message; }
 });
 $('#touchid-btn').addEventListener('click', () => tryTouchId(false));
+$('#sync-btn').addEventListener('click', () => syncNow());
 $('#lock-btn').addEventListener('click', async () => { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; TID.skipNext = true; await checkSession(); });
 
 async function enterApp() {
@@ -278,27 +278,48 @@ function mmState(st) {
   if (m.gesperrt === false) return {cls: 'ok', text: 'MoneyMoney läuft'};
   return {cls: 'ok', text: 'MoneyMoney läuft'};
 }
-function datenStand(st) {
-  // Zeitpunkt des MoneyMoney-Stands, mit dem Kontor rechnet (nicht der Zeitpunkt der letzten Neuberechnung)
-  const t = (st && st.moneymoney && st.moneymoney.stand) || (S.DATA && S.DATA.erstellt);
-  if (!t) return null;
-  const heute = new Date().toISOString().slice(0, 10);
-  return (t.slice(0, 10) === heute ? 'heute ' : t.slice(8, 10) + '.' + t.slice(5, 7) + '. ') + t.slice(11, 16);
+function fmtZeit(t) {
+  // 'YYYY-MM-DD HH:MM' -> 'heute 13:40' / 'gestern 08:12' / '03.11. 22:10' / '03.11.25 22:10' (Ortszeit)
+  if (!t) return '';
+  const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const now = new Date(), tag = t.slice(0, 10), zeit = t.slice(11, 16);
+  if (tag === iso(now)) return 'heute ' + zeit;
+  if (tag === iso(new Date(now.getTime() - 864e5))) return 'gestern ' + zeit;
+  return t.slice(8, 10) + '.' + t.slice(5, 7) + '.' + (t.slice(0, 4) === String(now.getFullYear()) ? '' : t.slice(2, 4)) + ' ' + zeit;
 }
 function hasRules() { const c = S.CFG || {}; return !!((c.darlehen || []).length || (c.beteiligungen || []).length || (c.saldo_spiegel || []).length); }
 function statusMini() {
   const st = S.STATUS; if (!st) return;
-  const mm = mmState(st), b = st.bericht || {}, l = st.letzter_lauf;
-  const stand = datenStand(st);
-  let line2 = b.laeuft ? '<span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Auswertung wird neu berechnet …'
-    : (stand ? 'Daten vom ' + stand : 'noch keine Daten') + (st.dienst.automatisch && st.moneymoney.laeuft ? ' · nächster Abgleich ' + (st.dienst.naechster_lauf || '–') : '');
-  if (st.neustart_ausstehend) line2 = '<span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Version ' + esc(st.neustart_ausstehend) + ' wird geladen …';
-  $('#status-mini').innerHTML = `<span class="dot ${mm.cls}"></span>${mm.text} ${hq('abgleich')}<br>${line2}${hasRules() && st.probelauf ? '<br><b>Testmodus</b> – Regeln buchen nichts' : ''}${l && l.fehler ? '<br><a href="#buchungen">⚠ letzter Abgleich mit Fehler</a>' : ''}`;
+  const mm = mmState(st), m = st.moneymoney || {}, b = st.bericht || {}, l = st.letzter_lauf, ba = m.bankabruf;
+  const zeile = (k, v, title) => `<div class="sm-row"${title ? ' title="' + esc(title) + '"' : ''}><span>${k}</span><b>${v}</b></div>`;
+  let h = `<div class="sm-head"><span class="dot ${mm.cls}"></span>${mm.text} ${hq('abgleich')}</div>`;
+  if (m.stand || ba) {
+    h += zeile('Banken → MM', ba ? esc(fmtZeit(ba.neuester)) : '–', ba ? 'Letzter Bankabruf in MoneyMoney (laut dem zuletzt von Kontor gelesenen Stand)' : 'Keine Online-Konten in MoneyMoney');
+    h += zeile('MM → Kontor', m.stand ? esc(fmtZeit(m.stand)) : '–', 'Wann Kontor zuletzt aus MoneyMoney gelesen hat' + (m.laeuft ? '' : ' (MoneyMoney ist aus – Kontor rechnet mit diesem Stand)'));
+    if (ba && ba.zurueck_anzahl) {
+      const n = ba.zurueck_anzahl, liste = ba.zurueck.map(k => k.name + ': ' + fmtZeit(k.zeit)).join('\n') + (n > ba.zurueck.length ? '\n…' : '');
+      const tag = t => fmtZeit(t).replace(/ \d\d:\d\d$/, '');
+      h += `<div class="sm-warn" title="${esc('Beim Bankabruf in MoneyMoney zurückgeblieben (z. B. TAN nötig):\n' + liste)}">⚠ ${n === 1 ? esc(ba.zurueck[0].name) : n + ' Konten'} seit ${esc(tag(ba.zurueck[0].zeit))} nicht abgerufen</div>`;
+    }
+  } else h += '<div>noch keine Daten aus MoneyMoney</div>';
+  if (st.neustart_ausstehend) h += '<div><span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Version ' + esc(st.neustart_ausstehend) + ' wird geladen …</div>';
+  else if (b.laeuft) h += '<div><span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Auswertung wird neu berechnet …</div>';
+  if (hasRules() && st.probelauf) h += '<div><b>Testmodus</b> – Regeln buchen nichts</div>';
+  if (l && l.fehler) h += '<div><a href="#buchungen">⚠ letzter Abgleich mit Fehler</a></div>';
+  else if (l && l.probelauf && (l.vorschlaege || []).length) h += `<div><a href="#buchungen">${l.vorschlaege.length} Buchungsvorschläge</a></div>`;
+  $('#status-mini').innerHTML = h;
+  const sb = $('#sync-btn');
+  if (sb) {
+    const busy = !!(st.dienst.laeuft || SYNC.busy);
+    sb.classList.toggle('busy', busy); sb.disabled = busy || OFFLINE.mode;
+    sb.title = OFFLINE.mode ? 'Offline-Ansicht – der Mac ist nicht erreichbar' : 'Jetzt aus MoneyMoney lesen, Regeln anwenden und Auswertungen aktualisieren';
+  }
   const upd = $('#nav a[href="#updates"]'); if (upd) { let d = upd.querySelector('.nbadge'); const neu = !!(st.update && st.update.neuer); if (neu && !d) { d = document.createElement('span'); d.className = 'nbadge'; d.title = 'Update ' + st.update.verfuegbar + ' verfügbar'; upd.appendChild(d); } else if (!neu && d) d.remove(); }
   if (!st.ablage.verschluesselt) banner('Daten liegen unverschlüsselt (Verschlüsselung nicht verfügbar).', 'err');
   else if (st.ablage.schluessel === 'datei') banner('Datenschlüssel liegt als Datei (Schlüsselbund nicht verfügbar).');
 }
 const BER = {stand: '', timer: null};
+const SYNC = {busy: false};
 const DATA_TABS = ['uebersicht', 'bilanz', 'kapitalfluss', 'planung', 'steuer', 'depots', 'immobilien', 'umsaetze', 'zuordnen', 'buchungen'];
 async function pollStatus() {
   // Status holen; läuft ein Berichtsneubau, öfter nachsehen und nach Abschluss die Daten frisch laden
@@ -417,18 +438,8 @@ function niceTicks(min, max, n) {
 }
 
 // ---------------------------------------------------------------- Übersicht
-function statusStrip() {
-  const st = S.STATUS, l = st.letzter_lauf;
-  const upd = st.update && st.update.neuer ? `<a href="#updates" class="pill info">Update ${esc(st.update.verfuegbar)}</a>` : '';
-  return `<div class="status-strip">
-    <span class="pill neutral"><span class="dot ${mmState(st).cls}"></span>${mmState(st).text}${datenStand(st) ? ' · Daten vom ' + esc(datenStand(st)) : ''}</span>${(st.bericht || {}).laeuft ? '<span class="pill info"><span class="spin" style="width:10px;height:10px;margin-right:5px"></span>Bericht wird neu gebaut</span>' : ''}
-    ${hasRules() ? `<span class="pill ${st.probelauf ? 'warn' : 'ok'}">${st.probelauf ? 'Testmodus – Regeln buchen nichts' : 'Regeln buchen in Offline-Konten'}</span>` : ''}
-    <span class="pill neutral">${st.dienst.automatisch ? 'Abgleich alle ' + st.dienst.intervall_minuten + ' Min. · nächster ' + (st.dienst.naechster_lauf || '–') : 'kein automatischer Abgleich'} ${hq('abgleich')}</span>
-    ${l ? `<a href="#buchungen" class="pill ${l.fehler ? 'err' : (l.vorschlaege && l.vorschlaege.length && l.probelauf ? 'warn' : 'ok')}">Letzter Abgleich ${esc(l.zeit.slice(5))}${l.fehler ? ': Fehler' : (l.probelauf && l.vorschlaege && l.vorschlaege.length ? ': ' + l.vorschlaege.length + ' Buchungsvorschläge' : (l.geschrieben ? ': ' + l.geschrieben + ' gebucht' : ''))}</a>` : ''}
-    <span class="pill ${st.ablage.verschluesselt ? 'neutral' : 'err'}">${st.ablage.verschluesselt ? '🔒 verschlüsselt' : 'KLARTEXT'}</span>${upd}</div>`;
-}
 async function vUebersicht() {
-  let h = statusStrip();
+  let h = '';
   const D = B();
   if (!D) return h + (S.einrichtung || !S.DATA ? '<div class="card"><div class="v s">Willkommen bei Kontor</div><div class="d">Die Einrichtung führt dich durch Verbindung, Bereiche, Bilanzpositionen und die optionalen Bausteine.</div><div class="actions"><a href="#einrichtung"><button>Einrichtung öffnen</button></a></div></div>' : noData);
   const nw = D.bilanz.nettovermoegen, m = D.monate, K = D.kennzahlen || {};
@@ -541,7 +552,6 @@ function vVerbindung() {
   return `<h2>Verbindung zu MoneyMoney</h2><div class="steps">
     <div class="step ${mmStepDone(st) ? 'done' : ''}" id="vb-mm">${mmStepInner(st)}</div>
     <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>Zugriff erlauben und Konten lesen ${hq('berechtigung')}</b>macOS fragt einmal, ob „python3“ MoneyMoney steuern darf – erlauben.<div class="actions"><button id="w-check" class="small">Verbindung prüfen</button><span id="w-busy" class="working hidden"><span class="spin"></span>Lese Konten und Umsätze aus MoneyMoney … bei vielen Umsätzen bis zu einer Minute.</span></div><div id="w-findings" class="findings"></div></div></div>
-    <div class="step"><div class="b"><b>Optional: Aktualisierung aus Kontor erlauben</b>Damit Kontor „Alle Konten aktualisieren“ anstoßen kann, zusätzlich unter Bedienungshilfen erlauben. ${hq('mm_refresh')}</div></div>
     <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>Weiter</b><div class="actions"><button data-next="#einrichtung/bereiche" ${S.KONTEN.length ? '' : 'class="secondary"'}>Weiter: Bereiche</button><button class="secondary" data-next="#einrichtung">Zurück zur Einrichtung</button></div></div></div></div>`;
 }
 const FIRMA_RE = /\b(gmbh|ug|ag|se|kg|ohg|gbr|egbr|e\.?\s?k\.?|e\.?\s?v\.?|eg|ltd|inc|llc|holding|verwaltung|beteiligung|immobilien|stiftung|verein|genossenschaft|partner|&\s?co)\b/i;
@@ -916,11 +926,9 @@ function vBuchungen(runs) {
     <button id="run-dry">Abgleich jetzt (Test)</button>
     <button id="run-live" class="${st.probelauf ? 'secondary' : ''}" ${st.lokal ? '' : 'disabled title="nur am Mac"'}>Jetzt buchen</button>
     <button id="run-report" class="secondary">Nur Bericht aktualisieren</button>
-    <button id="mm-refresh" class="secondary" ${st.lokal && st.moneymoney.aktualisieren_erlaubt ? '' : 'disabled title="nur am Mac und wenn in den Einstellungen erlaubt"'}>MoneyMoney aktualisieren</button>
-    <span class="muted small">${st.moneymoney.laeuft ? 'MoneyMoney läuft.' : 'MoneyMoney läuft nicht – der Abgleich wartet, bis es geöffnet und entsperrt ist.'}${st.moneymoney.aktualisiert_um ? ' Aktualisierung ausgelöst um ' + st.moneymoney.aktualisiert_um + '.' : ''}</span>
   </div>`;
   if (l) {
-    h += `<h2>Letzter Abgleich ${esc(l.zeit)} · ${l.probelauf ? '<span class="pill warn">Testmodus</span>' : '<span class="pill ok">gebucht</span>'} · ${l.geschrieben} gebucht${l.fehler ? ' · <span class="pill err">' + esc(l.fehler) + '</span>' : ''}</h2>`;
+    h += `<h2>Regeln zuletzt angewendet ${esc(l.zeit)} · ${l.probelauf ? '<span class="pill warn">Testmodus</span>' : '<span class="pill ok">gebucht</span>'} · ${l.geschrieben} gebucht${l.fehler ? ' · <span class="pill err">' + esc(l.fehler) + '</span>' : ''}</h2>`;
     if (l.vorschlaege && l.vorschlaege.length) {
       h += '<div class="wrap auto"><table class="plain"><thead><tr><th>Datum</th><th>Konto</th><th>Art</th><th class="num">Betrag</th><th>Text</th><th>Kategorie</th></tr></thead><tbody>'
         + l.vorschlaege.map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto)}</td><td>${esc(v.art)}</td><td class="num ${v.betrag < 0 ? 'neg' : 'pos'}">${F(v.betrag)}</td><td>${esc(v.text)}</td><td>${esc(v.kategorie || '')}</td></tr>`).join('') + '</tbody></table></div>';
@@ -1485,7 +1493,6 @@ function vEinstellungen() {
     <label>Historie ${hq('monate_zurueck')}</label><label class="chk"><input type="number" id="e-monate" min="0" value="${b.monate_zurueck ?? 0}" style="width:70px"> Monate (0 = alles)</label>
   </div>
   <h2>MoneyMoney</h2><div class="form">
-    <label>Aktualisieren auslösen ${hq('mm_refresh')}</label><label class="chk"><input type="checkbox" id="e-mm-refresh" ${mm.aktualisieren_erlauben !== false ? 'checked' : ''}> Kontor darf in MoneyMoney „Alle Konten aktualisieren“ anklicken (braucht Bedienungshilfen-Berechtigung)</label>
     <label>Kategorisieren erlauben ${hq('mm_cat')}</label><label class="chk"><input type="checkbox" id="e-mm-cat" ${mm.kategorisieren_erlauben ? 'checked' : ''}> Umsätzen aus Kontor eine Kategorie zuweisen (ändert nur die Kategorie des gewählten Umsatzes, nie Regeln)</label>
   </div>
   <h2>Belege</h2><div class="form">
@@ -1530,7 +1537,7 @@ function collectSettings() {
   cfg.zeitplan = { automatisch: $('#e-auto').checked, intervall_minuten: Math.max(5, parseInt($('#e-intervall').value) || 30) };
   cfg.bilanz = Object.assign(cfg.bilanz || {}, { monate_zurueck: parseInt($('#e-monate').value) || 0 });
   delete cfg.bilanz.wurzel;
-  cfg.moneymoney = { aktualisieren_erlauben: $('#e-mm-refresh').checked, kategorisieren_erlauben: $('#e-mm-cat').checked };
+  cfg.moneymoney = Object.assign(cfg.moneymoney || {}, { kategorisieren_erlauben: $('#e-mm-cat').checked }); delete cfg.moneymoney.aktualisieren_erlauben;
   cfg.belege = Object.assign(cfg.belege || {}, { ordner: $('#e-bl-ordner').value.trim() || '~/Documents/Kontor-Belege', unterordner: $('#e-bl-sub').value.trim() || '{jahr}', kommentar_schreiben: $('#e-bl-comment').checked,
     ordner_bestaetigt: !!(cfg.belege || {}).ordner_bestaetigt || $('#e-bl-ordner').value.trim() !== ((S.CFG.belege || {}).ordner || '') });    // ein hier gewählter Ordner gilt als bestätigt
   cfg.steuer = Object.assign(cfg.steuer || {}, { vermietung_kategorie: $('#e-verm').value.trim() || 'Vermietung',
@@ -1613,7 +1620,7 @@ function vHilfe() {
   <tr><td>Holt Umsätze und Salden von Banken, Depots, PayPal usw. (auch über Erweiterungen).</td><td>Liest diese Daten über die Skript-Schnittstelle – nur lesend, nie Zugangsdaten.</td></tr>
   <tr><td>Kategorisiert Umsätze (von Hand oder per Regel) und führt Budgets.</td><td>Wertet die Kategorien aus (Kapitalfluss, Steuer) und nutzt Budgets als Planmethode. Kategorien werden nie angelegt, umbenannt oder gelöscht. Auf Wunsch (Einstellung) darf Kontor einzelnen Umsätzen eine Kategorie zuweisen.</td></tr>
   <tr><td>Führt Offline-Konten (manuell): Darlehen, Beteiligungen, Immobilien, Kapitalkonten.</td><td>Bucht nach deinen Regeln in <b>genau diese Offline-Konten</b>: Darlehensraten spiegeln, Zinsen berechnen, Beteiligungswerte fortschreiben. Jede Buchung ist markiert und wird nie doppelt angelegt; bestehende Buchungen werden nie geändert oder gelöscht. Echte Bankkonten werden nie bebucht; Überweisungen sind technisch gesperrt.</td></tr>
-  <tr><td>Aktualisiert Konten (manuell oder nach Zeitplan).</td><td>Kann die Aktualisierung anstoßen („Alle Konten aktualisieren“ anklicken), wenn erlaubt; sonst nur verwenden, was MoneyMoney hat.</td></tr>
+  <tr><td>Ruft Konten bei den Banken ab (von Hand oder nach Zeitplan in MoneyMoney).</td><td>Verwendet, was MoneyMoney hat, und zeigt beide Stände: letzter Bankabruf und wann Kontor zuletzt gelesen hat (unten links). „Synchronisieren“ liest sofort neu.</td></tr>
   <tr><td>Hat keine Bilanz-/Planungs-/Steuer-Sicht.</td><td>Bilanz je Bereich nach Positionen, Kapitalfluss mit Prüfzeile, Planung (rollierend aus der Vergangenheit, je Zeile anpassbar, Ereignisse), Immobilienkalkulationen, Steuer-Jahresübersicht, Depots, Belege zu Umsätzen, Excel-Export.</td></tr>
   </tbody></table>
   <h2>Bereiche, Positionen, Verlauf</h2>
@@ -1639,7 +1646,6 @@ function vHilfe() {
   <h2>Berechtigungen, die macOS abfragt</h2>
   <ul><li><b>Automation → MoneyMoney</b> (beim ersten „Verbindung prüfen“ oder Abgleich): Kontor liest darüber Konten, Umsätze, Kategorien und Depotpositionen aus MoneyMoney – nur lesend. Geschrieben wird ausschließlich in Offline-Konten, die du in Regeln benennst. Bank-Zugangsdaten sieht Kontor nie. Ohne diese Freigabe kann Kontor nichts auswerten.</li>
   <li><b>Automation → System Events</b> („Datei wählen …“): öffnet den macOS-Dateidialog, damit du Belege oder Dokumente verknüpfen kannst.</li>
-  <li><b>Bedienungshilfen</b> (nur für „MoneyMoney aktualisieren“): Kontor löst damit in MoneyMoney „Alle Konten aktualisieren“ aus. Optional.</li>
   <li><b>Schlüsselbund</b>: Der Schlüssel für die verschlüsselte Ablage liegt im Login-Schlüsselbund; macOS fragt ggf. einmal nach Zugriff.</li></ul>
   <h2>Protokoll und Fehlersuche</h2>
   <p>Das Protokoll liegt als Klartext unter <code>~/Library/Application Support/Kontor/kontor.log</code> (Finder → Gehe zu → Ordner …), daneben <code>dienst.err.log</code>. Seite „Protokoll“ zeigt die letzten Zeilen und kann die Datei im Finder zeigen; die Diagnosedatei enthält Protokoll plus maskierte Konfiguration. Beides enthält keine IBANs, Salden oder Passwörter. Ein Berichtsneubau nach Änderungen läuft im Hintergrund (Status unten links); die Ansicht lädt sich danach selbst neu.</p>
@@ -1655,7 +1661,7 @@ function vHilfe() {
   <li>Das Protokoll enthält keine IBANs, Salden oder Passwörter; die Diagnosedatei maskiert zusätzlich Kontonamen.</li></ul>
   <h2>Typische Meldungen</h2>
   <ul><li><b>MoneyMoney läuft nicht / Datenbank gesperrt</b> – MoneyMoney öffnen und entsperren; Kontor wartet.</li>
-  <li><b>Keine Berechtigung</b> – Systemeinstellungen → Datenschutz &amp; Sicherheit → Automation: dem Programm (Terminal bzw. python3) den Zugriff auf MoneyMoney erlauben. Für „MoneyMoney aktualisieren“ zusätzlich unter Bedienungshilfen.</li>
+  <li><b>Keine Berechtigung</b> – Systemeinstellungen → Datenschutz &amp; Sicherheit → Automation: dem Programm (Terminal bzw. python3) den Zugriff auf MoneyMoney erlauben.</li>
   <li><b>Konto nicht gefunden</b> – ein in einer Regel verwendetes Konto wurde in MoneyMoney gelöscht oder das Paket stammt von einer anderen Installation: unter Regeln bzw. Pakete neu zuordnen.</li>
   <li><b>Prüfzeile ≠ 0</b> – eine Vermögensänderung ist nicht erklärt: fehlende Kategorie, fehlende Gegenbuchung oder manuelle Buchung ohne Markierung.</li>
   <li><b>Keine passende Zahlung</b> – die Darlehensregel findet die Rate nicht: Gegen-IBAN/Text prüfen, Quellkonto prüfen.</li>
@@ -1830,7 +1836,6 @@ function bind(main) {
   const rd = $('#run-dry', main); if (rd) rd.addEventListener('click', () => startRun(true));
   const rl = $('#run-live', main); if (rl) rl.addEventListener('click', () => { if (confirm('Jetzt buchen: Buchungen werden jetzt in MoneyMoney angelegt (nur manuelle Konten). Fortfahren?')) startRun(false); });
   const rr = $('#run-report', main); if (rr) rr.addEventListener('click', async () => { toast('Bericht wird erstellt …', 20000); const r = await api('/api/bericht', {}); if (!r.ok) toast(r.text || 'MoneyMoney nicht verfügbar', 5000); await loadAll(); route(); });
-  const mr = $('#mm-refresh', main); if (mr) mr.addEventListener('click', async () => { toast('Aktualisierung wird ausgelöst …'); try { const r = await api('/api/moneymoney/aktualisieren', {}); toast(r.ok ? 'MoneyMoney aktualisiert: ' + r.text : r.text, 7000); S.STATUS = await api('/api/status'); statusMini(); } catch (e) { toast(e.message, 7000); } });
 
   // Steuer
   const sj = $('#st-jahr', main); if (sj) sj.addEventListener('change', e => { S.steuerJahr = e.target.value; route(); });
@@ -1928,6 +1933,25 @@ async function rebuildReport(fresh) {
 async function plan(body) {
   try { await api('/api/plan', Object.assign({bereich: S.bereich}, body)); S.DATA = await api('/api/dataset'); route(); toast('Plan gespeichert'); }
   catch (e) { toast('Fehler: ' + e.message, 4000); }
+}
+async function syncNow() {
+  // Wie der automatische Abgleich, nur sofort: MoneyMoney lesen, Regeln anwenden (Testmodus laut Einstellung), Auswertung bauen
+  if (SYNC.busy) return;
+  SYNC.busy = true; statusMini();
+  try {
+    try { await api('/api/run', {force: false}); }
+    catch (e) { if (!/läuft bereits/.test(e.message)) throw e; }
+    let tries = 0;
+    do { await new Promise(r => setTimeout(r, tries ? 1500 : 800)); S.STATUS = await api('/api/status'); statusMini(); } while (S.STATUS.dienst.laeuft && tries++ < 200);
+    const r = S.STATUS.letztes_ergebnis || {};
+    await loadAll(); route();
+    const n = (r.vorschlaege || []).length;
+    const msg = r.status === 'unveraendert' ? 'Synchronisiert – keine Änderung in MoneyMoney'
+      : r.status === 'ok' ? 'Synchronisiert' + (r.geschrieben ? ' – ' + r.geschrieben + ' gebucht' : '') + (r.probelauf && n ? ' – ' + n + ' Buchungsvorschläge (Testmodus)' : '') + ((r.warnungen || []).length ? ' – ' + r.warnungen.length + ' Hinweise unter „Buchungen“' : '')
+      : (r.text || r.fehler || 'Synchronisiert');
+    toast(msg, r.status === 'nicht_verfuegbar' || r.status === 'fehler' ? 7000 : 4500);
+  } catch (e) { toast('Synchronisieren fehlgeschlagen: ' + e.message, 6000); }
+  finally { SYNC.busy = false; statusMini(); }
 }
 async function startRun(dry) {
   try { await api('/api/run', {probelauf: dry, force: true}); toast(dry ? 'Abgleich gestartet (Test) …' : 'Abgleich mit Buchung gestartet …'); } catch (e) { toast(e.message, 4000); return; }

@@ -8,7 +8,6 @@ Befehle:
   konten            Kontenbaum mit UUIDs, Typ, Rolle, letzter Aktualisierung
   check             Konfiguration gegen MoneyMoney pruefen
   status            Letzter Lauf, Verlauf
-  aktualisieren     In MoneyMoney "Alle Konten aktualisieren" ausloesen
   passwort          Passwort der Oberflaeche (neu) setzen -- nur im Terminal am Mac
   paket-export      Einstellungen als Paket (.kontor.json) ausgeben (--ohne-uuid: nur Kontonamen)
   paket-import      Einstellungspaket einlesen (DATEI [--ersetzen])
@@ -44,7 +43,7 @@ sys.path.insert(0, HERE)
 
 import mm_auth  # noqa: E402
 import mm_update  # noqa: E402
-from mm_bridge import Bridge, MoneyMoneyError, refresh_moneymoney  # noqa: E402
+from mm_bridge import Bridge, MoneyMoneyError  # noqa: E402
 from mm_core import (account_tree, check_config, diagnose, export_package, fetch, import_package, merged_config,  # noqa: E402
                      run_once, unavailable_text, version)
 from mm_model import Ledger, accounts_from_export, fmt_eur  # noqa: E402
@@ -242,12 +241,6 @@ def cmd_status(args) -> int:
     return 0
 
 
-def cmd_aktualisieren(args) -> int:
-    ok, text = refresh_moneymoney()
-    print(("Ausgelöst: %s" if ok else "Nicht möglich: %s") % text)
-    return 0 if ok else 1
-
-
 def cmd_passwort(args) -> int:
     store = open_store()
     pw = getpass.getpass("Neues Passwort für die Oberfläche: ")
@@ -440,7 +433,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="kontor", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--quiet", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("start", "oeffnen", "konten", "check", "status", "aktualisieren", "passwort", "install", "uninstall", "version"):
+    for name in ("start", "oeffnen", "konten", "check", "status", "passwort", "install", "uninstall", "version"):
         sub.add_parser(name)
     r = sub.add_parser("run")
     r.add_argument("--probelauf", action="store_true"); r.add_argument("--scharf", action="store_true"); r.add_argument("--force", action="store_true")
@@ -454,7 +447,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = ap.parse_args(argv)
     setup_logging(args.quiet)
     return {"start": cmd_start, "oeffnen": cmd_oeffnen, "run": cmd_run, "konten": cmd_konten, "check": cmd_check,
-            "status": cmd_status, "aktualisieren": cmd_aktualisieren, "passwort": cmd_passwort,
+            "status": cmd_status, "passwort": cmd_passwort,
             "paket-export": cmd_paket_export, "paket-import": cmd_paket_import, "diagnose": cmd_diagnose,
             "update": cmd_update, "install": cmd_install, "uninstall": cmd_uninstall, "tls": cmd_tls, "version": cmd_version}[args.cmd](args)
 

@@ -11,7 +11,7 @@ Kontor enthält keine Annahmen über deine Konten. Alles – Bereiche, Regeln, K
 | Holt Umsätze und Salden von Banken, Depots, Zahlungsdiensten (auch über Erweiterungen). | Liest diese Daten über die Skript-Schnittstelle – nur lesend. Zugangsdaten sieht Kontor nie. |
 | Kategorisiert Umsätze (von Hand oder per Regel), führt Budgets. | Führt eigene Kategorien: Baum aus MoneyMoney übernommen, Regeln aus den bisherigen Zuordnungen gelernt, offene Umsätze in Kontor zuordnen – MoneyMoney-Kategorien sind nur Startpunkt und Rückfall. Legt in MoneyMoney keine Kategorien an, benennt keine um, löscht keine; optional schreibt Kontor eine Zuordnung dorthin zurück (Einstellung, standardmäßig aus). Budgets als Planmethode. |
 | Führt Offline-Konten (manuell): private Darlehen, Beteiligungen, Immobilien, Kapitalkonten. | Bucht nach deinen Regeln **ausschließlich in solche Offline-Konten**: Darlehensraten spiegeln und Zinsen berechnen, Beteiligungswert = Anteil × Nettowert einer Kontengruppe, Saldo-Spiegel (Faktor × Konto). Jede Buchung trägt eine Markierung und wird nie doppelt angelegt. Bestehende Buchungen werden nie geändert oder gelöscht. Bank- und Erweiterungskonten werden nie bebucht; Überweisungen und Lastschriften sind in beiden Schichten der Anbindung gesperrt. |
-| Aktualisiert Konten. | Kann „Alle Konten aktualisieren“ anstoßen, wenn erlaubt (Bedienungshilfen-Berechtigung). |
+| Ruft Konten bei den Banken ab (von Hand oder nach Zeitplan). | Verwendet, was MoneyMoney hat, und zeigt beide Stände unten links: letzter Bankabruf in MoneyMoney und wann Kontor zuletzt gelesen hat (automatisch im eingestellten Abstand, sofort mit „Synchronisieren“). Konten, die beim Bankabruf zurückbleiben, werden gemeldet. |
 | – | Bilanz je Bereich, Kapitalfluss mit Prüfzeile, rollierende Planung (je Zeile anpassbar, Vorschlag bleibt sichtbar), Steuer-Jahresübersicht je Entität, Depots, Belege zu Umsätzen als Dateien, Excel-Export, Einstellungspakete, Updates. |
 
 ## Sicherheit
@@ -33,7 +33,7 @@ Voraussetzungen: macOS, MoneyMoney, Kommandozeilen-Werkzeuge von Apple (`xcode-s
    ```
    Dieselbe Zeile aktualisiert später auf den neuesten Stand. Alternativ von Hand: `git clone https://github.com/stecrz/Kontor.git ~/Kontor && cd ~/Kontor && bash install.sh`. (Ein ZIP aus dem Browser geht auch, aber Gatekeeper blockiert dann Skripte per Doppelklick – deshalb gibt es keine Installieren-Datei zum Anklicken; `bash install.sh` im entpackten Ordner entfernt die Sperre. Ein echter Doppelklick-Installer bräuchte eine Apple-Entwicklersignatur.)
 2. Der Browser öffnet `http://127.0.0.1:8765/`: Passwort festlegen, dann **Einrichtung** – modulare Bausteine, die sich einzeln und in beliebiger Reihenfolge einrichten lassen: Verbindung zu MoneyMoney, Bereiche (Pflicht), Konten (Bereich, Position, Verlauf), Kategorien & Zuordnen, Regeln, Immobilien, Planung, Steuer, Belege, Betrieb. Jeder Baustein zeigt, ob er eingerichtet ist; Hilfe-Knöpfe (?) erklären jedes Feld. Danach „Bericht erstellen“.
-3. Beim ersten Zugriff fragt macOS, ob das Programm MoneyMoney steuern darf (Automation) – erlauben. Für „MoneyMoney aktualisieren“ zusätzlich Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen.
+3. Beim ersten Zugriff fragt macOS, ob das Programm MoneyMoney steuern darf (Automation) – erlauben.
 
 `install.sh` ist jederzeit wiederholbar: Es ersetzt den Dienst, lässt Datenordner und Einstellungen unangetastet. Updates gehen aus der Oberfläche (Updates → installieren; lädt den aktuellen Stand des Hauptzweigs von github.com, erkennbar an der Datei `VERSION`), per `python3 kontor.py update --installieren` oder mit der Terminal-Zeile von oben. Entfernen: `python3 kontor.py uninstall` oder `Deinstallieren.command` (fragt, ob Daten und Schlüssel gelöscht werden sollen).
 
@@ -87,7 +87,7 @@ Am iPhone gilt: Anmeldung per Passwort; lesen, planen, Belege fotografieren – 
 
 ## Kommandozeile
 
-`python3 kontor.py …`: `start` (Dienst im Vordergrund), `oeffnen`, `run [--probelauf|--scharf] [--force]`, `konten` (Kontenbaum mit UUIDs, Typ, Rolle), `check` (Konfiguration gegen MoneyMoney prüfen), `status`, `aktualisieren`, `passwort` (zurücksetzen), `paket-export [DATEI] [--ohne-uuid] [--mit-plan]`, `paket-import DATEI [--ersetzen] [--trotzdem]`, `diagnose [DATEI]`, `update [--installieren]`, `install` / `uninstall`, `tls [--aus]` (https über Tailscale einrichten), `version`.
+`python3 kontor.py …`: `start` (Dienst im Vordergrund), `oeffnen`, `run [--probelauf|--scharf] [--force]`, `konten` (Kontenbaum mit UUIDs, Typ, Rolle), `check` (Konfiguration gegen MoneyMoney prüfen), `status`, `passwort` (zurücksetzen), `paket-export [DATEI] [--ohne-uuid] [--mit-plan]`, `paket-import DATEI [--ersetzen] [--trotzdem]`, `diagnose [DATEI]`, `update [--installieren]`, `install` / `uninstall`, `tls [--aus]` (https über Tailscale einrichten), `version`.
 
 ## Datenordner
 
@@ -99,7 +99,6 @@ Am iPhone gilt: Anmeldung per Passwort; lesen, planen, Belege fotografieren – 
 |---|---|
 | MoneyMoney läuft nicht / Datenbank gesperrt | MoneyMoney öffnen und entsperren; Kontor wartet und holt nach. |
 | Keine Berechtigung (Automation) | Systemeinstellungen → Datenschutz & Sicherheit → Automation: Terminal bzw. python3 darf MoneyMoney steuern. |
-| Keine Berechtigung (Bedienungshilfen) | Nur für „MoneyMoney aktualisieren“: dort das Programm erlauben; sonst Konten in MoneyMoney selbst aktualisieren. |
 | Konto nicht gefunden / mehrdeutig | Regel verweist auf ein gelöschtes Konto oder ein Paket stammt von einer anderen Installation: unter Regeln bzw. Pakete zuordnen. `UUID \| Name` überlebt Umbenennen und Verschieben. |
 | Keine passende Zahlung | Darlehensregel findet die Rate nicht: Gegen-IBAN/Text und Quellkonto prüfen. Bis 35 Tage nach „Automatik ab“ nur ein Hinweis. |
 | Prüfzeile ≠ 0 | Fehlende Kategorie, fehlende Gegenbuchung oder manuelle Buchung ohne Markierung. |

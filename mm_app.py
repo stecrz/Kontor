@@ -24,7 +24,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, Tuple
@@ -36,7 +36,7 @@ import mm_import
 import mm_kategorien
 import mm_update
 from mm_belege import Belege, file_status
-from mm_bridge import Bridge, MoneyMoneyError, is_running, refresh_moneymoney
+from mm_bridge import Bridge, MoneyMoneyError, is_running
 from mm_core import (RUN_LOCK, account_tree, bereiche_for, build_report, check_config, diagnose, export_package, fetch, fingerprint, immo_for_plan,
                      immo_results, import_package, merged_config, run_once, unavailable_text, version, version_on_disk)
 from mm_model import Ledger, ledger_from_bytes, ledger_to_bytes
@@ -83,7 +83,7 @@ class App:
         self.update_checked: Optional[float] = None
         self.tls_ctx: Optional[ssl.SSLContext] = None
         self.tls_checked: Optional[float] = None
-        self.mm_refresh_at: Optional[float] = None
+        self._bankabruf_cache: Tuple[Any, Optional[dict]] = (None, None)
         self._cfg_mtime = self._config_mtime()
         # Berichtsneubau laeuft im Hintergrund: mehrere Anstoesse werden zu einem Lauf zusammengefasst
         self.rebuild_cv = threading.Condition()
@@ -373,14 +373,6 @@ class App:
                 log.exception("Zeitplaner")
             self.stop.wait(20)
 
-    def next_run(self) -> Optional[str]:
-        z = self.config.get("zeitplan", {}) or {}
-        if not z.get("automatisch", True):
-            return None
-        interval = max(5, int(z.get("intervall_minuten", 30))) * 60
-        t = (self.last_run_at + interval) if self.last_run_at else time.time()
-        return datetime.fromtimestamp(t).strftime("%H:%M")
-
     # -- Daten fuer die Oberflaeche ---------------------------------------
     def plan_all(self) -> dict:
         plan = self.store.load("plan.json", {}) or {}
@@ -432,19 +424,42 @@ class App:
         ds["positionen"] = [{"id": r, "name": ROLE_LABELS[r]} for r in ROLES]
         return ds
 
+    def bankabruf(self) -> Optional[dict]:
+        """Eigener Datenstand von MoneyMoney: wann MoneyMoney zuletzt bei den Banken abgerufen hat (laut dem
+        von Kontor gelesenen Stand). Konten mit Saldo, die beim letzten Abruf zurueckgeblieben sind
+        (mehr als einen Tag aelter als der neueste Abruf, aber nicht laenger als inaktiv_monate), werden gemeldet."""
+        led = self.ledger
+        if led is None:
+            return None
+        n_inakt = int((self.config.get("bilanz") or {}).get("inaktiv_monate", 12) or 12)
+        key = (id(led), n_inakt)
+        if self._bankabruf_cache[0] == key:
+            return self._bankabruf_cache[1]
+        online = [a for a in led.accounts.values() if not a.group and a.refresh is not None and a.refresh.year >= 2005]
+        res: Optional[dict] = None
+        if online:
+            newest = max(a.refresh for a in online)
+            cutoff = newest - timedelta(days=30.5 * n_inakt)
+            lag = sorted((a for a in online if cutoff <= a.refresh < newest - timedelta(days=1) and (a.portfolio or abs(a.balance) > 0.005)),
+                         key=lambda a: a.refresh)
+            res = {"neuester": newest.strftime("%Y-%m-%d %H:%M"), "konten": len(online),
+                   "zurueck": [{"name": a.name, "zeit": a.refresh.strftime("%Y-%m-%d %H:%M")} for a in lag[:12]],
+                   "zurueck_anzahl": len(lag)}
+        self._bankabruf_cache = (key, res)
+        return res
+
     def status(self, loopback: bool, frisch: bool = False) -> dict:
         st = self.store.load_shared("state.json", {}) or {}
         bcfg = self.config.get("belege") or {}
         return {
             "version": version(),
             "dienst": {"gestartet": self.started.strftime("%Y-%m-%d %H:%M"), "laeuft": self.running,
-                       "naechster_lauf": self.next_run(), "automatisch": (self.config.get("zeitplan") or {}).get("automatisch", True),
+                       "automatisch": (self.config.get("zeitplan") or {}).get("automatisch", True),
                        "intervall_minuten": (self.config.get("zeitplan") or {}).get("intervall_minuten", 30)},
             "moneymoney": {"laeuft": is_running(), "gesperrt": self.moneymoney_gesperrt(max_age=3.0 if frisch else 45.0), "aus_zwischenspeicher": self.ledger_from_cache,
                            "stand": self.ledger_time.strftime("%Y-%m-%d %H:%M") if self.ledger_time else None,
-                           "aktualisieren_erlaubt": bool((self.config.get("moneymoney") or {}).get("aktualisieren_erlauben", True)),
-                           "kategorisieren_erlaubt": bool((self.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False)),
-                           "aktualisiert_um": datetime.fromtimestamp(self.mm_refresh_at).strftime("%H:%M") if self.mm_refresh_at else None},
+                           "bankabruf": self.bankabruf(),
+                           "kategorisieren_erlaubt": bool((self.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False))},
             "ablage": {"verschluesselt": self.store.encrypted, "schluessel": self.store.key_source, "ordner": self.data_dir},
             "belege": {"ordner": os.path.expanduser(bcfg.get("ordner") or "~/Documents/Kontor-Belege")},
             "probelauf": self.config.get("probelauf", True),
@@ -1056,18 +1071,6 @@ def make_handler(app: App):
                 return self._json(200, {"ok": ok, "text": err})
             if path == "/api/plan":
                 return self._json(200, self._update_plan(body))
-            if path == "/api/moneymoney/aktualisieren":
-                if not local:
-                    return self._json(403, {"fehler": "Nur von diesem Mac aus möglich."})
-                if not (app.config.get("moneymoney") or {}).get("aktualisieren_erlauben", True):
-                    return self._json(403, {"fehler": "In den Einstellungen nicht erlaubt (MoneyMoney > Aktualisieren auslösen)."})
-                ok, text = refresh_moneymoney()
-                if ok:
-                    app.mm_refresh_at = time.time()
-                    log.info("MoneyMoney-Aktualisierung ausgelöst (%s)", text)
-                else:
-                    log.warning("MoneyMoney-Aktualisierung nicht möglich: %s", text)
-                return self._json(200, {"ok": ok, "text": text})
             if path == "/api/umsaetze/kategorie":
                 if not local:
                     return self._json(403, {"fehler": "Nur von diesem Mac aus möglich."})

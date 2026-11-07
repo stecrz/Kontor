@@ -27,7 +27,6 @@ log = logging.getLogger("kontor.bridge")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 JXA_FILE = os.path.join(HERE, "mm_bridge.jxa")
-REFRESH_FILE = os.path.join(HERE, "mm_refresh.jxa")
 TIMEOUT_SECONDS = 120
 
 # Einzige Befehle, die an MoneyMoney gehen. Ueberweisungen/Lastschriften
@@ -246,29 +245,3 @@ def notify(title: str, text: str) -> None:
             capture_output=True, timeout=10)
     except Exception:
         pass
-
-
-def refresh_moneymoney() -> "tuple[bool, str]":
-    """Loest in MoneyMoney "Alle Konten aktualisieren" aus (Menuebefehl ueber Bedienungshilfen).
-
-    Liefert (ok, Text). Braucht die Berechtigung "Bedienungshilfen" fuer das Programm,
-    das Kontor ausfuehrt (Terminal bzw. python3). Es wird nur ein Menuepunkt angeklickt.
-    """
-    if not is_running():
-        return False, "MoneyMoney läuft nicht."
-    try:
-        r = subprocess.run(["osascript", "-l", "JavaScript", REFRESH_FILE], capture_output=True, text=True, timeout=30)
-    except FileNotFoundError:
-        return False, "osascript nicht gefunden (kein macOS?)."
-    except subprocess.TimeoutExpired:
-        return False, "MoneyMoney reagiert nicht (Zeitlimit)."
-    out = (r.stdout or "").strip()
-    if r.returncode != 0:
-        err = (r.stderr or "").strip()
-        if "1002" in err or "assistive" in err.lower() or "Bedienungshilfe" in err or "not allowed" in err.lower():
-            return False, ("Keine Berechtigung: Systemeinstellungen > Datenschutz & Sicherheit > Bedienungshilfen -- "
-                           "das Programm, das Kontor ausführt (Terminal/python3), erlauben.")
-        return False, "Aktualisierung fehlgeschlagen: %s" % (err[:200] or "unbekannter Fehler")
-    if out.startswith("ok:"):
-        return True, out[3:]
-    return False, out[7:] if out.startswith("fehler:") else (out or "unbekannte Antwort")

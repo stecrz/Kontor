@@ -14,7 +14,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from http.cookiejar import CookieJar
 from http.server import ThreadingHTTPServer
 
@@ -318,10 +318,6 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(mm_update.archive_url("a/b", "main", "heads"), "https://github.com/a/b/archive/refs/heads/main.zip")
         self.assertIsNone(mm_update.install_via_git(restart=False)) if not os.path.isdir(os.path.join(mm_update.HERE, ".git")) else None
 
-    def test_refresh_without_macos(self):
-        ok, text = mm_bridge.refresh_moneymoney()
-        self.assertFalse(ok); self.assertTrue(text)
-
     def test_update_install_from_archive(self):
         """Archiv wie von GitHub (Wurzelordner mit kontor.py + VERSION) wird in den Programmordner eingespielt, Sicherung unter .alt."""
         src = os.path.join(os.path.dirname(__file__), "..")
@@ -419,6 +415,20 @@ class _AppBase(unittest.TestCase):
 class AppTests(_AppBase):
     """Dienst ueber HTTP: Einrichtung, Anmeldung, CSRF, Daten, Plan, Konfiguration, Lauf, Belege, Exporte."""
 
+    def test_bankabruf_zurueck(self):
+        """Konten mit Saldo, die beim Bankabruf mehr als einen Tag zurückliegen, werden gemeldet; uralte (aufgelöste) nicht."""
+        self.login()
+        self.run_and_wait()
+        led = copy.deepcopy(self.app.ledger)
+        neu = max(a.refresh for a in led.accounts.values() if a.refresh)
+        led.accounts[F.uid("priv.giro")].refresh = neu - timedelta(days=3)
+        alt = next(a for a in led.accounts.values() if a.refresh and a.uuid != F.uid("priv.giro") and not a.group)
+        alt.refresh = neu - timedelta(days=800)
+        self.app.ledger = led
+        ba = self.app.bankabruf()
+        self.assertEqual(ba["zurueck_anzahl"], 1); self.assertEqual(ba["zurueck"][0]["name"], "Hausbank Giro")
+        self.assertEqual(ba["neuester"], neu.strftime("%Y-%m-%d %H:%M"))
+
     def test_auth_and_api_flow(self):
         self.assertEqual(self.call("/api/status")[0], 401)
         self.login()
@@ -432,6 +442,11 @@ class AppTests(_AppBase):
         self.run_and_wait()
         code, runs = self.call("/api/runs")
         self.assertEqual(runs["letzter_lauf"]["geschrieben"], 35)
+        code, st = self.call("/api/status")
+        mm = st["moneymoney"]
+        self.assertNotIn("naechster_lauf", st["dienst"]); self.assertNotIn("aktualisieren_erlaubt", mm)
+        self.assertTrue(mm["stand"]); self.assertEqual(mm["bankabruf"]["zurueck_anzahl"], 0)
+        self.assertRegex(mm["bankabruf"]["neuester"], r"^2026-11-0[34] \d\d:00$")       # Fixture: Abruf 04.11. (Ortszeit)
         code, ds = self.call("/api/dataset")
         self.assertEqual(ds["haupt"], F.uid("priv")); self.assertEqual(len(ds["bereiche"]), 3)
         b = ds["bereiche"][ds["haupt"]]
@@ -578,11 +593,11 @@ class AppTests(_AppBase):
         self.assertFalse(r["ok"]); self.assertEqual(r["unaufgeloest"][0]["label"], "Darlehen Fremd")
         code, r = self.call("/api/paket/import", {"paket": pkg, "modus": "ergaenzen", "zuordnung": {"Darlehen Fremd": F.uid("pb.vd") + " | Verkäuferdarlehen"}})
         self.assertTrue(r["ok"], r); self.assertEqual(len(r["config"]["darlehen"]), 1)
-        # Diagnose maskiert, Update-Status, MoneyMoney-Aktualisierung (nicht macOS -> ok False, kein Absturz)
+        # Diagnose maskiert, Update-Status; MoneyMoney-Aktualisierung gibt es nicht mehr
         code, data, hdr = self.call("/api/diagnose", raw=True)
         self.assertEqual(code, 200); self.assertNotIn(F.SELLER_IBAN, data.decode()); self.assertNotIn("Stadtbank Kontokorrent", data.decode())
         code, r = self.call("/api/update/status"); self.assertEqual(code, 200)
-        code, r = self.call("/api/moneymoney/aktualisieren", {}); self.assertEqual(code, 200); self.assertFalse(r["ok"])
+        code, r = self.call("/api/moneymoney/aktualisieren", {}); self.assertEqual(code, 404)
         code, r = self.call("/api/update/pruefen", {}); self.assertEqual(code, 200); self.assertIn("info", r)
 
 
@@ -1301,6 +1316,24 @@ class BrowserTest(unittest.TestCase):
                 for needle in ("nettovermögen", "jahresvergleich", "offene punkte", "weitere bereiche", "vermögensstruktur"):
                     self.assertIn(needle, txt)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_uebersicht.png"), full_page=True)
+                # Datenstand unten links (zweistufig), keine Infozeile mehr in der Übersicht, Synchronisieren
+                sm = pg.query_selector("#status-mini").inner_text()
+                self.assertIn("Banken → MM", sm); self.assertIn("MM → Kontor", sm); self.assertNotIn("nächster", sm)
+                self.assertIsNone(pg.query_selector(".status-strip"))
+                def sync():
+                    pg.evaluate("document.querySelector('#toast').textContent = ''")
+                    pg.click("#sync-btn")
+                    for _ in range(150):
+                        t = pg.query_selector("#toast").inner_text()
+                        if "Synchronisiert" in t:
+                            return t
+                        pg.wait_for_timeout(200)
+                    return pg.query_selector("#toast").inner_text()
+                self.assertIn("Synchronisiert", sync())          # erster Lauf nach eigenen Buchungen: vollständig
+                runs_vorher = len(store.load("state.json").get("verlauf", []))
+                self.assertIn("keine Änderung", sync())
+                self.assertEqual(len(store.load("state.json").get("verlauf", [])), runs_vorher)      # ohne Änderung kein neuer Regellauf
+                self.assertFalse(pg.query_selector("#sync-btn").is_disabled())
                 # Bereich wechseln
                 pg.click("#bereich-seg button:nth-child(2)"); pg.wait_for_timeout(500)
                 self.assertEqual(pg.evaluate("document.querySelector('#bereich-seg .on').textContent"), "Alpha GbR")
