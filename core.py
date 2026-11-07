@@ -16,6 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyNotRunning, notify
 from model import Account, Ledger, Tx, accounts_from_export, add_months, fmt_eur, month_key, tx_from_export, norm_cat
+import mm_categories
 import realestate
 import categorize
 from report import ROLES, account_roles, build_dataset
@@ -732,7 +733,7 @@ def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: 
         categorize.apply_to_ledger(categorize.empty(), ledger)
         return kat
     changed = False
-    if categories and (not kat.get("mm_uebernommen") or len(kat["baum"]) < len(categories)):
+    if categories and (not kat.get("mm_uebernommen") or kat.get("mm_pfade") != categorize.MM_PFADE or len(kat["baum"]) < len(categories)):
         if categorize.seed_from_moneymoney(kat, categories):
             changed = True
     # Regeln aus allen Umsaetzen lernen: beim vollstaendigen Lesen (taeglich), beim schnellen Lesen gelten die gelernten weiter
@@ -958,7 +959,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             ledger = fetch(bridge, config, today, with_portfolio=with_report, base=base, full=full)
             if categories is None:
                 try:
-                    categories = bridge.export_categories()
+                    categories = mm_categories.with_paths(bridge.export_categories())
                 except MoneyMoneyError:
                     categories = state.get("kategorien_roh") or []
         except MoneyMoneyError as e:

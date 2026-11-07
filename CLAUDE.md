@@ -17,8 +17,10 @@ MoneyMoney (macOS) arbeitet. Er läuft als launchd-Dienst beim Nutzer und starte
 
 ## Sicherheit (ohne Ausnahme)
 - Öffentliches Repo: keine persönlichen Daten (Namen, Konten, IBANs, Beträge, Pfade). Testdaten frei erfunden.
-- MoneyMoney nur über die AppleScript-Schnittstelle. Schreiben nur in Offline-Konten (Regeln). Nie Buchungen,
-  Kategorien oder Regeln des Nutzers ändern oder löschen, keine Überweisungen.
+- MoneyMoney nur über die AppleScript-Schnittstelle. Schreiben nur in Offline-Konten (Regeln) und – wenn der Nutzer das
+  Zurückschreiben eingeschaltet hat – das Kategoriefeld von Umsätzen, die er in Kontor zuordnet (`mm_categories.py`: direkt
+  vorher neu lesen und prüfen, fremde Kategorien nur nach Rückfrage, nur am Mac). Nie Buchungen, den Kategorienbaum oder
+  Regeln des Nutzers ändern oder löschen, keine Überweisungen.
 - Oberfläche nur über 127.0.0.1 bzw. Tailscale erreichbar. Einzige Netzverbindung: Update-Prüfung bei GitHub.
 - Keine Passwörter oder Zugangsdaten speichern, protokollieren oder zwischenspeichern; Datenordner verschlüsselt.
 - Kontostände aus MoneyMoney (`mm_history.py`): Datenbankdatei nur per Upload, nur im Arbeitsspeicher; Passwort nur im Swift-Helfer,

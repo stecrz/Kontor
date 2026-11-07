@@ -43,6 +43,7 @@ sys.path.insert(0, HERE)
 import auth  # noqa: E402
 import updates  # noqa: E402
 import i18n  # noqa: E402
+import mm_categories  # noqa: E402
 from mm_bridge import Bridge, MoneyMoneyError  # noqa: E402
 from core import (account_tree, check_config, diagnose, export_package, fetch, import_package, merged_config,  # noqa: E402
                      run_once, unavailable_text, version)
@@ -200,7 +201,7 @@ def cmd_check(args) -> int:
     b = Bridge(dry_run=True)
     try:
         ledger = fetch(b, cfg, date.today())
-        cats = b.export_categories()
+        cats = mm_categories.with_paths(b.export_categories())
     except MoneyMoneyError as e:
         print(unavailable_text(e) or str(e)); return 2
     findings = check_config(ledger, cats, cfg)

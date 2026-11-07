@@ -1,8 +1,10 @@
 """Kontor-eigene Kategorien: Baum, Zuordnungen je Umsatz, Regeln (gelernt und manuell).
 
-MoneyMoney bleibt Datenquelle; seine Kategorien werden beim ersten Lauf als Vorschlag uebernommen (Baum) und
-als Trainingsmenge fuer Regeln genutzt. Danach kategorisiert Kontor selbst: manuelle Zuordnungen > manuelle
-Regeln > gelernte Regeln > Kategorie aus MoneyMoney. Alles liegt verschluesselt in kategorien.json.
+MoneyMoney ist massgeblich: hat ein Umsatz dort eine Kategorie, gilt sie -- ausser Kontor soll sie ausdruecklich
+uebersteuern (Zuordnung mit "ov", z. B. "nur in Kontor" gewaehlt oder Regeln mit "MoneyMoney ueberschreiben").
+Umsaetze ohne Kategorie in MoneyMoney ordnet Kontor zu (von Hand oder per Regel); von Hand Zugeordnetes schreibt Kontor
+nach MoneyMoney zurueck, wenn das eingeschaltet ist (mm_categories). Zuordnung mit "w": wartet darauf, dass es die
+Kategorie in MoneyMoney gibt. Alles liegt verschluesselt in categories.json.
 
 Pfade sind kanonisch 'A / B / C' (siehe model.norm_cat)."""
 from __future__ import annotations
@@ -112,9 +114,18 @@ def delete_category(d: dict, path: str, ersatz: Optional[str] = None) -> int:
     return n
 
 
+MM_PFADE = 1          # Version der Uebernahme (1: volle Pfade aus der Einrueckung)
+
+
 def seed_from_moneymoney(d: dict, categories: List[dict]) -> int:
-    """MoneyMoney-Kategorienbaum als Vorschlag uebernehmen (nur neue Pfade)."""
+    """MoneyMoney-Kategorienbaum als Vorschlag uebernehmen (nur neue Pfade). Knoten frueherer Uebernahmen, die es in
+    MoneyMoney so nicht gibt (frueher nur der Name statt des Pfads) und an denen nichts haengt, fallen weg."""
     n = 0
+    mm = {norm_cat(str(c.get("path") or c.get("name") or "")) for c in categories or []}
+    used = {str(z.get("k") or "") for z in d["zuordnung"].values()} | {str(r.get("kategorie") or "") for r in d["regeln"]}
+    keep = lambda k: (k.get("quelle") != "moneymoney" or k["pfad"] in mm or any(u == k["pfad"] or u.startswith(k["pfad"] + " / ") for u in used)
+                      or any(p.startswith(k["pfad"] + " / ") for p in mm))
+    d["baum"] = [k for k in d["baum"] if keep(k)]
     existing = by_path(d)
     for c in categories or []:
         raw = str(c.get("path") or c.get("name") or "")
@@ -126,6 +137,7 @@ def seed_from_moneymoney(d: dict, categories: List[dict]) -> int:
         existing[p] = node
         n += 1
     d["mm_uebernommen"] = True
+    d["mm_pfade"] = MM_PFADE
     return n
 
 
@@ -133,12 +145,17 @@ def seed_from_moneymoney(d: dict, categories: List[dict]) -> int:
 # Wirksame Kategorie je Umsatz
 # ---------------------------------------------------------------------------
 
+def mm_of(t: Tx) -> str:
+    """Kategorie des Umsatzes in MoneyMoney (normiert)."""
+    return norm_cat(t.mm_category_path if t.mm_category_path is not None else t.category_path)
+
+
 def effective(d: dict, t: Tx) -> Tuple[str, str]:
-    """(Pfad, Quelle): Zuordnung in Kontor, sonst Kategorie aus MoneyMoney, sonst ''."""
+    """(Pfad, Quelle): Kategorie aus MoneyMoney; ohne (oder ausdruecklich uebersteuert) die Zuordnung in Kontor; sonst ''."""
     z = d["zuordnung"].get(str(t.id))
-    if z and z.get("k"):
+    mm = mm_of(t)
+    if z and z.get("k") and (not mm or z.get("ov")):
         return z["k"], z.get("q", "manuell")
-    mm = norm_cat(t.mm_category_path if t.mm_category_path is not None else t.category_path)
     return (mm, "moneymoney") if mm else ("", "")
 
 
@@ -296,8 +313,8 @@ def auto_assign(d: dict, ledger: Ledger, overwrite_mm: bool = False, progress=No
         z = d["zuordnung"].get(tid)
         if z and z.get("q") == "manuell":
             continue
-        mm_path = t.mm_category_path if t.mm_category_path is not None else t.category_path
-        if not overwrite_mm and norm_cat(mm_path):
+        mm_path = mm_of(t)
+        if not overwrite_mm and mm_path:
             if z and z.get("q") == "regel":
                 del d["zuordnung"][tid]        # MoneyMoney-Kategorie gilt wieder
                 n += 1
@@ -308,8 +325,9 @@ def auto_assign(d: dict, ledger: Ledger, overwrite_mm: bool = False, progress=No
                 del d["zuordnung"][tid]
                 n += 1
             continue
-        if not z or z.get("k") != r["kategorie"] or z.get("r") != r["id"]:
-            d["zuordnung"][tid] = {"k": r["kategorie"], "q": "regel", "r": r["id"]}
+        ov = bool(overwrite_mm and mm_path)
+        if not z or z.get("k") != r["kategorie"] or z.get("r") != r["id"] or bool(z.get("ov")) != ov:
+            d["zuordnung"][tid] = dict({"k": r["kategorie"], "q": "regel", "r": r["id"]}, **({"ov": True} if ov else {}))
             n += 1
     return n
 

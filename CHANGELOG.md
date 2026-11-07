@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.9.25 (2026-11-07)
+- Kategorien: MoneyMoney ist maßgeblich – hat ein Umsatz dort eine Kategorie, gilt sie. Umsätze ohne Kategorie ordnest du in Kontor zu.
+- „Kategorien zurückschreiben“ (Einstellungen oder „Einschalten“ unter Kategorien, nur am Mac): Zuordnungen aus Kontor setzt Kontor auch in MoneyMoney – nur das Kategoriefeld, direkt vorher neu gelesen und geprüft. Eine vorhandene andere Kategorie nur nach Rückfrage („In MoneyMoney ersetzen“ oder „Nur in Kontor“); von Kontor gesetzte lassen sich ohne Rückfrage ändern.
+- Fehlt die Kategorie in MoneyMoney, wartet die Zuordnung (Hinweis unter Kategorien) und wird nach dem Anlegen beim nächsten Abgleich nachgetragen.
+- Kategorienbaum aus MoneyMoney mit vollständigen Pfaden (vorher nur der Name der Kategorie).
+- Umsätze: Mehrfachauswahl ordnet über denselben geprüften Weg zu. „Datei hierher ziehen“ im Umsatzfenster wieder richtig beschriftet.
+
 ## 3.9.24 (2026-11-07)
 - Schnelleres Lesen: Ein Abgleich liest nur die Umsätze der letzten drei Monate aus MoneyMoney und übernimmt ältere aus dem letzten vollständigen Lesen. Vollständig gelesen wird alle 24 Stunden (einstellbar, nachts schon nach 12), nach eigenen Buchungen und mit „Alles neu lesen“ (Synchronisierung).
 - Bankabruf ohne neue Daten: keine Neuberechnung mehr, nur die Abrufzeiten werden aktualisiert.

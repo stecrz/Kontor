@@ -366,3 +366,8 @@ h2.sub-h { margin-top:0; }
 .bch-n input { width:46px; padding:3px 5px; font-size:12px; text-align:right; }
 .side-btns button { flex:1 1 0; }
 .bch-area.sub { stroke:var(--head); stroke-width:.6; }
+/* Rückfrage mit mehreren Antworten */
+.dlg-back { position:fixed; inset:0; background:rgba(0,0,0,.28); display:flex; align-items:center; justify-content:center; z-index:2000; padding:16px; }
+.dlg { background:var(--head); color:var(--fg); border-radius:var(--radius); box-shadow:0 10px 40px rgba(0,0,0,.25); padding:18px 20px; max-width:540px; width:100%; }
+.dlg-t { line-height:1.45; margin-bottom:12px; }
+.dlg .actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }

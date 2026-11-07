@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import fixtures as F  # noqa: E402
 import mm_bridge  # noqa: E402
 import core  # noqa: E402
+import categorize  # noqa: E402
 import updates  # noqa: E402
 from service import App, make_handler  # noqa: E402
 from model import Ledger, accounts_from_export, tx_from_export  # noqa: E402
@@ -49,13 +50,16 @@ class MockBridge:
     def export_accounts(self):
         return copy.deepcopy(MockBridge.state["accounts"])
 
+    # wie MoneyMoney: flache Liste mit Einrueckung, ohne Pfad; Standardkategorie "Unkategorisiert"
+    CATS = [("Unkategorisiert", 0, False, {"default": True}), ("Umbuchung", 0, False, {}), ("Finanzierung", 0, True, {}), ("Zinsen", 1, False, {}),
+            ("Wohnen", 0, True, {}), ("Miete", 1, False, {"budget": {"amount": 1500.0, "period": "monthly"}}),
+            ("Einnahmen", 0, True, {}), ("Gehalt", 1, False, {}), ("Investments", 0, True, {}), ("ETF", 1, False, {}),
+            ("Vermietung", 0, True, {}), ("Parkweg", 1, True, {}), ("Mieteinnahmen", 2, False, {}), ("Hausgeld", 2, False, {})]
+    extra_cats: list = []
+
     def export_categories(self):
-        return [{"name": "Umbuchung", "path": "Umbuchung"}, {"name": "Zinsen", "path": "Finanzierung\\Zinsen"},
-                {"name": "Wohnen", "path": "Wohnen", "group": True}, {"name": "Miete", "path": "Wohnen\\Miete", "budget": {"amount": 1500.0, "period": "monthly"}},
-                {"name": "Einnahmen", "path": "Einnahmen", "group": True}, {"name": "Gehalt", "path": "Einnahmen\\Gehalt"},
-                {"name": "Investments", "path": "Investments", "group": True}, {"name": "ETF", "path": "Investments\\ETF"},
-                {"name": "Vermietung", "path": "Vermietung", "group": True},
-                {"name": "Mieteinnahmen", "path": "Vermietung\\Parkweg\\Mieteinnahmen"}, {"name": "Hausgeld", "path": "Vermietung\\Parkweg\\Hausgeld"}]
+        out = [dict({"name": n, "indentation": i, "group": g, "uuid": F.uid("cat:" + n)}, **x) for n, i, g, x in self.CATS + MockBridge.extra_cats]
+        return copy.deepcopy(out)
 
     def export_transactions(self, from_date, to_date=None, account=None):
         return [t for t in self.txs if mm_bridge.local_date(t["bookingDate"]) >= from_date]
@@ -85,7 +89,10 @@ class MockBridge:
                 if comment is not None:
                     t["comment"] = comment
                 if category is not None:
-                    t["category"] = category; t["categoryPath"] = category
+                    import mm_categories
+                    paths = {c["uuid"]: c["path"] for c in mm_categories.with_paths(self.export_categories())}
+                    path = paths.get(category, category)
+                    t["category"] = path.split("\\")[-1]; t["categoryPath"] = path
 
 
 def private_transactions(until):
@@ -144,6 +151,7 @@ def config_for_test(belege_dir=None):
 def reset_mock():
     MockBridge.state = {"accounts": F.accounts_raw({"pb.vd": -1600000.0}), "txs": F.pb_transactions(TODAY) + private_transactions(TODAY)}
     MockBridge.instances = []
+    MockBridge.extra_cats = []
 
 
 class _FixedDate(date):
@@ -491,6 +499,48 @@ class AppTests(_AppBase):
         MockBridge.state["accounts"][-1]["name"] += " neu"     # Kontoname geaendert -> neuer Stand
         self.assertNotEqual(self.app.do_run(None, False)["status"], "unveraendert")
         self.assertIsNot(self.app.ledger, led)
+
+    def test_kategorien_zurueckschreiben(self):
+        """Zurueckschreiben nach MoneyMoney: fehlende Kategorie wartet und wird nachgetragen, eigene Kategorie ohne Rueckfrage
+        aenderbar, abweichender Umsatz wird nicht beschrieben, von unterwegs nur in Kontor."""
+        import mm_categories
+        self.login(); self.run_and_wait()
+        cfg = copy.deepcopy(self.app.config); cfg.setdefault("moneymoney", {})["kategorisieren_erlauben"] = True; self.app.save_config(cfg)
+        sets = lambda: [w for b in MockBridge.instances for w in b.written if w[0] == "set" and w[2] is not None]
+        # ohne Kategorie in MoneyMoney: Bauhaus-Umsaetze (Kategorie fehlt in MoneyMoney -> wartet)
+        MockBridge.state["txs"] += [F.tx("priv.giro", date(2026, 10, 20), -80.0, "Bauhaus", "Werkzeug"),
+                                    F.tx("priv.giro", date(2026, 10, 27), -35.0, "Bauhaus", "Schrauben")]
+        self.app.do_run(True, False, full=True)
+        ids = [t.id for t in self.app.ledger.txs if t.name == "Bauhaus"]
+        code, r = self.call("/api/categories/assign", {"ids": ids, "kategorie": "Haushalt / Werkzeug", "warten": True})
+        self.assertEqual((r["mm"]["geschrieben"], r["mm"]["wartet"]), (0, 2)); self.assertFalse(sets())
+        code, off = self.call("/api/categories/unassigned")
+        self.assertEqual(off["wartend"], [{"kategorie": "Haushalt / Werkzeug", "anzahl": 2}])
+        # in MoneyMoney angelegt -> beim naechsten Lesen nachgetragen (per UUID)
+        MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Werkzeug", 1, False, {})]
+        self.app.do_run(True, False)
+        self.assertEqual(sorted(w[1] for w in sets()), sorted(ids)); self.assertTrue(all(w[2] == F.uid("cat:Werkzeug") for w in sets()))
+        self.assertFalse([z for z in categorize.load(self.store)["zuordnung"].values() if z.get("w")])
+        self.assertEqual(categorize.mm_of(next(t for t in self.app.ledger.txs if t.id == ids[0])), "Haushalt / Werkzeug")
+        # von Kontor geschrieben -> erneut aenderbar ohne Rueckfrage
+        MockBridge.extra_cats.append(("Garten", 1, False, {}))
+        self.app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
+        code, r = self.call("/api/categories/assign", {"ids": ids[:1], "kategorie": "Haushalt / Garten", "warten": True})
+        self.assertEqual((r["mm"]["geschrieben"], r["mm"]["fremd"]), (1, []))
+        # in MoneyMoney geaendert (anderer Betrag) -> nicht schreiben, bleibt in Kontor
+        raw = next(t for t in MockBridge.state["txs"] if t["id"] == ids[1]); raw["amount"] = -36.0
+        n = len(sets())
+        code, r = self.call("/api/categories/assign", {"ids": ids[1:], "kategorie": "Haushalt / Garten", "warten": True})
+        self.assertEqual((r["mm"]["geschrieben"], r["mm"]["fehler"]), (0, 1)); self.assertEqual(len(sets()), n)
+        # von unterwegs (nicht vom Mac): nur in Kontor
+        orig = self.app.mm_write_allowed
+        self.app.mm_write_allowed = lambda local: False
+        try:
+            code, r = self.call("/api/categories/assign", {"ids": ids[:1], "kategorie": "Haushalt / Werkzeug", "warten": True})
+            self.assertTrue(r["mm"]["aus"]); self.assertEqual(len(sets()), n)
+            self.assertTrue(categorize.load(self.store)["zuordnung"][str(ids[0])].get("ov"))
+        finally:
+            self.app.mm_write_allowed = orig
 
     def test_abruf_offline_erkennung(self):
         """MoneyMoney setzt den Abrufzeitpunkt auch bei Offline-Konten: Regelziele und Konten ohne Nummern zaehlen nicht fuer den Datenstand."""
@@ -956,15 +1006,27 @@ class AppTests(_AppBase):
         self.assertEqual(r["eintrag"]["notiz"], "neu")
         code, r = self.call("/api/receipts/remove", {"id": e["id"], "datei_loeschen": False})
         self.assertTrue(r["ok"]); self.assertTrue(os.path.isfile(os.path.join(self.belege, e["pfad"])))
-        # Kategorisieren: standardmaessig nicht erlaubt, dann erlaubt
-        self.assertEqual(self.call("/api/transactions/category", {"ids": [tx["id"]], "kategorie": "Lebensmittel"})[0], 403)
+        # Kategorisieren: ohne Zurueckschreiben nur in Kontor (uebersteuert MoneyMoney), eingeschaltet geprueft nach MoneyMoney
+        import mm_categories
+        MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Lebensmittel", 1, False, {})]
+        self.app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
+        kat_of = lambda: [x for x in self.call("/api/transactions?q=supermarkt")[1]["umsaetze"] if x["id"] == tx["id"]][0]
+        code, r = self.call("/api/categories/assign", {"ids": [tx["id"]], "kategorie": "Haushalt / Lebensmittel", "warten": True})
+        self.assertEqual(code, 200); self.assertTrue(r["mm"]["aus"]); self.assertEqual(r["mm"]["geschrieben"], 0)
+        self.assertEqual((kat_of()["kategorie"], kat_of()["quelle"]), ("Haushalt / Lebensmittel", "manuell"))
+        self.assertFalse(any(w[0] == "set" and w[2] is not None for b in MockBridge.instances for w in b.written))
         code, cfg = self.call("/api/config"); cfg["moneymoney"]["kategorisieren_erlauben"] = True
         self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 200)
-        code, r = self.call("/api/transactions/category", {"ids": [tx["id"]], "kategorie": "Lebensmittel"})
-        self.assertEqual(code, 200); self.assertEqual(r["anzahl"], 1)
-        self.assertTrue(any(w[0] == "set" and w[1] == tx["id"] and w[2] == "Lebensmittel" for b in MockBridge.instances for w in b.written))
-        code, u4 = self.call("/api/transactions?q=supermarkt")
-        self.assertEqual([x for x in u4["umsaetze"] if x["id"] == tx["id"]][0]["kategorie"], "Lebensmittel")
+        # in MoneyMoney steht schon "Lebensmittel" (fremd): erst nachfragen, nichts schreiben
+        code, r = self.call("/api/categories/assign", {"ids": [tx["id"]], "kategorie": "Haushalt / Lebensmittel", "warten": True})
+        self.assertEqual(r["mm"]["fremd"], [{"id": tx["id"], "mm": "Lebensmittel"}]); self.assertEqual(r["mm"]["geschrieben"], 0)
+        self.assertFalse(any(w[0] == "set" and w[2] is not None for b in MockBridge.instances for w in b.written))
+        self.assertEqual(kat_of()["kategorie"], "Lebensmittel")                      # bis zur Entscheidung gilt MoneyMoney
+        code, r = self.call("/api/categories/assign", {"ids": [tx["id"]], "kategorie": "Haushalt / Lebensmittel", "modus": "ueberschreiben", "warten": True})
+        self.assertEqual(r["mm"]["geschrieben"], 1)
+        self.assertTrue(any(w[0] == "set" and w[1] == tx["id"] and w[2] == F.uid("cat:Lebensmittel") for b in MockBridge.instances for w in b.written))
+        self.assertEqual(next(t for t in MockBridge.state["txs"] if t["id"] == tx["id"])["categoryPath"], "Haushalt\\Lebensmittel")
+        self.assertEqual((kat_of()["kategorie"], kat_of()["quelle"]), ("Haushalt / Lebensmittel", "moneymoney"))
         # Excel-Exporte
         for was in ("balance", "cashflow", "planning", "tax", "transactions", "holdings", "receipts", "accounts"):
             for modus in ("months", "years"):

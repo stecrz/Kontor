@@ -32,6 +32,7 @@ from urllib.parse import parse_qs, urlparse
 
 import auth
 import i18n
+import mm_categories
 import mm_history
 import realestate
 import history_import
@@ -101,7 +102,7 @@ class App:
         self.ledger_time: Optional[datetime] = None
         self.umsaetze: Optional[list] = None            # kompakte Umsatzliste des letzten Berichts (sonst aus umsaetze.json)
         st = store.load("state.json", {}) or {}
-        self.categories_raw: list = st.get("kategorien_roh") or []
+        self.categories_raw: list = mm_categories.with_paths(st.get("kategorien_roh") or [])
         self.started = datetime.now()
         self.last_run_at: Optional[float] = None
         self.last_result: Optional[dict] = None
@@ -440,7 +441,7 @@ class App:
             log.info("MoneyMoney read (%.1f s)", time.time() - t0)
             step("categories")
             try:
-                self.categories_raw = b.export_categories()
+                self.categories_raw = mm_categories.with_paths(b.export_categories())
                 self.store.update("state.json", lambda st: st.__setitem__("kategorien_roh", self.categories_raw), {})
             except MoneyMoneyError:
                 pass
@@ -481,6 +482,10 @@ class App:
             if cats:
                 self.categories_raw = cats
             self.last_result = res
+            try:
+                self.flush_pending_categories()
+            except Exception:  # pragma: no cover
+                log.exception("Pending categories")
             return res
         except Exception as e:  # pragma: no cover - letzte Sicherung, damit der Dienst weiterlaeuft
             log.exception("Run failed")
@@ -654,6 +659,84 @@ class App:
 
     def plan_for(self, bereich: str) -> dict:
         return (self.plan_all().get("bereiche") or {}).get(bereich) or {}
+
+    # -- Kategorien nach MoneyMoney zurueckschreiben ---------------------------
+    def mm_write_allowed(self, local: bool) -> bool:
+        """Zurueckschreiben eingeschaltet und Anfrage vom Mac selbst (nicht von unterwegs)."""
+        return local and bool((self.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False))
+
+    def write_categories(self, kat: dict, ids: List[int], path: str, modus: str, local: bool) -> dict:
+        """Nach der Zuordnung in Kontor (categorize.assign): nach MoneyMoney schreiben.
+        modus: "auto" (leere und von Kontor gesetzte Kategorien; fremde werden gemeldet), "ueberschreiben" (fremde, die bei
+        der Rueckfrage zu sehen waren, ebenfalls), "nur_kontor" (MoneyMoney bleibt, Kontor uebersteuert)."""
+        path = categorize.norm_cat(path)
+        led = self.ledger
+        by_id = {t.id: t for t in led.txs if t.id > 0} if led is not None else {}
+        out: Dict[str, Any] = {"geschrieben": 0, "wartet": 0, "fremd": [], "fehler": 0, "nur_kontor": 0, "aus": False}
+        if not path or not ids:
+            return out
+        if modus == "nur_kontor" or not self.mm_write_allowed(local) or led is None:
+            # nur in Kontor: gegenueber einer Kategorie aus MoneyMoney ausdruecklich uebersteuern
+            for i in ids:
+                z = kat["zuordnung"].get(str(i))
+                if z and i in by_id and categorize.mm_of(by_id[i]):
+                    z["ov"] = True
+            out["nur_kontor"] = len(ids)
+            out["aus"] = modus != "nur_kontor"
+            return out
+        items = [{"id": i, "neu": path, "alt": categorize.mm_of(by_id[i]), "ueberschreiben": modus == "ueberschreiben"} for i in ids if i in by_id]
+        own = (self.store.load_shared("state.json", {}) or {}).get(mm_categories.LOG_KEY) or {}
+        idx = mm_categories.index(self.categories_raw)
+        try:
+            res = mm_categories.write(self.bridge_factory(False), led, items, idx, own)
+        except MoneyMoneyError as e:
+            log.warning("Setting categories in MoneyMoney not possible: %s", e)
+            raise ValueError(unavailable_text(e) or (tr("s_moneymoney_fehler_s") % e))
+        written = res["geschrieben"]
+        if written:
+            mm_categories.apply_to_ledger(led, idx, written)
+            self.store.update("state.json", lambda cur: mm_categories.remember(cur, written), {})
+            self._save_ledger_cache(led, force=True)
+        for i in [w["id"] for w in written] + res["gleich"]:
+            kat["zuordnung"].pop(str(i), None)          # steht jetzt in MoneyMoney -- dort massgeblich
+        for i in res["wartet"]:
+            if str(i) in kat["zuordnung"]:
+                kat["zuordnung"][str(i)]["w"] = 1       # Kategorie in MoneyMoney anlegen, dann wird nachgetragen
+        for f in res["fehler"]:                          # MoneyMoney weicht ab: Zuordnung bleibt in Kontor
+            z = kat["zuordnung"].get(str(f["id"]))
+            if z and f["id"] in by_id and categorize.mm_of(by_id[f["id"]]):
+                z["ov"] = True
+        out.update(geschrieben=len(written), wartet=len(res["wartet"]), fremd=res["fremd"], fehler=len(res["fehler"]))
+        return out
+
+    def flush_pending_categories(self) -> int:
+        """Wartende Zuordnungen nachtragen, sobald es die Kategorie in MoneyMoney gibt (Zurueckschreiben eingeschaltet).
+        Hat der Umsatz inzwischen in MoneyMoney eine Kategorie, gilt diese und die wartende Zuordnung entfaellt."""
+        if not (self.config.get("moneymoney") or {}).get("kategorisieren_erlauben") or self.ledger is None:
+            return 0
+        kat = categorize.load(self.store)
+        idx = mm_categories.index(self.categories_raw)
+        pend: Dict[str, List[int]] = {}
+        for tid, z in kat["zuordnung"].items():
+            if z.get("w") and mm_categories.assignable(idx, z.get("k") or "") is None:
+                pend.setdefault(z["k"], []).append(int(tid))
+        if not pend:
+            return 0
+        n = 0
+        for path, ids in pend.items():
+            try:
+                res = self.write_categories(kat, ids, path, "auto", True)
+            except ValueError as e:
+                log.info("Pending categories not written: %s", e)
+                return n
+            n += res["geschrieben"]
+            for f in res["fremd"]:                       # in MoneyMoney inzwischen anders kategorisiert -> gilt
+                kat["zuordnung"].pop(str(f["id"]), None)
+        categorize.save(self.store, kat)
+        if n:
+            log.info("%d pending categor(y/ies) written to MoneyMoney", n)
+            self.request_rebuild(tr("s_grund_kategorien_nachgetragen"))
+        return n
 
     def umsatzliste(self) -> list:
         """Kompakte Umsatzliste des aktuellen Berichts (schreibgeschuetzt): aus dem Speicher, sonst aus umsaetze.json."""
@@ -1149,8 +1232,16 @@ def make_handler(app: App):
                     return self._json(200, {"offen": 0, "gruppen": [], "gruppen_gesamt": 0, "hinweis": tr("s_noch_kein_lauf_moneymoney_lesen")})
                 kat = categorize.load(app.store)
                 bereich_of = {a.uuid: b["id"] for b in bereiche_for(app.ledger, app.config) for a in b["leaves"]}
-                return self._json(200, categorize.open_items(kat, app.ledger, bereich_of, int(q["year"]) if q.get("year") else None, q.get("area") or None,
-                                                                 float(q.get("min") or 0), int(q.get("limit") or 300)))
+                res = categorize.open_items(kat, app.ledger, bereich_of, int(q["year"]) if q.get("year") else None, q.get("area") or None,
+                                            float(q.get("min") or 0), int(q.get("limit") or 300))
+                # Zuordnungen, die auf eine Kategorie in MoneyMoney warten (dort anlegen, dann traegt Kontor nach)
+                wart: Dict[str, int] = {}
+                for z in kat["zuordnung"].values():
+                    if z.get("w"):
+                        wart[z["k"]] = wart.get(z["k"], 0) + 1
+                res["wartend"] = [{"kategorie": k, "anzahl": n} for k, n in sorted(wart.items())]
+                res["zurueckschreiben"] = app.mm_write_allowed(self._is_local(s))
+                return self._json(200, res)
             if path == "/api/properties":
                 return self._json(200, {"immobilien": app.config.get("immobilien") or [], "ergebnisse": {k: {kk: vv for kk, vv in v.items() if kk != "reihen"}
                                                                                                         for k, v in immo_results(app.config, date.today()).items()}})
@@ -1453,25 +1544,6 @@ def make_handler(app: App):
                 return self._json(200, {"ok": ok, "text": err})
             if path == "/api/plan":
                 return self._json(200, self._update_plan(body))
-            if path == "/api/transactions/category":
-                if not local:
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
-                if not (app.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False):
-                    return self._json(403, {"fehler": tr("s_kategorisieren_aus_kontor_ist_in")})
-                ids = [int(x) for x in (body.get("ids") or [])][:200]
-                kat = str(body.get("kategorie") or "")
-                if not ids or not kat:
-                    return self._json(400, {"fehler": tr("s_ids_und_kategorie_noetig")})
-                b = app.bridge_factory(False)
-                for i in ids:
-                    b.set_transaction(i, category=kat)
-                ums = app.umsatzliste()
-                for t in ums:
-                    if t["id"] in ids:
-                        t["kategorie"] = kat.replace("\\", " / ")
-                app.store.save("transactions.json", ums)
-                log.info("%d transaction(s) categorized", len(ids))
-                return self._json(200, {"ok": True, "anzahl": len(ids)})
             if path.startswith("/api/receipts/"):
                 return self._belege(path, body, local)
             if path == "/api/package/import":
@@ -1764,22 +1836,14 @@ def make_handler(app: App):
                     r = dict(body["regel"]); r["kategorie"] = pfad
                     rule = categorize.add_rule(kat, r)
                 n = categorize.assign(kat, ids, pfad, "manuell", rule["id"] if rule else None)
-                mm_written = 0
-                if body.get("in_moneymoney") and pfad and local and (app.config.get("moneymoney") or {}).get("kategorisieren_erlauben"):
-                    if pfad.replace(" / ", "\\") in {str(c.get("path") or "") for c in app.categories_raw}:
-                        try:
-                            b = app.bridge_factory(False)
-                            for i in ids[:200]:
-                                b.set_transaction(i, category=pfad.replace(" / ", "\\"))
-                                mm_written += 1
-                        except MoneyMoneyError as e:
-                            log.warning("Setting category in MoneyMoney: %s", e)
+                modus = str(body.get("modus") or "auto")
+                mm = app.write_categories(kat, ids[:2000], pfad, modus if modus in ("auto", "ueberschreiben", "nur_kontor") else "auto", local)
                 if rule and app.ledger is not None:
                     categorize.auto_assign(kat, app.ledger, overwrite_mm=bool((app.config.get("kategorien") or {}).get("mm_ueberschreiben")))
                 categorize.save(app.store, kat)
                 ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="Zuordnung") if app.ledger is not None else (False, None)
                 log.info("%d transaction(s) assigned in Kontor%s", n, " (rule created)" if rule else "")
-                return self._json(200, {"ok": True, "anzahl": n, "regel": rule, "in_moneymoney": mm_written, "bericht": ok, "text": err})
+                return self._json(200, {"ok": True, "anzahl": n, "regel": rule, "mm": mm, "in_moneymoney": mm["geschrieben"], "bericht": ok, "text": err})
             if path == "/api/categories/rule":
                 if body.get("loeschen"):
                     kat["regeln"] = [r for r in kat["regeln"] if r.get("id") != str(body.get("loeschen"))]
@@ -1822,6 +1886,10 @@ def make_handler(app: App):
                 for k in ("aktiv", "lernen", "mm_ueberschreiben"):
                     if k in body:
                         kc[k] = bool(body[k])
+                if "mm_schreiben" in body:          # Zurueckschreiben nach MoneyMoney: nur am Mac umschaltbar
+                    if not local:
+                        return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+                    cfg.setdefault("moneymoney", {})["kategorisieren_erlauben"] = bool(body["mm_schreiben"])
                 app.save_config(cfg)
                 ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund=tr("s_grund_kategorie_einstellungen")) if app.ledger is not None else (False, None)
                 return self._json(200, {"ok": True, "einstellungen": kc, "bericht": ok})

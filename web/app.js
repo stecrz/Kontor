@@ -156,6 +156,18 @@ const S = { tab: 'uebersicht', modus: 'monate', plan: true, real: false, alle: f
             DATA: null, CFG: null, KONTEN: [], KATS: [], STATUS: null, steuerJahr: null, steuerEnt: null, vorschlag: false,
             uf: {entitaet: '', jahr: '', konto: '', q: '', ohne_beleg: false, ohne_kategorie: false, richtung: ''}, sel: new Set(), drawerTx: null };
 
+function choose(msg, opts) {
+  // Rückfrage mit mehreren Antworten (statt confirm): opts = [[wert, text, klasse], ...]; Abbrechen, Escape oder daneben -> null
+  return new Promise(res => {
+    const bg = document.createElement('div'); bg.className = 'dlg-back';
+    bg.innerHTML = `<div class="dlg" role="dialog" aria-modal="true"><div class="dlg-t">${msg}</div><div class="actions">${opts.map(([v, l, c]) => `<button data-v="${esc(v)}" class="${c || ''}">${l}</button>`).join('')}<button data-v="" class="secondary">${t('abbrechen')}</button></div></div>`;
+    const key = e => { if (e.key === 'Escape') { e.stopPropagation(); done(''); } };
+    const done = v => { bg.remove(); document.removeEventListener('keydown', key, true); res(v || null); };
+    bg.addEventListener('click', e => { const b = e.target.closest('button[data-v]'); if (b) done(b.dataset.v); else if (e.target === bg) done(''); });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(bg); const f = bg.querySelector('button'); if (f) f.focus();
+  });
+}
 function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), ms); }
 function banner(msg, kind = '') { const b = $('#banner'); if (!msg) { b.classList.add('hidden'); return; } b.textContent = msg; b.className = 'banner ' + kind; }
 
@@ -1643,7 +1655,6 @@ async function vUmsaetze() {
   if (!S.DATA) return noData;
   await loadUms();
   const f = S.uf, st = S.STATUS, konten = S.DATA.konten.filter(k => !k.gruppe && (!f.entitaet || k.pfad.startsWith(BN(f.entitaet))));
-  const catAllowed = st.lokal && st.moneymoney.kategorisieren_erlaubt;
   let h = `<div class="toolbar">
     <select id="uf-ent"><option value="">${t('alle_bereiche')}</option>${Object.keys(S.DATA.bereiche).map(k => `<option value="${k}" ${f.entitaet === k ? 'selected' : ''}>${esc(BN(k))}</option>`).join('')}</select>
     <select id="uf-jahr"><option value="">${t('alle_jahre')}</option>${UMS.jahre.map(y => `<option ${f.jahr === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
@@ -1657,7 +1668,7 @@ async function vUmsaetze() {
     <button id="bl-folder" class="secondary small" ${st.lokal ? '' : t('disabled_title_nur_am_mac')}>${t('belegordner_oeffnen')}</button>
     <button id="bl-export" class="secondary small">${t('belege_exportieren_zip')}</button>
     ${xlsxBtn('transactions', f.entitaet ? `data-bereich="${f.entitaet}"` : '')} ${xlsxBtn('receipts')}</div>`;
-  if (S.sel.size) h += `<div class="banner info" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${t('0_ausgewaehlt_1', S.sel.size, catAllowed ? `<select id="bulk-cat">${catOptions('')}</select><button id="bulk-cat-btn" class="small">${t('kategorie_zuweisen')}</button>` : `<span class="small">${t('kategorisieren_aus_kontor_ist_in')}</span>`)}<button id="bulk-clear" class="small secondary">${t('auswahl_aufheben')}</button></div>`;
+  if (S.sel.size) h += `<div class="banner info" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${t('0_ausgewaehlt_1', S.sel.size, `<input type="text" id="bulk-cat" list="bulk-kats" placeholder="${t('kategorie')}" style="min-width:240px">${katList('bulk-kats')}<button id="bulk-cat-btn" class="small">${t('kategorie_zuweisen')}</button>`)}<button id="bulk-clear" class="small secondary">${t('auswahl_aufheben')}</button></div>`;
   h += `<div class="wrap"><table class="plain" id="ums-table"><thead><tr><th style="width:28px"><input type="checkbox" id="sel-all"></th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('name')}</th><th>${t('verwendungszweck')}</th><th class="num">${t('betrag')}</th><th>${t('kategorie')}</th><th class="num">${t('belege')}</th></tr></thead><tbody>`
     + UMS.umsaetze.map(u => `<tr class="clickable ${S.sel.has(u.id) ? 'sel' : ''}" data-id="${u.id}"><td><input type="checkbox" class="sel" ${S.sel.has(u.id) ? 'checked' : ''}></td><td class="small" style="white-space:nowrap">${FD(u.datum)}</td><td class="small">${esc(u.konto_name)}</td><td>${esc(u.name)}</td><td class="small muted" style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.zweck)}</td><td class="num ${u.betrag < 0 ? 'neg' : 'pos'}">${F(u.betrag)}</td><td class="small" title="${u.quelle === 'regel' ? t('per_kontor_regel') : u.quelle === 'manuell' ? t('in_kontor_zugeordnet') : u.quelle === 'moneymoney' ? t('aus_moneymoney_2') : ''}">${u.kategorie ? esc(u.kategorie) + (u.quelle === 'regel' ? ' <span class="muted">R</span>' : u.quelle === 'manuell' ? ' <span class="muted">K</span>' : '') : `<span class="pill warn">${t('ohne')}</span>`}</td><td class="num">${u.belege ? `<span class="pill ok">${u.belege}</span>` : `<button class="ghost small add-beleg" title="${t('beleg_hinzufuegen')}">＋</button>`}</td></tr>`).join('')
     + '</tbody></table></div>';
@@ -1668,12 +1679,12 @@ async function openDrawer(txId) {
   S.drawerTx = txId;
   const [bl] = await Promise.all([api('/api/receipts?files=1'), KZ.kat ? Promise.resolve() : loadKat().catch(() => null)]);
   const mine = bl.eintraege.filter(e => e.tx_id === txId), free = bl.dateien.filter(d => !d.verknuepft);
-  const st = S.STATUS, catAllowed = st.lokal && st.moneymoney.kategorisieren_erlaubt;
+  const st = S.STATUS;
   const d = $('#drawer');
   const QUELLE = {manuell: t('in_kontor_zugeordnet'), regel: t('per_kontor_regel'), moneymoney: t('aus_moneymoney_2'), '': ''};
   d.innerHTML = `<button class="close icon">✕</button><h2>${esc(u.name)}</h2>
     <div class="kv"><div>${t('datum')}</div><div>${FD(u.datum)}</div><div>${t('betrag')}</div><div class="${u.betrag < 0 ? 'neg' : 'pos'}" style="font-weight:600;color:var(--${u.betrag < 0 ? 'neg' : 'pos'})">${F(u.betrag)} €</div><div>${t('konto_2')}</div><div>${esc(u.konto_name)} · ${esc(BN(u.entitaet))}</div><div>${t('zweck')}</div><div>${esc(u.zweck) || '–'}</div><div>${t('kategorie')}</div><div>${esc(u.kategorie) || `<span class="pill warn">${t('ohne')}</span>`}${u.quelle ? ' <span class="small muted">· ' + QUELLE[u.quelle] + '</span>' : ''}</div><div>${t('status')}</div><div>${u.gebucht ? t('gebucht') : t('vorgemerkt')}${u.haken ? t('abgehakt') : ''}</div><div>${t('id')}</div><div class="mono small">${u.id}</div></div>
-    <div class="row tight" style="margin-top:10px"><input type="text" id="dr-kat" list="dr-kats" value="${esc(u.kategorie || '')}" placeholder="${t('kategorie_in_kontor_neu_anlegen')}" style="min-width:240px;flex:1">${katList('dr-kats')}<label class="chk small"><input type="checkbox" id="dr-rule"> ${t('regel_fuer_0', esc((u.name || '').slice(0, 24)))}</label>${catAllowed ? `<label class="chk small"><input type="checkbox" id="dr-mm"> ${t('auch_in_moneymoney')}</label>` : ''}<button id="dr-cat-btn" class="small">${t('zuordnen')}</button></div>
+    <div class="row tight" style="margin-top:10px"><input type="text" id="dr-kat" list="dr-kats" value="${esc(u.kategorie || '')}" placeholder="${t('kategorie_in_kontor_neu_anlegen')}" style="min-width:240px;flex:1">${katList('dr-kats')}<label class="chk small"><input type="checkbox" id="dr-rule"> ${t('regel_fuer_0', esc((u.name || '').slice(0, 24)))}</label><button id="dr-cat-btn" class="small">${t('zuordnen')}</button></div>${mmWriteNote()}
     <h3>${t('belege_n', mine.length)}</h3>
     ${mine.map(e => `<div class="beleg" data-id="${e.id}"><span class="n" title="${esc(e.pfad)}">${e.extern ? `<span class="tag" title="${t('verknuepfung_zu_einer_datei_ausserhalb')}">${t('mac')}</span>` : ''}${esc(e.pfad.split('/').pop())}</span><span class="small muted">${e.extern ? (e.status === 'icloud' ? `<span class="pill warn">${t('icloud_nicht_geladen')}</span>` : e.status === 'fehlt' ? `<span class="pill err">${t('fehlt')}</span>` : '') : (e.groesse / 1024).toFixed(0) + ' KB'}</span><a href="/api/receipts/file?id=${e.id}" target="_blank" class="small">${t('ansehen')}</a>${st.lokal ? `<button class="ghost small bl-show" title="${t('im_finder_zeigen_2')}">${t('finder')}</button>` : ''}<button class="ghost small bl-note" title="${t('notiz')}">✎</button><button class="ghost small bl-del" title="${e.extern ? t('verknuepfung_entfernen_datei_bleibt') : t('zuordnung_entfernen')}">✕</button></div>${e.notiz ? `<div class="small muted" style="padding:0 0 6px">${esc(e.notiz)}</div>` : ''}`).join('') || `<div class="muted small">${t('noch_kein_beleg')}</div>`}
     <div class="drop" id="dr-drop" style="margin-top:12px">${t('datei_hierher_ziehen')}<br><button id="dr-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button> <button id="dr-cam" class="small secondary" style="margin-top:8px">${t('foto_aufnehmen')}</button><div class="small muted" style="margin-top:6px">${t('pdf_bilder_e_mails_office')}</div></div>
@@ -1692,7 +1703,7 @@ async function openDrawer(txId) {
   const el = $('#dr-ext-link', d); if (el) el.onclick = async () => { const pfad = $('#dr-ext', d).value.trim(); if (!pfad) return toast(t('pfad_fehlt')); try { await api('/api/receipts/link', {tx_id: txId, pfad, extern: true}); toast(t('verknuepft')); await refreshUms(txId); } catch (er) { toast(er.message, 6000); } };
   $$('.bl-note', d).forEach(b => b.onclick = async e => { const id = e.target.closest('.beleg').dataset.id, ent = mine.find(x => x.id === id); const n = prompt(t('notiz_zum_beleg'), ent.notiz || ''); if (n === null) return; await api('/api/receipts/update', {id, notiz: n}); await refreshUms(txId); });
   $$('.bl-show', d).forEach(b => b.onclick = async e => { const id = e.target.closest('.beleg').dataset.id, ent = mine.find(x => x.id === id); try { await api('/api/receipts/open', {pfad: ent.pfad}); } catch (er) { toast(er.message, 4000); } });
-  const cb = $('#dr-cat-btn', d); if (cb) cb.onclick = async () => { const kat = $('#dr-kat', d).value.trim(); const body = {ids: [txId], kategorie: kat, in_moneymoney: !!($('#dr-mm', d) && $('#dr-mm', d).checked)}; if ($('#dr-rule', d).checked && kat) body.regel = {name_enthaelt: u.name}; try { const r = await api('/api/categories/assign', body); toast(kat ? t('zugeordnet') + (r.regel ? t('regel_angelegt') : '') : t('zuordnung_entfernt')); await loadAll(); await refreshUms(txId); } catch (e) { toast(e.message, 5000); } };
+  const cb = $('#dr-cat-btn', d); if (cb) cb.onclick = async () => { const kat = $('#dr-kat', d).value.trim(); const extra = ($('#dr-rule', d).checked && kat) ? {regel: {name_enthaelt: u.name}} : {}; try { const r = await assignCats([txId], kat, extra); toast(kat ? assignMsg(r) : t('zuordnung_entfernt'), 5000); await loadAll(); await refreshUms(txId); } catch (e) { toast(e.message, 5000); } };
 }
 function closeDrawer() { $('#drawer').classList.remove('open'); S.drawerTx = null; }
 async function belegeApi(path, body) {
@@ -1861,6 +1872,36 @@ function vKapitalflussZuordnung() {
 
 // ---------------------------------------------------------------- Zuordnen (Kontor-Kategorien)
 const KZ = {jahr: '', bereich: '', min: '', open: {}, kat: null, offen: null};
+async function assignCats(ids, kat, extra = {}) {
+  // In Kontor zuordnen; ist das Zurückschreiben an, setzt Kontor die Kategorie auch in MoneyMoney (vorher geprüft).
+  // Steht dort schon eine andere (nicht von Kontor gesetzte) Kategorie: nachfragen – überschreiben oder nur in Kontor.
+  const r = await api('/api/categories/assign', Object.assign({ids, kategorie: kat}, extra));
+  const mm = r.mm || {}, f = mm.fremd || [];
+  if (f.length) {
+    const bsp = [...new Set(f.map(x => x.mm))].slice(0, 3).map(x => '„' + esc(x) + '“').join(', ');
+    const v = await choose(tn('mm_fremd_frage', f.length, bsp, esc(kat)), [['ueberschreiben', t('in_moneymoney_ueberschreiben')], ['nur_kontor', t('nur_in_kontor'), 'secondary']]);
+    if (v) {
+      const r2 = (await api('/api/categories/assign', {ids: f.map(x => x.id), kategorie: kat, modus: v})).mm || {};
+      mm.geschrieben += r2.geschrieben || 0; mm.nur_kontor = (mm.nur_kontor || 0) + (r2.nur_kontor || 0); mm.fehler += r2.fehler || 0;
+    }
+    mm.fremd = v ? [] : f;
+  }
+  return r;
+}
+function assignMsg(r) {
+  // Rückmeldung: zugeordnet · in MoneyMoney · wartet auf Kategorie · nur in Kontor · abweichend
+  const m = r.mm || {}, p = [t('0_zugeordnet', r.anzahl) + (r.regel ? t('regel_angelegt') : '')];
+  if (m.geschrieben) p.push(t('0_in_moneymoney_gesetzt', m.geschrieben));
+  if (m.wartet) p.push(t('0_warten_auf_kategorie', m.wartet));
+  if (m.aus) p.push(t('nur_in_kontor_zurueckschreiben_aus'));
+  if (m.fehler) p.push(t('0_in_moneymoney_abweichend', m.fehler));
+  return p.join(' · ');
+}
+function mmWriteNote() {
+  // Hinweis unter dem Zuordnen: wohin die Zuordnung geht
+  const st = S.STATUS;
+  return `<div class="small muted">${st.lokal && st.moneymoney.kategorisieren_erlaubt ? t('zuordnung_geht_nach_moneymoney') : st.lokal ? t('zuordnung_nur_in_kontor_aus', '<a href="#einstellungen">' + t('einstellungen') + '</a>') : t('zuordnung_nur_in_kontor_unterwegs')}</div>`;
+}
 async function loadKat() { KZ.kat = await api('/api/categories/kontor'); return KZ.kat; }
 const katPaths = () => (KZ.kat ? KZ.kat.baum.map(k => k.pfad) : []);
 const katList = id => `<datalist id="${id}">${katPaths().map(p => `<option value="${esc(p)}">`).join('')}</datalist>`;
@@ -1869,12 +1910,13 @@ async function vZuordnen() {
   const [kat, off] = await Promise.all([loadKat(), api(`/api/categories/unassigned?year=${KZ.jahr}&area=${KZ.bereich}&min=${KZ.min}`)]);
   KZ.offen = off;
   const st = (S.DATA.kategorien || {}).gesamt || {}, years = Object.keys((S.DATA.kategorien || {}).jahre || {}).sort().reverse();
-  const mmAllowed = S.STATUS.lokal && S.STATUS.moneymoney.kategorisieren_erlaubt;
   let h = `<div class="toolbar"><select id="kz-bereich"><option value="">${t('alle_bereiche')}</option>${Object.keys(S.DATA.bereiche).map(k => `<option value="${k}" ${KZ.bereich === k ? 'selected' : ''}>${esc(BN(k))}</option>`).join('')}</select>
     <select id="kz-jahr"><option value="">${t('alle_jahre')}</option>${years.map(y => `<option ${KZ.jahr === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
     <label class="chk small">${t('ab')} <input type="number" id="kz-min" value="${esc(KZ.min)}" placeholder="0" style="width:80px"> €</label>
     <span class="sp"></span><button id="kz-lernen" class="secondary small" title="${t('regeln_aus_allen_vorhandenen_zuordnung')}">${t('regeln_neu_lernen')}</button></div>
     <div class="note">${t('0_umsaetze_ohne_kategorie_1', off.offen, off.hinweis ? ' – ' + esc(off.hinweis) : '', off.gruppen_gesamt, st.manuell || 0, st.regel || 0, st.moneymoney || 0, st.ohne || 0, hq('zuordnen'))}</div>` + katList('kz-kats');
+  if (!off.zurueckschreiben && S.STATUS.lokal) h += `<div class="banner info">${t('zurueckschreiben_ist_aus')} <button class="small" id="kz-mm-on">${t('einschalten')}</button></div>`;
+  if ((off.wartend || []).length) h += `<div class="banner">${t('in_moneymoney_anlegen_wartend', off.wartend.map(w => `<b>${esc(w.kategorie.replace(/ \/ /g, ' \\ '))}</b> (${tn('n_umsaetze', w.anzahl, w.anzahl)})`).join(', '))}</div>`;
   if (!off.gruppen.length) return h + `<div class="card"><div class="v s">${t('nichts_offen_2')}</div><div class="d">${t('alle_umsaetze_haben_eine_kategorie')}</div></div>`;
   h += '<div class="list">';
   for (const g of off.gruppen) {
@@ -1883,7 +1925,7 @@ async function vZuordnen() {
       <div class="row tight"><b style="min-width:220px">${esc(g.name)}</b><span class="small muted">${esc(g.konto)}${g.iban ? ' · ' + esc(g.iban) : ''}</span><span class="tag">${g.anzahl}×</span><span class="num ${g.summe < 0 ? 'neg' : 'pos'}" style="font-weight:600">${F(g.summe)} €</span><span class="small muted">${FD(g.von)}${g.von !== g.bis ? ' – ' + FD(g.bis) : ''}</span><button class="ghost small kz-toggle">${open ? t('beispiele') : t('beispiele_2')}</button></div>
       ${open ? '<div class="small muted" style="margin:4px 0 6px">' + g.beispiele.map(b => `${FD(b.datum)} · ${F(b.betrag)} € · ${esc(b.zweck || '–')}`).join('<br>') + '</div>' : ''}
       <div class="row tight"><input type="text" class="kz-kat" list="kz-kats" value="${esc(g.vorschlag || '')}" placeholder="${t('kategorie_neu_anlegen_z_b')}" style="min-width:300px">${g.vorschlag ? `<span class="tag" title="${t('vorschlag_aus_regel')} ` + esc(g.regel || '') + `${t('vorschlag_2')}</span>` : ''}
-        <label class="chk small"><input type="checkbox" class="kz-rule" checked> ${t('regel_fuer_0_2', g.iban ? t('diese_iban') : t('diesen_namen'))}</label>${mmAllowed ? `<label class="chk small"><input type="checkbox" class="kz-mm"> ${t('auch_in_moneymoney')}</label>` : ''}
+        <label class="chk small"><input type="checkbox" class="kz-rule" checked> ${t('regel_fuer_0_2', g.iban ? t('diese_iban') : t('diesen_namen'))}</label>
         <button class="small kz-save">${t('zuordnen')}</button><button class="small secondary kz-umb" title="${t('uebertrag_zwischen_eigenen_konten')}">${t('tag_umbuchung')}</button></div></div></div>`;
   }
   return h + '</div>';
@@ -1891,13 +1933,13 @@ async function vZuordnen() {
 function bindZuordnen(main) {
   const bindF = (id, key) => { const el = $(id, main); if (el) el.addEventListener('change', e => { KZ[key] = e.target.value; route(); }); };
   bindF('#kz-bereich', 'bereich'); bindF('#kz-jahr', 'jahr'); bindF('#kz-min', 'min');
+  const on = $('#kz-mm-on', main); if (on) on.addEventListener('click', async () => { try { await api('/api/categories/settings', {mm_schreiben: true}); S.CFG = await api('/api/config'); S.STATUS = await api('/api/status'); toast(t('zurueckschreiben_eingeschaltet')); route(); } catch (e) { toast(e.message, 6000); } });
   const ln = $('#kz-lernen', main); if (ln) ln.addEventListener('click', async () => { toast(t('lerne'), 10000); try { const r = await api('/api/categories/learn', {}); toast(`${t('0_regeln_aus_1_umsaetzen', r.gelernt.regeln, r.gelernt.muster, r.zugeordnet)}`, 6000); await loadAll(); route(); } catch (e) { toast(e.message, 6000); } });
   $$('.kz-toggle', main).forEach(b => b.addEventListener('click', e => { const k = e.target.closest('.kz-group').dataset.key; KZ.open[k] = !KZ.open[k]; route(); }));
   const assign = async (box, kat) => {
     const g = KZ.offen.gruppen.find(x => x.key === box.dataset.key); if (!g || !kat) return toast(t('kategorie_fehlt'));
-    const body = {ids: g.ids, kategorie: kat, in_moneymoney: !!($('.kz-mm', box) && $('.kz-mm', box).checked)};
-    if ($('.kz-rule', box).checked) body.regel = g.iban ? {iban: g.iban} : {name_enthaelt: g.name};
-    try { const r = await api('/api/categories/assign', body); toast(`${t('0_zugeordnet', r.anzahl)}${r.regel ? t('regel_angelegt') : ''}${r.in_moneymoney ? ' · ' + r.in_moneymoney + t('in_moneymoney') : ''}`); await loadAll(); route(); } catch (e) { toast(e.message, 6000); }
+    const extra = $('.kz-rule', box).checked ? {regel: g.iban ? {iban: g.iban} : {name_enthaelt: g.name}} : {};
+    try { const r = await assignCats(g.ids, kat, extra); toast(assignMsg(r), 6000); await loadAll(); route(); } catch (e) { toast(e.message, 6000); }
   };
   $$('.kz-save', main).forEach(b => b.addEventListener('click', e => { const box = e.target.closest('.kz-group'); assign(box, $('.kz-kat', box).value.trim()); }));
   $$('.kz-umb', main).forEach(b => b.addEventListener('click', e => { const box = e.target.closest('.kz-group'); assign(box, 'Umbuchung'); }));
@@ -2028,7 +2070,7 @@ function vSicherung() {
   <h2>${t('einstellungspaket')} ${hq('paket')}</h2><div class="note">${t('paket_text', `<code>${t('name_kontor_json')}</code>`)}</div>
   <div class="row"><label>${t('name')} <input type="text" id="pk-name" value="Kontor-Einstellungen"></label><label class="chk"><input type="checkbox" id="pk-nouuid"> ${t('ohne_uuids_nur_kontonamen_fuer')}</label><label class="chk"><input type="checkbox" id="pk-plan"> ${t('planung_mitnehmen')}</label><button id="pk-export" class="small">${t('paket_herunterladen')}</button></div>
   <div class="small muted">${t('aktuell_0_darlehen_1_beteiligungen', (C.darlehen || []).length, (C.beteiligungen || []).length, (C.saldo_spiegel || []).length, Object.keys((C.kapitalfluss || {}).kategorie_zuordnung || {}).length)}</div>
-  <h2>${t('datei_laden')}</h2><div class="drop" id="pk-drop">${t('datei_hierher_ziehen')}<br><button id="pk-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button></div><div id="pk-preview"></div>
+  <h2>${t('datei_laden')}</h2><div class="drop" id="pk-drop">${t('sicherung_hierher_ziehen')}<br><button id="pk-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button></div><div id="pk-preview"></div>
   ${vEinstellungenDaten()}
   <h2>${t('zuruecksetzen_h')}</h2><div class="note">${t('zuruecksetzen_text')}</div>
   <div class="row tight"><input type="password" id="rs-pw" placeholder="${t('passwort_zur_bestaetigung')}" autocomplete="current-password" style="width:220px"><label class="chk"><input type="checkbox" id="rs-pw-reset"> ${t('passwort_ebenfalls_zuruecksetzen_einri')}</label><button id="rs-go" class="danger" ${S.STATUS.lokal ? '' : t('disabled_title_nur_am_mac')}>${t('programm_zuruecksetzen')}</button></div><div id="rs-report" class="findings"></div>`;
@@ -2419,7 +2461,7 @@ function bind(main) {
     $('#sel-all', tbl).addEventListener('change', e => { S.sel.clear(); if (e.target.checked) UMS.umsaetze.forEach(u => S.sel.add(u.id)); route(); });
   }
   const bc = $('#bulk-clear', main); if (bc) bc.addEventListener('click', () => { S.sel.clear(); route(); });
-  const bk = $('#bulk-cat-btn', main); if (bk) bk.addEventListener('click', async () => { const kat = $('#bulk-cat').value; if (!kat) return toast(t('kategorie_waehlen')); if (!confirm(S.sel.size + t('umsaetzen_die_kategorie') + kat + t('zuweisen'))) return; try { const r = await api('/api/transactions/category', {ids: [...S.sel], kategorie: kat}); toast(r.anzahl + ' kategorisiert'); S.sel.clear(); route(); } catch (e) { toast(e.message, 6000); } });
+  const bk = $('#bulk-cat-btn', main); if (bk) bk.addEventListener('click', async () => { const kat = $('#bulk-cat').value.trim(); if (!kat) return toast(t('kategorie_waehlen')); if (!confirm(S.sel.size + t('umsaetzen_die_kategorie') + kat + t('zuweisen'))) return; try { const r = await assignCats([...S.sel], kat, {warten: true}); toast(assignMsg(r), 6000); S.sel.clear(); await loadAll(); route(); } catch (e) { toast(e.message, 6000); } });
   const bf = $('#bl-folder', main); if (bf) bf.addEventListener('click', async () => { try { await belegeApi('/api/receipts/open', {}); } catch (e) { toast(e.message, 5000); } });
   const be = $('#bl-export', main); if (be) be.addEventListener('click', async () => { const jahr = prompt(t('jahr_leer_alle'), uf.jahr || new Date().getFullYear()); if (jahr === null) return; try { const r = await belegeApi('/api/receipts/export', {jahr, entitaet: uf.entitaet}); toast(t('export_erstellt') + r.datei, 9000); } catch (e) { toast(e.message, 6000); } });
 
@@ -2521,7 +2563,7 @@ $('#menu-btn').addEventListener('click', () => $('.side').classList.toggle('open
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 // Klick neben das Seitenfenster schliesst es (bei ungespeicherten Eingaben erst nach Rueckfrage)
 document.addEventListener('pointerdown', e => {
-  const dr = $('#drawer'); if (!dr.classList.contains('open') || dr.contains(e.target) || e.target.closest('#toast')) return;
+  const dr = $('#drawer'); if (!dr.classList.contains('open') || dr.contains(e.target) || e.target.closest('#toast, .dlg-back')) return;
   if (drawerDirty() && !confirm(t('ungespeicherte_aenderungen_verwerfen'))) return;
   closeDrawer();
 });
