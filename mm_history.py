@@ -22,6 +22,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import gc
+import logging
 import os
 import shutil
 import sqlite3
@@ -45,6 +46,7 @@ PAGE_SIZES = (1024, 4096, 2048, 8192, 16384, 32768, 65536)
 RESERVES = (48, 80, 32, 64)
 SQLITE_HEADER = b"SQLite format 3\x00"
 
+log = logging.getLogger("kontor.history")
 AKTIV = threading.Event()        # waehrend des Vorgangs gesetzt: keine Update-Pruefung (keine Netzverbindung)
 
 
@@ -270,22 +272,42 @@ class MemDB:
 
 # -- Aufbau lesen ----------------------------------------------------------------------------------------
 
+SHADOW = ("_content", "_segments", "_segdir", "_docsize", "_stat", "_data", "_idx", "_config", "_node", "_parent", "_rowid")
+
+
+def table_names(db: "MemDB") -> Tuple[List[str], List[str]]:
+    """(gewoehnliche Tabellen, virtuelle Tabellen). Virtuelle Tabellen -- bei MoneyMoney die Volltextsuche mit eigenem
+    Tokenizer -- lassen sich ohne MoneyMoney nicht oeffnen und werden samt ihren Schattentabellen nie angefasst."""
+    rows = db.rows("SELECT name, coalesce(sql, '') FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    virtual = [n for n, sql in rows if sql.lstrip().upper().startswith("CREATE VIRTUAL TABLE")]
+    plain = [n for n, _sql in rows if n not in virtual and not any(n == v + sfx for v in virtual for sfx in SHADOW)]
+    return plain, virtual
+
+
+def columns(db: "MemDB", table: str) -> List[Tuple[str, str]]:
+    try:
+        return [(r[1], (r[2] or "").upper()) for r in db.rows("PRAGMA table_info(%s)" % _q(table))]
+    except sqlite3.DatabaseError:
+        return []
+
+
 def schema_of(db: "MemDB") -> List[Dict]:
+    plain, virtual = table_names(db)
     tables = []
-    for (name,) in db.rows("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"):
-        cols = [(r[1], r[2]) for r in db.rows("PRAGMA table_info(%s)" % _q(name))]
+    for name in plain:
         try:
             n = db.one("SELECT count(*) FROM %s" % _q(name))[0]
         except sqlite3.DatabaseError:
             n = None
-        tables.append({"name": name, "spalten": cols, "zeilen": n})
+        tables.append({"name": name, "spalten": columns(db, name), "zeilen": n})
+    tables += [{"name": name, "spalten": [], "zeilen": None, "virtuell": True} for name in virtual]
     return tables
 
 
 def schema_text(tables: List[Dict], fmt: str) -> str:
     lines = ["MoneyMoney database schema (names and row counts only, no contents)", "Format: %s" % fmt, ""]
     for t in tables:
-        lines.append("%s  (%s rows)" % (t["name"], "?" if t["zeilen"] is None else t["zeilen"]))
+        lines.append("%s  (%s)" % (t["name"], "virtual, skipped" if t.get("virtuell") else "%s rows" % ("?" if t["zeilen"] is None else t["zeilen"])))
         lines.append("  " + ", ".join("%s %s" % (c, ty) for c, ty in t["spalten"]))
     return "\n".join(lines) + "\n"
 
@@ -347,15 +369,20 @@ ISO = "[12][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]*"
 NUM = "typeof(%s) IN ('integer', 'real')"
 
 
+def _b(name: str) -> str:
+    """Spalte mit binaerem Vergleich (eigene Sortierfolgen von MoneyMoney gibt es hier nicht)."""
+    return _q(name) + " COLLATE BINARY"
+
+
 def _date_kinds(db: "MemDB", t: str, c: str, today: date) -> List[str]:
     """Moegliche Datumsformate einer Spalte: alle Werte muessen passen, der juengste liegt nahe heute."""
-    q = _q(c)
+    q, qb = _q(c), _b(c)
     n_all, n_num, n_iso, lo, hi = db.one("SELECT count(%s), sum(%s), sum(typeof(%s) = 'text' AND %s GLOB '%s'), min(CASE WHEN %s THEN %s END), "
-                                         "max(CASE WHEN %s THEN %s END) FROM %s" % (q, NUM % q, q, q, ISO, NUM % q, q, NUM % q, q, _q(t)))
+                                         "max(CASE WHEN %s THEN %s END) FROM %s" % (q, NUM % q, q, q, ISO, NUM % q, qb, NUM % q, qb, _q(t)))
     if not n_all:
         return []
     if n_iso == n_all:
-        lo, hi = db.one("SELECT min(%s), max(%s) FROM %s" % (q, q, _q(t)))
+        lo, hi = db.one("SELECT min(%s), max(%s) FROM %s" % (qb, qb, _q(t)))
         kinds = ["text"]
     elif n_num == n_all and lo is not None:
         kinds = ["ymd", "unix", "unix_ms", "cocoa", "julian"]
@@ -382,11 +409,8 @@ def find_history(db: "MemDB", accounts: Dict[str, Tuple[float, bool]], today: da
     ulist = sorted(uuids)
     if not ulist:
         return None
-    tables: Dict[str, List[Tuple[str, str]]] = {}
-    for (t,) in db.rows("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"):
-        if SKIP.search(t):
-            continue
-        tables[t] = [(r[1], (r[2] or "").upper()) for r in db.rows("PRAGMA table_info(%s)" % _q(t)) if not SKIP.search(r[1])]
+    plain, virtual = table_names(db)
+    tables: Dict[str, List[Tuple[str, str]]] = {t: [c for c in columns(db, t) if not SKIP.search(c[0])] for t in plain if not SKIP.search(t)}
     counts = {}
     for t in tables:
         try:
@@ -395,7 +419,7 @@ def find_history(db: "MemDB", accounts: Dict[str, Tuple[float, bool]], today: da
             counts[t] = 0
     # 1. Kontentabelle: Spalte mit den Kennungen der Konten -> Schluessel je Konto (rowid oder andere Ganzzahlspalte)
     key_maps: List[Dict[int, str]] = []
-    acct_table, best = None, 0
+    acct_table, acct_col, best = None, None, 0
     for t, cols in tables.items():
         if not counts[t] or counts[t] > 20000:
             continue
@@ -405,7 +429,7 @@ def find_history(db: "MemDB", accounts: Dict[str, Tuple[float, bool]], today: da
             except sqlite3.DatabaseError:
                 continue
             if len(found) > best:
-                best, acct_table = len(found), t
+                best, acct_table, acct_col = len(found), t, c
                 maps = [{r[0]: uuids[r[1].lower()] for r in found}]
                 for c2, _t2 in cols:
                     if c2 == c:
@@ -419,10 +443,11 @@ def find_history(db: "MemDB", accounts: Dict[str, Tuple[float, bool]], today: da
                     if len(m) == len(found):
                         maps.append(m)
                 key_maps = maps
+    log.info("MoneyMoney database: %d tables (%d virtual skipped); accounts in %s.%s: %d of %d", len(plain), len(virtual), acct_table, acct_col, best, len(accounts))
     if best < max(1, len(accounts) // 3):
         return None
     # 2. Verlaufstabelle: Kontospalte, Datumsspalte, Wertspalte
-    winner = None
+    winner = near = None
     for t, cols in tables.items():
         if t == acct_table or counts[t] < 2:
             continue
@@ -431,7 +456,7 @@ def find_history(db: "MemDB", accounts: Dict[str, Tuple[float, bool]], today: da
             q = _q(c)
             try:
                 nd, nt = db.one("SELECT count(DISTINCT %s), count(DISTINCT CASE WHEN typeof(%s) = 'text' AND lower(%s) IN %s THEN lower(%s) END) FROM %s"
-                                % (q, q, q, _in(len(ulist)), q, _q(t)), ulist)
+                                % (_b(c), q, q, _in(len(ulist)), q, _q(t)), ulist)
             except sqlite3.DatabaseError:
                 continue
             if nt >= 1 and nt >= 0.8 * nd:
@@ -441,7 +466,7 @@ def find_history(db: "MemDB", accounts: Dict[str, Tuple[float, bool]], today: da
                 keys = sorted(m)
                 try:
                     nk = db.one("SELECT count(DISTINCT CASE WHEN typeof(%s) = 'integer' AND %s IN %s THEN %s END) FROM %s"
-                                % (q, q, _in(len(keys)), q, _q(t)), keys)[0]
+                                % (q, _b(c), _in(len(keys)), _b(c), _q(t)), keys)[0]
                 except sqlite3.DatabaseError:
                     continue
                 if nk >= 1 and nk >= 0.8 * nd:
@@ -460,13 +485,10 @@ def find_history(db: "MemDB", accounts: Dict[str, Tuple[float, bool]], today: da
                     if vc in (ac, dc):
                         continue
                     try:     # die drei juengsten Werte je Konto
+                        cond = NUM % _q(dc) if kind != "text" else "%s IS NOT NULL" % _q(dc)
                         recent = db.rows("SELECT a, v FROM (SELECT %s AS a, %s AS v, row_number() OVER (PARTITION BY %s ORDER BY %s DESC) AS n FROM %s "
                                          "WHERE %s IS NOT NULL AND %s AND %s) WHERE n <= 3"
-                                         % (_q(ac), _q(vc), _q(ac), _q(dc), _q(t), _q(ac), NUM % _q(dc), NUM % _q(vc))
-                                         if kind != "text" else
-                                         "SELECT a, v FROM (SELECT %s AS a, %s AS v, row_number() OVER (PARTITION BY %s ORDER BY %s DESC) AS n FROM %s "
-                                         "WHERE %s IS NOT NULL AND %s IS NOT NULL AND %s) WHERE n <= 3"
-                                         % (_q(ac), _q(vc), _q(ac), _q(dc), _q(t), _q(ac), _q(dc), NUM % _q(vc)))
+                                         % (_q(ac), _q(vc), _b(ac), _b(dc), _q(t), _q(ac), cond, NUM % _q(vc)))
                     except sqlite3.DatabaseError:
                         continue
                     per: Dict[str, List[float]] = {}
@@ -484,18 +506,22 @@ def find_history(db: "MemDB", accounts: Dict[str, Tuple[float, bool]], today: da
                             if any(abs(v * scale - bal) <= max(0.011, 0.005 * abs(bal)) for v in vals):
                                 hits += 1
                                 depots += 1 if depot else 0
+                        if checked and (near is None or (hits / checked, hits) > near[0]):
+                            near = ((hits / checked, hits), "%s(%s, %s, %s ×%s)" % (t, ac, dc, vc, scale), hits, checked, counts[t])
                         if hits and hits >= 0.6 * checked and counts[t] >= max(6, 2 * checked):
                             score = (min(depots, 1), round(hits / checked, 2), hits, counts[t])
                             if winner is None or score > winner[0]:
                                 winner = (score, t, ac, ref, dc, kind, vc, scale, hits, checked)
     if winner is None:
+        log.info("MoneyMoney database: no balance history recognised; closest candidate %s", "%s: %d of %d balances match, %d rows" % near[1:] if near else "none")
         return None
     _s, t, ac, ref, dc, kind, vc, scale, hits, checked = winner
+    log.info("MoneyMoney database: balance history in %s(%s, %s, %s ×%s): %d of %d balances match", t, ac, dc, vc, scale, hits, checked)
     konten: Dict[str, Dict[str, float]] = {}
     cur = "%04d-%02d" % (today.year, today.month)
     cond = NUM % _q(dc) if kind != "text" else "%s IS NOT NULL" % _q(dc)
     for a, d, v in db.rows("SELECT %s, %s, %s FROM %s WHERE %s IS NOT NULL AND %s AND %s ORDER BY %s"
-                           % (_q(ac), _q(dc), _q(vc), _q(t), _q(ac), cond, NUM % _q(vc), _q(dc))):
+                           % (_q(ac), _q(dc), _q(vc), _q(t), _q(ac), cond, NUM % _q(vc), _b(dc))):
         u = ref(a)
         day = _to_date(d, kind)
         if u is None or day is None:

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.9.12
+- Kontostände aus MoneyMoney: Datenbanken mit Volltextsuche (eigener Tokenizer von MoneyMoney) und eigenen Sortierfolgen werden jetzt gelesen; solche Tabellen werden übersprungen, Vergleiche laufen binär. Das Protokoll nennt das Ergebnis der Suche (nur Tabellen- und Spaltennamen, keine Inhalte).
+
 ## 3.9.11
 - Bilanz mit Grafik: Zusammensetzung des Vermögens im Zeitverlauf in den Farben der Positionen, mit Nettovermögen, Plan und „heute“. Monatsgenau: Zeigen zeigt Monat und Werte, Ziehen vergrößert, 1/3/5/10 Jahre oder alles, Klick springt zur Spalte der Tabelle. Abschaltbar.
 - Tabellen (Bilanz, Kapitalfluss, Planung): Spalten rasten ein – die erste sichtbare Spalte ist nie mehr angeschnitten, auch ganz rechts.

@@ -493,7 +493,8 @@ class AppTests(_AppBase):
         led = self.app.ledger
         leaves = [a for a in led.accounts.values() if not a.group]
         cocoa = lambda d: (DT(d.year, d.month, d.day, 12) - DT(2001, 1, 1)).total_seconds()
-        sql = ["CREATE TABLE accounts(id INTEGER PRIMARY KEY, uuid TEXT, name TEXT, sortkey INTEGER);",
+        sql = ["CREATE TABLE accounts(id INTEGER PRIMARY KEY, uuid TEXT COLLATE NOCASE, name TEXT, sortkey INTEGER);",
+               "CREATE VIRTUAL TABLE search USING fts4(content, tokenize=simple);", "INSERT INTO search VALUES('Suchtext');",
                "CREATE TABLE logins(id INTEGER PRIMARY KEY, account INTEGER, password TEXT);",
                "CREATE TABLE transactions(id INTEGER PRIMARY KEY, account_key INTEGER, booking_date REAL, amount REAL, purpose TEXT);"]
         if mit_verlauf:
@@ -518,7 +519,10 @@ class AppTests(_AppBase):
         if os.path.exists(db):
             os.remove(db)
         pre = "PRAGMA key = '%s';\n" % passwort.replace("'", "''") + ("PRAGMA cipher_compatibility = %d;\n" % compat if compat else "")
-        sp.run(["sqlcipher", db], input=pre + "BEGIN;\n" + "\n".join(sql) + "\nCOMMIT;\n", capture_output=True, text=True, check=True)
+        # wie bei MoneyMoney: Volltextsuche mit eigenem Tokenizer und eigene Sortierfolge, die es hier nicht gibt
+        fix = (".dbconfig defensive off\nPRAGMA writable_schema = ON;\nUPDATE sqlite_master SET sql = replace(sql, 'tokenize=simple', 'tokenize=fts_tokenize') WHERE name = 'search';\n"
+               "UPDATE sqlite_master SET sql = replace(sql, 'COLLATE NOCASE', 'COLLATE localized') WHERE name = 'accounts';\n")
+        sp.run(["sqlcipher", db], input=pre + "BEGIN;\n" + "\n".join(sql) + "\nCOMMIT;\n" + fix, capture_output=True, text=True, check=True)
         with open(db, "rb") as f:
             return f.read()
 
