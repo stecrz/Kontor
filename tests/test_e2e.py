@@ -1360,6 +1360,8 @@ class FeatureTests(_AppBase):
         # Konten-Export und Pakete enthalten die Bereiche
         code, data, hdr = self.call("/api/package/export?name=B", raw=True)
         pkg = json.loads(data.decode()); self.assertEqual(len(pkg["config"]["bereiche"]), 2)
+        self.assertFalse(re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-", json.dumps(pkg["config"])))         # Paket immer ohne UUIDs
+        self.assertNotIn("plan", pkg)
         self.assertTrue(any(k["name"] == "Alle Objekte" for k in ds["konten"] if k["gruppe"]) or ds["bereich_namen"]["objekte"] == "Alle Objekte")
 
     def test_events_and_cross_bereich(self):
@@ -1678,12 +1680,16 @@ class FeatureTests(_AppBase):
         self.run_and_wait()
         P = F.uid("priv")
         self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Einnahmen / Gehalt", "methode": "fix", "betrag": "7000", "steigerung": "2"})
-        code, body, hdr = self.call("/api/backup", raw=True)
-        self.assertEqual(code, 200); self.assertIn("kontor-sicherung.json", hdr["Content-Disposition"])
-        sich = json.loads(body.decode())
-        self.assertEqual(sich["kontor_sicherung"], 1); self.assertIn("config", sich); self.assertIn("plan", sich); self.assertIn("kategorien", sich)
-        self.assertEqual(sich["plan"]["bereiche"][P]["zeilen"]["Einnahmen/Einnahmen / Gehalt"]["methode"], "fix")
-        self.assertNotIn("auth", sich)
+        # nur verschluesselt (eigenes Passwort, mind. 8 Zeichen); Inhalt nicht lesbar
+        self.assertEqual(self.call("/api/backup", {"passwort": "kurz"})[0], 400)
+        code, sich = self.call("/api/backup", {"passwort": "sicherung-123"})
+        self.assertEqual(code, 200); self.assertEqual(sich["kontor_sicherung_verschluesselt"], 1)
+        self.assertNotIn("config", sich); self.assertNotIn("Gehalt", json.dumps(sich)); self.assertNotIn("sicherung-123", json.dumps(sich))
+        import service as MA
+        inner = MA.backup_decrypt(sich, "sicherung-123")
+        self.assertEqual(inner["kontor_sicherung"], 1); self.assertIn("plan", inner); self.assertIn("kategorien", inner)
+        self.assertEqual(inner["plan"]["bereiche"][P]["zeilen"]["Einnahmen/Einnahmen / Gehalt"]["methode"], "fix")
+        self.assertNotIn("auth", inner)
         # Zuruecksetzen: nur lokal, nur mit Passwort; danach Einrichtung noetig, Passwort bleibt (ohne mit_passwort)
         self.assertEqual(self.call("/api/reset", {"passwort": "falsch"})[0], 401)
         code, r = self.call("/api/reset", {"passwort": "sehr-geheimes-passwort"})
@@ -1698,7 +1704,8 @@ class FeatureTests(_AppBase):
         code, cfg = self.call("/api/config")
         self.assertEqual(cfg["bilanz"].get("bereiche"), core.merged_config({})["bilanz"].get("bereiche"))
         # Sicherung laden stellt Einstellungen und Plan wieder her
-        code, r = self.call("/api/backup/restore", {"sicherung": sich})
+        self.assertEqual(self.call("/api/backup/restore", {"sicherung": sich, "passwort": "falsch-falsch"})[0], 400)
+        code, r = self.call("/api/backup/restore", {"sicherung": sich, "passwort": "sicherung-123"})
         self.assertEqual(code, 200); self.assertIn("Planung", r["teile"]); self.assertIn("Einstellungen", r["teile"])
         self.assertEqual(self.store.load("plan.json")["bereiche"][P]["zeilen"]["Einnahmen/Einnahmen / Gehalt"]["methode"], "fix")
         self.assertEqual(self.call("/api/backup/restore", {"sicherung": {"x": 1}})[0], 400)

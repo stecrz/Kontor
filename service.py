@@ -1195,19 +1195,12 @@ def make_handler(app: App):
                                  {"Content-Disposition": 'attachment; filename="Kontor-%s-%s.xlsx"' % (tr(EXPORT_FILE_KEYS[was]) if was in EXPORT_FILE_KEYS else was, date.today().isoformat())})
             if path == "/api/package/export":
                 name = (q.get("name") or "Kontor-Einstellungen").replace('"', "")
-                pkg = export_package(app.config, name, strip_uuids=q.get("without_uuid") == "1",
-                                     plan=(app.plan_all() if q.get("with_plan") == "1" else None), ledger=app.ledger)
+                # zum Weitergeben an eine andere MoneyMoney-Installation: Konten ueber Namen/Pfade, ohne Planung und Daten
+                pkg = export_package(app.config, name, strip_uuids=True, plan=None, ledger=app.ledger)
                 return self._raw(200, json.dumps(pkg, ensure_ascii=False, indent=2).encode("utf-8"), "application/json; charset=utf-8",
                                  {"Content-Disposition": 'attachment; filename="%s.kontor.json"' % name})
-            if path == "/api/backup":
-                st = app.store.load("state.json", {}) or {}
-                bl = app.store.load("receipts.json", {}) or {}
-                sich = {"kontor_sicherung": 1, "version": version(), "erstellt": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        "config": app.config, "plan": app.plan_all(), "kategorien": categorize.load(app.store),
-                        "historie": st.get("historie") or {}, "snapshots": st.get("snapshots") or {}, "belege": bl}
-                log.info("Backup of all settings downloaded")
-                return self._raw(200, json.dumps(sich, ensure_ascii=False, indent=1).encode("utf-8"), "application/json; charset=utf-8",
-                                 {"Content-Disposition": 'attachment; filename="Kontor-Sicherung-%s.kontor-sicherung.json"' % date.today().isoformat()})
+            if path == "/api/timemachine":
+                return self._json(200, {"status": timemachine_status(app.data_dir)})
             if path == "/api/diagnostics":
                 txt = diagnose(app.store, app.data_dir, app.config, app.status(self._loopback()), mask_names=q.get("names") != "1")
                 return self._raw(200, txt.encode("utf-8"), "text/plain; charset=utf-8",
@@ -1603,8 +1596,24 @@ def make_handler(app: App):
             if path == "/api/report/rebuild":
                 ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund=tr("s_bericht_neu"))
                 return self._json(200, {"ok": ok, "text": err, "bericht": app.bericht_status()})
+            if path == "/api/backup":
+                # vollstaendige Sicherung, mit einem eigenen Passwort verschluesselt (nur am Mac; Passwort wird nirgends abgelegt)
+                if not local:
+                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+                st = app.store.load("state.json", {}) or {}
+                sich = {"kontor_sicherung": 1, "version": version(), "erstellt": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "config": app.config, "plan": app.plan_all(), "kategorien": categorize.load(app.store),
+                        "historie": st.get("historie") or {}, "snapshots": st.get("snapshots") or {},
+                        "belege": app.store.load("receipts.json", {}) or {}, "mm_verlauf": app.store.load(MM_HISTORY_FILE, {}) or {}}
+                out = backup_encrypt(sich, str(body.get("passwort") or ""))
+                log.info("Encrypted backup of all settings created")
+                return self._json(200, out)
             if path == "/api/backup/restore":
+                if not local:
+                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
                 sich = body.get("sicherung") or {}
+                if isinstance(sich, dict) and sich.get("kontor_sicherung_verschluesselt"):
+                    sich = backup_decrypt(sich, str(body.get("passwort") or ""))
                 if not isinstance(sich, dict) or not sich.get("kontor_sicherung") or not isinstance(sich.get("config"), dict):
                     raise ValueError(tr("s_keine_kontor_sicherung"))
                 teile = []
@@ -1623,6 +1632,8 @@ def make_handler(app: App):
                     teile.append(tr("s_teil_verlauf"))
                 if isinstance(sich.get("belege"), dict) and sich["belege"] and body.get("mit_belegen", True):
                     app.store.save("receipts.json", sich["belege"]); teile.append(tr("s_teil_belegindex"))
+                if isinstance(sich.get("mm_verlauf"), dict) and sich["mm_verlauf"]:
+                    app.store.save(MM_HISTORY_FILE, sich["mm_verlauf"]); teile.append(tr("s_teil_mm_verlauf"))
                 log.info("Backup restored: %s", ", ".join(teile))
                 ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund=tr("s_grund_sicherung")) if app.ledger is not None else (False, None)
                 return self._json(200, {"ok": True, "teile": teile, "bericht": ok, "config": app.config})
@@ -1643,12 +1654,14 @@ def make_handler(app: App):
                 log.warning("Program reset (%s); receipt files and log kept", ", ".join(dateien))
                 return self._json(200, {"ok": True, "neu_einrichten": bool(body.get("mit_passwort"))}, self._set_cookie("", clear=True))
             if path == "/api/timemachine-exclusion":
+                if not local:
+                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
                 flag = "addexclusion" if body.get("ausschliessen") else "removeexclusion"
                 try:
                     r = subprocess.run(["tmutil", flag, app.data_dir], capture_output=True, text=True, timeout=30)
-                    return self._json(200, {"ok": r.returncode == 0, "text": (r.stdout + r.stderr).strip()})
+                    return self._json(200, {"ok": r.returncode == 0, "text": (r.stdout + r.stderr).strip(), "status": timemachine_status(app.data_dir)})
                 except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-                    return self._json(200, {"ok": False, "text": str(e)})
+                    return self._json(200, {"ok": False, "text": str(e), "status": "unbekannt"})
             return self._json(404, {"fehler": "unbekannt"})
 
         def _belege(self, path: str, body: dict, local: bool):
@@ -2113,6 +2126,45 @@ def make_handler(app: App):
             return {"ok": True, "plan": plan_all["bereiche"].get(bereich, {})}
 
     return H
+
+
+BACKUP_ITER = 600_000
+
+
+def backup_encrypt(data: dict, password: str) -> dict:
+    """Sicherung mit eigenem Passwort verschluesseln (PBKDF2-SHA256 -> AES-256 + HMAC wie der Datenordner).
+    Das Passwort wird weder gespeichert noch protokolliert."""
+    import hashlib
+    import secrets
+    from storage import encrypt
+    if len(password) < 8:
+        raise ValueError(tr("s_sicherungspasswort_zu_kurz"))
+    salt = secrets.token_bytes(16)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, BACKUP_ITER, 32)
+    blob = encrypt(key, json.dumps(data, ensure_ascii=False).encode("utf-8"))
+    return {"kontor_sicherung_verschluesselt": 1, "version": data.get("version"), "erstellt": data.get("erstellt"),
+            "kdf": "pbkdf2-sha256", "iter": BACKUP_ITER, "salt": base64.b64encode(salt).decode(), "daten": base64.b64encode(blob).decode()}
+
+
+def backup_decrypt(wrapper: dict, password: str) -> dict:
+    import hashlib
+    from storage import StoreError, decrypt
+    try:
+        salt = base64.b64decode(wrapper["salt"]); blob = base64.b64decode(wrapper["daten"])
+        key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, int(wrapper.get("iter") or BACKUP_ITER), 32)
+        return json.loads(decrypt(key, blob).decode("utf-8"))
+    except (KeyError, ValueError, StoreError, binascii.Error):
+        raise ValueError(tr("s_sicherung_passwort_falsch"))
+
+
+def timemachine_status(path: str) -> str:
+    """'ausgeschlossen' / 'gesichert' / 'unbekannt' (tmutil isexcluded, nur macOS)."""
+    try:
+        r = subprocess.run(["tmutil", "isexcluded", path], capture_output=True, text=True, timeout=10)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return "unbekannt"
+    out = r.stdout or ""
+    return "ausgeschlossen" if "[Excluded]" in out else "gesichert" if "[Included]" in out else "unbekannt"
 
 
 def restart_process() -> None:

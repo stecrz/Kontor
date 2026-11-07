@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.9.27 (2026-11-07)
+- Einstellungen neu gegliedert: Allgemein (Betrieb, MoneyMoney, Belege), Zugang, Updates, Steuer (eigener Reiter), Sichern & Zurücksetzen. Bereiche, Konten und Kategorien nur noch in der Einrichtung; „Umsätze lesen (Monate)“ steht unter MoneyMoney und ist erklärt. „Einrichtung prüfen“ (prüft alle Konto- und Kategoriebezüge gegen MoneyMoney) steht jetzt in der Einrichtung.
+- Sicherung: nur noch verschlüsselt mit eigenem Passwort (enthält deine Finanzdaten, jetzt auch die aus MoneyMoney übernommenen Kontostände); Laden fragt das Passwort ab. Sichern und Laden nur am Mac.
+- Einstellungspaket: immer ohne UUIDs und ohne Planung (zum Weitergeben); Unterschied zur Sicherung oben auf der Seite erklärt.
+- Time Machine: Stand wird angezeigt (gesichert/ausgeschlossen), ein Knopf schaltet um. Diagnosedatei nur noch unter Protokoll.
+- Updates: Quelle als GitHub-Adresse; Port erklärt.
+- Mehr Abstand zwischen Text und Eingabefeldern. Laufender Monat und laufendes Jahr leicht blass (noch nicht abgeschlossen).
+
 ## 3.9.26 (2026-11-07)
 - Kategorien → Auswahl (auch als Schritt in der Einrichtung): je Kategorie aus MoneyMoney „Eigene Zeile“, „Zur Oberkategorie“ (samt Unterkategorien; Kapitalfluss und Planung, Steuer bleibt genau) oder „Nicht verwenden“ (in Kontor wie ohne Kategorie, erscheint unter Zuordnen). Schnellwahl „Nur oberste Ebene als Zeile“. In MoneyMoney ändert sich nichts.
 

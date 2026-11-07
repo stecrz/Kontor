@@ -142,7 +142,7 @@ tr.sub td { background:var(--sub); font-weight:600; cursor:pointer; } tr.sub td:
 tr.sec td { background:var(--group); font-weight:700; } tr.sec td:first-child { background:var(--group); }
 tr.total td { font-weight:700; border-top:2px solid var(--line-2); }
 tr.sel td { background:var(--accent-soft) !important; }
-td.plan { opacity:.55; } th.plan { color:var(--muted); font-weight:500; } .ptable td.plan { opacity:1; background:var(--plan); } td.cur { background:var(--cur); }
+td.plan { opacity:.55; } td.part { opacity:.78; }      /* laufender Monat / laufendes Jahr: noch nicht abgeschlossen */ th.plan { color:var(--muted); font-weight:500; } .ptable td.plan { opacity:1; background:var(--plan); } td.cur { background:var(--cur); }
 td.neg { color:var(--neg); } td.pos { color:var(--pos); } td.zero { color:var(--faint); }
 td.ov { box-shadow: inset 3px 0 0 var(--accent); }
 td.plan.editable { cursor:cell; }
@@ -260,6 +260,7 @@ tr.clickable td { cursor:pointer; }
 .tip { position:fixed; width:max-content; max-width:340px; background:var(--fg); color:var(--bg); padding:8px 11px; border-radius:9px; font-size:12px; font-weight:400; line-height:1.4; white-space:normal; text-align:left; box-shadow:0 8px 30px rgba(0,0,0,.25); pointer-events:none; z-index:200; animation:fade .12s ease-out; }
 label .hq { vertical-align:-2px; }
 .form label { display:flex; align-items:center; gap:2px; }
+.form label.chk { gap:8px; }          /* Text und Eingabefeld nicht aneinanderkleben */
 
 /* Einrichtung */
 .modules { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:12px; margin-bottom:16px; }
@@ -373,3 +374,6 @@ h2.sub-h { margin-top:0; }
 .dlg .actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
 .ka-table td:last-child select { min-width:170px; }
 .ka-table tr.ka-inh td { color:var(--muted); }
+.cards.two { grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); }
+.row.tight label.chk, .toolbar label.chk { gap:8px; }
+.objloans { max-width:820px; } .objloans td:last-child { width:300px; } .objloans input { width:100%; }
