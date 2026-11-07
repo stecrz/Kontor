@@ -345,8 +345,9 @@ h2.sub-h { margin-top:0; }
 .drop.busy { opacity:.6; pointer-events:none; }
 
 /* Sprache */
-.lang-seg { margin:14px auto 0; justify-content:center; display:flex; width:max-content; }
-.lang-pick { display:flex; align-items:center; gap:10px; justify-content:flex-end; margin:-4px 0 8px; }
+.lang-sel { margin:14px auto 0; display:block; width:auto; }
+.lang-pick { display:flex; align-items:center; gap:10px; justify-content:flex-end; margin:0 0 10px; }
+.lang-pick select { width:auto; }
 .holdings { margin:0 0 12px; border:1px solid var(--line); border-radius:9px; padding:6px 10px; }
 .holdings summary { cursor:pointer; font-size:13px; font-weight:600; }
 .holdings table { width:100%; }

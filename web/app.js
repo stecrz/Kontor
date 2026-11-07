@@ -2,8 +2,11 @@
 'use strict';
 
 // ---------------------------------------------------------------- Sprache (alle Texte in web/i18n.js: Schluessel -> [Deutsch, Englisch])
+const LANGS = [['de', 'Deutsch'], ['en', 'English']];      // Auswahl überall als Liste (weitere Sprachen: hier und in i18n.js ergänzen)
+const langOk = l => LANGS.some(([v]) => v === l) ? l : 'de';
 let LANG = 'de';
-try { if (localStorage.getItem('kontor.lang') === 'en') LANG = 'en'; } catch (e) {}
+try { LANG = langOk(localStorage.getItem('kontor.lang')); } catch (e) {}
+const langOpts = () => LANGS.map(([v, n]) => `<option value="${v}" ${LANG === v ? 'selected' : ''}>${n}</option>`).join('');
 function t(k, ...a) {
   const e = I18N[k], s = e ? (LANG === 'en' && e[1] != null ? e[1] : e[0]) : k;
   return a.length ? s.replace(/\{(\d+)\}/g, (m, i) => String(a[+i])) : s;
@@ -11,15 +14,16 @@ function t(k, ...a) {
 const tx = t;                 // wo ein lokales t den Namen verdeckt
 function setLang(l, pending) {
   // Sprache wechseln: merken und Oberflaeche neu laden (alle Texte, Formate und Monatsnamen einheitlich)
-  try { localStorage.setItem('kontor.lang', l === 'en' ? 'en' : 'de'); if (pending) localStorage.setItem('kontor.lang.pending', '1'); } catch (e) {}
-  if ((l === 'en' ? 'en' : 'de') !== LANG) location.reload();
+  l = langOk(l);
+  try { localStorage.setItem('kontor.lang', l); if (pending) localStorage.setItem('kontor.lang.pending', '1'); } catch (e) {}
+  if (l !== LANG) location.reload();
 }
 function applyStatic() {
   document.documentElement.lang = LANG;
   $$('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
   $$('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
   $$('[data-i18n-aria]').forEach(el => el.setAttribute('aria-label', t(el.dataset.i18nAria)));
-  $$('#lang-seg button').forEach(b => b.classList.toggle('on', b.dataset.lang === LANG));
+  const ls = $('#lang-sel'); if (ls) ls.innerHTML = langOpts();
 }
 async function syncLang() {
   // nach der Anmeldung: Auswahl auf der Anmeldeseite an den Dienst geben, sonst die gespeicherte Sprache uebernehmen
@@ -293,7 +297,7 @@ $('#login-form').addEventListener('submit', async e => {
   } catch (err) { $('#login-err').textContent = err.message; }
 });
 $('#touchid-btn').addEventListener('click', () => tryTouchId(false));
-$$('#lang-seg button').forEach(b => b.addEventListener('click', () => setLang(b.dataset.lang, true)));
+$('#lang-sel').addEventListener('change', e => setLang(e.target.value, true));
 $('#pw-instead').addEventListener('click', () => { LOGIN.pw = true; showLogin(); });
 $('#tid-instead').addEventListener('click', () => { LOGIN.pw = false; showLogin(); });
 $('#sync-btn').addEventListener('click', () => syncNow());
@@ -587,7 +591,7 @@ function vEinrichtung(sub) {
   if (sub === 'verbindung') return sh('verbindung') + vVerbindung();
   if (sub === 'historie') return sh('historie') + vMMHistorie();
   const roots = S.KONTEN.filter(k => k.gruppe && k.ebene === 0);
-  let h = `<div class="lang-pick"><span class="small muted">${t('sprache_label')}</span><div class="seg small" id="w-lang"><button data-lang="de" class="${LANG === 'de' ? 'on' : ''}">Deutsch</button><button data-lang="en" class="${LANG === 'en' ? 'on' : ''}">English</button></div></div><div class="note">${t('in_dieser_reihenfolge_einrichten_die', S.KONTEN.length ? roots.length + t('kontengruppen_n') + S.KONTEN.filter(k => !k.gruppe).length + t('konten_aus_moneymoney_bekannt') : t('noch_keine_konten_aus_moneymoney'))}</div><div class="setup-list">`;
+  let h = `<div class="lang-pick"><label for="w-lang" class="small muted">${t('sprache_label')}</label><select id="w-lang">${langOpts()}</select></div><div class="note">${t('in_dieser_reihenfolge_einrichten_die', S.KONTEN.length ? roots.length + t('kontengruppen_n') + S.KONTEN.filter(k => !k.gruppe).length + t('konten_aus_moneymoney_bekannt') : t('noch_keine_konten_aus_moneymoney'))}</div><div class="setup-list">`;
   MODULES.forEach((m, i) => {
     const ok = m.done();
     h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? t('eingerichtet') : (m.optional ? t('optional') : t('offen'))}</span></div><div class="d">${esc(m.d)}</div></div><div class="a"><a href="${m.href || ('#einrichtung/' + m.id)}"><button class="small ${ok ? 'secondary' : ''}">${ok ? t('anpassen') : t('einrichten')}</button></a></div></div>`;
@@ -781,12 +785,12 @@ function vKontenEditor() {
     const cur = roleOf(k.uuid), ver = verOf(k.uuid);
     const vis = hide.has(k.uuid) ? 'hide' : show.has(k.uuid) ? 'show' : '', grenze = k.aktiv_grenze ?? (k.inaktiv_auto ? 9999 : 0), auto = autoHidden(grenze, cfg.bilanz.inaktiv_monate ?? 12);
     const rolle = cur || k.rolle || 'sonstiges', quelle = ver || k.verlauf || (k.depot ? 'stand' : 'umsaetze');
-    // Vorschlag (was Kontor aus Name, Typ und Gruppe erkennt) steht in der Liste mit „(Vorschlag)“; gestrichelt, solange ein neues Konto ihn noch trägt
+    // Vorschlag (was Kontor aus Name, Typ und Gruppe erkennt) steht in der Liste mit „(Vorschlag)“; gestrichelt = Vorschlag gewählt
     const sv = k.rolle_vorschlag || rolle, vv = k.depot ? 'stand' : 'umsaetze';
-    const dash = (cur, v) => !k.bestaetigt && cur === v ? ' vorschlag' : '';
+    const dash = (cur, v) => cur === v ? ' vorschlag' : '';
     h += `<tr data-uuid="${k.uuid}" data-ref="${k.uuid} | ${esc(k.name)}" data-auto="${auto ? 1 : 0}" data-grenze="${grenze}" class="${kontoHidden(vis, auto) ? 'inactive' : ''}${k.bestaetigt ? '' : ' neu'}"><td title="${esc(k.pfad)}">${esc(k.name)}${k.bestaetigt ? '' : `<span class="tag warn">${t('neu')}</span>`}<span class="tag k-vis">${t('ausgeblendet')}</span>${k.veraltet ? `<span class="tag warn" title="${t('saldo_0_aber_seit_1', F(k.saldo), esc(k.letzte_buchung || k.aktualisiert || t('jeher')))}">${t('veraltet')}</span>` : ''}<div class="small muted">${esc(k.pfad.split(' / ').slice(0, -1).join(' / '))} · ${k.depot ? t('depot') : (k.manuell || k.abruf === 'offline') ? t('manuell') : esc(k.typ || t('bank'))}</div></td><td><select class="k-bereich"><option value="">${t('keiner')}</option>${bereiche.map(([id, n]) => `<option value="${esc(id)}" ${bsel === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td>
-      <td><select class="k-rolle${dash(rolle, sv)}" data-vor="${sv}">${ROLE_OPTS.map(([v, l]) => `<option value="${v}" ${rolle === v ? 'selected' : ''}>${l}${v === sv ? ' (Vorschlag)' : ''}</option>`).join('')}</select>${vorHint(rolle, sv, ROLE_OPTS)}</td>
-      <td class="nowrap"><select class="k-verlauf${dash(quelle, vv)}" data-vor="${vv}">${[['umsaetze', t('umsaetze_2')], ['stand', t('kontostaende')]].map(([v, l]) => `<option value="${v}" ${quelle === v ? 'selected' : ''}>${l}${v === vv ? ' (Vorschlag)' : ''}</option>`).join('')}</select> <button class="ghost small k-hist" title="${t('monatsstaende_ansehen_und_bearbeiten')}">${t('verlauf')}</button>${vorHint(quelle, vv, [['umsaetze', t('umsaetze_2')], ['stand', t('kontostaende')]])}</td>
+      <td><select class="k-rolle${dash(rolle, sv)}" data-vor="${sv}">${ROLE_OPTS.map(([v, l]) => `<option value="${v}" ${rolle === v ? 'selected' : ''}>${l}${v === sv ? ` (${t('vorschlag')})` : ''}</option>`).join('')}</select></td>
+      <td class="nowrap"><select class="k-verlauf${dash(quelle, vv)}" data-vor="${vv}">${[['umsaetze', t('umsaetze_2')], ['stand', t('kontostaende')]].map(([v, l]) => `<option value="${v}" ${quelle === v ? 'selected' : ''}>${l}${v === vv ? ` (${t('vorschlag')})` : ''}</option>`).join('')}</select> <button class="ghost small k-hist" title="${t('monatsstaende_ansehen_und_bearbeiten')}">${t('verlauf')}</button></td>
       <td><select class="k-show" title="${auto ? t('kein_bestand_und_kein_umsatz') + (cfg.bilanz.inaktiv_monate ?? 12) + t('monaten') : t('mit_bestand_oder_umsatz_in') + (cfg.bilanz.inaktiv_monate ?? 12) + t('monaten')}"><option value="">${t('nach_aktivitaet')}</option><option value="show" ${vis === 'show' ? 'selected' : ''}>${t('immer_anzeigen')}</option><option value="hide" ${vis === 'hide' ? 'selected' : ''}>${t('ausblenden')}</option></select></td>
       <td class="num ${(k.saldo || 0) < 0 ? 'neg' : 'pos'}">${F(k.saldo)}</td></tr>`;
   }
@@ -816,11 +820,6 @@ function renderHistImport() {
 }
 function kontoHidden(vis, auto) { return vis === 'hide' || (vis === '' && !!auto); }
 function autoHidden(grenze, n) { n = +n || 0; return n > 0 && n <= (+grenze || 0); }      // "nach Aktivität": ohne Bestand und Umsatz seit N Monaten
-function vorHint(val, vor, opts) {
-  // Abweichung vom Vorschlag bleibt auch nach dem Speichern sichtbar
-  const l = (opts.find(o => o[0] === vor) || [vor, vor])[1].replace(/ – nicht im Nettovermögen$/, '');
-  return `<div class="vor-hint small muted${val === vor ? ' hidden' : ''}">${t('vorschlag_0', esc(l))}</div>`;
-}
 function collectKonten() {
   const cfg = JSON.parse(JSON.stringify(S.CFG)); const b = cfg.bilanz = cfg.bilanz || {};
   b.rollen = {}; b.verlauf = {}; b.illiquide_konten = []; b.ausgeblendet = []; b.immer_anzeigen = []; b.konten_zuordnung = b.konten_zuordnung || {};
@@ -886,7 +885,7 @@ async function openHistDrawer(uuid, vorschau) {
     const body = {konto: uuid, werte}; if (HD.r.quelle !== HD.r.quelle_gespeichert) body.quelle = HD.r.quelle;
     try {
       const res = await api('/api/history', body); renderHist(res.historie); toast(t('gespeichert'));
-      if (body.quelle) { S.CFG = await api('/api/config'); const sel = $(`tr[data-uuid="${uuid}"] .k-verlauf`); if (sel) { sel.value = body.quelle; sel.classList.toggle('vorschlag', sel.closest('tr').classList.contains('neu') && sel.value === sel.dataset.vor); const hn = sel.parentElement.querySelector('.vor-hint'); if (hn) hn.classList.toggle('hidden', sel.value === sel.dataset.vor); } }
+      if (body.quelle) { S.CFG = await api('/api/config'); const sel = $(`tr[data-uuid="${uuid}"] .k-verlauf`); if (sel) { sel.value = body.quelle; sel.classList.toggle('vorschlag', sel.value === sel.dataset.vor); } }
     } catch (e) { toast(e.message, 6000); }
   };
   $('#h-clear', d).onclick = async () => { if (!confirm(t('alle_eigenen_monatswerte_dieses_kontos'))) return; try { const res = await api('/api/history', {konto: uuid, werte: {}, loeschen: true}); renderHist(res.historie); } catch (e) { toast(e.message, 6000); } };
@@ -1937,7 +1936,7 @@ function vEinstellungenAllgemein() {
   const C = S.CFG, z = C.zeitplan || {}, b = C.bilanz || {}, st = C.steuer || {}, bl = C.belege || {}, mm = C.moneymoney || {};
   const loans = S.KONTEN.filter(k => !k.gruppe && k.rolle === 'verbindlichkeiten');
   let h = `<h2>${t('betrieb')}</h2><div class="form">
-    <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang"><option value="de" ${LANG === 'de' ? 'selected' : ''}>Deutsch</option><option value="en" ${LANG === 'en' ? 'selected' : ''}>English</option></select> <span class="small muted">${t('sprache_hinweis')}</span></label>
+    <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang">${langOpts()}</select> <span class="small muted">${t('sprache_hinweis')}</span></label>
     <label>${t('testmodus_0', hq('probelauf'))}</label><label class="chk"><input type="checkbox" id="e-probelauf" ${C.probelauf ? 'checked' : ''}> ${t('buchungen_aus_regeln_nur_vorschlagen')}</label>
     <label>${t('automatischer_abgleich_0', hq('abgleich'))}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatisch !== false ? 'checked' : ''}> ${t('alle_2')} <input type="number" id="e-intervall" min="5" value="${z.intervall_minuten ?? 30}" style="width:70px"> ${t('minuten_nur_wenn_moneymoney_laeuft')}</label>
     <label>${t('mitteilungen_macos')}</label><label class="chk"><input type="checkbox" id="e-mitt" ${C.mitteilungen !== false ? 'checked' : ''}> ${t('bei_buchungen_vorschlaegen_und_fehlern')}</label>
@@ -2305,7 +2304,7 @@ function bind(main) {
     if (!r.verfuegbar) { wc.classList.remove('busy'); wc.disabled = false; if (busy) busy.classList.add('hidden'); showFindings($('#w-findings'), [], r.text, 'fehler'); return; }
     S.KONTEN = r.konten; S.KATS = r.kategorien || S.KATS; await route(); showFindings($('#w-findings'), r.befunde, t('verbindung_steht') + r.konten.length + t('konten_gelesen'), 'ok'); });
   const wr = $('#w-report', main); if (wr) wr.addEventListener('click', () => rebuildReport(true));
-  $$('#w-lang button', main).forEach(b => b.addEventListener('click', async () => { if (b.dataset.lang === LANG) return; try { await api('/api/language', {sprache: b.dataset.lang}); setLang(b.dataset.lang); } catch (e) { toast(e.message, 5000); } }));
+  const wl = $('#w-lang', main); if (wl) wl.addEventListener('change', async () => { if (wl.value === LANG) return; try { await api('/api/language', {sprache: wl.value}); setLang(wl.value); } catch (e) { wl.value = LANG; toast(e.message, 5000); } });
   const abr = $('#add-bereich', main); if (abr) { bindBereichKonten(main); abr.addEventListener('click', () => { $('#bereiche').insertAdjacentHTML('beforeend', bereichForm({name: t('neuer_bereich'), id: '', konten: [], haupt: false}, $$('#bereiche .item').length)); bindDel(main); bindBereichKonten($('#bereiche .item:last-child')); bereichMvState(); }); }
   const bli = $('#bereiche', main); if (bli) {
     bereichMvState();
@@ -2352,8 +2351,7 @@ function bind(main) {
   const ksi = $('#k-show-inactive', main); if (ksi) ksi.addEventListener('change', e => $$('tr.inactive', main).forEach(tr => tr.style.display = e.target.checked ? '' : 'none'));
   $$('.k-show', main).forEach(sel => sel.addEventListener('change', () => { const tr = sel.closest('tr'); tr.classList.toggle('inactive', kontoHidden(sel.value, tr.dataset.auto === '1')); }));
   $$('.acct-table select[data-vor]', main).forEach(sel => sel.addEventListener('change', () => {
-    sel.classList.toggle('vorschlag', sel.closest('tr').classList.contains('neu') && sel.value === sel.dataset.vor);
-    const hint = sel.parentElement.querySelector('.vor-hint'); if (hint) hint.classList.toggle('hidden', sel.value === sel.dataset.vor);
+    sel.classList.toggle('vorschlag', sel.value === sel.dataset.vor);
   }));
   const kin = $('#k-inaktiv', main); if (kin) kin.addEventListener('input', () => $$('tr[data-grenze]', main).forEach(tr => {   // ausgegraut sofort neu
     tr.dataset.auto = autoHidden(tr.dataset.grenze, kin.value) ? '1' : '0';

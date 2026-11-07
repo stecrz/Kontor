@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.9.22 (2026-11-07)
+- Einrichtung → Konten: Hinweis „Vorschlag: …“ unter den Feldern entfällt. Gestrichelt = Vorschlag gewählt, durchgezogen = eigene Wahl (jetzt bei allen Konten); der Vorschlag steht weiter in der Auswahl.
+- Sprache überall als Auswahlliste (Anmeldung, Einrichtung, Einstellungen); in der Einrichtung nicht mehr abgeschnitten.
+- Einrichtungsschritt „Verbindung“ heißt „MoneyMoney-Verbindung“.
+
 ## 3.9.21 (2026-11-07)
 - Einstellungen in Reitern: Allgemein, Zugang, Updates, Sichern & Zurücksetzen.
 - Updates: automatische Prüfung täglich, wöchentlich oder nie (Einstellungen → Updates); die Updates-Seite zeigt die Einstellung mit Link.
