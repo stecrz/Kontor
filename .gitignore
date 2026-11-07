@@ -3,6 +3,7 @@ __pycache__/
 .DS_Store
 .alt/
 mm_touchid
+.touchid/
 config.json
 *.kontor.json
 !vorlagen/*.kontor.json

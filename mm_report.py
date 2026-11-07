@@ -94,6 +94,32 @@ def _signed(role: Optional[str], acc: Account) -> Optional[str]:
     return "forderungen" if acc.balance > 0.005 else "verbindlichkeiten"
 
 
+_FIRMA_RE = re.compile(r"\b(gmbh|ug|ag|se|kg|ohg|gbr|egbr|e\.?\s?k\.?|e\.?\s?v\.?|eg|ltd|inc|llc|holding|verwaltung|beteiligung|"
+                       r"immobilien|stiftung|verein|genossenschaft|partner|&\s?co)\b|gmbh|gbr|holding|gesellschaft", re.I)
+
+
+def _private_accounts(ledger: Ledger, config: dict) -> Set[str]:
+    """Konten in privaten Bereichen (eingerichtet, sonst Gruppen oberster Ebene, deren Name nicht nach Gesellschaft klingt)."""
+    out: Set[str] = set()
+    cfg = [b for b in (config.get("bereiche") or []) if isinstance(b, dict) and b.get("aktiv", True)]
+    if cfg:
+        for b in cfg:
+            art = b.get("art") or ("gesellschaft" if _FIRMA_RE.search(b.get("name") or "") else "privat")
+            if art != "privat":
+                continue
+            for ref in b.get("konten") or []:
+                try:
+                    a = ledger.resolve(ref)
+                except KeyError:
+                    continue
+                out.update(x.uuid for x in (ledger.descendants(a.uuid) if a.group else [a]))
+        return out
+    for a in ledger.accounts.values():           # ohne Einrichtung: keine uebergeordnete Gruppe klingt nach Gesellschaft
+        if not a.group and not any(_FIRMA_RE.search(g.name or "") for g in ledger.ancestors(a.uuid)):
+            out.add(a.uuid)
+    return out
+
+
 def account_roles(ledger: Ledger, config: dict) -> Dict[str, str]:
     """uuid -> Position fuer ALLE Konten. Vorrang: eigene Zuordnung > Depot > Kontoname > eindeutiger Kontotyp
     (Giro, Kreditkarte, Darlehen) > Name der naechsten Gruppe > allgemeiner Kontotyp (Spar-, Tagesgeld, Festgeld) > Sonstiges."""
@@ -112,6 +138,7 @@ def account_roles(ledger: Ledger, config: dict) -> Dict[str, str]:
             except KeyError:
                 pass
     roles: Dict[str, str] = {}
+    private = _private_accounts(ledger, config)
 
     def walk(acc: Account, group_hint: Optional[str]):
         if acc.group:
@@ -129,6 +156,8 @@ def account_roles(ledger: Ledger, config: dict) -> Dict[str, str]:
                 role = _signed(group_hint, acc)
             if not role:
                 role = next((r for k, r in WEAK_TYPES.items() if k in t), None)
+            if role == "eigenkapital" and acc.uuid in private and acc.balance > 0.005 and not cfg_roles.get(acc.uuid):
+                role = "beteiligungen"             # privat gefuehrtes Kapitalkonto = eigener Anteil an der Gesellschaft
             roles[acc.uuid] = role or "sonstiges"
             here = group_hint
         for c in acc.children:
@@ -175,14 +204,22 @@ def _verrechnungskonto_fuer(ledger: Ledger, depot: Account, cfg: dict) -> Option
                 return ledger.resolve(gref).uuid
         except KeyError:
             continue
-    # automatisch nur bei derselben Bank (Bankleitzahl), nicht schon wegen derselben MoneyMoney-Gruppe
-    if not (depot.bank_code or "").strip():
-        return None
+    # automatisch bei derselben Bank (Bankleitzahl); ohne Bankleitzahl (z. B. Broker ueber eine Erweiterung) nur innerhalb der
+    # eigenen Untergruppe, und nur wenn dort kein weiteres Depot liegt -- nicht schon wegen derselben Gruppe oberster Ebene
+    same_bank = bool((depot.bank_code or "").strip())
+    parent = ledger.accounts.get(depot.parent) if depot.parent else None
+    if not same_bank:
+        if parent is None or parent.parent is None:          # direkt unter einer Gruppe oberster Ebene: zu unsicher
+            return None
+        if any(x.portfolio and x.uuid != depot.uuid for x in ledger.descendants(parent.uuid)):
+            return None
     best, best_n = None, 0
     for a in ledger.accounts.values():
         if a.group or a.portfolio or a.uuid == depot.uuid:
             continue
-        if a.bank_code != depot.bank_code:
+        if same_bank and a.bank_code != depot.bank_code:
+            continue
+        if not same_bank and a.parent != depot.parent:
             continue
         n = sum(1 for t in ledger.transactions(a.uuid) if _KAUF_RE.search(t.name + " " + t.purpose + " " + t.booking_text) and not _NICHT_RE.search(t.purpose))
         if n > best_n:
@@ -305,15 +342,20 @@ def balance_history(ledger: Ledger, leaves: List[Account], months: List[Tuple[in
     hist: Dict[str, Dict[str, Optional[float]]] = {}
     quelle: Dict[str, str] = {}
     geschaetzt: Dict[str, str] = {}
+    fortgeschrieben: Dict[str, str] = {}
+    first_mk = "%04d-%02d" % months[0] if months else None
     for acc in leaves:
         src = verlauf_quelle(acc, verlauf_cfg)
         quelle[acc.uuid] = src
-        h, hinweis, gb, _ = account_balance_series(ledger, acc, months, src, snapshots, historie.get(acc.uuid) or {}, today, config)
+        h, hinweis, gb, anker = account_balance_series(ledger, acc, months, src, snapshots, historie.get(acc.uuid) or {}, today, config)
         hist[acc.uuid] = h
         if hinweis:
             warnings.append(hinweis)
         if gb:
             geschaetzt[acc.uuid] = gb
+        elif src == "stand" and acc.portfolio and anker and first_mk and first_mk < anker[0] and abs(acc.balance) > 0.005:
+            fortgeschrieben[acc.uuid] = anker[0]       # vor diesem Monat kein Stand bekannt: erster Wert rueckwaerts uebernommen
+    balance_history.fortgeschrieben = fortgeschrieben
     return hist, warnings, quelle, geschaetzt
 
 
@@ -365,6 +407,25 @@ def inactive_accounts(ledger: Ledger, leaves: List[Account], hist: Dict[str, Dic
                 auto.add(acc.uuid)
     hidden = {u for u in auto if u not in force_show} | {a.uuid for a in leaves if a.uuid in force_hide}
     return hidden, auto
+
+
+def activity_limits(ledger: Ledger, leaves: List[Account], hist: Dict[str, Dict[str, Optional[float]]], mkeys: List[str],
+                    today: date) -> Dict[str, int]:
+    """uuid -> groesstes N, bei dem das Konto unter "nach Aktivitaet" noch ausgeblendet waere (wie inactive_accounts):
+    ausgeblendet genau dann, wenn 0 < N <= Grenze. 0 = nie (Saldo), 9999 = immer (nie Bestand oder Umsatz)."""
+    now = today.year * 12 + today.month
+    out: Dict[str, int] = {}
+    for acc in leaves:
+        if abs(acc.balance) >= 0.005:
+            out[acc.uuid] = 0
+            continue
+        h = hist.get(acc.uuid, {})
+        last_h = next((k for k in reversed(mkeys) if abs(h.get(k) or 0.0) >= 0.005), None)
+        since_h = now - (int(last_h[:4]) * 12 + int(last_h[5:7])) if last_h else 9999
+        last_t = max((t.booking_date for t in ledger.transactions(acc.uuid)), default=None)
+        since_t = now - (last_t.year * 12 + last_t.month) if last_t else 10000
+        out[acc.uuid] = max(0, min(since_h, since_t - 1, 9999))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -631,6 +692,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
 
     step(0.05, "Monatsstände")
     hist, warn_h, quelle, geschaetzt = balance_history(ledger, leaves, months, snapshots, historie, verlauf_cfg, today, config)
+    fortgeschrieben = dict(getattr(balance_history, "fortgeschrieben", {}) or {})
     step(0.3, "Zahlungsströme")
     ckey = (getattr(ledger, "_kat_sig", None), tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
             json.dumps(config.get("kapitalfluss") or {}, sort_keys=True, default=str), tuple(months[0]) if months else None,
@@ -645,6 +707,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         cache[ckey] = copy.deepcopy((R, inbound, warn_c))
     step(0.85, "Bilanz")
     inactive, inactive_auto = inactive_accounts(ledger, leaves, hist, mkeys, config, today)
+    limits = activity_limits(ledger, leaves, hist, mkeys, today)
 
     # Konten mit Kontostaende-Verlauf: Depots -> Bewertung = Wertaenderung - Zufluesse;
     # andere Konten -> Korrektur = Saldoaenderung - eigene Buchungen (nur dort, wo ein eingetragener Stand abweicht)
@@ -690,7 +753,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
             illiq = (role in illiquid_roles) or (a.uuid in illiquid_refs) or any(x.uuid in illiquid_refs for x in ledger.ancestors(a.uuid))
             bilanz_rows.append({"id": a.uuid, "name": a.name, "pfad": a.path, "ebene": 1, "gruppe": False, "rolle": role,
                                 "illiquide": illiq, "depot": a.portfolio, "offline": a.offline, "inaktiv": a.uuid in inactive,
-                                "passiva": role == "verbindlichkeiten", "verlauf": quelle.get(a.uuid, "umsaetze"), "geschaetzt_bis": geschaetzt.get(a.uuid),
+                                "passiva": role == "verbindlichkeiten", "verlauf": quelle.get(a.uuid, "umsaetze"), "geschaetzt_bis": geschaetzt.get(a.uuid), "fortgeschrieben_vor": fortgeschrieben.get(a.uuid),
                                 "werte": {mk: hist[a.uuid][mk] for mk in mkeys}})
     nw = {mk: round(sum(pos_sums[r][mk] for r in pos_sums), 2) for mk in mkeys}
     aktiva = {mk: round(sum(pos_sums[r][mk] for r in pos_sums if r != "verbindlichkeiten"), 2) for mk in mkeys}
@@ -766,6 +829,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         "darlehen_konfig": loans_cfg,
         "konten_inaktiv": sorted(inactive),
         "konten_inaktiv_auto": sorted(inactive_auto),
+        "konten_aktivitaet": limits,
         "warnungen": warnings,
     }
 

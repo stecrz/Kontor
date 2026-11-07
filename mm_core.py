@@ -839,12 +839,14 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
     roles = roles if roles is not None else account_roles(ledger, config)
     inactive: set = set()
     inactive_auto: set = set()
+    limits: Dict[str, int] = {}
     verlauf: Dict[str, str] = {}
     bereich_of: Dict[str, str] = {}
     bereich_id: Dict[str, str] = {}
     for bid, ds in (datasets or {}).items():
         inactive.update(ds.get("konten_inaktiv") or [])
         inactive_auto.update(ds.get("konten_inaktiv_auto") or [])
+        limits.update(ds.get("konten_aktivitaet") or {})
         bname = (ds.get("bereich") or {}).get("name") or ""
         for r in ((ds.get("bilanz") or {}).get("zeilen") or []) + ((ds.get("bilanz") or {}).get("ausserhalb") or []):
             if not r.get("gruppe") and r.get("verlauf"):
@@ -878,7 +880,7 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
             continue
         out.append({"uuid": a.uuid, "name": a.name, "pfad": a.path, "ebene": a.path.count(" / "), "gruppe": a.group,
                     "depot": a.portfolio, "manuell": a.offline, "rolle": roles.get(a.uuid, "") if not a.group else "",
-                    "saldo": None if a.group else a.balance, "waehrung": a.currency, "typ": a.type, "inaktiv": a.uuid in inactive, "inaktiv_auto": a.uuid in inactive_auto,
+                    "saldo": None if a.group else a.balance, "waehrung": a.currency, "typ": a.type, "inaktiv": a.uuid in inactive, "inaktiv_auto": a.uuid in inactive_auto, "aktiv_grenze": limits.get(a.uuid, 0),
                     "rolle_vorschlag": suggested.get(a.uuid, "") if not a.group else "", "abruf": kinds.get(a.uuid, {}).get("art") if not a.group else None,
                     "verlauf": verlauf.get(a.uuid) or ("stand" if a.portfolio else "umsaetze"), "bereich": bereich_of.get(a.uuid, ""),
                     "bereich_id": bereich_id.get(a.uuid, ""), "bestaetigt": a.uuid in confirmed,

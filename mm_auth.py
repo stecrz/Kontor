@@ -15,12 +15,16 @@ import hmac
 import os
 import secrets
 import subprocess
+import sys
 import threading
 import time
 from typing import Dict, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TOUCHID_BIN = os.path.join(HERE, "mm_touchid")
+TOUCHID_SRC = os.path.join(HERE, "mm_touchid.swift")
+# Der Dateiname erscheint im macOS-Dialog ("Kontor möchte die Finanzübersicht entsperren")
+TOUCHID_BIN = os.path.join(HERE, ".touchid", "Kontor")
+TOUCHID_REASON = "die Finanzübersicht entsperren"
 PBKDF2_ROUNDS = 600_000
 
 
@@ -127,7 +131,30 @@ def touchid_available() -> bool:
     return os.path.exists(TOUCHID_BIN) and os.access(TOUCHID_BIN, os.X_OK)
 
 
-def touchid_verify(reason: str = "Kontor entsperren") -> bool:
+def build_touchid(force: bool = False) -> str:
+    """Touch-ID-Helfer uebersetzen (macOS, Xcode Command Line Tools). Ohne force nur, wenn er fehlt oder aelter als die Quelle ist."""
+    if sys.platform != "darwin":
+        return "nicht macOS"
+    if not force and touchid_available() and os.path.getmtime(TOUCHID_BIN) >= os.path.getmtime(TOUCHID_SRC):
+        return "ok"
+    try:
+        os.makedirs(os.path.dirname(TOUCHID_BIN), exist_ok=True)
+        r = subprocess.run(["swiftc", "-O", "-o", TOUCHID_BIN, TOUCHID_SRC], capture_output=True, text=True, timeout=300)
+        if r.returncode == 0:
+            os.chmod(TOUCHID_BIN, 0o755)
+            old = os.path.join(HERE, "mm_touchid")          # Vorversion
+            if os.path.exists(old):
+                try:
+                    os.remove(old)
+                except OSError:
+                    pass
+            return "ok"
+        return "swiftc-Fehler: " + (r.stderr or r.stdout)[-300:]
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:
+        return "swiftc nicht verfügbar (%s) -- Xcode Command Line Tools: xcode-select --install" % e
+
+
+def touchid_verify(reason: str = TOUCHID_REASON) -> bool:
     if not touchid_available():
         return False
     try:

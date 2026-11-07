@@ -24,7 +24,7 @@ const H = {
   anteil: 'Dein Anteil an dieser Gesellschaft in Prozent (z. B. 49). Damit rechnet die Steuerübersicht deinen Teil des Ergebnisses, und die Beteiligungsregel bewertet dein Beteiligungskonto. Leer = 100 %.',
   gruppenwahl: 'Eine Gruppe wählen heißt: alle Konten darunter gehören dazu – auch solche, die später in MoneyMoney in dieser Gruppe angelegt werden. Einzelne Konten lassen sich abwählen; dann gilt nicht mehr die Gruppe, sondern die verbleibenden Konten einzeln.',
   anzeige: '„nach Aktivität“ (Standard) blendet ein Konto aus, solange es seit N Monaten weder Bestand noch Umsatz hat, und zeigt es wieder, sobald sich das ändert – wird also laufend geprüft. „immer anzeigen“ / „ausblenden“ legt es je Konto fest. Ausgeblendete Konten sind grau, zählen aber in allen Summen und im Verlauf.',
-  position_kurz: 'Wo das Konto in der Bilanz erscheint und wie seine Umsätze im Kapitalfluss zählen. Vorschlag in dieser Reihenfolge: Depot → Kontoname (z. B. „Immobilie“, „Darlehen“, „Kapitalkonto“, „Aval“, „Bauspar“) → eindeutiger Kontotyp (Giro, Kreditkarte, Darlehen) → Name der Gruppe in MoneyMoney → übriger Kontotyp (Spar-, Tagesgeld, Festgeld). Darlehen und Kautionen: Guthaben = Forderung, Schuld = Verbindlichkeit. Kapitalkonten, Avale und „nicht bilanzieren“ zählen nicht zum Nettovermögen.',
+  position_kurz: 'Wo das Konto in der Bilanz erscheint und wie seine Umsätze im Kapitalfluss zählen. Vorschlag in dieser Reihenfolge: Depot → Kontoname (z. B. „Immobilie“, „Darlehen“, „Kapitalkonto“, „Aval“, „Bauspar“) → eindeutiger Kontotyp (Giro, Kreditkarte, Darlehen) → Name der Gruppe in MoneyMoney → übriger Kontotyp (Spar-, Tagesgeld, Festgeld). Darlehen und Kautionen: Guthaben = Forderung, Schuld = Verbindlichkeit. Kapitalkonten in einer Gesellschaft sind deren Eigenkapital – es gehört den Gesellschaftern und steckt schon im Nettovermögen der Gesellschaft (als Verbindlichkeit gezählt stünde sie bei null, als Vermögen doppelt). Privat erscheint dein Anteil über die Beteiligung (Regel „Anteil × Nettovermögen“ oder „Saldo-Spiegel“ deines Kapitalkontos); ein privat geführtes Kapitalkonto mit Guthaben schlägt Kontor als Beteiligung vor. Avale und „nicht bilanzieren“ zählen nicht zum Nettovermögen.',
   verlauf_kurz: 'Woher die Monatsstände kommen: „Umsätze“ = vom heutigen Saldo rückwärts über die Buchungen gerechnet (Standard für Bankkonten). „Kontostände“ = bekannte Stände (eingetragen, importiert, bei Depots monatlich aufgezeichnet) sind maßgeblich, dazwischen rechnet Kontor mit den Buchungen (Standard für Depots).',
   berechtigung: 'Wofür: Kontor liest über die Skript-Schnittstelle von MoneyMoney Konten, Umsätze und Kategorien – nur lesend; Zugangsdaten zu Banken sieht Kontor nie. Ohne diese Freigabe kann Kontor nichts auswerten. Geschrieben wird nur in Offline-Konten, die du später in Regeln benennst. Erscheint die Abfrage nicht: Systemeinstellungen → Datenschutz & Sicherheit → Automation → python3 → MoneyMoney.',
   position: 'Die Bilanzposition eines Kontos. Sie bestimmt, wo das Konto in der Bilanz erscheint und wie Umsätze im Kapitalfluss behandelt werden (Liquidität: Einnahmen/Ausgaben; Darlehen: Zins/Tilgung; Wertpapiere, Immobilien, Beteiligungen, Sachwerte: Umschichtung/Bewertung). Vorschlag aus Gruppenname und Kontotyp, hier überschreibbar.',
@@ -37,6 +37,7 @@ const H = {
   inaktiv: 'Gilt für Konten mit Anzeige „nach Aktivität“: ohne Bestand und ohne Umsatz in den letzten N Monaten (z. B. Altdaten) werden sie ausgeblendet, bleiben aber in Summen und Historie enthalten. 0 = nie automatisch ausblenden.',
   probelauf: 'Im Testmodus schlägt Kontor die Buchungen aus deinen Regeln (z. B. Darlehenszinsen) nur vor und legt nichts in MoneyMoney an. Zum Anlegen unter „Buchungen“ auf „Jetzt buchen“ klicken oder den Testmodus abschalten.',
   abruf: 'Stand je Konto in dem Datenstand, den Kontor zuletzt aus MoneyMoney gelesen hat. „zurück“ = mehr als einen Tag älter als der neueste Abruf (Konten mit Saldo). „ruht“ = seit über N Monaten kein Abruf (vermutlich aufgelöst). Offline-Konten erkennt Kontor an fehlender Bank-/Kontonummer, an Regeln, die in das Konto buchen, und an Kontor-Buchungen; MoneyMoney setzt den Abrufzeitpunkt auch bei Offline-Konten, deshalb zählt er allein nicht.',
+  touchid: 'Eingeschaltet: Die Anmeldung am Mac fragt nur nach Touch ID (oder Apple Watch); das Passwortfeld erscheint erst nach Klick auf „Stattdessen Passwort eingeben“. Ausgeschaltet: nur Passwort. Am iPhone gilt immer das Passwort.',
   bilanz_stand: 'Salden am Monatsende; der laufende Monat zeigt den aktuellen Stand. Klick auf ein Konto: Monatsstände ansehen und bearbeiten.',
   abgleich: 'Datenstand in zwei Stufen: „Banken → MM“ = wann MoneyMoney zuletzt bei den Banken abgerufen hat – das löst du in MoneyMoney aus (von Hand oder per Zeitplan dort). „MM → Kontor“ = wann Kontor zuletzt aus MoneyMoney gelesen hat – automatisch im eingestellten Abstand oder sofort mit „Synchronisieren“; dabei werden auch die Regeln angewendet, falls sich etwas geändert hat. Ist MoneyMoney aus oder gesperrt, rechnet Kontor mit dem zuletzt gelesenen Stand weiter und versucht es jede Minute erneut. Bleiben Konten beim Bankabruf zurück (z. B. TAN nötig), steht das hier. Testmodus: Buchungen aus Regeln werden nur vorgeschlagen.',
   kennung: 'Interne Kennung des Bereichs – wird automatisch vergeben und nirgends angezeigt.',
@@ -198,22 +199,29 @@ function showLogin() {
   $('#login-text').textContent = OFFLINE.mode ? 'Der Mac ist nicht erreichbar. Passwort eingeben, um die auf diesem Gerät gespeicherte Ansicht zu öffnen (nur lesen).'
     : setup ? 'Erster Start: Passwort festlegen (mindestens 10 Zeichen). Es schützt den Zugang zur Oberfläche; die Daten liegen zusätzlich verschlüsselt auf diesem Mac.'
     : (SESSION && SESSION.einrichtung_nur_lokal ? 'Noch kein Passwort festgelegt – die Einrichtung ist nur direkt am Mac möglich.' : 'Zugang gesperrt.');
+  // Touch ID eingeschaltet (am Mac): nur Touch ID, Passwort erst auf Wunsch – nie beides gleichzeitig
+  const tid = !setup && !OFFLINE.mode && SESSION && SESSION.touchid;
+  const tidMode = tid && !LOGIN.pw;
   $('#login-pw2').classList.toggle('hidden', !setup);
+  $('#setup-tid').classList.toggle('hidden', !(setup && SESSION && SESSION.touchid_verfuegbar));
   $('#login-btn').textContent = setup ? 'Passwort festlegen' : 'Anmelden';
-  $('#touchid-btn').classList.toggle('hidden', !(SESSION && SESSION.touchid && !setup) || OFFLINE.mode);
+  $('#tid-box').classList.toggle('hidden', !tidMode);
+  $('#login-form').classList.toggle('hidden', !!tidMode);
+  $('#tid-instead').classList.toggle('hidden', !(tid && LOGIN.pw));
   $('#login-err').textContent = SESSION && SESSION.gesperrt_sekunden ? ('Gesperrt für ' + SESSION.gesperrt_sekunden + ' s nach Fehlversuchen.') : '';
-  setTimeout(() => $('#login-pw').focus(), 50);
-  if (!setup && !OFFLINE.mode && SESSION && SESSION.touchid && !document.hidden) tryTouchId(true);     // Touch ID sofort anbieten, ohne Klick
+  if (!tidMode) setTimeout(() => $('#login-pw').focus(), 50);
+  if (tidMode && !document.hidden) tryTouchId(true);     // Touch ID sofort anbieten, ohne Klick
 }
+const LOGIN = {pw: false};      // true = Nutzer hat "Stattdessen Passwort eingeben" gewählt
 const TID = {pending: false, lastTry: 0};
 async function tryTouchId(auto) {
-  if (TID.pending || !(SESSION && SESSION.touchid && !SESSION.einrichtung_noetig)) return;
+  if (TID.pending || LOGIN.pw || !(SESSION && SESSION.touchid && !SESSION.einrichtung_noetig)) return;
   if (auto && TID.skipNext) { TID.skipNext = false; return; }           // nach bewusstem Sperren nicht sofort wieder fragen
   if (auto && Date.now() - TID.lastTry < 4000) return;
   TID.pending = true; TID.lastTry = Date.now();
   $('#login-err').textContent = 'Touch ID … bitte am Mac bestätigen.';
   try { const r = await api('/api/touchid', {}); S.csrf = r.csrf; $('#login-err').textContent = ''; await enterApp(); }
-  catch (err) { $('#login-err').textContent = auto ? 'Touch ID nicht bestätigt – Knopf drücken oder Passwort eingeben.' : err.message; }
+  catch (err) { $('#login-err').textContent = auto ? 'Touch ID nicht bestätigt – erneut versuchen oder Passwort eingeben.' : err.message; }
   finally { TID.pending = false; }
 }
 let REVAL = 0;
@@ -242,12 +250,15 @@ $('#login-form').addEventListener('submit', async e => {
     return;
   }
   try {
-    const r = await api(setup ? '/api/setup' : '/api/login', {passwort: pw});
+    const r = await api(setup ? '/api/setup' : '/api/login', setup && SESSION.touchid_verfuegbar ? {passwort: pw, touchid: $('#setup-tid-cb').checked} : {passwort: pw});
+    LOGIN.pw = false;
     S.csrf = r.csrf; $('#login-pw').value = ''; $('#login-pw2').value = '';
     await enterApp();
   } catch (err) { $('#login-err').textContent = err.message; }
 });
 $('#touchid-btn').addEventListener('click', () => tryTouchId(false));
+$('#pw-instead').addEventListener('click', () => { LOGIN.pw = true; showLogin(); });
+$('#tid-instead').addEventListener('click', () => { LOGIN.pw = false; showLogin(); });
 $('#sync-btn').addEventListener('click', () => syncNow());
 $('#lock-btn').addEventListener('click', async () => { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; TID.skipNext = true; await checkSession(); });
 
@@ -379,7 +390,8 @@ const sumOver = (vals, months) => months.reduce((a, m) => a + (vals[m] ?? 0) * d
 const lastOf = (vals, months) => { for (let i = months.length - 1; i >= 0; i--) if (vals[months[i]] != null) return vals[months[i]] * defl(months[i]); return null; };
 function cls(v, c) { let s = ''; if (c.plan) s += ' plan'; if (c.cur && S.modus !== 'jahre') s += ' cur'; if (c.year) s += ' year'; if (v == null || Math.abs(v) < 0.005) s += ' zero'; else s += v < 0 ? ' neg' : ' pos'; return s; }
 const cells = (C, fn) => C.map(c => { const v = fn(c); return `<td class="${cls(v, c)}">${F(v)}</td>`; }).join('');
-const thead = (first, C) => `<thead><tr><th>${first}</th>${C.map(c => `<th class="${c.year ? 'year' : ''}${c.plan ? ' plan' : ''}" title="${c.plan ? 'Plan' : c.mixed ? 'Ist + Plan' : 'Ist'}">${c.label}</th>`).join('')}</tr></thead>`;
+const isCurCol = c => { const D = B(), ib = (D && D.ist_bis) || ''; return c.year ? c.key === ib.slice(0, 4) && S.modus === 'jahre' : c.key === ib; };
+const thead = (first, C) => `<thead><tr><th>${first}</th>${C.map(c => `<th class="${c.year ? 'year' : ''}${c.plan ? ' plan' : ''}"${isCurCol(c) ? ' data-cur="1"' : ''} title="${c.plan ? 'Plan' : c.mixed ? 'Ist + Plan' : 'Ist'}">${c.label}</th>`).join('')}</tr></thead>`;
 const noData = '<div class="card"><div class="v s">Noch keine Daten</div><div class="d">Unter „Einrichtung“ den Bericht erstellen (MoneyMoney muss laufen und entsperrt sein) – danach erscheinen Übersicht, Bilanz, Kapitalfluss und Planung.</div></div>';
 const sumsOf = (D, name, months) => months.reduce((a, m) => a + (D.kapitalfluss.summen[m]?.[name] ?? 0) * defl(m), 0);
 
@@ -655,14 +667,14 @@ function vKontenEditor() {
   for (const {k, bsel} of rows) {
     if (bsel !== lastB) { lastB = bsel; h += `<tr class="bgroup"><td colspan="6">${esc((bereiche.find(([id]) => id === bsel) || [null, 'ohne Bereich'])[1])}</td></tr>`; }
     const cur = roleOf(k.uuid), ver = verOf(k.uuid);
-    const vis = hide.has(k.uuid) ? 'hide' : show.has(k.uuid) ? 'show' : '', auto = k.inaktiv_auto ?? (k.inaktiv && !hide.has(k.uuid));
+    const vis = hide.has(k.uuid) ? 'hide' : show.has(k.uuid) ? 'show' : '', grenze = k.aktiv_grenze ?? (k.inaktiv_auto ? 9999 : 0), auto = autoHidden(grenze, cfg.bilanz.inaktiv_monate ?? 12);
     const rolle = cur || k.rolle || 'sonstiges', quelle = ver || k.verlauf || (k.depot ? 'stand' : 'umsaetze');
     // Vorschlag (was Kontor aus Name, Typ und Gruppe erkennt) steht in der Liste mit „(Vorschlag)“; gestrichelt, solange ein neues Konto ihn noch trägt
     const sv = k.rolle_vorschlag || rolle, vv = k.depot ? 'stand' : 'umsaetze';
     const dash = (cur, v) => !k.bestaetigt && cur === v ? ' vorschlag' : '';
-    h += `<tr data-uuid="${k.uuid}" data-ref="${k.uuid} | ${esc(k.name)}" data-auto="${auto ? 1 : 0}" class="${kontoHidden(vis, auto) ? 'inactive' : ''}${k.bestaetigt ? '' : ' neu'}"><td title="${esc(k.pfad)}">${esc(k.name)}${k.bestaetigt ? '' : '<span class="tag warn">neu</span>'}<span class="tag k-vis">ausgeblendet</span>${k.veraltet ? `<span class="tag warn" title="Saldo ${F(k.saldo)}, aber seit ${esc(k.letzte_buchung || k.aktualisiert || 'jeher')} weder Buchung noch Aktualisierung – Konto aufgelöst? Dann in MoneyMoney den Saldo auf 0 setzen (Verlauf bleibt) oder „nicht bilanzieren“.">veraltet?</span>` : ''}<div class="small muted">${esc(k.pfad.split(' / ').slice(0, -1).join(' / '))} · ${k.depot ? 'Depot' : (k.manuell || k.abruf === 'offline') ? 'manuell' : esc(k.typ || 'Bank')}</div></td><td><select class="k-bereich"><option value="">– keiner –</option>${bereiche.map(([id, n]) => `<option value="${esc(id)}" ${bsel === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td>
-      <td><select class="k-rolle${dash(rolle, sv)}" data-vor="${sv}">${ROLE_OPTS.map(([v, l]) => `<option value="${v}" ${rolle === v ? 'selected' : ''}>${l}${v === sv ? ' (Vorschlag)' : ''}</option>`).join('')}</select></td>
-      <td class="nowrap"><select class="k-verlauf${dash(quelle, vv)}" data-vor="${vv}">${[['umsaetze', 'Umsätze'], ['stand', 'Kontostände']].map(([v, l]) => `<option value="${v}" ${quelle === v ? 'selected' : ''}>${l}${v === vv ? ' (Vorschlag)' : ''}</option>`).join('')}</select> <button class="ghost small k-hist" title="Monatsstände ansehen und bearbeiten">Verlauf…</button></td>
+    h += `<tr data-uuid="${k.uuid}" data-ref="${k.uuid} | ${esc(k.name)}" data-auto="${auto ? 1 : 0}" data-grenze="${grenze}" class="${kontoHidden(vis, auto) ? 'inactive' : ''}${k.bestaetigt ? '' : ' neu'}"><td title="${esc(k.pfad)}">${esc(k.name)}${k.bestaetigt ? '' : '<span class="tag warn">neu</span>'}<span class="tag k-vis">ausgeblendet</span>${k.veraltet ? `<span class="tag warn" title="Saldo ${F(k.saldo)}, aber seit ${esc(k.letzte_buchung || k.aktualisiert || 'jeher')} weder Buchung noch Aktualisierung – Konto aufgelöst? Dann in MoneyMoney den Saldo auf 0 setzen (Verlauf bleibt) oder „nicht bilanzieren“.">veraltet?</span>` : ''}<div class="small muted">${esc(k.pfad.split(' / ').slice(0, -1).join(' / '))} · ${k.depot ? 'Depot' : (k.manuell || k.abruf === 'offline') ? 'manuell' : esc(k.typ || 'Bank')}</div></td><td><select class="k-bereich"><option value="">– keiner –</option>${bereiche.map(([id, n]) => `<option value="${esc(id)}" ${bsel === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td>
+      <td><select class="k-rolle${dash(rolle, sv)}" data-vor="${sv}">${ROLE_OPTS.map(([v, l]) => `<option value="${v}" ${rolle === v ? 'selected' : ''}>${l}${v === sv ? ' (Vorschlag)' : ''}</option>`).join('')}</select>${vorHint(rolle, sv, ROLE_OPTS)}</td>
+      <td class="nowrap"><select class="k-verlauf${dash(quelle, vv)}" data-vor="${vv}">${[['umsaetze', 'Umsätze'], ['stand', 'Kontostände']].map(([v, l]) => `<option value="${v}" ${quelle === v ? 'selected' : ''}>${l}${v === vv ? ' (Vorschlag)' : ''}</option>`).join('')}</select>${vorHint(quelle, vv, [['umsaetze', 'Umsätze'], ['stand', 'Kontostände']])} <button class="ghost small k-hist" title="Monatsstände ansehen und bearbeiten">Verlauf…</button></td>
       <td><select class="k-show" title="${auto ? 'Kein Bestand und kein Umsatz seit ' + (cfg.bilanz.inaktiv_monate ?? 12) + ' Monaten' : 'Mit Bestand oder Umsatz in den letzten ' + (cfg.bilanz.inaktiv_monate ?? 12) + ' Monaten'}"><option value="">nach Aktivität</option><option value="show" ${vis === 'show' ? 'selected' : ''}>immer anzeigen</option><option value="hide" ${vis === 'hide' ? 'selected' : ''}>ausblenden</option></select></td>
       <td class="num ${(k.saldo || 0) < 0 ? 'neg' : 'pos'}">${F(k.saldo)}</td></tr>`;
   }
@@ -691,6 +703,12 @@ function renderHistImport() {
   };
 }
 function kontoHidden(vis, auto) { return vis === 'hide' || (vis === '' && !!auto); }
+function autoHidden(grenze, n) { n = +n || 0; return n > 0 && n <= (+grenze || 0); }      // "nach Aktivität": ohne Bestand und Umsatz seit N Monaten
+function vorHint(val, vor, opts) {
+  // Abweichung vom Vorschlag bleibt auch nach dem Speichern sichtbar
+  const l = (opts.find(o => o[0] === vor) || [vor, vor])[1].replace(/ – nicht im Nettovermögen$/, '');
+  return `<div class="vor-hint small muted${val === vor ? ' hidden' : ''}">Vorschlag: ${esc(l)}</div>`;
+}
 function collectKonten() {
   const cfg = JSON.parse(JSON.stringify(S.CFG)); const b = cfg.bilanz = cfg.bilanz || {};
   b.rollen = {}; b.verlauf = {}; b.illiquide_konten = []; b.ausgeblendet = []; b.immer_anzeigen = []; b.konten_zuordnung = b.konten_zuordnung || {};
@@ -783,45 +801,52 @@ const HD = {uuid: null, live: false, r: null};
 
 // ---------------------------------------------------------------- Bilanz
 function vBilanz() {
+  // Eine Tabelle: Positionen (farbig, aufklappbar) bzw. MoneyMoney-Gruppen; Plan-Spalten rechts angehängt
   const D = B(); if (!D) return noData;
-  const C = cols().filter(c => !c.plan);
+  const C = cols();
   const view = S.bilanzView || 'positionen';
-  const rows = view === 'gruppen' ? (D.bilanz.baum || []) : D.bilanz.zeilen;
+  const pr = S.plan ? D.bilanz.projektion : null;
+  const proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
+  const W = new Map(), werte = r => { if (!W.has(r.id)) W.set(r.id, proj[r.id] ? Object.assign({}, r.werte, proj[r.id]) : r.werte); return W.get(r.id); };
+  const nw = pr ? Object.assign({}, D.bilanz.nettovermoegen, pr.nettovermoegen) : D.bilanz.nettovermoegen;
   const nInactive = (D.konten_inaktiv || []).length;
-  let h = `<div class="toolbar">${viewCtl(true)}<span class="tb-sep"></span><div class="seg"><button data-v="positionen" class="${view === 'positionen' ? 'on' : ''}">Bilanzpositionen</button><button data-v="gruppen" class="${view === 'gruppen' ? 'on' : ''}">MoneyMoney-Gruppen</button></div>${nInactive ? `<label class="switch"><input type="checkbox" id="show-inactive" ${S.showInactive ? 'checked' : ''}><i></i>${nInactive} ausgeblendete zeigen</label>` : ''} ${hq('bilanz_stand')}<span class="sp"></span>${xlsxBtn('bilanz')}</div>`;
-  // Struktur nach Positionen (Kurzuebersicht)
   const pos = D.bilanz.zeilen.filter(r => r.gruppe);
-  h += '<div class="wrap auto" style="margin-bottom:14px"><table>' + thead('Struktur', C) + '<tbody>';
-  for (const r of pos) {
-    const [label, color] = ROLE[r.rolle] || [r.name, 'var(--c-neutral)'];
-    h += `<tr><td><i style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${color};margin-right:7px"></i>${label}</td>${cells(C, c => lastOf(r.werte, c.months))}</tr>`;
-  }
-  h += `<tr class="total"><td>Nettovermögen</td>${cells(C, c => lastOf(D.bilanz.nettovermoegen, c.months))}</tr>${(D.bilanz.ausserhalb || []).map(r => `<tr class="muted"><td>${esc(r.name)} <span class="tag">${esc((ROLE[r.rolle] || [r.rolle])[0])} · nicht im Nettovermögen</span></td>${cells(C, c => lastOf(r.werte, c.months))}</tr>`).join('')}</tbody></table></div>`;
+  S.posOpen = S.posOpen || {};
+  const allOpen = pos.length && pos.every(r => S.posOpen[r.rolle]);
+  let h = `<div class="toolbar">${viewCtl(true)}<span class="tb-sep"></span><div class="seg"><button data-v="positionen" class="${view === 'positionen' ? 'on' : ''}">Bilanzpositionen</button><button data-v="gruppen" class="${view === 'gruppen' ? 'on' : ''}">MoneyMoney-Gruppen</button></div>${view === 'positionen' ? `<button class="ghost small" id="pos-all">${allOpen ? 'alle zuklappen' : 'alle aufklappen'}</button>` : ''}${nInactive ? `<label class="switch"><input type="checkbox" id="show-inactive" ${S.showInactive ? 'checked' : ''}><i></i>${nInactive} ausgeblendete zeigen</label>` : ''} ${hq('bilanz_stand')}<span class="sp"></span>${xlsxBtn('bilanz')}</div>`;
+  const tag = r => (r.depot ? '<span class="tag">Depot</span>' : '') + (r.offline && !r.gruppe ? '<span class="tag">manuell</span>' : '') + (r.inaktiv ? '<span class="tag">ausgeblendet</span>' : '')
+    + (r.verlauf === 'stand' && !r.gruppe ? '<span class="tag" title="Verlauf aus Kontoständen">Kontostände</span>' : '')
+    + (r.geschaetzt_bis ? `<span class="tag warn" title="Kontostände bis ${ML(r.geschaetzt_bis)} aus Käufen/Verkäufen geschätzt – Werte eintragen oder importieren">geschätzt bis ${ML(r.geschaetzt_bis)}</span>` : '')
+    + (r.fortgeschrieben_vor ? `<span class="tag warn" title="Vor ${ML(r.fortgeschrieben_vor)} ist kein Stand bekannt – bis dahin steht rückwärts der erste bekannte Wert. Klick: Monatsstände eintragen, Datei importieren oder ein Verrechnungskonto für die Schätzung wählen.">vor ${ML(r.fortgeschrieben_vor)} unbekannt</span>` : '')
+    + (view === 'gruppen' && r.rolle && !r.gruppe ? `<span class="tag">${(ROLE[r.rolle] || [r.rolle])[0]}</span>` : '');
+  const row = (r, cls0, label) => `<tr class="${cls0}" data-id="${r.id}"><td title="${esc(r.pfad || r.name)}">${label}</td>${C.map(c => { const v = lastOf(werte(r), c.months); return `<td class="${cls(v, c)}">${F(v)}</td>`; }).join('')}</tr>`;
+  const skip = r => { if (!r.gruppe && r.inaktiv && !S.showInactive) return true; const vals = C.map(c => lastOf(werte(r), c.months)); return !S.nullzeilen && !r.gruppe && !r.inaktiv && vals.every(v => v == null || Math.abs(v) < 0.005); };
   h += '<div class="wrap"><table>' + thead(view === 'gruppen' ? 'Konto (MoneyMoney-Gruppen)' : 'Position / Konto', C) + '<tbody>';
-  const hidden = new Set();
-  for (const r of rows) {
-    if (view === 'gruppen' && [...hidden].some(p => r.pfad.startsWith(p + ' / '))) continue;
-    if (view === 'positionen' && !r.gruppe && S.collapsed['pos:' + r.rolle]) continue;
-    const vals = C.map(c => lastOf(r.werte, c.months));
-    if (!r.gruppe && r.inaktiv && !S.showInactive) continue;
-    if (!S.nullzeilen && !r.gruppe && !r.inaktiv && vals.every(v => v == null || Math.abs(v) < 0.005)) continue;
-    const coll = S.collapsed[r.id]; if (r.gruppe && coll && view === 'gruppen') hidden.add(r.pfad);
-    const tag = (r.depot ? '<span class="tag">Depot</span>' : '') + (r.offline && !r.gruppe ? '<span class="tag">manuell</span>' : '') + (r.inaktiv ? '<span class="tag">ausgeblendet</span>' : '') + (r.verlauf === 'stand' && !r.gruppe ? '<span class="tag" title="Verlauf aus Kontoständen">Kontostände</span>' : '') + (r.geschaetzt_bis ? `<span class="tag warn" title="Kontostände bis ${ML(r.geschaetzt_bis)} aus Käufen/Verkäufen geschätzt – Werte eintragen oder importieren">geschätzt bis ${ML(r.geschaetzt_bis)}</span>` : '') + (view === 'gruppen' && r.rolle && !r.gruppe ? `<span class="tag">${(ROLE[r.rolle] || [r.rolle])[0]}</span>` : '');
-    const extra = r.gruppe && view === 'positionen' ? ` <span class="small muted">(${r.anzahl} Konten${r.inaktive ? ', ' + r.inaktive + ' ausgeblendet' : ''})</span>` : '';
-    h += `<tr class="${r.gruppe ? 'group' : 'clickable acct'} ind${Math.min(r.ebene, 4)}" data-id="${r.id}"><td title="${esc(r.pfad)}">${r.gruppe ? (coll ? '▸ ' : '▾ ') : ''}${esc(r.name)}${extra}${tag}</td>` + vals.map((v, i) => `<td class="${cls(v, C[i])}">${F(v)}</td>`).join('') + '</tr>';
-  }
-  h += `<tr class="total"><td>Nettovermögen</td>${cells(C, c => lastOf(D.bilanz.nettovermoegen, c.months))}</tr></tbody></table></div>`;
-  if (S.plan && D.bilanz.projektion) {
-    const P = cols().filter(c => c.plan), pr = D.bilanz.projektion;
-    h += '<h2>Fortschreibung (Plan)' + (S.real ? ' <span class="x">in heutiger Kaufkraft</span>' : '') + '</h2><div class="wrap"><table>' + thead('Position', P) + '<tbody>';
-    for (const r of pr.zeilen) {
-      const vals = P.map(c => lastOf(r.werte, c.months));
-      if (!S.nullzeilen && !r.gruppe && vals.every(v => v == null || Math.abs(v) < 0.005)) continue;
-      h += `<tr class="${r.gruppe ? 'group' : ''} ind${Math.min(r.ebene, 4)}"><td>${esc(r.name)}</td>${vals.map((v, i) => `<td class="${cls(v, P[i])}">${F(v)}</td>`).join('')}</tr>`;
+  if (view === 'positionen') {
+    for (const r of D.bilanz.zeilen) {
+      if (r.gruppe) {
+        const [label, color] = ROLE[r.rolle] || [r.name, 'var(--c-neutral)'], open = !!S.posOpen[r.rolle];
+        h += row(r, 'group pos', `<span class="caret">${open ? '▾' : '▸'}</span><i class="pos-dot" style="background:${color}"></i>${label} <span class="small muted">(${r.anzahl}${r.inaktive ? ', ' + r.inaktive + ' ausgeblendet' : ''})</span>`).replace('<tr ', `<tr data-pos="${r.rolle}" `).replace(` data-id="${r.id}"`, '');
+        continue;
+      }
+      if (!S.posOpen[r.rolle] || skip(r)) continue;
+      h += row(r, 'clickable acct ind1', esc(r.name) + tag(r));
+      if (pr && r.rolle === 'beteiligungen' && proj.einlagen && r === D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === 'beteiligungen').slice(-1)[0])
+        h += row({id: 'einlagen', name: 'Einlagen/Entnahmen (kumuliert, Plan)', werte: {}}, 'ind1 muted', 'Einlagen/Entnahmen Beteiligungen (kumuliert, Plan)');
     }
-    h += `<tr class="total"><td>Liquidität (gesamt)</td>${cells(P, c => lastOf(pr.liquiditaet, c.months))}</tr><tr class="total"><td>Nettovermögen (Plan)</td>${cells(P, c => lastOf(pr.nettovermoegen, c.months))}</tr></tbody></table></div>`;
+  } else {
+    const hidden = new Set();
+    for (const r of (D.bilanz.baum || [])) {
+      if ([...hidden].some(p => r.pfad.startsWith(p + ' / '))) continue;
+      if (skip(r)) continue;
+      const coll = S.collapsed[r.id]; if (r.gruppe && coll) hidden.add(r.pfad);
+      h += row(r, `${r.gruppe ? 'group' : 'clickable acct'} ind${Math.min(r.ebene, 4)}`, `${r.gruppe ? (coll ? '▸ ' : '▾ ') : ''}${esc(r.name)}${tag(r)}`);
+    }
   }
-  h += '<div class="note">Klick auf ein Konto öffnet Position, Verlaufsquelle und Monatsstände. Positionen: Einrichtung → Bilanzpositionen. Fortschreibung: Liquidität + Zahlungsfluss; Darlehen − Tilgung; Wertpapiere/Immobilien/Beteiligungen + Investition + Wertentwicklung bzw. Kalkulation (Planung → Parameter).</div>';
+  h += `<tr class="total"><td>Nettovermögen${pr ? ' <span class="small muted">(rechts: Plan)</span>' : ''}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
+  h += (D.bilanz.ausserhalb || []).map(r => `<tr class="muted"><td>${esc(r.name)} <span class="tag">${esc((ROLE[r.rolle] || [r.rolle])[0])} · nicht im Nettovermögen</span></td>${cells(C, c => lastOf(r.werte, c.months))}</tr>`).join('');
+  h += '</tbody></table></div>';
+  h += '<div class="note">Klick auf eine Position klappt sie auf, Klick auf ein Konto öffnet Position, Verlaufsquelle und Monatsstände. Positionen: Einrichtung → Bilanzpositionen. Plan-Spalten (rechts): Liquidität + Zahlungsfluss; Darlehen − Tilgung; Wertpapiere/Immobilien/Beteiligungen + Investition + Wertentwicklung bzw. Kalkulation (Planung → Parameter).</div>';
   return h;
 }
 
@@ -1557,6 +1582,7 @@ function vEinstellungen() {
   </div>
   <h2>Oberfläche und Zugang</h2><div class="form">
     <label>Automatische Sperre</label><label class="chk">nach <input type="number" id="e-sperre" min="1" value="${o.sperre_minuten ?? 15}" style="width:70px"> Minuten ohne Aktivität</label>
+    <label>Touch ID ${hq('touchid')}</label><label class="chk"><input type="checkbox" id="e-touchid" ${o.touchid !== false ? 'checked' : ''} ${S.STATUS.touchid ? '' : 'disabled'}> Am Mac mit Touch ID entsperren – das Passwort gibt es dann nur über „Stattdessen Passwort eingeben“${S.STATUS.touchid ? '' : ' (an diesem Gerät nicht verfügbar)'}</label>
     <label>Adresse ${hq('bind')}</label><input type="text" id="e-bind" value="${esc(o.bind || '127.0.0.1')}" placeholder="127.0.0.1 oder Tailscale-Adresse 100.x.y.z">
     <label>Port</label><input type="number" id="e-port" value="${o.port ?? 8765}" style="width:100px">
     <label>TLS-Zertifikat (optional) ${hq('tls')}</label><input type="text" id="e-cert" value="${esc(o.tls_cert || '')}" placeholder="/Pfad/zert.crt">
@@ -1589,7 +1615,7 @@ function collectSettings() {
     objekt_darlehen: Object.fromEntries($$('.e-obj').map(i => [i.dataset.ref, i.value.trim()]).filter(([, v]) => v)),
     positionen: Object.fromEntries($$('.pos-row').map(r => [$('.p-kat', r).value.trim(), $('.p-pos', r).value.trim()]).filter(([k, v]) => k && v)) });
   cfg.updates = { taeglich_pruefen: $('#e-up-auto').checked, repo: $('#e-up-repo').value.trim() || 'stecrz/Kontor' };
-  cfg.oberflaeche = Object.assign(cfg.oberflaeche || {}, { sperre_minuten: Math.max(1, parseInt($('#e-sperre').value) || 15), bind: $('#e-bind').value.trim() || '127.0.0.1',
+  cfg.oberflaeche = Object.assign(cfg.oberflaeche || {}, { sperre_minuten: Math.max(1, parseInt($('#e-sperre').value) || 15), touchid: $('#e-touchid').checked, bind: $('#e-bind').value.trim() || '127.0.0.1',
     port: parseInt($('#e-port').value) || 8765, tls_cert: $('#e-cert').value.trim(), tls_key: $('#e-key').value.trim() });
   return cfg;
 }
@@ -1726,7 +1752,10 @@ async function route() {
     DIRTY.on = false;
   }
   const raw = (location.hash || '#uebersicht').slice(1), [path, qs] = raw.split('?'), [tab, sub] = path.split('/');
+  const y0 = window.scrollY;
+  if (SCROLL.key) SCROLL.pos[SCROLL.key] = y0;                 // Position des bisherigen Reiters merken
   S.tab = TITLES[tab] ? tab : 'uebersicht'; S.sub = sub || '';
+  const key = S.tab + '/' + S.sub, sameTab = key === SCROLL.key;
   if (qs && S.tab === 'umsaetze') { const p = new URLSearchParams(qs); S.uf.ohne_kategorie = p.get('ohne_kategorie') === '1'; S.uf.ohne_beleg = p.get('ohne_beleg') === '1'; if (p.get('jahr')) S.uf.jahr = p.get('jahr'); if (p.get('entitaet')) S.uf.entitaet = p.get('entitaet'); history.replaceState(null, '', '#umsaetze'); }
   $$('#nav a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + S.tab));
   $('#page-title').textContent = SUBTITLES[S.tab + '/' + S.sub] || (S.tab === 'immobilien' && S.sub ? 'Immobilie' : TITLES[S.tab]);
@@ -1760,6 +1789,8 @@ async function route() {
     clearTimeout(slow);
     if (ROUTE_SEQ !== myRoute) return;          // inzwischen woanders hin geklickt
     main.innerHTML = `<div class="fade">${h}</div>`;
+    SCROLL.key = key;
+    window.scrollTo(0, sameTab ? y0 : (SCROLL.pos[key] || 0));      // eigener Reiter: bleibt; anderer Reiter: dessen letzte Position, sonst oben
     bind(main);
     guardDirty(main);
     vbPoll();
@@ -1769,6 +1800,7 @@ async function route() {
   } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== 'nicht angemeldet') main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" onclick="route()">Erneut versuchen</button></div>`; }
 }
 let ROUTE_SEQ = 0;
+const SCROLL = {key: '', pos: {}};
 // Ungespeicherte Aenderungen: Formulare auf Seiten mit Speichern-Knopf melden Aenderungen; Wegnavigieren fragt nach
 const DIRTY = {on: false, hash: location.hash};
 const GUARDED = ['einrichtung/bereiche', 'einrichtung/konten', 'einstellungen', 'regeln'];
@@ -1838,9 +1870,12 @@ const SAVE = {
 window.addEventListener('beforeunload', e => { if (DIRTY.on) { e.preventDefault(); e.returnValue = ''; } });
 function bind(main) {
   $$('tr.group[data-id]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.id] = !S.collapsed[tr.dataset.id]; route(); }));
+  $$('tr.pos[data-pos]', main).forEach(tr => tr.addEventListener('click', () => { S.posOpen[tr.dataset.pos] = !S.posOpen[tr.dataset.pos]; route(); }));
+  const pa = $('#pos-all', main); if (pa) pa.addEventListener('click', () => { const D = B(), pos = D.bilanz.zeilen.filter(r => r.gruppe), open = !pos.every(r => S.posOpen[r.rolle]); pos.forEach(r => { S.posOpen[r.rolle] = open; }); route(); });
   $$('tr.sub[data-gid]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.gid] = !S.collapsed[tr.dataset.gid]; route(); }));
   $$('.card[data-b]', main).forEach(c => c.addEventListener('click', () => { S.bereich = c.dataset.b; bereichSeg(); route(); }));
-  if (S.modus !== 'jahre' && ['bilanz', 'kapitalfluss', 'planung'].includes(S.tab)) $$('.wrap', main).forEach(w => { const c = $('td.cur', w); if (c) w.scrollLeft = Math.max(0, c.offsetLeft - w.clientWidth * 0.55); });
+  // Waagerecht: aktuelle Spalte (Monat bzw. Jahr) rechts im Blick, ältere Jahre links davon; Plan-Spalten rechts anschließend
+  if (['bilanz', 'kapitalfluss', 'planung'].includes(S.tab)) $$('.wrap', main).forEach(w => { const c = $('th[data-cur]', w); if (c && w.scrollWidth > w.clientWidth) w.scrollLeft = Math.max(0, c.offsetLeft + c.offsetWidth - w.clientWidth * (S.plan ? 0.62 : 0.97)); });
   const vs = $('#vorschlag-an', main); if (vs) vs.addEventListener('change', e => { S.vorschlag = e.target.checked; route(); });
   $$('[data-xlsx]', main).forEach(b => b.addEventListener('click', () => download(b.dataset.xlsx === 'immobilie' ? `/api/export/immobilie.xlsx?id=${encodeURIComponent(b.dataset.immo || '')}&kalkulation=${encodeURIComponent(b.dataset.kalk || '')}` : `/api/export/${b.dataset.xlsx}.xlsx?bereich=${encodeURIComponent(b.dataset.bereich || S.bereich || '')}&modus=${S.modus === 'jahre' ? 'jahre' : 'monate'}`)));
 
@@ -1874,7 +1909,15 @@ function bind(main) {
   }));
   const ksi = $('#k-show-inactive', main); if (ksi) ksi.addEventListener('change', e => $$('tr.inactive', main).forEach(tr => tr.style.display = e.target.checked ? '' : 'none'));
   $$('.k-show', main).forEach(sel => sel.addEventListener('change', () => { const tr = sel.closest('tr'); tr.classList.toggle('inactive', kontoHidden(sel.value, tr.dataset.auto === '1')); }));
-  $$('.acct-table select[data-vor]', main).forEach(sel => sel.addEventListener('change', () => sel.classList.toggle('vorschlag', sel.closest('tr').classList.contains('neu') && sel.value === sel.dataset.vor)));
+  $$('.acct-table select[data-vor]', main).forEach(sel => sel.addEventListener('change', () => {
+    sel.classList.toggle('vorschlag', sel.closest('tr').classList.contains('neu') && sel.value === sel.dataset.vor);
+    const hint = sel.parentElement.querySelector('.vor-hint'); if (hint) hint.classList.toggle('hidden', sel.value === sel.dataset.vor);
+  }));
+  const kin = $('#k-inaktiv', main); if (kin) kin.addEventListener('input', () => $$('tr[data-grenze]', main).forEach(tr => {   // ausgegraut sofort neu
+    tr.dataset.auto = autoHidden(tr.dataset.grenze, kin.value) ? '1' : '0';
+    const on = kontoHidden($('.k-show', tr).value, tr.dataset.auto === '1'); tr.classList.toggle('inactive', on);
+    if (!$('#k-show-inactive', main).checked) tr.style.display = on ? 'none' : '';
+  }));
 
   // Bilanz
   $$('tr.acct[data-id]', main).forEach(tr => tr.addEventListener('click', () => openHistDrawer(tr.dataset.id)));

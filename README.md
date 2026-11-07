@@ -17,7 +17,7 @@ Kontor enthält keine Annahmen über deine Konten. Alles – Bereiche, Regeln, K
 ## Sicherheit
 
 - Oberfläche nur auf diesem Mac (`127.0.0.1`); optional eine Tailscale-Adresse (`100.64.0.0/10`) für das eigene iPhone – nie `0.0.0.0`, nie das LAN. Keine Fremdinhalte (CSP `default-src 'self'`), keine Telemetrie.
-- Passwort (PBKDF2-SHA256, 600 000 Runden) oder Touch ID (nur am Mac). Sitzungscookie HttpOnly/SameSite=Strict, CSRF-Token, Origin-Prüfung, 5 Fehlversuche → 5 Minuten Sperre, automatische Sperre nach Leerlauf.
+- Passwort (PBKDF2-SHA256, 600 000 Runden) oder Touch ID (nur am Mac; bei der Einrichtung und in den Einstellungen wählbar – eingeschaltet fragt die Anmeldung nur nach Touch ID, das Passwort gibt es über „Stattdessen Passwort eingeben“). Sitzungscookie HttpOnly/SameSite=Strict, CSRF-Token, Origin-Prüfung, 5 Fehlversuche → 5 Minuten Sperre, automatische Sperre nach Leerlauf.
 - Alle Dateien im Datenordner sind verschlüsselt (AES-256-CBC + HMAC-SHA256), Schlüssel im macOS-Schlüsselbund. Belege liegen als normale Dateien in einem Ordner deiner Wahl.
 - Scharfe Läufe, Updates, Kategorisieren und Ordner öffnen nur von diesem Mac aus; vom iPhone nur lesen und planen.
 - Das Protokoll enthält keine IBANs, Salden oder Passwörter. Die Diagnosedatei (für Hilfe bei Problemen) maskiert zusätzlich Kontonamen und den Benutzerordner.
@@ -115,7 +115,7 @@ Für Hilfe bei Problemen: Protokoll → Diagnosedatei (maskiert). Sie enthält V
 - Depots und manche Konten liefern keine Wertehistorie; die Bilanz nutzt Monatsstände ab dem ersten Lauf, eigene Einträge oder einen Saldenexport.
 - Immobilienkalkulation: Steuer je Gesellschafter als Anteil × Ergebnis × Steuersatz (keine Progression, kein Verlustausgleich); AfA linear; keine Steuerberatung.
 - Zinsmodelle sind vereinfacht (30/360, monatlich); einmal jährlich mit der Zinsabrechnung abgleichen.
-- Touch ID braucht `swiftc` (Kommandozeilen-Werkzeuge); ohne Helfer gilt nur das Passwort.
+- Touch ID braucht `swiftc` (Kommandozeilen-Werkzeuge); der Dienst übersetzt den Helfer selbst nach `.touchid/Kontor` (der Name erscheint im macOS-Dialog). Ohne Helfer gilt nur das Passwort.
 - MoneyMoney muss laufen und entsperrt sein – Kontor startet es nicht selbst.
 
 ## Tests

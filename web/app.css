@@ -95,6 +95,10 @@ main { flex:1; min-width:0; padding:0 24px 44px; }
 .login .brand { justify-content:center; font-size:20px; margin-bottom:8px; }
 .login form { display:flex; flex-direction:column; gap:10px; margin-top:14px; }
 .login input { padding:10px 12px; font-size:15px; }
+.login .tid { display:flex; flex-direction:column; align-items:center; gap:10px; margin-top:16px; }
+.login .tid-icon { width:46px; height:46px; color:var(--accent); }
+.login .tid #touchid-btn { width:100%; }
+.login form.hidden, .login .tid.hidden { display:none; }
 .err { color:var(--err-fg); min-height:18px; margin-top:8px; font-size:13px; }
 
 /* Cards / grids */
@@ -239,6 +243,7 @@ label .hq { vertical-align:-2px; }
 .acct-table .k-vis { display:none; } .acct-table tr.inactive .k-vis { display:inline-block; }
 .acct-table select.k-bereich { width:150px; } .acct-table select.k-rolle { width:245px; } .acct-table select.k-verlauf { width:162px; } .acct-table select.k-show { width:135px; }
 .acct-table select.vorschlag { border-style:dashed; border-color:var(--accent); }
+.acct-table .vor-hint { margin-top:2px; font-size:11px; }
 .acct-table tr.bgroup td { background:var(--group); font-weight:600; font-size:12.5px; padding-top:7px; padding-bottom:7px; color:var(--fg); }
 .b-side { display:flex; flex-direction:column; gap:6px; align-self:flex-start; }
 .b-side .b-mvs { display:flex; gap:4px; } .b-side .b-mv { flex:1; padding:4px 10px; line-height:1.1; } .b-side .b-mv:disabled { opacity:.35; }
@@ -290,3 +295,6 @@ textarea { width:100%; min-height:90px; font-family:ui-monospace, Menlo, monospa
 .sync-table td.c, .sync-table th.c { text-align:center; width:90px; }
 .cards .card .v.s .dot { margin-right:6px; }
 .toolbar .tb-sep { width:1px; height:22px; background:var(--line); margin:0 4px; }
+.pos .caret { display:inline-block; width:14px; color:var(--muted); }
+.pos .pos-dot { display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:7px; }
+tr.pos { cursor:pointer; }

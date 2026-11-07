@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.9.1
+- Bilanz: eine Tabelle statt Struktur + Konten – Positionen farbig und aufklappbar (anfangs zugeklappt, „alle aufklappen“), Plan-Spalten rechts in derselben Tabelle statt einer zweiten Tabelle darunter.
+- Tabellen scrollen waagerecht zur aktuellen Spalte (Monat bzw. Jahr), auch in der Jahresansicht; mit Plan bleiben die Plan-Spalten rechts im Blick.
+- Senkrechte Scrollposition je Reiter: beim Wechsel kommt die zuletzt dort gesehene Stelle (sonst oben), nicht die des vorigen Reiters.
+- Depots ohne älteren Stand: Kennzeichen „vor … unbekannt“ (dort steht rückwärts der erste bekannte Wert). Verrechnungskonto für die Schätzung auch ohne Bankleitzahl, wenn Depot und Konto allein in einer Untergruppe liegen.
+- Bilanzpositionen & Verlauf: Abweichung vom Vorschlag bleibt unter der Auswahl sichtbar („Vorschlag: …“), auch nach dem Speichern. Ausgegraute Konten folgen sofort der geänderten Monatszahl bei „nach Aktivität“.
+- Privat geführtes Kapitalkonto mit Guthaben wird als Beteiligung vorgeschlagen (in einer Gesellschaft bleibt es Eigenkapital); Hilfetext erklärt, warum Kapitalkonten der Gesellschaft nicht doppelt zählen.
+- Anmeldung: Touch ID bei der Einrichtung und in den Einstellungen wählbar. Eingeschaltet nur Touch ID (kein Passwortfeld, kein gleichzeitiges Ausfüllen durch den Browser), Passwort über „Stattdessen Passwort eingeben“; ausgeschaltet nur Passwort. Der macOS-Dialog heißt jetzt „Kontor möchte die Finanzübersicht entsperren“ (Helfer wird vom Dienst selbst übersetzt).
+
 ## 3.9.0
 - Konten überall in der Reihenfolge von MoneyMoney statt alphabetisch (Einrichtung, Bilanz, Gruppenansicht, Synchronisierung).
 - Einrichtung · Bilanzpositionen & Verlauf: Konten nach Bereichen gruppiert, in der Reihenfolge unter „Bereiche“; doppelte Unterüberschriften in der Einrichtung entfallen.

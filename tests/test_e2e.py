@@ -776,6 +776,49 @@ class ImmoEngineTests(unittest.TestCase):
             mm_immo.berechne({"kaufpreis": 100, "uebergang": "kein-datum"}, TODAY)
 
 
+class LoginTouchIdTest(unittest.TestCase):
+    """Touch ID eingeschaltet: Anmeldeseite fragt nur Touch ID, Passwort erst auf Wunsch; ausgeschaltet: nur Passwort."""
+
+    def test_login_modes(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        import mm_auth
+        d = tempfile.mkdtemp(prefix="kontor-tid-")
+        key, src = load_or_create_master_key(d)
+        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        reset_mock(); patch_today()
+        old_av, old_ver = mm_auth.touchid_available, mm_auth.touchid_verify
+        mm_auth.touchid_available = lambda: True
+        mm_auth.touchid_verify = lambda reason=None: False          # Dialog abgebrochen
+        app = App(store, d, bridge_factory=MockBridge)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch(); pg = b.new_page()
+                pg.goto("http://127.0.0.1:%d/" % port)
+                self.assertTrue(pg.is_visible("#setup-tid"))                     # Einrichtung fragt nach Touch ID
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort")
+                pg.click("#login-btn"); pg.wait_for_selector("#shell:not(.hidden)")
+                self.assertTrue(store.load("config.json")["oberflaeche"]["touchid"])
+                pg.click("#lock-btn"); pg.wait_for_selector("#login:not(.hidden)")
+                pg.reload(); pg.wait_for_selector("#tid-box:not(.hidden)")
+                self.assertFalse(pg.is_visible("#login-pw")); self.assertTrue(pg.is_visible("#pw-instead"))
+                pg.click("#pw-instead"); self.assertTrue(pg.is_visible("#login-pw")); self.assertFalse(pg.is_visible("#tid-box"))
+                self.assertTrue(pg.is_visible("#tid-instead"))
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); pg.wait_for_selector("#shell:not(.hidden)")
+                # ausschalten -> nur Passwort
+                cfg = store.load("config.json"); cfg["oberflaeche"]["touchid"] = False; app.save_config(cfg)
+                pg.click("#lock-btn"); pg.wait_for_selector("#login:not(.hidden)"); pg.reload(); pg.wait_for_selector("#login-pw")
+                self.assertTrue(pg.is_visible("#login-pw")); self.assertFalse(pg.is_visible("#tid-box")); self.assertFalse(pg.is_visible("#tid-instead"))
+                b.close()
+        finally:
+            mm_auth.touchid_available, mm_auth.touchid_verify = old_av, old_ver
+            srv.shutdown(); srv.server_close(); shutil.rmtree(d, ignore_errors=True)
+
+
 class BereichOrderTests(unittest.TestCase):
     def test_default_order_main_private_first(self):
         accs = [F.acc("root", "Alle Konten", 0, "Kontengruppe", True),
@@ -801,6 +844,9 @@ class FeatureTests(_AppBase):
         code, ds = self.call("/api/dataset")
         P = ds["haupt"]; b = ds["bereiche"][P]
         self.assertIn(F.uid("priv.alt"), b["konten_inaktiv"])
+        self.assertEqual(b["konten_aktivitaet"][F.uid("priv.alt")], 9999); self.assertEqual(b["konten_aktivitaet"][F.uid("priv.giro")], 0)
+        code, kt = self.call("/api/konten")
+        self.assertEqual([x for x in kt["konten"] if x["uuid"] == F.uid("priv.alt")][0]["aktiv_grenze"], 9999)
         alt = [r for r in b["bilanz"]["zeilen"] if r["id"] == F.uid("priv.alt")][0]
         self.assertTrue(alt["inaktiv"])
         pos = [r for r in b["bilanz"]["zeilen"] if r["gruppe"]]
@@ -1262,6 +1308,8 @@ class FeatureTests(_AppBase):
         self.assertEqual(role("Darlehen an Firma", "Sonstiges", 1e5), "forderungen")             # Guthaben = Forderung
         self.assertEqual(role("Barkaution Mieter", "Sonstiges", -5000), "verbindlichkeiten")
         self.assertEqual(role("Kapitalkonto A", "Darlehenskonto", -1e5), "eigenkapital")
+        self.assertEqual(role("Kapitalkonto Alpha GbR", "Sonstiges", 1e5), "beteiligungen")                # privat mit Guthaben = eigener Anteil
+        self.assertEqual(role("Kapitalkonto A", "Sonstiges", 1e5, group="Alpha GbR"), "eigenkapital")       # in der Gesellschaft: Eigenkapital
         self.assertEqual(role("Mietaval Laden", "Darlehenskonto", -3e4), "eventual")
         self.assertEqual(role("Bausparer", "Sparkonto", 2e4), "anlagen")
         self.assertEqual(role("Sparkonto", "Sparkonto", 2e4, group="Anlagen"), "anlagen")      # Gruppe vor allgemeinem Typ
@@ -1420,10 +1468,25 @@ class BrowserTest(unittest.TestCase):
                     self.assertTrue(pg.query_selector("#main").inner_html().strip(), tab)
                     if shots: pg.screenshot(path=os.path.join(shots, "ui_%s.png" % tab), full_page=(tab in ("regeln", "einstellungen", "steuer", "planung", "hilfe", "bilanz", "einrichtung")))
                 # Bilanz: Positionen/Gruppen, inaktive, Konto-Klick -> Verlauf
-                pg.click("#nav a[href='#bilanz']"); pg.wait_for_selector("tr.acct")
+                pg.click("#nav a[href='#bilanz']"); pg.wait_for_selector("tr.pos")
                 self.assertIn("Liquidität", pg.query_selector("#main").inner_text())
+                # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
+                self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
+                self.assertTrue(pg.query_selector("#main thead th.plan")); self.assertNotIn("Fortschreibung", pg.query_selector("#main").inner_text())
+                pg.click("tr.pos[data-pos='liquiditaet']"); pg.wait_for_selector("tr.acct")
+                pg.click("#pos-all"); pg.wait_for_timeout(300)
+                # waagerecht zur aktuellen Spalte gescrollt (auch in der Jahresansicht)
+                self.assertGreater(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0)
+                pg.click("#modus-seg button[data-m='jahre']"); pg.wait_for_timeout(300)
+                self.assertIsNotNone(pg.query_selector("#main thead th[data-cur]"))
+                pg.click("#modus-seg button[data-m='monate']"); pg.wait_for_timeout(300)
+                # senkrecht: Position je Reiter, nicht vom einen in den anderen uebertragen
+                pg.set_viewport_size({"width": 1440, "height": 500}); pg.evaluate("window.scrollTo(0, 300)"); y_bil = pg.evaluate("window.scrollY")
+                pg.click("#nav a[href='#hilfe']"); pg.wait_for_timeout(300); self.assertEqual(pg.evaluate("window.scrollY"), 0)
+                pg.click("#nav a[href='#bilanz']"); pg.wait_for_timeout(400); self.assertEqual(pg.evaluate("window.scrollY"), y_bil)
+                pg.evaluate("window.scrollTo(0, 0)"); pg.set_viewport_size({"width": 1440, "height": 900})
                 pg.click(".seg button[data-v='gruppen']"); pg.wait_for_timeout(300)
-                self.assertIn("MoneyMoney-Gruppen", pg.query_selector_all("#main thead")[1].inner_text())
+                self.assertIn("MoneyMoney-Gruppen", pg.query_selector_all("#main thead")[0].inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_bilanz_gruppen.png"), full_page=True)
                 pg.click(".seg button[data-v='positionen']"); pg.wait_for_timeout(300)
                 pg.click("tr.acct[data-id='%s'] td" % F.uid("priv.depot")); pg.wait_for_selector("#drawer.open #h-grid")
@@ -1591,8 +1654,23 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("nettovermögen", pg.query_selector("#main").inner_text().lower())
                 msg = pg.evaluate("api('/api/plan', {bereich: 'x'}).then(() => 'ok').catch(e => e.message)")
                 self.assertIn("Offline", msg)
-                pg.click("#nav a[href='#bilanz']"); pg.wait_for_selector("tr.acct")
+                pg.click("#nav a[href='#bilanz']"); pg.wait_for_selector("tr.pos")
                 self.assertIn("Liquidität", pg.query_selector("#main").inner_text())
+                # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
+                self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
+                self.assertTrue(pg.query_selector("#main thead th.plan")); self.assertNotIn("Fortschreibung", pg.query_selector("#main").inner_text())
+                pg.click("tr.pos[data-pos='liquiditaet']"); pg.wait_for_selector("tr.acct")
+                pg.click("#pos-all"); pg.wait_for_timeout(300)
+                # waagerecht zur aktuellen Spalte gescrollt (auch in der Jahresansicht)
+                self.assertGreater(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0)
+                pg.click("#modus-seg button[data-m='jahre']"); pg.wait_for_timeout(300)
+                self.assertIsNotNone(pg.query_selector("#main thead th[data-cur]"))
+                pg.click("#modus-seg button[data-m='monate']"); pg.wait_for_timeout(300)
+                # senkrecht: Position je Reiter, nicht vom einen in den anderen uebertragen
+                pg.set_viewport_size({"width": 1440, "height": 500}); pg.evaluate("window.scrollTo(0, 300)"); y_bil = pg.evaluate("window.scrollY")
+                pg.click("#nav a[href='#hilfe']"); pg.wait_for_timeout(300); self.assertEqual(pg.evaluate("window.scrollY"), 0)
+                pg.click("#nav a[href='#bilanz']"); pg.wait_for_timeout(400); self.assertEqual(pg.evaluate("window.scrollY"), y_bil)
+                pg.evaluate("window.scrollTo(0, 0)"); pg.set_viewport_size({"width": 1440, "height": 900})
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_offline.png"), full_page=True)
                 # Am Mac selbst gibt es keine Offline-Ansicht: Dienst weg -> Hinweis und neuer Versuch
                 pg.evaluate("localStorage.removeItem('kontor.testRemote')")

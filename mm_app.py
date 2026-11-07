@@ -96,6 +96,8 @@ class App:
         self.ledger_cache_fp: Optional[str] = None
         self.ledger_from_cache = False
         threading.Thread(target=self._load_ledger_cache, name="kontor-cache", daemon=True).start()
+        if sys.platform == "darwin":          # Touch-ID-Helfer bei Bedarf (neu) uebersetzen
+            threading.Thread(target=lambda: log.info("Touch-ID-Helfer: %s", mm_auth.build_touchid()), name="kontor-touchid", daemon=True).start()
         self.restart_allowed = False        # nur der echte Dienst (serve) startet sich bei neuem Code selbst neu
         self.mm_probe: Tuple[float, Optional[bool]] = (0.0, None)     # (Zeitpunkt, gesperrt?)
         self.mm_retry_at: Optional[float] = None
@@ -139,6 +141,9 @@ class App:
                         "gruppe": bool(c.get("group", False)), "ebene": int(c.get("indentation") or 0),
                         "budget": b if b and b.get("amount") else None})
         return out
+
+    def touchid_on(self) -> bool:
+        return bool((self.config.get("oberflaeche") or {}).get("touchid", True))
 
     def config_has_rules(self) -> bool:
         c = self.config
@@ -513,7 +518,7 @@ class App:
             "bericht": self.bericht_status(),
             "neustart_ausstehend": self.code_changed(),
             "update": self.update_info,
-            "touchid": mm_auth.touchid_available() and loopback,
+            "touchid": mm_auth.touchid_available() and loopback, "touchid_aktiv": self.touchid_on(),
             "lokal": loopback,
         }
 
@@ -756,7 +761,8 @@ def make_handler(app: App):
                 return self._json(200, {"angemeldet": s is not None, "csrf": s["csrf"] if s else None,
                                         "einrichtung_noetig": not rec and self._loopback(),
                                         "einrichtung_nur_lokal": not rec and not self._loopback(),
-                                        "touchid": mm_auth.touchid_available() and self._loopback(),
+                                        "touchid": mm_auth.touchid_available() and self._loopback() and app.touchid_on(),
+                                        "touchid_verfuegbar": mm_auth.touchid_available() and self._loopback(),
                                         "gesperrt_sekunden": app.sessions.locked(self._remote()), "lokal": self._loopback(),
                                         "version": version()})
             s = self._session()
@@ -999,6 +1005,8 @@ def make_handler(app: App):
                 if err:
                     return self._json(400, {"fehler": err})
                 app.store.save("auth.json", mm_auth.with_offline(mm_auth.hash_password(str(body["passwort"])), str(body["passwort"])))
+                if isinstance(body.get("touchid"), bool):
+                    cfg = copy.deepcopy(app.config); cfg.setdefault("oberflaeche", {})["touchid"] = body["touchid"]; app.save_config(cfg)
                 s = app.sessions.create(remote, "passwort")
                 log.info("Passwort festgelegt, Einrichtung begonnen")
                 return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
@@ -1024,9 +1032,11 @@ def make_handler(app: App):
             if u.path == "/api/touchid":
                 if not self._loopback() or not mm_auth.touchid_available():
                     return self._json(403, {"fehler": "Touch ID nur an diesem Mac."})
+                if not app.touchid_on():
+                    return self._json(403, {"fehler": "Touch ID ist in den Einstellungen ausgeschaltet."})
                 if not app.auth_record():
                     return self._json(403, {"fehler": "Zuerst ein Passwort festlegen."})
-                if mm_auth.touchid_verify("Kontor entsperren"):
+                if mm_auth.touchid_verify():
                     s = app.sessions.create(remote, "touchid")
                     log.info("Anmeldung per Touch ID")
                     return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))

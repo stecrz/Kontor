@@ -338,17 +338,8 @@ def launchd_path(label: str = LAUNCHD_LABEL) -> str:
 
 
 def build_touchid() -> str:
-    src, out = os.path.join(HERE, "mm_touchid.swift"), os.path.join(HERE, "mm_touchid")
-    if sys.platform != "darwin":
-        return "nicht macOS"
-    try:
-        r = subprocess.run(["swiftc", "-O", "-o", out, src], capture_output=True, text=True, timeout=300)
-        if r.returncode == 0:
-            os.chmod(out, 0o755)
-            return "ok"
-        return "swiftc-Fehler: " + (r.stderr or r.stdout)[-300:]
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-        return "swiftc nicht verfügbar (%s) -- Xcode Command Line Tools: xcode-select --install" % e
+    import mm_auth
+    return mm_auth.build_touchid(force=True)
 
 
 def cmd_install(args) -> int:
