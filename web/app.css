@@ -300,3 +300,4 @@ textarea { width:100%; min-height:90px; font-family:ui-monospace, Menlo, monospa
 tr.pos { cursor:pointer; }
 .side .brand { cursor:pointer; } .side .brand #ver:hover { color:var(--accent-fg); text-decoration:underline; }
 h2.sub-h { margin-top:0; }
+.drop.busy { opacity:.6; pointer-events:none; }

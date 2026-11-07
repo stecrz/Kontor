@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.9.7
+- Depot-Historie aus MoneyMoney, Schritt 1, ohne jede macOS-Freigabe: Die Datei „MoneyMoney.sqlite“ wird unter Synchronisierung ins Fenster gezogen (bleibt verschlüsselt bis in den Arbeitsspeicher). Das Passwortfenster wird nur für diesen Vorgang erzeugt und danach gelöscht; Schlüssel und entschlüsselte Daten liegen nur in Puffern, die danach mit Nullen überschrieben werden; SQLite schreibt keine Zwischendateien. Kein sqlcipher nötig.
+- Der vorab übersetzte Passwort-Helfer aus 3.9.6 wird beim Start entfernt.
+- `CLAUDE.md` mit den Projektregeln (Prüfen, Version, Sicherheit).
+
 ## 3.9.6
 - Depot-Historie aus MoneyMoney, Schritt 1 (Synchronisierung → Depots): „Datenbank prüfen“ liest den Aufbau von MoneyMoneys Datenbank. Das Passwort gibst du in einem eigenen macOS-Fenster ein (kleiner Helfer, wird beim Start übersetzt); Kontor erhält nur den daraus berechneten Schlüssel, entschlüsselt nur im Arbeitsspeicher (macOS CommonCrypto, keine Kopie auf der Festplatte, kein Fremdprogramm), nur lesend und nur bei beendetem MoneyMoney. Währenddessen keine Update-Prüfung.
 - Sparsamer im Hintergrund: ohne laufendes MoneyMoney nur einmal pro Minute ein kurzer Blick, mit MoneyMoney alle 30 Sekunden.

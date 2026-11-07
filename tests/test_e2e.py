@@ -487,37 +487,85 @@ class AppTests(_AppBase):
             MA.is_running = MB.is_running
 
     def test_historie_aus_moneymoney_pruefen(self):
-        """Schritt 1: Datenbank nur im Speicher entschluesseln (Passwort nie in Kontor), nur Aufbau schreiben; MoneyMoney muss beendet sein."""
+        """Schritt 1: hochgeladene (verschluesselte) Datenbank nur im Speicher entschluesseln, Passwort nie in Kontor,
+        nur Aufbau schreiben; MoneyMoney muss beendet sein; keine Datei, keine Freigabe."""
         import hashlib, shutil as sh, subprocess as sp, mm_historie as H, mm_app as MA
         if not sh.which("sqlcipher"):
             self.skipTest("sqlcipher fuer die Testdatenbank fehlt")
         self.login()
-        db = os.path.join(self.dir, "MoneyMoney.sqlite")
-        sp.run(["sqlcipher", db], input="PRAGMA key = 'ge''heim';\nCREATE TABLE balances(account INTEGER, date REAL, balance REAL);\n"
-               "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<500) INSERT INTO balances SELECT i, 7e8+i, 4711.5 FROM n;\n",
-               capture_output=True, text=True, check=True)
-        old = (H.DB_PATH, H.keys_from_dialog, MA.is_running)
-        H.DB_PATH = db
-        H.keys_from_dialog = lambda salt: [hashlib.pbkdf2_hmac(h, "ge'heim".encode(), salt, r, 32) for _n, h, r in H.FORMATS]
+
+        def upload(data, csrf=True):
+            req = urllib.request.Request("http://127.0.0.1:%d/api/historie/mm-pruefen" % self.port, data=data, method="POST")
+            req.add_header("Content-Type", "application/octet-stream")
+            if csrf:
+                req.add_header("X-CSRF-Token", self.csrf)
+            try:
+                with self.opener.open(req) as r:
+                    return r.status, json.loads(r.read().decode())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read().decode() or "{}")
+
+        def make(sql, compat=None):
+            db = os.path.join(self.dir, "MoneyMoney.sqlite")
+            if os.path.exists(db):
+                os.remove(db)
+            pre = "PRAGMA key = 'ge''heim';\n" + ("PRAGMA cipher_compatibility = %d;\n" % compat if compat else "")
+            sp.run(["sqlcipher", db], input=pre + sql, capture_output=True, text=True, check=True)
+            with open(db, "rb") as f:
+                return f.read()
+        data = make("CREATE TABLE balances(account INTEGER, date REAL, balance REAL);\n"
+                    "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<500) INSERT INTO balances SELECT i, 7e8+i, 4711.5 FROM n;\n")
+        old = (H.keys_from_dialog, MA.is_running)
+        H.keys_from_dialog = lambda salt: [bytearray(hashlib.pbkdf2_hmac(h, "ge'heim".encode(), salt, r, 32)) for _n, h, r in H.FORMATS]
         try:
+            self.assertEqual(upload(data, csrf=False)[0], 403)                         # ohne CSRF-Token abgewiesen
             MA.is_running = lambda: True
-            code, r = self.call("/api/historie/mm-pruefen", {}); self.assertFalse(r["ok"]); self.assertIn("beenden", r["text"])
+            code, r = upload(data); self.assertFalse(r["ok"]); self.assertIn("beenden", r["text"])
             MA.is_running = lambda: False
-            code, r = self.call("/api/historie/mm-pruefen", {}); self.assertTrue(r["ok"], r); self.assertEqual(r["tabellen"], 1)
+            code, r = upload(b"SQLite format 3\x00" + b"\0" * 4096); self.assertFalse(r["ok"])          # unverschluesselt -> nein
+            code, r = upload(data); self.assertTrue(r["ok"], r); self.assertEqual(r["tabellen"], 1)
             txt = open(os.path.join(os.path.dirname(H.__file__), "mm-historie-aufbau.txt"), encoding="utf-8").read()
             self.assertIn("balances  (500 Zeilen)", txt); self.assertNotIn("4711", txt); self.assertNotIn("heim", txt)
             self.assertFalse(H.AKTIV.is_set())
-            # aelteres Format (SQLCipher 3, wie MoneyMoney es nutzt) wird ebenfalls erkannt
-            os.remove(db); sp.run(["sqlcipher", db], input="PRAGMA key = 'ge''heim';\nPRAGMA cipher_compatibility = 3;\nCREATE TABLE a(x);\nINSERT INTO a VALUES(1);\n",
-                                  capture_output=True, text=True, check=True)
-            code, r = self.call("/api/historie/mm-pruefen", {}); self.assertTrue(r["ok"], r); self.assertEqual(r["format"], "SQLCipher 3")
-            H.keys_from_dialog = lambda salt: [hashlib.pbkdf2_hmac(h, b"falsch", salt, r, 32) for _n, h, r in H.FORMATS]
-            code, r = self.call("/api/historie/mm-pruefen", {}); self.assertFalse(r["ok"]); self.assertIn("Passwort falsch", r["text"])
+            self.assertFalse([f for f in os.listdir(self.dir) if f.startswith("kontor-") or f.endswith(".sqlite") and f != "MoneyMoney.sqlite"])
+            # aelteres Format (SQLCipher 3) wird ebenfalls erkannt
+            code, r = upload(make("CREATE TABLE a(x);\nINSERT INTO a VALUES(1);\n", compat=3)); self.assertTrue(r["ok"], r); self.assertEqual(r["format"], "SQLCipher 3")
+            H.keys_from_dialog = lambda salt: [bytearray(hashlib.pbkdf2_hmac(h, b"falsch", salt, r, 32)) for _n, h, r in H.FORMATS]
+            code, r = upload(data); self.assertFalse(r["ok"]); self.assertIn("Passwort falsch", r["text"])
         finally:
-            H.DB_PATH, H.keys_from_dialog, MA.is_running = old
+            H.keys_from_dialog, MA.is_running = old
             p = os.path.join(os.path.dirname(H.__file__), "mm-historie-aufbau.txt")
             if os.path.exists(p):
                 os.remove(p)
+
+    def test_historie_puffer_werden_ueberschrieben(self):
+        """Schluessel und Klartext liegen nur in Puffern, die nach dem Lesen mit Nullen ueberschrieben sind."""
+        import hashlib, shutil as sh, subprocess as sp, mm_historie as H
+        if not sh.which("sqlcipher"):
+            self.skipTest("sqlcipher fehlt")
+        db = os.path.join(self.dir, "w.sqlite")
+        sp.run(["sqlcipher", db], input="PRAGMA key = 'x';\nCREATE TABLE t(a);\nINSERT INTO t VALUES('GEHEIMER-INHALT');\n", capture_output=True, text=True, check=True)
+        raw = open(db, "rb").read()
+        seen = {}
+
+        def keys(salt):
+            seen["keys"] = [bytearray(hashlib.pbkdf2_hmac(h, b"x", salt, r, 32)) for _n, h, r in H.FORMATS]
+            return seen["keys"]
+        orig = H.decrypt_into
+
+        def spy(r, k):
+            out, fmt = orig(r, k)
+            seen["plain"] = out
+            self.assertIn(b"GEHEIMER-INHALT", bytes(out))
+            return out, fmt
+        H.decrypt_into = spy
+        try:
+            tables, fmt = H.read_schema(raw, keys_fn=keys)
+        finally:
+            H.decrypt_into = orig
+        self.assertEqual(tables[0]["name"], "t")
+        self.assertTrue(all(not any(k) for k in seen["keys"]))                     # Schluessel genullt
+        self.assertFalse(any(seen["plain"]))                                       # Klartext genullt
 
     def test_lesefehler_wird_gemeldet(self):
         """MoneyMoney laeuft, Kontor kann aber nicht lesen (z. B. Berechtigung) -> Hinweis; erfolgreiches Lesen nimmt ihn zurueck."""

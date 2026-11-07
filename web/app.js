@@ -36,7 +36,7 @@ const H = {
   verlauf_import: 'Datei mit Monats- oder Tagesständen. Spalten werden automatisch erkannt; Kontonamen aus der Datei ordnest du den Konten in Kontor zu (Vorschlag per Namensähnlichkeit). Mehrere Werte je Monat: der letzte zählt.',
   inaktiv: 'Gilt für Konten mit Anzeige „nach Aktivität“: ohne Bestand und ohne Umsatz in den letzten N Monaten (z. B. Altdaten) werden sie ausgeblendet, bleiben aber in Summen und Historie enthalten. 0 = nie automatisch ausblenden.',
   probelauf: 'Im Testmodus schlägt Kontor die Buchungen aus deinen Regeln (z. B. Darlehenszinsen) nur vor und legt nichts in MoneyMoney an. Zum Anlegen unter „Buchungen“ auf „Jetzt buchen“ klicken oder den Testmodus abschalten.',
-  mmhist: 'Sicherheit: Das Passwort bleibt im Fenster eines kleinen macOS-Helfers; Kontor erhält nur einen daraus berechneten Schlüssel für genau diese Datenbank (über eine interne Verbindung, nicht über das Netz, nie gespeichert). Entschlüsselt wird nur im Arbeitsspeicher, es entsteht keine unverschlüsselte Kopie; gelesen werden nur Aufbau bzw. Kontostände, nie Zugangsdaten. Während des Lesens prüft Kontor auch nicht auf Updates. macOS fragt beim ersten Mal, ob python3 auf Daten von MoneyMoney zugreifen darf.',
+  mmhist: 'Sicherheit: Die Datei bleibt verschlüsselt, bis sie bei Kontor im Arbeitsspeicher ankommt (nur auf diesem Mac, über 127.0.0.1). Dein Passwort gibst du in einem macOS-Fenster ein, das Kontor nur für diesen Vorgang erzeugt und danach löscht; Kontor erhält nur einen daraus berechneten Schlüssel. Entschlüsselt wird nur im Arbeitsspeicher, danach wird alles überschrieben – keine Datei, keine dauerhafte Freigabe, keine Netzverbindung währenddessen. Gelesen werden nur Aufbau bzw. Depotstände, nie Zugangsdaten.',
   depotverlauf: 'MoneyMoney stellt über seine Schnittstelle nur den aktuellen Depotwert bereit, nicht die Kurve. Kontor speichert deshalb bei jedem Lesen den Stand fürs Monatsende. Ältere Monate: im Verlauf-Fenster eintragen (z. B. die Monatsend-Werte aus MoneyMoneys Kurve oder aus Depotauszügen) oder als Datei importieren; davor steht „unbekannt“. Geschätzt wird nichts.',
   abruf: 'Stand je Konto in dem Datenstand, den Kontor zuletzt aus MoneyMoney gelesen hat. „zurück“ = mehr als einen Tag älter als der neueste Abruf (Konten mit Saldo). „ruht“ = seit über N Monaten kein Abruf (vermutlich aufgelöst). Offline-Konten erkennt Kontor an fehlender Bank-/Kontonummer, an Regeln, die in das Konto buchen, und an Kontor-Buchungen; MoneyMoney setzt den Abrufzeitpunkt auch bei Offline-Konten, deshalb zählt er allein nicht.',
   touchid: 'Eingeschaltet: Die Anmeldung am Mac fragt nur nach Touch ID (oder Apple Watch); das Passwortfeld erscheint erst nach Klick auf „Stattdessen Passwort eingeben“. Ausgeschaltet: nur Passwort. Am iPhone gilt immer das Passwort.',
@@ -342,6 +342,7 @@ function statusMini() {
 }
 const BER = {stand: '', timer: null};
 const SYNC = {busy: false};
+const MMH = {busy: false};
 const DATA_TABS = ['uebersicht', 'bilanz', 'kapitalfluss', 'planung', 'steuer', 'depots', 'immobilien', 'umsaetze', 'zuordnen', 'buchungen'];
 async function pollStatus() {
   // Status holen; läuft ein Berichtsneubau, öfter nachsehen und nach Abschluss die Daten frisch laden
@@ -994,7 +995,7 @@ async function vSync() {
   if (m.problem) h += `<div class="banner err">MoneyMoney lief am ${esc(fmtZeit(m.problem.zeit))}, Kontor konnte aber nicht lesen: ${esc(m.problem.text)} – ohne Lesen fehlen Depotstände. Der Hinweis verschwindet beim nächsten erfolgreichen Lesen.</div>`;
   if ((r.luecken || []).length) h += `<div class="banner">Möglicherweise fehlen Depotstände – MoneyMoney hat abgerufen, während Kontor nicht lief: ${r.luecken.map(l => `<b>${esc(l.name)}</b> ${l.monate.map(ML).join(', ')}`).join('; ')}. Die Monate im Verlauf-Fenster prüfen. <button class="small secondary" id="gap-ok">Hinweis ausblenden</button></div>`;
   if (dep.length) h += `<h2>Depots: Wertverlauf ${hq('depotverlauf')}</h2><div class="note">Bankkonten rechnet Kontor exakt aus den Umsätzen in MoneyMoney zurück – auch rückwirkend. Den Wertverlauf von Depots gibt MoneyMoney nicht heraus; den zeichnet Kontor selbst auf (seit ${r.aufzeichnung_seit ? ML(r.aufzeichnung_seit) : 'heute'}). Der Dienst läuft ab der Anmeldung im Hintergrund, auch ohne geöffnetes Kontor-Fenster, und liest innerhalb von etwa 20 Sekunden, sobald MoneyMoney offen und entsperrt ist – ein kurzer Blick in MoneyMoney genügt. Jeder Stand zählt für den Monat, in dem MoneyMoney ihn abgerufen hat. Rief MoneyMoney ab, während Kontor nicht lief, erscheint hier ein Hinweis.</div>
-    ${st.lokal ? `<div class="card" style="margin:8px 0 12px"><b>Historie aus MoneyMoney einlesen</b> ${hq('mmhist')}<div class="small muted" style="margin:4px 0 8px">Für den Start und falls einmal etwas fehlt: Kontor liest die gespeicherten Depotstände direkt aus MoneyMoney – nur lesend, nur im Arbeitsspeicher, ohne Netzverbindung. Dein Passwort gibst du in einem eigenen macOS-Fenster ein; Kontor selbst sieht es nie. Vorher MoneyMoney beenden (⌘Q). Schritt 1 liest nur den Aufbau der Datenbank (Tabellennamen), damit die Übernahme genau passt.</div><button id="mmh-check" class="small" ${m.historie_helfer ? '' : 'disabled title="Passwortfenster wird noch übersetzt (Xcode Command Line Tools nötig)"'}>Datenbank prüfen (Schritt 1)</button><div id="mmh-res" class="findings"></div></div>` : ''}
+    ${st.lokal ? `<div class="card" style="margin:8px 0 12px"><b>Historie aus MoneyMoney einlesen</b> ${hq('mmhist')}<div class="small muted" style="margin:4px 0 8px">Für den Start und falls einmal etwas fehlt. 1. In MoneyMoney „Hilfe → Datenbank im Finder anzeigen“, dann MoneyMoney beenden (⌘Q). 2. Die Datei „MoneyMoney.sqlite“ hierher ziehen. 3. Im erscheinenden macOS-Fenster das MoneyMoney-Passwort eingeben. Kontor braucht dafür keine Freigabe, speichert nichts davon und sieht das Passwort nie. Schritt 1 liest nur den Aufbau der Datenbank (Tabellennamen), damit die Übernahme genau passt.</div><div class="drop" id="mmh-drop">MoneyMoney.sqlite hierher ziehen<br><button id="mmh-pick" class="small" style="margin-top:8px">Datei wählen</button><input type="file" id="mmh-file" class="hidden"></div><div id="mmh-res" class="findings"></div></div>` : ''}
     <div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>Depot</th><th>Bereich</th><th>Bekannt ab</th><th></th></tr></thead><tbody>${dep.map(k => `<tr data-uuid="${k.uuid}"><td>${esc(k.name)}<div class="small muted">${esc(k.pfad.split(' / ').slice(0, -1).join(' / '))}</div></td><td class="small">${esc(k.bereich || '–')}</td><td>${k.erster_stand ? ML(k.erster_stand) : '–'}${k.eigene ? ` <span class="small muted">(${k.eigene} eingetragen)</span>` : ''}</td><td class="c"><button class="small secondary dep-hist">Stände eintragen</button></td></tr>`).join('')}</tbody></table></div>`;
   h += `<h2>Konten mit Bankabruf (${online.length}) ${hq('abruf')}</h2><div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>Konto</th><th>Bereich</th><th>Letzter Abruf</th><th>Stand</th><th class="c">abgerufen</th></tr></thead><tbody>${online.map(row).join('') || '<tr><td colspan="5" class="muted">keine</td></tr>'}</tbody></table></div>`;
   h += `<h2>Ohne Bankabruf (${offline.length})</h2><div class="note">Von Hand geführte Konten (z. B. Kapitalkonten, private Darlehen, Immobilien) – sie zählen nicht für den Datenstand. Falsch erkannt? Häkchen bei „abgerufen“ setzen bzw. oben entfernen.</div>
@@ -1915,12 +1916,25 @@ function bind(main) {
   $$('.k-hist', main).forEach(b => b.addEventListener('click', async e => { const btn = e.target; btn.classList.add('busy'); try { const tr = btn.closest('tr'), sel = $('.k-verlauf', tr); await openHistDrawer(tr.dataset.uuid, sel ? sel.value : null); } catch (er) { toast('Verlauf konnte nicht geladen werden: ' + er.message, 6000); } finally { btn.classList.remove('busy'); } }));
   const hp = $('#hi-pick', main); if (hp) hp.addEventListener('click', () => { const inp = $('#file-input'); inp.value = ''; inp.setAttribute('accept', '.csv,.txt,.xlsx,.xlsm'); inp.removeAttribute('capture'); inp.onchange = () => { if (inp.files[0]) histImportPreview(inp.files[0]); }; inp.click(); });
   const hd = $('#hi-drop', main); if (hd) { hd.addEventListener('dragover', e => { e.preventDefault(); hd.classList.add('over'); }); hd.addEventListener('dragleave', () => hd.classList.remove('over')); hd.addEventListener('drop', e => { e.preventDefault(); hd.classList.remove('over'); if (e.dataTransfer.files[0]) histImportPreview(e.dataTransfer.files[0]); }); if (HI) renderHistImport(); }
-  const mh = $('#mmh-check', main); if (mh) mh.addEventListener('click', async () => {
-    const res = $('#mmh-res', main); mh.classList.add('busy'); mh.disabled = true; res.innerHTML = '<div class="ok">Passwortfenster beachten …</div>';
-    try { const r = await api('/api/historie/mm-pruefen', {}); showFindings(res, [], r.ok ? `Aufbau gelesen (${r.format}, ${r.tabellen} Tabellen). Als Nächstes folgt die Übernahme der Depotstände.` : r.text, r.ok ? 'ok' : 'fehler'); }
-    catch (e) { showFindings(res, [], e.message, 'fehler'); }
-    finally { mh.classList.remove('busy'); mh.disabled = false; }
-  });
+  const md = $('#mmh-drop', main); if (md) {
+    const send = async file => {
+      // Datei (verschlüsselt) direkt als Bytes an den Dienst auf diesem Mac; nichts wird gespeichert
+      const res = $('#mmh-res', main); if (!file) return;
+      if (MMH.busy) return; MMH.busy = true; md.classList.add('busy'); res.innerHTML = '<div class="ok">Gleich erscheint das Passwortfenster von macOS …</div>';
+      try {
+        const r = await fetch('/api/historie/mm-pruefen', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/octet-stream', 'X-CSRF-Token': S.csrf, 'X-Kontor-Net': 'direct'}, body: file});
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.fehler || ('Fehler ' + r.status));
+        showFindings(res, [], j.ok ? `Aufbau gelesen (${j.format}, ${j.tabellen} Tabellen). Als Nächstes folgt die Übernahme der Depotstände.` : j.text, j.ok ? 'ok' : 'fehler');
+      } catch (e) { showFindings(res, [], e.message, 'fehler'); }
+      finally { MMH.busy = false; md.classList.remove('busy'); }
+    };
+    md.addEventListener('dragover', e => { e.preventDefault(); md.classList.add('over'); });
+    md.addEventListener('dragleave', () => md.classList.remove('over'));
+    md.addEventListener('drop', e => { e.preventDefault(); md.classList.remove('over'); send(e.dataTransfer.files[0]); });
+    $('#mmh-pick', main).addEventListener('click', () => $('#mmh-file', main).click());
+    $('#mmh-file', main).addEventListener('change', e => { send(e.target.files[0]); e.target.value = ''; });
+  }
   const go = $('#gap-ok', main); if (go) go.addEventListener('click', async () => { try { await api('/api/abruf/luecken', {}); S.STATUS = await api('/api/status'); statusMini(); route(); } catch (e) { toast(e.message, 5000); } });
   $$('.dep-hist', main).forEach(b => b.addEventListener('click', async () => { b.classList.add('busy'); try { await openHistDrawer(b.closest('tr').dataset.uuid); } catch (e) { toast(e.message, 6000); } finally { b.classList.remove('busy'); } }));
   const sn = $('#sync-now', main); if (sn) sn.addEventListener('click', async () => { sn.classList.add('busy'); try { await syncNow(); } finally { sn.classList.remove('busy'); } });

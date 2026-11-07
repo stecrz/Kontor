@@ -19,6 +19,7 @@ import json
 import logging
 import mimetypes
 import os
+import shutil
 import ssl
 import subprocess
 import sys
@@ -97,9 +98,9 @@ class App:
         self.ledger_cache_fp: Optional[str] = None
         self.ledger_from_cache = False
         threading.Thread(target=self._load_ledger_cache, name="kontor-cache", daemon=True).start()
+        shutil.rmtree(os.path.join(HERE, ".historie"), ignore_errors=True)     # Passwort-Helfer aus 3.9.6: wird nur noch kurz erzeugt
         if sys.platform == "darwin":          # Touch-ID-Helfer bei Bedarf (neu) uebersetzen
-            threading.Thread(target=lambda: log.info("Touch-ID-Helfer: %s; Passwort-Helfer Historie: %s", mm_auth.build_touchid(), mm_historie.build_helper()),
-                             name="kontor-helfer", daemon=True).start()
+            threading.Thread(target=lambda: log.info("Touch-ID-Helfer: %s", mm_auth.build_touchid()), name="kontor-touchid", daemon=True).start()
         self.restart_allowed = False        # nur der echte Dienst (serve) startet sich bei neuem Code selbst neu
         self.mm_probe: Tuple[float, Optional[bool]] = (0.0, None)     # (Zeitpunkt, gesperrt?)
         self.mm_retry_at: Optional[float] = None
@@ -594,7 +595,6 @@ class App:
             "moneymoney": {"laeuft": is_running(), "gesperrt": self.moneymoney_gesperrt(max_age=3.0 if frisch else 45.0), "aus_zwischenspeicher": self.ledger_from_cache,
                            "stand": self.ledger_time.strftime("%Y-%m-%d %H:%M") if self.ledger_time else None,
                            "bankabruf": self.bankabruf(), "luecken": len(st.get("luecken") or []), "problem": st.get("abgleich_problem"),
-                           "historie_helfer": mm_historie.helper_available(),
                            "kategorisieren_erlaubt": bool((self.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False))},
             "ablage": {"verschluesselt": self.store.encrypted, "schluessel": self.store.key_source, "ordner": self.data_dir},
             "belege": {"ordner": os.path.expanduser(bcfg.get("ordner") or "~/Documents/Kontor-Belege")},
@@ -1000,6 +1000,33 @@ def make_handler(app: App):
                 return self._json(200, {"status": st, "groesse": os.path.getsize(full) if st == "ok" else None})
             return self._json(404, {"fehler": "unbekannt"})
 
+        def _historie_pruefen(self, s: dict):
+            """Depot-Historie aus MoneyMoney, Schritt 1: Aufbau der hochgeladenen (verschluesselten) Datenbank lesen.
+            Die Datei bleibt nur im Arbeitsspeicher; das Passwort erreicht Kontor nie (eigenes Fenster des Helfers)."""
+            if not self._is_local(s):
+                return self._json(403, {"fehler": "Nur direkt am Mac möglich."})
+            if mm_historie.AKTIV.is_set():
+                return self._json(409, {"fehler": "Läuft bereits – bitte das Passwortfenster beachten."})
+            n = int(self.headers.get("Content-Length") or 0)
+            if n <= 0 or n > mm_historie.MAX_DB:
+                return self._json(400, {"fehler": "Keine oder zu große Datei."})
+            raw = self.rfile.read(n)
+            try:
+                if is_running():
+                    return self._json(200, {"ok": False, "text": "Bitte MoneyMoney zuerst beenden (⌘Q) und die Datei danach erneut hierher ziehen – sonst ist sie unvollständig."})
+                tables, fmt = mm_historie.read_schema(raw)
+            except mm_historie.HistorieError as e:
+                if str(e) != "abgebrochen":
+                    log.info("MoneyMoney-Datenbank nicht gelesen: %s", str(e)[:120])
+                return self._json(200, {"ok": False, "text": "Abgebrochen." if str(e) == "abgebrochen" else str(e)})
+            finally:
+                raw = b""
+            datei = os.path.join(HERE, "mm-historie-aufbau.txt")
+            with open(datei, "w", encoding="utf-8") as f:
+                f.write(mm_historie.schema_text(tables, fmt))
+            log.info("MoneyMoney-Datenbank geprüft (%s): %d Tabellen", fmt, len(tables))
+            return self._json(200, {"ok": True, "tabellen": len(tables), "format": fmt})
+
         def _historie(self, uuid: str, quelle: Optional[str] = None) -> dict:
             """Verlauf eines Kontos fuer das Verlauf-Fenster. Mit MoneyMoney-Stand im Speicher direkt fuer dieses eine Konto
             gerechnet (Millisekunden, unabhaengig vom Neubau der gesamten Auswertung), sonst aus dem letzten Bericht."""
@@ -1087,7 +1114,7 @@ def make_handler(app: App):
             if not u.path.startswith("/api/") or not self._origin_ok():
                 return self._json(403, {"fehler": "abgelehnt"})
             try:
-                body = self._body(MAX_UPLOAD if u.path == "/api/belege/upload" else MAX_BODY)
+                body = {} if u.path == "/api/historie/mm-pruefen" else self._body(MAX_UPLOAD if u.path == "/api/belege/upload" else MAX_BODY)
             except (ValueError, json.JSONDecodeError) as e:
                 return self._json(400, {"fehler": "Ungültige Anfrage: %s" % e})
             remote = self._remote()
@@ -1141,6 +1168,8 @@ def make_handler(app: App):
                 return self._json(401, {"fehler": "nicht angemeldet"})
             if self.headers.get("X-CSRF-Token") != s["csrf"]:
                 return self._json(403, {"fehler": "CSRF-Prüfung fehlgeschlagen -- Seite neu laden."})
+            if u.path == "/api/historie/mm-pruefen":
+                return self._historie_pruefen(s)
             t0 = time.time()
             log.debug("%s %s von %s (%d Bytes%s)", self.command, u.path, remote, len(json.dumps(body)) if body else 0, ", Mac" if self._is_local(s) else "")
             try:
@@ -1211,23 +1240,6 @@ def make_handler(app: App):
                                             "kategorien": app.categories()})
                 finally:
                     app.check_lock.release()
-            if path == "/api/historie/mm-pruefen":
-                # Depot-Historie aus MoneyMoney, Schritt 1: Aufbau lesen. Passwort erreicht Kontor nie (Dialog des Helfers).
-                if not local:
-                    return self._json(403, {"fehler": "Nur direkt am Mac möglich."})
-                if mm_historie.AKTIV.is_set():
-                    return self._json(409, {"fehler": "Läuft bereits – bitte das Passwortfenster beachten."})
-                try:
-                    tables, fmt = mm_historie.read_database(is_running=is_running)
-                except mm_historie.HistorieError as e:
-                    if str(e) != "abgebrochen":
-                        log.info("MoneyMoney-Datenbank nicht gelesen: %s", str(e)[:120])
-                    return self._json(200, {"ok": False, "text": "Abgebrochen." if str(e) == "abgebrochen" else str(e)})
-                datei = os.path.join(HERE, "mm-historie-aufbau.txt")
-                with open(datei, "w", encoding="utf-8") as f:
-                    f.write(mm_historie.schema_text(tables, fmt))
-                log.info("MoneyMoney-Datenbank geprüft (%s): %d Tabellen", fmt, len(tables))
-                return self._json(200, {"ok": True, "tabellen": len(tables), "format": fmt})
             if path == "/api/abruf/luecken":
                 app.store.update("state.json", lambda cur: cur.pop("luecken", None), {})
                 return self._json(200, {"ok": True})
