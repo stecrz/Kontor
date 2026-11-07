@@ -79,7 +79,7 @@ Der Dienst startet beim Anmelden, läuft dauerhaft und startet nach Abstürzen n
 
 **Einstellungspakete.** `….kontor.json` enthält Regeln, Bereiche, Bilanzpositionen, Immobilien, Kategorie- und Steuerzuordnungen – ohne Passwörter, Adresse, Port oder Daten (IBANs aus Darlehensregeln sind enthalten). Export mit UUIDs (gleiche MoneyMoney-Installation) oder als Pfade/Namen (andere Installation). Beim Laden werden Konten zugeordnet; was nicht gefunden wird, ordnest du in der Oberfläche zu. Modus „Ergänzen“ ersetzt gleichnamige Regeln, Bereiche und Immobilien mit gleicher Kennung und überschreibt Zuordnungen, „Ersetzen“ verwirft die vorhandene Konfiguration. Vorlagen liegen unter `templates/`.
 
-**Betrieb.** Alle N Minuten (Standard 30) prüft der Dienst, ob MoneyMoney läuft und entsperrt ist, liest die Daten und führt Regeln aus – nur wenn sich etwas geändert hat. Ist MoneyMoney zu oder gesperrt, passiert nichts; der nächste Lauf holt alles nach. Mitteilungen bei Buchungen, Vorschlägen und Fehlern.
+**Betrieb.** Alle N Minuten (Standard 30) prüft der Dienst, ob MoneyMoney läuft und entsperrt ist, liest die Daten und führt Regeln aus – nur wenn sich etwas geändert hat. Ist MoneyMoney zu oder gesperrt, passiert nichts; der nächste Lauf holt alles nach. Neue Daten in MoneyMoney (Bankabruf) lösen einen Lauf aus, sobald der Abruf dort fertig ist. Ein Lauf liest nur die Umsätze der letzten drei Monate und übernimmt ältere aus dem letzten vollständigen Lesen; vollständig gelesen wird alle N Stunden (Standard 24, nachts schon nach der Hälfte), nach eigenen Buchungen in MoneyMoney und mit „Alles neu lesen“ (Synchronisierung). Ein Bankabruf ohne neue Daten löst keine Neuberechnung aus. Mitteilungen bei Buchungen, Vorschlägen und Fehlern.
 
 ## Vom iPhone
 

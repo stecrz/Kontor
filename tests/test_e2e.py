@@ -353,6 +353,60 @@ class CoreTests(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(prog, "tests")))
 
 
+class IncrementalReadTests(unittest.TestCase):
+    """Schnelles Lesen: nur die letzten drei Monate aus MoneyMoney, aeltere Umsaetze aus dem letzten vollstaendigen Stand."""
+    def setUp(self):
+        reset_mock(); patch_today()
+        self.cfg = core.merged_config(config_for_test("/tmp/kontor-belege-test"))
+
+    def test_merge_equals_full_read(self):
+        from datetime import datetime as dt
+        full = core.fetch(MockBridge(True), self.cfg, TODAY)
+        self.assertFalse(full.incremental); self.assertIsNotNone(full.full_at)
+        # In-Memory-Ueberlagerungen des letzten Stands (Probelauf-Buchung, Kontor-Kategorie) duerfen nicht mitwandern
+        full.post(F.uid("priv.giro"), TODAY, -1.0, "Probelauf", "x")
+        old = next(t for t in full.txs if t.id > 0 and t.booking_date < TODAY - timedelta(days=200))
+        old.mm_category_path, old.category_path = old.category_path, "Kontor \\ Eigene"
+        # in MoneyMoney: neuer Umsatz heute, ein vorgemerkter verschwindet
+        MockBridge.state["txs"].append(F.tx("priv.giro", TODAY, -42.0, "Bäcker", "Brot", "Haushalt\\Lebensmittel"))
+        pend = F.tx("priv.giro", TODAY - timedelta(days=2), -9.0, "Kiosk", "vorgemerkt", booked=False)
+        MockBridge.state["txs"].append(pend)
+        mid = core.fetch(MockBridge(True), self.cfg, TODAY, base=core.fetch(MockBridge(True), self.cfg, TODAY), full=False)
+        self.assertIn(pend["id"], {t.id for t in mid.txs})
+        MockBridge.state["txs"].remove(pend)
+        inc = core.fetch(MockBridge(True), self.cfg, TODAY, base=full, full=False)
+        ref = core.fetch(MockBridge(True), self.cfg, TODAY)
+        self.assertTrue(inc.incremental); self.assertEqual(inc.full_at, full.full_at)
+        self.assertNotIn(pend["id"], {t.id for t in inc.txs})                 # in MoneyMoney geloescht -> weg
+        self.assertFalse([t for t in inc.txs if t.id < 0])                    # keine Probelauf-Buchungen
+        o2 = next(t for t in inc.txs if t.id == old.id)
+        self.assertEqual(o2.category_path, old.mm_category_path); self.assertIsNone(o2.mm_category_path)
+        self.assertEqual([t.id for t in inc.txs], [t.id for t in ref.txs])     # gleiche Umsaetze wie beim vollstaendigen Lesen
+        self.assertEqual(core.fingerprint(inc), core.fingerprint(ref))
+        # anderer Zeitraum (Historie geaendert) -> vollstaendig
+        cfg2 = dict(self.cfg, bilanz=dict(self.cfg["bilanz"], monate_zurueck=6))
+        self.assertFalse(core.fetch(MockBridge(True), cfg2, TODAY, base=full, full=False).incremental)
+        # Cache behaelt Zeitraum und Zeitpunkt des vollstaendigen Lesens
+        from model import ledger_from_bytes, ledger_to_bytes
+        back, _ = ledger_from_bytes(ledger_to_bytes(full))
+        self.assertEqual((back.since, back.full_at), (full.since, full.full_at))
+        self.assertIsInstance(back.full_at, dt)
+
+    def test_full_read_due(self):
+        from datetime import datetime as dt
+        import service as MA
+        app = MA.App.__new__(MA.App)
+        app.config = {"zeitplan": {"voll_lesen_stunden": 24}}
+        app.ledger = None
+        self.assertTrue(app.full_read_due())
+        app.ledger = type("L", (), {})(); app.ledger.full_at = dt(2026, 11, 4, 15, 0)
+        self.assertFalse(app.full_read_due(dt(2026, 11, 4, 22, 0)))           # 7 h
+        self.assertFalse(app.full_read_due(dt(2026, 11, 4, 23, 30)))          # 8,5 h
+        self.assertTrue(app.full_read_due(dt(2026, 11, 5, 3, 0)))             # nachts nach 12 h
+        self.assertTrue(app.full_read_due(dt(2026, 11, 5, 15, 0)))            # 24 h
+        self.assertFalse(app.full_read_due(dt(2026, 11, 5, 10, 0)))           # 19 h tagsueber
+
+
 class _AppBase(unittest.TestCase):
     """Gemeinsamer Aufbau: Dienst auf freiem Port, Cookie-Jar, CSRF."""
 
@@ -419,13 +473,21 @@ class AppTests(_AppBase):
     def test_unchanged_read_keeps_warm_state(self):
         """Unveraenderte Daten aus MoneyMoney: bisheriger Stand (mit Zwischenergebnissen) bleibt, nur der Lesezeitpunkt wird neu."""
         self.login(); self.run_and_wait()
+        self.assertTrue(self.app.full_read_due())    # nach eigenen Buchungen in MoneyMoney: naechstes Lesen vollstaendig
         led, t0 = self.app.ledger, self.app.ledger_time
         self.app.do_run(True, False)                 # erster Lauf nach eigenen Buchungen: vollstaendig
         led = self.app.ledger
+        self.assertFalse(self.app.full_read_due()); self.assertFalse(led.incremental)
         time.sleep(0.01)
         self.assertEqual(self.app.do_run(None, False)["status"], "unveraendert")
         self.assertIs(self.app.ledger, led); self.assertGreater(self.app.ledger_time, t0)
         self.app.refresh_ledger(); self.assertIs(self.app.ledger, led)
+        # Bankabruf ohne neue Daten: keine Neuberechnung, aber die Abrufzeit ist aktuell
+        giro = next(a for a in MockBridge.state["accounts"] if a["uuid"] == F.uid("priv.giro"))
+        vorher = led.accounts[F.uid("priv.giro")].refresh
+        giro["refreshTimestamp"] = F._dt(date(2026, 11, 3))
+        self.assertEqual(self.app.do_run(None, False)["status"], "unveraendert")
+        self.assertIs(self.app.ledger, led); self.assertNotEqual(led.accounts[F.uid("priv.giro")].refresh, vorher)
         MockBridge.state["accounts"][-1]["name"] += " neu"     # Kontoname geaendert -> neuer Stand
         self.assertNotEqual(self.app.do_run(None, False)["status"], "unveraendert")
         self.assertIsNot(self.app.ledger, led)

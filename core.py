@@ -11,11 +11,11 @@ import os
 import platform
 import re
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyNotRunning, notify
-from model import Account, Ledger, accounts_from_export, add_months, fmt_eur, month_key, tx_from_export, norm_cat
+from model import Account, Ledger, Tx, accounts_from_export, add_months, fmt_eur, month_key, tx_from_export, norm_cat
 import realestate
 import categorize
 from report import ROLES, account_roles, build_dataset
@@ -31,7 +31,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG: Dict[str, Any] = {
     "probelauf": True,
     "mitteilungen": True,
-    "zeitplan": {"intervall_minuten": 30, "automatisch": True},
+    "zeitplan": {"intervall_minuten": 30, "automatisch": True, "voll_lesen_stunden": 24},
     "darlehen": [], "beteiligungen": [], "saldo_spiegel": [],
     "bereiche": [],
     "immobilien": [],
@@ -119,18 +119,54 @@ def earliest_needed(config: dict, today: date) -> date:
     return start
 
 
-def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = False, progress: Optional[Callable[[str], None]] = None) -> Ledger:
-    """Konten, Umsaetze und ggf. Depotbestaende aus MoneyMoney lesen. progress(schritt) meldet den laufenden Schritt."""
+INCREMENT_DAYS = 92          # schnelles Lesen: nur Umsaetze der letzten drei Monate, der Rest kommt aus dem letzten Stand
+
+
+def _base_txs(base: Ledger, accounts: Dict[str, Account], fresh_ids: set, cut: date) -> List[Tx]:
+    """Aeltere Umsaetze aus dem letzten Stand (nur echte aus MoneyMoney, Kategorie im Original). Was an oder nach `cut`
+    gebucht oder wertgestellt ist, kommt nur aus dem frischen Lesen -- so verschwinden dort geloeschte Umsaetze
+    (z. B. vorgemerkte, die MoneyMoney durch die gebuchten ersetzt)."""
+    out = []
+    for t in base.txs:
+        if t.id <= 0 or t.id in fresh_ids or t.account_uuid not in accounts:
+            continue
+        if t.booking_date >= cut or (t.value_date is not None and t.value_date >= cut):
+            continue
+        c = Tx.__new__(Tx)                       # flache Kopie (schneller als dataclasses.replace bei ~200.000 Umsaetzen)
+        c.__dict__.update(t.__dict__)
+        if t.mm_category_path is not None:       # Kontor-Kategorie lag darueber -> Original aus MoneyMoney
+            path = t.mm_category_path
+            c.category_path, c.category, c.mm_category_path = path, (path.replace("\\", " / ").split(" / ")[-1] if path else ""), None
+        out.append(c)
+    return out
+
+
+def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = False, progress: Optional[Callable[[str], None]] = None,
+          base: Optional[Ledger] = None, full: bool = True) -> Ledger:
+    """Konten, Umsaetze und ggf. Depotbestaende aus MoneyMoney lesen. progress(schritt) meldet den laufenden Schritt.
+    full=False und ein vollstaendiger letzter Stand (base, gleicher Zeitraum): nur die letzten INCREMENT_DAYS Tage lesen und
+    mit den aelteren Umsaetzen aus base zusammenfuehren. Aenderungen an aelteren Umsaetzen in MoneyMoney kommen mit dem
+    naechsten vollstaendigen Lesen (siehe App.full_read_due)."""
     step = progress or (lambda _s: None)
     step("accounts")
     accounts = accounts_from_export(bridge.export_accounts())
     since = earliest_needed(config, today)
+    inc = None
+    if not full and base is not None and getattr(base, "since", None) == since and getattr(base, "full_at", None):
+        inc = max(since, today - timedelta(days=INCREMENT_DAYS))
     step("transactions")
-    raw = bridge.export_transactions(since)
+    raw = bridge.export_transactions(inc or since)
     step("parse")
     txs = tx_from_export(raw)
     del raw
+    n_read = len(txs)
+    if inc:
+        txs = _base_txs(base, accounts, {t.id for t in txs}, inc) + txs
+        txs.sort(key=lambda t: (t.booking_date, t.id))
     ledger = Ledger(accounts, txs)
+    ledger.since = since
+    ledger.full_at = base.full_at if inc else datetime.now()
+    ledger.incremental = bool(inc)
     ledger.portfolios = {}
     if with_portfolio:
         step("portfolios")
@@ -140,7 +176,9 @@ def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = Fals
                     ledger.portfolios[a.uuid] = bridge.export_portfolio(a.uuid)
                 except MoneyMoneyError as e:
                     log.info("Portfolio %s: no holdings data (%s)", a.uuid[:8], str(e)[:80])
-    log.info("MoneyMoney: %d accounts, %d transactions since %s, %d portfolios", len(accounts), len(txs), since, len(ledger.portfolios))
+    log.info("MoneyMoney: %d accounts, %d transactions since %s%s, %d portfolios", len(accounts), len(txs), since,
+             (" (read from %s: %d, older from last full read %s)" % (inc, n_read, base.full_at.strftime("%Y-%m-%d %H:%M"))) if inc
+             else " (full read)", len(ledger.portfolios))
     ledger.fp = fingerprint(ledger)          # Fingerabdruck des frischen Stands (vor Probelauf-Buchungen, die Salden veraendern)
     ledger.acc_sig = account_sig(accounts)   # Kontenstand dieses Lesens (Vergleich fuer den Schnellabgleich)
     return ledger
@@ -156,13 +194,13 @@ def ledger_fp(ledger: Ledger) -> str:
 
 
 def fingerprint(ledger: Ledger) -> str:
-    """Inhalt des MoneyMoney-Stands: Konten (Name, Pfad, Typ, Saldo, Abrufzeit), Umsaetze (Betrag, Datum, Texte,
-    Kategorie aus MoneyMoney, vorgemerkt) und Depotpositionen. Kontor-eigene Ueberlagerungen (Kategorien, Probelauf-
-    Buchungen mit negativer Nummer) zaehlen nicht -- gleicher Fingerabdruck = gleiche Daten in MoneyMoney."""
+    """Inhalt des MoneyMoney-Stands: Konten (Name, Pfad, Typ, Saldo), Umsaetze (Betrag, Datum, Texte, Kategorie aus
+    MoneyMoney, vorgemerkt) und Depotpositionen. Kontor-eigene Ueberlagerungen (Kategorien, Probelauf-Buchungen mit
+    negativer Nummer) zaehlen nicht -- gleicher Fingerabdruck = gleiche Daten in MoneyMoney. Die Abrufzeit zaehlt nicht:
+    ein Bankabruf ohne neue Daten braucht keine Neuberechnung (App.set_ledger uebernimmt nur die Zeiten)."""
     h = hashlib.sha256()
     for a in sorted(ledger.accounts.values(), key=lambda x: x.uuid):
-        h.update(("%s|%s|%s|%s|%.2f|%s\n" % (a.uuid, a.path or a.name, a.type, a.portfolio, a.balance,
-                                            a.refresh.isoformat() if a.refresh else "")).encode())
+        h.update(("%s|%s|%s|%s|%.2f\n" % (a.uuid, a.path or a.name, a.type, a.portfolio, a.balance)).encode())
     rows = []
     for t in ledger.txs:
         if t.id < 0:
@@ -697,7 +735,8 @@ def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: 
     if categories and (not kat.get("mm_uebernommen") or len(kat["baum"]) < len(categories)):
         if categorize.seed_from_moneymoney(kat, categories):
             changed = True
-    if kc.get("lernen", True):
+    # Regeln aus allen Umsaetzen lernen: beim vollstaendigen Lesen (taeglich), beim schnellen Lesen gelten die gelernten weiter
+    if kc.get("lernen", True) and (not getattr(ledger, "incremental", False) or not kat.get("gelernt_am")):
         before = len(kat["regeln"])
         categorize.learn(kat, ledger, progress=lambda f: step(0.6 * f, tr("s_kategorien_regeln_lernen")))
         changed = changed or len(kat["regeln"]) != before or not kat.get("gelernt_am")
@@ -909,14 +948,14 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
 
 def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
              bridge_factory: Callable[[bool], Bridge] = Bridge, with_report: bool = True,
-             categories: Optional[List[dict]] = None) -> dict:
+             categories: Optional[List[dict]] = None, base: Optional[Ledger] = None, full: bool = True) -> dict:
     if not RUN_LOCK.acquire(blocking=False):
         return {"status": "laeuft_bereits", "text": tr("s_ein_abgleich_laeuft_bereits")}
     try:
         state = store.load("state.json", {}) or {}
         bridge = bridge_factory(dry)
         try:
-            ledger = fetch(bridge, config, today, with_portfolio=with_report)
+            ledger = fetch(bridge, config, today, with_portfolio=with_report, base=base, full=full)
             if categories is None:
                 try:
                     categories = bridge.export_categories()
@@ -964,6 +1003,9 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                         log.warning("Balance of %s after booking is %s, expected %s", ledger.accounts[u].name, fmt_eur(after[u].balance), fmt_eur(ledger.accounts[u].balance)); result.warnings.append(msg)
             except MoneyMoneyError as e:
                 log.warning("Verification after writing not possible: %s", e)
+            # Neue Buchungen in MoneyMoney koennen weit zurueckdatiert sein (z. B. Zinsen seit Januar): das naechste Lesen muss
+            # vollstaendig sein, sonst fehlten sie im schnellen Lesen und die Regeln wuerden sie erneut vorschlagen
+            ledger.full_at = None
 
         warnings = list(result.warnings)
         if dry and bookings:

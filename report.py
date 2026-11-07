@@ -437,18 +437,25 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     first = date(months[0][0], months[0][1], 1)
     last = month_end(months[-1][0], months[-1][1])
 
-    all_tx = [t for t in ledger.txs if t.booked and first <= t.booking_date <= last]
-    by_id = {t.id: t for t in all_tx}
     # Depots mit Verlauf aus Kontostaenden liefern keine Zahlungsfluesse: ihre Wertaenderung ist Bewertung.
     # Andere Konten mit Kontostaenden behalten ihre Buchungen; Abweichungen zu den Kontostaenden werden als Korrektur ausgewiesen.
-    in_root = [t for t in all_tx if t.account_uuid in root_leaves and not _valuation_account(ledger.accounts[t.account_uuid], verlauf.get(t.account_uuid, ""))]
-    # Markierungen (#mm-tx-NNN) einmal indizieren statt je Treffer alle Umsaetze zu durchsuchen
-    tag_index: Dict[str, List[Tx]] = defaultdict(list)
-    for o in all_tx:
-        if "#mm-tx-" in o.purpose:
-            for tag in TAG_RE.findall(o.purpose):
-                if tag.startswith("#mm-tx-"):
-                    tag_index[tag].append(o)
+    flows = {u for u in root_leaves if u in ledger.accounts and not _valuation_account(ledger.accounts[u], verlauf.get(u, ""))}
+    in_root = [t for t in ledger.txs if t.account_uuid in flows and t.booked and first <= t.booking_date <= last]
+    # Nummern und Markierungen (#mm-tx-NNN) einmal je Stand indizieren (fuer alle Bereiche); Partner nur im Zeitraum
+    idx = ledger.__dict__.get("_tx_index")
+    if idx is None or idx[0] != len(ledger.txs):
+        tags: Dict[str, List[Tx]] = defaultdict(list)
+        for o in ledger.txs:
+            if o.booked and "#mm-tx-" in o.purpose:
+                for tag in TAG_RE.findall(o.purpose):
+                    if tag.startswith("#mm-tx-"):
+                        tags[tag].append(o)
+        idx = ledger._tx_index = (len(ledger.txs), {t.id: t for t in ledger.txs if t.booked}, tags)
+    by_id_all, tag_all = idx[1], idx[2]
+
+    def by_id_get(i: int) -> Optional[Tx]:
+        o = by_id_all.get(i)
+        return o if o is not None and first <= o.booking_date <= last else None
     transfer_set = set(transfer_cats)
 
     partner: Dict[int, Optional[str]] = {}
@@ -460,11 +467,13 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         if p is None and "#mm-" in t.purpose + t.comment:
             for tag in TAG_RE.findall(t.purpose + " " + t.comment):
                 if tag.startswith("#mm-tx-"):
-                    src = by_id.get(int(tag[7:]))
+                    src = by_id_get(int(tag[7:]))
                     if src and src.account_uuid != t.account_uuid:
                         p = src.account_uuid
                     else:
-                        for o in tag_index.get(tag, ()):
+                        for o in tag_all.get(tag, ()):
+                            if not first <= o.booking_date <= last:
+                                continue
                             if o.account_uuid != t.account_uuid:
                                 p = o.account_uuid
                                 break
@@ -507,6 +516,31 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     unclear = 0
     inbound: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
 
+    def cat_class(cat: str, top: str) -> tuple:
+        """Einordnung einer Kategorie (Bankkonten): (Abschnitt, ...) -- Finanzierung (art, nw), Investitionen (Zielkonto),
+        Einnahmen, Ausgaben, Ignorieren oder __operativ__ (nach Vorzeichen der Summe)."""
+        tl = top.lower()
+        zu = kat_sektion.get(cat.lower()) or kat_sektion.get(tl)
+        if zu:
+            sec, _, art = zu.partition("/")
+            if sec == "Finanzierung":
+                return ("Finanzierung", "zins" if art.lower().startswith("zins") else "tilgung", art.lower().startswith("zins"))
+            if sec == "Investitionen":
+                return ("Investitionen", kat_zu_konto.get(cat.lower()) or kat_zu_konto.get(tl))
+            if sec in ("Einnahmen", "Ausgaben", "Ignorieren"):
+                return (sec,)
+            return ("__operativ__",)
+        if any(k in tl for k in cost_cats):
+            return ("Finanzierung", "zins", True)
+        if any(k in tl for k in finance_cats):
+            return ("Finanzierung", "tilgung", False)
+        if any(k in tl for k in invest_cats) or cat.lower() in kat_zu_konto or tl in kat_zu_konto:
+            return ("Investitionen", kat_zu_konto.get(cat.lower()) or kat_zu_konto.get(tl))
+        if income_cats and any(k in tl for k in income_cats):
+            return ("Einnahmen",)
+        return ("__operativ__",)
+    cat_memo: Dict[str, tuple] = {}
+
     for t in in_root:
         acc = ledger.accounts[t.account_uuid]
         role = roles.get(acc.uuid, "sonstiges")
@@ -542,38 +576,19 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                 else:
                     R.add("Unklar", "Umbuchung", "Umbuchung ohne erkannten Partner", mk, t.amount, art="unklar"); unclear += 1
                 continue
-            tl = top.lower()
-            zu = kat_sektion.get(cat.lower()) or kat_sektion.get(tl)
-            if zu:
-                sec, _, art = zu.partition("/")
-                if sec == "Finanzierung":
-                    R.add("Finanzierung", top, cat, mk, t.amount, art=("zins" if art.lower().startswith("zins") else "tilgung"),
-                          nw=art.lower().startswith("zins"))
-                elif sec == "Investitionen":
-                    target = kat_zu_konto.get(cat.lower()) or kat_zu_konto.get(tl)
-                    R.add("Investitionen", top, cat, mk, t.amount, konto=target, art="kategorie", nw=False)
-                    if target:
-                        inbound[target][mk] += -t.amount
-                elif sec in ("Einnahmen", "Ausgaben"):
-                    R.add(sec, top, cat, mk, t.amount)
-                elif sec == "Ignorieren":
-                    continue
-                else:
-                    R.add("__operativ__", top, cat, mk, t.amount)
-                continue
-            if any(k in tl for k in cost_cats):
-                R.add("Finanzierung", top, cat, mk, t.amount, art="zins", nw=True)
-            elif any(k in tl for k in finance_cats):
-                R.add("Finanzierung", top, cat, mk, t.amount, art="tilgung", nw=False)
-            elif any(k in tl for k in invest_cats) or cat.lower() in kat_zu_konto or tl in kat_zu_konto:
-                target = kat_zu_konto.get(cat.lower()) or kat_zu_konto.get(tl)
-                R.add("Investitionen", top, cat, mk, t.amount, konto=target, art="kategorie", nw=False)
-                if target:
-                    inbound[target][mk] += -t.amount
-            elif income_cats and any(k in tl for k in income_cats):
-                R.add("Einnahmen", top, cat, mk, t.amount)
-            else:
-                R.add("__operativ__", top, cat, mk, t.amount)
+            # Abschnitt je Kategorie nur einmal bestimmen (gleiche Kategorie -> gleiche Einordnung)
+            c = cat_memo.get(cat)
+            if c is None:
+                c = cat_memo[cat] = cat_class(cat, top)
+            kind = c[0]
+            if kind == "Finanzierung":
+                R.add("Finanzierung", top, cat, mk, t.amount, art=c[1], nw=c[2])
+            elif kind == "Investitionen":
+                R.add("Investitionen", top, cat, mk, t.amount, konto=c[1], art="kategorie", nw=False)
+                if c[1]:
+                    inbound[c[1]][mk] += -t.amount
+            elif kind != "Ignorieren":
+                R.add(kind, top, cat, mk, t.amount)
         elif role == "verbindlichkeiten":
             if is_transfer[t.id]:
                 continue

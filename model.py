@@ -422,7 +422,8 @@ def ledger_to_bytes(ledger: "Ledger", saved_at: Optional[datetime] = None) -> by
             row.append(enc(v))
         txs.append(row)
     data = {"format": LEDGER_CACHE_FORMAT, "gespeichert": (saved_at or datetime.now()).isoformat(), "account_fields": afields, "accounts": accounts,
-            "tx_fields": tfields, "txs": txs, "portfolios": getattr(ledger, "portfolios", {}) or {}, "fp": getattr(ledger, "fp", None)}
+            "tx_fields": tfields, "txs": txs, "portfolios": getattr(ledger, "portfolios", {}) or {}, "fp": getattr(ledger, "fp", None),
+            "since": enc(getattr(ledger, "since", None)), "full_at": enc(getattr(ledger, "full_at", None))}
     return gzip.compress(json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8"), compresslevel=3)
 
 
@@ -459,6 +460,9 @@ def ledger_from_bytes(raw: bytes) -> Tuple["Ledger", Optional[datetime]]:
     ledger.portfolios = data.get("portfolios") or {}
     if data.get("fp"):
         ledger.fp = data["fp"]          # Fingerabdruck des Stands, wie er aus MoneyMoney kam
+    # Zeitraum und Zeitpunkt des letzten vollstaendigen Lesens (Grundlage fuers schnelle Lesen; fehlt -> naechstes Lesen vollstaendig)
+    ledger.since = date.fromisoformat(data["since"]) if data.get("since") else None
+    ledger.full_at = datetime.fromisoformat(data["full_at"]) if data.get("full_at") else None
     saved = data.get("gespeichert")
     return ledger, (datetime.fromisoformat(saved) if saved else None)
 

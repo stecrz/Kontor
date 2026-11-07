@@ -77,6 +77,7 @@ const H = {
   touchid: t('eingeschaltet_die_anmeldung_am_mac'),
   bilanz_stand: t('salden_am_monatsende_der_laufende'),
   abgleich: t('datenstand_in_zwei_stufen_banken'),
+  voll_lesen: t('voll_lesen_tip'),
   kennung: t('interne_kennung_des_bereichs_wird'),
   intervall: t('der_dienst_liest_alle_n'),
   mm_cat: t('erlaubt_einzelnen_umsaetzen_aus_kontor'),
@@ -1349,7 +1350,8 @@ async function vSync() {
     ${card(t('moneymoney_kontor'), r.gelesen ? esc(fmtZeit(r.gelesen)) : '–', (z.automatisch ? t('automatisch_alle') + z.intervall_minuten + t('minuten_wenn_moneymoney_laeuft_und') : t('automatischer_abgleich_ist_aus')) + ` (<a href="#einstellungen">${t('einstellungen')}</a>).`)}
     ${hasRules() ? card(t('regeln_zuletzt_angewendet'), l ? esc(fmtZeit(l.zeit)) : '–', `${t('nur_wenn_sich_in_moneymoney')} <a href="#buchungen">${t('buchungen')}</a>`) : ''}
   </div>
-  <div class="toolbar"><button id="sync-now" ${OFFLINE.mode ? 'disabled' : ''}>${t('jetzt_synchronisieren')}</button><span class="muted small">${t('liest_sofort_aus_moneymoney_wendet')}</span></div>`;
+  <div class="toolbar"><button id="sync-now" ${OFFLINE.mode ? 'disabled' : ''}>${t('jetzt_synchronisieren')}</button><span class="muted small">${t('liest_sofort_aus_moneymoney_wendet')}</span></div>
+  <div class="toolbar"><button id="sync-full" class="secondary" ${OFFLINE.mode ? 'disabled' : ''}>${t('alles_neu_lesen')}</button><span class="muted small">${t('voll_lesen_info', r.voll && r.voll.zuletzt ? esc(fmtZeit(r.voll.zuletzt)) : '–', (r.voll || {}).stunden || 24)} ${hq('voll_lesen')}</span></div>`;
   if (stale.length) h += `<div class="banner">${t('0_mehr_als_einen_tag', stale.length === 1 ? t('1_konto_liegt') : stale.length + t('konten_liegen'), esc(stale.map(k => k.name).join(', ')))}</div>`;
   const row = k => {
     const d = tage(k.zeit);
@@ -1939,6 +1941,7 @@ function vEinstellungenAllgemein() {
     <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang">${langOpts()}</select> <span class="small muted">${t('sprache_hinweis')}</span></label>
     <label>${t('testmodus_0', hq('probelauf'))}</label><label class="chk"><input type="checkbox" id="e-probelauf" ${C.probelauf ? 'checked' : ''}> ${t('buchungen_aus_regeln_nur_vorschlagen')}</label>
     <label>${t('automatischer_abgleich_0', hq('abgleich'))}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatisch !== false ? 'checked' : ''}> ${t('alle_2')} <input type="number" id="e-intervall" min="5" value="${z.intervall_minuten ?? 30}" style="width:70px"> ${t('minuten_nur_wenn_moneymoney_laeuft')}</label>
+    <label>${t('alles_neu_lesen_0', hq('voll_lesen'))}</label><label class="chk">${t('alle_2')} <input type="number" id="e-voll" min="1" value="${z.voll_lesen_stunden ?? 24}" style="width:70px"> ${t('stunden_bevorzugt_nachts')}</label>
     <label>${t('mitteilungen_macos')}</label><label class="chk"><input type="checkbox" id="e-mitt" ${C.mitteilungen !== false ? 'checked' : ''}> ${t('bei_buchungen_vorschlaegen_und_fehlern')}</label>
   </div>
   <h2>${t('bilanz')}</h2><div class="form">
@@ -1999,7 +2002,7 @@ function collectSettings() {
   const cfg = JSON.parse(JSON.stringify(S.CFG));
   if ($('#e-probelauf')) {
     cfg.probelauf = $('#e-probelauf').checked; cfg.mitteilungen = $('#e-mitt').checked;
-    cfg.zeitplan = { automatisch: $('#e-auto').checked, intervall_minuten: Math.max(5, parseInt($('#e-intervall').value) || 30) };
+    cfg.zeitplan = { automatisch: $('#e-auto').checked, intervall_minuten: Math.max(5, parseInt($('#e-intervall').value) || 30), voll_lesen_stunden: Math.max(1, parseInt($('#e-voll').value) || 24) };
     cfg.bilanz = Object.assign(cfg.bilanz || {}, { monate_zurueck: parseInt($('#e-monate').value) || 0 });
     cfg.moneymoney = Object.assign(cfg.moneymoney || {}, { kategorisieren_erlauben: $('#e-mm-cat').checked });
     cfg.belege = Object.assign(cfg.belege || {}, { ordner: $('#e-bl-ordner').value.trim() || '~/Documents/Kontor-Belege', unterordner: $('#e-bl-sub').value.trim() || '{jahr}', kommentar_schreiben: $('#e-bl-comment').checked,
@@ -2344,6 +2347,7 @@ function bind(main) {
   const go = $('#gap-ok', main); if (go) go.addEventListener('click', async () => { try { await api('/api/sync/gaps', {}); S.STATUS = await api('/api/status'); statusMini(); route(); } catch (e) { toast(e.message, 5000); } });
   $$('.dep-hist', main).forEach(b => b.addEventListener('click', async () => { b.classList.add('busy'); try { await openHistDrawer(b.closest('tr').dataset.uuid); } catch (e) { toast(e.message, 6000); } finally { b.classList.remove('busy'); } }));
   const sn = $('#sync-now', main); if (sn) sn.addEventListener('click', async () => { sn.classList.add('busy'); try { await syncNow(); } finally { sn.classList.remove('busy'); } });
+  const sf = $('#sync-full', main); if (sf) sf.addEventListener('click', async () => { sf.classList.add('busy'); try { await syncNow(true); } finally { sf.classList.remove('busy'); } });
   $$('.ab-chk', main).forEach(cb => cb.addEventListener('change', async () => {
     try { await api('/api/sync', {konto: cb.closest('tr').dataset.uuid, abgerufen: cb.checked}); S.STATUS = await api('/api/status'); statusMini(); route(); }
     catch (e) { toast(e.message, 5000); cb.checked = !cb.checked; }
@@ -2483,12 +2487,13 @@ async function plan(body) {
   try { await api('/api/plan', Object.assign({bereich: S.bereich}, body)); S.DATA = await api('/api/dataset'); route(); toast(t('plan_gespeichert')); }
   catch (e) { toast(t('fehler_3') + e.message, 4000); }
 }
-async function syncNow() {
-  // Wie der automatische Abgleich, nur sofort: MoneyMoney lesen, Regeln anwenden (Testmodus laut Einstellung), Auswertung bauen
+async function syncNow(voll) {
+  // Wie der automatische Abgleich, nur sofort: MoneyMoney lesen, Regeln anwenden (Testmodus laut Einstellung), Auswertung bauen.
+  // voll: alle Umsaetze lesen statt nur der letzten drei Monate
   if (SYNC.busy) return;
   SYNC.busy = true; statusMini();
   try {
-    try { await api('/api/run', {force: false}); }
+    try { await api('/api/run', voll ? {force: false, voll: true} : {force: false}); }
     catch (e) { if (!/läuft bereits/.test(e.message)) throw e; }
     let tries = 0;
     do { await new Promise(r => setTimeout(r, tries ? 1500 : 800)); S.STATUS = await api('/api/status'); statusMini(); } while (S.STATUS.dienst.laeuft && tries++ < 200);

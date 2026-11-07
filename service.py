@@ -223,9 +223,9 @@ class App:
         if self.store.exists("dataset.json") and (not is_running() or self.moneymoney_gesperrt(max_age=0) is not False):
             self.request_rebuild("Start")
 
-    def _save_ledger_cache(self, ledger: Ledger) -> None:
+    def _save_ledger_cache(self, ledger: Ledger, force: bool = False) -> None:
         fp = ledger_fp(ledger)
-        if fp == self.ledger_cache_fp:
+        if fp == self.ledger_cache_fp and not force:
             return
         self.ledger_cache_fp = fp
 
@@ -250,6 +250,13 @@ class App:
             if same:
                 self.ledger_time, self.ledger_from_cache = datetime.now(), False
                 log.debug("MoneyMoney data unchanged -- intermediate results kept")
+                for u, a in ledger.accounts.items():          # Abrufzeiten der Banken (zaehlen nicht zum Fingerabdruck) aktuell halten
+                    if u in old.accounts:
+                        old.accounts[u].refresh = a.refresh
+                newer = getattr(ledger, "full_at", None)
+                if newer and (getattr(old, "full_at", None) is None or old.full_at < newer):
+                    old.full_at, old.since = newer, getattr(ledger, "since", None)
+                    self._save_ledger_cache(old, force=True)     # Zeitpunkt des vollstaendigen Lesens auch nach Neustart
                 return
         self.ledger, self.ledger_time, self.ledger_from_cache = ledger, datetime.now(), False
         self._save_ledger_cache(ledger)
@@ -397,7 +404,24 @@ class App:
         return val
 
     # -- MoneyMoney --------------------------------------------------------
-    def refresh_ledger(self) -> Tuple[Optional[Ledger], Optional[str]]:
+    def full_read_due(self, now: Optional[datetime] = None) -> bool:
+        """Vollstaendig lesen (alle Umsaetze), wenn das letzte vollstaendige Lesen mindestens N Stunden her ist (Einstellung,
+        Standard 24) -- nachts (1-6 Uhr) schon nach der Haelfte, damit es moeglichst dann passiert und tagsueber schnell bleibt."""
+        b = self.ledger
+        fa = getattr(b, "full_at", None) if b is not None else None
+        if fa is None:
+            return True
+        now = now or datetime.now()
+        hours = max(1, int((self.config.get("zeitplan") or {}).get("voll_lesen_stunden", 24) or 24))
+        age = (now - fa).total_seconds() / 3600
+        return age >= hours or (1 <= now.hour < 6 and age >= hours / 2)
+
+    def full_read_info(self) -> dict:
+        fa = getattr(self.ledger, "full_at", None) if self.ledger is not None else None
+        return {"zuletzt": fa.strftime("%Y-%m-%d %H:%M") if fa else None,
+                "stunden": max(1, int((self.config.get("zeitplan") or {}).get("voll_lesen_stunden", 24) or 24))}
+
+    def refresh_ledger(self, full: Optional[bool] = None) -> Tuple[Optional[Ledger], Optional[str]]:
         """MoneyMoney lesen. Der Fortschritt (Schritt, Beginn, Dauer der Schritte beim letzten Mal) steht in self.lesen."""
         t0 = time.time()
         st = self.store.load_shared("state.json", {}) or {}
@@ -411,7 +435,8 @@ class App:
             self.lesen.update(schritt=name, seit=now)
         try:
             b = self.bridge_factory(True)
-            ledger = fetch(b, self.config, date.today(), with_portfolio=True, progress=step)
+            ledger = fetch(b, self.config, date.today(), with_portfolio=True, progress=step, base=self.ledger,
+                           full=self.full_read_due() if full is None else full)
             log.info("MoneyMoney read (%.1f s)", time.time() - t0)
             step("categories")
             try:
@@ -431,7 +456,7 @@ class App:
         finally:
             self.lesen["laeuft"] = False
 
-    def do_run(self, dry: Optional[bool], force: bool, with_report: bool = True) -> dict:
+    def do_run(self, dry: Optional[bool], force: bool, with_report: bool = True, full: Optional[bool] = None) -> dict:
         with self.lock:
             if self.running:
                 return {"status": "laeuft_bereits", "text": tr("s_ein_abgleich_laeuft_bereits")}
@@ -441,7 +466,8 @@ class App:
             self._freeze_assignments()
             t0 = time.time()
             log.info("Run started (%s%s%s)", "dry run" if d else "live", ", forced" if force else "", ", without report" if not with_report else "")
-            res = run_once(self.store, self.config, date.today(), d, force, self.bridge_factory, with_report)
+            full = self.full_read_due() if full is None else full
+            res = run_once(self.store, self.config, date.today(), d, force, self.bridge_factory, with_report, base=self.ledger, full=full)
             log.info("Run finished: %s (%.1f s)", res.get("text") or res.get("status"), time.time() - t0)
             self.last_run_at = time.time()
             ledger = res.pop("_ledger", None)
@@ -1035,7 +1061,8 @@ def make_handler(app: App):
                                    "erste_buchung": None})
                 return self._json(200, dict(r, konten=[dict(k, bereich=bereich.get(k["uuid"], "")) for k in r["konten"]], depots=depots, luecken=st.get("luecken") or [], mm_verlauf=st.get("mm_verlauf"),
                                             aufzeichnung_seit=min(snaps) if snaps else None,
-                                            gelesen=app.ledger_time.strftime("%Y-%m-%d %H:%M") if app.ledger_time else None))
+                                            gelesen=app.ledger_time.strftime("%Y-%m-%d %H:%M") if app.ledger_time else None,
+                                            voll=app.full_read_info()))
             if path == "/api/runs":
                 st = app.store.load("state.json", {}) or {}
                 return self._json(200, {"letzter_lauf": st.get("letzter_lauf"), "verlauf": list(reversed(st.get("verlauf", [])))})
@@ -1415,7 +1442,8 @@ def make_handler(app: App):
                     return self._json(403, {"fehler": tr("s_buchen_nur_von_diesem_mac")})
                 if app.running:
                     return self._json(409, {"fehler": tr("s_ein_abgleich_laeuft_bereits")})
-                threading.Thread(target=app.do_run, args=(dry, bool(body.get("force", True))), daemon=True).start()
+                full = True if body.get("voll") else None          # „Alles neu lesen“; sonst schnell, solange kein vollstaendiges Lesen faellig ist
+                threading.Thread(target=app.do_run, args=(dry, bool(body.get("force", True))), kwargs={"full": full}, daemon=True).start()
                 return self._json(202, {"gestartet": True})
             if path == "/api/report":
                 ledger, err = app.refresh_ledger()

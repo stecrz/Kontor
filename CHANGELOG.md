@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.9.24 (2026-11-07)
+- Schnelleres Lesen: Ein Abgleich liest nur die Umsätze der letzten drei Monate aus MoneyMoney und übernimmt ältere aus dem letzten vollständigen Lesen. Vollständig gelesen wird alle 24 Stunden (einstellbar, nachts schon nach 12), nach eigenen Buchungen und mit „Alles neu lesen“ (Synchronisierung).
+- Bankabruf ohne neue Daten: keine Neuberechnung mehr, nur die Abrufzeiten werden aktualisiert.
+- Neuberechnung etwas schneller (Regeln lernen nur beim vollständigen Lesen, Kapitalfluss ordnet jede Kategorie nur einmal ein).
+
 ## 3.9.23 (2026-11-07)
 - Sync-Knopf: Zeigt nach dem Abgleich wieder „Sync“, auch wenn währenddessen ein automatischer Abgleich lief oder das Fenster im Hintergrund war (Status wird während eines Abgleichs alle 3 s und beim Zurückkehren ins Fenster sofort geprüft).
 - Automatischer Abgleich nach neuen Daten in MoneyMoney: wartet, bis MoneyMoney mit dem Abruf fertig ist (45 s ohne weitere Änderung), statt je Bank einen eigenen Lauf zu starten; was ein Abgleich gerade gelesen hat, löst keinen zweiten Lauf mehr aus.
