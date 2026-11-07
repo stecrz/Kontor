@@ -3,6 +3,7 @@ import base64
 import copy
 import io
 import json
+import re
 import os
 import shutil
 import sys
@@ -494,7 +495,8 @@ class AppTests(_AppBase):
         from datetime import datetime as DT
         led = self.app.ledger
         leaves = [a for a in led.accounts.values() if not a.group]
-        ts = lambda d: int((DT(d.year, d.month, d.day, 12) - (DT(2001, 1, 1) if zeit == "cocoa" else DT(1970, 1, 1))).total_seconds())
+        ts = lambda d: int((DT(d.year, d.month, d.day) - (DT(2001, 1, 1) if zeit == "cocoa" else DT(1970, 1, 1))).total_seconds())
+        bal = __import__("service").balance_lookup(led)
         q = lambda v: "NULL" if v in (None, "") else "'%s'" % str(v).replace("'", "''")
         sql = ["CREATE TABLE accounts(rowid INTEGER PRIMARY KEY, bank_key INTEGER, account TEXT, subaccount TEXT, bankcode TEXT, portfolio INTEGER, iban TEXT, "
                "currency TEXT, name TEXT COLLATE NOCASE, cred TEXT, userdata BLOB);",
@@ -515,13 +517,18 @@ class AppTests(_AppBase):
                 sql.append("INSERT INTO transactions(local_account_key, timestamp, amount, unformatted_purpose) VALUES(%d, %d, %f, 'Text %d');" % (i, ts(date(2026, 10, 10 + k)), 12.34 + k, k))
             if not mit_verlauf:
                 continue
-            y, m = 2024, 1
+            # wie bei MoneyMoney: ein Punkt am 1. jedes Monats (0 Uhr) mit dem Saldo vom Ende des Vormonats, dazu der heutige Stand
+            y, m = 2024, 2
             pts = []
-            while (y, m) <= (2026, 10):
-                v = round(a.balance * (0.5 + 0.5 * ((y - 2024) * 12 + m) / 34.0), 2)
-                if a.uuid == F.uid("priv.depot") and (y, m) == (2025, 6):
-                    v = 70000.0
-                pts += [(date(y, m, day), v + day / 100.0) for day in (10, 27)]
+            while (y, m) <= (2026, 11):
+                d = date(y, m, 1)
+                if a.portfolio:
+                    v = 70000.27 if (y, m) == (2025, 7) else round(a.balance * (0.5 + 0.5 * ((y - 2024) * 12 + m) / 35.0), 2)
+                elif a.uuid == F.uid("pb.immo"):
+                    v = 123.0 * m                                       # passt nicht zu den Umsaetzen: wird nicht uebernommen
+                else:
+                    v = bal(a.uuid, d - timedelta(days=1), False)
+                pts.append((d, v))
                 y, m = (y + 1, 1) if m == 12 else (y, m + 1)
             pts.append((date(2026, 11, 3), a.balance))
             for d, v in pts:
@@ -579,18 +586,32 @@ class AppTests(_AppBase):
             code, r = self._mm_upload(data); self.assertFalse(r["ok"]); self.assertIn("beenden", r["text"])
             MA.is_running = lambda: False
             code, r = self._mm_upload(b"kein sqlite" * 200); self.assertFalse(r["ok"]); self.assertIn("Passwort falsch", r["text"])
-            code, r = self._mm_upload(data); self.assertTrue(r["ok"], r)
+            sqls = []
+            spy = lambda f: (lambda self_, sql, params=(): (sqls.append(sql), f(self_, sql, params))[1])
+            orig_rows, orig_one = H.MemDB.rows, H.MemDB.one
+            H.MemDB.rows, H.MemDB.one = spy(orig_rows), spy(orig_one)
+            try:
+                code, r = self._mm_upload(data); self.assertTrue(r["ok"], r)
+            finally:
+                H.MemDB.rows, H.MemDB.one = orig_rows, orig_one
+            # nur lesend: ausschliesslich SELECT (und Einstellungen der Verbindung), nie etwas, das die Datenbank aendert
+            self.assertTrue(sqls); self.assertFalse([q for q in sqls if not re.match(r"\s*(SELECT|PRAGMA (query_only|temp_store|mmap_size|cache_size|table_info))\b", q)])
+            self.assertFalse([q for q in sqls if re.search(r"\b(cred|credential|username|pin|userdata|purpose|unformatted)\b", q)])   # keine Zugangsdaten, keine Umsaetze
             n = len([a for a in self.app.ledger.accounts.values() if not a.group])
-            self.assertEqual(r["konten"], n); self.assertEqual(r["depots"], 1); self.assertEqual((r["von"], r["bis"]), ("2024-01", "2026-10"))
+            self.assertEqual(r["konten"], n - 1); self.assertEqual(r["depots"], 1); self.assertEqual((r["von"], r["bis"]), ("2024-01", "2026-10"))
             self.assertFalse(H.AKTIV.is_set()); self.assertFalse(os.path.exists(aufbau))
             self.assertFalse([f for f in os.listdir(self.dir) if f.startswith("kontor-") or f.endswith(".sqlite") and f != "MoneyMoney.sqlite"])
             mm = self.store.load(MM_HISTORY_FILE)["konten"]
             dep = mm[F.uid("priv.depot")]
+            self.assertNotIn(F.uid("pb.immo"), mm)                                      # Verlauf passt nicht zu den Umsaetzen: nicht uebernommen
+            giro = self.app.ledger.accounts[F.uid("priv.giro")]
+            self.assertEqual(mm[F.uid("priv.giro")]["2026-09"], __import__("service").balance_lookup(self.app.ledger)(giro.uuid, date(2026, 9, 30), False))   # Punkt am 1.10. = Ende September
+            self.assertEqual(mm[F.uid("pb.kap.s")]["2026-01"], -120000.0); self.assertEqual(mm[F.uid("shs.kap.s")]["2026-01"], -74145.0)   # gleichnamige Konten getrennt
             self.assertEqual(dep["2025-06"], 70000.27)                                 # letzter Wert im Monat (Monatsende), Cent -> Euro
             self.assertNotIn("2026-11", dep)                                            # laufender Monat kommt aus dem aktuellen Saldo
             with open(self.store.path(MM_HISTORY_FILE), "rb") as f:
                 self.assertNotIn(b"70000", f.read())                                    # verschluesselt abgelegt
-            self.assertEqual(self.store.load("state.json")["mm_verlauf"]["konten"], n)
+            self.assertEqual(self.store.load("state.json")["mm_verlauf"]["konten"], n - 1)
             code, st = self.call("/api/status"); self.assertEqual(st["moneymoney"]["historie"]["depots"], 1)
             self.app.rebuild_report(wait=True)
             code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
@@ -602,7 +623,7 @@ class AppTests(_AppBase):
             row = next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == F.uid("priv.depot"))
             self.assertEqual(row["werte"]["2025-06"], 70000.27)
             # aelteres Format (SQLCipher 3) und Cocoa-Zeit ebenso
-            code, r = self._mm_upload(self._mm_db(compat=3, zeit="cocoa")); self.assertTrue(r["ok"], r); self.assertEqual(r["konten"], n)
+            code, r = self._mm_upload(self._mm_db(compat=3, zeit="cocoa")); self.assertTrue(r["ok"], r); self.assertEqual(r["konten"], n - 1)
             # ohne Verlaufstabelle: nichts uebernommen, nur der Aufbau (Namen, keine Inhalte) als Hinweis
             code, r = self._mm_upload(self._mm_db(mit_verlauf=False)); self.assertFalse(r["ok"]); self.assertIn("nicht sicher erkannt", r["text"])
             txt = open(aufbau, encoding="utf-8").read()
@@ -620,13 +641,13 @@ class AppTests(_AppBase):
         import service as MA
         self.login(); self.run_and_wait()
         code, ds = self.call("/api/dataset")
-        self.assertEqual(next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == "pos:liquiditaet")["name"], "Liquidität")
+        self.assertEqual(next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == "pos:liquiditaet")["name"], "Bankguthaben")
         self.assertEqual(self.call("/api/language", {"sprache": "xx"})[0], 400)
         code, r = self.call("/api/language", {"sprache": "en"}); self.assertEqual(r["sprache"], "en")
         self.assertEqual(self.store.load("config.json")["oberflaeche"]["sprache"], "en")
         self.app.rebuild_report(wait=True)
         code, ds = self.call("/api/dataset")
-        self.assertEqual(next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == "pos:liquiditaet")["name"], "Liquidity")
+        self.assertEqual(next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == "pos:liquiditaet")["name"], "Bank balances")
         old = MA.is_running; MA.is_running = lambda: True
         try:
             code, r = self._mm_upload(b"x" * 2048); self.assertIn("Please quit MoneyMoney first", r["text"])
@@ -1693,12 +1714,24 @@ class BrowserTest(unittest.TestCase):
                     if shots: pg.screenshot(path=os.path.join(shots, "ui_%s.png" % tab), full_page=(tab in ("regeln", "einstellungen", "steuer", "planung", "hilfe", "bilanz", "einrichtung")))
                 # Bilanz: Positionen/Gruppen, inaktive, Konto-Klick -> Verlauf
                 pg.click("#nav a[href='#bilanz']"); pg.wait_for_selector("tr.pos")
-                self.assertIn("Liquidität", pg.query_selector("#main").inner_text())
+                self.assertIn("Bankguthaben", pg.query_selector("#main").inner_text())
                 # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
                 self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
                 self.assertTrue(pg.query_selector("#main thead th.plan")); self.assertNotIn("Fortschreibung", pg.query_selector("#main").inner_text())
                 pg.click("tr.pos[data-pos='liquiditaet']"); pg.wait_for_selector("tr.acct")
                 pg.click("#pos-all"); pg.wait_for_timeout(300)
+                # Grafik: waagerechtes Wischen verschiebt bei gleicher Laenge (auch am linken Rand), Doppelklick halbiert den Zeitraum
+                self.assertIsNone(pg.query_selector("#bch-on"))
+                pg.click("#bch-rb button[data-m='12']"); pg.wait_for_timeout(200)
+                span = pg.evaluate("BCH.i1 - BCH.i0"); bb = pg.query_selector("#bch-hit").bounding_box()
+                pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2)
+                for _ in range(40):
+                    pg.mouse.wheel(-300, 0)
+                pg.wait_for_timeout(300)
+                self.assertEqual(pg.evaluate("BCH.i0"), 0); self.assertEqual(pg.evaluate("BCH.i1 - BCH.i0"), span)
+                pg.mouse.dblclick(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2); pg.wait_for_timeout(300)
+                self.assertLessEqual(pg.evaluate("BCH.i1 - BCH.i0"), span // 2 + 1)
+                pg.click("#bch-rb button[data-m='0']"); pg.wait_for_timeout(200)
                 # waagerecht zur aktuellen Spalte gescrollt (auch in der Jahresansicht)
                 self.assertGreater(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0)
                 pg.click("#modus-seg button[data-m='jahre']"); pg.wait_for_timeout(300)
@@ -1725,7 +1758,8 @@ class BrowserTest(unittest.TestCase):
                 pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
                 pg.click("tr.acct[data-id='%s'] td" % F.uid("priv.giro")); pg.wait_for_selector("#drawer.open #h-grid")     # zweites Oeffnen
                 self.assertIn("Hausbank Giro", pg.query_selector("#drawer").inner_text())
-                pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
+                self.assertTrue(pg.query_selector("#drawer #h-chart svg"))                                  # Verlauf als Grafik
+                pg.click("#page-title"); pg.wait_for_selector("#drawer:not(.open)")                        # Klick daneben schliesst
                 pg.click("tr.acct[data-id='%s'] td" % F.uid("priv.depot")); pg.wait_for_selector("#drawer.open #h-grid")
                 pg.fill("#drawer input[data-mk='2026-09']", "77000"); pg.click("#h-save"); pg.wait_for_timeout(1200)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_verlauf_drawer.png"))
@@ -1893,7 +1927,7 @@ class BrowserTest(unittest.TestCase):
                 msg = pg.evaluate("api('/api/plan', {bereich: 'x'}).then(() => 'ok').catch(e => e.message)")
                 self.assertIn("Offline", msg)
                 pg.click("#nav a[href='#bilanz']"); pg.wait_for_selector("tr.pos")
-                self.assertIn("Liquidität", pg.query_selector("#main").inner_text())
+                self.assertIn("Bankguthaben", pg.query_selector("#main").inner_text())
                 # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
                 self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
                 self.assertTrue(pg.query_selector("#main thead th.plan")); self.assertNotIn("Fortschreibung", pg.query_selector("#main").inner_text())

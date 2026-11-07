@@ -84,6 +84,15 @@ def changelog_section(text: str, version: str) -> Tuple[str, str]:
     return "\n".join(out).strip()[:4000], datum
 
 
+def changelog() -> str:
+    """CHANGELOG.md der installierten Version (alle Versionen, fuer die Anzeige unter Updates)."""
+    try:
+        with open(os.path.join(HERE, "CHANGELOG.md"), encoding="utf-8") as f:
+            return f.read()[:200000]
+    except OSError:
+        return ""
+
+
 def installed_date() -> str:
     """Datum der installierten Version laut CHANGELOG.md im Programmordner."""
     try:

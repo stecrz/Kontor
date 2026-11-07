@@ -44,10 +44,10 @@ const ML = m => MONATE[+m.slice(5) - 1] + ' ' + m.slice(2, 4);
 const FD = d => (d && d.length >= 10) ? [d.slice(8, 10), d.slice(5, 7), d.slice(0, 4)].join(LANG === 'en' ? '/' : '.') : (d || '');
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
-const ROLE = {liquiditaet: [t('liquiditaet'), 'var(--c-liq)'], wertpapiere: [t('wertpapiere_depots'), 'var(--c-anl)'], anlagen: [t('geldanlagen'), '#2fb8a0'], immobilien: [t('immobilien'), '#b8860b'],
-              beteiligungen: [t('beteiligungen'), 'var(--c-bet)'], sachwerte: [t('sachwerte'), '#8e8e93'], forderungen: [t('forderungen_verliehenes_geld'), 'var(--c-ford)'], sonstiges: [t('sonstiges'), '#636366'], verbindlichkeiten: [t('darlehen_verbindlichkeiten'), 'var(--c-verb)'],
+const ROLE = {liquiditaet: [t('pos_bankguthaben'), 'var(--c-liq)'], wertpapiere: [t('pos_wertpapiere'), 'var(--c-anl)'], anlagen: [t('pos_festgeld_vorsorge'), 'var(--c-fest)'], immobilien: [t('immobilien'), '#b8860b'],
+              beteiligungen: [t('beteiligungen'), 'var(--c-bet)'], sachwerte: [t('sachwerte'), '#8e8e93'], forderungen: [t('pos_forderungen'), 'var(--c-ford)'], sonstiges: [t('sonstiges'), '#636366'], verbindlichkeiten: [t('darlehen_verbindlichkeiten'), 'var(--c-verb)'],
               eigenkapital: [t('role_eigenkapital'), '#7d7aa8'], eventual: [t('role_eventual'), '#a8a29e'], ignorieren: [t('nicht_bilanzieren'), '#c7c7cc']};
-const ROLE_OPTS = [['liquiditaet', t('liquiditaet')], ['wertpapiere', t('wertpapiere_depots')], ['anlagen', t('geldanlagen')], ['immobilien', t('immobilien')], ['beteiligungen', t('beteiligungen')], ['sachwerte', t('sachwerte')], ['forderungen', t('forderungen_verliehenes_geld')], ['sonstiges', t('sonstiges')], ['verbindlichkeiten', t('darlehen_verbindlichkeiten')], ['eigenkapital', t('kapitalkonten_eigenkapital_nicht_im_ne')], ['eventual', t('avale_buergschaften_nicht_im_nettoverm')], ['ignorieren', t('nicht_bilanzieren')]];
+const ROLE_OPTS = [['liquiditaet', t('pos_bankguthaben')], ['wertpapiere', t('pos_wertpapiere')], ['anlagen', t('pos_festgeld_vorsorge')], ['immobilien', t('immobilien')], ['beteiligungen', t('beteiligungen')], ['sachwerte', t('sachwerte')], ['forderungen', t('pos_forderungen')], ['sonstiges', t('sonstiges')], ['verbindlichkeiten', t('darlehen_verbindlichkeiten')], ['eigenkapital', t('kapitalkonten_eigenkapital_nicht_im_ne')], ['eventual', t('avale_buergschaften_nicht_im_nettoverm')], ['ignorieren', t('nicht_bilanzieren')]];
 // Hilfetexte (Tooltips). Schluessel werden mit hq('schluessel') eingeblendet.
 const H = {
   bereich: t('ein_bereich_ist_eine_menge'),
@@ -510,24 +510,24 @@ async function vUebersicht() {
   const delta = (a, b) => a == null || b == null ? '' : `<span class="delta ${a - b >= 0 ? 'pos' : 'neg'}">${a - b >= 0 ? '+' : ''}${F0(a - b)} €</span>`;
   const pct = x => x == null ? '–' : (x * 100).toFixed(0) + ' %';
   const liqRow = D.bilanz.zeilen.filter(r => !r.gruppe && r.rolle === 'liquiditaet'), liq = Object.fromEntries(m.map(k => [k, liqRow.reduce((a, r) => a + (r.werte[k] || 0), 0)]));
-  const kpi = (l, v, d, spark) => `<div class="card"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d || ''}</div>${spark || ''}</div>`;
+  const kpi = (l, v, d, spark, go) => `<div class="card${go ? ' link' : ''}"${go ? ` data-goto="${go}"` : ''}><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d || ''}</div>${spark || ''}</div>`;
   const opYtd = sumsOf(D, 'Operativ', ytd), opLytd = sumsOf(D, 'Operativ', lytd), opLy = sumsOf(D, 'Operativ', lyAll);
   const einYtd = sumsOf(D, 'Einnahmen', ytd), einLytd = sumsOf(D, 'Einnahmen', lytd), ausYtd = sumsOf(D, 'Ausgaben', ytd), ausLytd = sumsOf(D, 'Ausgaben', lytd);
   const pend = pm.length ? pm[pm.length - 1] : null;
   h += '<div class="cards">'
-    + kpi(t('nettovermoegen'), F0(nw[cur]) + ' €', (prev != null ? t('monat') + delta(nw[cur], nw[prev]) : '') + (yago != null ? t('jahr') + delta(nw[cur], nw[yago]) : '') + (pend ? t('plan_2') + ML(pend) + ': ' + F0(proj.nettovermoegen[pend] * defl(pend)) + ' €' : ''), sparkline(m.slice(-24).map(k => nw[k])))
-    + kpi(t('liquiditaet'), F0(liq[cur]) + ' €', 'reicht ' + (K.reichweite_monate == null ? '–' : K.reichweite_monate.toFixed(1) + t('monate_2')) + t('bei_ausgaben_inkl_zinsen') + (pend ? t('plan_2') + ML(pend) + ': ' + F0(proj.liquiditaet[pend] * defl(pend)) + ' €' : ''), sparkline(m.slice(-24).map(k => liq[k]), 'var(--c-liq)'))
-    + kpi(t('einnahmen_2') + y, F0(einYtd) + ' €', t('vorjahr_gleicher_zeitraum') + F0(einLytd) + ' € ' + delta(einYtd, einLytd), sparkline(m.slice(-24).map(k => D.kapitalfluss.summen[k]?.Einnahmen ?? 0), 'var(--c-ein)'))
-    + kpi(t('ausgaben_2') + y, F0(ausYtd) + ' €', t('vorjahr_gleicher_zeitraum') + F0(ausLytd) + ' € ' + delta(ausYtd, ausLytd), sparkline(m.slice(-24).map(k => -(D.kapitalfluss.summen[k]?.Ausgaben ?? 0)), 'var(--c-aus)'))
-    + kpi(t('operatives_ergebnis_2') + y, F0(opYtd) + ' €', t('vorjahr_gleicher_zeitraum') + F0(opLytd) + ' € ' + delta(opYtd, opLytd) + ' · ' + ly + ' gesamt ' + F0(opLy) + ' €', sparkline(m.slice(-24).map(k => D.kapitalfluss.summen[k]?.Operativ ?? 0), 'var(--c-anl)'))
-    + kpi(t('sparquote_12_monate'), pct(K.sparquote), t('operatives_ergebnis_3') + F0(K.operativ_12m) + t('einnahmen_ausgaben') + t('eur_monat', F0(K.ausgaben_monat)))
-    + kpi(t('zinslast'), t('eur_monat', F0(K.zinsen_monat)), t('durchschnitt_der_letzten_12_monate') + t('eur_jahr', F0((K.zinsen_monat || 0) * 12)))
+    + kpi(t('nettovermoegen'), F0(nw[cur]) + ' €', (prev != null ? t('monat') + delta(nw[cur], nw[prev]) : '') + (yago != null ? t('jahr') + delta(nw[cur], nw[yago]) : '') + (pend ? t('plan_2') + ML(pend) + ': ' + F0(proj.nettovermoegen[pend] * defl(pend)) + ' €' : ''), sparkline(m.slice(-24).map(k => nw[k])), '#bilanz')
+    + kpi(t('pos_bankguthaben'), F0(liq[cur]) + ' €', t('reicht') + (K.reichweite_monate == null ? '–' : K.reichweite_monate.toFixed(1) + t('monate_2')) + t('bei_ausgaben_inkl_zinsen') + (pend ? t('plan_2') + ML(pend) + ': ' + F0(proj.liquiditaet[pend] * defl(pend)) + ' €' : ''), sparkline(m.slice(-24).map(k => liq[k]), 'var(--c-liq)'), '#bilanz')
+    + kpi(t('einnahmen_2') + y, F0(einYtd) + ' €', t('vorjahr_gleicher_zeitraum') + F0(einLytd) + ' € ' + delta(einYtd, einLytd), sparkline(m.slice(-24).map(k => D.kapitalfluss.summen[k]?.Einnahmen ?? 0), 'var(--c-ein)'), '#kapitalfluss')
+    + kpi(t('ausgaben_2') + y, F0(ausYtd) + ' €', t('vorjahr_gleicher_zeitraum') + F0(ausLytd) + ' € ' + delta(ausYtd, ausLytd), sparkline(m.slice(-24).map(k => -(D.kapitalfluss.summen[k]?.Ausgaben ?? 0)), 'var(--c-aus)'), '#kapitalfluss')
+    + kpi(t('operatives_ergebnis_2') + y, F0(opYtd) + ' €', t('vorjahr_gleicher_zeitraum') + F0(opLytd) + ' € ' + delta(opYtd, opLytd) + ' · ' + t('jahr_gesamt', ly, F0(opLy)), sparkline(m.slice(-24).map(k => D.kapitalfluss.summen[k]?.Operativ ?? 0), 'var(--c-anl)'), '#kapitalfluss')
+    + kpi(t('sparquote_12_monate'), pct(K.sparquote), t('operatives_ergebnis_3') + F0(K.operativ_12m) + t('einnahmen_ausgaben') + t('eur_monat', F0(K.ausgaben_monat)), '', '#kapitalfluss')
+    + kpi(t('zinslast'), t('eur_monat', F0(K.zinsen_monat)), t('durchschnitt_der_letzten_12_monate') + t('eur_jahr', F0((K.zinsen_monat || 0) * 12)), '', '#kapitalfluss')
     + '</div>';
-  h += `<div class="grid2"><div class="card"><h3>${t('vermoegensstruktur')}</h3>${chartStack(D)}</div><div class="card"><h3>${t('einnahmen_und_ausgaben_je_monat')}</h3>${chartCashflow(D)}</div></div>`;
+  h += `<div class="grid2"><div class="card link" data-goto="#bilanz"><h3>${t('vermoegensstruktur')}</h3>${chartStack(D)}</div><div class="card link" data-goto="#kapitalfluss"><h3>${t('einnahmen_und_ausgaben_je_monat')}</h3>${chartCashflow(D)}</div></div>`;
   // Jahresvergleich (kumuliert)
   const years = [...new Set([...m, ...(S.plan ? pm : [])].map(k => k.slice(0, 4)))].sort();
   const ycols = years.map(yy => ({key: yy, months: [...m, ...(S.plan ? pm : [])].filter(k => k.startsWith(yy)), plan: !m.some(k => k.startsWith(yy)), mixed: m.some(k => k.startsWith(yy)) && pm.some(k => k.startsWith(yy)), year: true, cur: false}));
-  const lab = c => c.key + (c.mixed ? ' Ist+Plan' : c.plan ? t('plan_3') : '') + (c.months.length < 12 ? ' · ' + c.months.length + t('mon') : '');
+  const lab = c => c.key + (c.mixed ? ' ' + t('ist_plan_kurz') : c.plan ? t('plan_3') : '') + (c.months.length < 12 ? ' · ' + c.months.length + t('mon') : '');
   h += `<h2>${t('jahresvergleich')} <span class="x">${t('kumulierte_werte_spalte_0_bis', ly, MONATE[+cur.slice(5) - 1])}</span></h2><div class="wrap auto"><table><thead><tr><th>${t('position')}</th>${ycols.map(c => `<th class="year${c.plan ? ' plan' : ''}">${lab(c)}</th>`).join('')}${lytd.length ? `<th class="year">${t('0_bis_1', ly, MONATE[+cur.slice(5) - 1])}</th>` : ''}</tr></thead><tbody>`;
   const rowY = (label, fn, total) => `<tr class="${total ? 'total' : ''}"><td>${label}</td>${ycols.map(c => { const v = fn(c.months); return `<td class="${cls(v, c)}">${F0(v)}</td>`; }).join('')}${lytd.length ? `<td class="year ${(fn(lytd) || 0) < 0 ? 'neg' : 'pos'}">${F0(fn(lytd))}</td>` : ''}</tr>`;
   for (const [k, l] of [['Einnahmen', t('einnahmen')], ['Ausgaben', t('ausgaben')], ['Zinsen', t('davon_zinsen')]]) h += rowY(l, ms => sumsOf(D, k, ms));
@@ -550,7 +550,7 @@ async function vUebersicht() {
   let nx = '';
   if (pm.length) {
     const sums = D.kapitalfluss.summen;
-    nx = `<table class="plain"><thead><tr><th>${t('monat_2')}</th><th class="num">${t('operativ')}</th><th class="num">${t('zahlungsfluss')}</th><th class="num">${t('liquiditaet')}</th></tr></thead><tbody>` + pm.slice(0, 6).map(k => `<tr><td>${ML(k)}</td><td class="num ${(sums[k]?.Operativ || 0) < 0 ? 'neg' : 'pos'}">${F0((sums[k]?.Operativ || 0) * defl(k))}</td><td class="num ${(sums[k]?.Cashflow || 0) < 0 ? 'neg' : 'pos'}">${F0((sums[k]?.Cashflow || 0) * defl(k))}</td><td class="num">${F0(proj.liquiditaet[k] * defl(k))}</td></tr>`).join('') + '</tbody></table>';
+    nx = `<table class="plain"><thead><tr><th>${t('monat_2')}</th><th class="num">${t('operativ')}</th><th class="num">${t('zahlungsfluss')}</th><th class="num">${t('pos_bankguthaben')}</th></tr></thead><tbody>` + pm.slice(0, 6).map(k => `<tr><td>${ML(k)}</td><td class="num ${(sums[k]?.Operativ || 0) < 0 ? 'neg' : 'pos'}">${F0((sums[k]?.Operativ || 0) * defl(k))}</td><td class="num ${(sums[k]?.Cashflow || 0) < 0 ? 'neg' : 'pos'}">${F0((sums[k]?.Cashflow || 0) * defl(k))}</td><td class="num">${F0(proj.liquiditaet[k] * defl(k))}</td></tr>`).join('') + '</tbody></table>';
   }
   h += `<div class="grid2"><div class="card"><h3>${t('offene_punkte')}</h3>${items.length ? items.map(([k, t, href]) => `<div style="margin:4px 0"><a href="${href}" class="pill ${k}">${esc(t)}</a></div>`).join('') : `<div class="muted">${t('nichts_offen')}</div>`}</div><div class="card"><h3>${t('naechste_monate_plan')}</h3>${nx || `<div class="muted">${t('plan_unter_planung_aktivieren')}</div>`}</div></div>`;
   // andere Bereiche
@@ -829,6 +829,7 @@ async function openHistDrawer(uuid, vorschau) {
     <div class="row tight"><span class="small muted">${t('verlauf_aus_0', hq('verlauf'))}</span><div class="seg" id="hq-seg"><button class="hq-q" data-q="umsaetze">${t('umsaetze_2')}</button><button class="hq-q" data-q="stand">${t('kontostaenden')}</button></div></div>
     <div class="small muted" id="hq-erkl" style="margin:4px 0 8px"></div>
     <div id="hq-hinweis"></div><div id="hq-pending"></div>
+    <div class="h-chart" id="h-chart"></div>
     <h3>${t('monatsstaende')}</h3>
     <div class="row tight" id="h-addrow"><input type="month" id="h-von" style="width:140px"><button id="h-add" class="small secondary">${t('monat_davor_ergaenzen')}</button></div>
     <div class="hist-grid" id="h-grid"></div>
@@ -893,8 +894,24 @@ function renderHist(r) {
   $('#h-actions', d).classList.toggle('hidden', !stand && !pending);
   $('#h-clear', d).classList.toggle('hidden', !stand); $('#h-undo', d).classList.toggle('hidden', !pending);
   const g = $('#h-grid', d); if (g) g.scrollTop = g.scrollHeight;          // neueste Monate sichtbar
+  $('#h-chart', d).innerHTML = histChart(months.filter(mk => werte[mk] != null).map(mk => [mk, werte[mk]]));
+}
+function histChart(pts) {
+  // Verlauf des Kontos im Fenster: Monatsend-Staende als Linie mit Flaeche, Nulllinie, Jahre unten
+  if (pts.length < 2) return '';
+  const W = 420, H = 130, P = {l: 46, r: 6, t: 8, b: 18}, n = pts.length - 1, vals = pts.map(p => p[1]);
+  let max = Math.max(...vals, 0), min = Math.min(...vals, 0); if (max === min) max = min + 1;
+  const x = i => P.l + i * (W - P.l - P.r) / n, y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min), f = v => v.toFixed(1);
+  let g = '';
+  for (const tk of niceTicks(min, max, 3)) g += `<line class="bch-grid${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${f(y(tk))}" y2="${f(y(tk))}"/><text class="bch-y" x="${P.l - 5}" y="${f(y(tk) + 4)}">${Fk(tk)}</text>`;
+  const every = Math.max(1, Math.ceil(pts.length / 12 / 6));
+  pts.forEach(([mk], i) => { if (mk.endsWith('-01') && (+mk.slice(0, 4)) % every === 0 && x(i) > P.l + 10 && x(i) < W - 14) g += `<line class="bch-year" x1="${f(x(i))}" x2="${f(x(i))}" y1="${P.t}" y2="${H - P.b}"/><text class="bch-x" x="${f(x(i))}" y="${H - 4}">${mk.slice(0, 4)}</text>`; });
+  const line = pts.map((p, i) => (i ? 'L' : 'M') + f(x(i)) + ' ' + f(y(p[1]))).join('');
+  g += `<path class="h-area" d="${line}L${f(x(n))} ${f(y(0))}L${f(x(0))} ${f(y(0))}Z"/><path class="h-line" d="${line}"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" class="h-svg">${g}</svg>`;
 }
 const HD = {uuid: null, live: false, r: null};
+const drawerDirty = () => $$('#drawer #h-grid input:not(.auto)').some(i => i.value !== i.defaultValue) || !!($('#drawer #h-csv') && $('#drawer #h-csv').value.trim());
 
 // ---------------------------------------------------------------- Bilanz
 function vBilanz() {
@@ -909,7 +926,7 @@ function vBilanz() {
   const pos = D.bilanz.zeilen.filter(r => r.gruppe);
   S.posOpen = S.posOpen || {};
   const allOpen = pos.length && pos.every(r => S.posOpen[r.rolle]);
-  let h = `<div class="toolbar">${viewCtl()}<span class="tb-sep"></span><button class="ghost small" id="pos-all">${allOpen ? t('alle_zuklappen') : t('alle_aufklappen')}</button>${alleCtl(nInactive)}${planCtl()} ${hq('bilanz_stand')}<span class="sp"></span><label class="switch"><input type="checkbox" id="bch-on" ${S.bchOff ? '' : 'checked'}><i></i>${t('grafik')}</label>${xlsxBtn('balance')}</div>`;
+  let h = `<div class="toolbar">${viewCtl()}<span class="tb-sep"></span><button class="ghost small" id="pos-all">${allOpen ? t('alle_zuklappen') : t('alle_aufklappen')}</button>${alleCtl(nInactive)}${planCtl()} ${hq('bilanz_stand')}<span class="sp"></span>${xlsxBtn('balance')}</div>`;
   h += vBilanzChart(D);
   const tag = r => (r.depot ? `<span class="tag">${t('depot')}</span>` : '') + (r.offline && !r.gruppe ? `<span class="tag">${t('manuell')}</span>` : '') + (r.inaktiv ? `<span class="tag">${t('ausgeblendet')}</span>` : '')
     + (r.verlauf === 'stand' && !r.gruppe ? `<span class="tag" title="${t('verlauf_aus_kontostaenden')}">${t('kontostaende')}</span>` : '')
@@ -952,16 +969,15 @@ function bchData(D) {
   return {months, ist: D.monate.length, series, nw: months.map(m => nwAll[m] == null ? null : nwAll[m] * defl(m))};
 }
 function vBilanzChart(D) {
-  if (S.bchOff) return '';
   const d = bchData(D); if (d.months.length < 2 || !d.series.length) return '';
   BCH.d = d;
   // Ausschnitt (als Monate gemerkt, damit er Neuaufbau und Bereichswechsel uebersteht)
   const r = S.bchRange, n = d.months.length;
   let i0 = r ? d.months.indexOf(r[0]) : -1, i1 = r ? d.months.indexOf(r[1]) : -1;
   if (i0 < 0 || i1 <= i0) { i0 = 0; i1 = n - 1; }
-  BCH.i0 = i0; BCH.i1 = i1;
+  BCH.i0 = BCH.f0 = i0; BCH.i1 = BCH.f1 = i1;
   const rb = [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [60, t('bch_jahre', 5)], [120, t('bch_jahre', 10)], [0, t('alle')]];
-  return `<div class="card bch" id="bch"><div class="bch-head"><span class="bch-range" id="bch-range"></span><span class="sp"></span><span class="bch-hint">${t('ziehen_vergroessern_doppelklick_alles')}</span><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
+  return `<div class="card bch" id="bch"><div class="bch-head"><span class="bch-range" id="bch-range"></span><span class="sp"></span><span class="bch-hint">${t('bch_hinweis')}</span><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
     <div class="bch-plot" id="bch-plot"><svg class="bch-svg" id="bch-svg"></svg><div class="bch-tip hidden" id="bch-tip"></div></div></div>`;
 }
 function bchDraw() {
@@ -1017,7 +1033,21 @@ function bchDraw() {
 }
 function bchSet(i0, i1, btn) {
   const d = BCH.d, n = d.months.length; i0 = Math.max(0, Math.min(i0, n - 3)); i1 = Math.max(i0 + 2, Math.min(i1, n - 1));
+  BCH.f0 = i0; BCH.f1 = i1;
+  if (i0 === BCH.i0 && i1 === BCH.i1 && (btn || null) === S.bchBtn) return;
   BCH.i0 = i0; BCH.i1 = i1; S.bchRange = i0 === 0 && i1 === n - 1 ? null : [d.months[i0], d.months[i1]]; S.bchBtn = btn || null; bchDraw();
+}
+function bchView(f0, span, keepBtn) {
+  // Ausschnitt in Bruchteilen von Monaten (fliessendes Wischen und Zoomen); am Rand wird verschoben, nicht gestaucht
+  const last = BCH.d.months.length - 1; span = Math.max(2, Math.min(last, span)); f0 = Math.max(0, Math.min(f0, last - span));
+  const i0 = Math.round(f0), i1 = Math.min(last, i0 + Math.round(span));
+  bchSet(i0, i1, keepBtn ? S.bchBtn : null);
+  BCH.f0 = f0; BCH.f1 = f0 + span;
+}
+function bchZoom(c, factor) {
+  // um den Monat c (Bruchteil) vergroessern (factor < 1) bzw. verkleinern
+  const span = BCH.f1 - BCH.f0, ns = Math.max(2, Math.min(BCH.d.months.length - 1, span * factor));
+  bchView(c - (c - BCH.f0) * ns / span, ns, false);
 }
 function bchHover(i) {
   const d = BCH.d, G = BCH.geo, hv = $('#bch-hover'), tip = $('#bch-tip'); if (!hv || !tip) return;
@@ -1062,13 +1092,27 @@ function bchBind() {
     $('#bch-sel') && $('#bch-sel').classList.add('hidden');
     bchJump(BCH.d.months[G.idx(px)]);
   });
-  hit.addEventListener('dblclick', () => bchSet(0, BCH.d.months.length - 1));
+  const at = px => { const G = BCH.geo; return BCH.f0 + (px - G.P.l) * (BCH.f1 - BCH.f0) / Math.max(1, G.W - G.P.l - G.P.r); };   // Monat (Bruchteil) unter dem Zeiger
+  hit.addEventListener('dblclick', e => bchZoom(at(pt(e)), 0.5));          // Doppelklick: auf den halben Zeitraum um diese Stelle
   hit.addEventListener('wheel', e => {
-    // Zwei-Finger-Zoom (Trackpad) bzw. Strg + Rad: um die Mausposition vergroessern; waagerechtes Wischen verschiebt
-    const G = BCH.geo, span = BCH.i1 - BCH.i0;
-    if (e.ctrlKey) { e.preventDefault(); const c = G.idx(pt(e)), f = Math.exp(e.deltaY * 0.01), ns = Math.max(2, Math.round(span * f)), a = Math.round(c - (c - BCH.i0) * ns / Math.max(1, span)); bchSet(a, a + ns); }
-    else if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && span < BCH.d.months.length - 1) { e.preventDefault(); const sh = Math.round(e.deltaX / 12) || Math.sign(e.deltaX); bchSet(BCH.i0 + sh, BCH.i1 + sh); }
+    // Trackpad: Zusammen-/Auseinanderziehen (bzw. Strg + Rad) zoomt um den Zeiger; waagerechtes Wischen verschiebt den Ausschnitt
+    // bei gleicher Laenge (wie eine Tabelle); senkrechtes Wischen bleibt beim Seitenrollen
+    if (BCH.gesture) return;
+    if (e.ctrlKey) { e.preventDefault(); bchZoom(at(pt(e)), Math.exp(e.deltaY * 0.01)); return; }
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    const span = BCH.f1 - BCH.f0, G = BCH.geo;
+    if (span >= BCH.d.months.length - 1) return;
+    e.preventDefault();
+    bchView(BCH.f0 + e.deltaX * span / Math.max(1, G.W - G.P.l - G.P.r), span, true);
   }, {passive: false});
+  // Safari: Zusammen-/Auseinanderziehen kommt als eigenes Gesten-Ereignis
+  hit.addEventListener('gesturestart', e => { e.preventDefault(); BCH.gesture = {c: at(pt(e)), span: BCH.f1 - BCH.f0, f0: BCH.f0}; });
+  hit.addEventListener('gesturechange', e => {
+    e.preventDefault(); const g = BCH.gesture; if (!g || !e.scale) return;
+    const ns = Math.max(2, Math.min(BCH.d.months.length - 1, g.span / e.scale));
+    bchView(g.c - (g.c - g.f0) * ns / g.span, ns, false);
+  });
+  hit.addEventListener('gestureend', e => { e.preventDefault(); BCH.gesture = null; });
 }
 function bindBilanzChart(main) {
   if (!$('#bch', main)) return;
@@ -1927,12 +1971,25 @@ async function readPkgFile(file) {
 }
 
 // ---------------------------------------------------------------- Updates
+function clHtml(md) {
+  // CHANGELOG (Markdown-Ausschnitt): Versionen als Ueberschrift, Punkte als Liste, `Code`
+  const inl = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+  let h = '', open = false;
+  for (const line of md.split('\n')) {
+    const v = line.match(/^##\s+(\S+)(?:\s+\((\d{4}-\d{2}-\d{2})\))?/), li = line.match(/^\s*[-*]\s+(.*)/);
+    if (v) { if (open) h += '</ul>'; open = false; h += `<h3>${esc(v[1])}${v[2] ? `<span class="vdate">${t('vom_0', FD(v[2]))}</span>` : ''}</h3>`; }
+    else if (li) { if (!open) h += '<ul>'; open = true; h += `<li>${inl(li[1])}</li>`; }
+    else if (line.trim() && !line.startsWith('# ')) { if (open) h += '</ul>'; open = false; h += `<p>${inl(line)}</p>`; }
+  }
+  return `<div class="cl">${h}${open ? '</ul>' : ''}</div>`;
+}
 async function vUpdates() {
   const r = await api('/api/update/status'), st = S.STATUS, info = r.info;
   let h = `<div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.datum ? `<span class="vdate">${t('vom_0', FD(r.datum))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
     <div class="card"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.fehler ? '<span class="pill err">?</span>' : esc(info.verfuegbar || '–') + (info.datum ? `<span class="vdate">${t('vom_0', FD(info.datum))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.fehler ? esc(info.fehler) : (info.neuer ? `<span class="pill ok">${t('neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + t('quelle_2') + esc(info.quelle || '')) : t('noch_nicht_geprueft')}${r.geprueft ? t('geprueft') + new Date(r.geprueft * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
     <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${info && info.neuer && st.lokal ? '' : 'disabled'}>${t('update_installieren_und_dienst_neu')}</button></div>
-    ${info && info.notizen ? `<h2>${t('aenderungen')}</h2><pre class="log">` + esc(info.notizen) + '</pre>' : ''}
+    ${info && info.notizen && info.neuer ? `<h2>${t('neu_in_0', esc(info.verfuegbar))}</h2>${clHtml(info.notizen)}` : ''}
+    ${r.changelog ? `<details class="changelog"><summary>${t('alle_aenderungen')}</summary>${clHtml(r.changelog)}</details>` : ''}
     <div class="note">${t('die_pruefung_fragt_nur_github', esc((S.CFG.updates || {}).repo || 'stecrz/Kontor'))} <code>.alt</code>${t('und_der_dienst_neu_gestartet')} <code>${t('git_pull')}</code>${t('die_seite_laedt_danach_neu')} <code>bash &lt;(curl -fsSL https://raw.githubusercontent.com/${esc((S.CFG.updates || {}).repo || 'stecrz/Kontor')}/main/get.sh)</code> ${t('im_terminal_installiert_und_aktualisie')}</div>`;
   return h;
 }
@@ -2137,8 +2194,8 @@ function bind(main) {
     if (c && w.scrollWidth > w.clientWidth) w.scrollLeft = snapLeft(w, colX(w, c) + c.offsetWidth - w.clientWidth * (S.plan ? 0.62 : 1));
   });
   if (S.tab === 'bilanz') bindBilanzChart(main);
-  const bo = $('#bch-on', main); if (bo) bo.addEventListener('change', e => { S.bchOff = !e.target.checked; try { localStorage.setItem('kontor.bch', S.bchOff ? '0' : '1'); } catch (x) {} route(); });
   const vs = $('#vorschlag-an', main); if (vs) vs.addEventListener('change', e => { S.vorschlag = e.target.checked; route(); });
+  $$('[data-goto]', main).forEach(c => c.addEventListener('click', e => { if (!e.target.closest('a, button, input, select')) location.hash = c.dataset.goto; }));
   $$('[data-xlsx]', main).forEach(b => b.addEventListener('click', () => download(b.dataset.xlsx === 'property' ? `/api/export/property.xlsx?id=${encodeURIComponent(b.dataset.immo || '')}&calculation=${encodeURIComponent(b.dataset.kalk || '')}` : `/api/export/${b.dataset.xlsx}.xlsx?area=${encodeURIComponent(b.dataset.bereich || S.bereich || '')}&mode=${S.modus === 'jahre' ? 'years' : 'months'}`)));
 
   // Einrichtung
@@ -2358,7 +2415,12 @@ document.addEventListener('click', e => { const b = e.target.closest('#modus-seg
 document.addEventListener('change', e => { const id = e.target.id; if (id === 'planan') { S.plan = e.target.checked; route(); } else if (id === 'realan') { S.real = e.target.checked; route(); } else if (id === 'alle-zeilen') { S.alle = e.target.checked; route(); } });
 $('#menu-btn').addEventListener('click', () => $('.side').classList.toggle('open'));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
-try { S.bchOff = localStorage.getItem('kontor.bch') === '0'; } catch (e) {}
+// Klick neben das Seitenfenster schliesst es (bei ungespeicherten Eingaben erst nach Rueckfrage)
+document.addEventListener('pointerdown', e => {
+  const dr = $('#drawer'); if (!dr.classList.contains('open') || dr.contains(e.target) || e.target.closest('#toast')) return;
+  if (drawerDirty() && !confirm(t('ungespeicherte_aenderungen_verwerfen'))) return;
+  closeDrawer();
+});
 try { const s = JSON.parse(localStorage.getItem('kontor.ui') || '{}'); Object.assign(S, {modus: s.modus === 'jahre' ? 'jahre' : 'monate', plan: s.plan !== false, real: !!s.real, bereich: s.bereich || null}); } catch (e) {}
 let SNAP_T = null;
 window.addEventListener('resize', () => { clearTimeout(SNAP_T); SNAP_T = setTimeout(() => { if (['bilanz', 'kapitalfluss', 'planung'].includes(S.tab)) $$('#main .wrap.snap').forEach(w => { const l = w.scrollLeft; snapTable(w); w.scrollLeft = snapLeft(w, l); }); }, 150); });

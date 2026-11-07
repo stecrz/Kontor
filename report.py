@@ -39,19 +39,15 @@ from i18n import tr
 
 ROLES = ["liquiditaet", "wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte", "forderungen", "sonstiges", "verbindlichkeiten",
          "eigenkapital", "eventual", "ignorieren"]
-ROLE_LABELS = {"liquiditaet": "Liquidität", "wertpapiere": "Wertpapiere & Depots", "anlagen": "Geldanlagen", "immobilien": "Immobilien",
-               "beteiligungen": "Beteiligungen", "sachwerte": "Sachwerte", "forderungen": "Forderungen (verliehenes Geld)", "sonstiges": "Sonstiges",
-               "verbindlichkeiten": "Darlehen & Verbindlichkeiten", "eigenkapital": "Kapitalkonten (Eigenkapital)",
-               "eventual": "Avale & Bürgschaften", "ignorieren": "nicht bilanzieren"}
-ROLE_KEYS = {"liquiditaet": "liquiditaet", "wertpapiere": "wertpapiere_depots", "anlagen": "geldanlagen", "immobilien": "immobilien",
-             "beteiligungen": "beteiligungen", "sachwerte": "sachwerte", "forderungen": "forderungen_verliehenes_geld", "sonstiges": "sonstiges",
+ROLE_KEYS = {"liquiditaet": "pos_bankguthaben", "wertpapiere": "pos_wertpapiere", "anlagen": "pos_festgeld_vorsorge", "immobilien": "immobilien",
+             "beteiligungen": "beteiligungen", "sachwerte": "sachwerte", "forderungen": "pos_forderungen", "sonstiges": "sonstiges",
              "verbindlichkeiten": "darlehen_verbindlichkeiten", "eigenkapital": "role_eigenkapital", "eventual": "role_eventual",
              "ignorieren": "nicht_bilanzieren"}       # Schluessel in web/i18n.js
 
 
 def role_label(role: str) -> str:
     """Name einer Bilanzposition in der eingestellten Sprache."""
-    return tr(ROLE_KEYS[role]) if role in ROLE_KEYS else ROLE_LABELS.get(role, role)
+    return tr(ROLE_KEYS[role]) if role in ROLE_KEYS else role
 
 
 OFF_BALANCE = {"eigenkapital", "eventual", "ignorieren"}      # nicht im Nettovermoegen

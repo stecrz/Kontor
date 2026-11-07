@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.9.15 (2026-11-07)
+- Kontostände aus MoneyMoney: Der Verlauf wird jetzt an den Salden geeicht, die Kontor aus den Umsätzen kennt (auch, ob ein Punkt den Stand vom Vortag zeigt, z. B. am Monatsersten). Ein Konto wird nur übernommen, wenn mindestens 70 % seiner Punkte passen. Gelesen wird ausschließlich (nur SELECT); ein Test stellt das sicher. Scheitert die Erkennung, nennt das Protokoll nur Anzahlen zur Fehlersuche.
+- Bilanz-Grafik: Waagerechtes Wischen verschiebt den Ausschnitt bei gleicher Länge (auch am Rand); Zusammen-/Auseinanderziehen zoomt (auch in Safari); Doppelklick vergrößert auf den halben Zeitraum. Die Grafik ist immer sichtbar.
+- Verlauf-Fenster eines Kontos: mit Grafik; Klick daneben schließt es.
+- Übersicht: Klick auf eine Kachel oder Grafik öffnet Bilanz bzw. Kapitalfluss.
+- Positionen: „Bankguthaben“ (grün), „Wertpapiere“ (blau), „Festgeld & Vorsorge“, „Forderungen“.
+- Updates: alle Änderungen früherer Versionen aufklappbar.
+
 ## 3.9.14 (2026-11-07)
 - Kontostände aus MoneyMoney: liest jetzt MoneyMoneys tatsächliche Tabellen – Saldo-Verlauf (balance_chart) und für Depots den Wert der Wertpapiere je Abruf (portfolio_chart). Konten werden über IBAN, sonst Kontonummer + BLZ, sonst Namen zugeordnet; gleichnamige Konten entscheidet der aktuelle Saldo. Übernommen wird nur, was eindeutig passt.
 

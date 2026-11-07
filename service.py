@@ -12,6 +12,7 @@ Sicherheit:
 from __future__ import annotations
 
 import base64
+import bisect
 import binascii
 import copy
 import ipaddress
@@ -26,7 +27,7 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 import auth
@@ -38,9 +39,9 @@ import categorize
 import updates
 from receipts import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (RUN_LOCK, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+from core import (RUN_LOCK, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merged_config, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
-from model import Ledger, accounts_from_export, ledger_from_bytes, ledger_to_bytes
+from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, apply_plan, role_label
 from storage import Store
 from excel import Sheet, workbook
@@ -61,6 +62,31 @@ def bind_allowed(addr: str) -> bool:
     except ValueError:
         return False
     return ip.is_loopback or ip in ipaddress.ip_network("100.64.0.0/10")
+
+
+def balance_lookup(ledger: Ledger) -> Callable[[str, date, bool], Optional[float]]:
+    """Saldo eines Kontos am Ende eines Tages aus den Umsaetzen (heutiger Saldo minus alle spaeteren gebuchten Umsaetze),
+    nach Buchungs- oder Wertstellungsdatum; None fuer Depots und unbekannte Konten."""
+    idx: Dict[Tuple[str, bool], Tuple[List[date], List[float]]] = {}
+    per: Dict[str, List[Tx]] = {}
+    for t in ledger.txs:
+        if t.booked:
+            per.setdefault(t.account_uuid, []).append(t)
+    for u, txs in per.items():
+        for by_value in (False, True):
+            pts = sorted(((t.value_date or t.booking_date) if by_value else t.booking_date, t.amount) for t in txs)
+            cum = [0.0]
+            for _d, a in pts:
+                cum.append(cum[-1] + a)
+            idx[(u, by_value)] = ([d for d, _a in pts], cum)
+
+    def balance_at(uuid: str, day: date, by_value: bool = False) -> Optional[float]:
+        acc = ledger.accounts.get(uuid)
+        if acc is None or acc.portfolio or acc.group:
+            return None
+        dates, cum = idx.get((uuid, by_value), ([], [0.0]))
+        return round(acc.balance - (cum[-1] - cum[bisect.bisect_right(dates, day)]), 2)
+    return balance_at
 
 
 class App:
@@ -250,7 +276,8 @@ class App:
                 raise mm_history.HistorieError(tr("s_erst_die_konten_aus_moneymoney"))
             accounts = {a.uuid: {"saldo": a.balance, "depot": a.portfolio, "iban": a.iban, "nummer": a.account_number, "blz": a.bank_code,
                                  "name": a.name, "waehrung": a.currency} for a in ledger.accounts.values() if not a.group}
-            found, tables, fmt = mm_history.run(buf, accounts, date.today(), step=step)
+            found, tables, fmt = mm_history.run(buf, accounts, date.today(), step=step, balance_at=balance_lookup(ledger),
+                                                since=earliest_needed(self.config, date.today()))
             if not found or not found["konten"]:
                 with open(aufbau, "w", encoding="utf-8") as f:       # nur Tabellen-/Spaltennamen, keine Inhalte
                     f.write(mm_history.schema_text(tables, fmt))
@@ -674,7 +701,8 @@ def _last(d: dict, months: List[str]):
     return None
 
 
-EXPORT_FILE_KEYS = {t: "xf_" + t for t in ("balance", "cashflow", "planning", "tax", "transactions", "holdings", "receipts", "accounts")}   # Dateiname je Export
+EXPORT_FILE_KEYS = {"balance": "xf_balance", "cashflow": "xf_cashflow", "planning": "xf_planning", "tax": "xf_tax", "transactions": "xf_transactions",
+                    "holdings": "xf_holdings", "receipts": "xf_receipts", "accounts": "xf_accounts"}       # Dateiname je Export (Sprachkatalog)
 
 
 def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> List[Sheet]:
@@ -1033,7 +1061,8 @@ def make_handler(app: App):
                 return self._raw(200, txt.encode("utf-8"), "text/plain; charset=utf-8",
                                  {"Content-Disposition": 'attachment; filename="Kontor-Diagnose-%s.txt"' % date.today().isoformat()})
             if path == "/api/update/status":
-                return self._json(200, {"info": app.update_info, "geprueft": app.update_checked, "version": version(), "datum": updates.installed_date()})
+                return self._json(200, {"info": app.update_info, "geprueft": app.update_checked, "version": version(), "datum": updates.installed_date(),
+                                        "changelog": updates.changelog()})
             if path == "/api/history":
                 return self._json(200, self._historie(q.get("account") or "", q.get("source") if q.get("source") in ("umsaetze", "stand") else None))
             if path == "/api/history/mm-status":

@@ -417,13 +417,84 @@ def _series(rows, kind: str) -> List[Tuple[date, float]]:
     return out
 
 
-def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date) -> Optional[Dict]:
-    """Kontostand-Verlauf aus MoneyMoneys Tabellen balance_chart (Saldo je Konto und Zeitpunkt) und portfolio_chart
-    (Wert je Wertpapier und Zeitpunkt, fuer Depots ohne eigenen Saldo-Verlauf). accounts: uuid -> {saldo, depot, iban,
-    nummer, blz, name, waehrung}. Uebernommen wird ein Konto nur, wenn es eindeutig zugeordnet ist; ueber den Namen
-    zugeordnete Konten zusaetzlich nur, wenn der juengste Wert zum aktuellen Saldo passt. Insgesamt muss die Mehrheit der
-    pruefbaren Konten passen (sonst stimmt die Deutung nicht). Liefert {"tabelle", "spalten", "konten": {uuid: {JJJJ-MM:
-    Saldo am Monatsende}}, "treffer", "geprueft"} oder None."""
+# Deutungen eines Verlaufspunkts (Zeitpunkt T, Wert v): Saldo am Ende des Tages T oder davor (Ende T-1), nach Buchungs-
+# oder Wertstellungsdatum. Welche zutrifft, zeigt der Vergleich mit den Salden, die Kontor aus den Umsaetzen kennt.
+INTERP = (("end", False), ("start", False), ("end", True), ("start", True))
+BalanceAt = Callable[[str, date, bool], Optional[float]]
+
+
+def _load_series(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[int], Dict], today: date) -> Dict[int, Tuple[str, List]]:
+    """Verlauf je Konto der Datenbank: balance_chart (Saldo je Zeitpunkt, Waehrung des Kontos); Depots ohne eigenen
+    Saldo-Verlauf aus portfolio_chart (Summe der Wertpapiere je Zeitpunkt). Gelesen werden nur Kennung, Zeitpunkt, Betrag."""
+    series: Dict[int, Tuple[str, List]] = {}
+    kind = _time_kind(db, "balance_chart", today)
+    if kind:
+        by_key: Dict[int, Dict[str, List]] = {}
+        for k, c, ts, v in db.rows("SELECT account_key, currency, timestamp, balance FROM balance_chart WHERE account_key IN %s "
+                                   "AND typeof(balance) IN ('integer', 'real') ORDER BY timestamp" % _in(len(keys)), keys):
+            by_key.setdefault(k, {}).setdefault(c or "", []).append((ts, v))
+        for k, per in by_key.items():
+            rows = per.get(info(k).get("waehrung") or "") or (next(iter(per.values())) if len(per) == 1 else None)
+            if rows:
+                series[k] = ("balance_chart", _series(rows, kind))
+    if "portfolio_chart" in plain:
+        pkind = _time_kind(db, "portfolio_chart", today)
+        dep = [k for k in keys if k not in series and info(k).get("depot")]
+        if pkind and dep:
+            snaps: Dict[int, List] = {}
+            for k, ts, v in db.rows("SELECT account_key, timestamp, sum(balance) FROM portfolio_chart WHERE account_key IN %s "
+                                    "AND typeof(balance) IN ('integer', 'real') GROUP BY account_key, timestamp ORDER BY timestamp" % _in(len(dep)), dep):
+                snaps.setdefault(k, []).append((ts, v))
+            for k, rows in snaps.items():
+                series[k] = ("portfolio_chart", _series(rows, pkind))
+    return series
+
+
+def _day(d: date, when: str) -> date:
+    return d - timedelta(days=1) if when == "start" else d
+
+
+def _score(ser: List, u: str, scale: float, interp: Tuple[str, bool], balance_at: BalanceAt, since: Optional[date], today: date) -> Tuple[int, int]:
+    """(passende Punkte, vergleichbare Punkte) eines Verlaufs gegen die aus den Umsaetzen bekannten Tagessalden."""
+    when, by_value = interp
+    hits = n = 0
+    for d, v in ser:
+        day = _day(d, when)
+        if day >= today or (since and day < since):
+            continue
+        ref = balance_at(u, day, by_value)
+        if ref is None:
+            return 0, 0
+        n += 1
+        hits += abs(v * scale - ref) <= max(0.011, 0.001 * abs(ref))
+    return hits, n
+
+
+def _diagnose(series: Dict[int, Tuple[str, List]], matched: Dict[int, Tuple[str, str]], results: Dict, today: date) -> None:
+    """Protokoll fuer die Fehlersuche, wenn nichts uebernommen wird: nur Anzahlen und Anteile, keine Betraege oder Namen."""
+    pts = [d for _t, ser in series.values() for d, _v in ser]
+    if pts:
+        first = sum(1 for d in pts if d.day == 1) / len(pts)
+        last = sum(1 for d in pts if (d + timedelta(days=1)).day == 1) / len(pts)
+        gaps = sorted((b[0] - a[0]).days for _t, ser in series.values() for a, b in zip(ser, ser[1:]))
+        log.info("MoneyMoney database (diagnostics): %d points, %.0f %% on the 1st, %.0f %% on the last day of a month, median gap %s days, latest %s days ago",
+                 len(pts), 100 * first, 100 * last, gaps[len(gaps) // 2] if gaps else "-", (today - max(pts)).days)
+    for key, (hits, n) in sorted(results.items(), key=lambda x: str(x[0])):
+        log.info("MoneyMoney database (diagnostics): interpretation %s: %d of %d points match", key, hits, n)
+    for i, (k, (t, ser)) in enumerate(sorted(series.items())):
+        if k in matched:
+            log.info("MoneyMoney database (diagnostics): account %d (%s, %s): %d points", i + 1, matched[k][1], t, len(ser))
+
+
+def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at: Optional[BalanceAt] = None,
+                 since: Optional[date] = None) -> Optional[Dict]:
+    """Kontostand-Verlauf aus MoneyMoneys Tabellen balance_chart und portfolio_chart.
+    accounts: uuid -> {saldo, depot, iban, nummer, blz, name, waehrung}; balance_at(uuid, tag, nach_wertstellung): Saldo am
+    Ende des Tages laut den Umsaetzen in Kontor (None fuer Depots), verlaesslich ab since.
+    Massstab und Deutung der Zeitpunkte werden an diesen Salden geeicht; ein Konto mit Umsaetzen wird nur uebernommen, wenn
+    mindestens 70 % seiner Punkte passen, insgesamt muessen 60 % der pruefbaren Konten passen. Depots (ohne Umsaetze) nur bei
+    eindeutiger Zuordnung. Liefert {"tabelle", "spalten", "konten": {uuid: {JJJJ-MM: Saldo am Monatsende}}, "treffer",
+    "geprueft"} oder None."""
     plain, virtual = table_names(db)
     if "accounts" not in plain or "balance_chart" not in plain:
         log.info("MoneyMoney database: %d tables (%d virtual skipped), no accounts/balance_chart", len(plain), len(virtual))
@@ -435,78 +506,65 @@ def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date) -> Optiona
     if not matched and not unclear:
         return None
     owner = {k: u for u, ks in unclear.items() for k in ks}           # Kandidat -> ein Konto gleichen Namens (Waehrung, Depot)
-    acct = lambda k: accounts[matched[k][0] if k in matched else owner[k]]
-    keys = sorted(set(matched) | set(owner))
-    cur = "%04d-%02d" % (today.year, today.month)
-    series: Dict[int, Tuple[str, List[Tuple[date, float]]]] = {}
-    kind = _time_kind(db, "balance_chart", today)
-    if kind:
-        by_key: Dict[int, Dict[str, List]] = {}
-        for k, c, ts, v in db.rows("SELECT account_key, currency, timestamp, balance FROM balance_chart WHERE account_key IN %s "
-                                   "AND typeof(balance) IN ('integer', 'real') ORDER BY timestamp" % _in(len(keys)), keys):
-            by_key.setdefault(k, {}).setdefault(c or "", []).append((ts, v))
-        for k, per in by_key.items():
-            want = acct(k).get("waehrung") or ""
-            rows = per.get(want) or (next(iter(per.values())) if len(per) == 1 else None)
-            if rows:
-                series[k] = ("balance_chart", _series(rows, kind))
-    if "portfolio_chart" in plain:
-        pkind = _time_kind(db, "portfolio_chart", today)
-        dep = [k for k in keys if k not in series and acct(k).get("depot")]
-        if pkind and dep:
-            # Depotwert je Zeitpunkt = Summe der Wertpapiere zu diesem Zeitpunkt (MoneyMoney schreibt je Abruf alle Positionen)
-            snaps: Dict[int, List] = {}
-            for k, ts, v in db.rows("SELECT account_key, timestamp, sum(balance) FROM portfolio_chart WHERE account_key IN %s "
-                                    "AND typeof(balance) IN ('integer', 'real') GROUP BY account_key, timestamp ORDER BY timestamp" % _in(len(dep)), dep):
-                snaps.setdefault(k, []).append((ts, v))
-            for k, rows in snaps.items():
-                series[k] = ("portfolio_chart", _series(rows, pkind))
+    info = lambda k: accounts[matched[k][0] if k in matched else owner[k]]
+    series = _load_series(db, plain, sorted(set(matched) | set(owner)), info, today)
     if not series:
         log.info("MoneyMoney database: no balance history for the matched accounts")
         return None
-    # Pruefung: juengster Wert je Konto gegen den aktuellen Saldo aus MoneyMoney (Massstab 1 oder Cent)
-    def fits(k: int, scale: float, u: Optional[str] = None) -> Optional[bool]:
-        ser, bal = series[k][1], (accounts[u] if u else acct(k)).get("saldo") or 0.0
-        if not ser:
-            return None
-        if abs(bal) < 1.0:
-            return True if abs(ser[-1][1] * scale) < 1.0 else None
-        return abs(ser[-1][1] * scale - bal) <= max(0.011, 0.005 * abs(bal))
-    best = None
-    for scale in (1.0, 0.01):
-        ok = {k: f for k in series if k in matched for f in [fits(k, scale)] if f is not None}
-        hits = sum(ok.values())
-        if best is None or hits > best[1]:
-            best = (scale, hits, ok)
-    scale, hits, ok = best
-    # mehrdeutige Namen: der Kandidat, dessen juengster Wert zum aktuellen Saldo passt (genau einer)
+    balance_at = balance_at or (lambda _u, _d, _v: None)
+    # Eichung: Massstab (Euro/Cent, Vorzeichen) und Deutung, bei der die meisten Punkte zu den bekannten Salden passen
+    results: Dict = {}
+    for scale in (1.0, -1.0, 0.01, -0.01):
+        for interp in INTERP:
+            tot = [0, 0]
+            for k, (_t, ser) in series.items():
+                if k in matched:
+                    h, n = _score(ser, matched[k][0], scale, interp, balance_at, since, today)
+                    tot[0] += h; tot[1] += n
+            results[(scale, interp)] = tuple(tot)
+    (scale, interp), (all_hits, all_n) = max(results.items(), key=lambda x: (x[1][0], x[0][0] == 1.0, x[0][1] == ("end", False)))
+    good = lambda k, u: (lambda h, n: (n > 0 and h >= 0.7 * n, n))(*_score(series[k][1], u, scale, interp, balance_at, since, today))
+    ok: Dict[int, bool] = {}
+    for k in series:
+        if k in matched:
+            fit, n = good(k, matched[k][0])
+            if n:
+                ok[k] = fit
+            elif series[k][1] and abs(info(k).get("saldo") or 0.0) >= 1.0:
+                # ohne Umsaetze (Depots): nur Plausibilitaet -- juengster Wert in der Groessenordnung des aktuellen Saldos
+                q = series[k][1][-1][1] * scale / info(k)["saldo"]
+                if not 0.5 <= q <= 2.0:
+                    ok[k] = False
+    # mehrdeutige Namen: der Kandidat, dessen Verlauf zu den Salden dieses Kontos passt (genau einer)
     for u, ks in unclear.items():
-        good = [k for k in ks if k in series and fits(k, scale, u)]
-        if len(good) == 1 and good[0] not in matched:
-            matched[good[0]] = (u, "name")
-            ok[good[0]] = True
-            hits += 1
-    checked = len(ok)
-    log.info("MoneyMoney database: latest values match the current balance for %d of %d accounts (scale %s)", hits, checked, scale)
-    if checked and hits < 0.5 * checked:
+        fits = [k for k in ks if k in series and k not in matched and good(k, u)[0]]
+        if len(fits) == 1:
+            matched[fits[0]] = (u, "name")
+            ok[fits[0]] = True
+    hits, checked = sum(ok.values()), len(ok)
+    log.info("MoneyMoney database: scale %s, interpretation %s/%s: %d of %d points, %d of %d accounts with transactions match",
+             scale, interp[0], "value date" if interp[1] else "booking date", all_hits, all_n, hits, checked)
+    if checked and hits < 0.6 * checked:
+        _diagnose(series, matched, results, today)
         return None
+    cur = "%04d-%02d" % (today.year, today.month)
     konten: Dict[str, Dict[str, float]] = {}
     for k, (_t, ser) in series.items():
-        if k not in matched:
-            continue
-        u, how = matched[k]
-        if how == "name" and not ok.get(k):
-            continue                                       # ueber den Namen nur, wenn der juengste Wert passt
+        if k not in matched or ok.get(k) is False:
+            continue                                       # Konto mit Umsaetzen, dessen Verlauf nicht passt: nicht uebernehmen
+        u = matched[k][0]
         for d, v in ser:
-            mk = "%04d-%02d" % (d.year, d.month)
+            day = _day(d, interp[0])
+            mk = "%04d-%02d" % (day.year, day.month)
             if mk < cur:                                   # laufender Monat kommt aus MoneyMoneys aktuellem Saldo
                 konten.setdefault(u, {})[mk] = round(v * scale, 2)       # spaeterer Wert im Monat ueberschreibt -> Monatsende
     tabellen = sorted({series[k][0] for k in series if k in matched})
     return {"tabelle": "+".join(tabellen), "spalten": ["account_key", "timestamp", "balance"], "konten": konten, "treffer": hits, "geprueft": checked}
 
 
-def run(buf: bytearray, accounts: Dict[str, Tuple[float, bool]], today: date,
-        keys_fn: Optional[Callable[[bytes], List[bytearray]]] = None, step: Optional[Callable[[str], None]] = None) -> Tuple[Optional[Dict], List[Dict], str]:
+def run(buf: bytearray, accounts: Dict[str, Dict], today: date, keys_fn: Optional[Callable[[bytes], List[bytearray]]] = None,
+        step: Optional[Callable[[str], None]] = None, balance_at: Optional[BalanceAt] = None,
+        since: Optional[date] = None) -> Tuple[Optional[Dict], List[Dict], str]:
     """Hochgeladene Datenbank (Puffer) entschluesseln und den Kontostand-Verlauf suchen.
     Liefert (Verlauf oder None, Aufbau, Format). Schluessel und Puffer werden in jedem Fall ueberschrieben."""
     step = step or (lambda _t: None)
@@ -531,7 +589,7 @@ def run(buf: bytearray, accounts: Dict[str, Tuple[float, bool]], today: date,
         except sqlite3.DatabaseError:
             raise HistorieError(tr("s_das_ist_keine_moneymoney_datenbank"))
         try:
-            return find_history(db, accounts, today), schema_of(db), fmt
+            return find_history(db, accounts, today, balance_at, since), schema_of(db), fmt
         except sqlite3.DatabaseError as e:
             raise HistorieError(tr("s_datenbank_nicht_lesbar_s") % str(e)[:80])
     finally:
