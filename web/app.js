@@ -77,6 +77,8 @@ const H = {
   touchid: t('eingeschaltet_die_anmeldung_am_mac'),
   bilanz_stand: t('salden_am_monatsende_der_laufende'),
   abgleich: t('datenstand_in_zwei_stufen_banken'),
+  fern: t('fern_tip'),
+  fern_was: t('fern_was_tip'),
   timemachine: t('timemachine_tip'),
   diagnose: t('diagnose_tip'),
   port: t('port_tip'),
@@ -256,12 +258,18 @@ async function offlineLogin(pw) {
   if (S.CFG) S.CFG.oberflaeche = Object.assign(S.CFG.oberflaeche || {}, {sperre_minuten: v.sperre_minuten});
   return true;
 }
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+function swApply(allowed) {
+  if (!('serviceWorker' in navigator)) return;
+  if (allowed) { navigator.serviceWorker.register('/sw.js').catch(() => {}); return; }
+  navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())).catch(() => {});
+  try { caches.delete('kontor-data'); } catch (e) {}
+}
 
 // ---------------------------------------------------------------- Anmeldung
 let SESSION = null;
 async function checkSession() {
   try { SESSION = await api('/api/session'); } catch (e) { $('#login').classList.remove('hidden'); $('#login-err').textContent = e.message + t('neuer_versuch_in_5_s'); setTimeout(checkSession, 5000); return; }
+  swApply(SESSION.offline_kopie !== false);
   $('#ver').textContent = 'v' + (SESSION.version || '');
   if (SESSION.offline && IS_LOCAL) { $('#login').classList.remove('hidden'); $('#login-err').textContent = t('der_kontor_dienst_antwortet_nicht'); setTimeout(checkSession, 5000); return; }
   if (SESSION.offline) { OFFLINE.mode = true; showLogin(); return; }
@@ -618,6 +626,7 @@ const MODULES = [
   {id: 'planung', t: t('planung'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planung', optional: true},
   {id: 'steuer', t: t('steuer'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.steuer || {}).vermietung_kategorie, href: '#einstellungen/steuer', optional: true},
   {id: 'belege', t: t('belege_dokumente'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.belege || {}).ordner, href: '#einstellungen', optional: true},
+  {id: 'iphone', t: t('zugriff_vom_iphone'), d: t('zugriff_vom_iphone_d'), done: () => ((S.CFG.oberflaeche || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#einstellungen/zugang', optional: true},
   {id: 'betrieb', t: t('betrieb_zugang'), d: t('testmodus_automatischer_abgleich_mitte'), done: () => true, href: '#einstellungen'},
 ];
 function vEinrichtung(sub) {
@@ -2031,11 +2040,11 @@ function bindKontorKategorien(main) {
 }
 
 // ---------------------------------------------------------------- Einstellungen
-function vEinstellungen() {
+async function vEinstellungen() {
   // Reiter: Allgemein · Zugang · Updates · Steuer · Sichern & Zuruecksetzen (Bereiche, Konten, Kategorien, Regeln: Einrichtung)
   const tabs = subTabs('einstellungen', [['', t('allgemein')], ['zugang', t('zugang')], ['updates', t('updates')], ['steuer', t('steuer')], ['sichern', t('sichern_zuruecksetzen')]]);
   const v = {zugang: vEinstellungenZugang, updates: vEinstellungenUpdates, steuer: vEinstellungenSteuer, sichern: vSicherung}[S.sub] || vEinstellungenAllgemein;
-  return tabs + v();
+  return tabs + await v();
 }
 function vEinstellungenAllgemein() {
   const C = S.CFG, z = C.zeitplan || {}, b = C.bilanz || {}, bl = C.belege || {}, mm = C.moneymoney || {};
@@ -2069,22 +2078,69 @@ function vEinstellungenSteuer() {
   </div>
   <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
 }
-function vEinstellungenZugang() {
+async function vEinstellungenZugang() {
+  // Am Mac (Sperre, Touch ID, Passwort) · Zugriff vom iPhone über Tailscale: Stand, Einrichtung, wer/wo/was, Feineinstellung
   const o = S.CFG.oberflaeche || {};
-  let h = `<h2>${t('zugang')}</h2><div class="form">
+  let r = null; try { r = await api('/api/remote'); } catch (e) {}
+  const ts = (r && r.tailscale) || {}, lokal = r ? r.lokal : S.STATUS.lokal;
+  const ok = b => `<span class="dot ${b ? 'ok' : 'warn'}"></span>`;
+  let h = `<h2>${t('zugriff_vom_iphone')} ${hq('fern')}</h2>`;
+  if (r && r.aktiv) {
+    h += `<div class="banner ${r.lauscht ? 'ok' : 'warn'}">${r.lauscht ? t('fern_an', `<b>${esc(r.url)}</b>`) : t('fern_an_wartet', esc(r.fehler || ''))}</div>
+      <div class="row tight"><button class="secondary small" id="fz-copy" data-url="${esc(r.url)}">${t('link_kopieren')}</button>${lokal ? `<button class="danger small" id="fz-aus">${t('zugriff_ausschalten')}</button>` : ''}</div>
+      <div class="kv" style="margin-top:12px"><div>${t('wer')}</div><div>${t('fern_wer', esc(ts.konto || '?'))}${(ts.geraete || []).length ? `<div class="small muted">${t('geraete_im_tailnet')}: ${ts.geraete.map(g => esc(g.name) + (g.os ? ' (' + esc(g.os) + ')' : '') + (g.online ? '' : ' · ' + t('offline_klein'))).join(', ')}</div>` : ''}</div>
+        <div>${t('wo')}</div><div>${t('fern_wo')}</div>
+        <div>${t('was')}</div><div>${r.nur_ansehen ? t('fern_was_lesen') : t('fern_was_bearbeiten')}</div>
+        <div>${t('verschluesselung')}</div><div>${r.tls ? t('fern_tls', r.gueltig_bis ? FD(r.gueltig_bis) : '?') : t('fern_ohne_tls')}</div></div>`;
+  } else {
+    h += `<div class="banner info">${t('fern_aus')}</div><div class="note">${t('fern_warum')}</div>
+      <ol class="steps">
+        <li>${ok(ts.gefunden && ts.verbunden)} ${t('fern_schritt_mac')} ${ts.gefunden ? (ts.verbunden ? `<span class="small muted">${t('fern_verbunden_als', esc(ts.name || ''), esc(ts.konto || '?'))}</span>` : `<span class="small">${t('fern_nicht_verbunden')}</span>`) : `<a href="https://tailscale.com/download/mac" target="_blank" rel="noopener">${t('herunterladen')}</a>`}</li>
+        <li>${ok((ts.geraete || []).some(g => /ios/i.test(g.os)))} ${t('fern_schritt_iphone')} <a href="https://apps.apple.com/app/tailscale/id1470499037" target="_blank" rel="noopener">App Store</a>${(ts.geraete || []).some(g => /ios/i.test(g.os)) ? ` <span class="small muted">${esc(ts.geraete.filter(g => /ios/i.test(g.os)).map(g => g.name).join(', '))}</span>` : ''}</li>
+        <li>${ok(ts.https)} ${t('fern_schritt_https')} <a href="https://login.tailscale.com/admin/dns" target="_blank" rel="noopener">${t('tailscale_admin')}</a></li>
+        <li>${lokal ? `<button id="fz-ein" ${ts.verbunden ? '' : 'disabled'}>${t('zugriff_einschalten')}</button>${ts.verbunden && !ts.https ? ` <button id="fz-ein-http" class="secondary small">${t('ohne_zertifikat_einschalten')}</button>` : ''}` : t('nur_am_mac')}</li>
+        <li>${t('fern_schritt_oeffnen')}</li>
+      </ol><div id="fz-msg" class="findings"></div>`;
+  }
+  h += `<div class="form" style="margin-top:14px">
+    <label>${t('von_unterwegs')} ${hq('fern_was')}</label><label class="chk"><select id="fz-modus" ${lokal ? '' : 'disabled'}><option value="lesen" ${!r || r.nur_ansehen ? 'selected' : ''}>${t('nur_ansehen')}</option><option value="bearbeiten" ${r && !r.nur_ansehen ? 'selected' : ''}>${t('ansehen_und_bearbeiten')}</option></select></label>
+    <label>${t('offline_ansicht_0', hq('offline'))}</label><label class="chk"><input type="checkbox" id="fz-offline" ${!r || r.offline_kopie ? 'checked' : ''} ${lokal ? '' : 'disabled'}> ${t('offline_kopie_erlauben')}</label>
+  </div>`;
+  h += `<div class="kv" style="margin-top:12px"><div>${t('auf_diesem_geraet')}</div><div id="sw-state">${navigator.serviceWorker && navigator.serviceWorker.controller ? t('aktiv_die_zuletzt_geladenen_daten') : (location.protocol === 'https:' || location.hostname === '127.0.0.1' ? t('wird_beim_naechsten_laden_aktiv') : t('nicht_moeglich_ueber_http_tailscale'))}</div></div>
+    <div class="actions"><button id="sw-clear" class="secondary">${t('gespeicherte_daten_auf_diesem_geraet')}</button></div>`;
+  h += `<h2>${t('am_mac')}</h2><div class="form">
     <label>${t('automatische_sperre')}</label><label class="chk">${t('nach_2')} <input type="number" id="e-sperre" min="1" value="${o.sperre_minuten ?? 15}" style="width:70px"> ${t('minuten_ohne_aktivitaet')}</label>
     <label>Touch ID ${hq('touchid')}</label><label class="chk"><input type="checkbox" id="e-touchid" ${o.touchid !== false ? 'checked' : ''} ${S.STATUS.touchid ? '' : 'disabled'}> ${t('am_mac_mit_touch_id', S.STATUS.touchid ? '' : t('an_diesem_geraet_nicht_verfuegbar'))}</label>
+  </div>
+  <details class="adv"><summary>${t('erweitert_adresse_port')}</summary><div class="form">
     <label>${t('adresse_0', hq('bind'))}</label><input type="text" id="e-bind" value="${esc(o.bind || '127.0.0.1')}" placeholder="${t('127_0_0_1_oder')}">
     <label>${t('port')} ${hq('port')}</label><input type="number" id="e-port" value="${o.port ?? 8765}" style="width:100px">
     <label>${t('tls_zertifikat_optional_0', hq('tls'))}</label><input type="text" id="e-cert" value="${esc(o.tls_cert || '')}" placeholder="/Pfad/zert.crt">
     <label>${t('tls_schluessel_optional')}</label><input type="text" id="e-key" value="${esc(o.tls_key || '')}" placeholder="/Pfad/zert.key">
-    <div class="full note">${t('adresse_und_port_gelten_nach')} <code>${t('python3_kontor_kontor_py_tls')}</code> ${t('https_noetig_fuer_die_offline', o.port ?? 8765)}</div>
-  </div>
+    <div class="full note">${t('adresse_port_neustart')}</div>
+  </div></details>
   <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>
-  <h2>${t('passwort')}</h2><div class="form"><label>${t('altes_passwort')}</label><input type="password" id="pw-alt" autocomplete="current-password"><label>${t('neues_passwort')}</label><input type="password" id="pw-neu" autocomplete="new-password"></div><div class="actions"><button id="pw-save" class="secondary">${t('passwort_aendern')}</button></div>
-  <h2>${t('offline_ansicht_iphone_0', hq('offline'))}</h2><div class="kv"><div>${t('auf_diesem_geraet')}</div><div id="sw-state">${navigator.serviceWorker && navigator.serviceWorker.controller ? t('aktiv_die_zuletzt_geladenen_daten') : (location.protocol === 'https:' || location.hostname === '127.0.0.1' ? t('wird_beim_naechsten_laden_aktiv') : t('nicht_moeglich_ueber_http_tailscale'))}</div></div>
-  <div class="actions"><button id="sw-clear" class="secondary">${t('gespeicherte_daten_auf_diesem_geraet')}</button></div>`;
+  <h2>${t('passwort')}</h2><div class="form"><label>${t('altes_passwort')}</label><input type="password" id="pw-alt" autocomplete="current-password"><label>${t('neues_passwort')}</label><input type="password" id="pw-neu" autocomplete="new-password"></div><div class="actions"><button id="pw-save" class="secondary">${t('passwort_aendern')}</button></div>`;
   return h;
+}
+function bindZugang(main) {
+  const msg = (txt, cls) => { const el = $('#fz-msg', main); if (el) showFindings(el, [], txt, cls); else toast(txt, 8000); };
+  const restartWait = async () => {
+    // Dienst startet mit der neuen Adresse neu: warten, bis er wieder antwortet, dann neu laden
+    toast(t('kontor_startet_neu'), 15000);
+    for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 1000)); try { const r = await fetch('/api/session', {credentials: 'same-origin'}); if (r.ok) { location.reload(); return; } } catch (e) {} }
+    location.reload();
+  };
+  const act = async (aktion, extra = {}) => {
+    try { const r = await api('/api/remote', Object.assign({aktion}, extra)); if (!r.ok) { msg(r.text, 'fehler'); return; } if (r.neustart) return restartWait(); S.CFG = await api('/api/config'); route(); }
+    catch (e) { msg(e.message, 'fehler'); }
+  };
+  const on = $('#fz-ein', main); if (on) on.addEventListener('click', () => { on.disabled = true; on.classList.add('busy'); act('ein').finally(() => { on.disabled = false; on.classList.remove('busy'); }); });
+  const onh = $('#fz-ein-http', main); if (onh) onh.addEventListener('click', () => { if (confirm(t('ohne_zertifikat_frage'))) act('ein_http'); });
+  const off = $('#fz-aus', main); if (off) off.addEventListener('click', () => { if (confirm(t('zugriff_ausschalten_frage'))) act('aus'); });
+  const cp = $('#fz-copy', main); if (cp) cp.addEventListener('click', async () => { try { await navigator.clipboard.writeText(cp.dataset.url); toast(t('link_kopiert_iphone'), 5000); } catch (e) { prompt(t('link'), cp.dataset.url); } });
+  const md = $('#fz-modus', main); if (md) md.addEventListener('change', () => act('einstellungen', {fern_nur_ansehen: md.value === 'lesen'}));
+  const of = $('#fz-offline', main); if (of) of.addEventListener('change', () => act('einstellungen', {offline_kopie: of.checked}));
 }
 function vEinstellungenUpdates() {
   const up = S.CFG.updates || {};
@@ -2310,7 +2366,7 @@ async function route() {
     else if (S.tab === 'umsaetze') h = await vUmsaetze();
     else if (S.tab === 'regeln') h = vRegeln();
     else if (S.tab === 'kategorien') h = await vKategorien();
-    else if (S.tab === 'einstellungen') h = vEinstellungen();
+    else if (S.tab === 'einstellungen') h = await vEinstellungen();
     else if (S.tab === 'synchronisierung') h = await vSync();
     else if (S.tab === 'updates') h = await vUpdates();
     else if (S.tab === 'protokoll') h = await vProtokoll();
@@ -2325,6 +2381,7 @@ async function route() {
     vbPoll(); mmhPoll();
     if (S.tab === 'immobilien') bindImmo(main);
     if (S.tab === 'kategorien') { bindZuordnen(main); bindKontorKategorien(main); bindKatAuswahl(main); }
+    if (S.tab === 'einstellungen' && S.sub === 'zugang') bindZugang(main);
   } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== 'nicht angemeldet') main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" onclick="route()">${t('erneut_versuchen')}</button></div>`; }
 }
 let ROUTE_SEQ = 0;

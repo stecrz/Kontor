@@ -130,6 +130,11 @@ class App:
         if sys.platform == "darwin":          # Touch-ID-Helfer bei Bedarf (neu) uebersetzen
             threading.Thread(target=lambda: log.info("Touch ID helper: %s", auth.build_touchid()), name="kontor-touchid", daemon=True).start()
         self.restart_allowed = False        # nur der echte Dienst (serve) startet sich bei neuem Code selbst neu
+        self.remote_listening: Optional[Tuple[str, str]] = None     # (Schema, Adresse) des Zugangs fuer andere Geraete
+        self.remote_error: Optional[str] = None
+        self.remote_tried: float = 0.0
+        self._handler = None
+        self._ts_cache: Tuple[float, dict] = (0.0, {})
         self.mm_probe: Tuple[float, Optional[bool]] = (0.0, None)     # (Zeitpunkt, gesperrt?)
         self.mm_retry_at: Optional[float] = None
         self._capture_sig: Optional[tuple] = None      # zuletzt gesehener Kontenstand (Konto, Saldo, Abrufzeit)
@@ -404,6 +409,80 @@ class App:
         self.mm_probe = (time.time(), val)
         return val
 
+    # -- Zugriff von anderen Geraeten (iPhone ueber Tailscale) --------------
+    def remote_readonly(self) -> bool:
+        """Von unterwegs nur ansehen (Standard): Aenderungen nur am Mac."""
+        return bool((self.config.get("oberflaeche") or {}).get("fern_nur_ansehen", True))
+
+    def offline_copy(self) -> bool:
+        """Darf das iPhone die zuletzt geladenen Daten fuer die Offline-Ansicht behalten?"""
+        return bool((self.config.get("oberflaeche") or {}).get("offline_kopie", True))
+
+    def tailscale(self, fresh: bool = False) -> dict:
+        import tls_cert
+        t0, st = self._ts_cache
+        if fresh or time.time() - t0 > 30:
+            st = tls_cert.status()
+            self._ts_cache = (time.time(), st)
+        return st
+
+    def remote_info(self) -> dict:
+        ui = self.config.get("oberflaeche") or {}
+        bind = (ui.get("bind") or "127.0.0.1").strip()
+        port = int(ui.get("port") or 8765)
+        ts = self.tailscale()
+        tls = bool(ui.get("tls_cert") and ui.get("tls_key"))
+        exp = None
+        if tls:
+            import tls_cert
+            e = tls_cert.cert_expiry(ui["tls_cert"])
+            exp = e.date().isoformat() if e else None
+        host = (os.path.basename(ui.get("tls_cert") or "")[:-4] if tls else "") or bind
+        return {"aktiv": bind != "127.0.0.1", "adresse": bind, "port": port, "tls": tls, "gueltig_bis": exp,
+                "url": ("https://%s:%d/" % (host, port)) if tls else ("http://%s:%d/" % (bind, port)) if bind != "127.0.0.1" else None,
+                "lauscht": bool(self.remote_listening), "fehler": self.remote_error,
+                "nur_ansehen": self.remote_readonly(), "offline_kopie": self.offline_copy(), "tailscale": ts}
+
+    def request_restart(self) -> None:
+        """Dienst neu starten (neue Adresse/Zertifikat), kurz nachdem die Antwort raus ist. Nur im echten Dienst."""
+        if self.restart_allowed:
+            log.info("Restarting service for new access settings")
+            threading.Timer(1.5, restart_process).start()
+
+    def start_remote(self) -> None:
+        """Zweiten Zugang auf der eingestellten Tailscale-Adresse oeffnen (mit TLS, wenn ein Zertifikat eingetragen ist).
+        Klappt das nicht (Tailscale noch nicht verbunden), versucht es der Zeitplaner jede Minute erneut."""
+        ui = self.config.get("oberflaeche", {}) or {}
+        extra = (ui.get("bind") or "127.0.0.1").strip()
+        self.remote_tried = time.time()
+        if self._handler is None or extra == "127.0.0.1" or self.remote_listening:
+            return
+        if not bind_allowed(extra) or ipaddress.ip_address(extra).is_loopback:
+            self.remote_error = tr("s_adresse_s_nicht_erlaubt_nur") % extra
+            return
+        port = int(ui.get("port") or 8765)
+        try:
+            srv2 = _Server((extra, port), self._handler)
+        except OSError as e:
+            if self.remote_error != str(e):
+                log.error("Address %s:%d not usable (%s) -- is Tailscale connected? Retrying every minute", extra, port, e)
+            self.remote_error = str(e)
+            return
+        scheme = "http"
+        if ui.get("tls_cert") and ui.get("tls_key"):
+            try:
+                ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+                ctx.load_cert_chain(ui["tls_cert"], ui["tls_key"])
+                srv2.socket = ctx.wrap_socket(srv2.socket, server_side=True)
+                self.tls_ctx = ctx
+                scheme = "https"
+            except (OSError, ssl.SSLError) as e:
+                log.error("TLS not enabled (%s) -- continuing without TLS", e)
+        self.remote_listening, self.remote_error = (scheme, extra), None
+        log.info("Access for other devices at %s://%s:%d/", scheme, extra, port)
+        threading.Thread(target=srv2.serve_forever, daemon=True).start()
+
     # -- MoneyMoney --------------------------------------------------------
     def full_read_due(self, now: Optional[datetime] = None) -> bool:
         """Vollstaendig lesen (alle Umsaetze), wenn das letzte vollstaendige Lesen mindestens N Stunden her ist (Einstellung,
@@ -640,6 +719,12 @@ class App:
                         log.info("TLS certificate renewed and reloaded")
             except Exception:  # pragma: no cover
                 log.exception("Scheduler")
+            try:
+                bind = ((self.config.get("oberflaeche") or {}).get("bind") or "127.0.0.1").strip()
+                if bind != "127.0.0.1" and not self.remote_listening and self._handler is not None and time.time() - self.remote_tried >= 60:
+                    self.start_remote()
+            except Exception:  # pragma: no cover
+                log.exception("Remote access")
             try:
                 self.heartbeat()
                 if (self.config.get("zeitplan") or {}).get("automatisch", True):
@@ -1086,7 +1171,7 @@ def make_handler(app: App):
                                         "touchid": auth.touchid_available() and self._loopback() and app.touchid_on(),
                                         "touchid_verfuegbar": auth.touchid_available() and self._loopback(),
                                         "gesperrt_sekunden": app.sessions.locked(self._remote()), "lokal": self._loopback(),
-                                        "version": version()})
+                                        "offline_kopie": app.offline_copy(), "version": version()})
             s = self._session()
             if s is None:
                 return self._json(401, {"fehler": "nicht angemeldet"})
@@ -1121,7 +1206,7 @@ def make_handler(app: App):
                 return self._json(200, {"kategorien": app.categories()})
             if path == "/api/offline/verifier":
                 rec = app.auth_record()
-                return self._json(200, {"offline": rec.get("offline"), "sperre_minuten": int(app.config["oberflaeche"].get("sperre_minuten", 15)),
+                return self._json(200, {"offline": rec.get("offline") if app.offline_copy() else None, "sperre_minuten": int(app.config["oberflaeche"].get("sperre_minuten", 15)),
                                         "stand": datetime.now().strftime("%Y-%m-%d %H:%M")})
             if path == "/api/sync":
                 r = app.abruf() or {"neuester": None, "konten": [], "zurueck": [], "zurueck_anzahl": 0}
@@ -1199,6 +1284,8 @@ def make_handler(app: App):
                 pkg = export_package(app.config, name, strip_uuids=True, plan=None, ledger=app.ledger)
                 return self._raw(200, json.dumps(pkg, ensure_ascii=False, indent=2).encode("utf-8"), "application/json; charset=utf-8",
                                  {"Content-Disposition": 'attachment; filename="%s.kontor.json"' % name})
+            if path == "/api/remote":
+                return self._json(200, dict(app.remote_info(), lokal=self._is_local(s)))
             if path == "/api/timemachine":
                 return self._json(200, {"status": timemachine_status(app.data_dir)})
             if path == "/api/diagnostics":
@@ -1435,6 +1522,8 @@ def make_handler(app: App):
                 return self._json(401, {"fehler": "nicht angemeldet"})
             if self.headers.get("X-CSRF-Token") != s["csrf"]:
                 return self._json(403, {"fehler": tr("s_csrf_pruefung_fehlgeschlagen_seite_neu")})
+            if not self._is_local(s) and app.remote_readonly() and u.path not in ("/api/logout", "/api/lock"):
+                return self._json(403, {"fehler": tr("s_von_unterwegs_nur_ansehen")})
             if u.path == "/api/history/mm-import":
                 return self._historie_einlesen(s)
             t0 = time.time()
@@ -1653,6 +1742,8 @@ def make_handler(app: App):
                 app.sessions.drop_all()
                 log.warning("Program reset (%s); receipt files and log kept", ", ".join(dateien))
                 return self._json(200, {"ok": True, "neu_einrichten": bool(body.get("mit_passwort"))}, self._set_cookie("", clear=True))
+            if path == "/api/remote":
+                return self._remote_setup(body, local)
             if path == "/api/timemachine-exclusion":
                 if not local:
                     return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
@@ -1663,6 +1754,44 @@ def make_handler(app: App):
                 except (FileNotFoundError, subprocess.TimeoutExpired) as e:
                     return self._json(200, {"ok": False, "text": str(e), "status": "unbekannt"})
             return self._json(404, {"fehler": "unbekannt"})
+
+        def _remote_setup(self, body: dict, local: bool):
+            """Zugriff vom iPhone ein-/ausschalten und fein einstellen -- nur am Mac."""
+            import tls_cert
+            if not local:
+                return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+            aktion = body.get("aktion")
+            cfg = copy.deepcopy(app.config)
+            ui = cfg.setdefault("oberflaeche", {})
+            neustart = False
+            if aktion == "einstellungen":
+                for k in ("fern_nur_ansehen", "offline_kopie"):
+                    if k in body:
+                        ui[k] = bool(body[k])
+            elif aktion == "ein":                 # Zertifikat ueber Tailscale, Adresse = Tailscale-Adresse des Macs
+                try:
+                    r = tls_cert.setup(cfg, app.data_dir)
+                except Exception as e:
+                    log.warning("Remote access: certificate not available: %s", e)
+                    return self._json(200, {"ok": False, "text": str(e), "tailscale": app.tailscale(fresh=True)})
+                cfg["oberflaeche"] = dict(r["oberflaeche"], bind=r["ip"])
+                neustart = True
+            elif aktion == "ein_http":            # ohne Zertifikat (nur ueber Tailscale verschluesselt, keine Offline-Ansicht)
+                st = app.tailscale(fresh=True)
+                if not st.get("verbunden") or not st.get("ip"):
+                    return self._json(200, {"ok": False, "text": tr("s_tailscale_ist_nicht_verbunden_kein"), "tailscale": st})
+                ui.update(bind=st["ip"], tls_cert="", tls_key="")
+                neustart = True
+            elif aktion == "aus":
+                ui["bind"] = "127.0.0.1"
+                neustart = True
+            else:
+                raise ValueError("Unbekannte Aktion.")
+            app.save_config(cfg)
+            log.info("Remote access settings changed: %s", aktion)
+            if neustart:
+                app.request_restart()
+            return self._json(200, {"ok": True, "neustart": neustart and app.restart_allowed, "info": app.remote_info()})
 
         def _belege(self, path: str, body: dict, local: bool):
             bl = Belege(app.store, app.config)
@@ -2205,29 +2334,13 @@ def serve(app: App) -> None:
     except OSError as e:
         log.error("Port %d on 127.0.0.1 not usable (%s) -- is Kontor already running? Change the port in the settings.", port, e)
         raise SystemExit(2)
-    if extra != "127.0.0.1" and not ipaddress.ip_address(extra).is_loopback:
-        try:
-            srv2 = _Server((extra, port), handler)
-            scheme = "http"
-            if ui.get("tls_cert") and ui.get("tls_key"):
-                try:
-                    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-                    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-                    ctx.load_cert_chain(ui["tls_cert"], ui["tls_key"])
-                    srv2.socket = ctx.wrap_socket(srv2.socket, server_side=True)
-                    app.tls_ctx = ctx
-                    scheme = "https"
-                except (OSError, ssl.SSLError) as e:
-                    log.error("TLS not enabled (%s) -- continuing without TLS", e)
-            servers.append((scheme, extra, srv2))
-        except OSError as e:
-            log.error("Address %s:%d not usable (%s) -- is Tailscale connected? UI on 127.0.0.1 only", extra, port, e)
+    app._handler = handler
+    app.start_remote()                      # zweiter Zugang (Tailscale); sonst spaeter erneut vom Zeitplaner
     app.restart_allowed = True
     threading.Thread(target=app.scheduler, daemon=True).start()
     log.info("Kontor %s: UI at %s (data %s)", version(),
-             ", ".join("%s://%s:%d/" % (sc, h, port) for sc, h, _ in servers), "verschluesselt" if app.store.encrypted else "KLARTEXT")
-    for _, _, srv in servers[1:]:
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
+             ", ".join("%s://%s:%d/" % (sc, h, port) for sc, h, _ in servers + ([(app.remote_listening[0], app.remote_listening[1], None)] if app.remote_listening else [])),
+             "verschluesselt" if app.store.encrypted else "KLARTEXT")
     try:
         servers[0][2].serve_forever()
     except KeyboardInterrupt:

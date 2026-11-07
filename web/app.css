@@ -377,3 +377,5 @@ h2.sub-h { margin-top:0; }
 .cards.two { grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); }
 .row.tight label.chk, .toolbar label.chk { gap:8px; }
 .objloans { max-width:820px; } .objloans td:last-child { width:300px; } .objloans input { width:100%; }
+ol.steps { margin:8px 0 6px; padding-left:22px; max-width:820px; } ol.steps li { margin:7px 0; line-height:1.5; } ol.steps .dot { margin-right:4px; }
+details.adv { margin:14px 0 4px; } details.adv summary { cursor:pointer; color:var(--muted); font-size:13px; margin-bottom:8px; }

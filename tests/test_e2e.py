@@ -568,6 +568,51 @@ class AppTests(_AppBase):
         self.assertFalse([w for b in MockBridge.instances for w in b.written if w[0] == "set" and w[2] is not None])
         self.assertEqual(self.store.load("dataset.json")["kategorien"]["verwendung"], 2)
 
+    def test_zugriff_vom_iphone(self):
+        """Zugriff von anderen Geraeten: Stand, Ein-/Ausschalten nur am Mac, von unterwegs nur ansehen (Standard),
+        Offline-Kopie abschaltbar."""
+        import service as MA
+        self.login(); self.run_and_wait()
+        code, r = self.call("/api/remote")
+        self.assertEqual(code, 200); self.assertFalse(r["aktiv"]); self.assertTrue(r["nur_ansehen"]); self.assertTrue(r["offline_kopie"]); self.assertTrue(r["lokal"])
+        # ohne Tailscale: Einschalten scheitert mit Hinweis, nichts geaendert
+        self.app._ts_cache = (time.time() + 999, {"gefunden": False})
+        orig_status = MA.App.tailscale
+        MA.App.tailscale = lambda app, fresh=False: {"gefunden": False}
+        try:
+            code, r = self.call("/api/remote", {"aktion": "ein"})
+            self.assertFalse(r["ok"]); self.assertEqual(self.app.config["oberflaeche"]["bind"], "127.0.0.1")
+            # mit Tailscale (verbunden), ohne Zertifikat
+            MA.App.tailscale = lambda app, fresh=False: {"gefunden": True, "verbunden": True, "ip": "100.101.102.103", "name": "mac.example.ts.net", "https": False, "geraete": []}
+            code, r = self.call("/api/remote", {"aktion": "ein_http"})
+            self.assertTrue(r["ok"]); self.assertFalse(r["neustart"])                     # im Test kein echter Neustart
+            self.assertEqual(self.app.config["oberflaeche"]["bind"], "100.101.102.103")
+            self.assertEqual(r["info"]["url"], "http://100.101.102.103:8765/"); self.assertTrue(r["info"]["aktiv"])
+            code, r = self.call("/api/remote", {"aktion": "aus"})
+            self.assertEqual(self.app.config["oberflaeche"]["bind"], "127.0.0.1")
+        finally:
+            MA.App.tailscale = orig_status
+        # von unterwegs (nicht vom Mac): Stand ja, Aenderungen nein (Standard "nur ansehen")
+        orig = MA.auth.is_loopback
+        MA.auth.is_loopback = lambda remote: False
+        try:
+            self.assertEqual(self.call("/api/remote")[1]["lokal"], False)
+            code, r = self.call("/api/plan", {"bereich": F.uid("priv"), "zeile": "Einnahmen/Einnahmen / Gehalt", "methode": "fix", "betrag": "1"})
+            self.assertEqual(code, 403); self.assertIn("nur ansehen", r["fehler"])
+            self.assertEqual(self.call("/api/remote", {"aktion": "aus"})[0], 403)
+        finally:
+            MA.auth.is_loopback = orig
+        code, r = self.call("/api/remote", {"aktion": "einstellungen", "fern_nur_ansehen": False, "offline_kopie": False})
+        self.assertTrue(r["ok"]); self.assertFalse(r["info"]["nur_ansehen"])
+        MA.auth.is_loopback = lambda remote: False
+        try:
+            code, r = self.call("/api/plan", {"bereich": F.uid("priv"), "zeile": "Einnahmen/Einnahmen / Gehalt", "methode": "fix", "betrag": "1"})
+            self.assertEqual(code, 200)                                                    # bearbeiten erlaubt
+            self.assertIsNone(self.call("/api/offline/verifier")[1]["offline"])            # keine Offline-Kopie
+            self.assertFalse(self.call("/api/session")[1]["offline_kopie"])
+        finally:
+            MA.auth.is_loopback = orig
+
     def test_abruf_offline_erkennung(self):
         """MoneyMoney setzt den Abrufzeitpunkt auch bei Offline-Konten: Regelziele und Konten ohne Nummern zaehlen nicht fuer den Datenstand."""
         self.login(); self.run_and_wait()

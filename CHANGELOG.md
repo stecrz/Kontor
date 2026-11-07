@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.9.28 (2026-11-08)
+- Zugriff vom iPhone (Einstellungen → Zugang, auch als Schritt in der Einrichtung): Kontor erkennt Tailscale, zeigt die Einrichtung in fünf Schritten mit Häkchen und schaltet den Zugriff per Knopf ein oder aus (Zertifikat über Tailscale, Neustart automatisch) – kein Terminal mehr nötig.
+- Übersicht wer/wo/was: Geräte im Tailscale-Netz, von überall ohne offenen Port, Verschlüsselung und Gültigkeit des Zertifikats; Link zum Kopieren für das iPhone.
+- Feineinstellung: „Von unterwegs nur ansehen“ (Standard) oder „ansehen und bearbeiten“; Offline-Ansicht auf dem iPhone abschaltbar. Zugangseinstellungen nur am Mac.
+- Ist Tailscale beim Start noch nicht verbunden, öffnet Kontor die Adresse, sobald es geht (vorher erst nach einem Neustart).
+
 ## 3.9.27 (2026-11-07)
 - Einstellungen neu gegliedert: Allgemein (Betrieb, MoneyMoney, Belege), Zugang, Updates, Steuer (eigener Reiter), Sichern & Zurücksetzen. Bereiche, Konten und Kategorien nur noch in der Einrichtung; „Umsätze lesen (Monate)“ steht unter MoneyMoney und ist erklärt. „Einrichtung prüfen“ (prüft alle Konto- und Kategoriebezüge gegen MoneyMoney) steht jetzt in der Einrichtung.
 - Sicherung: nur noch verschlüsselt mit eigenem Passwort (enthält deine Finanzdaten, jetzt auch die aus MoneyMoney übernommenen Kontostände); Laden fragt das Passwort ab. Sichern und Laden nur am Mac.

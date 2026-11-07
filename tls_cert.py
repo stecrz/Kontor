@@ -45,6 +45,30 @@ def tailscale_self(binary: str) -> dict:
     return {"name": name, "ip": ips[0], "cert_domains": st.get("CertDomains") or [], "backend": st.get("BackendState")}
 
 
+def status() -> dict:
+    """Zustand von Tailscale auf diesem Mac fuer die Einrichtung des Zugriffs vom iPhone: gefunden, verbunden, eigener Name
+    (MagicDNS) und Adresse, Tailnet, Konto, ob HTTPS-Zertifikate eingeschaltet sind, und die anderen Geraete im Tailnet
+    (die Kontor erreichen koennten). Nichts davon wird gespeichert oder protokolliert."""
+    binary = find_tailscale()
+    if not binary:
+        return {"gefunden": False}
+    try:
+        r = subprocess.run([binary, "status", "--json"], capture_output=True, text=True, timeout=15)
+        st = json.loads(r.stdout or "{}")
+    except (OSError, ValueError, subprocess.TimeoutExpired) as e:
+        return {"gefunden": True, "verbunden": False, "fehler": str(e)[:200]}
+    me = st.get("Self") or {}
+    tn = st.get("CurrentTailnet") or {}
+    user = (st.get("User") or {}).get(str(me.get("UserID")), {}) if me.get("UserID") is not None else {}
+    peers = [{"name": p.get("HostName") or (p.get("DNSName") or "").split(".")[0], "os": p.get("OS") or "", "online": bool(p.get("Online"))}
+             for p in (st.get("Peer") or {}).values()]
+    return {"gefunden": True, "verbunden": st.get("BackendState") == "Running", "zustand": st.get("BackendState") or "",
+            "name": (me.get("DNSName") or "").rstrip("."), "ip": next((ip for ip in (me.get("TailscaleIPs") or []) if ":" not in ip), ""),
+            "tailnet": tn.get("Name") or "", "magicdns": bool(tn.get("MagicDNSEnabled", bool(me.get("DNSName")))),
+            "https": bool(st.get("CertDomains")), "konto": user.get("LoginName") or "",
+            "geraete": sorted(peers, key=lambda x: (not x["online"], x["name"].lower()))}
+
+
 def cert_expiry(cert_path: str) -> Optional[datetime]:
     try:
         info = ssl._ssl._test_decode_cert(cert_path)  # type: ignore[attr-defined]
