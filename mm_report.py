@@ -603,6 +603,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                   rule_warnings: Optional[List[str]] = None, progress: Optional[Callable[[float, str], None]] = None) -> dict:
     """bereich: {"id", "name", "art", "anteil", "leaves": [Account]}"""
     step = progress or (lambda f, t: None)
+    order = ledger.order()                      # Konten in der Reihenfolge von MoneyMoney
     bcfg = config.get("bilanz", {}) or {}
     leaves: List[Account] = [a for a in bereich["leaves"] if roles.get(a.uuid) not in OFF_BALANCE]
     ausserhalb_accs = [a for a in bereich["leaves"] if roles.get(a.uuid) in ("eigenkapital", "eventual")]
@@ -685,7 +686,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                             "rolle": role, "illiquide": role in illiquid_roles, "depot": False, "offline": False, "inaktiv": False,
                             "passiva": role == "verbindlichkeiten", "werte": werte, "anzahl": len(accs),
                             "inaktive": sum(1 for a in accs if a.uuid in inactive)})
-        for a in sorted(accs, key=lambda x: x.path):
+        for a in sorted(accs, key=lambda x: order.get(x.uuid, 10**9)):
             illiq = (role in illiquid_roles) or (a.uuid in illiquid_refs) or any(x.uuid in illiquid_refs for x in ledger.ancestors(a.uuid))
             bilanz_rows.append({"id": a.uuid, "name": a.name, "pfad": a.path, "ebene": 1, "gruppe": False, "rolle": role,
                                 "illiquide": illiq, "depot": a.portfolio, "offline": a.offline, "inaktiv": a.uuid in inactive,
@@ -697,14 +698,14 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
     liquid_nw = {mk: round(nw[mk] - sum((r["werte"][mk] or 0.0) for r in bilanz_rows if not r["gruppe"] and r["illiquide"]), 2) for mk in mkeys}
     # Ausserhalb des Nettovermoegens: Kapitalkonten (Eigenkapital) und Avale/Buergschaften -- nur zur Information
     ausserhalb = []
-    for a in sorted(ausserhalb_accs, key=lambda x: (roles.get(x.uuid), x.path)):
+    for a in sorted(ausserhalb_accs, key=lambda x: (roles.get(x.uuid) or "", order.get(x.uuid, 10**9))):
         wh, _, _, _ = account_balance_series(ledger, a, months, verlauf_quelle(a, verlauf_cfg), snapshots, historie.get(a.uuid) or {}, today, config)
         ausserhalb.append({"id": a.uuid, "name": a.name, "pfad": a.path, "rolle": roles.get(a.uuid), "werte": {mk: wh[mk] for mk in mkeys}})
 
     # MoneyMoney-Gruppenbaum (zweite Sicht), nur Konten des Bereichs
     baum: List[dict] = []
     group_rows: Dict[str, dict] = {}
-    for a in sorted(leaves, key=lambda x: x.path):
+    for a in sorted(leaves, key=lambda x: order.get(x.uuid, 10**9)):
         anc = list(reversed(ledger.ancestors(a.uuid)))
         for g in anc:
             if g.uuid not in group_rows:

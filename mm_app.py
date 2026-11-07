@@ -37,7 +37,7 @@ import mm_kategorien
 import mm_update
 from mm_belege import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, is_running
-from mm_core import (RUN_LOCK, account_tree, bereiche_for, build_report, check_config, diagnose, export_package, fetch, freeze_assignments, immo_for_plan,
+from mm_core import (RUN_LOCK, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, export_package, fetch, freeze_assignments, immo_for_plan,
                      immo_results, import_package, ledger_fp, merged_config, run_once, unavailable_text, version, version_on_disk)
 from mm_model import Ledger, ledger_from_bytes, ledger_to_bytes
 from mm_report import ROLE_LABELS, ROLES, account_balance_series, account_months, apply_plan, verrechnungskonto_fuer
@@ -454,29 +454,44 @@ class App:
         ds["positionen"] = [{"id": r, "name": ROLE_LABELS[r]} for r in ROLES]
         return ds
 
-    def bankabruf(self) -> Optional[dict]:
-        """Eigener Datenstand von MoneyMoney: wann MoneyMoney zuletzt bei den Banken abgerufen hat (laut dem
-        von Kontor gelesenen Stand). Konten mit Saldo, die beim letzten Abruf zurueckgeblieben sind
-        (mehr als einen Tag aelter als der neueste Abruf, aber nicht laenger als inaktiv_monate), werden gemeldet."""
+    def abruf(self) -> Optional[dict]:
+        """Eigener Datenstand von MoneyMoney je Konto (laut dem zuletzt gelesenen Stand): neuester Bankabruf, Konten, die dahinter
+        zurueckliegen (mehr als einen Tag, mit Saldo, nicht laenger als inaktiv_monate), und Konten ohne Abruf (offline)."""
         led = self.ledger
         if led is None:
             return None
         n_inakt = int((self.config.get("bilanz") or {}).get("inaktiv_monate", 12) or 12)
-        key = (id(led), n_inakt)
+        key = (id(led), n_inakt, json.dumps([self.config.get(k) for k in ("abruf", "darlehen", "beteiligungen", "saldo_spiegel")], sort_keys=True, default=str))
         if self._bankabruf_cache[0] == key:
             return self._bankabruf_cache[1]
-        online = [a for a in led.accounts.values() if not a.group and a.refresh is not None and a.refresh.year >= 2005]
-        res: Optional[dict] = None
-        if online:
-            newest = max(a.refresh for a in online)
-            cutoff = newest - timedelta(days=30.5 * n_inakt)
-            lag = sorted((a for a in online if cutoff <= a.refresh < newest - timedelta(days=1) and (a.portfolio or abs(a.balance) > 0.005)),
-                         key=lambda a: a.refresh)
-            res = {"neuester": newest.strftime("%Y-%m-%d %H:%M"), "konten": len(online),
-                   "zurueck": [{"name": a.name, "zeit": a.refresh.strftime("%Y-%m-%d %H:%M")} for a in lag[:12]],
-                   "zurueck_anzahl": len(lag)}
+        kinds = abruf_arten(led, self.config)
+        leaves = [a for a in led.accounts.values() if not a.group and a.path]
+        online = [a for a in leaves if kinds[a.uuid]["art"] == "online" and a.refresh is not None and a.refresh.year >= 2005]
+        newest = max((a.refresh for a in online), default=None)
+        cutoff = newest - timedelta(days=30.5 * n_inakt) if newest else None
+        konten, lag = [], []
+        for a in leaves:
+            k = kinds[a.uuid]
+            refreshed = a.refresh is not None and a.refresh.year >= 2005
+            zurueck = bool(newest and k["art"] == "online" and refreshed and cutoff <= a.refresh < newest - timedelta(days=1)
+                           and (a.portfolio or abs(a.balance) > 0.005))
+            alt = bool(newest and k["art"] == "online" and refreshed and a.refresh < cutoff)
+            konten.append({"uuid": a.uuid, "name": a.name, "pfad": a.path, "art": k["art"], "grund": k["grund"], "saldo": a.balance,
+                           "zeit": a.refresh.strftime("%Y-%m-%d %H:%M") if refreshed else None, "zurueck": zurueck, "alt": alt})
+            if zurueck:
+                lag.append(a)
+        lag.sort(key=lambda a: a.refresh)
+        res = {"neuester": newest.strftime("%Y-%m-%d %H:%M") if newest else None, "konten": konten,
+               "zurueck": [{"name": a.name, "zeit": a.refresh.strftime("%Y-%m-%d %H:%M")} for a in lag[:12]], "zurueck_anzahl": len(lag)}
         self._bankabruf_cache = (key, res)
         return res
+
+    def bankabruf(self) -> Optional[dict]:
+        r = self.abruf()
+        if not r or not r["neuester"]:
+            return None
+        return {"neuester": r["neuester"], "zurueck": r["zurueck"], "zurueck_anzahl": r["zurueck_anzahl"],
+                "konten": sum(1 for k in r["konten"] if k["art"] == "online")}
 
     def status(self, loopback: bool, frisch: bool = False) -> dict:
         st = self.store.load_shared("state.json", {}) or {}
@@ -780,6 +795,12 @@ def make_handler(app: App):
                 rec = app.auth_record()
                 return self._json(200, {"offline": rec.get("offline"), "sperre_minuten": int(app.config["oberflaeche"].get("sperre_minuten", 15)),
                                         "stand": datetime.now().strftime("%Y-%m-%d %H:%M")})
+            if path == "/api/abruf":
+                r = app.abruf() or {"neuester": None, "konten": [], "zurueck": [], "zurueck_anzahl": 0}
+                ds = app.store.load_shared("dataset.json", {}) or {}
+                bereich = {k["uuid"]: k.get("bereich") or "" for k in ds.get("konten") or []}
+                return self._json(200, dict(r, konten=[dict(k, bereich=bereich.get(k["uuid"], "")) for k in r["konten"]],
+                                            gelesen=app.ledger_time.strftime("%Y-%m-%d %H:%M") if app.ledger_time else None))
             if path == "/api/runs":
                 st = app.store.load("state.json", {}) or {}
                 return self._json(200, {"letzter_lauf": st.get("letzter_lauf"), "verlauf": list(reversed(st.get("verlauf", [])))})
@@ -1086,6 +1107,23 @@ def make_handler(app: App):
                                             "kategorien": app.categories()})
                 finally:
                     app.check_lock.release()
+            if path == "/api/abruf":
+                if app.ledger is None:
+                    return self._json(409, {"fehler": "Noch kein Stand aus MoneyMoney gelesen."})
+                try:
+                    acc = app.ledger.resolve(str(body.get("konto") or ""))
+                except KeyError as e:
+                    return self._json(400, {"fehler": str(e)})
+                want = body.get("abgerufen")
+                cfg = copy.deepcopy(app.config)
+                ab = cfg.setdefault("abruf", {})
+                for k in ("online", "offline"):
+                    ab[k] = [r for r in ab.get(k) or [] if r.split("|")[0].strip() != acc.uuid]
+                detected = abruf_arten(app.ledger, cfg)[acc.uuid]["art"]
+                if isinstance(want, bool) and (want != (detected == "online")):
+                    ab["online" if want else "offline"].append("%s | %s" % (acc.uuid, acc.name))
+                app.save_config(cfg)
+                return self._json(200, {"ok": True, "abruf": app.abruf()})
             if path == "/api/run":
                 dry = body.get("probelauf")
                 if dry is False and not local:

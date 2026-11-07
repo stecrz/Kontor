@@ -42,6 +42,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "steuer": {"vermietung_kategorie": "Vermietung", "objekt_darlehen": {}, "afa": {}, "positionen": {}, "entitaeten": []},
     "belege": {"ordner": "~/Documents/Kontor-Belege", "unterordner": "{jahr}", "kommentar_schreiben": False, "ordner_bestaetigt": False},
     "moneymoney": {"kategorisieren_erlauben": False},
+    "abruf": {"online": [], "offline": []},      # eigene Festlegung: Konto wird von MoneyMoney abgerufen / nicht (sonst erkannt)
     "updates": {"repo": "stecrz/Kontor", "taeglich_pruefen": True},
     "oberflaeche": {"sperre_minuten": 15, "touchid": True, "port": 8765, "bind": "127.0.0.1", "tls_cert": "", "tls_key": ""},
 }
@@ -272,6 +273,57 @@ def bereiche_for(ledger: Ledger, config: dict) -> List[dict]:
     return out
 
 
+def abruf_arten(ledger: Ledger, config: dict) -> Dict[str, Dict[str, str]]:
+    """uuid -> {"art": "online"|"offline", "grund": Text} fuer alle Konten (keine Gruppen). Online = MoneyMoney ruft bei
+    Bank oder Dienst ab; offline = von Hand gefuehrt, kein Abruf (zaehlt nicht fuer den Datenstand). MoneyMoney setzt den
+    Abrufzeitpunkt auch bei Offline-Konten (z. B. nach einer Buchung), deshalb mehrere Merkmale; eigene Festlegung geht vor."""
+    import mm_rules
+    ab = config.get("abruf") or {}
+
+    def refs(lst) -> set:
+        out = set()
+        for r in lst or []:
+            try:
+                out.add(ledger.resolve(r).uuid)
+            except KeyError:
+                pass
+        return out
+    force_on, force_off = refs(ab.get("online")), refs(ab.get("offline"))
+    targets = set()
+    for key, fields in (("darlehen", ("darlehenskonto",)), ("beteiligungen", ("zielkonto", "beteiligungskonto")), ("saldo_spiegel", ("zielkonto",))):
+        for r in config.get(key) or []:
+            if isinstance(r, dict):
+                targets |= refs([r[f] for f in fields if r.get(f)])
+    booked = {t.account_uuid for t in ledger.txs if t.purpose and "#mm-" in t.purpose and mm_rules.TAG_RE.search(t.purpose)}
+    out: Dict[str, Dict[str, str]] = {}
+    for a in ledger.accounts.values():
+        if a.group:
+            continue
+        refreshed = a.refresh is not None and a.refresh.year >= 2005
+        if a.uuid in force_off:
+            art, grund = "offline", "von dir als ohne Abruf festgelegt"
+        elif a.uuid in force_on:
+            art, grund = "online", "von dir als abgerufen festgelegt"
+        elif a.portfolio:
+            art, grund = ("online", "Depot") if refreshed else ("offline", "Depot ohne Abruf")
+        elif a.offline:
+            art, grund = "offline", "manuell geführt"
+        elif a.uuid in targets:
+            art, grund = "offline", "Zielkonto einer Regel"
+        elif a.uuid in booked:
+            art, grund = "offline", "von Kontor bebucht"
+        elif "offline" in (a.type or "").lower():
+            art, grund = "offline", "Offline-Konto"
+        elif not refreshed:
+            art, grund = "offline", "noch nie abgerufen"
+        elif not ((a.bank_code or "").strip() or (a.account_number or "").strip() or (a.iban or "").strip()):
+            art, grund = "offline", "ohne Bankleitzahl und Kontonummer"
+        else:
+            art, grund = "online", "Bank" if (a.bank_code or "").strip() else "Dienst (Erweiterung)"
+        out[a.uuid] = {"art": art, "grund": grund}
+    return out
+
+
 def freeze_assignments(ledger: Ledger, config: dict) -> Optional[dict]:
     """Bestaetigte Konten ohne feste Position/Verlaufsquelle (aeltere Einrichtung mit "auto") auf den heute erkannten Wert
     festlegen, damit spaetere Aenderungen an Name, Typ oder Gruppe in MoneyMoney die Zuordnung nicht verschieben.
@@ -320,7 +372,7 @@ def konten_neu(ledger: Ledger, config: dict, bereiche: List[dict], roles: Dict[s
             pass
     bereich_of = {a.uuid: b for b in bereiche for a in b["leaves"]}
     out = []
-    for a in sorted(ledger.accounts.values(), key=lambda x: x.path):
+    for a in ledger.accounts.values():           # Reihenfolge wie in MoneyMoney
         if a.group or a.uuid in confirmed or not a.path:
             continue
         b = bereich_of.get(a.uuid)
@@ -816,12 +868,18 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
         if t.booked and (t.account_uuid not in last_tx or t.booking_date > last_tx[t.account_uuid]):
             last_tx[t.account_uuid] = t.booking_date
     out = []
-    for a in sorted(ledger.accounts.values(), key=lambda x: x.path):
+    kinds = abruf_arten(ledger, config)
+    plain = copy.deepcopy(config)                # Vorschlag ohne eigene Zuordnungen (was Kontor heute erkennen wuerde)
+    plain.setdefault("bilanz", {})["rollen"] = {}
+    plain["bilanz"]["konten_zuordnung"] = {r: dict(z, position="") for r, z in (plain["bilanz"].get("konten_zuordnung") or {}).items() if isinstance(z, dict)}
+    suggested = account_roles(ledger, plain)
+    for a in ledger.accounts.values():           # Reihenfolge wie in MoneyMoney
         if not a.path:
             continue
         out.append({"uuid": a.uuid, "name": a.name, "pfad": a.path, "ebene": a.path.count(" / "), "gruppe": a.group,
                     "depot": a.portfolio, "manuell": a.offline, "rolle": roles.get(a.uuid, "") if not a.group else "",
                     "saldo": None if a.group else a.balance, "waehrung": a.currency, "typ": a.type, "inaktiv": a.uuid in inactive, "inaktiv_auto": a.uuid in inactive_auto,
+                    "rolle_vorschlag": suggested.get(a.uuid, "") if not a.group else "", "abruf": kinds.get(a.uuid, {}).get("art") if not a.group else None,
                     "verlauf": verlauf.get(a.uuid) or ("stand" if a.portfolio else "umsaetze"), "bereich": bereich_of.get(a.uuid, ""),
                     "bereich_id": bereich_id.get(a.uuid, ""), "bestaetigt": a.uuid in confirmed,
                     "aktualisiert": a.refresh.strftime("%Y-%m-%d %H:%M") if a.refresh else None,

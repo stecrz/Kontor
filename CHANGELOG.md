@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.9.0
+- Konten überall in der Reihenfolge von MoneyMoney statt alphabetisch (Einrichtung, Bilanz, Gruppenansicht, Synchronisierung).
+- Einrichtung · Bilanzpositionen & Verlauf: Konten nach Bereichen gruppiert, in der Reihenfolge unter „Bereiche“; doppelte Unterüberschriften in der Einrichtung entfallen.
+- Vorschlag: in der Auswahl immer mit „(Vorschlag)“ gekennzeichnet (auch bei bestätigten Konten); gestrichelt, solange ein neues Konto den Vorschlag trägt – auch nach dem Zurückwechseln. Keine Kursivschrift mehr.
+- Neue Seite „Synchronisierung“: Datenstand je Konto (letzter Abruf, Rückstand), Konten ohne Bankabruf getrennt, je Konto festlegbar. Unten links nur noch die beiden Zeitpunkte, ein Hinweis mit Anzahl zurückliegender Konten, Klick führt zur Seite.
+- Offline-Konten zählen nicht mehr für den Datenstand: MoneyMoney setzt den Abrufzeitpunkt auch bei ihnen; erkannt werden sie an fehlender Bank-/Kontonummer, an Regeln, die in sie buchen, und an Kontor-Buchungen.
+- Kopfzeile: Bereichsauswahl immer oben rechts. Ansicht (Monate/Jahre, Plan, inflationsbereinigt, leere Zeilen) steht in der Werkzeugleiste der Seite neben dem Excel-Export; der Bereichsname wird darunter nicht noch einmal genannt.
+- „Verbindung prüfen“ liest jetzt auch die Depotpositionen.
+
 ## 3.8.1
 - Position und Verlauf bestätigter Konten werden auch beim automatischen Abgleich festgelegt (nicht erst beim nächsten Neuberechnen).
 

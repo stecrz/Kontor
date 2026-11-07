@@ -266,6 +266,14 @@ class Ledger:
                 out.append(child)
         return out
 
+    def order(self) -> Dict[str, int]:
+        """uuid -> Position in der Seitenleiste von MoneyMoney (Reihenfolge des Exports)."""
+        o = self.__dict__.get("_order")
+        if o is None or len(o) != len(self.accounts):
+            o = {u: i for i, u in enumerate(self.accounts)}
+            self._order = o
+        return o
+
     def roots(self) -> List[Account]:
         return [a for a in self.accounts.values() if a.parent is None and a.path]
 

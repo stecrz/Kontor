@@ -429,6 +429,32 @@ class AppTests(_AppBase):
         self.assertNotEqual(self.app.do_run(None, False)["status"], "unveraendert")
         self.assertIsNot(self.app.ledger, led)
 
+    def test_abruf_offline_erkennung(self):
+        """MoneyMoney setzt den Abrufzeitpunkt auch bei Offline-Konten: Regelziele und Konten ohne Nummern zaehlen nicht fuer den Datenstand."""
+        self.login(); self.run_and_wait()
+        led = copy.deepcopy(self.app.ledger)
+        neu = max(a.refresh for a in led.accounts.values() if a.refresh)
+        for key in ("pb.vd", "priv.bet.pb"):                 # Regelziele mit Zeitstempel (wie nach einer Buchung)
+            led.accounts[F.uid(key)].refresh = neu - timedelta(days=20)
+        led.fp = "x"; self.app.ledger = led
+        kinds = mm_core.abruf_arten(led, self.app.config)
+        self.assertEqual(kinds[F.uid("pb.vd")]["art"], "offline"); self.assertEqual(kinds[F.uid("pb.vd")]["grund"], "Zielkonto einer Regel")
+        self.assertEqual(kinds[F.uid("priv.giro")]["art"], "online"); self.assertEqual(kinds[F.uid("priv.depot")]["art"], "online")
+        self.assertEqual(self.app.bankabruf()["zurueck_anzahl"], 0)
+        code, r = self.call("/api/abruf"); self.assertEqual(code, 200)
+        self.assertEqual([k["uuid"] for k in r["konten"]][:3], [a.uuid for a in led.accounts.values() if not a.group and a.path][:3])   # Reihenfolge wie MoneyMoney
+        self.assertTrue(r["gelesen"]); self.assertIn("bereich", r["konten"][0])
+        # eigene Festlegung: Giro nicht abgerufen -> offline; zurueck -> wieder erkannt
+        code, r = self.call("/api/abruf", {"konto": F.uid("priv.giro"), "abgerufen": False}); self.assertEqual(code, 200)
+        self.assertEqual([k for k in r["abruf"]["konten"] if k["uuid"] == F.uid("priv.giro")][0]["art"], "offline")
+        self.assertEqual(len(self.store.load("config.json")["abruf"]["offline"]), 1)
+        self.call("/api/abruf", {"konto": F.uid("priv.giro"), "abgerufen": True})
+        self.assertEqual(self.store.load("config.json")["abruf"], {"online": [], "offline": []})
+        # Kontenliste in der Reihenfolge von MoneyMoney (nicht alphabetisch)
+        code, k = self.call("/api/konten")
+        self.assertEqual([x["uuid"] for x in k["konten"]], [a.uuid for a in led.accounts.values() if a.path])
+        self.assertEqual([x for x in k["konten"] if x["uuid"] == F.uid("priv.giro")][0]["rolle_vorschlag"], "liquiditaet")
+
     def test_bankabruf_zurueck(self):
         """Konten mit Saldo, die beim Bankabruf mehr als einen Tag zurückliegen, werden gemeldet; uralte (aufgelöste) nicht."""
         self.login()
@@ -1374,12 +1400,22 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("keine Änderung", sync())
                 self.assertEqual(len(store.load("state.json").get("verlauf", [])), runs_vorher)      # ohne Änderung kein neuer Regellauf
                 self.assertFalse(pg.query_selector("#sync-btn").is_disabled())
+                # Bereichsauswahl steht oben rechts an derselben Stelle, egal wie lang der Seitentitel ist
+                x_ueb = pg.evaluate("document.querySelector('#bereich-seg').getBoundingClientRect().right")
+                pg.click("#nav a[href='#planung']"); pg.wait_for_selector("#main .toolbar #modus-seg")
+                self.assertEqual(x_ueb, pg.evaluate("document.querySelector('#bereich-seg').getBoundingClientRect().right"))
+                self.assertNotIn("Privat", pg.query_selector("#main .toolbar").inner_text())            # Bereich nicht doppelt genannt
+                pg.click("#nav a[href='#uebersicht']"); pg.wait_for_selector(".cards")
+                # Status unten links fuehrt zur Seite Synchronisierung
+                pg.click("#status-mini .sm-link"); pg.wait_for_selector(".sync-table")
+                self.assertIn("Ohne Bankabruf", pg.query_selector("#main").inner_text()); self.assertIn("Verkäuferdarlehen", pg.query_selector_all(".sync-table")[1].inner_text())
+                pg.click("#nav a[href='#uebersicht']"); pg.wait_for_selector(".cards")
                 # Bereich wechseln
                 pg.click("#bereich-seg button:nth-child(2)"); pg.wait_for_timeout(500)
                 self.assertEqual(pg.evaluate("document.querySelector('#bereich-seg .on').textContent"), "Alpha GbR")
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_uebersicht_gbr.png"), full_page=True)
                 pg.click("#bereich-seg button:nth-child(1)"); pg.wait_for_timeout(300)
-                for tab in ("bilanz", "kapitalfluss", "planung", "immobilien", "steuer", "depots", "umsaetze", "zuordnen", "buchungen", "einrichtung", "regeln", "kategorien", "einstellungen", "pakete", "updates", "protokoll", "hilfe"):
+                for tab in ("bilanz", "kapitalfluss", "planung", "immobilien", "steuer", "depots", "umsaetze", "zuordnen", "buchungen", "synchronisierung", "einrichtung", "regeln", "kategorien", "einstellungen", "pakete", "updates", "protokoll", "hilfe"):
                     pg.click("#nav a[href='#%s']" % tab); pg.wait_for_timeout(400)
                     self.assertTrue(pg.query_selector("#main").inner_html().strip(), tab)
                     if shots: pg.screenshot(path=os.path.join(shots, "ui_%s.png" % tab), full_page=(tab in ("regeln", "einstellungen", "steuer", "planung", "hilfe", "bilanz", "einrichtung")))
@@ -1447,6 +1483,17 @@ class BrowserTest(unittest.TestCase):
                 pg.select_option(row + " .k-show", "hide"); self.assertIn("inactive", pg.get_attribute(row, "class"))   # sofort grau
                 self.assertTrue(pg.is_visible(row + " .k-vis"))
                 pg.select_option(row + " .k-show", ""); self.assertNotIn("inactive", pg.get_attribute(row, "class") or "")
+                # Vorschlag in der Liste gekennzeichnet; gestrichelt nur, solange ein neues Konto ihn traegt (auch nach Zurueckwechseln)
+                self.assertIn("(Vorschlag)", pg.eval_on_selector(row + " .k-rolle", "e => e.options[e.selectedIndex].text"))
+                neu_row = "tr.neu[data-uuid]"
+                if pg.query_selector(neu_row):
+                    sel = neu_row + " .k-rolle"; vor = pg.get_attribute(sel, "data-vor")
+                    self.assertIn("vorschlag", pg.get_attribute(sel, "class"))
+                    pg.select_option(sel, "sonstiges" if vor != "sonstiges" else "anlagen"); self.assertNotIn("vorschlag", pg.get_attribute(sel, "class"))
+                    pg.select_option(sel, vor); self.assertIn("vorschlag", pg.get_attribute(sel, "class"))
+                # Konten nach Bereichen gruppiert, in der Reihenfolge der Bereiche
+                groups = pg.evaluate("[...document.querySelectorAll('.acct-table tr.bgroup td')].map(t => t.textContent)")
+                self.assertEqual(groups[:3], ["Privat", "Alpha GbR", "Beta GbR"])
                 # Auswahlfelder gleich breit -> "Verlauf…" steht sauber untereinander
                 xs = pg.evaluate("[...document.querySelectorAll('.acct-table .k-hist')].map(b => Math.round(b.getBoundingClientRect().left))")
                 self.assertEqual(len(set(xs)), 1, xs)
