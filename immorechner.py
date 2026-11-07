@@ -590,7 +590,7 @@ def planreihen(res: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def sheets(res: dict):
-    from mm_xlsx import Sheet
+    from excel import Sheet
     o, K, J = res["eingaben"], res["kennzahlen"], res["jahre"]
     inputs = [["Objekt", o.get("name")], ["Art", o.get("art")], ["Übergang", o.get("uebergang")], ["Kaufpreis", _f(o.get("kaufpreis"))],
               ["Nebenkosten (AfA-Basis)", K["nebenkosten"]], ["Gesamtinvestition", K["gesamtinvestition"]], ["Eigenkapital", K["eigenkapital"]],

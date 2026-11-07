@@ -23,12 +23,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import fixtures as F  # noqa: E402
 import mm_bridge  # noqa: E402
-import mm_core  # noqa: E402
-import mm_update  # noqa: E402
-from mm_app import App, make_handler  # noqa: E402
-from mm_model import Ledger, accounts_from_export, tx_from_export  # noqa: E402
-from mm_store import Store, load_or_create_master_key  # noqa: E402
-from mm_tax import build_tax  # noqa: E402
+import kern  # noqa: E402
+import updates  # noqa: E402
+from dienst import App, make_handler  # noqa: E402
+from datenmodell import Ledger, accounts_from_export, tx_from_export  # noqa: E402
+from ablage import Store, load_or_create_master_key  # noqa: E402
+from steuer import build_tax  # noqa: E402
 
 TODAY = date(2026, 11, 4)
 
@@ -152,11 +152,11 @@ class _FixedDate(date):
 
 
 def patch_today():
-    import mm_app
-    mm_core.date = _FixedDate
-    mm_app.date = _FixedDate
-    mm_app.is_running = lambda: True
-    mm_core.notify = lambda *a, **k: None
+    import dienst
+    kern.date = _FixedDate
+    dienst.date = _FixedDate
+    dienst.is_running = lambda: True
+    kern.notify = lambda *a, **k: None
 
 
 class CoreTests(unittest.TestCase):
@@ -172,16 +172,16 @@ class CoreTests(unittest.TestCase):
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def test_run_twice_then_dataset(self):
-        cfg = mm_core.merged_config(self.store.load("config.json"))
-        res = mm_core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
+        cfg = kern.merged_config(self.store.load("config.json"))
+        res = kern.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertEqual(res["status"], "ok", res)
         self.assertEqual(res["geschrieben"], 35)      # 11 Tilgung + 11 Zins + 2 Wert + 11 Quellkommentare
         self.assertEqual(len(res["vorschlaege"]), 24)
         vd = [a for a in MockBridge.state["accounts"] if a["name"] == "Verkäuferdarlehen"][0]["balance"][0][0]
         self.assertAlmostEqual(vd, -1600000 + 11 * 8250 - 11 * 4400, 2)
-        res2 = mm_core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
+        res2 = kern.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertEqual(res2["geschrieben"], 0)
-        self.assertEqual(mm_core.run_once(self.store, cfg, TODAY, dry=False, force=False, bridge_factory=MockBridge)["status"], "unveraendert")
+        self.assertEqual(kern.run_once(self.store, cfg, TODAY, dry=False, force=False, bridge_factory=MockBridge)["status"], "unveraendert")
         ds = self.store.load("dataset.json")
         self.assertEqual(ds["haupt"], F.uid("priv"))
         self.assertEqual(set(ds["bereich_namen"].values()), {"Privat", "Alpha GbR", "Beta GbR"})
@@ -208,8 +208,8 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(raw.startswith(b"MMT1")); self.assertNotIn(b"Privat", raw)
 
     def test_dry_run_writes_nothing(self):
-        cfg = mm_core.merged_config(self.store.load("config.json"))
-        res = mm_core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        cfg = kern.merged_config(self.store.load("config.json"))
+        res = kern.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
         self.assertEqual(res["geschrieben"], 0); self.assertEqual(len(res["vorschlaege"]), 24)
         vd = [a for a in MockBridge.state["accounts"] if a["name"] == "Verkäuferdarlehen"][0]["balance"][0][0]
         self.assertEqual(vd, -1600000.0)
@@ -217,7 +217,7 @@ class CoreTests(unittest.TestCase):
 
     def test_tax_report(self):
         led = Ledger(accounts_from_export(MockBridge.state["accounts"]), tx_from_export(MockBridge.state["txs"]))
-        cfg = mm_core.merged_config(config_for_test())
+        cfg = kern.merged_config(config_for_test())
         t = build_tax(led, cfg, TODAY)
         pb = [e for e in t["entitaeten"] if e["name"] == "Alpha GbR"][0]
         self.assertEqual(pb["art"], "gbr"); self.assertEqual(pb["anteil"], 0.49)
@@ -236,48 +236,48 @@ class CoreTests(unittest.TestCase):
 
     def test_check_config_findings(self):
         led = Ledger(accounts_from_export(MockBridge.state["accounts"]), tx_from_export(MockBridge.state["txs"]))
-        cfg = mm_core.merged_config(config_for_test())
-        f = mm_core.check_config(led, MockBridge().export_categories(), cfg)
+        cfg = kern.merged_config(config_for_test())
+        f = kern.check_config(led, MockBridge().export_categories(), cfg)
         self.assertFalse([x for x in f if x["stufe"] == "fehler"], f)
         cfg["darlehen"][0]["darlehenskonto"] = F.uid("priv.giro") + " | Hausbank Giro"
-        f = mm_core.check_config(led, [], cfg)
+        f = kern.check_config(led, [], cfg)
         self.assertTrue(any(x["stufe"] == "fehler" and "Bankanbindung" in x["text"] for x in f))
 
     def test_package_roundtrip_and_mapping(self):
         led = Ledger(accounts_from_export(MockBridge.state["accounts"]), tx_from_export(MockBridge.state["txs"]))
-        cfg = mm_core.merged_config(config_for_test())
-        pkg = mm_core.export_package(cfg, "Test", strip_uuids=True, ledger=led)
+        cfg = kern.merged_config(config_for_test())
+        pkg = kern.export_package(cfg, "Test", strip_uuids=True, ledger=led)
         self.assertEqual(pkg["kontor_paket"], 1)
         txt = json.dumps(pkg, ensure_ascii=False)
         self.assertNotIn(F.uid("pb.vd"), txt); self.assertNotIn("oberflaeche", pkg["config"]); self.assertIn("Verkäuferdarlehen", txt)
-        new_cfg, unresolved, report = mm_core.import_package(mm_core.merged_config({}), pkg, led, "ergaenzen")
+        new_cfg, unresolved, report = kern.import_package(kern.merged_config({}), pkg, led, "ergaenzen")
         self.assertEqual(unresolved, [], unresolved)
         self.assertEqual(new_cfg["darlehen"][0]["darlehenskonto"].split(" | ")[0], F.uid("pb.vd"))
         self.assertEqual(len(new_cfg["beteiligungen"]), 2)
         pkg2 = copy.deepcopy(pkg); pkg2["config"]["darlehen"][0]["darlehenskonto"] = "Darlehen Fremd"
-        _, unresolved, _ = mm_core.import_package(mm_core.merged_config({}), pkg2, led, "ergaenzen")
+        _, unresolved, _ = kern.import_package(kern.merged_config({}), pkg2, led, "ergaenzen")
         self.assertEqual(len(unresolved), 1); self.assertEqual(unresolved[0]["label"], "Darlehen Fremd")
-        new_cfg, unresolved, _ = mm_core.import_package(mm_core.merged_config({}), pkg2, led, "ergaenzen", {"Darlehen Fremd": F.uid("pb.vd") + " | Verkäuferdarlehen"})
+        new_cfg, unresolved, _ = kern.import_package(kern.merged_config({}), pkg2, led, "ergaenzen", {"Darlehen Fremd": F.uid("pb.vd") + " | Verkäuferdarlehen"})
         self.assertEqual(unresolved, []); self.assertIn(F.uid("pb.vd"), new_cfg["darlehen"][0]["darlehenskonto"])
-        again, _, _ = mm_core.import_package(new_cfg, pkg, led, "ergaenzen")
+        again, _, _ = kern.import_package(new_cfg, pkg, led, "ergaenzen")
         self.assertEqual(len(again["darlehen"]), 1)
 
     def test_diagnose_masks(self):
-        cfg = mm_core.merged_config(self.store.load("config.json"))
-        mm_core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        cfg = kern.merged_config(self.store.load("config.json"))
+        kern.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
         with open(os.path.join(self.dir, "kontor.log"), "w") as f:
             f.write("2026-11-04 INFO Lauf fuer Stadtbank Kontokorrent IBAN DE02701500000000594937 Saldo 1234567\n")
-        txt = mm_core.diagnose(self.store, self.dir, cfg, {"version": "x"}, mask_names=True)
+        txt = kern.diagnose(self.store, self.dir, cfg, {"version": "x"}, mask_names=True)
         self.assertNotIn("DE02701500000000594937", txt); self.assertNotIn(F.SELLER_IBAN, txt)
         self.assertNotIn("Stadtbank Kontokorrent", txt); self.assertIn("Konto", txt)
         self.assertNotIn("1234567", txt)
 
     def test_update_check_offline(self):
-        info = mm_update.check("stecrz/Kontor")
+        info = updates.check("stecrz/Kontor")
         self.assertIn("aktuell", info)
         self.assertTrue(info["fehler"] or info["verfuegbar"])
         with self.assertRaises(ValueError):
-            mm_update._get("https://evil.example/x.zip")
+            updates._get("https://evil.example/x.zip")
 
     def test_update_check_uses_archive_urls(self):
         """Quelle ist VERSION im Hauptzweig (Tags nicht noetig); Archiv ueber github.com/.../archive (nicht API-Zipball, 415).
@@ -291,11 +291,11 @@ class CoreTests(unittest.TestCase):
             if url.endswith("/main/CHANGELOG.md"):
                 return "# Änderungen\n\n## 9.9.9\n- Neu A\n- Neu B\n\n## 9.9.8\n- alt\n".encode()
             raise AssertionError(url)
-        old = mm_update._get; mm_update._get = fake_get
+        old = updates._get; updates._get = fake_get
         try:
-            info = mm_update.check("stecrz/Kontor")
+            info = updates.check("stecrz/Kontor")
         finally:
-            mm_update._get = old
+            updates._get = old
         self.assertEqual(info["verfuegbar"], "9.9.9"); self.assertTrue(info["neuer"]); self.assertEqual(info["quelle"], "main")
         self.assertEqual(info["zip"], "https://github.com/stecrz/Kontor/archive/refs/heads/main.zip")
         self.assertEqual(info["notizen"], "- Neu A\n- Neu B")
@@ -308,15 +308,15 @@ class CoreTests(unittest.TestCase):
             if url.endswith("/tags"):
                 return json.dumps([{"name": "v9.9.10"}, {"name": "v9.9.9"}, {"name": "v10.0.0"}]).encode()
             raise AssertionError(url)
-        mm_update._get = fake_get2
+        updates._get = fake_get2
         try:
-            info = mm_update.check("stecrz/Kontor")
+            info = updates.check("stecrz/Kontor")
         finally:
-            mm_update._get = old
+            updates._get = old
         self.assertEqual(info["verfuegbar"], "v10.0.0"); self.assertEqual(info["quelle"], "tag")
         self.assertEqual(info["zip"], "https://github.com/stecrz/Kontor/archive/refs/tags/v10.0.0.zip")
-        self.assertEqual(mm_update.archive_url("a/b", "main", "heads"), "https://github.com/a/b/archive/refs/heads/main.zip")
-        self.assertIsNone(mm_update.install_via_git(restart=False)) if not os.path.isdir(os.path.join(mm_update.HERE, ".git")) else None
+        self.assertEqual(updates.archive_url("a/b", "main", "heads"), "https://github.com/a/b/archive/refs/heads/main.zip")
+        self.assertIsNone(updates.install_via_git(restart=False)) if not os.path.isdir(os.path.join(updates.HERE, ".git")) else None
 
     def test_update_install_from_archive(self):
         """Archiv wie von GitHub (Wurzelordner mit kontor.py + VERSION) wird in den Programmordner eingespielt, Sicherung unter .alt."""
@@ -336,19 +336,19 @@ class CoreTests(unittest.TestCase):
                         data = b"// neu\n" + data
                     z.writestr("stecrz-Kontor-abc123/" + rel, data)
             z.writestr("stecrz-Kontor-abc123/neu.txt", b"x")
-        old_get, old_here = mm_update._get, mm_update.HERE
-        mm_update._get = lambda url, accept="": buf.getvalue()
-        mm_update.HERE = prog
+        old_get, old_here = updates._get, updates.HERE
+        updates._get = lambda url, accept="": buf.getvalue()
+        updates.HERE = prog
         try:
-            res = mm_update.install("stecrz/Kontor", zip_url="https://codeload.github.com/stecrz/Kontor/zip/main", restart=False)
+            res = updates.install("stecrz/Kontor", zip_url="https://codeload.github.com/stecrz/Kontor/zip/main", restart=False)
         finally:
-            mm_update._get, mm_update.HERE = old_get, old_here
+            updates._get, updates.HERE = old_get, old_here
         self.assertTrue(res["ok"], res); self.assertEqual(res["version"], "9.9.9")
         self.assertEqual(open(os.path.join(prog, "VERSION")).read().strip(), "9.9.9")
         self.assertTrue(open(os.path.join(prog, "web", "app.js")).read().startswith("// neu"))
         self.assertTrue(os.path.exists(os.path.join(prog, "neu.txt")))
         self.assertTrue(os.path.exists(os.path.join(prog, ".alt", "VERSION")))
-        self.assertEqual(open(os.path.join(prog, ".alt", "VERSION")).read().strip(), mm_update.current_version())
+        self.assertEqual(open(os.path.join(prog, ".alt", "VERSION")).read().strip(), updates.current_version())
         self.assertFalse(os.path.exists(os.path.join(prog, "tests")))
 
 
@@ -437,7 +437,7 @@ class AppTests(_AppBase):
         for key in ("pb.vd", "priv.bet.pb"):                 # Regelziele mit Zeitstempel (wie nach einer Buchung)
             led.accounts[F.uid(key)].refresh = neu - timedelta(days=20)
         led.fp = "x"; self.app.ledger = led
-        kinds = mm_core.abruf_arten(led, self.app.config)
+        kinds = kern.abruf_arten(led, self.app.config)
         self.assertEqual(kinds[F.uid("pb.vd")]["art"], "offline"); self.assertEqual(kinds[F.uid("pb.vd")]["grund"], "Zielkonto einer Regel")
         self.assertEqual(kinds[F.uid("priv.giro")]["art"], "online"); self.assertEqual(kinds[F.uid("priv.depot")]["art"], "online")
         self.assertEqual(self.app.bankabruf()["zurueck_anzahl"], 0)
@@ -460,7 +460,7 @@ class AppTests(_AppBase):
         nicht lief -> Hinweis auf moeglicherweise fehlende Monate."""
         from datetime import datetime as dt
         self.login()
-        import mm_app as MA
+        import dienst as MA
         MA.is_running = lambda: True
         try:
             depot = [a for a in MockBridge.state["accounts"] if a["uuid"] == F.uid("priv.depot")][0]
@@ -486,90 +486,149 @@ class AppTests(_AppBase):
             import mm_bridge as MB
             MA.is_running = MB.is_running
 
-    def test_historie_aus_moneymoney_pruefen(self):
-        """Schritt 1: hochgeladene (verschluesselte) Datenbank nur im Speicher entschluesseln, Passwort nie in Kontor,
-        nur Aufbau schreiben; MoneyMoney muss beendet sein; keine Datei, keine Freigabe."""
-        import hashlib, shutil as sh, subprocess as sp, mm_historie as H, mm_app as MA
+    def _mm_db(self, compat=None, mit_verlauf=True, passwort="ge'heim"):
+        """Erfundene MoneyMoney-Datenbank (SQLCipher): Konten, Umsaetze, Kontostand-Verlauf (Cocoa-Zeit, Cent), Zugangsdaten."""
+        import subprocess as sp
+        from datetime import datetime as DT
+        led = self.app.ledger
+        leaves = [a for a in led.accounts.values() if not a.group]
+        cocoa = lambda d: (DT(d.year, d.month, d.day, 12) - DT(2001, 1, 1)).total_seconds()
+        sql = ["CREATE TABLE accounts(id INTEGER PRIMARY KEY, uuid TEXT, name TEXT, sortkey INTEGER);",
+               "CREATE TABLE logins(id INTEGER PRIMARY KEY, account INTEGER, password TEXT);",
+               "CREATE TABLE transactions(id INTEGER PRIMARY KEY, account_key INTEGER, booking_date REAL, amount REAL, purpose TEXT);"]
+        if mit_verlauf:
+            sql.append("CREATE TABLE balance_history(id INTEGER PRIMARY KEY, account_key INTEGER, timestamp REAL, value INTEGER);")
+        for i, a in enumerate(leaves, 1):
+            sql.append("INSERT INTO accounts VALUES(%d, '%s', 'Konto %d', %d);" % (i, a.uuid.upper(), i, 100 + i))
+            sql.append("INSERT INTO logins VALUES(%d, %d, 'GEHEIM-%d');" % (i, i, i))
+            for k in range(3):
+                sql.append("INSERT INTO transactions(account_key, booking_date, amount, purpose) VALUES(%d, %f, %f, 'Text %d');" % (i, cocoa(date(2026, 10, 10 + k)), 12.34 + k, k))
+            if not mit_verlauf:
+                continue
+            y, m = 2024, 1
+            while (y, m) <= (2026, 10):
+                v = a.balance * (0.5 + 0.5 * ((y - 2024) * 12 + m) / 34.0)
+                if a.uuid == F.uid("priv.depot") and (y, m) == (2025, 6):
+                    v = 70000.0
+                for day in (10, 27):
+                    sql.append("INSERT INTO balance_history(account_key, timestamp, value) VALUES(%d, %f, %d);" % (i, cocoa(date(y, m, day)), round(v * 100) + day))
+                y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+            sql.append("INSERT INTO balance_history(account_key, timestamp, value) VALUES(%d, %f, %d);" % (i, cocoa(date(2026, 11, 3)), round(a.balance * 100)))
+        db = os.path.join(self.dir, "MoneyMoney.sqlite")
+        if os.path.exists(db):
+            os.remove(db)
+        pre = "PRAGMA key = '%s';\n" % passwort.replace("'", "''") + ("PRAGMA cipher_compatibility = %d;\n" % compat if compat else "")
+        sp.run(["sqlcipher", db], input=pre + "BEGIN;\n" + "\n".join(sql) + "\nCOMMIT;\n", capture_output=True, text=True, check=True)
+        with open(db, "rb") as f:
+            return f.read()
+
+    def _mm_upload(self, data, csrf=True):
+        req = urllib.request.Request("http://127.0.0.1:%d/api/historie/mm-einlesen" % self.port, data=data, method="POST")
+        req.add_header("Content-Type", "application/octet-stream")
+        if csrf:
+            req.add_header("X-CSRF-Token", self.csrf)
+        try:
+            with self.opener.open(req) as r:
+                code, res = r.status, json.loads(r.read().decode())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read().decode() or "{}")
+        if res.get("laeuft"):
+            for _ in range(600):
+                time.sleep(0.05)
+                c, st = self.call("/api/historie/mm-status")
+                if not st["laeuft"]:
+                    return code, st["ergebnis"]
+        return code, res
+
+    def test_kontostaende_aus_moneymoney(self):
+        """Verlauf aller Konten aus der hochgeladenen (verschluesselten) Datenbank: nur im Speicher, Passwort nie in Kontor,
+        geprueft am aktuellen Saldo, Monatsende uebernommen, verschluesselt gespeichert; MoneyMoney muss beendet sein."""
+        import hashlib, shutil as sh, mm_historie as H, dienst as MA
+        from kern import MM_VERLAUF_FILE
         if not sh.which("sqlcipher"):
             self.skipTest("sqlcipher fuer die Testdatenbank fehlt")
-        self.login()
-
-        def upload(data, csrf=True):
-            req = urllib.request.Request("http://127.0.0.1:%d/api/historie/mm-pruefen" % self.port, data=data, method="POST")
-            req.add_header("Content-Type", "application/octet-stream")
-            if csrf:
-                req.add_header("X-CSRF-Token", self.csrf)
-            try:
-                with self.opener.open(req) as r:
-                    return r.status, json.loads(r.read().decode())
-            except urllib.error.HTTPError as e:
-                return e.code, json.loads(e.read().decode() or "{}")
-
-        def make(sql, compat=None):
-            db = os.path.join(self.dir, "MoneyMoney.sqlite")
-            if os.path.exists(db):
-                os.remove(db)
-            pre = "PRAGMA key = 'ge''heim';\n" + ("PRAGMA cipher_compatibility = %d;\n" % compat if compat else "")
-            sp.run(["sqlcipher", db], input=pre + sql, capture_output=True, text=True, check=True)
-            with open(db, "rb") as f:
-                return f.read()
-        data = make("CREATE TABLE balances(account INTEGER, date REAL, balance REAL);\n"
-                    "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<500) INSERT INTO balances SELECT i, 7e8+i, 4711.5 FROM n;\n")
+        self.login(); self.run_and_wait()
+        data = self._mm_db()
+        self.assertNotIn(b"GEHEIM", data); self.assertNotIn(F.uid("priv.depot").upper().encode(), data)     # wirklich verschluesselt
         old = (H.keys_from_dialog, MA.is_running)
         H.keys_from_dialog = lambda salt: [bytearray(hashlib.pbkdf2_hmac(h, "ge'heim".encode(), salt, r, 32)) for _n, h, r in H.FORMATS]
+        aufbau = os.path.join(os.path.dirname(H.__file__), "mm-historie-aufbau.txt")
         try:
-            self.assertEqual(upload(data, csrf=False)[0], 403)                         # ohne CSRF-Token abgewiesen
+            self.assertEqual(self._mm_upload(data, csrf=False)[0], 403)                 # ohne CSRF-Token abgewiesen
             MA.is_running = lambda: True
-            code, r = upload(data); self.assertFalse(r["ok"]); self.assertIn("beenden", r["text"])
+            code, r = self._mm_upload(data); self.assertFalse(r["ok"]); self.assertIn("beenden", r["text"])
             MA.is_running = lambda: False
-            code, r = upload(b"SQLite format 3\x00" + b"\0" * 4096); self.assertFalse(r["ok"])          # unverschluesselt -> nein
-            code, r = upload(data); self.assertTrue(r["ok"], r); self.assertEqual(r["tabellen"], 1)
-            txt = open(os.path.join(os.path.dirname(H.__file__), "mm-historie-aufbau.txt"), encoding="utf-8").read()
-            self.assertIn("balances  (500 Zeilen)", txt); self.assertNotIn("4711", txt); self.assertNotIn("heim", txt)
-            self.assertFalse(H.AKTIV.is_set())
+            code, r = self._mm_upload(b"kein sqlite" * 200); self.assertFalse(r["ok"]); self.assertIn("Passwort falsch", r["text"])
+            code, r = self._mm_upload(data); self.assertTrue(r["ok"], r)
+            n = len([a for a in self.app.ledger.accounts.values() if not a.group])
+            self.assertEqual(r["konten"], n); self.assertEqual(r["depots"], 1); self.assertEqual((r["von"], r["bis"]), ("2024-01", "2026-10"))
+            self.assertFalse(H.AKTIV.is_set()); self.assertFalse(os.path.exists(aufbau))
             self.assertFalse([f for f in os.listdir(self.dir) if f.startswith("kontor-") or f.endswith(".sqlite") and f != "MoneyMoney.sqlite"])
-            # aelteres Format (SQLCipher 3) wird ebenfalls erkannt
-            code, r = upload(make("CREATE TABLE a(x);\nINSERT INTO a VALUES(1);\n", compat=3)); self.assertTrue(r["ok"], r); self.assertEqual(r["format"], "SQLCipher 3")
+            mm = self.store.load(MM_VERLAUF_FILE)["konten"]
+            dep = mm[F.uid("priv.depot")]
+            self.assertEqual(dep["2025-06"], 70000.27)                                 # letzter Wert im Monat (Monatsende), Cent -> Euro
+            self.assertNotIn("2026-11", dep)                                            # laufender Monat kommt aus dem aktuellen Saldo
+            with open(self.store.path(MM_VERLAUF_FILE), "rb") as f:
+                self.assertNotIn(b"70000", f.read())                                    # verschluesselt abgelegt
+            self.assertEqual(self.store.load("state.json")["mm_verlauf"]["konten"], n)
+            code, st = self.call("/api/status"); self.assertEqual(st["moneymoney"]["historie"]["depots"], 1)
+            self.app.rebuild_report(wait=True)
+            code, h = self.call("/api/historie?konto=" + F.uid("priv.depot"))
+            self.assertEqual(h["werte"]["2025-06"], 70000.27); self.assertEqual(h["moneymoney"]["2025-06"], 70000.27)
+            code, ab = self.call("/api/abruf")
+            d = next(x for x in ab["depots"] if x["uuid"] == F.uid("priv.depot")); self.assertEqual(d["erster_stand"], "2024-01"); self.assertTrue(d["aus_moneymoney"])
+            # Bilanz nutzt die Werte
+            code, ds = self.call("/api/dataset")
+            row = next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == F.uid("priv.depot"))
+            self.assertEqual(row["werte"]["2025-06"], 70000.27)
+            # aelteres Format (SQLCipher 3) ebenso
+            code, r = self._mm_upload(self._mm_db(compat=3)); self.assertTrue(r["ok"], r)
+            # ohne Verlaufstabelle: nichts uebernommen, nur der Aufbau (Namen, keine Inhalte) als Hinweis
+            code, r = self._mm_upload(self._mm_db(mit_verlauf=False)); self.assertFalse(r["ok"]); self.assertIn("nicht sicher erkannt", r["text"])
+            txt = open(aufbau, encoding="utf-8").read()
+            self.assertIn("transactions", txt); self.assertNotIn("GEHEIM", txt); self.assertNotIn("Text 1", txt)
+            self.assertEqual(self.store.load(MM_VERLAUF_FILE)["konten"][F.uid("priv.depot")]["2025-06"], 70000.27)    # bisherige Werte bleiben
             H.keys_from_dialog = lambda salt: [bytearray(hashlib.pbkdf2_hmac(h, b"falsch", salt, r, 32)) for _n, h, r in H.FORMATS]
-            code, r = upload(data); self.assertFalse(r["ok"]); self.assertIn("Passwort falsch", r["text"])
+            code, r = self._mm_upload(data); self.assertFalse(r["ok"]); self.assertIn("Passwort falsch", r["text"])
         finally:
             H.keys_from_dialog, MA.is_running = old
-            p = os.path.join(os.path.dirname(H.__file__), "mm-historie-aufbau.txt")
-            if os.path.exists(p):
-                os.remove(p)
+            if os.path.exists(aufbau):
+                os.remove(aufbau)
 
     def test_historie_puffer_werden_ueberschrieben(self):
-        """Schluessel und Klartext liegen nur in Puffern, die nach dem Lesen mit Nullen ueberschrieben sind."""
+        """Schluessel und Klartext liegen nur in einem Puffer, der nach dem Lesen mit Nullen ueberschrieben ist;
+        SQLite liest direkt aus diesem Puffer (keine Kopie); Zugangsdaten-Tabellen werden nicht angesehen."""
         import hashlib, shutil as sh, subprocess as sp, mm_historie as H
         if not sh.which("sqlcipher"):
             self.skipTest("sqlcipher fehlt")
         db = os.path.join(self.dir, "w.sqlite")
         sp.run(["sqlcipher", db], input="PRAGMA key = 'x';\nCREATE TABLE t(a);\nINSERT INTO t VALUES('GEHEIMER-INHALT');\n", capture_output=True, text=True, check=True)
-        raw = open(db, "rb").read()
+        buf = bytearray(open(db, "rb").read())
         seen = {}
 
         def keys(salt):
             seen["keys"] = [bytearray(hashlib.pbkdf2_hmac(h, b"x", salt, r, 32)) for _n, h, r in H.FORMATS]
             return seen["keys"]
-        orig = H.decrypt_into
+        orig = H.MemDB.__init__
 
-        def spy(r, k):
-            out, fmt = orig(r, k)
-            seen["plain"] = out
-            self.assertIn(b"GEHEIMER-INHALT", bytes(out))
-            return out, fmt
-        H.decrypt_into = spy
+        def spy(self_, b):
+            seen["klartext"] = b"GEHEIMER-INHALT" in bytes(b)
+            seen["gleich"] = b is buf
+            orig(self_, b)
+        H.MemDB.__init__ = spy
         try:
-            tables, fmt = H.read_schema(raw, keys_fn=keys)
+            found, tables, fmt = H.run(buf, {"x": (1.0, False)}, date(2026, 11, 4), keys_fn=keys)
         finally:
-            H.decrypt_into = orig
-        self.assertEqual(tables[0]["name"], "t")
+            H.MemDB.__init__ = orig
+        self.assertIsNone(found); self.assertEqual(tables[0]["name"], "t"); self.assertEqual(fmt, "SQLCipher 4")
+        self.assertTrue(seen["klartext"]); self.assertTrue(seen["gleich"])          # im selben Puffer entschluesselt
         self.assertTrue(all(not any(k) for k in seen["keys"]))                     # Schluessel genullt
-        self.assertFalse(any(seen["plain"]))                                       # Klartext genullt
+        self.assertFalse(any(buf))                                                 # Klartext genullt
+        self.assertTrue(H.SKIP.search("logins") and H.SKIP.search("password") and not H.SKIP.search("balance_history"))
 
     def test_lesefehler_wird_gemeldet(self):
         """MoneyMoney laeuft, Kontor kann aber nicht lesen (z. B. Berechtigung) -> Hinweis; erfolgreiches Lesen nimmt ihn zurueck."""
-        import mm_app as MA
+        import dienst as MA
         self.login()
         old = MA.is_running; MA.is_running = lambda: True
         orig = MockBridge.export_accounts
@@ -789,8 +848,8 @@ class ImmoEngineTests(unittest.TestCase):
     """Kalkulationskern gegen die Werte einer handgerechneten Excel-Kalkulation (jaehrliche Zinsabrechnung, Indexmiete, Gesellschafter)."""
 
     def test_parity_with_spreadsheet(self):
-        import mm_immo
-        r = mm_immo.berechne(PB_EINGABEN, TODAY)
+        import immorechner
+        r = immorechner.berechne(PB_EINGABEN, TODAY)
         J = {j["jahr"]: j for j in r["jahre"]}
         # Jahr 1: Miete, Zins (3,3 % auf Stand 1.1.), Tilgung = 12 x 8.250 - Zins, AfA 2 % x 76 % x (KP + NK)
         self.assertEqual(J[2026]["miete"], 151200.0)
@@ -812,17 +871,17 @@ class ImmoEngineTests(unittest.TestCase):
         self.assertAlmostEqual(K["bruttomietrendite"], 151200 / 1900000, 4)
         self.assertEqual(len(r["jahre"]), 24); self.assertEqual(len(r["monate"]), 24 * 12)
         # Planreihen: Monatswerte summieren sich auf das Jahr
-        reihen = mm_immo.planreihen(r)
+        reihen = immorechner.planreihen(r)
         self.assertAlmostEqual(sum(v for k, v in reihen["miete"].items() if k.startswith("2027")), 154072.8 + 12000, 1)   # inkl. Umlage (Zahlungsstrom)
         self.assertAlmostEqual(sum(v for k, v in reihen["kosten"].items() if k.startswith("2027")), -2983.63 - 12000, 1)
         self.assertEqual(round(reihen["darlehen"]["Verkäuferdarlehen"]["saldo"]["2026-12"], 2), -1553800.0)
-        sheets = mm_immo.sheets(r)
+        sheets = immorechner.sheets(r)
         self.assertEqual([x.name for x in sheets], ["Eingaben", "Kennzahlen", "Jahre", "Monate"])
 
     def test_parity_second_and_third_sheet(self):
         """Zwei weitere handgerechnete Kalkulationen: Teiljahr ab Mai, drei Darlehensarten (endfaellig, Tilgung mit spaeterer
         Sondertilgung, Annuitaet), Indexmiete mit Schwelle 5 % und Faktor 0,75, RND statt AfA-Satz; und ein einfaches Wohnobjekt."""
-        import mm_immo
+        import immorechner
         o = {"name": "G", "kaufpreis": 4000000, "uebergang": "2026-05-01", "horizont_jahre": 10,
              "nebenkosten": {"grunderwerbsteuer_prozent": 3.5, "notar": 18122.9, "grundbuch": 11788.0},
              "gebaeudeanteil_prozent": 51.44, "restnutzungsdauer_jahre": 18,
@@ -835,7 +894,7 @@ class ImmoEngineTests(unittest.TestCase):
              "gesellschafter": [{"name": "A", "anteil_prozent": 49, "steuersatz_prozent": 47.475}, {"name": "B", "anteil_prozent": 49, "steuersatz_prozent": 47.475},
                                 {"name": "C", "anteil_prozent": 1, "steuersatz_prozent": 47.475}, {"name": "D", "anteil_prozent": 1, "steuersatz_prozent": 40}],
              "ausschuettung_prozent": 48, "steuererstattung_in_cashflow": True}
-        J = {j["jahr"]: j for j in mm_immo.berechne(o, TODAY)["jahre"]}
+        J = {j["jahr"]: j for j in immorechner.berechne(o, TODAY)["jahre"]}
         self.assertEqual(J[2026]["monate"], 8); self.assertEqual(J[2026]["miete"], 148825.44); self.assertEqual(J[2026]["afa"], -79444.52)
         self.assertAlmostEqual(J[2026]["ergebnis"], -27345.75, delta=0.02); self.assertAlmostEqual(J[2026]["steuer"], 12961.95, delta=0.02)
         self.assertAlmostEqual(J[2026]["cashflow"], -7180.87, delta=0.02); self.assertAlmostEqual(J[2026]["ek_rendite"], 0.0758, 3)
@@ -850,19 +909,19 @@ class ImmoEngineTests(unittest.TestCase):
               "kosten": {"nicht_umlagefaehig_pa": 1000, "steigerung": "keine"},
               "darlehen": [{"name": "B", "betrag": 326000, "zins_prozent": 3.75, "annuitaet_monat": 1510, "abrechnung": "jaehrlich"}],
               "gesellschafter": [{"name": "S", "anteil_prozent": 100, "steuersatz_prozent": 47.475}], "ausschuettung_prozent": 49, "steuererstattung_in_cashflow": True}
-        J2 = {j["jahr"]: j for j in mm_immo.berechne(o2, TODAY)["jahre"]}
+        J2 = {j["jahr"]: j for j in immorechner.berechne(o2, TODAY)["jahre"]}
         self.assertEqual(J2[2026]["ergebnis"], -6836.79); self.assertEqual(J2[2026]["steuer"], 3245.77); self.assertEqual(J2[2026]["cashflow"], -6274.23)
         self.assertEqual(J2[2026]["restschuld"], 320105.0); self.assertEqual(J2[2029]["restschuld"], 301060.15); self.assertEqual(J2[2030]["ek_rendite"], 0.0033)
 
     def test_loan_variants_and_hints(self):
-        import mm_immo
+        import immorechner
         base = {"name": "Test", "kaufpreis": 500000, "uebergang": "2026-05-01", "horizont_jahre": 12, "gebaeudeanteil_prozent": 80,
                 "miete": {"nettokalt_monat": 2000, "index": {"art": "keine"}}, "kosten": {"nicht_umlagefaehig_pa": 2400, "steigerung": "keine"}}
         # Annuitaet monatlich mit Anfangstilgung, Sondertilgung ab Monat, Zinsbindung + Anschlusszins
         o = dict(base, darlehen=[{"name": "Bank", "betrag": 400000, "zins_prozent": 3.6, "anfangstilgung_prozent": 2.4, "abrechnung": "monatlich",
                                    "sondertilgung_monat": 500, "sondertilgung_ab": "2028-01", "zinsbindung_bis": "2031-04", "anschluss_zins_prozent": 5.0,
                                    "sondertilgungen": [{"datum": "2027-06", "betrag": 20000}]}])
-        r = mm_immo.berechne(o, TODAY)
+        r = immorechner.berechne(o, TODAY)
         M = {m["monat"]: m for m in r["monate"]}
         self.assertEqual(M["2026-05"]["zins"], -1200.0)                    # 400000 x 3,6 % / 12
         self.assertEqual(M["2026-05"]["tilgung"], -800.0)                  # Annuitaet 2000 - Zins
@@ -872,7 +931,7 @@ class ImmoEngineTests(unittest.TestCase):
         self.assertAlmostEqual(z_mai, -round(abs(s_apr) * 5.0 / 1200, 2), 1)   # Anschlusszins ab Mai 2031
         # Endfaellig mit Rueckzahlung
         o2 = dict(base, darlehen=[{"name": "Privat", "betrag": 100000, "zins_prozent": 4, "art": "endfaellig", "faelligkeit": "2028-12", "faelligkeit_art": "rueckzahlung", "abziehbar": False}])
-        r2 = mm_immo.berechne(o2, TODAY)
+        r2 = immorechner.berechne(o2, TODAY)
         M2 = {m["monat"]: m for m in r2["monate"]}
         self.assertEqual(M2["2028-11"]["tilgung"], 0.0); self.assertEqual(M2["2028-12"]["sondertilgung"], -100000.0)
         self.assertEqual(M2["2029-01"]["zins"], 0.0)
@@ -880,12 +939,12 @@ class ImmoEngineTests(unittest.TestCase):
         self.assertEqual(J2[2027]["zins_abziehbar"], 0.0); self.assertEqual(J2[2027]["zins"], -4000.0)
         # Endfaellig offen -> Hinweis
         o3 = dict(base, darlehen=[{"name": "Privat", "betrag": 100000, "zins_prozent": 4, "art": "endfaellig", "faelligkeit": "2028-12"}])
-        r3 = mm_immo.berechne(o3, TODAY)
+        r3 = immorechner.berechne(o3, TODAY)
         self.assertTrue(any("Privat" in h for h in r3["hinweise"]))
         # Verkauf mit IRR, RND statt AfA-Satz, Leerstand, feste Mietsteigerung
         o4 = dict(base, restnutzungsdauer_jahre=40, wertentwicklung_prozent=2, verkauf={"jahr": 2031, "kosten_prozent": 2},
                   miete={"nettokalt_monat": 2000, "leerstand_prozent": 5, "index": {"art": "prozent", "steigerung_prozent": 2}})
-        r4 = mm_immo.berechne(o4, TODAY)
+        r4 = immorechner.berechne(o4, TODAY)
         self.assertEqual(r4["kennzahlen"]["afa_satz"], 2.5); self.assertIsNotNone(r4["kennzahlen"]["irr"])
         self.assertEqual(r4["kennzahlen"]["exit_jahr"], 2031)
         J4 = {j["jahr"]: j for j in r4["jahre"]}
@@ -893,17 +952,17 @@ class ImmoEngineTests(unittest.TestCase):
         self.assertAlmostEqual(J4[2028]["nkm_monat"], round(2000 * 1.02 ** 2, 2), 2)
         # Darlehen, das vor dem Horizont ausgezahlt wurde, laeuft ab dem ersten Monat mit
         o5 = dict(base, darlehen=[{"name": "Alt", "betrag": 100000, "zins_prozent": 3, "annuitaet_monat": 1000, "beginn": "2025-11"}])
-        r5 = mm_immo.berechne(o5, TODAY)
+        r5 = immorechner.berechne(o5, TODAY)
         self.assertEqual(r5["monate"][0]["zins"], -250.0); self.assertEqual(r5["monate"][0]["tilgung"], -750.0)
         # Unsinnige Eingaben: Fehler statt Absturz
         with self.assertRaises(ValueError):
-            mm_immo.berechne({"kaufpreis": 100, "uebergang": "2026-01", "gesellschafter": [{"name": "A", "anteil_prozent": 60}, {"name": "B", "anteil_prozent": 60}]}, TODAY)
+            immorechner.berechne({"kaufpreis": 100, "uebergang": "2026-01", "gesellschafter": [{"name": "A", "anteil_prozent": 60}, {"name": "B", "anteil_prozent": 60}]}, TODAY)
         with self.assertRaises(ValueError):
-            mm_immo.berechne({"kaufpreis": 100, "uebergang": "2026-01", "darlehen": [{"name": "X", "betrag": "viel"}]}, TODAY)
+            immorechner.berechne({"kaufpreis": 100, "uebergang": "2026-01", "darlehen": [{"name": "X", "betrag": "viel"}]}, TODAY)
         with self.assertRaises(ValueError):
-            mm_immo.berechne({"kaufpreis": -1}, TODAY)
+            immorechner.berechne({"kaufpreis": -1}, TODAY)
         with self.assertRaises(ValueError):
-            mm_immo.berechne({"kaufpreis": 100, "uebergang": "kein-datum"}, TODAY)
+            immorechner.berechne({"kaufpreis": 100, "uebergang": "kein-datum"}, TODAY)
 
 
 class LoginTouchIdTest(unittest.TestCase):
@@ -914,14 +973,14 @@ class LoginTouchIdTest(unittest.TestCase):
             from playwright.sync_api import sync_playwright
         except ImportError:
             self.skipTest("playwright fehlt")
-        import mm_auth
+        import anmeldung
         d = tempfile.mkdtemp(prefix="kontor-tid-")
         key, src = load_or_create_master_key(d)
         store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
         reset_mock(); patch_today()
-        old_av, old_ver = mm_auth.touchid_available, mm_auth.touchid_verify
-        mm_auth.touchid_available = lambda: True
-        mm_auth.touchid_verify = lambda reason=None: False          # Dialog abgebrochen
+        old_av, old_ver = anmeldung.touchid_available, anmeldung.touchid_verify
+        anmeldung.touchid_available = lambda: True
+        anmeldung.touchid_verify = lambda reason=None: False          # Dialog abgebrochen
         app = App(store, d, bridge_factory=MockBridge)
         srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
         threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -945,7 +1004,7 @@ class LoginTouchIdTest(unittest.TestCase):
                 self.assertTrue(pg.is_visible("#login-pw")); self.assertFalse(pg.is_visible("#tid-box")); self.assertFalse(pg.is_visible("#tid-instead"))
                 b.close()
         finally:
-            mm_auth.touchid_available, mm_auth.touchid_verify = old_av, old_ver
+            anmeldung.touchid_available, anmeldung.touchid_verify = old_av, old_ver
             srv.shutdown(); srv.server_close(); shutil.rmtree(d, ignore_errors=True)
 
 
@@ -957,7 +1016,7 @@ class BereichOrderTests(unittest.TestCase):
                 F.acc("g3", "Max Mustermann", 1, "Kontengruppe", True), F.acc("g3.a", "Konto C", 2, balance=1.0, bank="1"),
                 F.acc("g4", "Familie", 1, "Kontengruppe", True), F.acc("g4.a", "Konto D", 2, balance=1.0, bank="1")]
         led = Ledger(accounts_from_export(accs), [])
-        out = mm_core.bereiche_for(led, mm_core.merged_config({}))
+        out = kern.bereiche_for(led, kern.merged_config({}))
         self.assertEqual([b["name"] for b in out], ["Max Mustermann", "Familie", "Alpha Verwaltung eGbR", "Muster GmbH"])
         self.assertTrue(out[0]["haupt"]); self.assertEqual([b["art"] for b in out], ["privat", "privat", "gesellschaft", "gesellschaft"])
 
@@ -1240,7 +1299,7 @@ class FeatureTests(_AppBase):
         self.assertEqual(ds["konten_neu"], [])
         # bestaetigte Konten ohne feste Position ("auto" aus aelterer Einrichtung) werden auf den erkannten Wert festgelegt
         zu = store_cfg = self.store.load("config.json")["bilanz"]
-        self.assertTrue(all(z["position"] in mm_core.ROLES for z in zu["konten_zuordnung"].values()))
+        self.assertTrue(all(z["position"] in kern.ROLES for z in zu["konten_zuordnung"].values()))
         self.assertEqual(zu["konten_zuordnung"][F.uid("priv.giro") + " | Hausbank Giro"]["position"], "liquiditaet")
         self.assertEqual(store_cfg["verlauf"][F.uid("priv.depot") + " | Depot"], "stand")
         # Umbenennen und anderer Kontotyp in MoneyMoney verschieben die Position nicht mehr
@@ -1266,9 +1325,9 @@ class FeatureTests(_AppBase):
 
     def test_history_import_file(self):
         self.login(); self.run_and_wait()
-        import mm_xlsx
+        import excel
         # Matrix wie eine eigene Vermoegensuebersicht: Zeilen = Konten, Spalten = Stichtage (XLSX ohne openpyxl geschrieben und gelesen)
-        wb = mm_xlsx.workbook([mm_xlsx.Sheet("Konten", ["", "Konto", "31.08.2026", "30.09.2026", "31.10.2026"],
+        wb = excel.workbook([excel.Sheet("Konten", ["", "Konto", "31.08.2026", "30.09.2026", "31.10.2026"],
                                               [["x", "Depot", 70000, 72000, 74000.5], ["y", "Fremdes Konto", 1, 2, 3], ["z", "Hausbank Giro", 100, 200, 300]])])
         code, r = self.call("/api/historie/import", {"datei": base64.b64encode(wb).decode(), "name": "Vermoegen.xlsx"})
         self.assertEqual(code, 200, r)
@@ -1313,7 +1372,7 @@ class FeatureTests(_AppBase):
         self.assertTrue(r["ok"]); self.assertTrue(os.path.isfile(ext))
 
     def test_balance_csv_parser(self):
-        from mm_app import _parse_balance_csv
+        from dienst import _parse_balance_csv
         p = _parse_balance_csv("Datum;Saldo\n31.01.2026;1.234,56\n2026-02-28;2000\n15.02.2026;1500\n")
         self.assertEqual(p[""]["2026-01"], 1234.56); self.assertEqual(p[""]["2026-02"], 2000.0)    # letzter Wert je Monat
         p = _parse_balance_csv("Datum,Konto,Saldo\n2026-01-31,Depot,\"85,000.50\"\n")
@@ -1323,16 +1382,16 @@ class FeatureTests(_AppBase):
         self.assertEqual(_parse_balance_csv("nur text"), {})
 
     def test_icon_und_neustart_bei_neuem_code(self):
-        import mm_app
+        import dienst
         code, body, hdr = self.call("/icon-180.png", raw=True)
         self.assertEqual(code, 200); self.assertEqual(hdr["Content-Type"], "image/png"); self.assertTrue(body.startswith(b"\x89PNG"))
         code, body, hdr = self.call("/", raw=True)
-        self.assertIn(("/icon.svg?v=%s" % mm_core.version()).encode(), body); self.assertNotIn(b"__VERSION__", body)
+        self.assertIn(("/icon.svg?v=%s" % kern.version()).encode(), body); self.assertNotIn(b"__VERSION__", body)
         code, body, hdr = self.call("/icon.svg", raw=True)
         self.assertNotIn(b"c2pa", body); self.assertIn(b"#0a7aff", body)
         self.assertIsNone(self.app.code_changed())
-        old = mm_app.version_on_disk
-        mm_app.version_on_disk = lambda: "99.0.0"
+        old = dienst.version_on_disk
+        dienst.version_on_disk = lambda: "99.0.0"
         try:
             self.assertEqual(self.app.code_changed(), "99.0.0")
             self.assertFalse(self.app.restart_if_code_changed())      # Testserver: kein Selbst-Neustart
@@ -1340,22 +1399,22 @@ class FeatureTests(_AppBase):
             code, st = self.call("/api/status")
             self.assertEqual(st["neustart_ausstehend"], "99.0.0")
         finally:
-            mm_app.version_on_disk = old
+            dienst.version_on_disk = old
 
     def test_sicherung_offline_zuruecksetzen(self):
         import hashlib
-        import mm_auth
+        import anmeldung
         self.login()
         # Offline-Pruefwert: eigener Salt, PBKDF2-SHA256, gleicher Hash wie WebCrypto im Browser
         code, v = self.call("/api/offline/verifier")
-        self.assertEqual(code, 200); self.assertEqual(v["offline"]["rounds"], mm_auth.OFFLINE_ROUNDS); self.assertEqual(v["sperre_minuten"], 15)
+        self.assertEqual(code, 200); self.assertEqual(v["offline"]["rounds"], anmeldung.OFFLINE_ROUNDS); self.assertEqual(v["sperre_minuten"], 15)
         h = hashlib.pbkdf2_hmac("sha256", b"sehr-geheimes-passwort", bytes.fromhex(v["offline"]["salt"]), v["offline"]["rounds"]).hex()
         self.assertEqual(h, v["offline"]["hash"])
         self.assertNotEqual(v["offline"]["salt"], self.app.auth_record()["salt"])
         # Service Worker wird mit Versionsnummer ausgeliefert, Verifier und Sitzung werden nie zwischengespeichert
         code, body, hdr = self.call("/sw.js", raw=True)
         self.assertEqual(code, 200); self.assertIn("application/javascript", hdr["Content-Type"])
-        self.assertIn(("const VERSION = '%s'" % mm_core.version()).encode(), body); self.assertNotIn(b"__VERSION__", body)
+        self.assertIn(("const VERSION = '%s'" % kern.version()).encode(), body); self.assertNotIn(b"__VERSION__", body)
         self.assertIn(b"'/api/session'", body); self.assertIn(b"'/api/sicherung'", body)
         code, mf = self.call("/manifest.webmanifest", raw=True)[:2]
         self.assertEqual(code, 200)
@@ -1381,7 +1440,7 @@ class FeatureTests(_AppBase):
         code, r = self.call("/api/login", {"passwort": "sehr-geheimes-passwort"})
         self.assertEqual(code, 200); self.csrf = r["csrf"]
         code, cfg = self.call("/api/config")
-        self.assertEqual(cfg["bilanz"].get("bereiche"), mm_core.merged_config({})["bilanz"].get("bereiche"))
+        self.assertEqual(cfg["bilanz"].get("bereiche"), kern.merged_config({})["bilanz"].get("bereiche"))
         # Sicherung laden stellt Einstellungen und Plan wieder her
         code, r = self.call("/api/sicherung/laden", {"sicherung": sich})
         self.assertEqual(code, 200); self.assertIn("Planung", r["teile"]); self.assertIn("Einstellungen", r["teile"])
@@ -1428,11 +1487,11 @@ class FeatureTests(_AppBase):
 
     def test_positionen_und_ausserhalb(self):
         """Positionsvorschlaege aus Name/Typ/Gruppe; Kapitalkonten und Avale ausserhalb des Nettovermoegens; Depot-Schaetzung nur bei gleicher Bank."""
-        from mm_report import account_roles, verrechnungskonto_fuer
+        from auswertung import account_roles, verrechnungskonto_fuer
 
         def role(name, typ, bal, group="Privat", bank=""):
             raw = [F.acc("r", "Alle", 0, "Kontengruppe", True), F.acc("g", group, 1, "Kontengruppe", True), F.acc("x", name, 2, typ, balance=bal, bank=bank)]
-            return account_roles(Ledger(accounts_from_export(raw), []), mm_core.merged_config({}))[F.uid("x")]
+            return account_roles(Ledger(accounts_from_export(raw), []), kern.merged_config({}))[F.uid("x")]
         self.assertEqual(role("Immobilie Musterweg", "Festgeldanlage", 5e5), "immobilien")       # Name vor Kontotyp
         self.assertEqual(role("Darlehen Immobilie X", "Darlehenskonto", -4e5), "verbindlichkeiten")
         self.assertEqual(role("Darlehen an Firma", "Sonstiges", 1e5), "forderungen")             # Guthaben = Forderung
@@ -1519,11 +1578,11 @@ class FeatureTests(_AppBase):
         self.assertEqual(self.call("/api/check", {})[0], 200)
 
     def test_tls_helpers(self):
-        import mm_tls
-        self.assertIsNone(mm_tls.cert_expiry(os.path.join(self.dir, "fehlt.crt")))
+        import zertifikat
+        self.assertIsNone(zertifikat.cert_expiry(os.path.join(self.dir, "fehlt.crt")))
         cfg = {"oberflaeche": {"tls_cert": "/irgendwo/fremd.crt"}}
-        self.assertFalse(mm_tls.renew_if_due(cfg, self.dir))                 # fremde Zertifikate werden nicht angefasst
-        self.assertFalse(mm_tls.renew_if_due({"oberflaeche": {}}, self.dir))
+        self.assertFalse(zertifikat.renew_if_due(cfg, self.dir))                 # fremde Zertifikate werden nicht angefasst
+        self.assertFalse(zertifikat.renew_if_due({"oberflaeche": {}}, self.dir))
 
 
 class BrowserTest(unittest.TestCase):
@@ -1836,7 +1895,7 @@ class BrowserWizardTest(unittest.TestCase):
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         pkg_path = os.path.join(d, "test.kontor.json")
         led = Ledger(accounts_from_export(MockBridge.state["accounts"]), tx_from_export(MockBridge.state["txs"]))
-        pkg = mm_core.export_package(mm_core.merged_config(config_for_test()), "Testpaket", strip_uuids=True, ledger=led)
+        pkg = kern.export_package(kern.merged_config(config_for_test()), "Testpaket", strip_uuids=True, ledger=led)
         pkg["config"]["darlehen"][0]["darlehenskonto"] = "Darlehen Fremd"       # muss zugeordnet werden
         with open(pkg_path, "w", encoding="utf-8") as f:
             json.dump(pkg, f, ensure_ascii=False)
@@ -1903,7 +1962,13 @@ class BrowserWizardTest(unittest.TestCase):
                 pg.wait_for_selector("#save-konten", timeout=30000)
                 self.assertIsNone(pg.query_selector(".busy-ov"))
                 self.assertFalse(self.__class__ is None or app.bericht_status()["laeuft"])
-                self.assertTrue(pg.query_selector("button[data-savenext='#zuordnen']")); self.assertTrue(pg.query_selector("button[data-next='#einrichtung']"))
+                self.assertTrue(pg.query_selector("button[data-savenext='#einrichtung/historie']")); self.assertTrue(pg.query_selector("button[data-next='#einrichtung']"))
+                # Schritt 4: Kontostaende aus MoneyMoney (Finder zeigen, Datei ziehen) -- MoneyMoney laeuft im Test
+                pg.goto("http://127.0.0.1:%d/#einrichtung/historie" % port); pg.wait_for_selector("#mmh-drop")
+                self.assertEqual(pg.query_selector("h2.sub-h").inner_text(), "Kontostände aus MoneyMoney")
+                self.assertIn("⌘Q", pg.query_selector("#mmh-s1").inner_text()); self.assertTrue(pg.query_selector("#mmh-zeigen"))
+                if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_historie.png"), full_page=True)
+                pg.goto("http://127.0.0.1:%d/#einrichtung/konten" % port); pg.wait_for_selector("#save-konten")
                 cfg0 = store.load("config.json")
                 self.assertEqual([b["name"] for b in cfg0["bereiche"]], ["Privat", "Alpha GbR"]); self.assertEqual(sum(1 for b in cfg0["bereiche"] if b["haupt"]), 1)
                 self.assertTrue(all(b["id"] for b in cfg0["bereiche"]))

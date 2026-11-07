@@ -18,7 +18,7 @@ import zipfile
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-from mm_store import Store
+from ablage import Store
 
 DEFAULT_FOLDER = "~/Documents/Kontor-Belege"
 ALLOWED_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".heic", ".gif", ".txt", ".csv", ".xlsx", ".docx", ".eml", ".msg", ".zip"}

@@ -41,13 +41,13 @@ from typing import List, Optional
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-import mm_auth  # noqa: E402
-import mm_update  # noqa: E402
+import anmeldung  # noqa: E402
+import updates  # noqa: E402
 from mm_bridge import Bridge, MoneyMoneyError  # noqa: E402
-from mm_core import (account_tree, check_config, diagnose, export_package, fetch, import_package, merged_config,  # noqa: E402
+from kern import (account_tree, check_config, diagnose, export_package, fetch, import_package, merged_config,  # noqa: E402
                      run_once, unavailable_text, version)
-from mm_model import Ledger, accounts_from_export, fmt_eur  # noqa: E402
-from mm_store import Store, load_or_create_master_key  # noqa: E402
+from datenmodell import Ledger, accounts_from_export, fmt_eur  # noqa: E402
+from ablage import Store, load_or_create_master_key  # noqa: E402
 
 log = logging.getLogger("kontor")
 DATA_DIR = os.environ.get("KONTOR_DIR") or os.path.expanduser("~/Library/Application Support/Kontor")
@@ -146,7 +146,7 @@ class Lock:
 # ---------------------------------------------------------------------------
 
 def cmd_start(args) -> int:
-    from mm_app import App, serve
+    from dienst import App, serve
     store = open_store()
     with Lock("dienst.lock"):
         app = App(store, DATA_DIR)
@@ -246,10 +246,10 @@ def cmd_passwort(args) -> int:
     pw = getpass.getpass("Neues Passwort für die Oberfläche: ")
     if pw != getpass.getpass("Wiederholen: "):
         print("Stimmt nicht überein."); return 1
-    err = mm_auth.password_ok(pw)
+    err = anmeldung.password_ok(pw)
     if err:
         print(err); return 1
-    store.save("auth.json", mm_auth.with_offline(mm_auth.hash_password(pw), pw))
+    store.save("auth.json", anmeldung.with_offline(anmeldung.hash_password(pw), pw))
     print("Passwort gesetzt. Laufende Sitzungen bleiben bis zur Sperre gültig.")
     return 0
 
@@ -320,7 +320,7 @@ def cmd_update(args) -> int:
     store = open_store()
     cfg = load_config(store)
     repo = (cfg.get("updates") or {}).get("repo") or "stecrz/Kontor"
-    info = mm_update.check(repo)
+    info = updates.check(repo)
     if info.get("fehler"):
         print(info["fehler"]); return 2
     print("Installiert: %s   Verfügbar: %s (%s)" % (info["aktuell"], info["verfuegbar"], info["quelle"]))
@@ -328,7 +328,7 @@ def cmd_update(args) -> int:
         print("Kontor ist aktuell."); return 0
     if not args.installieren:
         print("Einspielen: python3 kontor.py update --installieren"); return 0
-    res = mm_update.install(repo, info.get("zip"), restart=True)
+    res = updates.install(repo, info.get("zip"), restart=True)
     print(res.get("text"))
     return 0 if res.get("ok") else 1
 
@@ -338,8 +338,8 @@ def launchd_path(label: str = LAUNCHD_LABEL) -> str:
 
 
 def build_touchid() -> str:
-    import mm_auth
-    return mm_auth.build_touchid(force=True)
+    import anmeldung
+    return anmeldung.build_touchid(force=True)
 
 
 def cmd_install(args) -> int:
@@ -390,7 +390,7 @@ def cmd_uninstall(args) -> int:
 
 
 def cmd_tls(args) -> int:
-    import mm_tls
+    import zertifikat
     store = open_store()
     cfg = load_config(store)
     if args.aus:
@@ -399,7 +399,7 @@ def cmd_tls(args) -> int:
         print("TLS abgeschaltet (Adresse bleibt %s)." % cfg["oberflaeche"].get("bind"))
     else:
         try:
-            r = mm_tls.setup(cfg, DATA_DIR)
+            r = zertifikat.setup(cfg, DATA_DIR)
         except Exception as e:
             print("Fehler: %s" % e); return 1
         cfg["oberflaeche"] = r["oberflaeche"]

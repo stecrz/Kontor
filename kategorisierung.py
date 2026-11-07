@@ -4,7 +4,7 @@ MoneyMoney bleibt Datenquelle; seine Kategorien werden beim ersten Lauf als Vors
 als Trainingsmenge fuer Regeln genutzt. Danach kategorisiert Kontor selbst: manuelle Zuordnungen > manuelle
 Regeln > gelernte Regeln > Kategorie aus MoneyMoney. Alles liegt verschluesselt in kategorien.json.
 
-Pfade sind kanonisch 'A / B / C' (siehe mm_model.norm_cat)."""
+Pfade sind kanonisch 'A / B / C' (siehe datenmodell.norm_cat)."""
 from __future__ import annotations
 
 import re
@@ -13,7 +13,7 @@ import time
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
-from mm_model import Ledger, Tx, norm_cat
+from datenmodell import Ledger, Tx, norm_cat
 
 FILE = "kategorien.json"
 UMBUCHUNG = "Umbuchung"

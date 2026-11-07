@@ -1,4 +1,4 @@
-// mm_touchid.swift -- zeigt den macOS-Dialog "Mit Touch ID entsperren" und
+// touchid.swift -- zeigt den macOS-Dialog "Mit Touch ID entsperren" und
 // endet mit 0 (bestaetigt), 1 (abgelehnt/abgebrochen) oder 2 (nicht verfuegbar).
 // Uebersetzt der Dienst selbst nach .touchid/Kontor (der Dateiname erscheint im Dialog: "Kontor möchte ...").
 // Policy deviceOwnerAuthentication = Touch ID, Apple Watch oder Anmeldepasswort.

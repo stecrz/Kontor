@@ -33,8 +33,8 @@ from collections import defaultdict
 from datetime import date
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from mm_model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
-from mm_rules import TAG_RE
+from datenmodell import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
+from buchungsregeln import TAG_RE
 
 ROLES = ["liquiditaet", "wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte", "forderungen", "sonstiges", "verbindlichkeiten",
          "eigenkapital", "eventual", "ignorieren"]
@@ -236,7 +236,7 @@ def _valuation_account(acc: Account, src: str) -> bool:
 
 
 def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int, int]], src: str, snapshots: Dict[str, Dict[str, float]],
-                           manual_raw: Dict[str, Any], today: date, config: Optional[dict] = None):
+                           manual_raw: Dict[str, Any], today: date, config: Optional[dict] = None, mm_raw: Optional[Dict[str, Any]] = None):
     """Monatsend-Salden eines Kontos. Liefert (werte, hinweis, geschaetzt_bis, anker).
 
     umsaetze: heutiger Saldo minus alle spaeteren Buchungen (eigene Monatswerte zaehlen nicht).
@@ -250,6 +250,10 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
     h: Dict[str, Optional[float]] = {}
     hinweis, geschaetzt_bis = None, None
     manual = {k: float(v) for k, v in (manual_raw or {}).items() if v is not None}
+    # Aus MoneyMoney uebernommene Monatsstaende: zaehlen wie eigene Werte, eigene Eintraege gehen aber vor
+    for k, v in (mm_raw or {}).items():
+        if v is not None and k < month_key(today) and k not in manual:
+            manual[k] = float(v)
     if src != "stand":
         ends = ledger.month_end_balances(acc.uuid, past)
         for k in mkeys:
@@ -306,7 +310,8 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
 
 
 def balance_history(ledger: Ledger, leaves: List[Account], months: List[Tuple[int, int]], snapshots: Dict[str, Dict[str, float]],
-                    historie: Dict[str, Dict[str, float]], verlauf_cfg: Dict[str, str], today: date, config: Optional[dict] = None):
+                    historie: Dict[str, Dict[str, float]], verlauf_cfg: Dict[str, str], today: date, config: Optional[dict] = None,
+                    historie_mm: Optional[Dict[str, Dict[str, float]]] = None):
     """uuid -> {JJJJ-MM: Saldo am Monatsende}. Liefert zusaetzlich Hinweise, die Quelle je Konto und
     je Konto den letzten geschaetzten Monat (Depots ohne Historie: Schaetzung aus Kaeufen/Verkaeufen)."""
     warnings: List[str] = []
@@ -318,7 +323,8 @@ def balance_history(ledger: Ledger, leaves: List[Account], months: List[Tuple[in
     for acc in leaves:
         src = verlauf_quelle(acc, verlauf_cfg)
         quelle[acc.uuid] = src
-        h, hinweis, gb, anker = account_balance_series(ledger, acc, months, src, snapshots, historie.get(acc.uuid) or {}, today, config)
+        h, hinweis, gb, anker = account_balance_series(ledger, acc, months, src, snapshots, historie.get(acc.uuid) or {}, today, config,
+                                                       (historie_mm or {}).get(acc.uuid))
         hist[acc.uuid] = h
         if hinweis:
             warnings.append(hinweis)
@@ -644,7 +650,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
     if back <= 0:
         first_tx = min((t.booking_date for t in ledger.txs if t.account_uuid in leaf_ids), default=today)
         hist_cfg = state.get("historie") or {}
-        first_hist = min((k for u in leaf_ids for k in (hist_cfg.get(u) or {})), default=None)
+        mm_cfg = state.get("historie_mm") or {}
+        first_hist = min((k for u in leaf_ids for k in list(hist_cfg.get(u) or {}) + list(mm_cfg.get(u) or {})), default=None)
         if first_hist and first_hist < month_key(first_tx):
             first_tx = date(int(first_hist[:4]), int(first_hist[5:]), 1)
         y0, m0 = first_tx.year, first_tx.month
@@ -662,7 +669,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
             pass
 
     step(0.05, "Monatsstände")
-    hist, warn_h, quelle, geschaetzt = balance_history(ledger, leaves, months, snapshots, historie, verlauf_cfg, today, config)
+    historie_mm = state.get("historie_mm") or {}
+    hist, warn_h, quelle, geschaetzt = balance_history(ledger, leaves, months, snapshots, historie, verlauf_cfg, today, config, historie_mm)
     fortgeschrieben = dict(getattr(balance_history, "fortgeschrieben", {}) or {})
     step(0.3, "Zahlungsströme")
     ckey = (getattr(ledger, "_kat_sig", None), tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
@@ -733,7 +741,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
     # Ausserhalb des Nettovermoegens: Kapitalkonten (Eigenkapital) und Avale/Buergschaften -- nur zur Information
     ausserhalb = []
     for a in sorted(ausserhalb_accs, key=lambda x: (roles.get(x.uuid) or "", order.get(x.uuid, 10**9))):
-        wh, _, _, _ = account_balance_series(ledger, a, months, verlauf_quelle(a, verlauf_cfg), snapshots, historie.get(a.uuid) or {}, today, config)
+        wh, _, _, _ = account_balance_series(ledger, a, months, verlauf_quelle(a, verlauf_cfg), snapshots, historie.get(a.uuid) or {}, today, config,
+                                             historie_mm.get(a.uuid))
         ausserhalb.append({"id": a.uuid, "name": a.name, "pfad": a.path, "rolle": roles.get(a.uuid), "werte": {mk: wh[mk] for mk in mkeys}})
 
     # MoneyMoney-Gruppenbaum (zweite Sicht), nur Konten des Bereichs
@@ -859,7 +868,7 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                immo: Optional[List[dict]] = None, ledger_resolve=None) -> dict:
     """Planung auf einen Bereichs-Datensatz anwenden (in place).
     fremd_nw: Nettovermoegensplan anderer Bereiche (id -> {mk: nw}) fuer Beteiligungskonten.
-    immo: Immobilienkalkulationen dieses Bereichs mit Planreihen (siehe mm_immo.planreihen) und Zuordnungen."""
+    immo: Immobilienkalkulationen dieses Bereichs mit Planreihen (siehe immorechner.planreihen) und Zuordnungen."""
     horizon = max(1, min(240, int(plan.get("horizont_monate", 24))))
     default_method = plan.get("standard_methode", "gleitend12")
     inflation = float(plan.get("inflation_prozent_pa", 2.0) or 0.0)

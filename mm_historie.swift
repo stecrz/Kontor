@@ -1,7 +1,8 @@
 // mm_historie.swift -- fragt das MoneyMoney-Passwort in einem macOS-Dialog ab und gibt NUR daraus abgeleitete
 // Datenbank-Schluessel aus (PBKDF2 mit dem Salz der Datenbank). Das Passwort verlaesst diesen Prozess nie:
 // keine Befehlszeile, keine Datei, keine Umgebungsvariable, keine Ausgabe.
-// Uebersetzt der Dienst selbst nach .historie/Kontor (der Dateiname erscheint als Programmname im Dialog).
+// Der Dienst uebersetzt ihn nur fuer den Vorgang in einen privaten Ordner (Name "Kontor" = Programmname im Fenster)
+// und loescht ihn danach.
 //
 // Aufruf:  Kontor <salz-hex> <hash>:<runden> [<hash>:<runden> ...]     hash = sha1 | sha512
 // Ausgabe: je Parameter eine Zeile mit dem 32-Byte-Schluessel als Hex.
@@ -33,8 +34,8 @@ for a in args.dropFirst(2) {
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let alert = NSAlert()
-alert.messageText = "Depot-Historie aus MoneyMoney einlesen"
-alert.informativeText = "Gib dein MoneyMoney-Passwort ein. Es bleibt in diesem Fenster: Kontor erhält nur einen daraus berechneten Schlüssel, öffnet die Datenbank damit einmalig nur lesend im Arbeitsspeicher und verwirft ihn danach."
+alert.messageText = "Kontostände aus MoneyMoney einlesen"
+alert.informativeText = "Gib dein MoneyMoney-Passwort ein. Es bleibt in diesem Fenster: Kontor erhält nur einen daraus berechneten Schlüssel, öffnet die Datenbank damit einmalig nur lesend im Arbeitsspeicher und verwirft ihn danach. In MoneyMoney wird nichts verändert."
 alert.addButton(withTitle: "Einlesen")
 alert.addButton(withTitle: "Abbrechen")
 let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))

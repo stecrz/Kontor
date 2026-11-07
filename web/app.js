@@ -36,8 +36,8 @@ const H = {
   verlauf_import: 'Datei mit Monats- oder Tagesständen. Spalten werden automatisch erkannt; Kontonamen aus der Datei ordnest du den Konten in Kontor zu (Vorschlag per Namensähnlichkeit). Mehrere Werte je Monat: der letzte zählt.',
   inaktiv: 'Gilt für Konten mit Anzeige „nach Aktivität“: ohne Bestand und ohne Umsatz in den letzten N Monaten (z. B. Altdaten) werden sie ausgeblendet, bleiben aber in Summen und Historie enthalten. 0 = nie automatisch ausblenden.',
   probelauf: 'Im Testmodus schlägt Kontor die Buchungen aus deinen Regeln (z. B. Darlehenszinsen) nur vor und legt nichts in MoneyMoney an. Zum Anlegen unter „Buchungen“ auf „Jetzt buchen“ klicken oder den Testmodus abschalten.',
-  mmhist: 'Sicherheit: Die Datei bleibt verschlüsselt, bis sie bei Kontor im Arbeitsspeicher ankommt (nur auf diesem Mac, über 127.0.0.1). Dein Passwort gibst du in einem macOS-Fenster ein, das Kontor nur für diesen Vorgang erzeugt und danach löscht; Kontor erhält nur einen daraus berechneten Schlüssel. Entschlüsselt wird nur im Arbeitsspeicher, danach wird alles überschrieben – keine Datei, keine dauerhafte Freigabe, keine Netzverbindung währenddessen. Gelesen werden nur Aufbau bzw. Depotstände, nie Zugangsdaten.',
-  depotverlauf: 'MoneyMoney stellt über seine Schnittstelle nur den aktuellen Depotwert bereit, nicht die Kurve. Kontor speichert deshalb bei jedem Lesen den Stand fürs Monatsende. Ältere Monate: im Verlauf-Fenster eintragen (z. B. die Monatsend-Werte aus MoneyMoneys Kurve oder aus Depotauszügen) oder als Datei importieren; davor steht „unbekannt“. Geschätzt wird nichts.',
+  mmhist: 'Sicherheit: Die Datei bleibt verschlüsselt, bis sie bei Kontor im Arbeitsspeicher ankommt (nur auf diesem Mac, über 127.0.0.1). Dein Passwort gibst du in einem macOS-Fenster ein, das Kontor nur für diesen Vorgang erzeugt und danach löscht; Kontor erhält nur einen daraus berechneten Schlüssel und speichert weder Passwort noch Schlüssel. Entschlüsselt wird nur im Arbeitsspeicher, ohne Kopie, danach wird alles mit Nullen überschrieben – keine Datei, keine dauerhafte Freigabe, keine Netzverbindung währenddessen. MoneyMoney selbst bleibt unverändert. Übernommen werden nur Monatsend-Stände je Konto (verschlüsselt gespeichert), nie Zugangsdaten.',
+  depotverlauf: 'MoneyMoney stellt über seine Schnittstelle nur den aktuellen Depotwert bereit, nicht die Kurve. Den bisherigen Verlauf übernimmt Kontor einmalig aus MoneyMoneys Datenbank (Einrichtung → Kontostände aus MoneyMoney); danach speichert Kontor bei jedem Lesen den Stand fürs Monatsende. Fehlt etwas: im Verlauf-Fenster eintragen oder als Datei importieren; davor steht „unbekannt“. Geschätzt wird nichts.',
   abruf: 'Stand je Konto in dem Datenstand, den Kontor zuletzt aus MoneyMoney gelesen hat. „zurück“ = mehr als einen Tag älter als der neueste Abruf (Konten mit Saldo). „ruht“ = seit über N Monaten kein Abruf (vermutlich aufgelöst). Offline-Konten erkennt Kontor an fehlender Bank-/Kontonummer, an Regeln, die in das Konto buchen, und an Kontor-Buchungen; MoneyMoney setzt den Abrufzeitpunkt auch bei Offline-Konten, deshalb zählt er allein nicht.',
   touchid: 'Eingeschaltet: Die Anmeldung am Mac fragt nur nach Touch ID (oder Apple Watch); das Passwortfeld erscheint erst nach Klick auf „Stattdessen Passwort eingeben“. Ausgeschaltet: nur Passwort. Am iPhone gilt immer das Passwort.',
   bilanz_stand: 'Salden am Monatsende; der laufende Monat zeigt den aktuellen Stand. Klick auf ein Konto: Monatsstände ansehen und bearbeiten.',
@@ -305,9 +305,16 @@ function fmtZeit(t) {
   return t.slice(8, 10) + '.' + t.slice(5, 7) + '.' + (t.slice(0, 4) === String(now.getFullYear()) ? '' : t.slice(2, 4)) + ' ' + zeit;
 }
 function viewCtl(cols) {
-  // Ansicht der Auswertungen: Spalten (nur Tabellen), Plan, inflationsbereinigt, leere Zeilen (nur Tabellen)
+  // Spaltenansicht der Tabellen (in der Werkzeugleiste der Seite)
   const m = [['monate', 'Monate'], ['monate_jahre', 'Monate + Jahre'], ['jahre', 'Jahre']];
-  return `<div class="ctl">${cols ? `<div class="seg" id="modus-seg">${m.map(([k, l]) => `<button data-m="${k}" class="${S.modus === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''}<label class="switch"><input type="checkbox" id="planan" ${S.plan ? 'checked' : ''}><i></i>Plan</label><label class="switch"><input type="checkbox" id="realan" ${S.real ? 'checked' : ''}><i></i>inflationsbereinigt</label>${cols ? `<label class="switch"><input type="checkbox" id="nullzeilen" ${S.nullzeilen ? 'checked' : ''}><i></i>leere Zeilen</label>` : ''}</div>`;
+  return cols ? `<div class="seg" id="modus-seg">${m.map(([k, l]) => `<button data-m="${k}" class="${S.modus === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : '';
+}
+function topCtl() {
+  // Kleine Einstellungen oben rechts: Plan, inflationsbereinigt, leere Zeilen (nur in den Auswertungen)
+  const el = $('#top-ctl'), tabs = ['uebersicht', 'bilanz', 'kapitalfluss', 'planung'];
+  if (!tabs.includes(S.tab) || !S.DATA) { el.innerHTML = ''; return; }
+  const cols = S.tab !== 'uebersicht';
+  el.innerHTML = `<label class="switch"><input type="checkbox" id="planan" ${S.plan ? 'checked' : ''}><i></i>Plan</label><label class="switch"><input type="checkbox" id="realan" ${S.real ? 'checked' : ''}><i></i>inflationsbereinigt</label>${cols ? `<label class="switch"><input type="checkbox" id="nullzeilen" ${S.nullzeilen ? 'checked' : ''}><i></i>leere Zeilen</label>` : ''}`;
 }
 function hasRules() { const c = S.CFG || {}; return !!((c.darlehen || []).length || (c.beteiligungen || []).length || (c.saldo_spiegel || []).length); }
 function statusMini() {
@@ -464,7 +471,7 @@ function niceTicks(min, max, n) {
 // ---------------------------------------------------------------- Übersicht
 async function vUebersicht() {
   const D = B();
-  let h = D ? `<div class="toolbar">${viewCtl(false)}</div>` : '';
+  let h = '';
   if (!D) return h + (S.einrichtung || !S.DATA ? '<div class="card"><div class="v s">Willkommen bei Kontor</div><div class="d">Die Einrichtung führt dich durch Verbindung, Bereiche, Bilanzpositionen und die optionalen Bausteine.</div><div class="actions"><a href="#einrichtung"><button>Einrichtung öffnen</button></a></div></div>' : noData);
   const nw = D.bilanz.nettovermoegen, m = D.monate, K = D.kennzahlen || {};
   const cur = m[m.length - 1], prev = m[m.length - 2], yago = m[m.length - 13], y = cur.slice(0, 4), ly = String(+y - 1);
@@ -531,6 +538,7 @@ const MODULES = [
   {id: 'verbindung', t: 'Verbindung', d: 'MoneyMoney läuft und ist entsperrt, macOS erlaubt den Zugriff (Automation). Konten und Kategorien werden gelesen.', done: () => S.KONTEN.length > 0},
   {id: 'bereiche', t: 'Bereiche', d: 'Welche Konten gehören zusammen (Privat, jede Gesellschaft)? Unabhängig von der Gruppierung in MoneyMoney.', done: () => (S.CFG.bereiche || []).length > 0 || !!S.DATA},
   {id: 'konten', t: 'Konten', d: 'Jedes Konto bestätigen: Bereich und Position (Vorschlag aus MoneyMoney), Verlaufsquelle, inaktiv. Neue Konten in MoneyMoney tauchen hier als „neu“ auf. Saldenverlauf importieren.', done: () => !!S.DATA && !((S.DATA.konten_neu || []).length)},
+  {id: 'historie', t: 'Kontostände aus MoneyMoney', d: 'Bisherigen Verlauf aller Konten einmalig aus MoneyMoney übernehmen – vor allem für Depots, deren Wertverlauf MoneyMoney sonst nicht herausgibt. Passwort nur im macOS-Fenster, in MoneyMoney wird nichts verändert.', done: () => !!((S.STATUS || {}).moneymoney || {}).historie},
   {id: 'zuordnen', t: 'Kategorien & Zuordnen', d: 'Kontor-eigene Kategorien (Baum aus MoneyMoney übernommen), Regeln aus bisherigen Zuordnungen gelernt, offene Umsätze je Gegenpartei zuordnen. Funktioniert auch ganz ohne Kategorien in MoneyMoney.', done: () => !!S.DATA && !(((S.DATA.kategorien || {}).gesamt || {}).ohne), href: '#zuordnen', optional: true},
   {id: 'kategorien', t: 'Kategorien → Kapitalfluss', d: 'Oberkategorien den Abschnitten zuordnen (Einnahmen, Ausgaben, Investitionen, Finanzierung), Umbuchungen, Depot-Käufe.', done: () => Object.keys((S.CFG.kapitalfluss || {}).kategorie_zuordnung || {}).length > 0, href: '#kategorien', optional: true},
   {id: 'regeln', t: 'Regeln (Gegenbuchungen)', d: 'Darlehen spiegeln und verzinsen, Beteiligungswerte, Saldo-Spiegel – schreibt nur in manuelle Konten.', done: () => (S.CFG.darlehen || []).length + (S.CFG.beteiligungen || []).length + (S.CFG.saldo_spiegel || []).length > 0, href: '#regeln', optional: true},
@@ -545,8 +553,9 @@ function vEinrichtung(sub) {
   if (sub === 'bereiche') return sh('bereiche') + vBereicheEditor();
   if (sub === 'konten') return sh('konten') + vKontenEditor();
   if (sub === 'verbindung') return sh('verbindung') + vVerbindung();
+  if (sub === 'historie') return sh('historie') + vMMHistorie();
   const roots = S.KONTEN.filter(k => k.gruppe && k.ebene === 0);
-  let h = `<div class="note">In dieser Reihenfolge einrichten – die ersten drei Schritte bauen aufeinander auf (Konten lesen → Bereiche → Konten bestätigen), der Rest ist optional und jederzeit nachholbar. ${S.KONTEN.length ? roots.length + ' Kontengruppen, ' + S.KONTEN.filter(k => !k.gruppe).length + ' Konten aus MoneyMoney bekannt.' : 'Noch keine Konten aus MoneyMoney gelesen – mit Schritt 1 beginnen.'}</div><div class="setup-list">`;
+  let h = `<div class="note">In dieser Reihenfolge einrichten – die ersten Schritte bauen aufeinander auf (Konten lesen → Bereiche → Konten bestätigen → Kontostände aus MoneyMoney), der Rest ist optional und jederzeit nachholbar. ${S.KONTEN.length ? roots.length + ' Kontengruppen, ' + S.KONTEN.filter(k => !k.gruppe).length + ' Konten aus MoneyMoney bekannt.' : 'Noch keine Konten aus MoneyMoney gelesen – mit Schritt 1 beginnen.'}</div><div class="setup-list">`;
   MODULES.forEach((m, i) => {
     const ok = m.done();
     h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? 'eingerichtet' : (m.optional ? 'optional' : 'offen')}</span></div><div class="d">${esc(m.d)}</div></div><div class="a"><a href="${m.href || ('#einrichtung/' + m.id)}"><button class="small ${ok ? 'secondary' : ''}">${ok ? 'Anpassen' : 'Einrichten'}</button></a></div></div>`;
@@ -554,6 +563,47 @@ function vEinrichtung(sub) {
   h += '</div>';
   if (!S.DATA) h += `<div class="card"><h3>Erste Auswertung erstellen</h3><div class="small muted">Liest alle Umsätze aus MoneyMoney und baut Übersicht, Bilanz, Kapitalfluss, Planung und Steuer. In MoneyMoney wird nichts verändert. Danach hält Kontor die Auswertung selbst aktuell (nach jeder Änderung und bei jedem Abgleich).</div><div class="actions"><button id="w-report" class="small">Auswertung erstellen</button></div></div>`;
   return h;
+}
+function mmhStep1(st) {
+  const off = !(st.moneymoney || {}).laeuft;
+  return `<div class="b"><b>MoneyMoney beenden</b><span class="dot ${off ? 'ok' : 'warn'}"></span>${off ? 'MoneyMoney ist beendet.' : 'In MoneyMoney ⌘Q drücken – sonst ist die Datei unvollständig. Diese Anzeige prüft alle paar Sekunden.'}</div>`;
+}
+function vMMHistorie() {
+  const st = S.STATUS, last = (st.moneymoney || {}).historie;
+  if (!st.lokal) return '<div class="note">Nur direkt am Mac möglich – dort liegt die Datenbank von MoneyMoney.</div>';
+  const n = x => x === 1 ? 'ein Konto' : x + ' Konten';
+  return `${last ? `<div class="banner info small">Übernommen am ${esc(fmtZeit(last.zeit))}: ${n(last.konten)}${last.von ? `, ${ML(last.von)} bis ${ML(last.bis)}` : ''}. Erneutes Einlesen ersetzt diese Werte.</div>` : ''}
+  <div class="note">Kontor übernimmt einmalig den bisherigen Verlauf aller Konten (Stand am Monatsende) aus der Datenbank von MoneyMoney – vor allem für Depots, deren Wertverlauf MoneyMoney sonst nicht herausgibt. Danach zeichnet Kontor selbst auf. In MoneyMoney wird nichts verändert. ${hq('mmhist')}</div>
+  <div class="steps">
+    <div class="step ${(st.moneymoney || {}).laeuft ? '' : 'done'}" id="mmh-s1">${mmhStep1(st)}</div>
+    <div class="step"><div class="b"><b>Datei im Finder zeigen</b>Kontor öffnet ein Finder-Fenster, in dem „MoneyMoney.sqlite“ markiert ist.<div class="actions"><button id="mmh-zeigen" class="small">Im Finder zeigen</button></div><div class="small muted">Kein Fenster? In MoneyMoney „Hilfe → Datenbank im Finder anzeigen“ wählen und MoneyMoney danach beenden.</div></div></div>
+    <div class="step ${last ? 'done' : ''}"><div class="b"><b>Hierher ziehen, Passwort eingeben</b>Danach erscheint ein Fenster von macOS für das MoneyMoney-Passwort.<div class="drop" id="mmh-drop">MoneyMoney.sqlite hierher ziehen<br><button id="mmh-pick" class="small" style="margin-top:8px">Datei wählen</button><input type="file" id="mmh-file" class="hidden"></div><div id="mmh-res" class="findings"></div></div></div>
+    <div class="step"><div class="b"><b>Weiter</b><div class="actions"><button data-next="#zuordnen" ${last ? '' : 'class="secondary"'}>Weiter: Kategorien &amp; Zuordnen</button><button class="secondary" data-next="#einrichtung">Zurück zur Einrichtung</button></div></div></div></div>`;
+}
+const MMH_TXT = {'Datei erhalten': 'Gleich erscheint das Passwortfenster von macOS (beim ersten Mal kann das bis zu einer Minute dauern) …', 'Passwort': 'Bitte im Fenster von macOS das MoneyMoney-Passwort eingeben …', 'Entschlüsseln': 'Wird im Arbeitsspeicher entschlüsselt …', 'Kontostände suchen': 'Kontostände werden gesucht und geprüft …'};
+async function mmhFollow() {
+  // Fortschritt des Einlesens verfolgen, bis ein Ergebnis da ist
+  for (;;) {
+    let r; try { r = await api('/api/historie/mm-status'); } catch (e) { await new Promise(ok => setTimeout(ok, 1500)); continue; }
+    const res = $('#mmh-res');
+    if (r.laeuft) { if (res) res.innerHTML = `<div class="working"><span class="spin"></span>${esc(MMH_TXT[r.schritt] || 'Bitte warten …')}</div>`; await new Promise(ok => setTimeout(ok, 800)); continue; }
+    const e = r.ergebnis || {};
+    if (e.ok) { try { S.STATUS = await api('/api/status'); statusMini(); } catch (x) {} }
+    const msg = e.ok ? `Kontostände von ${e.konten === 1 ? 'einem Konto' : e.konten + ' Konten'} übernommen${e.von ? ` (${ML(e.von)} bis ${ML(e.bis)})` : ''}${e.depots ? `, davon ${e.depots === 1 ? 'ein Depot' : e.depots + ' Depots'}` : ''}. Die Auswertung wird neu berechnet.` : (e.text || 'Nicht übernommen.');
+    if (S.tab === 'einrichtung' && S.sub === 'historie') { if (e.ok) await route(); const res2 = $('#mmh-res'); if (res2) showFindings(res2, [], msg, e.ok ? 'ok' : 'fehler'); }
+    else toast(msg, 8000);
+    return;
+  }
+}
+const MMHP = {timer: null};
+function mmhPoll() {
+  // Auf der Seite "Kontostände aus MoneyMoney": alle 3 s pruefen, ob MoneyMoney beendet ist
+  clearTimeout(MMHP.timer);
+  if (!(S.tab === 'einrichtung' && S.sub === 'historie')) return;
+  MMHP.timer = setTimeout(async () => {
+    try { S.STATUS = await api('/api/status?frisch=1'); statusMini(); const el = $('#mmh-s1'); if (el) { el.className = 'step ' + ((S.STATUS.moneymoney || {}).laeuft ? '' : 'done'); el.innerHTML = mmhStep1(S.STATUS); } } catch (e) {}
+    mmhPoll();
+  }, 3000);
 }
 function mmStepDone(st) { return st.moneymoney.laeuft && st.moneymoney.gesperrt !== true; }
 function mmStepInner(st) {
@@ -686,7 +736,7 @@ function vKontenEditor() {
       <td><select class="k-show" title="${auto ? 'Kein Bestand und kein Umsatz seit ' + (cfg.bilanz.inaktiv_monate ?? 12) + ' Monaten' : 'Mit Bestand oder Umsatz in den letzten ' + (cfg.bilanz.inaktiv_monate ?? 12) + ' Monaten'}"><option value="">nach Aktivität</option><option value="show" ${vis === 'show' ? 'selected' : ''}>immer anzeigen</option><option value="hide" ${vis === 'hide' ? 'selected' : ''}>ausblenden</option></select></td>
       <td class="num ${(k.saldo || 0) < 0 ? 'neg' : 'pos'}">${F(k.saldo)}</td></tr>`;
   }
-  h += '</tbody></table></div><div class="actions"><button id="save-konten" class="secondary">Speichern</button><button data-savenext="#zuordnen" data-save="konten">Speichern und weiter: Kategorien &amp; Zuordnen</button><button class="secondary" data-next="#einrichtung">Zurück zur Einrichtung</button></div><div id="findings-k2" class="findings"></div>';
+  h += '</tbody></table></div><div class="actions"><button id="save-konten" class="secondary">Speichern</button><button data-savenext="#einrichtung/historie" data-save="konten">Speichern und weiter: Kontostände aus MoneyMoney</button><button class="secondary" data-next="#einrichtung">Zurück zur Einrichtung</button></div><div id="findings-k2" class="findings"></div>';
   h += `<h2>Saldenverlauf importieren ${hq('verlauf_import')}</h2><div class="note">Für Depots und Konten ohne Umsatzhistorie: Monatsstände aus einer Datei übernehmen. Erkannt werden CSV und Excel (.xlsx) – als Liste (Datum, Konto, Saldo), als Tabelle mit Stichtagen in der Kopfzeile (Konten als Zeilen, z. B. eine eigene Vermögensübersicht) oder mit Stichtagen in der ersten Spalte (Konten als Spalten). Je Monat zählt der letzte Wert. Umsatzkonten brauchen das nicht.</div>
     <div class="drop" id="hi-drop">Datei hierher ziehen<br><button id="hi-pick" class="small" style="margin-top:8px">Datei wählen</button></div><div id="hi-preview"></div>`;
   return h;
@@ -778,7 +828,7 @@ function renderHist(r) {
   const stand = r.quelle === 'stand';
   $$('.hq-q', d).forEach(x => x.classList.toggle('on', x.dataset.q === r.quelle));
   $('#hq-erkl', d).textContent = stand
-    ? (r.depot ? 'Letzter bekannter Kontostand gilt (Depots haben keine Buchungen). Kontor zeichnet den Stand monatlich auf; ältere Stände hier eintragen oder importieren.'
+    ? (r.depot ? 'Letzter bekannter Kontostand gilt (Depots haben keine Buchungen). Bekannt sind die aus MoneyMoney übernommenen Stände und Kontors monatliche Aufzeichnung; Fehlendes hier eintragen.'
                : 'Eingetragene Kontostände sind maßgeblich; die Monate dazwischen und davor rechnet Kontor von dort aus mit den Buchungen. Ohne eigene Werte = wie „Umsätze“.')
     : 'Saldo am Monatsende = heutiger Saldo minus alle späteren Buchungen. Eigene Monatswerte gelten nur bei „Kontoständen“.';
   const P = r.pruefung || {}, infos = [];
@@ -797,7 +847,7 @@ function renderHist(r) {
     const own = man[mk] != null;
     const val = werte[mk] != null ? F(werte[mk]) : '';
     if (!stand) return `<label>${ML(mk)}<input type="text" data-mk="${mk}" class="auto" value="" placeholder="${val}" disabled></label>`;
-    return `<label class="${anker.has(mk) && !own ? 'rec' : ''}">${ML(mk)}<input type="text" data-mk="${mk}" class="${own ? '' : 'auto'}" value="${own ? F(man[mk]) : ''}" placeholder="${val}"></label>`;
+    return `<label class="${anker.has(mk) && !own ? 'rec' : ''}"${!own && (r.moneymoney || {})[mk] != null ? ' title="aus MoneyMoney"' : ''}>${ML(mk)}<input type="text" data-mk="${mk}" class="${own ? '' : 'auto'}" value="${own ? F(man[mk]) : ''}" placeholder="${val}"></label>`;
   }).join('');
   $('#h-von', d).value = months[0] || new Date().toISOString().slice(0, 7);
   $('#h-addrow', d).classList.toggle('hidden', !stand);
@@ -994,9 +1044,9 @@ async function vSync() {
   const dep = r.depots || [];
   if (m.problem) h += `<div class="banner err">MoneyMoney lief am ${esc(fmtZeit(m.problem.zeit))}, Kontor konnte aber nicht lesen: ${esc(m.problem.text)} – ohne Lesen fehlen Depotstände. Der Hinweis verschwindet beim nächsten erfolgreichen Lesen.</div>`;
   if ((r.luecken || []).length) h += `<div class="banner">Möglicherweise fehlen Depotstände – MoneyMoney hat abgerufen, während Kontor nicht lief: ${r.luecken.map(l => `<b>${esc(l.name)}</b> ${l.monate.map(ML).join(', ')}`).join('; ')}. Die Monate im Verlauf-Fenster prüfen. <button class="small secondary" id="gap-ok">Hinweis ausblenden</button></div>`;
-  if (dep.length) h += `<h2>Depots: Wertverlauf ${hq('depotverlauf')}</h2><div class="note">Bankkonten rechnet Kontor exakt aus den Umsätzen in MoneyMoney zurück – auch rückwirkend. Den Wertverlauf von Depots gibt MoneyMoney nicht heraus; den zeichnet Kontor selbst auf (seit ${r.aufzeichnung_seit ? ML(r.aufzeichnung_seit) : 'heute'}). Der Dienst läuft ab der Anmeldung im Hintergrund, auch ohne geöffnetes Kontor-Fenster, und liest innerhalb von etwa 20 Sekunden, sobald MoneyMoney offen und entsperrt ist – ein kurzer Blick in MoneyMoney genügt. Jeder Stand zählt für den Monat, in dem MoneyMoney ihn abgerufen hat. Rief MoneyMoney ab, während Kontor nicht lief, erscheint hier ein Hinweis.</div>
-    ${st.lokal ? `<div class="card" style="margin:8px 0 12px"><b>Historie aus MoneyMoney einlesen</b> ${hq('mmhist')}<div class="small muted" style="margin:4px 0 8px">Für den Start und falls einmal etwas fehlt. 1. In MoneyMoney „Hilfe → Datenbank im Finder anzeigen“, dann MoneyMoney beenden (⌘Q). 2. Die Datei „MoneyMoney.sqlite“ hierher ziehen. 3. Im erscheinenden macOS-Fenster das MoneyMoney-Passwort eingeben. Kontor braucht dafür keine Freigabe, speichert nichts davon und sieht das Passwort nie. Schritt 1 liest nur den Aufbau der Datenbank (Tabellennamen), damit die Übernahme genau passt.</div><div class="drop" id="mmh-drop">MoneyMoney.sqlite hierher ziehen<br><button id="mmh-pick" class="small" style="margin-top:8px">Datei wählen</button><input type="file" id="mmh-file" class="hidden"></div><div id="mmh-res" class="findings"></div></div>` : ''}
-    <div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>Depot</th><th>Bereich</th><th>Bekannt ab</th><th></th></tr></thead><tbody>${dep.map(k => `<tr data-uuid="${k.uuid}"><td>${esc(k.name)}<div class="small muted">${esc(k.pfad.split(' / ').slice(0, -1).join(' / '))}</div></td><td class="small">${esc(k.bereich || '–')}</td><td>${k.erster_stand ? ML(k.erster_stand) : '–'}${k.eigene ? ` <span class="small muted">(${k.eigene} eingetragen)</span>` : ''}</td><td class="c"><button class="small secondary dep-hist">Stände eintragen</button></td></tr>`).join('')}</tbody></table></div>`;
+  if (dep.length) h += `<h2>Depots: Wertverlauf ${hq('depotverlauf')}</h2><div class="note">Bankkonten rechnet Kontor exakt aus den Umsätzen in MoneyMoney zurück – auch rückwirkend. Den Wertverlauf von Depots gibt MoneyMoney über seine Schnittstelle nicht heraus: Den bisherigen Verlauf übernimmt Kontor einmalig aus MoneyMoneys Datenbank, danach zeichnet Kontor selbst auf (seit ${r.aufzeichnung_seit ? ML(r.aufzeichnung_seit) : 'heute'}). Der Dienst läuft ab der Anmeldung im Hintergrund, auch ohne geöffnetes Kontor-Fenster, und liest innerhalb von etwa 20 Sekunden, sobald MoneyMoney offen und entsperrt ist – ein kurzer Blick in MoneyMoney genügt. Jeder Stand zählt für den Monat, in dem MoneyMoney ihn abgerufen hat. Rief MoneyMoney ab, während Kontor nicht lief, erscheint hier ein Hinweis.</div>
+    <div class="small" style="margin:6px 0 10px">${r.mm_verlauf ? `Verlauf aus MoneyMoney übernommen am ${esc(fmtZeit(r.mm_verlauf.zeit))}.` : 'Bisheriger Verlauf noch nicht übernommen.'} <a href="#einrichtung/historie">Kontostände aus MoneyMoney ${r.mm_verlauf ? 'erneut ' : ''}einlesen</a></div>
+    <div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>Depot</th><th>Bereich</th><th>Bekannt ab</th><th></th></tr></thead><tbody>${dep.map(k => `<tr data-uuid="${k.uuid}"><td>${esc(k.name)}<div class="small muted">${esc(k.pfad.split(' / ').slice(0, -1).join(' / '))}</div></td><td class="small">${esc(k.bereich || '–')}</td><td>${k.erster_stand ? ML(k.erster_stand) : '–'}${k.aus_moneymoney ? ' <span class="small muted">(aus MoneyMoney)</span>' : ''}${k.eigene ? ` <span class="small muted">(${k.eigene} eingetragen)</span>` : ''}</td><td class="c"><button class="small secondary dep-hist">Stände eintragen</button></td></tr>`).join('')}</tbody></table></div>`;
   h += `<h2>Konten mit Bankabruf (${online.length}) ${hq('abruf')}</h2><div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>Konto</th><th>Bereich</th><th>Letzter Abruf</th><th>Stand</th><th class="c">abgerufen</th></tr></thead><tbody>${online.map(row).join('') || '<tr><td colspan="5" class="muted">keine</td></tr>'}</tbody></table></div>`;
   h += `<h2>Ohne Bankabruf (${offline.length})</h2><div class="note">Von Hand geführte Konten (z. B. Kapitalkonten, private Darlehen, Immobilien) – sie zählen nicht für den Datenstand. Falsch erkannt? Häkchen bei „abgerufen“ setzen bzw. oben entfernen.</div>
     <div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>Konto</th><th>Bereich</th><th>Erkannt als</th><th class="c">abgerufen</th></tr></thead><tbody>${offline.map(row).join('') || '<tr><td colspan="4" class="muted">keine</td></tr>'}</tbody></table></div>`;
@@ -1774,6 +1824,7 @@ async function route() {
   $$('#nav a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + S.tab));
   $('#page-title').textContent = SUBTITLES[S.tab + '/' + S.sub] || (S.tab === 'immobilien' && S.sub ? 'Immobilie' : TITLES[S.tab]);
   $('#bereich-seg').classList.toggle('hidden', !(S.DATA && Object.keys(S.DATA.bereiche || {}).length > 1 && ['uebersicht', 'bilanz', 'kapitalfluss', 'planung'].includes(S.tab)));
+  topCtl();
   $('.side').classList.remove('open');
   if (S.tab !== 'umsaetze') closeDrawer();
   const main = $('#main');
@@ -1807,7 +1858,7 @@ async function route() {
     window.scrollTo(0, sameTab ? y0 : (SCROLL.pos[key] || 0));      // eigener Reiter: bleibt; anderer Reiter: dessen letzte Position, sonst oben
     bind(main);
     guardDirty(main);
-    vbPoll();
+    vbPoll(); mmhPoll();
     if (S.tab === 'immobilien') bindImmo(main);
     if (S.tab === 'zuordnen') bindZuordnen(main);
     if (S.tab === 'kategorien') { bindKontorKategorien(main); $$('.tabs button[data-kt]', main).forEach(b => b.addEventListener('click', () => { KZ.tab = b.dataset.kt; route(); })); }
@@ -1916,18 +1967,19 @@ function bind(main) {
   $$('.k-hist', main).forEach(b => b.addEventListener('click', async e => { const btn = e.target; btn.classList.add('busy'); try { const tr = btn.closest('tr'), sel = $('.k-verlauf', tr); await openHistDrawer(tr.dataset.uuid, sel ? sel.value : null); } catch (er) { toast('Verlauf konnte nicht geladen werden: ' + er.message, 6000); } finally { btn.classList.remove('busy'); } }));
   const hp = $('#hi-pick', main); if (hp) hp.addEventListener('click', () => { const inp = $('#file-input'); inp.value = ''; inp.setAttribute('accept', '.csv,.txt,.xlsx,.xlsm'); inp.removeAttribute('capture'); inp.onchange = () => { if (inp.files[0]) histImportPreview(inp.files[0]); }; inp.click(); });
   const hd = $('#hi-drop', main); if (hd) { hd.addEventListener('dragover', e => { e.preventDefault(); hd.classList.add('over'); }); hd.addEventListener('dragleave', () => hd.classList.remove('over')); hd.addEventListener('drop', e => { e.preventDefault(); hd.classList.remove('over'); if (e.dataTransfer.files[0]) histImportPreview(e.dataTransfer.files[0]); }); if (HI) renderHistImport(); }
+  const mz = $('#mmh-zeigen', main); if (mz) mz.addEventListener('click', async () => { try { await api('/api/historie/mm-zeigen', {}); } catch (e) { toast(e.message, 6000); } });
   const md = $('#mmh-drop', main); if (md) {
     const send = async file => {
-      // Datei (verschlüsselt) direkt als Bytes an den Dienst auf diesem Mac; nichts wird gespeichert
+      // Datei (verschlüsselt) direkt als Bytes an den Dienst auf diesem Mac; nichts davon wird gespeichert
       const res = $('#mmh-res', main); if (!file) return;
-      if (MMH.busy) return; MMH.busy = true; md.classList.add('busy'); res.innerHTML = '<div class="ok">Gleich erscheint das Passwortfenster von macOS …</div>';
+      if (MMH.busy) return; MMH.busy = true; md.classList.add('busy'); res.innerHTML = '<div class="working"><span class="spin"></span>Datei wird übergeben …</div>';
       try {
-        const r = await fetch('/api/historie/mm-pruefen', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/octet-stream', 'X-CSRF-Token': S.csrf, 'X-Kontor-Net': 'direct'}, body: file});
+        const r = await fetch('/api/historie/mm-einlesen', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/octet-stream', 'X-CSRF-Token': S.csrf, 'X-Kontor-Net': 'direct'}, body: file});
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.fehler || ('Fehler ' + r.status));
-        showFindings(res, [], j.ok ? `Aufbau gelesen (${j.format}, ${j.tabellen} Tabellen). Als Nächstes folgt die Übernahme der Depotstände.` : j.text, j.ok ? 'ok' : 'fehler');
-      } catch (e) { showFindings(res, [], e.message, 'fehler'); }
-      finally { MMH.busy = false; md.classList.remove('busy'); }
+        if (j.laeuft) await mmhFollow(); else showFindings($('#mmh-res') || res, [], j.text, 'fehler');
+      } catch (e) { showFindings($('#mmh-res') || res, [], e.message, 'fehler'); }
+      finally { MMH.busy = false; const d2 = $('#mmh-drop'); if (d2) d2.classList.remove('busy'); }
     };
     md.addEventListener('dragover', e => { e.preventDefault(); md.classList.add('over'); });
     md.addEventListener('dragleave', () => md.classList.remove('over'));

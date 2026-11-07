@@ -15,13 +15,13 @@ from datetime import date, datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyNotRunning, notify
-from mm_model import Account, Ledger, accounts_from_export, add_months, fmt_eur, month_key, tx_from_export, norm_cat
-import mm_immo
-import mm_kategorien
-from mm_report import ROLES, account_roles, build_dataset
-from mm_rules import Proposal, plan_all
-from mm_store import Store
-from mm_tax import build_tax
+from datenmodell import Account, Ledger, accounts_from_export, add_months, fmt_eur, month_key, tx_from_export, norm_cat
+import immorechner
+import kategorisierung
+from auswertung import ROLES, account_roles, build_dataset
+from buchungsregeln import Proposal, plan_all
+from ablage import Store
+from steuer import build_tax
 
 log = logging.getLogger("kontor.core")
 RUN_LOCK = threading.Lock()
@@ -277,7 +277,7 @@ def abruf_arten(ledger: Ledger, config: dict) -> Dict[str, Dict[str, str]]:
     """uuid -> {"art": "online"|"offline", "grund": Text} fuer alle Konten (keine Gruppen). Online = MoneyMoney ruft bei
     Bank oder Dienst ab; offline = von Hand gefuehrt, kein Abruf (zaehlt nicht fuer den Datenstand). MoneyMoney setzt den
     Abrufzeitpunkt auch bei Offline-Konten (z. B. nach einer Buchung), deshalb mehrere Merkmale; eigene Festlegung geht vor."""
-    import mm_rules
+    import buchungsregeln
     ab = config.get("abruf") or {}
 
     def refs(lst) -> set:
@@ -294,7 +294,7 @@ def abruf_arten(ledger: Ledger, config: dict) -> Dict[str, Dict[str, str]]:
         for r in config.get(key) or []:
             if isinstance(r, dict):
                 targets |= refs([r[f] for f in fields if r.get(f)])
-    booked = {t.account_uuid for t in ledger.txs if t.purpose and "#mm-" in t.purpose and mm_rules.TAG_RE.search(t.purpose)}
+    booked = {t.account_uuid for t in ledger.txs if t.purpose and "#mm-" in t.purpose and buchungsregeln.TAG_RE.search(t.purpose)}
     out: Dict[str, Dict[str, str]] = {}
     for a in ledger.accounts.values():
         if a.group:
@@ -553,11 +553,11 @@ def compact_transactions(ledger: Ledger, bereiche: List[dict], store: Optional[S
         for a in b["leaves"]:
             ent_of.setdefault(a.uuid, b["id"])
     out = []
-    kat = mm_kategorien.load(store) if store is not None else mm_kategorien.empty()
+    kat = kategorisierung.load(store) if store is not None else kategorisierung.empty()
     for t in ledger.txs:
         if t.account_uuid not in ent_of:
             continue
-        path, q = mm_kategorien.effective(kat, t)
+        path, q = kategorisierung.effective(kat, t)
         out.append({"id": t.id, "konto": t.account_uuid, "konto_name": ledger.accounts[t.account_uuid].name, "entitaet": ent_of[t.account_uuid],
                     "datum": t.booking_date.isoformat(), "betrag": t.amount, "name": t.name[:80], "zweck": t.purpose[:140],
                     "kategorie": path, "quelle": q, "gebucht": t.booked, "haken": t.checkmark})
@@ -606,14 +606,14 @@ def immo_results(config: dict, today: date) -> Dict[str, dict]:
         if not k:
             continue
         try:
-            res = mm_immo.berechne(k.get("eingaben") or {}, today)
+            res = immorechner.berechne(k.get("eingaben") or {}, today)
         except Exception as e:  # pragma: no cover - fehlerhafte Eingaben duerfen den Bericht nicht stoppen
             log.warning("Immobilie %s: Kalkulation fehlgeschlagen: %s", im.get("name"), e)
             out[str(im.get("id"))] = {"fehler": str(e)}
             continue
         out[str(im.get("id"))] = {"kalkulation": k.get("id"), "name": k.get("name"), "kennzahlen": res["kennzahlen"], "jahre": res["jahre"],
                                   "hinweise": res["hinweise"], "darlehen_namen": res["darlehen_namen"], "start": res["start"],
-                                  "reihen": mm_immo.planreihen(res)}
+                                  "reihen": immorechner.planreihen(res)}
     return out
 
 
@@ -685,7 +685,7 @@ COST_WORDS_DEFAULT = ["zins", "interest", "gebühr", "gebuehr", "entgelt", "prov
 
 
 def _kat_sig(store: Store, config: dict, categories: Optional[List[dict]]) -> tuple:
-    return (store.stamp(mm_kategorien.FILE), json.dumps(config.get("kategorien") or {}, sort_keys=True), len(categories or []))
+    return (store.stamp(kategorisierung.FILE), json.dumps(config.get("kategorien") or {}, sort_keys=True), len(categories or []))
 
 
 def prepare_categories(store: Store, ledger: Ledger, config: dict, categories: Optional[List[dict]],
@@ -703,26 +703,29 @@ def prepare_categories(store: Store, ledger: Ledger, config: dict, categories: O
 def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: Optional[List[dict]],
                         step: Callable[[float, str], None]) -> dict:
     kc = config.get("kategorien") or {}
-    kat = mm_kategorien.load(store)
+    kat = kategorisierung.load(store)
     if not kc.get("aktiv", True):
-        mm_kategorien.apply_to_ledger(mm_kategorien.empty(), ledger)
+        kategorisierung.apply_to_ledger(kategorisierung.empty(), ledger)
         return kat
     changed = False
     if categories and (not kat.get("mm_uebernommen") or len(kat["baum"]) < len(categories)):
-        if mm_kategorien.seed_from_moneymoney(kat, categories):
+        if kategorisierung.seed_from_moneymoney(kat, categories):
             changed = True
     if kc.get("lernen", True):
         before = len(kat["regeln"])
-        mm_kategorien.learn(kat, ledger, progress=lambda f: step(0.6 * f, "Kategorien: Regeln lernen"))
+        kategorisierung.learn(kat, ledger, progress=lambda f: step(0.6 * f, "Kategorien: Regeln lernen"))
         changed = changed or len(kat["regeln"]) != before or not kat.get("gelernt_am")
-    if mm_kategorien.auto_assign(kat, ledger, overwrite_mm=bool(kc.get("mm_ueberschreiben")),
+    if kategorisierung.auto_assign(kat, ledger, overwrite_mm=bool(kc.get("mm_ueberschreiben")),
                                  progress=lambda f: step(0.6 + 0.3 * f, "Kategorien: Umsätze zuordnen")):
         changed = True
     step(0.9, "Kategorien übernehmen")
     if changed:
-        mm_kategorien.save(store, kat)
-    mm_kategorien.apply_to_ledger(kat, ledger)
+        kategorisierung.save(store, kat)
+    kategorisierung.apply_to_ledger(kat, ledger)
     return kat
+
+
+MM_VERLAUF_FILE = "mm-verlauf.json"
 
 
 def record_snapshot(snaps: dict, accounts, today: date) -> bool:
@@ -761,6 +764,8 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
     step(0.05, "Kategorien")
     kat = prepare_categories(store, ledger, config, categories, lambda f, t: step(0.05 + 0.2 * f, t))
     record_snapshot(state.setdefault("snapshots", {}), ledger.accounts.values(), today)
+    # aus MoneyMoney uebernommene Kontostand-Verlaeufe (verschluesselt abgelegt, nur im Speicher in den Zustand gelegt)
+    state["historie_mm"] = (store.load_shared(MM_VERLAUF_FILE, {}) or {}).get("konten") or {}
     bereiche = bereiche_for(ledger, config)
     haupt = main_bereich(bereiche)
     roles = account_roles(ledger, config)
@@ -827,7 +832,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "immobilien": immobilien,
         "budgets": budgets,
         "warnungen": warnings,
-        "kategorien": (step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", ledger._kat_sig, lambda: mm_kategorien.stats(kat, ledger)))[1],
+        "kategorien": (step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", ledger._kat_sig, lambda: kategorisierung.stats(kat, ledger)))[1],
         "konten_neu": neu,
     }
     step(0.88, "Speichern")

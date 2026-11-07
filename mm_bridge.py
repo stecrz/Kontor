@@ -1,7 +1,7 @@
 """MoneyMoney-Anbindung ueber die offizielle Skript-Schnittstelle (osascript/JXA).
 
 Einzige Stelle, die mit MoneyMoney spricht. Alles andere arbeitet auf den
-hier gelieferten Python-Objekten (siehe mm_model.py).
+hier gelieferten Python-Objekten (siehe datenmodell.py).
 
 Eigenschaften:
   * startet MoneyMoney nie selbst (pgrep-Pruefung vor jedem Aufruf)

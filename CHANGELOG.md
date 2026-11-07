@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.9.8
+- Kontostände aus MoneyMoney als Einrichtungsschritt 4 (nach „Konten“): MoneyMoney beenden, „Im Finder zeigen“ (markiert MoneyMoney.sqlite, ohne Freigabe), Datei ins Fenster ziehen, Passwort im macOS-Fenster. Übernommen wird der Verlauf aller Konten als Monatsend-Stände, nur nach Prüfung am aktuellen Saldo; verschlüsselt gespeichert und in Bilanz und Verlauf-Fenster genutzt (eigene Einträge gehen vor).
+- Sicherer und sparsamer: Entschlüsselung an Ort und Stelle, SQLite liest direkt aus diesem Puffer (keine Kopie, Bedarf etwa Dateigröße, Prüfung des Arbeitsspeichers); danach alles mit Nullen überschrieben. Gesucht wird in SQLite, Tabellen mit Zugangsdaten werden nicht angesehen. Verarbeitung im Hintergrund mit Fortschrittsanzeige.
+- Dateien umbenannt: Präfix „mm_“ nur noch für Teile, die direkt mit MoneyMoney sprechen (mm_bridge, mm_historie).
+- Bereichsauswahl oben mittig, kleine Schalter (Plan, inflationsbereinigt, leere Zeilen) rechts; Ladesymbol im Synchronisieren-Knopf mittig.
+
 ## 3.9.7
 - Depot-Historie aus MoneyMoney, Schritt 1, ohne jede macOS-Freigabe: Die Datei „MoneyMoney.sqlite“ wird unter Synchronisierung ins Fenster gezogen (bleibt verschlüsselt bis in den Arbeitsspeicher). Das Passwortfenster wird nur für diesen Vorgang erzeugt und danach gelöscht; Schlüssel und entschlüsselte Daten liegen nur in Puffern, die danach mit Nullen überschrieben werden; SQLite schreibt keine Zwischendateien. Kein sqlcipher nötig.
 - Der vorab übersetzte Passwort-Helfer aus 3.9.6 wird beim Start entfernt.

@@ -4,7 +4,7 @@
 * Sitzung: 32 Byte Zufall als HttpOnly-Cookie, Leerlauf- und Hoechstdauer,
   CSRF-Token je Sitzung (Header X-CSRF-Token) fuer jede aendernde Anfrage.
 * Fehlversuche: nach 5 Fehlern 5 Minuten Sperre je Adresse.
-* Touch ID: kleiner Helfer (mm_touchid, Swift, bei der Installation uebersetzt),
+* Touch ID: kleiner Helfer (touchid.swift, bei der Installation uebersetzt),
   der den macOS-Dialog zeigt. Nur fuer Anfragen von diesem Mac (127.0.0.1) --
   von einem anderen Geraet aus zaehlt nur das Passwort.
 """
@@ -21,7 +21,7 @@ import time
 from typing import Dict, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TOUCHID_SRC = os.path.join(HERE, "mm_touchid.swift")
+TOUCHID_SRC = os.path.join(HERE, "touchid.swift")
 # Der Dateiname erscheint im macOS-Dialog ("Kontor möchte die Finanzübersicht entsperren")
 TOUCHID_BIN = os.path.join(HERE, ".touchid", "Kontor")
 TOUCHID_REASON = "die Finanzübersicht entsperren"

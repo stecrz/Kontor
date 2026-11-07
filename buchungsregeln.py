@@ -1,7 +1,7 @@
 """Regeln: Darlehensspiegelung + Zinsen, Beteiligungswert, Saldo-Spiegel.
 
 Jede Regel liefert Buchungsvorschlaege (Proposal) und Warnungen. Sie
-veraendert MoneyMoney nicht selbst; das macht mm_core.run_once nach dem Probelauf.
+veraendert MoneyMoney nicht selbst; das macht kern.run_once nach dem Probelauf.
 
 Idempotenz: Jede automatische Buchung traegt im Verwendungszweck eine
 Markierung (#mm-tx-<id>, #mm-zins-JJJJ-MM, #mm-wert-...). Vor jedem Vorschlag
@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from mm_model import Ledger, Tx, fmt_eur, month_end, months_between
+from datenmodell import Ledger, Tx, fmt_eur, month_end, months_between
 
 TAG_RE = re.compile(r"#mm-[a-z]+-[A-Za-z0-9\-]+")
 
@@ -349,7 +349,7 @@ def plan_all(ledger: Ledger, config: dict, today: date) -> RuleResult:
         if cfg.get("aktiv", True):
             r = plan_loan(ledger, cfg, today)
             total.proposals += r.proposals; total.warnings += r.warnings; total.info += r.info
-    from mm_report import account_roles          # spaet importiert (mm_report importiert mm_rules)
+    from auswertung import account_roles          # spaet importiert (auswertung importiert buchungsregeln)
     roles = account_roles(ledger, config)
     for cfg in (config.get("beteiligungen", []) or []) + (config.get("saldo_spiegel", []) or []):
         if cfg.get("aktiv", True):

@@ -27,7 +27,7 @@ log = logging.getLogger("kontor.update")
 HERE = os.path.dirname(os.path.abspath(__file__))
 ALLOWED_HOSTS = ("api.github.com", "codeload.github.com", "github.com", "raw.githubusercontent.com", "objects.githubusercontent.com")
 TIMEOUT = 25
-KEEP = {".alt", "mm_touchid", "web/.DS_Store"}       # nicht ueberschreiben/loeschen
+KEEP = {".alt", ".touchid", "mm_touchid", "web/.DS_Store"}       # nicht ueberschreiben/loeschen
 
 
 def current_version() -> str:
@@ -203,9 +203,8 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
     # Touch-ID-Helfer bei Bedarf neu uebersetzen (ohne Fehler zu werfen)
     try:
         if sys.platform == "darwin":
-            r = subprocess.run(["swiftc", "-O", "-o", os.path.join(HERE, "mm_touchid"), os.path.join(HERE, "mm_touchid.swift")],
-                               capture_output=True, text=True, timeout=300)
-            log.info("Update: Touch-ID-Helfer übersetzt (Status %s)%s", r.returncode, (": " + r.stderr.strip()[:300]) if r.returncode else "")
+            import anmeldung
+            log.info("Update: Touch-ID-Helfer: %s", anmeldung.build_touchid(force=True))
     except Exception as e:
         log.warning("Update: Touch-ID-Helfer nicht übersetzt: %s", e)
     restarted = False
