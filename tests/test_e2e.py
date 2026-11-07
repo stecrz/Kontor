@@ -487,7 +487,7 @@ class AppTests(_AppBase):
             import mm_bridge as MB
             MA.is_running = MB.is_running
 
-    def _mm_db(self, compat=None, mit_verlauf=True, passwort="ge'heim", zeit="unix", versatz=False):
+    def _mm_db(self, compat=None, mit_verlauf=True, passwort="ge'heim", zeit="unix", versatz=False, depot="wert"):
         """Erfundene MoneyMoney-Datenbank (SQLCipher) im Aufbau des Originals: accounts (ohne UUID; Zuordnung ueber IBAN,
         Kontonummer + BLZ oder Name), balance_chart (Saldo je Zeitpunkt), portfolio_chart (Wert je Wertpapier, fuer das Depot),
         Zugangsdaten, Umsaetze, Volltextsuche mit eigenem Tokenizer, eigene Sortierfolge."""
@@ -504,6 +504,7 @@ class AppTests(_AppBase):
                "CREATE TABLE transactions(rowid INTEGER PRIMARY KEY, local_account_key INTEGER, timestamp INTEGER, amount REAL, unformatted_purpose TEXT);"]
         if mit_verlauf:
             sql += ["CREATE TABLE balance_chart(account_key INTEGER, currency TEXT, timestamp INTEGER, balance REAL);",
+                    "CREATE TABLE securities(rowid INTEGER PRIMARY KEY, account_key INTEGER, quantity REAL, deleted INTEGER, comment TEXT);",
                     "CREATE TABLE portfolio_chart(account_key INTEGER, currency TEXT, timestamp INTEGER, balance REAL, securities_key INTEGER);"]
         rows = [(a, a.name) for a in leaves] + [(None, "Fremdes Konto")]
         for i, (a, name) in enumerate(rows, 1):
@@ -517,7 +518,7 @@ class AppTests(_AppBase):
             if not mit_verlauf:
                 continue
             # wie bei MoneyMoney: je Tag die Veraenderung (Summe der Buchungen), Zeitpunkt tagsueber; Saldo = rueckwaerts vom aktuellen
-            if a.portfolio:          # Depot: Wertveraenderung je Wertpapier und Abruf, Summe aller = aktueller Wert
+            if a.portfolio and depot == "delta":          # Depot als Wertveraenderung je Wertpapier: Summe aller = aktueller Wert
                 y, m, prev = 2024, 1, 0.0
                 while (y, m) <= (2026, 10):
                     v = 70000.27 if (y, m) == (2025, 6) else round(a.balance * (0.5 + 0.5 * ((y - 2024) * 12 + m) / 34.0), 2)
@@ -527,6 +528,22 @@ class AppTests(_AppBase):
                     sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, 2);" % (i, ts(date(y, m, 15)), round(delta - part, 2)))
                     y, m = (y + 1, 1) if m == 12 else (y, m + 1)
                 sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, 1);" % (i, ts(date(2026, 11, 3)), round(a.balance - prev, 2)))
+                continue
+            if a.portfolio:          # Depot: Wert je Wertpapier, unabhaengig voneinander erfasst; Wertpapier 3 im Juni 2024 verkauft
+                sql += ["INSERT INTO securities VALUES(%d, %d, 10, 0, 'GEHEIM');" % (100 + i, i), "INSERT INTO securities VALUES(%d, %d, 5, 0, NULL);" % (200 + i, i),
+                        "INSERT INTO securities VALUES(%d, %d, 0, 1, NULL);" % (300 + i, i)]
+                y, m = 2024, 1
+                while (y, m) <= (2026, 10):
+                    v = 70000.27 if (y, m) == (2025, 6) else round(a.balance * (0.5 + 0.5 * ((y - 2024) * 12 + m) / 34.0), 2)
+                    part = round(v * 0.6, 2)
+                    sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, %d);" % (i, ts(date(y, m, 12)), part, 100 + i))
+                    sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, %d);" % (i, ts(date(y, m, 19)), round(v - part, 2), 200 + i))
+                    if (y, m) <= (2024, 6):
+                        sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, 5000.0, %d);" % (i, ts(date(y, m, 8)), 300 + i))
+                    y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+                part = round(a.balance * 0.6, 2)
+                sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, %d);" % (i, ts(date(2026, 11, 3)), part, 100 + i))
+                sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, %d);" % (i, ts(date(2026, 11, 2)), round(a.balance - part, 2), 200 + i))
                 continue
             per_day = {}
             for tx in led.transactions(a.uuid):
@@ -607,7 +624,9 @@ class AppTests(_AppBase):
             for u in mm:                                                                # Monatsende = aktueller Saldo minus spaetere Veraenderungen
                 if not self.app.ledger.accounts[u].portfolio:
                     self.assertEqual(mm[u]["2026-09"], look(u, date(2026, 9, 30), False))
-            self.assertEqual(dep["2025-06"], 70000.27)                                 # letzter Wert im Monat (Monatsende), Cent -> Euro
+            self.assertEqual(dep["2025-06"], 70000.27)                                 # Summe der gehaltenen Wertpapiere am Monatsende
+            self.assertGreater(dep["2024-05"] - dep["2024-06"], 3000)          # verkauftes Wertpapier zaehlt nicht mehr im Monat seines letzten Werts
+            self.assertEqual(self.store.load(MM_HISTORY_FILE)["anfang"][F.uid("priv.depot")], 0.0)   # vor der ersten Aufzeichnung: leer
             self.assertNotIn("2026-11", dep)                                            # laufender Monat kommt aus dem aktuellen Saldo
             with open(self.store.path(MM_HISTORY_FILE), "rb") as f:
                 self.assertNotIn(b"70000", f.read())                                    # verschluesselt abgelegt
@@ -622,10 +641,15 @@ class AppTests(_AppBase):
             code, ds = self.call("/api/dataset")
             row = next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == F.uid("priv.depot"))
             self.assertEqual(row["werte"]["2025-06"], 70000.27)
+            self.assertIsNone(row.get("fortgeschrieben_vor"))                           # vor der Aufzeichnung leer, nicht "unbekannt"
+            self.assertNotIn("fortgeschrieben", h.get("hinweis") or "")
             # Verlauf der Konten mit Umsaetzen passt nirgends (versetzt): nur das Depot wird uebernommen, die Konten behalten Kontors Salden
             code, r = self._mm_upload(self._mm_db(versatz=True)); self.assertTrue(r["ok"], r); self.assertEqual((r["konten"], r["depots"]), (1, 1))
             # aelteres Format (SQLCipher 3) und Cocoa-Zeit ebenso
             code, r = self._mm_upload(self._mm_db(compat=3, zeit="cocoa")); self.assertTrue(r["ok"], r); self.assertEqual(r["konten"], n)
+            # Depot als Wertveraenderung je Wertpapier ebenso
+            code, r = self._mm_upload(self._mm_db(depot="delta")); self.assertTrue(r["ok"], r); self.assertEqual(r["depots"], 1)
+            self.assertEqual(self.store.load(MM_HISTORY_FILE)["konten"][F.uid("priv.depot")]["2025-06"], 70000.27)
             # ohne Verlaufstabelle: nichts uebernommen, nur der Aufbau (Namen, keine Inhalte) als Hinweis
             code, r = self._mm_upload(self._mm_db(mit_verlauf=False)); self.assertFalse(r["ok"]); self.assertIn("nicht sicher erkannt", r["text"])
             txt = open(aufbau, encoding="utf-8").read()

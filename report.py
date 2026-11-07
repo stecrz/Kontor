@@ -167,14 +167,16 @@ def _valuation_account(acc: Account, src: str) -> bool:
 
 
 def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int, int]], src: str, snapshots: Dict[str, Dict[str, float]],
-                           manual_raw: Dict[str, Any], today: date, config: Optional[dict] = None, mm_raw: Optional[Dict[str, Any]] = None):
+                           manual_raw: Dict[str, Any], today: date, config: Optional[dict] = None, mm_raw: Optional[Dict[str, Any]] = None,
+                           mm_start: Optional[float] = None):
     """Monatsend-Salden eines Kontos. Liefert (werte, hinweis, anker).
 
     umsaetze: heutiger Saldo minus alle spaeteren Buchungen (eigene Monatswerte zaehlen nicht).
     stand:    bekannte Kontostaende (eigene/importierte Werte, aus MoneyMoney uebernommene, bei Depots auch die von Kontor
               aufgezeichneten, dazu der heutige Saldo) sind massgeblich. Konten mit Buchungen: von jedem bekannten Stand aus
-              rueckwaerts mit den Buchungen weitergerechnet. Depots: letzter bekannter Stand; davor (gekennzeichnet) der erste
-              bekannte Wert -- keine Schaetzung."""
+              rueckwaerts mit den Buchungen weitergerechnet. Depots: letzter bekannter Stand; vor dem ersten bekannten Stand der
+              Stand vor MoneyMoneys erster Aufzeichnung (mm_start, meist 0), sonst (gekennzeichnet) der erste bekannte Wert --
+              keine Schaetzung."""
     cur_key = month_key(today)
     mkeys = ["%04d-%02d" % ym for ym in months]
     past = [(y, m) for (y, m) in months if "%04d-%02d" % (y, m) < cur_key]
@@ -216,6 +218,8 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
             known[k] = v[acc.uuid]
     known[cur_key] = acc.balance
     first_known = min(known)
+    mm_keys = [k for k, v in (mm_raw or {}).items() if v is not None]
+    before = mm_start if mm_start is not None and mm_keys and first_known >= min(mm_keys) else None   # Stand vor der Aufzeichnung
     # Keine Schaetzung: vor dem ersten bekannten Stand steht (gekennzeichnet) dieser erste Wert
     for k in mkeys:
         if k == cur_key:
@@ -223,18 +227,18 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
         elif k in known:
             h[k] = known[k]
         elif k < first_known:
-            h[k] = known[first_known]
+            h[k] = known[first_known] if before is None else before
         else:
             prev = max((kk for kk in known if kk < k), default=first_known)
             h[k] = known[prev]
-    if mkeys and mkeys[0] < first_known and abs(known[first_known]) > 0.005:
+    if before is None and mkeys and mkeys[0] < first_known and abs(known[first_known]) > 0.005:
         hinweis = (tr("s_s_kontostaende_vor_s_sind") % (acc.name, first_known))
     return h, hinweis, sorted(known)
 
 
 def balance_history(ledger: Ledger, leaves: List[Account], months: List[Tuple[int, int]], snapshots: Dict[str, Dict[str, float]],
                     historie: Dict[str, Dict[str, float]], verlauf_cfg: Dict[str, str], today: date, config: Optional[dict] = None,
-                    historie_mm: Optional[Dict[str, Dict[str, float]]] = None):
+                    historie_mm: Optional[Dict[str, Dict[str, float]]] = None, historie_mm_anfang: Optional[Dict[str, float]] = None):
     """uuid -> {JJJJ-MM: Saldo am Monatsende}. Liefert zusaetzlich Hinweise, die Quelle je Konto und je Depot den Monat,
     vor dem kein Stand bekannt ist (dort steht -- gekennzeichnet -- der erste bekannte Wert)."""
     warnings: List[str] = []
@@ -246,11 +250,12 @@ def balance_history(ledger: Ledger, leaves: List[Account], months: List[Tuple[in
         src = verlauf_quelle(acc, verlauf_cfg)
         quelle[acc.uuid] = src
         h, hinweis, anker = account_balance_series(ledger, acc, months, src, snapshots, historie.get(acc.uuid) or {}, today, config,
-                                                       (historie_mm or {}).get(acc.uuid))
+                                                       (historie_mm or {}).get(acc.uuid), (historie_mm_anfang or {}).get(acc.uuid))
         hist[acc.uuid] = h
         if hinweis:
             warnings.append(hinweis)
-        if src == "stand" and acc.portfolio and anker and first_mk and first_mk < anker[0] and abs(acc.balance) > 0.005:
+        if src == "stand" and acc.portfolio and anker and first_mk and first_mk < anker[0] and abs(acc.balance) > 0.005 \
+                and (historie_mm_anfang or {}).get(acc.uuid) is None:
             fortgeschrieben[acc.uuid] = anker[0]       # vor diesem Monat kein Stand bekannt: erster Wert rueckwaerts uebernommen
     return hist, warnings, quelle, fortgeschrieben
 
@@ -633,7 +638,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
 
     step(0.05, tr("s_monatsstaende"))
     historie_mm = state.get("historie_mm") or {}
-    hist, warn_h, quelle, fortgeschrieben = balance_history(ledger, leaves, months, snapshots, historie, verlauf_cfg, today, config, historie_mm)
+    hist, warn_h, quelle, fortgeschrieben = balance_history(ledger, leaves, months, snapshots, historie, verlauf_cfg, today, config, historie_mm,
+                                                            state.get("historie_mm_anfang") or {})
     step(0.3, tr("s_zahlungsstroeme"))
     ckey = (getattr(ledger, "_kat_sig", None), tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
             json.dumps(config.get("kapitalfluss") or {}, sort_keys=True, default=str), tuple(months[0]) if months else None,
@@ -720,7 +726,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
     ausserhalb = []
     for a in sorted(ausserhalb_accs, key=lambda x: (roles.get(x.uuid) or "", order.get(x.uuid, 10**9))):
         wh, _, _ = account_balance_series(ledger, a, months, verlauf_quelle(a, verlauf_cfg), snapshots, historie.get(a.uuid) or {}, today, config,
-                                             historie_mm.get(a.uuid))
+                                             historie_mm.get(a.uuid), (state.get("historie_mm_anfang") or {}).get(a.uuid))
         ausserhalb.append({"id": a.uuid, "name": a.name, "pfad": a.path, "rolle": roles.get(a.uuid), "werte": {mk: wh[mk] for mk in mkeys}})
 
     # Kapitalfluss-Sektionen

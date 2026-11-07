@@ -427,8 +427,7 @@ BalanceAt = Callable[[str, date, bool], Optional[float]]
 
 
 def _load_series(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[int], Dict], today: date) -> Dict[int, Tuple[str, List]]:
-    """Punkte je Konto der Datenbank: balance_chart (Waehrung des Kontos); Depots ohne eigene Punkte aus portfolio_chart
-    (Summe der Wertpapiere je Zeitpunkt). Gelesen werden nur Kennung, Zeitpunkt, Betrag."""
+    """Punkte je Konto der Datenbank aus balance_chart (Waehrung des Kontos). Gelesen werden nur Kennung, Zeitpunkt, Betrag."""
     series: Dict[int, Tuple[str, List]] = {}
     kind = _time_kind(db, "balance_chart", today)
     if kind:
@@ -440,17 +439,60 @@ def _load_series(db: "MemDB", plain: List[str], keys: List[int], info: Callable[
             rows = per.get(info(k).get("waehrung") or "") or (next(iter(per.values())) if len(per) == 1 else None)
             if rows:
                 series[k] = ("balance_chart", _series(rows, kind))
-    if "portfolio_chart" in plain:
-        pkind = _time_kind(db, "portfolio_chart", today)
-        dep = [k for k in keys if k not in series and info(k).get("depot")]
-        if pkind and dep:
-            snaps: Dict[int, List] = {}
-            for k, ts, v in db.rows("SELECT account_key, timestamp, sum(balance) FROM portfolio_chart WHERE account_key IN %s "
-                                    "AND typeof(balance) IN ('integer', 'real') GROUP BY account_key, timestamp ORDER BY timestamp" % _in(len(dep)), dep):
-                snaps.setdefault(k, []).append((ts, v))
-            for k, rows in snaps.items():
-                series[k] = ("portfolio_chart", _series(rows, pkind))
     return series
+
+
+def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[int], Dict], today: date) -> Dict[int, Dict]:
+    """Depots aus portfolio_chart: je Wertpapier Punkte (Zeitpunkt, Betrag), unabhaengig voneinander erfasst. Gedeutet als
+    Wert des Wertpapiers (Depotwert = Summe der letzten Werte der gehaltenen Wertpapiere; ein nicht mehr gehaltenes zaehlt nach
+    seinem letzten Punkt nicht mehr) oder als Veraenderung (Depotwert = Summe aller Veraenderungen). Es gilt die Deutung, die
+    den aktuellen Depotwert ergibt. Liefert je Depot {"werte": {JJJJ-MM: Wert}, "anfang": 0.0, "art": ...} bzw. {"fehler": ...}."""
+    out: Dict[int, Dict] = {}
+    kind = _time_kind(db, "portfolio_chart", today) if "portfolio_chart" in plain else None
+    if not kind or not keys:
+        return out
+    recs: Dict[int, Dict[int, List]] = {}
+    for k, sk, ts, v in db.rows("SELECT account_key, securities_key, timestamp, balance FROM portfolio_chart WHERE account_key IN %s "
+                                "AND typeof(balance) IN ('integer', 'real') ORDER BY timestamp" % _in(len(keys)), keys):
+        d = _to_date(ts, kind)
+        if d is not None:
+            recs.setdefault(k, {}).setdefault(sk, []).append((d, float(v)))
+    held: Dict[int, set] = {}                                  # aktuell gehaltene Wertpapiere je Depot
+    cols = {c for c, _ty in columns(db, "securities")} if "securities" in plain else set()
+    if {"account_key"} <= cols:
+        cond = " AND ".join(x for x in ("coalesce(deleted, 0) = 0" if "deleted" in cols else "", "coalesce(quantity, 0) != 0" if "quantity" in cols else "") if x) or "1"
+        for k, sk in db.rows("SELECT account_key, rowid FROM securities WHERE account_key IN %s AND %s" % (_in(len(keys)), cond), keys):
+            held.setdefault(k, set()).add(sk)
+    cur = "%04d-%02d" % (today.year, today.month)
+    for k, per in recs.items():
+        bal = info(k).get("saldo") or 0.0
+        now = held.get(k) if k in held else {sk for sk, r in per.items() if r[-1][0] == max(x[-1][0] for x in per.values())}
+        level_now = sum(r[-1][1] for sk, r in per.items() if sk in now)
+        delta_now = sum(v for r in per.values() for _d, v in r)
+        fits = lambda x: abs(x - bal) <= max(1.0, 0.02 * abs(bal))
+        art = "level" if fits(level_now) else "delta" if fits(delta_now) else None
+        if art is None:
+            off = lambda x: "within 5 %" if abs(x - bal) <= 0.05 * abs(bal) else "within 20 %" if abs(x - bal) <= 0.2 * abs(bal) else "further off"
+            out[k] = {"fehler": "%d securities (%d held): values %s, sum of changes %s" % (len(per), len(now), off(level_now), off(delta_now))}
+            continue
+        first = min(r[0][0] for r in per.values())
+        werte: Dict[str, float] = {}
+        y, m = first.year, first.month
+        while "%04d-%02d" % (y, m) < cur:
+            nxt = date(y + (m == 12), m % 12 + 1, 1)
+            total = 0.0
+            for sk, r in per.items():
+                upto = [v for d, v in r if d < nxt]
+                if not upto:
+                    continue
+                if art == "delta":
+                    total += sum(upto)
+                elif sk in now or r[-1][0] >= nxt:              # verkauft: nach dem letzten Punkt nicht mehr im Depot
+                    total += upto[-1]
+            werte["%04d-%02d" % (y, m)] = round(total, 2)
+            y, m = nxt.year, nxt.month
+        out[k] = {"werte": werte, "anfang": 0.0, "art": art}
+    return out
 
 
 def _daily(ser: List[Tuple[date, float]], kind: str) -> Dict[date, float]:
@@ -529,7 +571,8 @@ def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at
     owner = {k: u for u, ks in unclear.items() for k in ks}           # Kandidat -> ein Konto gleichen Namens (Waehrung, Depot)
     info = lambda k: accounts[matched[k][0] if k in matched else owner[k]]
     series = _load_series(db, plain, sorted(set(matched) | set(owner)), info, today)
-    if not series:
+    depots = _portfolios(db, plain, sorted(k for k in matched if k not in series and info(k).get("depot")), info, today)
+    if not series and not depots:
         log.info("MoneyMoney database: no balance history for the matched accounts")
         return None
     balance_at = balance_at or (lambda _u, _d, _v: None)
@@ -584,15 +627,26 @@ def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at
     log.info("MoneyMoney database: %s/%s, scale %s: %d of %d days match; %d of %d accounts with transactions, %d of %d without (portfolios)",
              mode[0], "value date" if mode[2] else "booking date", scale, all_hits, all_n, hits, len(with_tx), sum(1 for k in dep if ok[k]), len(dep))
     konten: Dict[str, Dict[str, float]] = {}
+    anfang: Dict[str, float] = {}                       # Stand vor dem ersten uebernommenen Monat (vor der ersten Veraenderung)
     for k in series:
         if k in matched and ok.get(k):
-            vals = _month_ends(days[k][use[k]], use[k], mode[1], scale, info(k).get("saldo") or 0.0, today)
+            bal = info(k).get("saldo") or 0.0
+            vals = _month_ends(days[k][use[k]], use[k], mode[1], scale, bal, today)
             if vals:
                 konten[matched[k][0]] = vals
+                if use[k] == "delta":
+                    anfang[matched[k][0]] = round(bal - sum(days[k]["delta"].values()) * scale, 2)
+    for k, r in depots.items():
+        if "fehler" in r:
+            log.info("MoneyMoney database: portfolio (%s) not taken over: %s", matched[k][1], r["fehler"])
+        elif r["werte"]:
+            konten[matched[k][0]], anfang[matched[k][0]] = r["werte"], r["anfang"]
+    log.info("MoneyMoney database: %d of %d portfolios from portfolio_chart", sum(1 for r in depots.values() if "werte" in r), len(depots))
     if not konten:
         return None
-    tabellen = sorted({series[k][0] for k in series if k in matched and ok.get(k)})
-    return {"tabelle": "+".join(tabellen), "spalten": ["account_key", "timestamp", "balance"], "konten": konten, "treffer": hits, "geprueft": len(with_tx)}
+    tabellen = sorted({series[k][0] for k in series if k in matched and ok.get(k)} | ({"portfolio_chart"} if any("werte" in r for r in depots.values()) else set()))
+    return {"tabelle": "+".join(tabellen), "spalten": ["account_key", "timestamp", "balance"], "konten": konten, "anfang": anfang,
+            "treffer": hits, "geprueft": len(with_tx)}
 
 
 def run(buf: bytearray, accounts: Dict[str, Dict], today: date, keys_fn: Optional[Callable[[bytes], List[bytearray]]] = None,

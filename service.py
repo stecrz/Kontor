@@ -287,7 +287,7 @@ class App:
                 konten = found["konten"]
                 monate = sorted({mk for v in konten.values() for mk in v})
                 now = datetime.now().strftime("%Y-%m-%d %H:%M")
-                self.store.save(MM_HISTORY_FILE, {"stand": now, "konten": konten})
+                self.store.save(MM_HISTORY_FILE, {"stand": now, "konten": konten, "anfang": found.get("anfang") or {}})   # ersetzt den bisherigen Stand
                 meta = {"zeit": now, "konten": len(konten), "werte": sum(len(v) for v in konten.values()),
                         "depots": sum(1 for u in konten if u in ledger.accounts and ledger.accounts[u].portfolio),
                         "von": monate[0] if monate else None, "bis": monate[-1] if monate else None}
@@ -1149,7 +1149,8 @@ def make_handler(app: App):
             st = app.store.load_shared("state.json", {}) or {}
             hist = dict((st.get("historie") or {}).get(uuid) or {})
             snaps = {mk: v[uuid] for mk, v in (st.get("snapshots") or {}).items() if uuid in v}
-            mmv = dict(((app.store.load_shared(MM_HISTORY_FILE, {}) or {}).get("konten") or {}).get(uuid) or {})
+            mmh = app.store.load_shared(MM_HISTORY_FILE, {}) or {}
+            mmv, mm_start = dict((mmh.get("konten") or {}).get(uuid) or {}), (mmh.get("anfang") or {}).get(uuid)
             vcfg = (app.config.get("bilanz") or {}).get("verlauf") or {}
             explizit = next((v for ref, v in vcfg.items() if ref.split("|")[0].strip() == uuid and v in ("umsaetze", "stand")), None)
             ledger = app.ledger
@@ -1165,7 +1166,7 @@ def make_handler(app: App):
             if acc is not None:
                 today = date.today()
                 months = account_months(ledger, acc, today, list(hist) + (list(snaps) + list(mmv) if depot else []))
-                werte, hinweis, anker = account_balance_series(ledger, acc, months, q, st.get("snapshots") or {}, hist, today, app.config, mmv)
+                werte, hinweis, anker = account_balance_series(ledger, acc, months, q, st.get("snapshots") or {}, hist, today, app.config, mmv, mm_start)
                 out.update({"werte": werte, "hinweis": hinweis, "anker": anker})
                 # Pruefung der Rueckrechnung: vorgemerkte Umsaetze, Anfangssaldo vor der ersten Buchung
                 alle = ledger.transactions(uuid, booked_only=False)

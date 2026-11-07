@@ -693,7 +693,7 @@ def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: 
             changed = True
     if kc.get("lernen", True):
         before = len(kat["regeln"])
-        categorize.learn(kat, ledger, progress=lambda f: step(0.6 * f, "Kategorien: Regeln lernen"))
+        categorize.learn(kat, ledger, progress=lambda f: step(0.6 * f, tr("s_kategorien_regeln_lernen")))
         changed = changed or len(kat["regeln"]) != before or not kat.get("gelernt_am")
     if categorize.auto_assign(kat, ledger, overwrite_mm=bool(kc.get("mm_ueberschreiben")),
                                  progress=lambda f: step(0.6 + 0.3 * f, tr("s_kategorien_umsaetze_zuordnen"))):
@@ -741,11 +741,12 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
     # Fortschritt grob nach Laufzeit eines Laufs ohne Zwischenergebnisse gewichtet: Kategorien 5-25 %, Bereiche 25-75 % (nach
     # Umsatzzahl), Steuer bis 85 %, Kategorienstatistik und Umsatzliste bis 95 %, Speichern
     step = progress or (lambda f, t: None)
-    step(0.05, "Kategorien")
+    step(0.05, tr("s_schritt_kategorien"))
     kat = prepare_categories(store, ledger, config, categories, lambda f, t: step(0.05 + 0.2 * f, t))
     record_snapshot(state.setdefault("snapshots", {}), ledger.accounts.values(), today)
     # aus MoneyMoney uebernommene Kontostand-Verlaeufe (verschluesselt abgelegt, nur im Speicher in den Zustand gelegt)
-    state["historie_mm"] = (store.load_shared(MM_HISTORY_FILE, {}) or {}).get("konten") or {}
+    mmh = store.load_shared(MM_HISTORY_FILE, {}) or {}
+    state["historie_mm"], state["historie_mm_anfang"] = mmh.get("konten") or {}, mmh.get("anfang") or {}
     bereiche = bereiche_for(ledger, config)
     haupt = main_bereich(bereiche)
     roles = account_roles(ledger, config)
@@ -760,7 +761,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
     for i, b in enumerate(bereiche):
         lo, hi = 0.25 + 0.5 * done_w / total_w, 0.25 + 0.5 * (done_w + weights[i]) / total_w
         done_w += weights[i]
-        step(lo, "Bereich %s" % b["name"])
+        step(lo, tr("s_bereich_n") % b["name"])
         sub = (lambda f, t, lo=lo, hi=hi, name=b["name"]: step(lo + (hi - lo) * f, "Bereich %s: %s" % (name, t)))
         try:
             ds = build_dataset(ledger, config, state, today, b, roles, warnings if (haupt and b["id"] == haupt["id"]) else [], sub)

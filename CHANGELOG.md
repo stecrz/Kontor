@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.9.18 (2026-11-07)
+- Kontostände aus MoneyMoney, Depots: Jedes Wertpapier wird für sich gelesen (Wert zum jeweiligen Zeitpunkt); der Depotwert ist die Summe der gehaltenen Wertpapiere, ein verkauftes zählt nach seinem letzten Wert nicht mehr. Übernommen, wenn das den heutigen Depotwert ergibt.
+- Vor der ersten Aufzeichnung in MoneyMoney gilt der Stand davor (bei neuen Konten und Depots 0) statt „unbekannt“ mit dem ersten Wert. Neues Einlesen ersetzt den bisherigen Stand vollständig.
+- Verlauf-Fenster: „Monat ergänzen“ fügt den eingegebenen Monat ein; die Grafik zeigt beim Darüberfahren Monat und Stand.
+
 ## 3.9.17 (2026-11-07)
 - Kontostände aus MoneyMoney: MoneyMoney speichert je Konto und Tag die Veränderung, nicht den Saldo (Protokoll: 100 % der Tage passen so). Kontor rechnet die Monatsend-Stände jetzt wie MoneyMoney rückwärts vom aktuellen Saldo; Depots über die Wertveränderung ihrer Wertpapiere, wenn deren Summe den aktuellen Depotwert ergibt. Künftig datierte Punkte werden berücksichtigt. Die ausführliche Fehlersuche im Protokoll ist wieder entfernt.
 

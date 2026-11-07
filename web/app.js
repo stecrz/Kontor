@@ -854,7 +854,7 @@ async function openHistDrawer(uuid, vorschau) {
     <div id="hq-hinweis"></div><div id="hq-pending"></div>
     <div class="h-chart" id="h-chart"></div>
     <h3>${t('monatsstaende')}</h3>
-    <div class="row tight" id="h-addrow"><input type="month" id="h-von" style="width:140px"><button id="h-add" class="small secondary">${t('monat_davor_ergaenzen')}</button></div>
+    <div class="row tight" id="h-addrow"><input type="month" id="h-von" style="width:140px"><button id="h-add" class="small secondary">${t('monat_ergaenzen')}</button></div>
     <div class="hist-grid" id="h-grid"></div>
     <div class="actions" id="h-actions"><button id="h-save" class="small">${t('speichern')}</button><button id="h-undo" class="small secondary hidden">${t('verwerfen')}</button><button id="h-clear" class="small secondary">${t('alle_eigenen_werte_loeschen')}</button></div>
     <div id="h-importbox"><h3>${t('import_aus_saldenexport')}</h3><div class="small muted">${t('csv_mit_datum_saldo_ein')}</div>
@@ -871,7 +871,14 @@ async function openHistDrawer(uuid, vorschau) {
     finally { $$('.hq-q', d).forEach(x => { x.disabled = false; }); }
   });
   $('#h-undo', d).onclick = async () => { try { renderHist(await api('/api/history?account=' + encodeURIComponent(uuid) + '&source=' + HD.r.quelle_gespeichert)); } catch (e) { toast(e.message, 6000); } };
-  $('#h-add', d).onclick = () => { const v = $('#h-von', d).value; if (!v) return; let [yy, mm] = v.split('-').map(Number); mm--; if (mm < 1) { mm = 12; yy--; } const mk = `${yy}-${String(mm).padStart(2, '0')}`; $('#h-von', d).value = mk; $('#h-grid', d).insertAdjacentHTML('afterbegin', `<label>${ML(mk)}<input type="text" data-mk="${mk}" class="auto" value=""></label>`); };
+  $('#h-add', d).onclick = () => {
+    // eingegebenen Monat hinzufuegen (gibt es ihn schon, wird sein Feld gewaehlt); Liste bleibt nach Monaten sortiert
+    const mk = $('#h-von', d).value; if (!/^\d{4}-\d{2}$/.test(mk)) return;
+    const have = $(`#h-grid input[data-mk="${mk}"]`, d); if (have) { have.focus(); return; }
+    const next = $$('#h-grid input', d).find(i => i.dataset.mk > mk), html = `<label>${ML(mk)}<input type="text" data-mk="${mk}" class="auto" value=""></label>`;
+    if (next) next.parentNode.insertAdjacentHTML('beforebegin', html); else $('#h-grid', d).insertAdjacentHTML('beforeend', html);
+    $(`#h-grid input[data-mk="${mk}"]`, d).focus();
+  };
   $('#h-save', d).onclick = async () => {
     const werte = {}; if (HD.r.quelle === 'stand') $$('#h-grid input', d).forEach(i => { if (!i.classList.contains('auto') || i.value.trim()) werte[i.dataset.mk] = i.value.trim() === '' ? null : i.value.trim(); });
     const body = {konto: uuid, werte}; if (HD.r.quelle !== HD.r.quelle_gespeichert) body.quelle = HD.r.quelle;
@@ -912,12 +919,14 @@ function renderHist(r) {
     if (!stand) return `<label>${ML(mk)}<input type="text" data-mk="${mk}" class="auto" value="" placeholder="${val}" disabled></label>`;
     return `<label class="${anker.has(mk) && !own ? 'rec' : ''}"${!own && (r.moneymoney || {})[mk] != null ? ` title="${t('aus_moneymoney_2')}"` : ''}>${ML(mk)}<input type="text" data-mk="${mk}" class="${own ? '' : 'auto'}" value="${own ? F(man[mk]) : ''}" placeholder="${val}"></label>`;
   }).join('');
-  $('#h-von', d).value = months[0] || new Date().toISOString().slice(0, 7);
+  const pre = months[0] ? new Date(+months[0].slice(0, 4), +months[0].slice(5) - 2, 15) : new Date();   // Vorschlag: Monat vor dem ersten
+  $('#h-von', d).value = `${pre.getFullYear()}-${String(pre.getMonth() + 1).padStart(2, '0')}`;
   $('#h-addrow', d).classList.toggle('hidden', !stand);
   $('#h-actions', d).classList.toggle('hidden', !stand && !pending);
   $('#h-clear', d).classList.toggle('hidden', !stand); $('#h-undo', d).classList.toggle('hidden', !pending);
   const g = $('#h-grid', d); if (g) g.scrollTop = g.scrollHeight;          // neueste Monate sichtbar
-  $('#h-chart', d).innerHTML = histChart(months.filter(mk => werte[mk] != null).map(mk => [mk, werte[mk]]));
+  const hp = months.filter(mk => werte[mk] != null).map(mk => [mk, werte[mk]]);
+  $('#h-chart', d).innerHTML = histChart(hp); bindHistChart($('#h-chart', d), hp);
 }
 function histChart(pts) {
   // Verlauf des Kontos im Fenster: Monatsend-Staende als Linie mit Flaeche, Nulllinie, Jahre unten
@@ -931,7 +940,21 @@ function histChart(pts) {
   pts.forEach(([mk], i) => { if (mk.endsWith('-01') && (+mk.slice(0, 4)) % every === 0 && x(i) > P.l + 10 && x(i) < W - 14) g += `<line class="bch-year" x1="${f(x(i))}" x2="${f(x(i))}" y1="${P.t}" y2="${H - P.b}"/><text class="bch-x" x="${f(x(i))}" y="${H - 4}">${mk.slice(0, 4)}</text>`; });
   const line = pts.map((p, i) => (i ? 'L' : 'M') + f(x(i)) + ' ' + f(y(p[1]))).join('');
   g += `<path class="h-area" d="${line}L${f(x(n))} ${f(y(0))}L${f(x(0))} ${f(y(0))}Z"/><path class="h-line" d="${line}"/>`;
-  return `<svg viewBox="0 0 ${W} ${H}" class="h-svg">${g}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" class="h-svg">${g}<g class="h-hover"></g></svg>`;
+}
+function bindHistChart(box, pts) {
+  // Zeigen: Stand zum Monat unter dem Zeiger (Linie, Punkt, Monat und Betrag)
+  const svg = $('svg', box); if (!svg || pts.length < 2) return;
+  const W = 420, H = 130, P = {l: 46, r: 6, t: 8, b: 18}, n = pts.length - 1, vals = pts.map(p => p[1]);
+  let max = Math.max(...vals, 0), min = Math.min(...vals, 0); if (max === min) max = min + 1;
+  const x = i => P.l + i * (W - P.l - P.r) / n, y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min), hv = $('.h-hover', svg);
+  svg.addEventListener('pointermove', e => {
+    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * W / r.width, i = Math.max(0, Math.min(n, Math.round((px - P.l) * n / (W - P.l - P.r))));
+    const [mk, v] = pts[i], xi = x(i), right = xi > W * 0.6, lab = `${ML(mk)}: ${F(v)}`;
+    hv.innerHTML = `<line class="bch-cross" x1="${xi.toFixed(1)}" x2="${xi.toFixed(1)}" y1="${P.t}" y2="${H - P.b}"/><circle class="bch-dot" cx="${xi.toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.5"/>`
+      + `<text class="h-lab" x="${(right ? xi - 6 : xi + 6).toFixed(1)}" y="${P.t + 10}" text-anchor="${right ? 'end' : 'start'}">${esc(lab)}</text>`;
+  });
+  svg.addEventListener('pointerleave', () => { hv.innerHTML = ''; });
 }
 const HD = {uuid: null, live: false, r: null};
 const drawerDirty = () => $$('#drawer #h-grid input:not(.auto)').some(i => i.value !== i.defaultValue) || !!($('#drawer #h-csv') && $('#drawer #h-csv').value.trim());

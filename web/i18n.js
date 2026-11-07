@@ -2,6 +2,9 @@
    Genutzt von der Oberflaeche (app.js: t()) und vom Dienst (i18n.py: tr()). */
 'use strict';
 const I18N = {
+"s_schritt_kategorien":["Kategorien", "Categories"],
+"s_kategorien_regeln_lernen":["Kategorien: Regeln lernen", "Categories: learning rules"],
+"s_bereich_n":["Bereich %s", "Area %s"],
 "lesen_accounts":["Konten werden gelesen …", "Reading accounts …"],
 "lesen_transactions":["Umsätze werden gelesen …", "Reading transactions …"],
 "lesen_parse":["Umsätze werden verarbeitet …", "Processing transactions …"],
@@ -575,7 +578,7 @@ const I18N = {
 "verlauf_aus_0":["Verlauf aus {0}", "History from {0}"],
 "kontostaenden":["Kontoständen", "balances"],
 "monatsstaende":["Monatsstände", "Monthly balances"],
-"monat_davor_ergaenzen":["Monat davor ergänzen", "Add previous month"],
+"monat_ergaenzen":["Monat ergänzen", "Add month"],
 "verwerfen":["Verwerfen", "Discard"],
 "alle_eigenen_werte_loeschen":["Alle eigenen Werte löschen", "Delete all own values"],
 "import_aus_saldenexport":["Import aus Saldenexport", "Import from balance export"],
