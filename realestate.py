@@ -36,6 +36,7 @@ import copy
 import math
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
+from i18n import tr
 
 MONATE = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
 
@@ -101,7 +102,7 @@ def normalize(obj: dict) -> dict:
         l.setdefault("abrechnung", "monatlich")
         l.setdefault("sondertilgungen", [])
         l.setdefault("faelligkeit_art", "offen")
-    o.setdefault("gesellschafter", [{"name": "Eigentümer", "anteil_prozent": 100, "steuersatz_prozent": 42}])
+    o.setdefault("gesellschafter", [{"name": tr("s_eigentuemer"), "anteil_prozent": 100, "steuersatz_prozent": 42}])
     o.setdefault("ausschuettung_prozent", 48)
     o.setdefault("steuererstattung_in_cashflow", True)
     o.setdefault("wertentwicklung_prozent", 2.0)
@@ -137,14 +138,14 @@ def pruefe(o: dict) -> None:
     """Eingaben pruefen; wirft ValueError mit verstaendlicher Meldung (Feldname) statt still zu rechnen."""
     def num(v, label, lo=None, hi=None):
         if not _is_num(v):
-            raise ValueError("%s: keine Zahl (%r)." % (label, v))
+            raise ValueError(tr("s_s_keine_zahl_r") % (label, v))
         if v in (None, ""):
             return 0.0
         x = _f(v)
         if lo is not None and x < lo:
-            raise ValueError("%s: darf nicht kleiner als %s sein." % (label, lo))
+            raise ValueError(tr("s_s_darf_nicht_kleiner_als") % (label, lo))
         if hi is not None and x > hi:
-            raise ValueError("%s: darf nicht größer als %s sein." % (label, hi))
+            raise ValueError(tr("s_s_darf_nicht_groesser_als") % (label, hi))
         return x
 
     def dat(v, label, required=False):
@@ -153,18 +154,18 @@ def pruefe(o: dict) -> None:
                 raise ValueError("%s fehlt." % label)
             return
         if _d(v) is None:
-            raise ValueError("%s: kein Datum (JJJJ-MM)." % label)
+            raise ValueError(tr("s_s_kein_datum_jjjj_mm") % label)
 
     num(o.get("kaufpreis"), "Kaufpreis", 0)
-    dat(o.get("uebergang"), "Übergang", required=True)
+    dat(o.get("uebergang"), tr("s_uebergang"), required=True)
     num(o.get("horizont_jahre"), "Horizont", 1, 60)
-    num(o.get("flaeche_qm"), "Fläche", 0)
+    num(o.get("flaeche_qm"), tr("s_flaeche"), 0)
     num(o.get("einheiten"), "Einheiten", 0)
     nk = o.get("nebenkosten") or {}
     num(nk.get("grunderwerbsteuer_prozent"), "Grunderwerbsteuer %", 0, 100)
     for k, label in (("notar", "Notar"), ("grundbuch", "Grundbuch"), ("makler", "Makler"), ("sonstige_afa", "Sonstige Nebenkosten"), ("sofort_abziehbar", "Sofort abziehbare Nebenkosten")):
         num(nk.get(k), label, 0)
-    num(o.get("gebaeudeanteil_prozent"), "Gebäudeanteil %", 0, 100)
+    num(o.get("gebaeudeanteil_prozent"), tr("s_gebaeudeanteil"), 0, 100)
     num(o.get("afa_prozent"), "AfA %", 0, 100)
     num(o.get("restnutzungsdauer_jahre"), "Restnutzungsdauer", 0, 200)
     mi = o.get("miete") or {}
@@ -181,15 +182,15 @@ def pruefe(o: dict) -> None:
     num(ix.get("schwelle_prozent"), "Schwelle %", 0, 100)
     num(ix.get("steigerung_prozent"), "Mietsteigerung %", -50, 100)
     ko = o.get("kosten") or {}
-    num(ko.get("nicht_umlagefaehig_pa"), "Kosten nicht umlagefähig", 0)
-    num(ko.get("ruecklage_pa"), "Rücklage", 0)
+    num(ko.get("nicht_umlagefaehig_pa"), tr("s_kosten_nicht_umlagefaehig"), 0)
+    num(ko.get("ruecklage_pa"), tr("s_ruecklage"), 0)
     if ko.get("steigerung") not in (None, "", "vpi", "prozent", "keine"):
         raise ValueError("Kostensteigerung: unbekannte Art %r." % ko.get("steigerung"))
     num(ko.get("steigerung_prozent"), "Kostensteigerung %", -50, 100)
     names = set()
     for i, l in enumerate(o.get("darlehen") or []):
         if not isinstance(l, dict):
-            raise ValueError("Darlehen %d: ungültig." % (i + 1))
+            raise ValueError(tr("s_darlehen_d_ungueltig") % (i + 1))
         label = "Darlehen %s" % (l.get("name") or i + 1)
         if l.get("name") in names:
             raise ValueError("%s: Name doppelt." % label)
@@ -203,27 +204,27 @@ def pruefe(o: dict) -> None:
         num(l.get("tilgung_monat"), label + " Tilgung/Monat", 0)
         num(l.get("sondertilgung_monat"), label + " Sondertilgung/Monat", 0)
         num(l.get("anschluss_zins_prozent"), label + " Anschlusszins %", 0, 100)
-        for k, lab in (("sondertilgung_ab", "Sondertilgung ab"), ("zinsbindung_bis", "Zinsbindung bis"), ("faelligkeit", "Fälligkeit"), ("beginn", "Beginn")):
+        for k, lab in (("sondertilgung_ab", "Sondertilgung ab"), ("zinsbindung_bis", tr("s_zinsbindung_bis")), ("faelligkeit", tr("s_faelligkeit")), ("beginn", "Beginn")):
             dat(l.get(k), "%s %s" % (label, lab))
         for st in l.get("sondertilgungen") or []:
             if not isinstance(st, dict):
-                raise ValueError("%s: Sondertilgung ungültig." % label)
+                raise ValueError(tr("s_s_sondertilgung_ungueltig") % label)
             dat(st.get("datum"), label + " Sondertilgung Datum", required=True)
             num(st.get("betrag"), label + " Sondertilgung Betrag", 0)
         if (l.get("art") or "annuitaet") == "annuitaet" and _f(l.get("betrag")) > 0 and not _f(l.get("annuitaet_monat")) and l.get("anfangstilgung_prozent") in (None, ""):
-            raise ValueError("%s: Annuität je Monat oder Anfangstilgung angeben." % label)
+            raise ValueError(tr("s_s_annuitaet_je_monat_oder") % label)
         if (l.get("abrechnung") or "monatlich") not in ("monatlich", "jaehrlich"):
-            raise ValueError("%s: Abrechnung muss monatlich oder jaehrlich sein." % label)
+            raise ValueError(tr("s_s_abrechnung_muss_monatlich_oder") % label)
     ges = o.get("gesellschafter") or []
     total = 0.0
     for g in ges:
         if not isinstance(g, dict):
-            raise ValueError("Gesellschafter: ungültig.")
+            raise ValueError(tr("s_gesellschafter_ungueltig"))
         total += num(g.get("anteil_prozent"), "Gesellschafter %s Anteil %%" % (g.get("name") or "?"), 0, 100)
         num(g.get("steuersatz_prozent"), "Gesellschafter %s Steuersatz %%" % (g.get("name") or "?"), 0, 100)
     if ges and abs(total - 100.0) > 0.05:
         raise ValueError("Gesellschafteranteile ergeben %.2f %% statt 100 %%." % total)
-    num(o.get("ausschuettung_prozent"), "Ausschüttung %", 0, 100)
+    num(o.get("ausschuettung_prozent"), tr("s_ausschuettung"), 0, 100)
     num(o.get("wertentwicklung_prozent"), "Wertentwicklung %", -50, 100)
     vk = o.get("verkauf") or {}
     num(vk.get("jahr"), "Verkaufsjahr", 1900, 2200)
@@ -519,15 +520,15 @@ def berechne(obj: dict, heute: Optional[date] = None) -> dict:
         if l.faelligkeit and l.faelligkeit_art == "offen" and l.faelligkeit[0] <= end_year:
             rest = next((j["darlehen"][l.name]["saldo"] for j in jahre if j["jahr"] == l.faelligkeit[0]), 0.0)
             if abs(rest) > 0.5:
-                hinweise.append("%s: fällig %02d/%d mit Restschuld %s € – Anschluss oder Rückzahlung nicht geplant (Fälligkeit → Art)."
+                hinweise.append(tr("s_s_faellig_02d_d_mit")
                                 % (l.name, l.faelligkeit[1], l.faelligkeit[0], _eur(-rest)))
         if l.zinsbindung_bis and l.anschluss_zins is None and l.zinsbindung_bis[0] <= end_year:
-            hinweise.append("%s: Zinsbindung endet %02d/%d – Anschlusszins nicht gesetzt, Zinssatz läuft unverändert weiter."
+            hinweise.append(tr("s_s_zinsbindung_endet_02d_d")
                             % (l.name, l.zinsbindung_bis[1], l.zinsbindung_bis[0]))
     if jahre:
         worst = min(jahre, key=lambda j: j["cashflow_kumuliert"])
         if worst["cashflow_kumuliert"] < -0.5:
-            hinweise.append("Kumulierter Cashflow bis %d negativ (%s €): Liquiditätsbedarf aus Eigenmitteln." % (worst["jahr"], _eur(worst["cashflow_kumuliert"])))
+            hinweise.append(tr("s_kumulierter_cashflow_bis_d_negativ") % (worst["jahr"], _eur(worst["cashflow_kumuliert"])))
     return {"eingaben": o, "kennzahlen": kennzahlen, "jahre": jahre, "monate": monate, "hinweise": hinweise,
             "darlehen_namen": [l.name for l in loans], "start": _mk(*start)}
 
@@ -592,23 +593,23 @@ def planreihen(res: dict) -> dict:
 def sheets(res: dict):
     from excel import Sheet
     o, K, J = res["eingaben"], res["kennzahlen"], res["jahre"]
-    inputs = [["Objekt", o.get("name")], ["Art", o.get("art")], ["Übergang", o.get("uebergang")], ["Kaufpreis", _f(o.get("kaufpreis"))],
+    inputs = [["Objekt", o.get("name")], ["Art", o.get("art")], [tr("s_uebergang"), o.get("uebergang")], ["Kaufpreis", _f(o.get("kaufpreis"))],
               ["Nebenkosten (AfA-Basis)", K["nebenkosten"]], ["Gesamtinvestition", K["gesamtinvestition"]], ["Eigenkapital", K["eigenkapital"]],
-              ["Gebäudeanteil %", _f(o.get("gebaeudeanteil_prozent"))], ["AfA-Satz %", K["afa_satz"]], ["AfA-Basis", K["afa_basis"]], ["AfA p.a.", K["afa_jahr"]],
+              [tr("s_gebaeudeanteil"), _f(o.get("gebaeudeanteil_prozent"))], ["AfA-Satz %", K["afa_satz"]], ["AfA-Basis", K["afa_basis"]], ["AfA p.a.", K["afa_jahr"]],
               ["Nettokaltmiete/Monat", _f(o["miete"].get("nettokalt_monat"))], ["Umlage/Monat", _f(o["miete"].get("nebenkosten_monat"))],
               ["Leerstand %", _f(o["miete"].get("leerstand_prozent"))], ["Index", str(o["miete"]["index"])],
-              ["Kosten nicht umlagefähig p.a.", _f(o["kosten"].get("nicht_umlagefaehig_pa"))], ["Rücklage p.a.", _f(o["kosten"].get("ruecklage_pa"))],
-              ["Wertentwicklung % p.a.", _f(o.get("wertentwicklung_prozent"))], ["Ausschüttung % des Ergebnisses", _f(o.get("ausschuettung_prozent"))]]
+              [tr("s_kosten_nicht_umlagefaehig_p_a"), _f(o["kosten"].get("nicht_umlagefaehig_pa"))], ["Rücklage p.a.", _f(o["kosten"].get("ruecklage_pa"))],
+              ["Wertentwicklung % p.a.", _f(o.get("wertentwicklung_prozent"))], [tr("s_ausschuettung_des_ergebnisses"), _f(o.get("ausschuettung_prozent"))]]
     for l in o.get("darlehen") or []:
-        inputs.append(["Darlehen " + str(l.get("name")), "%s € · %s %% · %s · Annuität %s · Tilgung %s · Sonder %s ab %s · Zinsbindung bis %s · Anschluss %s · Abrechnung %s" % (
+        inputs.append(["Darlehen " + str(l.get("name")), tr("s_s_s_s_annuitaet_s") % (
             _f(l.get("betrag")), _f(l.get("zins_prozent")), l.get("art"), l.get("annuitaet_monat") or "", l.get("tilgung_monat") or "", l.get("sondertilgung_monat") or "",
             l.get("sondertilgung_ab") or "", l.get("zinsbindung_bis") or "", l.get("anschluss_zins_prozent") or "", l.get("abrechnung"))])
     for g in o.get("gesellschafter") or []:
-        inputs.append(["Gesellschafter " + str(g.get("name")), "%s %% · Steuersatz %s %%" % (_f(g.get("anteil_prozent")), _f(g.get("steuersatz_prozent")))])
+        inputs.append(["Gesellschafter " + str(g.get("name")), tr("s_s_steuersatz_s") % (_f(g.get("anteil_prozent")), _f(g.get("steuersatz_prozent")))])
     kz = [[k, v] for k, v in K.items() if not isinstance(v, (list, dict))]
     names = res["darlehen_namen"]
-    head = ["Jahr", "Monate", "Miete", "Umlage", "Kosten", "Rücklage", "Zinsen", "Tilgung", "Sondertilgung", "AfA", "sofort abziehbar", "Ergebnis", "Steuer", "Ergebnis n. St.",
-            "Ausschüttung", "Cashflow", "Cashflow kum.", "Vermögensaufbau", "EK-Rendite", "Restschuld", "Objektwert", "EK im Objekt", "DSCR", "NKM/Monat", "VPI"]
+    head = ["Jahr", "Monate", "Miete", "Umlage", "Kosten", tr("s_ruecklage"), "Zinsen", "Tilgung", "Sondertilgung", "AfA", "sofort abziehbar", "Ergebnis", "Steuer", "Ergebnis n. St.",
+            tr("s_ausschuettung_2"), "Cashflow", "Cashflow kum.", "Vermögensaufbau", "EK-Rendite", "Restschuld", "Objektwert", "EK im Objekt", "DSCR", "NKM/Monat", "VPI"]
     for n in names:
         head += [n + " Zins", n + " Tilgung", n + " Saldo"]
     rows = []
@@ -619,7 +620,7 @@ def sheets(res: dict):
             d = j["darlehen"][n]
             r += [d["zins"], d["tilgung"], d["saldo"]]
         rows.append(r)
-    mhead = ["Monat", "Miete", "Umlage", "Kosten", "Rücklage", "Zinsen", "Tilgung", "Sondertilgung", "AfA", "Restschuld", "Objektwert"]
+    mhead = ["Monat", "Miete", "Umlage", "Kosten", tr("s_ruecklage"), "Zinsen", "Tilgung", "Sondertilgung", "AfA", "Restschuld", "Objektwert"]
     mrows = [[m["monat"], m["miete"], m["umlage"], m["kosten"], m["ruecklage"], m["zins"], m["tilgung"], m["sondertilgung"], m["afa"], m["restschuld"], m["wert"]] for m in res["monate"]]
     return [Sheet("Eingaben", ["Parameter", "Wert"], inputs, widths=[34, 80], freeze="A2"),
             Sheet("Kennzahlen", ["Kennzahl", "Wert"], kz, widths=[34, 20], freeze="A2"),

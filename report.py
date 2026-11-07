@@ -35,6 +35,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
 from rules import TAG_RE
+from i18n import tr
 
 ROLES = ["liquiditaet", "wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte", "forderungen", "sonstiges", "verbindlichkeiten",
          "eigenkapital", "eventual", "ignorieren"]
@@ -42,6 +43,17 @@ ROLE_LABELS = {"liquiditaet": "Liquidität", "wertpapiere": "Wertpapiere & Depot
                "beteiligungen": "Beteiligungen", "sachwerte": "Sachwerte", "forderungen": "Forderungen (verliehenes Geld)", "sonstiges": "Sonstiges",
                "verbindlichkeiten": "Darlehen & Verbindlichkeiten", "eigenkapital": "Kapitalkonten (Eigenkapital)",
                "eventual": "Avale & Bürgschaften", "ignorieren": "nicht bilanzieren"}
+ROLE_KEYS = {"liquiditaet": "liquiditaet", "wertpapiere": "wertpapiere_depots", "anlagen": "geldanlagen", "immobilien": "immobilien",
+             "beteiligungen": "beteiligungen", "sachwerte": "sachwerte", "forderungen": "forderungen_verliehenes_geld", "sonstiges": "sonstiges",
+             "verbindlichkeiten": "darlehen_verbindlichkeiten", "eigenkapital": "role_eigenkapital", "eventual": "role_eventual",
+             "ignorieren": "nicht_bilanzieren"}       # Schluessel in web/i18n.js
+
+
+def role_label(role: str) -> str:
+    """Name einer Bilanzposition in der eingestellten Sprache."""
+    return tr(ROLE_KEYS[role]) if role in ROLE_KEYS else ROLE_LABELS.get(role, role)
+
+
 OFF_BALANCE = {"eigenkapital", "eventual", "ignorieren"}      # nicht im Nettovermoegen
 ASSET_ROLES = {"wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte"}
 ILLIQUID_DEFAULT = ["anlagen", "beteiligungen", "immobilien", "sachwerte", "forderungen", "sonstiges"]
@@ -153,83 +165,6 @@ def verlauf_quelle(acc: Account, verlauf_cfg: Dict[str, str]) -> str:
     return "stand" if acc.portfolio else "umsaetze"
 
 
-_KAUF_RE = re.compile(r"kauf|sparplan|wertpapier|order|ausf(ü|ue)hrung|execution|buy", re.I)
-_VERKAUF_RE = re.compile(r"verkauf|sale|sell|r(ü|ue)ckzahlung.*wertpapier|einl(ö|oe)sung", re.I)
-_NICHT_RE = re.compile(r"dividende|aussch(ü|ue)ttung|zins|steuer|geb(ü|ue)hr|entgelt", re.I)
-
-
-def verrechnungskonto_fuer(ledger: Ledger, depot: Account, config: dict) -> Optional[str]:
-    """Verrechnungskonto eines Depots: konfiguriert (bilanz.verrechnung) oder erkannt an Kauf-/Verkaufsumsaetzen
-    eines Girokontos derselben Gruppe bzw. Bank."""
-    cfg = (config.get("bilanz") or {}).get("verrechnung") or {}
-    cache = ledger.__dict__.setdefault("_verrechnung_cache", {})
-    key = (depot.uuid, json.dumps(cfg, sort_keys=True))
-    if key not in cache:
-        cache[key] = _verrechnungskonto_fuer(ledger, depot, cfg)
-    return cache[key]
-
-
-def _verrechnungskonto_fuer(ledger: Ledger, depot: Account, cfg: dict) -> Optional[str]:
-    for dref, gref in cfg.items():
-        try:
-            if ledger.resolve(dref).uuid == depot.uuid:
-                if str(gref).strip().lower() in ("", "keine", "-"):
-                    return None
-                return ledger.resolve(gref).uuid
-        except KeyError:
-            continue
-    # automatisch bei derselben Bank (Bankleitzahl); ohne Bankleitzahl (z. B. Broker ueber eine Erweiterung) nur innerhalb der
-    # eigenen Untergruppe, und nur wenn dort kein weiteres Depot liegt -- nicht schon wegen derselben Gruppe oberster Ebene
-    same_bank = bool((depot.bank_code or "").strip())
-    parent = ledger.accounts.get(depot.parent) if depot.parent else None
-    if not same_bank:
-        if parent is None or parent.parent is None:          # direkt unter einer Gruppe oberster Ebene: zu unsicher
-            return None
-        if any(x.portfolio and x.uuid != depot.uuid for x in ledger.descendants(parent.uuid)):
-            return None
-    best, best_n = None, 0
-    for a in ledger.accounts.values():
-        if a.group or a.portfolio or a.uuid == depot.uuid:
-            continue
-        if same_bank and a.bank_code != depot.bank_code:
-            continue
-        if not same_bank and a.parent != depot.parent:
-            continue
-        n = sum(1 for t in ledger.transactions(a.uuid) if _KAUF_RE.search(t.name + " " + t.purpose + " " + t.booking_text) and not _NICHT_RE.search(t.purpose))
-        if n > best_n:
-            best, best_n = a.uuid, n
-    return best if best_n >= 3 else None
-
-
-def depot_schaetzung(ledger: Ledger, depot: Account, giro_uuid: str, mkeys: List[str], first_known: str, known_value: float) -> Dict[str, float]:
-    """Depotwert vor dem ersten bekannten Stand aus Kaeufen/Verkaeufen des Verrechnungskontos schaetzen:
-    Einstandspfad (Kaeufe - Verkaeufe, nie unter 0), skaliert auf den ersten bekannten Wert."""
-    flows: Dict[str, float] = defaultdict(float)
-    for t in ledger.transactions(giro_uuid):
-        text = " ".join((t.name, t.purpose, t.booking_text))
-        if _NICHT_RE.search(t.purpose) and not _KAUF_RE.search(t.purpose):
-            continue
-        mk = month_key(t.booking_date)
-        if t.amount < 0 and _KAUF_RE.search(text) and not _VERKAUF_RE.search(text):
-            flows[mk] += -t.amount
-        elif t.amount > 0 and _VERKAUF_RE.search(text):
-            flows[mk] -= t.amount
-    if not flows:
-        return {}
-    cum = 0.0
-    path: Dict[str, float] = {}
-    for mk in sorted(set(mkeys) | set(flows)):
-        cum = max(0.0, cum + flows.get(mk, 0.0))
-        path[mk] = cum
-    base = path.get(first_known, 0.0)
-    if base <= 0.005:
-        return {}
-    f = known_value / base
-    if f <= 0:
-        return {}
-    return {mk: round(path.get(mk, 0.0) * f, 2) for mk in mkeys if mk < first_known}
-
-
 def _valuation_account(acc: Account, src: str) -> bool:
     """Depot mit Verlauf aus Kontostaenden: Wertaenderung ist Bewertung, keine Zahlungsfluesse."""
     return src == "stand" and acc.portfolio
@@ -240,10 +175,10 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
     """Monatsend-Salden eines Kontos. Liefert (werte, hinweis, geschaetzt_bis, anker).
 
     umsaetze: heutiger Saldo minus alle spaeteren Buchungen (eigene Monatswerte zaehlen nicht).
-    stand:    bekannte Kontostaende (eigene/importierte Werte, bei Depots auch die von Kontor aufgezeichneten,
-              dazu der heutige Saldo) sind massgeblich. Konten mit Buchungen: von jedem bekannten Stand aus rueckwaerts
-              mit den Buchungen weitergerechnet. Depots: letzter bekannter Stand; davor Schaetzung aus Kaeufen/Verkaeufen
-              des Verrechnungskontos bzw. erster bekannter Wert."""
+    stand:    bekannte Kontostaende (eigene/importierte Werte, aus MoneyMoney uebernommene, bei Depots auch die von Kontor
+              aufgezeichneten, dazu der heutige Saldo) sind massgeblich. Konten mit Buchungen: von jedem bekannten Stand aus
+              rueckwaerts mit den Buchungen weitergerechnet. Depots: letzter bekannter Stand; davor (gekennzeichnet) der erste
+              bekannte Wert -- keine Schaetzung."""
     cur_key = month_key(today)
     mkeys = ["%04d-%02d" % ym for ym in months]
     past = [(y, m) for (y, m) in months if "%04d-%02d" % (y, m) < cur_key]
@@ -262,8 +197,7 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
         if any(x in t for x in NO_NEGATIVE_TYPES):
             neg = [k for k in mkeys if (h[k] or 0) < -1.0]
             if neg:
-                hinweis = ("'%s': Die Rückrechnung aus den Umsätzen ergibt negative Stände (%s bis %s), obwohl das Konto nicht ins Minus gehen kann "
-                           "-- vermutlich fehlen in MoneyMoney Umsätze. Abhilfe: Verlauf auf „Kontostände“ stellen und bekannte Stände eintragen."
+                hinweis = (tr("s_s_die_rueckrechnung_aus_den")
                            % (acc.name, neg[0], neg[-1]))
         return h, hinweis, None, [cur_key]
     if not acc.portfolio:
@@ -287,25 +221,18 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
     known[cur_key] = acc.balance
     first_known = min(known)
     # Keine Schaetzung: vor dem ersten bekannten Stand steht (gekennzeichnet) dieser erste Wert
-    est: Dict[str, float] = {}
-    giro = None
     for k in mkeys:
         if k == cur_key:
             h[k] = acc.balance
         elif k in known:
             h[k] = known[k]
         elif k < first_known:
-            h[k] = est[k] if k in est else known[first_known]
+            h[k] = known[first_known]
         else:
             prev = max((kk for kk in known if kk < k), default=first_known)
             h[k] = known[prev]
-    if est:
-        geschaetzt_bis = max(est)
-        hinweis = ("'%s': Kontostände vor %s sind aus Käufen/Verkäufen auf '%s' geschätzt -- genauer: Monatsstände eintragen oder "
-                   "MoneyMoneys Kontostand-Bericht importieren (Einrichtung → Konten)." % (acc.name, first_known, ledger.accounts[giro].name))
-    elif mkeys and mkeys[0] < first_known and abs(known[first_known]) > 0.005:
-        hinweis = ("'%s': Kontostände vor %s sind mit dem ersten bekannten Wert fortgeschrieben -- unter Bilanz → Verlauf "
-                   "lassen sich Monatsstände eintragen oder aus einem Saldenexport laden." % (acc.name, first_known))
+    if mkeys and mkeys[0] < first_known and abs(known[first_known]) > 0.005:
+        hinweis = (tr("s_s_kontostaende_vor_s_sind") % (acc.name, first_known))
     return h, hinweis, geschaetzt_bis, sorted(known)
 
 
@@ -313,7 +240,7 @@ def balance_history(ledger: Ledger, leaves: List[Account], months: List[Tuple[in
                     historie: Dict[str, Dict[str, float]], verlauf_cfg: Dict[str, str], today: date, config: Optional[dict] = None,
                     historie_mm: Optional[Dict[str, Dict[str, float]]] = None):
     """uuid -> {JJJJ-MM: Saldo am Monatsende}. Liefert zusaetzlich Hinweise, die Quelle je Konto und
-    je Konto den letzten geschaetzten Monat (Depots ohne Historie: Schaetzung aus Kaeufen/Verkaeufen)."""
+    ein leeres Feld fuer frueher geschaetzte Monate (Schaetzung entfallen)."""
     warnings: List[str] = []
     hist: Dict[str, Dict[str, Optional[float]]] = {}
     quelle: Dict[str, str] = {}
@@ -627,9 +554,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         R.meta.setdefault((target, key[1]), meta)
 
     if unclear:
-        warnings.append("%d Umbuchung(en) ohne erkennbaren Partner oder Konto ohne Position (Sektion 'Unklar'). "
-                        "Kategorie 'Umbuchung' nur für Konto-zu-Konto-Transfers verwenden, Gegen-IBAN prüfen, "
-                        "Position unter Bilanz → Konten setzen." % unclear)
+        warnings.append(tr("s_d_umbuchung_en_ohne_erkennbaren") % unclear)
     return R, inbound, warnings
 
 
@@ -668,11 +593,11 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         except KeyError:
             pass
 
-    step(0.05, "Monatsstände")
+    step(0.05, tr("s_monatsstaende"))
     historie_mm = state.get("historie_mm") or {}
     hist, warn_h, quelle, geschaetzt = balance_history(ledger, leaves, months, snapshots, historie, verlauf_cfg, today, config, historie_mm)
     fortgeschrieben = dict(getattr(balance_history, "fortgeschrieben", {}) or {})
-    step(0.3, "Zahlungsströme")
+    step(0.3, tr("s_zahlungsstroeme"))
     ckey = (getattr(ledger, "_kat_sig", None), tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
             json.dumps(config.get("kapitalfluss") or {}, sort_keys=True, default=str), tuple(months[0]) if months else None,
             tuple(months[-1]) if months else None, len(months), tuple(sorted(quelle.items())))
@@ -724,7 +649,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
             continue
         werte = {mk: round(sum((hist[a.uuid][mk] or 0.0) for a in accs), 2) for mk in mkeys}
         pos_sums[role] = werte
-        bilanz_rows.append({"id": "pos:" + role, "name": ROLE_LABELS[role], "pfad": ROLE_LABELS[role], "ebene": 0, "gruppe": True,
+        bilanz_rows.append({"id": "pos:" + role, "name": role_label(role), "pfad": role_label(role), "ebene": 0, "gruppe": True,
                             "rolle": role, "illiquide": role in illiquid_roles, "depot": False, "offline": False, "inaktiv": False,
                             "passiva": role == "verbindlichkeiten", "werte": werte, "anzahl": len(accs),
                             "inaktive": sum(1 for a in accs if a.uuid in inactive)})
@@ -804,7 +729,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         "wurzel": bereich["name"],
         "bereich": {"id": bereich["id"], "name": bereich["name"], "art": bereich.get("art"), "anteil": bereich.get("anteil")},
         "bilanz": {"zeilen": bilanz_rows, "baum": baum, "nettovermoegen": nw, "aktiva": aktiva, "passiva": passiva,
-                   "liquides_nettovermoegen": liquid_nw, "positionen": {r: ROLE_LABELS[r] for r in pos_sums}, "ausserhalb": ausserhalb},
+                   "liquides_nettovermoegen": liquid_nw, "positionen": {r: role_label(r) for r in pos_sums}, "ausserhalb": ausserhalb},
         "kapitalfluss": {"sektionen": sektionen, "ueberleitung": ueberleitung},
         "darlehen_konfig": loans_cfg,
         "konten_inaktiv": sorted(inactive),

@@ -19,12 +19,13 @@ import sys
 import threading
 import time
 from typing import Dict, Optional
+from i18n import tr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOUCHID_SRC = os.path.join(HERE, "touchid.swift")
 # Der Dateiname erscheint im macOS-Dialog ("Kontor möchte die Finanzübersicht entsperren")
 TOUCHID_BIN = os.path.join(HERE, ".touchid", "Kontor")
-TOUCHID_REASON = "die Finanzübersicht entsperren"
+TOUCHID_REASON = "s_touchid_reason"          # Schluessel in web/i18n.js (Text im macOS-Fenster)
 PBKDF2_ROUNDS = 600_000
 
 
@@ -134,7 +135,7 @@ def touchid_available() -> bool:
 def build_touchid(force: bool = False) -> str:
     """Touch-ID-Helfer uebersetzen (macOS, Xcode Command Line Tools). Ohne force nur, wenn er fehlt oder aelter als die Quelle ist."""
     if sys.platform != "darwin":
-        return "nicht macOS"
+        return tr("s_nicht_macos")
     if not force and touchid_available() and os.path.getmtime(TOUCHID_BIN) >= os.path.getmtime(TOUCHID_SRC):
         return "ok"
     try:
@@ -151,10 +152,11 @@ def build_touchid(force: bool = False) -> str:
             return "ok"
         return "swiftc-Fehler: " + (r.stderr or r.stdout)[-300:]
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:
-        return "swiftc nicht verfügbar (%s) -- Xcode Command Line Tools: xcode-select --install" % e
+        return tr("s_swiftc_nicht_verfuegbar_s_xcode") % e
 
 
-def touchid_verify(reason: str = TOUCHID_REASON) -> bool:
+def touchid_verify(reason: str = "") -> bool:
+    reason = reason or tr(TOUCHID_REASON)
     if not touchid_available():
         return False
     try:

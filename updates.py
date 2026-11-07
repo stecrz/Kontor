@@ -22,6 +22,7 @@ import urllib.request
 from urllib.parse import urlparse
 import zipfile
 from typing import Dict, Optional, Tuple
+from i18n import tr
 
 log = logging.getLogger("kontor.update")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -46,13 +47,13 @@ def _vtuple(v: str) -> Tuple[int, ...]:
 def _get(url: str, accept: str = "application/vnd.github+json") -> bytes:
     host = urlparse(url).netloc
     if host not in ALLOWED_HOSTS or not url.startswith("https://"):
-        raise ValueError("Adresse nicht erlaubt: %s" % url)
+        raise ValueError(tr("s_adresse_nicht_erlaubt_s") % url)
     req = urllib.request.Request(url, headers={"User-Agent": "Kontor-Update", "Accept": accept})
     log.debug("GET %s (Accept: %s)", url, accept)
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
         final = r.geturl()
         if urlparse(final).netloc not in ALLOWED_HOSTS:
-            raise ValueError("Umleitung auf fremden Host: %s" % final)
+            raise ValueError(tr("s_umleitung_auf_fremden_host_s") % final)
         data = r.read()
         log.debug("GET %s -> %s, %d bytes%s", url, r.status, len(data), (" via " + final) if final != url else "")
         return data
@@ -88,7 +89,7 @@ def check(repo: str) -> Dict[str, object]:
         try:
             v = _get("https://raw.githubusercontent.com/%s/main/VERSION" % repo, "text/plain").decode("utf-8").strip()
             if not re.match(r"^v?\d+(\.\d+)*$", v):
-                raise ValueError("VERSION im Hauptzweig unlesbar: %r" % v[:40])
+                raise ValueError(tr("s_version_im_hauptzweig_unlesbar_r") % v[:40])
             out.update({"verfuegbar": v, "quelle": "main", "zip": archive_url(repo, "main", "heads")})
             try:
                 cl = _get("https://raw.githubusercontent.com/%s/main/CHANGELOG.md" % repo, "text/plain").decode("utf-8", "replace")
@@ -114,10 +115,10 @@ def check(repo: str) -> Dict[str, object]:
         out["neuer"] = _vtuple(str(out["verfuegbar"])) > _vtuple(cur)
         log.info("Update check: available %s (%s)%s", out["verfuegbar"], out["quelle"], " -- newer than installed" if out["neuer"] else "")
     except urllib.error.HTTPError as e:
-        out["fehler"] = "Update-Prüfung nicht möglich: HTTP %s bei %s (%s)" % (e.code, e.geturl(), e.reason)
+        out["fehler"] = tr("s_update_pruefung_nicht_moeglich_http") % (e.code, e.geturl(), e.reason)
         log.warning("Update check failed: %s", out["fehler"])
     except Exception as e:  # Netz aus, Repo privat, Ratenlimit ...
-        out["fehler"] = "Update-Prüfung nicht möglich: %s: %s" % (type(e).__name__, str(e)[:200])
+        out["fehler"] = tr("s_update_pruefung_nicht_moeglich_s") % (type(e).__name__, str(e)[:200])
         log.warning("Update check failed: %s", out["fehler"], exc_info=True)
     return out
 
@@ -153,7 +154,7 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
         data = _get(str(url), "*/*")
     except urllib.error.HTTPError as e:
         log.error("Update: download failed: HTTP %s at %s (%s)", e.code, e.geturl(), e.reason)
-        return {"ok": False, "text": "Download fehlgeschlagen: HTTP %s (%s) bei %s" % (e.code, e.reason, e.geturl())}
+        return {"ok": False, "text": tr("s_download_fehlgeschlagen_http_s_s") % (e.code, e.reason, e.geturl())}
     except Exception as e:
         log.error("Update: download failed: %s", e, exc_info=True)
         return {"ok": False, "text": "Download fehlgeschlagen: %s: %s" % (type(e).__name__, str(e)[:200])}
@@ -172,7 +173,7 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
             break
     if base is None:
         log.error("Update: archive without kontor.py/VERSION; roots: %s", sorted(roots)[:5])
-        return {"ok": False, "text": "Archiv enthält kein Kontor (kontor.py/VERSION fehlen)."}
+        return {"ok": False, "text": tr("s_archiv_enthaelt_kein_kontor_kontor")}
     new_version = zf.read(base + "/VERSION").decode("utf-8").strip()
     log.info("Update: archive contains version %s (%d files), program folder %s", new_version, len(names), HERE)
     tmp = tempfile.mkdtemp(prefix="kontor-update-")
@@ -212,7 +213,7 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
         restarted = schedule_restart()
         log.info("Update: service restart %s", "scheduled" if restarted else "not possible")
     return {"ok": True, "version": new_version, "dateien": changed, "neustart": restarted,
-            "text": "Version %s installiert%s." % (new_version, " -- Dienst startet neu" if restarted else " -- bitte Dienst neu starten")}
+            "text": "Version %s installiert%s." % (new_version, " -- Dienst startet neu" if restarted else tr("s_bitte_dienst_neu_starten"))}
 
 
 LABEL = "de.kontor.service"                 # launchd job of the background service

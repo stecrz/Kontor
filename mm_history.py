@@ -32,6 +32,7 @@ import tempfile
 import threading
 from datetime import date, datetime, timedelta
 from typing import Callable, Dict, List, Optional, Tuple
+from i18n import tr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HELPER_SRC = os.path.join(HERE, "mm_history.swift")
@@ -63,7 +64,7 @@ def keys_from_dialog(salt: bytes) -> List[bytearray]:
     """Helfer in einem privaten Ordner uebersetzen, Passwort im eigenen Fenster abfragen lassen, Ordner loeschen.
     Zurueck kommen nur die Schluessel je Format (bytearray, werden nach Gebrauch ueberschrieben)."""
     if sys.platform != "darwin":
-        raise HistorieError("Nur auf dem Mac möglich.")
+        raise HistorieError(tr("s_nur_auf_dem_mac_moeglich"))
     work = tempfile.mkdtemp(prefix="kontor-")          # 0700, nur fuer diesen Benutzer
     try:
         exe = os.path.join(work, "Kontor")             # der Name erscheint als Programmname im Fenster
@@ -73,8 +74,7 @@ def keys_from_dialog(salt: bytes) -> List[bytearray]:
             r = None
         if r is None or r.returncode != 0:
             subprocess.run(["xcode-select", "--install"], capture_output=True)     # macOS bietet die Installation an
-            raise HistorieError("Für das Passwortfenster fehlen Apples Entwicklerwerkzeuge – macOS bietet die Installation "
-                                "gerade an. Danach erneut versuchen.")
+            raise HistorieError(tr("s_fuer_das_passwortfenster_fehlen_apples"))
         proc = subprocess.Popen([exe, salt.hex()] + ["%s:%d" % (h, n) for _x, h, n in FORMATS],
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, env={"PATH": "/usr/bin:/bin"})
         buf = bytearray(1024)
@@ -89,7 +89,7 @@ def keys_from_dialog(salt: bytes) -> List[bytearray]:
         except subprocess.TimeoutExpired:
             proc.kill()
             _wipe(buf)
-            raise HistorieError("Keine Eingabe im Passwortfenster (Zeitlimit).")
+            raise HistorieError(tr("s_keine_eingabe_im_passwortfenster_zeitl"))
         if code == 1:
             _wipe(buf)
             raise HistorieError("abgebrochen")
@@ -105,7 +105,7 @@ def keys_from_dialog(salt: bytes) -> List[bytearray]:
         if code != 0 or len(keys) != len(FORMATS) or any(len(k) != 32 for k in keys):
             for k in keys:
                 _wipe(k)
-            raise HistorieError("Das Passwortfenster konnte nicht angezeigt werden.")
+            raise HistorieError(tr("s_das_passwortfenster_konnte_nicht_angez"))
         return keys
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -129,12 +129,12 @@ def _aes_cbc() -> Callable[[bytearray, bytes, bytearray, int, int], None]:
             moved = ctypes.c_size_t(0)
             st = fn(1, 0, 0, ctypes.addressof(k), len(key), iv, ctypes.addressof(area), n, ctypes.addressof(area), n, ctypes.byref(moved))
             if st != 0 or moved.value != n:
-                raise HistorieError("Entschlüsselung fehlgeschlagen (%d)." % st)
+                raise HistorieError(tr("s_entschluesselung_fehlgeschlagen_d") % st)
         return dec
     try:   # andere Systeme (nur Tests)
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     except ImportError:  # pragma: no cover
-        raise HistorieError("Entschlüsselung nur auf dem Mac verfügbar.")
+        raise HistorieError(tr("s_entschluesselung_nur_auf_dem_mac"))
 
     def dec2(key: bytearray, iv: bytes, buf: bytearray, off: int, n: int) -> None:
         d = Cipher(algorithms.AES(bytes(key)), modes.CBC(bytes(iv))).decryptor()
@@ -172,7 +172,7 @@ def decrypt_in_place(buf: bytearray, keys: List[bytearray]) -> str:
                     dec(key, iv, buf, base + start, page - reserve - start)
                 buf[0:16] = SQLITE_HEADER
                 return name
-    raise HistorieError("Passwort falsch (oder unbekanntes Datenbankformat).")
+    raise HistorieError(tr("s_passwort_falsch_oder_unbekanntes_daten"))
 
 
 # -- Datenbank im Arbeitsspeicher (SQLite direkt auf dem Puffer, ohne Kopie) ------------------------------
@@ -189,7 +189,7 @@ def _sqlite_lib():
             return lib
         except (OSError, AttributeError, TypeError):
             continue
-    raise HistorieError("SQLite ohne Speicherfunktion gefunden – bitte Claude Bescheid geben.")
+    raise HistorieError(tr("s_sqlite_ohne_speicherfunktion_gefunden"))
 
 
 class MemDB:
@@ -213,11 +213,11 @@ class MemDB:
         self._area = (ctypes.c_char * len(buf)).from_buffer(buf)
         if lib.sqlite3_open(b":memory:", ctypes.byref(self.db)) != 0:
             self.close()
-            raise HistorieError("SQLite konnte nicht geöffnet werden.")
+            raise HistorieError(tr("s_sqlite_konnte_nicht_geoeffnet_werden"))
         # 4 = SQLITE_DESERIALIZE_READONLY: SQLite liest direkt aus dem Puffer, aendert und vergroessert ihn nie
         if lib.sqlite3_deserialize(self.db, b"main", ctypes.addressof(self._area), len(buf), len(buf), 4) != 0:
             self.close()
-            raise HistorieError("Datenbank konnte nicht geöffnet werden.")
+            raise HistorieError(tr("s_datenbank_konnte_nicht_geoeffnet_werde"))
         for pragma in ("query_only = 1", "temp_store = MEMORY", "mmap_size = 2147418112", "cache_size = -256"):
             self.rows("PRAGMA " + pragma)          # mmap: Seiten direkt aus dem Puffer statt Kopien im Seitencache
         self.rows("SELECT count(*) FROM sqlite_master")
@@ -293,11 +293,11 @@ def schema_text(tables: List[Dict], fmt: str) -> str:
 def receive(rfile, n: int) -> bytearray:
     """Hochgeladene Datei direkt in einen Puffer lesen (keine Zwischenkopie)."""
     if n <= 0 or n > MAX_DB:
-        raise HistorieError("Keine oder zu große Datei.")
+        raise HistorieError(tr("s_keine_oder_zu_grosse_datei"))
     try:
         total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
         if total and n > 0.5 * total:
-            raise HistorieError("Die Datenbank ist für den Arbeitsspeicher dieses Macs zu groß (%d MB)." % (n // 1048576))
+            raise HistorieError(tr("s_die_datenbank_ist_fuer_den") % (n // 1048576))
     except (ValueError, OSError, AttributeError):
         pass
     buf = bytearray(n)
@@ -311,7 +311,7 @@ def receive(rfile, n: int) -> bytearray:
     view.release()
     if got != n:
         _wipe(buf)
-        raise HistorieError("Datei unvollständig übertragen.")
+        raise HistorieError(tr("s_datei_unvollstaendig_uebertragen"))
     return buf
 
 
@@ -517,7 +517,7 @@ def run(buf: bytearray, accounts: Dict[str, Tuple[float, bool]], today: date,
     AKTIV.set()
     try:
         if len(buf) < 1024:
-            raise HistorieError("Das ist keine MoneyMoney-Datenbank (MoneyMoney.sqlite).")
+            raise HistorieError(tr("s_das_ist_keine_moneymoney_datenbank"))
         if bytes(buf[:16]) == SQLITE_HEADER:
             fmt = "unencrypted"
         else:
@@ -531,11 +531,11 @@ def run(buf: bytearray, accounts: Dict[str, Tuple[float, bool]], today: date,
         try:
             db = MemDB(buf)
         except sqlite3.DatabaseError:
-            raise HistorieError("Das ist keine MoneyMoney-Datenbank (MoneyMoney.sqlite).")
+            raise HistorieError(tr("s_das_ist_keine_moneymoney_datenbank"))
         try:
             return find_history(db, accounts, today), schema_of(db), fmt
         except sqlite3.DatabaseError as e:
-            raise HistorieError("Datenbank nicht lesbar (%s)." % str(e)[:80])
+            raise HistorieError(tr("s_datenbank_nicht_lesbar_s") % str(e)[:80])
     finally:
         if db is not None:
             db.close()

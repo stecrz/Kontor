@@ -16,6 +16,7 @@ from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
 from model import Ledger, Tx, fmt_eur, month_end, months_between
+from i18n import tr
 
 TAG_RE = re.compile(r"#mm-[a-z]+-[A-Za-z0-9\-]+")
 
@@ -139,10 +140,10 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
         res.warnings.append("%s: %s" % (rule, e))
         return res
     if loan.group:
-        res.warnings.append("%s: Darlehenskonto ist eine Gruppe." % rule)
+        res.warnings.append(tr("s_s_darlehenskonto_ist_eine_gruppe") % rule)
         return res
     if not loan.offline:
-        res.warnings.append("%s: Konto hat eine Bankanbindung -- es werden nur manuell geführte Konten bebucht." % rule)
+        res.warnings.append(tr("s_s_konto_hat_eine_bankanbindung") % rule)
         return res
 
     ab = date.fromisoformat(cfg["ab_datum"])
@@ -189,19 +190,19 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
     if cfg.get("erwartet_monatlich", True) and sources:
         recent = [t for t in matched if t.booking_date >= today - timedelta(days=35)]
         if not matched:
-            msg = "%s: seit %s keine passende Zahlung in den Quellkonten gefunden%s" % (
-                rule, ab.isoformat(), " -- Erkennung prüfen." if today - ab >= timedelta(days=35) else
-                " (noch keine 35 Tage; normal, falls die Rate später im Monat läuft).")
+            msg = tr("s_s_seit_s_keine_passende") % (
+                rule, ab.isoformat(), tr("s_erkennung_pruefen") if today - ab >= timedelta(days=35) else
+                tr("s_noch_keine_35_tage_normal"))
             (res.warnings if today - ab >= timedelta(days=35) else res.info).append(msg)
         elif not recent and today - timedelta(days=35) >= ab:
-            res.warnings.append("%s: letzte erkannte Zahlung am %s -- seit über 35 Tagen keine." %
+            res.warnings.append(tr("s_s_letzte_erkannte_zahlung_am") %
                                 (rule, max(t.booking_date for t in matched).isoformat()))
 
     # 2. Zinsen ------------------------------------------------------------
     zins = cfg.get("zins") or {}
     rates = zins.get("satz") or []
     if not rates:
-        res.info.append("%s: kein Zinssatz hinterlegt -- keine Zinsbuchungen." % rule)
+        res.info.append(tr("s_s_kein_zinssatz_hinterlegt_keine") % rule)
         return res
     modell = zins.get("modell", "jahresbasis")
     buchungstag = zins.get("buchungstag", "ultimo")
@@ -220,8 +221,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
             else:
                 base = None
             if base is None or rate is None:
-                res.warnings.append("%s: keine Jahresanfangsbasis/kein Zinssatz für %d -- "
-                                    "zins.basis_override[\"%d\"] setzen." % (rule, y, y))
+                res.warnings.append(tr("s_s_keine_jahresanfangsbasis_kein_zinssa") % (rule, y, y))
                 year_cache[y] = (0.0, 0.0, 0.0)
             else:
                 year_cache[y] = (base, rate, round(base * rate / 100.0, 2))
@@ -248,8 +248,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
         manual = [t for t in loan_txs if (t.booking_date.year, t.booking_date.month) == (y, m)
                   and "zins" in t.text.lower() and not TAG_RE.search(t.purpose + t.comment)]
         if manual:
-            res.warnings.append("%s: %04d-%02d enthält bereits eine manuelle Zinsbuchung (%s) -- "
-                                "uebersprungen." % (rule, y, m, fmt_eur(manual[0].amount)))
+            res.warnings.append(tr("s_s_04d_02d_enthaelt_bereits") % (rule, y, m, fmt_eur(manual[0].amount)))
             continue
 
         if modell == "jahresbasis":
@@ -299,13 +298,13 @@ def plan_mirror(ledger: Ledger, cfg: dict, today: date, roles: Optional[Dict[str
         res.warnings.append("%s: %s" % (rule, e))
         return res
     if target.group:
-        res.warnings.append("%s: Zielkonto ist eine Gruppe." % rule)
+        res.warnings.append(tr("s_s_zielkonto_ist_eine_gruppe") % rule)
         return res
     if not target.offline:
-        res.warnings.append("%s: Zielkonto hat eine Bankanbindung -- es werden nur manuell geführte Konten bebucht." % rule)
+        res.warnings.append(tr("s_s_zielkonto_hat_eine_bankanbindung") % rule)
         return res
     if source.group and any(a.uuid == target.uuid for a in ledger.descendants(source.uuid)):
-        res.warnings.append("%s: Zielkonto liegt innerhalb der Quellgruppe (Zirkelbezug)." % rule)
+        res.warnings.append(tr("s_s_zielkonto_liegt_innerhalb_der") % rule)
         return res
 
     anteil = float(cfg.get("anteil", cfg.get("faktor", 1.0)))

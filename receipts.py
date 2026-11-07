@@ -19,6 +19,7 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from storage import Store
+from i18n import tr
 
 DEFAULT_FOLDER = "~/Documents/Kontor-Belege"
 ALLOWED_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".heic", ".gif", ".txt", ".csv", ".xlsx", ".docx", ".eml", ".msg", ".zip"}
@@ -54,7 +55,7 @@ class Belege:
             os.makedirs(self.folder, exist_ok=True)
             return None
         except OSError as e:
-            return "Belegordner nicht anlegbar: %s (%s)" % (self.folder, e)
+            return tr("s_belegordner_nicht_anlegbar_s_s") % (self.folder, e)
 
     def subfolder(self, tx: Optional[dict]) -> str:
         d = (tx or {}).get("datum") or date.today().isoformat()
@@ -89,11 +90,11 @@ class Belege:
             raise OSError(err)
         ext = os.path.splitext(filename)[1].lower()
         if ext not in ALLOWED_EXT:
-            raise ValueError("Dateityp %s nicht erlaubt (%s)." % (ext or "ohne Endung", ", ".join(sorted(ALLOWED_EXT))))
+            raise ValueError(tr("s_dateityp_s_nicht_erlaubt_s") % (ext or tr("s_ohne_endung"), ", ".join(sorted(ALLOWED_EXT))))
         if len(data) > MAX_FILE:
-            raise ValueError("Datei zu groß (max. %d MB)." % (MAX_FILE // (1024 * 1024)))
+            raise ValueError(tr("s_datei_zu_gross_max_d") % (MAX_FILE // (1024 * 1024)))
         if not data:
-            raise ValueError("Leere Datei.")
+            raise ValueError(tr("s_leere_datei"))
         kennung = secrets.token_hex(3)
         sub = self.subfolder(tx)
         target_dir = os.path.join(self.folder, sub)
@@ -118,7 +119,7 @@ class Belege:
     def link_existing(self, tx: Optional[dict], rel_path: str, notiz: str = "") -> dict:
         full = os.path.normpath(os.path.join(self.folder, rel_path))
         if not full.startswith(os.path.normpath(self.folder) + os.sep) or not os.path.isfile(full):
-            raise ValueError("Datei liegt nicht im Belegordner.")
+            raise ValueError(tr("s_datei_liegt_nicht_im_belegordner"))
         entry = {"id": secrets.token_hex(3), "tx_id": (tx or {}).get("id"), "konto": (tx or {}).get("konto"), "entitaet": (tx or {}).get("entitaet"),
                  "datum": (tx or {}).get("datum") or date.today().isoformat(), "betrag": (tx or {}).get("betrag"),
                  "name": (tx or {}).get("name") or os.path.basename(rel_path), "pfad": rel_path.replace("\\", "/"),
@@ -131,10 +132,10 @@ class Belege:
         """Verknuepfung auf eine Datei ausserhalb des Belegordners (z. B. iCloud Drive). Die Datei bleibt, wo sie ist."""
         full = os.path.normpath(os.path.expanduser(abs_path))
         if not os.path.isabs(full):
-            raise ValueError("Bitte einen vollständigen Pfad angeben.")
+            raise ValueError(tr("s_bitte_einen_vollstaendigen_pfad_angebe"))
         st = file_status(full)
         if st == "fehlt":
-            raise ValueError("Datei nicht gefunden: %s" % full)
+            raise ValueError(tr("s_datei_nicht_gefunden_s") % full)
         entry = {"id": secrets.token_hex(3), "tx_id": (tx or {}).get("id"), "konto": (tx or {}).get("konto"), "entitaet": (tx or {}).get("entitaet"),
                  "datum": (tx or {}).get("datum") or date.today().isoformat(), "betrag": (tx or {}).get("betrag"),
                  "name": (tx or {}).get("name") or os.path.basename(full), "pfad": full, "extern": True,
@@ -205,7 +206,7 @@ class Belege:
         target = os.path.join(exp_dir, "Belege_%s.zip" % label)
         buf = io.StringIO()
         w = csv.writer(buf, delimiter=";")
-        w.writerow(["Datum", "Betrag", "Name", "Konto", "Entität", "Datei", "Notiz", "Umsatz-ID"])
+        w.writerow(["Datum", "Betrag", "Name", "Konto", tr("s_entitaet"), "Datei", "Notiz", "Umsatz-ID"])
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
             for e in sel:
                 full = self.full_path(e)

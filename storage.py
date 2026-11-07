@@ -24,6 +24,7 @@ import secrets
 import subprocess
 import threading
 from typing import Any, Dict, Optional, Tuple
+from i18n import tr
 
 _MISSING = object()
 CACHE_MAX_BYTES = 24 * 1024 * 1024
@@ -108,9 +109,9 @@ def _openssl(args, data: bytes, secret: str) -> bytes:
         r = subprocess.run(["openssl", "enc"] + args + ["-aes-256-cbc", "-md", "sha256", "-pass", "env:MMTOOLS_SECRET"],
                            input=data, capture_output=True, timeout=600, env=env)
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-        raise StoreError("openssl nicht verfügbar: %s" % e)
+        raise StoreError(tr("s_openssl_nicht_verfuegbar_s") % e)
     if r.returncode != 0:
-        raise StoreError("openssl-Fehler: %s" % r.stderr.decode(errors="replace")[:200])
+        raise StoreError(tr("s_openssl_fehler_s") % r.stderr.decode(errors="replace")[:200])
     return r.stdout
 
 
@@ -122,11 +123,11 @@ def encrypt(master: bytes, data: bytes) -> bytes:
 
 def decrypt(master: bytes, blob: bytes) -> bytes:
     if not blob.startswith(MAGIC) or len(blob) < len(MAGIC) + 32 + 16:
-        raise StoreError("Datei hat nicht das erwartete Format.")
+        raise StoreError(tr("s_datei_hat_nicht_das_erwartete"))
     enc_secret, mac_key = _subkeys(master)
     body, tag = blob[len(MAGIC):-32], blob[-32:]
     if not hmac.compare_digest(hmac.new(mac_key, body, hashlib.sha256).digest(), tag):
-        raise StoreError("Prüfsumme stimmt nicht -- Datei verändert oder falscher Schlüssel.")
+        raise StoreError(tr("s_pruefsumme_stimmt_nicht_datei_veraende"))
     return _openssl(["-d"], body, enc_secret)
 
 
@@ -204,7 +205,7 @@ class Store:
         try:
             obj = json.loads(raw.decode("utf-8"))
         except ValueError as e:
-            raise StoreError("%s ist kein gültiges JSON: %s" % (name, e))
+            raise StoreError(tr("s_s_ist_kein_gueltiges_json") % (name, e))
         if stamp[1] <= CACHE_MAX_BYTES:        # sehr grosse Dateien (Umsatzliste) nicht dauerhaft im Speicher halten
             with self._cache_lock:
                 self._cache[name] = (stamp, obj)

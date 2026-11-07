@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 import auth
+import i18n
 import mm_history
 import realestate
 import history_import
@@ -42,9 +43,10 @@ from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, is_running
 from core import (RUN_LOCK, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merged_config, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, accounts_from_export, ledger_from_bytes, ledger_to_bytes
-from report import ROLE_LABELS, ROLES, account_balance_series, account_months, apply_plan
+from report import ROLES, account_balance_series, account_months, apply_plan, role_label
 from storage import Store
 from excel import Sheet, workbook
+from i18n import tr
 
 log = logging.getLogger("kontor.app")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -69,6 +71,7 @@ class App:
         self.data_dir = data_dir
         self.bridge_factory = bridge_factory
         self.config = merged_config(store.load("config.json", {}) or {})
+        self.apply_language()
         self.sessions = auth.Sessions(idle_minutes=int(self.config["oberflaeche"].get("sperre_minuten", 15)))
         self.ledger: Optional[Ledger] = None            # letzter Stand aus MoneyMoney
         self.ledger_time: Optional[datetime] = None
@@ -124,11 +127,18 @@ class App:
     def save_config(self, cfg: dict) -> None:
         new = merged_config(cfg)
         changed = [k for k in sorted(set(new) | set(self.config or {})) if (self.config or {}).get(k) != new.get(k)]
+        old_lang = i18n.lang()
         self.config = new
         self.store.save("config.json", self.config)
         log.info("Configuration saved (changed: %s)", ", ".join(changed) or "nothing")
         self.sessions.set_idle(int(self.config["oberflaeche"].get("sperre_minuten", 15)))
         self._cfg_mtime = self._config_mtime()
+        self.apply_language()
+        if i18n.lang() != old_lang and self.ledger is not None:
+            self.request_rebuild("language")          # Hinweise der Auswertung in der neuen Sprache
+
+    def apply_language(self) -> None:
+        i18n.set_lang((self.config.get("oberflaeche") or {}).get("sprache") or "de")
 
     def _config_mtime(self) -> float:
         try:
@@ -144,6 +154,7 @@ class App:
         self._cfg_mtime = m
         self.config = merged_config(self.store.load("config.json", {}) or {})
         self.sessions.set_idle(int(self.config["oberflaeche"].get("sperre_minuten", 15)))
+        self.apply_language()
         log.info("Configuration reloaded (changed outside the service).")
         return True
 
@@ -244,15 +255,14 @@ class App:
         try:
             ledger = self.ledger
             if ledger is None:
-                raise mm_history.HistorieError("Erst die Konten aus MoneyMoney lesen (Einrichtung, Schritt 1).")
+                raise mm_history.HistorieError(tr("s_erst_die_konten_aus_moneymoney"))
             accounts = {a.uuid: (a.balance, a.portfolio) for a in ledger.accounts.values() if not a.group}
             found, tables, fmt = mm_history.run(buf, accounts, date.today(), step=step)
             if not found or not found["konten"]:
                 with open(aufbau, "w", encoding="utf-8") as f:       # nur Tabellen-/Spaltennamen, keine Inhalte
                     f.write(mm_history.schema_text(tables, fmt))
                 log.info("MoneyMoney database read (%s, %d tables), balances not recognized", fmt, len(tables))
-                res = {"ok": False, "text": "Die Kontostände wurden in der Datenbank nicht sicher erkannt – es wurde nichts übernommen. "
-                                             "Bitte Claude Bescheid geben (der Aufbau der Datenbank liegt ohne Inhalte im Kontor-Ordner)."}
+                res = {"ok": False, "text": tr("s_die_kontostaende_wurden_in_der")}
             else:
                 konten = found["konten"]
                 monate = sorted({mk for v in konten.values() for mk in v})
@@ -266,15 +276,15 @@ class App:
                     os.remove(aufbau)
                 log.info("Balances imported from MoneyMoney (%s): %d accounts, %d monthly values (check %d/%d)",
                          fmt, meta["konten"], meta["werte"], found["treffer"], found["geprueft"])
-                self.request_rebuild("Kontostände aus MoneyMoney")
+                self.request_rebuild(tr("s_kontostaende_aus_moneymoney"))
                 res = dict(meta, ok=True)
         except mm_history.HistorieError as e:
             if str(e) != "abgebrochen":
                 log.info("MoneyMoney database not read: %s", str(e)[:120])
-            res = {"ok": False, "text": "Abgebrochen." if str(e) == "abgebrochen" else str(e)}
+            res = {"ok": False, "text": tr("s_abgebrochen") if str(e) == "abgebrochen" else str(e)}
         except Exception:  # pragma: no cover
             log.exception("Balances from MoneyMoney")
-            res = {"ok": False, "text": "Unerwarteter Fehler – Details im Protokoll."}
+            res = {"ok": False, "text": tr("s_unerwarteter_fehler_details_im_protoko")}
         finally:
             mm_history._wipe(buf)
         self.mmh = {"laeuft": False, "schritt": None, "ergebnis": res}
@@ -284,13 +294,13 @@ class App:
         def progress(f: float, text: str) -> None:
             self.bericht_fortschritt = {"anteil": round(f, 2), "schritt": text}
         if self.ledger is None:
-            progress(0.02, "MoneyMoney wird gelesen")
+            progress(0.02, tr("s_moneymoney_wird_gelesen"))
             ledger, err = self.refresh_ledger()
             if ledger is None:
                 return False, err
         self._freeze_assignments()
         t0 = time.time()
-        progress(0.03, "wartet auf laufenden Abgleich")
+        progress(0.03, tr("s_wartet_auf_laufenden_abgleich"))
         with RUN_LOCK:          # nicht gleichzeitig mit einem Lauf (beide schreiben dataset.json)
             st = self.store.load("state.json", {}) or {}
             try:
@@ -298,7 +308,7 @@ class App:
                 self.umsaetze = ds.pop("_umsaetze", None)
             except Exception as e:  # pragma: no cover
                 log.exception("Report from last data failed")
-                return False, "Bericht fehlgeschlagen: %s" % e
+                return False, tr("s_bericht_fehlgeschlagen_s") % e
             # nur die Monats-Schnappschuesse zurueckschreiben -- Verlauf-Eingaben, die waehrend des Baus kamen, bleiben erhalten
             self.store.update("state.json", lambda cur: merge_snapshots(cur, st.get("snapshots") or {}), {})
         log.info("Report rebuilt from last data (%.1f s)", time.time() - t0)
@@ -379,12 +389,12 @@ class App:
             return self.ledger, None
         except MoneyMoneyError as e:
             log.warning("MoneyMoney not readable: %s", e)
-            return None, unavailable_text(e) or ("MoneyMoney-Fehler: %s" % e)
+            return None, unavailable_text(e) or (tr("s_moneymoney_fehler_s") % e)
 
     def do_run(self, dry: Optional[bool], force: bool, with_report: bool = True) -> dict:
         with self.lock:
             if self.running:
-                return {"status": "laeuft_bereits", "text": "Ein Abgleich läuft bereits."}
+                return {"status": "laeuft_bereits", "text": tr("s_ein_abgleich_laeuft_bereits")}
             self.running = True
         try:
             d = self.config.get("probelauf", True) if dry is None else dry
@@ -407,7 +417,7 @@ class App:
             return res
         except Exception as e:  # pragma: no cover - letzte Sicherung, damit der Dienst weiterlaeuft
             log.exception("Run failed")
-            self.last_result = {"status": "fehler", "text": "Unerwarteter Fehler: %s" % e}
+            self.last_result = {"status": "fehler", "text": tr("s_unerwarteter_fehler_s") % e}
             return self.last_result
         finally:
             self.running = False
@@ -423,7 +433,7 @@ class App:
         except MoneyMoneyError as e:
             if isinstance(e, MoneyMoneyLocked):
                 self.mm_probe = (time.time(), True)
-            elif "läuft nicht" not in str(e) and "nicht erreichbar" not in str(e):
+            elif tr("s_laeuft_nicht") not in str(e) and "nicht erreichbar" not in str(e):
                 # MoneyMoney lief, Kontor konnte aber nicht lesen (z. B. Berechtigung) -> sichtbar machen, sonst fehlen Staende
                 msg = str(e)[:200]
                 log.warning("Quick capture not possible although MoneyMoney is running: %s", msg)
@@ -593,7 +603,7 @@ class App:
                 run(bid, fremd)
         ds["einrichtung"] = not self.config_has_rules()
         ds["version"] = version()
-        ds["positionen"] = [{"id": r, "name": ROLE_LABELS[r]} for r in ROLES]
+        ds["positionen"] = [{"id": r, "name": role_label(r)} for r in ROLES]
         return ds
 
     def abruf(self) -> Optional[dict]:
@@ -678,12 +688,12 @@ EXPORT_NAMES = {"balance": "Bilanz", "cashflow": "Kapitalfluss", "planning": "Pl
 def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> List[Sheet]:
     ds = app.dataset()
     if ds.get("leer"):
-        raise ValueError("Noch keine Daten -- zuerst einen Lauf ausführen.")
+        raise ValueError(tr("s_noch_keine_daten_zuerst_einen"))
     key = bereich or ds.get("haupt") or ""
     b = (ds.get("bereiche") or {}).get(key, {})
     name = (ds.get("bereich_namen") or {}).get(key, "")
     if was in ("balance", "cashflow", "planning") and (not b or "fehler" in b):
-        raise ValueError("Bereich nicht vorhanden oder fehlerhaft.")
+        raise ValueError(tr("s_bereich_nicht_vorhanden_oder_fehlerhaf"))
 
     def columns(include_plan: bool):
         ist = b.get("monate", [])
@@ -717,7 +727,7 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> Lis
                 label = "    " + z["zeile"] + ("" if z.get("nw") else "  (Umschichtung)")
                 rows.append([label] + [round(sum(allv.get(m, 0.0) for m in ms), 2) for _, ms, _p in cols])
         sums = b.get("kapitalfluss", {}).get("summen", {})
-        for k, label in (("Operativ", "Operatives Ergebnis"), ("Cashflow", "Zahlungsfluss gesamt"), ("Nettovermoegen_delta", "Nettovermögensänderung")):
+        for k, label in (("Operativ", "Operatives Ergebnis"), ("Cashflow", "Zahlungsfluss gesamt"), ("Nettovermoegen_delta", tr("s_nettovermoegensaenderung"))):
             rows.append([label] + [round(sum((sums.get(m) or {}).get(k, 0.0) for m in ms), 2) for _, ms, _p in cols]); bold.append(len(rows) - 1)
         head = ["Position"] + [c[0] + (" (Plan)" if c[2] else "") for c in cols]
         sheets = [Sheet(("Planung " if was == "planning" else "Kapitalfluss ") + name, head, rows, bold_rows=bold)]
@@ -768,7 +778,7 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> Lis
             ums = [u for u in ums if u["entitaet"] == bereich]
         counts = Belege(app.store, app.config).counts()
         rows = [[u["datum"], u["konto_name"], u["name"], u["zweck"], u["betrag"], u["kategorie"], counts.get(u["id"], 0), u["id"]] for u in ums]
-        return [Sheet("Umsätze " + (name if bereich else ""), ["Datum", "Konto", "Name", "Verwendungszweck", "Betrag", "Kategorie", "Belege", "ID"],
+        return [Sheet(tr("s_umsaetze") + (name if bereich else ""), ["Datum", "Konto", "Name", "Verwendungszweck", "Betrag", "Kategorie", "Belege", "ID"],
                       rows, widths=[12, 26, 30, 50, 14, 30, 8, 10], freeze="A2")]
 
     if was == "holdings":
@@ -856,7 +866,7 @@ def make_handler(app: App):
         def _body(self, limit: int = MAX_BODY) -> dict:
             n = int(self.headers.get("Content-Length") or 0)
             if n > limit:
-                raise ValueError("Anfrage zu groß (%d MB, erlaubt %d MB)" % (n // 1048576, limit // 1048576))
+                raise ValueError(tr("s_anfrage_zu_gross_d_mb") % (n // 1048576, limit // 1048576))
             raw = self.rfile.read(n) if n else b""
             obj = json.loads(raw.decode("utf-8") or "{}")
             if not isinstance(obj, dict):
@@ -876,7 +886,7 @@ def make_handler(app: App):
             return urlparse(origin).netloc == (self.headers.get("Host") or "")
 
         def _static(self, path: str) -> None:
-            name = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/app.css": "app.css",
+            name = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/i18n.js": "i18n.js", "/app.css": "app.css",
                     "/icon.svg": "icon.svg", "/icon-180.png": "icon-180.png", "/icon-512.png": "icon-512.png",
                     "/manifest.webmanifest": "manifest.webmanifest", "/sw.js": "sw.js"}.get(path)
             fp = os.path.join(WEB_DIR, name) if name else None
@@ -918,7 +928,7 @@ def make_handler(app: App):
                 return None
             except Exception as e:
                 log.exception("GET %s", u.path)
-                return self._json(500, {"fehler": "Interner Fehler: %s" % e})
+                return self._json(500, {"fehler": tr("s_interner_fehler_s") % e})
 
         def _get(self, path: str, q: dict, s: dict):
             if path == "/api/status":
@@ -985,10 +995,10 @@ def make_handler(app: App):
                 bl = Belege(app.store, app.config)
                 e = next((x for x in bl.entries() if x["id"] == q.get("id")), None)
                 if e is None:
-                    return self._json(404, {"fehler": "Beleg nicht im Index."})
+                    return self._json(404, {"fehler": tr("s_beleg_nicht_im_index")})
                 full = bl.full_path(e)
                 if (not e.get("extern") and not full.startswith(os.path.normpath(bl.folder) + os.sep)) or not os.path.isfile(full):
-                    return self._json(404, {"fehler": "Datei fehlt oder nicht geladen (iCloud): %s" % e["pfad"]})
+                    return self._json(404, {"fehler": tr("s_datei_fehlt_oder_nicht_geladen") % e["pfad"]})
                 with open(full, "rb") as f:
                     data = f.read()
                 ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
@@ -997,7 +1007,7 @@ def make_handler(app: App):
             if path == "/api/export/property.xlsx":
                 im = next((x for x in app.config.get("immobilien") or [] if str(x.get("id")) == q.get("id")), None)
                 if not im:
-                    return self._json(404, {"fehler": "Immobilie nicht gefunden."})
+                    return self._json(404, {"fehler": tr("s_immobilie_nicht_gefunden")})
                 kalks = im.get("kalkulationen") or []
                 k = next((x for x in kalks if str(x.get("id")) == q.get("calculation")), None) or next((x for x in kalks if x.get("aktiv")), kalks[0] if kalks else None)
                 if not k:
@@ -1044,7 +1054,7 @@ def make_handler(app: App):
                                         "einstellungen": app.config.get("kategorien") or {}, "mm_kategorien": [str(c.get("path") or c.get("name") or "") for c in app.categories_raw]})
             if path == "/api/categories/unassigned":
                 if app.ledger is None:
-                    return self._json(200, {"offen": 0, "gruppen": [], "gruppen_gesamt": 0, "hinweis": "Noch kein Lauf -- MoneyMoney lesen."})
+                    return self._json(200, {"offen": 0, "gruppen": [], "gruppen_gesamt": 0, "hinweis": tr("s_noch_kein_lauf_moneymoney_lesen")})
                 kat = categorize.load(app.store)
                 bereich_of = {a.uuid: b["id"] for b in bereiche_for(app.ledger, app.config) for a in b["leaves"]}
                 return self._json(200, categorize.open_items(kat, app.ledger, bereich_of, int(q["year"]) if q.get("year") else None, q.get("area") or None,
@@ -1077,13 +1087,13 @@ def make_handler(app: App):
                 mm_history._wipe(tmp)
                 return self._json(code, {"ok": False, feld: text})
             if not self._is_local(s):
-                return ablehnen(403, "Nur direkt am Mac möglich.", "fehler")
+                return ablehnen(403, tr("s_nur_direkt_am_mac_moeglich"), "fehler")
             if mm_history.AKTIV.is_set() or app.mmh.get("laeuft"):
-                return ablehnen(409, "Läuft bereits – bitte das Passwortfenster beachten.", "fehler")
+                return ablehnen(409, tr("s_laeuft_bereits_bitte_das_passwortfenst"), "fehler")
             if is_running():
-                return ablehnen(200, "Bitte MoneyMoney zuerst beenden (⌘Q) und die Datei danach erneut hierher ziehen – sonst ist sie unvollständig.")
+                return ablehnen(200, tr("s_bitte_moneymoney_zuerst_beenden_q"))
             if app.ledger is None:
-                return ablehnen(200, "Erst die Konten aus MoneyMoney lesen (Einrichtung, Schritt 1).")
+                return ablehnen(200, tr("s_erst_die_konten_aus_moneymoney"))
             try:
                 buf = mm_history.receive(self.rfile, n)
             except mm_history.HistorieError as e:
@@ -1184,18 +1194,23 @@ def make_handler(app: App):
             try:
                 body = {} if u.path == "/api/history/mm-import" else self._body(MAX_UPLOAD if u.path == "/api/receipts/upload" else MAX_BODY)
             except (ValueError, json.JSONDecodeError) as e:
-                return self._json(400, {"fehler": "Ungültige Anfrage: %s" % e})
+                return self._json(400, {"fehler": tr("s_ungueltige_anfrage_s") % e})
             remote = self._remote()
 
             if u.path == "/api/setup":
                 if app.auth_record() or not self._loopback():
-                    return self._json(403, {"fehler": "Einrichtung nur einmal und nur von diesem Mac aus."})
+                    return self._json(403, {"fehler": tr("s_einrichtung_nur_einmal_und_nur")})
                 err = auth.password_ok(str(body.get("passwort", "")))
                 if err:
                     return self._json(400, {"fehler": err})
                 app.store.save("auth.json", auth.with_offline(auth.hash_password(str(body["passwort"])), str(body["passwort"])))
-                if isinstance(body.get("touchid"), bool):
-                    cfg = copy.deepcopy(app.config); cfg.setdefault("oberflaeche", {})["touchid"] = body["touchid"]; app.save_config(cfg)
+                if isinstance(body.get("touchid"), bool) or body.get("sprache") in i18n.LANGS:
+                    cfg = copy.deepcopy(app.config)
+                    if isinstance(body.get("touchid"), bool):
+                        cfg.setdefault("oberflaeche", {})["touchid"] = body["touchid"]
+                    if body.get("sprache") in i18n.LANGS:
+                        cfg.setdefault("oberflaeche", {})["sprache"] = body["sprache"]
+                    app.save_config(cfg)
                 s = app.sessions.create(remote, "passwort")
                 log.info("Password set, setup started")
                 return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
@@ -1205,7 +1220,7 @@ def make_handler(app: App):
                     return self._json(429, {"fehler": "Zu viele Fehlversuche. Bitte %d Sekunden warten." % wait})
                 rec = app.auth_record()
                 if not rec:
-                    return self._json(403, {"fehler": "Noch kein Passwort festgelegt (Einrichtung am Mac)."})
+                    return self._json(403, {"fehler": tr("s_noch_kein_passwort_festgelegt_einricht")})
                 if auth.verify_password(str(body.get("passwort", "")), rec):
                     app.sessions.clear_fails(remote)
                     if not rec.get("offline"):
@@ -1220,22 +1235,22 @@ def make_handler(app: App):
                 return self._json(401, {"fehler": "Passwort falsch."})
             if u.path == "/api/touchid":
                 if not self._loopback() or not auth.touchid_available():
-                    return self._json(403, {"fehler": "Touch ID nur an diesem Mac."})
+                    return self._json(403, {"fehler": tr("s_touch_id_nur_an_diesem")})
                 if not app.touchid_on():
-                    return self._json(403, {"fehler": "Touch ID ist in den Einstellungen ausgeschaltet."})
+                    return self._json(403, {"fehler": tr("s_touch_id_ist_in_den")})
                 if not app.auth_record():
-                    return self._json(403, {"fehler": "Zuerst ein Passwort festlegen."})
+                    return self._json(403, {"fehler": tr("s_zuerst_ein_passwort_festlegen")})
                 if auth.touchid_verify():
                     s = app.sessions.create(remote, "touchid")
                     log.info("Login with Touch ID")
                     return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
-                return self._json(401, {"fehler": "Touch ID nicht bestätigt."})
+                return self._json(401, {"fehler": tr("s_touch_id_nicht_bestaetigt")})
 
             s = self._session()
             if s is None:
                 return self._json(401, {"fehler": "nicht angemeldet"})
             if self.headers.get("X-CSRF-Token") != s["csrf"]:
-                return self._json(403, {"fehler": "CSRF-Prüfung fehlgeschlagen -- Seite neu laden."})
+                return self._json(403, {"fehler": tr("s_csrf_pruefung_fehlgeschlagen_seite_neu")})
             if u.path == "/api/history/mm-import":
                 return self._historie_einlesen(s)
             t0 = time.time()
@@ -1249,7 +1264,7 @@ def make_handler(app: App):
                 return self._json(400, {"fehler": str(e)})
             except MoneyMoneyError as e:
                 log.warning("%s %s: MoneyMoney not available: %s", self.command, u.path, e)
-                return self._json(502, {"fehler": unavailable_text(e) or ("MoneyMoney-Fehler: %s" % e)})
+                return self._json(502, {"fehler": unavailable_text(e) or (tr("s_moneymoney_fehler_s") % e)})
             except (BrokenPipeError, ConnectionResetError):
                 log.debug("%s %s: connection closed by client", self.command, u.path)
                 return None
@@ -1258,7 +1273,7 @@ def make_handler(app: App):
                 return self._json(500, {"fehler": "Dateifehler: %s" % e})
             except Exception as e:
                 log.exception("%s %s", self.command, u.path)
-                return self._json(500, {"fehler": "Interner Fehler: %s" % e})
+                return self._json(500, {"fehler": tr("s_interner_fehler_s") % e})
 
         def _is_local(self, s: dict) -> bool:
             return auth.is_loopback(s.get("remote", "")) and self._loopback()
@@ -1287,22 +1302,22 @@ def make_handler(app: App):
                     return self._json(400, {"fehler": "config fehlt"})
                 b = (cfg.get("oberflaeche") or {}).get("bind", "127.0.0.1") or "127.0.0.1"
                 if not bind_allowed(b):
-                    return self._json(400, {"fehler": "Adresse '%s' nicht erlaubt (nur 127.0.0.1 oder Tailscale 100.64.0.0/10)." % b})
+                    return self._json(400, {"fehler": tr("s_adresse_s_nicht_erlaubt_nur") % b})
                 findings = check_config(app.ledger, app.categories_raw, merged_config(cfg)) if app.ledger is not None else []
                 if any(f["stufe"] == "fehler" for f in findings) and not body.get("trotzdem"):
-                    return self._json(409, {"fehler": "Konfiguration hat Fehler", "befunde": findings})
+                    return self._json(409, {"fehler": tr("s_konfiguration_hat_fehler"), "befunde": findings})
                 app.save_config(cfg)
                 log.info("Configuration saved (%d loans, %d participations, %d mirrors)",
                          len(app.config.get("darlehen") or []), len(app.config.get("beteiligungen") or []), len(app.config.get("saldo_spiegel") or []))
                 return self._json(200, {"ok": True, "befunde": findings, "config": app.config})
             if path == "/api/check":
                 if not app.check_lock.acquire(blocking=False):
-                    return self._json(409, {"fehler": "Die Prüfung läuft bereits -- bitte warten."})
+                    return self._json(409, {"fehler": tr("s_die_pruefung_laeuft_bereits_bitte")})
                 try:
                     ledger, err = app.refresh_ledger()
                     if ledger is None:
                         return self._json(200, {"verfuegbar": False, "text": err, "befunde": []})
-                    app.request_rebuild("Verbindung geprüft")      # Auswertung auf den frischen Stand bringen (im Hintergrund)
+                    app.request_rebuild(tr("s_verbindung_geprueft"))      # Auswertung auf den frischen Stand bringen (im Hintergrund)
                     findings = check_config(ledger, app.categories_raw, app.config)
                     return self._json(200, {"verfuegbar": True, "befunde": findings, "konten": account_tree(ledger, app.config),
                                             "kategorien": app.categories()})
@@ -1313,7 +1328,7 @@ def make_handler(app: App):
                 return self._json(200, {"ok": True})
             if path == "/api/sync":
                 if app.ledger is None:
-                    return self._json(409, {"fehler": "Noch kein Stand aus MoneyMoney gelesen."})
+                    return self._json(409, {"fehler": tr("s_noch_kein_stand_aus_moneymoney")})
                 try:
                     acc = app.ledger.resolve(str(body.get("konto") or ""))
                 except KeyError as e:
@@ -1331,28 +1346,28 @@ def make_handler(app: App):
             if path == "/api/run":
                 dry = body.get("probelauf")
                 if dry is False and not local:
-                    return self._json(403, {"fehler": "Buchen nur von diesem Mac aus."})
+                    return self._json(403, {"fehler": tr("s_buchen_nur_von_diesem_mac")})
                 if app.running:
-                    return self._json(409, {"fehler": "Ein Abgleich läuft bereits."})
+                    return self._json(409, {"fehler": tr("s_ein_abgleich_laeuft_bereits")})
                 threading.Thread(target=app.do_run, args=(dry, bool(body.get("force", True))), daemon=True).start()
                 return self._json(202, {"gestartet": True})
             if path == "/api/report":
                 ledger, err = app.refresh_ledger()
                 if ledger is None:
                     return self._json(200, {"ok": False, "text": err})
-                ok, err = app.rebuild_report(wait=True, grund="Bericht aus MoneyMoney")
+                ok, err = app.rebuild_report(wait=True, grund=tr("s_bericht_aus_moneymoney"))
                 return self._json(200, {"ok": ok, "text": err})
             if path == "/api/plan":
                 return self._json(200, self._update_plan(body))
             if path == "/api/transactions/category":
                 if not local:
-                    return self._json(403, {"fehler": "Nur von diesem Mac aus möglich."})
+                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
                 if not (app.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False):
-                    return self._json(403, {"fehler": "Kategorisieren aus Kontor ist in den Einstellungen nicht erlaubt."})
+                    return self._json(403, {"fehler": tr("s_kategorisieren_aus_kontor_ist_in")})
                 ids = [int(x) for x in (body.get("ids") or [])][:200]
                 kat = str(body.get("kategorie") or "")
                 if not ids or not kat:
-                    return self._json(400, {"fehler": "ids und kategorie nötig"})
+                    return self._json(400, {"fehler": tr("s_ids_und_kategorie_noetig")})
                 b = app.bridge_factory(False)
                 for i in ids:
                     b.set_transaction(i, category=kat)
@@ -1372,7 +1387,7 @@ def make_handler(app: App):
                 cfg, unresolved, report = import_package(app.config, pkg, app.ledger, body.get("modus") or "ergaenzen", body.get("zuordnung") or {})
                 if unresolved and not body.get("trotzdem"):
                     return self._json(200, {"ok": False, "unaufgeloest": unresolved, "bericht": report,
-                                            "hinweis": "Konten zuordnen oder 'trotzdem übernehmen' (Referenzen bleiben dann als Name stehen)."})
+                                            "hinweis": tr("s_konten_zuordnen_oder_trotzdem_ueberneh")})
                 findings = check_config(app.ledger, app.categories_raw, cfg) if app.ledger is not None else []
                 app.save_config(cfg)
                 if pkg.get("plan") and body.get("mit_plan"):
@@ -1385,7 +1400,7 @@ def make_handler(app: App):
                 return self._json(200, {"info": app.update_info, "version": version()})
             if path == "/api/update/install":
                 if not local:
-                    return self._json(403, {"fehler": "Updates nur von diesem Mac aus."})
+                    return self._json(403, {"fehler": tr("s_updates_nur_von_diesem_mac")})
                 res = updates.install((app.config.get("updates") or {}).get("repo") or "stecrz/Kontor", restart=True)
                 if res.get("ok"):
                     log.info("Update installed: %s", res.get("version"))
@@ -1394,9 +1409,16 @@ def make_handler(app: App):
                 return self._json(200, self._historie_set(body))
             if path == "/api/history/import":
                 return self._json(200, self._historie_import(body))
+            if path == "/api/language":
+                if body.get("sprache") not in i18n.LANGS:
+                    raise ValueError("sprache: de|en")
+                cfg = copy.deepcopy(app.config)
+                cfg.setdefault("oberflaeche", {})["sprache"] = body["sprache"]
+                app.save_config(cfg)
+                return self._json(200, {"ok": True, "sprache": i18n.lang()})
             if path == "/api/history/mm-reveal":
                 if not self._is_local(s):
-                    return self._json(403, {"fehler": "Nur direkt am Mac möglich."})
+                    return self._json(403, {"fehler": tr("s_nur_direkt_am_mac_moeglich")})
                 mm_history.reveal()
                 return self._json(200, {"ok": True})
             if path.startswith("/api/categories/"):
@@ -1406,7 +1428,7 @@ def make_handler(app: App):
             if path.startswith("/api/file/"):
                 return self._datei(path, body, local)
             if path == "/api/report/rebuild":
-                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="Bericht neu")
+                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund=tr("s_bericht_neu"))
                 return self._json(200, {"ok": ok, "text": err, "bericht": app.bericht_status()})
             if path == "/api/backup/restore":
                 sich = body.get("sicherung") or {}
@@ -1433,7 +1455,7 @@ def make_handler(app: App):
                 return self._json(200, {"ok": True, "teile": teile, "bericht": ok, "config": app.config})
             if path == "/api/reset":
                 if not local:
-                    return self._json(403, {"fehler": "Zurücksetzen nur von diesem Mac aus."})
+                    return self._json(403, {"fehler": tr("s_zuruecksetzen_nur_von_diesem_mac")})
                 if not auth.verify_password(str(body.get("passwort", "")), app.auth_record()):
                     time.sleep(0.5)
                     return self._json(401, {"fehler": "Passwort falsch."})
@@ -1466,7 +1488,7 @@ def make_handler(app: App):
                     cfg.setdefault("belege", {})["ordner_bestaetigt"] = True
                     app.save_config(cfg)
                 elif not bcfg.get("ordner_bestaetigt"):
-                    return self._json(409, {"fehler": "Der Belegordner %s existiert noch nicht." % bl.folder, "ordner_bestaetigen": True, "ordner": bl.folder})
+                    return self._json(409, {"fehler": tr("s_der_belegordner_s_existiert_noch") % bl.folder, "ordner_bestaetigen": True, "ordner": bl.folder})
             ums = {t["id"]: t for t in (app.umsatzliste())}
             ds = app.store.load_shared("dataset.json", {}) or {}
             names = {k["uuid"]: k["name"] for k in ds.get("konten", [])}
@@ -1478,7 +1500,7 @@ def make_handler(app: App):
                     return None
                 t = ums.get(int(tid))
                 if t is None:
-                    raise ValueError("Umsatz %s nicht gefunden (Liste veraltet? Lauf ausführen)." % tid)
+                    raise ValueError(tr("s_umsatz_s_nicht_gefunden_liste") % tid)
                 return dict(t, entitaet_name=names.get(t["entitaet"], ""))
 
             if path == "/api/receipts/upload":
@@ -1513,7 +1535,7 @@ def make_handler(app: App):
                 return self._json(200, {"ok": e is not None, "eintrag": e})
             if path == "/api/receipts/open":
                 if not local:
-                    return self._json(403, {"fehler": "Nur von diesem Mac aus möglich."})
+                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
                 err = bl.ensure_folder()
                 if err:
                     return self._json(500, {"fehler": err})
@@ -1525,7 +1547,7 @@ def make_handler(app: App):
                     elif os.path.isabs(str(body["pfad"])) and os.path.exists(str(body["pfad"])):
                         target = os.path.normpath(str(body["pfad"]))
                 if sys.platform != "darwin":
-                    return self._json(400, {"fehler": "Öffnen im Finder nur unter macOS."})
+                    return self._json(400, {"fehler": tr("s_oeffnen_im_finder_nur_unter")})
                 subprocess.Popen(["open", "-R", target] if os.path.isfile(target) else ["open", target])
                 return self._json(200, {"ok": True})
             if path == "/api/receipts/export":
@@ -1559,15 +1581,6 @@ def make_handler(app: App):
                 if not hist:
                     st["historie"].pop(uuid, None)
             app.store.update("state.json", _apply, {})
-            if "verrechnung" in body:          # Depot: Konto fuer die Schaetzung aus Kaeufen/Verkaeufen ("" = automatisch, "keine")
-                cfg = copy.deepcopy(app.config)
-                vr = cfg.setdefault("bilanz", {}).setdefault("verrechnung", {})
-                for k in [k for k in vr if k.split("|", 1)[0].strip() == uuid]:
-                    vr.pop(k)
-                val = str(body.get("verrechnung") or "").strip()
-                if val:
-                    vr[uuid] = val
-                app.save_config(cfg)
             if body.get("quelle") in ("umsaetze", "stand"):
                 cfg = copy.deepcopy(app.config)
                 cfg.setdefault("bilanz", {}).setdefault("verlauf", {})
@@ -1593,12 +1606,12 @@ def make_handler(app: App):
                 except (binascii.Error, ValueError):
                     raise ValueError("Dateiinhalt unlesbar (Base64).")
                 if len(raw) > 30 * 1024 * 1024:
-                    raise ValueError("Datei zu groß (max. 30 MB).")
+                    raise ValueError(tr("s_datei_zu_gross_max_30"))
                 parsed, hints = history_import.balances_from_file(str(body.get("name") or ""), raw)
             else:
                 parsed = _parse_balance_csv(str(body.get("csv") or ""))
             if not parsed:
-                raise ValueError("Keine Werte erkannt. Erwartet: Datum, Konto (optional), Saldo -- oder eine Tabelle mit Stichtagen in einer Zeile oder Spalte.")
+                raise ValueError(tr("s_keine_werte_erkannt_erwartet_datum"))
             konten = {k["name"]: k["uuid"] for k in (app.store.load_shared("dataset.json", {}) or {}).get("konten", []) if not k["gruppe"]}
             if app.ledger is not None:
                 konten.update({a.name: a.uuid for a in app.ledger.accounts.values() if not a.group})
@@ -1612,7 +1625,7 @@ def make_handler(app: App):
                     target = (mapping.get(name) or "").split("|", 1)[0].strip() or None
                 else:
                     target = konten.get(name) or history_import.match_account(name, konten)
-                preview.append({"name": name or "(ohne Konto)", "uuid": target, "konto": uuid_name.get(target or "", ""), "anzahl": len(months), "von": min(months), "bis": max(months),
+                preview.append({"name": name or tr("s_ohne_konto"), "uuid": target, "konto": uuid_name.get(target or "", ""), "anzahl": len(months), "von": min(months), "bis": max(months),
                                 "sicher": bool(name in konten or name in mapping or (konto and (name == "" or len(parsed) == 1)))})
                 if target:
                     assign.setdefault(target, {}).update(months)
@@ -1651,7 +1664,7 @@ def make_handler(app: App):
                 ids = [int(x) for x in (body.get("ids") or [])][:5000]
                 pfad = str(body.get("kategorie") or "")
                 if not ids:
-                    raise ValueError("Keine Umsätze angegeben.")
+                    raise ValueError(tr("s_keine_umsaetze_angegeben"))
                 rule = None
                 if body.get("regel") and pfad:
                     r = dict(body["regel"]); r["kategorie"] = pfad
@@ -1688,7 +1701,7 @@ def make_handler(app: App):
                 return self._json(200, {"ok": True, "regeln": kat["regeln"], "bericht": ok})
             if path == "/api/categories/learn":
                 if app.ledger is None:
-                    return self._json(200, {"ok": False, "text": "Noch kein Lauf -- MoneyMoney lesen."})
+                    return self._json(200, {"ok": False, "text": tr("s_noch_kein_lauf_moneymoney_lesen")})
                 st = categorize.learn(kat, app.ledger)
                 n = categorize.auto_assign(kat, app.ledger, overwrite_mm=bool(body.get("mm_ueberschreiben") or (app.config.get("kategorien") or {}).get("mm_ueberschreiben")))
                 categorize.save(app.store, kat)
@@ -1736,7 +1749,7 @@ def make_handler(app: App):
                       "objekt_konto": body.get("objekt_konto") or "", "darlehen_konten": {}, "in_planung": False, "kalkulationen": [], "dokumente": [], "notizen": ""}
                 lst.append(im)
             elif im is None:
-                return self._json(404, {"fehler": "Immobilie nicht gefunden."})
+                return self._json(404, {"fehler": tr("s_immobilie_nicht_gefunden")})
             elif aktion == "loeschen":
                 lst.remove(im)
                 app.save_config(cfg)
@@ -1775,7 +1788,7 @@ def make_handler(app: App):
             elif aktion == "dokument_hinzufuegen":
                 pfad = os.path.expanduser(str(body.get("pfad") or ""))
                 if not pfad or file_status(pfad) == "fehlt":
-                    return self._json(400, {"fehler": "Datei nicht gefunden: %s" % pfad})
+                    return self._json(400, {"fehler": tr("s_datei_nicht_gefunden_s") % pfad})
                 im.setdefault("dokumente", []).append({"id": "d%d" % int(datetime.now().timestamp() * 1000 % 10 ** 9), "titel": body.get("titel") or os.path.basename(pfad),
                                                        "pfad": pfad, "art": body.get("art") or "", "hinzugefuegt": now})
             elif aktion == "dokument_entfernen":
@@ -1789,12 +1802,12 @@ def make_handler(app: App):
 
         def _datei(self, path: str, body: dict, local: bool):
             if not local:
-                return self._json(403, {"fehler": "Dateizugriff nur von diesem Mac aus."})
+                return self._json(403, {"fehler": tr("s_dateizugriff_nur_von_diesem_mac")})
             if sys.platform != "darwin":
                 return self._json(400, {"fehler": "Nur unter macOS."})
             if path == "/api/file/choose":
                 art = body.get("art") or "datei"
-                prompt = str(body.get("prompt") or "Datei wählen").replace('"', "")
+                prompt = str(body.get("prompt") or tr("s_datei_waehlen")).replace('"', "")
                 script = ('POSIX path of (choose folder with prompt "%s")' if art == "ordner" else 'POSIX path of (choose file with prompt "%s")') % prompt
                 try:
                     r = subprocess.run(["osascript", "-e", 'tell application "System Events" to activate', "-e", script], capture_output=True, text=True, timeout=600)
@@ -1811,12 +1824,12 @@ def make_handler(app: App):
             if path == "/api/file/open":
                 st = file_status(pfad)
                 if st == "fehlt":
-                    return self._json(404, {"fehler": "Datei nicht gefunden."})
+                    return self._json(404, {"fehler": tr("s_datei_nicht_gefunden")})
                 subprocess.Popen(["open", pfad])
                 return self._json(200, {"ok": True, "status": st})
             if path == "/api/file/reveal":
                 if not os.path.exists(pfad) and file_status(pfad) == "fehlt":
-                    return self._json(404, {"fehler": "Datei nicht gefunden."})
+                    return self._json(404, {"fehler": tr("s_datei_nicht_gefunden")})
                 subprocess.Popen(["open", "-R", pfad])
                 return self._json(200, {"ok": True})
             if path == "/api/file/load":

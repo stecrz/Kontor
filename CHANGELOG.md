@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.9.11
+- Bilanz mit Grafik: Zusammensetzung des Vermögens im Zeitverlauf in den Farben der Positionen, mit Nettovermögen, Plan und „heute“. Monatsgenau: Zeigen zeigt Monat und Werte, Ziehen vergrößert, 1/3/5/10 Jahre oder alles, Klick springt zur Spalte der Tabelle. Abschaltbar.
+- Tabellen (Bilanz, Kapitalfluss, Planung): Spalten rasten ein – die erste sichtbare Spalte ist nie mehr angeschnitten, auch ganz rechts.
+- Englisch als zweite Sprache: Auswahl auf der Anmeldeseite, in der Einrichtung und in den Einstellungen. Alle Texte stehen gebündelt in einem Katalog (web/i18n.js), auch die Meldungen des Dienstes.
+- Kontostände aus MoneyMoney: Bibliothek wird robuster gewählt (Fallback, falls macOS-SQLite die Speicherfunktion fehlt).
+- Entfernt: die nicht mehr genutzte Schätzung von Depotständen aus Käufen/Verkäufen samt Verrechnungskonto-Einstellung.
+
 ## 3.9.10
 - Kontostände aus MoneyMoney: Fehler nach dem Entschlüsseln behoben (Programmfehler beim Öffnen der Datenbank im Arbeitsspeicher auf dem Mac).
 

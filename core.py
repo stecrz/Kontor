@@ -22,6 +22,7 @@ from report import ROLES, account_roles, build_dataset
 from rules import Proposal, plan_all
 from storage import Store
 from tax import build_tax
+from i18n import tr
 
 log = logging.getLogger("kontor.core")
 RUN_LOCK = threading.Lock()
@@ -183,12 +184,11 @@ def fingerprint(ledger: Ledger) -> str:
 
 def unavailable_text(e: Exception) -> Optional[str]:
     if isinstance(e, MoneyMoneyNotRunning):
-        return "MoneyMoney läuft nicht."
+        return tr("s_moneymoney_laeuft_nicht")
     if isinstance(e, MoneyMoneyLocked):
-        return "MoneyMoney ist gesperrt -- bitte in MoneyMoney entsperren."
+        return tr("s_moneymoney_ist_gesperrt_bitte_in")
     if isinstance(e, MoneyMoneyNotPermitted):
-        return ("Keine Berechtigung, MoneyMoney zu steuern: Systemeinstellungen > Datenschutz & Sicherheit > "
-                "Automation -> Python/Kontor für MoneyMoney erlauben.")
+        return (tr("s_keine_berechtigung_moneymoney_zu_steue"))
     return None
 
 
@@ -301,23 +301,23 @@ def abruf_arten(ledger: Ledger, config: dict) -> Dict[str, Dict[str, str]]:
             continue
         refreshed = a.refresh is not None and a.refresh.year >= 2005
         if a.uuid in force_off:
-            art, grund = "offline", "von dir als ohne Abruf festgelegt"
+            art, grund = "offline", tr("s_von_dir_als_ohne_abruf")
         elif a.uuid in force_on:
-            art, grund = "online", "von dir als abgerufen festgelegt"
+            art, grund = "online", tr("s_von_dir_als_abgerufen_festgelegt")
         elif a.portfolio:
-            art, grund = ("online", "Depot") if refreshed else ("offline", "Depot ohne Abruf")
+            art, grund = ("online", "Depot") if refreshed else ("offline", tr("s_depot_ohne_abruf"))
         elif a.offline:
-            art, grund = "offline", "manuell geführt"
+            art, grund = "offline", tr("s_manuell_gefuehrt")
         elif a.uuid in targets:
             art, grund = "offline", "Zielkonto einer Regel"
         elif a.uuid in booked:
-            art, grund = "offline", "von Kontor bebucht"
+            art, grund = "offline", tr("s_von_kontor_bebucht")
         elif "offline" in (a.type or "").lower():
             art, grund = "offline", "Offline-Konto"
         elif not refreshed:
-            art, grund = "offline", "noch nie abgerufen"
+            art, grund = "offline", tr("s_noch_nie_abgerufen")
         elif not ((a.bank_code or "").strip() or (a.account_number or "").strip() or (a.iban or "").strip()):
-            art, grund = "offline", "ohne Bankleitzahl und Kontonummer"
+            art, grund = "offline", tr("s_ohne_bankleitzahl_und_kontonummer")
         else:
             art, grund = "online", "Bank" if (a.bank_code or "").strip() else "Dienst (Erweiterung)"
         out[a.uuid] = {"art": art, "grund": grund}
@@ -403,22 +403,22 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         except KeyError as e:
             add("fehler", "%s: %s" % (label, e)); return None
         if want_offline and not a.offline:
-            add("fehler", "%s: '%s' hat eine Bankanbindung -- nur manuell geführte Konten werden bebucht." % (label, a.path))
+            add("fehler", tr("s_s_s_hat_eine_bankanbindung") % (label, a.path))
         elif not group_ok and a.group:
-            add("fehler", "%s: '%s' ist eine Gruppe." % (label, a.path))
+            add("fehler", tr("s_s_s_ist_eine_gruppe") % (label, a.path))
         elif want_group and not a.group:
-            add("fehler", "%s: '%s' ist keine Gruppe." % (label, a.path))
+            add("fehler", tr("s_s_s_ist_keine_gruppe") % (label, a.path))
         else:
             add("ok", "%s → %s" % (label, a.path))
         return a
 
     def cat(label, name):
         if name and categories and name not in cat_names and name.split("\\")[-1] not in cat_names:
-            add("warnung", "%s: Kategorie '%s' existiert nicht in MoneyMoney." % (label, name))
+            add("warnung", tr("s_s_kategorie_s_existiert_nicht") % (label, name))
 
     for l in config.get("darlehen", []) or []:
         n = l.get("name", "?") + ("" if l.get("aktiv", True) else " (inaktiv)")
-        ref("Darlehen %s: Konto" % n, l.get("darlehenskonto", ""), want_offline=True, group_ok=False)
+        ref(tr("s_darlehen_s_konto") % n, l.get("darlehenskonto", ""), want_offline=True, group_ok=False)
         for s_ in l.get("quellkonten", []) or []:
             ref("Darlehen %s: Quelle" % n, s_, group_ok=False)
         b = l.get("buchung", {}) or {}
@@ -427,13 +427,13 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         erk = l.get("erkennung") or {}
         iban = (erk.get("gegen_iban") or "").replace(" ", "")
         if not iban and not erk.get("text_enthaelt"):
-            add("fehler", "Darlehen %s: Erkennung braucht Gegen-IBAN oder Text." % n)
+            add("fehler", tr("s_darlehen_s_erkennung_braucht_gegen") % n)
         if iban and not re.match(r"^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$", iban):
-            add("fehler", "Darlehen %s: '%s' ist keine IBAN." % (n, iban))
+            add("fehler", tr("s_darlehen_s_s_ist_keine") % (n, iban))
         try:
             date.fromisoformat(l.get("ab_datum", ""))
         except ValueError:
-            add("fehler", "Darlehen %s: ab_datum fehlt oder ist kein Datum (JJJJ-MM-TT)." % n)
+            add("fehler", tr("s_darlehen_s_ab_datum_fehlt") % n)
     for b in (config.get("beteiligungen", []) or []) + (config.get("saldo_spiegel", []) or []):
         n = b.get("name", "?") + ("" if b.get("aktiv", True) else " (inaktiv)")
         ref("Wert %s: Ziel" % n, b.get("zielkonto") or b.get("beteiligungskonto", ""), want_offline=True, group_ok=False)
@@ -443,7 +443,7 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         if not isinstance(b, dict):
             continue
         if not b.get("konten"):
-            add("fehler", "Bereich '%s' hat keine Konten." % b.get("name"))
+            add("fehler", tr("s_bereich_s_hat_keine_konten") % b.get("name"))
         for r in b.get("konten") or []:
             ref("Bereich %s" % b.get("name"), r)
     bereiche = bereiche_for(ledger, config)
@@ -452,23 +452,23 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
     for b in bereiche:
         for a in b["leaves"]:
             if a.uuid in seen_leaf and seen_leaf[a.uuid] != b["name"]:
-                add("warnung", "Konto '%s' liegt in mehreren Bereichen (%s, %s)." % (a.path, seen_leaf[a.uuid], b["name"]))
+                add("warnung", tr("s_konto_s_liegt_in_mehreren") % (a.path, seen_leaf[a.uuid], b["name"]))
             seen_leaf[a.uuid] = b["name"]
         missing = [a.path for a in b["leaves"] if roles.get(a.uuid) == "sonstiges"]
         if missing:
-            add("warnung", "%s: Konten ohne Position (Umsätze landen in 'Unklar'): %s -- unter Bilanz → Konten zuordnen."
+            add("warnung", tr("s_s_konten_ohne_position_umsaetze")
                 % (b["name"], "; ".join(missing[:8]) + (" …" if len(missing) > 8 else "")))
     for r in bil.get("illiquide_konten") or []:
         ref("Bilanz: illiquide", r)
     for k, v in (bil.get("rollen") or {}).items():
         if not k.startswith("_"):
-            ref("Position für", k)
+            ref(tr("s_position_fuer"), k)
             if v not in ROLES:
-                add("fehler", "Unbekannte Position '%s' für %s." % (v, k))
+                add("fehler", tr("s_unbekannte_position_s_fuer_s") % (v, k))
     for k, v in (bil.get("verlauf") or {}).items():
-        ref("Verlauf für", k, group_ok=False)
+        ref(tr("s_verlauf_fuer"), k, group_ok=False)
         if v not in ("umsaetze", "stand"):
-            add("fehler", "Unbekannte Verlaufsquelle '%s' für %s." % (v, k))
+            add("fehler", tr("s_unbekannte_verlaufsquelle_s_fuer_s") % (v, k))
     for k in (bil.get("ausgeblendet") or []) + (bil.get("immer_anzeigen") or []):
         ref("Bilanz: Anzeige", k)
     for im in config.get("immobilien") or []:
@@ -479,7 +479,7 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
             if r:
                 ref("Immobilie %s: Darlehen %s" % (n, ln), r, group_ok=False)
         if im.get("bereich") and not any(b["id"] == im["bereich"] for b in bereiche):
-            add("warnung", "Immobilie %s: Bereich '%s' existiert nicht." % (n, im["bereich"]))
+            add("warnung", tr("s_immobilie_s_bereich_s_existiert") % (n, im["bereich"]))
         if im.get("kategorie"):
             cat("Immobilie %s" % n, str(im["kategorie"]).split("\\")[-1])
     kfc = config.get("kapitalfluss", {}) or {}
@@ -490,18 +490,18 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
             continue
         cat("Kapitalfluss: Zuordnung", k)
         if str(v).split("/")[0] not in ("Einnahmen", "Ausgaben", "Investitionen", "Finanzierung"):
-            add("fehler", "Kapitalfluss: Zuordnung '%s' → '%s' unbekannt." % (k, v))
+            add("fehler", tr("s_kapitalfluss_zuordnung_s_s_unbekannt") % (k, v))
     for k, v in (kfc.get("kategorie_zu_konto") or {}).items():
         if not k.startswith("_"):
             cat("Kapitalfluss: Depotzuordnung", k)
-            ref("Kapitalfluss: Depot für '%s'" % k, v, group_ok=False)
+            ref(tr("s_kapitalfluss_depot_fuer_s") % k, v, group_ok=False)
     st = config.get("steuer", {}) or {}
     for k, v in (st.get("objekt_darlehen") or {}).items():
-        ref("Steuer: Darlehen für Objekt '%s'" % v, k)
+        ref(tr("s_steuer_darlehen_fuer_objekt_s") % v, k)
     bel = config.get("belege", {}) or {}
     folder = os.path.expanduser(bel.get("ordner") or DEFAULT_CONFIG["belege"]["ordner"])
     if os.path.isdir(folder) and not os.access(folder, os.W_OK):
-        add("fehler", "Belegordner nicht beschreibbar: %s" % folder)
+        add("fehler", tr("s_belegordner_nicht_beschreibbar_s") % folder)
     for h in ledger.hints:
         add("hinweis", h)
     return out
@@ -519,7 +519,7 @@ def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal]) -
             bridge.set_transaction(pr.source_tx_id, category=pr.set_category, comment=pr.set_comment)
         else:
             if not acc.offline:
-                raise MoneyMoneyError("Verweigert: '%s' ist kein manuell geführtes Konto." % acc.path)
+                raise MoneyMoneyError(tr("s_verweigert_s_ist_kein_manuell") % acc.path)
             bridge.add_transaction(acc.uuid, pr.booking_date, pr.payee, pr.amount, pr.purpose,
                                    pr.category or None, fallback_refs=[acc.name])
         done += 1
@@ -716,9 +716,9 @@ def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: 
         categorize.learn(kat, ledger, progress=lambda f: step(0.6 * f, "Kategorien: Regeln lernen"))
         changed = changed or len(kat["regeln"]) != before or not kat.get("gelernt_am")
     if categorize.auto_assign(kat, ledger, overwrite_mm=bool(kc.get("mm_ueberschreiben")),
-                                 progress=lambda f: step(0.6 + 0.3 * f, "Kategorien: Umsätze zuordnen")):
+                                 progress=lambda f: step(0.6 + 0.3 * f, tr("s_kategorien_umsaetze_zuordnen"))):
         changed = True
-    step(0.9, "Kategorien übernehmen")
+    step(0.9, tr("s_kategorien_uebernehmen"))
     if changed:
         categorize.save(store, kat)
     categorize.apply_to_ledger(kat, ledger)
@@ -791,8 +791,8 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
             datasets[b["id"]] = {"fehler": str(e), "wurzel": b["name"]}
     neu = konten_neu(ledger, config, bereiche, roles)
     if neu:
-        warnings.append("%s ohne bestätigte Zuordnung (Einrichtung → Konten): %s"
-                        % ("Ein Konto" if len(neu) == 1 else "%d Konten" % len(neu), ", ".join(k["name"] for k in neu[:5]) + (" …" if len(neu) > 5 else "")))
+        warnings.append(tr("s_s_ohne_bestaetigte_zuordnung_einrichtu")
+                        % (tr("s_ein_konto") if len(neu) == 1 else tr("s_d_konten") % len(neu), ", ".join(k["name"] for k in neu[:5]) + (" …" if len(neu) > 5 else "")))
     immobilien = []
     for im in config.get("immobilien") or []:
         r = immo_res.get(str(im.get("id")))
@@ -925,7 +925,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
              bridge_factory: Callable[[bool], Bridge] = Bridge, with_report: bool = True,
              categories: Optional[List[dict]] = None) -> dict:
     if not RUN_LOCK.acquire(blocking=False):
-        return {"status": "laeuft_bereits", "text": "Ein Abgleich läuft bereits."}
+        return {"status": "laeuft_bereits", "text": tr("s_ein_abgleich_laeuft_bereits")}
     try:
         state = store.load("state.json", {}) or {}
         bridge = bridge_factory(dry)
@@ -944,11 +944,11 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                     notify("Kontor", txt)
                 return {"status": "nicht_verfuegbar", "text": txt}
             log.error("MoneyMoney error: %s", e)
-            return {"status": "fehler", "text": "MoneyMoney-Fehler: %s" % e}
+            return {"status": "fehler", "text": tr("s_moneymoney_fehler_s") % e}
         fp = ledger_fp(ledger)
         if fp == state.get("fingerprint") and not force:
             log.info("No change in MoneyMoney since the last run.")
-            return {"status": "unveraendert", "text": "Keine Änderung in MoneyMoney seit dem letzten Lauf.", "_ledger": ledger,
+            return {"status": "unveraendert", "text": tr("s_keine_aenderung_in_moneymoney_seit"), "_ledger": ledger,
                     "_kategorien": categories}
 
         result = plan_all(ledger, config, today)
@@ -973,7 +973,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 after = accounts_from_export(bridge.export_accounts())
                 for u in {x.account_uuid for x in bookings}:
                     if u in after and abs(after[u].balance - ledger.accounts[u].balance) > 0.01:
-                        msg = "Saldo %s nach Buchung %s, erwartet %s" % (ledger.accounts[u].name, fmt_eur(after[u].balance),
+                        msg = tr("s_saldo_s_nach_buchung_s") % (ledger.accounts[u].name, fmt_eur(after[u].balance),
                                                                       fmt_eur(ledger.accounts[u].balance))
                         log.warning("Balance of %s after booking is %s, expected %s", ledger.accounts[u].name, fmt_eur(after[u].balance), fmt_eur(ledger.accounts[u].balance)); result.warnings.append(msg)
             except MoneyMoneyError as e:
@@ -981,7 +981,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
 
         warnings = list(result.warnings)
         if dry and bookings:
-            warnings.insert(0, "Probelauf: %d vorgeschlagene Buchung(en) sind NICHT in MoneyMoney." % len(bookings))
+            warnings.insert(0, tr("s_probelauf_d_vorgeschlagene_buchung_en") % len(bookings))
         ums = None
         if with_report:
             ums = build_report(store, ledger, config, state, today, warnings, categories).pop("_umsaetze", None)
@@ -1008,11 +1008,11 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
 
         if config.get("mitteilungen", True):
             if err:
-                notify("Kontor: Fehler", str(err))
+                notify(tr("s_kontor_fehler"), str(err))
             elif written:
                 notify("Kontor", "%d Buchung(en) in MoneyMoney angelegt." % written)
             elif bookings and dry:
-                notify("Kontor: Probelauf", "%d Buchung(en) warten auf Freigabe." % len(bookings))
+                notify(tr("s_kontor_probelauf"), tr("s_d_buchung_en_warten_auf") % len(bookings))
             elif result.warnings and not dry:
                 notify("Kontor: Hinweis", result.warnings[0])
         return dict(summary, _ledger=ledger, _kategorien=categories, _umsaetze=ums)
@@ -1045,11 +1045,9 @@ def _walk_refs(cfg: dict, fn: Callable[[str, str], str]) -> None:
     for key in ("ausgeblendet", "immer_anzeigen"):
         if bil.get(key):
             bil[key] = [fn("bilanz." + key, x) for x in bil[key]]
-    for key in ("rollen", "verlauf", "konten_zuordnung", "verrechnung"):
+    for key in ("rollen", "verlauf", "konten_zuordnung"):
         if bil.get(key):
             bil[key] = {(fn("bilanz." + key, k) if not k.startswith("_") else k): v for k, v in bil[key].items()}
-    if bil.get("verrechnung"):
-        bil["verrechnung"] = {k: (fn("bilanz.verrechnung", v) if isinstance(v, str) and v else v) for k, v in bil["verrechnung"].items()}
     for im in cfg.get("immobilien") or []:
         if im.get("objekt_konto"):
             im["objekt_konto"] = fn("immobilien.objekt_konto", im["objekt_konto"])
@@ -1147,7 +1145,7 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
                         report.append("%s '%s' aktualisiert" % (k, item.get("name") or item.get(key)))
                     else:
                         base[k].append(item)
-                        report.append("%s '%s' hinzugefügt" % (k, item.get("name") or item.get(key)))
+                        report.append(tr("s_s_s_hinzugefuegt") % (k, item.get("name") or item.get(key)))
             elif isinstance(v, dict):
                 base.setdefault(k, {})
                 for kk, vv in v.items():
@@ -1157,7 +1155,7 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
                         base[k][kk] = list(dict.fromkeys((base[k].get(kk) or []) + vv))
                     else:
                         base[k][kk] = vv
-                report.append("%s ergänzt" % k)
+                report.append(tr("s_s_ergaenzt") % k)
             else:
                 base[k] = v
                 report.append("%s gesetzt" % k)
@@ -1194,7 +1192,7 @@ def diagnose(store: Store, data_dir: str, config: dict, status: dict, mask_names
             names[k] = "Bereich%d" % i
         for l in cfg.get("darlehen") or []:
             if (l.get("erkennung") or {}).get("gegen_iban"):
-                l["erkennung"]["gegen_iban"] = "IBAN…"
+                l["erkennung"]["gegen_iban"] = tr("s_iban")
     _walk_refs(cfg, lambda f, r: ((r.split("|", 1)[0].strip()[:8] + " | " + mask_text(r.split("|", 1)[1].strip(), names))
                                   if "|" in r else mask_text(r, names)))
     state = store.load("state.json", {}) or {}
@@ -1211,13 +1209,13 @@ def diagnose(store: Store, data_dir: str, config: dict, status: dict, mask_names
     out = ["Kontor-Diagnose %s" % datetime.now().strftime("%Y-%m-%d %H:%M"),
            "Version %s, Python %s, %s %s" % (version(), platform.python_version(), platform.system(), platform.release()),
            "Status: " + m(json.dumps(st, ensure_ascii=False, default=str)),
-           "Konfiguration (Namen %s): %s" % ("maskiert" if mask_names else "im Klartext", m(json.dumps(cfg, ensure_ascii=False, indent=1))),
-           "Letzter Lauf: " + m(json.dumps(state.get("letzter_lauf"), ensure_ascii=False, default=str)),
+           "Konfiguration (Namen %s): %s" % ("maskiert" if mask_names else tr("s_im_klartext"), m(json.dumps(cfg, ensure_ascii=False, indent=1))),
+           tr("s_letzter_lauf") + m(json.dumps(state.get("letzter_lauf"), ensure_ascii=False, default=str)),
            "Verlauf: " + m(json.dumps((state.get("verlauf") or [])[-10:], ensure_ascii=False, default=str)),
            "--- Protokoll (letzte %d Zeilen) ---" % lines]
     try:
         with open(os.path.join(data_dir, "kontor.log"), encoding="utf-8", errors="replace") as f:
             out += [m(l.rstrip("\n")) for l in f.readlines()[-lines:]]
     except FileNotFoundError:
-        out.append("(kein Protokoll)")
+        out.append(tr("s_kein_protokoll"))
     return "\n".join(out)

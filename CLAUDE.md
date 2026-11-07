@@ -26,7 +26,10 @@ MoneyMoney (macOS) arbeitet. Er läuft als launchd-Dienst beim Nutzer und starte
 - Keine Kontostände schätzen. Unbekanntes als „unbekannt“ kennzeichnen.
 
 ## Sprache
-- Deutsch nur in der Oberfläche (Texte für den Nutzer, Download-Dateinamen, Hinweise im Chat).
+- Oberfläche zweisprachig: Deutsch ist Hauptsprache (Layout auf Deutsch abstimmen), Englisch immer mit pflegen.
+- Alle Texte für den Nutzer stehen in `web/i18n.js` (Schlüssel → [Deutsch, Englisch]); im Code nur `t('schluessel', …)`
+  (app.js) bzw. `tr("schluessel", …)` (Python). Keine Texte fest im Code. Platzhalter `{0}` (JS) bzw. `%s` (Python).
+- Texte, die nach MoneyMoney geschrieben werden (Verwendungszwecke), Kategorienamen und Datenschlüssel bleiben unübersetzt.
 - Englisch: Datei- und Modulnamen, Datendateien, API-Endpunkte und URL-Parameter, Kommandozeilenbefehle, Protokollmeldungen.
 - Präfix `mm_` nur für Teile, die direkt mit MoneyMoney sprechen.
 

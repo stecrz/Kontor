@@ -239,3 +239,38 @@ class MirrorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)
+
+
+class CatalogTests(unittest.TestCase):
+    """Texte fuer den Nutzer: ein Katalog (web/i18n.js), jeder benutzte Schluessel mit Deutsch und Englisch, gleiche Platzhalter."""
+
+    def test_katalog_vollstaendig(self):
+        import glob
+        import json
+        import re
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        txt = open(os.path.join(here, "web", "i18n.js"), encoding="utf-8").read()
+        cat = json.loads(txt[txt.index("{"):txt.rindex("}") + 1])
+        js = open(os.path.join(here, "web", "app.js"), encoding="utf-8").read()
+        html = open(os.path.join(here, "web", "index.html"), encoding="utf-8").read()
+        used = set(re.findall(r"\bt[xn]?\('(\w+)'", js)) | set(re.findall(r'data-i18n(?:-ph|-aria)?="(\w+)"', html))
+        for f in glob.glob(os.path.join(here, "*.py")):
+            used |= set(re.findall(r'\btr\("(\w+)"', open(f, encoding="utf-8").read()))
+        self.assertFalse(sorted(used - set(cat)), "Schluessel fehlen im Katalog")
+        ph = re.compile(r"\{\d+\}|%[sdr%]|%0?\d*d|\{[a-z]+\}")
+        for k, v in cat.items():
+            self.assertEqual(len(v), 2, k)
+            self.assertTrue(v[0] and v[1], k)
+            self.assertEqual(sorted(ph.findall(v[0])), sorted(ph.findall(v[1])), k)
+            self.assertEqual(sorted(re.findall(r"</?\w+", v[0])), sorted(re.findall(r"</?\w+", v[1])), k)
+
+    def test_tr_sprache(self):
+        import i18n
+        i18n.set_lang("en")
+        try:
+            self.assertEqual(i18n.tr("s_moneymoney_laeuft_nicht"), "MoneyMoney is not running.")
+            self.assertEqual(i18n.tr("sync_ohne_abruf", 3), "Without bank retrieval (3)")
+        finally:
+            i18n.set_lang("de")
+        self.assertEqual(i18n.tr("sync_ohne_abruf", 3), "Ohne Bankabruf (3)")
+        self.assertEqual(i18n.tr("unbekannter_schluessel"), "unbekannter_schluessel")

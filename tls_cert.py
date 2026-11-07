@@ -16,6 +16,7 @@ import ssl
 import subprocess
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
+from i18n import tr
 
 log = logging.getLogger("kontor.tls")
 
@@ -40,7 +41,7 @@ def tailscale_self(binary: str) -> dict:
     name = (me.get("DNSName") or "").rstrip(".")
     ips = [ip for ip in (me.get("TailscaleIPs") or []) if ":" not in ip]
     if not name or not ips:
-        raise RuntimeError("Tailscale ist nicht verbunden (kein MagicDNS-Name / keine IP).")
+        raise RuntimeError(tr("s_tailscale_ist_nicht_verbunden_kein"))
     return {"name": name, "ip": ips[0], "cert_domains": st.get("CertDomains") or [], "backend": st.get("BackendState")}
 
 

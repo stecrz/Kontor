@@ -22,6 +22,7 @@ import subprocess
 import time
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
+from i18n import tr
 
 log = logging.getLogger("kontor.bridge")
 
@@ -95,9 +96,9 @@ class Bridge:
 
     def _call(self, method: str, args: Optional[Dict[str, Any]]) -> str:
         if method not in ALLOWED_METHODS:
-            raise MoneyMoneyError("Befehl nicht erlaubt: %s" % method)
+            raise MoneyMoneyError(tr("s_befehl_nicht_erlaubt_s") % method)
         if not is_running():
-            raise MoneyMoneyNotRunning("MoneyMoney läuft nicht.")
+            raise MoneyMoneyNotRunning(tr("s_moneymoney_laeuft_nicht"))
         payload = json.dumps({"method": method, "args": args}, ensure_ascii=False)
         t0 = time.time()
         log.debug("MoneyMoney %s %s", method, json.dumps({k: v for k, v in (args or {}).items() if k not in ("purpose", "payee")}, ensure_ascii=False)[:300])
@@ -109,7 +110,7 @@ class Bridge:
         except subprocess.TimeoutExpired:
             log.error("MoneyMoney %s: timeout of %ds exceeded", method, self.timeout)
             raise MoneyMoneyError(
-                "MoneyMoney antwortet nicht (Zeitlimit %ds) -- offener Dialog?" % self.timeout)
+                tr("s_moneymoney_antwortet_nicht_zeitlimit_d") % self.timeout)
         log.debug("MoneyMoney %s: status %d, %d chars, %.1f s", method, r.returncode, len(r.stdout or ""), time.time() - t0)
         if r.returncode != 0:
             err = (r.stderr or r.stdout or "").strip()
@@ -117,24 +118,23 @@ class Bridge:
             low = err.lower()
             if "-1743" in err or "not permitted" in low or "nicht erlaubt" in low or "nicht berechtigt" in low:
                 raise MoneyMoneyNotPermitted(
-                    "Keine Berechtigung, MoneyMoney zu steuern (Systemeinstellungen > "
-                    "Datenschutz & Sicherheit > Automation). Original: " + err)
+                    tr("s_keine_berechtigung_moneymoney_zu_steue_2") + err)
             if "locked" in low or "gesperrt" in low or "verschl" in low or "password" in low or "passwort" in low:
-                raise MoneyMoneyLocked("MoneyMoney-Datenbank ist gesperrt. Original: " + err)
+                raise MoneyMoneyLocked(tr("s_moneymoney_datenbank_ist_gesperrt_orig") + err)
             if "-600" in err or "-10810" in err:
-                raise MoneyMoneyNotRunning("MoneyMoney nicht erreichbar. Original: " + err)
-            raise MoneyMoneyError("MoneyMoney-Fehler bei %s: %s" % (method, err))
+                raise MoneyMoneyNotRunning(tr("s_moneymoney_nicht_erreichbar_original") + err)
+            raise MoneyMoneyError(tr("s_moneymoney_fehler_bei_s_s") % (method, err))
         return r.stdout
 
     @staticmethod
     def _plist(text: str) -> Any:
         text = text.strip()
         if not text:
-            raise MoneyMoneyError("Leere Antwort von MoneyMoney.")
+            raise MoneyMoneyError(tr("s_leere_antwort_von_moneymoney"))
         try:
             return plistlib.loads(text.encode("utf-8"))
         except Exception as e:
-            raise MoneyMoneyError("Antwort ist keine Property-List: %s" % e)
+            raise MoneyMoneyError(tr("s_antwort_ist_keine_property_list") % e)
 
     # -- Lesen -------------------------------------------------------------
 
@@ -144,7 +144,7 @@ class Bridge:
         except MoneyMoneyError:
             raw = self._plist(self._call("exportAccounts", {"as": "plist"}))
         if not isinstance(raw, list):
-            raise MoneyMoneyError("Kontenexport hat unerwartetes Format.")
+            raise MoneyMoneyError(tr("s_kontenexport_hat_unerwartetes_format"))
         return raw
 
     def export_categories(self) -> List[Dict[str, Any]]:
@@ -165,7 +165,7 @@ class Bridge:
         if isinstance(raw, dict):
             raw = raw.get("transactions", [])
         if not isinstance(raw, list):
-            raise MoneyMoneyError("Umsatzexport hat unerwartetes Format.")
+            raise MoneyMoneyError(tr("s_umsatzexport_hat_unerwartetes_format"))
         return raw
 
     def export_portfolio(self, account: str) -> List[Dict[str, Any]]:
@@ -206,7 +206,7 @@ class Bridge:
             except MoneyMoneyError as e:
                 last = e
                 log.warning("addTransaction with account reference %r rejected: %s", ref, e)
-        raise MoneyMoneyError("Buchung konnte nicht angelegt werden: %s" % last)
+        raise MoneyMoneyError(tr("s_buchung_konnte_nicht_angelegt_werden") % last)
 
     def set_transaction(self, tx_id: int, category: Optional[str] = None,
                         comment: Optional[str] = None, checkmark: Optional[bool] = None) -> None:

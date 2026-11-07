@@ -595,6 +595,26 @@ class AppTests(_AppBase):
             if os.path.exists(aufbau):
                 os.remove(aufbau)
 
+    def test_sprache_englisch(self):
+        """Sprache in den Einstellungen: Meldungen des Dienstes und Namen der Auswertung auf Englisch; Deutsch bleibt Standard."""
+        import service as MA
+        self.login(); self.run_and_wait()
+        code, ds = self.call("/api/dataset")
+        self.assertEqual(next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == "pos:liquiditaet")["name"], "Liquidität")
+        self.assertEqual(self.call("/api/language", {"sprache": "xx"})[0], 400)
+        code, r = self.call("/api/language", {"sprache": "en"}); self.assertEqual(r["sprache"], "en")
+        self.assertEqual(self.store.load("config.json")["oberflaeche"]["sprache"], "en")
+        self.app.rebuild_report(wait=True)
+        code, ds = self.call("/api/dataset")
+        self.assertEqual(next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == "pos:liquiditaet")["name"], "Liquidity")
+        old = MA.is_running; MA.is_running = lambda: True
+        try:
+            code, r = self._mm_upload(b"x" * 2048); self.assertIn("Please quit MoneyMoney first", r["text"])
+        finally:
+            MA.is_running = old
+        code, r = self.call("/api/language", {"sprache": "de"})
+        code, r = self.call("/api/properties", {"aktion": "speichern", "id": "gibtsnicht"}); self.assertIn("nicht gefunden", json.dumps(r, ensure_ascii=False))
+
     def test_deutsche_dateinamen_werden_umbenannt(self):
         """Daten aelterer Versionen (deutsche Dateinamen) werden beim Start auf die englischen Namen umbenannt."""
         from storage import LEGACY_NAMES
@@ -1501,8 +1521,8 @@ class FeatureTests(_AppBase):
         self.assertEqual(cfg["bilanz"]["verlauf"][g + " | Hausbank Giro"], "stand")
 
     def test_positionen_und_ausserhalb(self):
-        """Positionsvorschlaege aus Name/Typ/Gruppe; Kapitalkonten und Avale ausserhalb des Nettovermoegens; Depot-Schaetzung nur bei gleicher Bank."""
-        from report import account_roles, verrechnungskonto_fuer
+        """Positionsvorschlaege aus Name/Typ/Gruppe; Kapitalkonten und Avale ausserhalb des Nettovermoegens; keine Depot-Schaetzung."""
+        from report import account_roles
 
         def role(name, typ, bal, group="Privat", bank=""):
             raw = [F.acc("r", "Alle", 0, "Kontengruppe", True), F.acc("g", group, 1, "Kontengruppe", True), F.acc("x", name, 2, typ, balance=bal, bank=bank)]
@@ -1528,13 +1548,6 @@ class FeatureTests(_AppBase):
         self.assertEqual(rows[F.uid("pb.kap.s")]["rolle"], "verbindlichkeiten")
         saldo = {k["uuid"]: k["saldo"] for k in ds["konten"] if not k["gruppe"]}
         self.assertEqual(pb["bilanz"]["nettovermoegen"]["2026-11"], round(sum(saldo[F.uid(k)] for k in ("pb.kk", "pb.immo", "pb.vd", "pb.kap.s", "pb.kap.p")), 2))
-        # Verrechnungskonto: gleiche Bank -> gefunden; eingestellt "keine" -> keine Schaetzung; per Verlauf-Fenster einstellbar
-        led = self.app.ledger; depot = led.accounts[F.uid("priv.depot")]
-        self.assertEqual(verrechnungskonto_fuer(led, depot, {"bilanz": {}}), F.uid("priv.tr"))
-        self.assertIsNone(verrechnungskonto_fuer(led, depot, {"bilanz": {"verrechnung": {F.uid("priv.depot"): "keine"}}}))
-        depot.bank_code = "99999999"; led.__dict__.pop("_verrechnung_cache", None)
-        self.assertIsNone(verrechnungskonto_fuer(led, depot, {"bilanz": {}}))                   # andere Bank: keine Verbindung ueber die Gruppe
-        depot.bank_code = "10050000"; led.__dict__.pop("_verrechnung_cache", None)
         code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
         self.assertIsNone(h["geschaetzt_bis"]); self.assertIn("fortgeschrieben", h["hinweis"])          # keine Schaetzung mehr
         # Pruefung im Verlauf-Fenster: Anfangssaldo und Buchungen
@@ -1894,6 +1907,41 @@ class BrowserTest(unittest.TestCase):
 
 class BrowserWizardTest(unittest.TestCase):
     """Leere Installation: Einrichtungsassistent, Bereiche speichern, Paket laden, Bericht erstellen."""
+
+    def test_sprache_umschalten(self):
+        """Sprache auf der Anmeldeseite waehlen (vor der Einrichtung), danach Oberflaeche und Einstellung auf Englisch; zurueck auf Deutsch."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        d = tempfile.mkdtemp(prefix="kontor-lang-")
+        key, src = load_or_create_master_key(d)
+        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch(); pg = b.new_page(viewport={"width": 1280, "height": 860})
+                errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto("http://127.0.0.1:%d/" % port); pg.wait_for_selector("#login:not(.hidden)")
+                self.assertEqual(pg.inner_text("#login-btn"), "Passwort festlegen")
+                pg.click("#lang-seg button[data-lang='en']"); pg.wait_for_load_state("load"); pg.wait_for_selector("#login:not(.hidden)")
+                self.assertEqual(pg.inner_text("#login-btn"), "Set password")
+                self.assertEqual(pg.get_attribute("#login-pw2", "placeholder"), "Repeat password")
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_timeout(500)
+                self.assertIn("Overview", pg.inner_text("#nav")); self.assertEqual(pg.evaluate("document.documentElement.lang"), "en")
+                self.assertEqual(store.load("config.json")["oberflaeche"]["sprache"], "en")
+                pg.goto("http://127.0.0.1:%d/#einrichtung" % port); pg.wait_for_selector(".setup-list")
+                self.assertIn("Balances from MoneyMoney", pg.inner_text(".setup-list"))
+                pg.click("#w-lang button[data-lang='de']"); pg.wait_for_load_state("load"); pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_timeout(500)
+                self.assertIn("Übersicht", pg.inner_text("#nav")); self.assertEqual(store.load("config.json")["oberflaeche"]["sprache"], "de")
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close(); shutil.rmtree(d, ignore_errors=True)
 
     def test_wizard_and_package(self):
         try:

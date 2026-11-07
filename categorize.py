@@ -14,6 +14,7 @@ from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from model import Ledger, Tx, norm_cat
+from i18n import tr
 
 FILE = "categories.json"
 UMBUCHUNG = "Umbuchung"
@@ -337,7 +338,7 @@ def add_rule(d: dict, rule: dict) -> dict:
     if not r["kategorie"]:
         raise ValueError("Regel: Kategorie fehlt.")
     if not (r.get("iban") or r.get("name_ist") or r.get("name_enthaelt") or r.get("zweck_enthaelt")):
-        raise ValueError("Regel: mindestens Gegen-IBAN, Name oder Verwendungszweck angeben.")
+        raise ValueError(tr("s_regel_mindestens_gegen_iban_name"))
     ensure_category(d, r["kategorie"])
     d["regeln"] = [x for x in d["regeln"] if x.get("id") != r["id"]] + [r]
     return r

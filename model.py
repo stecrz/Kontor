@@ -11,6 +11,7 @@ from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from mm_bridge import local_date, local_datetime
+from i18n import tr
 
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
@@ -219,19 +220,16 @@ class Ledger:
             acc = self.accounts.get(ref.lower()) or self.accounts.get(ref) or self.accounts.get(ref.upper())
             if acc is not None:
                 if label and label != acc.name and not acc.path.endswith(label):
-                    self._hint("Konto '%s' heißt jetzt '%s' (UUID unverändert) -- Beschriftung in config.json "
-                               "bei Gelegenheit anpassen." % (label, acc.path))
+                    self._hint(tr("s_konto_s_heisst_jetzt_s") % (label, acc.path))
                 return acc
             if label:
                 try:
                     acc = self.resolve(label)
                 except KeyError:
-                    raise KeyError("Konto '%s' (UUID %s) nicht gefunden -- gelöscht? 'kontor konten' zeigt die "
-                                   "aktuelle Liste." % (label, ref))
-                self._hint("Konto '%s': UUID %s existiert nicht mehr, über den Namen gefunden (%s). Neue UUID in "
-                           "config.json eintragen: %s" % (label, ref, acc.path, acc.uuid))
+                    raise KeyError(tr("s_konto_s_uuid_s_nicht") % (label, ref))
+                self._hint(tr("s_konto_s_uuid_s_existiert") % (label, ref, acc.path, acc.uuid))
                 return acc
-            raise KeyError("Konto mit UUID %s nicht gefunden." % ref)
+            raise KeyError(tr("s_konto_mit_uuid_s_nicht") % ref)
         norm = " / ".join(p.strip() for p in ref.split("/"))
         exact = [a for a in self.accounts.values() if a.path == norm]
         if len(exact) == 1:
@@ -245,8 +243,8 @@ class Ledger:
             return byname[0]
         cands = suffix or byname
         if not cands:
-            raise KeyError("Konto '%s' nicht gefunden." % ref)
-        raise KeyError("Konto '%s' ist mehrdeutig: %s -- bitte Pfad oder UUID angeben." %
+            raise KeyError(tr("s_konto_s_nicht_gefunden") % ref)
+        raise KeyError(tr("s_konto_s_ist_mehrdeutig_s") %
                        (ref, "; ".join(a.path for a in cands)))
 
     def _hint(self, text: str) -> None:
