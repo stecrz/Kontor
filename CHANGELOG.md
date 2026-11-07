@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.9.10
+- Kontostände aus MoneyMoney: Fehler nach dem Entschlüsseln behoben (Programmfehler beim Öffnen der Datenbank im Arbeitsspeicher auf dem Mac).
+
 ## 3.9.9
 - Technische Namen auf Englisch, die Oberfläche bleibt Deutsch (Grundlage für weitere Sprachen): Programmdateien, Datendateien, Schnittstellen-Adressen, Kommandozeilenbefehle (deutsche Befehle gehen weiter) und Protokollmeldungen.
 - Vorhandene Daten werden beim Start automatisch auf die neuen Dateinamen umgestellt; der Hintergrunddienst zieht einmalig unter seinen neuen Namen um.

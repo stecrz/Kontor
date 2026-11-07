@@ -634,6 +634,12 @@ class AppTests(_AppBase):
         self.assertTrue(all(not any(k) for k in seen["keys"]))                     # Schluessel genullt
         self.assertFalse(any(buf))                                                 # Klartext genullt
         self.assertTrue(H.SKIP.search("logins") and H.SKIP.search("password") and not H.SKIP.search("balance_history"))
+        real = H.sys                                                                  # macOS-Zweig (Systembibliothek fehlt hier -> Ersatz)
+        H.sys = type("Mac", (), {"platform": "darwin"})()
+        try:
+            self.assertTrue(H._sqlite_lib().sqlite3_deserialize)
+        finally:
+            H.sys = real
 
     def test_lesefehler_wird_gemeldet(self):
         """MoneyMoney laeuft, Kontor kann aber nicht lesen (z. B. Berechtigung) -> Hinweis; erfolgreiches Lesen nimmt ihn zurueck."""

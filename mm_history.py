@@ -20,6 +20,7 @@ Datenbank (SQLCipher, verschluesselt mit dem MoneyMoney-Passwort). Der Weg ist b
 from __future__ import annotations
 
 import ctypes
+import ctypes.util
 import gc
 import os
 import shutil
@@ -177,18 +178,18 @@ def decrypt_in_place(buf: bytearray, keys: List[bytearray]) -> str:
 # -- Datenbank im Arbeitsspeicher (SQLite direkt auf dem Puffer, ohne Kopie) ------------------------------
 
 def _sqlite_lib():
-    if sys.platform == "darwin":
-        return ctypes.CDLL("/usr/lib/libsqlite3.dylib")
-    import ctypes.util
+    """SQLite-Bibliothek mit sqlite3_deserialize: macOS-System, sonst die von Python mitgebrachte."""
     import _sqlite3
-    for name in (getattr(_sqlite3, "__file__", None), ctypes.util.find_library("sqlite3"), "libsqlite3.so.0", None):
+    names = (["/usr/lib/libsqlite3.dylib"] if sys.platform == "darwin" else []) + \
+        [getattr(_sqlite3, "__file__", None), ctypes.util.find_library("sqlite3"), "libsqlite3.so.0", None]
+    for name in names:
         try:
             lib = ctypes.CDLL(name)
             lib.sqlite3_deserialize
             return lib
-        except (OSError, AttributeError):
+        except (OSError, AttributeError, TypeError):
             continue
-    raise HistorieError("SQLite nicht gefunden.")
+    raise HistorieError("SQLite ohne Speicherfunktion gefunden – bitte Claude Bescheid geben.")
 
 
 class MemDB:
