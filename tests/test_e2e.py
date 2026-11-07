@@ -415,6 +415,20 @@ class _AppBase(unittest.TestCase):
 class AppTests(_AppBase):
     """Dienst ueber HTTP: Einrichtung, Anmeldung, CSRF, Daten, Plan, Konfiguration, Lauf, Belege, Exporte."""
 
+    def test_unchanged_read_keeps_warm_state(self):
+        """Unveraenderte Daten aus MoneyMoney: bisheriger Stand (mit Zwischenergebnissen) bleibt, nur der Lesezeitpunkt wird neu."""
+        self.login(); self.run_and_wait()
+        led, t0 = self.app.ledger, self.app.ledger_time
+        self.app.do_run(True, False)                 # erster Lauf nach eigenen Buchungen: vollstaendig
+        led = self.app.ledger
+        time.sleep(0.01)
+        self.assertEqual(self.app.do_run(None, False)["status"], "unveraendert")
+        self.assertIs(self.app.ledger, led); self.assertGreater(self.app.ledger_time, t0)
+        self.app.refresh_ledger(); self.assertIs(self.app.ledger, led)
+        MockBridge.state["accounts"][-1]["name"] += " neu"     # Kontoname geaendert -> neuer Stand
+        self.assertNotEqual(self.app.do_run(None, False)["status"], "unveraendert")
+        self.assertIsNot(self.app.ledger, led)
+
     def test_bankabruf_zurueck(self):
         """Konten mit Saldo, die beim Bankabruf mehr als einen Tag zurückliegen, werden gemeldet; uralte (aufgelöste) nicht."""
         self.login()
@@ -736,6 +750,19 @@ class ImmoEngineTests(unittest.TestCase):
             mm_immo.berechne({"kaufpreis": 100, "uebergang": "kein-datum"}, TODAY)
 
 
+class BereichOrderTests(unittest.TestCase):
+    def test_default_order_main_private_first(self):
+        accs = [F.acc("root", "Alle Konten", 0, "Kontengruppe", True),
+                F.acc("g1", "Alpha Verwaltung eGbR", 1, "Kontengruppe", True), F.acc("g1.a", "Konto A", 2, balance=1.0, bank="1"),
+                F.acc("g2", "Muster GmbH", 1, "Kontengruppe", True), F.acc("g2.a", "Konto B", 2, balance=1.0, bank="1"),
+                F.acc("g3", "Max Mustermann", 1, "Kontengruppe", True), F.acc("g3.a", "Konto C", 2, balance=1.0, bank="1"),
+                F.acc("g4", "Familie", 1, "Kontengruppe", True), F.acc("g4.a", "Konto D", 2, balance=1.0, bank="1")]
+        led = Ledger(accounts_from_export(accs), [])
+        out = mm_core.bereiche_for(led, mm_core.merged_config({}))
+        self.assertEqual([b["name"] for b in out], ["Max Mustermann", "Familie", "Alpha Verwaltung eGbR", "Muster GmbH"])
+        self.assertTrue(out[0]["haupt"]); self.assertEqual([b["art"] for b in out], ["privat", "privat", "gesellschaft", "gesellschaft"])
+
+
 class FeatureTests(_AppBase):
     """Bereiche unabhaengig von der MoneyMoney-Gruppierung, Positionen, Verlaufsquellen, inaktive Konten, Ereignisse, Immobilien, Dateiverknuepfungen."""
 
@@ -1009,6 +1036,19 @@ class FeatureTests(_AppBase):
         self.call("/api/bericht/neu", {})
         code, ds = self.call("/api/dataset")
         self.assertEqual(ds["konten_neu"], [])
+        # bestaetigte Konten ohne feste Position ("auto" aus aelterer Einrichtung) werden auf den erkannten Wert festgelegt
+        zu = store_cfg = self.store.load("config.json")["bilanz"]
+        self.assertTrue(all(z["position"] in mm_core.ROLES for z in zu["konten_zuordnung"].values()))
+        self.assertEqual(zu["konten_zuordnung"][F.uid("priv.giro") + " | Hausbank Giro"]["position"], "liquiditaet")
+        self.assertEqual(store_cfg["verlauf"][F.uid("priv.depot") + " | Depot"], "stand")
+        # Umbenennen und anderer Kontotyp in MoneyMoney verschieben die Position nicht mehr
+        giro = [a for a in MockBridge.state["accounts"] if a["uuid"] == F.uid("priv.giro")][0]
+        giro["name"], giro["type"] = "Hausbank Darlehen", "Darlehenskonto"
+        self.run_and_wait()
+        code, k = self.call("/api/konten")
+        self.assertEqual([x for x in k["konten"] if x["uuid"] == F.uid("priv.giro")][0]["rolle"], "liquiditaet")
+        giro["name"], giro["type"] = "Hausbank Giro", "Girokonto"
+        self.run_and_wait()
         pb_rows = {r["id"]: r for r in ds["bereiche"][F.uid("pb")]["bilanz"]["zeilen"] if not r["gruppe"]}
         self.assertIn(F.uid("priv.immo"), pb_rows); self.assertEqual(pb_rows[F.uid("priv.immo")]["rolle"], "immobilien")
         self.assertNotIn(F.uid("priv.immo"), {r["id"] for r in ds["bereiche"][ds["haupt"]]["bilanz"]["zeilen"]})
@@ -1399,14 +1439,27 @@ class BrowserTest(unittest.TestCase):
                 pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.tr")); pg.wait_for_selector("#drawer.open #h-grid", timeout=10000)
                 self.assertIn("Broker Giro", pg.query_selector("#drawer").inner_text())
                 pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
-                self.assertTrue(pg.query_selector("#k-show-inactive").is_checked())        # inaktive standardmaessig sichtbar
+                self.assertTrue(pg.query_selector("#k-show-inactive").is_checked())        # ausgeblendete standardmaessig sichtbar
+                # keine "auto"-Optionen bei Position und Verlauf; Anzeige "nach Aktivität" / "immer anzeigen" / "ausblenden"
+                self.assertEqual(pg.evaluate("document.querySelectorAll('.k-rolle option[value=\"\"], .k-verlauf option[value=\"\"]').length"), 0)
+                self.assertEqual(pg.evaluate("[...document.querySelector('.k-show').options].map(o => o.text)"), ["nach Aktivität", "immer anzeigen", "ausblenden"])
+                row = "tr[data-uuid='%s']" % F.uid("priv.giro")
+                pg.select_option(row + " .k-show", "hide"); self.assertIn("inactive", pg.get_attribute(row, "class"))   # sofort grau
+                self.assertTrue(pg.is_visible(row + " .k-vis"))
+                pg.select_option(row + " .k-show", ""); self.assertNotIn("inactive", pg.get_attribute(row, "class") or "")
+                # Auswahlfelder gleich breit -> "Verlauf…" steht sauber untereinander
+                xs = pg.evaluate("[...document.querySelectorAll('.acct-table .k-hist')].map(b => Math.round(b.getBoundingClientRect().left))")
+                self.assertEqual(len(set(xs)), 1, xs)
                 self.assertLessEqual(pg.evaluate("document.querySelector('.acct-table').scrollWidth"), pg.evaluate("document.querySelector('#main').clientWidth"))   # passt in die Breite
                 pg.select_option("tr[data-uuid='%s'] .k-rolle" % F.uid("priv.immo"), "immobilien")
                 self.assertIsNone(pg.query_selector("#k-neu"))                                          # kein "Bericht aktualisieren" im Einrichtungsschritt
                 pg.click("#save-konten"); pg.wait_for_selector("#findings-k2 .ok", timeout=20000); pg.wait_for_timeout(1500)
                 self.assertTrue(pg.evaluate("document.querySelector('#bereich-seg').classList.contains('hidden')"))   # Bereichsleiste nur in den Auswertungen
                 self.assertIn("Gespeichert", pg.query_selector("#findings-k2").inner_text())
-                self.assertEqual(store.load("config.json")["bilanz"]["rollen"][F.uid("priv.immo") + " | Immobilie Lindenstraße"], "immobilien")
+                bil = store.load("config.json")["bilanz"]
+                self.assertEqual(bil["rollen"][F.uid("priv.immo") + " | Immobilie Lindenstraße"], "immobilien")
+                self.assertEqual(bil["konten_zuordnung"][F.uid("priv.giro") + " | Hausbank Giro"]["position"], "liquiditaet")    # fest gespeichert
+                self.assertTrue(all(v in ("umsaetze", "stand") for v in bil["verlauf"].values()) and len(bil["verlauf"]) >= 10)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_konten.png"), full_page=True)
                 # Immobilien: Objekt + Kalkulation anlegen, Ergebnis, speichern, Jahrestabelle
                 pg.goto("http://127.0.0.1:%d/#immobilien" % port); pg.wait_for_selector("#im-new")
@@ -1560,6 +1613,12 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertGreaterEqual(box[0], 0); self.assertGreaterEqual(box[1], 0); self.assertLessEqual(box[2], box[3])
                 pg.click(".steps button[data-next='#einrichtung/bereiche']"); pg.wait_for_selector("#save-bereiche")
                 self.assertEqual(len(pg.query_selector_all("#bereiche .item")), 3)          # Vorschlag: jede Gruppe der obersten Ebene
+                names = lambda: pg.evaluate("[...document.querySelectorAll('#bereiche .item .b-name')].map(i => i.value)")
+                self.assertEqual(names()[0], "Privat")                                       # Hauptbereich zuerst
+                self.assertTrue(pg.is_disabled("#bereiche .item:first-child .b-mv[data-d='-1']")); self.assertTrue(pg.is_disabled("#bereiche .item:last-child .b-mv[data-d='1']"))
+                pg.click("#bereiche .item:nth-child(2) .b-mv[data-d='-1']"); self.assertEqual(names()[:2], ["Alpha GbR", "Privat"])
+                self.assertTrue(pg.is_disabled("#bereiche .item:first-child .b-mv[data-d='-1']"))
+                pg.click("#bereiche .item:first-child .b-mv[data-d='1']"); self.assertEqual(names()[:2], ["Privat", "Alpha GbR"])
                 # Vorbelegung: Privat = Hauptbereich und privat, GbRs = Gesellschaft; Konten unter gewaehlter Gruppe sind enthalten
                 items = {pg.evaluate("i => i.querySelector('.b-name').value", it): it for it in pg.query_selector_all("#bereiche .item")}
                 self.assertTrue(items["Privat"].query_selector(".b-haupt").is_checked()); self.assertEqual(items["Privat"].query_selector(".b-art").input_value(), "privat")
@@ -1587,7 +1646,7 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertFalse(self.__class__ is None or app.bericht_status()["laeuft"])
                 self.assertTrue(pg.query_selector("button[data-savenext='#zuordnen']")); self.assertTrue(pg.query_selector("button[data-next='#einrichtung']"))
                 cfg0 = store.load("config.json")
-                self.assertEqual(sorted(b["name"] for b in cfg0["bereiche"]), ["Alpha GbR", "Privat"]); self.assertEqual(sum(1 for b in cfg0["bereiche"] if b["haupt"]), 1)
+                self.assertEqual([b["name"] for b in cfg0["bereiche"]], ["Privat", "Alpha GbR"]); self.assertEqual(sum(1 for b in cfg0["bereiche"] if b["haupt"]), 1)
                 self.assertTrue(all(b["id"] for b in cfg0["bereiche"]))
                 pg.goto("http://127.0.0.1:%d/#einrichtung/bereiche" % port); pg.wait_for_selector("#save-bereiche")
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Alpha GbR"][0]["anteil"], 0.49)       # Prozent -> Anteil

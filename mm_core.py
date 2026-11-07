@@ -152,14 +152,31 @@ def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = Fals
                 except MoneyMoneyError as e:
                     log.info("Depot %s: keine Positionsdaten (%s)", a.uuid[:8], str(e)[:80])
     log.info("MoneyMoney: %d Konten, %d Umsätze seit %s, %d Depots", len(accounts), len(txs), since, len(ledger.portfolios))
+    ledger.fp = fingerprint(ledger)          # Fingerabdruck des frischen Stands (vor Probelauf-Buchungen, die Salden veraendern)
     return ledger
 
 
+def ledger_fp(ledger: Ledger) -> str:
+    return getattr(ledger, "fp", None) or fingerprint(ledger)
+
+
 def fingerprint(ledger: Ledger) -> str:
+    """Inhalt des MoneyMoney-Stands: Konten (Name, Pfad, Typ, Saldo, Abrufzeit), Umsaetze (Betrag, Datum, Texte,
+    Kategorie aus MoneyMoney, vorgemerkt) und Depotpositionen. Kontor-eigene Ueberlagerungen (Kategorien, Probelauf-
+    Buchungen mit negativer Nummer) zaehlen nicht -- gleicher Fingerabdruck = gleiche Daten in MoneyMoney."""
     h = hashlib.sha256()
     for a in sorted(ledger.accounts.values(), key=lambda x: x.uuid):
-        h.update(("%s|%.2f|%s\n" % (a.uuid, a.balance, a.refresh.isoformat() if a.refresh else "")).encode())
-    h.update(str(len(ledger.txs)).encode())
+        h.update(("%s|%s|%s|%s|%.2f|%s\n" % (a.uuid, a.path or a.name, a.type, a.portfolio, a.balance,
+                                            a.refresh.isoformat() if a.refresh else "")).encode())
+    rows = []
+    for t in ledger.txs:
+        if t.id < 0:
+            continue
+        mm = t.mm_category_path if t.mm_category_path is not None else t.category_path
+        rows.append("%d|%s|%s|%.2f|%s|%s|%s|%s|%s|%d|%s" % (t.id, t.account_uuid, t.booking_date, t.amount, mm, t.name, t.purpose,
+                                                           t.booking_text, t.counter_iban, t.booked, t.comment))
+    h.update("\n".join(rows).encode())
+    h.update(json.dumps(getattr(ledger, "portfolios", None) or {}, sort_keys=True, default=str).encode())
     return h.hexdigest()
 
 
@@ -174,11 +191,13 @@ def unavailable_text(e: Exception) -> Optional[str]:
     return None
 
 
+# wie guessArt in der Oberflaeche
+_FIRMA_RE = re.compile(r"\b(gmbh|ug|ag|se|kg|ohg|gbr|egbr|e\.?\s?k\.?|e\.?\s?v\.?|eg|ltd|inc|llc|holding|verwaltung|beteiligung|"
+                       r"immobilien|stiftung|verein|genossenschaft|partner|&\s?co)\b|gmbh|gbr|holding|gesellschaft", re.I)
+
+
 def _bereich_art(name: str) -> str:
-    low = name.lower()
-    if any(k in low for k in ("gbr", "ohg", " kg", "gmbh", " ag", " ug", "e.k.", "gesellschaft", "holding")):
-        return "gesellschaft"
-    return "privat"
+    return "gesellschaft" if _FIRMA_RE.search(name or "") else "privat"
 
 
 def bereiche_for(ledger: Ledger, config: dict) -> List[dict]:
@@ -231,7 +250,9 @@ def bereiche_for(ledger: Ledger, config: dict) -> List[dict]:
             out.append({"id": g.uuid, "name": g.name, "art": _bereich_art(g.name), "anteil": anteile.get(g.uuid), "haupt": g.uuid == haupt_uuid,
                         "konten": ["%s | %s" % (g.uuid, g.name)], "leaves": ledger.descendants(g.uuid), "gruppen": [g]})
         if out and not any(b["haupt"] for b in out):
-            out[0]["haupt"] = True
+            (next((b for b in out if b["art"] == "privat"), None) or out[0])["haupt"] = True
+        # Vorschlag: Hauptbereich zuerst, dann weitere private Bereiche, dann Gesellschaften
+        out.sort(key=lambda b: (not b["haupt"], b["art"] != "privat"))
     if out and not any(b["haupt"] for b in out):
         out[0]["haupt"] = True
     # Explizite Kontenzuordnung (Einrichtung → Konten): Konto in genau diesem Bereich, unabhaengig von der Gruppe
@@ -249,6 +270,43 @@ def bereiche_for(ledger: Ledger, config: dict) -> List[dict]:
             b["leaves"] = [x for x in b["leaves"] if x.uuid != a.uuid]
         by_id[z["bereich"]]["leaves"].append(a)
     return out
+
+
+def freeze_assignments(ledger: Ledger, config: dict) -> Optional[dict]:
+    """Bestaetigte Konten ohne feste Position/Verlaufsquelle (aeltere Einrichtung mit "auto") auf den heute erkannten Wert
+    festlegen, damit spaetere Aenderungen an Name, Typ oder Gruppe in MoneyMoney die Zuordnung nicht verschieben.
+    Liefert die geaenderte Konfiguration oder None, wenn nichts zu tun ist. Unbestaetigte (neue) Konten bleiben Vorschlag."""
+    bil = config.get("bilanz") or {}
+    zu = bil.get("konten_zuordnung") or {}
+    if not zu:
+        return None
+    roles = account_roles(ledger, config)
+    ver_cfg = {}
+    for ref in (bil.get("verlauf") or {}):
+        try:
+            ver_cfg[ledger.resolve(ref).uuid] = ref
+        except KeyError:
+            pass
+    new = copy.deepcopy(config)
+    nb = new.setdefault("bilanz", {})
+    nzu, nver = nb.setdefault("konten_zuordnung", {}), nb.setdefault("verlauf", {})
+    changed = 0
+    for ref, z in zu.items():
+        if not isinstance(z, dict) or not z.get("bestaetigt", True):
+            continue
+        try:
+            a = ledger.resolve(ref)
+        except KeyError:
+            continue
+        if a.group:
+            continue
+        if z.get("position") not in ROLES and roles.get(a.uuid) in ROLES:
+            nzu[ref] = dict(z, position=roles[a.uuid])
+            changed += 1
+        if a.uuid not in ver_cfg:
+            nver[ref] = "stand" if a.portfolio else "umsaetze"
+            changed += 1
+    return new if changed else None
 
 
 def konten_neu(ledger: Ledger, config: dict, bereiche: List[dict], roles: Dict[str, str]) -> List[dict]:
@@ -578,18 +636,20 @@ def _kat_sig(store: Store, config: dict, categories: Optional[List[dict]]) -> tu
     return (store.stamp(mm_kategorien.FILE), json.dumps(config.get("kategorien") or {}, sort_keys=True), len(categories or []))
 
 
-def prepare_categories(store: Store, ledger: Ledger, config: dict, categories: Optional[List[dict]]) -> dict:
+def prepare_categories(store: Store, ledger: Ledger, config: dict, categories: Optional[List[dict]],
+                       progress: Optional[Callable[[float, str], None]] = None) -> dict:
     """Kontor-Kategorien: MoneyMoney-Baum als Vorschlag uebernehmen, Regeln lernen, Luecken fuellen, auf den Ledger legen.
     Unveraendert seit dem letzten Mal (gleicher MoneyMoney-Stand, gleiche Kategorien-Datei)? Dann nichts tun."""
     cached = getattr(ledger, "_kat_cache", None)
     if cached and cached[0] == _kat_sig(store, config, categories):
         return cached[1]
-    kat = _prepare_categories(store, ledger, config, categories)
+    kat = _prepare_categories(store, ledger, config, categories, progress or (lambda f, t: None))
     ledger._kat_cache = (_kat_sig(store, config, categories), kat)
     return kat
 
 
-def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: Optional[List[dict]]) -> dict:
+def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: Optional[List[dict]],
+                        step: Callable[[float, str], None]) -> dict:
     kc = config.get("kategorien") or {}
     kat = mm_kategorien.load(store)
     if not kc.get("aktiv", True):
@@ -601,10 +661,12 @@ def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: 
             changed = True
     if kc.get("lernen", True):
         before = len(kat["regeln"])
-        mm_kategorien.learn(kat, ledger)
+        mm_kategorien.learn(kat, ledger, progress=lambda f: step(0.6 * f, "Kategorien: Regeln lernen"))
         changed = changed or len(kat["regeln"]) != before or not kat.get("gelernt_am")
-    if mm_kategorien.auto_assign(kat, ledger, overwrite_mm=bool(kc.get("mm_ueberschreiben"))):
+    if mm_kategorien.auto_assign(kat, ledger, overwrite_mm=bool(kc.get("mm_ueberschreiben")),
+                                 progress=lambda f: step(0.6 + 0.3 * f, "Kategorien: Umsätze zuordnen")):
         changed = True
+    step(0.9, "Kategorien übernehmen")
     if changed:
         mm_kategorien.save(store, kat)
     mm_kategorien.apply_to_ledger(kat, ledger)
@@ -613,9 +675,11 @@ def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: 
 
 def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today: date, warnings: List[str],
                  categories: Optional[List[dict]] = None, progress: Optional[Callable[[float, str], None]] = None) -> dict:
+    # Fortschritt grob nach Laufzeit eines Laufs ohne Zwischenergebnisse gewichtet: Kategorien 5-25 %, Bereiche 25-75 % (nach
+    # Umsatzzahl), Steuer bis 85 %, Kategorienstatistik und Umsatzliste bis 95 %, Speichern
     step = progress or (lambda f, t: None)
     step(0.05, "Kategorien")
-    kat = prepare_categories(store, ledger, config, categories)
+    kat = prepare_categories(store, ledger, config, categories, lambda f, t: step(0.05 + 0.2 * f, t))
     snaps = state.setdefault("snapshots", {})
     snaps[month_key(today)] = {a.uuid: a.balance for a in ledger.accounts.values() if not a.group}
     if len(snaps) > 600:
@@ -630,10 +694,15 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
               len(bereiche), ", ".join(b["name"] for b in bereiche), haupt["name"] if haupt else "-", len(roles), len(immo_res), len(budgets))
     ledger._kat_sig = repr(getattr(ledger, "_kat_cache", (None,))[0])      # fuer Zwischenergebnisse in build_dataset
     datasets: Dict[str, dict] = {}
+    weights = [1 + sum(len(ledger.transactions(a.uuid)) for a in b["leaves"]) for b in bereiche]
+    total_w, done_w = float(sum(weights) or 1), 0.0
     for i, b in enumerate(bereiche):
-        step(0.15 + 0.6 * i / max(1, len(bereiche)), "Bereich %s" % b["name"])
+        lo, hi = 0.25 + 0.5 * done_w / total_w, 0.25 + 0.5 * (done_w + weights[i]) / total_w
+        done_w += weights[i]
+        step(lo, "Bereich %s" % b["name"])
+        sub = (lambda f, t, lo=lo, hi=hi, name=b["name"]: step(lo + (hi - lo) * f, "Bereich %s: %s" % (name, t)))
         try:
-            ds = build_dataset(ledger, config, state, today, b, roles, warnings if (haupt and b["id"] == haupt["id"]) else [])
+            ds = build_dataset(ledger, config, state, today, b, roles, warnings if (haupt and b["id"] == haupt["id"]) else [], sub)
             ds["budgets"] = budgets
             datasets[b["id"]] = ds
         except Exception as e:
@@ -674,7 +743,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "bereich_info": {b["id"]: {"name": b["name"], "art": b["art"], "anteil": b["anteil"], "haupt": b["haupt"], "konten": b["konten"],
                                    "gruppen": [g.name for g in b["gruppen"]], "anzahl_konten": len(b["leaves"])} for b in bereiche},
         "konten": account_tree(ledger, config, roles, datasets),
-        "steuer": (step(0.8, "Steuer"), _cached(ledger, "_tax_cache", (ledger._kat_sig, today.isoformat(), _bereiche_sig(bereiche),
+        "steuer": (step(0.76, "Steuer"), _cached(ledger, "_tax_cache", (ledger._kat_sig, today.isoformat(), _bereiche_sig(bereiche),
                                                    json.dumps([config.get(k) for k in ("steuer", "kapitalfluss", "beteiligungen", "bereiche", "immobilien")]
                                                               + [(config.get("bilanz") or {}).get(k) for k in ("rollen", "konten_zuordnung")], sort_keys=True, default=str)),
                           lambda: build_tax(ledger, config, today, bereiche, roles, immo_afa_map(config, immo_res))))[1],
@@ -682,16 +751,17 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "immobilien": immobilien,
         "budgets": budgets,
         "warnungen": warnings,
-        "kategorien": _cached(ledger, "_katstats_cache", ledger._kat_sig, lambda: mm_kategorien.stats(kat, ledger)),
+        "kategorien": (step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", ledger._kat_sig, lambda: mm_kategorien.stats(kat, ledger)))[1],
         "konten_neu": neu,
     }
-    step(0.9, "Speichern")
+    step(0.88, "Speichern")
     store.save("dataset.json", dataset)
     sig = (ledger._kat_sig, _bereiche_sig(bereiche))
     cached = getattr(ledger, "_ums_cache", None)
     if cached and cached[0] == sig and store.exists("umsaetze.json"):
         ums = cached[1]                # Umsatzliste unveraendert (z. B. nur Verlauf geaendert) -> nicht neu schreiben
     else:
+        step(0.93, "Umsatzliste")
         ums = compact_transactions(ledger, bereiche, store)
         store.save("umsaetze.json", ums)
         ledger._ums_cache = (sig, ums)
@@ -716,11 +786,13 @@ def _cached(ledger: Ledger, attr: str, key, fn):
 def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] = None, datasets: Optional[Dict[str, dict]] = None) -> List[dict]:
     roles = roles if roles is not None else account_roles(ledger, config)
     inactive: set = set()
+    inactive_auto: set = set()
     verlauf: Dict[str, str] = {}
     bereich_of: Dict[str, str] = {}
     bereich_id: Dict[str, str] = {}
     for bid, ds in (datasets or {}).items():
         inactive.update(ds.get("konten_inaktiv") or [])
+        inactive_auto.update(ds.get("konten_inaktiv_auto") or [])
         bname = (ds.get("bereich") or {}).get("name") or ""
         for r in ((ds.get("bilanz") or {}).get("zeilen") or []) + ((ds.get("bilanz") or {}).get("ausserhalb") or []):
             if not r.get("gruppe") and r.get("verlauf"):
@@ -749,7 +821,7 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
             continue
         out.append({"uuid": a.uuid, "name": a.name, "pfad": a.path, "ebene": a.path.count(" / "), "gruppe": a.group,
                     "depot": a.portfolio, "manuell": a.offline, "rolle": roles.get(a.uuid, "") if not a.group else "",
-                    "saldo": None if a.group else a.balance, "waehrung": a.currency, "typ": a.type, "inaktiv": a.uuid in inactive,
+                    "saldo": None if a.group else a.balance, "waehrung": a.currency, "typ": a.type, "inaktiv": a.uuid in inactive, "inaktiv_auto": a.uuid in inactive_auto,
                     "verlauf": verlauf.get(a.uuid) or ("stand" if a.portfolio else "umsaetze"), "bereich": bereich_of.get(a.uuid, ""),
                     "bereich_id": bereich_id.get(a.uuid, ""), "bestaetigt": a.uuid in confirmed,
                     "aktualisiert": a.refresh.strftime("%Y-%m-%d %H:%M") if a.refresh else None,
@@ -784,7 +856,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 return {"status": "nicht_verfuegbar", "text": txt}
             log.error("MoneyMoney-Fehler: %s", e)
             return {"status": "fehler", "text": "MoneyMoney-Fehler: %s" % e}
-        fp = fingerprint(ledger)
+        fp = ledger_fp(ledger)
         if fp == state.get("fingerprint") and not force:
             log.info("Keine Änderung in MoneyMoney seit dem letzten Lauf.")
             return {"status": "unveraendert", "text": "Keine Änderung in MoneyMoney seit dem letzten Lauf.", "_ledger": ledger,

@@ -416,7 +416,7 @@ def ledger_to_bytes(ledger: "Ledger", saved_at: Optional[datetime] = None) -> by
             row.append(enc(v))
         txs.append(row)
     data = {"format": LEDGER_CACHE_FORMAT, "gespeichert": (saved_at or datetime.now()).isoformat(), "account_fields": afields, "accounts": accounts,
-            "tx_fields": tfields, "txs": txs, "portfolios": getattr(ledger, "portfolios", {}) or {}}
+            "tx_fields": tfields, "txs": txs, "portfolios": getattr(ledger, "portfolios", {}) or {}, "fp": getattr(ledger, "fp", None)}
     return gzip.compress(json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8"), compresslevel=3)
 
 
@@ -451,6 +451,8 @@ def ledger_from_bytes(raw: bytes) -> Tuple["Ledger", Optional[datetime]]:
         txs.append(Tx(**d))
     ledger = Ledger(accounts, txs)
     ledger.portfolios = data.get("portfolios") or {}
+    if data.get("fp"):
+        ledger.fp = data["fp"]          # Fingerabdruck des Stands, wie er aus MoneyMoney kam
     saved = data.get("gespeichert")
     return ledger, (datetime.fromisoformat(saved) if saved else None)
 

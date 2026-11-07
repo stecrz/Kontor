@@ -233,6 +233,12 @@ label .hq { vertical-align:-2px; }
 .acct-table td, .acct-table th { white-space:normal; }
 .acct-table select { padding:2px 6px; font-size:12px; }
 .acct-table tr.inactive td { color:var(--faint); }
+.acct-table .k-vis { display:none; } .acct-table tr.inactive .k-vis { display:inline-block; }
+.acct-table select.k-bereich { width:170px; } .acct-table select.k-rolle { width:210px; } .acct-table select.k-verlauf { width:130px; } .acct-table select.k-show { width:150px; }
+.acct-table select.vorschlag { border-style:dashed; font-style:italic; }
+.b-side { display:flex; flex-direction:column; gap:6px; align-self:flex-start; }
+.b-side .b-mvs { display:flex; gap:4px; } .b-side .b-mv { flex:1; padding:4px 10px; line-height:1.1; } .b-side .b-mv:disabled { opacity:.35; }
+.item.moved { animation:moved .7s ease-out; } @keyframes moved { from { box-shadow:0 0 0 3px var(--accent-soft), var(--shadow); } to { box-shadow:var(--shadow); } }
 .tag.warn { background:var(--warn-bg); color:var(--warn-fg); }
 .hist-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:6px 10px; max-height:46vh; overflow:auto; padding:2px 4px 2px 0; }
 .hist-grid input:disabled { background:transparent; border-color:transparent; color:var(--fg); }
@@ -270,5 +276,9 @@ textarea { width:100%; min-height:90px; font-family:ui-monospace, Menlo, monospa
 .busy-ov .box { background:var(--head); border:1px solid var(--line); border-radius:14px; padding:22px 26px; width:min(440px, 90vw); box-shadow:0 20px 60px rgba(0,0,0,.25); }
 .busy-ov .t { font-weight:600; margin-bottom:12px; }
 .busy-ov .bar { height:8px; border-radius:999px; background:var(--group); overflow:hidden; margin-bottom:8px; }
-.busy-ov .bar i { display:block; height:100%; background:var(--accent); border-radius:999px; transition:width .3s ease; }
+.busy-ov .bar i { display:block; height:100%; border-radius:999px; transition:width .6s ease; background-color:var(--accent);
+  background-image:linear-gradient(45deg, rgba(255,255,255,.28) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.28) 50%, rgba(255,255,255,.28) 75%, transparent 75%, transparent);
+  background-size:16px 16px; animation:stripes .8s linear infinite; }
+@keyframes stripes { from { background-position:0 0; } to { background-position:16px 0; } }
+.busy-ov .s { display:flex; justify-content:space-between; gap:10px; } .busy-ov .s .el { font-variant-numeric:tabular-nums; white-space:nowrap; }
 .step .dot { margin-left:2px; }

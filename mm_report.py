@@ -31,7 +31,7 @@ import json
 import re
 from collections import defaultdict
 from datetime import date
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from mm_model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
 from mm_rules import TAG_RE
@@ -335,11 +335,12 @@ def account_months(ledger: Ledger, acc: Account, today: date, extra_keys=()) -> 
 
 
 def inactive_accounts(ledger: Ledger, leaves: List[Account], hist: Dict[str, Dict[str, Optional[float]]], mkeys: List[str],
-                      config: dict, today: date) -> Set[str]:
-    """Konten ohne Bewegung und Bestand in den letzten N Monaten (Altdaten) -- ausgeblendet, aber in Summen enthalten."""
+                      config: dict, today: date) -> Tuple[Set[str], Set[str]]:
+    """(ausgeblendet, inaktiv nach Aktivitaet). Inaktiv = ohne Bestand und ohne Umsatz in den letzten N Monaten (Altdaten).
+    Ausgeblendet = je Konto "ausblenden", oder "nach Aktivitaet" und inaktiv; "immer anzeigen" nie. Ausgeblendete Konten
+    bleiben in allen Summen enthalten."""
     bcfg = config.get("bilanz", {}) or {}
     n = int(bcfg.get("inaktiv_monate", 12) or 0)
-    out: Set[str] = set()
     force_hide: Set[str] = set()
     force_show: Set[str] = set()
     for ref in bcfg.get("ausgeblendet") or []:
@@ -355,17 +356,15 @@ def inactive_accounts(ledger: Ledger, leaves: List[Account], hist: Dict[str, Dic
     y, m = add_months(today, -n)
     cutoff = date(y, m, 1)
     recent = mkeys[-n:] if n else []
-    for acc in leaves:
-        if acc.uuid in force_hide:
-            out.add(acc.uuid)
-            continue
-        if acc.uuid in force_show or not n:
-            continue
-        h = hist.get(acc.uuid, {})
-        if all(abs(h.get(k) or 0.0) < 0.005 for k in recent) and abs(acc.balance) < 0.005 \
-                and not any(t.booking_date >= cutoff for t in ledger.transactions(acc.uuid)):
-            out.add(acc.uuid)
-    return out
+    auto: Set[str] = set()
+    if n:
+        for acc in leaves:
+            h = hist.get(acc.uuid, {})
+            if all(abs(h.get(k) or 0.0) < 0.005 for k in recent) and abs(acc.balance) < 0.005 \
+                    and not any(t.booking_date >= cutoff for t in ledger.transactions(acc.uuid)):
+                auto.add(acc.uuid)
+    hidden = {u for u in auto if u not in force_show} | {a.uuid for a in leaves if a.uuid in force_hide}
+    return hidden, auto
 
 
 # ---------------------------------------------------------------------------
@@ -601,8 +600,9 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
 # ---------------------------------------------------------------------------
 
 def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereich: dict, roles: Dict[str, str],
-                  rule_warnings: Optional[List[str]] = None) -> dict:
+                  rule_warnings: Optional[List[str]] = None, progress: Optional[Callable[[float, str], None]] = None) -> dict:
     """bereich: {"id", "name", "art", "anteil", "leaves": [Account]}"""
+    step = progress or (lambda f, t: None)
     bcfg = config.get("bilanz", {}) or {}
     leaves: List[Account] = [a for a in bereich["leaves"] if roles.get(a.uuid) not in OFF_BALANCE]
     ausserhalb_accs = [a for a in bereich["leaves"] if roles.get(a.uuid) in ("eigenkapital", "eventual")]
@@ -628,7 +628,9 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         except KeyError:
             pass
 
+    step(0.05, "Monatsstände")
     hist, warn_h, quelle, geschaetzt = balance_history(ledger, leaves, months, snapshots, historie, verlauf_cfg, today, config)
+    step(0.3, "Zahlungsströme")
     ckey = (getattr(ledger, "_kat_sig", None), tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
             json.dumps(config.get("kapitalfluss") or {}, sort_keys=True, default=str), tuple(months[0]) if months else None,
             tuple(months[-1]) if months else None, len(months), tuple(sorted(quelle.items())))
@@ -640,7 +642,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         if len(cache) > 24:
             cache.clear()
         cache[ckey] = copy.deepcopy((R, inbound, warn_c))
-    inactive = inactive_accounts(ledger, leaves, hist, mkeys, config, today)
+    step(0.85, "Bilanz")
+    inactive, inactive_auto = inactive_accounts(ledger, leaves, hist, mkeys, config, today)
 
     # Konten mit Kontostaende-Verlauf: Depots -> Bewertung = Wertaenderung - Zufluesse;
     # andere Konten -> Korrektur = Saldoaenderung - eigene Buchungen (nur dort, wo ein eingetragener Stand abweicht)
@@ -761,6 +764,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         "kapitalfluss": {"sektionen": sektionen, "ueberleitung": ueberleitung},
         "darlehen_konfig": loans_cfg,
         "konten_inaktiv": sorted(inactive),
+        "konten_inaktiv_auto": sorted(inactive_auto),
         "warnungen": warnings,
     }
 

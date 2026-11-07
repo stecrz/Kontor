@@ -223,16 +223,21 @@ def suggest(d: dict, t: Tx) -> Optional[dict]:
     return best
 
 
-def learn(d: dict, ledger: Ledger, min_count: int = 2, min_share: float = 0.9) -> Dict[str, int]:
+def learn(d: dict, ledger: Ledger, min_count: int = 2, min_share: float = 0.9, progress=None) -> Dict[str, int]:
     """Regeln aus vorhandenen Zuordnungen (Kontor manuell + MoneyMoney) ableiten. Ersetzt die gelernten Regeln,
     manuelle bleiben. Reihenfolge: Gegen-IBAN, Name + Zweckanfang, Name."""
     samples: List[Tuple[Tx, str]] = []
-    for t in ledger.txs:
+    n_all = len(ledger.txs) or 1
+    for i, t in enumerate(ledger.txs):
+        if progress and i % 20000 == 0:
+            progress(0.5 * i / n_all)
         path, q = effective(d, t)
         if path and q in ("manuell", "moneymoney"):
             samples.append((t, path))
     groups: Dict[Tuple[str, str], Counter] = defaultdict(Counter)
-    for t, path in samples:
+    for i, (t, path) in enumerate(samples):
+        if progress and i % 20000 == 0:
+            progress(0.5 + 0.3 * i / (len(samples) or 1))
         iban = (t.counter_iban or "").replace(" ", "").upper()
         nm = norm_name(t.name)
         if iban and len(iban) >= 8:
@@ -242,6 +247,8 @@ def learn(d: dict, ledger: Ledger, min_count: int = 2, min_share: float = 0.9) -
             pk = purpose_key(t.purpose)
             if pk:
                 groups[("name+zweck", nm + "|" + pk)][path] += 1
+    if progress:
+        progress(0.8)
     manual = [r for r in d["regeln"] if r.get("quelle") == "manuell"]
     learned: List[dict] = []
     seen_names: set = set()
@@ -276,11 +283,14 @@ def learn(d: dict, ledger: Ledger, min_count: int = 2, min_share: float = 0.9) -
     return {"regeln": len(learned), "muster": len(samples), **{k: v for k, v in stats.items()}}
 
 
-def auto_assign(d: dict, ledger: Ledger, overwrite_mm: bool = False) -> int:
+def auto_assign(d: dict, ledger: Ledger, overwrite_mm: bool = False, progress=None) -> int:
     """Regeln auf Umsaetze ohne manuelle Zuordnung anwenden. overwrite_mm: auch Umsaetze mit MoneyMoney-Kategorie
     (sonst gilt die MoneyMoney-Kategorie weiter). Liefert Anzahl neu/anders zugeordneter Umsaetze."""
     n = 0
-    for t in ledger.txs:
+    n_all = len(ledger.txs) or 1
+    for i, t in enumerate(ledger.txs):
+        if progress and i % 20000 == 0:
+            progress(i / n_all)
         tid = str(t.id)
         z = d["zuordnung"].get(tid)
         if z and z.get("q") == "manuell":

@@ -37,8 +37,8 @@ import mm_kategorien
 import mm_update
 from mm_belege import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, is_running
-from mm_core import (RUN_LOCK, account_tree, bereiche_for, build_report, check_config, diagnose, export_package, fetch, fingerprint, immo_for_plan,
-                     immo_results, import_package, merged_config, run_once, unavailable_text, version, version_on_disk)
+from mm_core import (RUN_LOCK, account_tree, bereiche_for, build_report, check_config, diagnose, export_package, fetch, freeze_assignments, immo_for_plan,
+                     immo_results, import_package, ledger_fp, merged_config, run_once, unavailable_text, version, version_on_disk)
 from mm_model import Ledger, ledger_from_bytes, ledger_to_bytes
 from mm_report import ROLE_LABELS, ROLES, account_balance_series, account_months, apply_plan, verrechnungskonto_fuer
 from mm_store import Store
@@ -160,12 +160,16 @@ class App:
         with self.lock:
             if self.ledger is None:
                 self.ledger, self.ledger_time, self.ledger_from_cache = ledger, saved or datetime.now(), True
-                self.ledger_cache_fp = fingerprint(ledger)
+                self.ledger_cache_fp = ledger_fp(ledger)
         log.info("MoneyMoney-Stand vom %s aus dem Zwischenspeicher geladen: %d Konten, %d Umsätze (%.1f s)",
                  (saved.strftime("%Y-%m-%d %H:%M") if saved else "?"), len(ledger.accounts), len(ledger.txs), time.time() - t0)
+        # Ohne erreichbares MoneyMoney liest der Zeitplaner nichts: Auswertung einmal im Hintergrund bauen, damit Zwischen-
+        # ergebnisse (Kategorien, Zahlungsstroeme) bereitliegen und die erste Aenderung nach einem Neustart schnell geht
+        if self.store.exists("dataset.json") and (not is_running() or self.moneymoney_gesperrt(max_age=0) is not False):
+            self.request_rebuild("Start")
 
     def _save_ledger_cache(self, ledger: Ledger) -> None:
-        fp = fingerprint(ledger)
+        fp = ledger_fp(ledger)
         if fp == self.ledger_cache_fp:
             return
         self.ledger_cache_fp = fp
@@ -179,9 +183,33 @@ class App:
                 log.warning("MoneyMoney-Stand nicht zwischengespeichert: %s", e)
         threading.Thread(target=work, name="kontor-cache-save", daemon=True).start()
 
-    def set_ledger(self, ledger: Ledger) -> None:
+    def set_ledger(self, ledger: Ledger, reuse: bool = False) -> None:
+        """Neuen MoneyMoney-Stand uebernehmen. reuse=True: sind die Daten unveraendert, bleibt der bisherige Stand mit seinen
+        Zwischenergebnissen (Kategorien, Zahlungsstroeme) in Gebrauch -- nur der Lesezeitpunkt wird aktualisiert."""
+        old = self.ledger
+        if reuse and old is not None and old is not ledger:
+            try:
+                same = self.ledger_cache_fp is not None and ledger_fp(ledger) == self.ledger_cache_fp
+            except Exception:  # pragma: no cover
+                same = False
+            if same:
+                self.ledger_time, self.ledger_from_cache = datetime.now(), False
+                log.debug("MoneyMoney-Stand unverändert -- Zwischenergebnisse bleiben erhalten")
+                return
         self.ledger, self.ledger_time, self.ledger_from_cache = ledger, datetime.now(), False
         self._save_ledger_cache(ledger)
+
+    def _freeze_assignments(self) -> None:
+        if self.ledger is None:
+            return
+        try:
+            new = freeze_assignments(self.ledger, self.config)
+        except Exception:  # pragma: no cover
+            log.exception("Zuordnungen festlegen")
+            return
+        if new is not None:
+            self.save_config(new)
+            log.info("Position und Verlauf bestätigter Konten festgelegt (bisher automatisch erkannt)")
 
     def _rebuild_now(self) -> Tuple[bool, Optional[str]]:
         """Bericht aus dem letzten bekannten Stand neu bauen (synchron; nur aus dem Hintergrund-Thread aufrufen)."""
@@ -192,8 +220,9 @@ class App:
             ledger, err = self.refresh_ledger()
             if ledger is None:
                 return False, err
+        self._freeze_assignments()
         t0 = time.time()
-        progress(0.04, "wartet auf laufenden Abgleich")
+        progress(0.03, "wartet auf laufenden Abgleich")
         with RUN_LOCK:          # nicht gleichzeitig mit einem Lauf (beide schreiben dataset.json)
             st = self.store.load("state.json", {}) or {}
             try:
@@ -271,15 +300,15 @@ class App:
         t0 = time.time()
         try:
             b = self.bridge_factory(True)
-            ledger = fetch(b, self.config, date.today())
+            ledger = fetch(b, self.config, date.today(), with_portfolio=True)
             log.info("MoneyMoney gelesen (%.1f s)", time.time() - t0)
             try:
                 self.categories_raw = b.export_categories()
                 self.store.update("state.json", lambda st: st.__setitem__("kategorien_roh", self.categories_raw), {})
             except MoneyMoneyError:
                 pass
-            self.set_ledger(ledger)
-            return ledger, None
+            self.set_ledger(ledger, reuse=True)
+            return self.ledger, None
         except MoneyMoneyError as e:
             log.warning("MoneyMoney nicht lesbar: %s", e)
             return None, unavailable_text(e) or ("MoneyMoney-Fehler: %s" % e)
@@ -302,7 +331,7 @@ class App:
             if ums is not None:
                 self.umsaetze = ums
             if ledger is not None:
-                self.set_ledger(ledger)
+                self.set_ledger(ledger, reuse=res.get("status") == "unveraendert")
             if cats:
                 self.categories_raw = cats
             self.last_result = res
@@ -353,7 +382,7 @@ class App:
                         log.debug("Zeitplaner: Lauf %s", "fällig" if due else "nachgeholt (MoneyMoney wieder verfügbar)")
                         self.mm_retry_at = None
                         res = self.do_run(None, force=False)
-                        if res.get("status") == "nicht_verfuegbar":
+                        if res.get("status") in ("nicht_verfuegbar", "laeuft_bereits"):     # z. B. Neuberechnung lief gerade
                             self.mm_retry_at = time.time() + 60
                 up = self.config.get("updates", {}) or {}
                 wait = 86400 if not (self.update_info or {}).get("fehler") else 7200     # offline/Fehler: in 2 h erneut
@@ -1050,6 +1079,7 @@ def make_handler(app: App):
                     ledger, err = app.refresh_ledger()
                     if ledger is None:
                         return self._json(200, {"verfuegbar": False, "text": err, "befunde": []})
+                    app.request_rebuild("Verbindung geprüft")      # Auswertung auf den frischen Stand bringen (im Hintergrund)
                     findings = check_config(ledger, app.categories_raw, app.config)
                     return self._json(200, {"verfuegbar": True, "befunde": findings, "konten": account_tree(ledger, app.config),
                                             "kategorien": app.categories()})
