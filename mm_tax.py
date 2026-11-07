@@ -121,7 +121,7 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
 
     roles = roles if roles is not None else account_roles(ledger, config)
     for e in ents:
-        leaves = [a for a in e["leaves"] if roles.get(a.uuid) != "ignorieren"]
+        leaves = [a for a in e["leaves"] if roles.get(a.uuid) not in ("ignorieren", "eigenkapital", "eventual")]
         leaf_ids = {a.uuid for a in leaves}
         own_ibans = {a.iban.replace(" ", "").upper() for a in leaves if a.iban}
         ent = {"name": e["name"], "uuid": e["id"], "art": e["art"], "anteil": e["anteil"], "jahre": {}}

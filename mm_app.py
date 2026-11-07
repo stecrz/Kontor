@@ -40,7 +40,7 @@ from mm_bridge import Bridge, MoneyMoneyError, is_running, refresh_moneymoney
 from mm_core import (RUN_LOCK, account_tree, bereiche_for, build_report, check_config, diagnose, export_package, fetch, fingerprint, immo_for_plan,
                      immo_results, import_package, merged_config, run_once, unavailable_text, version, version_on_disk)
 from mm_model import Ledger, ledger_from_bytes, ledger_to_bytes
-from mm_report import ROLE_LABELS, ROLES, account_balance_series, account_months, apply_plan
+from mm_report import ROLE_LABELS, ROLES, account_balance_series, account_months, apply_plan, verrechnungskonto_fuer
 from mm_store import Store
 from mm_xlsx import Sheet, workbook
 
@@ -844,6 +844,23 @@ def make_handler(app: App):
                 months = account_months(ledger, acc, today, list(hist) + (list(snaps) if depot else []))
                 werte, hinweis, gb, anker = account_balance_series(ledger, acc, months, q, st.get("snapshots") or {}, hist, today, app.config)
                 out.update({"werte": werte, "hinweis": hinweis, "geschaetzt_bis": gb, "anker": anker})
+                # Pruefung der Rueckrechnung: vorgemerkte Umsaetze, Anfangssaldo vor der ersten Buchung
+                alle = ledger.transactions(uuid, booked_only=False)
+                vorgemerkt = [t for t in alle if not t.booked]
+                gebucht = [t for t in alle if t.booked]
+                info = {"vorgemerkt_anzahl": len(vorgemerkt), "vorgemerkt_summe": round(sum(t.amount for t in vorgemerkt), 2),
+                        "buchungen": len(gebucht), "erste_buchung": min((t.booking_date for t in gebucht), default=None),
+                        "anfangssaldo": round(acc.balance - sum(t.amount for t in gebucht), 2)}
+                if info["erste_buchung"]:
+                    info["erste_buchung"] = info["erste_buchung"].isoformat()
+                out["pruefung"] = info
+                if depot:
+                    vcfg2 = (app.config.get("bilanz") or {}).get("verrechnung") or {}
+                    eingestellt = next((v for k, v in vcfg2.items() if k.split("|")[0].strip() == uuid), None)
+                    auto = verrechnungskonto_fuer(ledger, acc, {"bilanz": {}}) if eingestellt is None else None
+                    out["verrechnung"] = {"eingestellt": eingestellt, "automatisch": auto, "automatisch_name": ledger.accounts[auto].name if auto else None,
+                                          "konten": sorted(({"uuid": a.uuid, "name": a.path} for a in ledger.accounts.values() if not a.group and not a.portfolio),
+                                                           key=lambda x: x["name"].lower())}
             else:
                 for b in ds.get("bereiche", {}).values():
                     for r in (b.get("bilanz") or {}).get("zeilen") or []:
@@ -1255,6 +1272,15 @@ def make_handler(app: App):
                 if not hist:
                     st["historie"].pop(uuid, None)
             app.store.update("state.json", _apply, {})
+            if "verrechnung" in body:          # Depot: Konto fuer die Schaetzung aus Kaeufen/Verkaeufen ("" = automatisch, "keine")
+                cfg = copy.deepcopy(app.config)
+                vr = cfg.setdefault("bilanz", {}).setdefault("verrechnung", {})
+                for k in [k for k in vr if k.split("|", 1)[0].strip() == uuid]:
+                    vr.pop(k)
+                val = str(body.get("verrechnung") or "").strip()
+                if val:
+                    vr[uuid] = val
+                app.save_config(cfg)
             if body.get("quelle") in ("umsaetze", "stand"):
                 cfg = copy.deepcopy(app.config)
                 cfg.setdefault("bilanz", {}).setdefault("verlauf", {})

@@ -718,7 +718,7 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
     for bid, ds in (datasets or {}).items():
         inactive.update(ds.get("konten_inaktiv") or [])
         bname = (ds.get("bereich") or {}).get("name") or ""
-        for r in (ds.get("bilanz") or {}).get("zeilen") or []:
+        for r in ((ds.get("bilanz") or {}).get("zeilen") or []) + ((ds.get("bilanz") or {}).get("ausserhalb") or []):
             if not r.get("gruppe") and r.get("verlauf"):
                 verlauf[r["id"]] = r["verlauf"]
             if not r.get("gruppe") and bname:
@@ -732,6 +732,13 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
         except KeyError:
             pass
     vcfg = (config.get("bilanz") or {}).get("verlauf") or {}
+    n_inakt = int((config.get("bilanz") or {}).get("inaktiv_monate", 12) or 12)
+    y, m = add_months(date.today(), -n_inakt)
+    cutoff = date(y, m, 1)
+    last_tx: Dict[str, date] = {}
+    for t in ledger.txs:
+        if t.booked and (t.account_uuid not in last_tx or t.booking_date > last_tx[t.account_uuid]):
+            last_tx[t.account_uuid] = t.booking_date
     out = []
     for a in sorted(ledger.accounts.values(), key=lambda x: x.path):
         if not a.path:
@@ -741,7 +748,11 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
                     "saldo": None if a.group else a.balance, "waehrung": a.currency, "typ": a.type, "inaktiv": a.uuid in inactive,
                     "verlauf": verlauf.get(a.uuid) or ("stand" if a.portfolio else "umsaetze"), "bereich": bereich_of.get(a.uuid, ""),
                     "bereich_id": bereich_id.get(a.uuid, ""), "bestaetigt": a.uuid in confirmed,
-                    "aktualisiert": a.refresh.strftime("%Y-%m-%d %H:%M") if a.refresh else None})
+                    "aktualisiert": a.refresh.strftime("%Y-%m-%d %H:%M") if a.refresh else None,
+                    "letzte_buchung": last_tx[a.uuid].isoformat() if a.uuid in last_tx else None,
+                    # Saldo, aber weder Buchung noch Aktualisierung seit N Monaten: Stand vermutlich veraltet (Konto aufgeloest?)
+                    "veraltet": (not a.group and (a.portfolio or not a.offline) and abs(a.balance) > 0.005 and (a.uuid not in last_tx or last_tx[a.uuid] < cutoff)
+                                 and (a.refresh is None or a.refresh.date() < cutoff))})
     return out
 
 

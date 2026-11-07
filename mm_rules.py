@@ -285,7 +285,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
 # Wert-Spiegel (Beteiligung = Anteil x Gruppenwert; Saldo-Spiegel = Faktor x Konto)
 # ---------------------------------------------------------------------------
 
-def plan_mirror(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
+def plan_mirror(ledger: Ledger, cfg: dict, today: date, roles: Optional[Dict[str, str]] = None) -> RuleResult:
     res = RuleResult()
     name = cfg.get("name") or cfg.get("zielkonto") or cfg.get("beteiligungskonto")
     rule = "Wert %s" % name
@@ -310,7 +310,12 @@ def plan_mirror(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
 
     anteil = float(cfg.get("anteil", cfg.get("faktor", 1.0)))
     schwelle = float(cfg.get("schwelle", 0.01))
-    source_value = ledger.group_balance(source.uuid) if source.group else source.balance
+    if source.group:
+        # Wert der Gesellschaft = Konten der Gruppe ohne Kapitalkonten (Eigenkapital), Avale und nicht bilanzierte Konten
+        aus = {"eigenkapital", "eventual", "ignorieren"}
+        source_value = round(sum(a.balance for a in ledger.descendants(source.uuid) if (roles or {}).get(a.uuid) not in aus), 2)
+    else:
+        source_value = source.balance
     want = round(anteil * source_value, 2)
     have = target.balance
     diff = round(want - have, 2)
@@ -344,8 +349,10 @@ def plan_all(ledger: Ledger, config: dict, today: date) -> RuleResult:
         if cfg.get("aktiv", True):
             r = plan_loan(ledger, cfg, today)
             total.proposals += r.proposals; total.warnings += r.warnings; total.info += r.info
+    from mm_report import account_roles          # spaet importiert (mm_report importiert mm_rules)
+    roles = account_roles(ledger, config)
     for cfg in (config.get("beteiligungen", []) or []) + (config.get("saldo_spiegel", []) or []):
         if cfg.get("aktiv", True):
-            r = plan_mirror(ledger, cfg, today)
+            r = plan_mirror(ledger, cfg, today, roles)
             total.proposals += r.proposals; total.warnings += r.warnings; total.info += r.info
     return total

@@ -1,5 +1,15 @@
 # Änderungen
 
+## 3.7.0
+- Positionen: Vorschlag neu geordnet – Kontoname vor Kontotyp (z. B. „Immobilie …“ als Festgeldanlage → Immobilien), Gruppenname vor allgemeinem Kontotyp (Sparkonto in „Anlagen“ → Geldanlagen), Bausparer und Versicherungen → Geldanlagen; Darlehen und Kautionen nach Vorzeichen (Guthaben = Forderung, Schuld = Verbindlichkeit); Namen mit Wortgrenzen (z. B. „Haushaltskasse“ ist keine Immobilie).
+- Neue Positionen außerhalb des Nettovermögens: „Kapitalkonten (Eigenkapital)“ und „Avale & Bürgschaften“; in der Bilanz unter dem Nettovermögen ausgewiesen. Einlagen/Entnahmen über Kapitalkonten erscheinen im Kapitalfluss. Die Beteiligungsregel bewertet eine Gesellschaft ohne ihre Kapitalkonten (vorher ergab sich so ein Wert nahe 0).
+- „nicht bilanzieren“ wird überall so angezeigt (vorher teils „ignorieren“).
+- Depot-Schätzung aus Käufen/Verkäufen nur noch über ein Konto derselben Bank (nicht mehr über dieselbe MoneyMoney-Gruppe, was falsche Zusammenhänge erzeugte); im Verlauf-Fenster wählbar oder abschaltbar.
+- Verlauf-Fenster prüft die Rückrechnung: Anfangssaldo vor der ersten Buchung, vorgemerkte Umsätze, Konten ohne Umsätze; negative Stände bei Spar-, Tagesgeld-, Festgeld- und Bausparkonten erscheinen als Hinweis.
+- Hinweis „veraltet?“ bei Konten mit Saldo, aber ohne Buchung und Aktualisierung seit N Monaten.
+- „illiquide“ entfällt als Einstellung; Kennzahl „Finanzielle Unabhängigkeit“ und „liquides Nettovermögen“ aus der Übersicht entfernt; Liquidität mit Reichweite in Monaten.
+- Bilanzpositionen & Verlauf: ein Hilfe-Symbol oben, Erklärungen in den Spaltenköpfen; nach dem Speichern nur noch Hinweise mit Handlungsbedarf statt aller geprüften Verweise.
+
 ## 3.6.0
 - Verlauf-Fenster rechnet das gewählte Konto sofort selbst (unter einer Sekunde, auch bei 190.000 Umsätzen) statt auf die Neuberechnung der gesamten Auswertung zu warten; Umschalten, Eintragen und Löschen zeigen das Ergebnis direkt.
 - „Kontostände“ bei Bankkonten neu: eingetragene/importierte Stände sind Anker, Monate dazwischen und davor werden von dort aus mit den Buchungen gerechnet (vorher: erster Stand flach fortgeschrieben bzw. eine Depot-Schätzung, die für Bankkonten nicht passt). Die Buchungen bleiben im Kapitalfluss, Abweichungen erscheinen als „Korrektur Kontostand“. Ohne eigene Werte identisch mit „Umsätze“.

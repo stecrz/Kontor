@@ -1169,6 +1169,49 @@ class FeatureTests(_AppBase):
         code, cfg = self.call("/api/config")
         self.assertEqual(cfg["bilanz"]["verlauf"][g + " | Hausbank Giro"], "stand")
 
+    def test_positionen_und_ausserhalb(self):
+        """Positionsvorschlaege aus Name/Typ/Gruppe; Kapitalkonten und Avale ausserhalb des Nettovermoegens; Depot-Schaetzung nur bei gleicher Bank."""
+        from mm_report import account_roles, verrechnungskonto_fuer
+
+        def role(name, typ, bal, group="Privat", bank=""):
+            raw = [F.acc("r", "Alle", 0, "Kontengruppe", True), F.acc("g", group, 1, "Kontengruppe", True), F.acc("x", name, 2, typ, balance=bal, bank=bank)]
+            return account_roles(Ledger(accounts_from_export(raw), []), mm_core.merged_config({}))[F.uid("x")]
+        self.assertEqual(role("Immobilie Musterweg", "Festgeldanlage", 5e5), "immobilien")       # Name vor Kontotyp
+        self.assertEqual(role("Darlehen Immobilie X", "Darlehenskonto", -4e5), "verbindlichkeiten")
+        self.assertEqual(role("Darlehen an Firma", "Sonstiges", 1e5), "forderungen")             # Guthaben = Forderung
+        self.assertEqual(role("Barkaution Mieter", "Sonstiges", -5000), "verbindlichkeiten")
+        self.assertEqual(role("Kapitalkonto A", "Darlehenskonto", -1e5), "eigenkapital")
+        self.assertEqual(role("Mietaval Laden", "Darlehenskonto", -3e4), "eventual")
+        self.assertEqual(role("Bausparer", "Sparkonto", 2e4), "anlagen")
+        self.assertEqual(role("Sparkonto", "Sparkonto", 2e4, group="Anlagen"), "anlagen")      # Gruppe vor allgemeinem Typ
+        self.assertEqual(role("Tagesgeld", "Sparkonto", 1e3, group="Liquidität"), "liquiditaet")
+        self.assertEqual(role("Girokonto", "Girokonto", 1e3, group="Anlagen"), "liquiditaet")  # eindeutiger Typ vor Gruppe
+        self.assertEqual(role("Haushaltskasse", "Bargeld", 300), "liquiditaet")
+        self.assertEqual(role("Kreditkarte", "Kreditkarte", -300), "liquiditaet")
+        self.login(); self.run_and_wait()
+        code, ds = self.call("/api/dataset"); pb = ds["bereiche"][F.uid("pb")]
+        aus = {r["name"]: r for r in pb["bilanz"]["ausserhalb"]}
+        self.assertEqual(set(aus), {"Kapitalkonto A", "Kapitalkonto B"}); self.assertEqual(aus["Kapitalkonto A"]["rolle"], "eigenkapital")
+        ids = {r["id"] for r in pb["bilanz"]["zeilen"]}
+        self.assertNotIn(F.uid("pb.kap.s"), ids)
+        saldo = {k["uuid"]: k["saldo"] for k in ds["konten"] if not k["gruppe"]}
+        self.assertEqual(pb["bilanz"]["nettovermoegen"]["2026-11"], round(sum(saldo[F.uid(k)] for k in ("pb.kk", "pb.immo", "pb.vd")), 2))
+        # Verrechnungskonto: gleiche Bank -> gefunden; eingestellt "keine" -> keine Schaetzung; per Verlauf-Fenster einstellbar
+        led = self.app.ledger; depot = led.accounts[F.uid("priv.depot")]
+        self.assertEqual(verrechnungskonto_fuer(led, depot, {"bilanz": {}}), F.uid("priv.tr"))
+        self.assertIsNone(verrechnungskonto_fuer(led, depot, {"bilanz": {"verrechnung": {F.uid("priv.depot"): "keine"}}}))
+        depot.bank_code = "99999999"; led.__dict__.pop("_verrechnung_cache", None)
+        self.assertIsNone(verrechnungskonto_fuer(led, depot, {"bilanz": {}}))                   # andere Bank: keine Verbindung ueber die Gruppe
+        depot.bank_code = "10050000"; led.__dict__.pop("_verrechnung_cache", None)
+        code, h = self.call("/api/historie?konto=" + F.uid("priv.depot"))
+        self.assertEqual(h["verrechnung"]["automatisch"], F.uid("priv.tr")); self.assertIsNotNone(h["geschaetzt_bis"])
+        code, r = self.call("/api/historie", {"konto": F.uid("priv.depot"), "werte": {}, "verrechnung": "keine"})
+        self.assertIsNone(r["historie"]["geschaetzt_bis"]); self.assertEqual(r["historie"]["verrechnung"]["eingestellt"], "keine")
+        self.assertIn("fortgeschrieben", r["historie"]["hinweis"])
+        # Pruefung im Verlauf-Fenster: Anfangssaldo und Buchungen
+        code, h = self.call("/api/historie?konto=" + F.uid("priv.giro"))
+        self.assertIn("anfangssaldo", h["pruefung"]); self.assertGreater(h["pruefung"]["buchungen"], 0)
+
     def test_bericht_im_hintergrund(self):
         """Verlauf-Aenderungen stossen den Neubau nur an; mehrere Anstoesse ergeben einen Lauf; Status zeigt den Fortschritt."""
         self.login(); self.run_and_wait()

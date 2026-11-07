@@ -36,25 +36,40 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from mm_model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
 from mm_rules import TAG_RE
 
-ROLES = ["liquiditaet", "wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte", "forderungen", "sonstiges", "verbindlichkeiten", "ignorieren"]
+ROLES = ["liquiditaet", "wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte", "forderungen", "sonstiges", "verbindlichkeiten",
+         "eigenkapital", "eventual", "ignorieren"]
 ROLE_LABELS = {"liquiditaet": "Liquidität", "wertpapiere": "Wertpapiere & Depots", "anlagen": "Geldanlagen", "immobilien": "Immobilien",
-               "beteiligungen": "Beteiligungen", "sachwerte": "Sachwerte", "forderungen": "Forderungen", "sonstiges": "Sonstiges",
-               "verbindlichkeiten": "Darlehen & Verbindlichkeiten", "ignorieren": "nicht bilanziert"}
+               "beteiligungen": "Beteiligungen", "sachwerte": "Sachwerte", "forderungen": "Forderungen (verliehenes Geld)", "sonstiges": "Sonstiges",
+               "verbindlichkeiten": "Darlehen & Verbindlichkeiten", "eigenkapital": "Kapitalkonten (Eigenkapital)",
+               "eventual": "Avale & Bürgschaften", "ignorieren": "nicht bilanzieren"}
+OFF_BALANCE = {"eigenkapital", "eventual", "ignorieren"}      # nicht im Nettovermoegen
 ASSET_ROLES = {"wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte"}
-ILLIQUID_DEFAULT = ["beteiligungen", "immobilien", "sachwerte"]
-GROUP_HINTS = [
-    ("off-balance", "ignorieren"), ("offbalance", "ignorieren"), ("nicht bilanz", "ignorieren"),
-    ("liquid", "liquiditaet"), ("cash", "liquiditaet"), ("giro", "liquiditaet"), ("tagesgeld", "liquiditaet"),
-    ("beteilig", "beteiligungen"), ("gesellschaft", "beteiligungen"),
-    ("immobil", "immobilien"), ("wohnung", "immobilien"), ("haus", "immobilien"), ("objekt", "immobilien"),
-    ("depot", "wertpapiere"), ("wertpapier", "wertpapiere"), ("etf", "wertpapiere"), ("aktien", "wertpapiere"), ("krypto", "wertpapiere"),
-    ("fahrzeug", "sachwerte"), ("auto", "sachwerte"), ("uhr", "sachwerte"), ("sachwert", "sachwerte"), ("schmuck", "sachwerte"), ("kunst", "sachwerte"),
-    ("anlage", "anlagen"), ("festgeld", "anlagen"), ("sparbrief", "anlagen"),
-    ("forderung", "forderungen"),
-    ("verbindlich", "verbindlichkeiten"), ("darlehen", "verbindlichkeiten"), ("schulden", "verbindlichkeiten"), ("kredit", "verbindlichkeiten"),
+ILLIQUID_DEFAULT = ["anlagen", "beteiligungen", "immobilien", "sachwerte", "forderungen", "sonstiges"]
+# Hinweise aus Konto- und Gruppennamen (Reihenfolge = Vorrang; Wortgrenzen, damit z. B. "Haushalt" nicht als Haus gilt).
+# "+/-": Darlehen, Kredite, Kautionen -> Guthaben = Forderung, negativer Saldo = Verbindlichkeit
+NAME_HINTS = [
+    (r"off.?balance|nicht bilanz", "ignorieren"),
+    (r"aval|b(ü|ue)rgschaft|garantie", "eventual"),
+    (r"kapitalkont|eigenkapital|gesellschafterkont", "eigenkapital"),
+    (r"kaution", "+/-"),
+    (r"darlehen|kredit(?!karte)|hypothek|finanzierung|\bschulden", "+/-"),
+    (r"bauspar|lebensversicherung|rentenversicherung|\bversicherung|riester|r(ü|ue)rup|fondspolice", "anlagen"),
+    (r"immobil|wohnung|\bhaus\b|eigenheim|grundst(ü|ue)ck|\bobjekt", "immobilien"),
+    (r"beteilig|\bgesellschafteranteil|\banteil an\b", "beteiligungen"),
+    (r"forderung|verliehen", "forderungen"),
+    (r"verbindlich", "verbindlichkeiten"),
+    (r"fahrzeug|\bauto\b|\bpkw\b|\bmotorrad|\buhren?\b|sachwert|schmuck|\bkunst|\bgold\b", "sachwerte"),
+    (r"depot|wertpapier|\betf|aktien|\bfonds|krypto|bitcoin", "wertpapiere"),
+    (r"festgeld|sparbrief|\banlage", "anlagen"),
+    (r"liquid|\bcash|\bgiro|tagesgeld|\bkasse\b|bargeld", "liquiditaet"),
 ]
-TYPE_ROLES = {"portfolio": "wertpapiere", "girokonto": "liquiditaet", "tagesgeld": "liquiditaet", "sparkonto": "liquiditaet", "kreditkarte": "liquiditaet",
-              "bargeld": "liquiditaet", "cash": "liquiditaet", "festgeld": "anlagen", "darlehenskonto": "verbindlichkeiten", "loan": "verbindlichkeiten"}
+_NAME_HINTS_RE = [(re.compile(rx, re.I), role) for rx, role in NAME_HINTS]
+GROUP_HINTS = NAME_HINTS          # Rueckwaerts-Kompatibilitaet
+STRONG_TYPES = {"portfolio": "wertpapiere", "depot": "wertpapiere", "girokonto": "liquiditaet", "kreditkarte": "liquiditaet", "bargeld": "liquiditaet", "cash": "liquiditaet",
+                "darlehenskonto": "+/-", "loan": "+/-", "bauspar": "anlagen"}
+WEAK_TYPES = {"tagesgeld": "liquiditaet", "sparkonto": "liquiditaet", "festgeld": "anlagen"}
+TYPE_ROLES = {**WEAK_TYPES, **STRONG_TYPES, "portfolio": "wertpapiere"}
+NO_NEGATIVE_TYPES = ("sparkonto", "tagesgeld", "festgeld", "bauspar")
 COST_WORDS = ["zins", "interest", "gebühr", "gebuehr", "entgelt", "provision", "bereitstellung", "#mm-zins"]
 SECTIONS = ["Einnahmen", "Ausgaben", "Investitionen", "Finanzierung", "Bewertung", "Unklar"]
 CASH_SECTIONS = ["Einnahmen", "Ausgaben", "Investitionen", "Finanzierung", "Unklar"]
@@ -66,15 +81,22 @@ PLAN_METHODS = ("gleitend12", "gleitend6", "vorjahr", "fix", "jahresbetrag", "bu
 # ---------------------------------------------------------------------------
 
 def _hint_role(name: str) -> Optional[str]:
-    low = name.lower()
-    for hint, role in GROUP_HINTS:
-        if hint in low:
+    for rx, role in _NAME_HINTS_RE:
+        if rx.search(name or ""):
             return role
     return None
 
 
+def _signed(role: Optional[str], acc: Account) -> Optional[str]:
+    """"+/-": Guthaben -> Forderung, Schuld -> Verbindlichkeit."""
+    if role != "+/-":
+        return role
+    return "forderungen" if acc.balance > 0.005 else "verbindlichkeiten"
+
+
 def account_roles(ledger: Ledger, config: dict) -> Dict[str, str]:
-    """uuid -> Position fuer ALLE Konten: Konfiguration > Gruppenname (vererbt) > Kontotyp/Name > sonstiges."""
+    """uuid -> Position fuer ALLE Konten. Vorrang: eigene Zuordnung > Depot > Kontoname > eindeutiger Kontotyp
+    (Giro, Kreditkarte, Darlehen) > Name der naechsten Gruppe > allgemeiner Kontotyp (Spar-, Tagesgeld, Festgeld) > Sonstiges."""
     cfg_roles: Dict[str, str] = {}
     for ref, role in (config.get("bilanz", {}).get("rollen") or {}).items():
         if ref.startswith("_"):
@@ -91,26 +113,26 @@ def account_roles(ledger: Ledger, config: dict) -> Dict[str, str]:
                 pass
     roles: Dict[str, str] = {}
 
-    def walk(acc: Account, inherited: Optional[str]):
+    def walk(acc: Account, group_hint: Optional[str]):
         if acc.group:
-            role = cfg_roles.get(acc.uuid) or _hint_role(acc.name) or inherited
+            here = cfg_roles.get(acc.uuid) or _hint_role(acc.name) or group_hint
         else:
+            t = (acc.type or "").lower()
             role = cfg_roles.get(acc.uuid)
+            if not role and acc.portfolio:
+                role = "wertpapiere"
             if not role:
-                t = (acc.type or "").lower()
-                by_type = next((r for k, r in TYPE_ROLES.items() if k in t), None)
-                by_name = _hint_role(acc.name)
-                if acc.portfolio:
-                    role = "wertpapiere"
-                elif acc.offline:
-                    role = by_name or inherited or by_type
-                else:
-                    role = by_type or by_name or inherited
-                if role == "verbindlichkeiten" and acc.balance > 0.005 and ("darlehen" in acc.name.lower() or "forderung" in acc.name.lower()) and not acc.offline:
-                    role = "forderungen"
+                role = _signed(_hint_role(acc.name), acc)
+            if not role:
+                role = _signed(next((r for k, r in STRONG_TYPES.items() if k in t), None), acc)
+            if not role and group_hint:
+                role = _signed(group_hint, acc)
+            if not role:
+                role = next((r for k, r in WEAK_TYPES.items() if k in t), None)
             roles[acc.uuid] = role or "sonstiges"
+            here = group_hint
         for c in acc.children:
-            walk(ledger.accounts[c], role if acc.group else inherited)
+            walk(ledger.accounts[c], here)
 
     for root in ledger.roots():
         walk(root, None)
@@ -148,17 +170,19 @@ def _verrechnungskonto_fuer(ledger: Ledger, depot: Account, cfg: dict) -> Option
     for dref, gref in cfg.items():
         try:
             if ledger.resolve(dref).uuid == depot.uuid:
+                if str(gref).strip().lower() in ("", "keine", "-"):
+                    return None
                 return ledger.resolve(gref).uuid
         except KeyError:
             continue
-    parent = depot.path.rsplit(" / ", 1)[0] if " / " in depot.path else ""
+    # automatisch nur bei derselben Bank (Bankleitzahl), nicht schon wegen derselben MoneyMoney-Gruppe
+    if not (depot.bank_code or "").strip():
+        return None
     best, best_n = None, 0
     for a in ledger.accounts.values():
         if a.group or a.portfolio or a.uuid == depot.uuid:
             continue
-        same_group = parent and a.path.startswith(parent + " / ")
-        same_bank = depot.bank_code and a.bank_code == depot.bank_code
-        if not (same_group or same_bank):
+        if a.bank_code != depot.bank_code:
             continue
         n = sum(1 for t in ledger.transactions(a.uuid) if _KAUF_RE.search(t.name + " " + t.purpose + " " + t.booking_text) and not _NICHT_RE.search(t.purpose))
         if n > best_n:
@@ -219,7 +243,14 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
         ends = ledger.month_end_balances(acc.uuid, past)
         for k in mkeys:
             h[k] = acc.balance if k >= cur_key else ends[k]
-        return h, None, None, [cur_key]
+        t = (acc.type or "").lower()
+        if any(x in t for x in NO_NEGATIVE_TYPES):
+            neg = [k for k in mkeys if (h[k] or 0) < -1.0]
+            if neg:
+                hinweis = ("'%s': Die Rückrechnung aus den Umsätzen ergibt negative Stände (%s bis %s), obwohl das Konto nicht ins Minus gehen kann "
+                           "-- vermutlich fehlen in MoneyMoney Umsätze. Abhilfe: Verlauf auf „Kontostände“ stellen und bekannte Stände eintragen."
+                           % (acc.name, neg[0], neg[-1]))
+        return h, hinweis, None, [cur_key]
     if not acc.portfolio:
         # Anker: eigene Werte + heutiger Saldo; dazwischen mit den Buchungen gerechnet (Saldo = Anker - Buchungen danach)
         anchors = {k: v for k, v in manual.items() if k < cur_key}
@@ -488,6 +519,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                 elif p is not None and p in beteiligungs_gruppen:
                     g = beteiligungs_gruppen[p]
                     R.add("Investitionen", "Einlagen/Entnahmen", "Einlage/Entnahme " + g, mk, t.amount, art="extern", nw=False)
+                elif p is not None and roles.get(p) == "eigenkapital":
+                    R.add("Finanzierung", "Gesellschafter", "Einlagen/Entnahmen Gesellschafter", mk, t.amount, art="extern", nw=True)
                 elif p is not None:
                     R.add("Unklar", "Umbuchung", "Umbuchung nach " + ledger.accounts[p].path, mk, t.amount, art="unklar"); unclear += 1
                 else:
@@ -571,7 +604,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                   rule_warnings: Optional[List[str]] = None) -> dict:
     """bereich: {"id", "name", "art", "anteil", "leaves": [Account]}"""
     bcfg = config.get("bilanz", {}) or {}
-    leaves: List[Account] = [a for a in bereich["leaves"] if roles.get(a.uuid) != "ignorieren"]
+    leaves: List[Account] = [a for a in bereich["leaves"] if roles.get(a.uuid) not in OFF_BALANCE]
+    ausserhalb_accs = [a for a in bereich["leaves"] if roles.get(a.uuid) in ("eigenkapital", "eventual")]
     leaf_ids = {a.uuid for a in leaves}
     back = int(bcfg.get("monate_zurueck", 0) or 0)
     if back <= 0:
@@ -630,19 +664,14 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                     if abs(val) >= 0.005:
                         R.add("Bewertung", acc.name, acc.name + " / Korrektur Kontostand", mk, val, konto=acc.uuid, art="korrektur", nw=True)
 
-    illiquid_roles = set(bcfg.get("illiquide_rollen") or ILLIQUID_DEFAULT)
+    illiquid_roles = set(ILLIQUID_DEFAULT)      # fest nach Position (Liquiditaet und Wertpapiere gelten als verfuegbar)
     illiquid_refs: Set[str] = set()
-    for ref in bcfg.get("illiquide_konten") or []:
-        try:
-            illiquid_refs.add(ledger.resolve(ref).uuid)
-        except KeyError:
-            pass
 
     # Bilanzzeilen nach Positionen
     bilanz_rows: List[dict] = []
     pos_sums: Dict[str, Dict[str, float]] = {}
     for role in ROLES:
-        if role == "ignorieren":
+        if role in OFF_BALANCE:
             continue
         accs = [a for a in leaves if roles.get(a.uuid) == role]
         if not accs:
@@ -663,6 +692,11 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
     aktiva = {mk: round(sum(pos_sums[r][mk] for r in pos_sums if r != "verbindlichkeiten"), 2) for mk in mkeys}
     passiva = {mk: round(pos_sums.get("verbindlichkeiten", {}).get(mk, 0.0), 2) for mk in mkeys}
     liquid_nw = {mk: round(nw[mk] - sum((r["werte"][mk] or 0.0) for r in bilanz_rows if not r["gruppe"] and r["illiquide"]), 2) for mk in mkeys}
+    # Ausserhalb des Nettovermoegens: Kapitalkonten (Eigenkapital) und Avale/Buergschaften -- nur zur Information
+    ausserhalb = []
+    for a in sorted(ausserhalb_accs, key=lambda x: (roles.get(x.uuid), x.path)):
+        wh, _, _, _ = account_balance_series(ledger, a, months, verlauf_quelle(a, verlauf_cfg), snapshots, historie.get(a.uuid) or {}, today, config)
+        ausserhalb.append({"id": a.uuid, "name": a.name, "pfad": a.path, "rolle": roles.get(a.uuid), "werte": {mk: wh[mk] for mk in mkeys}})
 
     # MoneyMoney-Gruppenbaum (zweite Sicht), nur Konten des Bereichs
     baum: List[dict] = []
@@ -723,7 +757,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         "wurzel": bereich["name"],
         "bereich": {"id": bereich["id"], "name": bereich["name"], "art": bereich.get("art"), "anteil": bereich.get("anteil")},
         "bilanz": {"zeilen": bilanz_rows, "baum": baum, "nettovermoegen": nw, "aktiva": aktiva, "passiva": passiva,
-                   "liquides_nettovermoegen": liquid_nw, "positionen": {r: ROLE_LABELS[r] for r in pos_sums}},
+                   "liquides_nettovermoegen": liquid_nw, "positionen": {r: ROLE_LABELS[r] for r in pos_sums}, "ausserhalb": ausserhalb},
         "kapitalfluss": {"sektionen": sektionen, "ueberleitung": ueberleitung},
         "darlehen_konfig": loans_cfg,
         "konten_inaktiv": sorted(inactive),
