@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.9.5
+- Schnellabgleich: Ist MoneyMoney offen und entsperrt, liest Kontor alle 20 Sekunden nur die Kontenliste (unter einer Sekunde) und merkt sich die Stände – ein kurzer Blick in MoneyMoney genügt. Geänderte Daten lösen danach den vollen Abgleich aus.
+- Depotstände zählen für den Monat, in dem MoneyMoney sie abgerufen hat (Abruf am 31., gelesen am 2. → richtiger Monat).
+- Hat MoneyMoney ein Depot abgerufen, während Kontor nicht lief, meldet Kontor die möglicherweise fehlenden Monate (Synchronisierung, unten links). Schlief der Mac, gibt es keine Meldung, weil auch MoneyMoney nichts abgerufen hat.
+
 ## 3.9.4
 - Kein Zugriff auf MoneyMoneys Datenbank: die Prüfung aus 3.9.3 ist wieder entfernt. Kontor nutzt nur MoneyMoneys Skript-Schnittstelle (Freigabe „Automation → MoneyMoney“).
 - Synchronisierung: neuer Abschnitt „Depots: Wertverlauf“ – ab wann Stände bekannt sind (eigene Aufzeichnung bzw. eingetragene Werte), mit „Stände eintragen“ je Depot.

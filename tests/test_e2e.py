@@ -455,6 +455,37 @@ class AppTests(_AppBase):
         self.assertEqual([x["uuid"] for x in k["konten"]], [a.uuid for a in led.accounts.values() if a.path])
         self.assertEqual([x for x in k["konten"] if x["uuid"] == F.uid("priv.giro")][0]["rolle_vorschlag"], "liquiditaet")
 
+    def test_schnellabgleich_und_luecken(self):
+        """Kurzer Blick in MoneyMoney genuegt: Kontenliste lesen, Depotstand im Monat des Abrufs merken; Abruf waehrend Kontor
+        nicht lief -> Hinweis auf moeglicherweise fehlende Monate."""
+        from datetime import datetime as dt
+        self.login()
+        import mm_app as MA
+        MA.is_running = lambda: True
+        try:
+            depot = [a for a in MockBridge.state["accounts"] if a["uuid"] == F.uid("priv.depot")][0]
+            depot["refreshTimestamp"] = F._dt(date(2026, 10, 31))           # Abruf am 31.10.
+            self.app.prev_seen = dt(2026, 9, 15, 12, 0)                     # Kontor lief zuletzt am 15.09.
+            self.app.capture()
+            st = self.store.load("state.json")
+            mk = [k for k, v in st["snapshots"].items() if F.uid("priv.depot") in v and k <= "2026-10"]
+            self.assertTrue(mk, st["snapshots"].keys())                     # Depot im Monat des Abrufs (Ortszeit 30./31.10.)
+            gaps = st.get("luecken") or []
+            self.assertEqual(len(gaps), 1); self.assertEqual(gaps[0]["konto"], F.uid("priv.depot")); self.assertEqual(gaps[0]["monate"][0], "2026-09")
+            code, r = self.call("/api/abruf"); self.assertEqual(len(r["luecken"]), 1)
+            code, stt = self.call("/api/status"); self.assertEqual(stt["moneymoney"]["luecken"], 1)
+            self.call("/api/abruf/luecken", {}); self.assertFalse(self.store.load("state.json").get("luecken"))
+            # unveraendert -> kein erneuter Abgleich; geaendert -> voller Abgleich wird angestossen
+            self.app.mm_retry_at = None; self.app.capture(); self.assertIsNone(self.app.mm_retry_at)
+            self.app.config.setdefault("zeitplan", {})["automatisch"] = True
+            depot["balance"][0][0] += 1000; self.app.capture(); self.assertIsNotNone(self.app.mm_retry_at)
+            # Mac schlief (kein Abruf seit dem letzten Lauf) -> keine Meldung
+            self.app.prev_seen = dt(2026, 11, 6, 12, 0); self.app._check_gaps(accounts_from_export(MockBridge.state["accounts"]))
+            self.assertFalse(self.store.load("state.json").get("luecken"))
+        finally:
+            import mm_bridge as MB
+            MA.is_running = MB.is_running
+
     def test_bankabruf_zurueck(self):
         """Konten mit Saldo, die beim Bankabruf mehr als einen Tag zurückliegen, werden gemeldet; uralte (aufgelöste) nicht."""
         self.login()

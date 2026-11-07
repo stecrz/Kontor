@@ -725,6 +725,34 @@ def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: 
     return kat
 
 
+def record_snapshot(snaps: dict, accounts, today: date) -> bool:
+    """Staende fuers Monatsende merken. Depots unter dem Monat ihres letzten Abrufs in MoneyMoney (nicht dem Monat, in dem
+    Kontor liest: ein Abruf am 31. landet im richtigen Monat, auch wenn Kontor erst am 2. liest), uebrige Konten unter dem
+    laufenden Monat. Liefert True, wenn sich etwas geaendert hat."""
+    changed = False
+    cur = month_key(today)
+    for a in accounts:
+        if a.group:
+            continue
+        mk = cur
+        if a.portfolio and a.refresh is not None and a.refresh.year >= 2005 and a.refresh.date() <= today:
+            mk = month_key(a.refresh.date())
+        row = snaps.setdefault(mk, {})
+        if row.get(a.uuid) != a.balance:
+            row[a.uuid] = a.balance
+            changed = True
+    if len(snaps) > 600:
+        for k in sorted(snaps)[:-600]:
+            snaps.pop(k, None)
+    return changed
+
+
+def merge_snapshots(state: dict, snaps: dict) -> None:
+    cur = state.setdefault("snapshots", {})
+    for mk, row in (snaps or {}).items():
+        cur.setdefault(mk, {}).update(row)
+
+
 def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today: date, warnings: List[str],
                  categories: Optional[List[dict]] = None, progress: Optional[Callable[[float, str], None]] = None) -> dict:
     # Fortschritt grob nach Laufzeit eines Laufs ohne Zwischenergebnisse gewichtet: Kategorien 5-25 %, Bereiche 25-75 % (nach
@@ -732,11 +760,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
     step = progress or (lambda f, t: None)
     step(0.05, "Kategorien")
     kat = prepare_categories(store, ledger, config, categories, lambda f, t: step(0.05 + 0.2 * f, t))
-    snaps = state.setdefault("snapshots", {})
-    snaps[month_key(today)] = {a.uuid: a.balance for a in ledger.accounts.values() if not a.group}
-    if len(snaps) > 600:
-        for k in sorted(snaps)[:-600]:
-            snaps.pop(k, None)
+    record_snapshot(state.setdefault("snapshots", {}), ledger.accounts.values(), today)
     bereiche = bereiche_for(ledger, config)
     haupt = main_bereich(bereiche)
     roles = account_roles(ledger, config)
@@ -972,7 +996,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                                                   "buchungen": [x.describe() for x in bookings][:50]})
             cur["verlauf"] = cur["verlauf"][-100:]
             if state.get("snapshots"):
-                cur["snapshots"] = state["snapshots"]
+                merge_snapshots(cur, state["snapshots"])     # Schnellabgleich waehrend des Laufs bleibt erhalten
             if state.get("kategorien_roh"):
                 cur["kategorien_roh"] = state["kategorien_roh"]
         store.update("state.json", _merge, {})      # Verlauf-Eingaben waehrend des Laufs bleiben erhalten

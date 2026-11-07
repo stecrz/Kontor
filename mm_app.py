@@ -36,10 +36,10 @@ import mm_import
 import mm_kategorien
 import mm_update
 from mm_belege import Belege, file_status
-from mm_bridge import Bridge, MoneyMoneyError, is_running
-from mm_core import (RUN_LOCK, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, export_package, fetch, freeze_assignments, immo_for_plan,
+from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, is_running
+from mm_core import (RUN_LOCK, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merged_config, run_once, unavailable_text, version, version_on_disk)
-from mm_model import Ledger, ledger_from_bytes, ledger_to_bytes
+from mm_model import Ledger, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from mm_report import ROLE_LABELS, ROLES, account_balance_series, account_months, apply_plan
 from mm_store import Store
 from mm_xlsx import Sheet, workbook
@@ -101,6 +101,14 @@ class App:
         self.restart_allowed = False        # nur der echte Dienst (serve) startet sich bei neuem Code selbst neu
         self.mm_probe: Tuple[float, Optional[bool]] = (0.0, None)     # (Zeitpunkt, gesperrt?)
         self.mm_retry_at: Optional[float] = None
+        self._capture_sig: Optional[tuple] = None      # letzter Schnellabgleich (Konto, Saldo, Abrufzeit)
+        self._hb_written = 0.0
+        self.prev_seen: Optional[datetime] = None       # wann der Dienst vor diesem Start zuletzt lief
+        try:
+            ps = (store.load("state.json", {}) or {}).get("dienst_zuletzt")
+            self.prev_seen = datetime.fromisoformat(ps) if ps else None
+        except Exception:
+            self.prev_seen = None
 
     # -- Konfiguration -----------------------------------------------------
     def save_config(self, cfg: dict) -> None:
@@ -237,7 +245,7 @@ class App:
                 log.exception("Bericht aus dem letzten Stand fehlgeschlagen")
                 return False, "Bericht fehlgeschlagen: %s" % e
             # nur die Monats-Schnappschuesse zurueckschreiben -- Verlauf-Eingaben, die waehrend des Baus kamen, bleiben erhalten
-            self.store.update("state.json", lambda cur: cur.__setitem__("snapshots", st.get("snapshots") or {}), {})
+            self.store.update("state.json", lambda cur: merge_snapshots(cur, st.get("snapshots") or {}), {})
         log.info("Bericht aus dem letzten Stand neu gebaut (%.1f s)", time.time() - t0)
         return True, None
 
@@ -349,6 +357,65 @@ class App:
         finally:
             self.running = False
 
+    def capture(self) -> None:
+        """Schnellabgleich: sobald MoneyMoney offen und entsperrt ist, nur die Kontenliste lesen (unter einer Sekunde) und die
+        Staende merken. So reicht auch ein kurzer Blick in MoneyMoney; geaenderte Daten loesen danach den vollen Abgleich aus."""
+        if self.running or not is_running():
+            return
+        try:
+            raw = self.bridge_factory(True).export_accounts()
+        except MoneyMoneyError as e:
+            if isinstance(e, MoneyMoneyLocked):
+                self.mm_probe = (time.time(), True)
+            return
+        self.mm_probe = (time.time(), False)
+        accs = accounts_from_export(raw)
+        sig = tuple(sorted((a.uuid, a.balance, a.refresh.isoformat() if a.refresh else "") for a in accs.values() if not a.group))
+        if sig == self._capture_sig:
+            return
+        first = self._capture_sig is None
+        self._capture_sig = sig
+        today = date.today()
+        self.store.update("state.json", lambda cur: record_snapshot(cur.setdefault("snapshots", {}), accs.values(), today), {})
+        if first:
+            self._check_gaps(accs)
+        elif (self.config.get("zeitplan") or {}).get("automatisch", True):
+            self.mm_retry_at = time.time()             # neue Daten in MoneyMoney: gleich vollstaendig abgleichen
+
+    def _check_gaps(self, accs: Dict) -> None:
+        """Hat MoneyMoney ein Depot abgerufen, waehrend Kontor nicht lief, koennen Monatsend-Staende dazwischen fehlen
+        (Kontor sieht nur den neuesten). Schlief der Mac, hat auch MoneyMoney nichts abgerufen -- dann keine Meldung."""
+        prev = self.prev_seen
+        if prev is None:
+            return
+        found = []
+        for a in accs.values():
+            if a.group or not a.portfolio or a.refresh is None or a.refresh.year < 2005:
+                continue
+            ref = a.refresh.replace(tzinfo=None)            # Ortszeit wie prev_seen/started
+            if not (prev + timedelta(minutes=5) < ref < self.started):
+                continue
+            months, y, m = [], prev.year, prev.month
+            while (y, m) < (ref.year, ref.month):
+                months.append("%04d-%02d" % (y, m))
+                y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+            if months:
+                found.append({"konto": a.uuid, "name": a.name, "monate": months, "erkannt": datetime.now().strftime("%Y-%m-%d %H:%M")})
+        if found:
+            log.info("Depotstände möglicherweise unvollständig (MoneyMoney rief ab, während Kontor nicht lief): %s",
+                     ", ".join("%s %s–%s" % (f["name"], f["monate"][0], f["monate"][-1]) for f in found))
+
+            def upd(cur):
+                old = [x for x in cur.get("luecken") or [] if x.get("konto") not in {f["konto"] for f in found}]
+                cur["luecken"] = old + found
+            self.store.update("state.json", upd, {})
+
+    def heartbeat(self) -> None:
+        if time.time() - self._hb_written >= 300:
+            self._hb_written = time.time()
+            now = datetime.now().isoformat(timespec="seconds")
+            self.store.update("state.json", lambda cur: cur.__setitem__("dienst_zuletzt", now), {})
+
     def code_changed(self) -> Optional[str]:
         """Neue Version im Programmordner (git pull, Update, Dateien ersetzt)? Liefert die neue Versionsnummer."""
         disk = version_on_disk()
@@ -406,6 +473,12 @@ class App:
                         log.info("TLS-Zertifikat erneuert und neu geladen")
             except Exception:  # pragma: no cover
                 log.exception("Zeitplaner")
+            try:
+                self.heartbeat()
+                if (self.config.get("zeitplan") or {}).get("automatisch", True):
+                    self.capture()
+            except Exception:  # pragma: no cover
+                log.exception("Schnellabgleich")
             self.stop.wait(20)
 
     # -- Daten fuer die Oberflaeche ---------------------------------------
@@ -508,7 +581,7 @@ class App:
                        "intervall_minuten": (self.config.get("zeitplan") or {}).get("intervall_minuten", 30)},
             "moneymoney": {"laeuft": is_running(), "gesperrt": self.moneymoney_gesperrt(max_age=3.0 if frisch else 45.0), "aus_zwischenspeicher": self.ledger_from_cache,
                            "stand": self.ledger_time.strftime("%Y-%m-%d %H:%M") if self.ledger_time else None,
-                           "bankabruf": self.bankabruf(),
+                           "bankabruf": self.bankabruf(), "luecken": len(st.get("luecken") or []),
                            "kategorisieren_erlaubt": bool((self.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False))},
             "ablage": {"verschluesselt": self.store.encrypted, "schluessel": self.store.key_source, "ordner": self.data_dir},
             "belege": {"ordner": os.path.expanduser(bcfg.get("ordner") or "~/Documents/Kontor-Belege")},
@@ -818,7 +891,7 @@ def make_handler(app: App):
                     depots.append({"uuid": a.uuid, "name": a.name, "pfad": a.path, "bereich": bereich.get(a.uuid, ""),
                                    "aufgezeichnet_seit": rec[0] if rec else None, "eigene": len(own), "erster_stand": known[0] if known else None,
                                    "erste_buchung": None})
-                return self._json(200, dict(r, konten=[dict(k, bereich=bereich.get(k["uuid"], "")) for k in r["konten"]], depots=depots,
+                return self._json(200, dict(r, konten=[dict(k, bereich=bereich.get(k["uuid"], "")) for k in r["konten"]], depots=depots, luecken=st.get("luecken") or [],
                                             aufzeichnung_seit=min(snaps) if snaps else None,
                                             gelesen=app.ledger_time.strftime("%Y-%m-%d %H:%M") if app.ledger_time else None))
             if path == "/api/runs":
@@ -1125,6 +1198,9 @@ def make_handler(app: App):
                                             "kategorien": app.categories()})
                 finally:
                     app.check_lock.release()
+            if path == "/api/abruf/luecken":
+                app.store.update("state.json", lambda cur: cur.pop("luecken", None), {})
+                return self._json(200, {"ok": True})
             if path == "/api/abruf":
                 if app.ledger is None:
                     return self._json(409, {"fehler": "Noch kein Stand aus MoneyMoney gelesen."})
