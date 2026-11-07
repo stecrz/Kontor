@@ -9,3 +9,4 @@ config.json
 !vorlagen/*.kontor.json
 Claude outputs/
 Hinweise-*.md
+mm-datenbank-aufbau.txt

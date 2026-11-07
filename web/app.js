@@ -37,6 +37,7 @@ const H = {
   inaktiv: 'Gilt für Konten mit Anzeige „nach Aktivität“: ohne Bestand und ohne Umsatz in den letzten N Monaten (z. B. Altdaten) werden sie ausgeblendet, bleiben aber in Summen und Historie enthalten. 0 = nie automatisch ausblenden.',
   probelauf: 'Im Testmodus schlägt Kontor die Buchungen aus deinen Regeln (z. B. Darlehenszinsen) nur vor und legt nichts in MoneyMoney an. Zum Anlegen unter „Buchungen“ auf „Jetzt buchen“ klicken oder den Testmodus abschalten.',
   abruf: 'Stand je Konto in dem Datenstand, den Kontor zuletzt aus MoneyMoney gelesen hat. „zurück“ = mehr als einen Tag älter als der neueste Abruf (Konten mit Saldo). „ruht“ = seit über N Monaten kein Abruf (vermutlich aufgelöst). Offline-Konten erkennt Kontor an fehlender Bank-/Kontonummer, an Regeln, die in das Konto buchen, und an Kontor-Buchungen; MoneyMoney setzt den Abrufzeitpunkt auch bei Offline-Konten, deshalb zählt er allein nicht.',
+  mmdb: 'Kontor öffnet MoneyMoneys Datenbank nur lesend mit dem Programm sqlcipher; das Passwort geht per Standardeingabe an sqlcipher (nicht sichtbar in der Prozessliste) und wird danach verworfen. macOS fragt ggf., ob python3 auf die Daten von MoneyMoney zugreifen darf (Festplattenvollzugriff).',
   touchid: 'Eingeschaltet: Die Anmeldung am Mac fragt nur nach Touch ID (oder Apple Watch); das Passwortfeld erscheint erst nach Klick auf „Stattdessen Passwort eingeben“. Ausgeschaltet: nur Passwort. Am iPhone gilt immer das Passwort.',
   bilanz_stand: 'Salden am Monatsende; der laufende Monat zeigt den aktuellen Stand. Klick auf ein Konto: Monatsstände ansehen und bearbeiten.',
   abgleich: 'Datenstand in zwei Stufen: „Banken → MM“ = wann MoneyMoney zuletzt bei den Banken abgerufen hat – das löst du in MoneyMoney aus (von Hand oder per Zeitplan dort). „MM → Kontor“ = wann Kontor zuletzt aus MoneyMoney gelesen hat – automatisch im eingestellten Abstand oder sofort mit „Synchronisieren“; dabei werden auch die Regeln angewendet, falls sich etwas geändert hat. Ist MoneyMoney aus oder gesperrt, rechnet Kontor mit dem zuletzt gelesenen Stand weiter und versucht es jede Minute erneut. Bleiben Konten beim Bankabruf zurück (z. B. TAN nötig), steht das hier. Testmodus: Buchungen aus Regeln werden nur vorgeschlagen.',
@@ -682,6 +683,8 @@ function vKontenEditor() {
       <td class="num ${(k.saldo || 0) < 0 ? 'neg' : 'pos'}">${F(k.saldo)}</td></tr>`;
   }
   h += '</tbody></table></div><div class="actions"><button id="save-konten" class="secondary">Speichern</button><button data-savenext="#zuordnen" data-save="konten">Speichern und weiter: Kategorien &amp; Zuordnen</button><button class="secondary" data-next="#einrichtung">Zurück zur Einrichtung</button></div><div id="findings-k2" class="findings"></div>';
+  if (S.STATUS && S.STATUS.lokal) h += `<h2>Kontostand-Historie aus MoneyMoney ${hq('mmdb')}</h2><div class="note">MoneyMoney gibt die Kurve der Kontostände nur über seine eigene Datenbank heraus. Schritt 1: Kontor liest deren Aufbau (nur Tabellen- und Spaltennamen, keine Beträge) und legt ihn als Datei „mm-datenbank-aufbau.txt“ in den Kontor-Ordner; danach folgt die Übernahme der Stände. Voraussetzung: <code>brew install sqlcipher</code> im Terminal. Das Passwort wird nicht gespeichert und nicht protokolliert.</div>
+    <div class="row tight"><input type="password" id="mmdb-pw" autocomplete="off" placeholder="MoneyMoney-Passwort" style="width:240px"><button id="mmdb-check" class="small">Aufbau prüfen</button></div><div id="mmdb-res" class="findings"></div>`;
   h += `<h2>Saldenverlauf importieren ${hq('verlauf_import')}</h2><div class="note">Für Depots und Konten ohne Umsatzhistorie: Monatsstände aus einer Datei übernehmen. Erkannt werden CSV und Excel (.xlsx) – als Liste (Datum, Konto, Saldo), als Tabelle mit Stichtagen in der Kopfzeile (Konten als Zeilen, z. B. eine eigene Vermögensübersicht) oder mit Stichtagen in der ersten Spalte (Konten als Spalten). Je Monat zählt der letzte Wert. Umsatzkonten brauchen das nicht.</div>
     <div class="drop" id="hi-drop">Datei hierher ziehen<br><button id="hi-pick" class="small" style="margin-top:8px">Datei wählen</button></div><div id="hi-preview"></div>`;
   return h;
@@ -1811,7 +1814,7 @@ const guarded = () => GUARDED.includes(S.tab + (S.sub ? '/' + S.sub : ''));
 (function dirtyListeners() {
   // einmal am Hauptbereich (bleibt bestehen); ob die Seite geschuetzt ist, wird beim Ereignis geprueft
   const main = $('#main');
-  const mark = e => { if (!guarded() || e.target.closest('#hi-preview, .toolbar') || e.target.id === 'k-show-inactive') return; DIRTY.on = true; };
+  const mark = e => { if (!guarded() || e.target.closest('#hi-preview, .toolbar, #mmdb-pw') || e.target.id === 'k-show-inactive') return; DIRTY.on = true; };
   main.addEventListener('input', mark); main.addEventListener('change', mark);
   main.addEventListener('click', e => { if (guarded() && e.target.closest('.del, #add-bereich, .add-item, .b-mv')) DIRTY.on = true; });
 })();
@@ -1905,6 +1908,13 @@ function bind(main) {
   $$('.k-hist', main).forEach(b => b.addEventListener('click', async e => { const btn = e.target; btn.classList.add('busy'); try { const tr = btn.closest('tr'), sel = $('.k-verlauf', tr); await openHistDrawer(tr.dataset.uuid, sel ? sel.value : null); } catch (er) { toast('Verlauf konnte nicht geladen werden: ' + er.message, 6000); } finally { btn.classList.remove('busy'); } }));
   const hp = $('#hi-pick', main); if (hp) hp.addEventListener('click', () => { const inp = $('#file-input'); inp.value = ''; inp.setAttribute('accept', '.csv,.txt,.xlsx,.xlsm'); inp.removeAttribute('capture'); inp.onchange = () => { if (inp.files[0]) histImportPreview(inp.files[0]); }; inp.click(); });
   const hd = $('#hi-drop', main); if (hd) { hd.addEventListener('dragover', e => { e.preventDefault(); hd.classList.add('over'); }); hd.addEventListener('dragleave', () => hd.classList.remove('over')); hd.addEventListener('drop', e => { e.preventDefault(); hd.classList.remove('over'); if (e.dataTransfer.files[0]) histImportPreview(e.dataTransfer.files[0]); }); if (HI) renderHistImport(); }
+  const mc = $('#mmdb-check', main); if (mc) mc.addEventListener('click', async () => {
+    const pw = $('#mmdb-pw', main), res = $('#mmdb-res', main); if (!pw.value) { pw.focus(); return; }
+    mc.classList.add('busy'); mc.disabled = true; res.innerHTML = '';
+    try { const r = await api('/api/mmdb/pruefen', {passwort: pw.value}); showFindings(res, [], r.ok ? `Aufbau gelesen: ${r.tabellen} Tabellen (SQLCipher ${r.kompatibilitaet}), gespeichert in ${r.datei}. Nächster Schritt: Übernahme der Stände.` : r.text, r.ok ? 'ok' : 'fehler'); }
+    catch (e) { showFindings(res, [], e.message, 'fehler'); }
+    finally { pw.value = ''; mc.classList.remove('busy'); mc.disabled = false; }
+  });
   const sn = $('#sync-now', main); if (sn) sn.addEventListener('click', async () => { sn.classList.add('busy'); try { await syncNow(); } finally { sn.classList.remove('busy'); } });
   $$('.ab-chk', main).forEach(cb => cb.addEventListener('change', async () => {
     try { await api('/api/abruf', {konto: cb.closest('tr').dataset.uuid, abgerufen: cb.checked}); S.STATUS = await api('/api/status'); statusMini(); route(); }

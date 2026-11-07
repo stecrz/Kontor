@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.9.3
+- Kontostand-Historie aus MoneyMoney, Schritt 1: Unter Einrichtung → Konten liest „Aufbau prüfen“ den Aufbau von MoneyMoneys Datenbank (nur Tabellen- und Spaltennamen, keine Beträge) und legt ihn als „mm-datenbank-aufbau.txt“ in den Kontor-Ordner. Nur am Mac, nur lesend, Passwort wird weder gespeichert noch protokolliert. Voraussetzung: `brew install sqlcipher`.
+
 ## 3.9.2
 - Einrichtung: oben steht nur „Einrichtung“, darunter der Name des Schritts wie im Einrichtungsplan („Verbindung“, „Bereiche“, „Konten“).
 - Einzahl/Mehrzahl: „Ein Konto“ bzw. „N Konten“ statt „Konto/Konten“.
