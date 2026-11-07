@@ -65,7 +65,7 @@ const H = {
   position: t('die_bilanzposition_eines_kontos_sie'),
   verlauf: t('umsaetze_saldo_am_monatsende_heutiger'),
   zuordnen: t('hier_landen_alle_umsaetze_die'),
-  kontor_kategorien: t('reihenfolge_manuelle_zuordnung_eigene'),
+  kontor_kategorien: t('kat_reihenfolge_tip'),
   mm_ueberschreiben: t('standard_umsaetze_mit_moneymoney_kateg'),
   konten_zuordnung: t('bereich_position_und_verlauf_werden'),
   verlauf_import: t('datei_mit_monats_oder_tagesstaenden'),
@@ -137,7 +137,21 @@ const H = {
   bch: t('bch_hinweis'),
   geld_unterwegs: t('geld_unterwegs_tip'),
 };
-const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k])}">?</span>` : '';
+const HELP_AT = {bereich: 'bereiche', haupt: 'bereiche', anteil: 'bereiche', gruppenwahl: 'bereiche', anzeige: 'konten', position_kurz: 'konten', position: 'konten',
+  konten_zuordnung: 'konten', inaktiv: 'konten', verlauf_kurz: 'verlauf', verlauf: 'verlauf', verlauf_import: 'verlauf', depotverlauf: 'verlauf', mmhist: 'kontostaende',
+  zuordnen: 'kategorien', kontor_kategorien: 'kategorien', mm_ueberschreiben: 'kategorien', mm_cat: 'kategorien-zurueckschreiben', kat_auswahl: 'kategorien-auswahl',
+  abgleich: 'synchronisierung', voll_lesen: 'synchronisierung', monate_zurueck: 'synchronisierung', abruf: 'synchronisierung', intervall: 'synchronisierung',
+  bch: 'bilanz', bilanz_stand: 'bilanz', geld_unterwegs: 'bilanz', probelauf: 'regeln', methode: 'planung', inflation: 'planung', steig_ein: 'planung',
+  rendite: 'planung', ereignis: 'planung', wert_bereich: 'planung', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
+  port: 'iphone', touchid: 'sicherheit', paket: 'sichern', timemachine: 'sichern', diagnose: 'fehler', pruefen: 'einrichtung', updates: 'updates',
+  update_quelle: 'updates', belege_ordner: 'belege', belege_sub: 'belege', dokumente: 'immobilien', immo_planung: 'immobilien'};
+const more = id => ` <a href="#hilfe/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
+const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k] + (HELP_AT[k] ? ' · ' + t('klick_mehr_in_der_hilfe') : ''))}"${HELP_AT[k] ? ` data-help="${HELP_AT[k]}"` : ''}>?</span>` : '';
+document.addEventListener('click', e => {
+  // auf Geräten mit Maus führt ein Klick auf „?“ in den passenden Abschnitt der Hilfe (am iPhone zeigt Tippen nur den Hinweis)
+  const q = e.target.closest('.hq[data-help]'); if (!q || !matchMedia('(hover: hover)').matches) return;
+  e.preventDefault(); e.stopPropagation(); location.hash = '#hilfe/' + q.dataset.help;
+}, true);
 // Tooltip als eigenes Element: unterhalb, wenn oben kein Platz ist; nie ueber den Fensterrand hinaus
 (function tooltips() {
   let tip = null, cur = null;
@@ -747,7 +761,7 @@ function vBereicheEditor() {
   let list = (S.CFG.bereiche || []).length ? S.CFG.bereiche : roots.map(r => ({id: r.uuid, name: r.name, konten: [r.uuid + ' | ' + r.name], haupt: false, art: guessArt(r.name), anteil: null}));
   if (list.length && !list.some(b => b.haupt)) { const p = list.find(b => (b.art || guessArt(b.name)) === 'privat') || list[0]; p.haupt = true; }
   if (!(S.CFG.bereiche || []).length) list = list.map((b, i) => [b, i]).sort((x, y) => (!x[0].haupt - !y[0].haupt) || (((x[0].art || guessArt(x[0].name)) !== 'privat') - ((y[0].art || guessArt(y[0].name)) !== 'privat')) || x[1] - y[1]).map(x => x[0]);
-  let h = `<div class="note">${t('standard_jede_kontengruppe_der_oberste', hq('bereich'), S.KONTEN.length ? '' : `<b>${t('noch_keine_konten_geladen_zuerst')}</b>`)}</div><div class="list" id="bereiche">`;
+  let h = `<div class="note">${t('bereiche_note', more('bereiche'), S.KONTEN.length ? '' : `<b>${t('noch_keine_konten_geladen_zuerst')}</b>`)}</div><div class="list" id="bereiche">`;
   list.forEach((b, i) => { h += bereichForm(b, i); });
   h += `</div><div class="actions"><button id="add-bereich" class="secondary">${t('bereich_hinzufuegen')}</button><button id="save-bereiche" class="secondary">${t('speichern')}</button><button data-savenext="#einrichtung/konten" data-save="bereiche">${t('speichern_und_weiter_konten')}</button><button class="secondary" data-next="#einrichtung">${t('zurueck_zur_einrichtung')}</button></div><div id="findings-b" class="findings"></div>`;
   return h;
@@ -817,7 +831,7 @@ function vKontenEditor() {
   const bereichOf = u => { const k = S.KONTEN.find(x => x.uuid === u); if (k && k.bereich) return k.bereich; for (const b of (S.CFG.bereiche || [])) if ((b.konten || []).some(r => { const id = r.split('|')[0].trim(); const g = S.KONTEN.find(x => x.uuid === id); return id === u || (g && g.gruppe && leaves.find(l => l.uuid === u && l.pfad.startsWith(g.pfad + ' / '))); })) return b.name; return ''; };
   const bereiche = (S.CFG.bereiche || []).length ? S.CFG.bereiche.map(b => [b.id, b.name]) : Object.entries((S.DATA && S.DATA.bereich_namen) || {});
   const neu = leaves.filter(k => !k.bestaetigt);
-  let h = `<div class="note">${t('jedes_konto_gehoert_zu_einem', hq('konten_zuordnung'))}</div>
+  let h = `<div class="note">${t('konten_note', more('konten'))}</div>
   ${neu.length ? `<div class="banner info">${t('0_noch_nicht_bestaetigt_1', nKonten(neu.length), esc(neu.slice(0, 6).map(k => k.name).join(', ')), neu.length > 6 ? ' …' : '')}</div>` : ''}
   <div class="row tight"><label>${t('nach_aktivitaet_ausblenden_ohne_bestan')} <input type="number" id="k-inaktiv" min="0" value="${cfg.bilanz.inaktiv_monate ?? 12}" style="width:70px"> ${t('monaten_0', hq('inaktiv'))}</label><label class="switch"><input type="checkbox" id="k-show-inactive" checked><i></i>${t('ausgeblendete_hier_zeigen')}</label></div>
   <div class="wrap auto"><table class="plain acct-table"><thead><tr><th>${t('konto_2')}</th><th>${t('bereich_0', hq('bereich'))}</th><th>${t('position_0', hq('position_kurz'))}</th><th>${t('verlauf_0', hq('verlauf_kurz'))}</th><th>${t('anzeige_0', hq('anzeige'))}</th><th class="num">${t('saldo')}</th></tr></thead><tbody>`;
@@ -1408,7 +1422,7 @@ async function vSync() {
   const dep = r.depots || [];
   if (m.problem) h += `<div class="banner err">${t('moneymoney_lief_am_0_kontor', esc(fmtZeit(m.problem.zeit)), esc(m.problem.text))}</div>`;
   if ((r.luecken || []).length) h += `<div class="banner">${t('moeglicherweise_fehlen_depotstaende_mo', r.luecken.map(l => `<b>${esc(l.name)}</b> ${l.monate.map(ML).join(', ')}`).join('; '))} <button class="small secondary" id="gap-ok">${t('hinweis_ausblenden')}</button></div>`;
-  if (dep.length) h += `<h2>${t('depots_wertverlauf_0', hq('depotverlauf'))}</h2><div class="note">${t('bankkonten_rechnet_kontor_exakt_aus', r.aufzeichnung_seit ? ML(r.aufzeichnung_seit) : t('heute'))}</div>
+  if (dep.length) h += `<h2>${t('depots_wertverlauf_0', hq('depotverlauf'))}</h2><div class="note">${t('depot_verlauf_note', r.aufzeichnung_seit ? ML(r.aufzeichnung_seit) : t('heute'))}${more('kontostaende')}</div>
     <div class="small" style="margin:6px 0 10px">${r.mm_verlauf ? `${t('verlauf_aus_moneymoney_uebernommen_am', esc(fmtZeit(r.mm_verlauf.zeit)))}` : t('bisheriger_verlauf_noch_nicht_uebernom')} <a href="#einrichtung/historie">${t('kontostaende_aus_moneymoney_0_einlesen', r.mm_verlauf ? 'erneut ' : '')}</a></div>
     <div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>${t('depot')}</th><th>${t('bereich')}</th><th>${t('bekannt_ab')}</th><th></th></tr></thead><tbody>${dep.map(k => `<tr data-uuid="${k.uuid}"><td>${esc(k.name)}<div class="small muted">${esc(k.pfad.split(' / ').slice(0, -1).join(' / '))}</div></td><td class="small">${esc(k.bereich || '–')}</td><td>${k.erster_stand ? ML(k.erster_stand) : '–'}${k.aus_moneymoney ? ` <span class="small muted">${t('aus_moneymoney')}</span>` : ''}${k.eigene ? ` <span class="small muted">${t('0_eingetragen', k.eigene)}</span>` : ''}</td><td class="c"><button class="small secondary dep-hist">${t('staende_eintragen')}</button></td></tr>`).join('')}</tbody></table></div>`;
   h += `<h2>${t('sync_mit_abruf', online.length, hq('abruf'))}</h2><div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>${t('konto_2')}</th><th>${t('bereich')}</th><th>${t('letzter_abruf')}</th><th>${t('stand')}</th><th class="c">${t('abgerufen')}</th></tr></thead><tbody>${online.map(row).join('') || `<tr><td colspan="5" class="muted">${t('keine')}</td></tr>`}</tbody></table></div>`;
@@ -1778,7 +1792,7 @@ function acctOptions(selected, filter) {
 const onlyManual = k => !k.gruppe && k.manuell, onlyGroups = k => k.gruppe, onlyLeaves = k => !k.gruppe;
 function vRegeln() {
   const C = S.CFG;
-  let h = `<div class="note">${t('regeln_schreiben_ausschliesslich_in_ma')}` + (S.KONTEN.length ? '' : ` <b>${t('noch_keine_konten_geladen_unter')}</b>`) + '</div>';
+  let h = `<div class="note">${t('regeln_schreiben_ausschliesslich_in_ma')}${more('regeln')}` + (S.KONTEN.length ? '' : ` <b>${t('noch_keine_konten_geladen_unter')}</b>`) + '</div>';
   h += `<h2>${t('darlehen')} <span class="x">${t('rate_erkennen_auf_dem_darlehenskonto')}</span></h2><div class="list" id="loans">`;
   (C.darlehen || []).forEach((l, i) => { h += loanForm(l, i); });
   h += `</div><div class="actions"><button id="add-loan" class="secondary">${t('darlehen_hinzufuegen')}</button></div>`;
@@ -2018,7 +2032,7 @@ function bindZuordnen(main) {
 function vKontorKategorien() {
   const kat = KZ.kat; if (!kat) return `<div class="note">${t('lade_2')}</div>`;
   const e = kat.einstellungen || {}, st = kat.statistik || {}, ges = st.gesamt || {};
-  let h = `<div class="note">${t('kontor_fuehrt_eigene_kategorien_baum', hq('kontor_kategorien'))}</div>
+  let h = `<div class="note">${t('kat_regeln_note', hq('kontor_kategorien'))}${more('kategorien')}</div>
   <div class="row tight" style="margin-bottom:10px"><label class="switch"><input type="checkbox" id="kk-aktiv" ${e.aktiv !== false ? 'checked' : ''}><i></i>${t('kontor_kategorien_aktiv')}</label><label class="switch"><input type="checkbox" id="kk-lernen" ${e.lernen !== false ? 'checked' : ''}><i></i>${t('bei_jedem_abgleich_regeln_nachlernen')}</label><label class="switch"><input type="checkbox" id="kk-mm" ${e.mm_ueberschreiben ? 'checked' : ''}><i></i>${t('regeln_auch_auf_moneymoney_kategorisie', hq('mm_ueberschreiben'))}</label>
     <span class="small muted">${t('0_kategorien_regeln_1_eigene', st.kategorien || 0, (st.regeln || {}).manuell || 0, (st.regeln || {}).gelernt || 0, st.gelernt_am ? ' (' + esc(st.gelernt_am) + ')' : '', ges.manuell || 0, ges.regel || 0, ges.moneymoney || 0, ges.ohne || 0)}</span></div>`;
   h += `<h2>${t('kategorien')} <span class="x">${kat.baum.length}</span></h2><div class="row tight" style="margin-bottom:6px"><input type="text" id="kk-neu" placeholder="${t('neue_kategorie_z_b_wohnen')}" style="min-width:320px"><button id="kk-add" class="small">${t('anlegen')}</button><button id="kk-mmsync" class="small secondary" title="${t('neue_kategorien_aus_moneymoney_in')}">${t('aus_moneymoney_ergaenzen')}</button></div>
@@ -2261,7 +2275,7 @@ async function vUpdates() {
     <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${info && info.neuer && st.lokal ? '' : 'disabled'}>${t('update_installieren_und_dienst_neu')}</button></div>
     ${info && info.notizen && info.neuer ? `<h2>${t('neu_in_0', esc(info.verfuegbar))}</h2>${clHtml(info.notizen)}` : ''}
     ${r.changelog ? `<details class="changelog"><summary>${t('alle_aenderungen')}</summary>${clHtml(r.changelog)}</details>` : ''}
-    <div class="note">${t('die_pruefung_fragt_nur_github', esc((S.CFG.updates || {}).repo || 'stecrz/Kontor'))} <code>.alt</code>${t('und_der_dienst_neu_gestartet')} <code>${t('git_pull')}</code>${t('die_seite_laedt_danach_neu')} <code>bash &lt;(curl -fsSL https://raw.githubusercontent.com/${esc((S.CFG.updates || {}).repo || 'stecrz/Kontor')}/main/get.sh)</code> ${t('im_terminal_installiert_und_aktualisie')}</div>`;
+    <div class="note">${t('updates_note', esc('https://github.com/' + ((S.CFG.updates || {}).repo || 'stecrz/Kontor')))}${more('updates')}</div>`;
   return h;
 }
 
@@ -2272,63 +2286,70 @@ async function vProtokoll() {
   return `<div class="toolbar"><button id="log-refresh" class="secondary small">${t('aktualisieren')}</button><button id="diag2" class="secondary small">${t('diagnosedatei_maskiert')}</button><button id="diag3" class="secondary small">${t('diagnosedatei_mit_kontonamen')}</button>${hq('diagnose')}${S.STATUS && S.STATUS.lokal ? `<button id="log-show" class="secondary small">${t('im_finder_zeigen')}</button>` : ''}</div>
     <div class="note">${t('datei')} <code>${esc(ordner)}/kontor.log</code> ${t('klartext_rotiert_bei_5_mb')} <code>${t('dienst_err_log')}</code> ${t('fuer_abstuerze_des_dienstes_zur')} <code>${t('library_application_support_kontor')}</code>.</div><pre class="log">` + esc(r.zeilen.join('\n')) + '</pre>';
 }
-function vHilfe() {
-  return `<div class="help">
-  <h2>${t('was_macht_moneymoney_was_macht')}</h2>
-  <table class="plain"><thead><tr><th>MoneyMoney</th><th>Kontor</th></tr></thead><tbody>
-  <tr><td>${t('holt_umsaetze_und_salden_von')}</td><td>${t('liest_diese_daten_ueber_die')}</td></tr>
-  <tr><td>${t('kategorisiert_umsaetze_von_hand_oder')}</td><td>${t('wertet_die_kategorien_aus_kapitalfluss')}</td></tr>
-  <tr><td>${t('fuehrt_offline_konten_manuell_darlehen')}</td><td>${t('bucht_nach_deinen_regeln_in')} <b>${t('genau_diese_offline_konten')}</b>${t('darlehensraten_spiegeln_zinsen_berechn')}</td></tr>
-  <tr><td>${t('ruft_konten_bei_den_banken')}</td><td>${t('verwendet_was_moneymoney_hat_und')}</td></tr>
-  <tr><td>${t('hat_keine_bilanz_planungs_steuer')}</td><td>${t('bilanz_je_bereich_nach_positionen')}</td></tr>
-  </tbody></table>
-  <h2>${t('bereiche_positionen_verlauf')}</h2>
-  <ul><li><b>${t('bereich')}</b> ${t('frei_zusammengestellte_konten_privat_j')}</li>
-  <li><b>${t('position')}</b> ${t('zeile_in_der_bilanz_liquiditaet')}</li>
-  <li><b>${t('verlauf_2')}</b> ${t('woher_die_monatsstaende_kommen_aus')}</li>
-  <li><b>${t('konten_bestaetigen')}</b>${t('bereich_position_und_verlauf_jedes')}</li>
-  <li><b>${t('ausgeblendete_konten')}</b>${t('anzeige_nach_aktivitaet_blendet_konten')}</li></ul>
-  <h2>${t('immobilien')}</h2>
-  <ul><li>${t('je_objekt_mehrere_kalkulationen_szenar')}</li>
-  <li>${t('darlehen_annuitaet_feste_rate_tilgungs')}</li>
-  <li>${t('indexmiete_erhoehung_zum_jahresbeginn_2')}</li>
-  <li>${t('steuer_ergebnis_miete_kosten_abziehbar')}</li>
-  <li>${t('verknuepfung_mit_moneymoney_vermietung')}</li></ul>
-  <h2>${t('kategorien')}</h2>
-  <ul><li>${t('kontor_fuehrt_eigene_kategorien_menue')}</li>
-  <li>${t('regeln_lernt_kontor_aus_den')}</li>
-  <li>${t('zuordnen_zeigt_alle_umsaetze_ohne')}</li>
-  <li>${t('ohne_kategorien_funktionieren_bilanz_v')}</li>
-  <li>${t('optional_schreibt_kontor_eine_zuordnun')}</li></ul>
-  <h2>${t('planung_ereignisse')}</h2>
-  <p>${t('umschichtung_betrag_wandert_von_von')}</p>
-  <h2>${t('berechtigungen_die_macos_abfragt')}</h2>
-  <ul><li><b>${t('automation_moneymoney')}</b> ${t('beim_ersten_verbindung_pruefen_oder')}</li>
-  <li><b>${t('automation_system_events')}</b> ${t('datei_waehlen_oeffnet_den_macos')}</li>
-  <li><b>${t('schluesselbund')}</b>${t('der_schluessel_fuer_die_verschluesselt')}</li></ul>
-  <h2>${t('protokoll_und_fehlersuche')}</h2>
-  <p>${t('das_protokoll_liegt_als_klartext')} <code>${t('library_application_support_kontor_kon')}</code> ${t('finder_gehe_zu_ordner_daneben')} <code>${t('dienst_err_log')}</code>${t('seite_protokoll_zeigt_die_letzten')}</p>
-  <h2>${t('iphone_und_offline_ansicht')}</h2>
-  <p>${t('tailscale_auf_mac_und_iphone')} <code>${t('python3_kontor_kontor_py_tls')}</code>${t('holt_ein_zertifikat_fuer_den')}</p>
-  <h2>${t('sicherung_und_zuruecksetzen')}</h2>
-  <p>${t('einstellungen_sicherung_herunterladen')}</p>
-  <h2>${t('sicherheit')}</h2>
-  <ul><li>${t('die_oberflaeche_ist_nur_auf')}</li>
-  <li>${t('alle_daten_im_datenordner_sind')}</li>
-  <li>${t('keine_verbindung_zu_externen_servern')}</li>
-  <li>${t('passwort_touch_id_automatische_sperre')}</li>
-  <li>${t('das_protokoll_enthaelt_keine_ibans')}</li></ul>
-  <h2>${t('typische_meldungen')}</h2>
-  <ul><li><b>${t('moneymoney_laeuft_nicht_datenbank_gesp')}</b> ${t('moneymoney_oeffnen_und_entsperren_kont')}</li>
-  <li><b>${t('keine_berechtigung')}</b> ${t('systemeinstellungen_datenschutz_amp_si')}</li>
-  <li><b>${t('konto_nicht_gefunden')}</b> ${t('ein_in_einer_regel_verwendetes')}</li>
-  <li><b>${t('pruefzeile_0')}</b> ${t('eine_vermoegensaenderung_ist_nicht_erk')}</li>
-  <li><b>${t('keine_passende_zahlung')}</b> ${t('die_darlehensregel_findet_die_rate')}</li>
-  <li><b>${t('kontostaende_vor_fortgeschrieben')}</b> ${t('fuer_ein_konto_mit_verlaufsquelle')}</li>
-  <li><b>${t('datei_liegt_in_icloud')}</b> ${t('die_verknuepfte_datei_ist_nur')}</li></ul>
-  <h2>${t('kommandozeile')}</h2>
-  <p><code>${t('python3_kontor_py_check')}</code> ${t('konfiguration_pruefen')} <code>${t('run_dry_run')}</code> · <code>${t('accounts')}</code> ${t('kontenbaum_mit_uuids')} <code>${t('package_export')}</code> / <code>${t('package_import_datei')}</code> · <code>${t('diagnostics')}</code> · <code>${t('update_install')}</code> · <code>${t('install')}</code> ${t('dienst_einrichten_jederzeit_wiederholb')}</p>
-  </div>`;
+// Hilfe: docs/hilfe.md bzw. docs/help.md (dieselbe Datei wie auf GitHub), mit Inhalt, Suche und Ankern (#hilfe/<abschnitt>)
+const HELP = {md: null, lang: null, q: '', bilder: {}};
+function mdInline(s) {
+  // Markdown in einer Zeile: Code, Fettschrift, Kursiv, Links (intern -> #hilfe/…, extern in neuem Fenster)
+  return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, txt, url) => url.startsWith('#') ? `<a href="#hilfe/${url.slice(1)}">${txt}</a>` : `<a href="${url}" target="_blank" rel="noopener">${txt}</a>`);
+}
+function mdHtml(md) {
+  // kleiner Markdown-Leser fuer die Hilfe: Ueberschriften (mit Anker aus <a id>), Absaetze, Listen, Tabellen, Bilder, Code
+  const out = []; let list = null, para = [], table = null, anchor = null, code = null;
+  const flush = () => { if (para.length) out.push(`<p>${mdInline(para.join(' '))}</p>`); para = []; if (list) out.push(`</${list}>`); list = null; if (table) { out.push(table + '</tbody></table></div>'); table = null; } };
+  for (const raw of md.split('\n')) {
+    if (code !== null) { if (raw.trim() === '```') { out.push(`<pre class="code">${esc(code.join('\n'))}</pre>`); code = null; } else code.push(raw); continue; }
+    if (raw.trim().startsWith('```')) { flush(); code = []; continue; }
+    const line = raw.trimEnd(), a = line.match(/^<a id="([\w-]+)"><\/a>$/), hd = line.match(/^(#{1,3})\s+(.*)/), img = line.match(/^!\[([^\]]*)\]\(([\w/.-]+)\)$/);
+    const li = line.match(/^\s*(?:[-*]|(\d+)\.)\s+(.*)/), tr = line.match(/^\|(.*)\|$/);
+    if (a) { flush(); anchor = a[1]; continue; }
+    if (hd) { flush(); const lvl = hd[1].length; if (lvl === 1) { anchor = null; continue; } out.push(`<h${lvl + 1}${anchor ? ` id="hl-${anchor}" data-a="${anchor}"` : ''}>${mdInline(hd[2])}</h${lvl + 1}>`); anchor = null; continue; }
+    if (img) {                                   // Groesse vorab (aus dem PNG-Kopf): Platz freihalten, Anker treffen; Aufnahmen mit 2- bzw. 3-facher Aufloesung (iPhone)
+      flush(); const wh = HELP.bilder[img[2]], k = /iphone/.test(img[2]) ? 3 : 2;
+      out.push(`<figure><img src="/docs/${img[2]}" alt="${esc(img[1])}"${wh ? ` width="${Math.round(wh[0] / k)}" height="${Math.round(wh[1] / k)}"` : ''} loading="lazy"></figure>`); continue;
+    }
+    if (tr) {
+      const cells = tr[1].split('|').map(c => c.trim());
+      if (cells.every(c => /^-+$/.test(c))) continue;
+      if (!table) { flush(); table = `<div class="wrap auto"><table class="plain"><thead><tr>${cells.map(c => `<th>${mdInline(c)}</th>`).join('')}</tr></thead><tbody>`; continue; }
+      table += `<tr>${cells.map(c => `<td>${mdInline(c)}</td>`).join('')}</tr>`; continue;
+    }
+    if (li) { const kind = li[1] ? 'ol' : 'ul'; if (para.length || table || (list && list !== kind)) flush(); if (!list) { list = kind; out.push(`<${kind}>`); } out.push(`<li>${mdInline(li[2])}</li>`); continue; }
+    if (!line.trim()) { flush(); continue; }
+    if (list) flush();
+    para.push(line.trim());
+  }
+  flush();
+  return out.join('\n');
+}
+async function vHilfe() {
+  if (HELP.md === null || HELP.lang !== LANG) { try { const r = await api('/api/help?lang=' + LANG); HELP.md = r.text || ''; HELP.bilder = r.bilder || {}; HELP.lang = LANG; } catch (e) { return `<div class="card">${esc(e.message)}</div>`; } }
+  const toc = [...HELP.md.matchAll(/<a id="([\w-]+)"><\/a>\n##\s+(.*)/g)].map(m => [m[1], m[2]]);
+  return `<div class="help-top"><input type="search" id="help-q" placeholder="${t('hilfe_durchsuchen')}" value="${esc(HELP.q)}"><span class="small muted" id="help-n"></span></div>
+    <div class="help-layout"><nav class="help-toc">${toc.map(([id, title]) => `<a href="#hilfe/${id}" data-a="${id}">${mdInline(title)}</a>`).join('')}</nav>
+    <div class="help" id="help-body">${mdHtml(HELP.md)}</div></div>`;
+}
+function bindHilfe(main) {
+  const body = $('#help-body', main); if (!body) return;
+  // Abschnitte = Ueberschrift h3 (## im Text) bis zur naechsten; Suche blendet Abschnitte ohne Treffer aus und markiert Treffer
+  const secs = []; let cur = null;
+  for (const el of [...body.children]) { if (el.tagName === 'H3' || el.tagName === 'H2') { cur = {head: el, els: [el], a: el.dataset.a || ''}; secs.push(cur); } else { if (!cur) { cur = {head: null, els: [], a: ''}; secs.push(cur); } cur.els.push(el); } }
+  const plain = new Map(secs.map(s => [s, s.els.map(e => e.textContent).join(' ').toLowerCase()]));
+  const unmark = () => $$('mark.hm', body).forEach(m => m.replaceWith(document.createTextNode(m.textContent)));
+  const search = q => {
+    HELP.q = q; unmark(); body.normalize();
+    const w = q.trim().toLowerCase(); let n = 0;
+    for (const s of secs) {
+      const hit = !w || plain.get(s).includes(w); if (hit && w) n++;
+      s.els.forEach(e => e.classList.toggle('hidden', !hit));
+      const tl = $(`.help-toc a[data-a="${s.a}"]`, main); if (tl) tl.classList.toggle('hidden', !hit);
+      if (hit && w) s.els.forEach(e => { const tw = document.createTreeWalker(e, NodeFilter.SHOW_TEXT); const nodes = []; while (tw.nextNode()) nodes.push(tw.currentNode);
+        nodes.forEach(nd => { const i = nd.nodeValue.toLowerCase().indexOf(w); if (i < 0) return; const r = document.createRange(); r.setStart(nd, i); r.setEnd(nd, i + w.length); const m = document.createElement('mark'); m.className = 'hm'; r.surroundContents(m); }); });
+    }
+    $('#help-n', main).textContent = w ? tn('n_abschnitte', n, n) : '';
+  };
+  const qi = $('#help-q', main); qi.addEventListener('input', () => search(qi.value)); if (HELP.q) search(HELP.q);
+  if (S.sub) { const h = $(`#hl-${CSS.escape(S.sub)}`, body); if (h) { if (h.classList.contains('hidden')) { qi.value = ''; search(''); } setTimeout(() => h.scrollIntoView({block: 'start'}), 30); } }
 }
 
 // ---------------------------------------------------------------- Steuerung
@@ -2370,7 +2391,7 @@ async function route() {
     else if (S.tab === 'synchronisierung') h = await vSync();
     else if (S.tab === 'updates') h = await vUpdates();
     else if (S.tab === 'protokoll') h = await vProtokoll();
-    else if (S.tab === 'hilfe') h = vHilfe();
+    else if (S.tab === 'hilfe') h = await vHilfe();
     clearTimeout(slow);
     if (ROUTE_SEQ !== myRoute) return;          // inzwischen woanders hin geklickt
     main.innerHTML = `<div class="fade">${h}</div>`;
@@ -2382,6 +2403,7 @@ async function route() {
     if (S.tab === 'immobilien') bindImmo(main);
     if (S.tab === 'kategorien') { bindZuordnen(main); bindKontorKategorien(main); bindKatAuswahl(main); }
     if (S.tab === 'einstellungen' && S.sub === 'zugang') bindZugang(main);
+    if (S.tab === 'hilfe') bindHilfe(main);
   } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== 'nicht angemeldet') main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" onclick="route()">${t('erneut_versuchen')}</button></div>`; }
 }
 let ROUTE_SEQ = 0;

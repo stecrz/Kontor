@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.9.29 (2026-11-08)
+- Hilfe neu: dieselbe ausführliche Anleitung wie auf GitHub (docs/hilfe.md, docs/help.md), mit Bildern, Inhaltsverzeichnis, Suche und Sprungmarken. Die „?“ führen per Klick zum passenden Abschnitt; lange Hinweise auf den Seiten sind gekürzt und verweisen auf die Hilfe.
+- README kürzer, mit Bildern des Tools (frei erfundene Daten) und Verweisen in die Hilfe; veraltete Angaben korrigiert.
+- Kategorien → Kontor-Kategorien & Regeln: Erklärung passt jetzt zur Regel „MoneyMoney ist maßgeblich“.
+
 ## 3.9.28 (2026-11-08)
 - Zugriff vom iPhone (Einstellungen → Zugang, auch als Schritt in der Einrichtung): Kontor erkennt Tailscale, zeigt die Einrichtung in fünf Schritten mit Häkchen und schaltet den Zugriff per Knopf ein oder aus (Zertifikat über Tailscale, Neustart automatisch) – kein Terminal mehr nötig.
 - Übersicht wer/wo/was: Geräte im Tailscale-Netz, von überall ohne offenen Port, Verschlüsselung und Gültigkeit des Zertifikats; Link zum Kopieren für das iPhone.

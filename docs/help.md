@@ -1,0 +1,297 @@
+# Kontor – Help
+
+Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sheet, a cash flow, a plan and a tax overview – for you privately and for each company separately. It runs as a small service on your Mac; you open the interface in your browser at `http://127.0.0.1:8765/`. This help is also available in Kontor itself (menu “Help”, searchable).
+
+![Overview](img/en/uebersicht.png)
+
+<a id="ueberblick"></a>
+## What MoneyMoney does and what Kontor does
+
+| MoneyMoney | Kontor |
+|---|---|
+| Fetches transactions and balances from banks, portfolios and payment services. | Reads this data through MoneyMoney's scripting interface. Kontor never sees bank credentials. |
+| Categorises transactions, manually or by rule. | Uses these categories. You assign transactions without a category in Kontor; optionally Kontor writes the assignment back to MoneyMoney. |
+| Keeps offline accounts: private loans, equity investments, real estate, capital accounts. | Books only into such offline accounts according to your rules: mirror loan instalments and calculate interest, investment values, balance mirrors. |
+| Has no balance sheet, no planning, no tax overview. | Balance sheet per area, cash flow with check row, rolling plan, real estate calculation, annual tax overview, receipts, Excel export. |
+
+Kontor never changes bookings, the category tree or rules in MoneyMoney and never initiates transfers.
+
+<a id="einrichtung"></a>
+## Setup
+
+**Setup** lists all building blocks in a sensible order. Each shows whether it is done; the first four build on each other, the rest is optional and can be done any time. “Check setup” (at the bottom) reads MoneyMoney and reports whether all accounts and categories your setup refers to still exist there – for example after renaming something in MoneyMoney.
+
+![Setup](img/en/einrichtung.png)
+
+1. **MoneyMoney connection** – MoneyMoney is running and unlocked; the first time, macOS asks whether Kontor may control MoneyMoney (Automation). Allow it.
+2. **Areas** – which accounts belong together.
+3. **Accounts** – confirm area, position and history of each account.
+4. **Balances from MoneyMoney** – import the past history once.
+5. **Choose categories** and **assign categories**.
+6. **Rules**, **Real estate**, **Planning**, **Tax**, **Receipts**, **Access from iPhone**, **Operation**.
+
+After that, “Create report” builds the first report. Choose the language (German or English) on the login page, in the setup or under Settings → General.
+
+<a id="bereiche"></a>
+### Areas
+
+An area is a set of accounts with its own balance sheet, cash flow, plan, tax overview, transactions and receipts – for example “Private” and one per company. Suggestion: each top-level account group in MoneyMoney. You can assign, merge or leave out accounts and groups freely. One area is the main area (private); it is preselected on opening. Companies get a type and your share – Kontor uses the share for your stake and for tax. Type and main area are prefilled from the names; please check. Use ▲ ▼ to set the order in which the areas appear in the bar at the top. Areas can be renamed, deleted, merged or assembled from individual accounts and groups; accounts that belong to no area count nowhere.
+
+<a id="konten"></a>
+### Accounts and positions
+
+Each account gets an area, a position in the balance sheet and a history source. Kontor suggests everything; dashed means “suggestion chosen”, solid means “your own choice”. Once saved it stays fixed: renaming or moving in MoneyMoney changes nothing. New accounts appear as “new” until you confirm them. Accounts appear everywhere in MoneyMoney's order.
+
+![Accounts](img/en/konten.png)
+
+**Positions** (balance sheet rows, ordered by availability):
+
+| Position | What belongs there |
+|---|---|
+| Cash | Current account, overnight money, credit card – available immediately |
+| Marketable investments | Portfolios with stocks, funds, ETF/ETC, derivatives, plus crypto and precious metals – sellable within days, with price risk |
+| Term deposits & pensions | Fixed-term deposits, building savings, life and pension insurance – contractually fixed |
+| Real estate, equity investments, tangible assets | tied up long-term |
+| Receivables | Loans to others, deposits, credit balances on capital accounts |
+| Liabilities | Loans, credit card debt, debts on capital accounts |
+| outside net worth | Equity (capital accounts, only when explicitly chosen), guarantees & sureties, “not on the balance sheet” |
+
+**How Kontor suggests** (in this order): portfolio → account name (e.g. “Immobilie”, “Darlehen”, “Kapitalkonto”, “Aval”, “Bauspar”) → unambiguous account type (current account, credit card, loan) → name of the group in MoneyMoney → remaining account type. Loans, deposits and capital or shareholder accounts count as receivables when in credit and as liabilities when in debt – in the company that is a debt to the shareholder, privately a receivable. The value of a stake is then your share of the rest; this holds even with unequal contributions.
+
+**Display**: “by activity” hides accounts without balance or transactions for N months; “always show” or “hide” fixes it. Hidden accounts still count in all totals.
+
+<a id="verlauf"></a>
+### History of an account
+
+Where an account's month-end balances come from:
+
+- **Transactions** (default for bank accounts): month-end balance = today's balance minus all later booked transactions – the way MoneyMoney calculates it too. Pending transactions do not count. Before the first transaction there is no balance.
+- **Balances**: entered or imported balances are anchors; Kontor calculates the months in between from the bookings. Differences appear in the cash flow as “balance correction”.
+- **Portfolios**: have no bookings. Kontor uses the balances imported from MoneyMoney and records each month itself afterwards.
+
+Kontor estimates nothing. Clicking an account in the balance sheet opens its history panel with chart, month-end balances and checks; there you can enter balances or import them from a file. For portfolios, the holdings (quantity, value, gain/loss) are shown at the top.
+
+The panel also checks the backward calculation: opening balance before the first booking in MoneyMoney, pending transactions, negative balances on accounts that cannot go below zero. Portfolios without imported history show “before … unknown”.
+
+**Balances from a file** (Setup → Accounts or the history panel): CSV or Excel (.xlsx), as a list (date, account, balance) or as a table with reference dates in the header row or the first column. Imported accounts are then set to “Balances”.
+
+![History of an account](img/en/verlauf.png)
+
+<a id="kontostaende"></a>
+### Balances from MoneyMoney
+
+MoneyMoney does not provide the history of balances through its interface – especially for portfolios the past would be missing. So Kontor reads it once from MoneyMoney's database file: quit MoneyMoney, “Show in Finder”, drag the file `MoneyMoney.sqlite` into the window and enter the MoneyMoney password in a macOS window. Kontor only receives a key derived from it, decrypts only in memory, checks the values against the current balance and stores only month-end balances, encrypted. Nothing is changed in MoneyMoney. Importing again replaces the previous data.
+
+**After that Kontor records itself**: bank accounts are calculated exactly backwards from the transactions anyway. For portfolios Kontor notes the current value on every read. The service runs in the background from login, even without an open Kontor window, and reads within about 20 seconds as soon as MoneyMoney is open and unlocked – a quick look at MoneyMoney is enough. Each value counts for the month in which MoneyMoney retrieved it from the bank. If MoneyMoney retrieved data while Kontor was not running, or a month is missing, the “Synchronisation” page points it out.
+
+<a id="synchronisierung"></a>
+## Sync
+
+The data has two stages: **banks → MoneyMoney** (MoneyMoney fetches from the banks) and **MoneyMoney → Kontor** (Kontor reads from MoneyMoney). Both times are shown at the bottom left. “Sync” reads immediately; automatically Kontor reads every 30 minutes (adjustable) and as soon as MoneyMoney has new data – only while MoneyMoney is running and unlocked.
+
+![Sync](img/en/synchronisierung.png)
+
+- **Quick read**: a sync only reads the transactions of the last three months and takes older ones from the last complete read. That takes seconds.
+- **Complete read**: every 24 hours (adjustable), at night already after half that time, after Kontor's own bookings and with “Read everything again”. Changes to older transactions in MoneyMoney (e.g. a rule applied to all transactions) only appear after that.
+- A bank refresh without new data does not trigger a recalculation.
+- **Read transactions** (Settings → General): how far back Kontor reads; 0 = all (recommended).
+
+The Sync page shows the last refresh per account and reports accounts that lag behind. Accounts without bank refresh (offline accounts: without bank or account number, target of a rule or booked by Kontor) are listed separately; adjustable per account. If MoneyMoney is closed or locked, nothing happens – the next sync catches up. For bookings, proposals and errors Kontor sends a macOS notification (can be turned off under Settings → General).
+
+<a id="tabellen"></a>
+## Tables, switches and Excel
+
+Everywhere you choose **months** (with annual totals) or **years** only. Year columns are cumulative: flows as a sum, balances as the year-end value. The current month and the current year (not yet complete) are faded, plan values even more so.
+
+- **All rows** also shows empty and hidden rows.
+- **Plan** (cash flow) appends the plan values on the right; off = actual values only. Balance sheet and planning always show the plan.
+- **inflation-adjusted** (planning) shows plan values in today's purchasing power.
+- The overview also compares with the same period of the previous year.
+
+Every table has an **Excel** button: balance sheet, cash flow, planning (with projection and parameters), tax, transactions, portfolios, receipts, accounts and every property calculation.
+
+<a id="bilanz"></a>
+## Balance sheet
+
+The balance sheet shows the assets of an area by position, month by month, with a plan up to December of the last plan year. Click a position to expand its accounts, click an account to open its history.
+
+![Balance sheet](img/en/bilanz.png)
+
+- **Faded**: the current month and the current year (not finished yet); more faded: plan values.
+- **Chart**: composition of assets in the colours of the positions, black the net worth (dashed: plan). Range 1/3/10 years, all or a number of months; swipe horizontally to pan, pinch to zoom, double-click to enlarge, click to jump to the column. Expanded positions show their accounts as shades of the colour.
+- **Cash in transit**: if the two bookings of a transfer between own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” under cash at month end – otherwise net worth would briefly look too low. A click shows the detected pairs.
+- **Months or years**: year columns show balances at year end.
+
+<a id="kapitalfluss"></a>
+## Cash flow
+
+Where the money goes: income and expenses by category, investments (moves into portfolios and investments, contributions to companies), financing (repayment and interest per loan), valuation (value changes of portfolios) and “unclear”.
+
+![Cash flow](img/en/kapitalfluss.png)
+
+Kontor recognises transfers between own accounts by the counterparty IBAN, the category “Umbuchung” and matching bookings of the same amount within three days; they do not count as income or expense. The **check row** “unexplained change in net worth” should be close to 0 – otherwise a category or a counter-booking is missing. Which categories appear as separate rows is set under [Categories → Selection](#kategorien-auswahl); which parent category belongs to which section under Categories → Cash flow mapping.
+
+<a id="kategorien"></a>
+## Categories
+
+**MoneyMoney is authoritative**: if a transaction has a category there, it applies in Kontor too. You assign transactions without a category in Kontor – under Categories → Assign, grouped by counterparty, with suggestions from learned rules. “Rule for this name” handles the counterparty permanently.
+
+![Assign](img/en/zuordnen.png)
+
+The Categories page has four tabs:
+
+- **Assign** – transactions without a category, grouped by counterparty; the number in the tab shows how many are open.
+- **Selection** – which MoneyMoney categories Kontor uses as rows ([more](#kategorien-auswahl)).
+- **Kontor categories & rules** – categories that exist only in Kontor (tree taken from MoneyMoney, extendable), your own rules (name, purpose, counter-IBAN, direction) and the learned ones. Rules are learned from the counterparty (IBAN or name, possibly with the start of the purpose) if at least 90 % of its previous transactions have the same category. Your own rules come first; more specific ones win (IBAN before name + purpose before name).
+- **Cash flow mapping** – which top-level category belongs to which cash flow section (income, expenses, investment, financing). Without a mapping the sign decides.
+
+**What applies**: the category from MoneyMoney – unless you explicitly override it (“Only in Kontor”). Without one: manual assignment before own rule before learned rule. By default rules only act on transactions without a MoneyMoney category; “Also apply rules to transactions categorised in MoneyMoney” changes that – only in Kontor, MoneyMoney stays unchanged.
+
+Categories are only needed for the breakdown (cash flow rows, planning per row, tax). Balance sheet, net worth, real estate, loans and total income/expenses work without them. Little upkeep: payments between you and your companies are recognised as contributions or withdrawals anyway; categorise in detail mainly where you need cash flow and tax precisely.
+
+<a id="kategorien-zurueckschreiben"></a>
+### Writing back to MoneyMoney
+
+With “Write categories back” (Settings → General or “Turn on” under Categories; only on the Mac) Kontor also sets your assignments in MoneyMoney – so you categorise in one place only. Safeguards:
+
+- Kontor only sets the category field of a transaction; amounts, dates and deleting are not possible with it.
+- Right before writing, Kontor reads the transaction again from MoneyMoney and only writes if it is unchanged and has no category yet (or the one Kontor set).
+- Kontor only replaces another existing category – for example one maintained by a business partner – after asking: “Replace in MoneyMoney” or “Only in Kontor” (MoneyMoney stays, Kontor overrides).
+- Kontor cannot create categories in MoneyMoney (MoneyMoney does not allow it). If one is missing, the assignment waits; after you create it in MoneyMoney, Kontor fills it in at the next sync.
+
+<a id="kategorien-auswahl"></a>
+### Selection: which categories Kontor uses
+
+Under Categories → Selection you decide for each MoneyMoney category:
+
+- **Separate row** – appears as its own row in cash flow and planning.
+- **Into parent** – counts towards the parent category including subcategories (cash flow and planning only; tax still uses the exact category).
+- **Not used** – in Kontor as if uncategorised; the transactions appear under “Assign”.
+
+“Top level only as rows” tidies up the cash flow in one click. Nothing changes in MoneyMoney.
+
+![Category selection](img/en/kat_auswahl.png)
+
+<a id="planung"></a>
+## Planning
+
+Planning continues the past: per row a method (Ø 12 or 6 months, same month last year, fixed amount, annual amount/12, MoneyMoney budget, none), an amount and an increase in % p.a. Expenses follow inflation by default, income the set rate. Double-click to override single months; the suggestion stays visible and can be restored.
+
+![Planning](img/en/planung.png)
+
+- **Loans**: interest on the projected remaining balance, repayment = instalment − interest.
+- **Value development** per account in % p.a.; equity investments optionally linked to the planned net worth of the company (share × net worth).
+- **Events**: one-off or recurring moves, income and expenses – e.g. repaying a loan in one go from the portfolio.
+- **Real estate**: active calculations contribute rent, costs, interest, repayment, remaining debt and property value.
+- The plan always runs to December; “inflation-adjusted” shows plan values in today's purchasing power.
+- Below: projection of the balance sheet per position and account, and key figures (savings rate, liquidity reach, interest burden). The plan applies per area.
+
+<a id="immobilien"></a>
+## Real estate
+
+Any number of calculations (scenarios) per property, one of them active. Inputs:
+
+- Purchase price and transfer date; incidental costs (real estate transfer tax, notary, land register, broker; immediately deductible items separate); building share and depreciation rate or remaining useful life.
+- Net cold rent and service charges, vacancy, rent adjustment (index rent by CPI with pass-through factor and threshold, fixed rate or none); non-recoverable costs and reserve (with CPI or fixed rate).
+- Loans: annuity, amortising or bullet; settled monthly like banks or annually on the 1 January balance like vendor loans; special repayments recurring or single, fixed-rate period with follow-up rate, maturity with repayment.
+- Partners with share and tax rate, distribution, value development, sale year.
+
+Kontor rejects invalid inputs with the field name.
+
+![Real estate](img/en/immobilien.png)
+
+Result: monthly and annual table (rent, costs, interest, repayment, depreciation, taxable result, tax, cash flow, wealth build-up, remaining debt, property value), key figures (price multiple, gross and net rental yield, cash-on-cash, DSCR, LTV, IRR until sale) and notes (open maturities, missing follow-up rate, negative cumulative cash flow). Links to MoneyMoney: rental category and loan accounts for the plan/actual comparison per year, property account for the value in the balance sheet. “Use in planning” feeds the plan of the area; the depreciation of the active calculation goes into the tax overview as long as no annual value has been entered there by hand. Excel export per calculation. Documents (purchase contract, appraisal …) are stored as links – the files stay where they are. Simplified: tax per partner = share × result × tax rate (no progression, no loss offset), straight-line depreciation.
+
+<a id="steuer"></a>
+## Tax
+
+Per entity (main area = private, each company with your share from the participation rule) and year: rental income per property from the categories `Vermietung \ Object \ Type` (any number of properties, private ones too), loan interest per loan (mapping loan → property under Settings → Tax), depreciation, tax items from category names (adjustable under Settings → Tax) and bookings without category as items to check. A year's receipts can be exported as a ZIP with an overview. No tax advice.
+
+<a id="belege"></a>
+## Transactions and receipts
+
+The transaction browser filters by area, year, account, text, “without receipt” and “without category”. Add receipts (PDF, images, e-mails, Office files) by choosing a file, drag & drop or a photo on the iPhone. They are stored as normal files in the receipts folder (default `~/Documents/Kontor-Belege`, subfolders e.g. `{jahr}`), file name `Date_Amount_Name_ID`. Files outside the folder (also iCloud Drive) can be linked without copying them – Kontor shows whether the file is local or still downloading from iCloud. Existing files in the receipts folder can be assigned later. Up to 60 MB per file. The index is stored encrypted in the data folder; the files remain usable without it. Deleting in Kontor never affects linked files.
+
+<a id="regeln"></a>
+## Rules (counter-bookings)
+
+Rules book into offline accounts in MoneyMoney:
+
+- **Loans**: recognise the instalment (counterparty IBAN or text), mirror it on the loan account, calculate interest (annual basis or remaining debt monthly).
+- **Equity investments**: target account = share × net value of an account group.
+- **Balance mirror**: target account = factor × source account (e.g. capital account).
+
+The default is **test mode**: proposals appear under “Bookings”, nothing is booked until “Book now” or until you turn test mode off. Every booking carries a marker in the purpose (MoneyMoney's interface has no comment field when creating) and is never created twice; Kontor never changes or deletes existing bookings. Bank and extension accounts are never booked to, transfers and direct debits are blocked.
+
+**Interest**: annual basis = interest rate × balance on 31 Dec of the previous year, one twelfth per month, the cent remainder in December – or monthly on the outstanding balance. The model is simplified (30/360); reconcile once a year with the bank's interest statement. If there are problems (account deleted, no matching payment, interest booking already entered by hand) you get a note and a notification.
+
+<a id="iphone"></a>
+## Access from iPhone
+
+By default Kontor is only reachable on the Mac (`127.0.0.1`) – that is why the iPhone cannot open the address. For remote access Kontor uses [Tailscale](https://tailscale.com): a private, encrypted network of only your devices. No port is open in your home network or the internet, nothing needs to be set up on the router.
+
+![Access from iPhone](img/en/zugang.png)
+
+Under Settings → Access, Kontor shows the steps with checkmarks:
+
+1. Install Tailscale on the Mac and sign in.
+2. Install Tailscale on the iPhone and sign in with the same account.
+3. In the Tailscale admin console under DNS, turn on “MagicDNS” and “HTTPS Certificates”.
+4. “Turn on access” – Kontor gets a real certificate for the Mac's name, opens a second address only in the Tailscale network and restarts.
+5. On the iPhone, open the shown address in Safari (copy the link – it reaches the iPhone via the clipboard), sign in, Share → “Add to Home Screen”.
+
+**Who, where, what**: Kontor is only reachable for devices in your Tailscale network and only with the Kontor password; from anywhere with internet; default **view only** – nothing can be changed from the iPhone. Optionally “view and edit” (planning, assignments in Kontor, settings). Writing to MoneyMoney, Touch ID, backup, reset and the access settings are only available on the Mac. The Mac has to be running (not asleep) and connected to Tailscale; if Tailscale is not yet connected at start, Kontor opens the address as soon as it can. In Terminal: `python3 ~/Kontor/kontor.py tls` (or `tls --off`).
+
+![Kontor on the iPhone](img/en/iphone.png)
+
+**Offline view**: saved as an app, the iPhone keeps the last loaded data. If the Mac cannot be reached, the Kontor password opens this copy – read only. Can be turned off under Settings → Access. The iPhone checks the password against its own verifier (PBKDF2-SHA256, own salt); the copy is protected by the iPhone's encryption but not additionally encrypted with the password – someone examining the unlocked device with developer tools could reach the data. “Delete stored data on this device” removes the copy immediately. The service renews the certificate (valid for 90 days) itself.
+
+Without HTTPS certificates, “Turn on without certificate” works (encrypted by Tailscale, but without offline view).
+
+<a id="sichern"></a>
+## Backup and reset
+
+![Backup and reset](img/en/sichern.png)
+
+- **Backup** – for you: restore Kontor exactly as it was on a new Mac or after a reset. Contains all settings, areas, rules, real estate, planning, categories and assignments, month-end balances and the receipt index – not the transactions (they come from MoneyMoney), no receipt files, not the Kontor password. Because it contains your financial data, it is encrypted with its own password, which Kontor does not store. Only on the Mac.
+- **Settings package** – for others: your rules and assignments as a template, e.g. for a business partner with their own MoneyMoney. Accounts by name only, without balances, transactions, planning, passwords or address. Loan rules contain the lender's counterparty IBAN – check before sharing. When loading, Kontor matches accounts by name; anything not found you assign in the interface. “Add” adds rules and overwrites assignments, “Replace” discards the existing setup. A template is in the `templates/` folder.
+- **Time Machine** backs up the data folder encrypted (the key is in the keychain, not in the folder). The status is shown on the page; excluding is possible but not recommended.
+- **Reset** (only on the Mac, with password) deletes settings, planning, categories, history and evaluations, optionally also the password. Receipt files, key and log remain.
+
+<a id="updates"></a>
+## Updates
+
+Kontor asks GitHub for the latest version (daily, weekly or never – Settings → Updates) and installs only when you click. The update check is Kontor's only network connection: it asks `raw.githubusercontent.com` for the file `VERSION` on the main branch of the repository (default: [github.com/stecrz/Kontor](https://github.com/stecrz/Kontor)). Other servers are deliberately not possible.
+
+When installing, Kontor downloads that version as an archive from github.com, replaces the program folder (the old files stay next to it as `.alt`), restarts the service and reloads the page; if the program folder is a git clone, `git pull` runs instead. Data folder and settings remain. All steps are in the log, all changes under Updates → “All changes”.
+
+In Terminal the same command installs and updates:
+
+```
+bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/get.sh)
+```
+
+<a id="sicherheit"></a>
+## Security
+
+- Interface only on this Mac (`127.0.0.1`); optionally also in your own Tailscale network – never in the home network or the internet. No third-party content, no telemetry.
+- Sign in with password (PBKDF2-SHA256, 600,000 rounds) or Touch ID on the Mac; lock after inactivity; five failed attempts lock for five minutes.
+- All files in the data folder are encrypted (AES-256 + HMAC), the key is in the macOS keychain. Receipts are normal files in a folder of your choice.
+- The log contains no IBANs, balances or passwords.
+- Limit: whoever uses your unlocked Mac can get to the key. FileVault remains the basis.
+
+<a id="fehler"></a>
+## When something goes wrong
+
+| Message | Remedy |
+|---|---|
+| MoneyMoney not running / database locked | Open and unlock MoneyMoney; Kontor catches up. |
+| No permission (Automation) | System Settings → Privacy & Security → Automation: allow python3 to control MoneyMoney. |
+| Account not found | A rule refers to a deleted or renamed account: reassign it under Rules; “Check setup” shows all cases. |
+| Cash flow check row ≠ 0 | A category or a counter-booking is missing. |
+| iPhone cannot open the address | Turn on access under Settings → Access; Tailscale connected on both devices? |
+| No matching payment | The loan rule does not find the instalment: check counterparty IBAN or text and source account. Only a note for up to 35 days after “automatic from”. |
+| Port not usable | Another program uses the port: Settings → Access → Advanced. |
+| Data key stored as a file | The keychain was not usable (e.g. started without login): Kontor works, but the key is then stored with permissions 0600 in the data folder. |
+
+For support questions: Log → “Diagnostics file (masked)”. In addition to the log it contains status and settings, account names replaced by Konto01, Konto02 … – without IBANs, balances or passwords.

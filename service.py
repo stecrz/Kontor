@@ -17,6 +17,7 @@ import binascii
 import copy
 import ipaddress
 import json
+import re
 import logging
 import mimetypes
 import os
@@ -1142,6 +1143,13 @@ def make_handler(app: App):
             return urlparse(origin).netloc == (self.headers.get("Host") or "")
 
         def _static(self, path: str) -> None:
+            m = re.match(r"^/docs/img/((?:en/)?[a-z0-9_]+\.png)$", path)      # Bilder der Hilfe (erfundene Beispieldaten)
+            if m:
+                fp = os.path.join(HERE, "docs", "img", *m.group(1).split("/"))
+                if not os.path.isfile(fp):
+                    return self._raw(404, b"nicht gefunden", "text/plain; charset=utf-8")
+                with open(fp, "rb") as f:
+                    return self._raw(200, f.read(), "image/png", cache="max-age=86400")
             name = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/i18n.js": "i18n.js", "/app.css": "app.css",
                     "/icon.svg": "icon.svg", "/icon-180.png": "icon-180.png", "/icon-512.png": "icon-512.png",
                     "/manifest.webmanifest": "manifest.webmanifest", "/sw.js": "sw.js"}.get(path)
@@ -1284,6 +1292,15 @@ def make_handler(app: App):
                 pkg = export_package(app.config, name, strip_uuids=True, plan=None, ledger=app.ledger)
                 return self._raw(200, json.dumps(pkg, ensure_ascii=False, indent=2).encode("utf-8"), "application/json; charset=utf-8",
                                  {"Content-Disposition": 'attachment; filename="%s.kontor.json"' % name})
+            if path == "/api/help":
+                # Hilfe = docs/hilfe.md bzw. docs/help.md (dieselbe Datei wie auf GitHub)
+                fn = "help.md" if (q.get("lang") or (app.config.get("oberflaeche") or {}).get("sprache")) == "en" else "hilfe.md"
+                try:
+                    with open(os.path.join(HERE, "docs", fn), encoding="utf-8") as f:
+                        text = f.read()
+                except OSError:
+                    return self._json(200, {"text": "", "bilder": {}})
+                return self._json(200, {"text": text, "bilder": help_image_sizes(text)})
             if path == "/api/remote":
                 return self._json(200, dict(app.remote_info(), lokal=self._is_local(s)))
             if path == "/api/timemachine":
@@ -2258,6 +2275,21 @@ def make_handler(app: App):
 
 
 BACKUP_ITER = 600_000
+
+
+def help_image_sizes(text: str) -> Dict[str, List[int]]:
+    """Breite und Hoehe (Pixel) der Bilder einer Hilfedatei aus dem PNG-Kopf – damit die Seite den Platz vorab
+    freihaelt und Sprungmarken an der richtigen Stelle landen."""
+    out: Dict[str, List[int]] = {}
+    for rel in set(re.findall(r"!\[[^\]]*\]\((img/(?:en/)?[a-z0-9_]+\.png)\)", text)):
+        try:
+            with open(os.path.join(HERE, "docs", rel), "rb") as f:
+                head = f.read(24)
+            if head[:8] == b"\x89PNG\r\n\x1a\n":
+                out[rel] = [int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")]
+        except OSError:
+            pass
+    return out
 
 
 def backup_encrypt(data: dict, password: str) -> dict:
