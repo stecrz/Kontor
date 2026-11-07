@@ -50,7 +50,10 @@ ILLIQUID_DEFAULT = ["anlagen", "beteiligungen", "immobilien", "sachwerte", "ford
 NAME_HINTS = [
     (r"off.?balance|nicht bilanz", "ignorieren"),
     (r"aval|b(ü|ue)rgschaft|garantie", "eventual"),
-    (r"kapitalkont|eigenkapital|gesellschafterkont", "eigenkapital"),
+    (r"eigenkapital", "eigenkapital"),
+    # Kapital-/Gesellschafterkonten wie Gesellschafterdarlehen: in der Gesellschaft Schuld an den Gesellschafter, privat Forderung;
+    # das Nettovermoegen der Gesellschaft ist dann der Rest, der nach Anteil verteilt wird (stimmt auch bei ungleichen Einlagen)
+    (r"kapitalkont|gesellschafterkont|gesellschafterdarlehen", "+/-"),
     (r"kaution", "+/-"),
     (r"darlehen|kredit(?!karte)|hypothek|finanzierung|\bschulden", "+/-"),
     (r"bauspar|lebensversicherung|rentenversicherung|\bversicherung|riester|r(ü|ue)rup|fondspolice", "anlagen"),
@@ -94,32 +97,6 @@ def _signed(role: Optional[str], acc: Account) -> Optional[str]:
     return "forderungen" if acc.balance > 0.005 else "verbindlichkeiten"
 
 
-_FIRMA_RE = re.compile(r"\b(gmbh|ug|ag|se|kg|ohg|gbr|egbr|e\.?\s?k\.?|e\.?\s?v\.?|eg|ltd|inc|llc|holding|verwaltung|beteiligung|"
-                       r"immobilien|stiftung|verein|genossenschaft|partner|&\s?co)\b|gmbh|gbr|holding|gesellschaft", re.I)
-
-
-def _private_accounts(ledger: Ledger, config: dict) -> Set[str]:
-    """Konten in privaten Bereichen (eingerichtet, sonst Gruppen oberster Ebene, deren Name nicht nach Gesellschaft klingt)."""
-    out: Set[str] = set()
-    cfg = [b for b in (config.get("bereiche") or []) if isinstance(b, dict) and b.get("aktiv", True)]
-    if cfg:
-        for b in cfg:
-            art = b.get("art") or ("gesellschaft" if _FIRMA_RE.search(b.get("name") or "") else "privat")
-            if art != "privat":
-                continue
-            for ref in b.get("konten") or []:
-                try:
-                    a = ledger.resolve(ref)
-                except KeyError:
-                    continue
-                out.update(x.uuid for x in (ledger.descendants(a.uuid) if a.group else [a]))
-        return out
-    for a in ledger.accounts.values():           # ohne Einrichtung: keine uebergeordnete Gruppe klingt nach Gesellschaft
-        if not a.group and not any(_FIRMA_RE.search(g.name or "") for g in ledger.ancestors(a.uuid)):
-            out.add(a.uuid)
-    return out
-
-
 def account_roles(ledger: Ledger, config: dict) -> Dict[str, str]:
     """uuid -> Position fuer ALLE Konten. Vorrang: eigene Zuordnung > Depot > Kontoname > eindeutiger Kontotyp
     (Giro, Kreditkarte, Darlehen) > Name der naechsten Gruppe > allgemeiner Kontotyp (Spar-, Tagesgeld, Festgeld) > Sonstiges."""
@@ -138,7 +115,6 @@ def account_roles(ledger: Ledger, config: dict) -> Dict[str, str]:
             except KeyError:
                 pass
     roles: Dict[str, str] = {}
-    private = _private_accounts(ledger, config)
 
     def walk(acc: Account, group_hint: Optional[str]):
         if acc.group:
@@ -156,8 +132,6 @@ def account_roles(ledger: Ledger, config: dict) -> Dict[str, str]:
                 role = _signed(group_hint, acc)
             if not role:
                 role = next((r for k, r in WEAK_TYPES.items() if k in t), None)
-            if role == "eigenkapital" and acc.uuid in private and acc.balance > 0.005 and not cfg_roles.get(acc.uuid):
-                role = "beteiligungen"             # privat gefuehrtes Kapitalkonto = eigener Anteil an der Gesellschaft
             roles[acc.uuid] = role or "sonstiges"
             here = group_hint
         for c in acc.children:
@@ -308,12 +282,9 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
             known[k] = v[acc.uuid]
     known[cur_key] = acc.balance
     first_known = min(known)
+    # Keine Schaetzung: vor dem ersten bekannten Stand steht (gekennzeichnet) dieser erste Wert
     est: Dict[str, float] = {}
     giro = None
-    if mkeys and mkeys[0] < first_known and abs(known[first_known]) > 0.005:
-        giro = verrechnungskonto_fuer(ledger, acc, config or {})
-        if giro:
-            est = depot_schaetzung(ledger, acc, giro, mkeys, first_known, known[first_known])
     for k in mkeys:
         if k == cur_key:
             h[k] = acc.balance
@@ -327,7 +298,7 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
     if est:
         geschaetzt_bis = max(est)
         hinweis = ("'%s': Kontostände vor %s sind aus Käufen/Verkäufen auf '%s' geschätzt -- genauer: Monatsstände eintragen oder "
-                   "MoneyMoneys Kontostand-Bericht importieren (Einrichtung → Bilanzpositionen & Verlauf)." % (acc.name, first_known, ledger.accounts[giro].name))
+                   "MoneyMoneys Kontostand-Bericht importieren (Einrichtung → Konten)." % (acc.name, first_known, ledger.accounts[giro].name))
     elif mkeys and mkeys[0] < first_known and abs(known[first_known]) > 0.005:
         hinweis = ("'%s': Kontostände vor %s sind mit dem ersten bekannten Wert fortgeschrieben -- unter Bilanz → Verlauf "
                    "lassen sich Monatsstände eintragen oder aus einem Saldenexport laden." % (acc.name, first_known))

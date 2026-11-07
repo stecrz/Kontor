@@ -855,10 +855,10 @@ class FeatureTests(_AppBase):
         depot = [r for r in b["bilanz"]["zeilen"] if r["id"] == F.uid("priv.depot")][0]
         self.assertEqual(depot["rolle"], "wertpapiere"); self.assertEqual(depot["verlauf"], "stand")
         self.assertEqual(depot["werte"]["2026-11"], 85000.0)
-        # kein Stand bekannt: Schaetzung aus den Sparplan-Kaeufen des Verrechnungskontos (1.000/Monat seit 2024-10), skaliert auf den heutigen Wert
-        self.assertEqual(depot["werte"]["2026-10"], round(85000 * 25 / 26, 2)); self.assertEqual(depot["werte"]["2024-11"], round(85000 * 2 / 26, 2))
-        self.assertEqual(depot["geschaetzt_bis"], "2026-10")
-        self.assertTrue(any("geschätzt" in w and "Broker Giro" in w for w in b["warnungen"]))
+        # kein aelterer Stand bekannt: keine Schaetzung -- der erste bekannte Wert steht davor, gekennzeichnet
+        self.assertEqual(depot["werte"]["2026-10"], 85000.0); self.assertEqual(depot["werte"]["2024-11"], 85000.0)
+        self.assertIsNone(depot["geschaetzt_bis"]); self.assertEqual(depot["fortgeschrieben_vor"], "2026-11")
+        self.assertTrue(any("fortgeschrieben" in w for w in b["warnungen"]))
         # Verlauf: Monatsstaende setzen, Import, Quelle umstellen
         code, h = self.call("/api/historie?konto=" + F.uid("priv.depot"))
         self.assertEqual(h["quelle"], "stand"); self.assertEqual(h["aufgezeichnet"]["2026-11"], 85000.0)
@@ -1152,7 +1152,7 @@ class FeatureTests(_AppBase):
         code, ds = self.call("/api/dataset")
         depot = [x for x in ds["bereiche"][ds["haupt"]]["bilanz"]["zeilen"] if x["id"] == F.uid("priv.depot")][0]
         self.assertEqual(depot["werte"]["2026-09"], 72000.0); self.assertEqual(depot["werte"]["2026-11"], 85000.0)
-        self.assertEqual(depot["geschaetzt_bis"], "2026-07")           # davor weiterhin geschaetzt
+        self.assertIsNone(depot["geschaetzt_bis"]); self.assertEqual(depot["fortgeschrieben_vor"], "2026-08")     # davor unbekannt, nicht geschaetzt
         # transponiert (Stichtage in der ersten Spalte) als CSV mit Monatsnamen
         csv = "Monat;Depot;Broker Giro\nJul 2026;60000;1\nJun 2026;58000;1\n"
         code, r = self.call("/api/historie/import", {"csv": csv, "uebernehmen": True, "nur_luecken": True})
@@ -1307,9 +1307,9 @@ class FeatureTests(_AppBase):
         self.assertEqual(role("Darlehen Immobilie X", "Darlehenskonto", -4e5), "verbindlichkeiten")
         self.assertEqual(role("Darlehen an Firma", "Sonstiges", 1e5), "forderungen")             # Guthaben = Forderung
         self.assertEqual(role("Barkaution Mieter", "Sonstiges", -5000), "verbindlichkeiten")
-        self.assertEqual(role("Kapitalkonto A", "Darlehenskonto", -1e5), "eigenkapital")
-        self.assertEqual(role("Kapitalkonto Alpha GbR", "Sonstiges", 1e5), "beteiligungen")                # privat mit Guthaben = eigener Anteil
-        self.assertEqual(role("Kapitalkonto A", "Sonstiges", 1e5, group="Alpha GbR"), "eigenkapital")       # in der Gesellschaft: Eigenkapital
+        self.assertEqual(role("Kapitalkonto A", "Darlehenskonto", -1e5, group="Alpha GbR"), "verbindlichkeiten")   # in der Gesellschaft: Schuld an den Gesellschafter
+        self.assertEqual(role("Kapitalkonto Alpha GbR", "Sonstiges", 1e5), "forderungen")                         # privat: Forderung an die Gesellschaft
+        self.assertEqual(role("Eigenkapital A", "Sonstiges", -1e5, group="Alpha GbR"), "eigenkapital")            # Eigenkapital nur ausdruecklich
         self.assertEqual(role("Mietaval Laden", "Darlehenskonto", -3e4), "eventual")
         self.assertEqual(role("Bausparer", "Sparkonto", 2e4), "anlagen")
         self.assertEqual(role("Sparkonto", "Sparkonto", 2e4, group="Anlagen"), "anlagen")      # Gruppe vor allgemeinem Typ
@@ -1319,12 +1319,11 @@ class FeatureTests(_AppBase):
         self.assertEqual(role("Kreditkarte", "Kreditkarte", -300), "liquiditaet")
         self.login(); self.run_and_wait()
         code, ds = self.call("/api/dataset"); pb = ds["bereiche"][F.uid("pb")]
-        aus = {r["name"]: r for r in pb["bilanz"]["ausserhalb"]}
-        self.assertEqual(set(aus), {"Kapitalkonto A", "Kapitalkonto B"}); self.assertEqual(aus["Kapitalkonto A"]["rolle"], "eigenkapital")
-        ids = {r["id"] for r in pb["bilanz"]["zeilen"]}
-        self.assertNotIn(F.uid("pb.kap.s"), ids)
+        self.assertEqual(pb["bilanz"]["ausserhalb"], [])                                   # Kapitalkonten zaehlen als Schuld der GbR
+        rows = {r["id"]: r for r in pb["bilanz"]["zeilen"]}
+        self.assertEqual(rows[F.uid("pb.kap.s")]["rolle"], "verbindlichkeiten")
         saldo = {k["uuid"]: k["saldo"] for k in ds["konten"] if not k["gruppe"]}
-        self.assertEqual(pb["bilanz"]["nettovermoegen"]["2026-11"], round(sum(saldo[F.uid(k)] for k in ("pb.kk", "pb.immo", "pb.vd")), 2))
+        self.assertEqual(pb["bilanz"]["nettovermoegen"]["2026-11"], round(sum(saldo[F.uid(k)] for k in ("pb.kk", "pb.immo", "pb.vd", "pb.kap.s", "pb.kap.p")), 2))
         # Verrechnungskonto: gleiche Bank -> gefunden; eingestellt "keine" -> keine Schaetzung; per Verlauf-Fenster einstellbar
         led = self.app.ledger; depot = led.accounts[F.uid("priv.depot")]
         self.assertEqual(verrechnungskonto_fuer(led, depot, {"bilanz": {}}), F.uid("priv.tr"))
@@ -1333,10 +1332,7 @@ class FeatureTests(_AppBase):
         self.assertIsNone(verrechnungskonto_fuer(led, depot, {"bilanz": {}}))                   # andere Bank: keine Verbindung ueber die Gruppe
         depot.bank_code = "10050000"; led.__dict__.pop("_verrechnung_cache", None)
         code, h = self.call("/api/historie?konto=" + F.uid("priv.depot"))
-        self.assertEqual(h["verrechnung"]["automatisch"], F.uid("priv.tr")); self.assertIsNotNone(h["geschaetzt_bis"])
-        code, r = self.call("/api/historie", {"konto": F.uid("priv.depot"), "werte": {}, "verrechnung": "keine"})
-        self.assertIsNone(r["historie"]["geschaetzt_bis"]); self.assertEqual(r["historie"]["verrechnung"]["eingestellt"], "keine")
-        self.assertIn("fortgeschrieben", r["historie"]["hinweis"])
+        self.assertIsNone(h["geschaetzt_bis"]); self.assertIn("fortgeschrieben", h["hinweis"])          # keine Schaetzung mehr
         # Pruefung im Verlauf-Fenster: Anfangssaldo und Buchungen
         code, h = self.call("/api/historie?konto=" + F.uid("priv.giro"))
         self.assertIn("anfangssaldo", h["pruefung"]); self.assertGreater(h["pruefung"]["buchungen"], 0)
@@ -1510,11 +1506,18 @@ class BrowserTest(unittest.TestCase):
                 # Im Verlauf-Fenster die Quelle wechseln (Umsätze <-> Stände), danach ein anderes Konto oeffnen
                 pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.giro")); pg.wait_for_selector("#drawer.open #h-grid")
                 pg.click("#drawer .hq-q[data-q='stand']"); pg.wait_for_selector("#drawer.open .hq-q.on[data-q='stand']", timeout=1000)     # sofort
-                self.assertEqual(pg.eval_on_selector("tr[data-uuid='%s'] .k-verlauf" % F.uid("priv.giro"), "e => e.value"), "stand")          # Tabelle zieht mit
                 for _ in range(150):           # CSP verbietet wait_for_function mit Intervall -> selbst abfragen
                     if not pg.evaluate("document.querySelector('#drawer .hq-q').disabled"):
                         break
                     pg.wait_for_timeout(100)
+                # erst Vorschau: nichts gespeichert, Tabelle unveraendert, Hinweis + Speichern/Verwerfen
+                self.assertIn("Vorschau", pg.query_selector("#hq-pending").inner_text()); self.assertTrue(pg.is_visible("#h-undo"))
+                self.assertEqual(pg.eval_on_selector("tr[data-uuid='%s'] .k-verlauf" % F.uid("priv.giro"), "e => e.value"), "umsaetze")
+                self.assertNotEqual((store.load("config.json")["bilanz"].get("verlauf") or {}).get(F.uid("priv.giro") + " | Hausbank Giro"), "stand")
+                self.assertEqual(pg.evaluate("getComputedStyle(document.querySelector('#h-grid')).gridTemplateColumns.split(' ').length"), 1)   # Monate untereinander
+                pg.click("#h-save"); pg.wait_for_timeout(800)
+                self.assertEqual(pg.eval_on_selector("tr[data-uuid='%s'] .k-verlauf" % F.uid("priv.giro"), "e => e.value"), "stand")          # nach Speichern zieht die Tabelle mit
+                self.assertEqual(pg.query_selector("#hq-pending").inner_text(), "")
                 pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
                 pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.giro")); pg.wait_for_selector("#drawer.open .hq-q.on[data-q='stand']", timeout=10000)   # bleibt beim erneuten Oeffnen
                 # Kontostaende: eigener Wert 2026-03 wirkt sofort auf die Monate davor (Vorschau ohne Neubau)

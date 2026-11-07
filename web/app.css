@@ -242,19 +242,19 @@ label .hq { vertical-align:-2px; }
 .acct-table tr.inactive td { color:var(--faint); }
 .acct-table .k-vis { display:none; } .acct-table tr.inactive .k-vis { display:inline-block; }
 .acct-table select.k-bereich { width:150px; } .acct-table select.k-rolle { width:245px; } .acct-table select.k-verlauf { width:162px; } .acct-table select.k-show { width:135px; }
-.acct-table select.vorschlag { border-style:dashed; border-color:var(--accent); }
+.acct-table select.vorschlag { border-style:dashed; }
 .acct-table .vor-hint { margin-top:2px; font-size:11px; }
 .acct-table tr.bgroup td { background:var(--group); font-weight:600; font-size:12.5px; padding-top:7px; padding-bottom:7px; color:var(--fg); }
 .b-side { display:flex; flex-direction:column; gap:6px; align-self:flex-start; }
 .b-side .b-mvs { display:flex; gap:4px; } .b-side .b-mv { flex:1; padding:4px 10px; line-height:1.1; } .b-side .b-mv:disabled { opacity:.35; }
 .item.moved { animation:moved .7s ease-out; } @keyframes moved { from { box-shadow:0 0 0 3px var(--accent-soft), var(--shadow); } to { box-shadow:var(--shadow); } }
 .tag.warn { background:var(--warn-bg); color:var(--warn-fg); }
-.hist-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:6px 10px; max-height:46vh; overflow:auto; padding:2px 4px 2px 0; }
+.hist-grid { display:grid; grid-template-columns:1fr; gap:4px; max-height:52vh; overflow:auto; padding:2px 4px 2px 0; }       /* Monate untereinander */
 .hist-grid input:disabled { background:transparent; border-color:transparent; color:var(--fg); }
 .hist-grid input:disabled::placeholder { color:var(--fg); opacity:.85; }
 .hist-grid label.rec input::placeholder { color:var(--accent-fg); }
 .banner.small { font-size:12px; padding:6px 10px; margin:6px 0; }
-.hist-grid label { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+.hist-grid label { display:grid; grid-template-columns:90px 1fr; align-items:center; gap:10px; font-size:12.5px; color:var(--muted); }
 .hist-grid input { width:100%; text-align:right; padding:3px 6px; font-size:12px; }
 .hist-grid input.auto { color:var(--faint); }
 textarea { width:100%; min-height:90px; font-family:ui-monospace, Menlo, monospace; font-size:12px; }
@@ -298,3 +298,5 @@ textarea { width:100%; min-height:90px; font-family:ui-monospace, Menlo, monospa
 .pos .caret { display:inline-block; width:14px; color:var(--muted); }
 .pos .pos-dot { display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:7px; }
 tr.pos { cursor:pointer; }
+.side .brand { cursor:pointer; } .side .brand #ver:hover { color:var(--accent-fg); text-decoration:underline; }
+h2.sub-h { margin-top:0; }

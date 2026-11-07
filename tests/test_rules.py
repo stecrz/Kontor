@@ -220,14 +220,14 @@ class MirrorTests(unittest.TestCase):
         res = plan_all(led, config, today)
         wert = [p for p in res.proposals if p.kind == "wert"]
         self.assertEqual(len(wert), 1)
-        # Kapitalkonten sind Eigenkapital der GbR und zaehlen nicht zum Wert der Gesellschaft (sonst waere er ~0)
-        pb_value = 40000 + 1900000 + (-1600000 + 11 * 8250 - 10 * 4400)
+        # Kapitalkonten = Schuld der GbR an die Gesellschafter: der Wert der Beteiligung ist der Anteil am Rest
+        pb_value = 40000 + 1900000 + (-1600000 + 11 * 8250 - 10 * 4400) - 240000
         self.assertAlmostEqual(wert[0].amount, round(0.49 * pb_value, 2) + 90000.0, 2)
-        # Wer die Kapitalkonten als Schulden der GbR fuehrt (Position "Darlehen & Verbindlichkeiten"), bekommt den alten Wert
+        # Wer die Kapitalkonten als Eigenkapital fuehrt (Position "Kapitalkonten (Eigenkapital)"), zaehlt sie nicht zum Wert
         led2 = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
-        config["bilanz"] = {"rollen": {F.uid("pb.kap.s") + " | Kapitalkonto A": "verbindlichkeiten", F.uid("pb.kap.p") + " | Kapitalkonto B": "verbindlichkeiten"}}
+        config["bilanz"] = {"rollen": {F.uid("pb.kap.s") + " | Kapitalkonto A": "eigenkapital", F.uid("pb.kap.p") + " | Kapitalkonto B": "eigenkapital"}}
         wert2 = [p for p in plan_all(led2, config, today).proposals if p.kind == "wert"]
-        self.assertAlmostEqual(wert2[0].amount, round(0.49 * (pb_value - 240000), 2) + 90000.0, 2)
+        self.assertAlmostEqual(wert2[0].amount, round(0.49 * (pb_value + 240000), 2) + 90000.0, 2)
 
     def test_circular_reference_rejected(self):
         led = make_ledger({}, [])

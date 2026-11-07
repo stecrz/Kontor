@@ -24,8 +24,8 @@ const H = {
   anteil: 'Dein Anteil an dieser Gesellschaft in Prozent (z. B. 49). Damit rechnet die Steuerübersicht deinen Teil des Ergebnisses, und die Beteiligungsregel bewertet dein Beteiligungskonto. Leer = 100 %.',
   gruppenwahl: 'Eine Gruppe wählen heißt: alle Konten darunter gehören dazu – auch solche, die später in MoneyMoney in dieser Gruppe angelegt werden. Einzelne Konten lassen sich abwählen; dann gilt nicht mehr die Gruppe, sondern die verbleibenden Konten einzeln.',
   anzeige: '„nach Aktivität“ (Standard) blendet ein Konto aus, solange es seit N Monaten weder Bestand noch Umsatz hat, und zeigt es wieder, sobald sich das ändert – wird also laufend geprüft. „immer anzeigen“ / „ausblenden“ legt es je Konto fest. Ausgeblendete Konten sind grau, zählen aber in allen Summen und im Verlauf.',
-  position_kurz: 'Wo das Konto in der Bilanz erscheint und wie seine Umsätze im Kapitalfluss zählen. Vorschlag in dieser Reihenfolge: Depot → Kontoname (z. B. „Immobilie“, „Darlehen“, „Kapitalkonto“, „Aval“, „Bauspar“) → eindeutiger Kontotyp (Giro, Kreditkarte, Darlehen) → Name der Gruppe in MoneyMoney → übriger Kontotyp (Spar-, Tagesgeld, Festgeld). Darlehen und Kautionen: Guthaben = Forderung, Schuld = Verbindlichkeit. Kapitalkonten in einer Gesellschaft sind deren Eigenkapital – es gehört den Gesellschaftern und steckt schon im Nettovermögen der Gesellschaft (als Verbindlichkeit gezählt stünde sie bei null, als Vermögen doppelt). Privat erscheint dein Anteil über die Beteiligung (Regel „Anteil × Nettovermögen“ oder „Saldo-Spiegel“ deines Kapitalkontos); ein privat geführtes Kapitalkonto mit Guthaben schlägt Kontor als Beteiligung vor. Avale und „nicht bilanzieren“ zählen nicht zum Nettovermögen.',
-  verlauf_kurz: 'Woher die Monatsstände kommen: „Umsätze“ = vom heutigen Saldo rückwärts über die Buchungen gerechnet (Standard für Bankkonten). „Kontostände“ = bekannte Stände (eingetragen, importiert, bei Depots monatlich aufgezeichnet) sind maßgeblich, dazwischen rechnet Kontor mit den Buchungen (Standard für Depots).',
+  position_kurz: 'Wo das Konto in der Bilanz erscheint und wie seine Umsätze im Kapitalfluss zählen. Vorschlag in dieser Reihenfolge: Depot → Kontoname (z. B. „Immobilie“, „Darlehen“, „Kapitalkonto“, „Aval“, „Bauspar“) → eindeutiger Kontotyp (Giro, Kreditkarte, Darlehen) → Name der Gruppe in MoneyMoney → übriger Kontotyp (Spar-, Tagesgeld, Festgeld). Darlehen, Kautionen, Kapital- und Gesellschafterkonten: Guthaben = Forderung, Schuld = Verbindlichkeit. So steht dein Kapitalkonto in der Gesellschaft als Schuld an dich und privat als Forderung; das Nettovermögen der Gesellschaft ist der Rest, dein Anteil daran kommt über die Beteiligungsregel dazu – das stimmt auch, wenn die Einlagen nicht den Anteilen entsprechen. „Kapitalkonten (Eigenkapital)“ nur wählen, wenn die Einlagen genau den Anteilen entsprechen und privat nichts gebucht ist. Avale und „nicht bilanzieren“ zählen nicht zum Nettovermögen.',
+  verlauf_kurz: 'Woher die Monatsstände kommen: „Umsätze“ = vom heutigen Saldo rückwärts über die Buchungen gerechnet (Standard für Bankkonten). „Kontostände“ = bekannte Stände (eingetragen, importiert, bei Depots monatlich aufgezeichnet) sind maßgeblich, dazwischen rechnet Kontor mit den Buchungen (Standard für Depots). Geschätzt wird nichts: Vor dem ersten bekannten Stand eines Depots steht dieser erste Wert, gekennzeichnet mit „vor … unbekannt“.',
   berechtigung: 'Wofür: Kontor liest über die Skript-Schnittstelle von MoneyMoney Konten, Umsätze und Kategorien – nur lesend; Zugangsdaten zu Banken sieht Kontor nie. Ohne diese Freigabe kann Kontor nichts auswerten. Geschrieben wird nur in Offline-Konten, die du später in Regeln benennst. Erscheint die Abfrage nicht: Systemeinstellungen → Datenschutz & Sicherheit → Automation → python3 → MoneyMoney.',
   position: 'Die Bilanzposition eines Kontos. Sie bestimmt, wo das Konto in der Bilanz erscheint und wie Umsätze im Kapitalfluss behandelt werden (Liquidität: Einnahmen/Ausgaben; Darlehen: Zins/Tilgung; Wertpapiere, Immobilien, Beteiligungen, Sachwerte: Umschichtung/Bewertung). Vorschlag aus Gruppenname und Kontotyp, hier überschreibbar.',
   verlauf: '„Umsätze“: Saldo am Monatsende = heutiger Saldo minus alle späteren Buchungen. Eigene Monatswerte zählen hier nicht. „Kontostände“: eingetragene oder importierte Stände sind maßgeblich; Monate dazwischen und davor rechnet Kontor von dort aus mit den Buchungen weiter, Abweichungen erscheinen im Kapitalfluss als „Korrektur Kontostand“. Bei Depots (ohne Buchungen) gilt der letzte bekannte Stand; Kontor zeichnet ihn monatlich auf, ältere Stände kannst du eintragen oder importieren.',
@@ -260,6 +260,7 @@ $('#touchid-btn').addEventListener('click', () => tryTouchId(false));
 $('#pw-instead').addEventListener('click', () => { LOGIN.pw = true; showLogin(); });
 $('#tid-instead').addEventListener('click', () => { LOGIN.pw = false; showLogin(); });
 $('#sync-btn').addEventListener('click', () => syncNow());
+$('.side .brand').addEventListener('click', e => { location.hash = e.target.closest('#ver') ? '#updates' : '#uebersicht'; });
 $('#lock-btn').addEventListener('click', async () => { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; TID.skipNext = true; await checkSession(); });
 
 async function enterApp() {
@@ -291,6 +292,7 @@ function mmState(st) {
   if (m.gesperrt === false) return {cls: 'ok', text: 'MoneyMoney läuft'};
   return {cls: 'ok', text: 'MoneyMoney läuft'};
 }
+const nKonten = n => n === 1 ? 'Ein Konto' : n + ' Konten';
 function fmtZeit(t) {
   // 'YYYY-MM-DD HH:MM' -> 'heute 13:40' / 'gestern 08:12' / '03.11. 22:10' / '03.11.25 22:10' (Ortszeit)
   if (!t) return '';
@@ -319,7 +321,7 @@ function statusMini() {
       + zeile('MM → Kontor', m.stand ? esc(fmtZeit(m.stand)) : '–', '') + '</a>';
   } else h += '<div>noch keine Daten aus MoneyMoney</div>';
   if (st.neustart_ausstehend) h += '<div><span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Version ' + esc(st.neustart_ausstehend) + ' wird geladen …</div>';
-  else if (b.laeuft) h += '<div><span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Auswertung wird neu berechnet …</div>';
+  else if (b.laeuft) h += '<div><span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Wird neu berechnet …</div>';
   if (hasRules() && st.probelauf) h += '<div><b>Testmodus</b> – Regeln buchen nichts</div>';
   if (l && l.fehler) h += '<div><a href="#buchungen">⚠ letzter Abgleich mit Fehler</a></div>';
   else if (l && l.probelauf && (l.vorschlaege || []).length) h += `<div><a href="#buchungen">${l.vorschlaege.length} Buchungsvorschläge</a></div>`;
@@ -498,7 +500,7 @@ async function vUebersicht() {
   const lastRun = S.STATUS.letzter_lauf, items = [];
   if (lastRun && lastRun.probelauf && lastRun.vorschlaege && lastRun.vorschlaege.length) items.push(['warn', lastRun.vorschlaege.length + ' Buchungsvorschläge warten (Testmodus)', '#buchungen']);
   if (ok.treffer) items.push(['warn', ok.treffer + ' Umsätze ' + yr + ' ohne Kategorie – zuordnen', '#zuordnen']);
-  if ((S.DATA.konten_neu || []).length) items.push(['warn', S.DATA.konten_neu.length + ' Konto/Konten ohne bestätigte Zuordnung (Bereich, Position)', '#einrichtung/konten']);
+  if ((S.DATA.konten_neu || []).length) items.push(['warn', nKonten(S.DATA.konten_neu.length) + ' ohne bestätigte Zuordnung (Bereich, Position)', '#einrichtung/konten']);
   if (ob.treffer) items.push(['neutral', ob.treffer + ' Ausgaben ' + yr + ' ohne Beleg', '#umsaetze?ohne_beleg=1']);
   const ue = (D.kapitalfluss.ueberleitung || {})[cur]; if (ue && Math.abs(ue.unerklaert) > 1) items.push(['warn', 'Unerklärte Vermögensänderung im laufenden Monat: ' + F(ue.unerklaert) + ' € (Prüfzeile)', '#kapitalfluss']);
   for (const w of (D.warnungen || []).slice(0, 6)) items.push(['warn', w, '#buchungen']);
@@ -521,9 +523,9 @@ async function vUebersicht() {
 
 // ---------------------------------------------------------------- Einrichtung (modular)
 const MODULES = [
-  {id: 'verbindung', t: 'Verbindung zu MoneyMoney', d: 'MoneyMoney läuft und ist entsperrt, macOS erlaubt den Zugriff (Automation). Konten und Kategorien werden gelesen.', done: () => S.KONTEN.length > 0},
+  {id: 'verbindung', t: 'Verbindung', d: 'MoneyMoney läuft und ist entsperrt, macOS erlaubt den Zugriff (Automation). Konten und Kategorien werden gelesen.', done: () => S.KONTEN.length > 0},
   {id: 'bereiche', t: 'Bereiche', d: 'Welche Konten gehören zusammen (Privat, jede Gesellschaft)? Unabhängig von der Gruppierung in MoneyMoney.', done: () => (S.CFG.bereiche || []).length > 0 || !!S.DATA},
-  {id: 'konten', t: 'Konten: Bereich, Position, Verlauf', d: 'Jedes Konto bestätigen: Bereich und Position (Vorschlag aus MoneyMoney), Verlaufsquelle, inaktiv. Neue Konten in MoneyMoney tauchen hier als „neu“ auf. Saldenverlauf importieren.', done: () => !!S.DATA && !((S.DATA.konten_neu || []).length)},
+  {id: 'konten', t: 'Konten', d: 'Jedes Konto bestätigen: Bereich und Position (Vorschlag aus MoneyMoney), Verlaufsquelle, inaktiv. Neue Konten in MoneyMoney tauchen hier als „neu“ auf. Saldenverlauf importieren.', done: () => !!S.DATA && !((S.DATA.konten_neu || []).length)},
   {id: 'zuordnen', t: 'Kategorien & Zuordnen', d: 'Kontor-eigene Kategorien (Baum aus MoneyMoney übernommen), Regeln aus bisherigen Zuordnungen gelernt, offene Umsätze je Gegenpartei zuordnen. Funktioniert auch ganz ohne Kategorien in MoneyMoney.', done: () => !!S.DATA && !(((S.DATA.kategorien || {}).gesamt || {}).ohne), href: '#zuordnen', optional: true},
   {id: 'kategorien', t: 'Kategorien → Kapitalfluss', d: 'Oberkategorien den Abschnitten zuordnen (Einnahmen, Ausgaben, Investitionen, Finanzierung), Umbuchungen, Depot-Käufe.', done: () => Object.keys((S.CFG.kapitalfluss || {}).kategorie_zuordnung || {}).length > 0, href: '#kategorien', optional: true},
   {id: 'regeln', t: 'Regeln (Gegenbuchungen)', d: 'Darlehen spiegeln und verzinsen, Beteiligungswerte, Saldo-Spiegel – schreibt nur in manuelle Konten.', done: () => (S.CFG.darlehen || []).length + (S.CFG.beteiligungen || []).length + (S.CFG.saldo_spiegel || []).length > 0, href: '#regeln', optional: true},
@@ -534,9 +536,10 @@ const MODULES = [
   {id: 'betrieb', t: 'Betrieb & Zugang', d: 'Testmodus, automatischer Abgleich, Mitteilungen, Updates, Adresse für das iPhone, Passwort.', done: () => true, href: '#einstellungen'},
 ];
 function vEinrichtung(sub) {
-  if (sub === 'bereiche') return vBereicheEditor();
-  if (sub === 'konten') return vKontenEditor();
-  if (sub === 'verbindung') return vVerbindung();
+  const sh = id => `<h2 class="sub-h">${esc((MODULES.find(m => m.id === id) || {}).t || '')}</h2>`;      // gleicher Name wie im Einrichtungsplan
+  if (sub === 'bereiche') return sh('bereiche') + vBereicheEditor();
+  if (sub === 'konten') return sh('konten') + vKontenEditor();
+  if (sub === 'verbindung') return sh('verbindung') + vVerbindung();
   const roots = S.KONTEN.filter(k => k.gruppe && k.ebene === 0);
   let h = `<div class="note">In dieser Reihenfolge einrichten – die ersten drei Schritte bauen aufeinander auf (Konten lesen → Bereiche → Konten bestätigen), der Rest ist optional und jederzeit nachholbar. ${S.KONTEN.length ? roots.length + ' Kontengruppen, ' + S.KONTEN.filter(k => !k.gruppe).length + ' Konten aus MoneyMoney bekannt.' : 'Noch keine Konten aus MoneyMoney gelesen – mit Schritt 1 beginnen.'}</div><div class="setup-list">`;
   MODULES.forEach((m, i) => {
@@ -586,7 +589,7 @@ function vBereicheEditor() {
   if (!(S.CFG.bereiche || []).length) list = list.map((b, i) => [b, i]).sort((x, y) => (!x[0].haupt - !y[0].haupt) || (((x[0].art || guessArt(x[0].name)) !== 'privat') - ((y[0].art || guessArt(y[0].name)) !== 'privat')) || x[1] - y[1]).map(x => x[0]);
   let h = `<div class="note">Standard: jede Kontengruppe der obersten Ebene ist ein Bereich – der Hauptbereich zuerst, dann weitere private, dann Gesellschaften. Art und Hauptbereich sind aus den Namen vorbelegt – prüfen und bei Bedarf ändern. Mit ▲ ▼ die Reihenfolge ändern: so erscheinen die Bereiche oben in der Leiste. Bereiche lassen sich umbenennen, löschen, zusammenlegen oder aus einzelnen Konten und Gruppen zusammenstellen. ${hq('bereich')} ${S.KONTEN.length ? '' : '<b>Noch keine Konten geladen – zuerst die Verbindung prüfen.</b>'}</div><div class="list" id="bereiche">`;
   list.forEach((b, i) => { h += bereichForm(b, i); });
-  h += '</div><div class="actions"><button id="add-bereich" class="secondary">Bereich hinzufügen</button><button id="save-bereiche" class="secondary">Speichern</button><button data-savenext="#einrichtung/konten" data-save="bereiche">Speichern und weiter: Positionen &amp; Verlauf</button><button class="secondary" data-next="#einrichtung">Zurück zur Einrichtung</button></div><div id="findings-b" class="findings"></div>';
+  h += '</div><div class="actions"><button id="add-bereich" class="secondary">Bereich hinzufügen</button><button id="save-bereiche" class="secondary">Speichern</button><button data-savenext="#einrichtung/konten" data-save="bereiche">Speichern und weiter: Konten</button><button class="secondary" data-next="#einrichtung">Zurück zur Einrichtung</button></div><div id="findings-b" class="findings"></div>';
   return h;
 }
 function bereichForm(b, i) {
@@ -656,7 +659,7 @@ function vKontenEditor() {
   const bereiche = (S.CFG.bereiche || []).length ? S.CFG.bereiche.map(b => [b.id, b.name]) : Object.entries((S.DATA && S.DATA.bereich_namen) || {});
   const neu = leaves.filter(k => !k.bestaetigt);
   let h = `<div class="note">Jedes Konto gehört zu einem Bereich und hat eine Position. Vorschläge kommen aus der Gruppierung in MoneyMoney, dem Gruppennamen und dem Kontotyp und sind in der Auswahl mit „(Vorschlag)“ gekennzeichnet – hier bestätigst oder änderst du sie. Neue Konten tauchen als „neu“ auf (gestrichelt = Vorschlag noch nicht bestätigt), bis du sie einmal gespeichert hast. Reihenfolge wie unter „Bereiche“, darin wie in MoneyMoney. ${hq('konten_zuordnung')}</div>
-  ${neu.length ? `<div class="banner info">${neu.length} Konto/Konten noch nicht bestätigt: ${esc(neu.slice(0, 6).map(k => k.name).join(', '))}${neu.length > 6 ? ' …' : ''} – Vorschläge prüfen und „Speichern“.</div>` : ''}
+  ${neu.length ? `<div class="banner info">${nKonten(neu.length)} noch nicht bestätigt: ${esc(neu.slice(0, 6).map(k => k.name).join(', '))}${neu.length > 6 ? ' …' : ''} – Vorschläge prüfen und „Speichern“.</div>` : ''}
   <div class="row tight"><label>„Nach Aktivität“: ausblenden ohne Bestand und Umsatz seit <input type="number" id="k-inaktiv" min="0" value="${cfg.bilanz.inaktiv_monate ?? 12}" style="width:70px"> Monaten ${hq('inaktiv')}</label><label class="switch"><input type="checkbox" id="k-show-inactive" checked><i></i>ausgeblendete hier zeigen</label></div>
   <div class="wrap auto"><table class="plain acct-table"><thead><tr><th>Konto</th><th>Bereich ${hq('bereich')}</th><th>Position ${hq('position_kurz')}</th><th>Verlauf ${hq('verlauf_kurz')}</th><th>Anzeige ${hq('anzeige')}</th><th class="num">Saldo</th></tr></thead><tbody>`;
   // Reihenfolge: Bereiche wie unter „Bereiche“ angeordnet, darin die Konten wie in MoneyMoney; ohne Bereich zum Schluss
@@ -674,12 +677,12 @@ function vKontenEditor() {
     const dash = (cur, v) => !k.bestaetigt && cur === v ? ' vorschlag' : '';
     h += `<tr data-uuid="${k.uuid}" data-ref="${k.uuid} | ${esc(k.name)}" data-auto="${auto ? 1 : 0}" data-grenze="${grenze}" class="${kontoHidden(vis, auto) ? 'inactive' : ''}${k.bestaetigt ? '' : ' neu'}"><td title="${esc(k.pfad)}">${esc(k.name)}${k.bestaetigt ? '' : '<span class="tag warn">neu</span>'}<span class="tag k-vis">ausgeblendet</span>${k.veraltet ? `<span class="tag warn" title="Saldo ${F(k.saldo)}, aber seit ${esc(k.letzte_buchung || k.aktualisiert || 'jeher')} weder Buchung noch Aktualisierung – Konto aufgelöst? Dann in MoneyMoney den Saldo auf 0 setzen (Verlauf bleibt) oder „nicht bilanzieren“.">veraltet?</span>` : ''}<div class="small muted">${esc(k.pfad.split(' / ').slice(0, -1).join(' / '))} · ${k.depot ? 'Depot' : (k.manuell || k.abruf === 'offline') ? 'manuell' : esc(k.typ || 'Bank')}</div></td><td><select class="k-bereich"><option value="">– keiner –</option>${bereiche.map(([id, n]) => `<option value="${esc(id)}" ${bsel === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td>
       <td><select class="k-rolle${dash(rolle, sv)}" data-vor="${sv}">${ROLE_OPTS.map(([v, l]) => `<option value="${v}" ${rolle === v ? 'selected' : ''}>${l}${v === sv ? ' (Vorschlag)' : ''}</option>`).join('')}</select>${vorHint(rolle, sv, ROLE_OPTS)}</td>
-      <td class="nowrap"><select class="k-verlauf${dash(quelle, vv)}" data-vor="${vv}">${[['umsaetze', 'Umsätze'], ['stand', 'Kontostände']].map(([v, l]) => `<option value="${v}" ${quelle === v ? 'selected' : ''}>${l}${v === vv ? ' (Vorschlag)' : ''}</option>`).join('')}</select>${vorHint(quelle, vv, [['umsaetze', 'Umsätze'], ['stand', 'Kontostände']])} <button class="ghost small k-hist" title="Monatsstände ansehen und bearbeiten">Verlauf…</button></td>
+      <td class="nowrap"><select class="k-verlauf${dash(quelle, vv)}" data-vor="${vv}">${[['umsaetze', 'Umsätze'], ['stand', 'Kontostände']].map(([v, l]) => `<option value="${v}" ${quelle === v ? 'selected' : ''}>${l}${v === vv ? ' (Vorschlag)' : ''}</option>`).join('')}</select> <button class="ghost small k-hist" title="Monatsstände ansehen und bearbeiten">Verlauf…</button>${vorHint(quelle, vv, [['umsaetze', 'Umsätze'], ['stand', 'Kontostände']])}</td>
       <td><select class="k-show" title="${auto ? 'Kein Bestand und kein Umsatz seit ' + (cfg.bilanz.inaktiv_monate ?? 12) + ' Monaten' : 'Mit Bestand oder Umsatz in den letzten ' + (cfg.bilanz.inaktiv_monate ?? 12) + ' Monaten'}"><option value="">nach Aktivität</option><option value="show" ${vis === 'show' ? 'selected' : ''}>immer anzeigen</option><option value="hide" ${vis === 'hide' ? 'selected' : ''}>ausblenden</option></select></td>
       <td class="num ${(k.saldo || 0) < 0 ? 'neg' : 'pos'}">${F(k.saldo)}</td></tr>`;
   }
   h += '</tbody></table></div><div class="actions"><button id="save-konten" class="secondary">Speichern</button><button data-savenext="#zuordnen" data-save="konten">Speichern und weiter: Kategorien &amp; Zuordnen</button><button class="secondary" data-next="#einrichtung">Zurück zur Einrichtung</button></div><div id="findings-k2" class="findings"></div>';
-  h += `<h2>Saldenverlauf importieren ${hq('verlauf_import')}</h2><div class="note">Für Depots und Konten ohne Umsatzhistorie: Monatsstände aus einer Datei übernehmen. Erkannt werden CSV und Excel (.xlsx) – als Liste (Datum, Konto, Saldo), als Tabelle mit Stichtagen in der Kopfzeile (Konten als Zeilen, z. B. eine eigene Vermögensübersicht) oder mit Stichtagen in der ersten Spalte (Konten als Spalten, z. B. MoneyMoney → Berichte → Kontostand → exportieren). Je Monat zählt der letzte Wert. Umsatzkonten brauchen das nicht.</div>
+  h += `<h2>Saldenverlauf importieren ${hq('verlauf_import')}</h2><div class="note">Für Depots und Konten ohne Umsatzhistorie: Monatsstände aus einer Datei übernehmen. Erkannt werden CSV und Excel (.xlsx) – als Liste (Datum, Konto, Saldo), als Tabelle mit Stichtagen in der Kopfzeile (Konten als Zeilen, z. B. eine eigene Vermögensübersicht) oder mit Stichtagen in der ersten Spalte (Konten als Spalten). Je Monat zählt der letzte Wert. Umsatzkonten brauchen das nicht.</div>
     <div class="drop" id="hi-drop">Datei hierher ziehen<br><button id="hi-pick" class="small" style="margin-top:8px">Datei wählen</button></div><div id="hi-preview"></div>`;
   return h;
 }
@@ -699,7 +702,7 @@ function renderHistImport() {
     <div class="row tight" style="margin-top:8px"><label class="chk"><input type="checkbox" id="hi-gaps" checked> nur Monate übernehmen, für die noch kein eigener Wert eingetragen ist</label><button id="hi-import" class="small">Übernehmen</button><span class="small muted">Ohne Zuordnung bleibt eine Zeile unberücksichtigt. Werte zählen als eigene Monatsstände (Verlaufsquelle „Kontostände“ für Depots; bei Umsatzkonten überschreiben sie nur den Monat, nicht die Rückrechnung).</span></div><div id="hi-report" class="findings"></div></div>`;
   $('#hi-import').onclick = async () => {
     const zuordnung = {}; $$('#hi-preview tr[data-name]').forEach(tr => { zuordnung[tr.dataset.name === '(ohne Konto)' ? '' : tr.dataset.name] = $('.hi-map', tr).value; });
-    try { const r = await api('/api/historie/import', {datei: HI.b64, name: HI.name, zuordnung, uebernehmen: true, nur_luecken: $('#hi-gaps').checked}); showFindings($('#hi-report'), [], r.uebernommen + ' Monatswerte für ' + r.konten + ' Konto/Konten übernommen' + (r.bericht ? '; Bericht aktualisiert.' : '.'), 'ok'); await loadAll(); } catch (e) { showFindings($('#hi-report'), [], e.message, 'fehler'); }
+    try { const r = await api('/api/historie/import', {datei: HI.b64, name: HI.name, zuordnung, uebernehmen: true, nur_luecken: $('#hi-gaps').checked}); showFindings($('#hi-report'), [], r.uebernommen + ' Monatswerte für ' + (r.konten === 1 ? 'ein Konto' : r.konten + ' Konten') + ' übernommen' + (r.bericht ? '; Bericht aktualisiert.' : '.'), 'ok'); await loadAll(); } catch (e) { showFindings($('#hi-report'), [], e.message, 'fehler'); }
   };
 }
 function kontoHidden(vis, auto) { return vis === 'hide' || (vis === '' && !!auto); }
@@ -722,43 +725,42 @@ function collectKonten() {
   return cfg;
 }
 // Verlauf (Monatsstaende) je Konto
-async function openHistDrawer(uuid) {
-  const r = await api('/api/historie?konto=' + encodeURIComponent(uuid));
+async function openHistDrawer(uuid, vorschau) {
+  // vorschau: Verlaufsquelle, die erst angezeigt und mit „Speichern“ übernommen wird (z. B. aus der Kontentabelle)
+  const r = await api('/api/historie?konto=' + encodeURIComponent(uuid) + (vorschau ? '&quelle=' + vorschau : ''));
   const k = S.KONTEN.find(x => x.uuid === uuid) || {name: r.name || uuid};
   const d = $('#drawer');
   HD.uuid = uuid; HD.live = r.live;
   d.innerHTML = `<button class="close icon">✕</button><h2>${esc(k.name || r.name)}</h2>
     <div class="row tight"><span class="small muted">Verlauf aus ${hq('verlauf')}</span><div class="seg" id="hq-seg"><button class="hq-q" data-q="umsaetze">Umsätze</button><button class="hq-q" data-q="stand">Kontoständen</button></div></div>
     <div class="small muted" id="hq-erkl" style="margin:4px 0 8px"></div>
-    <div id="hq-hinweis"></div><div id="hq-verr"></div>
+    <div id="hq-hinweis"></div><div id="hq-pending"></div>
     <h3>Monatsstände</h3>
     <div class="row tight" id="h-addrow"><input type="month" id="h-von" style="width:140px"><button id="h-add" class="small secondary">Monat davor ergänzen</button></div>
     <div class="hist-grid" id="h-grid"></div>
-    <div class="actions" id="h-actions"><button id="h-save" class="small">Speichern</button><button id="h-clear" class="small secondary">Alle eigenen Werte löschen</button></div>
-    <div id="h-importbox"><h3>Import aus Saldenexport</h3><div class="small muted">CSV mit Datum;Saldo (ein Konto) oder Datum;Konto;Saldo (MoneyMoney: Ablage → Exportieren → Kontostände). Es zählt der letzte Wert je Monat; das Konto wird dabei auf „Kontostände“ umgestellt.</div>
+    <div class="actions" id="h-actions"><button id="h-save" class="small">Speichern</button><button id="h-undo" class="small secondary hidden">Verwerfen</button><button id="h-clear" class="small secondary">Alle eigenen Werte löschen</button></div>
+    <div id="h-importbox"><h3>Import aus Saldenexport</h3><div class="small muted">CSV mit Datum;Saldo (ein Konto) oder Datum;Konto;Saldo (z. B. Werte aus Depot- oder Jahresauszügen). Es zählt der letzte Wert je Monat; das Konto wird dabei auf „Kontostände“ umgestellt.</div>
     <textarea id="h-csv" placeholder="Datum;Saldo\n31.12.2024;12.345,67\n31.01.2025;12.900,00"></textarea><div class="actions"><button id="h-import" class="small secondary">Vorschau</button><button id="h-import2" class="small hidden">Übernehmen</button></div><div id="h-prev" class="findings"></div></div>`;
   d.classList.add('open');
   renderHist(r);
   $('.close', d).onclick = closeDrawer;
+  // Quelle umstellen = nur Vorschau (die Liste zeigt, was sich ändern würde); übernommen wird mit „Speichern“
   $$('.hq-q', d).forEach(b => b.onclick = async () => {
     if (b.classList.contains('on')) return;
-    const prev = HD.r.quelle;
     $$('.hq-q', d).forEach(x => { x.classList.toggle('on', x === b); x.disabled = true; });
-    const sel = $(`tr[data-uuid="${uuid}"] .k-verlauf`); if (sel) sel.value = b.dataset.q;   // Tabelle zieht mit (sonst setzt "Speichern" zurueck)
-    try {
-      const res = await api('/api/historie', {konto: uuid, werte: {}, quelle: b.dataset.q});
-      S.CFG = await api('/api/config');
-      renderHist(res.historie);
-    } catch (e) {
-      toast('Nicht umgeschaltet: ' + e.message, 6000);
-      if (sel) sel.value = HD.r.quelle_explizit ? prev : '';
-      renderHist(HD.r);
-    } finally { $$('.hq-q', d).forEach(x => { x.disabled = false; }); }
+    try { renderHist(await api('/api/historie?konto=' + encodeURIComponent(uuid) + '&quelle=' + b.dataset.q)); }
+    catch (e) { toast(e.message, 6000); renderHist(HD.r); }
+    finally { $$('.hq-q', d).forEach(x => { x.disabled = false; }); }
   });
+  $('#h-undo', d).onclick = async () => { try { renderHist(await api('/api/historie?konto=' + encodeURIComponent(uuid) + '&quelle=' + HD.r.quelle_gespeichert)); } catch (e) { toast(e.message, 6000); } };
   $('#h-add', d).onclick = () => { const v = $('#h-von', d).value; if (!v) return; let [yy, mm] = v.split('-').map(Number); mm--; if (mm < 1) { mm = 12; yy--; } const mk = `${yy}-${String(mm).padStart(2, '0')}`; $('#h-von', d).value = mk; $('#h-grid', d).insertAdjacentHTML('afterbegin', `<label>${ML(mk)}<input type="text" data-mk="${mk}" class="auto" value=""></label>`); };
   $('#h-save', d).onclick = async () => {
-    const werte = {}; $$('#h-grid input', d).forEach(i => { if (!i.classList.contains('auto') || i.value.trim()) werte[i.dataset.mk] = i.value.trim() === '' ? null : i.value.trim(); });
-    try { const res = await api('/api/historie', {konto: uuid, werte}); renderHist(res.historie); toast('Gespeichert'); } catch (e) { toast(e.message, 6000); }
+    const werte = {}; if (HD.r.quelle === 'stand') $$('#h-grid input', d).forEach(i => { if (!i.classList.contains('auto') || i.value.trim()) werte[i.dataset.mk] = i.value.trim() === '' ? null : i.value.trim(); });
+    const body = {konto: uuid, werte}; if (HD.r.quelle !== HD.r.quelle_gespeichert) body.quelle = HD.r.quelle;
+    try {
+      const res = await api('/api/historie', body); renderHist(res.historie); toast('Gespeichert');
+      if (body.quelle) { S.CFG = await api('/api/config'); const sel = $(`tr[data-uuid="${uuid}"] .k-verlauf`); if (sel) { sel.value = body.quelle; sel.classList.toggle('vorschlag', sel.closest('tr').classList.contains('neu') && sel.value === sel.dataset.vor); const hn = sel.parentElement.querySelector('.vor-hint'); if (hn) hn.classList.toggle('hidden', sel.value === sel.dataset.vor); } }
+    } catch (e) { toast(e.message, 6000); }
   };
   $('#h-clear', d).onclick = async () => { if (!confirm('Alle eigenen Monatswerte dieses Kontos löschen?')) return; try { const res = await api('/api/historie', {konto: uuid, werte: {}, loeschen: true}); renderHist(res.historie); } catch (e) { toast(e.message, 6000); } };
   $('#h-import', d).onclick = async () => { try { const r2 = await api('/api/historie/import', {konto: uuid, csv: $('#h-csv', d).value}); $('#h-prev', d).innerHTML = r2.vorschau.map(v => `<div class="${v.uuid ? 'ok' : 'warnung'}">${esc(v.name)}: ${v.anzahl} Monate (${v.von} – ${v.bis})${v.uuid ? '' : ' – kein Konto zugeordnet'}</div>`).join(''); $('#h-import2', d).classList.remove('hidden'); } catch (e) { $('#h-prev', d).innerHTML = `<div class="fehler">${esc(e.message)}</div>`; } };
@@ -781,9 +783,8 @@ function renderHist(r) {
   if (P.vorgemerkt_anzahl) infos.push(`${P.vorgemerkt_anzahl} vorgemerkte Umsätze (zusammen ${F(P.vorgemerkt_summe)} €) sind nicht eingerechnet – wie im Kontostand von MoneyMoney.`);
   if (!r.live) infos.push('Noch kein MoneyMoney-Stand im Speicher – angezeigt werden die Werte der letzten Auswertung.');
   $('#hq-hinweis', d).innerHTML = infos.map(t => `<div class="banner info small">${esc(t)}</div>`).join('');
-  const V = r.verrechnung;
-  $('#hq-verr', d).innerHTML = V && stand ? `<div class="row tight small" style="margin:4px 0">Schätzung vor dem ersten bekannten Stand aus Käufen/Verkäufen von <select id="hq-verr-sel" style="max-width:260px"><option value="">automatisch (${esc(V.automatisch_name || 'kein passendes Konto bei derselben Bank')})</option><option value="keine" ${V.eingestellt === 'keine' ? 'selected' : ''}>keine Schätzung</option>${V.konten.map(k => `<option value="${k.uuid}" ${V.eingestellt && V.eingestellt.split('|')[0].trim() === k.uuid ? 'selected' : ''}>${esc(k.name)}</option>`).join('')}</select></div>` : '';
-  const vs = $('#hq-verr-sel', d); if (vs) vs.onchange = async () => { try { const res = await api('/api/historie', {konto: HD.uuid, werte: {}, verrechnung: vs.value}); renderHist(res.historie); } catch (e) { toast(e.message, 6000); } };
+  const pending = r.quelle_gespeichert && r.quelle !== r.quelle_gespeichert;
+  $('#hq-pending', d).innerHTML = pending ? `<div class="banner small">Vorschau: Verlauf aus ${r.quelle === 'stand' ? 'Kontoständen' : 'Umsätzen'} – gespeichert ist „${r.quelle_gespeichert === 'stand' ? 'Kontostände' : 'Umsätze'}“. „Speichern“ übernimmt die Umstellung.</div>` : '';
   const werte = r.werte || {}, man = r.manuell || {};
   const months = Object.keys(Object.assign({}, werte, man)).sort();
   const anker = new Set(r.anker || []);
@@ -794,7 +795,9 @@ function renderHist(r) {
     return `<label class="${anker.has(mk) && !own ? 'rec' : ''}">${ML(mk)}<input type="text" data-mk="${mk}" class="${own ? '' : 'auto'}" value="${own ? F(man[mk]) : ''}" placeholder="${val}"></label>`;
   }).join('');
   $('#h-von', d).value = months[0] || new Date().toISOString().slice(0, 7);
-  for (const id of ['#h-addrow', '#h-actions']) $(id, d).classList.toggle('hidden', !stand);
+  $('#h-addrow', d).classList.toggle('hidden', !stand);
+  $('#h-actions', d).classList.toggle('hidden', !stand && !pending);
+  $('#h-clear', d).classList.toggle('hidden', !stand); $('#h-undo', d).classList.toggle('hidden', !pending);
   const g = $('#h-grid', d); if (g) g.scrollTop = g.scrollHeight;          // neueste Monate sichtbar
 }
 const HD = {uuid: null, live: false, r: null};
@@ -846,7 +849,7 @@ function vBilanz() {
   h += `<tr class="total"><td>Nettovermögen${pr ? ' <span class="small muted">(rechts: Plan)</span>' : ''}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
   h += (D.bilanz.ausserhalb || []).map(r => `<tr class="muted"><td>${esc(r.name)} <span class="tag">${esc((ROLE[r.rolle] || [r.rolle])[0])} · nicht im Nettovermögen</span></td>${cells(C, c => lastOf(r.werte, c.months))}</tr>`).join('');
   h += '</tbody></table></div>';
-  h += '<div class="note">Klick auf eine Position klappt sie auf, Klick auf ein Konto öffnet Position, Verlaufsquelle und Monatsstände. Positionen: Einrichtung → Bilanzpositionen. Plan-Spalten (rechts): Liquidität + Zahlungsfluss; Darlehen − Tilgung; Wertpapiere/Immobilien/Beteiligungen + Investition + Wertentwicklung bzw. Kalkulation (Planung → Parameter).</div>';
+  h += '<div class="note">Klick auf eine Position klappt sie auf, Klick auf ein Konto öffnet Position, Verlaufsquelle und Monatsstände. Positionen: Einrichtung → Konten. Plan-Spalten (rechts): Liquidität + Zahlungsfluss; Darlehen − Tilgung; Wertpapiere/Immobilien/Beteiligungen + Investition + Wertentwicklung bzw. Kalkulation (Planung → Parameter).</div>';
   return h;
 }
 
@@ -1559,7 +1562,7 @@ function vEinstellungen() {
     <label>Mitteilungen (macOS)</label><label class="chk"><input type="checkbox" id="e-mitt" ${C.mitteilungen !== false ? 'checked' : ''}> bei Buchungen, Vorschlägen und Fehlern</label>
   </div>
   <h2>Bilanz</h2><div class="form">
-    <label>Bereiche, Positionen, Verlauf</label><div><a href="#einrichtung/bereiche">Bereiche</a> · <a href="#einrichtung/konten">Bilanzpositionen &amp; Verlauf</a> · <a href="#einrichtung">Einrichtung (alle Bausteine)</a><div class="small muted">${(C.bereiche || []).length ? (C.bereiche || []).map(x => esc(x.name) + (x.haupt ? ' (Haupt)' : '')).join(', ') : 'Standard: jede Kontengruppe der obersten Ebene'}</div></div>
+    <label>Bereiche, Positionen, Verlauf</label><div><a href="#einrichtung/bereiche">Bereiche</a> · <a href="#einrichtung/konten">Konten</a> · <a href="#einrichtung">Einrichtung (alle Bausteine)</a><div class="small muted">${(C.bereiche || []).length ? (C.bereiche || []).map(x => esc(x.name) + (x.haupt ? ' (Haupt)' : '')).join(', ') : 'Standard: jede Kontengruppe der obersten Ebene'}</div></div>
     <label>Historie ${hq('monate_zurueck')}</label><label class="chk"><input type="number" id="e-monate" min="0" value="${b.monate_zurueck ?? 0}" style="width:70px"> Monate (0 = alles)</label>
   </div>
   <h2>MoneyMoney</h2><div class="form">
@@ -1696,8 +1699,8 @@ function vHilfe() {
   </tbody></table>
   <h2>Bereiche, Positionen, Verlauf</h2>
   <ul><li><b>Bereich</b> = frei zusammengestellte Konten (Privat, jede Gesellschaft). Vorschlag: jede Kontengruppe der obersten Ebene; die Gruppierung in MoneyMoney ist keine Voraussetzung. Einrichtung → Bereiche.</li>
-  <li><b>Position</b> = Zeile in der Bilanz (Liquidität, Wertpapiere, Geldanlagen, Immobilien, Beteiligungen, Sachwerte, Forderungen, Sonstiges, Verbindlichkeiten). Vorschlag aus Gruppenname und Kontotyp, je Konto überschreibbar. Einrichtung → Bilanzpositionen.</li>
-  <li><b>Verlauf</b> = woher die Monatsstände kommen: aus den Umsätzen (rückwärts vom aktuellen Saldo gerechnet – Startsalden sind unerheblich) oder aus Kontoständen (Depots, Konten ohne Umsatzhistorie: Kontor zeichnet monatlich auf). Fehlende ältere Depotstände schätzt Kontor aus Käufen/Verkäufen des Verrechnungskontos (Kennzeichen „geschätzt bis“); genauer: Monatsstände eintragen (Klick auf das Konto in der Bilanz) oder eine Datei importieren (Einrichtung → Konten: CSV/Excel, z. B. MoneyMoney → Berichte → Kontostand → exportieren, oder eine eigene Vermögensübersicht).</li>
+  <li><b>Position</b> = Zeile in der Bilanz (Liquidität, Wertpapiere, Geldanlagen, Immobilien, Beteiligungen, Sachwerte, Forderungen, Sonstiges, Verbindlichkeiten). Vorschlag aus Gruppenname und Kontotyp, je Konto überschreibbar. Einrichtung → Konten.</li>
+  <li><b>Verlauf</b> = woher die Monatsstände kommen: aus den Umsätzen (rückwärts vom aktuellen Saldo gerechnet – Startsalden sind unerheblich) oder aus Kontoständen (Depots, Konten ohne Umsatzhistorie: Kontor zeichnet monatlich auf). Fehlende ältere Depotstände schätzt Kontor aus Käufen/Verkäufen des Verrechnungskontos (Kennzeichen „geschätzt bis“); genauer: Monatsstände eintragen (Klick auf das Konto in der Bilanz) oder eine Datei importieren (Einrichtung → Konten: CSV/Excel, z. B. eine eigene Vermögensübersicht oder Werte aus Depotauszügen).</li>
   <li><b>Konten bestätigen</b>: Bereich, Position und Verlauf jedes Kontos werden einmal bestätigt und bleiben dann fest – auch wenn du das Konto in MoneyMoney umbenennst, umgruppierst oder den Kontotyp änderst. Neue Konten erscheinen als „neu“ (Hinweis in der Übersicht), bis du sie bestätigst.</li>
   <li><b>Ausgeblendete Konten</b>: Anzeige „nach Aktivität“ blendet Konten ohne Bestand und Umsatz seit N Monaten aus (laufend geprüft); „ausblenden“ / „immer anzeigen“ legt es je Konto fest. Sie zählen in allen Summen und in der Historie.</li></ul>
   <h2>Immobilien</h2>
@@ -1745,7 +1748,7 @@ function vHilfe() {
 
 // ---------------------------------------------------------------- Steuerung
 const TITLES = {uebersicht: 'Übersicht', bilanz: 'Bilanz', kapitalfluss: 'Kapitalfluss', planung: 'Planung', buchungen: 'Buchungen', steuer: 'Steuer', immobilien: 'Immobilien', depots: 'Depots', umsaetze: 'Umsätze & Belege', zuordnen: 'Zuordnen', einrichtung: 'Einrichtung', regeln: 'Regeln', kategorien: 'Kategorien', einstellungen: 'Einstellungen', synchronisierung: 'Synchronisierung', pakete: 'Pakete', updates: 'Updates', protokoll: 'Protokoll', hilfe: 'Hilfe'};
-const SUBTITLES = {'einrichtung/verbindung': 'Einrichtung · Verbindung', 'einrichtung/bereiche': 'Einrichtung · Bereiche', 'einrichtung/konten': 'Einrichtung · Bilanzpositionen & Verlauf'};
+const SUBTITLES = {};
 async function route() {
   if (DIRTY.on && location.hash !== DIRTY.hash) {
     if (!confirm('Ungespeicherte Änderungen verwerfen?')) { history.replaceState(null, '', DIRTY.hash || '#uebersicht'); return; }
@@ -1899,7 +1902,7 @@ function bind(main) {
   }
   const sbr = $('#save-bereiche', main); if (sbr) sbr.addEventListener('click', async () => { if (await SAVE.bereiche()) { const box = $('#findings-b').innerHTML; await rebuildReport(false); const f = $('#findings-b'); if (f) f.innerHTML = box; } });
   const skn = $('#save-konten', main); if (skn) skn.addEventListener('click', async () => { if (await SAVE.konten()) { const box = $('#findings-k2').innerHTML; await rebuildReport(false); const f = $('#findings-k2'); if (f) f.innerHTML = box; } });
-  $$('.k-hist', main).forEach(b => b.addEventListener('click', async e => { const btn = e.target; btn.classList.add('busy'); try { await openHistDrawer(btn.closest('tr').dataset.uuid); } catch (er) { toast('Verlauf konnte nicht geladen werden: ' + er.message, 6000); } finally { btn.classList.remove('busy'); } }));
+  $$('.k-hist', main).forEach(b => b.addEventListener('click', async e => { const btn = e.target; btn.classList.add('busy'); try { const tr = btn.closest('tr'), sel = $('.k-verlauf', tr); await openHistDrawer(tr.dataset.uuid, sel ? sel.value : null); } catch (er) { toast('Verlauf konnte nicht geladen werden: ' + er.message, 6000); } finally { btn.classList.remove('busy'); } }));
   const hp = $('#hi-pick', main); if (hp) hp.addEventListener('click', () => { const inp = $('#file-input'); inp.value = ''; inp.setAttribute('accept', '.csv,.txt,.xlsx,.xlsm'); inp.removeAttribute('capture'); inp.onchange = () => { if (inp.files[0]) histImportPreview(inp.files[0]); }; inp.click(); });
   const hd = $('#hi-drop', main); if (hd) { hd.addEventListener('dragover', e => { e.preventDefault(); hd.classList.add('over'); }); hd.addEventListener('dragleave', () => hd.classList.remove('over')); hd.addEventListener('drop', e => { e.preventDefault(); hd.classList.remove('over'); if (e.dataTransfer.files[0]) histImportPreview(e.dataTransfer.files[0]); }); if (HI) renderHistImport(); }
   const sn = $('#sync-now', main); if (sn) sn.addEventListener('click', async () => { sn.classList.add('busy'); try { await syncNow(); } finally { sn.classList.remove('busy'); } });

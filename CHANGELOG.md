@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.9.2
+- Einrichtung: oben steht nur „Einrichtung“, darunter der Name des Schritts wie im Einrichtungsplan („Verbindung“, „Bereiche“, „Konten“).
+- Einzahl/Mehrzahl: „Ein Konto“ bzw. „N Konten“ statt „Konto/Konten“.
+- Verlauf-Fenster: Monate untereinander; das Umstellen zwischen Umsätzen und Kontoständen ist erst eine Vorschau („Speichern“ übernimmt, „Verwerfen“ geht zurück). Aus der Kontentabelle geöffnet, zeigt es die dort gewählte, noch nicht gespeicherte Quelle.
+- Keine Schätzung von Depotständen mehr (auch keine Auswahl eines Verrechnungskontos dafür); vor dem ersten bekannten Stand steht gekennzeichnet der erste Wert.
+- Kapital- und Gesellschafterkonten werden wie Gesellschafterdarlehen vorgeschlagen: in der Gesellschaft Schuld an den Gesellschafter, privat Forderung. „Kapitalkonten (Eigenkapital)“ bleibt wählbar.
+- Vorschlag nur gestrichelt umrandet (ohne Farbe); „Wird neu berechnet …“ passt in eine Zeile.
+- Klick auf „Kontor“ führt zur Übersicht, Klick auf die Versionsnummer zu den Updates.
+
 ## 3.9.1
 - Bilanz: eine Tabelle statt Struktur + Konten – Positionen farbig und aufklappbar (anfangs zugeklappt, „alle aufklappen“), Plan-Spalten rechts in derselben Tabelle statt einer zweiten Tabelle darunter.
 - Tabellen scrollen waagerecht zur aktuellen Spalte (Monat bzw. Jahr), auch in der Jahresansicht; mit Plan bleiben die Plan-Spalten rechts im Blick.

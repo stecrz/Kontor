@@ -40,7 +40,7 @@ from mm_bridge import Bridge, MoneyMoneyError, is_running
 from mm_core import (RUN_LOCK, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, export_package, fetch, freeze_assignments, immo_for_plan,
                      immo_results, import_package, ledger_fp, merged_config, run_once, unavailable_text, version, version_on_disk)
 from mm_model import Ledger, ledger_from_bytes, ledger_to_bytes
-from mm_report import ROLE_LABELS, ROLES, account_balance_series, account_months, apply_plan, verrechnungskonto_fuer
+from mm_report import ROLE_LABELS, ROLES, account_balance_series, account_months, apply_plan
 from mm_store import Store
 from mm_xlsx import Sheet, workbook
 
@@ -915,6 +915,7 @@ def make_handler(app: App):
             depot = bool(acc.portfolio) if acc else bool(kinfo.get("depot"))
             q = quelle or explizit or ("stand" if depot else "umsaetze")
             out = {"konto": uuid, "name": acc.name if acc else kinfo.get("name", ""), "quelle": q, "quelle_explizit": bool(explizit or quelle),
+                   "quelle_gespeichert": explizit or ("stand" if depot else "umsaetze"),
                    "depot": depot, "manuell": hist, "aufgezeichnet": snaps, "werte": {}, "hinweis": None, "geschaetzt_bis": None, "anker": [],
                    "live": acc is not None, "bericht_laeuft": app.bericht_status().get("laeuft", False)}
             if acc is not None:
@@ -932,13 +933,6 @@ def make_handler(app: App):
                 if info["erste_buchung"]:
                     info["erste_buchung"] = info["erste_buchung"].isoformat()
                 out["pruefung"] = info
-                if depot:
-                    vcfg2 = (app.config.get("bilanz") or {}).get("verrechnung") or {}
-                    eingestellt = next((v for k, v in vcfg2.items() if k.split("|")[0].strip() == uuid), None)
-                    auto = verrechnungskonto_fuer(ledger, acc, {"bilanz": {}}) if eingestellt is None else None
-                    out["verrechnung"] = {"eingestellt": eingestellt, "automatisch": auto, "automatisch_name": ledger.accounts[auto].name if auto else None,
-                                          "konten": sorted(({"uuid": a.uuid, "name": a.path} for a in ledger.accounts.values() if not a.group and not a.portfolio),
-                                                           key=lambda x: x["name"].lower())}
             else:
                 for b in ds.get("bereiche", {}).values():
                     for r in (b.get("bilanz") or {}).get("zeilen") or []:
@@ -1443,7 +1437,7 @@ def make_handler(app: App):
             if umgestellt:
                 app.save_config(cfg)
             ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="Verlaufsimport")
-            log.info("Verlaufsimport: %d Werte für %d Konto/Konten", total, len(assign))
+            log.info("Verlaufsimport: %d Werte für %d Konten", total, len(assign))
             return {"ok": True, "uebernommen": total, "konten": len(assign), "umgestellt": umgestellt, "bericht": ok, "text": err, "vorschau": preview, "hinweise": hints}
 
         def _kategorien(self, path: str, body: dict, local: bool):

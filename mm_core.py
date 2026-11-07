@@ -762,8 +762,8 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
             datasets[b["id"]] = {"fehler": str(e), "wurzel": b["name"]}
     neu = konten_neu(ledger, config, bereiche, roles)
     if neu:
-        warnings.append("%d Konto/Konten ohne bestätigte Zuordnung (Einrichtung → Bilanzpositionen & Verlauf): %s"
-                        % (len(neu), ", ".join(k["name"] for k in neu[:5]) + (" …" if len(neu) > 5 else "")))
+        warnings.append("%s ohne bestätigte Zuordnung (Einrichtung → Konten): %s"
+                        % ("Ein Konto" if len(neu) == 1 else "%d Konten" % len(neu), ", ".join(k["name"] for k in neu[:5]) + (" …" if len(neu) > 5 else "")))
     immobilien = []
     for im in config.get("immobilien") or []:
         r = immo_res.get(str(im.get("id")))
