@@ -496,7 +496,6 @@ class AppTests(_AppBase):
         led = self.app.ledger
         leaves = [a for a in led.accounts.values() if not a.group]
         ts = lambda d: int((DT(d.year, d.month, d.day) - (DT(2001, 1, 1) if zeit == "cocoa" else DT(1970, 1, 1))).total_seconds())
-        bal = __import__("service").balance_lookup(led)
         q = lambda v: "NULL" if v in (None, "") else "'%s'" % str(v).replace("'", "''")
         sql = ["CREATE TABLE accounts(rowid INTEGER PRIMARY KEY, bank_key INTEGER, account TEXT, subaccount TEXT, bankcode TEXT, portfolio INTEGER, iban TEXT, "
                "currency TEXT, name TEXT COLLATE NOCASE, cred TEXT, userdata BLOB);",
@@ -517,27 +516,25 @@ class AppTests(_AppBase):
                 sql.append("INSERT INTO transactions(local_account_key, timestamp, amount, unformatted_purpose) VALUES(%d, %d, %f, 'Text %d');" % (i, ts(date(2026, 10, 10 + k)), 12.34 + k, k))
             if not mit_verlauf:
                 continue
-            # wie bei MoneyMoney: ein Punkt am 1. jedes Monats (0 Uhr) mit dem Saldo vom Ende des Vormonats, dazu der heutige Stand
-            y, m = 2024, 2
-            pts = []
-            while (y, m) <= (2026, 11):
-                d = date(y, m, 1)
-                if a.portfolio:
-                    v = 70000.27 if (y, m) == (2025, 7) else round(a.balance * (0.5 + 0.5 * ((y - 2024) * 12 + m) / 35.0), 2)
-                elif a.uuid == F.uid("pb.immo"):
-                    v = 123.0 * m                                       # passt nicht zu den Umsaetzen: wird nicht uebernommen
-                else:
-                    v = bal(a.uuid, d - timedelta(days=1), False) + (1000.0 if versatz else 0.0)
-                pts.append((d, v))
-                y, m = (y + 1, 1) if m == 12 else (y, m + 1)
-            pts.append((date(2026, 11, 3), a.balance))
-            for d, v in pts:
-                if a.portfolio:          # Depot: zwei Wertpapiere je Zeitpunkt, kein eigener Saldo-Verlauf
-                    part = round(v * 0.6, 2)
-                    sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, 1);" % (i, ts(d), part))
-                    sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, 2);" % (i, ts(d), round(v - part, 2)))
-                else:
-                    sql.append("INSERT INTO balance_chart VALUES(%d, 'EUR', %d, %r);" % (i, ts(d), v))
+            # wie bei MoneyMoney: je Tag die Veraenderung (Summe der Buchungen), Zeitpunkt tagsueber; Saldo = rueckwaerts vom aktuellen
+            if a.portfolio:          # Depot: Wertveraenderung je Wertpapier und Abruf, Summe aller = aktueller Wert
+                y, m, prev = 2024, 1, 0.0
+                while (y, m) <= (2026, 10):
+                    v = 70000.27 if (y, m) == (2025, 6) else round(a.balance * (0.5 + 0.5 * ((y - 2024) * 12 + m) / 34.0), 2)
+                    delta, prev = round(v - prev, 2), v
+                    part = round(delta * 0.6, 2)
+                    sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, 1);" % (i, ts(date(y, m, 15)), part))
+                    sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, 2);" % (i, ts(date(y, m, 15)), round(delta - part, 2)))
+                    y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+                sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, 1);" % (i, ts(date(2026, 11, 3)), round(a.balance - prev, 2)))
+                continue
+            per_day = {}
+            for tx in led.transactions(a.uuid):
+                per_day[tx.booking_date] = round(per_day.get(tx.booking_date, 0.0) + tx.amount, 2)
+            if a.uuid == F.uid("pb.immo"):
+                per_day = {date(2025, 3, 3): 123.0, date(2025, 4, 3): 246.0, date(2025, 5, 3): -50.0}   # passt nicht zu den Umsaetzen
+            for d, v in sorted(per_day.items()):
+                sql.append("INSERT INTO balance_chart VALUES(%d, 'EUR', %d, %r);" % (i, ts(d) + 37000, v + (1000.0 if versatz else 0.0)))
         db = os.path.join(self.dir, "MoneyMoney.sqlite")
         if os.path.exists(db):
             os.remove(db)
@@ -597,21 +594,24 @@ class AppTests(_AppBase):
             # nur lesend: ausschliesslich SELECT (und Einstellungen der Verbindung), nie etwas, das die Datenbank aendert
             self.assertTrue(sqls); self.assertFalse([q for q in sqls if not re.match(r"\s*(SELECT|PRAGMA (query_only|temp_store|mmap_size|cache_size|table_info))\b", q)])
             self.assertFalse([q for q in sqls if re.search(r"\b(cred|credential|username|pin|userdata|purpose|unformatted)\b", q)])   # keine Zugangsdaten, keine Umsaetze
-            n = len([a for a in self.app.ledger.accounts.values() if not a.group])
-            self.assertEqual(r["konten"], n - 1); self.assertEqual(r["depots"], 1); self.assertEqual((r["von"], r["bis"]), ("2024-01", "2026-10"))
+            # uebernommen: das Depot und jedes Konto mit Umsaetzen (dessen Punkte passen); Konten ohne Umsaetze haben keine Punkte
+            n = 1 + sum(1 for a in self.app.ledger.accounts.values() if not a.group and not a.portfolio
+                        and any(t.booking_date < date(2026, 11, 1) for t in self.app.ledger.transactions(a.uuid)))
+            self.assertEqual(r["konten"], n); self.assertEqual(r["depots"], 1); self.assertEqual((r["von"], r["bis"]), ("2024-01", "2026-10"))
             self.assertFalse(H.AKTIV.is_set()); self.assertFalse(os.path.exists(aufbau))
             self.assertFalse([f for f in os.listdir(self.dir) if f.startswith("kontor-") or f.endswith(".sqlite") and f != "MoneyMoney.sqlite"])
             mm = self.store.load(MM_HISTORY_FILE)["konten"]
             dep = mm[F.uid("priv.depot")]
-            self.assertNotIn(F.uid("pb.immo"), mm)                                      # Verlauf passt nicht zu den Umsaetzen: nicht uebernommen
-            giro = self.app.ledger.accounts[F.uid("priv.giro")]
-            self.assertEqual(mm[F.uid("priv.giro")]["2026-09"], __import__("service").balance_lookup(self.app.ledger)(giro.uuid, date(2026, 9, 30), False))   # Punkt am 1.10. = Ende September
-            self.assertEqual(mm[F.uid("pb.kap.s")]["2026-01"], -120000.0); self.assertEqual(mm[F.uid("shs.kap.s")]["2026-01"], -74145.0)   # gleichnamige Konten getrennt
+            self.assertNotIn(F.uid("pb.immo"), mm)                                      # Punkte passen nicht zu den Umsaetzen: nicht uebernommen
+            look = __import__("service").balance_lookup(self.app.ledger)
+            for u in mm:                                                                # Monatsende = aktueller Saldo minus spaetere Veraenderungen
+                if not self.app.ledger.accounts[u].portfolio:
+                    self.assertEqual(mm[u]["2026-09"], look(u, date(2026, 9, 30), False))
             self.assertEqual(dep["2025-06"], 70000.27)                                 # letzter Wert im Monat (Monatsende), Cent -> Euro
             self.assertNotIn("2026-11", dep)                                            # laufender Monat kommt aus dem aktuellen Saldo
             with open(self.store.path(MM_HISTORY_FILE), "rb") as f:
                 self.assertNotIn(b"70000", f.read())                                    # verschluesselt abgelegt
-            self.assertEqual(self.store.load("state.json")["mm_verlauf"]["konten"], n - 1)
+            self.assertEqual(self.store.load("state.json")["mm_verlauf"]["konten"], n)
             code, st = self.call("/api/status"); self.assertEqual(st["moneymoney"]["historie"]["depots"], 1)
             self.app.rebuild_report(wait=True)
             code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
@@ -625,7 +625,7 @@ class AppTests(_AppBase):
             # Verlauf der Konten mit Umsaetzen passt nirgends (versetzt): nur das Depot wird uebernommen, die Konten behalten Kontors Salden
             code, r = self._mm_upload(self._mm_db(versatz=True)); self.assertTrue(r["ok"], r); self.assertEqual((r["konten"], r["depots"]), (1, 1))
             # aelteres Format (SQLCipher 3) und Cocoa-Zeit ebenso
-            code, r = self._mm_upload(self._mm_db(compat=3, zeit="cocoa")); self.assertTrue(r["ok"], r); self.assertEqual(r["konten"], n - 1)
+            code, r = self._mm_upload(self._mm_db(compat=3, zeit="cocoa")); self.assertTrue(r["ok"], r); self.assertEqual(r["konten"], n)
             # ohne Verlaufstabelle: nichts uebernommen, nur der Aufbau (Namen, keine Inhalte) als Hinweis
             code, r = self._mm_upload(self._mm_db(mit_verlauf=False)); self.assertFalse(r["ok"]); self.assertIn("nicht sicher erkannt", r["text"])
             txt = open(aufbau, encoding="utf-8").read()

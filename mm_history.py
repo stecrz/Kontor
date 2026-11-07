@@ -360,13 +360,14 @@ def _to_date(v, kind: str) -> Optional[date]:
 
 
 def _time_kind(db: "MemDB", table: str, today: date) -> Optional[str]:
-    """Zeitformat der Spalte timestamp: Unix-Sekunden, -Millisekunden oder Cocoa (ab 2001); der juengste Wert liegt nahe heute."""
+    """Zeitformat der Spalte timestamp: Unix-Sekunden, -Millisekunden oder Cocoa (ab 2001); der juengste Wert liegt nahe heute
+    (vorgemerkte Buchungen koennen in der Zukunft liegen)."""
     lo, hi = db.one("SELECT min(timestamp), max(timestamp) FROM %s WHERE typeof(timestamp) IN ('integer', 'real')" % _q(table))
     if hi is None:
         return None
     for kind in ("unix", "unix_ms", "cocoa"):
         a, b = _to_date(lo, kind), _to_date(hi, kind)
-        if a and b and a.year >= 1990 and today - timedelta(days=4 * 366) <= b <= today + timedelta(days=2):
+        if a and b and a.year >= 1990 and today - timedelta(days=4 * 366) <= b <= today + timedelta(days=366):
             return kind
     return None
 
@@ -417,15 +418,17 @@ def _series(rows, kind: str) -> List[Tuple[date, float]]:
     return out
 
 
-# Deutungen eines Verlaufspunkts (Zeitpunkt T, Wert v): Saldo am Ende des Tages T oder davor (Ende T-1), nach Buchungs-
-# oder Wertstellungsdatum. Welche zutrifft, zeigt der Vergleich mit den Salden, die Kontor aus den Umsaetzen kennt.
-INTERP = (("end", False), ("start", False), ("end", True), ("start", True))
+# Deutungen eines Verlaufspunkts (Tag T, Wert v). MoneyMoney speichert je Konto und Tag die Veraenderung ("delta": Summe
+# der Buchungen des Tages); der Saldo ergibt sich rueckwaerts vom aktuellen Saldo. Zur Sicherheit werden auch Saldo-Deutungen
+# ("level": Saldo am Ende des Tages T bzw. T-1) geprueft, jeweils nach Buchungs- oder Wertstellungsdatum. Welche zutrifft,
+# zeigt der Vergleich mit den Tagessalden, die Kontor aus den Umsaetzen kennt.
+MODES = (("delta", "end", False), ("delta", "end", True), ("level", "end", False), ("level", "start", False), ("level", "end", True), ("level", "start", True))
 BalanceAt = Callable[[str, date, bool], Optional[float]]
 
 
 def _load_series(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[int], Dict], today: date) -> Dict[int, Tuple[str, List]]:
-    """Verlauf je Konto der Datenbank: balance_chart (Saldo je Zeitpunkt, Waehrung des Kontos); Depots ohne eigenen
-    Saldo-Verlauf aus portfolio_chart (Summe der Wertpapiere je Zeitpunkt). Gelesen werden nur Kennung, Zeitpunkt, Betrag."""
+    """Punkte je Konto der Datenbank: balance_chart (Waehrung des Kontos); Depots ohne eigene Punkte aus portfolio_chart
+    (Summe der Wertpapiere je Zeitpunkt). Gelesen werden nur Kennung, Zeitpunkt, Betrag."""
     series: Dict[int, Tuple[str, List]] = {}
     kind = _time_kind(db, "balance_chart", today)
     if kind:
@@ -450,67 +453,58 @@ def _load_series(db: "MemDB", plain: List[str], keys: List[int], info: Callable[
     return series
 
 
-def _day(d: date, when: str) -> date:
-    return d - timedelta(days=1) if when == "start" else d
-
-
-def _score(ser: List, u: str, scale: float, interp: Tuple[str, bool], balance_at: BalanceAt, since: Optional[date], today: date) -> Tuple[int, int]:
-    """(passende Punkte, vergleichbare Punkte) eines Verlaufs gegen die aus den Umsaetzen bekannten Tagessalden."""
-    when, by_value = interp
-    hits = n = 0
+def _daily(ser: List[Tuple[date, float]], kind: str) -> Dict[date, float]:
+    """Je Tag: Summe der Punkte (delta) bzw. letzter Punkt (level)."""
+    out: Dict[date, float] = {}
     for d, v in ser:
-        day = _day(d, when)
+        out[d] = out.get(d, 0.0) + v if kind == "delta" else v
+    return out
+
+
+def _score(daily: Dict[date, float], u: str, scale: float, mode: Tuple[str, str, bool], balance_at: BalanceAt,
+           since: Optional[date], today: date) -> Tuple[int, int]:
+    """(passende Tage, vergleichbare Tage) gegen die aus den Umsaetzen bekannten Tagessalden."""
+    kind, when, by_value = mode
+    hits = n = 0
+    for d, v in daily.items():
+        day = d - timedelta(days=1) if when == "start" else d
         if day >= today or (since and day < since):
             continue
         ref = balance_at(u, day, by_value)
         if ref is None:
             return 0, 0
+        if kind == "delta":
+            ref -= balance_at(u, day - timedelta(days=1), by_value)
         n += 1
         hits += abs(v * scale - ref) <= max(0.011, 1e-6 * abs(ref))
     return hits, n
 
 
-def _diagnose(db: "MemDB", series: Dict[int, Tuple[str, List]], matched: Dict[int, Tuple[str, str]], results: Dict, failed: List[int],
-              balance_at: BalanceAt, since: Optional[date], today: date) -> None:
-    """Protokoll fuer die Fehlersuche (voruebergehend): nur Anzahlen und Anteile, keine Betraege, keine Namen.
-    Je nicht passendem Konto mit Umsaetzen wird geprueft, welcher Deutung die Werte folgen."""
-    try:
-        n_all, n_mid = db.one("SELECT count(*), sum(timestamp % 86400 = 0) FROM balance_chart")
-        log.info("MoneyMoney database (diagnostics): balance_chart %d rows, %d at 00:00 UTC", n_all, n_mid or 0)
-    except sqlite3.DatabaseError:
-        pass
-    pts = [d for _t, ser in series.values() for d, _v in ser]
-    if pts:
-        gaps = sorted((b[0] - a[0]).days for _t, ser in series.values() for a, b in zip(ser, ser[1:]))
-        log.info("MoneyMoney database (diagnostics): %d points, median gap %s days, %d points after today",
-                 len(pts), gaps[len(gaps) // 2] if gaps else "-", sum(1 for d in pts if d > today))
-    best = sorted(results.items(), key=lambda x: -x[1][0])[:3]
-    log.info("MoneyMoney database (diagnostics): best interpretations %s", "; ".join("%s %s/%s: %d of %d" % (sc, w, "value" if v else "booking", h, n) for (sc, (w, v)), (h, n) in best))
-    pct = lambda a, b: round(100.0 * a / b) if b else 0
-    order = {k: i + 1 for i, k in enumerate(sorted(series))}
-    for k in sorted(failed, key=lambda k: -len(series[k][1]))[:15]:
-        u = matched[k][0]
-        rows = []
-        for d, v in series[k][1]:
-            if d >= today or (since and d < since):
-                continue
-            ref, prev = balance_at(u, d, False), balance_at(u, d - timedelta(days=1), False)
-            if ref is not None and prev is not None:
-                rows.append((v, ref, prev))
-        if not rows:
-            continue
-        n = len(rows)
-        diffs: Dict[float, int] = {}
-        for v, ref, _p in rows:
-            diffs[round(v - ref, 2)] = diffs.get(round(v - ref, 2), 0) + 1
-        mode, cnt = max(diffs.items(), key=lambda x: x[1])
-        near = lambda a, b: abs(a - b) <= max(0.011, 1e-6 * abs(b))
-        tail = rows[-60:]
-        log.info("MoneyMoney database (diagnostics): account %d (%s): %d points; exact %d %%, same difference %d %% (%s), daily change %d %%, "
-                 "negated %d %%, previous day %d %%, last 60 exact %d %%",
-                 order[k], matched[k][1], n, pct(sum(near(v, r) for v, r, _p in rows), n), pct(cnt, n), "zero" if abs(mode) < 0.005 else "not zero",
-                 pct(sum(near(v, r - p) for v, r, p in rows), n), pct(sum(near(-v, r) for v, r, _p in rows), n),
-                 pct(sum(near(v, p) for v, _r, p in rows), n), pct(sum(near(v, r) for v, r, _p in tail), len(tail)))
+def _month_ends(daily: Dict[date, float], kind: str, when: str, scale: float, saldo: float, today: date) -> Dict[str, float]:
+    """Saldo am Ende jedes Monats ab dem ersten Punkt bis zum Vormonat. delta: aktueller Saldo minus alle spaeteren
+    Veraenderungen (wie Kontor aus den Umsaetzen rechnet); level: letzter Punkt im Monat."""
+    cur = "%04d-%02d" % (today.year, today.month)
+    out: Dict[str, float] = {}
+    if kind == "level":
+        for d in sorted(daily):
+            day = d - timedelta(days=1) if when == "start" else d
+            mk = "%04d-%02d" % (day.year, day.month)
+            if mk < cur:
+                out[mk] = round(daily[d] * scale, 2)
+        return out
+    days = sorted(daily)
+    if not days:
+        return out
+    after = sum(daily[d] for d in days) * scale          # Veraenderungen nach dem jeweiligen Monatsende (auch kuenftig datierte)
+    i, y, m = 0, days[0].year, days[0].month
+    while "%04d-%02d" % (y, m) < cur:
+        nxt = date(y + (m == 12), m % 12 + 1, 1)
+        while i < len(days) and days[i] < nxt:
+            after -= daily[days[i]] * scale
+            i += 1
+        out["%04d-%02d" % (y, m)] = round(saldo - after, 2)
+        y, m = nxt.year, nxt.month
+    return out
 
 
 def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at: Optional[BalanceAt] = None,
@@ -518,9 +512,9 @@ def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at
     """Kontostand-Verlauf aus MoneyMoneys Tabellen balance_chart und portfolio_chart.
     accounts: uuid -> {saldo, depot, iban, nummer, blz, name, waehrung}; balance_at(uuid, tag, nach_wertstellung): Saldo am
     Ende des Tages laut den Umsaetzen in Kontor (None fuer Depots), verlaesslich ab since.
-    Massstab und Deutung der Zeitpunkte werden an diesen Salden geeicht; ein Konto mit Umsaetzen wird nur uebernommen, wenn
-    mindestens 70 % seiner Punkte passen, insgesamt muessen 60 % der pruefbaren Konten passen. Depots (ohne Umsaetze) nur bei
-    eindeutiger Zuordnung. Liefert {"tabelle", "spalten", "konten": {uuid: {JJJJ-MM: Saldo am Monatsende}}, "treffer",
+    Deutung und Massstab werden an diesen Salden geeicht; ein Konto mit Umsaetzen wird nur uebernommen, wenn mindestens 70 %
+    seiner Tage passen. Depots (ohne Umsaetze) nur, wenn ihre Punkte zum aktuellen Wert passen (Summe der Veraenderungen
+    bzw. juengster Stand). Liefert {"tabelle", "spalten", "konten": {uuid: {JJJJ-MM: Saldo am Monatsende}}, "treffer",
     "geprueft"} oder None."""
     plain, virtual = table_names(db)
     if "accounts" not in plain or "balance_chart" not in plain:
@@ -539,64 +533,66 @@ def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at
         log.info("MoneyMoney database: no balance history for the matched accounts")
         return None
     balance_at = balance_at or (lambda _u, _d, _v: None)
-    # Eichung: Massstab (Euro/Cent, Vorzeichen) und Deutung, bei der die meisten Punkte zu den bekannten Salden passen
-    results: Dict = {}
-    for scale in (1.0, -1.0, 0.01, -0.01):
-        for interp in INTERP:
+    days = {k: {kind: _daily(ser, kind) for kind in ("delta", "level")} for k, (_t, ser) in series.items()}
+    score = lambda k, u, scale, mode: _score(days[k][mode[0]], u, scale, mode, balance_at, since, today)
+    # Eichung: Deutung und Massstab, bei denen die meisten Tage zu den bekannten Salden passen
+    results = {}
+    for scale in (1.0, 0.01):
+        for mode in MODES:
             tot = [0, 0]
-            for k, (_t, ser) in series.items():
+            for k in series:
                 if k in matched:
-                    h, n = _score(ser, matched[k][0], scale, interp, balance_at, since, today)
+                    h, n = score(k, matched[k][0], scale, mode)
                     tot[0] += h; tot[1] += n
-            results[(scale, interp)] = tuple(tot)
-    (scale, interp), (all_hits, all_n) = max(results.items(), key=lambda x: (x[1][0], x[0][0] == 1.0, x[0][1] == ("end", False)))
-    weak = all_hits < 0.5 * all_n
-    interp_months = ("end", False) if weak else interp     # Deutung nicht belegt: Zeitpunkt = Monat des Punkts
-    scale_dep = 1.0 if weak else scale                     # Massstab fuer Konten ohne Umsaetze (Depots)
-    plain_acc: set = set()
-    good = lambda k, u: (lambda h, n: (n > 0 and h >= 0.7 * n, n))(*_score(series[k][1], u, scale, interp, balance_at, since, today))
+            results[(scale, mode)] = tuple(tot)
+    (scale, mode), (all_hits, all_n) = max(results.items(), key=lambda x: (x[1][0], x[0][0] == 1.0, x[0][1] == MODES[0]))
+    if all_hits < 0.5 * all_n:
+        scale, mode = 1.0, MODES[0]                    # nicht belegt: MoneyMoneys Ablage (Veraenderung je Tag)
+    good = lambda k, u: (lambda h, n: (n > 0 and h >= 0.7 * n, n))(*score(k, u, scale, mode))
     ok: Dict[int, bool] = {}
+    use: Dict[int, str] = {}                            # Deutung je Konto ("delta"/"level")
     for k in series:
-        if k in matched:
-            fit, n = good(k, matched[k][0])
-            if n:
-                ok[k] = fit
-            elif series[k][1] and abs(info(k).get("saldo") or 0.0) >= 1.0:
-                # ohne Umsaetze (Depots): nur Plausibilitaet -- juengster Wert in der Groessenordnung des aktuellen Saldos
-                q = series[k][1][-1][1] * scale_dep / info(k)["saldo"]
-                if not 0.5 <= q <= 2.0:
-                    ok[k] = False
-            if not n:
-                plain_acc.add(k)
-    # mehrdeutige Namen: der Kandidat, dessen Verlauf zu den Salden dieses Kontos passt (genau einer)
+        if k not in matched:
+            continue
+        fit, n = good(k, matched[k][0])
+        if n:
+            ok[k], use[k] = fit, mode[0]
+            continue
+        # ohne Umsaetze (Depots): Summe aller Veraenderungen = aktueller Wert, sonst juengster Stand = aktueller Wert
+        bal = info(k).get("saldo") or 0.0
+        d_all = sum(days[k]["delta"].values()) * scale
+        last = days[k]["level"][max(days[k]["level"])] * scale if days[k]["level"] else None
+        tol = max(1.0, 0.01 * abs(bal))
+        if abs(d_all - bal) <= tol:
+            ok[k], use[k] = True, "delta"
+        elif last is not None and abs(last - bal) <= max(1.0, 0.05 * abs(bal)):
+            ok[k], use[k] = True, "level"
+        else:
+            ok[k] = False
+            off = lambda x: "-" if x is None else "within 5 %" if abs(x - bal) <= 0.05 * abs(bal) else "within 20 %" if abs(x - bal) <= 0.2 * abs(bal) else "further off"
+            log.info("MoneyMoney database: account without transactions (%s, %s, %d points) not taken over; sum of changes %s, latest value %s",
+                     matched[k][1], series[k][0], len(series[k][1]), off(d_all), off(last))
+    # mehrdeutige Namen: der Kandidat, dessen Punkte zu den Salden dieses Kontos passen (genau einer)
     for u, ks in unclear.items():
         fits = [k for k in ks if k in series and k not in matched and good(k, u)[0]]
         if len(fits) == 1:
             matched[fits[0]] = (u, "name")
-            ok[fits[0]] = True
-    with_tx = [k for k in ok if _score(series[k][1], matched[k][0], scale, interp, balance_at, since, today)[1]]
-    failed = [k for k in with_tx if not ok[k]]
-    hits, checked = len(with_tx) - len(failed), len(with_tx)
-    log.info("MoneyMoney database: scale %s, interpretation %s/%s: %d of %d points; %d of %d accounts with transactions match "
-             "(the others keep the balances Kontor calculates from their transactions)",
-             scale, interp[0], "value date" if interp[1] else "booking date", all_hits, all_n, hits, checked)
-    if failed:
-        _diagnose(db, series, matched, results, failed, balance_at, since, today)
-    cur = "%04d-%02d" % (today.year, today.month)
+            ok[fits[0]], use[fits[0]] = True, mode[0]
+    with_tx = [k for k in ok if score(k, matched[k][0], scale, mode)[1]]
+    hits = sum(1 for k in with_tx if ok[k])
+    dep = [k for k in ok if k not in with_tx]
+    log.info("MoneyMoney database: %s/%s, scale %s: %d of %d days match; %d of %d accounts with transactions, %d of %d without (portfolios)",
+             mode[0], "value date" if mode[2] else "booking date", scale, all_hits, all_n, hits, len(with_tx), sum(1 for k in dep if ok[k]), len(dep))
     konten: Dict[str, Dict[str, float]] = {}
-    for k, (_t, ser) in series.items():
-        if k not in matched or ok.get(k) is False:
-            continue                                       # Verlauf passt nicht (zu den Umsaetzen bzw. zum Saldo): nicht uebernehmen
-        u, f = matched[k][0], (scale_dep if k in plain_acc else scale)
-        for d, v in ser:
-            day = _day(d, interp_months[0])
-            mk = "%04d-%02d" % (day.year, day.month)
-            if mk < cur:                                   # laufender Monat kommt aus MoneyMoneys aktuellem Saldo
-                konten.setdefault(u, {})[mk] = round(v * f, 2)           # spaeterer Wert im Monat ueberschreibt -> Monatsende
+    for k in series:
+        if k in matched and ok.get(k):
+            vals = _month_ends(days[k][use[k]], use[k], mode[1], scale, info(k).get("saldo") or 0.0, today)
+            if vals:
+                konten[matched[k][0]] = vals
     if not konten:
         return None
-    tabellen = sorted({series[k][0] for k in series if k in matched})
-    return {"tabelle": "+".join(tabellen), "spalten": ["account_key", "timestamp", "balance"], "konten": konten, "treffer": hits, "geprueft": checked}
+    tabellen = sorted({series[k][0] for k in series if k in matched and ok.get(k)})
+    return {"tabelle": "+".join(tabellen), "spalten": ["account_key", "timestamp", "balance"], "konten": konten, "treffer": hits, "geprueft": len(with_tx)}
 
 
 def run(buf: bytearray, accounts: Dict[str, Dict], today: date, keys_fn: Optional[Callable[[bytes], List[bytearray]]] = None,

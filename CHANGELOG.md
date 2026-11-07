@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.9.17 (2026-11-07)
+- Kontostände aus MoneyMoney: MoneyMoney speichert je Konto und Tag die Veränderung, nicht den Saldo (Protokoll: 100 % der Tage passen so). Kontor rechnet die Monatsend-Stände jetzt wie MoneyMoney rückwärts vom aktuellen Saldo; Depots über die Wertveränderung ihrer Wertpapiere, wenn deren Summe den aktuellen Depotwert ergibt. Künftig datierte Punkte werden berücksichtigt. Die ausführliche Fehlersuche im Protokoll ist wieder entfernt.
+
 ## 3.9.16 (2026-11-07)
 - Einrichtung → Verbindung: Fortschrittsbalken beim Lesen aus MoneyMoney (Konten, Umsätze, Depotbestände, Kategorien); die Dauer schätzt Kontor aus dem letzten Lesen.
 - Kontostände aus MoneyMoney: Konten, deren Verlauf nicht zu den Umsätzen passt, verhindern nicht mehr die Übernahme der übrigen (vor allem der Depots); sie behalten die Salden, die Kontor aus ihren Umsätzen rechnet. Vergleich jetzt auf den Cent genau. Das Protokoll prüft für solche Konten mehrere Deutungen (nur Anteile, keine Beträge).
