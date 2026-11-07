@@ -230,7 +230,11 @@ label .hq { vertical-align:-2px; }
 .acct-table select { padding:2px 6px; font-size:12px; }
 .acct-table tr.inactive td { color:var(--faint); }
 .tag.warn { background:var(--warn-bg); color:var(--warn-fg); }
-.hist-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:6px 10px; }
+.hist-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:6px 10px; max-height:46vh; overflow:auto; padding:2px 4px 2px 0; }
+.hist-grid input:disabled { background:transparent; border-color:transparent; color:var(--fg); }
+.hist-grid input:disabled::placeholder { color:var(--fg); opacity:.85; }
+.hist-grid label.rec input::placeholder { color:var(--accent-fg); }
+.banner.small { font-size:12px; padding:6px 10px; margin:6px 0; }
 .hist-grid label { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
 .hist-grid input { width:100%; text-align:right; padding:3px 6px; font-size:12px; }
 .hist-grid input.auto { color:var(--faint); }

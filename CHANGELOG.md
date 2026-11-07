@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.6.0
+- Verlauf-Fenster rechnet das gewählte Konto sofort selbst (unter einer Sekunde, auch bei 190.000 Umsätzen) statt auf die Neuberechnung der gesamten Auswertung zu warten; Umschalten, Eintragen und Löschen zeigen das Ergebnis direkt.
+- „Kontostände“ bei Bankkonten neu: eingetragene/importierte Stände sind Anker, Monate dazwischen und davor werden von dort aus mit den Buchungen gerechnet (vorher: erster Stand flach fortgeschrieben bzw. eine Depot-Schätzung, die für Bankkonten nicht passt). Die Buchungen bleiben im Kapitalfluss, Abweichungen erscheinen als „Korrektur Kontostand“. Ohne eigene Werte identisch mit „Umsätze“.
+- „Umsätze“: eigene Monatswerte zählen dort nicht (Eingabe nur bei „Kontoständen“); ein Import stellt die importierten Konten automatisch auf „Kontostände“.
+- Neuberechnung nach Änderungen 6- bis 10-mal schneller: unveränderte Teile (Kategorien-Lernen, Umsatzliste, Steuer, Kapitalfluss nicht betroffener Bereiche, Depot-Verrechnungskonten) werden wiederverwendet; Dateien werden kompakt gespeichert.
+- Letzter MoneyMoney-Stand wird verschlüsselt zwischengespeichert: nach einem Neustart (z. B. Update) sind Auswertung und Verlauf sofort da, auch wenn MoneyMoney gesperrt oder geschlossen ist.
+- Einrichtung: „Bericht aktualisieren“ aus „Bilanzpositionen & Verlauf“ entfernt (die Auswertung aktualisiert sich nach dem Speichern selbst); Karte „Erste Auswertung erstellen“ nur, solange es noch keine gibt.
+- Fehler behoben: Bereichsleiste erschien nach einer Neuberechnung auch auf Seiten außerhalb der Auswertungen.
+
 ## 3.5.1
 - Verlauf-Fenster: Umschalten zwischen „Umsätze“ und „Kontoständen“ wirkt sofort (vorher zeigte das Fenster bis zum Ende der Neuberechnung die alte Quelle, dadurch schien der Knopf nicht zu reagieren); die Auswahl in der Kontentabelle zieht mit, die Werte aktualisieren sich nach der Neuberechnung von selbst; Fehler werden angezeigt.
 - Speichern im Verlauf-Fenster deutlich schneller (Bericht wird nicht mehr bei jeder Anfrage kopiert).

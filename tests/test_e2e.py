@@ -1131,6 +1131,44 @@ class FeatureTests(_AppBase):
         self.assertEqual(self.store.load("plan.json")["bereiche"][P]["zeilen"]["Einnahmen/Einnahmen / Gehalt"]["methode"], "fix")
         self.assertEqual(self.call("/api/sicherung/laden", {"sicherung": {"x": 1}})[0], 400)
 
+    def test_verlauf_quellen_semantik(self):
+        """Umsaetze: nur Buchungen. Kontostaende (Bankkonto): eingetragene Staende sind Anker, dazwischen mit Buchungen gerechnet,
+        Abweichung als Korrektur im Kapitalfluss. Vorschau im Verlauf-Fenster sofort, ohne auf den Neubau zu warten."""
+        self.login(); self.run_and_wait()
+        g = F.uid("priv.giro")
+        code, h = self.call("/api/historie?konto=" + g)
+        self.assertTrue(h["live"]); self.assertEqual(h["quelle"], "umsaetze")
+        umsatz = h["werte"]
+        self.assertEqual(umsatz["2026-11"], 12000.0)
+        # Vorschau "Kontostaende" ohne eigene Werte = identisch mit Umsaetzen (Bankkonto, Anker nur heutiger Saldo)
+        code, h2 = self.call("/api/historie?konto=%s&quelle=stand" % g)
+        self.assertEqual(h2["werte"], umsatz)
+        # Eigener Stand 2026-03 = 1.000: Monate bis 2026-03 um die Differenz verschoben, danach unveraendert
+        code, r = self.call("/api/historie", {"konto": g, "werte": {"2026-03": 1000}, "quelle": "stand"}, warten=False)
+        self.assertEqual(r["bericht"], "angefordert"); self.assertEqual(r["historie"]["quelle"], "stand")
+        w = r["historie"]["werte"]; diff = 1000.0 - umsatz["2026-03"]
+        self.assertEqual(w["2026-03"], 1000.0); self.assertEqual(w["2026-01"], round(umsatz["2026-01"] + diff, 2)); self.assertEqual(w["2026-04"], umsatz["2026-04"])
+        self.assertIn("2026-03", r["historie"]["anker"])
+        # Umsaetze ignorieren eigene Werte
+        code, h3 = self.call("/api/historie?konto=%s&quelle=umsaetze" % g)
+        self.assertEqual(h3["werte"]["2026-03"], umsatz["2026-03"])
+        # Nach dem Neubau: Bilanz wie Vorschau, Kapitalfluss mit Korrekturzeile, Buchungen des Kontos bleiben Zahlungsfluesse
+        self.app.rebuild_report(wait=True)
+        code, ds = self.call("/api/dataset"); b = ds["bereiche"][ds["haupt"]]
+        row = [z for z in b["bilanz"]["zeilen"] if z["id"] == g][0]
+        self.assertEqual(row["werte"]["2026-03"], 1000.0); self.assertEqual(row["werte"]["2026-01"], w["2026-01"])
+        bew = [s for s in b["kapitalfluss"]["sektionen"] if s["name"] == "Bewertung"]
+        korr = [z for z in (bew[0]["zeilen"] if bew else []) if "Korrektur Kontostand" in z["zeile"]]
+        self.assertTrue(korr)
+        self.assertAlmostEqual(sum(korr[0]["werte"].values()), -diff, places=2)       # Sprung zurueck auf die Buchungen nach dem Anker
+        self.assertTrue(any(s["name"] == "Einnahmen" and s["zeilen"] for s in b["kapitalfluss"]["sektionen"]))
+        # Import stellt importierte Konten auf Kontostaende um
+        self.call("/api/historie", {"konto": g, "werte": {}, "quelle": "umsaetze", "loeschen": True})
+        code, r = self.call("/api/historie/import", {"csv": "Datum;Konto;Saldo\n31.01.2026;Hausbank Giro;5.000,00\n", "uebernehmen": True})
+        self.assertEqual(r["umgestellt"], 1)
+        code, cfg = self.call("/api/config")
+        self.assertEqual(cfg["bilanz"]["verlauf"][g + " | Hausbank Giro"], "stand")
+
     def test_bericht_im_hintergrund(self):
         """Verlauf-Aenderungen stossen den Neubau nur an; mehrere Anstoesse ergeben einen Lauf; Status zeigt den Fortschritt."""
         self.login(); self.run_and_wait()
@@ -1239,7 +1277,23 @@ class BrowserTest(unittest.TestCase):
                     pg.wait_for_timeout(100)
                 pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
                 pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.giro")); pg.wait_for_selector("#drawer.open .hq-q.on[data-q='stand']", timeout=10000)   # bleibt beim erneuten Oeffnen
+                # Kontostaende: eigener Wert 2026-03 wirkt sofort auf die Monate davor (Vorschau ohne Neubau)
+                self.assertFalse(pg.is_disabled("#drawer input[data-mk='2026-03']"))
+                before = pg.get_attribute("#drawer input[data-mk='2026-01']", "placeholder")
+                pg.fill("#drawer input[data-mk='2026-03']", "1000"); pg.click("#h-save")
+                for _ in range(50):
+                    if pg.get_attribute("#drawer input[data-mk='2026-01']", "placeholder") != before:
+                        break
+                    pg.wait_for_timeout(100)
+                self.assertNotEqual(pg.get_attribute("#drawer input[data-mk='2026-01']", "placeholder"), before)
+                self.assertEqual(pg.input_value("#drawer input[data-mk='2026-03']"), "1.000,00")
                 pg.click("#drawer .hq-q[data-q='umsaetze']"); pg.wait_for_selector("#drawer.open .hq-q.on[data-q='umsaetze']", timeout=10000)
+                for _ in range(100):
+                    if pg.is_disabled("#drawer input[data-mk='2026-03']"):
+                        break
+                    pg.wait_for_timeout(50)
+                self.assertTrue(pg.is_disabled("#drawer input[data-mk='2026-03']"))                     # Umsaetze: eigene Werte zaehlen nicht
+                self.assertEqual(pg.get_attribute("#drawer input[data-mk='2026-01']", "placeholder"), before)
                 pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
                 pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.tr")); pg.wait_for_selector("#drawer.open #h-grid", timeout=10000)
                 self.assertIn("Broker Giro", pg.query_selector("#drawer").inner_text())
@@ -1247,7 +1301,9 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(pg.query_selector("#k-show-inactive").is_checked())        # inaktive standardmaessig sichtbar
                 self.assertLessEqual(pg.evaluate("document.querySelector('.acct-table').scrollWidth"), pg.evaluate("document.querySelector('#main').clientWidth"))   # passt in die Breite
                 pg.select_option("tr[data-uuid='%s'] .k-rolle" % F.uid("priv.immo"), "immobilien")
-                pg.click("#save-konten"); pg.wait_for_selector("#findings-k2 .ok", timeout=20000); pg.wait_for_timeout(300)
+                self.assertIsNone(pg.query_selector("#k-neu"))                                          # kein "Bericht aktualisieren" im Einrichtungsschritt
+                pg.click("#save-konten"); pg.wait_for_selector("#findings-k2 .ok", timeout=20000); pg.wait_for_timeout(1500)
+                self.assertTrue(pg.evaluate("document.querySelector('#bereich-seg').classList.contains('hidden')"))   # Bereichsleiste nur in den Auswertungen
                 self.assertIn("Gespeichert", pg.query_selector("#findings-k2").inner_text())
                 self.assertEqual(store.load("config.json")["bilanz"]["rollen"][F.uid("priv.immo") + " | Immobilie Lindenstraße"], "immobilien")
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_konten.png"), full_page=True)
@@ -1441,7 +1497,7 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertEqual(len(cfg["beteiligungen"]), 2)
                 # Bericht erstellen -> Uebersicht mit Kennzahlen
                 pg.click("#nav a[href='#einrichtung']"); pg.wait_for_selector("#w-report"); pg.click("#w-report")
-                pg.wait_for_selector("#main a[href='#uebersicht'] button", timeout=20000)
+                pg.wait_for_selector("#w-report", state="detached", timeout=30000)          # Karte verschwindet, sobald die Auswertung da ist
                 self.assertIn("eingerichtet", pg.query_selector(".setup-list").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung.png"), full_page=True)
                 pg.click("#nav a[href='#uebersicht']"); pg.wait_for_selector(".cards .spark", timeout=20000)

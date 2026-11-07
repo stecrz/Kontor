@@ -384,3 +384,73 @@ def fmt_eur(x: float) -> str:
     whole, frac = s.split(".")
     whole = "{:,}".format(int(whole)).replace(",", ".")
     return ("-" if x < 0 else "") + whole + "," + frac + " €"
+
+
+# ---------------------------------------------------------------------------
+# Zwischenspeicher des MoneyMoney-Stands (damit nach einem Neustart nicht erst MoneyMoney gelesen werden muss)
+# ---------------------------------------------------------------------------
+
+LEDGER_CACHE_FORMAT = 1
+
+
+def ledger_to_bytes(ledger: "Ledger", saved_at: Optional[datetime] = None) -> bytes:
+    """Konten + Umsaetze als gzip-JSON (Kategorie im Original aus MoneyMoney, nicht die Kontor-Ueberlagerung)."""
+    import gzip
+    import json
+    from dataclasses import fields as dc_fields
+    afields = [f.name for f in dc_fields(Account)]
+    tfields = [f.name for f in dc_fields(Tx) if f.name != "mm_category_path"]
+
+    def enc(v):
+        return v.isoformat() if isinstance(v, (date, datetime)) else v
+    accounts = []
+    for a in ledger.accounts.values():
+        accounts.append([enc(getattr(a, n)) for n in afields])
+    txs = []
+    for t in ledger.txs:
+        row = []
+        for n in tfields:
+            v = getattr(t, n)
+            if n == "category_path" and t.mm_category_path is not None:
+                v = t.mm_category_path
+            row.append(enc(v))
+        txs.append(row)
+    data = {"format": LEDGER_CACHE_FORMAT, "gespeichert": (saved_at or datetime.now()).isoformat(), "account_fields": afields, "accounts": accounts,
+            "tx_fields": tfields, "txs": txs, "portfolios": getattr(ledger, "portfolios", {}) or {}}
+    return gzip.compress(json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8"), compresslevel=3)
+
+
+def ledger_from_bytes(raw: bytes) -> Tuple["Ledger", Optional[datetime]]:
+    import gzip
+    import json
+    from dataclasses import fields as dc_fields
+    data = json.loads(gzip.decompress(raw).decode("utf-8"))
+    if data.get("format") != LEDGER_CACHE_FORMAT:
+        raise ValueError("anderes Format")
+    known_a = {f.name for f in dc_fields(Account)}
+    known_t = {f.name for f in dc_fields(Tx)}
+    accounts: Dict[str, Account] = {}
+    af = data["account_fields"]
+    for row in data["accounts"]:
+        d = {k: v for k, v in zip(af, row) if k in known_a}
+        if d.get("refresh"):
+            d["refresh"] = datetime.fromisoformat(d["refresh"])
+        a = Account(**d)
+        accounts[a.uuid] = a
+    tf = data["tx_fields"]
+    i_book = tf.index("booking_date")
+    i_val = tf.index("value_date") if "value_date" in tf else None
+    txs: List[Tx] = []
+    fd = date.fromisoformat
+    for row in data["txs"]:
+        row = list(row)
+        row[i_book] = fd(row[i_book])
+        if i_val is not None and row[i_val]:
+            row[i_val] = fd(row[i_val])
+        d = {k: v for k, v in zip(tf, row) if k in known_t}
+        txs.append(Tx(**d))
+    ledger = Ledger(accounts, txs)
+    ledger.portfolios = data.get("portfolios") or {}
+    saved = data.get("gespeichert")
+    return ledger, (datetime.fromisoformat(saved) if saved else None)
+

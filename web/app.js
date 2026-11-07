@@ -24,10 +24,10 @@ const H = {
   gruppenwahl: 'Eine Gruppe wählen heißt: alle Konten darunter gehören dazu – auch solche, die später in MoneyMoney in dieser Gruppe angelegt werden. Einzelne Konten lassen sich abwählen; dann gilt nicht mehr die Gruppe, sondern die verbleibenden Konten einzeln.',
   anzeige: '„automatisch“ blendet Konten aus, die seit N Monaten keinen Bestand und keinen Umsatz haben. „ausblenden“ / „immer anzeigen“ überschreibt das je Konto. Ausgeblendete Konten bleiben in Summen und Verlauf enthalten.',
   position_kurz: 'Wo das Konto in der Bilanz erscheint (Liquidität, Wertpapiere, Immobilien, Darlehen …) und wie seine Umsätze im Kapitalfluss zählen. Vorschlag aus Gruppenname und Kontotyp.',
-  verlauf_kurz: 'Woher die Monatsstände kommen: „Umsätze“ = vom aktuellen Saldo rückwärts gerechnet (Bankkonten). „Kontostände“ = Kontor merkt sich monatlich den Stand und du ergänzst ältere Werte (Depots, Konten ohne Umsatzhistorie).',
+  verlauf_kurz: 'Woher die Monatsstände kommen: „Umsätze“ = vom heutigen Saldo rückwärts über die Buchungen gerechnet (Standard für Bankkonten). „Kontostände“ = bekannte Stände (eingetragen, importiert, bei Depots monatlich aufgezeichnet) sind maßgeblich, dazwischen rechnet Kontor mit den Buchungen (Standard für Depots).',
   berechtigung: 'Wofür: Kontor liest über die Skript-Schnittstelle von MoneyMoney Konten, Umsätze und Kategorien – nur lesend; Zugangsdaten zu Banken sieht Kontor nie. Ohne diese Freigabe kann Kontor nichts auswerten. Geschrieben wird nur in Offline-Konten, die du später in Regeln benennst. Erscheint die Abfrage nicht: Systemeinstellungen → Datenschutz & Sicherheit → Automation → python3 → MoneyMoney.',
   position: 'Die Bilanzposition eines Kontos. Sie bestimmt, wo das Konto in der Bilanz erscheint und wie Umsätze im Kapitalfluss behandelt werden (Liquidität: Einnahmen/Ausgaben; Darlehen: Zins/Tilgung; Wertpapiere, Immobilien, Beteiligungen, Sachwerte: Umschichtung/Bewertung). Vorschlag aus Gruppenname und Kontotyp, hier überschreibbar.',
-  verlauf: '„Umsätze“: der Saldoverlauf wird aus dem aktuellen Saldo rückwärts über die Umsätze gerechnet (Startsalden spielen keine Rolle). „Kontostände“: für Depots und Konten ohne Umsatzhistorie – Kontor zeichnet ab dem ersten Abgleich monatlich den Stand auf; ältere Monatsstände kannst du eintragen oder aus einem Saldenexport laden.',
+  verlauf: '„Umsätze“: Saldo am Monatsende = heutiger Saldo minus alle späteren Buchungen. Eigene Monatswerte zählen hier nicht. „Kontostände“: eingetragene oder importierte Stände sind maßgeblich; Monate dazwischen und davor rechnet Kontor von dort aus mit den Buchungen weiter, Abweichungen erscheinen im Kapitalfluss als „Korrektur Kontostand“. Bei Depots (ohne Buchungen) gilt der letzte bekannte Stand; Kontor zeichnet ihn monatlich auf, ältere Stände kannst du eintragen oder importieren.',
   zuordnen: 'Hier landen alle Umsätze, die weder in Kontor noch in MoneyMoney eine Kategorie haben. Zuordnung je Gegenpartei; „Regel“ merkt sich die Zuordnung für künftige Umsätze. Kategorien tippen: neue werden angelegt (Oberkategorie / Unterkategorie).',
   kontor_kategorien: 'Reihenfolge: manuelle Zuordnung > eigene Regel > gelernte Regel > Kategorie aus MoneyMoney. Gelernte Regeln entstehen aus Gegenpartei (IBAN oder Name, ggf. plus Zweckanfang), wenn mindestens 90 % der bisherigen Umsätze dieser Gegenpartei dieselbe Kategorie haben.',
   mm_ueberschreiben: 'Standard: Umsätze mit MoneyMoney-Kategorie behalten sie. Eingeschaltet: Kontor-Regeln gelten auch dort (MoneyMoney selbst wird nicht verändert).',
@@ -307,7 +307,7 @@ async function pollStatus() {
     if (b.fehler) { toast('Bericht konnte nicht neu gebaut werden: ' + b.fehler, 6000); return; }
     await loadAll();
     const dr = $('#drawer');
-    if (dr.classList.contains('open') && HD.uuid && $('#hq-seg', dr)) { try { await openHistDrawer(HD.uuid); } catch (e) {} }
+    if (dr.classList.contains('open') && HD.uuid && $('#hq-seg', dr)) { if (!HD.live && !$$('#h-grid input:not(.auto)', dr).some(i => i.value !== i.defaultValue)) { try { await openHistDrawer(HD.uuid); } catch (e) {} } }
     else if (DATA_TABS.includes(S.tab) && !dr.classList.contains('open')) route();
     toast('Auswertung aktualisiert');
   }
@@ -319,7 +319,7 @@ function afterRebuild(r) {
 function bereichSeg() {
   const seg = $('#bereich-seg'); if (!S.DATA) { seg.classList.add('hidden'); return; }
   const keys = Object.keys(S.DATA.bereiche || {});
-  seg.classList.toggle('hidden', keys.length < 2);
+  seg.classList.toggle('hidden', keys.length < 2 || !['uebersicht', 'bilanz', 'kapitalfluss', 'planung'].includes(S.tab));
   seg.innerHTML = keys.map(k => `<button data-b="${k}" class="${k === S.bereich ? 'on' : ''}">${esc(BN(k))}</button>`).join('');
   $$('button', seg).forEach(b => b.addEventListener('click', () => { S.bereich = b.dataset.b; S.collapsed = {}; bereichSeg(); route(); }));
 }
@@ -511,7 +511,7 @@ function vEinrichtung(sub) {
     h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? 'eingerichtet' : (m.optional ? 'optional' : 'offen')}</span></div><div class="d">${esc(m.d)}</div></div><div class="a"><a href="${m.href || ('#einrichtung/' + m.id)}"><button class="small ${ok ? 'secondary' : ''}">${ok ? 'Anpassen' : 'Einrichten'}</button></a></div></div>`;
   });
   h += '</div>';
-  h += `<div class="card"><h3>Ersten Bericht erstellen</h3><div class="small muted">Liest alle Umsätze und baut Übersicht, Bilanz, Kapitalfluss, Planung und Steuer. Es wird nichts in MoneyMoney verändert. Danach: Buchungen → „Abgleich jetzt (Test)“, um die Regeln zu prüfen.</div><div class="actions"><button id="w-report" class="small">${S.DATA ? 'Bericht aktualisieren' : 'Bericht jetzt erstellen'}</button>${S.DATA ? '<a href="#uebersicht"><button class="small secondary">Zur Übersicht</button></a>' : ''}</div></div>`;
+  if (!S.DATA) h += `<div class="card"><h3>Erste Auswertung erstellen</h3><div class="small muted">Liest alle Umsätze aus MoneyMoney und baut Übersicht, Bilanz, Kapitalfluss, Planung und Steuer. In MoneyMoney wird nichts verändert. Danach hält Kontor die Auswertung selbst aktuell (nach jeder Änderung und bei jedem Abgleich).</div><div class="actions"><button id="w-report" class="small">Auswertung erstellen</button></div></div>`;
   return h;
 }
 function vVerbindung() {
@@ -618,7 +618,7 @@ function vKontenEditor() {
       <td><select class="k-show"><option value="">auto${k.inaktiv ? ' (inaktiv)' : ''}</option><option value="hide" ${hide.has(k.uuid) ? 'selected' : ''}>ausblenden</option><option value="show" ${show.has(k.uuid) ? 'selected' : ''}>immer zeigen</option></select></td>
       <td class="num ${(k.saldo || 0) < 0 ? 'neg' : 'pos'}">${F(k.saldo)}</td></tr>`;
   }
-  h += '</tbody></table></div><div class="actions"><button id="save-konten">Speichern</button><button id="k-neu" class="secondary">Bericht aktualisieren</button><button class="secondary" data-next="#einrichtung" data-save="#save-konten">Zurück zur Einrichtung</button></div><div id="findings-k2" class="findings"></div>';
+  h += '</tbody></table></div><div class="actions"><button id="save-konten">Speichern</button><button class="secondary" data-next="#einrichtung" data-save="#save-konten">Zurück zur Einrichtung</button></div><div id="findings-k2" class="findings"></div>';
   h += `<h2>Saldenverlauf importieren ${hq('verlauf_import')}</h2><div class="note">Für Depots und Konten ohne Umsatzhistorie: Monatsstände aus einer Datei übernehmen. Erkannt werden CSV und Excel (.xlsx) – als Liste (Datum, Konto, Saldo), als Tabelle mit Stichtagen in der Kopfzeile (Konten als Zeilen, z. B. eine eigene Vermögensübersicht) oder mit Stichtagen in der ersten Spalte (Konten als Spalten, z. B. MoneyMoney → Berichte → Kontostand → exportieren). Je Monat zählt der letzte Wert. Umsatzkonten brauchen das nicht.</div>
     <div class="drop" id="hi-drop">Datei hierher ziehen<br><button id="hi-pick" class="small" style="margin-top:8px">Datei wählen</button></div><div id="hi-preview"></div>`;
   return h;
@@ -659,45 +659,69 @@ async function openHistDrawer(uuid) {
   const r = await api('/api/historie?konto=' + encodeURIComponent(uuid));
   const k = S.KONTEN.find(x => x.uuid === uuid) || {name: r.name || uuid};
   const d = $('#drawer');
-  HD.uuid = uuid; HD.laeuft = !!r.bericht_laeuft;
-  const months = Object.keys(Object.assign({}, r.ist, r.aufgezeichnet, r.manuell)).sort();
-  const first = months[0] || new Date().toISOString().slice(0, 7);
-  const all = []; let [y, m] = first.split('-').map(Number); const now = new Date(), endY = now.getFullYear(), endM = now.getMonth() + 1;
-  while (y < endY || (y === endY && m <= endM)) { all.push(`${y}-${String(m).padStart(2, '0')}`); m++; if (m > 12) { m = 1; y++; } }
+  HD.uuid = uuid; HD.live = r.live;
   d.innerHTML = `<button class="close icon">✕</button><h2>${esc(k.name || r.name)}</h2>
-    <div class="row tight"><span class="small muted">Verlauf aus ${hq('verlauf')}</span><div class="seg" id="hq-seg"><button class="hq-q ${r.quelle !== 'stand' ? 'on' : ''}" data-q="umsaetze">Umsätze</button><button class="hq-q ${r.quelle === 'stand' ? 'on' : ''}" data-q="stand">Kontoständen</button></div></div>
-    <div id="hq-busy" class="working ${HD.laeuft ? '' : 'hidden'}"><span class="spin"></span>Verlauf wird neu berechnet – die Werte unten aktualisieren sich gleich von selbst.</div>
-    <h3>Monatsstände</h3><div class="small muted" style="margin-bottom:6px">Eigene Werte überschreiben die berechneten/aufgezeichneten (grau). Leer = kein eigener Wert. Monate vor dem ersten Eintrag ergänzen sich automatisch.</div>
-    <div class="row tight"><input type="month" id="h-von" value="${all[0]}" style="width:140px"><button id="h-add" class="small secondary">Monat davor ergänzen</button></div>
-    <div class="hist-grid" id="h-grid">${all.map(mk => `<label>${ML(mk)}<input type="text" data-mk="${mk}" class="${r.manuell[mk] != null ? '' : 'auto'}" value="${r.manuell[mk] != null ? F(r.manuell[mk]) : ''}" placeholder="${r.ist[mk] != null ? F(r.ist[mk]) : (r.aufgezeichnet[mk] != null ? F(r.aufgezeichnet[mk]) : '')}"></label>`).join('')}</div>
-    <div class="actions"><button id="h-save" class="small">Speichern</button><button id="h-clear" class="small secondary">Alle eigenen Werte löschen</button></div>
-    <h3>Import aus Saldenexport</h3><div class="small muted">CSV mit Datum;Saldo (ein Konto) oder Datum;Konto;Saldo (MoneyMoney: Ablage → Exportieren → Kontostände). Es zählt der letzte Wert je Monat.</div>
-    <textarea id="h-csv" placeholder="Datum;Saldo\n31.12.2024;12.345,67\n31.01.2025;12.900,00"></textarea><div class="actions"><button id="h-import" class="small secondary">Vorschau</button><button id="h-import2" class="small hidden">Übernehmen</button></div><div id="h-prev" class="findings"></div>`;
+    <div class="row tight"><span class="small muted">Verlauf aus ${hq('verlauf')}</span><div class="seg" id="hq-seg"><button class="hq-q" data-q="umsaetze">Umsätze</button><button class="hq-q" data-q="stand">Kontoständen</button></div></div>
+    <div class="small muted" id="hq-erkl" style="margin:4px 0 8px"></div>
+    <div id="hq-hinweis"></div>
+    <h3>Monatsstände</h3>
+    <div class="row tight" id="h-addrow"><input type="month" id="h-von" style="width:140px"><button id="h-add" class="small secondary">Monat davor ergänzen</button></div>
+    <div class="hist-grid" id="h-grid"></div>
+    <div class="actions" id="h-actions"><button id="h-save" class="small">Speichern</button><button id="h-clear" class="small secondary">Alle eigenen Werte löschen</button></div>
+    <div id="h-importbox"><h3>Import aus Saldenexport</h3><div class="small muted">CSV mit Datum;Saldo (ein Konto) oder Datum;Konto;Saldo (MoneyMoney: Ablage → Exportieren → Kontostände). Es zählt der letzte Wert je Monat; das Konto wird dabei auf „Kontostände“ umgestellt.</div>
+    <textarea id="h-csv" placeholder="Datum;Saldo\n31.12.2024;12.345,67\n31.01.2025;12.900,00"></textarea><div class="actions"><button id="h-import" class="small secondary">Vorschau</button><button id="h-import2" class="small hidden">Übernehmen</button></div><div id="h-prev" class="findings"></div></div>`;
   d.classList.add('open');
+  renderHist(r);
   $('.close', d).onclick = closeDrawer;
   $$('.hq-q', d).forEach(b => b.onclick = async () => {
     if (b.classList.contains('on')) return;
-    // sofort umschalten (die Neuberechnung laeuft im Hintergrund); Auswahl in der Kontentabelle mitziehen, damit "Speichern" sie nicht zuruecksetzt
+    const prev = HD.r.quelle;
     $$('.hq-q', d).forEach(x => { x.classList.toggle('on', x === b); x.disabled = true; });
-    const sel = $(`tr[data-uuid="${uuid}"] .k-verlauf`); if (sel) sel.value = b.dataset.q;
-    $('#hq-busy', d).classList.remove('hidden');
+    const sel = $(`tr[data-uuid="${uuid}"] .k-verlauf`); if (sel) sel.value = b.dataset.q;   // Tabelle zieht mit (sonst setzt "Speichern" zurueck)
     try {
-      await api('/api/historie', {konto: uuid, werte: {}, quelle: b.dataset.q});
+      const res = await api('/api/historie', {konto: uuid, werte: {}, quelle: b.dataset.q});
       S.CFG = await api('/api/config');
-      toast('Verlauf aus ' + (b.dataset.q === 'stand' ? 'Kontoständen' : 'Umsätzen') + ' – wird neu berechnet');
+      renderHist(res.historie);
     } catch (e) {
       toast('Nicht umgeschaltet: ' + e.message, 6000);
-      $$('.hq-q', d).forEach(x => x.classList.toggle('on', x.dataset.q === r.quelle || (x.dataset.q === 'umsaetze' && r.quelle !== 'stand')));
-      if (sel) sel.value = r.quelle_explizit ? r.quelle : '';
+      if (sel) sel.value = HD.r.quelle_explizit ? prev : '';
+      renderHist(HD.r);
     } finally { $$('.hq-q', d).forEach(x => { x.disabled = false; }); }
   });
   $('#h-add', d).onclick = () => { const v = $('#h-von', d).value; if (!v) return; let [yy, mm] = v.split('-').map(Number); mm--; if (mm < 1) { mm = 12; yy--; } const mk = `${yy}-${String(mm).padStart(2, '0')}`; $('#h-von', d).value = mk; $('#h-grid', d).insertAdjacentHTML('afterbegin', `<label>${ML(mk)}<input type="text" data-mk="${mk}" class="auto" value=""></label>`); };
-  $('#h-save', d).onclick = async () => { const werte = {}; $$('#h-grid input', d).forEach(i => { if (!i.classList.contains('auto') || i.value.trim()) werte[i.dataset.mk] = i.value.trim() === '' ? null : i.value.trim(); }); try { await api('/api/historie', {konto: uuid, werte}); toast('Verlauf gespeichert – wird neu berechnet'); $('#hq-busy', d).classList.remove('hidden'); } catch (e) { toast(e.message, 6000); } };
-  $('#h-clear', d).onclick = async () => { if (!confirm('Alle eigenen Monatswerte dieses Kontos löschen?')) return; try { await api('/api/historie', {konto: uuid, werte: {}, loeschen: true}); await openHistDrawer(uuid); } catch (e) { toast(e.message, 6000); } };
+  $('#h-save', d).onclick = async () => {
+    const werte = {}; $$('#h-grid input', d).forEach(i => { if (!i.classList.contains('auto') || i.value.trim()) werte[i.dataset.mk] = i.value.trim() === '' ? null : i.value.trim(); });
+    try { const res = await api('/api/historie', {konto: uuid, werte}); renderHist(res.historie); toast('Gespeichert'); } catch (e) { toast(e.message, 6000); }
+  };
+  $('#h-clear', d).onclick = async () => { if (!confirm('Alle eigenen Monatswerte dieses Kontos löschen?')) return; try { const res = await api('/api/historie', {konto: uuid, werte: {}, loeschen: true}); renderHist(res.historie); } catch (e) { toast(e.message, 6000); } };
   $('#h-import', d).onclick = async () => { try { const r2 = await api('/api/historie/import', {konto: uuid, csv: $('#h-csv', d).value}); $('#h-prev', d).innerHTML = r2.vorschau.map(v => `<div class="${v.uuid ? 'ok' : 'warnung'}">${esc(v.name)}: ${v.anzahl} Monate (${v.von} – ${v.bis})${v.uuid ? '' : ' – kein Konto zugeordnet'}</div>`).join(''); $('#h-import2', d).classList.remove('hidden'); } catch (e) { $('#h-prev', d).innerHTML = `<div class="fehler">${esc(e.message)}</div>`; } };
-  $('#h-import2', d).onclick = async () => { try { const r2 = await api('/api/historie/import', {konto: uuid, csv: $('#h-csv', d).value, uebernehmen: true}); toast(r2.uebernommen + ' Werte übernommen – wird neu berechnet'); await openHistDrawer(uuid); } catch (e) { toast(e.message, 6000); } };
+  $('#h-import2', d).onclick = async () => { try { const r2 = await api('/api/historie/import', {konto: uuid, csv: $('#h-csv', d).value, uebernehmen: true}); toast(r2.uebernommen + ' Werte übernommen'); S.CFG = await api('/api/config'); const sel = $(`tr[data-uuid="${uuid}"] .k-verlauf`); if (sel) sel.value = 'stand'; await openHistDrawer(uuid); } catch (e) { toast(e.message, 6000); } };
 }
-const HD = {uuid: null, laeuft: false};
+function renderHist(r) {
+  // Fensterinhalt aus der Vorschau des Dienstes (fuer dieses eine Konto sofort gerechnet)
+  const d = $('#drawer'); if (!d.classList.contains('open')) return;
+  HD.r = r; HD.live = r.live;
+  const stand = r.quelle === 'stand';
+  $$('.hq-q', d).forEach(x => x.classList.toggle('on', x.dataset.q === r.quelle));
+  $('#hq-erkl', d).textContent = stand
+    ? (r.depot ? 'Letzter bekannter Kontostand gilt (Depots haben keine Buchungen). Kontor zeichnet den Stand monatlich auf; ältere Stände hier eintragen oder importieren.'
+               : 'Eingetragene Kontostände sind maßgeblich; die Monate dazwischen und davor rechnet Kontor von dort aus mit den Buchungen. Ohne eigene Werte = wie „Umsätze“.')
+    : 'Saldo am Monatsende = heutiger Saldo minus alle späteren Buchungen. Eigene Monatswerte gelten nur bei „Kontoständen“.';
+  $('#hq-hinweis', d).innerHTML = (r.hinweis ? `<div class="banner info small">${esc(r.hinweis.replace(/^'[^']*': /, ''))}</div>` : '') + (r.live ? '' : '<div class="banner info small">Noch kein MoneyMoney-Stand im Speicher – angezeigt werden die Werte der letzten Auswertung.</div>');
+  const werte = r.werte || {}, man = r.manuell || {};
+  const months = Object.keys(Object.assign({}, werte, man)).sort();
+  const anker = new Set(r.anker || []);
+  $('#h-grid', d).innerHTML = months.map(mk => {
+    const own = man[mk] != null;
+    const val = werte[mk] != null ? F(werte[mk]) : '';
+    if (!stand) return `<label>${ML(mk)}<input type="text" data-mk="${mk}" class="auto" value="" placeholder="${val}" disabled></label>`;
+    return `<label class="${anker.has(mk) && !own ? 'rec' : ''}">${ML(mk)}<input type="text" data-mk="${mk}" class="${own ? '' : 'auto'}" value="${own ? F(man[mk]) : ''}" placeholder="${val}"></label>`;
+  }).join('');
+  $('#h-von', d).value = months[0] || new Date().toISOString().slice(0, 7);
+  for (const id of ['#h-addrow', '#h-actions']) $(id, d).classList.toggle('hidden', !stand);
+  const g = $('#h-grid', d); if (g) g.scrollTop = g.scrollHeight;          // neueste Monate sichtbar
+}
+const HD = {uuid: null, live: false, r: null};
 
 // ---------------------------------------------------------------- Bilanz
 function vBilanz() {
@@ -1709,7 +1733,6 @@ function bind(main) {
   const abr = $('#add-bereich', main); if (abr) { bindBereichKonten(main); abr.addEventListener('click', () => { $('#bereiche').insertAdjacentHTML('beforeend', bereichForm({name: 'Neuer Bereich', id: '', konten: [], haupt: false}, $$('#bereiche .item').length)); bindDel(main); bindBereichKonten($('#bereiche .item:last-child')); }); }
   const sbr = $('#save-bereiche', main); if (sbr) sbr.addEventListener('click', async () => { const cfg = collectBereiche(); if (!cfg.bereiche.length) return showFindings($('#findings-b'), [], 'Mindestens ein Bereich ist nötig.', 'fehler'); if (cfg.bereiche.some(b => !b.name)) return showFindings($('#findings-b'), [], 'Jeder Bereich braucht einen Namen.', 'fehler'); if (cfg.bereiche.some(b => !b.konten.length)) return showFindings($('#findings-b'), [], 'Jeder Bereich braucht mindestens ein Konto oder eine Gruppe.', 'fehler'); if (await saveConfig(cfg, $('#findings-b'))) { const box = $('#findings-b').innerHTML; await rebuildReport(false); const f = $('#findings-b'); if (f) f.innerHTML = box; } });
   const skn = $('#save-konten', main); if (skn) skn.addEventListener('click', async () => { if (await saveConfig(collectKonten(), $('#findings-k2'))) { const box = $('#findings-k2').innerHTML; await rebuildReport(false); const f = $('#findings-k2'); if (f) f.innerHTML = box; } });
-  const knu = $('#k-neu', main); if (knu) knu.addEventListener('click', () => rebuildReport(true));
   $$('.k-hist', main).forEach(b => b.addEventListener('click', async e => { const btn = e.target; btn.classList.add('busy'); try { await openHistDrawer(btn.closest('tr').dataset.uuid); } catch (er) { toast('Verlauf konnte nicht geladen werden: ' + er.message, 6000); } finally { btn.classList.remove('busy'); } }));
   const hp = $('#hi-pick', main); if (hp) hp.addEventListener('click', () => { const inp = $('#file-input'); inp.value = ''; inp.setAttribute('accept', '.csv,.txt,.xlsx,.xlsm'); inp.removeAttribute('capture'); inp.onchange = () => { if (inp.files[0]) histImportPreview(inp.files[0]); }; inp.click(); });
   const hd = $('#hi-drop', main); if (hd) { hd.addEventListener('dragover', e => { e.preventDefault(); hd.classList.add('over'); }); hd.addEventListener('dragleave', () => hd.classList.remove('over')); hd.addEventListener('drop', e => { e.preventDefault(); hd.classList.remove('over'); if (e.dataTransfer.files[0]) histImportPreview(e.dataTransfer.files[0]); }); if (HI) renderHistImport(); }

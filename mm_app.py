@@ -37,10 +37,10 @@ import mm_kategorien
 import mm_update
 from mm_belege import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, is_running, refresh_moneymoney
-from mm_core import (RUN_LOCK, account_tree, bereiche_for, build_report, check_config, diagnose, export_package, fetch, immo_for_plan,
+from mm_core import (RUN_LOCK, account_tree, bereiche_for, build_report, check_config, diagnose, export_package, fetch, fingerprint, immo_for_plan,
                      immo_results, import_package, merged_config, run_once, unavailable_text, version, version_on_disk)
-from mm_model import Ledger
-from mm_report import ROLE_LABELS, ROLES, apply_plan
+from mm_model import Ledger, ledger_from_bytes, ledger_to_bytes
+from mm_report import ROLE_LABELS, ROLES, account_balance_series, account_months, apply_plan
 from mm_store import Store
 from mm_xlsx import Sheet, workbook
 
@@ -92,6 +92,9 @@ class App:
         self.rebuild_reasons: List[str] = []
         self.bericht: dict = {"stand": None, "dauer": None, "fehler": None, "grund": None}
         self.check_lock = threading.Lock()
+        self.ledger_cache_fp: Optional[str] = None
+        self.ledger_from_cache = False
+        threading.Thread(target=self._load_ledger_cache, name="kontor-cache", daemon=True).start()
         self.restart_allowed = False        # nur der echte Dienst (serve) startet sich bei neuem Code selbst neu
         self.mm_probe: Tuple[float, Optional[bool]] = (0.0, None)     # (Zeitpunkt, gesperrt?)
         self.mm_retry_at: Optional[float] = None
@@ -139,6 +142,45 @@ class App:
     def config_has_rules(self) -> bool:
         c = self.config
         return bool(c.get("darlehen") or c.get("beteiligungen") or c.get("saldo_spiegel") or c.get("bereiche") or c.get("immobilien"))
+
+    # -- MoneyMoney-Stand zwischenspeichern ---------------------------------
+    def _load_ledger_cache(self) -> None:
+        """Nach einem Neustart den letzten MoneyMoney-Stand aus dem (verschluesselten) Zwischenspeicher laden, damit
+        Auswertungen und Verlauf sofort gehen -- auch wenn MoneyMoney gerade gesperrt oder geschlossen ist."""
+        t0 = time.time()
+        try:
+            raw = self.store.read_bytes("moneymoney-stand.bin")
+            if not raw:
+                return
+            ledger, saved = ledger_from_bytes(raw)
+        except Exception as e:
+            log.info("Zwischenspeicher des MoneyMoney-Stands nicht nutzbar (%s) -- wird beim nächsten Lesen neu angelegt", e)
+            return
+        with self.lock:
+            if self.ledger is None:
+                self.ledger, self.ledger_time, self.ledger_from_cache = ledger, saved or datetime.now(), True
+                self.ledger_cache_fp = fingerprint(ledger)
+        log.info("MoneyMoney-Stand vom %s aus dem Zwischenspeicher geladen: %d Konten, %d Umsätze (%.1f s)",
+                 (saved.strftime("%Y-%m-%d %H:%M") if saved else "?"), len(ledger.accounts), len(ledger.txs), time.time() - t0)
+
+    def _save_ledger_cache(self, ledger: Ledger) -> None:
+        fp = fingerprint(ledger)
+        if fp == self.ledger_cache_fp:
+            return
+        self.ledger_cache_fp = fp
+
+        def work():
+            t0 = time.time()
+            try:
+                self.store.write_bytes("moneymoney-stand.bin", ledger_to_bytes(ledger, self.ledger_time))
+                log.debug("MoneyMoney-Stand zwischengespeichert (%.1f s)", time.time() - t0)
+            except Exception as e:  # pragma: no cover
+                log.warning("MoneyMoney-Stand nicht zwischengespeichert: %s", e)
+        threading.Thread(target=work, name="kontor-cache-save", daemon=True).start()
+
+    def set_ledger(self, ledger: Ledger) -> None:
+        self.ledger, self.ledger_time, self.ledger_from_cache = ledger, datetime.now(), False
+        self._save_ledger_cache(ledger)
 
     def _rebuild_now(self) -> Tuple[bool, Optional[str]]:
         """Bericht aus dem letzten bekannten Stand neu bauen (synchron; nur aus dem Hintergrund-Thread aufrufen)."""
@@ -230,7 +272,7 @@ class App:
                 self.store.update("state.json", lambda st: st.__setitem__("kategorien_roh", self.categories_raw), {})
             except MoneyMoneyError:
                 pass
-            self.ledger, self.ledger_time = ledger, datetime.now()
+            self.set_ledger(ledger)
             return ledger, None
         except MoneyMoneyError as e:
             log.warning("MoneyMoney nicht lesbar: %s", e)
@@ -254,7 +296,7 @@ class App:
             if ums is not None:
                 self.umsaetze = ums
             if ledger is not None:
-                self.ledger, self.ledger_time = ledger, datetime.now()
+                self.set_ledger(ledger)
             if cats:
                 self.categories_raw = cats
             self.last_result = res
@@ -392,7 +434,7 @@ class App:
             "dienst": {"gestartet": self.started.strftime("%Y-%m-%d %H:%M"), "laeuft": self.running,
                        "naechster_lauf": self.next_run(), "automatisch": (self.config.get("zeitplan") or {}).get("automatisch", True),
                        "intervall_minuten": (self.config.get("zeitplan") or {}).get("intervall_minuten", 30)},
-            "moneymoney": {"laeuft": is_running(), "gesperrt": self.moneymoney_gesperrt(),
+            "moneymoney": {"laeuft": is_running(), "gesperrt": self.moneymoney_gesperrt(), "aus_zwischenspeicher": self.ledger_from_cache,
                            "stand": self.ledger_time.strftime("%Y-%m-%d %H:%M") if self.ledger_time else None,
                            "aktualisieren_erlaubt": bool((self.config.get("moneymoney") or {}).get("aktualisieren_erlauben", True)),
                            "kategorisieren_erlaubt": bool((self.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False)),
@@ -756,7 +798,7 @@ def make_handler(app: App):
             if path == "/api/update/status":
                 return self._json(200, {"info": app.update_info, "geprueft": app.update_checked, "version": version()})
             if path == "/api/historie":
-                return self._json(200, self._historie(q.get("konto") or ""))
+                return self._json(200, self._historie(q.get("konto") or "", q.get("quelle") if q.get("quelle") in ("umsaetze", "stand") else None))
             if path == "/api/kategorien/kontor":
                 kat = mm_kategorien.load(app.store)
                 return self._json(200, {"baum": sorted(kat["baum"], key=lambda k: k["pfad"].lower()), "regeln": kat["regeln"],
@@ -780,30 +822,34 @@ def make_handler(app: App):
                 return self._json(200, {"status": st, "groesse": os.path.getsize(full) if st == "ok" else None})
             return self._json(404, {"fehler": "unbekannt"})
 
-        def _historie(self, uuid: str) -> dict:
-            st = app.store.load("state.json", {}) or {}
-            hist = (st.get("historie") or {}).get(uuid) or {}
+        def _historie(self, uuid: str, quelle: Optional[str] = None) -> dict:
+            """Verlauf eines Kontos fuer das Verlauf-Fenster. Mit MoneyMoney-Stand im Speicher direkt fuer dieses eine Konto
+            gerechnet (Millisekunden, unabhaengig vom Neubau der gesamten Auswertung), sonst aus dem letzten Bericht."""
+            st = app.store.load_shared("state.json", {}) or {}
+            hist = dict((st.get("historie") or {}).get(uuid) or {})
             snaps = {mk: v[uuid] for mk, v in (st.get("snapshots") or {}).items() if uuid in v}
-            ist: Dict[str, Any] = {}
-            quelle = None
-            name = ""
-            ds = app.store.load_shared("dataset.json", {}) or {}
-            for b in ds.get("bereiche", {}).values():
-                for r in (b.get("bilanz") or {}).get("zeilen") or []:
-                    if r.get("id") == uuid:
-                        ist = r.get("werte") or {}; quelle = r.get("verlauf"); name = r.get("name")
-            # Quelle aus der Konfiguration (gilt sofort), nicht aus dem letzten Bericht -- der wird ggf. gerade neu berechnet
             vcfg = (app.config.get("bilanz") or {}).get("verlauf") or {}
             explizit = next((v for ref, v in vcfg.items() if ref.split("|")[0].strip() == uuid and v in ("umsaetze", "stand")), None)
-            if explizit:
-                quelle = explizit
-            elif not quelle:
-                acc = app.ledger.accounts.get(uuid) if app.ledger is not None else None
-                k = next((x for x in ds.get("konten", []) if x.get("uuid") == uuid), {})
-                quelle = "stand" if ((acc and acc.portfolio) or k.get("depot")) else "umsaetze"
-                name = name or (acc.name if acc else k.get("name", ""))
-            return {"konto": uuid, "name": name, "quelle": quelle, "quelle_explizit": bool(explizit), "manuell": hist, "aufgezeichnet": snaps, "ist": ist,
-                    "bericht_laeuft": app.bericht_status().get("laeuft", False)}
+            ledger = app.ledger
+            acc = ledger.accounts.get(uuid) if ledger is not None else None
+            ds = app.store.load_shared("dataset.json", {}) or {}
+            kinfo = next((x for x in ds.get("konten", []) if x.get("uuid") == uuid), {})
+            depot = bool(acc.portfolio) if acc else bool(kinfo.get("depot"))
+            q = quelle or explizit or ("stand" if depot else "umsaetze")
+            out = {"konto": uuid, "name": acc.name if acc else kinfo.get("name", ""), "quelle": q, "quelle_explizit": bool(explizit or quelle),
+                   "depot": depot, "manuell": hist, "aufgezeichnet": snaps, "werte": {}, "hinweis": None, "geschaetzt_bis": None, "anker": [],
+                   "live": acc is not None, "bericht_laeuft": app.bericht_status().get("laeuft", False)}
+            if acc is not None:
+                today = date.today()
+                months = account_months(ledger, acc, today, list(hist) + (list(snaps) if depot else []))
+                werte, hinweis, gb, anker = account_balance_series(ledger, acc, months, q, st.get("snapshots") or {}, hist, today, app.config)
+                out.update({"werte": werte, "hinweis": hinweis, "geschaetzt_bis": gb, "anker": anker})
+            else:
+                for b in ds.get("bereiche", {}).values():
+                    for r in (b.get("bilanz") or {}).get("zeilen") or []:
+                        if r.get("id") == uuid:
+                            out["werte"] = r.get("werte") or {}
+            return out
 
         def _umsaetze(self, q: dict) -> dict:
             ums = app.umsatzliste()
@@ -1087,7 +1133,7 @@ def make_handler(app: App):
                 if not mm_auth.verify_password(str(body.get("passwort", "")), app.auth_record()):
                     time.sleep(0.5)
                     return self._json(401, {"fehler": "Passwort falsch."})
-                dateien = ["config.json", "plan.json", "state.json", "dataset.json", "umsaetze.json", "kategorien.json", "belege.json"]
+                dateien = ["config.json", "plan.json", "state.json", "dataset.json", "umsaetze.json", "kategorien.json", "belege.json", "moneymoney-stand.bin"]
                 if body.get("mit_passwort"):
                     dateien.append("auth.json")
                 for name in dateien:
@@ -1219,7 +1265,7 @@ def make_handler(app: App):
                 cfg["bilanz"]["verlauf"][ref] = body["quelle"]
                 app.save_config(cfg)
             ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="Verlauf")
-            log.info("Verlauf für Konto %s: %d Monat(e) geändert", uuid[:8], n)
+            log.info("Verlauf für Konto %s: %d Monat(e) geändert%s", uuid[:8], n, (", Quelle " + body["quelle"]) if body.get("quelle") in ("umsaetze", "stand") else "")
             return {"ok": True, "bericht": ok, "text": err, "historie": self._historie(uuid)}
 
         def _historie_import(self, body: dict) -> dict:
@@ -1270,9 +1316,21 @@ def make_handler(app: App):
                     h.setdefault(uuid, {}).update(months)
                     total += len(months)
             app.store.update("state.json", _apply, {})
+            # importierte Werte sollen gelten -> diese Konten auf "Kontostaende" stellen
+            cfg = copy.deepcopy(app.config)
+            vc = cfg.setdefault("bilanz", {}).setdefault("verlauf", {})
+            umgestellt = 0
+            for uuid in assign:
+                if not any(k.split("|", 1)[0].strip() == uuid and v == "stand" for k, v in vc.items()):
+                    for k in [k for k in vc if k.split("|", 1)[0].strip() == uuid]:
+                        vc.pop(k)
+                    vc["%s | %s" % (uuid, uuid_name.get(uuid, ""))] = "stand"
+                    umgestellt += 1
+            if umgestellt:
+                app.save_config(cfg)
             ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="Verlaufsimport")
             log.info("Verlaufsimport: %d Werte für %d Konto/Konten", total, len(assign))
-            return {"ok": True, "uebernommen": total, "konten": len(assign), "bericht": ok, "text": err, "vorschau": preview, "hinweise": hints}
+            return {"ok": True, "uebernommen": total, "konten": len(assign), "umgestellt": umgestellt, "bericht": ok, "text": err, "vorschau": preview, "hinweise": hints}
 
         def _kategorien(self, path: str, body: dict, local: bool):
             kat = mm_kategorien.load(app.store)

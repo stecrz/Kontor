@@ -574,8 +574,22 @@ def immo_soll_ist(ledger: Ledger, config: dict, im: dict, res: dict, roles: Dict
 COST_WORDS_DEFAULT = ["zins", "interest", "gebühr", "gebuehr", "entgelt", "provision", "bereitstellung", "#mm-zins"]
 
 
+def _kat_sig(store: Store, config: dict, categories: Optional[List[dict]]) -> tuple:
+    return (store.stamp(mm_kategorien.FILE), json.dumps(config.get("kategorien") or {}, sort_keys=True), len(categories or []))
+
+
 def prepare_categories(store: Store, ledger: Ledger, config: dict, categories: Optional[List[dict]]) -> dict:
-    """Kontor-Kategorien: MoneyMoney-Baum als Vorschlag uebernehmen, Regeln lernen, Luecken fuellen, auf den Ledger legen."""
+    """Kontor-Kategorien: MoneyMoney-Baum als Vorschlag uebernehmen, Regeln lernen, Luecken fuellen, auf den Ledger legen.
+    Unveraendert seit dem letzten Mal (gleicher MoneyMoney-Stand, gleiche Kategorien-Datei)? Dann nichts tun."""
+    cached = getattr(ledger, "_kat_cache", None)
+    if cached and cached[0] == _kat_sig(store, config, categories):
+        return cached[1]
+    kat = _prepare_categories(store, ledger, config, categories)
+    ledger._kat_cache = (_kat_sig(store, config, categories), kat)
+    return kat
+
+
+def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: Optional[List[dict]]) -> dict:
     kc = config.get("kategorien") or {}
     kat = mm_kategorien.load(store)
     if not kc.get("aktiv", True):
@@ -612,6 +626,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
     immo_res = immo_results(config, today)
     log.debug("Bericht: %d Bereiche (%s), Haupt %s, %d Konten mit Position, %d Immobilienkalkulationen, %d Budgets",
               len(bereiche), ", ".join(b["name"] for b in bereiche), haupt["name"] if haupt else "-", len(roles), len(immo_res), len(budgets))
+    ledger._kat_sig = repr(getattr(ledger, "_kat_cache", (None,))[0])      # fuer Zwischenergebnisse in build_dataset
     datasets: Dict[str, dict] = {}
     for b in bereiche:
         try:
@@ -656,19 +671,42 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "bereich_info": {b["id"]: {"name": b["name"], "art": b["art"], "anteil": b["anteil"], "haupt": b["haupt"], "konten": b["konten"],
                                    "gruppen": [g.name for g in b["gruppen"]], "anzahl_konten": len(b["leaves"])} for b in bereiche},
         "konten": account_tree(ledger, config, roles, datasets),
-        "steuer": build_tax(ledger, config, today, bereiche, roles, immo_afa_map(config, immo_res)),
+        "steuer": _cached(ledger, "_tax_cache", (ledger._kat_sig, today.isoformat(), _bereiche_sig(bereiche),
+                                                   json.dumps([config.get(k) for k in ("steuer", "kapitalfluss", "beteiligungen", "bereiche", "immobilien")]
+                                                              + [(config.get("bilanz") or {}).get(k) for k in ("rollen", "konten_zuordnung")], sort_keys=True, default=str)),
+                          lambda: build_tax(ledger, config, today, bereiche, roles, immo_afa_map(config, immo_res))),
         "depots": portfolio_summary(ledger, bereiche),
         "immobilien": immobilien,
         "budgets": budgets,
         "warnungen": warnings,
-        "kategorien": mm_kategorien.stats(kat, ledger),
+        "kategorien": _cached(ledger, "_katstats_cache", ledger._kat_sig, lambda: mm_kategorien.stats(kat, ledger)),
         "konten_neu": neu,
     }
     store.save("dataset.json", dataset)
-    ums = compact_transactions(ledger, bereiche, store)
-    store.save("umsaetze.json", ums)
+    sig = (ledger._kat_sig, _bereiche_sig(bereiche))
+    cached = getattr(ledger, "_ums_cache", None)
+    if cached and cached[0] == sig and store.exists("umsaetze.json"):
+        ums = cached[1]                # Umsatzliste unveraendert (z. B. nur Verlauf geaendert) -> nicht neu schreiben
+    else:
+        ums = compact_transactions(ledger, bereiche, store)
+        store.save("umsaetze.json", ums)
+        ledger._ums_cache = (sig, ums)
     dataset["_umsaetze"] = ums        # fuer den Dienst: Liste im Speicher behalten (teilt die Strings mit dem Ledger), nicht Teil der Datei
     return dataset
+
+
+def _bereiche_sig(bereiche: List[dict]) -> tuple:
+    return tuple((b["id"], tuple(a.uuid for a in b["leaves"])) for b in bereiche)
+
+
+def _cached(ledger: Ledger, attr: str, key, fn):
+    """Ergebnis am Ledger zwischenspeichern (gleicher MoneyMoney-Stand + gleiche Eingaben -> gleiches Ergebnis)."""
+    hit = getattr(ledger, attr, None)
+    if hit and hit[0] == key:
+        return copy.deepcopy(hit[1])
+    val = fn()
+    setattr(ledger, attr, (key, copy.deepcopy(val)))
+    return val
 
 
 def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] = None, datasets: Optional[Dict[str, dict]] = None) -> List[dict]:

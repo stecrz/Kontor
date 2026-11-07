@@ -178,6 +178,10 @@ class Store:
         except OSError:
             return None
 
+    def stamp(self, name: str) -> Optional[Tuple[int, int]]:
+        """(Aenderungszeit, Groesse) der Datei -- aendert sich bei jedem Speichern."""
+        return self._stamp(name)
+
     def load_shared(self, name: str, default: Any = None) -> Any:
         """Wie load, liefert aber das im Speicher gehaltene Objekt (nur lesen, nicht veraendern!). Entschluesselt
         und parst eine Datei nur, wenn sie sich seit dem letzten Zugriff geaendert hat."""
@@ -221,7 +225,8 @@ class Store:
             return obj
 
     def save(self, name: str, obj: Any) -> None:
-        self.write_bytes(name, json.dumps(obj, ensure_ascii=False, indent=2, default=str).encode("utf-8"))
+        # kompakt und ohne Einrueckung: nutzt den schnellen C-Kodierer (bei grossen Dateien Faktor 5-10)
+        self.write_bytes(name, json.dumps(obj, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8"))
         stamp = self._stamp(name)
         with self._cache_lock:
             if stamp is not None and stamp[1] <= CACHE_MAX_BYTES:
