@@ -36,7 +36,7 @@ const H = {
   verlauf_import: 'Datei mit Monats- oder Tagesständen. Spalten werden automatisch erkannt; Kontonamen aus der Datei ordnest du den Konten in Kontor zu (Vorschlag per Namensähnlichkeit). Mehrere Werte je Monat: der letzte zählt.',
   inaktiv: 'Konten ohne Bestand und ohne Umsatz in den letzten N Monaten (z. B. Altdaten) werden ausgeblendet, bleiben aber in der Historie enthalten. 0 = nie ausblenden.',
   probelauf: 'Im Testmodus schlägt Kontor die Buchungen aus deinen Regeln (z. B. Darlehenszinsen) nur vor und legt nichts in MoneyMoney an. Zum Anlegen unter „Buchungen“ auf „Jetzt buchen“ klicken oder den Testmodus abschalten.',
-  abgleich: 'Abgleich: Kontor liest regelmäßig (Standard alle 30 Minuten) Konten und Umsätze aus MoneyMoney, wendet deine Regeln an und aktualisiert alle Auswertungen. Ist MoneyMoney aus oder gesperrt, versucht Kontor es jede Minute erneut. Testmodus: Buchungen aus Regeln werden nur vorgeschlagen.',
+  abgleich: 'Abgleich: Kontor liest regelmäßig (Standard alle 30 Minuten) Konten und Umsätze aus MoneyMoney, wendet deine Regeln an und aktualisiert alle Auswertungen. Ist MoneyMoney aus oder gesperrt, arbeitet Kontor mit dem zuletzt gelesenen Stand („Daten vom …“) weiter – alle Seiten, Einstellungen und Auswertungen funktionieren – und versucht es jede Minute erneut. Testmodus: Buchungen aus Regeln werden nur vorgeschlagen.',
   kennung: 'Interne Kennung des Bereichs – wird automatisch vergeben und nirgends angezeigt.',
   intervall: 'Der Dienst liest alle N Minuten MoneyMoney (wenn es läuft und entsperrt ist) und führt die Regeln aus – nur wenn sich etwas geändert hat.',
   mm_refresh: 'Kontor klickt in MoneyMoney den Menüpunkt „Alle Konten aktualisieren“. Dafür braucht das Programm, das Kontor ausführt, die Berechtigung „Bedienungshilfen“ (Systemeinstellungen → Datenschutz & Sicherheit).',
@@ -278,13 +278,20 @@ function mmState(st) {
   if (m.gesperrt === false) return {cls: 'ok', text: 'MoneyMoney läuft'};
   return {cls: 'ok', text: 'MoneyMoney läuft'};
 }
+function datenStand(st) {
+  // Zeitpunkt des MoneyMoney-Stands, mit dem Kontor rechnet (nicht der Zeitpunkt der letzten Neuberechnung)
+  const t = (st && st.moneymoney && st.moneymoney.stand) || (S.DATA && S.DATA.erstellt);
+  if (!t) return null;
+  const heute = new Date().toISOString().slice(0, 10);
+  return (t.slice(0, 10) === heute ? 'heute ' : t.slice(8, 10) + '.' + t.slice(5, 7) + '. ') + t.slice(11, 16);
+}
 function hasRules() { const c = S.CFG || {}; return !!((c.darlehen || []).length || (c.beteiligungen || []).length || (c.saldo_spiegel || []).length); }
 function statusMini() {
   const st = S.STATUS; if (!st) return;
   const mm = mmState(st), b = st.bericht || {}, l = st.letzter_lauf;
-  const stand = S.DATA && S.DATA.erstellt ? S.DATA.erstellt.slice(11, 16) : null;
+  const stand = datenStand(st);
   let line2 = b.laeuft ? '<span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Auswertung wird neu berechnet …'
-    : (stand ? 'Stand ' + stand : 'noch keine Auswertung') + (st.dienst.automatisch ? ' · nächster Abgleich ' + (st.dienst.naechster_lauf || '–') : '');
+    : (stand ? 'Daten vom ' + stand : 'noch keine Daten') + (st.dienst.automatisch && st.moneymoney.laeuft ? ' · nächster Abgleich ' + (st.dienst.naechster_lauf || '–') : '');
   if (st.neustart_ausstehend) line2 = '<span class="spin" style="width:9px;height:9px;margin-right:4px"></span>Version ' + esc(st.neustart_ausstehend) + ' wird geladen …';
   $('#status-mini').innerHTML = `<span class="dot ${mm.cls}"></span>${mm.text} ${hq('abgleich')}<br>${line2}${hasRules() && st.probelauf ? '<br><b>Testmodus</b> – Regeln buchen nichts' : ''}${l && l.fehler ? '<br><a href="#buchungen">⚠ letzter Abgleich mit Fehler</a>' : ''}`;
   const upd = $('#nav a[href="#updates"]'); if (upd) { let d = upd.querySelector('.nbadge'); const neu = !!(st.update && st.update.neuer); if (neu && !d) { d = document.createElement('span'); d.className = 'nbadge'; d.title = 'Update ' + st.update.verfuegbar + ' verfügbar'; upd.appendChild(d); } else if (!neu && d) d.remove(); }
@@ -414,7 +421,7 @@ function statusStrip() {
   const st = S.STATUS, l = st.letzter_lauf;
   const upd = st.update && st.update.neuer ? `<a href="#updates" class="pill info">Update ${esc(st.update.verfuegbar)}</a>` : '';
   return `<div class="status-strip">
-    <span class="pill neutral"><span class="dot ${mmState(st).cls}"></span>${mmState(st).text}${S.DATA ? ' · Stand ' + esc(S.DATA.erstellt) : ''}</span>${(st.bericht || {}).laeuft ? '<span class="pill info"><span class="spin" style="width:10px;height:10px;margin-right:5px"></span>Bericht wird neu gebaut</span>' : ''}
+    <span class="pill neutral"><span class="dot ${mmState(st).cls}"></span>${mmState(st).text}${datenStand(st) ? ' · Daten vom ' + esc(datenStand(st)) : ''}</span>${(st.bericht || {}).laeuft ? '<span class="pill info"><span class="spin" style="width:10px;height:10px;margin-right:5px"></span>Bericht wird neu gebaut</span>' : ''}
     ${hasRules() ? `<span class="pill ${st.probelauf ? 'warn' : 'ok'}">${st.probelauf ? 'Testmodus – Regeln buchen nichts' : 'Regeln buchen in Offline-Konten'}</span>` : ''}
     <span class="pill neutral">${st.dienst.automatisch ? 'Abgleich alle ' + st.dienst.intervall_minuten + ' Min. · nächster ' + (st.dienst.naechster_lauf || '–') : 'kein automatischer Abgleich'} ${hq('abgleich')}</span>
     ${l ? `<a href="#buchungen" class="pill ${l.fehler ? 'err' : (l.vorschlaege && l.vorschlaege.length && l.probelauf ? 'warn' : 'ok')}">Letzter Abgleich ${esc(l.zeit.slice(5))}${l.fehler ? ': Fehler' : (l.probelauf && l.vorschlaege && l.vorschlaege.length ? ': ' + l.vorschlaege.length + ' Buchungsvorschläge' : (l.geschrieben ? ': ' + l.geschrieben + ' gebucht' : ''))}</a>` : ''}

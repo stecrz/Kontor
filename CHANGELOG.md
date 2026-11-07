@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.7.2
+- Statuszeile zeigt, von wann die Daten aus MoneyMoney stammen („Daten vom …“), statt des Zeitpunkts der letzten Neuberechnung; ohne laufendes MoneyMoney kein „nächster Abgleich“.
+- Test: Arbeiten ohne MoneyMoney mit dem zwischengespeicherten Stand (Neustart, Neuberechnung, Verlauf).
+
 ## 3.7.1
 - Einrichtung · Verbindung: prüft auf der Seite alle 3 Sekunden, ob MoneyMoney läuft und entsperrt ist.
 - Einrichtung · Bereiche: Anteil nur bei Gesellschaften (bei „privat“ ausgeblendet).

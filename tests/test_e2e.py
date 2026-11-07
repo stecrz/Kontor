@@ -1212,6 +1212,31 @@ class FeatureTests(_AppBase):
         code, h = self.call("/api/historie?konto=" + F.uid("priv.giro"))
         self.assertIn("anfangssaldo", h["pruefung"]); self.assertGreater(h["pruefung"]["buchungen"], 0)
 
+    def test_ohne_moneymoney_mit_letztem_stand(self):
+        """Nach einem Neustart ohne laufendes MoneyMoney: letzter Stand aus dem Zwischenspeicher, Verlauf und Neuberechnung gehen."""
+        self.login(); self.run_and_wait()
+        for _ in range(100):
+            if self.store.exists("moneymoney-stand.bin"):
+                break
+            time.sleep(0.1)
+        self.assertTrue(self.store.exists("moneymoney-stand.bin"))
+
+        class Weg(MockBridge):
+            def export_accounts(self):
+                raise mm_bridge.MoneyMoneyNotRunning("MoneyMoney läuft nicht")
+            export_transactions = export_categories = lambda self, *a, **k: (_ for _ in ()).throw(mm_bridge.MoneyMoneyNotRunning("aus"))
+        app2 = App(self.store, self.dir, bridge_factory=Weg)
+        for _ in range(100):
+            if app2.ledger is not None:
+                break
+            time.sleep(0.05)
+        self.assertIsNotNone(app2.ledger); self.assertTrue(app2.ledger_from_cache)
+        ok, err = app2.rebuild_report(wait=True)
+        self.assertTrue(ok, err)
+        self.assertEqual(len(app2.ledger.txs), len(self.app.ledger.txs))
+        st = app2.status(True)
+        self.assertTrue(st["moneymoney"]["aus_zwischenspeicher"]); self.assertIsNotNone(st["moneymoney"]["stand"])
+
     def test_bericht_im_hintergrund(self):
         """Verlauf-Aenderungen stossen den Neubau nur an; mehrere Anstoesse ergeben einen Lauf; Status zeigt den Fortschritt."""
         self.login(); self.run_and_wait()
