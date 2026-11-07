@@ -23,12 +23,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import fixtures as F  # noqa: E402
 import mm_bridge  # noqa: E402
-import kern  # noqa: E402
+import core  # noqa: E402
 import updates  # noqa: E402
-from dienst import App, make_handler  # noqa: E402
-from datenmodell import Ledger, accounts_from_export, tx_from_export  # noqa: E402
-from ablage import Store, load_or_create_master_key  # noqa: E402
-from steuer import build_tax  # noqa: E402
+from service import App, make_handler  # noqa: E402
+from model import Ledger, accounts_from_export, tx_from_export  # noqa: E402
+from storage import Store, load_or_create_master_key  # noqa: E402
+from tax import build_tax  # noqa: E402
 
 TODAY = date(2026, 11, 4)
 
@@ -152,11 +152,11 @@ class _FixedDate(date):
 
 
 def patch_today():
-    import dienst
-    kern.date = _FixedDate
-    dienst.date = _FixedDate
-    dienst.is_running = lambda: True
-    kern.notify = lambda *a, **k: None
+    import service
+    core.date = _FixedDate
+    service.date = _FixedDate
+    service.is_running = lambda: True
+    core.notify = lambda *a, **k: None
 
 
 class CoreTests(unittest.TestCase):
@@ -172,16 +172,16 @@ class CoreTests(unittest.TestCase):
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def test_run_twice_then_dataset(self):
-        cfg = kern.merged_config(self.store.load("config.json"))
-        res = kern.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
+        cfg = core.merged_config(self.store.load("config.json"))
+        res = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertEqual(res["status"], "ok", res)
         self.assertEqual(res["geschrieben"], 35)      # 11 Tilgung + 11 Zins + 2 Wert + 11 Quellkommentare
         self.assertEqual(len(res["vorschlaege"]), 24)
         vd = [a for a in MockBridge.state["accounts"] if a["name"] == "Verkäuferdarlehen"][0]["balance"][0][0]
         self.assertAlmostEqual(vd, -1600000 + 11 * 8250 - 11 * 4400, 2)
-        res2 = kern.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
+        res2 = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertEqual(res2["geschrieben"], 0)
-        self.assertEqual(kern.run_once(self.store, cfg, TODAY, dry=False, force=False, bridge_factory=MockBridge)["status"], "unveraendert")
+        self.assertEqual(core.run_once(self.store, cfg, TODAY, dry=False, force=False, bridge_factory=MockBridge)["status"], "unveraendert")
         ds = self.store.load("dataset.json")
         self.assertEqual(ds["haupt"], F.uid("priv"))
         self.assertEqual(set(ds["bereich_namen"].values()), {"Privat", "Alpha GbR", "Beta GbR"})
@@ -200,7 +200,7 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(any("Mieteinnahmen" in k for k in gs["Einnahmen"]), list(gs["Einnahmen"]))
         self.assertTrue(any("Verkäuferdarlehen" in k for k in gs["Finanzierung"]), list(gs["Finanzierung"]))
         # Umsatzliste ohne Gegen-IBAN
-        ums = self.store.load("umsaetze.json")
+        ums = self.store.load("transactions.json")
         self.assertTrue(len(ums) > 300); self.assertNotIn("accountNumber", json.dumps(ums)); self.assertNotIn(F.SELLER_IBAN, json.dumps(ums))
         self.assertTrue(all(set(u) >= {"id", "konto", "entitaet", "datum", "betrag", "kategorie"} for u in ums))
         with open(self.store.path("dataset.json"), "rb") as fh:
@@ -208,8 +208,8 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(raw.startswith(b"MMT1")); self.assertNotIn(b"Privat", raw)
 
     def test_dry_run_writes_nothing(self):
-        cfg = kern.merged_config(self.store.load("config.json"))
-        res = kern.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        cfg = core.merged_config(self.store.load("config.json"))
+        res = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
         self.assertEqual(res["geschrieben"], 0); self.assertEqual(len(res["vorschlaege"]), 24)
         vd = [a for a in MockBridge.state["accounts"] if a["name"] == "Verkäuferdarlehen"][0]["balance"][0][0]
         self.assertEqual(vd, -1600000.0)
@@ -217,7 +217,7 @@ class CoreTests(unittest.TestCase):
 
     def test_tax_report(self):
         led = Ledger(accounts_from_export(MockBridge.state["accounts"]), tx_from_export(MockBridge.state["txs"]))
-        cfg = kern.merged_config(config_for_test())
+        cfg = core.merged_config(config_for_test())
         t = build_tax(led, cfg, TODAY)
         pb = [e for e in t["entitaeten"] if e["name"] == "Alpha GbR"][0]
         self.assertEqual(pb["art"], "gbr"); self.assertEqual(pb["anteil"], 0.49)
@@ -236,38 +236,38 @@ class CoreTests(unittest.TestCase):
 
     def test_check_config_findings(self):
         led = Ledger(accounts_from_export(MockBridge.state["accounts"]), tx_from_export(MockBridge.state["txs"]))
-        cfg = kern.merged_config(config_for_test())
-        f = kern.check_config(led, MockBridge().export_categories(), cfg)
+        cfg = core.merged_config(config_for_test())
+        f = core.check_config(led, MockBridge().export_categories(), cfg)
         self.assertFalse([x for x in f if x["stufe"] == "fehler"], f)
         cfg["darlehen"][0]["darlehenskonto"] = F.uid("priv.giro") + " | Hausbank Giro"
-        f = kern.check_config(led, [], cfg)
+        f = core.check_config(led, [], cfg)
         self.assertTrue(any(x["stufe"] == "fehler" and "Bankanbindung" in x["text"] for x in f))
 
     def test_package_roundtrip_and_mapping(self):
         led = Ledger(accounts_from_export(MockBridge.state["accounts"]), tx_from_export(MockBridge.state["txs"]))
-        cfg = kern.merged_config(config_for_test())
-        pkg = kern.export_package(cfg, "Test", strip_uuids=True, ledger=led)
+        cfg = core.merged_config(config_for_test())
+        pkg = core.export_package(cfg, "Test", strip_uuids=True, ledger=led)
         self.assertEqual(pkg["kontor_paket"], 1)
         txt = json.dumps(pkg, ensure_ascii=False)
         self.assertNotIn(F.uid("pb.vd"), txt); self.assertNotIn("oberflaeche", pkg["config"]); self.assertIn("Verkäuferdarlehen", txt)
-        new_cfg, unresolved, report = kern.import_package(kern.merged_config({}), pkg, led, "ergaenzen")
+        new_cfg, unresolved, report = core.import_package(core.merged_config({}), pkg, led, "ergaenzen")
         self.assertEqual(unresolved, [], unresolved)
         self.assertEqual(new_cfg["darlehen"][0]["darlehenskonto"].split(" | ")[0], F.uid("pb.vd"))
         self.assertEqual(len(new_cfg["beteiligungen"]), 2)
         pkg2 = copy.deepcopy(pkg); pkg2["config"]["darlehen"][0]["darlehenskonto"] = "Darlehen Fremd"
-        _, unresolved, _ = kern.import_package(kern.merged_config({}), pkg2, led, "ergaenzen")
+        _, unresolved, _ = core.import_package(core.merged_config({}), pkg2, led, "ergaenzen")
         self.assertEqual(len(unresolved), 1); self.assertEqual(unresolved[0]["label"], "Darlehen Fremd")
-        new_cfg, unresolved, _ = kern.import_package(kern.merged_config({}), pkg2, led, "ergaenzen", {"Darlehen Fremd": F.uid("pb.vd") + " | Verkäuferdarlehen"})
+        new_cfg, unresolved, _ = core.import_package(core.merged_config({}), pkg2, led, "ergaenzen", {"Darlehen Fremd": F.uid("pb.vd") + " | Verkäuferdarlehen"})
         self.assertEqual(unresolved, []); self.assertIn(F.uid("pb.vd"), new_cfg["darlehen"][0]["darlehenskonto"])
-        again, _, _ = kern.import_package(new_cfg, pkg, led, "ergaenzen")
+        again, _, _ = core.import_package(new_cfg, pkg, led, "ergaenzen")
         self.assertEqual(len(again["darlehen"]), 1)
 
     def test_diagnose_masks(self):
-        cfg = kern.merged_config(self.store.load("config.json"))
-        kern.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        cfg = core.merged_config(self.store.load("config.json"))
+        core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
         with open(os.path.join(self.dir, "kontor.log"), "w") as f:
             f.write("2026-11-04 INFO Lauf fuer Stadtbank Kontokorrent IBAN DE02701500000000594937 Saldo 1234567\n")
-        txt = kern.diagnose(self.store, self.dir, cfg, {"version": "x"}, mask_names=True)
+        txt = core.diagnose(self.store, self.dir, cfg, {"version": "x"}, mask_names=True)
         self.assertNotIn("DE02701500000000594937", txt); self.assertNotIn(F.SELLER_IBAN, txt)
         self.assertNotIn("Stadtbank Kontokorrent", txt); self.assertIn("Konto", txt)
         self.assertNotIn("1234567", txt)
@@ -437,21 +437,21 @@ class AppTests(_AppBase):
         for key in ("pb.vd", "priv.bet.pb"):                 # Regelziele mit Zeitstempel (wie nach einer Buchung)
             led.accounts[F.uid(key)].refresh = neu - timedelta(days=20)
         led.fp = "x"; self.app.ledger = led
-        kinds = kern.abruf_arten(led, self.app.config)
+        kinds = core.abruf_arten(led, self.app.config)
         self.assertEqual(kinds[F.uid("pb.vd")]["art"], "offline"); self.assertEqual(kinds[F.uid("pb.vd")]["grund"], "Zielkonto einer Regel")
         self.assertEqual(kinds[F.uid("priv.giro")]["art"], "online"); self.assertEqual(kinds[F.uid("priv.depot")]["art"], "online")
         self.assertEqual(self.app.bankabruf()["zurueck_anzahl"], 0)
-        code, r = self.call("/api/abruf"); self.assertEqual(code, 200)
+        code, r = self.call("/api/sync"); self.assertEqual(code, 200)
         self.assertEqual([k["uuid"] for k in r["konten"]][:3], [a.uuid for a in led.accounts.values() if not a.group and a.path][:3])   # Reihenfolge wie MoneyMoney
         self.assertTrue(r["gelesen"]); self.assertIn("bereich", r["konten"][0])
         # eigene Festlegung: Giro nicht abgerufen -> offline; zurueck -> wieder erkannt
-        code, r = self.call("/api/abruf", {"konto": F.uid("priv.giro"), "abgerufen": False}); self.assertEqual(code, 200)
+        code, r = self.call("/api/sync", {"konto": F.uid("priv.giro"), "abgerufen": False}); self.assertEqual(code, 200)
         self.assertEqual([k for k in r["abruf"]["konten"] if k["uuid"] == F.uid("priv.giro")][0]["art"], "offline")
         self.assertEqual(len(self.store.load("config.json")["abruf"]["offline"]), 1)
-        self.call("/api/abruf", {"konto": F.uid("priv.giro"), "abgerufen": True})
+        self.call("/api/sync", {"konto": F.uid("priv.giro"), "abgerufen": True})
         self.assertEqual(self.store.load("config.json")["abruf"], {"online": [], "offline": []})
         # Kontenliste in der Reihenfolge von MoneyMoney (nicht alphabetisch)
-        code, k = self.call("/api/konten")
+        code, k = self.call("/api/accounts")
         self.assertEqual([x["uuid"] for x in k["konten"]], [a.uuid for a in led.accounts.values() if a.path])
         self.assertEqual([x for x in k["konten"] if x["uuid"] == F.uid("priv.giro")][0]["rolle_vorschlag"], "liquiditaet")
 
@@ -460,7 +460,7 @@ class AppTests(_AppBase):
         nicht lief -> Hinweis auf moeglicherweise fehlende Monate."""
         from datetime import datetime as dt
         self.login()
-        import dienst as MA
+        import service as MA
         MA.is_running = lambda: True
         try:
             depot = [a for a in MockBridge.state["accounts"] if a["uuid"] == F.uid("priv.depot")][0]
@@ -472,9 +472,9 @@ class AppTests(_AppBase):
             self.assertTrue(mk, st["snapshots"].keys())                     # Depot im Monat des Abrufs (Ortszeit 30./31.10.)
             gaps = st.get("luecken") or []
             self.assertEqual(len(gaps), 1); self.assertEqual(gaps[0]["konto"], F.uid("priv.depot")); self.assertEqual(gaps[0]["monate"][0], "2026-09")
-            code, r = self.call("/api/abruf"); self.assertEqual(len(r["luecken"]), 1)
+            code, r = self.call("/api/sync"); self.assertEqual(len(r["luecken"]), 1)
             code, stt = self.call("/api/status"); self.assertEqual(stt["moneymoney"]["luecken"], 1)
-            self.call("/api/abruf/luecken", {}); self.assertFalse(self.store.load("state.json").get("luecken"))
+            self.call("/api/sync/gaps", {}); self.assertFalse(self.store.load("state.json").get("luecken"))
             # unveraendert -> kein erneuter Abgleich; geaendert -> voller Abgleich wird angestossen
             self.app.mm_retry_at = None; self.app.capture(); self.assertIsNone(self.app.mm_retry_at)
             self.app.config.setdefault("zeitplan", {})["automatisch"] = True
@@ -523,7 +523,7 @@ class AppTests(_AppBase):
             return f.read()
 
     def _mm_upload(self, data, csrf=True):
-        req = urllib.request.Request("http://127.0.0.1:%d/api/historie/mm-einlesen" % self.port, data=data, method="POST")
+        req = urllib.request.Request("http://127.0.0.1:%d/api/history/mm-import" % self.port, data=data, method="POST")
         req.add_header("Content-Type", "application/octet-stream")
         if csrf:
             req.add_header("X-CSRF-Token", self.csrf)
@@ -535,7 +535,7 @@ class AppTests(_AppBase):
         if res.get("laeuft"):
             for _ in range(600):
                 time.sleep(0.05)
-                c, st = self.call("/api/historie/mm-status")
+                c, st = self.call("/api/history/mm-status")
                 if not st["laeuft"]:
                     return code, st["ergebnis"]
         return code, res
@@ -543,8 +543,8 @@ class AppTests(_AppBase):
     def test_kontostaende_aus_moneymoney(self):
         """Verlauf aller Konten aus der hochgeladenen (verschluesselten) Datenbank: nur im Speicher, Passwort nie in Kontor,
         geprueft am aktuellen Saldo, Monatsende uebernommen, verschluesselt gespeichert; MoneyMoney muss beendet sein."""
-        import hashlib, shutil as sh, mm_historie as H, dienst as MA
-        from kern import MM_VERLAUF_FILE
+        import hashlib, shutil as sh, mm_history as H, service as MA
+        from core import MM_HISTORY_FILE
         if not sh.which("sqlcipher"):
             self.skipTest("sqlcipher fuer die Testdatenbank fehlt")
         self.login(); self.run_and_wait()
@@ -552,7 +552,7 @@ class AppTests(_AppBase):
         self.assertNotIn(b"GEHEIM", data); self.assertNotIn(F.uid("priv.depot").upper().encode(), data)     # wirklich verschluesselt
         old = (H.keys_from_dialog, MA.is_running)
         H.keys_from_dialog = lambda salt: [bytearray(hashlib.pbkdf2_hmac(h, "ge'heim".encode(), salt, r, 32)) for _n, h, r in H.FORMATS]
-        aufbau = os.path.join(os.path.dirname(H.__file__), "mm-historie-aufbau.txt")
+        aufbau = os.path.join(os.path.dirname(H.__file__), "mm-history-schema.txt")
         try:
             self.assertEqual(self._mm_upload(data, csrf=False)[0], 403)                 # ohne CSRF-Token abgewiesen
             MA.is_running = lambda: True
@@ -564,18 +564,18 @@ class AppTests(_AppBase):
             self.assertEqual(r["konten"], n); self.assertEqual(r["depots"], 1); self.assertEqual((r["von"], r["bis"]), ("2024-01", "2026-10"))
             self.assertFalse(H.AKTIV.is_set()); self.assertFalse(os.path.exists(aufbau))
             self.assertFalse([f for f in os.listdir(self.dir) if f.startswith("kontor-") or f.endswith(".sqlite") and f != "MoneyMoney.sqlite"])
-            mm = self.store.load(MM_VERLAUF_FILE)["konten"]
+            mm = self.store.load(MM_HISTORY_FILE)["konten"]
             dep = mm[F.uid("priv.depot")]
             self.assertEqual(dep["2025-06"], 70000.27)                                 # letzter Wert im Monat (Monatsende), Cent -> Euro
             self.assertNotIn("2026-11", dep)                                            # laufender Monat kommt aus dem aktuellen Saldo
-            with open(self.store.path(MM_VERLAUF_FILE), "rb") as f:
+            with open(self.store.path(MM_HISTORY_FILE), "rb") as f:
                 self.assertNotIn(b"70000", f.read())                                    # verschluesselt abgelegt
             self.assertEqual(self.store.load("state.json")["mm_verlauf"]["konten"], n)
             code, st = self.call("/api/status"); self.assertEqual(st["moneymoney"]["historie"]["depots"], 1)
             self.app.rebuild_report(wait=True)
-            code, h = self.call("/api/historie?konto=" + F.uid("priv.depot"))
+            code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
             self.assertEqual(h["werte"]["2025-06"], 70000.27); self.assertEqual(h["moneymoney"]["2025-06"], 70000.27)
-            code, ab = self.call("/api/abruf")
+            code, ab = self.call("/api/sync")
             d = next(x for x in ab["depots"] if x["uuid"] == F.uid("priv.depot")); self.assertEqual(d["erster_stand"], "2024-01"); self.assertTrue(d["aus_moneymoney"])
             # Bilanz nutzt die Werte
             code, ds = self.call("/api/dataset")
@@ -587,7 +587,7 @@ class AppTests(_AppBase):
             code, r = self._mm_upload(self._mm_db(mit_verlauf=False)); self.assertFalse(r["ok"]); self.assertIn("nicht sicher erkannt", r["text"])
             txt = open(aufbau, encoding="utf-8").read()
             self.assertIn("transactions", txt); self.assertNotIn("GEHEIM", txt); self.assertNotIn("Text 1", txt)
-            self.assertEqual(self.store.load(MM_VERLAUF_FILE)["konten"][F.uid("priv.depot")]["2025-06"], 70000.27)    # bisherige Werte bleiben
+            self.assertEqual(self.store.load(MM_HISTORY_FILE)["konten"][F.uid("priv.depot")]["2025-06"], 70000.27)    # bisherige Werte bleiben
             H.keys_from_dialog = lambda salt: [bytearray(hashlib.pbkdf2_hmac(h, b"falsch", salt, r, 32)) for _n, h, r in H.FORMATS]
             code, r = self._mm_upload(data); self.assertFalse(r["ok"]); self.assertIn("Passwort falsch", r["text"])
         finally:
@@ -595,10 +595,19 @@ class AppTests(_AppBase):
             if os.path.exists(aufbau):
                 os.remove(aufbau)
 
+    def test_deutsche_dateinamen_werden_umbenannt(self):
+        """Daten aelterer Versionen (deutsche Dateinamen) werden beim Start auf die englischen Namen umbenannt."""
+        from storage import LEGACY_NAMES
+        st = Store(self.dir, *load_or_create_master_key(self.dir))
+        st.save("belege.json", {"eintraege": [1]}); st.write_bytes("moneymoney-stand.bin", b"x")
+        st2 = Store(self.dir, *load_or_create_master_key(self.dir))
+        self.assertEqual(st2.load("receipts.json"), {"eintraege": [1]}); self.assertFalse(st2.exists("belege.json"))
+        self.assertEqual(st2.read_bytes("moneymoney-ledger.bin"), b"x"); self.assertIn("mm-verlauf.json", LEGACY_NAMES)
+
     def test_historie_puffer_werden_ueberschrieben(self):
         """Schluessel und Klartext liegen nur in einem Puffer, der nach dem Lesen mit Nullen ueberschrieben ist;
         SQLite liest direkt aus diesem Puffer (keine Kopie); Zugangsdaten-Tabellen werden nicht angesehen."""
-        import hashlib, shutil as sh, subprocess as sp, mm_historie as H
+        import hashlib, shutil as sh, subprocess as sp, mm_history as H
         if not sh.which("sqlcipher"):
             self.skipTest("sqlcipher fehlt")
         db = os.path.join(self.dir, "w.sqlite")
@@ -628,7 +637,7 @@ class AppTests(_AppBase):
 
     def test_lesefehler_wird_gemeldet(self):
         """MoneyMoney laeuft, Kontor kann aber nicht lesen (z. B. Berechtigung) -> Hinweis; erfolgreiches Lesen nimmt ihn zurueck."""
-        import dienst as MA
+        import service as MA
         self.login()
         old = MA.is_running; MA.is_running = lambda: True
         orig = MockBridge.export_accounts
@@ -681,10 +690,10 @@ class AppTests(_AppBase):
         b = ds["bereiche"][ds["haupt"]]
         self.assertIn("kennzahlen", b); self.assertIn("plan", b); self.assertTrue(b["plan_monate"])
         self.assertEqual(b["plan"]["inflation_prozent_pa"], 2.0)
-        code, k = self.call("/api/konten")
+        code, k = self.call("/api/accounts")
         self.assertTrue(any(x["name"] == "Verkäuferdarlehen" and x["manuell"] for x in k["konten"]))
         self.assertTrue(any(x["name"] == "Hausbank Giro" and not x["manuell"] for x in k["konten"]))
-        code, kats = self.call("/api/kategorien")
+        code, kats = self.call("/api/categories")
         self.assertTrue(any(c["pfad"] == "Vermietung / Parkweg / Mieteinnahmen" for c in kats["kategorien"]))
         # Plan je Bereich: Methode, Ueberschreibung, Parameter, Darlehen, Wertentwicklung
         P = ds["haupt"]
@@ -712,7 +721,7 @@ class AppTests(_AppBase):
         mz2 = [z for z in [s for s in ds["bereiche"][P]["kapitalfluss"]["sektionen"] if s["name"] == "Ausgaben"][0]["zeilen"] if "Miete" in z["zeile"]][0]
         self.assertEqual(mz2["plan"]["methode"], "budget"); self.assertAlmostEqual(mz2["plan"]["vorschlag"][b["plan_monate"][0]], round(-1500.0 * 1.03 ** (1 / 12), 2), 2)
         # anderer Bereich hat eigenen (leeren) Plan
-        code, plan_pb = self.call("/api/plan?bereich=" + F.uid("pb"))
+        code, plan_pb = self.call("/api/plan?area=" + F.uid("pb"))
         self.assertEqual(plan_pb, {})
         self.assertEqual(len(ds["bereiche"][F.uid("pb")]["plan_monate"]), 24)
         self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Einnahmen / Gehalt", "alle_ueberschreibungen_loeschen": True})
@@ -732,8 +741,8 @@ class AppTests(_AppBase):
         self.assertTrue(self.store.load("config.json")["probelauf"])
         self.assertTrue(any(e["name"] == "Alpha GbR" for e in ds["steuer"]["entitaeten"]))
         # Passwort aendern, abmelden, erneut anmelden; Fehlversuche sperren
-        self.assertEqual(self.call("/api/passwort", {"alt": "falsch", "neu": "neues-passwort-123"})[0], 401)
-        self.assertEqual(self.call("/api/passwort", {"alt": "sehr-geheimes-passwort", "neu": "neues-passwort-123"})[0], 200)
+        self.assertEqual(self.call("/api/password", {"alt": "falsch", "neu": "neues-passwort-123"})[0], 401)
+        self.assertEqual(self.call("/api/password", {"alt": "sehr-geheimes-passwort", "neu": "neues-passwort-123"})[0], 200)
         self.assertEqual(self.call("/api/lock", {})[0], 200)
         self.assertEqual(self.call("/api/status")[0], 401)
         for _ in range(5):
@@ -748,59 +757,59 @@ class AppTests(_AppBase):
 
     def test_umsaetze_belege_exports(self):
         self.login(); self.run_and_wait()
-        code, u = self.call("/api/umsaetze?jahr=2026&ohne_kategorie=1&limit=5")
+        code, u = self.call("/api/transactions?year=2026&uncategorized=1&limit=5")
         self.assertEqual(code, 200); self.assertTrue(u["treffer"] >= 10); self.assertEqual(len(u["umsaetze"]), 5)
         self.assertTrue(all(not x["kategorie"] for x in u["umsaetze"]))
-        code, u = self.call("/api/umsaetze?q=supermarkt&entitaet=" + F.uid("priv"))
+        code, u = self.call("/api/transactions?q=supermarkt&entity=" + F.uid("priv"))
         self.assertTrue(u["umsaetze"]); self.assertTrue(all("Supermarkt" in x["name"] for x in u["umsaetze"]))
         tx = u["umsaetze"][0]
         pdf = b"%PDF-1.4 test"
         # Erster Beleg: Ordner wird erst nach Rueckfrage angelegt
-        code, r = self.call("/api/belege/upload", {"tx_id": tx["id"], "datei_name": "rechnung.pdf", "inhalt": base64.b64encode(pdf).decode(), "notiz": "Test"})
+        code, r = self.call("/api/receipts/upload", {"tx_id": tx["id"], "datei_name": "rechnung.pdf", "inhalt": base64.b64encode(pdf).decode(), "notiz": "Test"})
         self.assertEqual(code, 409); self.assertTrue(r["ordner_bestaetigen"]); self.assertFalse(os.path.isdir(self.belege))
-        code, r = self.call("/api/belege/upload", {"tx_id": tx["id"], "datei_name": "rechnung.pdf", "inhalt": base64.b64encode(pdf).decode(), "notiz": "Test", "ordner_anlegen": True})
+        code, r = self.call("/api/receipts/upload", {"tx_id": tx["id"], "datei_name": "rechnung.pdf", "inhalt": base64.b64encode(pdf).decode(), "notiz": "Test", "ordner_anlegen": True})
         self.assertTrue(self.store.load("config.json")["belege"]["ordner_bestaetigt"])
         self.assertEqual(code, 200, r)
         e = r["eintrag"]
         self.assertTrue(e["pfad"].startswith(tx["datum"][:4] + "/Privat/"), e["pfad"]); self.assertTrue(e["pfad"].endswith(".pdf"))
         self.assertTrue(os.path.isfile(os.path.join(self.belege, e["pfad"])))
-        self.assertEqual(self.call("/api/belege/upload", {"tx_id": tx["id"], "datei_name": "x.exe", "inhalt": base64.b64encode(b"x").decode()})[0], 400)
-        code, u2 = self.call("/api/umsaetze?q=supermarkt&mit_beleg=1")
+        self.assertEqual(self.call("/api/receipts/upload", {"tx_id": tx["id"], "datei_name": "x.exe", "inhalt": base64.b64encode(b"x").decode()})[0], 400)
+        code, u2 = self.call("/api/transactions?q=supermarkt&with_receipt=1")
         self.assertEqual(u2["umsaetze"][0]["belege"], 1)
-        code, u3 = self.call("/api/umsaetze?q=supermarkt&ohne_beleg=1")
+        code, u3 = self.call("/api/transactions?q=supermarkt&without_receipt=1")
         self.assertFalse(any(x["id"] == tx["id"] for x in u3["umsaetze"]))
-        code, data, hdr = self.call("/api/belege/datei?id=" + e["id"], raw=True)
+        code, data, hdr = self.call("/api/receipts/file?id=" + e["id"], raw=True)
         self.assertEqual(code, 200); self.assertEqual(data, pdf); self.assertIn("application/pdf", hdr["Content-Type"])
         os.makedirs(os.path.join(self.belege, "2026"), exist_ok=True)
         with open(os.path.join(self.belege, "2026", "alt.pdf"), "wb") as f:
             f.write(b"%PDF-1.4 alt")
-        code, bl = self.call("/api/belege?dateien=1")
+        code, bl = self.call("/api/receipts?files=1")
         self.assertTrue(any(d["pfad"] == "2026/alt.pdf" and not d["verknuepft"] for d in bl["dateien"]))
-        code, r = self.call("/api/belege/verknuepfen", {"tx_id": tx["id"], "pfad": "2026/alt.pdf"})
+        code, r = self.call("/api/receipts/link", {"tx_id": tx["id"], "pfad": "2026/alt.pdf"})
         self.assertEqual(code, 200)
-        self.assertEqual(self.call("/api/belege/verknuepfen", {"tx_id": tx["id"], "pfad": "../../etc/passwd"})[0], 400)
-        code, r = self.call("/api/belege/export", {"jahr": "2026", "entitaet": F.uid("priv")})
+        self.assertEqual(self.call("/api/receipts/link", {"tx_id": tx["id"], "pfad": "../../etc/passwd"})[0], 400)
+        code, r = self.call("/api/receipts/export", {"jahr": "2026", "entitaet": F.uid("priv")})
         self.assertEqual(code, 200); self.assertTrue(os.path.isfile(r["datei"]))
         with zipfile.ZipFile(r["datei"]) as z:
             names = z.namelist()
             self.assertIn("Belege.csv", names); self.assertEqual(len(names), 3)
-        code, r = self.call("/api/belege/aendern", {"id": e["id"], "notiz": "neu"})
+        code, r = self.call("/api/receipts/update", {"id": e["id"], "notiz": "neu"})
         self.assertEqual(r["eintrag"]["notiz"], "neu")
-        code, r = self.call("/api/belege/entfernen", {"id": e["id"], "datei_loeschen": False})
+        code, r = self.call("/api/receipts/remove", {"id": e["id"], "datei_loeschen": False})
         self.assertTrue(r["ok"]); self.assertTrue(os.path.isfile(os.path.join(self.belege, e["pfad"])))
         # Kategorisieren: standardmaessig nicht erlaubt, dann erlaubt
-        self.assertEqual(self.call("/api/umsaetze/kategorie", {"ids": [tx["id"]], "kategorie": "Lebensmittel"})[0], 403)
+        self.assertEqual(self.call("/api/transactions/category", {"ids": [tx["id"]], "kategorie": "Lebensmittel"})[0], 403)
         code, cfg = self.call("/api/config"); cfg["moneymoney"]["kategorisieren_erlauben"] = True
         self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 200)
-        code, r = self.call("/api/umsaetze/kategorie", {"ids": [tx["id"]], "kategorie": "Lebensmittel"})
+        code, r = self.call("/api/transactions/category", {"ids": [tx["id"]], "kategorie": "Lebensmittel"})
         self.assertEqual(code, 200); self.assertEqual(r["anzahl"], 1)
         self.assertTrue(any(w[0] == "set" and w[1] == tx["id"] and w[2] == "Lebensmittel" for b in MockBridge.instances for w in b.written))
-        code, u4 = self.call("/api/umsaetze?q=supermarkt")
+        code, u4 = self.call("/api/transactions?q=supermarkt")
         self.assertEqual([x for x in u4["umsaetze"] if x["id"] == tx["id"]][0]["kategorie"], "Lebensmittel")
         # Excel-Exporte
-        for was in ("bilanz", "kapitalfluss", "planung", "steuer", "umsaetze", "depots", "belege", "konten"):
-            for modus in ("monate", "jahre"):
-                code, data, hdr = self.call("/api/export/%s.xlsx?modus=%s" % (was, modus), raw=True)
+        for was in ("balance", "cashflow", "planning", "tax", "transactions", "holdings", "receipts", "accounts"):
+            for modus in ("months", "years"):
+                code, data, hdr = self.call("/api/export/%s.xlsx?mode=%s" % (was, modus), raw=True)
                 self.assertEqual(code, 200, (was, data[:200])); self.assertIn("spreadsheetml", hdr["Content-Type"])
                 with zipfile.ZipFile(io.BytesIO(data)) as z:
                     self.assertIn("xl/workbook.xml", z.namelist()); self.assertIn("xl/worksheets/sheet1.xml", z.namelist())
@@ -809,25 +818,25 @@ class AppTests(_AppBase):
         except ImportError:
             openpyxl = None
         if openpyxl:
-            code, data, hdr = self.call("/api/export/planung.xlsx?modus=jahre", raw=True)
+            code, data, hdr = self.call("/api/export/planning.xlsx?mode=years", raw=True)
             wb = openpyxl.load_workbook(io.BytesIO(data))
             self.assertEqual(len(wb.sheetnames), 3)
             ws = wb[wb.sheetnames[0]]
             self.assertEqual(ws["A1"].value, "Position"); self.assertTrue(any(str(c.value).startswith("20") for c in ws[1][1:]))
         # Paket-Export/-Import ueber die API
-        code, data, hdr = self.call("/api/paket/export?ohne_uuid=1&name=Test", raw=True)
+        code, data, hdr = self.call("/api/package/export?without_uuid=1&name=Test", raw=True)
         pkg = json.loads(data.decode()); self.assertEqual(pkg["name"], "Test"); self.assertNotIn(F.uid("pb.vd"), data.decode())
         pkg["config"]["darlehen"][0]["darlehenskonto"] = "Darlehen Fremd"
-        code, r = self.call("/api/paket/import", {"paket": pkg, "modus": "ergaenzen"})
+        code, r = self.call("/api/package/import", {"paket": pkg, "modus": "ergaenzen"})
         self.assertFalse(r["ok"]); self.assertEqual(r["unaufgeloest"][0]["label"], "Darlehen Fremd")
-        code, r = self.call("/api/paket/import", {"paket": pkg, "modus": "ergaenzen", "zuordnung": {"Darlehen Fremd": F.uid("pb.vd") + " | Verkäuferdarlehen"}})
+        code, r = self.call("/api/package/import", {"paket": pkg, "modus": "ergaenzen", "zuordnung": {"Darlehen Fremd": F.uid("pb.vd") + " | Verkäuferdarlehen"}})
         self.assertTrue(r["ok"], r); self.assertEqual(len(r["config"]["darlehen"]), 1)
         # Diagnose maskiert, Update-Status; MoneyMoney-Aktualisierung gibt es nicht mehr
-        code, data, hdr = self.call("/api/diagnose", raw=True)
+        code, data, hdr = self.call("/api/diagnostics", raw=True)
         self.assertEqual(code, 200); self.assertNotIn(F.SELLER_IBAN, data.decode()); self.assertNotIn("Stadtbank Kontokorrent", data.decode())
         code, r = self.call("/api/update/status"); self.assertEqual(code, 200)
-        code, r = self.call("/api/moneymoney/aktualisieren", {}); self.assertEqual(code, 404)
-        code, r = self.call("/api/update/pruefen", {}); self.assertEqual(code, 200); self.assertIn("info", r)
+        code, r = self.call("/api/moneymoney/refresh", {}); self.assertEqual(code, 404)
+        code, r = self.call("/api/update/check", {}); self.assertEqual(code, 200); self.assertIn("info", r)
 
 
 PB_EINGABEN = {
@@ -848,8 +857,8 @@ class ImmoEngineTests(unittest.TestCase):
     """Kalkulationskern gegen die Werte einer handgerechneten Excel-Kalkulation (jaehrliche Zinsabrechnung, Indexmiete, Gesellschafter)."""
 
     def test_parity_with_spreadsheet(self):
-        import immorechner
-        r = immorechner.berechne(PB_EINGABEN, TODAY)
+        import realestate
+        r = realestate.berechne(PB_EINGABEN, TODAY)
         J = {j["jahr"]: j for j in r["jahre"]}
         # Jahr 1: Miete, Zins (3,3 % auf Stand 1.1.), Tilgung = 12 x 8.250 - Zins, AfA 2 % x 76 % x (KP + NK)
         self.assertEqual(J[2026]["miete"], 151200.0)
@@ -871,17 +880,17 @@ class ImmoEngineTests(unittest.TestCase):
         self.assertAlmostEqual(K["bruttomietrendite"], 151200 / 1900000, 4)
         self.assertEqual(len(r["jahre"]), 24); self.assertEqual(len(r["monate"]), 24 * 12)
         # Planreihen: Monatswerte summieren sich auf das Jahr
-        reihen = immorechner.planreihen(r)
+        reihen = realestate.planreihen(r)
         self.assertAlmostEqual(sum(v for k, v in reihen["miete"].items() if k.startswith("2027")), 154072.8 + 12000, 1)   # inkl. Umlage (Zahlungsstrom)
         self.assertAlmostEqual(sum(v for k, v in reihen["kosten"].items() if k.startswith("2027")), -2983.63 - 12000, 1)
         self.assertEqual(round(reihen["darlehen"]["Verkäuferdarlehen"]["saldo"]["2026-12"], 2), -1553800.0)
-        sheets = immorechner.sheets(r)
+        sheets = realestate.sheets(r)
         self.assertEqual([x.name for x in sheets], ["Eingaben", "Kennzahlen", "Jahre", "Monate"])
 
     def test_parity_second_and_third_sheet(self):
         """Zwei weitere handgerechnete Kalkulationen: Teiljahr ab Mai, drei Darlehensarten (endfaellig, Tilgung mit spaeterer
         Sondertilgung, Annuitaet), Indexmiete mit Schwelle 5 % und Faktor 0,75, RND statt AfA-Satz; und ein einfaches Wohnobjekt."""
-        import immorechner
+        import realestate
         o = {"name": "G", "kaufpreis": 4000000, "uebergang": "2026-05-01", "horizont_jahre": 10,
              "nebenkosten": {"grunderwerbsteuer_prozent": 3.5, "notar": 18122.9, "grundbuch": 11788.0},
              "gebaeudeanteil_prozent": 51.44, "restnutzungsdauer_jahre": 18,
@@ -894,7 +903,7 @@ class ImmoEngineTests(unittest.TestCase):
              "gesellschafter": [{"name": "A", "anteil_prozent": 49, "steuersatz_prozent": 47.475}, {"name": "B", "anteil_prozent": 49, "steuersatz_prozent": 47.475},
                                 {"name": "C", "anteil_prozent": 1, "steuersatz_prozent": 47.475}, {"name": "D", "anteil_prozent": 1, "steuersatz_prozent": 40}],
              "ausschuettung_prozent": 48, "steuererstattung_in_cashflow": True}
-        J = {j["jahr"]: j for j in immorechner.berechne(o, TODAY)["jahre"]}
+        J = {j["jahr"]: j for j in realestate.berechne(o, TODAY)["jahre"]}
         self.assertEqual(J[2026]["monate"], 8); self.assertEqual(J[2026]["miete"], 148825.44); self.assertEqual(J[2026]["afa"], -79444.52)
         self.assertAlmostEqual(J[2026]["ergebnis"], -27345.75, delta=0.02); self.assertAlmostEqual(J[2026]["steuer"], 12961.95, delta=0.02)
         self.assertAlmostEqual(J[2026]["cashflow"], -7180.87, delta=0.02); self.assertAlmostEqual(J[2026]["ek_rendite"], 0.0758, 3)
@@ -909,19 +918,19 @@ class ImmoEngineTests(unittest.TestCase):
               "kosten": {"nicht_umlagefaehig_pa": 1000, "steigerung": "keine"},
               "darlehen": [{"name": "B", "betrag": 326000, "zins_prozent": 3.75, "annuitaet_monat": 1510, "abrechnung": "jaehrlich"}],
               "gesellschafter": [{"name": "S", "anteil_prozent": 100, "steuersatz_prozent": 47.475}], "ausschuettung_prozent": 49, "steuererstattung_in_cashflow": True}
-        J2 = {j["jahr"]: j for j in immorechner.berechne(o2, TODAY)["jahre"]}
+        J2 = {j["jahr"]: j for j in realestate.berechne(o2, TODAY)["jahre"]}
         self.assertEqual(J2[2026]["ergebnis"], -6836.79); self.assertEqual(J2[2026]["steuer"], 3245.77); self.assertEqual(J2[2026]["cashflow"], -6274.23)
         self.assertEqual(J2[2026]["restschuld"], 320105.0); self.assertEqual(J2[2029]["restschuld"], 301060.15); self.assertEqual(J2[2030]["ek_rendite"], 0.0033)
 
     def test_loan_variants_and_hints(self):
-        import immorechner
+        import realestate
         base = {"name": "Test", "kaufpreis": 500000, "uebergang": "2026-05-01", "horizont_jahre": 12, "gebaeudeanteil_prozent": 80,
                 "miete": {"nettokalt_monat": 2000, "index": {"art": "keine"}}, "kosten": {"nicht_umlagefaehig_pa": 2400, "steigerung": "keine"}}
         # Annuitaet monatlich mit Anfangstilgung, Sondertilgung ab Monat, Zinsbindung + Anschlusszins
         o = dict(base, darlehen=[{"name": "Bank", "betrag": 400000, "zins_prozent": 3.6, "anfangstilgung_prozent": 2.4, "abrechnung": "monatlich",
                                    "sondertilgung_monat": 500, "sondertilgung_ab": "2028-01", "zinsbindung_bis": "2031-04", "anschluss_zins_prozent": 5.0,
                                    "sondertilgungen": [{"datum": "2027-06", "betrag": 20000}]}])
-        r = immorechner.berechne(o, TODAY)
+        r = realestate.berechne(o, TODAY)
         M = {m["monat"]: m for m in r["monate"]}
         self.assertEqual(M["2026-05"]["zins"], -1200.0)                    # 400000 x 3,6 % / 12
         self.assertEqual(M["2026-05"]["tilgung"], -800.0)                  # Annuitaet 2000 - Zins
@@ -931,7 +940,7 @@ class ImmoEngineTests(unittest.TestCase):
         self.assertAlmostEqual(z_mai, -round(abs(s_apr) * 5.0 / 1200, 2), 1)   # Anschlusszins ab Mai 2031
         # Endfaellig mit Rueckzahlung
         o2 = dict(base, darlehen=[{"name": "Privat", "betrag": 100000, "zins_prozent": 4, "art": "endfaellig", "faelligkeit": "2028-12", "faelligkeit_art": "rueckzahlung", "abziehbar": False}])
-        r2 = immorechner.berechne(o2, TODAY)
+        r2 = realestate.berechne(o2, TODAY)
         M2 = {m["monat"]: m for m in r2["monate"]}
         self.assertEqual(M2["2028-11"]["tilgung"], 0.0); self.assertEqual(M2["2028-12"]["sondertilgung"], -100000.0)
         self.assertEqual(M2["2029-01"]["zins"], 0.0)
@@ -939,12 +948,12 @@ class ImmoEngineTests(unittest.TestCase):
         self.assertEqual(J2[2027]["zins_abziehbar"], 0.0); self.assertEqual(J2[2027]["zins"], -4000.0)
         # Endfaellig offen -> Hinweis
         o3 = dict(base, darlehen=[{"name": "Privat", "betrag": 100000, "zins_prozent": 4, "art": "endfaellig", "faelligkeit": "2028-12"}])
-        r3 = immorechner.berechne(o3, TODAY)
+        r3 = realestate.berechne(o3, TODAY)
         self.assertTrue(any("Privat" in h for h in r3["hinweise"]))
         # Verkauf mit IRR, RND statt AfA-Satz, Leerstand, feste Mietsteigerung
         o4 = dict(base, restnutzungsdauer_jahre=40, wertentwicklung_prozent=2, verkauf={"jahr": 2031, "kosten_prozent": 2},
                   miete={"nettokalt_monat": 2000, "leerstand_prozent": 5, "index": {"art": "prozent", "steigerung_prozent": 2}})
-        r4 = immorechner.berechne(o4, TODAY)
+        r4 = realestate.berechne(o4, TODAY)
         self.assertEqual(r4["kennzahlen"]["afa_satz"], 2.5); self.assertIsNotNone(r4["kennzahlen"]["irr"])
         self.assertEqual(r4["kennzahlen"]["exit_jahr"], 2031)
         J4 = {j["jahr"]: j for j in r4["jahre"]}
@@ -952,17 +961,17 @@ class ImmoEngineTests(unittest.TestCase):
         self.assertAlmostEqual(J4[2028]["nkm_monat"], round(2000 * 1.02 ** 2, 2), 2)
         # Darlehen, das vor dem Horizont ausgezahlt wurde, laeuft ab dem ersten Monat mit
         o5 = dict(base, darlehen=[{"name": "Alt", "betrag": 100000, "zins_prozent": 3, "annuitaet_monat": 1000, "beginn": "2025-11"}])
-        r5 = immorechner.berechne(o5, TODAY)
+        r5 = realestate.berechne(o5, TODAY)
         self.assertEqual(r5["monate"][0]["zins"], -250.0); self.assertEqual(r5["monate"][0]["tilgung"], -750.0)
         # Unsinnige Eingaben: Fehler statt Absturz
         with self.assertRaises(ValueError):
-            immorechner.berechne({"kaufpreis": 100, "uebergang": "2026-01", "gesellschafter": [{"name": "A", "anteil_prozent": 60}, {"name": "B", "anteil_prozent": 60}]}, TODAY)
+            realestate.berechne({"kaufpreis": 100, "uebergang": "2026-01", "gesellschafter": [{"name": "A", "anteil_prozent": 60}, {"name": "B", "anteil_prozent": 60}]}, TODAY)
         with self.assertRaises(ValueError):
-            immorechner.berechne({"kaufpreis": 100, "uebergang": "2026-01", "darlehen": [{"name": "X", "betrag": "viel"}]}, TODAY)
+            realestate.berechne({"kaufpreis": 100, "uebergang": "2026-01", "darlehen": [{"name": "X", "betrag": "viel"}]}, TODAY)
         with self.assertRaises(ValueError):
-            immorechner.berechne({"kaufpreis": -1}, TODAY)
+            realestate.berechne({"kaufpreis": -1}, TODAY)
         with self.assertRaises(ValueError):
-            immorechner.berechne({"kaufpreis": 100, "uebergang": "kein-datum"}, TODAY)
+            realestate.berechne({"kaufpreis": 100, "uebergang": "kein-datum"}, TODAY)
 
 
 class LoginTouchIdTest(unittest.TestCase):
@@ -973,14 +982,14 @@ class LoginTouchIdTest(unittest.TestCase):
             from playwright.sync_api import sync_playwright
         except ImportError:
             self.skipTest("playwright fehlt")
-        import anmeldung
+        import auth
         d = tempfile.mkdtemp(prefix="kontor-tid-")
         key, src = load_or_create_master_key(d)
         store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
         reset_mock(); patch_today()
-        old_av, old_ver = anmeldung.touchid_available, anmeldung.touchid_verify
-        anmeldung.touchid_available = lambda: True
-        anmeldung.touchid_verify = lambda reason=None: False          # Dialog abgebrochen
+        old_av, old_ver = auth.touchid_available, auth.touchid_verify
+        auth.touchid_available = lambda: True
+        auth.touchid_verify = lambda reason=None: False          # Dialog abgebrochen
         app = App(store, d, bridge_factory=MockBridge)
         srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
         threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -1004,7 +1013,7 @@ class LoginTouchIdTest(unittest.TestCase):
                 self.assertTrue(pg.is_visible("#login-pw")); self.assertFalse(pg.is_visible("#tid-box")); self.assertFalse(pg.is_visible("#tid-instead"))
                 b.close()
         finally:
-            anmeldung.touchid_available, anmeldung.touchid_verify = old_av, old_ver
+            auth.touchid_available, auth.touchid_verify = old_av, old_ver
             srv.shutdown(); srv.server_close(); shutil.rmtree(d, ignore_errors=True)
 
 
@@ -1016,7 +1025,7 @@ class BereichOrderTests(unittest.TestCase):
                 F.acc("g3", "Max Mustermann", 1, "Kontengruppe", True), F.acc("g3.a", "Konto C", 2, balance=1.0, bank="1"),
                 F.acc("g4", "Familie", 1, "Kontengruppe", True), F.acc("g4.a", "Konto D", 2, balance=1.0, bank="1")]
         led = Ledger(accounts_from_export(accs), [])
-        out = kern.bereiche_for(led, kern.merged_config({}))
+        out = core.bereiche_for(led, core.merged_config({}))
         self.assertEqual([b["name"] for b in out], ["Max Mustermann", "Familie", "Alpha Verwaltung eGbR", "Muster GmbH"])
         self.assertTrue(out[0]["haupt"]); self.assertEqual([b["art"] for b in out], ["privat", "privat", "gesellschaft", "gesellschaft"])
 
@@ -1034,7 +1043,7 @@ class FeatureTests(_AppBase):
         P = ds["haupt"]; b = ds["bereiche"][P]
         self.assertIn(F.uid("priv.alt"), b["konten_inaktiv"])
         self.assertEqual(b["konten_aktivitaet"][F.uid("priv.alt")], 9999); self.assertEqual(b["konten_aktivitaet"][F.uid("priv.giro")], 0)
-        code, kt = self.call("/api/konten")
+        code, kt = self.call("/api/accounts")
         self.assertEqual([x for x in kt["konten"] if x["uuid"] == F.uid("priv.alt")][0]["aktiv_grenze"], 9999)
         alt = [r for r in b["bilanz"]["zeilen"] if r["id"] == F.uid("priv.alt")][0]
         self.assertTrue(alt["inaktiv"])
@@ -1049,9 +1058,9 @@ class FeatureTests(_AppBase):
         self.assertIsNone(depot["geschaetzt_bis"]); self.assertEqual(depot["fortgeschrieben_vor"], "2026-11")
         self.assertTrue(any("fortgeschrieben" in w for w in b["warnungen"]))
         # Verlauf: Monatsstaende setzen, Import, Quelle umstellen
-        code, h = self.call("/api/historie?konto=" + F.uid("priv.depot"))
+        code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
         self.assertEqual(h["quelle"], "stand"); self.assertEqual(h["aufgezeichnet"]["2026-11"], 85000.0)
-        code, r = self.call("/api/historie", {"konto": F.uid("priv.depot"), "werte": {"2026-10": "84.000,00", "2026-09": 80000, "2025-12": 60000}})
+        code, r = self.call("/api/history", {"konto": F.uid("priv.depot"), "werte": {"2026-10": "84.000,00", "2026-09": 80000, "2025-12": 60000}})
         self.assertEqual(code, 200); self.assertTrue(r["bericht"])
         code, ds = self.call("/api/dataset"); b = ds["bereiche"][P]
         depot = [r for r in b["bilanz"]["zeilen"] if r["id"] == F.uid("priv.depot")][0]
@@ -1059,20 +1068,20 @@ class FeatureTests(_AppBase):
         self.assertEqual(depot["werte"]["2026-05"], 60000.0)     # Luecken: letzter bekannter Stand
         self.assertEqual(b["bilanz"]["nettovermoegen"]["2026-10"], round(sum((r["werte"]["2026-10"] or 0) for r in b["bilanz"]["zeilen"] if not r["gruppe"]), 2))
         csv = "Datum;Konto;Saldo\n31.03.2026;Depot;70.000,00\n30.04.2026;Depot;71.500,50\n31.03.2026;Hausbank Giro;1.000,00\n"
-        code, r = self.call("/api/historie/import", {"csv": csv})
+        code, r = self.call("/api/history/import", {"csv": csv})
         self.assertEqual(code, 200); self.assertEqual(len(r["vorschau"]), 2); self.assertTrue(all(v["uuid"] for v in r["vorschau"]))
-        code, r = self.call("/api/historie/import", {"csv": csv, "uebernehmen": True})
+        code, r = self.call("/api/history/import", {"csv": csv, "uebernehmen": True})
         self.assertEqual(r["uebernommen"], 3)
-        code, h = self.call("/api/historie?konto=" + F.uid("priv.depot"))
+        code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
         self.assertEqual(h["manuell"]["2026-04"], 71500.5)
         # Girokonto auf "Staende" umstellen und zurueck
-        code, r = self.call("/api/historie", {"konto": F.uid("priv.giro"), "werte": {}, "quelle": "stand"})
+        code, r = self.call("/api/history", {"konto": F.uid("priv.giro"), "werte": {}, "quelle": "stand"})
         code, cfg = self.call("/api/config")
         self.assertEqual(cfg["bilanz"]["verlauf"].get(F.uid("priv.giro") + " | Hausbank Giro"), "stand")
         code, ds = self.call("/api/dataset")
         giro = [r for r in ds["bereiche"][P]["bilanz"]["zeilen"] if r["id"] == F.uid("priv.giro")][0]
         self.assertEqual(giro["verlauf"], "stand"); self.assertEqual(giro["werte"]["2026-03"], 1000.0)
-        self.call("/api/historie", {"konto": F.uid("priv.giro"), "werte": {}, "quelle": "umsaetze", "loeschen": True})
+        self.call("/api/history", {"konto": F.uid("priv.giro"), "werte": {}, "quelle": "umsaetze", "loeschen": True})
         code, ds = self.call("/api/dataset")
         giro = [r for r in ds["bereiche"][P]["bilanz"]["zeilen"] if r["id"] == F.uid("priv.giro")][0]
         self.assertEqual(giro["verlauf"], "umsaetze")
@@ -1086,7 +1095,7 @@ class FeatureTests(_AppBase):
         cfg["bilanz"]["inaktiv_monate"] = 0
         code, r = self.call("/api/config", {"config": cfg}, method="PUT")
         self.assertEqual(code, 200, r)
-        code, r = self.call("/api/bericht", {}); self.assertTrue(r["ok"])
+        code, r = self.call("/api/report", {}); self.assertTrue(r["ok"])
         code, ds = self.call("/api/dataset")
         self.assertEqual(set(ds["bereiche"]), {"privat", "objekte"}); self.assertEqual(ds["haupt"], "privat")
         ob = ds["bereiche"]["objekte"]
@@ -1102,7 +1111,7 @@ class FeatureTests(_AppBase):
         self.assertFalse([r for r in pr["bilanz"]["zeilen"] if r["id"] == F.uid("priv.alt")][0]["inaktiv"])   # inaktiv_monate 0 = nie
         self.assertTrue(any(e["name"] == "Alle Objekte" and e["anteil"] == 0.49 for e in ds["steuer"]["entitaeten"]))
         # Konten-Export und Pakete enthalten die Bereiche
-        code, data, hdr = self.call("/api/paket/export?name=B", raw=True)
+        code, data, hdr = self.call("/api/package/export?name=B", raw=True)
         pkg = json.loads(data.decode()); self.assertEqual(len(pkg["config"]["bereiche"]), 2)
         self.assertTrue(any(k["name"] == "Alle Objekte" for k in ds["konten"] if k["gruppe"]) or ds["bereich_namen"]["objekte"] == "Alle Objekte")
 
@@ -1147,21 +1156,21 @@ class FeatureTests(_AppBase):
 
     def test_immobilien_api_plan_tax_export(self):
         self.login(); self.run_and_wait()
-        code, r = self.call("/api/immobilien/vorlage"); self.assertEqual(r["eingaben"]["name"], "Neues Objekt")
-        code, r = self.call("/api/immobilien/berechnen", {"eingaben": PB_EINGABEN, "ohne_monate": True})
+        code, r = self.call("/api/properties/template"); self.assertEqual(r["eingaben"]["name"], "Neues Objekt")
+        code, r = self.call("/api/properties/calculate", {"eingaben": PB_EINGABEN, "ohne_monate": True})
         self.assertEqual(code, 200); self.assertNotIn("monate", r); self.assertEqual(r["jahre"][0]["cashflow"], 12893.83)
-        self.assertEqual(self.call("/api/immobilien/berechnen", {"eingaben": {"kaufpreis": "abc"}})[0], 400)
+        self.assertEqual(self.call("/api/properties/calculate", {"eingaben": {"kaufpreis": "abc"}})[0], 400)
         # Objekt anlegen, Kalkulation speichern, zweites Szenario, aktiv wechseln
-        code, r = self.call("/api/immobilien", {"aktion": "anlegen", "name": "Parkweg", "bereich": F.uid("pb"), "kategorie": "Vermietung \\ Parkweg",
+        code, r = self.call("/api/properties", {"aktion": "anlegen", "name": "Parkweg", "bereich": F.uid("pb"), "kategorie": "Vermietung \\ Parkweg",
                                                 "objekt_konto": F.uid("pb.immo") + " | Immobilie Parkweg"})
         self.assertEqual(code, 200); iid = r["immobilie"]["id"]
-        code, r = self.call("/api/immobilien", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "Basis", "eingaben": PB_EINGABEN}})
+        code, r = self.call("/api/properties", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "Basis", "eingaben": PB_EINGABEN}})
         self.assertEqual(code, 200); k1 = r["immobilie"]["kalkulationen"][0]; self.assertTrue(k1["aktiv"])
         var = copy.deepcopy(PB_EINGABEN); var["miete"]["nettokalt_monat"] = 13000
-        code, r = self.call("/api/immobilien", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "Mehr Miete", "eingaben": var}})
+        code, r = self.call("/api/properties", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "Mehr Miete", "eingaben": var}})
         k2 = r["immobilie"]["kalkulationen"][1]; self.assertFalse(k2["aktiv"])
-        self.assertEqual(self.call("/api/immobilien", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "kaputt", "eingaben": {"kaufpreis": -5}}})[0], 400)
-        code, r = self.call("/api/immobilien", {"aktion": "aendern", "id": iid, "in_planung": True, "darlehen_konten": {"Verkäuferdarlehen": F.uid("pb.vd") + " | Verkäuferdarlehen"}})
+        self.assertEqual(self.call("/api/properties", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "kaputt", "eingaben": {"kaufpreis": -5}}})[0], 400)
+        code, r = self.call("/api/properties", {"aktion": "aendern", "id": iid, "in_planung": True, "darlehen_konten": {"Verkäuferdarlehen": F.uid("pb.vd") + " | Verkäuferdarlehen"}})
         self.assertTrue(r["bericht"])
         code, ds = self.call("/api/dataset")
         im = [x for x in ds["immobilien"] if x["id"] == iid][0]
@@ -1186,51 +1195,51 @@ class FeatureTests(_AppBase):
         # Steuer: AfA aus der Kalkulation, wenn nicht manuell eingetragen
         code, cfg = self.call("/api/config"); cfg["steuer"]["afa"] = {}
         self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 200)
-        self.call("/api/bericht", {})
+        self.call("/api/report", {})
         code, ds = self.call("/api/dataset")
         ent = [e for e in ds["steuer"]["entitaeten"] if e["uuid"] == F.uid("pb")][0]
         self.assertEqual(ent["jahre"]["2026"]["objekte"]["Parkweg"]["afa"], 30100.82)
         self.assertEqual(ent["jahre"]["2026"]["objekte"]["Parkweg"].get("afa_quelle"), "kalkulation")
         # Szenario aktiv wechseln -> andere Miete in der Planung; Szenario loeschen
-        code, r = self.call("/api/immobilien", {"aktion": "kalkulation_aktiv", "id": iid, "kalkulation_id": k2["id"]})
+        code, r = self.call("/api/properties", {"aktion": "kalkulation_aktiv", "id": iid, "kalkulation_id": k2["id"]})
         code, ds = self.call("/api/dataset"); gbr = ds["bereiche"][F.uid("pb")]
         ez = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Einnahmen"][0]["zeilen"] if "Mieteinnahmen" in z["zeile"]][0]
         self.assertEqual(ez["plan"]["werte"][fm[0]], 14000.0)
-        code, r = self.call("/api/immobilien", {"aktion": "kalkulation_loeschen", "id": iid, "kalkulation_id": k2["id"]})
+        code, r = self.call("/api/properties", {"aktion": "kalkulation_loeschen", "id": iid, "kalkulation_id": k2["id"]})
         self.assertTrue(r["immobilie"]["kalkulationen"][0]["aktiv"])
         # Excel-Export der Kalkulation
-        code, data, hdr = self.call("/api/export/immobilie.xlsx?id=%s" % iid, raw=True)
+        code, data, hdr = self.call("/api/export/property.xlsx?id=%s" % iid, raw=True)
         self.assertEqual(code, 200); self.assertIn("spreadsheetml", hdr["Content-Type"])
         with zipfile.ZipFile(io.BytesIO(data)) as z:
             self.assertEqual(sum(1 for n in z.namelist() if n.startswith("xl/worksheets/sheet")), 4)
-        self.assertEqual(self.call("/api/export/immobilie.xlsx?id=nix", raw=True)[0], 404)
+        self.assertEqual(self.call("/api/export/property.xlsx?id=nix", raw=True)[0], 404)
         # Dokumente: Verknuepfung zu einer Datei (bleibt liegen), fehlende Datei abgewiesen, Status
         doc = os.path.join(self.dir, "Kaufvertrag.pdf")
         with open(doc, "wb") as f:
             f.write(b"%PDF-1.4 vertrag")
-        code, r = self.call("/api/immobilien", {"aktion": "dokument_hinzufuegen", "id": iid, "titel": "Kaufvertrag", "art": "Vertrag", "pfad": doc})
+        code, r = self.call("/api/properties", {"aktion": "dokument_hinzufuegen", "id": iid, "titel": "Kaufvertrag", "art": "Vertrag", "pfad": doc})
         self.assertEqual(code, 200); self.assertEqual(r["immobilie"]["dokumente"][0]["pfad"], doc)
-        self.assertEqual(self.call("/api/immobilien", {"aktion": "dokument_hinzufuegen", "id": iid, "pfad": doc + ".fehlt"})[0], 400)
-        code, r = self.call("/api/datei/status?pfad=" + urllib.parse.quote(doc))
+        self.assertEqual(self.call("/api/properties", {"aktion": "dokument_hinzufuegen", "id": iid, "pfad": doc + ".fehlt"})[0], 400)
+        code, r = self.call("/api/file/status?path=" + urllib.parse.quote(doc))
         self.assertEqual(r["status"], "ok"); self.assertEqual(r["groesse"], 16)
-        code, r = self.call("/api/datei/status?pfad=" + urllib.parse.quote(doc + ".nein"))
+        code, r = self.call("/api/file/status?path=" + urllib.parse.quote(doc + ".nein"))
         self.assertEqual(r["status"], "fehlt")
         did = self.call("/api/config")[1]["immobilien"][0]["dokumente"][0]["id"]
-        code, r = self.call("/api/immobilien", {"aktion": "dokument_entfernen", "id": iid, "dokument_id": did})
+        code, r = self.call("/api/properties", {"aktion": "dokument_entfernen", "id": iid, "dokument_id": did})
         self.assertEqual(r["immobilie"]["dokumente"], []); self.assertTrue(os.path.isfile(doc))
         # Paket enthaelt Immobilien; Objekt loeschen
-        code, data, hdr = self.call("/api/paket/export?name=I", raw=True)
+        code, data, hdr = self.call("/api/package/export?name=I", raw=True)
         self.assertEqual(len(json.loads(data.decode())["config"]["immobilien"]), 1)
-        code, r = self.call("/api/immobilien", {"aktion": "loeschen", "id": iid}); self.assertTrue(r["ok"])
+        code, r = self.call("/api/properties", {"aktion": "loeschen", "id": iid}); self.assertTrue(r["ok"])
         self.assertEqual(self.call("/api/config")[1]["immobilien"], [])
         # Datei-Dialoge nur am Mac
-        code, r = self.call("/api/datei/waehlen", {"art": "datei"})
+        code, r = self.call("/api/file/choose", {"art": "datei"})
         self.assertIn(code, (400, 403))
 
 
     def test_kontor_kategorien_und_konten_zuordnung(self):
         self.login(); self.run_and_wait()
-        code, k = self.call("/api/kategorien/kontor")
+        code, k = self.call("/api/categories/kontor")
         self.assertEqual(code, 200)
         pfade = {x["pfad"] for x in k["baum"]}
         self.assertIn("Wohnen / Miete", pfade); self.assertIn("Vermietung / Parkweg / Mieteinnahmen", pfade)   # aus MoneyMoney uebernommen
@@ -1238,53 +1247,53 @@ class FeatureTests(_AppBase):
         regeln = {r.get("name_ist") or r.get("name_enthaelt"): r for r in k["regeln"]}
         self.assertEqual(regeln["supermarkt"]["kategorie"], "Lebensmittel")
         # Offene Umsaetze: Baumarkt (ohne Kategorie) als Gruppe
-        code, off = self.call("/api/kategorien/offen")
+        code, off = self.call("/api/categories/unassigned")
         self.assertTrue(off["offen"] >= 20)
         g = [x for x in off["gruppen"] if x["name"] == "Baumarkt"][0]
         self.assertEqual(g["anzahl"], off["offen"] if len(off["gruppen"]) == 1 else g["anzahl"]); self.assertIsNone(g["vorschlag"])
         # Zuordnen mit Regel -> alle Baumarkt-Umsaetze kategorisiert, Kapitalfluss zeigt die neue Kategorie
-        code, r = self.call("/api/kategorien/zuordnen", {"ids": g["ids"][:2], "kategorie": "Haushalt / Werkzeug", "regel": {"name_enthaelt": "Baumarkt"}})
+        code, r = self.call("/api/categories/assign", {"ids": g["ids"][:2], "kategorie": "Haushalt / Werkzeug", "regel": {"name_enthaelt": "Baumarkt"}})
         self.assertEqual(code, 200); self.assertEqual(r["anzahl"], 2); self.assertTrue(r["regel"]); self.assertTrue(r["bericht"])
-        code, off2 = self.call("/api/kategorien/offen")
+        code, off2 = self.call("/api/categories/unassigned")
         self.assertFalse(any(x["name"] == "Baumarkt" for x in off2["gruppen"]))          # Regel hat den Rest erfasst
         code, ds = self.call("/api/dataset")
         az = [s["zeilen"] for s in ds["bereiche"][ds["haupt"]]["kapitalfluss"]["sektionen"] if s["name"] == "Ausgaben"][0]
         self.assertTrue(any(z["zeile"] == "Haushalt / Werkzeug" for z in az))
         self.assertEqual(ds["kategorien"]["gesamt"]["regel"] >= 20, True)
-        code, u = self.call("/api/umsaetze?q=baumarkt&limit=3")
+        code, u = self.call("/api/transactions?q=baumarkt&limit=3")
         self.assertEqual(u["umsaetze"][0]["kategorie"], "Haushalt / Werkzeug"); self.assertIn(u["umsaetze"][0]["quelle"], ("manuell", "regel"))
         # Kategorie umbenennen/verschieben, Regel loeschen, manuelle Zuordnung entfernen
-        code, r = self.call("/api/kategorien/baum", {"aktion": "umbenennen", "pfad": "Haushalt / Werkzeug", "neu": "Wohnen / Werkzeug"})
+        code, r = self.call("/api/categories/tree", {"aktion": "umbenennen", "pfad": "Haushalt / Werkzeug", "neu": "Wohnen / Werkzeug"})
         self.assertTrue(any(x["pfad"] == "Wohnen / Werkzeug" for x in r["baum"]))
-        code, k = self.call("/api/kategorien/kontor")
+        code, k = self.call("/api/categories/kontor")
         rid = [x["id"] for x in k["regeln"] if x.get("quelle") == "manuell"][0]
         self.assertEqual([x["kategorie"] for x in k["regeln"] if x["id"] == rid], ["Wohnen / Werkzeug"])
-        code, r = self.call("/api/kategorien/regel", {"loeschen": rid})
+        code, r = self.call("/api/categories/rule", {"loeschen": rid})
         self.assertFalse(any(x["id"] == rid for x in r["regeln"]))
-        code, off3 = self.call("/api/kategorien/offen")
+        code, off3 = self.call("/api/categories/unassigned")
         self.assertFalse(any(x["name"] == "Baumarkt" for x in off3["gruppen"]))          # aus den 2 manuellen Zuordnungen wurde eine Regel gelernt
-        code, k = self.call("/api/kategorien/kontor")
+        code, k = self.call("/api/categories/kontor")
         self.assertTrue(any(x.get("name_ist") == "baumarkt" and x["quelle"] == "gelernt" for x in k["regeln"]))
-        self.assertEqual(self.call("/api/kategorien/zuordnen", {"ids": g["ids"][:2], "kategorie": ""})[1]["anzahl"], 2)   # manuelle Zuordnungen weg -> Regel verschwindet
-        code, off4 = self.call("/api/kategorien/offen")
+        self.assertEqual(self.call("/api/categories/assign", {"ids": g["ids"][:2], "kategorie": ""})[1]["anzahl"], 2)   # manuelle Zuordnungen weg -> Regel verschwindet
+        code, off4 = self.call("/api/categories/unassigned")
         self.assertEqual([x for x in off4["gruppen"] if x["name"] == "Baumarkt"][0]["anzahl"], g["anzahl"])
         # Eigene Regel ueber die API, Lernen, Einstellungen
-        code, r = self.call("/api/kategorien/regel", {"regel": {"iban": "DE02500105170137075030", "kategorie": "Finanzierung / Annuität", "richtung": "aus"}})
+        code, r = self.call("/api/categories/rule", {"regel": {"iban": "DE02500105170137075030", "kategorie": "Finanzierung / Annuität", "richtung": "aus"}})
         self.assertTrue(any(x.get("iban") == "DE02500105170137075030" for x in r["regeln"]))
-        self.assertEqual(self.call("/api/kategorien/regel", {"regel": {"kategorie": "X"}})[0], 400)
-        code, r = self.call("/api/kategorien/lernen", {}); self.assertTrue(r["ok"]); self.assertIn("regeln", r["gelernt"])
-        code, r = self.call("/api/kategorien/einstellungen", {"mm_ueberschreiben": True})
+        self.assertEqual(self.call("/api/categories/rule", {"regel": {"kategorie": "X"}})[0], 400)
+        code, r = self.call("/api/categories/learn", {}); self.assertTrue(r["ok"]); self.assertIn("regeln", r["gelernt"])
+        code, r = self.call("/api/categories/settings", {"mm_ueberschreiben": True})
         self.assertTrue(r["einstellungen"]["mm_ueberschreiben"])
-        code, u = self.call("/api/umsaetze?q=VR-Bank&richtung=aus&limit=3&konto=" + F.uid("priv.giro"))
+        code, u = self.call("/api/transactions?q=VR-Bank&direction=out&limit=3&account=" + F.uid("priv.giro"))
         self.assertEqual(u["umsaetze"][0]["kategorie"], "Finanzierung / Annuität"); self.assertEqual(u["umsaetze"][0]["quelle"], "regel")   # Regel ueberschreibt 'Umbuchung'
-        self.call("/api/kategorien/einstellungen", {"mm_ueberschreiben": False})
-        code, u = self.call("/api/umsaetze?q=VR-Bank&richtung=aus&limit=3&konto=" + F.uid("priv.giro"))
+        self.call("/api/categories/settings", {"mm_ueberschreiben": False})
+        code, u = self.call("/api/transactions?q=VR-Bank&direction=out&limit=3&account=" + F.uid("priv.giro"))
         self.assertEqual(u["umsaetze"][0]["kategorie"], "Umbuchung"); self.assertEqual(u["umsaetze"][0]["quelle"], "moneymoney")
         # Kategorien aus: Bericht nutzt nur MoneyMoney
-        self.call("/api/kategorien/einstellungen", {"aktiv": False})
+        self.call("/api/categories/settings", {"aktiv": False})
         code, ds = self.call("/api/dataset")
         self.assertEqual(ds["kategorien"]["gesamt"].get("regel", 0), 0)
-        self.call("/api/kategorien/einstellungen", {"aktiv": True})
+        self.call("/api/categories/settings", {"aktiv": True})
         # Kontenzuordnung: alle Konten 'neu', nach Bestaetigung nicht mehr; Konto explizit in anderen Bereich
         code, ds = self.call("/api/dataset")
         self.assertTrue(len(ds["konten_neu"]) >= 10); self.assertTrue(any("ohne bestätigte Zuordnung" in w for w in ds["warnungen"]))
@@ -1294,26 +1303,26 @@ class FeatureTests(_AppBase):
         cfg["bilanz"]["konten_zuordnung"] = {k["uuid"] + " | " + k["name"]: {"bereich": k["bereich"], "position": "", "bestaetigt": True} for k in ds["konten_neu"]}
         cfg["bilanz"]["konten_zuordnung"][F.uid("priv.immo") + " | Immobilie Lindenstraße"] = {"bereich": F.uid("pb"), "position": "immobilien", "bestaetigt": True}
         self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 200)
-        self.call("/api/bericht/neu", {})
+        self.call("/api/report/rebuild", {})
         code, ds = self.call("/api/dataset")
         self.assertEqual(ds["konten_neu"], [])
         # bestaetigte Konten ohne feste Position ("auto" aus aelterer Einrichtung) werden auf den erkannten Wert festgelegt
         zu = store_cfg = self.store.load("config.json")["bilanz"]
-        self.assertTrue(all(z["position"] in kern.ROLES for z in zu["konten_zuordnung"].values()))
+        self.assertTrue(all(z["position"] in core.ROLES for z in zu["konten_zuordnung"].values()))
         self.assertEqual(zu["konten_zuordnung"][F.uid("priv.giro") + " | Hausbank Giro"]["position"], "liquiditaet")
         self.assertEqual(store_cfg["verlauf"][F.uid("priv.depot") + " | Depot"], "stand")
         # Umbenennen und anderer Kontotyp in MoneyMoney verschieben die Position nicht mehr
         giro = [a for a in MockBridge.state["accounts"] if a["uuid"] == F.uid("priv.giro")][0]
         giro["name"], giro["type"] = "Hausbank Darlehen", "Darlehenskonto"
         self.run_and_wait()
-        code, k = self.call("/api/konten")
+        code, k = self.call("/api/accounts")
         self.assertEqual([x for x in k["konten"] if x["uuid"] == F.uid("priv.giro")][0]["rolle"], "liquiditaet")
         giro["name"], giro["type"] = "Hausbank Giro", "Girokonto"
         self.run_and_wait()
         pb_rows = {r["id"]: r for r in ds["bereiche"][F.uid("pb")]["bilanz"]["zeilen"] if not r["gruppe"]}
         self.assertIn(F.uid("priv.immo"), pb_rows); self.assertEqual(pb_rows[F.uid("priv.immo")]["rolle"], "immobilien")
         self.assertNotIn(F.uid("priv.immo"), {r["id"] for r in ds["bereiche"][ds["haupt"]]["bilanz"]["zeilen"]})
-        code, k = self.call("/api/konten")
+        code, k = self.call("/api/accounts")
         self.assertTrue(all(x["bestaetigt"] for x in k["konten"] if not x["gruppe"]))
         self.assertEqual([x for x in k["konten"] if x["uuid"] == F.uid("priv.immo")][0]["bereich_id"], F.uid("pb"))
         # Neues Konto in MoneyMoney -> wieder 'neu'
@@ -1329,14 +1338,14 @@ class FeatureTests(_AppBase):
         # Matrix wie eine eigene Vermoegensuebersicht: Zeilen = Konten, Spalten = Stichtage (XLSX ohne openpyxl geschrieben und gelesen)
         wb = excel.workbook([excel.Sheet("Konten", ["", "Konto", "31.08.2026", "30.09.2026", "31.10.2026"],
                                               [["x", "Depot", 70000, 72000, 74000.5], ["y", "Fremdes Konto", 1, 2, 3], ["z", "Hausbank Giro", 100, 200, 300]])])
-        code, r = self.call("/api/historie/import", {"datei": base64.b64encode(wb).decode(), "name": "Vermoegen.xlsx"})
+        code, r = self.call("/api/history/import", {"datei": base64.b64encode(wb).decode(), "name": "Vermoegen.xlsx"})
         self.assertEqual(code, 200, r)
         prev = {v["name"]: v for v in r["vorschau"]}
         self.assertEqual(prev["Depot"]["uuid"], F.uid("priv.depot")); self.assertEqual(prev["Depot"]["anzahl"], 3); self.assertIsNone(prev["Fremdes Konto"]["uuid"])
-        code, r = self.call("/api/historie/import", {"datei": base64.b64encode(wb).decode(), "name": "Vermoegen.xlsx", "uebernehmen": True,
+        code, r = self.call("/api/history/import", {"datei": base64.b64encode(wb).decode(), "name": "Vermoegen.xlsx", "uebernehmen": True,
                                                       "zuordnung": {"Fremdes Konto": "", "Hausbank Giro": ""}})
         self.assertEqual(r["uebernommen"], 3); self.assertEqual(r["konten"], 1)
-        code, h = self.call("/api/historie?konto=" + F.uid("priv.depot"))
+        code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
         self.assertEqual(h["manuell"]["2026-10"], 74000.5)
         code, ds = self.call("/api/dataset")
         depot = [x for x in ds["bereiche"][ds["haupt"]]["bilanz"]["zeilen"] if x["id"] == F.uid("priv.depot")][0]
@@ -1344,35 +1353,35 @@ class FeatureTests(_AppBase):
         self.assertIsNone(depot["geschaetzt_bis"]); self.assertEqual(depot["fortgeschrieben_vor"], "2026-08")     # davor unbekannt, nicht geschaetzt
         # transponiert (Stichtage in der ersten Spalte) als CSV mit Monatsnamen
         csv = "Monat;Depot;Broker Giro\nJul 2026;60000;1\nJun 2026;58000;1\n"
-        code, r = self.call("/api/historie/import", {"csv": csv, "uebernehmen": True, "nur_luecken": True})
+        code, r = self.call("/api/history/import", {"csv": csv, "uebernehmen": True, "nur_luecken": True})
         self.assertEqual(r["uebernommen"], 4)
-        code, h = self.call("/api/historie?konto=" + F.uid("priv.depot"))
+        code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
         self.assertEqual(h["manuell"]["2026-07"], 60000.0); self.assertEqual(h["manuell"]["2026-10"], 74000.5)
-        self.assertEqual(self.call("/api/historie/import", {"csv": "nix"})[0], 400)
+        self.assertEqual(self.call("/api/history/import", {"csv": "nix"})[0], 400)
 
     def test_external_receipt_link(self):
         self.login(); self.run_and_wait()
-        code, u = self.call("/api/umsaetze?q=supermarkt&entitaet=" + F.uid("priv")); tx = u["umsaetze"][0]
+        code, u = self.call("/api/transactions?q=supermarkt&entity=" + F.uid("priv")); tx = u["umsaetze"][0]
         ext = os.path.join(self.dir, "Rechnung extern.pdf")
         with open(ext, "wb") as f:
             f.write(b"%PDF-1.4 extern")
-        code, r = self.call("/api/belege/verknuepfen", {"tx_id": tx["id"], "pfad": ext, "extern": True, "notiz": "liegt in iCloud"})
+        code, r = self.call("/api/receipts/link", {"tx_id": tx["id"], "pfad": ext, "extern": True, "notiz": "liegt in iCloud"})
         self.assertEqual(code, 200, r); e = r["eintrag"]; self.assertTrue(e["extern"]); self.assertEqual(e["status"], "ok")
-        self.assertEqual(self.call("/api/belege/verknuepfen", {"tx_id": tx["id"], "pfad": "relativ/x.pdf", "extern": True})[0], 400)
-        self.assertEqual(self.call("/api/belege/verknuepfen", {"tx_id": tx["id"], "pfad": ext + ".fehlt", "extern": True})[0], 400)
-        code, data, hdr = self.call("/api/belege/datei?id=" + e["id"], raw=True)
+        self.assertEqual(self.call("/api/receipts/link", {"tx_id": tx["id"], "pfad": "relativ/x.pdf", "extern": True})[0], 400)
+        self.assertEqual(self.call("/api/receipts/link", {"tx_id": tx["id"], "pfad": ext + ".fehlt", "extern": True})[0], 400)
+        code, data, hdr = self.call("/api/receipts/file?id=" + e["id"], raw=True)
         self.assertEqual(code, 200); self.assertEqual(data, b"%PDF-1.4 extern")
-        code, bl = self.call("/api/belege")
+        code, bl = self.call("/api/receipts")
         self.assertTrue(any(x["id"] == e["id"] and x["extern"] for x in bl["eintraege"]))
-        code, r = self.call("/api/belege/export", {"jahr": "2026", "entitaet": F.uid("priv"), "ordner_anlegen": True})
+        code, r = self.call("/api/receipts/export", {"jahr": "2026", "entitaet": F.uid("priv"), "ordner_anlegen": True})
         with zipfile.ZipFile(r["datei"]) as z:
             self.assertTrue(any(n.startswith("extern/") for n in z.namelist()))
         # Entfernen loescht externe Dateien nie
-        code, r = self.call("/api/belege/entfernen", {"id": e["id"], "datei_loeschen": True})
+        code, r = self.call("/api/receipts/remove", {"id": e["id"], "datei_loeschen": True})
         self.assertTrue(r["ok"]); self.assertTrue(os.path.isfile(ext))
 
     def test_balance_csv_parser(self):
-        from dienst import _parse_balance_csv
+        from service import _parse_balance_csv
         p = _parse_balance_csv("Datum;Saldo\n31.01.2026;1.234,56\n2026-02-28;2000\n15.02.2026;1500\n")
         self.assertEqual(p[""]["2026-01"], 1234.56); self.assertEqual(p[""]["2026-02"], 2000.0)    # letzter Wert je Monat
         p = _parse_balance_csv("Datum,Konto,Saldo\n2026-01-31,Depot,\"85,000.50\"\n")
@@ -1382,16 +1391,16 @@ class FeatureTests(_AppBase):
         self.assertEqual(_parse_balance_csv("nur text"), {})
 
     def test_icon_und_neustart_bei_neuem_code(self):
-        import dienst
+        import service
         code, body, hdr = self.call("/icon-180.png", raw=True)
         self.assertEqual(code, 200); self.assertEqual(hdr["Content-Type"], "image/png"); self.assertTrue(body.startswith(b"\x89PNG"))
         code, body, hdr = self.call("/", raw=True)
-        self.assertIn(("/icon.svg?v=%s" % kern.version()).encode(), body); self.assertNotIn(b"__VERSION__", body)
+        self.assertIn(("/icon.svg?v=%s" % core.version()).encode(), body); self.assertNotIn(b"__VERSION__", body)
         code, body, hdr = self.call("/icon.svg", raw=True)
         self.assertNotIn(b"c2pa", body); self.assertIn(b"#0a7aff", body)
         self.assertIsNone(self.app.code_changed())
-        old = dienst.version_on_disk
-        dienst.version_on_disk = lambda: "99.0.0"
+        old = service.version_on_disk
+        service.version_on_disk = lambda: "99.0.0"
         try:
             self.assertEqual(self.app.code_changed(), "99.0.0")
             self.assertFalse(self.app.restart_if_code_changed())      # Testserver: kein Selbst-Neustart
@@ -1399,38 +1408,38 @@ class FeatureTests(_AppBase):
             code, st = self.call("/api/status")
             self.assertEqual(st["neustart_ausstehend"], "99.0.0")
         finally:
-            dienst.version_on_disk = old
+            service.version_on_disk = old
 
     def test_sicherung_offline_zuruecksetzen(self):
         import hashlib
-        import anmeldung
+        import auth
         self.login()
         # Offline-Pruefwert: eigener Salt, PBKDF2-SHA256, gleicher Hash wie WebCrypto im Browser
         code, v = self.call("/api/offline/verifier")
-        self.assertEqual(code, 200); self.assertEqual(v["offline"]["rounds"], anmeldung.OFFLINE_ROUNDS); self.assertEqual(v["sperre_minuten"], 15)
+        self.assertEqual(code, 200); self.assertEqual(v["offline"]["rounds"], auth.OFFLINE_ROUNDS); self.assertEqual(v["sperre_minuten"], 15)
         h = hashlib.pbkdf2_hmac("sha256", b"sehr-geheimes-passwort", bytes.fromhex(v["offline"]["salt"]), v["offline"]["rounds"]).hex()
         self.assertEqual(h, v["offline"]["hash"])
         self.assertNotEqual(v["offline"]["salt"], self.app.auth_record()["salt"])
         # Service Worker wird mit Versionsnummer ausgeliefert, Verifier und Sitzung werden nie zwischengespeichert
         code, body, hdr = self.call("/sw.js", raw=True)
         self.assertEqual(code, 200); self.assertIn("application/javascript", hdr["Content-Type"])
-        self.assertIn(("const VERSION = '%s'" % kern.version()).encode(), body); self.assertNotIn(b"__VERSION__", body)
-        self.assertIn(b"'/api/session'", body); self.assertIn(b"'/api/sicherung'", body)
+        self.assertIn(("const VERSION = '%s'" % core.version()).encode(), body); self.assertNotIn(b"__VERSION__", body)
+        self.assertIn(b"'/api/session'", body); self.assertIn(b"'/api/backup'", body)
         code, mf = self.call("/manifest.webmanifest", raw=True)[:2]
         self.assertEqual(code, 200)
         # Sicherung: alles in einer Datei, wieder einspielbar
         self.run_and_wait()
         P = F.uid("priv")
         self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Einnahmen / Gehalt", "methode": "fix", "betrag": "7000", "steigerung": "2"})
-        code, body, hdr = self.call("/api/sicherung", raw=True)
+        code, body, hdr = self.call("/api/backup", raw=True)
         self.assertEqual(code, 200); self.assertIn("kontor-sicherung.json", hdr["Content-Disposition"])
         sich = json.loads(body.decode())
         self.assertEqual(sich["kontor_sicherung"], 1); self.assertIn("config", sich); self.assertIn("plan", sich); self.assertIn("kategorien", sich)
         self.assertEqual(sich["plan"]["bereiche"][P]["zeilen"]["Einnahmen/Einnahmen / Gehalt"]["methode"], "fix")
         self.assertNotIn("auth", sich)
         # Zuruecksetzen: nur lokal, nur mit Passwort; danach Einrichtung noetig, Passwort bleibt (ohne mit_passwort)
-        self.assertEqual(self.call("/api/zuruecksetzen", {"passwort": "falsch"})[0], 401)
-        code, r = self.call("/api/zuruecksetzen", {"passwort": "sehr-geheimes-passwort"})
+        self.assertEqual(self.call("/api/reset", {"passwort": "falsch"})[0], 401)
+        code, r = self.call("/api/reset", {"passwort": "sehr-geheimes-passwort"})
         self.assertEqual(code, 200); self.assertFalse(r["neu_einrichten"])
         self.assertIsNone(self.store.load("config.json", None)); self.assertIsNone(self.store.load("plan.json", None))
         self.assertIsNotNone(self.store.load("auth.json", None))
@@ -1440,33 +1449,33 @@ class FeatureTests(_AppBase):
         code, r = self.call("/api/login", {"passwort": "sehr-geheimes-passwort"})
         self.assertEqual(code, 200); self.csrf = r["csrf"]
         code, cfg = self.call("/api/config")
-        self.assertEqual(cfg["bilanz"].get("bereiche"), kern.merged_config({})["bilanz"].get("bereiche"))
+        self.assertEqual(cfg["bilanz"].get("bereiche"), core.merged_config({})["bilanz"].get("bereiche"))
         # Sicherung laden stellt Einstellungen und Plan wieder her
-        code, r = self.call("/api/sicherung/laden", {"sicherung": sich})
+        code, r = self.call("/api/backup/restore", {"sicherung": sich})
         self.assertEqual(code, 200); self.assertIn("Planung", r["teile"]); self.assertIn("Einstellungen", r["teile"])
         self.assertEqual(self.store.load("plan.json")["bereiche"][P]["zeilen"]["Einnahmen/Einnahmen / Gehalt"]["methode"], "fix")
-        self.assertEqual(self.call("/api/sicherung/laden", {"sicherung": {"x": 1}})[0], 400)
+        self.assertEqual(self.call("/api/backup/restore", {"sicherung": {"x": 1}})[0], 400)
 
     def test_verlauf_quellen_semantik(self):
         """Umsaetze: nur Buchungen. Kontostaende (Bankkonto): eingetragene Staende sind Anker, dazwischen mit Buchungen gerechnet,
         Abweichung als Korrektur im Kapitalfluss. Vorschau im Verlauf-Fenster sofort, ohne auf den Neubau zu warten."""
         self.login(); self.run_and_wait()
         g = F.uid("priv.giro")
-        code, h = self.call("/api/historie?konto=" + g)
+        code, h = self.call("/api/history?account=" + g)
         self.assertTrue(h["live"]); self.assertEqual(h["quelle"], "umsaetze")
         umsatz = h["werte"]
         self.assertEqual(umsatz["2026-11"], 12000.0)
         # Vorschau "Kontostaende" ohne eigene Werte = identisch mit Umsaetzen (Bankkonto, Anker nur heutiger Saldo)
-        code, h2 = self.call("/api/historie?konto=%s&quelle=stand" % g)
+        code, h2 = self.call("/api/history?account=%s&source=stand" % g)
         self.assertEqual(h2["werte"], umsatz)
         # Eigener Stand 2026-03 = 1.000: Monate bis 2026-03 um die Differenz verschoben, danach unveraendert
-        code, r = self.call("/api/historie", {"konto": g, "werte": {"2026-03": 1000}, "quelle": "stand"}, warten=False)
+        code, r = self.call("/api/history", {"konto": g, "werte": {"2026-03": 1000}, "quelle": "stand"}, warten=False)
         self.assertEqual(r["bericht"], "angefordert"); self.assertEqual(r["historie"]["quelle"], "stand")
         w = r["historie"]["werte"]; diff = 1000.0 - umsatz["2026-03"]
         self.assertEqual(w["2026-03"], 1000.0); self.assertEqual(w["2026-01"], round(umsatz["2026-01"] + diff, 2)); self.assertEqual(w["2026-04"], umsatz["2026-04"])
         self.assertIn("2026-03", r["historie"]["anker"])
         # Umsaetze ignorieren eigene Werte
-        code, h3 = self.call("/api/historie?konto=%s&quelle=umsaetze" % g)
+        code, h3 = self.call("/api/history?account=%s&source=umsaetze" % g)
         self.assertEqual(h3["werte"]["2026-03"], umsatz["2026-03"])
         # Nach dem Neubau: Bilanz wie Vorschau, Kapitalfluss mit Korrekturzeile, Buchungen des Kontos bleiben Zahlungsfluesse
         self.app.rebuild_report(wait=True)
@@ -1479,19 +1488,19 @@ class FeatureTests(_AppBase):
         self.assertAlmostEqual(sum(korr[0]["werte"].values()), -diff, places=2)       # Sprung zurueck auf die Buchungen nach dem Anker
         self.assertTrue(any(s["name"] == "Einnahmen" and s["zeilen"] for s in b["kapitalfluss"]["sektionen"]))
         # Import stellt importierte Konten auf Kontostaende um
-        self.call("/api/historie", {"konto": g, "werte": {}, "quelle": "umsaetze", "loeschen": True})
-        code, r = self.call("/api/historie/import", {"csv": "Datum;Konto;Saldo\n31.01.2026;Hausbank Giro;5.000,00\n", "uebernehmen": True})
+        self.call("/api/history", {"konto": g, "werte": {}, "quelle": "umsaetze", "loeschen": True})
+        code, r = self.call("/api/history/import", {"csv": "Datum;Konto;Saldo\n31.01.2026;Hausbank Giro;5.000,00\n", "uebernehmen": True})
         self.assertEqual(r["umgestellt"], 1)
         code, cfg = self.call("/api/config")
         self.assertEqual(cfg["bilanz"]["verlauf"][g + " | Hausbank Giro"], "stand")
 
     def test_positionen_und_ausserhalb(self):
         """Positionsvorschlaege aus Name/Typ/Gruppe; Kapitalkonten und Avale ausserhalb des Nettovermoegens; Depot-Schaetzung nur bei gleicher Bank."""
-        from auswertung import account_roles, verrechnungskonto_fuer
+        from report import account_roles, verrechnungskonto_fuer
 
         def role(name, typ, bal, group="Privat", bank=""):
             raw = [F.acc("r", "Alle", 0, "Kontengruppe", True), F.acc("g", group, 1, "Kontengruppe", True), F.acc("x", name, 2, typ, balance=bal, bank=bank)]
-            return account_roles(Ledger(accounts_from_export(raw), []), kern.merged_config({}))[F.uid("x")]
+            return account_roles(Ledger(accounts_from_export(raw), []), core.merged_config({}))[F.uid("x")]
         self.assertEqual(role("Immobilie Musterweg", "Festgeldanlage", 5e5), "immobilien")       # Name vor Kontotyp
         self.assertEqual(role("Darlehen Immobilie X", "Darlehenskonto", -4e5), "verbindlichkeiten")
         self.assertEqual(role("Darlehen an Firma", "Sonstiges", 1e5), "forderungen")             # Guthaben = Forderung
@@ -1520,20 +1529,20 @@ class FeatureTests(_AppBase):
         depot.bank_code = "99999999"; led.__dict__.pop("_verrechnung_cache", None)
         self.assertIsNone(verrechnungskonto_fuer(led, depot, {"bilanz": {}}))                   # andere Bank: keine Verbindung ueber die Gruppe
         depot.bank_code = "10050000"; led.__dict__.pop("_verrechnung_cache", None)
-        code, h = self.call("/api/historie?konto=" + F.uid("priv.depot"))
+        code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
         self.assertIsNone(h["geschaetzt_bis"]); self.assertIn("fortgeschrieben", h["hinweis"])          # keine Schaetzung mehr
         # Pruefung im Verlauf-Fenster: Anfangssaldo und Buchungen
-        code, h = self.call("/api/historie?konto=" + F.uid("priv.giro"))
+        code, h = self.call("/api/history?account=" + F.uid("priv.giro"))
         self.assertIn("anfangssaldo", h["pruefung"]); self.assertGreater(h["pruefung"]["buchungen"], 0)
 
     def test_ohne_moneymoney_mit_letztem_stand(self):
         """Nach einem Neustart ohne laufendes MoneyMoney: letzter Stand aus dem Zwischenspeicher, Verlauf und Neuberechnung gehen."""
         self.login(); self.run_and_wait()
         for _ in range(100):
-            if self.store.exists("moneymoney-stand.bin"):
+            if self.store.exists("moneymoney-ledger.bin"):
                 break
             time.sleep(0.1)
-        self.assertTrue(self.store.exists("moneymoney-stand.bin"))
+        self.assertTrue(self.store.exists("moneymoney-ledger.bin"))
 
         class Weg(MockBridge):
             def export_accounts(self):
@@ -1558,7 +1567,7 @@ class FeatureTests(_AppBase):
         self.assertFalse(st["bericht"]["laeuft"]); self.assertIn("gesperrt", st["moneymoney"])
         uuid = F.uid("priv.depot")
         for v in ("70000", "71000", "72000"):
-            code, r = self.call("/api/historie", {"konto": uuid, "werte": {"2026-09": v}}, warten=False)
+            code, r = self.call("/api/history", {"konto": uuid, "werte": {"2026-09": v}}, warten=False)
             self.assertEqual(code, 200); self.assertEqual(r["bericht"], "angefordert")
         for _ in range(300):
             code, st = self.call("/api/status")
@@ -1578,11 +1587,11 @@ class FeatureTests(_AppBase):
         self.assertEqual(self.call("/api/check", {})[0], 200)
 
     def test_tls_helpers(self):
-        import zertifikat
-        self.assertIsNone(zertifikat.cert_expiry(os.path.join(self.dir, "fehlt.crt")))
+        import tls_cert
+        self.assertIsNone(tls_cert.cert_expiry(os.path.join(self.dir, "fehlt.crt")))
         cfg = {"oberflaeche": {"tls_cert": "/irgendwo/fremd.crt"}}
-        self.assertFalse(zertifikat.renew_if_due(cfg, self.dir))                 # fremde Zertifikate werden nicht angefasst
-        self.assertFalse(zertifikat.renew_if_due({"oberflaeche": {}}, self.dir))
+        self.assertFalse(tls_cert.renew_if_due(cfg, self.dir))                 # fremde Zertifikate werden nicht angefasst
+        self.assertFalse(tls_cert.renew_if_due({"oberflaeche": {}}, self.dir))
 
 
 class BrowserTest(unittest.TestCase):
@@ -1895,7 +1904,7 @@ class BrowserWizardTest(unittest.TestCase):
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         pkg_path = os.path.join(d, "test.kontor.json")
         led = Ledger(accounts_from_export(MockBridge.state["accounts"]), tx_from_export(MockBridge.state["txs"]))
-        pkg = kern.export_package(kern.merged_config(config_for_test()), "Testpaket", strip_uuids=True, ledger=led)
+        pkg = core.export_package(core.merged_config(config_for_test()), "Testpaket", strip_uuids=True, ledger=led)
         pkg["config"]["darlehen"][0]["darlehenskonto"] = "Darlehen Fremd"       # muss zugeordnet werden
         with open(pkg_path, "w", encoding="utf-8") as f:
             json.dump(pkg, f, ensure_ascii=False)
@@ -1922,8 +1931,8 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertNotIn("Keine Bereiche", pg.query_selector("#w-findings").inner_text())
                 self.assertTrue(pg.query_selector(".steps button[data-next='#einrichtung/bereiche']"))           # Knopf statt Link
                 # Schritt 1 wird auf dieser Seite alle paar Sekunden neu geprueft
-                n0 = len([r for r in reqs if "/api/status?frisch=1" in r]); pg.wait_for_timeout(3500)
-                self.assertGreater(len([r for r in reqs if "/api/status?frisch=1" in r]), n0)
+                n0 = len([r for r in reqs if "/api/status?fresh=1" in r]); pg.wait_for_timeout(3500)
+                self.assertGreater(len([r for r in reqs if "/api/status?fresh=1" in r]), n0)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_verbindung.png"), full_page=True)
                 # Tooltip bleibt im Fenster (auch ganz oben)
                 pg.hover(".steps .hq"); pg.wait_for_selector(".tip")

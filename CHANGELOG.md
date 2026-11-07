@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.9.9
+- Technische Namen auf Englisch, die Oberfläche bleibt Deutsch (Grundlage für weitere Sprachen): Programmdateien, Datendateien, Schnittstellen-Adressen, Kommandozeilenbefehle (deutsche Befehle gehen weiter) und Protokollmeldungen.
+- Vorhandene Daten werden beim Start automatisch auf die neuen Dateinamen umgestellt; der Hintergrunddienst zieht einmalig unter seinen neuen Namen um.
+- `Deinstallieren.command` heißt jetzt `Uninstall.command`, Vorlagen liegen unter `templates/`.
+
 ## 3.9.8
 - Kontostände aus MoneyMoney als Einrichtungsschritt 4 (nach „Konten“): MoneyMoney beenden, „Im Finder zeigen“ (markiert MoneyMoney.sqlite, ohne Freigabe), Datei ins Fenster ziehen, Passwort im macOS-Fenster. Übernommen wird der Verlauf aller Konten als Monatsend-Stände, nur nach Prüfung am aktuellen Saldo; verschlüsselt gespeichert und in Bilanz und Verlauf-Fenster genutzt (eigene Einträge gehen vor).
 - Sicherer und sparsamer: Entschlüsselung an Ort und Stelle, SQLite liest direkt aus diesem Puffer (keine Kopie, Bedarf etwa Dateigröße, Prüfung des Arbeitsspeichers); danach alles mit Nullen überschrieben. Gesucht wird in SQLite, Tabellen mit Zugangsdaten werden nicht angesehen. Verarbeitung im Hintergrund mit Fortschrittsanzeige.

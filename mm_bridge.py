@@ -1,7 +1,7 @@
 """MoneyMoney-Anbindung ueber die offizielle Skript-Schnittstelle (osascript/JXA).
 
 Einzige Stelle, die mit MoneyMoney spricht. Alles andere arbeitet auf den
-hier gelieferten Python-Objekten (siehe datenmodell.py).
+hier gelieferten Python-Objekten (siehe model.py).
 
 Eigenschaften:
   * startet MoneyMoney nie selbst (pgrep-Pruefung vor jedem Aufruf)
@@ -107,13 +107,13 @@ class Bridge:
                 capture_output=True, text=True, timeout=self.timeout,
             )
         except subprocess.TimeoutExpired:
-            log.error("MoneyMoney %s: Zeitlimit %ds überschritten", method, self.timeout)
+            log.error("MoneyMoney %s: timeout of %ds exceeded", method, self.timeout)
             raise MoneyMoneyError(
                 "MoneyMoney antwortet nicht (Zeitlimit %ds) -- offener Dialog?" % self.timeout)
-        log.debug("MoneyMoney %s: Status %d, %d Zeichen, %.1f s", method, r.returncode, len(r.stdout or ""), time.time() - t0)
+        log.debug("MoneyMoney %s: status %d, %d chars, %.1f s", method, r.returncode, len(r.stdout or ""), time.time() - t0)
         if r.returncode != 0:
             err = (r.stderr or r.stdout or "").strip()
-            log.warning("MoneyMoney %s fehlgeschlagen: %s", method, err[:500])
+            log.warning("MoneyMoney %s failed: %s", method, err[:500])
             low = err.lower()
             if "-1743" in err or "not permitted" in low or "nicht erlaubt" in low or "nicht berechtigt" in low:
                 raise MoneyMoneyNotPermitted(
@@ -190,7 +190,7 @@ class Bridge:
         if category:
             args["category"] = category
         if self.dry_run:
-            log.info("PROBELAUF addTransaction %s", json.dumps(args, ensure_ascii=False))
+            log.info("DRY RUN addTransaction %s", json.dumps(args, ensure_ascii=False))
             self.written.append({"method": "addTransaction", "args": args})
             return
         refs = [account_ref] + [r for r in (fallback_refs or []) if r and r != account_ref]
@@ -205,7 +205,7 @@ class Bridge:
                 raise
             except MoneyMoneyError as e:
                 last = e
-                log.warning("addTransaction mit Kontoreferenz %r abgelehnt: %s", ref, e)
+                log.warning("addTransaction with account reference %r rejected: %s", ref, e)
         raise MoneyMoneyError("Buchung konnte nicht angelegt werden: %s" % last)
 
     def set_transaction(self, tx_id: int, category: Optional[str] = None,
@@ -220,7 +220,7 @@ class Bridge:
         if len(args) == 1:
             return
         if self.dry_run:
-            log.info("PROBELAUF setTransaction %s", json.dumps(args, ensure_ascii=False))
+            log.info("DRY RUN setTransaction %s", json.dumps(args, ensure_ascii=False))
             self.written.append({"method": "setTransaction", "args": args})
             return
         self._call("setTransaction", args)

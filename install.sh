@@ -26,10 +26,10 @@ xattr -dr com.apple.quarantine "$HERE" 2>/dev/null || true
 echo "Python: $PY ($("$PY" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))'))  Kontor $(cat "$HERE/VERSION")"
 "$PY" "$HERE/kontor.py" install
 sleep 2
-"$PY" "$HERE/kontor.py" oeffnen || true
+"$PY" "$HERE/kontor.py" open || true
 cat <<TXT
 
-Fertig. Die Oberflaeche laeuft dauerhaft unter http://127.0.0.1:8765/  (python3 kontor.py oeffnen)
+Fertig. Die Oberflaeche laeuft dauerhaft unter http://127.0.0.1:8765/  (python3 kontor.py open)
 Erster Schritt dort: Passwort festlegen, dann der Einrichtungsassistent.
 Beim ersten Zugriff fragt macOS, ob das Programm MoneyMoney steuern darf -- bitte erlauben.
 Datenordner (verschluesselt): ~/Library/Application Support/Kontor

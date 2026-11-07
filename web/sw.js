@@ -11,7 +11,7 @@ const VERSION = '__VERSION__';
 const SHELL = 'kontor-shell-' + VERSION;
 const DATA = 'kontor-data';
 const SHELL_FILES = ['/', '/app.js', '/app.css', '/icon.svg', '/icon-180.png', '/manifest.webmanifest'];
-const NO_CACHE = ['/api/session', '/api/log', '/api/update/', '/api/belege/datei', '/api/export/', '/api/diagnose', '/api/paket/export', '/api/sicherung', '/api/touchid'];
+const NO_CACHE = ['/api/session', '/api/log', '/api/update/', '/api/receipts/file', '/api/export/', '/api/diagnostics', '/api/package/export', '/api/backup', '/api/touchid'];
 let lastNetOk = 0;          // letzte erfolgreiche Netzantwort: kurz danach gilt ein grosszuegiges Zeitlimit (Server langsam ≠ weg)
 
 self.addEventListener('install', e => {

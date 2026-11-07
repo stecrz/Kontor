@@ -6,7 +6,7 @@ Datenbank (SQLCipher, verschluesselt mit dem MoneyMoney-Passwort). Der Weg ist b
 * Keine macOS-Freigabe fuer Kontor: Der Finder zeigt die Datei (Kontor selbst greift nicht auf MoneyMoneys Ordner zu),
   du ziehst sie ins Browserfenster; sie kommt ueber 127.0.0.1 an und liegt nur im Arbeitsspeicher, nie auf der Platte.
   MoneyMoney muss beendet sein; an seiner Datei aendert sich nichts.
-* Das Passwort erreicht Kontor nie. Ein kleiner macOS-Helfer (mm_historie.swift) wird nur fuer diesen einen Vorgang
+* Das Passwort erreicht Kontor nie. Ein kleiner macOS-Helfer (mm_history.swift) wird nur fuer diesen einen Vorgang
   in einem privaten Ordner uebersetzt, fragt das Passwort im eigenen Fenster ab, gibt ueber eine private Pipe nur die
   daraus berechneten Schluessel zurueck und wird danach samt Ordner geloescht.
 * Entschluesselt wird im Arbeitsspeicher dieses Prozesses (macOS CommonCrypto) an Ort und Stelle; SQLite liest
@@ -33,7 +33,7 @@ from datetime import date, datetime, timedelta
 from typing import Callable, Dict, List, Optional, Tuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HELPER_SRC = os.path.join(HERE, "mm_historie.swift")
+HELPER_SRC = os.path.join(HERE, "mm_history.swift")
 MAX_DB = 2 * 1024 * 1024 * 1024        # Obergrenze fuer die hochgeladene Datei
 
 # Schluesselableitung je SQLCipher-Generation: (Name, Hash fuer PBKDF2, Runden). Seitengroesse und reservierte Bytes
@@ -282,9 +282,9 @@ def schema_of(db: "MemDB") -> List[Dict]:
 
 
 def schema_text(tables: List[Dict], fmt: str) -> str:
-    lines = ["MoneyMoney-Datenbank: Aufbau (nur Namen und Zeilenzahlen, keine Inhalte)", "Format: %s" % fmt, ""]
+    lines = ["MoneyMoney database schema (names and row counts only, no contents)", "Format: %s" % fmt, ""]
     for t in tables:
-        lines.append("%s  (%s Zeilen)" % (t["name"], "?" if t["zeilen"] is None else t["zeilen"]))
+        lines.append("%s  (%s rows)" % (t["name"], "?" if t["zeilen"] is None else t["zeilen"]))
         lines.append("  " + ", ".join("%s %s" % (c, ty) for c, ty in t["spalten"]))
     return "\n".join(lines) + "\n"
 
@@ -518,7 +518,7 @@ def run(buf: bytearray, accounts: Dict[str, Tuple[float, bool]], today: date,
         if len(buf) < 1024:
             raise HistorieError("Das ist keine MoneyMoney-Datenbank (MoneyMoney.sqlite).")
         if bytes(buf[:16]) == SQLITE_HEADER:
-            fmt = "unverschlüsselt"
+            fmt = "unencrypted"
         else:
             step("Passwort")
             keys = [k if isinstance(k, bytearray) else bytearray(k) for k in (keys_fn or keys_from_dialog)(bytes(buf[:16]))]

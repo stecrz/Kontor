@@ -6,8 +6,8 @@ from datetime import date
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from datenmodell import Ledger, accounts_from_export, tx_from_export, fmt_eur  # noqa: E402
-from buchungsregeln import plan_loan, plan_mirror, plan_all  # noqa: E402
+from model import Ledger, accounts_from_export, tx_from_export, fmt_eur  # noqa: E402
+from rules import plan_loan, plan_mirror, plan_all  # noqa: E402
 import fixtures as F  # noqa: E402
 
 
@@ -58,7 +58,7 @@ class TreeTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             led2.resolve("00000000-0000-0000-0000-000000000000 | Gibt es nicht")
         # Offline-Erkennung: Extension-Konto ohne BLZ, aber aktualisiert -> nicht manuell
-        from datenmodell import Account
+        from model import Account
         ext = Account(uuid="x", name="PayPal", type="Girokonto", group=False, indentation=3, balance=0.0, currency="EUR",
                       bank_code="", refresh=__import__("datetime").datetime(2026, 11, 4, 8, 0))
         self.assertFalse(ext.offline)

@@ -15,13 +15,13 @@ from datetime import date, datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyNotRunning, notify
-from datenmodell import Account, Ledger, accounts_from_export, add_months, fmt_eur, month_key, tx_from_export, norm_cat
-import immorechner
-import kategorisierung
-from auswertung import ROLES, account_roles, build_dataset
-from buchungsregeln import Proposal, plan_all
-from ablage import Store
-from steuer import build_tax
+from model import Account, Ledger, accounts_from_export, add_months, fmt_eur, month_key, tx_from_export, norm_cat
+import realestate
+import categorize
+from report import ROLES, account_roles, build_dataset
+from rules import Proposal, plan_all
+from storage import Store
+from tax import build_tax
 
 log = logging.getLogger("kontor.core")
 RUN_LOCK = threading.Lock()
@@ -151,8 +151,8 @@ def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = Fals
                 try:
                     ledger.portfolios[a.uuid] = bridge.export_portfolio(a.uuid)
                 except MoneyMoneyError as e:
-                    log.info("Depot %s: keine Positionsdaten (%s)", a.uuid[:8], str(e)[:80])
-    log.info("MoneyMoney: %d Konten, %d Umsätze seit %s, %d Depots", len(accounts), len(txs), since, len(ledger.portfolios))
+                    log.info("Portfolio %s: no holdings data (%s)", a.uuid[:8], str(e)[:80])
+    log.info("MoneyMoney: %d accounts, %d transactions since %s, %d portfolios", len(accounts), len(txs), since, len(ledger.portfolios))
     ledger.fp = fingerprint(ledger)          # Fingerabdruck des frischen Stands (vor Probelauf-Buchungen, die Salden veraendern)
     return ledger
 
@@ -277,7 +277,7 @@ def abruf_arten(ledger: Ledger, config: dict) -> Dict[str, Dict[str, str]]:
     """uuid -> {"art": "online"|"offline", "grund": Text} fuer alle Konten (keine Gruppen). Online = MoneyMoney ruft bei
     Bank oder Dienst ab; offline = von Hand gefuehrt, kein Abruf (zaehlt nicht fuer den Datenstand). MoneyMoney setzt den
     Abrufzeitpunkt auch bei Offline-Konten (z. B. nach einer Buchung), deshalb mehrere Merkmale; eigene Festlegung geht vor."""
-    import buchungsregeln
+    import rules
     ab = config.get("abruf") or {}
 
     def refs(lst) -> set:
@@ -294,7 +294,7 @@ def abruf_arten(ledger: Ledger, config: dict) -> Dict[str, Dict[str, str]]:
         for r in config.get(key) or []:
             if isinstance(r, dict):
                 targets |= refs([r[f] for f in fields if r.get(f)])
-    booked = {t.account_uuid for t in ledger.txs if t.purpose and "#mm-" in t.purpose and buchungsregeln.TAG_RE.search(t.purpose)}
+    booked = {t.account_uuid for t in ledger.txs if t.purpose and "#mm-" in t.purpose and rules.TAG_RE.search(t.purpose)}
     out: Dict[str, Dict[str, str]] = {}
     for a in ledger.accounts.values():
         if a.group:
@@ -523,7 +523,7 @@ def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal]) -
             bridge.add_transaction(acc.uuid, pr.booking_date, pr.payee, pr.amount, pr.purpose,
                                    pr.category or None, fallback_refs=[acc.name])
         done += 1
-        log.info("%s %s", "GEBUCHT" if not bridge.dry_run else "PROBELAUF", pr.describe())
+        log.info("%s %s", "BOOKED" if not bridge.dry_run else "DRY RUN", pr.describe())
     return done
 
 
@@ -553,11 +553,11 @@ def compact_transactions(ledger: Ledger, bereiche: List[dict], store: Optional[S
         for a in b["leaves"]:
             ent_of.setdefault(a.uuid, b["id"])
     out = []
-    kat = kategorisierung.load(store) if store is not None else kategorisierung.empty()
+    kat = categorize.load(store) if store is not None else categorize.empty()
     for t in ledger.txs:
         if t.account_uuid not in ent_of:
             continue
-        path, q = kategorisierung.effective(kat, t)
+        path, q = categorize.effective(kat, t)
         out.append({"id": t.id, "konto": t.account_uuid, "konto_name": ledger.accounts[t.account_uuid].name, "entitaet": ent_of[t.account_uuid],
                     "datum": t.booking_date.isoformat(), "betrag": t.amount, "name": t.name[:80], "zweck": t.purpose[:140],
                     "kategorie": path, "quelle": q, "gebucht": t.booked, "haken": t.checkmark})
@@ -606,14 +606,14 @@ def immo_results(config: dict, today: date) -> Dict[str, dict]:
         if not k:
             continue
         try:
-            res = immorechner.berechne(k.get("eingaben") or {}, today)
+            res = realestate.berechne(k.get("eingaben") or {}, today)
         except Exception as e:  # pragma: no cover - fehlerhafte Eingaben duerfen den Bericht nicht stoppen
-            log.warning("Immobilie %s: Kalkulation fehlgeschlagen: %s", im.get("name"), e)
+            log.warning("Property %s: calculation failed: %s", im.get("name"), e)
             out[str(im.get("id"))] = {"fehler": str(e)}
             continue
         out[str(im.get("id"))] = {"kalkulation": k.get("id"), "name": k.get("name"), "kennzahlen": res["kennzahlen"], "jahre": res["jahre"],
                                   "hinweise": res["hinweise"], "darlehen_namen": res["darlehen_namen"], "start": res["start"],
-                                  "reihen": immorechner.planreihen(res)}
+                                  "reihen": realestate.planreihen(res)}
     return out
 
 
@@ -685,7 +685,7 @@ COST_WORDS_DEFAULT = ["zins", "interest", "gebühr", "gebuehr", "entgelt", "prov
 
 
 def _kat_sig(store: Store, config: dict, categories: Optional[List[dict]]) -> tuple:
-    return (store.stamp(kategorisierung.FILE), json.dumps(config.get("kategorien") or {}, sort_keys=True), len(categories or []))
+    return (store.stamp(categorize.FILE), json.dumps(config.get("kategorien") or {}, sort_keys=True), len(categories or []))
 
 
 def prepare_categories(store: Store, ledger: Ledger, config: dict, categories: Optional[List[dict]],
@@ -703,29 +703,29 @@ def prepare_categories(store: Store, ledger: Ledger, config: dict, categories: O
 def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: Optional[List[dict]],
                         step: Callable[[float, str], None]) -> dict:
     kc = config.get("kategorien") or {}
-    kat = kategorisierung.load(store)
+    kat = categorize.load(store)
     if not kc.get("aktiv", True):
-        kategorisierung.apply_to_ledger(kategorisierung.empty(), ledger)
+        categorize.apply_to_ledger(categorize.empty(), ledger)
         return kat
     changed = False
     if categories and (not kat.get("mm_uebernommen") or len(kat["baum"]) < len(categories)):
-        if kategorisierung.seed_from_moneymoney(kat, categories):
+        if categorize.seed_from_moneymoney(kat, categories):
             changed = True
     if kc.get("lernen", True):
         before = len(kat["regeln"])
-        kategorisierung.learn(kat, ledger, progress=lambda f: step(0.6 * f, "Kategorien: Regeln lernen"))
+        categorize.learn(kat, ledger, progress=lambda f: step(0.6 * f, "Kategorien: Regeln lernen"))
         changed = changed or len(kat["regeln"]) != before or not kat.get("gelernt_am")
-    if kategorisierung.auto_assign(kat, ledger, overwrite_mm=bool(kc.get("mm_ueberschreiben")),
+    if categorize.auto_assign(kat, ledger, overwrite_mm=bool(kc.get("mm_ueberschreiben")),
                                  progress=lambda f: step(0.6 + 0.3 * f, "Kategorien: Umsätze zuordnen")):
         changed = True
     step(0.9, "Kategorien übernehmen")
     if changed:
-        kategorisierung.save(store, kat)
-    kategorisierung.apply_to_ledger(kat, ledger)
+        categorize.save(store, kat)
+    categorize.apply_to_ledger(kat, ledger)
     return kat
 
 
-MM_VERLAUF_FILE = "mm-verlauf.json"
+MM_HISTORY_FILE = "mm-history.json"
 
 
 def record_snapshot(snaps: dict, accounts, today: date) -> bool:
@@ -765,13 +765,13 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
     kat = prepare_categories(store, ledger, config, categories, lambda f, t: step(0.05 + 0.2 * f, t))
     record_snapshot(state.setdefault("snapshots", {}), ledger.accounts.values(), today)
     # aus MoneyMoney uebernommene Kontostand-Verlaeufe (verschluesselt abgelegt, nur im Speicher in den Zustand gelegt)
-    state["historie_mm"] = (store.load_shared(MM_VERLAUF_FILE, {}) or {}).get("konten") or {}
+    state["historie_mm"] = (store.load_shared(MM_HISTORY_FILE, {}) or {}).get("konten") or {}
     bereiche = bereiche_for(ledger, config)
     haupt = main_bereich(bereiche)
     roles = account_roles(ledger, config)
     budgets = budgets_from_categories(categories or [])
     immo_res = immo_results(config, today)
-    log.debug("Bericht: %d Bereiche (%s), Haupt %s, %d Konten mit Position, %d Immobilienkalkulationen, %d Budgets",
+    log.debug("Report: %d areas (%s), main %s, %d accounts with position, %d property calculations, %d budgets",
               len(bereiche), ", ".join(b["name"] for b in bereiche), haupt["name"] if haupt else "-", len(roles), len(immo_res), len(budgets))
     ledger._kat_sig = repr(getattr(ledger, "_kat_cache", (None,))[0])      # fuer Zwischenergebnisse in build_dataset
     datasets: Dict[str, dict] = {}
@@ -787,7 +787,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
             ds["budgets"] = budgets
             datasets[b["id"]] = ds
         except Exception as e:
-            log.exception("Bereich %s: Bericht fehlgeschlagen", b["name"])
+            log.exception("Area %s: report failed", b["name"])
             datasets[b["id"]] = {"fehler": str(e), "wurzel": b["name"]}
     neu = konten_neu(ledger, config, bereiche, roles)
     if neu:
@@ -806,13 +806,13 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
                 entry["soll_ist"] = immo_soll_ist(ledger, config, im, r, roles, today)
             except Exception as e:  # pragma: no cover
                 entry["soll_ist"] = []
-                log.warning("Soll/Ist %s: %s", im.get("name"), e)
+                log.warning("Plan vs. actual %s: %s", im.get("name"), e)
         elif r:
             entry["fehler"] = r["fehler"]
         immobilien.append(entry)
     for bid, ds in datasets.items():
         if "fehler" not in ds:
-            log.debug("Bereich %s: %d Monate (%s bis %s), %d Konten, %d inaktiv, %d Warnung(en)", ds.get("bereich", {}).get("name", bid),
+            log.debug("Area %s: %d months (%s to %s), %d accounts, %d inactive, %d warning(s)", ds.get("bereich", {}).get("name", bid),
                       len(ds["monate"]), ds["monate"][0] if ds["monate"] else "-", ds["monate"][-1] if ds["monate"] else "-",
                       sum(1 for r in ds["bilanz"]["zeilen"] if not r["gruppe"]), len(ds.get("konten_inaktiv") or []), len(ds.get("warnungen") or []))
     dataset = {
@@ -832,19 +832,19 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "immobilien": immobilien,
         "budgets": budgets,
         "warnungen": warnings,
-        "kategorien": (step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", ledger._kat_sig, lambda: kategorisierung.stats(kat, ledger)))[1],
+        "kategorien": (step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", ledger._kat_sig, lambda: categorize.stats(kat, ledger)))[1],
         "konten_neu": neu,
     }
     step(0.88, "Speichern")
     store.save("dataset.json", dataset)
     sig = (ledger._kat_sig, _bereiche_sig(bereiche))
     cached = getattr(ledger, "_ums_cache", None)
-    if cached and cached[0] == sig and store.exists("umsaetze.json"):
+    if cached and cached[0] == sig and store.exists("transactions.json"):
         ums = cached[1]                # Umsatzliste unveraendert (z. B. nur Verlauf geaendert) -> nicht neu schreiben
     else:
         step(0.93, "Umsatzliste")
         ums = compact_transactions(ledger, bereiche, store)
-        store.save("umsaetze.json", ums)
+        store.save("transactions.json", ums)
         ledger._ums_cache = (sig, ums)
     dataset["_umsaetze"] = ums        # fuer den Dienst: Liste im Speicher behalten (teilt die Strings mit dem Ledger), nicht Teil der Datei
     return dataset
@@ -939,25 +939,25 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         except MoneyMoneyError as e:
             txt = unavailable_text(e)
             if txt:
-                log.info(txt)
+                log.info("MoneyMoney not available: %s", txt)
                 if isinstance(e, MoneyMoneyNotPermitted) and config.get("mitteilungen", True):
                     notify("Kontor", txt)
                 return {"status": "nicht_verfuegbar", "text": txt}
-            log.error("MoneyMoney-Fehler: %s", e)
+            log.error("MoneyMoney error: %s", e)
             return {"status": "fehler", "text": "MoneyMoney-Fehler: %s" % e}
         fp = ledger_fp(ledger)
         if fp == state.get("fingerprint") and not force:
-            log.info("Keine Änderung in MoneyMoney seit dem letzten Lauf.")
+            log.info("No change in MoneyMoney since the last run.")
             return {"status": "unveraendert", "text": "Keine Änderung in MoneyMoney seit dem letzten Lauf.", "_ledger": ledger,
                     "_kategorien": categories}
 
         result = plan_all(ledger, config, today)
         for h in ledger.hints:
-            log.warning(h); result.warnings.append(h)
+            log.warning("Data hint: %s", h); result.warnings.append(h)
         for i in result.info:
-            log.info(i)
+            log.info("Rules: %s", i)
         for w in result.warnings:
-            log.warning(w)
+            log.warning("Rules warning: %s", w)
         bookings = [x for x in result.proposals if x.kind != "quelle"]
         for pr in result.proposals:
             log.info("  %s", pr.describe())
@@ -968,16 +968,16 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 written = apply_proposals(bridge, ledger, result.proposals)
             except MoneyMoneyError as e:
                 err = e
-                log.error("Abbruch beim Schreiben nach %d Buchung(en): %s", written, e)
+                log.error("Writing aborted after %d booking(s): %s", written, e)
             try:
                 after = accounts_from_export(bridge.export_accounts())
                 for u in {x.account_uuid for x in bookings}:
                     if u in after and abs(after[u].balance - ledger.accounts[u].balance) > 0.01:
                         msg = "Saldo %s nach Buchung %s, erwartet %s" % (ledger.accounts[u].name, fmt_eur(after[u].balance),
                                                                       fmt_eur(ledger.accounts[u].balance))
-                        log.warning(msg); result.warnings.append(msg)
+                        log.warning("Balance of %s after booking is %s, expected %s", ledger.accounts[u].name, fmt_eur(after[u].balance), fmt_eur(ledger.accounts[u].balance)); result.warnings.append(msg)
             except MoneyMoneyError as e:
-                log.warning("Kontrolle nach dem Schreiben nicht möglich: %s", e)
+                log.warning("Verification after writing not possible: %s", e)
 
         warnings = list(result.warnings)
         if dry and bookings:

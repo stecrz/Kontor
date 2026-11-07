@@ -68,7 +68,7 @@ def issue(binary: str, name: str, data_dir: str) -> Tuple[str, str]:
     """Holt (oder erneuert) das Zertifikat fuer ``name``; gibt (cert, key) zurueck."""
     crt, key = cert_paths(data_dir, name)
     os.makedirs(os.path.dirname(crt), mode=0o700, exist_ok=True)
-    log.info("Tailscale-Zertifikat für %s anfordern", name)
+    log.info("Requesting Tailscale certificate for %s", name)
     r = subprocess.run([binary, "cert", "--cert-file", crt, "--key-file", key, name], capture_output=True, text=True, timeout=180)
     if r.returncode != 0:
         msg = (r.stderr or r.stdout).strip()
@@ -80,7 +80,7 @@ def issue(binary: str, name: str, data_dir: str) -> Tuple[str, str]:
     except OSError:
         pass
     exp = cert_expiry(crt)
-    log.info("Zertifikat liegt in %s (gültig bis %s)", crt, exp.strftime("%Y-%m-%d") if exp else "?")
+    log.info("Certificate stored in %s (valid until %s)", crt, exp.strftime("%Y-%m-%d") if exp else "?")
     return crt, key
 
 
@@ -115,12 +115,12 @@ def renew_if_due(config: dict, data_dir: str, days: int = RENEW_DAYS) -> bool:
         return False
     binary = find_tailscale()
     if not binary:
-        log.warning("TLS-Zertifikat läuft ab (%s), aber Tailscale fehlt", exp)
+        log.warning("TLS certificate expires (%s), but Tailscale is missing", exp)
         return False
     name = os.path.basename(crt)[:-4]
     try:
         issue(binary, name, data_dir)
         return True
     except Exception as e:
-        log.warning("Zertifikat konnte nicht erneuert werden: %s", e)
+        log.warning("Certificate could not be renewed: %s", e)
         return False

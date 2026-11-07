@@ -21,9 +21,14 @@ MoneyMoney (macOS) arbeitet. Er läuft als launchd-Dienst beim Nutzer und starte
   Kategorien oder Regeln des Nutzers ändern oder löschen, keine Überweisungen.
 - Oberfläche nur über 127.0.0.1 bzw. Tailscale erreichbar. Einzige Netzverbindung: Update-Prüfung bei GitHub.
 - Keine Passwörter oder Zugangsdaten speichern, protokollieren oder zwischenspeichern; Datenordner verschlüsselt.
-- Depot-Historie (`mm_historie.py`): Datenbankdatei nur per Upload, nur im Arbeitsspeicher; Passwort nur im Swift-Helfer,
+- Kontostände aus MoneyMoney (`mm_history.py`): Datenbankdatei nur per Upload, nur im Arbeitsspeicher; Passwort nur im Swift-Helfer,
   der nur für den Vorgang erzeugt und danach gelöscht wird; Puffer danach überschreiben; keine dauerhaften Freigaben.
 - Keine Kontostände schätzen. Unbekanntes als „unbekannt“ kennzeichnen.
+
+## Sprache
+- Deutsch nur in der Oberfläche (Texte für den Nutzer, Download-Dateinamen, Hinweise im Chat).
+- Englisch: Datei- und Modulnamen, Datendateien, API-Endpunkte und URL-Parameter, Kommandozeilenbefehle, Protokollmeldungen.
+- Präfix `mm_` nur für Teile, die direkt mit MoneyMoney sprechen.
 
 ## Oberfläche
 - Texte auf Deutsch, kurz, ohne Fachbegriffe, Einzahl/Mehrzahl korrekt.

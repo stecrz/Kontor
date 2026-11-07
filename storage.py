@@ -64,7 +64,7 @@ def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
     rc_old, out_old, _ = _security(["find-generic-password", "-s", OLD_KEYCHAIN[0], "-a", OLD_KEYCHAIN[1], "-w"])
     if rc_old == 0 and len(out_old.strip()) == 64:
         key = bytes.fromhex(out_old.strip())
-        log.info("Datenschlüssel der Vorversion (mmtools) übernommen.")
+        log.info("Data key of the previous version (mmtools) taken over.")
     else:
         # Schluesselbund vorhanden, aber kein Eintrag: neu anlegen
         key = secrets.token_bytes(32)
@@ -74,7 +74,7 @@ def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
         rc3, out3, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
         if rc3 == 0 and out3.strip() == key.hex():
             return key, "schluesselbund"
-    log.warning("Schlüsselbund nicht nutzbar (%s) -- Schlüssel wird als Datei abgelegt.", err.strip()[:120])
+    log.warning("Keychain not usable (%s) -- key stored as file.", err.strip()[:120])
     return _file_key(key_file), "datei"
 
 
@@ -135,13 +135,18 @@ def selftest(master: bytes) -> bool:
         probe = secrets.token_bytes(1000) + b"mmtools"
         return decrypt(master, encrypt(master, probe)) == probe
     except Exception as e:
-        log.warning("Selbsttest der Verschlüsselung fehlgeschlagen: %s", e)
+        log.warning("Encryption self-test failed: %s", e)
         return False
 
 
 # ---------------------------------------------------------------------------
 # Store
 # ---------------------------------------------------------------------------
+
+# Earlier versions used German file names; renamed on start
+LEGACY_NAMES = {"belege.json": "receipts.json", "kategorien.json": "categories.json", "umsaetze.json": "transactions.json",
+                "moneymoney-stand.bin": "moneymoney-ledger.bin", "mm-verlauf.json": "mm-history.json"}
+
 
 class Store:
     """load/save von JSON-Dokumenten im Datenordner, verschluesselt wenn ein Schluessel vorliegt."""
@@ -152,7 +157,7 @@ class Store:
         self.key_source = key_source
         self.encrypted = master is not None and selftest(master)
         if master is not None and not self.encrypted:
-            log.error("Verschlüsselung nicht verfügbar -- Daten werden UNVERSCHLUESSELT abgelegt.")
+            log.error("Encryption not available -- data stored UNENCRYPTED.")
         os.makedirs(data_dir, exist_ok=True)
         try:
             os.chmod(data_dir, 0o700)
@@ -162,6 +167,7 @@ class Store:
         self._cache_lock = threading.Lock()
         self._file_locks: Dict[str, threading.RLock] = {}
         self._migrate_plaintext()
+        self._migrate_names()
 
     # Pfade
     def path(self, name: str) -> str:
@@ -263,11 +269,18 @@ class Store:
         except FileNotFoundError:
             pass
 
+    def _migrate_names(self) -> None:
+        """Rename files written under the German names of earlier versions."""
+        for old, new in LEGACY_NAMES.items():
+            if self.exists(old) and not self.exists(new):
+                os.replace(self.path(old), self.path(new))
+                log.info("Renamed %s to %s", old, new)
+
     def _migrate_plaintext(self) -> None:
         """Klartextdateien frueherer Versionen in die verschluesselte Ablage uebernehmen."""
         if not self.encrypted:
             return
-        for name in ("config.json", "plan.json", "state.json", "dataset.json", "auth.json", "belege.json", "umsaetze.json"):
+        for name in ("config.json", "plan.json", "state.json", "dataset.json", "auth.json", "belege.json", "umsaetze.json"):  # legacy names
             src = os.path.join(self.data_dir, name)
             if os.path.exists(src) and not os.path.exists(self.path(name)):
                 with open(src, "rb") as f:
@@ -280,13 +293,13 @@ class Store:
                 self.write_bytes(name, raw)
                 if self.read_bytes(name) == raw:      # erst nach erfolgreicher Kontrolle den Klartext entfernen
                     os.remove(src)
-                    log.info("%s in die verschlüsselte Ablage übernommen, Klartext gelöscht.", name)
+                    log.info("%s moved to encrypted storage, plaintext deleted.", name)
         # Klartext-Reste aelterer Versionen (regenerierbar) entfernen
-        for name in ("bericht.html", "dataset.json", "umsaetze.json", "launchd.out.log", "launchd.err.log"):
+        for name in ("bericht.html", "dataset.json", "umsaetze.json", "transactions.json", "launchd.out.log", "launchd.err.log"):
             src = os.path.join(self.data_dir, name)
             if os.path.exists(src) and not (name.endswith(".json") and not os.path.exists(self.path(name))):
                 try:
                     os.remove(src)
-                    log.info("Klartextdatei %s entfernt (wird verschlüsselt neu erzeugt).", name)
+                    log.info("Plaintext file %s removed (recreated encrypted).", name)
                 except OSError:
                     pass

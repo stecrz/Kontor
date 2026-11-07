@@ -6,7 +6,8 @@ mm_touchid
 .touchid/
 config.json
 *.kontor.json
-!vorlagen/*.kontor.json
+!templates/*.kontor.json
 Claude outputs/
 Hinweise-*.md
+mm-history-schema.txt
 mm-historie-aufbau.txt

@@ -33,8 +33,8 @@ from collections import defaultdict
 from datetime import date
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from datenmodell import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
-from buchungsregeln import TAG_RE
+from model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
+from rules import TAG_RE
 
 ROLES = ["liquiditaet", "wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte", "forderungen", "sonstiges", "verbindlichkeiten",
          "eigenkapital", "eventual", "ignorieren"]
@@ -868,7 +868,7 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                immo: Optional[List[dict]] = None, ledger_resolve=None) -> dict:
     """Planung auf einen Bereichs-Datensatz anwenden (in place).
     fremd_nw: Nettovermoegensplan anderer Bereiche (id -> {mk: nw}) fuer Beteiligungskonten.
-    immo: Immobilienkalkulationen dieses Bereichs mit Planreihen (siehe immorechner.planreihen) und Zuordnungen."""
+    immo: Immobilienkalkulationen dieses Bereichs mit Planreihen (siehe realestate.planreihen) und Zuordnungen."""
     horizon = max(1, min(240, int(plan.get("horizont_monate", 24))))
     default_method = plan.get("standard_methode", "gleitend12")
     inflation = float(plan.get("inflation_prozent_pa", 2.0) or 0.0)

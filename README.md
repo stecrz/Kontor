@@ -35,7 +35,7 @@ Voraussetzungen: macOS, MoneyMoney, Kommandozeilen-Werkzeuge von Apple (`xcode-s
 2. Der Browser öffnet `http://127.0.0.1:8765/`: Passwort festlegen, dann **Einrichtung** – modulare Bausteine, die sich einzeln und in beliebiger Reihenfolge einrichten lassen: Verbindung zu MoneyMoney, Bereiche (Pflicht), Konten (Bereich, Position, Verlauf), Kategorien & Zuordnen, Regeln, Immobilien, Planung, Steuer, Belege, Betrieb. Jeder Baustein zeigt, ob er eingerichtet ist; Hilfe-Knöpfe (?) erklären jedes Feld. Danach „Bericht erstellen“.
 3. Beim ersten Zugriff fragt macOS, ob das Programm MoneyMoney steuern darf (Automation) – erlauben.
 
-`install.sh` ist jederzeit wiederholbar: Es ersetzt den Dienst, lässt Datenordner und Einstellungen unangetastet. Updates gehen aus der Oberfläche (Updates → installieren; lädt den aktuellen Stand des Hauptzweigs von github.com, erkennbar an der Datei `VERSION`), per `python3 kontor.py update --installieren` oder mit der Terminal-Zeile von oben. Entfernen: `python3 kontor.py uninstall` oder `Deinstallieren.command` (fragt, ob Daten und Schlüssel gelöscht werden sollen).
+`install.sh` ist jederzeit wiederholbar: Es ersetzt den Dienst, lässt Datenordner und Einstellungen unangetastet. Updates gehen aus der Oberfläche (Updates → installieren; lädt den aktuellen Stand des Hauptzweigs von github.com, erkennbar an der Datei `VERSION`), per `python3 kontor.py update --install` oder mit der Terminal-Zeile von oben. Entfernen: `python3 kontor.py uninstall` oder `Uninstall.command` (fragt, ob Daten und Schlüssel gelöscht werden sollen).
 
 Der Dienst startet beim Anmelden, läuft dauerhaft und startet nach Abstürzen neu (launchd, Label `de.kontor.dienst`).
 
@@ -73,7 +73,7 @@ Der Dienst startet beim Anmelden, läuft dauerhaft und startet nach Abstürzen n
 
 **Excel.** Jede Tabelle hat einen Excel-Knopf: Bilanz, Kapitalfluss, Planung (mit Fortschreibung und Parametern), Steuer, Umsätze, Depots, Belege, Konten, Immobilienkalkulation.
 
-**Einstellungspakete.** `….kontor.json` enthält Regeln, Bereiche, Bilanzpositionen, Immobilien, Kategorie- und Steuerzuordnungen – ohne Passwörter, Adresse, Port oder Daten (IBANs aus Darlehensregeln sind enthalten). Export mit UUIDs (gleiche MoneyMoney-Installation) oder als Pfade/Namen (andere Installation). Beim Laden werden Konten zugeordnet; was nicht gefunden wird, ordnest du in der Oberfläche zu. Modus „Ergänzen“ ersetzt gleichnamige Regeln, Bereiche und Immobilien mit gleicher Kennung und überschreibt Zuordnungen, „Ersetzen“ verwirft die vorhandene Konfiguration. Vorlagen liegen unter `vorlagen/`.
+**Einstellungspakete.** `….kontor.json` enthält Regeln, Bereiche, Bilanzpositionen, Immobilien, Kategorie- und Steuerzuordnungen – ohne Passwörter, Adresse, Port oder Daten (IBANs aus Darlehensregeln sind enthalten). Export mit UUIDs (gleiche MoneyMoney-Installation) oder als Pfade/Namen (andere Installation). Beim Laden werden Konten zugeordnet; was nicht gefunden wird, ordnest du in der Oberfläche zu. Modus „Ergänzen“ ersetzt gleichnamige Regeln, Bereiche und Immobilien mit gleicher Kennung und überschreibt Zuordnungen, „Ersetzen“ verwirft die vorhandene Konfiguration. Vorlagen liegen unter `templates/`.
 
 **Betrieb.** Alle N Minuten (Standard 30) prüft der Dienst, ob MoneyMoney läuft und entsperrt ist, liest die Daten und führt Regeln aus – nur wenn sich etwas geändert hat. Ist MoneyMoney zu oder gesperrt, passiert nichts; der nächste Lauf holt alles nach. Mitteilungen bei Buchungen, Vorschlägen und Fehlern.
 
@@ -89,7 +89,7 @@ Am iPhone gilt: Anmeldung per Passwort; lesen, planen, Belege fotografieren – 
 
 ## Kommandozeile
 
-`python3 kontor.py …`: `start` (Dienst im Vordergrund), `oeffnen`, `run [--probelauf|--scharf] [--force]`, `konten` (Kontenbaum mit UUIDs, Typ, Rolle), `check` (Konfiguration gegen MoneyMoney prüfen), `status`, `passwort` (zurücksetzen), `paket-export [DATEI] [--ohne-uuid] [--mit-plan]`, `paket-import DATEI [--ersetzen] [--trotzdem]`, `diagnose [DATEI]`, `update [--installieren]`, `install` / `uninstall`, `tls [--aus]` (https über Tailscale einrichten), `version`.
+`python3 kontor.py …`: `start` (Dienst im Vordergrund), `open`, `run [--dry-run|--live] [--force]`, `accounts` (Kontenbaum mit UUIDs, Typ, Rolle), `check` (Konfiguration gegen MoneyMoney prüfen), `status`, `password` (zurücksetzen), `package-export [DATEI] [--without-uuid] [--with-plan]`, `package-import DATEI [--replace] [--anyway]`, `diagnostics [DATEI]`, `update [--install]`, `install` / `uninstall`, `tls [--off]` (https über Tailscale einrichten), `version`. Die früheren deutschen Befehle funktionieren weiter.
 
 ## Datenordner
 

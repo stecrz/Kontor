@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from datenmodell import Ledger, Tx, fmt_eur, month_end, months_between
+from model import Ledger, Tx, fmt_eur, month_end, months_between
 
 TAG_RE = re.compile(r"#mm-[a-z]+-[A-Za-z0-9\-]+")
 
@@ -349,7 +349,7 @@ def plan_all(ledger: Ledger, config: dict, today: date) -> RuleResult:
         if cfg.get("aktiv", True):
             r = plan_loan(ledger, cfg, today)
             total.proposals += r.proposals; total.warnings += r.warnings; total.info += r.info
-    from auswertung import account_roles          # spaet importiert (auswertung importiert buchungsregeln)
+    from report import account_roles          # spaet importiert (auswertung importiert rules)
     roles = account_roles(ledger, config)
     for cfg in (config.get("beteiligungen", []) or []) + (config.get("saldo_spiegel", []) or []):
         if cfg.get("aktiv", True):

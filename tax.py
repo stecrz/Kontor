@@ -21,9 +21,9 @@ from collections import defaultdict
 from datetime import date
 from typing import Dict, List, Optional
 
-from datenmodell import Account, Ledger, Tx
-from auswertung import ASSET_ROLES, COST_WORDS, account_roles, _is_cost
-from buchungsregeln import TAG_RE
+from model import Account, Ledger, Tx
+from report import ASSET_ROLES, COST_WORDS, account_roles, _is_cost
+from rules import TAG_RE
 
 POSITION_HINTS = [
     ("gehalt", "Anlage N (Arbeitslohn)"), ("lohn", "Anlage N (Arbeitslohn)"), ("tantieme", "Anlage N (Arbeitslohn)"),
@@ -75,7 +75,7 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
               immo_afa: Optional[Dict[str, Dict[str, float]]] = None) -> dict:
     """immo_afa: Objektname -> {Jahr: AfA} aus den Immobilienkalkulationen (gilt, wenn steuer.afa nichts vorgibt)."""
     if bereiche is None:
-        from kern import bereiche_for
+        from core import bereiche_for
         bereiche = bereiche_for(ledger, config)
     immo_afa = immo_afa or {}
     st = config.get("steuer", {}) or {}

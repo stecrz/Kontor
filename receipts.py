@@ -18,7 +18,7 @@ import zipfile
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-from ablage import Store
+from storage import Store
 
 DEFAULT_FOLDER = "~/Documents/Kontor-Belege"
 ALLOWED_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".heic", ".gif", ".txt", ".csv", ".xlsx", ".docx", ".eml", ".msg", ".zip"}
@@ -46,7 +46,7 @@ class Belege:
         cfg = config.get("belege", {}) or {}
         self.folder = os.path.expanduser(cfg.get("ordner") or DEFAULT_FOLDER)
         self.pattern = cfg.get("unterordner") or "{jahr}"
-        self.index = store.load("belege.json", {"eintraege": []}) or {"eintraege": []}
+        self.index = store.load("receipts.json", {"eintraege": []}) or {"eintraege": []}
 
     # -- Ordner ------------------------------------------------------------
     def ensure_folder(self) -> Optional[str]:
@@ -67,7 +67,7 @@ class Belege:
 
     # -- Index -------------------------------------------------------------
     def _save(self) -> None:
-        self.store.save("belege.json", self.index)
+        self.store.save("receipts.json", self.index)
 
     def entries(self) -> List[dict]:
         return self.index.setdefault("eintraege", [])

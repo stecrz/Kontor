@@ -274,7 +274,7 @@ async function enterApp() {
 }
 async function loadAll() {
   const [status, data, cfg, konten, kats] = await Promise.all([
-    api('/api/status'), api('/api/dataset'), api('/api/config'), api('/api/konten'), api('/api/kategorien')]);
+    api('/api/status'), api('/api/dataset'), api('/api/config'), api('/api/accounts'), api('/api/categories')]);
   S.STATUS = status; S.DATA = data.leer ? null : data; S.CFG = cfg; S.KONTEN = konten.konten || []; S.KATS = kats.kategorien || [];
   if (!(status.bericht || {}).laeuft) BER.stand = (status.bericht || {}).stand || '';     // dieser Stand ist jetzt geladen
   S.einrichtung = data.einrichtung;
@@ -508,7 +508,7 @@ async function vUebersicht() {
   h += '</tbody></table></div>';
   // Offene Punkte + naechste Monate
   const yr = cur.slice(0, 4);
-  const [ok, ob] = await Promise.all([api(`/api/umsaetze?jahr=${yr}&ohne_kategorie=1&limit=1&entitaet=${S.bereich}`), api(`/api/umsaetze?jahr=${yr}&ohne_beleg=1&richtung=aus&limit=1&entitaet=${S.bereich}`)]);
+  const [ok, ob] = await Promise.all([api(`/api/transactions?year=${yr}&uncategorized=1&limit=1&entity=${S.bereich}`), api(`/api/transactions?year=${yr}&without_receipt=1&direction=out&limit=1&entity=${S.bereich}`)]);
   const lastRun = S.STATUS.letzter_lauf, items = [];
   if (lastRun && lastRun.probelauf && lastRun.vorschlaege && lastRun.vorschlaege.length) items.push(['warn', lastRun.vorschlaege.length + ' Buchungsvorschläge warten (Testmodus)', '#buchungen']);
   if (ok.treffer) items.push(['warn', ok.treffer + ' Umsätze ' + yr + ' ohne Kategorie – zuordnen', '#zuordnen']);
@@ -584,7 +584,7 @@ const MMH_TXT = {'Datei erhalten': 'Gleich erscheint das Passwortfenster von mac
 async function mmhFollow() {
   // Fortschritt des Einlesens verfolgen, bis ein Ergebnis da ist
   for (;;) {
-    let r; try { r = await api('/api/historie/mm-status'); } catch (e) { await new Promise(ok => setTimeout(ok, 1500)); continue; }
+    let r; try { r = await api('/api/history/mm-status'); } catch (e) { await new Promise(ok => setTimeout(ok, 1500)); continue; }
     const res = $('#mmh-res');
     if (r.laeuft) { if (res) res.innerHTML = `<div class="working"><span class="spin"></span>${esc(MMH_TXT[r.schritt] || 'Bitte warten …')}</div>`; await new Promise(ok => setTimeout(ok, 800)); continue; }
     const e = r.ergebnis || {};
@@ -601,7 +601,7 @@ function mmhPoll() {
   clearTimeout(MMHP.timer);
   if (!(S.tab === 'einrichtung' && S.sub === 'historie')) return;
   MMHP.timer = setTimeout(async () => {
-    try { S.STATUS = await api('/api/status?frisch=1'); statusMini(); const el = $('#mmh-s1'); if (el) { el.className = 'step ' + ((S.STATUS.moneymoney || {}).laeuft ? '' : 'done'); el.innerHTML = mmhStep1(S.STATUS); } } catch (e) {}
+    try { S.STATUS = await api('/api/status?fresh=1'); statusMini(); const el = $('#mmh-s1'); if (el) { el.className = 'step ' + ((S.STATUS.moneymoney || {}).laeuft ? '' : 'done'); el.innerHTML = mmhStep1(S.STATUS); } } catch (e) {}
     mmhPoll();
   }, 3000);
 }
@@ -618,7 +618,7 @@ function vbPoll() {
   clearTimeout(VB.timer);
   if (!(S.tab === 'einrichtung' && S.sub === 'verbindung')) return;
   VB.timer = setTimeout(async () => {
-    try { S.STATUS = await api('/api/status?frisch=1'); statusMini(); const el = $('#vb-mm'); if (el) { el.className = 'step ' + (mmStepDone(S.STATUS) ? 'done' : ''); el.innerHTML = mmStepInner(S.STATUS); } } catch (e) {}
+    try { S.STATUS = await api('/api/status?fresh=1'); statusMini(); const el = $('#vb-mm'); if (el) { el.className = 'step ' + (mmStepDone(S.STATUS) ? 'done' : ''); el.innerHTML = mmStepInner(S.STATUS); } } catch (e) {}
     vbPoll();
   }, 3000);
 }
@@ -745,7 +745,7 @@ let HI = null;   // {name, b64, vorschau}
 async function histImportPreview(file) {
   const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(file); });
   HI = {name: file.name, b64};
-  try { const r = await api('/api/historie/import', {datei: b64, name: file.name}); HI.vorschau = r.vorschau; HI.hinweise = r.hinweise || []; } catch (e) { HI = null; $('#hi-preview').innerHTML = `<div class="findings"><div class="fehler">${esc(e.message)}</div></div>`; return; }
+  try { const r = await api('/api/history/import', {datei: b64, name: file.name}); HI.vorschau = r.vorschau; HI.hinweise = r.hinweise || []; } catch (e) { HI = null; $('#hi-preview').innerHTML = `<div class="findings"><div class="fehler">${esc(e.message)}</div></div>`; return; }
   renderHistImport();
 }
 function renderHistImport() {
@@ -757,7 +757,7 @@ function renderHistImport() {
     <div class="row tight" style="margin-top:8px"><label class="chk"><input type="checkbox" id="hi-gaps" checked> nur Monate übernehmen, für die noch kein eigener Wert eingetragen ist</label><button id="hi-import" class="small">Übernehmen</button><span class="small muted">Ohne Zuordnung bleibt eine Zeile unberücksichtigt. Werte zählen als eigene Monatsstände (Verlaufsquelle „Kontostände“ für Depots; bei Umsatzkonten überschreiben sie nur den Monat, nicht die Rückrechnung).</span></div><div id="hi-report" class="findings"></div></div>`;
   $('#hi-import').onclick = async () => {
     const zuordnung = {}; $$('#hi-preview tr[data-name]').forEach(tr => { zuordnung[tr.dataset.name === '(ohne Konto)' ? '' : tr.dataset.name] = $('.hi-map', tr).value; });
-    try { const r = await api('/api/historie/import', {datei: HI.b64, name: HI.name, zuordnung, uebernehmen: true, nur_luecken: $('#hi-gaps').checked}); showFindings($('#hi-report'), [], r.uebernommen + ' Monatswerte für ' + (r.konten === 1 ? 'ein Konto' : r.konten + ' Konten') + ' übernommen' + (r.bericht ? '; Bericht aktualisiert.' : '.'), 'ok'); await loadAll(); } catch (e) { showFindings($('#hi-report'), [], e.message, 'fehler'); }
+    try { const r = await api('/api/history/import', {datei: HI.b64, name: HI.name, zuordnung, uebernehmen: true, nur_luecken: $('#hi-gaps').checked}); showFindings($('#hi-report'), [], r.uebernommen + ' Monatswerte für ' + (r.konten === 1 ? 'ein Konto' : r.konten + ' Konten') + ' übernommen' + (r.bericht ? '; Bericht aktualisiert.' : '.'), 'ok'); await loadAll(); } catch (e) { showFindings($('#hi-report'), [], e.message, 'fehler'); }
   };
 }
 function kontoHidden(vis, auto) { return vis === 'hide' || (vis === '' && !!auto); }
@@ -782,7 +782,7 @@ function collectKonten() {
 // Verlauf (Monatsstaende) je Konto
 async function openHistDrawer(uuid, vorschau) {
   // vorschau: Verlaufsquelle, die erst angezeigt und mit „Speichern“ übernommen wird (z. B. aus der Kontentabelle)
-  const r = await api('/api/historie?konto=' + encodeURIComponent(uuid) + (vorschau ? '&quelle=' + vorschau : ''));
+  const r = await api('/api/history?account=' + encodeURIComponent(uuid) + (vorschau ? '&source=' + vorschau : ''));
   const k = S.KONTEN.find(x => x.uuid === uuid) || {name: r.name || uuid};
   const d = $('#drawer');
   HD.uuid = uuid; HD.live = r.live;
@@ -803,23 +803,23 @@ async function openHistDrawer(uuid, vorschau) {
   $$('.hq-q', d).forEach(b => b.onclick = async () => {
     if (b.classList.contains('on')) return;
     $$('.hq-q', d).forEach(x => { x.classList.toggle('on', x === b); x.disabled = true; });
-    try { renderHist(await api('/api/historie?konto=' + encodeURIComponent(uuid) + '&quelle=' + b.dataset.q)); }
+    try { renderHist(await api('/api/history?account=' + encodeURIComponent(uuid) + '&source=' + b.dataset.q)); }
     catch (e) { toast(e.message, 6000); renderHist(HD.r); }
     finally { $$('.hq-q', d).forEach(x => { x.disabled = false; }); }
   });
-  $('#h-undo', d).onclick = async () => { try { renderHist(await api('/api/historie?konto=' + encodeURIComponent(uuid) + '&quelle=' + HD.r.quelle_gespeichert)); } catch (e) { toast(e.message, 6000); } };
+  $('#h-undo', d).onclick = async () => { try { renderHist(await api('/api/history?account=' + encodeURIComponent(uuid) + '&source=' + HD.r.quelle_gespeichert)); } catch (e) { toast(e.message, 6000); } };
   $('#h-add', d).onclick = () => { const v = $('#h-von', d).value; if (!v) return; let [yy, mm] = v.split('-').map(Number); mm--; if (mm < 1) { mm = 12; yy--; } const mk = `${yy}-${String(mm).padStart(2, '0')}`; $('#h-von', d).value = mk; $('#h-grid', d).insertAdjacentHTML('afterbegin', `<label>${ML(mk)}<input type="text" data-mk="${mk}" class="auto" value=""></label>`); };
   $('#h-save', d).onclick = async () => {
     const werte = {}; if (HD.r.quelle === 'stand') $$('#h-grid input', d).forEach(i => { if (!i.classList.contains('auto') || i.value.trim()) werte[i.dataset.mk] = i.value.trim() === '' ? null : i.value.trim(); });
     const body = {konto: uuid, werte}; if (HD.r.quelle !== HD.r.quelle_gespeichert) body.quelle = HD.r.quelle;
     try {
-      const res = await api('/api/historie', body); renderHist(res.historie); toast('Gespeichert');
+      const res = await api('/api/history', body); renderHist(res.historie); toast('Gespeichert');
       if (body.quelle) { S.CFG = await api('/api/config'); const sel = $(`tr[data-uuid="${uuid}"] .k-verlauf`); if (sel) { sel.value = body.quelle; sel.classList.toggle('vorschlag', sel.closest('tr').classList.contains('neu') && sel.value === sel.dataset.vor); const hn = sel.parentElement.querySelector('.vor-hint'); if (hn) hn.classList.toggle('hidden', sel.value === sel.dataset.vor); } }
     } catch (e) { toast(e.message, 6000); }
   };
-  $('#h-clear', d).onclick = async () => { if (!confirm('Alle eigenen Monatswerte dieses Kontos löschen?')) return; try { const res = await api('/api/historie', {konto: uuid, werte: {}, loeschen: true}); renderHist(res.historie); } catch (e) { toast(e.message, 6000); } };
-  $('#h-import', d).onclick = async () => { try { const r2 = await api('/api/historie/import', {konto: uuid, csv: $('#h-csv', d).value}); $('#h-prev', d).innerHTML = r2.vorschau.map(v => `<div class="${v.uuid ? 'ok' : 'warnung'}">${esc(v.name)}: ${v.anzahl} Monate (${v.von} – ${v.bis})${v.uuid ? '' : ' – kein Konto zugeordnet'}</div>`).join(''); $('#h-import2', d).classList.remove('hidden'); } catch (e) { $('#h-prev', d).innerHTML = `<div class="fehler">${esc(e.message)}</div>`; } };
-  $('#h-import2', d).onclick = async () => { try { const r2 = await api('/api/historie/import', {konto: uuid, csv: $('#h-csv', d).value, uebernehmen: true}); toast(r2.uebernommen + ' Werte übernommen'); S.CFG = await api('/api/config'); const sel = $(`tr[data-uuid="${uuid}"] .k-verlauf`); if (sel) sel.value = 'stand'; await openHistDrawer(uuid); } catch (e) { toast(e.message, 6000); } };
+  $('#h-clear', d).onclick = async () => { if (!confirm('Alle eigenen Monatswerte dieses Kontos löschen?')) return; try { const res = await api('/api/history', {konto: uuid, werte: {}, loeschen: true}); renderHist(res.historie); } catch (e) { toast(e.message, 6000); } };
+  $('#h-import', d).onclick = async () => { try { const r2 = await api('/api/history/import', {konto: uuid, csv: $('#h-csv', d).value}); $('#h-prev', d).innerHTML = r2.vorschau.map(v => `<div class="${v.uuid ? 'ok' : 'warnung'}">${esc(v.name)}: ${v.anzahl} Monate (${v.von} – ${v.bis})${v.uuid ? '' : ' – kein Konto zugeordnet'}</div>`).join(''); $('#h-import2', d).classList.remove('hidden'); } catch (e) { $('#h-prev', d).innerHTML = `<div class="fehler">${esc(e.message)}</div>`; } };
+  $('#h-import2', d).onclick = async () => { try { const r2 = await api('/api/history/import', {konto: uuid, csv: $('#h-csv', d).value, uebernehmen: true}); toast(r2.uebernommen + ' Werte übernommen'); S.CFG = await api('/api/config'); const sel = $(`tr[data-uuid="${uuid}"] .k-verlauf`); if (sel) sel.value = 'stand'; await openHistDrawer(uuid); } catch (e) { toast(e.message, 6000); } };
 }
 function renderHist(r) {
   // Fensterinhalt aus der Vorschau des Dienstes (fuer dieses eine Konto sofort gerechnet)
@@ -871,7 +871,7 @@ function vBilanz() {
   const pos = D.bilanz.zeilen.filter(r => r.gruppe);
   S.posOpen = S.posOpen || {};
   const allOpen = pos.length && pos.every(r => S.posOpen[r.rolle]);
-  let h = `<div class="toolbar">${viewCtl(true)}<span class="tb-sep"></span><div class="seg"><button data-v="positionen" class="${view === 'positionen' ? 'on' : ''}">Bilanzpositionen</button><button data-v="gruppen" class="${view === 'gruppen' ? 'on' : ''}">MoneyMoney-Gruppen</button></div>${view === 'positionen' ? `<button class="ghost small" id="pos-all">${allOpen ? 'alle zuklappen' : 'alle aufklappen'}</button>` : ''}${nInactive ? `<label class="switch"><input type="checkbox" id="show-inactive" ${S.showInactive ? 'checked' : ''}><i></i>${nInactive} ausgeblendete zeigen</label>` : ''} ${hq('bilanz_stand')}<span class="sp"></span>${xlsxBtn('bilanz')}</div>`;
+  let h = `<div class="toolbar">${viewCtl(true)}<span class="tb-sep"></span><div class="seg"><button data-v="positionen" class="${view === 'positionen' ? 'on' : ''}">Bilanzpositionen</button><button data-v="gruppen" class="${view === 'gruppen' ? 'on' : ''}">MoneyMoney-Gruppen</button></div>${view === 'positionen' ? `<button class="ghost small" id="pos-all">${allOpen ? 'alle zuklappen' : 'alle aufklappen'}</button>` : ''}${nInactive ? `<label class="switch"><input type="checkbox" id="show-inactive" ${S.showInactive ? 'checked' : ''}><i></i>${nInactive} ausgeblendete zeigen</label>` : ''} ${hq('bilanz_stand')}<span class="sp"></span>${xlsxBtn('balance')}</div>`;
   const tag = r => (r.depot ? '<span class="tag">Depot</span>' : '') + (r.offline && !r.gruppe ? '<span class="tag">manuell</span>' : '') + (r.inaktiv ? '<span class="tag">ausgeblendet</span>' : '')
     + (r.verlauf === 'stand' && !r.gruppe ? '<span class="tag" title="Verlauf aus Kontoständen">Kontostände</span>' : '')
     + (r.geschaetzt_bis ? `<span class="tag warn" title="Kontostände bis ${ML(r.geschaetzt_bis)} aus Käufen/Verkäufen geschätzt – Werte eintragen oder importieren">geschätzt bis ${ML(r.geschaetzt_bis)}</span>` : '')
@@ -916,7 +916,7 @@ function vKapitalfluss(editable) {
   const C = cols(), KF = D.kapitalfluss, sums = KF.summen || {}, P = D.plan || {};
   const vOf = (z, c) => sumOver(Object.assign({}, z.werte, (z.plan && z.plan.werte) || {}), c.months);
   const sOf = (z, c) => sumOver(Object.assign({}, z.werte, (z.plan && z.plan.vorschlag) || {}), c.months);
-  let h = `<div class="toolbar">${viewCtl(true)}<span class="sp"></span>${xlsxBtn(editable ? 'planung' : 'kapitalfluss')}</div>`;
+  let h = `<div class="toolbar">${viewCtl(true)}<span class="sp"></span>${xlsxBtn(editable ? 'planning' : 'cashflow')}</div>`;
   h += '<div class="legend"><span class="p">Plan</span><span class="c">laufender Monat</span><span class="y">Jahressumme</span><span class="o">überschrieben</span>' + (editable ? '<label class="chk"><input type="checkbox" id="vorschlag-an" ' + (S.vorschlag ? 'checked' : '') + '> Vorschlagswerte zeigen</label><em>Doppelklick auf eine Planzelle = eigener Wert · Methode, Betrag, Steigerung unter dem Zeilennamen · ↺ = Vorschlag wiederherstellen</em>' : '') + (S.real ? '<em class="pill info">Planwerte in heutiger Kaufkraft</em>' : '') + '</div>';
   if (editable) {
     h += `<div class="card" style="margin-bottom:12px"><h3>Parameter</h3><div class="row tight">
@@ -1022,7 +1022,7 @@ function vPlanExtras(D) {
 
 // ---------------------------------------------------------------- Synchronisierung
 async function vSync() {
-  const st = S.STATUS, m = st.moneymoney || {}, z = st.dienst || {}, l = st.letzter_lauf, r = await api('/api/abruf');
+  const st = S.STATUS, m = st.moneymoney || {}, z = st.dienst || {}, l = st.letzter_lauf, r = await api('/api/sync');
   const online = r.konten.filter(k => k.art === 'online'), offline = r.konten.filter(k => k.art === 'offline'), stale = online.filter(k => k.zurueck);
   const tage = t => r.neuester && t ? Math.floor((new Date(r.neuester.replace(' ', 'T')) - new Date(t.replace(' ', 'T'))) / 864e5) : null;
   const card = (t, v, d) => `<div class="card"><div class="l">${t}</div><div class="v s">${v}</div><div class="d">${d}</div></div>`;
@@ -1086,7 +1086,7 @@ function vSteuer() {
   const ent = ents.find(e => e.uuid === S.steuerEnt) || ents[0];
   let h = `<div class="toolbar"><label>Jahr <select id="st-jahr">${years.map(y => `<option ${String(y) === S.steuerJahr ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
     <label>Entität <select id="st-ent">${ents.map(e => `<option value="${e.uuid}" ${e.uuid === ent.uuid ? 'selected' : ''}>${esc(e.name)} (${e.art}${e.anteil ? ', Anteil ' + (e.anteil * 100).toFixed(0) + ' %' : ''})</option>`).join('')}</select></label>
-    <span class="sp"></span><button id="st-belege" class="secondary small">Belege ${esc(S.steuerJahr)} exportieren</button>${xlsxBtn('steuer')}</div>`;
+    <span class="sp"></span><button id="st-belege" class="secondary small">Belege ${esc(S.steuerJahr)} exportieren</button>${xlsxBtn('tax')}</div>`;
   const J = ent.jahre[S.steuerJahr]; if (!J) return h + '<div class="note">Keine Daten für dieses Jahr.</div>';
   const objs = Object.keys(J.objekte);
   h += `<div class="cards"><div class="card"><div class="l">Einnahmen (kategorisiert)</div><div class="v">${F0(J.summe_einnahmen)} €</div></div><div class="card"><div class="l">Ausgaben (kategorisiert)</div><div class="v">${F0(J.summe_ausgaben)} €</div></div><div class="card"><div class="l">Schuldzinsen</div><div class="v">${F0(Object.values(J.schuldzinsen).reduce((a, b) => a + b, 0))} €</div></div><div class="card"><div class="l">Ohne Kategorie</div><div class="v">${J.ohne_kategorie.anzahl ? '<span class="pill warn">' + J.ohne_kategorie.anzahl + ' Buchungen</span>' : '<span class="pill ok">keine</span>'}</div><div class="d">${F(J.ohne_kategorie.betrag)} € – <a href="#umsaetze?ohne_kategorie=1&jahr=${S.steuerJahr}&entitaet=${ent.uuid}">kategorisieren</a></div></div></div>`;
@@ -1136,7 +1136,7 @@ function vImmobilie(id) {
   if (!IM.edit || IM.editFor !== id + '|' + IM.kalk) { IM.edit = JSON.parse(JSON.stringify((k && k.eingaben) || null)); IM.editFor = id + '|' + IM.kalk; IM.res = null; }
   const konten = S.KONTEN.filter(x => !x.gruppe);
   const kats = S.KATS.filter(x => x.ebene <= 1);
-  let h = `<div class="toolbar"><a href="#immobilien" class="small">← Alle Objekte</a><h2 style="margin:0">${esc(im.name)}</h2><span class="sp"></span>${xlsxBtn('immobilie', `data-immo="${esc(im.id)}" data-kalk="${esc(IM.kalk || '')}"`)}<button id="im-del" class="danger small">Objekt löschen</button></div>
+  let h = `<div class="toolbar"><a href="#immobilien" class="small">← Alle Objekte</a><h2 style="margin:0">${esc(im.name)}</h2><span class="sp"></span>${xlsxBtn('property', `data-immo="${esc(im.id)}" data-kalk="${esc(IM.kalk || '')}"`)}<button id="im-del" class="danger small">Objekt löschen</button></div>
   <div class="card" style="margin-bottom:12px"><div class="immo-form">
     <label>Name</label><input type="text" id="im-name" value="${esc(im.name)}">
     <label>Bereich ${hq('bereich')}</label><select id="im-bereich">${Object.entries((S.DATA && S.DATA.bereich_namen) || {}).map(([bid, n]) => `<option value="${bid}" ${im.bereich === bid ? 'selected' : ''}>${esc(n)}</option>`).join('') || (S.CFG.bereiche || []).map(b => `<option value="${esc(b.id)}" ${im.bereich === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
@@ -1240,7 +1240,7 @@ function immoChart(J) {
 function vImmoJahre(d) {
   const J = d.jahre || []; if (!J.length) return '<div class="note">Keine Kalkulation vorhanden oder Bericht noch nicht aktualisiert.</div>';
   const names = d.darlehen_namen || [];
-  let h = `<div class="toolbar"><span class="muted small">Aktive Kalkulation „${esc(d.name || '')}“ · alle Jahre</span><span class="sp"></span>${xlsxBtn('immobilie', `data-immo="${esc(d.id)}"`)}</div><div class="wrap"><table><thead><tr><th>Jahr</th>${['Miete', 'Umlage', 'Kosten', 'Rücklage', 'Zinsen', 'Tilgung', 'Sondertilgung', 'AfA', 'Ergebnis', 'Steuer', 'Ergebnis n. St.', 'Ausschüttung', 'Cashflow', 'Cashflow kum.', 'Vermögensaufbau', 'EK-Rendite', 'Restschuld', 'Objektwert', 'EK im Objekt', 'DSCR', 'NKM/Monat'].map(x => `<th>${x}</th>`).join('')}${names.map(n => `<th>${esc(n)} Zins</th><th>${esc(n)} Tilgung</th><th>${esc(n)} Saldo</th>`).join('')}</tr></thead><tbody>`;
+  let h = `<div class="toolbar"><span class="muted small">Aktive Kalkulation „${esc(d.name || '')}“ · alle Jahre</span><span class="sp"></span>${xlsxBtn('property', `data-immo="${esc(d.id)}"`)}</div><div class="wrap"><table><thead><tr><th>Jahr</th>${['Miete', 'Umlage', 'Kosten', 'Rücklage', 'Zinsen', 'Tilgung', 'Sondertilgung', 'AfA', 'Ergebnis', 'Steuer', 'Ergebnis n. St.', 'Ausschüttung', 'Cashflow', 'Cashflow kum.', 'Vermögensaufbau', 'EK-Rendite', 'Restschuld', 'Objektwert', 'EK im Objekt', 'DSCR', 'NKM/Monat'].map(x => `<th>${x}</th>`).join('')}${names.map(n => `<th>${esc(n)} Zins</th><th>${esc(n)} Tilgung</th><th>${esc(n)} Saldo</th>`).join('')}</tr></thead><tbody>`;
   const c = v => `<td class="${v == null ? 'zero' : v < 0 ? 'neg' : 'pos'}">${v == null ? '–' : F(v)}</td>`;
   for (const j of J) h += `<tr><td>${j.jahr}${j.monate < 12 ? ' (' + j.monate + ' Mon.)' : ''}</td>${[j.miete, j.umlage, j.kosten, j.ruecklage, j.zins, j.tilgung, j.sondertilgung, j.afa, j.ergebnis, j.steuer, j.ergebnis_nach_steuern, j.ausschuettung, j.cashflow, j.cashflow_kumuliert, j.vermoegensaufbau].map(c).join('')}<td>${j.ek_rendite == null ? '–' : (j.ek_rendite * 100).toFixed(2) + ' %'}</td>${[j.restschuld, j.wert, j.eigenkapital_objekt].map(c).join('')}<td>${j.dscr ?? '–'}</td>${c(j.nkm_monat)}${names.map(n => c(j.darlehen[n].zins) + c(j.darlehen[n].tilgung) + c(j.darlehen[n].saldo)).join('')}</tr>`;
   h += '</tbody></table></div>';
@@ -1263,25 +1263,25 @@ function vImmoDokumente(im) {
 }
 async function immoCalc() {
   if (!IM.edit) return;
-  try { IM.res = await api('/api/immobilien/berechnen', {eingaben: IM.edit, ohne_monate: true}); const el = $('#im-result'); if (el) el.innerHTML = immoResultHtml(IM.res); const er = $('#im-err'); if (er) er.innerHTML = ''; }
+  try { IM.res = await api('/api/properties/calculate', {eingaben: IM.edit, ohne_monate: true}); const el = $('#im-result'); if (el) el.innerHTML = immoResultHtml(IM.res); const er = $('#im-err'); if (er) er.innerHTML = ''; }
   catch (e) { const el = $('#im-err'); if (el) el.innerHTML = `<div class="fehler">${esc(e.message)}</div>`; }
 }
 function bindImmo(main) {
   $$('.card[data-im]', main).forEach(c => c.addEventListener('click', () => { location.hash = '#immobilien/' + c.dataset.im; }));
-  const nw = $('#im-new', main); if (nw) nw.addEventListener('click', async () => { const name = prompt('Name des Objekts:'); if (!name) return; const b = S.bereich || ((S.CFG.bereiche || [])[0] || {}).id || ''; try { const r = await api('/api/immobilien', {aktion: 'anlegen', name, bereich: b}); S.CFG = await api('/api/config'); location.hash = '#immobilien/' + r.immobilie.id; } catch (e) { toast(e.message, 5000); } });
+  const nw = $('#im-new', main); if (nw) nw.addEventListener('click', async () => { const name = prompt('Name des Objekts:'); if (!name) return; const b = S.bereich || ((S.CFG.bereiche || [])[0] || {}).id || ''; try { const r = await api('/api/properties', {aktion: 'anlegen', name, bereich: b}); S.CFG = await api('/api/config'); location.hash = '#immobilien/' + r.immobilie.id; } catch (e) { toast(e.message, 5000); } });
   const id = (location.hash.split('/')[1] || '').split('?')[0]; if (!id) return;
   const im = immoOf(id); if (!im) return;
   $$('.tabs button[data-t]', main).forEach(b => b.addEventListener('click', () => { IM.tab = b.dataset.t; route(); }));
-  const del = $('#im-del', main); if (del) del.addEventListener('click', async () => { if (!confirm('Objekt „' + im.name + '“ mit allen Kalkulationen löschen?')) return; await api('/api/immobilien', {aktion: 'loeschen', id}); S.CFG = await api('/api/config'); location.hash = '#immobilien'; });
-  const sm = $('#im-save-meta', main); if (sm) sm.addEventListener('click', async () => { try { await api('/api/immobilien', {aktion: 'aendern', id, name: $('#im-name').value, bereich: $('#im-bereich').value, kategorie: $('#im-kat').value, objekt_konto: $('#im-konto').value, in_planung: $('#im-plan').checked, notizen: $('#im-notiz').value}); toast('Gespeichert'); await loadAll(); route(); } catch (e) { toast(e.message, 5000); } });
+  const del = $('#im-del', main); if (del) del.addEventListener('click', async () => { if (!confirm('Objekt „' + im.name + '“ mit allen Kalkulationen löschen?')) return; await api('/api/properties', {aktion: 'loeschen', id}); S.CFG = await api('/api/config'); location.hash = '#immobilien'; });
+  const sm = $('#im-save-meta', main); if (sm) sm.addEventListener('click', async () => { try { await api('/api/properties', {aktion: 'aendern', id, name: $('#im-name').value, bereich: $('#im-bereich').value, kategorie: $('#im-kat').value, objekt_konto: $('#im-konto').value, in_planung: $('#im-plan').checked, notizen: $('#im-notiz').value}); toast('Gespeichert'); await loadAll(); route(); } catch (e) { toast(e.message, 5000); } });
   const ks = $('#im-kalk', main); if (ks) ks.addEventListener('change', e => { IM.kalk = e.target.value; IM.edit = null; route(); });
   const kn = $('#im-kalk-new', main); if (kn) kn.addEventListener('click', async () => {
-    let eing = IM.edit ? JSON.parse(JSON.stringify(IM.edit)) : (await api('/api/immobilien/vorlage')).eingaben;
+    let eing = IM.edit ? JSON.parse(JSON.stringify(IM.edit)) : (await api('/api/properties/template')).eingaben;
     if (!IM.edit) { eing.name = im.name; if (S.DATA && S.DATA.bereich_info && S.DATA.bereich_info[im.bereich] && S.DATA.bereich_info[im.bereich].art === 'privat') eing.gesellschafter = [{name: 'Eigentümer', anteil_prozent: 100, steuersatz_prozent: 42}]; }
     const name = prompt('Name des Szenarios:', IM.edit ? 'Variante' : 'Basis'); if (!name) return;
-    try { const r = await api('/api/immobilien', {aktion: 'kalkulation_speichern', id, kalkulation: {name, eingaben: eing}}); S.CFG = await api('/api/config'); IM.kalk = r.immobilie.kalkulationen[r.immobilie.kalkulationen.length - 1].id; IM.edit = null; await loadAll(); route(); } catch (e) { toast(e.message, 6000); } });
-  const ka = $('#im-kalk-aktiv', main); if (ka) ka.addEventListener('click', async () => { await api('/api/immobilien', {aktion: 'kalkulation_aktiv', id, kalkulation_id: IM.kalk}); await loadAll(); route(); });
-  const kd = $('#im-kalk-del', main); if (kd) kd.addEventListener('click', async () => { if (!confirm('Szenario löschen?')) return; await api('/api/immobilien', {aktion: 'kalkulation_loeschen', id, kalkulation_id: IM.kalk}); IM.kalk = null; IM.edit = null; await loadAll(); route(); });
+    try { const r = await api('/api/properties', {aktion: 'kalkulation_speichern', id, kalkulation: {name, eingaben: eing}}); S.CFG = await api('/api/config'); IM.kalk = r.immobilie.kalkulationen[r.immobilie.kalkulationen.length - 1].id; IM.edit = null; await loadAll(); route(); } catch (e) { toast(e.message, 6000); } });
+  const ka = $('#im-kalk-aktiv', main); if (ka) ka.addEventListener('click', async () => { await api('/api/properties', {aktion: 'kalkulation_aktiv', id, kalkulation_id: IM.kalk}); await loadAll(); route(); });
+  const kd = $('#im-kalk-del', main); if (kd) kd.addEventListener('click', async () => { if (!confirm('Szenario löschen?')) return; await api('/api/properties', {aktion: 'kalkulation_loeschen', id, kalkulation_id: IM.kalk}); IM.kalk = null; IM.edit = null; await loadAll(); route(); });
   // Eingaben binden
   $$('[data-p]', main).forEach(inp => inp.addEventListener('input', () => {
     let v = inp.value;
@@ -1298,20 +1298,20 @@ function bindImmo(main) {
   const cb = $('#im-calc', main); if (cb) cb.addEventListener('click', immoCalc);
   const sv = $('#im-kalk-save', main); if (sv) sv.addEventListener('click', async () => {
     const dk = {}; $$('.im-loan-konto', main).forEach(sel => { const name = sel.closest('.loan-box').querySelector('[data-p$=".name"]').value; if (sel.value) dk[name] = sel.value; });
-    try { await api('/api/immobilien', {aktion: 'aendern', id, darlehen_konten: dk}); await api('/api/immobilien', {aktion: 'kalkulation_speichern', id, kalkulation: {id: IM.kalk, name: $('#im-kalk-name').value, eingaben: IM.edit}}); toast('Kalkulation gespeichert'); await loadAll(); route(); } catch (e) { $('#im-err').innerHTML = `<div class="fehler">${esc(e.message)}</div>`; } });
+    try { await api('/api/properties', {aktion: 'aendern', id, darlehen_konten: dk}); await api('/api/properties', {aktion: 'kalkulation_speichern', id, kalkulation: {id: IM.kalk, name: $('#im-kalk-name').value, eingaben: IM.edit}}); toast('Kalkulation gespeichert'); await loadAll(); route(); } catch (e) { $('#im-err').innerHTML = `<div class="fehler">${esc(e.message)}</div>`; } });
   if (IM.edit && !IM.res) immoCalc();
   // Dokumente
-  const dp = $('#doc-pick', main); if (dp) dp.addEventListener('click', async () => { toast('Dateiauswahl am Mac geöffnet …', 4000); try { const r = await api('/api/datei/waehlen', {art: 'datei', prompt: 'Dokument für ' + im.name}); if (r.ok) { $('#doc-pfad').value = r.pfad; if (!$('#doc-titel').value) $('#doc-titel').value = r.name.replace(/\.[^.]+$/, ''); } else toast(r.text); } catch (e) { toast(e.message, 5000); } });
-  const da = $('#doc-add', main); if (da) da.addEventListener('click', async () => { try { await api('/api/immobilien', {aktion: 'dokument_hinzufuegen', id, titel: $('#doc-titel').value, art: $('#doc-art').value, pfad: $('#doc-pfad').value}); S.CFG = await api('/api/config'); route(); } catch (e) { toast(e.message, 5000); } });
-  $$('.doc-del', main).forEach(b => b.addEventListener('click', async e => { const did = e.target.closest('.doc').dataset.id; await api('/api/immobilien', {aktion: 'dokument_entfernen', id, dokument_id: did}); S.CFG = await api('/api/config'); route(); }));
-  $$('.doc-open', main).forEach(b => b.addEventListener('click', async e => { const did = e.target.closest('.doc').dataset.id; const d = (im.dokumente || []).find(x => x.id === did); try { const r = await api('/api/datei/oeffnen', {pfad: d.pfad}); if (r.status === 'icloud') toast('Datei liegt in iCloud und wird geladen …', 5000); } catch (er) { toast(er.message, 5000); } }));
-  $$('.doc-show', main).forEach(b => b.addEventListener('click', async e => { const did = e.target.closest('.doc').dataset.id; const d = (im.dokumente || []).find(x => x.id === did); try { await api('/api/datei/zeigen', {pfad: d.pfad}); } catch (er) { toast(er.message, 5000); } }));
+  const dp = $('#doc-pick', main); if (dp) dp.addEventListener('click', async () => { toast('Dateiauswahl am Mac geöffnet …', 4000); try { const r = await api('/api/file/choose', {art: 'datei', prompt: 'Dokument für ' + im.name}); if (r.ok) { $('#doc-pfad').value = r.pfad; if (!$('#doc-titel').value) $('#doc-titel').value = r.name.replace(/\.[^.]+$/, ''); } else toast(r.text); } catch (e) { toast(e.message, 5000); } });
+  const da = $('#doc-add', main); if (da) da.addEventListener('click', async () => { try { await api('/api/properties', {aktion: 'dokument_hinzufuegen', id, titel: $('#doc-titel').value, art: $('#doc-art').value, pfad: $('#doc-pfad').value}); S.CFG = await api('/api/config'); route(); } catch (e) { toast(e.message, 5000); } });
+  $$('.doc-del', main).forEach(b => b.addEventListener('click', async e => { const did = e.target.closest('.doc').dataset.id; await api('/api/properties', {aktion: 'dokument_entfernen', id, dokument_id: did}); S.CFG = await api('/api/config'); route(); }));
+  $$('.doc-open', main).forEach(b => b.addEventListener('click', async e => { const did = e.target.closest('.doc').dataset.id; const d = (im.dokumente || []).find(x => x.id === did); try { const r = await api('/api/file/open', {pfad: d.pfad}); if (r.status === 'icloud') toast('Datei liegt in iCloud und wird geladen …', 5000); } catch (er) { toast(er.message, 5000); } }));
+  $$('.doc-show', main).forEach(b => b.addEventListener('click', async e => { const did = e.target.closest('.doc').dataset.id; const d = (im.dokumente || []).find(x => x.id === did); try { await api('/api/file/reveal', {pfad: d.pfad}); } catch (er) { toast(er.message, 5000); } }));
 }
 
 // ---------------------------------------------------------------- Depots
 function vDepots() {
   const dep = (S.DATA && S.DATA.depots) || [];
-  let h = `<div class="toolbar"><span class="muted small">Bestände aus MoneyMoney (Stand des letzten Laufs)</span><span class="sp"></span>${xlsxBtn('depots')}</div>`;
+  let h = `<div class="toolbar"><span class="muted small">Bestände aus MoneyMoney (Stand des letzten Laufs)</span><span class="sp"></span>${xlsxBtn('holdings')}</div>`;
   if (!dep.length) return h + '<div class="note">Keine Depots in den gewählten Bereichen – oder MoneyMoney liefert für diese Konten keine Positionen.</div>';
   h += '<div class="cards">' + dep.map(d => `<div class="card"><div class="l">${esc(d.name)}<span class="tag">${esc(d.entitaet)}</span></div><div class="v">${F0(d.summe)} €</div><div class="d">Einstand ${F0(d.einstand)} € · ${d.einstand ? `<span class="delta ${d.summe - d.einstand >= 0 ? 'pos' : 'neg'}">${d.summe - d.einstand >= 0 ? '+' : ''}${F0(d.summe - d.einstand)} € (${((d.summe / d.einstand - 1) * 100).toFixed(1)} %)</span>` : ''}</div></div>`).join('') + '</div>';
   for (const d of dep) {
@@ -1325,10 +1325,12 @@ function vDepots() {
 let UMS = {umsaetze: [], treffer: 0, gesamt: 0, jahre: []};
 async function loadUms() {
   const f = S.uf, q = new URLSearchParams();
-  for (const k of ['entitaet', 'jahr', 'konto', 'q', 'richtung']) if (f[k]) q.set(k, f[k]);
-  if (f.ohne_beleg) q.set('ohne_beleg', '1'); if (f.ohne_kategorie) q.set('ohne_kategorie', '1');
+  const P = {entitaet: 'entity', jahr: 'year', konto: 'account', q: 'q'};
+  for (const k in P) if (f[k]) q.set(P[k], f[k]);
+  if (f.richtung) q.set('direction', f.richtung === 'aus' ? 'out' : 'in');
+  if (f.ohne_beleg) q.set('without_receipt', '1'); if (f.ohne_kategorie) q.set('uncategorized', '1');
   q.set('limit', '400');
-  UMS = await api('/api/umsaetze?' + q.toString());
+  UMS = await api('/api/transactions?' + q.toString());
 }
 async function vUmsaetze() {
   if (!S.DATA) return noData;
@@ -1347,7 +1349,7 @@ async function vUmsaetze() {
   <div class="toolbar"><span class="muted small">${UMS.treffer} Treffer${UMS.treffer > UMS.umsaetze.length ? ' (erste ' + UMS.umsaetze.length + ' angezeigt – Filter verfeinern)' : ''} von ${UMS.gesamt} Umsätzen · Klick auf eine Zeile öffnet Details und Belege · Dateien lassen sich direkt auf eine Zeile ziehen</span><span class="sp"></span>
     <button id="bl-folder" class="secondary small" ${st.lokal ? '' : 'disabled title="nur am Mac"'}>Belegordner öffnen</button>
     <button id="bl-export" class="secondary small">Belege exportieren (ZIP)</button>
-    ${xlsxBtn('umsaetze', f.entitaet ? `data-bereich="${f.entitaet}"` : '')} ${xlsxBtn('belege')}</div>`;
+    ${xlsxBtn('transactions', f.entitaet ? `data-bereich="${f.entitaet}"` : '')} ${xlsxBtn('receipts')}</div>`;
   if (S.sel.size) h += `<div class="banner info" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${S.sel.size} ausgewählt ${catAllowed ? `<select id="bulk-cat">${catOptions('')}</select><button id="bulk-cat-btn" class="small">Kategorie zuweisen</button>` : '<span class="small">Kategorisieren aus Kontor ist in den Einstellungen nicht erlaubt (oder nicht am Mac).</span>'}<button id="bulk-clear" class="small secondary">Auswahl aufheben</button></div>`;
   h += '<div class="wrap"><table class="plain" id="ums-table"><thead><tr><th style="width:28px"><input type="checkbox" id="sel-all"></th><th>Datum</th><th>Konto</th><th>Name</th><th>Verwendungszweck</th><th class="num">Betrag</th><th>Kategorie</th><th class="num">Belege</th></tr></thead><tbody>'
     + UMS.umsaetze.map(u => `<tr class="clickable ${S.sel.has(u.id) ? 'sel' : ''}" data-id="${u.id}"><td><input type="checkbox" class="sel" ${S.sel.has(u.id) ? 'checked' : ''}></td><td class="small" style="white-space:nowrap">${FD(u.datum)}</td><td class="small">${esc(u.konto_name)}</td><td>${esc(u.name)}</td><td class="small muted" style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.zweck)}</td><td class="num ${u.betrag < 0 ? 'neg' : 'pos'}">${F(u.betrag)}</td><td class="small" title="${u.quelle === 'regel' ? 'per Kontor-Regel' : u.quelle === 'manuell' ? 'in Kontor zugeordnet' : u.quelle === 'moneymoney' ? 'aus MoneyMoney' : ''}">${u.kategorie ? esc(u.kategorie) + (u.quelle === 'regel' ? ' <span class="muted">R</span>' : u.quelle === 'manuell' ? ' <span class="muted">K</span>' : '') : '<span class="pill warn">ohne</span>'}</td><td class="num">${u.belege ? `<span class="pill ok">${u.belege}</span>` : `<button class="ghost small add-beleg" title="Beleg hinzufügen">＋</button>`}</td></tr>`).join('')
@@ -1357,7 +1359,7 @@ async function vUmsaetze() {
 async function openDrawer(txId) {
   const u = UMS.umsaetze.find(x => x.id === txId); if (!u) return;
   S.drawerTx = txId;
-  const [bl] = await Promise.all([api('/api/belege?dateien=1'), KZ.kat ? Promise.resolve() : loadKat().catch(() => null)]);
+  const [bl] = await Promise.all([api('/api/receipts?files=1'), KZ.kat ? Promise.resolve() : loadKat().catch(() => null)]);
   const mine = bl.eintraege.filter(e => e.tx_id === txId), free = bl.dateien.filter(d => !d.verknuepft);
   const st = S.STATUS, catAllowed = st.lokal && st.moneymoney.kategorisieren_erlaubt;
   const d = $('#drawer');
@@ -1366,7 +1368,7 @@ async function openDrawer(txId) {
     <div class="kv"><div>Datum</div><div>${FD(u.datum)}</div><div>Betrag</div><div class="${u.betrag < 0 ? 'neg' : 'pos'}" style="font-weight:600;color:var(--${u.betrag < 0 ? 'neg' : 'pos'})">${F(u.betrag)} €</div><div>Konto</div><div>${esc(u.konto_name)} · ${esc(BN(u.entitaet))}</div><div>Zweck</div><div>${esc(u.zweck) || '–'}</div><div>Kategorie</div><div>${esc(u.kategorie) || '<span class="pill warn">ohne</span>'}${u.quelle ? ' <span class="small muted">· ' + QUELLE[u.quelle] + '</span>' : ''}</div><div>Status</div><div>${u.gebucht ? 'gebucht' : 'vorgemerkt'}${u.haken ? ' · abgehakt' : ''}</div><div>ID</div><div class="mono small">${u.id}</div></div>
     <div class="row tight" style="margin-top:10px"><input type="text" id="dr-kat" list="dr-kats" value="${esc(u.kategorie || '')}" placeholder="Kategorie in Kontor (neu = anlegen)" style="min-width:240px;flex:1">${katList('dr-kats')}<label class="chk small"><input type="checkbox" id="dr-rule"> Regel für „${esc((u.name || '').slice(0, 24))}“</label>${catAllowed ? '<label class="chk small"><input type="checkbox" id="dr-mm"> auch in MoneyMoney</label>' : ''}<button id="dr-cat-btn" class="small">Zuordnen</button></div>
     <h3>Belege (${mine.length})</h3>
-    ${mine.map(e => `<div class="beleg" data-id="${e.id}"><span class="n" title="${esc(e.pfad)}">${e.extern ? '<span class="tag" title="Verknüpfung zu einer Datei außerhalb des Belegordners">Mac</span>' : ''}${esc(e.pfad.split('/').pop())}</span><span class="small muted">${e.extern ? (e.status === 'icloud' ? '<span class="pill warn">iCloud, nicht geladen</span>' : e.status === 'fehlt' ? '<span class="pill err">fehlt</span>' : '') : (e.groesse / 1024).toFixed(0) + ' KB'}</span><a href="/api/belege/datei?id=${e.id}" target="_blank" class="small">ansehen</a>${st.lokal ? `<button class="ghost small bl-show" title="im Finder zeigen">Finder</button>` : ''}<button class="ghost small bl-note" title="Notiz">✎</button><button class="ghost small bl-del" title="${e.extern ? 'Verknüpfung entfernen (Datei bleibt)' : 'Zuordnung entfernen'}">✕</button></div>${e.notiz ? `<div class="small muted" style="padding:0 0 6px">${esc(e.notiz)}</div>` : ''}`).join('') || '<div class="muted small">Noch kein Beleg.</div>'}
+    ${mine.map(e => `<div class="beleg" data-id="${e.id}"><span class="n" title="${esc(e.pfad)}">${e.extern ? '<span class="tag" title="Verknüpfung zu einer Datei außerhalb des Belegordners">Mac</span>' : ''}${esc(e.pfad.split('/').pop())}</span><span class="small muted">${e.extern ? (e.status === 'icloud' ? '<span class="pill warn">iCloud, nicht geladen</span>' : e.status === 'fehlt' ? '<span class="pill err">fehlt</span>' : '') : (e.groesse / 1024).toFixed(0) + ' KB'}</span><a href="/api/receipts/file?id=${e.id}" target="_blank" class="small">ansehen</a>${st.lokal ? `<button class="ghost small bl-show" title="im Finder zeigen">Finder</button>` : ''}<button class="ghost small bl-note" title="Notiz">✎</button><button class="ghost small bl-del" title="${e.extern ? 'Verknüpfung entfernen (Datei bleibt)' : 'Zuordnung entfernen'}">✕</button></div>${e.notiz ? `<div class="small muted" style="padding:0 0 6px">${esc(e.notiz)}</div>` : ''}`).join('') || '<div class="muted small">Noch kein Beleg.</div>'}
     <div class="drop" id="dr-drop" style="margin-top:12px">Datei hierher ziehen<br><button id="dr-pick" class="small" style="margin-top:8px">Datei wählen</button> <button id="dr-cam" class="small secondary" style="margin-top:8px">Foto aufnehmen</button><div class="small muted" style="margin-top:6px">PDF, Bilder, E-Mails, Office-Dateien bis 60 MB. Ablage als Datei im Belegordner, Name: Datum_Betrag_Name_Kennung.</div></div>
     ${free.length ? `<h3>Vorhandene Datei aus dem Belegordner zuordnen</h3><div class="row tight"><select id="dr-free" style="max-width:300px">${free.map(x => `<option value="${esc(x.pfad)}">${esc(x.pfad)}</option>`).join('')}</select><button id="dr-link" class="small secondary">Zuordnen</button></div>` : ''}
     <h3>Datei auf dem Mac verknüpfen ${hq('dokumente')}</h3><div class="row tight"><input type="text" id="dr-ext" placeholder="Pfad, z. B. ~/Library/Mobile Documents/com~apple~CloudDocs/Verträge/Kaufvertrag.pdf" style="flex:1;min-width:220px">${st.lokal ? '<button id="dr-ext-pick" class="small secondary">Datei wählen …</button>' : ''}<button id="dr-ext-link" class="small secondary">Verknüpfen</button></div><div class="small muted">Die Datei bleibt, wo sie liegt (auch iCloud Drive); Kontor speichert nur den Pfad.</div>`;
@@ -1377,13 +1379,13 @@ async function openDrawer(txId) {
   const dz = $('#dr-drop', d);
   dz.ondragover = e => { e.preventDefault(); dz.classList.add('over'); }; dz.ondragleave = () => dz.classList.remove('over');
   dz.ondrop = async e => { e.preventDefault(); dz.classList.remove('over'); await uploadFiles(txId, e.dataTransfer.files); };
-  const lk = $('#dr-link', d); if (lk) lk.onclick = async () => { try { await api('/api/belege/verknuepfen', {tx_id: txId, pfad: $('#dr-free', d).value}); toast('Zugeordnet'); await refreshUms(txId); } catch (e) { toast(e.message, 5000); } };
-  $$('.bl-del', d).forEach(b => b.onclick = async e => { const id = e.target.closest('.beleg').dataset.id, ent = mine.find(x => x.id === id); const del = ent && ent.extern ? false : confirm('Zuordnung entfernen. Datei auch löschen?\nOK = Datei löschen, Abbrechen = nur Zuordnung entfernen'); try { await api('/api/belege/entfernen', {id, datei_loeschen: del}); await refreshUms(txId); } catch (er) { toast(er.message, 5000); } });
-  const ep = $('#dr-ext-pick', d); if (ep) ep.onclick = async () => { toast('Dateiauswahl am Mac geöffnet …', 4000); try { const r = await api('/api/datei/waehlen', {art: 'datei', prompt: 'Beleg für ' + u.name}); if (r.ok) $('#dr-ext', d).value = r.pfad; else toast(r.text); } catch (er) { toast(er.message, 5000); } };
-  const el = $('#dr-ext-link', d); if (el) el.onclick = async () => { const pfad = $('#dr-ext', d).value.trim(); if (!pfad) return toast('Pfad fehlt'); try { await api('/api/belege/verknuepfen', {tx_id: txId, pfad, extern: true}); toast('Verknüpft'); await refreshUms(txId); } catch (er) { toast(er.message, 6000); } };
-  $$('.bl-note', d).forEach(b => b.onclick = async e => { const id = e.target.closest('.beleg').dataset.id, ent = mine.find(x => x.id === id); const n = prompt('Notiz zum Beleg:', ent.notiz || ''); if (n === null) return; await api('/api/belege/aendern', {id, notiz: n}); await refreshUms(txId); });
-  $$('.bl-show', d).forEach(b => b.onclick = async e => { const id = e.target.closest('.beleg').dataset.id, ent = mine.find(x => x.id === id); try { await api('/api/belege/oeffnen', {pfad: ent.pfad}); } catch (er) { toast(er.message, 4000); } });
-  const cb = $('#dr-cat-btn', d); if (cb) cb.onclick = async () => { const kat = $('#dr-kat', d).value.trim(); const body = {ids: [txId], kategorie: kat, in_moneymoney: !!($('#dr-mm', d) && $('#dr-mm', d).checked)}; if ($('#dr-rule', d).checked && kat) body.regel = {name_enthaelt: u.name}; try { const r = await api('/api/kategorien/zuordnen', body); toast(kat ? 'Zugeordnet' + (r.regel ? ' · Regel angelegt' : '') : 'Zuordnung entfernt'); await loadAll(); await refreshUms(txId); } catch (e) { toast(e.message, 5000); } };
+  const lk = $('#dr-link', d); if (lk) lk.onclick = async () => { try { await api('/api/receipts/link', {tx_id: txId, pfad: $('#dr-free', d).value}); toast('Zugeordnet'); await refreshUms(txId); } catch (e) { toast(e.message, 5000); } };
+  $$('.bl-del', d).forEach(b => b.onclick = async e => { const id = e.target.closest('.beleg').dataset.id, ent = mine.find(x => x.id === id); const del = ent && ent.extern ? false : confirm('Zuordnung entfernen. Datei auch löschen?\nOK = Datei löschen, Abbrechen = nur Zuordnung entfernen'); try { await api('/api/receipts/remove', {id, datei_loeschen: del}); await refreshUms(txId); } catch (er) { toast(er.message, 5000); } });
+  const ep = $('#dr-ext-pick', d); if (ep) ep.onclick = async () => { toast('Dateiauswahl am Mac geöffnet …', 4000); try { const r = await api('/api/file/choose', {art: 'datei', prompt: 'Beleg für ' + u.name}); if (r.ok) $('#dr-ext', d).value = r.pfad; else toast(r.text); } catch (er) { toast(er.message, 5000); } };
+  const el = $('#dr-ext-link', d); if (el) el.onclick = async () => { const pfad = $('#dr-ext', d).value.trim(); if (!pfad) return toast('Pfad fehlt'); try { await api('/api/receipts/link', {tx_id: txId, pfad, extern: true}); toast('Verknüpft'); await refreshUms(txId); } catch (er) { toast(er.message, 6000); } };
+  $$('.bl-note', d).forEach(b => b.onclick = async e => { const id = e.target.closest('.beleg').dataset.id, ent = mine.find(x => x.id === id); const n = prompt('Notiz zum Beleg:', ent.notiz || ''); if (n === null) return; await api('/api/receipts/update', {id, notiz: n}); await refreshUms(txId); });
+  $$('.bl-show', d).forEach(b => b.onclick = async e => { const id = e.target.closest('.beleg').dataset.id, ent = mine.find(x => x.id === id); try { await api('/api/receipts/open', {pfad: ent.pfad}); } catch (er) { toast(er.message, 4000); } });
+  const cb = $('#dr-cat-btn', d); if (cb) cb.onclick = async () => { const kat = $('#dr-kat', d).value.trim(); const body = {ids: [txId], kategorie: kat, in_moneymoney: !!($('#dr-mm', d) && $('#dr-mm', d).checked)}; if ($('#dr-rule', d).checked && kat) body.regel = {name_enthaelt: u.name}; try { const r = await api('/api/categories/assign', body); toast(kat ? 'Zugeordnet' + (r.regel ? ' · Regel angelegt' : '') : 'Zuordnung entfernt'); await loadAll(); await refreshUms(txId); } catch (e) { toast(e.message, 5000); } };
 }
 function closeDrawer() { $('#drawer').classList.remove('open'); S.drawerTx = null; }
 async function belegeApi(path, body) {
@@ -1408,7 +1410,7 @@ async function uploadFiles(txId, files) {
     toast('Lade ' + f.name + ' …', 60000);
     try {
       const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(f); });
-      await belegeApi('/api/belege/upload', {tx_id: txId, datei_name: f.name, inhalt: b64});
+      await belegeApi('/api/receipts/upload', {tx_id: txId, datei_name: f.name, inhalt: b64});
       toast(f.name + ' abgelegt');
     } catch (e) { toast('Fehler: ' + e.message, 6000); }
   }
@@ -1547,12 +1549,12 @@ function vKapitalflussZuordnung() {
 
 // ---------------------------------------------------------------- Zuordnen (Kontor-Kategorien)
 const KZ = {jahr: '', bereich: '', min: '', open: {}, kat: null, offen: null, tab: 'baum'};
-async function loadKat() { KZ.kat = await api('/api/kategorien/kontor'); return KZ.kat; }
+async function loadKat() { KZ.kat = await api('/api/categories/kontor'); return KZ.kat; }
 const katPaths = () => (KZ.kat ? KZ.kat.baum.map(k => k.pfad) : []);
 const katList = id => `<datalist id="${id}">${katPaths().map(p => `<option value="${esc(p)}">`).join('')}</datalist>`;
 async function vZuordnen() {
   if (!S.DATA) return noData;
-  const [kat, off] = await Promise.all([loadKat(), api(`/api/kategorien/offen?jahr=${KZ.jahr}&bereich=${KZ.bereich}&min=${KZ.min}`)]);
+  const [kat, off] = await Promise.all([loadKat(), api(`/api/categories/unassigned?year=${KZ.jahr}&area=${KZ.bereich}&min=${KZ.min}`)]);
   KZ.offen = off;
   const st = (S.DATA.kategorien || {}).gesamt || {}, years = Object.keys((S.DATA.kategorien || {}).jahre || {}).sort().reverse();
   const mmAllowed = S.STATUS.lokal && S.STATUS.moneymoney.kategorisieren_erlaubt;
@@ -1577,13 +1579,13 @@ async function vZuordnen() {
 function bindZuordnen(main) {
   const bindF = (id, key) => { const el = $(id, main); if (el) el.addEventListener('change', e => { KZ[key] = e.target.value; route(); }); };
   bindF('#kz-bereich', 'bereich'); bindF('#kz-jahr', 'jahr'); bindF('#kz-min', 'min');
-  const ln = $('#kz-lernen', main); if (ln) ln.addEventListener('click', async () => { toast('Lerne …', 10000); try { const r = await api('/api/kategorien/lernen', {}); toast(`${r.gelernt.regeln} Regeln aus ${r.gelernt.muster} Umsätzen, ${r.zugeordnet} neu zugeordnet`, 6000); await loadAll(); route(); } catch (e) { toast(e.message, 6000); } });
+  const ln = $('#kz-lernen', main); if (ln) ln.addEventListener('click', async () => { toast('Lerne …', 10000); try { const r = await api('/api/categories/learn', {}); toast(`${r.gelernt.regeln} Regeln aus ${r.gelernt.muster} Umsätzen, ${r.zugeordnet} neu zugeordnet`, 6000); await loadAll(); route(); } catch (e) { toast(e.message, 6000); } });
   $$('.kz-toggle', main).forEach(b => b.addEventListener('click', e => { const k = e.target.closest('.kz-group').dataset.key; KZ.open[k] = !KZ.open[k]; route(); }));
   const assign = async (box, kat) => {
     const g = KZ.offen.gruppen.find(x => x.key === box.dataset.key); if (!g || !kat) return toast('Kategorie fehlt');
     const body = {ids: g.ids, kategorie: kat, in_moneymoney: !!($('.kz-mm', box) && $('.kz-mm', box).checked)};
     if ($('.kz-rule', box).checked) body.regel = g.iban ? {iban: g.iban} : {name_enthaelt: g.name};
-    try { const r = await api('/api/kategorien/zuordnen', body); toast(`${r.anzahl} zugeordnet${r.regel ? ' · Regel angelegt' : ''}${r.in_moneymoney ? ' · ' + r.in_moneymoney + ' in MoneyMoney' : ''}`); await loadAll(); route(); } catch (e) { toast(e.message, 6000); }
+    try { const r = await api('/api/categories/assign', body); toast(`${r.anzahl} zugeordnet${r.regel ? ' · Regel angelegt' : ''}${r.in_moneymoney ? ' · ' + r.in_moneymoney + ' in MoneyMoney' : ''}`); await loadAll(); route(); } catch (e) { toast(e.message, 6000); }
   };
   $$('.kz-save', main).forEach(b => b.addEventListener('click', e => { const box = e.target.closest('.kz-group'); assign(box, $('.kz-kat', box).value.trim()); }));
   $$('.kz-umb', main).forEach(b => b.addEventListener('click', e => { const box = e.target.closest('.kz-group'); assign(box, 'Umbuchung'); }));
@@ -1603,14 +1605,14 @@ function vKontorKategorien() {
   return h;
 }
 function bindKontorKategorien(main) {
-  const setEinst = async () => { try { await api('/api/kategorien/einstellungen', {aktiv: $('#kk-aktiv').checked, lernen: $('#kk-lernen').checked, mm_ueberschreiben: $('#kk-mm').checked}); toast('Gespeichert'); await loadAll(); } catch (e) { toast(e.message, 5000); } };
+  const setEinst = async () => { try { await api('/api/categories/settings', {aktiv: $('#kk-aktiv').checked, lernen: $('#kk-lernen').checked, mm_ueberschreiben: $('#kk-mm').checked}); toast('Gespeichert'); await loadAll(); } catch (e) { toast(e.message, 5000); } };
   for (const id of ['#kk-aktiv', '#kk-lernen', '#kk-mm']) { const el = $(id, main); if (el) el.addEventListener('change', setEinst); }
-  const add = $('#kk-add', main); if (add) add.addEventListener('click', async () => { const p = $('#kk-neu').value.trim(); if (!p) return; try { await api('/api/kategorien/baum', {aktion: 'anlegen', pfad: p}); toast('Angelegt'); await loadKat(); route(); } catch (e) { toast(e.message, 5000); } });
-  const ms = $('#kk-mmsync', main); if (ms) ms.addEventListener('click', async () => { try { await api('/api/kategorien/baum', {aktion: 'mm_uebernehmen'}); await loadKat(); route(); } catch (e) { toast(e.message, 5000); } });
-  $$('.kk-ren', main).forEach(b => b.addEventListener('click', async e => { const p = e.target.closest('tr').dataset.pfad; const n = prompt('Neuer Pfad (Verschieben = Oberkategorie ändern):', p); if (!n || n === p) return; try { await api('/api/kategorien/baum', {aktion: 'umbenennen', pfad: p, neu: n}); await loadKat(); await loadAll(); route(); } catch (er) { toast(er.message, 5000); } }));
-  $$('.kk-del', main).forEach(b => b.addEventListener('click', async e => { const p = e.target.closest('tr').dataset.pfad; const ers = prompt('„' + p + '“ löschen. Zuordnungen und Regeln umhängen auf (leer = entfernen):', ''); if (ers === null) return; try { await api('/api/kategorien/baum', {aktion: 'loeschen', pfad: p, ersatz: ers}); await loadKat(); await loadAll(); route(); } catch (er) { toast(er.message, 5000); } }));
-  const ra = $('#kr-add', main); if (ra) ra.addEventListener('click', async () => { try { await api('/api/kategorien/regel', {regel: {name_enthaelt: $('#kr-name').value, zweck_enthaelt: $('#kr-zweck').value, iban: $('#kr-iban').value, richtung: $('#kr-richtung').value, kategorie: $('#kr-kat').value}}); toast('Regel angelegt'); await loadKat(); await loadAll(); route(); } catch (e) { toast(e.message, 6000); } });
-  $$('.kr-del', main).forEach(b => b.addEventListener('click', async e => { const id = e.target.closest('tr').dataset.id; try { await api('/api/kategorien/regel', {loeschen: id}); await loadKat(); await loadAll(); route(); } catch (er) { toast(er.message, 5000); } }));
+  const add = $('#kk-add', main); if (add) add.addEventListener('click', async () => { const p = $('#kk-neu').value.trim(); if (!p) return; try { await api('/api/categories/tree', {aktion: 'anlegen', pfad: p}); toast('Angelegt'); await loadKat(); route(); } catch (e) { toast(e.message, 5000); } });
+  const ms = $('#kk-mmsync', main); if (ms) ms.addEventListener('click', async () => { try { await api('/api/categories/tree', {aktion: 'mm_uebernehmen'}); await loadKat(); route(); } catch (e) { toast(e.message, 5000); } });
+  $$('.kk-ren', main).forEach(b => b.addEventListener('click', async e => { const p = e.target.closest('tr').dataset.pfad; const n = prompt('Neuer Pfad (Verschieben = Oberkategorie ändern):', p); if (!n || n === p) return; try { await api('/api/categories/tree', {aktion: 'umbenennen', pfad: p, neu: n}); await loadKat(); await loadAll(); route(); } catch (er) { toast(er.message, 5000); } }));
+  $$('.kk-del', main).forEach(b => b.addEventListener('click', async e => { const p = e.target.closest('tr').dataset.pfad; const ers = prompt('„' + p + '“ löschen. Zuordnungen und Regeln umhängen auf (leer = entfernen):', ''); if (ers === null) return; try { await api('/api/categories/tree', {aktion: 'loeschen', pfad: p, ersatz: ers}); await loadKat(); await loadAll(); route(); } catch (er) { toast(er.message, 5000); } }));
+  const ra = $('#kr-add', main); if (ra) ra.addEventListener('click', async () => { try { await api('/api/categories/rule', {regel: {name_enthaelt: $('#kr-name').value, zweck_enthaelt: $('#kr-zweck').value, iban: $('#kr-iban').value, richtung: $('#kr-richtung').value, kategorie: $('#kr-kat').value}}); toast('Regel angelegt'); await loadKat(); await loadAll(); route(); } catch (e) { toast(e.message, 6000); } });
+  $$('.kr-del', main).forEach(b => b.addEventListener('click', async e => { const id = e.target.closest('tr').dataset.id; try { await api('/api/categories/rule', {loeschen: id}); await loadKat(); await loadAll(); route(); } catch (er) { toast(er.message, 5000); } }));
 }
 
 // ---------------------------------------------------------------- Einstellungen
@@ -1708,7 +1710,7 @@ function pkgPreview() {
   $$('#pk-mode button').forEach(b => b.onclick = () => { $$('#pk-mode button').forEach(x => x.classList.remove('on')); b.classList.add('on'); mode = b.dataset.m; });
   const doImport = async (mapping, force) => {
     try {
-      const r = await api('/api/paket/import', {paket: PKG, modus: mode, zuordnung: mapping || {}, trotzdem: !!force, mit_plan: !!($('#pk-withplan') && $('#pk-withplan').checked)});
+      const r = await api('/api/package/import', {paket: PKG, modus: mode, zuordnung: mapping || {}, trotzdem: !!force, mit_plan: !!($('#pk-withplan') && $('#pk-withplan').checked)});
       if (!r.ok) { PKG_UNRES = r.unaufgeloest; pkgPreview(); showFindings($('#pk-report'), [], r.hinweis + ' (' + r.unaufgeloest.length + ' offen)', 'warnung'); return; }
       S.CFG = r.config; PKG_UNRES = null; showFindings($('#pk-report'), r.befunde, 'Übernommen: ' + r.bericht.join(' · '), 'ok'); toast('Paket übernommen');
     } catch (e) { showFindings($('#pk-report'), [], e.message, 'fehler'); }
@@ -1723,7 +1725,7 @@ async function readPkgFile(file) {
     if (obj.kontor_sicherung) {
       const teile = ['Einstellungen', obj.plan ? 'Planung' : '', obj.kategorien ? 'Kategorien' : '', obj.historie ? 'Verlauf' : '', obj.belege ? 'Belegindex' : ''].filter(Boolean).join(', ');
       if (!confirm('Sicherung vom ' + (obj.erstellt || '?') + ' (Version ' + (obj.version || '?') + ') wiederherstellen? Ersetzt: ' + teile + '.')) return;
-      const r = await api('/api/sicherung/laden', {sicherung: obj});
+      const r = await api('/api/backup/restore', {sicherung: obj});
       S.CFG = r.config; toast('Sicherung geladen: ' + r.teile.join(', '), 6000); await loadAll(); route(); return;
     }
     PKG = obj; if (!PKG.config) { if (PKG.darlehen || PKG.bilanz) PKG = {kontor_paket: 1, name: file.name, config: PKG}; else throw new Error('kein Kontor-Paket'); } PKG_UNRES = null; pkgPreview(); }
@@ -1803,7 +1805,7 @@ function vHilfe() {
   <li><b>Kontostände vor … fortgeschrieben</b> – für ein Konto mit Verlaufsquelle „Kontostände“ fehlen ältere Monatswerte: in der Bilanz auf das Konto klicken und Werte eintragen oder importieren.</li>
   <li><b>Datei liegt in iCloud</b> – die verknüpfte Datei ist nur in der Cloud; „Öffnen“ lädt sie herunter (oder im Finder auf die Wolke klicken).</li></ul>
   <h2>Kommandozeile</h2>
-  <p><code>python3 kontor.py check</code> (Konfiguration prüfen) · <code>run --probelauf</code> · <code>konten</code> (Kontenbaum mit UUIDs) · <code>paket-export</code> / <code>paket-import DATEI</code> · <code>diagnose</code> · <code>update --installieren</code> · <code>install</code> (Dienst einrichten, jederzeit wiederholbar).</p>
+  <p><code>python3 kontor.py check</code> (Konfiguration prüfen) · <code>run --dry-run</code> · <code>accounts</code> (Kontenbaum mit UUIDs) · <code>package-export</code> / <code>package-import DATEI</code> · <code>diagnostics</code> · <code>update --install</code> · <code>install</code> (Dienst einrichten, jederzeit wiederholbar).</p>
   </div>`;
 }
 
@@ -1885,7 +1887,7 @@ function guardDirty(main) {
     b.disabled = true;
     try {
       if (!(await SAVE[b.dataset.save]())) return;          // Fehler stehen auf der Seite
-      await api('/api/bericht/neu', {});
+      await api('/api/report/rebuild', {});
       if (!(await waitRebuild('Auswertung wird mit den gespeicherten Angaben aktualisiert'))) return;
       await loadAll();
       location.hash = b.dataset.savenext;
@@ -1942,7 +1944,7 @@ function bind(main) {
   // Waagerecht: aktuelle Spalte (Monat bzw. Jahr) rechts im Blick, ältere Jahre links davon; Plan-Spalten rechts anschließend
   if (['bilanz', 'kapitalfluss', 'planung'].includes(S.tab)) $$('.wrap', main).forEach(w => { const c = $('th[data-cur]', w); if (c && w.scrollWidth > w.clientWidth) w.scrollLeft = Math.max(0, c.offsetLeft + c.offsetWidth - w.clientWidth * (S.plan ? 0.62 : 0.97)); });
   const vs = $('#vorschlag-an', main); if (vs) vs.addEventListener('change', e => { S.vorschlag = e.target.checked; route(); });
-  $$('[data-xlsx]', main).forEach(b => b.addEventListener('click', () => download(b.dataset.xlsx === 'immobilie' ? `/api/export/immobilie.xlsx?id=${encodeURIComponent(b.dataset.immo || '')}&kalkulation=${encodeURIComponent(b.dataset.kalk || '')}` : `/api/export/${b.dataset.xlsx}.xlsx?bereich=${encodeURIComponent(b.dataset.bereich || S.bereich || '')}&modus=${S.modus === 'jahre' ? 'jahre' : 'monate'}`)));
+  $$('[data-xlsx]', main).forEach(b => b.addEventListener('click', () => download(b.dataset.xlsx === 'property' ? `/api/export/property.xlsx?id=${encodeURIComponent(b.dataset.immo || '')}&calculation=${encodeURIComponent(b.dataset.kalk || '')}` : `/api/export/${b.dataset.xlsx}.xlsx?area=${encodeURIComponent(b.dataset.bereich || S.bereich || '')}&mode=${S.modus === 'jahre' ? 'years' : 'months'}`)));
 
   // Einrichtung
   const wc = $('#w-check', main); if (wc) wc.addEventListener('click', async () => {
@@ -1967,14 +1969,14 @@ function bind(main) {
   $$('.k-hist', main).forEach(b => b.addEventListener('click', async e => { const btn = e.target; btn.classList.add('busy'); try { const tr = btn.closest('tr'), sel = $('.k-verlauf', tr); await openHistDrawer(tr.dataset.uuid, sel ? sel.value : null); } catch (er) { toast('Verlauf konnte nicht geladen werden: ' + er.message, 6000); } finally { btn.classList.remove('busy'); } }));
   const hp = $('#hi-pick', main); if (hp) hp.addEventListener('click', () => { const inp = $('#file-input'); inp.value = ''; inp.setAttribute('accept', '.csv,.txt,.xlsx,.xlsm'); inp.removeAttribute('capture'); inp.onchange = () => { if (inp.files[0]) histImportPreview(inp.files[0]); }; inp.click(); });
   const hd = $('#hi-drop', main); if (hd) { hd.addEventListener('dragover', e => { e.preventDefault(); hd.classList.add('over'); }); hd.addEventListener('dragleave', () => hd.classList.remove('over')); hd.addEventListener('drop', e => { e.preventDefault(); hd.classList.remove('over'); if (e.dataTransfer.files[0]) histImportPreview(e.dataTransfer.files[0]); }); if (HI) renderHistImport(); }
-  const mz = $('#mmh-zeigen', main); if (mz) mz.addEventListener('click', async () => { try { await api('/api/historie/mm-zeigen', {}); } catch (e) { toast(e.message, 6000); } });
+  const mz = $('#mmh-zeigen', main); if (mz) mz.addEventListener('click', async () => { try { await api('/api/history/mm-reveal', {}); } catch (e) { toast(e.message, 6000); } });
   const md = $('#mmh-drop', main); if (md) {
     const send = async file => {
       // Datei (verschlüsselt) direkt als Bytes an den Dienst auf diesem Mac; nichts davon wird gespeichert
       const res = $('#mmh-res', main); if (!file) return;
       if (MMH.busy) return; MMH.busy = true; md.classList.add('busy'); res.innerHTML = '<div class="working"><span class="spin"></span>Datei wird übergeben …</div>';
       try {
-        const r = await fetch('/api/historie/mm-einlesen', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/octet-stream', 'X-CSRF-Token': S.csrf, 'X-Kontor-Net': 'direct'}, body: file});
+        const r = await fetch('/api/history/mm-import', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/octet-stream', 'X-CSRF-Token': S.csrf, 'X-Kontor-Net': 'direct'}, body: file});
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.fehler || ('Fehler ' + r.status));
         if (j.laeuft) await mmhFollow(); else showFindings($('#mmh-res') || res, [], j.text, 'fehler');
@@ -1987,11 +1989,11 @@ function bind(main) {
     $('#mmh-pick', main).addEventListener('click', () => $('#mmh-file', main).click());
     $('#mmh-file', main).addEventListener('change', e => { send(e.target.files[0]); e.target.value = ''; });
   }
-  const go = $('#gap-ok', main); if (go) go.addEventListener('click', async () => { try { await api('/api/abruf/luecken', {}); S.STATUS = await api('/api/status'); statusMini(); route(); } catch (e) { toast(e.message, 5000); } });
+  const go = $('#gap-ok', main); if (go) go.addEventListener('click', async () => { try { await api('/api/sync/gaps', {}); S.STATUS = await api('/api/status'); statusMini(); route(); } catch (e) { toast(e.message, 5000); } });
   $$('.dep-hist', main).forEach(b => b.addEventListener('click', async () => { b.classList.add('busy'); try { await openHistDrawer(b.closest('tr').dataset.uuid); } catch (e) { toast(e.message, 6000); } finally { b.classList.remove('busy'); } }));
   const sn = $('#sync-now', main); if (sn) sn.addEventListener('click', async () => { sn.classList.add('busy'); try { await syncNow(); } finally { sn.classList.remove('busy'); } });
   $$('.ab-chk', main).forEach(cb => cb.addEventListener('change', async () => {
-    try { await api('/api/abruf', {konto: cb.closest('tr').dataset.uuid, abgerufen: cb.checked}); S.STATUS = await api('/api/status'); statusMini(); route(); }
+    try { await api('/api/sync', {konto: cb.closest('tr').dataset.uuid, abgerufen: cb.checked}); S.STATUS = await api('/api/status'); statusMini(); route(); }
     catch (e) { toast(e.message, 5000); cb.checked = !cb.checked; }
   }));
   const ksi = $('#k-show-inactive', main); if (ksi) ksi.addEventListener('change', e => $$('tr.inactive', main).forEach(tr => tr.style.display = e.target.checked ? '' : 'none'));
@@ -2032,12 +2034,12 @@ function bind(main) {
   // Buchungen
   const rd = $('#run-dry', main); if (rd) rd.addEventListener('click', () => startRun(true));
   const rl = $('#run-live', main); if (rl) rl.addEventListener('click', () => { if (confirm('Jetzt buchen: Buchungen werden jetzt in MoneyMoney angelegt (nur manuelle Konten). Fortfahren?')) startRun(false); });
-  const rr = $('#run-report', main); if (rr) rr.addEventListener('click', async () => { toast('Bericht wird erstellt …', 20000); const r = await api('/api/bericht', {}); if (!r.ok) toast(r.text || 'MoneyMoney nicht verfügbar', 5000); await loadAll(); route(); });
+  const rr = $('#run-report', main); if (rr) rr.addEventListener('click', async () => { toast('Bericht wird erstellt …', 20000); const r = await api('/api/report', {}); if (!r.ok) toast(r.text || 'MoneyMoney nicht verfügbar', 5000); await loadAll(); route(); });
 
   // Steuer
   const sj = $('#st-jahr', main); if (sj) sj.addEventListener('change', e => { S.steuerJahr = e.target.value; route(); });
   const se = $('#st-ent', main); if (se) se.addEventListener('change', e => { S.steuerEnt = e.target.value; route(); });
-  const sb = $('#st-belege', main); if (sb) sb.addEventListener('click', async () => { try { const r = await belegeApi('/api/belege/export', {jahr: S.steuerJahr, entitaet: S.steuerEnt}); toast('Export erstellt: ' + r.datei, 8000); } catch (e) { toast(e.message, 6000); } });
+  const sb = $('#st-belege', main); if (sb) sb.addEventListener('click', async () => { try { const r = await belegeApi('/api/receipts/export', {jahr: S.steuerJahr, entitaet: S.steuerEnt}); toast('Export erstellt: ' + r.datei, 8000); } catch (e) { toast(e.message, 6000); } });
   const afa = $('#afa-save', main); if (afa) afa.addEventListener('click', async () => {
     const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.steuer = cfg.steuer || {}; cfg.steuer.afa = cfg.steuer.afa || {};
     $$('.afa', main).forEach(i => { const o = i.dataset.obj; cfg.steuer.afa[o] = typeof cfg.steuer.afa[o] === 'object' && cfg.steuer.afa[o] ? cfg.steuer.afa[o] : {}; if (i.value === '') delete cfg.steuer.afa[o][S.steuerJahr]; else cfg.steuer.afa[o][S.steuerJahr] = parseFloat(i.value); });
@@ -2063,9 +2065,9 @@ function bind(main) {
     $('#sel-all', tbl).addEventListener('change', e => { S.sel.clear(); if (e.target.checked) UMS.umsaetze.forEach(u => S.sel.add(u.id)); route(); });
   }
   const bc = $('#bulk-clear', main); if (bc) bc.addEventListener('click', () => { S.sel.clear(); route(); });
-  const bk = $('#bulk-cat-btn', main); if (bk) bk.addEventListener('click', async () => { const kat = $('#bulk-cat').value; if (!kat) return toast('Kategorie wählen'); if (!confirm(S.sel.size + ' Umsätzen die Kategorie „' + kat + '“ zuweisen?')) return; try { const r = await api('/api/umsaetze/kategorie', {ids: [...S.sel], kategorie: kat}); toast(r.anzahl + ' kategorisiert'); S.sel.clear(); route(); } catch (e) { toast(e.message, 6000); } });
-  const bf = $('#bl-folder', main); if (bf) bf.addEventListener('click', async () => { try { await belegeApi('/api/belege/oeffnen', {}); } catch (e) { toast(e.message, 5000); } });
-  const be = $('#bl-export', main); if (be) be.addEventListener('click', async () => { const jahr = prompt('Jahr (leer = alle):', uf.jahr || new Date().getFullYear()); if (jahr === null) return; try { const r = await belegeApi('/api/belege/export', {jahr, entitaet: uf.entitaet}); toast('Export erstellt: ' + r.datei, 9000); } catch (e) { toast(e.message, 6000); } });
+  const bk = $('#bulk-cat-btn', main); if (bk) bk.addEventListener('click', async () => { const kat = $('#bulk-cat').value; if (!kat) return toast('Kategorie wählen'); if (!confirm(S.sel.size + ' Umsätzen die Kategorie „' + kat + '“ zuweisen?')) return; try { const r = await api('/api/transactions/category', {ids: [...S.sel], kategorie: kat}); toast(r.anzahl + ' kategorisiert'); S.sel.clear(); route(); } catch (e) { toast(e.message, 6000); } });
+  const bf = $('#bl-folder', main); if (bf) bf.addEventListener('click', async () => { try { await belegeApi('/api/receipts/open', {}); } catch (e) { toast(e.message, 5000); } });
+  const be = $('#bl-export', main); if (be) be.addEventListener('click', async () => { const jahr = prompt('Jahr (leer = alle):', uf.jahr || new Date().getFullYear()); if (jahr === null) return; try { const r = await belegeApi('/api/receipts/export', {jahr, entitaet: uf.entitaet}); toast('Export erstellt: ' + r.datei, 9000); } catch (e) { toast(e.message, 6000); } });
 
   // Regeln
   const al = $('#add-loan', main); if (al) al.addEventListener('click', () => { $('#loans').insertAdjacentHTML('beforeend', loanForm({name: 'Neues Darlehen', ab_datum: new Date().toISOString().slice(0, 10), zins: {modell: 'jahresbasis', satz: [], buchungstag: 'mit_rate'}, buchung: {kategorie_tilgung: 'Umbuchung'}}, $$('#loans .item').length)); bindDel(main); });
@@ -2088,28 +2090,28 @@ function bind(main) {
   const ss = $('#save-settings', main); if (ss) ss.addEventListener('click', () => saveConfig(collectSettings(), $('#findings-e')));
   const cb = $('#check-btn', main); if (cb) cb.addEventListener('click', async () => { toast('Prüfe …'); const r = await api('/api/check', {}); if (!r.verfuegbar) { showFindings($('#findings-e'), [], r.text, 'fehler'); return; } S.KONTEN = r.konten; S.KATS = r.kategorien || S.KATS; showFindings($('#findings-e'), r.befunde, 'Geprüft gegen den aktuellen Stand von MoneyMoney (' + r.konten.length + ' Konten).', 'ok'); });
   const ap = $('#add-pos', main); if (ap) ap.addEventListener('click', e => { e.target.insertAdjacentHTML('beforebegin', posRow('', '')); bindDel(main); });
-  const pw = $('#pw-save', main); if (pw) pw.addEventListener('click', async () => { try { await api('/api/passwort', {alt: $('#pw-alt').value, neu: $('#pw-neu').value}); toast('Passwort geändert'); $('#pw-alt').value = $('#pw-neu').value = ''; } catch (e) { toast(e.message, 4000); } });
-  const tmx = $('#tm-ex', main); if (tmx) tmx.addEventListener('click', async () => { const r = await api('/api/tm-ausschluss', {ausschliessen: true}); toast(r.ok ? 'Vom Time-Machine-Backup ausgeschlossen' : 'Fehler: ' + r.text, 4000); });
-  const tmi = $('#tm-in', main); if (tmi) tmi.addEventListener('click', async () => { const r = await api('/api/tm-ausschluss', {ausschliessen: false}); toast(r.ok ? 'Ausschluss aufgehoben' : 'Fehler: ' + r.text, 4000); });
-  for (const [id, url] of [['#diag', '/api/diagnose'], ['#diag2', '/api/diagnose'], ['#diag3', '/api/diagnose?namen=1'], ['#bk-save', '/api/sicherung']]) { const d = $(id, main); if (d) d.addEventListener('click', () => download(url)); }
+  const pw = $('#pw-save', main); if (pw) pw.addEventListener('click', async () => { try { await api('/api/password', {alt: $('#pw-alt').value, neu: $('#pw-neu').value}); toast('Passwort geändert'); $('#pw-alt').value = $('#pw-neu').value = ''; } catch (e) { toast(e.message, 4000); } });
+  const tmx = $('#tm-ex', main); if (tmx) tmx.addEventListener('click', async () => { const r = await api('/api/timemachine-exclusion', {ausschliessen: true}); toast(r.ok ? 'Vom Time-Machine-Backup ausgeschlossen' : 'Fehler: ' + r.text, 4000); });
+  const tmi = $('#tm-in', main); if (tmi) tmi.addEventListener('click', async () => { const r = await api('/api/timemachine-exclusion', {ausschliessen: false}); toast(r.ok ? 'Ausschluss aufgehoben' : 'Fehler: ' + r.text, 4000); });
+  for (const [id, url] of [['#diag', '/api/diagnostics'], ['#diag2', '/api/diagnostics'], ['#diag3', '/api/diagnostics?names=1'], ['#bk-save', '/api/backup']]) { const d = $(id, main); if (d) d.addEventListener('click', () => download(url)); }
   const swc = $('#sw-clear', main); if (swc) swc.addEventListener('click', async () => { try { const ks = await caches.keys(); await Promise.all(ks.filter(k => k === 'kontor-data').map(k => caches.delete(k))); toast('Gespeicherte Daten gelöscht'); } catch (e) { toast('Nicht möglich: ' + e.message, 4000); } });
   const rs = $('#rs-go', main); if (rs) rs.addEventListener('click', async () => {
     const pw = $('#rs-pw').value, withPw = $('#rs-pw-reset').checked;
     if (!pw) return showFindings($('#rs-report'), [], 'Passwort eingeben.', 'fehler');
     if (!confirm('Wirklich alle Kontor-Daten auf diesem Mac löschen (Einstellungen, Regeln, Immobilien, Planung, Kategorien, Verlauf, Belegindex)' + (withPw ? ' und das Passwort zurücksetzen' : '') + '? Belegdateien und Protokoll bleiben. Vorher eine Sicherung herunterladen!')) return;
-    try { const r = await api('/api/zuruecksetzen', {passwort: pw, mit_passwort: withPw}); toast('Zurückgesetzt – Neustart der Oberfläche', 4000); setTimeout(() => location.reload(), 1200); }
+    try { const r = await api('/api/reset', {passwort: pw, mit_passwort: withPw}); toast('Zurückgesetzt – Neustart der Oberfläche', 4000); setTimeout(() => location.reload(), 1200); }
     catch (e) { showFindings($('#rs-report'), [], e.message, 'fehler'); } });
 
   // Pakete
-  const pe = $('#pk-export', main); if (pe) pe.addEventListener('click', () => download(`/api/paket/export?name=${encodeURIComponent($('#pk-name').value || 'Kontor-Einstellungen')}&ohne_uuid=${$('#pk-nouuid').checked ? 1 : 0}&mit_plan=${$('#pk-plan').checked ? 1 : 0}`));
+  const pe = $('#pk-export', main); if (pe) pe.addEventListener('click', () => download(`/api/package/export?name=${encodeURIComponent($('#pk-name').value || 'Kontor-Einstellungen')}&without_uuid=${$('#pk-nouuid').checked ? 1 : 0}&with_plan=${$('#pk-plan').checked ? 1 : 0}`));
   const pp = $('#pk-pick', main); if (pp) pp.addEventListener('click', () => { const inp = $('#file-input'); inp.value = ''; inp.setAttribute('accept', '.json'); inp.removeAttribute('capture'); inp.onchange = () => { if (inp.files[0]) readPkgFile(inp.files[0]); }; inp.click(); });
   const pd = $('#pk-drop', main); if (pd) { pd.addEventListener('dragover', e => { e.preventDefault(); pd.classList.add('over'); }); pd.addEventListener('dragleave', () => pd.classList.remove('over')); pd.addEventListener('drop', e => { e.preventDefault(); pd.classList.remove('over'); if (e.dataTransfer.files[0]) readPkgFile(e.dataTransfer.files[0]); }); if (PKG) pkgPreview(); }
 
   // Updates
-  const uc = $('#up-check', main); if (uc) uc.addEventListener('click', async () => { toast('Prüfe …'); await api('/api/update/pruefen', {}); S.STATUS = await api('/api/status'); route(); });
-  const ui = $('#up-install', main); if (ui) ui.addEventListener('click', async () => { if (!confirm('Update installieren und Dienst neu starten?')) return; toast('Update wird installiert …', 30000); try { const r = await api('/api/update/installieren', {}); toast(r.text, 8000); if (r.ok && r.neustart) setTimeout(() => location.reload(), 6000); } catch (e) { toast(e.message, 8000); } });
+  const uc = $('#up-check', main); if (uc) uc.addEventListener('click', async () => { toast('Prüfe …'); await api('/api/update/check', {}); S.STATUS = await api('/api/status'); route(); });
+  const ui = $('#up-install', main); if (ui) ui.addEventListener('click', async () => { if (!confirm('Update installieren und Dienst neu starten?')) return; toast('Update wird installiert …', 30000); try { const r = await api('/api/update/install', {}); toast(r.text, 8000); if (r.ok && r.neustart) setTimeout(() => location.reload(), 6000); } catch (e) { toast(e.message, 8000); } });
   const lr = $('#log-refresh', main); if (lr) lr.addEventListener('click', route);
-  const ls = $('#log-show', main); if (ls) ls.addEventListener('click', async () => { try { await api('/api/datei/zeigen', {pfad: ((S.STATUS.ablage || {}).ordner || '') + '/kontor.log'}); } catch (e) { toast(e.message, 5000); } });
+  const ls = $('#log-show', main); if (ls) ls.addEventListener('click', async () => { try { await api('/api/file/reveal', {pfad: ((S.STATUS.ablage || {}).ordner || '') + '/kontor.log'}); } catch (e) { toast(e.message, 5000); } });
 }
 function bindDel(main) {
   $$('.item .del', main).forEach(b => { b.onclick = e => e.target.closest('.item').remove(); });
@@ -2120,8 +2122,8 @@ async function rebuildReport(fresh) {
   // der Status unten links zeigt den Fortschritt, danach werden die Daten automatisch neu geladen
   toast(fresh ? 'MoneyMoney wird gelesen, Auswertung wird erstellt …' : 'Auswertung wird im Hintergrund aktualisiert …', fresh ? 60000 : 4000);
   try {
-    let r = fresh ? await api('/api/bericht', {}) : await api('/api/bericht/neu', {});
-    if (!r.ok && fresh) r = await api('/api/bericht/neu', {});
+    let r = fresh ? await api('/api/report', {}) : await api('/api/report/rebuild', {});
+    if (!r.ok && fresh) r = await api('/api/report/rebuild', {});
     if (!r.ok) { toast(r.text || 'MoneyMoney nicht verfügbar – Bericht später erstellen', 7000); await loadAll(); route(); return false; }
     if (r.ok === 'angefordert') { await pollStatus(); return true; }
   } catch (e) { toast(e.message, 7000); return false; }

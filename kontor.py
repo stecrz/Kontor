@@ -3,16 +3,16 @@
 
 Befehle:
   start             Dienst starten: Web-Oberflaeche (http://127.0.0.1:8765/) + automatische Laeufe
-  oeffnen           Oberflaeche im Browser oeffnen (Dienst muss laufen)
-  run               Einmaliger Lauf ohne Dienst (--probelauf / --scharf / --force)
-  konten            Kontenbaum mit UUIDs, Typ, Rolle, letzter Aktualisierung
+  open              Oberflaeche im Browser oeffnen (Dienst muss laufen)
+  run               Einmaliger Lauf ohne Dienst (--dry-run / --live / --force)
+  accounts          Kontenbaum mit UUIDs, Typ, Rolle, letzter Aktualisierung
   check             Konfiguration gegen MoneyMoney pruefen
   status            Letzter Lauf, Verlauf
-  passwort          Passwort der Oberflaeche (neu) setzen -- nur im Terminal am Mac
-  paket-export      Einstellungen als Paket (.kontor.json) ausgeben (--ohne-uuid: nur Kontonamen)
-  paket-import      Einstellungspaket einlesen (DATEI [--ersetzen])
-  diagnose          Diagnosedatei (Protokoll + Konfiguration, maskiert) ausgeben
-  update            Neue Version von GitHub pruefen (--installieren spielt sie ein)
+  password          Passwort der Oberflaeche (neu) setzen -- nur im Terminal am Mac
+  package-export    Einstellungen als Paket (.kontor.json) ausgeben (--without-uuid: nur Kontonamen)
+  package-import    Einstellungspaket einlesen (DATEI [--replace])
+  diagnostics       Diagnosedatei (Protokoll + Konfiguration, maskiert) ausgeben
+  update            Neue Version von GitHub pruefen (--install spielt sie ein)
   install           Dienst als Hintergrundprogramm einrichten (startet beim Anmelden, laeuft dauerhaft);
                     uebersetzt den Touch-ID-Helfer.   uninstall entfernt den Dienst wieder (Daten bleiben)
   tls               https über Tailscale einrichten (Zertifikat holen, Adresse setzen) -- nötig für die Offline-Ansicht am iPhone
@@ -41,19 +41,19 @@ from typing import List, Optional
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-import anmeldung  # noqa: E402
+import auth  # noqa: E402
 import updates  # noqa: E402
 from mm_bridge import Bridge, MoneyMoneyError  # noqa: E402
-from kern import (account_tree, check_config, diagnose, export_package, fetch, import_package, merged_config,  # noqa: E402
+from core import (account_tree, check_config, diagnose, export_package, fetch, import_package, merged_config,  # noqa: E402
                      run_once, unavailable_text, version)
-from datenmodell import Ledger, accounts_from_export, fmt_eur  # noqa: E402
-from ablage import Store, load_or_create_master_key  # noqa: E402
+from model import Ledger, accounts_from_export, fmt_eur  # noqa: E402
+from storage import Store, load_or_create_master_key  # noqa: E402
 
 log = logging.getLogger("kontor")
 DATA_DIR = os.environ.get("KONTOR_DIR") or os.path.expanduser("~/Library/Application Support/Kontor")
 OLD_DATA_DIR = os.path.expanduser("~/Library/Application Support/mmtools")
-LAUNCHD_LABEL = "de.kontor.dienst"
-OLD_LAUNCHD_LABEL = "de.mmtools.dienst"
+LAUNCHD_LABEL = updates.LABEL
+OLD_LAUNCHD_LABELS = ("de.mmtools.dienst",) + updates.LEGACY_LABELS
 
 
 def migrate_old_data_dir() -> None:
@@ -62,7 +62,7 @@ def migrate_old_data_dir() -> None:
         return
     try:
         shutil.copytree(OLD_DATA_DIR, DATA_DIR)
-        for fn in ("mmtools.log", "dienst.out.log", "dienst.err.log", "dienst.lock"):
+        for fn in ("mmtools.log", "dienst.out.log", "dienst.err.log", "dienst.lock"):   # legacy names
             try:
                 os.remove(os.path.join(DATA_DIR, fn))
             except OSError:
@@ -146,9 +146,9 @@ class Lock:
 # ---------------------------------------------------------------------------
 
 def cmd_start(args) -> int:
-    from dienst import App, serve
+    from service import App, serve
     store = open_store()
-    with Lock("dienst.lock"):
+    with Lock("service.lock"):
         app = App(store, DATA_DIR)
         serve(app)
     return 0
@@ -246,10 +246,10 @@ def cmd_passwort(args) -> int:
     pw = getpass.getpass("Neues Passwort für die Oberfläche: ")
     if pw != getpass.getpass("Wiederholen: "):
         print("Stimmt nicht überein."); return 1
-    err = anmeldung.password_ok(pw)
+    err = auth.password_ok(pw)
     if err:
         print(err); return 1
-    store.save("auth.json", anmeldung.with_offline(anmeldung.hash_password(pw), pw))
+    store.save("auth.json", auth.with_offline(auth.hash_password(pw), pw))
     print("Passwort gesetzt. Laufende Sitzungen bleiben bis zur Sperre gültig.")
     return 0
 
@@ -294,7 +294,7 @@ def cmd_paket_import(args) -> int:
     for u in unresolved:
         print("  NICHT GEFUNDEN: %s (%s)" % (u["label"], u["feld"]))
     if unresolved and not args.trotzdem:
-        print("Nicht übernommen -- Konten in MoneyMoney prüfen oder --trotzdem (Referenzen bleiben als Name).")
+        print("Nicht übernommen -- Konten in MoneyMoney prüfen oder --anyway (Referenzen bleiben als Name).")
         return 1
     store.save("config.json", merged_config(new_cfg))
     if pkg.get("plan") and args.mit_plan:
@@ -327,32 +327,33 @@ def cmd_update(args) -> int:
     if not info["neuer"]:
         print("Kontor ist aktuell."); return 0
     if not args.installieren:
-        print("Einspielen: python3 kontor.py update --installieren"); return 0
+        print("Einspielen: python3 kontor.py update --install"); return 0
     res = updates.install(repo, info.get("zip"), restart=True)
     print(res.get("text"))
     return 0 if res.get("ok") else 1
 
 
 def launchd_path(label: str = LAUNCHD_LABEL) -> str:
-    return os.path.expanduser("~/Library/LaunchAgents/%s.plist" % label)
+    return updates.plist_path(label)
 
 
 def build_touchid() -> str:
-    import anmeldung
-    return anmeldung.build_touchid(force=True)
+    import auth
+    return auth.build_touchid(force=True)
 
 
 def cmd_install(args) -> int:
     store = open_store()
     cfg = load_config(store)
-    # Vorversion (mmtools) als Dienst entfernen, sonst streiten sich zwei Dienste um den Port
-    if os.path.exists(launchd_path(OLD_LAUNCHD_LABEL)):
-        subprocess.run(["launchctl", "unload", launchd_path(OLD_LAUNCHD_LABEL)], capture_output=True)
-        try:
-            os.remove(launchd_path(OLD_LAUNCHD_LABEL))
-            print("Dienst der Vorversion (mmtools) entfernt.")
-        except OSError:
-            pass
+    # Dienste frueherer Versionen entfernen, sonst streiten sich zwei Dienste um den Port
+    for old in OLD_LAUNCHD_LABELS:
+        if os.path.exists(launchd_path(old)):
+            subprocess.run(["launchctl", "unload", launchd_path(old)], capture_output=True)
+            try:
+                os.remove(launchd_path(old))
+                print("Dienst der Vorversion (%s) entfernt." % old)
+            except OSError:
+                pass
     if not store.load("auth.json", None):
         print("Noch kein Passwort: wird beim ersten Öffnen der Oberfläche am Mac festgelegt.")
     print("Touch-ID-Helfer: %s" % build_touchid())
@@ -363,8 +364,8 @@ def cmd_install(args) -> int:
         "KeepAlive": True,
         "ProcessType": "Interactive",
         "EnvironmentVariables": {"KONTOR_DIR": DATA_DIR, "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"},
-        "StandardOutPath": os.path.join(DATA_DIR, "dienst.out.log"),
-        "StandardErrorPath": os.path.join(DATA_DIR, "dienst.err.log"),
+        "StandardOutPath": os.path.join(DATA_DIR, "service.out.log"),
+        "StandardErrorPath": os.path.join(DATA_DIR, "service.err.log"),
     }
     os.makedirs(os.path.dirname(launchd_path()), exist_ok=True)
     with open(launchd_path(), "wb") as f:
@@ -380,17 +381,19 @@ def cmd_install(args) -> int:
 
 
 def cmd_uninstall(args) -> int:
-    subprocess.run(["launchctl", "unload", launchd_path()], capture_output=True)
-    try:
-        os.remove(launchd_path())
-    except FileNotFoundError:
-        pass
+    for label in (LAUNCHD_LABEL,) + OLD_LAUNCHD_LABELS:
+        if os.path.exists(launchd_path(label)):
+            subprocess.run(["launchctl", "unload", launchd_path(label)], capture_output=True)
+            try:
+                os.remove(launchd_path(label))
+            except FileNotFoundError:
+                pass
     print("Dienst entfernt. Daten bleiben in %s (bei Bedarf von Hand löschen)." % DATA_DIR)
     return 0
 
 
 def cmd_tls(args) -> int:
-    import zertifikat
+    import tls_cert
     store = open_store()
     cfg = load_config(store)
     if args.aus:
@@ -399,7 +402,7 @@ def cmd_tls(args) -> int:
         print("TLS abgeschaltet (Adresse bleibt %s)." % cfg["oberflaeche"].get("bind"))
     else:
         try:
-            r = zertifikat.setup(cfg, DATA_DIR)
+            r = tls_cert.setup(cfg, DATA_DIR)
         except Exception as e:
             print("Fehler: %s" % e); return 1
         cfg["oberflaeche"] = r["oberflaeche"]
@@ -407,8 +410,8 @@ def cmd_tls(args) -> int:
         print("Zertifikat für %s geholt (gültig bis %s), Adresse %s." % (r["name"], (r["gueltig_bis"] or "?")[:10], r["ip"]))
         print("Oberfläche nach dem Neustart: %s  (am iPhone diese Adresse öffnen, dann „Zum Home-Bildschirm“)." % r["url"])
         print("Das Zertifikat wird vom laufenden Dienst automatisch erneuert.")
-    if os.path.exists(launchd_path()):
-        r2 = subprocess.run(["launchctl", "kickstart", "-k", "gui/%d/%s" % (os.getuid(), LAUNCHD_LABEL)], capture_output=True, text=True)
+    if os.path.exists(launchd_path(updates.installed_label())):
+        r2 = subprocess.run(["launchctl", "kickstart", "-k", "gui/%d/%s" % (os.getuid(), updates.installed_label())], capture_output=True, text=True)
         print("Dienst neu gestartet." if r2.returncode == 0 else "Dienst bitte neu starten: bash install.sh")
     else:
         print("Dienst neu starten (bash install.sh), damit die Einstellung greift.")
@@ -424,23 +427,27 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="kontor", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--quiet", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("start", "oeffnen", "konten", "check", "status", "passwort", "install", "uninstall", "version"):
-        sub.add_parser(name)
-    r = sub.add_parser("run")
-    r.add_argument("--probelauf", action="store_true"); r.add_argument("--scharf", action="store_true"); r.add_argument("--force", action="store_true")
-    pe = sub.add_parser("paket-export"); pe.add_argument("datei", nargs="?"); pe.add_argument("--name"); pe.add_argument("--ohne-uuid", action="store_true")
-    pe.add_argument("--mit-plan", action="store_true")
-    pi = sub.add_parser("paket-import"); pi.add_argument("datei"); pi.add_argument("--ersetzen", action="store_true")
-    pi.add_argument("--trotzdem", action="store_true"); pi.add_argument("--mit-plan", action="store_true")
-    dg = sub.add_parser("diagnose"); dg.add_argument("datei", nargs="?"); dg.add_argument("--namen", action="store_true")
-    up = sub.add_parser("update"); up.add_argument("--installieren", action="store_true")
-    tl = sub.add_parser("tls"); tl.add_argument("--aus", action="store_true", help="TLS wieder abschalten")
+    # Befehle englisch; fruehere deutsche Namen bleiben als Alias nutzbar
+    for name, alias, fn in (("start", None, cmd_start), ("open", "oeffnen", cmd_oeffnen), ("accounts", "konten", cmd_konten), ("check", None, cmd_check),
+                            ("status", None, cmd_status), ("password", "passwort", cmd_passwort), ("install", None, cmd_install),
+                            ("uninstall", None, cmd_uninstall), ("version", None, cmd_version)):
+        sub.add_parser(name, aliases=[alias] if alias else []).set_defaults(fn=fn)
+    r = sub.add_parser("run"); r.set_defaults(fn=cmd_run)
+    r.add_argument("--dry-run", "--probelauf", dest="probelauf", action="store_true"); r.add_argument("--live", "--scharf", dest="scharf", action="store_true")
+    r.add_argument("--force", action="store_true")
+    pe = sub.add_parser("package-export", aliases=["paket-export"]); pe.set_defaults(fn=cmd_paket_export)
+    pe.add_argument("datei", nargs="?", metavar="file"); pe.add_argument("--name")
+    pe.add_argument("--without-uuid", "--ohne-uuid", dest="ohne_uuid", action="store_true"); pe.add_argument("--with-plan", "--mit-plan", dest="mit_plan", action="store_true")
+    pi = sub.add_parser("package-import", aliases=["paket-import"]); pi.set_defaults(fn=cmd_paket_import)
+    pi.add_argument("datei", metavar="file"); pi.add_argument("--replace", "--ersetzen", dest="ersetzen", action="store_true")
+    pi.add_argument("--anyway", "--trotzdem", dest="trotzdem", action="store_true"); pi.add_argument("--with-plan", "--mit-plan", dest="mit_plan", action="store_true")
+    dg = sub.add_parser("diagnostics", aliases=["diagnose"]); dg.set_defaults(fn=cmd_diagnose)
+    dg.add_argument("datei", nargs="?", metavar="file"); dg.add_argument("--names", "--namen", dest="namen", action="store_true")
+    up = sub.add_parser("update"); up.set_defaults(fn=cmd_update); up.add_argument("--install", "--installieren", dest="installieren", action="store_true")
+    tl = sub.add_parser("tls"); tl.set_defaults(fn=cmd_tls); tl.add_argument("--off", "--aus", dest="aus", action="store_true", help="TLS wieder abschalten")
     args = ap.parse_args(argv)
     setup_logging(args.quiet)
-    return {"start": cmd_start, "oeffnen": cmd_oeffnen, "run": cmd_run, "konten": cmd_konten, "check": cmd_check,
-            "status": cmd_status, "passwort": cmd_passwort,
-            "paket-export": cmd_paket_export, "paket-import": cmd_paket_import, "diagnose": cmd_diagnose,
-            "update": cmd_update, "install": cmd_install, "uninstall": cmd_uninstall, "tls": cmd_tls, "version": cmd_version}[args.cmd](args)
+    return args.fn(args)
 
 
 if __name__ == "__main__":
