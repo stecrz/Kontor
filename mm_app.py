@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 import mm_auth
+import mm_historie
 import mm_immo
 import mm_import
 import mm_kategorien
@@ -97,11 +98,13 @@ class App:
         self.ledger_from_cache = False
         threading.Thread(target=self._load_ledger_cache, name="kontor-cache", daemon=True).start()
         if sys.platform == "darwin":          # Touch-ID-Helfer bei Bedarf (neu) uebersetzen
-            threading.Thread(target=lambda: log.info("Touch-ID-Helfer: %s", mm_auth.build_touchid()), name="kontor-touchid", daemon=True).start()
+            threading.Thread(target=lambda: log.info("Touch-ID-Helfer: %s; Passwort-Helfer Historie: %s", mm_auth.build_touchid(), mm_historie.build_helper()),
+                             name="kontor-helfer", daemon=True).start()
         self.restart_allowed = False        # nur der echte Dienst (serve) startet sich bei neuem Code selbst neu
         self.mm_probe: Tuple[float, Optional[bool]] = (0.0, None)     # (Zeitpunkt, gesperrt?)
         self.mm_retry_at: Optional[float] = None
         self._capture_sig: Optional[tuple] = None      # letzter Schnellabgleich (Konto, Saldo, Abrufzeit)
+        self._mm_seen = False                           # lief MoneyMoney beim letzten Blick? (bestimmt den Takt)
         self._hb_written = 0.0
         self.prev_seen: Optional[datetime] = None       # wann der Dienst vor diesem Start zuletzt lief
         try:
@@ -360,15 +363,24 @@ class App:
     def capture(self) -> None:
         """Schnellabgleich: sobald MoneyMoney offen und entsperrt ist, nur die Kontenliste lesen (unter einer Sekunde) und die
         Staende merken. So reicht auch ein kurzer Blick in MoneyMoney; geaenderte Daten loesen danach den vollen Abgleich aus."""
-        if self.running or not is_running():
+        self._mm_seen = is_running()
+        if self.running or not self._mm_seen:
             return
         try:
             raw = self.bridge_factory(True).export_accounts()
         except MoneyMoneyError as e:
             if isinstance(e, MoneyMoneyLocked):
                 self.mm_probe = (time.time(), True)
+            elif "läuft nicht" not in str(e) and "nicht erreichbar" not in str(e):
+                # MoneyMoney lief, Kontor konnte aber nicht lesen (z. B. Berechtigung) -> sichtbar machen, sonst fehlen Staende
+                msg = str(e)[:200]
+                log.warning("Schnellabgleich nicht möglich, obwohl MoneyMoney läuft: %s", msg)
+                stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                self.store.update("state.json", lambda cur: cur.__setitem__("abgleich_problem", {"zeit": stamp, "text": msg}), {})
             return
         self.mm_probe = (time.time(), False)
+        if (self.store.load_shared("state.json", {}) or {}).get("abgleich_problem"):
+            self.store.update("state.json", lambda cur: cur.pop("abgleich_problem", None), {})
         accs = accounts_from_export(raw)
         sig = tuple(sorted((a.uuid, a.balance, a.refresh.isoformat() if a.refresh else "") for a in accs.values() if not a.group))
         if sig == self._capture_sig:
@@ -459,7 +471,7 @@ class App:
                             self.mm_retry_at = time.time() + 60
                 up = self.config.get("updates", {}) or {}
                 wait = 86400 if not (self.update_info or {}).get("fehler") else 7200     # offline/Fehler: in 2 h erneut
-                if up.get("taeglich_pruefen", True) and (self.update_checked is None or time.time() - self.update_checked > wait):
+                if up.get("taeglich_pruefen", True) and not mm_historie.AKTIV.is_set() and (self.update_checked is None or time.time() - self.update_checked > wait):
                     self.update_checked = time.time()
                     # eigener Thread: eine haengende Verbindung (offline) blockiert weder Zeitplaner noch Oberflaeche
                     threading.Thread(target=lambda: setattr(self, "update_info", mm_update.check(up.get("repo") or "stecrz/Kontor")),
@@ -479,7 +491,7 @@ class App:
                     self.capture()
             except Exception:  # pragma: no cover
                 log.exception("Schnellabgleich")
-            self.stop.wait(20)
+            self.stop.wait(30 if self._mm_seen else 60)
 
     # -- Daten fuer die Oberflaeche ---------------------------------------
     def plan_all(self) -> dict:
@@ -581,7 +593,8 @@ class App:
                        "intervall_minuten": (self.config.get("zeitplan") or {}).get("intervall_minuten", 30)},
             "moneymoney": {"laeuft": is_running(), "gesperrt": self.moneymoney_gesperrt(max_age=3.0 if frisch else 45.0), "aus_zwischenspeicher": self.ledger_from_cache,
                            "stand": self.ledger_time.strftime("%Y-%m-%d %H:%M") if self.ledger_time else None,
-                           "bankabruf": self.bankabruf(), "luecken": len(st.get("luecken") or []),
+                           "bankabruf": self.bankabruf(), "luecken": len(st.get("luecken") or []), "problem": st.get("abgleich_problem"),
+                           "historie_helfer": mm_historie.helper_available(),
                            "kategorisieren_erlaubt": bool((self.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False))},
             "ablage": {"verschluesselt": self.store.encrypted, "schluessel": self.store.key_source, "ordner": self.data_dir},
             "belege": {"ordner": os.path.expanduser(bcfg.get("ordner") or "~/Documents/Kontor-Belege")},
@@ -1198,6 +1211,23 @@ def make_handler(app: App):
                                             "kategorien": app.categories()})
                 finally:
                     app.check_lock.release()
+            if path == "/api/historie/mm-pruefen":
+                # Depot-Historie aus MoneyMoney, Schritt 1: Aufbau lesen. Passwort erreicht Kontor nie (Dialog des Helfers).
+                if not local:
+                    return self._json(403, {"fehler": "Nur direkt am Mac möglich."})
+                if mm_historie.AKTIV.is_set():
+                    return self._json(409, {"fehler": "Läuft bereits – bitte das Passwortfenster beachten."})
+                try:
+                    tables, fmt = mm_historie.read_database(is_running=is_running)
+                except mm_historie.HistorieError as e:
+                    if str(e) != "abgebrochen":
+                        log.info("MoneyMoney-Datenbank nicht gelesen: %s", str(e)[:120])
+                    return self._json(200, {"ok": False, "text": "Abgebrochen." if str(e) == "abgebrochen" else str(e)})
+                datei = os.path.join(HERE, "mm-historie-aufbau.txt")
+                with open(datei, "w", encoding="utf-8") as f:
+                    f.write(mm_historie.schema_text(tables, fmt))
+                log.info("MoneyMoney-Datenbank geprüft (%s): %d Tabellen", fmt, len(tables))
+                return self._json(200, {"ok": True, "tabellen": len(tables), "format": fmt})
             if path == "/api/abruf/luecken":
                 app.store.update("state.json", lambda cur: cur.pop("luecken", None), {})
                 return self._json(200, {"ok": True})

@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.9.6
+- Depot-Historie aus MoneyMoney, Schritt 1 (Synchronisierung → Depots): „Datenbank prüfen“ liest den Aufbau von MoneyMoneys Datenbank. Das Passwort gibst du in einem eigenen macOS-Fenster ein (kleiner Helfer, wird beim Start übersetzt); Kontor erhält nur den daraus berechneten Schlüssel, entschlüsselt nur im Arbeitsspeicher (macOS CommonCrypto, keine Kopie auf der Festplatte, kein Fremdprogramm), nur lesend und nur bei beendetem MoneyMoney. Währenddessen keine Update-Prüfung.
+- Sparsamer im Hintergrund: ohne laufendes MoneyMoney nur einmal pro Minute ein kurzer Blick, mit MoneyMoney alle 30 Sekunden.
+- Hinweis, wenn MoneyMoney lief, Kontor aber nicht lesen konnte (z. B. fehlende Berechtigung) – unten links und unter Synchronisierung.
+
 ## 3.9.5
 - Schnellabgleich: Ist MoneyMoney offen und entsperrt, liest Kontor alle 20 Sekunden nur die Kontenliste (unter einer Sekunde) und merkt sich die Stände – ein kurzer Blick in MoneyMoney genügt. Geänderte Daten lösen danach den vollen Abgleich aus.
 - Depotstände zählen für den Monat, in dem MoneyMoney sie abgerufen hat (Abruf am 31., gelesen am 2. → richtiger Monat).

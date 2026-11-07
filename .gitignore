@@ -9,3 +9,5 @@ config.json
 !vorlagen/*.kontor.json
 Claude outputs/
 Hinweise-*.md
+mm-historie-aufbau.txt
+.historie/

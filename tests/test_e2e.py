@@ -486,6 +486,57 @@ class AppTests(_AppBase):
             import mm_bridge as MB
             MA.is_running = MB.is_running
 
+    def test_historie_aus_moneymoney_pruefen(self):
+        """Schritt 1: Datenbank nur im Speicher entschluesseln (Passwort nie in Kontor), nur Aufbau schreiben; MoneyMoney muss beendet sein."""
+        import hashlib, shutil as sh, subprocess as sp, mm_historie as H, mm_app as MA
+        if not sh.which("sqlcipher"):
+            self.skipTest("sqlcipher fuer die Testdatenbank fehlt")
+        self.login()
+        db = os.path.join(self.dir, "MoneyMoney.sqlite")
+        sp.run(["sqlcipher", db], input="PRAGMA key = 'ge''heim';\nCREATE TABLE balances(account INTEGER, date REAL, balance REAL);\n"
+               "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<500) INSERT INTO balances SELECT i, 7e8+i, 4711.5 FROM n;\n",
+               capture_output=True, text=True, check=True)
+        old = (H.DB_PATH, H.keys_from_dialog, MA.is_running)
+        H.DB_PATH = db
+        H.keys_from_dialog = lambda salt: [hashlib.pbkdf2_hmac(h, "ge'heim".encode(), salt, r, 32) for _n, h, r in H.FORMATS]
+        try:
+            MA.is_running = lambda: True
+            code, r = self.call("/api/historie/mm-pruefen", {}); self.assertFalse(r["ok"]); self.assertIn("beenden", r["text"])
+            MA.is_running = lambda: False
+            code, r = self.call("/api/historie/mm-pruefen", {}); self.assertTrue(r["ok"], r); self.assertEqual(r["tabellen"], 1)
+            txt = open(os.path.join(os.path.dirname(H.__file__), "mm-historie-aufbau.txt"), encoding="utf-8").read()
+            self.assertIn("balances  (500 Zeilen)", txt); self.assertNotIn("4711", txt); self.assertNotIn("heim", txt)
+            self.assertFalse(H.AKTIV.is_set())
+            # aelteres Format (SQLCipher 3, wie MoneyMoney es nutzt) wird ebenfalls erkannt
+            os.remove(db); sp.run(["sqlcipher", db], input="PRAGMA key = 'ge''heim';\nPRAGMA cipher_compatibility = 3;\nCREATE TABLE a(x);\nINSERT INTO a VALUES(1);\n",
+                                  capture_output=True, text=True, check=True)
+            code, r = self.call("/api/historie/mm-pruefen", {}); self.assertTrue(r["ok"], r); self.assertEqual(r["format"], "SQLCipher 3")
+            H.keys_from_dialog = lambda salt: [hashlib.pbkdf2_hmac(h, b"falsch", salt, r, 32) for _n, h, r in H.FORMATS]
+            code, r = self.call("/api/historie/mm-pruefen", {}); self.assertFalse(r["ok"]); self.assertIn("Passwort falsch", r["text"])
+        finally:
+            H.DB_PATH, H.keys_from_dialog, MA.is_running = old
+            p = os.path.join(os.path.dirname(H.__file__), "mm-historie-aufbau.txt")
+            if os.path.exists(p):
+                os.remove(p)
+
+    def test_lesefehler_wird_gemeldet(self):
+        """MoneyMoney laeuft, Kontor kann aber nicht lesen (z. B. Berechtigung) -> Hinweis; erfolgreiches Lesen nimmt ihn zurueck."""
+        import mm_app as MA
+        self.login()
+        old = MA.is_running; MA.is_running = lambda: True
+        orig = MockBridge.export_accounts
+        try:
+            def boom(self_):
+                raise mm_bridge.MoneyMoneyNotPermitted("Keine Berechtigung")
+            MockBridge.export_accounts = boom
+            self.app.capture()
+            code, st = self.call("/api/status"); self.assertIn("Berechtigung", st["moneymoney"]["problem"]["text"])
+            MockBridge.export_accounts = orig
+            self.app.capture()
+            code, st = self.call("/api/status"); self.assertIsNone(st["moneymoney"]["problem"])
+        finally:
+            MockBridge.export_accounts = orig; MA.is_running = old
+
     def test_bankabruf_zurueck(self):
         """Konten mit Saldo, die beim Bankabruf mehr als einen Tag zurückliegen, werden gemeldet; uralte (aufgelöste) nicht."""
         self.login()
