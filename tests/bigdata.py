@@ -138,6 +138,6 @@ def config_for_big() -> Dict:
         ],
         "bilanz": {"monate_zurueck": 0, "inaktiv_monate": 12},
         "kategorien": {"aktiv": True, "lernen": True, "mm_ueberschreiben": False},
-        "updates": {"taeglich_pruefen": False},
+        "updates": {"pruefen": "aus"},
         "oberflaeche": {"sperre_minuten": 15, "port": 0},
     }

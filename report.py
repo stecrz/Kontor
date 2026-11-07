@@ -189,8 +189,13 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
             manual[k] = float(v)
     if src != "stand":
         ends = ledger.month_end_balances(acc.uuid, past)
+        # Alle Umsaetze bekannt (kein Zeitfenster): vor dem ersten Umsatz gab es das Konto nicht -- kein Stand (wie in MoneyMoney),
+        # statt den Startsaldo endlos zurueckzuschreiben
+        full = int(((config or {}).get("bilanz") or {}).get("monate_zurueck", 0) or 0) <= 0
+        first = min((t.booking_date for t in ledger.transactions(acc.uuid)), default=None) if full else None
+        opened = month_key(first) if first else None
         for k in mkeys:
-            h[k] = acc.balance if k >= cur_key else ends[k]
+            h[k] = acc.balance if k >= cur_key else (None if opened and k < opened else ends[k])
         t = (acc.type or "").lower()
         if any(x in t for x in NO_NEGATIVE_TYPES):
             neg = [k for k in mkeys if (h[k] or 0) < -1.0]
@@ -353,14 +358,15 @@ class Rows:
 
 
 def transit_series(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], months: List[Tuple[int, int]], quelle: Dict[str, str],
-                   today: date) -> Dict[str, float]:
+                   today: date) -> Tuple[Dict[str, float], List[dict]]:
     """Geld unterwegs am Monatsende: Umbuchung zwischen zwei Konten des Bereichs, deren Buchungen in verschiedene Monate fallen
     (am 31. abgebucht, am 1. gutgeschrieben). Abgebucht, aber noch nicht gutgeschrieben -> +Betrag; umgekehrt -> -Betrag.
-    Nur eindeutige Paare: Gegen-IBAN zeigt auf das andere Konto, gleicher Betrag mit umgekehrtem Vorzeichen, hoechstens 5 Tage Abstand."""
+    Nur eindeutige Paare: Gegen-IBAN zeigt auf das andere Konto, gleicher Betrag mit umgekehrtem Vorzeichen, hoechstens 5 Tage Abstand.
+    Liefert (Betrag je Monatsende, erkannte Umbuchungen ueber ein Monatsende)."""
     mkeys = ["%04d-%02d" % ym for ym in months]
     out = {mk: 0.0 for mk in mkeys}
     if not months:
-        return out
+        return out, []
     area = {a.uuid for a in leaves if roles.get(a.uuid) not in OFF_BALANCE and not _valuation_account(a, quelle.get(a.uuid, ""))}
     own = ledger.own_ibans()
     first = date(months[0][0], months[0][1], 1) - timedelta(days=6)
@@ -371,7 +377,7 @@ def transit_series(ledger: Ledger, leaves: List[Account], roles: Dict[str, str],
         if t.booked and t.account_uuid in area and first <= t.booking_date <= last:
             by_amt[cents(t.amount)].append(t)
     used: Set[int] = set()
-    pairs: List[Tuple[date, date, float]] = []
+    pairs: List[Tuple[date, date, float, str, str]] = []
     for c, outs in by_amt.items():
         if c >= 0 or -c not in by_amt:
             continue
@@ -390,12 +396,15 @@ def transit_series(ledger: Ledger, leaves: List[Account], roles: Dict[str, str],
             o = best[1]
             used.update({t.id, o.id})
             if month_key(t.booking_date) != month_key(o.booking_date):
-                pairs.append((t.booking_date, o.booking_date, -t.amount))
+                pairs.append((t.booking_date, o.booking_date, -t.amount, t.account_uuid, o.account_uuid))
     for (y, m), mk in zip(months, mkeys):
         cut = min(month_end(y, m), today)
-        val = sum(x for d_out, d_in, x in pairs if d_out <= cut < d_in) - sum(x for d_out, d_in, x in pairs if d_in <= cut < d_out)
+        val = sum(p[2] for p in pairs if p[0] <= cut < p[1]) - sum(p[2] for p in pairs if p[1] <= cut < p[0])
         out[mk] = round(val, 2)
-    return out
+    name = lambda u: ledger.accounts[u].name if u in ledger.accounts else u
+    details = [{"ab": p[0].isoformat(), "an": p[1].isoformat(), "betrag": round(p[2], 2), "von": name(p[3]), "nach": name(p[4])}
+               for p in sorted(pairs, key=lambda p: min(p[0], p[1]))]
+    return out, details
 
 
 def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], config: dict, months: List[Tuple[int, int]],
@@ -703,7 +712,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                                 "passiva": role == "verbindlichkeiten", "verlauf": quelle.get(a.uuid, "umsaetze"), "fortgeschrieben_vor": fortgeschrieben.get(a.uuid),
                                 "werte": {mk: hist[a.uuid][mk] for mk in mkeys}})
     # Geld unterwegs (Umbuchung ueber das Monatsende) zaehlt zur Liquiditaet; sonst knickt das Nettovermoegen am Monatsende ein
-    transit = transit_series(ledger, leaves, roles, months, quelle, today)
+    transit, transit_details = transit_series(ledger, leaves, roles, months, quelle, today)
     if any(abs(v) >= 0.005 for v in transit.values()):
         grp = next((r for r in bilanz_rows if r["id"] == "pos:liquiditaet"), None)
         if grp is None:
@@ -715,7 +724,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         idx = max(i for i, r in enumerate(bilanz_rows) if r["rolle"] == "liquiditaet") + 1
         bilanz_rows.insert(idx, {"id": "transit", "name": tr("s_geld_unterwegs"), "pfad": tr("s_geld_unterwegs"), "ebene": 1, "gruppe": False,
                                  "rolle": "liquiditaet", "transit": True, "illiquide": False, "depot": False, "offline": False, "inaktiv": False,
-                                 "passiva": False, "werte": dict(transit)})
+                                 "passiva": False, "werte": dict(transit), "umbuchungen": transit_details})
         for mk in mkeys:
             grp["werte"][mk] = round((grp["werte"][mk] or 0.0) + transit[mk], 2)
     nw = {mk: round(sum(pos_sums[r][mk] for r in pos_sums), 2) for mk in mkeys}
@@ -852,6 +861,9 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
     y, m = int(cur[:4]), int(cur[5:])
     future = []
     for _ in range(horizon):
+        y, m = add_months(date(y, m, 1), 1)
+        future.append("%04d-%02d" % (y, m))
+    while m != 12:                                       # letztes Planjahr immer vollstaendig
         y, m = add_months(date(y, m, 1), 1)
         future.append("%04d-%02d" % (y, m))
     dataset["plan_monate"] = future

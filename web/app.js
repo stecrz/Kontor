@@ -348,6 +348,7 @@ function viewCtl() {
 const swCtl = (id, on, label, tip) => `<label class="switch"${tip ? ` title="${esc(tip)}"` : ''}><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><i></i>${label}</label>`;
 const alleCtl = n => swCtl('alle-zeilen', S.alle, t('alle_zeilen'), n ? t('alle_zeilen_tip_n', n) : t('alle_zeilen_tip'));
 const planCtl = () => swCtl('planan', S.plan, t('plan'), t('plan_tip'));
+const planOn = () => S.plan || S.tab === 'bilanz' || S.tab === 'planung';     // in Bilanz und Planung immer mit Plan
 function hasRules() { const c = S.CFG || {}; return !!((c.darlehen || []).length || (c.beteiligungen || []).length || (c.saldo_spiegel || []).length); }
 function statusMini() {
   const st = S.STATUS; if (!st) return;
@@ -415,7 +416,7 @@ function bereichSeg() {
 
 // ---------------------------------------------------------------- Spalten, Werte
 function cols(D) {
-  D = D || B(); const ist = D.monate, plan = S.plan || S.tab === 'planung' ? (D.plan_monate || []) : [];
+  D = D || B(); const ist = D.monate, plan = planOn() ? (D.plan_monate || []) : [];
   const mcol = (m, isPlan) => ({key: m, label: ML(m), months: [m], plan: isPlan, cur: m === D.ist_bis, year: false});
   const all = [...ist.map(m => mcol(m, false)), ...plan.map(m => mcol(m, true))];
   const years = {};
@@ -958,6 +959,17 @@ function bindHistChart(box, pts) {
   svg.addEventListener('pointerleave', () => { hv.innerHTML = ''; });
 }
 const HD = {uuid: null, live: false, r: null};
+function openTransitDrawer() {
+  // Geldtransit: die erkannten Umbuchungen, deren Ab- und Gutschrift in verschiedene Monate fallen
+  const r = ((B() || {}).bilanz || {zeilen: []}).zeilen.find(x => x.transit); if (!r) return;
+  const list = (r.umbuchungen || []).slice().reverse(), d = $('#drawer');
+  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(r.name)}</h2><div class="note">${t('geld_unterwegs_tip')}</div>
+    <div class="wrap auto"><table class="plain small"><thead><tr><th>${t('abgebucht')}</th><th>${t('gutgeschrieben')}</th><th class="num">${t('betrag')}</th></tr></thead><tbody>`
+    + list.map(u => `<tr><td>${FD(u.ab)}<div class="muted">${esc(u.von)}</div></td><td>${FD(u.an)}<div class="muted">${esc(u.nach)}</div></td><td class="num">${F(u.betrag)}</td></tr>`).join('')
+    + `</tbody></table></div>`;
+  d.classList.add('open');
+  $('.close', d).onclick = closeDrawer;
+}
 const drawerDirty = () => $$('#drawer #h-grid input:not(.auto)').some(i => i.value !== i.defaultValue) || !!($('#drawer #h-csv') && $('#drawer #h-csv').value.trim());
 
 // ---------------------------------------------------------------- Bilanz
@@ -965,7 +977,7 @@ function vBilanz() {
   // Eine Tabelle: Positionen (farbig, aufklappbar) mit ihren Konten; Plan-Spalten rechts angehängt
   const D = B(); if (!D) return noData;
   const C = cols();
-  const pr = S.plan ? D.bilanz.projektion : null;
+  const pr = D.bilanz.projektion || null;
   const proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
   const W = new Map(), werte = r => { if (!W.has(r.id)) W.set(r.id, proj[r.id] ? Object.assign({}, r.werte, proj[r.id]) : r.werte); return W.get(r.id); };
   const nw = pr ? Object.assign({}, D.bilanz.nettovermoegen, pr.nettovermoegen) : D.bilanz.nettovermoegen;
@@ -973,7 +985,7 @@ function vBilanz() {
   const pos = D.bilanz.zeilen.filter(r => r.gruppe);
   S.posOpen = S.posOpen || {};
   const allOpen = pos.length && pos.every(r => S.posOpen[r.rolle]);
-  let h = `<div class="toolbar">${viewCtl()}<span class="tb-sep"></span><button class="ghost small" id="pos-all">${allOpen ? t('alle_zuklappen') : t('alle_aufklappen')}</button>${alleCtl(nInactive)}${planCtl()} ${hq('bilanz_stand')}<span class="sp"></span>${xlsxBtn('balance')}</div>`;
+  let h = `<div class="toolbar">${viewCtl()}<span class="tb-sep"></span><button class="ghost small" id="pos-all">${allOpen ? t('alle_zuklappen') : t('alle_aufklappen')}</button>${alleCtl(nInactive)} ${hq('bilanz_stand')}<span class="sp"></span>${xlsxBtn('balance')}</div>`;
   h += vBilanzChart(D);
   const tag = r => (r.depot ? `<span class="tag">${t('depot')}</span>` : '') + (r.offline && !r.gruppe ? `<span class="tag">${t('manuell')}</span>` : '') + (r.inaktiv ? `<span class="tag">${t('ausgeblendet')}</span>` : '')
     + (r.verlauf === 'stand' && !r.gruppe ? `<span class="tag" title="${t('verlauf_aus_kontostaenden')}">${t('kontostaende')}</span>` : '')
@@ -988,7 +1000,7 @@ function vBilanz() {
       continue;
     }
     if (!S.posOpen[r.rolle] || skip(r)) continue;
-    if (r.transit) { h += row(r, 'ind1 transit', `${esc(r.name)} ${hq('geld_unterwegs')}`); continue; }
+    if (r.transit) { h += row(r, 'ind1 transit clickable', `${esc(r.name)} ${hq('geld_unterwegs')}`); continue; }
     h += row(r, 'clickable acct ind1', esc(r.name) + tag(r));
     if (pr && r.rolle === 'beteiligungen' && proj.einlagen && r === D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === 'beteiligungen').slice(-1)[0])
       h += row({id: 'einlagen', name: t('einlagen_entnahmen_kumuliert_plan'), werte: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'));
@@ -1005,15 +1017,19 @@ const MONATE_LANG = LANG === 'en' ? ['January', 'February', 'March', 'April', 'M
   : ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 const BCH = {d: null, i0: 0, i1: 0, drag: null, hover: null, ro: null};
 function bchData(D) {
-  // Positionen (Farben wie in der Tabelle), Ist + ggf. Plan, inflationsbereinigt wie die Tabelle
-  const pr = S.plan ? D.bilanz.projektion : null, proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
+  // Positionen (Farben wie in der Tabelle), Ist + Plan; aufgeklappte Positionen zeigen ihre Konten (Abstufungen der Farbe)
+  const pr = D.bilanz.projektion || null, proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
   const months = [...D.monate, ...(pr ? (D.plan_monate || []) : [])];
-  const series = D.bilanz.zeilen.filter(r => r.gruppe && ROLE[r.rolle]).map(r => {
-    const w = Object.assign({}, r.werte, proj[r.id] || {});
-    return {rolle: r.rolle, label: ROLE[r.rolle][0], color: ROLE[r.rolle][1], vals: months.map(m => w[m] == null ? null : w[m] * defl(m))};
-  }).filter(x => x.vals.some(v => v != null && Math.abs(v) >= 0.5));
+  const vals = r => { const w = Object.assign({}, r.werte, proj[r.id] || {}); return months.map(m => w[m] == null ? null : w[m] * defl(m)); };
+  const series = [];
+  for (const r of D.bilanz.zeilen.filter(x => x.gruppe && ROLE[x.rolle])) {
+    const [label, color] = ROLE[r.rolle];
+    const accs = (S.posOpen || {})[r.rolle] ? D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === r.rolle) : [];
+    if (accs.length) accs.forEach((a, i) => series.push({rolle: r.rolle, label: a.name, color, op: [1, .7, .5, .36, .26][i % 5], sub: true, vals: vals(a)}));
+    else series.push({rolle: r.rolle, label, color, op: 1, vals: vals(r)});
+  }
   const nwAll = pr ? Object.assign({}, D.bilanz.nettovermoegen, pr.nettovermoegen) : D.bilanz.nettovermoegen;
-  return {months, ist: D.monate.length, series, nw: months.map(m => nwAll[m] == null ? null : nwAll[m] * defl(m))};
+  return {months, ist: D.monate.length, series: series.filter(x => x.vals.some(v => v != null && Math.abs(v) >= 0.5)), nw: months.map(m => nwAll[m] == null ? null : nwAll[m] * defl(m))};
 }
 function vBilanzChart(D) {
   const d = bchData(D); if (d.months.length < 2 || !d.series.length) return '';
@@ -1058,7 +1074,7 @@ function bchDraw() {
       for (let k = 0; k <= n; k++) { const v = sx.vals[i0 + k] || 0, part = sign > 0 ? Math.max(0, v) : Math.min(0, v); bot.push(base[k]); base[k] += part; top.push(base[k]); }
       if (top.every((t, k) => Math.abs(t - bot[k]) < 0.5)) continue;
       const path = top.map((t, k) => (k ? 'L' : 'M') + pf(x(i0 + k)) + ' ' + pf(y(t))).join('') + bot.map((b, k) => [k, b]).reverse().map(([k, b]) => 'L' + pf(x(i0 + k)) + ' ' + pf(y(b))).join('') + 'Z';
-      out += `<path class="bch-area" d="${path}" fill="${sx.color}"/>`;
+      out += `<path class="bch-area${sx.sub ? ' sub' : ''}" d="${path}" fill="${sx.color}"${sx.op < 1 ? ` fill-opacity="${sx.op}"` : ''}/>`;
     }
     return out;
   };
@@ -1081,7 +1097,7 @@ function bchDraw() {
 }
 function bchWindow(d, m) {
   // m Monate sichtbar; mit Plan endet der Ausschnitt ein Viertel davon nach heute, sonst heute
-  const last = d.months.length - 1, today = d.ist - 1, plan = S.plan ? Math.min(Math.round(m / 4), last - today) : 0;
+  const last = d.months.length - 1, today = d.ist - 1, plan = planOn() ? Math.min(Math.round(m / 4), last - today) : 0;
   const i1 = Math.min(last, today + plan), i0 = Math.max(0, i1 - m + 1);
   return [i0, Math.min(last, Math.max(i1, i0 + 2))];
 }
@@ -1110,7 +1126,7 @@ function bchHover(i) {
   let dots = `<line class="bch-cross" x1="${xi}" x2="${xi}" y1="${G.P.t}" y2="${G.H - G.P.b}"/>`;
   if (d.nw[i] != null) dots += `<circle class="bch-dot" cx="${xi}" cy="${G.y(d.nw[i]).toFixed(1)}" r="4"/>`;
   hv.innerHTML = dots;
-  const rows = d.series.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= 0.5).map(x => `<div><i style="background:${x.color}"></i><span>${esc(x.label)}</span><b>${F0(x.vals[i])}</b></div>`).join('');
+  const rows = d.series.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= 0.5).map(x => `<div><i style="background:${x.color};opacity:${x.op || 1}"></i><span>${esc(x.label)}</span><b>${F0(x.vals[i])}</b></div>`).join('');
   tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${plan ? ` <span class="pill neutral">${t('plan')}</span>` : ''}</div>${rows}<div class="bch-tip-nw"><span>${t('nettovermoegen')}</span><b>${F0(d.nw[i])}</b></div>`;
   tip.classList.remove('hidden');
   const bw = $('#bch-plot').clientWidth, tw = tip.offsetWidth, px = G.x(i);
@@ -1231,7 +1247,7 @@ function vKapitalfluss(editable) {
       <button id="p_save" class="small">${t('uebernehmen')}</button><button id="p_reset" class="small secondary" title="${t('alle_planeinstellungen_dieses_bereichs')}">${t('plan_zuruecksetzen')}</button></div>
       <div class="note" style="margin:6px 0 0">${t('ausgaben_steigen_standardmaessig_mit_d_2')}</div></div>`;
   }
-  h += '<div class="wrap"><table>' + thead(t('position'), C) + '<tbody>';
+  h += '<div class="wrap"><table' + (editable ? ' class="ptable"' : '') + '>' + thead(t('position'), C) + '<tbody>';
   const secTotal = name => C.map(c => c.months.reduce((a, m) => a + (sums[m]?.[name] ?? 0) * defl(m), 0));
   for (const sek of KF.sektionen) {
     const tot = secTotal(sek.name);
@@ -1912,13 +1928,16 @@ function bindKontorKategorien(main) {
 
 // ---------------------------------------------------------------- Einstellungen
 function vEinstellungen() {
-  const tabs = subTabs('einstellungen', [['', t('allgemein')], ['sicherung', t('sicherung_pakete')]]);
-  return tabs + (S.sub === 'sicherung' ? vSicherung() : vEinstellungenAllgemein());
+  // Reiter: Allgemein · Zugang · Updates · Sichern & Zuruecksetzen
+  const tabs = subTabs('einstellungen', [['', t('allgemein')], ['zugang', t('zugang')], ['updates', t('updates')], ['sichern', t('sichern_zuruecksetzen')]]);
+  const v = {zugang: vEinstellungenZugang, updates: vEinstellungenUpdates, sichern: vSicherung}[S.sub] || vEinstellungenAllgemein;
+  return tabs + v();
 }
 function vEinstellungenAllgemein() {
-  const C = S.CFG, z = C.zeitplan || {}, b = C.bilanz || {}, o = C.oberflaeche || {}, st = C.steuer || {}, bl = C.belege || {}, mm = C.moneymoney || {}, up = C.updates || {};
+  const C = S.CFG, z = C.zeitplan || {}, b = C.bilanz || {}, st = C.steuer || {}, bl = C.belege || {}, mm = C.moneymoney || {};
   const loans = S.KONTEN.filter(k => !k.gruppe && k.rolle === 'verbindlichkeiten');
   let h = `<h2>${t('betrieb')}</h2><div class="form">
+    <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang"><option value="de" ${LANG === 'de' ? 'selected' : ''}>Deutsch</option><option value="en" ${LANG === 'en' ? 'selected' : ''}>English</option></select> <span class="small muted">${t('sprache_hinweis')}</span></label>
     <label>${t('testmodus_0', hq('probelauf'))}</label><label class="chk"><input type="checkbox" id="e-probelauf" ${C.probelauf ? 'checked' : ''}> ${t('buchungen_aus_regeln_nur_vorschlagen')}</label>
     <label>${t('automatischer_abgleich_0', hq('abgleich'))}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatisch !== false ? 'checked' : ''}> ${t('alle_2')} <input type="number" id="e-intervall" min="5" value="${z.intervall_minuten ?? 30}" style="width:70px"> ${t('minuten_nur_wenn_moneymoney_laeuft')}</label>
     <label>${t('mitteilungen_macos')}</label><label class="chk"><input type="checkbox" id="e-mitt" ${C.mitteilungen !== false ? 'checked' : ''}> ${t('bei_buchungen_vorschlaegen_und_fehlern')}</label>
@@ -1941,12 +1960,13 @@ function vEinstellungenAllgemein() {
     <label>${t('darlehen_objekt')}</label><div class="list" id="objloans">${loans.map(l => `<div class="row tight"><span style="min-width:260px">${esc(l.pfad)}</span><input type="text" class="e-obj" data-ref="${l.uuid} | ${esc(l.name)}" value="${esc((st.objekt_darlehen || {})[l.uuid + ' | ' + l.name] || Object.entries(st.objekt_darlehen || {}).find(([k]) => k.startsWith(l.uuid))?.[1] || '')}" placeholder="${t('objektname_wie_in_der_kategorie')}"></div>`).join('') || `<span class="muted small">${t('keine_darlehenskonten_erkannt')}</span>`}</div>
     <label>${t('kategorie_steuerposition')}</label><div class="list" id="positions">${Object.entries(st.positionen || {}).filter(([k]) => !k.startsWith('_')).map(([k, v]) => posRow(k, v)).join('')}<button id="add-pos" class="secondary small">${t('zuordnung_hinzufuegen')}</button></div>
   </div>
-  <h2>${t('updates')}</h2><div class="form">
-    <label>${t('taeglich_pruefen_0', hq('updates'))}</label><label class="chk"><input type="checkbox" id="e-up-auto" ${up.taeglich_pruefen !== false ? 'checked' : ''}> ${t('einmal_taeglich_bei_github_nachsehen')}</label>
-    <label>${t('quelle_github_repo')}</label><input type="text" id="e-up-repo" value="${esc(up.repo || 'stecrz/Kontor')}">
-  </div>
-  <h2>${t('oberflaeche_und_zugang')}</h2><div class="form">
-    <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang"><option value="de" ${LANG === 'de' ? 'selected' : ''}>Deutsch</option><option value="en" ${LANG === 'en' ? 'selected' : ''}>English</option></select> <span class="small muted">${t('sprache_hinweis')}</span></label>
+  <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button><button id="check-btn" class="secondary">${t('konfiguration_gegen_moneymoney_pruefen')}</button></div><div id="findings-e" class="findings"></div>
+`;
+  return h;
+}
+function vEinstellungenZugang() {
+  const o = S.CFG.oberflaeche || {};
+  let h = `<h2>${t('zugang')}</h2><div class="form">
     <label>${t('automatische_sperre')}</label><label class="chk">${t('nach_2')} <input type="number" id="e-sperre" min="1" value="${o.sperre_minuten ?? 15}" style="width:70px"> ${t('minuten_ohne_aktivitaet')}</label>
     <label>Touch ID ${hq('touchid')}</label><label class="chk"><input type="checkbox" id="e-touchid" ${o.touchid !== false ? 'checked' : ''} ${S.STATUS.touchid ? '' : 'disabled'}> ${t('am_mac_mit_touch_id', S.STATUS.touchid ? '' : t('an_diesem_geraet_nicht_verfuegbar'))}</label>
     <label>${t('adresse_0', hq('bind'))}</label><input type="text" id="e-bind" value="${esc(o.bind || '127.0.0.1')}" placeholder="${t('127_0_0_1_oder')}">
@@ -1955,30 +1975,44 @@ function vEinstellungenAllgemein() {
     <label>${t('tls_schluessel_optional')}</label><input type="text" id="e-key" value="${esc(o.tls_key || '')}" placeholder="/Pfad/zert.key">
     <div class="full note">${t('adresse_und_port_gelten_nach')} <code>${t('python3_kontor_kontor_py_tls')}</code> ${t('https_noetig_fuer_die_offline', o.port ?? 8765)}</div>
   </div>
-  <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button><button id="check-btn" class="secondary">${t('konfiguration_gegen_moneymoney_pruefen')}</button></div><div id="findings-e" class="findings"></div>
+  <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>
   <h2>${t('passwort')}</h2><div class="form"><label>${t('altes_passwort')}</label><input type="password" id="pw-alt" autocomplete="current-password"><label>${t('neues_passwort')}</label><input type="password" id="pw-neu" autocomplete="new-password"></div><div class="actions"><button id="pw-save" class="secondary">${t('passwort_aendern')}</button></div>
   <h2>${t('offline_ansicht_iphone_0', hq('offline'))}</h2><div class="kv"><div>${t('auf_diesem_geraet')}</div><div id="sw-state">${navigator.serviceWorker && navigator.serviceWorker.controller ? t('aktiv_die_zuletzt_geladenen_daten') : (location.protocol === 'https:' || location.hostname === '127.0.0.1' ? t('wird_beim_naechsten_laden_aktiv') : t('nicht_moeglich_ueber_http_tailscale'))}</div></div>
-  <div class="actions"><button id="sw-clear" class="secondary">${t('gespeicherte_daten_auf_diesem_geraet')}</button></div>
-  <h2>${t('daten')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.ablage.ordner)}</div><div>${t('verschluesselung')}</div><div>${S.STATUS.ablage.verschluesselt ? t('aes_256_schluessel_im') + (S.STATUS.ablage.schluessel === 'schluesselbund' ? t('macos_schluesselbund') : t('dateisystem_0600')) : 'KEINE'}</div><div>${t('belegordner')}</div><div>${esc(S.STATUS.belege.ordner)}</div><div>Touch ID</div><div>${S.STATUS.touchid ? t('verfuegbar_2') : t('nicht_verfuegbar_helfer_nicht_ueberset')}</div><div>${t('version')}</div><div>${esc(S.STATUS.version)}</div></div>
+  <div class="actions"><button id="sw-clear" class="secondary">${t('gespeicherte_daten_auf_diesem_geraet')}</button></div>`;
+  return h;
+}
+function vEinstellungenUpdates() {
+  const up = S.CFG.updates || {};
+  return `<h2>${t('updates')}</h2><div class="form">
+    <label>${t('automatisch_pruefen_0', hq('updates'))}</label><label class="chk"><select id="e-up-pruefen">${[['taeglich', t('taeglich')], ['woechentlich', t('woechentlich')], ['aus', t('nie')]].map(([v, l]) => `<option value="${v}" ${(up.pruefen || 'taeglich') === v ? 'selected' : ''}>${l}</option>`).join('')}</select> <span class="small muted">${t('nur_github_installieren_erst_nach_klick')}</span></label>
+    <label>${t('quelle_github_repo')}</label><input type="text" id="e-up-repo" value="${esc(up.repo || 'stecrz/Kontor')}">
+  </div>
+  <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
+}
+function vEinstellungenDaten() {
+  return `<h2>${t('daten')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.ablage.ordner)}</div><div>${t('verschluesselung')}</div><div>${S.STATUS.ablage.verschluesselt ? t('aes_256_schluessel_im') + (S.STATUS.ablage.schluessel === 'schluesselbund' ? t('macos_schluesselbund') : t('dateisystem_0600')) : 'KEINE'}</div><div>${t('belegordner')}</div><div>${esc(S.STATUS.belege.ordner)}</div><div>Touch ID</div><div>${S.STATUS.touchid ? t('verfuegbar_2') : t('nicht_verfuegbar_helfer_nicht_ueberset')}</div><div>${t('version')}</div><div>${esc(S.STATUS.version)}</div></div>
   <div class="actions"><button id="tm-ex" class="secondary">${t('datenordner_von_time_machine_ausschlie')}</button><button id="tm-in" class="secondary">${t('ausschluss_aufheben')}</button><button id="diag" class="secondary">${t('diagnosedatei_maskiert')}</button></div>
   <div class="note">${t('die_diagnosedatei_enthaelt_protokoll_k')}</div>`;
-  return h;
 }
 const posRow = (k, v) => `<div class="row tight pos-row"><input type="text" class="p-kat" value="${esc(k)}" placeholder="${t('kategorie_oder_oberkategorie')}"><input type="text" class="p-pos" value="${esc(v)}" placeholder="${t('z_b_sonderausgaben_vorsorge')}"><button class="danger small del-row">×</button></div>`;
 function collectSettings() {
+  // nur die Felder des sichtbaren Reiters; alles andere bleibt, wie es ist
   const cfg = JSON.parse(JSON.stringify(S.CFG));
-  cfg.probelauf = $('#e-probelauf').checked; cfg.mitteilungen = $('#e-mitt').checked;
-  cfg.zeitplan = { automatisch: $('#e-auto').checked, intervall_minuten: Math.max(5, parseInt($('#e-intervall').value) || 30) };
-  cfg.bilanz = Object.assign(cfg.bilanz || {}, { monate_zurueck: parseInt($('#e-monate').value) || 0 });
-  cfg.moneymoney = Object.assign(cfg.moneymoney || {}, { kategorisieren_erlauben: $('#e-mm-cat').checked });
-  cfg.belege = Object.assign(cfg.belege || {}, { ordner: $('#e-bl-ordner').value.trim() || '~/Documents/Kontor-Belege', unterordner: $('#e-bl-sub').value.trim() || '{jahr}', kommentar_schreiben: $('#e-bl-comment').checked,
-    ordner_bestaetigt: !!(cfg.belege || {}).ordner_bestaetigt || $('#e-bl-ordner').value.trim() !== ((S.CFG.belege || {}).ordner || '') });    // ein hier gewählter Ordner gilt als bestätigt
-  cfg.steuer = Object.assign(cfg.steuer || {}, { vermietung_kategorie: $('#e-verm').value.trim() || 'Vermietung',
-    objekt_darlehen: Object.fromEntries($$('.e-obj').map(i => [i.dataset.ref, i.value.trim()]).filter(([, v]) => v)),
-    positionen: Object.fromEntries($$('.pos-row').map(r => [$('.p-kat', r).value.trim(), $('.p-pos', r).value.trim()]).filter(([k, v]) => k && v)) });
-  cfg.updates = { taeglich_pruefen: $('#e-up-auto').checked, repo: $('#e-up-repo').value.trim() || 'stecrz/Kontor' };
-  cfg.oberflaeche = Object.assign(cfg.oberflaeche || {}, { sprache: $('#e-lang').value, sperre_minuten: Math.max(1, parseInt($('#e-sperre').value) || 15), touchid: $('#e-touchid').checked, bind: $('#e-bind').value.trim() || '127.0.0.1',
-    port: parseInt($('#e-port').value) || 8765, tls_cert: $('#e-cert').value.trim(), tls_key: $('#e-key').value.trim() });
+  if ($('#e-probelauf')) {
+    cfg.probelauf = $('#e-probelauf').checked; cfg.mitteilungen = $('#e-mitt').checked;
+    cfg.zeitplan = { automatisch: $('#e-auto').checked, intervall_minuten: Math.max(5, parseInt($('#e-intervall').value) || 30) };
+    cfg.bilanz = Object.assign(cfg.bilanz || {}, { monate_zurueck: parseInt($('#e-monate').value) || 0 });
+    cfg.moneymoney = Object.assign(cfg.moneymoney || {}, { kategorisieren_erlauben: $('#e-mm-cat').checked });
+    cfg.belege = Object.assign(cfg.belege || {}, { ordner: $('#e-bl-ordner').value.trim() || '~/Documents/Kontor-Belege', unterordner: $('#e-bl-sub').value.trim() || '{jahr}', kommentar_schreiben: $('#e-bl-comment').checked,
+      ordner_bestaetigt: !!(cfg.belege || {}).ordner_bestaetigt || $('#e-bl-ordner').value.trim() !== ((S.CFG.belege || {}).ordner || '') });    // ein hier gewählter Ordner gilt als bestätigt
+    cfg.steuer = Object.assign(cfg.steuer || {}, { vermietung_kategorie: $('#e-verm').value.trim() || 'Vermietung',
+      objekt_darlehen: Object.fromEntries($$('.e-obj').map(i => [i.dataset.ref, i.value.trim()]).filter(([, v]) => v)),
+      positionen: Object.fromEntries($$('.pos-row').map(r => [$('.p-kat', r).value.trim(), $('.p-pos', r).value.trim()]).filter(([k, v]) => k && v)) });
+    cfg.oberflaeche = Object.assign(cfg.oberflaeche || {}, { sprache: $('#e-lang').value });
+  }
+  if ($('#e-up-pruefen')) cfg.updates = { pruefen: $('#e-up-pruefen').value, repo: $('#e-up-repo').value.trim() || 'stecrz/Kontor' };
+  if ($('#e-sperre')) cfg.oberflaeche = Object.assign(cfg.oberflaeche || {}, { sperre_minuten: Math.max(1, parseInt($('#e-sperre').value) || 15), touchid: $('#e-touchid').checked,
+    bind: $('#e-bind').value.trim() || '127.0.0.1', port: parseInt($('#e-port').value) || 8765, tls_cert: $('#e-cert').value.trim(), tls_key: $('#e-key').value.trim() });
   return cfg;
 }
 
@@ -1993,6 +2027,7 @@ function vSicherung() {
   <div class="row"><label>${t('name')} <input type="text" id="pk-name" value="Kontor-Einstellungen"></label><label class="chk"><input type="checkbox" id="pk-nouuid"> ${t('ohne_uuids_nur_kontonamen_fuer')}</label><label class="chk"><input type="checkbox" id="pk-plan"> ${t('planung_mitnehmen')}</label><button id="pk-export" class="small">${t('paket_herunterladen')}</button></div>
   <div class="small muted">${t('aktuell_0_darlehen_1_beteiligungen', (C.darlehen || []).length, (C.beteiligungen || []).length, (C.saldo_spiegel || []).length, Object.keys((C.kapitalfluss || {}).kategorie_zuordnung || {}).length)}</div>
   <h2>${t('datei_laden')}</h2><div class="drop" id="pk-drop">${t('datei_hierher_ziehen')}<br><button id="pk-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button></div><div id="pk-preview"></div>
+  ${vEinstellungenDaten()}
   <h2>${t('zuruecksetzen_h')}</h2><div class="note">${t('zuruecksetzen_text')}</div>
   <div class="row tight"><input type="password" id="rs-pw" placeholder="${t('passwort_zur_bestaetigung')}" autocomplete="current-password" style="width:220px"><label class="chk"><input type="checkbox" id="rs-pw-reset"> ${t('passwort_ebenfalls_zuruecksetzen_einri')}</label><button id="rs-go" class="danger" ${S.STATUS.lokal ? '' : t('disabled_title_nur_am_mac')}>${t('programm_zuruecksetzen')}</button></div><div id="rs-report" class="findings"></div>`;
 }
@@ -2049,6 +2084,7 @@ async function vUpdates() {
   const r = await api('/api/update/status'), st = S.STATUS, info = r.info;
   let h = `<div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.datum ? `<span class="vdate">${t('vom_0', FD(r.datum))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
     <div class="card"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.fehler ? '<span class="pill err">?</span>' : esc(info.verfuegbar || '–') + (info.datum ? `<span class="vdate">${t('vom_0', FD(info.datum))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.fehler ? esc(info.fehler) : (info.neuer ? `<span class="pill ok">${t('neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + t('quelle_2') + esc(info.quelle || '')) : t('noch_nicht_geprueft')}${r.geprueft ? t('geprueft') + new Date(r.geprueft * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
+    <div class="note">${t('automatisch_pruefen_status', {taeglich: t('taeglich'), woechentlich: t('woechentlich'), aus: t('nie')}[(S.CFG.updates || {}).pruefen || 'taeglich'])} <a href="#einstellungen/updates">${t('aendern')}</a></div>
     <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${info && info.neuer && st.lokal ? '' : 'disabled'}>${t('update_installieren_und_dienst_neu')}</button></div>
     ${info && info.notizen && info.neuer ? `<h2>${t('neu_in_0', esc(info.verfuegbar))}</h2>${clHtml(info.notizen)}` : ''}
     ${r.changelog ? `<details class="changelog"><summary>${t('alle_aenderungen')}</summary>${clHtml(r.changelog)}</details>` : ''}
@@ -2178,7 +2214,7 @@ let ROUTE_SEQ = 0;
 const SCROLL = {key: '', pos: {}};
 // Ungespeicherte Aenderungen: Formulare auf Seiten mit Speichern-Knopf melden Aenderungen; Wegnavigieren fragt nach
 const DIRTY = {on: false, hash: location.hash};
-const GUARDED = ['einrichtung/bereiche', 'einrichtung/konten', 'einstellungen', 'regeln'];
+const GUARDED = ['einrichtung/bereiche', 'einrichtung/konten', 'einstellungen', 'einstellungen/zugang', 'einstellungen/updates', 'regeln'];
 const guarded = () => GUARDED.includes(S.tab + (S.sub ? '/' + S.sub : ''));
 (function dirtyListeners() {
   // einmal am Hauptbereich (bleibt bestehen); ob die Seite geschuetzt ist, wird beim Ereignis geprueft
@@ -2253,7 +2289,7 @@ function bind(main) {
   if (['bilanz', 'kapitalfluss', 'planung'].includes(S.tab)) $$('.wrap', main).forEach(w => {
     snapTable(w);
     const c = $('th[data-cur]', w);
-    if (c && w.scrollWidth > w.clientWidth) w.scrollLeft = snapLeft(w, colX(w, c) + c.offsetWidth - w.clientWidth * (S.plan ? 0.62 : 1));
+    if (c && w.scrollWidth > w.clientWidth) w.scrollLeft = snapLeft(w, colX(w, c) + c.offsetWidth - w.clientWidth * (planOn() ? 0.62 : 1));
   });
   if (S.tab === 'bilanz') bindBilanzChart(main);
   const vs = $('#vorschlag-an', main); if (vs) vs.addEventListener('change', e => { S.vorschlag = e.target.checked; route(); });
@@ -2327,6 +2363,7 @@ function bind(main) {
 
   // Bilanz
   $$('tr.acct[data-id]', main).forEach(tr => tr.addEventListener('click', () => openHistDrawer(tr.dataset.id)));
+  $$('tr.transit', main).forEach(tr => tr.addEventListener('click', openTransitDrawer));
 
   // Planung
   $$('.edit .save', main).forEach(b => b.addEventListener('click', async e => { const box = e.target.closest('.edit'); await plan({zeile: box.dataset.key, methode: $('.meth', box).value, betrag: $('.betrag', box).value, steigerung: $('.steig', box).value}); }));

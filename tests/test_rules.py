@@ -290,7 +290,9 @@ class TransitTests(unittest.TestCase):
         from report import transit_series
         L = self.ledger(txs)
         leaves = [L.accounts["a"], L.accounts["b"]]
-        return transit_series(L, leaves, {"a": "liquiditaet", "b": "liquiditaet"}, [(2026, 1), (2026, 2), (2026, 3)], {}, today)
+        out, details = transit_series(L, leaves, {"a": "liquiditaet", "b": "liquiditaet"}, [(2026, 1), (2026, 2), (2026, 3)], {}, today)
+        self.assertEqual(len(details), sum(1 for v in out.values() if v))
+        return out
 
     def test_ueber_monatsende(self):
         t = self.run_transit([("a", date(2026, 1, 31), -500.0, "DE22"), ("b", date(2026, 2, 2), 500.0, "")])

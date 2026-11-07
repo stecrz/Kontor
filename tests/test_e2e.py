@@ -133,7 +133,7 @@ def config_for_test(belege_dir=None):
         "kapitalfluss": {"beteiligungs_gruppen": [F.uid("pb") + " | Alpha GbR", F.uid("shs") + " | Beta GbR"],
                          "kategorie_zu_konto": {"Investments\\ETF": F.uid("priv.depot") + " | Depot"}},
         "steuer": {"afa": {"Parkweg": {"2026": 40000}}},
-        "updates": {"taeglich_pruefen": False},
+        "updates": {"pruefen": "aus"},
         "oberflaeche": {"sperre_minuten": 15, "port": 0},
     }
     if belege_dir:
@@ -797,7 +797,8 @@ class AppTests(_AppBase):
                                 "wertentwicklung": {"Immobilie Lindenstraße": {"prozent_pa": "1.5", "basis": ""}}})
         code, ds = self.call("/api/dataset")
         b = ds["bereiche"][P]
-        self.assertEqual(len(b["plan_monate"]), 36); self.assertEqual(b["plan"]["inflation_prozent_pa"], 3)
+        self.assertEqual(len(b["plan_monate"]), 37); self.assertEqual(b["plan_monate"][-1][5:], "12")    # 36 Monate, bis Jahresende aufgefuellt
+        self.assertEqual(b["plan"]["inflation_prozent_pa"], 3)
         gz = [z for z in b["kapitalfluss"]["sektionen"][0]["zeilen"] if z["zeile"] == "Einnahmen / Gehalt"][0]
         self.assertEqual(gz["plan"]["werte"]["2027-01"], 9000.0)
         self.assertAlmostEqual(gz["plan"]["vorschlag"]["2027-01"], round(7000 * 1.02 ** (2 / 12), 2), 2)
@@ -815,7 +816,7 @@ class AppTests(_AppBase):
         # anderer Bereich hat eigenen (leeren) Plan
         code, plan_pb = self.call("/api/plan?area=" + F.uid("pb"))
         self.assertEqual(plan_pb, {})
-        self.assertEqual(len(ds["bereiche"][F.uid("pb")]["plan_monate"]), 24)
+        self.assertEqual(len(ds["bereiche"][F.uid("pb")]["plan_monate"]), 25)       # 24 Monate, bis Jahresende aufgefuellt
         self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Einnahmen / Gehalt", "alle_ueberschreibungen_loeschen": True})
         code, ds = self.call("/api/dataset")
         gz = [z for z in ds["bereiche"][P]["kapitalfluss"]["sektionen"][0]["zeilen"] if z["zeile"] == "Einnahmen / Gehalt"][0]
@@ -1784,10 +1785,7 @@ class BrowserTest(unittest.TestCase):
                 # Monatsansicht mit Jahressummen; Schalter in der Werkzeugleiste, nicht oben rechts
                 self.assertEqual(len(pg.query_selector_all("#modus-seg button")), 2)
                 self.assertTrue(pg.query_selector("#main thead th.year")); self.assertIsNone(pg.query_selector("#top-ctl"))
-                pg.click("#main .toolbar label:has(#planan)"); pg.wait_for_timeout(300)
-                self.assertIsNone(pg.query_selector("#main thead th.plan"))
-                pg.click("#main .toolbar label:has(#planan)"); pg.wait_for_timeout(300)
-                self.assertTrue(pg.query_selector("#main thead th.plan"))
+                self.assertIsNone(pg.query_selector("#main .toolbar #planan")); self.assertTrue(pg.query_selector("#main thead th.plan"))   # Bilanz immer mit Plan
                 n_rows = len(pg.query_selector_all("tr.acct")); pg.click("#main .toolbar label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
                 self.assertGreaterEqual(len(pg.query_selector_all("tr.acct")), n_rows)
                 pg.click("#main .toolbar label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
@@ -1950,7 +1948,7 @@ class BrowserTest(unittest.TestCase):
                 pg.wait_for_function("navigator.serviceWorker && navigator.serviceWorker.controller !== null", timeout=15000)
                 pg.reload(); pg.wait_for_selector(".cards")           # jetzt laufen alle Abrufe durch den Service Worker
                 pg.wait_for_function("caches.open('kontor-data').then(c => c.keys()).then(k => k.some(r => r.url.endsWith('/api/offline/verifier')) && k.some(r => r.url.endsWith('/api/dataset')))", timeout=15000)
-                pg.click("#nav a[href='#einstellungen']"); pg.wait_for_selector("#sw-state")
+                pg.goto("http://127.0.0.1:%d/#einstellungen/zugang" % port); pg.wait_for_selector("#sw-state")
                 self.assertIn("aktiv", pg.query_selector("#sw-state").inner_text())
                 pg.click("#nav a[href='#uebersicht']"); pg.wait_for_selector(".cards")
                 pg.evaluate("localStorage.setItem('kontor.testRemote', '1')")      # 127.0.0.1 gilt sonst als "am Mac": dort gibt es keine Offline-Ansicht
@@ -2041,7 +2039,7 @@ class BrowserWizardTest(unittest.TestCase):
         d = tempfile.mkdtemp(prefix="kontor-wiz-")
         key, src = load_or_create_master_key(d)
         store = Store(d, key, src)
-        store.save("config.json", {"updates": {"taeglich_pruefen": False}, "zeitplan": {"automatisch": False}, "belege": {"ordner": os.path.join(d, "Belege")}})
+        store.save("config.json", {"updates": {"pruefen": "aus"}, "zeitplan": {"automatisch": False}, "belege": {"ordner": os.path.join(d, "Belege")}})
         reset_mock(); patch_today()
         app = App(store, d, bridge_factory=MockBridge)
         srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
@@ -2129,8 +2127,8 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Alpha GbR"][0]["anteil"], 0.49)       # Prozent -> Anteil
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Privat"][0]["art"], "privat")
                 # Paket laden mit Zuordnung
-                pg.click("#nav a[href='#einstellungen']"); pg.wait_for_selector("#sw-state")
-                pg.click("#main .tabs button[data-next='#einstellungen/sicherung']"); pg.wait_for_selector("#pk-pick")
+                pg.click("#nav a[href='#einstellungen']"); pg.wait_for_selector("#e-probelauf")
+                pg.click("#main .tabs button[data-next='#einstellungen/sichern']"); pg.wait_for_selector("#pk-pick")
                 with pg.expect_file_chooser() as fc:
                     pg.click("#pk-pick")
                 fc.value.set_files(pkg_path); pg.wait_for_selector("#pk-import")

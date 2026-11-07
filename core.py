@@ -44,7 +44,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "belege": {"ordner": "~/Documents/Kontor-Belege", "unterordner": "{jahr}", "kommentar_schreiben": False, "ordner_bestaetigt": False},
     "moneymoney": {"kategorisieren_erlauben": False},
     "abruf": {"online": [], "offline": []},      # eigene Festlegung: Konto wird von MoneyMoney abgerufen / nicht (sonst erkannt)
-    "updates": {"repo": "stecrz/Kontor", "taeglich_pruefen": True},
+    "updates": {"repo": "stecrz/Kontor", "pruefen": "taeglich"},   # pruefen: taeglich | woechentlich | aus
     "oberflaeche": {"sperre_minuten": 15, "touchid": True, "port": 8765, "bind": "127.0.0.1", "tls_cert": "", "tls_key": ""},
 }
 

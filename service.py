@@ -568,8 +568,9 @@ class App:
                         if res.get("status") in ("nicht_verfuegbar", "laeuft_bereits"):     # z. B. Neuberechnung lief gerade
                             self.mm_retry_at = time.time() + 60
                 up = self.config.get("updates", {}) or {}
-                wait = 86400 if not (self.update_info or {}).get("fehler") else 7200     # offline/Fehler: in 2 h erneut
-                if up.get("taeglich_pruefen", True) and not mm_history.AKTIV.is_set() and (self.update_checked is None or time.time() - self.update_checked > wait):
+                every = {"taeglich": 86400, "woechentlich": 7 * 86400}.get(up.get("pruefen") or "taeglich")      # "aus": nie
+                wait = every if every and not (self.update_info or {}).get("fehler") else 7200                   # offline/Fehler: in 2 h erneut
+                if every and not mm_history.AKTIV.is_set() and (self.update_checked is None or time.time() - self.update_checked > wait):
                     self.update_checked = time.time()
                     # eigener Thread: eine haengende Verbindung (offline) blockiert weder Zeitplaner noch Oberflaeche
                     threading.Thread(target=lambda: setattr(self, "update_info", updates.check(up.get("repo") or "stecrz/Kontor")),

@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.9.21 (2026-11-07)
+- Einstellungen in Reitern: Allgemein, Zugang, Updates, Sichern & Zurücksetzen.
+- Updates: automatische Prüfung täglich, wöchentlich oder nie (Einstellungen → Updates); die Updates-Seite zeigt die Einstellung mit Link.
+- Bilanz: „Geld unterwegs“ heißt „Geldtransit“; ein Klick zeigt die erkannten Buchungspaare. „Wertpapiere“ heißt „Handelbare Anlagen“ (auch Krypto und Edelmetall).
+- Bilanz: Plan immer an, Planwerte blasser statt gelb; der Plan reicht immer bis Dezember. Aufgeklappte Positionen zeigen ihre Konten in der Grafik.
+- Konten mit Umsätzen: Sind alle Umsätze geladen, gibt es vor dem ersten Umsatz keinen Stand mehr – wie in MoneyMoney.
+
 ## 3.9.20 (2026-11-07)
 - Kontostände aus MoneyMoney, Depots: Manche Depots führen in MoneyMoney zusätzlich einen Eintrag mit dem Depotwert insgesamt (die Summe ergab deshalb genau das Doppelte). Kontor erkennt diesen Eintrag, prüft ihn über seinen ganzen Verlauf gegen die einzelnen Wertpapiere und nimmt dann ihn als Depotwert.
 
