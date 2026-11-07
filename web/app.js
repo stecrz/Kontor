@@ -389,13 +389,13 @@ const SYNC = {busy: false};
 const MMH = {busy: false};
 const DATA_TABS = ['uebersicht', 'bilanz', 'kapitalfluss', 'planung', 'steuer', 'immobilien', 'umsaetze', 'kategorien', 'buchungen'];
 async function pollStatus() {
-  // Status holen; läuft ein Berichtsneubau, öfter nachsehen und nach Abschluss die Daten frisch laden
+  // Status holen; läuft ein Abgleich oder Berichtsneubau, öfter nachsehen und nach Abschluss die Daten frisch laden
   S.STATUS = await api('/api/status'); statusMini();
   if (S.STATUS.version && SESSION && SESSION.version && S.STATUS.version !== SESSION.version) { toast(t('neue_version') + S.STATUS.version + t('seite_wird_neu_geladen'), 3000); setTimeout(() => location.reload(), 1200); return; }
   if (S.STATUS.neustart_ausstehend) { clearTimeout(BER.timer); BER.timer = setTimeout(() => pollStatus().catch(() => setTimeout(() => location.reload(), 4000)), 3000); return; }
   const b = S.STATUS.bericht || {};
   clearTimeout(BER.timer);
-  if (b.laeuft) { BER.timer = setTimeout(() => pollStatus().catch(() => {}), 3000); return; }
+  if (b.laeuft || (S.STATUS.dienst || {}).laeuft) { BER.timer = setTimeout(() => pollStatus().catch(() => {}), 3000); return; }
   if ((b.stand || '') !== BER.stand) {
     BER.stand = b.stand || '';
     if (b.fehler) { toast(t('auswertung_konnte_nicht_aktualisiert_w') + b.fehler, 6000); return; }
@@ -2525,5 +2525,7 @@ let SNAP_T = null;
 window.addEventListener('resize', () => { clearTimeout(SNAP_T); SNAP_T = setTimeout(() => { if (['bilanz', 'kapitalfluss', 'planung'].includes(S.tab)) $$('#main .wrap.snap').forEach(w => { const l = w.scrollLeft; snapTable(w); w.scrollLeft = snapLeft(w, l); }); }, 150); });
 window.addEventListener('beforeunload', () => { try { localStorage.setItem('kontor.ui', JSON.stringify({modus: S.modus, plan: S.plan, real: S.real, bereich: S.bereich})); } catch (e) {} });
 setInterval(async () => { if (S.csrf && !document.hidden && !OFFLINE.mode) { try { await pollStatus(); } catch (e) {} } }, 30000);
+// Zurück im Fenster (z. B. nach MoneyMoney): sofort nachsehen statt bis zu 30 s einen alten Stand zu zeigen
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.csrf && !OFFLINE.mode) pollStatus().catch(() => {}); });
 applyStatic();
 checkSession();

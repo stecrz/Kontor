@@ -39,7 +39,7 @@ import categorize
 import updates
 from receipts import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (RUN_LOCK, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+from core import (RUN_LOCK, account_sig, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merged_config, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, apply_plan, role_label
@@ -131,7 +131,10 @@ class App:
         self.restart_allowed = False        # nur der echte Dienst (serve) startet sich bei neuem Code selbst neu
         self.mm_probe: Tuple[float, Optional[bool]] = (0.0, None)     # (Zeitpunkt, gesperrt?)
         self.mm_retry_at: Optional[float] = None
-        self._capture_sig: Optional[tuple] = None      # letzter Schnellabgleich (Konto, Saldo, Abrufzeit)
+        self._capture_sig: Optional[tuple] = None      # zuletzt gesehener Kontenstand (Konto, Saldo, Abrufzeit)
+        self._captured_once = False                     # erster Schnellabgleich seit dem Start erledigt (Lueckenpruefung)
+        self._change_since: Optional[float] = None      # seit wann MoneyMoney neue Daten zeigt (Abruf laeuft evtl. noch)
+        self.retry_reason = ""
         self._mm_seen = False                           # lief MoneyMoney beim letzten Blick? (bestimmt den Takt)
         self._hb_written = 0.0
         self.prev_seen: Optional[datetime] = None       # wann der Dienst vor diesem Start zuletzt lief
@@ -418,6 +421,7 @@ class App:
                 pass
             step("save")
             self.set_ledger(ledger, reuse=True)
+            self._baseline(ledger)
             step("done")
             self.store.update("state.json", lambda st: st.__setitem__("lesen_dauer", took), {})
             return self.ledger, None
@@ -447,6 +451,7 @@ class App:
                 self.umsaetze = ums
             if ledger is not None:
                 self.set_ledger(ledger, reuse=res.get("status") == "unveraendert")
+                self._baseline(ledger)
             if cats:
                 self.categories_raw = cats
             self.last_result = res
@@ -457,6 +462,15 @@ class App:
             return self.last_result
         finally:
             self.running = False
+
+    def _baseline(self, ledger: Ledger) -> None:
+        """Kontenstand eines vollstaendigen Lesens merken: nur spaetere Aenderungen in MoneyMoney loesen den naechsten Lauf aus."""
+        sig = getattr(ledger, "acc_sig", None)
+        if sig is not None:
+            self._capture_sig = sig
+            self._change_since = None
+            if self.retry_reason == "new data":
+                self.mm_retry_at = None
 
     def capture(self) -> None:
         """Schnellabgleich: sobald MoneyMoney offen und entsperrt ist, nur die Kontenliste lesen (unter einer Sekunde) und die
@@ -480,17 +494,24 @@ class App:
         if (self.store.load_shared("state.json", {}) or {}).get("abgleich_problem"):
             self.store.update("state.json", lambda cur: cur.pop("abgleich_problem", None), {})
         accs = accounts_from_export(raw)
-        sig = tuple(sorted((a.uuid, a.balance, a.refresh.isoformat() if a.refresh else "") for a in accs.values() if not a.group))
+        sig = account_sig(accs)
         if sig == self._capture_sig:
             return
-        first = self._capture_sig is None
+        first = not self._captured_once
+        self._captured_once = True
+        known = self._capture_sig is not None
         self._capture_sig = sig
         today = date.today()
         self.store.update("state.json", lambda cur: record_snapshot(cur.setdefault("snapshots", {}), accs.values(), today), {})
         if first:
             self._check_gaps(accs)
-        elif (self.config.get("zeitplan") or {}).get("automatisch", True):
-            self.mm_retry_at = time.time()             # neue Daten in MoneyMoney: gleich vollstaendig abgleichen
+        if known and (self.config.get("zeitplan") or {}).get("automatisch", True):
+            # neue Daten in MoneyMoney: vollstaendig abgleichen, sobald der Abruf dort fertig ist (Stand 45 s unveraendert,
+            # spaetestens 3 Minuten nach der ersten Aenderung) -- sonst liefe bei jeder einzelnen Bank ein eigener Abgleich
+            now = time.time()
+            self._change_since = self._change_since or now
+            self.mm_retry_at = min(now + 45, self._change_since + 180)
+            self.retry_reason = "new data"
 
     def _check_gaps(self, accs: Dict) -> None:
         """Hat MoneyMoney ein Depot abgerufen, waehrend Kontor nicht lief, koennen Monatsend-Staende dazwischen fehlen
@@ -556,14 +577,18 @@ class App:
                             log.debug("Scheduler: run due, but MoneyMoney is not running -- checking every minute")
                         self.last_run_at = time.time()
                         self.mm_retry_at = time.time() + 60
+                        self.retry_reason = "available again"
                     elif self.moneymoney_gesperrt(max_age=0) is not None and self.moneymoney_gesperrt() is not False:
                         if due:
                             log.debug("Scheduler: run due, but MoneyMoney is locked -- checking every minute")
                         self.last_run_at = time.time()
                         self.mm_retry_at = time.time() + 60
+                        self.retry_reason = "available again"
                     else:
-                        log.debug("Scheduler: run %s", "due" if due else "catching up (MoneyMoney available again)")
+                        log.debug("Scheduler: run %s", "due" if due else ("after new data in MoneyMoney" if self.retry_reason == "new data"
+                                                                         else "catching up (MoneyMoney available again)"))
                         self.mm_retry_at = None
+                        self._change_since = None
                         res = self.do_run(None, force=False)
                         if res.get("status") in ("nicht_verfuegbar", "laeuft_bereits"):     # z. B. Neuberechnung lief gerade
                             self.mm_retry_at = time.time() + 60

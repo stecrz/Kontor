@@ -142,7 +142,13 @@ def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = Fals
                     log.info("Portfolio %s: no holdings data (%s)", a.uuid[:8], str(e)[:80])
     log.info("MoneyMoney: %d accounts, %d transactions since %s, %d portfolios", len(accounts), len(txs), since, len(ledger.portfolios))
     ledger.fp = fingerprint(ledger)          # Fingerabdruck des frischen Stands (vor Probelauf-Buchungen, die Salden veraendern)
+    ledger.acc_sig = account_sig(accounts)   # Kontenstand dieses Lesens (Vergleich fuer den Schnellabgleich)
     return ledger
+
+
+def account_sig(accounts: Dict[str, Account]) -> tuple:
+    """Salden und Abrufzeiten aller Konten -- aendert sich, sobald MoneyMoney neue Daten hat."""
+    return tuple(sorted((a.uuid, a.balance, a.refresh.isoformat() if a.refresh else "") for a in accounts.values() if not a.group))
 
 
 def ledger_fp(ledger: Ledger) -> str:

@@ -480,6 +480,10 @@ class AppTests(_AppBase):
             self.app.mm_retry_at = None; self.app.capture(); self.assertIsNone(self.app.mm_retry_at)
             self.app.config.setdefault("zeitplan", {})["automatisch"] = True
             depot["balance"][0][0] += 1000; self.app.capture(); self.assertIsNotNone(self.app.mm_retry_at)
+            import time as _t
+            self.assertGreater(self.app.mm_retry_at, _t.time() + 30)            # erst wenn MoneyMoney fertig abgerufen hat
+            self.app.do_run(True, force=False); self.assertIsNone(self.app.mm_retry_at)   # Lauf (Testmodus) hat den Stand gelesen
+            self.app.capture(); self.assertIsNone(self.app.mm_retry_at)          # -> kein zweiter Lauf hinterher
             # Mac schlief (kein Abruf seit dem letzten Lauf) -> keine Meldung
             self.app.prev_seen = dt(2026, 11, 6, 12, 0); self.app._check_gaps(accounts_from_export(MockBridge.state["accounts"]))
             self.assertFalse(self.store.load("state.json").get("luecken"))
@@ -1910,7 +1914,10 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#main .tabs button[data-next='#kategorien/regeln']"); pg.wait_for_selector("#kk-add")
                 self.assertIn("Haushalt / Werkzeug", pg.query_selector("#main").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_kategorien.png"), full_page=True)
-                # Planung: Ereignis anlegen
+                # Planung: Ereignis anlegen -- erst wenn die Neuberechnung nach dem Zuordnen fertig und geladen ist (sonst baut
+                # das Nachladen die Seite waehrend der Eingabe neu auf)
+                pg.wait_for_function("() => S.STATUS && !(S.STATUS.bericht || {}).laeuft && (S.STATUS.bericht || {}).stand === BER.stand", timeout=20000)
+                pg.wait_for_timeout(1000)
                 pg.click("#nav a[href='#planung']"); pg.wait_for_selector(".ev-row")
                 row = pg.query_selector_all(".ev-row")[-1]
                 row.query_selector(".ev-text").fill("Rückzahlung"); row.query_selector(".ev-betrag").fill("50000")
