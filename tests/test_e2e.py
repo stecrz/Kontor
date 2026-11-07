@@ -486,41 +486,57 @@ class AppTests(_AppBase):
             import mm_bridge as MB
             MA.is_running = MB.is_running
 
-    def _mm_db(self, compat=None, mit_verlauf=True, passwort="ge'heim"):
-        """Erfundene MoneyMoney-Datenbank (SQLCipher): Konten, Umsaetze, Kontostand-Verlauf (Cocoa-Zeit, Cent), Zugangsdaten."""
+    def _mm_db(self, compat=None, mit_verlauf=True, passwort="ge'heim", zeit="unix"):
+        """Erfundene MoneyMoney-Datenbank (SQLCipher) im Aufbau des Originals: accounts (ohne UUID; Zuordnung ueber IBAN,
+        Kontonummer + BLZ oder Name), balance_chart (Saldo je Zeitpunkt), portfolio_chart (Wert je Wertpapier, fuer das Depot),
+        Zugangsdaten, Umsaetze, Volltextsuche mit eigenem Tokenizer, eigene Sortierfolge."""
         import subprocess as sp
         from datetime import datetime as DT
         led = self.app.ledger
         leaves = [a for a in led.accounts.values() if not a.group]
-        cocoa = lambda d: (DT(d.year, d.month, d.day, 12) - DT(2001, 1, 1)).total_seconds()
-        sql = ["CREATE TABLE accounts(id INTEGER PRIMARY KEY, uuid TEXT COLLATE NOCASE, name TEXT, sortkey INTEGER);",
-               "CREATE VIRTUAL TABLE search USING fts4(content, tokenize=simple);", "INSERT INTO search VALUES('Suchtext');",
-               "CREATE TABLE logins(id INTEGER PRIMARY KEY, account INTEGER, password TEXT);",
-               "CREATE TABLE transactions(id INTEGER PRIMARY KEY, account_key INTEGER, booking_date REAL, amount REAL, purpose TEXT);"]
+        ts = lambda d: int((DT(d.year, d.month, d.day, 12) - (DT(2001, 1, 1) if zeit == "cocoa" else DT(1970, 1, 1))).total_seconds())
+        q = lambda v: "NULL" if v in (None, "") else "'%s'" % str(v).replace("'", "''")
+        sql = ["CREATE TABLE accounts(rowid INTEGER PRIMARY KEY, bank_key INTEGER, account TEXT, subaccount TEXT, bankcode TEXT, portfolio INTEGER, iban TEXT, "
+               "currency TEXT, name TEXT COLLATE NOCASE, cred TEXT, userdata BLOB);",
+               "CREATE TABLE banks(rowid INTEGER PRIMARY KEY, username TEXT, credential TEXT);", "INSERT INTO banks VALUES(1, 'GEHEIM-NUTZER', 'GEHEIM-PIN');",
+               "CREATE VIRTUAL TABLE transactions_fts USING fts4(content, tokenize=simple);", "INSERT INTO transactions_fts VALUES('Suchtext');",
+               "CREATE TABLE transactions(rowid INTEGER PRIMARY KEY, local_account_key INTEGER, timestamp INTEGER, amount REAL, unformatted_purpose TEXT);"]
         if mit_verlauf:
-            sql.append("CREATE TABLE balance_history(id INTEGER PRIMARY KEY, account_key INTEGER, timestamp REAL, value INTEGER);")
-        for i, a in enumerate(leaves, 1):
-            sql.append("INSERT INTO accounts VALUES(%d, '%s', 'Konto %d', %d);" % (i, a.uuid.upper(), i, 100 + i))
-            sql.append("INSERT INTO logins VALUES(%d, %d, 'GEHEIM-%d');" % (i, i, i))
+            sql += ["CREATE TABLE balance_chart(account_key INTEGER, currency TEXT, timestamp INTEGER, balance REAL);",
+                    "CREATE TABLE portfolio_chart(account_key INTEGER, currency TEXT, timestamp INTEGER, balance REAL, securities_key INTEGER);"]
+        rows = [(a, a.name) for a in leaves] + [(None, "Fremdes Konto")]
+        for i, (a, name) in enumerate(rows, 1):
+            if a is None:
+                sql.append("INSERT INTO accounts VALUES(%d, 1, '999', NULL, '10050000', 0, NULL, 'EUR', 'Fremdes Konto', 'GEHEIM-%d', NULL);" % (i, i))
+                continue
+            sql.append("INSERT INTO accounts VALUES(%d, 1, %s, NULL, %s, %d, %s, 'EUR', %s, 'GEHEIM-%d', NULL);"
+                       % (i, q(a.account_number), q(a.bank_code), 1 if a.portfolio else 0, q(a.iban), q(name), i))
             for k in range(3):
-                sql.append("INSERT INTO transactions(account_key, booking_date, amount, purpose) VALUES(%d, %f, %f, 'Text %d');" % (i, cocoa(date(2026, 10, 10 + k)), 12.34 + k, k))
+                sql.append("INSERT INTO transactions(local_account_key, timestamp, amount, unformatted_purpose) VALUES(%d, %d, %f, 'Text %d');" % (i, ts(date(2026, 10, 10 + k)), 12.34 + k, k))
             if not mit_verlauf:
                 continue
             y, m = 2024, 1
+            pts = []
             while (y, m) <= (2026, 10):
-                v = a.balance * (0.5 + 0.5 * ((y - 2024) * 12 + m) / 34.0)
+                v = round(a.balance * (0.5 + 0.5 * ((y - 2024) * 12 + m) / 34.0), 2)
                 if a.uuid == F.uid("priv.depot") and (y, m) == (2025, 6):
                     v = 70000.0
-                for day in (10, 27):
-                    sql.append("INSERT INTO balance_history(account_key, timestamp, value) VALUES(%d, %f, %d);" % (i, cocoa(date(y, m, day)), round(v * 100) + day))
+                pts += [(date(y, m, day), v + day / 100.0) for day in (10, 27)]
                 y, m = (y + 1, 1) if m == 12 else (y, m + 1)
-            sql.append("INSERT INTO balance_history(account_key, timestamp, value) VALUES(%d, %f, %d);" % (i, cocoa(date(2026, 11, 3)), round(a.balance * 100)))
+            pts.append((date(2026, 11, 3), a.balance))
+            for d, v in pts:
+                if a.portfolio:          # Depot: zwei Wertpapiere je Zeitpunkt, kein eigener Saldo-Verlauf
+                    part = round(v * 0.6, 2)
+                    sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, 1);" % (i, ts(d), part))
+                    sql.append("INSERT INTO portfolio_chart VALUES(%d, 'EUR', %d, %r, 2);" % (i, ts(d), round(v - part, 2)))
+                else:
+                    sql.append("INSERT INTO balance_chart VALUES(%d, 'EUR', %d, %r);" % (i, ts(d), v))
         db = os.path.join(self.dir, "MoneyMoney.sqlite")
         if os.path.exists(db):
             os.remove(db)
         pre = "PRAGMA key = '%s';\n" % passwort.replace("'", "''") + ("PRAGMA cipher_compatibility = %d;\n" % compat if compat else "")
         # wie bei MoneyMoney: Volltextsuche mit eigenem Tokenizer und eigene Sortierfolge, die es hier nicht gibt
-        fix = (".dbconfig defensive off\nPRAGMA writable_schema = ON;\nUPDATE sqlite_master SET sql = replace(sql, 'tokenize=simple', 'tokenize=fts_tokenize') WHERE name = 'search';\n"
+        fix = (".dbconfig defensive off\nPRAGMA writable_schema = ON;\nUPDATE sqlite_master SET sql = replace(sql, 'tokenize=simple', 'tokenize=fts_tokenize') WHERE name = 'transactions_fts';\n"
                "UPDATE sqlite_master SET sql = replace(sql, 'COLLATE NOCASE', 'COLLATE localized') WHERE name = 'accounts';\n")
         sp.run(["sqlcipher", db], input=pre + "BEGIN;\n" + "\n".join(sql) + "\nCOMMIT;\n" + fix, capture_output=True, text=True, check=True)
         with open(db, "rb") as f:
@@ -585,8 +601,8 @@ class AppTests(_AppBase):
             code, ds = self.call("/api/dataset")
             row = next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == F.uid("priv.depot"))
             self.assertEqual(row["werte"]["2025-06"], 70000.27)
-            # aelteres Format (SQLCipher 3) ebenso
-            code, r = self._mm_upload(self._mm_db(compat=3)); self.assertTrue(r["ok"], r)
+            # aelteres Format (SQLCipher 3) und Cocoa-Zeit ebenso
+            code, r = self._mm_upload(self._mm_db(compat=3, zeit="cocoa")); self.assertTrue(r["ok"], r); self.assertEqual(r["konten"], n)
             # ohne Verlaufstabelle: nichts uebernommen, nur der Aufbau (Namen, keine Inhalte) als Hinweis
             code, r = self._mm_upload(self._mm_db(mit_verlauf=False)); self.assertFalse(r["ok"]); self.assertIn("nicht sicher erkannt", r["text"])
             txt = open(aufbau, encoding="utf-8").read()
@@ -641,14 +657,13 @@ class AppTests(_AppBase):
             orig(self_, b)
         H.MemDB.__init__ = spy
         try:
-            found, tables, fmt = H.run(buf, {"x": (1.0, False)}, date(2026, 11, 4), keys_fn=keys)
+            found, tables, fmt = H.run(buf, {"x": {"saldo": 1.0, "depot": False, "name": "x"}}, date(2026, 11, 4), keys_fn=keys)
         finally:
             H.MemDB.__init__ = orig
         self.assertIsNone(found); self.assertEqual(tables[0]["name"], "t"); self.assertEqual(fmt, "SQLCipher 4")
         self.assertTrue(seen["klartext"]); self.assertTrue(seen["gleich"])          # im selben Puffer entschluesselt
         self.assertTrue(all(not any(k) for k in seen["keys"]))                     # Schluessel genullt
         self.assertFalse(any(buf))                                                 # Klartext genullt
-        self.assertTrue(H.SKIP.search("logins") and H.SKIP.search("password") and not H.SKIP.search("balance_history"))
         real = H.sys                                                                  # macOS-Zweig (Systembibliothek fehlt hier -> Ersatz)
         H.sys = type("Mac", (), {"platform": "darwin"})()
         try:

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.9.14 (2026-11-07)
+- Kontostände aus MoneyMoney: liest jetzt MoneyMoneys tatsächliche Tabellen – Saldo-Verlauf (balance_chart) und für Depots den Wert der Wertpapiere je Abruf (portfolio_chart). Konten werden über IBAN, sonst Kontonummer + BLZ, sonst Namen zugeordnet; gleichnamige Konten entscheidet der aktuelle Saldo. Übernommen wird nur, was eindeutig passt.
+
 ## 3.9.13 (2026-11-07)
 - Bilanz: „Geld unterwegs“ unter Liquidität – Umbuchungen zwischen eigenen Konten, die am Monatsende abgebucht, aber erst im Folgemonat gutgeschrieben sind (oder umgekehrt), zählen am Monatsende mit; das Nettovermögen knickt nicht mehr scheinbar ein.
 - Ansicht: nur noch „Monate“ (mit Jahressummen, Standard) und „Jahre“. Die Schalter oben rechts sind weg: „Alle Zeilen“ (leere und ausgeblendete) und „Plan“ stehen in der Werkzeugleiste von Bilanz und Kapitalfluss, „inflationsbereinigt“ nur in der Planung. Plan ist standardmäßig an.

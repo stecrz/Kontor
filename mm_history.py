@@ -13,9 +13,9 @@ Datenbank (SQLCipher, verschluesselt mit dem MoneyMoney-Passwort). Der Weg ist b
   schreibgeschuetzt direkt aus diesem Puffer (keine Kopie, keine Zwischendateien). Danach werden Schluessel und Puffer
   mit Nullen ueberschrieben. Spitzenbedarf an Arbeitsspeicher: etwa die Dateigroesse.
 * Waehrenddessen keine Netzverbindung von Kontor (Update-Pruefung ruht); protokolliert werden nur Zaehlerstaende.
-* Gesucht und verglichen wird in SQLite; in Python kommen nur Konto-Kennungen, Datumswerte und Betraege an. Tabellen
-  und Spalten, deren Namen nach Zugangsdaten klingen, werden nicht angesehen. Uebernommen werden nur Monatsend-Staende,
-  und nur, wenn die juengsten Werte zum aktuellen Saldo aus MoneyMoney passen.
+* Gelesen werden nur die Tabellen accounts (Kennzeichen zum Zuordnen: IBAN, Kontonummer, BLZ, Name, Depot ja/nein),
+  balance_chart und portfolio_chart (Zeitpunkt und Betrag); Zugangsdaten und Umsaetze werden nicht angesehen. Uebernommen
+  werden nur Monatsend-Staende eindeutig zugeordneter Konten, und nur, wenn die juengsten Werte zum aktuellen Saldo passen.
 """
 from __future__ import annotations
 
@@ -343,194 +343,166 @@ def _q(name: str) -> str:
     return '"%s"' % name.replace('"', '""')
 
 
-SKIP = re.compile(r"pass|secret|credential|token|kennwort|zugang|login|keychain|auth|cert|signatur", re.I)   # nie angesehen
+def _in(n: int) -> str:
+    return "(%s)" % ",".join("?" * n)
 
 
 def _to_date(v, kind: str) -> Optional[date]:
     try:
-        if kind == "text":
-            return date.fromisoformat(str(v)[:10])
-        if kind == "ymd":
-            x = int(v)
-            return date(x // 10000, x // 100 % 100, x % 100)
         x = float(v)
         if kind == "unix_ms":
             x /= 1000.0
         elif kind == "cocoa":
             x += 978307200.0
-        elif kind == "julian":
-            x = (x - 2440587.5) * 86400.0
         return datetime.fromtimestamp(x).date()
     except (ValueError, OverflowError, OSError, TypeError):
         return None
 
 
-ISO = "[12][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]*"
-NUM = "typeof(%s) IN ('integer', 'real')"
-
-
-def _b(name: str) -> str:
-    """Spalte mit binaerem Vergleich (eigene Sortierfolgen von MoneyMoney gibt es hier nicht)."""
-    return _q(name) + " COLLATE BINARY"
-
-
-def _date_kinds(db: "MemDB", t: str, c: str, today: date) -> List[str]:
-    """Moegliche Datumsformate einer Spalte: alle Werte muessen passen, der juengste liegt nahe heute."""
-    q, qb = _q(c), _b(c)
-    n_all, n_num, n_iso, lo, hi = db.one("SELECT count(%s), sum(%s), sum(typeof(%s) = 'text' AND %s GLOB '%s'), min(CASE WHEN %s THEN %s END), "
-                                         "max(CASE WHEN %s THEN %s END) FROM %s" % (q, NUM % q, q, q, ISO, NUM % q, qb, NUM % q, qb, _q(t)))
-    if not n_all:
-        return []
-    if n_iso == n_all:
-        lo, hi = db.one("SELECT min(%s), max(%s) FROM %s" % (qb, qb, _q(t)))
-        kinds = ["text"]
-    elif n_num == n_all and lo is not None:
-        kinds = ["ymd", "unix", "unix_ms", "cocoa", "julian"]
-    else:
-        return []
-    out = []
-    for kind in kinds:
+def _time_kind(db: "MemDB", table: str, today: date) -> Optional[str]:
+    """Zeitformat der Spalte timestamp: Unix-Sekunden, -Millisekunden oder Cocoa (ab 2001); der juengste Wert liegt nahe heute."""
+    lo, hi = db.one("SELECT min(timestamp), max(timestamp) FROM %s WHERE typeof(timestamp) IN ('integer', 'real')" % _q(table))
+    if hi is None:
+        return None
+    for kind in ("unix", "unix_ms", "cocoa"):
         a, b = _to_date(lo, kind), _to_date(hi, kind)
         if a and b and a.year >= 1990 and today - timedelta(days=4 * 366) <= b <= today + timedelta(days=2):
-            out.append(kind)
+            return kind
+    return None
+
+
+def _norm(v) -> str:
+    return re.sub(r"\s+", "", str(v or "")).upper()
+
+
+def _match_accounts(db: "MemDB", accounts: Dict[str, Dict]) -> Tuple[Dict[int, Tuple[str, str]], Dict[str, List[int]]]:
+    """Konten der Datenbank (rowid) den Konten von Kontor zuordnen: IBAN, sonst Kontonummer + BLZ, sonst Name.
+    Gelesen werden nur diese Kennzeichen (keine Zugangsdaten). Liefert (rowid -> (uuid, Merkmal) fuer eindeutige Treffer,
+    uuid -> [rowid, ...] fuer mehrdeutige Namen; die entscheidet spaeter der aktuelle Saldo)."""
+    have = {c for c, _ty in columns(db, "accounts")}
+    want = [c for c in ("iban", "account", "bankcode", "name", "portfolio") if c in have]
+    if "name" not in want:
+        return {}, {}
+    rows = [dict(zip(["rowid"] + want, r)) for r in db.rows("SELECT rowid, %s FROM accounts" % ", ".join(_q(c) for c in want))]
+    out: Dict[int, Tuple[str, str]] = {}
+    taken: Dict[int, int] = {}
+    unclear: Dict[str, List[int]] = {}
+    for u, a in accounts.items():
+        hit, how = [], ""
+        if _norm(a.get("iban")):
+            hit, how = [r for r in rows if _norm(r.get("iban")) == _norm(a["iban"])], "iban"
+        if not hit and _norm(a.get("nummer")) and _norm(a.get("blz")):
+            hit, how = [r for r in rows if _norm(r.get("account")) == _norm(a["nummer"]) and _norm(r.get("bankcode")) == _norm(a["blz"])], "nummer"
+        if not hit and a.get("name"):
+            hit, how = [r for r in rows if str(r.get("name") or "").strip() == a["name"].strip()
+                        and ("portfolio" not in r or bool(r["portfolio"]) == bool(a.get("depot")))], "name"
+        if len(hit) > 1 and how != "name":               # gleiche IBAN/Nummer mehrfach (Unterkonten): Name entscheidet
+            hit = [r for r in hit if str(r.get("name") or "").strip() == (a.get("name") or "").strip()] or hit
+        if len(hit) == 1:
+            k = hit[0]["rowid"]
+            taken[k] = taken.get(k, 0) + 1
+            out[k] = (u, how)
+        elif len(hit) > 1 and how == "name":
+            unclear[u] = [r["rowid"] for r in hit]
+    out = {k: v for k, v in out.items() if taken[k] == 1}
+    return out, {u: [k for k in ks if k not in out] for u, ks in unclear.items()}
+
+
+def _series(rows, kind: str) -> List[Tuple[date, float]]:
+    out = []
+    for ts, v in rows:
+        d = _to_date(ts, kind)
+        if d is not None and v is not None:
+            out.append((d, float(v)))
     return out
 
 
-def _in(n: int) -> str:
-    return "(%s)" % ",".join("?" * n)
-
-
-def find_history(db: "MemDB", accounts: Dict[str, Tuple[float, bool]], today: date) -> Optional[Dict]:
-    """Tabelle mit dem Kontostand-Verlauf suchen und pruefen. accounts: uuid -> (aktueller Saldo, Depot?).
-    Geprueft wird: Bei den meisten Konten steht der aktuelle Saldo aus MoneyMoney unter den juengsten Werten.
-    Verglichen wird in SQLite; in Python kommen nur Konto-Kennungen, Datumswerte und Betraege an.
-    Liefert {"tabelle", "spalten", "konten": {uuid: {JJJJ-MM: Saldo am Monatsende}}, "treffer", "geprueft"} oder None."""
-    uuids = {u.lower(): u for u in accounts}
-    ulist = sorted(uuids)
-    if not ulist:
-        return None
+def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date) -> Optional[Dict]:
+    """Kontostand-Verlauf aus MoneyMoneys Tabellen balance_chart (Saldo je Konto und Zeitpunkt) und portfolio_chart
+    (Wert je Wertpapier und Zeitpunkt, fuer Depots ohne eigenen Saldo-Verlauf). accounts: uuid -> {saldo, depot, iban,
+    nummer, blz, name, waehrung}. Uebernommen wird ein Konto nur, wenn es eindeutig zugeordnet ist; ueber den Namen
+    zugeordnete Konten zusaetzlich nur, wenn der juengste Wert zum aktuellen Saldo passt. Insgesamt muss die Mehrheit der
+    pruefbaren Konten passen (sonst stimmt die Deutung nicht). Liefert {"tabelle", "spalten", "konten": {uuid: {JJJJ-MM:
+    Saldo am Monatsende}}, "treffer", "geprueft"} oder None."""
     plain, virtual = table_names(db)
-    tables: Dict[str, List[Tuple[str, str]]] = {t: [c for c in columns(db, t) if not SKIP.search(c[0])] for t in plain if not SKIP.search(t)}
-    counts = {}
-    for t in tables:
-        try:
-            counts[t] = db.one("SELECT count(*) FROM %s" % _q(t))[0]
-        except sqlite3.DatabaseError:
-            counts[t] = 0
-    # 1. Kontentabelle: Spalte mit den Kennungen der Konten -> Schluessel je Konto (rowid oder andere Ganzzahlspalte)
-    key_maps: List[Dict[int, str]] = []
-    acct_table, acct_col, best = None, None, 0
-    for t, cols in tables.items():
-        if not counts[t] or counts[t] > 20000:
-            continue
-        for c, _ty in cols:
-            try:
-                found = db.rows("SELECT rowid, %s FROM %s WHERE typeof(%s) = 'text' AND lower(%s) IN %s" % (_q(c), _q(t), _q(c), _q(c), _in(len(ulist))), ulist)
-            except sqlite3.DatabaseError:
-                continue
-            if len(found) > best:
-                best, acct_table, acct_col = len(found), t, c
-                maps = [{r[0]: uuids[r[1].lower()] for r in found}]
-                for c2, _t2 in cols:
-                    if c2 == c:
-                        continue
-                    try:
-                        vals = db.rows("SELECT %s, %s FROM %s WHERE typeof(%s) = 'integer' AND lower(%s) IN %s"
-                                       % (_q(c2), _q(c), _q(t), _q(c2), _q(c), _in(len(ulist))), ulist)
-                    except sqlite3.DatabaseError:
-                        continue
-                    m = {r[0]: uuids[r[1].lower()] for r in vals}
-                    if len(m) == len(found):
-                        maps.append(m)
-                key_maps = maps
-    log.info("MoneyMoney database: %d tables (%d virtual skipped); accounts in %s.%s: %d of %d", len(plain), len(virtual), acct_table, acct_col, best, len(accounts))
-    if best < max(1, len(accounts) // 3):
+    if "accounts" not in plain or "balance_chart" not in plain:
+        log.info("MoneyMoney database: %d tables (%d virtual skipped), no accounts/balance_chart", len(plain), len(virtual))
         return None
-    # 2. Verlaufstabelle: Kontospalte, Datumsspalte, Wertspalte
-    winner = near = None
-    for t, cols in tables.items():
-        if t == acct_table or counts[t] < 2:
-            continue
-        acc_cols: List[Tuple[str, Dict]] = []
-        for c, _ty in cols:
-            q = _q(c)
-            try:
-                nd, nt = db.one("SELECT count(DISTINCT %s), count(DISTINCT CASE WHEN typeof(%s) = 'text' AND lower(%s) IN %s THEN lower(%s) END) FROM %s"
-                                % (_b(c), q, q, _in(len(ulist)), q, _q(t)), ulist)
-            except sqlite3.DatabaseError:
-                continue
-            if nt >= 1 and nt >= 0.8 * nd:
-                acc_cols.append((c, {}))           # Kennungen direkt
-                continue
-            for m in key_maps:
-                keys = sorted(m)
-                try:
-                    nk = db.one("SELECT count(DISTINCT CASE WHEN typeof(%s) = 'integer' AND %s IN %s THEN %s END) FROM %s"
-                                % (q, _b(c), _in(len(keys)), _b(c), _q(t)), keys)[0]
-                except sqlite3.DatabaseError:
-                    continue
-                if nk >= 1 and nk >= 0.8 * nd:
-                    acc_cols.append((c, m))
-                    break
-        if not acc_cols:
-            continue
-        num_cols = [c for c, ty in cols if ty == "" or any(x in ty for x in ("REAL", "INT", "NUM", "DOUBLE", "FLOAT", "DEC"))]
-        date_cols = [(c, k) for c, _ty in cols for k in _date_kinds(db, t, c, today)]
-        for ac, m in acc_cols:
-            ref = (lambda a, m=m: m.get(a)) if m else (lambda a: uuids.get(str(a).lower()))
-            for dc, kind in date_cols:
-                if dc == ac:
-                    continue
-                for vc in num_cols:
-                    if vc in (ac, dc):
-                        continue
-                    try:     # die drei juengsten Werte je Konto
-                        cond = NUM % _q(dc) if kind != "text" else "%s IS NOT NULL" % _q(dc)
-                        recent = db.rows("SELECT a, v FROM (SELECT %s AS a, %s AS v, row_number() OVER (PARTITION BY %s ORDER BY %s DESC) AS n FROM %s "
-                                         "WHERE %s IS NOT NULL AND %s AND %s) WHERE n <= 3"
-                                         % (_q(ac), _q(vc), _b(ac), _b(dc), _q(t), _q(ac), cond, NUM % _q(vc)))
-                    except sqlite3.DatabaseError:
-                        continue
-                    per: Dict[str, List[float]] = {}
-                    for a, v in recent:
-                        u = ref(a)
-                        if u is not None:
-                            per.setdefault(u, []).append(v)
-                    for scale in (1.0, 0.01):
-                        hits = depots = checked = 0
-                        for u, vals in per.items():
-                            bal, depot = accounts[u]
-                            if abs(bal) < 1.0:
-                                continue                   # Nullsalden beweisen nichts
-                            checked += 1
-                            if any(abs(v * scale - bal) <= max(0.011, 0.005 * abs(bal)) for v in vals):
-                                hits += 1
-                                depots += 1 if depot else 0
-                        if checked and (near is None or (hits / checked, hits) > near[0]):
-                            near = ((hits / checked, hits), "%s(%s, %s, %s ×%s)" % (t, ac, dc, vc, scale), hits, checked, counts[t])
-                        if hits and hits >= 0.6 * checked and counts[t] >= max(6, 2 * checked):
-                            score = (min(depots, 1), round(hits / checked, 2), hits, counts[t])
-                            if winner is None or score > winner[0]:
-                                winner = (score, t, ac, ref, dc, kind, vc, scale, hits, checked)
-    if winner is None:
-        log.info("MoneyMoney database: no balance history recognised; closest candidate %s", "%s: %d of %d balances match, %d rows" % near[1:] if near else "none")
+    matched, unclear = _match_accounts(db, accounts)
+    hows = [h for _u, h in matched.values()]
+    log.info("MoneyMoney database: %d tables (%d virtual skipped); %d of %d accounts matched (IBAN %d, number %d, name %d), %d names ambiguous",
+             len(plain), len(virtual), len(matched), len(accounts), hows.count("iban"), hows.count("nummer"), hows.count("name"), len(unclear))
+    if not matched and not unclear:
         return None
-    _s, t, ac, ref, dc, kind, vc, scale, hits, checked = winner
-    log.info("MoneyMoney database: balance history in %s(%s, %s, %s ×%s): %d of %d balances match", t, ac, dc, vc, scale, hits, checked)
-    konten: Dict[str, Dict[str, float]] = {}
+    owner = {k: u for u, ks in unclear.items() for k in ks}           # Kandidat -> ein Konto gleichen Namens (Waehrung, Depot)
+    acct = lambda k: accounts[matched[k][0] if k in matched else owner[k]]
+    keys = sorted(set(matched) | set(owner))
     cur = "%04d-%02d" % (today.year, today.month)
-    cond = NUM % _q(dc) if kind != "text" else "%s IS NOT NULL" % _q(dc)
-    for a, d, v in db.rows("SELECT %s, %s, %s FROM %s WHERE %s IS NOT NULL AND %s AND %s ORDER BY %s"
-                           % (_q(ac), _q(dc), _q(vc), _q(t), _q(ac), cond, NUM % _q(vc), _b(dc))):
-        u = ref(a)
-        day = _to_date(d, kind)
-        if u is None or day is None:
+    series: Dict[int, Tuple[str, List[Tuple[date, float]]]] = {}
+    kind = _time_kind(db, "balance_chart", today)
+    if kind:
+        by_key: Dict[int, Dict[str, List]] = {}
+        for k, c, ts, v in db.rows("SELECT account_key, currency, timestamp, balance FROM balance_chart WHERE account_key IN %s "
+                                   "AND typeof(balance) IN ('integer', 'real') ORDER BY timestamp" % _in(len(keys)), keys):
+            by_key.setdefault(k, {}).setdefault(c or "", []).append((ts, v))
+        for k, per in by_key.items():
+            want = acct(k).get("waehrung") or ""
+            rows = per.get(want) or (next(iter(per.values())) if len(per) == 1 else None)
+            if rows:
+                series[k] = ("balance_chart", _series(rows, kind))
+    if "portfolio_chart" in plain:
+        pkind = _time_kind(db, "portfolio_chart", today)
+        dep = [k for k in keys if k not in series and acct(k).get("depot")]
+        if pkind and dep:
+            # Depotwert je Zeitpunkt = Summe der Wertpapiere zu diesem Zeitpunkt (MoneyMoney schreibt je Abruf alle Positionen)
+            snaps: Dict[int, List] = {}
+            for k, ts, v in db.rows("SELECT account_key, timestamp, sum(balance) FROM portfolio_chart WHERE account_key IN %s "
+                                    "AND typeof(balance) IN ('integer', 'real') GROUP BY account_key, timestamp ORDER BY timestamp" % _in(len(dep)), dep):
+                snaps.setdefault(k, []).append((ts, v))
+            for k, rows in snaps.items():
+                series[k] = ("portfolio_chart", _series(rows, pkind))
+    if not series:
+        log.info("MoneyMoney database: no balance history for the matched accounts")
+        return None
+    # Pruefung: juengster Wert je Konto gegen den aktuellen Saldo aus MoneyMoney (Massstab 1 oder Cent)
+    def fits(k: int, scale: float, u: Optional[str] = None) -> Optional[bool]:
+        ser, bal = series[k][1], (accounts[u] if u else acct(k)).get("saldo") or 0.0
+        if not ser:
+            return None
+        if abs(bal) < 1.0:
+            return True if abs(ser[-1][1] * scale) < 1.0 else None
+        return abs(ser[-1][1] * scale - bal) <= max(0.011, 0.005 * abs(bal))
+    best = None
+    for scale in (1.0, 0.01):
+        ok = {k: f for k in series if k in matched for f in [fits(k, scale)] if f is not None}
+        hits = sum(ok.values())
+        if best is None or hits > best[1]:
+            best = (scale, hits, ok)
+    scale, hits, ok = best
+    # mehrdeutige Namen: der Kandidat, dessen juengster Wert zum aktuellen Saldo passt (genau einer)
+    for u, ks in unclear.items():
+        good = [k for k in ks if k in series and fits(k, scale, u)]
+        if len(good) == 1 and good[0] not in matched:
+            matched[good[0]] = (u, "name")
+            ok[good[0]] = True
+            hits += 1
+    checked = len(ok)
+    log.info("MoneyMoney database: latest values match the current balance for %d of %d accounts (scale %s)", hits, checked, scale)
+    if checked and hits < 0.5 * checked:
+        return None
+    konten: Dict[str, Dict[str, float]] = {}
+    for k, (_t, ser) in series.items():
+        if k not in matched:
             continue
-        mk = "%04d-%02d" % (day.year, day.month)
-        if mk >= cur:
-            continue                                   # laufender Monat kommt aus MoneyMoneys aktuellem Saldo
-        konten.setdefault(u, {})[mk] = round(v * scale, 2)       # spaeterer Wert im Monat ueberschreibt -> Monatsende
-    return {"tabelle": t, "spalten": [ac, dc, vc], "konten": konten, "treffer": hits, "geprueft": checked}
+        u, how = matched[k]
+        if how == "name" and not ok.get(k):
+            continue                                       # ueber den Namen nur, wenn der juengste Wert passt
+        for d, v in ser:
+            mk = "%04d-%02d" % (d.year, d.month)
+            if mk < cur:                                   # laufender Monat kommt aus MoneyMoneys aktuellem Saldo
+                konten.setdefault(u, {})[mk] = round(v * scale, 2)       # spaeterer Wert im Monat ueberschreibt -> Monatsende
+    tabellen = sorted({series[k][0] for k in series if k in matched})
+    return {"tabelle": "+".join(tabellen), "spalten": ["account_key", "timestamp", "balance"], "konten": konten, "treffer": hits, "geprueft": checked}
 
 
 def run(buf: bytearray, accounts: Dict[str, Tuple[float, bool]], today: date,

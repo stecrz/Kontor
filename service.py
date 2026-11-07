@@ -248,7 +248,8 @@ class App:
             ledger = self.ledger
             if ledger is None:
                 raise mm_history.HistorieError(tr("s_erst_die_konten_aus_moneymoney"))
-            accounts = {a.uuid: (a.balance, a.portfolio) for a in ledger.accounts.values() if not a.group}
+            accounts = {a.uuid: {"saldo": a.balance, "depot": a.portfolio, "iban": a.iban, "nummer": a.account_number, "blz": a.bank_code,
+                                 "name": a.name, "waehrung": a.currency} for a in ledger.accounts.values() if not a.group}
             found, tables, fmt = mm_history.run(buf, accounts, date.today(), step=step)
             if not found or not found["konten"]:
                 with open(aufbau, "w", encoding="utf-8") as f:       # nur Tabellen-/Spaltennamen, keine Inhalte
