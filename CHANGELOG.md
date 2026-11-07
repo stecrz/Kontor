@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.9.19 (2026-11-07)
+- Bilanz: Positionen „Verbindlichkeiten“ und „Gebundene Anlagen“ (Festgeld, Bausparvertrag, Lebens-/Rentenversicherung); „(rechts: Plan)“ entfällt. Englisch in gängiger Finanzsprache: Cash, Securities, Term deposits & pensions, Real estate, Private equity, Receivables, Liabilities.
+- Bilanz-Grafik: Standard 1 Jahr; Auswahl 1 J, 3 J, 10 J, Alle; Feld mit der Zahl der angezeigten Monate (eigene Zahl eingeben); Bedienhinweis nur noch im Fragezeichen.
+- Seitenleiste: Knopf „Sync“ (gleich breit wie „Sperren“); Ladesymbol unten links sitzt richtig.
+- Kontostände aus MoneyMoney: Bei nicht übernommenen Depots nennt das Protokoll Alter des letzten Punkts und Verhältnisse zum Depotwert (nur Prozent).
+
 ## 3.9.18 (2026-11-07)
 - Kontostände aus MoneyMoney, Depots: Jedes Wertpapier wird für sich gelesen (Wert zum jeweiligen Zeitpunkt); der Depotwert ist die Summe der gehaltenen Wertpapiere, ein verkauftes zählt nach seinem letzten Wert nicht mehr. Übernommen, wenn das den heutigen Depotwert ergibt.
 - Vor der ersten Aufzeichnung in MoneyMoney gilt der Stand davor (bei neuen Konten und Depots 0) statt „unbekannt“ mit dem ersten Wert. Neues Einlesen ersetzt den bisherigen Stand vollständig.

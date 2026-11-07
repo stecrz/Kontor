@@ -673,7 +673,7 @@ class AppTests(_AppBase):
         self.assertEqual(self.store.load("config.json")["oberflaeche"]["sprache"], "en")
         self.app.rebuild_report(wait=True)
         code, ds = self.call("/api/dataset")
-        self.assertEqual(next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == "pos:liquiditaet")["name"], "Bank balances")
+        self.assertEqual(next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == "pos:liquiditaet")["name"], "Cash")
         old = MA.is_running; MA.is_running = lambda: True
         try:
             code, r = self._mm_upload(b"x" * 2048); self.assertIn("Please quit MoneyMoney first", r["text"])

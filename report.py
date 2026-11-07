@@ -39,9 +39,9 @@ from i18n import tr
 
 ROLES = ["liquiditaet", "wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte", "forderungen", "sonstiges", "verbindlichkeiten",
          "eigenkapital", "eventual", "ignorieren"]
-ROLE_KEYS = {"liquiditaet": "pos_bankguthaben", "wertpapiere": "pos_wertpapiere", "anlagen": "pos_festgeld_vorsorge", "immobilien": "immobilien",
+ROLE_KEYS = {"liquiditaet": "pos_bankguthaben", "wertpapiere": "pos_wertpapiere", "anlagen": "pos_gebundene_anlagen", "immobilien": "immobilien",
              "beteiligungen": "beteiligungen", "sachwerte": "sachwerte", "forderungen": "pos_forderungen", "sonstiges": "sonstiges",
-             "verbindlichkeiten": "darlehen_verbindlichkeiten", "eigenkapital": "role_eigenkapital", "eventual": "role_eventual",
+             "verbindlichkeiten": "pos_verbindlichkeiten", "eigenkapital": "role_eigenkapital", "eventual": "role_eventual",
              "ignorieren": "nicht_bilanzieren"}       # Schluessel in web/i18n.js
 
 

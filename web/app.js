@@ -44,10 +44,10 @@ const ML = m => MONATE[+m.slice(5) - 1] + ' ' + m.slice(2, 4);
 const FD = d => (d && d.length >= 10) ? [d.slice(8, 10), d.slice(5, 7), d.slice(0, 4)].join(LANG === 'en' ? '/' : '.') : (d || '');
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
-const ROLE = {liquiditaet: [t('pos_bankguthaben'), 'var(--c-liq)'], wertpapiere: [t('pos_wertpapiere'), 'var(--c-anl)'], anlagen: [t('pos_festgeld_vorsorge'), 'var(--c-fest)'], immobilien: [t('immobilien'), '#b8860b'],
-              beteiligungen: [t('beteiligungen'), 'var(--c-bet)'], sachwerte: [t('sachwerte'), '#8e8e93'], forderungen: [t('pos_forderungen'), 'var(--c-ford)'], sonstiges: [t('sonstiges'), '#636366'], verbindlichkeiten: [t('darlehen_verbindlichkeiten'), 'var(--c-verb)'],
+const ROLE = {liquiditaet: [t('pos_bankguthaben'), 'var(--c-liq)'], wertpapiere: [t('pos_wertpapiere'), 'var(--c-anl)'], anlagen: [t('pos_gebundene_anlagen'), 'var(--c-fest)'], immobilien: [t('immobilien'), '#b8860b'],
+              beteiligungen: [t('beteiligungen'), 'var(--c-bet)'], sachwerte: [t('sachwerte'), '#8e8e93'], forderungen: [t('pos_forderungen'), 'var(--c-ford)'], sonstiges: [t('sonstiges'), '#636366'], verbindlichkeiten: [t('pos_verbindlichkeiten'), 'var(--c-verb)'],
               eigenkapital: [t('role_eigenkapital'), '#7d7aa8'], eventual: [t('role_eventual'), '#a8a29e'], ignorieren: [t('nicht_bilanzieren'), '#c7c7cc']};
-const ROLE_OPTS = [['liquiditaet', t('pos_bankguthaben')], ['wertpapiere', t('pos_wertpapiere')], ['anlagen', t('pos_festgeld_vorsorge')], ['immobilien', t('immobilien')], ['beteiligungen', t('beteiligungen')], ['sachwerte', t('sachwerte')], ['forderungen', t('pos_forderungen')], ['sonstiges', t('sonstiges')], ['verbindlichkeiten', t('darlehen_verbindlichkeiten')], ['eigenkapital', t('kapitalkonten_eigenkapital_nicht_im_ne')], ['eventual', t('avale_buergschaften_nicht_im_nettoverm')], ['ignorieren', t('nicht_bilanzieren')]];
+const ROLE_OPTS = [['liquiditaet', t('pos_bankguthaben')], ['wertpapiere', t('pos_wertpapiere')], ['anlagen', t('pos_gebundene_anlagen')], ['immobilien', t('immobilien')], ['beteiligungen', t('beteiligungen')], ['sachwerte', t('sachwerte')], ['forderungen', t('pos_forderungen')], ['sonstiges', t('sonstiges')], ['verbindlichkeiten', t('pos_verbindlichkeiten')], ['eigenkapital', t('kapitalkonten_eigenkapital_nicht_im_ne')], ['eventual', t('avale_buergschaften_nicht_im_nettoverm')], ['ignorieren', t('nicht_bilanzieren')]];
 // Hilfetexte (Tooltips). Schluessel werden mit hq('schluessel') eingeblendet.
 const H = {
   bereich: t('ein_bereich_ist_eine_menge'),
@@ -121,6 +121,7 @@ const H = {
   dokumente: t('verknuepfungen_zu_dateien_auf_dem'),
   offline: t('als_app_auf_dem_iphone'),
   paket: t('einstellungspaket_regeln_bereiche_posi'),
+  bch: t('bch_hinweis'),
   geld_unterwegs: t('geld_unterwegs_tip'),
 };
 const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k])}">?</span>` : '';
@@ -360,8 +361,8 @@ function statusMini() {
       + zeile(t('banken_mm'), (ba ? esc(fmtZeit(ba.neuester)) : '–') + warn, '')
       + zeile(t('mm_kontor'), m.stand ? esc(fmtZeit(m.stand)) : '–', '') + '</a>';
   } else h += `<div>${t('noch_keine_daten_aus_moneymoney')}</div>`;
-  if (st.neustart_ausstehend) h += `<div><span class="spin" style="width:9px;height:9px;margin-right:4px"></span>${t('version')} ` + esc(st.neustart_ausstehend) + ` ${t('wird_geladen')}</div>`;
-  else if (b.laeuft) h += `<div><span class="spin" style="width:9px;height:9px;margin-right:4px"></span>${t('wird_neu_berechnet')}</div>`;
+  if (st.neustart_ausstehend) h += `<div class="sm-busy"><span class="spin xs"></span>${t('version')} ` + esc(st.neustart_ausstehend) + ` ${t('wird_geladen')}</div>`;
+  else if (b.laeuft) h += `<div class="sm-busy"><span class="spin xs"></span>${t('wird_neu_berechnet')}</div>`;
   if (m.luecken) h += `<div><a href="#synchronisierung">${t('depotstaende_pruefen')}</a></div>`;
   if (m.problem) h += `<div><a href="#synchronisierung" title="${esc(m.problem.text)}">${t('moneymoney_lief_kontor_konnte_nicht')}</a></div>`;
   if (hasRules() && st.probelauf) h += `<div><b>${t('testmodus')}</b> ${t('regeln_buchen_nichts')}</div>`;
@@ -992,7 +993,7 @@ function vBilanz() {
     if (pr && r.rolle === 'beteiligungen' && proj.einlagen && r === D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === 'beteiligungen').slice(-1)[0])
       h += row({id: 'einlagen', name: t('einlagen_entnahmen_kumuliert_plan'), werte: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'));
   }
-  h += `<tr class="total"><td>${t('nettovermoegen_0', pr ? ` <span class="small muted">${t('rechts_plan')}</span>` : '')}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
+  h += `<tr class="total"><td>${t('nettovermoegen')}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
   h += (D.bilanz.ausserhalb || []).map(r => `<tr class="muted"><td>${esc(r.name)} <span class="tag">${t('0_nicht_im_nettovermoegen', esc((ROLE[r.rolle] || [r.rolle])[0]))}</span></td>${cells(C, c => lastOf(r.werte, c.months))}</tr>`).join('');
   h += '</tbody></table></div>';
   h += `<div class="note">${t('klick_auf_eine_position_klappt')}</div>`;
@@ -1020,10 +1021,10 @@ function vBilanzChart(D) {
   // Ausschnitt (als Monate gemerkt, damit er Neuaufbau und Bereichswechsel uebersteht)
   const r = S.bchRange, n = d.months.length;
   let i0 = r ? d.months.indexOf(r[0]) : -1, i1 = r ? d.months.indexOf(r[1]) : -1;
-  if (i0 < 0 || i1 <= i0) { i0 = 0; i1 = n - 1; }
+  if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, 12); S.bchRange = [d.months[i0], d.months[i1]]; S.bchBtn = 12; }    // Standard: 1 Jahr
   BCH.i0 = BCH.f0 = i0; BCH.i1 = BCH.f1 = i1;
-  const rb = [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [60, t('bch_jahre', 5)], [120, t('bch_jahre', 10)], [0, t('alle')]];
-  return `<div class="card bch" id="bch"><div class="bch-head"><span class="bch-range" id="bch-range"></span><span class="sp"></span><span class="bch-hint">${t('bch_hinweis')}</span><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
+  const rb = [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [120, t('bch_jahre', 10)], [0, t('alle')]];
+  return `<div class="card bch" id="bch"><div class="bch-head"><span class="bch-range" id="bch-range"></span> ${hq('bch')}<span class="sp"></span><label class="bch-n" title="${t('bch_monate_tip')}"><input type="number" id="bch-n" min="3" max="${n}" step="1">${t('bch_m')}</label><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
     <div class="bch-plot" id="bch-plot"><svg class="bch-svg" id="bch-svg"></svg><div class="bch-tip hidden" id="bch-tip"></div></div></div>`;
 }
 function bchDraw() {
@@ -1075,7 +1076,14 @@ function bchDraw() {
   BCH.geo = {W, H, P, x, y, idx: px => Math.max(i0, Math.min(i1, Math.round(i0 + (px - P.l) * n / Math.max(1, W - P.l - P.r))))};
   const rl = $('#bch-range'); if (rl) rl.textContent = `${MONATE_LANG[+d.months[i0].slice(5) - 1]} ${d.months[i0].slice(0, 4)} – ${MONATE_LANG[+d.months[i1].slice(5) - 1]} ${d.months[i1].slice(0, 4)}`;
   $$('#bch-rb button').forEach(b => b.classList.toggle('on', S.bchRange ? +b.dataset.m === S.bchBtn : b.dataset.m === '0'));
+  const nf = $('#bch-n'); if (nf && document.activeElement !== nf) nf.value = i1 - i0 + 1;
   bchBind();
+}
+function bchWindow(d, m) {
+  // m Monate sichtbar; mit Plan endet der Ausschnitt ein Viertel davon nach heute, sonst heute
+  const last = d.months.length - 1, today = d.ist - 1, plan = S.plan ? Math.min(Math.round(m / 4), last - today) : 0;
+  const i1 = Math.min(last, today + plan), i0 = Math.max(0, i1 - m + 1);
+  return [i0, Math.min(last, Math.max(i1, i0 + 2))];
 }
 function bchSet(i0, i1, btn) {
   const d = BCH.d, n = d.months.length; i0 = Math.max(0, Math.min(i0, n - 3)); i1 = Math.max(i0 + 2, Math.min(i1, n - 1));
@@ -1163,9 +1171,17 @@ function bchBind() {
 function bindBilanzChart(main) {
   if (!$('#bch', main)) return;
   $$('#bch-rb button', main).forEach(b => b.addEventListener('click', () => {
-    const d = BCH.d, m = +b.dataset.m, end = d.ist - 1 + (S.plan ? Math.min(Math.round(m / 4), d.months.length - d.ist) : 0);
-    if (!m) bchSet(0, d.months.length - 1); else bchSet(Math.max(0, d.ist - m), end, m);
+    const d = BCH.d, m = +b.dataset.m;
+    if (!m) bchSet(0, d.months.length - 1); else { const [a, z] = bchWindow(d, m); bchSet(a, z, m); }
   }));
+  const nf = $('#bch-n', main);
+  if (nf) nf.addEventListener('change', () => {
+    // eigene Anzahl Monate: rechter Rand bleibt, der Ausschnitt waechst bzw. schrumpft nach links
+    const d = BCH.d, m = Math.max(3, Math.min(d.months.length, Math.round(+nf.value) || 12)), z = BCH.i1;
+    let a = z - m + 1, e = z; if (a < 0) { e = Math.min(d.months.length - 1, e - a); a = 0; }
+    const btn = [12, 36, 120].includes(m) && bchWindow(d, m)[0] === a ? m : null;
+    bchSet(a, e, btn); nf.blur();
+  });
   bchDraw();
   if (BCH.ro) BCH.ro.disconnect();
   let last = 0; BCH.ro = new ResizeObserver(() => { const w = $('#bch-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; bchDraw(); } });

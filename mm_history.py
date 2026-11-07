@@ -458,11 +458,15 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
         if d is not None:
             recs.setdefault(k, {}).setdefault(sk, []).append((d, float(v)))
     held: Dict[int, set] = {}                                  # aktuell gehaltene Wertpapiere je Depot
+    qty: Dict[int, float] = {}                                 # nur fuer die Fehlersuche: Menge je Wertpapier
     cols = {c for c, _ty in columns(db, "securities")} if "securities" in plain else set()
     if {"account_key"} <= cols:
         cond = " AND ".join(x for x in ("coalesce(deleted, 0) = 0" if "deleted" in cols else "", "coalesce(quantity, 0) != 0" if "quantity" in cols else "") if x) or "1"
-        for k, sk in db.rows("SELECT account_key, rowid FROM securities WHERE account_key IN %s AND %s" % (_in(len(keys)), cond), keys):
+        for k, sk, q in db.rows("SELECT account_key, rowid, %s FROM securities WHERE account_key IN %s AND %s"
+                                % ("quantity" if "quantity" in cols else "NULL", _in(len(keys)), cond), keys):
             held.setdefault(k, set()).add(sk)
+            if q is not None:
+                qty[sk] = float(q)
     cur = "%04d-%02d" % (today.year, today.month)
     for k, per in recs.items():
         bal = info(k).get("saldo") or 0.0
@@ -472,8 +476,11 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
         fits = lambda x: abs(x - bal) <= max(1.0, 0.02 * abs(bal))
         art = "level" if fits(level_now) else "delta" if fits(delta_now) else None
         if art is None:
-            off = lambda x: "within 5 %" if abs(x - bal) <= 0.05 * abs(bal) else "within 20 %" if abs(x - bal) <= 0.2 * abs(bal) else "further off"
-            out[k] = {"fehler": "%d securities (%d held): values %s, sum of changes %s" % (len(per), len(now), off(level_now), off(delta_now))}
+            pct = lambda x: "%d %%" % round(100.0 * x / bal) if abs(bal) >= 1.0 else "-"
+            price_now = sum(r[-1][1] * qty[sk] for sk, r in per.items() if sk in now and sk in qty)
+            last = max(r[-1][0] for r in per.values())
+            out[k] = {"fehler": "%d securities (%d held), last point %d days ago; of the current value: values %s, sum of changes %s, "
+                                "value x quantity %s" % (len(per), len(now), (today - last).days, pct(level_now), pct(delta_now), pct(price_now))}
             continue
         first = min(r[0][0] for r in per.values())
         werte: Dict[str, float] = {}
