@@ -30,7 +30,7 @@ import copy
 import json
 import re
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
@@ -172,7 +172,7 @@ def _valuation_account(acc: Account, src: str) -> bool:
 
 def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int, int]], src: str, snapshots: Dict[str, Dict[str, float]],
                            manual_raw: Dict[str, Any], today: date, config: Optional[dict] = None, mm_raw: Optional[Dict[str, Any]] = None):
-    """Monatsend-Salden eines Kontos. Liefert (werte, hinweis, geschaetzt_bis, anker).
+    """Monatsend-Salden eines Kontos. Liefert (werte, hinweis, anker).
 
     umsaetze: heutiger Saldo minus alle spaeteren Buchungen (eigene Monatswerte zaehlen nicht).
     stand:    bekannte Kontostaende (eigene/importierte Werte, aus MoneyMoney uebernommene, bei Depots auch die von Kontor
@@ -183,7 +183,7 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
     mkeys = ["%04d-%02d" % ym for ym in months]
     past = [(y, m) for (y, m) in months if "%04d-%02d" % (y, m) < cur_key]
     h: Dict[str, Optional[float]] = {}
-    hinweis, geschaetzt_bis = None, None
+    hinweis = None
     manual = {k: float(v) for k, v in (manual_raw or {}).items() if v is not None}
     # Aus MoneyMoney uebernommene Monatsstaende: zaehlen wie eigene Werte, eigene Eintraege gehen aber vor
     for k, v in (mm_raw or {}).items():
@@ -199,7 +199,7 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
             if neg:
                 hinweis = (tr("s_s_die_rueckrechnung_aus_den")
                            % (acc.name, neg[0], neg[-1]))
-        return h, hinweis, None, [cur_key]
+        return h, hinweis, [cur_key]
     if not acc.portfolio:
         # Anker: eigene Werte + heutiger Saldo; dazwischen mit den Buchungen gerechnet (Saldo = Anker - Buchungen danach)
         anchors = {k: v for k, v in manual.items() if k < cur_key}
@@ -213,7 +213,7 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
                 continue
             a = next(x for x in akeys if x >= k)          # fruehester bekannter Stand ab diesem Monat
             h[k] = round(ends[k] + (anchors[a] - ends[a]), 2)
-        return h, None, None, akeys
+        return h, None, akeys
     known = dict(manual)
     for k, v in snapshots.items():
         if acc.uuid in v and k not in known:
@@ -233,34 +233,30 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
             h[k] = known[prev]
     if mkeys and mkeys[0] < first_known and abs(known[first_known]) > 0.005:
         hinweis = (tr("s_s_kontostaende_vor_s_sind") % (acc.name, first_known))
-    return h, hinweis, geschaetzt_bis, sorted(known)
+    return h, hinweis, sorted(known)
 
 
 def balance_history(ledger: Ledger, leaves: List[Account], months: List[Tuple[int, int]], snapshots: Dict[str, Dict[str, float]],
                     historie: Dict[str, Dict[str, float]], verlauf_cfg: Dict[str, str], today: date, config: Optional[dict] = None,
                     historie_mm: Optional[Dict[str, Dict[str, float]]] = None):
-    """uuid -> {JJJJ-MM: Saldo am Monatsende}. Liefert zusaetzlich Hinweise, die Quelle je Konto und
-    ein leeres Feld fuer frueher geschaetzte Monate (Schaetzung entfallen)."""
+    """uuid -> {JJJJ-MM: Saldo am Monatsende}. Liefert zusaetzlich Hinweise, die Quelle je Konto und je Depot den Monat,
+    vor dem kein Stand bekannt ist (dort steht -- gekennzeichnet -- der erste bekannte Wert)."""
     warnings: List[str] = []
     hist: Dict[str, Dict[str, Optional[float]]] = {}
     quelle: Dict[str, str] = {}
-    geschaetzt: Dict[str, str] = {}
     fortgeschrieben: Dict[str, str] = {}
     first_mk = "%04d-%02d" % months[0] if months else None
     for acc in leaves:
         src = verlauf_quelle(acc, verlauf_cfg)
         quelle[acc.uuid] = src
-        h, hinweis, gb, anker = account_balance_series(ledger, acc, months, src, snapshots, historie.get(acc.uuid) or {}, today, config,
+        h, hinweis, anker = account_balance_series(ledger, acc, months, src, snapshots, historie.get(acc.uuid) or {}, today, config,
                                                        (historie_mm or {}).get(acc.uuid))
         hist[acc.uuid] = h
         if hinweis:
             warnings.append(hinweis)
-        if gb:
-            geschaetzt[acc.uuid] = gb
-        elif src == "stand" and acc.portfolio and anker and first_mk and first_mk < anker[0] and abs(acc.balance) > 0.005:
+        if src == "stand" and acc.portfolio and anker and first_mk and first_mk < anker[0] and abs(acc.balance) > 0.005:
             fortgeschrieben[acc.uuid] = anker[0]       # vor diesem Monat kein Stand bekannt: erster Wert rueckwaerts uebernommen
-    balance_history.fortgeschrieben = fortgeschrieben
-    return hist, warnings, quelle, geschaetzt
+    return hist, warnings, quelle, fortgeschrieben
 
 
 def account_months(ledger: Ledger, acc: Account, today: date, extra_keys=()) -> List[Tuple[int, int]]:
@@ -353,6 +349,52 @@ class Rows:
         key = (section, zeile)
         self.vals[key][mk] += amount
         self.meta.setdefault(key, {"gruppe": gruppe, "konto": konto, "art": art, "nw": nw})
+
+
+def transit_series(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], months: List[Tuple[int, int]], quelle: Dict[str, str],
+                   today: date) -> Dict[str, float]:
+    """Geld unterwegs am Monatsende: Umbuchung zwischen zwei Konten des Bereichs, deren Buchungen in verschiedene Monate fallen
+    (am 31. abgebucht, am 1. gutgeschrieben). Abgebucht, aber noch nicht gutgeschrieben -> +Betrag; umgekehrt -> -Betrag.
+    Nur eindeutige Paare: Gegen-IBAN zeigt auf das andere Konto, gleicher Betrag mit umgekehrtem Vorzeichen, hoechstens 5 Tage Abstand."""
+    mkeys = ["%04d-%02d" % ym for ym in months]
+    out = {mk: 0.0 for mk in mkeys}
+    if not months:
+        return out
+    area = {a.uuid for a in leaves if roles.get(a.uuid) not in OFF_BALANCE and not _valuation_account(a, quelle.get(a.uuid, ""))}
+    own = ledger.own_ibans()
+    first = date(months[0][0], months[0][1], 1) - timedelta(days=6)
+    last = month_end(months[-1][0], months[-1][1])
+    cents = lambda x: int(round(x * 100))
+    by_amt: Dict[int, List[Tx]] = defaultdict(list)
+    for t in ledger.txs:
+        if t.booked and t.account_uuid in area and first <= t.booking_date <= last:
+            by_amt[cents(t.amount)].append(t)
+    used: Set[int] = set()
+    pairs: List[Tuple[date, date, float]] = []
+    for c, outs in by_amt.items():
+        if c >= 0 or -c not in by_amt:
+            continue
+        for t in sorted(outs, key=lambda x: (x.booking_date, x.id)):
+            best = None
+            for o in by_amt[-c]:
+                if o.id in used or o.account_uuid == t.account_uuid:
+                    continue
+                if own.get(t.counter_iban) != o.account_uuid and own.get(o.counter_iban) != t.account_uuid:
+                    continue
+                gap = abs((o.booking_date - t.booking_date).days)
+                if gap <= 5 and (best is None or gap < best[0]):
+                    best = (gap, o)
+            if best is None:
+                continue
+            o = best[1]
+            used.update({t.id, o.id})
+            if month_key(t.booking_date) != month_key(o.booking_date):
+                pairs.append((t.booking_date, o.booking_date, -t.amount))
+    for (y, m), mk in zip(months, mkeys):
+        cut = min(month_end(y, m), today)
+        val = sum(x for d_out, d_in, x in pairs if d_out <= cut < d_in) - sum(x for d_out, d_in, x in pairs if d_in <= cut < d_out)
+        out[mk] = round(val, 2)
+    return out
 
 
 def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], config: dict, months: List[Tuple[int, int]],
@@ -595,8 +637,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
 
     step(0.05, tr("s_monatsstaende"))
     historie_mm = state.get("historie_mm") or {}
-    hist, warn_h, quelle, geschaetzt = balance_history(ledger, leaves, months, snapshots, historie, verlauf_cfg, today, config, historie_mm)
-    fortgeschrieben = dict(getattr(balance_history, "fortgeschrieben", {}) or {})
+    hist, warn_h, quelle, fortgeschrieben = balance_history(ledger, leaves, months, snapshots, historie, verlauf_cfg, today, config, historie_mm)
     step(0.3, tr("s_zahlungsstroeme"))
     ckey = (getattr(ledger, "_kat_sig", None), tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
             json.dumps(config.get("kapitalfluss") or {}, sort_keys=True, default=str), tuple(months[0]) if months else None,
@@ -609,7 +650,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         if len(cache) > 24:
             cache.clear()
         cache[ckey] = copy.deepcopy((R, inbound, warn_c))
-    step(0.85, "Bilanz")
+    step(0.85, tr("x_bilanz"))
     inactive, inactive_auto = inactive_accounts(ledger, leaves, hist, mkeys, config, today)
     limits = activity_limits(ledger, leaves, hist, mkeys, today)
 
@@ -657,8 +698,24 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
             illiq = (role in illiquid_roles) or (a.uuid in illiquid_refs) or any(x.uuid in illiquid_refs for x in ledger.ancestors(a.uuid))
             bilanz_rows.append({"id": a.uuid, "name": a.name, "pfad": a.path, "ebene": 1, "gruppe": False, "rolle": role,
                                 "illiquide": illiq, "depot": a.portfolio, "offline": a.offline, "inaktiv": a.uuid in inactive,
-                                "passiva": role == "verbindlichkeiten", "verlauf": quelle.get(a.uuid, "umsaetze"), "geschaetzt_bis": geschaetzt.get(a.uuid), "fortgeschrieben_vor": fortgeschrieben.get(a.uuid),
+                                "passiva": role == "verbindlichkeiten", "verlauf": quelle.get(a.uuid, "umsaetze"), "fortgeschrieben_vor": fortgeschrieben.get(a.uuid),
                                 "werte": {mk: hist[a.uuid][mk] for mk in mkeys}})
+    # Geld unterwegs (Umbuchung ueber das Monatsende) zaehlt zur Liquiditaet; sonst knickt das Nettovermoegen am Monatsende ein
+    transit = transit_series(ledger, leaves, roles, months, quelle, today)
+    if any(abs(v) >= 0.005 for v in transit.values()):
+        grp = next((r for r in bilanz_rows if r["id"] == "pos:liquiditaet"), None)
+        if grp is None:
+            grp = {"id": "pos:liquiditaet", "name": role_label("liquiditaet"), "pfad": role_label("liquiditaet"), "ebene": 0, "gruppe": True,
+                   "rolle": "liquiditaet", "illiquide": False, "depot": False, "offline": False, "inaktiv": False, "passiva": False,
+                   "werte": {mk: 0.0 for mk in mkeys}, "anzahl": 0, "inaktive": 0}
+            bilanz_rows.insert(0, grp)
+            pos_sums = {"liquiditaet": grp["werte"], **pos_sums}
+        idx = max(i for i, r in enumerate(bilanz_rows) if r["rolle"] == "liquiditaet") + 1
+        bilanz_rows.insert(idx, {"id": "transit", "name": tr("s_geld_unterwegs"), "pfad": tr("s_geld_unterwegs"), "ebene": 1, "gruppe": False,
+                                 "rolle": "liquiditaet", "transit": True, "illiquide": False, "depot": False, "offline": False, "inaktiv": False,
+                                 "passiva": False, "werte": dict(transit)})
+        for mk in mkeys:
+            grp["werte"][mk] = round((grp["werte"][mk] or 0.0) + transit[mk], 2)
     nw = {mk: round(sum(pos_sums[r][mk] for r in pos_sums), 2) for mk in mkeys}
     aktiva = {mk: round(sum(pos_sums[r][mk] for r in pos_sums if r != "verbindlichkeiten"), 2) for mk in mkeys}
     passiva = {mk: round(pos_sums.get("verbindlichkeiten", {}).get(mk, 0.0), 2) for mk in mkeys}
@@ -666,26 +723,9 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
     # Ausserhalb des Nettovermoegens: Kapitalkonten (Eigenkapital) und Avale/Buergschaften -- nur zur Information
     ausserhalb = []
     for a in sorted(ausserhalb_accs, key=lambda x: (roles.get(x.uuid) or "", order.get(x.uuid, 10**9))):
-        wh, _, _, _ = account_balance_series(ledger, a, months, verlauf_quelle(a, verlauf_cfg), snapshots, historie.get(a.uuid) or {}, today, config,
+        wh, _, _ = account_balance_series(ledger, a, months, verlauf_quelle(a, verlauf_cfg), snapshots, historie.get(a.uuid) or {}, today, config,
                                              historie_mm.get(a.uuid))
         ausserhalb.append({"id": a.uuid, "name": a.name, "pfad": a.path, "rolle": roles.get(a.uuid), "werte": {mk: wh[mk] for mk in mkeys}})
-
-    # MoneyMoney-Gruppenbaum (zweite Sicht), nur Konten des Bereichs
-    baum: List[dict] = []
-    group_rows: Dict[str, dict] = {}
-    for a in sorted(leaves, key=lambda x: order.get(x.uuid, 10**9)):
-        anc = list(reversed(ledger.ancestors(a.uuid)))
-        for g in anc:
-            if g.uuid not in group_rows:
-                row = {"id": g.uuid, "name": g.name, "pfad": g.path, "ebene": g.path.count(" / "), "gruppe": True, "rolle": None,
-                       "illiquide": False, "depot": False, "offline": False, "inaktiv": False, "werte": {mk: 0.0 for mk in mkeys}}
-                group_rows[g.uuid] = row
-                baum.append(row)
-            for mk in mkeys:
-                group_rows[g.uuid]["werte"][mk] = round(group_rows[g.uuid]["werte"][mk] + (hist[a.uuid][mk] or 0.0), 2)
-        baum.append({"id": a.uuid, "name": a.name, "pfad": a.path, "ebene": a.path.count(" / "), "gruppe": False, "rolle": roles.get(a.uuid),
-                     "illiquide": any(r["id"] == a.uuid and r["illiquide"] for r in bilanz_rows), "depot": a.portfolio, "offline": a.offline,
-                     "inaktiv": a.uuid in inactive, "verlauf": quelle.get(a.uuid, "umsaetze"), "werte": {mk: hist[a.uuid][mk] for mk in mkeys}})
 
     # Kapitalfluss-Sektionen
     sektionen = []
@@ -726,9 +766,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         "heute": today.isoformat(),
         "monate": mkeys,
         "ist_bis": month_key(today),
-        "wurzel": bereich["name"],
         "bereich": {"id": bereich["id"], "name": bereich["name"], "art": bereich.get("art"), "anteil": bereich.get("anteil")},
-        "bilanz": {"zeilen": bilanz_rows, "baum": baum, "nettovermoegen": nw, "aktiva": aktiva, "passiva": passiva,
+        "bilanz": {"zeilen": bilanz_rows, "nettovermoegen": nw, "aktiva": aktiva, "passiva": passiva,
                    "liquides_nettovermoegen": liquid_nw, "positionen": {r: role_label(r) for r in pos_sums}, "ausserhalb": ausserhalb},
         "kapitalfluss": {"sektionen": sektionen, "ueberleitung": ueberleitung},
         "darlehen_konfig": loans_cfg,

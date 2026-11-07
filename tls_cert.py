@@ -92,7 +92,7 @@ def setup(config: dict, data_dir: str) -> dict:
     """
     binary = find_tailscale()
     if not binary:
-        raise RuntimeError("Tailscale nicht gefunden – App aus dem App Store installieren (https://tailscale.com/download/mac) und anmelden.")
+        raise RuntimeError(tr("s_tailscale_nicht_gefunden"))
     me = tailscale_self(binary)
     crt, key = issue(binary, me["name"], data_dir)
     ui = dict(config.get("oberflaeche") or {})

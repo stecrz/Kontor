@@ -1,52 +1,60 @@
 # Änderungen
 
-## 3.9.12
+## 3.9.13 (2026-11-07)
+- Bilanz: „Geld unterwegs“ unter Liquidität – Umbuchungen zwischen eigenen Konten, die am Monatsende abgebucht, aber erst im Folgemonat gutgeschrieben sind (oder umgekehrt), zählen am Monatsende mit; das Nettovermögen knickt nicht mehr scheinbar ein.
+- Ansicht: nur noch „Monate“ (mit Jahressummen, Standard) und „Jahre“. Die Schalter oben rechts sind weg: „Alle Zeilen“ (leere und ausgeblendete) und „Plan“ stehen in der Werkzeugleiste von Bilanz und Kapitalfluss, „inflationsbereinigt“ nur in der Planung. Plan ist standardmäßig an.
+- Bilanz: die zweite Sicht „MoneyMoney-Gruppen“ entfällt.
+- Menü kürzer: „Zuordnen“ ist ein Reiter unter „Kategorien“, „Pakete“ ein Reiter unter „Einstellungen“ (Sicherung & Pakete), die Seite „Depots“ entfällt – die Positionen eines Depots stehen oben in seinem Verlauf-Fenster.
+- Anmeldeseite ohne den Text „Zugang gesperrt.“; Updates zeigen das Datum der Version.
+- Aufgeräumt: Übernahme von Daten und Diensten früherer Versionen, deutsche Befehlsnamen und alte Einstellungsformate entfernt; restliche feste Texte (Excel-Export, Fehlermeldungen, Kommandozeile) stehen im Sprachkatalog.
+
+## 3.9.12 (2026-11-07)
 - Kontostände aus MoneyMoney: Datenbanken mit Volltextsuche (eigener Tokenizer von MoneyMoney) und eigenen Sortierfolgen werden jetzt gelesen; solche Tabellen werden übersprungen, Vergleiche laufen binär. Das Protokoll nennt das Ergebnis der Suche (nur Tabellen- und Spaltennamen, keine Inhalte).
 
-## 3.9.11
+## 3.9.11 (2026-11-07)
 - Bilanz mit Grafik: Zusammensetzung des Vermögens im Zeitverlauf in den Farben der Positionen, mit Nettovermögen, Plan und „heute“. Monatsgenau: Zeigen zeigt Monat und Werte, Ziehen vergrößert, 1/3/5/10 Jahre oder alles, Klick springt zur Spalte der Tabelle. Abschaltbar.
 - Tabellen (Bilanz, Kapitalfluss, Planung): Spalten rasten ein – die erste sichtbare Spalte ist nie mehr angeschnitten, auch ganz rechts.
 - Englisch als zweite Sprache: Auswahl auf der Anmeldeseite, in der Einrichtung und in den Einstellungen. Alle Texte stehen gebündelt in einem Katalog (web/i18n.js), auch die Meldungen des Dienstes.
 - Kontostände aus MoneyMoney: Bibliothek wird robuster gewählt (Fallback, falls macOS-SQLite die Speicherfunktion fehlt).
 - Entfernt: die nicht mehr genutzte Schätzung von Depotständen aus Käufen/Verkäufen samt Verrechnungskonto-Einstellung.
 
-## 3.9.10
+## 3.9.10 (2026-11-07)
 - Kontostände aus MoneyMoney: Fehler nach dem Entschlüsseln behoben (Programmfehler beim Öffnen der Datenbank im Arbeitsspeicher auf dem Mac).
 
-## 3.9.9
+## 3.9.9 (2026-11-07)
 - Technische Namen auf Englisch, die Oberfläche bleibt Deutsch (Grundlage für weitere Sprachen): Programmdateien, Datendateien, Schnittstellen-Adressen, Kommandozeilenbefehle (deutsche Befehle gehen weiter) und Protokollmeldungen.
 - Vorhandene Daten werden beim Start automatisch auf die neuen Dateinamen umgestellt; der Hintergrunddienst zieht einmalig unter seinen neuen Namen um.
 - `Deinstallieren.command` heißt jetzt `Uninstall.command`, Vorlagen liegen unter `templates/`.
 
-## 3.9.8
+## 3.9.8 (2026-11-07)
 - Kontostände aus MoneyMoney als Einrichtungsschritt 4 (nach „Konten“): MoneyMoney beenden, „Im Finder zeigen“ (markiert MoneyMoney.sqlite, ohne Freigabe), Datei ins Fenster ziehen, Passwort im macOS-Fenster. Übernommen wird der Verlauf aller Konten als Monatsend-Stände, nur nach Prüfung am aktuellen Saldo; verschlüsselt gespeichert und in Bilanz und Verlauf-Fenster genutzt (eigene Einträge gehen vor).
 - Sicherer und sparsamer: Entschlüsselung an Ort und Stelle, SQLite liest direkt aus diesem Puffer (keine Kopie, Bedarf etwa Dateigröße, Prüfung des Arbeitsspeichers); danach alles mit Nullen überschrieben. Gesucht wird in SQLite, Tabellen mit Zugangsdaten werden nicht angesehen. Verarbeitung im Hintergrund mit Fortschrittsanzeige.
 - Dateien umbenannt: Präfix „mm_“ nur noch für Teile, die direkt mit MoneyMoney sprechen (mm_bridge, mm_historie).
 - Bereichsauswahl oben mittig, kleine Schalter (Plan, inflationsbereinigt, leere Zeilen) rechts; Ladesymbol im Synchronisieren-Knopf mittig.
 
-## 3.9.7
+## 3.9.7 (2026-11-07)
 - Depot-Historie aus MoneyMoney, Schritt 1, ohne jede macOS-Freigabe: Die Datei „MoneyMoney.sqlite“ wird unter Synchronisierung ins Fenster gezogen (bleibt verschlüsselt bis in den Arbeitsspeicher). Das Passwortfenster wird nur für diesen Vorgang erzeugt und danach gelöscht; Schlüssel und entschlüsselte Daten liegen nur in Puffern, die danach mit Nullen überschrieben werden; SQLite schreibt keine Zwischendateien. Kein sqlcipher nötig.
 - Der vorab übersetzte Passwort-Helfer aus 3.9.6 wird beim Start entfernt.
 - `CLAUDE.md` mit den Projektregeln (Prüfen, Version, Sicherheit).
 
-## 3.9.6
+## 3.9.6 (2026-11-07)
 - Depot-Historie aus MoneyMoney, Schritt 1 (Synchronisierung → Depots): „Datenbank prüfen“ liest den Aufbau von MoneyMoneys Datenbank. Das Passwort gibst du in einem eigenen macOS-Fenster ein (kleiner Helfer, wird beim Start übersetzt); Kontor erhält nur den daraus berechneten Schlüssel, entschlüsselt nur im Arbeitsspeicher (macOS CommonCrypto, keine Kopie auf der Festplatte, kein Fremdprogramm), nur lesend und nur bei beendetem MoneyMoney. Währenddessen keine Update-Prüfung.
 - Sparsamer im Hintergrund: ohne laufendes MoneyMoney nur einmal pro Minute ein kurzer Blick, mit MoneyMoney alle 30 Sekunden.
 - Hinweis, wenn MoneyMoney lief, Kontor aber nicht lesen konnte (z. B. fehlende Berechtigung) – unten links und unter Synchronisierung.
 
-## 3.9.5
+## 3.9.5 (2026-11-07)
 - Schnellabgleich: Ist MoneyMoney offen und entsperrt, liest Kontor alle 20 Sekunden nur die Kontenliste (unter einer Sekunde) und merkt sich die Stände – ein kurzer Blick in MoneyMoney genügt. Geänderte Daten lösen danach den vollen Abgleich aus.
 - Depotstände zählen für den Monat, in dem MoneyMoney sie abgerufen hat (Abruf am 31., gelesen am 2. → richtiger Monat).
 - Hat MoneyMoney ein Depot abgerufen, während Kontor nicht lief, meldet Kontor die möglicherweise fehlenden Monate (Synchronisierung, unten links). Schlief der Mac, gibt es keine Meldung, weil auch MoneyMoney nichts abgerufen hat.
 
-## 3.9.4
+## 3.9.4 (2026-11-07)
 - Kein Zugriff auf MoneyMoneys Datenbank: die Prüfung aus 3.9.3 ist wieder entfernt. Kontor nutzt nur MoneyMoneys Skript-Schnittstelle (Freigabe „Automation → MoneyMoney“).
 - Synchronisierung: neuer Abschnitt „Depots: Wertverlauf“ – ab wann Stände bekannt sind (eigene Aufzeichnung bzw. eingetragene Werte), mit „Stände eintragen“ je Depot.
 
-## 3.9.3
+## 3.9.3 (2026-11-07)
 - Kontostand-Historie aus MoneyMoney, Schritt 1: Unter Einrichtung → Konten liest „Aufbau prüfen“ den Aufbau von MoneyMoneys Datenbank (nur Tabellen- und Spaltennamen, keine Beträge) und legt ihn als „mm-datenbank-aufbau.txt“ in den Kontor-Ordner. Nur am Mac, nur lesend, Passwort wird weder gespeichert noch protokolliert. Voraussetzung: `brew install sqlcipher`.
 
-## 3.9.2
+## 3.9.2 (2026-11-07)
 - Einrichtung: oben steht nur „Einrichtung“, darunter der Name des Schritts wie im Einrichtungsplan („Verbindung“, „Bereiche“, „Konten“).
 - Einzahl/Mehrzahl: „Ein Konto“ bzw. „N Konten“ statt „Konto/Konten“.
 - Verlauf-Fenster: Monate untereinander; das Umstellen zwischen Umsätzen und Kontoständen ist erst eine Vorschau („Speichern“ übernimmt, „Verwerfen“ geht zurück). Aus der Kontentabelle geöffnet, zeigt es die dort gewählte, noch nicht gespeicherte Quelle.
@@ -55,7 +63,7 @@
 - Vorschlag nur gestrichelt umrandet (ohne Farbe); „Wird neu berechnet …“ passt in eine Zeile.
 - Klick auf „Kontor“ führt zur Übersicht, Klick auf die Versionsnummer zu den Updates.
 
-## 3.9.1
+## 3.9.1 (2026-11-07)
 - Bilanz: eine Tabelle statt Struktur + Konten – Positionen farbig und aufklappbar (anfangs zugeklappt, „alle aufklappen“), Plan-Spalten rechts in derselben Tabelle statt einer zweiten Tabelle darunter.
 - Tabellen scrollen waagerecht zur aktuellen Spalte (Monat bzw. Jahr), auch in der Jahresansicht; mit Plan bleiben die Plan-Spalten rechts im Blick.
 - Senkrechte Scrollposition je Reiter: beim Wechsel kommt die zuletzt dort gesehene Stelle (sonst oben), nicht die des vorigen Reiters.
@@ -64,7 +72,7 @@
 - Privat geführtes Kapitalkonto mit Guthaben wird als Beteiligung vorgeschlagen (in einer Gesellschaft bleibt es Eigenkapital); Hilfetext erklärt, warum Kapitalkonten der Gesellschaft nicht doppelt zählen.
 - Anmeldung: Touch ID bei der Einrichtung und in den Einstellungen wählbar. Eingeschaltet nur Touch ID (kein Passwortfeld, kein gleichzeitiges Ausfüllen durch den Browser), Passwort über „Stattdessen Passwort eingeben“; ausgeschaltet nur Passwort. Der macOS-Dialog heißt jetzt „Kontor möchte die Finanzübersicht entsperren“ (Helfer wird vom Dienst selbst übersetzt).
 
-## 3.9.0
+## 3.9.0 (2026-11-07)
 - Konten überall in der Reihenfolge von MoneyMoney statt alphabetisch (Einrichtung, Bilanz, Gruppenansicht, Synchronisierung).
 - Einrichtung · Bilanzpositionen & Verlauf: Konten nach Bereichen gruppiert, in der Reihenfolge unter „Bereiche“; doppelte Unterüberschriften in der Einrichtung entfallen.
 - Vorschlag: in der Auswahl immer mit „(Vorschlag)“ gekennzeichnet (auch bei bestätigten Konten); gestrichelt, solange ein neues Konto den Vorschlag trägt – auch nach dem Zurückwechseln. Keine Kursivschrift mehr.
@@ -73,10 +81,10 @@
 - Kopfzeile: Bereichsauswahl immer oben rechts. Ansicht (Monate/Jahre, Plan, inflationsbereinigt, leere Zeilen) steht in der Werkzeugleiste der Seite neben dem Excel-Export; der Bereichsname wird darunter nicht noch einmal genannt.
 - „Verbindung prüfen“ liest jetzt auch die Depotpositionen.
 
-## 3.8.1
+## 3.8.1 (2026-11-07)
 - Position und Verlauf bestätigter Konten werden auch beim automatischen Abgleich festgelegt (nicht erst beim nächsten Neuberechnen).
 
-## 3.8.0
+## 3.8.0 (2026-11-07)
 - Einrichtung · Bereiche: Reihenfolge mit ▲ ▼ änderbar (gilt für die Bereichsleiste). Vorschlag ohne Einrichtung: Hauptbereich zuerst, dann weitere private Bereiche, dann Gesellschaften; Art-Erkennung wie in der Oberfläche.
 - Einrichtung · Bilanzpositionen & Verlauf: kein „auto“ mehr. Position und Verlauf werden fest gespeichert; vorgeschlagen wird nur bei neuen Konten (gestrichelt markiert). Bereits bestätigte Konten mit „auto“ werden beim nächsten Neuberechnen einmalig auf den erkannten Wert festgelegt – Umbenennen, Umgruppieren oder ein anderer Kontotyp in MoneyMoney verschiebt danach nichts mehr.
 - Anzeige je Konto: „nach Aktivität“ (laufend geprüft), „immer anzeigen“, „ausblenden“. Grau = ausgeblendet; ändert sich sofort mit der Auswahl. In Bilanz und Depots heißt es „ausgeblendet“ statt „inaktiv“.
@@ -86,7 +94,7 @@
 - Änderungserkennung genauer: Auch geänderte Texte, Kategorien oder Kontonamen in MoneyMoney gelten als Änderung (vorher nur Salden, Abrufzeit, Umsatzzahl).
 - Trifft der automatische Abgleich auf eine laufende Neuberechnung, versucht er es nach einer Minute erneut statt erst im nächsten Intervall.
 
-## 3.7.3
+## 3.7.3 (2026-11-07)
 - Datenstand unten links in zwei Stufen: „Banken → MM“ (letzter Bankabruf in MoneyMoney) und „MM → Kontor“ (wann Kontor zuletzt gelesen hat). Konten mit Saldo, die beim Bankabruf mehr als einen Tag zurückliegen, werden gemeldet.
 - Neuer Knopf „Synchronisieren“ unten links: liest sofort aus MoneyMoney, wendet bei Änderungen die Regeln an (Testmodus laut Einstellung) und aktualisiert die Auswertungen.
 - „Nächster Abgleich“ wird nicht mehr angezeigt; die Infozeile oben in der Übersicht entfällt (alles steht unten links). Buchungsvorschläge erscheinen dort als Link.
@@ -94,17 +102,17 @@
 - Buchungen: Überschrift „Regeln zuletzt angewendet“ statt „Letzter Abgleich“ – ohne Änderung in MoneyMoney werden die Regeln nicht erneut angewendet.
 - Menü scrollt bei kleiner Fensterhöhe, Status und Knöpfe bleiben sichtbar.
 
-## 3.7.2
+## 3.7.2 (2026-11-07)
 - Statuszeile zeigt, von wann die Daten aus MoneyMoney stammen („Daten vom …“), statt des Zeitpunkts der letzten Neuberechnung; ohne laufendes MoneyMoney kein „nächster Abgleich“.
 - Test: Arbeiten ohne MoneyMoney mit dem zwischengespeicherten Stand (Neustart, Neuberechnung, Verlauf).
 
-## 3.7.1
+## 3.7.1 (2026-11-07)
 - Einrichtung · Verbindung: prüft auf der Seite alle 3 Sekunden, ob MoneyMoney läuft und entsperrt ist.
 - Einrichtung · Bereiche: Anteil nur bei Gesellschaften (bei „privat“ ausgeblendet).
 - Einrichtungsschritte einheitlich: „Speichern“, „Speichern und weiter: …“, „Zurück zur Einrichtung“. „Speichern und weiter“ wartet mit Fortschrittsanzeige, bis die Auswertung aktualisiert ist, und öffnet erst dann den nächsten Schritt (so stimmen dort die Vorschläge).
 - Neuberechnung meldet ihren Fortschritt (Schritt und Prozent).
 
-## 3.7.0
+## 3.7.0 (2026-11-07)
 - Positionen: Vorschlag neu geordnet – Kontoname vor Kontotyp (z. B. „Immobilie …“ als Festgeldanlage → Immobilien), Gruppenname vor allgemeinem Kontotyp (Sparkonto in „Anlagen“ → Geldanlagen), Bausparer und Versicherungen → Geldanlagen; Darlehen und Kautionen nach Vorzeichen (Guthaben = Forderung, Schuld = Verbindlichkeit); Namen mit Wortgrenzen (z. B. „Haushaltskasse“ ist keine Immobilie).
 - Neue Positionen außerhalb des Nettovermögens: „Kapitalkonten (Eigenkapital)“ und „Avale & Bürgschaften“; in der Bilanz unter dem Nettovermögen ausgewiesen. Einlagen/Entnahmen über Kapitalkonten erscheinen im Kapitalfluss. Die Beteiligungsregel bewertet eine Gesellschaft ohne ihre Kapitalkonten (vorher ergab sich so ein Wert nahe 0).
 - „nicht bilanzieren“ wird überall so angezeigt (vorher teils „ignorieren“).
@@ -114,7 +122,7 @@
 - „illiquide“ entfällt als Einstellung; Kennzahl „Finanzielle Unabhängigkeit“ und „liquides Nettovermögen“ aus der Übersicht entfernt; Liquidität mit Reichweite in Monaten.
 - Bilanzpositionen & Verlauf: ein Hilfe-Symbol oben, Erklärungen in den Spaltenköpfen; nach dem Speichern nur noch Hinweise mit Handlungsbedarf statt aller geprüften Verweise.
 
-## 3.6.0
+## 3.6.0 (2026-11-07)
 - Verlauf-Fenster rechnet das gewählte Konto sofort selbst (unter einer Sekunde, auch bei 190.000 Umsätzen) statt auf die Neuberechnung der gesamten Auswertung zu warten; Umschalten, Eintragen und Löschen zeigen das Ergebnis direkt.
 - „Kontostände“ bei Bankkonten neu: eingetragene/importierte Stände sind Anker, Monate dazwischen und davor werden von dort aus mit den Buchungen gerechnet (vorher: erster Stand flach fortgeschrieben bzw. eine Depot-Schätzung, die für Bankkonten nicht passt). Die Buchungen bleiben im Kapitalfluss, Abweichungen erscheinen als „Korrektur Kontostand“. Ohne eigene Werte identisch mit „Umsätze“.
 - „Umsätze“: eigene Monatswerte zählen dort nicht (Eingabe nur bei „Kontoständen“); ein Import stellt die importierten Konten automatisch auf „Kontostände“.
@@ -123,12 +131,12 @@
 - Einrichtung: „Bericht aktualisieren“ aus „Bilanzpositionen & Verlauf“ entfernt (die Auswertung aktualisiert sich nach dem Speichern selbst); Karte „Erste Auswertung erstellen“ nur, solange es noch keine gibt.
 - Fehler behoben: Bereichsleiste erschien nach einer Neuberechnung auch auf Seiten außerhalb der Auswertungen.
 
-## 3.5.1
+## 3.5.1 (2026-11-06)
 - Verlauf-Fenster: Umschalten zwischen „Umsätze“ und „Kontoständen“ wirkt sofort (vorher zeigte das Fenster bis zum Ende der Neuberechnung die alte Quelle, dadurch schien der Knopf nicht zu reagieren); die Auswahl in der Kontentabelle zieht mit, die Werte aktualisieren sich nach der Neuberechnung von selbst; Fehler werden angezeigt.
 - Speichern im Verlauf-Fenster deutlich schneller (Bericht wird nicht mehr bei jeder Anfrage kopiert).
 - „Stände“ heißt jetzt „Kontostände“.
 
-## 3.5.0
+## 3.5.0 (2026-11-06)
 - Dienst lädt neue Versionen selbst: liegt im Programmordner eine neue Version (Update, git pull), startet er sich neu, sobald kein Abgleich und keine Berechnung läuft; die geöffnete Seite lädt sich danach neu. Vorher lief nach einem Update der alte Code mit der neuen Oberfläche weiter (Ursache für Hänger beim Verlauf und die nicht funktionierende Update-Prüfung).
 - Protokoll beginnt bei jeder neuen Version eine frische Datei (ältere bleiben als kontor.log.1 … .5; je höchstens 5 MB).
 - Neues Symbol: weißes K auf Blau mit weißem Rand, auch als Symbol für den iPhone-Home-Bildschirm.
@@ -137,10 +145,10 @@
 - Ungespeicherte Änderungen: „Weiter“ fragt „Speichern und weiter?“, Wegnavigieren fragt „verwerfen?“.
 - Bilanzpositionen & Verlauf: inaktive Konten werden standardmäßig angezeigt.
 
-## 3.4.1
+## 3.4.1 (2026-11-06)
 - Update-Prüfung liest die Version direkt aus dem Hauptzweig (Datei VERSION) statt aus Tags: neue Versionen werden erkannt, sobald sie gepusht sind; Neuerungen kommen aus CHANGELOG.md. Fallback auf Releases bzw. den höchsten Tag.
 
-## 3.4.0
+## 3.4.0 (2026-11-06)
 - Bericht 14× schneller (190.000 Umsätze: 154 s → 11 s; Umbuchungs-Paarung und Monatssalden ohne quadratischen Aufwand, Steuer nach Jahren gebündelt). Ergebnis bitgleich zur Vorversion geprüft.
 - Neubau nach Änderungen (Verlauf, Zuordnungen, Bereiche, Immobilien) läuft im Hintergrund; mehrere Änderungen werden zu einem Neubau zusammengefasst. Die Oberfläche bleibt bedienbar, unten links steht der Fortschritt, danach lädt die Ansicht selbst neu.
 - Entschlüsselte Dateien und die Umsatzliste bleiben im Speicher (nur neu gelesen, wenn sie sich ändern); parallele Lese-/Schreibzugriffe auf den Verlauf gehen nicht mehr verloren.
@@ -158,7 +166,7 @@
 - Bilanzpositionen & Verlauf kompakter (passt auf einen Bildschirm), Tooltips zu Position, Verlauf, Anzeige; „Verlauf …“ öffnet zuverlässig wiederholt.
 - Protokoll-Seite zeigt den Dateipfad und kann die Datei im Finder zeigen.
 
-## 3.3.0
+## 3.3.0 (2026-11-06)
 - Installation mit einer Terminal-Zeile (`get.sh`: clone/pull + install.sh); `Installieren.command` entfällt (Gatekeeper blockiert heruntergeladene Skripte). Update aus der Oberfläche lädt das Archiv von github.com statt über die API (die mit 415 antwortete).
 - Protokoll ausführlich (DEBUG in der Datei): Anfragen, MoneyMoney-Aufrufe mit Dauer, Berichtsumfang, Konfigurationsänderungen, Update-Schritte, Fehler mit Rückverfolgung.
 - Touch ID erscheint nach einer Sperre automatisch, sobald das Fenster wieder aktiv ist; Sitzung wird beim Zurückkehren geprüft.

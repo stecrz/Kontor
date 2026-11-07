@@ -274,3 +274,51 @@ class CatalogTests(unittest.TestCase):
             i18n.set_lang("de")
         self.assertEqual(i18n.tr("sync_ohne_abruf", 3), "Ohne Bankabruf (3)")
         self.assertEqual(i18n.tr("unbekannter_schluessel"), "unbekannter_schluessel")
+
+
+class TransitTests(unittest.TestCase):
+    """Geld unterwegs: Umbuchung zwischen eigenen Konten ueber das Monatsende."""
+
+    def ledger(self, txs):
+        from model import Account, Tx
+        acc = {u: Account(uuid=u, name=u, type="Giro", group=False, indentation=0, balance=0.0, currency="EUR", iban=iban)
+               for u, iban in (("a", "DE11"), ("b", "DE22"), ("x", "DE33"))}
+        return Ledger(acc, [Tx(id=i, account_uuid=u, booking_date=d, value_date=d, amount=amt, currency="EUR", counter_iban=ib)
+                            for i, (u, d, amt, ib) in enumerate(txs, 1)])
+
+    def run_transit(self, txs, today=date(2026, 3, 15)):
+        from report import transit_series
+        L = self.ledger(txs)
+        leaves = [L.accounts["a"], L.accounts["b"]]
+        return transit_series(L, leaves, {"a": "liquiditaet", "b": "liquiditaet"}, [(2026, 1), (2026, 2), (2026, 3)], {}, today)
+
+    def test_ueber_monatsende(self):
+        t = self.run_transit([("a", date(2026, 1, 31), -500.0, "DE22"), ("b", date(2026, 2, 2), 500.0, "")])
+        self.assertEqual(t, {"2026-01": 500.0, "2026-02": 0.0, "2026-03": 0.0})
+
+    def test_gutschrift_zuerst(self):
+        t = self.run_transit([("b", date(2026, 1, 30), 200.0, "DE11"), ("a", date(2026, 2, 1), -200.0, "")])
+        self.assertEqual(t["2026-01"], -200.0)
+
+    def test_nicht_gepaart(self):
+        # gleicher Monat, kein IBAN-Bezug, zu weit auseinander, Partner ausserhalb des Bereichs -> nichts unterwegs
+        for txs in ([("a", date(2026, 2, 10), -100.0, "DE22"), ("b", date(2026, 2, 11), 100.0, "")],
+                    [("a", date(2026, 1, 31), -100.0, ""), ("b", date(2026, 2, 1), 100.0, "")],
+                    [("a", date(2026, 1, 25), -100.0, "DE22"), ("b", date(2026, 2, 3), 100.0, "")],
+                    [("a", date(2026, 1, 31), -100.0, "DE33"), ("x", date(2026, 2, 1), 100.0, "DE11")]):
+            self.assertEqual(set(self.run_transit(txs).values()), {0.0}, txs)
+
+
+class ChangelogTests(unittest.TestCase):
+    def test_abschnitt_und_datum(self):
+        import updates
+        self.assertEqual(updates.changelog_section("# X\n\n## 1.2.3 (2026-01-02)\n- a\n\n## 1.2.2\n- b\n", "1.2.3"), ("- a", "2026-01-02"))
+        self.assertEqual(updates.changelog_section("## 1.2.2\n- b\n", "1.2.2"), ("- b", ""))
+
+    def test_aktuelle_version_hat_datum(self):
+        import updates
+        here = os.path.join(os.path.dirname(__file__), "..")
+        with open(os.path.join(here, "CHANGELOG.md"), encoding="utf-8") as f:
+            text = f.read()
+        notes, datum = updates.changelog_section(text, updates.current_version())
+        self.assertTrue(notes); self.assertRegex(datum, r"^\d{4}-\d{2}-\d{2}$")

@@ -32,7 +32,6 @@ import logging
 import logging.handlers
 import os
 import plistlib
-import shutil
 import subprocess
 import sys
 from datetime import date
@@ -53,29 +52,10 @@ from i18n import tr  # noqa: E402
 
 log = logging.getLogger("kontor")
 DATA_DIR = os.environ.get("KONTOR_DIR") or os.path.expanduser("~/Library/Application Support/Kontor")
-OLD_DATA_DIR = os.path.expanduser("~/Library/Application Support/mmtools")
 LAUNCHD_LABEL = updates.LABEL
-OLD_LAUNCHD_LABELS = ("de.mmtools.dienst",) + updates.LEGACY_LABELS
-
-
-def migrate_old_data_dir() -> None:
-    """Datenordner der Vorversion (mmtools) uebernehmen, falls Kontor noch keine Daten hat."""
-    if os.environ.get("KONTOR_DIR") or not os.path.isdir(OLD_DATA_DIR) or os.path.isdir(DATA_DIR):
-        return
-    try:
-        shutil.copytree(OLD_DATA_DIR, DATA_DIR)
-        for fn in ("mmtools.log", "dienst.out.log", "dienst.err.log", "dienst.lock"):   # legacy names
-            try:
-                os.remove(os.path.join(DATA_DIR, fn))
-            except OSError:
-                pass
-        print(tr("s_daten_der_vorversion_uebernommen_s") % (OLD_DATA_DIR, DATA_DIR))
-    except OSError as e:
-        print(tr("s_daten_der_vorversion_konnten_nicht") % e)
 
 
 def setup_logging(quiet: bool) -> None:
-    migrate_old_data_dir()
     os.makedirs(DATA_DIR, exist_ok=True)
     try:
         os.chmod(DATA_DIR, 0o700)
@@ -206,9 +186,9 @@ def cmd_konten(args) -> int:
         ledger = Ledger(accounts_from_export(Bridge(dry_run=True).export_accounts()), [])
     except MoneyMoneyError as e:
         print(unavailable_text(e) or str(e)); return 2
-    print("%-58s %-36s %-8s %-17s %-16s %s" % (tr("s_konto_pfad"), "UUID", "Typ", "Rolle", "aktualisiert", "Saldo"))
+    print("%-58s %-36s %-8s %-17s %-16s %s" % (tr("s_konto_pfad"), "UUID", tr("x_typ"), tr("x_rolle"), tr("x_aktualisiert"), tr("x_saldo")))
     for k in account_tree(ledger, cfg):
-        typ = "Gruppe" if k["gruppe"] else ("Depot" if k["depot"] else ("manuell" if k["manuell"] else "Bank"))
+        typ = tr("x_gruppe" if k["gruppe"] else ("x_depot" if k["depot"] else ("x_manuell" if k["manuell"] else "x_bank")))
         print("%-58s %-36s %-8s %-17s %-16s %s" % ("  " * k["ebene"] + k["name"], k["uuid"], typ, k["rolle"],
                                                    k["aktualisiert"] or "", "" if k["gruppe"] else fmt_eur(k["saldo"])))
     return 0
@@ -349,18 +329,9 @@ def build_touchid() -> str:
 def cmd_install(args) -> int:
     store = open_store()
     cfg = load_config(store)
-    # Dienste frueherer Versionen entfernen, sonst streiten sich zwei Dienste um den Port
-    for old in OLD_LAUNCHD_LABELS:
-        if os.path.exists(launchd_path(old)):
-            subprocess.run(["launchctl", "unload", launchd_path(old)], capture_output=True)
-            try:
-                os.remove(launchd_path(old))
-                print(tr("s_dienst_der_vorversion_s_entfernt") % old)
-            except OSError:
-                pass
     if not store.load("auth.json", None):
         print(tr("s_noch_kein_passwort_wird_beim"))
-    print("Touch-ID-Helfer: %s" % build_touchid())
+    print(tr("s_touchid_helfer") % build_touchid())
     plist = {
         "Label": LAUNCHD_LABEL,
         "ProgramArguments": [sys.executable, os.path.join(HERE, "kontor.py"), "--quiet", "start"],
@@ -385,13 +356,12 @@ def cmd_install(args) -> int:
 
 
 def cmd_uninstall(args) -> int:
-    for label in (LAUNCHD_LABEL,) + OLD_LAUNCHD_LABELS:
-        if os.path.exists(launchd_path(label)):
-            subprocess.run(["launchctl", "unload", launchd_path(label)], capture_output=True)
-            try:
-                os.remove(launchd_path(label))
-            except FileNotFoundError:
-                pass
+    if os.path.exists(launchd_path()):
+        subprocess.run(["launchctl", "unload", launchd_path()], capture_output=True)
+        try:
+            os.remove(launchd_path())
+        except FileNotFoundError:
+            pass
     print(tr("s_dienst_entfernt_daten_bleiben_in") % DATA_DIR)
     return 0
 
@@ -414,9 +384,9 @@ def cmd_tls(args) -> int:
         print(tr("s_zertifikat_fuer_s_geholt_gueltig") % (r["name"], (r["gueltig_bis"] or "?")[:10], r["ip"]))
         print(tr("s_oberflaeche_nach_dem_neustart_s") % r["url"])
         print(tr("s_das_zertifikat_wird_vom_laufenden"))
-    if os.path.exists(launchd_path(updates.installed_label())):
-        r2 = subprocess.run(["launchctl", "kickstart", "-k", "gui/%d/%s" % (os.getuid(), updates.installed_label())], capture_output=True, text=True)
-        print("Dienst neu gestartet." if r2.returncode == 0 else tr("s_dienst_bitte_neu_starten_bash"))
+    if os.path.exists(launchd_path()):
+        r2 = subprocess.run(["launchctl", "kickstart", "-k", "gui/%d/%s" % (os.getuid(), LAUNCHD_LABEL)], capture_output=True, text=True)
+        print(tr("s_dienst_neu_gestartet") if r2.returncode == 0 else tr("s_dienst_bitte_neu_starten_bash"))
     else:
         print(tr("s_dienst_neu_starten_bash_install"))
     return 0
@@ -431,24 +401,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="kontor", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--quiet", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    # Befehle englisch; fruehere deutsche Namen bleiben als Alias nutzbar
-    for name, alias, fn in (("start", None, cmd_start), ("open", "oeffnen", cmd_oeffnen), ("accounts", "konten", cmd_konten), ("check", None, cmd_check),
-                            ("status", None, cmd_status), ("password", "passwort", cmd_passwort), ("install", None, cmd_install),
-                            ("uninstall", None, cmd_uninstall), ("version", None, cmd_version)):
-        sub.add_parser(name, aliases=[alias] if alias else []).set_defaults(fn=fn)
+    for name, fn in (("start", cmd_start), ("open", cmd_oeffnen), ("accounts", cmd_konten), ("check", cmd_check), ("status", cmd_status),
+                     ("password", cmd_passwort), ("install", cmd_install), ("uninstall", cmd_uninstall), ("version", cmd_version)):
+        sub.add_parser(name).set_defaults(fn=fn)
     r = sub.add_parser("run"); r.set_defaults(fn=cmd_run)
-    r.add_argument("--dry-run", "--probelauf", dest="probelauf", action="store_true"); r.add_argument("--live", "--scharf", dest="scharf", action="store_true")
+    r.add_argument("--dry-run", dest="probelauf", action="store_true"); r.add_argument("--live", dest="scharf", action="store_true")
     r.add_argument("--force", action="store_true")
-    pe = sub.add_parser("package-export", aliases=["paket-export"]); pe.set_defaults(fn=cmd_paket_export)
+    pe = sub.add_parser("package-export"); pe.set_defaults(fn=cmd_paket_export)
     pe.add_argument("datei", nargs="?", metavar="file"); pe.add_argument("--name")
-    pe.add_argument("--without-uuid", "--ohne-uuid", dest="ohne_uuid", action="store_true"); pe.add_argument("--with-plan", "--mit-plan", dest="mit_plan", action="store_true")
-    pi = sub.add_parser("package-import", aliases=["paket-import"]); pi.set_defaults(fn=cmd_paket_import)
-    pi.add_argument("datei", metavar="file"); pi.add_argument("--replace", "--ersetzen", dest="ersetzen", action="store_true")
-    pi.add_argument("--anyway", "--trotzdem", dest="trotzdem", action="store_true"); pi.add_argument("--with-plan", "--mit-plan", dest="mit_plan", action="store_true")
-    dg = sub.add_parser("diagnostics", aliases=["diagnose"]); dg.set_defaults(fn=cmd_diagnose)
-    dg.add_argument("datei", nargs="?", metavar="file"); dg.add_argument("--names", "--namen", dest="namen", action="store_true")
-    up = sub.add_parser("update"); up.set_defaults(fn=cmd_update); up.add_argument("--install", "--installieren", dest="installieren", action="store_true")
-    tl = sub.add_parser("tls"); tl.set_defaults(fn=cmd_tls); tl.add_argument("--off", "--aus", dest="aus", action="store_true", help="TLS wieder abschalten")
+    pe.add_argument("--without-uuid", dest="ohne_uuid", action="store_true"); pe.add_argument("--with-plan", dest="mit_plan", action="store_true")
+    pi = sub.add_parser("package-import"); pi.set_defaults(fn=cmd_paket_import)
+    pi.add_argument("datei", metavar="file"); pi.add_argument("--replace", dest="ersetzen", action="store_true")
+    pi.add_argument("--anyway", dest="trotzdem", action="store_true"); pi.add_argument("--with-plan", dest="mit_plan", action="store_true")
+    dg = sub.add_parser("diagnostics"); dg.set_defaults(fn=cmd_diagnose)
+    dg.add_argument("datei", nargs="?", metavar="file"); dg.add_argument("--names", dest="namen", action="store_true")
+    up = sub.add_parser("update"); up.set_defaults(fn=cmd_update); up.add_argument("--install", dest="installieren", action="store_true")
+    tl = sub.add_parser("tls"); tl.set_defaults(fn=cmd_tls); tl.add_argument("--off", dest="aus", action="store_true")
     args = ap.parse_args(argv)
     setup_logging(args.quiet)
     return args.fn(args)

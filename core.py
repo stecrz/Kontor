@@ -68,27 +68,7 @@ def merged_config(cfg: Optional[dict]) -> dict:
     for k, v in cfg.items():
         if k not in out:
             out[k] = v
-    # Vorversionen: bilanz.wurzel / bilanz.hauptbereich / bilanz.bereiche (Referenzen) -> Bereichsobjekte
-    bil = out["bilanz"]
-    haupt = bil.pop("hauptbereich", None) or bil.pop("wurzel", None)
-    alte = bil.pop("bereiche", None) or []
-    if not out.get("bereiche"):
-        if alte:
-            refs = [r for r in ([haupt] if haupt else []) + list(alte) if r]
-            seen = set()
-            objs = []
-            for r in refs:
-                key = r.split("|", 1)[0].strip()
-                if key in seen:
-                    continue
-                seen.add(key)
-                objs.append({"id": key, "name": (r.split("|", 1)[1].strip() if "|" in r else r), "konten": [r], "haupt": r == haupt})
-            out["bereiche"] = objs
-        elif haupt:
-            bil["hauptbereich"] = haupt      # alle Kontengruppen als Bereiche, diese als Hauptbereich
     for i, b in enumerate(out["bereiche"]):
-        if isinstance(b, str):
-            out["bereiche"][i] = b = {"id": b.split("|", 1)[0].strip(), "name": (b.split("|", 1)[1].strip() if "|" in b else b), "konten": [b]}
         b.setdefault("id", "b%d" % (i + 1))
         b.setdefault("name", "Bereich %d" % (i + 1))
         b.setdefault("konten", [])
@@ -96,7 +76,6 @@ def merged_config(cfg: Optional[dict]) -> dict:
         b.setdefault("aktiv", True)
     if out["bereiche"] and not any(b.get("haupt") for b in out["bereiche"]):
         out["bereiche"][0]["haupt"] = True
-    out["bilanz"].pop("wurzel", None)
     for im in out.get("immobilien") or []:
         im.setdefault("kalkulationen", [])
         im.setdefault("dokumente", [])
@@ -240,15 +219,8 @@ def bereiche_for(ledger: Ledger, config: dict) -> List[dict]:
                         "anteil": float(anteil) if anteil not in (None, "") else None, "haupt": bool(b.get("haupt")),
                         "konten": list(b.get("konten") or []), "leaves": leaves, "gruppen": gruppen})
     if not out:
-        haupt_uuid = None
-        href = (config.get("bilanz") or {}).get("hauptbereich")
-        if href:
-            try:
-                haupt_uuid = ledger.resolve(href).uuid
-            except KeyError:
-                pass
         for g in ledger.roots():
-            out.append({"id": g.uuid, "name": g.name, "art": _bereich_art(g.name), "anteil": anteile.get(g.uuid), "haupt": g.uuid == haupt_uuid,
+            out.append({"id": g.uuid, "name": g.name, "art": _bereich_art(g.name), "anteil": anteile.get(g.uuid), "haupt": False,
                         "konten": ["%s | %s" % (g.uuid, g.name)], "leaves": ledger.descendants(g.uuid), "gruppen": [g]})
         if out and not any(b["haupt"] for b in out):
             (next((b for b in out if b["art"] == "privat"), None) or out[0])["haupt"] = True
@@ -305,21 +277,21 @@ def abruf_arten(ledger: Ledger, config: dict) -> Dict[str, Dict[str, str]]:
         elif a.uuid in force_on:
             art, grund = "online", tr("s_von_dir_als_abgerufen_festgelegt")
         elif a.portfolio:
-            art, grund = ("online", "Depot") if refreshed else ("offline", tr("s_depot_ohne_abruf"))
+            art, grund = ("online", tr("s_grund_depot")) if refreshed else ("offline", tr("s_depot_ohne_abruf"))
         elif a.offline:
             art, grund = "offline", tr("s_manuell_gefuehrt")
         elif a.uuid in targets:
-            art, grund = "offline", "Zielkonto einer Regel"
+            art, grund = "offline", tr("s_grund_zielkonto")
         elif a.uuid in booked:
             art, grund = "offline", tr("s_von_kontor_bebucht")
         elif "offline" in (a.type or "").lower():
-            art, grund = "offline", "Offline-Konto"
+            art, grund = "offline", tr("s_grund_offline_konto")
         elif not refreshed:
             art, grund = "offline", tr("s_noch_nie_abgerufen")
         elif not ((a.bank_code or "").strip() or (a.account_number or "").strip() or (a.iban or "").strip()):
             art, grund = "offline", tr("s_ohne_bankleitzahl_und_kontonummer")
         else:
-            art, grund = "online", "Bank" if (a.bank_code or "").strip() else "Dienst (Erweiterung)"
+            art, grund = "online", tr("s_grund_bank" if (a.bank_code or "").strip() else "s_grund_dienst")
         out[a.uuid] = {"art": art, "grund": grund}
     return out
 
@@ -436,8 +408,8 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
             add("fehler", tr("s_darlehen_s_ab_datum_fehlt") % n)
     for b in (config.get("beteiligungen", []) or []) + (config.get("saldo_spiegel", []) or []):
         n = b.get("name", "?") + ("" if b.get("aktiv", True) else " (inaktiv)")
-        ref("Wert %s: Ziel" % n, b.get("zielkonto") or b.get("beteiligungskonto", ""), want_offline=True, group_ok=False)
-        ref("Wert %s: Quelle" % n, b.get("gruppe") or b.get("quellkonto", ""), want_group=bool(b.get("gruppe")))
+        ref(tr("s_chk_wert_ziel") % n, b.get("zielkonto") or b.get("beteiligungskonto", ""), want_offline=True, group_ok=False)
+        ref(tr("s_chk_wert_quelle") % n, b.get("gruppe") or b.get("quellkonto", ""), want_group=bool(b.get("gruppe")))
     bil = config.get("bilanz", {}) or {}
     for b in config.get("bereiche") or []:
         if not isinstance(b, dict):
@@ -459,7 +431,7 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
             add("warnung", tr("s_s_konten_ohne_position_umsaetze")
                 % (b["name"], "; ".join(missing[:8]) + (" …" if len(missing) > 8 else "")))
     for r in bil.get("illiquide_konten") or []:
-        ref("Bilanz: illiquide", r)
+        ref(tr("s_chk_bilanz_illiquide"), r)
     for k, v in (bil.get("rollen") or {}).items():
         if not k.startswith("_"):
             ref(tr("s_position_fuer"), k)
@@ -470,7 +442,7 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         if v not in ("umsaetze", "stand"):
             add("fehler", tr("s_unbekannte_verlaufsquelle_s_fuer_s") % (v, k))
     for k in (bil.get("ausgeblendet") or []) + (bil.get("immer_anzeigen") or []):
-        ref("Bilanz: Anzeige", k)
+        ref(tr("s_chk_bilanz_anzeige"), k)
     for im in config.get("immobilien") or []:
         n = im.get("name") or "?"
         if im.get("objekt_konto"):
@@ -484,16 +456,16 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
             cat("Immobilie %s" % n, str(im["kategorie"]).split("\\")[-1])
     kfc = config.get("kapitalfluss", {}) or {}
     for g in kfc.get("beteiligungs_gruppen", []) or []:
-        ref("Kapitalfluss: Beteiligungsgruppe", g, want_group=True)
+        ref(tr("s_chk_kf_beteiligungsgruppe"), g, want_group=True)
     for k, v in (kfc.get("kategorie_zuordnung") or {}).items():
         if k.startswith("_"):
             continue
-        cat("Kapitalfluss: Zuordnung", k)
+        cat(tr("s_chk_kf_zuordnung"), k)
         if str(v).split("/")[0] not in ("Einnahmen", "Ausgaben", "Investitionen", "Finanzierung"):
             add("fehler", tr("s_kapitalfluss_zuordnung_s_s_unbekannt") % (k, v))
     for k, v in (kfc.get("kategorie_zu_konto") or {}).items():
         if not k.startswith("_"):
-            cat("Kapitalfluss: Depotzuordnung", k)
+            cat(tr("s_chk_kf_depotzuordnung"), k)
             ref(tr("s_kapitalfluss_depot_fuer_s") % k, v, group_ok=False)
     st = config.get("steuer", {}) or {}
     for k, v in (st.get("objekt_darlehen") or {}).items():
@@ -890,7 +862,6 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
             confirmed.add(ledger.resolve(ref).uuid)
         except KeyError:
             pass
-    vcfg = (config.get("bilanz") or {}).get("verlauf") or {}
     n_inakt = int((config.get("bilanz") or {}).get("inaktiv_monate", 12) or 12)
     y, m = add_months(date.today(), -n_inakt)
     cutoff = date(y, m, 1)
@@ -1033,14 +1004,10 @@ def _walk_refs(cfg: dict, fn: Callable[[str, str], str]) -> None:
                 item[field] = [fn(section + "." + field, x) for x in v]
             elif isinstance(v, str) and v:
                 item[field] = fn(section + "." + field, v)
-    bil = cfg.setdefault("bilanz", {})
-    if bil.get("hauptbereich"):
-        bil["hauptbereich"] = fn("bilanz.hauptbereich", bil["hauptbereich"])
-    if bil.get("bereiche"):
-        bil["bereiche"] = [fn("bilanz.bereiche", x) for x in (bil.get("bereiche") or [])]
     for b in cfg.get("bereiche") or []:
         if isinstance(b, dict):
             b["konten"] = [fn("bereiche.konten", x) for x in (b.get("konten") or [])]
+    bil = cfg.setdefault("bilanz", {})
     bil["illiquide_konten"] = [fn("bilanz.illiquide_konten", x) for x in (bil.get("illiquide_konten") or [])]
     for key in ("ausgeblendet", "immer_anzeigen"):
         if bil.get(key):
@@ -1097,7 +1064,7 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
                    mapping: Optional[Dict[str, str]] = None) -> Tuple[dict, List[dict], List[str]]:
     """Paket in die Konfiguration uebernehmen. Liefert (config, unaufgeloeste Referenzen, Bericht)."""
     if not isinstance(pkg, dict) or not isinstance(pkg.get("config"), dict):
-        raise ValueError("Keine Kontor-Einstellungsdatei (Feld 'config' fehlt).")
+        raise ValueError(tr("s_keine_einstellungsdatei"))
     inc = copy.deepcopy(pkg["config"])
     for k in ("oberflaeche", "updates"):
         inc.pop(k, None)
@@ -1142,7 +1109,7 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
                                 x["haupt"] = False
                     if item.get(key) in existing:
                         base[k][existing[item[key]]] = item
-                        report.append("%s '%s' aktualisiert" % (k, item.get("name") or item.get(key)))
+                        report.append(tr("s_s_s_aktualisiert") % (k, item.get("name") or item.get(key)))
                     else:
                         base[k].append(item)
                         report.append(tr("s_s_s_hinzugefuegt") % (k, item.get("name") or item.get(key)))

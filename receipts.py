@@ -13,10 +13,9 @@ import io
 import os
 import re
 import secrets
-import shutil
 import zipfile
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from storage import Store
 from i18n import tr
@@ -206,7 +205,7 @@ class Belege:
         target = os.path.join(exp_dir, "Belege_%s.zip" % label)
         buf = io.StringIO()
         w = csv.writer(buf, delimiter=";")
-        w.writerow(["Datum", "Betrag", "Name", "Konto", tr("s_entitaet"), "Datei", "Notiz", "Umsatz-ID"])
+        w.writerow([tr("x_datum"), tr("x_betrag"), tr("x_name"), tr("x_konto"), tr("s_entitaet"), tr("x_datei"), tr("x_notiz"), tr("x_umsatz_id")])
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
             for e in sel:
                 full = self.full_path(e)

@@ -33,8 +33,6 @@ log = logging.getLogger("kontor.store")
 MAGIC = b"MMT1"
 KEYCHAIN_SERVICE = "kontor.datenschluessel"
 KEYCHAIN_ACCOUNT = "kontor"
-# Eintrag frueherer Versionen (mmtools): wird gelesen und unter dem neuen Namen uebernommen
-OLD_KEYCHAIN = ("mmtools.datenschluessel", "mmtools")
 
 
 class StoreError(Exception):
@@ -61,14 +59,8 @@ def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
     key_file = os.path.join(data_dir, "master.key")
     if rc == 127:   # kein `security` (nicht macOS)
         return _file_key(key_file), "datei"
-    # Eintrag einer frueheren Version (mmtools) uebernehmen
-    rc_old, out_old, _ = _security(["find-generic-password", "-s", OLD_KEYCHAIN[0], "-a", OLD_KEYCHAIN[1], "-w"])
-    if rc_old == 0 and len(out_old.strip()) == 64:
-        key = bytes.fromhex(out_old.strip())
-        log.info("Data key of the previous version (mmtools) taken over.")
-    else:
-        # Schluesselbund vorhanden, aber kein Eintrag: neu anlegen
-        key = secrets.token_bytes(32)
+    # Schluesselbund vorhanden, aber kein Eintrag: neu anlegen
+    key = secrets.token_bytes(32)
     rc2, _, err = _security(["add-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT,
                              "-l", "Kontor Datenschlüssel", "-w", key.hex(), "-U"])
     if rc2 == 0:
@@ -144,11 +136,6 @@ def selftest(master: bytes) -> bool:
 # Store
 # ---------------------------------------------------------------------------
 
-# Earlier versions used German file names; renamed on start
-LEGACY_NAMES = {"belege.json": "receipts.json", "kategorien.json": "categories.json", "umsaetze.json": "transactions.json",
-                "moneymoney-stand.bin": "moneymoney-ledger.bin", "mm-verlauf.json": "mm-history.json"}
-
-
 class Store:
     """load/save von JSON-Dokumenten im Datenordner, verschluesselt wenn ein Schluessel vorliegt."""
 
@@ -167,8 +154,6 @@ class Store:
         self._cache: Dict[str, Tuple[Tuple[int, int], Any]] = {}     # name -> ((mtime_ns, size), Objekt)
         self._cache_lock = threading.Lock()
         self._file_locks: Dict[str, threading.RLock] = {}
-        self._migrate_plaintext()
-        self._migrate_names()
 
     # Pfade
     def path(self, name: str) -> str:
@@ -269,38 +254,3 @@ class Store:
             os.remove(self.path(name))
         except FileNotFoundError:
             pass
-
-    def _migrate_names(self) -> None:
-        """Rename files written under the German names of earlier versions."""
-        for old, new in LEGACY_NAMES.items():
-            if self.exists(old) and not self.exists(new):
-                os.replace(self.path(old), self.path(new))
-                log.info("Renamed %s to %s", old, new)
-
-    def _migrate_plaintext(self) -> None:
-        """Klartextdateien frueherer Versionen in die verschluesselte Ablage uebernehmen."""
-        if not self.encrypted:
-            return
-        for name in ("config.json", "plan.json", "state.json", "dataset.json", "auth.json", "belege.json", "umsaetze.json"):  # legacy names
-            src = os.path.join(self.data_dir, name)
-            if os.path.exists(src) and not os.path.exists(self.path(name)):
-                with open(src, "rb") as f:
-                    raw = f.read()
-                try:
-                    if name.endswith(".json"):
-                        json.loads(raw.decode("utf-8"))
-                except ValueError:
-                    continue
-                self.write_bytes(name, raw)
-                if self.read_bytes(name) == raw:      # erst nach erfolgreicher Kontrolle den Klartext entfernen
-                    os.remove(src)
-                    log.info("%s moved to encrypted storage, plaintext deleted.", name)
-        # Klartext-Reste aelterer Versionen (regenerierbar) entfernen
-        for name in ("bericht.html", "dataset.json", "umsaetze.json", "transactions.json", "launchd.out.log", "launchd.err.log"):
-            src = os.path.join(self.data_dir, name)
-            if os.path.exists(src) and not (name.endswith(".json") and not os.path.exists(self.path(name))):
-                try:
-                    os.remove(src)
-                    log.info("Plaintext file %s removed (recreated encrypted).", name)
-                except OSError:
-                    pass

@@ -21,7 +21,7 @@ from collections import defaultdict
 from datetime import date
 from typing import Dict, List, Optional
 
-from model import Account, Ledger, Tx
+from model import Ledger, Tx
 from report import ASSET_ROLES, COST_WORDS, account_roles, _is_cost
 from rules import TAG_RE
 

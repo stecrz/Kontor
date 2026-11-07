@@ -225,7 +225,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
                 year_cache[y] = (0.0, 0.0, 0.0)
             else:
                 year_cache[y] = (base, rate, round(base * rate / 100.0, 2))
-                res.info.append("%s: Zinsbasis %d = %s, %s %% p.a. = %s/Jahr" %
+                res.info.append(tr("s_zinsbasis_info") %
                                 (rule, y, fmt_eur(base), ("%.3f" % rate).rstrip("0").rstrip(".").replace(".", ","),
                                  fmt_eur(year_cache[y][2])))
         return year_cache[y]
@@ -287,7 +287,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
 def plan_mirror(ledger: Ledger, cfg: dict, today: date, roles: Optional[Dict[str, str]] = None) -> RuleResult:
     res = RuleResult()
     name = cfg.get("name") or cfg.get("zielkonto") or cfg.get("beteiligungskonto")
-    rule = "Wert %s" % name
+    rule = tr("s_regel_wert") % name
     try:
         target = ledger.resolve(cfg.get("zielkonto") or cfg["beteiligungskonto"])
         if cfg.get("gruppe"):
@@ -318,7 +318,7 @@ def plan_mirror(ledger: Ledger, cfg: dict, today: date, roles: Optional[Dict[str
     want = round(anteil * source_value, 2)
     have = target.balance
     diff = round(want - have, 2)
-    res.info.append("%s: Quelle %s = %s, Anteil %s %% -> Soll %s, Ist %s, Differenz %s" %
+    res.info.append(tr("s_spiegel_info") %
                     (rule, source.name, fmt_eur(source_value), ("%.4f" % (anteil * 100)).rstrip("0").rstrip(".").replace(".", ","),
                      fmt_eur(want), fmt_eur(have), fmt_eur(diff)))
     if abs(diff) < schwelle:

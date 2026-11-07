@@ -127,7 +127,7 @@ def config_for_test(belege_dir=None):
             {"name": "Alpha", "beteiligungskonto": F.uid("priv.bet.pb") + " | Beteiligung an Alpha GbR", "gruppe": F.uid("pb") + " | Alpha GbR", "anteil": 0.49},
             {"name": "Beta", "beteiligungskonto": F.uid("priv.bet.shs") + " | Beteiligung an Beta GbR", "gruppe": F.uid("shs") + " | Beta GbR", "anteil": 0.49}],
         "saldo_spiegel": [],
-        "bilanz": {"hauptbereich": F.uid("priv") + " | Privat", "bereiche": [], "monate_zurueck": 24, "illiquide_rollen": ["beteiligungen"],
+        "bilanz": {"monate_zurueck": 24, "illiquide_rollen": ["beteiligungen"],
                    "illiquide_konten": [F.uid("priv.darl") + " | Darlehen Lindenstraße"]},
         "kapitalfluss": {"beteiligungs_gruppen": [F.uid("pb") + " | Alpha GbR", F.uid("shs") + " | Beta GbR"],
                          "kategorie_zu_konto": {"Investments\\ETF": F.uid("priv.depot") + " | Depot"}},
@@ -189,7 +189,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(ds["depots"][0]["name"], "Depot"); self.assertAlmostEqual(ds["depots"][0]["summe"], 85000.0, 2)
         self.assertTrue(any(abs(v - 1500.0) < 0.01 for v in ds["budgets"].values()), ds["budgets"])
         b = ds["bereiche"][ds["haupt"]]
-        self.assertEqual(b["wurzel"], "Privat")
+        self.assertEqual(b["bereich"]["name"], "Privat")
         secs = {s["name"]: {z["zeile"]: z for z in s["zeilen"]} for s in b["kapitalfluss"]["sektionen"]}
         self.assertAlmostEqual(secs["Finanzierung"]["Darlehen Lindenstraße / Tilgung"]["werte"]["2026-10"], -600.0, 2)
         self.assertAlmostEqual(secs["Finanzierung"]["Darlehen Lindenstraße / Zinsen"]["werte"]["2026-10"], -900.0, 2)
@@ -618,15 +618,6 @@ class AppTests(_AppBase):
             MA.is_running = old
         code, r = self.call("/api/language", {"sprache": "de"})
         code, r = self.call("/api/properties", {"aktion": "speichern", "id": "gibtsnicht"}); self.assertIn("nicht gefunden", json.dumps(r, ensure_ascii=False))
-
-    def test_deutsche_dateinamen_werden_umbenannt(self):
-        """Daten aelterer Versionen (deutsche Dateinamen) werden beim Start auf die englischen Namen umbenannt."""
-        from storage import LEGACY_NAMES
-        st = Store(self.dir, *load_or_create_master_key(self.dir))
-        st.save("belege.json", {"eintraege": [1]}); st.write_bytes("moneymoney-stand.bin", b"x")
-        st2 = Store(self.dir, *load_or_create_master_key(self.dir))
-        self.assertEqual(st2.load("receipts.json"), {"eintraege": [1]}); self.assertFalse(st2.exists("belege.json"))
-        self.assertEqual(st2.read_bytes("moneymoney-ledger.bin"), b"x"); self.assertIn("mm-verlauf.json", LEGACY_NAMES)
 
     def test_historie_puffer_werden_ueberschrieben(self):
         """Schluessel und Klartext liegen nur in einem Puffer, der nach dem Lesen mit Nullen ueberschrieben ist;
@@ -1085,7 +1076,7 @@ class FeatureTests(_AppBase):
         self.assertEqual(depot["werte"]["2026-11"], 85000.0)
         # kein aelterer Stand bekannt: keine Schaetzung -- der erste bekannte Wert steht davor, gekennzeichnet
         self.assertEqual(depot["werte"]["2026-10"], 85000.0); self.assertEqual(depot["werte"]["2024-11"], 85000.0)
-        self.assertIsNone(depot["geschaetzt_bis"]); self.assertEqual(depot["fortgeschrieben_vor"], "2026-11")
+        self.assertNotIn("geschaetzt_bis", depot); self.assertEqual(depot["fortgeschrieben_vor"], "2026-11")
         self.assertTrue(any("fortgeschrieben" in w for w in b["warnungen"]))
         # Verlauf: Monatsstaende setzen, Import, Quelle umstellen
         code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
@@ -1380,7 +1371,7 @@ class FeatureTests(_AppBase):
         code, ds = self.call("/api/dataset")
         depot = [x for x in ds["bereiche"][ds["haupt"]]["bilanz"]["zeilen"] if x["id"] == F.uid("priv.depot")][0]
         self.assertEqual(depot["werte"]["2026-09"], 72000.0); self.assertEqual(depot["werte"]["2026-11"], 85000.0)
-        self.assertIsNone(depot["geschaetzt_bis"]); self.assertEqual(depot["fortgeschrieben_vor"], "2026-08")     # davor unbekannt, nicht geschaetzt
+        self.assertNotIn("geschaetzt_bis", depot); self.assertEqual(depot["fortgeschrieben_vor"], "2026-08")     # davor unbekannt, nicht geschaetzt
         # transponiert (Stichtage in der ersten Spalte) als CSV mit Monatsnamen
         csv = "Monat;Depot;Broker Giro\nJul 2026;60000;1\nJun 2026;58000;1\n"
         code, r = self.call("/api/history/import", {"csv": csv, "uebernehmen": True, "nur_luecken": True})
@@ -1553,7 +1544,7 @@ class FeatureTests(_AppBase):
         saldo = {k["uuid"]: k["saldo"] for k in ds["konten"] if not k["gruppe"]}
         self.assertEqual(pb["bilanz"]["nettovermoegen"]["2026-11"], round(sum(saldo[F.uid(k)] for k in ("pb.kk", "pb.immo", "pb.vd", "pb.kap.s", "pb.kap.p")), 2))
         code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
-        self.assertIsNone(h["geschaetzt_bis"]); self.assertIn("fortgeschrieben", h["hinweis"])          # keine Schaetzung mehr
+        self.assertNotIn("geschaetzt_bis", h); self.assertIn("fortgeschrieben", h["hinweis"])          # keine Schaetzung mehr
         # Pruefung im Verlauf-Fenster: Anfangssaldo und Buchungen
         code, h = self.call("/api/history?account=" + F.uid("priv.giro"))
         self.assertIn("anfangssaldo", h["pruefung"]); self.assertGreater(h["pruefung"]["buchungen"], 0)
@@ -1681,7 +1672,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("document.querySelector('#bereich-seg .on').textContent"), "Alpha GbR")
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_uebersicht_gbr.png"), full_page=True)
                 pg.click("#bereich-seg button:nth-child(1)"); pg.wait_for_timeout(300)
-                for tab in ("bilanz", "kapitalfluss", "planung", "immobilien", "steuer", "depots", "umsaetze", "zuordnen", "buchungen", "synchronisierung", "einrichtung", "regeln", "kategorien", "einstellungen", "pakete", "updates", "protokoll", "hilfe"):
+                for tab in ("bilanz", "kapitalfluss", "planung", "immobilien", "steuer", "umsaetze", "buchungen", "synchronisierung", "einrichtung", "regeln", "kategorien", "einstellungen", "updates", "protokoll", "hilfe"):
                     pg.click("#nav a[href='#%s']" % tab); pg.wait_for_timeout(400)
                     self.assertTrue(pg.query_selector("#main").inner_html().strip(), tab)
                     if shots: pg.screenshot(path=os.path.join(shots, "ui_%s.png" % tab), full_page=(tab in ("regeln", "einstellungen", "steuer", "planung", "hilfe", "bilanz", "einrichtung")))
@@ -1703,12 +1694,19 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#nav a[href='#hilfe']"); pg.wait_for_timeout(300); self.assertEqual(pg.evaluate("window.scrollY"), 0)
                 pg.click("#nav a[href='#bilanz']"); pg.wait_for_timeout(400); self.assertEqual(pg.evaluate("window.scrollY"), y_bil)
                 pg.evaluate("window.scrollTo(0, 0)"); pg.set_viewport_size({"width": 1440, "height": 900})
-                pg.click(".seg button[data-v='gruppen']"); pg.wait_for_timeout(300)
-                self.assertIn("MoneyMoney-Gruppen", pg.query_selector_all("#main thead")[0].inner_text())
-                if shots: pg.screenshot(path=os.path.join(shots, "ui_bilanz_gruppen.png"), full_page=True)
-                pg.click(".seg button[data-v='positionen']"); pg.wait_for_timeout(300)
+                # Monatsansicht mit Jahressummen; Schalter in der Werkzeugleiste, nicht oben rechts
+                self.assertEqual(len(pg.query_selector_all("#modus-seg button")), 2)
+                self.assertTrue(pg.query_selector("#main thead th.year")); self.assertIsNone(pg.query_selector("#top-ctl"))
+                pg.click("#main .toolbar label:has(#planan)"); pg.wait_for_timeout(300)
+                self.assertIsNone(pg.query_selector("#main thead th.plan"))
+                pg.click("#main .toolbar label:has(#planan)"); pg.wait_for_timeout(300)
+                self.assertTrue(pg.query_selector("#main thead th.plan"))
+                n_rows = len(pg.query_selector_all("tr.acct")); pg.click("#main .toolbar label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
+                self.assertGreaterEqual(len(pg.query_selector_all("tr.acct")), n_rows)
+                pg.click("#main .toolbar label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
                 pg.click("tr.acct[data-id='%s'] td" % F.uid("priv.depot")); pg.wait_for_selector("#drawer.open #h-grid")
                 self.assertIn("Monatsstände", pg.query_selector("#drawer").inner_text())
+                pg.click("#drawer details.holdings summary"); self.assertIn("Welt-ETF", pg.query_selector("#drawer details.holdings").inner_text())   # Depotpositionen
                 pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
                 pg.click("tr.acct[data-id='%s'] td" % F.uid("priv.giro")); pg.wait_for_selector("#drawer.open #h-grid")     # zweites Oeffnen
                 self.assertIn("Hausbank Giro", pg.query_selector("#drawer").inner_text())
@@ -1817,13 +1815,13 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#nav a[href='#immobilien']"); pg.wait_for_selector(".card[data-im]")
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_immobilien.png"), full_page=True)
                 # Zuordnen: offene Gegenpartei mit Regel zuordnen -> verschwindet, Kategorien-Seite zeigt Regel
-                pg.click("#nav a[href='#zuordnen']"); pg.wait_for_selector(".kz-group")
+                pg.click("#nav a[href='#kategorien']"); pg.wait_for_selector(".kz-group")
                 n_before = len(pg.query_selector_all(".kz-group"))
                 box = pg.query_selector(".kz-group"); box.query_selector(".kz-kat").fill("Haushalt / Werkzeug"); box.query_selector(".kz-save").click()
                 pg.wait_for_timeout(1500)
                 self.assertLess(len(pg.query_selector_all(".kz-group")), n_before)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_zuordnen.png"), full_page=True)
-                pg.click("#nav a[href='#kategorien']"); pg.wait_for_selector("#kk-add")
+                pg.click("#main .tabs button[data-next='#kategorien/regeln']"); pg.wait_for_selector("#kk-add")
                 self.assertIn("Haushalt / Werkzeug", pg.query_selector("#main").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_kategorien.png"), full_page=True)
                 # Planung: Ereignis anlegen
@@ -2043,7 +2041,8 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Alpha GbR"][0]["anteil"], 0.49)       # Prozent -> Anteil
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Privat"][0]["art"], "privat")
                 # Paket laden mit Zuordnung
-                pg.click("#nav a[href='#pakete']"); pg.wait_for_selector("#pk-pick")
+                pg.click("#nav a[href='#einstellungen']"); pg.wait_for_selector("#sw-state")
+                pg.click("#main .tabs button[data-next='#einstellungen/sicherung']"); pg.wait_for_selector("#pk-pick")
                 with pg.expect_file_chooser() as fc:
                     pg.click("#pk-pick")
                 fc.value.set_files(pkg_path); pg.wait_for_selector("#pk-import")

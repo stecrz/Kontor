@@ -547,13 +547,13 @@ def run(buf: bytearray, accounts: Dict[str, Tuple[float, bool]], today: date,
         if bytes(buf[:16]) == SQLITE_HEADER:
             fmt = "unencrypted"
         else:
-            step("Passwort")
+            step("password")
             keys = [k if isinstance(k, bytearray) else bytearray(k) for k in (keys_fn or keys_from_dialog)(bytes(buf[:16]))]
-            step("Entschlüsseln")
+            step("decrypt")
             fmt = decrypt_in_place(buf, keys)
             for k in keys:
                 _wipe(k)
-        step("Kontostände suchen")
+        step("search")
         try:
             db = MemDB(buf)
         except sqlite3.DatabaseError:

@@ -50,7 +50,7 @@ def ensure_category(d: dict, path: str, quelle: str = "manuell", sektion: Option
     """Kategorie (und Oberkategorien) anlegen, falls nicht vorhanden."""
     path = norm_cat(path)
     if not path:
-        raise ValueError("Kategoriename fehlt.")
+        raise ValueError(tr("s_kategoriename_fehlt"))
     existing = by_path(d)
     parts = path.split(" / ")
     node = None
@@ -71,7 +71,7 @@ def rename_category(d: dict, old: str, new: str) -> int:
     """Pfad umbenennen/verschieben (inkl. Unterkategorien, Zuordnungen, Regeln). Liefert Anzahl betroffener Knoten."""
     old, new = norm_cat(old), norm_cat(new)
     if not old or not new:
-        raise ValueError("Pfad fehlt.")
+        raise ValueError(tr("s_pfad_fehlt"))
     n = 0
     for k in d["baum"]:
         if k["pfad"] == old or k["pfad"].startswith(old + " / "):
@@ -336,7 +336,7 @@ def add_rule(d: dict, rule: dict) -> dict:
         if v not in (None, ""):
             r[k] = v
     if not r["kategorie"]:
-        raise ValueError("Regel: Kategorie fehlt.")
+        raise ValueError(tr("s_regel_kategorie_fehlt"))
     if not (r.get("iban") or r.get("name_ist") or r.get("name_enthaelt") or r.get("zweck_enthaelt")):
         raise ValueError(tr("s_regel_mindestens_gegen_iban_name"))
     ensure_category(d, r["kategorie"])

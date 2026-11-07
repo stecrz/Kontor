@@ -143,14 +143,8 @@ def build_touchid(force: bool = False) -> str:
         r = subprocess.run(["swiftc", "-O", "-o", TOUCHID_BIN, TOUCHID_SRC], capture_output=True, text=True, timeout=300)
         if r.returncode == 0:
             os.chmod(TOUCHID_BIN, 0o755)
-            old = os.path.join(HERE, "mm_touchid")          # Vorversion
-            if os.path.exists(old):
-                try:
-                    os.remove(old)
-                except OSError:
-                    pass
             return "ok"
-        return "swiftc-Fehler: " + (r.stderr or r.stdout)[-300:]
+        return tr("s_swiftc_fehler") % (r.stderr or r.stdout)[-300:]
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:
         return tr("s_swiftc_nicht_verfuegbar_s_xcode") % e
 

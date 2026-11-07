@@ -19,14 +19,12 @@ import json
 import logging
 import mimetypes
 import os
-import shutil
 import ssl
 import subprocess
 import sys
 import threading
 import time
 from datetime import date, datetime, timedelta
-from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
@@ -39,7 +37,7 @@ import history_import
 import categorize
 import updates
 from receipts import Belege, file_status
-from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, is_running
+from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
 from core import (RUN_LOCK, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merged_config, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, accounts_from_export, ledger_from_bytes, ledger_to_bytes
@@ -101,12 +99,6 @@ class App:
         self.ledger_cache_fp: Optional[str] = None
         self.ledger_from_cache = False
         threading.Thread(target=self._load_ledger_cache, name="kontor-cache", daemon=True).start()
-        shutil.rmtree(os.path.join(HERE, ".historie"), ignore_errors=True)     # Passwort-Helfer aus 3.9.6: wird nur noch kurz erzeugt
-        for old in ("mm-historie-aufbau.txt",):                                 # earlier German name
-            try:
-                os.remove(os.path.join(HERE, old))
-            except OSError:
-                pass
         self.mmh: dict = {"laeuft": False, "schritt": None, "ergebnis": None}   # Kontostaende aus MoneyMoney einlesen
         if sys.platform == "darwin":          # Touch-ID-Helfer bei Bedarf (neu) uebersetzen
             threading.Thread(target=lambda: log.info("Touch ID helper: %s", auth.build_touchid()), name="kontor-touchid", daemon=True).start()
@@ -433,7 +425,7 @@ class App:
         except MoneyMoneyError as e:
             if isinstance(e, MoneyMoneyLocked):
                 self.mm_probe = (time.time(), True)
-            elif tr("s_laeuft_nicht") not in str(e) and "nicht erreichbar" not in str(e):
+            elif not isinstance(e, MoneyMoneyNotRunning):
                 # MoneyMoney lief, Kontor konnte aber nicht lesen (z. B. Berechtigung) -> sichtbar machen, sonst fehlen Staende
                 msg = str(e)[:200]
                 log.warning("Quick capture not possible although MoneyMoney is running: %s", msg)
@@ -590,7 +582,7 @@ class App:
                 apply_plan(b, self.plan_for(bid), self.config, fremd_nw=fremd, immo=immo_for_plan(self.config, bid, immo_res), ledger_resolve=resolve)
             except Exception as e:  # pragma: no cover - fehlerhafte Plandaten duerfen die Anzeige nicht stoppen
                 log.exception("Planning for area %s", bid)
-                b["fehler"] = "Planung fehlgeschlagen: %s" % e
+                b["fehler"] = tr("s_planung_fehlgeschlagen") % e
 
         # 1. Durchgang: alle Bereiche; 2. Durchgang: Bereiche mit Beteiligungs-Verknuepfung auf andere Bereiche
         for bid in bereiche:
@@ -681,8 +673,7 @@ def _last(d: dict, months: List[str]):
     return None
 
 
-EXPORT_NAMES = {"balance": "Bilanz", "cashflow": "Kapitalfluss", "planning": "Planung", "tax": "Steuer", "transactions": "Umsaetze",
-                "holdings": "Depots", "receipts": "Belege", "accounts": "Konten"}       # download file names (user language)
+EXPORT_FILE_KEYS = {t: "xf_" + t for t in ("balance", "cashflow", "planning", "tax", "transactions", "holdings", "receipts", "accounts")}   # Dateiname je Export
 
 
 def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> List[Sheet]:
@@ -713,9 +704,9 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> Lis
                 bold.append(len(rows) - 1)
         nw = b.get("bilanz", {}).get("nettovermoegen", {})
         lnw = b.get("bilanz", {}).get("liquides_nettovermoegen", {})
-        rows.append(["Nettovermögen"] + [_last(nw, ms) for _, ms, _p in cols]); bold.append(len(rows) - 1)
-        rows.append(["davon liquide"] + [_last(lnw, ms) for _, ms, _p in cols])
-        return [Sheet("Bilanz " + name, ["Konto"] + [c[0] for c in cols], rows, bold_rows=bold)]
+        rows.append([tr("x_nettovermoegen")] + [_last(nw, ms) for _, ms, _p in cols]); bold.append(len(rows) - 1)
+        rows.append([tr("x_davon_liquide")] + [_last(lnw, ms) for _, ms, _p in cols])
+        return [Sheet(tr("x_bilanz") + " " + name, [tr("x_konto")] + [c[0] for c in cols], rows, bold_rows=bold)]
 
     if was in ("cashflow", "planning"):
         cols = columns(True)
@@ -724,13 +715,13 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> Lis
             rows.append([sek["name"]] + [None] * len(cols)); bold.append(len(rows) - 1)
             for z in sek["zeilen"]:
                 allv = dict(z["werte"]); allv.update((z.get("plan") or {}).get("werte", {}))
-                label = "    " + z["zeile"] + ("" if z.get("nw") else "  (Umschichtung)")
+                label = "    " + z["zeile"] + ("" if z.get("nw") else tr("x_umschichtung"))
                 rows.append([label] + [round(sum(allv.get(m, 0.0) for m in ms), 2) for _, ms, _p in cols])
         sums = b.get("kapitalfluss", {}).get("summen", {})
-        for k, label in (("Operativ", "Operatives Ergebnis"), ("Cashflow", "Zahlungsfluss gesamt"), ("Nettovermoegen_delta", tr("s_nettovermoegensaenderung"))):
+        for k, label in (("Operativ", tr("x_operativ")), ("Cashflow", tr("x_cashflow_gesamt")), ("Nettovermoegen_delta", tr("s_nettovermoegensaenderung"))):
             rows.append([label] + [round(sum((sums.get(m) or {}).get(k, 0.0) for m in ms), 2) for _, ms, _p in cols]); bold.append(len(rows) - 1)
-        head = ["Position"] + [c[0] + (" (Plan)" if c[2] else "") for c in cols]
-        sheets = [Sheet(("Planung " if was == "planning" else "Kapitalfluss ") + name, head, rows, bold_rows=bold)]
+        head = [tr("x_position")] + [c[0] + (tr("x_plan_suffix") if c[2] else "") for c in cols]
+        sheets = [Sheet(tr("x_planung" if was == "planning" else "x_kapitalfluss") + " " + name, head, rows, bold_rows=bold)]
         if was == "planning":
             pr = b.get("bilanz", {}).get("projektion", {})
             pcols = [c for c in cols if c[2]]
@@ -739,14 +730,14 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> Lis
                 prow.append(["    " * r["ebene"] + r["name"]] + [_last(r["werte"], ms) for _, ms, _p in pcols])
                 if r.get("gruppe"):
                     pbold.append(len(prow) - 1)
-            prow.append(["Nettovermögen (Plan)"] + [_last(pr.get("nettovermoegen", {}), ms) for _, ms, _p in pcols]); pbold.append(len(prow) - 1)
-            prow.append(["Liquidität (Plan)"] + [_last(pr.get("liquiditaet", {}), ms) for _, ms, _p in pcols])
-            sheets.append(Sheet("Fortschreibung", ["Position"] + [c[0] for c in pcols], prow, bold_rows=pbold))
+            prow.append([tr("x_nw_plan")] + [_last(pr.get("nettovermoegen", {}), ms) for _, ms, _p in pcols]); pbold.append(len(prow) - 1)
+            prow.append([tr("x_liq_plan")] + [_last(pr.get("liquiditaet", {}), ms) for _, ms, _p in pcols])
+            sheets.append(Sheet(tr("x_fortschreibung"), [tr("x_position")] + [c[0] for c in pcols], prow, bold_rows=pbold))
             P = b.get("plan", {})
             prm = [[k, P.get(k)] for k in PLAN_PARAMS]
             for zn, zc in (P.get("zeilen") or {}).items():
-                prm.append(["Zeile " + zn, json.dumps(zc, ensure_ascii=False)])
-            sheets.append(Sheet("Parameter", ["Parameter", "Wert"], prm, widths=[40, 60], freeze="A2"))
+                prm.append([tr("x_zeile") % zn, json.dumps(zc, ensure_ascii=False)])
+            sheets.append(Sheet(tr("x_parameter"), [tr("x_parameter"), tr("x_wert")], prm, widths=[40, 60], freeze="A2"))
         return sheets
 
     if was == "tax":
@@ -761,16 +752,16 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> Lis
                     for k in p["kategorien"]:
                         rows.append(["", "        " + k["pfad"], k["betrag"], k["anzahl"]])
                 for o, d in J["objekte"].items():
-                    rows.append(["", "Vermietung " + o, d["ergebnis"], None]); bold.append(len(rows) - 1)
+                    rows.append(["", tr("x_vermietung") % o, d["ergebnis"], None]); bold.append(len(rows) - 1)
                     for a, v in d["arten"].items():
                         rows.append(["", "        " + a, v, None])
                     for l, v in d["schuldzinsen"].items():
-                        rows.append(["", "        Schuldzinsen " + l, v, None])
-                    rows.append(["", "        AfA", -abs(d["afa"]) if d["afa"] else 0, None])
+                        rows.append(["", "        " + tr("x_schuldzinsen") % l, v, None])
+                    rows.append(["", "        " + tr("x_afa"), -abs(d["afa"]) if d["afa"] else 0, None])
                 if J["ohne_kategorie"]["anzahl"]:
-                    rows.append(["", "Ohne Kategorie", J["ohne_kategorie"]["betrag"], J["ohne_kategorie"]["anzahl"]])
-            sheets.append(Sheet(ent["name"], ["Jahr", "Position", "Betrag", "Buchungen"], rows, widths=[8, 56, 16, 12], freeze="A2", bold_rows=bold))
-        return sheets or [Sheet("Steuer", ["Hinweis"], [["keine Daten"]])]
+                    rows.append(["", tr("x_ohne_kategorie"), J["ohne_kategorie"]["betrag"], J["ohne_kategorie"]["anzahl"]])
+            sheets.append(Sheet(ent["name"], [tr("x_jahr"), tr("x_position"), tr("x_betrag"), tr("x_buchungen")], rows, widths=[8, 56, 16, 12], freeze="A2", bold_rows=bold))
+        return sheets or [Sheet(tr("x_steuer"), [tr("x_hinweis")], [[tr("x_keine_daten")]])]
 
     if was == "transactions":
         ums = app.umsatzliste()
@@ -778,7 +769,7 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> Lis
             ums = [u for u in ums if u["entitaet"] == bereich]
         counts = Belege(app.store, app.config).counts()
         rows = [[u["datum"], u["konto_name"], u["name"], u["zweck"], u["betrag"], u["kategorie"], counts.get(u["id"], 0), u["id"]] for u in ums]
-        return [Sheet(tr("s_umsaetze") + (name if bereich else ""), ["Datum", "Konto", "Name", "Verwendungszweck", "Betrag", "Kategorie", "Belege", "ID"],
+        return [Sheet(tr("s_umsaetze") + (name if bereich else ""), [tr("x_datum"), tr("x_konto"), tr("x_name"), tr("x_zweck"), tr("x_betrag"), tr("x_kategorie"), tr("x_belege"), "ID"],
                       rows, widths=[12, 26, 30, 50, 14, 30, 8, 10], freeze="A2")]
 
     if was == "holdings":
@@ -787,7 +778,7 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> Lis
             rows.append([d["name"], "", "", "", None, None, d["einstand"], d["summe"]]); bold.append(len(rows) - 1)
             for p in d["positionen"]:
                 rows.append(["", p["name"], p["isin"], p["klasse"], p["menge"], p["kurs"], p["einstand"], p["wert"]])
-        return [Sheet("Depots", ["Depot", "Position", "ISIN", "Klasse", "Menge", "Kurs", "Einstand", "Wert"], rows,
+        return [Sheet(tr("x_depots"), [tr("x_depot"), tr("x_position"), "ISIN", tr("x_klasse"), tr("x_menge"), tr("x_kurs"), tr("x_einstand"), tr("x_wert")], rows,
                       widths=[26, 36, 16, 14, 12, 12, 14, 14], freeze="A2", bold_rows=bold)]
 
     if was == "receipts":
@@ -796,15 +787,15 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> Lis
         names.update(ds.get("bereich_namen") or {})
         rows = [[e.get("datum"), e.get("betrag"), e.get("name"), names.get(e.get("konto") or "", ""), names.get(e.get("entitaet") or "", ""),
                  e["pfad"], e.get("notiz", ""), e.get("tx_id")] for e in bl.entries()]
-        return [Sheet("Belege", ["Datum", "Betrag", "Name", "Konto", "Bereich", "Datei", "Notiz", "Umsatz-ID"], rows,
+        return [Sheet(tr("x_belege"), [tr("x_datum"), tr("x_betrag"), tr("x_name"), tr("x_konto"), tr("x_bereich"), tr("x_datei"), tr("x_notiz"), tr("x_umsatz_id")], rows,
                       widths=[12, 14, 30, 26, 20, 50, 30, 10], freeze="A2")]
 
     if was == "accounts":
         rows = [["    " * k["ebene"] + k["name"], k["uuid"],
-                 "Gruppe" if k["gruppe"] else ("Depot" if k["depot"] else ("manuell" if k["manuell"] else "Bank")),
-                 k["rolle"], k["saldo"], k.get("aktualisiert") or ""] for k in ds.get("konten", [])]
-        return [Sheet("Konten", ["Konto", "UUID", "Typ", "Rolle", "Saldo", "aktualisiert"], rows, widths=[46, 38, 10, 16, 16, 18])]
-    raise ValueError("Unbekannter Export: %s" % was)
+                 tr("x_gruppe" if k["gruppe"] else ("x_depot" if k["depot"] else ("x_manuell" if k["manuell"] else "x_bank"))),
+                 role_label(k["rolle"]) if k["rolle"] else "", k["saldo"], k.get("aktualisiert") or ""] for k in ds.get("konten", [])]
+        return [Sheet(tr("x_konten"), [tr("x_konto"), "UUID", tr("x_typ"), tr("x_rolle"), tr("x_saldo"), tr("x_aktualisiert")], rows, widths=[46, 38, 10, 16, 16, 18])]
+    raise ValueError(tr("s_unbekannter_export") % was)
 
 
 def _parse_balance_csv(text: str) -> Dict[str, Dict[str, float]]:
@@ -1015,12 +1006,12 @@ def make_handler(app: App):
                 res = realestate.berechne(k.get("eingaben") or {}, date.today())
                 data = workbook(realestate.sheets(res))
                 return self._raw(200, data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                 {"Content-Disposition": 'attachment; filename="Kontor-Immobilie-%s-%s.xlsx"' % (str(im.get("name") or "Objekt").replace('"', "").replace("/", "-"), date.today().isoformat())})
+                                 {"Content-Disposition": 'attachment; filename="Kontor-%s-%s-%s.xlsx"' % (tr("xf_property"), str(im.get("name") or tr("x_objekt")).replace('"', "").replace("/", "-"), date.today().isoformat())})
             if path.startswith("/api/export/"):
                 was = path[len("/api/export/"):].replace(".xlsx", "")
                 data = workbook(export_sheets(app, was, q.get("area"), "jahre" if q.get("mode") == "years" else "monate"))
                 return self._raw(200, data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                 {"Content-Disposition": 'attachment; filename="Kontor-%s-%s.xlsx"' % (EXPORT_NAMES.get(was, was), date.today().isoformat())})
+                                 {"Content-Disposition": 'attachment; filename="Kontor-%s-%s.xlsx"' % (tr(EXPORT_FILE_KEYS[was]) if was in EXPORT_FILE_KEYS else was, date.today().isoformat())})
             if path == "/api/package/export":
                 name = (q.get("name") or "Kontor-Einstellungen").replace('"', "")
                 pkg = export_package(app.config, name, strip_uuids=q.get("without_uuid") == "1",
@@ -1041,7 +1032,7 @@ def make_handler(app: App):
                 return self._raw(200, txt.encode("utf-8"), "text/plain; charset=utf-8",
                                  {"Content-Disposition": 'attachment; filename="Kontor-Diagnose-%s.txt"' % date.today().isoformat()})
             if path == "/api/update/status":
-                return self._json(200, {"info": app.update_info, "geprueft": app.update_checked, "version": version()})
+                return self._json(200, {"info": app.update_info, "geprueft": app.update_checked, "version": version(), "datum": updates.installed_date()})
             if path == "/api/history":
                 return self._json(200, self._historie(q.get("account") or "", q.get("source") if q.get("source") in ("umsaetze", "stand") else None))
             if path == "/api/history/mm-status":
@@ -1099,7 +1090,7 @@ def make_handler(app: App):
             except mm_history.HistorieError as e:
                 self.close_connection = True
                 return self._json(200, {"ok": False, "text": str(e)})
-            app.mmh = {"laeuft": True, "schritt": "Datei erhalten", "ergebnis": None}
+            app.mmh = {"laeuft": True, "schritt": "received", "ergebnis": None}
             threading.Thread(target=app.historie_einlesen, args=(buf,), name="kontor-mm-historie", daemon=True).start()
             del buf
             return self._json(200, {"ok": True, "laeuft": True})
@@ -1121,13 +1112,13 @@ def make_handler(app: App):
             q = quelle or explizit or ("stand" if depot else "umsaetze")
             out = {"konto": uuid, "name": acc.name if acc else kinfo.get("name", ""), "quelle": q, "quelle_explizit": bool(explizit or quelle),
                    "quelle_gespeichert": explizit or ("stand" if depot else "umsaetze"),
-                   "depot": depot, "manuell": hist, "aufgezeichnet": snaps, "moneymoney": mmv, "werte": {}, "hinweis": None, "geschaetzt_bis": None, "anker": [],
+                   "depot": depot, "manuell": hist, "aufgezeichnet": snaps, "moneymoney": mmv, "werte": {}, "hinweis": None, "anker": [],
                    "live": acc is not None, "bericht_laeuft": app.bericht_status().get("laeuft", False)}
             if acc is not None:
                 today = date.today()
                 months = account_months(ledger, acc, today, list(hist) + (list(snaps) + list(mmv) if depot else []))
-                werte, hinweis, gb, anker = account_balance_series(ledger, acc, months, q, st.get("snapshots") or {}, hist, today, app.config, mmv)
-                out.update({"werte": werte, "hinweis": hinweis, "geschaetzt_bis": gb, "anker": anker})
+                werte, hinweis, anker = account_balance_series(ledger, acc, months, q, st.get("snapshots") or {}, hist, today, app.config, mmv)
+                out.update({"werte": werte, "hinweis": hinweis, "anker": anker})
                 # Pruefung der Rueckrechnung: vorgemerkte Umsaetze, Anfangssaldo vor der ersten Buchung
                 alle = ledger.transactions(uuid, booked_only=False)
                 vorgemerkt = [t for t in alle if not t.booked]
@@ -1217,7 +1208,7 @@ def make_handler(app: App):
             if u.path == "/api/login":
                 wait = app.sessions.locked(remote)
                 if wait:
-                    return self._json(429, {"fehler": "Zu viele Fehlversuche. Bitte %d Sekunden warten." % wait})
+                    return self._json(429, {"fehler": tr("s_zu_viele_fehlversuche") % wait})
                 rec = app.auth_record()
                 if not rec:
                     return self._json(403, {"fehler": tr("s_noch_kein_passwort_festgelegt_einricht")})
@@ -1232,7 +1223,7 @@ def make_handler(app: App):
                 app.sessions.fail(remote)
                 time.sleep(0.5)
                 log.warning("Failed login from %s", remote)
-                return self._json(401, {"fehler": "Passwort falsch."})
+                return self._json(401, {"fehler": tr("s_passwort_falsch")})
             if u.path == "/api/touchid":
                 if not self._loopback() or not auth.touchid_available():
                     return self._json(403, {"fehler": tr("s_touch_id_nur_an_diesem")})
@@ -1289,7 +1280,7 @@ def make_handler(app: App):
             if path == "/api/password":
                 rec = app.auth_record()
                 if not auth.verify_password(str(body.get("alt", "")), rec):
-                    return self._json(401, {"fehler": "Altes Passwort falsch."})
+                    return self._json(401, {"fehler": tr("s_altes_passwort_falsch")})
                 err = auth.password_ok(str(body.get("neu", "")))
                 if err:
                     return self._json(400, {"fehler": err})
@@ -1299,7 +1290,7 @@ def make_handler(app: App):
             if path == "/api/config":
                 cfg = body.get("config")
                 if not isinstance(cfg, dict):
-                    return self._json(400, {"fehler": "config fehlt"})
+                    return self._json(400, {"fehler": tr("s_config_fehlt")})
                 b = (cfg.get("oberflaeche") or {}).get("bind", "127.0.0.1") or "127.0.0.1"
                 if not bind_allowed(b):
                     return self._json(400, {"fehler": tr("s_adresse_s_nicht_erlaubt_nur") % b})
@@ -1433,13 +1424,13 @@ def make_handler(app: App):
             if path == "/api/backup/restore":
                 sich = body.get("sicherung") or {}
                 if not isinstance(sich, dict) or not sich.get("kontor_sicherung") or not isinstance(sich.get("config"), dict):
-                    raise ValueError("Keine Kontor-Sicherung (Feld 'kontor_sicherung'/'config' fehlt).")
+                    raise ValueError(tr("s_keine_kontor_sicherung"))
                 teile = []
-                app.save_config(sich["config"]); teile.append("Einstellungen")
+                app.save_config(sich["config"]); teile.append(tr("s_teil_einstellungen"))
                 if isinstance(sich.get("plan"), dict):
-                    app.store.save("plan.json", sich["plan"]); teile.append("Planung")
+                    app.store.save("plan.json", sich["plan"]); teile.append(tr("s_teil_planung"))
                 if isinstance(sich.get("kategorien"), dict):
-                    categorize.save(app.store, sich["kategorien"]); teile.append("Kategorien")
+                    categorize.save(app.store, sich["kategorien"]); teile.append(tr("s_teil_kategorien"))
                 def _merge(st):
                     if isinstance(sich.get("historie"), dict):
                         st["historie"] = sich["historie"]
@@ -1447,18 +1438,18 @@ def make_handler(app: App):
                         st["snapshots"] = {**sich["snapshots"], **(st.get("snapshots") or {})}
                 app.store.update("state.json", _merge, {})
                 if isinstance(sich.get("historie"), dict):
-                    teile.append("Verlauf")
+                    teile.append(tr("s_teil_verlauf"))
                 if isinstance(sich.get("belege"), dict) and sich["belege"] and body.get("mit_belegen", True):
-                    app.store.save("receipts.json", sich["belege"]); teile.append("Belegindex")
+                    app.store.save("receipts.json", sich["belege"]); teile.append(tr("s_teil_belegindex"))
                 log.info("Backup restored: %s", ", ".join(teile))
-                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="Sicherung") if app.ledger is not None else (False, None)
+                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund=tr("s_grund_sicherung")) if app.ledger is not None else (False, None)
                 return self._json(200, {"ok": True, "teile": teile, "bericht": ok, "config": app.config})
             if path == "/api/reset":
                 if not local:
                     return self._json(403, {"fehler": tr("s_zuruecksetzen_nur_von_diesem_mac")})
                 if not auth.verify_password(str(body.get("passwort", "")), app.auth_record()):
                     time.sleep(0.5)
-                    return self._json(401, {"fehler": "Passwort falsch."})
+                    return self._json(401, {"fehler": tr("s_passwort_falsch")})
                 dateien = ["config.json", "plan.json", "state.json", "dataset.json", "transactions.json", "categories.json", "receipts.json", "moneymoney-ledger.bin", "mm-history.json"]
                 if body.get("mit_passwort"):
                     dateien.append("auth.json")
@@ -1507,7 +1498,7 @@ def make_handler(app: App):
                 try:
                     data = base64.b64decode(str(body.get("inhalt") or ""), validate=True)
                 except Exception:
-                    raise ValueError("Dateiinhalt unlesbar (Base64).")
+                    raise ValueError(tr("s_dateiinhalt_unlesbar"))
                 e = bl.add_bytes(tx_of(body), str(body.get("datei_name") or "Beleg"), data, str(body.get("notiz") or ""))
                 if (app.config.get("belege") or {}).get("kommentar_schreiben") and e.get("tx_id") is not None and local:
                     try:
@@ -1561,7 +1552,7 @@ def make_handler(app: App):
         def _historie_set(self, body: dict) -> dict:
             uuid = str(body.get("konto") or "")
             if not uuid:
-                raise ValueError("konto fehlt")
+                raise ValueError(tr("s_konto_fehlt"))
             n = 0
 
             def _apply(st):
@@ -1604,7 +1595,7 @@ def make_handler(app: App):
                 try:
                     raw = base64.b64decode(str(body["datei"]))
                 except (binascii.Error, ValueError):
-                    raise ValueError("Dateiinhalt unlesbar (Base64).")
+                    raise ValueError(tr("s_dateiinhalt_unlesbar"))
                 if len(raw) > 30 * 1024 * 1024:
                     raise ValueError(tr("s_datei_zu_gross_max_30"))
                 parsed, hints = history_import.balances_from_file(str(body.get("name") or ""), raw)
@@ -1729,7 +1720,7 @@ def make_handler(app: App):
                     if k in body:
                         kc[k] = bool(body[k])
                 app.save_config(cfg)
-                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="Kategorie-Einstellungen") if app.ledger is not None else (False, None)
+                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund=tr("s_grund_kategorie_einstellungen")) if app.ledger is not None else (False, None)
                 return self._json(200, {"ok": True, "einstellungen": kc, "bericht": ok})
             return self._json(404, {"fehler": "unbekannt"})
 
@@ -1820,7 +1811,7 @@ def make_handler(app: App):
                                         "groesse": os.path.getsize(p) if os.path.isfile(p) else None})
             pfad = os.path.expanduser(str(body.get("pfad") or ""))
             if not pfad or not os.path.isabs(pfad):
-                return self._json(400, {"fehler": "Pfad fehlt."})
+                return self._json(400, {"fehler": tr("s_pfad_fehlt")})
             if path == "/api/file/open":
                 st = file_status(pfad)
                 if st == "fehlt":
@@ -1892,7 +1883,7 @@ def make_handler(app: App):
                              "wiederholung": ev.get("wiederholung") if ev.get("wiederholung") in ("einmalig", "monatlich", "quartal", "jaehrlich") else "einmalig",
                              "bis": (str(ev.get("bis") or "")[:7] or None), "aktiv": ev.get("aktiv", True)}
                     if len(clean["monat"]) != 7:
-                        raise ValueError("Monat fehlt (JJJJ-MM).")
+                        raise ValueError(tr("s_monat_fehlt"))
                     idx = next((i for i, e in enumerate(lst) if str(e.get("id")) == clean["id"]), None)
                     if idx is None:
                         lst.append(clean)
@@ -1993,9 +1984,6 @@ def serve(app: App) -> None:
         except OSError as e:
             log.error("Address %s:%d not usable (%s) -- is Tailscale connected? UI on 127.0.0.1 only", extra, port, e)
     app.restart_allowed = True
-    mig = threading.Timer(15.0, updates.migrate_launchd)          # launchd job under its English name (once)
-    mig.daemon = True
-    mig.start()
     threading.Thread(target=app.scheduler, daemon=True).start()
     log.info("Kontor %s: UI at %s (data %s)", version(),
              ", ".join("%s://%s:%d/" % (sc, h, port) for sc, h, _ in servers), "verschluesselt" if app.store.encrypted else "KLARTEXT")

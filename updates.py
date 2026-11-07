@@ -28,7 +28,7 @@ log = logging.getLogger("kontor.update")
 HERE = os.path.dirname(os.path.abspath(__file__))
 ALLOWED_HOSTS = ("api.github.com", "codeload.github.com", "github.com", "raw.githubusercontent.com", "objects.githubusercontent.com")
 TIMEOUT = 25
-KEEP = {".alt", ".touchid", "mm_touchid", "web/.DS_Store"}       # nicht ueberschreiben/loeschen
+KEEP = {".alt", ".touchid", "web/.DS_Store"}       # nicht ueberschreiben/loeschen
 
 
 def current_version() -> str:
@@ -65,25 +65,39 @@ def archive_url(repo: str, ref: str, kind: str = "tags") -> str:
     return "https://github.com/%s/archive/refs/%s/%s.zip" % (repo, kind, ref)
 
 
-def _changelog_section(text: str, version: str) -> str:
-    """Abschnitt '## <version>' aus CHANGELOG.md (fuer die Anzeige der Neuerungen)."""
-    out, on = [], False
+HEADING_RE = re.compile(r"^##\s+v?(\S+)(?:\s+\((\d{4}-\d{2}-\d{2})\))?")
+
+
+def changelog_section(text: str, version: str) -> Tuple[str, str]:
+    """Abschnitt '## <version> (<datum>)' aus CHANGELOG.md: (Neuerungen, Datum JJJJ-MM-TT oder '')."""
+    out, on, datum = [], False, ""
     for line in text.splitlines():
-        if line.startswith("## "):
+        m = HEADING_RE.match(line)
+        if m:
             if on:
                 break
-            on = line[3:].strip().lstrip("v") == version.lstrip("v")
+            on = m.group(1) == version.lstrip("v")
+            datum = (m.group(2) or "") if on else datum
             continue
         if on:
             out.append(line)
-    return "\n".join(out).strip()[:4000]
+    return "\n".join(out).strip()[:4000], datum
+
+
+def installed_date() -> str:
+    """Datum der installierten Version laut CHANGELOG.md im Programmordner."""
+    try:
+        with open(os.path.join(HERE, "CHANGELOG.md"), encoding="utf-8") as f:
+            return changelog_section(f.read(), current_version())[1]
+    except OSError:
+        return ""
 
 
 def check(repo: str) -> Dict[str, object]:
     """Neueste Version auf GitHub: VERSION im Hauptzweig (eine kleine Datei, kein API-Limit); nur wenn das
     nicht geht, Release bzw. Tag. Tags sind damit keine Voraussetzung mehr fuer ein Update."""
     cur = current_version()
-    out: Dict[str, object] = {"aktuell": cur, "verfuegbar": None, "neuer": False, "notizen": "", "quelle": "", "fehler": None}
+    out: Dict[str, object] = {"aktuell": cur, "verfuegbar": None, "datum": "", "neuer": False, "notizen": "", "quelle": "", "fehler": None}
     log.info("Update check: installed %s, repo %s", cur, repo)
     try:
         try:
@@ -93,7 +107,7 @@ def check(repo: str) -> Dict[str, object]:
             out.update({"verfuegbar": v, "quelle": "main", "zip": archive_url(repo, "main", "heads")})
             try:
                 cl = _get("https://raw.githubusercontent.com/%s/main/CHANGELOG.md" % repo, "text/plain").decode("utf-8", "replace")
-                out["notizen"] = _changelog_section(cl, v)
+                out["notizen"], out["datum"] = changelog_section(cl, v)
             except Exception as e:      # Neuerungen sind nur Beiwerk
                 log.debug("CHANGELOG not readable: %s", e)
         except urllib.error.HTTPError as e:
@@ -103,7 +117,8 @@ def check(repo: str) -> Dict[str, object]:
             try:
                 rel = json.loads(_get("https://api.github.com/repos/%s/releases/latest" % repo).decode("utf-8"))
                 tag = str(rel.get("tag_name") or "")
-                out.update({"verfuegbar": tag, "notizen": (rel.get("body") or "")[:4000], "quelle": "release", "zip": archive_url(repo, tag)})
+                out.update({"verfuegbar": tag, "notizen": (rel.get("body") or "")[:4000], "datum": str(rel.get("published_at") or "")[:10],
+                            "quelle": "release", "zip": archive_url(repo, tag)})
             except urllib.error.HTTPError as e2:
                 if e2.code != 404:
                     raise
@@ -132,13 +147,13 @@ def install_via_git(restart: bool = True) -> Optional[Dict[str, object]]:
         r = subprocess.run(["git", "-C", HERE, "pull", "--ff-only"], capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired) as e:
         log.error("Update: git pull failed: %s", e)
-        return {"ok": False, "text": "git pull fehlgeschlagen: %s" % e}
+        return {"ok": False, "text": tr("s_git_pull_fehlgeschlagen") % e}
     log.info("Update: git pull Status %d: %s", r.returncode, (r.stdout + r.stderr).strip()[:500])
     if r.returncode != 0:
-        return {"ok": False, "text": "git pull fehlgeschlagen: %s" % (r.stderr or r.stdout).strip()[:300]}
+        return {"ok": False, "text": tr("s_git_pull_fehlgeschlagen") % (r.stderr or r.stdout).strip()[:300]}
     restarted = schedule_restart() if (restart and sys.platform == "darwin") else False
     return {"ok": True, "version": current_version(), "dateien": 0, "neustart": restarted,
-            "text": "Repo aktualisiert (%s)%s." % ((r.stdout.strip().splitlines() or ["ok"])[-1][:80], " -- Dienst startet neu" if restarted else "")}
+            "text": tr("s_repo_aktualisiert") % ((r.stdout.strip().splitlines() or ["ok"])[-1][:80], tr("s_dienst_startet_neu") if restarted else "")}
 
 
 def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> Dict[str, object]:
@@ -148,7 +163,7 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
     info = check(repo) if not zip_url else {"zip": zip_url, "verfuegbar": "?"}
     url = zip_url or info.get("zip")
     if not url:
-        return {"ok": False, "text": info.get("fehler") or "Keine Version gefunden."}
+        return {"ok": False, "text": info.get("fehler") or tr("s_keine_version_gefunden")}
     log.info("Update: downloading %s", url)
     try:
         data = _get(str(url), "*/*")
@@ -157,13 +172,13 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
         return {"ok": False, "text": tr("s_download_fehlgeschlagen_http_s_s") % (e.code, e.reason, e.geturl())}
     except Exception as e:
         log.error("Update: download failed: %s", e, exc_info=True)
-        return {"ok": False, "text": "Download fehlgeschlagen: %s: %s" % (type(e).__name__, str(e)[:200])}
+        return {"ok": False, "text": tr("s_download_fehlgeschlagen") % (type(e).__name__, str(e)[:200])}
     log.info("Update: %d bytes downloaded", len(data))
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:
         log.error("Update: archive unreadable (not a ZIP, starts with %r)", data[:40])
-        return {"ok": False, "text": "Archiv unlesbar."}
+        return {"ok": False, "text": tr("s_archiv_unlesbar")}
     names = zf.namelist()
     roots = {n.split("/")[0] for n in names if "/" in n}
     base = None
@@ -213,67 +228,21 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
         restarted = schedule_restart()
         log.info("Update: service restart %s", "scheduled" if restarted else "not possible")
     return {"ok": True, "version": new_version, "dateien": changed, "neustart": restarted,
-            "text": "Version %s installiert%s." % (new_version, " -- Dienst startet neu" if restarted else tr("s_bitte_dienst_neu_starten"))}
+            "text": tr("s_version_installiert") % (new_version, tr("s_dienst_startet_neu") if restarted else tr("s_bitte_dienst_neu_starten"))}
 
 
 LABEL = "de.kontor.service"                 # launchd job of the background service
-LEGACY_LABELS = ("de.kontor.dienst",)       # earlier (German) label, moved on start
 
 
 def plist_path(label: str = LABEL) -> str:
     return os.path.expanduser("~/Library/LaunchAgents/%s.plist" % label)
 
 
-def installed_label() -> str:
-    for label in (LABEL,) + LEGACY_LABELS:
-        if os.path.exists(plist_path(label)):
-            return label
-    return LABEL
-
-
-def schedule_restart(label: Optional[str] = None) -> bool:
+def schedule_restart() -> bool:
     """Dienst nach der Antwort neu starten (launchd haelt ihn am Leben)."""
     try:
-        cmd = "sleep 1; launchctl kickstart -k gui/$(id -u)/%s" % (label or installed_label())
+        cmd = "sleep 1; launchctl kickstart -k gui/$(id -u)/%s" % LABEL
         subprocess.Popen(["/bin/sh", "-c", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         return True
     except OSError:
         return False
-
-
-def migrate_launchd() -> bool:
-    """Move the running background service from its legacy label to LABEL (same settings, English log file names).
-    Only from the process launchd started under the old label. The new job takes over within seconds; this one stops."""
-    if sys.platform != "darwin":
-        return False
-    old = os.environ.get("XPC_SERVICE_NAME")
-    if old not in LEGACY_LABELS or not os.path.exists(plist_path(old)) or os.path.exists(plist_path(LABEL)):
-        return False
-    import plistlib
-    try:
-        with open(plist_path(old), "rb") as f:
-            pl = plistlib.load(f)
-        pl["Label"] = LABEL
-        logdir = os.path.dirname(pl.get("StandardOutPath") or "")
-        if logdir:
-            pl["StandardOutPath"] = os.path.join(logdir, "service.out.log")
-            pl["StandardErrorPath"] = os.path.join(logdir, "service.err.log")
-        with open(plist_path(LABEL), "wb") as f:
-            plistlib.dump(pl, f)
-        r = subprocess.run(["launchctl", "load", plist_path(LABEL)], capture_output=True, text=True, timeout=30)
-        if r.returncode != 0 or subprocess.run(["launchctl", "list", LABEL], capture_output=True, timeout=30).returncode != 0:
-            os.remove(plist_path(LABEL))
-            log.warning("Moving the background service to %s failed: %s", LABEL, (r.stderr or r.stdout).strip()[:200])
-            return False
-    except (OSError, ValueError, subprocess.SubprocessError) as e:
-        log.warning("Moving the background service to %s failed: %s", LABEL, e)
-        return False
-    log.info("Background service moved from %s to %s; this process stops now", old, LABEL)
-    os.remove(plist_path(old))
-    for fn in ("dienst.out.log", "dienst.err.log"):
-        try:
-            os.remove(os.path.join(logdir, fn))
-        except OSError:
-            pass
-    subprocess.run(["launchctl", "remove", old], capture_output=True, timeout=30)     # stops this process
-    return True
