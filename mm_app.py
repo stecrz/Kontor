@@ -320,6 +320,7 @@ class App:
             self.running = True
         try:
             d = self.config.get("probelauf", True) if dry is None else dry
+            self._freeze_assignments()
             t0 = time.time()
             log.info("Lauf gestartet (%s%s%s)", "Probelauf" if d else "scharf", ", erzwungen" if force else "", ", ohne Bericht" if not with_report else "")
             res = run_once(self.store, self.config, date.today(), d, force, self.bridge_factory, with_report)

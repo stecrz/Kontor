@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.8.1
+- Position und Verlauf bestätigter Konten werden auch beim automatischen Abgleich festgelegt (nicht erst beim nächsten Neuberechnen).
+
 ## 3.8.0
 - Einrichtung · Bereiche: Reihenfolge mit ▲ ▼ änderbar (gilt für die Bereichsleiste). Vorschlag ohne Einrichtung: Hauptbereich zuerst, dann weitere private Bereiche, dann Gesellschaften; Art-Erkennung wie in der Oberfläche.
 - Einrichtung · Bilanzpositionen & Verlauf: kein „auto“ mehr. Position und Verlauf werden fest gespeichert; vorgeschlagen wird nur bei neuen Konten (gestrichelt markiert). Bereits bestätigte Konten mit „auto“ werden beim nächsten Neuberechnen einmalig auf den erkannten Wert festgelegt – Umbenennen, Umgruppieren oder ein anderer Kontotyp in MoneyMoney verschiebt danach nichts mehr.
