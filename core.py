@@ -19,7 +19,7 @@ from model import Account, Ledger, Tx, accounts_from_export, add_months, fmt_eur
 import mm_categories
 import realestate
 import categorize
-from report import ROLES, account_roles, build_dataset
+from report import ROLES, account_roles, build_dataset, holding_key
 from rules import Proposal, plan_all
 from storage import Store
 from tax import build_tax
@@ -637,6 +637,26 @@ def compact_transactions(ledger: Ledger, bereiche: List[dict], store: Optional[S
     return out
 
 
+def record_holdings(state: dict, portfolios: Dict[str, list], today: date) -> None:
+    """Month-end values of the securities of each portfolio as Kontor sees them (overwritten during the month, like the
+    portfolio values), for the breakdown of a portfolio in months the MoneyMoney history does not cover."""
+    if not portfolios:
+        return
+    mk = month_key(today)
+    snaps, names = state.setdefault("snapshots_wp", {}), state.setdefault("wp_namen", {})
+    for uuid, rows in portfolios.items():
+        vals: Dict[str, float] = {}
+        for p in rows or []:
+            try:
+                key = holding_key(str(p.get("name") or ""), str(p.get("isin") or ""))
+                vals[key] = round(vals.get(key, 0.0) + float(p.get("marketValue") or p.get("amount") or 0), 2)
+                names[key] = str(p.get("name") or "") or names.get(key, "")
+            except (TypeError, ValueError, AttributeError):
+                continue
+        if vals:
+            snaps.setdefault(mk, {})[uuid] = vals
+
+
 def portfolio_summary(ledger: Ledger, bereiche: List[dict]) -> List[dict]:
     out = []
     ent_of = {a.uuid: b["name"] for b in bereiche for a in b["leaves"]}
@@ -840,9 +860,11 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
     if zus:                       # Kapitalfluss-Zeilen: zusammengefasste Kategorien (nur fuer die Berechnung, nicht gespeichert)
         config = dict(config, kapitalfluss=dict(config.get("kapitalfluss") or {}, _zusammen=zus))
     record_snapshot(state.setdefault("snapshots", {}), ledger.accounts.values(), today)
+    record_holdings(state, getattr(ledger, "portfolios", None) or {}, today)
     # aus MoneyMoney uebernommene Kontostand-Verlaeufe (verschluesselt abgelegt, nur im Speicher in den Zustand gelegt)
     mmh = store.load_shared(MM_HISTORY_FILE, {}) or {}
     state["historie_mm"], state["historie_mm_anfang"] = mmh.get("konten") or {}, mmh.get("anfang") or {}
+    state["historie_mm_wp"] = mmh.get("wertpapiere") or {}
     bereiche = bereiche_for(ledger, config)
     haupt = main_bereich(bereiche)
     roles = account_roles(ledger, config)

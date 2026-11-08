@@ -306,7 +306,8 @@ class App:
                 konten = found["konten"]
                 monate = sorted({mk for v in konten.values() for mk in v})
                 now = datetime.now().strftime("%Y-%m-%d %H:%M")
-                self.store.save(MM_HISTORY_FILE, {"stand": now, "konten": konten, "anfang": found.get("anfang") or {}})   # ersetzt den bisherigen Stand
+                self.store.save(MM_HISTORY_FILE, {"stand": now, "konten": konten, "anfang": found.get("anfang") or {},
+                                                  "wertpapiere": found.get("wertpapiere") or {}})   # replaces the previous state
                 meta = {"zeit": now, "konten": len(konten), "werte": sum(len(v) for v in konten.values()),
                         "depots": sum(1 for u in konten if u in ledger.accounts and ledger.accounts[u].portfolio),
                         "von": monate[0] if monate else None, "bis": monate[-1] if monate else None}

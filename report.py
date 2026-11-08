@@ -168,6 +168,61 @@ def _valuation_account(acc: Account, src: str) -> bool:
     return src == "stand" and acc.portfolio
 
 
+def holding_key(name: str, isin: str) -> str:
+    """Identity of a security across MoneyMoney's export and its database: the ISIN, otherwise the name."""
+    return (isin or "").strip().upper() or "n:" + " ".join((name or "").lower().split())
+
+
+def depot_holdings(acc: Account, werte: Dict[str, Optional[float]], mkeys: List[str], today: date, state: dict,
+                   live: Optional[list]) -> List[dict]:
+    """The securities of a portfolio, month by month: past months from MoneyMoney's history (or Kontor's own monthly record),
+    the current month from MoneyMoney's export. A remainder row takes what the securities do not explain (e.g. cash that
+    MoneyMoney does not list as a position), so that the rows always add up to the portfolio value. No estimates: a month
+    without any known security stays empty."""
+    cur = month_key(today)
+    rows: Dict[str, dict] = {}
+
+    def row(name: str, isin: str) -> dict:
+        key = holding_key(name, isin)
+        r = rows.setdefault(key, {"id": acc.uuid + "|" + key, "name": name, "isin": isin, "werte": {}})
+        if name and not r["name"]:
+            r["name"] = name
+        return r
+    for w in (state.get("historie_mm_wp") or {}).get(acc.uuid) or []:
+        r = row(str(w.get("name") or ""), str(w.get("isin") or ""))
+        for mk, v in (w.get("werte") or {}).items():
+            if mk < cur and v is not None:
+                r["werte"][mk] = round(r["werte"].get(mk, 0.0) + float(v), 2)
+    names = state.get("wp_namen") or {}
+    covered = {mk for r in rows.values() for mk in r["werte"]}
+    for mk, per in (state.get("snapshots_wp") or {}).items():
+        if mk >= cur or mk in covered or acc.uuid not in per:
+            continue
+        for key, v in per[acc.uuid].items():
+            r = rows.setdefault(key, {"id": acc.uuid + "|" + key, "name": names.get(key, ""), "isin": key if not key.startswith("n:") else "", "werte": {}})
+            r["werte"][mk] = float(v)
+    for p in live or []:
+        try:
+            r = row(str(p.get("name") or ""), str(p.get("isin") or ""))
+            r["werte"][cur] = round(r["werte"].get(cur, 0.0) + float(p.get("marketValue") or p.get("amount") or 0), 2)
+        except (TypeError, ValueError, AttributeError):
+            continue
+    out = [r for r in rows.values() if any(abs(v) >= 0.005 for v in r["werte"].values())]
+    if not out:
+        return []
+    for i, r in enumerate(out, 1):
+        r["name"] = r["name"] or tr("s_wertpapier_n") % i
+        r["werte"] = {mk: r["werte"].get(mk) for mk in mkeys}
+    rest = {}
+    for mk in mkeys:
+        known = [r["werte"][mk] for r in out if r["werte"][mk] is not None]
+        rest[mk] = round((werte.get(mk) or 0.0) - sum(known), 2) if known and werte.get(mk) is not None else None
+    if any(v is not None and abs(v) >= 0.5 for v in rest.values()):
+        out.append({"id": acc.uuid + "|rest", "name": tr("s_wp_rest"), "isin": "", "rest": True, "werte": rest})
+    out.sort(key=lambda r: (bool(r.get("rest")), -abs(next((r["werte"][mk] for mk in reversed(mkeys) if r["werte"].get(mk) is not None), 0.0))))
+    return out
+
+
 def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int, int]], src: str, snapshots: Dict[str, Dict[str, float]],
                            manual_raw: Dict[str, Any], today: date, config: Optional[dict] = None, mm_raw: Optional[Dict[str, Any]] = None,
                            mm_start: Optional[float] = None):
@@ -731,10 +786,15 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                             "inaktive": sum(1 for a in accs if a.uuid in inactive)})
         for a in sorted(accs, key=lambda x: order.get(x.uuid, 10**9)):
             illiq = (role in illiquid_roles) or (a.uuid in illiquid_refs) or any(x.uuid in illiquid_refs for x in ledger.ancestors(a.uuid))
-            bilanz_rows.append({"id": a.uuid, "name": a.name, "pfad": a.path, "ebene": 1, "gruppe": False, "rolle": role,
-                                "illiquide": illiq, "depot": a.portfolio, "offline": a.offline, "inaktiv": a.uuid in inactive,
-                                "passiva": role == "verbindlichkeiten", "verlauf": quelle.get(a.uuid, "umsaetze"), "fortgeschrieben_vor": fortgeschrieben.get(a.uuid),
-                                "werte": {mk: hist[a.uuid][mk] for mk in mkeys}})
+            row = {"id": a.uuid, "name": a.name, "pfad": a.path, "ebene": 1, "gruppe": False, "rolle": role,
+                   "illiquide": illiq, "depot": a.portfolio, "offline": a.offline, "inaktiv": a.uuid in inactive,
+                   "passiva": role == "verbindlichkeiten", "verlauf": quelle.get(a.uuid, "umsaetze"), "fortgeschrieben_vor": fortgeschrieben.get(a.uuid),
+                   "werte": {mk: hist[a.uuid][mk] for mk in mkeys}}
+            if a.portfolio:
+                wp = depot_holdings(a, row["werte"], mkeys, today, state, (getattr(ledger, "portfolios", None) or {}).get(a.uuid))
+                if wp:
+                    row["wertpapiere"] = wp
+            bilanz_rows.append(row)
     # Geld unterwegs (Umbuchung ueber das Monatsende) zaehlt zur Liquiditaet; sonst knickt das Nettovermoegen am Monatsende ein
     transit, transit_details = transit_series(ledger, leaves, roles, months, quelle, today)
     if any(abs(v) >= 0.005 for v in transit.values()):

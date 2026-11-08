@@ -1069,6 +1069,10 @@ function vBilanz() {
   const pos = D.bilanz.zeilen.filter(r => r.gruppe);
   S.posOpen = S.posOpen || {};
   const allOpen = pos.length && pos.every(r => S.posOpen[r.rolle]);
+  // portfolios that can be broken down into their securities; the header button goes: positions -> accounts -> securities -> back
+  S.depOpen = S.depOpen || {};
+  const deps = D.bilanz.zeilen.filter(r => r.wertpapiere && r.wertpapiere.length), allDep = deps.length && deps.every(r => S.depOpen[r.id]);
+  const lvl = !allOpen ? 0 : deps.length && !allDep ? 1 : 2;
   // top: the view (months/years) for chart and table; the table options sit in its header cell (no gap to the chart)
   let h = `<div class="toolbar">${viewCtl()}<span class="sp"></span>${xlsxBtn('balance')}</div>`;
   h += vBilanzChart(D);
@@ -1080,7 +1084,7 @@ function vBilanz() {
   const skip = r => !S.alle && hidden(r), anyHidden = D.bilanz.zeilen.some(r => !r.gruppe && hidden(r));
   // header cell: ▸/▾ expands or collapses all positions, the eye also shows empty and hidden accounts (only when there are any)
   const nHid = D.bilanz.zeilen.filter(r => !r.gruppe && hidden(r)).length;
-  const first = `<div class="th-first"><button class="th-btn" id="pos-all" title="${allOpen ? t('nur_positionen') : t('konten_zeigen')}">${allOpen ? '▾' : '▸'}</button><span>${t('position_konto')}</span>${hq('bilanz_tabelle')}<span class="sp"></span>`
+  const first = `<div class="th-first"><button class="th-btn" id="pos-all" data-lvl="${lvl}" title="${[t('konten_zeigen'), t('wertpapiere_zeigen'), t('nur_positionen')][lvl]}">${['▸', '▾', deps.length ? '▾▾' : '▾'][lvl]}</button><span>${t('position_konto')}</span>${hq('bilanz_tabelle')}<span class="sp"></span>`
     + (anyHidden ? `<label class="th-hid${S.alle ? ' on' : ''}" title="${t('alle_zeilen_tip_n', nHid)}"><input type="checkbox" id="alle-zeilen" ${S.alle ? 'checked' : ''}>${S.alle ? ICON.eye : ICON.eyeOff}${nHid}</label>` : '') + '</div>';
   h += '<div class="wrap"><table>' + thead(first, C) + '<tbody>';
   for (const r of D.bilanz.zeilen) {
@@ -1095,7 +1099,11 @@ function vBilanz() {
     if (!S.posOpen[r.rolle] || skip(r)) continue;
     const sh = accShade((ROLE[r.rolle] || [0, 'var(--c-neutral)'])[1], accIdx(D, r)), dot = `<i class="pos-dot" style="${swatch(sh.color, sh.hatch)}"></i>`;      // shade as in the chart
     if (r.transit) { h += row(r, 'ind1 transit clickable', `${dot}${esc(r.name)} ${hq('geld_unterwegs')}`); continue; }
-    h += row(r, 'clickable acct ind1', dot + esc(r.name) + tag(r));
+    const wp = r.wertpapiere && r.wertpapiere.length ? r.wertpapiere : null, dOpen = wp && S.depOpen[r.id];
+    h += row(r, 'clickable acct ind1', (wp ? `<span class="caret dep" data-dep="${esc(r.id)}" title="${t(dOpen ? 'wp_zuklappen' : 'wp_aufklappen')}">${dOpen ? '▾' : '▸'}</span>` : '') + dot + esc(r.name) + tag(r));
+    // securities of an expanded portfolio (shades of the account colour, as in the composition chart)
+    if (dOpen) wp.forEach((w, j) => { const ws = accShade(sh.color, j + 1);
+      h += `<tr class="sec ind2${w.rest ? ' muted' : ''}"><td title="${esc(w.name + (w.isin ? ' · ' + w.isin : ''))}"><i class="pos-dot" style="${swatch(ws.color, ws.hatch)}"></i>${esc(w.name)}</td>${cells(C, c => lastOf(w.werte, c.months))}</tr>`; });
     if (pr && r.rolle === 'beteiligungen' && proj.einlagen && r === D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === 'beteiligungen').slice(-1)[0])
       h += row({id: 'einlagen', name: t('einlagen_entnahmen_kumuliert_plan'), werte: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'));
   }
@@ -1519,16 +1527,35 @@ function lcData(D, rollen) {
 }
 // third chart: one position split into its accounts (stacked), in the account colours of the table and the main chart
 // (first account on top)
-function lcStack(D, rolle) {
+function lcStack(D, rolle, mode) {
+  // series: the accounts of the position, or (mode "depot") portfolios broken down into their securities; the total line is
+  // always the whole position, whatever is broken down or deselected
   const pr = D.bilanz.projektion || null, proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
   const months = [...D.monate, ...(pr ? (D.plan_monate || []) : [])];
-  const color = (ROLE[rolle] || [0, 'var(--c-neutral)'])[1];
-  const series = D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === rolle).map((a, i) => {
-    const w = Object.assign({}, a.werte, proj[a.id] || {});
-    return Object.assign({label: a.name, vals: months.map(m => w[m] == null ? null : w[m] * defl(m))}, accShade(color, i));
-  }).filter(x => x.vals.some(v => v != null && Math.abs(v) >= 0.5));
-  const vals = months.map((m, k) => { let v = null; for (const x of series) if (x.vals[k] != null) v = (v || 0) + x.vals[k]; return v; });
-  return {months, ist: D.monate.length, vals, series};
+  const color = (ROLE[rolle] || [0, 'var(--c-neutral)'])[1], vs = w => months.map(m => w[m] == null ? null : w[m] * defl(m));
+  const accs = D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === rolle), series = [];
+  accs.forEach((a, i) => {
+    const sh = accShade(color, i);
+    if (mode === 'depot' && a.wertpapiere && a.wertpapiere.length)
+      a.wertpapiere.forEach((p, j) => series.push(Object.assign({key: p.id, label: p.name, vals: vs(p.werte)}, accShade(sh.color, j + 1))));
+    else series.push(Object.assign({key: a.id, label: a.name, vals: vs(Object.assign({}, a.werte, proj[a.id] || {}))}, sh));
+  });
+  const tot = accs.map(a => vs(Object.assign({}, a.werte, proj[a.id] || {})));
+  const vals = months.map((m, k) => { let v = null; for (const x of tot) if (x[k] != null) v = (v || 0) + x[k]; return v; });
+  return {months, ist: D.monate.length, vals, series: series.filter(x => x.vals.some(v => v != null && Math.abs(v) >= 0.5))};
+}
+const lcHasDepot = (D, rolle) => D.bilanz.zeilen.some(x => !x.gruppe && x.rolle === rolle && x.wertpapiere && x.wertpapiere.length);
+function lcPosMode(D, rolle) {
+  // "konten" or "depot" (securities), remembered per position; only where a portfolio of the position can be broken down
+  if (!lcHasDepot(D, rolle)) return 'konten';
+  let m = {}; try { m = JSON.parse(localStorage.getItem('kontor.lcPosMode') || '{}') || {}; } catch (e) {}
+  return m[rolle] === 'depot' ? 'depot' : 'konten';
+}
+function lcPosOff(st) {
+  // deselected series of the composition chart; all selected again whenever the position or the breakdown changes
+  const k = st.stack + '|' + st.mode;
+  if (!S.lcPosOff || S.lcPosOff.k !== k) S.lcPosOff = {k, off: new Set()};
+  return S.lcPosOff.off;
 }
 // colour of the selection chart: the selected positions' colours mixed in equal parts (one position: its own colour)
 const lcMix = rollen => (rollen || []).map(r => ROLE[r] && ROLE[r][1]).filter(Boolean)
@@ -1550,7 +1577,7 @@ function vBilanzLines(D) {
   return `<div class="cards lc-grid" id="lc-grid">
     <div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}${plot('nw')}<div class="lc-stats" id="lc-nw-stats"></div></div>
     <div class="card bch lc" data-lc="sel">${head('sel', (([tx, tip]) => `<span id="lc-sel-title" class="${tip ? 'tipped' : ''}" data-tip="${esc(tip)}" tabindex="0">${esc(tx)}</span>`)(lcSelTitle(sel, avail)))}${plot('sel')}<div class="lc-chips below" id="lc-chips">${chips}</div></div>
-    <div class="card bch lc" data-lc="pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select>`)}${plot('pos')}<div class="lc-legend" id="lc-pos-legend"></div></div>
+    <div class="card bch lc" data-lc="pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select><button class="lc-mode hidden" id="lc-pos-mode" title="${t('lc_depot_tip')}">${t('lc_depot')}</button>`)}${plot('pos')}<div class="lc-chips below" id="lc-pos-accs"></div></div>
   </div>`;
 }
 // growth in percent, short: 7,6 % · 13,7 % · 340 % · 2400 % (no thousands separator) · 12T % / 12k % (from 10 000 %);
@@ -1568,14 +1595,16 @@ function lcDraw(id) {
   const i0 = st.i0, i1 = st.i1, n = i1 - i0, ist = d.ist - 1;
   const vis = d.vals.slice(i0, i1 + 1).filter(v => v != null);
   // composition: only accounts that are not 0 € throughout the shown range (colours stay with the account)
-  const shown = st.stack ? d.series.filter(x => x.vals.slice(i0, i1 + 1).some(v => v != null && Math.abs(v) >= 0.5)) : [];
-  if (st.stack) { const lg = $(`#lc-${id}-legend`); if (lg) lg.innerHTML = shown.map(x => `<span><i style="${swatch(x.color, x.hatch)}"></i>${esc(x.label)}</span>`).join(''); }
+  // composition: accounts (or securities) not 0 € throughout the range can be deselected; the total line stays the position
+  const inWin = st.stack ? d.series.filter(x => x.vals.slice(i0, i1 + 1).some(v => v != null && Math.abs(v) >= 0.5)) : [];
+  const off = st.stack ? lcPosOff(st) : new Set(), shown = inWin.filter(x => !off.has(x.key));
+  if (st.stack) { const lg = $(`#lc-${id}-accs`); if (lg) lg.innerHTML = inWin.map(x => `<label class="lc-chip"><input type="checkbox" data-k="${esc(x.key)}" ${off.has(x.key) ? '' : 'checked'}><i style="${swatch(x.color, x.hatch)}"></i>${esc(x.label)}</label>`).join(''); }
   if (!vis.length) { svg.innerHTML = ''; svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); $(`#lc-${id}-val`).textContent = id === 'sel' && !st.title ? t('lc_nichts_gewaehlt') : t('keine_werte'); return; }
   let max = Math.max(...vis), min = Math.min(...vis);
   const ups = [], dns = [];
   if (st.stack) {                                       // stacked: positive parts up from zero, negative ones down
     for (let i = i0; i <= i1; i++) { let u = 0, l = 0; for (const s2 of shown) { const v = s2.vals[i] || 0; if (v > 0) u += v; else l += v; } ups.push(u); dns.push(l); }
-    max = Math.max(0, ...ups); min = Math.min(0, ...dns);
+    max = Math.max(0, ...ups, ...vis); min = Math.min(0, ...dns, ...vis);      // the position line always fits
   }
   if (max - min < 1) { max += 50; min -= 50; }
   const pad = (max - min) * 0.08; max += pad; if (!st.stack || min < 0) min -= pad;
@@ -1656,9 +1685,12 @@ function lcHover(id, i) {
   if (i == null || d.vals[i] == null) { hv.innerHTML = ''; tip.classList.add('hidden'); bchMark(null); return; }
   const xi = G.x(i).toFixed(1), m = d.months[i];
   hv.innerHTML = `<line class="bch-cross" x1="${xi}" x2="${xi}" y1="${G.P.t}" y2="${G.H - G.P.b}"/><circle class="bch-dot" cx="${xi}" cy="${G.y(d.vals[i]).toFixed(1)}" r="4" style="stroke:${st.color}"/>`;
-  const list = st.stack ? d.series.filter(x => x.vals.slice(st.i0, st.i1 + 1).some(v => v != null && Math.abs(v) >= 0.5)) : (d.parts && d.parts.length > 1 ? d.parts : []);
+  const off = st.stack ? lcPosOff(st) : new Set();
+  const list = st.stack ? d.series.filter(x => !off.has(x.key) && x.vals.slice(st.i0, st.i1 + 1).some(v => v != null && Math.abs(v) >= 0.5)) : (d.parts && d.parts.length > 1 ? d.parts : []);
+  // with deselected series: the sum of the selected ones, besides the whole position
+  const part = st.stack && off.size && list.length ? `<div class="bch-tip-nw"><span>${t('lc_summe_auswahl')}</span><b>${F0(list.reduce((s0, x) => s0 + (x.vals[i] || 0), 0))} €</b></div>` : '';
   const rows = list.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= 0.5).map(x => `<div><i style="${swatch(x.color, x.hatch)}"></i><span>${esc(x.label)}</span><b>${F0(x.vals[i])}</b></div>`).join('');
-  tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${i >= d.ist ? ` <span class="pill neutral">${t('plan')}</span>` : ''}</div>${rows}<div class="${list.length ? 'bch-tip-nw' : ''}"><span>${esc(list.length && !st.stack ? t('summe_label') : st.title)}</span><b>${F0(d.vals[i])} €</b></div>`;
+  tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${i >= d.ist ? ` <span class="pill neutral">${t('plan')}</span>` : ''}</div>${rows}${part}<div class="${list.length ? 'bch-tip-nw' : ''}"><span>${esc(list.length && !st.stack ? t('summe_label') : st.title)}</span><b>${F0(d.vals[i])} €</b></div>`;
   tip.classList.remove('hidden');
   const bw = $(`#lc-${id}-plot`).clientWidth, tw = tip.offsetWidth, px = G.x(i);
   tip.style.left = (px + 14 + tw > bw ? px - 14 - tw : px + 14) + 'px';
@@ -1698,13 +1730,13 @@ function lcBindPlot(id) {
 }
 function lcInit(id, D, rollen, title, color, stack) {
   // range kept as months (survives rebuilds); a range button stays anchored to today
-  const d = stack ? lcStack(D, stack) : lcData(D, rollen), n = d.months.length, r = (S.lcRange || {})[id];
+  const mode = stack ? lcPosMode(D, stack) : null, d = stack ? lcStack(D, stack, mode) : lcData(D, rollen), n = d.months.length, r = (S.lcRange || {})[id];
   let i0, i1, btn = r ? r[2] : bchDefault();             // default: 1 year (months view) or 3 years (years view) up to today
   if (btn === 0 || (btn && !bchRanges(false).some(([m]) => m === btn))) btn = bchDefault();     // not offered in this view
   if (btn === 0) { i0 = 0; i1 = n - 1; }
   else if (btn) [i0, i1] = bchWindow(d, btn);
   else { i0 = d.months.indexOf(r[0]); i1 = d.months.indexOf(r[1]); if (i0 < 0 || i1 <= i0) { btn = bchDefault(); [i0, i1] = bchWindow(d, btn); } }
-  LC[id] = {d, i0, i1, f0: i0, f1: i1, btn, title, color, stack: !!stack, drag: null, gesture: null, geo: null};
+  LC[id] = {d, i0, i1, f0: i0, f1: i1, btn, title, color, stack: stack || false, mode, drag: null, gesture: null, geo: null};
 }
 function bindBilanzLines(main) {
   const grid = $('#lc-grid', main), D = B(); if (!grid || !D) return;
@@ -1717,12 +1749,26 @@ function bindBilanzLines(main) {
     if (pr) lcInit('pos', D, null, ROLE[pr][0], ROLE[pr][1], pr);
     lcDraw('nw'); lcDraw('sel'); if (pr) lcDraw('pos');
   };
-  const ps = $('#lc-pos-sel', grid);
-  if (ps) ps.addEventListener('change', () => {
-    try { localStorage.setItem('kontor.lcPos', ps.value); } catch (e) {}
+  const ps = $('#lc-pos-sel', grid), pm = $('#lc-pos-mode', grid);
+  const posMode = () => { if (!pm || !ps) return; const has = lcHasDepot(D, ps.value); pm.classList.toggle('hidden', !has); pm.classList.toggle('on', has && lcPosMode(D, ps.value) === 'depot'); };
+  const posRedraw = () => {
     const keep = LC.pos ? [LC.pos.i0, LC.pos.i1, LC.pos.btn] : null;
     lcInit('pos', D, null, ROLE[ps.value][0], ROLE[ps.value][1], ps.value);
     if (keep) Object.assign(LC.pos, {i0: keep[0], i1: keep[1], f0: keep[0], f1: keep[1], btn: keep[2]});
+    posMode(); lcDraw('pos');
+  };
+  if (ps) ps.addEventListener('change', () => { try { localStorage.setItem('kontor.lcPos', ps.value); } catch (e) {} posRedraw(); });
+  if (pm) pm.addEventListener('click', () => {
+    let m = {}; try { m = JSON.parse(localStorage.getItem('kontor.lcPosMode') || '{}') || {}; } catch (e) {}
+    m[ps.value] = lcPosMode(D, ps.value) === 'depot' ? 'konten' : 'depot';
+    try { localStorage.setItem('kontor.lcPosMode', JSON.stringify(m)); } catch (e) {}
+    posRedraw();
+  });
+  posMode();
+  const pa = $('#lc-pos-accs', grid);
+  if (pa) pa.addEventListener('change', e => {
+    const cb = e.target.closest('input[data-k]'); if (!cb || !LC.pos) return;
+    const off = lcPosOff(LC.pos); if (cb.checked) off.delete(cb.dataset.k); else off.add(cb.dataset.k);
     lcDraw('pos');
   });
   $$('.lc-rb', grid).forEach(seg => seg.addEventListener('click', e => {
@@ -3035,7 +3081,16 @@ window.addEventListener('beforeunload', e => { if (DIRTY.on) { e.preventDefault(
 function bind(main) {
   $$('tr.group[data-id]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.id] = !S.collapsed[tr.dataset.id]; route(); }));
   $$('tr.pos[data-pos]', main).forEach(tr => tr.addEventListener('click', () => { S.posOpen[tr.dataset.pos] = !S.posOpen[tr.dataset.pos]; route(); }));
-  const pa = $('#pos-all', main); if (pa) pa.addEventListener('click', () => { const D = B(), pos = D.bilanz.zeilen.filter(r => r.gruppe), open = !pos.every(r => S.posOpen[r.rolle]); pos.forEach(r => { S.posOpen[r.rolle] = open; }); route(); });
+  const pa = $('#pos-all', main); if (pa) pa.addEventListener('click', () => {
+    // positions -> accounts -> (if there are any) securities of the portfolios -> back to positions
+    const D = B(), pos = D.bilanz.zeilen.filter(r => r.gruppe), deps = D.bilanz.zeilen.filter(r => r.wertpapiere && r.wertpapiere.length), lvl = +pa.dataset.lvl;
+    S.depOpen = S.depOpen || {};
+    if (lvl === 0) pos.forEach(r => { S.posOpen[r.rolle] = true; });
+    else if (lvl === 1) deps.forEach(r => { S.depOpen[r.id] = true; });
+    else { pos.forEach(r => { S.posOpen[r.rolle] = false; }); deps.forEach(r => { S.depOpen[r.id] = false; }); }
+    route();
+  });
+  $$('[data-dep]', main).forEach(el => el.addEventListener('click', e => { e.stopPropagation(); S.depOpen = S.depOpen || {}; S.depOpen[el.dataset.dep] = !S.depOpen[el.dataset.dep]; route(); }));
   $$('tr.sub[data-gid]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.gid] = !S.collapsed[tr.dataset.gid]; route(); }));
   $$('.card[data-b]', main).forEach(c => c.addEventListener('click', () => { S.bereich = c.dataset.b; bereichSeg(); route(); }));
   // Waagerecht: aktuelle Spalte (Monat bzw. Jahr) rechts im Blick, ältere Jahre links davon; Plan-Spalten rechts anschließend

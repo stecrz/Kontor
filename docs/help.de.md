@@ -106,7 +106,7 @@ Die Seite „Synchronisierung“ zeigt je Konto den letzten Abruf und meldet Kon
 
 Überall wählst du **Monate** (mit Jahressummen) oder nur **Jahre**. Jahresspalten sind kumuliert: Zahlungsflüsse als Summe, Bestände als Stand zum Jahresende. Blass sind der laufende Monat und das laufende Jahr (noch nicht abgeschlossen), blass und schraffiert die Planwerte.
 
-- **▸ in der Kopfzelle** der Bilanz klappt alle Positionen auf; das **Auge** daneben (mit Anzahl, nur wenn es welche gibt) zeigt auch leere und nach Aktivität ausgeblendete Konten (mitgezählt werden sie immer). Steht bei einer Position „(9/12)“, sind 9 von 12 Konten zu sehen. **Leere Zeilen** (Cashflow, Planung) zeigt auch Zeilen ohne Werte.
+- **▸ in der Kopfzelle** der Bilanz klappt alle Positionen auf (ein zweiter Klick auch die Depots in ihre Wertpapiere); das **Auge** daneben (mit Anzahl, nur wenn es welche gibt) zeigt auch leere und nach Aktivität ausgeblendete Konten (mitgezählt werden sie immer). Steht bei einer Position „(9/12)“, sind 9 von 12 Konten zu sehen. **Leere Zeilen** (Cashflow, Planung) zeigt auch Zeilen ohne Werte.
 - **Plan** (Cashflow) hängt die Planwerte rechts an; aus = nur Ist-Werte. Bilanz und Planung zeigen den Plan immer.
 - **inflationsbereinigt** (Planung) zeigt Planwerte in heutiger Kaufkraft.
 - Die Übersicht vergleicht zusätzlich mit dem gleichen Zeitraum des Vorjahrs.
@@ -123,7 +123,7 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 **Tabelle**
 
 - Salden am Monatsende; der laufende Monat zeigt den aktuellen Stand. **Blass**: laufender Monat bzw. laufendes Jahr (noch nicht abgeschlossen); **blass und schraffiert**: Plan.
-- Klick auf eine Position klappt ihre Konten auf, **▸** in der Kopfzelle klappt alle auf. Klick auf ein Konto öffnet seinen Verlauf (Monatsstände ansehen und bearbeiten).
+- Klick auf eine Position klappt ihre Konten auf. Klick auf ein Konto öffnet seinen Verlauf (Monatsstände ansehen und bearbeiten). Depots klappen über das **▸** davor in ihre Wertpapiere auf: frühere Monate aus den eingelesenen MoneyMoney-Kontoständen (sonst aus Kontors monatlicher Aufzeichnung), der laufende Monat aus MoneyMoney; was die Wertpapiere nicht erklären, steht als „Übrige“. Der Knopf **▸** in der Kopfzelle klappt nacheinander alle Konten, dann auch alle Depots auf und wieder zu.
 - Das **Auge** in der Kopfzelle (nur wenn es welche gibt, mit Anzahl) zeigt auch leere und nach Aktivität ausgeblendete Konten – mitgezählt werden sie immer. „(9/12)“ bei einer Position heißt: 9 von 12 Konten zu sehen.
 - Jahresspalten zeigen den Stand zum Jahresende (das laufende Jahr: heute). In der Monatsansicht gibt es keine Jahresspalten – sie wären nur der Dezember; ein feiner Strich trennt die Jahre.
 - Die Farben der Positionen folgen der Verfügbarkeit, von Bankguthaben (grün) bis Beteiligungen (violett). Konten tragen Abwandlungen der Farbe ihrer Position (benachbarter Farbton, andere Helligkeit; ab dem elften Konto schraffiert) – als Punkt vor dem Konto und genauso in den Grafiken.
@@ -139,7 +139,7 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 
 **Einzelne Grafiken** (unter der Tabelle)
 
-- Das Nettovermögen allein (darunter Ø je Monat, Höchst- und Tiefststand), die Summe frei gewählter Positionen (Standard: Bankguthaben, Wertpapiere und Festanlagen; der Titel nennt sie abgekürzt, z. B. „Auswahl: C + WP + FA“, Darüberfahren erklärt die Kürzel, die Linie hat ihre Mischfarbe) und die Zusammensetzung einer gewählten Position nach Konten (gestapelt).
+- Das Nettovermögen allein (darunter Ø je Monat, Höchst- und Tiefststand), die Summe frei gewählter Positionen (Standard: Bankguthaben, Wertpapiere und Festanlagen; der Titel nennt sie abgekürzt, z. B. „Auswahl: C + WP + FA“, Darüberfahren erklärt die Kürzel, die Linie hat ihre Mischfarbe) und die Zusammensetzung einer gewählten Position nach Konten (gestapelt). Dort schlüsselt **Depot** neben der Auswahl die Depots in ihre Wertpapiere auf (nur wo es das gibt); unten lassen sich Konten bzw. Wertpapiere einzeln abwählen – die Linie der Position bleibt, beim Darüberfahren steht zusätzlich die Summe der Auswahl.
 - Jede hat einen eigenen Zeitraum (je nach Ansicht 6 Monate, 1 oder 2 Jahre bzw. 1, 3 oder 10 Jahre bis heute; Ziehen vergrößert, Doppelklick zoomt, nach rechts wischen zeigt den Plan) und eine Achse, die sich den sichtbaren Werten anpasst – so sieht man die Entwicklung auch dann, wenn sich große Positionen wie Forderungen und Verbindlichkeiten oben gegenseitig ausgleichen. Die Fläche reicht bis zur Nulllinie, bei negativen Werten also nach oben.
 - Oben rechts steht der Bezugszeitraum: der Wert gilt für sein Ende, die Veränderung (in € und %) seit seinem Beginn.
 

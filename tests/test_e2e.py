@@ -2120,10 +2120,26 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(pg.query_selector("#lc-nw-svg path.bch-nw")); self.assertTrue(pg.query_selector("#lc-sel-svg path.bch-nw"))
                 self.assertEqual(pg.inner_text("#lc-sel-title").replace("\u2009", " "), "Auswahl: C + WP")      # chosen positions, abbreviated
                 pg.hover("#lc-sel-title"); pg.wait_for_selector(".tip"); self.assertIn("C = Bankguthaben", pg.inner_text(".tip")); pg.mouse.move(5, 5)
-                # composition of one position by account (stacked), legend with the accounts
-                self.assertTrue(pg.query_selector("#lc-pos-svg path.lc-band")); self.assertIn("Hausbank Giro", pg.inner_text("#lc-pos-legend"))
+                # composition of one position by account (stacked), chips with the accounts: deselecting one keeps the position line
+                self.assertTrue(pg.query_selector("#lc-pos-svg path.lc-band")); self.assertIn("Hausbank Giro", pg.inner_text("#lc-pos-accs"))
+                tot = pg.get_attribute("#lc-pos-svg path.lc-total", "d"); nb = len(pg.query_selector_all("#lc-pos-svg path.lc-band"))
+                pg.click("#lc-pos-accs label:has-text('Hausbank Giro')"); pg.wait_for_timeout(200)
+                self.assertLess(len(pg.query_selector_all("#lc-pos-svg path.lc-band")), nb); self.assertEqual(pg.get_attribute("#lc-pos-svg path.lc-total", "d"), tot)
+                bb = pg.query_selector("#lc-pos-hit").bounding_box(); pg.mouse.move(bb["x"] + bb["width"] - 40, bb["y"] + 60); pg.wait_for_timeout(150)
+                self.assertIn("Auswahl", pg.inner_text("#lc-pos-tip")); pg.mouse.move(5, 5)
+                # portfolios broken down into their securities: only offered where a portfolio of the position has them
+                self.assertFalse(pg.is_visible("#lc-pos-mode"))
+                pg.select_option("#lc-pos-sel", "wertpapiere"); pg.wait_for_timeout(200)
+                self.assertTrue(pg.is_visible("#lc-pos-mode")); pg.click("#lc-pos-mode"); pg.wait_for_timeout(200)
+                self.assertIn("Welt-ETF", pg.inner_text("#lc-pos-accs")); pg.click("#lc-pos-mode"); pg.wait_for_timeout(200)
+                self.assertNotIn("Welt-ETF", pg.inner_text("#lc-pos-accs"))
                 pg.select_option("#lc-pos-sel", "verbindlichkeiten"); pg.wait_for_timeout(200)
-                self.assertNotIn("Hausbank Giro", pg.inner_text("#lc-pos-legend")); pg.evaluate("localStorage.removeItem('kontor.lcPos')")
+                self.assertNotIn("Hausbank Giro", pg.inner_text("#lc-pos-accs")); pg.evaluate("localStorage.removeItem('kontor.lcPos')")
+                # the same in the table: a portfolio opens into its securities (without opening the account's history)
+                if not pg.query_selector("[data-dep]"):
+                    pg.click("tr.pos[data-pos='wertpapiere']")
+                pg.wait_for_selector("[data-dep]"); pg.click("[data-dep]"); pg.wait_for_selector("tr.sec")
+                self.assertIn("Welt-ETF", pg.inner_text("#main table")); self.assertFalse(pg.query_selector("#drawer.open"))
                 checked = {x.get_attribute("data-r") for x in pg.query_selector_all("#lc-chips input:checked")}
                 self.assertIn("liquiditaet", checked); self.assertTrue(checked <= {"liquiditaet", "wertpapiere", "anlagen"})
                 v0 = pg.inner_text("#lc-sel-val"); pg.click("#lc-chips input[data-r='immobilien']"); pg.wait_for_timeout(200)

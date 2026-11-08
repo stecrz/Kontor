@@ -468,6 +468,13 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
             held.setdefault(k, set()).add(sk)
             if q is not None:
                 qty[sk] = float(q)
+    # names of the securities (for the breakdown of a portfolio): only name and ISIN/WKN, nothing else of the row
+    names: Dict[int, Tuple[str, str]] = {}
+    ncol = next((c for c in ("name", "security_name", "title") if c in cols), None)
+    icol = next((c for c in ("isin", "wkn") if c in cols), None)
+    if "account_key" in cols and (ncol or icol):
+        for sk, n, i in db.rows("SELECT rowid, %s, %s FROM securities WHERE account_key IN %s" % (ncol or "NULL", icol or "NULL", _in(len(keys))), keys):
+            names[sk] = (str(n or "").strip(), str(i or "").strip())
     cur = "%04d-%02d" % (today.year, today.month)
     for k, per in recs.items():
         bal = info(k).get("saldo") or 0.0
@@ -521,23 +528,44 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
                 j = bisect.bisect_right(dates, r[-1][0])
                 gone[sk] = dates[j] if j < len(dates) else None
         werte: Dict[str, float] = {}
+        parts = {sk: {} for sk in per}                        # month-end value of each security (for the breakdown)
         y, m = first.year, first.month
         while "%04d-%02d" % (y, m) < cur:
             nxt = date(y + (m == 12), m % 12 + 1, 1)
-            total = 0.0
+            total, mk = 0.0, "%04d-%02d" % (y, m)
             for sk, r in per.items():
                 upto = [v for d, v in r if d < nxt]
                 if not upto:
                     continue
                 if art == "delta":
                     total += sum(upto)
+                    parts[sk][mk] = round(sum(upto), 2)
                 elif sk in now or (gone[sk] or r[-1][0]) >= nxt:
                     total += upto[-1]
-            werte["%04d-%02d" % (y, m)] = round(total, 2)
+                    parts[sk][mk] = round(upto[-1], 2)
+            werte[mk] = round(total, 2)
             y, m = nxt.year, nxt.month
+        # the securities themselves (with a total entry: all other series; present while held, recently updated, or until the
+        # next update of the portfolio after their last point -- the same rule as above)
+        if total_key is not None:
+            sec = {sk: r for sk, r in recs[k].items() if sk != total_key}
+            sdates, hk, parts = sorted({d for r in sec.values() for d, _v in r}), held.get(k, set()), {}
+            for sk, r in sec.items():
+                j = bisect.bisect_right(sdates, r[-1][0])
+                until = None if sk in hk or r[-1][0] >= last_any - timedelta(days=7) else (sdates[j] if j < len(sdates) else r[-1][0])
+                parts[sk] = {}
+                y, m = first.year, first.month
+                while "%04d-%02d" % (y, m) < cur:
+                    nxt = date(y + (m == 12), m % 12 + 1, 1)
+                    upto = [v for d, v in r if d < nxt]
+                    if upto and (until is None or until >= nxt):
+                        parts[sk]["%04d-%02d" % (y, m)] = round(upto[-1], 2)
+                    y, m = nxt.year, nxt.month
+        wp = [{"name": names.get(sk, ("", ""))[0], "isin": names.get(sk, ("", ""))[1], "werte": v} for sk, v in parts.items()
+              if any(abs(x) >= 0.005 for x in v.values())]
         log.debug("Portfolio %d: read as %s; series (points, first, last, held or gone): %s", k, art, "; ".join(
             "%d, %s, %s, %s" % (len(r), r[0][0], r[-1][0], "held" if sk in now else gone.get(sk) or "-") for sk, r in sorted(recs[k].items(), key=lambda x: x[1][0][0])))
-        out[k] = {"werte": werte, "anfang": 0.0, "art": "level" if art == "total" else art}
+        out[k] = {"werte": werte, "anfang": 0.0, "art": "level" if art == "total" else art, "wertpapiere": wp}
     return out
 
 
@@ -674,6 +702,7 @@ def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at
              mode[0], "value date" if mode[2] else "booking date", scale, all_hits, all_n, hits, len(with_tx), sum(1 for k in dep if ok[k]), len(dep))
     konten: Dict[str, Dict[str, float]] = {}
     anfang: Dict[str, float] = {}                       # Stand vor dem ersten uebernommenen Monat (vor der ersten Veraenderung)
+    wertpapiere: Dict[str, List[Dict]] = {}             # portfolio -> its securities with month-end values
     for k in series:
         if k in matched and ok.get(k):
             bal = info(k).get("saldo") or 0.0
@@ -687,11 +716,13 @@ def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at
             log.info("MoneyMoney database: portfolio (%s) not taken over: %s", matched[k][1], r["fehler"])
         elif r["werte"]:
             konten[matched[k][0]], anfang[matched[k][0]] = r["werte"], r["anfang"]
+            if r.get("wertpapiere"):
+                wertpapiere[matched[k][0]] = r["wertpapiere"]
     log.info("MoneyMoney database: %d of %d portfolios from portfolio_chart", sum(1 for r in depots.values() if "werte" in r), len(depots))
     if not konten:
         return None
     tabellen = sorted({series[k][0] for k in series if k in matched and ok.get(k)} | ({"portfolio_chart"} if any("werte" in r for r in depots.values()) else set()))
-    return {"tabelle": "+".join(tabellen), "spalten": ["account_key", "timestamp", "balance"], "konten": konten, "anfang": anfang,
+    return {"tabelle": "+".join(tabellen), "spalten": ["account_key", "timestamp", "balance"], "konten": konten, "anfang": anfang, "wertpapiere": wertpapiere,
             "treffer": hits, "geprueft": len(with_tx)}
 
 

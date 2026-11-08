@@ -106,7 +106,7 @@ The Sync page shows the last refresh per account and reports accounts that lag b
 
 Everywhere you choose **months** (with annual totals) or **years** only. Year columns are cumulative: flows as a sum, balances as the year-end value. The current month and the current year (not yet complete) are faded, plan values faded and hatched.
 
-- **▸ in the header cell** of the balance sheet expands all positions; the **eye** next to it (with a count, only when there are any) also shows empty accounts and those hidden by activity (they are always counted). “(9/12)” at a position means 9 of 12 accounts are shown. **Empty rows** (cash flow, planning) also shows rows without values.
+- **▸ in the header cell** of the balance sheet expands all positions (a second click also the portfolios into their securities); the **eye** next to it (with a count, only when there are any) also shows empty accounts and those hidden by activity (they are always counted). “(9/12)” at a position means 9 of 12 accounts are shown. **Empty rows** (cash flow, planning) also shows rows without values.
 - **Plan** (cash flow) appends the plan values on the right; off = actual values only. Balance sheet and planning always show the plan.
 - **inflation-adjusted** (planning) shows plan values in today's purchasing power.
 - The overview also compares with the same period of the previous year.
@@ -123,7 +123,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 **Table**
 
 - Balances at month end; the current month shows the current balance. **Faded**: current month or year (not finished yet); **faded and hatched**: plan.
-- Click a position to expand its accounts, **▸** in the header cell expands all. Click an account to open its history (view and edit month-end balances).
+- Click a position to expand its accounts. Click an account to open its history (view and edit month-end balances). Portfolios open into their securities via the **▸** in front of them: past months from the balances read from MoneyMoney (otherwise from Kontor's monthly record), the current month from MoneyMoney; what the securities do not explain is shown as “Other”. The **▸** button in the header cell expands all accounts, then all portfolios too, and collapses again.
 - The **eye** in the header cell (only when there are any, with a count) also shows empty accounts and those hidden by activity – they are always counted. “(9/12)” at a position means 9 of 12 accounts are shown.
 - Year columns show the balance at year end (the running year: today). The month view has no year columns – they would only repeat December; a thin line separates the years.
 - The position colours follow availability, from cash (green) to equity investments (violet). Accounts carry variations of their position's colour (neighbouring hue, different lightness; hatched from the eleventh account) – as a dot in front of the account and the same in the charts.
@@ -139,7 +139,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 
 **Single charts** (below the table)
 
-- Net worth alone (with the average per month, the high and the low below), the sum of freely chosen positions (default: cash, securities and term investments; the title names them abbreviated, e.g. “Selection: C + S + TI”, hovering explains the codes, the line has their mixed colour) and the composition of a chosen position by account (stacked).
+- Net worth alone (with the average per month, the high and the low below), the sum of freely chosen positions (default: cash, securities and term investments; the title names them abbreviated, e.g. “Selection: C + S + TI”, hovering explains the codes, the line has their mixed colour) and the composition of a chosen position by account (stacked). There, **Holdings** next to the selection breaks portfolios down into their securities (only where available); below, accounts or securities can be deselected one by one – the line of the position stays, and hovering also shows the sum of the selection.
 - Each has its own range (depending on the view 6 months, 1 or 2 years or 1, 3 or 10 years up to today; drag to enlarge, double-click to zoom, swipe right for the plan) and an axis that adapts to the visible values – so you can see the development even when large positions such as receivables and liabilities cancel each other out in the chart above. The area reaches to the zero line, so upwards for negative values.
 - The reference period is shown top right: the value applies to its end, the change (in € and %) since its start.
 

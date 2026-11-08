@@ -333,11 +333,11 @@ class PortfolioHistoryTests(unittest.TestCase):
         import sqlite3
         con = sqlite3.connect(":memory:")
         con.execute("CREATE TABLE portfolio_chart(account_key INTEGER, currency TEXT, timestamp INTEGER, balance REAL, securities_key INTEGER)")
-        con.execute("CREATE TABLE securities(rowid INTEGER PRIMARY KEY, account_key INTEGER, quantity REAL, deleted INTEGER)")
+        con.execute("CREATE TABLE securities(rowid INTEGER PRIMARY KEY, account_key INTEGER, quantity REAL, deleted INTEGER, name TEXT, isin TEXT, comment TEXT)")
         from datetime import datetime as DT
         ts = lambda d: int(DT(d.year, d.month, d.day, 12).timestamp())
         con.executemany("INSERT INTO portfolio_chart VALUES(1, 'EUR', ?, ?, ?)", [(ts(d), v, sk) for d, v, sk in chart])
-        con.executemany("INSERT INTO securities VALUES(?, 1, ?, ?)", securities)
+        con.executemany("INSERT INTO securities VALUES(?, 1, ?, ?, ?, ?, 'GEHEIM')", [tuple(x) + ("Titel %d" % x[0], "XX%010d" % x[0])[len(x) - 3:] for x in securities])
 
         class DB:
             rows = lambda self, sql, params=(): con.execute(sql, params).fetchall()
@@ -378,6 +378,10 @@ class PortfolioHistoryTests(unittest.TestCase):
             elif d >= D(2026, 11, 4):
                 chart.append((d, -0.30, 4))
             d += TD(days=3)
-        db = self._db(chart, [(1, 1, 0), (3, 0, 1)])
+        db = self._db(chart, [(1, 1, 0), (3, 0, 1), (4, 0, 0, "Guthaben", "")])
         r = H._portfolios(db, ["portfolio_chart", "securities"], [1], lambda k: {"saldo": 999.70}, D(2026, 11, 8))[1]
         self.assertEqual(r["werte"]["2026-09"], 1000.0); self.assertEqual(r["werte"]["2026-10"], 1000.3)
+        # the breakdown: the securities without the total entry, with name and ISIN; the old cash position until its replacement
+        wp = {w["name"]: w for w in r["wertpapiere"]}
+        self.assertEqual(sorted(wp), ["Titel 1", "Titel 3"]); self.assertEqual(wp["Titel 1"]["isin"], "XX0000000001")
+        self.assertEqual(wp["Titel 1"]["werte"]["2026-10"], 1000.0); self.assertEqual(wp["Titel 3"]["werte"], {"2026-10": 0.3})
