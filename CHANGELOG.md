@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.9.37 (2026-11-08 02:39)
+- Bilanz: Hauptgrafik zeigt beim Öffnen die letzten drei Jahre bis heute (statt einem Jahr).
+
 ## 3.9.36 (2026-11-08 02:31)
 - „Kapitalfluss“ heißt jetzt „Cashflow“. Positionen kürzer: „Wertpapiere“ (statt Handelbare Anlagen) und „Festanlagen“ (statt Gebundene Anlagen).
 - Bilanz: Tabelle zeigt beim Öffnen den laufenden Monat (bzw. das laufende Jahr) ganz rechts. „Konten zeigen“ / „Nur Positionen“ statt „alle aufklappen“, „Ausgeblendete“ statt „Alle Zeilen“ (Cashflow und Planung: „Leere Zeilen“); das „?“ daneben erklärt beides.

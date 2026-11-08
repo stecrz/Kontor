@@ -1111,7 +1111,7 @@ function vBilanzChart(D) {
   // Ausschnitt (als Monate gemerkt, damit er Neuaufbau und Bereichswechsel uebersteht)
   const r = S.bchRange, n = d.months.length;
   let i0 = r ? d.months.indexOf(r[0]) : -1, i1 = r ? d.months.indexOf(r[1]) : -1;
-  if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, 12); S.bchRange = [d.months[i0], d.months[i1]]; S.bchBtn = 12; }    // Standard: 1 Jahr
+  if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, 36); S.bchRange = [d.months[i0], d.months[i1]]; S.bchBtn = 36; }    // default: three years up to today
   BCH.i0 = BCH.f0 = i0; BCH.i1 = BCH.f1 = i1;
   const rb = [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [120, t('bch_jahre', 10)], [0, t('alle')]];
   return `<div class="card bch" id="bch"><div class="bch-head"><span class="bch-range" id="bch-range"></span> ${hq('bch')}<span class="sp"></span><label class="bch-n" title="${t('bch_monate_tip')}"><input type="number" id="bch-n" min="3" max="${n}" step="1">${t('bch_m')}</label><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
