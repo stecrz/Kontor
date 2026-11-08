@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.11.0 (2026-11-09 00:08)
+- Erste allgemeine Version: Noch nicht vollständig geprüfte Seiten (Übersicht, Cashflow, Planung, Immobilien, Steuer, Umsätze & Belege, Kategorien, Buchungen, Regeln) sind nutzbar, im Menü aber blass und mit „Alpha“ markiert, ebenso am Seitentitel.
+- Bilanz: Ansicht wird nicht mehr nebenbei gemerkt. Neu „Als Standard“ (merkt Monate/Jahre, Zeiträume bis heute, aufgeklappte Zeilen, Auge, große Grafik, Auswahl; je Gerät) und „Zurücksetzen“ auf den Standard von Kontor – neben Excel.
+- Grafiken: ⤢ tauscht eine kleine mit der großen Grafik, die Reihenfolge ist damit frei.
+- Wertpapiere: Name aus MoneyMoney und ISIN bleiben beim Darüberfahren immer sichtbar, auch bei eigenem Namen. Namen werden jetzt auch aus MoneyMoneys Datenbank übernommen, wo vorhanden.
+- Einrichtung → Historische Kontostände: optionaler Schritt „Namen der Wertpapiere nachschlagen“ (nur auf Klick, sendet nur die ISINs an OpenFIGI; wieder entfernbar).
+- Kontors eigene Monatsaufzeichnung der Wertpapiere wird jetzt dauerhaft gespeichert.
+
 ## 3.10.11 (2026-11-08 23:42)
 - Bilanz: Jede der vier Grafiken kann die große oben sein (⤢ in einer kleinen Grafik tauscht sie); mit allen Möglichkeiten der großen Grafik (Zeitraum, „Alle“, An Tabelle ausrichten).
 - Bilanz-Tabelle: Depots zeigen die Zahl ihrer Wertpapiere („(12)“ bzw. „(9/12)“); Wertpapiere nicht mehr fett; das Auge zählt ausgeblendete Wertpapiere nur aufgeklappter Positionen mit. Klick auf ein Wertpapier zeigt seinen Verlauf, dort lässt sich ein eigener Name vergeben. Ohne Namen „Unbenannt N“ statt „Wertpapier N“.

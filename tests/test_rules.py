@@ -385,3 +385,79 @@ class PortfolioHistoryTests(unittest.TestCase):
         wp = {w["name"]: w for w in r["wertpapiere"]}
         self.assertEqual(sorted(wp), ["Titel 1", "Titel 3"]); self.assertEqual(wp["Titel 1"]["isin"], "XX0000000001")
         self.assertEqual(wp["Titel 1"]["werte"]["2026-10"], 1000.0); self.assertEqual(wp["Titel 3"]["werte"], {"2026-10": 0.3})
+
+    def test_names_from_moneymoneys_short_columns(self):
+        # MoneyMoney's securities table has no "name" column: the name is the value of ident/symbol/wpn that reads like a name
+        # (not a ticker in capitals, not a WKN or an ISIN)
+        import sqlite3
+        import mm_history as H
+        from datetime import date as D, datetime as DT
+        con = sqlite3.connect(":memory:")
+        con.execute("CREATE TABLE portfolio_chart(account_key INTEGER, currency TEXT, timestamp INTEGER, balance REAL, securities_key INTEGER)")
+        con.execute("CREATE TABLE securities(rowid INTEGER PRIMARY KEY, account_key INTEGER, quantity REAL, deleted INTEGER, ident TEXT, symbol TEXT, wpn TEXT, isin TEXT)")
+        ts = int(DT(2026, 10, 10, 12).timestamp())
+        con.executemany("INSERT INTO portfolio_chart VALUES(1, 'EUR', ?, ?, ?)", [(ts, 600.0, 1), (ts, 400.0, 2)])
+        con.executemany("INSERT INTO securities VALUES(?, 1, 1, 0, ?, ?, ?, ?)",
+                        [(1, "IE00B4L5Y983", "EUNL", "A0RPWH", "IE00B4L5Y983"), (2, "Beispiel Fonds Welt", "BFW", "A1B2C3", "US0378331005")])
+
+        class DB:
+            rows = lambda self, sql, params=(): con.execute(sql, params).fetchall()
+            one = lambda self, sql, params=(): con.execute(sql, params).fetchone()
+        r = H._portfolios(DB(), ["portfolio_chart", "securities"], [1], lambda k: {"saldo": 1000.0}, D(2026, 11, 8))[1]
+        wp = {w["isin"]: w["name"] for w in r["wertpapiere"]}
+        self.assertEqual(wp, {"IE00B4L5Y983": "", "US0378331005": "Beispiel Fonds Welt"})
+
+
+class SecurityNameTests(unittest.TestCase):
+    """Names of securities by ISIN (OpenFIGI, only on request) and how they are shown (made-up values)."""
+
+    def test_isin_check_digit(self):
+        from security_names import valid_isin
+        self.assertTrue(valid_isin("IE00B4L5Y983")); self.assertTrue(valid_isin("us0378331005"))
+        self.assertFalse(valid_isin("IE00B4L5Y984")); self.assertFalse(valid_isin("A0RPWH")); self.assertFalse(valid_isin("n:Fonds"))
+
+    def test_lookup_sends_only_valid_isins_in_batches(self):
+        import urllib.error
+        import security_names as N
+        sent, waits = [], []
+        isins = ["IE00B4L5Y983", "US0378331005", "BAD", "IE00B4L5Y984"] + ["DE0007164600"]
+
+        def post(jobs):
+            sent.append([j["idValue"] for j in jobs])
+            if len(sent) == 1:
+                raise urllib.error.HTTPError(N.URL, 429, "too many", {}, None)       # once too many requests: wait, retry
+            return [{"data": [{"name": "ISHARES CORE MSCI WORLD", "ticker": "EUNL"}, {"name": "ISHARES CORE MSCI WORLD"}, {"name": "ISHARES MSCI"}]}
+                    if j["idValue"] == "IE00B4L5Y983" else {"warning": "No identifier found."} for j in jobs]
+        old = N.BATCH
+        try:
+            N.BATCH = 2
+            names = N.lookup(isins, post=post, sleep=waits.append)
+        finally:
+            N.BATCH = old
+        self.assertEqual(names, {"IE00B4L5Y983": "ISHARES CORE MSCI WORLD"})
+        self.assertTrue(all(N.valid_isin(i) for b in sent for i in b)); self.assertEqual(sorted({i for b in sent for i in b}), ["DE0007164600", "IE00B4L5Y983", "US0378331005"])
+        self.assertEqual(waits[0], 7.0); self.assertIn(N.PAUSE, waits)
+
+    def test_unnamed_leaves_out_named_own_and_done(self):
+        from security_names import unnamed
+        hist = {"u1": [{"name": "", "isin": "IE00B4L5Y983"}, {"name": "Beispiel", "isin": "US0378331005"}]}
+        snaps = {"2026-09": {"u1": {"DE0007164600": 1.0, "n:Fonds": 2.0, "US0378331005": 3.0}}}
+        self.assertEqual(unnamed(hist, snaps, {}, {}), ["DE0007164600", "IE00B4L5Y983"])
+        self.assertEqual(unnamed(hist, snaps, {"DE0007164600": "Aus dem Export"}, {}), ["IE00B4L5Y983"])
+        self.assertEqual(unnamed(hist, snaps, {}, {"IE00B4L5Y983": "Mein Name"}, ["DE0007164600"]), [])
+
+    def test_shown_name_keeps_moneymoneys_name_and_isin(self):
+        from datetime import date as D
+        from model import Account
+        from report import depot_holdings
+        acc = Account("u1", "Depot", "portfolio", False, 0, 0.0, "EUR", portfolio=True)
+        state = {"historie_mm_wp": {"u1": [{"name": "", "isin": "IE00B4L5Y983", "werte": {"2026-09": 100.0}},
+                                           {"name": "Beispiel", "isin": "US0378331005", "werte": {"2026-09": 50.0}},
+                                           {"name": "", "isin": "DE0007164600", "werte": {"2026-09": 25.0}}]},
+                 "wp_suche": {"namen": {"IE00B4L5Y983": "ISHARES CORE MSCI WORLD", "US0378331005": "NICHT GENUTZT"}}}
+        cfg = {"bilanz": {"wp_namen": {"US0378331005": "Mein Name"}}}
+        rows = {r["isin"]: r for r in depot_holdings(acc, {"2026-09": 175.0}, ["2026-09"], D(2026, 11, 8), state, None, cfg)}
+        a, b, c = rows["IE00B4L5Y983"], rows["US0378331005"], rows["DE0007164600"]
+        self.assertEqual((a["name"], a["orig"], a["quelle"]), ("ISHARES CORE MSCI WORLD", "", "suche"))     # looked up: only without a name
+        self.assertEqual((b["name"], b["orig"], b["auto"], b["quelle"]), ("Mein Name", "Beispiel", "Beispiel", "eigen"))
+        self.assertEqual((c["name"], c["orig"], c["quelle"]), ("DE0007164600", "", ""))                      # nothing known: the ISIN

@@ -16,6 +16,8 @@ Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilan
 
 Kontor ändert in MoneyMoney nie Buchungen, den Kategorienbaum oder Regeln und löst keine Überweisungen aus.
 
+**Alpha**: Seiten, die im Menü blass und mit „Alpha“ markiert sind (derzeit Übersicht, Cashflow, Planung, Immobilien, Steuer, Umsätze & Belege, Kategorien, Buchungen und Regeln), sind nutzbar, aber noch nicht vollständig geprüft – Zahlen dort bitte gegenprüfen. Geprüft sind Bilanz, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll und Hilfe.
+
 <a id="setup"></a>
 ## Einrichtung
 
@@ -84,6 +86,8 @@ Das Fenster prüft auch die Rückrechnung: Anfangssaldo vor der ersten Buchung i
 
 MoneyMoney gibt den Verlauf der Kontostände über seine Schnittstelle nicht heraus – vor allem bei Depots fehlt sonst die Vergangenheit. Einmalig liest Kontor ihn deshalb aus der Datenbankdatei von MoneyMoney: MoneyMoney beenden, „Im Finder zeigen“, die Datei `MoneyMoney.sqlite` ins Fenster ziehen und das MoneyMoney-Passwort in einem macOS-Fenster eingeben. Kontor bekommt nur einen daraus berechneten Schlüssel, entschlüsselt nur im Arbeitsspeicher, prüft die Werte am aktuellen Saldo und speichert nur Monatsend-Stände, verschlüsselt. In MoneyMoney wird nichts verändert. Erneutes Einlesen ersetzt den bisherigen Stand.
 
+**Namen der Wertpapiere nachschlagen** (optional): Kennt MoneyMoney ein Wertpapier nur mit seiner ISIN, erscheint darunter ein weiterer Schritt. Auf Klick schlägt Kontor die Namen einmalig bei OpenFIGI nach, einem frei zugänglichen Verzeichnis für Wertpapiere. Gesendet werden nur diese ISINs (vorher aufklappbar zu sehen) – keine Beträge, Mengen, Konten oder Namen. Es ist neben der Update-Prüfung die einzige Verbindung ins Internet und geschieht nie von selbst. Die gefundenen Namen werden getrennt abgelegt und lassen sich dort wieder entfernen; eigene Namen gehen vor.
+
 **Danach zeichnet Kontor selbst auf**: Bankkonten rechnet Kontor ohnehin exakt aus den Umsätzen zurück. Für Depots merkt sich Kontor bei jedem Lesen den aktuellen Wert. Der Dienst läuft ab der Anmeldung am Mac im Hintergrund, auch ohne geöffnetes Kontor-Fenster, und liest innerhalb von etwa 20 Sekunden, sobald MoneyMoney offen und entsperrt ist – ein kurzer Blick in MoneyMoney genügt. Jeder Stand zählt für den Monat, in dem MoneyMoney ihn bei der Bank abgerufen hat. Hat MoneyMoney abgerufen, während Kontor nicht lief, oder fehlt ein Monat, weist die Seite „Synchronisierung“ darauf hin.
 
 <a id="sync"></a>
@@ -123,19 +127,21 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 **Tabelle**
 
 - Salden am Monatsende; der laufende Monat zeigt den aktuellen Stand. **Blass**: laufender Monat bzw. laufendes Jahr (noch nicht abgeschlossen); **blass und schraffiert**: Plan.
-- Klick auf eine Position klappt ihre Konten auf. Klick auf ein Konto öffnet seinen Verlauf (Monatsstände ansehen und bearbeiten; die Grafik dort lässt sich wie die anderen verschieben und zoomen, 1 J / Alle). Klick auf ein Wertpapier zeigt seinen Verlauf; dort kannst du ihm auch einen eigenen Namen geben (z. B. wenn MoneyMoney nur die ISIN kennt). Depots klappen über das **▸** davor in ihre Wertpapiere auf: frühere Monate aus den eingelesenen MoneyMoney-Kontoständen (sonst aus Kontors monatlicher Aufzeichnung), der laufende Monat aus MoneyMoney; was die Wertpapiere nicht erklären, steht als „Übrige“. Der Knopf **▸** in der Kopfzelle klappt alle Positionen auf und wieder zu. Ein aufgeklapptes Depot zeigt seine Wertpapiere auch in der großen Grafik.
+- Klick auf eine Position klappt ihre Konten auf. Klick auf ein Konto öffnet seinen Verlauf (Monatsstände ansehen und bearbeiten; die Grafik dort lässt sich wie die anderen verschieben und zoomen, 1 J / Alle). Klick auf ein Wertpapier zeigt seinen Verlauf; dort kannst du ihm auch einen eigenen Anzeigenamen geben (z. B. wenn MoneyMoney nur die ISIN kennt). Der Name aus MoneyMoney und die ISIN gehen dabei nicht verloren: Beim Darüberfahren stehen sie immer dabei, ebenso ob der Name eigener oder nachgeschlagen ist. Konten benennst du am besten in MoneyMoney um – Kontor übernimmt den Namen von dort. Depots klappen über das **▸** davor in ihre Wertpapiere auf: frühere Monate aus den eingelesenen MoneyMoney-Kontoständen (sonst aus Kontors monatlicher Aufzeichnung), der laufende Monat aus MoneyMoney; was die Wertpapiere nicht erklären, steht als „Übrige“. Der Knopf **▸** in der Kopfzelle klappt alle Positionen auf und wieder zu. Ein aufgeklapptes Depot zeigt seine Wertpapiere auch in der großen Grafik.
 - Das **Auge** in der Kopfzelle (nur wenn es welche gibt, mit Anzahl) zeigt auch leere und nach Aktivität ausgeblendete Konten und Wertpapiere – mitgezählt werden sie immer. Was als ausgeblendet gilt, legst du unter [Einrichtung → Konten](#accounts) fest (Spalte „Anzeige“ und „Nach Aktivität … Monaten“, Standard 12); Wertpapiere ohne Wert in diesem Zeitraum gelten ebenfalls als ausgeblendet. „(9/12)“ bei einer Position heißt: 9 von 12 Konten zu sehen.
 - Jahresspalten zeigen den Stand zum Jahresende (das laufende Jahr: heute). In der Monatsansicht gibt es keine Jahresspalten – sie wären nur der Dezember; ein feiner Strich trennt die Jahre.
 - Die Farben der Positionen folgen der Verfügbarkeit, von Bankguthaben (grün) bis Beteiligungen (violett). Konten tragen Abwandlungen der Farbe ihrer Position (benachbarter Farbton, andere Helligkeit; ab dem elften Konto schraffiert) – als Punkt vor dem Konto und genauso in den Grafiken.
 - Unter dem Nettovermögen stehen Avale & Bürgschaften und Kapitalkonten als Eigenkapital (nicht im Nettovermögen), je gesammelt in einer aufklappbaren Zeile.
 - **Geldtransit**: Liegen die beiden Buchungen einer Umbuchung zwischen eigenen Konten in verschiedenen Monaten (am 31. abgebucht, am 1. gutgeschrieben), zählt der Betrag am Monatsende als „Geldtransit“ zum Bankguthaben – sonst sähe das Nettovermögen kurz zu niedrig aus. Ein Klick zeigt die erkannten Buchungspaare.
 
-**Große Grafik** – jede der vier Grafiken kann die große sein: das Symbol ⤢ in einer kleinen Grafik tauscht sie nach oben, die bisherige große erscheint dann klein (Standard: die Bilanz).
+**Große Grafik** – jede der vier Grafiken kann die große sein: das Symbol ⤢ in einer kleinen Grafik tauscht sie mit der großen, die bisherige große erscheint an ihrem Platz – so lässt sich die Reihenfolge beliebig ändern (Standard: die Bilanz oben).
 
 - Zusammensetzung des Vermögens in den Farben der Positionen, schwarz das Nettovermögen (gestrichelt: Plan); aufgeklappte Positionen zeigen ihre Konten.
 - Zeitraum je nach Ansicht – Monate: 6 Monate, 1 oder 2 Jahre (Standard 1 Jahr); Jahre: 1, 3 oder 10 Jahre (Standard 3 Jahre) –, alles oder eine eigene Zahl von Monaten.
 - Waagerecht wischen verschiebt, mit zwei Fingern zoomen, Ziehen wählt einen Ausschnitt, Doppelklick vergrößert, Klick springt zur Spalte der Tabelle. Umgekehrt verschiebt ein Klick auf eine Spaltenüberschrift die Grafik so, dass der Monat ungefähr über der Spalte steht. Auf der Monatsachse seitlich ziehen verschiebt; auf der Betragsachse nach oben/unten ziehen vergrößert bzw. verkleinert den Wertebereich (das Mausrad verschiebt ihn), Tippen oder Klick dort macht ihn wieder automatisch. Am iPhone verschieben und zoomen zwei Finger, ein Finger zeigt die Werte. Das gilt auch für die einzelnen Grafiken.
 - **An Tabelle ausrichten**: Jeder Wert steht genau über seiner Spalte. Die Grafik scrollt mit der Tabelle, Wischen oder Ziehen auf der Grafik scrollt die Tabelle, und die Skala passt sich den sichtbaren Spalten an. Das Werte-Fenster entfällt – die Werte stehen ja darunter.
+
+**Ansicht als Standard**: Was du beim Ansehen änderst (Monate oder Jahre, Zeiträume, aufgeklappte Zeilen, das Auge, welche Grafik groß ist, Auswahl in den Grafiken), gilt nur bis zum Neuladen. **Als Standard** (oben rechts, neben Excel) merkt sich die aktuelle Ansicht auf diesem Gerät – so öffnet sich die Bilanz dann jedes Mal. Zeiträume reichen dabei immer bis heute („1 J“ ist immer das letzte Jahr), die Tabelle steht wie immer auf dem aktuellen Monat. **Zurücksetzen** stellt den Standard von Kontor wieder her. Der Bereich bleibt davon unberührt.
 
 **Einzelne Grafiken** (unter der Tabelle)
 

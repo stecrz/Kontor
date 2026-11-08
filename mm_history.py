@@ -478,6 +478,19 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
     if "account_key" in cols and (ncol or icol):
         for sk, n, i in db.rows("SELECT rowid, %s, %s FROM securities WHERE account_key IN %s" % (ncol or "NULL", icol or "NULL", _in(len(keys))), keys):
             names[sk] = (str(n or "").strip(), str(i or "").strip())
+    if not ncol and "account_key" in cols:
+        # MoneyMoney keeps the name in one of its short text columns (ident, symbol, wpn): of these the value that reads like a
+        # name (letters with a space or lower case, not an ISIN or a WKN) counts
+        extra = [c for c in ("ident", "symbol", "wpn") if c in cols]
+        looks = lambda v: bool(v) and bool(re.search(r"[A-Za-zÄÖÜäöü]", v)) and (" " in v or v != v.upper()) and not re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}\d", v)
+        if extra:
+            found = 0
+            for row in db.rows("SELECT rowid, %s FROM securities WHERE account_key IN %s" % (", ".join(_q(c) for c in extra), _in(len(keys))), keys):
+                v = next((str(x).strip() for x in row[1:] if looks(str(x or "").strip())), "")
+                if v:
+                    found += 1
+                    names[row[0]] = (v, names.get(row[0], ("", ""))[1])
+            log.debug("MoneyMoney database: security names from %s: %d", "/".join(extra), found)
     if icol and not ncol:
         # the name may sit in another table keyed by the ISIN (only tables with an ISIN and a name column are looked at)
         for t in plain:

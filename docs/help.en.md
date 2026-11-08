@@ -16,6 +16,8 @@ Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sh
 
 Kontor never changes bookings, the category tree or rules in MoneyMoney and never initiates transfers.
 
+**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Overview, Cash flow, Planning, Properties, Tax, Transactions & receipts, Categories, Bookings and Rules) are usable but not fully tested yet – please double-check the figures there. Tested are Balance sheet, Sync, Setup, Settings, Updates, Log and Help.
+
 <a id="setup"></a>
 ## Setup
 
@@ -84,6 +86,8 @@ The panel also checks the backward calculation: opening balance before the first
 
 MoneyMoney does not provide the history of balances through its interface – especially for portfolios the past would be missing. So Kontor reads it once from MoneyMoney's database file: quit MoneyMoney, “Show in Finder”, drag the file `MoneyMoney.sqlite` into the window and enter the MoneyMoney password in a macOS window. Kontor only receives a key derived from it, decrypts only in memory, checks the values against the current balance and stores only month-end balances, encrypted. Nothing is changed in MoneyMoney. Importing again replaces the previous data.
 
+**Look up security names** (optional): if MoneyMoney knows a security only by its ISIN, another step appears below. On a click, Kontor looks up the names once at OpenFIGI, a freely accessible directory of securities. Only these ISINs are sent (you can expand the list beforehand) – no amounts, quantities, accounts or names. Besides the update check it is the only connection to the internet and never happens on its own. The names found are stored separately and can be removed there again; your own names take precedence.
+
 **After that Kontor records itself**: bank accounts are calculated exactly backwards from the transactions anyway. For portfolios Kontor notes the current value on every read. The service runs in the background from login, even without an open Kontor window, and reads within about 20 seconds as soon as MoneyMoney is open and unlocked – a quick look at MoneyMoney is enough. Each value counts for the month in which MoneyMoney retrieved it from the bank. If MoneyMoney retrieved data while Kontor was not running, or a month is missing, the “Synchronisation” page points it out.
 
 <a id="sync"></a>
@@ -123,19 +127,21 @@ The balance sheet shows the assets of an area by position, month by month or yea
 **Table**
 
 - Balances at month end; the current month shows the current balance. **Faded**: current month or year (not finished yet); **faded and hatched**: plan.
-- Click a position to expand its accounts. Click an account to open its history (view and edit month-end balances; the chart there pans and zooms like the others, 1 Y / All). Click a security to see its history; there you can also give it a name of your own (e.g. when MoneyMoney only knows the ISIN). Portfolios open into their securities via the **▸** in front of them: past months from the balances read from MoneyMoney (otherwise from Kontor's monthly record), the current month from MoneyMoney; what the securities do not explain is shown as “Other”. The **▸** button in the header cell expands and collapses all positions. An opened portfolio also shows its securities in the main chart.
+- Click a position to expand its accounts. Click an account to open its history (view and edit month-end balances; the chart there pans and zooms like the others, 1 Y / All). Click a security to see its history; there you can also give it a display name of your own (e.g. when MoneyMoney only knows the ISIN). MoneyMoney's name and the ISIN are never lost: they are always shown on hover, as is whether the name is your own or looked up. Accounts are best renamed in MoneyMoney – Kontor takes the name from there. Portfolios open into their securities via the **▸** in front of them: past months from the balances read from MoneyMoney (otherwise from Kontor's monthly record), the current month from MoneyMoney; what the securities do not explain is shown as “Other”. The **▸** button in the header cell expands and collapses all positions. An opened portfolio also shows its securities in the main chart.
 - The **eye** in the header cell (only when there are any, with a count) also shows empty accounts and securities and those hidden by activity – they are always counted. What counts as hidden is set under [Setup → Accounts](#accounts) (column “Display” and “By activity … months”, default 12); securities without a value in that period count as hidden too. “(9/12)” at a position means 9 of 12 accounts are shown.
 - Year columns show the balance at year end (the running year: today). The month view has no year columns – they would only repeat December; a thin line separates the years.
 - The position colours follow availability, from cash (green) to equity investments (violet). Accounts carry variations of their position's colour (neighbouring hue, different lightness; hatched from the eleventh account) – as a dot in front of the account and the same in the charts.
 - Below net worth, guarantees and capital accounts as equity (not in net worth) are each collected in one expandable row.
 - **Cash in transit**: If the two bookings of a transfer between your own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” to cash at the month end – otherwise net worth would briefly look too low. A click shows the detected booking pairs.
 
-**Main chart** – any of the four charts can be the large one: the ⤢ symbol in a small chart swaps it to the top, the previous large one then shows small (default: the balance sheet).
+**Main chart** – any of the four charts can be the large one: the ⤢ symbol in a small chart swaps it with the large one, which takes its place – so the order can be changed freely (default: the balance sheet at the top).
 
 - Composition of assets in the colours of the positions, black the net worth (dashed: plan); expanded positions show their accounts.
 - Range depending on the view – months: 6 months, 1 or 2 years (default 1 year); years: 1, 3 or 10 years (default 3 years) –, all or a number of months of your own.
 - Swipe horizontally to pan, pinch to zoom, drag to select a range, double-click to enlarge, click to jump to the column of the table. Conversely, clicking a column heading moves the chart so that the month sits roughly above the column. Drag sideways on the month axis to pan; drag up/down on the amount axis to zoom the value range in/out (the wheel moves it), a tap or click there makes it automatic again. On the iPhone two fingers pan and zoom, one finger shows the values. The same applies to the single charts.
 - **Align with table**: every value sits right above its column. The chart scrolls with the table, swiping or dragging on the chart scrolls the table, and the scale follows the visible columns. The value tip is dropped – the values are right below.
+
+**View as default**: what you change while viewing (months or years, ranges, expanded rows, the eye, which chart is large, selections in the charts) lasts only until the page is reloaded. **Set as default** (top right, next to Excel) keeps the current view on this device – the balance sheet then opens like this every time. Ranges always end today (“1 Y” is always the last year), and the table shows the current month as always. **Reset** restores Kontor's default. The area is not affected.
 
 **Single charts** (below the table)
 

@@ -37,13 +37,14 @@ import i18n
 import mm_categories
 import mm_history
 import realestate
+import security_names
 import history_import
 import categorize
 import updates
 from receipts import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
 from core import (RUN_LOCK, account_sig, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
-                     immo_results, import_package, ledger_fp, merged_config, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
+                     immo_results, import_package, ledger_fp, merge_holdings, merged_config, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, apply_plan, role_label
 from storage import Store
@@ -350,7 +351,7 @@ class App:
                 log.exception("Report from last data failed")
                 return False, tr("s_bericht_fehlgeschlagen_s") % e
             # nur die Monats-Schnappschuesse zurueckschreiben -- Verlauf-Eingaben, die waehrend des Baus kamen, bleiben erhalten
-            self.store.update("state.json", lambda cur: merge_snapshots(cur, st.get("snapshots") or {}), {})
+            self.store.update("state.json", lambda cur: (merge_snapshots(cur, st.get("snapshots") or {}), merge_holdings(cur, st)), {})
         log.info("Report rebuilt from last data (%.1f s)", time.time() - t0)
         return True, None
 
@@ -390,6 +391,31 @@ class App:
             self.rebuild_cv.wait_for(lambda: not self.rebuild_running and not self.rebuild_pending, timeout=timeout)
             b = self.bericht
         return (b.get("fehler") is None and b.get("stand") is not None), b.get("fehler")
+
+    def securities_unnamed(self) -> dict:
+        """Securities that have only an ISIN (no name in MoneyMoney, none of your own) and the names looked up so far."""
+        st = self.store.load_shared("state.json", {}) or {}
+        mmh = self.store.load_shared(MM_HISTORY_FILE, {}) or {}
+        own = ((self.config or {}).get("bilanz") or {}).get("wp_namen") or {}
+        done = st.get("wp_suche") or {}
+        offen = security_names.unnamed(mmh.get("wertpapiere") or {}, st.get("snapshots_wp") or {}, st.get("wp_namen") or {}, own,
+                                       list(done.get("namen") or {}) + list(done.get("ohne") or []))
+        return {"offen": offen, "gefunden": len(done.get("namen") or {}), "ohne": len(done.get("ohne") or []), "zeit": done.get("zeit")}
+
+    def securities_lookup(self) -> dict:
+        """Look up the names of the securities without one (only on request): sends only their ISINs to OpenFIGI."""
+        offen = self.securities_unnamed()["offen"]
+        names = security_names.lookup(offen) if offen else {}
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        def upd(cur: dict) -> None:
+            w = cur.setdefault("wp_suche", {})
+            w["zeit"] = now
+            w.setdefault("namen", {}).update(names)
+            w["ohne"] = sorted((set(w.get("ohne") or []) | set(offen)) - set(w["namen"]))
+        self.store.update("state.json", upd, {})
+        log.info("Security names: %d ISINs looked up, %d names found", len(offen), len(names))
+        return {"gesendet": len(offen), "neu": len(names)}
 
     def bericht_status(self) -> dict:
         with self.rebuild_cv:
@@ -1367,6 +1393,8 @@ def make_handler(app: App):
                                         "changelog": updates.changelog()})
             if path == "/api/history":
                 return self._json(200, self._historie(q.get("account") or "", q.get("source") if q.get("source") in ("umsaetze", "stand") else None))
+            if path == "/api/securities/lookup":
+                return self._json(200, dict(app.securities_unnamed(), lokal=self._is_local(s)))
             if path == "/api/history/mm-status":
                 st = app.store.load_shared("state.json", {}) or {}
                 return self._json(200, dict(app.mmh, letzte=st.get("mm_verlauf"), moneymoney_laeuft=is_running(), lokal=self._is_local(s)))
@@ -1755,6 +1783,21 @@ def make_handler(app: App):
                 cfg.setdefault("oberflaeche", {})["sprache"] = body["sprache"]
                 app.save_config(cfg)
                 return self._json(200, {"ok": True, "sprache": i18n.lang()})
+            if path == "/api/securities/lookup":
+                # names of securities by their ISIN (OpenFIGI): only on request, only at the Mac; "entfernen" drops them again
+                if not local:
+                    return self._json(403, {"fehler": tr("s_nur_direkt_am_mac_moeglich")})
+                if body.get("aktion") == "entfernen":
+                    app.store.update("state.json", lambda cur: cur.pop("wp_suche", None), {})
+                    res = {"entfernt": True}
+                else:
+                    try:
+                        res = app.securities_lookup()
+                    except (OSError, ValueError) as e:
+                        log.warning("Security names: lookup failed: %s", e)
+                        return self._json(502, {"fehler": tr("s_wp_suche_fehler") % e})
+                ok, err = app.rebuild_report(wait=True, grund=tr("s_bericht_neu"))
+                return self._json(200, dict(app.securities_unnamed(), **res, ok=ok, text=err))
             if path == "/api/history/mm-reveal":
                 if not self._is_local(s):
                     return self._json(403, {"fehler": tr("s_nur_direkt_am_mac_moeglich")})

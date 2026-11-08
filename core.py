@@ -849,6 +849,15 @@ def merge_snapshots(state: dict, snaps: dict) -> None:
         cur.setdefault(mk, {}).update(row)
 
 
+def merge_holdings(state: dict, built: dict) -> None:
+    """Kontor's monthly record of the securities (and the names seen in MoneyMoney's export) from a run or a rebuild."""
+    cur = state.setdefault("snapshots_wp", {})
+    for mk, row in (built.get("snapshots_wp") or {}).items():
+        cur.setdefault(mk, {}).update(row)
+    if built.get("wp_namen"):
+        state.setdefault("wp_namen", {}).update(built["wp_namen"])
+
+
 def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today: date, warnings: List[str],
                  categories: Optional[List[dict]] = None, progress: Optional[Callable[[float, str], None]] = None) -> dict:
     # Fortschritt grob nach Laufzeit eines Laufs ohne Zwischenergebnisse gewichtet: Kategorien 5-25 %, Bereiche 25-75 % (nach
@@ -1104,6 +1113,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             cur["verlauf"] = cur["verlauf"][-100:]
             if state.get("snapshots"):
                 merge_snapshots(cur, state["snapshots"])     # Schnellabgleich waehrend des Laufs bleibt erhalten
+            merge_holdings(cur, state)
             if state.get("kategorien_roh"):
                 cur["kategorien_roh"] = state["kategorien_roh"]
         store.update("state.json", _merge, {})      # Verlauf-Eingaben waehrend des Laufs bleiben erhalten

@@ -55,6 +55,12 @@ input[type=checkbox] { accent-color:var(--accent); }
 .side nav a svg { width:16px; height:16px; opacity:.7; flex-shrink:0; }
 .side nav a.on { background:var(--accent-soft); color:var(--accent-fg); font-weight:600; } .side nav a.on svg { opacity:1; }
 .side nav a:hover { background:rgba(127,127,127,.12); }
+.side nav a.alpha:not(.on) { color:color-mix(in srgb, var(--side-fg) 60%, transparent); } .side nav a.alpha:not(.on) svg { opacity:.45; }
+.side nav a.alpha span { min-width:0; } .side nav a .alpha-tag { flex-shrink:0; margin-right:-8px; font-size:8px; padding:2px 3px; }
+.alpha-tag { margin-left:auto; font-style:normal; font-size:8.5px; font-weight:600; letter-spacing:0; text-transform:uppercase; line-height:1; padding:2px 4px; border-radius:4px;
+  color:var(--muted); border:1px solid var(--line); background:repeating-linear-gradient(135deg, rgba(127,127,127,.16) 0 2px, transparent 2px 4px); cursor:help; }
+.alpha-tag.big { margin-left:10px; vertical-align:middle; font-size:10.5px; padding:2px 5px; position:relative; top:-2px; }
+.side nav a .alpha-tag + .nbadge { margin-left:6px; }
 .side nav a .nbadge { margin-left:auto; width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 2px var(--side-bg, #fff); flex-shrink:0; }
 .loading { padding:40px 20px; color:var(--muted); font-size:14px; text-align:center; }
 .loading .note { font-size:12px; margin-top:10px; color:var(--faint); }
@@ -243,6 +249,9 @@ td.flash, th.flash { animation:colflash 1.4s ease-out; }
 .th-hid input { display:none; } .th-hid:hover { border-color:var(--line); } .th-hid.on { color:var(--accent-fg); background:var(--accent-soft); }
 .xlsx { background:var(--group); color:var(--fg); border:1px solid var(--line); }
 .xlsx::before { content:"⤓ "; }
+.view-btns { display:inline-flex; gap:6px; }
+.view-btns button { display:inline-flex; align-items:center; gap:5px; }
+@media (max-width:600px) { .view-btns .lbl { display:none; } .view-btns button { padding:4px 8px; } }
 
 /* Forms */
 .form { display:grid; grid-template-columns:210px 1fr; gap:8px 14px; align-items:center; max-width:820px; }

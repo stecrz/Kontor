@@ -18,9 +18,13 @@ function setLang(l, pending) {
   try { localStorage.setItem('kontor.lang', l); if (pending) localStorage.setItem('kontor.lang.pending', '1'); } catch (e) {}
   if (l !== LANG) location.reload();
 }
+// pages not fully tested yet: usable, but marked "Alpha" in the menu and next to the page title
+const ALPHA_TABS = new Set(['overview', 'cashflow', 'planning', 'properties', 'tax', 'transactions', 'categories', 'bookings', 'rules']);
+const alphaTag = (cls = 'alpha-tag') => `<em class="${cls}" title="${t('alpha_tip')}">${t('alpha')}</em>`;
 function applyStatic() {
   document.documentElement.lang = LANG;
   $$('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  $$('#nav a').forEach(a => { if (ALPHA_TABS.has(a.getAttribute('href').slice(1)) && !a.querySelector('.alpha-tag')) { a.classList.add('alpha'); a.querySelector('span').insertAdjacentHTML('afterend', alphaTag()); } });
   $$('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
   $$('[data-i18n-aria]').forEach(el => el.setAttribute('aria-label', t(el.dataset.i18nAria)));
   const ls = $('#lang-sel'); if (ls) ls.innerHTML = langOpts();
@@ -159,6 +163,8 @@ const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl:
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 const ICON = {
   expand: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 3h6l-1 7 4 4H6l4-4-1-7z"/></svg>',
+  reset: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
   eye: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   eyeOff: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>'};
 const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k])}"${HELP_AT[k] ? ` data-help="${HELP_AT[k]}"` : ''}>?</span>` : '';
@@ -701,6 +707,7 @@ function vMMHistorie() {
     <div class="step ${(st.moneymoney || {}).laeuft ? '' : 'done'}" id="mmh-s1">${mmhStep1(st)}</div>
     <div class="step"><div class="b"><b>${t('datei_im_finder_zeigen')}</b>${t('kontor_oeffnet_ein_finder_fenster')}<div class="actions"><button id="mmh-zeigen" class="small">${t('im_finder_zeigen')}</button></div><div class="small muted">${t('kein_fenster_in_moneymoney_hilfe')}</div></div></div>
     <div class="step ${last ? 'done' : ''}"><div class="b"><b>${t('hierher_ziehen_passwort_eingeben')}</b>${t('danach_erscheint_ein_fenster_von')}<div class="drop" id="mmh-drop">${t('moneymoney_sqlite_hierher_ziehen')}<br><button id="mmh-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button><input type="file" id="mmh-file" class="hidden"></div><div id="mmh-res" class="findings"></div></div></div>
+    <div class="step hidden" id="mmh-names"></div>
     <div class="step"><div class="b"><b>${t('weiter')}</b><div class="actions"><button data-next="#categories" ${last ? '' : 'class="secondary"'}>${t('weiter_kategorien_amp_zuordnen')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button></div></div></div></div>`;
 }
 const MMH_TXT = {received: t('gleich_erscheint_das_passwortfenster_v'), password: t('bitte_im_fenster_von_macos'), decrypt: t('wird_im_arbeitsspeicher_entschluesselt'), search: t('kontostaende_werden_gesucht_und_geprue')};
@@ -713,10 +720,33 @@ async function mmhFollow() {
     const e = r.ergebnis || {};
     if (e.ok) { try { S.STATUS = await api('/api/status'); statusMini(); } catch (x) {} }
     const msg = e.ok ? `${t('kontostaende_von_0_uebernommen_1', e.konten === 1 ? t('einem_konto') : e.konten + t('konten'), e.von ? ` ${t('0_bis_1_3', ML(e.von), ML(e.bis))}` : '', e.depots ? `${t('davon_0', e.depots === 1 ? t('ein_depot') : e.depots + t('depots'))}` : '')}` : (e.text || t('nicht_uebernommen'));
-    if (S.tab === 'setup' && S.sub === 'history') { if (e.ok) await route(); const res2 = $('#mmh-res'); if (res2) showFindings(res2, [], msg, e.ok ? 'ok' : 'fehler'); }
+    if (S.tab === 'setup' && S.sub === 'history') { if (e.ok) { try { S.DATA = await api('/api/dataset'); } catch (x) {} await route(); } const res2 = $('#mmh-res'); if (res2) showFindings(res2, [], msg, e.ok ? 'ok' : 'fehler'); }
     else toast(msg, 8000);
     return;
   }
+}
+async function mmhNames() {
+  // optional: names of the securities MoneyMoney knows only by their ISIN, looked up once at OpenFIGI -- only on a click,
+  // only the ISINs are sent; the names found are kept apart and can be removed again
+  const el = $('#mmh-names'); if (!el) return;
+  let r; try { r = await api('/api/securities/lookup'); } catch (e) { return; }
+  const n = r.offen.length, had = r.gefunden + r.ohne > 0;
+  el.classList.toggle('hidden', !n && !had); el.classList.toggle('done', !n && had);
+  el.innerHTML = `<div class="b"><b>${t('wp_suche_titel')} <span class="pill neutral">${t('optional')}</span></b>`
+    + (n ? `<div>${t('wp_suche_text', n === 1 ? t('wp_suche_eins') : t('wp_suche_n', n))}</div><details class="small"><summary>${t('wp_suche_liste')}</summary><div class="mono">${r.offen.map(esc).join(', ')}</div></details>` : '')
+    + (had ? `<div class="small muted">${t('wp_suche_stand', r.gefunden, r.ohne, esc(fmtZeit(r.zeit)))}</div>` : '')
+    + `<div class="actions">${n ? `<button id="wp-look" class="small">${t('wp_suche_btn')}</button>` : ''}${had ? `<button id="wp-look-del" class="small secondary">${t('wp_suche_entfernen')}</button>` : ''}</div><div id="wp-look-res" class="findings"></div></div>`;
+  const run = async (btn, body) => {
+    const res = $('#wp-look-res', el); btn.classList.add('busy'); res.innerHTML = `<div class="working"><span class="spin"></span>${t('bitte_warten')}</div>`;
+    try {
+      const j = await api('/api/securities/lookup', body);
+      try { S.DATA = await api('/api/dataset'); } catch (e) {}
+      await mmhNames();
+      const res2 = $('#wp-look-res'); if (res2) showFindings(res2, [], j.entfernt ? t('wp_suche_entfernt') : t('wp_suche_ergebnis', j.neu, j.gesendet), 'ok');
+    } catch (e) { showFindings(res, [], e.message, 'fehler'); btn.classList.remove('busy'); }
+  };
+  const lb = $('#wp-look', el); if (lb) lb.addEventListener('click', () => run(lb, {}));
+  const ld = $('#wp-look-del', el); if (ld) ld.addEventListener('click', () => run(ld, {aktion: 'entfernen'}));
 }
 const MMHP = {timer: null};
 function mmhPoll() {
@@ -1078,6 +1108,13 @@ function hcDraw() {
   $$('#h-rb button').forEach(b => b.classList.toggle('on', HC.btn != null && +b.dataset.m === HC.btn));
 }
 const HD = {uuid: null, live: false, r: null};
+// hover text of a security: the name shown, MoneyMoney's own name (never lost, also after renaming) and the ISIN
+function wpTip(w, acc) {
+  if (w.rest) return w.name;
+  const src = w.orig ? t('wp_in_mm', w.orig) : t('wp_in_mm_ohne');
+  return [acc ? acc + ' · ' + w.name : w.name, w.isin ? 'ISIN ' + w.isin : '', w.orig !== w.name || !w.orig ? src : '',
+    w.quelle === 'eigen' ? t('wp_eigener_name') : w.quelle === 'suche' ? t('wp_nachgeschlagen') : ''].filter(Boolean).join('\n');
+}
 function openWpDrawer(id) {
   // a security of a portfolio: its month-end values (from MoneyMoney's history, Kontor's record and the current export) and,
   // where it has an ISIN or a name, a name of your own (e.g. when MoneyMoney's history only knows the ISIN)
@@ -1086,8 +1123,10 @@ function openWpDrawer(id) {
   if (!w) return;
   const d = $('#drawer'), key = id.slice(id.indexOf('|') + 1), canName = !w.rest && !key.startsWith('mm:');
   const pts = D.monate.filter(m => w.werte[m] != null).map(m => [m, w.werte[m]]);
-  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(w.name)}</h2><div class="small muted">${esc(acc.name)}${w.isin && w.isin !== w.name ? ' · ' + esc(w.isin) : ''}</div>
-    ${canName ? `<div class="row tight" style="margin:12px 0 4px"><input id="wp-name" value="${esc(w.name)}" placeholder="${esc(w.isin || '')}" style="flex:1" title="${t('wp_name_tip')}"><button id="wp-save" class="small">${t('speichern')}</button></div><div class="small muted">${t('wp_name_tip')}</div><div id="wp-find"></div>` : ''}
+  const own = w.quelle === 'eigen' ? w.name : '';
+  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(w.name)}</h2><div class="small muted">${esc(acc.name)}${w.isin ? ' · ISIN ' + esc(w.isin) : ''}</div>
+    ${w.rest ? '' : `<div class="small muted">${esc(w.orig ? t('wp_in_mm', w.orig) : t('wp_in_mm_ohne'))}${w.quelle === 'suche' ? ' · ' + t('wp_nachgeschlagen') : ''}</div>`}
+    ${canName ? `<div class="row tight" style="margin:12px 0 4px"><input id="wp-name" value="${esc(own)}" placeholder="${esc(w.auto || w.isin || '')}" style="flex:1" title="${t('wp_name_tip')}"><button id="wp-save" class="small">${t('speichern')}</button></div><div class="small muted">${t('wp_name_tip')}</div><div id="wp-find"></div>` : ''}
     <div class="h-chart" id="h-chart">${histChart(pts)}</div>
     <h3>${t('monatsstaende')}</h3><div class="hist-grid" id="h-grid">${pts.map(([mk, v]) => `<label>${ML(mk)}<input type="text" class="auto" value="${F(v)}" disabled></label>`).join('')}</div>`;
   d.classList.add('open');
@@ -1098,7 +1137,7 @@ function openWpDrawer(id) {
   if (sv) sv.onclick = async () => {
     const cfg = JSON.parse(JSON.stringify(S.CFG)), nm = $('#wp-name', d).value.trim();
     cfg.bilanz = cfg.bilanz || {}; cfg.bilanz.wp_namen = Object.assign({}, cfg.bilanz.wp_namen || {});
-    if (nm && nm !== w.isin) cfg.bilanz.wp_namen[key] = nm; else delete cfg.bilanz.wp_namen[key];
+    if (nm && nm !== w.auto && nm !== w.isin) cfg.bilanz.wp_namen[key] = nm; else delete cfg.bilanz.wp_namen[key];
     if (await saveConfig(cfg, $('#wp-find', d))) closeDrawer();
   };
 }
@@ -1130,7 +1169,7 @@ function vBilanz() {
   const allOpen = pos.length && pos.every(r => S.posOpen[r.rolle]);
   S.depOpen = S.depOpen || {};                          // portfolios opened into their securities (each on its own)
   // top: the view (months/years) for chart and table; the table options sit in its header cell (no gap to the chart)
-  let h = `<div class="toolbar">${viewCtl()}<span class="sp"></span>${xlsxBtn('balance')}</div>`;
+  let h = `<div class="toolbar">${viewCtl()}<span class="sp"></span>${viewBtns()}${xlsxBtn('balance')}</div>`;
   h += vBilanzChart(D);
   const tag = r => (r.offline && !r.gruppe ? `<span class="tag">${t('manuell')}</span>` : '') + (r.inaktiv ? `<span class="tag">${t('ausgeblendet')}</span>` : '')
     + (r.fortgeschrieben_vor ? `<span class="tag warn" title="${t('vor_0_ist_kein_stand', ML(r.fortgeschrieben_vor))}">${t('vor_0_unbekannt', ML(r.fortgeschrieben_vor))}</span>` : '');
@@ -1141,11 +1180,11 @@ function vBilanz() {
   const secHidden = w => C.every(c => { const v = lastOf(w.werte, c.months); return v == null || Math.abs(v) < 0.005; }) || !recent.some(m => w.werte[m] != null && Math.abs(w.werte[m]) >= 0.005);
   // hidden securities count only where their position is open (the eye shows what this view can show)
   const nSecHid = D.bilanz.zeilen.reduce((n, r) => n + (S.posOpen[r.rolle] ? (r.wertpapiere || []).filter(secHidden).length : 0), 0);
-  const skip = r => !S.alle && hidden(r), anyHidden = D.bilanz.zeilen.some(r => !r.gruppe && hidden(r)) || nSecHid > 0;
+  const skip = r => !S.alleB && hidden(r), anyHidden = D.bilanz.zeilen.some(r => !r.gruppe && hidden(r)) || nSecHid > 0;
   // header cell: ▸/▾ expands or collapses all positions, the eye also shows empty and hidden accounts and securities (only when there are any)
   const nHid = D.bilanz.zeilen.filter(r => !r.gruppe && hidden(r)).length + nSecHid;
   const first = `<div class="th-first"><button class="th-btn" id="pos-all" title="${allOpen ? t('nur_positionen') : t('konten_zeigen')}">${allOpen ? '▾' : '▸'}</button><span>${t('position_konto')}</span>${hq('bilanz_tabelle')}<span class="sp"></span>`
-    + (anyHidden ? `<label class="th-hid${S.alle ? ' on' : ''}" title="${t('alle_zeilen_tip_n', nHid)}"><input type="checkbox" id="alle-zeilen" ${S.alle ? 'checked' : ''}>${S.alle ? ICON.eye : ICON.eyeOff}${nHid}</label>` : '') + '</div>';
+    + (anyHidden ? `<label class="th-hid${S.alleB ? ' on' : ''}" title="${t('alle_zeilen_tip_n', nHid)}"><input type="checkbox" id="alle-zeilen" ${S.alleB ? 'checked' : ''}>${S.alleB ? ICON.eye : ICON.eyeOff}${nHid}</label>` : '') + '</div>';
   h += '<div class="wrap"><table>' + thead(first, C) + '<tbody>';
   for (const r of D.bilanz.zeilen) {
     if (r.gruppe) {
@@ -1161,12 +1200,12 @@ function vBilanz() {
     if (r.transit) { h += row(r, 'ind1 transit clickable', `${dot}${esc(r.name)} ${hq('geld_unterwegs')}`); continue; }
     const wp = r.wertpapiere && r.wertpapiere.length ? r.wertpapiere : null, dOpen = wp && S.depOpen[r.id];
     // a portfolio: number of its securities, like the accounts of a position ("shown/all" when some are hidden)
-    const wn = wp ? wp.filter(w => !w.rest).length : 0, wv = wp ? wp.filter(w => !w.rest && !(!S.alle && secHidden(w))).length : 0;
+    const wn = wp ? wp.filter(w => !w.rest).length : 0, wv = wp ? wp.filter(w => !w.rest && !(!S.alleB && secHidden(w))).length : 0;
     const wcnt = wp ? ` <span class="small muted"${wv < wn ? ` title="${t('n_von_m_wp', wv, wn)}"` : ''}>(${wv < wn ? wv + '/' + wn : wn})</span>` : '';
     h += row(r, 'clickable acct ind1', (wp ? `<span class="caret dep" data-dep="${esc(r.id)}" title="${t(dOpen ? 'wp_zuklappen' : 'wp_aufklappen')}">${dOpen ? '▾' : '▸'}</span>` : '') + dot + `<span class="nm">${esc(r.name)}</span>` + wcnt + tag(r));
     // securities of an expanded portfolio (shades of the account colour, as in the charts); long names shortened, full on hover
-    if (dOpen) wp.forEach((w, j) => { if (!S.alle && secHidden(w)) return; const ws = accShade(sh.color, j + 1);
-      h += `<tr class="wpr clickable ind2${w.rest ? ' muted' : ''}" data-wp="${esc(w.id)}"><td title="${esc(w.name + (w.isin && w.isin !== w.name ? ' · ' + w.isin : ''))}"><i class="pos-dot" style="${swatch(ws.color, ws.hatch)}"></i><span class="nm">${esc(w.name)}</span></td>${cells(C, c => lastOf(w.werte, c.months))}</tr>`; });
+    if (dOpen) wp.forEach((w, j) => { if (!S.alleB && secHidden(w)) return; const ws = accShade(sh.color, j + 1);
+      h += `<tr class="wpr clickable ind2${w.rest ? ' muted' : ''}" data-wp="${esc(w.id)}"><td title="${esc(wpTip(w))}"><i class="pos-dot" style="${swatch(ws.color, ws.hatch)}"></i><span class="nm">${esc(w.name)}</span></td>${cells(C, c => lastOf(w.werte, c.months))}</tr>`; });
     if (pr && r.rolle === 'beteiligungen' && proj.einlagen && r === D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === 'beteiligungen').slice(-1)[0])
       h += row({id: 'einlagen', name: t('einlagen_entnahmen_kumuliert_plan'), werte: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'));
   }
@@ -1250,7 +1289,7 @@ function bchBilanz(D) {
       if (!wp) { series.push(Object.assign({rolle: r.rolle, label: a.name, op: 1, sub: true, vals: vals(a)}, sh)); return; }
       // a portfolio opened in the table: its securities; months without any known security (and the plan) as the portfolio itself
       const known = months.map((m, k) => k < D.monate.length && wp.some(p => p.werte[m] != null));
-      wp.forEach((p, j) => series.push(Object.assign({rolle: r.rolle, label: p.name, op: 1, sub: true, vals: months.map((m, k) => known[k] ? p.werte[m] ?? null : null)}, accShade(sh.color, j + 1))));
+      wp.forEach((p, j) => series.push(Object.assign({rolle: r.rolle, label: p.name, full: wpTip(p, a.name), op: 1, sub: true, vals: months.map((m, k) => known[k] ? p.werte[m] ?? null : null)}, accShade(sh.color, j + 1))));
       series.push(Object.assign({rolle: r.rolle, label: a.name, op: 1, sub: true, vals: vals(a).map((v, k) => known[k] ? null : v)}, sh));
     });
     if (!accs.length) series.push({rolle: r.rolle, label, color, op: 1, vals: vals(r)});
@@ -1263,10 +1302,11 @@ function vBilanzChart(D) {
   BCH.d = d;
   // range kept as months (survives rebuilds and area changes; null = all); a button alone is anchored to today
   const dflt = bchDefault();
-  if (S.bchModus !== S.modus) { S.bchModus = S.modus; S.bchBtn = dflt; S.bchRange = undefined; }      // view switched: its own default
+  if (S.bchModus !== S.modus) { S.bchModus = S.modus; S.bchBtn = dflt; S.bchRange = undefined; S.bchLen = null; }      // view switched: its own default
   const r = S.bchRange, n = d.months.length, rb = bchRanges(true);
   let i0 = -1, i1 = -1;
-  if (r === null) { i0 = 0; i1 = n - 1; }
+  if (S.bchLen) { [i0, i1] = bchWindow(d, S.bchLen); S.bchBtn = null; S.bchLen = null; }       // kept as a length, ending today
+  else if (r === null) { i0 = 0; i1 = n - 1; }
   else if (r) { i0 = d.months.indexOf(r[0]); i1 = d.months.indexOf(r[1]); }
   if ((i0 < 0 || i1 <= i0) && S.bchBtn) [i0, i1] = bchWindow(d, S.bchBtn);
   if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, dflt); S.bchBtn = dflt; }          // default: 1 year (months) or 3 years (years) up to today
@@ -1403,7 +1443,7 @@ function tablePan(w, dx) {
     w.style.scrollSnapType = ''; w.scrollTo({left: Math.max(0, Math.min(max, best)), behavior: 'smooth'});
   }, 180);
 }
-const bchLinked = () => { if (S.bchLink == null) { try { S.bchLink = localStorage.getItem('kontor.bchLink') === '1'; } catch (e) { S.bchLink = false; } } return S.bchLink; };
+const bchLinked = () => !!S.bchLink;
 const bchKeyLabel = k => k.length === 4 ? k : `${MONATE_LANG[+k.slice(5) - 1]} ${k.slice(0, 4)}`;
 function bchIndex(key) {
   // month index of a table column (year column: the current month for the running year, otherwise its last month)
@@ -1613,19 +1653,19 @@ function bindBilanzChart(main) {
     bchSet(a, e, btn); nf.blur();
   });
   // a small chart shown large: its own controls (positions to add up, position and breakdown, accounts to leave out)
-  $$('#big-chips input', main).forEach(cb => cb.addEventListener('change', () => { try { localStorage.setItem('kontor.lcSel', JSON.stringify($$('#big-chips input:checked', main).map(x => x.dataset.r))); } catch (e) {} route(); }));
-  const bps = $('#big-pos-sel', main); if (bps) bps.addEventListener('change', () => { try { localStorage.setItem('kontor.lcPos', bps.value); } catch (e) {} route(); });
+  const vs = $('#view-save', main); if (vs) vs.addEventListener('click', () => { try { localStorage.setItem(VIEW_KEY, JSON.stringify(viewSnap())); toast(t('ansicht_gespeichert')); } catch (e) { toast(e.message, 5000); } });
+  const vr = $('#view-reset', main); if (vr) vr.addEventListener('click', () => { try { localStorage.removeItem(VIEW_KEY); } catch (e) {} viewApply(null); route(); toast(t('ansicht_zurueckgesetzt')); });
+  $$('#big-chips input', main).forEach(cb => cb.addEventListener('change', () => { S.lcSel = $$('#big-chips input:checked', main).map(x => x.dataset.r); route(); }));
+  const bps = $('#big-pos-sel', main); if (bps) bps.addEventListener('change', () => { S.lcPos = bps.value; route(); });
   const bpm = $('#big-pos-mode', main); if (bpm) bpm.addEventListener('click', () => {
-    let m = {}; try { m = JSON.parse(localStorage.getItem('kontor.lcPosMode') || '{}') || {}; } catch (e) {}
-    m[bps.value] = lcPosMode(B(), bps.value) === 'depot' ? 'konten' : 'depot';
-    try { localStorage.setItem('kontor.lcPosMode', JSON.stringify(m)); } catch (e) {} route();
+    S.lcPosModes = Object.assign({}, S.lcPosModes, {[bps.value]: lcPosMode(B(), bps.value) === 'depot' ? 'konten' : 'depot'}); route();
   });
   const bac = $('#big-accs', main); if (bac) bac.addEventListener('change', e => {
     const cb = e.target.closest('input[data-k]'); if (!cb || !BCH.d || !BCH.d.off) return;
     if (cb.checked) BCH.d.off.delete(cb.dataset.k); else BCH.d.off.add(cb.dataset.k);
     BCH.d = bchData(B()); bchDraw();
   });
-  const lb = $('#bch-link', main); if (lb) lb.addEventListener('click', () => { S.bchLink = !bchLinked(); try { localStorage.setItem('kontor.bchLink', S.bchLink ? '1' : '0'); } catch (e) {} route(); });
+  const lb = $('#bch-link', main); if (lb) lb.addEventListener('click', () => { S.bchLink = !bchLinked(); route(); });
   bchDraw();
   if (bchLinked()) {
     // the chart follows the table when it scrolls sideways; swiping or dragging on the chart scrolls the table
@@ -1669,7 +1709,7 @@ function lcGroupName(s, avail) {
 }
 function lcSelection(D) {
   const avail = D.bilanz.zeilen.filter(r => r.gruppe && ROLE[r.rolle]).map(r => r.rolle);
-  let sel = null; try { sel = JSON.parse(localStorage.getItem('kontor.lcSel') || 'null'); } catch (e) { sel = null; }
+  let sel = S.lcSel ? S.lcSel.slice() : null;
   return {avail, sel: (Array.isArray(sel) ? sel : LC_DEFAULT).filter(r => avail.includes(r))};
 }
 function lcData(D, rollen) {
@@ -1701,7 +1741,7 @@ function lcStack(D, rolle, mode) {
   accs.forEach((a, i) => {
     const sh = accShade(color, i);
     if (mode === 'depot' && a.wertpapiere && a.wertpapiere.length)
-      a.wertpapiere.forEach((p, j) => series.push(Object.assign({key: p.id, label: p.name, full: `${a.name} · ${p.name}${p.isin && p.isin !== p.name ? ' · ' + p.isin : ''}`, vals: vs(p.werte)}, accShade(sh.color, j + 1))));
+      a.wertpapiere.forEach((p, j) => series.push(Object.assign({key: p.id, label: p.name, full: wpTip(p, a.name), vals: vs(p.werte)}, accShade(sh.color, j + 1))));
     else series.push(Object.assign({key: a.id, label: a.name, full: a.pfad || a.name, vals: vs(Object.assign({}, a.werte, proj[a.id] || {}))}, sh));
   });
   const tot = accs.map(a => vs(Object.assign({}, a.werte, proj[a.id] || {})));
@@ -1712,7 +1752,7 @@ const lcHasDepot = (D, rolle) => D.bilanz.zeilen.some(x => !x.gruppe && x.rolle 
 function lcPosMode(D, rolle) {
   // "konten" or "depot" (securities), remembered per position; only where a portfolio of the position can be broken down
   if (!lcHasDepot(D, rolle)) return 'konten';
-  let m = {}; try { m = JSON.parse(localStorage.getItem('kontor.lcPosMode') || '{}') || {}; } catch (e) {}
+  const m = S.lcPosModes || {};
   return m[rolle] === 'depot' ? 'depot' : 'konten';
 }
 // short names for crowded legends: brackets, legal forms and fund words go, and of the remaining words the most distinctive
@@ -1758,13 +1798,54 @@ function lcBil(D) {
   return {months, ist: D.monate.length, vals: vs(nwAll), series};
 }
 // which of the four charts is the large one at the top (the others are the small ones below the table)
-const bigType = () => { if (!S.big) { try { S.big = localStorage.getItem('kontor.bigChart') || 'bilanz'; } catch (e) { S.big = 'bilanz'; } } return ['bilanz', 'nw', 'sel', 'pos'].includes(S.big) ? S.big : 'bilanz'; };
+// (S.lcOrder: the large one first, then the small ones in their order; enlarging a small one swaps it with the large one)
+const VIEW_ORDER = ['bilanz', 'nw', 'sel', 'pos'];
+const bigType = () => (S.lcOrder || VIEW_ORDER)[0];
+// The balance sheet view: changes while using it last for this session only. "Als Standard" keeps the current view on this
+// device (months or years, ranges, expanded rows, the eye, which chart is large, selections), "Zurücksetzen" goes back to
+// Kontor's default. Only what makes sense to keep: a range is kept as its length and always ends today (like "1 J"), the
+// table always scrolls to the current month, a zoom on the y axis is not kept. The area is chosen elsewhere.
+const VIEW_KEY = 'kontor.bilanzView';
+function viewLoad() { try { return JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); } catch (e) { return null; } }
+function viewApply(v) {
+  v = v || {};
+  const keys = o => Object.fromEntries(Object.entries(o && typeof o === 'object' ? o : {}).filter(([, x]) => x));
+  S.modus = v.modus === 'jahre' ? 'jahre' : 'monate';
+  S.lcOrder = Array.isArray(v.order) && v.order.length === VIEW_ORDER.length && VIEW_ORDER.every(x => v.order.includes(x)) ? v.order.slice() : VIEW_ORDER.slice();
+  S.bchLink = !!v.link; S.alleB = !!v.alle; S.posOpen = keys(v.posOpen); S.depOpen = keys(v.depOpen);
+  S.lcSel = Array.isArray(v.sel) ? v.sel.slice() : null; S.lcPos = typeof v.pos === 'string' ? v.pos : null; S.lcPosModes = keys(v.posMode);
+  S.lcOff = Object.fromEntries(Object.entries(v.off || {}).map(([id, o]) => [id, {k: o.k, off: new Set(o.off || [])}]));
+  // ranges: a button (months), all, or a length of its own -- each ending today
+  const b = v.bch || {};
+  S.bchModus = S.modus; S.bchRange = b.all ? null : undefined; S.bchBtn = b.btn || (b.all ? null : bchDefault()); S.bchLen = b.len || null; S.bchYr = null;
+  S.lcModus = S.modus; S.lcRange = {}; S.lcLen = {};
+  for (const [id, r] of Object.entries(v.lc || {})) { if (r && r.btn) S.lcRange[id] = [null, null, r.btn]; else if (r && r.len) S.lcLen[id] = r.len; }
+}
+function viewSnap() {
+  const len = (i0, i1) => i1 - i0 + 1, v = {modus: S.modus, order: (S.lcOrder || VIEW_ORDER).slice()};
+  if (bchLinked()) v.link = 1;
+  if (S.alleB) v.alle = 1;
+  const on = o => Object.keys(o || {}).filter(k => o[k]);
+  if (on(S.posOpen).length) v.posOpen = Object.fromEntries(on(S.posOpen).map(k => [k, 1]));
+  if (on(S.depOpen).length) v.depOpen = Object.fromEntries(on(S.depOpen).map(k => [k, 1]));
+  if (S.lcSel) v.sel = S.lcSel.slice();
+  if (S.lcPos) v.pos = S.lcPos;
+  if (on(S.lcPosModes).length) v.posMode = Object.assign({}, S.lcPosModes);
+  const off = Object.entries(S.lcOff || {}).filter(([, o]) => o.off && o.off.size);
+  if (off.length) v.off = Object.fromEntries(off.map(([id, o]) => [id, {k: o.k, off: [...o.off]}]));
+  v.bch = S.bchRange === null ? {all: 1} : S.bchBtn ? {btn: S.bchBtn} : BCH.d ? {len: len(BCH.i0, BCH.i1)} : {};
+  v.lc = {};
+  for (const [id, st] of Object.entries(LC)) if (st && st.d) v.lc[id] = st.btn ? {btn: st.btn} : {len: len(st.i0, st.i1)};
+  return v;
+}
+const viewBtns = () => `<span class="view-btns"><button class="small secondary" id="view-save" title="${t('ansicht_standard_tip')}">${ICON.pin}<span class="lbl">${t('ansicht_standard')}</span></button>`
+  + `<button class="small secondary" id="view-reset" title="${t('ansicht_reset_tip')}">${ICON.reset}<span class="lbl">${t('ansicht_reset')}</span></button></span>`;
 // colour of the selection chart: the selected positions' colours mixed in equal parts (one position: its own colour)
 const lcMix = rollen => (rollen || []).map(r => ROLE[r] && ROLE[r][1]).filter(Boolean)
   .reduce((m, c, k) => k ? `color-mix(in oklab, ${m} ${Math.round(k / (k + 1) * 100)}%, ${c})` : c, '') || 'var(--muted)';
 function lcPosRole(D) {
   const roles = D.bilanz.zeilen.filter(r => r.gruppe && ROLE[r.rolle]).map(r => r.rolle);
-  let r = null; try { r = localStorage.getItem('kontor.lcPos'); } catch (e) {}
+  const r = S.lcPos;
   if (roles.includes(r)) return r;
   const n = x => D.bilanz.zeilen.filter(a => !a.gruppe && a.rolle === x).length;
   return roles.find(x => x === 'liquiditaet' && n(x) > 1) || roles.find(x => n(x) > 1) || roles[0] || null;
@@ -1773,7 +1854,7 @@ function vBilanzLines(D) {
   if ((D.monate || []).length < 2) return '';
   const {avail, sel} = lcSelection(D);
   const rb = bchRanges(false);          // small charts: range in the top right corner
-  const big = bigType(), typeOf = {nw: 'nw', sel: 'sel', pos: 'pos', bil: 'bilanz'};
+  const typeOf = {nw: 'nw', sel: 'sel', pos: 'pos', bil: 'bilanz'};
   const head = (id, title, extra) => `<div class="lc-head"><b class="lc-title">${title}</b><button class="lc-big" data-big="${typeOf[id]}" title="${t('lc_gross')}">${ICON.expand}</button><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div><div class="lc-row2">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span><span class="lc-range" id="lc-${id}-range"></span></div>`;
   const plot = id => `<div class="bch-plot lc-plot" id="lc-${id}-plot"><svg class="bch-svg" id="lc-${id}-svg"></svg><div class="bch-tip hidden" id="lc-${id}-tip"></div></div>`;
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
@@ -1782,8 +1863,8 @@ function vBilanzLines(D) {
     bil: () => `<div class="card bch lc" data-lc="bil">${head('bil', t('lc_bilanz'))}${plot('bil')}<div class="lc-legend" id="lc-bil-legend"></div></div>`,
     sel: () => `<div class="card bch lc" data-lc="sel">${head('sel', (([tx, tip]) => `<span id="lc-sel-title" class="${tip ? 'tipped' : ''}" data-tip="${esc(tip)}" tabindex="0">${esc(tx)}</span>`)(lcSelTitle(sel, avail)))}${plot('sel')}<div class="lc-chips below" id="lc-chips">${chips}</div></div>`,
     pos: () => `<div class="card bch lc" data-lc="pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select><button class="lc-mode hidden" id="lc-pos-mode" title="${t('lc_depot_tip')}">${t('lc_depot')}</button>`)}${plot('pos')}<div class="lc-chips below" id="lc-pos-accs"></div></div>`};
-  // the chart shown large leaves its place to the balance sheet chart
-  return `<div class="cards lc-grid" id="lc-grid">${['nw', 'sel', 'pos'].map(id => card[id === big ? 'bil' : id]()).join('')}</div>`;
+  // the small ones in their order (enlarging one swaps it with the large one, so any order is possible)
+  return `<div class="cards lc-grid" id="lc-grid">${(S.lcOrder || VIEW_ORDER).slice(1).map(x => card[x === 'bilanz' ? 'bil' : x]()).join('')}</div>`;
 }
 // growth in percent, short: 7,6 % · 13,7 % · 340 % · 2400 % (no thousands separator) · 12T % / 12k % (from 10 000 %);
 // from a start of (almost) zero it cannot be computed: ∞
@@ -1949,6 +2030,12 @@ function lcInit(id, D, rollen, title, color, stack) {
   // range kept as months (survives rebuilds); a range button stays anchored to today
   const mode = stack && stack !== '__bil' ? lcPosMode(D, stack) : null, d = stack === '__bil' ? lcBil(D) : stack ? lcStack(D, stack, mode) : lcData(D, rollen), n = d.months.length, r = (S.lcRange || {})[id];
   let i0, i1, btn = r ? r[2] : bchDefault();             // default: 1 year (months view) or 3 years (years view) up to today
+  const len = (S.lcLen || {})[id];
+  if (len) {                                             // a length of its own (kept as default), ending today
+    delete S.lcLen[id]; [i0, i1] = bchWindow(d, len); S.lcRange = Object.assign(S.lcRange || {}, {[id]: [d.months[i0], d.months[i1], null]});
+    LC[id] = {id, d, i0, i1, f0: i0, f1: i1, btn: null, title, color, stack: stack || false, mode, drag: null, gesture: null, geo: null};
+    return;
+  }
   if (btn === 0 || (btn && !bchRanges(false).some(([m]) => m === btn))) btn = bchDefault();     // not offered in this view
   if (btn === 0) { i0 = 0; i1 = n - 1; }
   else if (btn) [i0, i1] = bchWindow(d, btn);
@@ -1957,7 +2044,7 @@ function lcInit(id, D, rollen, title, color, stack) {
 }
 function bindBilanzLines(main) {
   const grid = $('#lc-grid', main), D = B(); if (!grid || !D) return;
-  if (S.lcModus !== S.modus) { S.lcModus = S.modus; S.lcRange = {}; }      // view switched: its own default range
+  if (S.lcModus !== S.modus) { S.lcModus = S.modus; S.lcRange = {}; S.lcLen = {}; }      // view switched: its own default range
   const has = id => !!$(`.lc[data-lc="${id}"]`, grid);
   const draw = () => {
     const {sel} = lcSelection(D);
@@ -1967,7 +2054,10 @@ function bindBilanzLines(main) {
     if (pr && has('pos')) { lcInit('pos', D, null, ROLE[pr][0], ROLE[pr][1], pr); lcDraw('pos'); }
     if (has('bil')) { lcInit('bil', D, null, t('nettovermoegen'), 'var(--fg)', '__bil'); lcDraw('bil'); }
   };
-  $$('.lc-big', grid).forEach(b => b.addEventListener('click', () => { S.big = b.dataset.big; try { localStorage.setItem('kontor.bigChart', S.big); } catch (e) {} route(); }));
+  $$('.lc-big', grid).forEach(b => b.addEventListener('click', () => {
+    const o = (S.lcOrder || VIEW_ORDER).slice(), i = o.indexOf(b.dataset.big); if (i < 1) return;
+    [o[0], o[i]] = [o[i], o[0]]; S.lcOrder = o; route();
+  }));
   const ps = $('#lc-pos-sel', grid), pm = $('#lc-pos-mode', grid);
   const posMode = () => { if (!pm || !ps) return; const has = lcHasDepot(D, ps.value); pm.classList.toggle('hidden', !has); pm.classList.toggle('on', has && lcPosMode(D, ps.value) === 'depot'); };
   const posRedraw = () => {
@@ -1976,11 +2066,9 @@ function bindBilanzLines(main) {
     if (keep) Object.assign(LC.pos, {i0: keep[0], i1: keep[1], f0: keep[0], f1: keep[1], btn: keep[2]});
     posMode(); lcDraw('pos');
   };
-  if (ps) ps.addEventListener('change', () => { try { localStorage.setItem('kontor.lcPos', ps.value); } catch (e) {} posRedraw(); });
+  if (ps) ps.addEventListener('change', () => { S.lcPos = ps.value; posRedraw(); });
   if (pm) pm.addEventListener('click', () => {
-    let m = {}; try { m = JSON.parse(localStorage.getItem('kontor.lcPosMode') || '{}') || {}; } catch (e) {}
-    m[ps.value] = lcPosMode(D, ps.value) === 'depot' ? 'konten' : 'depot';
-    try { localStorage.setItem('kontor.lcPosMode', JSON.stringify(m)); } catch (e) {}
+    S.lcPosModes = Object.assign({}, S.lcPosModes, {[ps.value]: lcPosMode(D, ps.value) === 'depot' ? 'konten' : 'depot'});
     posRedraw();
   });
   posMode();
@@ -1996,7 +2084,7 @@ function bindBilanzLines(main) {
   }));
   $$('#lc-chips input', grid).forEach(cb => cb.addEventListener('change', () => {
     const sel = $$('#lc-chips input:checked', grid).map(x => x.dataset.r);
-    try { localStorage.setItem('kontor.lcSel', JSON.stringify(sel)); } catch (e) {}
+    S.lcSel = sel.slice();
     const keep = LC.sel ? [LC.sel.i0, LC.sel.i1, LC.sel.btn] : null, [tx, tip] = lcSelTitle(sel, lcSelection(D).avail), te = $('#lc-sel-title', grid);
     if (te) { te.textContent = tx; te.dataset.tip = tip; te.classList.toggle('tipped', !!tip); }
     lcInit('sel', D, sel, sel.map(r => ROLE[r][0]).join(' + '), lcMix(sel));
@@ -3190,6 +3278,7 @@ async function route() {
   if (qs && S.tab === 'transactions') { const p = new URLSearchParams(qs); S.uf.ohne_kategorie = p.get('uncategorized') === '1'; S.uf.ohne_beleg = p.get('no_receipt') === '1'; if (p.get('year')) S.uf.jahr = p.get('year'); if (p.get('entity')) S.uf.entitaet = p.get('entity'); history.replaceState(null, '', '#transactions'); }
   $$('#nav a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + S.tab));
   $('#page-title').textContent = SUBTITLES[S.tab + '/' + S.sub] || (S.tab === 'properties' && S.sub ? t('immobilie') : TITLES[S.tab]);
+  if (ALPHA_TABS.has(S.tab)) $('#page-title').insertAdjacentHTML('beforeend', alphaTag('alpha-tag big'));
   $('#bereich-seg').classList.toggle('hidden', !(S.DATA && Object.keys(S.DATA.bereiche || {}).length > 1 && ['overview', 'balance', 'cashflow', 'planning'].includes(S.tab)));
   $('.side').classList.remove('open');
   if (S.tab !== 'transactions') closeDrawer();
@@ -3315,7 +3404,7 @@ function bind(main) {
   const vs = $('#vorschlag-an', main); if (vs) vs.addEventListener('change', e => { S.vorschlag = e.target.checked; route(); });
   $$('[data-goto]', main).forEach(c => c.addEventListener('click', e => { if (!e.target.closest('a, button, input, select')) location.hash = c.dataset.goto; }));
   $$('[data-xlsx]', main).forEach(b => b.addEventListener('click', () => download(b.dataset.xlsx === 'property' ? `/api/export/property.xlsx?id=${encodeURIComponent(b.dataset.immo || '')}&calculation=${encodeURIComponent(b.dataset.kalk || '')}` : `/api/export/${b.dataset.xlsx}.xlsx?area=${encodeURIComponent(b.dataset.bereich || S.bereich || '')}&mode=${S.modus === 'jahre' ? 'years' : 'months'}`
-    + (b.dataset.xlsx === 'balance' ? `&open=${encodeURIComponent(Object.keys(S.posOpen || {}).filter(k => S.posOpen[k]).join(','))}&dep=${encodeURIComponent(Object.keys(S.depOpen || {}).filter(k => S.depOpen[k]).join(','))}&all=${S.alle ? 1 : 0}` : ''))));
+    + (b.dataset.xlsx === 'balance' ? `&open=${encodeURIComponent(Object.keys(S.posOpen || {}).filter(k => S.posOpen[k]).join(','))}&dep=${encodeURIComponent(Object.keys(S.depOpen || {}).filter(k => S.depOpen[k]).join(','))}&all=${S.alleB ? 1 : 0}` : ''))));
 
   // Einrichtung
   const wc = $('#w-check', main); if (wc) wc.addEventListener('click', async () => {
@@ -3343,6 +3432,7 @@ function bind(main) {
   $$('.k-hist', main).forEach(b => b.addEventListener('click', async e => { const btn = e.target; btn.classList.add('busy'); try { const tr = btn.closest('tr'), sel = $('.k-verlauf', tr); await openHistDrawer(tr.dataset.uuid, sel ? sel.value : null); } catch (er) { toast(t('verlauf_konnte_nicht_geladen_werden') + er.message, 6000); } finally { btn.classList.remove('busy'); } }));
   const hp = $('#hi-pick', main); if (hp) hp.addEventListener('click', () => { const inp = $('#file-input'); inp.value = ''; inp.setAttribute('accept', '.csv,.txt,.xlsx,.xlsm'); inp.removeAttribute('capture'); inp.onchange = () => { if (inp.files[0]) histImportPreview(inp.files[0]); }; inp.click(); });
   const hd = $('#hi-drop', main); if (hd) { hd.addEventListener('dragover', e => { e.preventDefault(); hd.classList.add('over'); }); hd.addEventListener('dragleave', () => hd.classList.remove('over')); hd.addEventListener('drop', e => { e.preventDefault(); hd.classList.remove('over'); if (e.dataTransfer.files[0]) histImportPreview(e.dataTransfer.files[0]); }); if (HI) renderHistImport(); }
+  if ($('#mmh-names', main)) mmhNames();
   const mz = $('#mmh-zeigen', main); if (mz) mz.addEventListener('click', async () => { try { await api('/api/history/mm-reveal', {}); } catch (e) { toast(e.message, 6000); } });
   const md = $('#mmh-drop', main); if (md) {
     const send = async file => {
@@ -3545,7 +3635,7 @@ async function startRun(dry) {
 
 window.addEventListener('hashchange', route);
 document.addEventListener('click', e => { const b = e.target.closest('#modus-seg button'); if (b) { S.modus = b.dataset.m; route(); } });
-document.addEventListener('change', e => { const id = e.target.id; if (id === 'planan') { S.plan = e.target.checked; route(); } else if (id === 'realan') { S.real = e.target.checked; route(); } else if (id === 'alle-zeilen') { S.alle = e.target.checked; route(); } });
+document.addEventListener('change', e => { const id = e.target.id; if (id === 'planan') { S.plan = e.target.checked; route(); } else if (id === 'realan') { S.real = e.target.checked; route(); } else if (id === 'alle-zeilen') { if (S.tab === 'balance') S.alleB = e.target.checked; else S.alle = e.target.checked; route(); } });
 $('#menu-btn').addEventListener('click', () => $('.side').classList.toggle('open'));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 // Klick neben das Seitenfenster schliesst es (bei ungespeicherten Eingaben erst nach Rueckfrage)
@@ -3554,10 +3644,12 @@ document.addEventListener('pointerdown', e => {
   if (drawerDirty() && !confirm(t('ungespeicherte_aenderungen_verwerfen'))) return;
   closeDrawer();
 });
-try { const s = JSON.parse(localStorage.getItem('kontor.ui') || '{}'); Object.assign(S, {modus: s.modus === 'jahre' ? 'jahre' : 'monate', plan: s.plan !== false, real: !!s.real, bereich: s.bereich || null}); } catch (e) {}
+try { const s = JSON.parse(localStorage.getItem('kontor.ui') || '{}'); Object.assign(S, {plan: s.plan !== false, real: !!s.real, bereich: s.bereich || null}); } catch (e) {}
+try { ['kontor.bigChart', 'kontor.lcSel', 'kontor.lcPos', 'kontor.lcPosMode', 'kontor.bchLink'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+viewApply(viewLoad());
 let SNAP_T = null;
 window.addEventListener('resize', () => { clearTimeout(SNAP_T); SNAP_T = setTimeout(() => { if (['balance', 'cashflow', 'planning'].includes(S.tab)) $$('#main .wrap.snap').forEach(w => { const l = w.scrollLeft; snapTable(w); w.scrollLeft = snapLeft(w, l); }); }, 150); });
-window.addEventListener('beforeunload', () => { try { localStorage.setItem('kontor.ui', JSON.stringify({modus: S.modus, plan: S.plan, real: S.real, bereich: S.bereich})); } catch (e) {} });
+window.addEventListener('beforeunload', () => { try { localStorage.setItem('kontor.ui', JSON.stringify({plan: S.plan, real: S.real, bereich: S.bereich})); } catch (e) {} });
 setInterval(async () => { if (S.csrf && !document.hidden && !OFFLINE.mode) { try { await pollStatus(); } catch (e) {} } }, 30000);
 // Zurück im Fenster (z. B. nach MoneyMoney): sofort nachsehen statt bis zu 30 s einen alten Stand zu zeigen
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.csrf && !OFFLINE.mode) pollStatus().catch(() => {}); });

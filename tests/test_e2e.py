@@ -2120,6 +2120,9 @@ class BrowserTest(unittest.TestCase):
                 # Bilanz: Positionen/Gruppen, inaktive, Konto-Klick -> Verlauf
                 pg.click("#nav a[href='#balance']"); pg.wait_for_selector("tr.pos")
                 self.assertIn("Bankguthaben", pg.query_selector("#main").inner_text())
+                # pages not fully tested yet carry "Alpha" in the menu and at the title; the balance sheet does not
+                self.assertTrue(pg.query_selector("#nav a.alpha[href='#cashflow'] .alpha-tag")); self.assertIsNone(pg.query_selector("#nav a[href='#balance'] .alpha-tag"))
+                self.assertIsNone(pg.query_selector("#page-title .alpha-tag")); self.assertTrue(pg.query_selector("#nav a.alpha[href='#rules']"))
                 # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
                 self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
                 self.assertTrue(pg.query_selector("#main thead th.plan")); self.assertNotIn("Fortschreibung", pg.query_selector("#main").inner_text())
@@ -2143,16 +2146,32 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("Welt-ETF", pg.inner_text("#lc-pos-accs")); pg.click("#lc-pos-mode"); pg.wait_for_timeout(200)
                 self.assertNotIn("Welt-ETF", pg.inner_text("#lc-pos-accs"))
                 pg.select_option("#lc-pos-sel", "verbindlichkeiten"); pg.wait_for_timeout(200)
-                self.assertNotIn("Hausbank Giro", pg.inner_text("#lc-pos-accs")); pg.evaluate("localStorage.removeItem('kontor.lcPos')")
+                self.assertNotIn("Hausbank Giro", pg.inner_text("#lc-pos-accs")); pg.evaluate("S.lcPos = null")
                 # any small chart can become the large one (the balance sheet then shows small in its place), and back
                 pg.click(".lc[data-lc='nw'] .lc-big"); pg.wait_for_selector("#bch.big-nw"); pg.wait_for_selector(".lc[data-lc='bil'] path.lc-band")
                 self.assertIn("Nettovermögen", pg.inner_text("#bch .bch-head")); self.assertTrue(pg.query_selector("#bch-svg path.bch-nw"))
                 pg.click(".lc[data-lc='bil'] .lc-big"); pg.wait_for_timeout(300); self.assertIsNone(pg.query_selector("#bch.big-nw")); self.assertTrue(pg.query_selector(".lc[data-lc='nw']"))
+                # enlarging swaps with the large one (so any order is possible); nothing of it is kept on its own -- only "Als Standard"
+                order = lambda: pg.eval_on_selector_all("#lc-grid .lc", "cs => cs.map(c => c.dataset.lc)")
+                pg.click(".lc[data-lc='nw'] .lc-big"); pg.wait_for_selector("#bch.big-nw"); pg.click(".lc[data-lc='sel'] .lc-big"); pg.wait_for_selector("#bch.big-sel")
+                self.assertEqual(order(), ["bil", "nw", "pos"])
+                pg.click("#modus-seg button[data-m='jahre']"); pg.wait_for_timeout(300)
+                pg.reload(); pg.wait_for_selector("#bch"); self.assertIsNone(pg.query_selector("#bch.big-sel")); self.assertEqual(order(), ["nw", "sel", "pos"])
+                self.assertTrue(pg.query_selector("#modus-seg button[data-m='monate'].on"))
+                pg.click(".lc[data-lc='pos'] .lc-big"); pg.wait_for_selector("#bch.big-pos"); pg.click("#modus-seg button[data-m='jahre']"); pg.wait_for_timeout(300)
+                pg.click("#bch-rb button[data-m='120']"); pg.wait_for_timeout(200); pg.click("#view-save"); pg.wait_for_timeout(200)
+                pg.reload(); pg.wait_for_selector("#bch.big-pos"); self.assertEqual(order(), ["nw", "sel", "bil"])
+                self.assertTrue(pg.query_selector("#modus-seg button[data-m='jahre'].on")); self.assertTrue(pg.query_selector("#bch-rb button[data-m='120'].on"))
+                pg.click("#view-reset"); pg.wait_for_timeout(300)
+                self.assertIsNone(pg.query_selector("#bch.big-pos")); self.assertEqual(order(), ["nw", "sel", "pos"]); self.assertTrue(pg.query_selector("#modus-seg button[data-m='monate'].on"))
+                self.assertIsNone(pg.evaluate("localStorage.getItem('kontor.bilanzView')"))
+                pg.click("#pos-all"); pg.wait_for_timeout(300)                       # all positions open again (as before)
                 # the same in the table: a portfolio opens into its securities (without opening the account's history)
                 if not pg.query_selector("[data-dep]"):
                     pg.click("tr.pos[data-pos='wertpapiere']")
                 pg.wait_for_selector("[data-dep]"); pg.click("[data-dep]"); pg.wait_for_selector("tr.wpr")
                 self.assertIn("Welt-ETF", pg.inner_text("#main table")); self.assertFalse(pg.query_selector("#drawer.open"))
+                self.assertTrue(any("ISIN IE00B4L5Y983" in x for x in pg.eval_on_selector_all("tr.wpr td:first-child", "ts => ts.map(t => t.title)")))      # MoneyMoney's identity always on hover
                 checked = {x.get_attribute("data-r") for x in pg.query_selector_all("#lc-chips input:checked")}
                 self.assertIn("liquiditaet", checked); self.assertTrue(checked <= {"liquiditaet", "wertpapiere", "anlagen"})
                 v0 = pg.inner_text("#lc-sel-val"); pg.click("#lc-chips input[data-r='immobilien']"); pg.wait_for_timeout(200)
@@ -2162,7 +2181,7 @@ class BrowserTest(unittest.TestCase):
                 pg.click(".lc-rb[data-lc='nw'] button[data-m='24']"); pg.wait_for_timeout(200)
                 self.assertTrue(pg.query_selector(".lc-rb[data-lc='nw'] button[data-m='24'].on"))
                 self.assertEqual(pg.eval_on_selector_all("#bch-rb button", "bs => bs.map(b => b.dataset.m)"), ["6", "12", "24", "0"])
-                pg.evaluate("localStorage.removeItem('kontor.lcSel')")
+                pg.evaluate("S.lcSel = null")
                 # old German addresses lead to the English ones
                 pg.evaluate("location.hash = '#einrichtung/konten'"); pg.wait_for_timeout(400)
                 self.assertEqual(pg.evaluate("location.hash"), "#setup/accounts")

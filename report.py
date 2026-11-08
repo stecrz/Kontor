@@ -208,13 +208,20 @@ def depot_holdings(acc: Account, werte: Dict[str, Optional[float]], mkeys: List[
         except (TypeError, ValueError, AttributeError):
             continue
     own = ((config or {}).get("bilanz") or {}).get("wp_namen") or {}
-    for key, r in rows.items():                       # own names first, then names Kontor has seen in MoneyMoney's export
-        r["name"] = str(own.get(key) or "") or r["name"] or names.get(key, "")
+    found = (state.get("wp_suche") or {}).get("namen") or {}
+    for key, r in rows.items():
+        # MoneyMoney's own name (history or export) stays as "orig" and is always shown on hover, together with the ISIN; the
+        # name shown is your own one, else MoneyMoney's, else one looked up by the ISIN (only on request), else the ISIN
+        r["orig"] = r["name"] or names.get(key, "")
+        look = str(found.get(r.get("isin") or "") or "") if not r["orig"] else ""
+        r["auto"], r["quelle"] = r["orig"] or look, "eigen" if own.get(key) else "suche" if look else ""
+        r["name"] = str(own.get(key) or "") or r["auto"]
     out = [r for r in rows.values() if any(abs(v) >= 0.005 for v in r["werte"].values())]
     if not out:
         return []
     for i, r in enumerate(out, 1):
-        r["name"] = r["name"] or r.get("isin") or tr("s_wertpapier_n") % i       # without a name: the ISIN
+        r["auto"] = r["auto"] or r.get("isin") or tr("s_wertpapier_n") % i       # without a name: the ISIN
+        r["name"] = r["name"] or r["auto"]
         r["werte"] = {mk: r["werte"].get(mk) for mk in mkeys}
     rest = {}
     for mk in mkeys:

@@ -21,7 +21,7 @@ MoneyMoney (macOS) arbeitet. Er läuft als launchd-Dienst beim Nutzer und starte
   Zurückschreiben eingeschaltet hat – das Kategoriefeld von Umsätzen, die er in Kontor zuordnet (`mm_categories.py`: direkt
   vorher neu lesen und prüfen, fremde Kategorien nur nach Rückfrage, nur am Mac). Nie Buchungen, den Kategorienbaum oder
   Regeln des Nutzers ändern oder löschen, keine Überweisungen.
-- Oberfläche nur über 127.0.0.1 bzw. Tailscale erreichbar. Einzige Netzverbindung: Update-Prüfung bei GitHub.
+- Oberfläche nur über 127.0.0.1 bzw. Tailscale erreichbar. Netzverbindungen nur: Update-Prüfung bei GitHub und – nur auf ausdrücklichen Klick (Einrichtung → Historische Kontostände) – das Nachschlagen von Wertpapiernamen bei OpenFIGI (`security_names.py`, sendet nur ISINs).
 - Keine Passwörter oder Zugangsdaten speichern, protokollieren oder zwischenspeichern; Datenordner verschlüsselt.
 - Kontostände aus MoneyMoney (`mm_history.py`): Datenbankdatei nur per Upload, nur im Arbeitsspeicher; Passwort nur im Swift-Helfer,
   der nur für den Vorgang erzeugt und danach gelöscht wird; Puffer danach überschreiben; keine dauerhaften Freigaben.
