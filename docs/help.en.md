@@ -139,7 +139,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 
 **Single charts** (below the table)
 
-- Net worth alone (with the average per month, the high and the low below), the sum of freely chosen positions (default: cash, securities and term investments; the title names them abbreviated, e.g. “C + S + TI”, the line has their mixed colour) and the composition of a chosen position by account (stacked).
+- Net worth alone (with the average per month, the high and the low below), the sum of freely chosen positions (default: cash, securities and term investments; the title names them abbreviated, e.g. “Selection: C + S + TI”, the line has their mixed colour) and the composition of a chosen position by account (stacked).
 - Each has its own range (depending on the view 6 months, 1 or 2 years or 1, 3 or 10 years up to today; drag to enlarge, double-click to zoom, swipe right for the plan) and an axis that adapts to the visible values – so you can see the development even when large positions such as receivables and liabilities cancel each other out in the chart above. The area reaches to the zero line, so upwards for negative values.
 - The reference period is shown top right: the value applies to its end, the change (in € and %) since its start.
 

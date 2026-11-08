@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.10.2 (2026-11-08 04:53)
+- Kleine Grafik „Auswahl“: Titel wieder mit „Auswahl:“ davor („Auswahl: BG + WP + FA“).
+- Kürzel: Beteiligungen „PE“ (Private Equity), Immobilien „RE“ (Real Estate), in beiden Sprachen.
+
 ## 3.10.1 (2026-11-08 04:46)
 - Kleine Grafik „Auswahl“: Der Titel nennt die gewählten Positionen stark abgekürzt (z. B. „BG + WP + FA“, ausgeschrieben beim Darüberfahren); eine Position ausgeschrieben, alle Positionen „Nettovermögen“.
 

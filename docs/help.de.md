@@ -139,7 +139,7 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 
 **Einzelne Grafiken** (unter der Tabelle)
 
-- Das Nettovermögen allein (darunter Ø je Monat, Höchst- und Tiefststand), die Summe frei gewählter Positionen (Standard: Bankguthaben, Wertpapiere und Festanlagen; der Titel nennt sie abgekürzt, z. B. „BG + WP + FA“, die Linie hat ihre Mischfarbe) und die Zusammensetzung einer gewählten Position nach Konten (gestapelt).
+- Das Nettovermögen allein (darunter Ø je Monat, Höchst- und Tiefststand), die Summe frei gewählter Positionen (Standard: Bankguthaben, Wertpapiere und Festanlagen; der Titel nennt sie abgekürzt, z. B. „Auswahl: BG + WP + FA“, die Linie hat ihre Mischfarbe) und die Zusammensetzung einer gewählten Position nach Konten (gestapelt).
 - Jede hat einen eigenen Zeitraum (je nach Ansicht 6 Monate, 1 oder 2 Jahre bzw. 1, 3 oder 10 Jahre bis heute; Ziehen vergrößert, Doppelklick zoomt, nach rechts wischen zeigt den Plan) und eine Achse, die sich den sichtbaren Werten anpasst – so sieht man die Entwicklung auch dann, wenn sich große Positionen wie Forderungen und Verbindlichkeiten oben gegenseitig ausgleichen. Die Fläche reicht bis zur Nulllinie, bei negativen Werten also nach oben.
 - Oben rechts steht der Bezugszeitraum: der Wert gilt für sein Ende, die Veränderung (in € und %) seit seinem Beginn.
 

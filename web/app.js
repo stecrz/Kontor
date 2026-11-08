@@ -1484,13 +1484,13 @@ function bindBilanzChart(main) {
 const LC = {};
 const LC_DEFAULT = ['liquiditaet', 'wertpapiere', 'anlagen'];
 // title of the selection chart: the chosen positions, strongly abbreviated (BG + WP + FA) so that even all but one fit;
-// one position: its name; all positions: net worth
+// one position: its name; all positions: net worth; always after "Selection:"
 function lcSelTitle(sel, avail) {
   const s = avail.filter(r => sel.includes(r)), full = s.map(r => ROLE[r][0]).join(' + ');
   if (!s.length) return [t('lc_summe_auswahl'), ''];
-  if (s.length === avail.length && avail.length > 1) return [t('nettovermoegen'), full];
-  if (s.length === 1) return [ROLE[s[0]][0], ''];
-  return [s.map(r => POS_KURZ[r] || ROLE[r][0]).join('\u2009+\u2009'), full];
+  if (s.length === avail.length && avail.length > 1) return [t('lc_auswahl_0', t('nettovermoegen')), full];
+  if (s.length === 1) return [t('lc_auswahl_0', ROLE[s[0]][0]), ''];
+  return [t('lc_auswahl_0', s.map(r => POS_KURZ[r] || ROLE[r][0]).join('\u2009+\u2009')), full];
 }
 const POS_KURZ = {liquiditaet: t('kurz_liquiditaet'), wertpapiere: t('kurz_wertpapiere'), anlagen: t('kurz_anlagen'), immobilien: t('kurz_immobilien'), beteiligungen: t('kurz_beteiligungen'),
   sachwerte: t('kurz_sachwerte'), forderungen: t('kurz_forderungen'), sonstiges: t('kurz_sonstiges'), verbindlichkeiten: t('kurz_verbindlichkeiten')};
