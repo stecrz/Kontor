@@ -8,6 +8,8 @@ und erneuert es, bevor es ablaeuft.
 """
 from __future__ import annotations
 
+import base64
+import http.client
 import json
 import logging
 import os
@@ -18,6 +20,7 @@ import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
+from urllib.parse import quote
 from i18n import tr
 
 log = logging.getLogger("kontor.tls")
@@ -43,13 +46,75 @@ def run(binary: str, args: list, timeout: int) -> subprocess.CompletedProcess:
             r2 = subprocess.run(["/bin/launchctl", "asuser", str(os.getuid()), binary] + list(args), capture_output=True, text=True, timeout=timeout)
             if r2.returncode == 0 and "GUI failed" not in (r2.stdout or ""):
                 return r2
-        except (OSError, subprocess.TimeoutExpired):
-            pass
+            log.debug("Tailscale CLI via launchctl: exit %s", r2.returncode)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            log.debug("Tailscale CLI via launchctl failed: %s", e)
     return r
 
 
-def status_json(binary: str, timeout: int = 15) -> dict:
-    """``tailscale status --json`` as a dict; raises RuntimeError with the CLI's own message if there is no JSON."""
+# -- Local interface of the Tailscale app (macOS) ----------------------------------------------------------------------
+# The Mac apps of Tailscale answer on 127.0.0.1 (the same "LocalAPI" their own command line tool uses). Port and a
+# per-session token come from a file only the logged-in user can read ("sameuserproof"). Kontor reads them for each
+# request, keeps nothing and logs neither token nor port. This works even when the bundled CLI refuses to run from a
+# background service ("The Tailscale GUI failed to start").
+MACSYS_DIR = "/Library/Tailscale"
+
+
+def parse_proof(text: str) -> Optional[Tuple[int, str]]:
+    """(port, token) from a file name like ".../sameuserproof-61577-2ae2ec9e0aa2005784f1"."""
+    m = re.search(r"sameuserproof-(\d+)-([^\s/]+)", text or "")
+    return (int(m.group(1)), m.group(2)) if m else None
+
+
+def localapi_endpoint() -> Optional[Tuple[int, str]]:
+    if sys.platform != "darwin":
+        return None
+    try:                                                  # Standalone variant (download from tailscale.com)
+        port = os.readlink(os.path.join(MACSYS_DIR, "ipnport"))
+        with open(os.path.join(MACSYS_DIR, "sameuserproof-" + port)) as f:
+            return int(port), f.read().strip()
+    except (OSError, ValueError):
+        pass
+    try:                                                  # App Store variant: the extension keeps the proof file open
+        out = subprocess.run([shutil.which("lsof") or "/usr/sbin/lsof", "-n", "-a", "-c", "IPNExtension", "-F", "n"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return parse_proof(out)
+
+
+def localapi(path: str, timeout: int = 15) -> bytes:
+    """GET ``path`` on the Tailscale app's local interface; raises RuntimeError (with Tailscale's message) on failure."""
+    ep = localapi_endpoint()
+    if not ep:
+        raise RuntimeError("Tailscale local interface not found")
+    port, token = ep
+    auth = base64.b64encode((":" + token).encode()).decode()
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    try:
+        conn.request("GET", path, headers={"Host": "local-tailscaled.sock", "Sec-Tailscale": "localapi", "Authorization": "Basic " + auth})
+        res = conn.getresponse()
+        body = res.read()
+    except (OSError, http.client.HTTPException) as e:
+        raise RuntimeError("Tailscale local interface: %s" % e)
+    finally:
+        conn.close()
+    if res.status != 200:
+        raise RuntimeError(("Tailscale %s: %s" % (res.status, body[:300].decode("utf-8", "replace").strip()))[:300])
+    return body
+
+
+def status_json(binary: Optional[str], timeout: int = 15) -> dict:
+    """Tailscale status as a dict: first via the app's local interface, then ``tailscale status --json``. Raises
+    RuntimeError with Tailscale's own message if neither answers."""
+    first = None
+    try:
+        st = json.loads(localapi("/localapi/v0/status", timeout).decode("utf-8"))
+        if isinstance(st, dict):
+            return st
+    except (RuntimeError, ValueError) as e:
+        first = str(e)
+    if not binary:
+        raise RuntimeError(first or "Tailscale not found")
     r = run(binary, ["status", "--json"], timeout)
     try:
         st = json.loads(r.stdout or "")
@@ -58,10 +123,11 @@ def status_json(binary: str, timeout: int = 15) -> dict:
     except ValueError:
         pass
     msg = ((r.stderr or "") + " " + (r.stdout or "")).strip().splitlines()
-    raise RuntimeError((msg[0] if msg else "exit %s" % r.returncode)[:200])
+    cli = (msg[0] if msg else "exit %s" % r.returncode)[:200]
+    raise RuntimeError(cli if not first or "not found" in first else "%s · CLI: %s" % (first[:200], cli))
 
 
-def tailscale_self(binary: str) -> dict:
+def tailscale_self(binary: Optional[str]) -> dict:
     """Own node according to ``tailscale status --json``: {name, ip, cert_domains}."""
     st = status_json(binary, 20)
     me = st.get("Self") or {}
@@ -77,7 +143,7 @@ def status() -> dict:
     (MagicDNS) und Adresse, Tailnet, Konto, ob HTTPS-Zertifikate eingeschaltet sind, und die anderen Geraete im Tailnet
     (die Kontor erreichen koennten). Nichts davon wird gespeichert oder protokolliert."""
     binary = find_tailscale()
-    if not binary:
+    if not binary and not localapi_endpoint():
         return {"gefunden": False}
     try:
         st = status_json(binary)
@@ -133,15 +199,25 @@ def _write_private(path: str, data: str) -> None:
     os.chmod(path, 0o600)
 
 
-def issue(binary: str, name: str, data_dir: str) -> Tuple[str, str]:
-    """Fetch (or renew) the certificate for ``name``; returns (cert, key).
-    The CLI prints certificate and key to stdout ("-") and Kontor writes the files itself: the Mac App Store variant of
-    Tailscale runs sandboxed and may not write into Kontor's data folder."""
+def issue(binary: Optional[str], name: str, data_dir: str) -> Tuple[str, str]:
+    """Fetch (or renew) the certificate for ``name``; returns (cert, key). First via the app's local interface, then the
+    CLI (certificate and key to stdout, "-"). Kontor writes the files itself: the Mac App Store variant of Tailscale runs
+    sandboxed and may not write into Kontor's data folder."""
     crt, key = cert_paths(data_dir, name)
     os.makedirs(os.path.dirname(crt), mode=0o700, exist_ok=True)
     log.info("Requesting Tailscale certificate")
-    r = run(binary, ["cert", "--cert-file", "-", "--key-file", "-", name], 180)
-    blocks = _pem_blocks(r.stdout) if r.returncode == 0 else []
+    blocks, why = [], ""
+    try:                                                  # app's local interface: private key, then the certificate chain
+        blocks = _pem_blocks(localapi("/localapi/v0/cert/%s?type=pair" % quote(name, safe=""), 180).decode("utf-8", "replace"))
+    except RuntimeError as e:
+        why = str(e)
+    if [b for t, b in blocks if t == "CERTIFICATE"] and [b for t, b in blocks if "PRIVATE KEY" in t]:
+        r = subprocess.CompletedProcess([], 0, "", "")
+    elif binary:
+        r = run(binary, ["cert", "--cert-file", "-", "--key-file", "-", name], 180)
+        blocks = _pem_blocks(r.stdout) if r.returncode == 0 else []
+    else:
+        r = subprocess.CompletedProcess([], 1, "", why)
     certs = [b for t, b in blocks if t == "CERTIFICATE"]
     keys = [b for t, b in blocks if "PRIVATE KEY" in t]
     if not (certs and keys):
@@ -170,7 +246,7 @@ def setup(config: dict, data_dir: str) -> dict:
     Rueckgabe: {"oberflaeche": {...}, "url": "https://name:port/", "name": ..., "ip": ..., "gueltig_bis": ...}
     """
     binary = find_tailscale()
-    if not binary:
+    if not binary and not localapi_endpoint():
         raise RuntimeError(tr("s_tailscale_nicht_gefunden"))
     me = tailscale_self(binary)
     crt, key = issue(binary, me["name"], data_dir)
@@ -194,7 +270,7 @@ def renew_if_due(config: dict, data_dir: str, days: int = RENEW_DAYS) -> bool:
     if exp and exp - datetime.now(timezone.utc) > timedelta(days=days):
         return False
     binary = find_tailscale()
-    if not binary:
+    if not binary and not localapi_endpoint():
         log.warning("TLS certificate expires (%s), but Tailscale is missing", exp)
         return False
     name = os.path.basename(crt)[:-4]

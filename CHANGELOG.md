@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.9.32 (2026-11-08)
+- Zugriff vom iPhone: Kontor fragt Tailscale jetzt direkt über dessen lokale Schnittstelle ab (wie Tailscales eigenes Kommandozeilenprogramm) und holt auch das Zertifikat so. Behebt „The Tailscale GUI failed to start“, wenn das Programm in Tailscale.app aus dem Hintergrunddienst nicht startet. Schlägt beides fehl, nennt Kontor beide Gründe.
+
 ## 3.9.31 (2026-11-08)
 - README auf GitHub schlank: Einführung, Bilder, Installation, Entwicklung; alles Weitere nur noch in der Hilfe (keine doppelt gepflegten Texte). Sicherheit, Kommandozeile und Datenordner stehen jetzt vollständig in der Hilfe („Für Fortgeschrittene“); veraltete Angabe zum Dienstnamen korrigiert.
 - Time Machine: Hinweis, dass „gesichert“ der Standard ist und „Ausschließen“ nur eine Markierung am Datenordner setzt (nicht die Time-Machine-Einstellungen ändert, daher nicht in deren Ausschlussliste sichtbar).

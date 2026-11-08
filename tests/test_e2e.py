@@ -393,6 +393,54 @@ class TailscaleTests(unittest.TestCase):
             tls_cert.find_tailscale = orig
 
 
+class TailscaleLocalApiTests(unittest.TestCase):
+    """Tailscale app's local interface (127.0.0.1, token from the "sameuserproof" file): status and certificate without the CLI."""
+    def test_localapi(self):
+        import tls_cert
+        from http.server import BaseHTTPRequestHandler
+        self.assertEqual(tls_cert.parse_proof("p123\nn/Users/x/Library/Group Containers/ABC.io.tailscale.ipn.macos/sameuserproof-61577-2ae2ec9e\n"), (61577, "2ae2ec9e"))
+        self.assertIsNone(tls_cert.parse_proof("nothing here"))
+        seen = []
+        pem = "-----BEGIN EC PRIVATE KEY-----\nS0tL\n-----END EC PRIVATE KEY-----\n-----BEGIN CERTIFICATE-----\nQUFB\n-----END CERTIFICATE-----\n"
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                seen.append((self.path, self.headers.get("Host"), self.headers.get("Authorization")))
+                if self.headers.get("Authorization") != "Basic " + base64.b64encode(b":tok123").decode():
+                    self.send_response(401); self.end_headers(); return
+                if self.path == "/localapi/v0/status":
+                    body = json.dumps({"BackendState": "Running", "Self": {"DNSName": "mac.example.ts.net.", "TailscaleIPs": ["100.101.102.103", "fd7a::1"]},
+                                       "CertDomains": ["mac.example.ts.net"], "Peer": {"x": {"HostName": "iPhone", "OS": "iOS", "Online": True}}}).encode()
+                elif self.path == "/localapi/v0/cert/mac.example.ts.net?type=pair":
+                    body = pem.encode()
+                else:
+                    self.send_response(404); self.end_headers(); return
+                self.send_response(200); self.end_headers(); self.wfile.write(body)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        orig_ep, orig_find = tls_cert.localapi_endpoint, tls_cert.find_tailscale
+        try:
+            tls_cert.localapi_endpoint = lambda: (srv.server_address[1], "tok123")
+            tls_cert.find_tailscale = lambda: None                                  # no CLI at all
+            st = tls_cert.status()
+            self.assertTrue(st["verbunden"]); self.assertEqual((st["name"], st["ip"]), ("mac.example.ts.net", "100.101.102.103"))
+            self.assertTrue(st["https"]); self.assertEqual(st["geraete"][0]["name"], "iPhone")
+            self.assertEqual(seen[0][1], "local-tailscaled.sock")
+            d = tempfile.mkdtemp(prefix="kontor-tls-")
+            crt, key = tls_cert.issue(None, "mac.example.ts.net", d)
+            self.assertIn("BEGIN CERTIFICATE", open(crt).read()); self.assertIn("PRIVATE KEY", open(key).read())
+            self.assertEqual(os.stat(key).st_mode & 0o777, 0o600)
+            tls_cert.localapi_endpoint = lambda: (srv.server_address[1], "wrong")   # wrong token: message, no crash
+            st = tls_cert.status()
+            self.assertFalse(st["verbunden"]); self.assertIn("401", st["fehler"])
+        finally:
+            tls_cert.localapi_endpoint, tls_cert.find_tailscale = orig_ep, orig_find
+            srv.shutdown()
+
+
 class IncrementalReadTests(unittest.TestCase):
     """Schnelles Lesen: nur die letzten 30 Tage aus MoneyMoney, aeltere Umsaetze aus dem letzten vollstaendigen Stand."""
     def setUp(self):
