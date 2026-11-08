@@ -2,6 +2,9 @@
    Genutzt von der Oberflaeche (app.js: t()) und vom Dienst (i18n.py: tr()). */
 'use strict';
 const I18N = {
+"lc_pos_tip":["Bilanzposition wählen", "Choose a balance sheet position"],
+"lc_pos_hinweis":["Zusammensetzung nach Konten", "Composition by account"],
+"bch_pan_tip":["Hier seitlich ziehen, um den Zeitraum zu verschieben", "Drag sideways here to move the range"],
 "sw_am_mac":["am Mac nicht nötig – die Offline-Ansicht gibt es nur auf dem iPhone", "not needed on the Mac – the offline view is only for the iPhone"],
 "acl_sum_gesperrt":["Absichern: Kontor ist gesperrt – Regel prüfen", "Harden: Kontor is blocked – check the rule"],
 "acl_sum_offen":["Absichern (empfohlen): noch weitere Ports erreichbar", "Harden (recommended): more ports still reachable"],
@@ -603,7 +606,6 @@ const I18N = {
 "s_von_unterwegs_nur_ansehen":["Von unterwegs nur ansehen – Änderungen am Mac (Einstellungen → Zugang).", "View only remotely – make changes on the Mac (Settings → Access)."],
 "hilfe_durchsuchen":["Hilfe durchsuchen …", "Search help …"],
 "n_abschnitte":["{0} Abschnitt|{0} Abschnitte", "{0} section|{0} sections"],
-"klick_mehr_in_der_hilfe":["Klick: mehr in der Hilfe", "Click: more in the help"],
 "moneymoney_laeuft_und_ist_entsperrt":["MoneyMoney läuft und ist entsperrt, macOS erlaubt den Zugriff (Automation). Konten und Kategorien werden gelesen.", "MoneyMoney is running and unlocked, macOS allows access (Automation). Accounts and categories are read."],
 "bereiche":["Bereiche", "Areas"],
 "welche_konten_gehoeren_zusammen_privat":["Welche Konten gehören zusammen (Privat, jede Gesellschaft)? Unabhängig von der Gruppierung in MoneyMoney.", "Which accounts belong together (private, each company)? Independent of the grouping in MoneyMoney."],
@@ -770,7 +772,7 @@ const I18N = {
 "einlagen_entnahmen_kumuliert_plan":["Einlagen/Entnahmen (kumuliert, Plan)", "Contributions/withdrawals (cumulative, plan)"],
 "einlagen_entnahmen_beteiligungen_kumul":["Einlagen/Entnahmen Beteiligungen (kumuliert, Plan)", "Contributions/withdrawals private equity (cumulative, plan)"],
 "0_nicht_im_nettovermoegen":["{0} · nicht im Nettovermögen", "{0} · not in net worth"],
-"klick_auf_eine_position_klappt":["Klick auf eine Position klappt sie auf, Klick auf ein Konto öffnet seinen Verlauf. Blass: laufender Monat (noch nicht abgeschlossen); blass und schraffiert: Plan. Darunter: Nettovermögen und eine frei wählbare Summe als eigene Kurven.", "Click a position to expand it, click an account to open its history. Faded: current month (not finished yet); faded and hatched: plan. Below: net worth and a freely chosen sum as separate curves."],
+"klick_auf_eine_position_klappt":["Klick auf eine Position klappt sie auf, Klick auf ein Konto öffnet seinen Verlauf. Blass: laufender Monat (noch nicht abgeschlossen); blass und schraffiert: Plan. Darunter: Nettovermögen, eine frei wählbare Summe und die Zusammensetzung einer Position nach Konten als eigene Grafiken.", "Click a position to expand it, click an account to open its history. Faded: current month (not finished yet); faded and hatched: plan. Below: net worth, a freely chosen sum and the composition of one position by account as separate charts."],
 "alle":["Alle", "All"],
 "bch_hinweis":["Wischen verschiebt den Zeitraum, Zusammen-/Auseinanderziehen zoomt, Ziehen oder Doppelklick vergrößert, Klick springt zum Monat in der Tabelle.", "Swipe moves the period, pinch zooms, drag or double-click zooms in, click jumps to the month in the table."],
 "heute":["heute", "today"],

@@ -146,18 +146,18 @@ const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl:
   port: 'iphone', touchid: 'security', paket: 'backup', timemachine: 'backup', diagnose: 'troubleshooting', pruefen: 'setup', updates: 'updates',
   update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', dokumente: 'properties', immo_planung: 'properties'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
-const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k] + (HELP_AT[k] ? ' · ' + t('klick_mehr_in_der_hilfe') : ''))}"${HELP_AT[k] ? ` data-help="${HELP_AT[k]}"` : ''}>?</span>` : '';
+const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k])}"${HELP_AT[k] ? ` data-help="${HELP_AT[k]}"` : ''}>?</span>` : '';
 document.addEventListener('click', e => {
-  // auf Geräten mit Maus führt ein Klick auf „?“ in den passenden Abschnitt der Hilfe (am iPhone zeigt Tippen nur den Hinweis)
+  // with a mouse a click on "?" opens the matching help section; on touch devices the first tap shows the tip, the second opens the help
   const q = e.target.closest('.hq[data-help]'); if (!q || !matchMedia('(hover: hover)').matches) return;
   e.preventDefault(); e.stopPropagation(); location.hash = '#help/' + q.dataset.help;
 }, true);
 // Tooltip als eigenes Element: unterhalb, wenn oben kein Platz ist; nie ueber den Fensterrand hinaus
 (function tooltips() {
-  let tip = null, cur = null;
+  let tip = null, cur = null, shownAt = 0;
   const hide = () => { if (tip) tip.remove(); tip = null; cur = null; };
   const show = el => {
-    hide(); cur = el;
+    hide(); cur = el; shownAt = Date.now();
     tip = document.createElement('div'); tip.className = 'tip'; tip.textContent = el.dataset.tip; document.body.appendChild(tip);
     const r = el.getBoundingClientRect(), w = Math.min(340, window.innerWidth - 16); tip.style.maxWidth = w + 'px';
     const tr = tip.getBoundingClientRect();
@@ -166,11 +166,18 @@ document.addEventListener('click', e => {
     if (top + tr.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - tr.height - 8);
     tip.style.left = left + 'px'; tip.style.top = top + 'px';
   };
-  document.addEventListener('mouseover', e => { const el = e.target.closest && e.target.closest('.hq'); if (el && el !== cur) show(el); });
-  document.addEventListener('mouseout', e => { const el = e.target.closest && e.target.closest('.hq'); if (el && el === cur && !(e.relatedTarget && el.contains(e.relatedTarget))) hide(); });
+  let touch = false;                        // after a tap the browser also sends mouse events; those must not hide the tip again
+  document.addEventListener('pointerdown', e => { touch = e.pointerType === 'touch'; }, true);
+  document.addEventListener('mouseover', e => { if (touch) return; const el = e.target.closest && e.target.closest('.hq'); if (el && el !== cur) show(el); });
+  document.addEventListener('mouseout', e => { if (touch) return; const el = e.target.closest && e.target.closest('.hq'); if (el && el === cur && !(e.relatedTarget && el.contains(e.relatedTarget))) hide(); });
   document.addEventListener('focusin', e => { const el = e.target.closest && e.target.closest('.hq'); if (el) show(el); });
   document.addEventListener('focusout', e => { if (e.target.closest && e.target.closest('.hq')) hide(); });
-  document.addEventListener('click', e => { const el = e.target.closest && e.target.closest('.hq'); if (el) { e.preventDefault(); if (cur === el && tip) hide(); else show(el); } else hide(); });
+  document.addEventListener('click', e => {
+    const el = e.target.closest && e.target.closest('.hq'); if (!el) { hide(); return; }
+    e.preventDefault();
+    if (cur === el && tip && Date.now() - shownAt > 400) { hide(); if (el.dataset.help) location.hash = '#help/' + el.dataset.help; }   // second tap
+    else if (cur !== el || !tip) show(el);
+  });
   window.addEventListener('scroll', hide, true); window.addEventListener('resize', hide);
 })();
 
@@ -474,6 +481,7 @@ function bereichSeg() {
   seg.classList.toggle('hidden', keys.length < 2 || !['overview', 'balance', 'cashflow', 'planning'].includes(S.tab));
   seg.innerHTML = keys.map(k => `<button data-b="${k}" class="${k === S.bereich ? 'on' : ''}">${esc(BN(k))}</button>`).join('');
   $$('button', seg).forEach(b => b.addEventListener('click', () => { S.bereich = b.dataset.b; S.collapsed = {}; bereichSeg(); route(); }));
+  const on = $('button.on', seg); if (on && seg.scrollWidth > seg.clientWidth) seg.scrollLeft = on.offsetLeft - (seg.clientWidth - on.offsetWidth) / 2;   // many areas: the bar scrolls sideways
 }
 
 // ---------------------------------------------------------------- Spalten, Werte
@@ -559,7 +567,7 @@ function chartCashflow(D) {
 }
 function niceTicks(min, max, n) {
   const span = (max - min) || 1, raw = span / n, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p, step = (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
-  const out = []; for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(v); return out;
+  const out = []; for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(Math.abs(v) < step * 1e-6 ? 0 : v); return out;   // no "-0"
 }
 
 // ---------------------------------------------------------------- Übersicht
@@ -1059,8 +1067,9 @@ function vBilanz() {
       continue;
     }
     if (!S.posOpen[r.rolle] || skip(r)) continue;
-    if (r.transit) { h += row(r, 'ind1 transit clickable', `${esc(r.name)} ${hq('geld_unterwegs')}`); continue; }
-    h += row(r, 'clickable acct ind1', esc(r.name) + tag(r));
+    const dot = `<i class="pos-dot" style="background:${(ROLE[r.rolle] || [0, 'var(--c-neutral)'])[1]};opacity:${accOp(D, r)}"></i>`;      // shade as in the chart
+    if (r.transit) { h += row(r, 'ind1 transit clickable', `${dot}${esc(r.name)} ${hq('geld_unterwegs')}`); continue; }
+    h += row(r, 'clickable acct ind1', dot + esc(r.name) + tag(r));
     if (pr && r.rolle === 'beteiligungen' && proj.einlagen && r === D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === 'beteiligungen').slice(-1)[0])
       h += row({id: 'einlagen', name: t('einlagen_entnahmen_kumuliert_plan'), werte: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'));
   }
@@ -1076,6 +1085,9 @@ function vBilanz() {
 const MONATE_LANG = LANG === 'en' ? ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
   : ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 const BCH = {d: null, i0: 0, i1: 0, drag: null, hover: null, ro: null};
+// shade of an account inside its position (same in chart and table)
+const ACC_OP = [1, .7, .5, .36, .26];
+const accOp = (D, r) => ACC_OP[Math.max(0, D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === r.rolle).indexOf(r)) % ACC_OP.length];
 function bchData(D) {
   // Positionen (Farben wie in der Tabelle), Ist + Plan; aufgeklappte Positionen zeigen ihre Konten (Abstufungen der Farbe)
   const pr = D.bilanz.projektion || null, proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
@@ -1085,7 +1097,7 @@ function bchData(D) {
   for (const r of D.bilanz.zeilen.filter(x => x.gruppe && ROLE[x.rolle])) {
     const [label, color] = ROLE[r.rolle];
     const accs = (S.posOpen || {})[r.rolle] ? D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === r.rolle) : [];
-    if (accs.length) accs.forEach((a, i) => series.push({rolle: r.rolle, label: a.name, color, op: [1, .7, .5, .36, .26][i % 5], sub: true, vals: vals(a)}));
+    if (accs.length) accs.forEach((a, i) => series.push({rolle: r.rolle, label: a.name, color, op: ACC_OP[i % ACC_OP.length], sub: true, vals: vals(a)}));
     else series.push({rolle: r.rolle, label, color, op: 1, vals: vals(r)});
   }
   const nwAll = pr ? Object.assign({}, D.bilanz.nettovermoegen, pr.nettovermoegen) : D.bilanz.nettovermoegen;
@@ -1147,7 +1159,7 @@ function bchDraw() {
   // Nettovermoegen
   const line = (a, b, cls0) => { const pts = []; for (let i = a; i <= b; i++) if (d.nw[i] != null) pts.push((pts.length ? 'L' : 'M') + pf(x(i)) + ' ' + pf(y(d.nw[i]))); return pts.length > 1 ? `<path class="${cls0}" d="${pts.join('')}"/>` : ''; };
   g += line(i0, Math.min(i1, ist), 'bch-nw') + (ist < i1 ? line(Math.max(i0, ist), i1, 'bch-nw plan') : '');
-  g += `<g id="bch-hover"></g><rect class="bch-sel hidden" id="bch-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="bch-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/>`;
+  g += `<g id="bch-hover"></g><rect class="bch-sel hidden" id="bch-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="bch-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-pan" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_pan_tip')}</title></rect>`;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); svg.innerHTML = g;
   BCH.geo = {W, H, P, x, y, idx: px => Math.max(i0, Math.min(i1, Math.round(i0 + (px - P.l) * n / Math.max(1, W - P.l - P.r))))};
   const rl = $('#bch-range'); if (rl) rl.textContent = `${MONATE_LANG[+d.months[i0].slice(5) - 1]} ${d.months[i0].slice(0, 4)} – ${MONATE_LANG[+d.months[i1].slice(5) - 1]} ${d.months[i1].slice(0, 4)}`;
@@ -1206,17 +1218,57 @@ function bchJump(m) {
   const idx = [...th.parentNode.children].indexOf(th);
   $$('tr', w).forEach(tr => { const c = tr.children[idx]; if (c) { c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); } });
 }
+// Touch and drag on a chart, attached once to the (persistent) <svg>; the plot inside is redrawn on every change.
+// - one finger or the mouse on the y-axis strip (.bch-pan): drag sideways to move the range
+// - two fingers in the plot: move = shift, spread/pinch = zoom; the value tip stays hidden meanwhile
+// o: {pt(e) -> x in svg units, geo(), range() -> [f0, f1], view(f0, span, keepBtn), hide()}
+function chartGestures(svg, o) {
+  if (!svg || svg._gest) return svg && svg._gest;
+  const tp = new Map(); let two = null, pan = null;
+  const width = G => Math.max(1, G.W - G.P.l - G.P.r);
+  const both = () => { const v = [...tp.values()]; return [(v[0] + v[1]) / 2, Math.abs(v[0] - v[1])]; };
+  svg.addEventListener('pointerdown', e => {
+    const G = o.geo(); if (!G) return;
+    if (e.target.classList && e.target.classList.contains('bch-pan')) {
+      const [f0, f1] = o.range(); pan = {id: e.pointerId, x: o.pt(e), f0, span: f1 - f0};
+      try { svg.setPointerCapture(e.pointerId); } catch (x) {}
+      e.preventDefault(); return;
+    }
+    if (e.pointerType !== 'touch') return;
+    tp.set(e.pointerId, o.pt(e));
+    if (tp.size === 2) { o.hide(); const [m, d] = both(), [f0, f1] = o.range(); two = {d: Math.max(d, 24), span: f1 - f0, c: f0 + (m - G.P.l) * (f1 - f0) / width(G)}; }
+  });
+  svg.addEventListener('pointermove', e => {
+    const G = o.geo(); if (!G) return;
+    if (pan && e.pointerId === pan.id) { e.preventDefault(); o.view(pan.f0 - (o.pt(e) - pan.x) * pan.span / width(G), pan.span, true); return; }
+    if (!tp.has(e.pointerId)) return;
+    tp.set(e.pointerId, o.pt(e));
+    if (!two || tp.size < 2) return;
+    e.preventDefault(); o.hide();
+    const [m, d] = both(), ns = two.span * two.d / Math.max(d, 24);
+    o.view(two.c - (m - G.P.l) * ns / width(G), ns, false);
+  });
+  let lastTwo = 0;
+  const end = e => { if (pan && e.pointerId === pan.id) pan = null; tp.delete(e.pointerId); if (tp.size < 2 && two) { two = null; lastTwo = Date.now(); } };
+  svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
+  // busy also shortly after two fingers: lifting the last finger is not a tap
+  svg._gest = {busy: () => !!pan || tp.size >= 2 || Date.now() - lastTwo < 500, multi: () => tp.size >= 2};
+  return svg._gest;
+}
 function bchBind() {
   const hit = $('#bch-hit'); if (!hit) return;
   const pt = e => { const r = $('#bch-svg').getBoundingClientRect(); return (e.clientX - r.left) * BCH.geo.W / r.width; };
+  const gest = chartGestures($('#bch-svg'), {pt, geo: () => BCH.geo, range: () => [BCH.f0, BCH.f1], view: (f0, span, keep) => bchView(f0, span, keep), hide: () => bchHover(null)});
   hit.addEventListener('pointermove', e => {
+    if (gest.busy()) { bchHover(null); return; }
     const px = pt(e), G = BCH.geo;
     if (BCH.drag) { const sel = $('#bch-sel'), a = Math.max(G.P.l, Math.min(BCH.drag.x, px)), b = Math.min(G.W - G.P.r, Math.max(BCH.drag.x, px)); sel.setAttribute('x', a); sel.setAttribute('width', b - a); sel.classList.toggle('hidden', b - a < 4); }
     bchHover(G.idx(px));
   });
   hit.addEventListener('pointerleave', () => { if (!BCH.drag) bchHover(null); });
-  hit.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') return; BCH.drag = {x: pt(e)}; hit.setPointerCapture(e.pointerId); });
+  hit.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') { BCH.tap = pt(e); return; } BCH.drag = {x: pt(e)}; hit.setPointerCapture(e.pointerId); });
   hit.addEventListener('pointerup', e => {
+    if (e.pointerType === 'touch' && (gest.busy() || BCH.tap == null || Math.abs(pt(e) - BCH.tap) > 10)) { BCH.tap = null; bchHover(null); return; }   // only a tap jumps to the column
     const G = BCH.geo, px = pt(e), dr = BCH.drag; BCH.drag = null;
     if (dr && Math.abs(px - dr.x) > 6) { const a = G.idx(Math.min(px, dr.x)), b = G.idx(Math.max(px, dr.x)); bchSet(a, b); return; }
     $('#bch-sel') && $('#bch-sel').classList.add('hidden');
@@ -1236,9 +1288,9 @@ function bchBind() {
     bchView(BCH.f0 + e.deltaX * span / Math.max(1, G.W - G.P.l - G.P.r), span, true);
   }, {passive: false});
   // Safari: Zusammen-/Auseinanderziehen kommt als eigenes Gesten-Ereignis
-  hit.addEventListener('gesturestart', e => { e.preventDefault(); BCH.gesture = {c: at(pt(e)), span: BCH.f1 - BCH.f0, f0: BCH.f0}; });
+  hit.addEventListener('gesturestart', e => { e.preventDefault(); bchHover(null); BCH.gesture = gest.multi() ? null : {c: at(pt(e)), span: BCH.f1 - BCH.f0, f0: BCH.f0}; });
   hit.addEventListener('gesturechange', e => {
-    e.preventDefault(); const g = BCH.gesture; if (!g || !e.scale) return;
+    e.preventDefault(); const g = BCH.gesture; if (!g || !e.scale || gest.multi()) return;
     const ns = Math.max(2, Math.min(BCH.d.months.length - 1, g.span / e.scale));
     bchView(g.c - (g.c - g.f0) * ns / g.span, ns, false);
   });
@@ -1288,6 +1340,27 @@ function lcData(D, rollen) {
   }
   return {months, ist: D.monate.length, vals};
 }
+// third chart: one position split into its accounts (stacked), in pastel colours distinct from the positions;
+// beyond the palette the colours repeat hatched
+const LC_PASTEL = ['#9ad0ec', '#f4b6c2', '#b8e0b8', '#ffd59e', '#cdb4f0', '#a8e6cf', '#ffb3a7', '#f9e79f', '#aec6f6', '#f7c5a8', '#c9e4ae', '#e0bbe4', '#b2dfdb', '#ffcfdf'];
+function lcStack(D, rolle) {
+  const pr = D.bilanz.projektion || null, proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
+  const months = [...D.monate, ...(pr ? (D.plan_monate || []) : [])];
+  const series = D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === rolle).map(a => {
+    const w = Object.assign({}, a.werte, proj[a.id] || {});
+    return {label: a.name, vals: months.map(m => w[m] == null ? null : w[m] * defl(m))};
+  }).filter(x => x.vals.some(v => v != null && Math.abs(v) >= 0.5));
+  series.forEach((x, i) => { x.color = LC_PASTEL[i % LC_PASTEL.length]; x.hatch = i >= LC_PASTEL.length; });
+  const vals = months.map((m, k) => { let v = null; for (const x of series) if (x.vals[k] != null) v = (v || 0) + x.vals[k]; return v; });
+  return {months, ist: D.monate.length, vals, series};
+}
+function lcPosRole(D) {
+  const roles = D.bilanz.zeilen.filter(r => r.gruppe && ROLE[r.rolle]).map(r => r.rolle);
+  let r = null; try { r = localStorage.getItem('kontor.lcPos'); } catch (e) {}
+  if (roles.includes(r)) return r;
+  const n = x => D.bilanz.zeilen.filter(a => !a.gruppe && a.rolle === x).length;
+  return roles.find(x => x === 'liquiditaet' && n(x) > 1) || roles.find(x => n(x) > 1) || roles[0] || null;
+}
 function vBilanzLines(D) {
   if ((D.monate || []).length < 2) return '';
   const {avail, sel} = lcSelection(D);
@@ -1295,9 +1368,10 @@ function vBilanzLines(D) {
   const head = (id, title) => `<div class="bch-head"><b class="lc-title">${title}</b><span class="lc-val" id="lc-${id}-val"></span><span class="sp"></span><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>`;
   const plot = id => `<div class="bch-plot lc-plot" id="lc-${id}-plot"><svg class="bch-svg" id="lc-${id}-svg"></svg><div class="bch-tip hidden" id="lc-${id}-tip"></div></div><div class="small muted lc-range" id="lc-${id}-range"></div>`;
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
-  return `<div class="cards two lc-grid" id="lc-grid">
+  return `<div class="cards lc-grid" id="lc-grid">
     <div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}<div class="lc-chips" title="${t('lc_nw_tip')}">${avail.map(r => `<span class="lc-chip fixed"><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</span>`).join('')}</div>${plot('nw')}</div>
     <div class="card bch lc" data-lc="sel">${head('sel', t('lc_summe_auswahl'))}<div class="lc-chips" id="lc-chips">${chips}</div>${plot('sel')}</div>
+    <div class="card bch lc" data-lc="pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select>`)}<div class="lc-chips small muted">${t('lc_pos_hinweis')}</div>${plot('pos')}<div class="lc-legend" id="lc-pos-legend"></div></div>
   </div>`;
 }
 function lcDraw(id) {
@@ -1305,9 +1379,16 @@ function lcDraw(id) {
   const d = st.d, W = Math.max(260, box.clientWidth), H = 190, P = {l: 58, r: 10, t: 14, b: 24};
   const i0 = st.i0, i1 = st.i1, n = i1 - i0, ist = d.ist - 1;
   const vis = d.vals.slice(i0, i1 + 1).filter(v => v != null);
+  if (st.stack) { const lg = $(`#lc-${id}-legend`); if (lg) lg.innerHTML = d.series.map(x => `<span><i style="${x.hatch ? `background:repeating-linear-gradient(135deg, ${x.color} 0 2px, transparent 2px 4px)` : `background:${x.color}`}"></i>${esc(x.label)}</span>`).join(''); }
   if (!vis.length) { svg.innerHTML = ''; svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); $(`#lc-${id}-val`).textContent = id === 'sel' && !st.title ? t('lc_nichts_gewaehlt') : t('keine_werte'); return; }
-  let max = Math.max(...vis), min = Math.min(...vis); if (max - min < 1) { max += 50; min -= 50; }
-  const pad = (max - min) * 0.08; max += pad; min -= pad;
+  let max = Math.max(...vis), min = Math.min(...vis);
+  const ups = [], dns = [];
+  if (st.stack) {                                       // stacked: positive parts up from zero, negative ones down
+    for (let i = i0; i <= i1; i++) { let u = 0, l = 0; for (const s2 of d.series) { const v = s2.vals[i] || 0; if (v > 0) u += v; else l += v; } ups.push(u); dns.push(l); }
+    max = Math.max(0, ...ups); min = Math.min(0, ...dns);
+  }
+  if (max - min < 1) { max += 50; min -= 50; }
+  const pad = (max - min) * 0.08; max += pad; if (!st.stack || min < 0) min -= pad;
   const x = i => P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n), y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min), pf = v => v.toFixed(1);
   let g = '';
   for (const tk of niceTicks(min, max, 4)) g += `<line class="bch-grid${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(tk))}" y2="${pf(y(tk))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(tk) + 4)}">${Fk(tk)}</text>`;
@@ -1323,8 +1404,24 @@ function lcDraw(id) {
   const line = (a, b, c) => { const pts = []; for (let i = a; i <= b; i++) if (d.vals[i] != null) pts.push((pts.length ? 'L' : 'M') + pf(x(i)) + ' ' + pf(y(d.vals[i]))); return pts.length > 1 ? `<path class="${c}" d="${pts.join('')}" style="stroke:${st.color}"/>` : ''; };
   const area = () => { const pts = []; let first = null, last = null; for (let i = i0; i <= Math.min(i1, ist); i++) if (d.vals[i] != null) { pts.push((pts.length ? 'L' : 'M') + pf(x(i)) + ' ' + pf(y(d.vals[i]))); if (first == null) first = i; last = i; }
     return pts.length > 1 ? `<path class="lc-area" d="${pts.join('')}L${pf(x(last))} ${H - P.b}L${pf(x(first))} ${H - P.b}Z" style="fill:${st.color}"/>` : ''; };
-  g += area() + line(i0, Math.min(i1, ist), 'bch-nw') + (ist < i1 ? line(Math.max(i0, ist), i1, 'bch-nw plan') : '');
-  g += `<g id="lc-${id}-hover"></g><rect class="bch-sel hidden" id="lc-${id}-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="lc-${id}-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/>`;
+  if (st.stack) {
+    let defs = '';
+    const bands = sign => {
+      const base = Array(n + 1).fill(0); let out = '';
+      d.series.forEach((sx, si) => {
+        const top = [], bot = [];
+        for (let k = 0; k <= n; k++) { const v = sx.vals[i0 + k] || 0, part = sign > 0 ? Math.max(0, v) : Math.min(0, v); bot.push(base[k]); base[k] += part; top.push(base[k]); }
+        if (top.every((tv, k) => Math.abs(tv - bot[k]) < 0.5)) return;
+        let fill = sx.color;
+        if (sx.hatch) { const pid = `lcp-${id}-${si}`; fill = `url(#${pid})`; if (!defs.includes(pid)) defs += `<pattern id="${pid}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${sx.color}" opacity=".35"/><rect width="2.5" height="5" fill="${sx.color}"/></pattern>`; }
+        out += `<path class="lc-band" d="${top.map((tv, k) => (k ? 'L' : 'M') + pf(x(i0 + k)) + ' ' + pf(y(tv))).join('')}${bot.map((bv, k) => [k, bv]).reverse().map(([k, bv]) => 'L' + pf(x(i0 + k)) + ' ' + pf(y(bv))).join('')}Z" fill="${fill}"/>`;
+      });
+      return out;
+    };
+    const b2 = bands(1) + bands(-1);
+    g = `<defs>${defs}</defs>` + g + b2 + line(i0, Math.min(i1, ist), 'lc-total') + (ist < i1 ? line(Math.max(i0, ist), i1, 'lc-total plan') : '');
+  } else g += area() + line(i0, Math.min(i1, ist), 'bch-nw') + (ist < i1 ? line(Math.max(i0, ist), i1, 'bch-nw plan') : '');
+  g += `<g id="lc-${id}-hover"></g><rect class="bch-sel hidden" id="lc-${id}-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="lc-${id}-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-pan" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_pan_tip')}</title></rect>`;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); svg.innerHTML = g;
   st.geo = {W, H, P, x, y, idx: px => Math.max(i0, Math.min(i1, Math.round(i0 + (px - P.l) * n / Math.max(1, W - P.l - P.r))))};
   // value today and change over the visible actual months
@@ -1355,7 +1452,8 @@ function lcHover(id, i) {
   if (i == null || d.vals[i] == null) { hv.innerHTML = ''; tip.classList.add('hidden'); bchMark(null); return; }
   const xi = G.x(i).toFixed(1), m = d.months[i];
   hv.innerHTML = `<line class="bch-cross" x1="${xi}" x2="${xi}" y1="${G.P.t}" y2="${G.H - G.P.b}"/><circle class="bch-dot" cx="${xi}" cy="${G.y(d.vals[i]).toFixed(1)}" r="4" style="stroke:${st.color}"/>`;
-  tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${i >= d.ist ? ` <span class="pill neutral">${t('plan')}</span>` : ''}</div><div><span>${esc(st.title)}</span><b>${F0(d.vals[i])} €</b></div>`;
+  const rows = st.stack ? d.series.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= 0.5).map(x => `<div><i style="background:${x.color}"></i><span>${esc(x.label)}</span><b>${F0(x.vals[i])}</b></div>`).join('') : '';
+  tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${i >= d.ist ? ` <span class="pill neutral">${t('plan')}</span>` : ''}</div>${rows}<div class="${st.stack ? 'bch-tip-nw' : ''}"><span>${esc(st.title)}</span><b>${F0(d.vals[i])} €</b></div>`;
   tip.classList.remove('hidden');
   const bw = $(`#lc-${id}-plot`).clientWidth, tw = tip.offsetWidth, px = G.x(i);
   tip.style.left = (px + 14 + tw > bw ? px - 14 - tw : px + 14) + 'px';
@@ -1363,16 +1461,19 @@ function lcHover(id, i) {
 }
 function lcBindPlot(id) {
   const st = LC[id], hit = $(`#lc-${id}-hit`); if (!hit) return;
-  const pt = e => { const r = $(`#lc-${id}-svg`).getBoundingClientRect(); return (e.clientX - r.left) * st.geo.W / r.width; };
+  const pt = e => { const r = $(`#lc-${id}-svg`).getBoundingClientRect(); return (e.clientX - r.left) * LC[id].geo.W / r.width; };
   const at = px => { const G = st.geo; return st.f0 + (px - G.P.l) * (st.f1 - st.f0) / Math.max(1, G.W - G.P.l - G.P.r); };
+  const gest = chartGestures($(`#lc-${id}-svg`), {pt, geo: () => LC[id].geo, range: () => [LC[id].f0, LC[id].f1], view: (f0, span, keep) => lcView(id, f0, span, keep), hide: () => lcHover(id, null)});
   hit.addEventListener('pointermove', e => {
+    if (gest.busy()) { lcHover(id, null); return; }
     const px = pt(e), G = st.geo;
     if (st.drag) { const sel = $(`#lc-${id}-sel`), a = Math.max(G.P.l, Math.min(st.drag.x, px)), b = Math.min(G.W - G.P.r, Math.max(st.drag.x, px)); sel.setAttribute('x', a); sel.setAttribute('width', b - a); sel.classList.toggle('hidden', b - a < 4); }
     lcHover(id, G.idx(px));
   });
   hit.addEventListener('pointerleave', () => { if (!st.drag) lcHover(id, null); });
-  hit.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') return; st.drag = {x: pt(e)}; hit.setPointerCapture(e.pointerId); });
+  hit.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') { st.tap = pt(e); return; } st.drag = {x: pt(e)}; hit.setPointerCapture(e.pointerId); });
   hit.addEventListener('pointerup', e => {
+    if (e.pointerType === 'touch' && (gest.busy() || st.tap == null || Math.abs(pt(e) - st.tap) > 10)) { st.tap = null; lcHover(id, null); return; }   // only a tap jumps to the column
     const G = st.geo, px = pt(e), dr = st.drag; st.drag = null;
     if (dr && Math.abs(px - dr.x) > 6) { lcSet(id, G.idx(Math.min(px, dr.x)), G.idx(Math.max(px, dr.x))); return; }
     const sel = $(`#lc-${id}-sel`); if (sel) sel.classList.add('hidden');
@@ -1386,18 +1487,18 @@ function lcBindPlot(id) {
     const span = st.f1 - st.f0, G = st.geo; if (span >= st.d.months.length - 1) return;
     e.preventDefault(); lcView(id, st.f0 + e.deltaX * span / Math.max(1, G.W - G.P.l - G.P.r), span, true);
   }, {passive: false});
-  hit.addEventListener('gesturestart', e => { e.preventDefault(); st.gesture = {c: at(pt(e)), span: st.f1 - st.f0, f0: st.f0}; });
-  hit.addEventListener('gesturechange', e => { e.preventDefault(); const g = st.gesture; if (!g || !e.scale) return; const ns = Math.max(2, Math.min(st.d.months.length - 1, g.span / e.scale)); lcView(id, g.c - (g.c - g.f0) * ns / g.span, ns, false); });
+  hit.addEventListener('gesturestart', e => { e.preventDefault(); lcHover(id, null); st.gesture = gest.multi() ? null : {c: at(pt(e)), span: st.f1 - st.f0, f0: st.f0}; });
+  hit.addEventListener('gesturechange', e => { e.preventDefault(); const g = st.gesture; if (!g || !e.scale || gest.multi()) return; const ns = Math.max(2, Math.min(st.d.months.length - 1, g.span / e.scale)); lcView(id, g.c - (g.c - g.f0) * ns / g.span, ns, false); });
   hit.addEventListener('gestureend', e => { e.preventDefault(); st.gesture = null; });
 }
-function lcInit(id, D, rollen, title, color) {
+function lcInit(id, D, rollen, title, color, stack) {
   // range kept as months (survives rebuilds); a range button stays anchored to today
-  const d = lcData(D, rollen), n = d.months.length, r = (S.lcRange || {})[id];
+  const d = stack ? lcStack(D, stack) : lcData(D, rollen), n = d.months.length, r = (S.lcRange || {})[id];
   let i0, i1, btn = r ? r[2] : 36;
   if (btn === 0) { i0 = 0; i1 = n - 1; }
   else if (btn) [i0, i1] = bchWindow(d, btn);
   else { i0 = d.months.indexOf(r[0]); i1 = d.months.indexOf(r[1]); if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, 36); btn = 36; } }
-  LC[id] = {d, i0, i1, f0: i0, f1: i1, btn, title, color, drag: null, gesture: null, geo: null};
+  LC[id] = {d, i0, i1, f0: i0, f1: i1, btn, title, color, stack: !!stack, drag: null, gesture: null, geo: null};
 }
 function bindBilanzLines(main) {
   const grid = $('#lc-grid', main), D = B(); if (!grid || !D) return;
@@ -1405,8 +1506,18 @@ function bindBilanzLines(main) {
     const {sel} = lcSelection(D);
     lcInit('nw', D, null, t('nettovermoegen'), 'var(--fg)');
     lcInit('sel', D, sel, sel.map(r => ROLE[r][0]).join(' + '), 'var(--accent)');
-    lcDraw('nw'); lcDraw('sel');
+    const pr = lcPosRole(D);
+    if (pr) lcInit('pos', D, null, ROLE[pr][0], 'var(--fg)', pr);
+    lcDraw('nw'); lcDraw('sel'); if (pr) lcDraw('pos');
   };
+  const ps = $('#lc-pos-sel', grid);
+  if (ps) ps.addEventListener('change', () => {
+    try { localStorage.setItem('kontor.lcPos', ps.value); } catch (e) {}
+    const keep = LC.pos ? [LC.pos.i0, LC.pos.i1, LC.pos.btn] : null;
+    lcInit('pos', D, null, ROLE[ps.value][0], 'var(--fg)', ps.value);
+    if (keep) Object.assign(LC.pos, {i0: keep[0], i1: keep[1], f0: keep[0], f1: keep[1], btn: keep[2]});
+    lcDraw('pos');
+  });
   $$('.lc-rb', grid).forEach(seg => seg.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return; const id = seg.dataset.lc, st = LC[id], m = +b.dataset.m;
     if (!m) lcSet(id, 0, st.d.months.length - 1, 0); else { const [a, z] = bchWindow(st.d, m); lcSet(id, a, z, m); }
@@ -1421,7 +1532,7 @@ function bindBilanzLines(main) {
   }));
   draw();
   if (LC.ro) LC.ro.disconnect();
-  let last = 0; LC.ro = new ResizeObserver(() => { const w = $('#lc-nw-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; lcDraw('nw'); lcDraw('sel'); } });
+  let last = 0; LC.ro = new ResizeObserver(() => { const w = $('#lc-nw-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; lcDraw('nw'); lcDraw('sel'); if (LC.pos) lcDraw('pos'); } });
   LC.ro.observe(grid);
 }
 

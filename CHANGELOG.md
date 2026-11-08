@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.9.35 (2026-11-08)
+- Bilanz: dritte Grafik – eine Position wählen und ihre Zusammensetzung nach Konten sehen (gestapelt, eigene Pastellfarben, bei sehr vielen Konten zusätzlich schraffiert, mit Legende). Aufgeklappte Konten tragen in der Tabelle denselben Farbton wie in der großen Grafik.
+- iPhone: Seite nicht mehr breiter als der Bildschirm – die Leiste der Bereiche (und Reiter) lässt sich bei vielen Einträgen seitlich schieben.
+- Grafiken am iPhone: auf dem Streifen mit den Beträgen links seitlich ziehen verschiebt den Zeitraum; zwei Finger verschieben und zoomen, ohne dass dabei die Werte-Anzeige erscheint; nur ein Tippen springt zur Spalte.
+- „?“ am iPhone: erstes Tippen zeigt den Hinweis, zweites öffnet die Hilfe. Der Zusatz „Klick: mehr in der Hilfe“ entfällt.
+
 ## 3.9.34 (2026-11-08)
 - Am Mac legt Kontor keine Offline-Kopie der Seite mehr an (die gibt es nur fürs iPhone); vorhandene werden entfernt. Dadurch zeigt nach einem Portwechsel die alte Adresse keine Anmeldeseite mehr.
 - Absichern über Tailscale: Schritt-für-Schritt-Anleitung (Regel kopieren, „Access controls“, „JSON editor“, gesamten Text ersetzen, „Save“) und eine Prüfung: Kontor liest die Regeln, die Tailscale auf dem Mac anwendet, und zeigt „abgesichert“, „noch weitere Ports erreichbar“ oder „Kontor gesperrt“.

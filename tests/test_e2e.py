@@ -2107,6 +2107,10 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # single curves below the table: net worth and a chosen sum (default cash + tradable + fixed-term); chips change the sum
                 self.assertTrue(pg.query_selector("#lc-nw-svg path.bch-nw")); self.assertTrue(pg.query_selector("#lc-sel-svg path.bch-nw"))
+                # composition of one position by account (stacked), legend with the accounts
+                self.assertTrue(pg.query_selector("#lc-pos-svg path.lc-band")); self.assertIn("Hausbank Giro", pg.inner_text("#lc-pos-legend"))
+                pg.select_option("#lc-pos-sel", "verbindlichkeiten"); pg.wait_for_timeout(200)
+                self.assertNotIn("Hausbank Giro", pg.inner_text("#lc-pos-legend")); pg.evaluate("localStorage.removeItem('kontor.lcPos')")
                 checked = {x.get_attribute("data-r") for x in pg.query_selector_all("#lc-chips input:checked")}
                 self.assertIn("liquiditaet", checked); self.assertTrue(checked <= {"liquiditaet", "wertpapiere", "anlagen"})
                 v0 = pg.inner_text("#lc-sel-val"); pg.click("#lc-chips input[data-r='immobilien']"); pg.wait_for_timeout(200)
