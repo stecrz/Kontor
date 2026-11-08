@@ -485,22 +485,21 @@ class App:
         threading.Thread(target=srv2.serve_forever, daemon=True).start()
 
     # -- MoneyMoney --------------------------------------------------------
+    def full_read_days(self) -> int:
+        return max(1, int((self.config.get("zeitplan") or {}).get("voll_lesen_tage", 7) or 7))
+
     def full_read_due(self, now: Optional[datetime] = None) -> bool:
-        """Vollstaendig lesen (alle Umsaetze), wenn das letzte vollstaendige Lesen mindestens N Stunden her ist (Einstellung,
-        Standard 24) -- nachts (1-6 Uhr) schon nach der Haelfte, damit es moeglichst dann passiert und tagsueber schnell bleibt."""
+        """Read all transactions when the last full read is at least N days old (setting, default 7). In between the quick
+        read checks every balance and reads everything at once if older transactions changed (core.unexplained_balances)."""
         b = self.ledger
         fa = getattr(b, "full_at", None) if b is not None else None
         if fa is None:
             return True
-        now = now or datetime.now()
-        hours = max(1, int((self.config.get("zeitplan") or {}).get("voll_lesen_stunden", 24) or 24))
-        age = (now - fa).total_seconds() / 3600
-        return age >= hours or (1 <= now.hour < 6 and age >= hours / 2)
+        return ((now or datetime.now()) - fa).total_seconds() >= self.full_read_days() * 86400
 
     def full_read_info(self) -> dict:
         fa = getattr(self.ledger, "full_at", None) if self.ledger is not None else None
-        return {"zuletzt": fa.strftime("%Y-%m-%d %H:%M") if fa else None,
-                "stunden": max(1, int((self.config.get("zeitplan") or {}).get("voll_lesen_stunden", 24) or 24))}
+        return {"zuletzt": fa.strftime("%Y-%m-%d %H:%M") if fa else None, "tage": self.full_read_days()}
 
     def refresh_ledger(self, full: Optional[bool] = None) -> Tuple[Optional[Ledger], Optional[str]]:
         """MoneyMoney lesen. Der Fortschritt (Schritt, Beginn, Dauer der Schritte beim letzten Mal) steht in self.lesen."""
@@ -1143,7 +1142,7 @@ def make_handler(app: App):
             return urlparse(origin).netloc == (self.headers.get("Host") or "")
 
         def _static(self, path: str) -> None:
-            m = re.match(r"^/docs/img/((?:en/)?[a-z0-9_]+\.png)$", path)      # Bilder der Hilfe (erfundene Beispieldaten)
+            m = re.match(r"^/docs/img/((?:de|en)/[a-z0-9_]+\.png)$", path)      # help images (made-up sample data)
             if m:
                 fp = os.path.join(HERE, "docs", "img", *m.group(1).split("/"))
                 if not os.path.isfile(fp):
@@ -1293,8 +1292,8 @@ def make_handler(app: App):
                 return self._raw(200, json.dumps(pkg, ensure_ascii=False, indent=2).encode("utf-8"), "application/json; charset=utf-8",
                                  {"Content-Disposition": 'attachment; filename="%s.kontor.json"' % name})
             if path == "/api/help":
-                # Hilfe = docs/hilfe.md bzw. docs/help.md (dieselbe Datei wie auf GitHub)
-                fn = "help.md" if (q.get("lang") or (app.config.get("oberflaeche") or {}).get("sprache")) == "en" else "hilfe.md"
+                # help = docs/help.de.md or docs/help.en.md (the same file as on GitHub)
+                fn = "help.en.md" if (q.get("lang") or (app.config.get("oberflaeche") or {}).get("sprache")) == "en" else "help.de.md"
                 try:
                     with open(os.path.join(HERE, "docs", fn), encoding="utf-8") as f:
                         text = f.read()
@@ -1302,6 +1301,8 @@ def make_handler(app: App):
                     return self._json(200, {"text": "", "bilder": {}})
                 return self._json(200, {"text": text, "bilder": help_image_sizes(text)})
             if path == "/api/remote":
+                if q.get("fresh"):
+                    app.tailscale(fresh=True)
                 return self._json(200, dict(app.remote_info(), lokal=self._is_local(s)))
             if path == "/api/timemachine":
                 return self._json(200, {"status": timemachine_status(app.data_dir)})
@@ -2278,10 +2279,10 @@ BACKUP_ITER = 600_000
 
 
 def help_image_sizes(text: str) -> Dict[str, List[int]]:
-    """Breite und Hoehe (Pixel) der Bilder einer Hilfedatei aus dem PNG-Kopf – damit die Seite den Platz vorab
-    freihaelt und Sprungmarken an der richtigen Stelle landen."""
+    """Width and height (pixels) of a help file's images from the PNG header, so the page reserves the space up front
+    and jumps to anchors land in the right place."""
     out: Dict[str, List[int]] = {}
-    for rel in set(re.findall(r"!\[[^\]]*\]\((img/(?:en/)?[a-z0-9_]+\.png)\)", text)):
+    for rel in set(re.findall(r"!\[[^\]]*\]\((img/(?:de|en)/[a-z0-9_]+\.png)\)", text)):
         try:
             with open(os.path.join(HERE, "docs", rel), "rb") as f:
                 head = f.read(24)

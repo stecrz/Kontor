@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.9.30 (2026-11-08)
+- Bilanz: unter der Tabelle zwei eigene Kurven – Nettovermögen allein und die Summe frei wählbarer Positionen (Standard: Bankguthaben, handelbare und gebundene Anlagen), je mit eigenem Zeitraum, Zoom und einer Achse, die sich den sichtbaren Werten anpasst.
+- Tabellen: Planwerte blass und schraffiert, laufender Monat nur blass (statt blau), über die ganze Spalte.
+- Abgleich: liest nur die letzten 30 Tage und prüft jeden Kontostand; passt einer nicht (z. B. nachträgliche Buchung mit altem Datum), liest Kontor sofort alles. Vollständig sonst alle 7 Tage (einstellbar); „bevorzugt nachts“ entfällt.
+- Adressen der Oberfläche englisch (z. B. #planning, #settings/access, #help/…); alte Lesezeichen leiten weiter. Hilfe-Dateien und Bilder englisch benannt.
+- Einrichtung mit Tätigkeiten benannt („MoneyMoney verbinden“, „Historische Kontostände einlesen“ …).
+- Einstellungen → Zugang: „Am Mac“ und „Passwort“ oben, „Zugriff vom iPhone“ darunter. Kontor nennt den Grund, wenn Tailscale nicht verbunden ist, prüft auf Knopfdruck neu und fragt Tailscale bei Bedarf in der Sitzung des Nutzers ab. Neu: „Absichern“ mit fertiger Tailscale-Regel, die nur Kontor erreichbar macht; Zertifikat auch mit der App-Store-Version von Tailscale.
+- Updates: Änderungen der neuesten Version direkt sichtbar, frühere aufklappbar; Einstellungen → Updates führt zur Seite Updates.
+
 ## 3.9.29 (2026-11-08)
 - Hilfe neu: dieselbe ausführliche Anleitung wie auf GitHub (docs/hilfe.md, docs/help.md), mit Bildern, Inhaltsverzeichnis, Suche und Sprungmarken. Die „?“ führen per Klick zum passenden Abschnitt; lange Hinweise auf den Seiten sind gekürzt und verweisen auf die Hilfe.
 - README kürzer, mit Bildern des Tools (frei erfundene Daten) und Verweisen in die Hilfe; veraltete Angaben korrigiert.

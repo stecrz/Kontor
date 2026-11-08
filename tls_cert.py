@@ -11,9 +11,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import ssl
 import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from i18n import tr
@@ -31,12 +33,37 @@ def find_tailscale() -> Optional[str]:
     return shutil.which("tailscale")
 
 
+def run(binary: str, args: list, timeout: int) -> subprocess.CompletedProcess:
+    """Run the Tailscale CLI. On macOS the CLI inside Tailscale.app sometimes answers "The Tailscale GUI failed to start"
+    when it is not started in the user's GUI session (e.g. from a launchd service); then retry via ``launchctl asuser``."""
+    r = subprocess.run([binary] + list(args), capture_output=True, text=True, timeout=timeout)
+    out = (r.stdout or "") + (r.stderr or "")
+    if sys.platform == "darwin" and os.path.exists("/bin/launchctl") and (r.returncode != 0 or "GUI failed" in out):
+        try:
+            r2 = subprocess.run(["/bin/launchctl", "asuser", str(os.getuid()), binary] + list(args), capture_output=True, text=True, timeout=timeout)
+            if r2.returncode == 0 and "GUI failed" not in (r2.stdout or ""):
+                return r2
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return r
+
+
+def status_json(binary: str, timeout: int = 15) -> dict:
+    """``tailscale status --json`` as a dict; raises RuntimeError with the CLI's own message if there is no JSON."""
+    r = run(binary, ["status", "--json"], timeout)
+    try:
+        st = json.loads(r.stdout or "")
+        if isinstance(st, dict):
+            return st
+    except ValueError:
+        pass
+    msg = ((r.stderr or "") + " " + (r.stdout or "")).strip().splitlines()
+    raise RuntimeError((msg[0] if msg else "exit %s" % r.returncode)[:200])
+
+
 def tailscale_self(binary: str) -> dict:
-    """Eigener Knoten laut ``tailscale status --json``: {name, ip, cert_domains}."""
-    r = subprocess.run([binary, "status", "--json"], capture_output=True, text=True, timeout=20)
-    if r.returncode != 0:
-        raise RuntimeError("tailscale status: %s" % (r.stderr or r.stdout).strip())
-    st = json.loads(r.stdout or "{}")
+    """Own node according to ``tailscale status --json``: {name, ip, cert_domains}."""
+    st = status_json(binary, 20)
     me = st.get("Self") or {}
     name = (me.get("DNSName") or "").rstrip(".")
     ips = [ip for ip in (me.get("TailscaleIPs") or []) if ":" not in ip]
@@ -53,10 +80,12 @@ def status() -> dict:
     if not binary:
         return {"gefunden": False}
     try:
-        r = subprocess.run([binary, "status", "--json"], capture_output=True, text=True, timeout=15)
-        st = json.loads(r.stdout or "{}")
-    except (OSError, ValueError, subprocess.TimeoutExpired) as e:
-        return {"gefunden": True, "verbunden": False, "fehler": str(e)[:200]}
+        st = status_json(binary)
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as e:
+        log.warning("Tailscale status unreadable: %s", e)
+        return {"gefunden": True, "verbunden": False, "zustand": "", "fehler": str(e)[:200]}
+    if st.get("BackendState") != "Running":
+        log.info("Tailscale state: %s", st.get("BackendState") or "?")
     me = st.get("Self") or {}
     tn = st.get("CurrentTailnet") or {}
     user = (st.get("User") or {}).get(str(me.get("UserID")), {}) if me.get("UserID") is not None else {}
@@ -89,23 +118,49 @@ def cert_paths(data_dir: str, name: str) -> Tuple[str, str]:
     return os.path.join(d, name + ".crt"), os.path.join(d, name + ".key")
 
 
+def _pem_blocks(text: str) -> list:
+    """(type, block) for every PEM block in ``text``."""
+    out = []
+    for m in re.finditer(r"-----BEGIN ([A-Z ]+)-----.*?-----END \1-----", text or "", re.S):
+        out.append((m.group(1), m.group(0)))
+    return out
+
+
+def _write_private(path: str, data: str) -> None:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(data)
+    os.chmod(path, 0o600)
+
+
 def issue(binary: str, name: str, data_dir: str) -> Tuple[str, str]:
-    """Holt (oder erneuert) das Zertifikat fuer ``name``; gibt (cert, key) zurueck."""
+    """Fetch (or renew) the certificate for ``name``; returns (cert, key).
+    The CLI prints certificate and key to stdout ("-") and Kontor writes the files itself: the Mac App Store variant of
+    Tailscale runs sandboxed and may not write into Kontor's data folder."""
     crt, key = cert_paths(data_dir, name)
     os.makedirs(os.path.dirname(crt), mode=0o700, exist_ok=True)
-    log.info("Requesting Tailscale certificate for %s", name)
-    r = subprocess.run([binary, "cert", "--cert-file", crt, "--key-file", key, name], capture_output=True, text=True, timeout=180)
-    if r.returncode != 0:
-        msg = (r.stderr or r.stdout).strip()
-        if "not enabled" in msg.lower() or "https" in msg.lower():
-            msg += "\nIn der Tailscale-Admin-Konsole (https://login.tailscale.com/admin/dns) MagicDNS und „HTTPS Certificates“ einschalten, dann erneut versuchen."
-        raise RuntimeError("tailscale cert: " + msg)
+    log.info("Requesting Tailscale certificate")
+    r = run(binary, ["cert", "--cert-file", "-", "--key-file", "-", name], 180)
+    blocks = _pem_blocks(r.stdout) if r.returncode == 0 else []
+    certs = [b for t, b in blocks if t == "CERTIFICATE"]
+    keys = [b for t, b in blocks if "PRIVATE KEY" in t]
+    if not (certs and keys):
+        if r.returncode == 0:                            # older CLI without "-": write the files directly
+            r = run(binary, ["cert", "--cert-file", crt, "--key-file", key, name], 180)
+        if r.returncode != 0:
+            msg = ((r.stderr or "") + " " + (r.stdout or "")).strip()
+            if "not enabled" in msg.lower() or "https" in msg.lower():
+                msg += "\n" + tr("s_tailscale_https_einschalten")
+            raise RuntimeError("tailscale cert: " + msg[:500])
+    else:
+        _write_private(crt, "\n".join(certs) + "\n")
+        _write_private(key, keys[0] + "\n")
     try:
         os.chmod(key, 0o600)
     except OSError:
         pass
     exp = cert_expiry(crt)
-    log.info("Certificate stored in %s (valid until %s)", crt, exp.strftime("%Y-%m-%d") if exp else "?")
+    log.info("Certificate stored (valid until %s)", exp.strftime("%Y-%m-%d") if exp else "?")
     return crt, key
 
 

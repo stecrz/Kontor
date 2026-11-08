@@ -32,7 +32,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG: Dict[str, Any] = {
     "probelauf": True,
     "mitteilungen": True,
-    "zeitplan": {"intervall_minuten": 30, "automatisch": True, "voll_lesen_stunden": 24},
+    "zeitplan": {"intervall_minuten": 30, "automatisch": True, "voll_lesen_tage": 7},
     "darlehen": [], "beteiligungen": [], "saldo_spiegel": [],
     "bereiche": [],
     "immobilien": [],
@@ -120,7 +120,40 @@ def earliest_needed(config: dict, today: date) -> date:
     return start
 
 
-INCREMENT_DAYS = 92          # schnelles Lesen: nur Umsaetze der letzten drei Monate, der Rest kommt aus dem letzten Stand
+INCREMENT_DAYS = 30          # quick read: only the last 30 days of transactions, older ones come from the last full read
+RECHECK_HOURS = 12           # a balance the quick read cannot explain triggers a full read at most this often
+
+
+def unexplained_balances(base: Ledger, accounts: Dict[str, Account], fresh: List[Tx], cut: date) -> List[str]:
+    """Accounts whose balance changed by more than the transactions since `cut` explain: something older than `cut` changed
+    in MoneyMoney (a late booking with an old date, an edited or deleted transaction). Portfolios are skipped (their value
+    moves without transactions); pending transactions may or may not be part of a bank's balance, so either way counts."""
+    def sums(txs):
+        booked: Dict[str, float] = {}
+        total: Dict[str, float] = {}
+        for t in txs:
+            if t.id <= 0 or t.booking_date < cut:
+                continue
+            total[t.account_uuid] = total.get(t.account_uuid, 0.0) + t.amount
+            if t.booked:
+                booked[t.account_uuid] = booked.get(t.account_uuid, 0.0) + t.amount
+        return booked, total
+    virtual: Dict[str, float] = {}                       # dry-run bookings changed the balances of the last ledger
+    for t in base.txs:
+        if t.id <= 0:
+            virtual[t.account_uuid] = virtual.get(t.account_uuid, 0.0) + t.amount
+    ob, oa = sums(base.txs)
+    nb, na = sums(fresh)
+    out = []
+    for uuid, acc in accounts.items():
+        old = base.accounts.get(uuid)
+        if acc.group or acc.portfolio or old is None or old.portfolio or old.currency != acc.currency:
+            continue
+        d = acc.balance - (old.balance - virtual.get(uuid, 0.0))
+        if abs(d - (nb.get(uuid, 0.0) - ob.get(uuid, 0.0))) < 0.005 or abs(d - (na.get(uuid, 0.0) - oa.get(uuid, 0.0))) < 0.005:
+            continue
+        out.append(uuid)
+    return out
 
 
 def _base_txs(base: Ledger, accounts: Dict[str, Account], fresh_ids: set, cut: date) -> List[Tx]:
@@ -161,6 +194,19 @@ def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = Fals
     txs = tx_from_export(raw)
     del raw
     n_read = len(txs)
+    if inc:
+        bad = unexplained_balances(base, accounts, txs, inc)
+        if bad and datetime.now() - base.full_at >= timedelta(hours=RECHECK_HOURS):
+            log.info("Quick read does not explain the balance of %d account(s) -- reading all transactions", len(bad))
+            step("transactions")
+            raw = bridge.export_transactions(since)
+            step("parse")
+            txs = tx_from_export(raw)
+            del raw
+            n_read, inc = len(txs), None
+        elif bad:
+            log.info("Quick read does not explain the balance of %d account(s); last full read %s, next one later",
+                     len(bad), base.full_at.strftime("%Y-%m-%d %H:%M"))
     if inc:
         txs = _base_txs(base, accounts, {t.id for t in txs}, inc) + txs
         txs.sort(key=lambda t: (t.booking_date, t.id))

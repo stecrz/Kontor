@@ -361,8 +361,40 @@ class CoreTests(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(prog, "tests")))
 
 
+class TailscaleTests(unittest.TestCase):
+    """Tailscale state with a stand-in CLI: reason when not connected, certificate via stdout (works with the sandboxed App Store variant)."""
+    def fake(self, body):
+        d = tempfile.mkdtemp(prefix="kontor-ts-")
+        p = os.path.join(d, "tailscale")
+        with open(p, "w") as f:
+            f.write("#!/bin/sh\n" + body)
+        os.chmod(p, 0o755)
+        return d, p
+
+    def test_status_and_cert(self):
+        import tls_cert
+        orig = tls_cert.find_tailscale
+        try:
+            d, p = self.fake('echo "The Tailscale GUI failed to start."; exit 1\n')
+            tls_cert.find_tailscale = lambda: p
+            st = tls_cert.status()
+            self.assertTrue(st["gefunden"]); self.assertFalse(st["verbunden"]); self.assertIn("GUI failed", st["fehler"])
+            d, p = self.fake('echo \'{"BackendState": "NeedsLogin", "Self": {}}\'\n')
+            tls_cert.find_tailscale = lambda: p
+            st = tls_cert.status()
+            self.assertFalse(st["verbunden"]); self.assertEqual(st["zustand"], "NeedsLogin"); self.assertNotIn("fehler", st)
+            pem = "-----BEGIN CERTIFICATE-----\\nQUFB\\n-----END CERTIFICATE-----\\n-----BEGIN EC PRIVATE KEY-----\\nS0tL\\n-----END EC PRIVATE KEY-----"
+            d, p = self.fake('if [ "$1" = cert ]; then printf "%s\\n" "' + pem + '"; fi\n')
+            crt, key = tls_cert.issue(p, "mac.example.ts.net", d)
+            self.assertIn("BEGIN CERTIFICATE", open(crt).read()); self.assertIn("PRIVATE KEY", open(key).read())
+            self.assertNotIn("PRIVATE KEY", open(crt).read())
+            self.assertEqual(os.stat(key).st_mode & 0o777, 0o600)
+        finally:
+            tls_cert.find_tailscale = orig
+
+
 class IncrementalReadTests(unittest.TestCase):
-    """Schnelles Lesen: nur die letzten drei Monate aus MoneyMoney, aeltere Umsaetze aus dem letzten vollstaendigen Stand."""
+    """Schnelles Lesen: nur die letzten 30 Tage aus MoneyMoney, aeltere Umsaetze aus dem letzten vollstaendigen Stand."""
     def setUp(self):
         reset_mock(); patch_today()
         self.cfg = core.merged_config(config_for_test("/tmp/kontor-belege-test"))
@@ -404,15 +436,34 @@ class IncrementalReadTests(unittest.TestCase):
         from datetime import datetime as dt
         import service as MA
         app = MA.App.__new__(MA.App)
-        app.config = {"zeitplan": {"voll_lesen_stunden": 24}}
+        app.config = {"zeitplan": {"voll_lesen_tage": 7}}
         app.ledger = None
         self.assertTrue(app.full_read_due())
         app.ledger = type("L", (), {})(); app.ledger.full_at = dt(2026, 11, 4, 15, 0)
-        self.assertFalse(app.full_read_due(dt(2026, 11, 4, 22, 0)))           # 7 h
-        self.assertFalse(app.full_read_due(dt(2026, 11, 4, 23, 30)))          # 8,5 h
-        self.assertTrue(app.full_read_due(dt(2026, 11, 5, 3, 0)))             # nachts nach 12 h
-        self.assertTrue(app.full_read_due(dt(2026, 11, 5, 15, 0)))            # 24 h
-        self.assertFalse(app.full_read_due(dt(2026, 11, 5, 10, 0)))           # 19 h tagsueber
+        self.assertFalse(app.full_read_due(dt(2026, 11, 5, 3, 0)))            # nachts: kein Sonderfall mehr
+        self.assertFalse(app.full_read_due(dt(2026, 11, 11, 14, 0)))          # knapp 7 Tage
+        self.assertTrue(app.full_read_due(dt(2026, 11, 11, 15, 0)))           # 7 Tage
+        app.config = {}
+        self.assertEqual(app.full_read_info()["tage"], 7)                      # Standard
+
+    def test_late_booking_triggers_full_read(self):
+        """Nachtraegliche Buchung mit altem Datum (vor dem 30-Tage-Fenster): der Kontostand passt nicht mehr -> alles lesen."""
+        from datetime import datetime as dt
+        full = core.fetch(MockBridge(True), self.cfg, TODAY)
+        full.post(F.uid("priv.giro"), TODAY, -1.0, "Probelauf", "x")           # Probelauf veraendert nur Kontors Saldo
+        full.full_at = dt.now() - timedelta(hours=13)
+        self.assertTrue(core.fetch(MockBridge(True), self.cfg, TODAY, base=full, full=False).incremental)   # nichts geaendert
+        late = F.tx("priv.giro", TODAY - timedelta(days=45), -77.0, "Nachzuegler", "spaet gebucht", "")
+        MockBridge.state["txs"].append(late)
+        for a in MockBridge.state["accounts"]:
+            if a["uuid"] == F.uid("priv.giro"):
+                a["balance"][0][0] = round(a["balance"][0][0] - 77.0, 2)
+        full.full_at = dt.now() - timedelta(hours=1)                           # gerade erst komplett gelesen -> nicht schon wieder
+        self.assertTrue(core.fetch(MockBridge(True), self.cfg, TODAY, base=full, full=False).incremental)
+        full.full_at = dt.now() - timedelta(hours=13)
+        r = core.fetch(MockBridge(True), self.cfg, TODAY, base=full, full=False)
+        self.assertFalse(r.incremental)
+        self.assertIn(late["id"], {t.id for t in r.txs})
 
 
 class _AppBase(unittest.TestCase):
@@ -1940,32 +1991,45 @@ class BrowserTest(unittest.TestCase):
                 self.assertFalse(pg.query_selector("#sync-btn").is_disabled())
                 # Bereichsauswahl steht oben rechts an derselben Stelle, egal wie lang der Seitentitel ist
                 x_ueb = pg.evaluate("document.querySelector('#bereich-seg').getBoundingClientRect().right")
-                pg.click("#nav a[href='#planung']"); pg.wait_for_selector("#main .toolbar #modus-seg")
+                pg.click("#nav a[href='#planning']"); pg.wait_for_selector("#main .toolbar #modus-seg")
                 self.assertEqual(x_ueb, pg.evaluate("document.querySelector('#bereich-seg').getBoundingClientRect().right"))
                 self.assertNotIn("Privat", pg.query_selector("#main .toolbar").inner_text())            # Bereich nicht doppelt genannt
-                pg.click("#nav a[href='#uebersicht']"); pg.wait_for_selector(".cards")
+                pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".cards")
                 # Status unten links fuehrt zur Seite Synchronisierung
                 pg.click("#status-mini .sm-link"); pg.wait_for_selector(".sync-table")
                 self.assertIn("Ohne Bankabruf", pg.query_selector("#main").inner_text()); self.assertIn("Verkäuferdarlehen", pg.query_selector_all(".sync-table")[-1].inner_text())
                 self.assertIn("Depots: Wertverlauf", pg.query_selector("#main").inner_text()); self.assertTrue(pg.query_selector(".dep-hist"))
-                pg.click("#nav a[href='#uebersicht']"); pg.wait_for_selector(".cards")
+                pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".cards")
                 # Bereich wechseln
                 pg.click("#bereich-seg button:nth-child(2)"); pg.wait_for_timeout(500)
                 self.assertEqual(pg.evaluate("document.querySelector('#bereich-seg .on').textContent"), "Alpha GbR")
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_uebersicht_gbr.png"), full_page=True)
                 pg.click("#bereich-seg button:nth-child(1)"); pg.wait_for_timeout(300)
-                for tab in ("bilanz", "kapitalfluss", "planung", "immobilien", "steuer", "umsaetze", "buchungen", "synchronisierung", "einrichtung", "regeln", "kategorien", "einstellungen", "updates", "protokoll", "hilfe"):
+                for tab in ("balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "sync", "setup", "rules", "categories", "settings", "updates", "log", "help"):
                     pg.click("#nav a[href='#%s']" % tab); pg.wait_for_timeout(400)
                     self.assertTrue(pg.query_selector("#main").inner_html().strip(), tab)
-                    if shots: pg.screenshot(path=os.path.join(shots, "ui_%s.png" % tab), full_page=(tab in ("regeln", "einstellungen", "steuer", "planung", "hilfe", "bilanz", "einrichtung")))
+                    if shots: pg.screenshot(path=os.path.join(shots, "ui_%s.png" % tab), full_page=(tab in ("rules", "settings", "tax", "planning", "help", "balance", "setup")))
                 # Bilanz: Positionen/Gruppen, inaktive, Konto-Klick -> Verlauf
-                pg.click("#nav a[href='#bilanz']"); pg.wait_for_selector("tr.pos")
+                pg.click("#nav a[href='#balance']"); pg.wait_for_selector("tr.pos")
                 self.assertIn("Bankguthaben", pg.query_selector("#main").inner_text())
                 # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
                 self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
                 self.assertTrue(pg.query_selector("#main thead th.plan")); self.assertNotIn("Fortschreibung", pg.query_selector("#main").inner_text())
                 pg.click("tr.pos[data-pos='liquiditaet']"); pg.wait_for_selector("tr.acct")
                 pg.click("#pos-all"); pg.wait_for_timeout(300)
+                # single curves below the table: net worth and a chosen sum (default cash + tradable + fixed-term); chips change the sum
+                self.assertTrue(pg.query_selector("#lc-nw-svg path.bch-nw")); self.assertTrue(pg.query_selector("#lc-sel-svg path.bch-nw"))
+                checked = {x.get_attribute("data-r") for x in pg.query_selector_all("#lc-chips input:checked")}
+                self.assertIn("liquiditaet", checked); self.assertTrue(checked <= {"liquiditaet", "wertpapiere", "anlagen"})
+                v0 = pg.inner_text("#lc-sel-val"); pg.click("#lc-chips input[data-r='immobilien']"); pg.wait_for_timeout(200)
+                self.assertNotEqual(pg.inner_text("#lc-sel-val"), v0)
+                pg.click(".lc-rb[data-lc='nw'] button[data-m='0']"); pg.wait_for_timeout(200)
+                self.assertTrue(pg.query_selector(".lc-rb[data-lc='nw'] button[data-m='0'].on"))
+                pg.evaluate("localStorage.removeItem('kontor.lcSel')")
+                # old German addresses lead to the English ones
+                pg.evaluate("location.hash = '#einrichtung/konten'"); pg.wait_for_timeout(400)
+                self.assertEqual(pg.evaluate("location.hash"), "#setup/accounts")
+                pg.click("#nav a[href='#balance']"); pg.wait_for_selector("tr.pos")
                 # Grafik: waagerechtes Wischen verschiebt bei gleicher Laenge (auch am linken Rand), Doppelklick halbiert den Zeitraum
                 self.assertIsNone(pg.query_selector("#bch-on"))
                 pg.click("#bch-rb button[data-m='12']"); pg.wait_for_timeout(200)
@@ -1985,8 +2049,8 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#modus-seg button[data-m='monate']"); pg.wait_for_timeout(300)
                 # senkrecht: Position je Reiter, nicht vom einen in den anderen uebertragen
                 pg.set_viewport_size({"width": 1440, "height": 500}); pg.evaluate("window.scrollTo(0, 300)"); y_bil = pg.evaluate("window.scrollY")
-                pg.click("#nav a[href='#hilfe']"); pg.wait_for_timeout(300); self.assertEqual(pg.evaluate("window.scrollY"), 0)
-                pg.click("#nav a[href='#bilanz']"); pg.wait_for_timeout(400); self.assertEqual(pg.evaluate("window.scrollY"), y_bil)
+                pg.click("#nav a[href='#help']"); pg.wait_for_timeout(300); self.assertEqual(pg.evaluate("window.scrollY"), 0)
+                pg.click("#nav a[href='#balance']"); pg.wait_for_timeout(400); self.assertEqual(pg.evaluate("window.scrollY"), y_bil)
                 pg.evaluate("window.scrollTo(0, 0)"); pg.set_viewport_size({"width": 1440, "height": 900})
                 # Monatsansicht mit Jahressummen; Schalter in der Werkzeugleiste, nicht oben rechts
                 self.assertEqual(len(pg.query_selector_all("#modus-seg button")), 2)
@@ -2009,9 +2073,9 @@ class BrowserTest(unittest.TestCase):
                 pg.keyboard.press("Escape")
                 self.assertEqual(store.load("state.json")["historie"][F.uid("priv.depot")]["2026-09"], 77000.0)
                 # Einrichtung: Bausteine, Positionen-Editor speichern
-                pg.click("#nav a[href='#einrichtung']"); pg.wait_for_selector(".setup-list")
+                pg.click("#nav a[href='#setup']"); pg.wait_for_selector(".setup-list")
                 self.assertIn("Bereiche", pg.query_selector("#main").inner_text())
-                pg.goto("http://127.0.0.1:%d/#einrichtung/konten" % port); pg.wait_for_selector("#save-konten")
+                pg.goto("http://127.0.0.1:%d/#setup/accounts" % port); pg.wait_for_selector("#save-konten")
                 for _ in range(2):          # "Verlauf..." laesst sich wiederholt oeffnen
                     pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.depot")); pg.wait_for_selector("#drawer.open #h-grid")
                     pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
@@ -2087,7 +2151,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(all(v in ("umsaetze", "stand") for v in bil["verlauf"].values()) and len(bil["verlauf"]) >= 10)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_konten.png"), full_page=True)
                 # Immobilien: Objekt + Kalkulation anlegen, Ergebnis, speichern, Jahrestabelle
-                pg.goto("http://127.0.0.1:%d/#immobilien" % port); pg.wait_for_selector("#im-new")
+                pg.goto("http://127.0.0.1:%d/#properties" % port); pg.wait_for_selector("#im-new")
                 pg.once("dialog", lambda d: d.accept("Parkweg")); pg.click("#im-new"); pg.wait_for_selector("#im-kalk-new")
                 pg.once("dialog", lambda d: d.accept("Basis")); pg.click("#im-kalk-new"); pg.wait_for_selector("#im-calc")
                 pg.fill("input[data-p='kaufpreis']", "1900000"); pg.fill("input[data-p='miete.nettokalt_monat']", "12600")
@@ -2104,23 +2168,23 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("Restschuld", pg.query_selector("#main").inner_text())
                 pg.click(".tabs button[data-t='dokumente']"); pg.wait_for_timeout(300)
                 self.assertIn("Dokumente", pg.query_selector("#main").inner_text())
-                pg.click("#nav a[href='#immobilien']"); pg.wait_for_selector(".card[data-im]")
+                pg.click("#nav a[href='#properties']"); pg.wait_for_selector(".card[data-im]")
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_immobilien.png"), full_page=True)
                 # Zuordnen: offene Gegenpartei mit Regel zuordnen -> verschwindet, Kategorien-Seite zeigt Regel
-                pg.click("#nav a[href='#kategorien']"); pg.wait_for_selector(".kz-group")
+                pg.click("#nav a[href='#categories']"); pg.wait_for_selector(".kz-group")
                 n_before = len(pg.query_selector_all(".kz-group"))
                 box = pg.query_selector(".kz-group"); box.query_selector(".kz-kat").fill("Haushalt / Werkzeug"); box.query_selector(".kz-save").click()
                 pg.wait_for_timeout(1500)
                 self.assertLess(len(pg.query_selector_all(".kz-group")), n_before)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_zuordnen.png"), full_page=True)
-                pg.click("#main .tabs button[data-next='#kategorien/regeln']"); pg.wait_for_selector("#kk-add")
+                pg.click("#main .tabs button[data-next='#categories/rules']"); pg.wait_for_selector("#kk-add")
                 self.assertIn("Haushalt / Werkzeug", pg.query_selector("#main").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_kategorien.png"), full_page=True)
                 # Planung: Ereignis anlegen -- erst wenn die Neuberechnung nach dem Zuordnen fertig und geladen ist (sonst baut
                 # das Nachladen die Seite waehrend der Eingabe neu auf)
                 pg.wait_for_function("() => S.STATUS && !(S.STATUS.bericht || {}).laeuft && (S.STATUS.bericht || {}).stand === BER.stand", timeout=20000)
                 pg.wait_for_timeout(1000)
-                pg.click("#nav a[href='#planung']"); pg.wait_for_selector(".ev-row")
+                pg.click("#nav a[href='#planning']"); pg.wait_for_selector(".ev-row")
                 row = pg.query_selector_all(".ev-row")[-1]
                 row.query_selector(".ev-text").fill("Rückzahlung"); row.query_selector(".ev-betrag").fill("50000")
                 row.query_selector(".ev-von").select_option(F.uid("priv.depot") + " | Depot"); row.query_selector(".ev-nach").select_option(F.uid("priv.darl") + " | Darlehen Lindenstraße")
@@ -2128,27 +2192,27 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(pg.query_selector(".ev-row .ev-del"))
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_planung_ereignisse.png"), full_page=True)
                 # Jahresmodus
-                pg.click("#nav a[href='#kapitalfluss']"); pg.wait_for_timeout(300)
+                pg.click("#nav a[href='#cashflow']"); pg.wait_for_timeout(300)
                 pg.click("#modus-seg button[data-m='jahre']"); pg.wait_for_timeout(400)
                 self.assertIn("2026", pg.query_selector("#main thead").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_kapitalfluss_jahre.png"))
                 pg.click("#modus-seg button[data-m='monate']"); pg.wait_for_timeout(200)
                 # Planung: Methode setzen
-                pg.click("#nav a[href='#planung']"); pg.wait_for_selector(".edit")
+                pg.click("#nav a[href='#planning']"); pg.wait_for_selector(".edit")
                 first = pg.query_selector(".edit"); first.query_selector(".meth").select_option("fix"); first.query_selector(".betrag").fill("1234"); first.query_selector(".save").click()
                 pg.wait_for_timeout(800)
                 self.assertIn("1.234,00", pg.query_selector("#main").inner_text())
                 # Umsaetze: Zeile oeffnen -> Drawer
-                pg.click("#nav a[href='#umsaetze']"); pg.wait_for_selector("#ums-table tbody tr")
+                pg.click("#nav a[href='#transactions']"); pg.wait_for_selector("#ums-table tbody tr")
                 pg.click("#ums-table tbody tr td:nth-child(4)"); pg.wait_for_selector("#drawer.open"); pg.wait_for_timeout(400)
                 self.assertIn("Belege", pg.query_selector("#drawer").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_umsaetze_drawer.png"))
                 pg.keyboard.press("Escape")
                 # Regeln speichern (unveraendert) -> Befunde ok
-                pg.click("#nav a[href='#regeln']"); pg.wait_for_selector("#save-rules"); pg.click("#save-rules"); pg.wait_for_timeout(900)
+                pg.click("#nav a[href='#rules']"); pg.wait_for_selector("#save-rules"); pg.click("#save-rules"); pg.wait_for_timeout(900)
                 self.assertIn("Gespeichert", pg.query_selector("#findings").inner_text())
                 # mobil
-                pg.set_viewport_size({"width": 390, "height": 844}); pg.click("#menu-btn"); pg.click("#nav a[href='#uebersicht']"); pg.wait_for_timeout(600)
+                pg.set_viewport_size({"width": 390, "height": 844}); pg.click("#menu-btn"); pg.click("#nav a[href='#overview']"); pg.wait_for_timeout(600)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_mobile.png"), full_page=True)
                 pg.click("#menu-btn"); pg.click("#lock-btn"); pg.wait_for_selector("#login:not(.hidden)")
                 # Offline-Ansicht: Service Worker speichert Oberflaeche und Daten; ohne Dienst oeffnet das Passwort die Kopie (nur lesen)
@@ -2157,9 +2221,9 @@ class BrowserTest(unittest.TestCase):
                 pg.wait_for_function("navigator.serviceWorker && navigator.serviceWorker.controller !== null", timeout=15000)
                 pg.reload(); pg.wait_for_selector(".cards")           # jetzt laufen alle Abrufe durch den Service Worker
                 pg.wait_for_function("caches.open('kontor-data').then(c => c.keys()).then(k => k.some(r => r.url.endsWith('/api/offline/verifier')) && k.some(r => r.url.endsWith('/api/dataset')))", timeout=15000)
-                pg.goto("http://127.0.0.1:%d/#einstellungen/zugang" % port); pg.wait_for_selector("#sw-state")
+                pg.goto("http://127.0.0.1:%d/#settings/access" % port); pg.wait_for_selector("#sw-state")
                 self.assertIn("aktiv", pg.query_selector("#sw-state").inner_text())
-                pg.click("#nav a[href='#uebersicht']"); pg.wait_for_selector(".cards")
+                pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".cards")
                 pg.evaluate("localStorage.setItem('kontor.testRemote', '1')")      # 127.0.0.1 gilt sonst als "am Mac": dort gibt es keine Offline-Ansicht
                 srv.shutdown(); srv.server_close(); stopped = True
                 pg.reload(); pg.wait_for_selector("#login:not(.hidden)")
@@ -2172,7 +2236,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("nettovermögen", pg.query_selector("#main").inner_text().lower())
                 msg = pg.evaluate("api('/api/plan', {bereich: 'x'}).then(() => 'ok').catch(e => e.message)")
                 self.assertIn("Offline", msg)
-                pg.click("#nav a[href='#bilanz']"); pg.wait_for_selector("tr.pos")
+                pg.click("#nav a[href='#balance']"); pg.wait_for_selector("tr.pos")
                 self.assertIn("Bankguthaben", pg.query_selector("#main").inner_text())
                 # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
                 self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
@@ -2186,8 +2250,8 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#modus-seg button[data-m='monate']"); pg.wait_for_timeout(300)
                 # senkrecht: Position je Reiter, nicht vom einen in den anderen uebertragen
                 pg.set_viewport_size({"width": 1440, "height": 500}); pg.evaluate("window.scrollTo(0, 300)"); y_bil = pg.evaluate("window.scrollY")
-                pg.click("#nav a[href='#hilfe']"); pg.wait_for_timeout(300); self.assertEqual(pg.evaluate("window.scrollY"), 0)
-                pg.click("#nav a[href='#bilanz']"); pg.wait_for_timeout(400); self.assertEqual(pg.evaluate("window.scrollY"), y_bil)
+                pg.click("#nav a[href='#help']"); pg.wait_for_timeout(300); self.assertEqual(pg.evaluate("window.scrollY"), 0)
+                pg.click("#nav a[href='#balance']"); pg.wait_for_timeout(400); self.assertEqual(pg.evaluate("window.scrollY"), y_bil)
                 pg.evaluate("window.scrollTo(0, 0)"); pg.set_viewport_size({"width": 1440, "height": 900})
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_offline.png"), full_page=True)
                 # Am Mac selbst gibt es keine Offline-Ansicht: Dienst weg -> Hinweis und neuer Versuch
@@ -2232,8 +2296,8 @@ class BrowserWizardTest(unittest.TestCase):
                 pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_timeout(500)
                 self.assertIn("Overview", pg.inner_text("#nav")); self.assertEqual(pg.evaluate("document.documentElement.lang"), "en")
                 self.assertEqual(store.load("config.json")["oberflaeche"]["sprache"], "en")
-                pg.goto("http://127.0.0.1:%d/#einrichtung" % port); pg.wait_for_selector(".setup-list")
-                self.assertIn("Balances from MoneyMoney", pg.inner_text(".setup-list"))
+                pg.goto("http://127.0.0.1:%d/#setup" % port); pg.wait_for_selector(".setup-list")
+                self.assertIn("Import historical balances", pg.inner_text(".setup-list"))
                 with pg.expect_navigation(): pg.select_option("#w-lang", "de")
                 pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_timeout(500)
                 self.assertIn("Übersicht", pg.inner_text("#nav")); self.assertEqual(store.load("config.json")["oberflaeche"]["sprache"], "de")
@@ -2269,11 +2333,11 @@ class BrowserWizardTest(unittest.TestCase):
                 reqs = []; pg.on("request", lambda r: reqs.append(r.url))
                 pg.goto("http://127.0.0.1:%d/" % port)
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
-                pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_selector("a[href='#einrichtung']")
-                pg.click("#main a[href='#einrichtung'] button"); pg.wait_for_selector(".setup-list")
+                pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_selector("a[href='#setup']")
+                pg.click("#main a[href='#setup'] button"); pg.wait_for_selector(".setup-list")
                 self.assertEqual(pg.query_selector(".srow .n").inner_text().strip(), "1")      # geordnete Liste, Schritt 1 offen
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_leer.png"), full_page=True)
-                pg.click(".srow a[href='#einrichtung/verbindung'] button"); pg.wait_for_selector(".steps")
+                pg.click(".srow a[href='#setup/connect'] button"); pg.wait_for_selector(".steps")
                 self.assertIn("Wofür", pg.evaluate("document.querySelector('.steps .hq').dataset.tip"))      # Erklaerung im Hilfe-Symbol
                 self.assertNotIn("Wofür", pg.query_selector("#main").inner_text())                            # nicht doppelt im Text
                 pg.click("#w-check")
@@ -2282,7 +2346,7 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertIn("Konten gelesen", pg.query_selector("#w-findings").inner_text())
                 self.assertNotIn("Belegordner", pg.query_selector("#w-findings").inner_text())
                 self.assertNotIn("Keine Bereiche", pg.query_selector("#w-findings").inner_text())
-                self.assertTrue(pg.query_selector(".steps button[data-next='#einrichtung/bereiche']"))           # Knopf statt Link
+                self.assertTrue(pg.query_selector(".steps button[data-next='#setup/areas']"))           # Knopf statt Link
                 # Schritt 1 wird auf dieser Seite alle paar Sekunden neu geprueft
                 n0 = len([r for r in reqs if "/api/status?fresh=1" in r]); pg.wait_for_timeout(3500)
                 self.assertGreater(len([r for r in reqs if "/api/status?fresh=1" in r]), n0)
@@ -2291,7 +2355,7 @@ class BrowserWizardTest(unittest.TestCase):
                 pg.hover(".steps .hq"); pg.wait_for_selector(".tip")
                 box = pg.evaluate("(() => { const r = document.querySelector('.tip').getBoundingClientRect(); return [r.top, r.left, r.right, window.innerWidth]; })()")
                 self.assertGreaterEqual(box[0], 0); self.assertGreaterEqual(box[1], 0); self.assertLessEqual(box[2], box[3])
-                pg.click(".steps button[data-next='#einrichtung/bereiche']"); pg.wait_for_selector("#save-bereiche")
+                pg.click(".steps button[data-next='#setup/areas']"); pg.wait_for_selector("#save-bereiche")
                 self.assertEqual(len(pg.query_selector_all("#bereiche .item")), 3)          # Vorschlag: jede Gruppe der obersten Ebene
                 names = lambda: pg.evaluate("[...document.querySelectorAll('#bereiche .item .b-name')].map(i => i.value)")
                 self.assertEqual(names()[0], "Privat")                                       # Hauptbereich zuerst
@@ -2319,27 +2383,27 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertTrue(pg.evaluate("[...document.querySelectorAll('#bereiche .item')].find(i => i.querySelector('.b-name').value === 'Privat').querySelector('.b-anteil-row').classList.contains('hidden')"))
                 self.assertFalse(pg.evaluate("[...document.querySelectorAll('#bereiche .item')].find(i => i.querySelector('.b-name').value === 'Alpha GbR').querySelector('.b-anteil-row').classList.contains('hidden')"))
                 # "Speichern und weiter": speichert, wartet mit Ladeanzeige auf die Auswertung, dann erst Positionen & Verlauf
-                pg.click("button[data-savenext='#einrichtung/konten']")
+                pg.click("button[data-savenext='#setup/accounts']")
                 pg.wait_for_selector(".busy-ov", timeout=5000)
                 pg.wait_for_selector("#save-konten", timeout=30000)
                 self.assertIsNone(pg.query_selector(".busy-ov"))
                 self.assertFalse(self.__class__ is None or app.bericht_status()["laeuft"])
-                self.assertTrue(pg.query_selector("button[data-savenext='#einrichtung/historie']")); self.assertTrue(pg.query_selector("button[data-next='#einrichtung']"))
+                self.assertTrue(pg.query_selector("button[data-savenext='#setup/history']")); self.assertTrue(pg.query_selector("button[data-next='#setup']"))
                 # Schritt 4: Kontostaende aus MoneyMoney (Finder zeigen, Datei ziehen) -- MoneyMoney laeuft im Test
-                pg.goto("http://127.0.0.1:%d/#einrichtung/historie" % port); pg.wait_for_selector("#mmh-drop")
-                self.assertEqual(pg.query_selector("h2.sub-h").inner_text(), "Kontostände aus MoneyMoney")
+                pg.goto("http://127.0.0.1:%d/#setup/history" % port); pg.wait_for_selector("#mmh-drop")
+                self.assertEqual(pg.query_selector("h2.sub-h").inner_text(), "Historische Kontostände einlesen")
                 self.assertIn("⌘Q", pg.query_selector("#mmh-s1").inner_text()); self.assertTrue(pg.query_selector("#mmh-zeigen"))
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_historie.png"), full_page=True)
-                pg.goto("http://127.0.0.1:%d/#einrichtung/konten" % port); pg.wait_for_selector("#save-konten")
+                pg.goto("http://127.0.0.1:%d/#setup/accounts" % port); pg.wait_for_selector("#save-konten")
                 cfg0 = store.load("config.json")
                 self.assertEqual([b["name"] for b in cfg0["bereiche"]], ["Privat", "Alpha GbR"]); self.assertEqual(sum(1 for b in cfg0["bereiche"] if b["haupt"]), 1)
                 self.assertTrue(all(b["id"] for b in cfg0["bereiche"]))
-                pg.goto("http://127.0.0.1:%d/#einrichtung/bereiche" % port); pg.wait_for_selector("#save-bereiche")
+                pg.goto("http://127.0.0.1:%d/#setup/areas" % port); pg.wait_for_selector("#save-bereiche")
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Alpha GbR"][0]["anteil"], 0.49)       # Prozent -> Anteil
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Privat"][0]["art"], "privat")
                 # Paket laden mit Zuordnung
-                pg.click("#nav a[href='#einstellungen']"); pg.wait_for_selector("#e-probelauf")
-                pg.click("#main .tabs button[data-next='#einstellungen/sichern']"); pg.wait_for_selector("#pk-pick")
+                pg.click("#nav a[href='#settings']"); pg.wait_for_selector("#e-probelauf")
+                pg.click("#main .tabs button[data-next='#settings/backup']"); pg.wait_for_selector("#pk-pick")
                 with pg.expect_file_chooser() as fc:
                     pg.click("#pk-pick")
                 fc.value.set_files(pkg_path); pg.wait_for_selector("#pk-import")
@@ -2352,11 +2416,11 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertEqual(cfg["darlehen"][0]["darlehenskonto"].split(" | ")[0], F.uid("pb.vd"))
                 self.assertEqual(len(cfg["beteiligungen"]), 2)
                 # Bericht erstellen -> Uebersicht mit Kennzahlen
-                pg.click("#nav a[href='#einrichtung']"); pg.wait_for_selector(".setup-list")
+                pg.click("#nav a[href='#setup']"); pg.wait_for_selector(".setup-list")
                 self.assertIsNone(pg.query_selector("#w-report"))      # Auswertung existiert schon ("Speichern und weiter" hat auf sie gewartet)
                 self.assertIn("eingerichtet", pg.query_selector(".setup-list").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung.png"), full_page=True)
-                pg.click("#nav a[href='#uebersicht']"); pg.wait_for_selector(".cards .spark", timeout=20000)
+                pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".cards .spark", timeout=20000)
                 self.assertIn("Jahresvergleich", pg.query_selector("#main").inner_text())
                 self.assertEqual(len(pg.query_selector_all("#bereich-seg button")), 2)      # Paket ohne Bereiche laesst die eigenen Bereiche unveraendert
                 self.assertEqual(errors, [])

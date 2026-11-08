@@ -2,9 +2,9 @@
 
 Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilanz, einen Kapitalfluss, eine Planung und eine Steuerübersicht – für dich privat und für jede Gesellschaft getrennt. Es läuft als kleiner Dienst auf deinem Mac, die Oberfläche öffnest du im Browser unter `http://127.0.0.1:8765/`. Diese Hilfe steht auch in Kontor selbst (Menü „Hilfe“, durchsuchbar).
 
-![Übersicht](img/uebersicht.png)
+![Übersicht](img/de/overview.png)
 
-<a id="ueberblick"></a>
+<a id="overview"></a>
 ## Was MoneyMoney macht und was Kontor macht
 
 | MoneyMoney | Kontor |
@@ -16,33 +16,33 @@ Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilan
 
 Kontor ändert in MoneyMoney nie Buchungen, den Kategorienbaum oder Regeln und löst keine Überweisungen aus.
 
-<a id="einrichtung"></a>
+<a id="setup"></a>
 ## Einrichtung
 
 Unter **Einrichtung** stehen alle Bausteine in einer sinnvollen Reihenfolge. Jeder zeigt, ob er schon eingerichtet ist; die ersten vier bauen aufeinander auf, der Rest ist optional und jederzeit nachholbar. „Einrichtung prüfen“ (unten) liest MoneyMoney und meldet, ob alle Konten und Kategorien, auf die sich deine Einrichtung bezieht, dort noch existieren – etwa nachdem du in MoneyMoney etwas umbenannt hast.
 
-![Einrichtung](img/einrichtung.png)
+![Einrichtung](img/de/setup.png)
 
-1. **MoneyMoney-Verbindung** – MoneyMoney läuft und ist entsperrt; macOS fragt beim ersten Mal, ob Kontor MoneyMoney steuern darf (Automation). Erlauben.
-2. **Bereiche** – welche Konten zusammengehören.
-3. **Konten** – Bereich, Position und Verlauf jedes Kontos bestätigen.
-4. **Kontostände aus MoneyMoney** – den bisherigen Verlauf einmalig übernehmen.
+1. **MoneyMoney verbinden** – MoneyMoney läuft und ist entsperrt; macOS fragt beim ersten Mal, ob Kontor MoneyMoney steuern darf (Automation). Erlauben.
+2. **Bereiche festlegen** – welche Konten zusammengehören.
+3. **Konten bestätigen** – Bereich, Position und Verlauf jedes Kontos.
+4. **Historische Kontostände einlesen** – den bisherigen Verlauf einmalig aus MoneyMoney übernehmen.
 5. **Kategorien auswählen** und **Kategorien zuordnen**.
-6. **Regeln**, **Immobilien**, **Planung**, **Steuer**, **Belege**, **Zugriff vom iPhone**, **Betrieb**.
+6. **Gegenbuchungen einrichten**, **Immobilien erfassen**, **Planung anpassen**, **Steuerübersicht einrichten**, **Belegordner wählen**, **iPhone-Zugriff einrichten**, **Abgleich und Testmodus einstellen**.
 
 Danach erstellt „Auswertung erstellen“ die erste Auswertung. Die Sprache (Deutsch oder Englisch) wählst du auf der Anmeldeseite, in der Einrichtung oder unter Einstellungen → Allgemein.
 
-<a id="bereiche"></a>
+<a id="areas"></a>
 ### Bereiche
 
 Ein Bereich ist eine Menge von Konten mit eigener Bilanz, eigenem Kapitalfluss, eigener Planung, Steuerübersicht, Umsätzen und Belegen – zum Beispiel „Privat“ und je eine Gesellschaft. Vorschlag: jede Kontengruppe auf oberster Ebene in MoneyMoney. Du kannst Konten und Gruppen aber beliebig zuordnen, zusammenlegen oder weglassen. Ein Bereich ist der Hauptbereich (privat); er ist beim Öffnen vorausgewählt. Gesellschaften bekommen Art und deinen Anteil – mit dem Anteil rechnet Kontor deine Beteiligung und die Steuer. Art und Hauptbereich sind aus den Namen vorbelegt; bitte prüfen. Mit ▲ ▼ legst du die Reihenfolge fest, in der die Bereiche oben in der Leiste stehen. Bereiche lassen sich umbenennen, löschen, zusammenlegen oder aus einzelnen Konten und Gruppen zusammenstellen; Konten, die keinem Bereich angehören, zählen nirgends.
 
-<a id="konten"></a>
+<a id="accounts"></a>
 ### Konten und Positionen
 
 Jedes Konto bekommt einen Bereich, eine Position in der Bilanz und eine Verlaufsquelle. Kontor schlägt alles vor; gestrichelt heißt „Vorschlag gewählt“, durchgezogen „eigene Wahl“. Nach dem Speichern bleibt es fest: Umbenennen oder Verschieben in MoneyMoney ändert nichts mehr. Neue Konten erscheinen als „neu“, bis du sie bestätigst. Konten erscheinen überall in der Reihenfolge von MoneyMoney.
 
-![Konten](img/konten.png)
+![Konten](img/de/accounts.png)
 
 **Positionen** (Zeilen der Bilanz, sortiert nach Verfügbarkeit):
 
@@ -60,7 +60,7 @@ Jedes Konto bekommt einen Bereich, eine Position in der Bilanz und eine Verlaufs
 
 **Anzeige**: „nach Aktivität“ blendet Konten aus, die seit N Monaten weder Bestand noch Umsatz haben; „immer anzeigen“ oder „ausblenden“ legt es fest. Ausgeblendete Konten zählen in allen Summen mit.
 
-<a id="verlauf"></a>
+<a id="history"></a>
 ### Verlauf eines Kontos
 
 Woher die Monatsstände eines Kontos kommen:
@@ -75,33 +75,34 @@ Das Fenster prüft auch die Rückrechnung: Anfangssaldo vor der ersten Buchung i
 
 **Stände aus einer Datei** (Einrichtung → Konten oder Verlauf-Fenster): CSV oder Excel (.xlsx), als Liste (Datum, Konto, Saldo) oder als Tabelle mit Stichtagen in der Kopfzeile oder in der ersten Spalte. Importierte Konten stehen danach auf „Kontostände“.
 
-![Verlauf eines Kontos](img/verlauf.png)
+![Verlauf eines Kontos](img/de/account_history.png)
 
-<a id="kontostaende"></a>
-### Kontostände aus MoneyMoney
+<a id="balances"></a>
+### Historische Kontostände einlesen
 
 MoneyMoney gibt den Verlauf der Kontostände über seine Schnittstelle nicht heraus – vor allem bei Depots fehlt sonst die Vergangenheit. Einmalig liest Kontor ihn deshalb aus der Datenbankdatei von MoneyMoney: MoneyMoney beenden, „Im Finder zeigen“, die Datei `MoneyMoney.sqlite` ins Fenster ziehen und das MoneyMoney-Passwort in einem macOS-Fenster eingeben. Kontor bekommt nur einen daraus berechneten Schlüssel, entschlüsselt nur im Arbeitsspeicher, prüft die Werte am aktuellen Saldo und speichert nur Monatsend-Stände, verschlüsselt. In MoneyMoney wird nichts verändert. Erneutes Einlesen ersetzt den bisherigen Stand.
 
 **Danach zeichnet Kontor selbst auf**: Bankkonten rechnet Kontor ohnehin exakt aus den Umsätzen zurück. Für Depots merkt sich Kontor bei jedem Lesen den aktuellen Wert. Der Dienst läuft ab der Anmeldung am Mac im Hintergrund, auch ohne geöffnetes Kontor-Fenster, und liest innerhalb von etwa 20 Sekunden, sobald MoneyMoney offen und entsperrt ist – ein kurzer Blick in MoneyMoney genügt. Jeder Stand zählt für den Monat, in dem MoneyMoney ihn bei der Bank abgerufen hat. Hat MoneyMoney abgerufen, während Kontor nicht lief, oder fehlt ein Monat, weist die Seite „Synchronisierung“ darauf hin.
 
-<a id="synchronisierung"></a>
+<a id="sync"></a>
 ## Synchronisierung
 
 Der Datenstand hat zwei Stufen: **Banken → MoneyMoney** (MoneyMoney ruft bei den Banken ab) und **MoneyMoney → Kontor** (Kontor liest aus MoneyMoney). Beide Zeitpunkte stehen unten links. „Sync“ liest sofort; automatisch liest Kontor alle 30 Minuten (einstellbar) und sobald MoneyMoney neue Daten hat – jeweils nur, wenn MoneyMoney läuft und entsperrt ist.
 
-![Synchronisierung](img/synchronisierung.png)
+![Synchronisierung](img/de/sync.png)
 
-- **Schnell lesen**: Ein Abgleich liest nur die Umsätze der letzten drei Monate und übernimmt ältere aus dem letzten vollständigen Lesen. Das dauert Sekunden.
-- **Vollständig lesen**: alle 24 Stunden (einstellbar), nachts schon nach der Hälfte, nach eigenen Buchungen von Kontor und mit „Alles neu lesen“. Änderungen an älteren Umsätzen in MoneyMoney (z. B. eine Regel auf alle Umsätze angewendet) erscheinen erst danach.
+- **Schnell lesen**: Ein Abgleich liest nur die Umsätze der letzten 30 Tage und übernimmt ältere aus dem letzten vollständigen Lesen.
+- **Kontrolle**: Dabei prüft Kontor jeden Kontostand. Passt er nicht zu den gelesenen Umsätzen, hat sich in MoneyMoney etwas Älteres geändert – etwa eine nachträgliche Buchung mit altem Datum oder ein gelöschter Umsatz. Dann liest Kontor sofort alles (höchstens alle 12 Stunden).
+- **Vollständig lesen**: alle 7 Tage (einstellbar), nach eigenen Buchungen von Kontor und mit „Alles neu lesen“. Nur geänderte Kategorien älterer Umsätze (z. B. eine Regel in MoneyMoney auf alle Umsätze angewendet) erscheinen erst dann – dafür „Alles neu lesen“.
 - Ein Bankabruf ohne neue Daten löst keine Neuberechnung aus.
 - **Umsätze lesen** (Einstellungen → Allgemein): wie weit zurück Kontor liest; 0 = alle (empfohlen).
 
 Die Seite „Synchronisierung“ zeigt je Konto den letzten Abruf und meldet Konten, die zurückliegen. Konten ohne Bankabruf (Offline-Konten: ohne Bank- oder Kontonummer, Ziel einer Regel oder von Kontor bebucht) stehen getrennt; je Konto änderbar. Ist MoneyMoney zu oder gesperrt, passiert nichts – der nächste Abgleich holt alles nach. Bei Buchungen, Vorschlägen und Fehlern meldet sich Kontor mit einer macOS-Mitteilung (abschaltbar unter Einstellungen → Allgemein).
 
-<a id="tabellen"></a>
+<a id="tables"></a>
 ## Tabellen, Schalter und Excel
 
-Überall wählst du **Monate** (mit Jahressummen) oder nur **Jahre**. Jahresspalten sind kumuliert: Zahlungsflüsse als Summe, Bestände als Stand zum Jahresende. Blass sind der laufende Monat und das laufende Jahr (noch nicht abgeschlossen), noch blasser Planwerte.
+Überall wählst du **Monate** (mit Jahressummen) oder nur **Jahre**. Jahresspalten sind kumuliert: Zahlungsflüsse als Summe, Bestände als Stand zum Jahresende. Blass sind der laufende Monat und das laufende Jahr (noch nicht abgeschlossen), blass und schraffiert die Planwerte.
 
 - **Alle Zeilen** zeigt auch leere und ausgeblendete Zeilen.
 - **Plan** (Kapitalfluss) hängt die Planwerte rechts an; aus = nur Ist-Werte. Bilanz und Planung zeigen den Plan immer.
@@ -110,38 +111,39 @@ Die Seite „Synchronisierung“ zeigt je Konto den letzten Abruf und meldet Kon
 
 Jede Tabelle hat einen **Excel**-Knopf: Bilanz, Kapitalfluss, Planung (mit Fortschreibung und Parametern), Steuer, Umsätze, Depots, Belege, Konten und jede Immobilienkalkulation.
 
-<a id="bilanz"></a>
+<a id="balance-sheet"></a>
 ## Bilanz
 
 Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat, mit Plan bis Dezember des letzten Planjahres. Klick auf eine Position klappt ihre Konten auf, Klick auf ein Konto öffnet seinen Verlauf.
 
-![Bilanz](img/bilanz.png)
+![Bilanz](img/de/balance_sheet.png)
 
-- **Blass**: der laufende Monat und das laufende Jahr (noch nicht abgeschlossen); noch blasser: Planwerte.
+- **Blass**: der laufende Monat und das laufende Jahr (noch nicht abgeschlossen); **blass und schraffiert**: Planwerte.
 - **Grafik**: Zusammensetzung des Vermögens in den Farben der Positionen, schwarz das Nettovermögen (gestrichelt: Plan). Zeitraum 1/3/10 Jahre, alles oder eine Monatszahl; waagerecht wischen verschiebt, mit zwei Fingern zoomen, Doppelklick vergrößert, Klick springt zur Spalte. Aufgeklappte Positionen zeigen ihre Konten als Abstufungen der Farbe.
 - **Geldtransit**: Liegen die beiden Buchungen einer Umbuchung zwischen eigenen Konten in verschiedenen Monaten (am 31. abgebucht, am 1. gutgeschrieben), zählt der Betrag am Monatsende als „Geldtransit“ zum Bankguthaben – sonst sähe das Nettovermögen kurz zu niedrig aus. Ein Klick zeigt die erkannten Buchungspaare.
 - **Monate oder Jahre**: Jahresspalten zeigen Bestände zum Jahresende.
+- **Einzelne Kurven** (unter der Tabelle): links das Nettovermögen allein, rechts die Summe frei gewählter Positionen (Standard: Bankguthaben, handelbare und gebundene Anlagen). Beide haben einen eigenen Zeitraum (1/3/10 Jahre, alles; Ziehen vergrößert, Doppelklick zoomt) und eine Achse, die sich den sichtbaren Werten anpasst – so sieht man die Entwicklung auch dann, wenn sich große Positionen wie Forderungen und Verbindlichkeiten in der Grafik oben gegenseitig ausgleichen. Oben steht der aktuelle Wert und die Veränderung im gewählten Zeitraum.
 
-<a id="kapitalfluss"></a>
+<a id="cash-flow"></a>
 ## Kapitalfluss
 
 Wohin das Geld fließt: Einnahmen und Ausgaben nach Kategorien, Investitionen (Umschichtungen in Depots und Anlagen, Einlagen in Beteiligungen), Finanzierung (Tilgung und Zinsen je Darlehen), Bewertung (Wertänderungen von Depots) und „Unklar“.
 
-![Kapitalfluss](img/kapitalfluss.png)
+![Kapitalfluss](img/de/cash_flow.png)
 
-Umbuchungen zwischen eigenen Konten erkennt Kontor an der Gegen-IBAN, an der Kategorie „Umbuchung“ und an Gegenbuchungen mit gleichem Betrag innerhalb von drei Tagen; sie zählen nicht als Einnahme oder Ausgabe. Die **Prüfzeile** „unerklärte Vermögensänderung“ sollte nahe 0 liegen – sonst fehlt eine Kategorie oder eine Gegenbuchung. Welche Kategorien als eigene Zeile erscheinen, legst du unter [Kategorien → Auswahl](#kategorien-auswahl) fest; welche Oberkategorie zu welchem Abschnitt gehört, unter Kategorien → Kapitalfluss-Zuordnung.
+Umbuchungen zwischen eigenen Konten erkennt Kontor an der Gegen-IBAN, an der Kategorie „Umbuchung“ und an Gegenbuchungen mit gleichem Betrag innerhalb von drei Tagen; sie zählen nicht als Einnahme oder Ausgabe. Die **Prüfzeile** „unerklärte Vermögensänderung“ sollte nahe 0 liegen – sonst fehlt eine Kategorie oder eine Gegenbuchung. Welche Kategorien als eigene Zeile erscheinen, legst du unter [Kategorien → Auswahl](#categories-selection) fest; welche Oberkategorie zu welchem Abschnitt gehört, unter Kategorien → Kapitalfluss-Zuordnung.
 
-<a id="kategorien"></a>
+<a id="categories"></a>
 ## Kategorien
 
 **MoneyMoney ist maßgeblich**: Hat ein Umsatz dort eine Kategorie, gilt sie auch in Kontor. Umsätze ohne Kategorie ordnest du in Kontor zu – unter Kategorien → Zuordnen, gruppiert nach Gegenpartei, mit Vorschlägen aus gelernten Regeln. „Regel für diesen Namen“ erledigt die Gegenpartei dauerhaft.
 
-![Zuordnen](img/zuordnen.png)
+![Zuordnen](img/de/assign_categories.png)
 
 Die Seite Kategorien hat vier Reiter:
 
 - **Zuordnen** – Umsätze ohne Kategorie, nach Gegenpartei gruppiert; die Zahl im Reiter zeigt, wie viele offen sind.
-- **Auswahl** – welche Kategorien aus MoneyMoney Kontor als Zeile nutzt ([mehr](#kategorien-auswahl)).
+- **Auswahl** – welche Kategorien aus MoneyMoney Kontor als Zeile nutzt ([mehr](#categories-selection)).
 - **Kontor-Kategorien & Regeln** – Kategorien, die es nur in Kontor gibt (Baum aus MoneyMoney übernommen, ergänzbar), deine eigenen Regeln (Name, Zweck, Gegen-IBAN, Richtung) und die gelernten. Gelernt wird aus der Gegenpartei (IBAN oder Name, ggf. mit Zweckanfang), wenn mindestens 90 % ihrer bisherigen Umsätze dieselbe Kategorie haben. Eigene Regeln gehen vor; spezifischere gewinnen (IBAN vor Name + Zweck vor Name).
 - **Kapitalfluss-Zuordnung** – welche Oberkategorie zu welchem Abschnitt des Kapitalflusses gehört (Einnahmen, Ausgaben, Investition, Finanzierung). Ohne Zuordnung entscheidet das Vorzeichen.
 
@@ -149,7 +151,7 @@ Die Seite Kategorien hat vier Reiter:
 
 Kategorien braucht es nur für die Aufteilung (Kapitalfluss-Zeilen, Planung je Zeile, Steuer). Bilanz, Nettovermögen, Immobilien, Darlehen und Einnahmen/Ausgaben insgesamt funktionieren auch ohne. Wenig Pflege: Zahlungen zwischen dir und deinen Gesellschaften erkennt Kontor ohnehin als Einlage oder Entnahme; fein kategorisieren musst du vor allem dort, wo du Kapitalfluss und Steuer genau brauchst.
 
-<a id="kategorien-zurueckschreiben"></a>
+<a id="categories-write-back"></a>
 ### Nach MoneyMoney zurückschreiben
 
 Mit „Kategorien zurückschreiben“ (Einstellungen → Allgemein oder „Einschalten“ unter Kategorien; nur am Mac) setzt Kontor deine Zuordnungen auch in MoneyMoney – so kategorisierst du nur an einer Stelle. Sicherungen:
@@ -159,7 +161,7 @@ Mit „Kategorien zurückschreiben“ (Einstellungen → Allgemein oder „Einsc
 - Eine vorhandene andere Kategorie – etwa von einem Geschäftspartner gepflegt – ersetzt Kontor nur nach Rückfrage: „In MoneyMoney ersetzen“ oder „Nur in Kontor“ (MoneyMoney bleibt, Kontor übersteuert).
 - Kategorien anlegen kann Kontor in MoneyMoney nicht (lässt MoneyMoney nicht zu). Fehlt eine, wartet die Zuordnung; nach dem Anlegen in MoneyMoney trägt Kontor sie beim nächsten Abgleich nach.
 
-<a id="kategorien-auswahl"></a>
+<a id="categories-selection"></a>
 ### Auswahl: welche Kategorien Kontor nutzt
 
 Unter Kategorien → Auswahl legst du je Kategorie aus MoneyMoney fest:
@@ -170,14 +172,14 @@ Unter Kategorien → Auswahl legst du je Kategorie aus MoneyMoney fest:
 
 „Nur oberste Ebene als Zeile“ räumt den Kapitalfluss mit einem Klick auf. In MoneyMoney ändert sich dadurch nichts.
 
-![Auswahl der Kategorien](img/kat_auswahl.png)
+![Auswahl der Kategorien](img/de/category_selection.png)
 
-<a id="planung"></a>
+<a id="planning"></a>
 ## Planung
 
 Die Planung schreibt die Vergangenheit fort: je Zeile eine Methode (Ø 12 oder 6 Monate, Vorjahresmonat, fester Betrag, Jahresbetrag/12, MoneyMoney-Budget, keine), ein Betrag und eine Steigerung in % p.a. Ausgaben folgen standardmäßig der Inflation, Einnahmen der eingestellten Rate. Einzelne Monate überschreibst du per Doppelklick; der Vorschlag bleibt sichtbar und lässt sich wiederherstellen.
 
-![Planung](img/planung.png)
+![Planung](img/de/planning.png)
 
 - **Darlehen**: Zins auf den fortgeschriebenen Restsaldo, Tilgung = Rate − Zins.
 - **Wertentwicklung** je Konto in % p.a.; Beteiligungen wahlweise gekoppelt an das geplante Nettovermögen der Gesellschaft (Anteil × Nettovermögen).
@@ -186,7 +188,7 @@ Die Planung schreibt die Vergangenheit fort: je Zeile eine Methode (Ø 12 oder 6
 - Der Plan reicht immer bis Dezember; „inflationsbereinigt“ zeigt Planwerte in heutiger Kaufkraft.
 - Darunter: Fortschreibung der Bilanz je Position und Konto und Kennzahlen (Sparquote, Reichweite der Liquidität, Zinslast). Der Plan gilt je Bereich.
 
-<a id="immobilien"></a>
+<a id="properties"></a>
 ## Immobilien
 
 Je Objekt beliebig viele Kalkulationen (Szenarien), eine davon aktiv. Eingaben:
@@ -198,21 +200,21 @@ Je Objekt beliebig viele Kalkulationen (Szenarien), eine davon aktiv. Eingaben:
 
 Ungültige Eingaben weist Kontor mit dem Feldnamen ab.
 
-![Immobilien](img/immobilien.png)
+![Immobilien](img/de/property.png)
 
 Ergebnis: Monats- und Jahrestabelle (Miete, Kosten, Zinsen, Tilgung, AfA, steuerliches Ergebnis, Steuer, Cashflow, Vermögensaufbau, Restschuld, Objektwert), Kennzahlen (Kaufpreisfaktor, Brutto- und Nettomietrendite, Cash-on-Cash, DSCR, LTV, IRR bis zum Verkauf) und Hinweise (offene Fälligkeiten, fehlender Anschlusszins, negativer kumulierter Cashflow). Verknüpfungen mit MoneyMoney: Vermietungskategorie und Darlehenskonten für den Soll/Ist-Vergleich je Jahr, Objektkonto für den Wert in der Bilanz. „In Planung übernehmen“ speist die Planung des Bereichs; die AfA der aktiven Kalkulation landet in der Steuerübersicht, solange dort kein Jahreswert von Hand steht. Excel-Export je Kalkulation. Dokumente (Kaufvertrag, Gutachten …) werden als Verknüpfung abgelegt – die Dateien bleiben, wo sie sind. Vereinfacht gerechnet: Steuer je Gesellschafter = Anteil × Ergebnis × Steuersatz (keine Progression, kein Verlustausgleich), AfA linear.
 
-<a id="steuer"></a>
+<a id="tax"></a>
 ## Steuer
 
 Je Entität (Hauptbereich = privat, jede Gesellschaft mit deinem Anteil aus der Beteiligungsregel) und Jahr: Vermietung je Objekt aus den Kategorien `Vermietung \ Objekt \ Art` (beliebig viele Objekte, auch privat), Schuldzinsen je Darlehen (Zuordnung Darlehen → Objekt unter Einstellungen → Steuer), AfA, Steuerpositionen aus Kategorienamen (anpassbar unter Einstellungen → Steuer) und Buchungen ohne Kategorie als Prüfposten. Die Belege eines Jahres lassen sich als ZIP mit Übersicht exportieren. Keine Steuerberatung.
 
-<a id="belege"></a>
+<a id="receipts"></a>
 ## Umsätze und Belege
 
 Der Umsatzbrowser filtert nach Bereich, Jahr, Konto, Text, „ohne Beleg“ und „ohne Kategorie“. Belege (PDF, Bilder, E-Mails, Office-Dateien) fügst du per Auswahl, Drag & Drop oder am iPhone per Foto hinzu. Sie liegen als normale Dateien im Belegordner (Standard `~/Documents/Kontor-Belege`, Unterordner z. B. `{jahr}`), Dateiname `Datum_Betrag_Name_Kennung`. Dateien außerhalb des Ordners (auch iCloud Drive) lassen sich verknüpfen, ohne sie zu kopieren – Kontor zeigt, ob die Datei lokal vorliegt oder noch aus iCloud geladen wird. Vorhandene Dateien im Belegordner lassen sich nachträglich zuordnen. Bis 60 MB je Datei. Der Index liegt verschlüsselt im Datenordner; die Dateien bleiben auch ohne ihn nutzbar. Löschen in Kontor betrifft nie verknüpfte Dateien.
 
-<a id="regeln"></a>
+<a id="rules"></a>
 ## Regeln (Gegenbuchungen)
 
 Regeln buchen in Offline-Konten in MoneyMoney:
@@ -230,7 +232,7 @@ Standard ist der **Testmodus**: Vorschläge erscheinen unter „Buchungen“, ge
 
 Standardmäßig ist Kontor nur auf dem Mac erreichbar (`127.0.0.1`) – deshalb öffnet das iPhone die Adresse nicht. Für den Zugriff von unterwegs nutzt Kontor [Tailscale](https://tailscale.com): ein privates, verschlüsseltes Netz nur aus deinen Geräten. Im Heimnetz und im Internet ist dabei kein Port offen, am Router ist nichts einzurichten.
 
-![Zugriff vom iPhone](img/zugang.png)
+![Zugriff vom iPhone](img/de/access.png)
 
 Unter Einstellungen → Zugang zeigt Kontor die Schritte mit Häkchen:
 
@@ -242,16 +244,31 @@ Unter Einstellungen → Zugang zeigt Kontor die Schritte mit Häkchen:
 
 **Wer, wo, was**: Erreichbar ist Kontor nur für Geräte in deinem Tailscale-Netz und nur mit dem Kontor-Passwort; von überall mit Internet; Standard **nur ansehen** – vom iPhone lässt sich nichts ändern. Wahlweise „ansehen und bearbeiten“ (Planung, Zuordnungen in Kontor, Einstellungen). In MoneyMoney schreiben, Touch ID, Sicherung, Zurücksetzen und die Zugangseinstellungen gibt es nur am Mac. Der Mac muss laufen (nicht im Ruhezustand) und mit Tailscale verbunden sein; ist Tailscale beim Start noch nicht verbunden, öffnet Kontor die Adresse, sobald es geht. Im Terminal: `python3 ~/Kontor/kontor.py tls` (bzw. `tls --off`).
 
-![Kontor auf dem iPhone](img/iphone.png)
+![Kontor auf dem iPhone](img/de/iphone.png)
 
 **Offline-Ansicht**: Als App gespeichert behält das iPhone die zuletzt geladenen Daten. Ist der Mac nicht erreichbar, öffnet das Kontor-Passwort diese Kopie – nur lesen. Abschaltbar unter Einstellungen → Zugang. Das Passwort prüft das iPhone dabei gegen einen eigenen Prüfwert (PBKDF2-SHA256, eigener Salt); die Kopie ist durch die iPhone-Verschlüsselung geschützt, aber nicht zusätzlich mit dem Passwort verschlüsselt – wer das entsperrte Gerät mit Entwicklerwerkzeugen untersucht, käme an die Daten. „Gespeicherte Daten auf diesem Gerät löschen“ entfernt die Kopie sofort. Das Zertifikat (90 Tage gültig) erneuert der Dienst selbst.
 
 Ohne HTTPS-Zertifikate geht „Ohne Zertifikat einschalten“ (durch Tailscale verschlüsselt, aber ohne Offline-Ansicht).
 
-<a id="sichern"></a>
+**Meldet Kontor „nicht verbunden“**, steht dahinter der Grund (nicht angemeldet, ausgeschaltet, wartet auf Freigabe oder die Antwort von Tailscale). Tailscale in der Menüleiste öffnen, „Connect“ einschalten, dann „Erneut prüfen“.
+
+<a id="iphone-security"></a>
+### Wie sicher ist Tailscale?
+
+Tailscale verbindet deine Geräte direkt und Ende-zu-Ende verschlüsselt (WireGuard). Der Dienst von Tailscale vermittelt nur, wer zu deinem Netz gehört, und sieht keine Inhalte. Ins Netz kommt nur ein Gerät, das mit deinem Konto angemeldet ist – bei Anmeldung mit Apple also mit deiner Apple-ID samt Zwei-Faktor-Schutz.
+
+Wichtig zu wissen: Ohne eigene Regel dürfen sich alle Geräte in deinem Tailscale-Netz gegenseitig auf allen Ports erreichen. Den Mac steuern kann darüber niemand, solange am Mac keine Fernzugänge eingeschaltet sind (Bildschirmfreigabe, Entfernte Anmeldung, Dateifreigabe – Systemeinstellungen → Allgemein → Teilen), und auch die verlangen das Mac-Passwort. Ganz dicht machst du es so:
+
+1. **Nur Kontor erlauben**: Unter Einstellungen → Zugang → „Absichern“ zeigt Kontor eine fertige Zugriffsregel für deinen Mac. In der Tailscale-Verwaltung unter „Access controls“ den Inhalt durch diese Regel ersetzen und speichern. Danach erreichen deine Geräte auf dem Mac nur noch Kontor, sonst nichts.
+2. **Neue Geräte freigeben lassen**: In der Tailscale-Verwaltung unter Settings → „Device approval“ einschalten. Ein neues Gerät kommt dann erst nach deiner Freigabe ins Netz – selbst wenn jemand an deine Anmeldung käme.
+3. **Konto schützen**: Apple-ID mit Zwei-Faktor-Schutz (Standard), keine weiteren Personen ins Tailscale-Netz einladen.
+
+Kontor selbst verlangt zusätzlich das Kontor-Passwort und lässt vom iPhone standardmäßig nur Ansehen zu.
+
+<a id="backup"></a>
 ## Sichern und Zurücksetzen
 
-![Sichern und Zurücksetzen](img/sichern.png)
+![Sichern und Zurücksetzen](img/de/backup.png)
 
 - **Sicherung** – für dich: Kontor auf einem neuen Mac oder nach dem Zurücksetzen genau so wiederherstellen. Enthält alle Einstellungen, Bereiche, Regeln, Immobilien, Planung, Kategorien und Zuordnungen, Monatsstände und den Belegindex – nicht die Umsätze (kommen aus MoneyMoney), keine Belegdateien, nicht das Kontor-Passwort. Weil sie deine Finanzdaten enthält, wird sie mit einem eigenen Passwort verschlüsselt, das Kontor nicht speichert. Nur am Mac.
 - **Einstellungspaket** – für andere: deine Regeln und Zuordnungen als Vorlage, z. B. für einen Geschäftspartner mit eigenem MoneyMoney. Konten nur mit Namen, ohne Kontostände, Umsätze, Planung, Passwörter oder Adresse. Darlehensregeln enthalten die Gegen-IBAN des Darlehensgebers – vor dem Weitergeben prüfen. Beim Laden ordnet Kontor die Konten über die Namen zu; was nicht gefunden wird, ordnest du in der Oberfläche zu. „Ergänzen“ fügt Regeln hinzu und überschreibt Zuordnungen, „Ersetzen“ verwirft die vorhandene Einrichtung. Eine Vorlage liegt im Ordner `templates/`.
@@ -263,7 +280,7 @@ Ohne HTTPS-Zertifikate geht „Ohne Zertifikat einschalten“ (durch Tailscale v
 
 Kontor fragt GitHub nach der neuesten Version (täglich, wöchentlich oder nie – Einstellungen → Updates) und installiert nur nach Klick. Die Update-Prüfung ist die einzige Netzverbindung von Kontor: Sie fragt `raw.githubusercontent.com` nach der Datei `VERSION` im Hauptzweig des Repositorys (Standard: [github.com/stecrz/Kontor](https://github.com/stecrz/Kontor)). Andere Server sind bewusst nicht möglich.
 
-Beim Installieren lädt Kontor diesen Stand als Archiv von github.com, ersetzt den Programmordner (die alten Dateien bleiben daneben als `.alt`), startet den Dienst neu und lädt die Seite neu; ist der Programmordner ein Git-Klon, läuft stattdessen `git pull`. Datenordner und Einstellungen bleiben. Alle Schritte stehen im Protokoll, alle Änderungen unter Updates → „Alle Änderungen“.
+Beim Installieren lädt Kontor diesen Stand als Archiv von github.com, ersetzt den Programmordner (die alten Dateien bleiben daneben als `.alt`), startet den Dienst neu und lädt die Seite neu; ist der Programmordner ein Git-Klon, läuft stattdessen `git pull`. Datenordner und Einstellungen bleiben. Alle Schritte stehen im Protokoll. Die Seite Updates zeigt die Änderungen der neuesten Version, darunter aufklappbar die früheren.
 
 Im Terminal installiert und aktualisiert derselbe Befehl:
 
@@ -271,7 +288,7 @@ Im Terminal installiert und aktualisiert derselbe Befehl:
 bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/get.sh)
 ```
 
-<a id="sicherheit"></a>
+<a id="security"></a>
 ## Sicherheit
 
 - Oberfläche nur auf diesem Mac (`127.0.0.1`); optional zusätzlich im eigenen Tailscale-Netz – nie im Heimnetz oder Internet. Keine fremden Inhalte, keine Telemetrie.
@@ -280,7 +297,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/get.sh)
 - Das Protokoll enthält keine IBANs, Salden oder Passwörter.
 - Grenze: Wer deinen entsperrten Mac bedient, kommt an den Schlüssel. FileVault bleibt die Basis.
 
-<a id="fehler"></a>
+<a id="troubleshooting"></a>
 ## Wenn etwas nicht klappt
 
 | Meldung | Abhilfe |

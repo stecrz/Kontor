@@ -1,7 +1,7 @@
-"""Bilder fuer README und Hilfe (docs/img) mit den erfundenen Testdaten erzeugen.
+"""Create the images for README and help (docs/img/<lang>) from the made-up test data.
 
-Aufruf: python3 tests/screenshots.py [Zielordner]   (Standard: docs/img). Braucht Playwright und Pillow.
-Alle Namen, Konten und Betraege stammen aus tests/fixtures.py und sind frei erfunden.
+Usage: python3 tests/screenshots.py [folder|-] [de|en]   (default: docs/img/de). Needs Playwright and Pillow.
+All names, accounts and amounts come from tests/fixtures.py and are made up.
 """
 import os
 import sys
@@ -21,7 +21,7 @@ from playwright.sync_api import sync_playwright        # noqa: E402
 from PIL import Image                                  # noqa: E402
 
 LANG = sys.argv[2] if len(sys.argv) > 2 else "de"
-OUT = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != "-" else os.path.join(HERE, "..", "docs", "img", *(["en"] if LANG == "en" else []))
+OUT = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != "-" else os.path.join(HERE, "..", "docs", "img", LANG)
 os.makedirs(OUT, exist_ok=True)
 
 
@@ -57,21 +57,21 @@ def main():
             pg.goto(U); pg.evaluate("l => localStorage.setItem('kontor.lang', l)", LANG); pg.reload(); pg.wait_for_selector("#login-pw")
             pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
             pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_timeout(800)
-            # Immobilie mit Kalkulation (fuer Bild und Planung)
+            # property with a calculation (for the image and the plan)
             res = pg.evaluate("""async (a) => { try { const r = await api('/api/properties', {aktion: 'anlegen', name: 'Parkweg', bereich: a.b, kategorie: 'Vermietung \\\\ Parkweg'});
                 await api('/api/properties', {aktion: 'kalkulation_speichern', id: r.immobilie.id, kalkulation: {name: 'Basis', eingaben: a.e}}); return 'ok'; } catch (e) { return e.message; } }""",
                               {"b": F.uid("pb"), "e": T.PB_EINGABEN})
             print("Immobilie:", res)
-            for _ in range(60):                    # Neuberechnung abwarten (sonst steht „wird neu berechnet“ im Bild)
+            for _ in range(60):                    # wait for the recalculation (otherwise "recalculating" shows in the image)
                 pg.wait_for_timeout(500)
                 if not pg.evaluate("fetch('/api/status').then(r => r.json()).then(s => !!(s.bericht || {}).laeuft)"):
                     break
             pg.reload(); pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_timeout(1200)
             pg.evaluate("document.querySelectorAll('.banner').forEach(b => b.remove())")
-            shots = [("uebersicht", "#uebersicht", None), ("bilanz", "#bilanz", "bilanz"), ("kapitalfluss", "#kapitalfluss", None),
-                     ("planung", "#planung", None), ("einrichtung", "#einrichtung", None), ("konten", "#einrichtung/konten", None),
-                     ("zuordnen", "#kategorien", None), ("kat_auswahl", "#kategorien/auswahl", None), ("synchronisierung", "#synchronisierung", None),
-                     ("zugang", "#einstellungen/zugang", None), ("sichern", "#einstellungen/sichern", None), ("immobilien", "#immobilien", "immo")]
+            shots = [("overview", "#overview", None), ("balance_sheet", "#balance", "bilanz"), ("cash_flow", "#cashflow", None),
+                     ("planning", "#planning", None), ("setup", "#setup", None), ("accounts", "#setup/accounts", None),
+                     ("assign_categories", "#categories", None), ("category_selection", "#categories/selection", None), ("sync", "#sync", None),
+                     ("access", "#settings/access", None), ("backup", "#settings/backup", None), ("property", "#properties", "immo")]
             for name, h, special in shots:
                 pg.goto(U + h); pg.wait_for_timeout(1400)
                 pg.evaluate("document.querySelectorAll('#banner').forEach(b => { b.className = 'hidden'; b.innerHTML = ''; })")
@@ -80,16 +80,16 @@ def main():
                 if special == "immo":
                     pg.click(".card[data-im]"); pg.wait_for_timeout(1500)
                 save(pg, name)
-            # Verlauf-Fenster eines Kontos und Geldtransit
-            pg.goto(U + "#bilanz"); pg.wait_for_timeout(1200)
+            # history panel of an account
+            pg.goto(U + "#balance"); pg.wait_for_timeout(1200)
             if not pg.query_selector("tr.acct"):
                 pg.click("tr.pos[data-pos='liquiditaet']"); pg.wait_for_timeout(400)
             pg.click("tr.acct td"); pg.wait_for_selector("#drawer.open"); pg.wait_for_timeout(800)
-            save(pg, "verlauf", clip={"x": 860, "y": 0, "width": 500, "height": 820})
+            save(pg, "account_history", clip={"x": 860, "y": 0, "width": 500, "height": 820})
             # iPhone
             m = b.new_page(viewport={"width": 390, "height": 760}, device_scale_factor=3, is_mobile=True, has_touch=True)
             m.context.add_cookies(pg.context.cookies())
-            m.goto(U + "#uebersicht"); m.wait_for_timeout(1500)
+            m.goto(U + "#overview"); m.wait_for_timeout(1500)
             m.evaluate("document.querySelectorAll('#banner').forEach(b => { b.className = 'hidden'; b.innerHTML = ''; })")
             save(m, "iphone")
             b.close()
