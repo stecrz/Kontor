@@ -2146,11 +2146,19 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("BCH.i0"), 0); self.assertEqual(pg.evaluate("BCH.i1 - BCH.i0"), span)
                 pg.mouse.dblclick(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2); pg.wait_for_timeout(300)
                 self.assertLessEqual(pg.evaluate("BCH.i1 - BCH.i0"), span // 2 + 1)
-                # click on a month heading: chart centred on that month, same span, column marked
+                # click on a month heading: chart moved (same span) so that the month lands above the column, column marked
                 pg.click("#bch-rb button[data-m='12']"); pg.wait_for_timeout(200)
-                key = pg.evaluate("BCH.d.months[2]"); pg.evaluate("document.querySelector(\"#main .wrap thead th[data-key='%s']\").click()" % key)
-                pg.wait_for_timeout(200)
-                self.assertEqual(pg.evaluate("BCH.i0"), 0); self.assertEqual(pg.evaluate("BCH.i1 - BCH.i0"), span)
+                for side in (0, 1):         # a visible month on the left and one on the right of the table
+                    key = pg.evaluate("""side => { const w = document.querySelector('#main .wrap'), wr = w.getBoundingClientRect(), fw = w.querySelector('thead th').offsetWidth;
+                        const vis = [...w.querySelectorAll('thead th[data-key]')].filter(h => { const r = h.getBoundingClientRect(); return r.left >= wr.left + fw - 1 && r.right <= wr.right + 1; });
+                        return (side ? vis[vis.length - 2] : vis[1]).dataset.key; }""", side)
+                    pg.evaluate("document.querySelector(\"#main .wrap thead th[data-key='%s']\").click()" % key); pg.wait_for_timeout(200)
+                    self.assertEqual(pg.evaluate("BCH.i1 - BCH.i0"), span)
+                    ok = pg.evaluate("""key => { const i = BCH.d.months.indexOf(key), G = BCH.geo, sr = document.querySelector('#bch-svg').getBoundingClientRect(),
+                        r = document.querySelector(`#main .wrap thead th[data-key="${key}"]`).getBoundingClientRect(), step = (G.W - G.P.l - G.P.r) / (BCH.i1 - BCH.i0);
+                        return [i >= BCH.i0 && i <= BCH.i1 && (Math.abs(sr.left + G.x(i) - (r.left + r.width / 2)) <= step + 1 || BCH.i0 === 0 || BCH.i1 === BCH.d.months.length - 1),
+                            [i, BCH.i0, BCH.i1, sr.left + G.x(i), r.left + r.width / 2, step]]; }""", key)
+                    self.assertTrue(ok[0], (key, ok[1]))
                 self.assertTrue(pg.query_selector("#main thead th[data-key='%s'].bch-on" % key)); self.assertFalse(pg.is_visible("#bch-tip"))
                 # aligned with the table: each column centre has its point right above it, no value tip, the chart follows the table
                 pg.click("#bch-link"); pg.wait_for_selector("#bch.linked"); pg.wait_for_timeout(300)
@@ -2178,9 +2186,10 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(len(pg.query_selector_all("#modus-seg button")), 2)
                 self.assertIsNone(pg.query_selector("#main thead th.year")); self.assertTrue(pg.query_selector("#main thead th.ystart")); self.assertIsNone(pg.query_selector("#top-ctl"))
                 self.assertIsNone(pg.query_selector("#main .toolbar #planan")); self.assertTrue(pg.query_selector("#main thead th.plan"))   # Bilanz immer mit Plan
-                n_rows = len(pg.query_selector_all("tr.acct")); pg.click("#main .toolbar label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
-                self.assertGreaterEqual(len(pg.query_selector_all("tr.acct")), n_rows)
-                pg.click("#main .toolbar label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
+                if pg.query_selector("#alle-zeilen"):        # only offered when empty or hidden accounts exist
+                    n_rows = len(pg.query_selector_all("tr.acct")); pg.click("#main .toolbar label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
+                    self.assertGreaterEqual(len(pg.query_selector_all("tr.acct")), n_rows)
+                    pg.click("#main .toolbar label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
                 pg.click("tr.acct[data-id='%s'] td" % F.uid("priv.depot")); pg.wait_for_selector("#drawer.open #h-grid")
                 self.assertIn("Monatsstände", pg.query_selector("#drawer").inner_text())
                 pg.click("#drawer details.holdings summary"); self.assertIn("Welt-ETF", pg.query_selector("#drawer details.holdings").inner_text())   # Depotpositionen

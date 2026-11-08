@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.9.45 (2026-11-08 04:21)
+- Bilanz: Klick auf eine Spaltenüberschrift verschiebt die Grafik so, dass der Monat ungefähr über der Spalte steht (statt in der Mitte).
+- Bilanz: Der Erklärtext unter der Tabelle steckt jetzt im „?“ neben „Position / Konto“.
+- Bilanz: „Konten zeigen“, „Ausgeblendete“ und Excel stehen jetzt direkt über der Tabelle; oben bleibt nur Monate/Jahre (gilt für Grafik und Tabelle). „Ausgeblendete“ erscheint nur, wenn es leere oder ausgeblendete Konten gibt.
+- Anzahl der Konten je Position kompakt: „(9/12)“ = 9 von 12 angezeigt (statt „12, 3 ausgeblendet“), einmal kurz unter der Tabelle erklärt.
+- Große Grafik: Flächen kräftiger, Positionen dadurch besser zu unterscheiden; Immobilien in wärmerem Braun (klar getrennt von Beteiligungen).
+
 ## 3.9.44 (2026-11-08 04:09)
 - Bilanz-Grafiken: Standard-Zeitraum in der Monatsansicht 1 Jahr (groß und klein), in der Jahresansicht 3 Jahre; beim Wechsel der Ansicht gilt deren Standard.
 - Farben nach Verfügbarkeit: Bankguthaben Grün, Wertpapiere Smaragd, Festanlagen Türkis, Forderungen Blau, Beteiligungen Violett.

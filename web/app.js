@@ -87,6 +87,7 @@ const H = {
   abruf: t('stand_je_konto_in_dem'),
   touchid: t('eingeschaltet_die_anmeldung_am_mac'),
   bilanz_stand: t('salden_am_monatsende_der_laufende'),
+  bilanz_tabelle: t('klick_auf_eine_position_klappt'),
   abgleich: t('datenstand_in_zwei_stufen_banken'),
   fern: t('fern_tip'),
   fern_was: t('fern_was_tip'),
@@ -152,7 +153,7 @@ const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl:
   konten_zuordnung: 'accounts', inaktiv: 'accounts', verlauf_kurz: 'history', verlauf: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
   zuordnen: 'categories', kontor_kategorien: 'categories', mm_ueberschreiben: 'categories', mm_cat: 'categories-write-back', kat_auswahl: 'categories-selection',
   abgleich: 'sync', voll_lesen: 'sync', monate_zurueck: 'sync', abruf: 'sync', intervall: 'sync',
-  bch: 'balance-sheet', bilanz_stand: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', methode: 'planning', inflation: 'planning', steig_ein: 'planning',
+  bch: 'balance-sheet', bilanz_stand: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', methode: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', ereignis: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', paket: 'backup', timemachine: 'backup', diagnose: 'troubleshooting', pruefen: 'setup', updates: 'updates',
   update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', dokumente: 'properties', immo_planung: 'properties'};
@@ -1066,18 +1067,27 @@ function vBilanz() {
   const pos = D.bilanz.zeilen.filter(r => r.gruppe);
   S.posOpen = S.posOpen || {};
   const allOpen = pos.length && pos.every(r => S.posOpen[r.rolle]);
-  let h = `<div class="toolbar">${viewCtl()}<span class="tb-sep"></span><button class="ghost small" id="pos-all">${allOpen ? t('nur_positionen') : t('konten_zeigen')}</button>${alleCtl(nInactive, true)} ${hq('bilanz_stand')}<span class="sp"></span>${xlsxBtn('balance')}</div>`;
+  // top: the view (months/years) for chart and table; the table options sit right above the table
+  let h = `<div class="toolbar">${viewCtl()}</div>`;
   h += vBilanzChart(D);
   const tag = r => (r.depot ? `<span class="tag">${t('depot')}</span>` : '') + (r.offline && !r.gruppe ? `<span class="tag">${t('manuell')}</span>` : '') + (r.inaktiv ? `<span class="tag">${t('ausgeblendet')}</span>` : '')
     + (r.verlauf === 'stand' && !r.gruppe ? `<span class="tag" title="${t('verlauf_aus_kontostaenden')}">${t('kontostaende')}</span>` : '')
     + (r.fortgeschrieben_vor ? `<span class="tag warn" title="${t('vor_0_ist_kein_stand', ML(r.fortgeschrieben_vor))}">${t('vor_0_unbekannt', ML(r.fortgeschrieben_vor))}</span>` : '');
   const row = (r, cls0, label) => `<tr class="${cls0}" data-id="${r.id}"><td title="${esc(r.pfad || r.name)}">${label}</td>${C.map(c => { const v = lastOf(werte(r), c.months); return `<td class="${cls(v, c)}">${F(v)}</td>`; }).join('')}</tr>`;
-  const skip = r => !S.alle && (r.inaktiv || C.every(c => { const v = lastOf(werte(r), c.months); return v == null || Math.abs(v) < 0.005; }));
-  h += '<div class="wrap"><table>' + thead(t('position_konto'), C) + '<tbody>';
+  const hidden = r => r.inaktiv || C.every(c => { const v = lastOf(werte(r), c.months); return v == null || Math.abs(v) < 0.005; });
+  const skip = r => !S.alle && hidden(r), anyHidden = D.bilanz.zeilen.some(r => !r.gruppe && hidden(r));
+  let partShown = false;
+  // table options right above the table; "Hidden" only when there is something to show
+  h += `<div class="toolbar tbl-bar"><button class="ghost small" id="pos-all">${allOpen ? t('nur_positionen') : t('konten_zeigen')}</button>${anyHidden ? alleCtl(nInactive, true) + ' ' : ''}${hq('bilanz_stand')}<span class="sp"></span>${xlsxBtn('balance')}</div>`;
+  h += '<div class="wrap"><table>' + thead(`${t('position_konto')} ${hq('bilanz_tabelle')}`, C) + '<tbody>';
   for (const r of D.bilanz.zeilen) {
     if (r.gruppe) {
       const [label, color] = ROLE[r.rolle] || [r.name, 'var(--c-neutral)'], open = !!S.posOpen[r.rolle];
-      h += row(r, 'group pos', `<span class="caret">${open ? '▾' : '▸'}</span><i class="pos-dot" style="background:${color}"></i>${label} <span class="small muted">(${r.anzahl}${r.inaktive ? t('n_ausgeblendet', r.inaktive) : ''})</span>`).replace('<tr ', `<tr data-pos="${r.rolle}" `).replace(` data-id="${r.id}"`, '');
+      // number of accounts; "shown/all" when empty or hidden ones are left out (explained once below the table)
+      const accs = D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === r.rolle), shown = accs.filter(x => !skip(x)).length;
+      if (shown < accs.length) partShown = true;
+      const cnt = shown < accs.length ? `<span class="small muted" title="${t('n_von_m_konten', shown, accs.length)}">(${shown}/${accs.length})</span>` : `<span class="small muted">(${accs.length})</span>`;
+      h += row(r, 'group pos', `<span class="caret">${open ? '▾' : '▸'}</span><i class="pos-dot" style="background:${color}"></i>${label} ${cnt}`).replace('<tr ', `<tr data-pos="${r.rolle}" `).replace(` data-id="${r.id}"`, '');
       continue;
     }
     if (!S.posOpen[r.rolle] || skip(r)) continue;
@@ -1090,7 +1100,7 @@ function vBilanz() {
   h += `<tr class="total"><td>${t('nettovermoegen')}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
   h += (D.bilanz.ausserhalb || []).map(r => `<tr class="muted"><td>${esc(r.name)} <span class="tag">${t('0_nicht_im_nettovermoegen', esc((ROLE[r.rolle] || [r.rolle])[0]))}</span></td>${cells(C, c => lastOf(r.werte, c.months))}</tr>`).join('');
   h += '</tbody></table></div>';
-  h += `<div class="note">${t('klick_auf_eine_position_klappt')}</div>`;
+  if (partShown) h += `<div class="note">${t('konten_teils_angezeigt')}</div>`;
   h += vBilanzLines(D);
   return h;
 }
@@ -1317,11 +1327,14 @@ function bchJump(m) {
   $$('tr', w).forEach(tr => { const c = tr.children[idx]; if (c) { c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); } });
 }
 function bchFocus(key) {
-  // table header clicked: centre the chart on that month, keep the span and mark it
+  // table header clicked: move the chart (same span) so that this month lands roughly above the clicked column, and mark it
   // (year column: the current month for the running year, otherwise its last month)
   const d = BCH.d; if (!d || bchLinked()) return;
   const i = bchIndex(key); if (i < 0) return;
-  const span = BCH.i1 - BCH.i0, last = d.months.length - 1, a = Math.max(0, Math.min(last - span, i - Math.round(span / 2))), z = Math.min(last, a + span);
+  const span = BCH.i1 - BCH.i0, last = d.months.length - 1, G = BCH.geo, svg = $('#bch-svg'), th = $(`#main .wrap thead th[data-key="${key}"]`);
+  let frac = 0.5;                                       // share of the plot width where the month should land
+  if (G && svg && th) { const sr = svg.getBoundingClientRect(), r = th.getBoundingClientRect(); if (sr.width) frac = ((r.left + r.width / 2 - sr.left) * G.W / sr.width - G.P.l) / Math.max(1, G.W - G.P.l - G.P.r); }
+  const a = Math.max(0, Math.min(last - span, Math.round(i - Math.max(0, Math.min(1, frac)) * span))), z = Math.min(last, a + span);
   bchSet(a, z, a === BCH.i0 && z === BCH.i1 ? S.bchBtn : null);
   bchHover(i); $('#bch-tip').classList.add('hidden');      // only the line marks the month; the values are in the table
   const c = $('#bch'), r = c && c.getBoundingClientRect(); if (r && (r.top < 0 || r.bottom > window.innerHeight)) c.scrollIntoView({block: 'nearest', behavior: 'smooth'});
