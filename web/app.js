@@ -41,10 +41,10 @@ const fmt = new Intl.NumberFormat(LOCALE, {minimumFractionDigits: 2, maximumFrac
 const fmt0 = new Intl.NumberFormat(LOCALE, {maximumFractionDigits: 0});
 const F = v => (v == null || isNaN(v) ? '–' : fmt.format(v));
 const F0 = v => (v == null || isNaN(v) ? '–' : fmt0.format(v));
-const Fk = v => {   // short amounts for axes: German Tsd. / Mio. / Mrd., English k / M / B
+const Fk = (v, long) => {   // amounts on axes: short where space is tight (T / M, English k / M), long on wide charts (Tsd. / Mio.)
   if (v == null || isNaN(v)) return '–';
-  const a = Math.abs(v), f = (x, d) => x.toLocaleString(LOCALE, {maximumFractionDigits: d});
-  return a >= 1e9 ? f(v / 1e9, 2) + t('mrd_kurz') : a >= 1e6 ? f(v / 1e6, 2) + t('mio_kurz') : a >= 1e4 ? f(v / 1e3, 0) + t('tsd_kurz') : F0(v);
+  const a = Math.abs(v), f = (x, d) => x.toLocaleString(LOCALE, {maximumFractionDigits: d}), u = k => t(k + (long ? '_lang' : '_kurz'));
+  return a >= 1e9 ? f(v / 1e9, 2) + u('mrd') : a >= 1e6 ? f(v / 1e6, 2) + u('mio') : a >= 1e4 ? f(v / 1e3, 0) + u('tsd') : F0(v);
 };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const MONATE = LANG === 'en' ? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] : ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
@@ -538,7 +538,7 @@ function chartStack(D) {
   const x = i => P.l + i * (W - P.l - P.r) / Math.max(1, all.length - 1), y = v => P.t + (max - v) * (H - P.t - P.b) / ((max - min) || 1);
   let s = `<svg class="chart" viewBox="0 0 ${W} ${H}">`;
   const ticks = niceTicks(min, max, 5);
-  for (const t of ticks) s += `<line x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${y(t) + 4}" text-anchor="end">${Fk(t)}</text>`;
+  for (const t of ticks) s += `<line x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${y(t) + 4}" text-anchor="end">${Fk(t, true)}</text>`;
   const up = all.map(() => 0), down = all.map(() => 0);
   for (const r of Object.keys(ROLE)) {
     const pts = []; const vals = series[r]; if (vals.every(v => Math.abs(v) < 0.5)) continue;
@@ -560,7 +560,7 @@ function chartCashflow(D) {
   const W = 920, H = 240, P = {l: 56, r: 12, t: 12, b: 26}, max = Math.max(...ein, ...op, 1), min = Math.min(...aus, ...op, 0);
   const n = all.length, bw = (W - P.l - P.r) / n, x = i => P.l + i * bw, y = v => P.t + (max - v) * (H - P.t - P.b) / ((max - min) || 1);
   let s = `<svg class="chart" viewBox="0 0 ${W} ${H}">`;
-  for (const t of niceTicks(min, max, 5)) s += `<line x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${y(t) + 4}" text-anchor="end">${Fk(t)}</text>`;
+  for (const t of niceTicks(min, max, 5)) s += `<line x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${y(t) + 4}" text-anchor="end">${Fk(t, true)}</text>`;
   all.forEach((m, i) => {
     const o = i >= keys.length ? ' opacity=".45"' : '';
     s += `<rect x="${(x(i) + bw * 0.12).toFixed(1)}" y="${y(ein[i]).toFixed(1)}" width="${(bw * 0.76).toFixed(1)}" height="${Math.max(0, y(0) - y(ein[i])).toFixed(1)}" fill="var(--c-ein)" rx="2"${o}/>`;
@@ -1163,7 +1163,7 @@ function bchDraw() {
   const x = i => P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n), y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min);
   const pf = v => v.toFixed(1);
   let g = `<rect class="bch-bg" x="${P.l}" y="${P.t}" width="${W - P.l - P.r}" height="${H - P.t - P.b}"/>`;
-  for (const t of niceTicks(min, max, H < 220 ? 4 : 5)) g += `<line class="bch-grid${Math.abs(t) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(t))}" y2="${pf(y(t))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(t) + 4)}">${Fk(t)}</text>`;
+  for (const t of niceTicks(min, max, H < 220 ? 4 : 5)) g += `<line class="bch-grid${Math.abs(t) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(t))}" y2="${pf(y(t))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(t) + 4)}">${Fk(t, true)}</text>`;
   // Zeitachse: Abstand der Beschriftungen passt sich dem Ausschnitt an (Monate bis Jahrzehnte)
   const ppm = (W - P.l - P.r) / Math.max(1, n), step = [1, 2, 3, 6, 12, 24, 60, 120].find(st => st * ppm >= 62) || 120;
   for (let i = i0; i <= i1; i++) {

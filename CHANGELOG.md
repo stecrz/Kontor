@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.9.40 (2026-11-08 03:26)
+- Beträge an den Achsen: wo es eng ist (kleine Grafiken, Prozente) „T“ und „M“ ohne Leerzeichen („150T“, „1,2M“, „+12T %“), in den breiten Grafiken „Tsd.“ und „Mio.“ (Englisch jeweils „k“, „M“).
+
 ## 3.9.39 (2026-11-08 03:19)
 - Kontofarben: Konten einer Position haben Abwandlungen ihrer Farbe (benachbarter Farbton, andere Helligkeit), auch bei 5–10 Konten gut unterscheidbar – gleich in Tabelle, großer Grafik und „Zusammensetzung“; ab dem elften Konto schraffiert.
 - Kleine Grafiken: Summenlinie bei „Zusammensetzung“ in der Farbe der Position, bei „Auswahl“ in der Mischfarbe der gewählten Positionen statt Blau.

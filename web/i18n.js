@@ -2,9 +2,12 @@
    Genutzt von der Oberflaeche (app.js: t()) und vom Dienst (i18n.py: tr()). */
 'use strict';
 const I18N = {
-"tsd_kurz":["\u00a0Tsd.", "k"],
-"mio_kurz":["\u00a0Mio.", "M"],
-"mrd_kurz":["\u00a0Mrd.", "B"],
+"tsd_kurz":["T", "k"],
+"mio_kurz":["M", "M"],
+"mrd_kurz":["Mrd", "B"],
+"tsd_lang":["\u00a0Tsd.", "k"],
+"mio_lang":["\u00a0Mio.", "M"],
+"mrd_lang":["\u00a0Mrd.", "B"],
 "summe_label":["Summe", "Total"],
 "leere_zeilen":["Leere Zeilen", "Empty rows"],
 "ausgeblendete_n":["Ausgeblendete{0}", "Hidden{0}"],
