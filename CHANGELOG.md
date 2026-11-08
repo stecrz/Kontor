@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.9.44 (2026-11-08 04:09)
+- Bilanz-Grafiken: Standard-Zeitraum in der Monatsansicht 1 Jahr (groß und klein), in der Jahresansicht 3 Jahre; beim Wechsel der Ansicht gilt deren Standard.
+- Farben nach Verfügbarkeit: Bankguthaben Grün, Wertpapiere Smaragd, Festanlagen Türkis, Forderungen Blau, Beteiligungen Violett.
+
 ## 3.9.43 (2026-11-08 03:58)
 - „An Tabelle ausrichten“: Die Skala passt sich den sichtbaren Spalten an (Ausreißer weiter links verzerren nichts mehr).
 - Kleine Grafiken: Achse nur so breit wie ihre Beschriftung. Nettovermögen zeigt darunter Ø je Monat, Höchst- und Tiefststand im Zeitraum.

@@ -1150,13 +1150,14 @@ function vBilanzChart(D) {
   const d = bchData(D); if (d.months.length < 2 || !d.series.length) return '';
   BCH.d = d;
   // range kept as months (survives rebuilds and area changes; null = all); a button alone is anchored to today
-  const r = S.bchRange, n = d.months.length, rb = bchRanges(true), dflt = S.modus === 'jahre' ? 36 : 24;
-  if (S.bchBtn && !rb.some(([m]) => m === S.bchBtn)) { S.bchBtn = dflt; S.bchRange = undefined; }       // view switched: its own buttons
+  const dflt = bchDefault();
+  if (S.bchModus !== S.modus) { S.bchModus = S.modus; S.bchBtn = dflt; S.bchRange = undefined; }      // view switched: its own default
+  const r = S.bchRange, n = d.months.length, rb = bchRanges(true);
   let i0 = -1, i1 = -1;
   if (r === null) { i0 = 0; i1 = n - 1; }
   else if (r) { i0 = d.months.indexOf(r[0]); i1 = d.months.indexOf(r[1]); }
   if ((i0 < 0 || i1 <= i0) && S.bchBtn) [i0, i1] = bchWindow(d, S.bchBtn);
-  if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, dflt); S.bchBtn = dflt; }          // default: 2 years (months) or 3 years (years) up to today
+  if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, dflt); S.bchBtn = dflt; }          // default: 1 year (months) or 3 years (years) up to today
   S.bchRange = i0 === 0 && i1 === n - 1 ? null : [d.months[i0], d.months[i1]];
   BCH.i0 = BCH.f0 = i0; BCH.i1 = BCH.f1 = i1;
   return `<div class="card bch${bchLinked() ? ' linked' : ''}" id="bch"><div class="bch-head"><span class="bch-range" id="bch-range"></span> ${hq('bch')}<span class="sp"></span><button class="ghost small bch-link${bchLinked() ? ' on' : ''}" id="bch-link" title="${t('bch_link_tip')}" aria-pressed="${bchLinked()}">${t('bch_link')}</button><label class="bch-n" title="${t('bch_monate_tip')}"><input type="number" id="bch-n" min="3" max="${n}" step="1">${t('bch_m')}</label><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
@@ -1259,6 +1260,7 @@ function bchCols(svg) {
   return cols.length > 1 ? {cols, l: first.getBoundingClientRect().right - sr.left, r: w.getBoundingClientRect().left + w.clientLeft + w.clientWidth - sr.left} : null;
 }
 // range buttons by view: months → 6 M, 1 J, 2 J (+ all), years → 1 J, 3 J, 10 J (+ all); the small charts without "all"
+const bchDefault = () => S.modus === 'jahre' ? 36 : 12;      // default range of all charts: months view 1 year, years view 3 years
 function bchRanges(all) {
   const r = S.modus === 'jahre' ? [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [120, t('bch_jahre', 10)]] : [[6, t('bch_monate_n', 6)], [12, t('bch_jahre', 1)], [24, t('bch_jahre', 2)]];
   return all ? [...r, [0, t('alle')]] : r;
@@ -1640,15 +1642,16 @@ function lcBindPlot(id) {
 function lcInit(id, D, rollen, title, color, stack) {
   // range kept as months (survives rebuilds); a range button stays anchored to today
   const d = stack ? lcStack(D, stack) : lcData(D, rollen), n = d.months.length, r = (S.lcRange || {})[id];
-  let i0, i1, btn = r ? r[2] : 12;                       // default: one year up to today
-  if (btn === 0 || (btn && !bchRanges(false).some(([m]) => m === btn))) btn = 12;     // not offered in this view: one year
+  let i0, i1, btn = r ? r[2] : bchDefault();             // default: 1 year (months view) or 3 years (years view) up to today
+  if (btn === 0 || (btn && !bchRanges(false).some(([m]) => m === btn))) btn = bchDefault();     // not offered in this view
   if (btn === 0) { i0 = 0; i1 = n - 1; }
   else if (btn) [i0, i1] = bchWindow(d, btn);
-  else { i0 = d.months.indexOf(r[0]); i1 = d.months.indexOf(r[1]); if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, 12); btn = 12; } }
+  else { i0 = d.months.indexOf(r[0]); i1 = d.months.indexOf(r[1]); if (i0 < 0 || i1 <= i0) { btn = bchDefault(); [i0, i1] = bchWindow(d, btn); } }
   LC[id] = {d, i0, i1, f0: i0, f1: i1, btn, title, color, stack: !!stack, drag: null, gesture: null, geo: null};
 }
 function bindBilanzLines(main) {
   const grid = $('#lc-grid', main), D = B(); if (!grid || !D) return;
+  if (S.lcModus !== S.modus) { S.lcModus = S.modus; S.lcRange = {}; }      // view switched: its own default range
   const draw = () => {
     const {sel} = lcSelection(D);
     lcInit('nw', D, null, t('nettovermoegen'), 'var(--fg)');
