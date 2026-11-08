@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.10.6 (2026-11-08 21:47)
+- Historische Kontostände der Depots: Eine Position, die MoneyMoney später ersetzt oder entfernt hat (z. B. ein Guthaben im Depot), zählt bis zur nächsten Aktualisierung des Depots – auch über ein Monatsende hinweg. Bisher fiel sie schon mit ihrem letzten Punkt weg. Bitte die Kontostände neu einlesen.
+
 ## 3.10.5 (2026-11-08 13:15)
 - Historische Kontostände: Depots, bei denen MoneyMoney zusätzlich den Depotwert insgesamt aufzeichnet (z. B. Trade Republic), wurden doppelt gezählt. Dieser Eintrag gilt jetzt allein. Bitte die Kontostände einmal neu einlesen.
 

@@ -324,3 +324,42 @@ class ChangelogTests(unittest.TestCase):
             text = f.read()
         notes, datum = updates.changelog_section(text, updates.current_version())
         self.assertTrue(notes); self.assertRegex(datum, r"^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$")
+
+
+class PortfolioHistoryTests(unittest.TestCase):
+    """Month-end values of a portfolio from MoneyMoney's portfolio_chart (made-up values)."""
+
+    def _db(self, chart, securities):
+        import sqlite3
+        con = sqlite3.connect(":memory:")
+        con.execute("CREATE TABLE portfolio_chart(account_key INTEGER, currency TEXT, timestamp INTEGER, balance REAL, securities_key INTEGER)")
+        con.execute("CREATE TABLE securities(rowid INTEGER PRIMARY KEY, account_key INTEGER, quantity REAL, deleted INTEGER)")
+        from datetime import datetime as DT
+        ts = lambda d: int(DT(d.year, d.month, d.day, 12).timestamp())
+        con.executemany("INSERT INTO portfolio_chart VALUES(1, 'EUR', ?, ?, ?)", [(ts(d), v, sk) for d, v, sk in chart])
+        con.executemany("INSERT INTO securities VALUES(?, 1, ?, ?)", securities)
+
+        class DB:
+            rows = lambda self, sql, params=(): con.execute(sql, params).fetchall()
+            one = lambda self, sql, params=(): con.execute(sql, params).fetchone()
+        return DB()
+
+    def test_replaced_position_counts_until_the_next_update(self):
+        # like a crowdinvesting account: one investment (points only when it changes), a cash position that appears in October
+        # and is replaced by a new one (new row, the old one deleted) at the next update in November -> October includes it
+        import mm_history as H
+        from datetime import date as D
+        chart = [(D(2026, 8, 3), 1000.0, 1), (D(2026, 10, 9), 0.30, 2), (D(2026, 10, 30), 0.30, 2), (D(2026, 11, 6), -0.30, 3)]
+        db = self._db(chart, [(1, 1, 0), (2, 0, 1), (3, 1, 0)])
+        r = H._portfolios(db, ["portfolio_chart", "securities"], [1], lambda k: {"saldo": 999.70}, D(2026, 11, 8))[1]
+        self.assertEqual(r["werte"]["2026-09"], 1000.0); self.assertEqual(r["werte"]["2026-10"], 1000.3)
+
+    def test_sold_position_ends_at_the_next_update(self):
+        # sold in June: the next update (June 20) no longer has it -> not in the June month end
+        import mm_history as H
+        from datetime import date as D
+        chart = [(D(2024, 5, 10), 500.0, 1), (D(2024, 5, 10), 200.0, 2), (D(2024, 6, 10), 520.0, 1), (D(2024, 6, 10), 210.0, 2),
+                 (D(2024, 6, 20), 525.0, 1), (D(2024, 7, 10), 530.0, 1)]
+        db = self._db(chart, [(1, 1, 0), (2, 0, 1)])
+        r = H._portfolios(db, ["portfolio_chart", "securities"], [1], lambda k: {"saldo": 530.0}, D(2024, 7, 20))[1]
+        self.assertEqual(r["werte"]["2024-05"], 700.0); self.assertEqual(r["werte"]["2024-06"], 525.0)

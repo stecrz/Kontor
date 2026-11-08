@@ -509,6 +509,14 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
             per = {total_key: per[total_key]}                  # Depotwert direkt aus dem Gesamt-Eintrag
             now = {total_key}
         first = min(r[0][0] for r in per.values())
+        # a security no longer held was gone at the next point of the portfolio after its own last one (the next update without
+        # it); until then its last value counts – also across a month end (MoneyMoney often records only when it updates)
+        dates = sorted({d for r in per.values() for d, _v in r})
+        gone: Dict[int, Optional[date]] = {}
+        for sk, r in per.items():
+            if sk not in now:
+                j = bisect.bisect_right(dates, r[-1][0])
+                gone[sk] = dates[j] if j < len(dates) else None
         werte: Dict[str, float] = {}
         y, m = first.year, first.month
         while "%04d-%02d" % (y, m) < cur:
@@ -520,11 +528,12 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
                     continue
                 if art == "delta":
                     total += sum(upto)
-                elif sk in now or r[-1][0] >= nxt:              # verkauft: nach dem letzten Punkt nicht mehr im Depot
+                elif sk in now or (gone[sk] or r[-1][0]) >= nxt:
                     total += upto[-1]
             werte["%04d-%02d" % (y, m)] = round(total, 2)
             y, m = nxt.year, nxt.month
-        log.debug("Portfolio %d: %d series, read as %s", k, len(recs[k]), art)
+        log.debug("Portfolio %d: read as %s; series (points, first, last, held or gone): %s", k, art, "; ".join(
+            "%d, %s, %s, %s" % (len(r), r[0][0], r[-1][0], "held" if sk in now else gone.get(sk) or "-") for sk, r in sorted(recs[k].items(), key=lambda x: x[1][0][0])))
         out[k] = {"werte": werte, "anfang": 0.0, "art": "level" if art == "total" else art}
     return out
 
