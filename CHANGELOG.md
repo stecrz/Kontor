@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.10.1 (2026-11-08 04:46)
+- Kleine Grafik „Auswahl“: Der Titel nennt die gewählten Positionen stark abgekürzt (z. B. „BG + WP + FA“, ausgeschrieben beim Darüberfahren); eine Position ausgeschrieben, alle Positionen „Nettovermögen“.
+
 ## 3.10.0 (2026-11-08 04:37)
 Die Bilanz ist als erste Seite in ihrer neuen Form fertig.
 - Avale & Bürgschaften (und Kapitalkonten als Eigenkapital) stehen gesammelt in je einer aufklappbaren Zeile unter dem Nettovermögen statt einzeln.

@@ -1483,6 +1483,17 @@ function bindBilanzChart(main) {
 // a flat curve shows its development.
 const LC = {};
 const LC_DEFAULT = ['liquiditaet', 'wertpapiere', 'anlagen'];
+// title of the selection chart: the chosen positions, strongly abbreviated (BG + WP + FA) so that even all but one fit;
+// one position: its name; all positions: net worth
+function lcSelTitle(sel, avail) {
+  const s = avail.filter(r => sel.includes(r)), full = s.map(r => ROLE[r][0]).join(' + ');
+  if (!s.length) return [t('lc_summe_auswahl'), ''];
+  if (s.length === avail.length && avail.length > 1) return [t('nettovermoegen'), full];
+  if (s.length === 1) return [ROLE[s[0]][0], ''];
+  return [s.map(r => POS_KURZ[r] || ROLE[r][0]).join('\u2009+\u2009'), full];
+}
+const POS_KURZ = {liquiditaet: t('kurz_liquiditaet'), wertpapiere: t('kurz_wertpapiere'), anlagen: t('kurz_anlagen'), immobilien: t('kurz_immobilien'), beteiligungen: t('kurz_beteiligungen'),
+  sachwerte: t('kurz_sachwerte'), forderungen: t('kurz_forderungen'), sonstiges: t('kurz_sonstiges'), verbindlichkeiten: t('kurz_verbindlichkeiten')};
 function lcSelection(D) {
   const avail = D.bilanz.zeilen.filter(r => r.gruppe && ROLE[r.rolle]).map(r => r.rolle);
   let sel = null; try { sel = JSON.parse(localStorage.getItem('kontor.lcSel') || 'null'); } catch (e) { sel = null; }
@@ -1537,7 +1548,7 @@ function vBilanzLines(D) {
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
   return `<div class="cards lc-grid" id="lc-grid">
     <div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}${plot('nw')}<div class="lc-stats" id="lc-nw-stats"></div></div>
-    <div class="card bch lc" data-lc="sel">${head('sel', t('lc_summe_auswahl'))}${plot('sel')}<div class="lc-chips below" id="lc-chips">${chips}</div></div>
+    <div class="card bch lc" data-lc="sel">${head('sel', (([tx, tip]) => `<span id="lc-sel-title" title="${esc(tip)}">${esc(tx)}</span>`)(lcSelTitle(sel, avail)))}${plot('sel')}<div class="lc-chips below" id="lc-chips">${chips}</div></div>
     <div class="card bch lc" data-lc="pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select>`)}${plot('pos')}<div class="lc-legend" id="lc-pos-legend"></div></div>
   </div>`;
 }
@@ -1720,7 +1731,8 @@ function bindBilanzLines(main) {
   $$('#lc-chips input', grid).forEach(cb => cb.addEventListener('change', () => {
     const sel = $$('#lc-chips input:checked', grid).map(x => x.dataset.r);
     try { localStorage.setItem('kontor.lcSel', JSON.stringify(sel)); } catch (e) {}
-    const keep = LC.sel ? [LC.sel.i0, LC.sel.i1, LC.sel.btn] : null;
+    const keep = LC.sel ? [LC.sel.i0, LC.sel.i1, LC.sel.btn] : null, [tx, tip] = lcSelTitle(sel, lcSelection(D).avail), te = $('#lc-sel-title', grid);
+    if (te) { te.textContent = tx; te.title = tip; }
     lcInit('sel', D, sel, sel.map(r => ROLE[r][0]).join(' + '), lcMix(sel));
     if (keep) Object.assign(LC.sel, {i0: keep[0], i1: keep[1], f0: keep[0], f1: keep[1], btn: keep[2]});
     lcDraw('sel');

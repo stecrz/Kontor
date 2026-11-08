@@ -2117,6 +2117,7 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # single curves below the table: net worth and a chosen sum (default cash + tradable + fixed-term); chips change the sum
                 self.assertTrue(pg.query_selector("#lc-nw-svg path.bch-nw")); self.assertTrue(pg.query_selector("#lc-sel-svg path.bch-nw"))
+                self.assertEqual(pg.inner_text("#lc-sel-title").replace("\u2009", " "), "BG + WP")      # chosen positions, abbreviated
                 # composition of one position by account (stacked), legend with the accounts
                 self.assertTrue(pg.query_selector("#lc-pos-svg path.lc-band")); self.assertIn("Hausbank Giro", pg.inner_text("#lc-pos-legend"))
                 pg.select_option("#lc-pos-sel", "verbindlichkeiten"); pg.wait_for_timeout(200)
