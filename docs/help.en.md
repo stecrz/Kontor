@@ -116,15 +116,32 @@ Every table has an **Excel** button: balance sheet, cash flow, planning (with pr
 <a id="balance-sheet"></a>
 ## Balance sheet
 
-The balance sheet shows the assets of an area by position, month by month, with a plan up to December of the last plan year. Click a position to expand its accounts, click an account to open its history.
+The balance sheet shows the assets of an area by position, month by month or year by year, with a plan up to December of the last plan year. The main chart is at the top, the table below it and three single charts at the bottom. **Months or years** (top left) applies to all of them.
 
 ![Balance sheet](img/en/balance_sheet.png)
 
-- **Faded**: the current month and the current year (not finished yet); **faded and hatched**: plan values.
-- **Chart**: composition of assets in the colours of the positions, black the net worth (dashed: plan). Range depending on the view – months: 6 months, 1 or 2 years; years: 1, 3 or 10 years (each up to today) –, all or a number of months; swipe horizontally to pan, pinch to zoom, double-click to enlarge, click to jump to the column – conversely, clicking a column heading in the table moves the chart so that this month sits roughly above the column. **Align with table** puts every value right above its column in the table; the chart then scrolls along with the table, and the value tip is dropped (the values are right below). On the iPhone: drag sideways on an axis (amounts on the left, months at the bottom) to pan, two fingers pan and zoom, one finger shows the values. Expanded positions show their accounts in variations of the colour (neighbouring hue, different lightness; hatched from the eleventh account) – the same colour appears as a dot in front of the account in the table.
-- **Cash in transit**: if the two bookings of a transfer between own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” under cash at month end – otherwise net worth would briefly look too low. A click shows the detected pairs.
-- **Months or years**: year columns show balances at year end (the running year: today). The month view has no year columns – they would only repeat December.
-- **Single charts** (below the table): net worth alone, the sum of freely chosen positions (default: cash, securities and term investments; the line has the mixed colour of the chosen positions) and the composition of a chosen position by account (stacked, in the same account colours as the table and the main chart). All have their own range (depending on the view 6 months, 1 or 2 years or 1, 3 or 10 years up to today; drag to enlarge, double-click to zoom, swipe right for the plan) and an axis that fits the visible values – so the development shows even when large positions such as receivables and liabilities cancel each other out in the chart above. The current value and the change over the chosen range are shown at the top; for net worth, the average per month, the high and the low below the chart.
+**Table**
+
+- Balances at month end; the current month shows the current balance. **Faded**: current month or year (not finished yet); **faded and hatched**: plan.
+- Click a position to expand its accounts, **▸** in the header cell expands all. Click an account to open its history (view and edit month-end balances).
+- The **eye** in the header cell (only when there are any, with a count) also shows empty accounts and those hidden by activity – they are always counted. “(9/12)” at a position means 9 of 12 accounts are shown.
+- Year columns show the balance at year end (the running year: today). The month view has no year columns – they would only repeat December; a thin line separates the years.
+- The position colours follow availability, from cash (green) to equity investments (violet). Accounts carry variations of their position's colour (neighbouring hue, different lightness; hatched from the eleventh account) – as a dot in front of the account and the same in the charts.
+- Below net worth, guarantees and capital accounts as equity (not in net worth) are each collected in one expandable row.
+- **Cash in transit**: If the two bookings of a transfer between your own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” to cash at the month end – otherwise net worth would briefly look too low. A click shows the detected booking pairs.
+
+**Main chart**
+
+- Composition of assets in the colours of the positions, black the net worth (dashed: plan); expanded positions show their accounts.
+- Range depending on the view – months: 6 months, 1 or 2 years (default 1 year); years: 1, 3 or 10 years (default 3 years) –, all or a number of months of your own.
+- Swipe horizontally to pan, pinch to zoom, drag to select a range, double-click to enlarge, click to jump to the column of the table. Conversely, clicking a column heading moves the chart so that the month sits roughly above the column. On the iPhone: drag sideways on an axis to pan, two fingers pan and zoom, one finger shows the values.
+- **Align with table**: every value sits right above its column. The chart scrolls with the table, swiping or dragging on the chart scrolls the table, and the scale follows the visible columns. The value tip is dropped – the values are right below.
+
+**Single charts** (below the table)
+
+- Net worth alone (with the average per month, the high and the low below), the sum of freely chosen positions (default: cash, securities and term investments; the line has the mixed colour of the chosen positions) and the composition of a chosen position by account (stacked).
+- Each has its own range (depending on the view 6 months, 1 or 2 years or 1, 3 or 10 years up to today; drag to enlarge, double-click to zoom, swipe right for the plan) and an axis that adapts to the visible values – so you can see the development even when large positions such as receivables and liabilities cancel each other out in the chart above. The area reaches to the zero line, so upwards for negative values.
+- The reference period is shown top right: the value applies to its end, the change (in € and %) since its start.
 
 <a id="cash-flow"></a>
 ## Cash flow

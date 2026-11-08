@@ -1078,7 +1078,6 @@ function vBilanz() {
   const row = (r, cls0, label) => `<tr class="${cls0}" data-id="${r.id}"><td title="${esc(r.pfad || r.name)}">${label}</td>${C.map(c => { const v = lastOf(werte(r), c.months); return `<td class="${cls(v, c)}">${F(v)}</td>`; }).join('')}</tr>`;
   const hidden = r => r.inaktiv || C.every(c => { const v = lastOf(werte(r), c.months); return v == null || Math.abs(v) < 0.005; });
   const skip = r => !S.alle && hidden(r), anyHidden = D.bilanz.zeilen.some(r => !r.gruppe && hidden(r));
-  let partShown = false;
   // header cell: ▸/▾ expands or collapses all positions, the eye also shows empty and hidden accounts (only when there are any)
   const nHid = D.bilanz.zeilen.filter(r => !r.gruppe && hidden(r)).length;
   const first = `<div class="th-first"><button class="th-btn" id="pos-all" title="${allOpen ? t('nur_positionen') : t('konten_zeigen')}">${allOpen ? '▾' : '▸'}</button><span>${t('position_konto')}</span>${hq('bilanz_tabelle')}<span class="sp"></span>`
@@ -1087,9 +1086,8 @@ function vBilanz() {
   for (const r of D.bilanz.zeilen) {
     if (r.gruppe) {
       const [label, color] = ROLE[r.rolle] || [r.name, 'var(--c-neutral)'], open = !!S.posOpen[r.rolle];
-      // number of accounts; "shown/all" when empty or hidden ones are left out (explained once below the table)
+      // number of accounts; "shown/all" when empty or hidden ones are left out (explained in the help of the header cell)
       const accs = D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === r.rolle), shown = accs.filter(x => !skip(x)).length;
-      if (shown < accs.length) partShown = true;
       const cnt = shown < accs.length ? `<span class="small muted" title="${t('n_von_m_konten', shown, accs.length)}">(${shown}/${accs.length})</span>` : `<span class="small muted">(${accs.length})</span>`;
       h += row(r, 'group pos', `<span class="caret">${open ? '▾' : '▸'}</span><i class="pos-dot" style="background:${color}"></i>${label} ${cnt}`).replace('<tr ', `<tr data-pos="${r.rolle}" `).replace(` data-id="${r.id}"`, '');
       continue;
@@ -1102,9 +1100,15 @@ function vBilanz() {
       h += row({id: 'einlagen', name: t('einlagen_entnahmen_kumuliert_plan'), werte: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'));
   }
   h += `<tr class="total"><td>${t('nettovermoegen')}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
-  h += (D.bilanz.ausserhalb || []).map(r => `<tr class="muted"><td>${esc(r.name)} <span class="tag">${t('0_nicht_im_nettovermoegen', esc((ROLE[r.rolle] || [r.rolle])[0]))}</span></td>${cells(C, c => lastOf(r.werte, c.months))}</tr>`).join('');
+  // outside net worth (guarantees, capital accounts as equity): one collapsible row per kind with its sum, accounts on click
+  const out = D.bilanz.ausserhalb || [];
+  for (const role of [...new Set(out.map(r => r.rolle))]) {
+    const accs = out.filter(r => r.rolle === role), open = !!S.posOpen[role], [label, color] = ROLE[role] || [role, 'var(--c-neutral)'];
+    const sum = c => { let v = null; for (const r of accs) { const x = lastOf(r.werte, c.months); if (x != null) v = (v || 0) + x; } return v; };
+    h += `<tr class="group pos muted" data-pos="${role}"><td><span class="caret">${open ? '▾' : '▸'}</span><i class="pos-dot" style="background:${color}"></i>${esc(label)} <span class="small muted">(${accs.length})</span> <span class="tag">${t('nicht_im_nw_kurz')}</span></td>${cells(C, sum)}</tr>`;
+    if (open) h += accs.map(r => `<tr class="muted ind1"><td title="${esc(r.pfad || r.name)}">${esc(r.name)}</td>${cells(C, c => lastOf(r.werte, c.months))}</tr>`).join('');
+  }
   h += '</tbody></table></div>';
-  if (partShown) h += `<div class="note">${t('konten_teils_angezeigt')}</div>`;
   h += vBilanzLines(D);
   return h;
 }

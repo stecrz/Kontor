@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.10.0 (2026-11-08 04:37)
+Die Bilanz ist als erste Seite in ihrer neuen Form fertig.
+- Avale & Bürgschaften (und Kapitalkonten als Eigenkapital) stehen gesammelt in je einer aufklappbaren Zeile unter dem Nettovermögen statt einzeln.
+- Der Hinweis zu „(9/12)“ unter der Tabelle entfällt (verschob beim Umschalten die kleinen Grafiken); er steht jetzt im „?“ der Kopfzelle.
+- Hilfe zur Bilanz neu gegliedert (Tabelle, große Grafik, einzelne Grafiken); Bilder in Hilfe und README neu.
+
 ## 3.9.47 (2026-11-08 04:29)
 - „An Tabelle ausrichten“: Wischen oder Ziehen auf der Grafik (auch auf den Achsen) scrollt die Tabelle seitlich; danach rastet sie auf der nächsten Spalte ein.
 
