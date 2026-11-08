@@ -276,14 +276,14 @@ function swApply(allowed) {
   if (!('serviceWorker' in navigator)) return;
   if (allowed) { navigator.serviceWorker.register('/sw.js').catch(() => {}); return; }
   navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())).catch(() => {});
-  try { caches.delete('kontor-data'); } catch (e) {}
+  try { caches.keys().then(ks => ks.filter(k => k.startsWith('kontor-')).forEach(k => caches.delete(k))); } catch (e) {}
 }
 
 // ---------------------------------------------------------------- Anmeldung
 let SESSION = null;
 async function checkSession() {
   try { SESSION = await api('/api/session'); } catch (e) { $('#login').classList.remove('hidden'); $('#login-err').textContent = e.message + t('neuer_versuch_in_5_s'); setTimeout(checkSession, 5000); return; }
-  swApply(SESSION.offline_kopie !== false);
+  swApply(!IS_LOCAL && SESSION.offline_kopie !== false);     // the offline copy is for the iPhone; on the Mac it would only leave stale pages behind (e.g. after a port change)
   $('#ver').textContent = 'v' + (SESSION.version || '');
   if (SESSION.offline && IS_LOCAL) { $('#login').classList.remove('hidden'); $('#login-err').textContent = t('der_kontor_dienst_antwortet_nicht'); setTimeout(checkSession, 5000); return; }
   if (SESSION.offline) { OFFLINE.mode = true; showLogin(); return; }
@@ -2282,8 +2282,19 @@ function tsReason(ts) {
 function vTsHarden(ts, r) {
   const port = (r && r.port) || 8765;
   const rule = JSON.stringify({acls: [{action: 'accept', src: ['autogroup:member'], dst: [ts.ip + ':' + port]}]}, null, 2);
-  return `<details class="adv" style="margin-top:12px"><summary>${t('fern_absichern')}</summary><div class="note">${t('fern_absichern_text', port)}</div>
-    <pre class="code" id="fz-acl">${esc(rule)}</pre><div class="row tight"><button class="secondary small" id="fz-acl-copy">${t('regel_kopieren')}</button><a href="https://login.tailscale.com/admin/acls/file" target="_blank" rel="noopener">${t('tailscale_zugriffsregeln')}</a> · <a href="https://login.tailscale.com/admin/settings/device-management" target="_blank" rel="noopener">${t('tailscale_geraetefreigabe')}</a>${more('iphone-security')}</div></details>`;
+  const a = (href, txt) => `<a href="${href}" target="_blank" rel="noopener">${txt}</a>`;
+  return `<details class="adv" style="margin-top:12px"><summary id="fz-acl-sum">${t('fern_absichern')}</summary>
+    <div class="banner small info" id="fz-acl-state">${t('acl_wird_geprueft')}</div>
+    <div class="note">${t('fern_absichern_text', port)}</div>
+    <ol class="steps">
+      <li>${t('acl_schritt1')} <button class="secondary small" id="fz-acl-copy">${t('regel_kopieren')}</button></li>
+      <li>${t('acl_schritt2')} ${a('https://login.tailscale.com/admin/acls/file', t('tailscale_zugriffsregeln'))}</li>
+      <li>${t('acl_schritt3')}</li>
+      <li>${t('acl_schritt4')}</li>
+      <li>${t('acl_schritt5')} <button class="secondary small" id="fz-acl-check">${t('jetzt_pruefen')}</button></li>
+    </ol>
+    <pre class="code" id="fz-acl">${esc(rule)}</pre>
+    <div class="note">${t('acl_geraetefreigabe')} ${a('https://login.tailscale.com/admin/settings/device-management', t('tailscale_geraetefreigabe'))} ·${more('iphone-security')}</div></details>`;
 }
 async function vEinstellungenZugang() {
   // On the Mac (lock, Touch ID, address, password), below: access from the iPhone via Tailscale (state, setup, who/where/what, options, hardening)
@@ -2327,8 +2338,8 @@ async function vEinstellungenZugang() {
     <label>${t('von_unterwegs')} ${hq('fern_was')}</label><label class="chk"><select id="fz-modus" ${lokal ? '' : 'disabled'}><option value="lesen" ${!r || r.nur_ansehen ? 'selected' : ''}>${t('nur_ansehen')}</option><option value="bearbeiten" ${r && !r.nur_ansehen ? 'selected' : ''}>${t('ansehen_und_bearbeiten')}</option></select></label>
     <label>${t('offline_ansicht_0', hq('offline'))}</label><label class="chk"><input type="checkbox" id="fz-offline" ${!r || r.offline_kopie ? 'checked' : ''} ${lokal ? '' : 'disabled'}> ${t('offline_kopie_erlauben')}</label>
   </div>`;
-  h += `<div class="kv" style="margin-top:12px"><div>${t('auf_diesem_geraet')}</div><div id="sw-state">${navigator.serviceWorker && navigator.serviceWorker.controller ? t('aktiv_die_zuletzt_geladenen_daten') : (location.protocol === 'https:' || location.hostname === '127.0.0.1' ? t('wird_beim_naechsten_laden_aktiv') : t('nicht_moeglich_ueber_http_tailscale'))}</div></div>
-    <div class="actions"><button id="sw-clear" class="secondary">${t('gespeicherte_daten_auf_diesem_geraet')}</button></div>`;
+  h += `<div class="kv" style="margin-top:12px"><div>${t('auf_diesem_geraet')}</div><div id="sw-state">${IS_LOCAL ? t('sw_am_mac') : navigator.serviceWorker && navigator.serviceWorker.controller ? t('aktiv_die_zuletzt_geladenen_daten') : (location.protocol === 'https:' || location.hostname === '127.0.0.1' ? t('wird_beim_naechsten_laden_aktiv') : t('nicht_moeglich_ueber_http_tailscale'))}</div></div>
+    ${IS_LOCAL ? '' : `<div class="actions"><button id="sw-clear" class="secondary">${t('gespeicherte_daten_auf_diesem_geraet')}</button></div>`}`;
   return h;
 }
 function bindZugang(main) {
@@ -2343,6 +2354,20 @@ function bindZugang(main) {
   const onh = $('#fz-ein-http', main); if (onh) onh.addEventListener('click', () => { if (confirm(t('ohne_zertifikat_frage'))) act('ein_http'); });
   const off = $('#fz-aus', main); if (off) off.addEventListener('click', () => { if (confirm(t('zugriff_ausschalten_frage'))) act('aus'); });
   const rc = $('#fz-recheck', main); if (rc) rc.addEventListener('click', async () => { rc.classList.add('busy'); try { await api('/api/remote?fresh=1'); } catch (e) {} route(); });
+  // which ports Tailscale lets in on this Mac (rules as Tailscale applies them)
+  const aclState = $('#fz-acl-state', main);
+  const aclCheck = async () => {
+    if (!aclState) return;
+    aclState.className = 'banner small info'; aclState.textContent = t('acl_wird_geprueft');
+    let a; try { a = await api('/api/remote/acl'); } catch (e) { a = {zustand: 'unbekannt', fehler: e.message}; }
+    const ports = (a.ports || []).map(([x, y]) => x === y ? x : x + '–' + y).join(', ');
+    const [cls, txt, sum] = {abgesichert: ['ok', t('acl_abgesichert', a.port), t('acl_sum_ok')],
+      offen: ['', a.alle ? t('acl_offen_alle') : t('acl_offen_ports', ports), t('acl_sum_offen')],
+      gesperrt: ['err', t('acl_gesperrt', a.port), t('acl_sum_gesperrt')]}[a.zustand] || ['info', t('acl_unbekannt', a.fehler || '?'), t('fern_absichern')];
+    aclState.className = 'banner small ' + cls; aclState.textContent = txt; $('#fz-acl-sum', main).textContent = sum;
+  };
+  aclCheck();
+  const acc = $('#fz-acl-check', main); if (acc) acc.addEventListener('click', aclCheck);
   const ac = $('#fz-acl-copy', main); if (ac) ac.addEventListener('click', async () => { const txt = $('#fz-acl', main).textContent; try { await navigator.clipboard.writeText(txt); toast(t('regel_kopiert'), 4000); } catch (e) { prompt(t('regel_kopieren'), txt); } });
   const cp = $('#fz-copy', main); if (cp) cp.addEventListener('click', async () => { try { await navigator.clipboard.writeText(cp.dataset.url); toast(t('link_kopiert_iphone'), 5000); } catch (e) { prompt(t('link'), cp.dataset.url); } });
   const md = $('#fz-modus', main); if (md) md.addEventListener('change', () => act('einstellungen', {fern_nur_ansehen: md.value === 'lesen'}));

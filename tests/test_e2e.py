@@ -401,6 +401,7 @@ class TailscaleLocalApiTests(unittest.TestCase):
         self.assertEqual(tls_cert.parse_proof("p123\nn/Users/x/Library/Group Containers/ABC.io.tailscale.ipn.macos/sameuserproof-61577-2ae2ec9e\n"), (61577, "2ae2ec9e"))
         self.assertIsNone(tls_cert.parse_proof("nothing here"))
         seen = []
+        rules = [[{"SrcIPs": ["*"], "DstPorts": [{"IP": "*", "Ports": {"First": 0, "Last": 65535}}]}]]     # Tailscale's default: everything
         pem = "-----BEGIN EC PRIVATE KEY-----\nS0tL\n-----END EC PRIVATE KEY-----\n-----BEGIN CERTIFICATE-----\nQUFB\n-----END CERTIFICATE-----\n"
 
         class H(BaseHTTPRequestHandler):
@@ -416,6 +417,8 @@ class TailscaleLocalApiTests(unittest.TestCase):
                                        "CertDomains": ["mac.example.ts.net"], "Peer": {"x": {"HostName": "iPhone", "OS": "iOS", "Online": True}}}).encode()
                 elif self.path == "/localapi/v0/cert/mac.example.ts.net?type=pair":
                     body = pem.encode()
+                elif self.path == "/localapi/v0/debug-packet-filter-rules":
+                    body = json.dumps(rules[0]).encode()
                 else:
                     self.send_response(404); self.end_headers(); return
                 self.send_response(200); self.end_headers(); self.wfile.write(body)
@@ -433,7 +436,15 @@ class TailscaleLocalApiTests(unittest.TestCase):
             crt, key = tls_cert.issue(None, "mac.example.ts.net", d)
             self.assertIn("BEGIN CERTIFICATE", open(crt).read()); self.assertIn("PRIVATE KEY", open(key).read())
             self.assertEqual(os.stat(key).st_mode & 0o777, 0o600)
+            # which ports Tailscale lets in: default -> everything open; Kontor's rule -> only Kontor; wrong port -> Kontor blocked
+            a = tls_cert.access_check(8765); self.assertEqual(a["zustand"], "offen"); self.assertTrue(a["alle"])
+            rules[0] = [{"SrcIPs": ["100.64.0.0/10"], "DstPorts": [{"IP": "100.101.102.103", "Ports": {"First": 8765, "Last": 8765}}]}]
+            self.assertEqual(tls_cert.access_check(8765)["zustand"], "abgesichert")
+            self.assertEqual(tls_cert.access_check(9000)["zustand"], "gesperrt")
+            rules[0].append({"SrcIPs": ["*"], "DstPorts": [{"IP": "*", "Ports": {"First": 22, "Last": 22}}]})
+            a = tls_cert.access_check(8765); self.assertEqual((a["zustand"], a["alle"], a["ports"]), ("offen", False, [[22, 22]]))
             tls_cert.localapi_endpoint = lambda: (srv.server_address[1], "wrong")   # wrong token: message, no crash
+            self.assertEqual(tls_cert.access_check(8765)["zustand"], "unbekannt")
             st = tls_cert.status()
             self.assertFalse(st["verbunden"]); self.assertIn("401", st["fehler"])
         finally:
@@ -2294,6 +2305,8 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#menu-btn"); pg.click("#lock-btn"); pg.wait_for_selector("#login:not(.hidden)")
                 # Offline-Ansicht: Service Worker speichert Oberflaeche und Daten; ohne Dienst oeffnet das Passwort die Kopie (nur lesen)
                 pg.set_viewport_size({"width": 1440, "height": 900})
+                self.assertFalse(pg.evaluate("navigator.serviceWorker.getRegistrations().then(r => r.length)"))   # none on the Mac itself
+                pg.evaluate("localStorage.setItem('kontor.testRemote', '1')"); pg.reload(); pg.wait_for_selector("#login-pw")   # act like the iPhone
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); pg.wait_for_selector("#shell:not(.hidden)")
                 pg.wait_for_function("navigator.serviceWorker && navigator.serviceWorker.controller !== null", timeout=15000)
                 pg.reload(); pg.wait_for_selector(".cards")           # jetzt laufen alle Abrufe durch den Service Worker
@@ -2301,7 +2314,6 @@ class BrowserTest(unittest.TestCase):
                 pg.goto("http://127.0.0.1:%d/#settings/access" % port); pg.wait_for_selector("#sw-state")
                 self.assertIn("aktiv", pg.query_selector("#sw-state").inner_text())
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".cards")
-                pg.evaluate("localStorage.setItem('kontor.testRemote', '1')")      # 127.0.0.1 gilt sonst als "am Mac": dort gibt es keine Offline-Ansicht
                 srv.shutdown(); srv.server_close(); stopped = True
                 pg.reload(); pg.wait_for_selector("#login:not(.hidden)")
                 self.assertIn("nicht erreichbar", pg.query_selector("#login-text").inner_text())

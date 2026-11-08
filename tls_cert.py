@@ -106,6 +106,32 @@ def localapi(path: str, timeout: int = 15) -> bytes:
     return body
 
 
+def access_check(port: int) -> dict:
+    """What Tailscale lets in on this Mac: the filter rules Tailscale applies to incoming connections (from the app's local
+    interface). zustand: "abgesichert" (only Kontor's port), "offen" (more ports, "alle" = every port), "gesperrt" (not even
+    Kontor's port) or "unbekannt" (could not be read)."""
+    data, why = None, ""
+    for path in ("/localapi/v0/debug-packet-filter-rules", "/localapi/v0/debug-packet-filter-matches"):
+        try:
+            data = json.loads(localapi(path, 10).decode("utf-8"))
+            break
+        except (RuntimeError, ValueError) as e:
+            why = str(e)
+    if not isinstance(data, list):
+        return {"zustand": "unbekannt", "fehler": why[:200], "port": port}
+    ranges = []
+    for r in data:
+        for d in (r.get("DstPorts") or r.get("Dsts") or []) if isinstance(r, dict) else []:
+            p = d.get("Ports") or {}
+            ranges.append((int(p.get("First", 0)), int(p.get("Last", 65535))))
+    kontor = any(a <= port <= b for a, b in ranges)
+    other = sorted({(a, b) for a, b in ranges if not a == b == port})
+    info = {"alle": any(a <= 1 and b >= 65535 for a, b in other), "ports": [list(x) for x in other[:6]], "port": port}
+    if not kontor:
+        return dict(info, zustand="gesperrt")
+    return dict(info, zustand="offen" if other else "abgesichert")
+
+
 def status_json(binary: Optional[str], timeout: int = 15) -> dict:
     """Tailscale status as a dict: first via the app's local interface, then ``tailscale status --json``. Raises
     RuntimeError with Tailscale's own message if neither answers."""

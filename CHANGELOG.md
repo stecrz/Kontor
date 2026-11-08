@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.9.34 (2026-11-08)
+- Am Mac legt Kontor keine Offline-Kopie der Seite mehr an (die gibt es nur fürs iPhone); vorhandene werden entfernt. Dadurch zeigt nach einem Portwechsel die alte Adresse keine Anmeldeseite mehr.
+- Absichern über Tailscale: Schritt-für-Schritt-Anleitung (Regel kopieren, „Access controls“, „JSON editor“, gesamten Text ersetzen, „Save“) und eine Prüfung: Kontor liest die Regeln, die Tailscale auf dem Mac anwendet, und zeigt „abgesichert“, „noch weitere Ports erreichbar“ oder „Kontor gesperrt“.
+
 ## 3.9.33 (2026-11-08)
 - „Zugriff einschalten“: Die Seite wartet jetzt auf den neu gestarteten Dienst und lädt dann selbst neu (vorher konnte sie zu früh neu laden und hängen bleiben). Während das Zertifikat geholt wird, steht ein Hinweis da.
 - Port oder Adresse ändern (Einstellungen → Zugang → Erweitert): Kontor prüft, ob der Port frei ist, startet neu und öffnet die Seite unter dem neuen Port; die iPhone-Adresse nutzt ihn ebenfalls. Nur am Mac.

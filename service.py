@@ -1313,6 +1313,9 @@ def make_handler(app: App):
                 except OSError:
                     return self._json(200, {"text": "", "bilder": {}})
                 return self._json(200, {"text": text, "bilder": help_image_sizes(text)})
+            if path == "/api/remote/acl":
+                import tls_cert
+                return self._json(200, tls_cert.access_check(int((app.config.get("oberflaeche") or {}).get("port") or 8765)))
             if path == "/api/remote":
                 if q.get("fresh"):
                     app.tailscale(fresh=True)
