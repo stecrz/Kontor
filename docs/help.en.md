@@ -87,7 +87,7 @@ MoneyMoney does not provide the history of balances through its interface – es
 <a id="sync"></a>
 ## Sync
 
-The data has two stages: **banks → MoneyMoney** (MoneyMoney fetches from the banks) and **MoneyMoney → Kontor** (Kontor reads from MoneyMoney). Both times are shown at the bottom left. “Sync” reads immediately; automatically Kontor reads every 30 minutes (adjustable) and as soon as MoneyMoney has new data – only while MoneyMoney is running and unlocked.
+The data has two stages: **banks → MoneyMoney** (MoneyMoney fetches from the banks) and **MoneyMoney → Kontor** (Kontor reads from MoneyMoney). Both times are shown at the bottom left. “Sync” reads immediately; automatically Kontor reads every 30 minutes (adjustable) and as soon as MoneyMoney has new data – only while MoneyMoney is running and unlocked (Kontor does not start it itself).
 
 ![Sync](img/en/sync.png)
 
@@ -272,7 +272,7 @@ Kontor itself also requires the Kontor password and, by default, only allows vie
 
 - **Backup** – for you: restore Kontor exactly as it was on a new Mac or after a reset. Contains all settings, areas, rules, real estate, planning, categories and assignments, month-end balances and the receipt index – not the transactions (they come from MoneyMoney), no receipt files, not the Kontor password. Because it contains your financial data, it is encrypted with its own password, which Kontor does not store. Only on the Mac.
 - **Settings package** – for others: your rules and assignments as a template, e.g. for a business partner with their own MoneyMoney. Accounts by name only, without balances, transactions, planning, passwords or address. Loan rules contain the lender's counterparty IBAN – check before sharing. When loading, Kontor matches accounts by name; anything not found you assign in the interface. “Add” adds rules and overwrites assignments, “Replace” discards the existing setup. A template is in the `templates/` folder.
-- **Time Machine** backs up the data folder encrypted (the key is in the keychain, not in the folder). The status is shown on the page; excluding is possible but not recommended.
+- **Time Machine** backs up the data folder by default – as encrypted files, the key is in the keychain, not in the folder. The page shows the status. “Exclude” does not change Time Machine's settings but sets the “do not back up” mark on the data folder itself (common for caches, no admin rights needed). That is why the folder does not appear in Time Machine's exclusion list. Recommendation: keep it backed up.
 - **Reset** (only on the Mac, with password) deletes settings, planning, categories, history and evaluations, optionally also the password. Receipt files, key and log remain.
 
 <a id="updates"></a>
@@ -282,20 +282,38 @@ Kontor asks GitHub for the latest version (daily, weekly or never – Settings �
 
 When installing, Kontor downloads that version as an archive from github.com, replaces the program folder (the old files stay next to it as `.alt`), restarts the service and reloads the page; if the program folder is a git clone, `git pull` runs instead. Data folder and settings remain. All steps are in the log. The Updates page shows the changes of the newest version, earlier ones folded below.
 
-In Terminal the same command installs and updates:
-
-```
-bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/get.sh)
-```
+In Terminal, the same line as for the [installation](https://github.com/stecrz/Kontor#installation) updates.
 
 <a id="security"></a>
 ## Security
 
-- Interface only on this Mac (`127.0.0.1`); optionally also in your own Tailscale network – never in the home network or the internet. No third-party content, no telemetry.
-- Sign in with password (PBKDF2-SHA256, 600,000 rounds) or Touch ID on the Mac; lock after inactivity; five failed attempts lock for five minutes.
+- Interface only on this Mac (`127.0.0.1`); optionally also the Tailscale address for your own devices – never on the home network or the internet. No third-party content, no telemetry. The only outside connection is the update check at GitHub.
+- Sign-in with password (PBKDF2-SHA256, 600,000 rounds) or Touch ID on the Mac (needs Apple's command line tools, otherwise only the password). The sign-in cookie only applies to Kontor, other websites cannot trigger anything (CSRF protection, origin check). Lock after idle time; five failed attempts lock for five minutes.
 - All files in the data folder are encrypted (AES-256 + HMAC), the key is in the macOS keychain. Receipts are normal files in a folder of your choice.
-- The log contains no IBANs, balances or passwords.
-- Limit: whoever uses your unlocked Mac can get to the key. FileVault remains the basis.
+- Booking, updates, writing categories back, backup, reset and access settings only on the Mac; from the iPhone view only by default.
+- Historical balances: Kontor decrypts MoneyMoney's database only in memory; you enter the MoneyMoney password in a macOS window, Kontor stores it nowhere.
+- The log contains no IBANs, balances or passwords; the diagnostics file also replaces account names and the user folder.
+- Limit: the key is in the login keychain so the service runs after login without input. Whoever operates your unlocked Mac can get to it – the Kontor password then protects access, not the files. FileVault remains the basis.
+
+<a id="advanced"></a>
+## Advanced
+
+**Install, update, remove**: installation is described in the [README](https://github.com/stecrz/Kontor#installation). `bash install.sh` in the program folder can be repeated at any time: it replaces the service and leaves data folder and settings untouched. Remove: `python3 kontor.py uninstall` or `Uninstall.command` (asks whether data and key should be deleted). The service starts at login, runs permanently and restarts after crashes (launchd, `de.kontor.service`).
+
+**Command line** – `python3 ~/Kontor/kontor.py …`:
+
+- `start` – run the service in the foreground; `open` – open the interface; `status` – state; `version`
+- `run [--dry-run|--live] [--force]` – run a sync (test mode or booking)
+- `accounts` – account tree with IDs, type and position; `check` – check the setup against MoneyMoney
+- `password` – reset the Kontor password
+- `package-export [FILE] [--without-uuid] [--with-plan]`, `package-import FILE [--replace] [--anyway]` – settings package
+- `diagnostics [FILE]` – write a diagnostics file; `update [--install]` – check for or install updates
+- `install` / `uninstall` – set up or remove the service; `tls [--off]` – turn access via Tailscale on or off
+
+**Data folder** `~/Library/Application Support/Kontor/` (the environment variable `KONTOR_DIR` changes it). Everything encrypted except the log:
+
+- `config` settings, `plan` planning, `state` history and portfolio month-end values, `categories` categories, assignments and rules, `dataset` reports, `transactions` transaction list (without counterparty IBAN), `receipts` receipt index, `mm-history` imported historical balances, `auth` password verifier (each `.json.enc`), `moneymoney-ledger.bin.enc` last state from MoneyMoney for the quick sync, `tls/` certificate for access from the iPhone.
+- `kontor.log` – plain-text log (rotates at 5 MB, five files): requests, MoneyMoney calls with duration, update steps and errors, without passwords, IBANs or amounts.
 
 <a id="troubleshooting"></a>
 ## When something goes wrong

@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.9.31 (2026-11-08)
+- README auf GitHub schlank: Einführung, Bilder, Installation, Entwicklung; alles Weitere nur noch in der Hilfe (keine doppelt gepflegten Texte). Sicherheit, Kommandozeile und Datenordner stehen jetzt vollständig in der Hilfe („Für Fortgeschrittene“); veraltete Angabe zum Dienstnamen korrigiert.
+- Time Machine: Hinweis, dass „gesichert“ der Standard ist und „Ausschließen“ nur eine Markierung am Datenordner setzt (nicht die Time-Machine-Einstellungen ändert, daher nicht in deren Ausschlussliste sichtbar).
+
 ## 3.9.30 (2026-11-08)
 - Bilanz: unter der Tabelle zwei eigene Kurven – Nettovermögen allein und die Summe frei wählbarer Positionen (Standard: Bankguthaben, handelbare und gebundene Anlagen), je mit eigenem Zeitraum, Zoom und einer Achse, die sich den sichtbaren Werten anpasst.
 - Tabellen: Planwerte blass und schraffiert, laufender Monat nur blass (statt blau), über die ganze Spalte.
