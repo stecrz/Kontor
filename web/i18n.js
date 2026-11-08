@@ -2,14 +2,15 @@
    Genutzt von der Oberflaeche (app.js: t()) und vom Dienst (i18n.py: tr()). */
 'use strict';
 const I18N = {
+"tsd_kurz":["T", "k"],
+"mio_kurz":["Mio.", "M"],
 "summe_label":["Summe", "Total"],
 "leere_zeilen":["Leere Zeilen", "Empty rows"],
 "ausgeblendete_n":["Ausgeblendete{0}", "Hidden{0}"],
 "nur_positionen":["Nur Positionen", "Positions only"],
 "konten_zeigen":["Konten zeigen", "Show accounts"],
 "um_0_uhr":[", {0} Uhr", ", {0}"],
-"lc_zusammensetzung":["Zusammensetzung", "Composition"],
-"lc_pos_tip":["Bilanzposition wählen", "Choose a balance sheet position"],
+"lc_pos_tip":["Zusammensetzung einer Bilanzposition nach Konten – Position wählen", "Composition of a balance sheet position by account – choose a position"],
 "bch_pan_tip":["Hier seitlich ziehen, um den Zeitraum zu verschieben", "Drag sideways here to move the range"],
 "sw_am_mac":["am Mac nicht nötig – die Offline-Ansicht gibt es nur auf dem iPhone", "not needed on the Mac – the offline view is only for the iPhone"],
 "acl_sum_gesperrt":["Absichern: Kontor ist gesperrt – Regel prüfen", "Harden: Kontor is blocked – check the rule"],

@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.9.38 (2026-11-08 02:57)
+- Bilanz: Klick auf eine Spaltenüberschrift (Monat oder Jahr) zeigt diesen Monat in der Grafik – Zeitraum bleibt gleich lang, die Werte erscheinen daneben.
+- Kleine Grafiken: „Zusammensetzung“ hat nur noch die Auswahl als Überschrift; bei „Auswahl“ stehen die Positionen unter der Grafik, damit alle drei Grafiken auf gleicher Höhe beginnen. Prozente über 1000 ohne Tausenderpunkt, ab 10 000 % in Tausend („12T %“), nicht berechenbar: ∞. Achsen: „T“ und „Mio.“ (Englisch „k“ und „M“).
+
 ## 3.9.37 (2026-11-08 02:39)
 - Bilanz: Hauptgrafik zeigt beim Öffnen die letzten drei Jahre bis heute (statt einem Jahr).
 

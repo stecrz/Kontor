@@ -41,7 +41,7 @@ const fmt = new Intl.NumberFormat(LOCALE, {minimumFractionDigits: 2, maximumFrac
 const fmt0 = new Intl.NumberFormat(LOCALE, {maximumFractionDigits: 0});
 const F = v => (v == null || isNaN(v) ? '–' : fmt.format(v));
 const F0 = v => (v == null || isNaN(v) ? '–' : fmt0.format(v));
-const Fk = v => (v == null || isNaN(v) ? '–' : (Math.abs(v) >= 1e6 ? (v / 1e6).toLocaleString(LOCALE, {maximumFractionDigits: 2}) + ' M' : Math.abs(v) >= 1e4 ? (v / 1e3).toLocaleString(LOCALE, {maximumFractionDigits: 0}) + ' k' : F0(v)));
+const Fk = v => (v == null || isNaN(v) ? '–' : (Math.abs(v) >= 1e6 ? (v / 1e6).toLocaleString(LOCALE, {maximumFractionDigits: 2}) + ' ' + t('mio_kurz') : Math.abs(v) >= 1e4 ? (v / 1e3).toLocaleString(LOCALE, {maximumFractionDigits: 0}) + ' ' + t('tsd_kurz') : F0(v)));   // German: T / Mio., English: k / M
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const MONATE = LANG === 'en' ? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] : ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const ML = m => MONATE[+m.slice(5) - 1] + ' ' + m.slice(2, 4);
@@ -1220,6 +1220,18 @@ function bchJump(m) {
   const idx = [...th.parentNode.children].indexOf(th);
   $$('tr', w).forEach(tr => { const c = tr.children[idx]; if (c) { c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); } });
 }
+function bchFocus(key) {
+  // table header clicked: centre the chart on that month, keep the span and show its values
+  // (year column: the current month for the running year, otherwise its last month)
+  const d = BCH.d; if (!d) return;
+  let i = d.months.indexOf(key);
+  if (i < 0) { const cur = d.ist - 1; i = d.months[cur] && d.months[cur].startsWith(key + '-') ? cur : d.months.reduce((k, m, j) => m.startsWith(key + '-') ? j : k, -1); }
+  if (i < 0) return;
+  const span = BCH.i1 - BCH.i0, last = d.months.length - 1, a = Math.max(0, Math.min(last - span, i - Math.round(span / 2))), z = Math.min(last, a + span);
+  bchSet(a, z, a === BCH.i0 && z === BCH.i1 ? S.bchBtn : null);
+  bchHover(i);
+  const c = $('#bch'), r = c && c.getBoundingClientRect(); if (r && (r.top < 0 || r.bottom > window.innerHeight)) c.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+}
 // Touch and drag on a chart, attached once to the (persistent) <svg>; the plot inside is redrawn on every change.
 // - one finger or the mouse on the y-axis strip (.bch-pan): drag sideways to move the range
 // - two fingers in the plot: move = shift, spread/pinch = zoom; the value tip stays hidden meanwhile
@@ -1313,6 +1325,7 @@ function bindBilanzChart(main) {
     bchSet(a, e, btn); nf.blur();
   });
   bchDraw();
+  $$('.wrap thead th[data-key]', main).forEach(th => { th.classList.add('jump'); th.addEventListener('click', () => bchFocus(th.dataset.key)); });
   if (BCH.ro) BCH.ro.disconnect();
   let last = 0; BCH.ro = new ResizeObserver(() => { const w = $('#bch-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; bchDraw(); } });
   BCH.ro.observe($('#bch-plot', main));
@@ -1376,12 +1389,19 @@ function vBilanzLines(D) {
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
   return `<div class="cards lc-grid" id="lc-grid">
     <div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}${plot('nw')}</div>
-    <div class="card bch lc" data-lc="sel">${head('sel', t('lc_summe_auswahl'))}<div class="lc-chips" id="lc-chips">${chips}</div>${plot('sel')}</div>
-    <div class="card bch lc" data-lc="pos">${head('pos', t('lc_zusammensetzung'), `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select>`)}${plot('pos')}<div class="lc-legend" id="lc-pos-legend"></div></div>
+    <div class="card bch lc" data-lc="sel">${head('sel', t('lc_summe_auswahl'))}${plot('sel')}<div class="lc-chips below" id="lc-chips">${chips}</div></div>
+    <div class="card bch lc" data-lc="pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select>`)}${plot('pos')}<div class="lc-legend" id="lc-pos-legend"></div></div>
   </div>`;
 }
-// growth in percent with at most three digits: 7,6 % · 13,7 % · 340 %
-const pctGrowth = p => p.toLocaleString(LOCALE, {maximumFractionDigits: Math.abs(p) >= 100 ? 0 : 1, signDisplay: 'always'}) + ' %';
+// growth in percent, short: 7,6 % · 13,7 % · 340 % · 2400 % (no thousands separator) · 12T % / 12k % (from 10 000 %);
+// from a start of (almost) zero it cannot be computed: ∞
+const pctGrowth = (from, change) => {
+  if (Math.abs(change) < 0.5) return '';
+  if (Math.abs(from) < 1) return (change > 0 ? '+' : '−') + '∞ %';
+  const p = change / Math.abs(from) * 100, sign = p > 0 ? '+' : '−', a = Math.abs(p);
+  if (a >= 10000) return sign + Math.round(a / 1000) + t('tsd_kurz') + ' %';
+  return sign + a.toLocaleString(LOCALE, {maximumFractionDigits: a >= 100 ? 0 : 1, useGrouping: false}) + ' %';
+};
 function lcDraw(id) {
   const st = LC[id], box = $(`#lc-${id}-plot`), svg = $(`#lc-${id}-svg`); if (!st || !box || !svg) return;
   const d = st.d, W = Math.max(260, box.clientWidth), H = 190, P = {l: 58, r: 10, t: 14, b: 24};
@@ -1437,7 +1457,7 @@ function lcDraw(id) {
   // value today and change over the visible actual months
   let a = null, z = null; for (let i = i0; i <= Math.min(i1, ist); i++) if (d.vals[i] != null) { if (a == null) a = i; z = i; }
   const vEl = $(`#lc-${id}-val`);
-  if (vEl) vEl.innerHTML = z == null ? '' : `${F0(d.vals[z])} €` + (a != null && a < z ? ` <span class="delta ${d.vals[z] - d.vals[a] >= 0 ? 'pos' : 'neg'}">${d.vals[z] - d.vals[a] >= 0 ? '+' : ''}${F0(d.vals[z] - d.vals[a])} €${Math.abs(d.vals[a]) >= 1 ? ` (${pctGrowth((d.vals[z] - d.vals[a]) / Math.abs(d.vals[a]) * 100)})` : ''}</span> <span class="small muted">${t('lc_seit_0', ML(d.months[a]))}</span>` : '');
+  if (vEl) vEl.innerHTML = z == null ? '' : `${F0(d.vals[z])} €` + (a != null && a < z ? ` <span class="delta ${d.vals[z] - d.vals[a] >= 0 ? 'pos' : 'neg'}">${d.vals[z] - d.vals[a] >= 0 ? '+' : ''}${F0(d.vals[z] - d.vals[a])} €${pctGrowth(d.vals[a], d.vals[z] - d.vals[a]) ? ` (${pctGrowth(d.vals[a], d.vals[z] - d.vals[a])})` : ''}</span> <span class="small muted">${t('lc_seit_0', ML(d.months[a]))}</span>` : '');
   const rl = $(`#lc-${id}-range`); if (rl) rl.textContent = `${MONATE_LANG[+d.months[i0].slice(5) - 1]} ${d.months[i0].slice(0, 4)} – ${MONATE_LANG[+d.months[i1].slice(5) - 1]} ${d.months[i1].slice(0, 4)}`;
   $$(`.lc-rb[data-lc="${id}"] button`).forEach(b => b.classList.toggle('on', st.btn != null ? +b.dataset.m === st.btn : false));
   lcBindPlot(id);

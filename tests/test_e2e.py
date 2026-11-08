@@ -35,6 +35,15 @@ from tax import build_tax  # noqa: E402
 TODAY = date(2026, 11, 4)
 
 
+def wait_shell(pg, timeout=30000):
+    """Wait for the app after login; on timeout report what the login page shows (flaky timeouts under load)."""
+    try:
+        pg.wait_for_selector("#shell:not(.hidden)", timeout=timeout)
+    except Exception as e:
+        info = pg.evaluate("({err: (document.querySelector('#login-err') || {}).textContent, login: !document.querySelector('#login').classList.contains('hidden'), btn: (document.querySelector('#login-btn') || {}).textContent})")
+        raise AssertionError("shell not shown: %r" % info) from e
+
+
 class MockBridge:
     """Simuliert MoneyMoney: Konten + Umsaetze im Speicher, Schreibbefehle wirken sofort."""
     instances = []
@@ -1002,13 +1011,13 @@ class AppTests(_AppBase):
         import service as MA
         self.login(); self.run_and_wait()
         code, ds = self.call("/api/dataset")
-        self.assertEqual(next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == "pos:liquiditaet")["name"], "Bankguthaben")
+        self.assertEqual(next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == "pos:verbindlichkeiten")["name"], "Verbindlichkeiten")
         self.assertEqual(self.call("/api/language", {"sprache": "xx"})[0], 400)
         code, r = self.call("/api/language", {"sprache": "en"}); self.assertEqual(r["sprache"], "en")
         self.assertEqual(self.store.load("config.json")["oberflaeche"]["sprache"], "en")
         self.app.rebuild_report(wait=True)
         code, ds = self.call("/api/dataset")
-        self.assertEqual(next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == "pos:liquiditaet")["name"], "Cash")
+        self.assertEqual(next(z for b in ds["bereiche"].values() for z in b["bilanz"]["zeilen"] if z.get("id") == "pos:verbindlichkeiten")["name"], "Liabilities")
         old = MA.is_running; MA.is_running = lambda: True
         try:
             code, r = self._mm_upload(b"x" * 2048); self.assertIn("Please quit MoneyMoney first", r["text"])
@@ -1430,14 +1439,14 @@ class LoginTouchIdTest(unittest.TestCase):
                 pg.goto("http://127.0.0.1:%d/" % port)
                 self.assertTrue(pg.is_visible("#setup-tid"))                     # Einrichtung fragt nach Touch ID
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort")
-                pg.click("#login-btn"); pg.wait_for_selector("#shell:not(.hidden)")
+                pg.click("#login-btn"); wait_shell(pg)
                 self.assertTrue(store.load("config.json")["oberflaeche"]["touchid"])
                 pg.click("#lock-btn"); pg.wait_for_selector("#login:not(.hidden)")
                 pg.reload(); pg.wait_for_selector("#tid-box:not(.hidden)")
                 self.assertFalse(pg.is_visible("#login-pw")); self.assertTrue(pg.is_visible("#pw-instead"))
                 pg.click("#pw-instead"); self.assertTrue(pg.is_visible("#login-pw")); self.assertFalse(pg.is_visible("#tid-box"))
                 self.assertTrue(pg.is_visible("#tid-instead"))
-                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); pg.wait_for_selector("#shell:not(.hidden)")
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg)
                 # ausschalten -> nur Passwort
                 cfg = store.load("config.json"); cfg["oberflaeche"]["touchid"] = False; app.save_config(cfg)
                 pg.click("#lock-btn"); pg.wait_for_selector("#login:not(.hidden)"); pg.reload(); pg.wait_for_selector("#login-pw")
@@ -2053,7 +2062,7 @@ class BrowserTest(unittest.TestCase):
                 errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
                 pg.goto("http://127.0.0.1:%d/" % port)
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
-                pg.wait_for_selector("#shell:not(.hidden)")
+                wait_shell(pg)
                 pg.wait_for_selector(".cards")
                 txt = pg.query_selector("#main").inner_text().lower()
                 for needle in ("nettovermögen", "jahresvergleich", "offene punkte", "weitere bereiche", "vermögensstruktur"):
@@ -2133,6 +2142,12 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("BCH.i0"), 0); self.assertEqual(pg.evaluate("BCH.i1 - BCH.i0"), span)
                 pg.mouse.dblclick(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2); pg.wait_for_timeout(300)
                 self.assertLessEqual(pg.evaluate("BCH.i1 - BCH.i0"), span // 2 + 1)
+                # click on a month heading: chart centred on that month, same span, column marked
+                pg.click("#bch-rb button[data-m='12']"); pg.wait_for_timeout(200)
+                key = pg.evaluate("BCH.d.months[2]"); pg.evaluate("document.querySelector(\"#main .wrap thead th[data-key='%s']\").click()" % key)
+                pg.wait_for_timeout(200)
+                self.assertEqual(pg.evaluate("BCH.i0"), 0); self.assertEqual(pg.evaluate("BCH.i1 - BCH.i0"), span)
+                self.assertTrue(pg.query_selector("#main thead th[data-key='%s'].bch-on" % key)); self.assertTrue(pg.is_visible("#bch-tip"))
                 pg.click("#bch-rb button[data-m='0']"); pg.wait_for_timeout(200)
                 # waagerecht zur aktuellen Spalte gescrollt (auch in der Jahresansicht)
                 self.assertGreater(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0)
@@ -2311,7 +2326,7 @@ class BrowserTest(unittest.TestCase):
                 pg.set_viewport_size({"width": 1440, "height": 900})
                 self.assertFalse(pg.evaluate("navigator.serviceWorker.getRegistrations().then(r => r.length)"))   # none on the Mac itself
                 pg.evaluate("localStorage.setItem('kontor.testRemote', '1')"); pg.reload(); pg.wait_for_selector("#login-pw")   # act like the iPhone
-                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); pg.wait_for_selector("#shell:not(.hidden)")
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg)
                 pg.wait_for_function("navigator.serviceWorker && navigator.serviceWorker.controller !== null", timeout=15000)
                 pg.reload(); pg.wait_for_selector(".cards")           # jetzt laufen alle Abrufe durch den Service Worker
                 pg.wait_for_function("caches.open('kontor-data').then(c => c.keys()).then(k => k.some(r => r.url.endsWith('/api/offline/verifier')) && k.some(r => r.url.endsWith('/api/dataset')))", timeout=15000)
@@ -2386,13 +2401,13 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertEqual(pg.inner_text("#login-btn"), "Set password")
                 self.assertEqual(pg.get_attribute("#login-pw2", "placeholder"), "Repeat password")
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
-                pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_timeout(500)
+                wait_shell(pg); pg.wait_for_timeout(500)
                 self.assertIn("Overview", pg.inner_text("#nav")); self.assertEqual(pg.evaluate("document.documentElement.lang"), "en")
                 self.assertEqual(store.load("config.json")["oberflaeche"]["sprache"], "en")
                 pg.goto("http://127.0.0.1:%d/#setup" % port); pg.wait_for_selector(".setup-list")
                 self.assertIn("Import historical balances", pg.inner_text(".setup-list"))
                 with pg.expect_navigation(): pg.select_option("#w-lang", "de")
-                pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_timeout(500)
+                wait_shell(pg); pg.wait_for_timeout(500)
                 self.assertIn("Übersicht", pg.inner_text("#nav")); self.assertEqual(store.load("config.json")["oberflaeche"]["sprache"], "de")
                 self.assertEqual(errors, [])
                 b.close()
@@ -2426,7 +2441,7 @@ class BrowserWizardTest(unittest.TestCase):
                 reqs = []; pg.on("request", lambda r: reqs.append(r.url))
                 pg.goto("http://127.0.0.1:%d/" % port)
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
-                pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_selector("a[href='#setup']")
+                wait_shell(pg); pg.wait_for_selector("a[href='#setup']")
                 pg.click("#main a[href='#setup'] button"); pg.wait_for_selector(".setup-list")
                 self.assertEqual(pg.query_selector(".srow .n").inner_text().strip(), "1")      # geordnete Liste, Schritt 1 offen
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_leer.png"), full_page=True)
