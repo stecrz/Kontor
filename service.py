@@ -396,11 +396,12 @@ class App:
         """Securities that have only an ISIN (no name in MoneyMoney, none of your own) and the names looked up so far."""
         st = self.store.load_shared("state.json", {}) or {}
         mmh = self.store.load_shared(MM_HISTORY_FILE, {}) or {}
-        own = ((self.config or {}).get("bilanz") or {}).get("wp_namen") or {}
         done = st.get("wp_suche") or {}
-        offen = security_names.unnamed(mmh.get("wertpapiere") or {}, st.get("snapshots_wp") or {}, st.get("wp_namen") or {}, own,
+        offen = security_names.unnamed(mmh.get("wertpapiere") or {}, st.get("snapshots_wp") or {}, st.get("wp_namen") or {},
                                        list(done.get("namen") or {}) + list(done.get("ohne") or []))
-        return {"offen": offen, "gefunden": len(done.get("namen") or {}), "ohne": len(done.get("ohne") or []), "zeit": done.get("zeit")}
+        found = done.get("namen") or {}
+        liste = [{"isin": i, "name": found.get(i, "")} for i in sorted(set(found) | set(done.get("ohne") or []))]
+        return {"offen": offen, "gefunden": len(found), "ohne": len(done.get("ohne") or []), "zeit": done.get("zeit"), "liste": liste}
 
     def securities_lookup(self) -> dict:
         """Look up the names of the securities without one (only on request): sends only their ISINs to OpenFIGI."""
@@ -1790,6 +1791,11 @@ def make_handler(app: App):
                 if body.get("aktion") == "entfernen":
                     app.store.update("state.json", lambda cur: cur.pop("wp_suche", None), {})
                     res = {"entfernt": True}
+                elif body.get("aktion") == "namen":
+                    # the list of looked-up names, changed by hand (only ISINs already looked up; empty = no name)
+                    namen = body.get("namen") if isinstance(body.get("namen"), dict) else {}
+                    app.store.update("state.json", lambda cur: security_names.set_names(cur.setdefault("wp_suche", {}), namen), {})
+                    res = {"gespeichert": True}
                 else:
                     try:
                         res = app.securities_lookup()

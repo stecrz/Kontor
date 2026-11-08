@@ -475,17 +475,26 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
     ncol = next((c for c in name_cols if c in cols), None)
     icol = next((c for c in ("isin", "wkn") if c in cols), None)
     log.debug("MoneyMoney database: securities columns %s", ", ".join(sorted(cols)) or "-")
-    if "account_key" in cols and (ncol or icol):
-        for sk, n, i in db.rows("SELECT rowid, %s, %s FROM securities WHERE account_key IN %s" % (ncol or "NULL", icol or "NULL", _in(len(keys))), keys):
+    # only names of tables and columns (no contents), to see where else MoneyMoney might keep securities
+    log.debug("MoneyMoney database: tables %s", "; ".join("%s (%s)" % (t, ", ".join(c for c, _ty in columns(db, t))) for t in sorted(plain)))
+    # by the key of each series (not by the portfolio: a security may have moved to another account in MoneyMoney)
+    sks = sorted({sk for per in recs.values() for sk in per})
+
+    def by_key(what: str):
+        for n in range(0, len(sks), 500):
+            part = sks[n:n + 500]
+            yield from db.rows("SELECT rowid, %s FROM securities WHERE rowid IN %s" % (what, _in(len(part))), part)
+    if cols and (ncol or icol):
+        for sk, n, i in by_key("%s, %s" % (ncol or "NULL", icol or "NULL")):
             names[sk] = (str(n or "").strip(), str(i or "").strip())
-    if not ncol and "account_key" in cols:
+    if not ncol and cols:
         # MoneyMoney keeps the name in one of its short text columns (ident, symbol, wpn): of these the value that reads like a
         # name (letters with a space or lower case, not an ISIN or a WKN) counts
         extra = [c for c in ("ident", "symbol", "wpn") if c in cols]
         looks = lambda v: bool(v) and bool(re.search(r"[A-Za-zÄÖÜäöü]", v)) and (" " in v or v != v.upper()) and not re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}\d", v)
         if extra:
             found = 0
-            for row in db.rows("SELECT rowid, %s FROM securities WHERE account_key IN %s" % (", ".join(_q(c) for c in extra), _in(len(keys))), keys):
+            for row in by_key(", ".join(_q(c) for c in extra)):
                 v = next((str(x).strip() for x in row[1:] if looks(str(x or "").strip())), "")
                 if v:
                     found += 1
@@ -590,6 +599,8 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
                     y, m = nxt.year, nxt.month
         wp = [{"name": names.get(sk, ("", ""))[0], "isin": names.get(sk, ("", ""))[1], "werte": v} for sk, v in parts.items()
               if any(abs(x) >= 0.005 for x in v.values())]
+        log.debug("Portfolio %d: %d series, %d of them in the securities table, %d with ISIN, %d with a name", k, len(recs[k]),
+                  sum(1 for sk in recs[k] if sk in names), sum(1 for sk in recs[k] if names.get(sk, ("", ""))[1]), sum(1 for sk in recs[k] if names.get(sk, ("", ""))[0]))
         log.debug("Portfolio %d: read as %s; series (points, first, last, held or gone): %s", k, art, "; ".join(
             "%d, %s, %s, %s" % (len(r), r[0][0], r[-1][0], "held" if sk in now else gone.get(sk) or "-") for sk, r in sorted(recs[k].items(), key=lambda x: x[1][0][0])))
         out[k] = {"werte": werte, "anfang": 0.0, "art": "level" if art == "total" else art, "wertpapiere": wp}

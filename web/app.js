@@ -725,28 +725,31 @@ async function mmhFollow() {
     return;
   }
 }
-async function mmhNames() {
+async function mmhNames(openList) {
   // optional: names of the securities MoneyMoney knows only by their ISIN, looked up once at OpenFIGI -- only on a click,
-  // only the ISINs are sent; the names found are kept apart and can be removed again
+  // only the ISINs are sent; the names found are kept apart, can be changed in a list right here and removed again
   const el = $('#mmh-names'); if (!el) return;
   let r; try { r = await api('/api/securities/lookup'); } catch (e) { return; }
   const n = r.offen.length, had = r.gefunden + r.ohne > 0;
   el.classList.toggle('hidden', !n && !had); el.classList.toggle('done', !n && had);
   el.innerHTML = `<div class="b"><b>${t('wp_suche_titel')} <span class="pill neutral">${t('optional')}</span></b>`
     + (n ? `<div>${t('wp_suche_text', n === 1 ? t('wp_suche_eins') : t('wp_suche_n', n))}</div><details class="small"><summary>${t('wp_suche_liste')}</summary><div class="mono">${r.offen.map(esc).join(', ')}</div></details>` : '')
-    + (had ? `<div class="small muted">${t('wp_suche_stand', r.gefunden, r.ohne, esc(fmtZeit(r.zeit)))}</div>` : '')
+    + (had ? `<div class="small muted">${t('wp_suche_stand', r.gefunden, r.ohne, esc(fmtZeit(r.zeit)))}</div>`
+      + `<details class="small"${openList ? ' open' : ''}><summary>${t('wp_suche_bearbeiten')}</summary><div class="wp-edit">${(r.liste || []).map(x => `<label><span class="mono">${esc(x.isin)}</span><input data-isin="${esc(x.isin)}" value="${esc(x.name)}" placeholder="${t('wp_suche_kein_name')}" maxlength="120"></label>`).join('')}</div>`
+      + `<div class="actions"><button id="wp-names-save" class="small">${t('speichern')}</button></div></details>` : '')
     + `<div class="actions">${n ? `<button id="wp-look" class="small">${t('wp_suche_btn')}</button>` : ''}${had ? `<button id="wp-look-del" class="small secondary">${t('wp_suche_entfernen')}</button>` : ''}</div><div id="wp-look-res" class="findings"></div></div>`;
   const run = async (btn, body) => {
     const res = $('#wp-look-res', el); btn.classList.add('busy'); res.innerHTML = `<div class="working"><span class="spin"></span>${t('bitte_warten')}</div>`;
     try {
       const j = await api('/api/securities/lookup', body);
       try { S.DATA = await api('/api/dataset'); } catch (e) {}
-      await mmhNames();
-      const res2 = $('#wp-look-res'); if (res2) showFindings(res2, [], j.entfernt ? t('wp_suche_entfernt') : t('wp_suche_ergebnis', j.neu, j.gesendet), 'ok');
+      await mmhNames(!body.aktion);
+      const res2 = $('#wp-look-res'); if (res2) showFindings(res2, [], j.entfernt ? t('wp_suche_entfernt') : body.aktion === 'namen' ? t('wp_suche_gespeichert') : t('wp_suche_ergebnis', j.neu, j.gesendet), 'ok');
     } catch (e) { showFindings(res, [], e.message, 'fehler'); btn.classList.remove('busy'); }
   };
   const lb = $('#wp-look', el); if (lb) lb.addEventListener('click', () => run(lb, {}));
   const ld = $('#wp-look-del', el); if (ld) ld.addEventListener('click', () => run(ld, {aktion: 'entfernen'}));
+  const ns = $('#wp-names-save', el); if (ns) ns.addEventListener('click', () => run(ns, {aktion: 'namen', namen: Object.fromEntries($$('.wp-edit input', el).map(i => [i.dataset.isin, i.value.trim()]))}));
 }
 const MMHP = {timer: null};
 function mmhPoll() {
@@ -1113,33 +1116,23 @@ function wpTip(w, acc) {
   if (w.rest) return w.name;
   const src = w.orig ? t('wp_in_mm', w.orig) : t('wp_in_mm_ohne');
   return [acc ? acc + ' · ' + w.name : w.name, w.isin ? 'ISIN ' + w.isin : '', w.orig !== w.name || !w.orig ? src : '',
-    w.quelle === 'eigen' ? t('wp_eigener_name') : w.quelle === 'suche' ? t('wp_nachgeschlagen') : ''].filter(Boolean).join('\n');
+    w.quelle === 'suche' ? t('wp_nachgeschlagen') : ''].filter(Boolean).join('\n');
 }
 function openWpDrawer(id) {
-  // a security of a portfolio: its month-end values (from MoneyMoney's history, Kontor's record and the current export) and,
-  // where it has an ISIN or a name, a name of your own (e.g. when MoneyMoney's history only knows the ISIN)
+  // a security of a portfolio: its month-end values (from MoneyMoney's history, Kontor's record and the current export), with
+  // MoneyMoney's name and the ISIN
   const D = B(); let acc = null, w = null;
   for (const r of D.bilanz.zeilen) { const x = (r.wertpapiere || []).find(p => p.id === id); if (x) { acc = r; w = x; break; } }
   if (!w) return;
-  const d = $('#drawer'), key = id.slice(id.indexOf('|') + 1), canName = !w.rest && !key.startsWith('mm:');
-  const pts = D.monate.filter(m => w.werte[m] != null).map(m => [m, w.werte[m]]);
-  const own = w.quelle === 'eigen' ? w.name : '';
+  const d = $('#drawer'), pts = D.monate.filter(m => w.werte[m] != null).map(m => [m, w.werte[m]]);
   d.innerHTML = `<button class="close icon">✕</button><h2>${esc(w.name)}</h2><div class="small muted">${esc(acc.name)}${w.isin ? ' · ISIN ' + esc(w.isin) : ''}</div>
     ${w.rest ? '' : `<div class="small muted">${esc(w.orig ? t('wp_in_mm', w.orig) : t('wp_in_mm_ohne'))}${w.quelle === 'suche' ? ' · ' + t('wp_nachgeschlagen') : ''}</div>`}
-    ${canName ? `<div class="row tight" style="margin:12px 0 4px"><input id="wp-name" value="${esc(own)}" placeholder="${esc(w.auto || w.isin || '')}" style="flex:1" title="${t('wp_name_tip')}"><button id="wp-save" class="small">${t('speichern')}</button></div><div class="small muted">${t('wp_name_tip')}</div><div id="wp-find"></div>` : ''}
     <div class="h-chart" id="h-chart">${histChart(pts)}</div>
     <h3>${t('monatsstaende')}</h3><div class="hist-grid" id="h-grid">${pts.map(([mk, v]) => `<label>${ML(mk)}<input type="text" class="auto" value="${F(v)}" disabled></label>`).join('')}</div>`;
   d.classList.add('open');
   $('.close', d).onclick = closeDrawer;
   bindHistChart($('#h-chart', d), pts);
   const g = $('#h-grid', d); if (g) g.scrollTop = g.scrollHeight;
-  const sv = $('#wp-save', d);
-  if (sv) sv.onclick = async () => {
-    const cfg = JSON.parse(JSON.stringify(S.CFG)), nm = $('#wp-name', d).value.trim();
-    cfg.bilanz = cfg.bilanz || {}; cfg.bilanz.wp_namen = Object.assign({}, cfg.bilanz.wp_namen || {});
-    if (nm && nm !== w.auto && nm !== w.isin) cfg.bilanz.wp_namen[key] = nm; else delete cfg.bilanz.wp_namen[key];
-    if (await saveConfig(cfg, $('#wp-find', d))) closeDrawer();
-  };
 }
 function openTransitDrawer() {
   // Geldtransit: die erkannten Umbuchungen, deren Ab- und Gutschrift in verschiedene Monate fallen
@@ -1302,7 +1295,7 @@ function vBilanzChart(D) {
   BCH.d = d;
   // range kept as months (survives rebuilds and area changes; null = all); a button alone is anchored to today
   const dflt = bchDefault();
-  if (S.bchModus !== S.modus) { S.bchModus = S.modus; S.bchBtn = dflt; S.bchRange = undefined; S.bchLen = null; }      // view switched: its own default
+  if (S.bchModus !== S.modus) { S.bchModus = S.modus; viewBchRange((viewSaved(S.modus) || {}).bch); }      // view switched: its saved or Kontor's default range      // view switched: its own default
   const r = S.bchRange, n = d.months.length, rb = bchRanges(true);
   let i0 = -1, i1 = -1;
   if (S.bchLen) { [i0, i1] = bchWindow(d, S.bchLen); S.bchBtn = null; S.bchLen = null; }       // kept as a length, ending today
@@ -1653,7 +1646,11 @@ function bindBilanzChart(main) {
     bchSet(a, e, btn); nf.blur();
   });
   // a small chart shown large: its own controls (positions to add up, position and breakdown, accounts to leave out)
-  const vs = $('#view-save', main); if (vs) vs.addEventListener('click', () => { try { localStorage.setItem(VIEW_KEY, JSON.stringify(viewSnap())); toast(t('ansicht_gespeichert')); } catch (e) { toast(e.message, 5000); } });
+  const vs = $('#view-save', main); if (vs) vs.addEventListener('click', () => {
+    // one default each for months and years; the one saved last opens at the start
+    const v = viewLoad() || {views: {}}; v.views[S.modus] = viewSnap(); v.modus = S.modus;
+    try { localStorage.setItem(VIEW_KEY, JSON.stringify(v)); toast(t(S.modus === 'jahre' ? 'ansicht_gespeichert_j' : 'ansicht_gespeichert_m')); } catch (e) { toast(e.message, 5000); }
+  });
   const vr = $('#view-reset', main); if (vr) vr.addEventListener('click', () => { try { localStorage.removeItem(VIEW_KEY); } catch (e) {} viewApply(null); route(); toast(t('ansicht_zurueckgesetzt')); });
   $$('#big-chips input', main).forEach(cb => cb.addEventListener('change', () => { S.lcSel = $$('#big-chips input:checked', main).map(x => x.dataset.r); route(); }));
   const bps = $('#big-pos-sel', main); if (bps) bps.addEventListener('change', () => { S.lcPos = bps.value; route(); });
@@ -1802,24 +1799,35 @@ function lcBil(D) {
 const VIEW_ORDER = ['bilanz', 'nw', 'sel', 'pos'];
 const bigType = () => (S.lcOrder || VIEW_ORDER)[0];
 // The balance sheet view: changes while using it last for this session only. "Als Standard" keeps the current view on this
-// device (months or years, ranges, expanded rows, the eye, which chart is large, selections), "Zurücksetzen" goes back to
-// Kontor's default. Only what makes sense to keep: a range is kept as its length and always ends today (like "1 J"), the
-// table always scrolls to the current month, a zoom on the y axis is not kept. The area is chosen elsewhere.
+// device (ranges, expanded rows, the eye, which chart is large, selections) -- one for months and one for years; the one saved
+// last opens at the start, and switching between months and years takes the ranges saved for that view. "Zurücksetzen" goes
+// back to Kontor's default. Only what makes sense to keep: a range is kept as its length and always ends today (like "1 J"),
+// the table always scrolls to the current month, a zoom on the y axis is not kept. The area is chosen elsewhere.
 const VIEW_KEY = 'kontor.bilanzView';
-function viewLoad() { try { return JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); } catch (e) { return null; } }
-function viewApply(v) {
-  v = v || {};
+function viewLoad() {
+  let v = null; try { v = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); } catch (e) { v = null; }
+  if (v && !v.views && v.modus) v = {modus: v.modus, views: {[v.modus]: v}};        // saved by 3.11.0 (one view only)
+  return v && v.views ? v : null;
+}
+const viewSaved = m => ((viewLoad() || {}).views || {})[m] || null;
+function viewBchRange(b) {
+  b = b || {}; S.bchRange = b.all ? null : undefined; S.bchBtn = b.btn || (b.all ? null : bchDefault()); S.bchLen = b.len || null;
+}
+function viewLcRange(lc) {
+  S.lcRange = {}; S.lcLen = {};
+  for (const [id, r] of Object.entries(lc || {})) { if (r && r.btn) S.lcRange[id] = [null, null, r.btn]; else if (r && r.len) S.lcLen[id] = r.len; }
+}
+function viewApply(saved) {
+  const m = saved && saved.modus === 'jahre' ? 'jahre' : 'monate', v = (saved && saved.views && saved.views[m]) || {};
   const keys = o => Object.fromEntries(Object.entries(o && typeof o === 'object' ? o : {}).filter(([, x]) => x));
-  S.modus = v.modus === 'jahre' ? 'jahre' : 'monate';
+  S.modus = m;
   S.lcOrder = Array.isArray(v.order) && v.order.length === VIEW_ORDER.length && VIEW_ORDER.every(x => v.order.includes(x)) ? v.order.slice() : VIEW_ORDER.slice();
   S.bchLink = !!v.link; S.alleB = !!v.alle; S.posOpen = keys(v.posOpen); S.depOpen = keys(v.depOpen);
   S.lcSel = Array.isArray(v.sel) ? v.sel.slice() : null; S.lcPos = typeof v.pos === 'string' ? v.pos : null; S.lcPosModes = keys(v.posMode);
   S.lcOff = Object.fromEntries(Object.entries(v.off || {}).map(([id, o]) => [id, {k: o.k, off: new Set(o.off || [])}]));
   // ranges: a button (months), all, or a length of its own -- each ending today
-  const b = v.bch || {};
-  S.bchModus = S.modus; S.bchRange = b.all ? null : undefined; S.bchBtn = b.btn || (b.all ? null : bchDefault()); S.bchLen = b.len || null; S.bchYr = null;
-  S.lcModus = S.modus; S.lcRange = {}; S.lcLen = {};
-  for (const [id, r] of Object.entries(v.lc || {})) { if (r && r.btn) S.lcRange[id] = [null, null, r.btn]; else if (r && r.len) S.lcLen[id] = r.len; }
+  S.bchModus = S.modus; viewBchRange(v.bch); S.bchYr = null;
+  S.lcModus = S.modus; viewLcRange(v.lc);
 }
 function viewSnap() {
   const len = (i0, i1) => i1 - i0 + 1, v = {modus: S.modus, order: (S.lcOrder || VIEW_ORDER).slice()};
@@ -2044,7 +2052,7 @@ function lcInit(id, D, rollen, title, color, stack) {
 }
 function bindBilanzLines(main) {
   const grid = $('#lc-grid', main), D = B(); if (!grid || !D) return;
-  if (S.lcModus !== S.modus) { S.lcModus = S.modus; S.lcRange = {}; S.lcLen = {}; }      // view switched: its own default range
+  if (S.lcModus !== S.modus) { S.lcModus = S.modus; viewLcRange((viewSaved(S.modus) || {}).lc); }      // view switched: its own default range
   const has = id => !!$(`.lc[data-lc="${id}"]`, grid);
   const draw = () => {
     const {sel} = lcSelection(D);

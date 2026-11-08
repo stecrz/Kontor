@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.11.1 (2026-11-09 00:44)
+- Bilanz: „Als Standard“ gilt getrennt für Monate und Jahre (z. B. Monate 2 J, Jahre 10 J); die zuletzt gespeicherte Ansicht öffnet beim Start, beim Wechsel gelten die gespeicherten Zeiträume der anderen.
+- Wertpapiere: eigener Name im Verlauf entfällt (wurde nicht übernommen). Stattdessen zeigt der Schritt „Namen nachschlagen“ danach alle nachgeschlagenen ISINs in einer Liste, in der sich Namen ändern oder ergänzen lassen.
+- Text dieses Schritts korrigiert.
+- Einlesen: Name und ISIN eines Wertpapiers werden über seine Kennung gesucht, auch wenn MoneyMoney es inzwischen einem anderen Konto zuordnet; das Protokoll nennt je Depot, wie viele Wertpapiere ISIN und Namen haben.
+
 ## 3.11.0 (2026-11-09 00:08)
 - Erste allgemeine Version: Noch nicht vollständig geprüfte Seiten (Übersicht, Cashflow, Planung, Immobilien, Steuer, Umsätze & Belege, Kategorien, Buchungen, Regeln) sind nutzbar, im Menü aber blass und mit „Alpha“ markiert, ebenso am Seitentitel.
 - Bilanz: Ansicht wird nicht mehr nebenbei gemerkt. Neu „Als Standard“ (merkt Monate/Jahre, Zeiträume bis heute, aufgeklappte Zeilen, Auge, große Grafik, Auswahl; je Gerät) und „Zurücksetzen“ auf den Standard von Kontor – neben Excel.

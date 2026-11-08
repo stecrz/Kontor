@@ -3,8 +3,8 @@ Kontostaende"), never on its own.
 
 What leaves the Mac: only the ISINs of the securities that have no name in MoneyMoney -- no amounts, quantities, accounts,
 names or anything else. HTTPS to one fixed host (api.openfigi.com, a free service for security identifiers), no API key.
-What is kept: the names found (state "wp_suche", ISIN -> name), shown below your own names and MoneyMoney's; removable at
-any time. MoneyMoney's own data (name, ISIN) is never changed and stays visible on hover.
+What is kept: the names found (state "wp_suche", ISIN -> name; changeable in the list right after the lookup), used only where
+MoneyMoney has no name; removable at any time. MoneyMoney's own data (name, ISIN) is never changed and stays visible on hover.
 """
 from __future__ import annotations
 
@@ -40,11 +40,10 @@ def valid_isin(s: str) -> bool:
     return (10 - total % 10) % 10 == int(s[-1])
 
 
-def unnamed(history_wp: Dict[str, list], snapshots_wp: Dict[str, dict], seen_names: Dict[str, str], own: Dict[str, str],
-            done: Iterable[str] = ()) -> List[str]:
-    """ISINs of the securities without a name: in MoneyMoney's history (no name), in Kontor's monthly record (no name seen in
-    MoneyMoney's export), and without a name of your own; those already looked up (found or not) are left out."""
-    named = {k for k, v in (seen_names or {}).items() if v} | {k for k, v in (own or {}).items() if v}
+def unnamed(history_wp: Dict[str, list], snapshots_wp: Dict[str, dict], seen_names: Dict[str, str], done: Iterable[str] = ()) -> List[str]:
+    """ISINs of the securities without a name: in MoneyMoney's history (no name) and in Kontor's monthly record (no name seen in
+    MoneyMoney's export); those already looked up (found or not) are left out."""
+    named = {k for k, v in (seen_names or {}).items() if v}
     isins = set()
     for rows in (history_wp or {}).values():
         for w in rows or []:
@@ -58,6 +57,23 @@ def unnamed(history_wp: Dict[str, list], snapshots_wp: Dict[str, dict], seen_nam
             isins.update(k for k in (vals or {}) if not k.startswith("n:"))
     skip = named | {str(x).upper() for x in done}
     return sorted(i for i in isins if i not in skip and valid_isin(i))
+
+
+def set_names(found: dict, names: Dict[str, str]) -> None:
+    """Names changed by hand in the list of looked-up ISINs: only ISINs already in the list; an empty name means none."""
+    known = set(found.get("namen") or {}) | set(found.get("ohne") or [])
+    namen, ohne = dict(found.get("namen") or {}), set(found.get("ohne") or [])
+    for isin, name in (names or {}).items():
+        isin, name = str(isin).strip().upper(), str(name or "").strip()[:120]
+        if isin not in known:
+            continue
+        if name:
+            namen[isin] = name
+            ohne.discard(isin)
+        else:
+            namen.pop(isin, None)
+            ohne.add(isin)
+    found["namen"], found["ohne"] = namen, sorted(ohne)
 
 
 def _post(jobs: list) -> list:

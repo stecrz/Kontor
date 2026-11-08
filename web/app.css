@@ -250,6 +250,8 @@ td.flash, th.flash { animation:colflash 1.4s ease-out; }
 .xlsx { background:var(--group); color:var(--fg); border:1px solid var(--line); }
 .xlsx::before { content:"⤓ "; }
 .view-btns { display:inline-flex; gap:6px; }
+.wp-edit { display:flex; flex-direction:column; gap:4px; margin:8px 0; max-height:320px; overflow:auto; }
+.wp-edit label { display:grid; grid-template-columns:120px minmax(0, 1fr); gap:8px; align-items:center; }
 .view-btns button { display:inline-flex; align-items:center; gap:5px; }
 @media (max-width:600px) { .view-btns .lbl { display:none; } .view-btns button { padding:4px 8px; } }
 

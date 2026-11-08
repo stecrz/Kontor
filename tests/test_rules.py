@@ -438,13 +438,19 @@ class SecurityNameTests(unittest.TestCase):
         self.assertTrue(all(N.valid_isin(i) for b in sent for i in b)); self.assertEqual(sorted({i for b in sent for i in b}), ["DE0007164600", "IE00B4L5Y983", "US0378331005"])
         self.assertEqual(waits[0], 7.0); self.assertIn(N.PAUSE, waits)
 
-    def test_unnamed_leaves_out_named_own_and_done(self):
+    def test_unnamed_leaves_out_named_and_done(self):
         from security_names import unnamed
         hist = {"u1": [{"name": "", "isin": "IE00B4L5Y983"}, {"name": "Beispiel", "isin": "US0378331005"}]}
         snaps = {"2026-09": {"u1": {"DE0007164600": 1.0, "n:Fonds": 2.0, "US0378331005": 3.0}}}
-        self.assertEqual(unnamed(hist, snaps, {}, {}), ["DE0007164600", "IE00B4L5Y983"])
-        self.assertEqual(unnamed(hist, snaps, {"DE0007164600": "Aus dem Export"}, {}), ["IE00B4L5Y983"])
-        self.assertEqual(unnamed(hist, snaps, {}, {"IE00B4L5Y983": "Mein Name"}, ["DE0007164600"]), [])
+        self.assertEqual(unnamed(hist, snaps, {}), ["DE0007164600", "IE00B4L5Y983"])
+        self.assertEqual(unnamed(hist, snaps, {"DE0007164600": "Aus dem Export"}), ["IE00B4L5Y983"])
+        self.assertEqual(unnamed(hist, snaps, {}, ["DE0007164600", "IE00B4L5Y983"]), [])
+
+    def test_names_changed_by_hand_only_for_looked_up_isins(self):
+        from security_names import set_names
+        found = {"namen": {"IE00B4L5Y983": "ISHARES CORE MSCI WORLD"}, "ohne": ["DE0007164600"]}
+        set_names(found, {"ie00b4l5y983": "", "DE0007164600": " Mein Fonds ", "US0378331005": "Nicht gesucht"})
+        self.assertEqual(found, {"namen": {"DE0007164600": "Mein Fonds"}, "ohne": ["IE00B4L5Y983"]})
 
     def test_shown_name_keeps_moneymoneys_name_and_isin(self):
         from datetime import date as D
@@ -455,9 +461,8 @@ class SecurityNameTests(unittest.TestCase):
                                            {"name": "Beispiel", "isin": "US0378331005", "werte": {"2026-09": 50.0}},
                                            {"name": "", "isin": "DE0007164600", "werte": {"2026-09": 25.0}}]},
                  "wp_suche": {"namen": {"IE00B4L5Y983": "ISHARES CORE MSCI WORLD", "US0378331005": "NICHT GENUTZT"}}}
-        cfg = {"bilanz": {"wp_namen": {"US0378331005": "Mein Name"}}}
-        rows = {r["isin"]: r for r in depot_holdings(acc, {"2026-09": 175.0}, ["2026-09"], D(2026, 11, 8), state, None, cfg)}
+        rows = {r["isin"]: r for r in depot_holdings(acc, {"2026-09": 175.0}, ["2026-09"], D(2026, 11, 8), state, None, {})}
         a, b, c = rows["IE00B4L5Y983"], rows["US0378331005"], rows["DE0007164600"]
         self.assertEqual((a["name"], a["orig"], a["quelle"]), ("ISHARES CORE MSCI WORLD", "", "suche"))     # looked up: only without a name
-        self.assertEqual((b["name"], b["orig"], b["auto"], b["quelle"]), ("Mein Name", "Beispiel", "Beispiel", "eigen"))
+        self.assertEqual((b["name"], b["orig"], b["quelle"]), ("Beispiel", "Beispiel", ""))                  # MoneyMoney's name goes first
         self.assertEqual((c["name"], c["orig"], c["quelle"]), ("DE0007164600", "", ""))                      # nothing known: the ISIN
