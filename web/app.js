@@ -910,7 +910,7 @@ async function openHistDrawer(uuid, vorschau) {
   const d = $('#drawer');
   HD.uuid = uuid; HD.live = r.live;
   d.innerHTML = `<button class="close icon">✕</button><h2>${esc(k.name || r.name)}</h2>${holdingsBox(uuid)}
-    <div class="row tight"><span class="small muted">${t('verlauf_aus_0', hq('verlauf'))}</span><div class="seg" id="hq-seg"><button class="hq-q" data-q="umsaetze">${t('umsaetze_2')}</button><button class="hq-q" data-q="stand">${t('kontostaenden')}</button></div></div>
+    <div class="row tight"><span class="small muted">${t('verlauf_aus_0', hq('verlauf'))}</span><div class="seg" id="hq-seg"><button class="hq-q" data-q="umsaetze">${t('umsaetzen')}</button><button class="hq-q" data-q="stand">${t('kontostaenden')}</button></div></div>
     <div class="small muted" id="hq-erkl" style="margin:4px 0 8px"></div>
     <div id="hq-hinweis"></div><div id="hq-pending"></div>
     <div class="h-chart" id="h-chart"></div>
@@ -1156,9 +1156,9 @@ function bchDraw() {
   bchBind();
 }
 function bchWindow(d, m) {
-  // m Monate sichtbar; mit Plan endet der Ausschnitt ein Viertel davon nach heute, sonst heute
-  const last = d.months.length - 1, today = d.ist - 1, plan = planOn() ? Math.min(Math.round(m / 4), last - today) : 0;
-  const i1 = Math.min(last, today + plan), i0 = Math.max(0, i1 - m + 1);
+  // m months ending with the current month: "1 J" means the last twelve actual months (changes refer to exactly that);
+  // the plan is reached by swiping to the right or with "Alle"
+  const last = d.months.length - 1, i1 = Math.min(last, Math.max(0, d.ist - 1)), i0 = Math.max(0, i1 - m + 1);
   return [i0, Math.min(last, Math.max(i1, i0 + 2))];
 }
 function bchSet(i0, i1, btn) {
@@ -2025,12 +2025,31 @@ function collectRules() {
 function showFindings(el, befunde, extra, kind = 'hinweis') {
   el.innerHTML = (extra ? `<div class="${kind}">${esc(extra)}</div>` : '') + (befunde || []).map(f => `<div class="${f.stufe}">${esc(f.text)}</div>`).join('');
 }
+// After a change of address or port the service restarts. Same port: wait for the new process (other instance id), then
+// reload. New port: the page may only talk to its own address, so wait until the old process is gone, give the new one a
+// moment to listen, then open the same page under the new address (the old one no longer answers).
+async function restartTo(port, before) {
+  toast(t('kontor_startet_neu'), 60000);
+  const samePort = String(port) === (location.port || (location.protocol === 'https:' ? '443' : '80'));
+  const target = `${location.protocol}//${location.hostname}:${port}/${location.hash}`;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  for (let i = 0; i < 60; i++) {
+    await sleep(1000);
+    let j = null;
+    try { const r = await fetch('/api/session', {credentials: 'same-origin', cache: 'no-store', headers: {'X-Kontor-Net': 'direct'}}); j = r.ok ? await r.json() : {}; } catch (e) { j = null; }
+    if (samePort && j && j.instanz && j.instanz !== before) { location.reload(); return; }
+    if (!samePort && (!j || (j.instanz && j.instanz !== before))) { await sleep(2500); location.href = target; return; }
+  }
+  if (samePort) location.reload(); else location.href = target;
+}
 async function saveConfig(cfg, findingsEl, trotzdem) {
   try {
     const r = await api('/api/config', {config: cfg, trotzdem: !!trotzdem}, 'PUT');
     DIRTY.on = false;
     const probleme = (r.befunde || []).filter(f => f.stufe !== 'ok');      // erfolgreich gepruefte Verweise nicht einzeln auflisten
-    S.CFG = r.config; if (((r.config.oberflaeche || {}).sprache || 'de') !== LANG) { setLang(r.config.oberflaeche.sprache); return true; }
+    S.CFG = r.config;
+    if (r.neustart) { restartTo(r.port, r.instanz); return true; }
+    if (((r.config.oberflaeche || {}).sprache || 'de') !== LANG) { setLang(r.config.oberflaeche.sprache); return true; }
     showFindings(findingsEl, probleme, t('gespeichert_2') + (S.KONTEN.length ? '' : t('noch_nicht_gegen_moneymoney_geprueft')), 'ok'); toast(t('gespeichert'));
     S.STATUS = await api('/api/status'); statusMini();
     return true;
@@ -2314,17 +2333,13 @@ async function vEinstellungenZugang() {
 }
 function bindZugang(main) {
   const msg = (txt, cls) => { const el = $('#fz-msg', main); if (el) showFindings(el, [], txt, cls); else toast(txt, 8000); };
-  const restartWait = async () => {
-    // Dienst startet mit der neuen Adresse neu: warten, bis er wieder antwortet, dann neu laden
-    toast(t('kontor_startet_neu'), 15000);
-    for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 1000)); try { const r = await fetch('/api/session', {credentials: 'same-origin'}); if (r.ok) { location.reload(); return; } } catch (e) {} }
-    location.reload();
-  };
+  // the service restarts with the new address: wait for the *new* process (see restartTo), then reload
+  const restartWait = before => { msg(t('kontor_startet_neu'), 'hinweis'); return restartTo(location.port || (location.protocol === 'https:' ? 443 : 80), before); };
   const act = async (aktion, extra = {}) => {
-    try { const r = await api('/api/remote', Object.assign({aktion}, extra)); if (!r.ok) { msg(r.text, 'fehler'); return; } if (r.neustart) return restartWait(); S.CFG = await api('/api/config'); route(); }
+    try { const r = await api('/api/remote', Object.assign({aktion}, extra)); if (!r.ok) { msg(r.text, 'fehler'); return; } if (r.neustart) return restartWait(r.instanz); S.CFG = await api('/api/config'); route(); }
     catch (e) { msg(e.message, 'fehler'); }
   };
-  const on = $('#fz-ein', main); if (on) on.addEventListener('click', () => { on.disabled = true; on.classList.add('busy'); act('ein').finally(() => { on.disabled = false; on.classList.remove('busy'); }); });
+  const on = $('#fz-ein', main); if (on) on.addEventListener('click', () => { on.disabled = true; on.classList.add('busy'); msg(t('fern_zertifikat_wird_geholt'), 'hinweis'); act('ein').finally(() => { on.disabled = false; on.classList.remove('busy'); }); });
   const onh = $('#fz-ein-http', main); if (onh) onh.addEventListener('click', () => { if (confirm(t('ohne_zertifikat_frage'))) act('ein_http'); });
   const off = $('#fz-aus', main); if (off) off.addEventListener('click', () => { if (confirm(t('zugriff_ausschalten_frage'))) act('aus'); });
   const rc = $('#fz-recheck', main); if (rc) rc.addEventListener('click', async () => { rc.classList.add('busy'); try { await api('/api/remote?fresh=1'); } catch (e) {} route(); });

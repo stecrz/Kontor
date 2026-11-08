@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.9.33 (2026-11-08)
+- „Zugriff einschalten“: Die Seite wartet jetzt auf den neu gestarteten Dienst und lädt dann selbst neu (vorher konnte sie zu früh neu laden und hängen bleiben). Während das Zertifikat geholt wird, steht ein Hinweis da.
+- Port oder Adresse ändern (Einstellungen → Zugang → Erweitert): Kontor prüft, ob der Port frei ist, startet neu und öffnet die Seite unter dem neuen Port; die iPhone-Adresse nutzt ihn ebenfalls. Nur am Mac.
+- Bilanz-Grafiken: 1/3/10 J zeigen genau so viele Monate bis heute (ohne Plan), die Veränderung bezieht sich damit auf den ganzen Zeitraum; der Plan bleibt per Wischen nach rechts oder „Alle“ erreichbar.
+- Tailscale-Abfrage schneller und ohne Warten beim Öffnen der Seite.
+- „Verlauf aus Umsätzen“ statt „Umsätze“.
+
 ## 3.9.32 (2026-11-08)
 - Zugriff vom iPhone: Kontor fragt Tailscale jetzt direkt über dessen lokale Schnittstelle ab (wie Tailscales eigenes Kommandozeilenprogramm) und holt auch das Zertifikat so. Behebt „The Tailscale GUI failed to start“, wenn das Programm in Tailscale.app aus dem Hintergrunddienst nicht startet. Schlägt beides fehl, nennt Kontor beide Gründe.
 

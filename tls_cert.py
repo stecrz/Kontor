@@ -75,8 +75,11 @@ def localapi_endpoint() -> Optional[Tuple[int, str]]:
             return int(port), f.read().strip()
     except (OSError, ValueError):
         pass
+    lsof = shutil.which("lsof") or "/usr/sbin/lsof"
     try:                                                  # App Store variant: the extension keeps the proof file open
-        out = subprocess.run([shutil.which("lsof") or "/usr/sbin/lsof", "-n", "-a", "-c", "IPNExtension", "-F", "n"], capture_output=True, text=True, timeout=10).stdout
+        pids = subprocess.run(["pgrep", "-x", "IPNExtension"], capture_output=True, text=True, timeout=5).stdout.split()
+        sel = ["-p", ",".join(pids)] if pids else ["-c", "IPNExtension"]   # only that process: much faster than scanning all
+        out = subprocess.run([lsof, "-n", "-P", "-a"] + sel + ["-F", "n"], capture_output=True, text=True, timeout=10).stdout
     except (OSError, subprocess.TimeoutExpired):
         return None
     return parse_proof(out)

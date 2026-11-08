@@ -119,10 +119,10 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat, mit
 ![Bilanz](img/de/balance_sheet.png)
 
 - **Blass**: der laufende Monat und das laufende Jahr (noch nicht abgeschlossen); **blass und schraffiert**: Planwerte.
-- **Grafik**: Zusammensetzung des Vermögens in den Farben der Positionen, schwarz das Nettovermögen (gestrichelt: Plan). Zeitraum 1/3/10 Jahre, alles oder eine Monatszahl; waagerecht wischen verschiebt, mit zwei Fingern zoomen, Doppelklick vergrößert, Klick springt zur Spalte. Aufgeklappte Positionen zeigen ihre Konten als Abstufungen der Farbe.
+- **Grafik**: Zusammensetzung des Vermögens in den Farben der Positionen, schwarz das Nettovermögen (gestrichelt: Plan). Zeitraum 1/3/10 Jahre (jeweils bis heute), alles oder eine Monatszahl; waagerecht wischen verschiebt, mit zwei Fingern zoomen, Doppelklick vergrößert, Klick springt zur Spalte. Aufgeklappte Positionen zeigen ihre Konten als Abstufungen der Farbe.
 - **Geldtransit**: Liegen die beiden Buchungen einer Umbuchung zwischen eigenen Konten in verschiedenen Monaten (am 31. abgebucht, am 1. gutgeschrieben), zählt der Betrag am Monatsende als „Geldtransit“ zum Bankguthaben – sonst sähe das Nettovermögen kurz zu niedrig aus. Ein Klick zeigt die erkannten Buchungspaare.
 - **Monate oder Jahre**: Jahresspalten zeigen Bestände zum Jahresende.
-- **Einzelne Kurven** (unter der Tabelle): links das Nettovermögen allein, rechts die Summe frei gewählter Positionen (Standard: Bankguthaben, handelbare und gebundene Anlagen). Beide haben einen eigenen Zeitraum (1/3/10 Jahre, alles; Ziehen vergrößert, Doppelklick zoomt) und eine Achse, die sich den sichtbaren Werten anpasst – so sieht man die Entwicklung auch dann, wenn sich große Positionen wie Forderungen und Verbindlichkeiten in der Grafik oben gegenseitig ausgleichen. Oben steht der aktuelle Wert und die Veränderung im gewählten Zeitraum.
+- **Einzelne Kurven** (unter der Tabelle): links das Nettovermögen allein, rechts die Summe frei gewählter Positionen (Standard: Bankguthaben, handelbare und gebundene Anlagen). Beide haben einen eigenen Zeitraum (1/3/10 Jahre bis heute, alles; Ziehen vergrößert, Doppelklick zoomt, nach rechts wischen zeigt den Plan) und eine Achse, die sich den sichtbaren Werten anpasst – so sieht man die Entwicklung auch dann, wenn sich große Positionen wie Forderungen und Verbindlichkeiten in der Grafik oben gegenseitig ausgleichen. Oben steht der aktuelle Wert und die Veränderung im gewählten Zeitraum.
 
 <a id="cash-flow"></a>
 ## Kapitalfluss

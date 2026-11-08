@@ -69,6 +69,7 @@ def merged_config(cfg: Optional[dict]) -> dict:
     for k, v in cfg.items():
         if k not in out:
             out[k] = v
+    out["zeitplan"].pop("voll_lesen_stunden", None)       # replaced by voll_lesen_tage (3.9.30)
     for i, b in enumerate(out["bereiche"]):
         b.setdefault("id", "b%d" % (i + 1))
         b.setdefault("name", "Bereich %d" % (i + 1))

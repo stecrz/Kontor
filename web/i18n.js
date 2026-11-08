@@ -2,6 +2,9 @@
    Genutzt von der Oberflaeche (app.js: t()) und vom Dienst (i18n.py: tr()). */
 'use strict';
 const I18N = {
+"s_port_belegt":["Port {0} ist schon belegt – bitte einen anderen wählen.", "Port {0} is already in use – please choose another one."],
+"s_port_ungueltig":["Der Port muss zwischen 1024 und 65535 liegen.", "The port must be between 1024 and 65535."],
+"fern_zertifikat_wird_geholt":["Kontor holt das Zertifikat bei Tailscale – beim ersten Mal kann das bis zu einer Minute dauern, danach startet Kontor neu.", "Kontor is fetching the certificate from Tailscale – the first time this can take up to a minute, then Kontor restarts."],
 "lc_nw_tip":["Das Nettovermögen enthält alle diese Positionen (Verbindlichkeiten abgezogen).", "Net worth contains all of these positions (liabilities subtracted)."],
 "lc_summe_auswahl":["Summe der Auswahl", "Sum of selection"],
 "lc_seit_0":["seit {0}", "since {0}"],
@@ -579,7 +582,7 @@ const I18N = {
 "offline_kopie_erlauben":["iPhone darf die zuletzt geladenen Daten behalten (lesbar, wenn der Mac nicht erreichbar ist)", "iPhone may keep the last loaded data (readable when the Mac is not reachable)"],
 "am_mac":["Am Mac", "On the Mac"],
 "erweitert_adresse_port":["Erweitert: Adresse, Port, Zertifikat von Hand", "Advanced: address, port, certificate manually"],
-"adresse_port_neustart":["Gilt nach einem Neustart des Dienstes. Erlaubt sind nur dieser Mac (127.0.0.1) oder eine Tailscale-Adresse (100.64.0.0/10) – nie das offene Netz. Normalerweise stellt „Zugriff einschalten“ das passend ein.", "Applies after restarting the service. Only this Mac (127.0.0.1) or a Tailscale address (100.64.0.0/10) are allowed – never the open network. Normally “Turn on access” sets this for you."],
+"adresse_port_neustart":["Nach dem Speichern startet Kontor neu und öffnet diese Seite unter der neuen Adresse. Lesezeichen und als App abgelegte Kontor-Seiten (Dock, iPhone) zeigen danach auf die alte Adresse und müssen neu angelegt werden. Erlaubt sind nur dieser Mac (127.0.0.1) oder eine Tailscale-Adresse – nie das offene Netz. Normalerweise stellt „Zugriff einschalten“ das passend ein.", "After saving, Kontor restarts and opens this page under the new address. Bookmarks and Kontor pages saved as apps (Dock, iPhone) then point to the old address and must be created again. Only this Mac (127.0.0.1) or a Tailscale address is allowed – never the open network. Normally “Turn on access” sets this up."],
 "kontor_startet_neu":["Kontor startet mit der neuen Einstellung neu …", "Kontor restarts with the new setting …"],
 "s_von_unterwegs_nur_ansehen":["Von unterwegs nur ansehen – Änderungen am Mac (Einstellungen → Zugang).", "View only remotely – make changes on the Mac (Settings → Access)."],
 "hilfe_durchsuchen":["Hilfe durchsuchen …", "Search help …"],

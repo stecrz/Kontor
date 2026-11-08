@@ -712,6 +712,35 @@ class AppTests(_AppBase):
         finally:
             MA.auth.is_loopback = orig
 
+    def test_port_aendern(self):
+        """Port change: only from the Mac, must be free and valid; the answer tells the page to follow to the new port."""
+        import socket
+        import service as MA
+        self.login()
+        cfg = copy.deepcopy(self.app.config)
+        busy = socket.socket(); busy.bind(("127.0.0.1", 0)); busy.listen(1)
+        try:
+            cfg["oberflaeche"]["port"] = busy.getsockname()[1]
+            code, r = self.call("/api/config", {"config": cfg}, method="PUT")
+            self.assertEqual(code, 409); self.assertIn(str(busy.getsockname()[1]), r["fehler"])
+        finally:
+            busy.close()
+        cfg["oberflaeche"]["port"] = 80
+        self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 400)
+        free = socket.socket(); free.bind(("127.0.0.1", 0)); port = free.getsockname()[1]; free.close()
+        cfg["oberflaeche"]["port"] = port
+        orig = MA.auth.is_loopback
+        MA.auth.is_loopback = lambda remote: False
+        try:
+            self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 403)    # not from the iPhone
+        finally:
+            MA.auth.is_loopback = orig
+        code, r = self.call("/api/config", {"config": cfg}, method="PUT")
+        self.assertEqual(code, 200); self.assertEqual(r["port"], port); self.assertTrue(r["instanz"])
+        self.assertFalse(r["neustart"])                                                       # no real restart in tests
+        self.assertEqual(self.app.config["oberflaeche"]["port"], port)
+        self.assertEqual(self.call("/api/session")[1]["instanz"], r["instanz"])
+
     def test_abruf_offline_erkennung(self):
         """MoneyMoney setzt den Abrufzeitpunkt auch bei Offline-Konten: Regelziele und Konten ohne Nummern zaehlen nicht fuer den Datenstand."""
         self.login(); self.run_and_wait()

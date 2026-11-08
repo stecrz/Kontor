@@ -119,10 +119,10 @@ The balance sheet shows the assets of an area by position, month by month, with 
 ![Balance sheet](img/en/balance_sheet.png)
 
 - **Faded**: the current month and the current year (not finished yet); **faded and hatched**: plan values.
-- **Chart**: composition of assets in the colours of the positions, black the net worth (dashed: plan). Range 1/3/10 years, all or a number of months; swipe horizontally to pan, pinch to zoom, double-click to enlarge, click to jump to the column. Expanded positions show their accounts as shades of the colour.
+- **Chart**: composition of assets in the colours of the positions, black the net worth (dashed: plan). Range 1/3/10 years (each up to today), all or a number of months; swipe horizontally to pan, pinch to zoom, double-click to enlarge, click to jump to the column. Expanded positions show their accounts as shades of the colour.
 - **Cash in transit**: if the two bookings of a transfer between own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” under cash at month end – otherwise net worth would briefly look too low. A click shows the detected pairs.
 - **Months or years**: year columns show balances at year end.
-- **Single curves** (below the table): on the left net worth alone, on the right the sum of freely chosen positions (default: cash, tradable and fixed-term investments). Both have their own range (1/3/10 years, all; drag to enlarge, double-click to zoom) and an axis that fits the visible values – so the development shows even when large positions such as receivables and liabilities cancel each other out in the chart above. The current value and the change over the chosen range are shown at the top.
+- **Single curves** (below the table): on the left net worth alone, on the right the sum of freely chosen positions (default: cash, tradable and fixed-term investments). Both have their own range (1/3/10 years up to today, all; drag to enlarge, double-click to zoom, swipe right for the plan) and an axis that fits the visible values – so the development shows even when large positions such as receivables and liabilities cancel each other out in the chart above. The current value and the change over the chosen range are shown at the top.
 
 <a id="cash-flow"></a>
 ## Cash flow

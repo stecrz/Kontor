@@ -18,6 +18,7 @@ import copy
 import ipaddress
 import json
 import re
+import secrets
 import logging
 import mimetypes
 import os
@@ -105,6 +106,7 @@ class App:
         st = store.load("state.json", {}) or {}
         self.categories_raw: list = mm_categories.with_paths(st.get("kategorien_roh") or [])
         self.started = datetime.now()
+        self.instance = secrets.token_hex(6)              # changes with every (re)start; the page waits for a new one after a restart
         self.last_run_at: Optional[float] = None
         self.last_result: Optional[dict] = None
         self.running = False
@@ -420,11 +422,22 @@ class App:
         return bool((self.config.get("oberflaeche") or {}).get("offline_kopie", True))
 
     def tailscale(self, fresh: bool = False) -> dict:
+        """Tailscale state (tls_cert.status). Older than 30 s: answer with the last state and refresh in the background, so a
+        page never waits for Tailscale; fresh=True (or nothing known yet) asks right away."""
         import tls_cert
         t0, st = self._ts_cache
-        if fresh or time.time() - t0 > 30:
+        if fresh or not t0:
             st = tls_cert.status()
             self._ts_cache = (time.time(), st)
+        elif time.time() - t0 > 30 and not getattr(self, "_ts_refreshing", False):
+            self._ts_refreshing = True
+
+            def refresh():
+                try:
+                    self._ts_cache = (time.time(), tls_cert.status())
+                finally:
+                    self._ts_refreshing = False
+            threading.Thread(target=refresh, daemon=True).start()
         return st
 
     def remote_info(self) -> dict:
@@ -1177,7 +1190,7 @@ def make_handler(app: App):
                                         "einrichtung_nur_lokal": not rec and not self._loopback(),
                                         "touchid": auth.touchid_available() and self._loopback() and app.touchid_on(),
                                         "touchid_verfuegbar": auth.touchid_available() and self._loopback(),
-                                        "gesperrt_sekunden": app.sessions.locked(self._remote()), "lokal": self._loopback(),
+                                        "gesperrt_sekunden": app.sessions.locked(self._remote()), "lokal": self._loopback(), "instanz": app.instance,
                                         "offline_kopie": app.offline_copy(), "version": version()})
             s = self._session()
             if s is None:
@@ -1594,13 +1607,29 @@ def make_handler(app: App):
                 b = (cfg.get("oberflaeche") or {}).get("bind", "127.0.0.1") or "127.0.0.1"
                 if not bind_allowed(b):
                     return self._json(400, {"fehler": tr("s_adresse_s_nicht_erlaubt_nur") % b})
+                # address, port and certificate: only on the Mac; a new port must be free; afterwards restart on it
+                old_ui, new_ui = app.config.get("oberflaeche") or {}, cfg.get("oberflaeche") or {}
+                net_keys = ("bind", "port", "tls_cert", "tls_key")
+                net_changed = any((old_ui.get(k) or "") != (new_ui.get(k) or "") for k in net_keys if k != "port") or \
+                    int(old_ui.get("port") or 8765) != int(new_ui.get("port") or 8765)
+                if net_changed and not local:
+                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+                new_port = int(new_ui.get("port") or 8765)
+                if not 1024 <= new_port <= 65535:
+                    return self._json(400, {"fehler": tr("s_port_ungueltig")})
+                if new_port != int(old_ui.get("port") or 8765) and not port_free(new_port):
+                    return self._json(409, {"fehler": tr("s_port_belegt", new_port)})
                 findings = check_config(app.ledger, app.categories_raw, merged_config(cfg)) if app.ledger is not None else []
                 if any(f["stufe"] == "fehler" for f in findings) and not body.get("trotzdem"):
                     return self._json(409, {"fehler": tr("s_konfiguration_hat_fehler"), "befunde": findings})
                 app.save_config(cfg)
                 log.info("Configuration saved (%d loans, %d participations, %d mirrors)",
                          len(app.config.get("darlehen") or []), len(app.config.get("beteiligungen") or []), len(app.config.get("saldo_spiegel") or []))
-                return self._json(200, {"ok": True, "befunde": findings, "config": app.config})
+                if net_changed:
+                    log.info("Address or port changed -- restarting on port %d", new_port)
+                    app.request_restart()
+                return self._json(200, {"ok": True, "befunde": findings, "config": app.config, "neustart": net_changed and app.restart_allowed,
+                                        "port": new_port, "instanz": app.instance})
             if path == "/api/check":
                 if not app.check_lock.acquire(blocking=False):
                     return self._json(409, {"fehler": tr("s_die_pruefung_laeuft_bereits_bitte")})
@@ -1809,7 +1838,7 @@ def make_handler(app: App):
             log.info("Remote access settings changed: %s", aktion)
             if neustart:
                 app.request_restart()
-            return self._json(200, {"ok": True, "neustart": neustart and app.restart_allowed, "info": app.remote_info()})
+            return self._json(200, {"ok": True, "neustart": neustart and app.restart_allowed, "instanz": app.instance, "info": app.remote_info()})
 
         def _belege(self, path: str, body: dict, local: bool):
             bl = Belege(app.store, app.config)
@@ -2276,6 +2305,20 @@ def make_handler(app: App):
 
 
 BACKUP_ITER = 600_000
+
+
+def port_free(port: int) -> bool:
+    """Can Kontor listen on 127.0.0.1:port? (checked before switching, so the service never restarts onto a busy port)"""
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
 
 
 def help_image_sizes(text: str) -> Dict[str, List[int]]:
