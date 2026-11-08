@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.10.5 (2026-11-08 13:15)
+- Historische Kontostände: Depots, bei denen MoneyMoney zusätzlich den Depotwert insgesamt aufzeichnet (z. B. Trade Republic), wurden doppelt gezählt. Dieser Eintrag gilt jetzt allein. Bitte die Kontostände einmal neu einlesen.
+
 ## 3.10.4 (2026-11-08 04:59)
 - „An Tabelle ausrichten“: Die Grafik nutzt links die volle Breite – über den Zeilenüberschriften der Tabelle zeigt sie die Monate davor.
 

@@ -19,6 +19,7 @@ Datenbank (SQLCipher, verschluesselt mit dem MoneyMoney-Passwort). Der Weg ist b
 """
 from __future__ import annotations
 
+import bisect
 import ctypes
 import ctypes.util
 import gc
@@ -474,25 +475,28 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
         level_now = sum(r[-1][1] for sk, r in per.items() if sk in now)
         delta_now = sum(v for r in per.values() for _d, v in r)
         fits = lambda x: abs(x - bal) <= max(1.0, 0.02 * abs(bal))
-        art = "level" if fits(level_now) else "delta" if fits(delta_now) else None
+        # a series that carries the portfolio value as a whole (= sum of the other securities), held or not: if there is one,
+        # it alone gives the value – otherwise it would be counted on top of the securities (twice the value)
+        idx = {sk: ([d for d, _v in r], [v for _d, v in r]) for sk, r in per.items()}
+        last_any = max(r[-1][0] for r in per.values())
+
+        def others_at(skip: int, d: date) -> float:
+            tot = 0.0
+            for o, (ds, vs) in idx.items():
+                j = bisect.bisect_right(ds, d) - 1
+                if o != skip and j >= 0 and (o in now or ds[-1] >= d):
+                    tot += vs[j]
+            return tot
         total_key, check = None, ""
-        if art is None and fits(level_now / 2):
-            # doppelt: ein Eintrag fuehrt den Depotwert insgesamt (Summe der uebrigen). Er gilt, wenn er ueber seinen ganzen
-            # Verlauf zur Summe der uebrigen Wertpapiere passt (mindestens 70 % der Punkte, 5 % Abstand)
-            def others_at(skip: int, d: date) -> float:
-                tot = 0.0
-                for o, r in per.items():
-                    upto = [v for dd, v in r if dd <= d]
-                    if o != skip and upto and (o in now or r[-1][0] >= d):
-                        tot += upto[-1]
-                return tot
-            for sk in sorted((sk for sk in now if fits(per[sk][-1][1])), key=lambda sk: per[sk][0][0]):
-                pts = per[sk]
+        if len(per) > 1:
+            for sk in sorted((sk for sk, r in per.items() if fits(r[-1][1]) and (last_any - r[-1][0]).days <= 7), key=lambda sk: per[sk][0][0]):
+                pts = per[sk][::max(1, len(per[sk]) // 300)]           # at most about 300 points to compare
                 hits = sum(1 for d, v in pts if abs(others_at(sk, d) - v) <= max(1.0, 0.05 * abs(v)))
                 check = "total entry matches the other securities at %d %% of its points" % round(100.0 * hits / len(pts))
                 if hits >= 0.7 * len(pts):
-                    art, total_key = "total", sk
+                    total_key = sk
                     break
+        art = "total" if total_key is not None else "level" if fits(level_now) else "delta" if fits(delta_now) else None
         if art is None:
             pct = lambda x: "%d %%" % round(100.0 * x / bal) if abs(bal) >= 1.0 else "-"
             price_now = sum(r[-1][1] * qty[sk] for sk, r in per.items() if sk in now and sk in qty)
@@ -520,6 +524,7 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
                     total += upto[-1]
             werte["%04d-%02d" % (y, m)] = round(total, 2)
             y, m = nxt.year, nxt.month
+        log.debug("Portfolio %d: %d series, read as %s", k, len(recs[k]), art)
         out[k] = {"werte": werte, "anfang": 0.0, "art": "level" if art == "total" else art}
     return out
 
