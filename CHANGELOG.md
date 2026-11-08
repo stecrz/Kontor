@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.10.3 (2026-11-08 04:54)
+- Kürzel im Titel von „Auswahl“ erklärt: Darüberfahren (am iPhone Tippen) zeigt „C = Bankguthaben · WP = Wertpapiere …“; der Titel ist dafür fein unterstrichen.
+- Kürzel für Bankguthaben: „C“ (Cash), in beiden Sprachen.
+
 ## 3.10.2 (2026-11-08 04:53)
 - Kleine Grafik „Auswahl“: Titel wieder mit „Auswahl:“ davor („Auswahl: BG + WP + FA“).
 - Kürzel: Beteiligungen „PE“ (Private Equity), Immobilien „RE“ (Real Estate), in beiden Sprachen.

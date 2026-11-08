@@ -166,7 +166,7 @@ document.addEventListener('click', e => {
   const q = e.target.closest('.hq[data-help]'); if (!q || !matchMedia('(hover: hover)').matches) return;
   e.preventDefault(); e.stopPropagation(); location.hash = '#help/' + q.dataset.help;
 }, true);
-// Tooltip als eigenes Element: unterhalb, wenn oben kein Platz ist; nie ueber den Fensterrand hinaus
+// Tooltip als eigenes Element: unterhalb, wenn oben kein Platz ist; nie ueber den Fensterrand hinaus (for "?" and other .tipped elements)
 (function tooltips() {
   let tip = null, cur = null, shownAt = 0;
   const hide = () => { if (tip) tip.remove(); tip = null; cur = null; };
@@ -182,12 +182,12 @@ document.addEventListener('click', e => {
   };
   let touch = false;                        // after a tap the browser also sends mouse events; those must not hide the tip again
   document.addEventListener('pointerdown', e => { touch = e.pointerType === 'touch'; }, true);
-  document.addEventListener('mouseover', e => { if (touch) return; const el = e.target.closest && e.target.closest('.hq'); if (el && el !== cur) show(el); });
-  document.addEventListener('mouseout', e => { if (touch) return; const el = e.target.closest && e.target.closest('.hq'); if (el && el === cur && !(e.relatedTarget && el.contains(e.relatedTarget))) hide(); });
-  document.addEventListener('focusin', e => { const el = e.target.closest && e.target.closest('.hq'); if (el) show(el); });
-  document.addEventListener('focusout', e => { if (e.target.closest && e.target.closest('.hq')) hide(); });
+  document.addEventListener('mouseover', e => { if (touch) return; const el = e.target.closest && e.target.closest('.hq, .tipped'); if (el && el !== cur) show(el); });
+  document.addEventListener('mouseout', e => { if (touch) return; const el = e.target.closest && e.target.closest('.hq, .tipped'); if (el && el === cur && !(e.relatedTarget && el.contains(e.relatedTarget))) hide(); });
+  document.addEventListener('focusin', e => { const el = e.target.closest && e.target.closest('.hq, .tipped'); if (el) show(el); });
+  document.addEventListener('focusout', e => { if (e.target.closest && e.target.closest('.hq, .tipped')) hide(); });
   document.addEventListener('click', e => {
-    const el = e.target.closest && e.target.closest('.hq'); if (!el) { hide(); return; }
+    const el = e.target.closest && e.target.closest('.hq, .tipped'); if (!el) { hide(); return; }
     e.preventDefault();
     if (cur === el && tip && Date.now() - shownAt > 400) { hide(); if (el.dataset.help) location.hash = '#help/' + el.dataset.help; }   // second tap
     else if (cur !== el || !tip) show(el);
@@ -1490,7 +1490,7 @@ function lcSelTitle(sel, avail) {
   if (!s.length) return [t('lc_summe_auswahl'), ''];
   if (s.length === avail.length && avail.length > 1) return [t('lc_auswahl_0', t('nettovermoegen')), full];
   if (s.length === 1) return [t('lc_auswahl_0', ROLE[s[0]][0]), ''];
-  return [t('lc_auswahl_0', s.map(r => POS_KURZ[r] || ROLE[r][0]).join('\u2009+\u2009')), full];
+  return [t('lc_auswahl_0', s.map(r => POS_KURZ[r] || ROLE[r][0]).join('\u2009+\u2009')), s.map(r => `${POS_KURZ[r]} = ${ROLE[r][0]}`).join(' · ')];   // tip explains the codes
 }
 const POS_KURZ = {liquiditaet: t('kurz_liquiditaet'), wertpapiere: t('kurz_wertpapiere'), anlagen: t('kurz_anlagen'), immobilien: t('kurz_immobilien'), beteiligungen: t('kurz_beteiligungen'),
   sachwerte: t('kurz_sachwerte'), forderungen: t('kurz_forderungen'), sonstiges: t('kurz_sonstiges'), verbindlichkeiten: t('kurz_verbindlichkeiten')};
@@ -1548,7 +1548,7 @@ function vBilanzLines(D) {
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
   return `<div class="cards lc-grid" id="lc-grid">
     <div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}${plot('nw')}<div class="lc-stats" id="lc-nw-stats"></div></div>
-    <div class="card bch lc" data-lc="sel">${head('sel', (([tx, tip]) => `<span id="lc-sel-title" title="${esc(tip)}">${esc(tx)}</span>`)(lcSelTitle(sel, avail)))}${plot('sel')}<div class="lc-chips below" id="lc-chips">${chips}</div></div>
+    <div class="card bch lc" data-lc="sel">${head('sel', (([tx, tip]) => `<span id="lc-sel-title" class="${tip ? 'tipped' : ''}" data-tip="${esc(tip)}" tabindex="0">${esc(tx)}</span>`)(lcSelTitle(sel, avail)))}${plot('sel')}<div class="lc-chips below" id="lc-chips">${chips}</div></div>
     <div class="card bch lc" data-lc="pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select>`)}${plot('pos')}<div class="lc-legend" id="lc-pos-legend"></div></div>
   </div>`;
 }
@@ -1732,7 +1732,7 @@ function bindBilanzLines(main) {
     const sel = $$('#lc-chips input:checked', grid).map(x => x.dataset.r);
     try { localStorage.setItem('kontor.lcSel', JSON.stringify(sel)); } catch (e) {}
     const keep = LC.sel ? [LC.sel.i0, LC.sel.i1, LC.sel.btn] : null, [tx, tip] = lcSelTitle(sel, lcSelection(D).avail), te = $('#lc-sel-title', grid);
-    if (te) { te.textContent = tx; te.title = tip; }
+    if (te) { te.textContent = tx; te.dataset.tip = tip; te.classList.toggle('tipped', !!tip); }
     lcInit('sel', D, sel, sel.map(r => ROLE[r][0]).join(' + '), lcMix(sel));
     if (keep) Object.assign(LC.sel, {i0: keep[0], i1: keep[1], f0: keep[0], f1: keep[1], btn: keep[2]});
     lcDraw('sel');

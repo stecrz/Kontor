@@ -37,7 +37,7 @@ const I18N = {
 "fern_zertifikat_wird_geholt":["Kontor holt das Zertifikat bei Tailscale – beim ersten Mal kann das bis zu einer Minute dauern, danach startet Kontor neu.", "Kontor is fetching the certificate from Tailscale – the first time this can take up to a minute, then Kontor restarts."],
 "lc_summe_auswahl":["Auswahl", "Selection"],
 "lc_auswahl_0":["Auswahl: {0}", "Selection: {0}"],
-"kurz_liquiditaet":["BG", "C"],
+"kurz_liquiditaet":["C", "C"],
 "kurz_wertpapiere":["WP", "S"],
 "kurz_anlagen":["FA", "TI"],
 "kurz_immobilien":["RE", "RE"],
