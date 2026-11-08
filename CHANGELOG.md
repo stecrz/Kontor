@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.9.43 (2026-11-08 03:58)
+- „An Tabelle ausrichten“: Die Skala passt sich den sichtbaren Spalten an (Ausreißer weiter links verzerren nichts mehr).
+- Kleine Grafiken: Achse nur so breit wie ihre Beschriftung. Nettovermögen zeigt darunter Ø je Monat, Höchst- und Tiefststand im Zeitraum.
+- Farben: Forderungen in Goldgelb (statt Rosa), Immobilien dafür in Braun.
+- Zeitraum-Knöpfe je nach Ansicht: Monate 6 M, 1 J, 2 J (Standard 2 J), Jahre 1 J, 3 J, 10 J (Standard 3 J); große Grafik zusätzlich „Alle“. „Alle“ bleibt jetzt auch nach dem Neuaufbau erhalten.
+- Bilanz, Monatsansicht: keine Jahresspalten mehr (sie wiederholten nur den Dezember bzw. den laufenden Monat); ein feiner Strich trennt die Jahre.
+
 ## 3.9.42 (2026-11-08 03:41)
 - Bilanz: „An Tabelle ausrichten“ – die große Grafik steht Spalte für Spalte über der Tabelle (jeder Wert genau über seiner Spalte) und scrollt mit; ohne Werte-Fenster, Zeitraum folgt der Tabelle.
 - Kleine Grafiken: „seit …“ entfällt ganz; der Zeitraum oben rechts ist genau der Bezug von Wert (Ende) und Veränderung (Beginn).

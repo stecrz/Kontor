@@ -50,6 +50,7 @@ const Fk = (v, long, ref = v) => {
   return a >= 1e9 ? f(v / 1e9, 2) + u('mrd') : a >= 1e6 ? f(v / 1e6, 2) + u('mio') : a >= 1e4 ? f(v / 1e3, a < 1e5 ? 1 : 0) + u('tsd') : F0(v);
 };
 // ticks of an axis as [tick, largest tick] (an array of ticks or the arguments of niceTicks)
+const textW = (s, px = 11) => { const c = textW.c || (textW.c = document.createElement('canvas').getContext('2d')); c.font = `${px}px ${getComputedStyle(document.body).fontFamily}`; return c.measureText(s).width; };
 const axisTicks = (...a) => { const ts = Array.isArray(a[0]) ? a[0] : niceTicks(...a), r = Math.max(...ts.map(Math.abs)); return ts.map(v => [v, r]); };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const MONATE = LANG === 'en' ? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] : ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
@@ -58,7 +59,7 @@ const FD = d => (d && d.length >= 10) ? [d.slice(8, 10), d.slice(5, 7), d.slice(
 const FDT = d => FD(d) + (d && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(d) ? t('um_0_uhr', d.slice(11, 16)) : '');      // date, with time if known (changelog headings)
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
-const ROLE = {liquiditaet: [t('pos_bankguthaben'), 'var(--c-liq)'], wertpapiere: [t('pos_wertpapiere'), 'var(--c-anl)'], anlagen: [t('pos_gebundene_anlagen'), 'var(--c-fest)'], immobilien: [t('immobilien'), '#b8860b'],
+const ROLE = {liquiditaet: [t('pos_bankguthaben'), 'var(--c-liq)'], wertpapiere: [t('pos_wertpapiere'), 'var(--c-anl)'], anlagen: [t('pos_gebundene_anlagen'), 'var(--c-fest)'], immobilien: [t('immobilien'), 'var(--c-immo)'],
               beteiligungen: [t('beteiligungen'), 'var(--c-bet)'], sachwerte: [t('sachwerte'), '#8e8e93'], forderungen: [t('pos_forderungen'), 'var(--c-ford)'], sonstiges: [t('sonstiges'), '#636366'], verbindlichkeiten: [t('pos_verbindlichkeiten'), 'var(--c-verb)'],
               eigenkapital: [t('role_eigenkapital'), '#7d7aa8'], eventual: [t('role_eventual'), '#a8a29e'], ignorieren: [t('nicht_bilanzieren'), '#c7c7cc']};
 const ROLE_OPTS = [['liquiditaet', t('pos_bankguthaben')], ['wertpapiere', t('pos_wertpapiere')], ['anlagen', t('pos_gebundene_anlagen')], ['immobilien', t('immobilien')], ['beteiligungen', t('beteiligungen')], ['sachwerte', t('sachwerte')], ['forderungen', t('pos_forderungen')], ['sonstiges', t('sonstiges')], ['verbindlichkeiten', t('pos_verbindlichkeiten')], ['eigenkapital', t('kapitalkonten_eigenkapital_nicht_im_ne')], ['eventual', t('avale_buergschaften_nicht_im_nettoverm')], ['ignorieren', t('nicht_bilanzieren')]];
@@ -496,7 +497,8 @@ function bereichSeg() {
 }
 
 // ---------------------------------------------------------------- Spalten, Werte
-function cols(D) {
+function cols(D, stocks) {
+  // stocks (balance sheet): no year columns in the month view – a year column would only repeat December (or the current month)
   D = D || B(); const ist = D.monate, plan = planOn() ? (D.plan_monate || []) : [];
   const mcol = (m, isPlan) => ({key: m, label: ML(m), months: [m], plan: isPlan, cur: m === D.ist_bis, part: m === D.ist_bis, year: false});
   const all = [...ist.map(m => mcol(m, false)), ...plan.map(m => mcol(m, true))];
@@ -504,6 +506,7 @@ function cols(D) {
   for (const c of all) { const y = c.key.slice(0, 4); (years[y] = years[y] || {months: [], plan: false, ist: false}).months.push(c.key); if (c.plan) years[y].plan = true; else years[y].ist = true; }
   const ycol = y => ({key: y, label: (S.modus === 'jahre' ? y : 'Σ ' + y) + (years[y].plan && years[y].ist ? ' ' + t('ist_plan_kurz') : '') + (years[y].months.length < 12 ? ' · ' + years[y].months.length + t('mon') : ''), months: years[y].months, plan: years[y].plan && !years[y].ist, mixed: years[y].plan && years[y].ist, part: years[y].months.includes(D.ist_bis), cur: false, year: true});
   if (S.modus === 'jahre') return Object.keys(years).sort().map(ycol);
+  if (stocks) return all.map((c, i) => Object.assign(c, {jan: i > 0 && c.key.endsWith('-01')}));
   const out = [];
   for (const c of all) { out.push(c); if (c.key.endsWith('-12') || c.key === all[all.length - 1].key) out.push(ycol(c.key.slice(0, 4))); }
   return out;
@@ -515,10 +518,10 @@ function defl(m) {
 }
 const sumOver = (vals, months) => months.reduce((a, m) => a + (vals[m] ?? 0) * defl(m), 0);
 const lastOf = (vals, months) => { for (let i = months.length - 1; i >= 0; i--) if (vals[months[i]] != null) return vals[months[i]] * defl(months[i]); return null; };
-function cls(v, c) { let s = ''; if (c.plan) s += ' plan'; else if (c.part) s += ' part'; if (c.cur && S.modus !== 'jahre') s += ' cur'; if (c.year) s += ' year'; if (v == null || Math.abs(v) < 0.005) s += ' zero'; else s += v < 0 ? ' neg' : ' pos'; return s; }
+function cls(v, c) { let s = ''; if (c.plan) s += ' plan'; else if (c.part) s += ' part'; if (c.cur && S.modus !== 'jahre') s += ' cur'; if (c.year) s += ' year'; if (c.jan) s += ' ystart'; if (v == null || Math.abs(v) < 0.005) s += ' zero'; else s += v < 0 ? ' neg' : ' pos'; return s; }
 const cells = (C, fn) => C.map(c => { const v = fn(c); return `<td class="${cls(v, c)}">${F(v)}</td>`; }).join('');
 const isCurCol = c => { const D = B(), ib = (D && D.ist_bis) || ''; return c.year ? c.key === ib.slice(0, 4) && S.modus === 'jahre' : c.key === ib; };
-const thead = (first, C) => `<thead><tr><th>${first}</th>${C.map(c => `<th data-key="${c.key}" class="${c.year ? 'year' : ''}${c.plan ? ' plan' : ''}"${isCurCol(c) ? ' data-cur="1"' : ''} title="${c.plan ? t('plan') : c.mixed ? t('ist_plan') : t('ist')}">${c.label}</th>`).join('')}</tr></thead>`;
+const thead = (first, C) => `<thead><tr><th>${first}</th>${C.map(c => `<th data-key="${c.key}" class="${c.year ? 'year' : ''}${c.jan ? ' ystart' : ''}${c.plan ? ' plan' : ''}"${isCurCol(c) ? ' data-cur="1"' : ''} title="${c.plan ? t('plan') : c.mixed ? t('ist_plan') : t('ist')}">${c.label}</th>`).join('')}</tr></thead>`;
 const noData = `<div class="card"><div class="v s">${t('noch_keine_daten')}</div><div class="d">${t('unter_einrichtung_den_bericht_erstelle')}</div></div>`;
 const sumsOf = (D, name, months) => months.reduce((a, m) => a + (D.kapitalfluss.summen[m]?.[name] ?? 0) * defl(m), 0);
 
@@ -1054,7 +1057,7 @@ const drawerDirty = () => $$('#drawer #h-grid input:not(.auto)').some(i => i.val
 function vBilanz() {
   // Eine Tabelle: Positionen (farbig, aufklappbar) mit ihren Konten; Plan-Spalten rechts angehängt
   const D = B(); if (!D) return noData;
-  const C = cols();
+  const C = cols(null, true);
   const pr = D.bilanz.projektion || null;
   const proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
   const W = new Map(), werte = r => { if (!W.has(r.id)) W.set(r.id, proj[r.id] ? Object.assign({}, r.werte, proj[r.id]) : r.werte); return W.get(r.id); };
@@ -1146,12 +1149,16 @@ function bchData(D) {
 function vBilanzChart(D) {
   const d = bchData(D); if (d.months.length < 2 || !d.series.length) return '';
   BCH.d = d;
-  // Ausschnitt (als Monate gemerkt, damit er Neuaufbau und Bereichswechsel uebersteht)
-  const r = S.bchRange, n = d.months.length;
-  let i0 = r ? d.months.indexOf(r[0]) : -1, i1 = r ? d.months.indexOf(r[1]) : -1;
-  if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, 36); S.bchRange = [d.months[i0], d.months[i1]]; S.bchBtn = 36; }    // default: three years up to today
+  // range kept as months (survives rebuilds and area changes; null = all); a button alone is anchored to today
+  const r = S.bchRange, n = d.months.length, rb = bchRanges(true), dflt = S.modus === 'jahre' ? 36 : 24;
+  if (S.bchBtn && !rb.some(([m]) => m === S.bchBtn)) { S.bchBtn = dflt; S.bchRange = undefined; }       // view switched: its own buttons
+  let i0 = -1, i1 = -1;
+  if (r === null) { i0 = 0; i1 = n - 1; }
+  else if (r) { i0 = d.months.indexOf(r[0]); i1 = d.months.indexOf(r[1]); }
+  if ((i0 < 0 || i1 <= i0) && S.bchBtn) [i0, i1] = bchWindow(d, S.bchBtn);
+  if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, dflt); S.bchBtn = dflt; }          // default: 2 years (months) or 3 years (years) up to today
+  S.bchRange = i0 === 0 && i1 === n - 1 ? null : [d.months[i0], d.months[i1]];
   BCH.i0 = BCH.f0 = i0; BCH.i1 = BCH.f1 = i1;
-  const rb = [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [120, t('bch_jahre', 10)], [0, t('alle')]];
   return `<div class="card bch${bchLinked() ? ' linked' : ''}" id="bch"><div class="bch-head"><span class="bch-range" id="bch-range"></span> ${hq('bch')}<span class="sp"></span><button class="ghost small bch-link${bchLinked() ? ' on' : ''}" id="bch-link" title="${t('bch_link_tip')}" aria-pressed="${bchLinked()}">${t('bch_link')}</button><label class="bch-n" title="${t('bch_monate_tip')}"><input type="number" id="bch-n" min="3" max="${n}" step="1">${t('bch_m')}</label><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
     <div class="bch-plot" id="bch-plot"><svg class="bch-svg" id="bch-svg"></svg><div class="bch-tip hidden" id="bch-tip"></div></div></div>`;
 }
@@ -1165,9 +1172,12 @@ function bchDraw() {
   if (!link) for (let i = i0; i <= i1; i++) pts.push({i, x: P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n)});
   const N = pts.length - 1;
   // Stapel: positive Anteile von der Nulllinie nach oben, negative nach unten (Reihenfolge wie die Tabelle von oben)
-  const pos = [], neg = [];
-  for (const p of pts) { let up = 0, dn = 0; for (const x of d.series) { const v = x.vals[p.i] || 0; if (v > 0) up += v; else dn += v; } pos.push(up); neg.push(dn); }
-  const nwv = pts.map(p => d.nw[p.i]).filter(v => v != null);
+  // the scale follows what is in view (aligned: the visible columns and one beyond each edge)
+  let kA = 0, kB = N;
+  if (link) { const vis = pts.map((p, k) => p.x >= P.l - 0.5 && p.x <= W - P.r + 0.5 ? k : -1).filter(k => k >= 0); if (vis.length) { kA = Math.max(0, vis[0] - 1); kB = Math.min(N, vis[vis.length - 1] + 1); } }
+  const inView = pts.slice(kA, kB + 1), pos = [], neg = [];
+  for (const p of inView) { let up = 0, dn = 0; for (const x of d.series) { const v = x.vals[p.i] || 0; if (v > 0) up += v; else dn += v; } pos.push(up); neg.push(dn); }
+  const nwv = inView.map(p => d.nw[p.i]).filter(v => v != null);
   let max = Math.max(...pos, ...nwv, 0), min = Math.min(...neg, ...nwv, 0); if (max === min) max = min + 1;
   const pad = (max - min) * 0.04; max += pad; if (min < 0) min -= pad;
   const x = i => P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n), y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min);
@@ -1228,7 +1238,7 @@ function bchDraw() {
   const rl = $('#bch-range');
   if (rl && link) { const vis = pts.filter(p => p.x >= P.l && p.x <= W - P.r); rl.textContent = vis.length ? `${bchKeyLabel(vis[0].key)} – ${bchKeyLabel(vis[vis.length - 1].key)}` : ''; }
   else if (rl) rl.textContent = `${MONATE_LANG[+d.months[i0].slice(5) - 1]} ${d.months[i0].slice(0, 4)} – ${MONATE_LANG[+d.months[i1].slice(5) - 1]} ${d.months[i1].slice(0, 4)}`;
-  $$('#bch-rb button').forEach(b => b.classList.toggle('on', S.bchRange ? +b.dataset.m === S.bchBtn : b.dataset.m === '0'));
+  $$('#bch-rb button').forEach(b => b.classList.toggle('on', S.bchBtn ? +b.dataset.m === S.bchBtn : S.bchRange === null && b.dataset.m === '0'));
   const nf = $('#bch-n'); if (nf && document.activeElement !== nf) nf.value = i1 - i0 + 1;
   bchBind();
 }
@@ -1247,6 +1257,11 @@ function bchCols(svg) {
   const cols = [];
   for (const th of $$('thead th[data-key]', w)) { const i = bchIndex(th.dataset.key); if (i < 0) continue; const r = th.getBoundingClientRect(); cols.push({i, key: th.dataset.key, label: th.textContent.trim(), x: r.left + r.width / 2 - sr.left}); }
   return cols.length > 1 ? {cols, l: first.getBoundingClientRect().right - sr.left, r: w.getBoundingClientRect().left + w.clientLeft + w.clientWidth - sr.left} : null;
+}
+// range buttons by view: months → 6 M, 1 J, 2 J (+ all), years → 1 J, 3 J, 10 J (+ all); the small charts without "all"
+function bchRanges(all) {
+  const r = S.modus === 'jahre' ? [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [120, t('bch_jahre', 10)]] : [[6, t('bch_monate_n', 6)], [12, t('bch_jahre', 1)], [24, t('bch_jahre', 2)]];
+  return all ? [...r, [0, t('alle')]] : r;
 }
 function bchWindow(d, m) {
   // m months ending with the current month: "1 J" means the last twelve actual months (changes refer to exactly that);
@@ -1403,7 +1418,7 @@ function bindBilanzChart(main) {
     // eigene Anzahl Monate: rechter Rand bleibt, der Ausschnitt waechst bzw. schrumpft nach links
     const d = BCH.d, m = Math.max(3, Math.min(d.months.length, Math.round(+nf.value) || 12)), z = BCH.i1;
     let a = z - m + 1, e = z; if (a < 0) { e = Math.min(d.months.length - 1, e - a); a = 0; }
-    const btn = [12, 36, 120].includes(m) && bchWindow(d, m)[0] === a ? m : null;
+    const btn = bchRanges().some(([k]) => k === m) && bchWindow(d, m)[0] === a ? m : null;
     bchSet(a, e, btn); nf.blur();
   });
   const lb = $('#bch-link', main); if (lb) lb.addEventListener('click', () => { S.bchLink = !bchLinked(); try { localStorage.setItem('kontor.bchLink', S.bchLink ? '1' : '0'); } catch (e) {} route(); });
@@ -1471,12 +1486,12 @@ function lcPosRole(D) {
 function vBilanzLines(D) {
   if ((D.monate || []).length < 2) return '';
   const {avail, sel} = lcSelection(D);
-  const rb = [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [0, t('alle')]];          // small charts: range in the top right corner
+  const rb = bchRanges(false);          // small charts: range in the top right corner
   const head = (id, title, extra) => `<div class="lc-head"><b class="lc-title">${title}</b><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div><div class="lc-row2">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span><span class="lc-range" id="lc-${id}-range"></span></div>`;
   const plot = id => `<div class="bch-plot lc-plot" id="lc-${id}-plot"><svg class="bch-svg" id="lc-${id}-svg"></svg><div class="bch-tip hidden" id="lc-${id}-tip"></div></div>`;
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
   return `<div class="cards lc-grid" id="lc-grid">
-    <div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}${plot('nw')}</div>
+    <div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}${plot('nw')}<div class="lc-stats" id="lc-nw-stats"></div></div>
     <div class="card bch lc" data-lc="sel">${head('sel', t('lc_summe_auswahl'))}${plot('sel')}<div class="lc-chips below" id="lc-chips">${chips}</div></div>
     <div class="card bch lc" data-lc="pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select>`)}${plot('pos')}<div class="lc-legend" id="lc-pos-legend"></div></div>
   </div>`;
@@ -1507,9 +1522,11 @@ function lcDraw(id) {
   }
   if (max - min < 1) { max += 50; min -= 50; }
   const pad = (max - min) * 0.08; max += pad; if (!st.stack || min < 0) min -= pad;
+  const ticks = axisTicks(min, max, 4);
+  P.l = Math.max(30, Math.ceil(Math.max(...ticks.map(([v, r]) => textW(Fk(v, false, r))))) + 12);      // axis only as wide as its labels
   const x = i => P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n), y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min), pf = v => v.toFixed(1);
   let g = '';
-  for (const [tk, ref] of axisTicks(min, max, 4)) g += `<line class="bch-grid${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(tk))}" y2="${pf(y(tk))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(tk) + 4)}">${Fk(tk, false, ref)}</text>`;
+  for (const [tk, ref] of ticks) g += `<line class="bch-grid${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(tk))}" y2="${pf(y(tk))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(tk) + 4)}">${Fk(tk, false, ref)}</text>`;
   const ppm = (W - P.l - P.r) / Math.max(1, n), step = [1, 2, 3, 6, 12, 24, 60, 120].find(s => s * ppm >= 62) || 120;
   for (let i = i0; i <= i1; i++) {
     const m = d.months[i], mo = +m.slice(5), yr = +m.slice(0, 4), xi = pf(x(i));
@@ -1547,6 +1564,14 @@ function lcDraw(id) {
   let a = null, z = null; for (let i = i0; i <= Math.min(i1, ist); i++) if (d.vals[i] != null) { if (a == null) a = i; z = i; }
   const vEl = $(`#lc-${id}-val`);
   if (vEl) vEl.innerHTML = z == null ? '' : `${F0(d.vals[z])} €` + (a != null && a < z ? ` <span class="delta ${d.vals[z] - d.vals[a] >= 0 ? 'pos' : 'neg'}">${d.vals[z] - d.vals[a] >= 0 ? '+' : ''}${F0(d.vals[z] - d.vals[a])} €${pctGrowth(d.vals[a], d.vals[z] - d.vals[a]) ? ` (${pctGrowth(d.vals[a], d.vals[z] - d.vals[a])})` : ''}</span>` : '');      // the period is shown on the right (range)
+  // key figures of the reference period (net worth card): average change per month, highest and lowest month-end
+  const stEl = $(`#lc-${id}-stats`);
+  if (stEl) {
+    let hi = null, lo = null; for (let i = a ?? 0; z != null && i <= z; i++) if (d.vals[i] != null) { if (hi == null || d.vals[i] > d.vals[hi]) hi = i; if (lo == null || d.vals[i] < d.vals[lo]) lo = i; }
+    const avg = a != null && z > a ? (d.vals[z] - d.vals[a]) / (z - a) : null, cell = (l, v, m, c) => `<div><span>${l}</span><b${c ? ` class="${c}"` : ''}>${v}</b>${m ? `<small>${m}</small>` : ''}</div>`;
+    stEl.innerHTML = hi == null ? '' : (avg != null ? cell(t('lc_avg_month'), `${avg >= 0 ? '+' : ''}${F0(avg)} €`, '', avg >= 0 ? 'pos' : 'neg') : '')
+      + cell(t('lc_high'), `${F0(d.vals[hi])} €`, ML(d.months[hi])) + cell(t('lc_low'), `${F0(d.vals[lo])} €`, ML(d.months[lo]));
+  }
   // the period the value (end) and the change (start) refer to: the actual months in view; compact, top right
   const rl = $(`#lc-${id}-range`); if (rl) { rl.textContent = a != null && a < z ? `${ML(d.months[a])} – ${ML(d.months[z])}` : z != null ? ML(d.months[z]) : ''; rl.title = t('lc_range_tip'); }
   $$(`.lc-rb[data-lc="${id}"] button`).forEach(b => b.classList.toggle('on', st.btn != null ? +b.dataset.m === st.btn : false));
@@ -1616,6 +1641,7 @@ function lcInit(id, D, rollen, title, color, stack) {
   // range kept as months (survives rebuilds); a range button stays anchored to today
   const d = stack ? lcStack(D, stack) : lcData(D, rollen), n = d.months.length, r = (S.lcRange || {})[id];
   let i0, i1, btn = r ? r[2] : 12;                       // default: one year up to today
+  if (btn === 0 || (btn && !bchRanges(false).some(([m]) => m === btn))) btn = 12;     // not offered in this view: one year
   if (btn === 0) { i0 = 0; i1 = n - 1; }
   else if (btn) [i0, i1] = bchWindow(d, btn);
   else { i0 = d.months.indexOf(r[0]); i1 = d.months.indexOf(r[1]); if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, 12); btn = 12; } }
@@ -2005,9 +2031,9 @@ function immoChart(J) {
   for (const [t, ref] of axisTicks(cmin, cmax, 4)) s += `<line x1="${P.l}" x2="${W - P.r}" y1="${yc(t)}" y2="${yc(t)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${yc(t) + 4}" text-anchor="end">${Fk(t, false, ref)}</text>`;
   cfs.forEach((v, i) => { s += `<rect x="${(x(i) + bw * 0.15).toFixed(1)}" y="${Math.min(yc(v), yc(0)).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${Math.abs(yc(v) - yc(0)).toFixed(1)}" fill="${v < 0 ? 'var(--c-aus)' : 'var(--c-ein)'}" rx="2"/>`; if (i % Math.ceil(n / 8) === 0) s += `<text x="${(x(i) + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${J[i].jahr}</text>`; });
   s += `<path d="${rs.map((v, i) => (i ? 'L' : 'M') + (x(i) + bw / 2).toFixed(1) + ' ' + yr(v).toFixed(1)).join(' ')}" fill="none" stroke="var(--c-verb)" stroke-width="2"/>`;
-  s += `<path d="${ws.map((v, i) => (i ? 'L' : 'M') + (x(i) + bw / 2).toFixed(1) + ' ' + yr(v).toFixed(1)).join(' ')}" fill="none" stroke="#b8860b" stroke-width="2" stroke-dasharray="4 3"/>`;
+  s += `<path d="${ws.map((v, i) => (i ? 'L' : 'M') + (x(i) + bw / 2).toFixed(1) + ' ' + yr(v).toFixed(1)).join(' ')}" fill="none" stroke="var(--c-immo)" stroke-width="2" stroke-dasharray="4 3"/>`;
   for (const [t, ref] of axisTicks(0, rmax, 4)) s += `<text x="${W - P.r + 6}" y="${yr(t) + 4}">${Fk(t, false, ref)}</text>`;
-  return s + `</svg><div class="chart-legend"><span><i style="background:var(--c-ein)"></i>${t('cashflow_je_jahr_links')}</span><span><i style="background:var(--c-verb)"></i>${t('restschuld_rechts')}</span><span><i style="background:#b8860b"></i>${t('objektwert_rechts')}</span></div>`;
+  return s + `</svg><div class="chart-legend"><span><i style="background:var(--c-ein)"></i>${t('cashflow_je_jahr_links')}</span><span><i style="background:var(--c-verb)"></i>${t('restschuld_rechts')}</span><span><i style="background:var(--c-immo)"></i>${t('objektwert_rechts')}</span></div>`;
 }
 function vImmoJahre(d) {
   const J = d.jahre || []; if (!J.length) return `<div class="note">${t('keine_kalkulation_vorhanden_oder_beric')}</div>`;

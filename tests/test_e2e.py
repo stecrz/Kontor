@@ -2125,8 +2125,11 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("liquiditaet", checked); self.assertTrue(checked <= {"liquiditaet", "wertpapiere", "anlagen"})
                 v0 = pg.inner_text("#lc-sel-val"); pg.click("#lc-chips input[data-r='immobilien']"); pg.wait_for_timeout(200)
                 self.assertNotEqual(pg.inner_text("#lc-sel-val"), v0)
-                pg.click(".lc-rb[data-lc='nw'] button[data-m='0']"); pg.wait_for_timeout(200)
-                self.assertTrue(pg.query_selector(".lc-rb[data-lc='nw'] button[data-m='0'].on"))
+                # range buttons by view: months 6 M / 1 J / 2 J, years 1 J / 3 J / 10 J
+                self.assertEqual(pg.eval_on_selector_all(".lc-rb[data-lc='nw'] button", "bs => bs.map(b => b.dataset.m)"), ["6", "12", "24"])
+                pg.click(".lc-rb[data-lc='nw'] button[data-m='24']"); pg.wait_for_timeout(200)
+                self.assertTrue(pg.query_selector(".lc-rb[data-lc='nw'] button[data-m='24'].on"))
+                self.assertEqual(pg.eval_on_selector_all("#bch-rb button", "bs => bs.map(b => b.dataset.m)"), ["6", "12", "24", "0"])
                 pg.evaluate("localStorage.removeItem('kontor.lcSel')")
                 # old German addresses lead to the English ones
                 pg.evaluate("location.hash = '#einrichtung/konten'"); pg.wait_for_timeout(400)
@@ -2170,9 +2173,10 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#nav a[href='#help']"); pg.wait_for_timeout(300); self.assertEqual(pg.evaluate("window.scrollY"), 0)
                 pg.click("#nav a[href='#balance']"); pg.wait_for_timeout(400); self.assertEqual(pg.evaluate("window.scrollY"), y_bil)
                 pg.evaluate("window.scrollTo(0, 0)"); pg.set_viewport_size({"width": 1440, "height": 900})
-                # Monatsansicht mit Jahressummen; Schalter in der Werkzeugleiste, nicht oben rechts
+                # balance sheet, month view: no year columns (they would only repeat December), a line separates the years;
+                # switch in the toolbar, not top right
                 self.assertEqual(len(pg.query_selector_all("#modus-seg button")), 2)
-                self.assertTrue(pg.query_selector("#main thead th.year")); self.assertIsNone(pg.query_selector("#top-ctl"))
+                self.assertIsNone(pg.query_selector("#main thead th.year")); self.assertTrue(pg.query_selector("#main thead th.ystart")); self.assertIsNone(pg.query_selector("#top-ctl"))
                 self.assertIsNone(pg.query_selector("#main .toolbar #planan")); self.assertTrue(pg.query_selector("#main thead th.plan"))   # Bilanz immer mit Plan
                 n_rows = len(pg.query_selector_all("tr.acct")); pg.click("#main .toolbar label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
                 self.assertGreaterEqual(len(pg.query_selector_all("tr.acct")), n_rows)
