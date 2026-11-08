@@ -207,11 +207,13 @@ def depot_holdings(acc: Account, werte: Dict[str, Optional[float]], mkeys: List[
             r["werte"][cur] = round(r["werte"].get(cur, 0.0) + float(p.get("marketValue") or p.get("amount") or 0), 2)
         except (TypeError, ValueError, AttributeError):
             continue
+    for key, r in rows.items():                       # names Kontor has seen in MoneyMoney's export before
+        r["name"] = r["name"] or names.get(key, "")
     out = [r for r in rows.values() if any(abs(v) >= 0.005 for v in r["werte"].values())]
     if not out:
         return []
     for i, r in enumerate(out, 1):
-        r["name"] = r["name"] or tr("s_wertpapier_n") % i
+        r["name"] = r["name"] or r.get("isin") or tr("s_wertpapier_n") % i       # without a name: the ISIN
         r["werte"] = {mk: r["werte"].get(mk) for mk in mkeys}
     rest = {}
     for mk in mkeys:

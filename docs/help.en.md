@@ -106,7 +106,7 @@ The Sync page shows the last refresh per account and reports accounts that lag b
 
 Everywhere you choose **months** (with annual totals) or **years** only. Year columns are cumulative: flows as a sum, balances as the year-end value. The current month and the current year (not yet complete) are faded, plan values faded and hatched.
 
-- **▸ in the header cell** of the balance sheet expands all positions (a second click also the portfolios into their securities); the **eye** next to it (with a count, only when there are any) also shows empty accounts and those hidden by activity (they are always counted). “(9/12)” at a position means 9 of 12 accounts are shown. **Empty rows** (cash flow, planning) also shows rows without values.
+- **▸ in the header cell** of the balance sheet expands all positions; the **eye** next to it (with a count, only when there are any) also shows empty accounts and those hidden by activity (they are always counted). “(9/12)” at a position means 9 of 12 accounts are shown. **Empty rows** (cash flow, planning) also shows rows without values.
 - **Plan** (cash flow) appends the plan values on the right; off = actual values only. Balance sheet and planning always show the plan.
 - **inflation-adjusted** (planning) shows plan values in today's purchasing power.
 - The overview also compares with the same period of the previous year.
@@ -123,8 +123,8 @@ The balance sheet shows the assets of an area by position, month by month or yea
 **Table**
 
 - Balances at month end; the current month shows the current balance. **Faded**: current month or year (not finished yet); **faded and hatched**: plan.
-- Click a position to expand its accounts. Click an account to open its history (view and edit month-end balances). Portfolios open into their securities via the **▸** in front of them: past months from the balances read from MoneyMoney (otherwise from Kontor's monthly record), the current month from MoneyMoney; what the securities do not explain is shown as “Other”. The **▸** button in the header cell expands all accounts, then all portfolios too, and collapses again.
-- The **eye** in the header cell (only when there are any, with a count) also shows empty accounts and those hidden by activity – they are always counted. “(9/12)” at a position means 9 of 12 accounts are shown.
+- Click a position to expand its accounts. Click an account to open its history (view and edit month-end balances). Portfolios open into their securities via the **▸** in front of them: past months from the balances read from MoneyMoney (otherwise from Kontor's monthly record), the current month from MoneyMoney; what the securities do not explain is shown as “Other”. The **▸** button in the header cell expands and collapses all positions. An opened portfolio also shows its securities in the main chart.
+- The **eye** in the header cell (only when there are any, with a count) also shows empty accounts and securities and those hidden by activity – they are always counted. What counts as hidden is set under [Setup → Accounts](#accounts) (column “Display” and “By activity … months”, default 12); securities without a value in that period count as hidden too. “(9/12)” at a position means 9 of 12 accounts are shown.
 - Year columns show the balance at year end (the running year: today). The month view has no year columns – they would only repeat December; a thin line separates the years.
 - The position colours follow availability, from cash (green) to equity investments (violet). Accounts carry variations of their position's colour (neighbouring hue, different lightness; hatched from the eleventh account) – as a dot in front of the account and the same in the charts.
 - Below net worth, guarantees and capital accounts as equity (not in net worth) are each collected in one expandable row.
@@ -134,7 +134,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 
 - Composition of assets in the colours of the positions, black the net worth (dashed: plan); expanded positions show their accounts.
 - Range depending on the view – months: 6 months, 1 or 2 years (default 1 year); years: 1, 3 or 10 years (default 3 years) –, all or a number of months of your own.
-- Swipe horizontally to pan, pinch to zoom, drag to select a range, double-click to enlarge, click to jump to the column of the table. Conversely, clicking a column heading moves the chart so that the month sits roughly above the column. On the iPhone: drag sideways on an axis to pan, two fingers pan and zoom, one finger shows the values.
+- Swipe horizontally to pan, pinch to zoom, drag to select a range, double-click to enlarge, click to jump to the column of the table. Conversely, clicking a column heading moves the chart so that the month sits roughly above the column. Drag sideways on the month axis to pan; drag up/down on the amount axis to zoom the value range in/out (the wheel moves it), a tap or click there makes it automatic again. On the iPhone two fingers pan and zoom, one finger shows the values. The same applies to the single charts.
 - **Align with table**: every value sits right above its column. The chart scrolls with the table, swiping or dragging on the chart scrolls the table, and the scale follows the visible columns. The value tip is dropped – the values are right below.
 
 **Single charts** (below the table)

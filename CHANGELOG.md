@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.10.10 (2026-11-08 22:59)
+- Bilanz-Tabelle: Konten leicht eingerückt; der Knopf in der Kopfzelle klappt wieder nur alle Positionen auf und zu, Depots öffnet man einzeln. Ein geöffnetes Depot zeigt seine Wertpapiere auch in der großen Grafik. Die Hinweise „Depot“ und „Kontostände“ neben Konten entfallen. Lange Namen werden gekürzt (ganz beim Darüberfahren).
+- Wertpapiere ohne Wert in der eingestellten Zeit (Einrichtung → Konten, „Nach Aktivität“) sind wie Konten ausgeblendet; das Auge zeigt sie. Sein Hinweis nennt jetzt, wo das eingestellt wird.
+- Grafiken: Auf der Betragsachse nach oben/unten ziehen vergrößert bzw. verkleinert den Wertebereich, das Mausrad verschiebt ihn, Tippen oder Klick dort macht ihn wieder automatisch. Seitlich verschieben geht über die Monatsachse.
+- „Zusammensetzung“: auch kleine Beträge (z. B. 0,29 € Guthaben) erscheinen; bei vielen Einträgen werden die Namen unten gekürzt, beim Darüberfahren steht der ganze Name (bei Wertpapieren mit Depot).
+- Laufendes Jahr ohne „Ist+Plan“-Zusatz: blass wie der laufende Monat (noch nicht abgeschlossen), Planjahre blass und schraffiert.
+- Wertpapiernamen: Kontor sucht sie beim Einlesen auch unter anderen Spaltennamen und in anderen Tabellen von MoneyMoney und nimmt sonst Namen, die es aus MoneyMoney schon kennt; ohne Namen steht die ISIN statt „Wertpapier N“.
+
 ## 3.10.9 (2026-11-08 22:21)
 - Depot-Aufschlüsselung: Wertpapiere ohne Namen in MoneyMoneys Datenbank werden nicht mehr zu einer Zeile zusammengefasst.
 

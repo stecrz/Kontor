@@ -470,11 +470,25 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
                 qty[sk] = float(q)
     # names of the securities (for the breakdown of a portfolio): only name and ISIN/WKN, nothing else of the row
     names: Dict[int, Tuple[str, str]] = {}
-    ncol = next((c for c in ("name", "security_name", "title") if c in cols), None)
+    name_cols = ("name", "security_name", "securityname", "title", "long_name", "longname", "short_name", "shortname", "description",
+                 "designation", "bezeichnung", "label")
+    ncol = next((c for c in name_cols if c in cols), None)
     icol = next((c for c in ("isin", "wkn") if c in cols), None)
+    log.debug("MoneyMoney database: securities columns %s", ", ".join(sorted(cols)) or "-")
     if "account_key" in cols and (ncol or icol):
         for sk, n, i in db.rows("SELECT rowid, %s, %s FROM securities WHERE account_key IN %s" % (ncol or "NULL", icol or "NULL", _in(len(keys))), keys):
             names[sk] = (str(n or "").strip(), str(i or "").strip())
+    if icol and not ncol:
+        # the name may sit in another table keyed by the ISIN (only tables with an ISIN and a name column are looked at)
+        for t in plain:
+            tc = {c for c, _ty in columns(db, t)}
+            tn = next((c for c in name_cols if c in tc), None)
+            if t == "securities" or icol not in tc or not tn:
+                continue
+            log.debug("MoneyMoney database: security names from table %s", t)
+            by_isin = {str(i or "").strip(): str(n or "").strip() for i, n in db.rows("SELECT %s, %s FROM %s" % (_q(icol), _q(tn), _q(t)))}
+            names = {sk: (by_isin.get(i, "") or n, i) for sk, (n, i) in names.items()}
+            break
     cur = "%04d-%02d" % (today.year, today.month)
     for k, per in recs.items():
         bal = info(k).get("saldo") or 0.0

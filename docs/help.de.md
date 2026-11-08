@@ -106,7 +106,7 @@ Die Seite „Synchronisierung“ zeigt je Konto den letzten Abruf und meldet Kon
 
 Überall wählst du **Monate** (mit Jahressummen) oder nur **Jahre**. Jahresspalten sind kumuliert: Zahlungsflüsse als Summe, Bestände als Stand zum Jahresende. Blass sind der laufende Monat und das laufende Jahr (noch nicht abgeschlossen), blass und schraffiert die Planwerte.
 
-- **▸ in der Kopfzelle** der Bilanz klappt alle Positionen auf (ein zweiter Klick auch die Depots in ihre Wertpapiere); das **Auge** daneben (mit Anzahl, nur wenn es welche gibt) zeigt auch leere und nach Aktivität ausgeblendete Konten (mitgezählt werden sie immer). Steht bei einer Position „(9/12)“, sind 9 von 12 Konten zu sehen. **Leere Zeilen** (Cashflow, Planung) zeigt auch Zeilen ohne Werte.
+- **▸ in der Kopfzelle** der Bilanz klappt alle Positionen auf; das **Auge** daneben (mit Anzahl, nur wenn es welche gibt) zeigt auch leere und nach Aktivität ausgeblendete Konten (mitgezählt werden sie immer). Steht bei einer Position „(9/12)“, sind 9 von 12 Konten zu sehen. **Leere Zeilen** (Cashflow, Planung) zeigt auch Zeilen ohne Werte.
 - **Plan** (Cashflow) hängt die Planwerte rechts an; aus = nur Ist-Werte. Bilanz und Planung zeigen den Plan immer.
 - **inflationsbereinigt** (Planung) zeigt Planwerte in heutiger Kaufkraft.
 - Die Übersicht vergleicht zusätzlich mit dem gleichen Zeitraum des Vorjahrs.
@@ -123,8 +123,8 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 **Tabelle**
 
 - Salden am Monatsende; der laufende Monat zeigt den aktuellen Stand. **Blass**: laufender Monat bzw. laufendes Jahr (noch nicht abgeschlossen); **blass und schraffiert**: Plan.
-- Klick auf eine Position klappt ihre Konten auf. Klick auf ein Konto öffnet seinen Verlauf (Monatsstände ansehen und bearbeiten). Depots klappen über das **▸** davor in ihre Wertpapiere auf: frühere Monate aus den eingelesenen MoneyMoney-Kontoständen (sonst aus Kontors monatlicher Aufzeichnung), der laufende Monat aus MoneyMoney; was die Wertpapiere nicht erklären, steht als „Übrige“. Der Knopf **▸** in der Kopfzelle klappt nacheinander alle Konten, dann auch alle Depots auf und wieder zu.
-- Das **Auge** in der Kopfzelle (nur wenn es welche gibt, mit Anzahl) zeigt auch leere und nach Aktivität ausgeblendete Konten – mitgezählt werden sie immer. „(9/12)“ bei einer Position heißt: 9 von 12 Konten zu sehen.
+- Klick auf eine Position klappt ihre Konten auf. Klick auf ein Konto öffnet seinen Verlauf (Monatsstände ansehen und bearbeiten). Depots klappen über das **▸** davor in ihre Wertpapiere auf: frühere Monate aus den eingelesenen MoneyMoney-Kontoständen (sonst aus Kontors monatlicher Aufzeichnung), der laufende Monat aus MoneyMoney; was die Wertpapiere nicht erklären, steht als „Übrige“. Der Knopf **▸** in der Kopfzelle klappt alle Positionen auf und wieder zu. Ein aufgeklapptes Depot zeigt seine Wertpapiere auch in der großen Grafik.
+- Das **Auge** in der Kopfzelle (nur wenn es welche gibt, mit Anzahl) zeigt auch leere und nach Aktivität ausgeblendete Konten und Wertpapiere – mitgezählt werden sie immer. Was als ausgeblendet gilt, legst du unter [Einrichtung → Konten](#accounts) fest (Spalte „Anzeige“ und „Nach Aktivität … Monaten“, Standard 12); Wertpapiere ohne Wert in diesem Zeitraum gelten ebenfalls als ausgeblendet. „(9/12)“ bei einer Position heißt: 9 von 12 Konten zu sehen.
 - Jahresspalten zeigen den Stand zum Jahresende (das laufende Jahr: heute). In der Monatsansicht gibt es keine Jahresspalten – sie wären nur der Dezember; ein feiner Strich trennt die Jahre.
 - Die Farben der Positionen folgen der Verfügbarkeit, von Bankguthaben (grün) bis Beteiligungen (violett). Konten tragen Abwandlungen der Farbe ihrer Position (benachbarter Farbton, andere Helligkeit; ab dem elften Konto schraffiert) – als Punkt vor dem Konto und genauso in den Grafiken.
 - Unter dem Nettovermögen stehen Avale & Bürgschaften und Kapitalkonten als Eigenkapital (nicht im Nettovermögen), je gesammelt in einer aufklappbaren Zeile.
@@ -134,7 +134,7 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 
 - Zusammensetzung des Vermögens in den Farben der Positionen, schwarz das Nettovermögen (gestrichelt: Plan); aufgeklappte Positionen zeigen ihre Konten.
 - Zeitraum je nach Ansicht – Monate: 6 Monate, 1 oder 2 Jahre (Standard 1 Jahr); Jahre: 1, 3 oder 10 Jahre (Standard 3 Jahre) –, alles oder eine eigene Zahl von Monaten.
-- Waagerecht wischen verschiebt, mit zwei Fingern zoomen, Ziehen wählt einen Ausschnitt, Doppelklick vergrößert, Klick springt zur Spalte der Tabelle. Umgekehrt verschiebt ein Klick auf eine Spaltenüberschrift die Grafik so, dass der Monat ungefähr über der Spalte steht. Am iPhone: auf einer Achse seitlich ziehen verschiebt, zwei Finger verschieben und zoomen, ein Finger zeigt die Werte.
+- Waagerecht wischen verschiebt, mit zwei Fingern zoomen, Ziehen wählt einen Ausschnitt, Doppelklick vergrößert, Klick springt zur Spalte der Tabelle. Umgekehrt verschiebt ein Klick auf eine Spaltenüberschrift die Grafik so, dass der Monat ungefähr über der Spalte steht. Auf der Monatsachse seitlich ziehen verschiebt; auf der Betragsachse nach oben/unten ziehen vergrößert bzw. verkleinert den Wertebereich (das Mausrad verschiebt ihn), Tippen oder Klick dort macht ihn wieder automatisch. Am iPhone verschieben und zoomen zwei Finger, ein Finger zeigt die Werte. Das gilt auch für die einzelnen Grafiken.
 - **An Tabelle ausrichten**: Jeder Wert steht genau über seiner Spalte. Die Grafik scrollt mit der Tabelle, Wischen oder Ziehen auf der Grafik scrollt die Tabelle, und die Skala passt sich den sichtbaren Spalten an. Das Werte-Fenster entfällt – die Werte stehen ja darunter.
 
 **Einzelne Grafiken** (unter der Tabelle)
