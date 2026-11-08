@@ -106,7 +106,7 @@ Die Seite „Synchronisierung“ zeigt je Konto den letzten Abruf und meldet Kon
 
 Überall wählst du **Monate** (mit Jahressummen) oder nur **Jahre**. Jahresspalten sind kumuliert: Zahlungsflüsse als Summe, Bestände als Stand zum Jahresende. Blass sind der laufende Monat und das laufende Jahr (noch nicht abgeschlossen), blass und schraffiert die Planwerte.
 
-- **Konten zeigen** (Bilanz) klappt alle Positionen auf; **Ausgeblendete** zeigt auch leere und nach Aktivität ausgeblendete Konten (mitgezählt werden sie immer). **Leere Zeilen** (Cashflow, Planung) zeigt auch Zeilen ohne Werte.
+- **▸ in der Kopfzelle** der Bilanz klappt alle Positionen auf; das **Auge** daneben (mit Anzahl, nur wenn es welche gibt) zeigt auch leere und nach Aktivität ausgeblendete Konten (mitgezählt werden sie immer). Steht bei einer Position „(9/12)“, sind 9 von 12 Konten zu sehen. **Leere Zeilen** (Cashflow, Planung) zeigt auch Zeilen ohne Werte.
 - **Plan** (Cashflow) hängt die Planwerte rechts an; aus = nur Ist-Werte. Bilanz und Planung zeigen den Plan immer.
 - **inflationsbereinigt** (Planung) zeigt Planwerte in heutiger Kaufkraft.
 - Die Übersicht vergleicht zusätzlich mit dem gleichen Zeitraum des Vorjahrs.

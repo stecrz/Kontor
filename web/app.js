@@ -86,7 +86,6 @@ const H = {
   depotverlauf: t('moneymoney_stellt_ueber_seine_schnitts'),
   abruf: t('stand_je_konto_in_dem'),
   touchid: t('eingeschaltet_die_anmeldung_am_mac'),
-  bilanz_stand: t('salden_am_monatsende_der_laufende'),
   bilanz_tabelle: t('klick_auf_eine_position_klappt'),
   abgleich: t('datenstand_in_zwei_stufen_banken'),
   fern: t('fern_tip'),
@@ -153,11 +152,14 @@ const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl:
   konten_zuordnung: 'accounts', inaktiv: 'accounts', verlauf_kurz: 'history', verlauf: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
   zuordnen: 'categories', kontor_kategorien: 'categories', mm_ueberschreiben: 'categories', mm_cat: 'categories-write-back', kat_auswahl: 'categories-selection',
   abgleich: 'sync', voll_lesen: 'sync', monate_zurueck: 'sync', abruf: 'sync', intervall: 'sync',
-  bch: 'balance-sheet', bilanz_stand: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', methode: 'planning', inflation: 'planning', steig_ein: 'planning',
+  bch: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', methode: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', ereignis: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', paket: 'backup', timemachine: 'backup', diagnose: 'troubleshooting', pruefen: 'setup', updates: 'updates',
   update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', dokumente: 'properties', immo_planung: 'properties'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
+const ICON = {
+  eye: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>'};
 const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k])}"${HELP_AT[k] ? ` data-help="${HELP_AT[k]}"` : ''}>?</span>` : '';
 document.addEventListener('click', e => {
   // with a mouse a click on "?" opens the matching help section; on touch devices the first tap shows the tip, the second opens the help
@@ -1067,8 +1069,8 @@ function vBilanz() {
   const pos = D.bilanz.zeilen.filter(r => r.gruppe);
   S.posOpen = S.posOpen || {};
   const allOpen = pos.length && pos.every(r => S.posOpen[r.rolle]);
-  // top: the view (months/years) for chart and table; the table options sit right above the table
-  let h = `<div class="toolbar">${viewCtl()}</div>`;
+  // top: the view (months/years) for chart and table; the table options sit in its header cell (no gap to the chart)
+  let h = `<div class="toolbar">${viewCtl()}<span class="sp"></span>${xlsxBtn('balance')}</div>`;
   h += vBilanzChart(D);
   const tag = r => (r.depot ? `<span class="tag">${t('depot')}</span>` : '') + (r.offline && !r.gruppe ? `<span class="tag">${t('manuell')}</span>` : '') + (r.inaktiv ? `<span class="tag">${t('ausgeblendet')}</span>` : '')
     + (r.verlauf === 'stand' && !r.gruppe ? `<span class="tag" title="${t('verlauf_aus_kontostaenden')}">${t('kontostaende')}</span>` : '')
@@ -1077,9 +1079,11 @@ function vBilanz() {
   const hidden = r => r.inaktiv || C.every(c => { const v = lastOf(werte(r), c.months); return v == null || Math.abs(v) < 0.005; });
   const skip = r => !S.alle && hidden(r), anyHidden = D.bilanz.zeilen.some(r => !r.gruppe && hidden(r));
   let partShown = false;
-  // table options right above the table; "Hidden" only when there is something to show
-  h += `<div class="toolbar tbl-bar"><button class="ghost small" id="pos-all">${allOpen ? t('nur_positionen') : t('konten_zeigen')}</button>${anyHidden ? alleCtl(nInactive, true) + ' ' : ''}${hq('bilanz_stand')}<span class="sp"></span>${xlsxBtn('balance')}</div>`;
-  h += '<div class="wrap"><table>' + thead(`${t('position_konto')} ${hq('bilanz_tabelle')}`, C) + '<tbody>';
+  // header cell: ▸/▾ expands or collapses all positions, the eye also shows empty and hidden accounts (only when there are any)
+  const nHid = D.bilanz.zeilen.filter(r => !r.gruppe && hidden(r)).length;
+  const first = `<div class="th-first"><button class="th-btn" id="pos-all" title="${allOpen ? t('nur_positionen') : t('konten_zeigen')}">${allOpen ? '▾' : '▸'}</button><span>${t('position_konto')}</span>${hq('bilanz_tabelle')}<span class="sp"></span>`
+    + (anyHidden ? `<label class="th-hid${S.alle ? ' on' : ''}" title="${t('alle_zeilen_tip_n', nHid)}"><input type="checkbox" id="alle-zeilen" ${S.alle ? 'checked' : ''}>${S.alle ? ICON.eye : ICON.eyeOff}${nHid}</label>` : '') + '</div>';
+  h += '<div class="wrap"><table>' + thead(first, C) + '<tbody>';
   for (const r of D.bilanz.zeilen) {
     if (r.gruppe) {
       const [label, color] = ROLE[r.rolle] || [r.name, 'var(--c-neutral)'], open = !!S.posOpen[r.rolle];
@@ -1553,7 +1557,9 @@ function lcDraw(id) {
   if (ist >= i0 && ist <= i1) g += `<line class="bch-today" x1="${pf(x(ist))}" x2="${pf(x(ist))}" y1="${P.t - 4}" y2="${H - P.b}"/>`;
   const line = (a, b, c) => { const pts = []; for (let i = a; i <= b; i++) if (d.vals[i] != null) pts.push((pts.length ? 'L' : 'M') + pf(x(i)) + ' ' + pf(y(d.vals[i]))); return pts.length > 1 ? `<path class="${c}" d="${pts.join('')}" style="stroke:${st.color}"/>` : ''; };
   const area = () => { const pts = []; let first = null, last = null; for (let i = i0; i <= Math.min(i1, ist); i++) if (d.vals[i] != null) { pts.push((pts.length ? 'L' : 'M') + pf(x(i)) + ' ' + pf(y(d.vals[i]))); if (first == null) first = i; last = i; }
-    return pts.length > 1 ? `<path class="lc-area" d="${pts.join('')}L${pf(x(last))} ${H - P.b}L${pf(x(first))} ${H - P.b}Z" style="fill:${st.color}"/>` : ''; };
+    // filled towards zero (upwards when negative); with zero outside the axis up to the plot edge on its side
+    const yb = pf(Math.max(P.t, Math.min(H - P.b, y(0))));
+    return pts.length > 1 ? `<path class="lc-area" d="${pts.join('')}L${pf(x(last))} ${yb}L${pf(x(first))} ${yb}Z" style="fill:${st.color}"/>` : ''; };
   if (st.stack) {
     let defs = '';
     const bands = sign => {

@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.9.46 (2026-11-08 04:27)
+- Kleine Grafiken: Fläche immer zur Nulllinie hin gefüllt – bei negativen Werten nach oben, so ist das Vorzeichen sofort sichtbar.
+- Kleine Grafiken: Kopf, Wertzeile und Grafik teilen sich die Zeilen – die Grafiken und ihre x-Achsen stehen auf gleicher Höhe, auch wenn eine Zeile umbricht.
+- Bilanz: Tabellen-Optionen wieder ohne Abstand zur Grafik – in der Kopfzelle der Tabelle: ▸/▾ klappt alle Positionen auf bzw. zu, das Auge (mit Anzahl) zeigt leere und ausgeblendete Konten; Excel wieder oben rechts.
+
 ## 3.9.45 (2026-11-08 04:21)
 - Bilanz: Klick auf eine Spaltenüberschrift verschiebt die Grafik so, dass der Monat ungefähr über der Spalte steht (statt in der Mitte).
 - Bilanz: Der Erklärtext unter der Tabelle steckt jetzt im „?“ neben „Position / Konto“.

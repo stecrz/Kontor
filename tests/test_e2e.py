@@ -2187,9 +2187,9 @@ class BrowserTest(unittest.TestCase):
                 self.assertIsNone(pg.query_selector("#main thead th.year")); self.assertTrue(pg.query_selector("#main thead th.ystart")); self.assertIsNone(pg.query_selector("#top-ctl"))
                 self.assertIsNone(pg.query_selector("#main .toolbar #planan")); self.assertTrue(pg.query_selector("#main thead th.plan"))   # Bilanz immer mit Plan
                 if pg.query_selector("#alle-zeilen"):        # only offered when empty or hidden accounts exist
-                    n_rows = len(pg.query_selector_all("tr.acct")); pg.click("#main .toolbar label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
+                    n_rows = len(pg.query_selector_all("tr.acct")); pg.click("#main label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
                     self.assertGreaterEqual(len(pg.query_selector_all("tr.acct")), n_rows)
-                    pg.click("#main .toolbar label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
+                    pg.click("#main label:has(#alle-zeilen)"); pg.wait_for_timeout(300)
                 pg.click("tr.acct[data-id='%s'] td" % F.uid("priv.depot")); pg.wait_for_selector("#drawer.open #h-grid")
                 self.assertIn("Monatsstände", pg.query_selector("#drawer").inner_text())
                 pg.click("#drawer details.holdings summary"); self.assertIn("Welt-ETF", pg.query_selector("#drawer details.holdings").inner_text())   # Depotpositionen

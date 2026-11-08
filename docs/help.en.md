@@ -106,7 +106,7 @@ The Sync page shows the last refresh per account and reports accounts that lag b
 
 Everywhere you choose **months** (with annual totals) or **years** only. Year columns are cumulative: flows as a sum, balances as the year-end value. The current month and the current year (not yet complete) are faded, plan values faded and hatched.
 
-- **Show accounts** (balance sheet) expands all positions; **Hidden** also shows empty accounts and those hidden by activity (they are always counted). **Empty rows** (cash flow, planning) also shows rows without values.
+- **▸ in the header cell** of the balance sheet expands all positions; the **eye** next to it (with a count, only when there are any) also shows empty accounts and those hidden by activity (they are always counted). “(9/12)” at a position means 9 of 12 accounts are shown. **Empty rows** (cash flow, planning) also shows rows without values.
 - **Plan** (cash flow) appends the plan values on the right; off = actual values only. Balance sheet and planning always show the plan.
 - **inflation-adjusted** (planning) shows plan values in today's purchasing power.
 - The overview also compares with the same period of the previous year.
