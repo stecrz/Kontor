@@ -51,8 +51,8 @@ Each account gets an area, a position in the balance sheet and a history source.
 | Position | What belongs there |
 |---|---|
 | Cash | Current account, overnight money, credit card – available immediately |
-| Marketable investments | Portfolios with stocks, funds, ETF/ETC, derivatives, plus crypto and precious metals – sellable within days, with price risk |
-| Term deposits & pensions | Fixed-term deposits, building savings, life and pension insurance – contractually fixed |
+| Securities | Portfolios with stocks, funds, ETF/ETC, derivatives, plus crypto and precious metals – sellable within days, with price risk |
+| Term investments | Fixed-term deposits, building savings, life and pension insurance – contractually fixed |
 | Real estate, equity investments, tangible assets | tied up long-term |
 | Receivables | Loans to others, deposits, credit balances on capital accounts |
 | Liabilities | Loans, credit card debt, debts on capital accounts |
@@ -106,7 +106,7 @@ The Sync page shows the last refresh per account and reports accounts that lag b
 
 Everywhere you choose **months** (with annual totals) or **years** only. Year columns are cumulative: flows as a sum, balances as the year-end value. The current month and the current year (not yet complete) are faded, plan values faded and hatched.
 
-- **All rows** also shows empty and hidden rows.
+- **Show accounts** (balance sheet) expands all positions; **Hidden** also shows empty accounts and those hidden by activity (they are always counted). **Empty rows** (cash flow, planning) also shows rows without values.
 - **Plan** (cash flow) appends the plan values on the right; off = actual values only. Balance sheet and planning always show the plan.
 - **inflation-adjusted** (planning) shows plan values in today's purchasing power.
 - The overview also compares with the same period of the previous year.
@@ -124,7 +124,7 @@ The balance sheet shows the assets of an area by position, month by month, with 
 - **Chart**: composition of assets in the colours of the positions, black the net worth (dashed: plan). Range 1/3/10 years (each up to today), all or a number of months; swipe horizontally to pan, pinch to zoom, double-click to enlarge, click to jump to the column. On the iPhone: drag sideways on the strip with the amounts on the left to pan, two fingers pan and zoom, one finger shows the values. Expanded positions show their accounts as shades of the colour – the same shade appears as a dot in front of the account in the table.
 - **Cash in transit**: if the two bookings of a transfer between own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” under cash at month end – otherwise net worth would briefly look too low. A click shows the detected pairs.
 - **Months or years**: year columns show balances at year end.
-- **Single charts** (below the table): net worth alone, the sum of freely chosen positions (default: cash, tradable and fixed-term investments) and the composition of a chosen position by account (stacked, in their own pastel colours, additionally hatched with very many accounts). All have their own range (1/3/10 years up to today, all; drag to enlarge, double-click to zoom, swipe right for the plan) and an axis that fits the visible values – so the development shows even when large positions such as receivables and liabilities cancel each other out in the chart above. The current value and the change over the chosen range are shown at the top.
+- **Single charts** (below the table): net worth alone, the sum of freely chosen positions (default: cash, securities and term investments) and the composition of a chosen position by account (stacked, in their own colours, additionally hatched with very many accounts). All have their own range (1 or 3 years up to today, all; drag to enlarge, double-click to zoom, swipe right for the plan) and an axis that fits the visible values – so the development shows even when large positions such as receivables and liabilities cancel each other out in the chart above. The current value and the change over the chosen range are shown at the top.
 
 <a id="cash-flow"></a>
 ## Cash flow

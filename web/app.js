@@ -46,6 +46,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const MONATE = LANG === 'en' ? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] : ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const ML = m => MONATE[+m.slice(5) - 1] + ' ' + m.slice(2, 4);
 const FD = d => (d && d.length >= 10) ? [d.slice(8, 10), d.slice(5, 7), d.slice(0, 4)].join(LANG === 'en' ? '/' : '.') : (d || '');
+const FDT = d => FD(d) + (d && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(d) ? t('um_0_uhr', d.slice(11, 16)) : '');      // date, with time if known (changelog headings)
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const ROLE = {liquiditaet: [t('pos_bankguthaben'), 'var(--c-liq)'], wertpapiere: [t('pos_wertpapiere'), 'var(--c-anl)'], anlagen: [t('pos_gebundene_anlagen'), 'var(--c-fest)'], immobilien: [t('immobilien'), '#b8860b'],
@@ -415,7 +416,8 @@ function viewCtl() {
   return `<div class="seg" id="modus-seg">${[['monate', t('monate'), t('monate_tip')], ['jahre', t('jahre'), '']].map(([k, l, tip]) => `<button data-m="${k}" class="${S.modus === k ? 'on' : ''}"${tip ? ` title="${tip}"` : ''}>${l}</button>`).join('')}</div>`;
 }
 const swCtl = (id, on, label, tip) => `<label class="switch"${tip ? ` title="${esc(tip)}"` : ''}><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><i></i>${label}</label>`;
-const alleCtl = n => swCtl('alle-zeilen', S.alle, t('alle_zeilen'), n ? t('alle_zeilen_tip_n', n) : t('alle_zeilen_tip'));
+// balance sheet: show hidden and empty accounts (with their number); cash flow / planning: show empty rows
+const alleCtl = (n, bilanz) => swCtl('alle-zeilen', S.alle, bilanz ? t('ausgeblendete_n', n ? ` (${n})` : '') : t('leere_zeilen'), bilanz ? t('alle_zeilen_tip_n', n) : t('alle_zeilen_tip'));
 const planCtl = () => swCtl('planan', S.plan, t('plan'), t('plan_tip'));
 const planOn = () => S.plan || S.tab === 'balance' || S.tab === 'planning';     // in Bilanz und Planung immer mit Plan
 function hasRules() { const c = S.CFG || {}; return !!((c.darlehen || []).length || (c.beteiligungen || []).length || (c.saldo_spiegel || []).length); }
@@ -1052,7 +1054,7 @@ function vBilanz() {
   const pos = D.bilanz.zeilen.filter(r => r.gruppe);
   S.posOpen = S.posOpen || {};
   const allOpen = pos.length && pos.every(r => S.posOpen[r.rolle]);
-  let h = `<div class="toolbar">${viewCtl()}<span class="tb-sep"></span><button class="ghost small" id="pos-all">${allOpen ? t('alle_zuklappen') : t('alle_aufklappen')}</button>${alleCtl(nInactive)} ${hq('bilanz_stand')}<span class="sp"></span>${xlsxBtn('balance')}</div>`;
+  let h = `<div class="toolbar">${viewCtl()}<span class="tb-sep"></span><button class="ghost small" id="pos-all">${allOpen ? t('nur_positionen') : t('konten_zeigen')}</button>${alleCtl(nInactive, true)} ${hq('bilanz_stand')}<span class="sp"></span>${xlsxBtn('balance')}</div>`;
   h += vBilanzChart(D);
   const tag = r => (r.depot ? `<span class="tag">${t('depot')}</span>` : '') + (r.offline && !r.gruppe ? `<span class="tag">${t('manuell')}</span>` : '') + (r.inaktiv ? `<span class="tag">${t('ausgeblendet')}</span>` : '')
     + (r.verlauf === 'stand' && !r.gruppe ? `<span class="tag" title="${t('verlauf_aus_kontostaenden')}">${t('kontostaende')}</span>` : '')
@@ -1335,14 +1337,18 @@ function lcData(D, rollen) {
     const nw = pr ? Object.assign({}, D.bilanz.nettovermoegen, pr.nettovermoegen) : D.bilanz.nettovermoegen;
     vals = months.map(m => nw[m] == null ? null : nw[m] * defl(m));
   } else {
-    const rows = D.bilanz.zeilen.filter(r => r.gruppe && rollen.includes(r.rolle)).map(r => Object.assign({}, r.werte, proj[r.id] || {}));
+    const groups = D.bilanz.zeilen.filter(r => r.gruppe && rollen.includes(r.rolle));
+    const rows = groups.map(r => Object.assign({}, r.werte, proj[r.id] || {}));
     vals = months.map(m => { let s = null; for (const w of rows) if (w[m] != null) s = (s || 0) + w[m]; return s == null ? null : s * defl(m); });
+    // the single positions, for the tooltip
+    const parts = groups.map((r, k) => ({label: ROLE[r.rolle][0], color: ROLE[r.rolle][1], vals: months.map(m => rows[k][m] == null ? null : rows[k][m] * defl(m))}));
+    return {months, ist: D.monate.length, vals, parts};
   }
   return {months, ist: D.monate.length, vals};
 }
-// third chart: one position split into its accounts (stacked), in pastel colours distinct from the positions;
-// beyond the palette the colours repeat hatched
-const LC_PASTEL = ['#9ad0ec', '#f4b6c2', '#b8e0b8', '#ffd59e', '#cdb4f0', '#a8e6cf', '#ffb3a7', '#f9e79f', '#aec6f6', '#f7c5a8', '#c9e4ae', '#e0bbe4', '#b2dfdb', '#ffcfdf'];
+// third chart: one position split into its accounts (stacked), in mid-tone colours of their own that read on light and on
+// dark backgrounds and differ from the position colours; beyond the palette the colours repeat hatched
+const LC_PASTEL = ['#3b9ab2', '#e8833a', '#c4568f', '#d4b13f', '#6c6fd1', '#7fa34a', '#e06c5a', '#4fb8c9', '#9d6fb0', '#b8976b', '#5a8f7b', '#d97fb0', '#8a9a3c', '#4f7fc4'];
 function lcStack(D, rolle) {
   const pr = D.bilanz.projektion || null, proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
   const months = [...D.monate, ...(pr ? (D.plan_monate || []) : [])];
@@ -1364,27 +1370,31 @@ function lcPosRole(D) {
 function vBilanzLines(D) {
   if ((D.monate || []).length < 2) return '';
   const {avail, sel} = lcSelection(D);
-  const rb = [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [120, t('bch_jahre', 10)], [0, t('alle')]];
-  const head = (id, title) => `<div class="bch-head"><b class="lc-title">${title}</b><span class="lc-val" id="lc-${id}-val"></span><span class="sp"></span><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>`;
+  const rb = [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [0, t('alle')]];          // small charts: range in the top right corner
+  const head = (id, title, extra) => `<div class="lc-head"><b class="lc-title">${title}</b><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div><div class="lc-row2">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span></div>`;
   const plot = id => `<div class="bch-plot lc-plot" id="lc-${id}-plot"><svg class="bch-svg" id="lc-${id}-svg"></svg><div class="bch-tip hidden" id="lc-${id}-tip"></div></div><div class="small muted lc-range" id="lc-${id}-range"></div>`;
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
   return `<div class="cards lc-grid" id="lc-grid">
-    <div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}<div class="lc-chips" title="${t('lc_nw_tip')}">${avail.map(r => `<span class="lc-chip fixed"><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</span>`).join('')}</div>${plot('nw')}</div>
+    <div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}${plot('nw')}</div>
     <div class="card bch lc" data-lc="sel">${head('sel', t('lc_summe_auswahl'))}<div class="lc-chips" id="lc-chips">${chips}</div>${plot('sel')}</div>
-    <div class="card bch lc" data-lc="pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select>`)}<div class="lc-chips small muted">${t('lc_pos_hinweis')}</div>${plot('pos')}<div class="lc-legend" id="lc-pos-legend"></div></div>
+    <div class="card bch lc" data-lc="pos">${head('pos', t('lc_zusammensetzung'), `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select>`)}${plot('pos')}<div class="lc-legend" id="lc-pos-legend"></div></div>
   </div>`;
 }
+// growth in percent with at most three digits: 7,6 % · 13,7 % · 340 %
+const pctGrowth = p => p.toLocaleString(LOCALE, {maximumFractionDigits: Math.abs(p) >= 100 ? 0 : 1, signDisplay: 'always'}) + ' %';
 function lcDraw(id) {
   const st = LC[id], box = $(`#lc-${id}-plot`), svg = $(`#lc-${id}-svg`); if (!st || !box || !svg) return;
   const d = st.d, W = Math.max(260, box.clientWidth), H = 190, P = {l: 58, r: 10, t: 14, b: 24};
   const i0 = st.i0, i1 = st.i1, n = i1 - i0, ist = d.ist - 1;
   const vis = d.vals.slice(i0, i1 + 1).filter(v => v != null);
-  if (st.stack) { const lg = $(`#lc-${id}-legend`); if (lg) lg.innerHTML = d.series.map(x => `<span><i style="${x.hatch ? `background:repeating-linear-gradient(135deg, ${x.color} 0 2px, transparent 2px 4px)` : `background:${x.color}`}"></i>${esc(x.label)}</span>`).join(''); }
+  // composition: only accounts that are not 0 € throughout the shown range (colours stay with the account)
+  const shown = st.stack ? d.series.filter(x => x.vals.slice(i0, i1 + 1).some(v => v != null && Math.abs(v) >= 0.5)) : [];
+  if (st.stack) { const lg = $(`#lc-${id}-legend`); if (lg) lg.innerHTML = shown.map(x => `<span><i style="${x.hatch ? `background:repeating-linear-gradient(135deg, ${x.color} 0 2px, transparent 2px 4px)` : `background:${x.color}`}"></i>${esc(x.label)}</span>`).join(''); }
   if (!vis.length) { svg.innerHTML = ''; svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); $(`#lc-${id}-val`).textContent = id === 'sel' && !st.title ? t('lc_nichts_gewaehlt') : t('keine_werte'); return; }
   let max = Math.max(...vis), min = Math.min(...vis);
   const ups = [], dns = [];
   if (st.stack) {                                       // stacked: positive parts up from zero, negative ones down
-    for (let i = i0; i <= i1; i++) { let u = 0, l = 0; for (const s2 of d.series) { const v = s2.vals[i] || 0; if (v > 0) u += v; else l += v; } ups.push(u); dns.push(l); }
+    for (let i = i0; i <= i1; i++) { let u = 0, l = 0; for (const s2 of shown) { const v = s2.vals[i] || 0; if (v > 0) u += v; else l += v; } ups.push(u); dns.push(l); }
     max = Math.max(0, ...ups); min = Math.min(0, ...dns);
   }
   if (max - min < 1) { max += 50; min -= 50; }
@@ -1408,8 +1418,8 @@ function lcDraw(id) {
     let defs = '';
     const bands = sign => {
       const base = Array(n + 1).fill(0); let out = '';
-      d.series.forEach((sx, si) => {
-        const top = [], bot = [];
+      shown.forEach(sx => {
+        const si = d.series.indexOf(sx), top = [], bot = [];
         for (let k = 0; k <= n; k++) { const v = sx.vals[i0 + k] || 0, part = sign > 0 ? Math.max(0, v) : Math.min(0, v); bot.push(base[k]); base[k] += part; top.push(base[k]); }
         if (top.every((tv, k) => Math.abs(tv - bot[k]) < 0.5)) return;
         let fill = sx.color;
@@ -1427,7 +1437,7 @@ function lcDraw(id) {
   // value today and change over the visible actual months
   let a = null, z = null; for (let i = i0; i <= Math.min(i1, ist); i++) if (d.vals[i] != null) { if (a == null) a = i; z = i; }
   const vEl = $(`#lc-${id}-val`);
-  if (vEl) vEl.innerHTML = z == null ? '' : `${F0(d.vals[z])} €` + (a != null && a < z ? ` <span class="delta ${d.vals[z] - d.vals[a] >= 0 ? 'pos' : 'neg'}">${d.vals[z] - d.vals[a] >= 0 ? '+' : ''}${F0(d.vals[z] - d.vals[a])} €${Math.abs(d.vals[a]) >= 1 ? ` (${((d.vals[z] - d.vals[a]) / Math.abs(d.vals[a]) * 100).toLocaleString(LOCALE, {maximumFractionDigits: 1, signDisplay: 'always'})} %)` : ''}</span> <span class="small muted">${t('lc_seit_0', ML(d.months[a]))}</span>` : '');
+  if (vEl) vEl.innerHTML = z == null ? '' : `${F0(d.vals[z])} €` + (a != null && a < z ? ` <span class="delta ${d.vals[z] - d.vals[a] >= 0 ? 'pos' : 'neg'}">${d.vals[z] - d.vals[a] >= 0 ? '+' : ''}${F0(d.vals[z] - d.vals[a])} €${Math.abs(d.vals[a]) >= 1 ? ` (${pctGrowth((d.vals[z] - d.vals[a]) / Math.abs(d.vals[a]) * 100)})` : ''}</span> <span class="small muted">${t('lc_seit_0', ML(d.months[a]))}</span>` : '');
   const rl = $(`#lc-${id}-range`); if (rl) rl.textContent = `${MONATE_LANG[+d.months[i0].slice(5) - 1]} ${d.months[i0].slice(0, 4)} – ${MONATE_LANG[+d.months[i1].slice(5) - 1]} ${d.months[i1].slice(0, 4)}`;
   $$(`.lc-rb[data-lc="${id}"] button`).forEach(b => b.classList.toggle('on', st.btn != null ? +b.dataset.m === st.btn : false));
   lcBindPlot(id);
@@ -1452,8 +1462,9 @@ function lcHover(id, i) {
   if (i == null || d.vals[i] == null) { hv.innerHTML = ''; tip.classList.add('hidden'); bchMark(null); return; }
   const xi = G.x(i).toFixed(1), m = d.months[i];
   hv.innerHTML = `<line class="bch-cross" x1="${xi}" x2="${xi}" y1="${G.P.t}" y2="${G.H - G.P.b}"/><circle class="bch-dot" cx="${xi}" cy="${G.y(d.vals[i]).toFixed(1)}" r="4" style="stroke:${st.color}"/>`;
-  const rows = st.stack ? d.series.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= 0.5).map(x => `<div><i style="background:${x.color}"></i><span>${esc(x.label)}</span><b>${F0(x.vals[i])}</b></div>`).join('') : '';
-  tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${i >= d.ist ? ` <span class="pill neutral">${t('plan')}</span>` : ''}</div>${rows}<div class="${st.stack ? 'bch-tip-nw' : ''}"><span>${esc(st.title)}</span><b>${F0(d.vals[i])} €</b></div>`;
+  const list = st.stack ? d.series.filter(x => x.vals.slice(st.i0, st.i1 + 1).some(v => v != null && Math.abs(v) >= 0.5)) : (d.parts && d.parts.length > 1 ? d.parts : []);
+  const rows = list.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= 0.5).map(x => `<div><i style="background:${x.color}"></i><span>${esc(x.label)}</span><b>${F0(x.vals[i])}</b></div>`).join('');
+  tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${i >= d.ist ? ` <span class="pill neutral">${t('plan')}</span>` : ''}</div>${rows}<div class="${list.length ? 'bch-tip-nw' : ''}"><span>${esc(list.length && !st.stack ? t('summe_label') : st.title)}</span><b>${F0(d.vals[i])} €</b></div>`;
   tip.classList.remove('hidden');
   const bw = $(`#lc-${id}-plot`).clientWidth, tw = tip.offsetWidth, px = G.x(i);
   tip.style.left = (px + 14 + tw > bw ? px - 14 - tw : px + 14) + 'px';
@@ -1494,10 +1505,10 @@ function lcBindPlot(id) {
 function lcInit(id, D, rollen, title, color, stack) {
   // range kept as months (survives rebuilds); a range button stays anchored to today
   const d = stack ? lcStack(D, stack) : lcData(D, rollen), n = d.months.length, r = (S.lcRange || {})[id];
-  let i0, i1, btn = r ? r[2] : 36;
+  let i0, i1, btn = r ? r[2] : 12;                       // default: one year up to today
   if (btn === 0) { i0 = 0; i1 = n - 1; }
   else if (btn) [i0, i1] = bchWindow(d, btn);
-  else { i0 = d.months.indexOf(r[0]); i1 = d.months.indexOf(r[1]); if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, 36); btn = 36; } }
+  else { i0 = d.months.indexOf(r[0]); i1 = d.months.indexOf(r[1]); if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, 12); btn = 12; } }
   LC[id] = {d, i0, i1, f0: i0, f1: i1, btn, title, color, stack: !!stack, drag: null, gesture: null, geo: null};
 }
 function bindBilanzLines(main) {
@@ -2590,8 +2601,8 @@ function clHtml(md) {
   const inl = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
   let h = '', open = false;
   for (const line of md.split('\n')) {
-    const v = line.match(/^##\s+(\S+)(?:\s+\((\d{4}-\d{2}-\d{2})\))?/), li = line.match(/^\s*[-*]\s+(.*)/);
-    if (v) { if (open) h += '</ul>'; open = false; h += `<h3>${esc(v[1])}${v[2] ? `<span class="vdate">${t('vom_0', FD(v[2]))}</span>` : ''}</h3>`; }
+    const v = line.match(/^##\s+(\S+)(?:\s+\((\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\))?/), li = line.match(/^\s*[-*]\s+(.*)/);
+    if (v) { if (open) h += '</ul>'; open = false; h += `<h3>${esc(v[1])}${v[2] ? `<span class="vdate">${t('vom_0', FDT(v[2]))}</span>` : ''}</h3>`; }
     else if (li) { if (!open) h += '<ul>'; open = true; h += `<li>${inl(li[1])}</li>`; }
     else if (line.trim() && !line.startsWith('# ')) { if (open) h += '</ul>'; open = false; h += `<p>${inl(line)}</p>`; }
   }
@@ -2606,8 +2617,8 @@ function clSplit(cl) {
 }
 async function vUpdates() {
   const r = await api('/api/update/status'), st = S.STATUS, info = r.info;
-  let h = `<div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.datum ? `<span class="vdate">${t('vom_0', FD(r.datum))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
-    <div class="card"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.fehler ? '<span class="pill err">?</span>' : esc(info.verfuegbar || '–') + (info.datum ? `<span class="vdate">${t('vom_0', FD(info.datum))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.fehler ? esc(info.fehler) : (info.neuer ? `<span class="pill ok">${t('neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + t('quelle_2') + esc(info.quelle || '')) : t('noch_nicht_geprueft')}${r.geprueft ? t('geprueft') + new Date(r.geprueft * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
+  let h = `<div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.datum ? `<span class="vdate">${t('vom_0', FDT(r.datum))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
+    <div class="card"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.fehler ? '<span class="pill err">?</span>' : esc(info.verfuegbar || '–') + (info.datum ? `<span class="vdate">${t('vom_0', FDT(info.datum))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.fehler ? esc(info.fehler) : (info.neuer ? `<span class="pill ok">${t('neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + t('quelle_2') + esc(info.quelle || '')) : t('noch_nicht_geprueft')}${r.geprueft ? t('geprueft') + new Date(r.geprueft * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
     <div class="note">${t('automatisch_pruefen_status', {taeglich: t('taeglich'), woechentlich: t('woechentlich'), aus: t('nie')}[(S.CFG.updates || {}).pruefen || 'taeglich'])} <a href="#settings/updates">${t('aendern')}</a></div>
     <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${info && info.neuer && st.lokal ? '' : 'disabled'}>${t('update_installieren_und_dienst_neu')}</button></div>
     ${info && info.notizen && info.neuer ? `<h2>${t('neu_in_0', esc(info.verfuegbar))}</h2>${clHtml(info.notizen)}` : ''}
@@ -2834,7 +2845,8 @@ function bind(main) {
   if (['balance', 'cashflow', 'planning'].includes(S.tab)) $$('.wrap', main).forEach(w => {
     snapTable(w);
     const c = $('th[data-cur]', w);
-    if (c && w.scrollWidth > w.clientWidth) w.scrollLeft = snapLeft(w, colX(w, c) + c.offsetWidth - w.clientWidth * (planOn() ? 0.62 : 1));
+    // balance sheet: the current month (or year) is the rightmost column; elsewhere with plan a part of the plan stays in view
+    if (c && w.scrollWidth > w.clientWidth) w.scrollLeft = snapLeft(w, colX(w, c) + c.offsetWidth - w.clientWidth * (S.tab !== 'balance' && planOn() ? 0.62 : 1));
   });
   if (S.tab === 'balance') { bindBilanzChart(main); bindBilanzLines(main); }
   const vs = $('#vorschlag-an', main); if (vs) vs.addEventListener('change', e => { S.vorschlag = e.target.checked; route(); });

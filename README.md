@@ -1,6 +1,6 @@
 # Kontor
 
-Bilanz, Kapitalfluss, Planung und Steuerübersicht auf Basis von [MoneyMoney](https://moneymoney-app.com) (macOS) – für dich privat und für jede Gesellschaft getrennt. Ein kleiner Dienst, der dauerhaft auf dem Mac läuft, mit einer Web-Oberfläche unter `http://127.0.0.1:8765/`. Nur Bordmittel (Python 3, `openssl`, `security`, `osascript`), keine Fremdbibliotheken, keine Zugangsdaten außerhalb von MoneyMoney, keine Netzverbindung außer der abschaltbaren Update-Prüfung bei GitHub. Kontor enthält keine Annahmen über deine Konten: Alles wird in der Oberfläche eingerichtet.
+Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https://moneymoney-app.com) (macOS) – für dich privat und für jede Gesellschaft getrennt. Ein kleiner Dienst, der dauerhaft auf dem Mac läuft, mit einer Web-Oberfläche unter `http://127.0.0.1:8765/`. Nur Bordmittel (Python 3, `openssl`, `security`, `osascript`), keine Fremdbibliotheken, keine Zugangsdaten außerhalb von MoneyMoney, keine Netzverbindung außer der abschaltbaren Update-Prüfung bei GitHub. Kontor enthält keine Annahmen über deine Konten: Alles wird in der Oberfläche eingerichtet.
 
 ![Übersicht](docs/img/de/overview.png)
 
@@ -8,7 +8,7 @@ Bilanz, Kapitalfluss, Planung und Steuerübersicht auf Basis von [MoneyMoney](ht
 
 | | |
 |:---:|:---:|
-| ![Bilanz](docs/img/de/balance_sheet.png)<br>[Bilanz](docs/help.de.md#balance-sheet) | ![Kapitalfluss](docs/img/de/cash_flow.png)<br>[Kapitalfluss](docs/help.de.md#cash-flow) |
+| ![Bilanz](docs/img/de/balance_sheet.png)<br>[Bilanz](docs/help.de.md#balance-sheet) | ![Cashflow](docs/img/de/cash_flow.png)<br>[Cashflow](docs/help.de.md#cash-flow) |
 | ![Planung](docs/img/de/planning.png)<br>[Planung](docs/help.de.md#planning) | ![Immobilien](docs/img/de/property.png)<br>[Immobilien](docs/help.de.md#properties) |
 | ![Kategorien zuordnen](docs/img/de/assign_categories.png)<br>[Kategorien](docs/help.de.md#categories) | ![Einrichtung](docs/img/de/setup.png)<br>[Einrichtung](docs/help.de.md#setup) |
 | ![Zugriff vom iPhone](docs/img/de/access.png)<br>[Zugriff vom iPhone](docs/help.de.md#iphone) | <img src="docs/img/de/iphone.png" alt="Kontor auf dem iPhone" width="220"><br>[Auf dem iPhone](docs/help.de.md#iphone) |

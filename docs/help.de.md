@@ -1,6 +1,6 @@
 # Kontor – Hilfe
 
-Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilanz, einen Kapitalfluss, eine Planung und eine Steuerübersicht – für dich privat und für jede Gesellschaft getrennt. Es läuft als kleiner Dienst auf deinem Mac, die Oberfläche öffnest du im Browser unter `http://127.0.0.1:8765/`. Diese Hilfe steht auch in Kontor selbst (Menü „Hilfe“, durchsuchbar).
+Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilanz, einen Cashflow, eine Planung und eine Steuerübersicht – für dich privat und für jede Gesellschaft getrennt. Es läuft als kleiner Dienst auf deinem Mac, die Oberfläche öffnest du im Browser unter `http://127.0.0.1:8765/`. Diese Hilfe steht auch in Kontor selbst (Menü „Hilfe“, durchsuchbar).
 
 ![Übersicht](img/de/overview.png)
 
@@ -12,7 +12,7 @@ Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilan
 | Holt Umsätze und Salden von Banken, Depots und Zahlungsdiensten. | Liest diese Daten über die Skript-Schnittstelle von MoneyMoney. Zugangsdaten zu Banken sieht Kontor nie. |
 | Kategorisiert Umsätze, von Hand oder per Regel. | Nutzt diese Kategorien. Umsätze ohne Kategorie ordnest du in Kontor zu; auf Wunsch schreibt Kontor die Zuordnung nach MoneyMoney zurück. |
 | Führt Offline-Konten: private Darlehen, Beteiligungen, Immobilien, Kapitalkonten. | Bucht nach deinen Regeln nur in solche Offline-Konten: Darlehensraten spiegeln und Zinsen berechnen, Beteiligungswerte, Saldo-Spiegel. |
-| Hat keine Bilanz, keine Planung, keine Steuerübersicht. | Bilanz je Bereich, Kapitalfluss mit Prüfzeile, rollierende Planung, Immobilienkalkulation, Steuer-Jahresübersicht, Belege, Excel-Export. |
+| Hat keine Bilanz, keine Planung, keine Steuerübersicht. | Bilanz je Bereich, Cashflow mit Prüfzeile, rollierende Planung, Immobilienkalkulation, Steuer-Jahresübersicht, Belege, Excel-Export. |
 
 Kontor ändert in MoneyMoney nie Buchungen, den Kategorienbaum oder Regeln und löst keine Überweisungen aus.
 
@@ -37,7 +37,7 @@ Danach erstellt „Auswertung erstellen“ die erste Auswertung. Die Sprache (De
 <a id="areas"></a>
 ### Bereiche
 
-Ein Bereich ist eine Menge von Konten mit eigener Bilanz, eigenem Kapitalfluss, eigener Planung, Steuerübersicht, Umsätzen und Belegen – zum Beispiel „Privat“ und je eine Gesellschaft. Vorschlag: jede Kontengruppe auf oberster Ebene in MoneyMoney. Du kannst Konten und Gruppen aber beliebig zuordnen, zusammenlegen oder weglassen. Ein Bereich ist der Hauptbereich (privat); er ist beim Öffnen vorausgewählt. Gesellschaften bekommen Art und deinen Anteil – mit dem Anteil rechnet Kontor deine Beteiligung und die Steuer. Art und Hauptbereich sind aus den Namen vorbelegt; bitte prüfen. Mit ▲ ▼ legst du die Reihenfolge fest, in der die Bereiche oben in der Leiste stehen. Bereiche lassen sich umbenennen, löschen, zusammenlegen oder aus einzelnen Konten und Gruppen zusammenstellen; Konten, die keinem Bereich angehören, zählen nirgends.
+Ein Bereich ist eine Menge von Konten mit eigener Bilanz, eigenem Cashflow, eigener Planung, Steuerübersicht, Umsätzen und Belegen – zum Beispiel „Privat“ und je eine Gesellschaft. Vorschlag: jede Kontengruppe auf oberster Ebene in MoneyMoney. Du kannst Konten und Gruppen aber beliebig zuordnen, zusammenlegen oder weglassen. Ein Bereich ist der Hauptbereich (privat); er ist beim Öffnen vorausgewählt. Gesellschaften bekommen Art und deinen Anteil – mit dem Anteil rechnet Kontor deine Beteiligung und die Steuer. Art und Hauptbereich sind aus den Namen vorbelegt; bitte prüfen. Mit ▲ ▼ legst du die Reihenfolge fest, in der die Bereiche oben in der Leiste stehen. Bereiche lassen sich umbenennen, löschen, zusammenlegen oder aus einzelnen Konten und Gruppen zusammenstellen; Konten, die keinem Bereich angehören, zählen nirgends.
 
 <a id="accounts"></a>
 ### Konten und Positionen
@@ -51,8 +51,8 @@ Jedes Konto bekommt einen Bereich, eine Position in der Bilanz und eine Verlaufs
 | Position | Was dazugehört |
 |---|---|
 | Bankguthaben | Giro, Tagesgeld, Kreditkarte – sofort verfügbar |
-| Handelbare Anlagen | Depots mit Aktien, Fonds, ETF/ETC, Derivaten, dazu Krypto und Edelmetall – in Tagen verkäuflich, mit Kursrisiko |
-| Gebundene Anlagen | Festgeld, Bausparvertrag, Lebens- und Rentenversicherung – vertraglich festgelegt |
+| Wertpapiere | Depots mit Aktien, Fonds, ETF/ETC, Derivaten, dazu Krypto und Edelmetall – in Tagen verkäuflich, mit Kursrisiko |
+| Festanlagen | Festgeld, Bausparvertrag, Lebens- und Rentenversicherung – vertraglich festgelegt |
 | Immobilien, Beteiligungen, Sachwerte | langfristig gebunden |
 | Forderungen | Darlehen an andere, Kautionen, Guthaben auf Kapitalkonten |
 | Verbindlichkeiten | Darlehen, Kreditkartenschulden, Schulden auf Kapitalkonten |
@@ -68,7 +68,7 @@ Jedes Konto bekommt einen Bereich, eine Position in der Bilanz und eine Verlaufs
 Woher die Monatsstände eines Kontos kommen:
 
 - **Umsätze** (Standard für Bankkonten): Stand am Monatsende = heutiger Saldo minus alle späteren gebuchten Umsätze – so rechnet auch MoneyMoney. Vorgemerkte Umsätze zählen nicht. Vor dem ersten Umsatz gibt es keinen Stand.
-- **Kontostände**: eingetragene oder übernommene Stände sind Anker; die Monate dazwischen rechnet Kontor mit den Buchungen. Abweichungen erscheinen im Kapitalfluss als „Korrektur Kontostand“.
+- **Kontostände**: eingetragene oder übernommene Stände sind Anker; die Monate dazwischen rechnet Kontor mit den Buchungen. Abweichungen erscheinen im Cashflow als „Korrektur Kontostand“.
 - **Depots**: haben keine Buchungen. Kontor nimmt die aus MoneyMoney übernommenen Stände und zeichnet danach jeden Monat selbst auf.
 
 Kontor schätzt nichts. Ein Klick auf ein Konto in der Bilanz öffnet sein Verlauf-Fenster mit Grafik, Monatsständen und Prüfhinweisen; dort lassen sich Stände eintragen oder aus einer Datei übernehmen. Bei Depots stehen oben die Positionen (Menge, Wert, Gewinn/Verlust).
@@ -106,12 +106,12 @@ Die Seite „Synchronisierung“ zeigt je Konto den letzten Abruf und meldet Kon
 
 Überall wählst du **Monate** (mit Jahressummen) oder nur **Jahre**. Jahresspalten sind kumuliert: Zahlungsflüsse als Summe, Bestände als Stand zum Jahresende. Blass sind der laufende Monat und das laufende Jahr (noch nicht abgeschlossen), blass und schraffiert die Planwerte.
 
-- **Alle Zeilen** zeigt auch leere und ausgeblendete Zeilen.
-- **Plan** (Kapitalfluss) hängt die Planwerte rechts an; aus = nur Ist-Werte. Bilanz und Planung zeigen den Plan immer.
+- **Konten zeigen** (Bilanz) klappt alle Positionen auf; **Ausgeblendete** zeigt auch leere und nach Aktivität ausgeblendete Konten (mitgezählt werden sie immer). **Leere Zeilen** (Cashflow, Planung) zeigt auch Zeilen ohne Werte.
+- **Plan** (Cashflow) hängt die Planwerte rechts an; aus = nur Ist-Werte. Bilanz und Planung zeigen den Plan immer.
 - **inflationsbereinigt** (Planung) zeigt Planwerte in heutiger Kaufkraft.
 - Die Übersicht vergleicht zusätzlich mit dem gleichen Zeitraum des Vorjahrs.
 
-Jede Tabelle hat einen **Excel**-Knopf: Bilanz, Kapitalfluss, Planung (mit Fortschreibung und Parametern), Steuer, Umsätze, Depots, Belege, Konten und jede Immobilienkalkulation.
+Jede Tabelle hat einen **Excel**-Knopf: Bilanz, Cashflow, Planung (mit Fortschreibung und Parametern), Steuer, Umsätze, Depots, Belege, Konten und jede Immobilienkalkulation.
 
 <a id="balance-sheet"></a>
 ## Bilanz
@@ -124,16 +124,16 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat, mit
 - **Grafik**: Zusammensetzung des Vermögens in den Farben der Positionen, schwarz das Nettovermögen (gestrichelt: Plan). Zeitraum 1/3/10 Jahre (jeweils bis heute), alles oder eine Monatszahl; waagerecht wischen verschiebt, mit zwei Fingern zoomen, Doppelklick vergrößert, Klick springt zur Spalte. Am iPhone: auf dem Streifen mit den Beträgen links seitlich ziehen verschiebt, zwei Finger verschieben und zoomen, ein Finger zeigt die Werte. Aufgeklappte Positionen zeigen ihre Konten als Abstufungen der Farbe – dieselbe Abstufung steht als Punkt vor dem Konto in der Tabelle.
 - **Geldtransit**: Liegen die beiden Buchungen einer Umbuchung zwischen eigenen Konten in verschiedenen Monaten (am 31. abgebucht, am 1. gutgeschrieben), zählt der Betrag am Monatsende als „Geldtransit“ zum Bankguthaben – sonst sähe das Nettovermögen kurz zu niedrig aus. Ein Klick zeigt die erkannten Buchungspaare.
 - **Monate oder Jahre**: Jahresspalten zeigen Bestände zum Jahresende.
-- **Einzelne Grafiken** (unter der Tabelle): das Nettovermögen allein, die Summe frei gewählter Positionen (Standard: Bankguthaben, handelbare und gebundene Anlagen) und die Zusammensetzung einer gewählten Position nach Konten (gestapelt, in eigenen Pastellfarben, bei sehr vielen Konten zusätzlich schraffiert). Alle haben einen eigenen Zeitraum (1/3/10 Jahre bis heute, alles; Ziehen vergrößert, Doppelklick zoomt, nach rechts wischen zeigt den Plan) und eine Achse, die sich den sichtbaren Werten anpasst – so sieht man die Entwicklung auch dann, wenn sich große Positionen wie Forderungen und Verbindlichkeiten in der Grafik oben gegenseitig ausgleichen. Oben steht der aktuelle Wert und die Veränderung im gewählten Zeitraum.
+- **Einzelne Grafiken** (unter der Tabelle): das Nettovermögen allein, die Summe frei gewählter Positionen (Standard: Bankguthaben, Wertpapiere und Festanlagen) und die Zusammensetzung einer gewählten Position nach Konten (gestapelt, in eigenen Farben, bei sehr vielen Konten zusätzlich schraffiert). Alle haben einen eigenen Zeitraum (1 oder 3 Jahre bis heute, alles; Ziehen vergrößert, Doppelklick zoomt, nach rechts wischen zeigt den Plan) und eine Achse, die sich den sichtbaren Werten anpasst – so sieht man die Entwicklung auch dann, wenn sich große Positionen wie Forderungen und Verbindlichkeiten in der Grafik oben gegenseitig ausgleichen. Oben steht der aktuelle Wert und die Veränderung im gewählten Zeitraum.
 
 <a id="cash-flow"></a>
-## Kapitalfluss
+## Cashflow
 
 Wohin das Geld fließt: Einnahmen und Ausgaben nach Kategorien, Investitionen (Umschichtungen in Depots und Anlagen, Einlagen in Beteiligungen), Finanzierung (Tilgung und Zinsen je Darlehen), Bewertung (Wertänderungen von Depots) und „Unklar“.
 
-![Kapitalfluss](img/de/cash_flow.png)
+![Cashflow](img/de/cash_flow.png)
 
-Umbuchungen zwischen eigenen Konten erkennt Kontor an der Gegen-IBAN, an der Kategorie „Umbuchung“ und an Gegenbuchungen mit gleichem Betrag innerhalb von drei Tagen; sie zählen nicht als Einnahme oder Ausgabe. Die **Prüfzeile** „unerklärte Vermögensänderung“ sollte nahe 0 liegen – sonst fehlt eine Kategorie oder eine Gegenbuchung. Welche Kategorien als eigene Zeile erscheinen, legst du unter [Kategorien → Auswahl](#categories-selection) fest; welche Oberkategorie zu welchem Abschnitt gehört, unter Kategorien → Kapitalfluss-Zuordnung.
+Umbuchungen zwischen eigenen Konten erkennt Kontor an der Gegen-IBAN, an der Kategorie „Umbuchung“ und an Gegenbuchungen mit gleichem Betrag innerhalb von drei Tagen; sie zählen nicht als Einnahme oder Ausgabe. Die **Prüfzeile** „unerklärte Vermögensänderung“ sollte nahe 0 liegen – sonst fehlt eine Kategorie oder eine Gegenbuchung. Welche Kategorien als eigene Zeile erscheinen, legst du unter [Kategorien → Auswahl](#categories-selection) fest; welche Oberkategorie zu welchem Abschnitt gehört, unter Kategorien → Cashflow-Zuordnung.
 
 <a id="categories"></a>
 ## Kategorien
@@ -147,11 +147,11 @@ Die Seite Kategorien hat vier Reiter:
 - **Zuordnen** – Umsätze ohne Kategorie, nach Gegenpartei gruppiert; die Zahl im Reiter zeigt, wie viele offen sind.
 - **Auswahl** – welche Kategorien aus MoneyMoney Kontor als Zeile nutzt ([mehr](#categories-selection)).
 - **Kontor-Kategorien & Regeln** – Kategorien, die es nur in Kontor gibt (Baum aus MoneyMoney übernommen, ergänzbar), deine eigenen Regeln (Name, Zweck, Gegen-IBAN, Richtung) und die gelernten. Gelernt wird aus der Gegenpartei (IBAN oder Name, ggf. mit Zweckanfang), wenn mindestens 90 % ihrer bisherigen Umsätze dieselbe Kategorie haben. Eigene Regeln gehen vor; spezifischere gewinnen (IBAN vor Name + Zweck vor Name).
-- **Kapitalfluss-Zuordnung** – welche Oberkategorie zu welchem Abschnitt des Kapitalflusses gehört (Einnahmen, Ausgaben, Investition, Finanzierung). Ohne Zuordnung entscheidet das Vorzeichen.
+- **Cashflow-Zuordnung** – welche Oberkategorie zu welchem Abschnitt des Cashflows gehört (Einnahmen, Ausgaben, Investition, Finanzierung). Ohne Zuordnung entscheidet das Vorzeichen.
 
 **Was gilt**: die Kategorie aus MoneyMoney – außer du übersteuerst sie ausdrücklich („Nur in Kontor“). Ohne sie: manuelle Zuordnung vor eigener Regel vor gelernter Regel. Regeln wirken standardmäßig nur auf Umsätze ohne MoneyMoney-Kategorie; „Regeln auch auf MoneyMoney-kategorisierte Umsätze anwenden“ ändert das – nur in Kontor, MoneyMoney bleibt unverändert.
 
-Kategorien braucht es nur für die Aufteilung (Kapitalfluss-Zeilen, Planung je Zeile, Steuer). Bilanz, Nettovermögen, Immobilien, Darlehen und Einnahmen/Ausgaben insgesamt funktionieren auch ohne. Wenig Pflege: Zahlungen zwischen dir und deinen Gesellschaften erkennt Kontor ohnehin als Einlage oder Entnahme; fein kategorisieren musst du vor allem dort, wo du Kapitalfluss und Steuer genau brauchst.
+Kategorien braucht es nur für die Aufteilung (Cashflow-Zeilen, Planung je Zeile, Steuer). Bilanz, Nettovermögen, Immobilien, Darlehen und Einnahmen/Ausgaben insgesamt funktionieren auch ohne. Wenig Pflege: Zahlungen zwischen dir und deinen Gesellschaften erkennt Kontor ohnehin als Einlage oder Entnahme; fein kategorisieren musst du vor allem dort, wo du Cashflow und Steuer genau brauchst.
 
 <a id="categories-write-back"></a>
 ### Nach MoneyMoney zurückschreiben
@@ -168,11 +168,11 @@ Mit „Kategorien zurückschreiben“ (Einstellungen → Allgemein oder „Einsc
 
 Unter Kategorien → Auswahl legst du je Kategorie aus MoneyMoney fest:
 
-- **Eigene Zeile** – erscheint im Kapitalfluss und in der Planung als eigene Zeile.
-- **Zur Oberkategorie** – zählt samt Unterkategorien zur Oberkategorie (nur Kapitalfluss und Planung; die Steuer nutzt weiter die genaue Kategorie).
+- **Eigene Zeile** – erscheint im Cashflow und in der Planung als eigene Zeile.
+- **Zur Oberkategorie** – zählt samt Unterkategorien zur Oberkategorie (nur Cashflow und Planung; die Steuer nutzt weiter die genaue Kategorie).
 - **Nicht verwenden** – in Kontor wie ohne Kategorie; die Umsätze erscheinen unter „Zuordnen“.
 
-„Nur oberste Ebene als Zeile“ räumt den Kapitalfluss mit einem Klick auf. In MoneyMoney ändert sich dadurch nichts.
+„Nur oberste Ebene als Zeile“ räumt den Cashflow mit einem Klick auf. In MoneyMoney ändert sich dadurch nichts.
 
 ![Auswahl der Kategorien](img/de/category_selection.png)
 
@@ -325,7 +325,7 @@ Im Terminal aktualisiert dieselbe Zeile wie bei der [Installation](https://githu
 | MoneyMoney läuft nicht / Datenbank gesperrt | MoneyMoney öffnen und entsperren; Kontor holt alles nach. |
 | Keine Berechtigung (Automation) | Systemeinstellungen → Datenschutz & Sicherheit → Automation: python3 darf MoneyMoney steuern. |
 | Konto nicht gefunden | Eine Regel verweist auf ein gelöschtes oder umbenanntes Konto: unter Regeln neu zuordnen; „Einrichtung prüfen“ zeigt alle Fälle. |
-| Prüfzeile im Kapitalfluss ≠ 0 | Es fehlt eine Kategorie oder eine Gegenbuchung. |
+| Prüfzeile im Cashflow ≠ 0 | Es fehlt eine Kategorie oder eine Gegenbuchung. |
 | iPhone öffnet die Adresse nicht | Zugriff unter Einstellungen → Zugang einschalten; Tailscale auf beiden Geräten verbunden? |
 | Keine passende Zahlung | Die Darlehensregel findet die Rate nicht: Gegen-IBAN oder Text und Quellkonto prüfen. Bis 35 Tage nach „Automatik ab“ nur ein Hinweis. |
 | Port nicht nutzbar | Ein anderes Programm belegt den Port: Einstellungen → Zugang → Erweitert. |

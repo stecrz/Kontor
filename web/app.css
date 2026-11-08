@@ -197,11 +197,14 @@ svg text { fill:var(--muted); font-size:11px; }
 .bch-tip-nw span { color:var(--fg); font-weight:600; }
 th.bch-on { color:var(--accent); box-shadow:inset 0 -2px 0 var(--accent); }
 .lc-grid { margin-top:4px; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); } .lc { margin-bottom:0; min-width:0; }
-.lc-band { stroke:var(--head); stroke-width:.7; fill-opacity:.9; }
+.lc-band { stroke:var(--head); stroke-width:.7; fill-opacity:.82; }
 .lc-total { fill:none; stroke:var(--fg); stroke-width:1.6; stroke-linejoin:round; } .lc-total.plan { stroke-dasharray:5 4; opacity:.7; }
-.lc-pos-sel { font-size:13px; font-weight:600; padding:3px 6px; max-width:100%; }
+.lc-pos-sel { font-size:13px; font-weight:600; padding:3px 6px; min-width:0; max-width:100%; }
 .lc-legend { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11.5px; color:var(--muted); margin-top:6px; } .lc-legend span { display:inline-flex; align-items:center; gap:5px; } .lc-legend i { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
-.lc-title { font-size:13px; } .lc-val { font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; }
+.lc-head { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:28px; }
+.lc-title { font-size:13px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:flex; align-items:center; gap:6px; } .lc-rb { flex-shrink:0; }
+.lc-row2 { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:2px 0 6px; min-height:20px; }
+.lc-val { font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; }
 .lc-plot { min-height:190px; }
 .lc-area { opacity:.07; stroke:none; }
 .lc-range { text-align:right; margin-top:2px; }

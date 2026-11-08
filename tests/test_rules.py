@@ -323,4 +323,4 @@ class ChangelogTests(unittest.TestCase):
         with open(os.path.join(here, "CHANGELOG.md"), encoding="utf-8") as f:
             text = f.read()
         notes, datum = updates.changelog_section(text, updates.current_version())
-        self.assertTrue(notes); self.assertRegex(datum, r"^\d{4}-\d{2}-\d{2}$")
+        self.assertTrue(notes); self.assertRegex(datum, r"^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$")

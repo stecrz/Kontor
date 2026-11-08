@@ -65,7 +65,7 @@ def archive_url(repo: str, ref: str, kind: str = "tags") -> str:
     return "https://github.com/%s/archive/refs/%s/%s.zip" % (repo, kind, ref)
 
 
-HEADING_RE = re.compile(r"^##\s+v?(\S+)(?:\s+\((\d{4}-\d{2}-\d{2})\))?")
+HEADING_RE = re.compile(r"^##\s+v?(\S+)(?:\s+\((\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\))?")      # date, optionally with time (local)
 
 
 def changelog_section(text: str, version: str) -> Tuple[str, str]:

@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.9.36 (2026-11-08 02:31)
+- „Kapitalfluss“ heißt jetzt „Cashflow“. Positionen kürzer: „Wertpapiere“ (statt Handelbare Anlagen) und „Festanlagen“ (statt Gebundene Anlagen).
+- Bilanz: Tabelle zeigt beim Öffnen den laufenden Monat (bzw. das laufende Jahr) ganz rechts. „Konten zeigen“ / „Nur Positionen“ statt „alle aufklappen“, „Ausgeblendete“ statt „Alle Zeilen“ (Cashflow und Planung: „Leere Zeilen“); das „?“ daneben erklärt beides.
+- Kleine Grafiken: Zeitraum oben rechts (1 J, 3 J, Alle), Standard 1 Jahr. Nettovermögen ohne Positionsliste. „Auswahl“ zeigt beim Darüberfahren jede Position einzeln und die Summe. Prozentuale Veränderung mit höchstens drei Ziffern (über 100 % ohne Nachkommastelle). „Zusammensetzung“: Auswahl unter dem Titel, nur Konten, die im Zeitraum nicht durchgehend 0 € stehen, Farben auch im Dunkelmodus gut lesbar.
+- Updates: Änderungen tragen jetzt auch die Uhrzeit der Version.
+
 ## 3.9.35 (2026-11-08)
 - Bilanz: dritte Grafik – eine Position wählen und ihre Zusammensetzung nach Konten sehen (gestapelt, eigene Pastellfarben, bei sehr vielen Konten zusätzlich schraffiert, mit Legende). Aufgeklappte Konten tragen in der Tabelle denselben Farbton wie in der großen Grafik.
 - iPhone: Seite nicht mehr breiter als der Bildschirm – die Leiste der Bereiche (und Reiter) lässt sich bei vielen Einträgen seitlich schieben.
