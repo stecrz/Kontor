@@ -363,3 +363,21 @@ class PortfolioHistoryTests(unittest.TestCase):
         db = self._db(chart, [(1, 1, 0), (2, 0, 1)])
         r = H._portfolios(db, ["portfolio_chart", "securities"], [1], lambda k: {"saldo": 530.0}, D(2024, 7, 20))[1]
         self.assertEqual(r["werte"]["2024-05"], 700.0); self.assertEqual(r["werte"]["2024-06"], 525.0)
+
+    def test_total_entry_beside_one_dominant_security(self):
+        # one investment makes up nearly the whole portfolio, MoneyMoney also records the portfolio total: the total entry is
+        # the one that matches the sum of the others exactly (not the investment, which matches only roughly) -> October with cash
+        import mm_history as H
+        from datetime import date as D, timedelta as TD
+        chart, d = [], D(2026, 8, 7)
+        while d <= D(2026, 11, 8):
+            cash = 0.30 if D(2026, 10, 7) <= d < D(2026, 11, 4) else -0.30 if d >= D(2026, 11, 4) else 0.0
+            chart += [(d, 1000.0, 1), (d, round(1000.0 + cash, 2), 2)]
+            if D(2026, 10, 7) <= d < D(2026, 11, 4):
+                chart.append((d, 0.30, 3))
+            elif d >= D(2026, 11, 4):
+                chart.append((d, -0.30, 4))
+            d += TD(days=3)
+        db = self._db(chart, [(1, 1, 0), (3, 0, 1)])
+        r = H._portfolios(db, ["portfolio_chart", "securities"], [1], lambda k: {"saldo": 999.70}, D(2026, 11, 8))[1]
+        self.assertEqual(r["werte"]["2026-09"], 1000.0); self.assertEqual(r["werte"]["2026-10"], 1000.3)

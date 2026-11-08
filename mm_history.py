@@ -487,15 +487,18 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
                 if o != skip and j >= 0 and (o in now or ds[-1] >= d):
                     tot += vs[j]
             return tot
-        total_key, check = None, ""
+        total_key, check, best = None, "", None
         if len(per) > 1:
+            # every candidate is checked; when one security makes up nearly the whole portfolio, it also roughly matches the sum
+            # of the others (which then contain the total) -- the real total entry matches at the most points, and most closely
             for sk in sorted((sk for sk, r in per.items() if fits(r[-1][1]) and (last_any - r[-1][0]).days <= 7), key=lambda sk: per[sk][0][0]):
                 pts = per[sk][::max(1, len(per[sk]) // 300)]           # at most about 300 points to compare
-                hits = sum(1 for d, v in pts if abs(others_at(sk, d) - v) <= max(1.0, 0.05 * abs(v)))
+                devs = sorted(abs(others_at(sk, d) - v) / max(20.0, abs(v)) for d, v in pts)   # 5 % or 1.00
+                hits = sum(1 for x in devs if x <= 0.05)
                 check = "total entry matches the other securities at %d %% of its points" % round(100.0 * hits / len(pts))
-                if hits >= 0.7 * len(pts):
-                    total_key = sk
-                    break
+                mean = sum(devs[:hits]) / max(1, hits)                  # closeness over the matching points
+                if hits >= 0.7 * len(pts) and (best is None or (hits, -mean) > best):
+                    total_key, best = sk, (hits, -mean)
         art = "total" if total_key is not None else "level" if fits(level_now) else "delta" if fits(delta_now) else None
         if art is None:
             pct = lambda x: "%d %%" % round(100.0 * x / bal) if abs(bal) >= 1.0 else "-"

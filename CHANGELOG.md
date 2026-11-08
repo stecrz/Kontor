@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.10.7 (2026-11-08 21:57)
+- Historische Kontostände der Depots: Macht eine Anlage fast das ganze Depot aus, wurde sie mit MoneyMoneys Eintrag für den Depotwert insgesamt verwechselt. Jetzt gilt der Eintrag, der am genauesten zur Summe der übrigen passt – also MoneyMoneys gespeicherter Depotwert. Bitte die Kontostände neu einlesen.
+
 ## 3.10.6 (2026-11-08 21:47)
 - Historische Kontostände der Depots: Eine Position, die MoneyMoney später ersetzt oder entfernt hat (z. B. ein Guthaben im Depot), zählt bis zur nächsten Aktualisierung des Depots – auch über ein Monatsende hinweg. Bisher fiel sie schon mit ihrem letzten Punkt weg. Bitte die Kontostände neu einlesen.
 
