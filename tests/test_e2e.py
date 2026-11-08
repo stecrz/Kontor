@@ -2169,6 +2169,13 @@ class BrowserTest(unittest.TestCase):
                 self.assertLess(off, 1.5)
                 bb = pg.query_selector("#bch-hit").bounding_box(); pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + 60); pg.wait_for_timeout(150)
                 self.assertFalse(pg.is_visible("#bch-tip"))
+                # swiping and dragging on the chart (also on the axes) scroll the table
+                sl = lambda: pg.evaluate("document.querySelector('#main .wrap').scrollLeft")
+                pg.evaluate("document.querySelector('#main .wrap').scrollLeft = 0"); pg.wait_for_timeout(300); s0 = sl()
+                pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] - 8); pg.mouse.wheel(400, 0); pg.wait_for_timeout(600)
+                self.assertGreater(sl(), s0); s1 = sl()
+                pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + 80); pg.mouse.down(); pg.mouse.move(bb["x"] + bb["width"] / 2 + 250, bb["y"] + 80, steps=6); pg.mouse.up(); pg.wait_for_timeout(600)
+                self.assertLess(sl(), s1)
                 pg.click("#bch-link"); pg.wait_for_timeout(300); self.assertIsNone(pg.query_selector("#bch.linked"))
                 pg.click("#bch-rb button[data-m='0']"); pg.wait_for_timeout(200)
                 # waagerecht zur aktuellen Spalte gescrollt (auch in der Jahresansicht)

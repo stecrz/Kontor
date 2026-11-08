@@ -1258,6 +1258,30 @@ function bchDraw() {
   bchBind();
 }
 // Aligned with the table: the chart follows the table's columns (each value right above its column) and scrolls with it
+function bchLinkPan(svg) {
+  // swiping (trackpad) or dragging (mouse, finger) anywhere on the chart – plot and axes – scrolls the table sideways
+  if (!svg || svg._lnk) return; svg._lnk = true;
+  const tbl = () => bchLinked() ? $('#main .wrap.snap') : null;
+  svg.addEventListener('wheel', e => { const w = tbl(); if (!w || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; e.preventDefault(); tablePan(w, e.deltaX); }, {passive: false});
+  let drag = null;
+  svg.addEventListener('pointerdown', e => { if (!tbl() || e.button > 0) return; drag = {id: e.pointerId, x: e.clientX}; try { svg.setPointerCapture(e.pointerId); } catch (x) {} });
+  svg.addEventListener('pointermove', e => { const w = tbl(); if (!drag || e.pointerId !== drag.id || !w) return; e.preventDefault(); tablePan(w, drag.x - e.clientX); drag.x = e.clientX; });
+  const end = e => { if (drag && e.pointerId === drag.id) drag = null; };
+  svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
+}
+function tablePan(w, dx) {
+  // move a snapping table freely (snapping off meanwhile), then let it settle on the nearest column
+  if (!w._pan) { w._pan = true; w.style.scrollSnapType = 'none'; }
+  w.scrollLeft += dx;
+  clearTimeout(w._panT);
+  w._panT = setTimeout(() => {
+    w._pan = false;
+    const sw = $('thead th', w).offsetWidth, max = w.scrollWidth - w.clientWidth, cur = w.scrollLeft;
+    const starts = $$('thead th', w).slice(1).filter(th => !th.classList.contains('snap-pad')).map(th => Math.round(colX(w, th) - sw));
+    const best = starts.reduce((b, v) => Math.abs(v - cur) < Math.abs(b - cur) ? v : b, 0);
+    w.style.scrollSnapType = ''; w.scrollTo({left: Math.max(0, Math.min(max, best)), behavior: 'smooth'});
+  }, 180);
+}
 const bchLinked = () => { if (S.bchLink == null) { try { S.bchLink = localStorage.getItem('kontor.bchLink') === '1'; } catch (e) { S.bchLink = false; } } return S.bchLink; };
 const bchKeyLabel = k => k.length === 4 ? k : `${MONATE_LANG[+k.slice(5) - 1]} ${k.slice(0, 4)}`;
 function bchIndex(key) {
@@ -1385,10 +1409,7 @@ function bchBind() {
   const pt = e => { const r = $('#bch-svg').getBoundingClientRect(); return (e.clientX - r.left) * BCH.geo.W / r.width; };
   const gest = chartGestures($('#bch-svg'), {pt, geo: () => bchLinked() ? null : BCH.geo, range: () => [BCH.f0, BCH.f1], view: (f0, span, keep) => bchView(f0, span, keep), hide: () => bchHover(null)});
   // aligned with the table: no value tip (the table shows the same), no zoom; swiping sideways scrolls the table
-  if (bchLinked()) {
-    hit.addEventListener('wheel', e => { const w = $('#main .wrap.snap'); if (!w || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; e.preventDefault(); w.scrollLeft += e.deltaX; }, {passive: false});
-    return;
-  }
+  if (bchLinked()) return;                              // aligned: swiping and dragging scroll the table (bchLinkPan)
   hit.addEventListener('pointermove', e => {
     if (gest.busy()) { bchHover(null); return; }
     const px = pt(e), G = BCH.geo;
@@ -1443,8 +1464,9 @@ function bindBilanzChart(main) {
   const lb = $('#bch-link', main); if (lb) lb.addEventListener('click', () => { S.bchLink = !bchLinked(); try { localStorage.setItem('kontor.bchLink', S.bchLink ? '1' : '0'); } catch (e) {} route(); });
   bchDraw();
   if (bchLinked()) {
-    // the chart follows the table when it scrolls sideways
+    // the chart follows the table when it scrolls sideways; swiping or dragging on the chart scrolls the table
     const w = $('.wrap.snap', main); if (w) w.addEventListener('scroll', () => { if (!BCH.raf) BCH.raf = requestAnimationFrame(() => { BCH.raf = 0; bchDraw(); }); }, {passive: true});
+    bchLinkPan($('#bch-svg', main));
   } else $$('.wrap thead th[data-key]', main).forEach(th => { th.classList.add('jump'); th.addEventListener('click', () => bchFocus(th.dataset.key)); });
   if (BCH.ro) BCH.ro.disconnect();
   let last = 0; BCH.ro = new ResizeObserver(() => { const w = $('#bch-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; bchDraw(); } });

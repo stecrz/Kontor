@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.9.47 (2026-11-08 04:29)
+- „An Tabelle ausrichten“: Wischen oder Ziehen auf der Grafik (auch auf den Achsen) scrollt die Tabelle seitlich; danach rastet sie auf der nächsten Spalte ein.
+
 ## 3.9.46 (2026-11-08 04:27)
 - Kleine Grafiken: Fläche immer zur Nulllinie hin gefüllt – bei negativen Werten nach oben, so ist das Vorzeichen sofort sichtbar.
 - Kleine Grafiken: Kopf, Wertzeile und Grafik teilen sich die Zeilen – die Grafiken und ihre x-Achsen stehen auf gleicher Höhe, auch wenn eine Zeile umbricht.
