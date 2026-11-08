@@ -955,7 +955,9 @@ EXPORT_FILE_KEYS = {"balance": "xf_balance", "cashflow": "xf_cashflow", "plannin
                     "holdings": "xf_holdings", "receipts": "xf_receipts", "accounts": "xf_accounts"}       # Dateiname je Export (Sprachkatalog)
 
 
-def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> List[Sheet]:
+def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: Optional[dict] = None) -> List[Sheet]:
+    """view (balance sheet): the state of the table on screen -- open positions, open portfolios, hidden rows shown --
+    so that the workbook opens like the page; everything else is in it too, collapsed (Excel's outline)."""
     ds = app.dataset()
     if ds.get("leer"):
         raise ValueError(tr("s_noch_keine_daten_zuerst_einen"))
@@ -975,17 +977,47 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str) -> Lis
         return [(m, [m], m in plan) for m in allm]
 
     if was == "balance":
-        cols = columns(False)
-        rows, bold = [], []
-        for r in b.get("bilanz", {}).get("zeilen", []):
-            rows.append(["    " * r["ebene"] + r["name"]] + [_last(r["werte"], ms) for _, ms, _p in cols])
-            if r["gruppe"]:
+        v = view or {}
+        cols = columns(True)
+        bil = b.get("bilanz", {})
+        proj = {r["id"]: r.get("werte") or {} for r in ((bil.get("projektion") or {}).get("zeilen") or [])}
+        allw = lambda r: dict(r.get("werte") or {}, **proj.get(r.get("id"), {}))
+        cur = (b.get("monate") or [""])[-1]
+        inakt = int(((app.config.get("bilanz") or {}).get("inaktiv_monate") or 12))
+        recent = (b.get("monate") or [])[-inakt:]
+        empty = lambda w: all(_last(w, ms) is None or abs(_last(w, ms)) < 0.005 for _, ms, _p in cols)
+        rows, bold, levels, hidden = [], [], [], []
+
+        def add(label, w, level, hide, strong=False):
+            rows.append([label] + [_last(w, ms) for _, ms, _p in cols])
+            levels.append(level)
+            if strong:
                 bold.append(len(rows) - 1)
-        nw = b.get("bilanz", {}).get("nettovermoegen", {})
-        lnw = b.get("bilanz", {}).get("liquides_nettovermoegen", {})
-        rows.append([tr("x_nettovermoegen")] + [_last(nw, ms) for _, ms, _p in cols]); bold.append(len(rows) - 1)
-        rows.append([tr("x_davon_liquide")] + [_last(lnw, ms) for _, ms, _p in cols])
-        return [Sheet(tr("x_bilanz") + " " + name, [tr("x_konto")] + [c[0] for c in cols], rows, bold_rows=bold)]
+            if hide:
+                hidden.append(len(rows) - 1)
+        role_open = False
+        for r in bil.get("zeilen", []):
+            if r["gruppe"]:
+                role_open = r["rolle"] in v.get("open", ())
+                add(r["name"], allw(r), 0, False, True)
+                continue
+            skip = not v.get("all") and (r.get("inaktiv") or empty(allw(r)))
+            add("    " + r["name"], allw(r), 1, not role_open or skip)
+            dep_open = role_open and not skip and r["id"] in v.get("dep", ())
+            for w in r.get("wertpapiere") or []:
+                gone = not v.get("all") and (empty(w["werte"]) or not any(w["werte"].get(m) not in (None, 0) for m in recent))
+                add("        " + w["name"] + (" (%s)" % w["isin"] if w.get("isin") and w["isin"] != w["name"] else ""), w["werte"], 2, not dep_open or gone)
+        nw = dict(bil.get("nettovermoegen", {}), **((bil.get("projektion") or {}).get("nettovermoegen") or {}))
+        add(tr("x_nettovermoegen"), nw, 0, False, True)
+        add(tr("x_davon_liquide"), bil.get("liquides_nettovermoegen", {}), 0, False)
+        for role in dict.fromkeys(r["rolle"] for r in bil.get("ausserhalb") or []):       # outside net worth, collapsed per kind
+            accs = [r for r in bil["ausserhalb"] if r["rolle"] == role]
+            tot = {m: round(sum((r["werte"].get(m) or 0.0) for r in accs), 2) for m in {m for r in accs for m in r["werte"]}}
+            add(role_label(role) + " (" + tr("x_nicht_im_nw") + ")", tot, 0, False, True)
+            for r in accs:
+                add("    " + r["name"], r["werte"], 1, role not in v.get("open", ()))
+        head = [tr("x_konto")] + [c[0] + (tr("x_plan_suffix") if c[2] else "") for c in cols]
+        return [Sheet(tr("x_bilanz") + " " + name, head, rows, bold_rows=bold, levels=levels, hidden_rows=hidden)]
 
     if was in ("cashflow", "planning"):
         cols = columns(True)
@@ -1296,7 +1328,8 @@ def make_handler(app: App):
                                  {"Content-Disposition": 'attachment; filename="Kontor-%s-%s-%s.xlsx"' % (tr("xf_property"), str(im.get("name") or tr("x_objekt")).replace('"', "").replace("/", "-"), date.today().isoformat())})
             if path.startswith("/api/export/"):
                 was = path[len("/api/export/"):].replace(".xlsx", "")
-                data = workbook(export_sheets(app, was, q.get("area"), "jahre" if q.get("mode") == "years" else "monate"))
+                view = {"open": set((q.get("open") or "").split(",")) - {""}, "dep": set((q.get("dep") or "").split(",")) - {""}, "all": q.get("all") == "1"}
+                data = workbook(export_sheets(app, was, q.get("area"), "jahre" if q.get("mode") == "years" else "monate", view))
                 return self._raw(200, data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                  {"Content-Disposition": 'attachment; filename="Kontor-%s-%s.xlsx"' % (tr(EXPORT_FILE_KEYS[was]) if was in EXPORT_FILE_KEYS else was, date.today().isoformat())})
             if path == "/api/package/export":

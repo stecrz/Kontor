@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.10.11 (2026-11-08 23:42)
+- Bilanz: Jede der vier Grafiken kann die große oben sein (⤢ in einer kleinen Grafik tauscht sie); mit allen Möglichkeiten der großen Grafik (Zeitraum, „Alle“, An Tabelle ausrichten).
+- Bilanz-Tabelle: Depots zeigen die Zahl ihrer Wertpapiere („(12)“ bzw. „(9/12)“); Wertpapiere nicht mehr fett; das Auge zählt ausgeblendete Wertpapiere nur aufgeklappter Positionen mit. Klick auf ein Wertpapier zeigt seinen Verlauf, dort lässt sich ein eigener Name vergeben. Ohne Namen „Unbenannt N“ statt „Wertpapier N“.
+- Verlauf eines Kontos: Grafik lässt sich verschieben und zoomen, dazu 1 J / Alle.
+- „Zusammensetzung“: höchstens drei Zeilen Einträge (größte zuerst, der Rest scrollt), Namen sinnvoll gekürzt (z. B. „ACWI“).
+- „Auswahl“: Namen für typische Kombinationen (Verfügbar, Finanzvermögen, Gebunden, Bruttovermögen, Sachvermögen); groß angezeigt ausgeschrieben.
+- Excel-Export der Bilanz: mit Konten und Wertpapieren, in Excel auf- und zuklappbar, beim Öffnen so aufgeklappt wie auf der Seite; mit Planspalten.
+- Kleine Grafiken: Zeitraum fett. Fest eingestellter Wertebereich bleibt an der blau markierten Betragsachse erkennbar.
+
 ## 3.10.10 (2026-11-08 22:59)
 - Bilanz-Tabelle: Konten leicht eingerückt; der Knopf in der Kopfzelle klappt wieder nur alle Positionen auf und zu, Depots öffnet man einzeln. Ein geöffnetes Depot zeigt seine Wertpapiere auch in der großen Grafik. Die Hinweise „Depot“ und „Kontostände“ neben Konten entfallen. Lange Namen werden gekürzt (ganz beim Darüberfahren).
 - Wertpapiere ohne Wert in der eingestellten Zeit (Einrichtung → Konten, „Nach Aktivität“) sind wie Konten ausgeblendet; das Auge zeigt sie. Sein Hinweis nennt jetzt, wo das eingestellt wird.

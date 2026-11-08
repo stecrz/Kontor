@@ -1254,6 +1254,15 @@ class AppTests(_AppBase):
                 self.assertEqual(code, 200, (was, data[:200])); self.assertIn("spreadsheetml", hdr["Content-Type"])
                 with zipfile.ZipFile(io.BytesIO(data)) as z:
                     self.assertIn("xl/workbook.xml", z.namelist()); self.assertIn("xl/worksheets/sheet1.xml", z.namelist())
+        # balance sheet: everything in it (positions, accounts, securities), grouped; collapsed as on the page
+        code, data, hdr = self.call("/api/export/balance.xlsx?mode=months&open=wertpapiere&dep=" + F.uid("priv.depot"), raw=True)
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            x = z.read("xl/worksheets/sheet1.xml").decode()
+        self.assertIn('outlinePr summaryBelow="0"', x); self.assertIn("Welt-ETF", x); self.assertIn('outlineLevel="2"', x)
+        row = re.search(r'<row r="\d+"([^>]*)><c r="A\d+" s="\d" t="inlineStr"><is><t xml:space="preserve">\s*Welt-ETF', x)
+        self.assertTrue(row and "hidden" not in row.group(1), row and row.group(1))           # the open portfolio: its securities visible
+        row = re.search(r'<row r="\d+"([^>]*)><c r="A\d+" s="\d" t="inlineStr"><is><t xml:space="preserve">\s*Hausbank Giro', x)
+        self.assertTrue(row and 'hidden="1"' in row.group(1))                                      # a closed position: its accounts collapsed
         try:
             import openpyxl
         except ImportError:
@@ -2118,8 +2127,8 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # single curves below the table: net worth and a chosen sum (default cash + tradable + fixed-term); chips change the sum
                 self.assertTrue(pg.query_selector("#lc-nw-svg path.bch-nw")); self.assertTrue(pg.query_selector("#lc-sel-svg path.bch-nw"))
-                self.assertEqual(pg.inner_text("#lc-sel-title").replace("\u2009", " "), "Auswahl: C + WP")      # chosen positions, abbreviated
-                pg.hover("#lc-sel-title"); pg.wait_for_selector(".tip"); self.assertIn("C = Bankguthaben", pg.inner_text(".tip")); pg.mouse.move(5, 5)
+                self.assertEqual(pg.inner_text("#lc-sel-title"), "Auswahl: Verfügbar")      # a known combination gets its name
+                pg.hover("#lc-sel-title"); pg.wait_for_selector(".tip"); self.assertIn("Bankguthaben + Wertpapiere", pg.inner_text(".tip")); pg.mouse.move(5, 5)
                 # composition of one position by account (stacked), chips with the accounts: deselecting one keeps the position line
                 self.assertTrue(pg.query_selector("#lc-pos-svg path.lc-band")); self.assertIn("Hausbank Giro", pg.inner_text("#lc-pos-accs"))
                 tot = pg.get_attribute("#lc-pos-svg path.lc-total", "d"); nb = len(pg.query_selector_all("#lc-pos-svg path.lc-band"))
@@ -2135,10 +2144,14 @@ class BrowserTest(unittest.TestCase):
                 self.assertNotIn("Welt-ETF", pg.inner_text("#lc-pos-accs"))
                 pg.select_option("#lc-pos-sel", "verbindlichkeiten"); pg.wait_for_timeout(200)
                 self.assertNotIn("Hausbank Giro", pg.inner_text("#lc-pos-accs")); pg.evaluate("localStorage.removeItem('kontor.lcPos')")
+                # any small chart can become the large one (the balance sheet then shows small in its place), and back
+                pg.click(".lc[data-lc='nw'] .lc-big"); pg.wait_for_selector("#bch.big-nw"); pg.wait_for_selector(".lc[data-lc='bil'] path.lc-band")
+                self.assertIn("Nettovermögen", pg.inner_text("#bch .bch-head")); self.assertTrue(pg.query_selector("#bch-svg path.bch-nw"))
+                pg.click(".lc[data-lc='bil'] .lc-big"); pg.wait_for_timeout(300); self.assertIsNone(pg.query_selector("#bch.big-nw")); self.assertTrue(pg.query_selector(".lc[data-lc='nw']"))
                 # the same in the table: a portfolio opens into its securities (without opening the account's history)
                 if not pg.query_selector("[data-dep]"):
                     pg.click("tr.pos[data-pos='wertpapiere']")
-                pg.wait_for_selector("[data-dep]"); pg.click("[data-dep]"); pg.wait_for_selector("tr.sec")
+                pg.wait_for_selector("[data-dep]"); pg.click("[data-dep]"); pg.wait_for_selector("tr.wpr")
                 self.assertIn("Welt-ETF", pg.inner_text("#main table")); self.assertFalse(pg.query_selector("#drawer.open"))
                 checked = {x.get_attribute("data-r") for x in pg.query_selector_all("#lc-chips input:checked")}
                 self.assertIn("liquiditaet", checked); self.assertTrue(checked <= {"liquiditaet", "wertpapiere", "anlagen"})

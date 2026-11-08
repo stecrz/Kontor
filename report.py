@@ -174,7 +174,7 @@ def holding_key(name: str, isin: str) -> str:
 
 
 def depot_holdings(acc: Account, werte: Dict[str, Optional[float]], mkeys: List[str], today: date, state: dict,
-                   live: Optional[list]) -> List[dict]:
+                   live: Optional[list], config: Optional[dict] = None) -> List[dict]:
     """The securities of a portfolio, month by month: past months from MoneyMoney's history (or Kontor's own monthly record),
     the current month from MoneyMoney's export. A remainder row takes what the securities do not explain (e.g. cash that
     MoneyMoney does not list as a position), so that the rows always add up to the portfolio value. No estimates: a month
@@ -207,8 +207,9 @@ def depot_holdings(acc: Account, werte: Dict[str, Optional[float]], mkeys: List[
             r["werte"][cur] = round(r["werte"].get(cur, 0.0) + float(p.get("marketValue") or p.get("amount") or 0), 2)
         except (TypeError, ValueError, AttributeError):
             continue
-    for key, r in rows.items():                       # names Kontor has seen in MoneyMoney's export before
-        r["name"] = r["name"] or names.get(key, "")
+    own = ((config or {}).get("bilanz") or {}).get("wp_namen") or {}
+    for key, r in rows.items():                       # own names first, then names Kontor has seen in MoneyMoney's export
+        r["name"] = str(own.get(key) or "") or r["name"] or names.get(key, "")
     out = [r for r in rows.values() if any(abs(v) >= 0.005 for v in r["werte"].values())]
     if not out:
         return []
@@ -793,7 +794,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                    "passiva": role == "verbindlichkeiten", "verlauf": quelle.get(a.uuid, "umsaetze"), "fortgeschrieben_vor": fortgeschrieben.get(a.uuid),
                    "werte": {mk: hist[a.uuid][mk] for mk in mkeys}}
             if a.portfolio:
-                wp = depot_holdings(a, row["werte"], mkeys, today, state, (getattr(ledger, "portfolios", None) or {}).get(a.uuid))
+                wp = depot_holdings(a, row["werte"], mkeys, today, state, (getattr(ledger, "portfolios", None) or {}).get(a.uuid), config)
                 if wp:
                     row["wertpapiere"] = wp
             bilanz_rows.append(row)

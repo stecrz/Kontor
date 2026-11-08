@@ -158,6 +158,7 @@ const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl:
   update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', dokumente: 'properties', immo_planung: 'properties'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 const ICON = {
+  expand: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>',
   eye: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   eyeOff: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>'};
 const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k])}"${HELP_AT[k] ? ` data-help="${HELP_AT[k]}"` : ''}>?</span>` : '';
@@ -1015,35 +1016,92 @@ function renderHist(r) {
   const hp = months.filter(mk => werte[mk] != null).map(mk => [mk, werte[mk]]);
   $('#h-chart', d).innerHTML = histChart(hp); bindHistChart($('#h-chart', d), hp);
 }
-function histChart(pts) {
-  // Verlauf des Kontos im Fenster: Monatsend-Staende als Linie mit Flaeche, Nulllinie, Jahre unten
-  if (pts.length < 2) return '';
-  const W = 420, H = 130, P = {l: 46, r: 6, t: 8, b: 18}, n = pts.length - 1, vals = pts.map(p => p[1]);
+// History chart of the drawer (account or security): month-end values as a line with area; range 1 J / Alle (default all),
+// swipe sideways or drag on the month axis to move, pinch / Ctrl+wheel / double click to zoom, the amount axis as in the
+// other charts (drag to zoom the value range, tap for automatic)
+const HC = {pts: [], f0: 0, f1: 0, yr: null, geo: null, btn: 0};
+function histChart(pts) { return pts.length < 2 ? '' : `<div class="h-head"><div class="seg small" id="h-rb"><button data-m="12">${t('bch_jahre', 1)}</button><button data-m="0" class="on">${t('alle')}</button></div></div><svg class="h-svg" id="h-svg"></svg>`; }
+function bindHistChart(box, pts) {
+  const svg = $('#h-svg', box); if (!svg || pts.length < 2) return;
+  Object.assign(HC, {pts, f0: 0, f1: pts.length - 1, yr: null, btn: 0});
+  hcDraw();
+  const W = () => HC.geo.W, pt = e => { const r = svg.getBoundingClientRect(); return (e.clientX - r.left) * W() / r.width; }, pty = e => { const r = svg.getBoundingClientRect(); return (e.clientY - r.top) * HC.geo.H / r.height; };
+  const last = () => HC.pts.length - 1;
+  const view = (f0, span) => { span = Math.max(2, Math.min(last(), span)); HC.f0 = Math.max(0, Math.min(last() - span, f0)); HC.f1 = HC.f0 + span; HC.btn = null; hcDraw(); };
+  const at = px => { const G = HC.geo; return HC.f0 + (px - G.P.l) * (HC.f1 - HC.f0) / Math.max(1, G.W - G.P.l - G.P.r); };
+  const zoom = (c, f) => { const span = HC.f1 - HC.f0, ns = Math.max(2, Math.min(last(), span * f)); view(c - (c - HC.f0) * ns / span, ns); };
+  chartGestures(svg, {pt, pty, geo: () => HC.geo, ygeo: () => HC.geo, range: () => [HC.f0, HC.f1], view: (f0, span) => view(f0, span),
+    yview: (lo, hi) => { HC.yr = lo == null ? null : [lo, hi]; hcDraw(); }, hide: () => { const hv = $('.h-hover', svg); if (hv) hv.innerHTML = ''; }});
+  svg.addEventListener('pointermove', e => {
+    if (!e.target.classList.contains('bch-hit')) return;
+    const G = HC.geo, i = Math.max(Math.ceil(HC.f0), Math.min(Math.floor(HC.f1), Math.round(at(pt(e))))), [mk, v] = HC.pts[i], xi = G.x(i), right = xi > G.W * 0.6;
+    $('.h-hover', svg).innerHTML = `<line class="bch-cross" x1="${xi.toFixed(1)}" x2="${xi.toFixed(1)}" y1="${G.P.t}" y2="${G.H - G.P.b}"/><circle class="bch-dot" cx="${xi.toFixed(1)}" cy="${G.y(v).toFixed(1)}" r="3.5"/>`
+      + `<text class="h-lab" x="${(right ? xi - 6 : xi + 6).toFixed(1)}" y="${G.P.t + 10}" text-anchor="${right ? 'end' : 'start'}">${esc(ML(mk) + ': ' + F(v))}</text>`;
+  });
+  svg.addEventListener('pointerleave', () => { const hv = $('.h-hover', svg); if (hv) hv.innerHTML = ''; });
+  svg.addEventListener('dblclick', e => { if (e.target.classList.contains('bch-hit')) zoom(at(pt(e)), 0.5); });
+  svg.addEventListener('wheel', e => {
+    if (!e.target.classList.contains('bch-hit')) return;
+    if (e.ctrlKey) { e.preventDefault(); zoom(at(pt(e)), Math.exp(e.deltaY * 0.01)); return; }
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) || HC.f1 - HC.f0 >= last()) return;
+    e.preventDefault(); const G = HC.geo, span = HC.f1 - HC.f0; view(HC.f0 + e.deltaX * span / Math.max(1, G.W - G.P.l - G.P.r), span);
+  }, {passive: false});
+  $$('#h-rb button', box).forEach(b => b.addEventListener('click', () => {
+    const m = +b.dataset.m; HC.btn = m;
+    if (!m) { HC.f0 = 0; HC.f1 = last(); } else { HC.f1 = last(); HC.f0 = Math.max(0, last() - m + 1); if (HC.f1 - HC.f0 < 2) HC.f0 = Math.max(0, HC.f1 - 2); }
+    hcDraw();
+  }));
+}
+function hcDraw() {
+  const svg = $('#h-svg'); if (!svg) return;
+  const pts = HC.pts, W = 420, H = 140, P = {l: 46, r: 6, t: 8, b: 18}, f0 = HC.f0, f1 = HC.f1, span = Math.max(1, f1 - f0);
+  const i0 = Math.max(0, Math.floor(f0)), i1 = Math.min(pts.length - 1, Math.ceil(f1)), vals = pts.slice(i0, i1 + 1).map(p => p[1]);
   let max = Math.max(...vals, 0), min = Math.min(...vals, 0); if (max === min) max = min + 1;
-  const x = i => P.l + i * (W - P.l - P.r) / n, y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min), f = v => v.toFixed(1);
+  if (HC.yr) [min, max] = HC.yr;
+  const x = i => P.l + (i - f0) * (W - P.l - P.r) / span, y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min), f = v => v.toFixed(1);
   let g = '';
   for (const [tk, ref] of axisTicks(min, max, 3)) g += `<line class="bch-grid${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${f(y(tk))}" y2="${f(y(tk))}"/><text class="bch-y" x="${P.l - 5}" y="${f(y(tk) + 4)}">${Fk(tk, false, ref)}</text>`;
-  const every = Math.max(1, Math.ceil(pts.length / 12 / 6));
-  pts.forEach(([mk], i) => { if (mk.endsWith('-01') && (+mk.slice(0, 4)) % every === 0 && x(i) > P.l + 10 && x(i) < W - 14) g += `<line class="bch-year" x1="${f(x(i))}" x2="${f(x(i))}" y1="${P.t}" y2="${H - P.b}"/><text class="bch-x" x="${f(x(i))}" y="${H - 4}">${mk.slice(0, 4)}</text>`; });
-  const line = pts.map((p, i) => (i ? 'L' : 'M') + f(x(i)) + ' ' + f(y(p[1]))).join('');
-  g += `<path class="h-area" d="${line}L${f(x(n))} ${f(y(0))}L${f(x(0))} ${f(y(0))}Z"/><path class="h-line" d="${line}"/>`;
-  return `<svg viewBox="0 0 ${W} ${H}" class="h-svg">${g}<g class="h-hover"></g></svg>`;
-}
-function bindHistChart(box, pts) {
-  // Zeigen: Stand zum Monat unter dem Zeiger (Linie, Punkt, Monat und Betrag)
-  const svg = $('svg', box); if (!svg || pts.length < 2) return;
-  const W = 420, H = 130, P = {l: 46, r: 6, t: 8, b: 18}, n = pts.length - 1, vals = pts.map(p => p[1]);
-  let max = Math.max(...vals, 0), min = Math.min(...vals, 0); if (max === min) max = min + 1;
-  const x = i => P.l + i * (W - P.l - P.r) / n, y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min), hv = $('.h-hover', svg);
-  svg.addEventListener('pointermove', e => {
-    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * W / r.width, i = Math.max(0, Math.min(n, Math.round((px - P.l) * n / (W - P.l - P.r))));
-    const [mk, v] = pts[i], xi = x(i), right = xi > W * 0.6, lab = `${ML(mk)}: ${F(v)}`;
-    hv.innerHTML = `<line class="bch-cross" x1="${xi.toFixed(1)}" x2="${xi.toFixed(1)}" y1="${P.t}" y2="${H - P.b}"/><circle class="bch-dot" cx="${xi.toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.5"/>`
-      + `<text class="h-lab" x="${(right ? xi - 6 : xi + 6).toFixed(1)}" y="${P.t + 10}" text-anchor="${right ? 'end' : 'start'}">${esc(lab)}</text>`;
-  });
-  svg.addEventListener('pointerleave', () => { hv.innerHTML = ''; });
+  const ppm = (W - P.l - P.r) / span, step = [1, 2, 3, 6, 12, 24, 60, 120].find(st => st * ppm >= 52) || 120;
+  for (let i = i0; i <= i1; i++) {
+    const mk = pts[i][0], mo = +mk.slice(5), yr = +mk.slice(0, 4), xi = x(i);
+    if (mo === 1 && xi > P.l) g += `<line class="bch-year" x1="${f(xi)}" x2="${f(xi)}" y1="${P.t}" y2="${H - P.b}"/>`;
+    const lab = step < 12 ? (mo - 1) % step === 0 : mo === 1 && yr % (step / 12) === 0;
+    if (lab && xi > P.l + 12 && xi < W - 14) g += `<text class="bch-x" x="${f(xi)}" y="${H - 4}">${step < 12 ? (mo === 1 ? yr : MONATE[mo - 1] + ' ' + String(yr).slice(2)) : yr}</text>`;
+  }
+  const line = pts.slice(i0, i1 + 1).map((p, k) => (k ? 'L' : 'M') + f(x(i0 + k)) + ' ' + f(y(p[1]))).join(''), yb = f(Math.max(P.t, Math.min(H - P.b, y(0))));
+  g += `<clipPath id="h-clip"><rect x="${P.l}" y="${P.t}" width="${W - P.l - P.r}" height="${H - P.t - P.b}"/></clipPath>`
+    + `<g clip-path="url(#h-clip)"><path class="h-area" d="${line}L${f(x(i1))} ${yb}L${f(x(i0))} ${yb}Z"/><path class="h-line" d="${line}"/></g>`
+    + `<g class="h-hover"></g><rect class="bch-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H - P.b}"/><rect class="bch-yax" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_yax_tip')}</title></rect>`
+    + `<rect class="bch-pan" x="${P.l}" y="${H - P.b}" width="${W - P.l - P.r}" height="${P.b}"><title>${t('bch_pan_tip')}</title></rect>`;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = g;
+  HC.geo = {W, H, P, x, y, min, max};
+  $$('#h-rb button').forEach(b => b.classList.toggle('on', HC.btn != null && +b.dataset.m === HC.btn));
 }
 const HD = {uuid: null, live: false, r: null};
+function openWpDrawer(id) {
+  // a security of a portfolio: its month-end values (from MoneyMoney's history, Kontor's record and the current export) and,
+  // where it has an ISIN or a name, a name of your own (e.g. when MoneyMoney's history only knows the ISIN)
+  const D = B(); let acc = null, w = null;
+  for (const r of D.bilanz.zeilen) { const x = (r.wertpapiere || []).find(p => p.id === id); if (x) { acc = r; w = x; break; } }
+  if (!w) return;
+  const d = $('#drawer'), key = id.slice(id.indexOf('|') + 1), canName = !w.rest && !key.startsWith('mm:');
+  const pts = D.monate.filter(m => w.werte[m] != null).map(m => [m, w.werte[m]]);
+  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(w.name)}</h2><div class="small muted">${esc(acc.name)}${w.isin && w.isin !== w.name ? ' · ' + esc(w.isin) : ''}</div>
+    ${canName ? `<div class="row tight" style="margin:12px 0 4px"><input id="wp-name" value="${esc(w.name)}" placeholder="${esc(w.isin || '')}" style="flex:1" title="${t('wp_name_tip')}"><button id="wp-save" class="small">${t('speichern')}</button></div><div class="small muted">${t('wp_name_tip')}</div><div id="wp-find"></div>` : ''}
+    <div class="h-chart" id="h-chart">${histChart(pts)}</div>
+    <h3>${t('monatsstaende')}</h3><div class="hist-grid" id="h-grid">${pts.map(([mk, v]) => `<label>${ML(mk)}<input type="text" class="auto" value="${F(v)}" disabled></label>`).join('')}</div>`;
+  d.classList.add('open');
+  $('.close', d).onclick = closeDrawer;
+  bindHistChart($('#h-chart', d), pts);
+  const g = $('#h-grid', d); if (g) g.scrollTop = g.scrollHeight;
+  const sv = $('#wp-save', d);
+  if (sv) sv.onclick = async () => {
+    const cfg = JSON.parse(JSON.stringify(S.CFG)), nm = $('#wp-name', d).value.trim();
+    cfg.bilanz = cfg.bilanz || {}; cfg.bilanz.wp_namen = Object.assign({}, cfg.bilanz.wp_namen || {});
+    if (nm && nm !== w.isin) cfg.bilanz.wp_namen[key] = nm; else delete cfg.bilanz.wp_namen[key];
+    if (await saveConfig(cfg, $('#wp-find', d))) closeDrawer();
+  };
+}
 function openTransitDrawer() {
   // Geldtransit: die erkannten Umbuchungen, deren Ab- und Gutschrift in verschiedene Monate fallen
   const r = ((B() || {}).bilanz || {zeilen: []}).zeilen.find(x => x.transit); if (!r) return;
@@ -1081,7 +1139,8 @@ function vBilanz() {
   // securities like accounts: hidden when empty in all columns or without a value for the inactivity period (sold long ago)
   const inakt = +((S.CFG || {}).bilanz || {}).inaktiv_monate || 12, recent = D.monate.slice(-inakt);
   const secHidden = w => C.every(c => { const v = lastOf(w.werte, c.months); return v == null || Math.abs(v) < 0.005; }) || !recent.some(m => w.werte[m] != null && Math.abs(w.werte[m]) >= 0.005);
-  const nSecHid = D.bilanz.zeilen.reduce((n, r) => n + (r.wertpapiere || []).filter(secHidden).length, 0);
+  // hidden securities count only where their position is open (the eye shows what this view can show)
+  const nSecHid = D.bilanz.zeilen.reduce((n, r) => n + (S.posOpen[r.rolle] ? (r.wertpapiere || []).filter(secHidden).length : 0), 0);
   const skip = r => !S.alle && hidden(r), anyHidden = D.bilanz.zeilen.some(r => !r.gruppe && hidden(r)) || nSecHid > 0;
   // header cell: ▸/▾ expands or collapses all positions, the eye also shows empty and hidden accounts and securities (only when there are any)
   const nHid = D.bilanz.zeilen.filter(r => !r.gruppe && hidden(r)).length + nSecHid;
@@ -1101,10 +1160,13 @@ function vBilanz() {
     const sh = accShade((ROLE[r.rolle] || [0, 'var(--c-neutral)'])[1], accIdx(D, r)), dot = `<i class="pos-dot" style="${swatch(sh.color, sh.hatch)}"></i>`;      // shade as in the chart
     if (r.transit) { h += row(r, 'ind1 transit clickable', `${dot}${esc(r.name)} ${hq('geld_unterwegs')}`); continue; }
     const wp = r.wertpapiere && r.wertpapiere.length ? r.wertpapiere : null, dOpen = wp && S.depOpen[r.id];
-    h += row(r, 'clickable acct ind1', (wp ? `<span class="caret dep" data-dep="${esc(r.id)}" title="${t(dOpen ? 'wp_zuklappen' : 'wp_aufklappen')}">${dOpen ? '▾' : '▸'}</span>` : '') + dot + `<span class="nm">${esc(r.name)}</span>` + tag(r));
+    // a portfolio: number of its securities, like the accounts of a position ("shown/all" when some are hidden)
+    const wn = wp ? wp.filter(w => !w.rest).length : 0, wv = wp ? wp.filter(w => !w.rest && !(!S.alle && secHidden(w))).length : 0;
+    const wcnt = wp ? ` <span class="small muted"${wv < wn ? ` title="${t('n_von_m_wp', wv, wn)}"` : ''}>(${wv < wn ? wv + '/' + wn : wn})</span>` : '';
+    h += row(r, 'clickable acct ind1', (wp ? `<span class="caret dep" data-dep="${esc(r.id)}" title="${t(dOpen ? 'wp_zuklappen' : 'wp_aufklappen')}">${dOpen ? '▾' : '▸'}</span>` : '') + dot + `<span class="nm">${esc(r.name)}</span>` + wcnt + tag(r));
     // securities of an expanded portfolio (shades of the account colour, as in the charts); long names shortened, full on hover
     if (dOpen) wp.forEach((w, j) => { if (!S.alle && secHidden(w)) return; const ws = accShade(sh.color, j + 1);
-      h += `<tr class="sec ind2${w.rest ? ' muted' : ''}"><td title="${esc(w.name + (w.isin && w.isin !== w.name ? ' · ' + w.isin : ''))}"><i class="pos-dot" style="${swatch(ws.color, ws.hatch)}"></i><span class="nm">${esc(w.name)}</span></td>${cells(C, c => lastOf(w.werte, c.months))}</tr>`; });
+      h += `<tr class="wpr clickable ind2${w.rest ? ' muted' : ''}" data-wp="${esc(w.id)}"><td title="${esc(w.name + (w.isin && w.isin !== w.name ? ' · ' + w.isin : ''))}"><i class="pos-dot" style="${swatch(ws.color, ws.hatch)}"></i><span class="nm">${esc(w.name)}</span></td>${cells(C, c => lastOf(w.werte, c.months))}</tr>`; });
     if (pr && r.rolle === 'beteiligungen' && proj.einlagen && r === D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === 'beteiligungen').slice(-1)[0])
       h += row({id: 'einlagen', name: t('einlagen_entnahmen_kumuliert_plan'), werte: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'));
   }
@@ -1159,6 +1221,22 @@ function accShade(color, i) {
 }
 const swatch = (color, hatch) => `background:${hatch ? `repeating-linear-gradient(135deg, ${color} 0 2px, transparent 2px 4px)` : color}`;
 function bchData(D) {
+  // the large chart: the balance sheet (default) or one of the small charts moved up
+  const type = bigType();
+  if (type === 'nw') { const x = lcData(D, null); return {months: x.months, ist: x.ist, series: [], nw: x.vals, lineLabel: t('nettovermoegen'), adaptive: true}; }
+  if (type === 'sel') {
+    const {sel, avail} = lcSelection(D), x = lcData(D, sel);
+    return {months: x.months, ist: x.ist, series: [], parts: x.parts || [], nw: x.vals, lineLabel: lcSelTitle(sel, avail, true)[0], lineColor: lcMix(sel), adaptive: true};
+  }
+  if (type === 'pos') {
+    const rolle = lcPosRole(D); if (!rolle) return {months: [], series: [], nw: []};
+    const mode = lcPosMode(D, rolle), x = lcStack(D, rolle, mode), off = lcOffSet('pos', rolle + '|' + mode);
+    return {months: x.months, ist: x.ist, series: x.series.filter(z => !off.has(z.key)).map(z => Object.assign({op: 1, sub: true}, z)), all: x.series, off,
+            nw: x.vals, lineLabel: ROLE[rolle][0], lineColor: ROLE[rolle][1]};
+  }
+  return bchBilanz(D);
+}
+function bchBilanz(D) {
   // Positionen (Farben wie in der Tabelle), Ist + Plan; aufgeklappte Positionen zeigen ihre Konten (Abstufungen der Farbe)
   const pr = D.bilanz.projektion || null, proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
   const months = [...D.monate, ...(pr ? (D.plan_monate || []) : [])];
@@ -1181,7 +1259,7 @@ function bchData(D) {
   return {months, ist: D.monate.length, series: series.filter(x => x.vals.some(v => v != null && Math.abs(v) >= 0.005)), nw: months.map(m => nwAll[m] == null ? null : nwAll[m] * defl(m))};
 }
 function vBilanzChart(D) {
-  const d = bchData(D); if (d.months.length < 2 || !d.series.length) return '';
+  const d = bchData(D); if (d.months.length < 2 || (!d.series.length && !d.nw.some(v => v != null))) return '';
   BCH.d = d;
   // range kept as months (survives rebuilds and area changes; null = all); a button alone is anchored to today
   const dflt = bchDefault();
@@ -1194,8 +1272,15 @@ function vBilanzChart(D) {
   if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, dflt); S.bchBtn = dflt; }          // default: 1 year (months) or 3 years (years) up to today
   S.bchRange = i0 === 0 && i1 === n - 1 ? null : [d.months[i0], d.months[i1]];
   BCH.i0 = BCH.f0 = i0; BCH.i1 = BCH.f1 = i1;
-  return `<div class="card bch${bchLinked() ? ' linked' : ''}" id="bch"><div class="bch-head"><span class="bch-range" id="bch-range"></span> ${hq('bch')}<span class="sp"></span><button class="ghost small bch-link${bchLinked() ? ' on' : ''}" id="bch-link" title="${t('bch_link_tip')}" aria-pressed="${bchLinked()}">${t('bch_link')}</button><label class="bch-n" title="${t('bch_monate_tip')}"><input type="number" id="bch-n" min="3" max="${n}" step="1">${t('bch_m')}</label><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
-    <div class="bch-plot" id="bch-plot"><svg class="bch-svg" id="bch-svg"></svg><div class="bch-tip hidden" id="bch-tip"></div></div></div>`;
+  const type = bigType(), {avail, sel} = lcSelection(D), pr = lcPosRole(D);
+  const title = type === 'nw' ? `<b class="bch-title">${t('nettovermoegen')}</b>`
+    : type === 'sel' ? (([tx, tip]) => `<b class="bch-title${tip ? ' tipped' : ''}" data-tip="${esc(tip)}" tabindex="0">${esc(tx)}</b>`)(lcSelTitle(sel, avail, true))
+    : type === 'pos' ? `<select id="big-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === pr ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select>${pr && lcHasDepot(D, pr) ? `<button class="lc-mode${lcPosMode(D, pr) === 'depot' ? ' on' : ''}" id="big-pos-mode" title="${t('lc_depot_tip')}">${t('lc_depot')}</button>` : ''}`
+    : '';
+  const below = type === 'sel' ? `<div class="lc-chips below" id="big-chips">${avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('')}</div>`
+    : type === 'pos' ? `<div class="lc-chips below" id="big-accs"></div>` : '';
+  return `<div class="card bch${bchLinked() ? ' linked' : ''}${type !== 'bilanz' ? ' big-' + type : ''}" id="bch"><div class="bch-head">${title}${type !== 'bilanz' ? ' ' : ''}<span class="bch-range${type !== 'bilanz' ? ' sub' : ''}" id="bch-range"></span> ${hq('bch')}<span class="sp"></span><button class="ghost small bch-link${bchLinked() ? ' on' : ''}" id="bch-link" title="${t('bch_link_tip')}" aria-pressed="${bchLinked()}">${t('bch_link')}</button><label class="bch-n" title="${t('bch_monate_tip')}"><input type="number" id="bch-n" min="3" max="${n}" step="1">${t('bch_m')}</label><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
+    <div class="bch-plot" id="bch-plot"><svg class="bch-svg" id="bch-svg"></svg><div class="bch-tip hidden" id="bch-tip"></div></div>${below}</div>`;
 }
 function bchDraw() {
   const box = $('#bch-plot'), svg = $('#bch-svg'), d = BCH.d; if (!box || !svg || !d) return;
@@ -1214,8 +1299,10 @@ function bchDraw() {
   const inView = pts.slice(kA, kB + 1), pos = [], neg = [];
   for (const p of inView) { let up = 0, dn = 0; for (const x of d.series) { const v = x.vals[p.i] || 0; if (v > 0) up += v; else dn += v; } pos.push(up); neg.push(dn); }
   const nwv = inView.map(p => d.nw[p.i]).filter(v => v != null);
-  let max = Math.max(...pos, ...nwv, 0), min = Math.min(...neg, ...nwv, 0); if (max === min) max = min + 1;
-  const pad = (max - min) * 0.04; max += pad; if (min < 0) min -= pad;
+  let max = Math.max(...pos, ...nwv, 0), min = Math.min(...neg, ...nwv, 0);
+  if (d.adaptive && nwv.length) { max = Math.max(...nwv); min = Math.min(...nwv); }          // a single line: the axis follows its values
+  if (max - min < 1) { max += 50; min -= 50; }
+  const pad = (max - min) * (d.adaptive ? 0.08 : 0.04); max += pad; if (min < 0 || d.adaptive) min -= pad;
   if (S.bchYr) [min, max] = S.bchYr;                    // range set on the y axis (a tap there resets it)
   const x = i => P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n), y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min);
   const pf = v => v.toFixed(1);
@@ -1264,7 +1351,11 @@ function bchDraw() {
   if (kp >= 0) { const xs = Math.max(P.l, kt >= 0 ? pts[kt].x : pts[kp].x); plot += `<rect class="bch-plan" x="${pf(xs)}" y="${P.t}" width="${pf(Math.max(0, W - P.r - xs))}" height="${H - P.t - P.b}"/>`; }
   if (kt >= 0) { const xt = pts[kt].x; plot += `<line class="bch-today" x1="${pf(xt)}" x2="${pf(xt)}" y1="${P.t - 4}" y2="${H - P.b}"/><text class="bch-today-l" x="${pf(xt)}" y="${P.t - 5}"${xt > W - P.r - 20 ? ' style="text-anchor:end"' : ''}>${t('heute')}</text>`; }
   // Nettovermoegen (bis heute durchgezogen, danach gestrichelt)
-  const line = (sel, cls0) => { const ps = []; for (const p of sel) if (d.nw[p.i] != null) ps.push((ps.length ? 'L' : 'M') + pf(p.x) + ' ' + pf(y(d.nw[p.i]))); return ps.length > 1 ? `<path class="${cls0}" d="${ps.join('')}"/>` : ''; };
+  const line = (sel, cls0) => { const ps = []; for (const p of sel) if (d.nw[p.i] != null) ps.push((ps.length ? 'L' : 'M') + pf(p.x) + ' ' + pf(y(d.nw[p.i]))); return ps.length > 1 ? `<path class="${cls0}" d="${ps.join('')}"${d.lineColor ? ` style="stroke:${d.lineColor}"` : ''}/>` : ''; };
+  if (d.adaptive) {                                     // a single line: filled towards zero, as in the small charts
+    const act = pts.filter(p => p.i <= ist && d.nw[p.i] != null), yb = pf(Math.max(P.t, Math.min(H - P.b, y(0))));
+    if (act.length > 1) plot += `<path class="lc-area" d="${act.map((p, k) => (k ? 'L' : 'M') + pf(p.x) + ' ' + pf(y(d.nw[p.i]))).join('')}L${pf(act[act.length - 1].x)} ${yb}L${pf(act[0].x)} ${yb}Z" style="fill:${d.lineColor || 'var(--fg)'}"/>`;
+  }
   plot += line(pts.filter(p => p.i <= ist), 'bch-nw') + (kp >= 0 ? line(pts.filter(p => p.i >= ist), 'bch-nw plan') : '');
   if (link || S.bchYr) { defs += `<clipPath id="bch-clip"><rect x="${P.l}" y="${S.bchYr ? P.t : 0}" width="${Math.max(0, W - P.l - P.r)}" height="${S.bchYr ? H - P.t - P.b : H}"/></clipPath>`; g += `<g clip-path="url(#bch-clip)">${plot}</g>`; } else g += plot;
   if (defs) g = `<defs>${defs}</defs>` + g;
@@ -1278,6 +1369,13 @@ function bchDraw() {
   else if (rl) rl.textContent = `${MONATE_LANG[+d.months[i0].slice(5) - 1]} ${d.months[i0].slice(0, 4)} – ${MONATE_LANG[+d.months[i1].slice(5) - 1]} ${d.months[i1].slice(0, 4)}`;
   $$('#bch-rb button').forEach(b => b.classList.toggle('on', S.bchBtn ? +b.dataset.m === S.bchBtn : S.bchRange === null && b.dataset.m === '0'));
   const nf = $('#bch-n'); if (nf && document.activeElement !== nf) nf.value = i1 - i0 + 1;
+  const ba = $('#big-accs');
+  if (ba && d.all) {                                    // the large composition chart: accounts / securities to deselect
+    const at = Math.min(i1, ist), inWin = d.all.filter(x => x.vals.slice(i0, i1 + 1).some(v => v != null && Math.abs(v) >= 0.005))
+      .sort((a, b) => Math.abs(b.vals[at] || 0) - Math.abs(a.vals[at] || 0));
+    const sn = shortNames(inWin.map(x => x.label), inWin.length <= 8 ? 24 : inWin.length <= 16 ? 14 : 10);
+    ba.innerHTML = inWin.map((x, k) => `<label class="lc-chip" title="${esc(x.full || x.label)}"><input type="checkbox" data-k="${esc(x.key)}" ${d.off.has(x.key) ? '' : 'checked'}><i style="${swatch(x.color, x.hatch)}"></i><span class="nm">${esc(sn[k])}</span></label>`).join('');
+  }
   bchBind();
 }
 // Aligned with the table: the chart follows the table's columns (each value right above its column) and scrolls with it
@@ -1357,8 +1455,10 @@ function bchHover(i) {
   let dots = `<line class="bch-cross" x1="${xi}" x2="${xi}" y1="${G.P.t}" y2="${G.H - G.P.b}"/>`;
   if (d.nw[i] != null) dots += `<circle class="bch-dot" cx="${xi}" cy="${G.y(d.nw[i]).toFixed(1)}" r="4"/>`;
   hv.innerHTML = dots;
-  const rows = d.series.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= 0.5).map(x => `<div><i style="${swatch(x.color, x.hatch)}"></i><span>${esc(x.label)}</span><b>${F0(x.vals[i])}</b></div>`).join('');
-  tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${plan ? ` <span class="pill neutral">${t('plan')}</span>` : ''}</div>${rows}<div class="bch-tip-nw"><span>${t('nettovermoegen')}</span><b>${F0(d.nw[i])}</b></div>`;
+  const list = d.parts && d.parts.length > 1 ? d.parts : d.series;
+  const rows = list.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= (d.all ? 0.005 : 0.5)).map(x => `<div><i style="${swatch(x.color, x.hatch)}"></i><span>${esc(x.label)}</span><b>${Math.abs(x.vals[i]) < 1 ? F(x.vals[i]) : F0(x.vals[i])}</b></div>`).join('');
+  const part = d.off && d.off.size && d.series.length ? `<div class="bch-tip-nw"><span>${t('lc_summe_auswahl')}</span><b>${F0(d.series.reduce((s0, x) => s0 + (x.vals[i] || 0), 0))}</b></div>` : '';
+  tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${plan ? ` <span class="pill neutral">${t('plan')}</span>` : ''}</div>${rows}${part}<div class="${rows ? 'bch-tip-nw' : ''}"><span>${esc(d.lineLabel || t('nettovermoegen'))}</span><b>${F0(d.nw[i])}</b></div>`;
   tip.classList.remove('hidden');
   const bw = $('#bch-plot').clientWidth, tw = tip.offsetWidth, px = G.x(i);
   tip.style.left = (px + 14 + tw > bw ? px - 14 - tw : px + 14) + 'px';
@@ -1512,6 +1612,19 @@ function bindBilanzChart(main) {
     const btn = bchRanges().some(([k]) => k === m) && bchWindow(d, m)[0] === a ? m : null;
     bchSet(a, e, btn); nf.blur();
   });
+  // a small chart shown large: its own controls (positions to add up, position and breakdown, accounts to leave out)
+  $$('#big-chips input', main).forEach(cb => cb.addEventListener('change', () => { try { localStorage.setItem('kontor.lcSel', JSON.stringify($$('#big-chips input:checked', main).map(x => x.dataset.r))); } catch (e) {} route(); }));
+  const bps = $('#big-pos-sel', main); if (bps) bps.addEventListener('change', () => { try { localStorage.setItem('kontor.lcPos', bps.value); } catch (e) {} route(); });
+  const bpm = $('#big-pos-mode', main); if (bpm) bpm.addEventListener('click', () => {
+    let m = {}; try { m = JSON.parse(localStorage.getItem('kontor.lcPosMode') || '{}') || {}; } catch (e) {}
+    m[bps.value] = lcPosMode(B(), bps.value) === 'depot' ? 'konten' : 'depot';
+    try { localStorage.setItem('kontor.lcPosMode', JSON.stringify(m)); } catch (e) {} route();
+  });
+  const bac = $('#big-accs', main); if (bac) bac.addEventListener('change', e => {
+    const cb = e.target.closest('input[data-k]'); if (!cb || !BCH.d || !BCH.d.off) return;
+    if (cb.checked) BCH.d.off.delete(cb.dataset.k); else BCH.d.off.add(cb.dataset.k);
+    BCH.d = bchData(B()); bchDraw();
+  });
   const lb = $('#bch-link', main); if (lb) lb.addEventListener('click', () => { S.bchLink = !bchLinked(); try { localStorage.setItem('kontor.bchLink', S.bchLink ? '1' : '0'); } catch (e) {} route(); });
   bchDraw();
   if (bchLinked()) {
@@ -1532,15 +1645,28 @@ const LC = {};
 const LC_DEFAULT = ['liquiditaet', 'wertpapiere', 'anlagen'];
 // title of the selection chart: the chosen positions, strongly abbreviated (BG + WP + FA) so that even all but one fit;
 // one position: its name; all positions: net worth; always after "Selection:"
-function lcSelTitle(sel, avail) {
+function lcSelTitle(sel, avail, long) {
   const s = avail.filter(r => sel.includes(r)), full = s.map(r => ROLE[r][0]).join(' + ');
+  if (long && s.length > 1 && s.length < avail.length && !lcGroupName(s, avail)) return [t('lc_auswahl_0', full), ''];     // large: written out
   if (!s.length) return [t('lc_summe_auswahl'), ''];
   if (s.length === avail.length && avail.length > 1) return [t('lc_auswahl_0', t('nettovermoegen')), full];
   if (s.length === 1) return [t('lc_auswahl_0', ROLE[s[0]][0]), ''];
+  const g = lcGroupName(s, avail); if (g) return [t('lc_auswahl_0', g), full];
   return [t('lc_auswahl_0', s.map(r => POS_KURZ[r] || ROLE[r][0]).join('\u2009+\u2009')), s.map(r => `${POS_KURZ[r]} = ${ROLE[r][0]}`).join(' · ')];   // tip explains the codes
 }
 const POS_KURZ = {liquiditaet: t('kurz_liquiditaet'), wertpapiere: t('kurz_wertpapiere'), anlagen: t('kurz_anlagen'), immobilien: t('kurz_immobilien'), beteiligungen: t('kurz_beteiligungen'),
   sachwerte: t('kurz_sachwerte'), forderungen: t('kurz_forderungen'), sonstiges: t('kurz_sonstiges'), verbindlichkeiten: t('kurz_verbindlichkeiten')};
+// a name for typical combinations of positions (only exact matches, judged by the positions this area has)
+const LC_LIQUID = ['liquiditaet', 'wertpapiere'], LC_ILLIQUID = ['anlagen', 'immobilien', 'beteiligungen', 'sachwerte', 'forderungen', 'sonstiges'];
+function lcGroupName(s, avail) {
+  const same = list => { const l = avail.filter(r => list.includes(r)); return l.length > 1 && l.length === s.length && l.every(r => s.includes(r)); };
+  if (avail.includes('verbindlichkeiten') && same(avail.filter(r => r !== 'verbindlichkeiten'))) return t('grp_brutto');
+  if (same(LC_LIQUID)) return t('grp_verfuegbar');
+  if (same([...LC_LIQUID, 'anlagen'])) return t('grp_finanz');
+  if (same(LC_ILLIQUID)) return t('grp_gebunden');
+  if (same(['immobilien', 'sachwerte'])) return t('grp_sach');
+  return '';
+}
 function lcSelection(D) {
   const avail = D.bilanz.zeilen.filter(r => r.gruppe && ROLE[r.rolle]).map(r => r.rolle);
   let sel = null; try { sel = JSON.parse(localStorage.getItem('kontor.lcSel') || 'null'); } catch (e) { sel = null; }
@@ -1589,12 +1715,50 @@ function lcPosMode(D, rolle) {
   let m = {}; try { m = JSON.parse(localStorage.getItem('kontor.lcPosMode') || '{}') || {}; } catch (e) {}
   return m[rolle] === 'depot' ? 'depot' : 'konten';
 }
-function lcPosOff(st) {
-  // deselected series of the composition chart; all selected again whenever the position or the breakdown changes
-  const k = st.stack + '|' + st.mode;
-  if (!S.lcPosOff || S.lcPosOff.k !== k) S.lcPosOff = {k, off: new Set()};
-  return S.lcPosOff.off;
+// short names for crowded legends: brackets, legal forms and fund words go, and of the remaining words the most distinctive
+// ones are kept (words many names share, e.g. a fund family or index provider, only if nothing else is left) -- e.g.
+// "MSCI ACWI USD (Acc)" next to other MSCI funds becomes "ACWI"; then cut to max characters. Works for any name.
+const SHORT_STOP = new Set(('ag se inc incorporated plc nv sa ltd limited gmbh corp corporation co kgaa spa oyj ab asa llc lp holding holdings group '
+  + 'etf etc etn ucits acc accumulating dist distributing distribution fund fonds index shares share class core usd eur gbp chf jpy hedged hdg '
+  + 'the of and und de la le du der die das a b c d 1c 1d 2c').split(' '));
+function shortNames(names, max) {
+  const toks = names.map(n => (String(n || '').replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').match(/[\p{L}\p{N}][\p{L}\p{N}.'&-]*/gu) || [])
+    .map(w => w.replace(/[.'-]+$/, '')).filter(w => w && !SHORT_STOP.has(w.toLowerCase())));
+  const df = {}; toks.forEach(ws => new Set(ws.map(w => w.toLowerCase())).forEach(w => { df[w] = (df[w] || 0) + 1; }));
+  return names.map((n, i) => {
+    const full = String(n || '').trim();
+    if (full.length <= max) return full;
+    const ws = toks[i]; if (!ws.length) return full.slice(0, max - 1).trimEnd() + '…';
+    // the most distinctive words first, as many as fit, shown in their original order
+    // (equally distinctive: a word that fits first); further words only if just as distinctive as the first
+    const order = ws.map((w, k) => [df[w.toLowerCase()], w.length > max ? 1 : 0, k]).sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]).map(x => x[2]), take = [];
+    for (const k of order) {
+      const len = take.reduce((s0, x) => s0 + ws[x].length + 1, 0) + ws[k].length;
+      if (!take.length || (len <= max && df[ws[k].toLowerCase()] <= df[ws[take[0]].toLowerCase()])) take.push(k);
+    }
+    const x = take.sort((a, b) => a - b).map(k => ws[k]).join(' ');
+    return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x;
+  });
 }
+function lcOffSet(id, k) {
+  // deselected series of a composition chart (per chart, the same whether shown small or large); all selected again
+  // whenever its position or the breakdown changes
+  S.lcOff = S.lcOff || {};
+  if (!S.lcOff[id] || S.lcOff[id].k !== k) S.lcOff[id] = {k, off: new Set()};
+  return S.lcOff[id].off;
+}
+const lcPosOff = st => lcOffSet(st.id, st.stack + '|' + st.mode);
+function lcBil(D) {
+  // the balance sheet as a small chart: positions stacked, net worth as the line
+  const pr = D.bilanz.projektion || null, proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
+  const months = [...D.monate, ...(pr ? (D.plan_monate || []) : [])], vs = w => months.map(m => w[m] == null ? null : w[m] * defl(m));
+  const series = D.bilanz.zeilen.filter(r => r.gruppe && ROLE[r.rolle]).map(r => ({key: r.id, label: ROLE[r.rolle][0], color: ROLE[r.rolle][1], vals: vs(Object.assign({}, r.werte, proj[r.id] || {}))}))
+    .filter(x => x.vals.some(v => v != null && Math.abs(v) >= 0.005));
+  const nwAll = pr ? Object.assign({}, D.bilanz.nettovermoegen, pr.nettovermoegen) : D.bilanz.nettovermoegen;
+  return {months, ist: D.monate.length, vals: vs(nwAll), series};
+}
+// which of the four charts is the large one at the top (the others are the small ones below the table)
+const bigType = () => { if (!S.big) { try { S.big = localStorage.getItem('kontor.bigChart') || 'bilanz'; } catch (e) { S.big = 'bilanz'; } } return ['bilanz', 'nw', 'sel', 'pos'].includes(S.big) ? S.big : 'bilanz'; };
 // colour of the selection chart: the selected positions' colours mixed in equal parts (one position: its own colour)
 const lcMix = rollen => (rollen || []).map(r => ROLE[r] && ROLE[r][1]).filter(Boolean)
   .reduce((m, c, k) => k ? `color-mix(in oklab, ${m} ${Math.round(k / (k + 1) * 100)}%, ${c})` : c, '') || 'var(--muted)';
@@ -1609,14 +1773,17 @@ function vBilanzLines(D) {
   if ((D.monate || []).length < 2) return '';
   const {avail, sel} = lcSelection(D);
   const rb = bchRanges(false);          // small charts: range in the top right corner
-  const head = (id, title, extra) => `<div class="lc-head"><b class="lc-title">${title}</b><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div><div class="lc-row2">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span><span class="lc-range" id="lc-${id}-range"></span></div>`;
+  const big = bigType(), typeOf = {nw: 'nw', sel: 'sel', pos: 'pos', bil: 'bilanz'};
+  const head = (id, title, extra) => `<div class="lc-head"><b class="lc-title">${title}</b><button class="lc-big" data-big="${typeOf[id]}" title="${t('lc_gross')}">${ICON.expand}</button><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div><div class="lc-row2">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span><span class="lc-range" id="lc-${id}-range"></span></div>`;
   const plot = id => `<div class="bch-plot lc-plot" id="lc-${id}-plot"><svg class="bch-svg" id="lc-${id}-svg"></svg><div class="bch-tip hidden" id="lc-${id}-tip"></div></div>`;
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
-  return `<div class="cards lc-grid" id="lc-grid">
-    <div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}${plot('nw')}<div class="lc-stats" id="lc-nw-stats"></div></div>
-    <div class="card bch lc" data-lc="sel">${head('sel', (([tx, tip]) => `<span id="lc-sel-title" class="${tip ? 'tipped' : ''}" data-tip="${esc(tip)}" tabindex="0">${esc(tx)}</span>`)(lcSelTitle(sel, avail)))}${plot('sel')}<div class="lc-chips below" id="lc-chips">${chips}</div></div>
-    <div class="card bch lc" data-lc="pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select><button class="lc-mode hidden" id="lc-pos-mode" title="${t('lc_depot_tip')}">${t('lc_depot')}</button>`)}${plot('pos')}<div class="lc-chips below" id="lc-pos-accs"></div></div>
-  </div>`;
+  const card = {
+    nw: () => `<div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}${plot('nw')}<div class="lc-stats" id="lc-nw-stats"></div></div>`,
+    bil: () => `<div class="card bch lc" data-lc="bil">${head('bil', t('lc_bilanz'))}${plot('bil')}<div class="lc-legend" id="lc-bil-legend"></div></div>`,
+    sel: () => `<div class="card bch lc" data-lc="sel">${head('sel', (([tx, tip]) => `<span id="lc-sel-title" class="${tip ? 'tipped' : ''}" data-tip="${esc(tip)}" tabindex="0">${esc(tx)}</span>`)(lcSelTitle(sel, avail)))}${plot('sel')}<div class="lc-chips below" id="lc-chips">${chips}</div></div>`,
+    pos: () => `<div class="card bch lc" data-lc="pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select><button class="lc-mode hidden" id="lc-pos-mode" title="${t('lc_depot_tip')}">${t('lc_depot')}</button>`)}${plot('pos')}<div class="lc-chips below" id="lc-pos-accs"></div></div>`};
+  // the chart shown large leaves its place to the balance sheet chart
+  return `<div class="cards lc-grid" id="lc-grid">${['nw', 'sel', 'pos'].map(id => card[id === big ? 'bil' : id]()).join('')}</div>`;
 }
 // growth in percent, short: 7,6 % · 13,7 % · 340 % · 2400 % (no thousands separator) · 12T % / 12k % (from 10 000 %);
 // from a start of (almost) zero it cannot be computed: ∞
@@ -1636,8 +1803,13 @@ function lcDraw(id) {
   // composition: accounts (or securities) not 0 € throughout the range can be deselected; the total line stays the position
   const inWin = st.stack ? d.series.filter(x => x.vals.slice(i0, i1 + 1).some(v => v != null && Math.abs(v) >= 0.005)) : [];
   const off = st.stack ? lcPosOff(st) : new Set(), shown = inWin.filter(x => !off.has(x.key));
-  // chips: names shortened (more the more chips there are), the full name (with the account for securities) on hover
-  if (st.stack) { const lg = $(`#lc-${id}-accs`); if (lg) { lg.classList.toggle('many', inWin.length > 8); lg.innerHTML = inWin.map(x => `<label class="lc-chip" title="${esc(x.full || x.label)}"><input type="checkbox" data-k="${esc(x.key)}" ${off.has(x.key) ? '' : 'checked'}><i style="${swatch(x.color, x.hatch)}"></i><span class="nm">${esc(x.label)}</span></label>`).join(''); } }
+  // chips: at most three rows -- the more there are, the shorter the names (full name with the account on hover); the largest
+  // first, the rest can be scrolled within the three rows
+  if (st.stack) { const lgd = $(`#lc-${id}-legend`); if (lgd) lgd.innerHTML = inWin.map(x => `<span><i style="${swatch(x.color, x.hatch)}"></i>${esc(x.label)}</span>`).join(''); }
+  if (st.stack) { const lg = $(`#lc-${id}-accs`); if (lg) {
+    const n = inWin.length, max = n <= 6 ? 18 : n <= 9 ? 12 : n <= 15 ? 9 : 7, at = Math.min(i1, ist);
+    const ord = inWin.slice().sort((a, b) => Math.abs(b.vals[at] || 0) - Math.abs(a.vals[at] || 0)), sn = shortNames(ord.map(x => x.label), max);
+    lg.innerHTML = ord.map((x, k) => `<label class="lc-chip" title="${esc(x.full || x.label)}"><input type="checkbox" data-k="${esc(x.key)}" ${off.has(x.key) ? '' : 'checked'}><i style="${swatch(x.color, x.hatch)}"></i><span class="nm">${esc(sn[k])}</span></label>`).join(''); } }
   if (!vis.length) { svg.innerHTML = ''; svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); $(`#lc-${id}-val`).textContent = id === 'sel' && !st.title ? t('lc_nichts_gewaehlt') : t('keine_werte'); return; }
   let max = Math.max(...vis), min = Math.min(...vis);
   const ups = [], dns = [];
@@ -1775,25 +1947,27 @@ function lcBindPlot(id) {
 }
 function lcInit(id, D, rollen, title, color, stack) {
   // range kept as months (survives rebuilds); a range button stays anchored to today
-  const mode = stack ? lcPosMode(D, stack) : null, d = stack ? lcStack(D, stack, mode) : lcData(D, rollen), n = d.months.length, r = (S.lcRange || {})[id];
+  const mode = stack && stack !== '__bil' ? lcPosMode(D, stack) : null, d = stack === '__bil' ? lcBil(D) : stack ? lcStack(D, stack, mode) : lcData(D, rollen), n = d.months.length, r = (S.lcRange || {})[id];
   let i0, i1, btn = r ? r[2] : bchDefault();             // default: 1 year (months view) or 3 years (years view) up to today
   if (btn === 0 || (btn && !bchRanges(false).some(([m]) => m === btn))) btn = bchDefault();     // not offered in this view
   if (btn === 0) { i0 = 0; i1 = n - 1; }
   else if (btn) [i0, i1] = bchWindow(d, btn);
   else { i0 = d.months.indexOf(r[0]); i1 = d.months.indexOf(r[1]); if (i0 < 0 || i1 <= i0) { btn = bchDefault(); [i0, i1] = bchWindow(d, btn); } }
-  LC[id] = {d, i0, i1, f0: i0, f1: i1, btn, title, color, stack: stack || false, mode, drag: null, gesture: null, geo: null};
+  LC[id] = {id, d, i0, i1, f0: i0, f1: i1, btn, title, color, stack: stack || false, mode, drag: null, gesture: null, geo: null};
 }
 function bindBilanzLines(main) {
   const grid = $('#lc-grid', main), D = B(); if (!grid || !D) return;
   if (S.lcModus !== S.modus) { S.lcModus = S.modus; S.lcRange = {}; }      // view switched: its own default range
+  const has = id => !!$(`.lc[data-lc="${id}"]`, grid);
   const draw = () => {
     const {sel} = lcSelection(D);
-    lcInit('nw', D, null, t('nettovermoegen'), 'var(--fg)');
-    lcInit('sel', D, sel, sel.map(r => ROLE[r][0]).join(' + '), lcMix(sel));
+    if (has('nw')) { lcInit('nw', D, null, t('nettovermoegen'), 'var(--fg)'); lcDraw('nw'); }
+    if (has('sel')) { lcInit('sel', D, sel, sel.map(r => ROLE[r][0]).join(' + '), lcMix(sel)); lcDraw('sel'); }
     const pr = lcPosRole(D);
-    if (pr) lcInit('pos', D, null, ROLE[pr][0], ROLE[pr][1], pr);
-    lcDraw('nw'); lcDraw('sel'); if (pr) lcDraw('pos');
+    if (pr && has('pos')) { lcInit('pos', D, null, ROLE[pr][0], ROLE[pr][1], pr); lcDraw('pos'); }
+    if (has('bil')) { lcInit('bil', D, null, t('nettovermoegen'), 'var(--fg)', '__bil'); lcDraw('bil'); }
   };
+  $$('.lc-big', grid).forEach(b => b.addEventListener('click', () => { S.big = b.dataset.big; try { localStorage.setItem('kontor.bigChart', S.big); } catch (e) {} route(); }));
   const ps = $('#lc-pos-sel', grid), pm = $('#lc-pos-mode', grid);
   const posMode = () => { if (!pm || !ps) return; const has = lcHasDepot(D, ps.value); pm.classList.toggle('hidden', !has); pm.classList.toggle('on', has && lcPosMode(D, ps.value) === 'depot'); };
   const posRedraw = () => {
@@ -1831,7 +2005,7 @@ function bindBilanzLines(main) {
   }));
   draw();
   if (LC.ro) LC.ro.disconnect();
-  let last = 0; LC.ro = new ResizeObserver(() => { const w = $('#lc-nw-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; lcDraw('nw'); lcDraw('sel'); if (LC.pos) lcDraw('pos'); } });
+  let last = 0; LC.ro = new ResizeObserver(() => { const w = $('.lc-plot', grid); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; ['nw', 'sel', 'pos', 'bil'].forEach(id => { if (has(id) && LC[id]) lcDraw(id); }); } });
   LC.ro.observe(grid);
 }
 
@@ -3140,7 +3314,8 @@ function bind(main) {
   if (S.tab === 'balance') { bindBilanzChart(main); bindBilanzLines(main); }
   const vs = $('#vorschlag-an', main); if (vs) vs.addEventListener('change', e => { S.vorschlag = e.target.checked; route(); });
   $$('[data-goto]', main).forEach(c => c.addEventListener('click', e => { if (!e.target.closest('a, button, input, select')) location.hash = c.dataset.goto; }));
-  $$('[data-xlsx]', main).forEach(b => b.addEventListener('click', () => download(b.dataset.xlsx === 'property' ? `/api/export/property.xlsx?id=${encodeURIComponent(b.dataset.immo || '')}&calculation=${encodeURIComponent(b.dataset.kalk || '')}` : `/api/export/${b.dataset.xlsx}.xlsx?area=${encodeURIComponent(b.dataset.bereich || S.bereich || '')}&mode=${S.modus === 'jahre' ? 'years' : 'months'}`)));
+  $$('[data-xlsx]', main).forEach(b => b.addEventListener('click', () => download(b.dataset.xlsx === 'property' ? `/api/export/property.xlsx?id=${encodeURIComponent(b.dataset.immo || '')}&calculation=${encodeURIComponent(b.dataset.kalk || '')}` : `/api/export/${b.dataset.xlsx}.xlsx?area=${encodeURIComponent(b.dataset.bereich || S.bereich || '')}&mode=${S.modus === 'jahre' ? 'years' : 'months'}`
+    + (b.dataset.xlsx === 'balance' ? `&open=${encodeURIComponent(Object.keys(S.posOpen || {}).filter(k => S.posOpen[k]).join(','))}&dep=${encodeURIComponent(Object.keys(S.depOpen || {}).filter(k => S.depOpen[k]).join(','))}&all=${S.alle ? 1 : 0}` : ''))));
 
   // Einrichtung
   const wc = $('#w-check', main); if (wc) wc.addEventListener('click', async () => {
@@ -3209,6 +3384,7 @@ function bind(main) {
 
   // Bilanz
   $$('tr.acct[data-id]', main).forEach(tr => tr.addEventListener('click', () => openHistDrawer(tr.dataset.id)));
+  $$('tr.wpr[data-wp]', main).forEach(tr => tr.addEventListener('click', () => openWpDrawer(tr.dataset.wp)));
   $$('tr.transit', main).forEach(tr => tr.addEventListener('click', openTransitDrawer));
 
   // Planung

@@ -26,23 +26,32 @@ def _col(n: int) -> str:
 
 class Sheet:
     def __init__(self, name: str, header: Sequence[Any], rows: Sequence[Sequence[Any]],
-                 widths: Optional[Sequence[float]] = None, freeze: str = "B2", bold_rows: Optional[Sequence[int]] = None):
+                 widths: Optional[Sequence[float]] = None, freeze: str = "B2", bold_rows: Optional[Sequence[int]] = None,
+                 levels: Optional[Sequence[int]] = None, hidden_rows: Optional[Sequence[int]] = None):
+        # levels: outline level per row (0 = top; groups can be expanded/collapsed in Excel, the summary row above its details);
+        # hidden_rows: rows collapsed at the start
         self.name = _INVALID_SHEET.sub("-", str(name))[:31] or "Blatt"
         self.header = list(header)
         self.rows = [list(r) for r in rows]
         self.widths = list(widths) if widths else None
         self.freeze = freeze
         self.bold_rows = set(bold_rows or [])
+        self.levels = list(levels or [])
+        self.hidden_rows = set(hidden_rows or [])
 
     def xml(self) -> str:
         out = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">']
+        if self.levels:
+            out.append('<sheetPr><outlinePr summaryBelow="0"/></sheetPr>')
         if self.freeze:
             col = re.match(r"([A-Z]+)(\d+)", self.freeze)
             xs = ord(col.group(1)) - 65 if col else 1
             ys = int(col.group(2)) - 1 if col else 1
             out.append('<sheetViews><sheetView workbookViewId="0"><pane xSplit="%d" ySplit="%d" topLeftCell="%s" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>'
                        % (xs, ys, self.freeze))
+        if self.levels:
+            out.append('<sheetFormatPr defaultRowHeight="15" outlineLevelRow="%d"/>' % max(self.levels))
         ncols = max([len(self.header)] + [len(r) for r in self.rows]) if (self.header or self.rows) else 1
         widths = self.widths or ([34] + [14] * (ncols - 1))
         out.append("<cols>" + "".join('<col min="%d" max="%d" width="%.1f" customWidth="1"/>' % (i + 1, i + 1, w)
@@ -50,12 +59,17 @@ class Sheet:
         out.append("<sheetData>")
         out.append(self._row(1, self.header, bold=True))
         for i, r in enumerate(self.rows, start=2):
-            out.append(self._row(i, r, bold=(i - 2) in self.bold_rows))
+            k = i - 2
+            lvl = self.levels[k] if k < len(self.levels) else 0
+            nxt = self.levels[k + 1] if k + 1 < len(self.levels) else 0
+            attrs = (' outlineLevel="%d"' % lvl if lvl else "") + (' hidden="1"' if k in self.hidden_rows else "") \
+                + (' collapsed="1"' if nxt > lvl and (k + 1) in self.hidden_rows else "")
+            out.append(self._row(i, r, bold=k in self.bold_rows, attrs=attrs))
         out.append("</sheetData></worksheet>")
         return "".join(out)
 
     @staticmethod
-    def _row(idx: int, values: Sequence[Any], bold: bool) -> str:
+    def _row(idx: int, values: Sequence[Any], bold: bool, attrs: str = "") -> str:
         cells = []
         for j, v in enumerate(values):
             ref = "%s%d" % (_col(j), idx)
@@ -69,7 +83,7 @@ class Sheet:
             else:
                 style = 2 if bold else 0
                 cells.append('<c r="%s" s="%d" t="inlineStr"><is><t xml:space="preserve">%s</t></is></c>' % (ref, style, escape(str(v))))
-        return '<row r="%d">%s</row>' % (idx, "".join(cells))
+        return '<row r="%d"%s>%s</row>' % (idx, attrs, "".join(cells))
 
 
 def workbook(sheets: List[Sheet]) -> bytes:
