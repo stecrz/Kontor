@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.10.9 (2026-11-08 22:21)
+- Depot-Aufschlüsselung: Wertpapiere ohne Namen in MoneyMoneys Datenbank werden nicht mehr zu einer Zeile zusammengefasst.
+
 ## 3.10.8 (2026-11-08 22:18)
 - Bilanz: Depots lassen sich in ihre Wertpapiere aufklappen (▸ vor dem Depot). Der Knopf in der Kopfzelle klappt nacheinander die Konten, dann auch alle Depots auf und wieder zu. Werte je Wertpapier: frühere Monate aus den eingelesenen MoneyMoney-Kontoständen (bzw. Kontors monatlicher Aufzeichnung), der laufende Monat aus MoneyMoney; was die Wertpapiere nicht erklären, steht als „Übrige“.
 - Kleine Grafik „Zusammensetzung“: „Depot“ neben der Auswahl schlüsselt Depots in ihre Wertpapiere auf (nur wo es das gibt, je Position gemerkt). Konten bzw. Wertpapiere lassen sich unten einzeln abwählen – die Linie der Position bleibt, beim Darüberfahren steht zusätzlich die Summe der Auswahl. Beim Wechsel der Position ist wieder alles gewählt.

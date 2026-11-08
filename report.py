@@ -182,14 +182,14 @@ def depot_holdings(acc: Account, werte: Dict[str, Optional[float]], mkeys: List[
     cur = month_key(today)
     rows: Dict[str, dict] = {}
 
-    def row(name: str, isin: str) -> dict:
-        key = holding_key(name, isin)
+    def row(name: str, isin: str, fallback: str = "") -> dict:
+        key = holding_key(name, isin) if (name or isin) else fallback or holding_key(name, isin)    # unnamed: kept apart
         r = rows.setdefault(key, {"id": acc.uuid + "|" + key, "name": name, "isin": isin, "werte": {}})
         if name and not r["name"]:
             r["name"] = name
         return r
-    for w in (state.get("historie_mm_wp") or {}).get(acc.uuid) or []:
-        r = row(str(w.get("name") or ""), str(w.get("isin") or ""))
+    for n, w in enumerate((state.get("historie_mm_wp") or {}).get(acc.uuid) or []):
+        r = row(str(w.get("name") or ""), str(w.get("isin") or ""), "mm:%d" % n)
         for mk, v in (w.get("werte") or {}).items():
             if mk < cur and v is not None:
                 r["werte"][mk] = round(r["werte"].get(mk, 0.0) + float(v), 2)
