@@ -2149,6 +2149,16 @@ class BrowserTest(unittest.TestCase):
                 pg.wait_for_timeout(200)
                 self.assertEqual(pg.evaluate("BCH.i0"), 0); self.assertEqual(pg.evaluate("BCH.i1 - BCH.i0"), span)
                 self.assertTrue(pg.query_selector("#main thead th[data-key='%s'].bch-on" % key)); self.assertFalse(pg.is_visible("#bch-tip"))
+                # aligned with the table: each column centre has its point right above it, no value tip, the chart follows the table
+                pg.click("#bch-link"); pg.wait_for_selector("#bch.linked"); pg.wait_for_timeout(300)
+                off = pg.evaluate("""() => { const svg = document.querySelector('#bch-svg').getBoundingClientRect(), w = document.querySelector('#main .wrap'),
+                    th = [...w.querySelectorAll('thead th[data-key]')].find(h => { const r = h.getBoundingClientRect(); return r.left > w.getBoundingClientRect().left + 250 && r.right < w.getBoundingClientRect().right; });
+                    const r = th.getBoundingClientRect(), tick = [...document.querySelectorAll('#bch-svg .bch-tick')].map(l => +l.getAttribute('x1') + svg.left);
+                    return Math.min(...tick.map(x => Math.abs(x - (r.left + r.width / 2)))); }""")
+                self.assertLess(off, 1.5)
+                bb = pg.query_selector("#bch-hit").bounding_box(); pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + 60); pg.wait_for_timeout(150)
+                self.assertFalse(pg.is_visible("#bch-tip"))
+                pg.click("#bch-link"); pg.wait_for_timeout(300); self.assertIsNone(pg.query_selector("#bch.linked"))
                 pg.click("#bch-rb button[data-m='0']"); pg.wait_for_timeout(200)
                 # waagerecht zur aktuellen Spalte gescrollt (auch in der Jahresansicht)
                 self.assertGreater(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0)

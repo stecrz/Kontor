@@ -1099,7 +1099,7 @@ const BCH = {d: null, i0: 0, i1: 0, drag: null, hover: null, ro: null};
 // colour of an account inside its position (same in the charts and the table): variants of the position colour with a
 // neighbouring hue and a different lightness, so that up to ten accounts stay apart without turning into a rainbow;
 // beyond that the variants repeat hatched. Computed in OKLCH (perceptually even), so the steps look alike in every colour.
-const ACC_STEPS = [[0, 0], [34, -.16], [-34, .11], [60, .03], [-58, -.1], [17, .18], [-17, -.21], [46, .14], [-46, -.04], [0, -.28]];   // [hue °, lightness]
+const ACC_STEPS = [[0, 0], [22, -.13], [-22, .09], [40, .02], [-40, -.08], [11, .15], [-11, -.18], [32, .12], [-32, -.02], [0, -.24]];   // [hue °, lightness]
 const accIdx = (D, r) => Math.max(0, D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === r.rolle).indexOf(r));
 const cssColor = c => c.startsWith('var(') ? getComputedStyle(document.documentElement).getPropertyValue(c.slice(4, -1)).trim() : c;
 function hexToOklch(hex) {
@@ -1152,41 +1152,58 @@ function vBilanzChart(D) {
   if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, 36); S.bchRange = [d.months[i0], d.months[i1]]; S.bchBtn = 36; }    // default: three years up to today
   BCH.i0 = BCH.f0 = i0; BCH.i1 = BCH.f1 = i1;
   const rb = [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [120, t('bch_jahre', 10)], [0, t('alle')]];
-  return `<div class="card bch" id="bch"><div class="bch-head"><span class="bch-range" id="bch-range"></span> ${hq('bch')}<span class="sp"></span><label class="bch-n" title="${t('bch_monate_tip')}"><input type="number" id="bch-n" min="3" max="${n}" step="1">${t('bch_m')}</label><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
+  return `<div class="card bch${bchLinked() ? ' linked' : ''}" id="bch"><div class="bch-head"><span class="bch-range" id="bch-range"></span> ${hq('bch')}<span class="sp"></span><button class="ghost small bch-link${bchLinked() ? ' on' : ''}" id="bch-link" title="${t('bch_link_tip')}" aria-pressed="${bchLinked()}">${t('bch_link')}</button><label class="bch-n" title="${t('bch_monate_tip')}"><input type="number" id="bch-n" min="3" max="${n}" step="1">${t('bch_m')}</label><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
     <div class="bch-plot" id="bch-plot"><svg class="bch-svg" id="bch-svg"></svg><div class="bch-tip hidden" id="bch-tip"></div></div></div>`;
 }
 function bchDraw() {
   const box = $('#bch-plot'), svg = $('#bch-svg'), d = BCH.d; if (!box || !svg || !d) return;
-  const W = Math.max(320, box.clientWidth), H = window.matchMedia('(max-width:820px)').matches ? 200 : 250, P = {l: 58, r: 10, t: 14, b: 24};
-  const i0 = BCH.i0, i1 = BCH.i1, n = i1 - i0;
+  const W = Math.max(320, box.clientWidth), H = window.matchMedia('(max-width:820px)').matches ? 200 : 250;
+  // points to draw: the months of the range, or (aligned with the table) the table's columns at their positions
+  const link = bchLinked() ? bchCols(svg) : null, i0 = BCH.i0, i1 = BCH.i1, n = i1 - i0;
+  const P = link ? {l: link.l, r: Math.max(0, W - link.r), t: 14, b: 24} : {l: 58, r: 10, t: 14, b: 24};
+  const pts = link ? link.cols : [];
+  if (!link) for (let i = i0; i <= i1; i++) pts.push({i, x: P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n)});
+  const N = pts.length - 1;
   // Stapel: positive Anteile von der Nulllinie nach oben, negative nach unten (Reihenfolge wie die Tabelle von oben)
   const pos = [], neg = [];
-  for (let i = i0; i <= i1; i++) { let up = 0, dn = 0; for (const x of d.series) { const v = x.vals[i] || 0; if (v > 0) up += v; else dn += v; } pos.push(up); neg.push(dn); }
-  const nwv = d.nw.slice(i0, i1 + 1).filter(v => v != null);
+  for (const p of pts) { let up = 0, dn = 0; for (const x of d.series) { const v = x.vals[p.i] || 0; if (v > 0) up += v; else dn += v; } pos.push(up); neg.push(dn); }
+  const nwv = pts.map(p => d.nw[p.i]).filter(v => v != null);
   let max = Math.max(...pos, ...nwv, 0), min = Math.min(...neg, ...nwv, 0); if (max === min) max = min + 1;
   const pad = (max - min) * 0.04; max += pad; if (min < 0) min -= pad;
   const x = i => P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n), y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min);
   const pf = v => v.toFixed(1);
-  let g = `<rect class="bch-bg" x="${P.l}" y="${P.t}" width="${W - P.l - P.r}" height="${H - P.t - P.b}"/>`;
+  let g = `<rect class="bch-bg" x="${P.l}" y="${P.t}" width="${Math.max(0, W - P.l - P.r)}" height="${H - P.t - P.b}"/>`;
   for (const [t, ref] of axisTicks(min, max, H < 220 ? 4 : 5)) g += `<line class="bch-grid${Math.abs(t) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(t))}" y2="${pf(y(t))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(t) + 4)}">${Fk(t, true, ref)}</text>`;
-  // Zeitachse: Abstand der Beschriftungen passt sich dem Ausschnitt an (Monate bis Jahrzehnte)
-  const ppm = (W - P.l - P.r) / Math.max(1, n), step = [1, 2, 3, 6, 12, 24, 60, 120].find(st => st * ppm >= 62) || 120;
-  for (let i = i0; i <= i1; i++) {
-    const m = d.months[i], mo = +m.slice(5), yr = +m.slice(0, 4), xi = pf(x(i));
-    if (mo === 1 && i > i0) g += `<line class="bch-year" x1="${xi}" x2="${xi}" y1="${P.t}" y2="${H - P.b}"/>`;
-    if (ppm >= 5) g += `<line class="bch-tick" x1="${xi}" x2="${xi}" y1="${H - P.b}" y2="${H - P.b + (mo === 1 ? 5 : 3)}"/>`;
-    const lab = step < 12 ? (mo - 1) % step === 0 : mo === 1 && yr % (step / 12) === 0;
-    if (lab && x(i) > P.l + 14 && x(i) < W - P.r - 14) g += `<text class="bch-x" x="${xi}" y="${H - 6}">${step < 12 ? (mo === 1 ? yr : MONATE[mo - 1] + ' ' + String(yr).slice(2)) : yr}</text>`;
+  let plot = '';                                        // everything that is clipped to the plot when aligned with the table
+  if (link) {
+    // time axis: the column labels of the table (thinned out when the columns are narrow)
+    const cw = N > 0 ? Math.abs(pts[1].x - pts[0].x) : 60, step = Math.max(1, Math.ceil(54 / Math.max(1, cw)));
+    pts.forEach((p, k) => {
+      const xi = pf(p.x), jan = p.key.length === 7 && p.key.endsWith('-01');
+      if (jan && k > 0) plot += `<line class="bch-year" x1="${xi}" x2="${xi}" y1="${P.t}" y2="${H - P.b}"/>`;
+      plot += `<line class="bch-tick" x1="${xi}" x2="${xi}" y1="${H - P.b}" y2="${H - P.b + (jan ? 5 : 3)}"/>`;
+      if (k % step === 0 && p.x > P.l + 12 && p.x < W - P.r - 12) g += `<text class="bch-x" x="${xi}" y="${H - 6}">${esc(p.label)}</text>`;
+    });
+  } else {
+    // Zeitachse: Abstand der Beschriftungen passt sich dem Ausschnitt an (Monate bis Jahrzehnte)
+    const ppm = (W - P.l - P.r) / Math.max(1, n), step = [1, 2, 3, 6, 12, 24, 60, 120].find(st => st * ppm >= 62) || 120;
+    for (let i = i0; i <= i1; i++) {
+      const m = d.months[i], mo = +m.slice(5), yr = +m.slice(0, 4), xi = pf(x(i));
+      if (mo === 1 && i > i0) g += `<line class="bch-year" x1="${xi}" x2="${xi}" y1="${P.t}" y2="${H - P.b}"/>`;
+      if (ppm >= 5) g += `<line class="bch-tick" x1="${xi}" x2="${xi}" y1="${H - P.b}" y2="${H - P.b + (mo === 1 ? 5 : 3)}"/>`;
+      const lab = step < 12 ? (mo - 1) % step === 0 : mo === 1 && yr % (step / 12) === 0;
+      if (lab && x(i) > P.l + 14 && x(i) < W - P.r - 14) g += `<text class="bch-x" x="${xi}" y="${H - 6}">${step < 12 ? (mo === 1 ? yr : MONATE[mo - 1] + ' ' + String(yr).slice(2)) : yr}</text>`;
+    }
   }
   // Flaechen
   let defs = '';
   const band = (sel, sign) => {
-    const base = Array(n + 1).fill(0); let out = '';
+    const base = Array(N + 1).fill(0); let out = '';
     for (const sx of sel) {
       const top = [], bot = [];
-      for (let k = 0; k <= n; k++) { const v = sx.vals[i0 + k] || 0, part = sign > 0 ? Math.max(0, v) : Math.min(0, v); bot.push(base[k]); base[k] += part; top.push(base[k]); }
+      for (let k = 0; k <= N; k++) { const v = sx.vals[pts[k].i] || 0, part = sign > 0 ? Math.max(0, v) : Math.min(0, v); bot.push(base[k]); base[k] += part; top.push(base[k]); }
       if (top.every((t, k) => Math.abs(t - bot[k]) < 0.5)) continue;
-      const path = top.map((t, k) => (k ? 'L' : 'M') + pf(x(i0 + k)) + ' ' + pf(y(t))).join('') + bot.map((b, k) => [k, b]).reverse().map(([k, b]) => 'L' + pf(x(i0 + k)) + ' ' + pf(y(b))).join('') + 'Z';
+      const path = top.map((t, k) => (k ? 'L' : 'M') + pf(pts[k].x) + ' ' + pf(y(t))).join('') + bot.map((b, k) => [k, b]).reverse().map(([k, b]) => 'L' + pf(pts[k].x) + ' ' + pf(y(b))).join('') + 'Z';
       let fill = sx.color;
       if (sx.hatch) { const pid = `bchp-${d.series.indexOf(sx)}`; fill = `url(#${pid})`; if (!defs.includes(pid)) defs += `<pattern id="${pid}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.5" height="5" fill="${sx.color}"/></pattern>`; }
       out += `<path class="bch-area${sx.sub ? ' sub' : ''}" d="${path}" fill="${fill}"${sx.op < 1 ? ` fill-opacity="${sx.op}"` : ''}/>`;
@@ -1194,22 +1211,42 @@ function bchDraw() {
     return out;
   };
   const ordered = d.series.slice().reverse();          // unterste Flaeche = letzte Position der Tabelle
-  g += band(ordered, 1) + band(ordered, -1);
-  if (defs) g = `<defs>${defs}</defs>` + g;
+  plot += band(ordered, 1) + band(ordered, -1);
   // Plan-Bereich blass, heute markiert
-  const ist = d.ist - 1;
-  if (ist < i1) { const xs = Math.max(P.l, x(Math.max(ist, i0))); g += `<rect class="bch-plan" x="${pf(xs)}" y="${P.t}" width="${pf(W - P.r - xs)}" height="${H - P.t - P.b}"/>`; }
-  if (ist >= i0 && ist <= i1) g += `<line class="bch-today" x1="${pf(x(ist))}" x2="${pf(x(ist))}" y1="${P.t - 4}" y2="${H - P.b}"/><text class="bch-today-l" x="${pf(x(ist))}" y="${P.t - 5}"${x(ist) > W - P.r - 20 ? ' style="text-anchor:end"' : ''}>${t('heute')}</text>`;
-  // Nettovermoegen
-  const line = (a, b, cls0) => { const pts = []; for (let i = a; i <= b; i++) if (d.nw[i] != null) pts.push((pts.length ? 'L' : 'M') + pf(x(i)) + ' ' + pf(y(d.nw[i]))); return pts.length > 1 ? `<path class="${cls0}" d="${pts.join('')}"/>` : ''; };
-  g += line(i0, Math.min(i1, ist), 'bch-nw') + (ist < i1 ? line(Math.max(i0, ist), i1, 'bch-nw plan') : '');
-  g += `<g id="bch-hover"></g><rect class="bch-sel hidden" id="bch-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="bch-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-pan" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_pan_tip')}</title></rect><rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"><title>${t('bch_pan_tip')}</title></rect>`;
+  const ist = d.ist - 1, kt = pts.findIndex(p => p.i === ist), kp = pts.findIndex(p => p.i > ist);
+  if (kp >= 0) { const xs = Math.max(P.l, kt >= 0 ? pts[kt].x : pts[kp].x); plot += `<rect class="bch-plan" x="${pf(xs)}" y="${P.t}" width="${pf(Math.max(0, W - P.r - xs))}" height="${H - P.t - P.b}"/>`; }
+  if (kt >= 0) { const xt = pts[kt].x; plot += `<line class="bch-today" x1="${pf(xt)}" x2="${pf(xt)}" y1="${P.t - 4}" y2="${H - P.b}"/><text class="bch-today-l" x="${pf(xt)}" y="${P.t - 5}"${xt > W - P.r - 20 ? ' style="text-anchor:end"' : ''}>${t('heute')}</text>`; }
+  // Nettovermoegen (bis heute durchgezogen, danach gestrichelt)
+  const line = (sel, cls0) => { const ps = []; for (const p of sel) if (d.nw[p.i] != null) ps.push((ps.length ? 'L' : 'M') + pf(p.x) + ' ' + pf(y(d.nw[p.i]))); return ps.length > 1 ? `<path class="${cls0}" d="${ps.join('')}"/>` : ''; };
+  plot += line(pts.filter(p => p.i <= ist), 'bch-nw') + (kp >= 0 ? line(pts.filter(p => p.i >= ist), 'bch-nw plan') : '');
+  if (link) { defs += `<clipPath id="bch-clip"><rect x="${P.l}" y="0" width="${Math.max(0, W - P.l - P.r)}" height="${H}"/></clipPath>`; g += `<g clip-path="url(#bch-clip)">${plot}</g>`; } else g += plot;
+  if (defs) g = `<defs>${defs}</defs>` + g;
+  g += `<g id="bch-hover"></g><rect class="bch-sel hidden" id="bch-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="bch-hit" x="${P.l}" y="0" width="${Math.max(0, W - P.l - P.r)}" height="${H}"/>`
+    + (link ? '' : `<rect class="bch-pan" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_pan_tip')}</title></rect><rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"><title>${t('bch_pan_tip')}</title></rect>`);
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); svg.innerHTML = g;
   BCH.geo = {W, H, P, x, y, idx: px => Math.max(i0, Math.min(i1, Math.round(i0 + (px - P.l) * n / Math.max(1, W - P.l - P.r))))};
-  const rl = $('#bch-range'); if (rl) rl.textContent = `${MONATE_LANG[+d.months[i0].slice(5) - 1]} ${d.months[i0].slice(0, 4)} – ${MONATE_LANG[+d.months[i1].slice(5) - 1]} ${d.months[i1].slice(0, 4)}`;
+  const rl = $('#bch-range');
+  if (rl && link) { const vis = pts.filter(p => p.x >= P.l && p.x <= W - P.r); rl.textContent = vis.length ? `${bchKeyLabel(vis[0].key)} – ${bchKeyLabel(vis[vis.length - 1].key)}` : ''; }
+  else if (rl) rl.textContent = `${MONATE_LANG[+d.months[i0].slice(5) - 1]} ${d.months[i0].slice(0, 4)} – ${MONATE_LANG[+d.months[i1].slice(5) - 1]} ${d.months[i1].slice(0, 4)}`;
   $$('#bch-rb button').forEach(b => b.classList.toggle('on', S.bchRange ? +b.dataset.m === S.bchBtn : b.dataset.m === '0'));
   const nf = $('#bch-n'); if (nf && document.activeElement !== nf) nf.value = i1 - i0 + 1;
   bchBind();
+}
+// Aligned with the table: the chart follows the table's columns (each value right above its column) and scrolls with it
+const bchLinked = () => { if (S.bchLink == null) { try { S.bchLink = localStorage.getItem('kontor.bchLink') === '1'; } catch (e) { S.bchLink = false; } } return S.bchLink; };
+const bchKeyLabel = k => k.length === 4 ? k : `${MONATE_LANG[+k.slice(5) - 1]} ${k.slice(0, 4)}`;
+function bchIndex(key) {
+  // month index of a table column (year column: the current month for the running year, otherwise its last month)
+  const d = BCH.d, i = d.months.indexOf(key); if (i >= 0 || key.length !== 4) return i;
+  const cur = d.ist - 1; if (d.months[cur] && d.months[cur].startsWith(key + '-')) return cur;
+  return d.months.reduce((k, m, j) => m.startsWith(key + '-') ? j : k, -1);
+}
+function bchCols(svg) {
+  // the table's columns as points: month index and the x of the column centre in the chart; l/r = visible part of the table
+  const w = $('#main .wrap.snap'), first = w && $('thead th', w), sr = svg.getBoundingClientRect(); if (!first || !sr.width) return null;
+  const cols = [];
+  for (const th of $$('thead th[data-key]', w)) { const i = bchIndex(th.dataset.key); if (i < 0) continue; const r = th.getBoundingClientRect(); cols.push({i, key: th.dataset.key, label: th.textContent.trim(), x: r.left + r.width / 2 - sr.left}); }
+  return cols.length > 1 ? {cols, l: first.getBoundingClientRect().right - sr.left, r: w.getBoundingClientRect().left + w.clientLeft + w.clientWidth - sr.left} : null;
 }
 function bchWindow(d, m) {
   // m months ending with the current month: "1 J" means the last twelve actual months (changes refer to exactly that);
@@ -1265,10 +1302,8 @@ function bchJump(m) {
 function bchFocus(key) {
   // table header clicked: centre the chart on that month, keep the span and mark it
   // (year column: the current month for the running year, otherwise its last month)
-  const d = BCH.d; if (!d) return;
-  let i = d.months.indexOf(key);
-  if (i < 0) { const cur = d.ist - 1; i = d.months[cur] && d.months[cur].startsWith(key + '-') ? cur : d.months.reduce((k, m, j) => m.startsWith(key + '-') ? j : k, -1); }
-  if (i < 0) return;
+  const d = BCH.d; if (!d || bchLinked()) return;
+  const i = bchIndex(key); if (i < 0) return;
   const span = BCH.i1 - BCH.i0, last = d.months.length - 1, a = Math.max(0, Math.min(last - span, i - Math.round(span / 2))), z = Math.min(last, a + span);
   bchSet(a, z, a === BCH.i0 && z === BCH.i1 ? S.bchBtn : null);
   bchHover(i); $('#bch-tip').classList.add('hidden');      // only the line marks the month; the values are in the table
@@ -1314,7 +1349,12 @@ function chartGestures(svg, o) {
 function bchBind() {
   const hit = $('#bch-hit'); if (!hit) return;
   const pt = e => { const r = $('#bch-svg').getBoundingClientRect(); return (e.clientX - r.left) * BCH.geo.W / r.width; };
-  const gest = chartGestures($('#bch-svg'), {pt, geo: () => BCH.geo, range: () => [BCH.f0, BCH.f1], view: (f0, span, keep) => bchView(f0, span, keep), hide: () => bchHover(null)});
+  const gest = chartGestures($('#bch-svg'), {pt, geo: () => bchLinked() ? null : BCH.geo, range: () => [BCH.f0, BCH.f1], view: (f0, span, keep) => bchView(f0, span, keep), hide: () => bchHover(null)});
+  // aligned with the table: no value tip (the table shows the same), no zoom; swiping sideways scrolls the table
+  if (bchLinked()) {
+    hit.addEventListener('wheel', e => { const w = $('#main .wrap.snap'); if (!w || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; e.preventDefault(); w.scrollLeft += e.deltaX; }, {passive: false});
+    return;
+  }
   hit.addEventListener('pointermove', e => {
     if (gest.busy()) { bchHover(null); return; }
     const px = pt(e), G = BCH.geo;
@@ -1366,8 +1406,12 @@ function bindBilanzChart(main) {
     const btn = [12, 36, 120].includes(m) && bchWindow(d, m)[0] === a ? m : null;
     bchSet(a, e, btn); nf.blur();
   });
+  const lb = $('#bch-link', main); if (lb) lb.addEventListener('click', () => { S.bchLink = !bchLinked(); try { localStorage.setItem('kontor.bchLink', S.bchLink ? '1' : '0'); } catch (e) {} route(); });
   bchDraw();
-  $$('.wrap thead th[data-key]', main).forEach(th => { th.classList.add('jump'); th.addEventListener('click', () => bchFocus(th.dataset.key)); });
+  if (bchLinked()) {
+    // the chart follows the table when it scrolls sideways
+    const w = $('.wrap.snap', main); if (w) w.addEventListener('scroll', () => { if (!BCH.raf) BCH.raf = requestAnimationFrame(() => { BCH.raf = 0; bchDraw(); }); }, {passive: true});
+  } else $$('.wrap thead th[data-key]', main).forEach(th => { th.classList.add('jump'); th.addEventListener('click', () => bchFocus(th.dataset.key)); });
   if (BCH.ro) BCH.ro.disconnect();
   let last = 0; BCH.ro = new ResizeObserver(() => { const w = $('#bch-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; bchDraw(); } });
   BCH.ro.observe($('#bch-plot', main));
@@ -1502,8 +1546,9 @@ function lcDraw(id) {
   // value today and change over the visible actual months
   let a = null, z = null; for (let i = i0; i <= Math.min(i1, ist); i++) if (d.vals[i] != null) { if (a == null) a = i; z = i; }
   const vEl = $(`#lc-${id}-val`);
-  if (vEl) vEl.innerHTML = z == null ? '' : `${F0(d.vals[z])} €` + (a != null && a < z ? ` <span class="delta ${d.vals[z] - d.vals[a] >= 0 ? 'pos' : 'neg'}" title="${t('lc_seit_0', ML(d.months[a]))}">${d.vals[z] - d.vals[a] >= 0 ? '+' : ''}${F0(d.vals[z] - d.vals[a])} €${pctGrowth(d.vals[a], d.vals[z] - d.vals[a]) ? ` (${pctGrowth(d.vals[a], d.vals[z] - d.vals[a])})` : ''}</span>` : '');      // the period is shown on the right (range), "since" as tooltip
-  const rl = $(`#lc-${id}-range`); if (rl) rl.textContent = `${ML(d.months[i0])} – ${ML(d.months[i1])}`;      // shown range, compact (top right)
+  if (vEl) vEl.innerHTML = z == null ? '' : `${F0(d.vals[z])} €` + (a != null && a < z ? ` <span class="delta ${d.vals[z] - d.vals[a] >= 0 ? 'pos' : 'neg'}">${d.vals[z] - d.vals[a] >= 0 ? '+' : ''}${F0(d.vals[z] - d.vals[a])} €${pctGrowth(d.vals[a], d.vals[z] - d.vals[a]) ? ` (${pctGrowth(d.vals[a], d.vals[z] - d.vals[a])})` : ''}</span>` : '');      // the period is shown on the right (range)
+  // the period the value (end) and the change (start) refer to: the actual months in view; compact, top right
+  const rl = $(`#lc-${id}-range`); if (rl) { rl.textContent = a != null && a < z ? `${ML(d.months[a])} – ${ML(d.months[z])}` : z != null ? ML(d.months[z]) : ''; rl.title = t('lc_range_tip'); }
   $$(`.lc-rb[data-lc="${id}"] button`).forEach(b => b.classList.toggle('on', st.btn != null ? +b.dataset.m === st.btn : false));
   lcBindPlot(id);
 }

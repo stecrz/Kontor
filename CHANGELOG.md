@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.9.42 (2026-11-08 03:41)
+- Bilanz: „An Tabelle ausrichten“ – die große Grafik steht Spalte für Spalte über der Tabelle (jeder Wert genau über seiner Spalte) und scrollt mit; ohne Werte-Fenster, Zeitraum folgt der Tabelle.
+- Kleine Grafiken: „seit …“ entfällt ganz; der Zeitraum oben rechts ist genau der Bezug von Wert (Ende) und Veränderung (Beginn).
+- Kontofarben wieder wie in 3.9.40 (die kräftigere Abstufung aus 3.9.41 zurückgenommen).
+
 ## 3.9.41 (2026-11-08 03:38)
 - Anmeldeseite: Hinweise (z. B. „Touch ID nicht bestätigt …“) stehen zentriert.
 - Kleine Grafiken: Zeitraum kompakt oben rechts („Dez 25 – Nov 26“) statt ausgeschrieben unter der Grafik; „seit …“ steht als Hinweis an der Veränderung.
