@@ -392,15 +392,21 @@ class App:
             b = self.bericht
         return (b.get("fehler") is None and b.get("stand") is not None), b.get("fehler")
 
-    def securities_unnamed(self) -> dict:
-        """Securities that have only an ISIN (no name in MoneyMoney, none of your own) and the names looked up so far."""
+    def securities_known(self) -> Tuple[dict, dict, dict]:
         st = self.store.load_shared("state.json", {}) or {}
         mmh = self.store.load_shared(MM_HISTORY_FILE, {}) or {}
+        return st, mmh, security_names.catalog(mmh.get("wertpapiere") or {}, st.get("wp_namen") or {})
+
+    def securities_unnamed(self) -> dict:
+        """Securities that have only an ISIN (no name in MoneyMoney) and the list of all securities with their names: MoneyMoney's,
+        looked up, your own."""
+        st, mmh, known = self.securities_known()
         done = st.get("wp_suche") or {}
+        found, own = done.get("namen") or {}, done.get("eigene") or {}
         offen = security_names.unnamed(mmh.get("wertpapiere") or {}, st.get("snapshots_wp") or {}, st.get("wp_namen") or {},
-                                       list(done.get("namen") or {}) + list(done.get("ohne") or []))
-        found = done.get("namen") or {}
-        liste = [{"isin": i, "name": found.get(i, "")} for i in sorted(set(found) | set(done.get("ohne") or []))]
+                                       list(found) + list(done.get("ohne") or []) + list(own))
+        liste = [{"isin": i, "mm": known.get(i, ""), "such": found.get(i, ""), "eigen": own.get(i, "")} for i in set(known) | set(found)]
+        liste.sort(key=lambda x: ((x["eigen"] or x["mm"] or x["such"] or "~").lower(), x["isin"]))
         return {"offen": offen, "gefunden": len(found), "ohne": len(done.get("ohne") or []), "zeit": done.get("zeit"), "liste": liste}
 
     def securities_lookup(self) -> dict:
@@ -1794,7 +1800,8 @@ def make_handler(app: App):
                 elif body.get("aktion") == "namen":
                     # the list of looked-up names, changed by hand (only ISINs already looked up; empty = no name)
                     namen = body.get("namen") if isinstance(body.get("namen"), dict) else {}
-                    app.store.update("state.json", lambda cur: security_names.set_names(cur.setdefault("wp_suche", {}), namen), {})
+                    known = app.securities_known()[2]
+                    app.store.update("state.json", lambda cur: security_names.set_names(cur.setdefault("wp_suche", {}), namen, known), {})
                     res = {"gespeichert": True}
                 else:
                     try:

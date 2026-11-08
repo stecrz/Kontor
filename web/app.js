@@ -726,24 +726,26 @@ async function mmhFollow() {
   }
 }
 async function mmhNames(openList) {
-  // optional: names of the securities MoneyMoney knows only by their ISIN, looked up once at OpenFIGI -- only on a click,
-  // only the ISINs are sent; the names found are kept apart, can be changed in a list right here and removed again
+  // the names of the securities: the ones MoneyMoney knows only by their ISIN can be looked up once at OpenFIGI (only on a
+  // click, only the ISINs are sent); then all securities are listed with their names, which can be changed here
   const el = $('#mmh-names'); if (!el) return;
   let r; try { r = await api('/api/securities/lookup'); } catch (e) { return; }
-  const n = r.offen.length, had = r.gefunden + r.ohne > 0;
-  el.classList.toggle('hidden', !n && !had); el.classList.toggle('done', !n && had);
+  const n = r.offen.length, had = r.gefunden + r.ohne > 0, list = r.liste || [];
+  el.classList.toggle('hidden', !n && !list.length); el.classList.toggle('done', !n && list.length > 0);
+  const base = x => x.mm || x.such || '';
   el.innerHTML = `<div class="b"><b>${t('wp_suche_titel')} <span class="pill neutral">${t('optional')}</span></b>`
     + (n ? `<div>${t('wp_suche_text', n === 1 ? t('wp_suche_eins') : t('wp_suche_n', n))}</div><details class="small"><summary>${t('wp_suche_liste')}</summary><div class="mono">${r.offen.map(esc).join(', ')}</div></details>` : '')
-    + (had ? `<div class="small muted">${t('wp_suche_stand', r.gefunden, r.ohne, esc(fmtZeit(r.zeit)))}</div>`
-      + `<details class="small"${openList ? ' open' : ''}><summary>${t('wp_suche_bearbeiten')}</summary><div class="wp-edit">${(r.liste || []).map(x => `<label><span class="mono">${esc(x.isin)}</span><input data-isin="${esc(x.isin)}" value="${esc(x.name)}" placeholder="${t('wp_suche_kein_name')}" maxlength="120"></label>`).join('')}</div>`
+    + (had ? `<div class="small muted">${t('wp_suche_stand', r.gefunden, r.ohne, esc(fmtZeit(r.zeit)))}</div>` : '')
+    + (list.length ? `<details class="small"${openList ? ' open' : ''}><summary>${t('wp_suche_bearbeiten', list.length)}</summary><div class="small muted">${t('wp_suche_bearbeiten_tip')}</div>`
+      + `<div class="wp-edit">${list.map(x => `<label><span class="mono" title="${esc(x.mm ? t('wp_in_mm', x.mm) : t('wp_in_mm_ohne'))}">${esc(x.isin)}</span><input data-isin="${esc(x.isin)}" value="${esc(x.eigen || base(x))}" placeholder="${esc(base(x) || t('wp_suche_kein_name'))}" maxlength="120"></label>`).join('')}</div>`
       + `<div class="actions"><button id="wp-names-save" class="small">${t('speichern')}</button></div></details>` : '')
-    + `<div class="actions">${n ? `<button id="wp-look" class="small">${t('wp_suche_btn')}</button>` : ''}${had ? `<button id="wp-look-del" class="small secondary">${t('wp_suche_entfernen')}</button>` : ''}</div><div id="wp-look-res" class="findings"></div></div>`;
+    + `<div class="actions">${n ? `<button id="wp-look" class="small">${t('wp_suche_btn')}</button>` : ''}${had || list.some(x => x.eigen) ? `<button id="wp-look-del" class="small secondary">${t('wp_suche_entfernen')}</button>` : ''}</div><div id="wp-look-res" class="findings"></div></div>`;
   const run = async (btn, body) => {
     const res = $('#wp-look-res', el); btn.classList.add('busy'); res.innerHTML = `<div class="working"><span class="spin"></span>${t('bitte_warten')}</div>`;
     try {
       const j = await api('/api/securities/lookup', body);
       try { S.DATA = await api('/api/dataset'); } catch (e) {}
-      await mmhNames(!body.aktion);
+      await mmhNames(!body.aktion || body.aktion === 'namen');
       const res2 = $('#wp-look-res'); if (res2) showFindings(res2, [], j.entfernt ? t('wp_suche_entfernt') : body.aktion === 'namen' ? t('wp_suche_gespeichert') : t('wp_suche_ergebnis', j.neu, j.gesendet), 'ok');
     } catch (e) { showFindings(res, [], e.message, 'fehler'); btn.classList.remove('busy'); }
   };
@@ -1116,7 +1118,7 @@ function wpTip(w, acc) {
   if (w.rest) return w.name;
   const src = w.orig ? t('wp_in_mm', w.orig) : t('wp_in_mm_ohne');
   return [acc ? acc + ' · ' + w.name : w.name, w.isin ? 'ISIN ' + w.isin : '', w.orig !== w.name || !w.orig ? src : '',
-    w.quelle === 'suche' ? t('wp_nachgeschlagen') : ''].filter(Boolean).join('\n');
+    w.quelle === 'eigen' ? t('wp_eigener_name') : w.quelle === 'suche' ? t('wp_nachgeschlagen') : ''].filter(Boolean).join('\n');
 }
 function openWpDrawer(id) {
   // a security of a portfolio: its month-end values (from MoneyMoney's history, Kontor's record and the current export), with
@@ -1126,7 +1128,7 @@ function openWpDrawer(id) {
   if (!w) return;
   const d = $('#drawer'), pts = D.monate.filter(m => w.werte[m] != null).map(m => [m, w.werte[m]]);
   d.innerHTML = `<button class="close icon">✕</button><h2>${esc(w.name)}</h2><div class="small muted">${esc(acc.name)}${w.isin ? ' · ISIN ' + esc(w.isin) : ''}</div>
-    ${w.rest ? '' : `<div class="small muted">${esc(w.orig ? t('wp_in_mm', w.orig) : t('wp_in_mm_ohne'))}${w.quelle === 'suche' ? ' · ' + t('wp_nachgeschlagen') : ''}</div>`}
+    ${w.rest ? '' : `<div class="small muted">${esc(w.orig ? t('wp_in_mm', w.orig) : t('wp_in_mm_ohne'))}${w.quelle === 'eigen' ? ' · ' + t('wp_eigener_name') : w.quelle === 'suche' ? ' · ' + t('wp_nachgeschlagen') : ''}</div>`}
     <div class="h-chart" id="h-chart">${histChart(pts)}</div>
     <h3>${t('monatsstaende')}</h3><div class="hist-grid" id="h-grid">${pts.map(([mk, v]) => `<label>${ML(mk)}<input type="text" class="auto" value="${F(v)}" disabled></label>`).join('')}</div>`;
   d.classList.add('open');

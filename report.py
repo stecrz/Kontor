@@ -207,13 +207,15 @@ def depot_holdings(acc: Account, werte: Dict[str, Optional[float]], mkeys: List[
             r["werte"][cur] = round(r["werte"].get(cur, 0.0) + float(p.get("marketValue") or p.get("amount") or 0), 2)
         except (TypeError, ValueError, AttributeError):
             continue
-    found = (state.get("wp_suche") or {}).get("namen") or {}
+    found, own = (state.get("wp_suche") or {}).get("namen") or {}, (state.get("wp_suche") or {}).get("eigene") or {}
     for key, r in rows.items():
-        # MoneyMoney's own name (history or export) stays as "orig" and is always shown on hover, together with the ISIN; without
-        # one, the name looked up by the ISIN (only on request, set in the setup), else the ISIN
+        # MoneyMoney's own name (history or export) stays as "orig" and is always shown on hover, together with the ISIN; the name
+        # shown: one changed in the setup (list of names), else MoneyMoney's, else the one looked up by the ISIN, else the ISIN
+        isin = (r.get("isin") or "").upper()
         r["orig"] = r["name"] or names.get(key, "")
-        look = str(found.get(r.get("isin") or "") or "") if not r["orig"] else ""
-        r["name"], r["quelle"] = r["orig"] or look, "suche" if look else ""
+        look = str(found.get(isin) or "") if not r["orig"] else ""
+        mine = str(own.get(isin) or "") if isin else ""
+        r["name"], r["quelle"] = mine or r["orig"] or look, "eigen" if mine else "suche" if look else ""
     out = [r for r in rows.values() if any(abs(v) >= 0.005 for v in r["werte"].values())]
     if not out:
         return []

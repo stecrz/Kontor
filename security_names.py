@@ -59,21 +59,33 @@ def unnamed(history_wp: Dict[str, list], snapshots_wp: Dict[str, dict], seen_nam
     return sorted(i for i in isins if i not in skip and valid_isin(i))
 
 
-def set_names(found: dict, names: Dict[str, str]) -> None:
-    """Names changed by hand in the list of looked-up ISINs: only ISINs already in the list; an empty name means none."""
-    known = set(found.get("namen") or {}) | set(found.get("ohne") or [])
-    namen, ohne = dict(found.get("namen") or {}), set(found.get("ohne") or [])
+def catalog(history_wp: Dict[str, list], seen_names: Dict[str, str]) -> Dict[str, str]:
+    """All securities with an ISIN (held or sold) and MoneyMoney's name for each (from the history or the export; may be empty)."""
+    out: Dict[str, str] = {}
+    for rows in (history_wp or {}).values():
+        for w in rows or []:
+            i = str(w.get("isin") or "").strip().upper()
+            if i:
+                out[i] = out.get(i) or str(w.get("name") or "").strip()
+    for k, v in (seen_names or {}).items():
+        if k and not k.startswith("n:"):
+            out[k.upper()] = out.get(k.upper()) or str(v or "").strip()
+    return out
+
+
+def set_names(found: dict, names: Dict[str, str], known: Dict[str, str]) -> None:
+    """Names changed by hand in the list of all securities: a name differing from MoneyMoney's (or the looked-up one) is kept as
+    your own; empty or the same again means none of your own. Only ISINs of the list (known: ISIN -> MoneyMoney's name)."""
+    looked, own = found.get("namen") or {}, dict(found.get("eigene") or {})
     for isin, name in (names or {}).items():
         isin, name = str(isin).strip().upper(), str(name or "").strip()[:120]
-        if isin not in known:
+        if isin not in known and isin not in looked:
             continue
-        if name:
-            namen[isin] = name
-            ohne.discard(isin)
+        if name and name != (known.get(isin) or looked.get(isin) or ""):
+            own[isin] = name
         else:
-            namen.pop(isin, None)
-            ohne.add(isin)
-    found["namen"], found["ohne"] = namen, sorted(ohne)
+            own.pop(isin, None)
+    found["eigene"] = own
 
 
 def _post(jobs: list) -> list:

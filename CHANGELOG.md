@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.11.2 (2026-11-09 00:51)
+- Einrichtung → Historische Kontostände, „Namen der Wertpapiere“: listet nach dem Einlesen alle Wertpapiere mit ISIN (auch verkaufte und ausgeblendete) mit ihrem Namen aus MoneyMoney bzw. dem nachgeschlagenen; Namen lassen sich dort ändern. Name aus MoneyMoney und ISIN bleiben beim Darüberfahren sichtbar.
+
 ## 3.11.1 (2026-11-09 00:44)
 - Bilanz: „Als Standard“ gilt getrennt für Monate und Jahre (z. B. Monate 2 J, Jahre 10 J); die zuletzt gespeicherte Ansicht öffnet beim Start, beim Wechsel gelten die gespeicherten Zeiträume der anderen.
 - Wertpapiere: eigener Name im Verlauf entfällt (wurde nicht übernommen). Stattdessen zeigt der Schritt „Namen nachschlagen“ danach alle nachgeschlagenen ISINs in einer Liste, in der sich Namen ändern oder ergänzen lassen.

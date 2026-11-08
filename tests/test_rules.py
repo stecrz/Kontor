@@ -446,11 +446,14 @@ class SecurityNameTests(unittest.TestCase):
         self.assertEqual(unnamed(hist, snaps, {"DE0007164600": "Aus dem Export"}), ["IE00B4L5Y983"])
         self.assertEqual(unnamed(hist, snaps, {}, ["DE0007164600", "IE00B4L5Y983"]), [])
 
-    def test_names_changed_by_hand_only_for_looked_up_isins(self):
-        from security_names import set_names
-        found = {"namen": {"IE00B4L5Y983": "ISHARES CORE MSCI WORLD"}, "ohne": ["DE0007164600"]}
-        set_names(found, {"ie00b4l5y983": "", "DE0007164600": " Mein Fonds ", "US0378331005": "Nicht gesucht"})
-        self.assertEqual(found, {"namen": {"DE0007164600": "Mein Fonds"}, "ohne": ["IE00B4L5Y983"]})
+    def test_names_changed_by_hand_in_the_list_of_all(self):
+        from security_names import catalog, set_names
+        known = catalog({"u1": [{"name": "", "isin": "ie00b4l5y983"}, {"name": "Beispiel", "isin": "US0378331005"}]}, {"DE0007164600": "Aus dem Export", "n:Fonds": "Fonds"})
+        self.assertEqual(known, {"IE00B4L5Y983": "", "US0378331005": "Beispiel", "DE0007164600": "Aus dem Export"})
+        found = {"namen": {"IE00B4L5Y983": "ISHARES CORE MSCI WORLD"}, "ohne": [], "eigene": {"DE0007164600": "Alt"}}
+        set_names(found, {"IE00B4L5Y983": "ISHARES CORE MSCI WORLD", "US0378331005": " Mein Name ", "DE0007164600": "", "XX0000000000": "Fremd"}, known)
+        self.assertEqual(found["eigene"], {"US0378331005": "Mein Name"})          # unchanged or empty: none of your own
+        self.assertEqual(found["namen"], {"IE00B4L5Y983": "ISHARES CORE MSCI WORLD"})
 
     def test_shown_name_keeps_moneymoneys_name_and_isin(self):
         from datetime import date as D
@@ -465,4 +468,7 @@ class SecurityNameTests(unittest.TestCase):
         a, b, c = rows["IE00B4L5Y983"], rows["US0378331005"], rows["DE0007164600"]
         self.assertEqual((a["name"], a["orig"], a["quelle"]), ("ISHARES CORE MSCI WORLD", "", "suche"))     # looked up: only without a name
         self.assertEqual((b["name"], b["orig"], b["quelle"]), ("Beispiel", "Beispiel", ""))                  # MoneyMoney's name goes first
+        state["wp_suche"]["eigene"] = {"US0378331005": "Mein Name"}                                          # changed in the list of names
+        b = {r["isin"]: r for r in depot_holdings(acc, {"2026-09": 175.0}, ["2026-09"], D(2026, 11, 8), state, None, {})}["US0378331005"]
+        self.assertEqual((b["name"], b["orig"], b["quelle"]), ("Mein Name", "Beispiel", "eigen"))
         self.assertEqual((c["name"], c["orig"], c["quelle"]), ("DE0007164600", "", ""))                      # nothing known: the ISIN
