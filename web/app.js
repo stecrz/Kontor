@@ -41,11 +41,16 @@ const fmt = new Intl.NumberFormat(LOCALE, {minimumFractionDigits: 2, maximumFrac
 const fmt0 = new Intl.NumberFormat(LOCALE, {maximumFractionDigits: 0});
 const F = v => (v == null || isNaN(v) ? '–' : fmt.format(v));
 const F0 = v => (v == null || isNaN(v) ? '–' : fmt0.format(v));
-const Fk = (v, long) => {   // amounts on axes: short where space is tight (T / M, English k / M), long on wide charts (Tsd. / Mio.)
+// amounts on axes: short where space is tight (T / M, English k / M), long on wide charts (Tsd. / Mio.);
+// ref = largest tick of the axis, so that all ticks share one unit (5T, 10T, 15T instead of 5.000, 10T, 15T)
+const Fk = (v, long, ref = v) => {
   if (v == null || isNaN(v)) return '–';
-  const a = Math.abs(v), f = (x, d) => x.toLocaleString(LOCALE, {maximumFractionDigits: d}), u = k => t(k + (long ? '_lang' : '_kurz'));
-  return a >= 1e9 ? f(v / 1e9, 2) + u('mrd') : a >= 1e6 ? f(v / 1e6, 2) + u('mio') : a >= 1e4 ? f(v / 1e3, 0) + u('tsd') : F0(v);
+  if (Math.abs(v) < 1e-9) return '0';
+  const a = Math.abs(ref), f = (x, d) => x.toLocaleString(LOCALE, {maximumFractionDigits: d}), u = k => t(k + (long ? '_lang' : '_kurz'));
+  return a >= 1e9 ? f(v / 1e9, 2) + u('mrd') : a >= 1e6 ? f(v / 1e6, 2) + u('mio') : a >= 1e4 ? f(v / 1e3, a < 1e5 ? 1 : 0) + u('tsd') : F0(v);
 };
+// ticks of an axis as [tick, largest tick] (an array of ticks or the arguments of niceTicks)
+const axisTicks = (...a) => { const ts = Array.isArray(a[0]) ? a[0] : niceTicks(...a), r = Math.max(...ts.map(Math.abs)); return ts.map(v => [v, r]); };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const MONATE = LANG === 'en' ? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] : ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const ML = m => MONATE[+m.slice(5) - 1] + ' ' + m.slice(2, 4);
@@ -538,7 +543,7 @@ function chartStack(D) {
   const x = i => P.l + i * (W - P.l - P.r) / Math.max(1, all.length - 1), y = v => P.t + (max - v) * (H - P.t - P.b) / ((max - min) || 1);
   let s = `<svg class="chart" viewBox="0 0 ${W} ${H}">`;
   const ticks = niceTicks(min, max, 5);
-  for (const t of ticks) s += `<line x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${y(t) + 4}" text-anchor="end">${Fk(t, true)}</text>`;
+  for (const [t, ref] of axisTicks(ticks)) s += `<line x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${y(t) + 4}" text-anchor="end">${Fk(t, true, ref)}</text>`;
   const up = all.map(() => 0), down = all.map(() => 0);
   for (const r of Object.keys(ROLE)) {
     const pts = []; const vals = series[r]; if (vals.every(v => Math.abs(v) < 0.5)) continue;
@@ -560,7 +565,7 @@ function chartCashflow(D) {
   const W = 920, H = 240, P = {l: 56, r: 12, t: 12, b: 26}, max = Math.max(...ein, ...op, 1), min = Math.min(...aus, ...op, 0);
   const n = all.length, bw = (W - P.l - P.r) / n, x = i => P.l + i * bw, y = v => P.t + (max - v) * (H - P.t - P.b) / ((max - min) || 1);
   let s = `<svg class="chart" viewBox="0 0 ${W} ${H}">`;
-  for (const t of niceTicks(min, max, 5)) s += `<line x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${y(t) + 4}" text-anchor="end">${Fk(t, true)}</text>`;
+  for (const [t, ref] of axisTicks(min, max, 5)) s += `<line x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${y(t) + 4}" text-anchor="end">${Fk(t, true, ref)}</text>`;
   all.forEach((m, i) => {
     const o = i >= keys.length ? ' opacity=".45"' : '';
     s += `<rect x="${(x(i) + bw * 0.12).toFixed(1)}" y="${y(ein[i]).toFixed(1)}" width="${(bw * 0.76).toFixed(1)}" height="${Math.max(0, y(0) - y(ein[i])).toFixed(1)}" fill="var(--c-ein)" rx="2"${o}/>`;
@@ -1010,7 +1015,7 @@ function histChart(pts) {
   let max = Math.max(...vals, 0), min = Math.min(...vals, 0); if (max === min) max = min + 1;
   const x = i => P.l + i * (W - P.l - P.r) / n, y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min), f = v => v.toFixed(1);
   let g = '';
-  for (const tk of niceTicks(min, max, 3)) g += `<line class="bch-grid${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${f(y(tk))}" y2="${f(y(tk))}"/><text class="bch-y" x="${P.l - 5}" y="${f(y(tk) + 4)}">${Fk(tk)}</text>`;
+  for (const [tk, ref] of axisTicks(min, max, 3)) g += `<line class="bch-grid${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${f(y(tk))}" y2="${f(y(tk))}"/><text class="bch-y" x="${P.l - 5}" y="${f(y(tk) + 4)}">${Fk(tk, false, ref)}</text>`;
   const every = Math.max(1, Math.ceil(pts.length / 12 / 6));
   pts.forEach(([mk], i) => { if (mk.endsWith('-01') && (+mk.slice(0, 4)) % every === 0 && x(i) > P.l + 10 && x(i) < W - 14) g += `<line class="bch-year" x1="${f(x(i))}" x2="${f(x(i))}" y1="${P.t}" y2="${H - P.b}"/><text class="bch-x" x="${f(x(i))}" y="${H - 4}">${mk.slice(0, 4)}</text>`; });
   const line = pts.map((p, i) => (i ? 'L' : 'M') + f(x(i)) + ' ' + f(y(p[1]))).join('');
@@ -1094,7 +1099,7 @@ const BCH = {d: null, i0: 0, i1: 0, drag: null, hover: null, ro: null};
 // colour of an account inside its position (same in the charts and the table): variants of the position colour with a
 // neighbouring hue and a different lightness, so that up to ten accounts stay apart without turning into a rainbow;
 // beyond that the variants repeat hatched. Computed in OKLCH (perceptually even), so the steps look alike in every colour.
-const ACC_STEPS = [[0, 0], [22, -.13], [-22, .09], [40, .02], [-40, -.08], [11, .15], [-11, -.18], [32, .12], [-32, -.02], [0, -.24]];   // [hue °, lightness]
+const ACC_STEPS = [[0, 0], [34, -.16], [-34, .11], [60, .03], [-58, -.1], [17, .18], [-17, -.21], [46, .14], [-46, -.04], [0, -.28]];   // [hue °, lightness]
 const accIdx = (D, r) => Math.max(0, D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === r.rolle).indexOf(r));
 const cssColor = c => c.startsWith('var(') ? getComputedStyle(document.documentElement).getPropertyValue(c.slice(4, -1)).trim() : c;
 function hexToOklch(hex) {
@@ -1163,7 +1168,7 @@ function bchDraw() {
   const x = i => P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n), y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min);
   const pf = v => v.toFixed(1);
   let g = `<rect class="bch-bg" x="${P.l}" y="${P.t}" width="${W - P.l - P.r}" height="${H - P.t - P.b}"/>`;
-  for (const t of niceTicks(min, max, H < 220 ? 4 : 5)) g += `<line class="bch-grid${Math.abs(t) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(t))}" y2="${pf(y(t))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(t) + 4)}">${Fk(t, true)}</text>`;
+  for (const [t, ref] of axisTicks(min, max, H < 220 ? 4 : 5)) g += `<line class="bch-grid${Math.abs(t) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(t))}" y2="${pf(y(t))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(t) + 4)}">${Fk(t, true, ref)}</text>`;
   // Zeitachse: Abstand der Beschriftungen passt sich dem Ausschnitt an (Monate bis Jahrzehnte)
   const ppm = (W - P.l - P.r) / Math.max(1, n), step = [1, 2, 3, 6, 12, 24, 60, 120].find(st => st * ppm >= 62) || 120;
   for (let i = i0; i <= i1; i++) {
@@ -1423,8 +1428,8 @@ function vBilanzLines(D) {
   if ((D.monate || []).length < 2) return '';
   const {avail, sel} = lcSelection(D);
   const rb = [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [0, t('alle')]];          // small charts: range in the top right corner
-  const head = (id, title, extra) => `<div class="lc-head"><b class="lc-title">${title}</b><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div><div class="lc-row2">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span></div>`;
-  const plot = id => `<div class="bch-plot lc-plot" id="lc-${id}-plot"><svg class="bch-svg" id="lc-${id}-svg"></svg><div class="bch-tip hidden" id="lc-${id}-tip"></div></div><div class="small muted lc-range" id="lc-${id}-range"></div>`;
+  const head = (id, title, extra) => `<div class="lc-head"><b class="lc-title">${title}</b><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div><div class="lc-row2">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span><span class="lc-range" id="lc-${id}-range"></span></div>`;
+  const plot = id => `<div class="bch-plot lc-plot" id="lc-${id}-plot"><svg class="bch-svg" id="lc-${id}-svg"></svg><div class="bch-tip hidden" id="lc-${id}-tip"></div></div>`;
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
   return `<div class="cards lc-grid" id="lc-grid">
     <div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}${plot('nw')}</div>
@@ -1460,7 +1465,7 @@ function lcDraw(id) {
   const pad = (max - min) * 0.08; max += pad; if (!st.stack || min < 0) min -= pad;
   const x = i => P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n), y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min), pf = v => v.toFixed(1);
   let g = '';
-  for (const tk of niceTicks(min, max, 4)) g += `<line class="bch-grid${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(tk))}" y2="${pf(y(tk))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(tk) + 4)}">${Fk(tk)}</text>`;
+  for (const [tk, ref] of axisTicks(min, max, 4)) g += `<line class="bch-grid${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(tk))}" y2="${pf(y(tk))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(tk) + 4)}">${Fk(tk, false, ref)}</text>`;
   const ppm = (W - P.l - P.r) / Math.max(1, n), step = [1, 2, 3, 6, 12, 24, 60, 120].find(s => s * ppm >= 62) || 120;
   for (let i = i0; i <= i1; i++) {
     const m = d.months[i], mo = +m.slice(5), yr = +m.slice(0, 4), xi = pf(x(i));
@@ -1497,8 +1502,8 @@ function lcDraw(id) {
   // value today and change over the visible actual months
   let a = null, z = null; for (let i = i0; i <= Math.min(i1, ist); i++) if (d.vals[i] != null) { if (a == null) a = i; z = i; }
   const vEl = $(`#lc-${id}-val`);
-  if (vEl) vEl.innerHTML = z == null ? '' : `${F0(d.vals[z])} €` + (a != null && a < z ? ` <span class="delta ${d.vals[z] - d.vals[a] >= 0 ? 'pos' : 'neg'}">${d.vals[z] - d.vals[a] >= 0 ? '+' : ''}${F0(d.vals[z] - d.vals[a])} €${pctGrowth(d.vals[a], d.vals[z] - d.vals[a]) ? ` (${pctGrowth(d.vals[a], d.vals[z] - d.vals[a])})` : ''}</span> <span class="small muted">${t('lc_seit_0', ML(d.months[a]))}</span>` : '');
-  const rl = $(`#lc-${id}-range`); if (rl) rl.textContent = `${MONATE_LANG[+d.months[i0].slice(5) - 1]} ${d.months[i0].slice(0, 4)} – ${MONATE_LANG[+d.months[i1].slice(5) - 1]} ${d.months[i1].slice(0, 4)}`;
+  if (vEl) vEl.innerHTML = z == null ? '' : `${F0(d.vals[z])} €` + (a != null && a < z ? ` <span class="delta ${d.vals[z] - d.vals[a] >= 0 ? 'pos' : 'neg'}" title="${t('lc_seit_0', ML(d.months[a]))}">${d.vals[z] - d.vals[a] >= 0 ? '+' : ''}${F0(d.vals[z] - d.vals[a])} €${pctGrowth(d.vals[a], d.vals[z] - d.vals[a]) ? ` (${pctGrowth(d.vals[a], d.vals[z] - d.vals[a])})` : ''}</span>` : '');      // the period is shown on the right (range), "since" as tooltip
+  const rl = $(`#lc-${id}-range`); if (rl) rl.textContent = `${ML(d.months[i0])} – ${ML(d.months[i1])}`;      // shown range, compact (top right)
   $$(`.lc-rb[data-lc="${id}"] button`).forEach(b => b.classList.toggle('on', st.btn != null ? +b.dataset.m === st.btn : false));
   lcBindPlot(id);
 }
@@ -1952,11 +1957,11 @@ function immoChart(J) {
   const cmax = Math.max(...cfs, 1) * 1.1, cmin = Math.min(...cfs, 0) * 1.1, rmax = Math.max(...rs, ...ws, 1) * 1.05;
   const yc = v => P.t + (cmax - v) * (H - P.t - P.b) / ((cmax - cmin) || 1), yr = v => P.t + (rmax - v) * (H - P.t - P.b) / rmax, x = i => P.l + i * bw;
   let s = `<svg class="chart" viewBox="0 0 ${W} ${H}">`;
-  for (const t of niceTicks(cmin, cmax, 4)) s += `<line x1="${P.l}" x2="${W - P.r}" y1="${yc(t)}" y2="${yc(t)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${yc(t) + 4}" text-anchor="end">${Fk(t)}</text>`;
+  for (const [t, ref] of axisTicks(cmin, cmax, 4)) s += `<line x1="${P.l}" x2="${W - P.r}" y1="${yc(t)}" y2="${yc(t)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${yc(t) + 4}" text-anchor="end">${Fk(t, false, ref)}</text>`;
   cfs.forEach((v, i) => { s += `<rect x="${(x(i) + bw * 0.15).toFixed(1)}" y="${Math.min(yc(v), yc(0)).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${Math.abs(yc(v) - yc(0)).toFixed(1)}" fill="${v < 0 ? 'var(--c-aus)' : 'var(--c-ein)'}" rx="2"/>`; if (i % Math.ceil(n / 8) === 0) s += `<text x="${(x(i) + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${J[i].jahr}</text>`; });
   s += `<path d="${rs.map((v, i) => (i ? 'L' : 'M') + (x(i) + bw / 2).toFixed(1) + ' ' + yr(v).toFixed(1)).join(' ')}" fill="none" stroke="var(--c-verb)" stroke-width="2"/>`;
   s += `<path d="${ws.map((v, i) => (i ? 'L' : 'M') + (x(i) + bw / 2).toFixed(1) + ' ' + yr(v).toFixed(1)).join(' ')}" fill="none" stroke="#b8860b" stroke-width="2" stroke-dasharray="4 3"/>`;
-  for (const t of niceTicks(0, rmax, 4)) s += `<text x="${W - P.r + 6}" y="${yr(t) + 4}">${Fk(t)}</text>`;
+  for (const [t, ref] of axisTicks(0, rmax, 4)) s += `<text x="${W - P.r + 6}" y="${yr(t) + 4}">${Fk(t, false, ref)}</text>`;
   return s + `</svg><div class="chart-legend"><span><i style="background:var(--c-ein)"></i>${t('cashflow_je_jahr_links')}</span><span><i style="background:var(--c-verb)"></i>${t('restschuld_rechts')}</span><span><i style="background:#b8860b"></i>${t('objektwert_rechts')}</span></div>`;
 }
 function vImmoJahre(d) {

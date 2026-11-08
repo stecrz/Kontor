@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.9.41 (2026-11-08 03:38)
+- Anmeldeseite: Hinweise (z. B. „Touch ID nicht bestätigt …“) stehen zentriert.
+- Kleine Grafiken: Zeitraum kompakt oben rechts („Dez 25 – Nov 26“) statt ausgeschrieben unter der Grafik; „seit …“ steht als Hinweis an der Veränderung.
+- Achsen: alle Beträge einer Achse in derselben Einheit („5T, 10T, 15T“ statt „5.000, 10T, 15T“).
+- Forderungen in Rosa statt Hellblau – klar unterscheidbar von Wertpapieren und Festanlagen.
+- Kontofarben innerhalb einer Position deutlicher unterschiedlich, „Zusammensetzung“ kräftiger.
+
 ## 3.9.40 (2026-11-08 03:26)
 - Beträge an den Achsen: wo es eng ist (kleine Grafiken, Prozente) „T“ und „M“ ohne Leerzeichen („150T“, „1,2M“, „+12T %“), in den breiten Grafiken „Tsd.“ und „Mio.“ (Englisch jeweils „k“, „M“).
 
