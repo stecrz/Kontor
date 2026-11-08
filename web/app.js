@@ -1186,7 +1186,8 @@ function bchDraw() {
   const W = Math.max(320, box.clientWidth), H = window.matchMedia('(max-width:820px)').matches ? 200 : 250;
   // points to draw: the months of the range, or (aligned with the table) the table's columns at their positions
   const link = bchLinked() ? bchCols(svg) : null, i0 = BCH.i0, i1 = BCH.i1, n = i1 - i0;
-  const P = link ? {l: link.l, r: Math.max(0, W - link.r), t: 14, b: 24} : {l: 58, r: 10, t: 14, b: 24};
+  // aligned: the plot uses the full width on the left too (above the row labels of the table it shows the columns scrolled out there)
+  const P = link ? {l: 58, r: Math.max(10, W - link.r), t: 14, b: 24} : {l: 58, r: 10, t: 14, b: 24};
   const pts = link ? link.cols : [];
   if (!link) for (let i = i0; i <= i1; i++) pts.push({i, x: P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n)});
   const N = pts.length - 1;

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.10.4 (2026-11-08 04:59)
+- „An Tabelle ausrichten“: Die Grafik nutzt links die volle Breite – über den Zeilenüberschriften der Tabelle zeigt sie die Monate davor.
+
 ## 3.10.3 (2026-11-08 04:54)
 - Kürzel im Titel von „Auswahl“ erklärt: Darüberfahren (am iPhone Tippen) zeigt „C = Bankguthaben · WP = Wertpapiere …“; der Titel ist dafür fein unterstrichen.
 - Kürzel für Bankguthaben: „C“ (Cash), in beiden Sprachen.
