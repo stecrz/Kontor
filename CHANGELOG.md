@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.9.39 (2026-11-08 03:19)
+- Kontofarben: Konten einer Position haben Abwandlungen ihrer Farbe (benachbarter Farbton, andere Helligkeit), auch bei 5–10 Konten gut unterscheidbar – gleich in Tabelle, großer Grafik und „Zusammensetzung“; ab dem elften Konto schraffiert.
+- Kleine Grafiken: Summenlinie bei „Zusammensetzung“ in der Farbe der Position, bei „Auswahl“ in der Mischfarbe der gewählten Positionen statt Blau.
+- Grafiken verschieben: auch auf der Monatsachse unten seitlich ziehen.
+- Bilanz: Klick auf eine Spaltenüberschrift markiert den Monat in der Grafik nur noch mit der Linie, ohne Werte-Fenster (die Werte stehen in der Tabelle).
+- Kurzbeträge einheitlich: „Tsd.“, „Mio.“, „Mrd.“ (Englisch „k“, „M“, „B“), auch bei Prozenten („+12 Tsd. %“).
+- Konten mit „P2P“ im Namen werden als Festanlage vorgeschlagen (bisher Darlehen). Hilfe: Faustregel Wertpapiere oder Festanlagen.
+
 ## 3.9.38 (2026-11-08 02:57)
 - Bilanz: Klick auf eine Spaltenüberschrift (Monat oder Jahr) zeigt diesen Monat in der Grafik – Zeitraum bleibt gleich lang, die Werte erscheinen daneben.
 - Kleine Grafiken: „Zusammensetzung“ hat nur noch die Auswahl als Überschrift; bei „Auswahl“ stehen die Positionen unter der Grafik, damit alle drei Grafiken auf gleicher Höhe beginnen. Prozente über 1000 ohne Tausenderpunkt, ab 10 000 % in Tausend („12T %“), nicht berechenbar: ∞. Achsen: „T“ und „Mio.“ (Englisch „k“ und „M“).

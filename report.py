@@ -64,6 +64,7 @@ NAME_HINTS = [
     # das Nettovermoegen der Gesellschaft ist dann der Rest, der nach Anteil verteilt wird (stimmt auch bei ungleichen Einlagen)
     (r"kapitalkont|gesellschafterkont|gesellschafterdarlehen", "+/-"),
     (r"kaution", "+/-"),
+    (r"\bp2p|peer.to.peer", "anlagen"),      # P2P loans are an investment, not a loan to manage (before "kredit")
     (r"darlehen|kredit(?!karte)|hypothek|finanzierung|\bschulden", "+/-"),
     (r"bauspar|lebensversicherung|rentenversicherung|\bversicherung|riester|r(ü|ue)rup|fondspolice", "anlagen"),
     (r"immobil|wohnung|\bhaus\b|eigenheim|grundst(ü|ue)ck|\bobjekt", "immobilien"),

@@ -41,7 +41,11 @@ const fmt = new Intl.NumberFormat(LOCALE, {minimumFractionDigits: 2, maximumFrac
 const fmt0 = new Intl.NumberFormat(LOCALE, {maximumFractionDigits: 0});
 const F = v => (v == null || isNaN(v) ? '–' : fmt.format(v));
 const F0 = v => (v == null || isNaN(v) ? '–' : fmt0.format(v));
-const Fk = v => (v == null || isNaN(v) ? '–' : (Math.abs(v) >= 1e6 ? (v / 1e6).toLocaleString(LOCALE, {maximumFractionDigits: 2}) + ' ' + t('mio_kurz') : Math.abs(v) >= 1e4 ? (v / 1e3).toLocaleString(LOCALE, {maximumFractionDigits: 0}) + ' ' + t('tsd_kurz') : F0(v)));   // German: T / Mio., English: k / M
+const Fk = v => {   // short amounts for axes: German Tsd. / Mio. / Mrd., English k / M / B
+  if (v == null || isNaN(v)) return '–';
+  const a = Math.abs(v), f = (x, d) => x.toLocaleString(LOCALE, {maximumFractionDigits: d});
+  return a >= 1e9 ? f(v / 1e9, 2) + t('mrd_kurz') : a >= 1e6 ? f(v / 1e6, 2) + t('mio_kurz') : a >= 1e4 ? f(v / 1e3, 0) + t('tsd_kurz') : F0(v);
+};
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const MONATE = LANG === 'en' ? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] : ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const ML = m => MONATE[+m.slice(5) - 1] + ' ' + m.slice(2, 4);
@@ -315,7 +319,7 @@ function showLogin() {
   $('#login-form').classList.toggle('hidden', !!tidMode);
   $('#tid-instead').classList.toggle('hidden', !(tid && LOGIN.pw));
   $('#login-err').textContent = SESSION && SESSION.gesperrt_sekunden ? (t('gesperrt_fuer') + SESSION.gesperrt_sekunden + t('s_nach_fehlversuchen')) : '';
-  if (!tidMode) setTimeout(() => $('#login-pw').focus(), 50);
+  if (!tidMode) setTimeout(() => { if (!$('#login').contains(document.activeElement)) $('#login-pw').focus(); }, 50);   // never move the cursor out of a field being filled
   if (tidMode && !document.hidden) tryTouchId(true);     // Touch ID sofort anbieten, ohne Klick
 }
 const LOGIN = {pw: false};      // true = Nutzer hat "Stattdessen Passwort eingeben" gewählt
@@ -1069,7 +1073,7 @@ function vBilanz() {
       continue;
     }
     if (!S.posOpen[r.rolle] || skip(r)) continue;
-    const dot = `<i class="pos-dot" style="background:${(ROLE[r.rolle] || [0, 'var(--c-neutral)'])[1]};opacity:${accOp(D, r)}"></i>`;      // shade as in the chart
+    const sh = accShade((ROLE[r.rolle] || [0, 'var(--c-neutral)'])[1], accIdx(D, r)), dot = `<i class="pos-dot" style="${swatch(sh.color, sh.hatch)}"></i>`;      // shade as in the chart
     if (r.transit) { h += row(r, 'ind1 transit clickable', `${dot}${esc(r.name)} ${hq('geld_unterwegs')}`); continue; }
     h += row(r, 'clickable acct ind1', dot + esc(r.name) + tag(r));
     if (pr && r.rolle === 'beteiligungen' && proj.einlagen && r === D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === 'beteiligungen').slice(-1)[0])
@@ -1087,9 +1091,38 @@ function vBilanz() {
 const MONATE_LANG = LANG === 'en' ? ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
   : ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 const BCH = {d: null, i0: 0, i1: 0, drag: null, hover: null, ro: null};
-// shade of an account inside its position (same in chart and table)
-const ACC_OP = [1, .7, .5, .36, .26];
-const accOp = (D, r) => ACC_OP[Math.max(0, D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === r.rolle).indexOf(r)) % ACC_OP.length];
+// colour of an account inside its position (same in the charts and the table): variants of the position colour with a
+// neighbouring hue and a different lightness, so that up to ten accounts stay apart without turning into a rainbow;
+// beyond that the variants repeat hatched. Computed in OKLCH (perceptually even), so the steps look alike in every colour.
+const ACC_STEPS = [[0, 0], [22, -.13], [-22, .09], [40, .02], [-40, -.08], [11, .15], [-11, -.18], [32, .12], [-32, -.02], [0, -.24]];   // [hue °, lightness]
+const accIdx = (D, r) => Math.max(0, D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === r.rolle).indexOf(r));
+const cssColor = c => c.startsWith('var(') ? getComputedStyle(document.documentElement).getPropertyValue(c.slice(4, -1)).trim() : c;
+function hexToOklch(hex) {
+  const n = parseInt(hex.slice(1), 16), [r, g, b] = [n >> 16, (n >> 8) & 255, n & 255].map(v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b), m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b), q = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const L = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * q, A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * q, B = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * q;
+  return [L, Math.hypot(A, B), Math.atan2(B, A) * 180 / Math.PI];
+}
+function oklchToHex(L, C, H) {
+  for (let c = C; c >= 0; c -= 0.005) {                 // outside sRGB: reduce the chroma until it fits
+    const a = c * Math.cos(H * Math.PI / 180), b = c * Math.sin(H * Math.PI / 180);
+    const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3, m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3, q = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3;
+    const rgb = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * q, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * q, -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * q];
+    if (rgb.every(v => v >= -0.001 && v <= 1.001)) return '#' + rgb.map(v => { v = Math.min(1, Math.max(0, v)); v = v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055; return Math.round(v * 255).toString(16).padStart(2, '0'); }).join('');
+  }
+  return '#8e8e93';
+}
+const ACC_CACHE = new Map();
+function accShade(color, i) {
+  const base = cssColor(color), k = base + '|' + i;
+  if (!ACC_CACHE.has(k)) {
+    let c = color;
+    if (/^#[0-9a-f]{6}$/i.test(base)) { const [L, C, H] = hexToOklch(base), [dh, dl] = ACC_STEPS[i % ACC_STEPS.length]; c = i ? oklchToHex(Math.min(.9, Math.max(.35, L + dl)), C, H + dh) : base; }
+    ACC_CACHE.set(k, {color: c, hatch: i >= ACC_STEPS.length});
+  }
+  return ACC_CACHE.get(k);
+}
+const swatch = (color, hatch) => `background:${hatch ? `repeating-linear-gradient(135deg, ${color} 0 2px, transparent 2px 4px)` : color}`;
 function bchData(D) {
   // Positionen (Farben wie in der Tabelle), Ist + Plan; aufgeklappte Positionen zeigen ihre Konten (Abstufungen der Farbe)
   const pr = D.bilanz.projektion || null, proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
@@ -1099,7 +1132,7 @@ function bchData(D) {
   for (const r of D.bilanz.zeilen.filter(x => x.gruppe && ROLE[x.rolle])) {
     const [label, color] = ROLE[r.rolle];
     const accs = (S.posOpen || {})[r.rolle] ? D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === r.rolle) : [];
-    if (accs.length) accs.forEach((a, i) => series.push({rolle: r.rolle, label: a.name, color, op: ACC_OP[i % ACC_OP.length], sub: true, vals: vals(a)}));
+    if (accs.length) accs.forEach((a, i) => series.push(Object.assign({rolle: r.rolle, label: a.name, op: 1, sub: true, vals: vals(a)}, accShade(color, i))));
     else series.push({rolle: r.rolle, label, color, op: 1, vals: vals(r)});
   }
   const nwAll = pr ? Object.assign({}, D.bilanz.nettovermoegen, pr.nettovermoegen) : D.bilanz.nettovermoegen;
@@ -1141,6 +1174,7 @@ function bchDraw() {
     if (lab && x(i) > P.l + 14 && x(i) < W - P.r - 14) g += `<text class="bch-x" x="${xi}" y="${H - 6}">${step < 12 ? (mo === 1 ? yr : MONATE[mo - 1] + ' ' + String(yr).slice(2)) : yr}</text>`;
   }
   // Flaechen
+  let defs = '';
   const band = (sel, sign) => {
     const base = Array(n + 1).fill(0); let out = '';
     for (const sx of sel) {
@@ -1148,12 +1182,15 @@ function bchDraw() {
       for (let k = 0; k <= n; k++) { const v = sx.vals[i0 + k] || 0, part = sign > 0 ? Math.max(0, v) : Math.min(0, v); bot.push(base[k]); base[k] += part; top.push(base[k]); }
       if (top.every((t, k) => Math.abs(t - bot[k]) < 0.5)) continue;
       const path = top.map((t, k) => (k ? 'L' : 'M') + pf(x(i0 + k)) + ' ' + pf(y(t))).join('') + bot.map((b, k) => [k, b]).reverse().map(([k, b]) => 'L' + pf(x(i0 + k)) + ' ' + pf(y(b))).join('') + 'Z';
-      out += `<path class="bch-area${sx.sub ? ' sub' : ''}" d="${path}" fill="${sx.color}"${sx.op < 1 ? ` fill-opacity="${sx.op}"` : ''}/>`;
+      let fill = sx.color;
+      if (sx.hatch) { const pid = `bchp-${d.series.indexOf(sx)}`; fill = `url(#${pid})`; if (!defs.includes(pid)) defs += `<pattern id="${pid}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.5" height="5" fill="${sx.color}"/></pattern>`; }
+      out += `<path class="bch-area${sx.sub ? ' sub' : ''}" d="${path}" fill="${fill}"${sx.op < 1 ? ` fill-opacity="${sx.op}"` : ''}/>`;
     }
     return out;
   };
   const ordered = d.series.slice().reverse();          // unterste Flaeche = letzte Position der Tabelle
   g += band(ordered, 1) + band(ordered, -1);
+  if (defs) g = `<defs>${defs}</defs>` + g;
   // Plan-Bereich blass, heute markiert
   const ist = d.ist - 1;
   if (ist < i1) { const xs = Math.max(P.l, x(Math.max(ist, i0))); g += `<rect class="bch-plan" x="${pf(xs)}" y="${P.t}" width="${pf(W - P.r - xs)}" height="${H - P.t - P.b}"/>`; }
@@ -1161,7 +1198,7 @@ function bchDraw() {
   // Nettovermoegen
   const line = (a, b, cls0) => { const pts = []; for (let i = a; i <= b; i++) if (d.nw[i] != null) pts.push((pts.length ? 'L' : 'M') + pf(x(i)) + ' ' + pf(y(d.nw[i]))); return pts.length > 1 ? `<path class="${cls0}" d="${pts.join('')}"/>` : ''; };
   g += line(i0, Math.min(i1, ist), 'bch-nw') + (ist < i1 ? line(Math.max(i0, ist), i1, 'bch-nw plan') : '');
-  g += `<g id="bch-hover"></g><rect class="bch-sel hidden" id="bch-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="bch-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-pan" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_pan_tip')}</title></rect>`;
+  g += `<g id="bch-hover"></g><rect class="bch-sel hidden" id="bch-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="bch-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-pan" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_pan_tip')}</title></rect><rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"><title>${t('bch_pan_tip')}</title></rect>`;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); svg.innerHTML = g;
   BCH.geo = {W, H, P, x, y, idx: px => Math.max(i0, Math.min(i1, Math.round(i0 + (px - P.l) * n / Math.max(1, W - P.l - P.r))))};
   const rl = $('#bch-range'); if (rl) rl.textContent = `${MONATE_LANG[+d.months[i0].slice(5) - 1]} ${d.months[i0].slice(0, 4)} – ${MONATE_LANG[+d.months[i1].slice(5) - 1]} ${d.months[i1].slice(0, 4)}`;
@@ -1200,7 +1237,7 @@ function bchHover(i) {
   let dots = `<line class="bch-cross" x1="${xi}" x2="${xi}" y1="${G.P.t}" y2="${G.H - G.P.b}"/>`;
   if (d.nw[i] != null) dots += `<circle class="bch-dot" cx="${xi}" cy="${G.y(d.nw[i]).toFixed(1)}" r="4"/>`;
   hv.innerHTML = dots;
-  const rows = d.series.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= 0.5).map(x => `<div><i style="background:${x.color};opacity:${x.op || 1}"></i><span>${esc(x.label)}</span><b>${F0(x.vals[i])}</b></div>`).join('');
+  const rows = d.series.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= 0.5).map(x => `<div><i style="${swatch(x.color, x.hatch)}"></i><span>${esc(x.label)}</span><b>${F0(x.vals[i])}</b></div>`).join('');
   tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${plan ? ` <span class="pill neutral">${t('plan')}</span>` : ''}</div>${rows}<div class="bch-tip-nw"><span>${t('nettovermoegen')}</span><b>${F0(d.nw[i])}</b></div>`;
   tip.classList.remove('hidden');
   const bw = $('#bch-plot').clientWidth, tw = tip.offsetWidth, px = G.x(i);
@@ -1221,7 +1258,7 @@ function bchJump(m) {
   $$('tr', w).forEach(tr => { const c = tr.children[idx]; if (c) { c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); } });
 }
 function bchFocus(key) {
-  // table header clicked: centre the chart on that month, keep the span and show its values
+  // table header clicked: centre the chart on that month, keep the span and mark it
   // (year column: the current month for the running year, otherwise its last month)
   const d = BCH.d; if (!d) return;
   let i = d.months.indexOf(key);
@@ -1229,7 +1266,7 @@ function bchFocus(key) {
   if (i < 0) return;
   const span = BCH.i1 - BCH.i0, last = d.months.length - 1, a = Math.max(0, Math.min(last - span, i - Math.round(span / 2))), z = Math.min(last, a + span);
   bchSet(a, z, a === BCH.i0 && z === BCH.i1 ? S.bchBtn : null);
-  bchHover(i);
+  bchHover(i); $('#bch-tip').classList.add('hidden');      // only the line marks the month; the values are in the table
   const c = $('#bch'), r = c && c.getBoundingClientRect(); if (r && (r.top < 0 || r.bottom > window.innerHeight)) c.scrollIntoView({block: 'nearest', behavior: 'smooth'});
 }
 // Touch and drag on a chart, attached once to the (persistent) <svg>; the plot inside is redrawn on every change.
@@ -1359,20 +1396,22 @@ function lcData(D, rollen) {
   }
   return {months, ist: D.monate.length, vals};
 }
-// third chart: one position split into its accounts (stacked), in mid-tone colours of their own that read on light and on
-// dark backgrounds and differ from the position colours; beyond the palette the colours repeat hatched
-const LC_PASTEL = ['#3b9ab2', '#e8833a', '#c4568f', '#d4b13f', '#6c6fd1', '#7fa34a', '#e06c5a', '#4fb8c9', '#9d6fb0', '#b8976b', '#5a8f7b', '#d97fb0', '#8a9a3c', '#4f7fc4'];
+// third chart: one position split into its accounts (stacked), in the account colours of the table and the main chart
+// (first account on top)
 function lcStack(D, rolle) {
   const pr = D.bilanz.projektion || null, proj = pr ? Object.fromEntries(pr.zeilen.map(r => [r.id, r.werte])) : {};
   const months = [...D.monate, ...(pr ? (D.plan_monate || []) : [])];
-  const series = D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === rolle).map(a => {
+  const color = (ROLE[rolle] || [0, 'var(--c-neutral)'])[1];
+  const series = D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === rolle).map((a, i) => {
     const w = Object.assign({}, a.werte, proj[a.id] || {});
-    return {label: a.name, vals: months.map(m => w[m] == null ? null : w[m] * defl(m))};
+    return Object.assign({label: a.name, vals: months.map(m => w[m] == null ? null : w[m] * defl(m))}, accShade(color, i));
   }).filter(x => x.vals.some(v => v != null && Math.abs(v) >= 0.5));
-  series.forEach((x, i) => { x.color = LC_PASTEL[i % LC_PASTEL.length]; x.hatch = i >= LC_PASTEL.length; });
   const vals = months.map((m, k) => { let v = null; for (const x of series) if (x.vals[k] != null) v = (v || 0) + x.vals[k]; return v; });
   return {months, ist: D.monate.length, vals, series};
 }
+// colour of the selection chart: the selected positions' colours mixed in equal parts (one position: its own colour)
+const lcMix = rollen => (rollen || []).map(r => ROLE[r] && ROLE[r][1]).filter(Boolean)
+  .reduce((m, c, k) => k ? `color-mix(in oklab, ${m} ${Math.round(k / (k + 1) * 100)}%, ${c})` : c, '') || 'var(--muted)';
 function lcPosRole(D) {
   const roles = D.bilanz.zeilen.filter(r => r.gruppe && ROLE[r.rolle]).map(r => r.rolle);
   let r = null; try { r = localStorage.getItem('kontor.lcPos'); } catch (e) {}
@@ -1399,7 +1438,7 @@ const pctGrowth = (from, change) => {
   if (Math.abs(change) < 0.5) return '';
   if (Math.abs(from) < 1) return (change > 0 ? '+' : '−') + '∞ %';
   const p = change / Math.abs(from) * 100, sign = p > 0 ? '+' : '−', a = Math.abs(p);
-  if (a >= 10000) return sign + Math.round(a / 1000) + t('tsd_kurz') + ' %';
+  if (a >= 10000) return sign + Math.round(a / 1000).toLocaleString(LOCALE, {useGrouping: false}) + t('tsd_kurz') + ' %';
   return sign + a.toLocaleString(LOCALE, {maximumFractionDigits: a >= 100 ? 0 : 1, useGrouping: false}) + ' %';
 };
 function lcDraw(id) {
@@ -1409,7 +1448,7 @@ function lcDraw(id) {
   const vis = d.vals.slice(i0, i1 + 1).filter(v => v != null);
   // composition: only accounts that are not 0 € throughout the shown range (colours stay with the account)
   const shown = st.stack ? d.series.filter(x => x.vals.slice(i0, i1 + 1).some(v => v != null && Math.abs(v) >= 0.5)) : [];
-  if (st.stack) { const lg = $(`#lc-${id}-legend`); if (lg) lg.innerHTML = shown.map(x => `<span><i style="${x.hatch ? `background:repeating-linear-gradient(135deg, ${x.color} 0 2px, transparent 2px 4px)` : `background:${x.color}`}"></i>${esc(x.label)}</span>`).join(''); }
+  if (st.stack) { const lg = $(`#lc-${id}-legend`); if (lg) lg.innerHTML = shown.map(x => `<span><i style="${swatch(x.color, x.hatch)}"></i>${esc(x.label)}</span>`).join(''); }
   if (!vis.length) { svg.innerHTML = ''; svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); $(`#lc-${id}-val`).textContent = id === 'sel' && !st.title ? t('lc_nichts_gewaehlt') : t('keine_werte'); return; }
   let max = Math.max(...vis), min = Math.min(...vis);
   const ups = [], dns = [];
@@ -1438,20 +1477,21 @@ function lcDraw(id) {
     let defs = '';
     const bands = sign => {
       const base = Array(n + 1).fill(0); let out = '';
-      shown.forEach(sx => {
+      shown.slice().reverse().forEach(sx => {           // first account on top, as in the table
         const si = d.series.indexOf(sx), top = [], bot = [];
         for (let k = 0; k <= n; k++) { const v = sx.vals[i0 + k] || 0, part = sign > 0 ? Math.max(0, v) : Math.min(0, v); bot.push(base[k]); base[k] += part; top.push(base[k]); }
         if (top.every((tv, k) => Math.abs(tv - bot[k]) < 0.5)) return;
         let fill = sx.color;
-        if (sx.hatch) { const pid = `lcp-${id}-${si}`; fill = `url(#${pid})`; if (!defs.includes(pid)) defs += `<pattern id="${pid}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${sx.color}" opacity=".35"/><rect width="2.5" height="5" fill="${sx.color}"/></pattern>`; }
+        if (sx.hatch) { const pid = `lcp-${id}-${si}`; fill = `url(#${pid})`; if (!defs.includes(pid)) defs += `<pattern id="${pid}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.5" height="5" fill="${sx.color}"/></pattern>`; }
         out += `<path class="lc-band" d="${top.map((tv, k) => (k ? 'L' : 'M') + pf(x(i0 + k)) + ' ' + pf(y(tv))).join('')}${bot.map((bv, k) => [k, bv]).reverse().map(([k, bv]) => 'L' + pf(x(i0 + k)) + ' ' + pf(y(bv))).join('')}Z" fill="${fill}"/>`;
       });
       return out;
     };
     const b2 = bands(1) + bands(-1);
+    // total as a solid line in the position colour above the lighter bands
     g = `<defs>${defs}</defs>` + g + b2 + line(i0, Math.min(i1, ist), 'lc-total') + (ist < i1 ? line(Math.max(i0, ist), i1, 'lc-total plan') : '');
   } else g += area() + line(i0, Math.min(i1, ist), 'bch-nw') + (ist < i1 ? line(Math.max(i0, ist), i1, 'bch-nw plan') : '');
-  g += `<g id="lc-${id}-hover"></g><rect class="bch-sel hidden" id="lc-${id}-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="lc-${id}-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-pan" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_pan_tip')}</title></rect>`;
+  g += `<g id="lc-${id}-hover"></g><rect class="bch-sel hidden" id="lc-${id}-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="lc-${id}-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-pan" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_pan_tip')}</title></rect><rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"><title>${t('bch_pan_tip')}</title></rect>`;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); svg.innerHTML = g;
   st.geo = {W, H, P, x, y, idx: px => Math.max(i0, Math.min(i1, Math.round(i0 + (px - P.l) * n / Math.max(1, W - P.l - P.r))))};
   // value today and change over the visible actual months
@@ -1483,7 +1523,7 @@ function lcHover(id, i) {
   const xi = G.x(i).toFixed(1), m = d.months[i];
   hv.innerHTML = `<line class="bch-cross" x1="${xi}" x2="${xi}" y1="${G.P.t}" y2="${G.H - G.P.b}"/><circle class="bch-dot" cx="${xi}" cy="${G.y(d.vals[i]).toFixed(1)}" r="4" style="stroke:${st.color}"/>`;
   const list = st.stack ? d.series.filter(x => x.vals.slice(st.i0, st.i1 + 1).some(v => v != null && Math.abs(v) >= 0.5)) : (d.parts && d.parts.length > 1 ? d.parts : []);
-  const rows = list.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= 0.5).map(x => `<div><i style="background:${x.color}"></i><span>${esc(x.label)}</span><b>${F0(x.vals[i])}</b></div>`).join('');
+  const rows = list.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= 0.5).map(x => `<div><i style="${swatch(x.color, x.hatch)}"></i><span>${esc(x.label)}</span><b>${F0(x.vals[i])}</b></div>`).join('');
   tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${i >= d.ist ? ` <span class="pill neutral">${t('plan')}</span>` : ''}</div>${rows}<div class="${list.length ? 'bch-tip-nw' : ''}"><span>${esc(list.length && !st.stack ? t('summe_label') : st.title)}</span><b>${F0(d.vals[i])} €</b></div>`;
   tip.classList.remove('hidden');
   const bw = $(`#lc-${id}-plot`).clientWidth, tw = tip.offsetWidth, px = G.x(i);
@@ -1536,16 +1576,16 @@ function bindBilanzLines(main) {
   const draw = () => {
     const {sel} = lcSelection(D);
     lcInit('nw', D, null, t('nettovermoegen'), 'var(--fg)');
-    lcInit('sel', D, sel, sel.map(r => ROLE[r][0]).join(' + '), 'var(--accent)');
+    lcInit('sel', D, sel, sel.map(r => ROLE[r][0]).join(' + '), lcMix(sel));
     const pr = lcPosRole(D);
-    if (pr) lcInit('pos', D, null, ROLE[pr][0], 'var(--fg)', pr);
+    if (pr) lcInit('pos', D, null, ROLE[pr][0], ROLE[pr][1], pr);
     lcDraw('nw'); lcDraw('sel'); if (pr) lcDraw('pos');
   };
   const ps = $('#lc-pos-sel', grid);
   if (ps) ps.addEventListener('change', () => {
     try { localStorage.setItem('kontor.lcPos', ps.value); } catch (e) {}
     const keep = LC.pos ? [LC.pos.i0, LC.pos.i1, LC.pos.btn] : null;
-    lcInit('pos', D, null, ROLE[ps.value][0], 'var(--fg)', ps.value);
+    lcInit('pos', D, null, ROLE[ps.value][0], ROLE[ps.value][1], ps.value);
     if (keep) Object.assign(LC.pos, {i0: keep[0], i1: keep[1], f0: keep[0], f1: keep[1], btn: keep[2]});
     lcDraw('pos');
   });
@@ -1557,7 +1597,7 @@ function bindBilanzLines(main) {
     const sel = $$('#lc-chips input:checked', grid).map(x => x.dataset.r);
     try { localStorage.setItem('kontor.lcSel', JSON.stringify(sel)); } catch (e) {}
     const keep = LC.sel ? [LC.sel.i0, LC.sel.i1, LC.sel.btn] : null;
-    lcInit('sel', D, sel, sel.map(r => ROLE[r][0]).join(' + '), 'var(--accent)');
+    lcInit('sel', D, sel, sel.map(r => ROLE[r][0]).join(' + '), lcMix(sel));
     if (keep) Object.assign(LC.sel, {i0: keep[0], i1: keep[1], f0: keep[0], f1: keep[1], btn: keep[2]});
     lcDraw('sel');
   }));

@@ -1957,6 +1957,7 @@ class FeatureTests(_AppBase):
         self.assertEqual(role("Eigenkapital A", "Sonstiges", -1e5, group="Alpha GbR"), "eigenkapital")            # Eigenkapital nur ausdruecklich
         self.assertEqual(role("Mietaval Laden", "Darlehenskonto", -3e4), "eventual")
         self.assertEqual(role("Bausparer", "Sparkonto", 2e4), "anlagen")
+        self.assertEqual(role("P2P-Kredite", "Sonstiges", 5e3), "anlagen")                      # P2P is an investment, not a loan
         self.assertEqual(role("Sparkonto", "Sparkonto", 2e4, group="Anlagen"), "anlagen")      # Gruppe vor allgemeinem Typ
         self.assertEqual(role("Tagesgeld", "Sparkonto", 1e3, group="Liquidität"), "liquiditaet")
         self.assertEqual(role("Girokonto", "Girokonto", 1e3, group="Anlagen"), "liquiditaet")  # eindeutiger Typ vor Gruppe
@@ -2147,7 +2148,7 @@ class BrowserTest(unittest.TestCase):
                 key = pg.evaluate("BCH.d.months[2]"); pg.evaluate("document.querySelector(\"#main .wrap thead th[data-key='%s']\").click()" % key)
                 pg.wait_for_timeout(200)
                 self.assertEqual(pg.evaluate("BCH.i0"), 0); self.assertEqual(pg.evaluate("BCH.i1 - BCH.i0"), span)
-                self.assertTrue(pg.query_selector("#main thead th[data-key='%s'].bch-on" % key)); self.assertTrue(pg.is_visible("#bch-tip"))
+                self.assertTrue(pg.query_selector("#main thead th[data-key='%s'].bch-on" % key)); self.assertFalse(pg.is_visible("#bch-tip"))
                 pg.click("#bch-rb button[data-m='0']"); pg.wait_for_timeout(200)
                 # waagerecht zur aktuellen Spalte gescrollt (auch in der Jahresansicht)
                 self.assertGreater(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0)

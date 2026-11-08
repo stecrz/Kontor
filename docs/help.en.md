@@ -52,13 +52,13 @@ Each account gets an area, a position in the balance sheet and a history source.
 |---|---|
 | Cash | Current account, overnight money, credit card – available immediately |
 | Securities | Portfolios with stocks, funds, ETF/ETC, derivatives, plus crypto and precious metals – sellable within days, with price risk |
-| Term investments | Fixed-term deposits, building savings, life and pension insurance – contractually fixed |
+| Term investments | Fixed-term deposits, P2P loans, building savings, life and pension insurance – before the end only with a waiting time or a discount; not counted as available |
 | Real estate, equity investments, tangible assets | tied up long-term |
 | Receivables | Loans to others, deposits, credit balances on capital accounts |
 | Liabilities | Loans, credit card debt, debts on capital accounts |
 | outside net worth | Equity (capital accounts, only when explicitly chosen), guarantees & sureties, “not on the balance sheet” |
 
-**How Kontor suggests** (in this order): portfolio → account name (e.g. “Immobilie”, “Darlehen”, “Kapitalkonto”, “Aval”, “Bauspar”) → unambiguous account type (current account, credit card, loan) → name of the group in MoneyMoney → remaining account type. Loans, deposits and capital or shareholder accounts count as receivables when in credit and as liabilities when in debt – in the company that is a debt to the shareholder, privately a receivable. The value of a stake is then your share of the rest; this holds even with unequal contributions.
+**How Kontor suggests** (in this order): portfolio → account name (e.g. “Immobilie”, “Darlehen”, “Kapitalkonto”, “Aval”, “Bauspar”) → unambiguous account type (current account, credit card, loan) → name of the group in MoneyMoney → remaining account type. Rule of thumb between securities and term investments: cash within a few days without a discount? Then securities, otherwise term investments. Loans, deposits and capital or shareholder accounts count as receivables when in credit and as liabilities when in debt – in the company that is a debt to the shareholder, privately a receivable. The value of a stake is then your share of the rest; this holds even with unequal contributions.
 
 **Display**: “by activity” hides accounts without balance or transactions for N months; “always show” or “hide” fixes it. Hidden accounts still count in all totals.
 
@@ -121,10 +121,10 @@ The balance sheet shows the assets of an area by position, month by month, with 
 ![Balance sheet](img/en/balance_sheet.png)
 
 - **Faded**: the current month and the current year (not finished yet); **faded and hatched**: plan values.
-- **Chart**: composition of assets in the colours of the positions, black the net worth (dashed: plan). Range 1/3/10 years (each up to today), all or a number of months; swipe horizontally to pan, pinch to zoom, double-click to enlarge, click to jump to the column – conversely, clicking a column heading in the table moves the chart to that month. On the iPhone: drag sideways on the strip with the amounts on the left to pan, two fingers pan and zoom, one finger shows the values. Expanded positions show their accounts as shades of the colour – the same shade appears as a dot in front of the account in the table.
+- **Chart**: composition of assets in the colours of the positions, black the net worth (dashed: plan). Range 1/3/10 years (each up to today), all or a number of months; swipe horizontally to pan, pinch to zoom, double-click to enlarge, click to jump to the column – conversely, clicking a column heading in the table moves the chart to that month. On the iPhone: drag sideways on an axis (amounts on the left, months at the bottom) to pan, two fingers pan and zoom, one finger shows the values. Expanded positions show their accounts in variations of the colour (neighbouring hue, different lightness; hatched from the eleventh account) – the same colour appears as a dot in front of the account in the table.
 - **Cash in transit**: if the two bookings of a transfer between own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” under cash at month end – otherwise net worth would briefly look too low. A click shows the detected pairs.
 - **Months or years**: year columns show balances at year end.
-- **Single charts** (below the table): net worth alone, the sum of freely chosen positions (default: cash, securities and term investments) and the composition of a chosen position by account (stacked, in their own colours, additionally hatched with very many accounts). All have their own range (1 or 3 years up to today, all; drag to enlarge, double-click to zoom, swipe right for the plan) and an axis that fits the visible values – so the development shows even when large positions such as receivables and liabilities cancel each other out in the chart above. The current value and the change over the chosen range are shown at the top.
+- **Single charts** (below the table): net worth alone, the sum of freely chosen positions (default: cash, securities and term investments; the line has the mixed colour of the chosen positions) and the composition of a chosen position by account (stacked, in the same account colours as the table and the main chart). All have their own range (1 or 3 years up to today, all; drag to enlarge, double-click to zoom, swipe right for the plan) and an axis that fits the visible values – so the development shows even when large positions such as receivables and liabilities cancel each other out in the chart above. The current value and the change over the chosen range are shown at the top.
 
 <a id="cash-flow"></a>
 ## Cash flow
