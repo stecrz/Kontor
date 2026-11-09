@@ -11,12 +11,12 @@ Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilan
 |---|---|
 | Holt Umsätze und Salden von Banken, Depots und Zahlungsdiensten. | Liest diese Daten über die Skript-Schnittstelle von MoneyMoney. Zugangsdaten zu Banken sieht Kontor nie. |
 | Kategorisiert Umsätze, von Hand oder per Regel. | Nutzt diese Kategorien. Umsätze ohne Kategorie ordnest du in Kontor zu; auf Wunsch schreibt Kontor die Zuordnung nach MoneyMoney zurück. |
-| Führt Offline-Konten: private Darlehen, Beteiligungen, Immobilien, Kapitalkonten. | Bucht nach deinen Regeln nur in solche Offline-Konten: Darlehensraten spiegeln und Zinsen berechnen, Beteiligungswerte, Saldo-Spiegel. |
+| Führt Offline-Konten: private Darlehen, Beteiligungen, Immobilien, Kapitalkonten. | Bucht nach deinen Regeln nur in solche Offline-Konten: Darlehensraten spiegeln und Zinsen berechnen, Beteiligungen und Gegenkonten deiner Gesellschaften. |
 | Hat keine Bilanz, keine Planung, keine Steuerübersicht. | Bilanz je Bereich, Cashflow mit Prüfzeile, rollierende Planung, Immobilienkalkulation, Steuer-Jahresübersicht, Belege, Excel-Export. |
 
 Kontor ändert in MoneyMoney nie Buchungen, den Kategorienbaum oder Regeln und löst keine Überweisungen aus.
 
-**Alpha**: Seiten, die im Menü blass und mit „Alpha“ markiert sind (derzeit Übersicht, Cashflow, Planung, Immobilien, Steuer, Umsätze & Belege, Kategorien, Auto-Buchungen und Auto-Regeln), sind nutzbar, aber noch nicht vollständig geprüft – Zahlen dort bitte gegenprüfen. Ebenso die Eigenkapitalquote in der Bilanz. Geprüft sind Bilanz, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll und Hilfe.
+**Alpha**: Seiten, die im Menü blass und mit „Alpha“ markiert sind (derzeit Übersicht, Cashflow, Planung, Immobilien, Steuer, Umsätze & Belege, Kategorien, Auto-Buchungen und Buchungsregeln), sind nutzbar, aber noch nicht vollständig geprüft – Zahlen dort bitte gegenprüfen. Ebenso die Eigenkapitalquote in der Bilanz. Geprüft sind Bilanz, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll und Hilfe.
 
 <a id="setup"></a>
 ## Einrichtung
@@ -27,12 +27,12 @@ Unter **Einrichtung** stehen alle Bausteine in einer sinnvollen Reihenfolge. Jed
 
 ![Einrichtung](img/de/setup.png)
 
-1. **MoneyMoney verbinden** – MoneyMoney läuft und ist entsperrt; macOS fragt beim ersten Mal, ob Kontor MoneyMoney steuern darf (Automation). Erlauben.
-2. **Bereiche festlegen** – welche Konten zusammengehören.
-3. **Konten bestätigen** – Bereich, Position und Verlauf jedes Kontos.
-4. **Historische Kontostände einlesen** – den bisherigen Verlauf einmalig aus MoneyMoney übernehmen.
-5. **Kategorien auswählen** und **Kategorien zuordnen**.
-6. **Gegenbuchungen einrichten**, **Immobilien erfassen**, **Planung anpassen**, **Steuerübersicht einrichten**, **Belegordner wählen**, **iPhone-Zugriff einrichten**, **Abgleich und Freigabe einstellen**.
+1. **MoneyMoney** – MoneyMoney läuft und ist entsperrt; macOS fragt beim ersten Mal, ob Kontor MoneyMoney steuern darf (Automation). Erlauben.
+2. **Bereiche** – welche Konten zusammengehören.
+3. **Konten** – Bereich, Position und Verlauf jedes Kontos bestätigen.
+4. **Historische Kontostände** – den bisherigen Verlauf einmalig aus MoneyMoney übernehmen.
+5. **Kategorien** (auswählen) und **Zuordnung** (Umsätze zuordnen).
+6. **Buchungsregeln**, **Immobilien**, **Planung**, **Steuer**, **Belege**, **iPhone-Zugriff**, **Abgleich und Freigabe**.
 
 Danach erstellt „Auswertung erstellen“ die erste Auswertung. Die Sprache (Deutsch oder Englisch) wählst du auf der Anmeldeseite, in der Einrichtung oder unter Einstellungen → Allgemein. Dort stellst du auch das Erscheinungsbild ein: dunkel (Standard), hell oder wie das System – je Gerät.
 
@@ -82,7 +82,7 @@ Das Fenster prüft auch die Rückrechnung: Anfangssaldo vor der ersten Buchung i
 ![Verlauf eines Kontos](img/de/account_history.png)
 
 <a id="balances"></a>
-### Historische Kontostände einlesen
+### Historische Kontostände
 
 MoneyMoney gibt den Verlauf der Kontostände über seine Schnittstelle nicht heraus – vor allem bei Depots fehlt sonst die Vergangenheit. Einmalig liest Kontor ihn deshalb aus der Datenbankdatei von MoneyMoney: MoneyMoney beenden, „Im Finder zeigen“, die Datei `MoneyMoney.sqlite` ins Fenster ziehen und das MoneyMoney-Passwort in einem macOS-Fenster eingeben. Kontor bekommt nur einen daraus berechneten Schlüssel, entschlüsselt nur im Arbeitsspeicher, prüft die Werte am aktuellen Saldo und speichert nur Monatsend-Stände, verschlüsselt. In MoneyMoney wird nichts verändert. Erneutes Einlesen ersetzt den bisherigen Stand.
 
@@ -141,7 +141,7 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 - **Depots**: frühere Monate aus den eingelesenen MoneyMoney-Kontoständen (sonst aus Kontors monatlicher Aufzeichnung), der laufende Monat aus MoneyMoney; was die Wertpapiere nicht erklären, steht als „Übrige“. Beim Darüberfahren über ein Wertpapier stehen immer der Name aus MoneyMoney und die ISIN dabei, ebenso ob der Name nachgeschlagen oder geändert ist. Konten benennst du in MoneyMoney um – Kontor übernimmt die Namen von dort.
 - Jahresspalten zeigen den Stand zum Jahresende (das laufende Jahr: heute). In der Monatsansicht gibt es keine Jahresspalten – sie wären nur der Dezember; ein feiner Strich trennt die Jahre.
 - Die erste Spalte ziehst du an ihrem rechten Rand breiter oder schmaler (Doppelklick: Standardbreite); die Breite gehört zur Ansicht.
-- **Eigenkapitalquote** (Alpha; Klick auf „Nettovermögen“ klappt die Kennzahlen darunter auf): wie viel deines Vermögens dir schuldenfrei gehört – Eigenkapital ÷ (Eigenkapital + Schulden). Durchgerechnet durch deine Gesellschaften: Deren Schulden zählen mit deinem Anteil aus der Beteiligungsregel, sonst sähe die Quote zu gut aus, weil die Bankdarlehen dort liegen. Schulden sind Konten mit negativem Stand; Kapital- und Gesellschafterkonten sind Eigenkapital, Beteiligungen selbst nie Schulden. Wie du Kapitalkonten buchst, ändert nichts. Beteiligungen ohne Beteiligungsregel zählen nur mit ihrem Wert; liegen Konten einer Gesellschaft in keinem Bereich, ist die Quote unbekannt. Ein Klick zeigt die Rechnung des Monats Schritt für Schritt.
+- **Eigenkapitalquote** (Alpha; Klick auf „Nettovermögen“ klappt die Kennzahlen darunter auf): wie viel deines Vermögens dir schuldenfrei gehört – Eigenkapital ÷ (Eigenkapital + Schulden). Durchgerechnet durch deine Gesellschaften: Deren Schulden zählen mit deinem Anteil (Bereiche), wenn die Beteiligung unter Buchungsregeln → Gesellschaften eingetragen ist, sonst sähe die Quote zu gut aus, weil die Bankdarlehen dort liegen. Schulden sind Konten mit negativem Stand; Kapital- und Gesellschafterkonten sind Eigenkapital, Beteiligungen selbst nie Schulden. Wie du Kapitalkonten buchst, ändert nichts. Beteiligungen ohne diesen Eintrag zählen nur mit ihrem Wert; liegen Konten einer Gesellschaft in keinem Bereich, ist die Quote unbekannt. Ein Klick zeigt die Rechnung des Monats Schritt für Schritt.
 - Unter dem Nettovermögen stehen Avale & Bürgschaften und Kapitalkonten als Eigenkapital (nicht im Nettovermögen), je gesammelt in einer aufklappbaren Zeile.
 - **Geldtransit**: Liegen die beiden Buchungen einer Umbuchung zwischen eigenen Konten in verschiedenen Monaten (am 31. abgebucht, am 1. gutgeschrieben), zählt der Betrag am Monatsende als „Geldtransit“ zum Bankguthaben – sonst sähe das Nettovermögen kurz zu niedrig aus. Ein Klick zeigt die erkannten Buchungspaare.
 
@@ -271,7 +271,7 @@ Ergebnis: Monats- und Jahrestabelle (Miete, Kosten, Zinsen, Tilgung, AfA, steuer
 <a id="tax"></a>
 ## Steuer
 
-Je Entität (Hauptbereich = privat, jede Gesellschaft mit deinem Anteil aus der Beteiligungsregel) und Jahr: Vermietung je Objekt aus den Kategorien `Vermietung \ Objekt \ Art` (beliebig viele Objekte, auch privat), Schuldzinsen je Darlehen (Zuordnung Darlehen → Objekt unter Einstellungen → Steuer), AfA, Steuerpositionen aus Kategorienamen (anpassbar unter Einstellungen → Steuer) und Buchungen ohne Kategorie als Prüfposten. Die Belege eines Jahres lassen sich als ZIP mit Übersicht exportieren. Keine Steuerberatung.
+Je Entität (Hauptbereich = privat, jede Gesellschaft mit deinem Anteil aus den Bereichen) und Jahr: Vermietung je Objekt aus den Kategorien `Vermietung \ Objekt \ Art` (beliebig viele Objekte, auch privat), Schuldzinsen je Darlehen (Zuordnung Darlehen → Objekt unter Einstellungen → Steuer), AfA, Steuerpositionen aus Kategorienamen (anpassbar unter Einstellungen → Steuer) und Buchungen ohne Kategorie als Prüfposten. Die Belege eines Jahres lassen sich als ZIP mit Übersicht exportieren. Keine Steuerberatung.
 
 <a id="receipts"></a>
 ## Umsätze und Belege
@@ -279,21 +279,48 @@ Je Entität (Hauptbereich = privat, jede Gesellschaft mit deinem Anteil aus der 
 Der Umsatzbrowser filtert nach Bereich, Jahr, Konto, Text, „ohne Beleg“ und „ohne Kategorie“. Belege (PDF, Bilder, E-Mails, Office-Dateien) fügst du per Auswahl, Drag & Drop oder am iPhone per Foto hinzu. Sie liegen als normale Dateien im Belegordner (Standard `~/Documents/Kontor-Belege`, Unterordner z. B. `{jahr}`), Dateiname `Datum_Betrag_Name_Kennung`. Dateien außerhalb des Ordners (auch iCloud Drive) lassen sich verknüpfen, ohne sie zu kopieren – Kontor zeigt, ob die Datei lokal vorliegt oder noch aus iCloud geladen wird. Vorhandene Dateien im Belegordner lassen sich nachträglich zuordnen. Bis 60 MB je Datei. Der Index liegt verschlüsselt im Datenordner; die Dateien bleiben auch ohne ihn nutzbar. Löschen in Kontor betrifft nie verknüpfte Dateien.
 
 <a id="rules"></a>
-## Auto-Regeln (Gegenbuchungen)
+## Buchungsregeln
 
-Auto-Regeln buchen automatisch in Offline-Konten in MoneyMoney:
+Buchungsregeln legen fest, was Kontor automatisch in deine Offline-Konten in MoneyMoney bucht:
 
-- **Darlehen**: Rate erkennen (Gegen-IBAN oder Text), auf dem Darlehenskonto spiegeln, Zinsen berechnen (Jahresbasis oder Restschuld monatlich).
-- **Beteiligungen**: Zielkonto = Anteil × Nettowert einer Kontengruppe.
-- **Saldo-Spiegel**: Zielkonto = Faktor × Quellkonto (z. B. Kapitalkonto).
+- **Darlehen** – Rate erkennen, als Tilgung auf das Darlehenskonto buchen, Zinsen dazu.
+- **Gesellschaften** – je Gesellschaft deine Beteiligung und deine Gegenkonten auf ihrem Stand halten.
 
-**Automatisch buchen** (Schalter oben unter „Auto-Regeln“, nur am Mac): aus (Standard) – die Buchungen erscheinen unter „Auto-Buchungen“ und werden erst angelegt, wenn du sie dort **freigibst** (nur am Mac); an – Kontor legt sie bei jedem Abgleich selbst an. Oben rechts unter „Auto-Buchungen“ steht, was gilt („Mit Freigabe“ oder „Automatisch“). Bank- und Erweiterungskonten werden nie bebucht, Überweisungen und Lastschriften sind gesperrt, bestehende Buchungen ändert oder löscht Kontor nie.
+![Buchungsregeln](img/de/rules.png)
 
-**Ablauf**: Bei jedem Abgleich (automatisch alle 30 Minuten, nach neuen Daten in MoneyMoney oder per „Sync“) rechnet Kontor die Auto-Regeln durch; „Jetzt prüfen“ tut das sofort. Eine Mitteilung meldet „… Buchungen warten auf Freigabe“ bzw. „… Buchungen angelegt“. Unter „Auto-Buchungen“ stehen die wartenden bzw. zuletzt gebuchten Buchungen mit Hinweisen und Rechenwegen, **„Von Kontor angelegt“** (nur Kontors eigene Buchungen mit ihrem Stand in MoneyMoney) und der Verlauf.
+Jedes Darlehen ist eine Zeile (Name → Darlehenskonto, rechts was offen ist); ein Klick klappt die Einzelheiten auf. Jede Gesellschaft hat eine eigene Karte. Neben jedem Feld erklärt ein **?** kurz, was es bewirkt (Klick: dieser Abschnitt). Neben jeder Regel stehen **Soll**, **Ist** und die **Differenz**, die Kontor buchen würde – schon während du änderst. **„Speichern und prüfen“** (⌘S) unten gilt für alle Änderungen der Seite und prüft sie gegen MoneyMoney.
 
-**Nie doppelt**: Jede Buchung trägt eine Markierung im Verwendungszweck (z. B. „#mm-zins-2026-10“; die Schnittstelle von MoneyMoney kennt beim Anlegen kein Kommentarfeld). Zusätzlich führt Kontor eine eigene, verschlüsselte Liste aller Buchungen, die es angelegt hat. Ändert sich die Markierung in MoneyMoney, erkennt Kontor die Buchung an Konto, Datum und Betrag (jede Buchung in MoneyMoney zählt dabei nur einmal, zwei gleiche also als zwei); fehlt sie ganz (gelöscht), legt Kontor sie **nicht** von selbst neu an, sondern zeigt sie als „In MoneyMoney nicht mehr gefunden“ – „Wieder anlegen“ erlaubt es beim nächsten Abgleich. **Löschen** geht nur in MoneyMoney, dessen Schnittstelle kennt kein Löschen. Wertanpassungen (Beteiligungen, Spiegel) buchen immer die Differenz zum Stand in MoneyMoney und brauchen das nicht.
+**Automatisch buchen** (Schalter oben unter „Buchungsregeln“, nur am Mac): aus (Standard) – die Buchungen erscheinen unter „Auto-Buchungen“ und werden erst angelegt, wenn du sie dort **freigibst** (nur am Mac); an – Kontor legt sie bei jedem Abgleich selbst an. Oben rechts unter „Auto-Buchungen“ steht, was gilt („Mit Freigabe“ oder „Automatisch“). Bank- und Erweiterungskonten werden nie bebucht, Überweisungen und Lastschriften sind gesperrt, bestehende Buchungen ändert oder löscht Kontor nie.
+
+**Ablauf**: Bei jedem Abgleich (automatisch alle 30 Minuten, nach neuen Daten in MoneyMoney oder per „Sync“) rechnet Kontor die Buchungsregeln durch; „Jetzt prüfen“ tut das sofort. Eine Mitteilung meldet „… Buchungen warten auf Freigabe“ bzw. „… Buchungen angelegt“. Unter „Auto-Buchungen“ stehen die wartenden bzw. zuletzt gebuchten Buchungen mit Hinweisen und Rechenwegen, **„Von Kontor angelegt“** (nur Kontors eigene Buchungen mit ihrem Stand in MoneyMoney) und der Verlauf.
+
+**Nie doppelt**: Jede Buchung trägt eine Markierung im Verwendungszweck (z. B. „#mm-zins-2026-10“; die Schnittstelle von MoneyMoney kennt beim Anlegen kein Kommentarfeld). Zusätzlich führt Kontor eine eigene, verschlüsselte Liste aller Buchungen, die es angelegt hat. Ändert sich die Markierung in MoneyMoney, erkennt Kontor die Buchung an Konto, Datum und Betrag (jede Buchung in MoneyMoney zählt dabei nur einmal, zwei gleiche also als zwei); fehlt sie ganz (gelöscht), legt Kontor sie **nicht** von selbst neu an, sondern zeigt sie als „In MoneyMoney nicht mehr gefunden“ – „Wieder anlegen“ erlaubt es beim nächsten Abgleich. **Löschen** geht nur in MoneyMoney, dessen Schnittstelle kennt kein Löschen. Beteiligungen und Gegenkonten buchen immer die Differenz zum Stand in MoneyMoney und brauchen das nicht.
+
+<a id="rules-loans"></a>
+### Darlehen
+
+Kontor erkennt die Rate auf dem Quellkonto – über die IBAN des Darlehensgebers oder einen Text im Verwendungszweck – und bucht sie als Tilgung auf das Darlehenskonto (ein Offline-Konto). Dazu kommen jeden Monat die Zinsen. So stimmt die Restschuld in MoneyMoney ohne Handarbeit. „Art“: Verbindlichkeit (du zahlst) oder Forderung (du bekommst). „Buchen ab“: erst ab diesem Tag. Ohne Zinsmodell („keine Zinsen“) spiegelt Kontor nur die Raten.
 
 **Zinsen**: Jahresbasis = Zinssatz × Stand am 31.12. des Vorjahres, je Monat ein Zwölftel, im Dezember mit dem Cent-Rest – oder monatlich auf die Restschuld. Das Modell ist vereinfacht (30/360); einmal im Jahr mit der Zinsabrechnung der Bank abgleichen. Bei Problemen (Konto gelöscht, keine passende Zahlung, Zinsbuchung schon von Hand vorhanden) gibt es einen Hinweis und eine Mitteilung.
+
+<a id="rules-companies"></a>
+### Gesellschaften
+
+Jeder Bereich der Art „Gesellschaft“ (Einrichtung → Bereiche) erscheint als Karte, mit deinem **Anteil**. Der Anteil steht nur dort; die Karte verlinkt hin.
+
+- **Beteiligung**: dein Offline-Konto für diese Gesellschaft. Kontor hält es auf **Anteil × Wert der Gesellschaft**. Wert = alle Konten ihres Bereichs, also Vermögen minus Schulden (ohne Konten mit der Position „Kapitalkonten (Eigenkapital)“, Avale und nicht bilanzierte Konten).
+- **Gegenkonten**: dein Offline-Konto als Gegenstück zu einem Konto der Gesellschaft – gleicher Betrag, umgekehrtes Vorzeichen. Beispiel: Dein Kapitalkonto ist in der GbR eine Schuld an dich, bei dir eine Forderung.
+
+Beides zusammen zählt nichts doppelt, wenn die Kapitalkonten in der Gesellschaft als Schuld geführt sind (Standard für Konten mit „Kapitalkonto“ oder „Gesellschafterdarlehen“ im Namen): Die Forderung ist dein Kapitalkonto, die Beteiligung dein Anteil am Rest – Wertzuwachs und nicht verteilte Überschüsse. Das stimmt auch bei ungleichen Einlagen. Führst du ein Kapitalkonto dagegen als Eigenkapital der Gesellschaft, steckt es schon im Wert der Beteiligung; ein Gegenkonto dazu zählt dann doppelt, und „Speichern und prüfen“ warnt.
+
+Unter **Weitere Einstellungen**: Mindestdifferenz (kleinere Abweichungen bucht Kontor nicht), Gegenpartei der Buchungen (leer: Name der Gesellschaft) und „Rückwirkend ab“.
+
+Kontor bucht jeweils nur die Differenz zum Stand in MoneyMoney (Verwendungszweck mit Markierung „#mm-wert-…“ bzw. „#mm-spiegel-…“). Zahlungen zwischen dir und einer Gesellschaft mit Beteiligung oder Gegenkonto zählen im Cashflow als Einlage bzw. Entnahme, und die Eigenkapitalquote in der Bilanz rechnet über die Beteiligungen durch die Gesellschaften hindurch.
+
+<a id="rules-back"></a>
+### Rückwirkend buchen
+
+Mit „Rückwirkend ab“ (Monat) bucht Kontor für jede Gesellschaft auch für die vergangenen Monate je eine Anpassung zum Monatsende – mit dem Wert, den die Bilanz für diesen Tag zeigt, und wieder nur die Differenz. So stimmt der Verlauf deiner Beteiligung und deiner Gegenkonten in MoneyMoney und in Kontor. Monate, in denen ein Wert nicht bekannt ist (z. B. ein Depot in der Gesellschaft, dessen früherer Stand MoneyMoney nicht herausgibt), werden übersprungen und genannt – Kontor schätzt nichts. Bereits vorhandene Buchungen werden nie geändert; ohne „Automatisch buchen“ warten auch die rückwirkenden Buchungen auf deine Freigabe.
 
 <a id="iphone"></a>
 ## Zugriff vom iPhone
@@ -390,7 +417,7 @@ Im Terminal aktualisiert dieselbe Zeile wie bei der [Installation](https://githu
 |---|---|
 | MoneyMoney läuft nicht / Datenbank gesperrt | MoneyMoney öffnen und entsperren; Kontor holt alles nach. |
 | Keine Berechtigung (Automation) | Systemeinstellungen → Datenschutz & Sicherheit → Automation: python3 darf MoneyMoney steuern. |
-| Konto nicht gefunden | Eine Regel verweist auf ein gelöschtes oder umbenanntes Konto: unter Auto-Regeln neu zuordnen; „Einrichtung prüfen“ zeigt alle Fälle. |
+| Konto nicht gefunden | Eine Regel verweist auf ein gelöschtes oder umbenanntes Konto: unter Buchungsregeln neu zuordnen; „Einrichtung prüfen“ zeigt alle Fälle. |
 | Prüfzeile im Cashflow ≠ 0 | Es fehlt eine Kategorie oder eine Gegenbuchung. |
 | iPhone öffnet die Adresse nicht | Zugriff unter Einstellungen → Zugang einschalten; Tailscale auf beiden Geräten verbunden? |
 | Keine passende Zahlung | Die Darlehensregel findet die Rate nicht: Gegen-IBAN oder Text und Quellkonto prüfen. Bis 35 Tage nach „Automatik ab“ nur ein Hinweis. |

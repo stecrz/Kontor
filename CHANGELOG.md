@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.12.18 (2026-11-09 19:07)
+- Buchungsregeln (vorher „Auto-Regeln“) neu aufgebaut: Darlehen als aufklappbare Zeilen mit gegliederten Feldern; je Gesellschaft eine Karte mit Beteiligung und Gegenkonten (ersetzt „Beteiligungen“ und „Saldo-Spiegel“). Der Anteil steht nur noch unter Einrichtung → Bereiche.
+- Neben jeder Regel Soll, Ist und Differenz, schon beim Ändern; neben jedem Feld ein „?“ mit Erklärung und Verweis in die Hilfe; eine Speicherleiste für die ganze Seite (⌘S).
+- Rückwirkend buchen: Beteiligungen und Gegenkonten auf Wunsch ab einem Monat, je eine Buchung zum Monatsende (nur die Differenz, unbekannte Monate werden übersprungen).
+- Warnung, wenn ein Gegenkonto zusätzlich zur Beteiligung doppelt zählt. Eigenkapitalquote und Einlagen im Cashflow ergeben sich aus den Gesellschaften; die Einstellung „Beteiligungsgruppen“ entfällt.
+- Einrichtung: Schritte heißen nur noch nach ihrem Thema, der lange Einleitungstext entfällt.
+
 ## 3.12.17 (2026-11-09 17:49)
 - Auto-Regeln: Schalter „Automatisch buchen“ oben (aus = mit Freigabe), wie in den macOS-Einstellungen; Auto-Buchungen zeigen oben rechts, was gilt, und haben „Freigeben“ und „Jetzt prüfen“ mit Symbolen.
 - Erkennung geänderter Markierungen: Jede Buchung in MoneyMoney zählt nur einmal; Buchungen mit fremder Markierung zählen nicht mit.

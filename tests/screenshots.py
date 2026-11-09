@@ -70,13 +70,15 @@ def main():
             pg.evaluate("document.querySelectorAll('.banner').forEach(b => b.remove())")
             shots = [("overview", "#overview", None), ("balance_sheet", "#balance", "bilanz"), ("cash_flow", "#cashflow", None),
                      ("planning", "#planning", None), ("setup", "#setup", None), ("accounts", "#setup/accounts", None),
-                     ("assign_categories", "#categories", None), ("category_selection", "#categories/selection", None), ("sync", "#sync", None),
+                     ("assign_categories", "#categories", None), ("rules", "#rules", "rules"), ("category_selection", "#categories/selection", None), ("sync", "#sync", None),
                      ("access", "#settings/access", None), ("backup", "#settings/backup", None), ("property", "#properties", "immo")]
             for name, h, special in shots:
                 pg.goto(U + h); pg.wait_for_timeout(1400)
                 pg.evaluate("document.querySelectorAll('#banner').forEach(b => { b.className = 'hidden'; b.innerHTML = ''; })")
                 if special == "bilanz" and not pg.query_selector("tr.acct"):
                     pg.click("tr.pos[data-pos='liquiditaet'] td:first-child"); pg.wait_for_timeout(500)
+                if special == "rules":                 # the settings of the first company open, numbers loaded
+                    pg.click(".co-card .co-more summary"); pg.wait_for_timeout(1200)
                 if special == "immo":
                     pg.click(".card[data-im]"); pg.wait_for_timeout(1500)
                 save(pg, name)

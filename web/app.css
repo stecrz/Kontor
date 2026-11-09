@@ -174,8 +174,55 @@ button.ico { display:inline-flex; align-items:center; gap:6px; } button.ico svg 
 /* the booking mode as a quiet status (changed under Auto-Regeln) */
 .mode-chip { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; padding:4px 11px; border-radius:999px; background:var(--group); color:var(--muted); text-decoration:none !important; }
 .mode-chip.auto { color:var(--fg); } .mode-chip:hover { color:var(--fg); }
-/* a setting as one row: what it is and means on the left, the switch on the right (as in the macOS settings) */
-.card.set-row { display:flex; align-items:center; gap:16px; margin-bottom:6px; } .card.set-row .grow { flex:1; min-width:0; } .card.set-row .small { margin-top:2px; }
+/* Buchungsregeln: readable width; a settings group with one row (switch on the right, as in the macOS settings); the rules by
+   kind as collapsible rows; one save bar for the whole page at the bottom */
+.rules-page { max-width:860px; }
+.rules-page .lead { color:var(--muted); font-size:13px; margin:2px 0 14px; line-height:1.5; }
+.group { background:var(--head); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); margin-bottom:22px; }
+.set-row { display:flex; align-items:center; gap:16px; padding:12px 16px; } .set-row .grow { flex:1; min-width:0; } .set-row .small { margin-top:2px; }
+.rule-sec { margin-bottom:22px; }
+.sec-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:8px; } .sec-head h2 { margin:0; } .sec-head .sp { flex:1; }
+.rule-sec .list:not(:empty) + .empty { display:none; } .rule-sec .empty { padding:12px 16px; border:1px dashed var(--line); border-radius:12px; }
+details.item.rule { display:block; padding:0; }
+details.rule > summary { list-style:none; display:flex; align-items:center; gap:10px; padding:11px 16px; cursor:pointer; }
+details.rule > summary::-webkit-details-marker { display:none; }
+details.rule > summary::before { content:"▸"; color:var(--muted); font-size:11px; width:10px; transition:transform .15s; }
+details.rule[open] > summary::before { transform:rotate(90deg); }
+details.rule .r-name { font-weight:600; } details.rule .r-target { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+details.rule .rule-body { padding:4px 16px 14px 36px; border-top:1px solid var(--line); }
+details.rule .rule-body .form { margin-top:12px; }
+.rule-foot { display:flex; justify-content:flex-end; margin-top:10px; } .rule-foot .del { color:var(--neg); }
+.sec-sub { color:var(--muted); font-size:13px; margin:-2px 0 10px; line-height:1.45; }
+details.rule .r-pv { white-space:nowrap; }
+.form .fg { font-size:11.5px; font-weight:600; color:var(--muted); letter-spacing:.02em; margin-top:8px; padding-top:12px; border-top:1px solid var(--line); }
+.form.no-zins .zo { display:none; }
+/* a company: head with its share; rows for participation and counter accounts (label | fields, live numbers below) */
+.co-card { background:var(--head); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); margin-bottom:14px; }
+.co-head { display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid var(--line); }
+.co-head h3 { margin:0 4px 0 0; font-size:15px; }
+.co-head a.pill { text-decoration:none; }
+.co-row { display:grid; grid-template-columns:170px minmax(0, 1fr); gap:6px 14px; padding:12px 16px; border-bottom:1px solid var(--line); }
+.co-l { display:flex; align-items:center; gap:2px; align-self:start; min-height:30px; color:var(--muted); font-size:13px; }
+.co-f > select { width:100%; max-width:440px; }
+.co-f.gks .add-gk { margin-top:2px; }
+.gk-row { display:grid; grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr) auto; gap:4px 8px; align-items:center; max-width:640px; margin-bottom:10px; }
+.gk-row select { width:100%; }
+.gk-row .pv { grid-column:1 / -1; }
+.gk-row.invalid select { border-color:var(--neg); }
+.gk-arrow { color:var(--muted); font-size:14px; }
+.gk-del { background:none; color:var(--muted); font-size:17px; line-height:1; padding:4px 6px; } .gk-del:hover { color:var(--neg); }
+.pv { margin-top:5px; color:var(--muted); font-variant-numeric:tabular-nums; line-height:1.5; } .pv:empty { display:none; }
+.pv b { color:var(--fg); font-weight:600; }
+.pv-ok { color:var(--pos); } .pv-diff { color:var(--fg); font-weight:600; } .pv-unk { color:var(--warn-fg); }
+.co-more { padding:10px 16px 12px; } .co-more > summary { cursor:pointer; color:var(--muted); font-size:12.5px; }
+.co-more .form { grid-template-columns:170px 1fr; margin-top:10px; }
+@media (max-width:700px) {
+  .co-row, .co-more .form { grid-template-columns:1fr; }
+  .gk-row { grid-template-columns:minmax(0, 1fr) auto; } .gk-row .gk-arrow { grid-column:1; justify-self:start; transform:rotate(90deg); }
+  .gk-row .g-quelle { grid-column:1; } .gk-row .gk-del { grid-column:2; grid-row:1; }
+}
+.savebar { position:sticky; bottom:0; z-index:4; display:flex; align-items:center; gap:12px; padding:12px 0; margin-top:6px; background:var(--bg); border-top:1px solid var(--line); }
+.savebar .sp { flex:1; }
 .switch.off { opacity:.5; cursor:default; }
 details.calc { margin:10px 0 14px; } details.calc > summary { cursor:pointer; color:var(--muted); font-size:12.5px; margin-bottom:6px; }      /* calculations, history: on demand */
 .note.warn { color:var(--warn-fg); background:var(--warn-bg); padding:7px 10px; border-radius:8px; }

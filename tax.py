@@ -95,14 +95,6 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
             loan_obj[ledger.resolve(ref).uuid] = str(obj)
         except KeyError:
             pass
-    # Anteile aus den Beteiligungsregeln
-    anteile: Dict[str, float] = {}
-    for b in config.get("beteiligungen", []) or []:
-        try:
-            anteile[ledger.resolve(b["gruppe"]).uuid] = float(b.get("anteil", 1.0))
-        except (KeyError, ValueError, TypeError):
-            pass
-
     # Entitaeten = Bereiche (Hauptbereich = privat, andere nach Art/Name)
     ents: List[dict] = []
     for b in bereiche or []:
@@ -110,7 +102,7 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
         if art == "gesellschaft":
             art = "gbr" if "gbr" in b["name"].lower() else ("gmbh" if "gmbh" in b["name"].lower() else "gesellschaft")
         ents.append({"id": b["id"], "name": b["name"], "leaves": b["leaves"], "art": art,
-                     "anteil": b.get("anteil") if b.get("anteil") not in (None, "", 0) else anteile.get(b["gruppen"][0].uuid) if b.get("gruppen") else None})
+                     "anteil": b.get("anteil") if b.get("anteil") not in (None, "", 0) else None})
 
     by_year: Dict[int, List[Tx]] = defaultdict(list)
     for t in ledger.txs:
@@ -139,7 +131,7 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
                 is_transfer = (t.counter_iban and t.counter_iban in own_ibans) or \
                               any(cat_low.split("\\")[-1] == c or cat_low == c for c in transfer_cats) or \
                               any(tag.startswith("#mm-tx-") for tag in TAG_RE.findall(t.purpose + " " + t.comment)) or \
-                              any(tag.startswith("#mm-wert-") for tag in TAG_RE.findall(t.purpose))
+                              any(tag.startswith(("#mm-wert-", "#mm-spiegel-")) for tag in TAG_RE.findall(t.purpose))
                 if acc.portfolio:
                     continue
                 if role in ("verbindlichkeiten", "forderungen"):

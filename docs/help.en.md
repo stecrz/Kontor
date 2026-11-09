@@ -11,12 +11,12 @@ Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sh
 |---|---|
 | Fetches transactions and balances from banks, portfolios and payment services. | Reads this data through MoneyMoney's scripting interface. Kontor never sees bank credentials. |
 | Categorises transactions, manually or by rule. | Uses these categories. You assign transactions without a category in Kontor; optionally Kontor writes the assignment back to MoneyMoney. |
-| Keeps offline accounts: private loans, equity investments, real estate, capital accounts. | Books only into such offline accounts according to your rules: mirror loan instalments and calculate interest, investment values, balance mirrors. |
+| Keeps offline accounts: private loans, equity investments, real estate, capital accounts. | Books only into such offline accounts according to your rules: mirror loan instalments and calculate interest, participations and counter accounts of your companies. |
 | Has no balance sheet, no planning, no tax overview. | Balance sheet per area, cash flow with check row, rolling plan, real estate calculation, annual tax overview, receipts, Excel export. |
 
 Kontor never changes bookings, the category tree or rules in MoneyMoney and never initiates transfers.
 
-**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Overview, Cash flow, Planning, Properties, Tax, Transactions & receipts, Categories, Auto bookings and Auto rules) are usable but not fully tested yet – please double-check the figures there. So is the equity ratio in the balance sheet. Tested are Balance sheet, Sync, Setup, Settings, Updates, Log and Help.
+**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Overview, Cash flow, Planning, Properties, Tax, Transactions & receipts, Categories, Auto bookings and Booking rules) are usable but not fully tested yet – please double-check the figures there. So is the equity ratio in the balance sheet. Tested are Balance sheet, Sync, Setup, Settings, Updates, Log and Help.
 
 <a id="setup"></a>
 ## Setup
@@ -27,12 +27,12 @@ The “?” next to fields explain briefly; a click on one (on the iPhone: a sec
 
 ![Setup](img/en/setup.png)
 
-1. **Connect MoneyMoney** – MoneyMoney is running and unlocked; the first time, macOS asks whether Kontor may control MoneyMoney (Automation). Allow it.
-2. **Define areas** – which accounts belong together.
-3. **Confirm accounts** – area, position and history of each account.
-4. **Import historical balances** – take over the past history from MoneyMoney once.
-5. **Choose categories** and **assign categories**.
-6. **Set up counter-bookings**, **Add properties**, **Adjust planning**, **Set up tax overview**, **Choose receipts folder**, **Set up iPhone access**, **Set sync and approval**.
+1. **MoneyMoney** – MoneyMoney is running and unlocked; the first time, macOS asks whether Kontor may control MoneyMoney (Automation). Allow it.
+2. **Areas** – which accounts belong together.
+3. **Accounts** – confirm area, position and history of each account.
+4. **Historical balances** – take over the past history from MoneyMoney once.
+5. **Categories** (choose) and **Assignment** (assign transactions).
+6. **Booking rules**, **Properties**, **Planning**, **Tax**, **Receipts**, **iPhone access**, **Sync and approval**.
 
 After that, “Create report” builds the first report. Choose the language (German or English) on the login page, in the setup or under Settings → General. The appearance is set there too: dark (default), light or like the system – per device.
 
@@ -82,7 +82,7 @@ The panel also checks the backward calculation: opening balance before the first
 ![History of an account](img/en/account_history.png)
 
 <a id="balances"></a>
-### Import historical balances
+### Historical balances
 
 MoneyMoney does not provide the history of balances through its interface – especially for portfolios the past would be missing. So Kontor reads it once from MoneyMoney's database file: quit MoneyMoney, “Show in Finder”, drag the file `MoneyMoney.sqlite` into the window and enter the MoneyMoney password in a macOS window. Kontor only receives a key derived from it, decrypts only in memory, checks the values against the current balance and stores only month-end balances, encrypted. Nothing is changed in MoneyMoney. Importing again replaces the previous data.
 
@@ -141,7 +141,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 - **Portfolios**: past months from the balances read from MoneyMoney (otherwise from Kontor's monthly record), the current month from MoneyMoney; what the securities do not explain is shown as “Other”. Hovering over a security always shows MoneyMoney's name and the ISIN, and whether the name was looked up or changed. Rename accounts in MoneyMoney – Kontor takes the names from there.
 - Year columns show the balance at year end (the running year: today). The month view has no year columns – they would only repeat December; a thin line separates the years.
 - Drag the right edge of the first column to make it wider or narrower (double-click: default width); the width is part of the view.
-- **Equity ratio** (alpha; a click on “Net worth” opens the key figures below it): how much of your assets you own free of debt – equity ÷ (equity + debts). Looking through your companies: their debts count with your share from the participation rule, otherwise the ratio would look too good, because the bank loans sit there. Debts are accounts with a negative balance; capital and shareholder accounts are equity, participations themselves never debts. How you book capital accounts changes nothing. Participations without a participation rule count with their value only; if accounts of a company are in no area, the ratio is unknown. A click shows the month's calculation step by step.
+- **Equity ratio** (alpha; a click on “Net worth” opens the key figures below it): how much of your assets you own free of debt – equity ÷ (equity + debts). Looking through your companies: their debts count with your share (areas) if the participation is entered under Booking rules → Companies, otherwise the ratio would look too good, because the bank loans sit there. Debts are accounts with a negative balance; capital and shareholder accounts are equity, participations themselves never debts. How you book capital accounts changes nothing. Participations without this entry count with their value only; if accounts of a company are in no area, the ratio is unknown. A click shows the month's calculation step by step.
 - Below net worth, guarantees and capital accounts as equity (not in net worth) are each collected in one expandable row.
 - **Cash in transit**: If the two bookings of a transfer between your own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” to cash at the month end – otherwise net worth would briefly look too low. A click shows the detected booking pairs.
 
@@ -271,7 +271,7 @@ Result: monthly and annual table (rent, costs, interest, repayment, depreciation
 <a id="tax"></a>
 ## Tax
 
-Per entity (main area = private, each company with your share from the participation rule) and year: rental income per property from the categories `Vermietung \ Object \ Type` (any number of properties, private ones too), loan interest per loan (mapping loan → property under Settings → Tax), depreciation, tax items from category names (adjustable under Settings → Tax) and bookings without category as items to check. A year's receipts can be exported as a ZIP with an overview. No tax advice.
+Per entity (main area = private, each company with your share from the areas) and year: rental income per property from the categories `Vermietung \ Object \ Type` (any number of properties, private ones too), loan interest per loan (mapping loan → property under Settings → Tax), depreciation, tax items from category names (adjustable under Settings → Tax) and bookings without category as items to check. A year's receipts can be exported as a ZIP with an overview. No tax advice.
 
 <a id="receipts"></a>
 ## Transactions and receipts
@@ -279,21 +279,48 @@ Per entity (main area = private, each company with your share from the participa
 The transaction browser filters by area, year, account, text, “without receipt” and “without category”. Add receipts (PDF, images, e-mails, Office files) by choosing a file, drag & drop or a photo on the iPhone. They are stored as normal files in the receipts folder (default `~/Documents/Kontor-Belege`, subfolders e.g. `{jahr}`), file name `Date_Amount_Name_ID`. Files outside the folder (also iCloud Drive) can be linked without copying them – Kontor shows whether the file is local or still downloading from iCloud. Existing files in the receipts folder can be assigned later. Up to 60 MB per file. The index is stored encrypted in the data folder; the files remain usable without it. Deleting in Kontor never affects linked files.
 
 <a id="rules"></a>
-## Auto rules (counter-bookings)
+## Booking rules
 
-Auto rules book automatically into offline accounts in MoneyMoney:
+Booking rules set what Kontor books automatically into your offline accounts in MoneyMoney:
 
-- **Loans**: recognise the instalment (counterparty IBAN or text), mirror it on the loan account, calculate interest (annual basis or remaining debt monthly).
-- **Equity investments**: target account = share × net value of an account group.
-- **Balance mirror**: target account = factor × source account (e.g. capital account).
+- **Loans** – recognise the instalment, book it as repayment to the loan account, add the interest.
+- **Companies** – keep your participation and your counter accounts in line with each company.
 
-**Book automatically** (switch at the top of “Auto rules”, on the Mac only): off (default) – the bookings appear under “Auto bookings” and are created once you **approve** them there (on the Mac only); on – Kontor creates them itself at every sync. The top right of “Auto bookings” shows which applies (“With approval” or “Automatic”). Bank and extension accounts are never booked to, transfers and direct debits are blocked, Kontor never changes or deletes existing bookings.
+![Booking rules](img/en/rules.png)
 
-**How it runs**: at every sync (automatically every 30 minutes, after new data in MoneyMoney or with “Sync”) Kontor works through the auto rules; “Check now” does it at once. A notification says “… bookings waiting for approval” or “… bookings created”. Under “Auto bookings” you find the waiting or last booked bookings with notes and calculations, **“Created by Kontor”** (only Kontor's own bookings with their state in MoneyMoney) and the history.
+Each loan is one row (name → loan account, on the right what is open); a click opens the details. Each company has its own card. Next to every field a **?** briefly explains what it does (click: this section). Next to every rule you see the **target**, the **actual** balance and the **difference** Kontor would book – already while you edit. **“Save and check”** (⌘S) at the bottom applies to all changes on the page and checks them against MoneyMoney.
 
-**Never twice**: every booking carries a mark in the purpose (e.g. “#mm-zins-2026-10”; MoneyMoney's interface has no comment field when creating). On top, Kontor keeps its own encrypted list of all bookings it created. If the mark changes in MoneyMoney, Kontor recognises the booking by account, date and amount (each booking in MoneyMoney counts once, so two equal ones as two); if it is gone (deleted), Kontor does **not** create it again on its own but shows it as “No longer found in MoneyMoney” – “Create again” allows it at the next sync. **Deleting** only works in MoneyMoney, its interface has no delete. Value adjustments (participations, mirrors) always book the difference to the balance in MoneyMoney and need none of this.
+**Book automatically** (switch at the top of “Booking rules”, on the Mac only): off (default) – the bookings appear under “Auto bookings” and are created once you **approve** them there (on the Mac only); on – Kontor creates them itself at every sync. The top right of “Auto bookings” shows which applies (“With approval” or “Automatic”). Bank and extension accounts are never booked to, transfers and direct debits are blocked, Kontor never changes or deletes existing bookings.
+
+**How it runs**: at every sync (automatically every 30 minutes, after new data in MoneyMoney or with “Sync”) Kontor works through the booking rules; “Check now” does it at once. A notification says “… bookings waiting for approval” or “… bookings created”. Under “Auto bookings” you find the waiting or last booked bookings with notes and calculations, **“Created by Kontor”** (only Kontor's own bookings with their state in MoneyMoney) and the history.
+
+**Never twice**: every booking carries a mark in the purpose (e.g. “#mm-zins-2026-10”; MoneyMoney's interface has no comment field when creating). On top, Kontor keeps its own encrypted list of all bookings it created. If the mark changes in MoneyMoney, Kontor recognises the booking by account, date and amount (each booking in MoneyMoney counts once, so two equal ones as two); if it is gone (deleted), Kontor does **not** create it again on its own but shows it as “No longer found in MoneyMoney” – “Create again” allows it at the next sync. **Deleting** only works in MoneyMoney, its interface has no delete. Participations and counter accounts always book the difference to the balance in MoneyMoney and need none of this.
+
+<a id="rules-loans"></a>
+### Loans
+
+Kontor recognises the instalment on the source account – by the lender's IBAN or a text in the purpose – and books it as repayment to the loan account (an offline account). The interest comes on top every month. So the remaining debt in MoneyMoney is right without manual work. “Type”: liability (you pay) or receivable (you receive). “Book from”: only from this day. Without an interest model (“no interest”) Kontor only mirrors the instalments.
 
 **Interest**: annual basis = interest rate × balance on 31 Dec of the previous year, one twelfth per month, the cent remainder in December – or monthly on the outstanding balance. The model is simplified (30/360); reconcile once a year with the bank's interest statement. If there are problems (account deleted, no matching payment, interest booking already entered by hand) you get a note and a notification.
+
+<a id="rules-companies"></a>
+### Companies
+
+Every area of the kind “company” (Setup → Areas) appears as a card, with your **share**. The share is set there only; the card links to it.
+
+- **Participation**: your offline account for this company. Kontor keeps it at **share × value of the company**. Value = all accounts of its area, i.e. assets minus debts (without accounts with the position “Capital accounts (equity)”, guarantees and off-balance accounts).
+- **Counter accounts**: your offline account as the counterpart of one of the company's accounts – same amount, opposite sign. Example: your capital account is a debt to you in the partnership and a receivable for you.
+
+Both together count nothing twice if the capital accounts are kept as debts in the company (the default for accounts with “Kapitalkonto” or “Gesellschafterdarlehen” in their name): the receivable is your capital account, the participation your share of the rest – increases in value and undistributed surpluses. This also holds for unequal contributions. If you keep a capital account as the company's equity instead, it is already part of the participation's value; a counter account for it then counts twice, and “Save and check” warns.
+
+Under **More settings**: minimum difference (Kontor does not book smaller differences), counterparty of the bookings (empty: name of the company) and “Back to”.
+
+Kontor always books only the difference to the balance in MoneyMoney (purpose with the mark “#mm-wert-…” or “#mm-spiegel-…”). Payments between you and a company with a participation or counter account count as contributions or withdrawals in the cash flow, and the equity ratio in the balance sheet looks through the companies via the participations.
+
+<a id="rules-back"></a>
+### Booking back
+
+With “Back to” (a month) Kontor also books one adjustment at each past month end for the company – with the value the balance sheet shows for that day, and again only the difference. So the history of your participation and your counter accounts is right in MoneyMoney and in Kontor. Months in which a value is not known (e.g. a portfolio in the company whose earlier balance MoneyMoney does not provide) are skipped and named – Kontor estimates nothing. Existing bookings are never changed; without “Book automatically” the bookings back also wait for your approval.
 
 <a id="iphone"></a>
 ## Access from iPhone
@@ -390,7 +417,7 @@ In Terminal, the same line as for the [installation](https://github.com/stecrz/K
 |---|---|
 | MoneyMoney not running / database locked | Open and unlock MoneyMoney; Kontor catches up. |
 | No permission (Automation) | System Settings → Privacy & Security → Automation: allow python3 to control MoneyMoney. |
-| Account not found | A rule refers to a deleted or renamed account: reassign it under Auto rules; “Check setup” shows all cases. |
+| Account not found | A rule refers to a deleted or renamed account: reassign it under Booking rules; “Check setup” shows all cases. |
 | Cash flow check row ≠ 0 | A category or a counter-booking is missing. |
 | iPhone cannot open the address | Turn on access under Settings → Access; Tailscale connected on both devices? |
 | No matching payment | The loan rule does not find the instalment: check counterparty IBAN or text and source account. Only a note for up to 35 days after “automatic from”. |

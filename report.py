@@ -477,6 +477,24 @@ def transit_series(ledger: Ledger, leaves: List[Account], roles: Dict[str, str],
     return out, details
 
 
+def company_accounts(ledger: Ledger, config: dict) -> Dict[str, str]:
+    """Accounts of the companies set up under Booking rules (with a participation or counter account) -> company name."""
+    areas = {str(b.get("id")): b for b in config.get("bereiche") or [] if isinstance(b, dict)}
+    out: Dict[str, str] = {}
+    for g in config.get("gesellschaften") or []:
+        if not isinstance(g, dict) or not (g.get("beteiligung") or g.get("gegenkonten")):
+            continue
+        b = areas.get(str(g.get("bereich")))
+        for r in (b.get("konten") or []) if b else [str(g.get("bereich"))]:
+            try:
+                a = ledger.resolve(r)
+            except KeyError:
+                continue
+            for x in (ledger.descendants(a.uuid) if a.group else [a]):
+                out[x.uuid] = (b or {}).get("name") or a.name
+    return out
+
+
 def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], config: dict, months: List[Tuple[int, int]],
              verlauf: Dict[str, str]):
     kf = config.get("kapitalfluss", {}) or {}
@@ -496,14 +514,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             kat_zu_konto[cat_name.replace("\\", " / ").lower()] = ledger.resolve(ref).uuid
         except KeyError:
             pass
-    beteiligungs_gruppen: Dict[str, str] = {}
-    for ref in kf.get("beteiligungs_gruppen") or []:
-        try:
-            g = ledger.resolve(ref)
-            for a in (ledger.descendants(g.uuid) if g.group else [g]):
-                beteiligungs_gruppen[a.uuid] = g.name
-        except KeyError:
-            pass
+    beteiligungs_gruppen = company_accounts(ledger, config)       # payments to and from them: contributions/withdrawals
     first = date(months[0][0], months[0][1], 1)
     last = month_end(months[-1][0], months[-1][1])
 
@@ -913,8 +924,8 @@ def equity_ratio(ledger: Ledger, config: dict, roles: Dict[str, str], bereiche: 
 
     - Debts: accounts with a negative balance -- not participations (their debts come in through the look-through) and not
       capital or shareholder accounts (equity of the partners, also as loans) -- plus, for each company linked by a
-      participation rule (account, group, share), the share of that company's debts, counted the same way (also through
-      its own participations).
+      participation (Booking rules: company area, participation account, share of the area), the share of that company's
+      debts, counted the same way (also through its own participations).
     - Equity: net worth; in a company area also the capital and shareholder accounts owed to the partners.
     - The way capital accounts are booked (receivables or participations, one account or two) does not matter: net worth
       stays the same and they are never debts. A company whose accounts are in no area: unknown (nothing is estimated).
@@ -926,16 +937,19 @@ def equity_ratio(ledger: Ledger, config: dict, roles: Dict[str, str], bereiche: 
                 vals.setdefault(r["id"], r["werte"])
     sh = shareholder_ids(ledger)
     links: List[dict] = []
-    for e in config.get("beteiligungen") or []:
+    by_id = {b["id"]: b for b in bereiche}
+    for e in config.get("gesellschaften") or []:
+        b = by_id.get(str((e or {}).get("bereich")))
+        if not b or not e.get("beteiligung") or b.get("anteil") is None:
+            continue
         try:
-            tgt = ledger.resolve(e.get("zielkonto") or e["beteiligungskonto"])
-            grp = ledger.resolve(e["gruppe"])
+            tgt = ledger.resolve(e["beteiligung"])
         except (KeyError, TypeError, AttributeError):
             continue
-        if tgt.group or not grp.group:
+        if tgt.group:
             continue
-        accs = [a for a in ledger.descendants(grp.uuid) if roles.get(a.uuid) not in OFF_BALANCE]
-        links.append({"n": len(links), "ziel": tgt.uuid, "name": e.get("name") or grp.name, "anteil": float(e.get("anteil", 1.0) or 0.0), "konten": accs})
+        accs = [a for a in b["leaves"] if roles.get(a.uuid) not in OFF_BALANCE]
+        links.append({"n": len(links), "ziel": tgt.uuid, "name": b["name"], "anteil": float(b["anteil"]), "konten": accs})
     targets = {lk["ziel"] for lk in links}
 
     def look(accs: List[Account], mk: str, seen: frozenset) -> dict:

@@ -4,6 +4,8 @@ Reine Logik ohne MoneyMoney-Zugriff -- vollstaendig ohne macOS testbar.
 """
 from __future__ import annotations
 
+import dataclasses
+
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -329,6 +331,12 @@ class Ledger:
     def earliest_tx(self, uuid: str) -> Optional[date]:
         txs = self.transactions(uuid)
         return txs[0].booking_date if txs else None
+
+    def fork(self) -> "Ledger":
+        """A copy for planning: own account balances and booking lists, the same (unchanged) transactions."""
+        out = Ledger({u: dataclasses.replace(a) for u, a in self.accounts.items()}, self.txs)
+        out._next_virtual_id = self._next_virtual_id
+        return out
 
     # -- In-Memory-Buchung (fuer Probelauf und Reihenfolge innerhalb eines Laufs)
 

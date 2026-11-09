@@ -47,7 +47,7 @@ from core import (RUN_LOCK, account_sig, account_tree, bereiche_for, build_repor
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, apply_plan, role_label
-from rules import TAG_RE, find_unmarked
+from rules import TAG_RE, find_unmarked, plan_all as plan_rules
 from storage import Store
 from excel import Sheet, workbook
 from i18n import tr
@@ -245,7 +245,7 @@ class App:
 
     def config_has_rules(self) -> bool:
         c = self.config
-        return bool(c.get("darlehen") or c.get("beteiligungen") or c.get("saldo_spiegel") or c.get("bereiche") or c.get("immobilien"))
+        return bool(c.get("darlehen") or c.get("gesellschaften") or c.get("bereiche") or c.get("immobilien"))
 
     # -- MoneyMoney-Stand zwischenspeichern ---------------------------------
     def _load_ledger_cache(self) -> None:
@@ -954,7 +954,7 @@ class App:
         if led is None:
             return None
         n_inakt = int((self.config.get("bilanz") or {}).get("inaktiv_monate", 12) or 12)
-        key = (id(led), n_inakt, json.dumps([self.config.get(k) for k in ("abruf", "darlehen", "beteiligungen", "saldo_spiegel")], sort_keys=True, default=str))
+        key = (id(led), n_inakt, json.dumps([self.config.get(k) for k in ("abruf", "darlehen", "gesellschaften")], sort_keys=True, default=str))
         if self._bankabruf_cache[0] == key:
             return self._bankabruf_cache[1]
         kinds = abruf_arten(led, self.config)
@@ -1759,13 +1759,22 @@ def make_handler(app: App):
                 if any(f["stufe"] == "fehler" for f in findings) and not body.get("trotzdem"):
                     return self._json(409, {"fehler": tr("s_konfiguration_hat_fehler"), "befunde": findings})
                 app.save_config(cfg)
-                log.info("Configuration saved (%d loans, %d participations, %d mirrors)",
-                         len(app.config.get("darlehen") or []), len(app.config.get("beteiligungen") or []), len(app.config.get("saldo_spiegel") or []))
+                log.info("Configuration saved (%d loans, %d companies with rules)",
+                         len(app.config.get("darlehen") or []), len(app.config.get("gesellschaften") or []))
                 if net_changed:
                     log.info("Address or port changed -- restarting on port %d", new_port)
                     app.request_restart()
                 return self._json(200, {"ok": True, "befunde": findings, "config": app.config, "neustart": net_changed and app.restart_allowed,
                                         "port": new_port, "instanz": app.instance})
+            if path == "/api/rules/preview":
+                # what the rules would book now, for a configuration being edited (nothing is saved or written)
+                cfg = body.get("config")
+                if not isinstance(cfg, dict) or app.ledger is None:
+                    return self._json(200, {"vorschau": [], "warnungen": [], "buchungen": 0})
+                st = app.store.load("state.json", {}) or {}
+                created = {r["tag"]: r for r in st.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")}
+                res = plan_rules(app.ledger.fork(), merged_config(cfg), date.today(), created)
+                return self._json(200, {"vorschau": res.preview, "warnungen": res.warnings, "buchungen": len(res.proposals)})
             if path == "/api/check":
                 if not app.check_lock.acquire(blocking=False):
                     return self._json(409, {"fehler": tr("s_die_pruefung_laeuft_bereits_bitte")})

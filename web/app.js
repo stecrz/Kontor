@@ -127,8 +127,10 @@ const H = {
   zinsmodell: t('jahresbasis_zins_satz_stand_am'),
   satz: t('zinssaetze_mit_gueltigkeitsbeginn_z_b'),
   basis_override: t('erzwingt_die_zinsbasis_fuer_ein'),
-  beteiligung: t('zielkonto_anteil_nettowert_der_gewaehl'),
-  spiegel: t('zielkonto_faktor_saldo_des_quellkontos'),
+  regel_darlehen_h: t('regel_darlehen_h'), regel_gesellschaften_h: t('regel_gesellschaften_h'),
+  h_l_name: t('h_l_name'), h_l_aktiv: t('h_l_aktiv'), h_l_art: t('h_l_art'), h_l_text: t('h_l_text'), h_l_excl: t('h_l_excl'), h_l_zinstag: t('h_l_zinstag'),
+  h_l_ab: t('h_l_ab'), h_l_gp: t('h_l_gp'), h_l_kt: t('h_l_kt'), h_l_kz: t('h_l_kz'),
+  h_co_anteil: t('h_co_anteil'), h_co_bet: t('h_co_bet'), h_co_gk: t('h_co_gk'), h_co_rueck: t('h_co_rueck'), h_co_schwelle: t('h_co_schwelle'), h_co_gp: t('h_co_gp'),
   methode: t('12_6_monate_durchschnitt_der'),
   inflation: t('ausgaben_steigen_standardmaessig_mit_d'),
   steig_ein: t('jaehrliche_steigerung_der_einnahmen_z'),
@@ -166,7 +168,11 @@ const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl:
   konten_zuordnung: 'accounts', inaktiv: 'accounts', verlauf_kurz: 'history', verlauf: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
   zuordnen: 'categories', kontor_kategorien: 'categories', mm_ueberschreiben: 'categories', mm_cat: 'categories-write-back', kat_auswahl: 'categories-selection',
   abgleich: 'sync', voll_lesen: 'sync', monate_zurueck: 'sync', abruf: 'sync', intervall: 'sync',
-  bch: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', methode: 'planning', inflation: 'planning', steig_ein: 'planning',
+  bch: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', regel_darlehen_h: 'rules-loans', regel_gesellschaften_h: 'rules-companies',
+  darlehen_iban: 'rules-loans', darlehen_konto: 'rules-loans', darlehen_quelle: 'rules-loans', zinsmodell: 'rules-loans', satz: 'rules-loans', basis_override: 'rules-loans',
+  h_l_name: 'rules-loans', h_l_aktiv: 'rules-loans', h_l_art: 'rules-loans', h_l_text: 'rules-loans', h_l_excl: 'rules-loans', h_l_zinstag: 'rules-loans', h_l_ab: 'rules-loans',
+  h_l_gp: 'rules-loans', h_l_kt: 'rules-loans', h_l_kz: 'rules-loans', h_co_anteil: 'areas', h_co_bet: 'rules-companies', h_co_gk: 'rules-companies',
+  h_co_rueck: 'rules-back', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', methode: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', ereignis: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', paket: 'backup', timemachine: 'backup', diagnose: 'troubleshooting', pruefen: 'setup', updates: 'updates',
   update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', dokumente: 'properties', immo_planung: 'properties'};
@@ -462,7 +468,10 @@ $('#lock-btn').addEventListener('click', lockNow);
 $('#lock-btn').title = t('sperren_tip');
 // ⌘L locks (in the web app in the Dock and wherever the browser leaves the key to the page)
 document.addEventListener('keydown', e => {
-  if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && (e.key || '').toLowerCase() === 'l' && S.csrf && $('#login').classList.contains('hidden')) { e.preventDefault(); lockNow(); }
+  if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || !S.csrf || !$('#login').classList.contains('hidden')) return;
+  const k = (e.key || '').toLowerCase();
+  if (k === 'l') { e.preventDefault(); lockNow(); }
+  if (k === 's') { const b = $('#main [data-cmd-s]'); if (b) { e.preventDefault(); if (!b.disabled) b.click(); } }
 });
 
 async function enterApp() {
@@ -515,7 +524,7 @@ const swCtl = (id, on, label, tip) => `<label class="switch"${tip ? ` title="${e
 const alleCtl = (n, bilanz) => swCtl('alle-zeilen', S.alle, bilanz ? t('ausgeblendete_n', n ? ` (${n})` : '') : t('leere_zeilen'), bilanz ? t('alle_zeilen_tip_n', n) : t('alle_zeilen_tip'));
 const planCtl = () => swCtl('planan', S.plan, t('plan'), t('plan_tip'));
 const planOn = () => S.plan || S.tab === 'balance' || S.tab === 'planning';     // in Bilanz und Planung immer mit Plan
-function hasRules() { const c = S.CFG || {}; return !!((c.darlehen || []).length || (c.beteiligungen || []).length || (c.saldo_spiegel || []).length); }
+function hasRules() { const c = S.CFG || {}; return !!((c.darlehen || []).length || (c.gesellschaften || []).length); }
 function statusMini() {
   const st = S.STATUS; if (!st) return;
   const mm = mmState(st), m = st.moneymoney || {}, b = st.bericht || {}, l = st.letzter_lauf, ba = m.bankabruf;
@@ -750,7 +759,7 @@ const MODULES = [
   {id: 'history', t: t('mod_history'), d: t('bisherigen_verlauf_aller_konten_einmal'), done: () => !!((S.STATUS || {}).moneymoney || {}).historie},
   {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => !!((S.DATA && S.DATA.kategorien || {}).verwendung) || Object.keys((S.CFG.kapitalfluss || {}).kategorie_zuordnung || {}).length > 0, href: '#categories/selection', optional: true},
   {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.kategorien || {}).gesamt || {}).ohne), href: '#categories', optional: true},
-  {id: 'rules', t: t('mod_rules'), d: t('darlehen_spiegeln_und_verzinsen_beteil'), done: () => (S.CFG.darlehen || []).length + (S.CFG.beteiligungen || []).length + (S.CFG.saldo_spiegel || []).length > 0, href: '#rules', optional: true},
+  {id: 'rules', t: t('mod_rules'), d: t('darlehen_spiegeln_und_verzinsen_beteil'), done: () => (S.CFG.darlehen || []).length + (S.CFG.gesellschaften || []).length > 0, href: '#rules', optional: true},
   {id: 'properties', t: t('mod_properties'), d: t('kalkulationen_anlegen_mit_konten_und'), done: () => (S.CFG.immobilien || []).length > 0, href: '#properties', optional: true},
   {id: 'planning', t: t('mod_planning'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planning', optional: true},
   {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.steuer || {}).vermietung_kategorie, href: '#settings/tax', optional: true},
@@ -764,8 +773,7 @@ function vEinrichtung(sub) {
   if (sub === 'accounts') return sh('accounts') + vKontenEditor();
   if (sub === 'connect') return sh('connect') + vVerbindung();
   if (sub === 'history') return sh('history') + vMMHistorie();
-  const roots = S.KONTEN.filter(k => k.gruppe && k.ebene === 0);
-  let h = `<div class="lang-pick"><label for="w-lang" class="small muted">${t('sprache_label')}</label><select id="w-lang">${langOpts()}</select></div><div class="note">${t('in_dieser_reihenfolge_einrichten_die', S.KONTEN.length ? roots.length + t('kontengruppen_n') + S.KONTEN.filter(k => !k.gruppe).length + t('konten_aus_moneymoney_bekannt') : t('noch_keine_konten_aus_moneymoney'))}</div><div class="setup-list">`;
+  let h = `<div class="lang-pick"><label for="w-lang" class="small muted">${t('sprache_label')}</label><select id="w-lang">${langOpts()}</select></div>${S.KONTEN.length ? '' : `<div class="note">${t('noch_keine_konten_aus_moneymoney')}</div>`}<div class="setup-list">`;
   MODULES.forEach((m, i) => {
     const ok = m.done();
     h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? t('eingerichtet') : (m.optional ? t('optional') : t('offen'))}</span></div><div class="d">${esc(m.d)}</div></div><div class="a"><a href="${m.href || ('#setup/' + m.id)}"><button class="small ${ok ? 'secondary' : ''}">${ok ? t('anpassen') : t('einrichten')}</button></a></div></div>`;
@@ -895,12 +903,6 @@ function vVerbindung() {
 }
 const FIRMA_RE = /\b(gmbh|ug|ag|se|kg|ohg|gbr|egbr|e\.?\s?k\.?|e\.?\s?v\.?|eg|ltd|inc|llc|holding|verwaltung|beteiligung|immobilien|stiftung|verein|genossenschaft|partner|&\s?co)\b/i;
 const guessArt = name => FIRMA_RE.test(name || '') || /(gmbh|gbr|holding)/i.test(name || '') ? 'gesellschaft' : 'privat';
-function anteilAusRegel(konten) {
-  // Beteiligungsregel, deren Gruppe zu diesem Bereich gehoert -> Anteil als Vorschlag
-  const ids = new Set((konten || []).map(r => r.split('|')[0].trim()));
-  const b = (S.CFG.beteiligungen || []).find(x => ids.has((x.gruppe || '').split('|')[0].trim()));
-  return b && b.anteil != null ? b.anteil : null;
-}
 function vBereicheEditor() {
   const roots = S.KONTEN.filter(k => k.gruppe && k.ebene === 0);
   let list = (S.CFG.bereiche || []).length ? S.CFG.bereiche : roots.map(r => ({id: r.uuid, name: r.name, konten: [r.uuid + ' | ' + r.name], haupt: false, art: guessArt(r.name), anteil: null}));
@@ -914,7 +916,6 @@ function vBereicheEditor() {
 function bereichForm(b, i) {
   const sel = new Set((b.konten || []).map(r => r.split('|')[0].trim()));
   const art = b.art || guessArt(b.name);
-  const regel = anteilAusRegel(b.konten);
   const pct = b.anteil != null && b.anteil !== '' ? Math.round(parseFloat(b.anteil) * 10000) / 100 : '';
   // Konten unter einer gewaehlten Gruppe sind enthalten (angehakt, gesperrt)
   const rows = []; let within = null;
@@ -930,7 +931,7 @@ function bereichForm(b, i) {
     <input type="hidden" class="b-id" value="${esc(b.id || '')}">
     <label>${t('art')}</label><select class="b-art"><option value="privat" ${art === 'privat' ? 'selected' : ''}>${t('privat')}</option><option value="gesellschaft" ${art === 'gesellschaft' ? 'selected' : ''}>${t('gesellschaft_gbr_gmbh')}</option></select>
     <label>${t('hauptbereich_0', hq('haupt'))}</label><label class="chk"><input type="radio" name="b-haupt" class="b-haupt" ${b.haupt ? 'checked' : ''}> ${b.haupt ? t('ja') : t('nein')}</label>
-    <label class="b-anteil-row ${art === 'privat' ? 'hidden' : ''}">${t('anteil_0', hq('anteil'))}</label><div class="row tight b-anteil-row ${art === 'privat' ? 'hidden' : ''}"><input type="number" step="0.01" min="0" max="100" class="b-anteil" value="${pct}" placeholder="${regel != null ? Math.round(regel * 10000) / 100 : '100'}" style="width:110px"> %${regel != null && pct === '' ? `<span class="small muted">${t('vorschlag_aus_der_beteiligungsregel_0', Math.round(regel * 10000) / 100)}</span>` : ''}</div>
+    <label class="b-anteil-row ${art === 'privat' ? 'hidden' : ''}">${t('anteil_0', hq('anteil'))}</label><div class="row tight b-anteil-row ${art === 'privat' ? 'hidden' : ''}"><input type="number" step="0.01" min="0" max="100" class="b-anteil" value="${pct}" placeholder="100" style="width:110px"> %</div>
     <label>${t('konten_gruppen_0', hq('gruppenwahl'))}</label><div class="list b-konten" style="max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 10px">${rows.join('')}</div>
   </div></div><div class="b-side"><div class="b-mvs"><button class="secondary small b-mv" data-d="-1" title="${t('nach_oben')}">▲</button><button class="secondary small b-mv" data-d="1" title="${t('nach_unten')}">▼</button></div><button class="danger small del">${t('entfernen')}</button></div></div>`;
 }
@@ -3068,55 +3069,120 @@ function acctOptions(selected, filter) {
 }
 const onlyManual = k => !k.gruppe && k.manuell, onlyGroups = k => k.gruppe, onlyLeaves = k => !k.gruppe;
 function vRegeln() {
+  // Buchungsregeln: one switch (book automatically); loans as collapsible rows; one card per company (area of the kind
+  // "Gesellschaft") with its participation and counter accounts; target, actual and difference live; one save bar for all
   const C = S.CFG;
-  let h = `<div class="note">${t('regeln_schreiben_ausschliesslich_in_ma')}${more('rules')}` + (S.KONTEN.length ? '' : ` <b>${t('noch_keine_konten_geladen_unter')}</b>`) + '</div>';
   const lr = (S.STATUS || {}).letzter_lauf, pend = lr && lr.probelauf ? (lr.vorschlaege || []).length : 0, auto = C.probelauf === false, loc = !!(S.STATUS || {}).lokal;
-  h += `<div class="card set-row"><div class="grow"><b>${t('auto_buchen')}</b><div class="small muted">${t(auto ? 'auto_buchen_an' : 'auto_buchen_aus')}${loc ? '' : ' ' + t('nur_am_mac_klammer')}</div></div>`
-    + `<label class="switch${loc ? '' : ' off'}"><input type="checkbox" id="auto-book" ${auto ? 'checked' : ''} ${loc ? '' : 'disabled'}><i></i></label></div>`
-    + `<div class="note">${pend ? `<a href="#bookings">${t('0_buchungsvorschlaege', pend)} →</a>` : `<a href="#bookings">${t('regeln_zu_buchungen')} →</a>`}</div>`;
-  h += `<h2>${t('darlehen')} <span class="x">${t('rate_erkennen_auf_dem_darlehenskonto')}</span></h2><div class="list" id="loans">`;
-  (C.darlehen || []).forEach((l, i) => { h += loanForm(l, i); });
-  h += `</div><div class="actions"><button id="add-loan" class="secondary">${t('darlehen_hinzufuegen')}</button></div>`;
-  h += `<h2>${t('beteiligungen')} <span class="x">${t('wert_anteil_nettowert_einer_kontengrup')}</span></h2><div class="list" id="bets">`;
-  (C.beteiligungen || []).forEach((b, i) => { h += mirrorForm(b, i, 'bet'); });
-  h += `</div><div class="actions"><button id="add-bet" class="secondary">${t('beteiligung_hinzufuegen')}</button></div>`;
-  h += `<h2>${t('saldo_spiegel')} <span class="x">${t('zielkonto_faktor_quellkonto_z_b')}</span></h2><div class="list" id="mirrors">`;
-  (C.saldo_spiegel || []).forEach((b, i) => { h += mirrorForm(b, i, 'mirror'); });
-  h += `</div><div class="actions"><button id="add-mirror" class="secondary">${t('spiegel_hinzufuegen')}</button><button id="save-rules">${t('speichern_und_pruefen')}</button></div><div id="findings" class="findings"></div>`;
+  let h = `<div class="rules-page"><p class="lead">${t('regeln_lead')} <a href="#bookings">${pend ? t('0_buchungsvorschlaege', pend) : t('nav_auto_buchungen')} →</a></p>`
+    + (S.KONTEN.length ? '' : `<div class="note"><b>${t('noch_keine_konten_geladen_unter')}</b></div>`);
+  h += `<div class="group"><div class="set-row"><div class="grow"><b>${t('auto_buchen')}</b><div class="small muted">${t(auto ? 'auto_buchen_an' : 'auto_buchen_aus')}${loc ? '' : ' ' + t('nur_am_mac_klammer')}</div></div>`
+    + `<label class="switch${loc ? '' : ' off'}"><input type="checkbox" id="auto-book" ${auto ? 'checked' : ''} ${loc ? '' : 'disabled'}><i></i></label></div></div>`;
+  h += `<section class="rule-sec"><div class="sec-head"><h2>${t('darlehen')}${hq('regel_darlehen_h')}</h2><span class="sp"></span><button id="add-loan" class="ghost small add-rule">+ ${t('regel_darlehen')}</button></div>`
+    + `<p class="sec-sub">${t('darlehen_sub')}</p><div class="list" id="loans">${(C.darlehen || []).map((l, i) => loanForm(l, i)).join('')}</div><div class="empty small muted">${t('leer_darlehen')}</div></section>`;
+  const cos = companyAreas();
+  h += `<section class="rule-sec"><div class="sec-head"><h2>${t('gesellschaften')}${hq('regel_gesellschaften_h')}</h2></div><p class="sec-sub">${t('gesellschaften_sub')}</p>`
+    + `<div id="companies">${cos.map(b => companyCard(b, (C.gesellschaften || []).find(g => String(g.bereich) === String(b.id)) || {})).join('')}</div>`
+    + (cos.length ? '' : `<div class="empty small muted">${t('leer_gesellschaften')} <a href="#setup/areas">${t('mod_areas')} →</a></div>`) + `</section>`;
+  h += `<div id="rules-warn" class="findings"></div><div id="findings" class="findings"></div>`
+    + `<div class="savebar"><span class="small muted"><span id="rules-state">${t('regeln_gespeichert')}</span>${more('rules')}</span><span class="sp"></span>`
+    + `<button id="save-rules" data-cmd-s title="⌘S" disabled>${t('speichern_und_pruefen')}</button></div></div>`;
   return h;
+}
+// the companies: areas of the kind "Gesellschaft" (as set up; without own areas the top groups of MoneyMoney), in their order
+function companyAreas() {
+  const own = S.CFG.bereiche || [];
+  const list = own.length ? own : S.KONTEN.filter(k => k.gruppe && k.ebene === 0).map(r => ({id: r.uuid, name: r.name}));
+  return list.filter(b => b.aktiv !== false && (b.art || guessArt(b.name)) === 'gesellschaft');
+}
+const pctText = v => (Math.round(parseFloat(v) * 10000) / 100).toLocaleString(LOCALE) + ' %';
+function acctSel(cls, selected, filter, empty) {
+  const sel = (selected || '').split('|')[0].trim(), list = S.KONTEN.filter(filter);
+  return `<select class="${cls}"><option value="">${empty}</option>` + list.map(k => `<option value="${k.uuid} | ${esc(k.name)}" ${k.uuid === sel ? 'selected' : ''}>${esc(k.name)}</option>`).join('')
+    + (sel && !list.some(k => k.uuid === sel) ? `<option value="${esc(selected)}" selected>${t('0_nicht_gefunden', esc(refName(selected) || selected))}</option>` : '') + `</select>`;
+}
+// counter account: a private manual account (outside the company) = counterpart of one account of the company
+function gkRow(x, bid) {
+  const inside = k => k.bereich_id === String(bid);
+  return `<div class="gk-row" data-f="${x.faktor ?? -1}">${acctSel('g-konto', x.konto, k => !k.gruppe && k.manuell && !inside(k), t('privates_konto'))}`
+    + `<span class="gk-arrow" title="${esc(t('gegenstueck_von'))}" aria-label="${esc(t('gegenstueck_von'))}">⇄</span>${acctSel('g-quelle', x.quelle, k => !k.gruppe && inside(k), t('konto_der_gesellschaft'))}`
+    + `<button class="ico gk-del" title="${esc(t('entfernen'))}" aria-label="${esc(t('entfernen'))}">×</button><div class="pv small"></div></div>`;
+}
+// "back to": the past months (last month first, ten years back) -- a menu instead of typing a date (same in every browser)
+function backMonths(sel) {
+  const now = new Date(), out = [];
+  for (let i = 1; i <= 132; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
+  if (sel && !out.includes(sel)) out.push(sel);
+  return `<option value="">${t('nicht_rueckwirkend')}</option>` + out.map(m => `<option value="${m}" ${m === sel ? 'selected' : ''}>${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}</option>`).join('');
+}
+function companyCard(b, g) {
+  const has = b.anteil != null && b.anteil !== '', bid = String(b.id), inside = k => k.bereich_id === bid;
+  const extra = !!(g.rueckwirkend_ab || (g.schwelle != null && g.schwelle !== 0.01) || g.gegenpartei);
+  return `<div class="co-card" data-b="${esc(bid)}"><div class="co-head"><h3>${esc(b.name)}</h3>`
+    + (has ? `<a class="pill neutral" href="#setup/areas">${t('anteil_0', pctText(b.anteil))}</a>` : `<a class="pill warn" href="#setup/areas">${t('anteil_fehlt')}</a>`) + hq('h_co_anteil') + `</div>`
+    + `<div class="co-row"><div class="co-l">${t('co_beteiligung')}${hq('h_co_bet')}</div><div class="co-f">${acctSel('c-bet', g.beteiligung, k => !k.gruppe && k.manuell && !inside(k), t('keine_2'))}<div class="pv small" data-pv="b"></div></div></div>`
+    + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}</div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="ghost small add-gk">+ ${t('co_gegenkonto')}</button></div></div>`
+    + `<details class="co-more"${extra ? ' open' : ''}><summary>${t('co_mehr')}</summary><div class="form">`
+    + `<label>${t('co_rueck')}${hq('h_co_rueck')}</label><select class="c-ab">${backMonths(g.rueckwirkend_ab)}</select>`
+    + `<label>${t('co_schwelle')}${hq('h_co_schwelle')}</label><div class="row tight"><input type="number" step="0.01" min="0.01" class="c-sw" value="${g.schwelle ?? 0.01}" style="width:110px"> €</div>`
+    + `<label>${t('gegenpartei')}${hq('h_co_gp')}</label><input type="text" class="c-gp" value="${esc(g.gegenpartei || '')}" placeholder="${esc(b.name)}">`
+    + `</div></details></div>`;
+}
+// target, actual and difference of every rule, from /api/rules/preview (the configuration as edited, nothing is saved)
+function rulesPreviewShow(rp, r) {
+  const eur = v => `${F(v)} €`;
+  $$('.pv, .r-pv', rp).forEach(x => { x.innerHTML = ''; });
+  for (const p of r.vorschau || []) {
+    if (p.art === 'darlehen') {
+      const it = $$('#loans .item', rp)[p.i], el = it && $('.r-pv', it);
+      if (el) el.innerHTML = p.buchungen ? `<span class="pv-diff">${p.buchungen === 1 ? t('buchung_offen_1') : t('buchungen_offen_n', p.buchungen)}</span>` : `<span class="pv-ok">✓ ${t('aktuell')}</span>`;
+      continue;
+    }
+    const card = $$('.co-card', rp).find(c => c.dataset.b === String(p.bereich));
+    const row = card && (p.art === 'beteiligung' ? card : $$('.gk-row', card)[p.i]);
+    const el = row && $(p.art === 'beteiligung' ? '[data-pv="b"]' : '.pv', row);
+    if (!el || p.soll == null) continue;
+    const ok = Math.abs(p.diff || 0) < 0.005 && !p.rueck;
+    let h = `${t('soll')} <b>${eur(p.soll)}</b> · ${t('ist')} ${eur(p.ist)} · ` + (ok ? `<span class="pv-ok">✓ ${t('aktuell')}</span>` : `<span class="pv-diff">${p.diff > 0 ? '+' : ''}${eur(p.diff)}</span>`);
+    if (p.rueck) h += ` · ${p.rueck === 1 ? t('monat_rueck_1') : t('monate_rueck_n', p.rueck)}`;
+    if ((p.unbekannt || []).length) h += ` · <span class="pv-unk">${t('monate_unbekannt_0', p.unbekannt.join(', '))}</span>`;
+    if (p.art === 'beteiligung') { const b = companyAreas().find(x => String(x.id) === String(p.bereich)); if (b && b.anteil != null) h += `<div class="muted">${t('co_formel', pctText(b.anteil), eur(p.quelle))}</div>`; }
+    el.innerHTML = h;
+  }
+  showFindings($('#rules-warn', rp), (r.warnungen || []).map(w => ({stufe: 'warnung', text: w})));
+}
+// a rule as one collapsible row: name, what it books into, what is open, whether it is on; the details below
+const refName = ref => String(ref || '').split(' | ').slice(1).join(' | ') || '';
+function ruleShell(i, name, target, on, open, body) {
+  return `<details class="item rule" data-i="${i}"${open ? ' open' : ''}><summary><span class="r-name">${esc(name || t('ohne_namen'))}</span><span class="r-target small muted">${target ? '→ ' + esc(target) : ''}</span><span class="r-pv small"></span>${on ? '' : `<span class="pill neutral">${t('aus')}</span>`}</summary>`
+    + `<div class="rule-body">${body}<div class="rule-foot"><button class="ghost small del">${t('regel_entfernen')}</button></div></div></details>`;
 }
 function loanForm(l, i) {
   const z = l.zins || {}, b = l.buchung || {}, e = l.erkennung || {};
   const satz = (z.satz || []).map(s => `${s.ab}: ${s.prozent}`).join('; ');
-  return `<div class="item" data-i="${i}"><div class="grow"><div class="form">
-    <label>${t('name')}</label><input type="text" class="f-name" value="${esc(l.name || '')}">
-    <label>${t('aktiv')}</label><label class="chk"><input type="checkbox" class="f-aktiv" ${l.aktiv === false ? '' : 'checked'}></label>
-    <label>${t('darlehenskonto_manuell_0', hq('darlehen_konto'))}</label><select class="f-konto">${acctOptions(l.darlehenskonto, onlyManual)}</select>
-    <label>${t('quellkonto_zahlungen_0', hq('darlehen_quelle'))}</label><select class="f-quelle">${acctOptions((l.quellkonten || [])[0], onlyLeaves)}</select>
-    <label>${t('gegen_iban_0', hq('darlehen_iban'))}</label><input type="text" class="f-iban" value="${esc(e.gegen_iban || '')}" placeholder="${t('de_iban_des_darlehensgebers_nehmers')}">
-    <label>${t('oder_text_enthaelt')}</label><input type="text" class="f-text" value="${esc((e.text_enthaelt || []).join('; '))}" placeholder="${t('z_b_darlehen_mustermann_wenn')}">
-    <label>${t('ausschliessen_wenn_text_enthaelt')}</label><input type="text" class="f-excl" value="${esc((e.ausschliessen_text || []).join('; '))}" placeholder="${t('z_b_nebenkosten_kaution')}">
-    <label>${t('art')}</label><select class="f-art"><option value="verbindlichkeit" ${l.art !== 'forderung' ? 'selected' : ''}>${t('verbindlichkeit_ich_zahle')}</option><option value="forderung" ${l.art === 'forderung' ? 'selected' : ''}>${t('forderung_ich_erhalte')}</option></select>
-    <label>${t('automatik_ab')}</label><input type="date" class="f-ab" value="${esc(l.ab_datum || '')}">
-    <label>${t('zinsmodell_0', hq('zinsmodell'))}</label><select class="f-modell"><option value="jahresbasis" ${z.modell !== 'restschuld_monatlich' && z.satz ? 'selected' : ''}>${t('jahresbasis_satz_stand_31_12')}</option><option value="restschuld_monatlich" ${z.modell === 'restschuld_monatlich' ? 'selected' : ''}>${t('restschuld_monatlich_satz_12_stand')}</option><option value="" ${!z.satz ? 'selected' : ''}>${t('keine_zinsen_nur_spiegeln')}</option></select>
-    <label>${t('zinssaetze_ab_0', hq('satz'))}</label><input type="text" class="f-satz" value="${esc(satz)}" placeholder="2025-11-20: 3,3; 2027-01-01: 3,0">
-    <label>${t('zinsbuchung')}</label><select class="f-tag"><option value="mit_rate" ${z.buchungstag !== 'ultimo' ? 'selected' : ''}>${t('am_tag_der_rate_sonst')}</option><option value="ultimo" ${z.buchungstag === 'ultimo' ? 'selected' : ''}>${t('ultimo')}</option></select>
-    <label>${t('jahresbasis_erzwingen_jahr_betrag_0', hq('basis_override'))}</label><input type="text" class="f-basis" value="${esc(Object.entries(z.basis_override || {}).map(([k, v]) => k + '=' + v).join('; '))}" placeholder="2026=160000">
-    <label>${t('gegenpartei')}</label><input type="text" class="f-gp" value="${esc(b.gegenpartei || '')}">
-    <label>${t('kategorie_tilgung')}</label><select class="f-kt">${catOptions(b.kategorie_tilgung)}</select>
-    <label>${t('kategorie_zinsen')}</label><select class="f-kz">${catOptions(b.kategorie_zins)}</select>
-  </div></div><button class="danger small del">${t('entfernen')}</button></div>`;
-}
-function mirrorForm(b, i, kind) {
-  return `<div class="item" data-i="${i}" data-kind="${kind}"><div class="grow"><div class="form">
-    <label>${t('name')}</label><input type="text" class="f-name" value="${esc(b.name || '')}">
-    <label>${t('aktiv')}</label><label class="chk"><input type="checkbox" class="f-aktiv" ${b.aktiv === false ? '' : 'checked'}></label>
-    <label>${t('zielkonto_manuell')}</label><select class="f-ziel">${acctOptions(b.zielkonto || b.beteiligungskonto, onlyManual)}</select>
-    <label>${kind === 'bet' ? t('kontengruppe_wert') : t('quellkonto')} ${hq(kind === 'bet' ? 'beteiligung' : 'spiegel')}</label><select class="f-quelle">${acctOptions(kind === 'bet' ? b.gruppe : b.quellkonto, kind === 'bet' ? onlyGroups : onlyLeaves)}</select>
-    <label>${kind === 'bet' ? t('anteil_01') : t('faktor_2')}</label><input type="number" step="0.0001" class="f-anteil" value="${kind === 'bet' ? (b.anteil ?? 0.5) : (b.faktor ?? -1)}">
-    <label>${t('schwelle_2')}</label><input type="number" step="0.01" class="f-schwelle" value="${b.schwelle ?? 0.01}">
-    <label>${t('gegenpartei_buchungstext')}</label><input type="text" class="f-gp" value="${esc((b.buchung || {}).gegenpartei || '')}" placeholder="${t('optional')}">
-  </div></div><button class="danger small del">${t('entfernen')}</button></div>`;
+  const f = (label, key, ctl, cls = '') => `<label class="${cls}">${label}${hq(key)}</label><div class="${cls}">${ctl}</div>`;
+  const g = title => `<div class="fg full">${title}</div>`;
+  return ruleShell(i, l.name, refName(l.darlehenskonto), l.aktiv !== false, l._neu, `<div class="form${z.satz ? '' : ' no-zins'}">`
+    + f(t('name'), 'h_l_name', `<input type="text" class="f-name" value="${esc(l.name || '')}">`)
+    + f(t('l_aktiv'), 'h_l_aktiv', `<label class="chk"><input type="checkbox" class="f-aktiv" ${l.aktiv === false ? '' : 'checked'}></label>`)
+    + g(t('fg_konten'))
+    + f(t('l_darlehenskonto'), 'darlehen_konto', `<select class="f-konto">${acctOptions(l.darlehenskonto, onlyManual)}</select>`)
+    + f(t('l_zahlungen_von'), 'darlehen_quelle', `<select class="f-quelle">${acctOptions((l.quellkonten || [])[0], onlyLeaves)}</select>`)
+    + f(t('art'), 'h_l_art', `<select class="f-art"><option value="verbindlichkeit" ${l.art !== 'forderung' ? 'selected' : ''}>${t('verbindlichkeit_ich_zahle')}</option><option value="forderung" ${l.art === 'forderung' ? 'selected' : ''}>${t('forderung_ich_erhalte')}</option></select>`)
+    + g(t('fg_erkennen'))
+    + f(t('l_gegen_iban'), 'darlehen_iban', `<input type="text" class="f-iban" value="${esc(e.gegen_iban || '')}" placeholder="${t('de_iban_des_darlehensgebers_nehmers')}">`)
+    + f(t('oder_text_enthaelt'), 'h_l_text', `<input type="text" class="f-text" value="${esc((e.text_enthaelt || []).join('; '))}" placeholder="${t('z_b_darlehen_mustermann_wenn')}">`)
+    + f(t('ausschliessen_wenn_text_enthaelt'), 'h_l_excl', `<input type="text" class="f-excl" value="${esc((e.ausschliessen_text || []).join('; '))}" placeholder="${t('z_b_nebenkosten_kaution')}">`)
+    + g(t('fg_zinsen'))
+    + f(t('l_zinsmodell'), 'zinsmodell', `<select class="f-modell"><option value="jahresbasis" ${z.modell !== 'restschuld_monatlich' && z.satz ? 'selected' : ''}>${t('jahresbasis_satz_stand_31_12')}</option><option value="restschuld_monatlich" ${z.modell === 'restschuld_monatlich' ? 'selected' : ''}>${t('restschuld_monatlich_satz_12_stand')}</option><option value="" ${!z.satz ? 'selected' : ''}>${t('keine_zinsen_nur_spiegeln')}</option></select>`)
+    + f(t('l_zinssaetze'), 'satz', `<input type="text" class="f-satz" value="${esc(satz)}" placeholder="2025-11-20: 3,3; 2027-01-01: 3,0">`, 'zo')
+    + f(t('zinsbuchung'), 'h_l_zinstag', `<select class="f-tag"><option value="mit_rate" ${z.buchungstag !== 'ultimo' ? 'selected' : ''}>${t('am_tag_der_rate_sonst')}</option><option value="ultimo" ${z.buchungstag === 'ultimo' ? 'selected' : ''}>${t('ultimo')}</option></select>`, 'zo')
+    + f(t('l_zinsbasis'), 'basis_override', `<input type="text" class="f-basis" value="${esc(Object.entries(z.basis_override || {}).map(([k, v]) => k + '=' + v).join('; '))}" placeholder="2026=160000">`, 'zo')
+    + g(t('fg_buchung'))
+    + f(t('l_ab'), 'h_l_ab', `<input type="date" class="f-ab" value="${esc(l.ab_datum || '')}">`)
+    + f(t('gegenpartei'), 'h_l_gp', `<input type="text" class="f-gp" value="${esc(b.gegenpartei || '')}">`)
+    + f(t('kategorie_tilgung'), 'h_l_kt', `<select class="f-kt">${catOptions(b.kategorie_tilgung)}</select>`)
+    + f(t('kategorie_zinsen'), 'h_l_kz', `<select class="f-kz">${catOptions(b.kategorie_zins)}</select>`, 'zo')
+    + `</div>`);
 }
 function catOptions(selected) {
   const leaves = S.KATS.filter(k => !k.gruppe);
@@ -3137,8 +3203,11 @@ function collectRules() {
     if (modell) l.zins = { modell, satz, buchungstag: v('.f-tag'), basis_override: basis };
     return l;
   });
-  cfg.beteiligungen = $$('#bets .item').map(it => ({ name: $('.f-name', it).value.trim(), aktiv: $('.f-aktiv', it).checked, beteiligungskonto: $('.f-ziel', it).value, gruppe: $('.f-quelle', it).value, anteil: parseFloat($('.f-anteil', it).value) || 0, schwelle: parseFloat($('.f-schwelle', it).value) || 0.01, buchung: $('.f-gp', it).value.trim() ? {gegenpartei: $('.f-gp', it).value.trim()} : undefined }));
-  cfg.saldo_spiegel = $$('#mirrors .item').map(it => ({ name: $('.f-name', it).value.trim(), aktiv: $('.f-aktiv', it).checked, zielkonto: $('.f-ziel', it).value, quellkonto: $('.f-quelle', it).value, faktor: parseFloat($('.f-anteil', it).value) || -1, schwelle: parseFloat($('.f-schwelle', it).value) || 0.01, buchung: $('.f-gp', it).value.trim() ? {gegenpartei: $('.f-gp', it).value.trim()} : undefined }));
+  cfg.gesellschaften = $$('#companies .co-card').map(c => ({ bereich: c.dataset.b, beteiligung: $('.c-bet', c).value,
+    gegenkonten: $$('.gk-row', c).map(r => ({konto: $('.g-konto', r).value, quelle: $('.g-quelle', r).value, faktor: parseFloat(r.dataset.f) || -1})),
+    rueckwirkend_ab: $('.c-ab', c).value.trim(), schwelle: parseFloat($('.c-sw', c).value) || 0.01, gegenpartei: $('.c-gp', c).value.trim() }))
+    .filter(g => g.beteiligung || g.gegenkonten.length);
+  delete cfg.beteiligungen; delete cfg.saldo_spiegel;
   return cfg;
 }
 function showFindings(el, befunde, extra, kind = 'hinweis') {
@@ -3238,7 +3307,7 @@ function vKapitalflussZuordnung() {
     h += `<tr data-cat="${esc(t.name)}"><td>${esc(t.name)}${umb.includes(t.name) ? `<span class="tag">${tx('tag_umbuchung')}</span>` : ''}</td><td><select class="k-sek"><option value="">${tx('automatisch')}</option>${[['Einnahmen', 'sek_einnahmen'], ['Ausgaben', 'sek_ausgaben'], ['Investitionen', 'sek_investitionen'], ['Finanzierung/Tilgung', 'sek_fin_tilgung'], ['Finanzierung/Zinsen', 'sek_fin_zinsen'], ['Ignorieren', 'sek_ignorieren']].map(([x, k]) => `<option value="${x}" ${cur === x ? 'selected' : ''}>${tx(k)}</option>`).join('')}</select></td><td><select class="k-depot">${acctOptions(zk[t.name], k => !k.gruppe && (k.depot || k.rolle === 'anlagen'))}</select></td><td class="num small muted">${t.budget ? F0(t.budget.amount) + ' / ' + esc(t.budget.period || '') : ''}</td></tr>`;
   }
   h += '</tbody></table></div>';
-  h += `<div class="form" style="margin-top:12px"><label>${t('umbuchungs_kategorien')}</label><input type="text" id="k-umb" value="${esc(umb.join('; '))}"><label>${t('beteiligungsgruppen_einlagen_zaehlen_a')}</label><div>${[0, 1, 2].map(i => `<select class="k-bg">${acctOptions((kf.beteiligungs_gruppen || [])[i], onlyGroups)}</select>`).join(' ')}</div></div>`;
+  h += `<div class="form" style="margin-top:12px"><label>${t('umbuchungs_kategorien')}</label><input type="text" id="k-umb" value="${esc(umb.join('; '))}"></div>`;
   h += `<div class="actions"><button id="save-kats">${t('speichern')}</button></div><div id="findings-k" class="findings"></div>`;
   const have = new Set(S.KATS.map(k => k.pfad));
   const rec = [
@@ -3545,7 +3614,7 @@ function vSicherung() {
   ${S.STATUS.lokal ? `<div class="row tight"><input type="password" id="bk-pw" placeholder="${t('passwort_fuer_die_sicherung')}" autocomplete="new-password" style="width:230px"><input type="password" id="bk-pw2" placeholder="${t('ph_passwort_wiederholen')}" autocomplete="new-password" style="width:230px"><button id="bk-save" class="secondary">${t('sicherung_verschluesselt_herunterladen')}</button></div><div class="small muted">${t('sicherung_passwort_hinweis')}</div>` : `<div class="small muted">${t('nur_am_mac')}</div>`}
   <h2>${t('einstellungspaket')} ${hq('paket')}</h2><div class="note">${t('paket_text', `<code>${t('name_kontor_json')}</code>`)}</div>
   <div class="row tight"><label class="chk">${t('name')} <input type="text" id="pk-name" value="Kontor-Einstellungen"></label><button id="pk-export" class="secondary">${t('paket_herunterladen')}</button></div>
-  <div class="small muted">${t('aktuell_0_darlehen_1_beteiligungen', (C.darlehen || []).length, (C.beteiligungen || []).length, (C.saldo_spiegel || []).length, Object.keys((C.kapitalfluss || {}).kategorie_zuordnung || {}).length)}</div>
+  <div class="small muted">${t('aktuell_0_darlehen_1_beteiligungen', (C.darlehen || []).length, (C.gesellschaften || []).length, Object.keys((C.kapitalfluss || {}).kategorie_zuordnung || {}).length)}</div>
   <h2>${t('datei_laden')}</h2><div class="drop" id="pk-drop">${t('sicherung_hierher_ziehen')}<br><button id="pk-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button></div><div id="pk-preview"></div>
   ${vEinstellungenDaten()}
   <h2>${t('zuruecksetzen_h')}</h2><div class="note">${t('zuruecksetzen_text')}</div>
@@ -3555,7 +3624,7 @@ function pkgPreview() {
   const el = $('#pk-preview'); if (!PKG) { el.innerHTML = ''; return; }
   const c = PKG.config || {};
   let h = `<div class="card" style="margin-top:12px"><h3>${esc(PKG.name || t('paket'))} <span class="muted">${t('version_0_1', esc(PKG.version || '?'), esc(PKG.erstellt || ''))}</span></h3>
-    <div class="small">${t('0_darlehen_1_beteiligungen_2', (c.darlehen || []).length, (c.beteiligungen || []).length, (c.saldo_spiegel || []).length, Object.keys((c.kapitalfluss || {}).kategorie_zuordnung || {}).length, Object.keys((c.steuer || {}).positionen || {}).length, PKG.plan ? t('planung_enthalten') : '')}</div>
+    <div class="small">${t('0_darlehen_1_beteiligungen_2', (c.darlehen || []).length, (c.gesellschaften || []).length, Object.keys((c.kapitalfluss || {}).kategorie_zuordnung || {}).length, Object.keys((c.steuer || {}).positionen || {}).length, PKG.plan ? t('planung_enthalten') : '')}</div>
     <div class="row tight" style="margin-top:8px"><div class="seg" id="pk-mode"><button data-m="ergaenzen" class="on">${t('ergaenzen_regeln_hinzufuegen_zuordnung')}</button><button data-m="ersetzen">${t('ersetzen_vorhandene_regeln_verwerfen')}</button></div>${PKG.plan ? `<label class="chk"><input type="checkbox" id="pk-withplan"> ${t('planung_uebernehmen')}</label>` : ''}<button id="pk-import" class="small">${t('uebernehmen')}</button></div>`;
   if (PKG_UNRES && PKG_UNRES.length) {
     h += `<h3 style="margin-top:12px">${t('nicht_gefundene_konten_zuordnen')}</h3><div class="list">` + PKG_UNRES.map((u, i) => `<div class="row tight"><span style="min-width:280px"><b>${esc(u.label)}</b> <span class="small muted">(${esc(u.feld)})</span></span><select class="pk-map" data-ref="${esc(u.ref)}">${acctOptions('')}</select></div>`).join('') + `</div><div class="row tight"><button id="pk-import2" class="small">${t('mit_zuordnung_uebernehmen')}</button><button id="pk-force" class="small secondary">${t('ohne_zuordnung_uebernehmen_namen_bleib')}</button></div>`;
@@ -4001,11 +4070,44 @@ function bind(main) {
   const bf = $('#bl-folder', main); if (bf) bf.addEventListener('click', async () => { try { await belegeApi('/api/receipts/open', {}); } catch (e) { toast(e.message, 5000); } });
   const be = $('#bl-export', main); if (be) be.addEventListener('click', async () => { const jahr = prompt(t('jahr_leer_alle'), uf.jahr || new Date().getFullYear()); if (jahr === null) return; try { const r = await belegeApi('/api/receipts/export', {jahr, entitaet: uf.entitaet}); toast(t('export_erstellt') + r.datei, 9000); } catch (e) { toast(e.message, 6000); } });
 
-  // Regeln
-  const al = $('#add-loan', main); if (al) al.addEventListener('click', () => { $('#loans').insertAdjacentHTML('beforeend', loanForm({name: t('neues_darlehen'), ab_datum: new Date().toISOString().slice(0, 10), zins: {modell: 'jahresbasis', satz: [], buchungstag: 'mit_rate'}, buchung: {kategorie_tilgung: 'Umbuchung'}}, $$('#loans .item').length)); bindDel(main); });
-  const ab = $('#add-bet', main); if (ab) ab.addEventListener('click', () => { $('#bets').insertAdjacentHTML('beforeend', mirrorForm({name: t('neue_beteiligung'), anteil: 0.5}, $$('#bets .item').length, 'bet')); bindDel(main); });
-  const am = $('#add-mirror', main); if (am) am.addEventListener('click', () => { $('#mirrors').insertAdjacentHTML('beforeend', mirrorForm({name: t('neuer_spiegel'), faktor: -1}, $$('#mirrors .item').length, 'mirror')); bindDel(main); });
-  const sr = $('#save-rules', main); if (sr) sr.addEventListener('click', () => saveConfig(collectRules(), $('#findings')));
+  // Buchungsregeln: every change marks the page unsaved and updates target/actual/difference (debounced); ⌘S saves
+  const rp = $('.rules-page', main);
+  if (rp) {
+    const sr = $('#save-rules', rp), st = $('#rules-state', rp);
+    let pvTimer = null, pvSeq = 0;
+    const preview = async () => { const n = ++pvSeq; try { const r = await api('/api/rules/preview', {config: collectRules()}); if (n === pvSeq) rulesPreviewShow(rp, r); } catch (e) { /* preview only */ } };
+    const changed = () => { sr.disabled = false; st.textContent = t('regeln_ungespeichert'); DIRTY.on = true; clearTimeout(pvTimer); pvTimer = setTimeout(preview, 450); };
+    $('#add-loan', rp).addEventListener('click', () => {
+      $('#loans', rp).insertAdjacentHTML('beforeend', loanForm({name: t('neues_darlehen'), _neu: true, ab_datum: new Date().toISOString().slice(0, 10), zins: {modell: 'jahresbasis', satz: [], buchungstag: 'mit_rate'}, buchung: {kategorie_tilgung: 'Umbuchung'}}, $$('#loans .item', rp).length));
+      bindDel(main); changed();
+      const it = $('#loans', rp).lastElementChild; it.scrollIntoView({block: 'nearest', behavior: 'smooth'}); const n = $('.f-name', it); n.focus(); n.select();
+    });
+    rp.addEventListener('input', e => {
+      if (!e.target.closest('.rule, .co-card')) return;
+      changed();
+      const r = e.target.closest('.rule'); if (r && e.target.classList.contains('f-name')) $('.r-name', r).textContent = e.target.value || t('ohne_namen');
+    });
+    rp.addEventListener('change', e => {
+      if (!e.target.closest('.rule, .co-card')) return;
+      if (e.target.classList.contains('f-modell')) e.target.closest('.form').classList.toggle('no-zins', !e.target.value);
+      e.target.closest('.gk-row')?.classList.remove('invalid');
+      changed();
+    });
+    rp.addEventListener('click', e => {
+      if (e.target.closest('.rule .del')) { setTimeout(changed); return; }
+      const add = e.target.closest('.add-gk');
+      if (add) { add.insertAdjacentHTML('beforebegin', gkRow({faktor: -1}, add.closest('.co-card').dataset.b)); $('.g-konto', add.previousElementSibling).focus(); changed(); return; }
+      const del = e.target.closest('.gk-del'); if (del) { del.closest('.gk-row').remove(); changed(); }
+    });
+    sr.addEventListener('click', async () => {
+      const rows = $$('.gk-row', rp);
+      rows.filter(r => !$('.g-konto', r).value && !$('.g-quelle', r).value).forEach(r => r.remove());
+      const bad = rows.filter(r => r.isConnected && (!$('.g-konto', r).value || !$('.g-quelle', r).value));
+      if (bad.length) { bad.forEach(r => r.classList.add('invalid')); bad[0].scrollIntoView({block: 'center', behavior: 'smooth'}); toast(t('gk_unvollstaendig'), 5000); return; }
+      if (await saveConfig(collectRules(), $('#findings', rp))) { sr.disabled = true; st.textContent = t('regeln_gespeichert'); preview(); }
+    });
+    preview();
+  }
   bindDel(main);
 
   // Kategorien
@@ -4014,7 +4116,6 @@ function bind(main) {
     kf.kategorie_zuordnung = {}; kf.kategorie_zu_konto = {};
     $$('tr[data-cat]', main).forEach(tr => { const c = tr.dataset.cat; if ($('.k-sek', tr).value) kf.kategorie_zuordnung[c] = $('.k-sek', tr).value; if ($('.k-depot', tr).value) kf.kategorie_zu_konto[c] = $('.k-depot', tr).value; });
     kf.umbuchungs_kategorien = $('#k-umb').value.split(';').map(x => x.trim()).filter(Boolean);
-    kf.beteiligungs_gruppen = $$('.k-bg').map(s => s.value).filter(Boolean);
     saveConfig(cfg, $('#findings-k'));
   });
 

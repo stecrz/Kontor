@@ -2,13 +2,13 @@ import copy
 import os
 import sys
 import unittest
-from datetime import date
+from datetime import date, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from model import Ledger, accounts_from_export, tx_from_export, fmt_eur  # noqa: E402
-from rules import plan_loan, plan_mirror, plan_all  # noqa: E402
+from rules import plan_loan, plan_all  # noqa: E402
 import fixtures as F  # noqa: E402
 
 
@@ -199,41 +199,99 @@ class LoanTests(unittest.TestCase):
         self.assertEqual(len([p for p in res.proposals if p.kind == "tilgung"]), 11)
 
 
-class MirrorTests(unittest.TestCase):
+def company_cfg(**over):
+    cfg = {"bereiche": [{"id": "p", "name": "Privat", "art": "privat", "haupt": True, "konten": [F.uid("priv") + " | Privat"]},
+                        {"id": "a", "name": "Alpha GbR", "art": "gesellschaft", "anteil": 0.49, "konten": [F.uid("pb") + " | Alpha GbR"]},
+                        {"id": "b", "name": "Beta GbR", "art": "gesellschaft", "anteil": 0.49, "konten": [F.uid("shs") + " | Beta GbR"]}],
+           "gesellschaften": [{"bereich": "a", "beteiligung": F.uid("priv.bet.pb") + " | Beteiligung an Alpha GbR"}]}
+    cfg.update(over)
+    return cfg
+
+
+class CompanyTests(unittest.TestCase):
     def test_participation_value(self):
         today = date(2026, 11, 4)
         led = make_ledger({}, [])
-        cfg = {"name": "Alpha", "beteiligungskonto": "Beteiligung an Alpha GbR", "gruppe": "Alpha GbR", "anteil": 0.49}
-        res = plan_mirror(led, cfg, today)
-        pb_value = 40000 + 1900000 - 1600000 - 120000 - 120000      # = 100.000
+        res = plan_all(led, company_cfg(), today)
+        pb_value = 40000 + 1900000 - 1600000 - 120000 - 120000      # = 100.000 (capital accounts are debts of the company)
         want = round(0.49 * pb_value, 2)
         self.assertEqual(len(res.proposals), 1)
+        self.assertEqual((res.proposals[0].kind, res.proposals[0].booking_date), ("wert", today))
         self.assertAlmostEqual(res.proposals[0].amount, want - (-90000.0), 2)
         self.assertEqual(led.resolve("Beteiligung an Alpha GbR").balance, want)
-        # erneut: nichts
-        self.assertEqual(plan_mirror(led, cfg, today).proposals, [])
+        self.assertEqual(res.preview, [{"art": "beteiligung", "bereich": "a", "ziel": F.uid("priv.bet.pb"), "ist": -90000.0, "rueck": 0,
+                                        "rueck_summe": 0.0, "unbekannt": [], "soll": want, "quelle": float(pb_value), "diff": want + 90000.0}])
+        self.assertEqual(plan_all(led, company_cfg(), today).proposals, [])        # again: nothing
+        # the share comes only from the area; without it nothing is booked
+        cfg = company_cfg(); cfg["bereiche"][1].pop("anteil")
+        res = plan_all(make_ledger({}, []), cfg, today)
+        self.assertEqual(res.proposals, []); self.assertTrue(any("Anteil fehlt" in w for w in res.warnings))
 
-    def test_loans_before_participation_in_plan_all(self):
+    def test_loans_before_participation_and_equity_roles(self):
         today = date(2026, 11, 4)
         led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
-        config = {"darlehen": [loan_cfg()],
-                  "beteiligungen": [{"name": "Alpha", "beteiligungskonto": "Beteiligung an Alpha GbR", "gruppe": "Alpha GbR", "anteil": 0.49}]}
+        config = company_cfg(darlehen=[loan_cfg()])
         res = plan_all(led, config, today)
         wert = [p for p in res.proposals if p.kind == "wert"]
         self.assertEqual(len(wert), 1)
-        # Kapitalkonten = Schuld der GbR an die Gesellschafter: der Wert der Beteiligung ist der Anteil am Rest
         pb_value = 40000 + 1900000 + (-1600000 + 11 * 8250 - 10 * 4400) - 240000
         self.assertAlmostEqual(wert[0].amount, round(0.49 * pb_value, 2) + 90000.0, 2)
-        # Wer die Kapitalkonten als Eigenkapital fuehrt (Position "Kapitalkonten (Eigenkapital)"), zaehlt sie nicht zum Wert
+        # capital accounts kept as the company's equity are not part of its value
         led2 = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
         config["bilanz"] = {"rollen": {F.uid("pb.kap.s") + " | Kapitalkonto A": "eigenkapital", F.uid("pb.kap.p") + " | Kapitalkonto B": "eigenkapital"}}
         wert2 = [p for p in plan_all(led2, config, today).proposals if p.kind == "wert"]
         self.assertAlmostEqual(wert2[0].amount, round(0.49 * (pb_value + 240000), 2) + 90000.0, 2)
 
+    def test_counter_account(self):
+        today = date(2026, 11, 4)
+        led = make_ledger({}, [])
+        cfg = company_cfg(gesellschaften=[{"bereich": "b", "gegenkonten": [
+            {"konto": F.uid("priv.bet.shs") + " | Beteiligung an Beta GbR", "quelle": F.uid("shs.kap.s") + " | Kapitalkonto A", "faktor": -1}]}])
+        res = plan_all(led, cfg, today)
+        self.assertEqual([(p.kind, p.amount) for p in res.proposals], [("spiegel", round(74145.0 + 65312.27, 2))])
+        self.assertTrue(res.proposals[0].tag.startswith("#mm-spiegel-20261104-"))
+        self.assertIn("Abgleich mit Kapitalkonto A", res.proposals[0].purpose)
+        self.assertEqual(res.preview[0]["i"], 0)
+
+    def test_back_to_month_ends(self):
+        today = date(2026, 11, 4)
+        led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
+        cfg = company_cfg(darlehen=[loan_cfg()])
+        cfg["gesellschaften"][0]["rueckwirkend_ab"] = "2026-03"
+        res = plan_all(led, cfg, today)
+        wert = [p for p in res.proposals if p.kind == "wert"]
+        days = [p.booking_date for p in wert]
+        self.assertEqual(days[:8], [date(2026, m + 1, 1) - timedelta(days=1) for m in range(3, 11)])      # 31.03. ... 31.10.
+        target = led.resolve("Beteiligung an Alpha GbR")
+        for p in wert[:8]:          # each month end shows the share of the company's value at that day
+            accs = [a for a in led.descendants(F.uid("pb"))]
+            v = round(sum(led.balance_at(a.uuid, p.booking_date) for a in accs), 2)
+            self.assertAlmostEqual(led.balance_at(target.uuid, p.booking_date), round(0.49 * v, 2), 2)
+        self.assertEqual(len({p.tag for p in wert}), len(wert))
+        pv = [x for x in res.preview if x["art"] == "beteiligung"][0]
+        self.assertEqual(pv["rueck"], 8)
+        self.assertAlmostEqual(pv["diff"], round(pv["soll"] - pv["ist"], 2), 2)
+        self.assertAlmostEqual(target.balance, pv["soll"], 2)
+        # a second run books nothing (the bookings are there now)
+        self.assertEqual([p for p in plan_all(led, cfg, today).proposals if p.kind == "wert"], [])
+
+    def test_back_to_unknown_months_skipped(self):
+        # a portfolio in the company: its past value is not known -> those months are not booked
+        today = date(2026, 11, 4)
+        led = make_ledger({}, [])
+        cfg = company_cfg(bereiche=[{"id": "a", "name": "Alpha GbR", "art": "gesellschaft", "anteil": 0.5,
+                                     "konten": [F.uid("pb") + " | Alpha GbR", F.uid("priv.depot") + " | Depot"]},
+                                    {"id": "p", "name": "Privat", "art": "privat", "haupt": True, "konten": [F.uid("priv.bet") + " | Beteiligungen"]}])
+        cfg["gesellschaften"][0]["rueckwirkend_ab"] = "2026-09"
+        res = plan_all(led, cfg, today)
+        self.assertEqual([p.booking_date for p in res.proposals], [today])
+        self.assertEqual(res.preview[0]["unbekannt"], ["09/2026", "10/2026"])
+        self.assertTrue(any("unbekannt" in i for i in res.info))
+
     def test_circular_reference_rejected(self):
         led = make_ledger({}, [])
-        cfg = {"name": "x", "beteiligungskonto": "Immobilie Parkweg", "gruppe": "Alpha GbR", "anteil": 0.49}
-        res = plan_mirror(led, cfg, date(2026, 11, 4))
+        cfg = company_cfg(gesellschaften=[{"bereich": "a", "beteiligung": F.uid("pb.immo") + " | Immobilie Parkweg"}])
+        res = plan_all(led, cfg, date(2026, 11, 4))
         self.assertTrue(any("Zirkelbezug" in w for w in res.warnings))
         self.assertEqual(res.proposals, [])
 

@@ -21,7 +21,8 @@ import mm_categories
 import realestate
 import categorize
 from report import ROLES, account_roles, build_dataset, equity_ratio, holding_key
-from rules import Proposal, plan_all
+import rules
+from rules import Proposal, parse_month, plan_all
 from storage import Store
 from tax import build_tax
 from i18n import tr
@@ -34,13 +35,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "probelauf": True,
     "mitteilungen": True,
     "zeitplan": {"intervall_minuten": 30, "automatisch": True, "voll_lesen_tage": 7},
-    "darlehen": [], "beteiligungen": [], "saldo_spiegel": [],
+    "darlehen": [], "gesellschaften": [],
     "bereiche": [],
     "immobilien": [],
     "kategorien": {"aktiv": True, "lernen": True, "mm_ueberschreiben": False},
     "bilanz": {"monate_zurueck": 0, "rollen": {}, "verlauf": {}, "illiquide_rollen": ["beteiligungen", "immobilien", "sachwerte"],
                "illiquide_konten": [], "inaktiv_monate": 12, "ausgeblendet": [], "immer_anzeigen": [], "ansicht": "positionen"},
-    "kapitalfluss": {"beteiligungs_gruppen": [], "kategorie_zuordnung": {}, "kategorie_zu_konto": {},
+    "kapitalfluss": {"kategorie_zuordnung": {}, "kategorie_zu_konto": {},
                      "umbuchungs_kategorien": ["Umbuchung"], "umbuchung_paarung": True, "paarung_manuelle_konten": True},
     "steuer": {"vermietung_kategorie": "Vermietung", "objekt_darlehen": {}, "afa": {}, "positionen": {}, "entitaeten": []},
     "belege": {"ordner": "~/Documents/Kontor-Belege", "unterordner": "{jahr}", "kommentar_schreiben": False, "ordner_bestaetigt": False},
@@ -52,9 +53,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
 # Felder mit Kontoreferenzen in Listen (fuer Pakete und Pruefung)
 REF_FIELDS = [
-    ("darlehen", "darlehenskonto"), ("darlehen", "quellkonten"),
-    ("beteiligungen", "beteiligungskonto"), ("beteiligungen", "zielkonto"), ("beteiligungen", "gruppe"),
-    ("saldo_spiegel", "zielkonto"), ("saldo_spiegel", "quellkonto"),
+    ("darlehen", "darlehenskonto"), ("darlehen", "quellkonten"), ("gesellschaften", "beteiligung"),
 ]
 
 
@@ -71,6 +70,9 @@ def merged_config(cfg: Optional[dict]) -> dict:
         if k not in out:
             out[k] = v
     out["zeitplan"].pop("voll_lesen_stunden", None)       # replaced by voll_lesen_tage (3.9.30)
+    for k in ("beteiligungen", "saldo_spiegel"):          # replaced by gesellschaften (3.12.18)
+        out.pop(k, None)
+    out["kapitalfluss"].pop("beteiligungs_gruppen", None)
     for i, b in enumerate(out["bereiche"]):
         b.setdefault("id", "b%d" % (i + 1))
         b.setdefault("name", "Bereich %d" % (i + 1))
@@ -119,6 +121,10 @@ def earliest_needed(config: dict, today: date) -> date:
             start = min(start, date(ab.year - 1, 1, 1))
         except Exception:
             pass
+    for g in config.get("gesellschaften", []) or []:
+        ym = parse_month((g or {}).get("rueckwirkend_ab"))
+        if ym:
+            start = min(start, date(ym[0] - 1, 1, 1))
     return start
 
 
@@ -284,12 +290,6 @@ def _bereich_art(name: str) -> str:
 def bereiche_for(ledger: Ledger, config: dict) -> List[dict]:
     """Bereiche mit aufgeloesten Konten: konfiguriert, sonst alle Kontengruppen der obersten Ebene.
     Jeder Bereich: {"id", "name", "art", "anteil", "haupt", "konten" (Referenzen), "leaves" (Account), "gruppen"}."""
-    anteile: Dict[str, float] = {}
-    for b in config.get("beteiligungen") or []:
-        try:
-            anteile[ledger.resolve(b["gruppe"]).uuid] = float(b.get("anteil", 1.0))
-        except (KeyError, ValueError, TypeError):
-            pass
     out: List[dict] = []
     cfg = [b for b in (config.get("bereiche") or []) if isinstance(b, dict) and b.get("aktiv", True)]
     if cfg:
@@ -313,15 +313,13 @@ def bereiche_for(ledger: Ledger, config: dict) -> List[dict]:
                 continue
             first_group = gruppen[0] if gruppen else None
             anteil = b.get("anteil")
-            if anteil in (None, "") and first_group is not None:
-                anteil = anteile.get(first_group.uuid)
             out.append({"id": str(b.get("id")), "name": b.get("name") or (first_group.name if first_group else "Bereich"),
                         "art": b.get("art") or _bereich_art(b.get("name") or (first_group.name if first_group else "")),
                         "anteil": float(anteil) if anteil not in (None, "") else None, "haupt": bool(b.get("haupt")),
                         "konten": list(b.get("konten") or []), "leaves": leaves, "gruppen": gruppen})
     if not out:
         for g in ledger.roots():
-            out.append({"id": g.uuid, "name": g.name, "art": _bereich_art(g.name), "anteil": anteile.get(g.uuid), "haupt": False,
+            out.append({"id": g.uuid, "name": g.name, "art": _bereich_art(g.name), "anteil": None, "haupt": False,
                         "konten": ["%s | %s" % (g.uuid, g.name)], "leaves": ledger.descendants(g.uuid), "gruppen": [g]})
         if out and not any(b["haupt"] for b in out):
             (next((b for b in out if b["art"] == "privat"), None) or out[0])["haupt"] = True
@@ -363,10 +361,13 @@ def abruf_arten(ledger: Ledger, config: dict) -> Dict[str, Dict[str, str]]:
         return out
     force_on, force_off = refs(ab.get("online")), refs(ab.get("offline"))
     targets = set()
-    for key, fields in (("darlehen", ("darlehenskonto",)), ("beteiligungen", ("zielkonto", "beteiligungskonto")), ("saldo_spiegel", ("zielkonto",))):
-        for r in config.get(key) or []:
-            if isinstance(r, dict):
-                targets |= refs([r[f] for f in fields if r.get(f)])
+    for r in config.get("darlehen") or []:
+        if isinstance(r, dict):
+            targets |= refs([r["darlehenskonto"]] if r.get("darlehenskonto") else [])
+    for g in config.get("gesellschaften") or []:
+        if isinstance(g, dict):
+            targets |= refs([g["beteiligung"]] if g.get("beteiligung") else [])
+            targets |= refs([x.get("konto") for x in g.get("gegenkonten") or [] if isinstance(x, dict) and x.get("konto")])
     booked = {t.account_uuid for t in ledger.txs if t.purpose and "#mm-" in t.purpose and rules.TAG_RE.search(t.purpose)}
     out: Dict[str, Dict[str, str]] = {}
     for a in ledger.accounts.values():
@@ -507,10 +508,6 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
             date.fromisoformat(l.get("ab_datum", ""))
         except ValueError:
             add("fehler", tr("s_darlehen_s_ab_datum_fehlt") % n)
-    for b in (config.get("beteiligungen", []) or []) + (config.get("saldo_spiegel", []) or []):
-        n = b.get("name", "?") + ("" if b.get("aktiv", True) else " (inaktiv)")
-        ref(tr("s_chk_wert_ziel") % n, b.get("zielkonto") or b.get("beteiligungskonto", ""), want_offline=True, group_ok=False)
-        ref(tr("s_chk_wert_quelle") % n, b.get("gruppe") or b.get("quellkonto", ""), want_group=bool(b.get("gruppe")))
     bil = config.get("bilanz", {}) or {}
     for b in config.get("bereiche") or []:
         if not isinstance(b, dict):
@@ -531,6 +528,42 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         if missing:
             add("warnung", tr("s_s_konten_ohne_position_umsaetze")
                 % (b["name"], "; ".join(missing[:8]) + (" …" if len(missing) > 8 else "")))
+    by_id = {b["id"]: b for b in bereiche}
+    used: Dict[str, str] = {}
+    for g in config.get("gesellschaften") or []:
+        if not isinstance(g, dict) or not (g.get("beteiligung") or g.get("gegenkonten")):
+            continue
+        b = by_id.get(str(g.get("bereich")))
+        if b is None:              # area removed or changed: the rules wait (no error, so the areas can still be saved)
+            add("warnung", tr("s_gesellschaft_s_bereich_fehlt") % g.get("bereich"))
+            continue
+        n, inside = b["name"], {a.uuid for a in b["leaves"]}
+        if g.get("rueckwirkend_ab") and (parse_month(g["rueckwirkend_ab"]) is None or str(g["rueckwirkend_ab"])[:7] > date.today().isoformat()[:7]):
+            add("fehler", tr("s_s_rueckwirkend_ungueltig") % (n, g["rueckwirkend_ab"]))
+        targets = []
+        if g.get("beteiligung"):
+            if b.get("anteil") is None:
+                add("fehler", tr("s_s_anteil_fehlt") % (tr("s_regel_beteiligung") % n))
+            a = ref(tr("s_regel_beteiligung") % n, g["beteiligung"], want_offline=True, group_ok=False)
+            if a is not None:
+                targets.append(a)
+        for x in g.get("gegenkonten") or []:
+            if not isinstance(x, dict) or not x.get("konto") or not x.get("quelle"):
+                continue
+            a = ref(tr("s_regel_gegenkonto") % n, x["konto"], want_offline=True, group_ok=False)
+            q = ref(tr("s_chk_gegenkonto_quelle") % n, x["quelle"], group_ok=False)
+            if a is not None:
+                targets.append(a)
+            if q is not None and q.uuid not in inside:
+                add("warnung", tr("s_s_quelle_nicht_in_gesellschaft") % (n, q.path))
+            if q is not None and g.get("beteiligung") and roles.get(q.uuid) in rules.VALUE_OFF:
+                add("warnung", tr("s_s_doppelt_gezaehlt") % (n, q.name))
+        for a in targets:
+            if a.uuid in inside:
+                add("fehler", tr("s_s_zielkonto_liegt_innerhalb_der") % ("%s: %s" % (n, a.name)))
+            if a.uuid in used:
+                add("fehler", tr("s_konto_s_mehrfach_ziel") % (a.path, used[a.uuid], n))
+            used.setdefault(a.uuid, n)
     for r in bil.get("illiquide_konten") or []:
         ref(tr("s_chk_bilanz_illiquide"), r)
     for k, v in (bil.get("rollen") or {}).items():
@@ -556,8 +589,6 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         if im.get("kategorie"):
             cat("Immobilie %s" % n, str(im["kategorie"]).split("\\")[-1])
     kfc = config.get("kapitalfluss", {}) or {}
-    for g in kfc.get("beteiligungs_gruppen", []) or []:
-        ref(tr("s_chk_kf_beteiligungsgruppe"), g, want_group=True)
     for k, v in (kfc.get("kategorie_zuordnung") or {}).items():
         if k.startswith("_"):
             continue
@@ -941,7 +972,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
                                    "gruppen": [g.name for g in b["gruppen"]], "anzahl_konten": len(b["leaves"])} for b in bereiche},
         "konten": account_tree(ledger, config, roles, datasets),
         "steuer": (step(0.76, "Steuer"), _cached(ledger, "_tax_cache", (ledger._kat_sig, today.isoformat(), _bereiche_sig(bereiche),
-                                                   json.dumps([config.get(k) for k in ("steuer", "kapitalfluss", "beteiligungen", "bereiche", "immobilien")]
+                                                   json.dumps([config.get(k) for k in ("steuer", "kapitalfluss", "gesellschaften", "bereiche", "immobilien")]
                                                               + [(config.get("bilanz") or {}).get(k) for k in ("rollen", "konten_zuordnung")], sort_keys=True, default=str)),
                           lambda: build_tax(ledger, config, today, bereiche, roles, immo_afa_map(config, immo_res))))[1],
         "depots": portfolio_summary(ledger, bereiche),
@@ -1176,8 +1207,12 @@ def _walk_refs(cfg: dict, fn: Callable[[str, str], str]) -> None:
             im["objekt_konto"] = fn("immobilien.objekt_konto", im["objekt_konto"])
         if im.get("darlehen_konten"):
             im["darlehen_konten"] = {k: (fn("immobilien.darlehen_konten", v) if v else v) for k, v in im["darlehen_konten"].items()}
+    for g in cfg.get("gesellschaften") or []:
+        for x in (g.get("gegenkonten") or []) if isinstance(g, dict) else []:
+            for f in ("konto", "quelle"):
+                if isinstance(x, dict) and x.get(f):
+                    x[f] = fn("gesellschaften.gegenkonten." + f, x[f])
     kf = cfg.setdefault("kapitalfluss", {})
-    kf["beteiligungs_gruppen"] = [fn("kapitalfluss.beteiligungs_gruppen", x) for x in (kf.get("beteiligungs_gruppen") or [])]
     if kf.get("kategorie_zu_konto"):
         kf["kategorie_zu_konto"] = {k: (fn("kapitalfluss.kategorie_zu_konto", v) if not k.startswith("_") else v)
                                     for k, v in kf["kategorie_zu_konto"].items()}
@@ -1201,6 +1236,9 @@ def export_package(config: dict, name: str = "Kontor-Einstellungen", strip_uuids
     cfg.pop("oberflaeche", None)
     cfg.pop("updates", None)
     (cfg.get("belege") or {}).pop("ordner", None)
+    ids = {str(b.get("id")) for b in cfg.get("bereiche") or [] if isinstance(b, dict)}
+    if ids:                                   # rules of companies whose area no longer exists do not travel along
+        cfg["gesellschaften"] = [g for g in cfg.get("gesellschaften") or [] if isinstance(g, dict) and str(g.get("bereich")) in ids]
     if strip_uuids:
         def strip(field: str, r: str) -> str:
             if "|" not in r:
@@ -1252,8 +1290,8 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
             report.append("%s ersetzt" % k)
     else:
         for k, v in inc.items():
-            if k in ("darlehen", "beteiligungen", "saldo_spiegel", "bereiche", "immobilien"):
-                key = "id" if k in ("bereiche", "immobilien") else "name"
+            if k in ("darlehen", "gesellschaften", "bereiche", "immobilien"):
+                key = {"bereiche": "id", "immobilien": "id", "gesellschaften": "bereich"}.get(k, "name")
                 existing = {x.get(key): i for i, x in enumerate(base.get(k) or []) if isinstance(x, dict)}
                 base.setdefault(k, [])
                 for item in v or []:
@@ -1274,7 +1312,7 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
                 for kk, vv in v.items():
                     if isinstance(vv, dict) and isinstance(base[k].get(kk), dict):
                         base[k][kk].update(vv)
-                    elif isinstance(vv, list) and kk in ("illiquide_konten", "bereiche", "beteiligungs_gruppen", "umbuchungs_kategorien", "entitaeten"):
+                    elif isinstance(vv, list) and kk in ("illiquide_konten", "bereiche", "umbuchungs_kategorien", "entitaeten"):
                         base[k][kk] = list(dict.fromkeys((base[k].get(kk) or []) + vv))
                     else:
                         base[k][kk] = vv

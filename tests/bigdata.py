@@ -129,7 +129,7 @@ def config_for_big() -> Dict:
     return {
         "probelauf": True, "mitteilungen": False,
         "zeitplan": {"intervall_minuten": 30, "automatisch": False},
-        "darlehen": [], "beteiligungen": [], "saldo_spiegel": [],
+        "darlehen": [], "gesellschaften": [],
         "bereiche": [
             {"id": "b-priv", "name": "Max Mustermann", "art": "privat", "haupt": True, "anteil": None, "aktiv": True, "konten": [F.uid("priv") + " | Max Mustermann"]},
             {"id": "b-gmbh", "name": "Muster Biomarkt GmbH", "art": "firma", "haupt": False, "anteil": None, "aktiv": True, "konten": [F.uid("gmbh") + " | Muster Biomarkt GmbH"]},

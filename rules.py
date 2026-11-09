@@ -1,10 +1,10 @@
-"""Regeln: Darlehensspiegelung + Zinsen, Beteiligungswert, Saldo-Spiegel.
+"""Regeln: Darlehensspiegelung + Zinsen; je Gesellschaft Beteiligungswert und Gegenkonten.
 
 Jede Regel liefert Buchungsvorschlaege (Proposal) und Warnungen. Sie
 veraendert MoneyMoney nicht selbst; das macht kern.run_once nach dem Probelauf.
 
 Idempotenz: Jede automatische Buchung traegt im Verwendungszweck eine
-Markierung (#mm-tx-<id>, #mm-zins-JJJJ-MM, #mm-wert-...). Vor jedem Vorschlag
+Markierung (#mm-tx-<id>, #mm-zins-JJJJ-MM, #mm-wert-..., #mm-spiegel-...). Vor jedem Vorschlag
 wird geprueft, ob die Markierung im Zielkonto schon existiert. Die Wahrheit
 liegt damit in MoneyMoney selbst, nicht in einer Notizdatei des Skripts.
 """
@@ -24,7 +24,7 @@ TAG_RE = re.compile(r"#mm-[a-z]+-[A-Za-z0-9\-]+")
 @dataclass
 class Proposal:
     rule: str
-    kind: str                 # tilgung | zins | wert | quelle
+    kind: str                 # tilgung | zins | wert | spiegel | quelle
     account_uuid: str
     account_path: str
     booking_date: date
@@ -57,6 +57,7 @@ class RuleResult:
     warnings: List[str] = field(default_factory=list)
     info: List[str] = field(default_factory=list)
     missing: List[dict] = field(default_factory=list)     # created by Kontor before, no longer found in MoneyMoney
+    preview: List[dict] = field(default_factory=list)     # per rule: target, actual, difference, months booked back (interface)
 
 
 def find_unmarked(ledger: Ledger, rec: dict, claimed: set) -> Optional[Tx]:
@@ -151,6 +152,7 @@ DEFAULT_TEXTS = {
     "tilgung_text": "{art} {datum} von {quelle} · {tag}",
     "zins_text": "Zinsen {monat} · {prozent} % p.a. auf {basis} · {tag}",
     "wert_text": "Wertanpassung {anteil} % · Wert {quelle} {wert} · {tag}",
+    "spiegel_text": "Abgleich mit {quelle} · Stand {wert} · {tag}",
 }
 
 
@@ -307,59 +309,151 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str
 
 
 # ---------------------------------------------------------------------------
-# Wert-Spiegel (Beteiligung = Anteil x Gruppenwert; Saldo-Spiegel = Faktor x Konto)
+# Gesellschaften: Beteiligung (Anteil x Wert der Gesellschaft) und Gegenkonten (Faktor x Konto der Gesellschaft)
 # ---------------------------------------------------------------------------
 
-def plan_mirror(ledger: Ledger, cfg: dict, today: date, roles: Optional[Dict[str, str]] = None) -> RuleResult:
-    res = RuleResult()
-    name = cfg.get("name") or cfg.get("zielkonto") or cfg.get("beteiligungskonto")
-    rule = tr("s_regel_wert") % name
+VALUE_OFF = {"eigenkapital", "eventual", "ignorieren"}      # not part of a company's value: partners' equity, contingent, ignored
+
+
+def parse_month(s) -> Optional[Tuple[int, int]]:
+    """'2025-03' -> (2025, 3); anything else -> None."""
     try:
-        target = ledger.resolve(cfg.get("zielkonto") or cfg["beteiligungskonto"])
-        if cfg.get("gruppe"):
-            source = ledger.resolve(cfg["gruppe"])
-        else:
-            source = ledger.resolve(cfg["quellkonto"])
-    except KeyError as e:
-        res.warnings.append("%s: %s" % (rule, e))
-        return res
+        y, m = (int(x) for x in str(s or "").split("-")[:2])
+    except ValueError:
+        return None
+    return (y, m) if 1 <= m <= 12 and 1990 <= y <= 2100 else None
+
+
+def past_balances(ledger: Ledger, accs, day: date, config: Optional[dict] = None) -> Tuple[float, List[str]]:
+    """Sum of the balances of `accs` at the end of a past `day`, as the balance sheet shows them -- so the bookings match it:
+    from the transactions; with the whole history read, an account did not exist before its first transaction; accounts
+    whose history comes from their balance (portfolios by default) are unknown. Returns (sum, unknown account names);
+    nothing is estimated."""
+    bil = (config or {}).get("bilanz") or {}
+    full = int(bil.get("monate_zurueck", 0) or 0) <= 0
+    src: Dict[str, str] = {}
+    for ref, v in (bil.get("verlauf") or {}).items():
+        try:
+            src[ledger.resolve(ref).uuid] = v
+        except KeyError:
+            pass
+    total, unknown = 0.0, []
+    for a in accs:
+        txs = ledger.transactions(a.uuid)
+        if src.get(a.uuid) == "stand" or (a.portfolio and src.get(a.uuid) != "umsaetze"):
+            if abs(a.balance) >= 0.005 or txs:
+                unknown.append(a.name)
+            continue
+        if full and txs and min(t.booking_date for t in txs) > day:
+            continue
+        total += ledger.balance_at(a.uuid, day)
+    return round(total, 2), unknown
+
+
+def _keep_value(ledger: Ledger, res: RuleResult, rule: str, kind: str, target, value_at, cfg: dict, today: date,
+                payee: str, purpose, preview: dict) -> None:
+    """Keep the manual account `target` at value_at(day) -> (value, source value, unknown accounts): one booking at each month
+    end from cfg["rueckwirkend_ab"] up to last month, then one today -- always only the difference to its balance in
+    MoneyMoney, so a booking that is already there is never made twice. Unknown months are skipped."""
+    schwelle = max(float(cfg.get("schwelle") or 0.01), 0.01)
+    days: List[Optional[date]] = []
+    ym = parse_month(cfg.get("rueckwirkend_ab"))
+    if ym:
+        last = date(today.year, today.month, 1) - timedelta(days=1)
+        days = [month_end(y, m) for (y, m) in months_between(date(ym[0], ym[1], 1), last)]
+    preview.update(ziel=target.uuid, ist=round(target.balance, 2), rueck=0, rueck_summe=0.0, unbekannt=[])
+    for d in days + [None]:
+        day = d or today
+        want, src_value, unknown = value_at(d)
+        if unknown:
+            preview["unbekannt"].append(day.strftime("%m/%Y"))
+            res.info.append(tr("s_wert_unbekannt") % (rule, day.strftime("%m/%Y"), ", ".join(unknown[:3])))
+            continue
+        have = target.balance if d is None else ledger.balance_at(target.uuid, d)
+        diff = round(want - have, 2)
+        if d is None:
+            preview.update(soll=want, quelle=src_value, diff=round(want - preview["ist"], 2))
+        if abs(diff) < schwelle:
+            continue
+        prefix = "#mm-%s-%s-" % (kind, day.strftime("%Y%m%d"))
+        tag = prefix + str(1 + sum(1 for t in ledger.transactions(target.uuid) if prefix in t.purpose))
+        p = Proposal(rule, kind, target.uuid, target.path, day, diff, payee, purpose(src_value, tag), cfg.get("kategorie") or "", tag)
+        res.proposals.append(p)
+        ledger.post(target.uuid, day, diff, payee, p.purpose, p.category)
+        if d is not None:
+            preview["rueck"] += 1
+            preview["rueck_summe"] = round(preview["rueck_summe"] + diff, 2)
+
+
+def _target_ok(res: RuleResult, rule: str, target, inside: set) -> bool:
     if target.group:
         res.warnings.append(tr("s_s_zielkonto_ist_eine_gruppe") % rule)
-        return res
-    if not target.offline:
+    elif not target.offline:
         res.warnings.append(tr("s_s_zielkonto_hat_eine_bankanbindung") % rule)
-        return res
-    if source.group and any(a.uuid == target.uuid for a in ledger.descendants(source.uuid)):
+    elif target.uuid in inside:
         res.warnings.append(tr("s_s_zielkonto_liegt_innerhalb_der") % rule)
-        return res
-
-    anteil = float(cfg.get("anteil", cfg.get("faktor", 1.0)))
-    schwelle = float(cfg.get("schwelle", 0.01))
-    if source.group:
-        # Wert der Gesellschaft = Konten der Gruppe ohne Kapitalkonten (Eigenkapital), Avale und nicht bilanzierte Konten
-        aus = {"eigenkapital", "eventual", "ignorieren"}
-        source_value = round(sum(a.balance for a in ledger.descendants(source.uuid) if (roles or {}).get(a.uuid) not in aus), 2)
     else:
-        source_value = source.balance
-    want = round(anteil * source_value, 2)
-    have = target.balance
-    diff = round(want - have, 2)
-    res.info.append(tr("s_spiegel_info") %
-                    (rule, source.name, fmt_eur(source_value), ("%.4f" % (anteil * 100)).rstrip("0").rstrip(".").replace(".", ","),
-                     fmt_eur(want), fmt_eur(have), fmt_eur(diff)))
-    if abs(diff) < schwelle:
-        return res
-    texts = dict(DEFAULT_TEXTS)
-    texts.update(cfg.get("buchung", {}) or {})
-    seq = 1 + sum(1 for t in ledger.transactions(target.uuid)
-                  if t.booking_date == today and "#mm-wert-" in t.purpose)
-    tag = "#mm-wert-%s-%d" % (today.strftime("%Y%m%d"), seq)
-    purpose = _fill(texts["wert_text"], anteil=("%.4f" % (anteil * 100)).rstrip("0").rstrip(".").replace(".", ","),
-                    quelle=source.name, wert=fmt_eur(source_value), tag=tag)
-    p = Proposal(rule, "wert", target.uuid, target.path, today, diff,
-                 texts.get("gegenpartei", "Wertanpassung"), purpose, texts.get("kategorie_wert", ""), tag)
-    res.proposals.append(p)
-    ledger.post(target.uuid, today, diff, p.payee, purpose, p.category)
+        return True
+    return False
+
+
+def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Optional[Dict[str, str]] = None,
+                 config: Optional[dict] = None) -> RuleResult:
+    """One company (an area of the kind "Gesellschaft"): the participation account follows share x value of the company
+    (its accounts without the partners' equity), each counter account follows factor x one account of the company."""
+    res = RuleResult()
+    roles = roles or {}
+    name = area["name"]
+    inside = {a.uuid for a in area["leaves"]}
+    payee = (cfg.get("gegenpartei") or "").strip() or name
+    if cfg.get("beteiligung"):
+        rule = tr("s_regel_beteiligung") % name
+        pv = {"art": "beteiligung", "bereich": area["id"]}
+        try:
+            target = ledger.resolve(cfg["beteiligung"])
+        except KeyError as e:
+            res.warnings.append("%s: %s" % (rule, e))
+            target = None
+        anteil = area.get("anteil")
+        if target is not None and anteil is None:
+            res.warnings.append(tr("s_s_anteil_fehlt") % rule)
+        elif target is not None and _target_ok(res, rule, target, inside):
+            accs = [a for a in area["leaves"] if roles.get(a.uuid) not in VALUE_OFF]
+            share = float(anteil)
+
+            def value_at(d, accs=accs, share=share):
+                if d is None:
+                    v, unknown = round(sum(a.balance for a in accs), 2), []
+                else:
+                    v, unknown = past_balances(ledger, accs, d, config)
+                return round(share * v, 2), v, unknown
+            pct = ("%.4f" % (share * 100)).rstrip("0").rstrip(".").replace(".", ",")
+            _keep_value(ledger, res, rule, "wert", target, value_at, cfg, today, payee,
+                        lambda v, tag: _fill(DEFAULT_TEXTS["wert_text"], anteil=pct, quelle=name, wert=fmt_eur(v), tag=tag), pv)
+            res.preview.append(pv)
+    for i, g in enumerate(cfg.get("gegenkonten") or []):
+        if not isinstance(g, dict) or not g.get("konto") or not g.get("quelle"):
+            continue
+        pv = {"art": "gegenkonto", "bereich": area["id"], "i": i}
+        try:
+            target, src = ledger.resolve(g["konto"]), ledger.resolve(g["quelle"])
+        except KeyError as e:
+            res.warnings.append("%s: %s" % (tr("s_regel_gegenkonto") % name, e))
+            continue
+        rule = tr("s_regel_gegenkonto") % target.name
+        if src.group:
+            res.warnings.append(tr("s_s_quelle_ist_eine_gruppe") % rule)
+            continue
+        if not _target_ok(res, rule, target, inside | {src.uuid}):
+            continue
+        f = float(g.get("faktor", -1) if g.get("faktor") not in (None, "") else -1)
+
+        def value_at(d, src=src, f=f):
+            v, unknown = (round(src.balance, 2), []) if d is None else past_balances(ledger, [src], d, config)
+            return round(f * v, 2), v, unknown
+        _keep_value(ledger, res, rule, "spiegel", target, value_at, cfg, today, payee,
+                    lambda v, tag, src=src: _fill(DEFAULT_TEXTS["spiegel_text"], quelle=src.name, wert=fmt_eur(v), tag=tag), pv)
+        res.preview.append(pv)
     return res
 
 
@@ -368,19 +462,31 @@ def plan_mirror(ledger: Ledger, cfg: dict, today: date, roles: Optional[Dict[str
 # ---------------------------------------------------------------------------
 
 def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[str, dict]] = None) -> RuleResult:
-    """created: Kontor's own list of the bookings it made (tag -> record), see _created_check. Values (participations, mirrors)
-    need none: they always book the difference to the balance in MoneyMoney."""
+    """created: Kontor's own list of the bookings it made (tag -> record), see _created_check. Values (participations, counter
+    accounts) need none: they always book the difference to the balance in MoneyMoney."""
     total = RuleResult()
     claimed: set = set()
-    # Reihenfolge: erst Darlehen (veraendern GbR-Werte), dann Wert-Spiegel
-    for cfg in config.get("darlehen", []) or []:
+
+    def add(r: RuleResult) -> None:
+        total.proposals += r.proposals; total.warnings += r.warnings; total.info += r.info
+        total.missing += r.missing; total.preview += r.preview
+    # Reihenfolge: erst Darlehen (veraendern die Werte der Gesellschaften), dann Beteiligungen und Gegenkonten
+    for i, cfg in enumerate(config.get("darlehen", []) or []):
         if cfg.get("aktiv", True):
             r = plan_loan(ledger, cfg, today, created, claimed)
-            total.proposals += r.proposals; total.warnings += r.warnings; total.info += r.info; total.missing += r.missing
-    from report import account_roles          # spaet importiert (auswertung importiert rules)
-    roles = account_roles(ledger, config)
-    for cfg in (config.get("beteiligungen", []) or []) + (config.get("saldo_spiegel", []) or []):
-        if cfg.get("aktiv", True):
-            r = plan_mirror(ledger, cfg, today, roles)
-            total.proposals += r.proposals; total.warnings += r.warnings; total.info += r.info
+            r.preview.append({"art": "darlehen", "i": i, "buchungen": len(r.proposals), "fehlend": len(r.missing)})
+            add(r)
+    if config.get("gesellschaften"):
+        from report import account_roles          # spaet importiert (report/core importieren rules)
+        from core import bereiche_for
+        roles = account_roles(ledger, config)
+        areas = {b["id"]: b for b in bereiche_for(ledger, config)}
+        for cfg in config.get("gesellschaften") or []:
+            if not isinstance(cfg, dict) or not (cfg.get("beteiligung") or cfg.get("gegenkonten")):
+                continue
+            area = areas.get(str(cfg.get("bereich")))
+            if area is None:
+                total.warnings.append(tr("s_gesellschaft_s_bereich_fehlt") % cfg.get("bereich"))
+                continue
+            add(plan_company(ledger, cfg, area, today, roles, config))
     return total

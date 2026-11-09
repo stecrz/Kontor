@@ -140,14 +140,16 @@ def config_for_test(belege_dir=None):
             "zins": {"modell": "jahresbasis", "satz": [{"ab": "2025-11-20", "prozent": 3.3}], "buchungstag": "mit_rate"},
             "buchung": {"gegenpartei": "Verkäufer", "kategorie_tilgung": "Umbuchung", "kategorie_zins": "Zinsen"},
             "quelle_kommentar": True}],
-        "beteiligungen": [
-            {"name": "Alpha", "beteiligungskonto": F.uid("priv.bet.pb") + " | Beteiligung an Alpha GbR", "gruppe": F.uid("pb") + " | Alpha GbR", "anteil": 0.49},
-            {"name": "Beta", "beteiligungskonto": F.uid("priv.bet.shs") + " | Beteiligung an Beta GbR", "gruppe": F.uid("shs") + " | Beta GbR", "anteil": 0.49}],
-        "saldo_spiegel": [],
+        "bereiche": [
+            {"id": F.uid("priv"), "name": "Privat", "art": "privat", "haupt": True, "konten": [F.uid("priv") + " | Privat"]},
+            {"id": F.uid("pb"), "name": "Alpha GbR", "art": "gesellschaft", "anteil": 0.49, "konten": [F.uid("pb") + " | Alpha GbR"]},
+            {"id": F.uid("shs"), "name": "Beta GbR", "art": "gesellschaft", "anteil": 0.49, "konten": [F.uid("shs") + " | Beta GbR"]}],
+        "gesellschaften": [
+            {"bereich": F.uid("pb"), "beteiligung": F.uid("priv.bet.pb") + " | Beteiligung an Alpha GbR"},
+            {"bereich": F.uid("shs"), "beteiligung": F.uid("priv.bet.shs") + " | Beteiligung an Beta GbR"}],
         "bilanz": {"monate_zurueck": 24, "illiquide_rollen": ["beteiligungen"],
                    "illiquide_konten": [F.uid("priv.darl") + " | Darlehen Lindenstraße"]},
-        "kapitalfluss": {"beteiligungs_gruppen": [F.uid("pb") + " | Alpha GbR", F.uid("shs") + " | Beta GbR"],
-                         "kategorie_zu_konto": {"Investments\\ETF": F.uid("priv.depot") + " | Depot"}},
+        "kapitalfluss": {"kategorie_zu_konto": {"Investments\\ETF": F.uid("priv.depot") + " | Depot"}},
         "steuer": {"afa": {"Parkweg": {"2026": 40000}}},
         "updates": {"pruefen": "aus"},
         "oberflaeche": {"sperre_minuten": 15, "port": 0},
@@ -289,7 +291,7 @@ class CoreTests(unittest.TestCase):
         new_cfg, unresolved, report = core.import_package(core.merged_config({}), pkg, led, "ergaenzen")
         self.assertEqual(unresolved, [], unresolved)
         self.assertEqual(new_cfg["darlehen"][0]["darlehenskonto"].split(" | ")[0], F.uid("pb.vd"))
-        self.assertEqual(len(new_cfg["beteiligungen"]), 2)
+        self.assertEqual(len(new_cfg["gesellschaften"]), 2)
         pkg2 = copy.deepcopy(pkg); pkg2["config"]["darlehen"][0]["darlehenskonto"] = "Darlehen Fremd"
         _, unresolved, _ = core.import_package(core.merged_config({}), pkg2, led, "ergaenzen")
         self.assertEqual(len(unresolved), 1); self.assertEqual(unresolved[0]["label"], "Darlehen Fremd")
@@ -1655,7 +1657,7 @@ class FeatureTests(_AppBase):
         priv = ds["bereiche"][P]["bilanz"]["ek_quote"]["monate"]; alpha = ds["bereiche"][A]["bilanz"]["ek_quote"]["monate"]
         mk = sorted(priv)[-2]; e = priv[mk]; ea = alpha[mk]
         self.assertEqual(e["nw"], ds["bereiche"][P]["bilanz"]["nettovermoegen"][mk]); self.assertEqual(e["kapital"], 0)
-        self.assertEqual([f["name"] for f in e["firmen"]], ["Alpha", "Beta"])
+        self.assertEqual([f["name"] for f in e["firmen"]], ["Alpha GbR", "Beta GbR"])
         fa = e["firmen"][0]; self.assertAlmostEqual(fa["anteil"], 0.49); self.assertAlmostEqual(fa["schulden"], ea["eigene"], 2)
         self.assertAlmostEqual(fa["anteilig"], round(0.49 * ea["eigene"], 2), 2)
         self.assertAlmostEqual(e["schulden"], e["eigene"] + sum(f["anteilig"] for f in e["firmen"]), 2)
@@ -2188,7 +2190,7 @@ class BrowserTest(unittest.TestCase):
                 # pages not fully tested yet carry "Alpha" in the menu and at the title; the balance sheet does not
                 self.assertTrue(pg.query_selector("#nav a.alpha[href='#cashflow'] .alpha-tag")); self.assertIsNone(pg.query_selector("#nav a[href='#balance'] .alpha-tag"))
                 self.assertIsNone(pg.query_selector("#page-title .alpha-tag")); self.assertTrue(pg.query_selector("#nav a.alpha[href='#rules']"))
-                self.assertEqual(pg.inner_text("#nav a[href='#rules'] span"), "Auto-Regeln"); self.assertEqual(pg.inner_text("#nav a[href='#bookings'] span"), "Auto-Buchungen")
+                self.assertEqual(pg.inner_text("#nav a[href='#rules'] span"), "Buchungsregeln"); self.assertEqual(pg.inner_text("#nav a[href='#bookings'] span"), "Auto-Buchungen")
                 # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
                 self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
                 self.assertTrue(pg.query_selector("#main thead th.plan")); self.assertNotIn("Fortschreibung", pg.query_selector("#main").inner_text())
@@ -2382,7 +2384,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertIsNone(pg.query_selector("#main .bil-tbl tr.ekq"))           # folded by default; the name of net worth opens it
                 pg.click("#main .bil-tbl tr.total td:first-child"); pg.wait_for_selector("#main .bil-tbl tr.ekq")
                 pg.click("#main .bil-tbl tr.ekq td:first-child"); pg.wait_for_selector("#drawer.open .ekq-tbl")
-                self.assertIn("Eigenkapitalquote", pg.inner_text("#drawer")); self.assertIn("Alpha: 49 % von", pg.inner_text("#drawer"))
+                self.assertIn("Eigenkapitalquote", pg.inner_text("#drawer")); self.assertIn("Alpha GbR: 49 % von", pg.inner_text("#drawer"))
                 pg.click("#drawer .close"); pg.wait_for_timeout(300)
                 # a click on a net worth value: aligned as by the month heading, and the net worth dot blinks once
                 k = pg.evaluate("Array.from(document.querySelectorAll('#main .bil-tbl tr.total td')).findIndex((td, n) => n > 0 && (() => { const r = td.getBoundingClientRect(), w = document.querySelector('#main .wrap').getBoundingClientRect(); return r.left > w.left + 300 && r.right < w.right - 20; })())")
@@ -2587,8 +2589,22 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("Kontor bucht" if auto else "Freigabe", pg.inner_text(".set-row"))
                 pg.click("#nav a[href='#bookings']"); pg.wait_for_selector(".mode-chip"); self.assertIn("Automatisch" if auto else "Mit Freigabe", pg.inner_text(".mode-chip"))
                 self.assertTrue(pg.query_selector("#run-dry svg"))
-                pg.click(".mode-chip"); pg.wait_for_selector("#save-rules"); pg.click("#save-rules"); pg.wait_for_timeout(900)
+                pg.click(".mode-chip"); pg.wait_for_selector("#save-rules")
+                # companies come from the areas: one card each with its share, the participation chosen, target/actual live
+                self.assertEqual(pg.eval_on_selector_all(".co-card h3", "e => e.map(x => x.textContent)"), ["Alpha GbR", "Beta GbR"])
+                self.assertIn("49", pg.inner_text(".co-card .co-head"))
+                self.assertEqual(pg.eval_on_selector(".co-card .c-bet", "e => e.value").split(" | ")[0], F.uid("priv.bet.pb"))
+                pg.wait_for_function("(document.querySelector('.co-card [data-pv=\"b\"]') || {}).textContent?.includes('Soll')", timeout=8000)
+                self.assertGreaterEqual(len(pg.query_selector_all(".co-card .hq")), 6); self.assertGreaterEqual(len(pg.query_selector_all("#loans .hq")), 15)
+                self.assertTrue(pg.is_disabled("#save-rules"))
+                # an incomplete counter account is not saved
+                pg.click(".co-card .add-gk"); pg.select_option(".gk-row .g-konto", index=1); pg.click("#save-rules"); pg.wait_for_timeout(300)
+                self.assertTrue(pg.query_selector(".gk-row.invalid")); self.assertNotIn("gegenkonten", json.dumps(store.load("config.json")["gesellschaften"]))
+                pg.click(".gk-row .gk-del")
+                pg.click(".co-card .co-more summary"); pg.fill(".co-card .c-sw", "1")
+                pg.keyboard.press("Meta+s"); pg.wait_for_timeout(900)          # ⌘S saves
                 self.assertIn("Gespeichert", pg.query_selector("#findings").inner_text())
+                self.assertEqual(store.load("config.json")["gesellschaften"][0]["schwelle"], 1); self.assertTrue(pg.is_disabled("#save-rules"))
                 # ⌘L locks
                 pg.keyboard.press("Meta+l"); pg.wait_for_selector("#login:not(.hidden)")
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg)
@@ -2683,7 +2699,7 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertIn("Overview", pg.inner_text("#nav")); self.assertEqual(pg.evaluate("document.documentElement.lang"), "en")
                 self.assertEqual(store.load("config.json")["oberflaeche"]["sprache"], "en")
                 pg.goto("http://127.0.0.1:%d/#setup" % port); pg.wait_for_selector(".setup-list")
-                self.assertIn("Import historical balances", pg.inner_text(".setup-list"))
+                self.assertIn("Historical balances", pg.inner_text(".setup-list"))
                 with pg.expect_navigation(): pg.select_option("#w-lang", "de")
                 wait_shell(pg); pg.wait_for_timeout(500)
                 self.assertIn("Übersicht", pg.inner_text("#nav")); self.assertEqual(store.load("config.json")["oberflaeche"]["sprache"], "de")
@@ -2777,7 +2793,7 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertTrue(pg.query_selector("button[data-savenext='#setup/history']")); self.assertTrue(pg.query_selector("button[data-next='#setup']"))
                 # Schritt 4: Kontostaende aus MoneyMoney (Finder zeigen, Datei ziehen) -- MoneyMoney laeuft im Test
                 pg.goto("http://127.0.0.1:%d/#setup/history" % port); pg.wait_for_selector("#mmh-drop")
-                self.assertEqual(pg.query_selector("h2.sub-h").inner_text(), "Historische Kontostände einlesen")
+                self.assertEqual(pg.query_selector("h2.sub-h").inner_text(), "Historische Kontostände")
                 self.assertIn("⌘Q", pg.query_selector("#mmh-s1").inner_text()); self.assertTrue(pg.query_selector("#mmh-zeigen"))
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_historie.png"), full_page=True)
                 # names of the securities: all listed (MoneyMoney's name first), changeable by hand; nothing is sent without a click
@@ -2809,7 +2825,7 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertIn("Übernommen", pg.query_selector("#pk-report").inner_text())
                 cfg = store.load("config.json")
                 self.assertEqual(cfg["darlehen"][0]["darlehenskonto"].split(" | ")[0], F.uid("pb.vd"))
-                self.assertEqual(len(cfg["beteiligungen"]), 2)
+                self.assertEqual(len(cfg["gesellschaften"]), 2)
                 # Bericht erstellen -> Uebersicht mit Kennzahlen
                 pg.click("#nav a[href='#setup']"); pg.wait_for_selector(".setup-list")
                 self.assertIsNone(pg.query_selector("#w-report"))      # Auswertung existiert schon ("Speichern und weiter" hat auf sie gewartet)
