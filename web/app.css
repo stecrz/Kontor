@@ -200,7 +200,7 @@ svg text { fill:var(--muted); font-size:11px; }
 .bch-x.end { fill:var(--fg); font-weight:600; }
 .bch-area { opacity:.82; stroke:var(--head); stroke-width:.6; }
 .bch-plan { fill:var(--head); opacity:.45; }
-.bch-run { fill:var(--head); opacity:.22; }                /* the running month: data still coming in */
+.bch-run { stroke:none; }                /* the running month (data still coming in): a gradient from no shade to the plan's */
 .bch-nw.run:not(.halo), .lc-total.run:not(.halo) { stroke-dasharray:.5 4.5; }
 .bch-today { stroke:var(--fg); stroke-width:1; opacity:.45; stroke-dasharray:3 3; }
 .bch-nw { fill:none; stroke:var(--c-nw); stroke-width:2.4; stroke-linejoin:round; stroke-linecap:round; }

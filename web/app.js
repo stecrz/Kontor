@@ -1436,7 +1436,12 @@ function bchDraw() {
   const act = pts.filter(p => p.i <= done), runp = kt >= 0 ? pts.filter(p => p.i > done && p.i <= ist) : [];
   if (act.length && runp.length) runp.unshift(act[act.length - 1]);
   const shade = (cls0, xa, xb) => xb > xa ? `<rect class="${cls0}" x="${pf(xa)}" y="${P.t}" width="${pf(xb - xa)}" height="${H - P.t - P.b}"/>` : '';
-  if (runp.length) plot += shade('bch-run', Math.max(P.l, runp[0].x), pts[kt].x);
+  // the running month leads softly from the past (no shade) over to the plan's shade -- the further the month has gone, the
+  // further right the change (the vertical line marks the cut)
+  if (runp.length) { const now = new Date(), dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const p = Math.min(1, (now.getDate() - 1 + now.getHours() / 24) / dim), w = 0.35, a = p - w, b = p + w, op = o => (.45 * Math.max(0, Math.min(1, (o - a) / (b - a)))).toFixed(3);
+    df.s += `<linearGradient id="bch-rung" x1="0" x2="1">${[0, Math.max(0, a), Math.min(1, b), 1].map(o => `<stop offset="${o.toFixed(3)}" style="stop-color:var(--head);stop-opacity:${op(o)}"/>`).join('')}</linearGradient>`;
+    plot += shade('bch-run', Math.max(P.l, runp[0].x), pts[kt].x).replace('<rect ', '<rect fill="url(#bch-rung)" '); }
   if (kp >= 0) plot += shade('bch-plan', Math.max(P.l, kt >= 0 ? pts[kt].x : pts[kp].x), W - P.r);
   if (act.length && (act[act.length - 1].i === done || runp.length)) { const xd = act[act.length - 1].x; plot += `<line class="bch-today" x1="${pf(xd)}" x2="${pf(xd)}" y1="${P.t - 4}" y2="${H - P.b}"/>`; }
   // Nettovermoegen (bis heute durchgezogen, danach gestrichelt)
@@ -1985,7 +1990,7 @@ function lcSumTip(avail) {
   if (G.some(([k]) => k === 'grp_gebunden') && !used.has('grp_gebunden')) {
     const liq = avail.filter(r => LC_LIQUID.includes(r)), all = avail.filter(r => r !== 'verbindlichkeiten');
     const a = all.length === avail.length ? 'nettovermoegen' : nameOf(all), b = liq.length > 1 ? nameOf(liq) : liq[0];
-    if (a && b) lines.push('', `${t('kurzw_gebunden')} = ${t(a)} − ${b.startsWith('grp_') ? t(b) : ROLE[b][0]}`);
+    if (a && b) lines.push('', `${KURZW.grp_gebunden} = ${KURZW[a]} − ${b.startsWith('grp_') ? KURZW[b] : ROLE[b][0]}`);
   }
   return lines.length > 1 ? lines.join('\n') : '';
 }

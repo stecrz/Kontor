@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.12.7 (2026-11-09 13:45)
+- Bilanzgrafik: Der laufende Monat geht als weicher Verlauf von der Vergangenheit (ohne Schleier) in den Plan über.
+- Grafik 2: Zeile „Gebundenes Verm.“ beim Darüberfahren durchgehend gekürzt, damit sie in eine Zeile passt.
+
 ## 3.12.6 (2026-11-09 13:35)
 - Kleine Grafiken: Zeiträume über zwei Jahren in Jahren und Monaten („2 Jahre 8 Mon.“, „2 ½ Jahre“).
 - Kennzahlen unter dem Nettovermögen (Eigenkapitalquote) sind zugeklappt; ein Klick auf „Nettovermögen“ klappt sie auf.

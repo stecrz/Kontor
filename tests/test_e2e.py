@@ -2163,7 +2163,7 @@ class BrowserTest(unittest.TestCase):
                 # the names as one written sum, each word once
                 self.assertEqual(pg.evaluate("a => lcSumTip(a)", av).split("\n"), ["\u2007 Bankguthaben", "+ Wertpapiere", "= Liquides Vermögen", "+ Festanlagen", "= Geldanlagen", "+ Beteiligungen",
                                  "= Geldvermögen", "+ Immobilien", "= Bruttovermögen (Bilanzsumme)", "+ Verbindlichkeiten", "= Nettovermögen", "",
-                                 "Gebundenes Verm. = Bruttovermögen − Liquides Vermögen"])
+                                 "Gebundenes Verm. = Bruttoverm. − Liquides Verm."])
                 self.assertIn("+ Sachvermögen (Immobilien + Sachwerte)", pg.evaluate("a => lcSumTip(a)", av + ["sachwerte"]))
                 # composition of one position by account (stacked), chips with the accounts: deselecting one keeps the position line
                 self.assertTrue(pg.query_selector("#lc-pos-svg path.lc-band")); self.assertIn("Hausbank Giro", pg.inner_text("#lc-pos-accs"))

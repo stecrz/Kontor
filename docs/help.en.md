@@ -130,7 +130,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 
 - Values are balances at month end; the current month shows the current balance.
 - The charts end with the last completed month and count from month end to month end: in November, “1 Y” runs from October of the previous year to October, so the change covers exactly twelve completed months. The first and the last month are always labelled on the time axis; the value applies to the end of the range, the change (in € and %) since its start – in the main chart too, only the balance sheet shows no value and no change. The shortest range is one month (change to the previous month).
-- To the right (by swiping or with “All”) follows the running month, dotted and lightly shaded – actual data is already coming in –, then the plan, dashed and shaded more. The dashed vertical line marks the end of the last completed month. In the table the running month or year is faded, the plan faded and hatched.
+- To the right (by swiping or with “All”) follows the running month, dotted and with a soft shade leading over – actual data is already coming in –, then the plan, dashed and shaded. The dashed vertical line marks the end of the last completed month. In the table the running month or year is faded, the plan faded and hatched.
 - Colours: positions by availability, from cash (green) to equity investments (violet); accounts in variations of their position's colour (hatched from the eleventh account), the same in the table and the charts. Net worth is golden; the golden dash in front of it in the value tip and in the table stands for its line.
 
 **Table**
