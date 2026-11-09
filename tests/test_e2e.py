@@ -2126,7 +2126,7 @@ class BrowserTest(unittest.TestCase):
                 # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
                 self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
                 self.assertTrue(pg.query_selector("#main thead th.plan")); self.assertNotIn("Fortschreibung", pg.query_selector("#main").inner_text())
-                pg.click("tr.pos[data-pos='liquiditaet']"); pg.wait_for_selector("tr.acct")
+                pg.click("tr.pos[data-pos='liquiditaet'] td:first-child"); pg.wait_for_selector("tr.acct")
                 pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # single curves below the table: net worth and a chosen sum (default cash + tradable + fixed-term); chips change the sum
                 self.assertTrue(pg.query_selector("#lc-nw-svg path.bch-nw")); self.assertTrue(pg.query_selector("#lc-sel-svg path.bch-nw"))
@@ -2151,6 +2151,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertFalse(pg.is_visible("#lc-pos-mode"))
                 pg.select_option("#lc-pos-sel", "wertpapiere"); pg.wait_for_timeout(200)
                 self.assertTrue(pg.is_visible("#lc-pos-mode")); pg.click("#lc-pos-mode"); pg.wait_for_timeout(200)
+                pg.evaluate("lcSet('pos', LC.pos.i0, LC.pos.d.ist - 1)"); pg.wait_for_timeout(100)     # the made-up securities exist only this month
                 self.assertIn("Welt-ETF", pg.inner_text("#lc-pos-accs")); pg.click("#lc-pos-mode"); pg.wait_for_timeout(200)
                 self.assertNotIn("Welt-ETF", pg.inner_text("#lc-pos-accs"))
                 pg.select_option("#lc-pos-sel", "verbindlichkeiten"); pg.wait_for_timeout(200)
@@ -2171,25 +2172,27 @@ class BrowserTest(unittest.TestCase):
                 pg.reload(); pg.wait_for_selector("#bch.big-pos"); self.assertEqual(order(), ["nw", "sel", "bil"])
                 self.assertTrue(pg.query_selector("#modus-seg button[data-m='jahre'].on")); self.assertTrue(pg.query_selector("#bch-rb button[data-m='120'].on"))
                 # one default each for months and years: the one saved last opens, switching takes the other one's ranges
-                pg.click("#modus-seg button[data-m='monate']"); pg.wait_for_timeout(300); self.assertTrue(pg.query_selector("#bch-rb button[data-m='12'].on"))
-                pg.click("#bch-rb button[data-m='24']"); pg.wait_for_timeout(200); pg.click("#view-save"); pg.wait_for_timeout(200)
+                pg.click("#modus-seg button[data-m='monate']"); pg.wait_for_timeout(300); self.assertTrue(pg.query_selector("#bch-rb button[data-m='24'].on"))     # large chart: 2 J
+                pg.click("#bch-rb button[data-m='36']"); pg.wait_for_timeout(200); pg.click("#view-save"); pg.wait_for_timeout(200)
                 pg.click("#modus-seg button[data-m='jahre']"); pg.wait_for_timeout(300); self.assertTrue(pg.query_selector("#bch-rb button[data-m='120'].on"))
-                pg.reload(); pg.wait_for_selector("#bch"); self.assertTrue(pg.query_selector("#modus-seg button[data-m='monate'].on")); self.assertTrue(pg.query_selector("#bch-rb button[data-m='24'].on"))
+                pg.reload(); pg.wait_for_selector("#bch"); self.assertTrue(pg.query_selector("#modus-seg button[data-m='monate'].on")); self.assertTrue(pg.query_selector("#bch-rb button[data-m='36'].on"))
                 pg.click("#view-reset"); pg.wait_for_timeout(300)
                 self.assertIsNone(pg.query_selector("#bch.big-pos")); self.assertEqual(order(), ["nw", "sel", "pos"]); self.assertTrue(pg.query_selector("#modus-seg button[data-m='monate'].on"))
                 self.assertIsNone(pg.evaluate("localStorage.getItem('kontor.bilanzView')"))
                 pg.click("#pos-all"); pg.wait_for_timeout(300)                       # all positions open again (as before)
-                # the table can sit above the large chart or below the small ones (small arrows in its header), kept with "Ansicht speichern"
-                where = lambda: pg.evaluate("""() => { const t = document.querySelector('#main .wrap'), c = document.querySelector('#bch'), g = document.querySelector('#lc-grid');
-                    const before = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING); return before(t, c) ? 'top' : before(g, t) ? 'bot' : 'mid'; }""")
-                self.assertEqual(where(), "mid"); pg.click(".th-mv[data-mv='-1']"); pg.wait_for_timeout(300); self.assertEqual(where(), "top")
-                self.assertFalse(pg.is_visible(".th-mv[data-mv='-1']")); pg.click(".th-mv[data-mv='1']"); pg.wait_for_timeout(300); pg.click(".th-mv[data-mv='1']"); pg.wait_for_timeout(300)
-                self.assertEqual(where(), "bot"); pg.click("#view-save"); pg.wait_for_timeout(200)
-                self.assertEqual(pg.evaluate("JSON.parse(localStorage.getItem('kontor.bilanzView')).views.monate.tbl"), "bot")
-                pg.click("#view-reset"); pg.wait_for_timeout(300); self.assertEqual(where(), "mid"); pg.click("#pos-all"); pg.wait_for_timeout(300)
+                # table and large chart can be moved up and down (small arrows in their headers), kept with "Ansicht speichern"
+                order3 = lambda: pg.evaluate("""() => [...document.querySelectorAll('#main #bch, #main .wrap.bil-tbl, #main #lc-grid')].map(e => e.id === 'bch' ? 'chart' : e.id === 'lc-grid' ? 'lines' : 'table')""")
+                tbl = lambda mv: ".wrap .th-mv[data-blk='table'][data-mv='%s']" % mv
+                self.assertEqual(order3(), ["chart", "table", "lines"]); pg.click(tbl(-1)); pg.wait_for_timeout(300); self.assertEqual(order3(), ["table", "chart", "lines"])
+                self.assertFalse(pg.is_visible(tbl(-1))); pg.click(tbl(1)); pg.wait_for_timeout(300); pg.click(tbl(1)); pg.wait_for_timeout(300)
+                self.assertEqual(order3(), ["chart", "lines", "table"])
+                pg.click("#bch .th-mv[data-blk='chart'][data-mv='1']"); pg.wait_for_timeout(300); self.assertEqual(order3(), ["lines", "chart", "table"])
+                pg.click("#view-save"); pg.wait_for_timeout(200)
+                self.assertEqual(pg.evaluate("JSON.parse(localStorage.getItem('kontor.bilanzView')).views.monate.blocks"), ["lines", "chart", "table"])
+                pg.click("#view-reset"); pg.wait_for_timeout(300); self.assertEqual(order3(), ["chart", "table", "lines"]); pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # the same in the table: a portfolio opens into its securities (without opening the account's history)
                 if not pg.query_selector("[data-dep]"):
-                    pg.click("tr.pos[data-pos='wertpapiere']")
+                    pg.click("tr.pos[data-pos='wertpapiere'] td:first-child")
                 pg.wait_for_selector("[data-dep]"); pg.click("[data-dep]"); pg.wait_for_selector("tr.wpr")
                 self.assertIn("Welt-ETF", pg.inner_text("#main table")); self.assertFalse(pg.query_selector("#drawer.open"))
                 self.assertTrue(any("ISIN IE00B4L5Y983" in x for x in pg.eval_on_selector_all("tr.wpr td:first-child", "ts => ts.map(t => t.title)")))      # MoneyMoney's identity always on hover
@@ -2201,7 +2204,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.eval_on_selector_all(".lc-rb[data-lc='nw'] button", "bs => bs.map(b => b.dataset.m)"), ["6", "12", "24"])
                 pg.click(".lc-rb[data-lc='nw'] button[data-m='24']"); pg.wait_for_timeout(200)
                 self.assertTrue(pg.query_selector(".lc-rb[data-lc='nw'] button[data-m='24'].on"))
-                self.assertEqual(pg.eval_on_selector_all("#bch-rb button", "bs => bs.map(b => b.dataset.m)"), ["6", "12", "24", "0"])
+                self.assertEqual(pg.eval_on_selector_all("#bch-rb button", "bs => bs.map(b => b.dataset.m)"), ["6", "12", "24", "36", "0"])
                 pg.evaluate("S.lcSel = null")
                 # old German addresses lead to the English ones
                 pg.evaluate("location.hash = '#einrichtung/konten'"); pg.wait_for_timeout(400)
@@ -2224,17 +2227,21 @@ class BrowserTest(unittest.TestCase):
                     .sort((a, b) => b[1].width * b[1].height - a[1].width * a[1].height); const [p, r] = ps[0]; return [r.left + r.width / 2, r.top + r.height / 2, BCH.d.series[+p.dataset.s].rolle]; }"""
                 x, y, role = pg.evaluate("() => (%s)(x => x.acc && !x.dep)" % centre)
                 pg.mouse.click(x, y); pg.wait_for_timeout(400); self.assertFalse(pg.evaluate("r => !!S.posOpen[r]", role))
+                self.assertTrue(pg.is_visible("#bch-tip")); self.assertTrue(pg.query_selector("#bch-svg.hl"))      # still under the mouse, without moving it
                 x, y, _ = pg.evaluate("r => (%s)(x => x.pos && x.rolle === r)" % centre, role)
                 pg.mouse.click(x, y); pg.wait_for_timeout(400); self.assertTrue(pg.evaluate("r => !!S.posOpen[r]", role))
-                # the mouse over a table row marks the same area in the chart
+                # the mouse over the name of a row marks the same area in the chart; a click on a value shows month and area for a moment
                 pg.hover("tr.acct td:first-child"); pg.wait_for_timeout(100); self.assertTrue(pg.query_selector("#bch-svg.hl .bch-area.hl")); pg.mouse.move(5, 5)
+                pg.click("tr.acct td:nth-child(3)"); pg.wait_for_timeout(200)
+                self.assertFalse(pg.query_selector("#drawer.open")); self.assertTrue(pg.is_visible("#bch-tip")); self.assertTrue(pg.query_selector("#bch-tip div.on"))
+                pg.wait_for_timeout(2800); self.assertFalse(pg.is_visible("#bch-tip"))
                 span = pg.evaluate("BCH.i1 - BCH.i0"); bb = pg.query_selector("#bch-hit").bounding_box()
                 pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2)
                 for _ in range(40):
                     pg.mouse.wheel(-300, 0)
                 pg.wait_for_timeout(300)
                 self.assertEqual(pg.evaluate("BCH.i0"), 0); self.assertEqual(pg.evaluate("BCH.i1 - BCH.i0"), span)
-                pg.mouse.dblclick(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2); pg.wait_for_timeout(300)
+                pg.mouse.dblclick(bb["x"] + bb["width"] / 2, bb["y"] + 17); pg.wait_for_timeout(300)        # above the areas (a click on one opens it)
                 self.assertLessEqual(pg.evaluate("BCH.i1 - BCH.i0"), span // 2 + 1)
                 # click on a month heading: chart moved (same span) so that the month lands above the column, column marked
                 pg.click("#bch-rb button[data-m='12']"); pg.wait_for_timeout(200)
@@ -2410,7 +2417,10 @@ class BrowserTest(unittest.TestCase):
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_kategorien.png"), full_page=True)
                 # Planung: Ereignis anlegen -- erst wenn die Neuberechnung nach dem Zuordnen fertig und geladen ist (sonst baut
                 # das Nachladen die Seite waehrend der Eingabe neu auf)
-                pg.wait_for_function("() => S.STATUS && !(S.STATUS.bericht || {}).laeuft && (S.STATUS.bericht || {}).stand === BER.stand", timeout=20000)
+                for _ in range(60):                 # asks for the status itself instead of waiting for the next poll (every 30 s)
+                    if pg.evaluate("async () => { try { await pollStatus(); } catch (e) {} return !!S.STATUS && !(S.STATUS.bericht || {}).laeuft && (S.STATUS.bericht || {}).stand === BER.stand; }"):
+                        break
+                    pg.wait_for_timeout(500)
                 pg.wait_for_timeout(1000)
                 pg.click("#nav a[href='#planning']"); pg.wait_for_selector(".ev-row")
                 row = pg.query_selector_all(".ev-row")[-1]
@@ -2470,7 +2480,7 @@ class BrowserTest(unittest.TestCase):
                 # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
                 self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
                 self.assertTrue(pg.query_selector("#main thead th.plan")); self.assertNotIn("Fortschreibung", pg.query_selector("#main").inner_text())
-                pg.click("tr.pos[data-pos='liquiditaet']"); pg.wait_for_selector("tr.acct")
+                pg.click("tr.pos[data-pos='liquiditaet'] td:first-child"); pg.wait_for_selector("tr.acct")
                 pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # waagerecht zur aktuellen Spalte gescrollt (auch in der Jahresansicht)
                 self.assertGreater(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0)

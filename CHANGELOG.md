@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.11.7 (2026-11-09 02:11)
+- Grafiken der Bilanz: Zeiträume enden am letzten abgeschlossenen Monat (im November: „1 J“ = Oktober bis Oktober). Der laufende Monat ist gepunktet und leicht hinterlegt, der Plan gestrichelt; die senkrechte Linie markiert das Ende des letzten abgeschlossenen Monats, „heute“ den laufenden. Kürzester Zeitraum: ein Monat. Große Grafik zusätzlich mit 3 J (Monate) bzw. 5 J (Jahre), vorausgewählt 2 J bzw. 5 J.
+- Auch die große Grafik lässt sich über kleine Pfeile in ihrem Kopf nach oben oder unten schieben (auch unter die kleinen Grafiken); wird mit „Ansicht speichern“ gemerkt.
+- Bilanz-Tabelle: Klick auf den Namen wie bisher (aufklappen bzw. Verlauf), Klick auf einen Wert zeigt Monat und Fläche kurz in der großen Grafik. Hervorhebung beim Darüberfahren nur noch über dem Namen, ohne springende Monatslinie.
+- Klick auf eine Fläche: Werte-Fenster und Hervorhebung sind danach sofort wieder da (ohne die Maus zu bewegen), ein zweiter Klick klappt gleich wieder zu; die Tabelle springt dabei wie gewohnt zum Monat.
+
 ## 3.11.6 (2026-11-09 01:46)
 - Bilanz-Grafik: Über der Monatsachse erscheint das Werte-Fenster ohne Hervorhebung; Klick dort springt in die Tabelle, waagerechtes Wischen verschiebt.
 - Klick auf eine Fläche klappt wie in der Tabelle auf (Position → Konten → Depot → Wertpapiere); Klick auf ein Konto oder Wertpapier klappt die Position wieder zu.

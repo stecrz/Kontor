@@ -76,14 +76,14 @@ def main():
                 pg.goto(U + h); pg.wait_for_timeout(1400)
                 pg.evaluate("document.querySelectorAll('#banner').forEach(b => { b.className = 'hidden'; b.innerHTML = ''; })")
                 if special == "bilanz" and not pg.query_selector("tr.acct"):
-                    pg.click("tr.pos[data-pos='liquiditaet']"); pg.wait_for_timeout(500)
+                    pg.click("tr.pos[data-pos='liquiditaet'] td:first-child"); pg.wait_for_timeout(500)
                 if special == "immo":
                     pg.click(".card[data-im]"); pg.wait_for_timeout(1500)
                 save(pg, name)
             # history panel of an account
             pg.goto(U + "#balance"); pg.wait_for_timeout(1200)
             if not pg.query_selector("tr.acct"):
-                pg.click("tr.pos[data-pos='liquiditaet']"); pg.wait_for_timeout(400)
+                pg.click("tr.pos[data-pos='liquiditaet'] td:first-child"); pg.wait_for_timeout(400)
             pg.click("tr.acct td"); pg.wait_for_selector("#drawer.open"); pg.wait_for_timeout(800)
             save(pg, "account_history", clip={"x": 860, "y": 0, "width": 500, "height": 820})
             # iPhone

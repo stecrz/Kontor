@@ -188,6 +188,8 @@ svg text { fill:var(--muted); font-size:11px; }
 .bch-x.end { fill:var(--fg); font-weight:600; }
 .bch-area { opacity:.82; stroke:var(--head); stroke-width:.6; }
 .bch-plan { fill:var(--head); opacity:.45; }
+.bch-run { fill:var(--head); opacity:.22; }                /* the running month: data still coming in */
+.bch-nw.run:not(.halo), .lc-total.run:not(.halo) { stroke-dasharray:.5 4.5; }
 .bch-today { stroke:var(--fg); stroke-width:1; opacity:.45; stroke-dasharray:3 3; }
 .bch-today-l { font-size:10px; fill:var(--muted); text-anchor:middle; }
 .bch-nw { fill:none; stroke:var(--c-nw); stroke-width:2.4; stroke-linejoin:round; stroke-linecap:round; }
@@ -197,7 +199,7 @@ svg text { fill:var(--muted); font-size:11px; }
 .bch-nw.halo, .lc-total.halo { stroke:var(--head) !important; stroke-width:6; opacity:.85; stroke-dasharray:none; }
 .bch-nw.plan.halo, .lc-total.plan.halo { opacity:.5; }
 @media (prefers-color-scheme: dark) { .bch-nw.halo, .lc-total.halo { stroke-width:4; opacity:.3; } .bch-nw.plan.halo, .lc-total.plan.halo { opacity:.2; } }
-.wrap + .bch { margin-top:14px; }          /* table above the large chart: room for its scroll bar */
+.wrap + .bch, .wrap + .lc-grid { margin-top:14px; }          /* table above the large chart: room for its scroll bar */
 .bch-end { fill:var(--c-nw); stroke:var(--head); stroke-width:2; }
 .bch-sel { fill:var(--accent); opacity:.12; }
 .bch-hit { fill:transparent; cursor:crosshair; }
@@ -256,7 +258,7 @@ td.flash, th.flash { animation:colflash 1.4s ease-out; }
 .th-btn { padding:0 4px; min-width:20px; height:20px; font-size:12px; line-height:1; background:transparent; border:1px solid var(--line); border-radius:5px; color:var(--muted); cursor:pointer; }
 .th-btn:hover { color:var(--accent-fg); border-color:var(--accent-fg); }
 .th-mv { padding:0; width:13px; height:18px; border:0; background:transparent; color:var(--muted); font-size:11px; line-height:1; cursor:pointer; opacity:0; transition:opacity .15s; }
-.th-first:hover .th-mv, .th-mv:focus-visible { opacity:.75; } .th-mv:hover { opacity:1 !important; color:var(--accent-fg); } .th-mv:disabled { visibility:hidden; }
+.th-first:hover .th-mv, .bch-head:hover .th-mv, .th-mv:focus-visible { opacity:.75; } .th-mv:hover { opacity:1 !important; color:var(--accent-fg); } .th-mv:disabled { visibility:hidden; }
 @media (hover:none) { .th-mv { opacity:.45; } }
 .th-hid { display:inline-flex; align-items:center; gap:3px; font-size:11px; color:var(--muted); cursor:pointer; padding:1px 5px; border-radius:5px; border:1px solid transparent; font-weight:500; }
 .th-hid input { display:none; } .th-hid:hover { border-color:var(--line); } .th-hid.on { color:var(--accent-fg); background:var(--accent-soft); }
