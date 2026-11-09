@@ -59,18 +59,26 @@ class RuleResult:
     missing: List[dict] = field(default_factory=list)     # created by Kontor before, no longer found in MoneyMoney
 
 
-def _created_check(ledger: Ledger, created: Dict[str, dict], tag: str, res: RuleResult) -> bool:
+def find_unmarked(ledger: Ledger, rec: dict, claimed: set) -> Optional[Tx]:
+    """A booking of Kontor's own list whose mark is gone: the same account, date and amount, without another booking's mark,
+    and each booking in MoneyMoney for one entry only (two equal ones are two, not one twice)."""
+    for t in ledger.transactions(rec.get("konto") or ""):
+        if t.id in claimed or t.booking_date.isoformat() != rec.get("datum") or abs(t.amount - float(rec.get("betrag") or 0)) >= 0.005:
+            continue
+        if TAG_RE.search(t.purpose or ""):          # carries a mark: belongs to that booking
+            continue
+        claimed.add(t.id)
+        return t
+    return None
+
+
+def _created_check(ledger: Ledger, created: Dict[str, dict], tag: str, res: RuleResult, claimed: Optional[set] = None) -> bool:
     """Kontor's own list of the bookings it made: a tag on it is never proposed again, even if its mark is gone from
-    MoneyMoney (changed or deleted there). Still there by account, date and amount: fine; otherwise noted as missing."""
+    MoneyMoney (changed or deleted there) -- the matching below only decides whether it is shown as missing."""
     rec = created.get(tag)
     if not rec:
         return False
-    try:
-        d = date.fromisoformat(rec.get("datum") or "")
-    except ValueError:
-        d = None
-    there = any(t.booking_date == d and abs(t.amount - float(rec.get("betrag") or 0)) < 0.005 for t in ledger.transactions(rec.get("konto") or ""))
-    if not there:
+    if find_unmarked(ledger, rec, claimed if claimed is not None else set()) is None:
         res.missing.append({k: rec.get(k) for k in ("tag", "konto_name", "datum", "betrag", "art", "regel")})
     return True
 
@@ -146,8 +154,9 @@ DEFAULT_TEXTS = {
 }
 
 
-def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str, dict]] = None) -> RuleResult:
+def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str, dict]] = None, claimed: Optional[set] = None) -> RuleResult:
     res = RuleResult()
+    claimed = claimed if claimed is not None else set()
     name = cfg.get("name") or cfg.get("darlehenskonto")
     rule = "Darlehen %s" % name
     try:
@@ -183,7 +192,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str
                 continue
             matched.append(t)
             tag = "#mm-tx-%d" % t.id
-            if tag in existing or _created_check(ledger, created or {}, tag, res):
+            if tag in existing or _created_check(ledger, created or {}, tag, res, claimed):
                 continue
             amount = round(-t.amount, 2)
             purpose = _fill(texts["tilgung_text"], art=payment_kind(t), datum=t.booking_date.strftime("%d.%m.%Y"),
@@ -259,7 +268,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str
         if bday > today or bday < ab:
             continue
         tag = "#mm-zins-%04d-%02d" % (y, m)
-        if tag in existing or _created_check(ledger, created or {}, tag, res):
+        if tag in existing or _created_check(ledger, created or {}, tag, res, claimed):
             continue
         # Schutz: manuell gebuchte Zinsen im selben Monat
         manual = [t for t in loan_txs if (t.booking_date.year, t.booking_date.month) == (y, m)
@@ -362,10 +371,11 @@ def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[s
     """created: Kontor's own list of the bookings it made (tag -> record), see _created_check. Values (participations, mirrors)
     need none: they always book the difference to the balance in MoneyMoney."""
     total = RuleResult()
+    claimed: set = set()
     # Reihenfolge: erst Darlehen (veraendern GbR-Werte), dann Wert-Spiegel
     for cfg in config.get("darlehen", []) or []:
         if cfg.get("aktiv", True):
-            r = plan_loan(ledger, cfg, today, created)
+            r = plan_loan(ledger, cfg, today, created, claimed)
             total.proposals += r.proposals; total.warnings += r.warnings; total.info += r.info; total.missing += r.missing
     from report import account_roles          # spaet importiert (auswertung importiert rules)
     roles = account_roles(ledger, config)

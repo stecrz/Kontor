@@ -47,7 +47,7 @@ from core import (RUN_LOCK, account_sig, account_tree, bereiche_for, build_repor
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, apply_plan, role_label
-from rules import TAG_RE
+from rules import TAG_RE, find_unmarked
 from storage import Store
 from excel import Sheet, workbook
 from i18n import tr
@@ -83,15 +83,14 @@ def kontor_bookings(ledger, record: Optional[List[dict]] = None) -> List[dict]:
                 "art": kinds.get(k, (rec or {}).get("art", k)), "betrag": round(t.amount, 2) if t else (rec or {}).get("betrag"),
                 "gegenpartei": t.name if t else "", "zweck": TAG_RE.sub("", t.purpose).strip() if t else (rec or {}).get("regel", ""),
                 "markierung": tag, "status": status}
-    seen = set()
+    seen, claimed = set(), set()
     for rec in record or []:
         tag = rec.get("tag") or ""
         seen.add(tag)
         if tag in by_tag:
             out.append(row(by_tag[tag], tag, "ok", rec))
             continue
-        hit = next((t for t in ledger.transactions(rec.get("konto") or "") if t.booking_date.isoformat() == rec.get("datum")
-                    and abs(t.amount - float(rec.get("betrag") or 0)) < 0.005), None)
+        hit = find_unmarked(ledger, rec, claimed)          # one booking in MoneyMoney for one entry only
         out.append(row(hit, tag, "markierung" if hit else "fehlt", rec))
     for tag, t in by_tag.items():
         if tag not in seen:

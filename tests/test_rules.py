@@ -600,3 +600,12 @@ class CreatedListTests(unittest.TestCase):
         led2 = Ledger(accounts_from_export(F.accounts_raw({})), tx_from_export([F.tx("pb.vd", z[0].booking_date, z[0].amount, "Bank", "Zinsen (Markierung geändert)")]))
         r2 = plan_loan(led2, cfg, date(2026, 10, 31), rec)
         self.assertNotIn(z[0].tag, [p.tag for p in r2.proposals]); self.assertEqual(r2.missing, [])
+
+    def test_two_equal_bookings_are_two(self):
+        from rules import find_unmarked
+        txs = [F.tx("pb.vd", date(2026, 10, 31), -50.0, "Bank", "Zinsen"), F.tx("pb.vd", date(2026, 10, 31), -50.0, "Bank", "Zinsen #mm-zins-2026-09")]
+        led = Ledger(accounts_from_export(F.accounts_raw({})), tx_from_export(txs))
+        rec = {"konto": F.uid("pb.vd"), "datum": "2026-10-31", "betrag": -50.0}
+        claimed = set()
+        self.assertIsNotNone(find_unmarked(led, rec, claimed))      # the one without a mark
+        self.assertIsNone(find_unmarked(led, rec, claimed))         # the other carries another booking's mark, the first is taken

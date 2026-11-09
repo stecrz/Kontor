@@ -172,6 +172,10 @@ const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl:
   update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', dokumente: 'properties', immo_planung: 'properties'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 const ICON = {
+  check: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M13.5 2 4 13.5h6.5L9.5 22 20 9.5h-6.6z"/></svg>',
+  hand: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11m0-6.5v-.5a1.5 1.5 0 0 1 3 0V11m0-5.5a1.5 1.5 0 0 1 3 0V12m0-3.5a1.5 1.5 0 0 1 3 0V15a7 7 0 0 1-7 7h-1.2a7 7 0 0 1-5.6-2.8L3.4 15a1.6 1.6 0 0 1 2.4-2.1L8 15"/></svg>',
   expand: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>',
   pin: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 3h6l-1 7 4 4H6l4-4-1-7z"/></svg>',
   reset: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
@@ -2688,12 +2692,12 @@ function vBuchungen(runs) {
   const pending = l && l.probelauf && (l.vorschlaege || []).length ? l.vorschlaege.length : 0;
   const artL = {tilgung: t('art_tilgung'), zins: t('art_zins'), wert: t('art_wert'), spiegel: t('art_spiegel')};
   let h = `<div class="toolbar">
-    <button id="run-dry" class="${pending ? 'secondary' : ''}">${t('abgleich_jetzt_test')}</button>
-    ${pending ? `<button id="run-live" ${local ? '' : t('disabled_title_nur_am_mac')}>${t('jetzt_buchen')} (${pending})</button>` : ''}
+    ${pending ? `<button id="run-live" class="ico" ${local ? '' : t('disabled_title_nur_am_mac')}>${ICON.check}${t('jetzt_buchen')} (${pending})</button>` : ''}
+    <button id="run-dry" class="ico${pending ? ' secondary' : ''}">${ICON.refresh}${t('abgleich_jetzt_test')}</button>
     <button id="run-report" class="secondary">${t('nur_bericht_aktualisieren')}</button>
     <span class="sp"></span>
-    <div class="seg small" id="auto-mode" title="${t('modus_tip')}"><button data-v="1" class="${ask ? 'on' : ''}" ${local ? '' : 'disabled'}>${t('modus_fragen')}</button><button data-v="0" class="${ask ? '' : 'on'}" ${local ? '' : 'disabled'}>${t('modus_auto')}</button></div>
-  </div><div class="note">${t('im_testmodus_schlaegt_kontor_die')} <a href="#rules">${t('regeln_bearbeiten')} →</a></div>`;
+    <a class="mode-chip${ask ? '' : ' auto'}" href="#rules" title="${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')}">${ask ? ICON.hand : ICON.bolt}${t(ask ? 'modus_freigabe' : 'modus_automatisch')}</a>
+  </div><div class="note">${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')} <a href="#rules">${t('regeln_bearbeiten')} →</a></div>`;
   if (l) {
     const head = pending ? `${t('wartet_freigabe')} <span class="x">${pending}</span>` : `${t('zuletzt_geprueft')} <span class="x">${esc(l.zeit)} · ${l.geschrieben} ${t('gebucht')}</span>`;
     h += `<h2>${head}${l.fehler ? ' <span class="pill err">' + esc(l.fehler) + '</span>' : ''}</h2>`;
@@ -3066,8 +3070,10 @@ const onlyManual = k => !k.gruppe && k.manuell, onlyGroups = k => k.gruppe, only
 function vRegeln() {
   const C = S.CFG;
   let h = `<div class="note">${t('regeln_schreiben_ausschliesslich_in_ma')}${more('rules')}` + (S.KONTEN.length ? '' : ` <b>${t('noch_keine_konten_geladen_unter')}</b>`) + '</div>';
-  const lr = (S.STATUS || {}).letzter_lauf, pend = lr && lr.probelauf ? (lr.vorschlaege || []).length : 0;
-  h += `<div class="banner info"><b>${C.probelauf !== false ? t('modus_fragen') : t('modus_auto')}</b> · ${pend ? `<a href="#bookings">${t('0_buchungsvorschlaege', pend)} →</a>` : `<a href="#bookings">${t('regeln_zu_buchungen')} →</a>`}</div>`;
+  const lr = (S.STATUS || {}).letzter_lauf, pend = lr && lr.probelauf ? (lr.vorschlaege || []).length : 0, auto = C.probelauf === false, loc = !!(S.STATUS || {}).lokal;
+  h += `<div class="card set-row"><div class="grow"><b>${t('auto_buchen')}</b><div class="small muted">${t(auto ? 'auto_buchen_an' : 'auto_buchen_aus')}${loc ? '' : ' ' + t('nur_am_mac_klammer')}</div></div>`
+    + `<label class="switch${loc ? '' : ' off'}"><input type="checkbox" id="auto-book" ${auto ? 'checked' : ''} ${loc ? '' : 'disabled'}><i></i></label></div>`
+    + `<div class="note">${pend ? `<a href="#bookings">${t('0_buchungsvorschlaege', pend)} →</a>` : `<a href="#bookings">${t('regeln_zu_buchungen')} →</a>`}</div>`;
   h += `<h2>${t('darlehen')} <span class="x">${t('rate_erkennen_auf_dem_darlehenskonto')}</span></h2><div class="list" id="loans">`;
   (C.darlehen || []).forEach((l, i) => { h += loanForm(l, i); });
   h += `</div><div class="actions"><button id="add-loan" class="secondary">${t('darlehen_hinzufuegen')}</button></div>`;
@@ -3359,7 +3365,7 @@ function vEinstellungenAllgemein() {
   let h = `<div class="note">${t('einstellungen_vs_einrichtung', '<a href="#setup">' + t('einrichtung') + '</a>')}</div><h2>${t('betrieb')}</h2><div class="form">
     <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang">${langOpts()}</select> <span class="small muted">${t('sprache_hinweis')}</span></label>
     <label>${t('design_label')}</label><label class="chk"><select id="e-theme">${[['dark', t('design_dunkel')], ['light', t('design_hell')], ['auto', t('design_system')]].map(([k, l]) => `<option value="${k}" ${themeGet() === k ? 'selected' : ''}>${l}</option>`).join('')}</select> <span class="small muted">${t('design_hinweis')}</span></label>
-    <label>${t('testmodus_0', hq('probelauf'))}</label><label class="chk"><input type="checkbox" id="e-probelauf" ${C.probelauf ? 'checked' : ''}> ${t('buchungen_aus_regeln_nur_vorschlagen')}</label>
+    <label>${t('auto_buchen')} ${hq('probelauf')}</label><label class="chk"><input type="checkbox" id="e-autobook" ${C.probelauf === false ? 'checked' : ''} ${(S.STATUS || {}).lokal ? '' : 'disabled'}> ${t('auto_buchen_kurz')}</label>
     <label>${t('automatischer_abgleich_0', hq('abgleich'))}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatisch !== false ? 'checked' : ''}> ${t('alle_2')} <input type="number" id="e-intervall" min="5" value="${z.intervall_minuten ?? 30}" style="width:70px"> ${t('minuten_nur_wenn_moneymoney_laeuft')}</label>
     <label>${t('alles_neu_lesen_0', hq('voll_lesen'))}</label><label class="chk">${t('alle_2')} <input type="number" id="e-voll" min="1" value="${z.voll_lesen_tage ?? 7}" style="width:70px"> ${t('tage')}</label>
     <label>${t('mitteilungen_macos')}</label><label class="chk"><input type="checkbox" id="e-mitt" ${C.mitteilungen !== false ? 'checked' : ''}> ${t('bei_buchungen_vorschlaegen_und_fehlern')}</label>
@@ -3506,8 +3512,8 @@ const posRow = (k, v) => `<div class="row tight pos-row"><input type="text" clas
 function collectSettings() {
   // nur die Felder des sichtbaren Reiters; alles andere bleibt, wie es ist
   const cfg = JSON.parse(JSON.stringify(S.CFG));
-  if ($('#e-probelauf')) {
-    cfg.probelauf = $('#e-probelauf').checked; cfg.mitteilungen = $('#e-mitt').checked;
+  if ($('#e-autobook')) {
+    cfg.probelauf = !$('#e-autobook').checked; cfg.mitteilungen = $('#e-mitt').checked;
     cfg.zeitplan = { automatisch: $('#e-auto').checked, intervall_minuten: Math.max(5, parseInt($('#e-intervall').value) || 30), voll_lesen_tage: Math.max(1, parseInt($('#e-voll').value) || 7) };
     cfg.bilanz = Object.assign(cfg.bilanz || {}, { monate_zurueck: parseInt($('#e-monate').value) || 0 });
     cfg.moneymoney = Object.assign(cfg.moneymoney || {}, { kategorisieren_erlauben: $('#e-mm-cat').checked });
@@ -3953,11 +3959,11 @@ function bind(main) {
 
   // Buchungen
   const rd = $('#run-dry', main); if (rd) rd.addEventListener('click', () => startRun(true));
-  $$('#auto-mode button', main).forEach(b => b.addEventListener('click', async () => {      // ask before booking / book automatically
-    const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.probelauf = b.dataset.v === '1';
-    if (!cfg.probelauf && !confirm(t('modus_auto_frage'))) return;
-    try { await api('/api/config', {config: cfg}, 'PUT'); S.CFG = await api('/api/config'); S.STATUS = await api('/api/status'); route(); } catch (e) { toast(e.message, 5000); }
-  }));
+  const autoSw = $('#auto-book', main); if (autoSw) autoSw.addEventListener('change', async () => {      // book automatically (on) or with approval (off)
+    if (autoSw.checked && !confirm(t('modus_auto_frage'))) { autoSw.checked = false; return; }
+    const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.probelauf = !autoSw.checked;
+    try { await api('/api/config', {config: cfg}, 'PUT'); S.CFG = await api('/api/config'); S.STATUS = await api('/api/status'); route(); } catch (e) { autoSw.checked = !autoSw.checked; toast(e.message, 5000); }
+  });
   $$('.re-allow', main).forEach(b => b.addEventListener('click', async () => { try { await api('/api/bookings/allow', {tag: b.dataset.tag}); toast(t('wieder_anlegen_ok')); route(); } catch (e) { toast(e.message, 5000); } }));
   const rl = $('#run-live', main); if (rl) rl.addEventListener('click', () => { if (confirm(t('jetzt_buchen_buchungen_werden_jetzt'))) startRun(false); });
   const rr = $('#run-report', main); if (rr) rr.addEventListener('click', async () => { toast(t('bericht_wird_erstellt'), 20000); const r = await api('/api/report', {}); if (!r.ok) toast(r.text || t('moneymoney_nicht_verfuegbar'), 5000); await loadAll(); route(); });

@@ -2582,7 +2582,12 @@ class BrowserTest(unittest.TestCase):
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_umsaetze_drawer.png"))
                 pg.keyboard.press("Escape")
                 # Regeln speichern (unveraendert) -> Befunde ok
-                pg.click("#nav a[href='#rules']"); pg.wait_for_selector("#save-rules"); pg.click("#save-rules"); pg.wait_for_timeout(900)
+                pg.click("#nav a[href='#rules']"); pg.wait_for_selector("#save-rules")
+                auto = pg.evaluate("S.CFG.probelauf === false"); self.assertEqual(pg.is_checked("#auto-book"), auto)      # the setting as a switch at the top
+                self.assertIn("Kontor bucht" if auto else "Freigabe", pg.inner_text(".set-row"))
+                pg.click("#nav a[href='#bookings']"); pg.wait_for_selector(".mode-chip"); self.assertIn("Automatisch" if auto else "Mit Freigabe", pg.inner_text(".mode-chip"))
+                self.assertTrue(pg.query_selector("#run-dry svg"))
+                pg.click(".mode-chip"); pg.wait_for_selector("#save-rules"); pg.click("#save-rules"); pg.wait_for_timeout(900)
                 self.assertIn("Gespeichert", pg.query_selector("#findings").inner_text())
                 # ⌘L locks
                 pg.keyboard.press("Meta+l"); pg.wait_for_selector("#login:not(.hidden)")
@@ -2792,7 +2797,7 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Alpha GbR"][0]["anteil"], 0.49)       # Prozent -> Anteil
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Privat"][0]["art"], "privat")
                 # Paket laden mit Zuordnung
-                pg.click("#nav a[href='#settings']"); pg.wait_for_selector("#e-probelauf")
+                pg.click("#nav a[href='#settings']"); pg.wait_for_selector("#e-autobook")
                 pg.click("#main .tabs button[data-next='#settings/backup']"); pg.wait_for_selector("#pk-pick")
                 with pg.expect_file_chooser() as fc:
                     pg.click("#pk-pick")

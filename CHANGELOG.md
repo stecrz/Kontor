@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.12.17 (2026-11-09 17:49)
+- Auto-Regeln: Schalter „Automatisch buchen“ oben (aus = mit Freigabe), wie in den macOS-Einstellungen; Auto-Buchungen zeigen oben rechts, was gilt, und haben „Freigeben“ und „Jetzt prüfen“ mit Symbolen.
+- Erkennung geänderter Markierungen: Jede Buchung in MoneyMoney zählt nur einmal; Buchungen mit fremder Markierung zählen nicht mit.
+
 ## 3.12.16 (2026-11-09 17:31)
 - Auto-Buchungen: „Vor dem Buchen fragen“ oder „Automatisch buchen“ statt „Testmodus“ (umschalten nur am Mac); „Jetzt prüfen“ und „Freigeben und buchen“. Hinweise zuerst, Rechenwege und Verlauf aufklappbar; Verweise zwischen Auto-Regeln und Auto-Buchungen.
 - Nie doppelt: Kontor führt eine eigene Liste aller Buchungen, die es angelegt hat. Geänderte Markierungen erkennt es an Konto, Datum und Betrag; in MoneyMoney gelöschte Buchungen legt es nicht von selbst neu an, sondern zeigt sie als fehlend („Wieder anlegen“).
