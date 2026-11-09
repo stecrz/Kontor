@@ -19,7 +19,7 @@ from model import Account, Ledger, Tx, accounts_from_export, add_months, fmt_eur
 import mm_categories
 import realestate
 import categorize
-from report import ROLES, account_roles, build_dataset, holding_key
+from report import ROLES, account_roles, build_dataset, equity_ratio, holding_key
 from rules import Proposal, plan_all
 from storage import Store
 from tax import build_tax
@@ -897,6 +897,10 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         except Exception as e:
             log.exception("Area %s: report failed", b["name"])
             datasets[b["id"]] = {"fehler": str(e), "wurzel": b["name"]}
+    try:
+        equity_ratio(ledger, config, roles, bereiche, datasets)
+    except Exception:  # pragma: no cover
+        log.exception("Equity ratio failed")
     neu = konten_neu(ledger, config, bereiche, roles)
     if neu:
         warnings.append(tr("s_s_ohne_bestaetigte_zuordnung_einrichtu")

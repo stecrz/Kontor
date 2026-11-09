@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.12.4 (2026-11-09 04:30)
+- Neu (Alpha): Eigenkapitalquote unter dem Nettovermögen – durchgerechnet durch die Gesellschaften (deren Schulden mit deinem Anteil); ein Klick zeigt die Rechnung Schritt für Schritt.
+- Kapital- und Gesellschafterkonten (auch Gesellschafterdarlehen) zählen mit Guthaben standardmäßig zu den Beteiligungen statt zu den Forderungen.
+- Klick auf Monatsüberschrift oder Nettovermögen: Markierung blinkt nur kurz, die kleinen Grafiken enden mit dem Monat, die Seite scrollt nicht mehr.
+- Kleine Grafik 3: Klick in die Grafik ließ die Auswahl oben verschwinden – behoben.
+- Kästchen etwas weicher, weniger Leerraum am Seitenende.
+
 ## 3.12.3 (2026-11-09 04:08)
 - Klick auf eine Monatsüberschrift: Die große Grafik steht wieder genau über der Spalte. Klick auf einen Wert des Nettovermögens ebenso, dazu blinkt sein Punkt kurz auf.
 - Große Grafik: Wert und Veränderung unter der Überschrift, Werte-Fenster leicht durchsichtig, mindestens fünf Hilfslinien, „heute“ entfällt (dafür etwas höher). „Plan“ steht links vom Monatsfeld; das Feld zählt die Monate bis zum letzten abgeschlossenen.

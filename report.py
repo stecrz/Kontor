@@ -56,13 +56,15 @@ ASSET_ROLES = {"wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwer
 ILLIQUID_DEFAULT = ["anlagen", "beteiligungen", "immobilien", "sachwerte", "forderungen", "sonstiges"]
 # Hinweise aus Konto- und Gruppennamen (Reihenfolge = Vorrang; Wortgrenzen, damit z. B. "Haushalt" nicht als Haus gilt).
 # "+/-": Darlehen, Kredite, Kautionen -> Guthaben = Forderung, negativer Saldo = Verbindlichkeit
+# "kapital": Kapital-/Gesellschafterkonten und Gesellschafterdarlehen -> Guthaben = Beteiligung (Risikokapital: traegt Verluste mit,
+# fliesst erst beim Ausscheiden zurueck), negativer Saldo = Verbindlichkeit (in der Gesellschaft: Schuld an den Gesellschafter)
 NAME_HINTS = [
     (r"off.?balance|nicht bilanz", "ignorieren"),
     (r"aval|b(ü|ue)rgschaft|garantie", "eventual"),
     (r"eigenkapital", "eigenkapital"),
     # Kapital-/Gesellschafterkonten wie Gesellschafterdarlehen: in der Gesellschaft Schuld an den Gesellschafter, privat Forderung;
     # das Nettovermoegen der Gesellschaft ist dann der Rest, der nach Anteil verteilt wird (stimmt auch bei ungleichen Einlagen)
-    (r"kapitalkont|gesellschafterkont|gesellschafterdarlehen", "+/-"),
+    (r"kapitalkont|gesellschafterkont|gesellschafterdarlehen", "kapital"),
     (r"kaution", "+/-"),
     (r"\bp2p|peer.to.peer", "anlagen"),      # P2P loans are an investment, not a loan to manage (before "kredit")
     (r"darlehen|kredit(?!karte)|hypothek|finanzierung|\bschulden", "+/-"),
@@ -101,7 +103,9 @@ def _hint_role(name: str) -> Optional[str]:
 
 
 def _signed(role: Optional[str], acc: Account) -> Optional[str]:
-    """"+/-": Guthaben -> Forderung, Schuld -> Verbindlichkeit."""
+    """"+/-": Guthaben -> Forderung, Schuld -> Verbindlichkeit; "kapital": Guthaben -> Beteiligung, Schuld -> Verbindlichkeit."""
+    if role == "kapital":
+        return "beteiligungen" if acc.balance > 0.005 else "verbindlichkeiten"
     if role != "+/-":
         return role
     return "forderungen" if acc.balance > 0.005 else "verbindlichkeiten"
@@ -885,6 +889,98 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
 # ---------------------------------------------------------------------------
 # Planung
 # ---------------------------------------------------------------------------
+
+def shareholder_ids(ledger: Ledger) -> Set[str]:
+    """Capital and shareholder accounts (by their own name, otherwise their group's): the partners' equity in a company."""
+    out: Set[str] = set()
+
+    def walk(acc: Account, inherited: bool):
+        own = _hint_role(acc.name)
+        here = own == "kapital" or (own is None and inherited)
+        if not acc.group and here:
+            out.add(acc.uuid)
+        for c in acc.children:
+            walk(ledger.accounts[c], here)
+
+    for root in ledger.roots():
+        walk(root, False)
+    return out
+
+
+def equity_ratio(ledger: Ledger, config: dict, roles: Dict[str, str], bereiche: List[dict], datasets: Dict[str, dict]) -> None:
+    """Equity ratio looking through the companies (alpha): equity / (equity + debts) per month, written to
+    ds["bilanz"]["ek_quote"] with every part, so the calculation can be followed in the interface.
+
+    - Debts: accounts with a negative balance -- not participations (their debts come in through the look-through) and not
+      capital or shareholder accounts (equity of the partners, also as loans) -- plus, for each company linked by a
+      participation rule (account, group, share), the share of that company's debts, counted the same way (also through
+      its own participations).
+    - Equity: net worth; in a company area also the capital and shareholder accounts owed to the partners.
+    - The way capital accounts are booked (receivables or participations, one account or two) does not matter: net worth
+      stays the same and they are never debts. A company whose accounts are in no area: unknown (nothing is estimated).
+    """
+    vals: Dict[str, Dict[str, Optional[float]]] = {}
+    for ds in datasets.values():
+        for r in (ds.get("bilanz") or {}).get("zeilen") or []:
+            if not r.get("gruppe") and r.get("id") and isinstance(r.get("werte"), dict):
+                vals.setdefault(r["id"], r["werte"])
+    sh = shareholder_ids(ledger)
+    links: List[dict] = []
+    for e in config.get("beteiligungen") or []:
+        try:
+            tgt = ledger.resolve(e.get("zielkonto") or e["beteiligungskonto"])
+            grp = ledger.resolve(e["gruppe"])
+        except (KeyError, TypeError, AttributeError):
+            continue
+        if tgt.group or not grp.group:
+            continue
+        accs = [a for a in ledger.descendants(grp.uuid) if roles.get(a.uuid) not in OFF_BALANCE]
+        links.append({"n": len(links), "ziel": tgt.uuid, "name": e.get("name") or grp.name, "anteil": float(e.get("anteil", 1.0) or 0.0), "konten": accs})
+    targets = {lk["ziel"] for lk in links}
+
+    def look(accs: List[Account], mk: str, seen: frozenset) -> dict:
+        ids = {a.uuid for a in accs}
+        own, konten, unknown = 0.0, [], []
+        for a in accs:
+            if a.uuid in sh or a.uuid in targets or roles.get(a.uuid) == "beteiligungen":
+                continue
+            w = vals.get(a.uuid)
+            if w is None:
+                unknown.append(a.name)
+                continue
+            v = w.get(mk) or 0.0
+            if v < -0.005:
+                own += -v
+                konten.append([a.name, round(-v, 2)])
+        firmen = []
+        for lk in links:
+            if lk["ziel"] not in ids or lk["n"] in seen:
+                continue
+            sub = look(lk["konten"], mk, seen | {lk["n"]})
+            unknown += sub["unbekannt"]
+            firmen.append({"name": lk["name"], "anteil": lk["anteil"], "schulden": sub["summe"], "anteilig": round(lk["anteil"] * sub["summe"], 2),
+                           "konten": sub["konten"] + [[t["name"], t["anteilig"]] for t in sub["firmen"]]})
+        return {"eigene": round(own, 2), "konten": sorted(konten, key=lambda x: -x[1]), "firmen": firmen, "unbekannt": unknown,
+                "summe": round(own + sum(f["anteilig"] for f in firmen), 2)}
+
+    for b in bereiche:
+        ds = datasets.get(b["id"]) or {}
+        if "bilanz" not in ds:
+            continue
+        accs = [a for a in b["leaves"] if roles.get(a.uuid) not in OFF_BALANCE]
+        nw = ds["bilanz"].get("nettovermoegen") or {}
+        ohne = sorted({a.name for a in accs if roles.get(a.uuid) == "beteiligungen" and a.uuid not in targets and a.uuid not in sh})
+        monate = {}
+        for mk in ds.get("monate") or []:
+            r = look(accs, mk, frozenset())
+            kap = 0.0 if b.get("haupt") else sum(max(0.0, -((vals.get(a.uuid) or {}).get(mk) or 0.0)) for a in accs if a.uuid in sh)
+            ek = round((nw.get(mk) or 0.0) + kap, 2)
+            den = ek + r["summe"]
+            monate[mk] = {"quote": round(ek / den, 4) if den > 0.005 and not r["unbekannt"] else None, "ek": ek, "nw": nw.get(mk),
+                          "kapital": round(kap, 2), "schulden": r["summe"], "eigene": r["eigene"], "konten": r["konten"], "firmen": r["firmen"],
+                          "unbekannt": sorted(set(r["unbekannt"]))}
+        ds["bilanz"]["ek_quote"] = {"monate": monate, "ohne_durchschau": ohne}
+
 
 def _rate_at(rates: List[dict], day: date) -> Optional[float]:
     best = None

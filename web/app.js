@@ -1156,6 +1156,28 @@ function openWpDrawer(id) {
   bindHistChart($('#h-chart', d), pts);
   const g = $('#h-grid', d); if (g) g.scrollTop = g.scrollHeight;
 }
+const pctQ = q => (q * 100).toLocaleString(LOCALE, {minimumFractionDigits: 1, maximumFractionDigits: 1}) + ' %';
+function openEkqDrawer(mk) {
+  // the equity ratio of a month, step by step: equity, own debts, the share of each company's debts, the ratio
+  if (drawerAgain('ekq:' + mk)) return;
+  const EQ = ((B() || {}).bilanz || {}).ek_quote, e = EQ && EQ.monate[mk], d = $('#drawer'); if (!e) return;
+  const row = (l, v, c = '') => `<tr class="${c}"><td>${l}</td><td class="num">${v == null ? '–' : F0(v) + ' €'}</td></tr>`;
+  const sub = list => list.map(([n, v]) => `<tr class="muted ind1"><td>${esc(n)}</td><td class="num">${F0(v)} €</td></tr>`).join('');
+  const pct = a => (a * 100).toLocaleString(LOCALE, {maximumFractionDigits: 2}) + ' %';
+  let h = row(t('nettovermoegen'), e.nw) + (e.kapital ? row(t('ekq_kapital'), e.kapital) : '') + row(t('ekq_ek'), e.ek, 'total')
+    + row(t('ekq_eigene'), e.eigene) + sub(e.konten);
+  for (const f of e.firmen) h += row(t('ekq_firma', esc(f.name), pct(f.anteil), F0(f.schulden) + ' €'), f.anteilig) + sub(f.konten);
+  h += row(t('ekq_schulden'), e.schulden, 'total') + row(t('ekq_vermoegen'), e.ek + e.schulden)
+    + `<tr class="total"><td>${t('ekq_quote')}</td><td class="num">${e.quote == null ? t('unbekannt') : pctQ(e.quote)}</td></tr>`;
+  const ohne = EQ.ohne_durchschau || [];
+  d.innerHTML = `<button class="close icon">✕</button><h2>${t('ekq')} ${alphaTag()}</h2><div class="muted">${MONATE_LANG[+mk.slice(5) - 1]} ${mk.slice(0, 4)}</div>
+    <div class="note">${t('ekq_note')}</div><div class="wrap auto"><table class="plain small ekq-tbl"><tbody>${h}</tbody></table></div>
+    <div class="note">${t('ekq_regeln')}</div>`
+    + (ohne.length ? `<div class="note warn">${t(ohne.length === 1 ? 'ekq_ohne_1' : 'ekq_ohne_n', ohne.map(esc).join(', '))}</div>` : '')
+    + (e.unbekannt.length ? `<div class="note warn">${t('ekq_unbekannt', e.unbekannt.map(esc).join(', '))}</div>` : '');
+  d.classList.add('open');
+  $('.close', d).onclick = closeDrawer;
+}
 function openTransitDrawer() {
   if (drawerAgain('transit')) return;
   // Geldtransit: die erkannten Umbuchungen, deren Ab- und Gutschrift in verschiedene Monate fallen
@@ -1228,6 +1250,13 @@ function vBilanz() {
       h += row({id: 'einlagen', name: t('einlagen_entnahmen_kumuliert_plan'), werte: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'));
   }
   h += `<tr class="total"><td><i class="nw-sw"></i>${t('nettovermoegen')}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
+  // equity ratio (alpha): looking through the companies; actual months only, a click shows the calculation
+  const EQ = D.bilanz.ek_quote;
+  if (EQ && Object.keys(EQ.monate || {}).length) {
+    const at = c => { if (c.plan) return null; for (let k = c.months.length - 1; k >= 0; k--) if (EQ.monate[c.months[k]]) return c.months[k]; return null; };
+    h += `<tr class="ekq"><td title="${esc(t('ekq_tip'))}">${t('ekq')} ${alphaTag()}</td>${C.map(c => { const mk = at(c), e = mk && EQ.monate[mk];
+      return `<td class="${cls(1, c).replace(' pos', '')}"${mk ? ` data-m="${mk}"` : ''}>${!e ? '' : e.quote == null ? `<span title="${esc(t('unbekannt'))}">?</span>` : pctQ(e.quote)}</td>`; }).join('')}</tr>`;
+  }
   // outside net worth (guarantees, capital accounts as equity): one collapsible row per kind with its sum, accounts on click
   const out = D.bilanz.ausserhalb || [];
   for (const role of [...new Set(out.map(r => r.rolle))]) {
@@ -1633,18 +1662,24 @@ function bchJump(m) {
   $$('tr', w).forEach(tr => { const c = tr.children[idx]; if (c) { c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); } });
 }
 function bchFocus(key, blink) {
-  // table header clicked: move the chart (same span) so that this month lands roughly above the clicked column, and mark it
-  // (year column: the current month for the running year, otherwise its last month)
-  const d = BCH.d; if (!d || bchLinked()) return;
+  // a month heading (or a net worth value) clicked: the large chart moves (same span) so that this month lands exactly above
+  // the column and lights up once (net worth: its dot blinks); the small charts keep their length and end with this month,
+  // so they show the change up to it (year column: the current month for the running year, otherwise its last month)
+  const d = BCH.d; if (!d) return;
   const i = bchIndex(key); if (i < 0) return;
-  const span = BCH.i1 - BCH.i0, last = d.months.length - 1, G = BCH.geo, svg = $('#bch-svg'), th = $(`#main .wrap thead th[data-key="${key}"]`);
-  let frac = 0.5;                                       // share of the plot width where the month should land
-  if (G && svg && th) { const sr = svg.getBoundingClientRect(), r = th.getBoundingClientRect(); if (sr.width) frac = ((r.left + r.width / 2 - sr.left) * G.W / sr.width - G.P.l) / Math.max(1, G.W - G.P.l - G.P.r); }
-  const f = Math.max(0, Math.min(last - span, i - Math.max(0, Math.min(1, frac)) * span)), a = Math.round(f), z = Math.min(last, a + span);
-  bchSet(a, z, z - a === BCH.i1 - BCH.i0 ? S.bchBtn : null, f - a);     // same length: the range button stays (as when moving)
-  if (blink) bchBlink(i);                              // net worth clicked: its dot blinks once
-  else { bchHover(i); $('#bch-tip').classList.add('hidden'); }      // only the line marks the month; the values are in the table
-  const c = $('#bch'), r = c && c.getBoundingClientRect(); if (r && (r.top < 0 || r.bottom > window.innerHeight)) c.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+  if (!bchLinked()) {
+    const span = BCH.i1 - BCH.i0, last = d.months.length - 1, G = BCH.geo, svg = $('#bch-svg'), th = $(`#main .wrap thead th[data-key="${key}"]`);
+    let frac = 0.5;                                     // share of the plot width where the month should land
+    if (G && svg && th) { const sr = svg.getBoundingClientRect(), r = th.getBoundingClientRect(); if (sr.width) frac = ((r.left + r.width / 2 - sr.left) * G.W / sr.width - G.P.l) / Math.max(1, G.W - G.P.l - G.P.r); }
+    const f = Math.max(0, Math.min(last - span, i - Math.max(0, Math.min(1, frac)) * span)), a = Math.round(f), z = Math.min(last, a + span);
+    bchSet(a, z, z - a === BCH.i1 - BCH.i0 ? S.bchBtn : null, f - a);   // same length: the range button stays (as when moving)
+    bchBlink(i, blink && ['bilanz', 'nw'].includes(bigType()));
+  }
+  const m = d.months[i];
+  for (const id of Object.keys(LC)) {
+    const st = LC[id], j = st && st.d && $(`#lc-${id}-svg`) ? st.d.months.indexOf(m) : -1; if (j < 0) continue;
+    const sp = st.i1 - st.i0; lcSet(id, j - sp, j, j - sp >= 0 ? st.btn : null);
+  }
 }
 // Touch and drag on a chart, attached once to the (persistent) <svg>; the plot inside is redrawn on every change.
 // - one finger or the mouse on the x-axis strip (.bch-pan): drag sideways to move the range; the mouse over it shows the
@@ -1778,12 +1813,15 @@ function bchTableHover(tr) {
   if (!BCH.d || bigType() !== 'bilanz' || BCH.flash) return;
   stackMark($('#bch-svg'), 'bch-area', BCH.d, tr ? bchRowSeries(tr) : []);
 }
-function bchBlink(i) {
-  const d = BCH.d, G = BCH.geo, hv = $('#bch-hover'); if (!G || !hv || d.nw[i] == null) return;
+function bchBlink(i, dot) {
+  // a month lights up once in the large chart (line and table column), with the net worth dot if wanted; nothing stays
+  const d = BCH.d, G = BCH.geo, hv = $('#bch-hover'); if (!G || !hv) return;
   clearTimeout(BCH.flashT2); bchHover(null);
   const xi = G.x(i).toFixed(1);
-  hv.innerHTML = `<line class="bch-cross pulse" x1="${xi}" x2="${xi}" y1="${G.P.t}" y2="${G.H - G.P.b}"/><circle class="bch-dot blink" cx="${xi}" cy="${G.y(d.nw[i]).toFixed(1)}" r="4"${d.lineColor ? ` style="stroke:${d.lineColor}"` : ''}/>`;
-  BCH.flashT2 = setTimeout(() => { const h2 = $('#bch-hover'); if (h2 && !BCH.hov) h2.innerHTML = ''; }, 1300);
+  hv.innerHTML = `<line class="bch-cross pulse" x1="${xi}" x2="${xi}" y1="${G.P.t}" y2="${G.H - G.P.b}"/>`
+    + (dot && d.nw[i] != null ? `<circle class="bch-dot blink" cx="${xi}" cy="${G.y(d.nw[i]).toFixed(1)}" r="4"${d.lineColor ? ` style="stroke:${d.lineColor}"` : ''}/>` : '');
+  bchMark(d.months[i]);
+  BCH.flashT2 = setTimeout(() => { if (BCH.hov) return; const h2 = $('#bch-hover'); if (h2) h2.innerHTML = ''; bchMark(null); }, 1300);
 }
 function bchFlash(tr, td) {
   // a click on a value in the table: the row's area and the month light up once in the large chart, short and soft (the chart
@@ -2200,7 +2238,7 @@ function lcDraw(id) {
   } else pl = area() + lines('bch-nw');
   // with a range set on the y axis the curves are cut at the plot edges
   g += yr ? `<clipPath id="lcc-${id}"><rect x="${P.l}" y="${P.t}" width="${W - P.l - P.r}" height="${H - P.t - P.b}"/></clipPath><g clip-path="url(#lcc-${id})">${pl}</g>` : pl;
-  g += `<g id="lc-${id}-hover"></g><rect class="bch-sel hidden" id="lc-${id}-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="lc-${id}-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-yax${yr ? ' on' : ''}" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_yax_tip')}</title></rect><rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"/>`;
+  g += `<g id="lc-${id}-hover"></g><rect class="bch-sel hidden" id="lc-${id}-brush" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="lc-${id}-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-yax${yr ? ' on' : ''}" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_yax_tip')}</title></rect><rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"/>`;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); svg.innerHTML = g; svg.classList.remove('hl');
   st.shown = shown;
   st.geo = {W, H, P, x, y, min, max, inv: py => max - (py - P.t) * (max - min) / Math.max(1, H - P.t - P.b), idx: px => Math.max(i0, Math.min(i1, Math.round(i0 + (px - P.l) * n / Math.max(1, W - P.l - P.r))))};
@@ -2268,7 +2306,7 @@ function lcBindPlot(id) {
   hit.addEventListener('pointermove', e => {
     if (gest.busy()) { lcHover(id, null); return; }
     const px = pt(e), G = st.geo;
-    if (st.drag) { const sel = $(`#lc-${id}-sel`), a = Math.max(G.P.l, Math.min(st.drag.x, px)), b = Math.min(G.W - G.P.r, Math.max(st.drag.x, px)); sel.setAttribute('x', a); sel.setAttribute('width', b - a); sel.classList.toggle('hidden', b - a < 4); }
+    if (st.drag) { const sel = $(`#lc-${id}-brush`), a = Math.max(G.P.l, Math.min(st.drag.x, px)), b = Math.min(G.W - G.P.r, Math.max(st.drag.x, px)); sel.setAttribute('x', a); sel.setAttribute('width', b - a); sel.classList.toggle('hidden', b - a < 4); }
     lcHover(id, G.idx(px), pty(e));
   });
   hit.addEventListener('pointerleave', () => { if (!st.drag) lcHover(id, null); });
@@ -2277,7 +2315,7 @@ function lcBindPlot(id) {
     if (e.pointerType === 'touch' && (gest.busy() || st.tap == null || Math.abs(pt(e) - st.tap) > 10)) { st.tap = null; lcHover(id, null); return; }   // only a tap jumps to the column
     const G = st.geo, px = pt(e), dr = st.drag; st.drag = null;
     if (dr && Math.abs(px - dr.x) > 6) { lcSet(id, G.idx(Math.min(px, dr.x)), G.idx(Math.max(px, dr.x))); return; }
-    const sel = $(`#lc-${id}-sel`); if (sel) sel.classList.add('hidden');
+    const sel = $(`#lc-${id}-brush`); if (sel) sel.classList.add('hidden');
     bchJump(st.d.months[G.idx(px)]);
   });
   hit.addEventListener('dblclick', e => lcZoom(id, at(pt(e)), 0.5));
@@ -3666,9 +3704,12 @@ function bind(main) {
   $$('tr.group[data-id]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.id] = !S.collapsed[tr.dataset.id]; route(); }));
   // balance sheet: a click on the name opens the position (or the account's history), on a value it marks month and row in the chart
   const valueCell = (e, tr) => { const td = e.target.closest('td'); return td && td !== tr.firstElementChild && tr.closest('.bil-tbl') ? td : null; };
+  $$('.bil-tbl tr.ekq', main).forEach(tr => tr.addEventListener('click', e => {      // equity ratio: the calculation of the month (name: the current one)
+    const td = e.target.closest('td'), ks = Object.keys(((B() || {}).bilanz || {}).ek_quote?.monate || {}), cur = (B() || {}).ist_bis;
+    const mk = td && td.dataset.m ? td.dataset.m : (ks.includes(cur) ? cur : ks[ks.length - 1]); if (mk && td && (td.dataset.m || td === tr.firstElementChild)) openEkqDrawer(mk); }));
   $$('.bil-tbl tr.total', main).forEach(tr => tr.addEventListener('click', e => {      // net worth: like the month heading, and its dot blinks
     const td = valueCell(e, tr), th = td && td.closest('table').querySelector('thead tr').children[td.cellIndex];
-    if (th && th.dataset.key && bigType() === 'bilanz') bchFocus(th.dataset.key, true); }));
+    if (th && th.dataset.key) bchFocus(th.dataset.key, true); }));
   $$('tr.pos[data-pos]', main).forEach(tr => tr.addEventListener('click', e => { const td = valueCell(e, tr); if (td) { bchFlash(tr, td); return; } S.posOpen[tr.dataset.pos] = !S.posOpen[tr.dataset.pos]; route(); }));
   const pa = $('#pos-all', main); if (pa) pa.addEventListener('click', () => { const D = B(), pos = D.bilanz.zeilen.filter(r => r.gruppe), open = !pos.every(r => S.posOpen[r.rolle]); pos.forEach(r => { S.posOpen[r.rolle] = open; }); route(); });
   $$('[data-dep]', main).forEach(el => el.addEventListener('click', e => { e.stopPropagation(); S.depOpen = S.depOpen || {}; S.depOpen[el.dataset.dep] = !S.depOpen[el.dataset.dep]; route(); }));

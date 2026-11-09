@@ -16,7 +16,7 @@ Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sh
 
 Kontor never changes bookings, the category tree or rules in MoneyMoney and never initiates transfers.
 
-**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Overview, Cash flow, Planning, Properties, Tax, Transactions & receipts, Categories, Bookings and Rules) are usable but not fully tested yet – please double-check the figures there. Tested are Balance sheet, Sync, Setup, Settings, Updates, Log and Help.
+**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Overview, Cash flow, Planning, Properties, Tax, Transactions & receipts, Categories, Bookings and Rules) are usable but not fully tested yet – please double-check the figures there. So is the equity ratio in the balance sheet. Tested are Balance sheet, Sync, Setup, Settings, Updates, Log and Help.
 
 <a id="setup"></a>
 ## Setup
@@ -55,12 +55,12 @@ Each account gets an area, a position in the balance sheet and a history source.
 | Cash | Current account, overnight money, credit card – available immediately |
 | Securities | Portfolios with stocks, funds, ETF/ETC, derivatives, plus crypto and precious metals – sellable within days, with price risk |
 | Term investments | Fixed-term deposits, P2P loans, building savings, life and pension insurance – before the end only with a waiting time or a discount; not counted as available |
-| Real estate, equity investments, tangible assets | tied up long-term |
-| Receivables | Loans to others, deposits, credit balances on capital accounts |
+| Real estate, equity investments, tangible assets | tied up long-term; equity investments include credit balances on capital and shareholder accounts (shareholder loans too) |
+| Receivables | Loans to others, deposits |
 | Liabilities | Loans, credit card debt, debts on capital accounts |
 | outside net worth | Equity (capital accounts, only when explicitly chosen), guarantees & sureties, “not on the balance sheet” |
 
-**How Kontor suggests** (in this order): portfolio → account name (e.g. “Immobilie”, “Darlehen”, “Kapitalkonto”, “Aval”, “Bauspar”) → unambiguous account type (current account, credit card, loan) → name of the group in MoneyMoney → remaining account type. Rule of thumb between securities and term investments: cash within a few days without a discount? Then securities, otherwise term investments. Loans, deposits and capital or shareholder accounts count as receivables when in credit and as liabilities when in debt – in the company that is a debt to the shareholder, privately a receivable. The value of a stake is then your share of the rest; this holds even with unequal contributions.
+**How Kontor suggests** (in this order): portfolio → account name (e.g. “Immobilie”, “Darlehen”, “Kapitalkonto”, “Aval”, “Bauspar”) → unambiguous account type (current account, credit card, loan) → name of the group in MoneyMoney → remaining account type. Rule of thumb between securities and term investments: cash within a few days without a discount? Then securities, otherwise term investments. Loans and deposits count as receivables when in credit and as liabilities when in debt. Capital and shareholder accounts (shareholder loans too) count as equity investments when in credit – it is risk capital that bears losses and only comes back when you leave – and as liabilities when in debt: in the company that is a debt to the shareholder. The value of a stake is then your share of the rest; together with the capital account that is your whole share, even with unequal contributions.
 
 **Display**: “by activity” hides accounts without balance or transactions for N months; “always show” or “hide” fixes it. Hidden accounts still count in all totals.
 
@@ -136,11 +136,12 @@ The balance sheet shows the assets of an area by position, month by month or yea
 **Table**
 
 - Click the **name** of a position to expand its accounts (**▸** in the header cell: all positions; **▸** in front of a portfolio: its securities). Click the name of an account to open its history (view and edit month-end balances); a second click closes it again; the same for a security.
-- Click a **value** to make its area and month light up briefly in the main chart (the chart moves to the month if needed). Clicking a month heading moves the chart so that the month sits exactly above the column; so does a click on a net worth value, and its dot in the chart blinks briefly. Hovering over a name marks the same area in the chart.
+- Click a **value** to make its area and month light up briefly in the main chart (the chart moves to the month if needed). Clicking a month heading moves the chart so that the month sits exactly above the column; so does a click on a net worth value, and its dot in the chart blinks briefly. The single charts keep their length and end with that month – so they show the change up to it. The page itself stays put. Hovering over a name marks the same area in the chart.
 - The **eye** in the header cell (only when there are any, with a count) also shows empty accounts and securities and those hidden by activity – they are always counted. What counts as hidden is set under [Setup → Accounts](#accounts) (column “Display” and “By activity … months”, default 12); securities without a value in that period count as hidden too. “(9/12)” means 9 of 12 are shown.
 - **Portfolios**: past months from the balances read from MoneyMoney (otherwise from Kontor's monthly record), the current month from MoneyMoney; what the securities do not explain is shown as “Other”. Hovering over a security always shows MoneyMoney's name and the ISIN, and whether the name was looked up or changed. Rename accounts in MoneyMoney – Kontor takes the names from there.
 - Year columns show the balance at year end (the running year: today). The month view has no year columns – they would only repeat December; a thin line separates the years.
 - Drag the right edge of the first column to make it wider or narrower (double-click: default width); the width is part of the view.
+- **Equity ratio** (alpha, below net worth): how much of your assets you own free of debt – equity ÷ (equity + debts). Looking through your companies: their debts count with your share from the participation rule, otherwise the ratio would look too good, because the bank loans sit there. Debts are accounts with a negative balance; capital and shareholder accounts are equity, participations themselves never debts. How you book capital accounts changes nothing. Participations without a participation rule count with their value only; if accounts of a company are in no area, the ratio is unknown. A click shows the month's calculation step by step.
 - Below net worth, guarantees and capital accounts as equity (not in net worth) are each collected in one expandable row.
 - **Cash in transit**: If the two bookings of a transfer between your own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” to cash at the month end – otherwise net worth would briefly look too low. A click shows the detected booking pairs.
 

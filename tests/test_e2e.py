@@ -1606,6 +1606,25 @@ class FeatureTests(_AppBase):
         gbr_nw = ds["bereiche"][F.uid("pb")]["bilanz"]["projektion"]["nettovermoegen"]
         self.assertAlmostEqual(pr[F.uid("priv.bet.pb")]["werte"][fm[5]], round(gbr_nw[fm[5]] * 0.49, 2), 0)
 
+    def test_equity_ratio(self):
+        """Equity ratio looking through the companies: own debts plus the share of each linked company's debts; the partners'
+        capital accounts are equity, never debts; nothing estimated."""
+        self.login(); self.run_and_wait()
+        code, ds = self.call("/api/dataset")
+        P, A, B_ = F.uid("priv"), F.uid("pb"), F.uid("shs")
+        priv = ds["bereiche"][P]["bilanz"]["ek_quote"]["monate"]; alpha = ds["bereiche"][A]["bilanz"]["ek_quote"]["monate"]
+        mk = sorted(priv)[-2]; e = priv[mk]; ea = alpha[mk]
+        self.assertEqual(e["nw"], ds["bereiche"][P]["bilanz"]["nettovermoegen"][mk]); self.assertEqual(e["kapital"], 0)
+        self.assertEqual([f["name"] for f in e["firmen"]], ["Alpha", "Beta"])
+        fa = e["firmen"][0]; self.assertAlmostEqual(fa["anteil"], 0.49); self.assertAlmostEqual(fa["schulden"], ea["eigene"], 2)
+        self.assertAlmostEqual(fa["anteilig"], round(0.49 * ea["eigene"], 2), 2)
+        self.assertAlmostEqual(e["schulden"], e["eigene"] + sum(f["anteilig"] for f in e["firmen"]), 2)
+        self.assertAlmostEqual(e["quote"], round(e["ek"] / (e["ek"] + e["schulden"]), 4), 4)
+        # in the company: the partners' capital accounts are equity (added back), not debts
+        self.assertNotIn("Kapitalkonto A", [k[0] for k in ea["konten"]]); self.assertGreater(ea["kapital"], 0)
+        self.assertAlmostEqual(ea["ek"], ds["bereiche"][A]["bilanz"]["nettovermoegen"][mk] + ea["kapital"], 2)
+        self.assertEqual(ds["bereiche"][P]["bilanz"]["ek_quote"]["ohne_durchschau"], [])
+
     def test_immobilien_api_plan_tax_export(self):
         self.login(); self.run_and_wait()
         code, r = self.call("/api/properties/template"); self.assertEqual(r["eingaben"]["name"], "Neues Objekt")
@@ -1963,7 +1982,8 @@ class FeatureTests(_AppBase):
         self.assertEqual(role("Darlehen an Firma", "Sonstiges", 1e5), "forderungen")             # Guthaben = Forderung
         self.assertEqual(role("Barkaution Mieter", "Sonstiges", -5000), "verbindlichkeiten")
         self.assertEqual(role("Kapitalkonto A", "Darlehenskonto", -1e5, group="Alpha GbR"), "verbindlichkeiten")   # in der Gesellschaft: Schuld an den Gesellschafter
-        self.assertEqual(role("Kapitalkonto Alpha GbR", "Sonstiges", 1e5), "forderungen")                         # privat: Forderung an die Gesellschaft
+        self.assertEqual(role("Kapitalkonto Alpha GbR", "Sonstiges", 1e5), "beteiligungen")                       # privat: Teil der Beteiligung (Risikokapital)
+        self.assertEqual(role("Gesellschafterdarlehen Alpha", "Darlehenskonto", 5e4), "beteiligungen")            # ebenso ein Gesellschafterdarlehen
         self.assertEqual(role("Eigenkapital A", "Sonstiges", -1e5, group="Alpha GbR"), "eigenkapital")            # Eigenkapital nur ausdruecklich
         self.assertEqual(role("Mietaval Laden", "Darlehenskonto", -3e4), "eventual")
         self.assertEqual(role("Bausparer", "Sparkonto", 2e4), "anlagen")
@@ -2292,6 +2312,16 @@ class BrowserTest(unittest.TestCase):
                             [i, BCH.i0, BCH.i1, sr.left + G.x(i), r.left + r.width / 2, step]]; }""", key)
                     self.assertTrue(ok[0], (key, ok[1]))
                 self.assertTrue(pg.query_selector("#main thead th[data-key='%s'].bch-on" % key)); self.assertFalse(pg.is_visible("#bch-tip"))
+                # the small charts keep their length and end with that month; the page does not scroll; the mark goes away again
+                self.assertEqual(pg.evaluate("k => Object.keys(LC).filter(id => document.querySelector(`#lc-${id}-svg`)).map(id => LC[id].d.months[LC[id].i1] === k)", key), [True, True, True])
+                y0 = pg.evaluate("scrollY"); pg.wait_for_timeout(1400)
+                self.assertIsNone(pg.query_selector("#bch-hover .bch-cross")); self.assertIsNone(pg.query_selector("#main thead th.bch-on")); self.assertEqual(pg.evaluate("scrollY"), y0)
+                bb = pg.query_selector("#lc-pos-plot").bounding_box(); pg.mouse.click(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2); pg.wait_for_timeout(200)
+                self.assertTrue(pg.is_visible("#lc-pos-sel"))          # a click into chart 3 keeps its title (dropdown)
+                # equity ratio (alpha) under net worth: a click shows the calculation
+                pg.click("#main .bil-tbl tr.ekq td:first-child"); pg.wait_for_selector("#drawer.open .ekq-tbl")
+                self.assertIn("Eigenkapitalquote", pg.inner_text("#drawer")); self.assertIn("Alpha: 49 % von", pg.inner_text("#drawer"))
+                pg.click("#drawer .close"); pg.wait_for_timeout(300)
                 # a click on a net worth value: aligned as by the month heading, and the net worth dot blinks once
                 k = pg.evaluate("Array.from(document.querySelectorAll('#main .bil-tbl tr.total td')).findIndex((td, n) => n > 0 && (() => { const r = td.getBoundingClientRect(), w = document.querySelector('#main .wrap').getBoundingClientRect(); return r.left > w.left + 300 && r.right < w.right - 20; })())")
                 pg.evaluate("k => document.querySelectorAll('#main .bil-tbl tr.total td')[k].click()", k); pg.wait_for_timeout(150)
