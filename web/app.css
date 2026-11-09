@@ -5,7 +5,7 @@
   --neg:#c0392b; --pos:#1a8a4a; --accent:#0a7aff; --accent-soft:#e3f0ff; --accent-fg:#0a62cc;
   --side:rgba(246,246,248,.92); --side-fg:#1d1d1f;
   --warn-bg:#fff4df; --warn-fg:#8a4b00; --err-bg:#fde8e8; --err-fg:#8a1c1c; --ok-bg:#e6f5ec; --ok-fg:#0f5a30;
-  --c-liq:#34c759; --c-anl:#12a88a; --c-fest:#1d9fc0; --c-bet:#af52de; --c-ford:#3a6ff0; --c-immo:#b07d45; --c-verb:#ff6b57; --c-ein:#1a8a4a; --c-aus:#c0392b; --c-neutral:#8e8e93;
+  --c-liq:#34c759; --c-anl:#12a88a; --c-fest:#1d9fc0; --c-bet:#af52de; --c-ford:#3a6ff0; --c-immo:#b07d45; --c-verb:#ff6b57; --c-ein:#1a8a4a; --c-aus:#c0392b; --c-neutral:#8e8e93; --c-nw:#e39b0b;
   --radius:14px; --radius-s:9px; --shadow:0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
 }
 @media (prefers-color-scheme: dark) {
@@ -13,7 +13,7 @@
           --plan:#1f1f22; --hatch:rgba(255,255,255,.14); --cur:#172338; --year:#232326; --group:#232326;
           --neg:#ff6b57; --pos:#5ad38a; --accent:#0a84ff; --accent-soft:#132a47; --accent-fg:#6cb4ff;
           --side:rgba(20,20,22,.94); --side-fg:#f5f5f7;
-          --warn-bg:#3a2a12; --warn-fg:#ffd28a; --err-bg:#3a1515; --err-fg:#ffb3b3; --ok-bg:#12301f; --ok-fg:#9be0b6;
+          --c-nw:#ffc24b; --warn-bg:#3a2a12; --warn-fg:#ffd28a; --err-bg:#3a1515; --err-fg:#ffb3b3; --ok-bg:#12301f; --ok-fg:#9be0b6;
           --c-liq:#30d158; --c-anl:#2ec4a2; --c-fest:#3fbfdc; --c-bet:#bf5af2; --c-ford:#5b8cff; --c-immo:#c99a62; --c-verb:#ff6961; --c-ein:#30d158; --c-aus:#ff6961;
           --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3); }
 }
@@ -190,10 +190,13 @@ svg text { fill:var(--muted); font-size:11px; }
 .bch-plan { fill:var(--head); opacity:.45; }
 .bch-today { stroke:var(--fg); stroke-width:1; opacity:.45; stroke-dasharray:3 3; }
 .bch-today-l { font-size:10px; fill:var(--muted); text-anchor:middle; }
-.bch-nw { fill:none; stroke:var(--fg); stroke-width:2; stroke-linejoin:round; }
+.bch-nw { fill:none; stroke:var(--c-nw); stroke-width:2.4; stroke-linejoin:round; stroke-linecap:round; }
 .bch-nw.plan { stroke-dasharray:5 4; opacity:.7; }
 .bch-cross { stroke:var(--fg); stroke-width:1; opacity:.35; }
-.bch-dot { fill:var(--bg); stroke:var(--fg); stroke-width:2; }
+.bch-dot { fill:var(--head); stroke:var(--c-nw); stroke-width:2.2; }
+.bch-nw.halo, .lc-total.halo { stroke:var(--head) !important; stroke-width:6; opacity:.85; stroke-dasharray:none; }
+.bch-nw.plan.halo, .lc-total.plan.halo { opacity:.5; }
+.bch-end { fill:var(--c-nw); stroke:var(--head); stroke-width:2; }
 .bch-sel { fill:var(--accent); opacity:.12; }
 .bch-hit { fill:transparent; cursor:crosshair; }
 .bch-pan { fill:transparent; cursor:ew-resize; touch-action:pan-y; } .bch-pan:hover { fill:var(--group); opacity:.6; }
@@ -218,7 +221,7 @@ th.bch-on { color:var(--accent); box-shadow:inset 0 -2px 0 var(--accent); }
 /* the cards share their rows (head, value, chart, extras), so the charts and their x axes line up even when a line wraps */
 @supports (grid-template-rows: subgrid) { .lc-grid > .lc { display:grid; grid-row:span 4; grid-template-rows:subgrid; row-gap:0; align-content:start; } }
 .lc-band { stroke:var(--head); stroke-width:.8; opacity:.62; }
-.lc-total { fill:none; stroke-width:2; stroke-linejoin:round; } .lc-total.plan { stroke-dasharray:5 4; opacity:.7; }
+.lc-total { fill:none; stroke-width:2.2; stroke-linejoin:round; stroke-linecap:round; } .lc-total.plan { stroke-dasharray:5 4; opacity:.7; }
 .lc-pos-sel { font-size:13px; font-weight:600; padding:3px 6px; min-width:0; max-width:100%; }
 .lc-mode { flex-shrink:0; font-size:11.5px; padding:2px 8px; border-radius:10px; border:1px solid var(--line); background:transparent; color:var(--muted); cursor:pointer; } .lc-mode.on { background:var(--accent-soft); color:var(--accent-fg); border-color:transparent; } .lc-mode.hidden { display:none; }
 .lc-legend { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11.5px; color:var(--muted); margin-top:6px; } .lc-legend span { display:inline-flex; align-items:center; gap:5px; } .lc-legend i { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
@@ -315,7 +318,7 @@ tr.clickable td { cursor:pointer; }
 .hq { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:var(--group); color:var(--muted); font-size:11px; font-weight:700; margin-left:5px; cursor:help; position:relative; vertical-align:middle; border:1px solid var(--line); user-select:none; }
 .hq:hover, .hq:focus { background:var(--accent-soft); color:var(--accent-fg); outline:none; }
 .tipped { cursor:help; text-decoration:underline dotted var(--faint); text-underline-offset:3px; outline:none; }
-.tip { position:fixed; width:max-content; max-width:340px; background:var(--fg); color:var(--bg); padding:8px 11px; border-radius:9px; font-size:12px; font-weight:400; line-height:1.4; white-space:normal; text-align:left; box-shadow:0 8px 30px rgba(0,0,0,.25); pointer-events:none; z-index:200; animation:fade .12s ease-out; }
+.tip { position:fixed; width:max-content; max-width:340px; background:var(--fg); color:var(--bg); padding:8px 11px; border-radius:9px; font-size:12px; font-weight:400; line-height:1.4; white-space:pre-line; text-align:left; box-shadow:0 8px 30px rgba(0,0,0,.25); pointer-events:none; z-index:200; animation:fade .12s ease-out; }
 label .hq { vertical-align:-2px; }
 .form label { display:flex; align-items:center; gap:2px; }
 .form label.chk { gap:8px; }          /* Text und Eingabefeld nicht aneinanderkleben */

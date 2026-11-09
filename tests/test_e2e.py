@@ -2130,8 +2130,16 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # single curves below the table: net worth and a chosen sum (default cash + tradable + fixed-term); chips change the sum
                 self.assertTrue(pg.query_selector("#lc-nw-svg path.bch-nw")); self.assertTrue(pg.query_selector("#lc-sel-svg path.bch-nw"))
-                self.assertEqual(pg.inner_text("#lc-sel-title"), "Auswahl: Verfügbar")      # a known combination gets its name
-                pg.hover("#lc-sel-title"); pg.wait_for_selector(".tip"); self.assertIn("Bankguthaben + Wertpapiere", pg.inner_text(".tip")); pg.mouse.move(5, 5)
+                self.assertEqual(pg.inner_text("#lc-sel-title"), "Verfügbar")      # a known combination gets its name
+                # the selection named in words, never in codes: groups, "+", "ohne"; shortened words only in the small chart
+                av = ['liquiditaet', 'wertpapiere', 'anlagen', 'immobilien', 'beteiligungen', 'verbindlichkeiten']
+                name = lambda sel, big=True: pg.evaluate("([s, a, l]) => lcSelTitle(s, a, l)[0]", [sel, av, big])
+                self.assertEqual(name(['liquiditaet', 'wertpapiere', 'anlagen', 'verbindlichkeiten']), "Finanzvermögen + Verbindlichkeiten")
+                self.assertEqual(name(['liquiditaet', 'wertpapiere', 'anlagen', 'verbindlichkeiten'], False), "Finanzverm. + Verbindl.")
+                self.assertEqual(name([r for r in av if r != 'beteiligungen']), "Nettovermögen ohne Beteiligungen")
+                self.assertEqual(name(['liquiditaet', 'wertpapiere', 'anlagen', 'immobilien']), "Finanzvermögen + Immobilien")      # a tie: in plus
+                self.assertEqual(name(['liquiditaet', 'immobilien']), "Bankguthaben + Immobilien"); self.assertEqual(name(av), "Nettovermögen")
+                pg.hover("#lc-sel-title"); pg.wait_for_selector(".tip"); self.assertIn("Bankguthaben + Wertpapiere", pg.inner_text(".tip")); self.assertIn("Verfügbar = Bankguthaben + Wertpapiere", pg.inner_text(".tip")); pg.mouse.move(5, 5)
                 # composition of one position by account (stacked), chips with the accounts: deselecting one keeps the position line
                 self.assertTrue(pg.query_selector("#lc-pos-svg path.lc-band")); self.assertIn("Hausbank Giro", pg.inner_text("#lc-pos-accs"))
                 tot = pg.get_attribute("#lc-pos-svg path.lc-total", "d"); nb = len(pg.query_selector_all("#lc-pos-svg path.lc-band"))

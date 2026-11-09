@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.11.5 (2026-11-09 01:27)
+- Bilanz-Grafik schöner: weiche Kurven (an jedem Monatsende exakt), Flächen mit leichtem Verlauf, Nettovermögen als goldene Linie mit hellem Rand und Punkt für heute (auch in den kleinen Grafiken).
+- Grafik „Auswahl“: Titel in Worten statt Kürzeln – „Finanzvermögen + Verbindlichkeiten“, „Nettovermögen ohne Beteiligungen“ usw., bei Platzmangel mit gekürzten Wörtern; ohne „Auswahl:“ davor. Darüberfahren über den Titel zeigt, was die Namen bedeuten (z. B. Finanzvermögen = Bankguthaben + Wertpapiere + Festanlagen).
+
 ## 3.11.4 (2026-11-09 01:11)
 - Grafiken der Bilanz: erster und letzter Monat stehen immer auf der Zeitachse (hervorgehoben); die Zeitraum-Angabe oben rechts in den kleinen Grafiken entfällt dafür.
 - „Als Standard“ heißt jetzt „Ansicht speichern“.

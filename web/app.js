@@ -1362,16 +1362,15 @@ function bchDraw() {
     g += monthAxis(d, i0, i1, x, P, W, H, true);
   }
   // Flaechen
-  let defs = '';
+  const df = {s: ''};
   const band = (sel, sign) => {
     const base = Array(N + 1).fill(0); let out = '';
     for (const sx of sel) {
       const top = [], bot = [];
       for (let k = 0; k <= N; k++) { const v = sx.vals[pts[k].i] || 0, part = sign > 0 ? Math.max(0, v) : Math.min(0, v); bot.push(base[k]); base[k] += part; top.push(base[k]); }
       if (top.every((t, k) => Math.abs(t - bot[k]) < 0.005)) continue;
-      const path = top.map((t, k) => (k ? 'L' : 'M') + pf(pts[k].x) + ' ' + pf(y(t))).join('') + bot.map((b, k) => [k, b]).reverse().map(([k, b]) => 'L' + pf(pts[k].x) + ' ' + pf(y(b))).join('') + 'Z';
-      let fill = sx.color;
-      if (sx.hatch) { const pid = `bchp-${d.series.indexOf(sx)}`; fill = `url(#${pid})`; if (!defs.includes(pid)) defs += `<pattern id="${pid}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.5" height="5" fill="${sx.color}"/></pattern>`; }
+      const path = smoothD(top.map((t, k) => [pts[k].x, y(t)])) + smoothD(bot.map((b, k) => [pts[k].x, y(b)]), true) + 'Z';
+      const fill = bandFill(df, `bch-${d.series.indexOf(sx)}`, sx.color, sx.hatch);
       out += `<path class="bch-area${sx.sub ? ' sub' : ''}" data-s="${d.series.indexOf(sx)}" d="${path}" fill="${fill}"${sx.op < 1 ? ` fill-opacity="${sx.op}"` : ''}/>`;
     }
     return out;
@@ -1383,12 +1382,13 @@ function bchDraw() {
   if (kp >= 0) { const xs = Math.max(P.l, kt >= 0 ? pts[kt].x : pts[kp].x); plot += `<rect class="bch-plan" x="${pf(xs)}" y="${P.t}" width="${pf(Math.max(0, W - P.r - xs))}" height="${H - P.t - P.b}"/>`; }
   if (kt >= 0) { const xt = pts[kt].x; plot += `<line class="bch-today" x1="${pf(xt)}" x2="${pf(xt)}" y1="${P.t - 4}" y2="${H - P.b}"/><text class="bch-today-l" x="${pf(xt)}" y="${P.t - 5}"${xt > W - P.r - 20 ? ' style="text-anchor:end"' : ''}>${t('heute')}</text>`; }
   // Nettovermoegen (bis heute durchgezogen, danach gestrichelt)
-  const line = (sel, cls0) => { const ps = []; for (const p of sel) if (d.nw[p.i] != null) ps.push((ps.length ? 'L' : 'M') + pf(p.x) + ' ' + pf(y(d.nw[p.i]))); return ps.length > 1 ? `<path class="${cls0}" d="${ps.join('')}"${d.lineColor ? ` style="stroke:${d.lineColor}"` : ''}/>` : ''; };
+  const line = (sel, cls0, dot) => heroLine(sel.filter(p => d.nw[p.i] != null).map(p => [p.x, y(d.nw[p.i])]), cls0, d.lineColor, dot);
   if (d.adaptive) {                                     // a single line: filled towards zero, as in the small charts
-    const act = pts.filter(p => p.i <= ist && d.nw[p.i] != null), yb = pf(Math.max(P.t, Math.min(H - P.b, y(0))));
-    if (act.length > 1) plot += `<path class="lc-area" d="${act.map((p, k) => (k ? 'L' : 'M') + pf(p.x) + ' ' + pf(y(d.nw[p.i]))).join('')}L${pf(act[act.length - 1].x)} ${yb}L${pf(act[0].x)} ${yb}Z" style="fill:${d.lineColor || 'var(--fg)'}"/>`;
+    const act = pts.filter(p => p.i <= ist && d.nw[p.i] != null), yb = Math.max(P.t, Math.min(H - P.b, y(0)));
+    if (act.length > 1) plot += `<path class="lc-area" d="${smoothD(act.map(p => [p.x, y(d.nw[p.i])]))}L${pf(act[act.length - 1].x)} ${pf(yb)}L${pf(act[0].x)} ${pf(yb)}Z" style="fill:${d.lineColor || 'var(--c-nw)'}"/>`;
   }
-  plot += line(pts.filter(p => p.i <= ist), 'bch-nw') + (kp >= 0 ? line(pts.filter(p => p.i >= ist), 'bch-nw plan') : '');
+  plot += (kp >= 0 ? line(pts.filter(p => p.i >= ist), 'bch-nw plan') : '') + line(pts.filter(p => p.i <= ist), 'bch-nw', kt >= 0);
+  let defs = df.s;
   if (link || S.bchYr) { defs += `<clipPath id="bch-clip"><rect x="${P.l}" y="${S.bchYr ? P.t : 0}" width="${Math.max(0, W - P.l - P.r)}" height="${S.bchYr ? H - P.t - P.b : H}"/></clipPath>`; g += `<g clip-path="url(#bch-clip)">${plot}</g>`; } else g += plot;
   if (defs) g = `<defs>${defs}</defs>` + g;
   g += `<g id="bch-hover"></g><rect class="bch-sel hidden" id="bch-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="bch-hit" x="${P.l}" y="0" width="${Math.max(0, W - P.l - P.r)}" height="${H}"/>`
@@ -1456,6 +1456,38 @@ function bchRanges(all) {
   const r = S.modus === 'jahre' ? [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [120, t('bch_jahre', 10)]] : [[6, t('bch_monate_n', 6)], [12, t('bch_jahre', 1)], [24, t('bch_jahre', 2)]];
   return all ? [...r, [0, t('alle')]] : r;
 }
+// smooth curve through the month ends (monotone cubic, Fritsch-Carlson): exact at every point and never beyond its neighbours,
+// so no invented bumps; areas use the same curve for the shared edge of two neighbouring bands (forwards and backwards)
+function smoothD(p, back) {
+  const f = v => v.toFixed(1);
+  if (p.length < 3) { const q = back ? p.slice().reverse() : p; return q.map((v, k) => (k || back ? 'L' : 'M') + f(v[0]) + ' ' + f(v[1])).join(''); }
+  const n = p.length, dl = [], m = [];
+  for (let k = 0; k < n - 1; k++) { const dx = p[k + 1][0] - p[k][0]; dl.push(dx ? (p[k + 1][1] - p[k][1]) / dx : 0); }
+  for (let k = 0; k < n; k++) m.push(k === 0 ? dl[0] : k === n - 1 ? dl[n - 2] : dl[k - 1] * dl[k] <= 0 ? 0 : (dl[k - 1] + dl[k]) / 2);
+  for (let k = 0; k < n - 1; k++) {
+    if (!dl[k]) { m[k] = 0; m[k + 1] = 0; continue; }
+    const a = m[k] / dl[k], b = m[k + 1] / dl[k], s = a * a + b * b;
+    if (s > 9) { const tt = 3 / Math.sqrt(s); m[k] = tt * a * dl[k]; m[k + 1] = tt * b * dl[k]; }
+  }
+  const seg = [];
+  for (let k = 0; k < n - 1; k++) { const dx = (p[k + 1][0] - p[k][0]) / 3; seg.push([p[k], [p[k][0] + dx, p[k][1] + m[k] * dx], [p[k + 1][0] - dx, p[k + 1][1] - m[k + 1] * dx], p[k + 1]]); }
+  if (!back) return `M${f(p[0][0])} ${f(p[0][1])}` + seg.map(s => `C${f(s[1][0])} ${f(s[1][1])} ${f(s[2][0])} ${f(s[2][1])} ${f(s[3][0])} ${f(s[3][1])}`).join('');
+  return `L${f(p[n - 1][0])} ${f(p[n - 1][1])}` + seg.reverse().map(s => `C${f(s[2][0])} ${f(s[2][1])} ${f(s[1][0])} ${f(s[1][1])} ${f(s[0][0])} ${f(s[0][1])}`).join('');
+}
+// a band of a stacked chart: its colour fading slightly downwards (depth without getting loud); hatched ones keep their pattern
+function bandFill(defs, pid, color, hatch) {
+  if (hatch) { if (!defs.s.includes(pid + 'p"')) defs.s += `<pattern id="${pid}p" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.5" height="5" style="fill:${color}"/></pattern>`; return `url(#${pid}p)`; }
+  if (!defs.s.includes(pid + 'g"')) defs.s += `<linearGradient id="${pid}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:${color}"/><stop offset="1" style="stop-color:${color};stop-opacity:.72"/></linearGradient>`;
+  return `url(#${pid}g)`;
+}
+// the line of a chart (net worth or a position): a soft outline in the card colour lets it stand out above the areas;
+// a dot marks today's value
+function heroLine(p, cls0, color, dot) {
+  if (p.length < 2) return '';
+  const dd = smoothD(p), st = color ? ` style="stroke:${color}"` : '';
+  return `<path class="${cls0} halo" d="${dd}"/><path class="${cls0}" d="${dd}"${st}/>`
+    + (dot ? `<circle class="bch-end" cx="${p[p.length - 1][0].toFixed(1)}" cy="${p[p.length - 1][1].toFixed(1)}" r="3.5"${color ? ` style="fill:${color}"` : ''}/>` : '');
+}
 function monthAxis(d, i0, i1, x, P, W, H, ticks) {
   // month axis: the first and the last month of the range are always labelled ("Nov 25"), so the period the values and the
   // change refer to can be read off directly; in between labels at even steps, only where they do not touch the end labels
@@ -1518,7 +1550,7 @@ function bchHover(i, py) {
   if (i == null) { hv.innerHTML = ''; tip.classList.add('hidden'); bchMark(null); stackMark($('#bch-svg'), 'bch-area', d, null); return; }
   const xi = G.x(i).toFixed(1), m = d.months[i], plan = i >= d.ist;
   let dots = `<line class="bch-cross" x1="${xi}" x2="${xi}" y1="${G.P.t}" y2="${G.H - G.P.b}"/>`;
-  if (d.nw[i] != null) dots += `<circle class="bch-dot" cx="${xi}" cy="${G.y(d.nw[i]).toFixed(1)}" r="4"/>`;
+  if (d.nw[i] != null) dots += `<circle class="bch-dot" cx="${xi}" cy="${G.y(d.nw[i]).toFixed(1)}" r="4"${d.lineColor ? ` style="stroke:${d.lineColor}"` : ''}/>`;
   hv.innerHTML = dots;
   const list = d.parts && d.parts.length > 1 ? d.parts : d.series;
   const hit = list === d.series && !d.adaptive && py != null ? stackHit(d.series, i, G.inv(py)) : null;
@@ -1719,30 +1751,49 @@ function bindBilanzChart(main) {
 // a flat curve shows its development.
 const LC = {};
 const LC_DEFAULT = ['liquiditaet', 'wertpapiere', 'anlagen'];
-// title of the selection chart: the chosen positions, strongly abbreviated (BG + WP + FA) so that even all but one fit;
-// one position: its name; all positions: net worth; always after "Selection:"
+// title of the selection chart, in words (no codes): one position by its name, all of them as net worth, typical combinations
+// by their name (Finanzvermögen …), otherwise the shorter of "group + rest" (Finanzvermögen + Verbindlichkeiten) and "net worth
+// or gross assets without …" (Nettovermögen ohne Beteiligungen); in the small chart long words are shortened (Verbindl.),
+// the tip names every position (no "Auswahl:" before it: the title follows the chips anyway)
 function lcSelTitle(sel, avail, long) {
-  const s = avail.filter(r => sel.includes(r)), full = s.map(r => ROLE[r][0]).join(' + ');
-  if (long && s.length > 1 && s.length < avail.length && !lcGroupName(s, avail)) return [t('lc_auswahl_0', full), ''];     // large: written out
+  const s = avail.filter(r => sel.includes(r)), all = s.map(r => ROLE[r][0]).join(' + ');
   if (!s.length) return [t('lc_summe_auswahl'), ''];
-  if (s.length === avail.length && avail.length > 1) return [t('lc_auswahl_0', t('nettovermoegen')), full];
-  if (s.length === 1) return [t('lc_auswahl_0', ROLE[s[0]][0]), ''];
-  const g = lcGroupName(s, avail); if (g) return [t('lc_auswahl_0', g), full];
-  return [t('lc_auswahl_0', s.map(r => POS_KURZ[r] || ROLE[r][0]).join('\u2009+\u2009')), s.map(r => `${POS_KURZ[r]} = ${ROLE[r][0]}`).join(' · ')];   // tip explains the codes
+  const w = lcSelWords(s, avail), word = (k, sh) => sh ? KURZW[k] || ROLE[k][0] : k === 'nettovermoegen' || k.startsWith('grp_') ? t(k) : ROLE[k][0];
+  const text = sh => w.minus ? t('lc_ohne', word(w.base, sh), w.minus.map(k => word(k, sh)).join(t('lc_und'))) : w.plus.map(k => word(k, sh)).join(' + ');
+  const full = text(false), short = !long && full.length > 26;
+  const now = [short ? full : '', all !== full ? all : ''].filter(Boolean).join(' = ');
+  // the tip also says what the names stand for (only positions this area has)
+  const defs = lcGroups(avail, true).map(([k, l]) => `${t(k)} = ${l.map(r => ROLE[r][0]).join(' + ')}`).join('\n');
+  return [short ? text(true) : full, [now, defs ? t('lc_gruppen') + '\n' + defs : ''].filter(Boolean).join('\n\n')];
 }
-const POS_KURZ = {liquiditaet: t('kurz_liquiditaet'), wertpapiere: t('kurz_wertpapiere'), anlagen: t('kurz_anlagen'), immobilien: t('kurz_immobilien'), beteiligungen: t('kurz_beteiligungen'),
-  sachwerte: t('kurz_sachwerte'), forderungen: t('kurz_forderungen'), sonstiges: t('kurz_sonstiges'), verbindlichkeiten: t('kurz_verbindlichkeiten')};
-// a name for typical combinations of positions (only exact matches, judged by the positions this area has)
+function lcGroups(avail, show) {
+  // the named combinations of positions this area has (at least two of their positions each; the same set only once):
+  // largest first for naming a selection, in a fixed order for showing them
+  const order = [['grp_verfuegbar', LC_LIQUID], ['grp_finanz', [...LC_LIQUID, 'anlagen']], ['grp_sach', ['immobilien', 'sachwerte']], ['grp_gebunden', LC_ILLIQUID],
+    ['grp_brutto', avail.filter(r => r !== 'verbindlichkeiten')]];
+  const seen = new Set(), out = [];
+  for (const [k, l0] of order) { const l = avail.filter(r => l0.includes(r)), sig = l.join(); if (l.length > 1 && !seen.has(sig)) { seen.add(sig); out.push([k, l]); } }
+  return show ? out : out.slice().sort((a, b) => b[1].length - a[1].length);
+}
+function lcSelWords(s, avail) {
+  // {plus: [words]} joined by "+", or {base, minus: [positions]} for "… ohne …" -- whichever needs fewer words
+  if (s.length === avail.length) return {plus: ['nettovermoegen']};
+  if (s.length === 1) return {plus: [s[0]]};
+  const groups = lcGroups(avail);
+  let rest = s.slice(); const plus = [];
+  for (const [k, l] of groups) if (l.every(r => rest.includes(r))) { plus.push(k); rest = rest.filter(r => !l.includes(r)); }
+  plus.push(...rest);
+  const base = !avail.includes('verbindlichkeiten') || s.includes('verbindlichkeiten') ? 'nettovermoegen' : 'grp_brutto';
+  const minus = avail.filter(r => !s.includes(r) && !(base === 'grp_brutto' && r === 'verbindlichkeiten'));
+  return minus.length && 1 + minus.length < plus.length ? {base, minus} : {plus};
+}
+// shortened words for the small chart (never single letters)
+const KURZW = {liquiditaet: t('kurzw_liquiditaet'), wertpapiere: t('kurzw_wertpapiere'), anlagen: t('kurzw_anlagen'), immobilien: t('kurzw_immobilien'),
+  beteiligungen: t('kurzw_beteiligungen'), sachwerte: t('kurzw_sachwerte'), forderungen: t('kurzw_forderungen'), sonstiges: t('kurzw_sonstiges'),
+  verbindlichkeiten: t('kurzw_verbindlichkeiten'), nettovermoegen: t('kurzw_nettovermoegen'), grp_brutto: t('kurzw_brutto'), grp_finanz: t('kurzw_finanz'),
+  grp_gebunden: t('grp_gebunden'), grp_verfuegbar: t('grp_verfuegbar'), grp_sach: t('kurzw_sach')};
+// positions of the typical combinations (names in lcSelWords)
 const LC_LIQUID = ['liquiditaet', 'wertpapiere'], LC_ILLIQUID = ['anlagen', 'immobilien', 'beteiligungen', 'sachwerte', 'forderungen', 'sonstiges'];
-function lcGroupName(s, avail) {
-  const same = list => { const l = avail.filter(r => list.includes(r)); return l.length > 1 && l.length === s.length && l.every(r => s.includes(r)); };
-  if (avail.includes('verbindlichkeiten') && same(avail.filter(r => r !== 'verbindlichkeiten'))) return t('grp_brutto');
-  if (same(LC_LIQUID)) return t('grp_verfuegbar');
-  if (same([...LC_LIQUID, 'anlagen'])) return t('grp_finanz');
-  if (same(LC_ILLIQUID)) return t('grp_gebunden');
-  if (same(['immobilien', 'sachwerte'])) return t('grp_sach');
-  return '';
-}
 function lcSelection(D) {
   const avail = D.bilanz.zeilen.filter(r => r.gruppe && ROLE[r.rolle]).map(r => r.rolle);
   let sel = S.lcSel ? S.lcSel.slice() : null;
@@ -1957,30 +2008,30 @@ function lcDraw(id) {
   g += monthAxis(d, i0, i1, x, P, W, H, false);          // first and last month labelled: the period of value and change
   if (ist < i1) { const xs = Math.max(P.l, x(Math.max(ist, i0))); g += `<rect class="bch-plan" x="${pf(xs)}" y="${P.t}" width="${pf(W - P.r - xs)}" height="${H - P.t - P.b}"/>`; }
   if (ist >= i0 && ist <= i1) g += `<line class="bch-today" x1="${pf(x(ist))}" x2="${pf(x(ist))}" y1="${P.t - 4}" y2="${H - P.b}"/>`;
-  const line = (a, b, c) => { const pts = []; for (let i = a; i <= b; i++) if (d.vals[i] != null) pts.push((pts.length ? 'L' : 'M') + pf(x(i)) + ' ' + pf(y(d.vals[i]))); return pts.length > 1 ? `<path class="${c}" d="${pts.join('')}" style="stroke:${st.color}"/>` : ''; };
-  const area = () => { const pts = []; let first = null, last = null; for (let i = i0; i <= Math.min(i1, ist); i++) if (d.vals[i] != null) { pts.push((pts.length ? 'L' : 'M') + pf(x(i)) + ' ' + pf(y(d.vals[i]))); if (first == null) first = i; last = i; }
+  const line = (a, b, c, dot) => { const ps = []; for (let i = a; i <= b; i++) if (d.vals[i] != null) ps.push([x(i), y(d.vals[i])]); return heroLine(ps, c, st.color, dot); };
+  const area = () => { const ps = []; let first = null, last = null; for (let i = i0; i <= Math.min(i1, ist); i++) if (d.vals[i] != null) { ps.push([x(i), y(d.vals[i])]); if (first == null) first = i; last = i; }
     // filled towards zero (upwards when negative); with zero outside the axis up to the plot edge on its side
     const yb = pf(Math.max(P.t, Math.min(H - P.b, y(0))));
-    return pts.length > 1 ? `<path class="lc-area" d="${pts.join('')}L${pf(x(last))} ${yb}L${pf(x(first))} ${yb}Z" style="fill:${st.color}"/>` : ''; };
+    return ps.length > 1 ? `<path class="lc-area" d="${smoothD(ps)}L${pf(x(last))} ${yb}L${pf(x(first))} ${yb}Z" style="fill:${st.color}"/>` : ''; };
+  const today = ist >= i0 && ist <= i1;
   if (st.stack) {
-    let defs = '';
+    const df = {s: ''};
     const bands = sign => {
       const base = Array(n + 1).fill(0); let out = '';
       shown.slice().reverse().forEach(sx => {           // first account on top, as in the table
         const si = d.series.indexOf(sx), top = [], bot = [];
         for (let k = 0; k <= n; k++) { const v = sx.vals[i0 + k] || 0, part = sign > 0 ? Math.max(0, v) : Math.min(0, v); bot.push(base[k]); base[k] += part; top.push(base[k]); }
         if (top.every((tv, k) => Math.abs(tv - bot[k]) < 0.005)) return;
-        let fill = sx.color;
-        if (sx.hatch) { const pid = `lcp-${id}-${si}`; fill = `url(#${pid})`; if (!defs.includes(pid)) defs += `<pattern id="${pid}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.5" height="5" fill="${sx.color}"/></pattern>`; }
-        out += `<path class="lc-band" data-s="${si}" d="${top.map((tv, k) => (k ? 'L' : 'M') + pf(x(i0 + k)) + ' ' + pf(y(tv))).join('')}${bot.map((bv, k) => [k, bv]).reverse().map(([k, bv]) => 'L' + pf(x(i0 + k)) + ' ' + pf(y(bv))).join('')}Z" fill="${fill}"/>`;
+        const fill = bandFill(df, `lc-${id}-${si}`, sx.color, sx.hatch);
+        out += `<path class="lc-band" data-s="${si}" d="${smoothD(top.map((tv, k) => [x(i0 + k), y(tv)]))}${smoothD(bot.map((bv, k) => [x(i0 + k), y(bv)]), true)}Z" fill="${fill}"/>`;
       });
       return out;
     };
     const b2 = bands(1) + bands(-1);
     // total as a solid line in the position colour above the lighter bands
-    pl = b2 + line(i0, Math.min(i1, ist), 'lc-total') + (ist < i1 ? line(Math.max(i0, ist), i1, 'lc-total plan') : '');
-    g = `<defs>${defs}</defs>` + g;
-  } else pl = area() + line(i0, Math.min(i1, ist), 'bch-nw') + (ist < i1 ? line(Math.max(i0, ist), i1, 'bch-nw plan') : '');
+    pl = b2 + (ist < i1 ? line(Math.max(i0, ist), i1, 'lc-total plan') : '') + line(i0, Math.min(i1, ist), 'lc-total', today);
+    g = `<defs>${df.s}</defs>` + g;
+  } else pl = area() + (ist < i1 ? line(Math.max(i0, ist), i1, 'bch-nw plan') : '') + line(i0, Math.min(i1, ist), 'bch-nw', today);
   // with a range set on the y axis the curves are cut at the plot edges
   g += yr ? `<clipPath id="lcc-${id}"><rect x="${P.l}" y="${P.t}" width="${W - P.l - P.r}" height="${H - P.t - P.b}"/></clipPath><g clip-path="url(#lcc-${id})">${pl}</g>` : pl;
   g += `<g id="lc-${id}-hover"></g><rect class="bch-sel hidden" id="lc-${id}-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="lc-${id}-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-yax${yr ? ' on' : ''}" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_yax_tip')}</title></rect><rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"><title>${t('bch_pan_tip')}</title></rect>`;
@@ -2092,11 +2143,11 @@ function bindBilanzLines(main) {
   const has = id => !!$(`.lc[data-lc="${id}"]`, grid);
   const draw = () => {
     const {sel} = lcSelection(D);
-    if (has('nw')) { lcInit('nw', D, null, t('nettovermoegen'), 'var(--fg)'); lcDraw('nw'); }
+    if (has('nw')) { lcInit('nw', D, null, t('nettovermoegen'), 'var(--c-nw)'); lcDraw('nw'); }
     if (has('sel')) { lcInit('sel', D, sel, sel.map(r => ROLE[r][0]).join(' + '), lcMix(sel)); lcDraw('sel'); }
     const pr = lcPosRole(D);
     if (pr && has('pos')) { lcInit('pos', D, null, ROLE[pr][0], ROLE[pr][1], pr); lcDraw('pos'); }
-    if (has('bil')) { lcInit('bil', D, null, t('nettovermoegen'), 'var(--fg)', '__bil'); lcDraw('bil'); }
+    if (has('bil')) { lcInit('bil', D, null, t('nettovermoegen'), 'var(--c-nw)', '__bil'); lcDraw('bil'); }
   };
   $$('.lc-big', grid).forEach(b => b.addEventListener('click', () => {
     const o = (S.lcOrder || VIEW_ORDER).slice(), i = o.indexOf(b.dataset.big); if (i < 1) return;
