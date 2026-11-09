@@ -1,8 +1,17 @@
+<p align="center"><img src="web/icon-512.png" width="112" alt="Kontor"></p>
+
 # Kontor
 
 Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https://moneymoney-app.com) (macOS) – für dich privat und für jede Gesellschaft getrennt. Ein kleiner Dienst, der dauerhaft auf dem Mac läuft, mit einer Web-Oberfläche unter `http://127.0.0.1:8765/`. Nur Bordmittel (Python 3, `openssl`, `security`, `osascript`), keine Fremdbibliotheken, keine Zugangsdaten außerhalb von MoneyMoney, keine Netzverbindung außer der abschaltbaren Update-Prüfung bei GitHub (und, nur auf Klick, dem Nachschlagen von Wertpapiernamen per ISIN). Kontor enthält keine Annahmen über deine Konten: Alles wird in der Oberfläche eingerichtet.
 
-![Übersicht](docs/img/de/overview.png)
+![Bilanz](docs/img/de/balance_sheet.png)
+
+**Bilanz** – das Vermögen je Bereich nach Positionen, Konten und bis zu den einzelnen Wertpapieren, Monat für Monat oder Jahr für Jahr, mit Plan:
+
+- Große Grafik und Tabelle arbeiten zusammen: Klick auf eine Fläche klappt sie in der Grafik und in der Tabelle auf, Klick auf einen Wert zeigt ihn in der Grafik; Werte am Monatsende, Zeiträume bis zum letzten abgeschlossenen Monat (der laufende Monat gepunktet, der Plan gestrichelt).
+- Depots mit ihren Wertpapieren, auch rückwirkend – der Verlauf wird einmalig aus MoneyMoney übernommen; fehlende Namen per ISIN nachschlagbar.
+- Drei einzelne Grafiken (Nettovermögen, frei gewählte Positionen wie „Finanzvermögen“, Zusammensetzung einer Position); jede kann die große werden.
+- Ansicht je Gerät speichern, Anordnung frei, dunkel (Standard) oder hell, Excel-Export mit aufklappbaren Zeilen.
 
 **Stand:** Bilanz, Synchronisierung und Einrichtung sind geprüft. Die übrigen Seiten (Übersicht, Cashflow, Planung, Immobilien, Steuer, Umsätze & Belege, Kategorien, Buchungen, Regeln) sind nutzbar, aber noch als „Alpha“ markiert – Zahlen dort bitte gegenprüfen.
 
@@ -10,7 +19,7 @@ Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https:
 
 | | |
 |:---:|:---:|
-| ![Bilanz](docs/img/de/balance_sheet.png)<br>[Bilanz](docs/help.de.md#balance-sheet) | ![Cashflow](docs/img/de/cash_flow.png)<br>[Cashflow](docs/help.de.md#cash-flow) |
+| ![Übersicht](docs/img/de/overview.png)<br>[Übersicht](docs/help.de.md#overview) | ![Cashflow](docs/img/de/cash_flow.png)<br>[Cashflow](docs/help.de.md#cash-flow) |
 | ![Planung](docs/img/de/planning.png)<br>[Planung](docs/help.de.md#planning) | ![Immobilien](docs/img/de/property.png)<br>[Immobilien](docs/help.de.md#properties) |
 | ![Kategorien zuordnen](docs/img/de/assign_categories.png)<br>[Kategorien](docs/help.de.md#categories) | ![Einrichtung](docs/img/de/setup.png)<br>[Einrichtung](docs/help.de.md#setup) |
 | ![Zugriff vom iPhone](docs/img/de/access.png)<br>[Zugriff vom iPhone](docs/help.de.md#iphone) | <img src="docs/img/de/iphone.png" alt="Kontor auf dem iPhone" width="220"><br>[Auf dem iPhone](docs/help.de.md#iphone) |

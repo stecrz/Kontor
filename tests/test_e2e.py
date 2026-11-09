@@ -1849,7 +1849,7 @@ class FeatureTests(_AppBase):
         code, body, hdr = self.call("/", raw=True)
         self.assertIn(("/icon.svg?v=%s" % core.version()).encode(), body); self.assertNotIn(b"__VERSION__", body)
         code, body, hdr = self.call("/icon.svg", raw=True)
-        self.assertNotIn(b"c2pa", body); self.assertIn(b"#0a7aff", body)
+        self.assertNotIn(b"c2pa", body); self.assertIn(b"#f2cb63", body)          # the golden logo
         self.assertIsNone(self.app.code_changed())
         old = service.version_on_disk
         service.version_on_disk = lambda: "99.0.0"

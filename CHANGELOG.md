@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.0 (2026-11-09 02:46)
+- Neuer Look: Akzentfarbe Gold statt Blau, neues goldenes Logo (auch als Symbol am iPhone).
+- Dunkel ist jetzt der Standard; hell oder wie das System unter Einstellungen → Allgemein → Erscheinungsbild (je Gerät).
+- Bilanz in Hilfe, README und den Hilfe-Symbolen neu beschrieben (Zeiträume, Tabelle, große Grafik, einzelne Grafiken, Anordnung und Ansicht speichern); Bilder im neuen Look.
+
 ## 3.11.8 (2026-11-09 02:36)
 - Bilanz-Grafik: Nach einem Klick auf eine Fläche ist alles markiert, was aufgeklappt wurde, bis sich die Maus bewegt. Die Tabelle bleibt beim Auf- und Zuklappen stehen und rückt nur, wenn der Monat nicht schon dort steht.
 - Klick auf einen Wert der Tabelle: Fläche und Monat leuchten in der großen Grafik einmal kurz und weich auf.
