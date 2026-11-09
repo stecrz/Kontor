@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.11.4 (2026-11-09 01:11)
+- Grafiken der Bilanz: erster und letzter Monat stehen immer auf der Zeitachse (hervorgehoben); die Zeitraum-Angabe oben rechts in den kleinen Grafiken entfällt dafür.
+- „Als Standard“ heißt jetzt „Ansicht speichern“.
+
 ## 3.11.3 (2026-11-09 01:07)
 - Zeiträume von Monatsende zu Monatsende: „1 J“ zeigt November bis November (13 Punkte), die Veränderung umfasst damit genau zwölf Monate (bisher elf); ebenso 6 M, 2 J usw.
 - Bilanz-Grafiken: Die Fläche unter dem Mauszeiger wird hervorgehoben (die anderen blasser), ebenso ihre Zeile im Werte-Fenster.

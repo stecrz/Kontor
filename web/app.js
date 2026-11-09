@@ -1358,15 +1358,8 @@ function bchDraw() {
       if (k % step === 0 && p.x > P.l + 12 && p.x < W - P.r - 12) g += `<text class="bch-x" x="${xi}" y="${H - 6}">${esc(p.label)}</text>`;
     });
   } else {
-    // Zeitachse: Abstand der Beschriftungen passt sich dem Ausschnitt an (Monate bis Jahrzehnte)
-    const ppm = (W - P.l - P.r) / Math.max(1, n), step = [1, 2, 3, 6, 12, 24, 60, 120].find(st => st * ppm >= 62) || 120;
-    for (let i = i0; i <= i1; i++) {
-      const m = d.months[i], mo = +m.slice(5), yr = +m.slice(0, 4), xi = pf(x(i));
-      if (mo === 1 && i > i0) g += `<line class="bch-year" x1="${xi}" x2="${xi}" y1="${P.t}" y2="${H - P.b}"/>`;
-      if (ppm >= 5) g += `<line class="bch-tick" x1="${xi}" x2="${xi}" y1="${H - P.b}" y2="${H - P.b + (mo === 1 ? 5 : 3)}"/>`;
-      const lab = step < 12 ? (mo - 1) % step === 0 : mo === 1 && yr % (step / 12) === 0;
-      if (lab && x(i) > P.l + 14 && x(i) < W - P.r - 14) g += `<text class="bch-x" x="${xi}" y="${H - 6}">${step < 12 ? (mo === 1 ? yr : MONATE[mo - 1] + ' ' + String(yr).slice(2)) : yr}</text>`;
-    }
+    // Zeitachse: erster und letzter Monat immer beschriftet, dazwischen je nach Ausschnitt (Monate bis Jahrzehnte)
+    g += monthAxis(d, i0, i1, x, P, W, H, true);
   }
   // Flaechen
   let defs = '';
@@ -1462,6 +1455,21 @@ const bchDefault = () => S.modus === 'jahre' ? 36 : 12;      // default range of
 function bchRanges(all) {
   const r = S.modus === 'jahre' ? [[12, t('bch_jahre', 1)], [36, t('bch_jahre', 3)], [120, t('bch_jahre', 10)]] : [[6, t('bch_monate_n', 6)], [12, t('bch_jahre', 1)], [24, t('bch_jahre', 2)]];
   return all ? [...r, [0, t('alle')]] : r;
+}
+function monthAxis(d, i0, i1, x, P, W, H, ticks) {
+  // month axis: the first and the last month of the range are always labelled ("Nov 25"), so the period the values and the
+  // change refer to can be read off directly; in between labels at even steps, only where they do not touch the end labels
+  const n = i1 - i0, ppm = (W - P.l - P.r) / Math.max(1, n), step = [1, 2, 3, 6, 12, 24, 60, 120].find(st => st * ppm >= 62) || 120, pf = v => v.toFixed(1);
+  const a = ML(d.months[i0]), z = ML(d.months[i1]), ea = x(i0) + textW(a) + 10, ez = x(i1) - textW(z) - 10;
+  let g = `<text class="bch-x end" x="${pf(x(i0))}" y="${H - 6}" style="text-anchor:start">${a}</text>` + (i1 > i0 ? `<text class="bch-x end" x="${pf(x(i1))}" y="${H - 6}" style="text-anchor:end">${z}</text>` : '');
+  for (let i = i0; i <= i1; i++) {
+    const m = d.months[i], mo = +m.slice(5), yr = +m.slice(0, 4), xi = pf(x(i));
+    if (mo === 1 && i > i0) g += `<line class="bch-year" x1="${xi}" x2="${xi}" y1="${P.t}" y2="${H - P.b}"/>`;
+    if (ticks && ppm >= 5) g += `<line class="bch-tick" x1="${xi}" x2="${xi}" y1="${H - P.b}" y2="${H - P.b + (mo === 1 ? 5 : 3)}"/>`;
+    const lab = step < 12 ? (mo - 1) % step === 0 : mo === 1 && yr % (step / 12) === 0, txt = String(step < 12 ? (mo === 1 ? yr : ML(m)) : yr), half = textW(txt) / 2 + 4;
+    if (lab && i > i0 && i < i1 && x(i) - half > ea && x(i) + half < ez) g += `<text class="bch-x" x="${xi}" y="${H - 6}">${txt}</text>`;
+  }
+  return g;
 }
 function bchWindow(d, m) {
   // m months up to the current month, from month end to month end: "1 J" runs from November last year to November (13 points),
@@ -1829,7 +1837,7 @@ function lcBil(D) {
 // (S.lcOrder: the large one first, then the small ones in their order; enlarging a small one swaps it with the large one)
 const VIEW_ORDER = ['bilanz', 'nw', 'sel', 'pos'];
 const bigType = () => (S.lcOrder || VIEW_ORDER)[0];
-// The balance sheet view: changes while using it last for this session only. "Als Standard" keeps the current view on this
+// The balance sheet view: changes while using it last for this session only. "Ansicht speichern" keeps the current view on this
 // device (ranges, expanded rows, the eye, which chart is large, selections) -- one for months and one for years; the one saved
 // last opens at the start, and switching between months and years takes the ranges saved for that view. "Zurücksetzen" goes
 // back to Kontor's default. Only what makes sense to keep: a range is kept as its length and always ends today (like "1 J"),
@@ -1895,7 +1903,7 @@ function vBilanzLines(D) {
   const {avail, sel} = lcSelection(D);
   const rb = bchRanges(false);          // small charts: range in the top right corner
   const typeOf = {nw: 'nw', sel: 'sel', pos: 'pos', bil: 'bilanz'};
-  const head = (id, title, extra) => `<div class="lc-head"><b class="lc-title">${title}</b><button class="lc-big" data-big="${typeOf[id]}" title="${t('lc_gross')}">${ICON.expand}</button><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div><div class="lc-row2">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span><span class="lc-range" id="lc-${id}-range"></span></div>`;
+  const head = (id, title, extra) => `<div class="lc-head"><b class="lc-title">${title}</b><button class="lc-big" data-big="${typeOf[id]}" title="${t('lc_gross')}">${ICON.expand}</button><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div><div class="lc-row2">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span></div>`;
   const plot = id => `<div class="bch-plot lc-plot" id="lc-${id}-plot"><svg class="bch-svg" id="lc-${id}-svg"></svg><div class="bch-tip hidden" id="lc-${id}-tip"></div></div>`;
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
   const card = {
@@ -1946,13 +1954,7 @@ function lcDraw(id) {
   const x = i => P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n), y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min), pf = v => v.toFixed(1);
   let g = '', pl = '';
   for (const [tk, ref] of ticks) g += `<line class="bch-grid${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(tk))}" y2="${pf(y(tk))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(tk) + 4)}">${Fk(tk, false, ref)}</text>`;
-  const ppm = (W - P.l - P.r) / Math.max(1, n), step = [1, 2, 3, 6, 12, 24, 60, 120].find(s => s * ppm >= 62) || 120;
-  for (let i = i0; i <= i1; i++) {
-    const m = d.months[i], mo = +m.slice(5), yr = +m.slice(0, 4), xi = pf(x(i));
-    if (mo === 1 && i > i0) g += `<line class="bch-year" x1="${xi}" x2="${xi}" y1="${P.t}" y2="${H - P.b}"/>`;
-    const lab = step < 12 ? (mo - 1) % step === 0 : mo === 1 && yr % (step / 12) === 0;
-    if (lab && x(i) > P.l + 14 && x(i) < W - P.r - 14) g += `<text class="bch-x" x="${xi}" y="${H - 6}">${step < 12 ? (mo === 1 ? yr : MONATE[mo - 1] + ' ' + String(yr).slice(2)) : yr}</text>`;
-  }
+  g += monthAxis(d, i0, i1, x, P, W, H, false);          // first and last month labelled: the period of value and change
   if (ist < i1) { const xs = Math.max(P.l, x(Math.max(ist, i0))); g += `<rect class="bch-plan" x="${pf(xs)}" y="${P.t}" width="${pf(W - P.r - xs)}" height="${H - P.t - P.b}"/>`; }
   if (ist >= i0 && ist <= i1) g += `<line class="bch-today" x1="${pf(x(ist))}" x2="${pf(x(ist))}" y1="${P.t - 4}" y2="${H - P.b}"/>`;
   const line = (a, b, c) => { const pts = []; for (let i = a; i <= b; i++) if (d.vals[i] != null) pts.push((pts.length ? 'L' : 'M') + pf(x(i)) + ' ' + pf(y(d.vals[i]))); return pts.length > 1 ? `<path class="${c}" d="${pts.join('')}" style="stroke:${st.color}"/>` : ''; };
@@ -1998,7 +2000,6 @@ function lcDraw(id) {
       + cell(t('lc_high'), `${F0(d.vals[hi])} €`, ML(d.months[hi])) + cell(t('lc_low'), `${F0(d.vals[lo])} €`, ML(d.months[lo]));
   }
   // the period the value (end) and the change (start) refer to: the actual months in view; compact, top right
-  const rl = $(`#lc-${id}-range`); if (rl) { rl.textContent = a != null && a < z ? `${ML(d.months[a])} – ${ML(d.months[z])}` : z != null ? ML(d.months[z]) : ''; rl.title = t('lc_range_tip'); }
   $$(`.lc-rb[data-lc="${id}"] button`).forEach(b => b.classList.toggle('on', st.btn != null ? +b.dataset.m === st.btn : false));
   lcBindPlot(id);
 }

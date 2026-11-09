@@ -2151,7 +2151,7 @@ class BrowserTest(unittest.TestCase):
                 pg.click(".lc[data-lc='nw'] .lc-big"); pg.wait_for_selector("#bch.big-nw"); pg.wait_for_selector(".lc[data-lc='bil'] path.lc-band")
                 self.assertIn("Nettovermögen", pg.inner_text("#bch .bch-head")); self.assertTrue(pg.query_selector("#bch-svg path.bch-nw"))
                 pg.click(".lc[data-lc='bil'] .lc-big"); pg.wait_for_timeout(300); self.assertIsNone(pg.query_selector("#bch.big-nw")); self.assertTrue(pg.query_selector(".lc[data-lc='nw']"))
-                # enlarging swaps with the large one (so any order is possible); nothing of it is kept on its own -- only "Als Standard"
+                # enlarging swaps with the large one (so any order is possible); nothing of it is kept on its own -- only "Ansicht speichern"
                 order = lambda: pg.eval_on_selector_all("#lc-grid .lc", "cs => cs.map(c => c.dataset.lc)")
                 pg.click(".lc[data-lc='nw'] .lc-big"); pg.wait_for_selector("#bch.big-nw"); pg.click(".lc[data-lc='sel'] .lc-big"); pg.wait_for_selector("#bch.big-sel")
                 self.assertEqual(order(), ["bil", "nw", "pos"])
@@ -2171,7 +2171,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertIsNone(pg.query_selector("#bch.big-pos")); self.assertEqual(order(), ["nw", "sel", "pos"]); self.assertTrue(pg.query_selector("#modus-seg button[data-m='monate'].on"))
                 self.assertIsNone(pg.evaluate("localStorage.getItem('kontor.bilanzView')"))
                 pg.click("#pos-all"); pg.wait_for_timeout(300)                       # all positions open again (as before)
-                # the table can sit above the large chart or below the small ones (small arrows in its header), kept with "Als Standard"
+                # the table can sit above the large chart or below the small ones (small arrows in its header), kept with "Ansicht speichern"
                 where = lambda: pg.evaluate("""() => { const t = document.querySelector('#main .wrap'), c = document.querySelector('#bch'), g = document.querySelector('#lc-grid');
                     const before = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING); return before(t, c) ? 'top' : before(g, t) ? 'bot' : 'mid'; }""")
                 self.assertEqual(where(), "mid"); pg.click(".th-mv[data-mv='-1']"); pg.wait_for_timeout(300); self.assertEqual(where(), "top")
