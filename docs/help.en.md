@@ -129,9 +129,9 @@ The balance sheet shows the assets of an area by position, month by month or yea
 **Ranges and display**
 
 - Values are balances at month end; the current month shows the current balance.
-- The charts end with the last completed month and count from month end to month end: in November, “1 Y” runs from October of the previous year to October, so the change covers exactly twelve completed months. The first and the last month are always labelled on the time axis; the value applies to the end of the range, the change (in € and %) since its start. The shortest range is one month (change to the previous month).
+- The charts end with the last completed month and count from month end to month end: in November, “1 Y” runs from October of the previous year to October, so the change covers exactly twelve completed months. The first and the last month are always labelled on the time axis; the value applies to the end of the range, the change (in € and %) since its start – in the main chart too, only the balance sheet shows no value and no change. The shortest range is one month (change to the previous month).
 - To the right (by swiping or with “All”) follows the running month, dotted and lightly shaded – actual data is already coming in –, then the plan, dashed and shaded more. The dashed vertical line marks the end of the last completed month, “today” the running one. In the table the running month or year is faded, the plan faded and hatched.
-- Colours: positions by availability, from cash (green) to equity investments (violet); accounts in variations of their position's colour (hatched from the eleventh account), the same in the table and the charts. Net worth is golden.
+- Colours: positions by availability, from cash (green) to equity investments (violet); accounts in variations of their position's colour (hatched from the eleventh account), the same in the table and the charts. Net worth is golden; the golden dash in front of it in the value tip and in the table stands for its line.
 
 **Table**
 
@@ -140,12 +140,14 @@ The balance sheet shows the assets of an area by position, month by month or yea
 - The **eye** in the header cell (only when there are any, with a count) also shows empty accounts and securities and those hidden by activity – they are always counted. What counts as hidden is set under [Setup → Accounts](#accounts) (column “Display” and “By activity … months”, default 12); securities without a value in that period count as hidden too. “(9/12)” means 9 of 12 are shown.
 - **Portfolios**: past months from the balances read from MoneyMoney (otherwise from Kontor's monthly record), the current month from MoneyMoney; what the securities do not explain is shown as “Other”. Hovering over a security always shows MoneyMoney's name and the ISIN, and whether the name was looked up or changed. Rename accounts in MoneyMoney – Kontor takes the names from there.
 - Year columns show the balance at year end (the running year: today). The month view has no year columns – they would only repeat December; a thin line separates the years.
+- Drag the right edge of the first column to make it wider or narrower (double-click: default width); the width is part of the view.
 - Below net worth, guarantees and capital accounts as equity (not in net worth) are each collected in one expandable row.
 - **Cash in transit**: If the two bookings of a transfer between your own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” to cash at the month end – otherwise net worth would briefly look too low. A click shows the detected booking pairs.
 
 **Main chart** – any of the four charts can be the large one: the ⤢ symbol in a small chart swaps it with the large one (default: the balance sheet).
 
 - Range depending on the view – months: 6 months, 1, 2 or 3 years (default 1 year); years: 1, 3, 5 or 10 years (default 3 years) –, all or a number of months of your own.
+- As the balance sheet, the main chart also shows about a third of the range ahead: the running month and the plan (with 1 year the running month and three plan months, with 3 years twelve months). **Plan** left of the ranges turns this off; the setting is part of the view.
 - Hovering shows the month's values; the area under the pointer and its row in the tip stand out. Over the month axis the values appear without marking an area.
 - A click on an area works as in the table: a position opens into its accounts, a portfolio into its securities; a click on an account or a security closes the position again. Afterwards, what opened is marked until the mouse moves. A click beside it or on the month axis jumps to the month in the table.
 - Swipe (on the month axis too) to pan, pinch to zoom, drag to select a range, double-click beside the areas to enlarge. Drag up/down on the amount axis to zoom the value range in/out (the wheel moves it), a tap or click there makes it automatic again. On the iPhone two fingers pan and zoom, one finger shows the values. The same applies to the single charts.
@@ -153,15 +155,15 @@ The balance sheet shows the assets of an area by position, month by month or yea
 
 **Single charts** (below the table)
 
-- **Net worth** alone, with the average per month, the high and the low below.
+- **Net worth** alone, with the average per month, the high and the low below. Hovering shows just the month and the value.
 - **Selection**: the sum of freely chosen positions (default: cash, securities and term investments). The title names the selection in words – typical combinations as “Available”, “Financial assets”, “Tied up”, “Gross assets” (all assets without liabilities, i.e. total assets) or “Real assets”, otherwise combined like “Financial assets + Liabilities” or “Net worth excluding Private equity”, with shortened words when space is short. Hovering over the title names every position and what the names stand for (e.g. Financial assets = Cash + Securities + Term investments); the line has the positions' mixed colour.
 - **Composition** of a chosen position by account (stacked). **Holdings** next to it breaks portfolios down into their securities (only where available); below, accounts or securities can be deselected one by one – the line of the position stays, and hovering also shows the sum of the selection.
-- Each has its own range (depending on the view 6 months, 1 or 2 years or 1, 3 or 10 years) and an axis that adapts to the visible values (at least four grid lines) – so you can see the development even when large positions such as receivables and liabilities cancel each other out in the chart above. The area reaches to the zero line, so upwards for negative values.
+- Each has its own range (depending on the view 6 months, 1 or 2 years or 1, 3 or 10 years) and an axis that adapts to the visible values (at least four grid lines) – so you can see the development even when large positions such as receivables and liabilities cancel each other out in the chart above. The area reaches to the zero line, so upwards for negative values. The value tip is slightly see-through so the line beneath stays visible.
 
 **Layout and saving the view**
 
 - The small arrows **↑ ↓** in the header of the table and of the main chart (on hover) move them up or down, also below the single charts.
-- What you change while viewing (months or years, ranges, expanded rows, the eye, layout, which chart is large, selections in the charts) lasts only until the page is reloaded. **Save view** (top right, next to Excel) keeps the current view on this device, separately for months and years (e.g. months with 2 years, years with 10 years). The one saved last opens at the start; switching between months and years takes their saved ranges. Ranges always end with the last completed month, and the table shows the current month as always. **Reset** restores Kontor's default. The area is not affected.
+- What you change while viewing (months or years, ranges, plan, expanded rows, the eye, width of the first column, layout, which chart is large, selections in the charts) lasts only until the page is reloaded. **Save view** (top right, next to Excel) keeps the current view on this device, separately for months and years (e.g. months with 2 years, years with 10 years). The one saved last opens at the start; switching between months and years takes their saved ranges. Ranges always end with the last completed month, and the table shows the current month as always. **Reset** restores Kontor's default. The area is not affected.
 
 <a id="cash-flow"></a>
 ## Cash flow

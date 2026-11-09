@@ -1849,7 +1849,7 @@ class FeatureTests(_AppBase):
         code, body, hdr = self.call("/", raw=True)
         self.assertIn(("/icon.svg?v=%s" % core.version()).encode(), body); self.assertNotIn(b"__VERSION__", body)
         code, body, hdr = self.call("/icon.svg", raw=True)
-        self.assertNotIn(b"c2pa", body); self.assertIn(b"#f2cb63", body)          # the golden logo
+        self.assertNotIn(b"c2pa", body); self.assertIn(b"#ffc533", body)          # the logo with its golden dot
         self.assertIsNone(self.app.code_changed())
         old = service.version_on_disk
         service.version_on_disk = lambda: "99.0.0"
@@ -2159,6 +2159,8 @@ class BrowserTest(unittest.TestCase):
                 # any small chart can become the large one (the balance sheet then shows small in its place), and back
                 pg.click(".lc[data-lc='nw'] .lc-big"); pg.wait_for_selector("#bch.big-nw"); pg.wait_for_selector(".lc[data-lc='bil'] path.lc-band")
                 self.assertIn("Nettovermögen", pg.inner_text("#bch .bch-head")); self.assertTrue(pg.query_selector("#bch-svg path.bch-nw"))
+                self.assertIn("€", pg.inner_text("#bch-val")); self.assertIsNone(pg.query_selector("#bch-plan"))      # value and change as in the small charts, no plan ahead
+                self.assertTrue(pg.evaluate("!S.bchBtn || BCH.i1 <= BCH.d.ist - 2")); self.assertEqual(pg.inner_text("#lc-bil-val").strip(), "")     # the small balance sheet: no change
                 pg.click(".lc[data-lc='bil'] .lc-big"); pg.wait_for_timeout(300); self.assertIsNone(pg.query_selector("#bch.big-nw")); self.assertTrue(pg.query_selector(".lc[data-lc='nw']"))
                 # enlarging swaps with the large one (so any order is possible); nothing of it is kept on its own -- only "Ansicht speichern"
                 order = lambda: pg.eval_on_selector_all("#lc-grid .lc", "cs => cs.map(c => c.dataset.lc)")
@@ -2213,6 +2215,23 @@ class BrowserTest(unittest.TestCase):
                 # Grafik: waagerechtes Wischen verschiebt bei gleicher Laenge (auch am linken Rand), Doppelklick halbiert den Zeitraum
                 self.assertIsNone(pg.query_selector("#bch-on"))
                 pg.click("#bch-rb button[data-m='12']"); pg.wait_for_timeout(200)
+                # the balance sheet as the large chart: a third of the range ahead (running month + 3 plan months), "Plan" switches it off; no value
+                self.assertEqual(pg.evaluate("BCH.i1"), pg.evaluate("Math.min(BCH.d.months.length - 1, BCH.d.ist + 2)")); self.assertIsNone(pg.query_selector("#bch-val"))
+                pg.click("#bch-plan"); pg.wait_for_timeout(200); self.assertEqual(pg.evaluate("BCH.i1"), pg.evaluate("BCH.d.ist - 2"))
+                self.assertEqual(pg.evaluate("BCH.i1 - BCH.i0"), 12); self.assertTrue(pg.query_selector("#bch-rb button[data-m='12'].on"))
+                pg.click("#bch-plan"); pg.wait_for_timeout(200); self.assertEqual(pg.evaluate("BCH.i1"), pg.evaluate("Math.min(BCH.d.months.length - 1, BCH.d.ist + 2)"))
+                # the small net worth chart: just the month and the value in its tip
+                pg.query_selector("#lc-nw-plot").scroll_into_view_if_needed(); pb = pg.query_selector("#lc-nw-plot").bounding_box()
+                pg.mouse.move(pb["x"] + pb["width"] * .6, pb["y"] + pb["height"] / 2); pg.wait_for_timeout(150)
+                self.assertTrue(pg.query_selector("#lc-nw-tip.one"), pg.inner_html("#lc-nw-tip")); self.assertNotIn("Nettovermögen", pg.inner_text("#lc-nw-tip")); self.assertIn("€", pg.inner_text("#lc-nw-tip"))
+                pg.mouse.move(5, 5); pg.wait_for_timeout(100)
+                # the first column of the table: wider by dragging its edge, back by a double click
+                pg.query_selector(".bil-tbl .col-grip").scroll_into_view_if_needed()
+                w0 = pg.evaluate("document.querySelector('.bil-tbl thead th').getBoundingClientRect().width"); gb = pg.query_selector(".bil-tbl .col-grip").bounding_box()
+                pg.mouse.move(gb["x"] + 3, gb["y"] + gb["height"] / 2); pg.mouse.down(); pg.mouse.move(gb["x"] + 63, gb["y"] + gb["height"] / 2, steps=4); pg.mouse.up()
+                self.assertAlmostEqual(pg.evaluate("document.querySelector('.bil-tbl thead th').getBoundingClientRect().width"), w0 + 60, delta=3); self.assertTrue(pg.evaluate("S.bilW > 0"))
+                pg.dblclick(".bil-tbl .col-grip"); pg.wait_for_timeout(100); self.assertIsNone(pg.evaluate("S.bilW"))
+                self.assertAlmostEqual(pg.evaluate("document.querySelector('.bil-tbl thead th').getBoundingClientRect().width"), w0, delta=1)
                 # the area under the pointer stands out, its row in the tip too
                 c = pg.evaluate("""() => { const ps = [...document.querySelectorAll('#bch-svg .bch-area')].map(p => p.getBoundingClientRect()).sort((a, b) => b.width * b.height - a.width * a.height);
                     const r = ps[0]; return [r.left + r.width / 2, r.top + r.height / 2]; }""")

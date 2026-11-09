@@ -1202,8 +1202,8 @@ function vBilanz() {
   const nHid = D.bilanz.zeilen.filter(r => !r.gruppe && hidden(r)).length + nSecHid;
   const first = `<div class="th-first"><button class="th-btn" id="pos-all" title="${allOpen ? t('nur_positionen') : t('konten_zeigen')}">${allOpen ? '▾' : '▸'}</button><span>${t('position_konto')}</span>${hq('bilanz_tabelle')}`
     + `<button class="th-mv" data-blk="table" data-mv="-1" title="${t('tbl_hoch')}"${at === 0 ? ' disabled' : ''}>↑</button><button class="th-mv" data-blk="table" data-mv="1" title="${t('tbl_runter')}"${at === 2 ? ' disabled' : ''}>↓</button><span class="sp"></span>`
-    + (anyHidden ? `<label class="th-hid${S.alleB ? ' on' : ''}" title="${t('alle_zeilen_tip_n', nHid)}"><input type="checkbox" id="alle-zeilen" ${S.alleB ? 'checked' : ''}>${S.alleB ? ICON.eye : ICON.eyeOff}${nHid}</label>` : '') + '</div>';
-  h += '<div class="wrap bil-tbl"><table>' + thead(first, C) + '<tbody>';
+    + (anyHidden ? `<label class="th-hid${S.alleB ? ' on' : ''}" title="${t('alle_zeilen_tip_n', nHid)}"><input type="checkbox" id="alle-zeilen" ${S.alleB ? 'checked' : ''}>${S.alleB ? ICON.eye : ICON.eyeOff}${nHid}</label>` : '') + `</div><span class="col-grip" title="${t('spalte_breite')}"></span>`;
+  h += `<div class="wrap bil-tbl"${S.bilW ? ` style="--bil-w:${S.bilW}px"` : ''}><table>` + thead(first, C) + '<tbody>';
   for (const r of D.bilanz.zeilen) {
     if (r.gruppe) {
       const [label, color] = ROLE[r.rolle] || [r.name, 'var(--c-neutral)'], open = !!S.posOpen[r.rolle];
@@ -1227,7 +1227,7 @@ function vBilanz() {
     if (pr && r.rolle === 'beteiligungen' && proj.einlagen && r === D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === 'beteiligungen').slice(-1)[0])
       h += row({id: 'einlagen', name: t('einlagen_entnahmen_kumuliert_plan'), werte: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'));
   }
-  h += `<tr class="total"><td>${t('nettovermoegen')}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
+  h += `<tr class="total"><td><i class="nw-sw"></i>${t('nettovermoegen')}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
   // outside net worth (guarantees, capital accounts as equity): one collapsible row per kind with its sum, accounts on click
   const out = D.bilanz.ausserhalb || [];
   for (const role of [...new Set(out.map(r => r.rolle))]) {
@@ -1327,8 +1327,8 @@ function vBilanzChart(D) {
   if (S.bchLen) { [i0, i1] = bchWindow(d, S.bchLen); S.bchBtn = null; S.bchLen = null; }       // kept as a length, ending today
   else if (r === null) { i0 = 0; i1 = n - 1; }
   else if (r) { i0 = d.months.indexOf(r[0]); i1 = d.months.indexOf(r[1]); }
-  if ((i0 < 0 || i1 <= i0) && S.bchBtn) [i0, i1] = bchWindow(d, S.bchBtn);
-  if (i0 < 0 || i1 <= i0) { [i0, i1] = bchWindow(d, dflt); S.bchBtn = dflt; }          // default: 1 year (months) or 5 years (years)
+  if ((i0 < 0 || i1 <= i0) && S.bchBtn) [i0, i1] = bchBigWindow(d, S.bchBtn);
+  if (i0 < 0 || i1 <= i0) { [i0, i1] = bchBigWindow(d, dflt); S.bchBtn = dflt; }          // default: 1 year (months) or 5 years (years)
   S.bchRange = i0 === 0 && i1 === n - 1 ? null : [d.months[i0], d.months[i1]];
   BCH.i0 = BCH.f0 = i0; BCH.i1 = BCH.f1 = i1;
   const type = bigType(), {avail, sel} = lcSelection(D), pr = lcPosRole(D);
@@ -1338,7 +1338,7 @@ function vBilanzChart(D) {
     : '';
   const below = type === 'sel' ? `<div class="lc-chips below" id="big-chips">${avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('')}</div>`
     : type === 'pos' ? `<div class="lc-chips below" id="big-accs"></div>` : '';
-  return `<div class="card bch${bchLinked() ? ' linked' : ''}${type !== 'bilanz' ? ' big-' + type : ''}" id="bch"><div class="bch-head">${title}${type !== 'bilanz' ? ' ' : ''}<span class="bch-range${type !== 'bilanz' ? ' sub' : ''}" id="bch-range"></span> ${hq('bch')}${((k) => `<button class="th-mv" data-blk="chart" data-mv="-1" title="${t('grafik_hoch')}"${k === 0 ? ' disabled' : ''}>↑</button><button class="th-mv" data-blk="chart" data-mv="1" title="${t('grafik_runter')}"${k === 2 ? ' disabled' : ''}>↓</button>`)(bilBlocks().indexOf('chart'))}<span class="sp"></span><button class="ghost small bch-link${bchLinked() ? ' on' : ''}" id="bch-link" title="${t('bch_link_tip')}" aria-pressed="${bchLinked()}">${t('bch_link')}</button><label class="bch-n" title="${t('bch_monate_tip')}"><input type="number" id="bch-n" min="1" max="${n - 1}" step="1">${t('bch_m')}</label><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
+  return `<div class="card bch${bchLinked() ? ' linked' : ''}${type !== 'bilanz' ? ' big-' + type : ''}" id="bch"><div class="bch-head">${title}${type !== 'bilanz' ? ' <span class="lc-val" id="bch-val"></span> ' : ''}<span class="bch-range${type !== 'bilanz' ? ' sub' : ''}" id="bch-range"></span> ${hq('bch')}${((k) => `<button class="th-mv" data-blk="chart" data-mv="-1" title="${t('grafik_hoch')}"${k === 0 ? ' disabled' : ''}>↑</button><button class="th-mv" data-blk="chart" data-mv="1" title="${t('grafik_runter')}"${k === 2 ? ' disabled' : ''}>↓</button>`)(bilBlocks().indexOf('chart'))}<span class="sp"></span><button class="ghost small bch-link${bchLinked() ? ' on' : ''}" id="bch-link" title="${t('bch_link_tip')}" aria-pressed="${bchLinked()}">${t('bch_link')}</button><label class="bch-n" title="${t('bch_monate_tip')}"><input type="number" id="bch-n" min="1" max="${n - 1}" step="1">${t('bch_m')}</label>${type === 'bilanz' ? `<button class="lc-mode bch-plan-tg${S.bchPlan !== false ? ' on' : ''}" id="bch-plan" title="${t('bch_plan_tip')}">${t('plan')}</button>` : ''}<div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
     <div class="bch-plot" id="bch-plot"><svg class="bch-svg" id="bch-svg"></svg><div class="bch-tip hidden" id="bch-tip"></div></div>${below}</div>`;
 }
 function bchDraw() {
@@ -1422,6 +1422,8 @@ function bchDraw() {
     + (link ? '' : `<rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"/>`);
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); svg.innerHTML = g; svg.classList.remove('hl');
   BCH.geo = {W, H, P, x, y, min, max, inv: py => max - (py - P.t) * (max - min) / Math.max(1, H - P.t - P.b), idx: px => Math.max(i0, Math.min(i1, Math.round(i0 + (px - P.l) * n / Math.max(1, W - P.l - P.r))))};
+  const bv = $('#bch-val');
+  if (bv) { let a = null, z = null; for (const p of pts) if (p.i <= ist && d.nw[p.i] != null && (!link || (p.x >= P.l && p.x <= W - P.r))) { if (a == null) a = p.i; z = p.i; } bv.innerHTML = valChange(d.nw, a, z); }
   const rl = $('#bch-range');
   if (rl && link) { const vis = pts.filter(p => p.x >= P.l && p.x <= W - P.r); rl.textContent = vis.length ? `${bchKeyLabel(vis[0].key)} – ${bchKeyLabel(vis[vis.length - 1].key)}` : ''; }
   else if (rl) rl.textContent = `${MONATE_LANG[+d.months[i0].slice(5) - 1]} ${d.months[i0].slice(0, 4)} – ${MONATE_LANG[+d.months[i1].slice(5) - 1]} ${d.months[i1].slice(0, 4)}`;
@@ -1535,6 +1537,18 @@ function monthAxis(d, i0, i1, x, P, W, H, ticks) {
   }
   return g;
 }
+function valChange(vals, a, z) {
+  // value at the end of the shown actual months and the change since their start (in € and %), as in the small charts
+  if (z == null) return '';
+  const ch = a != null && a < z ? vals[z] - vals[a] : null, pc = ch != null ? pctGrowth(vals[a], ch) : '';
+  return `${F0(vals[z])} €` + (ch != null ? ` <span class="delta ${ch >= 0 ? 'pos' : 'neg'}">${ch >= 0 ? '+' : ''}${F0(ch)} €${pc ? ` (${pc})` : ''}</span>` : '');
+}
+function bchBigWindow(d, m) {
+  // the large chart: as bchWindow; the balance sheet (no change shown there) also about a third of the range ahead -- the running
+  // month and the plan (1 J: 4 months, 3 J: a year), unless "Plan" is switched off
+  const [a, z] = bchWindow(d, m), extra = bigType() === 'bilanz' && S.bchPlan !== false ? Math.round(m / 3) : 0;
+  return [a, Math.min(d.months.length - 1, z + extra)];
+}
 function bchWindow(d, m) {
   // m months up to the current month, from month end to month end: "1 J" runs from November last year to November (13 points),
   // so the change shown is exactly that of twelve months; the plan is reached by swiping to the right or with "Alle"
@@ -1591,7 +1605,7 @@ function bchHover(i, py, mark) {
   stackMark($('#bch-svg'), 'bch-area', d, hits);
   const rows = list.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= (d.all ? 0.005 : 0.5)).map(x => `<div${hits.includes(x) ? ' class="on"' : ''}><i style="${swatch(x.color, x.hatch)}"></i><span>${esc(x.label)}</span><b>${Math.abs(x.vals[i]) < 1 ? F(x.vals[i]) : F0(x.vals[i])}</b></div>`).join('');
   const part = d.off && d.off.size && d.series.length ? `<div class="bch-tip-nw"><span>${t('lc_summe_auswahl')}</span><b>${F0(d.series.reduce((s0, x) => s0 + (x.vals[i] || 0), 0))}</b></div>` : '';
-  tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${plan ? ` <span class="pill neutral">${t('plan')}</span>` : i === d.ist - 1 ? ` <span class="pill neutral">${t('laufender_monat')}</span>` : ''}</div>${rows}${part}<div class="${rows ? 'bch-tip-nw' : ''}"><span>${esc(d.lineLabel || t('nettovermoegen'))}</span><b>${F0(d.nw[i])}</b></div>`;
+  tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${plan ? ` <span class="pill neutral">${t('plan')}</span>` : i === d.ist - 1 ? ` <span class="pill neutral">${t('laufender_monat')}</span>` : ''}</div>${rows}${part}<div class="${rows ? 'bch-tip-nw' : ''}"><i class="nw-sw" style="background:${d.lineColor || 'var(--c-nw)'}"></i><span>${esc(d.lineLabel || t('nettovermoegen'))}</span><b>${F0(d.nw[i])}</b></div>`;
   tip.classList.remove('hidden');
   const bw = $('#bch-plot').clientWidth, tw = tip.offsetWidth, px = G.x(i);
   tip.style.left = (px + 14 + tw > bw ? px - 14 - tw : px + 14) + 'px';
@@ -1803,8 +1817,12 @@ function bindBilanzChart(main) {
   if (!$('#bch', main)) return;
   $$('#bch-rb button', main).forEach(b => b.addEventListener('click', () => {
     const d = BCH.d, m = +b.dataset.m;
-    if (!m) bchSet(0, d.months.length - 1); else { const [a, z] = bchWindow(d, m); bchSet(a, z, m); }
+    if (!m) bchSet(0, d.months.length - 1); else { const [a, z] = bchBigWindow(d, m); bchSet(a, z, m); }
   }));
+  const bp = $('#bch-plan', main); if (bp) bp.addEventListener('click', () => {      // the balance sheet: plan on the right on/off
+    S.bchPlan = S.bchPlan === false; bp.classList.toggle('on', S.bchPlan !== false);
+    if (S.bchBtn) { const [a, z] = bchBigWindow(BCH.d, S.bchBtn); bchSet(a, z, S.bchBtn); }
+  });
   const nf = $('#bch-n', main);
   if (nf) nf.addEventListener('change', () => {
     // eigene Anzahl Monate: rechter Rand bleibt, der Ausschnitt waechst bzw. schrumpft nach links
@@ -1814,6 +1832,20 @@ function bindBilanzChart(main) {
     bchSet(a, e, btn); nf.blur();
   });
   // a small chart shown large: its own controls (positions to add up, position and breakdown, accounts to leave out)
+  const grip = $('.bil-tbl .col-grip', main);
+  if (grip) {
+    // the first column of the balance table: drag its edge to make it wider or narrower (double click: back to the default)
+    grip.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      const wrap = grip.closest('.bil-tbl'), x0 = e.clientX, w0 = grip.closest('th').getBoundingClientRect().width;
+      grip.setPointerCapture(e.pointerId); grip.classList.add('on');
+      const move = ev => { const w = Math.round(Math.max(150, Math.min(520, w0 + ev.clientX - x0))); wrap.style.setProperty('--bil-w', w + 'px'); S.bilW = w; };
+      const up = () => { grip.classList.remove('on'); grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up); if (bchLinked()) bchDraw(); };
+      grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+    });
+    grip.addEventListener('click', e => e.stopPropagation());
+    grip.addEventListener('dblclick', e => { e.stopPropagation(); S.bilW = null; grip.closest('.bil-tbl').style.removeProperty('--bil-w'); if (bchLinked()) bchDraw(); });
+  }
   $$('.th-mv[data-blk]', main).forEach(b => b.addEventListener('click', e => {     // move the table or the large chart up or down
     e.stopPropagation(); const o = bilBlocks(), k = o.indexOf(b.dataset.blk), n = k + +b.dataset.mv; if (k < 0 || n < 0 || n > 2) return;
     [o[k], o[n]] = [o[n], o[k]]; S.blocks = o;
@@ -2023,6 +2055,7 @@ function viewApply(saved) {
   S.lcOrder = Array.isArray(v.order) && v.order.length === VIEW_ORDER.length && VIEW_ORDER.every(x => v.order.includes(x)) ? v.order.slice() : VIEW_ORDER.slice();
   S.bchLink = !!v.link; S.alleB = !!v.alle; S.posOpen = keys(v.posOpen); S.depOpen = keys(v.depOpen);
   S.blocks = Array.isArray(v.blocks) ? v.blocks.slice() : v.tbl === 'top' ? ['table', 'chart', 'lines'] : v.tbl === 'bot' ? ['chart', 'lines', 'table'] : null;   // v.tbl: 3.11.3
+  S.bchPlan = !v.noPlan; S.bilW = +v.bilW || null;
   S.lcSel = Array.isArray(v.sel) ? v.sel.slice() : null; S.lcPos = typeof v.pos === 'string' ? v.pos : null; S.lcPosModes = keys(v.posMode);
   S.lcOff = Object.fromEntries(Object.entries(v.off || {}).map(([id, o]) => [id, {k: o.k, off: new Set(o.off || [])}]));
   // ranges: a button (months), all, or a length of its own -- each ending today
@@ -2034,6 +2067,8 @@ function viewSnap() {
   if (bchLinked()) v.link = 1;
   if (S.alleB) v.alle = 1;
   if (bilBlocks().join() !== BIL_BLOCKS.join()) v.blocks = bilBlocks();
+  if (S.bchPlan === false) v.noPlan = 1;
+  if (S.bilW) v.bilW = S.bilW;
   const on = o => Object.keys(o || {}).filter(k => o[k]);
   if (on(S.posOpen).length) v.posOpen = Object.fromEntries(on(S.posOpen).map(k => [k, 1]));
   if (on(S.depOpen).length) v.depOpen = Object.fromEntries(on(S.depOpen).map(k => [k, 1]));
@@ -2155,7 +2190,7 @@ function lcDraw(id) {
   // value today and change over the visible actual months
   let a = null, z = null; for (let i = i0; i <= Math.min(i1, ist); i++) if (d.vals[i] != null) { if (a == null) a = i; z = i; }
   const vEl = $(`#lc-${id}-val`);
-  if (vEl) vEl.innerHTML = z == null ? '' : `${F0(d.vals[z])} €` + (a != null && a < z ? ` <span class="delta ${d.vals[z] - d.vals[a] >= 0 ? 'pos' : 'neg'}">${d.vals[z] - d.vals[a] >= 0 ? '+' : ''}${F0(d.vals[z] - d.vals[a])} €${pctGrowth(d.vals[a], d.vals[z] - d.vals[a]) ? ` (${pctGrowth(d.vals[a], d.vals[z] - d.vals[a])})` : ''}</span>` : '');      // the period is shown on the right (range)
+  if (vEl) vEl.innerHTML = id === 'bil' ? '' : valChange(d.vals, a, z);      // the balance sheet: no change (the net worth chart shows it)
   // key figures of the reference period (net worth card): average change per month, highest and lowest month-end
   const stEl = $(`#lc-${id}-stats`);
   if (stEl) {
@@ -2195,7 +2230,11 @@ function lcHover(id, i, py) {
   const hit = st.stack && py != null && st.shown ? stackHit(st.shown, i, G.inv(py)) : null;
   if (st.stack) stackMark($(`#lc-${id}-svg`), 'lc-band', d, hit);
   const rows = list.filter(x => x.vals[i] != null && Math.abs(x.vals[i]) >= (st.stack ? 0.005 : 0.5)).map(x => `<div${x === hit ? ' class="on"' : ''}><i style="${swatch(x.color, x.hatch)}"></i><span>${esc(x.label)}</span><b>${Math.abs(x.vals[i]) < 1 ? F(x.vals[i]) : F0(x.vals[i])}</b></div>`).join('');
-  tip.innerHTML = `<div class="bch-tip-h">${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}${i >= d.ist ? ` <span class="pill neutral">${t('plan')}</span>` : i === d.ist - 1 ? ` <span class="pill neutral">${t('laufender_monat')}</span>` : ''}</div>${rows}${part}<div class="${list.length ? 'bch-tip-nw' : ''}"><span>${esc(list.length && !st.stack ? t('summe_label') : st.title)}</span><b>${F0(d.vals[i])} €</b></div>`;
+  const mon = `${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}`, pill = i >= d.ist ? ` <span class="pill neutral">${t('plan')}</span>` : i === d.ist - 1 ? ` <span class="pill neutral">${t('laufender_monat')}</span>` : '';
+  // a single line (net worth, one account): just the month and the value -- the chart's title says what it is
+  tip.innerHTML = list.length ? `<div class="bch-tip-h">${mon}${pill}</div>${rows}${part}<div class="bch-tip-nw"><i class="nw-sw" style="background:${st.color}"></i><span>${esc(!st.stack ? t('summe_label') : st.title)}</span><b>${F0(d.vals[i])} €</b></div>`
+    : `<div class="bch-tip-h"><span class="tip-m">${mon}</span>${pill}<b>${F0(d.vals[i])} €</b></div>`;
+  tip.classList.toggle('one', !list.length);
   tip.classList.remove('hidden');
   const bw = $(`#lc-${id}-plot`).clientWidth, tw = tip.offsetWidth, px = G.x(i);
   tip.style.left = (px + 14 + tw > bw ? px - 14 - tw : px + 14) + 'px';
@@ -2266,7 +2305,8 @@ function bindBilanzLines(main) {
   };
   $$('.lc-big', grid).forEach(b => b.addEventListener('click', () => {
     const o = (S.lcOrder || VIEW_ORDER).slice(), i = o.indexOf(b.dataset.big); if (i < 1) return;
-    [o[0], o[i]] = [o[i], o[0]]; S.lcOrder = o; route();
+    [o[0], o[i]] = [o[i], o[0]]; S.lcOrder = o; if (S.bchBtn) S.bchRange = undefined;      // a range button: its window for the new large chart (plan ahead only for the balance sheet)
+    route();
   }));
   const ps = $('#lc-pos-sel', grid), pm = $('#lc-pos-mode', grid);
   const posMode = () => { if (!pm || !ps) return; const has = lcHasDepot(D, ps.value); pm.classList.toggle('hidden', !has); pm.classList.toggle('on', has && lcPosMode(D, ps.value) === 'depot'); };

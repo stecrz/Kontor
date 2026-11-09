@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.12.2 (2026-11-09 03:33)
+- Große Grafik: Nettovermögen, Auswahl und Zusammensetzung zeigen Wert und Veränderung wie die kleinen; die Bilanz zeigt keine Veränderung mehr (groß und klein).
+- Bilanz als große Grafik: etwa ein Drittel des Zeitraums nach vorn – laufender Monat und Plan (1 J: +4 Monate, 3 J: +12). Schalter „Plan“ links neben den Zeiträumen, gehört zur Ansicht.
+- Bilanz-Tabelle: erste Spalte am rechten Rand breiter oder schmaler ziehen (Doppelklick: Standard), gehört zur Ansicht.
+- Goldener Strich vor „Nettovermögen“ im Werte-Fenster und in der Tabelle.
+- Kleine Grafiken: Werte-Fenster leicht durchsichtig; beim Nettovermögen nur Monat und Betrag.
+- Neues Logo: dunkle Kachel, helles K mit goldenem Punkt.
+
 ## 3.12.1 (2026-11-09 03:04)
 - Akzente neutral statt Gold (dunkel: weiß, hell: schwarz) – sie konkurrieren nicht mehr mit den Farben der Grafiken; Gold bleibt für Logo und Nettovermögen. Links im Text unterstrichen.
 - Bilanz-Tabelle: erste Spalte fest breit, damit sich beim Auf- und Zuklappen nichts verschiebt; lange Konto- und Wertpapiernamen werden gekürzt.
