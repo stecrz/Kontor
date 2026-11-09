@@ -353,19 +353,19 @@ class Ledger:
             return False
         refreshed = a.refresh is not None and a.refresh.year >= 2005
         if marked("offline"):
-            return "offline", "s_von_dir_als_ohne_abruf"
+            return "offline", "s_von_dir_festgelegt"
         if marked("online"):
-            return "online", "s_von_dir_als_abgerufen_festgelegt"
+            return "online", "s_von_dir_festgelegt"
         if a.portfolio:
             return ("online", "s_grund_depot") if refreshed else ("offline", "s_depot_ohne_abruf")
         if not refreshed:
-            return "offline", ("s_manuell_gefuehrt" if not (a.bank_code or "").strip() else "s_noch_nie_abgerufen")
+            return "offline", "s_grund_offline_konto"
         if any(t.id > 0 and TAG_RE.search(t.purpose or "") for t in self._by_account.get(uuid, ())):
-            return "offline", "s_von_kontor_bebucht"
+            return "offline", "s_grund_offline_konto"
         if "offline" in (a.type or "").lower():
             return "offline", "s_grund_offline_konto"
         if not ((a.bank_code or "").strip() or (a.account_number or "").strip() or (a.iban or "").strip()):
-            return "offline", "s_ohne_bankleitzahl_und_kontonummer"
+            return "offline", "s_grund_offline_konto"
         return "online", ("s_grund_bank" if (a.bank_code or "").strip() else "s_grund_dienst")
 
     def writable(self, uuid: str, config: Optional[dict] = None) -> bool:

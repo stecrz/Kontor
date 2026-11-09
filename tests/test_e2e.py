@@ -804,7 +804,7 @@ class AppTests(_AppBase):
             led.accounts[F.uid(key)].refresh = neu - timedelta(days=20)
         led.fp = "x"; self.app.ledger = led
         kinds = core.abruf_arten(led, self.app.config)
-        self.assertEqual(kinds[F.uid("pb.vd")]["art"], "offline"); self.assertIn(kinds[F.uid("pb.vd")]["grund"], ("von Kontor bebucht", "ohne Bankleitzahl und Kontonummer"))
+        self.assertEqual(kinds[F.uid("pb.vd")]["art"], "offline"); self.assertEqual(kinds[F.uid("pb.vd")]["grund"], "Offline-Konto")
         self.assertEqual(kinds[F.uid("priv.bet.pb")]["art"], "offline")
         self.assertEqual(kinds[F.uid("priv.giro")]["art"], "online"); self.assertEqual(kinds[F.uid("priv.depot")]["art"], "online")
         self.assertEqual(self.app.bankabruf()["zurueck_anzahl"], 0)
@@ -2173,7 +2173,7 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".cards")
                 # Status unten links fuehrt zur Seite Synchronisierung
                 pg.click("#status-mini .sm-link"); pg.wait_for_selector(".sync-table")
-                self.assertIn("Ohne Bankabruf", pg.query_selector("#main").inner_text()); self.assertIn("Verkäuferdarlehen", pg.query_selector_all(".sync-table")[-1].inner_text())
+                self.assertIn("Offline-Konten", pg.query_selector("#main").inner_text()); self.assertIn("Verkäuferdarlehen", pg.query_selector_all(".sync-table")[-1].inner_text())
                 self.assertIn("Depots: Wertverlauf", pg.query_selector("#main").inner_text()); self.assertTrue(pg.query_selector(".dep-hist"))
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".cards")
                 # Bereich wechseln
@@ -2598,6 +2598,12 @@ class BrowserTest(unittest.TestCase):
                 pg.wait_for_function("(document.querySelector('.co-card [data-pv=\"b\"]') || {}).textContent?.includes('Soll')", timeout=8000)
                 self.assertGreaterEqual(len(pg.query_selector_all(".co-card .hq")), 6); self.assertGreaterEqual(len(pg.query_selector_all("#loans .hq")), 15)
                 self.assertTrue(pg.is_disabled("#save-rules"))
+                # participation: only offline accounts with the position "Beteiligungen"; a suggestion only when exactly one fits the name
+                opts = pg.eval_on_selector_all(".co-card:first-child .c-bet option", "e => e.map(o => o.textContent)")
+                self.assertEqual(opts[1:], ["Beteiligung an Alpha GbR", "Beteiligung an Beta GbR"])
+                card = """n => { const keep = S.CFG.gesellschaften; S.CFG.gesellschaften = []; const d = document.createElement('div'); d.innerHTML = companyCard({id: 'x', name: n, anteil: 0.5}, {}); S.CFG.gesellschaften = keep; return [d.querySelector('.c-bet').value, !!d.querySelector('.sug')]; }"""
+                v, sug = pg.evaluate(card, "Beta GbR"); self.assertTrue(sug); self.assertEqual(v.split(" | ")[0], F.uid("priv.bet.shs"))
+                self.assertEqual(pg.evaluate(card, "Gamma GbR"), ["", False]); self.assertEqual(pg.evaluate(card, "GbR"), ["", False])
                 # an incomplete counter account is not saved
                 pg.click(".co-card .add-gk"); pg.select_option(".gk-row .g-konto", index=1); pg.click("#save-rules"); pg.wait_for_timeout(300)
                 self.assertTrue(pg.query_selector(".gk-row.invalid")); self.assertNotIn("gegenkonten", json.dumps(store.load("config.json")["gesellschaften"]))
@@ -2606,6 +2612,11 @@ class BrowserTest(unittest.TestCase):
                 pg.keyboard.press("Meta+s"); pg.wait_for_timeout(900)          # ⌘S saves
                 self.assertIn("Gespeichert", pg.query_selector("#findings").inner_text())
                 self.assertEqual(store.load("config.json")["gesellschaften"][0]["schwelle"], 1); self.assertTrue(pg.is_disabled("#save-rules"))
+                # Sync: online or offline per account as a menu; offline accounts recognised as "Offline-Konto"
+                self.assertFalse(pg.evaluate("DIRTY.on"))
+                pg.click("#nav a[href='#sync']"); pg.wait_for_selector(".ab-sel")          # leaving after ⌘S: no question (a late change event does not count)
+                self.assertIn("Offline-Konto", pg.inner_text("#main")); self.assertIn("Offline-Konten", pg.inner_text("#main"))
+                self.assertEqual(pg.eval_on_selector("tr[data-uuid='%s'] .ab-sel" % F.uid("priv.bet.pb"), "e => e.value"), "offline")
                 # ⌘L locks
                 pg.keyboard.press("Meta+l"); pg.wait_for_selector("#login:not(.hidden)")
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg)

@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.21 (2026-11-10 00:05)
+- Buchungsregeln: Als Beteiligung wählbar sind nur Offline-Konten mit der Position „Beteiligungen“. Passt genau eines dem Namen nach zur Gesellschaft, ist es vorausgewählt (übernommen mit „Speichern und prüfen“). Warnung, wenn ein gespeichertes Beteiligungskonto eine andere Position hat.
+- Synchronisierung: „Online-Konten“ und „Offline-Konten“; je Konto „Art“ als Auswahl (Online/Offline) statt des Häkchens „abgerufen“. Erkannte Offline-Konten heißen einheitlich „Offline-Konto“, eigene Festlegungen „von dir festgelegt“.
+- Nach ⌘S fragt die Seite beim Verlassen nicht mehr nach ungespeicherten Änderungen.
+
 ## 3.12.20 (2026-11-09 20:59)
 - Von Hand geführte Konten: Eine eingetragene Bankleitzahl schließt ein Konto nicht mehr aus. Ob Kontor bucht, folgt jetzt genau der Einordnung unter Synchronisierung (nie abgerufen, ohne Bank- und Kontonummer, als Offline-Konto angelegt, von Kontor bebucht – oder dort das Häkchen „abgerufen“ entfernt).
 

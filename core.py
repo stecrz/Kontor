@@ -505,6 +505,8 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
             a = ref(tr("s_regel_beteiligung") % n, g["beteiligung"], want_offline=True, group_ok=False)
             if a is not None:
                 targets.append(a)
+                if roles.get(a.uuid) != "beteiligungen":
+                    add("warnung", tr("s_s_keine_position_beteiligungen") % (tr("s_regel_beteiligung") % n, a.name))
         for x in g.get("gegenkonten") or []:
             if not isinstance(x, dict) or not x.get("konto") or not x.get("quelle"):
                 continue

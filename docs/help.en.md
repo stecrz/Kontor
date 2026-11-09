@@ -105,7 +105,7 @@ The data has two stages: **banks → MoneyMoney** (MoneyMoney fetches from the b
 - A bank refresh without new data does not trigger a recalculation.
 - **Read transactions** (Settings → General): how far back Kontor reads; 0 = all (recommended).
 
-The Sync page shows the last refresh per account and reports accounts that lag behind. Accounts without bank refresh (offline accounts: never refreshed, without bank and account number, created as offline account or booked by Kontor) are listed separately; adjustable per account (tick “retrieved”). Kontor books only into such accounts – also into an offline account with a bank code typed in, once you untick it there. If MoneyMoney is closed or locked, nothing happens – the next sync catches up. For bookings, proposals and errors Kontor sends a macOS notification (can be turned off under Settings → General).
+The Sync page shows the last refresh per account and reports accounts that lag behind. Offline accounts (kept by hand: never refreshed, without bank and account number, created as offline account or booked by Kontor) are listed separately as “Offline account”; if sorted wrongly, change it per account under “Type” to “Online” or “Offline”. Kontor books only into offline accounts – also into one with a bank code typed in, once it is set to “Offline” there. If MoneyMoney is closed or locked, nothing happens – the next sync catches up. For bookings, proposals and errors Kontor sends a macOS notification (can be turned off under Settings → General).
 
 <a id="tables"></a>
 ## Tables, switches and Excel
@@ -308,7 +308,7 @@ Kontor recognises the instalment on the source account – by the lender's IBAN 
 
 Every area of the kind “company” (Setup → Areas) appears as a card, with your **share**. The share is set there only; the card links to it.
 
-- **Participation**: your offline account for this company. Kontor keeps it at **share × value of the company**. Value = all accounts of its area, i.e. assets minus debts (without accounts with the position “Capital accounts (equity)”, guarantees and off-balance accounts).
+- **Participation**: your offline account for this company – you can choose offline accounts with the position “Participations” (Setup → Accounts); if exactly one fits the company's name, Kontor suggests it (taken over only with “Save and check”). Kontor keeps it at **share × value of the company**. Value = all accounts of its area, i.e. assets minus debts (without accounts with the position “Capital accounts (equity)”, guarantees and off-balance accounts).
 - **Counter accounts**: your offline account as the counterpart of one of the company's accounts – same amount, opposite sign. Example: your capital account is a debt to you in the partnership and a receivable for you.
 
 Both together count nothing twice if the capital accounts are kept as debts in the company (the default for accounts with “Kapitalkonto” or “Gesellschafterdarlehen” in their name): the receivable is your capital account, the participation your share of the rest – increases in value and undistributed surpluses. This also holds for unequal contributions. If you keep a capital account as the company's equity instead, it is already part of the participation's value; a counter account for it then counts twice, and “Save and check” warns.

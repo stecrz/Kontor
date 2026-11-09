@@ -105,7 +105,7 @@ Der Datenstand hat zwei Stufen: **Banken → MoneyMoney** (MoneyMoney ruft bei d
 - Ein Bankabruf ohne neue Daten löst keine Neuberechnung aus.
 - **Umsätze lesen** (Einstellungen → Allgemein): wie weit zurück Kontor liest; 0 = alle (empfohlen).
 
-Die Seite „Synchronisierung“ zeigt je Konto den letzten Abruf und meldet Konten, die zurückliegen. Konten ohne Bankabruf (Offline-Konten: nie abgerufen, ohne Bank- und Kontonummer, als Offline-Konto angelegt oder von Kontor bebucht) stehen getrennt; je Konto änderbar (Häkchen „abgerufen“). Nur in solche Konten bucht Kontor – auch in ein Offline-Konto mit eingetragener Bankleitzahl, wenn du dort das Häkchen entfernst. Ist MoneyMoney zu oder gesperrt, passiert nichts – der nächste Abgleich holt alles nach. Bei Buchungen, Vorschlägen und Fehlern meldet sich Kontor mit einer macOS-Mitteilung (abschaltbar unter Einstellungen → Allgemein).
+Die Seite „Synchronisierung“ zeigt je Konto den letzten Abruf und meldet Konten, die zurückliegen. Offline-Konten (von Hand geführt: nie abgerufen, ohne Bank- und Kontonummer, als Offline-Konto angelegt oder von Kontor bebucht) stehen getrennt als „Offline-Konto“; falsch eingeordnet, je Konto unter „Art“ auf „Online“ oder „Offline“ ändern. Nur in Offline-Konten bucht Kontor – auch in eines mit eingetragener Bankleitzahl, wenn es dort auf „Offline“ steht. Ist MoneyMoney zu oder gesperrt, passiert nichts – der nächste Abgleich holt alles nach. Bei Buchungen, Vorschlägen und Fehlern meldet sich Kontor mit einer macOS-Mitteilung (abschaltbar unter Einstellungen → Allgemein).
 
 <a id="tables"></a>
 ## Tabellen, Schalter und Excel
@@ -308,7 +308,7 @@ Kontor erkennt die Rate auf dem Quellkonto – über die IBAN des Darlehensgeber
 
 Jeder Bereich der Art „Gesellschaft“ (Einrichtung → Bereiche) erscheint als Karte, mit deinem **Anteil**. Der Anteil steht nur dort; die Karte verlinkt hin.
 
-- **Beteiligung**: dein Offline-Konto für diese Gesellschaft. Kontor hält es auf **Anteil × Wert der Gesellschaft**. Wert = alle Konten ihres Bereichs, also Vermögen minus Schulden (ohne Konten mit der Position „Kapitalkonten (Eigenkapital)“, Avale und nicht bilanzierte Konten).
+- **Beteiligung**: dein Offline-Konto für diese Gesellschaft – zur Wahl stehen Offline-Konten mit der Position „Beteiligungen“ (Einrichtung → Konten); passt genau eines dem Namen nach zur Gesellschaft, schlägt Kontor es vor (übernommen erst mit „Speichern und prüfen“). Kontor hält es auf **Anteil × Wert der Gesellschaft**. Wert = alle Konten ihres Bereichs, also Vermögen minus Schulden (ohne Konten mit der Position „Kapitalkonten (Eigenkapital)“, Avale und nicht bilanzierte Konten).
 - **Gegenkonten**: dein Offline-Konto als Gegenstück zu einem Konto der Gesellschaft – gleicher Betrag, umgekehrtes Vorzeichen. Beispiel: Dein Kapitalkonto ist in der GbR eine Schuld an dich, bei dir eine Forderung.
 
 Beides zusammen zählt nichts doppelt, wenn die Kapitalkonten in der Gesellschaft als Schuld geführt sind (Standard für Konten mit „Kapitalkonto“ oder „Gesellschafterdarlehen“ im Namen): Die Forderung ist dein Kapitalkonto, die Beteiligung dein Anteil am Rest – Wertzuwachs und nicht verteilte Überschüsse. Das stimmt auch bei ungleichen Einlagen. Führst du ein Kapitalkonto dagegen als Eigenkapital der Gesellschaft, steckt es schon im Wert der Beteiligung; ein Gegenkonto dazu zählt dann doppelt, und „Speichern und prüfen“ warnt.

@@ -98,7 +98,7 @@ const H = {
   probelauf: t('im_testmodus_schlaegt_kontor_die'),
   mmhist: t('sicherheit_die_datei_bleibt_verschlues'),
   depotverlauf: t('moneymoney_stellt_ueber_seine_schnitts'),
-  abruf: t('stand_je_konto_in_dem'),
+  abruf: t('stand_je_konto_in_dem'), ab_art: t('wird_von_moneymoney_bei_bank'),
   touchid: t('eingeschaltet_die_anmeldung_am_mac'),
   bilanz_tabelle: t('klick_auf_eine_position_klappt'),
   abgleich: t('datenstand_in_zwei_stufen_banken'),
@@ -167,7 +167,7 @@ const H = {
 const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   konten_zuordnung: 'accounts', inaktiv: 'accounts', verlauf_kurz: 'history', verlauf: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
   zuordnen: 'categories', kontor_kategorien: 'categories', mm_ueberschreiben: 'categories', mm_cat: 'categories-write-back', kat_auswahl: 'categories-selection',
-  abgleich: 'sync', voll_lesen: 'sync', monate_zurueck: 'sync', abruf: 'sync', intervall: 'sync',
+  abgleich: 'sync', ab_art: 'sync', voll_lesen: 'sync', monate_zurueck: 'sync', abruf: 'sync', intervall: 'sync',
   bch: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', regel_darlehen_h: 'rules-loans', regel_gesellschaften_h: 'rules-companies',
   darlehen_iban: 'rules-loans', darlehen_konto: 'rules-loans', darlehen_quelle: 'rules-loans', zinsmodell: 'rules-loans', satz: 'rules-loans', basis_override: 'rules-loans',
   h_l_name: 'rules-loans', h_l_aktiv: 'rules-loans', h_l_art: 'rules-loans', h_l_text: 'rules-loans', h_l_excl: 'rules-loans', h_l_zinstag: 'rules-loans', h_l_ab: 'rules-loans',
@@ -2672,7 +2672,7 @@ async function vSync() {
     const stand = k.art === 'offline' ? `<span class="muted">${esc(k.grund)}</span>` : k.alt ? `<span class="tag">${t('ruht_seit_ueber')} ` + ((S.CFG.bilanz || {}).inaktiv_monate || 12) + ` ${t('monaten_kein_abruf')}</span>` : k.zurueck ? `<span class="tag warn">${t('0_1_zurueck', d, d === 1 ? t('tag') : t('tage'))}</span>` : d != null && d >= 1 && !(k.saldo) ? `<span class="muted">${t('0_tage_zurueck_ohne_saldo', d)}</span>` : `<span class="tag ok">${t('aktuell')}</span>`;
     return `<tr data-uuid="${k.uuid}"><td>${esc(k.name)}<div class="small muted">${esc(k.pfad.split(' / ').slice(0, -1).join(' / '))}</div></td><td class="small">${esc(k.bereich || '–')}</td>
       ${k.art === 'online' ? `<td class="nowrap">${k.zeit ? esc(fmtZeit(k.zeit)) : '–'}</td>` : ''}<td>${stand}</td>
-      <td class="c"><input type="checkbox" class="ab-chk" ${k.art === 'online' ? 'checked' : ''} title="${t('wird_von_moneymoney_bei_bank')}"></td></tr>`;
+      <td><select class="ab-sel" title="${esc(t('wird_von_moneymoney_bei_bank'))}"><option value="online" ${k.art === 'online' ? 'selected' : ''}>${t('art_online')}</option><option value="offline" ${k.art === 'offline' ? 'selected' : ''}>${t('art_offline')}</option></select></td></tr>`;
   };
   const dep = r.depots || [];
   if (m.problem) h += `<div class="banner err">${t('moneymoney_lief_am_0_kontor', esc(fmtZeit(m.problem.zeit)), esc(m.problem.text))}</div>`;
@@ -2680,9 +2680,9 @@ async function vSync() {
   if (dep.length) h += `<h2>${t('depots_wertverlauf_0', hq('depotverlauf'))}</h2><div class="note">${t('depot_verlauf_note', r.aufzeichnung_seit ? ML(r.aufzeichnung_seit) : t('heute'))}${more('balances')}</div>
     <div class="small" style="margin:6px 0 10px">${r.mm_verlauf ? `${t('verlauf_aus_moneymoney_uebernommen_am', esc(fmtZeit(r.mm_verlauf.zeit)))}` : t('bisheriger_verlauf_noch_nicht_uebernom')} <a href="#setup/history">${t('kontostaende_aus_moneymoney_0_einlesen', r.mm_verlauf ? 'erneut ' : '')}</a></div>
     <div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>${t('depot')}</th><th>${t('bereich')}</th><th>${t('bekannt_ab')}</th><th></th></tr></thead><tbody>${dep.map(k => `<tr data-uuid="${k.uuid}"><td>${esc(k.name)}<div class="small muted">${esc(k.pfad.split(' / ').slice(0, -1).join(' / '))}</div></td><td class="small">${esc(k.bereich || '–')}</td><td>${k.erster_stand ? ML(k.erster_stand) : '–'}${k.aus_moneymoney ? ` <span class="small muted">${t('aus_moneymoney')}</span>` : ''}${k.eigene ? ` <span class="small muted">${t('0_eingetragen', k.eigene)}</span>` : ''}</td><td class="c"><button class="small secondary dep-hist">${t('staende_eintragen')}</button></td></tr>`).join('')}</tbody></table></div>`;
-  h += `<h2>${t('sync_mit_abruf', online.length, hq('abruf'))}</h2><div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>${t('konto_2')}</th><th>${t('bereich')}</th><th>${t('letzter_abruf')}</th><th>${t('stand')}</th><th class="c">${t('abgerufen')}</th></tr></thead><tbody>${online.map(row).join('') || `<tr><td colspan="5" class="muted">${t('keine')}</td></tr>`}</tbody></table></div>`;
+  h += `<h2>${t('sync_mit_abruf', online.length, hq('abruf'))}</h2><div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>${t('konto_2')}</th><th>${t('bereich')}</th><th>${t('letzter_abruf')}</th><th>${t('stand')}</th><th>${t('art')}${hq('ab_art')}</th></tr></thead><tbody>${online.map(row).join('') || `<tr><td colspan="5" class="muted">${t('keine')}</td></tr>`}</tbody></table></div>`;
   h += `<h2>${t('sync_ohne_abruf', offline.length)}</h2><div class="note">${t('von_hand_gefuehrte_konten_z')}</div>
-    <div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>${t('konto_2')}</th><th>${t('bereich')}</th><th>${t('erkannt_als')}</th><th class="c">${t('abgerufen')}</th></tr></thead><tbody>${offline.map(row).join('') || `<tr><td colspan="4" class="muted">${t('keine')}</td></tr>`}</tbody></table></div>`;
+    <div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>${t('konto_2')}</th><th>${t('bereich')}</th><th>${t('erkannt_als')}</th><th>${t('art')}${hq('ab_art')}</th></tr></thead><tbody>${offline.map(row).join('') || `<tr><td colspan="4" class="muted">${t('keine')}</td></tr>`}</tbody></table></div>`;
   return h;
 }
 
@@ -3098,7 +3098,7 @@ const pctText = v => (Math.round(parseFloat(v) * 10000) / 100).toLocaleString(LO
 function acctSel(cls, selected, filter, empty) {
   const sel = (selected || '').split('|')[0].trim(), list = S.KONTEN.filter(filter);
   return `<select class="${cls}"><option value="">${empty}</option>` + list.map(k => `<option value="${k.uuid} | ${esc(k.name)}" ${k.uuid === sel ? 'selected' : ''}>${esc(k.name)}</option>`).join('')
-    + (sel && !list.some(k => k.uuid === sel) ? `<option value="${esc(selected)}" selected>${t('0_nicht_gefunden', esc(refName(selected) || selected))}</option>` : '') + `</select>`;
+    + (sel && !list.some(k => k.uuid === sel) ? `<option value="${esc(selected)}" selected>${S.KONTEN.some(k => k.uuid === sel) ? t('0_nicht_waehlbar', esc(refName(selected))) : t('0_nicht_gefunden', esc(refName(selected) || selected))}</option>` : '') + `</select>`;
 }
 // counter account: a private manual account (outside the company) = counterpart of one account of the company
 function gkRow(x, bid) {
@@ -3114,12 +3114,27 @@ function backMonths(sel) {
   if (sel && !out.includes(sel)) out.push(sel);
   return `<option value="">${t('nicht_rueckwirkend')}</option>` + out.map(m => `<option value="${m}" ${m === sel ? 'selected' : ''}>${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}</option>`).join('');
 }
+// words of a name that tell companies apart (no legal forms or filler words), for the suggestion by name
+const NAME_STOP = new Set(['gbr', 'egbr', 'gmbh', 'mbh', 'kg', 'ug', 'ag', 'ohg', 'se', 'co', 'und', 'an', 'am', 'der', 'die', 'das', 'des', 'den', 'dem', 'beteiligung', 'beteiligungen', 'anteil', 'anteile', 'gesellschaft', 'haftungsbeschrankt', 'konto']);
+const nameWords = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').split(/[^a-z0-9]+/).filter(w => w.length >= 2 && !NAME_STOP.has(w));
+function suggestByName(name, list) {
+  const words = nameWords(name); if (!words.length) return null;
+  const hits = list.filter(k => { const kw = new Set(nameWords(k.name)); return words.some(w => kw.has(w)); });
+  return hits.length === 1 ? hits[0] : null;          // only when exactly one account fits the name
+}
+const betCandidate = (bid) => k => !k.gruppe && k.manuell && k.rolle === 'beteiligungen' && k.bereich_id !== String(bid);
 function companyCard(b, g) {
   const has = b.anteil != null && b.anteil !== '', bid = String(b.id), inside = k => k.bereich_id === bid;
+  let bet = g.beteiligung, sug = null;
+  if (!bet) {
+    const used = new Set((S.CFG.gesellschaften || []).map(x => (x.beteiligung || '').split('|')[0].trim()).filter(Boolean));
+    sug = suggestByName(b.name, S.KONTEN.filter(betCandidate(bid)).filter(k => !used.has(k.uuid)));
+    if (sug) bet = `${sug.uuid} | ${sug.name}`;
+  }
   const extra = !!(g.rueckwirkend_ab || (g.schwelle != null && g.schwelle !== 0.01) || g.gegenpartei);
   return `<div class="co-card" data-b="${esc(bid)}"><div class="co-head"><h3>${esc(b.name)}</h3>`
     + (has ? `<a class="pill neutral" href="#setup/areas">${t('anteil_0', pctText(b.anteil))}</a>` : `<a class="pill warn" href="#setup/areas">${t('anteil_fehlt')}</a>`) + hq('h_co_anteil') + `</div>`
-    + `<div class="co-row"><div class="co-l">${t('co_beteiligung')}${hq('h_co_bet')}</div><div class="co-f">${acctSel('c-bet', g.beteiligung, k => !k.gruppe && k.manuell && !inside(k), t('keine_2'))}<div class="pv small" data-pv="b"></div></div></div>`
+    + `<div class="co-row"><div class="co-l">${t('co_beteiligung')}${hq('h_co_bet')}</div><div class="co-f${sug ? ' suggested' : ''}">${acctSel('c-bet', bet, betCandidate(bid), t('keine_2'))}${sug ? `<span class="pill info sug">${t('vorschlag')}</span>` : ''}<div class="pv small" data-pv="b"></div></div></div>`
     + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}</div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="secondary small add-gk">${t('gegenkonto_hinzufuegen')}</button></div></div>`
     + `<details class="co-more"${extra ? ' open' : ''}><summary>${t('co_mehr')}</summary><div class="form">`
     + `<label>${t('co_rueck')}${hq('h_co_rueck')}</label><select class="c-ab">${backMonths(g.rueckwirkend_ab)}</select>`
@@ -3188,7 +3203,8 @@ function catOptions(selected) {
   const leaves = S.KATS.filter(k => !k.gruppe);
   return `<option value="">${t('keine_2')}</option>` + leaves.map(k => `<option value="${esc(k.name)}" ${k.name === selected ? 'selected' : ''}>${esc(k.pfad)}</option>`).join('') + (selected && !leaves.some(k => k.name === selected) ? `<option value="${esc(selected)}" selected>${t('0_nicht_in_moneymoney', esc(selected))}</option>` : '');
 }
-function collectRules() {
+function collectRules(asSaved) {
+  // asSaved: a suggested participation (not saved yet) counts as empty
   const cfg = JSON.parse(JSON.stringify(S.CFG));
   const lst = s => s.split(';').map(x => x.trim()).filter(Boolean);
   cfg.darlehen = $$('#loans .item').map(it => {
@@ -3203,7 +3219,7 @@ function collectRules() {
     if (modell) l.zins = { modell, satz, buchungstag: v('.f-tag'), basis_override: basis };
     return l;
   });
-  cfg.gesellschaften = $$('#companies .co-card').map(c => ({ bereich: c.dataset.b, beteiligung: $('.c-bet', c).value,
+  cfg.gesellschaften = $$('#companies .co-card').map(c => ({ bereich: c.dataset.b, beteiligung: asSaved && $('.co-f.suggested', c) ? '' : $('.c-bet', c).value,
     gegenkonten: $$('.gk-row', c).map(r => ({konto: $('.g-konto', r).value, quelle: $('.g-quelle', r).value, faktor: parseFloat(r.dataset.f) || -1})),
     rueckwirkend_ab: $('.c-ab', c).value.trim(), schwelle: parseFloat($('.c-sw', c).value) || 0.01, gegenpartei: $('.c-gp', c).value.trim() }))
     .filter(g => g.beteiligung || g.gegenkonten.length);
@@ -3844,7 +3860,7 @@ const guarded = () => GUARDED.includes(S.tab + (S.sub ? '/' + S.sub : ''));
 (function dirtyListeners() {
   // einmal am Hauptbereich (bleibt bestehen); ob die Seite geschuetzt ist, wird beim Ereignis geprueft
   const main = $('#main');
-  const mark = e => { if (!guarded() || e.target.closest('#hi-preview, .toolbar') || e.target.id === 'k-show-inactive') return; DIRTY.on = true; };
+  const mark = e => { if (!guarded() || e.target.closest('#hi-preview, .toolbar, .rules-page') || e.target.id === 'k-show-inactive') return; DIRTY.on = true; };
   main.addEventListener('input', mark); main.addEventListener('change', mark);
   main.addEventListener('click', e => { if (guarded() && e.target.closest('.del, #add-bereich, .add-item, .b-mv')) DIRTY.on = true; });
 })();
@@ -3988,9 +4004,9 @@ function bind(main) {
   $$('.dep-hist', main).forEach(b => b.addEventListener('click', async () => { b.classList.add('busy'); try { await openHistDrawer(b.closest('tr').dataset.uuid); } catch (e) { toast(e.message, 6000); } finally { b.classList.remove('busy'); } }));
   const sn = $('#sync-now', main); if (sn) sn.addEventListener('click', async () => { sn.classList.add('busy'); try { await syncNow(); } finally { sn.classList.remove('busy'); } });
   const sf = $('#sync-full', main); if (sf) sf.addEventListener('click', async () => { sf.classList.add('busy'); try { await syncNow(true); } finally { sf.classList.remove('busy'); } });
-  $$('.ab-chk', main).forEach(cb => cb.addEventListener('change', async () => {
-    try { await api('/api/sync', {konto: cb.closest('tr').dataset.uuid, abgerufen: cb.checked}); S.STATUS = await api('/api/status'); statusMini(); route(); }
-    catch (e) { toast(e.message, 5000); cb.checked = !cb.checked; }
+  $$('.ab-sel', main).forEach(sel => sel.addEventListener('change', async () => {
+    try { await api('/api/sync', {konto: sel.closest('tr').dataset.uuid, abgerufen: sel.value === 'online'}); S.STATUS = await api('/api/status'); S.KONTEN = (await api('/api/accounts')).konten || S.KONTEN; statusMini(); route(); }
+    catch (e) { toast(e.message, 5000); sel.value = sel.value === 'online' ? 'offline' : 'online'; }
   }));
   const ksi = $('#k-show-inactive', main); if (ksi) ksi.addEventListener('change', e => $$('tr.inactive', main).forEach(tr => tr.style.display = e.target.checked ? '' : 'none'));
   $$('.k-show', main).forEach(sel => sel.addEventListener('change', () => { const tr = sel.closest('tr'); tr.classList.toggle('inactive', kontoHidden(sel.value, tr.dataset.auto === '1')); }));
@@ -4076,7 +4092,13 @@ function bind(main) {
     const sr = $('#save-rules', rp), st = $('#rules-state', rp);
     let pvTimer = null, pvSeq = 0;
     const preview = async () => { const n = ++pvSeq; try { const r = await api('/api/rules/preview', {config: collectRules()}); if (n === pvSeq) rulesPreviewShow(rp, r); } catch (e) { /* preview only */ } };
-    const changed = () => { sr.disabled = false; st.textContent = t('regeln_ungespeichert'); DIRTY.on = true; clearTimeout(pvTimer); pvTimer = setTimeout(preview, 450); };
+    const rulesJson = asSaved => { const c = collectRules(asSaved); return JSON.stringify([c.darlehen, c.gesellschaften]); };
+    let saved = rulesJson(true);
+    const changed = () => {
+      const same = rulesJson(false) === saved;
+      sr.disabled = same; DIRTY.on = !same; st.textContent = t(same ? 'regeln_gespeichert' : 'regeln_ungespeichert');
+      clearTimeout(pvTimer); pvTimer = setTimeout(preview, 450);
+    };
     $('#add-loan', rp).addEventListener('click', () => {
       $('#loans', rp).insertAdjacentHTML('beforeend', loanForm({name: t('neues_darlehen'), _neu: true, ab_datum: new Date().toISOString().slice(0, 10), zins: {modell: 'jahresbasis', satz: [], buchungstag: 'mit_rate'}, buchung: {kategorie_tilgung: 'Umbuchung'}}, $$('#loans .item', rp).length));
       bindDel(main); changed();
@@ -4104,8 +4126,13 @@ function bind(main) {
       rows.filter(r => !$('.g-konto', r).value && !$('.g-quelle', r).value).forEach(r => r.remove());
       const bad = rows.filter(r => r.isConnected && (!$('.g-konto', r).value || !$('.g-quelle', r).value));
       if (bad.length) { bad.forEach(r => r.classList.add('invalid')); bad[0].scrollIntoView({block: 'center', behavior: 'smooth'}); toast(t('gk_unvollstaendig'), 5000); return; }
-      if (await saveConfig(collectRules(), $('#findings', rp))) { sr.disabled = true; st.textContent = t('regeln_gespeichert'); preview(); }
+      if (await saveConfig(collectRules(), $('#findings', rp))) {
+        $$('.co-f.suggested', rp).forEach(f => { f.classList.remove('suggested'); $('.sug', f)?.remove(); });
+        saved = rulesJson(true); sr.disabled = true; st.textContent = t('regeln_gespeichert'); preview();
+      }
     });
+    if ($('.co-f.suggested', rp)) { sr.disabled = false; st.textContent = t('vorschlag_speichern'); }
+    rp.addEventListener('change', e => { const f = e.target.closest('.co-f.suggested'); if (f) { f.classList.remove('suggested'); $('.sug', f)?.remove(); changed(); } }, true);
     preview();
   }
   bindDel(main);

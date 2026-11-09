@@ -358,10 +358,10 @@ class CatalogTests(unittest.TestCase):
         i18n.set_lang("en")
         try:
             self.assertEqual(i18n.tr("s_moneymoney_laeuft_nicht"), "MoneyMoney is not running.")
-            self.assertEqual(i18n.tr("sync_ohne_abruf", 3), "Without bank retrieval (3)")
+            self.assertEqual(i18n.tr("sync_ohne_abruf", 3), "Offline accounts (3)")
         finally:
             i18n.set_lang("de")
-        self.assertEqual(i18n.tr("sync_ohne_abruf", 3), "Ohne Bankabruf (3)")
+        self.assertEqual(i18n.tr("sync_ohne_abruf", 3), "Offline-Konten (3)")
         self.assertEqual(i18n.tr("unbekannter_schluessel"), "unbekannter_schluessel")
 
 
