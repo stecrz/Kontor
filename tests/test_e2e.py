@@ -1121,6 +1121,14 @@ class AppTests(_AppBase):
         self.assertEqual(self.call("/api/setup", {"passwort": "noch-ein-passwort-123"})[0], 403)
         self.assertEqual(self.call("/api/run", {"probelauf": True}, csrf=False)[0], 403)
         self.assertEqual(self.call("/api/run", {"probelauf": True}, origin="http://evil.example")[0], 403)
+        # DNS rebinding: a foreign name pointing to 127.0.0.1 gets nothing; *.localhost and localhost are fine
+        import http.client
+        for host, want in (("evil.example:%d" % self.port, 421), ("kontor.localhost:%d" % self.port, 200), ("localhost:%d" % self.port, 200)):
+            c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5); c.request("GET", "/", headers={"Host": host})
+            self.assertEqual(c.getresponse().status, want, host); c.close()
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("POST", "/api/login", body=b"{}", headers={"Host": "evil.example", "Origin": "http://evil.example", "Content-Type": "application/json"})
+        self.assertEqual(c.getresponse().status, 403); c.close()
         code, st = self.call("/api/status")
         self.assertEqual(code, 200); self.assertTrue(st["ablage"]["verschluesselt"]); self.assertIn("version", st)
         code, ds = self.call("/api/dataset")
@@ -2574,7 +2582,11 @@ class BrowserTest(unittest.TestCase):
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg)
                 pg.wait_for_function("navigator.serviceWorker && navigator.serviceWorker.controller !== null", timeout=15000)
                 pg.reload(); pg.wait_for_selector(".cards")           # jetzt laufen alle Abrufe durch den Service Worker
-                pg.wait_for_function("caches.open('kontor-data').then(c => c.keys()).then(k => k.some(r => r.url.endsWith('/api/offline/verifier')) && k.some(r => r.url.endsWith('/api/dataset')))", timeout=15000)
+                pg.wait_for_function("caches.open('kontor-data-enc').then(c => c.keys()).then(k => k.some(r => r.url.endsWith('/api/offline/verifier')) && k.some(r => r.url.endsWith('/api/dataset')))", timeout=15000)
+                # the stored copy is encrypted (key pair of the device, the private key only with the password): no plain text in it
+                raw = pg.evaluate("caches.open('kontor-data-enc').then(c => c.match(location.origin + '/api/dataset')).then(r => r.arrayBuffer()).then(b => new TextDecoder('latin1').decode(b))")
+                self.assertNotIn("Hausbank", raw); self.assertNotIn("nettovermoegen", raw); self.assertGreater(len(raw), 1000)
+                self.assertFalse(pg.evaluate("caches.has('kontor-data')"))                        # never a plain copy
                 pg.goto("http://127.0.0.1:%d/#settings/access" % port); pg.wait_for_selector("#sw-state")
                 self.assertIn("aktiv", pg.query_selector("#sw-state").inner_text())
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".cards")

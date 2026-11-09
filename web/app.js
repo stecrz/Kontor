@@ -267,7 +267,10 @@ async function api(path, body, method, netMode) {
     catch (e) { OFFLINE.mode = true; offlineBanner(); }
   }
   let data = null;
-  try { data = await r.json(); } catch (e) { data = {}; }
+  if (r.headers.get('X-Kontor-Enc') === '1') {          // the stored copy: only readable with the key the password unlocks
+    if (!OFFKEY) { S.csrf = null; OFFLINE.mode = true; showLogin(); throw new Error(t('err_offline_passwort')); }
+    try { data = await offOpen(await r.arrayBuffer()); } catch (e) { data = {}; }
+  } else { try { data = await r.json(); } catch (e) { data = {}; } }
   if (r.headers.get('X-Kontor-Offline') === '1') {
     const at = r.headers.get('X-Kontor-Cached-At'); if (at) OFFLINE.stand = at;
     if (IS_LOCAL) throw new Error(t('err_dienst_antwortet_nicht'));
@@ -289,7 +292,7 @@ function offlineBanner() {
 }
 function idleReset() {
   clearTimeout(OFFLINE.idle);
-  if (OFFLINE.mode && S.csrf) OFFLINE.idle = setTimeout(() => { S.csrf = null; showLogin(); }, Math.max(1, ((S.CFG && S.CFG.oberflaeche) || {}).sperre_minuten || 15) * 60000);
+  if (OFFLINE.mode && S.csrf) OFFLINE.idle = setTimeout(() => { S.csrf = null; OFFKEY = null; showLogin(); }, Math.max(1, ((S.CFG && S.CFG.oberflaeche) || {}).sperre_minuten || 15) * 60000);
 }
 for (const ev of ['pointerdown', 'keydown', 'touchstart']) document.addEventListener(ev, idleReset, {passive: true});
 async function offlinePing() {
@@ -298,16 +301,66 @@ async function offlinePing() {
   try { const s = await api('/api/session'); if (!s.offline) await revalidate(); } catch (e) {}
 }
 setInterval(offlinePing, 30000);
-const hexOf = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-const bytesOf = hex => new Uint8Array(hex.match(/../g).map(h => parseInt(h, 16)));
+// The offline copy on this device is encrypted (see sw.js): a key pair per device; the public key encrypts every stored
+// answer, the private key lies on the device only encrypted with a key from the Kontor password (PBKDF2) and is unlocked
+// into memory at a password sign-in -- never stored readable, gone when the page locks or closes.
+let OFFKEY = null;
+const OFF_ROUNDS = 400000;
+function offIdb(fn) {
+  return new Promise((res, rej) => {
+    const o = indexedDB.open('kontor-off', 1);
+    o.onupgradeneeded = () => o.result.createObjectStore('k');
+    o.onerror = () => rej(o.error);
+    o.onsuccess = () => { const tx = o.result.transaction('k', 'readwrite'), st = tx.objectStore('k'), q = fn(st); tx.oncomplete = () => res(q && q.result); tx.onerror = () => rej(tx.error); };
+  });
+}
+async function offKek(pw, salt) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({name: 'PBKDF2', hash: 'SHA-256', salt, iterations: OFF_ROUNDS}, base, {name: 'AES-GCM', length: 256}, false, ['encrypt', 'decrypt']);
+}
+async function offUnlock(pw) {
+  // the private key of this device, unlocked with the password; null: no key pair, false: wrong password
+  const rec = await offIdb(st => st.get('pair')).catch(() => null); if (!rec) return null;
+  try {
+    const pk = await crypto.subtle.decrypt({name: 'AES-GCM', iv: rec.iv}, await offKek(pw, rec.salt), rec.wrapped);
+    return await crypto.subtle.importKey('pkcs8', pk, {name: 'RSA-OAEP', hash: 'SHA-256'}, false, ['decrypt']);
+  } catch (e) { return false; }
+}
+async function offKeyEnsure(pw) {
+  // at a password sign-in with the Mac: unlock this device's key, or (first time, or a new password) make a new pair
+  if (IS_LOCAL || !(window.crypto && crypto.subtle) || !window.indexedDB || !(SESSION && SESSION.offline_kopie !== false)) return;
+  try {
+    const k = await offUnlock(pw); if (k) { OFFKEY = k; return; }
+    const pair = await crypto.subtle.generateKey({name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256'}, true, ['encrypt', 'decrypt']);
+    const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+    const pk = await crypto.subtle.exportKey('pkcs8', pair.privateKey);
+    const wrapped = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, await offKek(pw, salt), pk);
+    const spki = await crypto.subtle.exportKey('spki', pair.publicKey);
+    await offIdb(st => st.put({spki, salt, iv, wrapped}, 'pair'));
+    OFFKEY = await crypto.subtle.importKey('pkcs8', pk, {name: 'RSA-OAEP', hash: 'SHA-256'}, false, ['decrypt']);
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage('key-changed');
+  } catch (e) { OFFKEY = null; }
+}
+async function offForget() {
+  // the stored copy and the key pair of this device gone
+  OFFKEY = null;
+  try { await offIdb(st => st.delete('pair')); } catch (e) {}
+  try { const ks = await caches.keys(); await Promise.all(ks.filter(k => k.startsWith('kontor-data')).map(k => caches.delete(k))); } catch (e) {}
+}
+async function offOpen(buf) {
+  const b = new Uint8Array(buf), n = (b[0] << 8) | b[1];
+  const raw = await crypto.subtle.decrypt({name: 'RSA-OAEP'}, OFFKEY, b.slice(2, 2 + n));
+  const aes = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
+  const pt = await crypto.subtle.decrypt({name: 'AES-GCM', iv: b.slice(2 + n, 14 + n)}, aes, b.slice(14 + n));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
 async function offlineLogin(pw) {
-  if (!(window.crypto && crypto.subtle)) throw new Error(t('err_offline_https'));
-  const v = await api('/api/offline/verifier');
-  if (!v.offline) throw new Error(t('err_kein_offline_pruefwert'));
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({name: 'PBKDF2', hash: 'SHA-256', salt: bytesOf(v.offline.salt), iterations: v.offline.rounds}, key, 256);
-  if (hexOf(bits) !== v.offline.hash) throw new Error(t('err_passwort_falsch'));
-  if (S.CFG) S.CFG.oberflaeche = Object.assign(S.CFG.oberflaeche || {}, {sperre_minuten: v.sperre_minuten});
+  if (!(window.crypto && crypto.subtle) || !window.indexedDB) throw new Error(t('err_offline_https'));
+  const k = await offUnlock(pw);
+  if (k === null) throw new Error(t('err_keine_offline_kopie'));
+  if (k === false) throw new Error(t('err_passwort_falsch'));
+  OFFKEY = k;
+  try { const v = await api('/api/offline/verifier'); if (S.CFG) S.CFG.oberflaeche = Object.assign(S.CFG.oberflaeche || {}, {sperre_minuten: v.sperre_minuten}); } catch (e) {}
   return true;
 }
 function swApply(allowed) {
@@ -315,6 +368,7 @@ function swApply(allowed) {
   if (allowed) { navigator.serviceWorker.register('/sw.js').catch(() => {}); return; }
   navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())).catch(() => {});
   try { caches.keys().then(ks => ks.filter(k => k.startsWith('kontor-')).forEach(k => caches.delete(k))); } catch (e) {}
+  if (!IS_LOCAL) offForget();
 }
 
 // ---------------------------------------------------------------- Anmeldung
@@ -389,6 +443,7 @@ $('#login-form').addEventListener('submit', async e => {
     const r = await api(setup ? '/api/setup' : '/api/login', setup ? Object.assign({passwort: pw, sprache: LANG}, SESSION.touchid_verfuegbar ? {touchid: $('#setup-tid-cb').checked} : {}) : {passwort: pw});
     LOGIN.pw = false;
     S.csrf = r.csrf; $('#login-pw').value = ''; $('#login-pw2').value = '';
+    await offKeyEnsure(pw);
     await enterApp();
   } catch (err) { $('#login-err').textContent = err.message; }
 });
@@ -398,7 +453,7 @@ $('#pw-instead').addEventListener('click', () => { LOGIN.pw = true; showLogin();
 $('#tid-instead').addEventListener('click', () => { LOGIN.pw = false; showLogin(); });
 $('#sync-btn').addEventListener('click', () => syncNow());
 $('.side .brand').addEventListener('click', e => { location.hash = e.target.closest('#ver') ? '#updates' : '#overview'; });
-$('#lock-btn').addEventListener('click', async () => { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; TID.skipNext = true; await checkSession(); });
+$('#lock-btn').addEventListener('click', async () => { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; OFFKEY = null; TID.skipNext = true; await checkSession(); });
 
 async function enterApp() {
   $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
@@ -3931,7 +3986,7 @@ function bind(main) {
   const ss = $('#save-settings', main); if (ss) ss.addEventListener('click', () => { try { saveConfig(collectSettings(), $('#findings-e')); } catch (e) { toast(e.message, 6000); } });
   const cb = $('#check-btn', main); if (cb) cb.addEventListener('click', async () => { toast(t('pruefe')); const r = await api('/api/check', {}); if (!r.verfuegbar) { showFindings($('#findings-e'), [], r.text, 'fehler'); return; } S.KONTEN = r.konten; S.KATS = r.kategorien || S.KATS; showFindings($('#findings-e'), r.befunde, t('geprueft_gegen_den_aktuellen_stand') + r.konten.length + t('konten_klammer_zu'), 'ok'); });
   const ap = $('#add-pos', main); if (ap) ap.addEventListener('click', e => { e.target.insertAdjacentHTML('beforebegin', posRow('', '')); bindDel(main); });
-  const pw = $('#pw-save', main); if (pw) pw.addEventListener('click', async () => { try { await api('/api/password', {alt: $('#pw-alt').value, neu: $('#pw-neu').value}); toast(t('passwort_geaendert')); $('#pw-alt').value = $('#pw-neu').value = ''; } catch (e) { toast(e.message, 4000); } });
+  const pw = $('#pw-save', main); if (pw) pw.addEventListener('click', async () => { try { const neu = $('#pw-neu').value; await api('/api/password', {alt: $('#pw-alt').value, neu}); OFFKEY = null; await offKeyEnsure(neu); toast(t('passwort_geaendert')); $('#pw-alt').value = $('#pw-neu').value = ''; } catch (e) { toast(e.message, 4000); } });
   const tms = $('#tm-state', main);
   if (tms) {
     // Time Machine: aktuellen Stand zeigen, ein Knopf schaltet um
@@ -3944,7 +3999,7 @@ function bind(main) {
     const pw = $('#bk-pw', main).value; if (pw.length < 8) return toast(t('sicherungspasswort_mind_8'), 5000); if (pw !== $('#bk-pw2', main).value) return toast(t('passwoerter_ungleich'), 5000);
     try { const r = await api('/api/backup', {passwort: pw}); saveJson(r, `Kontor-Sicherung-${new Date().toISOString().slice(0, 10)}.kontor-sicherung.json`); $('#bk-pw', main).value = $('#bk-pw2', main).value = ''; toast(t('sicherung_erstellt'), 5000); } catch (e) { toast(e.message, 6000); }
   });
-  const swc = $('#sw-clear', main); if (swc) swc.addEventListener('click', async () => { try { const ks = await caches.keys(); await Promise.all(ks.filter(k => k === 'kontor-data').map(k => caches.delete(k))); toast(t('gespeicherte_daten_geloescht')); } catch (e) { toast(t('nicht_moeglich') + e.message, 4000); } });
+  const swc = $('#sw-clear', main); if (swc) swc.addEventListener('click', async () => { try { await offForget(); toast(t('gespeicherte_daten_geloescht')); } catch (e) { toast(t('nicht_moeglich') + e.message, 4000); } });
   const rs = $('#rs-go', main); if (rs) rs.addEventListener('click', async () => {
     const pw = $('#rs-pw').value, withPw = $('#rs-pw-reset').checked;
     if (!pw) return showFindings($('#rs-report'), [], t('passwort_eingeben'), 'fehler');

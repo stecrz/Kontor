@@ -1214,6 +1214,19 @@ def make_handler(app: App):
                 return {"Set-Cookie": "kontor_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0" + secure}
             return {"Set-Cookie": "kontor_session=%s; Path=/; HttpOnly; SameSite=Strict" % token + secure}
 
+        def _host_ok(self) -> bool:
+            """On the address of this Mac (127.0.0.1) only loopback names are answered: a foreign web page whose name points
+            to 127.0.0.1 (DNS rebinding) gets nothing. *.localhost always means this Mac in browsers."""
+            try:
+                bound = self.server.server_address[0]
+            except Exception:
+                return True
+            if not auth.is_loopback(bound):
+                return True
+            host = (self.headers.get("Host") or "").strip().lower()
+            name = host[1:host.index("]")] if host.startswith("[") and "]" in host else host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+            return name in ("127.0.0.1", "localhost", "::1") or name.endswith(".localhost")
+
         def _origin_ok(self) -> bool:
             origin = self.headers.get("Origin")
             if not origin:
@@ -1245,6 +1258,8 @@ def make_handler(app: App):
         # -- GET -----------------------------------------------------------
         def do_GET(self):
             u = urlparse(self.path)
+            if not self._host_ok():
+                return self._raw(421, b"falsche Adresse", "text/plain; charset=utf-8")
             if not u.path.startswith("/api/"):
                 return self._static(u.path)
             q = {k: v[0] for k, v in parse_qs(u.query).items()}
@@ -1565,7 +1580,7 @@ def make_handler(app: App):
 
         def _mutating(self):
             u = urlparse(self.path)
-            if not u.path.startswith("/api/") or not self._origin_ok():
+            if not u.path.startswith("/api/") or not self._origin_ok() or not self._host_ok():
                 return self._json(403, {"fehler": "abgelehnt"})
             try:
                 body = {} if u.path == "/api/history/mm-import" else self._body(MAX_UPLOAD if u.path == "/api/receipts/upload" else MAX_BODY)

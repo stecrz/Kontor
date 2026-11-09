@@ -310,7 +310,7 @@ Under Settings → Access, Kontor shows the steps with checkmarks:
 
 ![Kontor on the iPhone](img/en/iphone.png)
 
-**Offline view**: saved as an app, the iPhone keeps the last loaded data. If the Mac cannot be reached, the Kontor password opens this copy – read only. Can be turned off under Settings → Access. The iPhone checks the password against its own verifier (PBKDF2-SHA256, own salt); the copy is protected by the iPhone's encryption but not additionally encrypted with the password – someone examining the unlocked device with developer tools could reach the data. “Delete stored data on this device” removes the copy immediately. The service renews the certificate (valid for 90 days) itself.
+**Offline view**: saved as an app, the iPhone keeps the last loaded data. If the Mac cannot be reached, the Kontor password opens this copy – read only. Can be turned off under Settings → Access. The copy is encrypted with the Kontor password: the iPhone has its own key pair; one part encrypts every new answer, the other lies on the device only encrypted with your password (PBKDF2-SHA256, AES-GCM, RSA-OAEP). Without the password the copy cannot be read, not even with developer tools on the unlocked device. It comes into being at the first sign-in with the password while the Mac is reachable; after a password change it starts afresh with the next sign-in. “Delete stored data on this device” removes the copy immediately. The service renews the certificate (valid for 90 days) itself.
 
 Without HTTPS certificates, “Turn on without certificate” works (encrypted by Tailscale, but without offline view).
 

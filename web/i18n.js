@@ -1831,6 +1831,8 @@ const I18N = {
 "gruppe_suffix":[" (Gruppe)", " (group)"],
 "konten_klammer_zu":[" Konten).", " accounts)."],
 "err_offline_https":["Offline-Anmeldung braucht eine sichere Verbindung (https).", "Offline login needs a secure connection (https)."],
+"err_keine_offline_kopie":["Auf diesem Gerät liegt keine Offline-Kopie – einmal mit Verbindung zum Mac anmelden, dann ist sie da.", "There is no offline copy on this device – sign in once while the Mac is reachable, then it is there."],
+"err_offline_passwort":["Die gespeicherte Kopie öffnet nur das Kontor-Passwort.", "Only the Kontor password opens the stored copy."],
 "err_passwort_falsch":["Passwort falsch.", "Wrong password."],
 "meth_jahresbetrag":["Jahresbetrag/12", "Annual amount/12"],
 "meth_budget":["MoneyMoney-Budget", "MoneyMoney budget"],
