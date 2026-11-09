@@ -1285,13 +1285,13 @@ function bchBilanz(D) {
     const accs = (S.posOpen || {})[r.rolle] ? D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === r.rolle) : [];
     accs.forEach((a, i) => {
       const sh = accShade(color, i), wp = (S.depOpen || {})[a.id] && a.wertpapiere && a.wertpapiere.length ? a.wertpapiere : null;
-      if (!wp) { series.push(Object.assign({rolle: r.rolle, label: a.name, op: 1, sub: true, vals: vals(a)}, sh)); return; }
+      if (!wp) { series.push(Object.assign({rolle: r.rolle, acc: a.id, dep: !!(a.wertpapiere && a.wertpapiere.length), label: a.name, op: 1, sub: true, vals: vals(a)}, sh)); return; }
       // a portfolio opened in the table: its securities; months without any known security (and the plan) as the portfolio itself
       const known = months.map((m, k) => k < D.monate.length && wp.some(p => p.werte[m] != null));
-      wp.forEach((p, j) => series.push(Object.assign({rolle: r.rolle, label: p.name, full: wpTip(p, a.name), op: 1, sub: true, vals: months.map((m, k) => known[k] ? p.werte[m] ?? null : null)}, accShade(sh.color, j + 1))));
-      series.push(Object.assign({rolle: r.rolle, label: a.name, op: 1, sub: true, vals: vals(a).map((v, k) => known[k] ? null : v)}, sh));
+      wp.forEach((p, j) => series.push(Object.assign({rolle: r.rolle, acc: a.id, wp: p.id, label: p.name, full: wpTip(p, a.name), op: 1, sub: true, vals: months.map((m, k) => known[k] ? p.werte[m] ?? null : null)}, accShade(sh.color, j + 1))));
+      series.push(Object.assign({rolle: r.rolle, acc: a.id, dep: true, label: a.name, op: 1, sub: true, vals: vals(a).map((v, k) => known[k] ? null : v)}, sh));
     });
-    if (!accs.length) series.push({rolle: r.rolle, label, color, op: 1, vals: vals(r)});
+    if (!accs.length) series.push({rolle: r.rolle, pos: true, label, color, op: 1, vals: vals(r)});
   }
   const nwAll = pr ? Object.assign({}, D.bilanz.nettovermoegen, pr.nettovermoegen) : D.bilanz.nettovermoegen;
   return {months, ist: D.monate.length, series: series.filter(x => x.vals.some(v => v != null && Math.abs(v) >= 0.005)), nw: months.map(m => nwAll[m] == null ? null : nwAll[m] * defl(m))};
@@ -1301,7 +1301,7 @@ function vBilanzChart(D) {
   BCH.d = d;
   // range kept as months (survives rebuilds and area changes; null = all); a button alone is anchored to today
   const dflt = bchDefault();
-  if (S.bchModus !== S.modus) { S.bchModus = S.modus; viewBchRange((viewSaved(S.modus) || {}).bch); }      // view switched: its saved or Kontor's default range      // view switched: its own default
+  if (S.bchModus !== S.modus) { S.bchModus = S.modus; viewBchRange((viewSaved(S.modus) || {}).bch); }      // view switched: its saved or Kontor's default range
   const r = S.bchRange, n = d.months.length, rb = bchRanges(true);
   let i0 = -1, i1 = -1;
   if (S.bchLen) { [i0, i1] = bchWindow(d, S.bchLen); S.bchBtn = null; S.bchLen = null; }       // kept as a length, ending today
@@ -1393,7 +1393,7 @@ function bchDraw() {
   if (defs) g = `<defs>${defs}</defs>` + g;
   g += `<g id="bch-hover"></g><rect class="bch-sel hidden" id="bch-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="bch-hit" x="${P.l}" y="0" width="${Math.max(0, W - P.l - P.r)}" height="${H}"/>`
     + `<rect class="bch-yax${S.bchYr ? ' on' : ''}" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_yax_tip')}</title></rect>`
-    + (link ? '' : `<rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"><title>${t('bch_pan_tip')}</title></rect>`);
+    + (link ? '' : `<rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"/>`);
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); svg.innerHTML = g; svg.classList.remove('hl');
   BCH.geo = {W, H, P, x, y, min, max, inv: py => max - (py - P.t) * (max - min) / Math.max(1, H - P.t - P.b), idx: px => Math.max(i0, Math.min(i1, Math.round(i0 + (px - P.l) * n / Math.max(1, W - P.l - P.r))))};
   const rl = $('#bch-range');
@@ -1590,7 +1590,8 @@ function bchFocus(key) {
   const c = $('#bch'), r = c && c.getBoundingClientRect(); if (r && (r.top < 0 || r.bottom > window.innerHeight)) c.scrollIntoView({block: 'nearest', behavior: 'smooth'});
 }
 // Touch and drag on a chart, attached once to the (persistent) <svg>; the plot inside is redrawn on every change.
-// - one finger or the mouse on the x-axis strip (.bch-pan): drag sideways to move the range
+// - one finger or the mouse on the x-axis strip (.bch-pan): drag sideways to move the range; the mouse over it shows the
+//   values (as above the plot, without marking an area), a click jumps to the table, two fingers sideways move the range
 // - on the y-axis strip (.bch-yax): drag up/down zooms the value range in/out around that point, the wheel moves it
 //   (with Ctrl or a pinch on the trackpad: zoom); a tap or click there restores the automatic range
 // - two fingers in the plot: move = shift, spread/pinch = zoom; the value tip stays hidden meanwhile
@@ -1605,7 +1606,11 @@ function chartGestures(svg, o) {
   const valAt = (G, yy) => G.max - (yy - G.P.t) * (G.max - G.min) / Math.max(1, G.H - G.P.t - G.P.b);
   const yscale = (G, a, f) => o.yview(a - (a - G.min) * f, a + (G.max - a) * f);
   svg.addEventListener('touchstart', e => { if (onY(e)) e.preventDefault(); }, {passive: false});      // no page scrolling there
+  const onX = e => e.target.classList && e.target.classList.contains('bch-pan');
   svg.addEventListener('wheel', e => {
+    if (onX(e) && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      const G = o.geo(); if (!G) return; const [f0, f1] = o.range(); e.preventDefault(); o.view(f0 + e.deltaX * (f1 - f0) / width(G), f1 - f0, true); return;
+    }
     if (!onY(e)) return; const G = o.ygeo(); if (!G) return; e.preventDefault();
     if (e.ctrlKey) yscale(G, valAt(G, o.pty(e)), Math.exp(e.deltaY * 0.01));
     else { const sh = e.deltaY * (G.max - G.min) / Math.max(1, G.H - G.P.t - G.P.b); o.yview(G.min - sh, G.max - sh); }
@@ -1619,7 +1624,7 @@ function chartGestures(svg, o) {
     }
     const G = o.geo(); if (!G) return;
     if (e.target.classList && e.target.classList.contains('bch-pan')) {
-      const [f0, f1] = o.range(); pan = {id: e.pointerId, x: o.pt(e), f0, span: f1 - f0};
+      const [f0, f1] = o.range(); pan = {id: e.pointerId, x: o.pt(e), f0, span: f1 - f0, moved: false};
       try { svg.setPointerCapture(e.pointerId); } catch (x) {}
       e.preventDefault(); return;
     }
@@ -1634,7 +1639,12 @@ function chartGestures(svg, o) {
       return;
     }
     const G = o.geo(); if (!G) return;
-    if (pan && e.pointerId === pan.id) { e.preventDefault(); o.view(pan.f0 - (o.pt(e) - pan.x) * pan.span / width(G), pan.span, true); return; }
+    if (pan && e.pointerId === pan.id) {
+      if (Math.abs(o.pt(e) - pan.x) > 4) pan.moved = true;
+      if (pan.moved) { e.preventDefault(); o.hide(); o.view(pan.f0 - (o.pt(e) - pan.x) * pan.span / width(G), pan.span, true); }
+      return;
+    }
+    if (onX(e) && e.pointerType !== 'touch' && !tp.size && o.panHover) { o.panHover(o.pt(e)); return; }
     if (!tp.has(e.pointerId)) return;
     tp.set(e.pointerId, o.pt(e));
     if (!two || tp.size < 2) return;
@@ -1645,9 +1655,10 @@ function chartGestures(svg, o) {
   let lastTwo = 0;
   const end = e => {
     if (yz && e.pointerId === yz.id) { if (!yz.moved && e.type === 'pointerup') o.yview(null); yz = null; return; }    // tap: automatic range again
-    if (pan && e.pointerId === pan.id) pan = null; tp.delete(e.pointerId); if (tp.size < 2 && two) { two = null; lastTwo = Date.now(); }
+    if (pan && e.pointerId === pan.id) { if (!pan.moved && e.type === 'pointerup' && o.panTap) o.panTap(o.pt(e)); pan = null; } tp.delete(e.pointerId); if (tp.size < 2 && two) { two = null; lastTwo = Date.now(); }
   };
   svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
+  svg.addEventListener('pointerout', e => { if (onX(e) && !pan && !(e.relatedTarget && e.relatedTarget.classList && e.relatedTarget.classList.contains('bch-hit'))) o.hide(); });
   // busy also shortly after two fingers: lifting the last finger is not a tap
   svg._gest = {busy: () => !!pan || !!yz || tp.size >= 2 || Date.now() - lastTwo < 500, multi: () => tp.size >= 2};
   return svg._gest;
@@ -1657,7 +1668,8 @@ function bchBind() {
   const pt = e => { const r = $('#bch-svg').getBoundingClientRect(); return (e.clientX - r.left) * BCH.geo.W / r.width; };
   const pty = e => { const r = $('#bch-svg').getBoundingClientRect(); return (e.clientY - r.top) * BCH.geo.H / r.height; };
   const gest = chartGestures($('#bch-svg'), {pt, pty, geo: () => bchLinked() ? null : BCH.geo, ygeo: () => BCH.geo, range: () => [BCH.f0, BCH.f1],
-    view: (f0, span, keep) => bchView(f0, span, keep), yview: (lo, hi) => { S.bchYr = lo == null ? null : [lo, hi]; bchDraw(); }, hide: () => bchHover(null)});
+    view: (f0, span, keep) => bchView(f0, span, keep), yview: (lo, hi) => { S.bchYr = lo == null ? null : [lo, hi]; bchDraw(); }, hide: () => bchHover(null),
+    panHover: px => bchHover(BCH.geo.idx(px)), panTap: px => { bchHover(null); bchJump(BCH.d.months[BCH.geo.idx(px)]); }});
   // aligned with the table: no value tip (the table shows the same), no zoom; swiping sideways scrolls the table
   if (bchLinked()) return;                              // aligned: swiping and dragging scroll the table (bchLinkPan)
   hit.addEventListener('pointermove', e => {
@@ -1673,10 +1685,15 @@ function bchBind() {
     const G = BCH.geo, px = pt(e), dr = BCH.drag; BCH.drag = null;
     if (dr && Math.abs(px - dr.x) > 6) { const a = G.idx(Math.min(px, dr.x)), b = G.idx(Math.max(px, dr.x)); bchSet(a, b); return; }
     $('#bch-sel') && $('#bch-sel').classList.add('hidden');
+    // with the mouse on an area of the balance sheet: open it up (or close it again), otherwise jump to the month in the table
+    // (a moment later: a double click zooms instead)
+    const h = e.pointerType !== 'touch' && bigType() === 'bilanz' ? stackHit(BCH.d.series, G.idx(px), G.inv(pty(e))) : null;
+    clearTimeout(BCH.clickT);
+    if (h) { BCH.clickT = setTimeout(() => bchToggle(h), 280); return; }
     bchJump(BCH.d.months[G.idx(px)]);
   });
   const at = px => { const G = BCH.geo; return BCH.f0 + (px - G.P.l) * (BCH.f1 - BCH.f0) / Math.max(1, G.W - G.P.l - G.P.r); };   // Monat (Bruchteil) unter dem Zeiger
-  hit.addEventListener('dblclick', e => bchZoom(at(pt(e)), 0.5));          // Doppelklick: auf den halben Zeitraum um diese Stelle
+  hit.addEventListener('dblclick', e => { clearTimeout(BCH.clickT); bchZoom(at(pt(e)), 0.5); });          // Doppelklick: auf den halben Zeitraum um diese Stelle
   hit.addEventListener('wheel', e => {
     // Trackpad: Zusammen-/Auseinanderziehen (bzw. Strg + Rad) zoomt um den Zeiger; waagerechtes Wischen verschiebt den Ausschnitt
     // bei gleicher Laenge (wie eine Tabelle); senkrechtes Wischen bleibt beim Seitenrollen
@@ -1696,6 +1713,30 @@ function bchBind() {
     bchView(g.c - (g.c - g.f0) * ns / g.span, ns, false);
   });
   hit.addEventListener('gestureend', e => { e.preventDefault(); BCH.gesture = null; });
+}
+function bchTableHover(tr, td) {
+  // the mouse over the table marks the same position, account or security in the large chart (where the chart shows it) and,
+  // over a cell, its month (where it is in the shown range)
+  const d = BCH.d, svg = $('#bch-svg'), hv = $('#bch-hover'), G = BCH.geo; if (!d || !svg || !hv || !G || bigType() !== 'bilanz') return;
+  const p = tr && tr.dataset.pos, a = tr && tr.dataset.id, w = tr && tr.dataset.wp;
+  const idx = tr ? d.series.map((x, k) => (p ? x.rolle === p : w ? x.wp === w : a ? x.acc === a : false) ? String(k) : null).filter(v => v != null) : [];
+  const shown = idx.filter(k => svg.querySelector(`.bch-area[data-s="${k}"]`));
+  svg.classList.toggle('hl', shown.length > 0);
+  svg.querySelectorAll('.bch-area').forEach(el => el.classList.toggle('hl', shown.includes(el.dataset.s)));
+  let i = -1;
+  if (td && !bchLinked()) { const th = td.closest('table').querySelector('thead tr').children[td.cellIndex]; if (th && th.dataset.key) i = bchIndex(th.dataset.key); }
+  hv.innerHTML = i >= BCH.i0 && i <= BCH.i1 ? `<line class="bch-cross" x1="${G.x(i).toFixed(1)}" x2="${G.x(i).toFixed(1)}" y1="${G.P.t}" y2="${G.H - G.P.b}"/>` : '';
+}
+function bchToggle(x) {
+  // a click on an area of the balance sheet chart, as in the table: a position opens into its accounts, a portfolio into its
+  // securities; a click on what cannot be split further (an account, a security) closes the whole position again
+  const r = x.rolle, D = B(); if (!r || !D) return false;
+  S.posOpen = S.posOpen || {}; S.depOpen = S.depOpen || {};
+  if (x.pos) S.posOpen[r] = true;
+  else if (x.acc && x.dep && !x.wp && !S.depOpen[x.acc]) S.depOpen[x.acc] = true;
+  else { S.posOpen[r] = false; for (const a of D.bilanz.zeilen) if (!a.gruppe && a.rolle === r) S.depOpen[a.id] = false; }
+  bchHover(null); route();
+  return true;
 }
 function bindBilanzChart(main) {
   if (!$('#bch', main)) return;
@@ -1734,6 +1775,11 @@ function bindBilanzChart(main) {
     BCH.d = bchData(B()); bchDraw();
   });
   const lb = $('#bch-link', main); if (lb) lb.addEventListener('click', () => { S.bchLink = !bchLinked(); route(); });
+  const tb = $('.wrap tbody', main);
+  if (tb) {
+    tb.addEventListener('mouseover', e => { const td = e.target.closest('td'); if (td) bchTableHover(td.parentNode, td.cellIndex > 0 ? td : null); });
+    tb.addEventListener('mouseleave', () => bchTableHover(null, null));
+  }
   bchDraw();
   if (bchLinked()) {
     // the chart follows the table when it scrolls sideways; swiping or dragging on the chart scrolls the table
@@ -2034,7 +2080,7 @@ function lcDraw(id) {
   } else pl = area() + (ist < i1 ? line(Math.max(i0, ist), i1, 'bch-nw plan') : '') + line(i0, Math.min(i1, ist), 'bch-nw', today);
   // with a range set on the y axis the curves are cut at the plot edges
   g += yr ? `<clipPath id="lcc-${id}"><rect x="${P.l}" y="${P.t}" width="${W - P.l - P.r}" height="${H - P.t - P.b}"/></clipPath><g clip-path="url(#lcc-${id})">${pl}</g>` : pl;
-  g += `<g id="lc-${id}-hover"></g><rect class="bch-sel hidden" id="lc-${id}-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="lc-${id}-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-yax${yr ? ' on' : ''}" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_yax_tip')}</title></rect><rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"><title>${t('bch_pan_tip')}</title></rect>`;
+  g += `<g id="lc-${id}-hover"></g><rect class="bch-sel hidden" id="lc-${id}-sel" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="lc-${id}-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-yax${yr ? ' on' : ''}" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_yax_tip')}</title></rect><rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"/>`;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); svg.innerHTML = g; svg.classList.remove('hl');
   st.shown = shown;
   st.geo = {W, H, P, x, y, min, max, inv: py => max - (py - P.t) * (max - min) / Math.max(1, H - P.t - P.b), idx: px => Math.max(i0, Math.min(i1, Math.round(i0 + (px - P.l) * n / Math.max(1, W - P.l - P.r))))};
@@ -2093,7 +2139,8 @@ function lcBindPlot(id) {
   const at = px => { const G = st.geo; return st.f0 + (px - G.P.l) * (st.f1 - st.f0) / Math.max(1, G.W - G.P.l - G.P.r); };
   const pty = e => { const r = $(`#lc-${id}-svg`).getBoundingClientRect(); return (e.clientY - r.top) * LC[id].geo.H / r.height; };
   const gest = chartGestures($(`#lc-${id}-svg`), {pt, pty, geo: () => LC[id].geo, ygeo: () => LC[id].geo, range: () => [LC[id].f0, LC[id].f1], view: (f0, span, keep) => lcView(id, f0, span, keep),
-    yview: (lo, hi) => { S.lcYr = Object.assign(S.lcYr || {}, {[id]: lo == null ? null : [lo, hi]}); lcDraw(id); }, hide: () => lcHover(id, null)});
+    yview: (lo, hi) => { S.lcYr = Object.assign(S.lcYr || {}, {[id]: lo == null ? null : [lo, hi]}); lcDraw(id); }, hide: () => lcHover(id, null),
+    panHover: px => lcHover(id, LC[id].geo.idx(px)), panTap: px => { lcHover(id, null); bchJump(LC[id].d.months[LC[id].geo.idx(px)]); }});
   hit.addEventListener('pointermove', e => {
     if (gest.busy()) { lcHover(id, null); return; }
     const px = pt(e), G = st.geo;

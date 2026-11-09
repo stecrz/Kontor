@@ -2216,6 +2216,18 @@ class BrowserTest(unittest.TestCase):
                 pg.mouse.move(c[0], c[1]); pg.wait_for_timeout(150)
                 self.assertTrue(pg.query_selector("#bch-svg.hl .bch-area.hl")); self.assertTrue(pg.query_selector("#bch-tip div.on"))
                 pg.mouse.move(5, 5); pg.wait_for_timeout(100); self.assertIsNone(pg.query_selector("#bch-svg.hl"))
+                # over the month axis: the values without marking an area
+                pb = pg.query_selector("#bch-svg .bch-pan").bounding_box(); pg.mouse.move(pb["x"] + pb["width"] / 2, pb["y"] + pb["height"] / 2); pg.wait_for_timeout(150)
+                self.assertTrue(pg.is_visible("#bch-tip")); self.assertIsNone(pg.query_selector("#bch-svg.hl")); pg.mouse.move(5, 5); pg.wait_for_timeout(100)
+                # a click on an area works like the table: an account closes its position, the position opens again
+                centre = """f => { const ps = [...document.querySelectorAll('#bch-svg .bch-area')].filter(p => f(BCH.d.series[+p.dataset.s])).map(p => [p, p.getBoundingClientRect()])
+                    .sort((a, b) => b[1].width * b[1].height - a[1].width * a[1].height); const [p, r] = ps[0]; return [r.left + r.width / 2, r.top + r.height / 2, BCH.d.series[+p.dataset.s].rolle]; }"""
+                x, y, role = pg.evaluate("() => (%s)(x => x.acc && !x.dep)" % centre)
+                pg.mouse.click(x, y); pg.wait_for_timeout(400); self.assertFalse(pg.evaluate("r => !!S.posOpen[r]", role))
+                x, y, _ = pg.evaluate("r => (%s)(x => x.pos && x.rolle === r)" % centre, role)
+                pg.mouse.click(x, y); pg.wait_for_timeout(400); self.assertTrue(pg.evaluate("r => !!S.posOpen[r]", role))
+                # the mouse over a table row marks the same area in the chart
+                pg.hover("tr.acct td:first-child"); pg.wait_for_timeout(100); self.assertTrue(pg.query_selector("#bch-svg.hl .bch-area.hl")); pg.mouse.move(5, 5)
                 span = pg.evaluate("BCH.i1 - BCH.i0"); bb = pg.query_selector("#bch-hit").bounding_box()
                 pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2)
                 for _ in range(40):

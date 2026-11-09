@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.11.6 (2026-11-09 01:46)
+- Bilanz-Grafik: Über der Monatsachse erscheint das Werte-Fenster ohne Hervorhebung; Klick dort springt in die Tabelle, waagerechtes Wischen verschiebt.
+- Klick auf eine Fläche klappt wie in der Tabelle auf (Position → Konten → Depot → Wertpapiere); Klick auf ein Konto oder Wertpapier klappt die Position wieder zu.
+- Darüberfahren über die Tabelle hebt dieselbe Fläche in der Grafik hervor, über einer Zelle auch ihren Monat.
+- Immobilien brauner, Nettovermögen gelber; im dunklen Modus trennt der Rand der Linie die Flächen nicht mehr sichtbar. Abstand, wenn die Tabelle über der Grafik steht.
+
 ## 3.11.5 (2026-11-09 01:27)
 - Bilanz-Grafik schöner: weiche Kurven (an jedem Monatsende exakt), Flächen mit leichtem Verlauf, Nettovermögen als goldene Linie mit hellem Rand und Punkt für heute (auch in den kleinen Grafiken).
 - Grafik „Auswahl“: Titel in Worten statt Kürzeln – „Finanzvermögen + Verbindlichkeiten“, „Nettovermögen ohne Beteiligungen“ usw., bei Platzmangel mit gekürzten Wörtern; ohne „Auswahl:“ davor. Darüberfahren über den Titel zeigt, was die Namen bedeuten (z. B. Finanzvermögen = Bankguthaben + Wertpapiere + Festanlagen).
