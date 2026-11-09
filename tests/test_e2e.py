@@ -2160,7 +2160,9 @@ class BrowserTest(unittest.TestCase):
                 pg.click(".lc[data-lc='nw'] .lc-big"); pg.wait_for_selector("#bch.big-nw"); pg.wait_for_selector(".lc[data-lc='bil'] path.lc-band")
                 self.assertIn("Nettovermögen", pg.inner_text("#bch .bch-head")); self.assertTrue(pg.query_selector("#bch-svg path.bch-nw"))
                 self.assertIn("€", pg.inner_text("#bch-val")); self.assertIsNone(pg.query_selector("#bch-plan"))      # value and change as in the small charts, no plan ahead
-                self.assertTrue(pg.evaluate("!S.bchBtn || BCH.i1 <= BCH.d.ist - 2")); self.assertEqual(pg.inner_text("#lc-bil-val").strip(), "")     # the small balance sheet: no change
+                self.assertTrue(pg.evaluate("!S.bchBtn || BCH.i1 <= BCH.d.ist - 2")); self.assertIsNone(pg.query_selector("#lc-bil-val"))     # the small balance sheet: no value line, the chart is taller instead
+                self.assertGreater(pg.evaluate("document.querySelector('#lc-bil-svg').getBoundingClientRect().height"), pg.evaluate("document.querySelector('#lc-sel-svg').getBoundingClientRect().height") + 20)
+                self.assertTrue(pg.query_selector("#bch .bch-row2 #bch-val"))       # value and change under the title
                 pg.click(".lc[data-lc='bil'] .lc-big"); pg.wait_for_timeout(300); self.assertIsNone(pg.query_selector("#bch.big-nw")); self.assertTrue(pg.query_selector(".lc[data-lc='nw']"))
                 # enlarging swaps with the large one (so any order is possible); nothing of it is kept on its own -- only "Ansicht speichern"
                 order = lambda: pg.eval_on_selector_all("#lc-grid .lc", "cs => cs.map(c => c.dataset.lc)")
@@ -2219,7 +2221,16 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("BCH.i1"), pg.evaluate("Math.min(BCH.d.months.length - 1, BCH.d.ist + 2)")); self.assertIsNone(pg.query_selector("#bch-val"))
                 pg.click("#bch-plan"); pg.wait_for_timeout(200); self.assertEqual(pg.evaluate("BCH.i1"), pg.evaluate("BCH.d.ist - 2"))
                 self.assertEqual(pg.evaluate("BCH.i1 - BCH.i0"), 12); self.assertTrue(pg.query_selector("#bch-rb button[data-m='12'].on"))
+                self.assertEqual(pg.eval_on_selector_all("#bch .bch-head > *", "es => es.map(e => e.id || e.querySelector('input')?.id || '')").index("bch-n") - 1,
+                                 pg.eval_on_selector_all("#bch .bch-head > *", "es => es.map(e => e.id || '')").index("bch-plan"))      # Plan left of the month field
                 pg.click("#bch-plan"); pg.wait_for_timeout(200); self.assertEqual(pg.evaluate("BCH.i1"), pg.evaluate("Math.min(BCH.d.months.length - 1, BCH.d.ist + 2)"))
+                self.assertEqual(pg.input_value("#bch-n"), "12")         # the month field counts up to the last completed month
+                pg.fill("#bch-n", "6"); pg.press("#bch-n", "Enter"); pg.wait_for_timeout(200)
+                self.assertTrue(pg.query_selector("#bch-rb button[data-m='6'].on")); self.assertEqual(pg.evaluate("[BCH.i0, BCH.i1]"), pg.evaluate("[BCH.d.ist - 8, BCH.d.ist]"))
+                pg.fill("#bch-n", "9"); pg.press("#bch-n", "Enter"); pg.wait_for_timeout(200)
+                self.assertEqual(pg.evaluate("[BCH.i0, BCH.i1]"), pg.evaluate("[BCH.d.ist - 11, BCH.d.ist + 1]")); self.assertEqual(pg.input_value("#bch-n"), "9")
+                pg.click("#bch-rb button[data-m='12']"); pg.wait_for_timeout(200)
+                self.assertGreaterEqual(pg.evaluate("document.querySelectorAll('#bch-svg line.bch-grid').length"), 5)      # at least five lines on the amount axis
                 # the small net worth chart: just the month and the value in its tip
                 pg.query_selector("#lc-nw-plot").scroll_into_view_if_needed(); pb = pg.query_selector("#lc-nw-plot").bounding_box()
                 pg.mouse.move(pb["x"] + pb["width"] * .6, pb["y"] + pb["height"] / 2); pg.wait_for_timeout(150)
@@ -2277,10 +2288,18 @@ class BrowserTest(unittest.TestCase):
                     self.assertEqual(pg.evaluate("BCH.i1 - BCH.i0"), span)
                     ok = pg.evaluate("""key => { const i = BCH.d.months.indexOf(key), G = BCH.geo, sr = document.querySelector('#bch-svg').getBoundingClientRect(),
                         r = document.querySelector(`#main .wrap thead th[data-key="${key}"]`).getBoundingClientRect(), step = (G.W - G.P.l - G.P.r) / (BCH.i1 - BCH.i0);
-                        return [i >= BCH.i0 && i <= BCH.i1 && (Math.abs(sr.left + G.x(i) - (r.left + r.width / 2)) <= step + 1 || BCH.i0 === 0 || BCH.i1 === BCH.d.months.length - 1),
+                        return [i >= BCH.i0 && i <= BCH.i1 && (Math.abs(sr.left + G.x(i) - (r.left + r.width / 2)) <= 2 || BCH.i0 === 0 || BCH.i1 === BCH.d.months.length - 1),
                             [i, BCH.i0, BCH.i1, sr.left + G.x(i), r.left + r.width / 2, step]]; }""", key)
                     self.assertTrue(ok[0], (key, ok[1]))
                 self.assertTrue(pg.query_selector("#main thead th[data-key='%s'].bch-on" % key)); self.assertFalse(pg.is_visible("#bch-tip"))
+                # a click on a net worth value: aligned as by the month heading, and the net worth dot blinks once
+                k = pg.evaluate("Array.from(document.querySelectorAll('#main .bil-tbl tr.total td')).findIndex((td, n) => n > 0 && (() => { const r = td.getBoundingClientRect(), w = document.querySelector('#main .wrap').getBoundingClientRect(); return r.left > w.left + 300 && r.right < w.right - 20; })())")
+                pg.evaluate("k => document.querySelectorAll('#main .bil-tbl tr.total td')[k].click()", k); pg.wait_for_timeout(150)
+                self.assertTrue(pg.query_selector("#bch-hover .bch-dot.blink")); self.assertTrue(pg.evaluate("""k => { const td = document.querySelectorAll('#main .bil-tbl tr.total td')[k], key = td.closest('table').querySelector('thead tr').children[k].dataset.key,
+                    i = BCH.d.months.indexOf(key), G = BCH.geo, sr = document.querySelector('#bch-svg').getBoundingClientRect(), r = td.getBoundingClientRect();
+                    return Math.abs(sr.left + G.x(i) - (r.left + r.width / 2)) <= 2 || BCH.i0 === 0 || BCH.i1 === BCH.d.months.length - 1; }""", k))
+                pg.wait_for_timeout(1400); self.assertIsNone(pg.query_selector("#bch-hover .bch-dot.blink"))
+                self.assertIsNone(pg.query_selector("#bch-svg .bch-today-l"))        # no "heute" label above the chart
                 # aligned with the table: each column centre has its point right above it, no value tip, the chart follows the table
                 pg.click("#bch-link"); pg.wait_for_selector("#bch.linked"); pg.wait_for_timeout(300)
                 off = pg.evaluate("""() => { const svg = document.querySelector('#bch-svg').getBoundingClientRect(), w = document.querySelector('#main .wrap'),

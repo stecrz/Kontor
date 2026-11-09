@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.3 (2026-11-09 04:08)
+- Klick auf eine Monatsüberschrift: Die große Grafik steht wieder genau über der Spalte. Klick auf einen Wert des Nettovermögens ebenso, dazu blinkt sein Punkt kurz auf.
+- Große Grafik: Wert und Veränderung unter der Überschrift, Werte-Fenster leicht durchsichtig, mindestens fünf Hilfslinien, „heute“ entfällt (dafür etwas höher). „Plan“ steht links vom Monatsfeld; das Feld zählt die Monate bis zum letzten abgeschlossenen.
+- Kleine Bilanz-Grafik: ohne Wertzeile, dafür höher.
+
 ## 3.12.2 (2026-11-09 03:33)
 - Große Grafik: Nettovermögen, Auswahl und Zusammensetzung zeigen Wert und Veränderung wie die kleinen; die Bilanz zeigt keine Veränderung mehr (groß und klein).
 - Bilanz als große Grafik: etwa ein Drittel des Zeitraums nach vorn – laufender Monat und Plan (1 J: +4 Monate, 3 J: +12). Schalter „Plan“ links neben den Zeiträumen, gehört zur Ansicht.
