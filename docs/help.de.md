@@ -158,9 +158,27 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 
 - **Bilanz** (wenn eine andere Grafik groß ist): ohne Wertzeile, dafür etwas höher.
 - **Nettovermögen** allein, darunter Ø je Monat, Höchst- und Tiefststand. Beim Darüberfahren stehen nur Monat und Wert da.
-- **Auswahl**: die Summe frei gewählter Positionen (Standard: Bankguthaben, Wertpapiere und Festanlagen). Der Titel benennt die Auswahl in Worten – typische Kombinationen als „Verfügbar“, „Finanzvermögen“, „Gebunden“, „Bruttovermögen“ (alle Vermögenswerte ohne Verbindlichkeiten, entspricht der Bilanzsumme) oder „Sachvermögen“, sonst zusammengesetzt wie „Finanzvermögen + Verbindlichkeiten“ oder „Nettovermögen ohne Beteiligungen“, bei Platzmangel mit gekürzten Wörtern. Darüberfahren über den Titel nennt alle Positionen und was die Namen bedeuten (z. B. Finanzvermögen = Bankguthaben + Wertpapiere + Festanlagen); die Linie hat die Mischfarbe der Positionen.
+- **Auswahl**: die Summe frei gewählter Positionen (Standard: Bankguthaben, Wertpapiere und Festanlagen). Der Titel benennt die Auswahl in Worten – typische Kombinationen mit ihrem Namen, sonst zusammengesetzt wie „Finanzvermögen + Verbindlichkeiten“ oder „Nettovermögen ohne Beteiligungen“, bei Platzmangel mit gekürzten Wörtern; die Linie hat die Mischfarbe der Positionen. Die Namen ergeben sich Schritt für Schritt – so steht es auch beim Darüberfahren über den Titel, dort nur mit den Positionen, die es im Bereich gibt:
+
+```
+  Bankguthaben
++ Wertpapiere
+= Verfügbar
++ Festanlagen
+= Finanzvermögen
++ Sachvermögen (Immobilien + Sachwerte)
++ Beteiligungen
++ Forderungen
++ Sonstiges
+= Bruttovermögen (Bilanzsumme)
++ Verbindlichkeiten
+= Nettovermögen
+
+Gebunden = Bruttovermögen − Verfügbar
+```
+
 - **Zusammensetzung** einer gewählten Position nach Konten (gestapelt). **Depot** daneben schlüsselt die Depots in ihre Wertpapiere auf (nur wo es das gibt); unten lassen sich Konten bzw. Wertpapiere einzeln abwählen – die Linie der Position bleibt, beim Darüberfahren steht zusätzlich die Summe der Auswahl.
-- Jede hat einen eigenen Zeitraum (je nach Ansicht 6 Monate, 1 oder 2 Jahre bzw. 1, 3 oder 10 Jahre) und eine Achse, die sich den sichtbaren Werten anpasst (mindestens vier Hilfslinien) – so sieht man die Entwicklung auch dann, wenn sich große Positionen wie Forderungen und Verbindlichkeiten oben gegenseitig ausgleichen. Die Fläche reicht bis zur Nulllinie, bei negativen Werten also nach oben. Das Werte-Fenster ist leicht durchsichtig, damit die Linie darunter sichtbar bleibt.
+- Jede hat einen eigenen Zeitraum (je nach Ansicht 6 Monate, 1 oder 2 Jahre bzw. 1, 3 oder 10 Jahre) und eine Achse, die sich den sichtbaren Werten anpasst (mindestens vier Hilfslinien) – so sieht man die Entwicklung auch dann, wenn sich große Positionen wie Forderungen und Verbindlichkeiten oben gegenseitig ausgleichen. Die Fläche reicht bis zur Nulllinie, bei negativen Werten also nach oben. Das Werte-Fenster ist leicht durchsichtig, damit die Linie darunter sichtbar bleibt. Unter den Zeitraum-Knöpfen steht die Länge des gezeigten Zeitraums – darauf beziehen sich Wert und Veränderung; nach dem Zoomen ist ein Knopf wieder markiert, sobald die Länge passt.
 
 **Anordnung und Ansicht speichern**
 

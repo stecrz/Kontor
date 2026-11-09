@@ -1678,7 +1678,7 @@ function bchFocus(key, blink) {
   const m = d.months[i];
   for (const id of Object.keys(LC)) {
     const st = LC[id], j = st && st.d && $(`#lc-${id}-svg`) ? st.d.months.indexOf(m) : -1; if (j < 0) continue;
-    const sp = st.i1 - st.i0; lcSet(id, j - sp, j, j - sp >= 0 ? st.btn : null);
+    const sp = st.i1 - st.i0; lcSet(id, j - sp, j, null);      // stays there (the range button is marked by the length)
   }
 }
 // Touch and drag on a chart, attached once to the (persistent) <svg>; the plot inside is redrawn on every change.
@@ -1956,9 +1956,36 @@ function lcSelTitle(sel, avail, long) {
   const text = sh => w.minus ? t('lc_ohne', word(w.base, sh), w.minus.map(k => word(k, sh)).join(t('lc_und'))) : w.plus.map(k => word(k, sh)).join(' + ');
   const full = text(false), short = !long && full.length > 26;
   const now = [short ? full : '', all !== full ? all : ''].filter(Boolean).join(' = ');
-  // the tip also says what the names stand for (only positions this area has)
-  const defs = lcGroups(avail, true).map(([k, l]) => `${t(k)}${k === 'grp_brutto' ? ` (${t('grp_brutto_alias')})` : ''} = ${l.map(r => ROLE[r][0]).join(' + ')}`).join('\n');
+  // the tip also says what the names stand for: written as one sum, step by step (only positions this area has)
+  const defs = lcSumTip(avail);
   return [short ? text(true) : full, [now, defs ? t('lc_gruppen') + '\n' + defs : ''].filter(Boolean).join('\n\n')];
+}
+function lcSumTip(avail) {
+  // the named combinations as a written sum, each word once:   Bankguthaben / + Wertpapiere / = Verfügbar / + Festanlagen /
+  // = Finanzvermögen / + Sachvermögen (Immobilien + Sachwerte) / … / = Bruttovermögen / + Verbindlichkeiten / = Nettovermögen
+  const G = lcGroups(avail, true), has = r => avail.includes(r), lines = [], sum = [], used = new Set();
+  const nameOf = set => { const sig = avail.filter(r => set.includes(r)).join(), g = G.find(([, l]) => l.join() === sig); return g ? g[0] : null; };
+  const word = k => k === 'nettovermoegen' ? t(k) : t(k) + (k === 'grp_brutto' ? ` (${t('grp_brutto_alias')})` : '');
+  const add = (label, rs) => { lines.push((sum.length ? '+ ' : '\u2007 ') + label); sum.push(...rs); };
+  const sach = has('immobilien') && has('sachwerte') && nameOf(['immobilien', 'sachwerte']) === 'grp_sach';
+  for (const stage of [LC_LIQUID, ['anlagen'], ['immobilien', 'sachwerte', 'beteiligungen', 'forderungen', 'sonstiges'], ['verbindlichkeiten']]) {
+    let added = false;
+    for (const r of stage) {
+      if (!has(r) || (sach && r === 'sachwerte')) continue;
+      if (sach && r === 'immobilien') { add(`${t('grp_sach')} (${ROLE.immobilien[0]} + ${ROLE.sachwerte[0]})`, ['immobilien', 'sachwerte']); used.add('grp_sach'); }
+      else add(ROLE[r][0], [r]);
+      added = true;
+    }
+    const k = !added || sum.length < 2 ? null : sum.length === avail.length ? 'nettovermoegen' : nameOf(sum);
+    if (k) { lines.push('= ' + word(k)); used.add(k); }
+  }
+  // "Gebunden" does not lie on the way: what is left of the assets without the available part
+  if (G.some(([k]) => k === 'grp_gebunden') && !used.has('grp_gebunden')) {
+    const liq = avail.filter(r => LC_LIQUID.includes(r)), all = avail.filter(r => r !== 'verbindlichkeiten');
+    const a = all.length === avail.length ? 'nettovermoegen' : nameOf(all), b = liq.length > 1 ? nameOf(liq) : liq[0];
+    if (a && b) lines.push('', `${t('grp_gebunden')} = ${a === 'nettovermoegen' ? t(a) : t(a)} − ${b.startsWith('grp_') ? t(b) : ROLE[b][0]}`);
+  }
+  return lines.length > 1 ? lines.join('\n') : '';
 }
 function lcGroups(avail, show) {
   // the named combinations of positions this area has (at least two of their positions each; the same set only once):
@@ -2154,7 +2181,7 @@ function vBilanzLines(D) {
   const {avail, sel} = lcSelection(D);
   const rb = bchRanges(false);          // small charts: range in the top right corner
   const typeOf = {nw: 'nw', sel: 'sel', pos: 'pos', bil: 'bilanz'};
-  const head = (id, title, extra, noVal) => `<div class="lc-head"><b class="lc-title">${title}</b><button class="lc-big" data-big="${typeOf[id]}" title="${t('lc_gross')}">${ICON.expand}</button><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>${noVal ? '' : `<div class="lc-row2">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span></div>`}`;
+  const head = (id, title, extra, noVal) => `<div class="lc-head"><b class="lc-title">${title}</b><button class="lc-big" data-big="${typeOf[id]}" title="${t('lc_gross')}">${ICON.expand}</button><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>${noVal ? '' : `<div class="lc-row2">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span><span class="lc-span" id="lc-${id}-span" title="${t('lc_span_tip')}"></span></div>`}`;
   const plot = id => `<div class="bch-plot lc-plot" id="lc-${id}-plot"><svg class="bch-svg" id="lc-${id}-svg"></svg><div class="bch-tip hidden" id="lc-${id}-tip"></div></div>`;
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
   const card = {
@@ -2255,11 +2282,18 @@ function lcDraw(id) {
       + cell(t('lc_high'), `${F0(d.vals[hi])} €`, ML(d.months[hi])) + cell(t('lc_low'), `${F0(d.vals[lo])} €`, ML(d.months[lo]));
   }
   // the period the value (end) and the change (start) refer to: the actual months in view; compact, top right
-  $$(`.lc-rb[data-lc="${id}"] button`).forEach(b => b.classList.toggle('on', st.btn != null ? +b.dataset.m === st.btn : false));
+  // a range button is marked whenever the range has its length (also after zooming back); below it the length in words
+  const span = st.i1 - st.i0;
+  $$(`.lc-rb[data-lc="${id}"] button`).forEach(b => b.classList.toggle('on', +b.dataset.m === (st.btn != null ? st.btn : span)));
+  const spEl = $(`#lc-${id}-span`); if (spEl) spEl.textContent = spanText(span);
   lcBindPlot(id);
 }
+const spanText = m => m % 12 === 0 ? (m === 12 ? t('lc_span_1j') : t('lc_span_j', m / 12)) : m === 1 ? t('lc_span_1m') : t('lc_span_m', m);
 function lcSet(id, i0, i1, btn) {
   const st = LC[id], n = st.d.months.length; i0 = Math.max(0, Math.min(i0, n - 2)); i1 = Math.max(i0 + 1, Math.min(i1, n - 1));
+  // a range button stays anchored to today only while the range is exactly its own; a range of that length ending today gets it
+  if (btn) { const [a, z] = bchWindow(st.d, btn); if (a !== i0 || z !== i1) btn = null; }
+  if (!btn && bchRanges(false).some(([m]) => m === i1 - i0)) { const [a, z] = bchWindow(st.d, i1 - i0); if (a === i0 && z === i1) btn = i1 - i0; }
   st.f0 = i0; st.f1 = i1;
   if (i0 === st.i0 && i1 === st.i1 && (btn ?? null) === st.btn) return;
   st.i0 = i0; st.i1 = i1; st.btn = btn ?? null; S.lcRange = Object.assign(S.lcRange || {}, {[id]: [st.d.months[i0], st.d.months[i1], st.btn]}); lcDraw(id);

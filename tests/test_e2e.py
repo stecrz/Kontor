@@ -2159,7 +2159,11 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(name([r for r in av if r != 'beteiligungen']), "Nettovermögen ohne Beteiligungen")
                 self.assertEqual(name(['liquiditaet', 'wertpapiere', 'anlagen', 'immobilien']), "Finanzvermögen + Immobilien")      # a tie: in plus
                 self.assertEqual(name(['liquiditaet', 'immobilien']), "Bankguthaben + Immobilien"); self.assertEqual(name(av), "Nettovermögen")
-                pg.hover("#lc-sel-title"); pg.wait_for_selector(".tip"); self.assertIn("Bankguthaben + Wertpapiere", pg.inner_text(".tip")); self.assertIn("Verfügbar = Bankguthaben + Wertpapiere", pg.inner_text(".tip")); pg.mouse.move(5, 5)
+                pg.hover("#lc-sel-title"); pg.wait_for_selector(".tip"); self.assertIn("Bankguthaben + Wertpapiere", pg.inner_text(".tip")); self.assertIn("+ Wertpapiere\n= Verfügbar", pg.inner_text(".tip")); pg.mouse.move(5, 5)
+                # the names as one written sum, each word once
+                self.assertEqual(pg.evaluate("a => lcSumTip(a)", av).split("\n"), ["\u2007 Bankguthaben", "+ Wertpapiere", "= Verfügbar", "+ Festanlagen", "= Finanzvermögen", "+ Immobilien",
+                                 "+ Beteiligungen", "= Bruttovermögen (Bilanzsumme)", "+ Verbindlichkeiten", "= Nettovermögen", "", "Gebunden = Bruttovermögen − Verfügbar"])
+                self.assertIn("+ Sachvermögen (Immobilien + Sachwerte)", pg.evaluate("a => lcSumTip(a)", av + ["sachwerte"]))
                 # composition of one position by account (stacked), chips with the accounts: deselecting one keeps the position line
                 self.assertTrue(pg.query_selector("#lc-pos-svg path.lc-band")); self.assertIn("Hausbank Giro", pg.inner_text("#lc-pos-accs"))
                 tot = pg.get_attribute("#lc-pos-svg path.lc-total", "d"); nb = len(pg.query_selector_all("#lc-pos-svg path.lc-band"))
@@ -2228,6 +2232,12 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.eval_on_selector_all(".lc-rb[data-lc='nw'] button", "bs => bs.map(b => b.dataset.m)"), ["6", "12", "24"])
                 pg.click(".lc-rb[data-lc='nw'] button[data-m='24']"); pg.wait_for_timeout(200)
                 self.assertTrue(pg.query_selector(".lc-rb[data-lc='nw'] button[data-m='24'].on"))
+                self.assertEqual(pg.inner_text("#lc-nw-span"), pg.evaluate("spanText(LC.nw.i1 - LC.nw.i0)"))      # the test data is a little shorter than 2 years
+                # zoomed in: no range button, the length below them; zoomed back out to a year: "1 J" marked again
+                pg.evaluate("lcView('nw', LC.nw.i1 - 10, 10, false)"); pg.wait_for_timeout(100)
+                self.assertIsNone(pg.query_selector(".lc-rb[data-lc='nw'] button.on")); self.assertEqual(pg.inner_text("#lc-nw-span"), "10 Monate")
+                pg.evaluate("lcView('nw', LC.nw.i1 - 12, 12, false)"); pg.wait_for_timeout(100)
+                self.assertTrue(pg.query_selector(".lc-rb[data-lc='nw'] button[data-m='12'].on")); self.assertEqual(pg.inner_text("#lc-nw-span"), "1 Jahr")
                 self.assertEqual(pg.eval_on_selector_all("#bch-rb button", "bs => bs.map(b => b.dataset.m)"), ["6", "12", "24", "36", "0"])
                 pg.evaluate("S.lcSel = null")
                 # old German addresses lead to the English ones

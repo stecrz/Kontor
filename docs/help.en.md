@@ -158,9 +158,27 @@ The balance sheet shows the assets of an area by position, month by month or yea
 
 - **Balance sheet** (when another chart is the large one): without the value line, a little taller instead.
 - **Net worth** alone, with the average per month, the high and the low below. Hovering shows just the month and the value.
-- **Selection**: the sum of freely chosen positions (default: cash, securities and term investments). The title names the selection in words – typical combinations as “Available”, “Financial assets”, “Tied up”, “Gross assets” (all assets without liabilities, i.e. total assets) or “Real assets”, otherwise combined like “Financial assets + Liabilities” or “Net worth excluding Private equity”, with shortened words when space is short. Hovering over the title names every position and what the names stand for (e.g. Financial assets = Cash + Securities + Term investments); the line has the positions' mixed colour.
+- **Selection**: the sum of freely chosen positions (default: cash, securities and term investments). The title names the selection in words – typical combinations by their name, otherwise combined like “Financial assets + Liabilities” or “Net worth excluding Private equity”, with shortened words when space is short; the line has the positions' mixed colour. The names build up step by step – hovering over the title shows the same, there only with the positions the area has:
+
+```
+  Cash
++ Securities
+= Available
++ Term investments
+= Financial assets
++ Real assets (Real estate + Tangible assets)
++ Private equity
++ Receivables
++ Other
+= Gross assets (total assets)
++ Liabilities
+= Net worth
+
+Tied up = Gross assets − Available
+```
+
 - **Composition** of a chosen position by account (stacked). **Holdings** next to it breaks portfolios down into their securities (only where available); below, accounts or securities can be deselected one by one – the line of the position stays, and hovering also shows the sum of the selection.
-- Each has its own range (depending on the view 6 months, 1 or 2 years or 1, 3 or 10 years) and an axis that adapts to the visible values (at least four grid lines) – so you can see the development even when large positions such as receivables and liabilities cancel each other out in the chart above. The area reaches to the zero line, so upwards for negative values. The value tip is slightly see-through so the line beneath stays visible.
+- Each has its own range (depending on the view 6 months, 1 or 2 years or 1, 3 or 10 years) and an axis that adapts to the visible values (at least four grid lines) – so you can see the development even when large positions such as receivables and liabilities cancel each other out in the chart above. The area reaches to the zero line, so upwards for negative values. The value tip is slightly see-through so the line beneath stays visible. Below the range buttons stands the length of the range shown – the value and the change refer to it; after zooming, a button is marked again as soon as the length matches.
 
 **Layout and saving the view**
 

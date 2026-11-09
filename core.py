@@ -1057,7 +1057,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 return {"status": "nicht_verfuegbar", "text": txt}
             log.error("MoneyMoney error: %s", e)
             return {"status": "fehler", "text": tr("s_moneymoney_fehler_s") % e}
-        fp = ledger_fp(ledger)
+        fp = "%s@%s" % (ledger_fp(ledger), version())       # a new version builds the report again (new figures, e.g. after an update)
         if fp == state.get("fingerprint") and not force:
             log.info("No change in MoneyMoney since the last run.")
             return {"status": "unveraendert", "text": tr("s_keine_aenderung_in_moneymoney_seit"), "_ledger": ledger,

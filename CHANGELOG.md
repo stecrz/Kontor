@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.5 (2026-11-09 04:49)
+- Eigenkapitalquote erscheint jetzt auch ohne neue Daten in MoneyMoney: Nach einem Update rechnet Kontor die Auswertung einmal neu.
+- Kleine Grafiken: unter den Zeitraum-Knöpfen steht die Länge des gezeigten Zeitraums; nach dem Zoomen ist der passende Knopf wieder markiert, sobald die Länge stimmt.
+- Grafik 2: Die Namen der Kombinationen stehen beim Darüberfahren und in der Hilfe als schriftliche Rechnung untereinander.
+
 ## 3.12.4 (2026-11-09 04:30)
 - Neu (Alpha): Eigenkapitalquote unter dem Nettovermögen – durchgerechnet durch die Gesellschaften (deren Schulden mit deinem Anteil); ein Klick zeigt die Rechnung Schritt für Schritt.
 - Kapital- und Gesellschafterkonten (auch Gesellschafterdarlehen) zählen mit Guthaben standardmäßig zu den Beteiligungen statt zu den Forderungen.
