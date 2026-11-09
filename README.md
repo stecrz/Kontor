@@ -10,7 +10,7 @@ Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https:
 
 - Große Grafik und Tabelle arbeiten zusammen: Klick auf eine Fläche klappt sie in der Grafik und in der Tabelle auf, Klick auf einen Wert zeigt ihn in der Grafik; Werte am Monatsende, Zeiträume bis zum letzten abgeschlossenen Monat (der laufende Monat gepunktet, der Plan gestrichelt).
 - Depots mit ihren Wertpapieren, auch rückwirkend – der Verlauf wird einmalig aus MoneyMoney übernommen; fehlende Namen per ISIN nachschlagbar.
-- Drei einzelne Grafiken (Nettovermögen, frei gewählte Positionen wie „Finanzvermögen“, Zusammensetzung einer Position); jede kann die große werden.
+- Drei einzelne Grafiken (Nettovermögen, frei gewählte Positionen wie „Geldanlagen“, Zusammensetzung einer Position); jede kann die große werden.
 - Ansicht je Gerät speichern, Anordnung frei, dunkel (Standard) oder hell, Excel-Export mit aufklappbaren Zeilen.
 
 **Stand:** Bilanz, Synchronisierung und Einrichtung sind geprüft. Die übrigen Seiten (Übersicht, Cashflow, Planung, Immobilien, Steuer, Umsätze & Belege, Kategorien, Buchungen, Regeln) sind nutzbar, aber noch als „Alpha“ markiert – Zahlen dort bitte gegenprüfen.

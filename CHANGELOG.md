@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.6 (2026-11-09 13:35)
+- Kleine Grafiken: Zeiträume über zwei Jahren in Jahren und Monaten („2 Jahre 8 Mon.“, „2 ½ Jahre“).
+- Kennzahlen unter dem Nettovermögen (Eigenkapitalquote) sind zugeklappt; ein Klick auf „Nettovermögen“ klappt sie auf.
+- Grafik 2: neue Namen – „Liquides Vermögen“ (statt „Verfügbar“), „Geldanlagen“ (statt „Finanzvermögen“), neu „Geldvermögen“ (mit Beteiligungen und Forderungen, wie bei der Bundesbank), „Gebundenes Vermögen“.
+
 ## 3.12.5 (2026-11-09 04:49)
 - Eigenkapitalquote erscheint jetzt auch ohne neue Daten in MoneyMoney: Nach einem Update rechnet Kontor die Auswertung einmal neu.
 - Kleine Grafiken: unter den Zeitraum-Knöpfen steht die Länge des gezeigten Zeitraums; nach dem Zoomen ist der passende Knopf wieder markiert, sobald die Länge stimmt.

@@ -1249,12 +1249,13 @@ function vBilanz() {
     if (pr && r.rolle === 'beteiligungen' && proj.einlagen && r === D.bilanz.zeilen.filter(x => !x.gruppe && x.rolle === 'beteiligungen').slice(-1)[0])
       h += row({id: 'einlagen', name: t('einlagen_entnahmen_kumuliert_plan'), werte: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'));
   }
-  h += `<tr class="total"><td><i class="nw-sw"></i>${t('nettovermoegen')}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
+  // key figures under net worth (equity ratio, alpha): folded by default, the name of net worth opens them like a position
+  const EQ = D.bilanz.ek_quote, kpi = !!(EQ && Object.keys(EQ.monate || {}).length), kOpen = kpi && !!S.posOpen._kennzahlen;
+  h += `<tr class="total${kpi ? ' fold' : ''}"><td${kpi ? ` title="${t(kOpen ? 'kennzahlen_zu' : 'kennzahlen_auf')}"` : ''}>${kpi ? `<span class="caret">${kOpen ? '▾' : '▸'}</span>` : ''}<i class="nw-sw"></i>${t('nettovermoegen')}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
   // equity ratio (alpha): looking through the companies; actual months only, a click shows the calculation
-  const EQ = D.bilanz.ek_quote;
-  if (EQ && Object.keys(EQ.monate || {}).length) {
+  if (kOpen) {
     const at = c => { if (c.plan) return null; for (let k = c.months.length - 1; k >= 0; k--) if (EQ.monate[c.months[k]]) return c.months[k]; return null; };
-    h += `<tr class="ekq"><td title="${esc(t('ekq_tip'))}">${t('ekq')} ${alphaTag()}</td>${C.map(c => { const mk = at(c), e = mk && EQ.monate[mk];
+    h += `<tr class="ekq ind1"><td title="${esc(t('ekq_tip'))}">${t('ekq')} ${alphaTag()}</td>${C.map(c => { const mk = at(c), e = mk && EQ.monate[mk];
       return `<td class="${cls(1, c).replace(' pos', '')}"${mk ? ` data-m="${mk}"` : ''}>${!e ? '' : e.quote == null ? `<span title="${esc(t('unbekannt'))}">?</span>` : pctQ(e.quote)}</td>`; }).join('')}</tr>`;
   }
   // outside net worth (guarantees, capital accounts as equity): one collapsible row per kind with its sum, accounts on click
@@ -1961,14 +1962,15 @@ function lcSelTitle(sel, avail, long) {
   return [short ? text(true) : full, [now, defs ? t('lc_gruppen') + '\n' + defs : ''].filter(Boolean).join('\n\n')];
 }
 function lcSumTip(avail) {
-  // the named combinations as a written sum, each word once:   Bankguthaben / + Wertpapiere / = Verfügbar / + Festanlagen /
-  // = Finanzvermögen / + Sachvermögen (Immobilien + Sachwerte) / … / = Bruttovermögen / + Verbindlichkeiten / = Nettovermögen
+  // the named combinations as a written sum, each word once:   Bankguthaben / + Wertpapiere / = Liquides Vermögen / + Festanlagen /
+  // = Geldanlagen / + Beteiligungen / + Forderungen / = Geldvermögen / + Sachvermögen (Immobilien + Sachwerte) / + Sonstiges /
+  // = Bruttovermögen / + Verbindlichkeiten / = Nettovermögen   (gross = financial + real assets, as usual)
   const G = lcGroups(avail, true), has = r => avail.includes(r), lines = [], sum = [], used = new Set();
   const nameOf = set => { const sig = avail.filter(r => set.includes(r)).join(), g = G.find(([, l]) => l.join() === sig); return g ? g[0] : null; };
   const word = k => k === 'nettovermoegen' ? t(k) : t(k) + (k === 'grp_brutto' ? ` (${t('grp_brutto_alias')})` : '');
   const add = (label, rs) => { lines.push((sum.length ? '+ ' : '\u2007 ') + label); sum.push(...rs); };
   const sach = has('immobilien') && has('sachwerte') && nameOf(['immobilien', 'sachwerte']) === 'grp_sach';
-  for (const stage of [LC_LIQUID, ['anlagen'], ['immobilien', 'sachwerte', 'beteiligungen', 'forderungen', 'sonstiges'], ['verbindlichkeiten']]) {
+  for (const stage of [LC_LIQUID, ['anlagen'], ['beteiligungen', 'forderungen'], ['immobilien', 'sachwerte', 'sonstiges'], ['verbindlichkeiten']]) {
     let added = false;
     for (const r of stage) {
       if (!has(r) || (sach && r === 'sachwerte')) continue;
@@ -1979,19 +1981,19 @@ function lcSumTip(avail) {
     const k = !added || sum.length < 2 ? null : sum.length === avail.length ? 'nettovermoegen' : nameOf(sum);
     if (k) { lines.push('= ' + word(k)); used.add(k); }
   }
-  // "Gebunden" does not lie on the way: what is left of the assets without the available part
+  // tied-up assets do not lie on the way: what is left of the assets without the liquid part (shortened to fit one line)
   if (G.some(([k]) => k === 'grp_gebunden') && !used.has('grp_gebunden')) {
     const liq = avail.filter(r => LC_LIQUID.includes(r)), all = avail.filter(r => r !== 'verbindlichkeiten');
     const a = all.length === avail.length ? 'nettovermoegen' : nameOf(all), b = liq.length > 1 ? nameOf(liq) : liq[0];
-    if (a && b) lines.push('', `${t('grp_gebunden')} = ${a === 'nettovermoegen' ? t(a) : t(a)} − ${b.startsWith('grp_') ? t(b) : ROLE[b][0]}`);
+    if (a && b) lines.push('', `${t('kurzw_gebunden')} = ${t(a)} − ${b.startsWith('grp_') ? t(b) : ROLE[b][0]}`);
   }
   return lines.length > 1 ? lines.join('\n') : '';
 }
 function lcGroups(avail, show) {
   // the named combinations of positions this area has (at least two of their positions each; the same set only once):
   // largest first for naming a selection, in a fixed order for showing them
-  const order = [['grp_verfuegbar', LC_LIQUID], ['grp_finanz', [...LC_LIQUID, 'anlagen']], ['grp_sach', ['immobilien', 'sachwerte']], ['grp_gebunden', LC_ILLIQUID],
-    ['grp_brutto', avail.filter(r => r !== 'verbindlichkeiten')]];
+  const order = [['grp_liquide', LC_LIQUID], ['grp_geldanlagen', [...LC_LIQUID, 'anlagen']], ['grp_geldvermoegen', [...LC_LIQUID, 'anlagen', 'beteiligungen', 'forderungen']],
+    ['grp_sach', ['immobilien', 'sachwerte']], ['grp_gebunden', LC_ILLIQUID], ['grp_brutto', avail.filter(r => r !== 'verbindlichkeiten')]];
   const seen = new Set(), out = [];
   for (const [k, l0] of order) { const l = avail.filter(r => l0.includes(r)), sig = l.join(); if (l.length > 1 && !seen.has(sig)) { seen.add(sig); out.push([k, l]); } }
   return show ? out : out.slice().sort((a, b) => b[1].length - a[1].length);
@@ -2011,8 +2013,8 @@ function lcSelWords(s, avail) {
 // shortened words for the small chart (never single letters)
 const KURZW = {liquiditaet: t('kurzw_liquiditaet'), wertpapiere: t('kurzw_wertpapiere'), anlagen: t('kurzw_anlagen'), immobilien: t('kurzw_immobilien'),
   beteiligungen: t('kurzw_beteiligungen'), sachwerte: t('kurzw_sachwerte'), forderungen: t('kurzw_forderungen'), sonstiges: t('kurzw_sonstiges'),
-  verbindlichkeiten: t('kurzw_verbindlichkeiten'), nettovermoegen: t('kurzw_nettovermoegen'), grp_brutto: t('kurzw_brutto'), grp_finanz: t('kurzw_finanz'),
-  grp_gebunden: t('grp_gebunden'), grp_verfuegbar: t('grp_verfuegbar'), grp_sach: t('kurzw_sach')};
+  verbindlichkeiten: t('kurzw_verbindlichkeiten'), nettovermoegen: t('kurzw_nettovermoegen'), grp_brutto: t('kurzw_brutto'), grp_geldanlagen: t('kurzw_geldanlagen'),
+  grp_geldvermoegen: t('kurzw_geldvermoegen'), grp_gebunden: t('kurzw_gebunden'), grp_liquide: t('kurzw_liquide'), grp_sach: t('kurzw_sach')};
 // positions of the typical combinations (names in lcSelWords)
 const LC_LIQUID = ['liquiditaet', 'wertpapiere'], LC_ILLIQUID = ['anlagen', 'immobilien', 'beteiligungen', 'sachwerte', 'forderungen', 'sonstiges'];
 function lcSelection(D) {
@@ -2288,7 +2290,9 @@ function lcDraw(id) {
   const spEl = $(`#lc-${id}-span`); if (spEl) spEl.textContent = spanText(span);
   lcBindPlot(id);
 }
-const spanText = m => m % 12 === 0 ? (m === 12 ? t('lc_span_1j') : t('lc_span_j', m / 12)) : m === 1 ? t('lc_span_1m') : t('lc_span_m', m);
+// the length of a range in words: months up to 2 years, beyond that years and months ("2 Jahre 8 Mon.", half a year as "2 ½ Jahre")
+const spanText = m => m % 12 === 0 ? (m === 12 ? t('lc_span_1j') : t('lc_span_j', m / 12)) : m <= 24 ? (m === 1 ? t('lc_span_1m') : t('lc_span_m', m))
+  : m % 12 === 6 ? t('lc_span_jh', Math.floor(m / 12)) : t('lc_span_jm', Math.floor(m / 12), m % 12);
 function lcSet(id, i0, i1, btn) {
   const st = LC[id], n = st.d.months.length; i0 = Math.max(0, Math.min(i0, n - 2)); i1 = Math.max(i0 + 1, Math.min(i1, n - 1));
   // a range button stays anchored to today only while the range is exactly its own; a range of that length ending today gets it
@@ -3742,6 +3746,7 @@ function bind(main) {
     const td = e.target.closest('td'), ks = Object.keys(((B() || {}).bilanz || {}).ek_quote?.monate || {}), cur = (B() || {}).ist_bis;
     const mk = td && td.dataset.m ? td.dataset.m : (ks.includes(cur) ? cur : ks[ks.length - 1]); if (mk && td && (td.dataset.m || td === tr.firstElementChild)) openEkqDrawer(mk); }));
   $$('.bil-tbl tr.total', main).forEach(tr => tr.addEventListener('click', e => {      // net worth: like the month heading, and its dot blinks
+    if (tr.classList.contains('fold') && e.target.closest('td') === tr.firstElementChild) { S.posOpen._kennzahlen = !S.posOpen._kennzahlen; route(); return; }      // its name: key figures open/close
     const td = valueCell(e, tr), th = td && td.closest('table').querySelector('thead tr').children[td.cellIndex];
     if (th && th.dataset.key) bchFocus(th.dataset.key, true); }));
   $$('tr.pos[data-pos]', main).forEach(tr => tr.addEventListener('click', e => { const td = valueCell(e, tr); if (td) { bchFlash(tr, td); return; } S.posOpen[tr.dataset.pos] = !S.posOpen[tr.dataset.pos]; route(); }));

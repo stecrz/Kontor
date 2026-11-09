@@ -141,7 +141,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 - **Portfolios**: past months from the balances read from MoneyMoney (otherwise from Kontor's monthly record), the current month from MoneyMoney; what the securities do not explain is shown as “Other”. Hovering over a security always shows MoneyMoney's name and the ISIN, and whether the name was looked up or changed. Rename accounts in MoneyMoney – Kontor takes the names from there.
 - Year columns show the balance at year end (the running year: today). The month view has no year columns – they would only repeat December; a thin line separates the years.
 - Drag the right edge of the first column to make it wider or narrower (double-click: default width); the width is part of the view.
-- **Equity ratio** (alpha, below net worth): how much of your assets you own free of debt – equity ÷ (equity + debts). Looking through your companies: their debts count with your share from the participation rule, otherwise the ratio would look too good, because the bank loans sit there. Debts are accounts with a negative balance; capital and shareholder accounts are equity, participations themselves never debts. How you book capital accounts changes nothing. Participations without a participation rule count with their value only; if accounts of a company are in no area, the ratio is unknown. A click shows the month's calculation step by step.
+- **Equity ratio** (alpha; a click on “Net worth” opens the key figures below it): how much of your assets you own free of debt – equity ÷ (equity + debts). Looking through your companies: their debts count with your share from the participation rule, otherwise the ratio would look too good, because the bank loans sit there. Debts are accounts with a negative balance; capital and shareholder accounts are equity, participations themselves never debts. How you book capital accounts changes nothing. Participations without a participation rule count with their value only; if accounts of a company are in no area, the ratio is unknown. A click shows the month's calculation step by step.
 - Below net worth, guarantees and capital accounts as equity (not in net worth) are each collected in one expandable row.
 - **Cash in transit**: If the two bookings of a transfer between your own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” to cash at the month end – otherwise net worth would briefly look too low. A click shows the detected booking pairs.
 
@@ -158,27 +158,30 @@ The balance sheet shows the assets of an area by position, month by month or yea
 
 - **Balance sheet** (when another chart is the large one): without the value line, a little taller instead.
 - **Net worth** alone, with the average per month, the high and the low below. Hovering shows just the month and the value.
-- **Selection**: the sum of freely chosen positions (default: cash, securities and term investments). The title names the selection in words – typical combinations by their name, otherwise combined like “Financial assets + Liabilities” or “Net worth excluding Private equity”, with shortened words when space is short; the line has the positions' mixed colour. The names build up step by step – hovering over the title shows the same, there only with the positions the area has:
+- **Selection**: the sum of freely chosen positions (default: cash, securities and term investments – savings & investments). The title names the selection in words – typical combinations by their name, otherwise combined like “Savings & investments + Liabilities” or “Net worth excluding Private equity”, with shortened words when space is short; the line has the positions' mixed colour. The names build up step by step – hovering over the title shows the same, there only with the positions the area has:
 
 ```
   Cash
 + Securities
-= Available
+= Liquid assets
 + Term investments
-= Financial assets
-+ Real assets (Real estate + Tangible assets)
+= Savings & investments
 + Private equity
 + Receivables
+= Financial assets
++ Real assets (Real estate + Tangible assets)
 + Other
 = Gross assets (total assets)
 + Liabilities
 = Net worth
 
-Tied up = Gross assets − Available
+Tied-up assets = Gross assets − Liquid assets
 ```
 
+Financial and real assets are split as in the Bundesbank's statistics: participations count as financial assets, even if the company holds real estate; crypto and precious metals sit under securities in Kontor and so in financial assets. There is deliberately no “current assets” – that depends on how long you mean to hold something, not on how fast it turns into money.
+
 - **Composition** of a chosen position by account (stacked). **Holdings** next to it breaks portfolios down into their securities (only where available); below, accounts or securities can be deselected one by one – the line of the position stays, and hovering also shows the sum of the selection.
-- Each has its own range (depending on the view 6 months, 1 or 2 years or 1, 3 or 10 years) and an axis that adapts to the visible values (at least four grid lines) – so you can see the development even when large positions such as receivables and liabilities cancel each other out in the chart above. The area reaches to the zero line, so upwards for negative values. The value tip is slightly see-through so the line beneath stays visible. Below the range buttons stands the length of the range shown – the value and the change refer to it; after zooming, a button is marked again as soon as the length matches.
+- Each has its own range (depending on the view 6 months, 1 or 2 years or 1, 3 or 10 years) and an axis that adapts to the visible values (at least four grid lines) – so you can see the development even when large positions such as receivables and liabilities cancel each other out in the chart above. The area reaches to the zero line, so upwards for negative values. The value tip is slightly see-through so the line beneath stays visible. Below the range buttons stands the length of the range shown (beyond two years in years and months, e.g. “2 years 8 mo.” or “2½ years”) – the value and the change refer to it; after zooming, a button is marked again as soon as the length matches.
 
 **Layout and saving the view**
 

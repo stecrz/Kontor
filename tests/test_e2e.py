@@ -2150,19 +2150,20 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # single curves below the table: net worth and a chosen sum (default cash + tradable + fixed-term); chips change the sum
                 self.assertTrue(pg.query_selector("#lc-nw-svg path.bch-nw")); self.assertTrue(pg.query_selector("#lc-sel-svg path.bch-nw"))
-                self.assertEqual(pg.inner_text("#lc-sel-title"), "Verfügbar")      # a known combination gets its name
+                self.assertEqual(pg.inner_text("#lc-sel-title"), "Liquides Vermögen")      # a known combination gets its name
                 # the selection named in words, never in codes: groups, "+", "ohne"; shortened words only in the small chart
                 av = ['liquiditaet', 'wertpapiere', 'anlagen', 'immobilien', 'beteiligungen', 'verbindlichkeiten']
                 name = lambda sel, big=True: pg.evaluate("([s, a, l]) => lcSelTitle(s, a, l)[0]", [sel, av, big])
-                self.assertEqual(name(['liquiditaet', 'wertpapiere', 'anlagen', 'verbindlichkeiten']), "Finanzvermögen + Verbindlichkeiten")
-                self.assertEqual(name(['liquiditaet', 'wertpapiere', 'anlagen', 'verbindlichkeiten'], False), "Finanzverm. + Verbindl.")
+                self.assertEqual(name(['liquiditaet', 'wertpapiere', 'anlagen', 'verbindlichkeiten']), "Geldanlagen + Verbindlichkeiten")
+                self.assertEqual(name(['liquiditaet', 'wertpapiere', 'anlagen', 'verbindlichkeiten'], False), "Geldanlagen + Verbindl.")
                 self.assertEqual(name([r for r in av if r != 'beteiligungen']), "Nettovermögen ohne Beteiligungen")
-                self.assertEqual(name(['liquiditaet', 'wertpapiere', 'anlagen', 'immobilien']), "Finanzvermögen + Immobilien")      # a tie: in plus
+                self.assertEqual(name(['liquiditaet', 'wertpapiere', 'anlagen', 'immobilien']), "Geldanlagen + Immobilien")      # a tie: in plus
                 self.assertEqual(name(['liquiditaet', 'immobilien']), "Bankguthaben + Immobilien"); self.assertEqual(name(av), "Nettovermögen")
-                pg.hover("#lc-sel-title"); pg.wait_for_selector(".tip"); self.assertIn("Bankguthaben + Wertpapiere", pg.inner_text(".tip")); self.assertIn("+ Wertpapiere\n= Verfügbar", pg.inner_text(".tip")); pg.mouse.move(5, 5)
+                pg.hover("#lc-sel-title"); pg.wait_for_selector(".tip"); self.assertIn("Bankguthaben + Wertpapiere", pg.inner_text(".tip")); self.assertIn("+ Wertpapiere\n= Liquides Vermögen", pg.inner_text(".tip")); pg.mouse.move(5, 5)
                 # the names as one written sum, each word once
-                self.assertEqual(pg.evaluate("a => lcSumTip(a)", av).split("\n"), ["\u2007 Bankguthaben", "+ Wertpapiere", "= Verfügbar", "+ Festanlagen", "= Finanzvermögen", "+ Immobilien",
-                                 "+ Beteiligungen", "= Bruttovermögen (Bilanzsumme)", "+ Verbindlichkeiten", "= Nettovermögen", "", "Gebunden = Bruttovermögen − Verfügbar"])
+                self.assertEqual(pg.evaluate("a => lcSumTip(a)", av).split("\n"), ["\u2007 Bankguthaben", "+ Wertpapiere", "= Liquides Vermögen", "+ Festanlagen", "= Geldanlagen", "+ Beteiligungen",
+                                 "= Geldvermögen", "+ Immobilien", "= Bruttovermögen (Bilanzsumme)", "+ Verbindlichkeiten", "= Nettovermögen", "",
+                                 "Gebundenes Verm. = Bruttovermögen − Liquides Vermögen"])
                 self.assertIn("+ Sachvermögen (Immobilien + Sachwerte)", pg.evaluate("a => lcSumTip(a)", av + ["sachwerte"]))
                 # composition of one position by account (stacked), chips with the accounts: deselecting one keeps the position line
                 self.assertTrue(pg.query_selector("#lc-pos-svg path.lc-band")); self.assertIn("Hausbank Giro", pg.inner_text("#lc-pos-accs"))
@@ -2238,6 +2239,8 @@ class BrowserTest(unittest.TestCase):
                 self.assertIsNone(pg.query_selector(".lc-rb[data-lc='nw'] button.on")); self.assertEqual(pg.inner_text("#lc-nw-span"), "10 Monate")
                 pg.evaluate("lcView('nw', LC.nw.i1 - 12, 12, false)"); pg.wait_for_timeout(100)
                 self.assertTrue(pg.query_selector(".lc-rb[data-lc='nw'] button[data-m='12'].on")); self.assertEqual(pg.inner_text("#lc-nw-span"), "1 Jahr")
+                self.assertEqual(pg.evaluate("[11, 18, 24, 30, 32, 37, 120].map(spanText)"), ["11 Monate", "18 Monate", "2 Jahre", "2\u202f½ Jahre", "2 Jahre 8 Mon.", "3 Jahre 1 Mon.", "10 Jahre"])
+                self.assertEqual(pg.evaluate("[11, 18, 24, 30, 32, 37, 120].map(spanText)"), ["11 Monate", "18 Monate", "2 Jahre", "2\u202f½ Jahre", "2 Jahre 8 Mon.", "3 Jahre 1 Mon.", "10 Jahre"])
                 self.assertEqual(pg.eval_on_selector_all("#bch-rb button", "bs => bs.map(b => b.dataset.m)"), ["6", "12", "24", "36", "0"])
                 pg.evaluate("S.lcSel = null")
                 # old German addresses lead to the English ones
@@ -2267,12 +2270,13 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(pg.query_selector("#lc-nw-tip.one"), pg.inner_html("#lc-nw-tip")); self.assertNotIn("Nettovermögen", pg.inner_text("#lc-nw-tip")); self.assertIn("€", pg.inner_text("#lc-nw-tip"))
                 pg.mouse.move(5, 5); pg.wait_for_timeout(100)
                 # the first column of the table: wider by dragging its edge, back by a double click
-                pg.query_selector(".bil-tbl .col-grip").scroll_into_view_if_needed()
+                pg.evaluate("document.querySelector('.bil-tbl').scrollIntoView({block: 'center'})"); pg.wait_for_timeout(100)      # not under the sticky top bar
                 w0 = pg.evaluate("document.querySelector('.bil-tbl thead th').getBoundingClientRect().width"); gb = pg.query_selector(".bil-tbl .col-grip").bounding_box()
                 pg.mouse.move(gb["x"] + 3, gb["y"] + gb["height"] / 2); pg.mouse.down(); pg.mouse.move(gb["x"] + 63, gb["y"] + gb["height"] / 2, steps=4); pg.mouse.up()
                 self.assertAlmostEqual(pg.evaluate("document.querySelector('.bil-tbl thead th').getBoundingClientRect().width"), w0 + 60, delta=3); self.assertTrue(pg.evaluate("S.bilW > 0"))
                 pg.dblclick(".bil-tbl .col-grip"); pg.wait_for_timeout(100); self.assertIsNone(pg.evaluate("S.bilW"))
                 self.assertAlmostEqual(pg.evaluate("document.querySelector('.bil-tbl thead th').getBoundingClientRect().width"), w0, delta=1)
+                pg.evaluate("window.scrollTo(0, 0)"); pg.wait_for_timeout(100)
                 # the area under the pointer stands out, its row in the tip too
                 c = pg.evaluate("""() => { const ps = [...document.querySelectorAll('#bch-svg .bch-area')].map(p => p.getBoundingClientRect()).sort((a, b) => b.width * b.height - a.width * a.height);
                     const r = ps[0]; return [r.left + r.width / 2, r.top + r.height / 2]; }""")
@@ -2329,6 +2333,8 @@ class BrowserTest(unittest.TestCase):
                 bb = pg.query_selector("#lc-pos-plot").bounding_box(); pg.mouse.click(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2); pg.wait_for_timeout(200)
                 self.assertTrue(pg.is_visible("#lc-pos-sel"))          # a click into chart 3 keeps its title (dropdown)
                 # equity ratio (alpha) under net worth: a click shows the calculation
+                self.assertIsNone(pg.query_selector("#main .bil-tbl tr.ekq"))           # folded by default; the name of net worth opens it
+                pg.click("#main .bil-tbl tr.total td:first-child"); pg.wait_for_selector("#main .bil-tbl tr.ekq")
                 pg.click("#main .bil-tbl tr.ekq td:first-child"); pg.wait_for_selector("#drawer.open .ekq-tbl")
                 self.assertIn("Eigenkapitalquote", pg.inner_text("#drawer")); self.assertIn("Alpha: 49 % von", pg.inner_text("#drawer"))
                 pg.click("#drawer .close"); pg.wait_for_timeout(300)
