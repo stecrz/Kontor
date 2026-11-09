@@ -133,6 +133,7 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 - Das **Auge** in der Kopfzelle (nur wenn es welche gibt, mit Anzahl) zeigt auch leere und nach Aktivität ausgeblendete Konten und Wertpapiere – mitgezählt werden sie immer. Was als ausgeblendet gilt, legst du unter [Einrichtung → Konten](#accounts) fest (Spalte „Anzeige“ und „Nach Aktivität … Monaten“, Standard 12); Wertpapiere ohne Wert in diesem Zeitraum gelten ebenfalls als ausgeblendet. „(9/12)“ bei einer Position heißt: 9 von 12 Konten zu sehen.
 - Jahresspalten zeigen den Stand zum Jahresende (das laufende Jahr: heute). In der Monatsansicht gibt es keine Jahresspalten – sie wären nur der Dezember; ein feiner Strich trennt die Jahre.
 - Die Farben der Positionen folgen der Verfügbarkeit, von Bankguthaben (grün) bis Beteiligungen (violett). Konten tragen Abwandlungen der Farbe ihrer Position (benachbarter Farbton, andere Helligkeit; ab dem elften Konto schraffiert) – als Punkt vor dem Konto und genauso in den Grafiken.
+- Die kleinen Pfeile **↑ ↓** im Tabellenkopf (beim Darüberfahren) verschieben die Tabelle über die große Grafik oder unter die einzelnen Grafiken; „Als Standard“ merkt sich auch das.
 - Unter dem Nettovermögen stehen Avale & Bürgschaften und Kapitalkonten als Eigenkapital (nicht im Nettovermögen), je gesammelt in einer aufklappbaren Zeile.
 - **Geldtransit**: Liegen die beiden Buchungen einer Umbuchung zwischen eigenen Konten in verschiedenen Monaten (am 31. abgebucht, am 1. gutgeschrieben), zählt der Betrag am Monatsende als „Geldtransit“ zum Bankguthaben – sonst sähe das Nettovermögen kurz zu niedrig aus. Ein Klick zeigt die erkannten Buchungspaare.
 
@@ -140,6 +141,7 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 
 - Zusammensetzung des Vermögens in den Farben der Positionen, schwarz das Nettovermögen (gestrichelt: Plan); aufgeklappte Positionen zeigen ihre Konten.
 - Zeitraum je nach Ansicht – Monate: 6 Monate, 1 oder 2 Jahre (Standard 1 Jahr); Jahre: 1, 3 oder 10 Jahre (Standard 3 Jahre) –, alles oder eine eigene Zahl von Monaten.
+- Beim Darüberfahren zeigt ein Fenster die Werte des Monats; die Fläche unter dem Mauszeiger wird hervorgehoben, ebenso ihre Zeile im Fenster (auch in den einzelnen Grafiken).
 - Waagerecht wischen verschiebt, mit zwei Fingern zoomen, Ziehen wählt einen Ausschnitt, Doppelklick vergrößert, Klick springt zur Spalte der Tabelle. Umgekehrt verschiebt ein Klick auf eine Spaltenüberschrift die Grafik so, dass der Monat ungefähr über der Spalte steht. Auf der Monatsachse seitlich ziehen verschiebt; auf der Betragsachse nach oben/unten ziehen vergrößert bzw. verkleinert den Wertebereich (das Mausrad verschiebt ihn), Tippen oder Klick dort macht ihn wieder automatisch. Am iPhone verschieben und zoomen zwei Finger, ein Finger zeigt die Werte. Das gilt auch für die einzelnen Grafiken.
 - **An Tabelle ausrichten**: Jeder Wert steht genau über seiner Spalte. Die Grafik scrollt mit der Tabelle, Wischen oder Ziehen auf der Grafik scrollt die Tabelle, und die Skala passt sich den sichtbaren Spalten an. Das Werte-Fenster entfällt – die Werte stehen ja darunter.
 
@@ -149,7 +151,7 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 
 - Das Nettovermögen allein (darunter Ø je Monat, Höchst- und Tiefststand), die Summe frei gewählter Positionen (Standard: Bankguthaben, Wertpapiere und Festanlagen; der Titel nennt sie abgekürzt, z. B. „Auswahl: C + WP + FA“, Darüberfahren erklärt die Kürzel, die Linie hat ihre Mischfarbe; typische Kombinationen heißen „Verfügbar“, „Finanzvermögen“, „Gebunden“, „Bruttovermögen“ oder „Sachvermögen“) und die Zusammensetzung einer gewählten Position nach Konten (gestapelt). Dort schlüsselt **Depot** neben der Auswahl die Depots in ihre Wertpapiere auf (nur wo es das gibt); unten lassen sich Konten bzw. Wertpapiere einzeln abwählen – die Linie der Position bleibt, beim Darüberfahren steht zusätzlich die Summe der Auswahl.
 - Jede hat einen eigenen Zeitraum (je nach Ansicht 6 Monate, 1 oder 2 Jahre bzw. 1, 3 oder 10 Jahre bis heute; Ziehen vergrößert, Doppelklick zoomt, nach rechts wischen zeigt den Plan) und eine Achse, die sich den sichtbaren Werten anpasst – so sieht man die Entwicklung auch dann, wenn sich große Positionen wie Forderungen und Verbindlichkeiten oben gegenseitig ausgleichen. Die Fläche reicht bis zur Nulllinie, bei negativen Werten also nach oben.
-- Oben rechts steht der Bezugszeitraum: der Wert gilt für sein Ende, die Veränderung (in € und %) seit seinem Beginn.
+- Oben rechts steht der Bezugszeitraum: der Wert gilt für sein Ende, die Veränderung (in € und %) seit seinem Beginn. Zeiträume zählen von Monatsende zu Monatsende: „1 J“ reicht von November des Vorjahres bis November, die Veränderung umfasst also genau zwölf Monate.
 
 <a id="cash-flow"></a>
 ## Cashflow

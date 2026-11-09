@@ -407,7 +407,8 @@ class App:
                                        list(found) + list(done.get("ohne") or []) + list(own))
         liste = [{"isin": i, "mm": known.get(i, ""), "such": found.get(i, ""), "eigen": own.get(i, "")} for i in set(known) | set(found)]
         liste.sort(key=lambda x: ((x["eigen"] or x["mm"] or x["such"] or "~").lower(), x["isin"]))
-        return {"offen": offen, "gefunden": len(found), "ohne": len(done.get("ohne") or []), "zeit": done.get("zeit"), "liste": liste}
+        return {"offen": offen, "gefunden": len(found), "ohne": len(done.get("ohne") or []), "zeit": done.get("zeit"), "liste": liste,
+                "aus_mm": sum(1 for x in liste if x["mm"])}
 
     def securities_lookup(self) -> dict:
         """Look up the names of the securities without one (only on request): sends only their ISINs to OpenFIGI."""

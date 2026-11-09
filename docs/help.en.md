@@ -133,6 +133,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 - The **eye** in the header cell (only when there are any, with a count) also shows empty accounts and securities and those hidden by activity – they are always counted. What counts as hidden is set under [Setup → Accounts](#accounts) (column “Display” and “By activity … months”, default 12); securities without a value in that period count as hidden too. “(9/12)” at a position means 9 of 12 accounts are shown.
 - Year columns show the balance at year end (the running year: today). The month view has no year columns – they would only repeat December; a thin line separates the years.
 - The position colours follow availability, from cash (green) to equity investments (violet). Accounts carry variations of their position's colour (neighbouring hue, different lightness; hatched from the eleventh account) – as a dot in front of the account and the same in the charts.
+- The small arrows **↑ ↓** in the table header (on hover) move the table above the main chart or below the single charts; “Set as default” keeps that too.
 - Below net worth, guarantees and capital accounts as equity (not in net worth) are each collected in one expandable row.
 - **Cash in transit**: If the two bookings of a transfer between your own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” to cash at the month end – otherwise net worth would briefly look too low. A click shows the detected booking pairs.
 
@@ -140,6 +141,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 
 - Composition of assets in the colours of the positions, black the net worth (dashed: plan); expanded positions show their accounts.
 - Range depending on the view – months: 6 months, 1 or 2 years (default 1 year); years: 1, 3 or 10 years (default 3 years) –, all or a number of months of your own.
+- Hovering shows the month's values in a tip; the area under the pointer stands out, as does its row in the tip (also in the single charts).
 - Swipe horizontally to pan, pinch to zoom, drag to select a range, double-click to enlarge, click to jump to the column of the table. Conversely, clicking a column heading moves the chart so that the month sits roughly above the column. Drag sideways on the month axis to pan; drag up/down on the amount axis to zoom the value range in/out (the wheel moves it), a tap or click there makes it automatic again. On the iPhone two fingers pan and zoom, one finger shows the values. The same applies to the single charts.
 - **Align with table**: every value sits right above its column. The chart scrolls with the table, swiping or dragging on the chart scrolls the table, and the scale follows the visible columns. The value tip is dropped – the values are right below.
 
@@ -149,7 +151,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 
 - Net worth alone (with the average per month, the high and the low below), the sum of freely chosen positions (default: cash, securities and term investments; the title names them abbreviated, e.g. “Selection: C + S + TI”, hovering explains the codes, the line has their mixed colour; typical combinations are called “Available”, “Financial assets”, “Tied up”, “Gross assets” or “Real assets”) and the composition of a chosen position by account (stacked). There, **Holdings** next to the selection breaks portfolios down into their securities (only where available); below, accounts or securities can be deselected one by one – the line of the position stays, and hovering also shows the sum of the selection.
 - Each has its own range (depending on the view 6 months, 1 or 2 years or 1, 3 or 10 years up to today; drag to enlarge, double-click to zoom, swipe right for the plan) and an axis that adapts to the visible values – so you can see the development even when large positions such as receivables and liabilities cancel each other out in the chart above. The area reaches to the zero line, so upwards for negative values.
-- The reference period is shown top right: the value applies to its end, the change (in € and %) since its start.
+- The reference period is shown top right: the value applies to its end, the change (in € and %) since its start. Ranges count from month end to month end: “1 Y” runs from November of the previous year to November, so the change covers exactly twelve months.
 
 <a id="cash-flow"></a>
 ## Cash flow

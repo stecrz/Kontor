@@ -2171,6 +2171,14 @@ class BrowserTest(unittest.TestCase):
                 self.assertIsNone(pg.query_selector("#bch.big-pos")); self.assertEqual(order(), ["nw", "sel", "pos"]); self.assertTrue(pg.query_selector("#modus-seg button[data-m='monate'].on"))
                 self.assertIsNone(pg.evaluate("localStorage.getItem('kontor.bilanzView')"))
                 pg.click("#pos-all"); pg.wait_for_timeout(300)                       # all positions open again (as before)
+                # the table can sit above the large chart or below the small ones (small arrows in its header), kept with "Als Standard"
+                where = lambda: pg.evaluate("""() => { const t = document.querySelector('#main .wrap'), c = document.querySelector('#bch'), g = document.querySelector('#lc-grid');
+                    const before = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING); return before(t, c) ? 'top' : before(g, t) ? 'bot' : 'mid'; }""")
+                self.assertEqual(where(), "mid"); pg.click(".th-mv[data-mv='-1']"); pg.wait_for_timeout(300); self.assertEqual(where(), "top")
+                self.assertFalse(pg.is_visible(".th-mv[data-mv='-1']")); pg.click(".th-mv[data-mv='1']"); pg.wait_for_timeout(300); pg.click(".th-mv[data-mv='1']"); pg.wait_for_timeout(300)
+                self.assertEqual(where(), "bot"); pg.click("#view-save"); pg.wait_for_timeout(200)
+                self.assertEqual(pg.evaluate("JSON.parse(localStorage.getItem('kontor.bilanzView')).views.monate.tbl"), "bot")
+                pg.click("#view-reset"); pg.wait_for_timeout(300); self.assertEqual(where(), "mid"); pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # the same in the table: a portfolio opens into its securities (without opening the account's history)
                 if not pg.query_selector("[data-dep]"):
                     pg.click("tr.pos[data-pos='wertpapiere']")
@@ -2194,6 +2202,12 @@ class BrowserTest(unittest.TestCase):
                 # Grafik: waagerechtes Wischen verschiebt bei gleicher Laenge (auch am linken Rand), Doppelklick halbiert den Zeitraum
                 self.assertIsNone(pg.query_selector("#bch-on"))
                 pg.click("#bch-rb button[data-m='12']"); pg.wait_for_timeout(200)
+                # the area under the pointer stands out, its row in the tip too
+                c = pg.evaluate("""() => { const ps = [...document.querySelectorAll('#bch-svg .bch-area')].map(p => p.getBoundingClientRect()).sort((a, b) => b.width * b.height - a.width * a.height);
+                    const r = ps[0]; return [r.left + r.width / 2, r.top + r.height / 2]; }""")
+                pg.mouse.move(c[0], c[1]); pg.wait_for_timeout(150)
+                self.assertTrue(pg.query_selector("#bch-svg.hl .bch-area.hl")); self.assertTrue(pg.query_selector("#bch-tip div.on"))
+                pg.mouse.move(5, 5); pg.wait_for_timeout(100); self.assertIsNone(pg.query_selector("#bch-svg.hl"))
                 span = pg.evaluate("BCH.i1 - BCH.i0"); bb = pg.query_selector("#bch-hit").bounding_box()
                 pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2)
                 for _ in range(40):

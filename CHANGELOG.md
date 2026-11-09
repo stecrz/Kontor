@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.11.3 (2026-11-09 01:07)
+- Zeiträume von Monatsende zu Monatsende: „1 J“ zeigt November bis November (13 Punkte), die Veränderung umfasst damit genau zwölf Monate (bisher elf); ebenso 6 M, 2 J usw.
+- Bilanz-Grafiken: Die Fläche unter dem Mauszeiger wird hervorgehoben (die anderen blasser), ebenso ihre Zeile im Werte-Fenster.
+- Bilanz-Tabelle: lässt sich über kleine Pfeile im Tabellenkopf über die große Grafik oder unter die einzelnen Grafiken schieben; wird mit „Als Standard“ gemerkt. Anzahl der Konten bzw. Wertpapiere („(9/13)“) nicht mehr fett.
+- Namen der Wertpapiere: sagt, wie viele ihren Namen schon aus MoneyMoney haben (auch verkaufte) – nachgeschlagen werden nur die übrigen.
+
 ## 3.11.2 (2026-11-09 00:51)
 - Einrichtung → Historische Kontostände, „Namen der Wertpapiere“: listet nach dem Einlesen alle Wertpapiere mit ISIN (auch verkaufte und ausgeblendete) mit ihrem Namen aus MoneyMoney bzw. dem nachgeschlagenen; Namen lassen sich dort ändern. Name aus MoneyMoney und ISIN bleiben beim Darüberfahren sichtbar.
 
