@@ -14,8 +14,10 @@ import hashlib
 import hmac
 import os
 import secrets
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from typing import Dict, Optional
@@ -23,8 +25,18 @@ from i18n import tr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOUCHID_SRC = os.path.join(HERE, "touchid.swift")
-# Der Dateiname erscheint im macOS-Dialog ("Kontor möchte die Finanzübersicht entsperren")
-TOUCHID_BIN = os.path.join(HERE, ".touchid", "Kontor")
+# A small app bundle (no Dock icon): started through LaunchServices it comes to the front with keyboard focus, so Touch ID
+# works without a click on the dialog. Its name appears in the dialog ("Kontor möchte die Finanzübersicht entsperren").
+TOUCHID_APP = os.path.join(HERE, ".touchid", "Kontor.app")
+TOUCHID_BIN = os.path.join(TOUCHID_APP, "Contents", "MacOS", "Kontor")
+TOUCHID_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>Kontor</string><key>CFBundleIdentifier</key><string>local.kontor.touchid</string>
+<key>CFBundleName</key><string>Kontor</string><key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>1.0</string><key>LSUIElement</key><true/>
+</dict></plist>
+"""
 TOUCHID_REASON = "s_touchid_reason"          # Schluessel in web/i18n.js (Text im macOS-Fenster)
 PBKDF2_ROUNDS = 600_000
 
@@ -158,9 +170,15 @@ def build_touchid(force: bool = False) -> str:
         return "ok"
     try:
         os.makedirs(os.path.dirname(TOUCHID_BIN), exist_ok=True)
+        with open(os.path.join(TOUCHID_APP, "Contents", "Info.plist"), "w", encoding="utf-8") as f:
+            f.write(TOUCHID_PLIST)
         r = subprocess.run(["swiftc", "-O", "-o", TOUCHID_BIN, TOUCHID_SRC], capture_output=True, text=True, timeout=300)
         if r.returncode == 0:
             os.chmod(TOUCHID_BIN, 0o755)
+            subprocess.run(["codesign", "--force", "--sign", "-", TOUCHID_APP], capture_output=True, timeout=60)     # ad hoc, as a whole bundle
+            old = os.path.join(os.path.dirname(TOUCHID_APP), "Kontor")      # the plain helper of earlier versions
+            if os.path.isfile(old):
+                os.remove(old)
             return "ok"
         return tr("s_swiftc_fehler") % (r.stderr or r.stdout)[-300:]
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:
@@ -171,7 +189,24 @@ def touchid_verify(reason: str = "") -> bool:
     reason = reason or tr(TOUCHID_REASON)
     if not touchid_available():
         return False
-    try:
+    if sys.platform == "darwin":
+        # through LaunchServices ("open"): the helper comes to the front with focus. It writes "ok <nonce>" only after a
+        # confirmed Touch ID, into a file in a fresh private folder; the random nonce ties the answer to this very request.
+        nonce, d = secrets.token_hex(16), tempfile.mkdtemp(prefix="kontor-tid-")
+        out = os.path.join(d, "result")
+        try:
+            r = subprocess.run(["open", "-n", "-W", "--stdout", out, "-a", TOUCHID_APP, "--args", reason, nonce], capture_output=True, timeout=95)
+            if r.returncode == 0:
+                try:
+                    with open(out, encoding="utf-8") as f:
+                        return ("ok " + nonce) in f.read()
+                except OSError:
+                    return False
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+    try:                            # without LaunchServices: the helper directly (the dialog may then need a click)
         r = subprocess.run([TOUCHID_BIN, reason], capture_output=True, timeout=90)
         return r.returncode == 0
     except (subprocess.TimeoutExpired, OSError):

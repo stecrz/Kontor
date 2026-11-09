@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.12.14 (2026-11-09 16:14)
+- Touch ID: Der Helfer startet als kleine App über macOS selbst und bekommt so den Fokus – Finger auflegen genügt, ohne erst auf den Dialog zu klicken.
+
 ## 3.12.13 (2026-11-09 15:43)
 - ⌘L sperrt Kontor (auch in der Web-App im Dock).
 - Touch ID: Der Dialog holt sich nach vorn, statt hinter dem Fenster zu bleiben.
