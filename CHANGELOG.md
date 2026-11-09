@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.12.8 (2026-11-09 13:56)
+- Kleine Grafiken: laufender Monat und Plan wie in der großen – ein Schleier über Flächen und Kurven statt schwarzer Fläche, Plankurven etwas blasser.
+- Laufender Monat (alle Grafiken): eigener heller Schleier, der zum Plan hin weich zunimmt – mit sichtbarer Kante am Schnitt und beim Übergang in den Plan.
+
 ## 3.12.7 (2026-11-09 13:45)
 - Bilanzgrafik: Der laufende Monat geht als weicher Verlauf von der Vergangenheit (ohne Schleier) in den Plan über.
 - Grafik 2: Zeile „Gebundenes Verm.“ beim Darüberfahren durchgehend gekürzt, damit sie in eine Zeile passt.

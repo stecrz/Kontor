@@ -1436,12 +1436,7 @@ function bchDraw() {
   const act = pts.filter(p => p.i <= done), runp = kt >= 0 ? pts.filter(p => p.i > done && p.i <= ist) : [];
   if (act.length && runp.length) runp.unshift(act[act.length - 1]);
   const shade = (cls0, xa, xb) => xb > xa ? `<rect class="${cls0}" x="${pf(xa)}" y="${P.t}" width="${pf(xb - xa)}" height="${H - P.t - P.b}"/>` : '';
-  // the running month leads softly from the past (no shade) over to the plan's shade -- the further the month has gone, the
-  // further right the change (the vertical line marks the cut)
-  if (runp.length) { const now = new Date(), dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const p = Math.min(1, (now.getDate() - 1 + now.getHours() / 24) / dim), w = 0.35, a = p - w, b = p + w, op = o => (.45 * Math.max(0, Math.min(1, (o - a) / (b - a)))).toFixed(3);
-    df.s += `<linearGradient id="bch-rung" x1="0" x2="1">${[0, Math.max(0, a), Math.min(1, b), 1].map(o => `<stop offset="${o.toFixed(3)}" style="stop-color:var(--head);stop-opacity:${op(o)}"/>`).join('')}</linearGradient>`;
-    plot += shade('bch-run', Math.max(P.l, runp[0].x), pts[kt].x).replace('<rect ', '<rect fill="url(#bch-rung)" '); }
+  if (runp.length) { df.s += runGrad('bch-rung'); plot += shade('bch-run', Math.max(P.l, runp[0].x), pts[kt].x).replace('<rect ', '<rect fill="url(#bch-rung)" '); }
   if (kp >= 0) plot += shade('bch-plan', Math.max(P.l, kt >= 0 ? pts[kt].x : pts[kp].x), W - P.r);
   if (act.length && (act[act.length - 1].i === done || runp.length)) { const xd = act[act.length - 1].x; plot += `<line class="bch-today" x1="${pf(xd)}" x2="${pf(xd)}" y1="${P.t - 4}" y2="${H - P.b}"/>`; }
   // Nettovermoegen (bis heute durchgezogen, danach gestrichelt)
@@ -1553,6 +1548,15 @@ function bandFill(defs, pid, color, hatch) {
 }
 // the line of a chart (net worth or a position): a soft outline in the card colour lets it stand out above the areas;
 // a dot marks today's value
+function runGrad(gid) {
+  // the veil over the running month (large and small charts): a light one from the cut, rising softly towards the plan's and
+  // the more to the right the further the month has gone -- yet with a visible step at the cut (.10) and again where the plan
+  // starts (.32 → .45), so entering the running month and the plan stays clear
+  const now = new Date(), dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const p = Math.min(1, (now.getDate() - 1 + now.getHours() / 24) / dim), w = 0.35, a = p - w, b = p + w;
+  const op = o => (.10 + .22 * Math.max(0, Math.min(1, (o - a) / (b - a)))).toFixed(3);
+  return `<linearGradient id="${gid}" x1="0" x2="1">${[0, Math.max(0, a), Math.min(1, b), 1].map(o => `<stop offset="${o.toFixed(3)}" style="stop-color:var(--head);stop-opacity:${op(o)}"/>`).join('')}</linearGradient>`;
+}
 function heroLine(p, cls0, color, dot) {
   if (p.length < 2) return '';
   const dd = smoothD(p), st = color ? ` style="stroke:${color}"` : '';
@@ -2240,14 +2244,17 @@ function lcDraw(id) {
   let g = '', pl = '';
   for (const [tk, ref] of ticks) g += `<line class="bch-grid${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(tk))}" y2="${pf(y(tk))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(tk) + 4)}">${Fk(tk, false, ref)}</text>`;
   g += monthAxis(d, i0, i1, x, P, W, H, false);          // first and last month labelled: the period of value and change
-  // completed months solid, the running month dotted and lightly shaded, the plan dashed and shaded; the dashed vertical line
-  // marks the end of the last completed month
+  // completed months solid, the running month dotted, the plan dashed; as in the large chart a veil lies over the areas of the
+  // plan, and over the running month it leads softly from none to the plan's; the dashed vertical line marks the cut
   const done = ist - 1, run = ist >= i0 && ist <= i1 && ist > 0;
-  if (run && done >= i0) g += `<rect class="bch-run" x="${pf(x(done))}" y="${P.t}" width="${pf(x(ist) - x(done))}" height="${H - P.t - P.b}"/>`;
-  if (ist < i1) { const xs = Math.max(P.l, x(Math.max(ist, i0))); g += `<rect class="bch-plan" x="${pf(xs)}" y="${P.t}" width="${pf(W - P.r - xs)}" height="${H - P.t - P.b}"/>`; }
+  let veil = '', gdef = '';
+  if (run && done >= i0) { gdef = runGrad(`lc-${id}-rung`);
+    veil += `<rect class="bch-run" fill="url(#lc-${id}-rung)" x="${pf(x(done))}" y="${P.t}" width="${pf(x(ist) - x(done))}" height="${H - P.t - P.b}"/>`; }
+  if (ist < i1) { const xs = Math.max(P.l, x(Math.max(ist, i0))); veil += `<rect class="bch-plan" x="${pf(xs)}" y="${P.t}" width="${pf(W - P.r - xs)}" height="${H - P.t - P.b}"/>`; }
   if (done >= i0 && done <= i1) g += `<line class="bch-today" x1="${pf(x(done))}" x2="${pf(x(done))}" y1="${P.t - 4}" y2="${H - P.b}"/>`;
   const line = (a, b, c, dot) => { const ps = []; for (let i = a; i <= b; i++) if (d.vals[i] != null) ps.push([x(i), y(d.vals[i])]); return heroLine(ps, c, st.color, dot); };
-  const area = () => { const ps = []; let first = null, last = null; for (let i = i0; i <= Math.min(i1, ist); i++) if (d.vals[i] != null) { ps.push([x(i), y(d.vals[i])]); if (first == null) first = i; last = i; }
+  // the area reaches into the plan too (under its veil)
+  const area = () => { const ps = []; let first = null, last = null; for (let i = i0; i <= i1; i++) if (d.vals[i] != null) { ps.push([x(i), y(d.vals[i])]); if (first == null) first = i; last = i; }
     // filled towards zero (upwards when negative); with zero outside the axis up to the plot edge on its side
     const yb = pf(Math.max(P.t, Math.min(H - P.b, y(0))));
     return ps.length > 1 ? `<path class="lc-area" d="${smoothD(ps)}L${pf(x(last))} ${yb}L${pf(x(first))} ${yb}Z" style="fill:${st.color}"/>` : ''; };
@@ -2267,9 +2274,9 @@ function lcDraw(id) {
     };
     const b2 = bands(1) + bands(-1);
     // total as a solid line in the position colour above the lighter bands
-    pl = b2 + lines('lc-total');
-    g = `<defs>${df.s}</defs>` + g;
-  } else pl = area() + lines('bch-nw');
+    pl = b2 + veil + lines('lc-total');
+    g = `<defs>${df.s}${gdef}</defs>` + g;
+  } else { pl = area() + veil + lines('bch-nw'); if (gdef) g = `<defs>${gdef}</defs>` + g; }
   // with a range set on the y axis the curves are cut at the plot edges
   g += yr ? `<clipPath id="lcc-${id}"><rect x="${P.l}" y="${P.t}" width="${W - P.l - P.r}" height="${H - P.t - P.b}"/></clipPath><g clip-path="url(#lcc-${id})">${pl}</g>` : pl;
   g += `<g id="lc-${id}-hover"></g><rect class="bch-sel hidden" id="lc-${id}-brush" y="${P.t}" height="${H - P.t - P.b}"/><rect class="bch-hit" id="lc-${id}-hit" x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}"/><rect class="bch-yax${yr ? ' on' : ''}" x="0" y="0" width="${P.l - 2}" height="${H}"><title>${t('bch_yax_tip')}</title></rect><rect class="bch-pan" x="${P.l}" y="${H - P.b + 2}" width="${W - P.l - P.r}" height="${P.b - 2}"/>`;
