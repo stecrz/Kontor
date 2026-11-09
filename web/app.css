@@ -1,10 +1,11 @@
 /* Kontor -- Oberflaeche. Keine Fremdquellen.
-   Akzent Gold; dunkel ist der Standard (html data-theme="dark"), hell auf Wunsch (Einstellungen, je Geraet). */
+   Akzente neutral (dunkel: weiss, hell: schwarz), damit sie nicht mit den Farben der Grafiken konkurrieren; Gold nur fuer
+   Logo und Nettovermoegen. Dunkel ist der Standard (html data-theme="dark"), hell auf Wunsch (Einstellungen, je Geraet). */
 :root {
   color-scheme:light;
   --bg:#f5f5f7; --fg:#1d1d1f; --muted:#6e6e73; --faint:#aeaeb2; --line:#e5e5ea; --line-2:#d2d2d7; --head:#ffffff; --sub:#fafafa;
-  --plan:#f7f7f9; --hatch:rgba(0,0,0,.13); --cur:#fbf4e1; --year:#f2f2f7; --group:#f5f5f7;
-  --neg:#c0392b; --pos:#1a8a4a; --accent:#c99a2e; --accent-soft:#f7edd3; --accent-fg:#86600f; --accent-ink:#1f1806;
+  --plan:#f7f7f9; --hatch:rgba(0,0,0,.13); --cur:#f0f0f4; --year:#f2f2f7; --group:#f5f5f7;
+  --neg:#c0392b; --pos:#1a8a4a; --accent:#1d1d1f; --accent-soft:#e8e8ed; --accent-fg:#1d1d1f; --accent-ink:#ffffff;
   --side:rgba(246,246,248,.92); --side-fg:#1d1d1f;
   --warn-bg:#fff4df; --warn-fg:#8a4b00; --err-bg:#fde8e8; --err-fg:#8a1c1c; --ok-bg:#e6f5ec; --ok-fg:#0f5a30;
   --c-liq:#34c759; --c-anl:#12a88a; --c-fest:#1d9fc0; --c-bet:#af52de; --c-ford:#3a6ff0; --c-immo:#9e7458; --c-verb:#ff6b57; --c-ein:#1a8a4a; --c-aus:#c0392b; --c-neutral:#8e8e93; --c-nw:#e8aa00;
@@ -13,8 +14,8 @@
 :root[data-theme="dark"] {
   color-scheme:dark;
   --bg:#000000; --fg:#f5f5f7; --muted:#98989d; --faint:#636366; --line:#2c2c2e; --line-2:#3a3a3c; --head:#1c1c1e; --sub:#161618;
-          --plan:#1f1f22; --hatch:rgba(255,255,255,.14); --cur:#2a2414; --year:#232326; --group:#232326;
-          --neg:#ff6b57; --pos:#5ad38a; --accent:#e0b04a; --accent-soft:#33291a; --accent-fg:#f0c862; --accent-ink:#1a1306;
+          --plan:#1f1f22; --hatch:rgba(255,255,255,.14); --cur:#1e1e22; --year:#232326; --group:#232326;
+          --neg:#ff6b57; --pos:#5ad38a; --accent:#f2f2f5; --accent-soft:#2c2c31; --accent-fg:#ffffff; --accent-ink:#111113;
           --side:rgba(20,20,22,.94); --side-fg:#f5f5f7;
           --c-nw:#ffd23f; --warn-bg:#3a2a12; --warn-fg:#ffd28a; --err-bg:#3a1515; --err-fg:#ffb3b3; --ok-bg:#12301f; --ok-fg:#9be0b6;
           --c-liq:#30d158; --c-anl:#2ec4a2; --c-fest:#3fbfdc; --c-bet:#bf5af2; --c-ford:#5b8cff; --c-immo:#b08a6e; --c-verb:#ff6961; --c-ein:#30d158; --c-aus:#ff6961;
@@ -25,6 +26,8 @@ html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:
 .hidden { display:none !important; }
 .muted { color:var(--muted); } .small { font-size:12px; } .mono { font-family:ui-monospace, Menlo, monospace; }
 a { color:var(--accent-fg); text-decoration:none; }
+#main a:not(.pill), .login a { text-decoration:underline; text-decoration-color:color-mix(in srgb, currentColor 35%, transparent); text-underline-offset:2px; }   /* links in text: underlined (the accent is neutral) */
+#main a:not(.pill):hover { text-decoration-color:currentColor; }
 button, input, select, textarea { font:inherit; color:inherit; }
 button { background:var(--accent); color:var(--accent-ink); border:0; border-radius:var(--radius-s); padding:7px 14px; cursor:pointer; font-weight:600; transition:transform .08s, filter .15s; }
 button:hover { filter:brightness(1.06); } button:active { transform:scale(.98); }
@@ -47,7 +50,7 @@ input[type=checkbox] { accent-color:var(--accent); }
 .switch { display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); cursor:pointer; user-select:none; }
 .switch i { width:30px; height:18px; border-radius:9px; background:var(--line-2); position:relative; transition:background .15s; display:inline-block; }
 .switch i::after { content:""; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:#fff; transition:left .15s; box-shadow:0 1px 2px rgba(0,0,0,.3); }
-.switch input { display:none; } .switch input:checked + i { background:var(--accent); } .switch input:checked + i::after { left:14px; }
+.switch input { display:none; } .switch input:checked + i { background:var(--accent); } .switch input:checked + i::after { left:14px; background:var(--accent-ink); }
 
 /* Layout */
 .shell { display:flex; min-height:100vh; }
@@ -208,12 +211,12 @@ svg text { fill:var(--muted); font-size:11px; }
 .bch-hit { fill:transparent; cursor:crosshair; }
 .bch-pan { fill:transparent; cursor:ew-resize; touch-action:pan-y; } .bch-pan:hover { fill:var(--group); opacity:.6; }
 .bch-yax { fill:transparent; cursor:ns-resize; touch-action:none; } .bch-yax:hover { fill:var(--group); opacity:.6; } .bch-yax.on { fill:var(--accent-soft); opacity:.6; }     /* value range fixed by hand (stands out on purpose; a tap on the axis releases it) */
-.bch-tip { position:absolute; top:8px; min-width:190px; background:var(--head); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); padding:8px 10px; font-size:12px; pointer-events:none; z-index:6; }
+.bch-tip { position:absolute; top:8px; width:min(236px, 70vw); background:var(--head); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); padding:8px 10px; font-size:12px; pointer-events:none; z-index:6; }
 .bch-tip div { display:flex; align-items:center; gap:6px; line-height:1.55; }
 .bch-tip i { width:9px; height:9px; border-radius:3px; flex-shrink:0; opacity:.8; }
-.bch-tip span { flex:1; color:var(--muted); }
+.bch-tip span { flex:1; min-width:0; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .bch-tip .bch-tip-h span.pill { flex:none; }
-.bch-tip b { font-weight:600; font-variant-numeric:tabular-nums; }
+.bch-tip b { font-weight:600; font-variant-numeric:tabular-nums; flex-shrink:0; white-space:nowrap; }
 .bch-tip-h { font-weight:600; margin-bottom:3px; }
 .bch-tip > div.on { background:var(--accent-soft); margin:0 -6px; padding:0 6px; border-radius:5px; }
 .bch-tip > div.on span { color:var(--fg); font-weight:600; } .bch-tip > div.on i { opacity:1; box-shadow:0 0 0 1.5px var(--head), 0 0 0 2.5px var(--fg); }
@@ -417,6 +420,9 @@ textarea { width:100%; min-height:90px; font-family:ui-monospace, Menlo, monospa
 /* balance sheet: accounts a little indented under their position, securities further; long names shortened (full on hover) */
 .wrap tr.acct td:first-child, .wrap tr.transit td:first-child { padding-left:32px; } .wrap tr.wpr td:first-child { padding-left:50px; }
 .wrap tr.acct .nm, .wrap tr.wpr .nm { display:inline-block; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
+.bil-tbl th:first-child, .bil-tbl td:first-child { width:250px; min-width:250px; max-width:250px; white-space:nowrap; }       /* fixed: no jumping when rows open */
+.bil-tbl tr.acct .nm { max-width:146px; } .bil-tbl tr.wpr .nm { max-width:166px; }
+@media (max-width:820px) { .bil-tbl th:first-child, .bil-tbl td:first-child { width:180px; min-width:180px; max-width:180px; } .bil-tbl tr.acct .nm { max-width:84px; } .bil-tbl tr.wpr .nm { max-width:96px; } }
 .caret.dep { display:inline-block; width:14px; margin-left:-14px; color:var(--muted); cursor:pointer; } .caret.dep:hover { color:var(--accent-fg); }
 tr.wpr td { font-size:12.5px; font-weight:400; } tr.wpr td:first-child { color:var(--muted); }
 .pos-dot { display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:7px; }

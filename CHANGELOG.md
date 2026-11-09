@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.12.1 (2026-11-09 03:04)
+- Akzente neutral statt Gold (dunkel: weiß, hell: schwarz) – sie konkurrieren nicht mehr mit den Farben der Grafiken; Gold bleibt für Logo und Nettovermögen. Links im Text unterstrichen.
+- Bilanz-Tabelle: erste Spalte fest breit, damit sich beim Auf- und Zuklappen nichts verschiebt; lange Konto- und Wertpapiernamen werden gekürzt.
+- Werte-Fenster der Grafiken gleich breit, lange Namen gekürzt.
+- „Bruttovermögen“ heißt in der Erklärung auch „Bilanzsumme“.
+
 ## 3.12.0 (2026-11-09 02:46)
 - Neuer Look: Akzentfarbe Gold statt Blau, neues goldenes Logo (auch als Symbol am iPhone).
 - Dunkel ist jetzt der Standard; hell oder wie das System unter Einstellungen → Allgemein → Erscheinungsbild (je Gerät).

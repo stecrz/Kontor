@@ -1870,7 +1870,7 @@ function lcSelTitle(sel, avail, long) {
   const full = text(false), short = !long && full.length > 26;
   const now = [short ? full : '', all !== full ? all : ''].filter(Boolean).join(' = ');
   // the tip also says what the names stand for (only positions this area has)
-  const defs = lcGroups(avail, true).map(([k, l]) => `${t(k)} = ${l.map(r => ROLE[r][0]).join(' + ')}`).join('\n');
+  const defs = lcGroups(avail, true).map(([k, l]) => `${t(k)}${k === 'grp_brutto' ? ` (${t('grp_brutto_alias')})` : ''} = ${l.map(r => ROLE[r][0]).join(' + ')}`).join('\n');
   return [short ? text(true) : full, [now, defs ? t('lc_gruppen') + '\n' + defs : ''].filter(Boolean).join('\n\n')];
 }
 function lcGroups(avail, show) {

@@ -99,6 +99,7 @@ const I18N = {
 "grafik_hoch":["Grafik nach oben verschieben", "Move the chart up"],
 "grafik_runter":["Grafik nach unten verschieben", "Move the chart down"],
 "grp_brutto":["Bruttovermögen", "Gross assets"],
+"grp_brutto_alias":["Bilanzsumme", "total assets"],
 "grp_verfuegbar":["Verfügbar", "Available"],
 "grp_finanz":["Finanzvermögen", "Financial assets"],
 "grp_gebunden":["Gebunden", "Tied up"],
