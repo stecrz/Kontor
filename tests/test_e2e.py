@@ -804,7 +804,8 @@ class AppTests(_AppBase):
             led.accounts[F.uid(key)].refresh = neu - timedelta(days=20)
         led.fp = "x"; self.app.ledger = led
         kinds = core.abruf_arten(led, self.app.config)
-        self.assertEqual(kinds[F.uid("pb.vd")]["art"], "offline"); self.assertEqual(kinds[F.uid("pb.vd")]["grund"], "Zielkonto einer Regel")
+        self.assertEqual(kinds[F.uid("pb.vd")]["art"], "offline"); self.assertIn(kinds[F.uid("pb.vd")]["grund"], ("von Kontor bebucht", "ohne Bankleitzahl und Kontonummer"))
+        self.assertEqual(kinds[F.uid("priv.bet.pb")]["art"], "offline")
         self.assertEqual(kinds[F.uid("priv.giro")]["art"], "online"); self.assertEqual(kinds[F.uid("priv.depot")]["art"], "online")
         self.assertEqual(self.app.bankabruf()["zurueck_anzahl"], 0)
         code, r = self.call("/api/sync"); self.assertEqual(code, 200)

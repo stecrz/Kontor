@@ -335,14 +335,12 @@ class Ledger:
         txs = self.transactions(uuid)
         return txs[0].booking_date if txs else None
 
-    def writable(self, uuid: str, config: Optional[dict] = None) -> bool:
-        """May Kontor book into this account? Only manually kept ones: no group or portfolio, no bank code (bank accounts always
-        have one), not marked "fetched" by you -- and never fetched, or (because MoneyMoney sets a fetch time on a manual
-        account after a booking, too) its type says offline, you marked it "without fetching" (Setup -> Accounts) or it
-        carries one of Kontor's own bookings. Bookings planned in this run do not count."""
-        a = self.accounts.get(uuid)
-        if a is None or a.group or a.portfolio or (a.bank_code or "").strip():
-            return False
+    def fetch_kind(self, uuid: str, config: Optional[dict] = None) -> Tuple[str, str]:
+        """("online" | "offline", reason key): does MoneyMoney fetch this account from a bank or service, or is it kept by hand?
+        MoneyMoney also sets a fetch time on a manual account after a booking, and a bank code can be typed into a manual
+        account, so several signs count; your own choice (Sync: "retrieved") comes first. Bookings planned in this run do
+        not count."""
+        a = self.accounts[uuid]
         ab = (config or {}).get("abruf") or {}
 
         def marked(key: str) -> bool:
@@ -353,11 +351,28 @@ class Ledger:
                 except KeyError:
                     pass
             return False
+        refreshed = a.refresh is not None and a.refresh.year >= 2005
+        if marked("offline"):
+            return "offline", "s_von_dir_als_ohne_abruf"
         if marked("online"):
-            return False
-        if a.refresh is None or a.refresh.year < 2005 or "offline" in (a.type or "").lower() or marked("offline"):
-            return True
-        return any(t.id > 0 and TAG_RE.search(t.purpose or "") for t in self._by_account.get(uuid, ()))
+            return "online", "s_von_dir_als_abgerufen_festgelegt"
+        if a.portfolio:
+            return ("online", "s_grund_depot") if refreshed else ("offline", "s_depot_ohne_abruf")
+        if not refreshed:
+            return "offline", ("s_manuell_gefuehrt" if not (a.bank_code or "").strip() else "s_noch_nie_abgerufen")
+        if any(t.id > 0 and TAG_RE.search(t.purpose or "") for t in self._by_account.get(uuid, ())):
+            return "offline", "s_von_kontor_bebucht"
+        if "offline" in (a.type or "").lower():
+            return "offline", "s_grund_offline_konto"
+        if not ((a.bank_code or "").strip() or (a.account_number or "").strip() or (a.iban or "").strip()):
+            return "offline", "s_ohne_bankleitzahl_und_kontonummer"
+        return "online", ("s_grund_bank" if (a.bank_code or "").strip() else "s_grund_dienst")
+
+    def writable(self, uuid: str, config: Optional[dict] = None) -> bool:
+        """May Kontor book into this account? Only into manually kept ones (fetch_kind "offline"), never into groups or
+        portfolios. MoneyMoney refuses bookings in fetched accounts on top."""
+        a = self.accounts.get(uuid)
+        return a is not None and not a.group and not a.portfolio and self.fetch_kind(uuid, config)[0] == "offline"
 
     def fork(self) -> "Ledger":
         """A copy for planning: own account balances and booking lists, the same (unchanged) transactions."""

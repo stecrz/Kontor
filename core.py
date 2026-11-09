@@ -348,53 +348,11 @@ def abruf_arten(ledger: Ledger, config: dict) -> Dict[str, Dict[str, str]]:
     """uuid -> {"art": "online"|"offline", "grund": Text} fuer alle Konten (keine Gruppen). Online = MoneyMoney ruft bei
     Bank oder Dienst ab; offline = von Hand gefuehrt, kein Abruf (zaehlt nicht fuer den Datenstand). MoneyMoney setzt den
     Abrufzeitpunkt auch bei Offline-Konten (z. B. nach einer Buchung), deshalb mehrere Merkmale; eigene Festlegung geht vor."""
-    import rules
-    ab = config.get("abruf") or {}
-
-    def refs(lst) -> set:
-        out = set()
-        for r in lst or []:
-            try:
-                out.add(ledger.resolve(r).uuid)
-            except KeyError:
-                pass
-        return out
-    force_on, force_off = refs(ab.get("online")), refs(ab.get("offline"))
-    targets = set()
-    for r in config.get("darlehen") or []:
-        if isinstance(r, dict):
-            targets |= refs([r["darlehenskonto"]] if r.get("darlehenskonto") else [])
-    for g in config.get("gesellschaften") or []:
-        if isinstance(g, dict):
-            targets |= refs([g["beteiligung"]] if g.get("beteiligung") else [])
-            targets |= refs([x.get("konto") for x in g.get("gegenkonten") or [] if isinstance(x, dict) and x.get("konto")])
-    booked = {t.account_uuid for t in ledger.txs if t.purpose and "#mm-" in t.purpose and rules.TAG_RE.search(t.purpose)}
     out: Dict[str, Dict[str, str]] = {}
     for a in ledger.accounts.values():
-        if a.group:
-            continue
-        refreshed = a.refresh is not None and a.refresh.year >= 2005
-        if a.uuid in force_off:
-            art, grund = "offline", tr("s_von_dir_als_ohne_abruf")
-        elif a.uuid in force_on:
-            art, grund = "online", tr("s_von_dir_als_abgerufen_festgelegt")
-        elif a.portfolio:
-            art, grund = ("online", tr("s_grund_depot")) if refreshed else ("offline", tr("s_depot_ohne_abruf"))
-        elif a.offline:
-            art, grund = "offline", tr("s_manuell_gefuehrt")
-        elif a.uuid in targets:
-            art, grund = "offline", tr("s_grund_zielkonto")
-        elif a.uuid in booked:
-            art, grund = "offline", tr("s_von_kontor_bebucht")
-        elif "offline" in (a.type or "").lower():
-            art, grund = "offline", tr("s_grund_offline_konto")
-        elif not refreshed:
-            art, grund = "offline", tr("s_noch_nie_abgerufen")
-        elif not ((a.bank_code or "").strip() or (a.account_number or "").strip() or (a.iban or "").strip()):
-            art, grund = "offline", tr("s_ohne_bankleitzahl_und_kontonummer")
-        else:
-            art, grund = "online", tr("s_grund_bank" if (a.bank_code or "").strip() else "s_grund_dienst")
-        out[a.uuid] = {"art": art, "grund": grund}
+        if not a.group:
+            art, grund = ledger.fetch_kind(a.uuid, config)
+            out[a.uuid] = {"art": art, "grund": tr(grund)}
     return out
 
 

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.12.20 (2026-11-09 20:59)
+- Von Hand geführte Konten: Eine eingetragene Bankleitzahl schließt ein Konto nicht mehr aus. Ob Kontor bucht, folgt jetzt genau der Einordnung unter Synchronisierung (nie abgerufen, ohne Bank- und Kontonummer, als Offline-Konto angelegt, von Kontor bebucht – oder dort das Häkchen „abgerufen“ entfernt).
+
 ## 3.12.19 (2026-11-09 19:52)
 - Von Hand geführte Konten werden zuverlässig erkannt, auch wenn MoneyMoney nach einer Buchung einen Abrufzeitpunkt setzt (Kontotyp „Offline“, „abgerufen“ unter Synchronisierung abgewählt oder schon von Kontor bebucht). Damit erscheinen sie in den Auswahllisten für Beteiligung, Gegenkonten und Darlehen. Konten mit Bankleitzahl werden weiter nie bebucht.
 - „Vollautomatisch buchen“ statt „Automatisch buchen“; „Darlehen hinzufügen“ und „Gegenkonto hinzufügen“ als sichtbare Schaltflächen.

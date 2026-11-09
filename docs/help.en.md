@@ -105,7 +105,7 @@ The data has two stages: **banks → MoneyMoney** (MoneyMoney fetches from the b
 - A bank refresh without new data does not trigger a recalculation.
 - **Read transactions** (Settings → General): how far back Kontor reads; 0 = all (recommended).
 
-The Sync page shows the last refresh per account and reports accounts that lag behind. Accounts without bank refresh (offline accounts: without bank or account number, target of a rule or booked by Kontor) are listed separately; adjustable per account. If MoneyMoney is closed or locked, nothing happens – the next sync catches up. For bookings, proposals and errors Kontor sends a macOS notification (can be turned off under Settings → General).
+The Sync page shows the last refresh per account and reports accounts that lag behind. Accounts without bank refresh (offline accounts: never refreshed, without bank and account number, created as offline account or booked by Kontor) are listed separately; adjustable per account (tick “retrieved”). Kontor books only into such accounts – also into an offline account with a bank code typed in, once you untick it there. If MoneyMoney is closed or locked, nothing happens – the next sync catches up. For bookings, proposals and errors Kontor sends a macOS notification (can be turned off under Settings → General).
 
 <a id="tables"></a>
 ## Tables, switches and Excel

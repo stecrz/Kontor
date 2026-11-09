@@ -274,7 +274,6 @@ const I18N = {
 "s_kategoriename_fehlt":["Kategoriename fehlt.", "Category name missing."],
 "s_regel_kategorie_fehlt":["Regel: Kategorie fehlt.", "Rule: category missing."],
 "s_grund_depot":["Depot", "Portfolio"],
-"s_grund_zielkonto":["Zielkonto einer Regel", "target account of a rule"],
 "s_grund_offline_konto":["Offline-Konto", "offline account"],
 "s_grund_bank":["Bank", "bank"],
 "s_grund_dienst":["Dienst (Erweiterung)", "service (extension)"],

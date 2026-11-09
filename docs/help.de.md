@@ -105,7 +105,7 @@ Der Datenstand hat zwei Stufen: **Banken → MoneyMoney** (MoneyMoney ruft bei d
 - Ein Bankabruf ohne neue Daten löst keine Neuberechnung aus.
 - **Umsätze lesen** (Einstellungen → Allgemein): wie weit zurück Kontor liest; 0 = alle (empfohlen).
 
-Die Seite „Synchronisierung“ zeigt je Konto den letzten Abruf und meldet Konten, die zurückliegen. Konten ohne Bankabruf (Offline-Konten: ohne Bank- oder Kontonummer, Ziel einer Regel oder von Kontor bebucht) stehen getrennt; je Konto änderbar. Ist MoneyMoney zu oder gesperrt, passiert nichts – der nächste Abgleich holt alles nach. Bei Buchungen, Vorschlägen und Fehlern meldet sich Kontor mit einer macOS-Mitteilung (abschaltbar unter Einstellungen → Allgemein).
+Die Seite „Synchronisierung“ zeigt je Konto den letzten Abruf und meldet Konten, die zurückliegen. Konten ohne Bankabruf (Offline-Konten: nie abgerufen, ohne Bank- und Kontonummer, als Offline-Konto angelegt oder von Kontor bebucht) stehen getrennt; je Konto änderbar (Häkchen „abgerufen“). Nur in solche Konten bucht Kontor – auch in ein Offline-Konto mit eingetragener Bankleitzahl, wenn du dort das Häkchen entfernst. Ist MoneyMoney zu oder gesperrt, passiert nichts – der nächste Abgleich holt alles nach. Bei Buchungen, Vorschlägen und Fehlern meldet sich Kontor mit einer macOS-Mitteilung (abschaltbar unter Einstellungen → Allgemein).
 
 <a id="tables"></a>
 ## Tabellen, Schalter und Excel
