@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.12.13 (2026-11-09 15:43)
+- ⌘L sperrt Kontor (auch in der Web-App im Dock).
+- Touch ID: Der Dialog holt sich nach vorn, statt hinter dem Fenster zu bleiben.
+
 ## 3.12.12 (2026-11-09 15:22)
 - Sicherheit: Offline-Kopie am iPhone mit dem Kontor-Passwort verschlüsselt (eigenes Schlüsselpaar je Gerät, privater Teil nur mit Passwort); die bisherige unverschlüsselte Kopie wird gelöscht. Sie entsteht neu bei der nächsten Anmeldung mit Passwort, solange der Mac erreichbar ist.
 - Sicherheit: Unter 127.0.0.1 antwortet Kontor nur noch auf Namen dieses Macs (127.0.0.1, localhost, *.localhost) – fremde Webseiten, deren Name auf den Mac zeigt, bekommen nichts.

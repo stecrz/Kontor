@@ -1803,6 +1803,7 @@ const I18N = {
 "nav_verwaltung":["Verwaltung", "Administration"],
 "btn_synchronisieren":["Sync", "Sync"],
 "btn_sperren":["Sperren", "Lock"],
+"sperren_tip":["Sperren (⌘ L)", "Lock (⌘ L)"],
 "ph_passwort_wiederholen":["Passwort wiederholen", "Repeat password"],
 "btn_touchid":["Mit Touch ID entsperren", "Unlock with Touch ID"],
 "btn_pw_instead":["Stattdessen Passwort eingeben", "Enter password instead"],

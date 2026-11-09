@@ -453,7 +453,13 @@ $('#pw-instead').addEventListener('click', () => { LOGIN.pw = true; showLogin();
 $('#tid-instead').addEventListener('click', () => { LOGIN.pw = false; showLogin(); });
 $('#sync-btn').addEventListener('click', () => syncNow());
 $('.side .brand').addEventListener('click', e => { location.hash = e.target.closest('#ver') ? '#updates' : '#overview'; });
-$('#lock-btn').addEventListener('click', async () => { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; OFFKEY = null; TID.skipNext = true; await checkSession(); });
+async function lockNow() { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; OFFKEY = null; TID.skipNext = true; await checkSession(); }
+$('#lock-btn').addEventListener('click', lockNow);
+$('#lock-btn').title = t('sperren_tip');
+// ⌘L locks (in the web app in the Dock and wherever the browser leaves the key to the page)
+document.addEventListener('keydown', e => {
+  if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && (e.key || '').toLowerCase() === 'l' && S.csrf && $('#login').classList.contains('hidden')) { e.preventDefault(); lockNow(); }
+});
 
 async function enterApp() {
   $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');

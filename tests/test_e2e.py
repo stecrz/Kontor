@@ -2571,6 +2571,9 @@ class BrowserTest(unittest.TestCase):
                 # Regeln speichern (unveraendert) -> Befunde ok
                 pg.click("#nav a[href='#rules']"); pg.wait_for_selector("#save-rules"); pg.click("#save-rules"); pg.wait_for_timeout(900)
                 self.assertIn("Gespeichert", pg.query_selector("#findings").inner_text())
+                # ⌘L locks
+                pg.keyboard.press("Meta+l"); pg.wait_for_selector("#login:not(.hidden)")
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg)
                 # mobil
                 pg.set_viewport_size({"width": 390, "height": 844}); pg.click("#menu-btn"); pg.click("#nav a[href='#overview']"); pg.wait_for_timeout(600)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_mobile.png"), full_page=True)

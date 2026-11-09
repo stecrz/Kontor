@@ -1,6 +1,6 @@
 # Kontor – Help
 
-Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sheet, a cash flow, a plan and a tax overview – for you privately and for each company separately. It runs as a small service on your Mac; you open the interface in your browser at `http://127.0.0.1:8765/`. This help is also available in Kontor itself (menu “Help”, searchable).
+Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sheet, a cash flow, a plan and a tax overview – for you privately and for each company separately. It runs as a small service on your Mac; you open the interface in your browser at `http://127.0.0.1:8765/` – or as an app of its own in the Dock (Safari: File → Add to Dock). **⌘L** locks. This help is also available in Kontor itself (menu “Help”, searchable).
 
 ![Overview](img/en/overview.png)
 
@@ -352,7 +352,7 @@ In Terminal, the same line as for the [installation](https://github.com/stecrz/K
 ## Security
 
 - Interface only on this Mac (`127.0.0.1`); optionally also the Tailscale address for your own devices – never on the home network or the internet. No third-party content, no telemetry. The only outside connection is the update check at GitHub.
-- Sign-in with password (PBKDF2-SHA256, 600,000 rounds) or Touch ID on the Mac (needs Apple's command line tools, otherwise only the password). The sign-in cookie only applies to Kontor, other websites cannot trigger anything (CSRF protection, origin check). Lock after idle time; five failed attempts lock for five minutes. A password change signs out all other devices and renews your own sign-in.
+- Sign-in with password (PBKDF2-SHA256, 600,000 rounds) or Touch ID on the Mac (needs Apple's command line tools, otherwise only the password). The sign-in cookie only applies to Kontor, other websites cannot trigger anything (CSRF protection, origin check). Lock after idle time or with ⌘L; five failed attempts lock for five minutes. A password change signs out all other devices and renews your own sign-in.
 - All files in the data folder are encrypted (AES-256 + HMAC), the key is in the macOS keychain. If encryption or the keychain does not work, Kontor does not start – it never stores unencrypted and puts no new key into a file next to the data. Receipts are normal files in a folder of your choice; files outside it are linked only at the Mac, and only receipt files – nothing from hidden folders, the data folder or the Library (except iCloud Drive and other cloud folders).
 - Booking, updates, writing categories back, backup, reset and access settings only on the Mac; from the iPhone view only by default.
 - Historical balances: you enter the MoneyMoney password in a window of a small Kontor helper that is built from the source only for this and deleted afterwards; Kontor stores it nowhere. Meanwhile the database lies fully decrypted in memory for a moment – this takes trust in that code. If you do not want that, leave the feature out; once read, it is not needed again.
