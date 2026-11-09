@@ -2172,7 +2172,7 @@ class BrowserTest(unittest.TestCase):
                 pg.reload(); pg.wait_for_selector("#bch.big-pos"); self.assertEqual(order(), ["nw", "sel", "bil"])
                 self.assertTrue(pg.query_selector("#modus-seg button[data-m='jahre'].on")); self.assertTrue(pg.query_selector("#bch-rb button[data-m='120'].on"))
                 # one default each for months and years: the one saved last opens, switching takes the other one's ranges
-                pg.click("#modus-seg button[data-m='monate']"); pg.wait_for_timeout(300); self.assertTrue(pg.query_selector("#bch-rb button[data-m='24'].on"))     # large chart: 2 J
+                pg.click("#modus-seg button[data-m='monate']"); pg.wait_for_timeout(300); self.assertTrue(pg.query_selector("#bch-rb button[data-m='12'].on"))     # large chart: 1 J
                 pg.click("#bch-rb button[data-m='36']"); pg.wait_for_timeout(200); pg.click("#view-save"); pg.wait_for_timeout(200)
                 pg.click("#modus-seg button[data-m='jahre']"); pg.wait_for_timeout(300); self.assertTrue(pg.query_selector("#bch-rb button[data-m='120'].on"))
                 pg.reload(); pg.wait_for_selector("#bch"); self.assertTrue(pg.query_selector("#modus-seg button[data-m='monate'].on")); self.assertTrue(pg.query_selector("#bch-rb button[data-m='36'].on"))
@@ -2230,11 +2230,16 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(pg.is_visible("#bch-tip")); self.assertTrue(pg.query_selector("#bch-svg.hl"))      # still under the mouse, without moving it
                 x, y, _ = pg.evaluate("r => (%s)(x => x.pos && x.rolle === r)" % centre, role)
                 pg.mouse.click(x, y); pg.wait_for_timeout(400); self.assertTrue(pg.evaluate("r => !!S.posOpen[r]", role))
+                n_acc = pg.evaluate("r => BCH.d.series.filter(x => x.rolle === r && document.querySelector(`#bch-svg .bch-area[data-s=\"${BCH.d.series.indexOf(x)}\"]`)).length", role)
+                self.assertEqual(len(pg.query_selector_all("#bch-svg .bch-area.hl")), n_acc)       # all that opened, until the mouse moves
                 # the mouse over the name of a row marks the same area in the chart; a click on a value shows month and area for a moment
                 pg.hover("tr.acct td:first-child"); pg.wait_for_timeout(100); self.assertTrue(pg.query_selector("#bch-svg.hl .bch-area.hl")); pg.mouse.move(5, 5)
-                pg.click("tr.acct td:nth-child(3)"); pg.wait_for_timeout(200)
-                self.assertFalse(pg.query_selector("#drawer.open")); self.assertTrue(pg.is_visible("#bch-tip")); self.assertTrue(pg.query_selector("#bch-tip div.on"))
-                pg.wait_for_timeout(2800); self.assertFalse(pg.is_visible("#bch-tip"))
+                pg.click("tr.acct td:nth-child(3)"); pg.wait_for_timeout(150)
+                self.assertFalse(pg.query_selector("#drawer.open")); self.assertTrue(pg.query_selector("#bch-svg.hl .bch-area.hl")); self.assertTrue(pg.query_selector("#bch-hover .bch-cross"))
+                pg.wait_for_timeout(1300); self.assertIsNone(pg.query_selector("#bch-svg.hl")); self.assertIsNone(pg.query_selector("#bch-hover .bch-cross"))
+                # a second click on the name of the account whose history is open closes it
+                pg.click("tr.acct td:first-child"); pg.wait_for_selector("#drawer.open"); pg.wait_for_timeout(300)
+                pg.click("tr.acct td:first-child"); pg.wait_for_timeout(400); self.assertIsNone(pg.query_selector("#drawer.open"))
                 span = pg.evaluate("BCH.i1 - BCH.i0"); bb = pg.query_selector("#bch-hit").bounding_box()
                 pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2)
                 for _ in range(40):

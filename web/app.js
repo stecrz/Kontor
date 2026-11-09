@@ -590,9 +590,16 @@ function chartCashflow(D) {
   s += `<line x1="${P.l}" x2="${W - P.r}" y1="${y(0)}" y2="${y(0)}" stroke="var(--line-2)"/>`;
   return s + `</svg><div class="chart-legend"><span><i style="background:var(--c-ein)"></i>${t('einnahmen')}</span><span><i style="background:var(--c-aus)"></i>${t('ausgaben')}</span><span><i style="background:var(--fg)"></i>${t('operatives_ergebnis')}</span>` + (pm.length ? `<span class="muted">${t('blass_plan')}</span>` : '') + '</div>';
 }
-function niceTicks(min, max, n) {
+function niceTicks(min, max, n, least = 0) {
+  // about n round steps (1, 2, 5 × 10^k); with fewer than "least" lines a finer round step (also 2.5: 0 / 25 / 50 / 75 / 100 Tsd.)
   const span = (max - min) || 1, raw = span / n, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p, step = (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
-  const out = []; for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(Math.abs(v) < step * 1e-6 ? 0 : v); return out;   // no "-0"
+  const make = st => { const o = []; for (let k = Math.ceil(min / st - 1e-9); k * st <= max + st * 1e-9; k++) { const v = k * st; o.push(Math.abs(v) < st * 1e-6 ? 0 : v); } return o; };   // no "-0"
+  let out = make(step);
+  if (least && out.length < least) {
+    const finer = []; for (const e of [1, 0.1]) for (const x of [10, 5, 2.5, 2, 1]) if (x * p * e < step * (1 - 1e-9)) finer.push(x * p * e);
+    for (const st of finer.sort((a, b) => b - a)) { const o = make(st); if (o.length >= least) { out = o; break; } }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- Übersicht
@@ -968,6 +975,7 @@ function holdingsBox(uuid) {
 }
 async function openHistDrawer(uuid, vorschau) {
   // vorschau: Verlaufsquelle, die erst angezeigt und mit „Speichern“ übernommen wird (z. B. aus der Kontentabelle)
+  if (drawerAgain('acc:' + uuid + ':' + (vorschau || ''))) return;
   const r = await api('/api/history?account=' + encodeURIComponent(uuid) + (vorschau ? '&source=' + vorschau : ''));
   const k = S.KONTEN.find(x => x.uuid === uuid) || {name: r.name || uuid};
   const d = $('#drawer');
@@ -1122,6 +1130,7 @@ function wpTip(w, acc) {
     w.quelle === 'eigen' ? t('wp_eigener_name') : w.quelle === 'suche' ? t('wp_nachgeschlagen') : ''].filter(Boolean).join('\n');
 }
 function openWpDrawer(id) {
+  if (drawerAgain('wp:' + id)) return;
   // a security of a portfolio: its month-end values (from MoneyMoney's history, Kontor's record and the current export), with
   // MoneyMoney's name and the ISIN
   const D = B(); let acc = null, w = null;
@@ -1138,6 +1147,7 @@ function openWpDrawer(id) {
   const g = $('#h-grid', d); if (g) g.scrollTop = g.scrollHeight;
 }
 function openTransitDrawer() {
+  if (drawerAgain('transit')) return;
   // Geldtransit: die erkannten Umbuchungen, deren Ab- und Gutschrift in verschiedene Monate fallen
   const r = ((B() || {}).bilanz || {zeilen: []}).zeilen.find(x => x.transit); if (!r) return;
   const list = (r.umbuchungen || []).slice().reverse(), d = $('#drawer');
@@ -1346,7 +1356,7 @@ function bchDraw() {
   const x = i => P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n), y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min);
   const pf = v => v.toFixed(1);
   let g = `<rect class="bch-bg" x="${P.l}" y="${P.t}" width="${Math.max(0, W - P.l - P.r)}" height="${H - P.t - P.b}"/>`;
-  for (const [t, ref] of axisTicks(min, max, H < 220 ? 4 : 5)) g += `<line class="bch-grid${Math.abs(t) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(t))}" y2="${pf(y(t))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(t) + 4)}">${Fk(t, true, ref)}</text>`;
+  for (const [t, ref] of axisTicks(min, max, H < 220 ? 4 : 5, 4)) g += `<line class="bch-grid${Math.abs(t) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${pf(y(t))}" y2="${pf(y(t))}"/><text class="bch-y" x="${P.l - 6}" y="${pf(y(t) + 4)}">${Fk(t, true, ref)}</text>`;
   let plot = '';                                        // everything that is clipped to the plot when aligned with the table
   if (link) {
     // time axis: the column labels of the table (thinned out when the columns are narrow)
@@ -1460,7 +1470,7 @@ function bchCols(svg) {
 }
 // range buttons by view: months → 6 M, 1 J, 2 J (+ all), years → 1 J, 3 J, 10 J (+ all); the small charts without "all"
 const bchDefault = () => S.modus === 'jahre' ? 36 : 12;      // default range of all charts: months view 1 year, years view 3 years
-const bigDefault = () => S.modus === 'jahre' ? 60 : 12;       // the large chart: months view 1 year, years view 5 years
+const bigDefault = () => S.modus === 'jahre' ? 36 : 12;       // the large chart: months view 1 year, years view 3 years
 function bchRanges(all) {
   // the large chart (all) has one more range (months: 3 years, years: 5 years) and "Alle"
   const y = S.modus === 'jahre';
@@ -1599,7 +1609,7 @@ function bchFocus(key) {
   let frac = 0.5;                                       // share of the plot width where the month should land
   if (G && svg && th) { const sr = svg.getBoundingClientRect(), r = th.getBoundingClientRect(); if (sr.width) frac = ((r.left + r.width / 2 - sr.left) * G.W / sr.width - G.P.l) / Math.max(1, G.W - G.P.l - G.P.r); }
   const a = Math.max(0, Math.min(last - span, Math.round(i - Math.max(0, Math.min(1, frac)) * span))), z = Math.min(last, a + span);
-  bchSet(a, z, a === BCH.i0 && z === BCH.i1 ? S.bchBtn : null);
+  bchSet(a, z, z - a === BCH.i1 - BCH.i0 ? S.bchBtn : null);         // same length: the range button stays (as when moving)
   bchHover(i); $('#bch-tip').classList.add('hidden');      // only the line marks the month; the values are in the table
   const c = $('#bch'), r = c && c.getBoundingClientRect(); if (r && (r.top < 0 || r.bottom > window.innerHeight)) c.scrollIntoView({block: 'nearest', behavior: 'smooth'});
 }
@@ -1736,20 +1746,18 @@ function bchTableHover(tr) {
   stackMark($('#bch-svg'), 'bch-area', BCH.d, tr ? bchRowSeries(tr) : []);
 }
 function bchFlash(tr, td) {
-  // a click on a value in the table: the large chart shows that month with its values for a moment and marks the row's area
-  // (moving there when the month is outside the shown range)
-  const d = BCH.d; if (!d || !$('#bch-svg') || bigType() !== 'bilanz') return;
+  // a click on a value in the table: the row's area and the month light up once in the large chart, short and soft (the chart
+  // moves there, with the same range, when the month is outside it)
+  const d = BCH.d, svg = $('#bch-svg'); if (!d || !svg || bigType() !== 'bilanz') return;
   const th = td.closest('table').querySelector('thead tr').children[td.cellIndex], i = th && th.dataset.key ? bchIndex(th.dataset.key) : -1;
   if (i < 0) return;
-  const mark = bchRowSeries(tr);
-  clearTimeout(BCH.flashT); BCH.flash = false;
-  if (bchLinked()) stackMark($('#bch-svg'), 'bch-area', d, mark);       // aligned: the month is right above the cell anyway
-  else {
-    if (i < BCH.i0 || i > BCH.i1) { const span = BCH.i1 - BCH.i0, last = d.months.length - 1, a = Math.max(0, Math.min(last - span, i - Math.round(span / 2))); bchSet(a, Math.min(last, a + span), null); }
-    bchHover(i, null, mark);
-  }
-  BCH.flash = true;
-  BCH.flashT = setTimeout(() => { BCH.flash = false; bchHover(null); }, 2600);
+  if (!bchLinked() && (i < BCH.i0 || i > BCH.i1)) { const span = BCH.i1 - BCH.i0, last = d.months.length - 1, a = Math.max(0, Math.min(last - span, i - Math.round(span / 2))); bchSet(a, Math.min(last, a + span), S.bchBtn); }
+  clearTimeout(BCH.flashT); clearTimeout(BCH.flashT2); bchHover(null);
+  const G = BCH.geo, hv = $('#bch-hover');
+  svg.classList.add('pulse'); stackMark(svg, 'bch-area', BCH.d, bchRowSeries(tr)); BCH.flash = true;
+  if (hv && G && !bchLinked()) hv.innerHTML = `<line class="bch-cross pulse" x1="${G.x(i).toFixed(1)}" x2="${G.x(i).toFixed(1)}" y1="${G.P.t}" y2="${G.H - G.P.b}"/>`;
+  BCH.flashT = setTimeout(() => { stackMark(svg, 'bch-area', BCH.d, []); BCH.flash = false; }, 650);
+  BCH.flashT2 = setTimeout(() => { svg.classList.remove('pulse'); const h2 = $('#bch-hover'); if (h2 && !BCH.hov) h2.innerHTML = ''; }, 1100);
 }
 function bchToggle(x, m) {
   // a click on an area of the balance sheet chart, as in the table: a position opens into its accounts, a portfolio into its
@@ -1760,8 +1768,18 @@ function bchToggle(x, m) {
   else if (x.acc && x.dep && !x.wp && !S.depOpen[x.acc]) S.depOpen[x.acc] = true;
   else { S.posOpen[r] = false; for (const a of D.bilanz.zeilen) if (!a.gruppe && a.rolle === r) S.depOpen[a.id] = false; }
   BCH.lastToggle = Date.now(); bchHover(null);
-  // afterwards: the table at that month (as a click beside the areas), the values under the resting mouse right away
-  Promise.resolve(route()).then(() => requestAnimationFrame(() => { if (m) bchJump(m); bchRehover(); }));
+  // afterwards: the table stays where it was (and moves to the month only if needed); what just opened (or closed) is marked
+  // until the mouse moves, then again only the area under it
+  const w = $('#main .wrap.snap'), sl = w ? w.scrollLeft : null;
+  const pick = x.pos ? (y => y.rolle === r) : x.acc && x.dep && !x.wp && S.depOpen[x.acc] ? (y => y.acc === x.acc) : (y => y.pos && y.rolle === r);
+  Promise.resolve(route()).then(() => requestAnimationFrame(() => {
+    const w2 = $('#main .wrap.snap'); if (w2 && sl != null) w2.scrollLeft = sl;
+    if (m) bchJump(m);
+    const d = BCH.d, G = BCH.geo, svg = $('#bch-svg'), p = BCH.ptr; if (!d || !G || !svg) return;
+    let i = m ? d.months.indexOf(m) : -1;
+    if (p) { const rc = svg.getBoundingClientRect(); if (rc.width) i = G.idx((p.x - rc.left) * G.W / rc.width); }
+    if (i >= BCH.i0 && i <= BCH.i1) bchHover(i, null, d.series.filter(pick));
+  }));
   return true;
 }
 function bchRehover() {
@@ -2082,7 +2100,7 @@ function lcDraw(id) {
   if (max - min < 1) { max += 50; min -= 50; }
   const pad = (max - min) * 0.08; max += pad; if (!st.stack || min < 0) min -= pad;
   const yr = (S.lcYr || {})[id]; if (yr) [min, max] = yr;    // range set on the y axis (a tap there resets it)
-  const ticks = axisTicks(min, max, 4);
+  const ticks = axisTicks(min, max, 4, 4);                // at least four lines (finer round steps when needed)
   P.l = Math.max(30, Math.ceil(Math.max(...ticks.map(([v, r]) => textW(Fk(v, false, r))))) + 12);      // axis only as wide as its labels
   const x = i => P.l + (i - i0) * (W - P.l - P.r) / Math.max(1, n), y = v => P.t + (max - v) * (H - P.t - P.b) / (max - min), pf = v => v.toFixed(1);
   let g = '', pl = '';
@@ -2768,7 +2786,14 @@ async function openDrawer(txId) {
   $$('.bl-show', d).forEach(b => b.onclick = async e => { const id = e.target.closest('.beleg').dataset.id, ent = mine.find(x => x.id === id); try { await api('/api/receipts/open', {pfad: ent.pfad}); } catch (er) { toast(er.message, 4000); } });
   const cb = $('#dr-cat-btn', d); if (cb) cb.onclick = async () => { const kat = $('#dr-kat', d).value.trim(); const extra = ($('#dr-rule', d).checked && kat) ? {regel: {name_enthaelt: u.name}} : {}; try { const r = await assignCats([txId], kat, extra); toast(kat ? assignMsg(r) : t('zuordnung_entfernt'), 5000); await loadAll(); await refreshUms(txId); } catch (e) { toast(e.message, 5000); } };
 }
-function closeDrawer() { $('#drawer').classList.remove('open'); S.drawerTx = null; }
+function closeDrawer() { $('#drawer').classList.remove('open'); S.drawerTx = null; DRW.key = null; }
+// which drawer is open; a click on the row that opened it closes it (the click outside closes it first -- it must not reopen)
+const DRW = {key: null, closed: null};
+function drawerAgain(key) {
+  const c = DRW.closed; DRW.closed = null;
+  if (c && c.key === key && Date.now() - c.t < 800) return true;
+  DRW.key = key; return false;
+}
 async function belegeApi(path, body) {
   // Erster Beleg: Ordner nur nach Rueckfrage anlegen (oder anderen Ordner in den Einstellungen waehlen)
   try { return await api(path, body); }
@@ -3487,8 +3512,9 @@ async function route() {
     else if (S.tab === 'help') h = await vHilfe();
     clearTimeout(slow);
     if (ROUTE_SEQ !== myRoute) return;          // inzwischen woanders hin geklickt
+    const keepX = sameTab ? $$('.wrap', main).map(w => ({x: w.scrollLeft, n: w.querySelectorAll('thead th').length})) : null;   // same page again: tables stay put
     main.innerHTML = `<div class="fade">${h}</div>`;
-    SCROLL.key = key;
+    SCROLL.key = key; SCROLL.keepX = keepX;
     window.scrollTo(0, sameTab ? y0 : (SCROLL.pos[key] || 0));      // eigener Reiter: bleibt; anderer Reiter: dessen letzte Position, sonst oben
     bind(main);
     guardDirty(main);
@@ -3578,9 +3604,12 @@ function bind(main) {
   $$('tr.sub[data-gid]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.gid] = !S.collapsed[tr.dataset.gid]; route(); }));
   $$('.card[data-b]', main).forEach(c => c.addEventListener('click', () => { S.bereich = c.dataset.b; bereichSeg(); route(); }));
   // Waagerecht: aktuelle Spalte (Monat bzw. Jahr) rechts im Blick, ältere Jahre links davon; Plan-Spalten rechts anschließend
-  if (['balance', 'cashflow', 'planning'].includes(S.tab)) $$('.wrap', main).forEach(w => {
+  if (['balance', 'cashflow', 'planning'].includes(S.tab)) $$('.wrap', main).forEach((w, k) => {
     snapTable(w);
-    const c = $('th[data-cur]', w);
+    const c = $('th[data-cur]', w), keep = (SCROLL.keepX || [])[k];
+    // the same page redrawn (a row opened, a chart clicked): the table stays where it was, without moving (not after a switch
+    // between months and years: other columns)
+    if (keep && keep.n === w.querySelectorAll('thead th').length) { w.scrollLeft = keep.x; return; }
     // balance sheet: the current month (or year) is the rightmost column; elsewhere with plan a part of the plan stays in view
     if (c && w.scrollWidth > w.clientWidth) w.scrollLeft = snapLeft(w, colX(w, c) + c.offsetWidth - w.clientWidth * (S.tab !== 'balance' && planOn() ? 0.62 : 1));
   });
@@ -3826,7 +3855,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(
 document.addEventListener('pointerdown', e => {
   const dr = $('#drawer'); if (!dr.classList.contains('open') || dr.contains(e.target) || e.target.closest('#toast, .dlg-back')) return;
   if (drawerDirty() && !confirm(t('ungespeicherte_aenderungen_verwerfen'))) return;
-  closeDrawer();
+  const key = DRW.key; closeDrawer(); DRW.closed = key ? {key, t: Date.now()} : null;
 });
 try { const s = JSON.parse(localStorage.getItem('kontor.ui') || '{}'); Object.assign(S, {plan: s.plan !== false, real: !!s.real, bereich: s.bereich || null}); } catch (e) {}
 try { ['kontor.bigChart', 'kontor.lcSel', 'kontor.lcPos', 'kontor.lcPosMode', 'kontor.bchLink'].forEach(k => localStorage.removeItem(k)); } catch (e) {}

@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.11.8 (2026-11-09 02:36)
+- Bilanz-Grafik: Nach einem Klick auf eine Fläche ist alles markiert, was aufgeklappt wurde, bis sich die Maus bewegt. Die Tabelle bleibt beim Auf- und Zuklappen stehen und rückt nur, wenn der Monat nicht schon dort steht.
+- Klick auf einen Wert der Tabelle: Fläche und Monat leuchten in der großen Grafik einmal kurz und weich auf.
+- Zweiter Klick auf ein Konto (bzw. Wertpapier) schließt seinen Verlauf wieder.
+- Klick auf eine Spaltenüberschrift verschiebt die Grafik, ohne die Auswahl des Zeitraums (z. B. „1 J“) zu verlieren.
+- Große Grafik vorausgewählt: 1 J (Monate) bzw. 3 J (Jahre).
+- Grafiken: mindestens vier Hilfslinien auf der Betragsachse (z. B. 0 / 25 / 50 / 75 / 100 Tsd.).
+- Kleine Bilanz-Grafik: Zeilen der Legende enger beisammen.
+
 ## 3.11.7 (2026-11-09 02:11)
 - Grafiken der Bilanz: Zeiträume enden am letzten abgeschlossenen Monat (im November: „1 J“ = Oktober bis Oktober). Der laufende Monat ist gepunktet und leicht hinterlegt, der Plan gestrichelt; die senkrechte Linie markiert das Ende des letzten abgeschlossenen Monats, „heute“ den laufenden. Kürzester Zeitraum: ein Monat. Große Grafik zusätzlich mit 3 J (Monate) bzw. 5 J (Jahre), vorausgewählt 2 J bzw. 5 J.
 - Auch die große Grafik lässt sich über kleine Pfeile in ihrem Kopf nach oben oder unten schieben (auch unter die kleinen Grafiken); wird mit „Ansicht speichern“ gemerkt.
