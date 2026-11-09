@@ -1125,7 +1125,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             if err:
                 notify(tr("s_kontor_fehler"), str(err))
             elif written:
-                notify("Kontor", "%d Buchung(en) in MoneyMoney angelegt." % written)
+                notify("Kontor", tr("s_d_buchungen_angelegt") % written)
             elif bookings and dry:
                 notify(tr("s_kontor_probelauf"), tr("s_d_buchung_en_warten_auf") % len(bookings))
             elif result.warnings and not dry:

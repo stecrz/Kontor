@@ -566,3 +566,16 @@ class SecurityHardeningTests(unittest.TestCase):
                 storage.load_or_create_master_key(tempfile.mkdtemp())
         finally:
             storage._security = orig
+
+
+class KontorBookingsTests(unittest.TestCase):
+    def test_list_of_created_bookings(self):
+        import service
+        txs = [F.tx("pb.vd", date(2026, 10, 31), -4400.0, "Zinsen", "Zinsen Oktober #mm-zins-2026-10"),
+               F.tx("priv.bet.pb", date(2026, 11, 2), 1500.0, "Wertanpassung", "Anteil 49 % #mm-wert-20261102-1"),
+               F.tx("priv.giro", date(2026, 10, 3), -900.0, "Bank", "Rate", comment="→ Darlehen gespiegelt (#mm-tx-7)")]
+        led = Ledger(accounts_from_export(F.accounts_raw({})), tx_from_export(txs))
+        out = service.kontor_bookings(led)
+        self.assertEqual([(x["art"], x["markierung"]) for x in out], [("wert", "#mm-wert-20261102-1"), ("zins", "#mm-zins-2026-10")])   # newest first; a comment alone is no booking
+        self.assertEqual(out[1]["zweck"], "Zinsen Oktober"); self.assertEqual(out[1]["betrag"], -4400.0)
+        self.assertEqual(service.kontor_bookings(None), [])

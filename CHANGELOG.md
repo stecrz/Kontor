@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.15 (2026-11-09 16:49)
+- „Regeln“ heißt jetzt „Auto-Regeln“, „Buchungen“ jetzt „Auto-Buchungen“ – es geht um automatische Buchungen.
+- Auto-Buchungen: neue Liste „In MoneyMoney angelegt“ mit allen Buchungen, die Kontor angelegt hat (so, wie sie jetzt in MoneyMoney stehen); Hinweis, wie man sie löscht.
+- Sicherheit: Auch der Probelauf am Mac schreibt keine Beträge, Empfänger oder Texte mehr ins Protokoll. Mitteilung „Buchungen angelegt“ auch auf Englisch.
+
 ## 3.12.14 (2026-11-09 16:14)
 - Touch ID: Der Helfer startet als kleine App über macOS selbst und bekommt so den Fokus – Finger auflegen genügt, ohne erst auf den Dialog zu klicken.
 

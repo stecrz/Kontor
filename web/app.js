@@ -2657,7 +2657,7 @@ async function vSync() {
     ${card('MoneyMoney', `<span class="dot ${mmState(st).cls}"></span>${mmState(st).text}`, m.laeuft ? (m.gesperrt ? t('zum_lesen_in_moneymoney_entsperren') : t('kontor_kann_lesen')) : t('kontor_rechnet_mit_dem_zuletzt'))}
     ${card(t('banken_moneymoney'), r.neuester ? esc(fmtZeit(r.neuester)) : '–', t('neuester_bankabruf_in_moneymoney_den'))}
     ${card(t('moneymoney_kontor'), r.gelesen ? esc(fmtZeit(r.gelesen)) : '–', (z.automatisch ? t('automatisch_alle') + z.intervall_minuten + t('minuten_wenn_moneymoney_laeuft_und') : t('automatischer_abgleich_ist_aus')) + ` (<a href="#settings">${t('einstellungen')}</a>).`)}
-    ${hasRules() ? card(t('regeln_zuletzt_angewendet'), l ? esc(fmtZeit(l.zeit)) : '–', `${t('nur_wenn_sich_in_moneymoney')} <a href="#bookings">${t('buchungen')}</a>`) : ''}
+    ${hasRules() ? card(t('regeln_zuletzt_angewendet'), l ? esc(fmtZeit(l.zeit)) : '–', `${t('nur_wenn_sich_in_moneymoney')} <a href="#bookings">${t('nav_auto_buchungen')}</a>`) : ''}
   </div>
   <div class="toolbar"><button id="sync-now" ${OFFLINE.mode ? 'disabled' : ''}>${t('jetzt_synchronisieren')}</button><span class="muted small">${t('liest_sofort_aus_moneymoney_wendet')}</span></div>
   <div class="toolbar"><button id="sync-full" class="secondary" ${OFFLINE.mode ? 'disabled' : ''}>${t('alles_neu_lesen')}</button><span class="muted small">${t('voll_lesen_info', r.voll && r.voll.zuletzt ? esc(fmtZeit(r.voll.zuletzt)) : '–', (r.voll || {}).tage || 7)} ${hq('voll_lesen')}</span></div>`;
@@ -2699,6 +2699,12 @@ function vBuchungen(runs) {
     if (l.hinweise && l.hinweise.length) h += `<h3>${t('rechenwege')}</h3>` + l.hinweise.map(x => `<div class="small muted">${esc(x)}</div>`).join('');
     if (l.warnungen && l.warnungen.length) h += `<h3>${t('hinweise')}</h3>` + l.warnungen.map(x => `<div class="banner">${esc(x)}</div>`).join('');
   }
+  // what Kontor has made in MoneyMoney, as MoneyMoney has it now (deleting only there: the scripting interface has no delete)
+  const ang = runs.angelegt || [], artL = {tilgung: t('art_tilgung'), zins: t('art_zins'), wert: t('art_wert'), spiegel: t('art_spiegel')};
+  h += `<h2>${t('angelegt_titel')} <span class="x">${ang.length}</span></h2><div class="note">${t('angelegt_note')}</div>`
+    + (ang.length ? `<div class="wrap auto" style="max-height:420px"><table class="plain"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th><th>${t('markierung')}</th></tr></thead><tbody>`
+      + ang.slice(0, 300).map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td><td class="num ${v.betrag < 0 ? 'neg' : 'pos'}">${F(v.betrag)}</td><td class="small">${esc(v.zweck || v.gegenpartei)}</td><td class="small muted" style="white-space:nowrap">${esc(v.markierung)}</td></tr>`).join('')
+      + `</tbody></table></div>` : `<div class="muted small">${t('keine_angelegt')}</div>`);
   h += `<h2>${t('verlauf_2')}</h2><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th>${t('modus')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th><th>${t('buchungen')}</th></tr></thead><tbody>`
     + (runs.verlauf || []).map(v => `<tr><td>${esc(v.zeit)}</td><td>${v.probelauf ? t('test') : t('gebucht')}</td><td class="num">${v.vorschlaege ?? ''}</td><td class="num">${v.geschrieben}</td><td>${esc(v.fehler || '')}</td><td class="small">${(v.buchungen || []).map(esc).join('<br>')}</td></tr>`).join('') + '</tbody></table></div>';
   return h;
@@ -3675,7 +3681,7 @@ function bindHilfe(main) {
 }
 
 // ---------------------------------------------------------------- Steuerung
-const TITLES = {overview: t('uebersicht'), balance: t('bilanz'), cashflow: t('kapitalfluss'), planning: t('planung'), bookings: t('buchungen'), tax: t('steuer'), properties: t('immobilien'), transactions: t('umsaetze_belege'), setup: t('einrichtung'), rules: t('regeln'), categories: t('kategorien'), settings: t('einstellungen'), sync: t('synchronisierung'), updates: t('updates'), log: t('protokoll'), help: t('hilfe')};
+const TITLES = {overview: t('uebersicht'), balance: t('bilanz'), cashflow: t('kapitalfluss'), planning: t('planung'), bookings: t('nav_auto_buchungen'), tax: t('steuer'), properties: t('immobilien'), transactions: t('umsaetze_belege'), setup: t('einrichtung'), rules: t('nav_auto_regeln'), categories: t('kategorien'), settings: t('einstellungen'), sync: t('synchronisierung'), updates: t('updates'), log: t('protokoll'), help: t('hilfe')};
 const SUBTITLES = {};
 // Earlier German addresses (bookmarks, home screen) lead to the English ones
 const OLD_ROUTES = {uebersicht: 'overview', bilanz: 'balance', kapitalfluss: 'cashflow', planung: 'planning', buchungen: 'bookings', steuer: 'tax', immobilien: 'properties',

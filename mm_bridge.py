@@ -190,7 +190,7 @@ class Bridge:
         if category:
             args["category"] = category
         if self.dry_run:
-            log.info("DRY RUN addTransaction %s", json.dumps(args, ensure_ascii=False))
+            log.info("DRY RUN addTransaction (%s)", ", ".join(sorted(args)))      # no amount, payee or purpose in the log
             self.written.append({"method": "addTransaction", "args": args})
             return
         refs = [account_ref] + [r for r in (fallback_refs or []) if r and r != account_ref]

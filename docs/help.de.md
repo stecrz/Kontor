@@ -16,7 +16,7 @@ Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilan
 
 Kontor ändert in MoneyMoney nie Buchungen, den Kategorienbaum oder Regeln und löst keine Überweisungen aus.
 
-**Alpha**: Seiten, die im Menü blass und mit „Alpha“ markiert sind (derzeit Übersicht, Cashflow, Planung, Immobilien, Steuer, Umsätze & Belege, Kategorien, Buchungen und Regeln), sind nutzbar, aber noch nicht vollständig geprüft – Zahlen dort bitte gegenprüfen. Ebenso die Eigenkapitalquote in der Bilanz. Geprüft sind Bilanz, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll und Hilfe.
+**Alpha**: Seiten, die im Menü blass und mit „Alpha“ markiert sind (derzeit Übersicht, Cashflow, Planung, Immobilien, Steuer, Umsätze & Belege, Kategorien, Auto-Buchungen und Auto-Regeln), sind nutzbar, aber noch nicht vollständig geprüft – Zahlen dort bitte gegenprüfen. Ebenso die Eigenkapitalquote in der Bilanz. Geprüft sind Bilanz, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll und Hilfe.
 
 <a id="setup"></a>
 ## Einrichtung
@@ -279,15 +279,17 @@ Je Entität (Hauptbereich = privat, jede Gesellschaft mit deinem Anteil aus der 
 Der Umsatzbrowser filtert nach Bereich, Jahr, Konto, Text, „ohne Beleg“ und „ohne Kategorie“. Belege (PDF, Bilder, E-Mails, Office-Dateien) fügst du per Auswahl, Drag & Drop oder am iPhone per Foto hinzu. Sie liegen als normale Dateien im Belegordner (Standard `~/Documents/Kontor-Belege`, Unterordner z. B. `{jahr}`), Dateiname `Datum_Betrag_Name_Kennung`. Dateien außerhalb des Ordners (auch iCloud Drive) lassen sich verknüpfen, ohne sie zu kopieren – Kontor zeigt, ob die Datei lokal vorliegt oder noch aus iCloud geladen wird. Vorhandene Dateien im Belegordner lassen sich nachträglich zuordnen. Bis 60 MB je Datei. Der Index liegt verschlüsselt im Datenordner; die Dateien bleiben auch ohne ihn nutzbar. Löschen in Kontor betrifft nie verknüpfte Dateien.
 
 <a id="rules"></a>
-## Regeln (Gegenbuchungen)
+## Auto-Regeln (Gegenbuchungen)
 
-Regeln buchen in Offline-Konten in MoneyMoney:
+Auto-Regeln buchen automatisch in Offline-Konten in MoneyMoney:
 
 - **Darlehen**: Rate erkennen (Gegen-IBAN oder Text), auf dem Darlehenskonto spiegeln, Zinsen berechnen (Jahresbasis oder Restschuld monatlich).
 - **Beteiligungen**: Zielkonto = Anteil × Nettowert einer Kontengruppe.
 - **Saldo-Spiegel**: Zielkonto = Faktor × Quellkonto (z. B. Kapitalkonto).
 
-Standard ist der **Testmodus**: Vorschläge erscheinen unter „Buchungen“, gebucht wird erst nach „Jetzt buchen“ oder wenn du den Testmodus ausschaltest. Jede Buchung trägt eine Markierung im Verwendungszweck (die Schnittstelle von MoneyMoney kennt beim Anlegen kein Kommentarfeld) und wird nie doppelt angelegt; bestehende Buchungen ändert oder löscht Kontor nie. Bank- und Erweiterungskonten werden nie bebucht, Überweisungen und Lastschriften sind gesperrt.
+Standard ist der **Testmodus**: Vorschläge erscheinen unter „Auto-Buchungen“, gebucht wird erst nach „Jetzt buchen“ oder wenn du den Testmodus ausschaltest. Jede Buchung trägt eine Markierung im Verwendungszweck (die Schnittstelle von MoneyMoney kennt beim Anlegen kein Kommentarfeld) und wird nie doppelt angelegt; bestehende Buchungen ändert oder löscht Kontor nie. Bank- und Erweiterungskonten werden nie bebucht, Überweisungen und Lastschriften sind gesperrt.
+
+**Ablauf**: Bei jedem Abgleich (automatisch alle 30 Minuten, nach neuen Daten in MoneyMoney oder per „Sync“) rechnet Kontor die Regeln durch. Im Testmodus meldet eine Mitteilung „… Buchungen warten auf Freigabe“ – „Jetzt buchen“ (nur am Mac) ist die Freigabe; ohne Testmodus bucht Kontor selbst und meldet „… Buchungen angelegt“. Unter „Auto-Buchungen“ stehen der letzte Lauf mit Rechenwegen und Hinweisen, der Verlauf und **„In MoneyMoney angelegt“**: alle Buchungen mit Kontors Markierung, so wie sie jetzt in MoneyMoney stehen. **Löschen** geht nur in MoneyMoney (Suche nach der Markierung, z. B. „#mm-zins“) – die Schnittstelle von MoneyMoney kennt kein Löschen. Greift die Regel noch, legt Kontor eine gelöschte Buchung beim nächsten Abgleich wieder an; also zuerst die Regel ändern oder abschalten.
 
 **Zinsen**: Jahresbasis = Zinssatz × Stand am 31.12. des Vorjahres, je Monat ein Zwölftel, im Dezember mit dem Cent-Rest – oder monatlich auf die Restschuld. Das Modell ist vereinfacht (30/360); einmal im Jahr mit der Zinsabrechnung der Bank abgleichen. Bei Problemen (Konto gelöscht, keine passende Zahlung, Zinsbuchung schon von Hand vorhanden) gibt es einen Hinweis und eine Mitteilung.
 
@@ -386,7 +388,7 @@ Im Terminal aktualisiert dieselbe Zeile wie bei der [Installation](https://githu
 |---|---|
 | MoneyMoney läuft nicht / Datenbank gesperrt | MoneyMoney öffnen und entsperren; Kontor holt alles nach. |
 | Keine Berechtigung (Automation) | Systemeinstellungen → Datenschutz & Sicherheit → Automation: python3 darf MoneyMoney steuern. |
-| Konto nicht gefunden | Eine Regel verweist auf ein gelöschtes oder umbenanntes Konto: unter Regeln neu zuordnen; „Einrichtung prüfen“ zeigt alle Fälle. |
+| Konto nicht gefunden | Eine Regel verweist auf ein gelöschtes oder umbenanntes Konto: unter Auto-Regeln neu zuordnen; „Einrichtung prüfen“ zeigt alle Fälle. |
 | Prüfzeile im Cashflow ≠ 0 | Es fehlt eine Kategorie oder eine Gegenbuchung. |
 | iPhone öffnet die Adresse nicht | Zugriff unter Einstellungen → Zugang einschalten; Tailscale auf beiden Geräten verbunden? |
 | Keine passende Zahlung | Die Darlehensregel findet die Rate nicht: Gegen-IBAN oder Text und Quellkonto prüfen. Bis 35 Tage nach „Automatik ab“ nur ein Hinweis. |

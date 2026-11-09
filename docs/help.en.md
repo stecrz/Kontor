@@ -16,7 +16,7 @@ Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sh
 
 Kontor never changes bookings, the category tree or rules in MoneyMoney and never initiates transfers.
 
-**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Overview, Cash flow, Planning, Properties, Tax, Transactions & receipts, Categories, Bookings and Rules) are usable but not fully tested yet – please double-check the figures there. So is the equity ratio in the balance sheet. Tested are Balance sheet, Sync, Setup, Settings, Updates, Log and Help.
+**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Overview, Cash flow, Planning, Properties, Tax, Transactions & receipts, Categories, Auto bookings and Auto rules) are usable but not fully tested yet – please double-check the figures there. So is the equity ratio in the balance sheet. Tested are Balance sheet, Sync, Setup, Settings, Updates, Log and Help.
 
 <a id="setup"></a>
 ## Setup
@@ -279,15 +279,17 @@ Per entity (main area = private, each company with your share from the participa
 The transaction browser filters by area, year, account, text, “without receipt” and “without category”. Add receipts (PDF, images, e-mails, Office files) by choosing a file, drag & drop or a photo on the iPhone. They are stored as normal files in the receipts folder (default `~/Documents/Kontor-Belege`, subfolders e.g. `{jahr}`), file name `Date_Amount_Name_ID`. Files outside the folder (also iCloud Drive) can be linked without copying them – Kontor shows whether the file is local or still downloading from iCloud. Existing files in the receipts folder can be assigned later. Up to 60 MB per file. The index is stored encrypted in the data folder; the files remain usable without it. Deleting in Kontor never affects linked files.
 
 <a id="rules"></a>
-## Rules (counter-bookings)
+## Auto rules (counter-bookings)
 
-Rules book into offline accounts in MoneyMoney:
+Auto rules book automatically into offline accounts in MoneyMoney:
 
 - **Loans**: recognise the instalment (counterparty IBAN or text), mirror it on the loan account, calculate interest (annual basis or remaining debt monthly).
 - **Equity investments**: target account = share × net value of an account group.
 - **Balance mirror**: target account = factor × source account (e.g. capital account).
 
-The default is **test mode**: proposals appear under “Bookings”, nothing is booked until “Book now” or until you turn test mode off. Every booking carries a marker in the purpose (MoneyMoney's interface has no comment field when creating) and is never created twice; Kontor never changes or deletes existing bookings. Bank and extension accounts are never booked to, transfers and direct debits are blocked.
+The default is **test mode**: proposals appear under “Auto bookings”, nothing is booked until “Book now” or until you turn test mode off. Every booking carries a marker in the purpose (MoneyMoney's interface has no comment field when creating) and is never created twice; Kontor never changes or deletes existing bookings. Bank and extension accounts are never booked to, transfers and direct debits are blocked.
+
+**How it runs**: at every sync (automatically every 30 minutes, after new data in MoneyMoney or with “Sync”) Kontor works through the rules. In test mode a notification says “… bookings waiting for approval” – “Book now” (only on the Mac) is the approval; without test mode Kontor books itself and says “… bookings created”. Under “Auto bookings” you find the last run with its calculations and notes, the history and **“Created in MoneyMoney”**: all bookings with Kontor's mark, as they are in MoneyMoney now. **Deleting** only works in MoneyMoney (search for the mark, e.g. “#mm-zins”) – MoneyMoney's interface has no delete. If the rule still applies, Kontor creates a deleted booking again at the next sync; so change or switch off the rule first.
 
 **Interest**: annual basis = interest rate × balance on 31 Dec of the previous year, one twelfth per month, the cent remainder in December – or monthly on the outstanding balance. The model is simplified (30/360); reconcile once a year with the bank's interest statement. If there are problems (account deleted, no matching payment, interest booking already entered by hand) you get a note and a notification.
 
@@ -386,7 +388,7 @@ In Terminal, the same line as for the [installation](https://github.com/stecrz/K
 |---|---|
 | MoneyMoney not running / database locked | Open and unlock MoneyMoney; Kontor catches up. |
 | No permission (Automation) | System Settings → Privacy & Security → Automation: allow python3 to control MoneyMoney. |
-| Account not found | A rule refers to a deleted or renamed account: reassign it under Rules; “Check setup” shows all cases. |
+| Account not found | A rule refers to a deleted or renamed account: reassign it under Auto rules; “Check setup” shows all cases. |
 | Cash flow check row ≠ 0 | A category or a counter-booking is missing. |
 | iPhone cannot open the address | Turn on access under Settings → Access; Tailscale connected on both devices? |
 | No matching payment | The loan rule does not find the instalment: check counterparty IBAN or text and source account. Only a note for up to 35 days after “automatic from”. |

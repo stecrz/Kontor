@@ -47,6 +47,7 @@ from core import (RUN_LOCK, account_sig, account_tree, bereiche_for, build_repor
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, apply_plan, role_label
+from rules import TAG_RE
 from storage import Store
 from excel import Sheet, workbook
 from i18n import tr
@@ -59,6 +60,24 @@ MAX_UPLOAD = 90 * 1024 * 1024      # Base64 eines 60-MB-Belegs
 PLAN_PARAMS = ("horizont_monate", "standard_methode", "inflation_prozent_pa", "steigerung_einnahmen_prozent_pa",
                "steigerung_ausgaben_prozent_pa", "rendite_prozent_pa", "fi_rendite_real_prozent")
 
+
+
+def kontor_bookings(ledger) -> List[dict]:
+    """The bookings Kontor has made in MoneyMoney (its mark #mm-... in the purpose), as MoneyMoney has them now -- newest first."""
+    out: List[dict] = []
+    if ledger is None:
+        return out
+    kinds = {"tx": "tilgung", "zins": "zins", "wert": "wert", "spiegel": "spiegel"}
+    for t in ledger.txs:
+        m = TAG_RE.search(t.purpose or "")
+        if not m:
+            continue
+        acc = ledger.accounts.get(t.account_uuid)
+        k = m.group(0).split("-")[1]
+        out.append({"datum": t.booking_date.isoformat(), "konto": acc.name if acc else "", "art": kinds.get(k, k), "betrag": round(t.amount, 2),
+                    "gegenpartei": t.name, "zweck": TAG_RE.sub("", t.purpose).strip(), "markierung": m.group(0)})
+    out.sort(key=lambda x: (x["datum"], x["markierung"]), reverse=True)
+    return out
 
 def bind_allowed(addr: str) -> bool:
     try:
@@ -1334,7 +1353,7 @@ def make_handler(app: App):
                                             voll=app.full_read_info()))
             if path == "/api/runs":
                 st = app.store.load("state.json", {}) or {}
-                return self._json(200, {"letzter_lauf": st.get("letzter_lauf"), "verlauf": list(reversed(st.get("verlauf", [])))})
+                return self._json(200, {"letzter_lauf": st.get("letzter_lauf"), "verlauf": list(reversed(st.get("verlauf", []))), "angelegt": kontor_bookings(app.ledger)})
             if path == "/api/log":
                 n = min(2000, int(q.get("n", "300")))
                 try:

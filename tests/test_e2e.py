@@ -2176,6 +2176,7 @@ class BrowserTest(unittest.TestCase):
                 # pages not fully tested yet carry "Alpha" in the menu and at the title; the balance sheet does not
                 self.assertTrue(pg.query_selector("#nav a.alpha[href='#cashflow'] .alpha-tag")); self.assertIsNone(pg.query_selector("#nav a[href='#balance'] .alpha-tag"))
                 self.assertIsNone(pg.query_selector("#page-title .alpha-tag")); self.assertTrue(pg.query_selector("#nav a.alpha[href='#rules']"))
+                self.assertEqual(pg.inner_text("#nav a[href='#rules'] span"), "Auto-Regeln"); self.assertEqual(pg.inner_text("#nav a[href='#bookings'] span"), "Auto-Buchungen")
                 # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
                 self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
                 self.assertTrue(pg.query_selector("#main thead th.plan")); self.assertNotIn("Fortschreibung", pg.query_selector("#main").inner_text())
