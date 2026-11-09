@@ -61,7 +61,7 @@ MACSYS_DIR = "/Library/Tailscale"
 
 
 def parse_proof(text: str) -> Optional[Tuple[int, str]]:
-    """(port, token) from a file name like ".../sameuserproof-61577-2ae2ec9e0aa2005784f1"."""
+    """(port, token) from a file name like ".../sameuserproof-12345-0123456789abcdef0000" (made-up example)."""
     m = re.search(r"sameuserproof-(\d+)-([^\s/]+)", text or "")
     return (int(m.group(1)), m.group(2)) if m else None
 

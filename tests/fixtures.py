@@ -33,6 +33,8 @@ def acc(key, name, indent, typ="Girokonto", group=False, balance=0.0, iban=None,
     }
 
 
+# All names, amounts and numbers here are made up. The IBANs are the public sample IBANs from banks' documentation (some with
+# a changed last digit for a second account), not real accounts of anyone involved.
 def accounts_raw(balances: Dict[str, float]) -> List[dict]:
     b = balances.get
     return [

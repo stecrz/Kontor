@@ -413,7 +413,7 @@ class TailscaleLocalApiTests(unittest.TestCase):
     def test_localapi(self):
         import tls_cert
         from http.server import BaseHTTPRequestHandler
-        self.assertEqual(tls_cert.parse_proof("p123\nn/Users/x/Library/Group Containers/ABC.io.tailscale.ipn.macos/sameuserproof-61577-2ae2ec9e\n"), (61577, "2ae2ec9e"))
+        self.assertEqual(tls_cert.parse_proof("p123\nn/Users/x/Library/Group Containers/ABC.io.tailscale.ipn.macos/sameuserproof-12345-0badc0de\n"), (12345, "0badc0de"))       # made up
         self.assertIsNone(tls_cert.parse_proof("nothing here"))
         seen = []
         rules = [[{"SrcIPs": ["*"], "DstPorts": [{"IP": "*", "Ports": {"First": 0, "Last": 65535}}]}]]     # Tailscale's default: everything

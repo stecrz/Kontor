@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.12.11 (2026-11-09 15:08)
+- Öffentliches Repo: Beispielwert für den Tailscale-Zugang durch einen erfundenen ersetzt; Testdaten als erfunden gekennzeichnet (Beispiel-IBANs aus Bankunterlagen).
+
 ## 3.12.10 (2026-11-09 14:58)
 - Sicherheit: Von unterwegs (auch mit „ansehen und bearbeiten“) weder Belegordner noch Dateiverknüpfungen ändern; ein Abgleich von dort ist immer ein Probelauf. Unterordner für Belege bleiben immer im Belegordner.
 - Sicherheit: Passwortwechsel erneuert auch die eigene Anmeldung. Ohne Schlüsselbund kein neuer Schlüssel als Datei (Kontor startet dann nicht); liegt neben dem Schlüsselbund noch eine Schlüsseldatei, wird sie entfernt.
