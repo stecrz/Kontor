@@ -58,9 +58,20 @@ def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
     rc, out, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
     key_file = os.path.join(data_dir, "master.key")
     if rc == 0 and len(out.strip()) == 64:
+        kc = bytes.fromhex(out.strip())
         if os.path.exists(key_file):
-            log.warning("Key file found besides the keychain entry -- the keychain entry is used, the file left as it is")
-        return bytes.fromhex(out.strip()), "schluesselbund"
+            # a key file besides the keychain entry: the one that opens the data stays (in the keychain), the file goes
+            fk = _read_key_file(key_file)
+            if fk and fk != kc and _opens(fk, data_dir) and not _opens(kc, data_dir):
+                rc2, _, _ = _security(["add-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-l", "Kontor Datenschlüssel", "-w", fk.hex(), "-U"])
+                rc3, out3, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
+                if rc2 != 0 or rc3 != 0 or out3.strip() != fk.hex():
+                    log.warning("Key file opens the data, but the keychain did not take it -- the file stays")
+                    return fk, "datei"
+                kc = fk
+            _wipe(key_file)
+            log.info("Key file besides the keychain entry removed")
+        return kc, "schluesselbund"
     if rc == 127:   # kein `security` (nicht macOS)
         return _file_key(key_file), "datei"
     # Schluesselbund vorhanden, aber kein Eintrag: der Schluessel einer frueheren Ausweichdatei (sonst ein neuer) kommt hinein
@@ -75,8 +86,24 @@ def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
                 _wipe(key_file)
                 log.info("Data key moved from the key file into the keychain; file removed")
             return key, "schluesselbund"
-    log.warning("Keychain not usable (%s) -- key kept as a file in the data folder (less protected).", err.strip()[:120])
-    return _file_key(key_file), "datei"
+    if not old:
+        # on the Mac a new key never goes into a file next to the data: without the keychain Kontor does not start
+        log.error("Keychain not usable (%s) -- no key file created; Kontor stops.", err.strip()[:120])
+        raise StoreError(tr("s_schluesselbund_nicht_nutzbar"))
+    log.warning("Keychain not usable (%s) -- the existing key file is used until the keychain works (less protected).", err.strip()[:120])
+    return old, "datei"
+
+
+def _opens(key: bytes, data_dir: str) -> bool:
+    """Does this key open the data in the folder (the check sum of an encrypted file matches)?"""
+    for name in ("config.json.enc", "state.json.enc", "auth.json.enc"):
+        try:
+            with open(os.path.join(data_dir, name), "rb") as f:
+                decrypt(key, f.read())
+            return True
+        except (OSError, StoreError):
+            continue
+    return False
 
 
 def _read_key_file(path: str) -> Optional[bytes]:

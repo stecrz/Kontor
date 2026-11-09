@@ -105,6 +105,16 @@ class Sessions:
         with self._lock:
             self._s.clear()
 
+    def rotate(self, token: Optional[str]) -> Optional[str]:
+        """The same session under a new token (after a password change: a copy of the old cookie no longer works)."""
+        with self._lock:
+            s = self._s.pop(token or "", None)
+            if s is None:
+                return None
+            s["token"] = secrets.token_urlsafe(32)
+            self._s[s["token"]] = s
+            return s["token"]
+
     def drop_others(self, token: Optional[str]) -> int:
         """Ends every session but this one (after a password change: a stolen session stops working at once)."""
         with self._lock:

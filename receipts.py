@@ -61,9 +61,13 @@ class Belege:
         vals = {"jahr": d[:4], "monat": d[5:7], "entitaet": _safe((tx or {}).get("entitaet_name") or "Allgemein", 30),
                 "konto": _safe((tx or {}).get("konto_name") or "Konto", 30)}
         try:
-            return self.pattern.format(**vals)
-        except (KeyError, IndexError, ValueError):
+            sub = os.path.normpath(self.pattern.format(**vals))
+        except (KeyError, IndexError, ValueError, AttributeError):
             return vals["jahr"]
+        # always inside the receipts folder: no absolute path, no way up
+        if os.path.isabs(sub) or sub == ".." or sub.startswith(".." + os.sep) or "{" in sub or "<" in sub:
+            return vals["jahr"]
+        return sub
 
     # -- Index -------------------------------------------------------------
     def _save(self) -> None:

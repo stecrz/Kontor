@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.10 (2026-11-09 14:58)
+- Sicherheit: Von unterwegs (auch mit „ansehen und bearbeiten“) weder Belegordner noch Dateiverknüpfungen ändern; ein Abgleich von dort ist immer ein Probelauf. Unterordner für Belege bleiben immer im Belegordner.
+- Sicherheit: Passwortwechsel erneuert auch die eigene Anmeldung. Ohne Schlüsselbund kein neuer Schlüssel als Datei (Kontor startet dann nicht); liegt neben dem Schlüsselbund noch eine Schlüsseldatei, wird sie entfernt.
+- Sicherheit: Protokoll ohne Bereichs- und Objektnamen; Protokolle älterer Versionen werden einmalig gelöscht.
+
 ## 3.12.9 (2026-11-09 14:10)
 - Sicherheit: Ohne funktionierende Verschlüsselung startet Kontor nicht mehr (bisher: Weiterarbeit unverschlüsselt). Ein Datenschlüssel, der als Datei im Datenordner liegt, zieht in den Schlüsselbund um; die Datei wird gelöscht.
 - Sicherheit: Protokoll ohne Beträge, Empfänger, Verwendungszwecke und Kontonamen von Buchungen (auch im Probelauf).

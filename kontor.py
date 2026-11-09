@@ -64,6 +64,19 @@ def setup_logging(quiet: bool) -> None:
         pass
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S")
     path = os.path.join(DATA_DIR, "kontor.log")
+    # logs of earlier versions could hold amounts, payees and names (e.g. of dry runs): removed once, before the file is opened
+    clean = os.path.join(DATA_DIR, "log.clean")
+    if not os.path.exists(clean):
+        for n in [""] + [".%d" % i for i in range(1, 10)]:
+            try:
+                os.remove(path + n)
+            except OSError:
+                pass
+        try:
+            with open(clean, "w", encoding="utf-8") as f:
+                f.write(version())
+        except OSError:
+            pass
     fh = logging.handlers.RotatingFileHandler(path, maxBytes=5_000_000, backupCount=5, encoding="utf-8")
     # Neue Version: frische Protokolldatei beginnen (die alte bleibt als kontor.log.1 usw.)
     marker = os.path.join(DATA_DIR, "log.version")

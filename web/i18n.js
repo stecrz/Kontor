@@ -1784,6 +1784,7 @@ const I18N = {
 "s_datei_waehlen":["Datei wählen", "Choose file"],
 "s_datei_nicht_gefunden":["Datei nicht gefunden.", "File not found."],
 "s_openssl_nicht_verfuegbar_s":["openssl nicht verfügbar: %s", "openssl not available: %s"],
+"s_schluesselbund_nicht_nutzbar":["Der Schlüsselbund ist nicht nutzbar – Kontor legt den Datenschlüssel nie als Datei neben die Daten und startet deshalb nicht. Am Mac angemeldet sein und den Anmelde-Schlüsselbund entsperren, dann neu starten.", "The keychain is not usable – Kontor never puts the data key into a file next to the data and therefore does not start. Be signed in on the Mac and unlock the login keychain, then restart."],
 "s_ohne_verschluesselung":["Verschlüsselung nicht verfügbar – Kontor speichert nichts unverschlüsselt und startet deshalb nicht. Ist openssl vorhanden (/usr/bin/openssl)? Details im Protokoll.", "Encryption not available – Kontor stores nothing unencrypted and therefore does not start. Is openssl there (/usr/bin/openssl)? Details in the log."],
 "s_beleg_extern_nicht_erlaubt":["Diese Datei lässt sich nicht verknüpfen: nur Belege (PDF, Bilder, Office-Dateien …), nicht aus versteckten Ordnern, dem Kontor-Datenordner oder der Library (außer iCloud Drive und anderen Cloud-Ordnern).", "This file cannot be linked: receipts only (PDF, images, office files …), not from hidden folders, Kontor's data folder or the Library (except iCloud Drive and other cloud folders)."],
 "s_openssl_fehler_s":["openssl-Fehler: %s", "openssl error: %s"],

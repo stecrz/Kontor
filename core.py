@@ -701,7 +701,7 @@ def immo_results(config: dict, today: date) -> Dict[str, dict]:
         try:
             res = realestate.berechne(k.get("eingaben") or {}, today)
         except Exception as e:  # pragma: no cover - fehlerhafte Eingaben duerfen den Bericht nicht stoppen
-            log.warning("Property %s: calculation failed: %s", im.get("name"), e)
+            log.warning("Property %s: calculation failed (%s)", im.get("id"), type(e).__name__)
             out[str(im.get("id"))] = {"fehler": str(e)}
             continue
         out[str(im.get("id"))] = {"kalkulation": k.get("id"), "name": k.get("name"), "kennzahlen": res["kennzahlen"], "jahre": res["jahre"],
@@ -880,8 +880,8 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
     roles = account_roles(ledger, config)
     budgets = budgets_from_categories(categories or [])
     immo_res = immo_results(config, today)
-    log.debug("Report: %d areas (%s), main %s, %d accounts with position, %d property calculations, %d budgets",
-              len(bereiche), ", ".join(b["name"] for b in bereiche), haupt["name"] if haupt else "-", len(roles), len(immo_res), len(budgets))
+    log.debug("Report: %d areas, %d accounts with position, %d property calculations, %d budgets",       # no names in the log
+              len(bereiche), len(roles), len(immo_res), len(budgets))
     ledger._kat_sig = repr(getattr(ledger, "_kat_cache", (None,))[0])      # fuer Zwischenergebnisse in build_dataset
     datasets: Dict[str, dict] = {}
     weights = [1 + sum(len(ledger.transactions(a.uuid)) for a in b["leaves"]) for b in bereiche]
@@ -896,7 +896,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
             ds["budgets"] = budgets
             datasets[b["id"]] = ds
         except Exception as e:
-            log.exception("Area %s: report failed", b["name"])
+            log.exception("Area %s: report failed", str(b["id"])[:8])
             datasets[b["id"]] = {"fehler": str(e), "wurzel": b["name"]}
     try:
         equity_ratio(ledger, config, roles, bereiche, datasets)
@@ -919,13 +919,13 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
                 entry["soll_ist"] = immo_soll_ist(ledger, config, im, r, roles, today)
             except Exception as e:  # pragma: no cover
                 entry["soll_ist"] = []
-                log.warning("Plan vs. actual %s: %s", im.get("name"), e)
+                log.warning("Plan vs. actual %s: %s", im.get("id"), type(e).__name__)
         elif r:
             entry["fehler"] = r["fehler"]
         immobilien.append(entry)
     for bid, ds in datasets.items():
         if "fehler" not in ds:
-            log.debug("Area %s: %d months (%s to %s), %d accounts, %d inactive, %d warning(s)", ds.get("bereich", {}).get("name", bid),
+            log.debug("Area %s: %d months (%s to %s), %d accounts, %d inactive, %d warning(s)", str(bid)[:8],
                       len(ds["monate"]), ds["monate"][0] if ds["monate"] else "-", ds["monate"][-1] if ds["monate"] else "-",
                       sum(1 for r in ds["bilanz"]["zeilen"] if not r["gruppe"]), len(ds.get("konten_inaktiv") or []), len(ds.get("warnungen") or []))
     dataset = {

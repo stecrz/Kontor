@@ -528,3 +528,41 @@ class SecurityHardeningTests(unittest.TestCase):
         self.assertFalse(bl.external_ok(os.path.join(home, "Library", "Keychains", "login.pdf")))  # Library outside the cloud folders
         self.assertFalse(bl.external_ok(os.path.join(d, "config.pdf")))                           # Kontor's data folder
         self.assertFalse(bl.external_ok(os.path.join(home, "Documents", "notes.sqlite")))         # not a receipt type
+
+    def test_session_renewed_and_subfolders_inside(self):
+        import auth, tempfile, receipts, storage
+        ss = auth.Sessions(); a = ss.create("127.0.0.1", "pw"); old = a["token"]
+        new = ss.rotate(old)
+        self.assertIsNone(ss.get(old)); self.assertIsNotNone(ss.get(new)); self.assertNotEqual(old, new)
+        d = tempfile.mkdtemp(); st = storage.Store(d, None)
+        for pat, want in (("../../{jahr}", "2026"), ("/etc/{jahr}", "2026"), ("{jahr}/{monat}", os.path.join("2026", "03")), ("{jahr.__class__}", "2026")):
+            bl = receipts.Belege(st, {"belege": {"ordner": os.path.join(d, "B"), "unterordner": pat}})
+            self.assertEqual(bl.subfolder({"datum": "2026-03-04"}), want, pat)
+
+    def test_key_file_besides_keychain(self):
+        import tempfile, storage
+        d = tempfile.mkdtemp(); path = os.path.join(d, "master.key")
+        kc, fk = b"\x22" * 32, b"\x33" * 32
+        with open(os.path.join(d, "config.json.enc"), "wb") as f:
+            f.write(storage.encrypt(fk, b"{}"))                         # the data belongs to the file's key
+        with open(path, "w") as f:
+            f.write(fk.hex())
+        chain = {"w": kc.hex()}
+
+        def fake(args, input_text=None):
+            if args[0] == "find-generic-password":
+                return 0, chain["w"] + "\n", ""
+            if args[0] == "add-generic-password":
+                chain["w"] = args[args.index("-w") + 1]; return 0, "", ""
+            return 1, "", ""
+        orig = storage._security
+        storage._security = fake
+        try:
+            got, src = storage.load_or_create_master_key(d)
+            self.assertEqual((got, src), (fk, "schluesselbund")); self.assertFalse(os.path.exists(path))
+            # no keychain at all and no key file: no new key file next to the data -- Kontor does not start
+            storage._security = lambda args, input_text=None: (45, "", "denied")
+            with self.assertRaises(storage.StoreError):
+                storage.load_or_create_master_key(tempfile.mkdtemp())
+        finally:
+            storage._security = orig

@@ -1438,6 +1438,8 @@ def make_handler(app: App):
             if path == "/api/properties/template":
                 return self._json(200, {"eingaben": realestate.normalize({"name": "Neues Objekt", "uebergang": date.today().replace(day=1).isoformat()})})
             if path == "/api/file/status":
+                if not self._is_local(s):
+                    return self._json(403, {"fehler": tr("s_dateizugriff_nur_von_diesem_mac")})
                 full = os.path.expanduser(q.get("path") or "")
                 st = file_status(full) if full else "fehlt"
                 return self._json(200, {"status": st, "groesse": os.path.getsize(full) if st == "ok" else None})
@@ -1671,8 +1673,9 @@ def make_handler(app: App):
                     return self._json(400, {"fehler": err})
                 app.store.save("auth.json", auth.with_offline(auth.hash_password(str(body["neu"])), str(body["neu"])))
                 n = app.sessions.drop_others(s["token"])                # other devices have to sign in with the new password
-                log.info("Password changed, %d other session(s) ended", n)
-                return self._json(200, {"ok": True})
+                new = app.sessions.rotate(s["token"])                    # and this one goes on under a new token
+                log.info("Password changed, %d other session(s) ended, this one renewed", n)
+                return self._json(200, {"ok": True}, self._set_cookie(new) if new else None)
             if path == "/api/config":
                 cfg = body.get("config")
                 if not isinstance(cfg, dict):
@@ -1686,6 +1689,10 @@ def make_handler(app: App):
                 net_changed = any((old_ui.get(k) or "") != (new_ui.get(k) or "") for k in net_keys if k != "port") or \
                     int(old_ui.get("port") or 8765) != int(new_ui.get("port") or 8765)
                 if net_changed and not local:
+                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+                # where files are read and written (receipts folder and its sub-folders): only at the Mac
+                old_b, new_b = app.config.get("belege") or {}, cfg.get("belege") or {}
+                if any((old_b.get(k) or "") != (new_b.get(k) or "") for k in ("ordner", "unterordner")) and not local:
                     return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
                 new_port = int(new_ui.get("port") or 8765)
                 if not 1024 <= new_port <= 65535:
@@ -1740,6 +1747,8 @@ def make_handler(app: App):
                 dry = body.get("probelauf")
                 if dry is False and not local:
                     return self._json(403, {"fehler": tr("s_buchen_nur_von_diesem_mac")})
+                if not local:
+                    dry = True          # from elsewhere never a live run, whatever the test mode says (the Mac's schedule books)
                 if app.running:
                     return self._json(409, {"fehler": tr("s_ein_abgleich_laeuft_bereits")})
                 full = True if body.get("voll") else None          # „Alles neu lesen“; sonst schnell, solange kein vollstaendiges Lesen faellig ist
@@ -1820,7 +1829,7 @@ def make_handler(app: App):
             if path.startswith("/api/categories/"):
                 return self._kategorien(path, body, local)
             if path.startswith("/api/properties"):
-                return self._immobilien(path, body)
+                return self._immobilien(path, body, local)
             if path.startswith("/api/file/"):
                 return self._datei(path, body, local)
             if path == "/api/report/rebuild":
@@ -2196,7 +2205,7 @@ def make_handler(app: App):
                 return self._json(200, {"ok": True, "einstellungen": kc, "bericht": ok})
             return self._json(404, {"fehler": "unbekannt"})
 
-        def _immobilien(self, path: str, body: dict):
+        def _immobilien(self, path: str, body: dict, local: bool = True):
             if path == "/api/properties/calculate":
                 res = realestate.berechne(body.get("eingaben") or {}, date.today())
                 res.pop("monate", None) if body.get("ohne_monate") else None
@@ -2249,6 +2258,8 @@ def make_handler(app: App):
                 for x in im["kalkulationen"]:
                     x["aktiv"] = str(x.get("id")) == str(body.get("kalkulation_id"))
             elif aktion == "dokument_hinzufuegen":
+                if not local:                                   # links to files on the Mac: only set there
+                    return self._json(403, {"fehler": tr("s_dateizugriff_nur_von_diesem_mac")})
                 pfad = os.path.expanduser(str(body.get("pfad") or ""))
                 if not pfad or file_status(pfad) == "fehlt":
                     return self._json(400, {"fehler": tr("s_datei_nicht_gefunden_s") % pfad})

@@ -735,6 +735,20 @@ class AppTests(_AppBase):
             self.assertEqual(code, 200)                                                    # bearbeiten erlaubt
             self.assertIsNone(self.call("/api/offline/verifier")[1]["offline"])            # keine Offline-Kopie
             self.assertFalse(self.call("/api/session")[1]["offline_kopie"])
+            # even with editing allowed: no receipts folder, no file questions, no live run from elsewhere
+            cfg = copy.deepcopy(self.app.config); cfg.setdefault("belege", {})["ordner"] = "/"
+            self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 403)
+            cfg["belege"] = dict(self.app.config.get("belege") or {}, unterordner="../../{jahr}")
+            self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 403)
+            self.assertEqual(self.call("/api/file/status?path=" + self.dir)[0], 403)
+            runs = []; orig_run = self.app.do_run
+            self.app.do_run = lambda dry, force, **kw: runs.append(dry)
+            try:
+                self.assertEqual(self.call("/api/run", {})[0], 202); time.sleep(0.2)
+                self.assertEqual(self.call("/api/run", {"probelauf": False})[0], 403)
+            finally:
+                self.app.do_run = orig_run
+            self.assertEqual(runs, [True])                                                  # a dry run, whatever the test mode says
         finally:
             MA.auth.is_loopback = orig
 
