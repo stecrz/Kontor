@@ -1,3 +1,4 @@
+import copy
 import os
 import sys
 import unittest
@@ -579,3 +580,23 @@ class KontorBookingsTests(unittest.TestCase):
         self.assertEqual([(x["art"], x["markierung"]) for x in out], [("wert", "#mm-wert-20261102-1"), ("zins", "#mm-zins-2026-10")])   # newest first; a comment alone is no booking
         self.assertEqual(out[1]["zweck"], "Zinsen Oktober"); self.assertEqual(out[1]["betrag"], -4400.0)
         self.assertEqual(service.kontor_bookings(None), [])
+
+
+class CreatedListTests(unittest.TestCase):
+    """Kontor's own list of the bookings it made: never proposed again, missing ones reported."""
+
+    def test_created_not_proposed_again(self):
+        from rules import plan_loan
+        led = Ledger(accounts_from_export(F.accounts_raw({})), tx_from_export([]))
+        cfg = {"name": "Testdarlehen", "darlehenskonto": F.uid("pb.vd"), "quellkonten": [], "ab_datum": "2026-09-01", "art": "verbindlichkeit",
+               "zins": {"modell": "restschuld_monatlich", "satz": [{"ab": "2026-01-01", "prozent": 3.0}], "buchungstag": "ultimo"}, "erwartet_monatlich": False}
+        r0 = plan_loan(copy.deepcopy(led), cfg, date(2026, 10, 31))
+        z = [p for p in r0.proposals if p.kind == "zins"]
+        self.assertTrue(z)
+        rec = {z[0].tag: {"tag": z[0].tag, "konto": z[0].account_uuid, "konto_name": "Darlehen", "datum": z[0].booking_date.isoformat(), "betrag": z[0].amount, "art": "zins"}}
+        r1 = plan_loan(copy.deepcopy(led), cfg, date(2026, 10, 31), rec)
+        self.assertNotIn(z[0].tag, [p.tag for p in r1.proposals]); self.assertEqual([m["tag"] for m in r1.missing], [z[0].tag])
+        # there by account, date and amount (its mark changed in MoneyMoney): neither proposed nor missing
+        led2 = Ledger(accounts_from_export(F.accounts_raw({})), tx_from_export([F.tx("pb.vd", z[0].booking_date, z[0].amount, "Bank", "Zinsen (Markierung geändert)")]))
+        r2 = plan_loan(led2, cfg, date(2026, 10, 31), rec)
+        self.assertNotIn(z[0].tag, [p.tag for p in r2.proposals]); self.assertEqual(r2.missing, [])

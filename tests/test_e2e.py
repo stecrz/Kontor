@@ -200,6 +200,18 @@ class CoreTests(unittest.TestCase):
         res2 = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertEqual(res2["geschrieben"], 0)
         self.assertEqual(core.run_once(self.store, cfg, TODAY, dry=False, force=False, bridge_factory=MockBridge)["status"], "unveraendert")
+        # Kontor's own list of what it booked (besides the marks): 24 bookings, the 11 comments on source payments are none
+        recs = self.store.load("state.json")["kontor_buchungen"]
+        self.assertEqual(len(recs), 24); self.assertTrue(all(r["tag"].startswith("#mm-") and r["konto"] for r in recs))
+        # a booking deleted in MoneyMoney is not made again on its own, but reported as missing; one whose mark was changed counts as there
+        txs = MockBridge.state["txs"]
+        zins = [t for t in txs if "#mm-zins-" in (t.get("purpose") or "")]
+        gone = zins[0]; txs.remove(gone)
+        zins[1]["purpose"] = zins[1]["purpose"].replace("#mm-zins-", "#geaendert-")
+        res3 = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
+        self.assertEqual(res3["geschrieben"], 0); self.assertEqual(len(res3["vorschlaege"]), 0)
+        self.assertEqual([m["tag"] for m in res3["fehlend"]], re.findall(r"#mm-zins-[0-9-]+", gone["purpose"]))
+        txs.append(gone)                                                           # back: nothing missing
         ds = self.store.load("dataset.json")
         self.assertEqual(ds["haupt"], F.uid("priv"))
         self.assertEqual(set(ds["bereich_namen"].values()), {"Privat", "Alpha GbR", "Beta GbR"})
@@ -237,7 +249,7 @@ class CoreTests(unittest.TestCase):
         self.assertNotIn("Verkäuferdarlehen", logtext); self.assertNotIn("€", logtext)
         vd = [a for a in MockBridge.state["accounts"] if a["name"] == "Verkäuferdarlehen"][0]["balance"][0][0]
         self.assertEqual(vd, -1600000.0)
-        self.assertTrue(any("Probelauf" in w for w in self.store.load("dataset.json")["warnungen"]))
+        self.assertTrue(any("Freigabe" in w for w in self.store.load("dataset.json")["warnungen"]))
 
     def test_tax_report(self):
         led = Ledger(accounts_from_export(MockBridge.state["accounts"]), tx_from_export(MockBridge.state["txs"]))

@@ -32,7 +32,7 @@ Unter **Einrichtung** stehen alle Bausteine in einer sinnvollen Reihenfolge. Jed
 3. **Konten bestätigen** – Bereich, Position und Verlauf jedes Kontos.
 4. **Historische Kontostände einlesen** – den bisherigen Verlauf einmalig aus MoneyMoney übernehmen.
 5. **Kategorien auswählen** und **Kategorien zuordnen**.
-6. **Gegenbuchungen einrichten**, **Immobilien erfassen**, **Planung anpassen**, **Steuerübersicht einrichten**, **Belegordner wählen**, **iPhone-Zugriff einrichten**, **Abgleich und Testmodus einstellen**.
+6. **Gegenbuchungen einrichten**, **Immobilien erfassen**, **Planung anpassen**, **Steuerübersicht einrichten**, **Belegordner wählen**, **iPhone-Zugriff einrichten**, **Abgleich und Freigabe einstellen**.
 
 Danach erstellt „Auswertung erstellen“ die erste Auswertung. Die Sprache (Deutsch oder Englisch) wählst du auf der Anmeldeseite, in der Einrichtung oder unter Einstellungen → Allgemein. Dort stellst du auch das Erscheinungsbild ein: dunkel (Standard), hell oder wie das System – je Gerät.
 
@@ -287,9 +287,11 @@ Auto-Regeln buchen automatisch in Offline-Konten in MoneyMoney:
 - **Beteiligungen**: Zielkonto = Anteil × Nettowert einer Kontengruppe.
 - **Saldo-Spiegel**: Zielkonto = Faktor × Quellkonto (z. B. Kapitalkonto).
 
-Standard ist der **Testmodus**: Vorschläge erscheinen unter „Auto-Buchungen“, gebucht wird erst nach „Jetzt buchen“ oder wenn du den Testmodus ausschaltest. Jede Buchung trägt eine Markierung im Verwendungszweck (die Schnittstelle von MoneyMoney kennt beim Anlegen kein Kommentarfeld) und wird nie doppelt angelegt; bestehende Buchungen ändert oder löscht Kontor nie. Bank- und Erweiterungskonten werden nie bebucht, Überweisungen und Lastschriften sind gesperrt.
+Standard ist **„Vor dem Buchen fragen“**: Die Buchungen erscheinen unter „Auto-Buchungen“ und werden erst angelegt, wenn du sie dort freigibst („Freigeben und buchen“, nur am Mac). Mit **„Automatisch buchen“** legt Kontor sie bei jedem Abgleich selbst an; umschalten nur am Mac. Bank- und Erweiterungskonten werden nie bebucht, Überweisungen und Lastschriften sind gesperrt, bestehende Buchungen ändert oder löscht Kontor nie.
 
-**Ablauf**: Bei jedem Abgleich (automatisch alle 30 Minuten, nach neuen Daten in MoneyMoney oder per „Sync“) rechnet Kontor die Regeln durch. Im Testmodus meldet eine Mitteilung „… Buchungen warten auf Freigabe“ – „Jetzt buchen“ (nur am Mac) ist die Freigabe; ohne Testmodus bucht Kontor selbst und meldet „… Buchungen angelegt“. Unter „Auto-Buchungen“ stehen der letzte Lauf mit Rechenwegen und Hinweisen, der Verlauf und **„In MoneyMoney angelegt“**: alle Buchungen mit Kontors Markierung, so wie sie jetzt in MoneyMoney stehen. **Löschen** geht nur in MoneyMoney (Suche nach der Markierung, z. B. „#mm-zins“) – die Schnittstelle von MoneyMoney kennt kein Löschen. Greift die Regel noch, legt Kontor eine gelöschte Buchung beim nächsten Abgleich wieder an; also zuerst die Regel ändern oder abschalten.
+**Ablauf**: Bei jedem Abgleich (automatisch alle 30 Minuten, nach neuen Daten in MoneyMoney oder per „Sync“) rechnet Kontor die Auto-Regeln durch; „Jetzt prüfen“ tut das sofort. Eine Mitteilung meldet „… Buchungen warten auf Freigabe“ bzw. „… Buchungen angelegt“. Unter „Auto-Buchungen“ stehen die wartenden bzw. zuletzt gebuchten Buchungen mit Hinweisen und Rechenwegen, **„Von Kontor angelegt“** (nur Kontors eigene Buchungen mit ihrem Stand in MoneyMoney) und der Verlauf.
+
+**Nie doppelt**: Jede Buchung trägt eine Markierung im Verwendungszweck (z. B. „#mm-zins-2026-10“; die Schnittstelle von MoneyMoney kennt beim Anlegen kein Kommentarfeld). Zusätzlich führt Kontor eine eigene, verschlüsselte Liste aller Buchungen, die es angelegt hat. Ändert sich die Markierung in MoneyMoney, erkennt Kontor die Buchung an Konto, Datum und Betrag; fehlt sie ganz (gelöscht), legt Kontor sie **nicht** von selbst neu an, sondern zeigt sie als „In MoneyMoney nicht mehr gefunden“ – „Wieder anlegen“ erlaubt es beim nächsten Abgleich. **Löschen** geht nur in MoneyMoney, dessen Schnittstelle kennt kein Löschen. Wertanpassungen (Beteiligungen, Spiegel) buchen immer die Differenz zum Stand in MoneyMoney und brauchen das nicht.
 
 **Zinsen**: Jahresbasis = Zinssatz × Stand am 31.12. des Vorjahres, je Monat ein Zwölftel, im Dezember mit dem Cent-Rest – oder monatlich auf die Restschuld. Das Modell ist vereinfacht (30/360); einmal im Jahr mit der Zinsabrechnung der Bank abgleichen. Bei Problemen (Konto gelöscht, keine passende Zahlung, Zinsbuchung schon von Hand vorhanden) gibt es einen Hinweis und eine Mitteilung.
 
@@ -369,7 +371,7 @@ Im Terminal aktualisiert dieselbe Zeile wie bei der [Installation](https://githu
 **Kommandozeile** – `python3 ~/Kontor/kontor.py …`:
 
 - `start` – Dienst im Vordergrund starten; `open` – Oberfläche öffnen; `status` – Zustand; `version`
-- `run [--dry-run|--live] [--force]` – einen Abgleich ausführen (Testmodus oder buchen)
+- `run [--dry-run|--live] [--force]` – einen Abgleich ausführen (nur vorschlagen oder buchen)
 - `accounts` – Kontenbaum mit Kennungen, Typ und Position; `check` – Einrichtung gegen MoneyMoney prüfen
 - `password` – Kontor-Passwort zurücksetzen
 - `package-export [DATEI] [--without-uuid] [--with-plan]`, `package-import DATEI [--replace] [--anyway]` – Einstellungspaket

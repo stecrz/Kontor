@@ -37,6 +37,7 @@ MoneyMoney (macOS) arbeitet. Er läuft als launchd-Dienst beim Nutzer und starte
 - Präfix `mm_` nur für Teile, die direkt mit MoneyMoney sprechen.
 
 ## Oberfläche
+- Gestaltung und Bedienung nach Apples Human Interface Guidelines (macOS und iOS): klare Hierarchie, bekannte Bedienmuster und Tastaturkürzel, ruhige Typografie, Hell- und Dunkelmodus.
 - Texte auf Deutsch, kurz, ohne Fachbegriffe, Einzahl/Mehrzahl korrekt.
 - Konten in der Reihenfolge von MoneyMoney.
 - Hinweise für den Nutzer im Chat, nicht als Dateien im Repo.

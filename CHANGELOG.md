@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.16 (2026-11-09 17:31)
+- Auto-Buchungen: „Vor dem Buchen fragen“ oder „Automatisch buchen“ statt „Testmodus“ (umschalten nur am Mac); „Jetzt prüfen“ und „Freigeben und buchen“. Hinweise zuerst, Rechenwege und Verlauf aufklappbar; Verweise zwischen Auto-Regeln und Auto-Buchungen.
+- Nie doppelt: Kontor führt eine eigene Liste aller Buchungen, die es angelegt hat. Geänderte Markierungen erkennt es an Konto, Datum und Betrag; in MoneyMoney gelöschte Buchungen legt es nicht von selbst neu an, sondern zeigt sie als fehlend („Wieder anlegen“).
+- „Von Kontor angelegt“ (statt „In MoneyMoney angelegt“) mit Status je Buchung.
+
 ## 3.12.15 (2026-11-09 16:49)
 - „Regeln“ heißt jetzt „Auto-Regeln“, „Buchungen“ jetzt „Auto-Buchungen“ – es geht um automatische Buchungen.
 - Auto-Buchungen: neue Liste „In MoneyMoney angelegt“ mit allen Buchungen, die Kontor angelegt hat (so, wie sie jetzt in MoneyMoney stehen); Hinweis, wie man sie löscht.

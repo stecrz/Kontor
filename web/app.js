@@ -2683,30 +2683,40 @@ async function vSync() {
 
 // ---------------------------------------------------------------- Buchungen (Laeufe)
 function vBuchungen(runs) {
-  const st = S.STATUS, l = runs.letzter_lauf;
+  // Auto-Buchungen: what the auto rules would book (waiting for approval) and have booked; the rules themselves under Auto-Regeln
+  const st = S.STATUS, l = runs.letzter_lauf, ask = S.CFG.probelauf !== false, local = !!st.lokal;
+  const pending = l && l.probelauf && (l.vorschlaege || []).length ? l.vorschlaege.length : 0;
+  const artL = {tilgung: t('art_tilgung'), zins: t('art_zins'), wert: t('art_wert'), spiegel: t('art_spiegel')};
   let h = `<div class="toolbar">
-    <button id="run-dry">${t('abgleich_jetzt_test')}</button>
-    <button id="run-live" class="${st.probelauf ? 'secondary' : ''}" ${st.lokal ? '' : t('disabled_title_nur_am_mac')}>${t('jetzt_buchen')}</button>
+    <button id="run-dry" class="${pending ? 'secondary' : ''}">${t('abgleich_jetzt_test')}</button>
+    ${pending ? `<button id="run-live" ${local ? '' : t('disabled_title_nur_am_mac')}>${t('jetzt_buchen')} (${pending})</button>` : ''}
     <button id="run-report" class="secondary">${t('nur_bericht_aktualisieren')}</button>
-  </div>`;
+    <span class="sp"></span>
+    <div class="seg small" id="auto-mode" title="${t('modus_tip')}"><button data-v="1" class="${ask ? 'on' : ''}" ${local ? '' : 'disabled'}>${t('modus_fragen')}</button><button data-v="0" class="${ask ? '' : 'on'}" ${local ? '' : 'disabled'}>${t('modus_auto')}</button></div>
+  </div><div class="note">${t('im_testmodus_schlaegt_kontor_die')} <a href="#rules">${t('regeln_bearbeiten')} →</a></div>`;
   if (l) {
-    h += `<h2>${t('regeln_zuletzt_angewendet_0_1', esc(l.zeit), l.probelauf ? `<span class="pill warn">${t('testmodus')}</span>` : `<span class="pill ok">${t('gebucht')}</span>`, l.geschrieben, l.fehler ? ' · <span class="pill err">' + esc(l.fehler) + '</span>' : '')}</h2>`;
-    if (l.vorschlaege && l.vorschlaege.length) {
+    const head = pending ? `${t('wartet_freigabe')} <span class="x">${pending}</span>` : `${t('zuletzt_geprueft')} <span class="x">${esc(l.zeit)} · ${l.geschrieben} ${t('gebucht')}</span>`;
+    h += `<h2>${head}${l.fehler ? ' <span class="pill err">' + esc(l.fehler) + '</span>' : ''}</h2>`;
+    if ((l.vorschlaege || []).length) {
       h += `<div class="wrap auto"><table class="plain"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th><th>${t('kategorie')}</th></tr></thead><tbody>`
-        + l.vorschlaege.map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto)}</td><td>${esc(v.art)}</td><td class="num ${v.betrag < 0 ? 'neg' : 'pos'}">${F(v.betrag)}</td><td>${esc(v.text)}</td><td>${esc(v.kategorie || '')}</td></tr>`).join('') + '</tbody></table></div>';
+        + l.vorschlaege.map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td><td class="num ${v.betrag < 0 ? 'neg' : 'pos'}">${F(v.betrag)}</td><td>${esc(v.text)}</td><td>${esc(v.kategorie || '')}</td></tr>`).join('') + '</tbody></table></div>';
       if (l.probelauf) h += `<div class="note">${t('diese_buchungen_sind_noch_nicht')}</div>`;
     } else h += `<div class="note">${t('keine_buchungen_noetig')}</div>`;
-    if (l.hinweise && l.hinweise.length) h += `<h3>${t('rechenwege')}</h3>` + l.hinweise.map(x => `<div class="small muted">${esc(x)}</div>`).join('');
     if (l.warnungen && l.warnungen.length) h += `<h3>${t('hinweise')}</h3>` + l.warnungen.map(x => `<div class="banner">${esc(x)}</div>`).join('');
+    if (l.hinweise && l.hinweise.length) h += `<details class="calc"><summary>${t('rechenwege')} (${l.hinweise.length})</summary>` + l.hinweise.map(x => `<div class="small muted">${esc(x)}</div>`).join('') + '</details>';
+    // made by Kontor, missing in MoneyMoney now: never made again on its own
+    const miss = l.fehlend || [];
+    if (miss.length) h += `<h3>${t('fehlend_titel')} <span class="x">${miss.length}</span></h3><div class="note">${t('fehlend_note')}</div><div class="wrap auto"><table class="plain"><tbody>`
+      + miss.map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto_name || '')}</td><td>${esc(artL[v.art] || v.art || '')}</td><td class="num">${F(v.betrag)}</td><td class="small muted">${esc(v.tag)}</td><td>${local ? `<button class="ghost small re-allow" data-tag="${esc(v.tag)}">${t('wieder_anlegen')}</button>` : ''}</td></tr>`).join('') + '</tbody></table></div>';
   }
-  // what Kontor has made in MoneyMoney, as MoneyMoney has it now (deleting only there: the scripting interface has no delete)
-  const ang = runs.angelegt || [], artL = {tilgung: t('art_tilgung'), zins: t('art_zins'), wert: t('art_wert'), spiegel: t('art_spiegel')};
+  // only what Kontor itself made in MoneyMoney (its own list and marks), with the state there now
+  const ang = runs.angelegt || [], stL = {ok: ['ok', t('st_ok')], markierung: ['warn', t('st_markierung')], fehlt: ['err', t('st_fehlt')]};
   h += `<h2>${t('angelegt_titel')} <span class="x">${ang.length}</span></h2><div class="note">${t('angelegt_note')}</div>`
-    + (ang.length ? `<div class="wrap auto" style="max-height:420px"><table class="plain"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th><th>${t('markierung')}</th></tr></thead><tbody>`
-      + ang.slice(0, 300).map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td><td class="num ${v.betrag < 0 ? 'neg' : 'pos'}">${F(v.betrag)}</td><td class="small">${esc(v.zweck || v.gegenpartei)}</td><td class="small muted" style="white-space:nowrap">${esc(v.markierung)}</td></tr>`).join('')
+    + (ang.length ? `<div class="wrap auto" style="max-height:420px"><table class="plain"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th><th>${t('markierung')}</th><th>${t('status')}</th></tr></thead><tbody>`
+      + ang.slice(0, 300).map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td><td class="num ${v.betrag < 0 ? 'neg' : 'pos'}">${F(v.betrag)}</td><td class="small">${esc(v.zweck || v.gegenpartei)}</td><td class="small muted" style="white-space:nowrap">${esc(v.markierung)}</td><td><span class="pill ${(stL[v.status] || stL.ok)[0]}">${(stL[v.status] || stL.ok)[1]}</span></td></tr>`).join('')
       + `</tbody></table></div>` : `<div class="muted small">${t('keine_angelegt')}</div>`);
-  h += `<h2>${t('verlauf_2')}</h2><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th>${t('modus')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th><th>${t('buchungen')}</th></tr></thead><tbody>`
-    + (runs.verlauf || []).map(v => `<tr><td>${esc(v.zeit)}</td><td>${v.probelauf ? t('test') : t('gebucht')}</td><td class="num">${v.vorschlaege ?? ''}</td><td class="num">${v.geschrieben}</td><td>${esc(v.fehler || '')}</td><td class="small">${(v.buchungen || []).map(esc).join('<br>')}</td></tr>`).join('') + '</tbody></table></div>';
+  h += `<details class="calc"><summary>${t('verlauf_2')} (${(runs.verlauf || []).length})</summary><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th>${t('modus')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th><th>${t('buchungen')}</th></tr></thead><tbody>`
+    + (runs.verlauf || []).map(v => `<tr><td>${esc(v.zeit)}</td><td>${v.probelauf ? t('test') : t('gebucht')}</td><td class="num">${v.vorschlaege ?? ''}</td><td class="num">${v.geschrieben}</td><td>${esc(v.fehler || '')}</td><td class="small">${(v.buchungen || []).map(esc).join('<br>')}</td></tr>`).join('') + '</tbody></table></div></details>';
   return h;
 }
 
@@ -3056,6 +3066,8 @@ const onlyManual = k => !k.gruppe && k.manuell, onlyGroups = k => k.gruppe, only
 function vRegeln() {
   const C = S.CFG;
   let h = `<div class="note">${t('regeln_schreiben_ausschliesslich_in_ma')}${more('rules')}` + (S.KONTEN.length ? '' : ` <b>${t('noch_keine_konten_geladen_unter')}</b>`) + '</div>';
+  const lr = (S.STATUS || {}).letzter_lauf, pend = lr && lr.probelauf ? (lr.vorschlaege || []).length : 0;
+  h += `<div class="banner info"><b>${C.probelauf !== false ? t('modus_fragen') : t('modus_auto')}</b> · ${pend ? `<a href="#bookings">${t('0_buchungsvorschlaege', pend)} →</a>` : `<a href="#bookings">${t('regeln_zu_buchungen')} →</a>`}</div>`;
   h += `<h2>${t('darlehen')} <span class="x">${t('rate_erkennen_auf_dem_darlehenskonto')}</span></h2><div class="list" id="loans">`;
   (C.darlehen || []).forEach((l, i) => { h += loanForm(l, i); });
   h += `</div><div class="actions"><button id="add-loan" class="secondary">${t('darlehen_hinzufuegen')}</button></div>`;
@@ -3941,6 +3953,12 @@ function bind(main) {
 
   // Buchungen
   const rd = $('#run-dry', main); if (rd) rd.addEventListener('click', () => startRun(true));
+  $$('#auto-mode button', main).forEach(b => b.addEventListener('click', async () => {      // ask before booking / book automatically
+    const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.probelauf = b.dataset.v === '1';
+    if (!cfg.probelauf && !confirm(t('modus_auto_frage'))) return;
+    try { await api('/api/config', {config: cfg}, 'PUT'); S.CFG = await api('/api/config'); S.STATUS = await api('/api/status'); route(); } catch (e) { toast(e.message, 5000); }
+  }));
+  $$('.re-allow', main).forEach(b => b.addEventListener('click', async () => { try { await api('/api/bookings/allow', {tag: b.dataset.tag}); toast(t('wieder_anlegen_ok')); route(); } catch (e) { toast(e.message, 5000); } }));
   const rl = $('#run-live', main); if (rl) rl.addEventListener('click', () => { if (confirm(t('jetzt_buchen_buchungen_werden_jetzt'))) startRun(false); });
   const rr = $('#run-report', main); if (rr) rr.addEventListener('click', async () => { toast(t('bericht_wird_erstellt'), 20000); const r = await api('/api/report', {}); if (!r.ok) toast(r.text || t('moneymoney_nicht_verfuegbar'), 5000); await loadAll(); route(); });
 

@@ -32,7 +32,7 @@ The “?” next to fields explain briefly; a click on one (on the iPhone: a sec
 3. **Confirm accounts** – area, position and history of each account.
 4. **Import historical balances** – take over the past history from MoneyMoney once.
 5. **Choose categories** and **assign categories**.
-6. **Set up counter-bookings**, **Add properties**, **Adjust planning**, **Set up tax overview**, **Choose receipts folder**, **Set up iPhone access**, **Set sync and test mode**.
+6. **Set up counter-bookings**, **Add properties**, **Adjust planning**, **Set up tax overview**, **Choose receipts folder**, **Set up iPhone access**, **Set sync and approval**.
 
 After that, “Create report” builds the first report. Choose the language (German or English) on the login page, in the setup or under Settings → General. The appearance is set there too: dark (default), light or like the system – per device.
 
@@ -287,9 +287,11 @@ Auto rules book automatically into offline accounts in MoneyMoney:
 - **Equity investments**: target account = share × net value of an account group.
 - **Balance mirror**: target account = factor × source account (e.g. capital account).
 
-The default is **test mode**: proposals appear under “Auto bookings”, nothing is booked until “Book now” or until you turn test mode off. Every booking carries a marker in the purpose (MoneyMoney's interface has no comment field when creating) and is never created twice; Kontor never changes or deletes existing bookings. Bank and extension accounts are never booked to, transfers and direct debits are blocked.
+The default is **“Ask before booking”**: the bookings appear under “Auto bookings” and are created once you approve them there (“Approve and book”, on the Mac only). With **“Book automatically”** Kontor creates them itself at every sync; switching only on the Mac. Bank and extension accounts are never booked to, transfers and direct debits are blocked, Kontor never changes or deletes existing bookings.
 
-**How it runs**: at every sync (automatically every 30 minutes, after new data in MoneyMoney or with “Sync”) Kontor works through the rules. In test mode a notification says “… bookings waiting for approval” – “Book now” (only on the Mac) is the approval; without test mode Kontor books itself and says “… bookings created”. Under “Auto bookings” you find the last run with its calculations and notes, the history and **“Created in MoneyMoney”**: all bookings with Kontor's mark, as they are in MoneyMoney now. **Deleting** only works in MoneyMoney (search for the mark, e.g. “#mm-zins”) – MoneyMoney's interface has no delete. If the rule still applies, Kontor creates a deleted booking again at the next sync; so change or switch off the rule first.
+**How it runs**: at every sync (automatically every 30 minutes, after new data in MoneyMoney or with “Sync”) Kontor works through the auto rules; “Check now” does it at once. A notification says “… bookings waiting for approval” or “… bookings created”. Under “Auto bookings” you find the waiting or last booked bookings with notes and calculations, **“Created by Kontor”** (only Kontor's own bookings with their state in MoneyMoney) and the history.
+
+**Never twice**: every booking carries a mark in the purpose (e.g. “#mm-zins-2026-10”; MoneyMoney's interface has no comment field when creating). On top, Kontor keeps its own encrypted list of all bookings it created. If the mark changes in MoneyMoney, Kontor recognises the booking by account, date and amount; if it is gone (deleted), Kontor does **not** create it again on its own but shows it as “No longer found in MoneyMoney” – “Create again” allows it at the next sync. **Deleting** only works in MoneyMoney, its interface has no delete. Value adjustments (participations, mirrors) always book the difference to the balance in MoneyMoney and need none of this.
 
 **Interest**: annual basis = interest rate × balance on 31 Dec of the previous year, one twelfth per month, the cent remainder in December – or monthly on the outstanding balance. The model is simplified (30/360); reconcile once a year with the bank's interest statement. If there are problems (account deleted, no matching payment, interest booking already entered by hand) you get a note and a notification.
 
@@ -369,7 +371,7 @@ In Terminal, the same line as for the [installation](https://github.com/stecrz/K
 **Command line** – `python3 ~/Kontor/kontor.py …`:
 
 - `start` – run the service in the foreground; `open` – open the interface; `status` – state; `version`
-- `run [--dry-run|--live] [--force]` – run a sync (test mode or booking)
+- `run [--dry-run|--live] [--force]` – run a sync (suggest only or book)
 - `accounts` – account tree with IDs, type and position; `check` – check the setup against MoneyMoney
 - `password` – reset the Kontor password
 - `package-export [FILE] [--without-uuid] [--with-plan]`, `package-import FILE [--replace] [--anyway]` – settings package

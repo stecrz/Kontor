@@ -56,6 +56,23 @@ class RuleResult:
     proposals: List[Proposal] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     info: List[str] = field(default_factory=list)
+    missing: List[dict] = field(default_factory=list)     # created by Kontor before, no longer found in MoneyMoney
+
+
+def _created_check(ledger: Ledger, created: Dict[str, dict], tag: str, res: RuleResult) -> bool:
+    """Kontor's own list of the bookings it made: a tag on it is never proposed again, even if its mark is gone from
+    MoneyMoney (changed or deleted there). Still there by account, date and amount: fine; otherwise noted as missing."""
+    rec = created.get(tag)
+    if not rec:
+        return False
+    try:
+        d = date.fromisoformat(rec.get("datum") or "")
+    except ValueError:
+        d = None
+    there = any(t.booking_date == d and abs(t.amount - float(rec.get("betrag") or 0)) < 0.005 for t in ledger.transactions(rec.get("konto") or ""))
+    if not there:
+        res.missing.append({k: rec.get(k) for k in ("tag", "konto_name", "datum", "betrag", "art", "regel")})
+    return True
 
 
 def tags_in(txs: List[Tx]) -> Dict[str, Tx]:
@@ -129,7 +146,7 @@ DEFAULT_TEXTS = {
 }
 
 
-def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
+def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str, dict]] = None) -> RuleResult:
     res = RuleResult()
     name = cfg.get("name") or cfg.get("darlehenskonto")
     rule = "Darlehen %s" % name
@@ -166,7 +183,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
                 continue
             matched.append(t)
             tag = "#mm-tx-%d" % t.id
-            if tag in existing:
+            if tag in existing or _created_check(ledger, created or {}, tag, res):
                 continue
             amount = round(-t.amount, 2)
             purpose = _fill(texts["tilgung_text"], art=payment_kind(t), datum=t.booking_date.strftime("%d.%m.%Y"),
@@ -242,7 +259,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date) -> RuleResult:
         if bday > today or bday < ab:
             continue
         tag = "#mm-zins-%04d-%02d" % (y, m)
-        if tag in existing:
+        if tag in existing or _created_check(ledger, created or {}, tag, res):
             continue
         # Schutz: manuell gebuchte Zinsen im selben Monat
         manual = [t for t in loan_txs if (t.booking_date.year, t.booking_date.month) == (y, m)
@@ -341,13 +358,15 @@ def plan_mirror(ledger: Ledger, cfg: dict, today: date, roles: Optional[Dict[str
 # Alle Regeln eines Konfigurationsstands
 # ---------------------------------------------------------------------------
 
-def plan_all(ledger: Ledger, config: dict, today: date) -> RuleResult:
+def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[str, dict]] = None) -> RuleResult:
+    """created: Kontor's own list of the bookings it made (tag -> record), see _created_check. Values (participations, mirrors)
+    need none: they always book the difference to the balance in MoneyMoney."""
     total = RuleResult()
     # Reihenfolge: erst Darlehen (veraendern GbR-Werte), dann Wert-Spiegel
     for cfg in config.get("darlehen", []) or []:
         if cfg.get("aktiv", True):
-            r = plan_loan(ledger, cfg, today)
-            total.proposals += r.proposals; total.warnings += r.warnings; total.info += r.info
+            r = plan_loan(ledger, cfg, today, created)
+            total.proposals += r.proposals; total.warnings += r.warnings; total.info += r.info; total.missing += r.missing
     from report import account_roles          # spaet importiert (auswertung importiert rules)
     roles = account_roles(ledger, config)
     for cfg in (config.get("beteiligungen", []) or []) + (config.get("saldo_spiegel", []) or []):

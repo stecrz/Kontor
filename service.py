@@ -62,21 +62,41 @@ PLAN_PARAMS = ("horizont_monate", "standard_methode", "inflation_prozent_pa", "s
 
 
 
-def kontor_bookings(ledger) -> List[dict]:
-    """The bookings Kontor has made in MoneyMoney (its mark #mm-... in the purpose), as MoneyMoney has them now -- newest first."""
+def kontor_bookings(ledger, record: Optional[List[dict]] = None) -> List[dict]:
+    """The bookings Kontor has made in MoneyMoney -- from its own list (record) and its marks (#mm-...) in the purpose -- with
+    their state in MoneyMoney now: present ("ok"), mark changed but account, date and amount found ("markierung"), missing
+    ("fehlt"). Newest first."""
     out: List[dict] = []
     if ledger is None:
         return out
     kinds = {"tx": "tilgung", "zins": "zins", "wert": "wert", "spiegel": "spiegel"}
+    by_tag: Dict[str, Tx] = {}
     for t in ledger.txs:
         m = TAG_RE.search(t.purpose or "")
-        if not m:
+        if m:
+            by_tag.setdefault(m.group(0), t)
+
+    def row(t: Optional[Tx], tag: str, status: str, rec: Optional[dict] = None) -> dict:
+        acc = ledger.accounts.get(t.account_uuid) if t else None
+        k = tag.split("-")[1] if tag.count("-") >= 2 else ""
+        return {"datum": t.booking_date.isoformat() if t else (rec or {}).get("datum", ""), "konto": acc.name if acc else (rec or {}).get("konto_name", ""),
+                "art": kinds.get(k, (rec or {}).get("art", k)), "betrag": round(t.amount, 2) if t else (rec or {}).get("betrag"),
+                "gegenpartei": t.name if t else "", "zweck": TAG_RE.sub("", t.purpose).strip() if t else (rec or {}).get("regel", ""),
+                "markierung": tag, "status": status}
+    seen = set()
+    for rec in record or []:
+        tag = rec.get("tag") or ""
+        seen.add(tag)
+        if tag in by_tag:
+            out.append(row(by_tag[tag], tag, "ok", rec))
             continue
-        acc = ledger.accounts.get(t.account_uuid)
-        k = m.group(0).split("-")[1]
-        out.append({"datum": t.booking_date.isoformat(), "konto": acc.name if acc else "", "art": kinds.get(k, k), "betrag": round(t.amount, 2),
-                    "gegenpartei": t.name, "zweck": TAG_RE.sub("", t.purpose).strip(), "markierung": m.group(0)})
-    out.sort(key=lambda x: (x["datum"], x["markierung"]), reverse=True)
+        hit = next((t for t in ledger.transactions(rec.get("konto") or "") if t.booking_date.isoformat() == rec.get("datum")
+                    and abs(t.amount - float(rec.get("betrag") or 0)) < 0.005), None)
+        out.append(row(hit, tag, "markierung" if hit else "fehlt", rec))
+    for tag, t in by_tag.items():
+        if tag not in seen:
+            out.append(row(t, tag, "ok"))
+    out.sort(key=lambda x: (x["datum"] or "", x["markierung"]), reverse=True)
     return out
 
 def bind_allowed(addr: str) -> bool:
@@ -1353,7 +1373,8 @@ def make_handler(app: App):
                                             voll=app.full_read_info()))
             if path == "/api/runs":
                 st = app.store.load("state.json", {}) or {}
-                return self._json(200, {"letzter_lauf": st.get("letzter_lauf"), "verlauf": list(reversed(st.get("verlauf", []))), "angelegt": kontor_bookings(app.ledger)})
+                return self._json(200, {"letzter_lauf": st.get("letzter_lauf"), "verlauf": list(reversed(st.get("verlauf", []))),
+                                        "angelegt": kontor_bookings(app.ledger, st.get("kontor_buchungen")), "lokal": self._is_local(s)})
             if path == "/api/log":
                 n = min(2000, int(q.get("n", "300")))
                 try:
@@ -1725,6 +1746,8 @@ def make_handler(app: App):
                 if net_changed and not local:
                     return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
                 # where files are read and written (receipts folder and its sub-folders): only at the Mac
+                if bool(cfg.get("probelauf", True)) != bool(app.config.get("probelauf", True)) and not local:
+                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})      # booking without asking: switched only at the Mac
                 old_b, new_b = app.config.get("belege") or {}, cfg.get("belege") or {}
                 if any((old_b.get(k) or "") != (new_b.get(k) or "") for k in ("ordner", "unterordner")) and not local:
                     return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
@@ -1777,6 +1800,14 @@ def make_handler(app: App):
                     ab["online" if want else "offline"].append("%s | %s" % (acc.uuid, acc.name))
                 app.save_config(cfg)
                 return self._json(200, {"ok": True, "abruf": app.abruf()})
+            if path == "/api/bookings/allow":
+                # a booking Kontor made and that is missing in MoneyMoney: allowed to be made again at the next sync (only at the Mac)
+                if not local:
+                    return self._json(403, {"fehler": tr("s_buchen_nur_von_diesem_mac")})
+                tag = str(body.get("tag") or "")
+                app.store.update("state.json", lambda cur: cur.__setitem__("kontor_buchungen", [r for r in cur.get("kontor_buchungen") or [] if r.get("tag") != tag]), {})
+                log.info("Booking allowed to be made again")
+                return self._json(200, {"ok": True})
             if path == "/api/run":
                 dry = body.get("probelauf")
                 if dry is False and not local:

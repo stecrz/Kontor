@@ -584,7 +584,8 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
 # Lauf
 # ---------------------------------------------------------------------------
 
-def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal]) -> int:
+def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal], made: Optional[List[Proposal]] = None) -> int:
+    """Writes the proposals; the bookings written (not the comments on source payments) go into made."""
     done = 0
     for pr in proposals:
         acc = ledger.accounts[pr.account_uuid]
@@ -595,6 +596,8 @@ def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal]) -
                 raise MoneyMoneyError(tr("s_verweigert_s_ist_kein_manuell") % acc.path)
             bridge.add_transaction(acc.uuid, pr.booking_date, pr.payee, pr.amount, pr.purpose,
                                    pr.category or None, fallback_refs=[acc.name])
+            if made is not None and not bridge.dry_run:
+                made.append(pr)
         done += 1
         log.info("%s: %s booking", "BOOKED" if not bridge.dry_run else "DRY RUN", pr.kind)      # no amounts, payees or purposes in the log
     return done
@@ -1064,7 +1067,8 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             return {"status": "unveraendert", "text": tr("s_keine_aenderung_in_moneymoney_seit"), "_ledger": ledger,
                     "_kategorien": categories}
 
-        result = plan_all(ledger, config, today)
+        created = {r["tag"]: r for r in state.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")}
+        result = plan_all(ledger, config, today, created)
         result.warnings.extend(ledger.hints)
         # the log (plain text) holds no amounts, payees, purposes or account names: the details are in the encrypted state and
         # shown in the interface; here only how many
@@ -1074,9 +1078,10 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         bookings = [x for x in result.proposals if x.kind != "quelle"]
 
         written, err = 0, None
+        made: List[Proposal] = []
         if result.proposals and not dry:
             try:
-                written = apply_proposals(bridge, ledger, result.proposals)
+                written = apply_proposals(bridge, ledger, result.proposals, made)
             except MoneyMoneyError as e:
                 err = e
                 log.error("Writing aborted after %d booking(s): %s", written, e)
@@ -1106,8 +1111,15 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                                     "betrag": x.amount, "text": x.purpose, "kategorie": x.category} for x in bookings],
                    "quellaenderungen": len(result.proposals) - len(bookings),
                    "geschrieben": written, "warnungen": result.warnings, "hinweise": result.info,
-                   "fehler": str(err) if err else None}
+                   "fehlend": result.missing, "fehler": str(err) if err else None}
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        new_recs = [{"tag": p.tag, "konto": p.account_uuid, "konto_name": ledger.accounts[p.account_uuid].name if p.account_uuid in ledger.accounts else "",
+                     "datum": p.booking_date.isoformat(), "betrag": round(p.amount, 2), "art": p.kind, "regel": p.rule, "angelegt": stamp}
+                    for p in made if p.tag]
+
         def _merge(cur: dict) -> None:
+            if new_recs:                    # Kontor's own list of what it booked (encrypted state, not the marks in MoneyMoney)
+                cur["kontor_buchungen"] = (cur.get("kontor_buchungen") or []) + new_recs
             cur["fingerprint"] = fp if err is None else None
             cur["letzter_lauf"] = summary
             cur.setdefault("verlauf", []).append({"zeit": summary["zeit"], "probelauf": dry, "geschrieben": written,

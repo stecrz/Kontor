@@ -170,6 +170,7 @@ td.plan.editable { cursor:cell; }
 .legend .p::before { background-color:var(--plan); background-image:repeating-linear-gradient(135deg, var(--muted) 0 1px, transparent 1px 4px); } .legend .c::before { background:var(--muted); opacity:.35; } .legend .y::before { background:var(--year); } .legend .o::before { box-shadow:inset 3px 0 0 var(--accent); }
 .legend em { font-style:normal; }
 .note { color:var(--muted); font-size:12px; margin:8px 0 14px; max-width:980px; }
+details.calc { margin:10px 0 14px; } details.calc > summary { cursor:pointer; color:var(--muted); font-size:12.5px; margin-bottom:6px; }      /* calculations, history: on demand */
 .note.warn { color:var(--warn-fg); background:var(--warn-bg); padding:7px 10px; border-radius:8px; }
 /* equity ratio (alpha) under net worth: quiet, a click shows the calculation */
 .wrap tr.ekq td { font-size:12.5px; color:var(--muted); cursor:pointer; } .wrap tr.ekq td:first-child { font-weight:500; padding-left:32px; }
