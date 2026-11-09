@@ -352,11 +352,11 @@ In Terminal, the same line as for the [installation](https://github.com/stecrz/K
 ## Security
 
 - Interface only on this Mac (`127.0.0.1`); optionally also the Tailscale address for your own devices – never on the home network or the internet. No third-party content, no telemetry. The only outside connection is the update check at GitHub.
-- Sign-in with password (PBKDF2-SHA256, 600,000 rounds) or Touch ID on the Mac (needs Apple's command line tools, otherwise only the password). The sign-in cookie only applies to Kontor, other websites cannot trigger anything (CSRF protection, origin check). Lock after idle time; five failed attempts lock for five minutes.
-- All files in the data folder are encrypted (AES-256 + HMAC), the key is in the macOS keychain. Receipts are normal files in a folder of your choice.
+- Sign-in with password (PBKDF2-SHA256, 600,000 rounds) or Touch ID on the Mac (needs Apple's command line tools, otherwise only the password). The sign-in cookie only applies to Kontor, other websites cannot trigger anything (CSRF protection, origin check). Lock after idle time; five failed attempts lock for five minutes. A password change signs out all other devices.
+- All files in the data folder are encrypted (AES-256 + HMAC), the key is in the macOS keychain. If encryption does not work, Kontor does not start – it never stores unencrypted. Receipts are normal files in a folder of your choice; files outside it are linked only at the Mac, and only receipt files – nothing from hidden folders, the data folder or the Library (except iCloud Drive and other cloud folders).
 - Booking, updates, writing categories back, backup, reset and access settings only on the Mac; from the iPhone view only by default.
-- Historical balances: Kontor decrypts MoneyMoney's database only in memory; you enter the MoneyMoney password in a macOS window, Kontor stores it nowhere.
-- The log contains no IBANs, balances or passwords; the diagnostics file also replaces account names and the user folder.
+- Historical balances: you enter the MoneyMoney password in a window of a small Kontor helper that is built from the source only for this and deleted afterwards; Kontor stores it nowhere. Meanwhile the database lies fully decrypted in memory for a moment – this takes trust in that code. If you do not want that, leave the feature out; once read, it is not needed again.
+- The log contains no IBANs, balances, amounts, payees, purposes or passwords (for bookings only how many and of which kind); the diagnostics file also replaces account names and the user folder.
 - Limit: the key is in the login keychain so the service runs after login without input. Whoever operates your unlocked Mac can get to it – the Kontor password then protects access, not the files. FileVault remains the basis.
 
 <a id="advanced"></a>
@@ -391,6 +391,6 @@ In Terminal, the same line as for the [installation](https://github.com/stecrz/K
 | iPhone cannot open the address | Turn on access under Settings → Access; Tailscale connected on both devices? |
 | No matching payment | The loan rule does not find the instalment: check counterparty IBAN or text and source account. Only a note for up to 35 days after “automatic from”. |
 | Port not usable | Another program uses the port: Settings → Access → Advanced. |
-| Data key stored as a file | The keychain was not usable (e.g. started without login): Kontor works, but the key is then stored with permissions 0600 in the data folder. |
+| Data key stored as a file | The keychain was not usable (e.g. started without login): Kontor works, but the key is then stored with permissions 0600 in the data folder. As soon as the keychain works again, Kontor moves it there and deletes the file. |
 
 For support questions: Log → “Diagnostics file (masked)”. In addition to the log it contains status and settings, account names replaced by Konto01, Konto02 … – without IBANs, balances or passwords.

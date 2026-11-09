@@ -11,6 +11,7 @@ import os
 import platform
 import re
 import threading
+from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -595,7 +596,7 @@ def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal]) -
             bridge.add_transaction(acc.uuid, pr.booking_date, pr.payee, pr.amount, pr.purpose,
                                    pr.category or None, fallback_refs=[acc.name])
         done += 1
-        log.info("%s %s", "BOOKED" if not bridge.dry_run else "DRY RUN", pr.describe())
+        log.info("%s: %s booking", "BOOKED" if not bridge.dry_run else "DRY RUN", pr.kind)      # no amounts, payees or purposes in the log
     return done
 
 
@@ -1064,15 +1065,13 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                     "_kategorien": categories}
 
         result = plan_all(ledger, config, today)
-        for h in ledger.hints:
-            log.warning("Data hint: %s", h); result.warnings.append(h)
-        for i in result.info:
-            log.info("Rules: %s", i)
-        for w in result.warnings:
-            log.warning("Rules warning: %s", w)
+        result.warnings.extend(ledger.hints)
+        # the log (plain text) holds no amounts, payees, purposes or account names: the details are in the encrypted state and
+        # shown in the interface; here only how many
+        kinds = Counter(p.kind for p in result.proposals)
+        log.info("Rules: %d note(s), %d warning(s), %d proposal(s)%s", len(result.info), len(result.warnings), len(result.proposals),
+                 " (%s)" % ", ".join("%s %d" % kv for kv in sorted(kinds.items())) if kinds else "")
         bookings = [x for x in result.proposals if x.kind != "quelle"]
-        for pr in result.proposals:
-            log.info("  %s", pr.describe())
 
         written, err = 0, None
         if result.proposals and not dry:
@@ -1087,7 +1086,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                     if u in after and abs(after[u].balance - ledger.accounts[u].balance) > 0.01:
                         msg = tr("s_saldo_s_nach_buchung_s") % (ledger.accounts[u].name, fmt_eur(after[u].balance),
                                                                       fmt_eur(ledger.accounts[u].balance))
-                        log.warning("Balance of %s after booking is %s, expected %s", ledger.accounts[u].name, fmt_eur(after[u].balance), fmt_eur(ledger.accounts[u].balance)); result.warnings.append(msg)
+                        log.warning("Balance check after booking failed for account %s", u[:8]); result.warnings.append(msg)
             except MoneyMoneyError as e:
                 log.warning("Verification after writing not possible: %s", e)
             # Neue Buchungen in MoneyMoney koennen weit zurueckdatiert sein (z. B. Zinsen seit Januar): das naechste Lesen muss

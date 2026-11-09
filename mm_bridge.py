@@ -101,7 +101,7 @@ class Bridge:
             raise MoneyMoneyNotRunning(tr("s_moneymoney_laeuft_nicht"))
         payload = json.dumps({"method": method, "args": args}, ensure_ascii=False)
         t0 = time.time()
-        log.debug("MoneyMoney %s %s", method, json.dumps({k: v for k, v in (args or {}).items() if k not in ("purpose", "payee")}, ensure_ascii=False)[:300])
+        log.debug("MoneyMoney %s (%s)", method, ", ".join(sorted(args or {})))      # only the names of the arguments: no amounts, payees or texts
         try:
             r = subprocess.run(
                 ["osascript", "-l", "JavaScript", JXA_FILE, payload],

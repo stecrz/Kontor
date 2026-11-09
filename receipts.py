@@ -127,11 +127,29 @@ class Belege:
         self._save()
         return entry
 
+    def external_ok(self, full: str) -> bool:
+        """A file outside the receipts folder that may be linked and handed out: a document type of receipts, not hidden, not
+        in Kontor's data folder and not in ~/Library -- except the cloud folders there (iCloud Drive, Dropbox, OneDrive ...)."""
+        full = os.path.realpath(full)
+        if os.path.splitext(full)[1].lower() not in ALLOWED_EXT:
+            return False
+        if any(p.startswith(".") for p in full.split(os.sep) if p):
+            return False
+        data = os.path.realpath(self.store.data_dir)
+        if full == data or full.startswith(data + os.sep):
+            return False
+        lib = os.path.realpath(os.path.expanduser("~/Library"))
+        if full.startswith(lib + os.sep):
+            return any(full.startswith(os.path.join(lib, c) + os.sep) for c in ("Mobile Documents", "CloudStorage"))
+        return True
+
     def link_external(self, tx: Optional[dict], abs_path: str, notiz: str = "") -> dict:
         """Verknuepfung auf eine Datei ausserhalb des Belegordners (z. B. iCloud Drive). Die Datei bleibt, wo sie ist."""
         full = os.path.normpath(os.path.expanduser(abs_path))
         if not os.path.isabs(full):
             raise ValueError(tr("s_bitte_einen_vollstaendigen_pfad_angebe"))
+        if not self.external_ok(full):
+            raise ValueError(tr("s_beleg_extern_nicht_erlaubt"))
         st = file_status(full)
         if st == "fehlt":
             raise ValueError(tr("s_datei_nicht_gefunden_s") % full)

@@ -691,8 +691,7 @@ class App:
             if months:
                 found.append({"konto": a.uuid, "name": a.name, "monate": months, "erkannt": datetime.now().strftime("%Y-%m-%d %H:%M")})
         if found:
-            log.info("Portfolio values possibly incomplete (MoneyMoney refreshed while Kontor was not running): %s",
-                     ", ".join("%s %s–%s" % (f["name"], f["monate"][0], f["monate"][-1]) for f in found))
+            log.info("Portfolio values possibly incomplete (MoneyMoney refreshed while Kontor was not running): %d portfolio(s)", len(found))
 
             def upd(cur):
                 old = [x for x in cur.get("luecken") or [] if x.get("konto") not in {f["konto"] for f in found}]
@@ -1341,7 +1340,7 @@ def make_handler(app: App):
                 if e is None:
                     return self._json(404, {"fehler": tr("s_beleg_nicht_im_index")})
                 full = bl.full_path(e)
-                if (not e.get("extern") and not full.startswith(os.path.normpath(bl.folder) + os.sep)) or not os.path.isfile(full):
+                if (not e.get("extern") and not full.startswith(os.path.normpath(bl.folder) + os.sep)) or (e.get("extern") and not bl.external_ok(full)) or not os.path.isfile(full):
                     return self._json(404, {"fehler": tr("s_datei_fehlt_oder_nicht_geladen") % e["pfad"]})
                 with open(full, "rb") as f:
                     data = f.read()
@@ -1671,7 +1670,8 @@ def make_handler(app: App):
                 if err:
                     return self._json(400, {"fehler": err})
                 app.store.save("auth.json", auth.with_offline(auth.hash_password(str(body["neu"])), str(body["neu"])))
-                log.info("Password changed")
+                n = app.sessions.drop_others(s["token"])                # other devices have to sign in with the new password
+                log.info("Password changed, %d other session(s) ended", n)
                 return self._json(200, {"ok": True})
             if path == "/api/config":
                 cfg = body.get("config")
@@ -1973,6 +1973,8 @@ def make_handler(app: App):
                 log.info("Receipt stored (%d KB)", len(data) // 1024)
                 return self._json(200, {"ok": True, "eintrag": e})
             if path == "/api/receipts/link":
+                if body.get("extern") and not local:            # a file outside the receipts folder: only chosen at the Mac
+                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
                 if body.get("extern"):
                     e = dict(bl.link_external(tx_of(body), str(body.get("pfad") or ""), str(body.get("notiz") or "")))
                     e["status"] = file_status(e["pfad"])

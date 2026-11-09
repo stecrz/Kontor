@@ -28,7 +28,7 @@ import core  # noqa: E402
 import categorize  # noqa: E402
 import updates  # noqa: E402
 from service import App, make_handler  # noqa: E402
-from model import Ledger, accounts_from_export, tx_from_export  # noqa: E402
+from model import Ledger, accounts_from_export, fmt_eur, tx_from_export  # noqa: E402
 from storage import Store, load_or_create_master_key  # noqa: E402
 from tax import build_tax  # noqa: E402
 
@@ -227,8 +227,14 @@ class CoreTests(unittest.TestCase):
 
     def test_dry_run_writes_nothing(self):
         cfg = core.merged_config(self.store.load("config.json"))
-        res = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        with self.assertLogs(level="DEBUG") as cm:
+            res = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
         self.assertEqual(res["geschrieben"], 0); self.assertEqual(len(res["vorschlaege"]), 24)
+        # the plain-text log holds no amounts, payees, purposes or account names of the bookings
+        logtext = "\n".join(cm.output)
+        for p in res["vorschlaege"]:
+            self.assertNotIn(p["text"], logtext); self.assertNotIn(fmt_eur(p["betrag"]), logtext)
+        self.assertNotIn("Verkäuferdarlehen", logtext); self.assertNotIn("€", logtext)
         vd = [a for a in MockBridge.state["accounts"] if a["name"] == "Verkäuferdarlehen"][0]["balance"][0][0]
         self.assertEqual(vd, -1600000.0)
         self.assertTrue(any("Probelauf" in w for w in self.store.load("dataset.json")["warnungen"]))
@@ -1833,9 +1839,14 @@ class FeatureTests(_AppBase):
     def test_external_receipt_link(self):
         self.login(); self.run_and_wait()
         code, u = self.call("/api/transactions?q=supermarkt&entity=" + F.uid("priv")); tx = u["umsaetze"][0]
-        ext = os.path.join(self.dir, "Rechnung extern.pdf")
+        other = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, other, True)
+        ext = os.path.join(other, "Rechnung extern.pdf")
         with open(ext, "wb") as f:
             f.write(b"%PDF-1.4 extern")
+        inside = os.path.join(self.dir, "Rechnung.pdf")             # in Kontor's data folder: never linked or handed out
+        with open(inside, "wb") as f:
+            f.write(b"%PDF-1.4 innen")
+        self.assertEqual(self.call("/api/receipts/link", {"tx_id": tx["id"], "pfad": inside, "extern": True})[0], 400)
         code, r = self.call("/api/receipts/link", {"tx_id": tx["id"], "pfad": ext, "extern": True, "notiz": "liegt in iCloud"})
         self.assertEqual(code, 200, r); e = r["eintrag"]; self.assertTrue(e["extern"]); self.assertEqual(e["status"], "ok")
         self.assertEqual(self.call("/api/receipts/link", {"tx_id": tx["id"], "pfad": "relativ/x.pdf", "extern": True})[0], 400)

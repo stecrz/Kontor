@@ -1784,6 +1784,8 @@ const I18N = {
 "s_datei_waehlen":["Datei wählen", "Choose file"],
 "s_datei_nicht_gefunden":["Datei nicht gefunden.", "File not found."],
 "s_openssl_nicht_verfuegbar_s":["openssl nicht verfügbar: %s", "openssl not available: %s"],
+"s_ohne_verschluesselung":["Verschlüsselung nicht verfügbar – Kontor speichert nichts unverschlüsselt und startet deshalb nicht. Ist openssl vorhanden (/usr/bin/openssl)? Details im Protokoll.", "Encryption not available – Kontor stores nothing unencrypted and therefore does not start. Is openssl there (/usr/bin/openssl)? Details in the log."],
+"s_beleg_extern_nicht_erlaubt":["Diese Datei lässt sich nicht verknüpfen: nur Belege (PDF, Bilder, Office-Dateien …), nicht aus versteckten Ordnern, dem Kontor-Datenordner oder der Library (außer iCloud Drive und anderen Cloud-Ordnern).", "This file cannot be linked: receipts only (PDF, images, office files …), not from hidden folders, Kontor's data folder or the Library (except iCloud Drive and other cloud folders)."],
 "s_openssl_fehler_s":["openssl-Fehler: %s", "openssl error: %s"],
 "s_datei_hat_nicht_das_erwartete":["Datei hat nicht das erwartete Format.", "File does not have the expected format."],
 "s_pruefsumme_stimmt_nicht_datei_veraende":["Prüfsumme stimmt nicht -- Datei verändert oder falscher Schlüssel.", "Checksum does not match -- file changed or wrong key."],

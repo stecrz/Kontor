@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.12.9 (2026-11-09 14:10)
+- Sicherheit: Ohne funktionierende Verschlüsselung startet Kontor nicht mehr (bisher: Weiterarbeit unverschlüsselt). Ein Datenschlüssel, der als Datei im Datenordner liegt, zieht in den Schlüsselbund um; die Datei wird gelöscht.
+- Sicherheit: Protokoll ohne Beträge, Empfänger, Verwendungszwecke und Kontonamen von Buchungen (auch im Probelauf).
+- Sicherheit: Passwortwechsel meldet alle anderen Geräte ab. Belege außerhalb des Belegordners nur noch am Mac verknüpfbar, nur Belegdateien, nichts aus versteckten Ordnern, dem Datenordner oder der Library.
+- Laufender Monat: geht ohne Stufe in den Plan über.
+
 ## 3.12.8 (2026-11-09 13:56)
 - Kleine Grafiken: laufender Monat und Plan wie in der großen – ein Schleier über Flächen und Kurven statt schwarzer Fläche, Plankurven etwas blasser.
 - Laufender Monat (alle Grafiken): eigener heller Schleier, der zum Plan hin weich zunimmt – mit sichtbarer Kante am Schnitt und beim Übergang in den Plan.

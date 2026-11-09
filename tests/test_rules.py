@@ -472,3 +472,59 @@ class SecurityNameTests(unittest.TestCase):
         b = {r["isin"]: r for r in depot_holdings(acc, {"2026-09": 175.0}, ["2026-09"], D(2026, 11, 8), state, None, {})}["US0378331005"]
         self.assertEqual((b["name"], b["orig"], b["quelle"]), ("Mein Name", "Beispiel", "eigen"))
         self.assertEqual((c["name"], c["orig"], c["quelle"]), ("DE0007164600", "", ""))                      # nothing known: the ISIN
+
+
+class SecurityHardeningTests(unittest.TestCase):
+    """No plain-text fallback, the key out of the data folder, sessions ended on a password change, external receipts limited."""
+
+    def test_no_plain_text_fallback(self):
+        import tempfile, storage
+        d = tempfile.mkdtemp()
+        orig = storage.selftest
+        storage.selftest = lambda master: False
+        try:
+            with self.assertRaises(storage.StoreError):
+                storage.Store(d, b"k" * 32, "datei")
+        finally:
+            storage.selftest = orig
+        self.assertFalse(storage.Store(d, None).encrypted)          # only without any key (tests, never the service)
+
+    def test_key_file_moved_into_keychain(self):
+        import tempfile, storage
+        d = tempfile.mkdtemp(); path = os.path.join(d, "master.key"); key = b"\x11" * 32
+        with open(path, "w") as f:
+            f.write(key.hex())
+        chain = {}
+
+        def fake(args, input_text=None):
+            if args[0] == "find-generic-password":
+                return (0, chain["w"] + "\n", "") if "w" in chain else (44, "", "not found")
+            if args[0] == "add-generic-password":
+                chain["w"] = args[args.index("-w") + 1]; return 0, "", ""
+            return 1, "", ""
+        orig = storage._security
+        storage._security = fake
+        try:
+            got, src = storage.load_or_create_master_key(d)
+        finally:
+            storage._security = orig
+        self.assertEqual((got, src), (key, "schluesselbund"))       # the same key (data stays readable), now in the keychain
+        self.assertEqual(chain["w"], key.hex()); self.assertFalse(os.path.exists(path))
+
+    def test_password_change_ends_other_sessions(self):
+        import auth
+        ss = auth.Sessions(); a = ss.create("127.0.0.1", "pw"); b = ss.create("100.64.0.2", "pw")
+        self.assertEqual(ss.drop_others(a["token"]), 1)
+        self.assertIsNotNone(ss.get(a["token"])); self.assertIsNone(ss.get(b["token"]))
+
+    def test_external_receipts_limited(self):
+        import tempfile, receipts, storage
+        d = tempfile.mkdtemp(); st = storage.Store(d, None)
+        bl = receipts.Belege(st, {"belege": {"ordner": os.path.join(d, "Belege")}})
+        home = os.path.expanduser("~")
+        self.assertTrue(bl.external_ok(os.path.join(home, "Documents", "Rechnung.pdf")))
+        self.assertTrue(bl.external_ok(os.path.join(home, "Library", "Mobile Documents", "com~apple~CloudDocs", "Beleg.pdf")))
+        self.assertFalse(bl.external_ok(os.path.join(home, ".ssh", "id_ed25519.pdf")))           # hidden folder
+        self.assertFalse(bl.external_ok(os.path.join(home, "Library", "Keychains", "login.pdf")))  # Library outside the cloud folders
+        self.assertFalse(bl.external_ok(os.path.join(d, "config.pdf")))                           # Kontor's data folder
+        self.assertFalse(bl.external_ok(os.path.join(home, "Documents", "notes.sqlite")))         # not a receipt type

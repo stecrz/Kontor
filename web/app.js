@@ -1549,12 +1549,12 @@ function bandFill(defs, pid, color, hatch) {
 // the line of a chart (net worth or a position): a soft outline in the card colour lets it stand out above the areas;
 // a dot marks today's value
 function runGrad(gid) {
-  // the veil over the running month (large and small charts): a light one from the cut, rising softly towards the plan's and
-  // the more to the right the further the month has gone -- yet with a visible step at the cut (.10) and again where the plan
-  // starts (.32 → .45), so entering the running month and the plan stays clear
+  // the veil over the running month (large and small charts): a light one from the cut (a visible step there), rising softly
+  // into the plan's without a step -- the running month is not closed yet, much like a plan month; the further the month has
+  // gone, the further right the rise
   const now = new Date(), dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const p = Math.min(1, (now.getDate() - 1 + now.getHours() / 24) / dim), w = 0.35, a = p - w, b = p + w;
-  const op = o => (.10 + .22 * Math.max(0, Math.min(1, (o - a) / (b - a)))).toFixed(3);
+  const p = Math.min(1, (now.getDate() - 1 + now.getHours() / 24) / dim), w = 0.35, c = Math.max(w, Math.min(1 - w, p)), a = c - w, b = c + w;     // always from .10 at the cut to .45 at the plan
+  const op = o => (.10 + .35 * Math.max(0, Math.min(1, (o - a) / (b - a)))).toFixed(3);
   return `<linearGradient id="${gid}" x1="0" x2="1">${[0, Math.max(0, a), Math.min(1, b), 1].map(o => `<stop offset="${o.toFixed(3)}" style="stop-color:var(--head);stop-opacity:${op(o)}"/>`).join('')}</linearGradient>`;
 }
 function heroLine(p, cls0, color, dot) {

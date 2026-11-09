@@ -105,6 +105,14 @@ class Sessions:
         with self._lock:
             self._s.clear()
 
+    def drop_others(self, token: Optional[str]) -> int:
+        """Ends every session but this one (after a password change: a stolen session stops working at once)."""
+        with self._lock:
+            gone = [k for k in self._s if k != token]
+            for k in gone:
+                self._s.pop(k, None)
+            return len(gone)
+
     def set_idle(self, minutes: int) -> None:
         self.idle = max(1, int(minutes)) * 60
 

@@ -52,23 +52,53 @@ def _security(args, input_text: Optional[str] = None) -> Tuple[int, str, str]:
 
 
 def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
-    """Liefert (Schluessel, Quelle). Quelle: 'schluesselbund' | 'datei'."""
+    """Liefert (Schluessel, Quelle). Quelle: 'schluesselbund' | 'datei'.
+    The key belongs in the keychain, not next to the data: a key file left from an earlier fallback is moved into the keychain
+    as soon as that works (and the file removed); only if the keychain cannot be used at all, the file stays (with a warning)."""
     rc, out, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
-    if rc == 0 and len(out.strip()) == 64:
-        return bytes.fromhex(out.strip()), "schluesselbund"
     key_file = os.path.join(data_dir, "master.key")
+    if rc == 0 and len(out.strip()) == 64:
+        if os.path.exists(key_file):
+            log.warning("Key file found besides the keychain entry -- the keychain entry is used, the file left as it is")
+        return bytes.fromhex(out.strip()), "schluesselbund"
     if rc == 127:   # kein `security` (nicht macOS)
         return _file_key(key_file), "datei"
-    # Schluesselbund vorhanden, aber kein Eintrag: neu anlegen
-    key = secrets.token_bytes(32)
+    # Schluesselbund vorhanden, aber kein Eintrag: der Schluessel einer frueheren Ausweichdatei (sonst ein neuer) kommt hinein
+    old = _read_key_file(key_file)
+    key = old or secrets.token_bytes(32)
     rc2, _, err = _security(["add-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT,
                              "-l", "Kontor Datenschlüssel", "-w", key.hex(), "-U"])
     if rc2 == 0:
         rc3, out3, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
         if rc3 == 0 and out3.strip() == key.hex():
+            if old:
+                _wipe(key_file)
+                log.info("Data key moved from the key file into the keychain; file removed")
             return key, "schluesselbund"
-    log.warning("Keychain not usable (%s) -- key stored as file.", err.strip()[:120])
+    log.warning("Keychain not usable (%s) -- key kept as a file in the data folder (less protected).", err.strip()[:120])
     return _file_key(key_file), "datei"
+
+
+def _read_key_file(path: str) -> Optional[bytes]:
+    try:
+        with open(path, "rb") as f:
+            raw = f.read().strip()
+        return bytes.fromhex(raw.decode()) if len(raw) == 64 else None
+    except (OSError, ValueError):
+        return None
+
+
+def _wipe(path: str) -> None:
+    """Overwrite, then remove a small secret file."""
+    try:
+        n = os.path.getsize(path)
+        with open(path, "r+b") as f:
+            f.write(secrets.token_bytes(max(n, 64)))
+            f.flush()
+            os.fsync(f.fileno())
+        os.remove(path)
+    except OSError as e:
+        log.warning("Key file not removed: %s", e)
 
 
 def _file_key(path: str) -> bytes:
@@ -145,7 +175,9 @@ class Store:
         self.key_source = key_source
         self.encrypted = master is not None and selftest(master)
         if master is not None and not self.encrypted:
-            log.error("Encryption not available -- data stored UNENCRYPTED.")
+            # never fall back to plain text: without working encryption Kontor stores nothing (and does not start)
+            log.error("Encryption not available -- Kontor stores nothing unencrypted and stops.")
+            raise StoreError(tr("s_ohne_verschluesselung"))
         os.makedirs(data_dir, exist_ok=True)
         try:
             os.chmod(data_dir, 0o700)
