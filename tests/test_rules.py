@@ -288,6 +288,30 @@ class CompanyTests(unittest.TestCase):
         self.assertEqual(res.preview[0]["unbekannt"], ["09/2026", "10/2026"])
         self.assertTrue(any("unbekannt" in i for i in res.info))
 
+    def test_writable_manual_accounts(self):
+        """MoneyMoney sets a fetch time on a manual account after a booking: such accounts stay bookable when their type says
+        offline, you marked them "without fetching" or they carry a booking of Kontor; bank accounts never."""
+        from datetime import datetime
+        raw = F.accounts_raw({})
+        for a in raw:
+            if a["uuid"] in (F.uid("pb.vd"), F.uid("priv.bet.pb")):
+                a["refreshTimestamp"] = datetime(2026, 10, 1)
+        led = Ledger(accounts_from_export(raw), [])
+        vd, bet, giro = F.uid("pb.vd"), F.uid("priv.bet.pb"), F.uid("priv.giro")
+        self.assertTrue(led.writable(bet))                                   # type "Offline-Konto"
+        self.assertFalse(led.writable(vd))                                   # "Darlehenskonto", fetched, no mark
+        self.assertTrue(led.writable(vd, {"abruf": {"offline": [vd + " | Verkäuferdarlehen"]}}))
+        self.assertFalse(led.writable(bet, {"abruf": {"online": [bet + " | Beteiligung an Alpha GbR"]}}))
+        self.assertFalse(led.writable(giro, {"abruf": {"offline": [giro + " | Hausbank Giro"]}}))      # bank code: never
+        self.assertFalse(led.writable(F.uid("pb")))                          # group
+        led2 = Ledger(accounts_from_export(raw), tx_from_export([F.tx("pb.vd", date(2026, 9, 30), -10.0, "x", "Zinsen 09/2026 · #mm-zins-2026-09")]))
+        self.assertTrue(led2.writable(vd))                                   # carries a booking of Kontor
+        led.post(vd, date(2026, 11, 4), 1.0, "x", "#mm-wert-20261104-1")
+        self.assertFalse(led.writable(vd))                                   # a booking planned in this run does not count
+        # the rules use it: a fetched loan account is refused, a manual one with a fetch time is booked
+        cfg = company_cfg(); cfg["gesellschaften"][0]["beteiligung"] = F.uid("priv.bet.pb") + " | Beteiligung an Alpha GbR"
+        self.assertEqual(len(plan_all(Ledger(accounts_from_export(raw), []), cfg, date(2026, 11, 4)).proposals), 1)
+
     def test_circular_reference_rejected(self):
         led = make_ledger({}, [])
         cfg = company_cfg(gesellschaften=[{"bereich": "a", "beteiligung": F.uid("pb.immo") + " | Immobilie Parkweg"}])

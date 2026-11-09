@@ -290,7 +290,7 @@ Booking rules set what Kontor books automatically into your offline accounts in 
 
 Each loan is one row (name → loan account, on the right what is open); a click opens the details. Each company has its own card. Next to every field a **?** briefly explains what it does (click: this section). Next to every rule you see the **target**, the **actual** balance and the **difference** Kontor would book – already while you edit. **“Save and check”** (⌘S) at the bottom applies to all changes on the page and checks them against MoneyMoney.
 
-**Book automatically** (switch at the top of “Booking rules”, on the Mac only): off (default) – the bookings appear under “Auto bookings” and are created once you **approve** them there (on the Mac only); on – Kontor creates them itself at every sync. The top right of “Auto bookings” shows which applies (“With approval” or “Automatic”). Bank and extension accounts are never booked to, transfers and direct debits are blocked, Kontor never changes or deletes existing bookings.
+**Book fully automatically** (switch at the top of “Booking rules”, on the Mac only): off (default) – the bookings appear under “Auto bookings” and are created once you **approve** them there (on the Mac only); on – Kontor creates them itself at every sync. The top right of “Auto bookings” shows which applies (“With approval” or “Fully automatic”). Bank and extension accounts are never booked to, transfers and direct debits are blocked, Kontor never changes or deletes existing bookings.
 
 **How it runs**: at every sync (automatically every 30 minutes, after new data in MoneyMoney or with “Sync”) Kontor works through the booking rules; “Check now” does it at once. A notification says “… bookings waiting for approval” or “… bookings created”. Under “Auto bookings” you find the waiting or last booked bookings with notes and calculations, **“Created by Kontor”** (only Kontor's own bookings with their state in MoneyMoney) and the history.
 
@@ -320,7 +320,7 @@ Kontor always books only the difference to the balance in MoneyMoney (purpose wi
 <a id="rules-back"></a>
 ### Booking back
 
-With “Back to” (a month) Kontor also books one adjustment at each past month end for the company – with the value the balance sheet shows for that day, and again only the difference. So the history of your participation and your counter accounts is right in MoneyMoney and in Kontor. Months in which a value is not known (e.g. a portfolio in the company whose earlier balance MoneyMoney does not provide) are skipped and named – Kontor estimates nothing. Existing bookings are never changed; without “Book automatically” the bookings back also wait for your approval.
+With “Back to” (a month) Kontor also books one adjustment at each past month end for the company – with the value the balance sheet shows for that day, and again only the difference. So the history of your participation and your counter accounts is right in MoneyMoney and in Kontor. Months in which a value is not known (e.g. a portfolio in the company whose earlier balance MoneyMoney does not provide) are skipped and named – Kontor estimates nothing. Existing bookings are never changed; without “Book fully automatically” the bookings back also wait for your approval.
 
 <a id="iphone"></a>
 ## Access from iPhone

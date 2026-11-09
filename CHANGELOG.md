@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.19 (2026-11-09 19:52)
+- Von Hand geführte Konten werden zuverlässig erkannt, auch wenn MoneyMoney nach einer Buchung einen Abrufzeitpunkt setzt (Kontotyp „Offline“, „abgerufen“ unter Synchronisierung abgewählt oder schon von Kontor bebucht). Damit erscheinen sie in den Auswahllisten für Beteiligung, Gegenkonten und Darlehen. Konten mit Bankleitzahl werden weiter nie bebucht.
+- „Vollautomatisch buchen“ statt „Automatisch buchen“; „Darlehen hinzufügen“ und „Gegenkonto hinzufügen“ als sichtbare Schaltflächen.
+- Hinweise ohne den Zusatz „Klick: mehr in der Hilfe“.
+
 ## 3.12.18 (2026-11-09 19:07)
 - Buchungsregeln (vorher „Auto-Regeln“) neu aufgebaut: Darlehen als aufklappbare Zeilen mit gegliederten Feldern; je Gesellschaft eine Karte mit Beteiligung und Gegenkonten (ersetzt „Beteiligungen“ und „Saldo-Spiegel“). Der Anteil steht nur noch unter Einrichtung → Bereiche.
 - Neben jeder Regel Soll, Ist und Differenz, schon beim Ändern; neben jedem Feld ein „?“ mit Erklärung und Verweis in die Hilfe; eine Speicherleiste für die ganze Seite (⌘S).

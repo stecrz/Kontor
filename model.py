@@ -194,6 +194,9 @@ def tx_from_export(raw: List[Dict[str, Any]]) -> List[Tx]:
 # Kontenbaum
 # ---------------------------------------------------------------------------
 
+TAG_RE = re.compile(r"#mm-[a-z]+-[A-Za-z0-9\-]+")          # Kontor's mark in the purpose of its bookings
+
+
 class Ledger:
     """Konten + Umsaetze einer Sitzung, mit In-Memory-Buchungen fuer den Probelauf."""
 
@@ -331,6 +334,30 @@ class Ledger:
     def earliest_tx(self, uuid: str) -> Optional[date]:
         txs = self.transactions(uuid)
         return txs[0].booking_date if txs else None
+
+    def writable(self, uuid: str, config: Optional[dict] = None) -> bool:
+        """May Kontor book into this account? Only manually kept ones: no group or portfolio, no bank code (bank accounts always
+        have one), not marked "fetched" by you -- and never fetched, or (because MoneyMoney sets a fetch time on a manual
+        account after a booking, too) its type says offline, you marked it "without fetching" (Setup -> Accounts) or it
+        carries one of Kontor's own bookings. Bookings planned in this run do not count."""
+        a = self.accounts.get(uuid)
+        if a is None or a.group or a.portfolio or (a.bank_code or "").strip():
+            return False
+        ab = (config or {}).get("abruf") or {}
+
+        def marked(key: str) -> bool:
+            for r in ab.get(key) or []:
+                try:
+                    if self.resolve(r).uuid == uuid:
+                        return True
+                except KeyError:
+                    pass
+            return False
+        if marked("online"):
+            return False
+        if a.refresh is None or a.refresh.year < 2005 or "offline" in (a.type or "").lower() or marked("offline"):
+            return True
+        return any(t.id > 0 and TAG_RE.search(t.purpose or "") for t in self._by_account.get(uuid, ()))
 
     def fork(self) -> "Ledger":
         """A copy for planning: own account balances and booking lists, the same (unchanged) transactions."""

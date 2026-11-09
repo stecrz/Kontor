@@ -476,7 +476,7 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
             a = ledger.resolve(r)
         except KeyError as e:
             add("fehler", "%s: %s" % (label, e)); return None
-        if want_offline and not a.offline:
+        if want_offline and not ledger.writable(a.uuid, config):
             add("fehler", tr("s_s_s_hat_eine_bankanbindung") % (label, a.path))
         elif not group_ok and a.group:
             add("fehler", tr("s_s_s_ist_eine_gruppe") % (label, a.path))
@@ -615,15 +615,17 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
 # Lauf
 # ---------------------------------------------------------------------------
 
-def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal], made: Optional[List[Proposal]] = None) -> int:
-    """Writes the proposals; the bookings written (not the comments on source payments) go into made."""
+def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal], made: Optional[List[Proposal]] = None,
+                    config: Optional[dict] = None) -> int:
+    """Writes the proposals; the bookings written (not the comments on source payments) go into made. Only into manually
+    kept accounts (Ledger.writable), checked again here for every booking."""
     done = 0
     for pr in proposals:
         acc = ledger.accounts[pr.account_uuid]
         if pr.kind == "quelle":
             bridge.set_transaction(pr.source_tx_id, category=pr.set_category, comment=pr.set_comment)
         else:
-            if not acc.offline:
+            if not ledger.writable(acc.uuid, config):
                 raise MoneyMoneyError(tr("s_verweigert_s_ist_kein_manuell") % acc.path)
             bridge.add_transaction(acc.uuid, pr.booking_date, pr.payee, pr.amount, pr.purpose,
                                    pr.category or None, fallback_refs=[acc.name])
@@ -1055,7 +1057,7 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
         if not a.path:
             continue
         out.append({"uuid": a.uuid, "name": a.name, "pfad": a.path, "ebene": a.path.count(" / "), "gruppe": a.group,
-                    "depot": a.portfolio, "manuell": a.offline, "rolle": roles.get(a.uuid, "") if not a.group else "",
+                    "depot": a.portfolio, "manuell": ledger.writable(a.uuid, config), "rolle": roles.get(a.uuid, "") if not a.group else "",
                     "saldo": None if a.group else a.balance, "waehrung": a.currency, "typ": a.type, "inaktiv": a.uuid in inactive, "inaktiv_auto": a.uuid in inactive_auto, "aktiv_grenze": limits.get(a.uuid, 0),
                     "rolle_vorschlag": suggested.get(a.uuid, "") if not a.group else "", "abruf": kinds.get(a.uuid, {}).get("art") if not a.group else None,
                     "verlauf": verlauf.get(a.uuid) or ("stand" if a.portfolio else "umsaetze"), "bereich": bereich_of.get(a.uuid, ""),
@@ -1112,7 +1114,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         made: List[Proposal] = []
         if result.proposals and not dry:
             try:
-                written = apply_proposals(bridge, ledger, result.proposals, made)
+                written = apply_proposals(bridge, ledger, result.proposals, made, config)
             except MoneyMoneyError as e:
                 err = e
                 log.error("Writing aborted after %d booking(s): %s", written, e)

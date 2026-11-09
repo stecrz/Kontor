@@ -3077,7 +3077,7 @@ function vRegeln() {
     + (S.KONTEN.length ? '' : `<div class="note"><b>${t('noch_keine_konten_geladen_unter')}</b></div>`);
   h += `<div class="group"><div class="set-row"><div class="grow"><b>${t('auto_buchen')}</b><div class="small muted">${t(auto ? 'auto_buchen_an' : 'auto_buchen_aus')}${loc ? '' : ' ' + t('nur_am_mac_klammer')}</div></div>`
     + `<label class="switch${loc ? '' : ' off'}"><input type="checkbox" id="auto-book" ${auto ? 'checked' : ''} ${loc ? '' : 'disabled'}><i></i></label></div></div>`;
-  h += `<section class="rule-sec"><div class="sec-head"><h2>${t('darlehen')}${hq('regel_darlehen_h')}</h2><span class="sp"></span><button id="add-loan" class="ghost small add-rule">+ ${t('regel_darlehen')}</button></div>`
+  h += `<section class="rule-sec"><div class="sec-head"><h2>${t('darlehen')}${hq('regel_darlehen_h')}</h2><span class="sp"></span><button id="add-loan" class="secondary small add-rule">${t('darlehen_hinzufuegen')}</button></div>`
     + `<p class="sec-sub">${t('darlehen_sub')}</p><div class="list" id="loans">${(C.darlehen || []).map((l, i) => loanForm(l, i)).join('')}</div><div class="empty small muted">${t('leer_darlehen')}</div></section>`;
   const cos = companyAreas();
   h += `<section class="rule-sec"><div class="sec-head"><h2>${t('gesellschaften')}${hq('regel_gesellschaften_h')}</h2></div><p class="sec-sub">${t('gesellschaften_sub')}</p>`
@@ -3120,7 +3120,7 @@ function companyCard(b, g) {
   return `<div class="co-card" data-b="${esc(bid)}"><div class="co-head"><h3>${esc(b.name)}</h3>`
     + (has ? `<a class="pill neutral" href="#setup/areas">${t('anteil_0', pctText(b.anteil))}</a>` : `<a class="pill warn" href="#setup/areas">${t('anteil_fehlt')}</a>`) + hq('h_co_anteil') + `</div>`
     + `<div class="co-row"><div class="co-l">${t('co_beteiligung')}${hq('h_co_bet')}</div><div class="co-f">${acctSel('c-bet', g.beteiligung, k => !k.gruppe && k.manuell && !inside(k), t('keine_2'))}<div class="pv small" data-pv="b"></div></div></div>`
-    + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}</div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="ghost small add-gk">+ ${t('co_gegenkonto')}</button></div></div>`
+    + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}</div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="secondary small add-gk">${t('gegenkonto_hinzufuegen')}</button></div></div>`
     + `<details class="co-more"${extra ? ' open' : ''}><summary>${t('co_mehr')}</summary><div class="form">`
     + `<label>${t('co_rueck')}${hq('h_co_rueck')}</label><select class="c-ab">${backMonths(g.rueckwirkend_ab)}</select>`
     + `<label>${t('co_schwelle')}${hq('h_co_schwelle')}</label><div class="row tight"><input type="number" step="0.01" min="0.01" class="c-sw" value="${g.schwelle ?? 0.01}" style="width:110px"> €</div>`

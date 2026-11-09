@@ -15,10 +15,8 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from model import Ledger, Tx, fmt_eur, month_end, months_between
+from model import TAG_RE, Ledger, Tx, fmt_eur, month_end, months_between
 from i18n import tr
-
-TAG_RE = re.compile(r"#mm-[a-z]+-[A-Za-z0-9\-]+")
 
 
 @dataclass
@@ -156,7 +154,8 @@ DEFAULT_TEXTS = {
 }
 
 
-def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str, dict]] = None, claimed: Optional[set] = None) -> RuleResult:
+def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str, dict]] = None, claimed: Optional[set] = None,
+              config: Optional[dict] = None) -> RuleResult:
     res = RuleResult()
     claimed = claimed if claimed is not None else set()
     name = cfg.get("name") or cfg.get("darlehenskonto")
@@ -170,7 +169,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str
     if loan.group:
         res.warnings.append(tr("s_s_darlehenskonto_ist_eine_gruppe") % rule)
         return res
-    if not loan.offline:
+    if not ledger.writable(loan.uuid, config):
         res.warnings.append(tr("s_s_konto_hat_eine_bankanbindung") % rule)
         return res
 
@@ -385,10 +384,10 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, kind: str, target, v
             preview["rueck_summe"] = round(preview["rueck_summe"] + diff, 2)
 
 
-def _target_ok(res: RuleResult, rule: str, target, inside: set) -> bool:
+def _target_ok(ledger: Ledger, config: Optional[dict], res: RuleResult, rule: str, target, inside: set) -> bool:
     if target.group:
         res.warnings.append(tr("s_s_zielkonto_ist_eine_gruppe") % rule)
-    elif not target.offline:
+    elif not ledger.writable(target.uuid, config):
         res.warnings.append(tr("s_s_zielkonto_hat_eine_bankanbindung") % rule)
     elif target.uuid in inside:
         res.warnings.append(tr("s_s_zielkonto_liegt_innerhalb_der") % rule)
@@ -417,7 +416,7 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
         anteil = area.get("anteil")
         if target is not None and anteil is None:
             res.warnings.append(tr("s_s_anteil_fehlt") % rule)
-        elif target is not None and _target_ok(res, rule, target, inside):
+        elif target is not None and _target_ok(ledger, config, res, rule, target, inside):
             accs = [a for a in area["leaves"] if roles.get(a.uuid) not in VALUE_OFF]
             share = float(anteil)
 
@@ -444,7 +443,7 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
         if src.group:
             res.warnings.append(tr("s_s_quelle_ist_eine_gruppe") % rule)
             continue
-        if not _target_ok(res, rule, target, inside | {src.uuid}):
+        if not _target_ok(ledger, config, res, rule, target, inside | {src.uuid}):
             continue
         f = float(g.get("faktor", -1) if g.get("faktor") not in (None, "") else -1)
 
@@ -473,7 +472,7 @@ def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[s
     # Reihenfolge: erst Darlehen (veraendern die Werte der Gesellschaften), dann Beteiligungen und Gegenkonten
     for i, cfg in enumerate(config.get("darlehen", []) or []):
         if cfg.get("aktiv", True):
-            r = plan_loan(ledger, cfg, today, created, claimed)
+            r = plan_loan(ledger, cfg, today, created, claimed, config)
             r.preview.append({"art": "darlehen", "i": i, "buchungen": len(r.proposals), "fehlend": len(r.missing)})
             add(r)
     if config.get("gesellschaften"):

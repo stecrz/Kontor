@@ -290,7 +290,7 @@ Buchungsregeln legen fest, was Kontor automatisch in deine Offline-Konten in Mon
 
 Jedes Darlehen ist eine Zeile (Name → Darlehenskonto, rechts was offen ist); ein Klick klappt die Einzelheiten auf. Jede Gesellschaft hat eine eigene Karte. Neben jedem Feld erklärt ein **?** kurz, was es bewirkt (Klick: dieser Abschnitt). Neben jeder Regel stehen **Soll**, **Ist** und die **Differenz**, die Kontor buchen würde – schon während du änderst. **„Speichern und prüfen“** (⌘S) unten gilt für alle Änderungen der Seite und prüft sie gegen MoneyMoney.
 
-**Automatisch buchen** (Schalter oben unter „Buchungsregeln“, nur am Mac): aus (Standard) – die Buchungen erscheinen unter „Auto-Buchungen“ und werden erst angelegt, wenn du sie dort **freigibst** (nur am Mac); an – Kontor legt sie bei jedem Abgleich selbst an. Oben rechts unter „Auto-Buchungen“ steht, was gilt („Mit Freigabe“ oder „Automatisch“). Bank- und Erweiterungskonten werden nie bebucht, Überweisungen und Lastschriften sind gesperrt, bestehende Buchungen ändert oder löscht Kontor nie.
+**Vollautomatisch buchen** (Schalter oben unter „Buchungsregeln“, nur am Mac): aus (Standard) – die Buchungen erscheinen unter „Auto-Buchungen“ und werden erst angelegt, wenn du sie dort **freigibst** (nur am Mac); an – Kontor legt sie bei jedem Abgleich selbst an. Oben rechts unter „Auto-Buchungen“ steht, was gilt („Mit Freigabe“ oder „Vollautomatisch“). Bank- und Erweiterungskonten werden nie bebucht, Überweisungen und Lastschriften sind gesperrt, bestehende Buchungen ändert oder löscht Kontor nie.
 
 **Ablauf**: Bei jedem Abgleich (automatisch alle 30 Minuten, nach neuen Daten in MoneyMoney oder per „Sync“) rechnet Kontor die Buchungsregeln durch; „Jetzt prüfen“ tut das sofort. Eine Mitteilung meldet „… Buchungen warten auf Freigabe“ bzw. „… Buchungen angelegt“. Unter „Auto-Buchungen“ stehen die wartenden bzw. zuletzt gebuchten Buchungen mit Hinweisen und Rechenwegen, **„Von Kontor angelegt“** (nur Kontors eigene Buchungen mit ihrem Stand in MoneyMoney) und der Verlauf.
 
@@ -320,7 +320,7 @@ Kontor bucht jeweils nur die Differenz zum Stand in MoneyMoney (Verwendungszweck
 <a id="rules-back"></a>
 ### Rückwirkend buchen
 
-Mit „Rückwirkend ab“ (Monat) bucht Kontor für jede Gesellschaft auch für die vergangenen Monate je eine Anpassung zum Monatsende – mit dem Wert, den die Bilanz für diesen Tag zeigt, und wieder nur die Differenz. So stimmt der Verlauf deiner Beteiligung und deiner Gegenkonten in MoneyMoney und in Kontor. Monate, in denen ein Wert nicht bekannt ist (z. B. ein Depot in der Gesellschaft, dessen früherer Stand MoneyMoney nicht herausgibt), werden übersprungen und genannt – Kontor schätzt nichts. Bereits vorhandene Buchungen werden nie geändert; ohne „Automatisch buchen“ warten auch die rückwirkenden Buchungen auf deine Freigabe.
+Mit „Rückwirkend ab“ (Monat) bucht Kontor für jede Gesellschaft auch für die vergangenen Monate je eine Anpassung zum Monatsende – mit dem Wert, den die Bilanz für diesen Tag zeigt, und wieder nur die Differenz. So stimmt der Verlauf deiner Beteiligung und deiner Gegenkonten in MoneyMoney und in Kontor. Monate, in denen ein Wert nicht bekannt ist (z. B. ein Depot in der Gesellschaft, dessen früherer Stand MoneyMoney nicht herausgibt), werden übersprungen und genannt – Kontor schätzt nichts. Bereits vorhandene Buchungen werden nie geändert; ohne „Vollautomatisch buchen“ warten auch die rückwirkenden Buchungen auf deine Freigabe.
 
 <a id="iphone"></a>
 ## Zugriff vom iPhone

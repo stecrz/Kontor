@@ -2587,7 +2587,7 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#nav a[href='#rules']"); pg.wait_for_selector("#save-rules")
                 auto = pg.evaluate("S.CFG.probelauf === false"); self.assertEqual(pg.is_checked("#auto-book"), auto)      # the setting as a switch at the top
                 self.assertIn("Kontor bucht" if auto else "Freigabe", pg.inner_text(".set-row"))
-                pg.click("#nav a[href='#bookings']"); pg.wait_for_selector(".mode-chip"); self.assertIn("Automatisch" if auto else "Mit Freigabe", pg.inner_text(".mode-chip"))
+                pg.click("#nav a[href='#bookings']"); pg.wait_for_selector(".mode-chip"); self.assertIn("Vollautomatisch" if auto else "Mit Freigabe", pg.inner_text(".mode-chip"))
                 self.assertTrue(pg.query_selector("#run-dry svg"))
                 pg.click(".mode-chip"); pg.wait_for_selector("#save-rules")
                 # companies come from the areas: one card each with its share, the participation chosen, target/actual live

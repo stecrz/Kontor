@@ -221,7 +221,7 @@ def cmd_check(args) -> int:
     for f in findings:
         print("%-8s %s" % (f["stufe"].upper(), f["text"]))
     bad = any(f["stufe"] == "fehler" for f in findings)
-    print(tr("s_probelauf_s") % ("EIN" if cfg.get("probelauf", True) else "AUS"))
+    print(tr("s_probelauf_s") % (tr("aus") if cfg.get("probelauf", True) else tr("an")))
     print("Ergebnis: %s" % ("alles in Ordnung" if not bad else "FEHLER vorhanden"))
     return 1 if bad else 0
 
