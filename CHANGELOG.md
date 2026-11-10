@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.12.32 (2026-11-10 16:29)
+- Auto-Buchungen: „Nicht gebucht“ bleibt nach „Neu buchen“ geöffnet und an seiner Stelle – mehrere lassen sich nacheinander neu buchen; die Freigabe wird dabei nur aus den Konten der Buchungsregeln neu gerechnet.
+- Überflüssige Erklärtexte auf der Seite entfernt (stehen im Hover der Knöpfe und in der Hilfe).
+
 ## 3.12.31 (2026-11-10 15:27)
 - Auto-Buchungen: „Aktualisieren“ neben „Freigeben“ liest nur die Konten neu, die die Buchungsregeln betreffen, und rechnet die Freigabe neu – schneller als „Sync“, bucht nichts.
 

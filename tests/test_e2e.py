@@ -2766,6 +2766,11 @@ class BrowserTest(unittest.TestCase):
                     Object.assign(BOOK, sv); return r.map(x => [x.k.slice(-10), x.off, x.gone, x.b, x.adjusted, x.neu]); }""")
                 self.assertEqual(rows, [["20260131-1", True, False, 50, False, False], ["20260228-1", False, False, 150, True, False],
                                         ["20260430-1", False, True, 7, False, False], ["20260331-1", False, False, 5, False, True]])
+                # folded sections stay open when the page is drawn again (e.g. "Not booked" while booking several again); no
+                # explanations the button at the top already gives on hover
+                pg.click("details[data-keep='bk-hist'] summary"); pg.evaluate("routeKeeping(\"details[data-keep='bk-hist']\")"); pg.wait_for_timeout(500)
+                self.assertTrue(pg.evaluate("document.querySelector(\"details[data-keep='bk-hist']\").open"))
+                self.assertNotIn("Buchungsregeln bearbeiten", pg.inner_text("#main")); self.assertNotIn("bei jedem Abgleich", pg.inner_text("#main"))
                 n_wait = pg.evaluate("((S.STATUS.letzter_lauf || {}).probelauf && (S.STATUS.letzter_lauf.vorschlaege || []).length) || 0")
                 self.assertEqual(pg.evaluate("(document.querySelector('#nav a[href=\"#bookings\"] .nbadge') || {}).textContent || ''"), str(n_wait) if n_wait else "")
                 pg.evaluate("window.__st = S.STATUS; S.STATUS = Object.assign({}, S.STATUS, {letzter_lauf: {probelauf: true, zeit: 'x', vorschlaege: [{}, {}, {}]}, update: {neuer: true, verfuegbar: '9.9.9'}}); statusMini()")

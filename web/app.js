@@ -2712,6 +2712,37 @@ function bkRows(l) {
     return {v, k, off, e, gone, b, neu: !inBase.has(k), adjusted: !!(cur && e.betrag == null && inBase.has(k) && Math.abs(cur.betrag - v.betrag) >= 0.005)};
   });
 }
+// folded sections that stay open while the page is drawn again (e.g. "Not booked" while booking several again)
+const KEEP_OPEN = new Set();
+const keepOpen = k => KEEP_OPEN.has(k) ? ' open' : '';
+document.addEventListener('toggle', e => { const d = e.target; if (d.matches && d.matches('details[data-keep]')) { if (d.open) KEEP_OPEN.add(d.dataset.keep); else KEEP_OPEN.delete(d.dataset.keep); } }, true);
+// draw the page again with `sel` where it was on the screen (rows added above it do not push it away)
+async function routeKeeping(sel) {
+  const el = sel && $(sel, main), top = el ? el.getBoundingClientRect().top : null;
+  await route();
+  const fade = $('.fade', main); if (fade) fade.classList.remove('fade');          // in place: no fade-in (it moves the page)
+  const now = sel && $(sel, main);
+  if (!now || top == null) return;
+  window.scrollBy(0, now.getBoundingClientRect().top - top);
+  const miss = now.getBoundingClientRect().top - top;          // the page ends below: room there, so it stays in place
+  if (miss > 1) { main.style.paddingBottom = Math.ceil(miss) + 'px'; window.scrollBy(0, miss); }
+}
+// "Book again" with approval: the list waiting planned again (only the accounts of the rules read), one after the other
+const NB = {busy: false, again: false};
+async function nbRefresh() {
+  if (NB.busy) { NB.again = true; return; }
+  NB.busy = true;
+  try {
+    let tries = 0;
+    do {
+      NB.again = false;
+      try { await api('/api/bookings/refresh', {}); }
+      catch (e) { if (tries++ > 60) { toast(e.message, 5000); break; } await new Promise(r => setTimeout(r, 1500)); NB.again = true; }    // a check is running: after it
+    } while (NB.again);
+    S.STATUS = await api('/api/status'); statusMini();
+  } catch (e) { toast(e.message, 5000); }
+  finally { NB.busy = false; routeKeeping('#nb-list'); }
+}
 async function bkRecalc() {
   const l = (BOOK.runs || {}).letzter_lauf || {}, my = ++BOOK.seq;
   if (!l.probelauf) return;
@@ -2736,10 +2767,9 @@ function vBuchungen(runs) {
   let h = `<div class="toolbar">
     ${pending ? `<button id="run-live" class="ico" ${local ? '' : t('disabled_title_nur_am_mac')}>${ICON.check}<span>${t('jetzt_buchen')} (<span id="sel-n">${pending}</span>)</span></button>` : ''}
     ${ask ? `<button id="bk-refresh" class="secondary ico" title="${esc(t('freigabe_aktualisieren_tip'))}" ${OFFLINE.mode ? 'disabled' : ''}>${ICON.refresh}<span>${t('aktualisieren')}</span></button>` : ''}
-    <span class="muted small">${t('geprueft_bei_sync')}</span>
     <span class="sp"></span>
     <a class="mode-chip${ask ? '' : ' auto'}" href="#rules" title="${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')}">${ask ? ICON.hand : ICON.bolt}${t(ask ? 'modus_freigabe' : 'modus_automatisch')}</a>
-  </div><div class="note">${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')} <a href="#rules">${t('regeln_bearbeiten')} →</a></div>`;
+  </div>`;
   if (l) {
     const head = pending ? `${t('wartet_freigabe')} <span class="x">${pending}</span>` : `${t('zuletzt_geprueft')} <span class="x">${esc(l.zeit)} · ${l.geschrieben} ${t('gebucht')}</span>`;
     h += `<h2>${head}${l.fehler ? ' <span class="pill err">' + esc(l.fehler) + '</span>' : ''}</h2>`;
@@ -2752,31 +2782,31 @@ function vBuchungen(runs) {
           const d = e.datum ?? v.datum, z = e.zweck ?? plain(v.text), changed = Object.keys(e).length > 0;
           const pills = (changed ? ` <span class="pill info">${t('geaendert')}</span>` : '') + (adjusted ? ` <span class="pill info" title="${esc(t('angepasst_tip'))}">${t('angepasst')}</span>` : '')
             + (neu ? ` <span class="pill info" title="${esc(t('neu_dazu_tip'))}">${t('neu_dazu')}</span>` : '') + (gone ? ` <span class="pill neutral" title="${esc(t('entfaellt_tip'))}">${t('entfaellt')}</span>` : '');
-          return `<tr data-key="${esc(k)}" class="${off || gone ? 'off' : ''}${gone ? ' gone' : ''}${BOOK.editing.has(k) ? ' editing' : ''}">${pick ? `<td class="c">${k ? `<input type="checkbox" class="bk-on" ${off || gone ? '' : 'checked'}${gone ? ' disabled' : ''}>` : ''}</td>` : ''}`
+          return `<tr data-key="${esc(k)}" class="${off || gone ? 'off' : ''}${gone ? ' gone' : ''}${BOOK.editing.has(k) ? ' editing' : ''}">${pick ? `<td class="c">${k ? `<input type="checkbox" class="bk-on" title="${esc(t('bk_on_tip'))}" ${off || gone ? '' : 'checked'}${gone ? ' disabled' : ''}>` : ''}</td>` : ''}`
             + `<td style="white-space:nowrap"><span class="v">${FD(d)}</span><input type="date" class="bk-d e" value="${esc(d)}"></td><td>${esc(v.konto_name || v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td>`
             + `<td class="num ${b < 0 ? 'neg' : 'pos'}"><span class="v">${F(b)}</span><input type="number" step="0.01" class="bk-b e" value="${b}"></td>`
             + `<td><span class="v">${esc(z)}</span><input type="text" class="bk-z e" value="${esc(z)}">${pills}<div class="small muted">${esc(v.regel || '')}${v.kategorie ? ' · ' + esc(v.kategorie) : ''}</div></td>`
             + (ed ? `<td class="nowrap">${k ? (local ? `<button class="icon bk-edit" title="${esc(t('bearbeiten'))}" aria-label="${esc(t('bearbeiten'))}">${ICON.pencil}</button>` : '') + `<button class="icon bk-rej" title="${esc(t('verwerfen'))}" aria-label="${esc(t('verwerfen'))}">✕</button>` : ''}</td>` : '') + `</tr>`;
         }).join('') + '</tbody></table></div>';
-      if (l.probelauf) h += `<div class="note">${t('diese_buchungen_sind_noch_nicht')}${l.vorschlaege.some(v => !v.key) ? ' ' + t('einmal_sync_fuer_auswahl') : ''}</div>`;
+      if (l.probelauf && l.vorschlaege.some(v => !v.key)) h += `<div class="note">${t('einmal_sync_fuer_auswahl')}</div>`;
     } else h += `<div class="note">${t('keine_buchungen_noetig')}</div>`;
     if (l.warnungen && l.warnungen.length) h += `<h3>${t('hinweise')}</h3>` + l.warnungen.map(x => `<div class="banner">${esc(x)}</div>`).join('');
-    if (l.hinweise && l.hinweise.length) h += `<details class="calc"><summary>${t('rechenwege')} (${l.hinweise.length})</summary>` + l.hinweise.map(x => `<div class="small muted">${esc(x)}</div>`).join('') + '</details>';
+    if (l.hinweise && l.hinweise.length) h += `<details class="calc" data-keep="bk-calc"${keepOpen('bk-calc')}><summary>${t('rechenwege')} (${l.hinweise.length})</summary>` + l.hinweise.map(x => `<div class="small muted">${esc(x)}</div>`).join('') + '</details>';
   }
   // not booked: proposals you dropped and Kontor's loan bookings deleted in MoneyMoney -- never made on its own, "Book again" here
   const rej = runs.abgelehnt || [];
-  if (rej.length) h += `<details class="calc"><summary>${t('nicht_gebucht_titel')} (${rej.length})</summary><div class="note">${t('nicht_gebucht_note')}</div><div class="wrap auto"><table class="plain"><tbody>`
+  if (rej.length) h += `<details class="calc" id="nb-list" data-keep="bk-nb"${keepOpen('bk-nb')}><summary>${t('nicht_gebucht_titel')} (${rej.length})</summary><div class="wrap auto"><table class="plain"><tbody>`
     + rej.slice().reverse().map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto_name || '')}</td><td>${esc(artL[v.art] || v.art || '')}</td><td class="num">${v.betrag != null ? F(v.betrag) : ''}</td>`
       + `<td><span class="pill ${v.grund === 'geloescht' ? 'warn' : 'neutral'}">${t(v.grund === 'geloescht' ? 'grund_geloescht' : 'grund_verworfen')}</span></td><td class="small muted">${esc(v.regel || '')}</td>`
       + `<td>${local || ask ? `<button class="secondary small re-book" data-key="${esc((v.konto || '00000000') + '|' + v.tag)}" title="${esc(t(ask ? 'neu_buchen_tip' : 'neu_buchen_tip_auto'))}">${t('neu_buchen')}</button>` : ''}</td></tr>`).join('') + '</tbody></table></div></details>';
   // only what Kontor itself made in MoneyMoney (its own list and marks), with the state there now
   const ang = runs.angelegt || [], stL = {ok: ['ok', t('st_ok')], markierung: ['warn', t('st_markierung')], fehlt: ['err', t('st_fehlt')]};
-  h += `<h2>${t('angelegt_titel')} <span class="x">${ang.length}</span></h2><div class="note">${t('angelegt_note')}</div>`
+  h += `<h2>${t('angelegt_titel')} <span class="x">${ang.length}</span></h2>`
     + (ang.length ? `<div class="wrap auto" style="max-height:420px"><table class="plain"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th><th>${t('markierung')}</th><th>${t('status')}</th></tr></thead><tbody>`
       + ang.slice(0, 300).map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td><td class="num ${v.betrag < 0 ? 'neg' : 'pos'}">${F(v.betrag)}</td><td class="small">${esc(v.zweck || v.gegenpartei)}</td><td class="small muted" style="white-space:nowrap">${esc(v.markierung)}</td><td><span class="pill ${(stL[v.status] || stL.ok)[0]}">${(stL[v.status] || stL.ok)[1]}</span></td></tr>`).join('')
       + `</tbody></table></div>` : `<div class="muted small">${t('keine_angelegt')}</div>`);
   // history: only the checks (when, how many proposed and booked, errors) -- the bookings themselves are listed above
-  h += `<details class="calc"><summary>${t('verlauf_2')} (${(runs.verlauf || []).length})</summary><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th></tr></thead><tbody>`
+  h += `<details class="calc" data-keep="bk-hist"${keepOpen('bk-hist')}><summary>${t('verlauf_2')} (${(runs.verlauf || []).length})</summary><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th></tr></thead><tbody>`
     + (runs.verlauf || []).map(v => `<tr><td>${esc(v.zeit)}</td><td class="num">${v.vorschlaege ?? ''}</td><td class="num">${v.geschrieben}</td><td>${esc(v.fehler || '')}</td></tr>`).join('') + '</tbody></table></div></details>';
   return h;
 }
@@ -3890,6 +3920,7 @@ async function route() {
     clearTimeout(slow);
     if (ROUTE_SEQ !== myRoute) return;          // inzwischen woanders hin geklickt
     const keepX = sameTab ? $$('.wrap', main).map(w => ({x: w.scrollLeft, n: w.querySelectorAll('thead th').length})) : null;   // same page again: tables stay put
+    main.style.paddingBottom = '';               // room left by routeKeeping
     main.innerHTML = `<div class="fade">${h}</div>`;
     SCROLL.key = key; SCROLL.keepX = keepX;
     window.scrollTo(0, sameTab ? y0 : (SCROLL.pos[key] || 0));      // eigener Reiter: bleibt; anderer Reiter: dessen letzte Position, sonst oben
@@ -4133,8 +4164,9 @@ function bind(main) {
   }
   $$('.re-book', main).forEach(b => b.addEventListener('click', async () => {
     // book again: with approval it waits for you again (to change it first), booking fully automatically books it now
-    if (S.CFG.probelauf === false) { if (confirm(t('neu_buchen_frage'))) startRun(false, {[b.dataset.key]: {}}); return; }
-    try { await api('/api/bookings/restore', {key: b.dataset.key}); toast(t('neu_buchen_wartet'), 4000); startRun(true); } catch (e) { toast(e.message, 5000); }
+    // "Not booked" stays open and in its place, so several can be booked again one after the other
+    if (S.CFG.probelauf === false) { if (confirm(t('neu_buchen_frage'))) startRun(false, {[b.dataset.key]: {}}, '#nb-list'); return; }
+    try { b.disabled = true; await api('/api/bookings/restore', {key: b.dataset.key}); toast(t('neu_buchen_wartet'), 3000); await routeKeeping('#nb-list'); nbRefresh(); } catch (e) { b.disabled = false; toast(e.message, 5000); }
   }));
   // only what the approval list depends on: the accounts of the rules read again, the list planned again (nothing booked)
   const rf = $('#bk-refresh', main); if (rf) rf.addEventListener('click', async () => {
@@ -4327,10 +4359,10 @@ async function syncNow(voll) {
   } catch (e) { toast(t('synchronisieren_fehlgeschlagen') + e.message, 6000); }
   finally { SYNC.busy = false; statusMini(); }
 }
-async function startRun(dry, freigabe) {
+async function startRun(dry, freigabe, anchor) {
   try { await api('/api/run', {probelauf: dry, force: true, ...(freigabe ? {freigabe} : {})}); toast(dry ? t('abgleich_gestartet_test') : t('abgleich_mit_buchung_gestartet')); } catch (e) { toast(e.message, 4000); return; }
   let tries = 0;
-  const poll = async () => { S.STATUS = await api('/api/status'); statusMini(); if (S.STATUS.dienst.laeuft && tries++ < 150) return setTimeout(poll, 2000); await loadAll(); route(); const r = S.STATUS.letztes_ergebnis; toast(r && r.text ? r.text : t('abgleich_beendet'), 6000); };
+  const poll = async () => { S.STATUS = await api('/api/status'); statusMini(); if (S.STATUS.dienst.laeuft && tries++ < 150) return setTimeout(poll, 2000); await loadAll(); await (anchor ? routeKeeping(anchor) : route()); const r = S.STATUS.letztes_ergebnis; toast(r && r.text ? r.text : t('abgleich_beendet'), 6000); };
   setTimeout(poll, 1500);
 }
 
