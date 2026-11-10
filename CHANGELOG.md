@@ -1,5 +1,17 @@
 # Änderungen
 
+## 3.13.1 (2026-11-10 19:35)
+Auto-Buchungen ohne eigene Buchungsliste – Kontor leitet alles aus MoneyMoney und den Einstellungen ab, Änderungen dort bringen nichts mehr durcheinander.
+- **Was gebucht ist, erkennt Kontor in MoneyMoney:** an der Markierung oder an einer gleichen Buchung, die du selbst angelegt hast (Tilgung mit gleichem Betrag bis 7 Tage neben der Zahlung, Zinsen mit „Zins“ im Text oder der Zinskategorie, im Kontenspiegel gleiche Buchungen auf beiden Seiten). Geänderte Buchungen gelten, wie sie jetzt sind; gelöschte schlägt Kontor wieder vor. Funktioniert auch mit Konten, die du schon von Hand geführt hast, und ohne Datensicherung.
+- **Vollautomatisch bucht Kontor nur, was seit der letzten Prüfung neu ist.** Älteres – rückwirkend oder in MoneyMoney gelöscht – wartet auch dann auf deine Freigabe (Hinweis „älter“), ebenso Zinsen, die darauf aufbauen.
+- **„Buchen ab“** je Gesellschaft (statt „Rückwirkend ab“): ein Tag (neu: heute) oder alles. Kontor prüft bei jedem Abgleich den ganzen Zeitraum und korrigiert genau den Tag, an dem etwas fehlt oder geändert wurde. „Erneut prüfen“ und „Neu buchen“ entfallen.
+- **Echte Zinsen:** Kontors Zinsbuchung in MoneyMoney ändern oder die Zinsen selbst buchen – Kontor bucht für diesen Monat dann nichts, doppelte Zinsen in einem Monat meldet es.
+- **„Nicht buchen“** wird in den Einstellungen gespeichert (also auch in der Datensicherung); „Wieder vorschlagen“ statt „Neu buchen“. Bisherige Entscheidungen werden übernommen.
+- Hinweise, wenn die Zahlung zu einer Tilgung fehlt; bekommt eine Zahlung oder ein gespiegeltes Original in MoneyMoney eine neue Nummer, zählt Kontors Buchung weiter.
+- Bearbeiten in der Freigabe: Betrag und Datum nur bei Darlehen (Wertanpassungen und gespiegelte Buchungen folgen MoneyMoney genau), Text überall.
+- „Von Kontor angelegt“ zeigt alle Buchungen mit Kontors Markierung. Punkt an „Auto-Buchungen“ in der Seitenleiste, wenn es Hinweise gibt; umbenannte Konten sind nur noch ein Rechenweg-Hinweis.
+- Fällt die Vorschau oder Neuberechnung der Regeln einmal aus, bleibt die Seite bedienbar.
+
 ## 3.13.0 (2026-11-10 18:09)
 Prüfung aller Funktionen, Schwerpunkt: nie etwas in MoneyMoney kaputt machen.
 - **Was Kontor in MoneyMoney schreibt, ist jetzt eng begrenzt:** neue Buchungen nur in Offline-Konten, nur mit Markierung, nie zweimal (vor jeder Buchung erneut geprüft); die Kategorie eines Umsatzes nur, wenn du sie zuordnest und das Zurückschreiben an ist; der Belegpfad wird an den Kommentar angehängt statt ihn zu ersetzen. Die Darlehensregel schreibt nichts mehr an deine Bankumsätze (Kommentar/Kategorie). Eine Buchung wird nur noch über die Konto-ID angelegt (nie über einen Namen) und nach einem Fehler oder Zeitlimit nicht blind wiederholt. Eine Kategorie, die es in MoneyMoney nicht gibt, wird nicht mitgegeben (Hinweis statt neuer Kategorie).

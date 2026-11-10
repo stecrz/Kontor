@@ -15,7 +15,6 @@ import threading
 import traceback
 from collections import Counter
 from datetime import date, datetime, timedelta
-from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyNotRunning
@@ -50,6 +49,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "belege": {"ordner": "~/Documents/Kontor-Belege", "unterordner": "{jahr}", "kommentar_schreiben": False, "ordner_bestaetigt": False},
     "moneymoney": {"kategorisieren_erlauben": False},
     "abruf": {"online": [], "offline": []},      # eigene Festlegung: Konto wird von MoneyMoney abgerufen / nicht (sonst erkannt)
+    "nicht_buchen": [],      # bookings of the rules you chose not to book: {"key": account|mark, "datum", "betrag", "konto", "art", "text", "regel", "seit"}
     "updates": {"repo": "stecrz/Kontor", "pruefen": "taeglich"},   # pruefen: taeglich | woechentlich | aus
     "oberflaeche": {"sperre_minuten": 15, "touchid": True, "port": 8765, "bind": "127.0.0.1", "tls_cert": "", "tls_key": ""},
 }
@@ -147,6 +147,14 @@ def _shape(cfg: dict) -> dict:
         for f in ("online", "offline"):
             if f in ab:
                 ab[f] = texts(ab[f])
+    if "nicht_buchen" in cfg:
+        keep, have = [], set()
+        for x in cfg["nicht_buchen"]:
+            acc, _, tag = text(x.get("key")).partition("|")
+            if acc and rules.TAG_RE.fullmatch(tag) and x["key"] not in have:
+                have.add(x["key"])
+                keep.append({k: v for k, v in x.items() if isinstance(v, (str, int, float)) and not isinstance(v, bool)})
+        cfg["nicht_buchen"] = keep[-1000:]
     return cfg
 
 
@@ -684,7 +692,7 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         if g.get("takt") not in (None, "", "taeglich", "monatlich"):
             add("fehler", tr("s_s_takt_unbekannt") % (n, g.get("takt")))
         rs = parse_start(g.get("rueckwirkend_ab")) if g.get("rueckwirkend_ab") else ""
-        if rs is None or (isinstance(rs, date) and rs >= date.today()):
+        if rs is None or (isinstance(rs, date) and rs > date.today()):
             add("fehler", tr("s_s_rueckwirkend_ungueltig") % (n, g["rueckwirkend_ab"]))
         targets = []
         if g.get("beteiligung"):
@@ -765,87 +773,80 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
 # Lauf
 # ---------------------------------------------------------------------------
 
-def _from_record(ledger: Ledger, rec: dict) -> Optional[Proposal]:
-    """A booking of Kontor's lists ("Not booked") as it was: account, date, amount, text with its mark, counterparty, category."""
-    uuid, tag = rec.get("konto") or "", canon_tag(rec.get("tag"))
-    if uuid not in ledger.accounts or not tag:
-        return None
-    try:
-        day, amount = date.fromisoformat(str(rec.get("datum"))), round(float(rec.get("betrag")), 2)
-    except (TypeError, ValueError):
-        return None
-    text = rules.TAG_RE.sub("", str(rec.get("zweck") or rec.get("text") or rec.get("regel") or "")).strip(" ·")     # its mark in the current form
-    purpose = "%s · %s" % (text, tag) if text else tag
-    acc = ledger.accounts[uuid]
-    return Proposal(rec.get("regel") or "", rec.get("art") or "wert", uuid, acc.path, day, amount, rec.get("gegenpartei") or "Kontor",
-                    purpose, rec.get("kategorie") or "", tag)
+# Kontor's own lists of its bookings until 3.13.0 (state): replaced by what is in MoneyMoney, see migrate_booking_state
+OLD_STATE_KEYS = ("kontor_buchungen", "kontor_abgelehnt", "kontor_neu", "abgleich", "rueckwirkend", "spiegel_seit")
 
 
-def _plan_inputs(state: dict, ledger: Ledger, approve: Optional[Dict[str, dict]] = None, dry: bool = True) -> SimpleNamespace:
-    """What the rules plan from: Kontor's lists in the state, and what changed in MoneyMoney since. A value adjustment of
-    Kontor's deleted or changed there gets its day checked again (recheck): a balance is the sum of the bookings up to that
-    day, so one booking on that day sets every later one right again -- the bookings after it stay as they are."""
-    def key_of(r: dict) -> str:
-        return rules.bkey(r["konto"], r["tag"]) if r.get("konto") else canon_tag(r["tag"])
-    recs = [r for r in state.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")]
-    created = {rules.bkey(r.get("konto", ""), r["tag"]): r for r in recs}
-    not_booked = {key_of(r): r for r in state.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("tag")}
-    # "Book again" under "Not booked": with approval it waits for you again (kontor_neu), booking fully automatically books it
-    again_recs = {rules.bkey(r.get("konto", ""), r.get("tag", "")): r for r in state.get("kontor_neu") or [] if isinstance(r, dict) and r.get("tag")}
-    restore = ({k for k in (approve or {}) if k in not_booked} if not dry else set()) | set(again_recs)
-    # older entries: a deleted value adjustment never stops the next one
-    rejected = {k for k, r in not_booked.items() if not (r.get("grund") == "geloescht" and rules.is_value_tag(r.get("tag")))} - restore
-    mark_txs = rules.present_mark_txs(ledger)
-    marks = set(mark_txs)
-    gone = {rules.bkey(r.get("konto", ""), r["tag"]): r for r in rules.deleted_values(ledger, recs, marks)}
-    changed = rules.changed_values(ledger, recs, mark_txs)
-    recheck: Dict[str, set] = {}
-    persist: Dict[str, set] = {}
-
-    def again(uuid, day, keep: bool = True) -> None:
+def not_booked_entry(row: dict, key: str) -> dict:
+    """An entry of "Don't book" (config nicht_buchen): the booking as it was shown, so the list can name it."""
+    def num(v):
         try:
-            d = day if isinstance(day, date) else date.fromisoformat(str(day))
+            return round(float(v), 2)
         except (TypeError, ValueError):
-            return
-        if uuid:
-            recheck.setdefault(uuid, set()).add(d)
-            if keep:
-                persist.setdefault(uuid, set()).add(d)
-    for uuid, days in (state.get("abgleich") or {}).items():
-        for d in days or []:
-            again(uuid, d)
-    for r in gone.values():
-        again(r.get("konto"), r.get("datum"))
-    for r, t in changed:
-        again(r.get("konto"), r.get("datum"))
-        again(r.get("konto"), t.booking_date)
-    for k in restore:          # a value adjustment booked again: its day is checked again, with the amount it needs now
-        r = again_recs.get(k) or not_booked.get(k)
-        if r and rules.is_value_tag(r.get("tag")):
-            again(r.get("konto"), r.get("datum"), keep=False)
-    return SimpleNamespace(
-        created=created, not_booked=not_booked, again_recs=again_recs, restore=restore, rejected=rejected,
-        done=dict(state.get("rueckwirkend") or {}), marks=marks, gone=gone, changed=changed, recheck=recheck, persist=persist,
-        since=dict(state.get("spiegel_seit") or {}),              # counter account mirrors: the newest booking when set up
-        back={k: r for k, r in not_booked.items() if r.get("konto") and (r["konto"], canon_tag(r["tag"])) in marks},     # there again
-        back_again={k for k, r in again_recs.items() if (r.get("konto"), canon_tag(r.get("tag"))) in marks})
+            return None
+    out = {"key": key, "datum": str(row.get("datum") or "")[:10], "betrag": num(row.get("betrag")),
+           "konto": str(row.get("konto_name") or row.get("konto") or "")[:120], "art": str(row.get("art") or "")[:20],
+           "text": rules.TAG_RE.sub("", str(row.get("text") or row.get("zweck") or "")).strip(" ·")[:200],
+           "regel": str(row.get("regel") or "")[:120], "seit": datetime.now().strftime("%Y-%m-%d %H:%M")}
+    return {k: v for k, v in out.items() if v is not None}
 
 
-def _plan_round(ledger: Ledger, config: dict, today: date, ctx: SimpleNamespace, hold: Optional[set] = None,
-                edits: Optional[Dict[str, dict]] = None, booked: Optional[set] = None) -> "rules.RuleResult":
-    """The rules once: hold = left out of this approval (planned as not booked), edits = your changes (planned as changed),
-    booked = written in this run (not booked again)."""
-    hold = set(hold or ())
-    result = plan_all(ledger, config, today, ctx.created, ctx.rejected | hold, ctx.done, edits, ctx.recheck, ctx.since)
-    planned = {p.key for p in result.proposals}
-    for k in sorted(ctx.restore - planned - hold - set(booked or ())):
-        rec = ctx.again_recs.get(k) or ctx.not_booked.get(k)
-        if not rec or rules.is_value_tag(rec.get("tag")):
-            continue            # a value adjustment: its day is checked again instead (recheck)
-        p = _from_record(ledger, rec)          # not planned again (e.g. a loan booking): as it was
-        if p is not None:
-            rules._emit(result, ledger, p, edits)
-    return result
+def migrate_booking_state(store: Store) -> bool:
+    """Until 3.13.0 Kontor kept lists of its own bookings in its state. From 3.13.1 it derives everything from MoneyMoney and the
+    settings; only your decisions not to book a booking stay -- moved into the settings (nicht_buchen, part of every backup),
+    the rest is dropped. True if something was there."""
+    st = store.load("state.json", {}) or {}
+    if not any(k in st for k in OLD_STATE_KEYS):
+        return False
+    rej = [r for r in st.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("konto") and r.get("tag")
+           and rules.TAG_RE.fullmatch(canon_tag(r.get("tag")))]
+    if rej:
+        cfg = store.load("config.json", {}) or {}
+        cur = [x for x in cfg.get("nicht_buchen") or [] if isinstance(x, dict)]
+        have = {x.get("key") for x in cur}
+        for r in rej:
+            key = rules.bkey(str(r["konto"]), r["tag"])
+            if key not in have:
+                cur.append(dict(not_booked_entry(dict(r, konto_name=r.get("konto_name") or ""), key), seit=str(r.get("abgelehnt") or "")[:16]))
+                have.add(key)
+        cfg["nicht_buchen"] = cur[-1000:]
+        store.save("config.json", cfg)
+
+    def drop(cur: dict) -> None:
+        for k in OLD_STATE_KEYS:
+            cur.pop(k, None)
+    store.update("state.json", drop, {})
+    log.info("Kontor's own booking lists replaced by MoneyMoney (%d decision(s) not to book kept)", len(rej))
+    return True
+
+
+def fix_start_dates(ledger: Ledger, config: dict, today: date) -> Optional[dict]:
+    """"Buchen ab" of each company as a day: until 3.13.0 it could be empty (from now on). An empty one gets the day of Kontor's
+    first booking for the company's rules (so everything since is kept right), otherwise today -- and never moves again.
+    Returns the changed configuration, or None."""
+    gs = [g for g in config.get("gesellschaften") or [] if isinstance(g, dict) and (g.get("beteiligung") or g.get("gegenkonten"))
+          and parse_start(g.get("rueckwirkend_ab")) is None]
+    if not gs:
+        return None
+    new = copy.deepcopy(config)
+    areas = {str(b["id"]): b for b in bereiche_for(ledger, config)}
+    changed = False
+    for g in new.get("gesellschaften") or []:
+        if not isinstance(g, dict) or not (g.get("beteiligung") or g.get("gegenkonten")) or parse_start(g.get("rueckwirkend_ab")) is not None:
+            continue
+        area = areas.get(str(g.get("bereich")))
+        if area is not None:
+            g["rueckwirkend_ab"] = (rules.default_start(ledger, g, area) or today).isoformat()
+            changed = True
+    return new if changed else None
+
+
+def _plan_round(ledger: Ledger, config: dict, today: date, seen: "rules.Seen", hold: Optional[set] = None,
+                edits: Optional[Dict[str, dict]] = None, auto: bool = False) -> "rules.RuleResult":
+    """The rules once: hold = left out of this run (planned as not booked: what follows makes up for it, a loan's interest
+    after it waits too), edits = your changes from the approval (planned as changed), auto = only what booking fully
+    automatically books (what is new since the last check)."""
+    return plan_all(ledger, config, today, set(hold or ()), edits, seen, auto)
 
 
 def proposal_rows(ledger: Ledger, proposals: List[Proposal]) -> List[dict]:
@@ -860,9 +861,9 @@ def plan_pending(ledger: Ledger, config: dict, state: dict, today: date, hold: O
                  edits: Optional[Dict[str, dict]] = None) -> List[dict]:
     """The approval list with your selection: what you leave out or change, and everything planned after it, recalculated
     (nothing is written)."""
-    ctx = _plan_inputs(state, ledger)
     lg = ledger.fork()
-    return proposal_rows(lg, _plan_round(lg, config, today, ctx, hold, edits).proposals)
+    seen = rules.Seen.from_state(state.get("gesehen"), lg, today)
+    return proposal_rows(lg, _plan_round(lg, config, today, seen, hold, edits).proposals)
 
 
 def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal], made: Optional[List[Proposal]] = None,
@@ -1359,7 +1360,8 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
              approve: Optional[Dict[str, dict]] = None, report: bool = True, ledger: Optional[Ledger] = None,
              progress: Optional[Callable[[str, int, int], None]] = None) -> dict:
     """approve (a live run from "Approve" under Auto bookings): account|mark -> changes (amount, date, purpose) of the
-    bookings you approved; only these are written, the others keep waiting. None: all. Marks you rejected are never proposed.
+    bookings you approved; only these are written, the others keep waiting. None: booking fully automatically, what is new
+    since the last check (see wanted). What you chose not to book (settings: nicht_buchen) is never proposed.
     report=False: no report here (the service builds it in the background, so the page is up to date at once).
     ledger: a state read already (e.g. only the accounts of the rules, refresh_accounts): not read again, and the mark of the
     last full check stays (the next sync still sees what changed in MoneyMoney).
@@ -1391,11 +1393,9 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             log.error("MoneyMoney error: %s", e)
             return {"status": "fehler", "text": tr("s_moneymoney_fehler_s") % e}
         # a new version builds the report again (new figures, e.g. after an update); the rules run again when their basis
-        # changed: their settings, the bookings you rejected or allowed again, and the day (interest at month end, values)
-        basis = json.dumps([[config.get(k) for k in ("darlehen", "gesellschaften", "bereiche", "abruf", "probelauf", "bilanz")],
-                            sorted(rules.bkey(r.get("konto", ""), r.get("tag", "")) for r in state.get("kontor_buchungen") or [] if isinstance(r, dict)),
-                            sorted(rules.bkey(r.get("konto", ""), r.get("tag", "")) for r in state.get("kontor_abgelehnt") or [] if isinstance(r, dict)),
-                            state.get("rueckwirkend") or {}, state.get("abgleich") or {}, today.isoformat()], sort_keys=True, default=str)
+        # changed: their settings (your "Don't book" among them) and the day (interest at month end, values)
+        basis = json.dumps([[config.get(k) for k in ("darlehen", "gesellschaften", "bereiche", "abruf", "probelauf", "bilanz", "nicht_buchen")],
+                            today.isoformat()], sort_keys=True, default=str)
         fp = "%s@%s#%s" % (ledger_fp(ledger), version(), hashlib.sha256(basis.encode()).hexdigest()[:16])
         if fp == state.get("fingerprint") and not force:
             log.info("No change in MoneyMoney since the last run.")
@@ -1405,40 +1405,44 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         # when Kontor first saw each account: one new in MoneyMoney shows at once (before its first transaction); the first
         # time all known accounts count as long known
         seen_before = state.get("konten_seit")
-        seen = dict(seen_before) if isinstance(seen_before, dict) else {}
+        known = dict(seen_before) if isinstance(seen_before, dict) else {}
         for u, a in ledger.accounts.items():
-            if not a.group and u not in seen:
-                seen[u] = today.isoformat() if isinstance(seen_before, dict) else "alt"      # "alt": known before
-        seen_new = {u: v for u, v in seen.items() if u not in (seen_before or {})}
-        state["konten_seit"] = seen                 # for the report of this run
+            if not a.group and u not in known:
+                known[u] = today.isoformat() if isinstance(seen_before, dict) else "alt"      # "alt": known before
+        known_new = {u: v for u, v in known.items() if u not in (seen_before or {})}
+        state["konten_seit"] = known                # for the report of this run
         step("regeln", 0, 0)
-        ctx = _plan_inputs(state, ledger, approve, dry)
-        done = ctx.done                         # companies whose booking back is done (area -> "Rückwirkend ab")
+        # up to where Kontor had looked when it last booked on its own: what arose after that is new (Seen)
+        seen = rules.Seen.from_state(state.get("gesehen"), ledger, today)
+        new_seen = None if isinstance(state.get("gesehen"), dict) and state["gesehen"].get("tag") else seen.dump()
+        top = rules.Seen.top_id(ledger)
         t_read = time.time()
         approving = not dry and approve is not None
+        automatic = not dry and approve is None
         edits = {k: v for k, v in approve.items() if isinstance(v, dict)} if approving else None
         hold: set = set()
 
         def wanted(p: Proposal) -> bool:
-            """Booked in this run: what you approved; booking fully automatically everything -- except counter bookings of
-            what was there before a mirror was set up (they may be there by hand already): those always wait for you."""
-            if approving:
-                return p.key in approve
-            return not (p.kind == "spiegel" and p.retro)
+            """Booked in this run: what you approved; booking fully automatically what is new since the last check -- what is
+            backdated or missing again (deleted in MoneyMoney) waits for you, and a loan's interest after it too."""
+            return p.key in approve if approving else not p.retro
         failed = False
         moved: List[str] = []
         try:
-            result = _plan_round(ledger, config, today, ctx, hold, edits)
+            result = _plan_round(ledger, config, today, seen, hold, edits, automatic)
             if not dry:
                 # what is left out is not booked, and what comes after it is planned without it (the next value adjustment of
-                # that account takes up the difference, later interest the other balance) -- again until nothing depends on it
+                # that account takes up the difference) -- again until nothing depends on it (booking fully automatically the
+                # rules plan only what is new in the first place)
                 for _ in range(8):
                     extra = {p.key for p in result.proposals if not wanted(p)} - hold
                     if not extra:
                         break
                     hold |= extra
                     ledger = ledger.without_planned()
-                    result = _plan_round(ledger, config, today, ctx, hold, edits)
+                    result = _plan_round(ledger, config, today, seen, hold, edits, automatic)
+                # planned and booked must be the same: what does not settle is not written this time
+                moved = [p.key for p in result.proposals if not wanted(p)]
             # booked is exactly what you saw: if an amount is different now (MoneyMoney changed meanwhile), nothing is written
             if approving:
                 now = {p.key: p for p in result.proposals}
@@ -1446,11 +1450,11 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                     shown = ch.get("angezeigt") if isinstance(ch, dict) else None
                     if shown is not None and (k not in now or abs(now[k].amount - float(shown)) >= 0.005):
                         moved.append(k)
-                if moved:
-                    log.info("Approval: %d amount(s) changed since shown, nothing written", len(moved))
-                    ledger = ledger.without_planned()
-                    result = _plan_round(ledger, config, today, ctx)
-                    result.warnings.insert(0, tr("s_betraege_geaendert"))
+            if moved:
+                log.info("%d planned booking(s) not settled or changed since shown, nothing written", len(moved))
+                ledger = ledger.without_planned()
+                result = _plan_round(ledger, config, today, seen)
+                result.warnings.insert(0, tr("s_betraege_geaendert"))
         except Exception as e:      # the rules met something unexpected: nothing is booked, everything else goes on
             where = traceback.extract_tb(e.__traceback__)[-1]
             log.error("Booking rules failed (%s at %s:%d) -- nothing booked", type(e).__name__, os.path.basename(where.filename), where.lineno)
@@ -1458,9 +1462,8 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             ledger = ledger.without_planned()
             result = rules.RuleResult()
             result.warnings.append(tr("s_regeln_fehler") % type(e).__name__)
-            ctx.gone, ctx.changed, ctx.back, ctx.back_again = {}, [], {}, set()        # nothing planned: Kontor's lists stay as they are
         t_rules = time.time()
-        result.warnings.extend(ledger.hints)
+        result.info.extend(ledger.hints)            # an account renamed in MoneyMoney: found by its number, nothing to do
         # the log (plain text) holds no amounts, payees, purposes or account names: the details are in the encrypted state and
         # shown in the interface; here only how many
         kinds = Counter(p.kind for p in result.proposals)
@@ -1489,33 +1492,19 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             # Bookings written now may be dated far back (e.g. interest since January): the quick read does not see them, so
             # the ledger keeps them (Ledger.without_planned(keep)) until the next full read -- no full read needed for them
         made_keys = {p.key for p in made}
-        # waiting for approval after this run: everything of a dry run; after booking a selection, the rules again on the state
-        # after writing (what you left out comes back with the amount it needs now); what could not be written
+        # waiting for approval after this run: everything of a dry run; after booking a part, the rules again on the state after
+        # writing (what was left out comes back with the amount it needs now); what could not be written
         if dry or moved:
             left = bookings
         elif err is not None:
             left = [x for x in bookings if x.key not in made_keys]
-        elif (approving or hold) and not failed:
-            left = list(_plan_round(ledger.fork(), config, today, ctx, booked=made_keys).proposals)
+        elif not failed:                    # what is left out (booking fully automatically: what is older) still waits
+            left = list(_plan_round(ledger.fork(), config, today, seen).proposals)
         else:
             left = []
         waiting = left if dry or moved or err is None else []
-        if not dry and err is None and not moved and not failed:
-            for g in config.get("gesellschaften") or []:          # booking back done for a company: from now on only the current state
-                ab, bid = (g or {}).get("rueckwirkend_ab"), str((g or {}).get("bereich"))
-                if ab and done.get(bid) != ab and not any(p.retro and p.group == bid and rules.is_value_tag(p.tag) for p in left):
-                    done[bid] = ab
-        # days to check again stay until nothing is left for them
-        open_days = {(p.account_uuid, p.booking_date) for p in left}
-        recheck = {u: sorted(d.isoformat() for d in days if (u, d) in open_days or failed) for u, days in ctx.persist.items()}
-        recheck = {u: v for u, v in recheck.items() if v}
-        # a value adjustment booked again that is not needed any more (the value is right): out of the lists
-        obsolete = {k for k in ctx.restore if rules.is_value_tag((ctx.again_recs.get(k) or ctx.not_booked.get(k) or {}).get("tag"))} \
-            - {p.key for p in result.proposals} - hold - made_keys
-        if failed:
-            obsolete = set()
-        if obsolete:
-            result.info.append(tr("s_wert_stimmt_bereits"))
+        if not dry and not approving and err is None and not failed and not moved and not prefetched:
+            new_seen = rules.Seen(top, today).dump()        # booked on its own what was new: from here on the next is new
 
         warnings = list(result.warnings)
         if dry and bookings:
@@ -1534,73 +1523,22 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         summary = {"status": "fehler" if err else "ok", "zeit": datetime.now().strftime("%Y-%m-%d %H:%M"), "probelauf": dry or bool(waiting) or bool(moved),
                    "vorschlaege": proposal_rows(ledger, waiting or bookings),
                    "geschrieben": written, "gebucht": len(made), "warnungen": result.warnings, "hinweise": result.info,
-                   "fehlend": result.missing, "fehler": str(err) if err else None}
-        stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        new_recs = [{"tag": p.tag, "konto": p.account_uuid, "konto_name": ledger.accounts[p.account_uuid].name if p.account_uuid in ledger.accounts else "",
-                     "datum": p.booking_date.isoformat(), "betrag": round(p.amount, 2), "art": p.kind, "regel": p.rule, "angelegt": stamp,
-                     "zweck": p.purpose, "gegenpartei": p.payee, "kategorie": p.category}
-                    for p in made if p.tag]
-        booked_again = (made_keys & set(ctx.not_booked)) | (obsolete & set(ctx.not_booked))
-
-        stamp_now = datetime.now().strftime("%Y-%m-%d %H:%M")
-        # Kontor's loan bookings deleted in MoneyMoney: "not booked" (never made again on its own, "Book again" there); a
-        # deleted value adjustment is not listed there: its day is checked again (recheck)
-        gone_loans = {rules.bkey(m.get("konto") or "", m.get("tag") or ""): dict(m, grund="geloescht", abgelehnt=stamp_now) for m in result.missing}
-        gone_values = ctx.gone
-        changed_now = {rules.bkey(r.get("konto", ""), r.get("tag", "")): t for r, t in ctx.changed}
-        back = ctx.back
-
-        again_done = (made_keys & set(ctx.again_recs)) | ctx.back_again | (obsolete & set(ctx.again_recs))
-        # account mirrors: when each was set up. One taken out of the rules is forgotten (set up again it starts anew); one that
-        # could not be planned this time (a warning, an error) keeps its start
-        set_up = {"%s|%s" % (str(x.get("konto") or "").split("|")[0].strip(), str(x.get("quelle") or "").split("|")[0].strip())
-                  for g in config.get("gesellschaften") or [] if isinstance(g, dict) for x in g.get("gegenkonten") or [] if isinstance(x, dict)}
-        mirrors = dict({k: v for k, v in ctx.since.items() if k in set_up}, **result.mirror_since)
-
-        old_recheck = state.get("abgleich") or {}
+                   "fehler": str(err) if err else None}
 
         def _merge(cur: dict) -> None:
-            if again_done:
-                cur["kontor_neu"] = [r for r in cur.get("kontor_neu") or [] if rules.bkey(r.get("konto", ""), r.get("tag", "")) not in again_done]
-            out_of = booked_again | set(back)      # booked again, or there again in MoneyMoney: out of "not booked"
-            if out_of:
-                cur["kontor_abgelehnt"] = [r for r in cur.get("kontor_abgelehnt") or []
-                                           if (rules.bkey(r["konto"], r.get("tag", "")) if r.get("konto") else canon_tag(r.get("tag"))) not in out_of]
-                known = {rules.bkey(r.get("konto", ""), r.get("tag", "")) for r in cur.get("kontor_buchungen") or []}
-                cur["kontor_buchungen"] = (cur.get("kontor_buchungen") or []) + [
-                    {f: r.get(f) for f in ("tag", "konto", "konto_name", "datum", "betrag", "art", "regel", "zweck", "gegenpartei", "kategorie")}
-                    for k, r in back.items() if k not in known and r.get("grund") == "geloescht"]
-            if gone_loans or gone_values:
-                cur["kontor_buchungen"] = [r for r in cur.get("kontor_buchungen") or []
-                                           if rules.bkey(r.get("konto", ""), r.get("tag", "")) not in gone_loans
-                                           and rules.bkey(r.get("konto", ""), r.get("tag", "")) not in gone_values]
-                have = {rules.bkey(r.get("konto", ""), r.get("tag", "")) for r in cur.get("kontor_abgelehnt") or []}
-                cur["kontor_abgelehnt"] = ((cur.get("kontor_abgelehnt") or []) + [v for k, v in gone_loans.items() if k not in have])[-500:]
-            if changed_now:                 # changed in MoneyMoney: Kontor's list follows (its day is checked again)
-                for r in cur.get("kontor_buchungen") or []:
-                    t = changed_now.get(rules.bkey(r.get("konto", ""), r.get("tag", "")))
-                    if t is not None:
-                        r["betrag"], r["datum"] = round(t.amount, 2), t.booking_date.isoformat()
-            if recheck != old_recheck:
-                if recheck:
-                    cur["abgleich"] = recheck
-                else:
-                    cur.pop("abgleich", None)
-            if done != (state.get("rueckwirkend") or {}):
-                cur["rueckwirkend"] = dict(cur.get("rueckwirkend") or {}, **done)
-            if seen_new:
-                cur["konten_seit"] = dict(seen_new, **(cur.get("konten_seit") or {}))
-            if mirrors != ctx.since:
-                cur["spiegel_seit"] = mirrors
-            if new_recs:                    # Kontor's own list of what it booked (encrypted state, not the marks in MoneyMoney)
-                cur["kontor_buchungen"] = (cur.get("kontor_buchungen") or []) + new_recs
+            for k in OLD_STATE_KEYS:                # Kontor's own booking lists until 3.13.0 (migrate_booking_state)
+                cur.pop(k, None)
+            if known_new:
+                cur["konten_seit"] = dict(known_new, **(cur.get("konten_seit") or {}))
+            if new_seen:
+                cur["gesehen"] = new_seen
             if not prefetched:
                 cur["fingerprint"] = fp if err is None and not failed else None        # after an error: again at the next sync
             cur["letzter_lauf"] = summary
             if not prefetched:                  # "Refresh" (only the accounts of the rules) is no check of its own
                 cur.setdefault("verlauf", []).append({"zeit": summary["zeit"], "probelauf": dry, "geschrieben": written,
                                                       "vorschlaege": len(bookings), "fehler": summary["fehler"]})
-            cur["verlauf"] = [{k: v for k, v in x.items() if k != "buchungen"} for x in (cur.get("verlauf") or [])[-100:]]     # at most 100; the bookings are in Kontor's own list
+            cur["verlauf"] = [{k: v for k, v in x.items() if k != "buchungen"} for x in (cur.get("verlauf") or [])[-100:]]     # at most 100
             if state.get("snapshots"):
                 merge_snapshots(cur, state["snapshots"])     # Schnellabgleich waehrend des Laufs bleibt erhalten
             merge_holdings(cur, state)
@@ -1670,6 +1608,7 @@ def export_package(config: dict, name: str = "Kontor-Einstellungen", strip_uuids
     cfg = copy.deepcopy(merged_config(config))
     cfg.pop("oberflaeche", None)
     cfg.pop("updates", None)
+    cfg.pop("nicht_buchen", None)                 # decisions about bookings in your MoneyMoney: they stay here
     (cfg.get("belege") or {}).pop("ordner", None)
     ids = {str(b.get("id")) for b in cfg.get("bereiche") or [] if isinstance(b, dict)}
     if ids:                                   # rules of companies whose area no longer exists do not travel along
@@ -1695,7 +1634,7 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
     if not isinstance(pkg, dict) or not isinstance(pkg.get("config"), dict):
         raise ValueError(tr("s_keine_einstellungsdatei"))
     inc = copy.deepcopy(pkg["config"])
-    for k in ("oberflaeche", "updates"):
+    for k in ("oberflaeche", "updates", "nicht_buchen"):
         inc.pop(k, None)
     mapping = mapping or {}
     unresolved: List[dict] = []
@@ -1779,6 +1718,7 @@ def mask_text(text: str, names: Optional[Dict[str, str]] = None) -> str:
 def diagnose(store: Store, data_dir: str, config: dict, status: dict, mask_names: bool = True, lines: int = 400) -> str:
     cfg = copy.deepcopy(config)
     cfg.pop("oberflaeche", None)
+    cfg["nicht_buchen"] = len(cfg.get("nicht_buchen") or [])        # only how many (amounts and texts stay out)
     names: Dict[str, str] = {}
     if mask_names:
         ds = store.load("dataset.json", {}) or {}

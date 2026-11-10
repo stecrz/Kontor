@@ -43,12 +43,12 @@ import categorize
 import updates
 from receipts import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (REPORT_LOCK, RUN_LOCK, account_sig, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
-                     immo_results, import_package, ledger_fp, merge_holdings, merged_config, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
+from core import (REPORT_LOCK, RUN_LOCK, account_sig, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, fix_start_dates, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+                     immo_results, import_package, ledger_fp, merge_holdings, merged_config, migrate_booking_state, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, apply_plan, role_label
-from model import canon_tag, marks_in
-from rules import TAG_RE, bkey as rules_bkey, find_unmarked, plan_all as plan_rules
+from model import marks_in
+from rules import Seen, TAG_RE, bkey as rules_bkey, plan_all as plan_rules
 from storage import Store
 from excel import Sheet, workbook
 from i18n import tr
@@ -97,41 +97,23 @@ def approval(raw) -> Tuple[Optional[Dict[str, dict]], Optional[str]]:
     return out, None
 
 
-def kontor_bookings(ledger, record: Optional[List[dict]] = None) -> List[dict]:
-    """The bookings Kontor has made in MoneyMoney -- from its own list (record) and its marks (#kontor-...) in the purpose -- with
-    their state in MoneyMoney now: present ("ok"), mark changed but account, date and amount found ("markierung"), missing
-    ("fehlt"). Newest first."""
+def kontor_bookings(ledger) -> List[dict]:
+    """The bookings Kontor has made in MoneyMoney: those carrying its mark (#kontor-...) in the purpose. Newest first."""
     out: List[dict] = []
     if ledger is None:
         return out
-    kinds = {"tx": "tilgung", "zins": "zins", "wert": "wert", "spiegel": "spiegel", "gk": "spiegel"}
-    by_tag: Dict[Tuple[str, str], Tx] = {}             # (account, mark): the same mark exists once per account
+    kinds = {"tx": "tilgung", "zins": "zins", "wert": "wert", "spiegel": "wert", "gk": "spiegel"}
     for t in ledger.txs:                                 # the ledger holds no planned bookings (Ledger.without_planned)
-        for m in marks_in(t.purpose)[:1]:
-            by_tag.setdefault((t.account_uuid, m), t)
-
-    def row(t: Optional[Tx], tag: str, status: str, rec: Optional[dict] = None) -> dict:
-        acc = ledger.accounts.get(t.account_uuid) if t else None
-        k = tag.split("-")[1] if tag.count("-") >= 2 else ""
-        return {"datum": t.booking_date.isoformat() if t else (rec or {}).get("datum", ""), "konto": acc.name if acc else (rec or {}).get("konto_name", ""),
-                "art": kinds.get(k, (rec or {}).get("art", k)), "betrag": round(t.amount, 2) if t else (rec or {}).get("betrag"),
-                "gegenpartei": t.name if t else "", "zweck": TAG_RE.sub("", t.purpose).strip(" ·") if t else (rec or {}).get("regel", ""),
-                "markierung": tag, "status": status}
-    seen, claimed = set(), set()
-    for rec in record or []:
-        tag = canon_tag(rec.get("tag"))
-        k = (rec.get("konto") or "", tag)
-        seen.add(k)
-        if k in by_tag:
-            out.append(row(by_tag[k], tag, "ok", rec))
+        ms = marks_in(t.purpose)
+        if not ms or getattr(t, "planned", False):
             continue
-        hit = find_unmarked(ledger, rec, claimed)          # one booking in MoneyMoney for one entry only
-        out.append(row(hit, tag, "markierung" if hit else "fehlt", rec))
-    for k, t in by_tag.items():
-        if k not in seen:
-            out.append(row(t, k[1], "ok"))
-    out.sort(key=lambda x: (x["datum"] or "", x["markierung"]), reverse=True)
+        acc = ledger.accounts.get(t.account_uuid)
+        k = ms[0].split("-")[1] if ms[0].count("-") >= 2 else ""
+        out.append({"datum": t.booking_date.isoformat(), "konto": acc.name if acc else "", "art": kinds.get(k, k), "betrag": round(t.amount, 2),
+                    "gegenpartei": t.name, "zweck": TAG_RE.sub("", t.purpose).strip(" ·"), "markierung": ms[0]})
+    out.sort(key=lambda x: (x["datum"], x["markierung"]), reverse=True)
     return out
+
 
 def bind_allowed(addr: str) -> bool:
     try:
@@ -171,6 +153,10 @@ class App:
         self.store = store
         self.data_dir = data_dir
         self.bridge_factory = bridge_factory
+        try:
+            migrate_booking_state(store)        # until 3.13.0: Kontor's own lists of its bookings (only your decisions stay)
+        except Exception:  # pragma: no cover - the service starts anyway
+            log.exception("Booking lists not migrated")
         self.config = merged_config(store.load("config.json", {}) or {})
         self.apply_language()
         self.sessions = auth.Sessions(idle_minutes=int(self.config["oberflaeche"].get("sperre_minuten", 15)))
@@ -344,6 +330,21 @@ class App:
                 return
         self.ledger, self.ledger_time, self.ledger_from_cache = ledger, datetime.now(), False
         self._save_ledger_cache(ledger)
+
+    def _fix_start_dates(self) -> None:
+        """"Buchen ab" of companies set up before 3.13.1 (empty): fixed to a day once (core.fix_start_dates)."""
+        if self.ledger is None:
+            return
+        try:
+            new = fix_start_dates(self.ledger, self.config, date.today())
+        except Exception:  # pragma: no cover
+            log.exception("Start dates of the companies")
+            return
+        if new is not None:
+            n = sum(1 for a, b in zip(self.config.get("gesellschaften") or [], new.get("gesellschaften") or [])
+                    if isinstance(a, dict) and isinstance(b, dict) and a.get("rueckwirkend_ab") != b.get("rueckwirkend_ab"))
+            self.save_config(new)
+            log.info("Start date of the booking rules of %d company(ies) fixed", n)
 
     def _freeze_assignments(self) -> None:
         if self.ledger is None:
@@ -668,6 +669,7 @@ class App:
         try:
             d = self.config.get("probelauf", True) if dry is None else dry
             self._freeze_assignments()
+            self._fix_start_dates()
             t0 = time.time()
             log.info("Run started (%s%s%s)", "dry run" if d else "live", ", forced" if force else "", ", without report" if not with_report else "")
             full = self.full_read_due() if full is None else full
@@ -1454,7 +1456,7 @@ def make_handler(app: App):
             if path == "/api/runs":
                 st = app.store.load("state.json", {}) or {}
                 return self._json(200, {"letzter_lauf": st.get("letzter_lauf"), "verlauf": list(reversed(st.get("verlauf", []))),
-                                        "angelegt": kontor_bookings(app.ledger, st.get("kontor_buchungen")), "abgelehnt": st.get("kontor_abgelehnt") or [],
+                                        "angelegt": kontor_bookings(app.ledger)[:500], "nicht_buchen": list(reversed(app.config.get("nicht_buchen") or [])),
                                         "lokal": self._is_local(s)})
             if path == "/api/log":
                 n = min(2000, int(q.get("n", "300")))
@@ -1816,6 +1818,7 @@ def make_handler(app: App):
                 cfg = body.get("config")
                 if not isinstance(cfg, dict):
                     return self._json(400, {"fehler": tr("s_config_fehlt")})
+                cfg = dict(cfg, nicht_buchen=copy.deepcopy(app.config.get("nicht_buchen") or []))     # changed only under Auto bookings
                 b = (cfg.get("oberflaeche") or {}).get("bind", "127.0.0.1") or "127.0.0.1"
                 if not bind_allowed(b):
                     return self._json(400, {"fehler": tr("s_adresse_s_nicht_erlaubt_nur") % b})
@@ -1854,11 +1857,14 @@ def make_handler(app: App):
                 if not isinstance(cfg, dict) or app.ledger is None:
                     return self._json(200, {"vorschau": [], "warnungen": [], "buchungen": 0})
                 st = app.store.load("state.json", {}) or {}
-                created = {rules_bkey(r.get("konto", ""), r["tag"]): r for r in st.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")}
-                rejected = {rules_bkey(r["konto"], r["tag"]) if r.get("konto") else canon_tag(r["tag"]) for r in st.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("tag")}
-                done = st.get("rueckwirkend") or {}
-                res = plan_rules(app.ledger.fork(), merged_config(cfg), date.today(), created, rejected, done, None, None, st.get("spiegel_seit"))
-                return self._json(200, {"vorschau": res.preview, "warnungen": res.warnings, "buchungen": len(res.proposals), "eingespielt": done})
+                led = app.ledger.fork()
+                try:
+                    res = plan_rules(led, merged_config(dict(cfg, nicht_buchen=app.config.get("nicht_buchen") or [])), date.today(),
+                                     seen=Seen.from_state(st.get("gesehen"), led, date.today()))
+                except Exception as e:          # something unexpected in MoneyMoney or the rules: named, the page stays usable
+                    log.warning("Rules preview failed (%s)", type(e).__name__)
+                    return self._json(200, {"vorschau": [], "warnungen": [tr("s_regeln_fehler") % type(e).__name__], "buchungen": 0})
+                return self._json(200, {"vorschau": res.preview, "warnungen": res.warnings, "buchungen": len(res.proposals)})
             if path == "/api/check":
                 if not app.check_lock.acquire(blocking=False):
                     return self._json(409, {"fehler": tr("s_die_pruefung_laeuft_bereits_bitte")})
@@ -1893,43 +1899,32 @@ def make_handler(app: App):
                 app.save_config(cfg)
                 return self._json(200, {"ok": True, "abruf": app.abruf()})
             if path == "/api/bookings/reject":
-                # a proposed booking you do not want: never proposed again (wieder=True: proposed again at the next check)
+                # a proposed booking you do not want: never proposed again (settings: nicht_buchen), until "Propose again"
                 key = str(body.get("key") or "")
                 acc, _, tag = key.partition("|")
                 if not re.fullmatch(r"[0-9A-Za-z-]{8,64}", acc) or not TAG_RE.fullmatch(tag):
                     return self._json(400, {"fehler": tr("s_markierung_ungueltig")})
-                tag = canon_tag(tag); key = rules_bkey(acc, tag)
-                same = lambda r: (r.get("konto") or acc) == acc and canon_tag(r.get("tag")) == tag     # noqa: E731
-
-                if body.get("wieder") and not local:                     # booking again is booking: only at the Mac
-                    return self._json(403, {"fehler": tr("s_buchen_nur_von_diesem_mac")})
+                key = rules_bkey(acc, tag)
+                lr = (app.store.load("state.json", {}) or {}).get("letzter_lauf") or {}
+                row = next((x for x in lr.get("vorschlaege") or [] if x.get("key") == key), None) or {"konto_name": "", "text": ""}
+                cfg = copy.deepcopy(app.config)
+                cfg["nicht_buchen"] = [x for x in cfg.get("nicht_buchen") or [] if x.get("key") != key] + [not_booked_entry(row, key)]
+                app.save_config(cfg)
 
                 def upd(cur: dict) -> None:
-                    rej = [r for r in cur.get("kontor_abgelehnt") or [] if not same(r)]
-                    cur["kontor_neu"] = [r for r in cur.get("kontor_neu") or [] if not same(r)]
-                    if body.get("wieder"):                               # deleted in MoneyMoney: no longer counts as made
-                        cur["kontor_buchungen"] = [r for r in cur.get("kontor_buchungen") or [] if not same(r)]
+                    # what still waits, planned again without it (the next value adjustment of that account takes up the
+                    # difference) -- from the last state read, nothing is written
                     lr = cur.get("letzter_lauf") or {}
-                    if not body.get("wieder"):
-                        v = next((x for x in lr.get("vorschlaege") or [] if x.get("key") == key), {})
-                        rej.append({"tag": tag, "konto": acc, "konto_name": v.get("konto_name") or v.get("konto") or "", "datum": v.get("datum") or "",
-                                    "betrag": v.get("betrag"), "art": v.get("art") or "", "regel": v.get("regel") or "", "grund": "verworfen",
-                                    "zweck": v.get("text") or "", "gegenpartei": v.get("gegenpartei") or "", "kategorie": v.get("kategorie") or "",
-                                    "abgelehnt": datetime.now().strftime("%Y-%m-%d %H:%M")})
-                        if lr.get("vorschlaege"):
-                            lr["vorschlaege"] = [x for x in lr["vorschlaege"] if x.get("key") != key]
-                            lr["probelauf"] = bool(lr["vorschlaege"]) and lr.get("probelauf", False)
-                    cur["kontor_abgelehnt"] = rej[-500:]
-                    if lr.get("probelauf") and app.ledger is not None:
-                        # what still waits, planned again without it (the next value adjustment of that account takes up the
-                        # difference) -- from the last state read, nothing is written
-                        try:
-                            lr["vorschlaege"] = plan_pending(app.ledger, app.config, cur, date.today())
-                            lr["probelauf"] = bool(lr["vorschlaege"])
-                        except Exception as e:          # the list stays as it was; the next check plans it again
-                            log.warning("Approval list not recalculated: %s", e)
+                    if lr.get("vorschlaege"):
+                        lr["vorschlaege"] = [x for x in lr["vorschlaege"] if x.get("key") != key]
+                        if lr.get("probelauf") and app.ledger is not None:
+                            try:
+                                lr["vorschlaege"] = plan_pending(app.ledger, app.config, cur, date.today())
+                            except Exception as e:          # the list stays as it was; the next check plans it again
+                                log.warning("Approval list not recalculated: %s", e)
+                        lr["probelauf"] = bool(lr["vorschlaege"]) and lr.get("probelauf", False)
                 app.store.update("state.json", upd, {})
-                log.info("Booking %s", "to be booked again" if body.get("wieder") else "dropped")
+                log.info("Booking set to not be booked")
                 return self._json(200, {"ok": True})
             if path == "/api/bookings/plan":
                 # the approval list for your selection: what you leave out (halten) or change (aenderungen) and everything
@@ -1945,25 +1940,23 @@ def make_handler(app: App):
                 if app.ledger is None:
                     return self._json(200, {"vorschlaege": None})
                 st = app.store.load("state.json", {}) or {}
-                return self._json(200, {"vorschlaege": plan_pending(app.ledger, app.config, st, date.today(), set(hold), edits)})
+                try:
+                    return self._json(200, {"vorschlaege": plan_pending(app.ledger, app.config, st, date.today(), set(hold), edits)})
+                except Exception as e:          # the list stays as it was
+                    log.warning("Approval list not recalculated (%s)", type(e).__name__)
+                    return self._json(409, {"fehler": tr("s_regeln_fehler") % type(e).__name__})
             if path == "/api/bookings/restore":
-                # "Book again" with approval: out of "not booked", waiting for approval again (to change it before booking)
+                # "Propose again" under "Not booked": out of the list -- the next check proposes it if it is still needed (it
+                # waits for your approval when it is older than the last check, also booking fully automatically)
                 key = str(body.get("key") or "")
                 acc, _, tag = key.partition("|")
                 if not re.fullmatch(r"[0-9A-Za-z-]{8,64}", acc) or not TAG_RE.fullmatch(tag):
                     return self._json(400, {"fehler": tr("s_markierung_ungueltig")})
-                tag = canon_tag(tag); key = rules_bkey(acc, tag)
-                same = lambda r: (r.get("konto") or acc) == acc and canon_tag(r.get("tag")) == tag     # noqa: E731
-
-                def upd_restore(cur: dict) -> None:
-                    rec = next((r for r in cur.get("kontor_abgelehnt") or [] if same(r)), None)
-                    if rec is None:
-                        return
-                    cur["kontor_abgelehnt"] = [r for r in cur.get("kontor_abgelehnt") or [] if not same(r)]
-                    cur["kontor_buchungen"] = [r for r in cur.get("kontor_buchungen") or [] if not same(r)]     # deleted: no longer counts as made
-                    cur["kontor_neu"] = [r for r in cur.get("kontor_neu") or [] if not same(r)] + [dict(rec, konto=rec.get("konto") or acc)]
-                app.store.update("state.json", upd_restore, {})
-                log.info("Booking back for approval")
+                key = rules_bkey(acc, tag)
+                cfg = copy.deepcopy(app.config)
+                cfg["nicht_buchen"] = [x for x in cfg.get("nicht_buchen") or [] if x.get("key") != key]
+                app.save_config(cfg)
+                log.info("Booking to be proposed again")
                 return self._json(200, {"ok": True})
             if path == "/api/bookings/refresh":
                 # "Aktualisieren" under Auto bookings: only the accounts of the rules read again, the approval list planned again
@@ -1971,12 +1964,6 @@ def make_handler(app: App):
                 code = 409 if res.get("status") == "laeuft_bereits" else 200
                 return self._json(code, dict({k: res.get(k) for k in ("status", "text", "probelauf")},
                                              wartend=len(res.get("vorschlaege") or []) if res.get("probelauf") else 0))
-            if path == "/api/rules/recheck":
-                # check the whole history of a company again (Rückwirkend ab) at the next sync, existing bookings included
-                bid = str(body.get("bereich") or "")
-                app.store.update("state.json", lambda cur: (cur.get("rueckwirkend") or {}).pop(bid, None), {})
-                log.info("Booking back of a company to be checked again")
-                return self._json(200, {"ok": True})
             if path == "/api/run":
                 dry = body.get("probelauf")
                 if dry is False and not local:

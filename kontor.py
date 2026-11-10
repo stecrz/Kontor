@@ -46,7 +46,7 @@ import i18n  # noqa: E402
 import mm_categories  # noqa: E402
 from mm_bridge import Bridge, MoneyMoneyError  # noqa: E402
 from core import (account_tree, check_config, diagnose, export_package, fetch, import_package, merged_config,  # noqa: E402
-                     run_once, unavailable_text, version)
+                     migrate_booking_state, run_once, unavailable_text, version)
 from model import Ledger, accounts_from_export, fmt_eur  # noqa: E402
 from storage import Store, load_or_create_master_key  # noqa: E402
 from i18n import tr  # noqa: E402
@@ -117,6 +117,10 @@ def open_store() -> Store:
 
 
 def load_config(store: Store) -> dict:
+    try:
+        migrate_booking_state(store)            # until 3.13.0: Kontor's own lists of its bookings (only your decisions stay)
+    except Exception:  # pragma: no cover
+        log.exception("Booking lists not migrated")
     cfg = merged_config(store.load("config.json", {}) or {})
     i18n.set_lang((cfg.get("oberflaeche") or {}).get("sprache") or "de")
     return cfg

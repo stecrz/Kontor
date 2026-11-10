@@ -604,10 +604,10 @@ function statusMini() {
     sb.title = OFFLINE.mode ? t('offline_ansicht_der_mac_ist_2') : t('jetzt_aus_moneymoney_lesen_regeln');
   }
   // something to do: bookings waiting for approval (count) or a failed run (!), an update (dot) -- in the sidebar and on the app icon
-  const waiting = l && l.probelauf && !l.fehler ? (l.vorschlaege || []).length : 0;
-  navBadge('#bookings', l && l.fehler ? '!' : waiting ? (waiting > 99 ? '99+' : String(waiting)) : '', l && l.fehler ? t('letzter_abgleich_mit_fehler') : t('0_buchungsvorschlaege', waiting));
+  const waiting = l && l.probelauf && !l.fehler ? (l.vorschlaege || []).length : 0, notes = l && !l.fehler && !waiting ? (l.warnungen || []).length : 0;
+  navBadge('#bookings', l && l.fehler ? '!' : waiting ? (waiting > 99 ? '99+' : String(waiting)) : notes ? '•' : '', l && l.fehler ? t('letzter_abgleich_mit_fehler') : waiting ? t('0_buchungsvorschlaege', waiting) : tn('n_hinweise_auto', notes));
   navBadge('#updates', st.update && st.update.neuer ? '•' : '', st.update && st.update.neuer ? t('update') + st.update.verfuegbar + t('verfuegbar') : '');
-  const mb = $('#menu-btn'); if (mb) mb.classList.toggle('has-badge', !!(waiting || (l && l.fehler) || (st.update && st.update.neuer)));     // narrow window: the sidebar is closed
+  const mb = $('#menu-btn'); if (mb) mb.classList.toggle('has-badge', !!(waiting || notes || (l && l.fehler) || (st.update && st.update.neuer)));     // narrow window: the sidebar is closed
   try { if (navigator.setAppBadge) { if (waiting) navigator.setAppBadge(waiting); else navigator.clearAppBadge(); } } catch (e) { /* not supported */ }
   if (!st.ablage.verschluesselt) banner(t('daten_liegen_unverschluesselt_verschlu'), 'err');
   else if (st.ablage.schluessel === 'datei') banner(t('datenschluessel_liegt_als_datei_schlue'));
@@ -2835,13 +2835,13 @@ function vBuchungen(runs) {
       const plain = txt => String(txt || '').replace(/\s*·?\s*#(?:kontor|mm)-[a-z]+-[A-Za-z0-9-]+/g, '').trim();
       h += `<div class="wrap auto"><table class="plain bk-table"><thead><tr>${pick ? `<th class="c"><input type="checkbox" id="bk-all" ${BOOK.off.size || bkRows(l).some(r => r.gone) ? '' : 'checked'} aria-label="${esc(t('alle'))}"></th>` : ''}<th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>`
         + bkRows(l).map(({v, k, off, e, gone, b, neu, adjusted}) => {
-          const d = e.datum ?? v.datum, z = e.zweck ?? plain(v.text), changed = Object.keys(e).length > 0;
+          const d = e.datum ?? v.datum, z = e.zweck ?? plain(v.text), changed = Object.keys(e).length > 0, loan = v.art === 'tilgung' || v.art === 'zins';
           const pills = (changed ? ` <span class="pill info">${t('geaendert')}</span>` : '') + (adjusted ? ` <span class="pill info" title="${esc(t('angepasst_tip'))}">${t('angepasst')}</span>` : '')
             + (neu ? ` <span class="pill info" title="${esc(t('neu_dazu_tip'))}">${t('neu_dazu')}</span>` : '')
-            + (v.art === 'spiegel' && v.rueckwirkend ? ` <span class="pill neutral" title="${esc(t('gk_alt_tip'))}">${t('gk_alt')}</span>` : '') + (gone ? ` <span class="pill neutral" title="${esc(t('entfaellt_tip'))}">${t('entfaellt')}</span>` : '');
+            + (!ask && v.rueckwirkend ? ` <span class="pill neutral" title="${esc(t('aelter_tip'))}">${t('aelter')}</span>` : '') + (gone ? ` <span class="pill neutral" title="${esc(t('entfaellt_tip'))}">${t('entfaellt')}</span>` : '');
           return `<tr data-key="${esc(k)}" class="${off || gone ? 'off' : ''}${gone ? ' gone' : ''}${BOOK.editing.has(k) ? ' editing' : ''}">${pick ? `<td class="c">${k ? `<input type="checkbox" class="bk-on" title="${esc(t('bk_on_tip'))}" ${off || gone ? '' : 'checked'}${gone ? ' disabled' : ''}>` : ''}</td>` : ''}`
-            + `<td style="white-space:nowrap"><span class="v">${FD(d)}</span><input type="date" class="bk-d e" value="${esc(d)}"></td><td>${esc(v.konto_name || v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td>`
-            + `<td class="num ${b < 0 ? 'neg' : 'pos'}"><span class="v">${F(b)}</span><input type="number" step="0.01" class="bk-b e" value="${b}"></td>`
+            + `<td style="white-space:nowrap"><span class="${loan ? 'v' : ''}">${FD(d)}</span>${loan ? `<input type="date" class="bk-d e" value="${esc(d)}">` : ''}</td><td>${esc(v.konto_name || v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td>`
+            + `<td class="num ${b < 0 ? 'neg' : 'pos'}"><span class="${loan ? 'v' : ''}">${F(b)}</span>${loan ? `<input type="number" step="0.01" class="bk-b e" value="${b}">` : ''}</td>`
             + `<td><span class="v">${esc(z)}</span><input type="text" class="bk-z e" value="${esc(z)}">${pills}<div class="small muted">${esc(v.regel || '')}${v.kategorie ? ' · ' + esc(v.kategorie) : ''}</div></td>`
             + (ed ? `<td class="nowrap">${k ? (local ? `<button class="icon bk-edit" title="${esc(t('bearbeiten'))}" aria-label="${esc(t('bearbeiten'))}">${ICON.pencil}</button>` : '') + `<button class="icon bk-rej" title="${esc(t('verwerfen'))}" aria-label="${esc(t('verwerfen'))}">✕</button>` : ''}</td>` : '') + `</tr>`;
         }).join('') + '</tbody></table></div>';
@@ -2850,17 +2850,17 @@ function vBuchungen(runs) {
     if (l.warnungen && l.warnungen.length) h += `<h3>${t('hinweise')}</h3>` + l.warnungen.map(x => `<div class="banner">${esc(x)}</div>`).join('');
     if (l.hinweise && l.hinweise.length) h += `<details class="calc" data-keep="bk-calc"${keepOpen('bk-calc')}><summary>${t('rechenwege')} (${l.hinweise.length})</summary>` + l.hinweise.map(x => `<div class="small muted">${esc(x)}</div>`).join('') + '</details>';
   }
-  // not booked: proposals you dropped and Kontor's loan bookings deleted in MoneyMoney -- never made on its own, "Book again" here
-  const rej = runs.abgelehnt || [];
+  // not booked: the proposals you chose not to book (kept in the settings) -- "Propose again" takes one off the list
+  const rej = runs.nicht_buchen || [];
   if (rej.length) h += `<details class="calc" id="nb-list" data-keep="bk-nb"${keepOpen('bk-nb')}><summary>${t('nicht_gebucht_titel')} (${rej.length})</summary><div class="wrap auto"><table class="plain"><tbody>`
-    + rej.slice().reverse().map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto_name || '')}</td><td>${esc(artL[v.art] || v.art || '')}</td><td class="num">${v.betrag != null ? F(v.betrag) : ''}</td>`
-      + `<td><span class="pill ${v.grund === 'geloescht' ? 'warn' : 'neutral'}">${t(v.grund === 'geloescht' ? 'grund_geloescht' : 'grund_verworfen')}</span></td><td class="small muted">${esc(v.regel || '')}</td>`
-      + `<td>${local || ask ? `<button class="secondary small re-book" data-key="${esc((v.konto || '00000000') + '|' + v.tag)}" title="${esc(t(ask ? 'neu_buchen_tip' : 'neu_buchen_tip_auto'))}">${t('neu_buchen')}</button>` : ''}</td></tr>`).join('') + '</tbody></table></div></details>';
-  // only what Kontor itself made in MoneyMoney (its own list and marks), with the state there now
-  const ang = runs.angelegt || [], stL = {ok: ['ok', t('st_ok')], markierung: ['warn', t('st_markierung')], fehlt: ['err', t('st_fehlt')]};
+    + rej.map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto || '')}</td><td>${esc(artL[v.art] || v.art || '')}</td><td class="num">${v.betrag != null ? F(v.betrag) : ''}</td>`
+      + `<td class="small">${esc(v.text || '')}<div class="small muted">${esc(v.regel || '')}</div></td>`
+      + `<td><button class="secondary small re-book" data-key="${esc(v.key)}" title="${esc(t('wieder_vorschlagen_tip'))}">${t('wieder_vorschlagen')}</button></td></tr>`).join('') + '</tbody></table></div></details>';
+  // what Kontor made in MoneyMoney: the bookings carrying its mark
+  const ang = runs.angelegt || [];
   h += `<h2>${t('angelegt_titel')} <span class="x">${ang.length}</span></h2>`
-    + (ang.length ? `<div class="wrap auto" style="max-height:420px"><table class="plain"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th><th>${t('markierung')}</th><th>${t('status')}</th></tr></thead><tbody>`
-      + ang.slice(0, 300).map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td><td class="num ${v.betrag < 0 ? 'neg' : 'pos'}">${F(v.betrag)}</td><td class="small">${esc(v.zweck || v.gegenpartei)}</td><td class="small muted" style="white-space:nowrap">${esc(v.markierung)}</td><td><span class="pill ${(stL[v.status] || stL.ok)[0]}">${(stL[v.status] || stL.ok)[1]}</span></td></tr>`).join('')
+    + (ang.length ? `<div class="wrap auto" style="max-height:420px"><table class="plain"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th><th>${t('markierung')}</th></tr></thead><tbody>`
+      + ang.slice(0, 300).map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td><td class="num ${v.betrag < 0 ? 'neg' : 'pos'}">${F(v.betrag)}</td><td class="small">${esc(v.zweck || v.gegenpartei)}</td><td class="small muted" style="white-space:nowrap">${esc(v.markierung)}</td></tr>`).join('')
       + `</tbody></table></div>` : `<div class="muted small">${t('keine_angelegt')}</div>`);
   // history: only the checks (when, how many proposed and booked, errors) -- the bookings themselves are listed above
   h += `<details class="calc" data-keep="bk-hist"${keepOpen('bk-hist')}><summary>${t('verlauf_2')} (${(runs.verlauf || []).length})</summary><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th></tr></thead><tbody>`
@@ -3250,14 +3250,15 @@ function gkRow(x, bid) {
     + `<span class="gk-arrow" title="${esc(t('gk_spiegel'))}" aria-label="${esc(t('gk_spiegel'))}">⇄</span>${acctSel('g-quelle', x.quelle, k => !k.gruppe && inside(k), t('konto_der_gesellschaft'))}`
     + `<button class="ico gk-del" title="${esc(t('entfernen'))}" aria-label="${esc(t('entfernen'))}">×</button><div class="pv small"></div></div>`;
 }
-// "back to": not at all, from a day (date field), or everything since the company exists
+// "Buchen ab": from a day (new: today) or everything since the company exists
+const isoToday = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
 function backField(v) {
-  v = String(v || ''); const day = /^\d{4}-\d{2}(-\d{2})?$/.test(v) ? (v.length === 7 ? v + '-01' : v) : '';
-  const mode = v === 'alles' ? 'alles' : day ? 'datum' : '';
-  return `<div class="row tight"><select class="c-rmode"><option value="" ${mode === '' ? 'selected' : ''}>${t('rueck_nein')}</option><option value="datum" ${mode === 'datum' ? 'selected' : ''}>${t('rueck_datum')}</option><option value="alles" ${mode === 'alles' ? 'selected' : ''}>${t('rueck_alles')}</option></select>`
-    + `<input type="date" class="c-ab${mode === 'datum' ? '' : ' hidden'}" value="${esc(day)}" max="${new Date(Date.now() - 864e5).toISOString().slice(0, 10)}"></div>`;
+  v = String(v || ''); const day = /^\d{4}-\d{2}(-\d{2})?$/.test(v) ? (v.length === 7 ? v + '-01' : v) : isoToday();
+  const all = v === 'alles';
+  return `<div class="row tight"><select class="c-rmode"><option value="datum" ${all ? '' : 'selected'}>${t('rueck_datum')}</option><option value="alles" ${all ? 'selected' : ''}>${t('rueck_alles')}</option></select>`
+    + `<input type="date" class="c-ab${all ? ' hidden' : ''}" value="${esc(day)}" max="${isoToday()}"></div>`;
 }
-const backValue = c => { const m = $('.c-rmode', c).value; return m === 'alles' ? 'alles' : m === 'datum' ? $('.c-ab', c).value : ''; };
+const backValue = c => $('.c-rmode', c).value === 'alles' ? 'alles' : ($('.c-ab', c).value || isoToday());
 const betCandidate = (bid) => k => !k.gruppe && k.manuell && k.rolle === 'beteiligungen' && k.bereich_id !== String(bid);
 // rhythm: daily fits booking fully automatically, monthly fits approval (else a booking waits every day) -- a hint only when it does not fit
 const taktTip = takt => { const auto = S.CFG.probelauf === false, monthly = takt === 'monatlich'; return auto && monthly ? t('takt_tipp_taeglich') : !auto && !monthly ? t('takt_tipp_monatlich') : ''; };
@@ -3270,7 +3271,7 @@ function companyCard(b, g) {
     + row(t('co_beteiligung'), 'h_co_bet', `${acctSel('c-bet', g.beteiligung, betCandidate(bid), t('keine_2'))}<div class="pv small" data-pv="b"></div>`)
     + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}<span class="opt">${t('optional')}</span></div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="secondary small add-gk">${t('gegenkonto_hinzufuegen')}</button></div></div>`
     + row(t('co_takt'), 'h_co_takt', `<select class="c-takt"><option value="taeglich" ${g.takt !== 'monatlich' ? 'selected' : ''}>${t('takt_taeglich')}</option><option value="monatlich" ${g.takt === 'monatlich' ? 'selected' : ''}>${t('takt_monatlich')}</option></select><div class="small muted c-takt-tip">${taktTip(g.takt)}</div>`)
-    + row(t('co_rueck'), 'h_co_rueck', `${backField(g.rueckwirkend_ab)}<div class="small muted c-ab-state"></div>`)
+    + row(t('co_rueck'), 'h_co_rueck', backField(g.rueckwirkend_ab))
     + row(t('co_schwelle'), 'h_co_schwelle', `<div class="row tight"><input type="number" step="0.01" min="0.01" class="c-sw" value="${g.schwelle ?? 0.01}" style="width:110px"> €</div>`)
     + row(t('gegenpartei'), 'h_co_gp', `<input type="text" class="c-gp" value="${esc(g.gegenpartei || '')}" placeholder="${esc(b.name)}">`)
     + `</div>`;
@@ -3294,21 +3295,16 @@ function rulesPreviewShow(rp, r) {
       continue;
     }
     if (!el || p.soll == null) continue;
-    const ok = Math.abs(p.diff || 0) < 0.005 && !p.rueck;
+    const ok = !p.offen;
     // target with its calculation (quiet), actual; no difference -- what is to book is listed under Auto bookings
     const b = p.art === 'beteiligung' ? companyAreas().find(x => String(x.id) === String(p.bereich)) : null;
     let h = `${t('soll')} <b>${eur(p.soll)}</b>` + (b && b.anteil != null ? ` <span class="pv-calc">${t('co_formel', pctText(b.anteil), eur(p.quelle))}</span>` : '')
       + ` · ${t('ist')} ${eur(p.ist)}` + (ok ? ` · <span class="pv-ok">✓ ${t('aktuell')}</span>` : '');
-    if (p.rueck) h += ` · ${p.rueck === 1 ? t('monat_rueck_1') : t('monate_rueck_n', p.rueck)}`;
+    if (p.offen) h += ` · <span class="pv-diff">${p.offen === 1 ? t('buchung_offen_1') : t('buchungen_offen_n', p.offen)}</span>`;
     if ((p.unbekannt || []).length) h += ` · <span class="pv-unk">${t('monate_unbekannt_0', p.unbekannt.join(', '))}</span>`;
     el.innerHTML = h;
   }
   showFindings($('#rules-warn', rp), (r.warnungen || []).map(w => ({stufe: 'warnung', text: w})));
-  // booking back: done once -- from then on only the current state; checking the whole history again on request
-  $$('.co-card', rp).forEach(c => {
-    const el = $('.c-ab-state', c), ab = backValue(c), done = (r.eingespielt || {})[c.dataset.b];
-    el.innerHTML = ab && done === ab ? `✓ ${t('rueck_eingespielt')} <button class="ghost small c-recheck">${t('rueck_erneut')}</button>` : ab ? t('rueck_beim_naechsten') : '';
-  });
 }
 // a rule as one collapsible row: name, what it books into, what is open, whether it is on; the details below
 const refName = ref => String(ref || '').split(' | ').slice(1).join(' | ') || '';
@@ -4214,7 +4210,7 @@ function bind(main) {
     });
     bt.addEventListener('click', async e => {
       const r = e.target.closest('tr[data-key]'); if (!r || !r.dataset.key) return;
-      if (e.target.closest('.bk-edit')) { const k = r.dataset.key, on = !BOOK.editing.has(k); if (on) { BOOK.editing.add(k); r.classList.add('editing'); $('.bk-b', r).focus(); } else { BOOK.editing.delete(k); route(); } return; }
+      if (e.target.closest('.bk-edit')) { const k = r.dataset.key, on = !BOOK.editing.has(k); if (on) { BOOK.editing.add(k); r.classList.add('editing'); ($('.bk-b', r) || $('.bk-z', r)).focus(); } else { BOOK.editing.delete(k); route(); } return; }
       if (e.target.closest('.bk-rej')) {
         if (!confirm(t('verwerfen_frage'))) return;
         try {
@@ -4227,10 +4223,9 @@ function bind(main) {
     count();
   }
   $$('.re-book', main).forEach(b => b.addEventListener('click', async () => {
-    // book again: with approval it waits for you again (to change it first), booking fully automatically books it now
-    // "Not booked" stays open and in its place, so several can be booked again one after the other
-    if (S.CFG.probelauf === false) { if (confirm(t('neu_buchen_frage'))) startRun(false, {[b.dataset.key]: {}}, '#nb-list'); return; }
-    try { b.disabled = true; await api('/api/bookings/restore', {key: b.dataset.key}); toast(t('neu_buchen_wartet'), 3000); await routeKeeping('#nb-list'); nbRefresh(); } catch (e) { b.disabled = false; toast(e.message, 5000); }
+    // propose again: off the list; if it is still needed it waits for approval (planned again at once) -- "Not booked" stays
+    // open and in its place, so several can be proposed again one after the other
+    try { b.disabled = true; await api('/api/bookings/restore', {key: b.dataset.key}); toast(t('wieder_vorgeschlagen'), 3000); await routeKeeping('#nb-list'); nbRefresh(); } catch (e) { b.disabled = false; toast(e.message, 5000); }
   }));
   // only what the approval list depends on: the accounts of the rules read again, the list planned again (nothing booked)
   const rf = $('#bk-refresh', main); if (rf) rf.addEventListener('click', async () => {
@@ -4313,7 +4308,7 @@ function bind(main) {
       if (!e.target.closest('.rule, .co-card')) return;
       if (e.target.classList.contains('f-modell')) e.target.closest('.form').classList.toggle('no-zins', !e.target.value);
       if (e.target.classList.contains('c-takt')) $('.c-takt-tip', e.target.closest('.co-card')).textContent = taktTip(e.target.value);
-      if (e.target.classList.contains('c-rmode')) { const f = $('.c-ab', e.target.closest('.co-card')); f.classList.toggle('hidden', e.target.value !== 'datum'); if (e.target.value === 'datum' && !f.value) f.focus(); }
+      if (e.target.classList.contains('c-rmode')) { const f = $('.c-ab', e.target.closest('.co-card')); f.classList.toggle('hidden', e.target.value !== 'datum'); if (e.target.value === 'datum') { if (!f.value) f.value = isoToday(); f.focus(); } }
       e.target.closest('.gk-row')?.classList.remove('invalid');
       changed();
     });
@@ -4322,8 +4317,6 @@ function bind(main) {
       const add = e.target.closest('.add-gk');
       if (add) { add.insertAdjacentHTML('beforebegin', gkRow({}, add.closest('.co-card').dataset.b)); $('.g-konto', add.previousElementSibling).focus(); changed(); return; }
       const del = e.target.closest('.gk-del'); if (del) { del.closest('.gk-row').remove(); changed(); return; }
-      const rc = e.target.closest('.c-recheck');
-      if (rc) { api('/api/rules/recheck', {bereich: rc.closest('.co-card').dataset.b}).then(() => { toast(t('rueck_erneut_ok'), 5000); preview(); }).catch(er => toast(er.message, 5000)); }
     });
     sr.addEventListener('click', async () => {
       const rows = $$('.gk-row', rp);

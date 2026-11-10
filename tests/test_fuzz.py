@@ -1,5 +1,6 @@
-"""Random runs of the booking rules against a simulated MoneyMoney: approving parts, dropping, deleting and changing bookings,
-new payments, booking fully automatically -- and after every step what must always hold:
+"""Random runs of the booking rules against a simulated MoneyMoney: approving parts, not booking (and proposing again), deleting,
+changing, moving and unmarking Kontor's bookings there, changing, deleting or entering again your own bookings (a mirrored
+original, a loan payment), new payments, booking fully automatically -- and after every step what must always hold:
 
   * a mark exists at most once per account (nothing is ever booked twice),
   * Kontor only adds bookings, only into the offline accounts of its rules, each with its mark,
@@ -25,7 +26,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import fixtures as F  # noqa: E402
 import core  # noqa: E402
 import rules  # noqa: E402
-from model import marks_in  # noqa: E402
+from model import TAG_RE, marks_in  # noqa: E402
 from storage import Store, load_or_create_master_key  # noqa: E402
 from test_e2e import TODAY, MockBridge, config_for_test, patch_today, reset_mock  # noqa: E402
 
@@ -62,6 +63,11 @@ class FuzzTests(unittest.TestCase):
         b = self.balance(F.uid(key)); b[0] = round(b[0] + amount, 2)
         self.frozen[t["id"]] = copy.deepcopy(t)
         return t
+
+    def mine(self, keys):
+        """Your own bookings (no mark of Kontor's) in some accounts."""
+        uu = {F.uid(k) for k in keys}
+        return [t for t in self.txs() if t["accountUuid"] in uu and not marks_in(t.get("purpose")) and "#geaendert" not in (t.get("purpose") or "")]
 
     # -- what must always hold ---------------------------------------------------------------------------------------------
     def check(self, where):
@@ -111,23 +117,23 @@ class FuzzTests(unittest.TestCase):
             F_t = F.tx(THEIRS, d, amt, "Ich", "früher"); self.txs().append(F_t)
         self.frozen = {t["id"]: copy.deepcopy(t) for t in self.txs()}
         steps = []
+        touched_mirror = False
         for i in range(18):
             auto = rnd.random() < 0.35
             cfg["probelauf"] = not auto
-            act = rnd.choice(["sync", "sync", "approve", "approve", "reject", "delete", "change", "pay", "mirror", "again", "recheck"])
+            act = rnd.choice(["sync", "sync", "approve", "approve", "reject", "delete", "change", "pay", "mirror", "again", "unmark",
+                              "redate", "original", "renumber", "paydel"])
             steps.append(act + ("/auto" if auto else ""))
             where = "seed %d step %d (%s)" % (seed, i, " ".join(steps[-4:]))
             if act == "sync":
                 self.run_once(cfg, not auto)
             elif act == "approve":
                 self.approve(cfg, rnd)
-            elif act == "reject":
+            elif act == "reject":                                                   # "Don't book" (settings)
                 rows = self.run_once(cfg, True)["vorschlaege"]
                 if rows:
                     p = rnd.choice(rows)
-                    self.store.update("state.json", lambda cur: cur.setdefault("kontor_abgelehnt", []).append(
-                        {"tag": p["tag"], "konto": p["konto_id"], "datum": p["datum"], "betrag": p["betrag"], "art": p["art"], "regel": p["regel"],
-                         "grund": "verworfen", "zweck": p["text"]}), {})
+                    cfg["nicht_buchen"] = [x for x in cfg.get("nicht_buchen") or [] if x["key"] != p["key"]] + [core.not_booked_entry(p, p["key"])]
             elif act == "delete" and self.kontor_txs():
                 self.remove(rnd.choice(self.kontor_txs()))                      # you delete a booking of Kontor's in MoneyMoney
             elif act == "change":
@@ -139,25 +145,39 @@ class FuzzTests(unittest.TestCase):
                 self.add("pb.kk", TODAY - timedelta(days=rnd.randint(0, 50)), rnd.choice([-1234.5, 800.0, 96.25]), "Zahlung")
             elif act == "mirror":                                                   # a new booking in one of the mirrored accounts
                 self.add(rnd.choice([MINE, THEIRS]), TODAY - timedelta(days=rnd.randint(0, 20)), rnd.choice([-300.0, 120.0, 55.55]), "Einlage/Entnahme")
-            elif act == "again":
-                st = self.store.load("state.json") or {}
-                if st.get("kontor_abgelehnt"):
-                    rec = rnd.choice(st["kontor_abgelehnt"])
-                    st["kontor_abgelehnt"] = [r for r in st["kontor_abgelehnt"] if r is not rec]
-                    st["kontor_neu"] = (st.get("kontor_neu") or []) + [rec]; self.store.save("state.json", st)
-            elif act == "recheck":
-                self.store.update("state.json", lambda cur: (cur.get("rueckwirkend") or {}).pop(F.uid("pb"), None), {})
+            elif act == "again" and cfg.get("nicht_buchen"):                       # "Propose again"
+                cfg["nicht_buchen"].remove(rnd.choice(cfg["nicht_buchen"]))
+            elif act == "unmark" and self.kontor_txs():                             # you remove Kontor's mark from a booking's text
+                t = rnd.choice(self.kontor_txs())
+                t["purpose"] = TAG_RE.sub("", t["purpose"]).strip(" ·")
+            elif act == "redate" and self.kontor_txs():                             # you move a booking of Kontor's by a few days
+                t = rnd.choice(self.kontor_txs())
+                t["bookingDate"] = t["valueDate"] = t["bookingDate"] + timedelta(days=rnd.choice([-3, -1, 2]))
+            elif act == "original" and self.mine([MINE, THEIRS]):                   # you change or delete a mirrored original
+                t = rnd.choice(self.mine([MINE, THEIRS])); touched_mirror = True
+                if rnd.random() < 0.5:
+                    self.remove(t)
+                else:
+                    d = rnd.choice([-10.0, 33.3]); t["amount"] = round(t["amount"] + d, 2); b = self.balance(t["accountUuid"]); b[0] = round(b[0] + d, 2)
+                    self.frozen[t["id"]] = copy.deepcopy(t)
+            elif act == "renumber" and self.mine([MINE, THEIRS, "pb.kk"]):         # deleted and entered again in MoneyMoney: a new number
+                t = rnd.choice(self.mine([MINE, THEIRS, "pb.kk"]))
+                self.remove(t)
+                again = self.add(next(k for k, u in F.U.items() if u == t["accountUuid"]), date(2026, 1, 1), t["amount"], t["purpose"])
+                again.update({k: t[k] for k in ("bookingDate", "valueDate", "name", "accountNumber", "category", "categoryPath")})
+                self.frozen[again["id"]] = copy.deepcopy(again)
+            elif act == "paydel":                                                   # a loan payment deleted in MoneyMoney
+                pays = [t for t in self.mine(["pb.kk"]) if t.get("accountNumber") == F.SELLER_IBAN]
+                if pays:
+                    self.remove(rnd.choice(pays))
             self.check(where)
         # in the end: everything approved until nothing is left
         cfg["probelauf"] = True
 
-        def book_again():           # everything under "Not booked" (dropped, or deleted in MoneyMoney): booked again
-            self.store.update("state.json", lambda cur: cur.update(kontor_neu=(cur.get("kontor_neu") or []) + (cur.get("kontor_abgelehnt") or []), kontor_abgelehnt=[]), {})
+        cfg["nicht_buchen"] = []          # everything under "Not booked" proposed again
         for _ in range(8):
-            book_again()
-            if not self.run_once(cfg, True)["vorschlaege"] and not (self.store.load("state.json") or {}).get("kontor_abgelehnt"):
+            if not self.run_once(cfg, True)["vorschlaege"]:
                 break
-            book_again()
             self.approve(cfg, rnd, part=False)
             self.check("seed %d settling" % seed)
         end = self.run_once(cfg, True)
@@ -173,7 +193,7 @@ class FuzzTests(unittest.TestCase):
         # every booking of the mirrored accounts has its counterpart: the two balances moved by the same amounts
         mine = sorted(round(t["amount"], 2) for t in self.txs() if t["accountUuid"] == F.uid(MINE))
         theirs = sorted(round(-t["amount"], 2) for t in self.txs() if t["accountUuid"] == F.uid(THEIRS))
-        if cfg["gesellschaften"][1]["rueckwirkend_ab"] == "alles":
+        if cfg["gesellschaften"][1]["rueckwirkend_ab"] == "alles" and not touched_mirror:      # (an original you changed: a note, Kontor changes nothing)
             self.assertEqual(mine, theirs, "seed %d: mirror incomplete" % seed)
         return steps
 

@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from model import Ledger, accounts_from_export, tx_from_export, fmt_eur  # noqa: E402
-from rules import plan_loan, plan_all  # noqa: E402
+from rules import Seen, plan_loan, plan_all  # noqa: E402
 import fixtures as F  # noqa: E402
 
 
@@ -149,12 +149,16 @@ class LoanTests(unittest.TestCase):
         self.assertEqual(len(zins), 0)                       # November-Ultimo noch nicht erreicht
         # Basis 2026 bleibt der Stand 31.12.2025 trotz manueller Buchungen
         self.assertTrue(any("Zinsbasis 2026 = 1.600.000,00" in i for i in res.info), res.info)
-        # Manuelle Zinsbuchung im gleichen Monat -> Warnung statt Doppelbuchung
+        # repayments and interest you booked yourself (no mark): the repayments count as booked, the months of your interest
+        # are left to you -- one note, no warning, nothing twice
         txs2 = F.pb_transactions(today, with_manual_interest_until=date(2026, 10, 1))
         led2 = make_ledger({"pb.vd": -1600000.0}, txs2)
         res2 = plan_loan(led2, loan_cfg(ab_datum="2026-01-01"), today)
         self.assertEqual(len([p for p in res2.proposals if p.kind == "zins"]), 0)
-        self.assertEqual(len([w for w in res2.warnings if "manuelle Zinsbuchung" in w]), 10)
+        self.assertEqual([p.booking_date for p in res2.proposals if p.kind == "tilgung"], [date(2026, 11, 1)])
+        self.assertFalse(res2.warnings, res2.warnings)
+        own = [i for i in res2.info if "selbst gebucht" in i]
+        self.assertEqual(len(own), 1); self.assertIn("01/2026", own[0]); self.assertIn("10/2026", own[0])
 
     def test_missing_base_warns(self):
         today = date(2026, 6, 1)
@@ -219,8 +223,9 @@ class CompanyTests(unittest.TestCase):
         self.assertEqual((res.proposals[0].kind, res.proposals[0].booking_date), ("wert", today))
         self.assertAlmostEqual(res.proposals[0].amount, want - (-90000.0), 2)
         self.assertEqual(led.resolve("Beteiligung an Alpha GbR").balance, want)
-        self.assertEqual(res.preview, [{"art": "beteiligung", "bereich": "a", "ziel": F.uid("priv.bet.pb"), "ist": -90000.0, "rueck": 0,
-                                        "rueck_summe": 0.0, "unbekannt": [], "takt": "taeglich", "soll": want, "quelle": float(pb_value), "diff": want + 90000.0}])
+        self.assertEqual(res.preview, [{"art": "beteiligung", "bereich": "a", "ziel": F.uid("priv.bet.pb"), "ist": -90000.0, "rueck": 0, "offen": 1,
+                                        "rueck_summe": 0.0, "unbekannt": [], "takt": "taeglich", "soll": want, "quelle": float(pb_value), "diff": want + 90000.0,
+                                        "beginn": None}])
         self.assertEqual(plan_all(led, company_cfg(), today).proposals, [])        # again: nothing
         # the share comes only from the area; without it nothing is booked
         cfg = company_cfg(); cfg["bereiche"][1].pop("anteil")
@@ -260,7 +265,7 @@ class CompanyTests(unittest.TestCase):
         led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
         cfg = company_cfg(darlehen=[loan_cfg()])
         cfg["gesellschaften"][0].update(rueckwirkend_ab="2026-03", takt="monatlich")
-        res = plan_all(led, cfg, today)
+        res = plan_all(led, cfg, today, seen=Seen(Seen.top_id(led), today))
         wert = [p for p in res.proposals if p.kind == "wert"]
         days = [p.booking_date for p in wert]
         self.assertEqual(days[:8], [date(2026, m + 1, 1) - timedelta(days=1) for m in range(3, 11)])      # 31.03. ... 31.10.
@@ -273,11 +278,12 @@ class CompanyTests(unittest.TestCase):
         pv = [x for x in res.preview if x["art"] == "beteiligung"][0]
         self.assertEqual(pv["rueck"], 8); self.assertTrue(all(p.retro and p.group == "a" for p in wert))
         self.assertEqual(len(wert), 8)                  # monthly: no booking today, the month runs until its end
-        # a second run books nothing (the bookings are there now); once done, the past is not checked again
+        # a second run books nothing (the bookings are there now, every month end is checked again and right); a month later
+        # only the month just ended -- new, so booked without asking when booking fully automatically
         self.assertEqual([p for p in plan_all(led, cfg, today).proposals if p.kind == "wert"], [])
-        later = plan_all(led, cfg, date(2026, 12, 2), done={"a": "2026-03"})
+        later = plan_all(led, cfg, date(2026, 12, 2), seen=Seen(Seen.top_id(led), today))
         self.assertEqual([x for x in later.preview if x["art"] == "beteiligung"][0]["rueck"], 0)
-        self.assertEqual([p.booking_date for p in later.proposals if p.kind == "wert"], [date(2026, 11, 30)])   # only the month just ended
+        self.assertEqual([(p.booking_date, p.retro) for p in later.proposals if p.kind == "wert"], [(date(2026, 11, 30), False)])
 
     def test_back_to_daily(self):
         """Daily (default): back to every day on which the company's value changed, then today; once done only today."""
@@ -285,7 +291,7 @@ class CompanyTests(unittest.TestCase):
         led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
         cfg = company_cfg(darlehen=[loan_cfg()])
         cfg["gesellschaften"][0]["rueckwirkend_ab"] = "2026-03"
-        res = plan_all(led, cfg, today)
+        res = plan_all(led, cfg, today, seen=Seen(Seen.top_id(led), today))
         wert = [p for p in res.proposals if p.kind == "wert"]
         target = led.resolve("Beteiligung an Alpha GbR")
         change_days = sorted({t.booking_date for a in led.descendants(F.uid("pb")) for t in led.transactions(a.uuid) if date(2026, 3, 1) <= t.booking_date < today})
@@ -294,9 +300,21 @@ class CompanyTests(unittest.TestCase):
             v = round(sum(led.balance_at(a.uuid, d) for a in led.descendants(F.uid("pb"))), 2)
             self.assertAlmostEqual(led.balance_at(target.uuid, d), round(0.49 * v, 2), 2)
         self.assertAlmostEqual(target.balance, res.preview[-1]["soll"], 2)
-        led2 = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
-        once = [p for p in plan_all(led2, cfg, today, done={"a": "2026-03"}).proposals if p.kind == "wert"]
-        self.assertEqual([p.booking_date for p in once], [today]); self.assertFalse(once[0].retro)
+        self.assertTrue(wert and all(p.retro for p in wert))          # the past waits for you (nothing new since the last check) ...
+        self.assertEqual([p for p in plan_all(led, cfg, today).proposals if p.kind == "wert"], [])        # all there: nothing
+        # ... and left out, today's value is booked at once: the difference of all of them
+        led3 = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
+        seen, hold = Seen(Seen.top_id(led3), today), set()
+        for rounds in range(1, 9):                    # as a run does: left out, planned again, until nothing depends on it
+            held = plan_all(led3.fork(), cfg, today, hold=hold, seen=seen)
+            more = {p.key for p in held.proposals if p.retro} - hold
+            if not more:
+                break
+            hold |= more
+        self.assertLess(rounds, 5)
+        now = [p for p in held.proposals if p.kind == "wert"]
+        self.assertEqual([(p.booking_date, p.retro) for p in now], [(today, False)])
+        self.assertAlmostEqual(now[0].amount, round(0.49 * sum(a.balance for a in led3.descendants(F.uid("pb"))) + 90000.0, 2), delta=0.05)
 
     def test_back_to_a_day_or_everything(self):
         """"Rückwirkend ab": a day (monthly: the month ends from then on) or "alles" (since the company's first transaction)."""
@@ -308,7 +326,7 @@ class CompanyTests(unittest.TestCase):
         self.assertEqual(days[0], date(2026, 3, 31)); self.assertEqual(days[-1], date(2026, 10, 31))
         led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
         cfg["gesellschaften"][0].update(rueckwirkend_ab="alles", takt="taeglich")
-        res = plan_all(led, cfg, today)
+        res = plan_all(led, cfg, today, seen=Seen(Seen.top_id(led), today))
         first = min(t.booking_date for a in led.descendants(F.uid("pb")) for t in led.transactions(a.uuid) if t.id > 0)
         retro = [p for p in res.proposals if p.kind == "wert" and p.retro]
         self.assertTrue(retro); self.assertGreaterEqual(min(p.booking_date for p in retro), first)
@@ -709,33 +727,82 @@ class KontorBookingsTests(unittest.TestCase):
         self.assertEqual(service.kontor_bookings(None), [])
 
 
-class CreatedListTests(unittest.TestCase):
-    """Kontor's own list of the bookings it made: never proposed again, missing ones reported."""
+class StatelessLoanTests(unittest.TestCase):
+    """Kontor keeps no list of its bookings: what is booked is recognised in MoneyMoney -- by its mark, or as an equal booking
+    you made yourself. Deleted there: proposed again (older than the last check: only with your approval)."""
+    today = date(2026, 11, 4)
 
-    def test_created_not_proposed_again(self):
-        from rules import plan_loan
-        led = Ledger(accounts_from_export(F.accounts_raw({})), tx_from_export([]))
-        cfg = {"name": "Testdarlehen", "darlehenskonto": F.uid("pb.vd"), "quellkonten": [], "ab_datum": "2026-09-01", "art": "verbindlichkeit",
-               "zins": {"modell": "restschuld_monatlich", "satz": [{"ab": "2026-01-01", "prozent": 3.0}], "buchungstag": "ultimo"}, "erwartet_monatlich": False}
-        r0 = plan_loan(copy.deepcopy(led), cfg, date(2026, 10, 31))
-        z = [p for p in r0.proposals if p.kind == "zins"]
-        self.assertTrue(z)
-        rec = {z[0].key: {"tag": z[0].tag, "konto": z[0].account_uuid, "konto_name": "Darlehen", "datum": z[0].booking_date.isoformat(), "betrag": z[0].amount, "art": "zins"}}
-        r1 = plan_loan(copy.deepcopy(led), cfg, date(2026, 10, 31), rec)
-        self.assertNotIn(z[0].tag, [p.tag for p in r1.proposals]); self.assertEqual([m["tag"] for m in r1.missing], [z[0].tag])
-        # there by account, date and amount (its mark changed in MoneyMoney): neither proposed nor missing
-        led2 = Ledger(accounts_from_export(F.accounts_raw({})), tx_from_export([F.tx("pb.vd", z[0].booking_date, z[0].amount, "Bank", "Zinsen (Markierung geändert)")]))
-        r2 = plan_loan(led2, cfg, date(2026, 10, 31), rec)
-        self.assertNotIn(z[0].tag, [p.tag for p in r2.proposals]); self.assertEqual(r2.missing, [])
+    def booked(self, cfg=None):
+        """All of the loan booked (as if written), then MoneyMoney read again."""
+        led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(self.today))
+        res = plan_loan(led, cfg or loan_cfg(), self.today)
+        return led.without_planned(keep=[p.key for p in res.proposals]), res
 
-    def test_two_equal_bookings_are_two(self):
-        from rules import find_unmarked
-        txs = [F.tx("pb.vd", date(2026, 10, 31), -50.0, "Bank", "Zinsen"), F.tx("pb.vd", date(2026, 10, 31), -50.0, "Bank", "Zinsen #mm-zins-2026-09")]
-        led = Ledger(accounts_from_export(F.accounts_raw({})), tx_from_export(txs))
-        rec = {"konto": F.uid("pb.vd"), "datum": "2026-10-31", "betrag": -50.0}
-        claimed = set()
-        self.assertIsNotNone(find_unmarked(led, rec, claimed))      # the one without a mark
-        self.assertIsNone(find_unmarked(led, rec, claimed))         # the other carries another booking's mark, the first is taken
+    def test_deleted_changed_unmarked(self):
+        real, res = self.booked()
+        self.assertEqual(plan_loan(real.fork(), loan_cfg(), self.today).proposals, [])
+        z = next(t for t in real.txs if "#kontor-zins-2026-03" in t.purpose)
+        tl = next(t for t in real.txs if "#kontor-tx-" in t.purpose and t.booking_date == date(2026, 5, 1))
+        # deleted in MoneyMoney: proposed again, older than the last check -> waits for you; the interest after it waits too
+        gone = _replace_tx(_replace_tx(real, z), tl)
+        seen = Seen(Seen.top_id(real), self.today)
+        again = plan_loan(gone.fork(), loan_cfg(), self.today, seen=seen)
+        self.assertEqual(sorted((p.kind, p.booking_date.isoformat()) for p in again.proposals), [("tilgung", "2026-05-01"), ("zins", "2026-03-31")])
+        self.assertTrue(all(p.retro for p in again.proposals))
+        # changed there (its mark kept): counts as it is now
+        ch = _replace_tx(real, z, -1234.56)
+        self.assertEqual(plan_loan(ch.fork(), loan_cfg(), self.today).proposals, [])
+        # its mark removed: the repayment is found by amount and day, the interest by its text (interest you booked)
+        z.purpose, tl.purpose = "Zinsen März", "Annuität Mai"
+        r = plan_loan(real.fork(), loan_cfg(), self.today)
+        self.assertEqual(r.proposals, []); self.assertTrue(any("03/2026" in i for i in r.info))
+
+    def test_replaced_or_gone_payment_and_both_interests(self):
+        real, res = self.booked()
+        pay = next(t for t in real.txs if t.account_uuid == F.uid("pb.kk") and t.booking_date == date(2026, 6, 1))
+        # MoneyMoney replaced the payment (new number, a day later): Kontor's repayment counts for it -- nothing new, no note
+        import dataclasses
+        moved = Ledger(real.accounts, [dataclasses.replace(t, id=990001, booking_date=date(2026, 6, 2)) if t is pay else t for t in real.txs])
+        r = plan_loan(moved.fork(), loan_cfg(), self.today)
+        self.assertEqual(r.proposals, []); self.assertFalse(r.warnings, r.warnings)
+        # the payment gone: a note to check Kontor's repayment (it deletes nothing)
+        gone = Ledger(real.accounts, [t for t in real.txs if t is not pay])
+        r = plan_loan(gone.fork(), loan_cfg(), self.today)
+        self.assertEqual(r.proposals, []); self.assertTrue(any("keiner erkannten Zahlung" in w for w in r.warnings), r.warnings)
+        # interest of Kontor's and yours in the same month: a warning (one of them is too much)
+        both = real.fork(); both.post(F.uid("pb.vd"), date(2026, 7, 15), -4400.0, "Bank", "Zinsen Juli laut Bank").planned = False
+        r = plan_loan(both, loan_cfg(), self.today)
+        self.assertEqual(r.proposals, []); self.assertTrue(any("07/2026" in w for w in r.warnings), r.warnings)
+
+    def test_new_since_last_check_and_dont_book(self):
+        today = self.today
+        led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(date(2026, 10, 30)))
+        last = max(t.id for t in led.txs)
+        before = plan_loan(led, loan_cfg(), date(2026, 10, 30))          # all booked until the last check on 30 October
+        real = led.without_planned(keep=[p.key for p in before.proposals])
+        real = Ledger(real.accounts, real.txs + tx_from_export([F.tx("pb.kk", date(2026, 11, 1), -8250.0, "Verkäufer", F.ANNUITY_TEXT, "", F.SELLER_IBAN)]))
+        res = plan_loan(real.fork(), loan_cfg(), today, seen=Seen(last, date(2026, 10, 30)))
+        self.assertEqual(sorted((p.kind, p.booking_date.isoformat(), p.retro) for p in res.proposals),
+                         [("tilgung", "2026-11-01", False), ("zins", "2026-10-31", False)])       # the payment after it, the month ended after it
+        # an older repayment left out (waiting for you): the interest after it waits too -- it is computed from the balance
+        led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
+        t3 = next(p for p in plan_loan(led.fork(), loan_cfg(), today).proposals if p.kind == "tilgung" and p.booking_date == date(2026, 3, 1))
+        res = plan_loan(led.fork(), loan_cfg(), today, seen=Seen(0, date(2000, 1, 1)), hold={t3.key})
+        self.assertNotIn(t3.key, [p.key for p in res.proposals])
+        self.assertEqual([p.booking_date for p in res.proposals if p.kind == "zins" and p.retro], [date(2026, m + 1, 1) - timedelta(days=1) for m in range(3, 11)])      # March to October
+        self.assertFalse([p for p in res.proposals if p.kind == "zins" and p.booking_date < date(2026, 3, 1) and p.retro])
+        # "Don't book" (settings): never proposed
+        cfg = {"darlehen": [loan_cfg()], "nicht_buchen": [{"key": t3.key}]}
+        self.assertNotIn(t3.key, [p.key for p in plan_all(make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today)), cfg, today).proposals])
+
+    def test_two_equal_payments_one_booked_by_hand(self):
+        txs = [F.tx("pb.kk", date(2026, 10, 1), -500.0, "Verkäufer", F.ANNUITY_TEXT, "", F.SELLER_IBAN),
+               F.tx("pb.kk", date(2026, 10, 2), -500.0, "Verkäufer", F.ANNUITY_TEXT, "", F.SELLER_IBAN),
+               F.tx("pb.vd", date(2026, 10, 1), 500.0, "Ich", "Rate von Hand")]
+        led = make_ledger({"pb.vd": -1600000.0}, txs)
+        cfg = loan_cfg(ab_datum="2026-10-01", zins={}, erwartet_monatlich=False)
+        res = plan_loan(led, cfg, date(2026, 10, 20))
+        self.assertEqual([(p.kind, p.booking_date) for p in res.proposals], [("tilgung", date(2026, 10, 2))])     # each booking counts once
 
 
 def _replace_tx(led, tx, amount=None):
@@ -771,20 +838,25 @@ class ChainTests(unittest.TestCase):
         _, _, res = self.plan()
         w = [p for p in res.proposals if p.kind == "wert"]
         self.assertEqual(len(w), 8)
-        _, _, held = self.plan(skip={w[1].key})
+        _, _, held = self.plan(hold={w[1].key})
         h = {p.key: p.amount for p in held.proposals if p.kind == "wert"}
         self.assertNotIn(w[1].key, h)
         self.assertAlmostEqual(h[w[2].key], round(w[1].amount + w[2].amount, 2), 2)          # the next one takes up the difference
         for p in [w[0]] + w[3:]:
             self.assertAlmostEqual(h[p.key], p.amount, 2)
-        _, _, ed = self.plan(edits={w[1].key: {"betrag": round(w[1].amount + 100, 2)}})
-        e = {p.key: p.amount for p in ed.proposals if p.kind == "wert"}
-        self.assertAlmostEqual(e[w[1].key], round(w[1].amount + 100, 2), 2); self.assertAlmostEqual(e[w[2].key], round(w[2].amount - 100, 2), 2)
-        for p in w[3:]:
-            self.assertAlmostEqual(e[p.key], p.amount, 2)
+        # a value adjustment follows MoneyMoney: its amount is not changed by hand (only its text)
+        _, _, ed = self.plan(edits={w[1].key: {"betrag": round(w[1].amount + 100, 2), "zweck": "Mein Text"}})
+        e = {p.key: p for p in ed.proposals if p.kind == "wert"}
+        self.assertAlmostEqual(e[w[1].key].amount, w[1].amount, 2); self.assertEqual(e[w[1].key].purpose, "Mein Text · " + w[1].tag)
+        # a loan's interest changed by hand: booked with your amount, the value after it follows
+        z = next(p for p in res.proposals if p.kind == "zins" and p.booking_date == date(2026, 5, 31))
+        _, _, zed = self.plan(edits={z.key: {"betrag": -1000.0}})
+        zz = {p.key: p.amount for p in zed.proposals}
+        self.assertEqual(zz[z.key], -1000.0)
+        self.assertAlmostEqual(zz[w[2].key], round(w[2].amount + 0.49 * (-1000.0 - z.amount), 2), delta=0.02)
         # a loan repayment left out: the company is worth less from that day on, the first value adjustment after it follows
         t0 = next(p for p in res.proposals if p.kind == "tilgung")
-        _, _, lo = self.plan(skip={t0.key})
+        _, _, lo = self.plan(hold={t0.key})
         v = {p.key: p.amount for p in lo.proposals if p.kind == "wert"}
         self.assertAlmostEqual(v[w[0].key], w[0].amount - 0.49 * t0.amount, delta=0.02)
         for p in w[1:]:
@@ -792,30 +864,23 @@ class ChainTests(unittest.TestCase):
         self.assertNotIn(t0.key, {p.key for p in lo.proposals})
 
     def test_deleted_or_changed_is_corrected_on_its_day(self):
-        from rules import changed_values, deleted_values
         led, cfg, res = self.plan()
         real = led.without_planned(keep=[p.key for p in res.proposals])        # all written: in MoneyMoney now
-        done = {"a": "2026-03"}
-        self.assertEqual([p for p in plan_all(real.fork(), cfg, self.today, done=done).proposals if p.kind == "wert"], [])
+        self.assertEqual([p for p in plan_all(real.fork(), cfg, self.today).proposals if p.kind == "wert"], [])
         w = [p for p in res.proposals if p.kind == "wert"]
         tx = next(t for t in real.txs if w[2].tag in (t.purpose or "") and t.account_uuid == w[2].account_uuid)
-        rec = {"tag": w[2].tag, "konto": w[2].account_uuid, "datum": w[2].booking_date.isoformat(), "betrag": w[2].amount}
-        # deleted: without its day checked again the difference waits for the next month end (the months between stay wrong)
+        # deleted in MoneyMoney: every month end is checked again -- one booking on its day (its mark is free again), nothing
+        # after it; older than the last check, so it waits for you
         gone = _replace_tx(real, tx)
-        self.assertEqual(deleted_values(gone, [rec]), [rec])
-        plain = [p for p in plan_all(gone.fork(), cfg, self.today, done=done).proposals if p.kind == "wert"]
-        self.assertEqual([(p.booking_date, round(p.amount, 2)) for p in plain], [(date(2026, 10, 31), round(w[2].amount, 2))])
-        # its day checked again: one booking on that day (its mark is free again), nothing after it
-        again = [p for p in plan_all(gone.fork(), cfg, self.today, done=done, recheck={w[2].account_uuid: {w[2].booking_date}}).proposals if p.kind == "wert"]
-        self.assertEqual([(p.key, p.booking_date, round(p.amount, 2)) for p in again], [(w[2].key, w[2].booking_date, round(w[2].amount, 2))])
+        again = [p for p in plan_all(gone.fork(), cfg, self.today, seen=Seen(Seen.top_id(real), self.today)).proposals if p.kind == "wert"]
+        self.assertEqual([(p.key, p.booking_date, round(p.amount, 2), p.retro) for p in again], [(w[2].key, w[2].booking_date, round(w[2].amount, 2), True)])
         # you booked the value yourself instead: nothing to do
         own = _replace_tx(real, tx)
         own.post(tx.account_uuid, tx.booking_date, tx.amount, "Ich", "Wert selbst gebucht").planned = False
-        self.assertEqual([p for p in plan_all(own, cfg, self.today, done=done, recheck={w[2].account_uuid: {w[2].booking_date}}).proposals if p.kind == "wert"], [])
+        self.assertEqual([p for p in plan_all(own, cfg, self.today).proposals if p.kind == "wert"], [])
         # amount changed in MoneyMoney: the difference back on that day, with the next free mark
         ch = _replace_tx(real, tx, round(tx.amount + 50, 2))
-        self.assertEqual(len(changed_values(ch, [rec])), 1); self.assertEqual(changed_values(real, [rec]), [])
-        fix = [p for p in plan_all(ch, cfg, self.today, done=done, recheck={w[2].account_uuid: {w[2].booking_date}}).proposals if p.kind == "wert"]
+        fix = [p for p in plan_all(ch, cfg, self.today).proposals if p.kind == "wert"]
         self.assertEqual([(p.booking_date, round(p.amount, 2), p.tag) for p in fix], [(w[2].booking_date, -50.0, w[2].tag[:-1] + "2")])
 
 
@@ -844,35 +909,43 @@ class MirrorTests(unittest.TestCase):
         again = plan_all(real.fork(), self.cfg(), self.today)
         self.assertEqual(again.proposals, []); self.assertEqual(again.warnings, []); self.assertEqual(again.preview[0]["gespiegelt"], 5)
 
-    def test_from_now_on_and_bank_account_one_way(self):
-        old = F.tx("shs.kk", date(2026, 10, 1), -300.0, "Ich", "alt")
-        cfg = self.cfg(back="", quelle="shs.kk")              # the company's side is a bank account: only into yours
+    def test_from_a_day_and_bank_account_one_way(self):
+        old = F.tx("shs.kk", date(2026, 10, 1), -300.0, "Ich", "vor dem Start")
+        cfg = self.cfg(back="2026-10-15", quelle="shs.kk")        # the company's side is a bank account: only into yours
         res = plan_all(make_ledger({}, [old]), cfg, self.today)
-        self.assertEqual(res.proposals, []); self.assertEqual(list(res.mirror_since.values()), [old["id"]])
-        new = F.tx("shs.kk", date(2026, 9, 30), 800.0, "Ich", "neu, mit altem Datum")       # booked after setting it up
-        res2 = plan_all(make_ledger({}, [old, new]), cfg, self.today, since=res.mirror_since)
+        self.assertEqual(res.proposals, [])
+        new = F.tx("shs.kk", date(2026, 10, 20), 800.0, "Ich", "ab dem Start")
+        res2 = plan_all(make_ledger({}, [old, new]), cfg, self.today)
         self.assertEqual([(p.account_uuid, p.amount) for p in res2.proposals], [(F.uid("priv.bet.shs"), -800.0)])
-        self.assertEqual(res2.preview[0]["richtung"], "zu_a")
+        self.assertEqual((res2.preview[0]["richtung"], res2.preview[0]["beginn"]), ("zu_a", "2026-10-15"))
+        # set up before 3.13.1 without a day: since Kontor's first mirrored booking, else what is new since the last check
+        led = make_ledger({}, [old, new])
+        res3 = plan_all(led, self.cfg(back="", quelle="shs.kk"), self.today, seen=Seen(old["id"], self.today))
+        self.assertEqual([p.amount for p in res3.proposals], [-800.0])
         # mine is a bank account too: nothing can be mirrored
         cfg3 = company_cfg(gesellschaften=[{"bereich": "b", "gegenkonten": [{"konto": F.uid("priv.giro") + " | Giro", "quelle": F.uid("shs.kk") + " | KK"}]}])
         self.assertTrue(any("Offline-Konto" in w for w in plan_all(make_ledger({}, []), cfg3, self.today).warnings))
 
-    def test_gone_or_changed_original_is_a_note_deleted_mirror_not_again(self):
+    def test_gone_changed_renumbered_original_and_deleted_mirror(self):
         o = F.tx("shs.kap.s", date(2026, 9, 1), -5000.0, "Ich", "Einlage")
         led = make_ledger({}, [o])
         res = plan_all(led, self.cfg(), self.today)
         p = res.proposals[0]
         mirror = F.tx("priv.bet.shs", p.booking_date, p.amount, p.payee, p.purpose)
-        # the original deleted: a note to delete the counter booking too
+        # the original deleted: a note to delete the mirrored booking too
         gone = plan_all(make_ledger({}, [mirror]), self.cfg(), self.today)
         self.assertEqual(gone.proposals, []); self.assertTrue(any("kein Original mehr" in w for w in gone.warnings))
+        # the original entered again (a new number, same day and amount): the mirrored booking counts for it
+        again_o = dict(o, id=o["id"] + 50000)
+        r = plan_all(make_ledger({}, [again_o, mirror]), self.cfg(), self.today)
+        self.assertEqual(r.proposals, []); self.assertEqual(r.warnings, []); self.assertEqual(r.preview[0]["gespiegelt"], 1)
         # the original changed: a note to adjust it
         changed = plan_all(make_ledger({}, [dict(o, amount=-5500.0), mirror]), self.cfg(), self.today)
         self.assertEqual(changed.proposals, []); self.assertTrue(any("passt nicht mehr" in w for w in changed.warnings))
-        # the counter booking Kontor made deleted: not made again on its own ("Not booked")
-        rec = {"tag": p.tag, "konto": p.account_uuid, "datum": p.booking_date.isoformat(), "betrag": p.amount}
-        again = plan_all(make_ledger({}, [o]), self.cfg(), self.today, created={p.key: rec})
-        self.assertEqual(again.proposals, []); self.assertEqual([m["tag"] for m in again.missing], [p.tag])
+        # the mirrored booking deleted in MoneyMoney: proposed again -- older than the last check, so only with your approval
+        led2 = make_ledger({}, [o])
+        again = plan_all(led2, self.cfg(), self.today, seen=Seen(Seen.top_id(led2), self.today))
+        self.assertEqual([(q.key, q.retro) for q in again.proposals], [(p.key, True)])
 
     def test_new_account_shown_before_its_first_booking(self):
         from report import inactive_accounts
@@ -1024,14 +1097,12 @@ class MarkTests(unittest.TestCase):
             {"konto": F.uid("priv.bet.shs") + " | B", "quelle": F.uid("shs.kap.s") + " | K"}]}])
         r = plan_all(make_ledger({}, [o, m]), mc, today)
         self.assertEqual(r.proposals, []); self.assertEqual(r.warnings, []); self.assertEqual(r.preview[0]["gespiegelt"], 1)
-        # Kontor's lists from before (keys with "#mm-"): a rejected or created booking is still the same one
+        # a decision not to book from before (key with "#mm-"): still the same booking
         import rules
         self.assertEqual(rules.bkey("a", "#mm-zins-2026-01"), rules.bkey("a", "#kontor-zins-2026-01"))
         z = next(p for p in res.proposals if p.kind == "zins")
-        again = plan_all(make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today)), cfg, today, skip={z.account_uuid + "|" + z.tag.replace("#kontor-", "#mm-")})
-        self.assertIn(z.tag, [p.tag for p in again.proposals])              # a raw old key does not match ...
-        again = plan_all(make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today)), cfg, today, skip={rules.bkey(z.account_uuid, z.tag.replace("#kontor-", "#mm-"))})
-        self.assertNotIn(z.tag, [p.tag for p in again.proposals])           # ... which is why every key goes through bkey
+        again = plan_all(make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today)), dict(cfg, nicht_buchen=[{"key": z.account_uuid + "|" + z.tag.replace("#kontor-", "#mm-")}]), today)
+        self.assertNotIn(z.tag, [p.tag for p in again.proposals])
 
 
 class ReferenceTests(unittest.TestCase):

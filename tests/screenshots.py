@@ -38,11 +38,12 @@ def main():
     store = Store(d, *load_or_create_master_key(d))
     cfg = T.config_for_test(os.path.join(d, "Belege")); cfg.setdefault("oberflaeche", {})["sprache"] = LANG
     store.save("config.json", cfg)
+    store.save("state.json", dict(T.ALL_NEW))          # everything booked on the first sync (nothing older waits)
     T.reset_mock(); T.patch_today()
     T.MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Lebensmittel", 1, False, {})]
     T.MockBridge.state["txs"] += [F.tx("priv.giro", date(2026, 8, 31), -2500.0, "Broker", "Übertrag", "Umbuchung", "DE02100500000054540402"),
                                   F.tx("priv.tr", date(2026, 9, 1), 2500.0, "Hausbank", "Übertrag", "Umbuchung", "DE02120300000000202051")]
-    app = App(store, d, bridge_factory=T.MockBridge); app.do_run(False, True)
+    app = App(store, d, bridge_factory=T.MockBridge); app.do_run(False, True); app._fix_start_dates()
     import service as MA
     MA.App.tailscale = lambda a, fresh=False: {"gefunden": True, "verbunden": True, "ip": "100.101.102.103", "name": "macbook.tail1234.ts.net",
                                                "https": True, "konto": "max@example.com",
