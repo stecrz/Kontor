@@ -1120,7 +1120,9 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         created = {rules.bkey(r.get("konto", ""), r["tag"]): r for r in state.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")}
         not_booked = {(rules.bkey(r["konto"], r["tag"]) if r.get("konto") else r["tag"]): r
                       for r in state.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("tag")}
-        restore = {k for k in (approve or {}) if k in not_booked} if not dry else set()     # "Book again" under "Not booked"
+        # "Book again" under "Not booked": with approval it waits for you again (kontor_neu), booking fully automatically books it
+        again_recs = {rules.bkey(r.get("konto", ""), r.get("tag", "")): r for r in state.get("kontor_neu") or [] if isinstance(r, dict) and r.get("tag")}
+        restore = ({k for k in (approve or {}) if k in not_booked} if not dry else set()) | set(again_recs)
         # a deleted value adjustment does not stop the next one (the difference is booked anyway); everything else stays out
         rejected = {k for k, r in not_booked.items()
                     if not (r.get("grund") == "geloescht" and str(r.get("tag", "")).startswith(("#mm-wert-", "#mm-spiegel-")))} - restore
@@ -1128,11 +1130,12 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         marks = rules.present_marks(ledger)
         gone_values = {rules.bkey(r.get("konto", ""), r["tag"]): r for r in rules.deleted_values(ledger, state.get("kontor_buchungen"), marks)}
         back = {k: r for k, r in not_booked.items() if r.get("konto") and (r["konto"], r["tag"]) in marks}    # there again (e.g. undone in MoneyMoney)
+        back_again = {k for k, r in again_recs.items() if (r.get("konto"), r.get("tag")) in marks}
         t_read = time.time()
         result = plan_all(ledger, config, today, created, rejected, done)
         planned_keys = {p.key for p in result.proposals}
         for k in sorted(restore - planned_keys):          # not planned again (e.g. a value adjustment of a past day): as it was
-            p = _from_record(ledger, not_booked[k])
+            p = _from_record(ledger, again_recs.get(k) or not_booked[k])
             if p is not None:
                 result.proposals.append(p)
                 ledger.post(p.account_uuid, p.booking_date, p.amount, p.payee, p.purpose, p.category)
@@ -1217,7 +1220,11 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         gone_loans.update({k: dict({f: r.get(f) for f in ("tag", "konto", "konto_name", "datum", "betrag", "art", "regel", "zweck", "gegenpartei", "kategorie")},
                                    grund="geloescht", abgelehnt=stamp_now) for k, r in gone_values.items()})
 
+        again_done = ({p.key for p in made} & set(again_recs)) | back_again
+
         def _merge(cur: dict) -> None:
+            if again_done:
+                cur["kontor_neu"] = [r for r in cur.get("kontor_neu") or [] if rules.bkey(r.get("konto", ""), r.get("tag", "")) not in again_done]
             out_of = booked_again | set(back)      # booked again, or there again in MoneyMoney: out of "not booked"
             if out_of:
                 cur["kontor_abgelehnt"] = [r for r in cur.get("kontor_abgelehnt") or []
@@ -1239,9 +1246,8 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             cur["fingerprint"] = fp if err is None else None
             cur["letzter_lauf"] = summary
             cur.setdefault("verlauf", []).append({"zeit": summary["zeit"], "probelauf": dry, "geschrieben": written,
-                                                  "vorschlaege": len(bookings), "fehler": summary["fehler"],
-                                                  "buchungen": [x.describe() for x in bookings][:50]})
-            cur["verlauf"] = cur["verlauf"][-100:]
+                                                  "vorschlaege": len(bookings), "fehler": summary["fehler"]})
+            cur["verlauf"] = [{k: v for k, v in x.items() if k != "buchungen"} for x in cur["verlauf"][-100:]]     # the bookings are in Kontor's own list
             if state.get("snapshots"):
                 merge_snapshots(cur, state["snapshots"])     # Schnellabgleich waehrend des Laufs bleibt erhalten
             merge_holdings(cur, state)

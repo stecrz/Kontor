@@ -1861,6 +1861,7 @@ def make_handler(app: App):
 
                 def upd(cur: dict) -> None:
                     rej = [r for r in cur.get("kontor_abgelehnt") or [] if not same(r)]
+                    cur["kontor_neu"] = [r for r in cur.get("kontor_neu") or [] if not same(r)]
                     if body.get("wieder"):                               # deleted in MoneyMoney: no longer counts as made
                         cur["kontor_buchungen"] = [r for r in cur.get("kontor_buchungen") or [] if not same(r)]
                     lr = cur.get("letzter_lauf") or {}
@@ -1876,6 +1877,24 @@ def make_handler(app: App):
                     cur["kontor_abgelehnt"] = rej[-500:]
                 app.store.update("state.json", upd, {})
                 log.info("Booking %s", "to be booked again" if body.get("wieder") else "dropped")
+                return self._json(200, {"ok": True})
+            if path == "/api/bookings/restore":
+                # "Book again" with approval: out of "not booked", waiting for approval again (to change it before booking)
+                key = str(body.get("key") or "")
+                acc, _, tag = key.partition("|")
+                if not re.fullmatch(r"[0-9A-Za-z-]{8,64}", acc) or not TAG_RE.fullmatch(tag):
+                    return self._json(400, {"fehler": tr("s_markierung_ungueltig")})
+                same = lambda r: (r.get("konto") or acc) == acc and r.get("tag") == tag     # noqa: E731
+
+                def upd_restore(cur: dict) -> None:
+                    rec = next((r for r in cur.get("kontor_abgelehnt") or [] if same(r)), None)
+                    if rec is None:
+                        return
+                    cur["kontor_abgelehnt"] = [r for r in cur.get("kontor_abgelehnt") or [] if not same(r)]
+                    cur["kontor_buchungen"] = [r for r in cur.get("kontor_buchungen") or [] if not same(r)]     # deleted: no longer counts as made
+                    cur["kontor_neu"] = [r for r in cur.get("kontor_neu") or [] if not same(r)] + [dict(rec, konto=rec.get("konto") or acc)]
+                app.store.update("state.json", upd_restore, {})
+                log.info("Booking back for approval")
                 return self._json(200, {"ok": True})
             if path == "/api/rules/recheck":
                 # check the whole history of a company again (Rückwirkend ab) at the next sync, existing bookings included

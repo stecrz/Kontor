@@ -2739,15 +2739,16 @@ function vBuchungen(runs) {
   if (rej.length) h += `<details class="calc"><summary>${t('nicht_gebucht_titel')} (${rej.length})</summary><div class="note">${t('nicht_gebucht_note')}</div><div class="wrap auto"><table class="plain"><tbody>`
     + rej.slice().reverse().map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto_name || '')}</td><td>${esc(artL[v.art] || v.art || '')}</td><td class="num">${v.betrag != null ? F(v.betrag) : ''}</td>`
       + `<td><span class="pill ${v.grund === 'geloescht' ? 'warn' : 'neutral'}">${t(v.grund === 'geloescht' ? 'grund_geloescht' : 'grund_verworfen')}</span></td><td class="small muted">${esc(v.regel || '')}</td>`
-      + `<td>${local ? `<button class="secondary small re-book" data-key="${esc((v.konto || '00000000') + '|' + v.tag)}">${t('neu_buchen')}</button>` : ''}</td></tr>`).join('') + '</tbody></table></div></details>';
+      + `<td>${local || ask ? `<button class="secondary small re-book" data-key="${esc((v.konto || '00000000') + '|' + v.tag)}" title="${esc(t(ask ? 'neu_buchen_tip' : 'neu_buchen_tip_auto'))}">${t('neu_buchen')}</button>` : ''}</td></tr>`).join('') + '</tbody></table></div></details>';
   // only what Kontor itself made in MoneyMoney (its own list and marks), with the state there now
   const ang = runs.angelegt || [], stL = {ok: ['ok', t('st_ok')], markierung: ['warn', t('st_markierung')], fehlt: ['err', t('st_fehlt')]};
   h += `<h2>${t('angelegt_titel')} <span class="x">${ang.length}</span></h2><div class="note">${t('angelegt_note')}</div>`
     + (ang.length ? `<div class="wrap auto" style="max-height:420px"><table class="plain"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th><th>${t('markierung')}</th><th>${t('status')}</th></tr></thead><tbody>`
       + ang.slice(0, 300).map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td><td class="num ${v.betrag < 0 ? 'neg' : 'pos'}">${F(v.betrag)}</td><td class="small">${esc(v.zweck || v.gegenpartei)}</td><td class="small muted" style="white-space:nowrap">${esc(v.markierung)}</td><td><span class="pill ${(stL[v.status] || stL.ok)[0]}">${(stL[v.status] || stL.ok)[1]}</span></td></tr>`).join('')
       + `</tbody></table></div>` : `<div class="muted small">${t('keine_angelegt')}</div>`);
-  h += `<details class="calc"><summary>${t('verlauf_2')} (${(runs.verlauf || []).length})</summary><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th>${t('modus')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th><th>${t('buchungen')}</th></tr></thead><tbody>`
-    + (runs.verlauf || []).map(v => `<tr><td>${esc(v.zeit)}</td><td>${v.probelauf ? t('test') : t('gebucht')}</td><td class="num">${v.vorschlaege ?? ''}</td><td class="num">${v.geschrieben}</td><td>${esc(v.fehler || '')}</td><td class="small">${(v.buchungen || []).map(esc).join('<br>')}</td></tr>`).join('') + '</tbody></table></div></details>';
+  // history: only the checks (when, how many proposed and booked, errors) -- the bookings themselves are listed above
+  h += `<details class="calc"><summary>${t('verlauf_2')} (${(runs.verlauf || []).length})</summary><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th></tr></thead><tbody>`
+    + (runs.verlauf || []).map(v => `<tr><td>${esc(v.zeit)}</td><td class="num">${v.vorschlaege ?? ''}</td><td class="num">${v.geschrieben}</td><td>${esc(v.fehler || '')}</td></tr>`).join('') + '</tbody></table></div></details>';
   return h;
 }
 
@@ -4107,9 +4108,10 @@ function bind(main) {
     });
     count();
   }
-  $$('.re-book', main).forEach(b => b.addEventListener('click', async () => {          // book again: out of "not booked", booked now
-    if (!confirm(t('neu_buchen_frage'))) return;
-    startRun(false, {[b.dataset.key]: {}});
+  $$('.re-book', main).forEach(b => b.addEventListener('click', async () => {
+    // book again: with approval it waits for you again (to change it first), booking fully automatically books it now
+    if (S.CFG.probelauf === false) { if (confirm(t('neu_buchen_frage'))) startRun(false, {[b.dataset.key]: {}}); return; }
+    try { await api('/api/bookings/restore', {key: b.dataset.key}); toast(t('neu_buchen_wartet'), 4000); startRun(true); } catch (e) { toast(e.message, 5000); }
   }));
   const rl = $('#run-live', main); if (rl) rl.addEventListener('click', () => {
     const keys = (((BOOK.runs || {}).letzter_lauf || {}).vorschlaege || []).map(v => v.key).filter(k => k && !BOOK.off.has(k));

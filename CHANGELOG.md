@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.12.28 (2026-11-10 14:02)
+- „Neu buchen“ legt eine Buchung wieder zur Freigabe vor, wo du sie vor dem Buchen ändern kannst; mit „Vollautomatisch buchen“ bucht es sie sofort.
+- Verlauf unter Auto-Buchungen zeigt nur noch die Prüfungen (Zeit, Vorschläge, gebucht, Fehler) – die Buchungen selbst stehen darüber.
+
 ## 3.12.27 (2026-11-10 13:51)
 - Touch ID: Der Dialog erscheint erst, wenn du zu Kontor wechselst – nicht mehr im Vordergrund, wenn Kontor im Hintergrund gesperrt wurde.
 - Gegenkonten als „optional“ gekennzeichnet; Hilfe erklärt, wofür sie gut sind und wann man sie nicht braucht.

@@ -216,9 +216,13 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(made[0]["purpose"], "Zinsen laut Abrechnung · " + zins[1]["tag"])
         self.assertEqual(made[0]["bookingDate"], F._dt(date(2026, 10, 15)))
         self.assertEqual(len(self.store.load("state.json")["kontor_buchungen"]), 3)
-        # "book again" a booking you did not book: booked now, out of "not booked"
+        # "book again" with approval: back to waiting (to change it first), then approved like any other
+        st = self.store.load("state.json"); rec = st["kontor_abgelehnt"][0]
+        st["kontor_abgelehnt"] = []; st["kontor_neu"] = [dict(rec, betrag=-4400.0, datum="2026-01-01", zweck="Zinsen 01/2026")]; self.store.save("state.json", st)
+        r1 = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        self.assertIn(zins[0]["key"], [p["key"] for p in r1["vorschlaege"]])
         r2 = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve={zins[0]["key"]: {}})
-        self.assertEqual(r2["geschrieben"], 1); self.assertEqual(self.store.load("state.json")["kontor_abgelehnt"], [])
+        self.assertEqual(r2["geschrieben"], 1); self.assertEqual(self.store.load("state.json")["kontor_neu"], [])
         self.assertTrue([t for t in MockBridge.state["txs"] if zins[0]["tag"] in (t.get("purpose") or "")])
         # invalid changes and marks are refused
         self.assertIsNotNone(MA.approval({zins[2]["key"]: {"betrag": "0"}})[1]); self.assertIsNotNone(MA.approval({"rm -rf": {}})[1])
