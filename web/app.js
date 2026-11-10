@@ -558,7 +558,7 @@ function statusMini() {
   }
   // something to do: bookings waiting for approval (count) or a failed run (!), an update (dot) -- in the sidebar and on the app icon
   const waiting = l && l.probelauf && !l.fehler ? (l.vorschlaege || []).length : 0;
-  navBadge('#bookings', l && l.fehler ? '!' : waiting ? String(waiting) : '', l && l.fehler ? t('letzter_abgleich_mit_fehler') : t('0_buchungsvorschlaege', waiting));
+  navBadge('#bookings', l && l.fehler ? '!' : waiting ? (waiting > 99 ? '99+' : String(waiting)) : '', l && l.fehler ? t('letzter_abgleich_mit_fehler') : t('0_buchungsvorschlaege', waiting));
   navBadge('#updates', st.update && st.update.neuer ? '•' : '', st.update && st.update.neuer ? t('update') + st.update.verfuegbar + t('verfuegbar') : '');
   const mb = $('#menu-btn'); if (mb) mb.classList.toggle('has-badge', !!(waiting || (l && l.fehler) || (st.update && st.update.neuer)));     // narrow window: the sidebar is closed
   try { if (navigator.setAppBadge) { if (waiting) navigator.setAppBadge(waiting); else navigator.clearAppBadge(); } } catch (e) { /* not supported */ }
@@ -3131,13 +3131,14 @@ function gkRow(x, bid) {
     + `<span class="gk-arrow" title="${esc(t('gegenstueck_von'))}" aria-label="${esc(t('gegenstueck_von'))}">⇄</span>${acctSel('g-quelle', x.quelle, k => !k.gruppe && inside(k), t('konto_der_gesellschaft'))}`
     + `<button class="ico gk-del" title="${esc(t('entfernen'))}" aria-label="${esc(t('entfernen'))}">×</button><div class="pv small"></div></div>`;
 }
-// "back to": the past months (last month first, ten years back) -- a menu instead of typing a date (same in every browser)
-function backMonths(sel) {
-  const now = new Date(), out = [];
-  for (let i = 1; i <= 132; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
-  if (sel && !out.includes(sel)) out.push(sel);
-  return `<option value="">${t('nicht_rueckwirkend')}</option>` + out.map(m => `<option value="${m}" ${m === sel ? 'selected' : ''}>${MONATE_LANG[+m.slice(5) - 1]} ${m.slice(0, 4)}</option>`).join('');
+// "back to": not at all, from a day (date field), or everything since the company exists
+function backField(v) {
+  v = String(v || ''); const day = /^\d{4}-\d{2}(-\d{2})?$/.test(v) ? (v.length === 7 ? v + '-01' : v) : '';
+  const mode = v === 'alles' ? 'alles' : day ? 'datum' : '';
+  return `<div class="row tight"><select class="c-rmode"><option value="" ${mode === '' ? 'selected' : ''}>${t('rueck_nein')}</option><option value="datum" ${mode === 'datum' ? 'selected' : ''}>${t('rueck_datum')}</option><option value="alles" ${mode === 'alles' ? 'selected' : ''}>${t('rueck_alles')}</option></select>`
+    + `<input type="date" class="c-ab${mode === 'datum' ? '' : ' hidden'}" value="${esc(day)}" max="${new Date(Date.now() - 864e5).toISOString().slice(0, 10)}"></div>`;
 }
+const backValue = c => { const m = $('.c-rmode', c).value; return m === 'alles' ? 'alles' : m === 'datum' ? $('.c-ab', c).value : ''; };
 // words of a name that tell companies apart (no legal forms or filler words), for the suggestion by name
 const NAME_STOP = new Set(['gbr', 'egbr', 'gmbh', 'mbh', 'kg', 'ug', 'ag', 'ohg', 'se', 'co', 'und', 'an', 'am', 'der', 'die', 'das', 'des', 'den', 'dem', 'beteiligung', 'beteiligungen', 'anteil', 'anteile', 'gesellschaft', 'haftungsbeschrankt', 'konto']);
 const nameWords = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').split(/[^a-z0-9]+/).filter(w => w.length >= 2 && !NAME_STOP.has(w));
@@ -3164,7 +3165,7 @@ function companyCard(b, g) {
     + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}</div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="secondary small add-gk">${t('gegenkonto_hinzufuegen')}</button></div></div>`
     + `<details class="co-more"${extra ? ' open' : ''}><summary>${t('co_mehr')}</summary><div class="form">`
     + `<label>${t('co_takt')}${hq('h_co_takt')}</label><div><select class="c-takt"><option value="taeglich" ${g.takt !== 'monatlich' ? 'selected' : ''}>${t('takt_taeglich')}</option><option value="monatlich" ${g.takt === 'monatlich' ? 'selected' : ''}>${t('takt_monatlich')}</option></select><div class="small muted c-takt-tip">${taktTip(g.takt)}</div></div>`
-    + `<label>${t('co_rueck')}${hq('h_co_rueck')}</label><div><select class="c-ab">${backMonths(g.rueckwirkend_ab)}</select><div class="small muted c-ab-state"></div></div>`
+    + `<label>${t('co_rueck')}${hq('h_co_rueck')}</label><div>${backField(g.rueckwirkend_ab)}<div class="small muted c-ab-state"></div></div>`
     + `<label>${t('co_schwelle')}${hq('h_co_schwelle')}</label><div class="row tight"><input type="number" step="0.01" min="0.01" class="c-sw" value="${g.schwelle ?? 0.01}" style="width:110px"> €</div>`
     + `<label>${t('gegenpartei')}${hq('h_co_gp')}</label><input type="text" class="c-gp" value="${esc(g.gegenpartei || '')}" placeholder="${esc(b.name)}">`
     + `</div></details></div>`;
@@ -3193,7 +3194,7 @@ function rulesPreviewShow(rp, r) {
   showFindings($('#rules-warn', rp), (r.warnungen || []).map(w => ({stufe: 'warnung', text: w})));
   // booking back: done once -- from then on only the current state; checking the whole history again on request
   $$('.co-card', rp).forEach(c => {
-    const el = $('.c-ab-state', c), ab = $('.c-ab', c).value, done = (r.eingespielt || {})[c.dataset.b];
+    const el = $('.c-ab-state', c), ab = backValue(c), done = (r.eingespielt || {})[c.dataset.b];
     el.innerHTML = ab && done === ab ? `✓ ${t('rueck_eingespielt')} <button class="ghost small c-recheck">${t('rueck_erneut')}</button>` : ab ? t('rueck_beim_naechsten') : '';
   });
 }
@@ -3253,7 +3254,7 @@ function collectRules(asSaved) {
   });
   cfg.gesellschaften = $$('#companies .co-card').map(c => ({ bereich: c.dataset.b, beteiligung: asSaved && $('.co-f.suggested', c) ? '' : $('.c-bet', c).value,
     gegenkonten: $$('.gk-row', c).map(r => ({konto: $('.g-konto', r).value, quelle: $('.g-quelle', r).value, faktor: parseFloat(r.dataset.f) || -1})),
-    rueckwirkend_ab: $('.c-ab', c).value.trim(), takt: $('.c-takt', c).value, schwelle: parseFloat($('.c-sw', c).value) || 0.01, gegenpartei: $('.c-gp', c).value.trim() }))
+    rueckwirkend_ab: backValue(c), takt: $('.c-takt', c).value, schwelle: parseFloat($('.c-sw', c).value) || 0.01, gegenpartei: $('.c-gp', c).value.trim() }))
     .filter(g => g.beteiligung || g.gegenkonten.length);
   delete cfg.beteiligungen; delete cfg.saldo_spiegel;
   return cfg;
@@ -4174,6 +4175,7 @@ function bind(main) {
       if (!e.target.closest('.rule, .co-card')) return;
       if (e.target.classList.contains('f-modell')) e.target.closest('.form').classList.toggle('no-zins', !e.target.value);
       if (e.target.classList.contains('c-takt')) $('.c-takt-tip', e.target.closest('.co-card')).textContent = taktTip(e.target.value);
+      if (e.target.classList.contains('c-rmode')) { const f = $('.c-ab', e.target.closest('.co-card')); f.classList.toggle('hidden', e.target.value !== 'datum'); if (e.target.value === 'datum' && !f.value) f.focus(); }
       e.target.closest('.gk-row')?.classList.remove('invalid');
       changed();
     });

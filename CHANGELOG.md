@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.12.25 (2026-11-10 02:09)
+- „Rückwirkend ab“: nicht rückwirkend, ab einem bestimmten Tag (Datumsfeld) oder alles seit der ersten Buchung der Gesellschaft.
+- Seitenleiste: Zahl und Punkt in den Farben der Oberfläche statt rot; ab 100 wartenden Buchungen „99+“.
+
 ## 3.12.24 (2026-11-10 01:53)
 - Freigabe: Auswahl einzelner Buchungen klappt jetzt auch bei zwei Gesellschaften (gleiche Markierung in verschiedenen Konten wurde verwechselt); der Kommentar an der Quellzahlung geht mit seiner Tilgung. Dieselbe Verwechslung hätte bei zwei Darlehen Zinsen übersprungen – behoben.
 - Beteiligungen und Gegenkonten: „Buchen“ täglich (Standard, MoneyMoney zeigt den aktuellen Stand) oder monatlich; Empfehlung je nach Freigabe. „Rückwirkend ab“ spielt die Vergangenheit einmalig ein (täglich je Tag mit Änderung) und prüft danach nur noch den aktuellen Stand; „Erneut prüfen“ kontrolliert den ganzen Verlauf noch einmal.

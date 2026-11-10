@@ -2630,6 +2630,8 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("(document.querySelector('#nav a[href=\"#bookings\"] .nbadge') || {}).textContent || ''"), str(n_wait) if n_wait else "")
                 pg.evaluate("window.__st = S.STATUS; S.STATUS = Object.assign({}, S.STATUS, {letzter_lauf: {probelauf: true, zeit: 'x', vorschlaege: [{}, {}, {}]}, update: {neuer: true, verfuegbar: '9.9.9'}}); statusMini()")
                 self.assertEqual(pg.inner_text("#nav a[href='#bookings'] .nbadge"), "3"); self.assertTrue(pg.query_selector("#nav a[href='#updates'] .nbadge"))
+                pg.evaluate("S.STATUS = Object.assign({}, S.STATUS, {letzter_lauf: {probelauf: true, zeit: 'x', vorschlaege: Array(250).fill({})}}); statusMini()")
+                self.assertEqual(pg.inner_text("#nav a[href='#bookings'] .nbadge"), "99+")
                 self.assertNotIn("Freigabe", pg.inner_text("#status-mini")); self.assertIsNone(pg.query_selector("#nav a[href='#bookings'] .alpha-tag"))
                 pg.evaluate("S.STATUS = window.__st; statusMini()")
                 pg.click(".mode-chip"); pg.wait_for_selector("#save-rules")

@@ -296,6 +296,22 @@ class CompanyTests(unittest.TestCase):
         once = [p for p in plan_all(led2, cfg, today, done={"a": "2026-03"}).proposals if p.kind == "wert"]
         self.assertEqual([p.booking_date for p in once], [today]); self.assertFalse(once[0].retro)
 
+    def test_back_to_a_day_or_everything(self):
+        """"Rückwirkend ab": a day (monthly: the month ends from then on) or "alles" (since the company's first transaction)."""
+        today = date(2026, 11, 4)
+        led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
+        cfg = company_cfg(darlehen=[loan_cfg()])
+        cfg["gesellschaften"][0].update(rueckwirkend_ab="2026-03-15", takt="monatlich")
+        days = [p.booking_date for p in plan_all(led, cfg, today).proposals if p.kind == "wert"]
+        self.assertEqual(days[0], date(2026, 3, 31)); self.assertEqual(days[-1], date(2026, 10, 31))
+        led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
+        cfg["gesellschaften"][0].update(rueckwirkend_ab="alles", takt="taeglich")
+        res = plan_all(led, cfg, today)
+        first = min(t.booking_date for a in led.descendants(F.uid("pb")) for t in led.transactions(a.uuid) if t.id > 0)
+        retro = [p for p in res.proposals if p.kind == "wert" and p.retro]
+        self.assertTrue(retro); self.assertGreaterEqual(min(p.booking_date for p in retro), first)
+        self.assertEqual(min(p.booking_date for p in retro), first)          # the first day already differs (opening balance)
+
     def test_back_to_unknown_months_skipped(self):
         # a portfolio in the company: its past value is not known -> those months are not booked
         today = date(2026, 11, 4)

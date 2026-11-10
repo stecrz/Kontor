@@ -23,7 +23,7 @@ import realestate
 import categorize
 from report import ROLES, account_roles, build_dataset, equity_ratio, holding_key
 import rules
-from rules import Proposal, parse_month, plan_all
+from rules import Proposal, parse_start, plan_all
 from storage import Store
 from tax import build_tax
 from i18n import tr
@@ -123,9 +123,11 @@ def earliest_needed(config: dict, today: date) -> date:
         except Exception:
             pass
     for g in config.get("gesellschaften", []) or []:
-        ym = parse_month((g or {}).get("rueckwirkend_ab"))
-        if ym:
-            start = min(start, date(ym[0] - 1, 1, 1))
+        rs = parse_start((g or {}).get("rueckwirkend_ab"))
+        if rs == "alles":
+            start = min(start, date(2000, 1, 1))
+        elif rs:
+            start = min(start, date(rs.year - 1, 1, 1))
     return start
 
 
@@ -506,7 +508,8 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         n, inside = b["name"], {a.uuid for a in b["leaves"]}
         if g.get("takt") not in (None, "", "taeglich", "monatlich"):
             add("fehler", tr("s_s_takt_unbekannt") % (n, g.get("takt")))
-        if g.get("rueckwirkend_ab") and (parse_month(g["rueckwirkend_ab"]) is None or str(g["rueckwirkend_ab"])[:7] > date.today().isoformat()[:7]):
+        rs = parse_start(g.get("rueckwirkend_ab")) if g.get("rueckwirkend_ab") else ""
+        if rs is None or (isinstance(rs, date) and rs >= date.today()):
             add("fehler", tr("s_s_rueckwirkend_ungueltig") % (n, g["rueckwirkend_ab"]))
         targets = []
         if g.get("beteiligung"):

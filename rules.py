@@ -333,13 +333,18 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str
 VALUE_OFF = {"eigenkapital", "eventual", "ignorieren"}      # not part of a company's value: partners' equity, contingent, ignored
 
 
-def parse_month(s) -> Optional[Tuple[int, int]]:
-    """'2025-03' -> (2025, 3); anything else -> None."""
+def parse_start(s):
+    """"Rückwirkend ab": a day ('2025-03-14'), "alles" (since the company exists), older '2025-03' (first of the month);
+    anything else (empty: from now on only) -> None."""
+    s = str(s or "").strip()
+    if s == "alles":
+        return "alles"
     try:
-        y, m = (int(x) for x in str(s or "").split("-")[:2])
-    except ValueError:
+        parts = [int(x) for x in s.split("-")]
+        d = date(parts[0], parts[1], parts[2] if len(parts) > 2 else 1)
+    except (ValueError, IndexError):
         return None
-    return (y, m) if 1 <= m <= 12 and 1990 <= y <= 2100 else None
+    return d if 1990 <= d.year <= 2100 else None
 
 
 class ValueSeries:
@@ -406,21 +411,23 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, kind: str, target, s
     """Keep the manual account `target` at the value of `series`, always booking only the difference to its balance in
     MoneyMoney (so a booking that is there is never made twice):
     - daily (default): today; monthly ("takt"): at the end of last month,
-    - "Rückwirkend ab" once (until it is marked as done): every past day on which the value changed (daily) or every month
-      end (monthly) from that month on -- this also checks and corrects what is there. Unknown days are skipped."""
+    - "Rückwirkend ab" (a day, or "alles": since the company's first transaction) once, until it is marked as done: every past
+      day on which the value changed (daily) or every month end (monthly) from then on -- this also checks and corrects what
+      is there. Unknown days are skipped."""
     schwelle = max(float(cfg.get("schwelle") or 0.01), 0.01)
     monthly = cfg.get("takt") == "monatlich"
     first = date(today.year, today.month, 1)
     last_end = first - timedelta(days=1)
     days: List[Tuple[Optional[date], bool]] = []
-    ym = parse_month(cfg.get("rueckwirkend_ab"))
-    if ym and not retro_done:
-        start = date(ym[0], ym[1], 1)
+    start = parse_start(cfg.get("rueckwirkend_ab"))
+    if start == "alles":                       # since the company exists: from its first transaction
+        start = series.change_days[0] if series.change_days else None
+    if start and not retro_done:
         if monthly:
-            days = [(month_end(y, m), True) for (y, m) in months_between(start, last_end)]
+            days = [(e, True) for e in (month_end(y, m) for (y, m) in months_between(start, last_end)) if e >= start]
         else:
-            days = [(d, True) for d in sorted({start} | {d for d in series.change_days if start <= d < today})]
-    elif monthly and (not ym or last_end >= date(ym[0], ym[1], 1)):
+            days = [(d, True) for d in sorted({start} | {d for d in series.change_days if start <= d < today}) if d < today]
+    elif monthly and (not start or last_end >= start):
         days = [(last_end, False)]
     if not monthly:
         days.append((None, False))
