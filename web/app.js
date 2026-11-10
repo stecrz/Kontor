@@ -19,7 +19,7 @@ function setLang(l, pending) {
   if (l !== LANG) location.reload();
 }
 // pages not fully tested yet: usable, but marked "Alpha" in the menu and next to the page title
-const ALPHA_TABS = new Set(['overview', 'cashflow', 'planning', 'properties', 'tax', 'transactions', 'categories', 'rules']);
+const ALPHA_TABS = new Set(['overview', 'cashflow', 'planning', 'properties', 'tax', 'transactions', 'categories']);
 const alphaTag = (cls = 'alpha-tag') => `<em class="${cls}" title="${t('alpha_tip')}">${t('alpha')}</em>`;
 // appearance, per device: dark (the default), light, or like the system
 const themeGet = () => { try { return ['light', 'auto'].includes(localStorage.getItem('kontor.theme')) ? localStorage.getItem('kontor.theme') : 'dark'; } catch (e) { return 'dark'; } };
@@ -411,7 +411,7 @@ function showLogin() {
   $('#tid-instead').classList.toggle('hidden', !(tid && LOGIN.pw));
   $('#login-err').textContent = SESSION && SESSION.gesperrt_sekunden ? (t('gesperrt_fuer') + SESSION.gesperrt_sekunden + t('s_nach_fehlversuchen')) : '';
   if (!tidMode) setTimeout(() => { if (!$('#login').contains(document.activeElement)) $('#login-pw').focus(); }, 50);   // never move the cursor out of a field being filled
-  if (tidMode && !document.hidden) tryTouchId(true);     // Touch ID sofort anbieten, ohne Klick
+  if (tidMode) tryTouchId(true);     // Touch ID at once, without a click -- only while Kontor is the active window (see tryTouchId)
 }
 const LOGIN = {pw: false};      // true = Nutzer hat "Stattdessen Passwort eingeben" gewählt
 const TID = {pending: false, lastTry: 0};
@@ -419,6 +419,9 @@ async function tryTouchId(auto) {
   if (TID.pending || LOGIN.pw || !(SESSION && SESSION.touchid && !SESSION.einrichtung_noetig)) return;
   if (auto && TID.skipNext) { TID.skipNext = false; return; }           // nach bewusstem Sperren nicht sofort wieder fragen
   if (auto && Date.now() - TID.lastTry < 4000) return;
+  // only when you are in Kontor: a lock that happened in the background (or a window just becoming visible) does not put the
+  // system dialog in front of what you are doing -- it comes when you switch to Kontor (focus -> revalidate)
+  if (auto && (document.hidden || !document.hasFocus())) return;
   TID.pending = true; TID.lastTry = Date.now();
   $('#login-err').textContent = t('touch_id_bitte_am_mac');
   try { const r = await api('/api/touchid', {}); S.csrf = r.csrf; $('#login-err').textContent = ''; await enterApp(); }
@@ -3161,7 +3164,7 @@ function companyCard(b, g) {
   return `<div class="co-card" data-b="${esc(bid)}"><div class="co-head"><h3>${esc(b.name)}</h3>`
     + (has ? `<a class="pill neutral" href="#setup/areas">${t('anteil_0', pctText(b.anteil))}</a>` : `<a class="pill warn" href="#setup/areas">${t('anteil_fehlt')}</a>`) + hq('h_co_anteil') + `</div>`
     + `<div class="co-row"><div class="co-l">${t('co_beteiligung')}${hq('h_co_bet')}</div><div class="co-f${sug ? ' suggested' : ''}">${acctSel('c-bet', bet, betCandidate(bid), t('keine_2'))}${sug ? `<span class="pill info sug">${t('vorschlag')}</span>` : ''}<div class="pv small" data-pv="b"></div></div></div>`
-    + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}</div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="secondary small add-gk">${t('gegenkonto_hinzufuegen')}</button></div></div>`
+    + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}<span class="opt">${t('optional')}</span></div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="secondary small add-gk">${t('gegenkonto_hinzufuegen')}</button></div></div>`
     + `<details class="co-more"${extra ? ' open' : ''}><summary>${t('co_mehr')}</summary><div class="form">`
     + `<label>${t('co_takt')}${hq('h_co_takt')}</label><div><select class="c-takt"><option value="taeglich" ${g.takt !== 'monatlich' ? 'selected' : ''}>${t('takt_taeglich')}</option><option value="monatlich" ${g.takt === 'monatlich' ? 'selected' : ''}>${t('takt_monatlich')}</option></select><div class="small muted c-takt-tip">${taktTip(g.takt)}</div></div>`
     + `<label>${t('co_rueck')}${hq('h_co_rueck')}</label><div>${backField(g.rueckwirkend_ab)}<div class="small muted c-ab-state"></div></div>`

@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.27 (2026-11-10 13:51)
+- Touch ID: Der Dialog erscheint erst, wenn du zu Kontor wechselst – nicht mehr im Vordergrund, wenn Kontor im Hintergrund gesperrt wurde.
+- Gegenkonten als „optional“ gekennzeichnet; Hilfe erklärt, wofür sie gut sind und wann man sie nicht braucht.
+- „Buchungsregeln“ ohne Alpha-Kennzeichen.
+
 ## 3.12.26 (2026-11-10 13:44)
 - Auto-Buchungen: „Nicht gebucht“ sammelt Buchungen, die du nicht gebucht hast (✕), und solche, die nachträglich in MoneyMoney gelöscht wurden. „Neu buchen“ legt sie mit Datum, Betrag und Text wie zuvor an. Den Status „fehlt“ gibt es nicht mehr; „Von Kontor angelegt“ zeigt nur, was in MoneyMoney steht. Taucht eine gelöschte Buchung dort wieder auf, gilt sie wieder als angelegt.
 
