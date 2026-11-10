@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.12.35 (2026-11-10 17:21)
+- Gegenkonten: Von Hand gebuchte Paare zählen nur bei gleichem Tag und Betrag – der Spiegel ist exakt.
+
 ## 3.12.34 (2026-11-10 17:14)
 - Gegenkonten sind jetzt ein Spiegel: Jede Buchung im einen Konto kommt mit umgekehrtem Vorzeichen ins andere – in beide Richtungen, soweit beide Offline-Konten sind. Früher beidseitig von Hand gebuchte Paare werden erkannt. Fehlt das Original einer Gegenbuchung oder wurde es geändert, steht ein Hinweis unter „Auto-Buchungen“. Das Feld „Faktor“ entfällt.
 - Wertanpassungen der Beteiligung nennen die Rechnung: „Wertanpassung: 49 % × … (Wert …) = …“.

@@ -552,7 +552,6 @@ def _target_ok(ledger: Ledger, config: Optional[dict], res: RuleResult, rule: st
 
 
 MIRROR_TAG = "#mm-gk-"
-MIRROR_DAYS = 7             # bookings made on both sides by hand before: at most this many days apart count as a pair
 
 
 def mirror_key(a_uuid: str, b_uuid: str) -> str:
@@ -565,7 +564,7 @@ def plan_mirror(ledger: Ledger, res: RuleResult, rule: str, a, b, cfg: dict, con
     """Counter account as a mirror: every booking of one account comes into the other with the opposite sign (same day, its
     text, a mark naming the original: #mm-gk-<id>) -- into each side that is an offline account; a mirrored booking is never
     mirrored back. From "Rückwirkend ab" of the company (a day, or everything), otherwise the bookings made after the mirror
-    was set up. Bookings made on both sides by hand before (same amount, opposite sign, at most MIRROR_DAYS apart) are a pair.
+    was set up. Bookings made on both sides by hand before (same day, same amount, opposite sign) are a pair -- a mirror is exact.
     Kontor never changes or deletes: a mirrored booking whose original is gone or changed is a note to correct it there; one
     deleted itself goes to "Not booked" (created list)."""
     created, claimed = created or {}, claimed if claimed is not None else set()
@@ -612,18 +611,14 @@ def plan_mirror(ledger: Ledger, res: RuleResult, rule: str, a, b, cfg: dict, con
             if abs(m.amount + o.amount) >= 0.005 or m.booking_date != o.booking_date:
                 res.warnings.append(tr("s_s_spiegel_geaendert") % (x.name, m.booking_date.strftime("%d.%m.%Y"), fmt_eur(m.amount), src.name,
                                                                    o.booking_date.strftime("%d.%m.%Y"), fmt_eur(o.amount)))
-    # pairs booked by hand on both sides (no mark): the closest day first, each booking in one pair only
+    # pairs booked by hand on both sides (no mark): the same day, each booking in one pair only
     open_a = [t for t in originals[a.uuid] if t.id not in done_ids and counts(t)]
     free_b = [t for t in originals[b.uuid] if t.id not in done_ids]
     pairs = 0
     for t in sorted(open_a, key=lambda t: (t.booking_date, t.id)):
-        best = None
-        for u in free_b:
-            gap = abs((u.booking_date - t.booking_date).days)
-            if abs(u.amount + t.amount) < 0.005 and gap <= MIRROR_DAYS and (best is None or gap < best[0]):
-                best = (gap, u)
-        if best:
-            free_b.remove(best[1]); done_ids.update((t.id, best[1].id)); pairs += 1
+        u = next((u for u in free_b if u.booking_date == t.booking_date and abs(u.amount + t.amount) < 0.005), None)
+        if u is not None:
+            free_b.remove(u); done_ids.update((t.id, u.id)); pairs += 1
     booked = 0
     for x in (a, b):
         target = other[x.uuid]

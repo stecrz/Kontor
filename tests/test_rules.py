@@ -829,17 +829,19 @@ class MirrorTests(unittest.TestCase):
 
     def test_both_ways_pairs_and_never_back(self):
         txs = [F.tx("shs.kap.s", date(2026, 9, 1), -5000.0, "Ich", "Einlage"), F.tx("priv.bet.shs", date(2026, 10, 2), 1200.0, "Beta GbR", "Entnahme"),
-               F.tx("shs.kap.s", date(2026, 10, 1), 1000.0, "Ich", "Entnahme Okt"), F.tx("priv.bet.shs", date(2026, 10, 4), -1000.0, "Beta GbR", "von Hand")]
+               F.tx("shs.kap.s", date(2026, 10, 1), 1000.0, "Ich", "Entnahme Okt"), F.tx("priv.bet.shs", date(2026, 10, 1), -1000.0, "Beta GbR", "von Hand"),
+               F.tx("shs.kap.s", date(2026, 10, 20), 70.0, "Ich", "Gebühr"), F.tx("priv.bet.shs", date(2026, 10, 21), -70.0, "Beta GbR", "einen Tag später")]
         led = make_ledger({}, txs)
         res = plan_all(led, self.cfg(), self.today)
         got = sorted((p.account_uuid, p.booking_date, p.amount) for p in res.proposals)
-        self.assertEqual(got, sorted([(F.uid("shs.kap.s"), date(2026, 10, 2), -1200.0), (F.uid("priv.bet.shs"), date(2026, 9, 1), 5000.0)]))
+        self.assertEqual(got, sorted([(F.uid("shs.kap.s"), date(2026, 10, 2), -1200.0), (F.uid("priv.bet.shs"), date(2026, 9, 1), 5000.0),
+                                      (F.uid("priv.bet.shs"), date(2026, 10, 20), -70.0), (F.uid("shs.kap.s"), date(2026, 10, 21), 70.0)]))   # a day apart: no pair
         pv = res.preview[0]
-        self.assertEqual((pv["richtung"], pv["paare"], pv["offen"]), ("beide", 1, 2))
+        self.assertEqual((pv["richtung"], pv["paare"], pv["offen"]), ("beide", 1, 4))
         # written: nothing again, nothing mirrored back
         real = led.without_planned(keep=[p.key for p in res.proposals])
         again = plan_all(real.fork(), self.cfg(), self.today)
-        self.assertEqual(again.proposals, []); self.assertEqual(again.warnings, []); self.assertEqual(again.preview[0]["gespiegelt"], 3)
+        self.assertEqual(again.proposals, []); self.assertEqual(again.warnings, []); self.assertEqual(again.preview[0]["gespiegelt"], 5)
 
     def test_from_now_on_and_bank_account_one_way(self):
         old = F.tx("shs.kk", date(2026, 10, 1), -300.0, "Ich", "alt")
