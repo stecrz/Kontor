@@ -222,6 +222,11 @@ details.rule .r-pv { white-space:nowrap; }
   .gk-row { grid-template-columns:minmax(0, 1fr) auto; } .gk-row .gk-arrow { grid-column:1; justify-self:start; transform:rotate(90deg); }
   .gk-row .g-quelle { grid-column:1; } .gk-row .gk-del { grid-column:2; grid-row:1; }
 }
+/* approval: leave out (unticked rows fade), change inline (pencil), reject (cross) */
+.bk-table tr.off td:not(:first-child) { opacity:.45; }
+.bk-table .e { display:none; } .bk-table tr.editing .e { display:inline-block; } .bk-table tr.editing .v { display:none; }
+.bk-table .bk-b { width:120px; text-align:right; } .bk-table .bk-z { min-width:260px; width:100%; } .bk-table .bk-d { width:140px; }
+.bk-table button.icon { font-size:13px; color:var(--muted); padding:3px 6px; } .bk-table button.icon:hover { color:var(--fg); } .bk-table .bk-rej:hover { color:var(--neg); }
 .savebar { position:sticky; bottom:0; z-index:4; display:flex; align-items:center; gap:12px; padding:12px 0; margin-top:6px; background:var(--bg); border-top:1px solid var(--line); }
 .savebar .sp { flex:1; }
 .switch.off { opacity:.5; cursor:default; }

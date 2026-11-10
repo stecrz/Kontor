@@ -62,6 +62,34 @@ PLAN_PARAMS = ("horizont_monate", "standard_methode", "inflation_prozent_pa", "s
 
 
 
+def approval(raw) -> Tuple[Optional[Dict[str, dict]], Optional[str]]:
+    """"Book selected": {mark: {betrag, datum, zweck}} checked -- marks of Kontor, amount not zero, a real date, a short text."""
+    if not isinstance(raw, dict) or len(raw) > 2000:
+        return None, tr("s_freigabe_ungueltig")
+    out: Dict[str, dict] = {}
+    for tag, ch in raw.items():
+        if not isinstance(tag, str) or not TAG_RE.fullmatch(tag):
+            return None, tr("s_markierung_ungueltig")
+        ch = ch if isinstance(ch, dict) else {}
+        c: dict = {}
+        try:
+            if ch.get("betrag") not in (None, ""):
+                c["betrag"] = round(float(str(ch["betrag"]).replace(",", ".")), 2)
+                if abs(c["betrag"]) < 0.01 or abs(c["betrag"]) > 1e9:
+                    raise ValueError
+            if ch.get("datum"):
+                d = date.fromisoformat(str(ch["datum"]))
+                if not date(1990, 1, 1) <= d <= date.today() + timedelta(days=366):
+                    raise ValueError
+                c["datum"] = d.isoformat()
+        except ValueError:
+            return None, tr("s_aenderung_ungueltig")
+        if ch.get("zweck") is not None:
+            c["zweck"] = str(ch["zweck"])[:300]
+        out[tag] = c
+    return out, None
+
+
 def kontor_bookings(ledger, record: Optional[List[dict]] = None) -> List[dict]:
     """The bookings Kontor has made in MoneyMoney -- from its own list (record) and its marks (#mm-...) in the purpose -- with
     their state in MoneyMoney now: present ("ok"), mark changed but account, date and amount found ("markierung"), missing
@@ -72,7 +100,7 @@ def kontor_bookings(ledger, record: Optional[List[dict]] = None) -> List[dict]:
     kinds = {"tx": "tilgung", "zins": "zins", "wert": "wert", "spiegel": "spiegel"}
     by_tag: Dict[str, Tx] = {}
     for t in ledger.txs:
-        m = TAG_RE.search(t.purpose or "")
+        m = TAG_RE.search(t.purpose or "") if t.id > 0 else None        # only what is in MoneyMoney, not what a run planned
         if m:
             by_tag.setdefault(m.group(0), t)
 
@@ -622,7 +650,8 @@ class App:
         finally:
             self.lesen["laeuft"] = False
 
-    def do_run(self, dry: Optional[bool], force: bool, with_report: bool = True, full: Optional[bool] = None) -> dict:
+    def do_run(self, dry: Optional[bool], force: bool, with_report: bool = True, full: Optional[bool] = None,
+               approve: Optional[Dict[str, dict]] = None) -> dict:
         with self.lock:
             if self.running:
                 return {"status": "laeuft_bereits", "text": tr("s_ein_abgleich_laeuft_bereits")}
@@ -633,10 +662,13 @@ class App:
             t0 = time.time()
             log.info("Run started (%s%s%s)", "dry run" if d else "live", ", forced" if force else "", ", without report" if not with_report else "")
             full = self.full_read_due() if full is None else full
-            res = run_once(self.store, self.config, date.today(), d, force, self.bridge_factory, with_report, base=self.ledger, full=full)
+            res = run_once(self.store, self.config, date.today(), d, force, self.bridge_factory, with_report, base=self.ledger, full=full,
+                           approve=approve)
             log.info("Run finished: %s (%.1f s)", res.get("text") or res.get("status"), time.time() - t0)
             self.last_run_at = time.time()
             ledger = res.pop("_ledger", None)
+            if ledger is not None:                        # the state in MoneyMoney (the report shows the planned bookings)
+                ledger = ledger.without_planned(res.pop("_gebucht", None) or ())
             cats = res.pop("_kategorien", None)
             ums = res.pop("_umsaetze", None)
             if ums is not None:
@@ -1373,7 +1405,8 @@ def make_handler(app: App):
             if path == "/api/runs":
                 st = app.store.load("state.json", {}) or {}
                 return self._json(200, {"letzter_lauf": st.get("letzter_lauf"), "verlauf": list(reversed(st.get("verlauf", []))),
-                                        "angelegt": kontor_bookings(app.ledger, st.get("kontor_buchungen")), "lokal": self._is_local(s)})
+                                        "angelegt": kontor_bookings(app.ledger, st.get("kontor_buchungen")), "abgelehnt": st.get("kontor_abgelehnt") or [],
+                                        "lokal": self._is_local(s)})
             if path == "/api/log":
                 n = min(2000, int(q.get("n", "300")))
                 try:
@@ -1808,6 +1841,27 @@ def make_handler(app: App):
                     ab["online" if want else "offline"].append("%s | %s" % (acc.uuid, acc.name))
                 app.save_config(cfg)
                 return self._json(200, {"ok": True, "abruf": app.abruf()})
+            if path == "/api/bookings/reject":
+                # a proposed booking you do not want: never proposed again (wieder=True: proposed again at the next check)
+                tag = str(body.get("tag") or "")
+                if not TAG_RE.fullmatch(tag):
+                    return self._json(400, {"fehler": tr("s_markierung_ungueltig")})
+
+                def upd(cur: dict) -> None:
+                    rej = [r for r in cur.get("kontor_abgelehnt") or [] if r.get("tag") != tag]
+                    lr = cur.get("letzter_lauf") or {}
+                    if not body.get("wieder"):
+                        v = next((x for x in lr.get("vorschlaege") or [] if x.get("tag") == tag), {})
+                        rej.append({"tag": tag, "konto_name": v.get("konto_name") or v.get("konto") or "", "datum": v.get("datum") or "",
+                                    "betrag": v.get("betrag"), "art": v.get("art") or "", "regel": v.get("regel") or "",
+                                    "abgelehnt": datetime.now().strftime("%Y-%m-%d %H:%M")})
+                        if lr.get("vorschlaege"):
+                            lr["vorschlaege"] = [x for x in lr["vorschlaege"] if x.get("tag") != tag]
+                            lr["probelauf"] = bool(lr["vorschlaege"]) and lr.get("probelauf", False)
+                    cur["kontor_abgelehnt"] = rej[-500:]
+                app.store.update("state.json", upd, {})
+                log.info("Proposed booking %s", "allowed again" if body.get("wieder") else "rejected")
+                return self._json(200, {"ok": True})
             if path == "/api/bookings/allow":
                 # a booking Kontor made and that is missing in MoneyMoney: allowed to be made again at the next sync (only at the Mac)
                 if not local:
@@ -1825,7 +1879,12 @@ def make_handler(app: App):
                 if app.running:
                     return self._json(409, {"fehler": tr("s_ein_abgleich_laeuft_bereits")})
                 full = True if body.get("voll") else None          # „Alles neu lesen“; sonst schnell, solange kein vollstaendiges Lesen faellig ist
-                threading.Thread(target=app.do_run, args=(dry, bool(body.get("force", True))), kwargs={"full": full}, daemon=True).start()
+                approve = None
+                if dry is False and body.get("freigabe") is not None:      # "Book selected": only these, with your changes
+                    approve, err = approval(body.get("freigabe"))
+                    if err:
+                        return self._json(400, {"fehler": err})
+                threading.Thread(target=app.do_run, args=(dry, bool(body.get("force", True))), kwargs={"full": full, "approve": approve}, daemon=True).start()
                 return self._json(202, {"gestartet": True})
             if path == "/api/report":
                 ledger, err = app.refresh_ledger()

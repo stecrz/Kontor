@@ -374,6 +374,25 @@ class Ledger:
         a = self.accounts.get(uuid)
         return a is not None and not a.group and not a.portfolio and self.fetch_kind(uuid, config)[0] == "offline"
 
+    def without_planned(self, keep: Iterable[str] = ()) -> "Ledger":
+        """The state in MoneyMoney: without the bookings planned in a run (ledger.post) and their effect on the balances --
+        except those written to MoneyMoney in that run (keep: their marks)."""
+        keep = set(keep)
+        planned = [t for t in self.txs if t.id <= 0 and not (keep and (TAG_RE.search(t.purpose or "") or [None])[0] in keep)]
+        if not planned:
+            return self
+        accs = {u: dataclasses.replace(a) for u, a in self.accounts.items()}
+        for t in planned:
+            if t.account_uuid in accs:
+                accs[t.account_uuid].balance = round(accs[t.account_uuid].balance - t.amount, 2)
+        drop = {id(t) for t in planned}
+        out = Ledger(accs, [t for t in self.txs if id(t) not in drop])
+        out._next_virtual_id = min([t.id for t in out.txs if t.id <= 0], default=0) - 1
+        for k, v in self.__dict__.items():          # read times, period, portfolios, hints ... (no caches: "_...")
+            if k not in ("accounts", "txs") and not k.startswith("_"):
+                setattr(out, k, v)
+        return out
+
     def fork(self) -> "Ledger":
         """A copy for planning: own account balances and booking lists, the same (unchanged) transactions."""
         out = Ledger({u: dataclasses.replace(a) for u, a in self.accounts.items()}, self.txs)

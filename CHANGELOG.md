@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.22 (2026-11-10 01:13)
+- Auto-Buchungen: Freigabe einzeln – Häkchen entfernen nimmt eine Buchung aus (sie wartet weiter), der Stift ändert Datum, Betrag oder Text (die Markierung bleibt), ✕ lehnt sie ab. Abgelehnte schlägt Kontor nicht wieder vor („Abgelehnt“ → „Wieder vorschlagen“).
+- „Von Kontor angelegt“ zeigt nur noch, was wirklich in MoneyMoney steht – nicht schon die wartenden Vorschläge. Auch die Vorschau in den Buchungsregeln rechnet mit dem Stand in MoneyMoney.
+- „Nur Bericht aktualisieren“ entfällt: „Jetzt prüfen“ aktualisiert die Auswertungen ohnehin (und bucht nichts).
+
 ## 3.12.21 (2026-11-10 00:05)
 - Buchungsregeln: Als Beteiligung wählbar sind nur Offline-Konten mit der Position „Beteiligungen“. Passt genau eines dem Namen nach zur Gesellschaft, ist es vorausgewählt (übernommen mit „Speichern und prüfen“). Warnung, wenn ein gespeichertes Beteiligungskonto eine andere Position hat.
 - Synchronisierung: „Online-Konten“ und „Offline-Konten“; je Konto „Art“ als Auswahl (Online/Offline) statt des Häkchens „abgerufen“. Erkannte Offline-Konten heißen einheitlich „Offline-Konto“, eigene Festlegungen „von dir festgelegt“.

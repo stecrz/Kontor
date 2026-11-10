@@ -155,7 +155,9 @@ DEFAULT_TEXTS = {
 
 
 def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str, dict]] = None, claimed: Optional[set] = None,
-              config: Optional[dict] = None) -> RuleResult:
+              config: Optional[dict] = None, skip: Optional[set] = None) -> RuleResult:
+    """skip: marks of bookings you rejected under Auto bookings -- never proposed again."""
+    skip = skip or set()
     res = RuleResult()
     claimed = claimed if claimed is not None else set()
     name = cfg.get("name") or cfg.get("darlehenskonto")
@@ -193,7 +195,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str
                 continue
             matched.append(t)
             tag = "#mm-tx-%d" % t.id
-            if tag in existing or _created_check(ledger, created or {}, tag, res, claimed):
+            if tag in existing or tag in skip or _created_check(ledger, created or {}, tag, res, claimed):
                 continue
             amount = round(-t.amount, 2)
             purpose = _fill(texts["tilgung_text"], art=payment_kind(t), datum=t.booking_date.strftime("%d.%m.%Y"),
@@ -269,7 +271,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str
         if bday > today or bday < ab:
             continue
         tag = "#mm-zins-%04d-%02d" % (y, m)
-        if tag in existing or _created_check(ledger, created or {}, tag, res, claimed):
+        if tag in existing or tag in skip or _created_check(ledger, created or {}, tag, res, claimed):
             continue
         # Schutz: manuell gebuchte Zinsen im selben Monat
         manual = [t for t in loan_txs if (t.booking_date.year, t.booking_date.month) == (y, m)
@@ -350,7 +352,7 @@ def past_balances(ledger: Ledger, accs, day: date, config: Optional[dict] = None
 
 
 def _keep_value(ledger: Ledger, res: RuleResult, rule: str, kind: str, target, value_at, cfg: dict, today: date,
-                payee: str, purpose, preview: dict) -> None:
+                payee: str, purpose, preview: dict, skip: Optional[set] = None) -> None:
     """Keep the manual account `target` at value_at(day) -> (value, source value, unknown accounts): one booking at each month
     end from cfg["rueckwirkend_ab"] up to last month, then one today -- always only the difference to its balance in
     MoneyMoney, so a booking that is already there is never made twice. Unknown months are skipped."""
@@ -376,6 +378,8 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, kind: str, target, v
             continue
         prefix = "#mm-%s-%s-" % (kind, day.strftime("%Y%m%d"))
         tag = prefix + str(1 + sum(1 for t in ledger.transactions(target.uuid) if prefix in t.purpose))
+        if tag in (skip or ()):          # rejected by you under Auto bookings
+            continue
         p = Proposal(rule, kind, target.uuid, target.path, day, diff, payee, purpose(src_value, tag), cfg.get("kategorie") or "", tag)
         res.proposals.append(p)
         ledger.post(target.uuid, day, diff, payee, p.purpose, p.category)
@@ -397,7 +401,7 @@ def _target_ok(ledger: Ledger, config: Optional[dict], res: RuleResult, rule: st
 
 
 def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Optional[Dict[str, str]] = None,
-                 config: Optional[dict] = None) -> RuleResult:
+                 config: Optional[dict] = None, skip: Optional[set] = None) -> RuleResult:
     """One company (an area of the kind "Gesellschaft"): the participation account follows share x value of the company
     (its accounts without the partners' equity), each counter account follows factor x one account of the company."""
     res = RuleResult()
@@ -428,7 +432,7 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
                 return round(share * v, 2), v, unknown
             pct = ("%.4f" % (share * 100)).rstrip("0").rstrip(".").replace(".", ",")
             _keep_value(ledger, res, rule, "wert", target, value_at, cfg, today, payee,
-                        lambda v, tag: _fill(DEFAULT_TEXTS["wert_text"], anteil=pct, quelle=name, wert=fmt_eur(v), tag=tag), pv)
+                        lambda v, tag: _fill(DEFAULT_TEXTS["wert_text"], anteil=pct, quelle=name, wert=fmt_eur(v), tag=tag), pv, skip)
             res.preview.append(pv)
     for i, g in enumerate(cfg.get("gegenkonten") or []):
         if not isinstance(g, dict) or not g.get("konto") or not g.get("quelle"):
@@ -451,7 +455,7 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
             v, unknown = (round(src.balance, 2), []) if d is None else past_balances(ledger, [src], d, config)
             return round(f * v, 2), v, unknown
         _keep_value(ledger, res, rule, "spiegel", target, value_at, cfg, today, payee,
-                    lambda v, tag, src=src: _fill(DEFAULT_TEXTS["spiegel_text"], quelle=src.name, wert=fmt_eur(v), tag=tag), pv)
+                    lambda v, tag, src=src: _fill(DEFAULT_TEXTS["spiegel_text"], quelle=src.name, wert=fmt_eur(v), tag=tag), pv, skip)
         res.preview.append(pv)
     return res
 
@@ -460,9 +464,10 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
 # Alle Regeln eines Konfigurationsstands
 # ---------------------------------------------------------------------------
 
-def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[str, dict]] = None) -> RuleResult:
+def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[str, dict]] = None,
+             skip: Optional[set] = None) -> RuleResult:
     """created: Kontor's own list of the bookings it made (tag -> record), see _created_check. Values (participations, counter
-    accounts) need none: they always book the difference to the balance in MoneyMoney."""
+    accounts) need none: they always book the difference to the balance in MoneyMoney. skip: marks you rejected."""
     total = RuleResult()
     claimed: set = set()
 
@@ -472,7 +477,7 @@ def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[s
     # Reihenfolge: erst Darlehen (veraendern die Werte der Gesellschaften), dann Beteiligungen und Gegenkonten
     for i, cfg in enumerate(config.get("darlehen", []) or []):
         if cfg.get("aktiv", True):
-            r = plan_loan(ledger, cfg, today, created, claimed, config)
+            r = plan_loan(ledger, cfg, today, created, claimed, config, skip)
             r.preview.append({"art": "darlehen", "i": i, "buchungen": len(r.proposals), "fehlend": len(r.missing)})
             add(r)
     if config.get("gesellschaften"):
@@ -487,5 +492,5 @@ def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[s
             if area is None:
                 total.warnings.append(tr("s_gesellschaft_s_bereich_fehlt") % cfg.get("bereich"))
                 continue
-            add(plan_company(ledger, cfg, area, today, roles, config))
+            add(plan_company(ledger, cfg, area, today, roles, config, skip))
     return total

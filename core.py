@@ -575,6 +575,25 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
 # Lauf
 # ---------------------------------------------------------------------------
 
+def _edit(p: Proposal, ch: dict, ledger: Ledger) -> None:
+    """Your changes to a booking before approving it: amount, date, purpose (its mark stays, so it is never made twice) --
+    also in the booking the run planned, so the state after writing matches MoneyMoney."""
+    old = p.amount
+    if ch.get("betrag") is not None:
+        p.amount = round(float(ch["betrag"]), 2)
+    if ch.get("datum"):
+        p.booking_date = date.fromisoformat(str(ch["datum"]))
+    if ch.get("zweck") is not None:
+        text = rules.TAG_RE.sub("", str(ch["zweck"])).strip(" ·")
+        p.purpose = ("%s · %s" % (text, p.tag)) if text else p.tag
+    vt = next((t for t in ledger.txs if t.id <= 0 and t.account_uuid == p.account_uuid and p.tag in (t.purpose or "")), None)
+    if vt is not None:
+        vt.amount, vt.booking_date, vt.value_date, vt.purpose = p.amount, p.booking_date, p.booking_date, p.purpose
+        ledger.accounts[p.account_uuid].balance = round(ledger.accounts[p.account_uuid].balance + p.amount - old, 2)
+        ledger.transactions(p.account_uuid, booked_only=False)
+        ledger._by_account[p.account_uuid].sort(key=lambda x: (x.booking_date, x.id))
+
+
 def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal], made: Optional[List[Proposal]] = None,
                     config: Optional[dict] = None) -> int:
     """Writes the proposals; the bookings written (not the comments on source payments) go into made. Only into manually
@@ -1032,7 +1051,10 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
 
 def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
              bridge_factory: Callable[[bool], Bridge] = Bridge, with_report: bool = True,
-             categories: Optional[List[dict]] = None, base: Optional[Ledger] = None, full: bool = True) -> dict:
+             categories: Optional[List[dict]] = None, base: Optional[Ledger] = None, full: bool = True,
+             approve: Optional[Dict[str, dict]] = None) -> dict:
+    """approve (a live run from "Book selected" under Auto bookings): mark -> changes (amount, date, purpose) of the bookings
+    you approved; only these are written, the others keep waiting. None: all. Marks you rejected are never proposed."""
     if not RUN_LOCK.acquire(blocking=False):
         return {"status": "laeuft_bereits", "text": tr("s_ein_abgleich_laeuft_bereits")}
     try:
@@ -1061,7 +1083,8 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                     "_kategorien": categories}
 
         created = {r["tag"]: r for r in state.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")}
-        result = plan_all(ledger, config, today, created)
+        rejected = {r["tag"] for r in state.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("tag")}
+        result = plan_all(ledger, config, today, created, rejected)
         result.warnings.extend(ledger.hints)
         # the log (plain text) holds no amounts, payees, purposes or account names: the details are in the encrypted state and
         # shown in the interface; here only how many
@@ -1072,18 +1095,29 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
 
         written, err = 0, None
         made: List[Proposal] = []
-        if result.proposals and not dry:
+        chosen, rest = list(result.proposals), []
+        expect = {u: ledger.accounts[u].balance for u in {x.account_uuid for x in bookings}}      # balances after writing
+        if not dry and approve is not None:
+            chosen = [p for p in result.proposals if p.tag in approve]
+            rest = [p for p in bookings if p.tag not in approve]
+            for p in rest:
+                expect[p.account_uuid] = round(expect[p.account_uuid] - p.amount, 2)
+            for p in chosen:
+                if p.kind != "quelle" and approve.get(p.tag):
+                    _edit(p, approve[p.tag], ledger)
+            # after writing: the planned state without what keeps waiting
+            expect = {u: round(ledger.accounts[u].balance - sum(x.amount for x in rest if x.account_uuid == u), 2) for u in expect}
+        if chosen and not dry:
             try:
-                written = apply_proposals(bridge, ledger, result.proposals, made, config)
+                written = apply_proposals(bridge, ledger, chosen, made, config)
             except MoneyMoneyError as e:
                 err = e
                 log.error("Writing aborted after %d booking(s): %s", written, e)
             try:
                 after = accounts_from_export(bridge.export_accounts())
-                for u in {x.account_uuid for x in bookings}:
-                    if u in after and abs(after[u].balance - ledger.accounts[u].balance) > 0.01:
-                        msg = tr("s_saldo_s_nach_buchung_s") % (ledger.accounts[u].name, fmt_eur(after[u].balance),
-                                                                      fmt_eur(ledger.accounts[u].balance))
+                for u in {x.account_uuid for x in chosen if x.kind != "quelle"}:
+                    if u in after and abs(after[u].balance - expect[u]) > 0.01:
+                        msg = tr("s_saldo_s_nach_buchung_s") % (ledger.accounts[u].name, fmt_eur(after[u].balance), fmt_eur(expect[u]))
                         log.warning("Balance check after booking failed for account %s", u[:8]); result.warnings.append(msg)
             except MoneyMoneyError as e:
                 log.warning("Verification after writing not possible: %s", e)
@@ -1099,9 +1133,12 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             ums = build_report(store, ledger, config, state, today, warnings, categories).pop("_umsaetze", None)
             state["kategorien_roh"] = categories or []
 
-        summary = {"status": "fehler" if err else "ok", "zeit": datetime.now().strftime("%Y-%m-%d %H:%M"), "probelauf": dry,
-                   "vorschlaege": [{"art": x.kind, "konto": x.account_path, "datum": x.booking_date.isoformat(),
-                                    "betrag": x.amount, "text": x.purpose, "kategorie": x.category} for x in bookings],
+        # waiting for approval: everything of a dry run, or what was not chosen when booking a selection
+        shown = bookings if dry or not rest else rest
+        summary = {"status": "fehler" if err else "ok", "zeit": datetime.now().strftime("%Y-%m-%d %H:%M"), "probelauf": dry or bool(rest),
+                   "vorschlaege": [{"art": x.kind, "konto": x.account_path, "konto_name": ledger.accounts[x.account_uuid].name if x.account_uuid in ledger.accounts else "",
+                                    "datum": x.booking_date.isoformat(), "betrag": x.amount, "text": x.purpose, "kategorie": x.category,
+                                    "tag": x.tag, "regel": x.rule} for x in shown],
                    "quellaenderungen": len(result.proposals) - len(bookings),
                    "geschrieben": written, "warnungen": result.warnings, "hinweise": result.info,
                    "fehlend": result.missing, "fehler": str(err) if err else None}
@@ -1135,7 +1172,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 notify(tr("s_kontor_probelauf"), tr("s_d_buchung_en_warten_auf") % len(bookings))
             elif result.warnings and not dry:
                 notify("Kontor: Hinweis", result.warnings[0])
-        return dict(summary, _ledger=ledger, _kategorien=categories, _umsaetze=ums)
+        return dict(summary, _ledger=ledger, _kategorien=categories, _umsaetze=ums, _gebucht=[p.tag for p in made])
     finally:
         RUN_LOCK.release()
 

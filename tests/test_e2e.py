@@ -191,6 +191,33 @@ class CoreTests(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
 
+    def test_approve_selection_change_and_reject(self):
+        """With approval: book only the chosen bookings, one changed (amount, date, text; its mark stays); the others keep
+        waiting; a rejected one is never proposed again; planned bookings are not in "created by Kontor"."""
+        import service as MA
+        cfg = core.merged_config(self.store.load("config.json")); cfg["probelauf"] = True
+        res = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        props = res["vorschlaege"]; self.assertEqual(len(props), 24); self.assertTrue(all(p["tag"].startswith("#mm-") for p in props))
+        self.assertEqual(MA.kontor_bookings(res["_ledger"]), [])                 # planned, not made: nothing "created by Kontor"
+        self.assertEqual(res["_ledger"].without_planned().accounts[F.uid("pb.vd")].balance, -1600000.0)
+        zins = [p for p in props if p["art"] == "zins"]; tilg = [p for p in props if p["art"] == "tilgung"]
+        st = self.store.load("state.json"); st["kontor_abgelehnt"] = [{"tag": zins[0]["tag"]}]; self.store.save("state.json", st)
+        approve, err = MA.approval({tilg[0]["tag"]: {}, zins[1]["tag"]: {"betrag": "-1234,56", "zweck": "Zinsen laut Abrechnung", "datum": "2026-10-15"}})
+        self.assertIsNone(err)
+        r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve=approve)
+        self.assertEqual(r["status"], "ok", r); self.assertEqual(r["geschrieben"], 3)        # 2 bookings + the comment on the source payment
+        self.assertFalse([w for w in r["warnungen"] if "nach Buchung" in w], r["warnungen"])
+        self.assertTrue(r["probelauf"]); self.assertEqual(len(r["vorschlaege"]), 21)          # 24 - 1 rejected - 2 booked: still waiting
+        self.assertNotIn(zins[0]["tag"], [p["tag"] for p in r["vorschlaege"]])
+        made = [t for t in MockBridge.state["txs"] if zins[1]["tag"] in (t.get("purpose") or "")]
+        self.assertEqual(len(made), 1); self.assertEqual(made[0]["amount"], -1234.56)
+        self.assertEqual(made[0]["purpose"], "Zinsen laut Abrechnung · " + zins[1]["tag"])
+        self.assertEqual(made[0]["bookingDate"], F._dt(date(2026, 10, 15)))
+        self.assertEqual(len(self.store.load("state.json")["kontor_buchungen"]), 2)
+        # invalid changes and marks are refused
+        self.assertIsNotNone(MA.approval({zins[2]["tag"]: {"betrag": "0"}})[1]); self.assertIsNotNone(MA.approval({"rm -rf": {}})[1])
+        self.assertIsNotNone(MA.approval({zins[2]["tag"]: {"datum": "2026-13-01"}})[1])
+
     def test_run_twice_then_dataset(self):
         cfg = core.merged_config(self.store.load("config.json"))
         res = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
