@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.12.24 (2026-11-10 01:53)
+- Freigabe: Auswahl einzelner Buchungen klappt jetzt auch bei zwei Gesellschaften (gleiche Markierung in verschiedenen Konten wurde verwechselt); der Kommentar an der Quellzahlung geht mit seiner Tilgung. Dieselbe Verwechslung hätte bei zwei Darlehen Zinsen übersprungen – behoben.
+- Beteiligungen und Gegenkonten: „Buchen“ täglich (Standard, MoneyMoney zeigt den aktuellen Stand) oder monatlich; Empfehlung je nach Freigabe. „Rückwirkend ab“ spielt die Vergangenheit einmalig ein (täglich je Tag mit Änderung) und prüft danach nur noch den aktuellen Stand; „Erneut prüfen“ kontrolliert den ganzen Verlauf noch einmal.
+- Schneller: Nach eigenen Buchungen kein vollständiges Lesen mehr (Kontor behält sie bis zum nächsten), nach der Freigabe sofort aktuell (Auswertung im Hintergrund), Wertberechnung über viele Tage deutlich schneller. Das Protokoll zeigt die Zeiten je Schritt.
+- Keine macOS-Mitteilungen mehr – die Seitenleiste zeigt, was zu tun ist.
+
 ## 3.12.23 (2026-11-10 01:23)
 - Seitenleiste zeigt, wo etwas zu tun ist: Zahl an „Auto-Buchungen“ für wartende Buchungen („!“ nach einem Fehler), roter Punkt an „Updates“ für eine neue Version; bei schmalem Fenster ein Punkt am Menüknopf, in der Web-App im Dock die Zahl am Symbol. Der Datenstand unten links zeigt das nicht mehr doppelt.
 - „Jetzt prüfen“ entfällt: Jeder Abgleich („Sync“) prüft die Buchungsregeln – jetzt auch, wenn sich nur die Regeln, deine Entscheidungen (abgelehnt, wieder anlegen) oder der Tag geändert haben.

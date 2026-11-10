@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import time
 import logging
 import os
 import platform
@@ -15,7 +16,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyNotRunning, notify
+from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyNotRunning
 from model import Account, Ledger, Tx, accounts_from_export, add_months, fmt_eur, month_key, tx_from_export, norm_cat
 import mm_categories
 import realestate
@@ -33,7 +34,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "probelauf": True,
-    "mitteilungen": True,
     "zeitplan": {"intervall_minuten": 30, "automatisch": True, "voll_lesen_tage": 7},
     "darlehen": [], "gesellschaften": [],
     "bereiche": [],
@@ -70,6 +70,7 @@ def merged_config(cfg: Optional[dict]) -> dict:
         if k not in out:
             out[k] = v
     out["zeitplan"].pop("voll_lesen_stunden", None)       # replaced by voll_lesen_tage (3.9.30)
+    out.pop("mitteilungen", None)                         # no macOS notifications any more: the sidebar shows what is to do (3.12.24)
     for k in ("beteiligungen", "saldo_spiegel"):          # replaced by gesellschaften (3.12.18)
         out.pop(k, None)
     out["kapitalfluss"].pop("beteiligungs_gruppen", None)
@@ -140,16 +141,14 @@ def unexplained_balances(base: Ledger, accounts: Dict[str, Account], fresh: List
         booked: Dict[str, float] = {}
         total: Dict[str, float] = {}
         for t in txs:
-            if t.id <= 0 or t.booking_date < cut:
+            if t.booking_date < cut:
                 continue
             total[t.account_uuid] = total.get(t.account_uuid, 0.0) + t.amount
             if t.booked:
                 booked[t.account_uuid] = booked.get(t.account_uuid, 0.0) + t.amount
         return booked, total
-    virtual: Dict[str, float] = {}                       # dry-run bookings changed the balances of the last ledger
-    for t in base.txs:
-        if t.id <= 0:
-            virtual[t.account_uuid] = virtual.get(t.account_uuid, 0.0) + t.amount
+    # base holds no planned bookings (Ledger.without_planned), only Kontor's written ones (id <= 0) until the next full read:
+    # they are in MoneyMoney's balance as well, so they count like any other transaction
     ob, oa = sums(base.txs)
     nb, na = sums(fresh)
     out = []
@@ -157,20 +156,29 @@ def unexplained_balances(base: Ledger, accounts: Dict[str, Account], fresh: List
         old = base.accounts.get(uuid)
         if acc.group or acc.portfolio or old is None or old.portfolio or old.currency != acc.currency:
             continue
-        d = acc.balance - (old.balance - virtual.get(uuid, 0.0))
+        d = acc.balance - old.balance
         if abs(d - (nb.get(uuid, 0.0) - ob.get(uuid, 0.0))) < 0.005 or abs(d - (na.get(uuid, 0.0) - oa.get(uuid, 0.0))) < 0.005:
             continue
         out.append(uuid)
     return out
 
 
-def _base_txs(base: Ledger, accounts: Dict[str, Account], fresh_ids: set, cut: date) -> List[Tx]:
+def _base_txs(base: Ledger, accounts: Dict[str, Account], fresh_ids: set, cut: date, fresh_txs: List[Tx] = ()) -> List[Tx]:
     """Aeltere Umsaetze aus dem letzten Stand (nur echte aus MoneyMoney, Kategorie im Original). Was an oder nach `cut`
     gebucht oder wertgestellt ist, kommt nur aus dem frischen Lesen -- so verschwinden dort geloeschte Umsaetze
     (z. B. vorgemerkte, die MoneyMoney durch die gebuchten ersetzt)."""
     out = []
+    fresh_marks = None
     for t in base.txs:
-        if t.id <= 0 or t.id in fresh_ids or t.account_uuid not in accounts:
+        if t.id in fresh_ids or t.account_uuid not in accounts:
+            continue
+        if t.id <= 0:                 # written by Kontor, real one not read yet: keep it unless the quick read brought it
+            if fresh_marks is None:
+                fresh_marks = {(x.account_uuid, m) for x in fresh_txs for m in rules.TAG_RE.findall(x.purpose or "")}
+            m = rules.TAG_RE.search(t.purpose or "")
+            if not m or (t.account_uuid, m.group(0)) in fresh_marks or t.booking_date >= cut:
+                continue
+            out.append(t)
             continue
         if t.booking_date >= cut or (t.value_date is not None and t.value_date >= cut):
             continue
@@ -216,7 +224,7 @@ def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = Fals
             log.info("Quick read does not explain the balance of %d account(s); last full read %s, next one later",
                      len(bad), base.full_at.strftime("%Y-%m-%d %H:%M"))
     if inc:
-        txs = _base_txs(base, accounts, {t.id for t in txs}, inc) + txs
+        txs = _base_txs(base, accounts, {t.id for t in txs}, inc, txs) + txs
         txs.sort(key=lambda t: (t.booking_date, t.id))
     ledger = Ledger(accounts, txs)
     ledger.since = since
@@ -496,6 +504,8 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
             add("warnung", tr("s_gesellschaft_s_bereich_fehlt") % g.get("bereich"))
             continue
         n, inside = b["name"], {a.uuid for a in b["leaves"]}
+        if g.get("takt") not in (None, "", "taeglich", "monatlich"):
+            add("fehler", tr("s_s_takt_unbekannt") % (n, g.get("takt")))
         if g.get("rueckwirkend_ab") and (parse_month(g["rueckwirkend_ab"]) is None or str(g["rueckwirkend_ab"])[:7] > date.today().isoformat()[:7]):
             add("fehler", tr("s_s_rueckwirkend_ungueltig") % (n, g["rueckwirkend_ab"]))
         targets = []
@@ -1052,14 +1062,16 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
 def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
              bridge_factory: Callable[[bool], Bridge] = Bridge, with_report: bool = True,
              categories: Optional[List[dict]] = None, base: Optional[Ledger] = None, full: bool = True,
-             approve: Optional[Dict[str, dict]] = None) -> dict:
-    """approve (a live run from "Book selected" under Auto bookings): mark -> changes (amount, date, purpose) of the bookings
-    you approved; only these are written, the others keep waiting. None: all. Marks you rejected are never proposed."""
+             approve: Optional[Dict[str, dict]] = None, report: bool = True) -> dict:
+    """approve (a live run from "Approve" under Auto bookings): account|mark -> changes (amount, date, purpose) of the
+    bookings you approved; only these are written, the others keep waiting. None: all. Marks you rejected are never proposed.
+    report=False: no report here (the service builds it in the background, so the page is up to date at once)."""
     if not RUN_LOCK.acquire(blocking=False):
         return {"status": "laeuft_bereits", "text": tr("s_ein_abgleich_laeuft_bereits")}
     try:
         state = store.load("state.json", {}) or {}
         bridge = bridge_factory(dry)
+        t_start = time.time()
         try:
             ledger = fetch(bridge, config, today, with_portfolio=with_report, base=base, full=full)
             if categories is None:
@@ -1071,26 +1083,28 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             txt = unavailable_text(e)
             if txt:
                 log.info("MoneyMoney not available: %s", txt)
-                if isinstance(e, MoneyMoneyNotPermitted) and config.get("mitteilungen", True):
-                    notify("Kontor", txt)
                 return {"status": "nicht_verfuegbar", "text": txt}
             log.error("MoneyMoney error: %s", e)
             return {"status": "fehler", "text": tr("s_moneymoney_fehler_s") % e}
         # a new version builds the report again (new figures, e.g. after an update); the rules run again when their basis
         # changed: their settings, the bookings you rejected or allowed again, and the day (interest at month end, values)
         basis = json.dumps([[config.get(k) for k in ("darlehen", "gesellschaften", "bereiche", "abruf", "probelauf", "bilanz")],
-                            sorted(r.get("tag", "") for r in state.get("kontor_buchungen") or [] if isinstance(r, dict)),
-                            sorted(r.get("tag", "") for r in state.get("kontor_abgelehnt") or [] if isinstance(r, dict)),
-                            today.isoformat()], sort_keys=True, default=str)
+                            sorted(rules.bkey(r.get("konto", ""), r.get("tag", "")) for r in state.get("kontor_buchungen") or [] if isinstance(r, dict)),
+                            sorted(rules.bkey(r.get("konto", ""), r.get("tag", "")) for r in state.get("kontor_abgelehnt") or [] if isinstance(r, dict)),
+                            state.get("rueckwirkend") or {}, today.isoformat()], sort_keys=True, default=str)
         fp = "%s@%s#%s" % (ledger_fp(ledger), version(), hashlib.sha256(basis.encode()).hexdigest()[:16])
         if fp == state.get("fingerprint") and not force:
             log.info("No change in MoneyMoney since the last run.")
             return {"status": "unveraendert", "text": tr("s_keine_aenderung_in_moneymoney_seit"), "_ledger": ledger,
                     "_kategorien": categories}
 
-        created = {r["tag"]: r for r in state.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")}
-        rejected = {r["tag"] for r in state.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("tag")}
-        result = plan_all(ledger, config, today, created, rejected)
+        created = {rules.bkey(r.get("konto", ""), r["tag"]): r for r in state.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")}
+        rejected = {rules.bkey(r["konto"], r["tag"]) if r.get("konto") else r["tag"]
+                    for r in state.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("tag")}
+        done = dict(state.get("rueckwirkend") or {})            # companies whose booking back is done (area -> "Rückwirkend ab")
+        t_read = time.time()
+        result = plan_all(ledger, config, today, created, rejected, done)
+        t_rules = time.time()
         result.warnings.extend(ledger.hints)
         # the log (plain text) holds no amounts, payees, purposes or account names: the details are in the encrypted state and
         # shown in the interface; here only how many
@@ -1104,13 +1118,14 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         chosen, rest = list(result.proposals), []
         expect = {u: ledger.accounts[u].balance for u in {x.account_uuid for x in bookings}}      # balances after writing
         if not dry and approve is not None:
-            chosen = [p for p in result.proposals if p.tag in approve]
-            rest = [p for p in bookings if p.tag not in approve]
+            ok_tags = {p.tag for p in bookings if p.key in approve}       # the comment on a source payment goes with its booking
+            chosen = [p for p in result.proposals if p.key in approve or (p.kind == "quelle" and p.tag in ok_tags)]
+            rest = [p for p in bookings if p.key not in approve]
             for p in rest:
                 expect[p.account_uuid] = round(expect[p.account_uuid] - p.amount, 2)
             for p in chosen:
-                if p.kind != "quelle" and approve.get(p.tag):
-                    _edit(p, approve[p.tag], ledger)
+                if p.kind != "quelle" and approve.get(p.key):
+                    _edit(p, approve[p.key], ledger)
             # after writing: the planned state without what keeps waiting
             expect = {u: round(ledger.accounts[u].balance - sum(x.amount for x in rest if x.account_uuid == u), 2) for u in expect}
         if chosen and not dry:
@@ -1127,24 +1142,32 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                         log.warning("Balance check after booking failed for account %s", u[:8]); result.warnings.append(msg)
             except MoneyMoneyError as e:
                 log.warning("Verification after writing not possible: %s", e)
-            # Neue Buchungen in MoneyMoney koennen weit zurueckdatiert sein (z. B. Zinsen seit Januar): das naechste Lesen muss
-            # vollstaendig sein, sonst fehlten sie im schnellen Lesen und die Regeln wuerden sie erneut vorschlagen
-            ledger.full_at = None
+            # Bookings written now may be dated far back (e.g. interest since January): the quick read does not see them, so
+            # the ledger keeps them (Ledger.without_planned(keep)) until the next full read -- no full read needed for them
+        if not dry and err is None:
+            for g in config.get("gesellschaften") or []:          # booking back done for a company: from now on only the current state
+                ab, bid = (g or {}).get("rueckwirkend_ab"), str((g or {}).get("bereich"))
+                if ab and done.get(bid) != ab and not any(p.retro and p.group == bid for p in rest):
+                    done[bid] = ab
 
         warnings = list(result.warnings)
         if dry and bookings:
             warnings.insert(0, tr("s_probelauf_d_vorgeschlagene_buchung_en") % len(bookings))
         ums = None
-        if with_report:
+        t_write = time.time()
+        if with_report and report:
             ums = build_report(store, ledger, config, state, today, warnings, categories).pop("_umsaetze", None)
+        if with_report:
             state["kategorien_roh"] = categories or []
+        log.info("Run times: read %.1f s (%s), rules %.1f s, write %.1f s, report %.1f s", t_read - t_start,
+                 "quick" if getattr(ledger, "incremental", False) else "full", t_rules - t_read, t_write - t_rules, time.time() - t_write)
 
         # waiting for approval: everything of a dry run, or what was not chosen when booking a selection
         shown = bookings if dry or not rest else rest
         summary = {"status": "fehler" if err else "ok", "zeit": datetime.now().strftime("%Y-%m-%d %H:%M"), "probelauf": dry or bool(rest),
                    "vorschlaege": [{"art": x.kind, "konto": x.account_path, "konto_name": ledger.accounts[x.account_uuid].name if x.account_uuid in ledger.accounts else "",
-                                    "datum": x.booking_date.isoformat(), "betrag": x.amount, "text": x.purpose, "kategorie": x.category,
-                                    "tag": x.tag, "regel": x.rule} for x in shown],
+                                    "konto_id": x.account_uuid, "key": x.key, "datum": x.booking_date.isoformat(), "betrag": x.amount, "text": x.purpose,
+                                    "kategorie": x.category, "tag": x.tag, "regel": x.rule, "rueckwirkend": x.retro} for x in shown],
                    "quellaenderungen": len(result.proposals) - len(bookings),
                    "geschrieben": written, "warnungen": result.warnings, "hinweise": result.info,
                    "fehlend": result.missing, "fehler": str(err) if err else None}
@@ -1154,6 +1177,8 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                     for p in made if p.tag]
 
         def _merge(cur: dict) -> None:
+            if done != (state.get("rueckwirkend") or {}):
+                cur["rueckwirkend"] = dict(cur.get("rueckwirkend") or {}, **done)
             if new_recs:                    # Kontor's own list of what it booked (encrypted state, not the marks in MoneyMoney)
                 cur["kontor_buchungen"] = (cur.get("kontor_buchungen") or []) + new_recs
             cur["fingerprint"] = fp if err is None else None
@@ -1169,16 +1194,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 cur["kategorien_roh"] = state["kategorien_roh"]
         store.update("state.json", _merge, {})      # Verlauf-Eingaben waehrend des Laufs bleiben erhalten
 
-        if config.get("mitteilungen", True):
-            if err:
-                notify(tr("s_kontor_fehler"), str(err))
-            elif written:
-                notify("Kontor", tr("s_d_buchungen_angelegt") % written)
-            elif bookings and dry:
-                notify(tr("s_kontor_probelauf"), tr("s_d_buchung_en_warten_auf") % len(bookings))
-            elif result.warnings and not dry:
-                notify("Kontor: Hinweis", result.warnings[0])
-        return dict(summary, _ledger=ledger, _kategorien=categories, _umsaetze=ums, _gebucht=[p.tag for p in made])
+        return dict(summary, _ledger=ledger, _kategorien=categories, _umsaetze=ums, _gebucht=[p.key for p in made])
     finally:
         RUN_LOCK.release()
 

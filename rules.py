@@ -11,12 +11,18 @@ liegt damit in MoneyMoney selbst, nicht in einer Notizdatei des Skripts.
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
 from model import TAG_RE, Ledger, Tx, fmt_eur, month_end, months_between
 from i18n import tr
+
+
+def bkey(account_uuid: str, tag: str) -> str:
+    """A booking of Kontor: account and mark (the same mark, e.g. interest of a month, exists once per account)."""
+    return "%s|%s" % (account_uuid, tag)
 
 
 @dataclass
@@ -35,6 +41,12 @@ class Proposal:
     source_tx_id: Optional[int] = None
     set_comment: Optional[str] = None
     set_category: Optional[str] = None
+    group: str = ""           # company (area id) of a participation or counter account
+    retro: bool = False       # booking back to a past day (Rückwirkend ab)
+
+    @property
+    def key(self) -> str:
+        return bkey(self.account_uuid, self.tag)
 
     def describe(self) -> str:
         if self.kind == "quelle":
@@ -71,15 +83,20 @@ def find_unmarked(ledger: Ledger, rec: dict, claimed: set) -> Optional[Tx]:
     return None
 
 
-def _created_check(ledger: Ledger, created: Dict[str, dict], tag: str, res: RuleResult, claimed: Optional[set] = None) -> bool:
-    """Kontor's own list of the bookings it made: a tag on it is never proposed again, even if its mark is gone from
+def _created_check(ledger: Ledger, created: Dict[str, dict], key: str, res: RuleResult, claimed: Optional[set] = None) -> bool:
+    """Kontor's own list of the bookings it made (key: account|mark): never proposed again, even if its mark is gone from
     MoneyMoney (changed or deleted there) -- the matching below only decides whether it is shown as missing."""
-    rec = created.get(tag)
+    rec = created.get(key)
     if not rec:
         return False
     if find_unmarked(ledger, rec, claimed if claimed is not None else set()) is None:
         res.missing.append({k: rec.get(k) for k in ("tag", "konto_name", "datum", "betrag", "art", "regel")})
     return True
+
+
+def _skipped(skip: Optional[set], account_uuid: str, tag: str) -> bool:
+    """Rejected by you (account|mark; older entries only by mark)."""
+    return bool(skip) and (bkey(account_uuid, tag) in skip or tag in skip)
 
 
 def tags_in(txs: List[Tx]) -> Dict[str, Tx]:
@@ -195,7 +212,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str
                 continue
             matched.append(t)
             tag = "#mm-tx-%d" % t.id
-            if tag in existing or tag in skip or _created_check(ledger, created or {}, tag, res, claimed):
+            if tag in existing or _skipped(skip, loan.uuid, tag) or _created_check(ledger, created or {}, bkey(loan.uuid, tag), res, claimed):
                 continue
             amount = round(-t.amount, 2)
             purpose = _fill(texts["tilgung_text"], art=payment_kind(t), datum=t.booking_date.strftime("%d.%m.%Y"),
@@ -271,7 +288,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, created: Optional[Dict[str
         if bday > today or bday < ab:
             continue
         tag = "#mm-zins-%04d-%02d" % (y, m)
-        if tag in existing or tag in skip or _created_check(ledger, created or {}, tag, res, claimed):
+        if tag in existing or _skipped(skip, loan.uuid, tag) or _created_check(ledger, created or {}, bkey(loan.uuid, tag), res, claimed):
             continue
         # Schutz: manuell gebuchte Zinsen im selben Monat
         manual = [t for t in loan_txs if (t.booking_date.year, t.booking_date.month) == (y, m)
@@ -325,67 +342,121 @@ def parse_month(s) -> Optional[Tuple[int, int]]:
     return (y, m) if 1 <= m <= 12 and 1990 <= y <= 2100 else None
 
 
+class ValueSeries:
+    """Sum of the balances of some accounts at the end of past days, as the balance sheet shows them -- so the bookings match
+    it: from the transactions; with the whole history read, an account did not exist before its first transaction; accounts
+    whose history comes from their balance (portfolios by default) are unknown. Prefix sums, so many days stay quick.
+    Nothing is estimated."""
+
+    def __init__(self, ledger: Ledger, accs, config: Optional[dict] = None, factor: float = 1.0):
+        bil = (config or {}).get("bilanz") or {}
+        full = int(bil.get("monate_zurueck", 0) or 0) <= 0
+        src: Dict[str, str] = {}
+        for ref, v in (bil.get("verlauf") or {}).items():
+            try:
+                src[ledger.resolve(ref).uuid] = v
+            except KeyError:
+                pass
+        self.factor, self.unknown, self.parts, self.now = factor, [], [], 0.0
+        days: set = set()
+        for a in accs:
+            txs = sorted(ledger.transactions(a.uuid), key=lambda t: t.booking_date)
+            self.now += a.balance
+            if src.get(a.uuid) == "stand" or (a.portfolio and src.get(a.uuid) != "umsaetze"):
+                if abs(a.balance) >= 0.005 or txs:
+                    self.unknown.append(a.name)
+                continue
+            dates, sums, run = [], [], 0.0
+            for t in txs:
+                run += t.amount
+                if dates and dates[-1] == t.booking_date:
+                    sums[-1] = run
+                else:
+                    dates.append(t.booking_date); sums.append(run)
+            days.update(dates)
+            opening = a.balance - run
+            self.parts.append((dates, sums, opening, full and bool(dates)))
+        self.change_days = sorted(days)
+
+    def at(self, day: Optional[date]) -> Tuple[float, float, List[str]]:
+        """(factor x value, value, unknown accounts) at the end of `day`; None: now."""
+        if day is None:
+            v = round(self.now, 2)
+            return round(self.factor * v, 2), v, []
+        if self.unknown:
+            return 0.0, 0.0, self.unknown
+        total = 0.0
+        for dates, sums, opening, born in self.parts:
+            i = bisect_right(dates, day)
+            if born and i == 0:
+                continue                    # did not exist yet
+            total += opening + (sums[i - 1] if i else 0.0)
+        v = round(total, 2)
+        return round(self.factor * v, 2), v, []
+
+
 def past_balances(ledger: Ledger, accs, day: date, config: Optional[dict] = None) -> Tuple[float, List[str]]:
-    """Sum of the balances of `accs` at the end of a past `day`, as the balance sheet shows them -- so the bookings match it:
-    from the transactions; with the whole history read, an account did not exist before its first transaction; accounts
-    whose history comes from their balance (portfolios by default) are unknown. Returns (sum, unknown account names);
-    nothing is estimated."""
-    bil = (config or {}).get("bilanz") or {}
-    full = int(bil.get("monate_zurueck", 0) or 0) <= 0
-    src: Dict[str, str] = {}
-    for ref, v in (bil.get("verlauf") or {}).items():
-        try:
-            src[ledger.resolve(ref).uuid] = v
-        except KeyError:
-            pass
-    total, unknown = 0.0, []
-    for a in accs:
-        txs = ledger.transactions(a.uuid)
-        if src.get(a.uuid) == "stand" or (a.portfolio and src.get(a.uuid) != "umsaetze"):
-            if abs(a.balance) >= 0.005 or txs:
-                unknown.append(a.name)
-            continue
-        if full and txs and min(t.booking_date for t in txs) > day:
-            continue
-        total += ledger.balance_at(a.uuid, day)
-    return round(total, 2), unknown
+    """Sum of the balances of `accs` at the end of a past `day` (see ValueSeries)."""
+    _, v, unknown = ValueSeries(ledger, accs, config).at(day)
+    return v, unknown
 
 
-def _keep_value(ledger: Ledger, res: RuleResult, rule: str, kind: str, target, value_at, cfg: dict, today: date,
-                payee: str, purpose, preview: dict, skip: Optional[set] = None) -> None:
-    """Keep the manual account `target` at value_at(day) -> (value, source value, unknown accounts): one booking at each month
-    end from cfg["rueckwirkend_ab"] up to last month, then one today -- always only the difference to its balance in
-    MoneyMoney, so a booking that is already there is never made twice. Unknown months are skipped."""
+def _keep_value(ledger: Ledger, res: RuleResult, rule: str, kind: str, target, series: ValueSeries, cfg: dict, today: date,
+                payee: str, purpose, preview: dict, skip: Optional[set] = None, retro_done: bool = False, group: str = "") -> None:
+    """Keep the manual account `target` at the value of `series`, always booking only the difference to its balance in
+    MoneyMoney (so a booking that is there is never made twice):
+    - daily (default): today; monthly ("takt"): at the end of last month,
+    - "Rückwirkend ab" once (until it is marked as done): every past day on which the value changed (daily) or every month
+      end (monthly) from that month on -- this also checks and corrects what is there. Unknown days are skipped."""
     schwelle = max(float(cfg.get("schwelle") or 0.01), 0.01)
-    days: List[Optional[date]] = []
+    monthly = cfg.get("takt") == "monatlich"
+    first = date(today.year, today.month, 1)
+    last_end = first - timedelta(days=1)
+    days: List[Tuple[Optional[date], bool]] = []
     ym = parse_month(cfg.get("rueckwirkend_ab"))
-    if ym:
-        last = date(today.year, today.month, 1) - timedelta(days=1)
-        days = [month_end(y, m) for (y, m) in months_between(date(ym[0], ym[1], 1), last)]
-    preview.update(ziel=target.uuid, ist=round(target.balance, 2), rueck=0, rueck_summe=0.0, unbekannt=[])
-    for d in days + [None]:
+    if ym and not retro_done:
+        start = date(ym[0], ym[1], 1)
+        if monthly:
+            days = [(month_end(y, m), True) for (y, m) in months_between(start, last_end)]
+        else:
+            days = [(d, True) for d in sorted({start} | {d for d in series.change_days if start <= d < today})]
+    elif monthly and (not ym or last_end >= date(ym[0], ym[1], 1)):
+        days = [(last_end, False)]
+    if not monthly:
+        days.append((None, False))
+    preview.update(ziel=target.uuid, ist=round(target.balance, 2), rueck=0, rueck_summe=0.0, unbekannt=[], takt="monatlich" if monthly else "taeglich")
+    want_now, src_now, _ = series.at(None)
+    preview.update(soll=want_now, quelle=src_now, diff=round(want_now - preview["ist"], 2))
+    unknown_months: List[str] = []
+    for d, retro in days:
         day = d or today
-        want, src_value, unknown = value_at(d)
+        want, src_value, unknown = series.at(d)
         if unknown:
-            preview["unbekannt"].append(day.strftime("%m/%Y"))
-            res.info.append(tr("s_wert_unbekannt") % (rule, day.strftime("%m/%Y"), ", ".join(unknown[:3])))
+            m = day.strftime("%m/%Y")
+            if m not in unknown_months:
+                unknown_months.append(m)
             continue
         have = target.balance if d is None else ledger.balance_at(target.uuid, d)
         diff = round(want - have, 2)
-        if d is None:
-            preview.update(soll=want, quelle=src_value, diff=round(want - preview["ist"], 2))
         if abs(diff) < schwelle:
             continue
         prefix = "#mm-%s-%s-" % (kind, day.strftime("%Y%m%d"))
         tag = prefix + str(1 + sum(1 for t in ledger.transactions(target.uuid) if prefix in t.purpose))
-        if tag in (skip or ()):          # rejected by you under Auto bookings
+        if _skipped(skip, target.uuid, tag):          # rejected by you under Auto bookings
             continue
-        p = Proposal(rule, kind, target.uuid, target.path, day, diff, payee, purpose(src_value, tag), cfg.get("kategorie") or "", tag)
+        p = Proposal(rule, kind, target.uuid, target.path, day, diff, payee, purpose(src_value, tag), cfg.get("kategorie") or "", tag,
+                     group=group, retro=retro)
         res.proposals.append(p)
         ledger.post(target.uuid, day, diff, payee, p.purpose, p.category)
-        if d is not None:
+        if retro:
             preview["rueck"] += 1
             preview["rueck_summe"] = round(preview["rueck_summe"] + diff, 2)
+    if unknown_months:
+        preview["unbekannt"] = unknown_months
+        res.info.append(tr("s_wert_unbekannt") % (rule, ", ".join(unknown_months[:6]) + (" …" if len(unknown_months) > 6 else ""),
+                                                   ", ".join(series.unknown[:3])))
+    if monthly:          # what is open now is booked at the end of the month
+        preview["diff"] = round(sum(p.amount for p in res.proposals if p.account_uuid == target.uuid), 2)
 
 
 def _target_ok(ledger: Ledger, config: Optional[dict], res: RuleResult, rule: str, target, inside: set) -> bool:
@@ -401,7 +472,7 @@ def _target_ok(ledger: Ledger, config: Optional[dict], res: RuleResult, rule: st
 
 
 def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Optional[Dict[str, str]] = None,
-                 config: Optional[dict] = None, skip: Optional[set] = None) -> RuleResult:
+                 config: Optional[dict] = None, skip: Optional[set] = None, done: Optional[Dict[str, str]] = None) -> RuleResult:
     """One company (an area of the kind "Gesellschaft"): the participation account follows share x value of the company
     (its accounts without the partners' equity), each counter account follows factor x one account of the company."""
     res = RuleResult()
@@ -409,6 +480,7 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
     name = area["name"]
     inside = {a.uuid for a in area["leaves"]}
     payee = (cfg.get("gegenpartei") or "").strip() or name
+    retro_done = bool(cfg.get("rueckwirkend_ab")) and (done or {}).get(str(area["id"])) == cfg.get("rueckwirkend_ab")
     if cfg.get("beteiligung"):
         rule = tr("s_regel_beteiligung") % name
         pv = {"art": "beteiligung", "bereich": area["id"]}
@@ -423,16 +495,10 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
         elif target is not None and _target_ok(ledger, config, res, rule, target, inside):
             accs = [a for a in area["leaves"] if roles.get(a.uuid) not in VALUE_OFF]
             share = float(anteil)
-
-            def value_at(d, accs=accs, share=share):
-                if d is None:
-                    v, unknown = round(sum(a.balance for a in accs), 2), []
-                else:
-                    v, unknown = past_balances(ledger, accs, d, config)
-                return round(share * v, 2), v, unknown
             pct = ("%.4f" % (share * 100)).rstrip("0").rstrip(".").replace(".", ",")
-            _keep_value(ledger, res, rule, "wert", target, value_at, cfg, today, payee,
-                        lambda v, tag: _fill(DEFAULT_TEXTS["wert_text"], anteil=pct, quelle=name, wert=fmt_eur(v), tag=tag), pv, skip)
+            _keep_value(ledger, res, rule, "wert", target, ValueSeries(ledger, accs, config, share), cfg, today, payee,
+                        lambda v, tag: _fill(DEFAULT_TEXTS["wert_text"], anteil=pct, quelle=name, wert=fmt_eur(v), tag=tag), pv, skip,
+                        retro_done, str(area["id"]))
             res.preview.append(pv)
     for i, g in enumerate(cfg.get("gegenkonten") or []):
         if not isinstance(g, dict) or not g.get("konto") or not g.get("quelle"):
@@ -450,12 +516,9 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
         if not _target_ok(ledger, config, res, rule, target, inside | {src.uuid}):
             continue
         f = float(g.get("faktor", -1) if g.get("faktor") not in (None, "") else -1)
-
-        def value_at(d, src=src, f=f):
-            v, unknown = (round(src.balance, 2), []) if d is None else past_balances(ledger, [src], d, config)
-            return round(f * v, 2), v, unknown
-        _keep_value(ledger, res, rule, "spiegel", target, value_at, cfg, today, payee,
-                    lambda v, tag, src=src: _fill(DEFAULT_TEXTS["spiegel_text"], quelle=src.name, wert=fmt_eur(v), tag=tag), pv, skip)
+        _keep_value(ledger, res, rule, "spiegel", target, ValueSeries(ledger, [src], config, f), cfg, today, payee,
+                    lambda v, tag, src=src: _fill(DEFAULT_TEXTS["spiegel_text"], quelle=src.name, wert=fmt_eur(v), tag=tag), pv, skip,
+                    retro_done, str(area["id"]))
         res.preview.append(pv)
     return res
 
@@ -465,7 +528,7 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
 # ---------------------------------------------------------------------------
 
 def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[str, dict]] = None,
-             skip: Optional[set] = None) -> RuleResult:
+             skip: Optional[set] = None, done: Optional[Dict[str, str]] = None) -> RuleResult:
     """created: Kontor's own list of the bookings it made (tag -> record), see _created_check. Values (participations, counter
     accounts) need none: they always book the difference to the balance in MoneyMoney. skip: marks you rejected."""
     total = RuleResult()
@@ -492,5 +555,5 @@ def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[s
             if area is None:
                 total.warnings.append(tr("s_gesellschaft_s_bereich_fehlt") % cfg.get("bereich"))
                 continue
-            add(plan_company(ledger, cfg, area, today, roles, config, skip))
+            add(plan_company(ledger, cfg, area, today, roles, config, skip, done))
     return total

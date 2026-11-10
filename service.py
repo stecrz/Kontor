@@ -47,7 +47,7 @@ from core import (RUN_LOCK, account_sig, account_tree, bereiche_for, build_repor
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, apply_plan, role_label
-from rules import TAG_RE, find_unmarked, plan_all as plan_rules
+from rules import TAG_RE, bkey as rules_bkey, find_unmarked, plan_all as plan_rules
 from storage import Store
 from excel import Sheet, workbook
 from i18n import tr
@@ -67,8 +67,9 @@ def approval(raw) -> Tuple[Optional[Dict[str, dict]], Optional[str]]:
     if not isinstance(raw, dict) or len(raw) > 2000:
         return None, tr("s_freigabe_ungueltig")
     out: Dict[str, dict] = {}
-    for tag, ch in raw.items():
-        if not isinstance(tag, str) or not TAG_RE.fullmatch(tag):
+    for key, ch in raw.items():
+        acc, _, tag = str(key).partition("|")
+        if not re.fullmatch(r"[0-9A-Za-z-]{8,64}", acc) or not TAG_RE.fullmatch(tag):
             return None, tr("s_markierung_ungueltig")
         ch = ch if isinstance(ch, dict) else {}
         c: dict = {}
@@ -86,7 +87,7 @@ def approval(raw) -> Tuple[Optional[Dict[str, dict]], Optional[str]]:
             return None, tr("s_aenderung_ungueltig")
         if ch.get("zweck") is not None:
             c["zweck"] = str(ch["zweck"])[:300]
-        out[tag] = c
+        out[key] = c
     return out, None
 
 
@@ -98,11 +99,11 @@ def kontor_bookings(ledger, record: Optional[List[dict]] = None) -> List[dict]:
     if ledger is None:
         return out
     kinds = {"tx": "tilgung", "zins": "zins", "wert": "wert", "spiegel": "spiegel"}
-    by_tag: Dict[str, Tx] = {}
-    for t in ledger.txs:
-        m = TAG_RE.search(t.purpose or "") if t.id > 0 else None        # only what is in MoneyMoney, not what a run planned
+    by_tag: Dict[Tuple[str, str], Tx] = {}             # (account, mark): the same mark exists once per account
+    for t in ledger.txs:                                 # the ledger holds no planned bookings (Ledger.without_planned)
+        m = TAG_RE.search(t.purpose or "")
         if m:
-            by_tag.setdefault(m.group(0), t)
+            by_tag.setdefault((t.account_uuid, m.group(0)), t)
 
     def row(t: Optional[Tx], tag: str, status: str, rec: Optional[dict] = None) -> dict:
         acc = ledger.accounts.get(t.account_uuid) if t else None
@@ -114,15 +115,16 @@ def kontor_bookings(ledger, record: Optional[List[dict]] = None) -> List[dict]:
     seen, claimed = set(), set()
     for rec in record or []:
         tag = rec.get("tag") or ""
-        seen.add(tag)
-        if tag in by_tag:
-            out.append(row(by_tag[tag], tag, "ok", rec))
+        k = (rec.get("konto") or "", tag)
+        seen.add(k)
+        if k in by_tag:
+            out.append(row(by_tag[k], tag, "ok", rec))
             continue
         hit = find_unmarked(ledger, rec, claimed)          # one booking in MoneyMoney for one entry only
         out.append(row(hit, tag, "markierung" if hit else "fehlt", rec))
-    for tag, t in by_tag.items():
-        if tag not in seen:
-            out.append(row(t, tag, "ok"))
+    for k, t in by_tag.items():
+        if k not in seen:
+            out.append(row(t, k[1], "ok"))
     out.sort(key=lambda x: (x["datum"] or "", x["markierung"]), reverse=True)
     return out
 
@@ -411,7 +413,8 @@ class App:
         with RUN_LOCK:          # nicht gleichzeitig mit einem Lauf (beide schreiben dataset.json)
             st = self.store.load("state.json", {}) or {}
             try:
-                ds = build_report(self.store, self.ledger, self.config, st, date.today(), [], self.categories_raw, progress)
+                warn = list((st.get("letzter_lauf") or {}).get("warnungen") or [])       # the notes of the last run stay in the report
+                ds = build_report(self.store, self.ledger, self.config, st, date.today(), warn, self.categories_raw, progress)
                 self.umsaetze = ds.pop("_umsaetze", None)
             except Exception as e:  # pragma: no cover
                 log.exception("Report from last data failed")
@@ -663,7 +666,7 @@ class App:
             log.info("Run started (%s%s%s)", "dry run" if d else "live", ", forced" if force else "", ", without report" if not with_report else "")
             full = self.full_read_due() if full is None else full
             res = run_once(self.store, self.config, date.today(), d, force, self.bridge_factory, with_report, base=self.ledger, full=full,
-                           approve=approve)
+                           approve=approve, report=approve is None)
             log.info("Run finished: %s (%.1f s)", res.get("text") or res.get("status"), time.time() - t0)
             self.last_run_at = time.time()
             ledger = res.pop("_ledger", None)
@@ -678,6 +681,8 @@ class App:
                 self._baseline(ledger)
             if cats:
                 self.categories_raw = cats
+            if approve is not None and res.get("status") in ("ok", "fehler") and with_report:
+                self.request_rebuild(tr("s_nach_freigabe"))         # the page shows the bookings at once, the figures follow
             self.last_result = res
             try:
                 self.flush_pending_categories()
@@ -1805,9 +1810,11 @@ def make_handler(app: App):
                 if not isinstance(cfg, dict) or app.ledger is None:
                     return self._json(200, {"vorschau": [], "warnungen": [], "buchungen": 0})
                 st = app.store.load("state.json", {}) or {}
-                created = {r["tag"]: r for r in st.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")}
-                res = plan_rules(app.ledger.fork(), merged_config(cfg), date.today(), created)
-                return self._json(200, {"vorschau": res.preview, "warnungen": res.warnings, "buchungen": len(res.proposals)})
+                created = {rules_bkey(r.get("konto", ""), r["tag"]): r for r in st.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")}
+                rejected = {rules_bkey(r["konto"], r["tag"]) if r.get("konto") else r["tag"] for r in st.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("tag")}
+                done = st.get("rueckwirkend") or {}
+                res = plan_rules(app.ledger.fork(), merged_config(cfg), date.today(), created, rejected, done)
+                return self._json(200, {"vorschau": res.preview, "warnungen": res.warnings, "buchungen": len(res.proposals), "eingespielt": done})
             if path == "/api/check":
                 if not app.check_lock.acquire(blocking=False):
                     return self._json(409, {"fehler": tr("s_die_pruefung_laeuft_bereits_bitte")})
@@ -1843,24 +1850,32 @@ def make_handler(app: App):
                 return self._json(200, {"ok": True, "abruf": app.abruf()})
             if path == "/api/bookings/reject":
                 # a proposed booking you do not want: never proposed again (wieder=True: proposed again at the next check)
-                tag = str(body.get("tag") or "")
-                if not TAG_RE.fullmatch(tag):
+                key = str(body.get("key") or "")
+                acc, _, tag = key.partition("|")
+                if not re.fullmatch(r"[0-9A-Za-z-]{8,64}", acc) or not TAG_RE.fullmatch(tag):
                     return self._json(400, {"fehler": tr("s_markierung_ungueltig")})
+                same = lambda r: (r.get("konto") or acc) == acc and r.get("tag") == tag     # noqa: E731
 
                 def upd(cur: dict) -> None:
-                    rej = [r for r in cur.get("kontor_abgelehnt") or [] if r.get("tag") != tag]
+                    rej = [r for r in cur.get("kontor_abgelehnt") or [] if not same(r)]
                     lr = cur.get("letzter_lauf") or {}
                     if not body.get("wieder"):
-                        v = next((x for x in lr.get("vorschlaege") or [] if x.get("tag") == tag), {})
-                        rej.append({"tag": tag, "konto_name": v.get("konto_name") or v.get("konto") or "", "datum": v.get("datum") or "",
+                        v = next((x for x in lr.get("vorschlaege") or [] if x.get("key") == key), {})
+                        rej.append({"tag": tag, "konto": acc, "konto_name": v.get("konto_name") or v.get("konto") or "", "datum": v.get("datum") or "",
                                     "betrag": v.get("betrag"), "art": v.get("art") or "", "regel": v.get("regel") or "",
                                     "abgelehnt": datetime.now().strftime("%Y-%m-%d %H:%M")})
                         if lr.get("vorschlaege"):
-                            lr["vorschlaege"] = [x for x in lr["vorschlaege"] if x.get("tag") != tag]
+                            lr["vorschlaege"] = [x for x in lr["vorschlaege"] if x.get("key") != key]
                             lr["probelauf"] = bool(lr["vorschlaege"]) and lr.get("probelauf", False)
                     cur["kontor_abgelehnt"] = rej[-500:]
                 app.store.update("state.json", upd, {})
                 log.info("Proposed booking %s", "allowed again" if body.get("wieder") else "rejected")
+                return self._json(200, {"ok": True})
+            if path == "/api/rules/recheck":
+                # check the whole history of a company again (Rückwirkend ab) at the next sync, existing bookings included
+                bid = str(body.get("bereich") or "")
+                app.store.update("state.json", lambda cur: (cur.get("rueckwirkend") or {}).pop(bid, None), {})
+                log.info("Booking back of a company to be checked again")
                 return self._json(200, {"ok": True})
             if path == "/api/bookings/allow":
                 # a booking Kontor made and that is missing in MoneyMoney: allowed to be made again at the next sync (only at the Mac)

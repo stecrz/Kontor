@@ -207,7 +207,7 @@ class Ledger:
         self._by_account: Dict[str, List[Tx]] = {}
         for t in self.txs:
             self._by_account.setdefault(t.account_uuid, []).append(t)
-        self._next_virtual_id = -1
+        self._next_virtual_id = min([t.id for t in self.txs if t.id <= 0], default=0) - 1     # Kontor's written ones may be in
 
     # -- Auflösung von Kontoreferenzen -----------------------------------
 
@@ -360,13 +360,20 @@ class Ledger:
             return ("online", "s_grund_depot") if refreshed else ("offline", "s_depot_ohne_abruf")
         if not refreshed:
             return "offline", "s_grund_offline_konto"
-        if any(t.id > 0 and TAG_RE.search(t.purpose or "") for t in self._by_account.get(uuid, ())):
+        if uuid in self.kontor_marked():
             return "offline", "s_grund_offline_konto"
         if "offline" in (a.type or "").lower():
             return "offline", "s_grund_offline_konto"
         if not ((a.bank_code or "").strip() or (a.account_number or "").strip() or (a.iban or "").strip()):
             return "offline", "s_grund_offline_konto"
         return "online", ("s_grund_bank" if (a.bank_code or "").strip() else "s_grund_dienst")
+
+    def kontor_marked(self) -> set:
+        """Accounts holding a booking of Kontor (its mark) that is in MoneyMoney -- one pass, kept for this ledger."""
+        m = getattr(self, "_marked", None)
+        if m is None:
+            m = self._marked = {t.account_uuid for t in self.txs if t.id > 0 and "#mm-" in (t.purpose or "") and TAG_RE.search(t.purpose)}
+        return m
 
     def writable(self, uuid: str, config: Optional[dict] = None) -> bool:
         """May Kontor book into this account? Only into manually kept ones (fetch_kind "offline"), never into groups or
@@ -378,7 +385,14 @@ class Ledger:
         """The state in MoneyMoney: without the bookings planned in a run (ledger.post) and their effect on the balances --
         except those written to MoneyMoney in that run (keep: their marks)."""
         keep = set(keep)
-        planned = [t for t in self.txs if t.id <= 0 and not (keep and (TAG_RE.search(t.purpose or "") or [None])[0] in keep)]
+
+        def kept(t: Tx) -> bool:
+            m = TAG_RE.search(t.purpose or "") if keep else None
+            return bool(m) and "%s|%s" % (t.account_uuid, m.group(0)) in keep
+        planned = [t for t in self.txs if getattr(t, "planned", False) and not kept(t)]
+        for t in self.txs:
+            if getattr(t, "planned", False) and kept(t):
+                t.planned = False                   # written to MoneyMoney: kept until the full read brings the real one
         if not planned:
             return self
         accs = {u: dataclasses.replace(a) for u, a in self.accounts.items()}
@@ -408,6 +422,7 @@ class Ledger:
                value_date=booking_date, amount=round(amount, 2), currency=acc.currency,
                name=name, purpose=purpose, category=category, category_path=category, booked=True)
         self._next_virtual_id -= 1
+        t.planned = True                            # planned in this run (Ledger.without_planned removes it again)
         self.txs.append(t)
         self._by_account.setdefault(uuid, []).append(t)
         self._by_account[uuid].sort(key=lambda x: (x.booking_date, x.id))

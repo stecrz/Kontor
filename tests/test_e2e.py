@@ -176,7 +176,6 @@ def patch_today():
     core.date = _FixedDate
     service.date = _FixedDate
     service.is_running = lambda: True
-    core.notify = lambda *a, **k: None
 
 
 class CoreTests(unittest.TestCase):
@@ -198,25 +197,28 @@ class CoreTests(unittest.TestCase):
         cfg = core.merged_config(self.store.load("config.json")); cfg["probelauf"] = True
         res = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
         props = res["vorschlaege"]; self.assertEqual(len(props), 24); self.assertTrue(all(p["tag"].startswith("#mm-") for p in props))
-        self.assertEqual(MA.kontor_bookings(res["_ledger"]), [])                 # planned, not made: nothing "created by Kontor"
+        self.assertEqual(MA.kontor_bookings(res["_ledger"].without_planned()), [])     # planned, not made: nothing "created by Kontor"
         self.assertEqual(res["_ledger"].without_planned().accounts[F.uid("pb.vd")].balance, -1600000.0)
         zins = [p for p in props if p["art"] == "zins"]; tilg = [p for p in props if p["art"] == "tilgung"]
-        st = self.store.load("state.json"); st["kontor_abgelehnt"] = [{"tag": zins[0]["tag"]}]; self.store.save("state.json", st)
-        approve, err = MA.approval({tilg[0]["tag"]: {}, zins[1]["tag"]: {"betrag": "-1234,56", "zweck": "Zinsen laut Abrechnung", "datum": "2026-10-15"}})
+        wert = [p for p in props if p["art"] == "wert"]                     # two companies: the same mark, two accounts
+        self.assertEqual(len({p["tag"] for p in wert}), 1); self.assertEqual(len({p["key"] for p in wert}), 2)
+        st = self.store.load("state.json"); st["kontor_abgelehnt"] = [{"tag": zins[0]["tag"], "konto": zins[0]["konto_id"]}]; self.store.save("state.json", st)
+        approve, err = MA.approval({tilg[0]["key"]: {}, wert[0]["key"]: {}, zins[1]["key"]: {"betrag": "-1234,56", "zweck": "Zinsen laut Abrechnung", "datum": "2026-10-15"}})
         self.assertIsNone(err)
         r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve=approve)
-        self.assertEqual(r["status"], "ok", r); self.assertEqual(r["geschrieben"], 3)        # 2 bookings + the comment on the source payment
+        self.assertEqual(r["status"], "ok", r); self.assertEqual(r["geschrieben"], 4)        # 3 bookings + the comment on the source payment
         self.assertFalse([w for w in r["warnungen"] if "nach Buchung" in w], r["warnungen"])
-        self.assertTrue(r["probelauf"]); self.assertEqual(len(r["vorschlaege"]), 21)          # 24 - 1 rejected - 2 booked: still waiting
+        self.assertTrue(r["probelauf"]); self.assertEqual(len(r["vorschlaege"]), 20)          # 24 - 1 rejected - 3 booked: still waiting
+        self.assertIn(wert[1]["key"], [p["key"] for p in r["vorschlaege"]]); self.assertNotIn(wert[0]["key"], [p["key"] for p in r["vorschlaege"]])
         self.assertNotIn(zins[0]["tag"], [p["tag"] for p in r["vorschlaege"]])
         made = [t for t in MockBridge.state["txs"] if zins[1]["tag"] in (t.get("purpose") or "")]
         self.assertEqual(len(made), 1); self.assertEqual(made[0]["amount"], -1234.56)
         self.assertEqual(made[0]["purpose"], "Zinsen laut Abrechnung · " + zins[1]["tag"])
         self.assertEqual(made[0]["bookingDate"], F._dt(date(2026, 10, 15)))
-        self.assertEqual(len(self.store.load("state.json")["kontor_buchungen"]), 2)
+        self.assertEqual(len(self.store.load("state.json")["kontor_buchungen"]), 3)
         # invalid changes and marks are refused
-        self.assertIsNotNone(MA.approval({zins[2]["tag"]: {"betrag": "0"}})[1]); self.assertIsNotNone(MA.approval({"rm -rf": {}})[1])
-        self.assertIsNotNone(MA.approval({zins[2]["tag"]: {"datum": "2026-13-01"}})[1])
+        self.assertIsNotNone(MA.approval({zins[2]["key"]: {"betrag": "0"}})[1]); self.assertIsNotNone(MA.approval({"rm -rf": {}})[1])
+        self.assertIsNotNone(MA.approval({zins[2]["key"]: {"datum": "2026-13-01"}})[1]); self.assertIsNotNone(MA.approval({zins[2]["tag"]: {}})[1])
 
     def test_run_twice_then_dataset(self):
         cfg = core.merged_config(self.store.load("config.json"))
@@ -650,11 +652,15 @@ class AppTests(_AppBase):
     def test_unchanged_read_keeps_warm_state(self):
         """Unveraenderte Daten aus MoneyMoney: bisheriger Stand (mit Zwischenergebnissen) bleibt, nur der Lesezeitpunkt wird neu."""
         self.login(); self.run_and_wait()
-        self.assertTrue(self.app.full_read_due())    # nach eigenen Buchungen in MoneyMoney: naechstes Lesen vollstaendig
+        self.assertFalse(self.app.full_read_due())   # own bookings need no full read: the ledger keeps them until the next one
         led, t0 = self.app.ledger, self.app.ledger_time
-        self.app.do_run(True, False)                 # erster Lauf nach eigenen Buchungen: vollstaendig
+        self.app.do_run(True, False)                 # after own bookings: a quick read is enough
         led = self.app.ledger
-        self.assertFalse(self.app.full_read_due()); self.assertFalse(led.incremental)
+        self.assertFalse(self.app.full_read_due()); self.assertTrue(led.incremental)
+        # the bookings written back to January come from the kept ones (the quick read sees 30 days): nothing proposed again
+        self.assertTrue(any(t.id <= 0 and "#mm-zins-2026-01" in t.purpose for t in led.txs))
+        again = self.app.do_run(True, True); self.assertEqual(again["vorschlaege"], []); self.assertTrue(self.app.ledger.incremental)
+        led = self.app.ledger
         time.sleep(0.01)
         self.assertEqual(self.app.do_run(None, False)["status"], "unveraendert")
         self.assertIs(self.app.ledger, led); self.assertGreater(self.app.ledger_time, t0)

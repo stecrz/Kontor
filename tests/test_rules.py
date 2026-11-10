@@ -220,7 +220,7 @@ class CompanyTests(unittest.TestCase):
         self.assertAlmostEqual(res.proposals[0].amount, want - (-90000.0), 2)
         self.assertEqual(led.resolve("Beteiligung an Alpha GbR").balance, want)
         self.assertEqual(res.preview, [{"art": "beteiligung", "bereich": "a", "ziel": F.uid("priv.bet.pb"), "ist": -90000.0, "rueck": 0,
-                                        "rueck_summe": 0.0, "unbekannt": [], "soll": want, "quelle": float(pb_value), "diff": want + 90000.0}])
+                                        "rueck_summe": 0.0, "unbekannt": [], "takt": "taeglich", "soll": want, "quelle": float(pb_value), "diff": want + 90000.0}])
         self.assertEqual(plan_all(led, company_cfg(), today).proposals, [])        # again: nothing
         # the share comes only from the area; without it nothing is booked
         cfg = company_cfg(); cfg["bereiche"][1].pop("anteil")
@@ -257,7 +257,7 @@ class CompanyTests(unittest.TestCase):
         today = date(2026, 11, 4)
         led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
         cfg = company_cfg(darlehen=[loan_cfg()])
-        cfg["gesellschaften"][0]["rueckwirkend_ab"] = "2026-03"
+        cfg["gesellschaften"][0].update(rueckwirkend_ab="2026-03", takt="monatlich")
         res = plan_all(led, cfg, today)
         wert = [p for p in res.proposals if p.kind == "wert"]
         days = [p.booking_date for p in wert]
@@ -269,11 +269,32 @@ class CompanyTests(unittest.TestCase):
             self.assertAlmostEqual(led.balance_at(target.uuid, p.booking_date), round(0.49 * v, 2), 2)
         self.assertEqual(len({p.tag for p in wert}), len(wert))
         pv = [x for x in res.preview if x["art"] == "beteiligung"][0]
-        self.assertEqual(pv["rueck"], 8)
-        self.assertAlmostEqual(pv["diff"], round(pv["soll"] - pv["ist"], 2), 2)
-        self.assertAlmostEqual(target.balance, pv["soll"], 2)
-        # a second run books nothing (the bookings are there now)
+        self.assertEqual(pv["rueck"], 8); self.assertTrue(all(p.retro and p.group == "a" for p in wert))
+        self.assertEqual(len(wert), 8)                  # monthly: no booking today, the month runs until its end
+        # a second run books nothing (the bookings are there now); once done, the past is not checked again
         self.assertEqual([p for p in plan_all(led, cfg, today).proposals if p.kind == "wert"], [])
+        later = plan_all(led, cfg, date(2026, 12, 2), done={"a": "2026-03"})
+        self.assertEqual([x for x in later.preview if x["art"] == "beteiligung"][0]["rueck"], 0)
+        self.assertEqual([p.booking_date for p in later.proposals if p.kind == "wert"], [date(2026, 11, 30)])   # only the month just ended
+
+    def test_back_to_daily(self):
+        """Daily (default): back to every day on which the company's value changed, then today; once done only today."""
+        today = date(2026, 11, 4)
+        led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
+        cfg = company_cfg(darlehen=[loan_cfg()])
+        cfg["gesellschaften"][0]["rueckwirkend_ab"] = "2026-03"
+        res = plan_all(led, cfg, today)
+        wert = [p for p in res.proposals if p.kind == "wert"]
+        target = led.resolve("Beteiligung an Alpha GbR")
+        change_days = sorted({t.booking_date for a in led.descendants(F.uid("pb")) for t in led.transactions(a.uuid) if date(2026, 3, 1) <= t.booking_date < today})
+        self.assertTrue(set(p.booking_date for p in wert if p.retro) <= set(change_days) | {date(2026, 3, 1)})
+        for d in change_days:
+            v = round(sum(led.balance_at(a.uuid, d) for a in led.descendants(F.uid("pb"))), 2)
+            self.assertAlmostEqual(led.balance_at(target.uuid, d), round(0.49 * v, 2), 2)
+        self.assertAlmostEqual(target.balance, res.preview[-1]["soll"], 2)
+        led2 = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
+        once = [p for p in plan_all(led2, cfg, today, done={"a": "2026-03"}).proposals if p.kind == "wert"]
+        self.assertEqual([p.booking_date for p in once], [today]); self.assertFalse(once[0].retro)
 
     def test_back_to_unknown_months_skipped(self):
         # a portfolio in the company: its past value is not known -> those months are not booked
@@ -282,9 +303,9 @@ class CompanyTests(unittest.TestCase):
         cfg = company_cfg(bereiche=[{"id": "a", "name": "Alpha GbR", "art": "gesellschaft", "anteil": 0.5,
                                      "konten": [F.uid("pb") + " | Alpha GbR", F.uid("priv.depot") + " | Depot"]},
                                     {"id": "p", "name": "Privat", "art": "privat", "haupt": True, "konten": [F.uid("priv.bet") + " | Beteiligungen"]}])
-        cfg["gesellschaften"][0]["rueckwirkend_ab"] = "2026-09"
+        cfg["gesellschaften"][0].update(rueckwirkend_ab="2026-09", takt="monatlich")
         res = plan_all(led, cfg, today)
-        self.assertEqual([p.booking_date for p in res.proposals], [today])
+        self.assertEqual([p.booking_date for p in res.proposals], [])
         self.assertEqual(res.preview[0]["unbekannt"], ["09/2026", "10/2026"])
         self.assertTrue(any("unbekannt" in i for i in res.info))
 
@@ -681,7 +702,7 @@ class CreatedListTests(unittest.TestCase):
         r0 = plan_loan(copy.deepcopy(led), cfg, date(2026, 10, 31))
         z = [p for p in r0.proposals if p.kind == "zins"]
         self.assertTrue(z)
-        rec = {z[0].tag: {"tag": z[0].tag, "konto": z[0].account_uuid, "konto_name": "Darlehen", "datum": z[0].booking_date.isoformat(), "betrag": z[0].amount, "art": "zins"}}
+        rec = {z[0].key: {"tag": z[0].tag, "konto": z[0].account_uuid, "konto_name": "Darlehen", "datum": z[0].booking_date.isoformat(), "betrag": z[0].amount, "art": "zins"}}
         r1 = plan_loan(copy.deepcopy(led), cfg, date(2026, 10, 31), rec)
         self.assertNotIn(z[0].tag, [p.tag for p in r1.proposals]); self.assertEqual([m["tag"] for m in r1.missing], [z[0].tag])
         # there by account, date and amount (its mark changed in MoneyMoney): neither proposed nor missing

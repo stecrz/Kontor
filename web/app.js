@@ -2719,14 +2719,14 @@ function vBuchungen(runs) {
       const plain = txt => String(txt || '').replace(/\s*·?\s*#mm-[a-z]+-[A-Za-z0-9-]+/g, '').trim();
       h += `<div class="wrap auto"><table class="plain bk-table"><thead><tr>${pick ? `<th class="c"><input type="checkbox" id="bk-all" ${BOOK.off.size ? '' : 'checked'} aria-label="${esc(t('alle'))}"></th>` : ''}<th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>`
         + l.vorschlaege.map(v => {
-          const e = BOOK.edits[v.tag] || {}, d = e.datum ?? v.datum, b = e.betrag ?? v.betrag, z = e.zweck ?? plain(v.text), changed = Object.keys(e).length > 0;
-          return `<tr data-tag="${esc(v.tag || '')}" class="${BOOK.off.has(v.tag) ? 'off' : ''}">${pick ? `<td class="c"><input type="checkbox" class="bk-on" ${BOOK.off.has(v.tag) ? '' : 'checked'}></td>` : ''}`
+          const k = v.key || '', e = BOOK.edits[k] || {}, d = e.datum ?? v.datum, b = e.betrag ?? v.betrag, z = e.zweck ?? plain(v.text), changed = Object.keys(e).length > 0;
+          return `<tr data-key="${esc(k)}" class="${BOOK.off.has(k) ? 'off' : ''}">${pick ? `<td class="c">${k ? `<input type="checkbox" class="bk-on" ${BOOK.off.has(k) ? '' : 'checked'}>` : ''}</td>` : ''}`
             + `<td style="white-space:nowrap"><span class="v">${FD(d)}</span><input type="date" class="bk-d e" value="${esc(d)}"></td><td>${esc(v.konto_name || v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td>`
             + `<td class="num ${b < 0 ? 'neg' : 'pos'}"><span class="v">${F(b)}</span><input type="number" step="0.01" class="bk-b e" value="${b}"></td>`
             + `<td><span class="v">${esc(z)}</span><input type="text" class="bk-z e" value="${esc(z)}">${changed ? ` <span class="pill info">${t('geaendert')}</span>` : ''}<div class="small muted">${esc(v.regel || '')}${v.kategorie ? ' · ' + esc(v.kategorie) : ''}</div></td>`
-            + (ed ? `<td class="nowrap">${local ? `<button class="icon bk-edit" title="${esc(t('bearbeiten'))}" aria-label="${esc(t('bearbeiten'))}">${ICON.pencil}</button>` : ''}<button class="icon bk-rej" title="${esc(t('ablehnen'))}" aria-label="${esc(t('ablehnen'))}">✕</button></td>` : '') + `</tr>`;
+            + (ed ? `<td class="nowrap">${k ? (local ? `<button class="icon bk-edit" title="${esc(t('bearbeiten'))}" aria-label="${esc(t('bearbeiten'))}">${ICON.pencil}</button>` : '') + `<button class="icon bk-rej" title="${esc(t('ablehnen'))}" aria-label="${esc(t('ablehnen'))}">✕</button>` : ''}</td>` : '') + `</tr>`;
         }).join('') + '</tbody></table></div>';
-      if (l.probelauf) h += `<div class="note">${t('diese_buchungen_sind_noch_nicht')}</div>`;
+      if (l.probelauf) h += `<div class="note">${t('diese_buchungen_sind_noch_nicht')}${l.vorschlaege.some(v => !v.key) ? ' ' + t('einmal_sync_fuer_auswahl') : ''}</div>`;
     } else h += `<div class="note">${t('keine_buchungen_noetig')}</div>`;
     if (l.warnungen && l.warnungen.length) h += `<h3>${t('hinweise')}</h3>` + l.warnungen.map(x => `<div class="banner">${esc(x)}</div>`).join('');
     if (l.hinweise && l.hinweise.length) h += `<details class="calc"><summary>${t('rechenwege')} (${l.hinweise.length})</summary>` + l.hinweise.map(x => `<div class="small muted">${esc(x)}</div>`).join('') + '</details>';
@@ -2737,7 +2737,7 @@ function vBuchungen(runs) {
   }
   const rej = runs.abgelehnt || [];
   if (rej.length) h += `<details class="calc"><summary>${t('abgelehnt_titel')} (${rej.length})</summary><div class="note">${t('abgelehnt_note')}</div><div class="wrap auto"><table class="plain"><tbody>`
-    + rej.slice().reverse().map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto_name || '')}</td><td>${esc(artL[v.art] || v.art || '')}</td><td class="num">${v.betrag != null ? F(v.betrag) : ''}</td><td class="small muted">${esc(v.regel || '')}</td><td><button class="ghost small re-propose" data-tag="${esc(v.tag)}">${t('wieder_vorschlagen')}</button></td></tr>`).join('') + '</tbody></table></div></details>';
+    + rej.slice().reverse().map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto_name || '')}</td><td>${esc(artL[v.art] || v.art || '')}</td><td class="num">${v.betrag != null ? F(v.betrag) : ''}</td><td class="small muted">${esc(v.regel || '')}</td><td><button class="ghost small re-propose" data-key="${esc((v.konto || '00000000') + '|' + v.tag)}">${t('wieder_vorschlagen')}</button></td></tr>`).join('') + '</tbody></table></div></details>';
   // only what Kontor itself made in MoneyMoney (its own list and marks), with the state there now
   const ang = runs.angelegt || [], stL = {ok: ['ok', t('st_ok')], markierung: ['warn', t('st_markierung')], fehlt: ['err', t('st_fehlt')]};
   h += `<h2>${t('angelegt_titel')} <span class="x">${ang.length}</span></h2><div class="note">${t('angelegt_note')}</div>`
@@ -3147,6 +3147,8 @@ function suggestByName(name, list) {
   return hits.length === 1 ? hits[0] : null;          // only when exactly one account fits the name
 }
 const betCandidate = (bid) => k => !k.gruppe && k.manuell && k.rolle === 'beteiligungen' && k.bereich_id !== String(bid);
+// rhythm: daily fits booking fully automatically, monthly fits approval (else a booking waits every day) -- a hint only when it does not fit
+const taktTip = takt => { const auto = S.CFG.probelauf === false, monthly = takt === 'monatlich'; return auto && monthly ? t('takt_tipp_taeglich') : !auto && !monthly ? t('takt_tipp_monatlich') : ''; };
 function companyCard(b, g) {
   const has = b.anteil != null && b.anteil !== '', bid = String(b.id), inside = k => k.bereich_id === bid;
   let bet = g.beteiligung, sug = null;
@@ -3155,13 +3157,14 @@ function companyCard(b, g) {
     sug = suggestByName(b.name, S.KONTEN.filter(betCandidate(bid)).filter(k => !used.has(k.uuid)));
     if (sug) bet = `${sug.uuid} | ${sug.name}`;
   }
-  const extra = !!(g.rueckwirkend_ab || (g.schwelle != null && g.schwelle !== 0.01) || g.gegenpartei);
+  const extra = !!(g.rueckwirkend_ab || (g.schwelle != null && g.schwelle !== 0.01) || g.gegenpartei || g.takt === 'monatlich' || ((g.beteiligung || (g.gegenkonten || []).length) && taktTip(g.takt)));
   return `<div class="co-card" data-b="${esc(bid)}"><div class="co-head"><h3>${esc(b.name)}</h3>`
     + (has ? `<a class="pill neutral" href="#setup/areas">${t('anteil_0', pctText(b.anteil))}</a>` : `<a class="pill warn" href="#setup/areas">${t('anteil_fehlt')}</a>`) + hq('h_co_anteil') + `</div>`
     + `<div class="co-row"><div class="co-l">${t('co_beteiligung')}${hq('h_co_bet')}</div><div class="co-f${sug ? ' suggested' : ''}">${acctSel('c-bet', bet, betCandidate(bid), t('keine_2'))}${sug ? `<span class="pill info sug">${t('vorschlag')}</span>` : ''}<div class="pv small" data-pv="b"></div></div></div>`
     + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}</div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="secondary small add-gk">${t('gegenkonto_hinzufuegen')}</button></div></div>`
     + `<details class="co-more"${extra ? ' open' : ''}><summary>${t('co_mehr')}</summary><div class="form">`
-    + `<label>${t('co_rueck')}${hq('h_co_rueck')}</label><select class="c-ab">${backMonths(g.rueckwirkend_ab)}</select>`
+    + `<label>${t('co_takt')}${hq('h_co_takt')}</label><div><select class="c-takt"><option value="taeglich" ${g.takt !== 'monatlich' ? 'selected' : ''}>${t('takt_taeglich')}</option><option value="monatlich" ${g.takt === 'monatlich' ? 'selected' : ''}>${t('takt_monatlich')}</option></select><div class="small muted c-takt-tip">${taktTip(g.takt)}</div></div>`
+    + `<label>${t('co_rueck')}${hq('h_co_rueck')}</label><div><select class="c-ab">${backMonths(g.rueckwirkend_ab)}</select><div class="small muted c-ab-state"></div></div>`
     + `<label>${t('co_schwelle')}${hq('h_co_schwelle')}</label><div class="row tight"><input type="number" step="0.01" min="0.01" class="c-sw" value="${g.schwelle ?? 0.01}" style="width:110px"> €</div>`
     + `<label>${t('gegenpartei')}${hq('h_co_gp')}</label><input type="text" class="c-gp" value="${esc(g.gegenpartei || '')}" placeholder="${esc(b.name)}">`
     + `</div></details></div>`;
@@ -3188,6 +3191,11 @@ function rulesPreviewShow(rp, r) {
     el.innerHTML = h;
   }
   showFindings($('#rules-warn', rp), (r.warnungen || []).map(w => ({stufe: 'warnung', text: w})));
+  // booking back: done once -- from then on only the current state; checking the whole history again on request
+  $$('.co-card', rp).forEach(c => {
+    const el = $('.c-ab-state', c), ab = $('.c-ab', c).value, done = (r.eingespielt || {})[c.dataset.b];
+    el.innerHTML = ab && done === ab ? `✓ ${t('rueck_eingespielt')} <button class="ghost small c-recheck">${t('rueck_erneut')}</button>` : ab ? t('rueck_beim_naechsten') : '';
+  });
 }
 // a rule as one collapsible row: name, what it books into, what is open, whether it is on; the details below
 const refName = ref => String(ref || '').split(' | ').slice(1).join(' | ') || '';
@@ -3245,7 +3253,7 @@ function collectRules(asSaved) {
   });
   cfg.gesellschaften = $$('#companies .co-card').map(c => ({ bereich: c.dataset.b, beteiligung: asSaved && $('.co-f.suggested', c) ? '' : $('.c-bet', c).value,
     gegenkonten: $$('.gk-row', c).map(r => ({konto: $('.g-konto', r).value, quelle: $('.g-quelle', r).value, faktor: parseFloat(r.dataset.f) || -1})),
-    rueckwirkend_ab: $('.c-ab', c).value.trim(), schwelle: parseFloat($('.c-sw', c).value) || 0.01, gegenpartei: $('.c-gp', c).value.trim() }))
+    rueckwirkend_ab: $('.c-ab', c).value.trim(), takt: $('.c-takt', c).value, schwelle: parseFloat($('.c-sw', c).value) || 0.01, gegenpartei: $('.c-gp', c).value.trim() }))
     .filter(g => g.beteiligung || g.gegenkonten.length);
   delete cfg.beteiligungen; delete cfg.saldo_spiegel;
   return cfg;
@@ -3477,7 +3485,6 @@ function vEinstellungenAllgemein() {
     <label>${t('auto_buchen')} ${hq('probelauf')}</label><label class="chk"><input type="checkbox" id="e-autobook" ${C.probelauf === false ? 'checked' : ''} ${(S.STATUS || {}).lokal ? '' : 'disabled'}> ${t('auto_buchen_kurz')}</label>
     <label>${t('automatischer_abgleich_0', hq('abgleich'))}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatisch !== false ? 'checked' : ''}> ${t('alle_2')} <input type="number" id="e-intervall" min="5" value="${z.intervall_minuten ?? 30}" style="width:70px"> ${t('minuten_nur_wenn_moneymoney_laeuft')}</label>
     <label>${t('alles_neu_lesen_0', hq('voll_lesen'))}</label><label class="chk">${t('alle_2')} <input type="number" id="e-voll" min="1" value="${z.voll_lesen_tage ?? 7}" style="width:70px"> ${t('tage')}</label>
-    <label>${t('mitteilungen_macos')}</label><label class="chk"><input type="checkbox" id="e-mitt" ${C.mitteilungen !== false ? 'checked' : ''}> ${t('bei_buchungen_vorschlaegen_und_fehlern')}</label>
   </div>
   <h2>MoneyMoney</h2><div class="form">
     <label>${t('umsaetze_lesen_0', hq('monate_zurueck'))}</label><label class="chk">${t('die_letzten')} <input type="number" id="e-monate" min="0" value="${b.monate_zurueck ?? 0}" style="width:70px"> ${t('monate_0_alle')}</label>
@@ -3622,7 +3629,7 @@ function collectSettings() {
   // nur die Felder des sichtbaren Reiters; alles andere bleibt, wie es ist
   const cfg = JSON.parse(JSON.stringify(S.CFG));
   if ($('#e-autobook')) {
-    cfg.probelauf = !$('#e-autobook').checked; cfg.mitteilungen = $('#e-mitt').checked;
+    cfg.probelauf = !$('#e-autobook').checked; delete cfg.mitteilungen;
     cfg.zeitplan = { automatisch: $('#e-auto').checked, intervall_minuten: Math.max(5, parseInt($('#e-intervall').value) || 30), voll_lesen_tage: Math.max(1, parseInt($('#e-voll').value) || 7) };
     cfg.bilanz = Object.assign(cfg.bilanz || {}, { monate_zurueck: parseInt($('#e-monate').value) || 0 });
     cfg.moneymoney = Object.assign(cfg.moneymoney || {}, { kategorisieren_erlauben: $('#e-mm-cat').checked });
@@ -4075,34 +4082,34 @@ function bind(main) {
   $$('.re-allow', main).forEach(b => b.addEventListener('click', async () => { try { await api('/api/bookings/allow', {tag: b.dataset.tag}); toast(t('wieder_anlegen_ok')); route(); } catch (e) { toast(e.message, 5000); } }));
   const bt = $('.bk-table', main);
   if (bt) {
-    const count = () => { const n = $$('tr[data-tag]', bt).filter(r => !BOOK.off.has(r.dataset.tag)).length, b = $('#run-live', main); if (b) { $('#sel-n', b).textContent = n; b.disabled = !n || !(S.STATUS || {}).lokal; } };
+    const rows = () => $$('tr[data-key]', bt).filter(r => r.dataset.key);
+    const count = () => { const n = rows().filter(r => !BOOK.off.has(r.dataset.key)).length, b = $('#run-live', main); if (b) { $('#sel-n', b).textContent = n; b.disabled = !n || !(S.STATUS || {}).lokal; } };
     bt.addEventListener('change', e => {
-      const r = e.target.closest('tr[data-tag]');
-      if (e.target.id === 'bk-all') { $$('tr[data-tag]', bt).forEach(x => { x.classList.toggle('off', !e.target.checked); $('.bk-on', x).checked = e.target.checked; if (e.target.checked) BOOK.off.delete(x.dataset.tag); else BOOK.off.add(x.dataset.tag); }); return count(); }
-      if (!r) return;
-      const tag = r.dataset.tag;
-      if (e.target.classList.contains('bk-on')) { r.classList.toggle('off', !e.target.checked); if (e.target.checked) BOOK.off.delete(tag); else BOOK.off.add(tag); return count(); }
-      const v = ((BOOK.runs.letzter_lauf || {}).vorschlaege || []).find(x => x.tag === tag) || {}, ch = BOOK.edits[tag] = BOOK.edits[tag] || {};
+      if (e.target.id === 'bk-all') { rows().forEach(x => { x.classList.toggle('off', !e.target.checked); $('.bk-on', x).checked = e.target.checked; if (e.target.checked) BOOK.off.delete(x.dataset.key); else BOOK.off.add(x.dataset.key); }); return count(); }
+      const r = e.target.closest('tr[data-key]'); if (!r || !r.dataset.key) return;
+      const key = r.dataset.key;
+      if (e.target.classList.contains('bk-on')) { r.classList.toggle('off', !e.target.checked); if (e.target.checked) BOOK.off.delete(key); else BOOK.off.add(key); return count(); }
+      const v = ((BOOK.runs.letzter_lauf || {}).vorschlaege || []).find(x => x.key === key) || {}, ch = BOOK.edits[key] = BOOK.edits[key] || {};
       if (e.target.classList.contains('bk-d')) { if (e.target.value && e.target.value !== v.datum) ch.datum = e.target.value; else delete ch.datum; }
       if (e.target.classList.contains('bk-b')) { const n = parseFloat(e.target.value); if (!isNaN(n) && Math.abs(n) >= 0.01 && Math.abs(n - v.betrag) >= 0.005) ch.betrag = Math.round(n * 100) / 100; else delete ch.betrag; }
       if (e.target.classList.contains('bk-z')) { const z = String(v.text || '').replace(/\s*·?\s*#mm-[a-z]+-[A-Za-z0-9-]+/g, '').trim(); if (e.target.value.trim() !== z) ch.zweck = e.target.value.trim(); else delete ch.zweck; }
-      if (!Object.keys(ch).length) delete BOOK.edits[tag];
+      if (!Object.keys(ch).length) delete BOOK.edits[key];
     });
     bt.addEventListener('click', async e => {
-      const r = e.target.closest('tr[data-tag]'); if (!r) return;
+      const r = e.target.closest('tr[data-key]'); if (!r || !r.dataset.key) return;
       if (e.target.closest('.bk-edit')) { const on = r.classList.toggle('editing'); if (!on) route(); else $('.bk-b', r).focus(); return; }
       if (e.target.closest('.bk-rej')) {
         if (!confirm(t('ablehnen_frage'))) return;
-        try { await api('/api/bookings/reject', {tag: r.dataset.tag}); BOOK.off.delete(r.dataset.tag); delete BOOK.edits[r.dataset.tag]; toast(t('abgelehnt_ok')); route(); } catch (er) { toast(er.message, 5000); }
+        try { await api('/api/bookings/reject', {key: r.dataset.key}); BOOK.off.delete(r.dataset.key); delete BOOK.edits[r.dataset.key]; toast(t('abgelehnt_ok')); route(); } catch (er) { toast(er.message, 5000); }
       }
     });
     count();
   }
-  $$('.re-propose', main).forEach(b => b.addEventListener('click', async () => { try { await api('/api/bookings/reject', {tag: b.dataset.tag, wieder: true}); toast(t('wieder_vorschlagen_ok')); route(); } catch (e) { toast(e.message, 5000); } }));
+  $$('.re-propose', main).forEach(b => b.addEventListener('click', async () => { try { await api('/api/bookings/reject', {key: b.dataset.key, wieder: true}); toast(t('wieder_vorschlagen_ok')); route(); } catch (e) { toast(e.message, 5000); } }));
   const rl = $('#run-live', main); if (rl) rl.addEventListener('click', () => {
-    const tags = (((BOOK.runs || {}).letzter_lauf || {}).vorschlaege || []).map(v => v.tag).filter(tag => tag && !BOOK.off.has(tag));
-    if (!tags.length || !confirm(t('jetzt_buchen_buchungen_werden_jetzt'))) return;
-    const freigabe = {}; tags.forEach(tag => { freigabe[tag] = BOOK.edits[tag] || {}; });
+    const keys = (((BOOK.runs || {}).letzter_lauf || {}).vorschlaege || []).map(v => v.key).filter(k => k && !BOOK.off.has(k));
+    if (!keys.length || !confirm(t('jetzt_buchen_buchungen_werden_jetzt'))) return;
+    const freigabe = {}; keys.forEach(k => { freigabe[k] = BOOK.edits[k] || {}; });
     BOOK.zeit = null;                 // what stays waiting starts a new round (all ticked, no changes)
     startRun(false, freigabe);
   });
@@ -4166,6 +4173,7 @@ function bind(main) {
     rp.addEventListener('change', e => {
       if (!e.target.closest('.rule, .co-card')) return;
       if (e.target.classList.contains('f-modell')) e.target.closest('.form').classList.toggle('no-zins', !e.target.value);
+      if (e.target.classList.contains('c-takt')) $('.c-takt-tip', e.target.closest('.co-card')).textContent = taktTip(e.target.value);
       e.target.closest('.gk-row')?.classList.remove('invalid');
       changed();
     });
@@ -4173,7 +4181,9 @@ function bind(main) {
       if (e.target.closest('.rule .del')) { setTimeout(changed); return; }
       const add = e.target.closest('.add-gk');
       if (add) { add.insertAdjacentHTML('beforebegin', gkRow({faktor: -1}, add.closest('.co-card').dataset.b)); $('.g-konto', add.previousElementSibling).focus(); changed(); return; }
-      const del = e.target.closest('.gk-del'); if (del) { del.closest('.gk-row').remove(); changed(); }
+      const del = e.target.closest('.gk-del'); if (del) { del.closest('.gk-row').remove(); changed(); return; }
+      const rc = e.target.closest('.c-recheck');
+      if (rc) { api('/api/rules/recheck', {bereich: rc.closest('.co-card').dataset.b}).then(() => { toast(t('rueck_erneut_ok'), 5000); preview(); }).catch(er => toast(er.message, 5000)); }
     });
     sr.addEventListener('click', async () => {
       const rows = $$('.gk-row', rp);

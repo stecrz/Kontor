@@ -233,15 +233,3 @@ def restrict_permissions(path: str) -> None:
         os.chmod(path, 0o700 if os.path.isdir(path) else 0o600)
     except OSError:
         pass
-
-
-def notify(title: str, text: str) -> None:
-    """macOS-Mitteilung (Mitteilungszentrale). Fehler werden ignoriert."""
-    try:
-        safe_title = title.replace('"', "'")
-        safe_text = text.replace('"', "'")[:200]
-        subprocess.run(
-            ["osascript", "-e", 'display notification "%s" with title "%s"' % (safe_text, safe_title)],
-            capture_output=True, timeout=10)
-    except Exception:
-        pass

@@ -101,11 +101,11 @@ The data has two stages: **banks → MoneyMoney** (MoneyMoney fetches from the b
 
 - **Quick read**: a sync only reads the transactions of the last 30 days and takes older ones from the last complete read.
 - **Check**: Kontor checks every balance. If it does not match the transactions read, something older changed in MoneyMoney – e.g. a late booking with an old date or a deleted transaction. Then Kontor reads everything at once (at most every 12 hours).
-- **Complete read**: every 7 days (adjustable), after Kontor's own bookings and with “Read everything again”. Only changed categories of older transactions (e.g. a rule in MoneyMoney applied to all transactions) appear just then – use “Read everything again” for that.
+- **Complete read**: every 7 days (adjustable) and with “Read everything again”. Kontor's own bookings need none: Kontor keeps them until then. Only changed categories of older transactions (e.g. a rule in MoneyMoney applied to all transactions) appear just then – use “Read everything again” for that.
 - A bank refresh without new data does not trigger a recalculation.
 - **Read transactions** (Settings → General): how far back Kontor reads; 0 = all (recommended).
 
-The Sync page shows the last refresh per account and reports accounts that lag behind. Offline accounts (kept by hand: never refreshed, without bank and account number, created as offline account or booked by Kontor) are listed separately as “Offline account”; if sorted wrongly, change it per account under “Type” to “Online” or “Offline”. Kontor books only into offline accounts – also into one with a bank code typed in, once it is set to “Offline” there. If MoneyMoney is closed or locked, nothing happens – the next sync catches up. For bookings, proposals and errors Kontor sends a macOS notification (can be turned off under Settings → General).
+The Sync page shows the last refresh per account and reports accounts that lag behind. Offline accounts (kept by hand: never refreshed, without bank and account number, created as offline account or booked by Kontor) are listed separately as “Offline account”; if sorted wrongly, change it per account under “Type” to “Online” or “Offline”. Kontor books only into offline accounts – also into one with a bank code typed in, once it is set to “Offline” there. If MoneyMoney is closed or locked, nothing happens – the next sync catches up.
 
 <a id="tables"></a>
 ## Tables, switches and Excel
@@ -292,7 +292,7 @@ Each loan is one row (name → loan account, on the right what is open); a click
 
 **Book fully automatically** (switch at the top of “Booking rules”, on the Mac only): off (default) – the bookings appear under “Auto bookings” and are created once you **approve** them there (on the Mac only) – one by one: untick to leave a booking out, the pencil changes date, amount or text (the mark stays), ✕ rejects it; Kontor does not propose rejected ones again (“Rejected” → “Propose again”), what you only untick keeps waiting; on – Kontor creates them itself at every sync. The top right of “Auto bookings” shows which applies (“With approval” or “Fully automatic”). Bank and extension accounts are never booked to, transfers and direct debits are blocked, Kontor never changes or deletes existing bookings.
 
-**How it runs**: at every sync (automatically every 30 minutes, after new data in MoneyMoney or with “Sync”) Kontor works through the booking rules – also when nothing changed in MoneyMoney but the rules, your decisions or the day (interest at month end); “Sync” at the bottom left does it at once. A notification says “… bookings waiting for approval” or “… bookings created”; in the sidebar a number on “Auto bookings” shows how many are waiting (a “!” after an error), a dot on “Updates” a new version – in a narrow window a dot on the menu button, in the web app in the Dock the number on its icon. Under “Auto bookings” you find the waiting or last booked bookings with notes and calculations, **“Created by Kontor”** (only Kontor's own bookings with their state in MoneyMoney) and the history.
+**How it runs**: at every sync (automatically every 30 minutes, after new data in MoneyMoney or with “Sync”) Kontor works through the booking rules – also when nothing changed in MoneyMoney but the rules, your decisions or the day (interest at month end); “Sync” at the bottom left does it at once. There are no macOS notifications: in the sidebar a number on “Auto bookings” shows how many are waiting (a “!” after an error), a dot on “Updates” a new version – in a narrow window a dot on the menu button, in the web app in the Dock the number on its icon. Under “Auto bookings” you find the waiting or last booked bookings with notes and calculations, **“Created by Kontor”** (only Kontor's own bookings with their state in MoneyMoney) and the history.
 
 **Never twice**: every booking carries a mark in the purpose (e.g. “#mm-zins-2026-10”; MoneyMoney's interface has no comment field when creating). On top, Kontor keeps its own encrypted list of all bookings it created. If the mark changes in MoneyMoney, Kontor recognises the booking by account, date and amount (each booking in MoneyMoney counts once, so two equal ones as two); if it is gone (deleted), Kontor does **not** create it again on its own but shows it as “No longer found in MoneyMoney” – “Create again” allows it at the next sync. **Deleting** only works in MoneyMoney, its interface has no delete. Participations and counter accounts always book the difference to the balance in MoneyMoney and need none of this.
 
@@ -301,7 +301,7 @@ Each loan is one row (name → loan account, on the right what is open); a click
 
 Kontor recognises the instalment on the source account – by the lender's IBAN or a text in the purpose – and books it as repayment to the loan account (an offline account). The interest comes on top every month. So the remaining debt in MoneyMoney is right without manual work. “Type”: liability (you pay) or receivable (you receive). “Book from”: only from this day. Without an interest model (“no interest”) Kontor only mirrors the instalments.
 
-**Interest**: annual basis = interest rate × balance on 31 Dec of the previous year, one twelfth per month, the cent remainder in December – or monthly on the outstanding balance. The model is simplified (30/360); reconcile once a year with the bank's interest statement. If there are problems (account deleted, no matching payment, interest booking already entered by hand) you get a note and a notification.
+**Interest**: annual basis = interest rate × balance on 31 Dec of the previous year, one twelfth per month, the cent remainder in December – or monthly on the outstanding balance. The model is simplified (30/360); reconcile once a year with the bank's interest statement. If there are problems (account deleted, no matching payment, interest booking already entered by hand) you get a note under “Auto bookings”.
 
 <a id="rules-companies"></a>
 ### Companies
@@ -313,14 +313,18 @@ Every area of the kind “company” (Setup → Areas) appears as a card, with y
 
 Both together count nothing twice if the capital accounts are kept as debts in the company (the default for accounts with “Kapitalkonto” or “Gesellschafterdarlehen” in their name): the receivable is your capital account, the participation your share of the rest – increases in value and undistributed surpluses. This also holds for unequal contributions. If you keep a capital account as the company's equity instead, it is already part of the participation's value; a counter account for it then counts twice, and “Save and check” warns.
 
-Under **More settings**: minimum difference (Kontor does not book smaller differences), counterparty of the bookings (empty: name of the company) and “Back to”.
+Under **More settings**:
+
+- **Book** – *daily* (default): the difference at every sync with the day's date, so MoneyMoney always shows the current state; recommended with “Book fully automatically”. *Monthly*: one booking at month end – enough for the balance sheet; recommended with approval, otherwise a booking waits for you every day.
+- **Back to** – see below.
+- **Minimum difference** (Kontor does not book smaller differences) and **counterparty** of the bookings (empty: name of the company).
 
 Kontor always books only the difference to the balance in MoneyMoney (purpose with the mark “#mm-wert-…” or “#mm-spiegel-…”). Payments between you and a company with a participation or counter account count as contributions or withdrawals in the cash flow, and the equity ratio in the balance sheet looks through the companies via the participations.
 
 <a id="rules-back"></a>
 ### Booking back
 
-With “Back to” (a month) Kontor also books one adjustment at each past month end for the company – with the value the balance sheet shows for that day, and again only the difference. So the history of your participation and your counter accounts is right in MoneyMoney and in Kontor. Months in which a value is not known (e.g. a portfolio in the company whose earlier balance MoneyMoney does not provide) are skipped and named – Kontor estimates nothing. Existing bookings are never changed; without “Book fully automatically” the bookings back also wait for your approval.
+With “Back to” (a month) Kontor brings in the past **once**: from this month on, one adjustment on every day on which the company's value changed (daily) or at every month end (monthly) – with the value the balance sheet shows for that day, and again only the difference; existing bookings in the account are checked too. So the history of your participation and your counter accounts is right in MoneyMoney and in Kontor. Once the bookings are created, “done” shows next to it and Kontor only checks the current state from then on. “Check again” (or another month) checks the whole history once more and corrects it with additional bookings. Tip: delete old bookings in the participation account first, then bring the history in. Months in which a value is not known (e.g. a portfolio in the company whose earlier balance MoneyMoney does not provide) are skipped and named – Kontor estimates nothing. Existing bookings are never changed; without “Book fully automatically” the bookings back also wait for your approval.
 
 <a id="iphone"></a>
 ## Access from iPhone
