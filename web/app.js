@@ -2700,7 +2700,33 @@ async function vSync() {
 }
 
 // ---------------------------------------------------------------- Buchungen (Laeufe)
-const BOOK = {zeit: null, edits: {}, off: new Set(), runs: null};       // approval: your changes and the bookings left out, until the next check
+// approval: your changes and the bookings left out, until the next check; calc = the list recalculated for them (a booking
+// left out or changed moves every later balance, so the next value adjustment of that account takes up the difference)
+const BOOK = {zeit: null, edits: {}, off: new Set(), runs: null, calc: null, extra: {}, editing: new Set(), seq: 0};
+// the rows shown: the waiting list, new ones from the recalculation, each with the amount it books now
+function bkRows(l) {
+  const base = l.vorschlaege || [], inBase = new Set(base.map(v => v.key)), calc = BOOK.calc ? new Map(BOOK.calc.map(r => [r.key, r])) : null;
+  return base.concat(Object.values(BOOK.extra).filter(x => !inBase.has(x.key))).map(v => {
+    const k = v.key || '', off = BOOK.off.has(k), e = BOOK.edits[k] || {}, cur = calc && !off ? calc.get(k) : null;
+    const gone = !!(calc && k && !off && !cur), b = e.betrag ?? (cur ? cur.betrag : v.betrag);
+    return {v, k, off, e, gone, b, neu: !inBase.has(k), adjusted: !!(cur && e.betrag == null && inBase.has(k) && Math.abs(cur.betrag - v.betrag) >= 0.005)};
+  });
+}
+async function bkRecalc() {
+  const l = (BOOK.runs || {}).letzter_lauf || {}, my = ++BOOK.seq;
+  if (!l.probelauf) return;
+  const edits = {}; Object.entries(BOOK.edits).forEach(([k, e]) => { if (e.betrag != null || e.datum) edits[k] = {betrag: e.betrag, datum: e.datum}; });
+  if (!BOOK.off.size && !Object.keys(edits).length) { BOOK.calc = null; BOOK.extra = {}; return route(); }
+  try {
+    const r = await api('/api/bookings/plan', {halten: [...BOOK.off], aenderungen: edits});
+    if (my !== BOOK.seq) return;                    // a newer change is on its way
+    const inBase = new Set((l.vorschlaege || []).map(v => v.key));
+    BOOK.calc = r.vorschlaege || null;
+    BOOK.extra = Object.fromEntries(Object.entries(BOOK.extra).filter(([k]) => BOOK.off.has(k)));
+    (BOOK.calc || []).forEach(x => { if (!inBase.has(x.key)) BOOK.extra[x.key] = x; });
+    route();
+  } catch (e) { toast(e.message, 5000); }
+}
 function vBuchungen(runs) {
   BOOK.runs = runs;
   // Auto-Buchungen: what the auto rules would book (waiting for approval) and have booked; the rules themselves under Auto-Regeln
@@ -2718,15 +2744,17 @@ function vBuchungen(runs) {
     h += `<h2>${head}${l.fehler ? ' <span class="pill err">' + esc(l.fehler) + '</span>' : ''}</h2>`;
     if ((l.vorschlaege || []).length) {
       const pick = pending && local, ed = pending;          // choose and change only while waiting; booking only at the Mac
-      if (BOOK.zeit !== l.zeit) { BOOK.zeit = l.zeit; BOOK.edits = {}; BOOK.off = new Set(); }
+      if (BOOK.zeit !== l.zeit) Object.assign(BOOK, {zeit: l.zeit, edits: {}, off: new Set(), calc: null, extra: {}, editing: new Set()});
       const plain = txt => String(txt || '').replace(/\s*·?\s*#mm-[a-z]+-[A-Za-z0-9-]+/g, '').trim();
-      h += `<div class="wrap auto"><table class="plain bk-table"><thead><tr>${pick ? `<th class="c"><input type="checkbox" id="bk-all" ${BOOK.off.size ? '' : 'checked'} aria-label="${esc(t('alle'))}"></th>` : ''}<th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>`
-        + l.vorschlaege.map(v => {
-          const k = v.key || '', e = BOOK.edits[k] || {}, d = e.datum ?? v.datum, b = e.betrag ?? v.betrag, z = e.zweck ?? plain(v.text), changed = Object.keys(e).length > 0;
-          return `<tr data-key="${esc(k)}" class="${BOOK.off.has(k) ? 'off' : ''}">${pick ? `<td class="c">${k ? `<input type="checkbox" class="bk-on" ${BOOK.off.has(k) ? '' : 'checked'}>` : ''}</td>` : ''}`
+      h += `<div class="wrap auto"><table class="plain bk-table"><thead><tr>${pick ? `<th class="c"><input type="checkbox" id="bk-all" ${BOOK.off.size || bkRows(l).some(r => r.gone) ? '' : 'checked'} aria-label="${esc(t('alle'))}"></th>` : ''}<th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>`
+        + bkRows(l).map(({v, k, off, e, gone, b, neu, adjusted}) => {
+          const d = e.datum ?? v.datum, z = e.zweck ?? plain(v.text), changed = Object.keys(e).length > 0;
+          const pills = (changed ? ` <span class="pill info">${t('geaendert')}</span>` : '') + (adjusted ? ` <span class="pill info" title="${esc(t('angepasst_tip'))}">${t('angepasst')}</span>` : '')
+            + (neu ? ` <span class="pill info" title="${esc(t('neu_dazu_tip'))}">${t('neu_dazu')}</span>` : '') + (gone ? ` <span class="pill neutral" title="${esc(t('entfaellt_tip'))}">${t('entfaellt')}</span>` : '');
+          return `<tr data-key="${esc(k)}" class="${off || gone ? 'off' : ''}${gone ? ' gone' : ''}${BOOK.editing.has(k) ? ' editing' : ''}">${pick ? `<td class="c">${k ? `<input type="checkbox" class="bk-on" ${off || gone ? '' : 'checked'}${gone ? ' disabled' : ''}>` : ''}</td>` : ''}`
             + `<td style="white-space:nowrap"><span class="v">${FD(d)}</span><input type="date" class="bk-d e" value="${esc(d)}"></td><td>${esc(v.konto_name || v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td>`
             + `<td class="num ${b < 0 ? 'neg' : 'pos'}"><span class="v">${F(b)}</span><input type="number" step="0.01" class="bk-b e" value="${b}"></td>`
-            + `<td><span class="v">${esc(z)}</span><input type="text" class="bk-z e" value="${esc(z)}">${changed ? ` <span class="pill info">${t('geaendert')}</span>` : ''}<div class="small muted">${esc(v.regel || '')}${v.kategorie ? ' · ' + esc(v.kategorie) : ''}</div></td>`
+            + `<td><span class="v">${esc(z)}</span><input type="text" class="bk-z e" value="${esc(z)}">${pills}<div class="small muted">${esc(v.regel || '')}${v.kategorie ? ' · ' + esc(v.kategorie) : ''}</div></td>`
             + (ed ? `<td class="nowrap">${k ? (local ? `<button class="icon bk-edit" title="${esc(t('bearbeiten'))}" aria-label="${esc(t('bearbeiten'))}">${ICON.pencil}</button>` : '') + `<button class="icon bk-rej" title="${esc(t('verwerfen'))}" aria-label="${esc(t('verwerfen'))}">✕</button>` : ''}</td>` : '') + `</tr>`;
         }).join('') + '</tbody></table></div>';
       if (l.probelauf) h += `<div class="note">${t('diese_buchungen_sind_noch_nicht')}${l.vorschlaege.some(v => !v.key) ? ' ' + t('einmal_sync_fuer_auswahl') : ''}</div>`;
@@ -4072,25 +4100,32 @@ function bind(main) {
   });
   const bt = $('.bk-table', main);
   if (bt) {
-    const rows = () => $$('tr[data-key]', bt).filter(r => r.dataset.key);
+    const rows = () => $$('tr[data-key]', bt).filter(r => r.dataset.key && !r.classList.contains('gone'));
     const count = () => { const n = rows().filter(r => !BOOK.off.has(r.dataset.key)).length, b = $('#run-live', main); if (b) { $('#sel-n', b).textContent = n; b.disabled = !n || !(S.STATUS || {}).lokal; } };
     bt.addEventListener('change', e => {
-      if (e.target.id === 'bk-all') { rows().forEach(x => { x.classList.toggle('off', !e.target.checked); $('.bk-on', x).checked = e.target.checked; if (e.target.checked) BOOK.off.delete(x.dataset.key); else BOOK.off.add(x.dataset.key); }); return count(); }
+      // what you leave out or change moves the bookings after it: the list is recalculated (what you see is what is booked)
+      if (e.target.id === 'bk-all') { rows().forEach(x => { x.classList.toggle('off', !e.target.checked); $('.bk-on', x).checked = e.target.checked; if (e.target.checked) BOOK.off.delete(x.dataset.key); else BOOK.off.add(x.dataset.key); }); count(); return bkRecalc(); }
       const r = e.target.closest('tr[data-key]'); if (!r || !r.dataset.key) return;
       const key = r.dataset.key;
-      if (e.target.classList.contains('bk-on')) { r.classList.toggle('off', !e.target.checked); if (e.target.checked) BOOK.off.delete(key); else BOOK.off.add(key); return count(); }
-      const v = ((BOOK.runs.letzter_lauf || {}).vorschlaege || []).find(x => x.key === key) || {}, ch = BOOK.edits[key] = BOOK.edits[key] || {};
+      if (e.target.classList.contains('bk-on')) { r.classList.toggle('off', !e.target.checked); if (e.target.checked) BOOK.off.delete(key); else BOOK.off.add(key); count(); return bkRecalc(); }
+      const l = BOOK.runs.letzter_lauf || {}, v = (l.vorschlaege || []).find(x => x.key === key) || BOOK.extra[key] || {}, ch = BOOK.edits[key] = BOOK.edits[key] || {};
+      const now = (bkRows(l).find(x => x.k === key) || {}).b ?? v.betrag;          // the amount without your change
       if (e.target.classList.contains('bk-d')) { if (e.target.value && e.target.value !== v.datum) ch.datum = e.target.value; else delete ch.datum; }
-      if (e.target.classList.contains('bk-b')) { const n = parseFloat(e.target.value); if (!isNaN(n) && Math.abs(n) >= 0.01 && Math.abs(n - v.betrag) >= 0.005) ch.betrag = Math.round(n * 100) / 100; else delete ch.betrag; }
+      if (e.target.classList.contains('bk-b')) { const n = parseFloat(e.target.value); if (!isNaN(n) && Math.abs(n) >= 0.01 && (ch.betrag != null || Math.abs(n - now) >= 0.005)) ch.betrag = Math.round(n * 100) / 100; else delete ch.betrag; }
       if (e.target.classList.contains('bk-z')) { const z = String(v.text || '').replace(/\s*·?\s*#mm-[a-z]+-[A-Za-z0-9-]+/g, '').trim(); if (e.target.value.trim() !== z) ch.zweck = e.target.value.trim(); else delete ch.zweck; }
       if (!Object.keys(ch).length) delete BOOK.edits[key];
+      if (e.target.classList.contains('bk-b') || e.target.classList.contains('bk-d')) bkRecalc();
     });
     bt.addEventListener('click', async e => {
       const r = e.target.closest('tr[data-key]'); if (!r || !r.dataset.key) return;
-      if (e.target.closest('.bk-edit')) { const on = r.classList.toggle('editing'); if (!on) route(); else $('.bk-b', r).focus(); return; }
+      if (e.target.closest('.bk-edit')) { const k = r.dataset.key, on = !BOOK.editing.has(k); if (on) { BOOK.editing.add(k); r.classList.add('editing'); $('.bk-b', r).focus(); } else { BOOK.editing.delete(k); route(); } return; }
       if (e.target.closest('.bk-rej')) {
         if (!confirm(t('verwerfen_frage'))) return;
-        try { await api('/api/bookings/reject', {key: r.dataset.key}); BOOK.off.delete(r.dataset.key); delete BOOK.edits[r.dataset.key]; toast(t('verworfen_ok')); route(); } catch (er) { toast(er.message, 5000); }
+        try {
+          await api('/api/bookings/reject', {key: r.dataset.key}); BOOK.off.delete(r.dataset.key); delete BOOK.edits[r.dataset.key]; delete BOOK.extra[r.dataset.key];
+          toast(t('verworfen_ok')); BOOK.calc = null; await route();
+          if (BOOK.off.size || Object.keys(BOOK.edits).length) bkRecalc();
+        } catch (er) { toast(er.message, 5000); }
       }
     });
     count();
@@ -4101,9 +4136,10 @@ function bind(main) {
     try { await api('/api/bookings/restore', {key: b.dataset.key}); toast(t('neu_buchen_wartet'), 4000); startRun(true); } catch (e) { toast(e.message, 5000); }
   }));
   const rl = $('#run-live', main); if (rl) rl.addEventListener('click', () => {
-    const keys = (((BOOK.runs || {}).letzter_lauf || {}).vorschlaege || []).map(v => v.key).filter(k => k && !BOOK.off.has(k));
-    if (!keys.length || !confirm(t('jetzt_buchen_buchungen_werden_jetzt'))) return;
-    const freigabe = {}; keys.forEach(k => { freigabe[k] = BOOK.edits[k] || {}; });
+    // what is ticked, with the amount shown: booked only if it is still the same
+    const pick = bkRows((BOOK.runs || {}).letzter_lauf || {}).filter(r => r.k && !r.off && !r.gone);
+    if (!pick.length || !confirm(t('jetzt_buchen_buchungen_werden_jetzt'))) return;
+    const freigabe = {}; pick.forEach(r => { freigabe[r.k] = {...(BOOK.edits[r.k] || {}), angezeigt: r.b}; });
     BOOK.zeit = null;                 // what stays waiting starts a new round (all ticked, no changes)
     startRun(false, freigabe);
   });

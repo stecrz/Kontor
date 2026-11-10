@@ -734,3 +734,84 @@ class CreatedListTests(unittest.TestCase):
         claimed = set()
         self.assertIsNotNone(find_unmarked(led, rec, claimed))      # the one without a mark
         self.assertIsNone(find_unmarked(led, rec, claimed))         # the other carries another booking's mark, the first is taken
+
+
+def _replace_tx(led, tx, amount=None):
+    """The ledger without `tx` (amount=None: deleted in MoneyMoney) or with its amount changed there."""
+    import dataclasses
+    accs = {u: dataclasses.replace(a) for u, a in led.accounts.items()}
+    txs = []
+    for t in led.txs:
+        if t is tx:
+            accs[t.account_uuid].balance = round(accs[t.account_uuid].balance - t.amount + (amount or 0.0), 2)
+            if amount is not None:
+                txs.append(dataclasses.replace(t, amount=amount))
+            continue
+        txs.append(t)
+    return Ledger(accs, txs)
+
+
+class ChainTests(unittest.TestCase):
+    """A balance is the sum of the bookings up to that day: what you leave out or change is made up by the next value adjustment
+    of that account (the ones after it stay); one deleted or changed in MoneyMoney is corrected on its own day."""
+    today = date(2026, 11, 4)
+
+    def setUp(self):
+        self.base = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(self.today))         # the same bookings (ids) each time
+
+    def plan(self, led=None, **kw):
+        led = led or self.base.fork()
+        cfg = company_cfg(darlehen=[loan_cfg()])
+        cfg["gesellschaften"][0].update(rueckwirkend_ab="2026-03", takt="monatlich")
+        return led, cfg, plan_all(led, cfg, self.today, **kw)
+
+    def test_left_out_or_changed_moves_only_the_next(self):
+        _, _, res = self.plan()
+        w = [p for p in res.proposals if p.kind == "wert"]
+        self.assertEqual(len(w), 8)
+        _, _, held = self.plan(skip={w[1].key})
+        h = {p.key: p.amount for p in held.proposals if p.kind == "wert"}
+        self.assertNotIn(w[1].key, h)
+        self.assertAlmostEqual(h[w[2].key], round(w[1].amount + w[2].amount, 2), 2)          # the next one takes up the difference
+        for p in [w[0]] + w[3:]:
+            self.assertAlmostEqual(h[p.key], p.amount, 2)
+        _, _, ed = self.plan(edits={w[1].key: {"betrag": round(w[1].amount + 100, 2)}})
+        e = {p.key: p.amount for p in ed.proposals if p.kind == "wert"}
+        self.assertAlmostEqual(e[w[1].key], round(w[1].amount + 100, 2), 2); self.assertAlmostEqual(e[w[2].key], round(w[2].amount - 100, 2), 2)
+        for p in w[3:]:
+            self.assertAlmostEqual(e[p.key], p.amount, 2)
+        # a loan repayment left out: the company is worth less from that day on, the first value adjustment after it follows
+        t0 = next(p for p in res.proposals if p.kind == "tilgung")
+        _, _, lo = self.plan(skip={t0.key})
+        v = {p.key: p.amount for p in lo.proposals if p.kind == "wert"}
+        self.assertAlmostEqual(v[w[0].key], w[0].amount - 0.49 * t0.amount, delta=0.02)
+        for p in w[1:]:
+            self.assertAlmostEqual(v[p.key], p.amount, delta=0.02)
+        self.assertNotIn(t0.key, {p.key for p in lo.proposals})
+
+    def test_deleted_or_changed_is_corrected_on_its_day(self):
+        from rules import changed_values, deleted_values
+        led, cfg, res = self.plan()
+        real = led.without_planned(keep=[p.key for p in res.proposals])        # all written: in MoneyMoney now
+        done = {"a": "2026-03"}
+        self.assertEqual([p for p in plan_all(real.fork(), cfg, self.today, done=done).proposals if p.kind == "wert"], [])
+        w = [p for p in res.proposals if p.kind == "wert"]
+        tx = next(t for t in real.txs if w[2].tag in (t.purpose or "") and t.account_uuid == w[2].account_uuid)
+        rec = {"tag": w[2].tag, "konto": w[2].account_uuid, "datum": w[2].booking_date.isoformat(), "betrag": w[2].amount}
+        # deleted: without its day checked again the difference waits for the next month end (the months between stay wrong)
+        gone = _replace_tx(real, tx)
+        self.assertEqual(deleted_values(gone, [rec]), [rec])
+        plain = [p for p in plan_all(gone.fork(), cfg, self.today, done=done).proposals if p.kind == "wert"]
+        self.assertEqual([(p.booking_date, round(p.amount, 2)) for p in plain], [(date(2026, 10, 31), round(w[2].amount, 2))])
+        # its day checked again: one booking on that day (its mark is free again), nothing after it
+        again = [p for p in plan_all(gone.fork(), cfg, self.today, done=done, recheck={w[2].account_uuid: {w[2].booking_date}}).proposals if p.kind == "wert"]
+        self.assertEqual([(p.key, p.booking_date, round(p.amount, 2)) for p in again], [(w[2].key, w[2].booking_date, round(w[2].amount, 2))])
+        # you booked the value yourself instead: nothing to do
+        own = _replace_tx(real, tx)
+        own.post(tx.account_uuid, tx.booking_date, tx.amount, "Ich", "Wert selbst gebucht").planned = False
+        self.assertEqual([p for p in plan_all(own, cfg, self.today, done=done, recheck={w[2].account_uuid: {w[2].booking_date}}).proposals if p.kind == "wert"], [])
+        # amount changed in MoneyMoney: the difference back on that day, with the next free mark
+        ch = _replace_tx(real, tx, round(tx.amount + 50, 2))
+        self.assertEqual(len(changed_values(ch, [rec])), 1); self.assertEqual(changed_values(real, [rec]), [])
+        fix = [p for p in plan_all(ch, cfg, self.today, done=done, recheck={w[2].account_uuid: {w[2].booking_date}}).proposals if p.kind == "wert"]
+        self.assertEqual([(p.booking_date, round(p.amount, 2), p.tag) for p in fix], [(w[2].booking_date, -50.0, w[2].tag[:-1] + "2")])

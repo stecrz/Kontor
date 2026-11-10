@@ -28,7 +28,7 @@ import core  # noqa: E402
 import categorize  # noqa: E402
 import updates  # noqa: E402
 from service import App, make_handler  # noqa: E402
-from model import Ledger, accounts_from_export, fmt_eur, tx_from_export  # noqa: E402
+from model import TAG_RE, Ledger, accounts_from_export, fmt_eur, tx_from_export  # noqa: E402
 from storage import Store, load_or_create_master_key  # noqa: E402
 from tax import build_tax  # noqa: E402
 
@@ -208,8 +208,12 @@ class CoreTests(unittest.TestCase):
         r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve=approve)
         self.assertEqual(r["status"], "ok", r); self.assertEqual(r["geschrieben"], 4)        # 3 bookings + the comment on the source payment
         self.assertFalse([w for w in r["warnungen"] if "nach Buchung" in w], r["warnungen"])
-        self.assertTrue(r["probelauf"]); self.assertEqual(len(r["vorschlaege"]), 20)          # 24 - 1 rejected - 3 booked: still waiting
+        # 24 - 1 rejected - 3 booked, still waiting -- and one more: the value booked matches what is in MoneyMoney now (the loan
+        # bookings left out not included), so once they are booked the value needs one more adjustment
+        self.assertTrue(r["probelauf"]); self.assertEqual(len(r["vorschlaege"]), 21)
         self.assertIn(wert[1]["key"], [p["key"] for p in r["vorschlaege"]]); self.assertNotIn(wert[0]["key"], [p["key"] for p in r["vorschlaege"]])
+        more = [p for p in r["vorschlaege"] if p["art"] == "wert" and p["konto_id"] == wert[0]["konto_id"]]
+        self.assertEqual(len(more), 1); self.assertTrue(more[0]["tag"].endswith("-2"))
         self.assertNotIn(zins[0]["tag"], [p["tag"] for p in r["vorschlaege"]])
         made = [t for t in MockBridge.state["txs"] if zins[1]["tag"] in (t.get("purpose") or "")]
         self.assertEqual(len(made), 1); self.assertEqual(made[0]["amount"], -1234.56)
@@ -227,6 +231,57 @@ class CoreTests(unittest.TestCase):
         # invalid changes and marks are refused
         self.assertIsNotNone(MA.approval({zins[2]["key"]: {"betrag": "0"}})[1]); self.assertIsNotNone(MA.approval({"rm -rf": {}})[1])
         self.assertIsNotNone(MA.approval({zins[2]["key"]: {"datum": "2026-13-01"}})[1]); self.assertIsNotNone(MA.approval({zins[2]["tag"]: {}})[1])
+
+    def test_left_out_recalculated_and_deleted_value_checked_on_its_day(self):
+        """What you leave out of an approval is planned as not booked (the next value adjustment takes up the difference),
+        booked is exactly what you saw; a value adjustment deleted or changed in MoneyMoney gets its day checked again."""
+        cfg = core.merged_config(self.store.load("config.json")); cfg["probelauf"] = True
+        cfg["gesellschaften"][0].update(rueckwirkend_ab="2026-03", takt="monatlich")
+        props = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)["vorschlaege"]
+        tilg = [p for p in props if p["art"] == "tilgung"]
+        st = self.store.load("state.json")
+        led = core.fetch(MockBridge(True), cfg, TODAY)
+        held = core.plan_pending(led, cfg, st, TODAY, {tilg[0]["key"]})
+        old, new = {p["key"]: p["betrag"] for p in props}, {p["key"]: p["betrag"] for p in held}
+        self.assertNotIn(tilg[0]["key"], new)
+        moved = [k for k in new if k in old and abs(new[k] - old[k]) >= 0.005]
+        self.assertEqual(len(moved), 1); self.assertTrue(moved[0].split("|")[1].startswith("#mm-wert-"))       # only the next one
+        # the amounts shown before leaving it out are not the ones booked now: nothing is written
+        approve = {k: {"angezeigt": v} for k, v in old.items() if k != tilg[0]["key"]}
+        r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve=approve)
+        self.assertEqual(r["geschrieben"], 0); self.assertIn(core.tr("s_betraege_geaendert"), r["warnungen"]); self.assertTrue(r["probelauf"])
+        # with the amounts recalculated: all of them booked, the one left out keeps waiting
+        approve = {k: {"angezeigt": v} for k, v in new.items()}
+        r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve=approve)
+        self.assertEqual(r["status"], "ok", r); self.assertFalse([w for w in r["warnungen"] if "nach Buchung" in w], r["warnungen"])
+        made = {t["accountUuid"] + "|" + TAG_RE.search(t["purpose"]).group(0): t["amount"] for t in MockBridge.state["txs"] if TAG_RE.search(t.get("purpose") or "")}
+        for k, v in new.items():
+            self.assertAlmostEqual(made[k], v, 2)
+        self.assertIn(tilg[0]["key"], [p["key"] for p in r["vorschlaege"]])
+        # booked later on: the value adjusted once more, on the first month end after it
+        rest = {p["key"]: {"angezeigt": p["betrag"]} for p in r["vorschlaege"]}
+        r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve=rest)
+        self.assertEqual(r["status"], "ok", r); self.assertEqual(core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)["vorschlaege"], [])
+        # a value adjustment of a past month end deleted in MoneyMoney: its day checked again (not under "not booked")
+        txs = MockBridge.state["txs"]
+        wert = sorted((t for t in txs if "#mm-wert-2026" in (t.get("purpose") or "") and t["accountUuid"] == F.uid("priv.bet.pb")), key=lambda t: t["bookingDate"])[2]
+        txs.remove(wert)
+        acc = next(a for a in MockBridge.state["accounts"] if a["uuid"] == wert["accountUuid"]); acc["balance"][0][0] = round(acc["balance"][0][0] - wert["amount"], 2)
+        r = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        st = self.store.load("state.json"); wtag = TAG_RE.search(wert["purpose"]).group(0)
+        self.assertEqual(st.get("kontor_abgelehnt") or [], []); self.assertEqual(list(st["abgleich"]), [F.uid("priv.bet.pb")])
+        self.assertEqual([(p["key"], p["betrag"]) for p in r["vorschlaege"]], [(wert["accountUuid"] + "|" + wtag, wert["amount"])])
+        p = r["vorschlaege"][0]
+        r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve={p["key"]: {"angezeigt": p["betrag"]}})
+        self.assertEqual(r["geschrieben"], 1); self.assertNotIn("abgleich", self.store.load("state.json"))
+        back = [t for t in txs if wtag in (t.get("purpose") or "") and t["accountUuid"] == wert["accountUuid"]]
+        self.assertEqual([(t["amount"], t["bookingDate"]) for t in back], [(wert["amount"], wert["bookingDate"])])
+        # changed there: the difference back on its day, Kontor's list follows
+        back[0]["amount"] = round(back[0]["amount"] + 50, 2); acc["balance"][0][0] = round(acc["balance"][0][0] + 50, 2)
+        r = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        self.assertEqual([(p["betrag"], p["datum"]) for p in r["vorschlaege"]], [(-50.0, p["datum"])])
+        rec = next(x for x in self.store.load("state.json")["kontor_buchungen"] if x["tag"] == wtag and x["konto"] == wert["accountUuid"])
+        self.assertEqual(rec["betrag"], back[0]["amount"])
 
     def test_run_twice_then_dataset(self):
         cfg = core.merged_config(self.store.load("config.json"))
@@ -263,16 +318,18 @@ class CoreTests(unittest.TestCase):
         core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
         st = self.store.load("state.json")
         self.assertEqual(st.get("kontor_abgelehnt"), []); self.assertIn(tag, [r["tag"] for r in st["kontor_buchungen"]])
-        # a value adjustment deleted in MoneyMoney: under "not booked" too, the difference is proposed anyway; "book again" restores it as it was
+        # a value adjustment deleted in MoneyMoney: not under "not booked" -- its day is checked again and what is missing
+        # booked there (the same mark, free again), approved with the amount shown
         wert = [t for t in txs if "#mm-wert-" in (t.get("purpose") or "")][0]; txs.remove(wert)
         acc = next(a for a in MockBridge.state["accounts"] if a["uuid"] == wert["accountUuid"]); acc["balance"][0][0] = round(acc["balance"][0][0] - wert["amount"], 2)
         r5 = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
-        nb = self.store.load("state.json")["kontor_abgelehnt"]
-        self.assertEqual([r["grund"] for r in nb], ["geloescht"]); self.assertEqual(len([p for p in r5["vorschlaege"] if p["art"] == "wert"]), 1)
-        key = nb[0]["konto"] + "|" + nb[0]["tag"]
-        r6 = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve={key: {}})
-        self.assertEqual(r6["geschrieben"], 1); self.assertEqual(self.store.load("state.json")["kontor_abgelehnt"], [])
-        again = [t for t in txs if nb[0]["tag"] in (t.get("purpose") or "") and t["accountUuid"] == nb[0]["konto"]]
+        self.assertEqual(self.store.load("state.json")["kontor_abgelehnt"], [])
+        w5 = [p for p in r5["vorschlaege"] if p["art"] == "wert"]; self.assertEqual(len(w5), 1)
+        wtag = TAG_RE.search(wert["purpose"]).group(0)
+        self.assertEqual(w5[0]["key"], wert["accountUuid"] + "|" + wtag); self.assertAlmostEqual(w5[0]["betrag"], wert["amount"], 2)
+        r6 = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve={w5[0]["key"]: {"angezeigt": w5[0]["betrag"]}})
+        self.assertEqual(r6["geschrieben"], 1)
+        again = [t for t in txs if wtag in (t.get("purpose") or "") and t["accountUuid"] == wert["accountUuid"]]
         self.assertEqual(len(again), 1); self.assertEqual(again[0]["amount"], wert["amount"]); self.assertEqual(again[0]["bookingDate"], wert["bookingDate"])
         ds = self.store.load("dataset.json")
         self.assertEqual(ds["haupt"], F.uid("priv"))
@@ -676,6 +733,26 @@ class _AppBase(unittest.TestCase):
 
 class AppTests(_AppBase):
     """Dienst ueber HTTP: Einrichtung, Anmeldung, CSRF, Daten, Plan, Konfiguration, Lauf, Belege, Exporte."""
+
+    def test_approval_list_recalculated(self):
+        """The approval list for your selection, from the last state read (nothing written); dropping one plans the rest again."""
+        self.login()
+        self.app.config["probelauf"] = True
+        self.app.do_run(True, True)
+        props = self.store.load("state.json")["letzter_lauf"]["vorschlaege"]
+        k = next(p["key"] for p in props if p["art"] == "tilgung")
+        n_txs = len(MockBridge.state["txs"])
+        code, r = self.call("/api/bookings/plan", {"halten": [k], "aenderungen": {}})
+        self.assertEqual(code, 200); rows = {p["key"]: p["betrag"] for p in r["vorschlaege"]}
+        self.assertNotIn(k, rows); self.assertEqual(len(MockBridge.state["txs"]), n_txs)
+        moved = [x for x in props if x["key"] in rows and abs(rows[x["key"]] - x["betrag"]) >= 0.005]
+        self.assertEqual([x["art"] for x in moved], ["wert"])
+        self.assertEqual(self.call("/api/bookings/plan", {"halten": ["rm -rf"]})[0], 400)
+        self.assertEqual(self.call("/api/bookings/plan", {"halten": [], "aenderungen": {k: {"betrag": "0"}}})[0], 400)
+        # dropped: the list waiting is planned again without it (the same amounts as above)
+        self.assertEqual(self.call("/api/bookings/reject", {"key": k})[0], 200)
+        lr = self.store.load("state.json")["letzter_lauf"]
+        self.assertTrue(lr["probelauf"]); self.assertEqual({p["key"]: p["betrag"] for p in lr["vorschlaege"]}, rows)
 
     def test_unchanged_read_keeps_warm_state(self):
         """Unveraenderte Daten aus MoneyMoney: bisheriger Stand (mit Zwischenergebnissen) bleibt, nur der Lesezeitpunkt wird neu."""
@@ -2654,6 +2731,14 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("Kontor bucht" if auto else "Freigabe", pg.inner_text(".set-row"))
                 pg.click("#nav a[href='#bookings']"); pg.wait_for_selector(".mode-chip"); self.assertIn("Vollautomatisch" if auto else "Mit Freigabe", pg.inner_text(".mode-chip"))
                 self.assertIsNone(pg.query_selector("#run-dry"))              # checked at every sync, no button of its own
+                # the approval list with your selection: left out, recalculated (adjusted), new, not needed any more
+                rows = pg.evaluate("""() => { const sv = {...BOOK}, A = 'a|#mm-wert-20260131-1', B = 'a|#mm-wert-20260228-1', C = 'a|#mm-wert-20260331-1', D = 'a|#mm-wert-20260430-1';
+                    Object.assign(BOOK, {off: new Set([A]), edits: {}, calc: [{key: B, betrag: 150}, {key: C, betrag: 5}], extra: {}});
+                    BOOK.extra[C] = {key: C, betrag: 5};
+                    const r = bkRows({vorschlaege: [{key: A, betrag: 50}, {key: B, betrag: 100}, {key: D, betrag: 7}]});
+                    Object.assign(BOOK, sv); return r.map(x => [x.k.slice(-10), x.off, x.gone, x.b, x.adjusted, x.neu]); }""")
+                self.assertEqual(rows, [["20260131-1", True, False, 50, False, False], ["20260228-1", False, False, 150, True, False],
+                                        ["20260430-1", False, True, 7, False, False], ["20260331-1", False, False, 5, False, True]])
                 n_wait = pg.evaluate("((S.STATUS.letzter_lauf || {}).probelauf && (S.STATUS.letzter_lauf.vorschlaege || []).length) || 0")
                 self.assertEqual(pg.evaluate("(document.querySelector('#nav a[href=\"#bookings\"] .nbadge') || {}).textContent || ''"), str(n_wait) if n_wait else "")
                 pg.evaluate("window.__st = S.STATUS; S.STATUS = Object.assign({}, S.STATUS, {letzter_lauf: {probelauf: true, zeit: 'x', vorschlaege: [{}, {}, {}]}, update: {neuer: true, verfuegbar: '9.9.9'}}); statusMini()")

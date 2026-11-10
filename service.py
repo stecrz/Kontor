@@ -44,7 +44,7 @@ import updates
 from receipts import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
 from core import (RUN_LOCK, account_sig, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
-                     immo_results, import_package, ledger_fp, merge_holdings, merged_config, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
+                     immo_results, import_package, ledger_fp, merge_holdings, merged_config, plan_pending, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, apply_plan, role_label
 from rules import TAG_RE, bkey as rules_bkey, find_unmarked, plan_all as plan_rules
@@ -87,6 +87,11 @@ def approval(raw) -> Tuple[Optional[Dict[str, dict]], Optional[str]]:
             return None, tr("s_aenderung_ungueltig")
         if ch.get("zweck") is not None:
             c["zweck"] = str(ch["zweck"])[:300]
+        try:                    # the amount you saw: booked only if it is still the same
+            if ch.get("angezeigt") not in (None, ""):
+                c["angezeigt"] = round(float(ch["angezeigt"]), 2)
+        except (TypeError, ValueError):
+            return None, tr("s_aenderung_ungueltig")
         out[key] = c
     return out, None
 
@@ -1875,9 +1880,31 @@ def make_handler(app: App):
                             lr["vorschlaege"] = [x for x in lr["vorschlaege"] if x.get("key") != key]
                             lr["probelauf"] = bool(lr["vorschlaege"]) and lr.get("probelauf", False)
                     cur["kontor_abgelehnt"] = rej[-500:]
+                    if lr.get("probelauf") and app.ledger is not None:
+                        # what still waits, planned again without it (the next value adjustment of that account takes up the
+                        # difference) -- from the last state read, nothing is written
+                        try:
+                            lr["vorschlaege"] = plan_pending(app.ledger, app.config, cur, date.today())
+                            lr["probelauf"] = bool(lr["vorschlaege"])
+                        except Exception as e:          # the list stays as it was; the next check plans it again
+                            log.warning("Approval list not recalculated: %s", e)
                 app.store.update("state.json", upd, {})
                 log.info("Booking %s", "to be booked again" if body.get("wieder") else "dropped")
                 return self._json(200, {"ok": True})
+            if path == "/api/bookings/plan":
+                # the approval list for your selection: what you leave out (halten) or change (aenderungen) and everything
+                # planned after it, recalculated from the last state read -- nothing is saved or written
+                hold = body.get("halten") or []
+                if not isinstance(hold, list) or len(hold) > 2000 or not all(
+                        isinstance(k, str) and re.fullmatch(r"[0-9A-Za-z-]{8,64}", k.partition("|")[0]) and TAG_RE.fullmatch(k.partition("|")[2]) for k in hold):
+                    return self._json(400, {"fehler": tr("s_markierung_ungueltig")})
+                edits, err = approval(body.get("aenderungen") or {})
+                if err:
+                    return self._json(400, {"fehler": err})
+                if app.ledger is None:
+                    return self._json(200, {"vorschlaege": None})
+                st = app.store.load("state.json", {}) or {}
+                return self._json(200, {"vorschlaege": plan_pending(app.ledger, app.config, st, date.today(), set(hold), edits)})
             if path == "/api/bookings/restore":
                 # "Book again" with approval: out of "not booked", waiting for approval again (to change it before booking)
                 key = str(body.get("key") or "")

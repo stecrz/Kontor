@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.30 (2026-11-10 15:01)
+- Freigabe: Abwählen, Verwerfen oder Ändern einer Buchung rechnet die Liste sofort neu – die nächste Wertanpassung desselben Kontos gleicht die Differenz aus (bei Darlehen die Zinsen danach). Gebucht wird genau, was angezeigt ist; hat sich in MoneyMoney inzwischen etwas geändert, bucht Kontor nichts und zeigt die neuen Beträge.
+- In MoneyMoney gelöschte oder geänderte Wertanpassungen: Kontor prüft ihren Tag einmal neu und bucht dort, was fehlt (statt der Differenz heute) – die Buchungen danach bleiben. Sie stehen nicht mehr unter „Nicht gebucht“.
+- Markierungen nehmen die erste freie Nummer eines Tages (keine doppelte Markierung nach einer gelöschten Buchung).
+
 ## 3.12.29 (2026-11-10 14:23)
 - Gesellschaften: alle Einstellungen direkt sichtbar (kein ausklappbarer Bereich), „Beteiligung“ heißt jetzt „Beteiligungskonto“ und ist nicht vorausgewählt.
 - „Rückwirkend ab“ steht standardmäßig auf „nicht rückwirkend (ab jetzt)“.
