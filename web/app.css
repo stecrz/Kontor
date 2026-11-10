@@ -5,7 +5,7 @@
   color-scheme:light;
   --bg:#f5f5f7; --fg:#1d1d1f; --muted:#6e6e73; --faint:#aeaeb2; --line:#e5e5ea; --line-2:#d2d2d7; --head:#ffffff; --sub:#fafafa;
   --plan:#f7f7f9; --hatch:rgba(0,0,0,.13); --cur:#f0f0f4; --year:#f2f2f7; --group:#f5f5f7;
-  --neg:#c0392b; --pos:#1a8a4a; --accent:#1d1d1f; --check:#48484d; --accent-soft:#e8e8ed; --accent-fg:#1d1d1f; --accent-ink:#ffffff;
+  --badge:#ff3b30; --neg:#c0392b; --pos:#1a8a4a; --accent:#1d1d1f; --check:#48484d; --accent-soft:#e8e8ed; --accent-fg:#1d1d1f; --accent-ink:#ffffff;
   --side:rgba(246,246,248,.92); --side-fg:#1d1d1f;
   --warn-bg:#fff4df; --warn-fg:#8a4b00; --err-bg:#fde8e8; --err-fg:#8a1c1c; --ok-bg:#e6f5ec; --ok-fg:#0f5a30;
   --c-liq:#34c759; --c-anl:#12a88a; --c-fest:#1d9fc0; --c-bet:#af52de; --c-ford:#3a6ff0; --c-immo:#9e7458; --c-verb:#ff6b57; --c-ein:#1a8a4a; --c-aus:#c0392b; --c-neutral:#8e8e93; --c-nw:#e8aa00;
@@ -15,7 +15,7 @@
   color-scheme:dark;
   --bg:#000000; --fg:#f5f5f7; --muted:#98989d; --faint:#636366; --line:#2c2c2e; --line-2:#3a3a3c; --head:#1c1c1e; --sub:#161618;
           --plan:#1f1f22; --hatch:rgba(255,255,255,.14); --cur:#1e1e22; --year:#232326; --group:#232326;
-          --neg:#ff6b57; --pos:#5ad38a; --accent:#f2f2f5; --check:#cfcfd5; --accent-soft:#2c2c31; --accent-fg:#ffffff; --accent-ink:#111113;
+          --badge:#ff453a; --neg:#ff6b57; --pos:#5ad38a; --accent:#f2f2f5; --check:#cfcfd5; --accent-soft:#2c2c31; --accent-fg:#ffffff; --accent-ink:#111113;
           --side:rgba(20,20,22,.94); --side-fg:#f5f5f7;
           --c-nw:#ffd23f; --warn-bg:#3a2a12; --warn-fg:#ffd28a; --err-bg:#3a1515; --err-fg:#ffb3b3; --ok-bg:#12301f; --ok-fg:#9be0b6;
           --c-liq:#30d158; --c-anl:#2ec4a2; --c-fest:#3fbfdc; --c-bet:#bf5af2; --c-ford:#5b8cff; --c-immo:#b08a6e; --c-verb:#ff6961; --c-ein:#30d158; --c-aus:#ff6961;
@@ -67,7 +67,9 @@ input[type=checkbox] { accent-color:var(--check); }      /* a little softer than
   color:var(--muted); border:1px solid var(--line); background:repeating-linear-gradient(135deg, rgba(127,127,127,.16) 0 2px, transparent 2px 4px); cursor:help; }
 .alpha-tag.big { margin-left:10px; vertical-align:middle; font-size:10.5px; padding:2px 5px; position:relative; top:-2px; }
 .side nav a .alpha-tag + .nbadge { margin-left:6px; }
-.side nav a .nbadge { margin-left:auto; width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 2px var(--side-bg, #fff); flex-shrink:0; }
+.side nav a .nbadge { margin-left:auto; width:9px; height:9px; border-radius:50%; background:var(--badge); flex-shrink:0; }
+#menu-btn { position:relative; } #menu-btn.has-badge::after { content:""; position:absolute; top:3px; right:3px; width:8px; height:8px; border-radius:50%; background:var(--badge); }
+.side nav a .nbadge.n { width:auto; min-width:19px; height:19px; padding:0 6px; border-radius:10px; box-sizing:border-box; color:#fff; font-size:11.5px; font-weight:700; line-height:19px; text-align:center; font-variant-numeric:tabular-nums; }
 .loading { padding:40px 20px; color:var(--muted); font-size:14px; text-align:center; }
 .loading .note { font-size:12px; margin-top:10px; color:var(--faint); }
 .spin { display:inline-block; width:16px; height:16px; border:2px solid var(--faint); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; vertical-align:-3px; margin-right:8px; }

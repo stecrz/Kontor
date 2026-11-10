@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.23 (2026-11-10 01:23)
+- Seitenleiste zeigt, wo etwas zu tun ist: Zahl an „Auto-Buchungen“ für wartende Buchungen („!“ nach einem Fehler), roter Punkt an „Updates“ für eine neue Version; bei schmalem Fenster ein Punkt am Menüknopf, in der Web-App im Dock die Zahl am Symbol. Der Datenstand unten links zeigt das nicht mehr doppelt.
+- „Jetzt prüfen“ entfällt: Jeder Abgleich („Sync“) prüft die Buchungsregeln – jetzt auch, wenn sich nur die Regeln, deine Entscheidungen (abgelehnt, wieder anlegen) oder der Tag geändert haben.
+- „Auto-Buchungen“ ohne Alpha-Kennzeichen.
+
 ## 3.12.22 (2026-11-10 01:13)
 - Auto-Buchungen: Freigabe einzeln – Häkchen entfernen nimmt eine Buchung aus (sie wartet weiter), der Stift ändert Datum, Betrag oder Text (die Markierung bleibt), ✕ lehnt sie ab. Abgelehnte schlägt Kontor nicht wieder vor („Abgelehnt“ → „Wieder vorschlagen“).
 - „Von Kontor angelegt“ zeigt nur noch, was wirklich in MoneyMoney steht – nicht schon die wartenden Vorschläge. Auch die Vorschau in den Buchungsregeln rechnet mit dem Stand in MoneyMoney.

@@ -19,7 +19,7 @@ function setLang(l, pending) {
   if (l !== LANG) location.reload();
 }
 // pages not fully tested yet: usable, but marked "Alpha" in the menu and next to the page title
-const ALPHA_TABS = new Set(['overview', 'cashflow', 'planning', 'properties', 'tax', 'transactions', 'categories', 'bookings', 'rules']);
+const ALPHA_TABS = new Set(['overview', 'cashflow', 'planning', 'properties', 'tax', 'transactions', 'categories', 'rules']);
 const alphaTag = (cls = 'alpha-tag') => `<em class="${cls}" title="${t('alpha_tip')}">${t('alpha')}</em>`;
 // appearance, per device: dark (the default), light, or like the system
 const themeGet = () => { try { return ['light', 'auto'].includes(localStorage.getItem('kontor.theme')) ? localStorage.getItem('kontor.theme') : 'dark'; } catch (e) { return 'dark'; } };
@@ -526,6 +526,13 @@ const alleCtl = (n, bilanz) => swCtl('alle-zeilen', S.alle, bilanz ? t('ausgeble
 const planCtl = () => swCtl('planan', S.plan, t('plan'), t('plan_tip'));
 const planOn = () => S.plan || S.tab === 'balance' || S.tab === 'planning';     // in Bilanz und Planung immer mit Plan
 function hasRules() { const c = S.CFG || {}; return !!((c.darlehen || []).length || (c.gesellschaften || []).length); }
+function navBadge(href, text, title) {
+  const a = $(`#nav a[href="${href}"]`); if (!a) return;
+  let d = a.querySelector('.nbadge');
+  if (!text) { if (d) d.remove(); return; }
+  if (!d) { d = document.createElement('span'); a.appendChild(d); }
+  d.className = 'nbadge' + (text === '•' ? '' : ' n'); d.textContent = text === '•' ? '' : text; d.title = title || '';
+}
 function statusMini() {
   const st = S.STATUS; if (!st) return;
   const mm = mmState(st), m = st.moneymoney || {}, b = st.bericht || {}, l = st.letzter_lauf, ba = m.bankabruf;
@@ -542,9 +549,6 @@ function statusMini() {
   else if (b.laeuft) h += `<div class="sm-busy"><span class="spin xs"></span>${t('wird_neu_berechnet')}</div>`;
   if (m.luecken) h += `<div><a href="#sync">${t('depotstaende_pruefen')}</a></div>`;
   if (m.problem) h += `<div><a href="#sync" title="${esc(m.problem.text)}">${t('moneymoney_lief_kontor_konnte_nicht')}</a></div>`;
-  if (hasRules() && st.probelauf) h += `<div><b>${t('testmodus')}</b> ${t('regeln_buchen_nichts')}</div>`;
-  if (l && l.fehler) h += `<div><a href="#bookings">${t('letzter_abgleich_mit_fehler')}</a></div>`;
-  else if (l && l.probelauf && (l.vorschlaege || []).length) h += `<div><a href="#bookings">${t('0_buchungsvorschlaege', l.vorschlaege.length)}</a></div>`;
   $('#status-mini').innerHTML = h;
   const sb = $('#sync-btn');
   if (sb) {
@@ -552,7 +556,12 @@ function statusMini() {
     sb.classList.toggle('busy', busy); sb.disabled = busy || OFFLINE.mode;
     sb.title = OFFLINE.mode ? t('offline_ansicht_der_mac_ist_2') : t('jetzt_aus_moneymoney_lesen_regeln');
   }
-  const upd = $('#nav a[href="#updates"]'); if (upd) { let d = upd.querySelector('.nbadge'); const neu = !!(st.update && st.update.neuer); if (neu && !d) { d = document.createElement('span'); d.className = 'nbadge'; d.title = t('update') + st.update.verfuegbar + t('verfuegbar'); upd.appendChild(d); } else if (!neu && d) d.remove(); }
+  // something to do: bookings waiting for approval (count) or a failed run (!), an update (dot) -- in the sidebar and on the app icon
+  const waiting = l && l.probelauf && !l.fehler ? (l.vorschlaege || []).length : 0;
+  navBadge('#bookings', l && l.fehler ? '!' : waiting ? String(waiting) : '', l && l.fehler ? t('letzter_abgleich_mit_fehler') : t('0_buchungsvorschlaege', waiting));
+  navBadge('#updates', st.update && st.update.neuer ? '•' : '', st.update && st.update.neuer ? t('update') + st.update.verfuegbar + t('verfuegbar') : '');
+  const mb = $('#menu-btn'); if (mb) mb.classList.toggle('has-badge', !!(waiting || (l && l.fehler) || (st.update && st.update.neuer)));     // narrow window: the sidebar is closed
+  try { if (navigator.setAppBadge) { if (waiting) navigator.setAppBadge(waiting); else navigator.clearAppBadge(); } } catch (e) { /* not supported */ }
   if (!st.ablage.verschluesselt) banner(t('daten_liegen_unverschluesselt_verschlu'), 'err');
   else if (st.ablage.schluessel === 'datei') banner(t('datenschluessel_liegt_als_datei_schlue'));
 }
@@ -2697,7 +2706,7 @@ function vBuchungen(runs) {
   const artL = {tilgung: t('art_tilgung'), zins: t('art_zins'), wert: t('art_wert'), spiegel: t('art_spiegel')};
   let h = `<div class="toolbar">
     ${pending ? `<button id="run-live" class="ico" ${local ? '' : t('disabled_title_nur_am_mac')}>${ICON.check}<span>${t('jetzt_buchen')} (<span id="sel-n">${pending}</span>)</span></button>` : ''}
-    <button id="run-dry" class="ico${pending ? ' secondary' : ''}" title="${esc(t('jetzt_pruefen_tip'))}">${ICON.refresh}${t('abgleich_jetzt_test')}</button>
+    <span class="muted small">${t('geprueft_bei_sync')}</span>
     <span class="sp"></span>
     <a class="mode-chip${ask ? '' : ' auto'}" href="#rules" title="${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')}">${ask ? ICON.hand : ICON.bolt}${t(ask ? 'modus_freigabe' : 'modus_automatisch')}</a>
   </div><div class="note">${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')} <a href="#rules">${t('regeln_bearbeiten')} →</a></div>`;
@@ -4058,7 +4067,6 @@ function bind(main) {
   $$('.ev-del', main).forEach(b => b.addEventListener('click', e => { const tr = e.target.closest('.ev-row'); if (confirm(t('ereignis_loeschen'))) plan({ereignis: {id: tr.dataset.id, loeschen: true}}); }));
 
   // Buchungen
-  const rd = $('#run-dry', main); if (rd) rd.addEventListener('click', () => startRun(true));
   const autoSw = $('#auto-book', main); if (autoSw) autoSw.addEventListener('change', async () => {      // book automatically (on) or with approval (off)
     if (autoSw.checked && !confirm(t('modus_auto_frage'))) { autoSw.checked = false; return; }
     const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.probelauf = !autoSw.checked;

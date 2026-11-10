@@ -1076,7 +1076,13 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 return {"status": "nicht_verfuegbar", "text": txt}
             log.error("MoneyMoney error: %s", e)
             return {"status": "fehler", "text": tr("s_moneymoney_fehler_s") % e}
-        fp = "%s@%s" % (ledger_fp(ledger), version())       # a new version builds the report again (new figures, e.g. after an update)
+        # a new version builds the report again (new figures, e.g. after an update); the rules run again when their basis
+        # changed: their settings, the bookings you rejected or allowed again, and the day (interest at month end, values)
+        basis = json.dumps([[config.get(k) for k in ("darlehen", "gesellschaften", "bereiche", "abruf", "probelauf", "bilanz")],
+                            sorted(r.get("tag", "") for r in state.get("kontor_buchungen") or [] if isinstance(r, dict)),
+                            sorted(r.get("tag", "") for r in state.get("kontor_abgelehnt") or [] if isinstance(r, dict)),
+                            today.isoformat()], sort_keys=True, default=str)
+        fp = "%s@%s#%s" % (ledger_fp(ledger), version(), hashlib.sha256(basis.encode()).hexdigest()[:16])
         if fp == state.get("fingerprint") and not force:
             log.info("No change in MoneyMoney since the last run.")
             return {"status": "unveraendert", "text": tr("s_keine_aenderung_in_moneymoney_seit"), "_ledger": ledger,

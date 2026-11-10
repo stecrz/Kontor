@@ -229,6 +229,9 @@ class CoreTests(unittest.TestCase):
         res2 = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertEqual(res2["geschrieben"], 0)
         self.assertEqual(core.run_once(self.store, cfg, TODAY, dry=False, force=False, bridge_factory=MockBridge)["status"], "unveraendert")
+        cfg2 = copy.deepcopy(cfg); cfg2["gesellschaften"][0]["schwelle"] = 5          # changed rules: checked again without a change in MoneyMoney
+        self.assertEqual(core.run_once(self.store, cfg2, TODAY, dry=True, force=False, bridge_factory=MockBridge)["status"], "ok")
+        self.assertEqual(core.run_once(self.store, cfg2, TODAY + timedelta(days=1), dry=True, force=False, bridge_factory=MockBridge)["status"], "ok")   # a new day too
         # Kontor's own list of what it booked (besides the marks): 24 bookings, the 11 comments on source payments are none
         recs = self.store.load("state.json")["kontor_buchungen"]
         self.assertEqual(len(recs), 24); self.assertTrue(all(r["tag"].startswith("#mm-") and r["konto"] for r in recs))
@@ -2616,7 +2619,13 @@ class BrowserTest(unittest.TestCase):
                 auto = pg.evaluate("S.CFG.probelauf === false"); self.assertEqual(pg.is_checked("#auto-book"), auto)      # the setting as a switch at the top
                 self.assertIn("Kontor bucht" if auto else "Freigabe", pg.inner_text(".set-row"))
                 pg.click("#nav a[href='#bookings']"); pg.wait_for_selector(".mode-chip"); self.assertIn("Vollautomatisch" if auto else "Mit Freigabe", pg.inner_text(".mode-chip"))
-                self.assertTrue(pg.query_selector("#run-dry svg"))
+                self.assertIsNone(pg.query_selector("#run-dry"))              # checked at every sync, no button of its own
+                n_wait = pg.evaluate("((S.STATUS.letzter_lauf || {}).probelauf && (S.STATUS.letzter_lauf.vorschlaege || []).length) || 0")
+                self.assertEqual(pg.evaluate("(document.querySelector('#nav a[href=\"#bookings\"] .nbadge') || {}).textContent || ''"), str(n_wait) if n_wait else "")
+                pg.evaluate("window.__st = S.STATUS; S.STATUS = Object.assign({}, S.STATUS, {letzter_lauf: {probelauf: true, zeit: 'x', vorschlaege: [{}, {}, {}]}, update: {neuer: true, verfuegbar: '9.9.9'}}); statusMini()")
+                self.assertEqual(pg.inner_text("#nav a[href='#bookings'] .nbadge"), "3"); self.assertTrue(pg.query_selector("#nav a[href='#updates'] .nbadge"))
+                self.assertNotIn("Freigabe", pg.inner_text("#status-mini")); self.assertIsNone(pg.query_selector("#nav a[href='#bookings'] .alpha-tag"))
+                pg.evaluate("S.STATUS = window.__st; statusMini()")
                 pg.click(".mode-chip"); pg.wait_for_selector("#save-rules")
                 # companies come from the areas: one card each with its share, the participation chosen, target/actual live
                 self.assertEqual(pg.eval_on_selector_all(".co-card h3", "e => e.map(x => x.textContent)"), ["Alpha GbR", "Beta GbR"])
