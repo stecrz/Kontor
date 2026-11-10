@@ -243,14 +243,15 @@ class CompanyTests(unittest.TestCase):
         self.assertAlmostEqual(wert2[0].amount, round(0.49 * (pb_value + 240000), 2) + 90000.0, 2)
 
     def test_counter_account(self):
+        """A counter account mirrors each booking (see MirrorTests); its text names the original account."""
         today = date(2026, 11, 4)
-        led = make_ledger({}, [])
-        cfg = company_cfg(gesellschaften=[{"bereich": "b", "gegenkonten": [
-            {"konto": F.uid("priv.bet.shs") + " | Beteiligung an Beta GbR", "quelle": F.uid("shs.kap.s") + " | Kapitalkonto A", "faktor": -1}]}])
+        led = make_ledger({}, [F.tx("shs.kap.s", date(2026, 9, 1), -5000.0, "Ich", "Einlage")])
+        cfg = company_cfg(gesellschaften=[{"bereich": "b", "rueckwirkend_ab": "alles", "gegenkonten": [
+            {"konto": F.uid("priv.bet.shs") + " | Beteiligung an Beta GbR", "quelle": F.uid("shs.kap.s") + " | Kapitalkonto A"}]}])
         res = plan_all(led, cfg, today)
-        self.assertEqual([(p.kind, p.amount) for p in res.proposals], [("spiegel", round(74145.0 + 65312.27, 2))])
-        self.assertTrue(res.proposals[0].tag.startswith("#mm-spiegel-20261104-"))
-        self.assertIn("Abgleich mit Kapitalkonto A", res.proposals[0].purpose)
+        self.assertEqual([(p.kind, p.amount, p.booking_date) for p in res.proposals], [("spiegel", 5000.0, date(2026, 9, 1))])
+        self.assertTrue(res.proposals[0].tag.startswith("#mm-gk-"))
+        self.assertIn("Gegenbuchung zu Kapitalkonto A: Einlage", res.proposals[0].purpose)
         self.assertEqual(res.preview[0]["i"], 0)
 
     def test_back_to_month_ends(self):
@@ -815,3 +816,81 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(len(changed_values(ch, [rec])), 1); self.assertEqual(changed_values(real, [rec]), [])
         fix = [p for p in plan_all(ch, cfg, self.today, done=done, recheck={w[2].account_uuid: {w[2].booking_date}}).proposals if p.kind == "wert"]
         self.assertEqual([(p.booking_date, round(p.amount, 2), p.tag) for p in fix], [(w[2].booking_date, -50.0, w[2].tag[:-1] + "2")])
+
+
+class MirrorTests(unittest.TestCase):
+    """Counter accounts as a mirror: each booking into the other account with the opposite sign, both ways where both are
+    offline accounts, never back; pairs booked by hand count; gone or changed originals are notes."""
+    today = date(2026, 11, 4)
+
+    def cfg(self, back="alles", quelle="shs.kap.s"):
+        return company_cfg(gesellschaften=[{"bereich": "b", "rueckwirkend_ab": back, "gegenkonten": [
+            {"konto": F.uid("priv.bet.shs") + " | Beteiligung an Beta GbR", "quelle": F.uid(quelle) + " | Konto"}]}])
+
+    def test_both_ways_pairs_and_never_back(self):
+        txs = [F.tx("shs.kap.s", date(2026, 9, 1), -5000.0, "Ich", "Einlage"), F.tx("priv.bet.shs", date(2026, 10, 2), 1200.0, "Beta GbR", "Entnahme"),
+               F.tx("shs.kap.s", date(2026, 10, 1), 1000.0, "Ich", "Entnahme Okt"), F.tx("priv.bet.shs", date(2026, 10, 4), -1000.0, "Beta GbR", "von Hand")]
+        led = make_ledger({}, txs)
+        res = plan_all(led, self.cfg(), self.today)
+        got = sorted((p.account_uuid, p.booking_date, p.amount) for p in res.proposals)
+        self.assertEqual(got, sorted([(F.uid("shs.kap.s"), date(2026, 10, 2), -1200.0), (F.uid("priv.bet.shs"), date(2026, 9, 1), 5000.0)]))
+        pv = res.preview[0]
+        self.assertEqual((pv["richtung"], pv["paare"], pv["offen"]), ("beide", 1, 2))
+        # written: nothing again, nothing mirrored back
+        real = led.without_planned(keep=[p.key for p in res.proposals])
+        again = plan_all(real.fork(), self.cfg(), self.today)
+        self.assertEqual(again.proposals, []); self.assertEqual(again.warnings, []); self.assertEqual(again.preview[0]["gespiegelt"], 3)
+
+    def test_from_now_on_and_bank_account_one_way(self):
+        old = F.tx("shs.kk", date(2026, 10, 1), -300.0, "Ich", "alt")
+        cfg = self.cfg(back="", quelle="shs.kk")              # the company's side is a bank account: only into yours
+        res = plan_all(make_ledger({}, [old]), cfg, self.today)
+        self.assertEqual(res.proposals, []); self.assertEqual(list(res.mirror_since.values()), [old["id"]])
+        new = F.tx("shs.kk", date(2026, 9, 30), 800.0, "Ich", "neu, mit altem Datum")       # booked after setting it up
+        res2 = plan_all(make_ledger({}, [old, new]), cfg, self.today, since=res.mirror_since)
+        self.assertEqual([(p.account_uuid, p.amount) for p in res2.proposals], [(F.uid("priv.bet.shs"), -800.0)])
+        self.assertEqual(res2.preview[0]["richtung"], "zu_a")
+        # mine is a bank account too: nothing can be mirrored
+        cfg3 = company_cfg(gesellschaften=[{"bereich": "b", "gegenkonten": [{"konto": F.uid("priv.giro") + " | Giro", "quelle": F.uid("shs.kk") + " | KK"}]}])
+        self.assertTrue(any("Offline-Konto" in w for w in plan_all(make_ledger({}, []), cfg3, self.today).warnings))
+
+    def test_gone_or_changed_original_is_a_note_deleted_mirror_not_again(self):
+        o = F.tx("shs.kap.s", date(2026, 9, 1), -5000.0, "Ich", "Einlage")
+        led = make_ledger({}, [o])
+        res = plan_all(led, self.cfg(), self.today)
+        p = res.proposals[0]
+        mirror = F.tx("priv.bet.shs", p.booking_date, p.amount, p.payee, p.purpose)
+        # the original deleted: a note to delete the counter booking too
+        gone = plan_all(make_ledger({}, [mirror]), self.cfg(), self.today)
+        self.assertEqual(gone.proposals, []); self.assertTrue(any("kein Original mehr" in w for w in gone.warnings))
+        # the original changed: a note to adjust it
+        changed = plan_all(make_ledger({}, [dict(o, amount=-5500.0), mirror]), self.cfg(), self.today)
+        self.assertEqual(changed.proposals, []); self.assertTrue(any("passt nicht mehr" in w for w in changed.warnings))
+        # the counter booking Kontor made deleted: not made again on its own ("Not booked")
+        rec = {"tag": p.tag, "konto": p.account_uuid, "datum": p.booking_date.isoformat(), "betrag": p.amount}
+        again = plan_all(make_ledger({}, [o]), self.cfg(), self.today, created={p.key: rec})
+        self.assertEqual(again.proposals, []); self.assertEqual([m["tag"] for m in again.missing], [p.tag])
+
+    def test_new_account_shown_before_its_first_booking(self):
+        from report import inactive_accounts
+        led = make_ledger({"shs.kap.p": 0.0}, [])
+        acc = led.accounts[F.uid("shs.kap.p")]
+        hidden, auto = inactive_accounts(led, [acc], {}, [], {"bilanz": {"inaktiv_monate": 12}}, self.today)
+        self.assertIn(acc.uuid, auto)                                   # empty and long known: hidden by activity
+        hidden, auto = inactive_accounts(led, [acc], {}, [], {"bilanz": {"inaktiv_monate": 12}}, self.today, {acc.uuid: "2026-11-03"})
+        self.assertNotIn(acc.uuid, auto)                                # new in MoneyMoney: shown at once
+
+
+class CapitalAccountRoleTests(unittest.TestCase):
+    def test_capital_account_private_participation_company_debt(self):
+        """An account named "Kapitalkonto": privately a participation (also empty, also of the type "Darlehenskonto"), in a
+        company its debt to the partner."""
+        from report import account_roles
+        raw = F.accounts_raw({})
+        for a in raw:
+            if a["uuid"] == F.uid("priv.bet.pb"):
+                a.update(name="Kapitalkonto Alpha GbR", type="Darlehenskonto", balance=[[0.0, "EUR"]])
+        led = Ledger(accounts_from_export(raw), [])
+        roles = account_roles(led, company_cfg())
+        self.assertEqual(roles[F.uid("priv.bet.pb")], "beteiligungen")
+        self.assertEqual(roles[F.uid("pb.kap.s")], "verbindlichkeiten")

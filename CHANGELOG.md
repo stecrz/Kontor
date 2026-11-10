@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.12.34 (2026-11-10 17:14)
+- Gegenkonten sind jetzt ein Spiegel: Jede Buchung im einen Konto kommt mit umgekehrtem Vorzeichen ins andere – in beide Richtungen, soweit beide Offline-Konten sind. Früher beidseitig von Hand gebuchte Paare werden erkannt. Fehlt das Original einer Gegenbuchung oder wurde es geändert, steht ein Hinweis unter „Auto-Buchungen“. Das Feld „Faktor“ entfällt.
+- Wertanpassungen der Beteiligung nennen die Rechnung: „Wertanpassung: 49 % × … (Wert …) = …“.
+- Auto-Buchungen: Hilfe-Symbol mit Kurzhilfe (Klick: Hilfe) und Link zu den Buchungsregeln.
+- Nach einem Update lädt die Seite erst neu, wenn der Dienst wieder antwortet – keine Fehlerseite mehr in der Web-App.
+- Neue Konten aus MoneyMoney erscheinen sofort, nicht erst nach dem ersten Umsatz.
+- Konten mit „Kapitalkonto“ im Namen werden privat als „Beteiligungen“ vorgeschlagen (in der Gesellschaft weiter als Schuld), auch wenn sie in MoneyMoney Darlehenskonten sind.
+
 ## 3.12.33 (2026-11-10 16:52)
 - Abgleich und Freigabe: links unten (und auf „Freigeben“) steht, was Kontor gerade tut – „Liest MoneyMoney …“, „Bucht 12 von 56 …“. Das Ergebnis erscheint sofort, die Auswertung rechnet Kontor danach im Hintergrund neu; ein Abgleich muss nicht mehr auf sie warten.
 - Kategorien, die du zuordnest, während die Auswertung neu berechnet wird, gehen nicht mehr verloren.

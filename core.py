@@ -579,10 +579,12 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         for x in g.get("gegenkonten") or []:
             if not isinstance(x, dict) or not x.get("konto") or not x.get("quelle"):
                 continue
-            a = ref(tr("s_regel_gegenkonto") % n, x["konto"], want_offline=True, group_ok=False)
+            a = ref(tr("s_regel_gegenkonto") % n, x["konto"], group_ok=False)
             q = ref(tr("s_chk_gegenkonto_quelle") % n, x["quelle"], group_ok=False)
             if a is not None:
                 targets.append(a)
+            if a is not None and q is not None and not (ledger.writable(a.uuid, config) or ledger.writable(q.uuid, config)):
+                add("warnung", tr("s_s_spiegel_kein_offline") % (tr("s_regel_gegenkonto") % n, a.name, q.name))
             if q is not None and q.uuid not in inside:
                 add("warnung", tr("s_s_quelle_nicht_in_gesellschaft") % (n, q.path))
             if q is not None and g.get("beteiligung") and roles.get(q.uuid) in rules.VALUE_OFF:
@@ -705,6 +707,7 @@ def _plan_inputs(state: dict, ledger: Ledger, approve: Optional[Dict[str, dict]]
     return SimpleNamespace(
         created=created, not_booked=not_booked, again_recs=again_recs, restore=restore, rejected=rejected,
         done=dict(state.get("rueckwirkend") or {}), marks=marks, gone=gone, changed=changed, recheck=recheck, persist=persist,
+        since=dict(state.get("spiegel_seit") or {}),              # counter account mirrors: the newest booking when set up
         back={k: r for k, r in not_booked.items() if r.get("konto") and (r["konto"], r["tag"]) in marks},     # there again
         back_again={k for k, r in again_recs.items() if (r.get("konto"), r.get("tag")) in marks})
 
@@ -714,7 +717,7 @@ def _plan_round(ledger: Ledger, config: dict, today: date, ctx: SimpleNamespace,
     """The rules once: hold = left out of this approval (planned as not booked), edits = your changes (planned as changed),
     booked = written in this run (not booked again)."""
     hold = set(hold or ())
-    result = plan_all(ledger, config, today, ctx.created, ctx.rejected | hold, ctx.done, edits, ctx.recheck)
+    result = plan_all(ledger, config, today, ctx.created, ctx.rejected | hold, ctx.done, edits, ctx.recheck, ctx.since)
     planned = {p.key for p in result.proposals}
     for k in sorted(ctx.restore - planned - hold - set(booked or ())):
         rec = ctx.again_recs.get(k) or ctx.not_booked.get(k)
@@ -1263,6 +1266,15 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             return {"status": "unveraendert", "text": tr("s_keine_aenderung_in_moneymoney_seit"), "_ledger": ledger,
                     "_kategorien": categories}
 
+        # when Kontor first saw each account: one new in MoneyMoney shows at once (before its first transaction); the first
+        # time all known accounts count as long known
+        seen_before = state.get("konten_seit")
+        seen = dict(seen_before) if isinstance(seen_before, dict) else {}
+        for u, a in ledger.accounts.items():
+            if not a.group and u not in seen:
+                seen[u] = today.isoformat() if isinstance(seen_before, dict) else "alt"      # "alt": known before
+        seen_new = {u: v for u, v in seen.items() if u not in (seen_before or {})}
+        state["konten_seit"] = seen                 # for the report of this run
         step("regeln", 0, 0)
         ctx = _plan_inputs(state, ledger, approve, dry)
         done = ctx.done                         # companies whose booking back is done (area -> "Rückwirkend ab")
@@ -1388,6 +1400,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         back = ctx.back
 
         again_done = (made_keys & set(ctx.again_recs)) | ctx.back_again | (obsolete & set(ctx.again_recs))
+        mirrors_new = {k: v for k, v in result.mirror_since.items() if k not in ctx.since}
         old_recheck = state.get("abgleich") or {}
 
         def _merge(cur: dict) -> None:
@@ -1419,6 +1432,10 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                     cur.pop("abgleich", None)
             if done != (state.get("rueckwirkend") or {}):
                 cur["rueckwirkend"] = dict(cur.get("rueckwirkend") or {}, **done)
+            if seen_new:
+                cur["konten_seit"] = dict(seen_new, **(cur.get("konten_seit") or {}))
+            if mirrors_new:                 # a counter account mirror set up now: from here on its new bookings
+                cur["spiegel_seit"] = dict(mirrors_new, **(cur.get("spiegel_seit") or {}))
             if new_recs:                    # Kontor's own list of what it booked (encrypted state, not the marks in MoneyMoney)
                 cur["kontor_buchungen"] = (cur.get("kontor_buchungen") or []) + new_recs
             if not prefetched:

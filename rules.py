@@ -68,6 +68,7 @@ class RuleResult:
     info: List[str] = field(default_factory=list)
     missing: List[dict] = field(default_factory=list)     # created by Kontor before, no longer found in MoneyMoney
     preview: List[dict] = field(default_factory=list)     # per rule: target, actual, difference, months booked back (interface)
+    mirror_since: Dict[str, int] = field(default_factory=dict)      # counter accounts set up now: the newest booking at that moment
 
 
 VALUE_TAGS = ("#mm-wert-", "#mm-spiegel-")
@@ -228,8 +229,8 @@ def payment_kind(t: Tx) -> str:
 DEFAULT_TEXTS = {
     "tilgung_text": "{art} {datum} von {quelle} · {tag}",
     "zins_text": "Zinsen {monat} · {prozent} % p.a. auf {basis} · {tag}",
-    "wert_text": "Wertanpassung {anteil} % · Wert {quelle} {wert} · {tag}",
-    "spiegel_text": "Abgleich mit {quelle} · Stand {wert} · {tag}",
+    "wert_text": "Wertanpassung: {anteil} % × {wert} (Wert {quelle}) = {soll} · {tag}",
+    "spiegel_text": "Gegenbuchung zu {quelle}: {text} · {tag}",
 }
 
 
@@ -524,7 +525,7 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, kind: str, target, s
         tag = prefix + str(n)
         if _skipped(skip, target.uuid, tag):          # rejected by you under Auto bookings
             continue
-        p = Proposal(rule, kind, target.uuid, target.path, day, diff, payee, purpose(src_value, tag), cfg.get("kategorie") or "", tag,
+        p = Proposal(rule, kind, target.uuid, target.path, day, diff, payee, purpose(src_value, tag, want), cfg.get("kategorie") or "", tag,
                      group=group, retro=retro)
         _emit(res, ledger, p, edits)
         if retro:
@@ -550,12 +551,107 @@ def _target_ok(ledger: Ledger, config: Optional[dict], res: RuleResult, rule: st
     return False
 
 
+MIRROR_TAG = "#mm-gk-"
+MIRROR_DAYS = 7             # bookings made on both sides by hand before: at most this many days apart count as a pair
+
+
+def mirror_key(a_uuid: str, b_uuid: str) -> str:
+    return "%s|%s" % (a_uuid, b_uuid)
+
+
+def plan_mirror(ledger: Ledger, res: RuleResult, rule: str, a, b, cfg: dict, config: Optional[dict], pv: dict,
+                skip: Optional[set] = None, created: Optional[Dict[str, dict]] = None, claimed: Optional[set] = None,
+                edits: Optional[Dict[str, dict]] = None, since: Optional[Dict[str, int]] = None) -> None:
+    """Counter account as a mirror: every booking of one account comes into the other with the opposite sign (same day, its
+    text, a mark naming the original: #mm-gk-<id>) -- into each side that is an offline account; a mirrored booking is never
+    mirrored back. From "Rückwirkend ab" of the company (a day, or everything), otherwise the bookings made after the mirror
+    was set up. Bookings made on both sides by hand before (same amount, opposite sign, at most MIRROR_DAYS apart) are a pair.
+    Kontor never changes or deletes: a mirrored booking whose original is gone or changed is a note to correct it there; one
+    deleted itself goes to "Not booked" (created list)."""
+    created, claimed = created or {}, claimed if claimed is not None else set()
+    sides = [x for x in (a, b) if ledger.writable(x.uuid, config)]
+    if not sides:
+        res.warnings.append(tr("s_s_spiegel_kein_offline") % (rule, a.name, b.name))
+        return
+    start = parse_start(cfg.get("rueckwirkend_ab"))
+    key = mirror_key(a.uuid, b.uuid)
+    real = {x.uuid: [t for t in ledger.transactions(x.uuid) if not getattr(t, "planned", False)] for x in (a, b)}
+    first_id = None
+    if start is None:                       # from now on: the bookings made after the mirror was set up
+        first_id = (since or {}).get(key)
+        if first_id is None:
+            first_id = max([t.id for x in (a, b) for t in real[x.uuid]] + [0])
+            res.mirror_since[key] = first_id
+
+    def mirror_of(t: Tx) -> Optional[int]:
+        m = re.search(re.escape(MIRROR_TAG) + r"(\d+)", (t.purpose or "") + " " + (t.comment or ""))
+        return int(m.group(1)) if m else None
+
+    def counts(t: Tx) -> bool:
+        if start == "alles":
+            return True
+        if isinstance(start, date):
+            return t.booking_date >= start
+        return t.id > first_id
+
+    by_id = {t.id: t for x in (a, b) for t in real[x.uuid]}
+    originals = {x.uuid: [t for t in real[x.uuid] if mirror_of(t) is None] for x in (a, b)}
+    mirrors = {x.uuid: {mirror_of(t): t for t in real[x.uuid] if mirror_of(t) is not None} for x in (a, b)}
+    other = {a.uuid: b, b.uuid: a}
+    # what is mirrored already, and notes on mirrored bookings whose original is gone or changed
+    done_ids: set = set()
+    marked = 0
+    for x in (a, b):
+        src = other[x.uuid]
+        for oid, m in mirrors[x.uuid].items():
+            o = by_id.get(oid)
+            if o is None or o.account_uuid != src.uuid:
+                res.warnings.append(tr("s_s_spiegel_original_weg") % (x.name, m.booking_date.strftime("%d.%m.%Y"), fmt_eur(m.amount), src.name, x.name))
+                continue
+            done_ids.add(oid); marked += 1
+            if abs(m.amount + o.amount) >= 0.005 or m.booking_date != o.booking_date:
+                res.warnings.append(tr("s_s_spiegel_geaendert") % (x.name, m.booking_date.strftime("%d.%m.%Y"), fmt_eur(m.amount), src.name,
+                                                                   o.booking_date.strftime("%d.%m.%Y"), fmt_eur(o.amount)))
+    # pairs booked by hand on both sides (no mark): the closest day first, each booking in one pair only
+    open_a = [t for t in originals[a.uuid] if t.id not in done_ids and counts(t)]
+    free_b = [t for t in originals[b.uuid] if t.id not in done_ids]
+    pairs = 0
+    for t in sorted(open_a, key=lambda t: (t.booking_date, t.id)):
+        best = None
+        for u in free_b:
+            gap = abs((u.booking_date - t.booking_date).days)
+            if abs(u.amount + t.amount) < 0.005 and gap <= MIRROR_DAYS and (best is None or gap < best[0]):
+                best = (gap, u)
+        if best:
+            free_b.remove(best[1]); done_ids.update((t.id, best[1].id)); pairs += 1
+    booked = 0
+    for x in (a, b):
+        target = other[x.uuid]
+        if target not in sides:
+            continue
+        for t in sorted(originals[x.uuid], key=lambda t: (t.booking_date, t.id)):
+            if t.id in done_ids or not counts(t):
+                continue
+            tag = MIRROR_TAG + str(t.id)
+            if _skipped(skip, target.uuid, tag) or _created_check(ledger, created, bkey(target.uuid, tag), res, claimed):
+                continue
+            text = (t.purpose or t.name or "").strip() or "-"
+            p = Proposal(rule, "spiegel", target.uuid, target.path, t.booking_date, round(-t.amount, 2), x.name,
+                         _fill(DEFAULT_TEXTS["spiegel_text"], quelle=x.name, text=text, tag=tag), cfg.get("kategorie") or "", tag)
+            _emit(res, ledger, p, edits)
+            booked += 1
+    pv.update(richtung="beide" if len(sides) == 2 else ("zu_a" if sides[0] is a else "zu_b"), gespiegelt=marked + pairs, offen=booked,
+              paare=pairs, saldo_a=round(a.balance, 2), saldo_b=round(b.balance, 2))
+
+
 def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Optional[Dict[str, str]] = None,
                  config: Optional[dict] = None, skip: Optional[set] = None, done: Optional[Dict[str, str]] = None,
-                 edits: Optional[Dict[str, dict]] = None, recheck: Optional[Dict[str, set]] = None) -> RuleResult:
-    """One company (an area of the kind "Gesellschaft"): the participation account follows share x value of the company
-    (its accounts without the partners' equity), each counter account follows factor x one account of the company.
-    recheck: account -> past days to check again (see _keep_value)."""
+                 edits: Optional[Dict[str, dict]] = None, recheck: Optional[Dict[str, set]] = None,
+                 created: Optional[Dict[str, dict]] = None, claimed: Optional[set] = None,
+                 since: Optional[Dict[str, int]] = None) -> RuleResult:
+    """One company (an area of the kind "Gesellschaft"): its counter accounts mirror each booking (plan_mirror), then the
+    participation account follows share x value of the company (its accounts without the partners' equity) -- so what was
+    mirrored into the company counts in its value. recheck: account -> past days to check again (see _keep_value)."""
     recheck = recheck or {}
     res = RuleResult()
     roles = roles or {}
@@ -563,6 +659,24 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
     inside = {a.uuid for a in area["leaves"]}
     payee = (cfg.get("gegenpartei") or "").strip() or name
     retro_done = bool(cfg.get("rueckwirkend_ab")) and (done or {}).get(str(area["id"])) == cfg.get("rueckwirkend_ab")
+    for i, g in enumerate(cfg.get("gegenkonten") or []):
+        if not isinstance(g, dict) or not g.get("konto") or not g.get("quelle"):
+            continue
+        pv = {"art": "gegenkonto", "bereich": area["id"], "i": i}
+        try:
+            mine, theirs = ledger.resolve(g["konto"]), ledger.resolve(g["quelle"])
+        except KeyError as e:
+            res.warnings.append("%s: %s" % (tr("s_regel_gegenkonto") % name, e))
+            continue
+        rule = tr("s_regel_gegenkonto") % mine.name
+        if mine.group or theirs.group:
+            res.warnings.append(tr("s_s_quelle_ist_eine_gruppe") % rule)
+            continue
+        if mine.uuid in inside or theirs.uuid not in inside or mine.uuid == theirs.uuid:
+            res.warnings.append(tr("s_s_zielkonto_liegt_innerhalb_der") % rule)
+            continue
+        plan_mirror(ledger, res, rule, mine, theirs, cfg, config, pv, skip, created, claimed, edits, since)
+        res.preview.append(pv)
     if cfg.get("beteiligung"):
         rule = tr("s_regel_beteiligung") % name
         pv = {"art": "beteiligung", "bereich": area["id"]}
@@ -579,29 +693,9 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
             share = float(anteil)
             pct = ("%.4f" % (share * 100)).rstrip("0").rstrip(".").replace(".", ",")
             _keep_value(ledger, res, rule, "wert", target, ValueSeries(ledger, accs, config, share), cfg, today, payee,
-                        lambda v, tag: _fill(DEFAULT_TEXTS["wert_text"], anteil=pct, quelle=name, wert=fmt_eur(v), tag=tag), pv, skip,
+                        lambda v, tag, want: _fill(DEFAULT_TEXTS["wert_text"], anteil=pct, quelle=name, wert=fmt_eur(v), soll=fmt_eur(want), tag=tag), pv, skip,
                         retro_done, str(area["id"]), edits, recheck.get(target.uuid))
             res.preview.append(pv)
-    for i, g in enumerate(cfg.get("gegenkonten") or []):
-        if not isinstance(g, dict) or not g.get("konto") or not g.get("quelle"):
-            continue
-        pv = {"art": "gegenkonto", "bereich": area["id"], "i": i}
-        try:
-            target, src = ledger.resolve(g["konto"]), ledger.resolve(g["quelle"])
-        except KeyError as e:
-            res.warnings.append("%s: %s" % (tr("s_regel_gegenkonto") % name, e))
-            continue
-        rule = tr("s_regel_gegenkonto") % target.name
-        if src.group:
-            res.warnings.append(tr("s_s_quelle_ist_eine_gruppe") % rule)
-            continue
-        if not _target_ok(ledger, config, res, rule, target, inside | {src.uuid}):
-            continue
-        f = float(g.get("faktor", -1) if g.get("faktor") not in (None, "") else -1)
-        _keep_value(ledger, res, rule, "spiegel", target, ValueSeries(ledger, [src], config, f), cfg, today, payee,
-                    lambda v, tag, src=src: _fill(DEFAULT_TEXTS["spiegel_text"], quelle=src.name, wert=fmt_eur(v), tag=tag), pv, skip,
-                    retro_done, str(area["id"]), edits, recheck.get(target.uuid))
-        res.preview.append(pv)
     return res
 
 
@@ -611,7 +705,7 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
 
 def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[str, dict]] = None,
              skip: Optional[set] = None, done: Optional[Dict[str, str]] = None, edits: Optional[Dict[str, dict]] = None,
-             recheck: Optional[Dict[str, set]] = None) -> RuleResult:
+             recheck: Optional[Dict[str, set]] = None, since: Optional[Dict[str, int]] = None) -> RuleResult:
     """created: Kontor's own list of the bookings it made (tag -> record), see _created_check. Values (participations, counter
     accounts) need none: they always book the difference to the balance in MoneyMoney. skip: marks you rejected (or left out
     of an approval). edits: your changes from the approval. recheck: account -> past days to check again."""
@@ -620,7 +714,7 @@ def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[s
 
     def add(r: RuleResult) -> None:
         total.proposals += r.proposals; total.warnings += r.warnings; total.info += r.info
-        total.missing += r.missing; total.preview += r.preview
+        total.missing += r.missing; total.preview += r.preview; total.mirror_since.update(r.mirror_since)
     # Reihenfolge: erst Darlehen (veraendern die Werte der Gesellschaften), dann Beteiligungen und Gegenkonten
     for i, cfg in enumerate(config.get("darlehen", []) or []):
         if cfg.get("aktiv", True):
@@ -639,5 +733,5 @@ def plan_all(ledger: Ledger, config: dict, today: date, created: Optional[Dict[s
             if area is None:
                 total.warnings.append(tr("s_gesellschaft_s_bereich_fehlt") % cfg.get("bereich"))
                 continue
-            add(plan_company(ledger, cfg, area, today, roles, config, skip, done, edits, recheck))
+            add(plan_company(ledger, cfg, area, today, roles, config, skip, done, edits, recheck, created, claimed, since))
     return total

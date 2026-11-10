@@ -214,7 +214,7 @@ details.rule .r-pv { white-space:nowrap; }
 .gk-row .pv { grid-column:1 / -1; }
 .gk-row.invalid select { border-color:var(--neg); }
 .gk-arrow { color:var(--muted); font-size:15px; }
-.gk-note { margin-top:6px; } .gks .gk-row + .add-gk, .gks > .add-gk { margin-top:2px; }
+.gks .gk-row + .add-gk, .gks > .add-gk { margin-top:2px; }
 .gk-del { background:none; color:var(--muted); font-size:17px; line-height:1; padding:4px 6px; } .gk-del:hover { color:var(--neg); }
 .pv { margin-top:5px; color:var(--muted); font-variant-numeric:tabular-nums; line-height:1.5; } .pv:empty { display:none; }
 .pv b { color:var(--fg); font-weight:600; }

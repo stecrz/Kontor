@@ -130,7 +130,7 @@ const H = {
   regel_darlehen_h: t('regel_darlehen_h'), regel_gesellschaften_h: t('regel_gesellschaften_h'),
   h_l_name: t('h_l_name'), h_l_aktiv: t('h_l_aktiv'), h_l_art: t('h_l_art'), h_l_text: t('h_l_text'), h_l_excl: t('h_l_excl'), h_l_zinstag: t('h_l_zinstag'),
   h_l_ab: t('h_l_ab'), h_l_gp: t('h_l_gp'), h_l_kt: t('h_l_kt'), h_l_kz: t('h_l_kz'),
-  h_co_anteil: t('h_co_anteil'), h_co_bet: t('h_co_bet'), h_co_gk: t('h_co_gk'), h_co_rueck: t('h_co_rueck'), h_co_schwelle: t('h_co_schwelle'), h_co_gp: t('h_co_gp'),
+  auto_buchungen_h: t('auto_buchungen_h'), h_co_anteil: t('h_co_anteil'), h_co_bet: t('h_co_bet'), h_co_gk: t('h_co_gk'), h_co_rueck: t('h_co_rueck'), h_co_schwelle: t('h_co_schwelle'), h_co_gp: t('h_co_gp'),
   methode: t('12_6_monate_durchschnitt_der'),
   inflation: t('ausgaben_steigen_standardmaessig_mit_d'),
   steig_ein: t('jaehrliche_steigerung_der_einnahmen_z'),
@@ -172,7 +172,7 @@ const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl:
   darlehen_iban: 'rules-loans', darlehen_konto: 'rules-loans', darlehen_quelle: 'rules-loans', zinsmodell: 'rules-loans', satz: 'rules-loans', basis_override: 'rules-loans',
   h_l_name: 'rules-loans', h_l_aktiv: 'rules-loans', h_l_art: 'rules-loans', h_l_text: 'rules-loans', h_l_excl: 'rules-loans', h_l_zinstag: 'rules-loans', h_l_ab: 'rules-loans',
   h_l_gp: 'rules-loans', h_l_kt: 'rules-loans', h_l_kz: 'rules-loans', h_co_anteil: 'areas', h_co_bet: 'rules-companies', h_co_gk: 'rules-companies',
-  h_co_rueck: 'rules-back', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', methode: 'planning', inflation: 'planning', steig_ein: 'planning',
+  auto_buchungen_h: 'auto-bookings', h_co_rueck: 'rules-back', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', methode: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', ereignis: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', paket: 'backup', timemachine: 'backup', diagnose: 'troubleshooting', pruefen: 'setup', updates: 'updates',
   update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', dokumente: 'properties', immo_planung: 'properties'};
@@ -405,6 +405,20 @@ function checkVersion(v) {
   if (!checkVersion.on) { checkVersion.on = true; toast(t('neue_version') + v + t('seite_wird_neu_geladen'), 3000); setTimeout(() => location.reload(), 800); }
   return true;
 }
+// the service restarts (an update): reload only once it answers again -- a reload while it is away leaves an error page
+// (in the web app in the Dock only ⌘R helped then); newVersion: wait until it runs another version than this page
+async function waitAndReload(newVersion) {
+  if (waitAndReload.on) return;
+  waitAndReload.on = true;
+  const until = Date.now() + 180000;
+  while (Date.now() < until) {
+    await new Promise(r => setTimeout(r, 1500));
+    let s = null;
+    try { const r = await fetch('/api/session', {credentials: 'same-origin', cache: 'no-store'}); if (r.ok) s = await r.json(); } catch (e) {}
+    if (s && s.version && !s.offline && (!newVersion || !PAGE_VERSION || s.version !== PAGE_VERSION)) break;
+  }
+  location.reload();
+}
 async function checkSession() {
   try { SESSION = await api('/api/session'); } catch (e) { $('#login').classList.remove('hidden'); $('#login-err').textContent = e.message + t('neuer_versuch_in_5_s'); setTimeout(checkSession, 5000); return; }
   swApply(!IS_LOCAL && SESSION.offline_kopie !== false);     // the offline copy is for the iPhone; on the Mac it would only leave stale pages behind (e.g. after a port change)
@@ -605,7 +619,7 @@ async function pollStatus() {
   // Status holen; läuft ein Abgleich oder Berichtsneubau, öfter nachsehen und nach Abschluss die Daten frisch laden
   S.STATUS = await api('/api/status'); statusMini();
   if (checkVersion(S.STATUS.version)) return;
-  if (S.STATUS.neustart_ausstehend) { clearTimeout(BER.timer); BER.timer = setTimeout(() => pollStatus().catch(() => setTimeout(() => location.reload(), 4000)), 3000); return; }
+  if (S.STATUS.neustart_ausstehend) { clearTimeout(BER.timer); BER.timer = setTimeout(() => pollStatus().catch(() => waitAndReload(true)), 3000); return; }
   const b = S.STATUS.bericht || {};
   clearTimeout(BER.timer);
   if (b.laeuft || (S.STATUS.dienst || {}).laeuft) { BER.timer = setTimeout(() => pollStatus().catch(() => {}), 3000); return; }
@@ -2796,7 +2810,7 @@ function vBuchungen(runs) {
   let h = `<div class="toolbar">
     ${pending ? `<button id="run-live" class="ico" ${local ? '' : t('disabled_title_nur_am_mac')}>${ICON.check}<span>${t('jetzt_buchen')} (<span id="sel-n">${pending}</span>)</span></button>` : ''}
     ${ask ? `<button id="bk-refresh" class="secondary ico" title="${esc(t('freigabe_aktualisieren_tip'))}" ${OFFLINE.mode ? 'disabled' : ''}>${ICON.refresh}<span>${t('aktualisieren')}</span></button>` : ''}
-    <span class="sp"></span>
+    <span class="sp"></span>${hq('auto_buchungen_h')}<a class="small" href="#rules">${t('zu_den_regeln')}</a>
     <a class="mode-chip${ask ? '' : ' auto'}" href="#rules" title="${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')}">${ask ? ICON.hand : ICON.bolt}${t(ask ? 'modus_freigabe' : 'modus_automatisch')}</a>
   </div>`;
   if (l) {
@@ -3218,8 +3232,8 @@ function acctSel(cls, selected, filter, empty) {
 // counter account: a private manual account (outside the company) = counterpart of one account of the company
 function gkRow(x, bid) {
   const inside = k => k.bereich_id === String(bid);
-  return `<div class="gk-row" data-f="${x.faktor ?? -1}">${acctSel('g-konto', x.konto, k => !k.gruppe && k.manuell && !inside(k), t('privates_konto'))}`
-    + `<span class="gk-arrow" title="${esc(t('gk_folgt'))}" aria-label="${esc(t('gk_folgt'))}">←</span>${acctSel('g-quelle', x.quelle, k => !k.gruppe && inside(k), t('konto_der_gesellschaft'))}`
+  return `<div class="gk-row">${acctSel('g-konto', x.konto, k => !k.gruppe && !inside(k), t('privates_konto'))}`
+    + `<span class="gk-arrow" title="${esc(t('gk_spiegel'))}" aria-label="${esc(t('gk_spiegel'))}">⇄</span>${acctSel('g-quelle', x.quelle, k => !k.gruppe && inside(k), t('konto_der_gesellschaft'))}`
     + `<button class="ico gk-del" title="${esc(t('entfernen'))}" aria-label="${esc(t('entfernen'))}">×</button><div class="pv small"></div></div>`;
 }
 // "back to": not at all, from a day (date field), or everything since the company exists
@@ -3240,7 +3254,7 @@ function companyCard(b, g) {
   return `<div class="co-card" data-b="${esc(bid)}"><div class="co-head"><h3>${esc(b.name)}</h3>`
     + (has ? `<a class="pill neutral" href="#setup/areas">${t('anteil_0', pctText(b.anteil))}</a>` : `<a class="pill warn" href="#setup/areas">${t('anteil_fehlt')}</a>`) + hq('h_co_anteil') + `</div>`
     + row(t('co_beteiligung'), 'h_co_bet', `${acctSel('c-bet', g.beteiligung, betCandidate(bid), t('keine_2'))}<div class="pv small" data-pv="b"></div>`)
-    + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}<span class="opt">${t('optional')}</span></div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="secondary small add-gk">${t('gegenkonto_hinzufuegen')}</button><div class="small muted gk-note">${t('gk_richtung')}</div></div></div>`
+    + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}<span class="opt">${t('optional')}</span></div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="secondary small add-gk">${t('gegenkonto_hinzufuegen')}</button></div></div>`
     + row(t('co_takt'), 'h_co_takt', `<select class="c-takt"><option value="taeglich" ${g.takt !== 'monatlich' ? 'selected' : ''}>${t('takt_taeglich')}</option><option value="monatlich" ${g.takt === 'monatlich' ? 'selected' : ''}>${t('takt_monatlich')}</option></select><div class="small muted c-takt-tip">${taktTip(g.takt)}</div>`)
     + row(t('co_rueck'), 'h_co_rueck', `${backField(g.rueckwirkend_ab)}<div class="small muted c-ab-state"></div>`)
     + row(t('co_schwelle'), 'h_co_schwelle', `<div class="row tight"><input type="number" step="0.01" min="0.01" class="c-sw" value="${g.schwelle ?? 0.01}" style="width:110px"> €</div>`)
@@ -3260,6 +3274,11 @@ function rulesPreviewShow(rp, r) {
     const card = $$('.co-card', rp).find(c => c.dataset.b === String(p.bereich));
     const row = card && (p.art === 'beteiligung' ? card : $$('.gk-row', card)[p.i]);
     const el = row && $(p.art === 'beteiligung' ? '[data-pv="b"]' : '.pv', row);
+    if (el && p.art === 'gegenkonto' && p.richtung) {          // mirror: which way, how many mirrored, what is open
+      el.innerHTML = t(p.richtung === 'beide' ? 'gk_beide' : p.richtung === 'zu_a' ? 'gk_zu_mir' : 'gk_zu_ges') + (p.gespiegelt ? ` · ${t('gk_gespiegelt_n', p.gespiegelt)}` : '') + ' · '
+        + (p.offen ? `<span class="pv-diff">${p.offen === 1 ? t('buchung_offen_1') : t('buchungen_offen_n', p.offen)}</span>` : `<span class="pv-ok">✓ ${t('aktuell')}</span>`);
+      continue;
+    }
     if (!el || p.soll == null) continue;
     const ok = Math.abs(p.diff || 0) < 0.005 && !p.rueck;
     // target with its calculation (quiet), actual; no difference -- what is to book is listed under Auto bookings
@@ -3331,7 +3350,7 @@ function collectRules() {
     return l;
   });
   cfg.gesellschaften = $$('#companies .co-card').map(c => ({ bereich: c.dataset.b, beteiligung: $('.c-bet', c).value,
-    gegenkonten: $$('.gk-row', c).map(r => ({konto: $('.g-konto', r).value, quelle: $('.g-quelle', r).value, faktor: parseFloat(r.dataset.f) || -1})),
+    gegenkonten: $$('.gk-row', c).map(r => ({konto: $('.g-konto', r).value, quelle: $('.g-quelle', r).value})),
     rueckwirkend_ab: backValue(c), takt: $('.c-takt', c).value, schwelle: parseFloat($('.c-sw', c).value) || 0.01, gegenpartei: $('.c-gp', c).value.trim() }))
     .filter(g => g.beteiligung || g.gegenkonten.length);
   delete cfg.beteiligungen; delete cfg.saldo_spiegel;
@@ -4286,7 +4305,7 @@ function bind(main) {
     rp.addEventListener('click', e => {
       if (e.target.closest('.rule .del')) { setTimeout(changed); return; }
       const add = e.target.closest('.add-gk');
-      if (add) { add.insertAdjacentHTML('beforebegin', gkRow({faktor: -1}, add.closest('.co-card').dataset.b)); $('.g-konto', add.previousElementSibling).focus(); changed(); return; }
+      if (add) { add.insertAdjacentHTML('beforebegin', gkRow({}, add.closest('.co-card').dataset.b)); $('.g-konto', add.previousElementSibling).focus(); changed(); return; }
       const del = e.target.closest('.gk-del'); if (del) { del.closest('.gk-row').remove(); changed(); return; }
       const rc = e.target.closest('.c-recheck');
       if (rc) { api('/api/rules/recheck', {bereich: rc.closest('.co-card').dataset.b}).then(() => { toast(t('rueck_erneut_ok'), 5000); preview(); }).catch(er => toast(er.message, 5000)); }
@@ -4335,7 +4354,7 @@ function bind(main) {
     const pw = $('#rs-pw').value, withPw = $('#rs-pw-reset').checked;
     if (!pw) return showFindings($('#rs-report'), [], t('passwort_eingeben'), 'fehler');
     if (!confirm(t('wirklich_alle_kontor_daten_auf') + (withPw ? t('und_das_passwort_zuruecksetzen') : '') + t('belegdateien_und_protokoll_bleiben_vor'))) return;
-    try { const r = await api('/api/reset', {passwort: pw, mit_passwort: withPw}); toast(t('zurueckgesetzt_neustart_der_oberflaech'), 4000); setTimeout(() => location.reload(), 1200); }
+    try { const r = await api('/api/reset', {passwort: pw, mit_passwort: withPw}); toast(t('zurueckgesetzt_neustart_der_oberflaech'), 4000); waitAndReload(false); }
     catch (e) { showFindings($('#rs-report'), [], e.message, 'fehler'); } });
 
   // Pakete
@@ -4345,7 +4364,7 @@ function bind(main) {
 
   // Updates
   const uc = $('#up-check', main); if (uc) uc.addEventListener('click', async () => { toast(t('pruefe')); await api('/api/update/check', {}); S.STATUS = await api('/api/status'); route(); });
-  const ui = $('#up-install', main); if (ui) ui.addEventListener('click', async () => { if (!confirm(t('update_installieren_und_dienst_neu_2'))) return; toast(t('update_wird_installiert'), 30000); try { const r = await api('/api/update/install', {}); toast(r.text, 8000); if (r.ok && r.neustart) setTimeout(() => location.reload(), 6000); } catch (e) { toast(e.message, 8000); } });
+  const ui = $('#up-install', main); if (ui) ui.addEventListener('click', async () => { if (!confirm(t('update_installieren_und_dienst_neu_2'))) return; toast(t('update_wird_installiert'), 30000); try { const r = await api('/api/update/install', {}); toast(r.text, 8000); if (r.ok && r.neustart) waitAndReload(true); } catch (e) { toast(e.message, 8000); } });
   const lr = $('#log-refresh', main); if (lr) lr.addEventListener('click', route);
   const ls = $('#log-show', main); if (ls) ls.addEventListener('click', async () => { try { await api('/api/file/reveal', {pfad: ((S.STATUS.ablage || {}).ordner || '') + '/kontor.log'}); } catch (e) { toast(e.message, 5000); } });
 }

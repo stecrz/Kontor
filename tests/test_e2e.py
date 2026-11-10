@@ -1730,6 +1730,12 @@ class FeatureTests(_AppBase):
         P = ds["haupt"]; b = ds["bereiche"][P]
         self.assertIn(F.uid("priv.alt"), b["konten_inaktiv"])
         self.assertEqual(b["konten_aktivitaet"][F.uid("priv.alt")], 9999); self.assertEqual(b["konten_aktivitaet"][F.uid("priv.giro")], 0)
+        # an account new in MoneyMoney: shown at once, before its first booking
+        accts.insert([a["uuid"] for a in accts].index(F.uid("priv.tr")) + 1, F.acc("priv.neu", "Neues Konto", 3, "Offline-Konto", balance=0.0))
+        self.run_and_wait()
+        nb = self.call("/api/dataset")[1]["bereiche"][P]
+        self.assertNotIn(F.uid("priv.neu"), nb["konten_inaktiv"]); self.assertIn(F.uid("priv.alt"), nb["konten_inaktiv"])
+        code, ds = self.call("/api/dataset"); b = ds["bereiche"][P]
         code, kt = self.call("/api/accounts")
         self.assertEqual([x for x in kt["konten"] if x["uuid"] == F.uid("priv.alt")][0]["aktiv_grenze"], 9999)
         alt = [r for r in b["bilanz"]["zeilen"] if r["id"] == F.uid("priv.alt")][0]

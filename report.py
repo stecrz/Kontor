@@ -102,10 +102,14 @@ def _hint_role(name: str) -> Optional[str]:
     return None
 
 
-def _signed(role: Optional[str], acc: Account) -> Optional[str]:
-    """"+/-": Guthaben -> Forderung, Schuld -> Verbindlichkeit; "kapital": Guthaben -> Beteiligung, Schuld -> Verbindlichkeit."""
+def _signed(role: Optional[str], acc: Account, in_company: bool = False) -> Optional[str]:
+    """"+/-": Guthaben -> Forderung, Schuld -> Verbindlichkeit; "kapital": in a company its debt to the partner (a credit
+    balance: a participation), privately your participation -- also before its first booking, whatever its type in MoneyMoney
+    (often "Darlehenskonto"); only a debit balance there is a debt."""
     if role == "kapital":
-        return "beteiligungen" if acc.balance > 0.005 else "verbindlichkeiten"
+        if in_company:
+            return "beteiligungen" if acc.balance > 0.005 else "verbindlichkeiten"
+        return "verbindlichkeiten" if acc.balance < -0.005 else "beteiligungen"
     if role != "+/-":
         return role
     return "forderungen" if acc.balance > 0.005 else "verbindlichkeiten"
@@ -129,6 +133,15 @@ def account_roles(ledger: Ledger, config: dict) -> Dict[str, str]:
             except KeyError:
                 pass
     roles: Dict[str, str] = {}
+    company: set = set()                # accounts in areas of the kind "Gesellschaft"
+    for b in config.get("bereiche") or []:
+        if isinstance(b, dict) and b.get("art") == "gesellschaft":
+            for ref in b.get("konten") or []:
+                try:
+                    a = ledger.resolve(ref)
+                except KeyError:
+                    continue
+                company.update(x.uuid for x in (ledger.descendants(a.uuid) if a.group else [a]))
 
     def walk(acc: Account, group_hint: Optional[str]):
         if acc.group:
@@ -138,12 +151,13 @@ def account_roles(ledger: Ledger, config: dict) -> Dict[str, str]:
             role = cfg_roles.get(acc.uuid)
             if not role and acc.portfolio:
                 role = "wertpapiere"
+            inside = acc.uuid in company
             if not role:
-                role = _signed(_hint_role(acc.name), acc)
+                role = _signed(_hint_role(acc.name), acc, inside)
             if not role:
-                role = _signed(next((r for k, r in STRONG_TYPES.items() if k in t), None), acc)
+                role = _signed(next((r for k, r in STRONG_TYPES.items() if k in t), None), acc, inside)
             if not role and group_hint:
-                role = _signed(group_hint, acc)
+                role = _signed(group_hint, acc, inside)
             if not role:
                 role = next((r for k, r in WEAK_TYPES.items() if k in t), None)
             roles[acc.uuid] = role or "sonstiges"
@@ -352,11 +366,21 @@ def account_months(ledger: Ledger, acc: Account, today: date, extra_keys=()) -> 
     return out
 
 
+def _seen_month(seen: Optional[Dict[str, str]], uuid: str) -> Optional[int]:
+    """The month Kontor first saw an account (year * 12 + month), None: unknown or long known."""
+    v = (seen or {}).get(uuid) or ""
+    try:
+        return int(v[:4]) * 12 + int(v[5:7])
+    except ValueError:
+        return None
+
+
 def inactive_accounts(ledger: Ledger, leaves: List[Account], hist: Dict[str, Dict[str, Optional[float]]], mkeys: List[str],
-                      config: dict, today: date) -> Tuple[Set[str], Set[str]]:
+                      config: dict, today: date, seen: Optional[Dict[str, str]] = None) -> Tuple[Set[str], Set[str]]:
     """(ausgeblendet, inaktiv nach Aktivitaet). Inaktiv = ohne Bestand und ohne Umsatz in den letzten N Monaten (Altdaten).
     Ausgeblendet = je Konto "ausblenden", oder "nach Aktivitaet" und inaktiv; "immer anzeigen" nie. Ausgeblendete Konten
-    bleiben in allen Summen enthalten."""
+    bleiben in allen Summen enthalten. seen: uuid -> day Kontor first saw the account -- one new in MoneyMoney is shown at once,
+    before its first transaction."""
     bcfg = config.get("bilanz", {}) or {}
     n = int(bcfg.get("inaktiv_monate", 12) or 0)
     force_hide: Set[str] = set()
@@ -378,15 +402,17 @@ def inactive_accounts(ledger: Ledger, leaves: List[Account], hist: Dict[str, Dic
     if n:
         for acc in leaves:
             h = hist.get(acc.uuid, {})
+            first = _seen_month(seen, acc.uuid)
             if all(abs(h.get(k) or 0.0) < 0.005 for k in recent) and abs(acc.balance) < 0.005 \
-                    and not any(t.booking_date >= cutoff for t in ledger.transactions(acc.uuid)):
+                    and not any(t.booking_date >= cutoff for t in ledger.transactions(acc.uuid)) \
+                    and not (first is not None and first >= cutoff.year * 12 + cutoff.month):
                 auto.add(acc.uuid)
     hidden = {u for u in auto if u not in force_show} | {a.uuid for a in leaves if a.uuid in force_hide}
     return hidden, auto
 
 
 def activity_limits(ledger: Ledger, leaves: List[Account], hist: Dict[str, Dict[str, Optional[float]]], mkeys: List[str],
-                    today: date) -> Dict[str, int]:
+                    today: date, seen: Optional[Dict[str, str]] = None) -> Dict[str, int]:
     """uuid -> groesstes N, bei dem das Konto unter "nach Aktivitaet" noch ausgeblendet waere (wie inactive_accounts):
     ausgeblendet genau dann, wenn 0 < N <= Grenze. 0 = nie (Saldo), 9999 = immer (nie Bestand oder Umsatz)."""
     now = today.year * 12 + today.month
@@ -400,7 +426,9 @@ def activity_limits(ledger: Ledger, leaves: List[Account], hist: Dict[str, Dict[
         since_h = now - (int(last_h[:4]) * 12 + int(last_h[5:7])) if last_h else 9999
         last_t = max((t.booking_date for t in ledger.transactions(acc.uuid)), default=None)
         since_t = now - (last_t.year * 12 + last_t.month) if last_t else 10000
-        out[acc.uuid] = max(0, min(since_h, since_t - 1, 9999))
+        first = _seen_month(seen, acc.uuid)
+        since_seen = now - first if first is not None else 10000
+        out[acc.uuid] = max(0, min(since_h, since_t - 1, since_seen - 1, 9999))
     return out
 
 
@@ -765,8 +793,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
             cache.clear()
         cache[ckey] = copy.deepcopy((R, inbound, warn_c))
     step(0.85, tr("x_bilanz"))
-    inactive, inactive_auto = inactive_accounts(ledger, leaves, hist, mkeys, config, today)
-    limits = activity_limits(ledger, leaves, hist, mkeys, today)
+    inactive, inactive_auto = inactive_accounts(ledger, leaves, hist, mkeys, config, today, state.get("konten_seit"))
+    limits = activity_limits(ledger, leaves, hist, mkeys, today, state.get("konten_seit"))
 
     # Konten mit Kontostaende-Verlauf: Depots -> Bewertung = Wertaenderung - Zufluesse;
     # andere Konten -> Korrektur = Saldoaenderung - eigene Buchungen (nur dort, wo ein eingetragener Stand abweicht)
