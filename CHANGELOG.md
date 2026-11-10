@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.12.29 (2026-11-10 14:23)
+- Gesellschaften: alle Einstellungen direkt sichtbar (kein ausklappbarer Bereich), „Beteiligung“ heißt jetzt „Beteiligungskonto“ und ist nicht vorausgewählt.
+- „Rückwirkend ab“ steht standardmäßig auf „nicht rückwirkend (ab jetzt)“.
+- Die Rechnung steht grau neben dem Soll: „(= N % × Betrag Wert der Gesellschaft)“.
+
 ## 3.12.28 (2026-11-10 14:02)
 - „Neu buchen“ legt eine Buchung wieder zur Freigabe vor, wo du sie vor dem Buchen ändern kannst; mit „Vollautomatisch buchen“ bucht es sie sofort.
 - Verlauf unter Auto-Buchungen zeigt nur noch die Prüfungen (Zeit, Vorschläge, gebucht, Fehler) – die Buchungen selbst stehen darüber.

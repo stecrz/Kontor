@@ -308,15 +308,15 @@ Kontor recognises the instalment on the source account – by the lender's IBAN 
 
 Every area of the kind “company” (Setup → Areas) appears as a card, with your **share**. The share is set there only; the card links to it.
 
-- **Participation**: your offline account for this company – you can choose offline accounts with the position “Participations” (Setup → Accounts); if exactly one fits the company's name, Kontor suggests it (taken over only with “Save and check”). Kontor keeps it at **share × value of the company**. Value = all accounts of its area, i.e. assets minus debts (without accounts with the position “Capital accounts (equity)”, guarantees and off-balance accounts).
-- **Counter accounts** (optional): your offline account as the counterpart of one of the company's accounts – same amount, opposite sign. Example: your capital account is a debt to you in the partnership and a receivable for you (“loan to the partnership”). Then you book contributions and withdrawals only once in the company and Kontor keeps your account in line. If you keep no such account or book it yourself, you need no counter accounts.
+- **Participation account**: your offline account for this company – you can choose offline accounts with the position “Participations” (Setup → Accounts); none is chosen in advance, because the bookings start as soon as you choose one and save. Kontor keeps it at **share × value of the company**. Value = all accounts of its area, i.e. assets minus debts (without accounts with the position “Capital accounts (equity)”, guarantees and off-balance accounts).
+- **Counter accounts** (optional): your offline account as the counterpart of one of the company's accounts – same amount, opposite sign. Example: your capital account is a debt to you in the partnership and a receivable for you (“loan to the partnership”). The direction is fixed: you book contributions and withdrawals only once in the company, Kontor keeps your account in line – it never books into the company's account. If you keep no such account or book it yourself, you need no counter accounts.
 
 Both together count nothing twice if the capital accounts are kept as debts in the company (the default for accounts with “Kapitalkonto” or “Gesellschafterdarlehen” in their name): the receivable is your capital account, the participation your share of the rest – increases in value and undistributed surpluses. This also holds for unequal contributions. If you keep a capital account as the company's equity instead, it is already part of the participation's value; a counter account for it then counts twice, and “Save and check” warns.
 
-Under **More settings**:
+Also per company:
 
-- **Book** – *daily* (default): the difference at every sync with the day's date, so MoneyMoney always shows the current state; recommended with “Book fully automatically”. *Monthly*: one booking at month end – enough for the balance sheet; recommended with approval, otherwise a booking waits for you every day.
-- **Back to** – see below.
+- **Booking frequency** – *daily* (default): the difference at every sync with the day's date, so MoneyMoney always shows the current state; recommended with “Book fully automatically”. *Monthly*: one booking at month end – enough for the balance sheet; recommended with approval, otherwise a booking waits for you every day.
+- **Back to** – default “not back (from now on)”, see below.
 - **Minimum difference** (Kontor does not book smaller differences) and **counterparty** of the bookings (empty: name of the company).
 
 Kontor always books only the difference to the balance in MoneyMoney (purpose with the mark “#mm-wert-…” or “#mm-spiegel-…”). Payments between you and a company with a participation or counter account count as contributions or withdrawals in the cash flow, and the equity ratio in the balance sheet looks through the companies via the participations.

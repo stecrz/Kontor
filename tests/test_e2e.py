@@ -2670,17 +2670,16 @@ class BrowserTest(unittest.TestCase):
                 pg.wait_for_function("(document.querySelector('.co-card [data-pv=\"b\"]') || {}).textContent?.includes('Soll')", timeout=8000)
                 self.assertGreaterEqual(len(pg.query_selector_all(".co-card .hq")), 6); self.assertGreaterEqual(len(pg.query_selector_all("#loans .hq")), 15)
                 self.assertTrue(pg.is_disabled("#save-rules"))
-                # participation: only offline accounts with the position "Beteiligungen"; a suggestion only when exactly one fits the name
+                # participation account: only offline accounts with the position "Beteiligungen", nothing chosen in advance
                 opts = pg.eval_on_selector_all(".co-card:first-child .c-bet option", "e => e.map(o => o.textContent)")
                 self.assertEqual(opts[1:], ["Beteiligung an Alpha GbR", "Beteiligung an Beta GbR"])
-                card = """n => { const keep = S.CFG.gesellschaften; S.CFG.gesellschaften = []; const d = document.createElement('div'); d.innerHTML = companyCard({id: 'x', name: n, anteil: 0.5}, {}); S.CFG.gesellschaften = keep; return [d.querySelector('.c-bet').value, !!d.querySelector('.sug')]; }"""
-                v, sug = pg.evaluate(card, "Beta GbR"); self.assertTrue(sug); self.assertEqual(v.split(" | ")[0], F.uid("priv.bet.shs"))
-                self.assertEqual(pg.evaluate(card, "Gamma GbR"), ["", False]); self.assertEqual(pg.evaluate(card, "GbR"), ["", False])
+                card = """n => { const d = document.createElement('div'); d.innerHTML = companyCard({id: 'x', name: n, anteil: 0.5}, {}); return [d.querySelector('.c-bet').value, d.querySelector('.c-rmode').value, !!d.querySelector('details')]; }"""
+                self.assertEqual(pg.evaluate(card, "Beta GbR"), ["", "", False])               # no preselection, not back (from now on), nothing folded
                 # an incomplete counter account is not saved
                 pg.click(".co-card .add-gk"); pg.select_option(".gk-row .g-konto", index=1); pg.click("#save-rules"); pg.wait_for_timeout(300)
                 self.assertTrue(pg.query_selector(".gk-row.invalid")); self.assertNotIn("gegenkonten", json.dumps(store.load("config.json")["gesellschaften"]))
                 pg.click(".gk-row .gk-del")
-                pg.click(".co-card .co-more summary"); pg.fill(".co-card .c-sw", "1")
+                pg.fill(".co-card .c-sw", "1")
                 pg.keyboard.press("Meta+s"); pg.wait_for_timeout(900)          # ⌘S saves
                 self.assertIn("Gespeichert", pg.query_selector("#findings").inner_text())
                 self.assertEqual(store.load("config.json")["gesellschaften"][0]["schwelle"], 1); self.assertTrue(pg.is_disabled("#save-rules"))

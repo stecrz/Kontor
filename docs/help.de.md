@@ -308,15 +308,15 @@ Kontor erkennt die Rate auf dem Quellkonto – über die IBAN des Darlehensgeber
 
 Jeder Bereich der Art „Gesellschaft“ (Einrichtung → Bereiche) erscheint als Karte, mit deinem **Anteil**. Der Anteil steht nur dort; die Karte verlinkt hin.
 
-- **Beteiligung**: dein Offline-Konto für diese Gesellschaft – zur Wahl stehen Offline-Konten mit der Position „Beteiligungen“ (Einrichtung → Konten); passt genau eines dem Namen nach zur Gesellschaft, schlägt Kontor es vor (übernommen erst mit „Speichern und prüfen“). Kontor hält es auf **Anteil × Wert der Gesellschaft**. Wert = alle Konten ihres Bereichs, also Vermögen minus Schulden (ohne Konten mit der Position „Kapitalkonten (Eigenkapital)“, Avale und nicht bilanzierte Konten).
-- **Gegenkonten** (optional): dein Offline-Konto als Gegenstück zu einem Konto der Gesellschaft – gleicher Betrag, umgekehrtes Vorzeichen. Beispiel: Dein Kapitalkonto ist in der GbR eine Schuld an dich, bei dir eine Forderung („Darlehen an die GbR“). Dann buchst du Einlagen und Entnahmen nur einmal in der Gesellschaft, Kontor führt dein Konto nach. Führst du kein solches Konto oder buchst es selbst, brauchst du keine Gegenkonten.
+- **Beteiligungskonto**: dein Offline-Konto für diese Gesellschaft – zur Wahl stehen Offline-Konten mit der Position „Beteiligungen“ (Einrichtung → Konten); vorausgewählt ist keins, denn sobald du eines wählst und speicherst, beginnen die Buchungen. Kontor hält es auf **Anteil × Wert der Gesellschaft**. Wert = alle Konten ihres Bereichs, also Vermögen minus Schulden (ohne Konten mit der Position „Kapitalkonten (Eigenkapital)“, Avale und nicht bilanzierte Konten).
+- **Gegenkonten** (optional): dein Offline-Konto als Gegenstück zu einem Konto der Gesellschaft – gleicher Betrag, umgekehrtes Vorzeichen. Beispiel: Dein Kapitalkonto ist in der GbR eine Schuld an dich, bei dir eine Forderung („Darlehen an die GbR“). Die Richtung ist fest: Du buchst Einlagen und Entnahmen nur einmal in der Gesellschaft, Kontor führt dein Konto nach – in das Konto der Gesellschaft bucht es nie. Führst du kein solches Konto oder buchst es selbst, brauchst du keine Gegenkonten.
 
 Beides zusammen zählt nichts doppelt, wenn die Kapitalkonten in der Gesellschaft als Schuld geführt sind (Standard für Konten mit „Kapitalkonto“ oder „Gesellschafterdarlehen“ im Namen): Die Forderung ist dein Kapitalkonto, die Beteiligung dein Anteil am Rest – Wertzuwachs und nicht verteilte Überschüsse. Das stimmt auch bei ungleichen Einlagen. Führst du ein Kapitalkonto dagegen als Eigenkapital der Gesellschaft, steckt es schon im Wert der Beteiligung; ein Gegenkonto dazu zählt dann doppelt, und „Speichern und prüfen“ warnt.
 
-Unter **Weitere Einstellungen**:
+Außerdem je Gesellschaft:
 
-- **Buchen** – *täglich* (Standard): bei jedem Abgleich die Differenz mit dem Tagesdatum, MoneyMoney zeigt also immer den aktuellen Stand; empfohlen mit „Vollautomatisch buchen“. *Monatlich*: eine Buchung zum Monatsende – reicht für die Bilanz; empfohlen mit Freigabe, sonst wartet jeden Tag eine Buchung auf dich.
-- **Rückwirkend ab** – siehe unten.
+- **Buchungshäufigkeit** – *täglich* (Standard): bei jedem Abgleich die Differenz mit dem Tagesdatum, MoneyMoney zeigt also immer den aktuellen Stand; empfohlen mit „Vollautomatisch buchen“. *Monatlich*: eine Buchung zum Monatsende – reicht für die Bilanz; empfohlen mit Freigabe, sonst wartet jeden Tag eine Buchung auf dich.
+- **Rückwirkend ab** – Standard „nicht rückwirkend (ab jetzt)“, siehe unten.
 - **Mindestdifferenz** (kleinere Abweichungen bucht Kontor nicht) und **Gegenpartei** der Buchungen (leer: Name der Gesellschaft).
 
 Kontor bucht jeweils nur die Differenz zum Stand in MoneyMoney (Verwendungszweck mit Markierung „#mm-wert-…“ bzw. „#mm-spiegel-…“). Zahlungen zwischen dir und einer Gesellschaft mit Beteiligung oder Gegenkonto zählen im Cashflow als Einlage bzw. Entnahme, und die Eigenkapitalquote in der Bilanz rechnet über die Beteiligungen durch die Gesellschaften hindurch.

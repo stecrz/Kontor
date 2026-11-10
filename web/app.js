@@ -3131,7 +3131,7 @@ function acctSel(cls, selected, filter, empty) {
 function gkRow(x, bid) {
   const inside = k => k.bereich_id === String(bid);
   return `<div class="gk-row" data-f="${x.faktor ?? -1}">${acctSel('g-konto', x.konto, k => !k.gruppe && k.manuell && !inside(k), t('privates_konto'))}`
-    + `<span class="gk-arrow" title="${esc(t('gegenstueck_von'))}" aria-label="${esc(t('gegenstueck_von'))}">⇄</span>${acctSel('g-quelle', x.quelle, k => !k.gruppe && inside(k), t('konto_der_gesellschaft'))}`
+    + `<span class="gk-arrow" title="${esc(t('gk_folgt'))}" aria-label="${esc(t('gk_folgt'))}">←</span>${acctSel('g-quelle', x.quelle, k => !k.gruppe && inside(k), t('konto_der_gesellschaft'))}`
     + `<button class="ico gk-del" title="${esc(t('entfernen'))}" aria-label="${esc(t('entfernen'))}">×</button><div class="pv small"></div></div>`;
 }
 // "back to": not at all, from a day (date field), or everything since the company exists
@@ -3142,36 +3142,22 @@ function backField(v) {
     + `<input type="date" class="c-ab${mode === 'datum' ? '' : ' hidden'}" value="${esc(day)}" max="${new Date(Date.now() - 864e5).toISOString().slice(0, 10)}"></div>`;
 }
 const backValue = c => { const m = $('.c-rmode', c).value; return m === 'alles' ? 'alles' : m === 'datum' ? $('.c-ab', c).value : ''; };
-// words of a name that tell companies apart (no legal forms or filler words), for the suggestion by name
-const NAME_STOP = new Set(['gbr', 'egbr', 'gmbh', 'mbh', 'kg', 'ug', 'ag', 'ohg', 'se', 'co', 'und', 'an', 'am', 'der', 'die', 'das', 'des', 'den', 'dem', 'beteiligung', 'beteiligungen', 'anteil', 'anteile', 'gesellschaft', 'haftungsbeschrankt', 'konto']);
-const nameWords = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').split(/[^a-z0-9]+/).filter(w => w.length >= 2 && !NAME_STOP.has(w));
-function suggestByName(name, list) {
-  const words = nameWords(name); if (!words.length) return null;
-  const hits = list.filter(k => { const kw = new Set(nameWords(k.name)); return words.some(w => kw.has(w)); });
-  return hits.length === 1 ? hits[0] : null;          // only when exactly one account fits the name
-}
 const betCandidate = (bid) => k => !k.gruppe && k.manuell && k.rolle === 'beteiligungen' && k.bereich_id !== String(bid);
 // rhythm: daily fits booking fully automatically, monthly fits approval (else a booking waits every day) -- a hint only when it does not fit
 const taktTip = takt => { const auto = S.CFG.probelauf === false, monthly = takt === 'monatlich'; return auto && monthly ? t('takt_tipp_taeglich') : !auto && !monthly ? t('takt_tipp_monatlich') : ''; };
 function companyCard(b, g) {
-  const has = b.anteil != null && b.anteil !== '', bid = String(b.id), inside = k => k.bereich_id === bid;
-  let bet = g.beteiligung, sug = null;
-  if (!bet) {
-    const used = new Set((S.CFG.gesellschaften || []).map(x => (x.beteiligung || '').split('|')[0].trim()).filter(Boolean));
-    sug = suggestByName(b.name, S.KONTEN.filter(betCandidate(bid)).filter(k => !used.has(k.uuid)));
-    if (sug) bet = `${sug.uuid} | ${sug.name}`;
-  }
-  const extra = !!(g.rueckwirkend_ab || (g.schwelle != null && g.schwelle !== 0.01) || g.gegenpartei || g.takt === 'monatlich' || ((g.beteiligung || (g.gegenkonten || []).length) && taktTip(g.takt)));
+  // all settings of a company in one card, nothing folded away; no account chosen in advance (choosing one starts the bookings)
+  const has = b.anteil != null && b.anteil !== '', bid = String(b.id);
+  const row = (label, help, field, opt) => `<div class="co-row"><div class="co-l">${label}${hq(help)}${opt ? `<span class="opt">${t('optional')}</span>` : ''}</div><div class="co-f">${field}</div></div>`;
   return `<div class="co-card" data-b="${esc(bid)}"><div class="co-head"><h3>${esc(b.name)}</h3>`
     + (has ? `<a class="pill neutral" href="#setup/areas">${t('anteil_0', pctText(b.anteil))}</a>` : `<a class="pill warn" href="#setup/areas">${t('anteil_fehlt')}</a>`) + hq('h_co_anteil') + `</div>`
-    + `<div class="co-row"><div class="co-l">${t('co_beteiligung')}${hq('h_co_bet')}</div><div class="co-f${sug ? ' suggested' : ''}">${acctSel('c-bet', bet, betCandidate(bid), t('keine_2'))}${sug ? `<span class="pill info sug">${t('vorschlag')}</span>` : ''}<div class="pv small" data-pv="b"></div></div></div>`
-    + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}<span class="opt">${t('optional')}</span></div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="secondary small add-gk">${t('gegenkonto_hinzufuegen')}</button></div></div>`
-    + `<details class="co-more"${extra ? ' open' : ''}><summary>${t('co_mehr')}</summary><div class="form">`
-    + `<label>${t('co_takt')}${hq('h_co_takt')}</label><div><select class="c-takt"><option value="taeglich" ${g.takt !== 'monatlich' ? 'selected' : ''}>${t('takt_taeglich')}</option><option value="monatlich" ${g.takt === 'monatlich' ? 'selected' : ''}>${t('takt_monatlich')}</option></select><div class="small muted c-takt-tip">${taktTip(g.takt)}</div></div>`
-    + `<label>${t('co_rueck')}${hq('h_co_rueck')}</label><div>${backField(g.rueckwirkend_ab)}<div class="small muted c-ab-state"></div></div>`
-    + `<label>${t('co_schwelle')}${hq('h_co_schwelle')}</label><div class="row tight"><input type="number" step="0.01" min="0.01" class="c-sw" value="${g.schwelle ?? 0.01}" style="width:110px"> €</div>`
-    + `<label>${t('gegenpartei')}${hq('h_co_gp')}</label><input type="text" class="c-gp" value="${esc(g.gegenpartei || '')}" placeholder="${esc(b.name)}">`
-    + `</div></details></div>`;
+    + row(t('co_beteiligung'), 'h_co_bet', `${acctSel('c-bet', g.beteiligung, betCandidate(bid), t('keine_2'))}<div class="pv small" data-pv="b"></div>`)
+    + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}<span class="opt">${t('optional')}</span></div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="secondary small add-gk">${t('gegenkonto_hinzufuegen')}</button><div class="small muted gk-note">${t('gk_richtung')}</div></div></div>`
+    + row(t('co_takt'), 'h_co_takt', `<select class="c-takt"><option value="taeglich" ${g.takt !== 'monatlich' ? 'selected' : ''}>${t('takt_taeglich')}</option><option value="monatlich" ${g.takt === 'monatlich' ? 'selected' : ''}>${t('takt_monatlich')}</option></select><div class="small muted c-takt-tip">${taktTip(g.takt)}</div>`)
+    + row(t('co_rueck'), 'h_co_rueck', `${backField(g.rueckwirkend_ab)}<div class="small muted c-ab-state"></div>`)
+    + row(t('co_schwelle'), 'h_co_schwelle', `<div class="row tight"><input type="number" step="0.01" min="0.01" class="c-sw" value="${g.schwelle ?? 0.01}" style="width:110px"> €</div>`)
+    + row(t('gegenpartei'), 'h_co_gp', `<input type="text" class="c-gp" value="${esc(g.gegenpartei || '')}" placeholder="${esc(b.name)}">`)
+    + `</div>`;
 }
 // target, actual and difference of every rule, from /api/rules/preview (the configuration as edited, nothing is saved)
 function rulesPreviewShow(rp, r) {
@@ -3188,10 +3174,12 @@ function rulesPreviewShow(rp, r) {
     const el = row && $(p.art === 'beteiligung' ? '[data-pv="b"]' : '.pv', row);
     if (!el || p.soll == null) continue;
     const ok = Math.abs(p.diff || 0) < 0.005 && !p.rueck;
-    let h = `${t('soll')} <b>${eur(p.soll)}</b> · ${t('ist')} ${eur(p.ist)} · ` + (ok ? `<span class="pv-ok">✓ ${t('aktuell')}</span>` : `<span class="pv-diff">${p.diff > 0 ? '+' : ''}${eur(p.diff)}</span>`);
+    // target with its calculation (quiet), actual; no difference -- what is to book is listed under Auto bookings
+    const b = p.art === 'beteiligung' ? companyAreas().find(x => String(x.id) === String(p.bereich)) : null;
+    let h = `${t('soll')} <b>${eur(p.soll)}</b>` + (b && b.anteil != null ? ` <span class="pv-calc">${t('co_formel', pctText(b.anteil), eur(p.quelle))}</span>` : '')
+      + ` · ${t('ist')} ${eur(p.ist)}` + (ok ? ` · <span class="pv-ok">✓ ${t('aktuell')}</span>` : '');
     if (p.rueck) h += ` · ${p.rueck === 1 ? t('monat_rueck_1') : t('monate_rueck_n', p.rueck)}`;
     if ((p.unbekannt || []).length) h += ` · <span class="pv-unk">${t('monate_unbekannt_0', p.unbekannt.join(', '))}</span>`;
-    if (p.art === 'beteiligung') { const b = companyAreas().find(x => String(x.id) === String(p.bereich)); if (b && b.anteil != null) h += `<div class="muted">${t('co_formel', pctText(b.anteil), eur(p.quelle))}</div>`; }
     el.innerHTML = h;
   }
   showFindings($('#rules-warn', rp), (r.warnungen || []).map(w => ({stufe: 'warnung', text: w})));
@@ -3239,8 +3227,7 @@ function catOptions(selected) {
   const leaves = S.KATS.filter(k => !k.gruppe);
   return `<option value="">${t('keine_2')}</option>` + leaves.map(k => `<option value="${esc(k.name)}" ${k.name === selected ? 'selected' : ''}>${esc(k.pfad)}</option>`).join('') + (selected && !leaves.some(k => k.name === selected) ? `<option value="${esc(selected)}" selected>${t('0_nicht_in_moneymoney', esc(selected))}</option>` : '');
 }
-function collectRules(asSaved) {
-  // asSaved: a suggested participation (not saved yet) counts as empty
+function collectRules() {
   const cfg = JSON.parse(JSON.stringify(S.CFG));
   const lst = s => s.split(';').map(x => x.trim()).filter(Boolean);
   cfg.darlehen = $$('#loans .item').map(it => {
@@ -3255,7 +3242,7 @@ function collectRules(asSaved) {
     if (modell) l.zins = { modell, satz, buchungstag: v('.f-tag'), basis_override: basis };
     return l;
   });
-  cfg.gesellschaften = $$('#companies .co-card').map(c => ({ bereich: c.dataset.b, beteiligung: asSaved && $('.co-f.suggested', c) ? '' : $('.c-bet', c).value,
+  cfg.gesellschaften = $$('#companies .co-card').map(c => ({ bereich: c.dataset.b, beteiligung: $('.c-bet', c).value,
     gegenkonten: $$('.gk-row', c).map(r => ({konto: $('.g-konto', r).value, quelle: $('.g-quelle', r).value, faktor: parseFloat(r.dataset.f) || -1})),
     rueckwirkend_ab: backValue(c), takt: $('.c-takt', c).value, schwelle: parseFloat($('.c-sw', c).value) || 0.01, gegenpartei: $('.c-gp', c).value.trim() }))
     .filter(g => g.beteiligung || g.gegenkonten.length);
@@ -4160,10 +4147,10 @@ function bind(main) {
     const sr = $('#save-rules', rp), st = $('#rules-state', rp);
     let pvTimer = null, pvSeq = 0;
     const preview = async () => { const n = ++pvSeq; try { const r = await api('/api/rules/preview', {config: collectRules()}); if (n === pvSeq) rulesPreviewShow(rp, r); } catch (e) { /* preview only */ } };
-    const rulesJson = asSaved => { const c = collectRules(asSaved); return JSON.stringify([c.darlehen, c.gesellschaften]); };
-    let saved = rulesJson(true);
+    const rulesJson = () => { const c = collectRules(); return JSON.stringify([c.darlehen, c.gesellschaften]); };
+    let saved = rulesJson();
     const changed = () => {
-      const same = rulesJson(false) === saved;
+      const same = rulesJson() === saved;
       sr.disabled = same; DIRTY.on = !same; st.textContent = t(same ? 'regeln_gespeichert' : 'regeln_ungespeichert');
       clearTimeout(pvTimer); pvTimer = setTimeout(preview, 450);
     };
@@ -4199,12 +4186,9 @@ function bind(main) {
       const bad = rows.filter(r => r.isConnected && (!$('.g-konto', r).value || !$('.g-quelle', r).value));
       if (bad.length) { bad.forEach(r => r.classList.add('invalid')); bad[0].scrollIntoView({block: 'center', behavior: 'smooth'}); toast(t('gk_unvollstaendig'), 5000); return; }
       if (await saveConfig(collectRules(), $('#findings', rp))) {
-        $$('.co-f.suggested', rp).forEach(f => { f.classList.remove('suggested'); $('.sug', f)?.remove(); });
-        saved = rulesJson(true); sr.disabled = true; st.textContent = t('regeln_gespeichert'); preview();
+        saved = rulesJson(); sr.disabled = true; st.textContent = t('regeln_gespeichert'); preview();
       }
     });
-    if ($('.co-f.suggested', rp)) { sr.disabled = false; st.textContent = t('vorschlag_speichern'); }
-    rp.addEventListener('change', e => { const f = e.target.closest('.co-f.suggested'); if (f) { f.classList.remove('suggested'); $('.sug', f)?.remove(); changed(); } }, true);
     preview();
   }
   bindDel(main);

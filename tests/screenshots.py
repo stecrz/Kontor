@@ -77,8 +77,8 @@ def main():
                 pg.evaluate("document.querySelectorAll('#banner').forEach(b => { b.className = 'hidden'; b.innerHTML = ''; })")
                 if special == "bilanz" and not pg.query_selector("tr.acct"):
                     pg.click("tr.pos[data-pos='liquiditaet'] td:first-child"); pg.wait_for_timeout(500)
-                if special == "rules":                 # the settings of the first company open, numbers loaded
-                    pg.click(".co-card .co-more summary"); pg.wait_for_timeout(1200)
+                if special == "rules":                 # numbers loaded
+                    pg.wait_for_timeout(1200)
                 if special == "immo":
                     pg.click(".card[data-im]"); pg.wait_for_timeout(1500)
                 save(pg, name)
