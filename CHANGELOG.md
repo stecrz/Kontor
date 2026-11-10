@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.12.26 (2026-11-10 13:44)
+- Auto-Buchungen: „Nicht gebucht“ sammelt Buchungen, die du nicht gebucht hast (✕), und solche, die nachträglich in MoneyMoney gelöscht wurden. „Neu buchen“ legt sie mit Datum, Betrag und Text wie zuvor an. Den Status „fehlt“ gibt es nicht mehr; „Von Kontor angelegt“ zeigt nur, was in MoneyMoney steht. Taucht eine gelöschte Buchung dort wieder auf, gilt sie wieder als angelegt.
+
 ## 3.12.25 (2026-11-10 02:09)
 - „Rückwirkend ab“: nicht rückwirkend, ab einem bestimmten Tag (Datumsfeld) oder alles seit der ersten Buchung der Gesellschaft.
 - Seitenleiste: Zahl und Punkt in den Farben der Oberfläche statt rot; ab 100 wartenden Buchungen „99+“.

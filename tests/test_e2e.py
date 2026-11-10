@@ -216,6 +216,10 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(made[0]["purpose"], "Zinsen laut Abrechnung · " + zins[1]["tag"])
         self.assertEqual(made[0]["bookingDate"], F._dt(date(2026, 10, 15)))
         self.assertEqual(len(self.store.load("state.json")["kontor_buchungen"]), 3)
+        # "book again" a booking you did not book: booked now, out of "not booked"
+        r2 = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve={zins[0]["key"]: {}})
+        self.assertEqual(r2["geschrieben"], 1); self.assertEqual(self.store.load("state.json")["kontor_abgelehnt"], [])
+        self.assertTrue([t for t in MockBridge.state["txs"] if zins[0]["tag"] in (t.get("purpose") or "")])
         # invalid changes and marks are refused
         self.assertIsNotNone(MA.approval({zins[2]["key"]: {"betrag": "0"}})[1]); self.assertIsNotNone(MA.approval({"rm -rf": {}})[1])
         self.assertIsNotNone(MA.approval({zins[2]["key"]: {"datum": "2026-13-01"}})[1]); self.assertIsNotNone(MA.approval({zins[2]["tag"]: {}})[1])
@@ -244,8 +248,28 @@ class CoreTests(unittest.TestCase):
         zins[1]["purpose"] = zins[1]["purpose"].replace("#mm-zins-", "#geaendert-")
         res3 = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertEqual(res3["geschrieben"], 0); self.assertEqual(len(res3["vorschlaege"]), 0)
-        self.assertEqual([m["tag"] for m in res3["fehlend"]], re.findall(r"#mm-zins-[0-9-]+", gone["purpose"]))
-        txs.append(gone)                                                           # back: nothing missing
+        tag = re.findall(r"#mm-zins-[0-9-]+", gone["purpose"])[0]
+        self.assertEqual([m["tag"] for m in res3["fehlend"]], [tag])
+        st = self.store.load("state.json")                                         # deleted in MoneyMoney: under "not booked", no longer "made"
+        self.assertEqual([(r["tag"], r["grund"]) for r in st["kontor_abgelehnt"]], [(tag, "geloescht")])
+        self.assertNotIn(tag, [r["tag"] for r in st["kontor_buchungen"]]); self.assertTrue(st["kontor_abgelehnt"][0].get("zweck"))
+        res4 = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        self.assertEqual(res4["vorschlaege"], []); self.assertEqual(res4["fehlend"], [])          # not made again on its own
+        txs.append(gone)                                                           # back in MoneyMoney (undone there): out of "not booked"
+        core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        st = self.store.load("state.json")
+        self.assertEqual(st.get("kontor_abgelehnt"), []); self.assertIn(tag, [r["tag"] for r in st["kontor_buchungen"]])
+        # a value adjustment deleted in MoneyMoney: under "not booked" too, the difference is proposed anyway; "book again" restores it as it was
+        wert = [t for t in txs if "#mm-wert-" in (t.get("purpose") or "")][0]; txs.remove(wert)
+        acc = next(a for a in MockBridge.state["accounts"] if a["uuid"] == wert["accountUuid"]); acc["balance"][0][0] = round(acc["balance"][0][0] - wert["amount"], 2)
+        r5 = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        nb = self.store.load("state.json")["kontor_abgelehnt"]
+        self.assertEqual([r["grund"] for r in nb], ["geloescht"]); self.assertEqual(len([p for p in r5["vorschlaege"] if p["art"] == "wert"]), 1)
+        key = nb[0]["konto"] + "|" + nb[0]["tag"]
+        r6 = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve={key: {}})
+        self.assertEqual(r6["geschrieben"], 1); self.assertEqual(self.store.load("state.json")["kontor_abgelehnt"], [])
+        again = [t for t in txs if nb[0]["tag"] in (t.get("purpose") or "") and t["accountUuid"] == nb[0]["konto"]]
+        self.assertEqual(len(again), 1); self.assertEqual(again[0]["amount"], wert["amount"]); self.assertEqual(again[0]["bookingDate"], wert["bookingDate"])
         ds = self.store.load("dataset.json")
         self.assertEqual(ds["haupt"], F.uid("priv"))
         self.assertEqual(set(ds["bereich_namen"].values()), {"Privat", "Alpha GbR", "Beta GbR"})

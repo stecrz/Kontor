@@ -588,6 +588,22 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
 # Lauf
 # ---------------------------------------------------------------------------
 
+def _from_record(ledger: Ledger, rec: dict) -> Optional[Proposal]:
+    """A booking of Kontor's lists ("Not booked") as it was: account, date, amount, text with its mark, counterparty, category."""
+    uuid, tag = rec.get("konto") or "", rec.get("tag") or ""
+    if uuid not in ledger.accounts or not tag:
+        return None
+    try:
+        day, amount = date.fromisoformat(str(rec.get("datum"))), round(float(rec.get("betrag")), 2)
+    except (TypeError, ValueError):
+        return None
+    text = str(rec.get("zweck") or rec.get("text") or rec.get("regel") or "")
+    purpose = text if tag in text else ("%s · %s" % (text, tag) if text else tag)
+    acc = ledger.accounts[uuid]
+    return Proposal(rec.get("regel") or "", rec.get("art") or "wert", uuid, acc.path, day, amount, rec.get("gegenpartei") or "Kontor",
+                    purpose, rec.get("kategorie") or "", tag)
+
+
 def _edit(p: Proposal, ch: dict, ledger: Ledger) -> None:
     """Your changes to a booking before approving it: amount, date, purpose (its mark stays, so it is never made twice) --
     also in the booking the run planned, so the state after writing matches MoneyMoney."""
@@ -1102,11 +1118,24 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                     "_kategorien": categories}
 
         created = {rules.bkey(r.get("konto", ""), r["tag"]): r for r in state.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")}
-        rejected = {rules.bkey(r["konto"], r["tag"]) if r.get("konto") else r["tag"]
-                    for r in state.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("tag")}
+        not_booked = {(rules.bkey(r["konto"], r["tag"]) if r.get("konto") else r["tag"]): r
+                      for r in state.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("tag")}
+        restore = {k for k in (approve or {}) if k in not_booked} if not dry else set()     # "Book again" under "Not booked"
+        # a deleted value adjustment does not stop the next one (the difference is booked anyway); everything else stays out
+        rejected = {k for k, r in not_booked.items()
+                    if not (r.get("grund") == "geloescht" and str(r.get("tag", "")).startswith(("#mm-wert-", "#mm-spiegel-")))} - restore
         done = dict(state.get("rueckwirkend") or {})            # companies whose booking back is done (area -> "Rückwirkend ab")
+        marks = rules.present_marks(ledger)
+        gone_values = {rules.bkey(r.get("konto", ""), r["tag"]): r for r in rules.deleted_values(ledger, state.get("kontor_buchungen"), marks)}
+        back = {k: r for k, r in not_booked.items() if r.get("konto") and (r["konto"], r["tag"]) in marks}    # there again (e.g. undone in MoneyMoney)
         t_read = time.time()
         result = plan_all(ledger, config, today, created, rejected, done)
+        planned_keys = {p.key for p in result.proposals}
+        for k in sorted(restore - planned_keys):          # not planned again (e.g. a value adjustment of a past day): as it was
+            p = _from_record(ledger, not_booked[k])
+            if p is not None:
+                result.proposals.append(p)
+                ledger.post(p.account_uuid, p.booking_date, p.amount, p.payee, p.purpose, p.category)
         t_rules = time.time()
         result.warnings.extend(ledger.hints)
         # the log (plain text) holds no amounts, payees, purposes or account names: the details are in the encrypted state and
@@ -1170,16 +1199,39 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         summary = {"status": "fehler" if err else "ok", "zeit": datetime.now().strftime("%Y-%m-%d %H:%M"), "probelauf": dry or bool(rest),
                    "vorschlaege": [{"art": x.kind, "konto": x.account_path, "konto_name": ledger.accounts[x.account_uuid].name if x.account_uuid in ledger.accounts else "",
                                     "konto_id": x.account_uuid, "key": x.key, "datum": x.booking_date.isoformat(), "betrag": x.amount, "text": x.purpose,
-                                    "kategorie": x.category, "tag": x.tag, "regel": x.rule, "rueckwirkend": x.retro} for x in shown],
+                                    "kategorie": x.category, "tag": x.tag, "regel": x.rule, "rueckwirkend": x.retro, "gegenpartei": x.payee} for x in shown],
                    "quellaenderungen": len(result.proposals) - len(bookings),
                    "geschrieben": written, "warnungen": result.warnings, "hinweise": result.info,
                    "fehlend": result.missing, "fehler": str(err) if err else None}
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         new_recs = [{"tag": p.tag, "konto": p.account_uuid, "konto_name": ledger.accounts[p.account_uuid].name if p.account_uuid in ledger.accounts else "",
-                     "datum": p.booking_date.isoformat(), "betrag": round(p.amount, 2), "art": p.kind, "regel": p.rule, "angelegt": stamp}
+                     "datum": p.booking_date.isoformat(), "betrag": round(p.amount, 2), "art": p.kind, "regel": p.rule, "angelegt": stamp,
+                     "zweck": p.purpose, "gegenpartei": p.payee, "kategorie": p.category}
                     for p in made if p.tag]
+        booked_again = {p.key for p in made} & set(not_booked)
+
+        stamp_now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        # Kontor's bookings deleted in MoneyMoney: "not booked" (never made again on its own, "Book again" there; for a value
+        # adjustment the difference is proposed anyway)
+        gone_loans = {rules.bkey(m.get("konto") or "", m.get("tag") or ""): dict(m, grund="geloescht", abgelehnt=stamp_now) for m in result.missing}
+        gone_loans.update({k: dict({f: r.get(f) for f in ("tag", "konto", "konto_name", "datum", "betrag", "art", "regel", "zweck", "gegenpartei", "kategorie")},
+                                   grund="geloescht", abgelehnt=stamp_now) for k, r in gone_values.items()})
 
         def _merge(cur: dict) -> None:
+            out_of = booked_again | set(back)      # booked again, or there again in MoneyMoney: out of "not booked"
+            if out_of:
+                cur["kontor_abgelehnt"] = [r for r in cur.get("kontor_abgelehnt") or []
+                                           if (rules.bkey(r["konto"], r.get("tag", "")) if r.get("konto") else r.get("tag")) not in out_of]
+                known = {rules.bkey(r.get("konto", ""), r.get("tag", "")) for r in cur.get("kontor_buchungen") or []}
+                cur["kontor_buchungen"] = (cur.get("kontor_buchungen") or []) + [
+                    {f: r.get(f) for f in ("tag", "konto", "konto_name", "datum", "betrag", "art", "regel", "zweck", "gegenpartei", "kategorie")}
+                    for k, r in back.items() if k not in known and r.get("grund") == "geloescht"]
+            if gone_loans or gone_values:
+                cur["kontor_buchungen"] = [r for r in cur.get("kontor_buchungen") or []
+                                           if rules.bkey(r.get("konto", ""), r.get("tag", "")) not in gone_loans
+                                           and rules.bkey(r.get("konto", ""), r.get("tag", "")) not in gone_values]
+                have = {rules.bkey(r.get("konto", ""), r.get("tag", "")) for r in cur.get("kontor_abgelehnt") or []}
+                cur["kontor_abgelehnt"] = ((cur.get("kontor_abgelehnt") or []) + [v for k, v in gone_loans.items() if k not in have])[-500:]
             if done != (state.get("rueckwirkend") or {}):
                 cur["rueckwirkend"] = dict(cur.get("rueckwirkend") or {}, **done)
             if new_recs:                    # Kontor's own list of what it booked (encrypted state, not the marks in MoneyMoney)

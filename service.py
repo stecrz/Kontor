@@ -1856,34 +1856,32 @@ def make_handler(app: App):
                     return self._json(400, {"fehler": tr("s_markierung_ungueltig")})
                 same = lambda r: (r.get("konto") or acc) == acc and r.get("tag") == tag     # noqa: E731
 
+                if body.get("wieder") and not local:                     # booking again is booking: only at the Mac
+                    return self._json(403, {"fehler": tr("s_buchen_nur_von_diesem_mac")})
+
                 def upd(cur: dict) -> None:
                     rej = [r for r in cur.get("kontor_abgelehnt") or [] if not same(r)]
+                    if body.get("wieder"):                               # deleted in MoneyMoney: no longer counts as made
+                        cur["kontor_buchungen"] = [r for r in cur.get("kontor_buchungen") or [] if not same(r)]
                     lr = cur.get("letzter_lauf") or {}
                     if not body.get("wieder"):
                         v = next((x for x in lr.get("vorschlaege") or [] if x.get("key") == key), {})
                         rej.append({"tag": tag, "konto": acc, "konto_name": v.get("konto_name") or v.get("konto") or "", "datum": v.get("datum") or "",
-                                    "betrag": v.get("betrag"), "art": v.get("art") or "", "regel": v.get("regel") or "",
+                                    "betrag": v.get("betrag"), "art": v.get("art") or "", "regel": v.get("regel") or "", "grund": "verworfen",
+                                    "zweck": v.get("text") or "", "gegenpartei": v.get("gegenpartei") or "", "kategorie": v.get("kategorie") or "",
                                     "abgelehnt": datetime.now().strftime("%Y-%m-%d %H:%M")})
                         if lr.get("vorschlaege"):
                             lr["vorschlaege"] = [x for x in lr["vorschlaege"] if x.get("key") != key]
                             lr["probelauf"] = bool(lr["vorschlaege"]) and lr.get("probelauf", False)
                     cur["kontor_abgelehnt"] = rej[-500:]
                 app.store.update("state.json", upd, {})
-                log.info("Proposed booking %s", "allowed again" if body.get("wieder") else "rejected")
+                log.info("Booking %s", "to be booked again" if body.get("wieder") else "dropped")
                 return self._json(200, {"ok": True})
             if path == "/api/rules/recheck":
                 # check the whole history of a company again (Rückwirkend ab) at the next sync, existing bookings included
                 bid = str(body.get("bereich") or "")
                 app.store.update("state.json", lambda cur: (cur.get("rueckwirkend") or {}).pop(bid, None), {})
                 log.info("Booking back of a company to be checked again")
-                return self._json(200, {"ok": True})
-            if path == "/api/bookings/allow":
-                # a booking Kontor made and that is missing in MoneyMoney: allowed to be made again at the next sync (only at the Mac)
-                if not local:
-                    return self._json(403, {"fehler": tr("s_buchen_nur_von_diesem_mac")})
-                tag = str(body.get("tag") or "")
-                app.store.update("state.json", lambda cur: cur.__setitem__("kontor_buchungen", [r for r in cur.get("kontor_buchungen") or [] if r.get("tag") != tag]), {})
-                log.info("Booking allowed to be made again")
                 return self._json(200, {"ok": True})
             if path == "/api/run":
                 dry = body.get("probelauf")

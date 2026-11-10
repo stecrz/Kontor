@@ -70,6 +70,21 @@ class RuleResult:
     preview: List[dict] = field(default_factory=list)     # per rule: target, actual, difference, months booked back (interface)
 
 
+def present_marks(ledger: Ledger) -> set:
+    """(account, mark) of Kontor's bookings that are in MoneyMoney (not the ones planned in this run)."""
+    return {(t.account_uuid, m) for t in ledger.txs if not getattr(t, "planned", False) and "#mm-" in (t.purpose or "")
+            for m in TAG_RE.findall(t.purpose)}
+
+
+def deleted_values(ledger: Ledger, records: List[dict], marks: Optional[set] = None) -> List[dict]:
+    """Value adjustments (participation, counter account) Kontor made that are gone from MoneyMoney (they move to "Not booked";
+    the next check books the difference anyway)."""
+    marks = present_marks(ledger) if marks is None else marks
+    claimed: set = set()
+    return [r for r in records or [] if isinstance(r, dict) and str(r.get("tag", "")).startswith(("#mm-wert-", "#mm-spiegel-"))
+            and (r.get("konto"), r.get("tag")) not in marks and find_unmarked(ledger, r, claimed) is None]
+
+
 def find_unmarked(ledger: Ledger, rec: dict, claimed: set) -> Optional[Tx]:
     """A booking of Kontor's own list whose mark is gone: the same account, date and amount, without another booking's mark,
     and each booking in MoneyMoney for one entry only (two equal ones are two, not one twice)."""
@@ -90,7 +105,7 @@ def _created_check(ledger: Ledger, created: Dict[str, dict], key: str, res: Rule
     if not rec:
         return False
     if find_unmarked(ledger, rec, claimed if claimed is not None else set()) is None:
-        res.missing.append({k: rec.get(k) for k in ("tag", "konto_name", "datum", "betrag", "art", "regel")})
+        res.missing.append({k: rec.get(k) for k in ("tag", "konto", "konto_name", "datum", "betrag", "art", "regel", "zweck", "gegenpartei", "kategorie")})
     return True
 
 

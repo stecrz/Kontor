@@ -2724,20 +2724,19 @@ function vBuchungen(runs) {
             + `<td style="white-space:nowrap"><span class="v">${FD(d)}</span><input type="date" class="bk-d e" value="${esc(d)}"></td><td>${esc(v.konto_name || v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td>`
             + `<td class="num ${b < 0 ? 'neg' : 'pos'}"><span class="v">${F(b)}</span><input type="number" step="0.01" class="bk-b e" value="${b}"></td>`
             + `<td><span class="v">${esc(z)}</span><input type="text" class="bk-z e" value="${esc(z)}">${changed ? ` <span class="pill info">${t('geaendert')}</span>` : ''}<div class="small muted">${esc(v.regel || '')}${v.kategorie ? ' · ' + esc(v.kategorie) : ''}</div></td>`
-            + (ed ? `<td class="nowrap">${k ? (local ? `<button class="icon bk-edit" title="${esc(t('bearbeiten'))}" aria-label="${esc(t('bearbeiten'))}">${ICON.pencil}</button>` : '') + `<button class="icon bk-rej" title="${esc(t('ablehnen'))}" aria-label="${esc(t('ablehnen'))}">✕</button>` : ''}</td>` : '') + `</tr>`;
+            + (ed ? `<td class="nowrap">${k ? (local ? `<button class="icon bk-edit" title="${esc(t('bearbeiten'))}" aria-label="${esc(t('bearbeiten'))}">${ICON.pencil}</button>` : '') + `<button class="icon bk-rej" title="${esc(t('verwerfen'))}" aria-label="${esc(t('verwerfen'))}">✕</button>` : ''}</td>` : '') + `</tr>`;
         }).join('') + '</tbody></table></div>';
       if (l.probelauf) h += `<div class="note">${t('diese_buchungen_sind_noch_nicht')}${l.vorschlaege.some(v => !v.key) ? ' ' + t('einmal_sync_fuer_auswahl') : ''}</div>`;
     } else h += `<div class="note">${t('keine_buchungen_noetig')}</div>`;
     if (l.warnungen && l.warnungen.length) h += `<h3>${t('hinweise')}</h3>` + l.warnungen.map(x => `<div class="banner">${esc(x)}</div>`).join('');
     if (l.hinweise && l.hinweise.length) h += `<details class="calc"><summary>${t('rechenwege')} (${l.hinweise.length})</summary>` + l.hinweise.map(x => `<div class="small muted">${esc(x)}</div>`).join('') + '</details>';
-    // made by Kontor, missing in MoneyMoney now: never made again on its own
-    const miss = l.fehlend || [];
-    if (miss.length) h += `<h3>${t('fehlend_titel')} <span class="x">${miss.length}</span></h3><div class="note">${t('fehlend_note')}</div><div class="wrap auto"><table class="plain"><tbody>`
-      + miss.map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto_name || '')}</td><td>${esc(artL[v.art] || v.art || '')}</td><td class="num">${F(v.betrag)}</td><td class="small muted">${esc(v.tag)}</td><td>${local ? `<button class="ghost small re-allow" data-tag="${esc(v.tag)}">${t('wieder_anlegen')}</button>` : ''}</td></tr>`).join('') + '</tbody></table></div>';
   }
+  // not booked: proposals you dropped and Kontor's loan bookings deleted in MoneyMoney -- never made on its own, "Book again" here
   const rej = runs.abgelehnt || [];
-  if (rej.length) h += `<details class="calc"><summary>${t('abgelehnt_titel')} (${rej.length})</summary><div class="note">${t('abgelehnt_note')}</div><div class="wrap auto"><table class="plain"><tbody>`
-    + rej.slice().reverse().map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto_name || '')}</td><td>${esc(artL[v.art] || v.art || '')}</td><td class="num">${v.betrag != null ? F(v.betrag) : ''}</td><td class="small muted">${esc(v.regel || '')}</td><td><button class="ghost small re-propose" data-key="${esc((v.konto || '00000000') + '|' + v.tag)}">${t('wieder_vorschlagen')}</button></td></tr>`).join('') + '</tbody></table></div></details>';
+  if (rej.length) h += `<details class="calc"><summary>${t('nicht_gebucht_titel')} (${rej.length})</summary><div class="note">${t('nicht_gebucht_note')}</div><div class="wrap auto"><table class="plain"><tbody>`
+    + rej.slice().reverse().map(v => `<tr><td style="white-space:nowrap">${FD(v.datum)}</td><td>${esc(v.konto_name || '')}</td><td>${esc(artL[v.art] || v.art || '')}</td><td class="num">${v.betrag != null ? F(v.betrag) : ''}</td>`
+      + `<td><span class="pill ${v.grund === 'geloescht' ? 'warn' : 'neutral'}">${t(v.grund === 'geloescht' ? 'grund_geloescht' : 'grund_verworfen')}</span></td><td class="small muted">${esc(v.regel || '')}</td>`
+      + `<td>${local ? `<button class="secondary small re-book" data-key="${esc((v.konto || '00000000') + '|' + v.tag)}">${t('neu_buchen')}</button>` : ''}</td></tr>`).join('') + '</tbody></table></div></details>';
   // only what Kontor itself made in MoneyMoney (its own list and marks), with the state there now
   const ang = runs.angelegt || [], stL = {ok: ['ok', t('st_ok')], markierung: ['warn', t('st_markierung')], fehlt: ['err', t('st_fehlt')]};
   h += `<h2>${t('angelegt_titel')} <span class="x">${ang.length}</span></h2><div class="note">${t('angelegt_note')}</div>`
@@ -4080,7 +4079,6 @@ function bind(main) {
     const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.probelauf = !autoSw.checked;
     try { await api('/api/config', {config: cfg}, 'PUT'); S.CFG = await api('/api/config'); S.STATUS = await api('/api/status'); route(); } catch (e) { autoSw.checked = !autoSw.checked; toast(e.message, 5000); }
   });
-  $$('.re-allow', main).forEach(b => b.addEventListener('click', async () => { try { await api('/api/bookings/allow', {tag: b.dataset.tag}); toast(t('wieder_anlegen_ok')); route(); } catch (e) { toast(e.message, 5000); } }));
   const bt = $('.bk-table', main);
   if (bt) {
     const rows = () => $$('tr[data-key]', bt).filter(r => r.dataset.key);
@@ -4100,13 +4098,16 @@ function bind(main) {
       const r = e.target.closest('tr[data-key]'); if (!r || !r.dataset.key) return;
       if (e.target.closest('.bk-edit')) { const on = r.classList.toggle('editing'); if (!on) route(); else $('.bk-b', r).focus(); return; }
       if (e.target.closest('.bk-rej')) {
-        if (!confirm(t('ablehnen_frage'))) return;
-        try { await api('/api/bookings/reject', {key: r.dataset.key}); BOOK.off.delete(r.dataset.key); delete BOOK.edits[r.dataset.key]; toast(t('abgelehnt_ok')); route(); } catch (er) { toast(er.message, 5000); }
+        if (!confirm(t('verwerfen_frage'))) return;
+        try { await api('/api/bookings/reject', {key: r.dataset.key}); BOOK.off.delete(r.dataset.key); delete BOOK.edits[r.dataset.key]; toast(t('verworfen_ok')); route(); } catch (er) { toast(er.message, 5000); }
       }
     });
     count();
   }
-  $$('.re-propose', main).forEach(b => b.addEventListener('click', async () => { try { await api('/api/bookings/reject', {key: b.dataset.key, wieder: true}); toast(t('wieder_vorschlagen_ok')); route(); } catch (e) { toast(e.message, 5000); } }));
+  $$('.re-book', main).forEach(b => b.addEventListener('click', async () => {          // book again: out of "not booked", booked now
+    if (!confirm(t('neu_buchen_frage'))) return;
+    startRun(false, {[b.dataset.key]: {}});
+  }));
   const rl = $('#run-live', main); if (rl) rl.addEventListener('click', () => {
     const keys = (((BOOK.runs || {}).letzter_lauf || {}).vorschlaege || []).map(v => v.key).filter(k => k && !BOOK.off.has(k));
     if (!keys.length || !confirm(t('jetzt_buchen_buchungen_werden_jetzt'))) return;
