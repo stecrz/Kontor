@@ -47,6 +47,7 @@ def wait_shell(pg, timeout=30000):
 class MockBridge:
     """Simuliert MoneyMoney: Konten + Umsaetze im Speicher, Schreibbefehle wirken sofort."""
     instances = []
+    reads = []                  # accounts of the transaction exports (None: all)
     state = {"accounts": [], "txs": []}
 
     def __init__(self, dry_run=True, timeout=0):
@@ -71,7 +72,8 @@ class MockBridge:
         return copy.deepcopy(out)
 
     def export_transactions(self, from_date, to_date=None, account=None):
-        return [t for t in self.txs if mm_bridge.local_date(t["bookingDate"]) >= from_date]
+        MockBridge.reads.append(account)
+        return [t for t in self.txs if mm_bridge.local_date(t["bookingDate"]) >= from_date and (not account or t["accountUuid"] == account)]
 
     def export_portfolio(self, account):
         if account == F.uid("priv.depot"):
@@ -162,6 +164,7 @@ def config_for_test(belege_dir=None):
 def reset_mock():
     MockBridge.state = {"accounts": F.accounts_raw({"pb.vd": -1600000.0}), "txs": F.pb_transactions(TODAY) + private_transactions(TODAY)}
     MockBridge.instances = []
+    MockBridge.reads = []
     MockBridge.extra_cats = []
 
 
@@ -753,6 +756,30 @@ class AppTests(_AppBase):
         self.assertEqual(self.call("/api/bookings/reject", {"key": k})[0], 200)
         lr = self.store.load("state.json")["letzter_lauf"]
         self.assertTrue(lr["probelauf"]); self.assertEqual({p["key"]: p["betrag"] for p in lr["vorschlaege"]}, rows)
+
+    def test_refresh_reads_only_the_accounts_of_the_rules(self):
+        """"Aktualisieren" under Auto bookings: only the accounts the rules read or book are read again, the approval list
+        planned again; nothing is written, and the next sync still sees what changed in MoneyMoney."""
+        self.login()
+        self.app.do_run(False, True)                                        # all booked
+        self.app.config["probelauf"] = True
+        fp = self.store.load("state.json")["fingerprint"]
+        txs = MockBridge.state["txs"]; wert = next(t for t in txs if "#mm-wert-" in (t.get("purpose") or ""))
+        txs.remove(wert)                                                    # deleted in MoneyMoney
+        acc = next(a for a in MockBridge.state["accounts"] if a["uuid"] == wert["accountUuid"]); acc["balance"][0][0] = round(acc["balance"][0][0] - wert["amount"], 2)
+        MockBridge.reads.clear(); n_txs = len(txs)
+        code, r = self.call("/api/bookings/refresh", {})
+        self.assertEqual(code, 200); self.assertEqual((r["status"], r["wartend"]), ("ok", 1))
+        reads = set(MockBridge.reads)
+        self.assertNotIn(None, reads)                                       # not all accounts
+        self.assertTrue({wert["accountUuid"], F.uid("pb.vd"), F.uid("pb.kk"), F.uid("priv.bet.shs")} <= reads)
+        self.assertNotIn(F.uid("priv.giro"), reads)
+        lr = self.store.load("state.json")["letzter_lauf"]
+        self.assertTrue(lr["probelauf"]); self.assertEqual([p["konto_id"] for p in lr["vorschlaege"]], [wert["accountUuid"]])
+        self.assertEqual(len(txs), n_txs); self.assertEqual(self.store.load("state.json")["fingerprint"], fp)
+        self.assertNotIn(wert["id"], {t.id for t in self.app.ledger.txs})  # the state read now is the one the list is planned on
+        code, r = self.call("/api/bookings/plan", {"halten": [], "aenderungen": {}})
+        self.assertEqual([p["key"] for p in r["vorschlaege"]], [p["key"] for p in lr["vorschlaege"]])
 
     def test_unchanged_read_keeps_warm_state(self):
         """Unveraenderte Daten aus MoneyMoney: bisheriger Stand (mit Zwischenergebnissen) bleibt, nur der Lesezeitpunkt wird neu."""

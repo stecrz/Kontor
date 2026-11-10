@@ -2735,6 +2735,7 @@ function vBuchungen(runs) {
   const artL = {tilgung: t('art_tilgung'), zins: t('art_zins'), wert: t('art_wert'), spiegel: t('art_spiegel')};
   let h = `<div class="toolbar">
     ${pending ? `<button id="run-live" class="ico" ${local ? '' : t('disabled_title_nur_am_mac')}>${ICON.check}<span>${t('jetzt_buchen')} (<span id="sel-n">${pending}</span>)</span></button>` : ''}
+    ${ask ? `<button id="bk-refresh" class="secondary ico" title="${esc(t('freigabe_aktualisieren_tip'))}" ${OFFLINE.mode ? 'disabled' : ''}>${ICON.refresh}<span>${t('aktualisieren')}</span></button>` : ''}
     <span class="muted small">${t('geprueft_bei_sync')}</span>
     <span class="sp"></span>
     <a class="mode-chip${ask ? '' : ' auto'}" href="#rules" title="${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')}">${ask ? ICON.hand : ICON.bolt}${t(ask ? 'modus_freigabe' : 'modus_automatisch')}</a>
@@ -4135,6 +4136,18 @@ function bind(main) {
     if (S.CFG.probelauf === false) { if (confirm(t('neu_buchen_frage'))) startRun(false, {[b.dataset.key]: {}}); return; }
     try { await api('/api/bookings/restore', {key: b.dataset.key}); toast(t('neu_buchen_wartet'), 4000); startRun(true); } catch (e) { toast(e.message, 5000); }
   }));
+  // only what the approval list depends on: the accounts of the rules read again, the list planned again (nothing booked)
+  const rf = $('#bk-refresh', main); if (rf) rf.addEventListener('click', async () => {
+    if (SYNC.busy) return;
+    SYNC.busy = true; rf.disabled = true; rf.classList.add('busy'); statusMini();
+    try {
+      const r = await api('/api/bookings/refresh', {});
+      if (r.status === 'nicht_verfuegbar' || r.status === 'fehler') toast(r.text || t('synchronisieren_fehlgeschlagen'), 7000);
+      else toast(r.wartend ? (r.wartend === 1 ? t('aktualisiert_1') : t('aktualisiert_n', r.wartend)) : t('aktualisiert_0'), 4000);
+      S.STATUS = await api('/api/status');
+    } catch (e) { toast(e.message, 6000); }
+    finally { SYNC.busy = false; statusMini(); route(); }
+  });
   const rl = $('#run-live', main); if (rl) rl.addEventListener('click', () => {
     // what is ticked, with the amount shown: booked only if it is still the same
     const pick = bkRows((BOOK.runs || {}).letzter_lauf || {}).filter(r => r.k && !r.off && !r.gone);

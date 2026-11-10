@@ -250,6 +250,60 @@ def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = Fals
     return ledger
 
 
+def rule_accounts(ledger: Ledger, config: dict) -> set:
+    """The accounts the booking rules read or book -- all the approval list depends on: loan accounts and the accounts their
+    payments come from, participation and counter accounts with their sources, the accounts of each company (its value)."""
+    out: set = set()
+
+    def add(ref) -> None:
+        try:
+            a = ledger.resolve(str(ref or ""))
+        except KeyError:
+            return
+        out.update(x.uuid for x in (ledger.descendants(a.uuid) if a.group else [a]))
+    for d in config.get("darlehen") or []:
+        if isinstance(d, dict) and d.get("aktiv", True):
+            add(d.get("darlehenskonto"))
+            for src in d.get("quellkonten") or []:
+                add(src)
+    companies = [g for g in config.get("gesellschaften") or [] if isinstance(g, dict) and (g.get("beteiligung") or g.get("gegenkonten"))]
+    if companies:
+        areas = {str(b["id"]): b for b in bereiche_for(ledger, config)}
+        for g in companies:
+            add(g.get("beteiligung"))
+            for k in g.get("gegenkonten") or []:
+                if isinstance(k, dict):
+                    add(k.get("konto")); add(k.get("quelle"))
+            area = areas.get(str(g.get("bereich")))
+            if area:
+                out.update(a.uuid for a in area["leaves"] if not a.group)
+    return out
+
+
+def refresh_accounts(bridge: Bridge, base: Ledger, config: dict, today: date, uuids: set) -> Ledger:
+    """The last state with only some accounts read again (balance, transactions since the start of the period); the others
+    stay as read last. Kontor's own bookings kept until the next full read are replaced by what is in MoneyMoney now."""
+    now = accounts_from_export(bridge.export_accounts())
+    since = getattr(base, "since", None) or earliest_needed(config, today)
+    fresh: List[Tx] = []
+    for u in sorted(uuids):
+        fresh += [t for t in tx_from_export(bridge.export_transactions(since, account=u)) if t.account_uuid == u]
+    accs = dict(base.accounts)
+    for u in uuids:
+        if u in now:
+            accs[u] = now[u]
+    txs = [t for t in base.txs if t.account_uuid not in uuids] + fresh
+    txs.sort(key=lambda t: (t.booking_date, t.id))
+    led = Ledger({k: copy.copy(a) for k, a in accs.items()}, txs)
+    for k, v in base.__dict__.items():          # read times, period, portfolios ... (no caches: "_...")
+        if k not in ("accounts", "txs") and not k.startswith("_"):
+            setattr(led, k, v)
+    led.hints = []
+    led.fp = fingerprint(led)
+    log.info("MoneyMoney: %d account(s) read again, %d transactions", len(uuids), len(fresh))
+    return led
+
+
 def account_sig(accounts: Dict[str, Account]) -> tuple:
     """Salden und Abrufzeiten aller Konten -- aendert sich, sobald MoneyMoney neue Daten hat."""
     return tuple(sorted((a.uuid, a.balance, a.refresh.isoformat() if a.refresh else "") for a in accounts.values() if not a.group))
@@ -1146,19 +1200,25 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
 def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
              bridge_factory: Callable[[bool], Bridge] = Bridge, with_report: bool = True,
              categories: Optional[List[dict]] = None, base: Optional[Ledger] = None, full: bool = True,
-             approve: Optional[Dict[str, dict]] = None, report: bool = True) -> dict:
+             approve: Optional[Dict[str, dict]] = None, report: bool = True, ledger: Optional[Ledger] = None) -> dict:
     """approve (a live run from "Approve" under Auto bookings): account|mark -> changes (amount, date, purpose) of the
     bookings you approved; only these are written, the others keep waiting. None: all. Marks you rejected are never proposed.
-    report=False: no report here (the service builds it in the background, so the page is up to date at once)."""
+    report=False: no report here (the service builds it in the background, so the page is up to date at once).
+    ledger: a state read already (e.g. only the accounts of the rules, refresh_accounts): not read again, and the mark of the
+    last full check stays (the next sync still sees what changed in MoneyMoney)."""
     if not RUN_LOCK.acquire(blocking=False):
         return {"status": "laeuft_bereits", "text": tr("s_ein_abgleich_laeuft_bereits")}
     try:
         state = store.load("state.json", {}) or {}
         bridge = bridge_factory(dry)
         t_start = time.time()
+        prefetched = ledger is not None
         try:
-            ledger = fetch(bridge, config, today, with_portfolio=with_report, base=base, full=full)
-            if categories is None:
+            if not prefetched:
+                ledger = fetch(bridge, config, today, with_portfolio=with_report, base=base, full=full)
+            if categories is None and prefetched:
+                categories = state.get("kategorien_roh") or []
+            elif categories is None:
                 try:
                     categories = mm_categories.with_paths(bridge.export_categories())
                 except MoneyMoneyError:
@@ -1338,7 +1398,8 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 cur["rueckwirkend"] = dict(cur.get("rueckwirkend") or {}, **done)
             if new_recs:                    # Kontor's own list of what it booked (encrypted state, not the marks in MoneyMoney)
                 cur["kontor_buchungen"] = (cur.get("kontor_buchungen") or []) + new_recs
-            cur["fingerprint"] = fp if err is None else None
+            if not prefetched:
+                cur["fingerprint"] = fp if err is None else None
             cur["letzter_lauf"] = summary
             cur.setdefault("verlauf", []).append({"zeit": summary["zeit"], "probelauf": dry, "geschrieben": written,
                                                   "vorschlaege": len(bookings), "fehler": summary["fehler"]})

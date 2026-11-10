@@ -44,7 +44,7 @@ import updates
 from receipts import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
 from core import (RUN_LOCK, account_sig, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
-                     immo_results, import_package, ledger_fp, merge_holdings, merged_config, plan_pending, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
+                     immo_results, import_package, ledger_fp, merge_holdings, merged_config, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, apply_plan, role_label
 from rules import TAG_RE, bkey as rules_bkey, find_unmarked, plan_all as plan_rules
@@ -698,6 +698,39 @@ class App:
             log.exception("Run failed")
             self.last_result = {"status": "fehler", "text": tr("s_unerwarteter_fehler_s") % e}
             return self.last_result
+        finally:
+            self.running = False
+
+    def refresh_bookings(self) -> dict:
+        """Only what the approval list depends on, quicker than a whole sync: the accounts the rules read or book are read again
+        and the rules planned (a dry run: nothing is written, no report)."""
+        with self.lock:
+            if self.running:
+                return {"status": "laeuft_bereits", "text": tr("s_ein_abgleich_laeuft_bereits")}
+            self.running = True
+        try:
+            base = self.ledger
+            if base is None:
+                return {"status": "fehler", "text": tr("s_noch_kein_stand_aus_moneymoney")}
+            t0 = time.time()
+            uuids = rule_accounts(base, self.config)
+            try:
+                led = refresh_accounts(self.bridge_factory(True), base, self.config, date.today(), uuids)
+            except MoneyMoneyError as e:
+                log.info("Approval list not refreshed: %s", str(e)[:120])
+                return {"status": "nicht_verfuegbar", "text": unavailable_text(e) or (tr("s_moneymoney_fehler_s") % e)}
+            res = run_once(self.store, self.config, date.today(), True, True, self.bridge_factory, with_report=False,
+                           report=False, ledger=led)
+            ledger = res.pop("_ledger", None)
+            if ledger is not None:
+                self.set_ledger(ledger.without_planned())
+            for k in ("_kategorien", "_umsaetze", "_gebucht"):
+                res.pop(k, None)
+            log.info("Approval list refreshed from %d account(s) (%.1f s)", len(uuids), time.time() - t0)
+            return res
+        except Exception as e:  # pragma: no cover - the service keeps running
+            log.exception("Refreshing the approval list failed")
+            return {"status": "fehler", "text": tr("s_unerwarteter_fehler_s") % e}
         finally:
             self.running = False
 
@@ -1923,6 +1956,12 @@ def make_handler(app: App):
                 app.store.update("state.json", upd_restore, {})
                 log.info("Booking back for approval")
                 return self._json(200, {"ok": True})
+            if path == "/api/bookings/refresh":
+                # "Aktualisieren" under Auto bookings: only the accounts of the rules read again, the approval list planned again
+                res = app.refresh_bookings()
+                code = 409 if res.get("status") == "laeuft_bereits" else 200
+                return self._json(code, dict({k: res.get(k) for k in ("status", "text", "probelauf")},
+                                             wartend=len(res.get("vorschlaege") or []) if res.get("probelauf") else 0))
             if path == "/api/rules/recheck":
                 # check the whole history of a company again (Rückwirkend ab) at the next sync, existing bookings included
                 bid = str(body.get("bereich") or "")
