@@ -286,6 +286,16 @@ class CoreTests(unittest.TestCase):
         rec = next(x for x in self.store.load("state.json")["kontor_buchungen"] if x["tag"] == wtag and x["konto"] == wert["accountUuid"])
         self.assertEqual(rec["betrag"], back[0]["amount"])
 
+    def test_run_progress(self):
+        """Reading, rules, then each booking (n of m) -- what the interface shows while a run goes on."""
+        steps = []
+        cfg = core.merged_config(self.store.load("config.json"))
+        res = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, progress=lambda *a: steps.append(a))
+        self.assertEqual(steps[:2], [("lesen", 0, 0), ("regeln", 0, 0)])
+        booking = [x for x in steps if x[0] == "buchen"]          # the bookings, not the comments on source payments
+        self.assertEqual(len(booking), res["gebucht"]); self.assertEqual([x[1] for x in booking], list(range(res["gebucht"])))
+        self.assertEqual({x[2] for x in booking}, {res["gebucht"]}); self.assertLess(res["gebucht"], res["geschrieben"])
+
     def test_run_twice_then_dataset(self):
         cfg = core.merged_config(self.store.load("config.json"))
         res = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
@@ -732,10 +742,25 @@ class _AppBase(unittest.TestCase):
             time.sleep(0.1)
             if not self.app.running and self.app.last_run_at:
                 break
+        self.wait_report()
+
+    def wait_report(self):
+        """The report follows a run in the background."""
+        with self.app.rebuild_cv:
+            self.app.rebuild_cv.wait_for(lambda: not self.app.rebuild_running and not self.app.rebuild_pending, timeout=60)
 
 
 class AppTests(_AppBase):
     """Dienst ueber HTTP: Einrichtung, Anmeldung, CSRF, Daten, Plan, Konfiguration, Lauf, Belege, Exporte."""
+
+    def test_run_reports_its_step_and_the_report_follows(self):
+        """The status says what a run does; the report is built afterwards in the background (the bookings are there at once)."""
+        self.login()
+        code, st = self.call("/api/status"); self.assertIn("schritt", st["dienst"]); self.assertIsNone(st["dienst"]["schritt"])
+        res = self.app.do_run(False, True)
+        self.assertEqual(res["status"], "ok"); self.assertIsNone(self.app.run_step)
+        self.wait_report()
+        self.assertTrue(self.app.dataset().get("bereiche"))
 
     def test_approval_list_recalculated(self):
         """The approval list for your selection, from the last state read (nothing written); dropping one plans the rest again."""
@@ -767,7 +792,7 @@ class AppTests(_AppBase):
         txs = MockBridge.state["txs"]; wert = next(t for t in txs if "#mm-wert-" in (t.get("purpose") or ""))
         txs.remove(wert)                                                    # deleted in MoneyMoney
         acc = next(a for a in MockBridge.state["accounts"] if a["uuid"] == wert["accountUuid"]); acc["balance"][0][0] = round(acc["balance"][0][0] - wert["amount"], 2)
-        MockBridge.reads.clear(); n_txs = len(txs)
+        MockBridge.reads.clear(); n_txs = len(txs); n_hist = len(self.store.load("state.json")["verlauf"])
         code, r = self.call("/api/bookings/refresh", {})
         self.assertEqual(code, 200); self.assertEqual((r["status"], r["wartend"]), ("ok", 1))
         reads = set(MockBridge.reads)
@@ -777,6 +802,7 @@ class AppTests(_AppBase):
         lr = self.store.load("state.json")["letzter_lauf"]
         self.assertTrue(lr["probelauf"]); self.assertEqual([p["konto_id"] for p in lr["vorschlaege"]], [wert["accountUuid"]])
         self.assertEqual(len(txs), n_txs); self.assertEqual(self.store.load("state.json")["fingerprint"], fp)
+        self.assertEqual(len(self.store.load("state.json")["verlauf"]), n_hist)          # no check of its own in the history
         self.assertNotIn(wert["id"], {t.id for t in self.app.ledger.txs})  # the state read now is the one the list is planned on
         code, r = self.call("/api/bookings/plan", {"halten": [], "aenderungen": {}})
         self.assertEqual([p["key"] for p in r["vorschlaege"]], [p["key"] for p in lr["vorschlaege"]])
@@ -2318,6 +2344,12 @@ class BrowserTest(unittest.TestCase):
                 # Datenstand unten links (zweistufig), keine Infozeile mehr in der Übersicht, Synchronisieren
                 sm = pg.query_selector("#status-mini").inner_text()
                 self.assertIn("Banken → MM", sm); self.assertIn("MM → Kontor", sm); self.assertNotIn("nächster", sm)
+                # the page knows the version of its files: a newer one at the service (also after signing in again) loads it again
+                self.assertEqual(pg.evaluate("PAGE_VERSION"), core.version()); self.assertEqual(pg.inner_text("#ver"), "v" + core.version())
+                self.assertFalse(pg.evaluate("checkVersion(PAGE_VERSION)"))
+                self.assertTrue(pg.evaluate("checkVersion.on = true; const r = checkVersion('9.9.9'); checkVersion.on = false; sessionStorage.removeItem('kontor.reload'); r"))
+                # an old token (signed in again in another window): taken anew, the request goes through
+                self.assertTrue(pg.evaluate("async () => { const ok = S.csrf; S.csrf = 'alt'; const r = await api('/api/bookings/plan', {halten: [], aenderungen: {}}); return S.csrf === ok && 'vorschlaege' in r; }"))
                 self.assertIsNone(pg.query_selector(".status-strip"))
                 def sync():
                     pg.evaluate("document.querySelector('#toast').textContent = ''")

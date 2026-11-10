@@ -43,7 +43,7 @@ import categorize
 import updates
 from receipts import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (RUN_LOCK, account_sig, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+from core import (REPORT_LOCK, RUN_LOCK, account_sig, account_tree, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, apply_plan, role_label
@@ -184,6 +184,7 @@ class App:
         self.last_run_at: Optional[float] = None
         self.last_result: Optional[dict] = None
         self.running = False
+        self.run_step: Optional[dict] = None      # what the run is doing now (shown in the interface)
         self.stop = threading.Event()
         self.lock = threading.Lock()
         self.update_info: Optional[dict] = None
@@ -415,7 +416,7 @@ class App:
         self._freeze_assignments()
         t0 = time.time()
         progress(0.03, tr("s_wartet_auf_laufenden_abgleich"))
-        with RUN_LOCK:          # nicht gleichzeitig mit einem Lauf (beide schreiben dataset.json)
+        with REPORT_LOCK:       # one report at a time (dataset.json); a run (reading, rules, booking) goes on beside it
             st = self.store.load("state.json", {}) or {}
             try:
                 warn = list((st.get("letzter_lauf") or {}).get("warnungen") or [])       # the notes of the last run stay in the report
@@ -670,8 +671,12 @@ class App:
             t0 = time.time()
             log.info("Run started (%s%s%s)", "dry run" if d else "live", ", forced" if force else "", ", without report" if not with_report else "")
             full = self.full_read_due() if full is None else full
+
+            def step(name: str, n: int, of: int) -> None:
+                self.run_step = {"schritt": name, "n": n, "von": of}
+            # the report follows in the background: the bookings and the approval list are there at once
             res = run_once(self.store, self.config, date.today(), d, force, self.bridge_factory, with_report, base=self.ledger, full=full,
-                           approve=approve, report=approve is None)
+                           approve=approve, report=False, progress=step)
             log.info("Run finished: %s (%.1f s)", res.get("text") or res.get("status"), time.time() - t0)
             self.last_run_at = time.time()
             ledger = res.pop("_ledger", None)
@@ -686,8 +691,8 @@ class App:
                 self._baseline(ledger)
             if cats:
                 self.categories_raw = cats
-            if approve is not None and res.get("status") in ("ok", "fehler") and with_report:
-                self.request_rebuild(tr("s_nach_freigabe"))         # the page shows the bookings at once, the figures follow
+            if res.get("status") in ("ok", "fehler") and with_report:
+                self.request_rebuild(tr("s_nach_freigabe" if approve is not None else "s_nach_abgleich"))   # the figures follow
             self.last_result = res
             try:
                 self.flush_pending_categories()
@@ -699,7 +704,7 @@ class App:
             self.last_result = {"status": "fehler", "text": tr("s_unerwarteter_fehler_s") % e}
             return self.last_result
         finally:
-            self.running = False
+            self.running, self.run_step = False, None
 
     def refresh_bookings(self) -> dict:
         """Only what the approval list depends on, quicker than a whole sync: the accounts the rules read or book are read again
@@ -726,7 +731,8 @@ class App:
                 self.set_ledger(ledger.without_planned())
             for k in ("_kategorien", "_umsaetze", "_gebucht"):
                 res.pop(k, None)
-            log.info("Approval list refreshed from %d account(s) (%.1f s)", len(uuids), time.time() - t0)
+            log.info("Approval list %s from %d account(s) (%.1f s)", "refreshed" if ledger is not None else "not refreshed (%s)" % res.get("status"),
+                     len(uuids), time.time() - t0)
             return res
         except Exception as e:  # pragma: no cover - the service keeps running
             log.exception("Refreshing the approval list failed")
@@ -1066,7 +1072,7 @@ class App:
         bcfg = self.config.get("belege") or {}
         return {
             "version": version(),
-            "dienst": {"gestartet": self.started.strftime("%Y-%m-%d %H:%M"), "laeuft": self.running,
+            "dienst": {"gestartet": self.started.strftime("%Y-%m-%d %H:%M"), "laeuft": self.running, "schritt": self.run_step,
                        "automatisch": (self.config.get("zeitplan") or {}).get("automatisch", True),
                        "intervall_minuten": (self.config.get("zeitplan") or {}).get("intervall_minuten", 30)},
             "moneymoney": {"laeuft": is_running(), "gesperrt": self.moneymoney_gesperrt(max_age=3.0 if frisch else 45.0), "aus_zwischenspeicher": self.ledger_from_cache,
@@ -1756,7 +1762,7 @@ def make_handler(app: App):
             if s is None:
                 return self._json(401, {"fehler": "nicht angemeldet"})
             if self.headers.get("X-CSRF-Token") != s["csrf"]:
-                return self._json(403, {"fehler": tr("s_csrf_pruefung_fehlgeschlagen_seite_neu")})
+                return self._json(403, {"fehler": tr("s_csrf_pruefung_fehlgeschlagen_seite_neu"), "csrf": "ungueltig"})
             if not self._is_local(s) and app.remote_readonly() and u.path not in ("/api/logout", "/api/lock"):
                 return self._json(403, {"fehler": tr("s_von_unterwegs_nur_ansehen")})
             if u.path == "/api/history/mm-import":

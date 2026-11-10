@@ -9,7 +9,10 @@ Kategorie in MoneyMoney gibt. Alles liegt verschluesselt in categories.json.
 Pfade sind kanonisch 'A / B / C' (siehe model.norm_cat)."""
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+import threading
 from functools import lru_cache
 import time
 from collections import Counter, defaultdict
@@ -32,8 +35,17 @@ def load(store) -> dict:
     return d
 
 
+LOCK = threading.RLock()        # writing the file; the report checks and writes under it (see core._prepare_categories)
+
+
 def save(store, d: dict) -> None:
-    store.save(FILE, {k: v for k, v in d.items() if not k.startswith("_")})      # "_..." = Zwischenspeicher, nicht ablegen
+    with LOCK:
+        store.save(FILE, {k: v for k, v in d.items() if not k.startswith("_")})      # "_..." = Zwischenspeicher, nicht ablegen
+
+
+def digest(d: dict) -> Dict[str, str]:
+    """A fingerprint per part (tree, assignments, rules ...): which parts changed since it was read."""
+    return {k: hashlib.sha1(json.dumps(v, sort_keys=True, default=str).encode()).hexdigest() for k, v in d.items() if not k.startswith("_")}
 
 
 # ---------------------------------------------------------------------------

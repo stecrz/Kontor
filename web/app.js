@@ -256,13 +256,15 @@ function saveJson(obj, name) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 1)], {type: 'application/json'})); a.download = name;
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
-function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), ms); }
+function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), ms); t._until = Date.now() + ms; }
+// a note that may wait: not over one still being read (e.g. the result of a sync when the report follows quickly)
+function toastQuiet(msg, ms) { const t = $('#toast'); if (!t._until || Date.now() > t._until) toast(msg, ms); }
 function banner(msg, kind = '') { const b = $('#banner'); if (!msg) { b.classList.add('hidden'); return; } b.textContent = msg; b.className = 'banner ' + kind; }
 
 // Am Mac selbst gibt es keine Offline-Ansicht: der Dienst ist erreichbar oder nicht (Tests können das Gerät als "entfernt" markieren)
 let IS_LOCAL = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(location.hostname);
 try { if (localStorage.getItem('kontor.testRemote') === '1') IS_LOCAL = false; } catch (e) {}
-async function api(path, body, method, netMode) {
+async function api(path, body, method, netMode, renewed) {
   const opts = { method: method || (body === undefined ? 'GET' : 'POST'), headers: {}, credentials: 'same-origin' };
   if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   if (S.csrf) opts.headers['X-CSRF-Token'] = S.csrf;
@@ -287,7 +289,11 @@ async function api(path, body, method, netMode) {
     if (IS_LOCAL) throw new Error(t('err_dienst_antwortet_nicht'));
   } else if (OFFLINE.mode && opts.method === 'GET' && r.ok && path !== '/api/session') { OFFLINE.mode = false; OFFLINE.stand = null; offlineBanner(); }
   if (r.status === 401 && path !== '/api/session') { S.csrf = null; if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.stand = null; checkSession(); } else showLogin(); throw new Error('nicht angemeldet'); }
-  if (!r.ok) { const e = new Error(data.fehler || (t('fehler') + r.status)); e.data = data; throw e; }
+  if (r.status === 403 && data.csrf === 'ungueltig' && !renewed) {
+    // signed in again meanwhile (e.g. in another window): the token of this page is old -- take the current one, try once more
+    try { const s = await fetch('/api/session', {credentials: 'same-origin'}).then(x => x.json()); if (s.angemeldet && s.csrf) { S.csrf = s.csrf; return await api(path, body, method, netMode, true); } } catch (e) {}
+  }
+  if (!r.ok) { const e = new Error(data.fehler || (t('fehler') + r.status)); e.data = data; e.status = r.status; throw e; }
   if (opts.method !== 'GET' && data && data.bericht === 'angefordert') afterRebuild(data);
   return data;
 }
@@ -384,10 +390,26 @@ function swApply(allowed) {
 
 // ---------------------------------------------------------------- Anmeldung
 let SESSION = null;
+// the version of the files this page runs (index.html): the service runs a newer one -> load the page again, also when the
+// service restarted while the window was in the background (a new sign-in alone keeps the old files)
+const PAGE_VERSION = ((document.querySelector('meta[name="kontor-version"]') || {}).content || '').replace(/^__.*/, '');
+function checkVersion(v) {
+  if (!v || !PAGE_VERSION || v === PAGE_VERSION) return false;
+  let n = 0;
+  try {             // the new files did not come (yet): not again and again
+    const r = JSON.parse(sessionStorage.getItem('kontor.reload') || '{}');
+    n = r.v === v && Date.now() - r.at < 60000 ? r.n : 0;
+    sessionStorage.setItem('kontor.reload', JSON.stringify({v, at: Date.now(), n: n + 1}));
+  } catch (e) {}
+  if (n >= 3) return false;
+  if (!checkVersion.on) { checkVersion.on = true; toast(t('neue_version') + v + t('seite_wird_neu_geladen'), 3000); setTimeout(() => location.reload(), 800); }
+  return true;
+}
 async function checkSession() {
   try { SESSION = await api('/api/session'); } catch (e) { $('#login').classList.remove('hidden'); $('#login-err').textContent = e.message + t('neuer_versuch_in_5_s'); setTimeout(checkSession, 5000); return; }
   swApply(!IS_LOCAL && SESSION.offline_kopie !== false);     // the offline copy is for the iPhone; on the Mac it would only leave stale pages behind (e.g. after a port change)
-  $('#ver').textContent = 'v' + (SESSION.version || '');
+  if (!SESSION.offline && checkVersion(SESSION.version)) return;
+  $('#ver').textContent = 'v' + (PAGE_VERSION || SESSION.version || '');
   if (SESSION.offline && IS_LOCAL) { $('#login').classList.remove('hidden'); $('#login-err').textContent = t('der_kontor_dienst_antwortet_nicht'); setTimeout(checkSession, 5000); return; }
   if (SESSION.offline) { OFFLINE.mode = true; showLogin(); return; }
   OFFLINE.mode = false;
@@ -437,6 +459,7 @@ async function revalidate() {
   try { s = await fetch('/api/session', {credentials: 'same-origin'}).then(r => r.json()); } catch (e) { return; }
   const loginShown = !$('#login').classList.contains('hidden');
   if (s.offline) { if (IS_LOCAL) return; if (!OFFLINE.mode && !loginShown) { OFFLINE.mode = true; offlineBanner(); } return; }   // Mac weg: gespeicherte Ansicht bleibt offen
+  if (checkVersion(s.version)) return;
   if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.stand = null; SESSION = s; S.csrf = s.angemeldet ? s.csrf : null; if (s.angemeldet) { await enterApp(); } else showLogin(); return; }
   if (!s.angemeldet && !loginShown) { SESSION = s; S.csrf = null; showLogin(); }
   else if (!s.angemeldet && loginShown && s.touchid && !s.einrichtung_noetig) { SESSION = s; tryTouchId(true); }
@@ -536,6 +559,11 @@ function navBadge(href, text, title) {
   if (!d) { d = document.createElement('span'); a.appendChild(d); }
   d.className = 'nbadge' + (text === '•' ? '' : ' n'); d.textContent = text === '•' ? '' : text; d.title = title || '';
 }
+// what a run does now: reading MoneyMoney, checking the rules, booking n of m
+function runStep(st) {
+  const s = ((st || {}).dienst || {}).schritt || {};
+  return s.schritt === 'buchen' ? t('lauf_buchen', Math.min(s.n + 1, s.von), s.von) : s.schritt === 'regeln' ? t('lauf_regeln') : t('lauf_lesen');
+}
 function statusMini() {
   const st = S.STATUS; if (!st) return;
   const mm = mmState(st), m = st.moneymoney || {}, b = st.bericht || {}, l = st.letzter_lauf, ba = m.bankabruf;
@@ -549,6 +577,7 @@ function statusMini() {
       + zeile(t('mm_kontor'), m.stand ? esc(fmtZeit(m.stand)) : '–', '') + '</a>';
   } else h += `<div>${t('noch_keine_daten_aus_moneymoney')}</div>`;
   if (st.neustart_ausstehend) h += `<div class="sm-busy"><span class="spin xs"></span>${t('version')} ` + esc(st.neustart_ausstehend) + ` ${t('wird_geladen')}</div>`;
+  else if ((st.dienst || {}).laeuft) h += `<div class="sm-busy"><span class="spin xs"></span>${runStep(st)}</div>`;
   else if (b.laeuft) h += `<div class="sm-busy"><span class="spin xs"></span>${t('wird_neu_berechnet')}</div>`;
   if (m.luecken) h += `<div><a href="#sync">${t('depotstaende_pruefen')}</a></div>`;
   if (m.problem) h += `<div><a href="#sync" title="${esc(m.problem.text)}">${t('moneymoney_lief_kontor_konnte_nicht')}</a></div>`;
@@ -575,7 +604,7 @@ const DATA_TABS = ['overview', 'balance', 'cashflow', 'planning', 'tax', 'proper
 async function pollStatus() {
   // Status holen; läuft ein Abgleich oder Berichtsneubau, öfter nachsehen und nach Abschluss die Daten frisch laden
   S.STATUS = await api('/api/status'); statusMini();
-  if (S.STATUS.version && SESSION && SESSION.version && S.STATUS.version !== SESSION.version) { toast(t('neue_version') + S.STATUS.version + t('seite_wird_neu_geladen'), 3000); setTimeout(() => location.reload(), 1200); return; }
+  if (checkVersion(S.STATUS.version)) return;
   if (S.STATUS.neustart_ausstehend) { clearTimeout(BER.timer); BER.timer = setTimeout(() => pollStatus().catch(() => setTimeout(() => location.reload(), 4000)), 3000); return; }
   const b = S.STATUS.bericht || {};
   clearTimeout(BER.timer);
@@ -587,7 +616,7 @@ async function pollStatus() {
     const dr = $('#drawer');
     if (dr.classList.contains('open') && HD.uuid && $('#hq-seg', dr)) { if (!HD.live && !$$('#h-grid input:not(.auto)', dr).some(i => i.value !== i.defaultValue)) { try { await openHistDrawer(HD.uuid); } catch (e) {} } }
     else if (DATA_TABS.includes(S.tab) && !dr.classList.contains('open')) route();
-    toast(t('auswertung_aktualisiert'));
+    toastQuiet(t('auswertung_aktualisiert'));
   }
 }
 function afterRebuild(r) {
@@ -3889,6 +3918,7 @@ async function route() {
   if (SCROLL.key) SCROLL.pos[SCROLL.key] = y0;                 // Position des bisherigen Reiters merken
   S.tab = TITLES[tab] ? tab : 'overview'; S.sub = sub || '';
   const key = S.tab + '/' + S.sub, sameTab = key === SCROLL.key;
+  if (!sameTab) KEEP_OPEN.clear();          // folded sections open only while the same page is drawn again
   if (qs && S.tab === 'transactions') { const p = new URLSearchParams(qs); S.uf.ohne_kategorie = p.get('uncategorized') === '1'; S.uf.ohne_beleg = p.get('no_receipt') === '1'; if (p.get('year')) S.uf.jahr = p.get('year'); if (p.get('entity')) S.uf.entitaet = p.get('entity'); history.replaceState(null, '', '#transactions'); }
   $$('#nav a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + S.tab));
   $('#page-title').textContent = SUBTITLES[S.tab + '/' + S.sub] || (S.tab === 'properties' && S.sub ? t('immobilie') : TITLES[S.tab]);
@@ -4346,24 +4376,34 @@ async function syncNow(voll) {
   SYNC.busy = true; statusMini();
   try {
     try { await api('/api/run', voll ? {force: false, voll: true} : {force: false}); }
-    catch (e) { if (!/läuft bereits/.test(e.message)) throw e; }
+    catch (e) { if (e.status !== 409) throw e; }          // a check is running already: wait for it
     let tries = 0;
-    do { await new Promise(r => setTimeout(r, tries ? 1500 : 800)); S.STATUS = await api('/api/status'); statusMini(); } while (S.STATUS.dienst.laeuft && tries++ < 200);
+    do { await new Promise(r => setTimeout(r, tries ? 1000 : 600)); S.STATUS = await api('/api/status'); statusMini(); } while (S.STATUS.dienst.laeuft && tries++ < 300);
     const r = S.STATUS.letztes_ergebnis || {};
-    await loadAll(); route();
     const n = (r.vorschlaege || []).length;
     const msg = r.status === 'unveraendert' ? t('synchronisiert_keine_aenderung_in_mone')
-      : r.status === 'ok' ? t('synchronisiert') + (r.geschrieben ? ' – ' + r.geschrieben + ' gebucht' : '') + (r.probelauf && n ? ' – ' + n + t('buchungsvorschlaege_testmodus') : '') + ((r.warnungen || []).length ? ' – ' + r.warnungen.length + t('hinweise_unter_buchungen') : '')
+      : r.status === 'ok' ? t('synchronisiert') + (r.gebucht ? ' – ' + r.gebucht + ' ' + t('gebucht') : '') + (r.probelauf && n ? ' – ' + n + t('buchungsvorschlaege_testmodus') : '') + ((r.warnungen || []).length ? ' – ' + r.warnungen.length + t('hinweise_unter_buchungen') : '')
       : (r.text || r.fehler || t('synchronisiert'));
     toast(msg, r.status === 'nicht_verfuegbar' || r.status === 'fehler' ? 7000 : 4500);
+    if (S.tab === 'bookings' || S.tab === 'sync') route();          // what is new for these is there now
+    pollStatus().catch(() => {});                                    // the figures follow: loaded once the report is rebuilt
   } catch (e) { toast(t('synchronisieren_fehlgeschlagen') + e.message, 6000); }
   finally { SYNC.busy = false; statusMini(); }
 }
 async function startRun(dry, freigabe, anchor) {
   try { await api('/api/run', {probelauf: dry, force: true, ...(freigabe ? {freigabe} : {})}); toast(dry ? t('abgleich_gestartet_test') : t('abgleich_mit_buchung_gestartet')); } catch (e) { toast(e.message, 4000); return; }
   let tries = 0;
-  const poll = async () => { S.STATUS = await api('/api/status'); statusMini(); if (S.STATUS.dienst.laeuft && tries++ < 150) return setTimeout(poll, 2000); await loadAll(); await (anchor ? routeKeeping(anchor) : route()); const r = S.STATUS.letztes_ergebnis; toast(r && r.text ? r.text : t('abgleich_beendet'), 6000); };
-  setTimeout(poll, 1500);
+  const poll = async () => {
+    try { S.STATUS = await api('/api/status'); } catch (e) { return setTimeout(poll, 1500); }
+    statusMini();
+    const rl = $('#run-live', main);
+    if (S.STATUS.dienst.laeuft && tries++ < 300) { if (rl) { rl.disabled = true; $('span', rl).textContent = runStep(S.STATUS); } return setTimeout(poll, 1000); }
+    const r = S.STATUS.letztes_ergebnis || {};
+    toast(r.gebucht ? t('x_gebucht', r.gebucht) : ((r.warnungen || [])[0] || r.text || t('abgleich_beendet')), 5000);
+    await (anchor ? routeKeeping(anchor) : route());             // the bookings at once
+    pollStatus().catch(() => {});                                  // the figures follow
+  };
+  setTimeout(poll, 600);
 }
 
 window.addEventListener('hashchange', route);

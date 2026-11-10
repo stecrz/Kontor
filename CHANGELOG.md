@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.12.33 (2026-11-10 16:52)
+- Abgleich und Freigabe: links unten (und auf „Freigeben“) steht, was Kontor gerade tut – „Liest MoneyMoney …“, „Bucht 12 von 56 …“. Das Ergebnis erscheint sofort, die Auswertung rechnet Kontor danach im Hintergrund neu; ein Abgleich muss nicht mehr auf sie warten.
+- Kategorien, die du zuordnest, während die Auswertung neu berechnet wird, gehen nicht mehr verloren.
+- Nach einem Update lädt sich die Oberfläche selbst neu – auch wenn das Fenster im Hintergrund war und du dich neu angemeldet hast.
+- Nach einer Anmeldung in einem anderen Fenster übernimmt die Seite die neue Sitzung, statt mit „CSRF-Prüfung fehlgeschlagen“ (403) abzubrechen.
+- „Nicht gebucht“ und „Verlauf“ sind beim Öffnen der Seite eingeklappt; „Aktualisieren“ zählt nicht mehr als eigener Eintrag im Verlauf (höchstens 100 Einträge).
+
 ## 3.12.32 (2026-11-10 16:29)
 - Auto-Buchungen: „Nicht gebucht“ bleibt nach „Neu buchen“ geöffnet und an seiner Stelle – mehrere lassen sich nacheinander neu buchen; die Freigabe wird dabei nur aus den Konten der Buchungsregeln neu gerechnet.
 - Überflüssige Erklärtexte auf der Seite entfernt (stehen im Hover der Knöpfe und in der Hilfe).

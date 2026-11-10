@@ -31,6 +31,7 @@ from i18n import tr
 
 log = logging.getLogger("kontor.core")
 RUN_LOCK = threading.Lock()
+REPORT_LOCK = threading.Lock()          # building the report (dataset.json): one at a time, beside a run
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -743,11 +744,15 @@ def plan_pending(ledger: Ledger, config: dict, state: dict, today: date, hold: O
 
 
 def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal], made: Optional[List[Proposal]] = None,
-                    config: Optional[dict] = None) -> int:
+                    config: Optional[dict] = None, progress: Optional[Callable[[str, int, int], None]] = None) -> int:
     """Writes the proposals; the bookings written (not the comments on source payments) go into made. Only into manually
-    kept accounts (Ledger.writable), checked again here for every booking."""
+    kept accounts (Ledger.writable), checked again here for every booking. progress("buchen", n, of) after each one."""
     done = 0
+    total, n = sum(1 for x in proposals if x.kind != "quelle"), 0          # the bookings (comments on source payments not counted)
     for pr in proposals:
+        if progress and pr.kind != "quelle":
+            progress("buchen", n, total)
+            n += 1
         acc = ledger.accounts[pr.account_uuid]
         if pr.kind == "quelle":
             bridge.set_transaction(pr.source_tx_id, category=pr.set_category, comment=pr.set_comment)
@@ -960,6 +965,7 @@ def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: 
                         step: Callable[[float, str], None]) -> dict:
     kc = config.get("kategorien") or {}
     kat = categorize.load(store)
+    base = categorize.digest(kat)
     if not kc.get("aktiv", True):
         categorize.apply_to_ledger(categorize.empty(), ledger)
         return kat
@@ -977,7 +983,18 @@ def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: 
         changed = True
     step(0.9, tr("s_kategorien_uebernehmen"))
     if changed:
-        categorize.save(store, kat)
+        with categorize.LOCK:
+            now = categorize.load(store)
+            dnow = categorize.digest(now)
+            if dnow != base:
+                # changed meanwhile (e.g. a category you assigned while the report was being built): that stays; what was
+                # worked out here goes only where nothing changed, then the rules assign again on the result
+                for k, v in kat.items():
+                    if not k.startswith("_") and (k not in dnow or dnow[k] == base.get(k)):
+                        now[k] = v
+                categorize.auto_assign(now, ledger, overwrite_mm=bool(kc.get("mm_ueberschreiben")))
+                kat = now
+            categorize.save(store, kat)
     categorize.apply_to_ledger(kat, ledger)
     return kat
 
@@ -1200,12 +1217,15 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
 def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
              bridge_factory: Callable[[bool], Bridge] = Bridge, with_report: bool = True,
              categories: Optional[List[dict]] = None, base: Optional[Ledger] = None, full: bool = True,
-             approve: Optional[Dict[str, dict]] = None, report: bool = True, ledger: Optional[Ledger] = None) -> dict:
+             approve: Optional[Dict[str, dict]] = None, report: bool = True, ledger: Optional[Ledger] = None,
+             progress: Optional[Callable[[str, int, int], None]] = None) -> dict:
     """approve (a live run from "Approve" under Auto bookings): account|mark -> changes (amount, date, purpose) of the
     bookings you approved; only these are written, the others keep waiting. None: all. Marks you rejected are never proposed.
     report=False: no report here (the service builds it in the background, so the page is up to date at once).
     ledger: a state read already (e.g. only the accounts of the rules, refresh_accounts): not read again, and the mark of the
-    last full check stays (the next sync still sees what changed in MoneyMoney)."""
+    last full check stays (the next sync still sees what changed in MoneyMoney).
+    progress(step, n, of): "lesen", "regeln", "buchen" (n of the bookings) -- shown while the run is going."""
+    step = progress or (lambda *_a: None)
     if not RUN_LOCK.acquire(blocking=False):
         return {"status": "laeuft_bereits", "text": tr("s_ein_abgleich_laeuft_bereits")}
     try:
@@ -1215,6 +1235,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         prefetched = ledger is not None
         try:
             if not prefetched:
+                step("lesen", 0, 0)
                 ledger = fetch(bridge, config, today, with_portfolio=with_report, base=base, full=full)
             if categories is None and prefetched:
                 categories = state.get("kategorien_roh") or []
@@ -1242,6 +1263,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             return {"status": "unveraendert", "text": tr("s_keine_aenderung_in_moneymoney_seit"), "_ledger": ledger,
                     "_kategorien": categories}
 
+        step("regeln", 0, 0)
         ctx = _plan_inputs(state, ledger, approve, dry)
         done = ctx.done                         # companies whose booking back is done (area -> "Rückwirkend ab")
         t_read = time.time()
@@ -1290,7 +1312,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         expect = {u: ledger.accounts[u].balance for u in {x.account_uuid for x in bookings}}      # balances after writing
         if chosen:
             try:
-                written = apply_proposals(bridge, ledger, chosen, made, config)
+                written = apply_proposals(bridge, ledger, chosen, made, config, progress)
             except MoneyMoneyError as e:
                 err = e
                 log.error("Writing aborted after %d booking(s): %s", written, e)
@@ -1337,7 +1359,8 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         ums = None
         t_write = time.time()
         if with_report and report:
-            ums = build_report(store, ledger, config, state, today, warnings, categories).pop("_umsaetze", None)
+            with REPORT_LOCK:
+                ums = build_report(store, ledger, config, state, today, warnings, categories).pop("_umsaetze", None)
         if with_report:
             state["kategorien_roh"] = categories or []
         log.info("Run times: read %.1f s (%s), rules %.1f s, write %.1f s, report %.1f s", t_read - t_start,
@@ -1347,7 +1370,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         summary = {"status": "fehler" if err else "ok", "zeit": datetime.now().strftime("%Y-%m-%d %H:%M"), "probelauf": dry or bool(waiting) or bool(moved),
                    "vorschlaege": proposal_rows(ledger, waiting or bookings),
                    "quellaenderungen": len(result.proposals) - len(bookings),
-                   "geschrieben": written, "warnungen": result.warnings, "hinweise": result.info,
+                   "geschrieben": written, "gebucht": len(made), "warnungen": result.warnings, "hinweise": result.info,
                    "fehlend": result.missing, "fehler": str(err) if err else None}
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         new_recs = [{"tag": p.tag, "konto": p.account_uuid, "konto_name": ledger.accounts[p.account_uuid].name if p.account_uuid in ledger.accounts else "",
@@ -1401,9 +1424,10 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             if not prefetched:
                 cur["fingerprint"] = fp if err is None else None
             cur["letzter_lauf"] = summary
-            cur.setdefault("verlauf", []).append({"zeit": summary["zeit"], "probelauf": dry, "geschrieben": written,
-                                                  "vorschlaege": len(bookings), "fehler": summary["fehler"]})
-            cur["verlauf"] = [{k: v for k, v in x.items() if k != "buchungen"} for x in cur["verlauf"][-100:]]     # the bookings are in Kontor's own list
+            if not prefetched:                  # "Refresh" (only the accounts of the rules) is no check of its own
+                cur.setdefault("verlauf", []).append({"zeit": summary["zeit"], "probelauf": dry, "geschrieben": written,
+                                                      "vorschlaege": len(bookings), "fehler": summary["fehler"]})
+            cur["verlauf"] = [{k: v for k, v in x.items() if k != "buchungen"} for x in (cur.get("verlauf") or [])[-100:]]     # at most 100; the bookings are in Kontor's own list
             if state.get("snapshots"):
                 merge_snapshots(cur, state["snapshots"])     # Schnellabgleich waehrend des Laufs bleibt erhalten
             merge_holdings(cur, state)
