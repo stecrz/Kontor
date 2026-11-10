@@ -81,7 +81,9 @@ class MockBridge:
                     {"name": "Anleihen-ETF", "isin": "IE00BZ163L38", "quantity": 600.0, "marketPrice": 50.0, "marketValue": 30000.0, "purchaseValue": 31000.0, "currency": "EUR", "assetClass": "ETF"}]
         return []
 
-    def add_transaction(self, account_ref, booking_date, payee, amount, purpose="", category=None, fallback_refs=None):
+    append_comment = mm_bridge.Bridge.append_comment
+
+    def add_transaction(self, account_ref, booking_date, payee, amount, purpose="", category=None):
         self.written.append(("add", account_ref, booking_date, amount, purpose))
         if self.dry_run:
             return
@@ -199,7 +201,7 @@ class CoreTests(unittest.TestCase):
         import service as MA
         cfg = core.merged_config(self.store.load("config.json")); cfg["probelauf"] = True
         res = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
-        props = res["vorschlaege"]; self.assertEqual(len(props), 24); self.assertTrue(all(p["tag"].startswith("#mm-") for p in props))
+        props = res["vorschlaege"]; self.assertEqual(len(props), 24); self.assertTrue(all(p["tag"].startswith("#kontor-") for p in props))
         self.assertEqual(MA.kontor_bookings(res["_ledger"].without_planned()), [])     # planned, not made: nothing "created by Kontor"
         self.assertEqual(res["_ledger"].without_planned().accounts[F.uid("pb.vd")].balance, -1600000.0)
         zins = [p for p in props if p["art"] == "zins"]; tilg = [p for p in props if p["art"] == "tilgung"]
@@ -209,7 +211,7 @@ class CoreTests(unittest.TestCase):
         approve, err = MA.approval({tilg[0]["key"]: {}, wert[0]["key"]: {}, zins[1]["key"]: {"betrag": "-1234,56", "zweck": "Zinsen laut Abrechnung", "datum": "2026-10-15"}})
         self.assertIsNone(err)
         r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve=approve)
-        self.assertEqual(r["status"], "ok", r); self.assertEqual(r["geschrieben"], 4)        # 3 bookings + the comment on the source payment
+        self.assertEqual(r["status"], "ok", r); self.assertEqual(r["geschrieben"], 3)        # the 3 bookings, nothing else
         self.assertFalse([w for w in r["warnungen"] if "nach Buchung" in w], r["warnungen"])
         # 24 - 1 rejected - 3 booked, still waiting -- and one more: the value booked matches what is in MoneyMoney now (the loan
         # bookings left out not included), so once they are booked the value needs one more adjustment
@@ -248,7 +250,7 @@ class CoreTests(unittest.TestCase):
         old, new = {p["key"]: p["betrag"] for p in props}, {p["key"]: p["betrag"] for p in held}
         self.assertNotIn(tilg[0]["key"], new)
         moved = [k for k in new if k in old and abs(new[k] - old[k]) >= 0.005]
-        self.assertEqual(len(moved), 1); self.assertTrue(moved[0].split("|")[1].startswith("#mm-wert-"))       # only the next one
+        self.assertEqual(len(moved), 1); self.assertTrue(moved[0].split("|")[1].startswith("#kontor-wert-"))       # only the next one
         # the amounts shown before leaving it out are not the ones booked now: nothing is written
         approve = {k: {"angezeigt": v} for k, v in old.items() if k != tilg[0]["key"]}
         r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve=approve)
@@ -267,7 +269,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(r["status"], "ok", r); self.assertEqual(core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)["vorschlaege"], [])
         # a value adjustment of a past month end deleted in MoneyMoney: its day checked again (not under "not booked")
         txs = MockBridge.state["txs"]
-        wert = sorted((t for t in txs if "#mm-wert-2026" in (t.get("purpose") or "") and t["accountUuid"] == F.uid("priv.bet.pb")), key=lambda t: t["bookingDate"])[2]
+        wert = sorted((t for t in txs if "#kontor-wert-2026" in (t.get("purpose") or "") and t["accountUuid"] == F.uid("priv.bet.pb")), key=lambda t: t["bookingDate"])[2]
         txs.remove(wert)
         acc = next(a for a in MockBridge.state["accounts"] if a["uuid"] == wert["accountUuid"]); acc["balance"][0][0] = round(acc["balance"][0][0] - wert["amount"], 2)
         r = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
@@ -286,21 +288,100 @@ class CoreTests(unittest.TestCase):
         rec = next(x for x in self.store.load("state.json")["kontor_buchungen"] if x["tag"] == wtag and x["konto"] == wert["accountUuid"])
         self.assertEqual(rec["betrag"], back[0]["amount"])
 
+    def test_mirror_books_new_at_once_but_older_only_with_approval(self):
+        """Account mirror with "Book fully automatically": what was there before the mirror was set up waits for your approval
+        (it may be in the other account by hand already, on another day); what is booked afterwards is mirrored at once."""
+        cfg = core.merged_config(self.store.load("config.json")); cfg["probelauf"] = False
+        cfg["gesellschaften"][1] = {"bereich": F.uid("shs"), "rueckwirkend_ab": "alles", "gegenkonten": [
+            {"konto": F.uid("priv.bet.shs") + " | Beteiligung an Beta GbR", "quelle": F.uid("shs.kap.s") + " | Kapitalkonto A"}]}
+        txs = MockBridge.state["txs"]
+        old = F.tx("shs.kap.s", date(2026, 9, 1), -5000.0, "Ich", "Einlage alt"); txs.append(old)
+        r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
+        self.assertEqual(r["status"], "ok", r)
+        gk = [t for t in txs if "#kontor-gk-" in (t.get("purpose") or "")]
+        self.assertEqual(gk, [])                                           # the older one: not booked on its own
+        wait = [p for p in r["vorschlaege"] if p["art"] == "spiegel"]
+        self.assertTrue(r["probelauf"]); self.assertEqual([(p["rueckwirkend"], p["betrag"], p["gegenpartei"]) for p in wait], [(True, 5000.0, "Beta GbR")])
+        self.assertEqual(list(self.store.load("state.json")["spiegel_seit"].values()), [old["id"]])
+        # booked after the mirror was set up: mirrored at the next sync without asking; the older one keeps waiting
+        new = F.tx("shs.kap.s", TODAY, 300.0, "Ich", "Entnahme neu"); txs.append(new)
+        r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
+        gk = [t for t in txs if "#kontor-gk-" in (t.get("purpose") or "")]
+        self.assertEqual([(t["amount"], t["accountUuid"], t["name"]) for t in gk], [(-300.0, F.uid("priv.bet.shs"), "Beta GbR")])
+        self.assertIn("Entnahme neu · gespiegelt von Kapitalkonto A · #kontor-gk-%d" % new["id"], gk[0]["purpose"])
+        self.assertEqual([p["betrag"] for p in r["vorschlaege"] if p["art"] == "spiegel"], [5000.0])
+        # approved: booked; nothing mirrored back, nothing twice
+        key = next(p["key"] for p in r["vorschlaege"] if p["art"] == "spiegel")
+        r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, approve={key: {}})
+        self.assertEqual(len([t for t in txs if "#kontor-gk-" in (t.get("purpose") or "")]), 2)
+        r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
+        self.assertEqual(len([t for t in txs if "#kontor-gk-" in (t.get("purpose") or "")]), 2); self.assertFalse(r["probelauf"])
+        self.assertFalse([w for w in r["warnungen"] if "Original" in w])
+        # the original deleted in MoneyMoney: a note to delete the mirrored booking too (Kontor deletes nothing)
+        txs.remove(new)
+        acc = next(a for a in MockBridge.state["accounts"] if a["uuid"] == F.uid("shs.kap.s")); acc["balance"][0][0] = round(acc["balance"][0][0] - 300.0, 2)
+        n = len(txs)
+        r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
+        self.assertTrue([w for w in r["warnungen"] if "kein Original mehr" in w], r["warnungen"]); self.assertEqual(len(txs), n)
+
+    def test_failing_rules_book_nothing_and_stop_nothing_else(self):
+        """Something unexpected inside the rules: nothing is booked, Kontor's lists stay, the run itself goes on (reading, the
+        report) and says so; the next sync tries again."""
+        cfg = core.merged_config(self.store.load("config.json"))
+        core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
+        before = self.store.load("state.json"); n = len(MockBridge.state["txs"])
+        real = core.plan_all
+
+        def boom(*a, **k):
+            raise RuntimeError("unerwartet")
+        core.plan_all = boom
+        try:
+            MockBridge.state["txs"].append(F.tx("pb.kk", TODAY, -99.0, "x", "y"))        # something to do: the company is worth less
+            kk = next(a for a in MockBridge.state["accounts"] if a["uuid"] == F.uid("pb.kk")); kk["balance"][0][0] = round(kk["balance"][0][0] - 99.0, 2)
+            with self.assertLogs(level="ERROR") as cm:
+                r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
+        finally:
+            core.plan_all = real
+        self.assertEqual(r["status"], "ok"); self.assertEqual(r["geschrieben"], 0); self.assertEqual(len(MockBridge.state["txs"]), n + 1)
+        self.assertTrue(any("nichts gebucht" in w for w in r["warnungen"]), r["warnungen"])
+        self.assertNotIn("unerwartet", "".join(cm.output))                            # the log names the kind and place, no contents
+        after = self.store.load("state.json")
+        self.assertEqual(after["kontor_buchungen"], before["kontor_buchungen"]); self.assertIsNone(after["fingerprint"])
+        self.assertTrue(self.store.load("dataset.json").get("bereiche"))                # the report was built all the same
+        r = core.run_once(self.store, cfg, TODAY, dry=False, force=False, bridge_factory=MockBridge)      # the next sync: again
+        self.assertEqual(r["status"], "ok"); self.assertEqual(r["geschrieben"], 1)
+
+    def test_settings_of_the_wrong_kind_are_dropped(self):
+        """A configuration changed by hand or imported with the wrong kind of value somewhere: dropped when loaded, nothing fails."""
+        cfg = self.store.load("config.json")
+        cfg["darlehen"].append("kein Darlehen"); cfg["darlehen"][0]["quellkonten"] = "nur ein Text"; cfg["darlehen"].append({"name": 5, "ab_datum": "2026-13-45"})
+        cfg["gesellschaften"] = [None, {"bereich": F.uid("pb"), "beteiligung": 12, "gegenkonten": [3, {"konto": [], "quelle": F.uid("pb.kap.s")}], "schwelle": "viel"}]
+        cfg["bereiche"].append(7); cfg["bilanz"] = "kaputt"; cfg["abruf"] = {"offline": 4}
+        m = core.merged_config(cfg)
+        self.assertEqual(len(m["darlehen"]), 2); self.assertEqual(m["darlehen"][0]["quellkonten"], ["nur ein Text"]); self.assertFalse(m["darlehen"][1]["aktiv"])
+        self.assertEqual(m["gesellschaften"], [{"bereich": F.uid("pb"), "beteiligung": "", "gegenkonten": [{"konto": "", "quelle": F.uid("pb.kap.s")}], "schwelle": 0.01}])
+        self.assertEqual(m["bilanz"]["inaktiv_monate"], 12); self.assertEqual(m["abruf"]["offline"], [])
+        r = core.run_once(self.store, m, TODAY, dry=True, force=True, bridge_factory=MockBridge)
+        self.assertEqual(r["status"], "ok")
+        led = core.fetch(MockBridge(True), m, TODAY)
+        self.assertTrue(core.check_config(led, [], m))                                  # named, not crashed
+
     def test_run_progress(self):
         """Reading, rules, then each booking (n of m) -- what the interface shows while a run goes on."""
         steps = []
         cfg = core.merged_config(self.store.load("config.json"))
         res = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge, progress=lambda *a: steps.append(a))
         self.assertEqual(steps[:2], [("lesen", 0, 0), ("regeln", 0, 0)])
-        booking = [x for x in steps if x[0] == "buchen"]          # the bookings, not the comments on source payments
+        booking = [x for x in steps if x[0] == "buchen"]
         self.assertEqual(len(booking), res["gebucht"]); self.assertEqual([x[1] for x in booking], list(range(res["gebucht"])))
-        self.assertEqual({x[2] for x in booking}, {res["gebucht"]}); self.assertLess(res["gebucht"], res["geschrieben"])
+        self.assertEqual({x[2] for x in booking}, {res["gebucht"]}); self.assertEqual(res["gebucht"], res["geschrieben"])
 
     def test_run_twice_then_dataset(self):
         cfg = core.merged_config(self.store.load("config.json"))
         res = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertEqual(res["status"], "ok", res)
-        self.assertEqual(res["geschrieben"], 35)      # 11 Tilgung + 11 Zins + 2 Wert + 11 Quellkommentare
+        self.assertEqual(res["geschrieben"], 24)      # 11 Tilgung + 11 Zins + 2 Wert -- nothing else: the payments are never touched
+        self.assertFalse([w for b in MockBridge.instances for w in b.written if w[0] == "set"])
         self.assertEqual(len(res["vorschlaege"]), 24)
         vd = [a for a in MockBridge.state["accounts"] if a["name"] == "Verkäuferdarlehen"][0]["balance"][0][0]
         self.assertAlmostEqual(vd, -1600000 + 11 * 8250 - 11 * 4400, 2)
@@ -312,15 +393,15 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(core.run_once(self.store, cfg2, TODAY + timedelta(days=1), dry=True, force=False, bridge_factory=MockBridge)["status"], "ok")   # a new day too
         # Kontor's own list of what it booked (besides the marks): 24 bookings, the 11 comments on source payments are none
         recs = self.store.load("state.json")["kontor_buchungen"]
-        self.assertEqual(len(recs), 24); self.assertTrue(all(r["tag"].startswith("#mm-") and r["konto"] for r in recs))
+        self.assertEqual(len(recs), 24); self.assertTrue(all(r["tag"].startswith("#kontor-") and r["konto"] for r in recs))
         # a booking deleted in MoneyMoney is not made again on its own, but reported as missing; one whose mark was changed counts as there
         txs = MockBridge.state["txs"]
-        zins = [t for t in txs if "#mm-zins-" in (t.get("purpose") or "")]
+        zins = [t for t in txs if "#kontor-zins-" in (t.get("purpose") or "")]
         gone = zins[0]; txs.remove(gone)
-        zins[1]["purpose"] = zins[1]["purpose"].replace("#mm-zins-", "#geaendert-")
+        zins[1]["purpose"] = zins[1]["purpose"].replace("#kontor-zins-", "#geaendert-")
         res3 = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertEqual(res3["geschrieben"], 0); self.assertEqual(len(res3["vorschlaege"]), 0)
-        tag = re.findall(r"#mm-zins-[0-9-]+", gone["purpose"])[0]
+        tag = re.findall(r"#kontor-zins-[0-9-]+", gone["purpose"])[0]
         self.assertEqual([m["tag"] for m in res3["fehlend"]], [tag])
         st = self.store.load("state.json")                                         # deleted in MoneyMoney: under "not booked", no longer "made"
         self.assertEqual([(r["tag"], r["grund"]) for r in st["kontor_abgelehnt"]], [(tag, "geloescht")])
@@ -333,7 +414,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(st.get("kontor_abgelehnt"), []); self.assertIn(tag, [r["tag"] for r in st["kontor_buchungen"]])
         # a value adjustment deleted in MoneyMoney: not under "not booked" -- its day is checked again and what is missing
         # booked there (the same mark, free again), approved with the amount shown
-        wert = [t for t in txs if "#mm-wert-" in (t.get("purpose") or "")][0]; txs.remove(wert)
+        wert = [t for t in txs if "#kontor-wert-" in (t.get("purpose") or "")][0]; txs.remove(wert)
         acc = next(a for a in MockBridge.state["accounts"] if a["uuid"] == wert["accountUuid"]); acc["balance"][0][0] = round(acc["balance"][0][0] - wert["amount"], 2)
         r5 = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
         self.assertEqual(self.store.load("state.json")["kontor_abgelehnt"], [])
@@ -789,7 +870,7 @@ class AppTests(_AppBase):
         self.app.do_run(False, True)                                        # all booked
         self.app.config["probelauf"] = True
         fp = self.store.load("state.json")["fingerprint"]
-        txs = MockBridge.state["txs"]; wert = next(t for t in txs if "#mm-wert-" in (t.get("purpose") or ""))
+        txs = MockBridge.state["txs"]; wert = next(t for t in txs if "#kontor-wert-" in (t.get("purpose") or ""))
         txs.remove(wert)                                                    # deleted in MoneyMoney
         acc = next(a for a in MockBridge.state["accounts"] if a["uuid"] == wert["accountUuid"]); acc["balance"][0][0] = round(acc["balance"][0][0] - wert["amount"], 2)
         MockBridge.reads.clear(); n_txs = len(txs); n_hist = len(self.store.load("state.json")["verlauf"])
@@ -815,8 +896,11 @@ class AppTests(_AppBase):
         self.app.do_run(True, False)                 # after own bookings: a quick read is enough
         led = self.app.ledger
         self.assertFalse(self.app.full_read_due()); self.assertTrue(led.incremental)
-        # the bookings written back to January come from the kept ones (the quick read sees 30 days): nothing proposed again
-        self.assertTrue(any(t.id <= 0 and "#mm-zins-2026-01" in t.purpose for t in led.txs))
+        # the accounts of the rules are read in full at every quick read: the bookings written back to January are there as
+        # MoneyMoney has them (no stand-ins), nothing is proposed again
+        jan = [t for t in led.txs if "#kontor-zins-2026-01" in t.purpose]
+        self.assertEqual(len(jan), 1); self.assertGreater(jan[0].id, 0)
+        self.assertIn(F.uid("pb.vd"), set(MockBridge.reads)); self.assertNotIn(F.uid("priv.giro"), set(MockBridge.reads))
         again = self.app.do_run(True, True); self.assertEqual(again["vorschlaege"], []); self.assertTrue(self.app.ledger.incremental)
         led = self.app.ledger
         time.sleep(0.01)
@@ -1344,7 +1428,7 @@ class AppTests(_AppBase):
         self.assertTrue(ds["leer"])
         self.run_and_wait()
         code, runs = self.call("/api/runs")
-        self.assertEqual(runs["letzter_lauf"]["geschrieben"], 35)
+        self.assertEqual(runs["letzter_lauf"]["geschrieben"], 24)
         code, st = self.call("/api/status")
         mm = st["moneymoney"]
         self.assertNotIn("naechster_lauf", st["dienst"]); self.assertNotIn("aktualisieren_erlaubt", mm)
@@ -2797,7 +2881,7 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#nav a[href='#bookings']"); pg.wait_for_selector(".mode-chip"); self.assertIn("Vollautomatisch" if auto else "Mit Freigabe", pg.inner_text(".mode-chip"))
                 self.assertIsNone(pg.query_selector("#run-dry"))              # checked at every sync, no button of its own
                 # the approval list with your selection: left out, recalculated (adjusted), new, not needed any more
-                rows = pg.evaluate("""() => { const sv = {...BOOK}, A = 'a|#mm-wert-20260131-1', B = 'a|#mm-wert-20260228-1', C = 'a|#mm-wert-20260331-1', D = 'a|#mm-wert-20260430-1';
+                rows = pg.evaluate("""() => { const sv = {...BOOK}, A = 'a|#kontor-wert-20260131-1', B = 'a|#kontor-wert-20260228-1', C = 'a|#kontor-wert-20260331-1', D = 'a|#kontor-wert-20260430-1';
                     Object.assign(BOOK, {off: new Set([A]), edits: {}, calc: [{key: B, betrag: 150}, {key: C, betrag: 5}], extra: {}});
                     BOOK.extra[C] = {key: C, betrag: 5};
                     const r = bkRows({vorschlaege: [{key: A, betrag: 50}, {key: B, betrag: 100}, {key: D, betrag: 7}]});

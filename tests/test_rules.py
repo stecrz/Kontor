@@ -85,15 +85,15 @@ class LoanTests(unittest.TestCase):
         res = plan_loan(led, loan_cfg(), today)
         tilg = [p for p in res.proposals if p.kind == "tilgung"]
         zins = [p for p in res.proposals if p.kind == "zins"]
-        quelle = [p for p in res.proposals if p.kind == "quelle"]
         self.assertEqual(len(tilg), 11)                      # Jan..Nov
         self.assertEqual(len(zins), 10)                      # Jan..Okt (Nov-Ultimo liegt in der Zukunft)
-        self.assertEqual(len(quelle), 11)
+        self.assertEqual({p.kind for p in res.proposals}, {"tilgung", "zins"})        # the payments themselves are never touched
+        self.assertTrue(all(p.account_uuid == led.resolve(loan_cfg()["darlehenskonto"]).uuid for p in res.proposals))
         self.assertTrue(all(p.amount == 8250.0 for p in tilg))
         self.assertTrue(all(p.amount == -4400.0 for p in zins))   # 1.600.000 x 3,3 % / 12
         self.assertEqual(zins[0].booking_date, date(2026, 1, 31))
-        self.assertIn("#mm-zins-2026-01", zins[0].purpose)
-        self.assertIn("#mm-tx-", tilg[0].purpose)
+        self.assertIn("#kontor-zins-2026-01", zins[0].purpose)
+        self.assertIn("#kontor-tx-", tilg[0].purpose)
         self.assertTrue(tilg[0].purpose.startswith("Annuität "))
         # In-Memory-Saldo nach allen Buchungen
         vd = led.resolve("Verkäuferdarlehen")
@@ -107,7 +107,7 @@ class LoanTests(unittest.TestCase):
         # Zweiter Lauf: Buchungen "existieren" jetzt im Ledger (in-memory) -> nichts Neues
         res2 = plan_loan(led, loan_cfg(), today)
         self.assertTrue(res1.proposals)
-        self.assertEqual([p for p in res2.proposals if p.kind != "quelle"], [])
+        self.assertEqual(res2.proposals, [])
 
     def test_december_remainder_is_cent_exact(self):
         today = date(2027, 1, 5)
@@ -250,8 +250,9 @@ class CompanyTests(unittest.TestCase):
             {"konto": F.uid("priv.bet.shs") + " | Beteiligung an Beta GbR", "quelle": F.uid("shs.kap.s") + " | Kapitalkonto A"}]}])
         res = plan_all(led, cfg, today)
         self.assertEqual([(p.kind, p.amount, p.booking_date) for p in res.proposals], [("spiegel", 5000.0, date(2026, 9, 1))])
-        self.assertTrue(res.proposals[0].tag.startswith("#mm-gk-"))
-        self.assertIn("Gegenbuchung zu Kapitalkonto A: Einlage", res.proposals[0].purpose)
+        self.assertTrue(res.proposals[0].tag.startswith("#kontor-gk-"))
+        self.assertIn("Einlage · gespiegelt von Kapitalkonto A · #kontor-gk-", res.proposals[0].purpose)
+        self.assertEqual(res.proposals[0].payee, "Beta GbR")              # the sender is the company, not its account
         self.assertEqual(res.preview[0]["i"], 0)
 
     def test_back_to_month_ends(self):
@@ -348,7 +349,7 @@ class CompanyTests(unittest.TestCase):
         self.assertTrue(led_with({vd: {"bankCode": "70150000"}}).writable(vd))          # never fetched
         self.assertTrue(led_with({vd: blz}).writable(vd, {"abruf": {"offline": [vd + " | Verkäuferdarlehen"]}}))      # your choice
         self.assertTrue(led_with({vd: blz}, [F.tx("pb.vd", date(2026, 9, 30), -10.0, "x", "Zinsen 09/2026 · #mm-zins-2026-09")]).writable(vd))
-        led2 = led_with({vd: blz}); led2.post(vd, date(2026, 11, 4), 1.0, "x", "#mm-wert-20261104-1")
+        led2 = led_with({vd: blz}); led2.post(vd, date(2026, 11, 4), 1.0, "x", "#kontor-wert-20261104-1")
         self.assertFalse(led2.writable(vd))                                  # a booking planned in this run does not count
         self.assertFalse(led.writable(bet, {"abruf": {"online": [bet + " | Beteiligung an Alpha GbR"]}}))
         # the rules use it
@@ -703,7 +704,7 @@ class KontorBookingsTests(unittest.TestCase):
                F.tx("priv.giro", date(2026, 10, 3), -900.0, "Bank", "Rate", comment="→ Darlehen gespiegelt (#mm-tx-7)")]
         led = Ledger(accounts_from_export(F.accounts_raw({})), tx_from_export(txs))
         out = service.kontor_bookings(led)
-        self.assertEqual([(x["art"], x["markierung"]) for x in out], [("wert", "#mm-wert-20261102-1"), ("zins", "#mm-zins-2026-10")])   # newest first; a comment alone is no booking
+        self.assertEqual([(x["art"], x["markierung"]) for x in out], [("wert", "#kontor-wert-20261102-1"), ("zins", "#kontor-zins-2026-10")])   # newest first; a comment alone is no booking
         self.assertEqual(out[1]["zweck"], "Zinsen Oktober"); self.assertEqual(out[1]["betrag"], -4400.0)
         self.assertEqual(service.kontor_bookings(None), [])
 
@@ -896,3 +897,167 @@ class CapitalAccountRoleTests(unittest.TestCase):
         roles = account_roles(led, company_cfg())
         self.assertEqual(roles[F.uid("priv.bet.pb")], "beteiligungen")
         self.assertEqual(roles[F.uid("pb.kap.s")], "verbindlichkeiten")
+        for a in raw:                                       # also with a debit balance: yours is a participation
+            if a["uuid"] == F.uid("priv.bet.pb"):
+                a["balance"] = [[-500.0, "EUR"]]
+        self.assertEqual(account_roles(Ledger(accounts_from_export(raw), []), company_cfg())[F.uid("priv.bet.pb")], "beteiligungen")
+        # no company set up yet: a capital account with a debt stays a debt (as before)
+        self.assertEqual(account_roles(Ledger(accounts_from_export(raw), []), {})[F.uid("pb.kap.s")], "verbindlichkeiten")
+
+
+class WritePathTests(unittest.TestCase):
+    """Everything Kontor may do in MoneyMoney, in one place: new bookings in offline accounts (core.apply_proposals), the
+    category of a transaction you assign (mm_categories.write), a receipt reference added to a comment (Bridge.append_comment).
+    Nothing else -- no transfers, nothing deleted, nothing existing replaced."""
+
+    class Rec:
+        dry_run = False
+
+        def __init__(self, txs=()):
+            self.calls, self.txs = [], list(txs)
+
+        def add_transaction(self, *a, **k):
+            self.calls.append(("add",) + a)
+
+        def set_transaction(self, tx_id, category=None, comment=None, checkmark=None):
+            self.calls.append(("set", tx_id, category, comment))
+
+        def export_transactions(self, from_date, to_date=None, account=None):
+            return [t for t in self.txs if t["accountUuid"] == account]
+
+    def test_only_these_calls_exist(self):
+        import re as _re
+        import mm_bridge
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.assertEqual(set(mm_bridge.ALLOWED_METHODS), {"exportAccounts", "exportCategories", "exportTransactions", "exportPortfolio",
+                                                           "addTransaction", "setTransaction"})
+        jxa = open(os.path.join(root, "mm_bridge.jxa"), encoding="utf-8").read()
+        allowed = set(_re.findall(r"(\w+): true", jxa.split("const ERLAUBT")[1].split("};")[0]))
+        self.assertEqual(allowed, set(mm_bridge.ALLOWED_METHODS))
+        for word in ("createBankTransfer", "createBatchTransfer", "createDirectDebit", "createBatchDirectDebit"):
+            self.assertNotIn(word, allowed)
+        found = {}
+        for name in sorted(os.listdir(root)):
+            if not name.endswith(".py"):
+                continue
+            src = open(os.path.join(root, name), encoding="utf-8").read()
+            for call in ("add_transaction", "set_transaction", "append_comment", "_call"):
+                n = len(_re.findall(r"\.%s\(" % call, src))
+                if n:
+                    found[(name, call)] = n
+        self.assertEqual(found, {("core.py", "add_transaction"): 1,              # apply_proposals
+                                 ("mm_categories.py", "set_transaction"): 1,     # the category you assign (write-back on)
+                                 ("service.py", "append_comment"): 1,            # receipt reference (your setting)
+                                 ("mm_bridge.py", "set_transaction"): 1,         # inside append_comment
+                                 ("mm_bridge.py", "_call"): 8})
+
+    def test_bookings_only_marked_once_and_into_offline_accounts(self):
+        import core
+        from rules import Proposal
+        from mm_bridge import MoneyMoneyError
+        tag = "#kontor-wert-20261104-1"
+        there = F.tx("priv.bet.shs", date(2026, 11, 1), 5.0, "x", "da · #mm-wert-20261101-1")
+        led = make_ledger({}, [there])
+        off, bank = led.accounts[F.uid("priv.bet.pb")], led.accounts[F.uid("priv.giro")]
+        ok = Proposal("r", "wert", off.uuid, off.path, date(2026, 11, 4), 12.5, "p", "Text · " + tag, "", tag)
+        br = self.Rec()
+        made = []
+        self.assertEqual(core.apply_proposals(br, led, [ok], made), 1)
+        self.assertEqual(br.calls, [("add", off.uuid, date(2026, 11, 4), "p", 12.5, "Text · " + tag, None)]); self.assertEqual(made, [ok])
+        for bad in (Proposal("r", "wert", bank.uuid, bank.path, date(2026, 11, 4), 1.0, "p", "x · " + tag, "", tag),       # a bank account
+                    Proposal("r", "wert", F.uid("priv"), "Privat", date(2026, 11, 4), 1.0, "p", "x · " + tag, "", tag),      # a group
+                    Proposal("r", "wert", off.uuid, off.path, date(2026, 11, 4), 1.0, "p", "ohne Markierung", "", tag),      # no mark in its text
+                    Proposal("r", "wert", off.uuid, off.path, date(2026, 11, 4), 1.0, "p", "x", "", ""),
+                    Proposal("r", "wert", off.uuid, off.path, date(2026, 11, 4), float("nan"), "p", "x · " + tag, "", tag)):
+            br = self.Rec()
+            with self.assertRaises(MoneyMoneyError):
+                core.apply_proposals(br, led, [bad], [])
+            self.assertEqual(br.calls, [])
+        # its mark is in the account already, or no amount: nothing is written (never twice)
+        twice = Proposal("r", "wert", F.uid("priv.bet.shs"), "x", date(2026, 11, 1), 5.0, "p", "da · #kontor-wert-20261101-1", "", "#kontor-wert-20261101-1")       # there with its older "#mm-" mark
+        zero = Proposal("r", "wert", off.uuid, off.path, date(2026, 11, 4), 0.0, "p", "x · " + tag, "", tag)
+        br = self.Rec(); made = []
+        core.apply_proposals(br, led, [twice, zero, ok, ok], made)
+        self.assertEqual(len(br.calls), 1); self.assertEqual(made, [ok])
+        # a category only if MoneyMoney has it -- otherwise without one (its category tree is never touched), and a note
+        cats = [{"name": "Zinsen", "path": "Finanzen\\Zinsen", "uuid": "u-1"}]
+        a = Proposal("r", "zins", off.uuid, off.path, date(2026, 11, 4), -3.0, "p", "x · #kontor-zins-2026-10", "Zinsen", "#kontor-zins-2026-10")
+        b = Proposal("r", "zins", off.uuid, off.path, date(2026, 11, 4), -3.0, "p", "x · #kontor-zins-2026-09", "Gibtsnicht", "#kontor-zins-2026-09")
+        br = self.Rec(); notes = []
+        core.apply_proposals(br, led, [a, b], [], None, None, cats, notes)
+        self.assertEqual([c[-1] for c in br.calls], ["Zinsen", None]); self.assertEqual(len(notes), 1); self.assertIn("Gibtsnicht", notes[0])
+
+    def test_comment_is_added_never_replaced(self):
+        import mm_bridge
+        t = F.tx("priv.giro", date(2026, 10, 1), -10.0, "Laden", "Einkauf", comment="meine Notiz")
+        br = self.Rec([t]); br.append_comment = mm_bridge.Bridge.append_comment.__get__(br)
+        self.assertTrue(br.append_comment(t["id"], t["accountUuid"], date(2026, 10, 1), "Beleg: 2026/a.pdf"))
+        self.assertEqual(br.calls, [("set", t["id"], None, "meine Notiz\nBeleg: 2026/a.pdf")])
+        t["comment"] = "meine Notiz\nBeleg: 2026/a.pdf"; br.calls.clear()
+        self.assertFalse(br.append_comment(t["id"], t["accountUuid"], date(2026, 10, 1), "Beleg: 2026/a.pdf")); self.assertEqual(br.calls, [])
+        self.assertFalse(br.append_comment(999999, t["accountUuid"], date(2026, 10, 1), "x")); self.assertEqual(br.calls, [])       # not found: nothing
+
+
+class MarkTests(unittest.TestCase):
+    """Kontor's mark reads "#kontor-..." (so MoneyMoney shows who made a booking); bookings made until 3.12 carry "#mm-..." and
+    are the same marks: nothing is booked twice, Kontor's lists keep working."""
+
+    def test_old_marks_are_the_same_marks(self):
+        from model import canon_tag, marks_in, has_mark
+        self.assertEqual(canon_tag("#mm-zins-2026-01"), "#kontor-zins-2026-01"); self.assertEqual(canon_tag("#kontor-gk-12"), "#kontor-gk-12")
+        self.assertEqual(marks_in("Zinsen · #mm-zins-2026-01 und #kontor-wert-20260101-2"), ["#kontor-zins-2026-01", "#kontor-wert-20260101-2"])
+        self.assertTrue(has_mark("x #mm-tx-5")); self.assertFalse(has_mark("#mmm kein Zeichen"))
+        today = date(2026, 11, 4)
+        # everything booked by an older version (old marks): nothing is proposed again
+        led = make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today))
+        cfg = company_cfg(darlehen=[loan_cfg()])
+        res = plan_all(led, cfg, today)
+        self.assertTrue(res.proposals); self.assertTrue(all(p.tag.startswith("#kontor-") and p.tag in p.purpose for p in res.proposals))
+        old = led.without_planned(keep=[p.key for p in res.proposals])
+        for t in old.txs:
+            t.purpose = t.purpose.replace("#kontor-", "#mm-")
+        self.assertEqual(plan_all(old.fork(), cfg, today).proposals, [])
+        # a mirrored booking with the old mark: recognised, not mirrored again and not mirrored back
+        o = F.tx("shs.kap.s", date(2026, 9, 1), -5000.0, "Ich", "Einlage")
+        m = F.tx("priv.bet.shs", date(2026, 9, 1), 5000.0, "Beta GbR", "Einlage · #mm-gk-%d" % o["id"])
+        mc = company_cfg(gesellschaften=[{"bereich": "b", "rueckwirkend_ab": "alles", "gegenkonten": [
+            {"konto": F.uid("priv.bet.shs") + " | B", "quelle": F.uid("shs.kap.s") + " | K"}]}])
+        r = plan_all(make_ledger({}, [o, m]), mc, today)
+        self.assertEqual(r.proposals, []); self.assertEqual(r.warnings, []); self.assertEqual(r.preview[0]["gespiegelt"], 1)
+        # Kontor's lists from before (keys with "#mm-"): a rejected or created booking is still the same one
+        import rules
+        self.assertEqual(rules.bkey("a", "#mm-zins-2026-01"), rules.bkey("a", "#kontor-zins-2026-01"))
+        z = next(p for p in res.proposals if p.kind == "zins")
+        again = plan_all(make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today)), cfg, today, skip={z.account_uuid + "|" + z.tag.replace("#kontor-", "#mm-")})
+        self.assertIn(z.tag, [p.tag for p in again.proposals])              # a raw old key does not match ...
+        again = plan_all(make_ledger({"pb.vd": -1600000.0}, F.pb_transactions(today)), cfg, today, skip={rules.bkey(z.account_uuid, z.tag.replace("#kontor-", "#mm-"))})
+        self.assertNotIn(z.tag, [p.tag for p in again.proposals])           # ... which is why every key goes through bkey
+
+
+class ReferenceTests(unittest.TestCase):
+    """What points to something else finds it: help sections in both languages, help icons, the addresses the interface calls."""
+
+    def test_help_icons_sections_and_addresses(self):
+        import re as _re
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        read = lambda *p: open(os.path.join(root, *p), encoding="utf-8").read()   # noqa: E731
+        js, de, en, svc = read("web", "app.js"), read("docs", "help.de.md"), read("docs", "help.en.md"), read("service.py")
+        a_de, a_en = set(_re.findall(r'<a id="([\w-]+)"', de)), set(_re.findall(r'<a id="([\w-]+)"', en))
+        self.assertEqual(a_de, a_en)                                               # the same sections in both languages
+        self.assertEqual(len(_re.findall(r"^#{2,3} ", de, _re.M)), len(_re.findall(r"^#{2,3} ", en, _re.M)))
+        block = js[js.index("const H = {"):js.index("const HELP_AT")]
+        tips = set(_re.findall(r"^\s*(\w+):", block, _re.M)) | set(_re.findall(r"[,{]\s*(\w+): t\(", block))
+        at = js[js.index("const HELP_AT = {"):]; at = dict(_re.findall(r"(\w+): '([\w-]+)'", at[:at.index("};")]))
+        self.assertFalse(sorted(set(_re.findall(r"hq\('(\w+)'\)", js)) - tips - {"schluessel"}), "help icon without a text")
+        self.assertFalse(sorted(v for v in at.values() if v not in a_de), "help icon pointing to a section that is not there")
+        self.assertFalse(sorted(k for k in at if k not in tips), "section for a help icon that is not there")
+        links = set(_re.findall(r"#help/([\w-]+)", js)) | set(_re.findall(r"more\('([\w-]+)'\)", js))
+        self.assertFalse(sorted(x for x in links if x not in a_de))
+        for text in (de, en):
+            for img in _re.findall(r"\]\((img/[\w/.-]+)\)", text):
+                self.assertTrue(os.path.exists(os.path.join(root, "docs", img)), img)
+        known = set(_re.findall(r'"(/api/[\w/-]+)"', svc))
+        used = set(_re.findall(r"api\(\s*[`'](/api/[\w/-]+)", js)) | set(_re.findall(r"fetch\(\s*[`'](/api/[\w/-]+)", js))
+        self.assertFalse(sorted(e for e in used if e not in known and not any(e.startswith(k) for k in known if k.endswith("/"))), "address the service does not know")
+        titles = js[js.index("const TITLES"):]; pages = set(_re.findall(r"(\w+):", titles[:titles.index("};")]))
+        self.assertFalse(sorted(x for x in set(_re.findall(r'href="#(\w+)["/]', js + read("web", "index.html"))) if x not in pages), "link to a page that is not there")

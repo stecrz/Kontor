@@ -194,7 +194,29 @@ def tx_from_export(raw: List[Dict[str, Any]]) -> List[Tx]:
 # Kontenbaum
 # ---------------------------------------------------------------------------
 
-TAG_RE = re.compile(r"#mm-[a-z]+-[A-Za-z0-9\-]+")          # Kontor's mark in the purpose of its bookings
+# Kontor's mark in the purpose of its bookings: "#kontor-<kind>-<...>" -- so everyone sees who made the booking. Until 3.12 it
+# was "#mm-..."; those bookings stay as they are in MoneyMoney and are recognised as the same mark (canon_tag).
+MARK = "#kontor-"
+TAG_RE = re.compile(r"#(?:kontor|mm)-[a-z]+-[A-Za-z0-9\-]+")
+
+
+def canon_tag(tag) -> str:
+    """A mark in its current form ("#mm-zins-2026-01" and "#kontor-zins-2026-01" are the same mark)."""
+    tag = str(tag or "")
+    return MARK + tag[4:] if tag.startswith("#mm-") else tag
+
+
+def marks_in(text) -> List[str]:
+    """Kontor's marks in a text, in their current form."""
+    text = text or ""
+    if "#kontor-" not in text and "#mm-" not in text:
+        return []
+    return [canon_tag(m) for m in TAG_RE.findall(text)]
+
+
+def has_mark(text) -> bool:
+    text = text or ""
+    return ("#kontor-" in text or "#mm-" in text) and bool(TAG_RE.search(text))
 
 
 class Ledger:
@@ -372,7 +394,7 @@ class Ledger:
         """Accounts holding a booking of Kontor (its mark) that is in MoneyMoney -- one pass, kept for this ledger."""
         m = getattr(self, "_marked", None)
         if m is None:
-            m = self._marked = {t.account_uuid for t in self.txs if t.id > 0 and "#mm-" in (t.purpose or "") and TAG_RE.search(t.purpose)}
+            m = self._marked = {t.account_uuid for t in self.txs if t.id > 0 and has_mark(t.purpose)}
         return m
 
     def writable(self, uuid: str, config: Optional[dict] = None) -> bool:
@@ -387,8 +409,7 @@ class Ledger:
         keep = set(keep)
 
         def kept(t: Tx) -> bool:
-            m = TAG_RE.search(t.purpose or "") if keep else None
-            return bool(m) and "%s|%s" % (t.account_uuid, m.group(0)) in keep
+            return bool(keep) and any("%s|%s" % (t.account_uuid, m) in keep for m in marks_in(t.purpose))
         planned = [t for t in self.txs if getattr(t, "planned", False) and not kept(t)]
         for t in self.txs:
             if getattr(t, "planned", False) and kept(t):

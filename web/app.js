@@ -518,6 +518,7 @@ document.addEventListener('keydown', e => {
 async function enterApp() {
   $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
   await loadAll();
+  if (!OFFLINE.mode && checkVersion((S.STATUS || {}).version)) return;        // signed in again after an update: the new files first
   await syncLang();
   route();
   if (!OFFLINE.mode) api('/api/offline/verifier').catch(() => {});       // für die Offline-Ansicht zwischenspeichern
@@ -2786,6 +2787,18 @@ async function nbRefresh() {
   } catch (e) { toast(e.message, 5000); }
   finally { NB.busy = false; routeKeeping('#nb-list'); }
 }
+// rules saved: the list under Auto bookings follows at once -- with approval planned again (only the accounts of the rules are
+// read), booking fully automatically a sync books what is new
+async function rulesFollowUp(after) {
+  if (OFFLINE.mode) return;
+  if (S.CFG.probelauf === false) { await syncNow(); if (after && S.tab === 'rules') after(); return; }
+  try {
+    const r = await api('/api/bookings/refresh', {});
+    S.STATUS = await api('/api/status'); statusMini();
+    if (after && S.tab === 'rules') after();
+    if (r.status === 'ok' && r.wartend) toast(r.wartend === 1 ? t('aktualisiert_1') : t('aktualisiert_n', r.wartend), 4500);
+  } catch (e) { /* the next sync plans it */ }
+}
 async function bkRecalc() {
   const l = (BOOK.runs || {}).letzter_lauf || {}, my = ++BOOK.seq;
   if (!l.probelauf) return;
@@ -2810,7 +2823,7 @@ function vBuchungen(runs) {
   let h = `<div class="toolbar">
     ${pending ? `<button id="run-live" class="ico" ${local ? '' : t('disabled_title_nur_am_mac')}>${ICON.check}<span>${t('jetzt_buchen')} (<span id="sel-n">${pending}</span>)</span></button>` : ''}
     ${ask ? `<button id="bk-refresh" class="secondary ico" title="${esc(t('freigabe_aktualisieren_tip'))}" ${OFFLINE.mode ? 'disabled' : ''}>${ICON.refresh}<span>${t('aktualisieren')}</span></button>` : ''}
-    <span class="sp"></span>${hq('auto_buchungen_h')}<a class="small" href="#rules">${t('zu_den_regeln')}</a>
+    <span class="sp"></span><a class="small" href="#rules">${t('zu_den_regeln')}</a>
     <a class="mode-chip${ask ? '' : ' auto'}" href="#rules" title="${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')}">${ask ? ICON.hand : ICON.bolt}${t(ask ? 'modus_freigabe' : 'modus_automatisch')}</a>
   </div>`;
   if (l) {
@@ -2819,12 +2832,13 @@ function vBuchungen(runs) {
     if ((l.vorschlaege || []).length) {
       const pick = pending && local, ed = pending;          // choose and change only while waiting; booking only at the Mac
       if (BOOK.zeit !== l.zeit) Object.assign(BOOK, {zeit: l.zeit, edits: {}, off: new Set(), calc: null, extra: {}, editing: new Set()});
-      const plain = txt => String(txt || '').replace(/\s*·?\s*#mm-[a-z]+-[A-Za-z0-9-]+/g, '').trim();
+      const plain = txt => String(txt || '').replace(/\s*·?\s*#(?:kontor|mm)-[a-z]+-[A-Za-z0-9-]+/g, '').trim();
       h += `<div class="wrap auto"><table class="plain bk-table"><thead><tr>${pick ? `<th class="c"><input type="checkbox" id="bk-all" ${BOOK.off.size || bkRows(l).some(r => r.gone) ? '' : 'checked'} aria-label="${esc(t('alle'))}"></th>` : ''}<th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>`
         + bkRows(l).map(({v, k, off, e, gone, b, neu, adjusted}) => {
           const d = e.datum ?? v.datum, z = e.zweck ?? plain(v.text), changed = Object.keys(e).length > 0;
           const pills = (changed ? ` <span class="pill info">${t('geaendert')}</span>` : '') + (adjusted ? ` <span class="pill info" title="${esc(t('angepasst_tip'))}">${t('angepasst')}</span>` : '')
-            + (neu ? ` <span class="pill info" title="${esc(t('neu_dazu_tip'))}">${t('neu_dazu')}</span>` : '') + (gone ? ` <span class="pill neutral" title="${esc(t('entfaellt_tip'))}">${t('entfaellt')}</span>` : '');
+            + (neu ? ` <span class="pill info" title="${esc(t('neu_dazu_tip'))}">${t('neu_dazu')}</span>` : '')
+            + (v.art === 'spiegel' && v.rueckwirkend ? ` <span class="pill neutral" title="${esc(t('gk_alt_tip'))}">${t('gk_alt')}</span>` : '') + (gone ? ` <span class="pill neutral" title="${esc(t('entfaellt_tip'))}">${t('entfaellt')}</span>` : '');
           return `<tr data-key="${esc(k)}" class="${off || gone ? 'off' : ''}${gone ? ' gone' : ''}${BOOK.editing.has(k) ? ' editing' : ''}">${pick ? `<td class="c">${k ? `<input type="checkbox" class="bk-on" title="${esc(t('bk_on_tip'))}" ${off || gone ? '' : 'checked'}${gone ? ' disabled' : ''}>` : ''}</td>` : ''}`
             + `<td style="white-space:nowrap"><span class="v">${FD(d)}</span><input type="date" class="bk-d e" value="${esc(d)}"></td><td>${esc(v.konto_name || v.konto)}</td><td>${esc(artL[v.art] || v.art)}</td>`
             + `<td class="num ${b < 0 ? 'neg' : 'pos'}"><span class="v">${F(b)}</span><input type="number" step="0.01" class="bk-b e" value="${b}"></td>`
@@ -3942,6 +3956,7 @@ async function route() {
   $$('#nav a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + S.tab));
   $('#page-title').textContent = SUBTITLES[S.tab + '/' + S.sub] || (S.tab === 'properties' && S.sub ? t('immobilie') : TITLES[S.tab]);
   if (ALPHA_TABS.has(S.tab)) $('#page-title').insertAdjacentHTML('beforeend', alphaTag('alpha-tag big'));
+  if (S.tab === 'bookings') $('#page-title').insertAdjacentHTML('beforeend', ' ' + hq('auto_buchungen_h'));       // what this page is (a click: its help section)
   $('#bereich-seg').classList.toggle('hidden', !(S.DATA && Object.keys(S.DATA.bereiche || {}).length > 1 && ['overview', 'balance', 'cashflow', 'planning'].includes(S.tab)));
   $('.side').classList.remove('open');
   if (S.tab !== 'transactions') closeDrawer();
@@ -4193,7 +4208,7 @@ function bind(main) {
       const now = (bkRows(l).find(x => x.k === key) || {}).b ?? v.betrag;          // the amount without your change
       if (e.target.classList.contains('bk-d')) { if (e.target.value && e.target.value !== v.datum) ch.datum = e.target.value; else delete ch.datum; }
       if (e.target.classList.contains('bk-b')) { const n = parseFloat(e.target.value); if (!isNaN(n) && Math.abs(n) >= 0.01 && (ch.betrag != null || Math.abs(n - now) >= 0.005)) ch.betrag = Math.round(n * 100) / 100; else delete ch.betrag; }
-      if (e.target.classList.contains('bk-z')) { const z = String(v.text || '').replace(/\s*·?\s*#mm-[a-z]+-[A-Za-z0-9-]+/g, '').trim(); if (e.target.value.trim() !== z) ch.zweck = e.target.value.trim(); else delete ch.zweck; }
+      if (e.target.classList.contains('bk-z')) { const z = String(v.text || '').replace(/\s*·?\s*#(?:kontor|mm)-[a-z]+-[A-Za-z0-9-]+/g, '').trim(); if (e.target.value.trim() !== z) ch.zweck = e.target.value.trim(); else delete ch.zweck; }
       if (!Object.keys(ch).length) delete BOOK.edits[key];
       if (e.target.classList.contains('bk-b') || e.target.classList.contains('bk-d')) bkRecalc();
     });
@@ -4317,6 +4332,7 @@ function bind(main) {
       if (bad.length) { bad.forEach(r => r.classList.add('invalid')); bad[0].scrollIntoView({block: 'center', behavior: 'smooth'}); toast(t('gk_unvollstaendig'), 5000); return; }
       if (await saveConfig(collectRules(), $('#findings', rp))) {
         saved = rulesJson(); sr.disabled = true; st.textContent = t('regeln_gespeichert'); preview();
+        rulesFollowUp(preview);
       }
     });
     preview();

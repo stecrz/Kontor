@@ -18,7 +18,7 @@ import time
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
-from model import Ledger, Tx, norm_cat
+from model import Ledger, Tx, has_mark, norm_cat
 from i18n import tr
 
 FILE = "categories.json"
@@ -434,7 +434,7 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
     groups: Dict[str, dict] = {}
     total = 0
     for t in ledger.txs:
-        if not t.booked or "#mm-" in t.purpose:          # eigene Buchungen von Kontor (Spiegelung, Zins, Wert) brauchen keine Kategorie
+        if not t.booked or has_mark(t.purpose):          # eigene Buchungen von Kontor (Spiegelung, Zins, Wert) brauchen keine Kategorie
             continue
         path, q = effective(d, t)
         if path:
@@ -467,7 +467,7 @@ def stats(d: dict, ledger: Ledger) -> Dict[str, Any]:
     c: Counter = Counter()
     years: Dict[int, Counter] = defaultdict(Counter)
     for t in ledger.txs:
-        if "#mm-" in t.purpose:
+        if has_mark(t.purpose):
             continue
         path, q = effective(d, t)
         k = q or "ohne"

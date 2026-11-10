@@ -20,7 +20,7 @@ import os
 import plistlib
 import subprocess
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from i18n import tr
 
@@ -50,6 +50,10 @@ class MoneyMoneyLocked(MoneyMoneyError):
 
 class MoneyMoneyNotPermitted(MoneyMoneyError):
     pass
+
+
+class MoneyMoneyTimeout(MoneyMoneyError):
+    """No answer in time: for a write it is unknown whether MoneyMoney carried it out -- never tried again blindly."""
 
 
 def is_running() -> bool:
@@ -109,7 +113,7 @@ class Bridge:
             )
         except subprocess.TimeoutExpired:
             log.error("MoneyMoney %s: timeout of %ds exceeded", method, self.timeout)
-            raise MoneyMoneyError(
+            raise MoneyMoneyTimeout(
                 tr("s_moneymoney_antwortet_nicht_zeitlimit_d") % self.timeout)
         log.debug("MoneyMoney %s: status %d, %d chars, %.1f s", method, r.returncode, len(r.stdout or ""), time.time() - t0)
         if r.returncode != 0:
@@ -141,6 +145,8 @@ class Bridge:
     def export_accounts(self) -> List[Dict[str, Any]]:
         try:
             raw = self._plist(self._call("exportAccounts", None))
+        except (MoneyMoneyNotRunning, MoneyMoneyLocked, MoneyMoneyNotPermitted):
+            raise                       # not reachable: asking again in another form changes nothing
         except MoneyMoneyError:
             raw = self._plist(self._call("exportAccounts", {"as": "plist"}))
         if not isinstance(raw, list):
@@ -150,6 +156,8 @@ class Bridge:
     def export_categories(self) -> List[Dict[str, Any]]:
         try:
             raw = self._plist(self._call("exportCategories", None))
+        except (MoneyMoneyNotRunning, MoneyMoneyLocked, MoneyMoneyNotPermitted):
+            raise
         except MoneyMoneyError:
             raw = self._plist(self._call("exportCategories", {"as": "plist"}))
         return raw if isinstance(raw, list) else []
@@ -177,8 +185,10 @@ class Bridge:
     # -- Schreiben (nur manuelle Konten) ---------------------------------
 
     def add_transaction(self, account_ref: str, booking_date: date, payee: str,
-                        amount: float, purpose: str = "", category: Optional[str] = None,
-                        fallback_refs: Optional[List[str]] = None) -> None:
+                        amount: float, purpose: str = "", category: Optional[str] = None) -> None:
+        """A new booking in an offline account, addressed by its UUID only -- never by a name (two accounts may carry the same
+        one), and one attempt only: after an error or a timeout it is not tried again in another form (it may have been
+        carried out). MoneyMoney itself accepts this only for offline accounts."""
         args: Dict[str, Any] = {
             "toAccount": account_ref,
             "onDate": booking_date.isoformat(),
@@ -193,20 +203,13 @@ class Bridge:
             log.info("DRY RUN addTransaction (%s)", ", ".join(sorted(args)))      # no amount, payee or purpose in the log
             self.written.append({"method": "addTransaction", "args": args})
             return
-        refs = [account_ref] + [r for r in (fallback_refs or []) if r and r != account_ref]
-        last: Optional[Exception] = None
-        for ref in refs:
-            args["toAccount"] = ref
-            try:
-                self._call("addTransaction", args)
-                self.written.append({"method": "addTransaction", "args": dict(args)})
-                return
-            except (MoneyMoneyNotRunning, MoneyMoneyLocked, MoneyMoneyNotPermitted):
-                raise
-            except MoneyMoneyError as e:
-                last = e
-                log.warning("addTransaction with account reference %r rejected: %s", ref, e)
-        raise MoneyMoneyError(tr("s_buchung_konnte_nicht_angelegt_werden") % last)
+        try:
+            self._call("addTransaction", args)
+        except (MoneyMoneyNotRunning, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyTimeout):
+            raise
+        except MoneyMoneyError as e:
+            raise MoneyMoneyError(tr("s_buchung_konnte_nicht_angelegt_werden") % e)
+        self.written.append({"method": "addTransaction", "args": dict(args)})
 
     def set_transaction(self, tx_id: int, category: Optional[str] = None,
                         comment: Optional[str] = None, checkmark: Optional[bool] = None) -> None:
@@ -225,6 +228,19 @@ class Bridge:
             return
         self._call("setTransaction", args)
         self.written.append({"method": "setTransaction", "args": args})
+
+    def append_comment(self, tx_id: int, account: str, day: date, text: str) -> bool:
+        """Add a note to a transaction's comment without losing what is there: read just before (only this account, around that
+        day), keep the comment and add the text. Nothing if the text is there already or the transaction is not found."""
+        rows = self.export_transactions(day - timedelta(days=7), day + timedelta(days=7), account=account)
+        r = next((x for x in rows if int(x.get("id") or 0) == int(tx_id) and str(x.get("accountUuid") or account) == account), None)
+        if r is None:
+            return False
+        cur = str(r.get("comment") or "")
+        if text in cur:
+            return False
+        self.set_transaction(tx_id, comment=(cur + "\n" if cur.strip() else "") + text)
+        return True
 
 
 def restrict_permissions(path: str) -> None:

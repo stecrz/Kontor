@@ -34,7 +34,7 @@ from datetime import date, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
-from rules import TAG_RE
+from model import MARK, marks_in
 from i18n import tr
 from categorize import fold as fold_category
 
@@ -85,7 +85,8 @@ STRONG_TYPES = {"portfolio": "wertpapiere", "depot": "wertpapiere", "girokonto":
 WEAK_TYPES = {"tagesgeld": "liquiditaet", "sparkonto": "liquiditaet", "festgeld": "anlagen"}
 TYPE_ROLES = {**WEAK_TYPES, **STRONG_TYPES, "portfolio": "wertpapiere"}
 NO_NEGATIVE_TYPES = ("sparkonto", "tagesgeld", "festgeld", "bauspar")
-COST_WORDS = ["zins", "interest", "gebühr", "gebuehr", "entgelt", "provision", "bereitstellung", "#mm-zins"]
+TX_MARK = MARK + "tx-"              # a loan repayment mirrored from a payment: the mark names the payment
+COST_WORDS = ["zins", "interest", "gebühr", "gebuehr", "entgelt", "provision", "bereitstellung", "#kontor-zins", "#mm-zins"]
 SECTIONS = ["Einnahmen", "Ausgaben", "Investitionen", "Finanzierung", "Bewertung", "Unklar"]
 CASH_SECTIONS = ["Einnahmen", "Ausgaben", "Investitionen", "Finanzierung", "Unklar"]
 PLAN_METHODS = ("gleitend12", "gleitend6", "vorjahr", "fix", "jahresbetrag", "budget", "keine")
@@ -102,14 +103,15 @@ def _hint_role(name: str) -> Optional[str]:
     return None
 
 
-def _signed(role: Optional[str], acc: Account, in_company: bool = False) -> Optional[str]:
-    """"+/-": Guthaben -> Forderung, Schuld -> Verbindlichkeit; "kapital": in a company its debt to the partner (a credit
-    balance: a participation), privately your participation -- also before its first booking, whatever its type in MoneyMoney
-    (often "Darlehenskonto"); only a debit balance there is a debt."""
+def _signed(role: Optional[str], acc: Account, in_company: Optional[bool] = False) -> Optional[str]:
+    """"+/-": Guthaben -> Forderung, Schuld -> Verbindlichkeit; "kapital" (a capital account): in a company its debt to the
+    partner (only a credit balance there is a participation); outside the companies it is your participation -- whatever its
+    balance or its type in MoneyMoney (often "Darlehenskonto"), also before its first booking. in_company None: no company
+    set up yet, so nobody knows -- then a debt is a debt."""
     if role == "kapital":
-        if in_company:
+        if in_company or (in_company is None and acc.balance < -0.005):
             return "beteiligungen" if acc.balance > 0.005 else "verbindlichkeiten"
-        return "verbindlichkeiten" if acc.balance < -0.005 else "beteiligungen"
+        return "beteiligungen"
     if role != "+/-":
         return role
     return "forderungen" if acc.balance > 0.005 else "verbindlichkeiten"
@@ -151,7 +153,7 @@ def account_roles(ledger: Ledger, config: dict) -> Dict[str, str]:
             role = cfg_roles.get(acc.uuid)
             if not role and acc.portfolio:
                 role = "wertpapiere"
-            inside = acc.uuid in company
+            inside = (acc.uuid in company) if company else None
             if not role:
                 role = _signed(_hint_role(acc.name), acc, inside)
             if not role:
@@ -550,14 +552,14 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     # Andere Konten mit Kontostaenden behalten ihre Buchungen; Abweichungen zu den Kontostaenden werden als Korrektur ausgewiesen.
     flows = {u for u in root_leaves if u in ledger.accounts and not _valuation_account(ledger.accounts[u], verlauf.get(u, ""))}
     in_root = [t for t in ledger.txs if t.account_uuid in flows and t.booked and first <= t.booking_date <= last]
-    # Nummern und Markierungen (#mm-tx-NNN) einmal je Stand indizieren (fuer alle Bereiche); Partner nur im Zeitraum
+    # Nummern und Markierungen (#kontor-tx-NNN) einmal je Stand indizieren (fuer alle Bereiche); Partner nur im Zeitraum
     idx = ledger.__dict__.get("_tx_index")
     if idx is None or idx[0] != len(ledger.txs):
         tags: Dict[str, List[Tx]] = defaultdict(list)
         for o in ledger.txs:
-            if o.booked and "#mm-tx-" in o.purpose:
-                for tag in TAG_RE.findall(o.purpose):
-                    if tag.startswith("#mm-tx-"):
+            if o.booked and "-tx-" in o.purpose:
+                for tag in marks_in(o.purpose):
+                    if tag.startswith(TX_MARK):
                         tags[tag].append(o)
         idx = ledger._tx_index = (len(ledger.txs), {t.id: t for t in ledger.txs if t.booked}, tags)
     by_id_all, tag_all = idx[1], idx[2]
@@ -573,10 +575,10 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         p = None
         if t.counter_iban and t.counter_iban in own_ibans and own_ibans[t.counter_iban] != t.account_uuid:
             p = own_ibans[t.counter_iban]
-        if p is None and "#mm-" in t.purpose + t.comment:
-            for tag in TAG_RE.findall(t.purpose + " " + t.comment):
-                if tag.startswith("#mm-tx-"):
-                    src = by_id_get(int(tag[7:]))
+        if p is None:
+            for tag in marks_in(t.purpose + " " + t.comment):
+                if tag.startswith(TX_MARK) and tag[len(TX_MARK):].isdigit():
+                    src = by_id_get(int(tag[len(TX_MARK):]))
                     if src and src.account_uuid != t.account_uuid:
                         p = src.account_uuid
                     else:

@@ -119,7 +119,7 @@ self.addEventListener('fetch', e => {
       return resp;
     } catch (err) {
       const c = await caches.open(SHELL);
-      return (await c.match(req)) || (req.mode === 'navigate' ? c.match('/') : null) || new Response('Offline', {status: 503});
+      return (await c.match(req, {ignoreSearch: true})) || (req.mode === 'navigate' ? c.match('/') : null) || new Response('Offline', {status: 503});      // the files carry their version in the address
     }
   })());
 });

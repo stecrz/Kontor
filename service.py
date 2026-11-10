@@ -47,6 +47,7 @@ from core import (REPORT_LOCK, RUN_LOCK, account_sig, account_tree, bereiche_for
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, apply_plan, role_label
+from model import canon_tag, marks_in
 from rules import TAG_RE, bkey as rules_bkey, find_unmarked, plan_all as plan_rules
 from storage import Store
 from excel import Sheet, workbook
@@ -92,34 +93,33 @@ def approval(raw) -> Tuple[Optional[Dict[str, dict]], Optional[str]]:
                 c["angezeigt"] = round(float(ch["angezeigt"]), 2)
         except (TypeError, ValueError):
             return None, tr("s_aenderung_ungueltig")
-        out[key] = c
+        out[rules_bkey(acc, tag)] = c         # the mark in its current form (older lists carry "#mm-...")
     return out, None
 
 
 def kontor_bookings(ledger, record: Optional[List[dict]] = None) -> List[dict]:
-    """The bookings Kontor has made in MoneyMoney -- from its own list (record) and its marks (#mm-...) in the purpose -- with
+    """The bookings Kontor has made in MoneyMoney -- from its own list (record) and its marks (#kontor-...) in the purpose -- with
     their state in MoneyMoney now: present ("ok"), mark changed but account, date and amount found ("markierung"), missing
     ("fehlt"). Newest first."""
     out: List[dict] = []
     if ledger is None:
         return out
-    kinds = {"tx": "tilgung", "zins": "zins", "wert": "wert", "spiegel": "spiegel"}
+    kinds = {"tx": "tilgung", "zins": "zins", "wert": "wert", "spiegel": "spiegel", "gk": "spiegel"}
     by_tag: Dict[Tuple[str, str], Tx] = {}             # (account, mark): the same mark exists once per account
     for t in ledger.txs:                                 # the ledger holds no planned bookings (Ledger.without_planned)
-        m = TAG_RE.search(t.purpose or "")
-        if m:
-            by_tag.setdefault((t.account_uuid, m.group(0)), t)
+        for m in marks_in(t.purpose)[:1]:
+            by_tag.setdefault((t.account_uuid, m), t)
 
     def row(t: Optional[Tx], tag: str, status: str, rec: Optional[dict] = None) -> dict:
         acc = ledger.accounts.get(t.account_uuid) if t else None
         k = tag.split("-")[1] if tag.count("-") >= 2 else ""
         return {"datum": t.booking_date.isoformat() if t else (rec or {}).get("datum", ""), "konto": acc.name if acc else (rec or {}).get("konto_name", ""),
                 "art": kinds.get(k, (rec or {}).get("art", k)), "betrag": round(t.amount, 2) if t else (rec or {}).get("betrag"),
-                "gegenpartei": t.name if t else "", "zweck": TAG_RE.sub("", t.purpose).strip() if t else (rec or {}).get("regel", ""),
+                "gegenpartei": t.name if t else "", "zweck": TAG_RE.sub("", t.purpose).strip(" ·") if t else (rec or {}).get("regel", ""),
                 "markierung": tag, "status": status}
     seen, claimed = set(), set()
     for rec in record or []:
-        tag = rec.get("tag") or ""
+        tag = canon_tag(rec.get("tag"))
         k = (rec.get("konto") or "", tag)
         seen.add(k)
         if k in by_tag:
@@ -1855,9 +1855,9 @@ def make_handler(app: App):
                     return self._json(200, {"vorschau": [], "warnungen": [], "buchungen": 0})
                 st = app.store.load("state.json", {}) or {}
                 created = {rules_bkey(r.get("konto", ""), r["tag"]): r for r in st.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")}
-                rejected = {rules_bkey(r["konto"], r["tag"]) if r.get("konto") else r["tag"] for r in st.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("tag")}
+                rejected = {rules_bkey(r["konto"], r["tag"]) if r.get("konto") else canon_tag(r["tag"]) for r in st.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("tag")}
                 done = st.get("rueckwirkend") or {}
-                res = plan_rules(app.ledger.fork(), merged_config(cfg), date.today(), created, rejected, done)
+                res = plan_rules(app.ledger.fork(), merged_config(cfg), date.today(), created, rejected, done, None, None, st.get("spiegel_seit"))
                 return self._json(200, {"vorschau": res.preview, "warnungen": res.warnings, "buchungen": len(res.proposals), "eingespielt": done})
             if path == "/api/check":
                 if not app.check_lock.acquire(blocking=False):
@@ -1898,7 +1898,8 @@ def make_handler(app: App):
                 acc, _, tag = key.partition("|")
                 if not re.fullmatch(r"[0-9A-Za-z-]{8,64}", acc) or not TAG_RE.fullmatch(tag):
                     return self._json(400, {"fehler": tr("s_markierung_ungueltig")})
-                same = lambda r: (r.get("konto") or acc) == acc and r.get("tag") == tag     # noqa: E731
+                tag = canon_tag(tag); key = rules_bkey(acc, tag)
+                same = lambda r: (r.get("konto") or acc) == acc and canon_tag(r.get("tag")) == tag     # noqa: E731
 
                 if body.get("wieder") and not local:                     # booking again is booking: only at the Mac
                     return self._json(403, {"fehler": tr("s_buchen_nur_von_diesem_mac")})
@@ -1940,6 +1941,7 @@ def make_handler(app: App):
                 edits, err = approval(body.get("aenderungen") or {})
                 if err:
                     return self._json(400, {"fehler": err})
+                hold = [rules_bkey(k.partition("|")[0], k.partition("|")[2]) for k in hold]
                 if app.ledger is None:
                     return self._json(200, {"vorschlaege": None})
                 st = app.store.load("state.json", {}) or {}
@@ -1950,7 +1952,8 @@ def make_handler(app: App):
                 acc, _, tag = key.partition("|")
                 if not re.fullmatch(r"[0-9A-Za-z-]{8,64}", acc) or not TAG_RE.fullmatch(tag):
                     return self._json(400, {"fehler": tr("s_markierung_ungueltig")})
-                same = lambda r: (r.get("konto") or acc) == acc and r.get("tag") == tag     # noqa: E731
+                tag = canon_tag(tag); key = rules_bkey(acc, tag)
+                same = lambda r: (r.get("konto") or acc) == acc and canon_tag(r.get("tag")) == tag     # noqa: E731
 
                 def upd_restore(cur: dict) -> None:
                     rec = next((r for r in cur.get("kontor_abgelehnt") or [] if same(r)), None)
@@ -2211,9 +2214,13 @@ def make_handler(app: App):
                     raise ValueError(tr("s_dateiinhalt_unlesbar"))
                 e = bl.add_bytes(tx_of(body), str(body.get("datei_name") or "Beleg"), data, str(body.get("notiz") or ""))
                 if (app.config.get("belege") or {}).get("kommentar_schreiben") and e.get("tx_id") is not None and local:
+                    # your setting "Reference in MoneyMoney": added to the comment that is there (read just before), never
+                    # in its place
+                    u = ums.get(int(e["tx_id"])) or {}
                     try:
-                        app.bridge_factory(False).set_transaction(e["tx_id"], comment="Beleg: " + e["pfad"])
-                    except MoneyMoneyError as ex:
+                        if u.get("konto") and u.get("datum"):
+                            app.bridge_factory(False).append_comment(int(e["tx_id"]), u["konto"], date.fromisoformat(u["datum"]), "Beleg: " + e["pfad"])
+                    except (MoneyMoneyError, ValueError) as ex:
                         log.warning("Receipt reference not written to MoneyMoney: %s", ex)
                 log.info("Receipt stored (%d KB)", len(data) // 1024)
                 return self._json(200, {"ok": True, "eintrag": e})

@@ -1,5 +1,19 @@
 # Änderungen
 
+## 3.13.0 (2026-11-10 18:09)
+Prüfung aller Funktionen, Schwerpunkt: nie etwas in MoneyMoney kaputt machen.
+- **Was Kontor in MoneyMoney schreibt, ist jetzt eng begrenzt:** neue Buchungen nur in Offline-Konten, nur mit Markierung, nie zweimal (vor jeder Buchung erneut geprüft); die Kategorie eines Umsatzes nur, wenn du sie zuordnest und das Zurückschreiben an ist; der Belegpfad wird an den Kommentar angehängt statt ihn zu ersetzen. Die Darlehensregel schreibt nichts mehr an deine Bankumsätze (Kommentar/Kategorie). Eine Buchung wird nur noch über die Konto-ID angelegt (nie über einen Namen) und nach einem Fehler oder Zeitlimit nicht blind wiederholt. Eine Kategorie, die es in MoneyMoney nicht gibt, wird nicht mitgegeben (Hinweis statt neuer Kategorie).
+- **Markierung „#kontor-…“** statt „#mm-…“ – in MoneyMoney sieht man, dass Kontor die Buchung angelegt hat. Ältere Buchungen mit „#mm-…“ zählen weiter als dieselben.
+- **Kontenspiegel** (vorher „Gegenkonten“): Sender bzw. Empfänger ist die Gesellschaft bzw. Person, nicht das Konto; Text „… · gespiegelt von <Konto>“. Was beim Einrichten schon da war, spiegelt Kontor nur nach Freigabe – auch bei „Vollautomatisch buchen“. Wertanpassungen werden nie gespiegelt.
+- **Nach dem Speichern der Buchungsregeln** werden die Auto-Buchungen sofort neu gerechnet.
+- Die Konten der Buchungsregeln werden bei jedem Abgleich vollständig gelesen – die Regeln rechnen nie auf einem älteren Stand.
+- Rechnen die Buchungsregeln einmal nicht (unerwarteter Fehler), wird nichts gebucht; Lesen und Auswertung laufen weiter, der nächste Abgleich versucht es erneut.
+- Beschädigte oder von Hand geänderte Einstellungen werden beim Laden bereinigt, statt Abläufe abzubrechen. Ein einzelnes nicht lesbares Konto hält den Abgleich nicht mehr auf.
+- Private Kapitalkonten werden immer als „Beteiligungen“ vorgeschlagen, auch mit negativem Saldo.
+- Auto-Buchungen: Hilfe-Symbol neben dem Seitentitel (Klick: Abschnitt „Auto-Buchungen“ in der Hilfe).
+- Die Oberfläche lädt nach einem Update auch nach einer neuen Anmeldung die neuen Dateien.
+- Neue Tests: Zufallsabläufe (Freigeben, Verwerfen, Löschen, Ändern, neue Zahlungen) mit Prüfung, dass nichts doppelt gebucht und nichts Bestehendes verändert wird; feste Liste aller Schreibwege; Verweise zwischen Oberfläche, Hilfe und Dienst.
+
 ## 3.12.35 (2026-11-10 17:21)
 - Gegenkonten: Von Hand gebuchte Paare zählen nur bei gleichem Tag und Betrag – der Spiegel ist exakt.
 

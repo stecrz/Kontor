@@ -12,13 +12,14 @@ import os
 import platform
 import re
 import threading
+import traceback
 from collections import Counter
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyNotRunning
-from model import Account, Ledger, Tx, accounts_from_export, add_months, fmt_eur, month_key, tx_from_export, norm_cat
+from model import Account, Ledger, Tx, accounts_from_export, add_months, canon_tag, fmt_eur, marks_in, month_key, tx_from_export, norm_cat
 import mm_categories
 import realestate
 import categorize
@@ -59,9 +60,99 @@ REF_FIELDS = [
 ]
 
 
+def _shape(cfg: dict) -> dict:
+    """A configuration edited by hand or imported may hold the wrong kind of value somewhere (a text where a list belongs, a
+    number where an account reference belongs). Such parts are dropped here, once, so nothing after it has to expect them --
+    a rule that is incomplete after that is named by check_config and simply does not book."""
+    def text(v) -> str:
+        return v if isinstance(v, str) else ""
+
+    def texts(v) -> List[str]:
+        return [x for x in v if isinstance(x, str)] if isinstance(v, list) else ([v] if isinstance(v, str) and v else [])
+
+    def number(v, default=None):
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v else default
+
+    def day(v) -> str:
+        try:
+            return date.fromisoformat(v).isoformat() if isinstance(v, str) else ""
+        except ValueError:
+            return ""
+
+    def dicts(v) -> List[dict]:
+        return [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
+    for k, v in DEFAULT_CONFIG.items():
+        if k in cfg and isinstance(v, dict) and not isinstance(cfg[k], dict):
+            cfg.pop(k)
+        elif k in cfg and isinstance(v, list):
+            cfg[k] = dicts(cfg[k])
+    for b in cfg.get("bereiche") or []:
+        for f in ("id", "name", "art"):
+            if f in b and not isinstance(b[f], str):
+                b[f] = str(b[f]) if isinstance(b[f], (int, float)) and not isinstance(b[f], bool) else ""
+            if f in b and not b[f] and f != "art":
+                b.pop(f)
+        b["konten"] = texts(b.get("konten"))
+        if "anteil" in b:
+            b["anteil"] = number(b["anteil"])
+    for d in cfg.get("darlehen") or []:
+        d["darlehenskonto"] = text(d.get("darlehenskonto"))
+        d["quellkonten"] = texts(d.get("quellkonten"))
+        e = d["erkennung"] = d["erkennung"] if isinstance(d.get("erkennung"), dict) else {}
+        for f in ("gegen_iban", "text_enthaelt", "ausschliessen_text"):
+            if f in e and not isinstance(e[f], str):
+                e[f] = texts(e[f])
+        d["ab_datum"] = day(d.get("ab_datum"))
+        if not d["ab_datum"] or not d["darlehenskonto"]:
+            d["aktiv"] = False                      # cannot run: shown as switched off until it is complete
+        if "name" in d and not isinstance(d["name"], str):
+            d.pop("name")
+        if "buchung" in d and not isinstance(d["buchung"], dict):
+            d.pop("buchung")
+        for f in [f for f, v in (d.get("buchung") or {}).items() if v is not None and not isinstance(v, str)]:
+            d["buchung"].pop(f)
+        if "art" in d and not isinstance(d["art"], str):
+            d.pop("art")
+        z = d.get("zins")
+        if z is not None and not isinstance(z, dict):
+            d.pop("zins")
+        elif z:
+            z["satz"] = [{"ab": day(r.get("ab")), "prozent": number(r.get("prozent"))} for r in dicts(z.get("satz")) if number(r.get("prozent")) is not None]
+            z["basis_override"] = {str(k): number(v) for k, v in z["basis_override"].items() if number(v) is not None} if isinstance(z.get("basis_override"), dict) else {}
+            for f in ("modell", "buchungstag"):
+                if f in z and not isinstance(z[f], str):
+                    z.pop(f)
+    for g in cfg.get("gesellschaften") or []:
+        g["bereich"] = str(g["bereich"]) if isinstance(g.get("bereich"), (str, int)) and not isinstance(g.get("bereich"), bool) else ""
+        for f in ("beteiligung", "rueckwirkend_ab", "takt", "gegenpartei", "kategorie"):
+            if f in g:
+                g[f] = text(g[f])
+        if "gegenkonten" in g:
+            g["gegenkonten"] = [{"konto": text(x.get("konto")), "quelle": text(x.get("quelle"))} for x in dicts(g["gegenkonten"])]
+        if "schwelle" in g:
+            g["schwelle"] = number(g["schwelle"], 0.01)
+    bil = cfg.get("bilanz")
+    if isinstance(bil, dict):
+        for f in ("rollen", "verlauf", "konten_zuordnung"):
+            if f in bil:
+                bil[f] = {k: v for k, v in bil[f].items() if isinstance(k, str) and isinstance(v, dict if f == "konten_zuordnung" else str)} if isinstance(bil[f], dict) else {}
+        for f in ("illiquide_konten", "ausgeblendet", "immer_anzeigen", "illiquide_rollen"):
+            if f in bil:
+                bil[f] = texts(bil[f])
+        for f in ("monate_zurueck", "inaktiv_monate"):
+            if f in bil and number(bil[f]) is None:
+                bil.pop(f)
+    ab = cfg.get("abruf")
+    if isinstance(ab, dict):
+        for f in ("online", "offline"):
+            if f in ab:
+                ab[f] = texts(ab[f])
+    return cfg
+
+
 def merged_config(cfg: Optional[dict]) -> dict:
     out: Dict[str, Any] = {}
-    cfg = cfg or {}
+    cfg = _shape(copy.deepcopy(cfg)) if isinstance(cfg, dict) else {}
     for k, v in DEFAULT_CONFIG.items():
         if isinstance(v, dict):
             out[k] = copy.deepcopy(v)
@@ -178,9 +269,9 @@ def _base_txs(base: Ledger, accounts: Dict[str, Account], fresh_ids: set, cut: d
             continue
         if t.id <= 0:                 # written by Kontor, real one not read yet: keep it unless the quick read brought it
             if fresh_marks is None:
-                fresh_marks = {(x.account_uuid, m) for x in fresh_txs for m in rules.TAG_RE.findall(x.purpose or "")}
-            m = rules.TAG_RE.search(t.purpose or "")
-            if not m or (t.account_uuid, m.group(0)) in fresh_marks or t.booking_date >= cut:
+                fresh_marks = {(x.account_uuid, m) for x in fresh_txs for m in marks_in(x.purpose)}
+            ms = marks_in(t.purpose)
+            if not ms or any((t.account_uuid, m) in fresh_marks for m in ms) or t.booking_date >= cut:
                 continue
             out.append(t)
             continue
@@ -229,6 +320,17 @@ def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = Fals
                      len(bad), base.full_at.strftime("%Y-%m-%d %H:%M"))
     if inc:
         txs = _base_txs(base, accounts, {t.id for t in txs}, inc, txs) + txs
+        # the accounts the booking rules read or book are always read in full: the rules never plan on an older state of them
+        # (a booking with an old date added, changed or deleted there since the last full read) -- they are few and small
+        try:
+            uu = rule_accounts(Ledger(accounts, []), config)
+        except Exception:  # pragma: no cover - a broken reference: the checks name it, the quick read stands
+            uu = set()
+        if uu:
+            step("transactions")
+            fresh, got = _read_accounts(bridge, since, uu)
+            txs = [t for t in txs if t.account_uuid not in got] + fresh
+            n_read += len(fresh)
         txs.sort(key=lambda t: (t.booking_date, t.id))
     ledger = Ledger(accounts, txs)
     ledger.since = since
@@ -281,19 +383,36 @@ def rule_accounts(ledger: Ledger, config: dict) -> set:
     return out
 
 
+def _read_accounts(bridge: Bridge, since: date, uuids: set) -> Tuple[List[Tx], set]:
+    """All transactions of some accounts since `since`, one account at a time (only what belongs to it): (transactions, the
+    accounts read). An account MoneyMoney does not export on its own keeps what was read before (the rest is still read);
+    MoneyMoney locked or gone stops everything as usual."""
+    out: List[Tx] = []
+    read: set = set()
+    for u in sorted(uuids):
+        try:
+            rows = bridge.export_transactions(since, account=u)
+        except (MoneyMoneyNotRunning, MoneyMoneyLocked, MoneyMoneyNotPermitted):
+            raise
+        except MoneyMoneyError as e:
+            log.warning("Account %s not read on its own (%s) -- kept as read before", u[:8], str(e)[:80])
+            continue
+        out += [t for t in tx_from_export(rows) if t.account_uuid == u]
+        read.add(u)
+    return out, read
+
+
 def refresh_accounts(bridge: Bridge, base: Ledger, config: dict, today: date, uuids: set) -> Ledger:
     """The last state with only some accounts read again (balance, transactions since the start of the period); the others
     stay as read last. Kontor's own bookings kept until the next full read are replaced by what is in MoneyMoney now."""
     now = accounts_from_export(bridge.export_accounts())
     since = getattr(base, "since", None) or earliest_needed(config, today)
-    fresh: List[Tx] = []
-    for u in sorted(uuids):
-        fresh += [t for t in tx_from_export(bridge.export_transactions(since, account=u)) if t.account_uuid == u]
+    fresh, got = _read_accounts(bridge, since, uuids)
     accs = dict(base.accounts)
-    for u in uuids:
+    for u in got:
         if u in now:
             accs[u] = now[u]
-    txs = [t for t in base.txs if t.account_uuid not in uuids] + fresh
+    txs = [t for t in base.txs if t.account_uuid not in got] + fresh
     txs.sort(key=lambda t: (t.booking_date, t.id))
     led = Ledger({k: copy.copy(a) for k, a in accs.items()}, txs)
     for k, v in base.__dict__.items():          # read times, period, portfolios ... (no caches: "_...")
@@ -301,7 +420,7 @@ def refresh_accounts(bridge: Bridge, base: Ledger, config: dict, today: date, uu
             setattr(led, k, v)
     led.hints = []
     led.fp = fingerprint(led)
-    log.info("MoneyMoney: %d account(s) read again, %d transactions", len(uuids), len(fresh))
+    log.info("MoneyMoney: %d account(s) read again, %d transactions", len(got), len(fresh))
     return led
 
 
@@ -648,15 +767,15 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
 
 def _from_record(ledger: Ledger, rec: dict) -> Optional[Proposal]:
     """A booking of Kontor's lists ("Not booked") as it was: account, date, amount, text with its mark, counterparty, category."""
-    uuid, tag = rec.get("konto") or "", rec.get("tag") or ""
+    uuid, tag = rec.get("konto") or "", canon_tag(rec.get("tag"))
     if uuid not in ledger.accounts or not tag:
         return None
     try:
         day, amount = date.fromisoformat(str(rec.get("datum"))), round(float(rec.get("betrag")), 2)
     except (TypeError, ValueError):
         return None
-    text = str(rec.get("zweck") or rec.get("text") or rec.get("regel") or "")
-    purpose = text if tag in text else ("%s · %s" % (text, tag) if text else tag)
+    text = rules.TAG_RE.sub("", str(rec.get("zweck") or rec.get("text") or rec.get("regel") or "")).strip(" ·")     # its mark in the current form
+    purpose = "%s · %s" % (text, tag) if text else tag
     acc = ledger.accounts[uuid]
     return Proposal(rec.get("regel") or "", rec.get("art") or "wert", uuid, acc.path, day, amount, rec.get("gegenpartei") or "Kontor",
                     purpose, rec.get("kategorie") or "", tag)
@@ -667,7 +786,7 @@ def _plan_inputs(state: dict, ledger: Ledger, approve: Optional[Dict[str, dict]]
     Kontor's deleted or changed there gets its day checked again (recheck): a balance is the sum of the bookings up to that
     day, so one booking on that day sets every later one right again -- the bookings after it stay as they are."""
     def key_of(r: dict) -> str:
-        return rules.bkey(r["konto"], r["tag"]) if r.get("konto") else r["tag"]
+        return rules.bkey(r["konto"], r["tag"]) if r.get("konto") else canon_tag(r["tag"])
     recs = [r for r in state.get("kontor_buchungen") or [] if isinstance(r, dict) and r.get("tag")]
     created = {rules.bkey(r.get("konto", ""), r["tag"]): r for r in recs}
     not_booked = {key_of(r): r for r in state.get("kontor_abgelehnt") or [] if isinstance(r, dict) and r.get("tag")}
@@ -708,8 +827,8 @@ def _plan_inputs(state: dict, ledger: Ledger, approve: Optional[Dict[str, dict]]
         created=created, not_booked=not_booked, again_recs=again_recs, restore=restore, rejected=rejected,
         done=dict(state.get("rueckwirkend") or {}), marks=marks, gone=gone, changed=changed, recheck=recheck, persist=persist,
         since=dict(state.get("spiegel_seit") or {}),              # counter account mirrors: the newest booking when set up
-        back={k: r for k, r in not_booked.items() if r.get("konto") and (r["konto"], r["tag"]) in marks},     # there again
-        back_again={k for k, r in again_recs.items() if (r.get("konto"), r.get("tag")) in marks})
+        back={k: r for k, r in not_booked.items() if r.get("konto") and (r["konto"], canon_tag(r["tag"])) in marks},     # there again
+        back_again={k for k, r in again_recs.items() if (r.get("konto"), canon_tag(r.get("tag"))) in marks})
 
 
 def _plan_round(ledger: Ledger, config: dict, today: date, ctx: SimpleNamespace, hold: Optional[set] = None,
@@ -734,7 +853,7 @@ def proposal_rows(ledger: Ledger, proposals: List[Proposal]) -> List[dict]:
     return [{"art": x.kind, "konto": x.account_path, "konto_name": ledger.accounts[x.account_uuid].name if x.account_uuid in ledger.accounts else "",
              "konto_id": x.account_uuid, "key": x.key, "datum": x.booking_date.isoformat(), "betrag": x.amount, "text": x.purpose,
              "kategorie": x.category, "tag": x.tag, "regel": x.rule, "rueckwirkend": x.retro, "gegenpartei": x.payee}
-            for x in proposals if x.kind != "quelle"]
+            for x in proposals]
 
 
 def plan_pending(ledger: Ledger, config: dict, state: dict, today: date, hold: Optional[set] = None,
@@ -747,27 +866,44 @@ def plan_pending(ledger: Ledger, config: dict, state: dict, today: date, hold: O
 
 
 def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal], made: Optional[List[Proposal]] = None,
-                    config: Optional[dict] = None, progress: Optional[Callable[[str, int, int], None]] = None) -> int:
-    """Writes the proposals; the bookings written (not the comments on source payments) go into made. Only into manually
-    kept accounts (Ledger.writable), checked again here for every booking. progress("buchen", n, of) after each one."""
+                    config: Optional[dict] = None, progress: Optional[Callable[[str, int, int], None]] = None,
+                    categories: Optional[List[dict]] = None, notes: Optional[List[str]] = None) -> int:
+    """Writes the proposals: only new bookings (nothing existing is ever changed or deleted), only into offline accounts
+    (Ledger.writable, checked again here for each one), each with Kontor's mark in its purpose and never one whose mark is
+    in that account already. A category is passed only if MoneyMoney has it (categories: its list) -- otherwise the booking
+    goes without one, so MoneyMoney's category tree is never touched. The bookings written go into made.
+    progress("buchen", n, of) before each one."""
     done = 0
-    total, n = sum(1 for x in proposals if x.kind != "quelle"), 0          # the bookings (comments on source payments not counted)
+    present = rules.present_marks(ledger)                 # in MoneyMoney already (the last read)
+    cats = {str(c.get(f) or "") for c in categories or [] if isinstance(c, dict) for f in ("name", "path", "uuid")}
+    cats |= {str(c.get("path") or "").split("\\")[-1] for c in categories or [] if isinstance(c, dict)}
+    unknown: set = set()
     for pr in proposals:
-        if progress and pr.kind != "quelle":
-            progress("buchen", n, total)
-            n += 1
-        acc = ledger.accounts[pr.account_uuid]
-        if pr.kind == "quelle":
-            bridge.set_transaction(pr.source_tx_id, category=pr.set_category, comment=pr.set_comment)
-        else:
-            if not ledger.writable(acc.uuid, config):
-                raise MoneyMoneyError(tr("s_verweigert_s_ist_kein_manuell") % acc.path)
-            bridge.add_transaction(acc.uuid, pr.booking_date, pr.payee, pr.amount, pr.purpose,
-                                   pr.category or None, fallback_refs=[acc.name])
-            if made is not None and not bridge.dry_run:
-                made.append(pr)
+        if progress:
+            progress("buchen", done, len(proposals))
+        acc = ledger.accounts.get(pr.account_uuid)
+        if acc is None or acc.group or not ledger.writable(pr.account_uuid, config):
+            raise MoneyMoneyError(tr("s_verweigert_s_ist_kein_manuell") % (acc.path if acc is not None else pr.account_path))
+        amount = round(float(pr.amount), 2)
+        if not pr.tag or pr.tag not in (pr.purpose or "") or not rules.TAG_RE.fullmatch(pr.tag):
+            raise MoneyMoneyError(tr("s_verweigert_ohne_markierung") % acc.name)       # without its mark it could be made twice
+        if amount != amount or abs(amount) > 1e10:
+            raise MoneyMoneyError(tr("s_verweigert_betrag") % acc.name)
+        if abs(amount) < 0.005 or (acc.uuid, pr.tag) in present:      # nothing to book, or there already (never twice)
+            log.warning("Booking skipped: %s (%s)", "no amount" if abs(amount) < 0.005 else "its mark is in the account already", pr.kind)
+            continue
+        cat = pr.category or None
+        if cat and cat not in cats and cat.split("\\")[-1] not in cats:
+            unknown.add(cat)
+            cat = None
+        bridge.add_transaction(acc.uuid, pr.booking_date, pr.payee, amount, pr.purpose, cat)
+        present.add((acc.uuid, pr.tag))
+        if made is not None and not bridge.dry_run:
+            made.append(pr)
         done += 1
         log.info("%s: %s booking", "BOOKED" if not bridge.dry_run else "DRY RUN", pr.kind)      # no amounts, payees or purposes in the log
+    if unknown and notes is not None:
+        notes.append(tr("s_kategorie_fehlt_ohne_gebucht") % ", ".join(sorted(unknown)))
     return done
 
 
@@ -945,7 +1081,7 @@ def immo_soll_ist(ledger: Ledger, config: dict, im: dict, res: dict, roles: Dict
     return out
 
 
-COST_WORDS_DEFAULT = ["zins", "interest", "gebühr", "gebuehr", "entgelt", "provision", "bereitstellung", "#mm-zins"]
+COST_WORDS_DEFAULT = ["zins", "interest", "gebühr", "gebuehr", "entgelt", "provision", "bereitstellung", "#kontor-zins", "#mm-zins"]
 
 
 def _kat_sig(store: Store, config: dict, categories: Optional[List[dict]]) -> tuple:
@@ -1282,30 +1418,47 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         approving = not dry and approve is not None
         edits = {k: v for k, v in approve.items() if isinstance(v, dict)} if approving else None
         hold: set = set()
-        result = _plan_round(ledger, config, today, ctx, hold, edits)
-        if approving:
-            # what you left out is not booked, and what comes after it is planned without it (the next value adjustment of
-            # that account takes up the difference, later interest the other balance) -- again until nothing depends on it
-            for _ in range(8):
-                extra = {p.key for p in result.proposals if p.kind != "quelle" and p.key not in approve} - hold
-                if not extra:
-                    break
-                hold |= extra
-                ledger = ledger.without_planned()
-                result = _plan_round(ledger, config, today, ctx, hold, edits)
-        # booked is exactly what you saw: if an amount is different now (MoneyMoney changed meanwhile), nothing is written
-        moved = []
-        if approving:
-            now = {p.key: p for p in result.proposals if p.kind != "quelle"}
-            for k, ch in approve.items():
-                shown = ch.get("angezeigt") if isinstance(ch, dict) else None
-                if shown is not None and (k not in now or abs(now[k].amount - float(shown)) >= 0.005):
-                    moved.append(k)
-            if moved:
-                log.info("Approval: %d amount(s) changed since shown, nothing written", len(moved))
-                ledger = ledger.without_planned()
-                result = _plan_round(ledger, config, today, ctx)
-                result.warnings.insert(0, tr("s_betraege_geaendert"))
+
+        def wanted(p: Proposal) -> bool:
+            """Booked in this run: what you approved; booking fully automatically everything -- except counter bookings of
+            what was there before a mirror was set up (they may be there by hand already): those always wait for you."""
+            if approving:
+                return p.key in approve
+            return not (p.kind == "spiegel" and p.retro)
+        failed = False
+        moved: List[str] = []
+        try:
+            result = _plan_round(ledger, config, today, ctx, hold, edits)
+            if not dry:
+                # what is left out is not booked, and what comes after it is planned without it (the next value adjustment of
+                # that account takes up the difference, later interest the other balance) -- again until nothing depends on it
+                for _ in range(8):
+                    extra = {p.key for p in result.proposals if not wanted(p)} - hold
+                    if not extra:
+                        break
+                    hold |= extra
+                    ledger = ledger.without_planned()
+                    result = _plan_round(ledger, config, today, ctx, hold, edits)
+            # booked is exactly what you saw: if an amount is different now (MoneyMoney changed meanwhile), nothing is written
+            if approving:
+                now = {p.key: p for p in result.proposals}
+                for k, ch in approve.items():
+                    shown = ch.get("angezeigt") if isinstance(ch, dict) else None
+                    if shown is not None and (k not in now or abs(now[k].amount - float(shown)) >= 0.005):
+                        moved.append(k)
+                if moved:
+                    log.info("Approval: %d amount(s) changed since shown, nothing written", len(moved))
+                    ledger = ledger.without_planned()
+                    result = _plan_round(ledger, config, today, ctx)
+                    result.warnings.insert(0, tr("s_betraege_geaendert"))
+        except Exception as e:      # the rules met something unexpected: nothing is booked, everything else goes on
+            where = traceback.extract_tb(e.__traceback__)[-1]
+            log.error("Booking rules failed (%s at %s:%d) -- nothing booked", type(e).__name__, os.path.basename(where.filename), where.lineno)
+            failed, hold, moved = True, set(), []
+            ledger = ledger.without_planned()
+            result = rules.RuleResult()
+            result.warnings.append(tr("s_regeln_fehler") % type(e).__name__)
+            ctx.gone, ctx.changed, ctx.back, ctx.back_again = {}, [], {}, set()        # nothing planned: Kontor's lists stay as they are
         t_rules = time.time()
         result.warnings.extend(ledger.hints)
         # the log (plain text) holds no amounts, payees, purposes or account names: the details are in the encrypted state and
@@ -1313,24 +1466,21 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         kinds = Counter(p.kind for p in result.proposals)
         log.info("Rules: %d note(s), %d warning(s), %d proposal(s)%s", len(result.info), len(result.warnings), len(result.proposals),
                  " (%s)" % ", ".join("%s %d" % kv for kv in sorted(kinds.items())) if kinds else "")
-        bookings = [x for x in result.proposals if x.kind != "quelle"]
+        bookings = list(result.proposals)
 
         written, err = 0, None
         made: List[Proposal] = []
-        chosen = [] if dry or moved else list(result.proposals)
-        if approving:                   # only what you approved (the comment on a source payment goes with its booking)
-            ok_tags = {p.tag for p in bookings if p.key in approve}
-            chosen = [p for p in chosen if p.key in approve or (p.kind == "quelle" and p.tag in ok_tags)]
+        chosen = [] if dry or moved or failed else [p for p in result.proposals if wanted(p)]
         expect = {u: ledger.accounts[u].balance for u in {x.account_uuid for x in bookings}}      # balances after writing
         if chosen:
             try:
-                written = apply_proposals(bridge, ledger, chosen, made, config, progress)
+                written = apply_proposals(bridge, ledger, chosen, made, config, progress, categories, result.warnings)
             except MoneyMoneyError as e:
                 err = e
                 log.error("Writing aborted after %d booking(s): %s", written, e)
             try:
                 after = accounts_from_export(bridge.export_accounts())
-                for u in {x.account_uuid for x in chosen if x.kind != "quelle"}:
+                for u in {x.account_uuid for x in chosen}:
                     if u in after and abs(after[u].balance - expect[u]) > 0.01:
                         msg = tr("s_saldo_s_nach_buchung_s") % (ledger.accounts[u].name, fmt_eur(after[u].balance), fmt_eur(expect[u]))
                         log.warning("Balance check after booking failed for account %s", u[:8]); result.warnings.append(msg)
@@ -1345,23 +1495,25 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             left = bookings
         elif err is not None:
             left = [x for x in bookings if x.key not in made_keys]
-        elif approving:
-            left = [x for x in _plan_round(ledger.fork(), config, today, ctx, booked=made_keys).proposals if x.kind != "quelle"]
+        elif (approving or hold) and not failed:
+            left = list(_plan_round(ledger.fork(), config, today, ctx, booked=made_keys).proposals)
         else:
             left = []
-        waiting = left if dry or moved or (approving and err is None) else []
-        if not dry and err is None and not moved:
+        waiting = left if dry or moved or err is None else []
+        if not dry and err is None and not moved and not failed:
             for g in config.get("gesellschaften") or []:          # booking back done for a company: from now on only the current state
                 ab, bid = (g or {}).get("rueckwirkend_ab"), str((g or {}).get("bereich"))
-                if ab and done.get(bid) != ab and not any(p.retro and p.group == bid for p in left):
+                if ab and done.get(bid) != ab and not any(p.retro and p.group == bid and rules.is_value_tag(p.tag) for p in left):
                     done[bid] = ab
         # days to check again stay until nothing is left for them
         open_days = {(p.account_uuid, p.booking_date) for p in left}
-        recheck = {u: sorted(d.isoformat() for d in days if (u, d) in open_days) for u, days in ctx.persist.items()}
+        recheck = {u: sorted(d.isoformat() for d in days if (u, d) in open_days or failed) for u, days in ctx.persist.items()}
         recheck = {u: v for u, v in recheck.items() if v}
         # a value adjustment booked again that is not needed any more (the value is right): out of the lists
         obsolete = {k for k in ctx.restore if rules.is_value_tag((ctx.again_recs.get(k) or ctx.not_booked.get(k) or {}).get("tag"))} \
             - {p.key for p in result.proposals} - hold - made_keys
+        if failed:
+            obsolete = set()
         if obsolete:
             result.info.append(tr("s_wert_stimmt_bereits"))
 
@@ -1381,7 +1533,6 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         # shown: what waits for approval, otherwise what was just booked
         summary = {"status": "fehler" if err else "ok", "zeit": datetime.now().strftime("%Y-%m-%d %H:%M"), "probelauf": dry or bool(waiting) or bool(moved),
                    "vorschlaege": proposal_rows(ledger, waiting or bookings),
-                   "quellaenderungen": len(result.proposals) - len(bookings),
                    "geschrieben": written, "gebucht": len(made), "warnungen": result.warnings, "hinweise": result.info,
                    "fehlend": result.missing, "fehler": str(err) if err else None}
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -1400,7 +1551,12 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         back = ctx.back
 
         again_done = (made_keys & set(ctx.again_recs)) | ctx.back_again | (obsolete & set(ctx.again_recs))
-        mirrors_new = {k: v for k, v in result.mirror_since.items() if k not in ctx.since}
+        # account mirrors: when each was set up. One taken out of the rules is forgotten (set up again it starts anew); one that
+        # could not be planned this time (a warning, an error) keeps its start
+        set_up = {"%s|%s" % (str(x.get("konto") or "").split("|")[0].strip(), str(x.get("quelle") or "").split("|")[0].strip())
+                  for g in config.get("gesellschaften") or [] if isinstance(g, dict) for x in g.get("gegenkonten") or [] if isinstance(x, dict)}
+        mirrors = dict({k: v for k, v in ctx.since.items() if k in set_up}, **result.mirror_since)
+
         old_recheck = state.get("abgleich") or {}
 
         def _merge(cur: dict) -> None:
@@ -1409,7 +1565,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             out_of = booked_again | set(back)      # booked again, or there again in MoneyMoney: out of "not booked"
             if out_of:
                 cur["kontor_abgelehnt"] = [r for r in cur.get("kontor_abgelehnt") or []
-                                           if (rules.bkey(r["konto"], r.get("tag", "")) if r.get("konto") else r.get("tag")) not in out_of]
+                                           if (rules.bkey(r["konto"], r.get("tag", "")) if r.get("konto") else canon_tag(r.get("tag"))) not in out_of]
                 known = {rules.bkey(r.get("konto", ""), r.get("tag", "")) for r in cur.get("kontor_buchungen") or []}
                 cur["kontor_buchungen"] = (cur.get("kontor_buchungen") or []) + [
                     {f: r.get(f) for f in ("tag", "konto", "konto_name", "datum", "betrag", "art", "regel", "zweck", "gegenpartei", "kategorie")}
@@ -1434,12 +1590,12 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 cur["rueckwirkend"] = dict(cur.get("rueckwirkend") or {}, **done)
             if seen_new:
                 cur["konten_seit"] = dict(seen_new, **(cur.get("konten_seit") or {}))
-            if mirrors_new:                 # a counter account mirror set up now: from here on its new bookings
-                cur["spiegel_seit"] = dict(mirrors_new, **(cur.get("spiegel_seit") or {}))
+            if mirrors != ctx.since:
+                cur["spiegel_seit"] = mirrors
             if new_recs:                    # Kontor's own list of what it booked (encrypted state, not the marks in MoneyMoney)
                 cur["kontor_buchungen"] = (cur.get("kontor_buchungen") or []) + new_recs
             if not prefetched:
-                cur["fingerprint"] = fp if err is None else None
+                cur["fingerprint"] = fp if err is None and not failed else None        # after an error: again at the next sync
             cur["letzter_lauf"] = summary
             if not prefetched:                  # "Refresh" (only the accounts of the rules) is no check of its own
                 cur.setdefault("verlauf", []).append({"zeit": summary["zeit"], "probelauf": dry, "geschrieben": written,
