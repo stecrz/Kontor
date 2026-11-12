@@ -13,12 +13,16 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.9", "3.13"]     # 3.9: the Python of Apple's command line tools on the Mac
+        include:
+          - python: "3.9"           # the Python of Apple's command line tools on the Mac (its Playwright needs an older image)
+            os: ubuntu-24.04
+          - python: "3.13"
+            os: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6        # any Python version on any runner (3.9 is gone from setup-python's newest images)
