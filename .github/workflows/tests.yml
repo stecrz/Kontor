@@ -21,16 +21,17 @@ jobs:
         python: ["3.9", "3.13"]     # 3.9: the Python of Apple's command line tools on the Mac
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6        # any Python version on any runner (3.9 is gone from setup-python's newest images)
         with:
           python-version: ${{ matrix.python }}
+          activate-environment: true
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
       - name: Tools
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q sqlcipher
-          python -m pip install -q pytest playwright pillow cryptography
+          uv pip install -q pytest playwright pillow cryptography
           python -m playwright install --with-deps chromium
       - name: Interface
         run: node --check web/app.js && node --check web/i18n.js && node --check web/sw.js
