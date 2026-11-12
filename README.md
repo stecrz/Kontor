@@ -41,6 +41,8 @@ Aktualisieren, neu einrichten und entfernen: [Updates](docs/help.de.md#updates) 
 
 - Tests: `python3 -m pytest -q tests` – Regeln und Zinsmodelle, Verschlüsselung, Lauf gegen ein simuliertes MoneyMoney, HTTP-API, Immobilienkalkulation gegen eine handgerechnete Tabellenkalkulation (auf den Cent) und die Oberfläche im Browser (Playwright). Testdaten sind frei erfunden.
 - Bilder für Hilfe und README: `python3 tests/screenshots.py [Ordner|-] [de|en]` (aus denselben erfundenen Daten).
-- Regeln für Änderungen (Version, Sprache, Sicherheit): [CLAUDE.md](CLAUDE.md). Änderungen: [CHANGELOG.md](CHANGELOG.md).
+- Seiten ansehen (hell/dunkel, Mac/iPhone): `python3 tests/preview.py <Ordner> ['#route' …]`.
+- Regeln für Änderungen (Version, Sprache, Sicherheit): [CLAUDE.md](CLAUDE.md). Fahrplan: [ROADMAP.md](ROADMAP.md). Änderungen: [CHANGELOG.md](CHANGELOG.md).
+- Jeder Push wird automatisch getestet (GitHub Actions, Python 3.9 und neu), nachts mit 1000 Zufallsläufen der Buchungsregeln.
 
 Lizenz: CC0. Keine Gewähr, keine Steuer- oder Anlageberatung.

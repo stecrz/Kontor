@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.13.2 (2026-11-12 17:05)
+Grundlage für die weitere Entwicklung – an Kontor selbst ändert sich nichts.
+- Fahrplan mit klaren Abnahmekriterien je Bereich (Kategorien und Cashflow zuerst).
+- Jede Änderung wird nach festem Ablauf geprüft und veröffentlicht; Rechenlogik und Zugriffe auf MoneyMoney prüft vorher ein unabhängiger Durchgang.
+- Feste Sperren bei der Entwicklung: kein Zugriff auf Kontors Datenordner oder MoneyMoneys Daten am Mac, keine Überweisungen.
+- Automatische Tests bei jedem Update (auch mit der Python-Version des Mac) und jede Nacht mit 1000 Zufallsläufen; ein Test verhindert persönliche Daten im öffentlichen Repo.
+
 ## 3.13.1 (2026-11-10 19:35)
 Auto-Buchungen ohne eigene Buchungsliste – Kontor leitet alles aus MoneyMoney und den Einstellungen ab, Änderungen dort bringen nichts mehr durcheinander.
 - **Was gebucht ist, erkennt Kontor in MoneyMoney:** an der Markierung oder an einer gleichen Buchung, die du selbst angelegt hast (Tilgung mit gleichem Betrag bis 7 Tage neben der Zahlung, Zinsen mit „Zins“ im Text oder der Zinskategorie, im Kontenspiegel gleiche Buchungen auf beiden Seiten). Geänderte Buchungen gelten, wie sie jetzt sind; gelöschte schlägt Kontor wieder vor. Funktioniert auch mit Konten, die du schon von Hand geführt hast, und ohne Datensicherung.

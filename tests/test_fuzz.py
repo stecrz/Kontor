@@ -198,7 +198,7 @@ class FuzzTests(unittest.TestCase):
         return steps
 
     def test_random_runs(self):
-        for seed in range(40):
+        for seed in range(int(os.environ.get("KONTOR_FUZZ_SEEDS") or 40)):          # more: KONTOR_FUZZ_SEEDS=1000 (nightly)
             reset_mock(); MockBridge.instances = []
             for name in ("state.json",):
                 self.store.save(name, {})
