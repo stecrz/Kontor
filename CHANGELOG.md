@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.13.3 (2026-11-13 14:22)
+- Beteiligung monatlich, vor 3.13.1 „nicht rückwirkend“ eingerichtet: Hattest du Kontors Buchung zum Monatsende in MoneyMoney in den nächsten Monat verschoben, prüfte Kontor das abgelaufene Monatsende nicht mehr und die Beteiligung blieb dort falsch. Jetzt wird es immer geprüft (gefunden von den nächtlichen Zufallstests).
+
 ## 3.13.2 (2026-11-12 17:05)
 Grundlage für die weitere Entwicklung – an Kontor selbst ändert sich nichts.
 - Fahrplan mit klaren Abnahmekriterien je Bereich (Kategorien und Cashflow zuerst).

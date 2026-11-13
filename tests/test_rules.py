@@ -332,6 +332,19 @@ class CompanyTests(unittest.TestCase):
         self.assertTrue(retro); self.assertGreaterEqual(min(p.booking_date for p in retro), first)
         self.assertEqual(min(p.booking_date for p in retro), first)          # the first day already differs (opening balance)
 
+    def test_legacy_start_keeps_the_month_just_ended(self):
+        """Set up before 3.13.1 without "Buchen ab": since Kontor's first booking -- a booking of Kontor's you moved into the
+        next month does not leave the month just ended out (found by the nightly random runs)."""
+        today = date(2026, 11, 4)
+        led = make_ledger({}, [])
+        cfg = company_cfg(); cfg["gesellschaften"][0].update(rueckwirkend_ab="", takt="monatlich")
+        w = [p for p in plan_all(led, cfg, today).proposals if p.kind == "wert"]
+        self.assertEqual([p.booking_date for p in w], [date(2026, 10, 31)])
+        real = led.without_planned(keep=[p.key for p in w])
+        next(t for t in real.txs if w[0].tag in t.purpose).booking_date = date(2026, 11, 2)          # you moved it into November
+        again = [p for p in plan_all(real.fork(), cfg, today).proposals if p.kind == "wert"]
+        self.assertEqual([(p.booking_date, round(p.amount, 2)) for p in again], [(date(2026, 10, 31), round(w[0].amount, 2))])
+
     def test_back_to_unknown_months_skipped(self):
         # a portfolio in the company: its past value is not known -> those months are not booked
         today = date(2026, 11, 4)

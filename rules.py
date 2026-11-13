@@ -686,16 +686,23 @@ def plan_mirror(ledger: Ledger, res: RuleResult, rule: str, a, b, cfg: dict, con
               beginn=start.isoformat() if isinstance(start, date) else start if start == "alles" else None)
 
 
-def default_start(ledger: Ledger, cfg: dict, area: dict) -> Optional[date]:
+def current_day(cfg: dict, today: date) -> date:
+    """The day a participation is booked for now: today (daily), the end of last month (monthly)."""
+    return date(today.year, today.month, 1) - timedelta(days=1) if cfg.get("takt") == "monatlich" else today
+
+
+def default_start(ledger: Ledger, cfg: dict, area: dict, today: date) -> Optional[date]:
     """For a company set up before 3.13.1 without "Buchen ab": since Kontor's first booking for its rules (the participation's
-    value adjustments, the mirrored bookings) -- None if there is none."""
+    value adjustments, the mirrored bookings), at the latest the day booked for now (a booking of Kontor's you moved to a
+    later day must not leave that day out) -- None if there is none."""
     accs: List[str] = []
     for ref in [cfg.get("beteiligung")] + [x.get(f) for x in cfg.get("gegenkonten") or [] if isinstance(x, dict) for f in ("konto", "quelle")]:
         try:
             accs.append(ledger.resolve(str(ref or "")).uuid)
         except KeyError:
             pass
-    return _first_mark(ledger, accs, VALUE_TAGS + (MIRROR_TAG,)) if accs else None
+    first = _first_mark(ledger, accs, VALUE_TAGS + (MIRROR_TAG,)) if accs else None
+    return min(first, current_day(cfg, today)) if first else None
 
 
 def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Optional[Dict[str, str]] = None,
@@ -712,7 +719,7 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
     payee = (cfg.get("gegenpartei") or "").strip() or name
     start = parse_start(cfg.get("rueckwirkend_ab"))
     if start is None:
-        start = default_start(ledger, cfg, area)
+        start = default_start(ledger, cfg, area, today)
     for i, g in enumerate(cfg.get("gegenkonten") or []):
         if not isinstance(g, dict) or not g.get("konto") or not g.get("quelle"):
             continue

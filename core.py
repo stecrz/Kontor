@@ -836,7 +836,7 @@ def fix_start_dates(ledger: Ledger, config: dict, today: date) -> Optional[dict]
             continue
         area = areas.get(str(g.get("bereich")))
         if area is not None:
-            g["rueckwirkend_ab"] = (rules.default_start(ledger, g, area) or today).isoformat()
+            g["rueckwirkend_ab"] = (rules.default_start(ledger, g, area, today) or rules.current_day(g, today)).isoformat()
             changed = True
     return new if changed else None
 
