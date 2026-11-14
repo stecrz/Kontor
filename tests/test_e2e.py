@@ -440,7 +440,8 @@ class CoreTests(unittest.TestCase):
         # GbR-Bereich: Mieteinnahmen in den Einnahmen, Verkaeuferdarlehen in der Finanzierung
         g = ds["bereiche"][F.uid("pb")]
         gs = {s["name"]: {z["zeile"]: z for z in s["zeilen"]} for s in g["kapitalfluss"]["sektionen"]}
-        self.assertTrue(any("Mieteinnahmen" in k for k in gs["Einnahmen"]), list(gs["Einnahmen"]))
+        self.assertIn("Vermietung", gs["Einnahmen"])                                     # the position, its categories inside
+        self.assertTrue(any("Mieteinnahmen" in d["kategorie"] for d in gs["Einnahmen"]["Vermietung"]["details"]))
         self.assertTrue(any("Verkäuferdarlehen" in k for k in gs["Finanzierung"]), list(gs["Finanzierung"]))
         # Umsatzliste ohne Gegen-IBAN
         ums = self.store.load("transactions.json")
@@ -1004,32 +1005,38 @@ class AppTests(_AppBase):
         self.assertTrue(u and all(x["braucht"] is False for x in u))
         self.assertFalse(self.call("/api/transactions?uncategorized=1&account=" + F.uid("pb.vd"))[1]["umsaetze"])
 
-    def test_kategorien_auswahl(self):
-        """Kategorien -> Auswahl: zusammenfassen (Kapitalfluss-Zeile = Oberkategorie, Steuer unveraendert); MoneyMoney bleibt
-        unberuehrt, seine Kategorie gilt immer."""
+    def test_cashflow_positionen(self):
+        """Kategorien -> Cashflow-Positionen: Kontor schlaegt je Kategorie eine Position vor, deine Wahl gilt auch darunter;
+        Steuer und MoneyMoney bleiben unberuehrt."""
         self.login(); self.run_and_wait()
-        def zeilen():
-            ds = self.store.load("dataset.json")
-            return {z["zeile"] for b in ds["bereiche"].values() for sek in b["kapitalfluss"]["sektionen"] for z in sek["zeilen"]}
-        self.assertIn("Vermietung / Parkweg / Mieteinnahmen", zeilen()); self.assertIn("Wohnen / Miete", zeilen())
+        def rows(area="priv"):
+            b = self.store.load("dataset.json")["bereiche"][F.uid(area)]
+            return {z["zeile"]: z for sek in b["kapitalfluss"]["sektionen"] for z in sek["zeilen"]}
+        self.assertIn("Einnahmen / Gehalt", {d["kategorie"] for d in rows()["Arbeit"]["details"]})
+        code, p = self.call("/api/categories/positions")
+        k = {r["pfad"]: r for r in p["kategorien"]}
+        self.assertEqual((k["Einnahmen / Gehalt"]["vorschlag"], k["Wohnen / Miete"]["vorschlag"]), ("arbeit", "wohnen"))
+        self.assertGreater(k["Lebensmittel"]["anzahl_alle"], 0); self.assertIsNone(k["Einnahmen / Gehalt"]["eigene"])
         steuer_vorher = json.dumps(self.store.load("dataset.json")["steuer"], sort_keys=True)
-        code, off = self.call("/api/categories/unassigned"); offen_vorher = off["offen"]
-        code, r = self.call("/api/categories/usage", {"verwendung": {"Vermietung / Parkweg": "zusammen", "Wohnen": "zusammen"}, "warten": True})
-        self.assertEqual(code, 200)
-        z = zeilen()
-        self.assertIn("Vermietung", z); self.assertFalse([x for x in z if "Parkweg" in x])
-        self.assertIn("Wohnen / Miete", z)                                                  # oberste Ebene nicht zusammenfassbar
-        self.assertEqual(json.dumps(self.store.load("dataset.json")["steuer"], sort_keys=True), steuer_vorher)   # Steuer: genaue Kategorie
-        # "nicht verwenden" gibt es nicht mehr: die Kategorie aus MoneyMoney gilt immer
-        code, r = self.call("/api/categories/usage", {"verwendung": {"Vermietung / Parkweg": "zusammen", "Wohnen": "zusammen",
-                                                                   "Lebensmittel": "ignorieren", "Einnahmen / Gehalt": "zeile"}, "warten": True})
-        self.assertEqual(r["verwendung"], {"Vermietung / Parkweg": "zusammen"})
-        code, off = self.call("/api/categories/unassigned")
-        self.assertEqual(off["offen"], offen_vorher); self.assertNotIn("Supermarkt", [g["name"] for g in off["gruppen"]])
-        code, k = self.call("/api/categories/kontor"); self.assertNotIn("Lebensmittel", k["verwendung"])
-        self.assertGreater(k["anzahl"]["Lebensmittel"], 0)
+        code, r = self.call("/api/categories/positions", {"positionen": {"Einnahmen / Gehalt": "sonstige_einnahmen", "Wohnen": "ignorieren"}, "warten": True})
+        self.assertEqual(code, 200); self.assertEqual(r["config"]["kapitalfluss"]["positionen"], {"Einnahmen / Gehalt": "sonstige_einnahmen", "Wohnen": "ignorieren"})
+        z = rows()
+        self.assertNotIn("Arbeit", z); self.assertIn("Einnahmen / Gehalt", {d["kategorie"] for d in z["Sonstige Einnahmen"]["details"]})
+        self.assertNotIn("Wohnen", z)                                                        # with "Wohnen / Miete" below it
+        ue = self.store.load("dataset.json")["bereiche"][F.uid("priv")]["kapitalfluss"]["ueberleitung"]
+        self.assertTrue(any(g[0] == "ue_ignoriert" for m in ue.values() for g in m["gruende"]))
+        self.assertEqual(json.dumps(self.store.load("dataset.json")["steuer"], sort_keys=True), steuer_vorher)
+        # back to Kontor's proposal; a transfer category; nothing unknown
+        code, r = self.call("/api/categories/positions", {"positionen": {"Einnahmen / Gehalt": "", "Wohnen": "", "Lebensmittel": "umbuchung"}, "warten": True})
+        self.assertEqual(r["config"]["kapitalfluss"]["positionen"], {"Lebensmittel": "umbuchung"})
+        self.assertIn("Arbeit", rows()); self.assertNotIn("Lebenshaltung", rows())
+        code, p = self.call("/api/categories/positions")
+        self.assertEqual({x["pfad"]: x for x in p["kategorien"]}["Lebensmittel"]["eigene"], "umbuchung")
+        code, r = self.call("/api/categories/positions", {"positionen": {"Lebensmittel": ""}})
+        self.assertEqual(r["config"]["kapitalfluss"]["positionen"], {})
+        self.assertEqual(self.call("/api/categories/positions", {"positionen": {"Lebensmittel": "erfunden"}})[0], 400)
+        self.assertEqual(self.call("/api/categories/positions", {"konten": {"Sparen": "kein Konto"}})[0], 400)
         self.assertFalse([w for b in MockBridge.instances for w in b.written if w[0] == "set" and w[2] is not None])
-        self.assertEqual(self.store.load("dataset.json")["kategorien"]["verwendung"], 1)
 
     def test_zugriff_vom_iphone(self):
         """Zugriff von anderen Geraeten: Stand, Ein-/Ausschalten nur am Mac, von unterwegs nur ansehen (Standard),
@@ -1060,7 +1067,7 @@ class AppTests(_AppBase):
         MA.auth.is_loopback = lambda remote: False
         try:
             self.assertEqual(self.call("/api/remote")[1]["lokal"], False)
-            code, r = self.call("/api/plan", {"bereich": F.uid("priv"), "zeile": "Einnahmen/Einnahmen / Gehalt", "methode": "fix", "betrag": "1"})
+            code, r = self.call("/api/plan", {"bereich": F.uid("priv"), "zeile": "Einnahmen/Arbeit", "methode": "fix", "betrag": "1"})
             self.assertEqual(code, 403); self.assertIn("nur ansehen", r["fehler"])
             self.assertEqual(self.call("/api/remote", {"aktion": "aus"})[0], 403)
         finally:
@@ -1069,7 +1076,7 @@ class AppTests(_AppBase):
         self.assertTrue(r["ok"]); self.assertFalse(r["info"]["nur_ansehen"])
         MA.auth.is_loopback = lambda remote: False
         try:
-            code, r = self.call("/api/plan", {"bereich": F.uid("priv"), "zeile": "Einnahmen/Einnahmen / Gehalt", "methode": "fix", "betrag": "1"})
+            code, r = self.call("/api/plan", {"bereich": F.uid("priv"), "zeile": "Einnahmen/Arbeit", "methode": "fix", "betrag": "1"})
             self.assertEqual(code, 200)                                                    # bearbeiten erlaubt
             self.assertIsNone(self.call("/api/offline/verifier")[1]["offline"])            # keine Offline-Kopie
             self.assertFalse(self.call("/api/session")[1]["offline_kopie"])
@@ -1492,9 +1499,9 @@ class AppTests(_AppBase):
         self.assertTrue(any(c["pfad"] == "Vermietung / Parkweg / Mieteinnahmen" for c in kats["kategorien"]))
         # Plan je Bereich: Methode, Ueberschreibung, Parameter, Darlehen, Wertentwicklung
         P = ds["haupt"]
-        code, r = self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Einnahmen / Gehalt", "methode": "fix", "betrag": "7000", "steigerung": "2"})
+        code, r = self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeit", "methode": "fix", "betrag": "7000", "steigerung": "2"})
         self.assertEqual(code, 200)
-        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Einnahmen / Gehalt", "monat": "2027-01", "wert": "9000"})
+        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeit", "monat": "2027-01", "wert": "9000"})
         self.call("/api/plan", {"bereich": P, "parameter": {"horizont_monate": 36, "inflation_prozent_pa": 3},
                                 "darlehen": {"Darlehen Lindenstraße": {"zins_prozent_pa": "3.6", "modell": "restschuld_monatlich", "zahlung": ""}},
                                 "wertentwicklung": {"Immobilie Lindenstraße": {"prozent_pa": "1.5", "basis": ""}}})
@@ -1502,27 +1509,27 @@ class AppTests(_AppBase):
         b = ds["bereiche"][P]
         self.assertEqual(len(b["plan_monate"]), 37); self.assertEqual(b["plan_monate"][-1][5:], "12")    # 36 Monate, bis Jahresende aufgefuellt
         self.assertEqual(b["plan"]["inflation_prozent_pa"], 3)
-        gz = [z for z in b["kapitalfluss"]["sektionen"][0]["zeilen"] if z["zeile"] == "Einnahmen / Gehalt"][0]
+        gz = [z for z in b["kapitalfluss"]["sektionen"][0]["zeilen"] if z["zeile"] == "Arbeit"][0]
         self.assertEqual(gz["plan"]["werte"]["2027-01"], 9000.0)
         self.assertAlmostEqual(gz["plan"]["vorschlag"]["2027-01"], round(7000 * 1.02 ** (2 / 12), 2), 2)
         self.assertEqual(gz["plan"]["ueberschrieben"], ["2027-01"])
         fz = {z["zeile"]: z for z in [s for s in b["kapitalfluss"]["sektionen"] if s["name"] == "Finanzierung"][0]["zeilen"]}
         self.assertEqual(fz["Darlehen Lindenstraße / Zinsen"]["plan"]["methode"], "darlehen")
         # Ausgaben folgen der Inflation (3 %)
-        mz = [z for z in [s for s in b["kapitalfluss"]["sektionen"] if s["name"] == "Ausgaben"][0]["zeilen"] if "Miete" in z["zeile"]][0]
+        mz = [z for z in [s for s in b["kapitalfluss"]["sektionen"] if s["name"] == "Ausgaben"][0]["zeilen"] if z["zeile"] == "Wohnen"][0]
         self.assertEqual(mz["plan"]["steigerung_prozent_pa"], 3.0)
         # Budget-Methode
         self.call("/api/plan", {"bereich": P, "zeile": "Ausgaben/" + mz["zeile"], "methode": "budget"})
         code, ds = self.call("/api/dataset")
-        mz2 = [z for z in [s for s in ds["bereiche"][P]["kapitalfluss"]["sektionen"] if s["name"] == "Ausgaben"][0]["zeilen"] if "Miete" in z["zeile"]][0]
+        mz2 = [z for z in [s for s in ds["bereiche"][P]["kapitalfluss"]["sektionen"] if s["name"] == "Ausgaben"][0]["zeilen"] if z["zeile"] == "Wohnen"][0]
         self.assertEqual(mz2["plan"]["methode"], "budget"); self.assertAlmostEqual(mz2["plan"]["vorschlag"][b["plan_monate"][0]], round(-1500.0 * 1.03 ** (1 / 12), 2), 2)
         # anderer Bereich hat eigenen (leeren) Plan
         code, plan_pb = self.call("/api/plan?area=" + F.uid("pb"))
         self.assertEqual(plan_pb, {})
         self.assertEqual(len(ds["bereiche"][F.uid("pb")]["plan_monate"]), 25)       # 24 Monate, bis Jahresende aufgefuellt
-        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Einnahmen / Gehalt", "alle_ueberschreibungen_loeschen": True})
+        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeit", "alle_ueberschreibungen_loeschen": True})
         code, ds = self.call("/api/dataset")
-        gz = [z for z in ds["bereiche"][P]["kapitalfluss"]["sektionen"][0]["zeilen"] if z["zeile"] == "Einnahmen / Gehalt"][0]
+        gz = [z for z in ds["bereiche"][P]["kapitalfluss"]["sektionen"][0]["zeilen"] if z["zeile"] == "Arbeit"][0]
         self.assertEqual(gz["plan"]["werte"]["2027-01"], gz["plan"]["vorschlag"]["2027-01"])
         # Konfiguration: Fehler wird abgewiesen, gueltige gespeichert, bind geprueft
         code, cfg = self.call("/api/config")
@@ -2028,7 +2035,7 @@ class FeatureTests(_AppBase):
         self.assertIsNotNone(si[2026]["restschuld_ist"])
         # Planung der GbR: Mietzeile folgt der Kalkulation, Darlehenssaldo folgt der Kalkulation, Ausschuettung als Entnahme
         gbr = ds["bereiche"][F.uid("pb")]; fm = gbr["plan_monate"]
-        ez = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Einnahmen"][0]["zeilen"] if "Mieteinnahmen" in z["zeile"]][0]
+        ez = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Einnahmen"][0]["zeilen"] if z.get("objekt") == "Parkweg"][0]
         self.assertEqual(ez["plan"]["methode"], "immobilie"); self.assertEqual(ez["plan"]["werte"][fm[0]], 13600.0)   # NKM + Umlage
         jan27 = [m for m in fm if m == "2027-01"][0]
         self.assertEqual(ez["plan"]["werte"][jan27], 13839.4)        # 12600 x 1,019 + 1000
@@ -2048,7 +2055,7 @@ class FeatureTests(_AppBase):
         # Szenario aktiv wechseln -> andere Miete in der Planung; Szenario loeschen
         code, r = self.call("/api/properties", {"aktion": "kalkulation_aktiv", "id": iid, "kalkulation_id": k2["id"]})
         code, ds = self.call("/api/dataset"); gbr = ds["bereiche"][F.uid("pb")]
-        ez = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Einnahmen"][0]["zeilen"] if "Mieteinnahmen" in z["zeile"]][0]
+        ez = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Einnahmen"][0]["zeilen"] if z.get("objekt") == "Parkweg"][0]
         self.assertEqual(ez["plan"]["werte"][fm[0]], 14000.0)
         code, r = self.call("/api/properties", {"aktion": "kalkulation_loeschen", "id": iid, "kalkulation_id": k2["id"]})
         self.assertTrue(r["immobilie"]["kalkulationen"][0]["aktiv"])
@@ -2088,9 +2095,9 @@ class FeatureTests(_AppBase):
         cfg = copy.deepcopy(self.app.config); cfg.setdefault("moneymoney", {})["kategorisieren_erlauben"] = True; self.app.save_config(cfg)
         MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Werkzeug", 1, False, {})]
         self.app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
-        code, k = self.call("/api/categories/kontor")
+        code, k = self.call("/api/categories/positions")
         self.assertEqual(code, 200); self.assertNotIn("baum", k); self.assertNotIn("regeln", k)
-        self.assertGreater(k["anzahl"]["Lebensmittel"], 0)
+        self.assertGreater({r["pfad"]: r for r in k["kategorien"]}["Lebensmittel"]["anzahl_alle"], 0)
         # Offene Umsaetze: Baumarkt (ohne Kategorie) als Gruppe, ohne Vorschlag; gelernte Muster ordnen nie selbst zu
         code, off = self.call("/api/categories/unassigned")
         self.assertTrue(off["offen"] >= 20)
@@ -2106,7 +2113,9 @@ class FeatureTests(_AppBase):
         self.assertEqual((g2["anzahl"], g2["vorschlag"]), (g["anzahl"] - 2, "Haushalt / Werkzeug"))
         code, ds = self.call("/api/dataset")
         az = [s["zeilen"] for s in ds["bereiche"][ds["haupt"]]["kapitalfluss"]["sektionen"] if s["name"] == "Ausgaben"][0]
-        self.assertTrue(any(z["zeile"] == "Haushalt / Werkzeug" for z in az))
+        lh = {d["kategorie"]: d for d in [z for z in az if z["zeile"] == "Lebenshaltung"][0]["details"]}
+        self.assertIn("Haushalt / Werkzeug", lh)                                            # in its position ...
+        self.assertIn("", lh)                                                               # ... the rest estimated (learned), not in MoneyMoney
         code, pr = self.call("/api/categories/proposals")
         v = [x for x in pr["vorschlaege"] if x["kategorie"] == "Haushalt / Werkzeug"]
         self.assertEqual(len(v), 1); self.assertEqual(v[0]["ausdruck"], 'name:"Baumarkt"')
@@ -2258,7 +2267,7 @@ class FeatureTests(_AppBase):
         # Sicherung: alles in einer Datei, wieder einspielbar
         self.run_and_wait()
         P = F.uid("priv")
-        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Einnahmen / Gehalt", "methode": "fix", "betrag": "7000", "steigerung": "2"})
+        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeit", "methode": "fix", "betrag": "7000", "steigerung": "2"})
         # nur verschluesselt (eigenes Passwort, mind. 8 Zeichen); Inhalt nicht lesbar
         self.assertEqual(self.call("/api/backup", {"passwort": "kurz"})[0], 400)
         code, sich = self.call("/api/backup", {"passwort": "sicherung-123"})
@@ -2267,7 +2276,7 @@ class FeatureTests(_AppBase):
         import service as MA
         inner = MA.backup_decrypt(sich, "sicherung-123")
         self.assertEqual(inner["kontor_sicherung"], 1); self.assertIn("plan", inner); self.assertIn("kategorien", inner)
-        self.assertEqual(inner["plan"]["bereiche"][P]["zeilen"]["Einnahmen/Einnahmen / Gehalt"]["methode"], "fix")
+        self.assertEqual(inner["plan"]["bereiche"][P]["zeilen"]["Einnahmen/Arbeit"]["methode"], "fix")
         self.assertNotIn("auth", inner)
         # Zuruecksetzen: nur lokal, nur mit Passwort; danach Einrichtung noetig, Passwort bleibt (ohne mit_passwort)
         self.assertEqual(self.call("/api/reset", {"passwort": "falsch"})[0], 401)
@@ -2286,7 +2295,7 @@ class FeatureTests(_AppBase):
         self.assertEqual(self.call("/api/backup/restore", {"sicherung": sich, "passwort": "falsch-falsch"})[0], 400)
         code, r = self.call("/api/backup/restore", {"sicherung": sich, "passwort": "sicherung-123"})
         self.assertEqual(code, 200); self.assertIn("Planung", r["teile"]); self.assertIn("Einstellungen", r["teile"])
-        self.assertEqual(self.store.load("plan.json")["bereiche"][P]["zeilen"]["Einnahmen/Einnahmen / Gehalt"]["methode"], "fix")
+        self.assertEqual(self.store.load("plan.json")["bereiche"][P]["zeilen"]["Einnahmen/Arbeit"]["methode"], "fix")
         self.assertEqual(self.call("/api/backup/restore", {"sicherung": {"x": 1}})[0], 400)
 
     def test_verlauf_quellen_semantik(self):

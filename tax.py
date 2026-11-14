@@ -81,7 +81,8 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
     st = config.get("steuer", {}) or {}
     kf = config.get("kapitalfluss", {}) or {}
     verm = (st.get("vermietung_kategorie") or "Vermietung").lower()
-    transfer_cats = [c.lower() for c in (kf.get("umbuchungs_kategorien") or ["Umbuchung"])]
+    from report import transfer_check
+    transfer_cat = transfer_check(config)          # the same transfer categories as the cash flow (your positions first)
     cost_words = [w.lower() for w in (kf.get("kosten_texte") or COST_WORDS)]
     afa_cfg = st.get("afa") or {}
     pos_map = st.get("positionen") or {}
@@ -127,9 +128,8 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
                     continue
                 acc = ledger.accounts[t.account_uuid]
                 role = roles.get(acc.uuid)
-                cat_low = t.category_path.lower()
                 is_transfer = (t.counter_iban and t.counter_iban in own_ibans) or \
-                              any(cat_low.split("\\")[-1] == c or cat_low == c for c in transfer_cats) or \
+                              (bool(t.category_path) and transfer_cat(t.category_path)) or \
                               any(tag.startswith(MARK + "tx-") for tag in marks_in(t.purpose + " " + t.comment)) or \
                               any(tag.startswith((MARK + "wert-", MARK + "spiegel-", MARK + "gk-")) for tag in marks_in(t.purpose))
                 if acc.portfolio:

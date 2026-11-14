@@ -46,12 +46,12 @@ class Truth(unittest.TestCase):
         self.assertEqual(C.open_items(C.empty(), L, {}, banks={"elsewhere"})["offen"], 0)
         self.assertEqual(C.stats(C.empty(), L, banks={"giro"})["gesamt"], {"ohne": 1})
 
-    def test_old_file_starts_empty_but_keeps_the_rows(self):
+    def test_old_file_starts_empty(self):
         class Store:
             def load(self, name, default):
                 return {"baum": [{"pfad": "X"}], "zuordnung": {"1": {"k": "X", "q": "manuell"}}, "regeln": [{"quelle": "manuell"}],
-                        "verwendung": {"Wohnen / Miete": "zusammen", "Lebensmittel": "ignorieren"}}
-        self.assertEqual(C.load(Store()), dict(C.empty(), verwendung={"Wohnen / Miete": "zusammen"}))
+                        "verwendung": {"Wohnen / Miete": "zusammen"}}
+        self.assertEqual(C.load(Store()), C.empty())
 
     def test_mixed_group_suggests_per_transaction(self):
         iban = "DE02100100100006820101"
@@ -78,11 +78,6 @@ class Truth(unittest.TestCase):
         self.assertEqual(L.txs[2].category_path, "")                          # not assigned by itself
         off = C.open_items(d, L, {})
         self.assertEqual([(g["name"], g["vorschlag"], g["ids"]) for g in off["gruppen"]], [("Baumarkt", "Haushalt", [3])])
-
-    def test_usage_has_no_ignore_any_more(self):
-        d = C.empty()
-        C.set_usage(d, {"Wohnen / Miete": "zusammen", "Lebensmittel": "ignorieren", "Wohnen": "zusammen"})
-        self.assertEqual(d["verwendung"], {"Wohnen / Miete": "zusammen"})
 
 
 class Proposals(unittest.TestCase):

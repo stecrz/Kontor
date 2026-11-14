@@ -27,16 +27,17 @@ Immobilienkalkulationen (Monatsreihen), Fortschreibung je Konto und Position, Ke
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import re
 from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
+from categorize import suggest as suggest_category
 from model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
 from model import MARK, marks_in
 from i18n import tr
-from categorize import fold as fold_category
 
 ROLES = ["liquiditaet", "wertpapiere", "anlagen", "immobilien", "beteiligungen", "sachwerte", "forderungen", "sonstiges", "verbindlichkeiten",
          "eigenkapital", "eventual", "ignorieren"]
@@ -449,19 +450,26 @@ class Rows:
     def __init__(self):
         self.vals: Dict[Tuple[str, str], Dict[str, float]] = defaultdict(lambda: defaultdict(float))
         self.meta: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        self.det: Dict[Tuple[str, str], Dict[str, Dict[str, float]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
 
     def add(self, section: str, gruppe: str, zeile: str, mk: str, amount: float, *,
             konto: Optional[str] = None, art: str = "kategorie", nw: bool = True, lbl: Optional[tuple] = None,
-            glbl: Optional[tuple] = None):
-        """zeile/gruppe stay German (keys of your planning); lbl/glbl: (text key, value) shown in your language."""
+            glbl: Optional[tuple] = None, ord: Optional[float] = None, objekt: Optional[str] = None, detail: Optional[str] = None):
+        """zeile/gruppe stay German (keys of your planning); lbl/glbl: (text key, value) shown in your language; ord: place in
+        the fixed outline (positions); objekt: the property the row belongs to; detail: the category inside the row."""
         key = (section, zeile)
         self.vals[key][mk] += amount
+        if detail is not None:
+            self.det[key][detail][mk] += amount
         if key not in self.meta:
             self.meta[key] = {"gruppe": gruppe, "konto": konto, "art": art, "nw": nw}
-            if lbl:
-                self.meta[key]["lbl"] = list(lbl)
-            if glbl:
-                self.meta[key]["glbl"] = list(glbl)
+            for k, v in (("lbl", lbl), ("glbl", glbl)):
+                if v:
+                    self.meta[key][k] = list(v)
+            if ord is not None:
+                self.meta[key]["ord"] = ord
+            if objekt:
+                self.meta[key]["objekt"] = objekt
 
 
 def transit_series(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], months: List[Tuple[int, int]], quelle: Dict[str, str],
@@ -585,7 +593,7 @@ def company_stakes(ledger: Ledger, config: dict) -> Dict[str, str]:
     return out
 
 
-def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[str, str], transfer_cats: List[str],
+def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[str, str], is_transfer: Callable[[str], bool],
                    cost_words: List[str], kf: dict, pairable: Callable[[Tx], bool] = lambda t: True):
     """Transfers within an area, booking by booking: the counterpart of a transfer is the booking on the other side.
     Found by Kontor's mark (#kontor-tx-<payment>: the repayment of a loan names the payment), by the counter IBAN (a booking of
@@ -593,7 +601,6 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
     -- by amount alone (at most 3 days). Returns (mate: booking -> counterpart in the area, partner: booking -> account on the
     other side, also outside the area or without a counterpart, category: booking -> marked as transfer by its category)."""
     own_ibans = ledger.own_ibans()
-    transfer_set = set(transfer_cats)
     cents = lambda x: int(round(x * 100))
     idx = ledger.__dict__.get("_tx_index")
     if idx is None or idx[0] != len(ledger.txs):
@@ -615,8 +622,7 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
 
     # 1. Kontor's mark: the booking names its payment
     for t in txs:
-        cat_low = t.category_path.lower()
-        by_cat[t.id] = cat_low in transfer_set or cat_low.rsplit("\\", 1)[-1] in transfer_set
+        by_cat[t.id] = bool(t.category_path) and is_transfer(t.category_path)
         if "-tx-" not in t.purpose and "-tx-" not in t.comment:
             continue
         for tag in marks_in(t.purpose + " " + t.comment):
@@ -705,30 +711,219 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
     return mate, partner, by_cat
 
 
+# ---------------------------------------------------------------------------
+# Cash flow positions: a fixed outline for income and expenses; MoneyMoney's categories are assigned to them once
+# (Kategorien -> Cashflow-Positionen; Kontor proposes by name). Planning works on the positions.
+# ---------------------------------------------------------------------------
+POSITIONS = [  # (key, section, row -- German, the key of your planning; shown in your language via pos_<key>); one outline for
+    # every area (a row shows only where there is money in it)
+    ("arbeit", "Einnahmen", "Arbeit"), ("umsatz", "Einnahmen", "Umsatzerlöse"), ("vermietung", "Einnahmen", "Vermietung"),
+    ("kapitalertraege", "Einnahmen", "Kapitalerträge"), ("erstattungen", "Einnahmen", "Erstattungen"), ("sonstige_einnahmen", "Einnahmen", "Sonstige Einnahmen"),
+    ("wareneinkauf", "Ausgaben", "Wareneinkauf"), ("personal", "Ausgaben", "Personal"), ("betrieb", "Ausgaben", "Betriebskosten"),
+    ("wohnen", "Ausgaben", "Wohnen"), ("lebenshaltung", "Ausgaben", "Lebenshaltung"), ("mobilitaet", "Ausgaben", "Mobilität"),
+    ("versicherungen", "Ausgaben", "Versicherungen"), ("gesundheit", "Ausgaben", "Gesundheit"), ("freizeit", "Ausgaben", "Freizeit & Reisen"),
+    ("objektkosten", "Ausgaben", "Objektkosten"), ("verwaltung", "Ausgaben", "Beratung & Gebühren"), ("steuern", "Ausgaben", "Steuern"),
+    ("spenden", "Ausgaben", "Geschenke & Spenden"), ("sonstige_ausgaben", "Ausgaben", "Sonstige Ausgaben"),
+    ("anlegen", "Investitionen", "Sparen & Anlegen"), ("tilgung", "Finanzierung", "Tilgung"), ("zinsen", "Finanzierung", "Zinsen"),
+    ("ignorieren", "", ""),
+]
+POS = {k: (sec, row, i) for i, (k, sec, row) in enumerate(POSITIONS)}
+# words in a category's name -> (position when the money comes in, when it goes out); the first hit wins. Context words in the
+# path first (a category under "Vermietung" is about a property), then the category's own name, then its whole path.
+# words in a category's name -> (position when the money comes in, when it goes out); the first hit wins: saving, financing and
+# interest first (name, then whole path), then the context (a category under "Vermietung" is about a property), then the rest
+# (name, then path). Folded (ae, oe, ue, ss); German names are compounds, so parts of words count -- words of up to three
+# letters only at the start of a word.
+POSITION_FIRST = [  # (words, in, out, only at the start of a word); not for costs of these (fees, card) -- see FIRST_NOT
+    (("zins", "finanzierungskost"), "kapitalertraege", "zinsen", False),
+    (("tilgung", "kredit", "darlehen", "finanzierung", "annuit"), "tilgung", "tilgung", False),
+    (("sparen", "sparplan", "bauspar", "invest", "wertpapier", "depot", "etf", "aktie", "fonds", "geldanlage", "ruecklage", "krypto",
+      "altersvorsorge", "beteiligung", "immobilienkauf", "kapitalanlage"), "anlegen", "anlegen", True),
+]
+FIRST_NOT = ("gebuehr", "kosten", "entgelt", "provision", "kreditkarte")
+POSITION_CONTEXT = [(("vermiet", "immobil", "objekt"), "vermietung", "objektkosten")]
+POSITION_HINTS = [
+    (("steuerberat", "beratung", "notar", "anwalt", "kontofuehr", "gebuehr", "bankgeb"), "sonstige_einnahmen", "verwaltung"),
+    (("wareneinkauf", "waren", "lieferant", "material"), "erstattungen", "wareneinkauf"),
+    (("personal", "loehne", "sozialversicher", "sozialabgab", "lohnneben"), "erstattungen", "personal"),
+    (("umsatzerl", "erloes", "kasseneinnahm", "verkauf"), "umsatz", "sonstige_ausgaben"),
+    (("betriebskost", "betriebsbedarf", "ladenmiete", "raumkost", "marketing", "werbung", "software", "it-kost"), "erstattungen", "betrieb"),
+    (("hausgeld", "instandhalt", "reparatur", "hausverwalt", "grundsteuer"), "erstattungen", "objektkosten"),
+    (("finanzamt", "steuer", "solidarit"), "erstattungen", "steuern"),
+    (("gehalt", "gehaelt", "lohn", "loehn", "tantieme", "bonus", "gratifikation", "verguetung", "honorar", "arbeit"), "arbeit", "personal"),
+    (("dividend", "kapitalertr", "ausschuett"), "kapitalertraege", "sonstige_ausgaben"),
+    (("mieteinnahm", "pacht"), "vermietung", "objektkosten"),
+    (("erstattung", "rueckzahlung", "gutschrift", "cashback"), "erstattungen", "sonstige_ausgaben"),
+    (("geldautomat", "bargeld", "barabhebung", "abhebung"), "sonstige_einnahmen", "sonstige_ausgaben"),
+    (("versicherung",), "erstattungen", "versicherungen"),
+    (("restaurant", "gastro"), "erstattungen", "freizeit"),
+    (("miete",), "vermietung", "wohnen"),
+    (("nebenkost", "strom", "energie", "wasser", "heiz", "internet", "telefon", "mobilfunk", "rundfunk", "wohnen", "wohnung"), "erstattungen", "wohnen"),
+    (("lebensmittel", "supermarkt", "einkauf", "drogerie", "kleidung", "haushalt", "lebenshalt"), "erstattungen", "lebenshaltung"),
+    (("auto", "kfz", "tank", "benzin", "mobilit", "bahn", "oepnv", "taxi", "parken", "fahrrad", "verkehr", "maut", "transport"), "erstattungen", "mobilitaet"),
+    (("gesundheit", "arzt", "apotheke", "medizin", "zahn", "kranken", "therapie"), "erstattungen", "gesundheit"),
+    (("freizeit", "urlaub", "reise", "kultur", "sport", "hobby", "abo", "streaming", "kino", "konzert", "hotel", "flug"), "erstattungen", "freizeit"),
+    (("spende", "geschenk"), "sonstige_einnahmen", "spenden"),
+]
+_word_rx = {}
+
+
+def _has(words, text: str, start: bool = False) -> bool:
+    for w in words:
+        if start or len(w) <= 3:
+            rx = _word_rx.get(w) or _word_rx.setdefault(w, re.compile(r"(?<![a-z])" + re.escape(w)))
+            if rx.search(text):
+                return True
+        elif w in text:
+            return True
+    return False
+
+
+# a booking without a category: (field "name" or "text" = name, purpose and booking text, words) -> (position when money comes
+# in, goes out) for a person and for a company. None: no estimate from this entry (the next one may have one); "": no estimate
+# at all (e.g. a loan rate mixes repayment and interest). Learned patterns of your categories come first (see classify).
+TX_HINTS = [
+    ("name", r"finanzamt|steuerkasse|bundeskasse|stadtkasse|gemeindekasse", ("erstattungen", "steuern"), ("erstattungen", "steuern")),
+    ("text", r"tilgung|annuitaet|darlehensrate|kreditrate|\brate\b", ("", ""), ("", "")),
+    ("text", r"ausschuettung|dividend|ertragsgutschrift", ("kapitalertraege", ""), ("kapitalertraege", "")),
+    ("text", r"\bzins|sollzins|habenzins|zinsabschluss|kupon", ("kapitalertraege", "zinsen"), ("kapitalertraege", "zinsen")),
+    ("name", r"deutsche rentenversicherung", ("", "versicherungen"), ("", "personal")),       # money from it: a pension, no estimate
+    ("name", r"\baok\b|techniker krankenkasse|barmer|\bdak\b|\bikk\b|\bbkk\b|knappschaft|minijob|berufsgenossenschaft|krankenkasse|rentenversicherung",
+     ("erstattungen", "versicherungen"), ("erstattungen", "personal")),
+    ("text", r"\blohn\b|\bgehalt|lohn/gehalt|\bloehne\b|entgeltabrechnung|bezuege|\bverguetung", ("arbeit", None), (None, "personal")),
+    ("text", r"bareinzahlung|kartenumsa|kartenzahlung|nexi\b|concardis|adyen|sumup|payone|worldline|elavon|ec-cash|girocard|kassenabrechnung", (None, None), ("umsatz", None)),
+    ("name", r"steuerberat|rechtsanwalt|notar|kanzlei|wirtschaftspruef|datev|amtsgericht|handelsregister|bundesanzeiger|\bihk\b", (None, "verwaltung"), (None, "verwaltung")),
+    ("text", r"hausgeld|wohngeld|instandhaltungsruecklage|hausverwaltung", ("erstattungen", "wohnen"), ("erstattungen", "objektkosten")),
+    ("text", r"\bmiete\b|mietzahlung|kaltmiete|warmmiete|\bpacht\b|nebenkosten", ("vermietung", "wohnen"), ("vermietung", "betrieb")),
+    ("name", r"stadtwerke|vattenfall|e\.on|\beon\b|\benbw\b|naturstrom|lichtblick|polarstern|\bstrom|fernwaerme|telekom|vodafone|telefonica|\bo2\b|1&1|congstar|m-net|rundfunk|beitragsservice",
+     ("erstattungen", "wohnen"), ("erstattungen", "betrieb")),
+    ("text", r"kontofuehrung|kontoentgelt|gebuehr|kartenpreis|kontopreis|kontomodell", (None, "verwaltung"), (None, "verwaltung")),
+    ("name", r"versicherung|allianz|\bhuk\b|\bergo\b|\baxa\b|generali|signal iduna|debeka|\bhdi\b|\bwwk\b|\blvm\b|\bdevk\b|gothaer|provinzial",
+     ("erstattungen", "versicherungen"), ("erstattungen", "versicherungen")),
+    ("text", r"spende|unicef|aerzte ohne grenzen|\bwwf\b|greenpeace|albert schweitzer", (None, "spenden"), (None, "spenden")),
+    ("name", r"\brewe\b|\bedeka\b|\baldi\b|\blidl\b|\bpenny\b|kaufland|denns|alnatura|\bdm\b|dm-drogerie|rossmann|amazon|zalando|\bikea\b",
+     ("erstattungen", "lebenshaltung"), (None, None)),
+    ("name", r"deutsche bahn|\bdb vertrieb|\bmvg\b|\bmvv\b|\baral\b|\bshell\b|\besso\b|totalenergies|tankstelle|\bsixt\b|share now|\buber\b|flixbus|lufthansa|parkhaus|\bapcoa\b|\badac\b",
+     ("erstattungen", "mobilitaet"), (None, "betrieb")),
+    ("name", r"apotheke|zahnarzt|\barzt|arztpraxis|klinik|krankenhaus|physiotherap|fielmann", ("erstattungen", "gesundheit"), (None, None)),
+    ("name", r"netflix|spotify|disney|apple\.com|itunes|google play|eventim|airbnb|booking\.com|\bhotel|restaurant|lieferando|\bwolt\b|\bkino",
+     ("erstattungen", "freizeit"), (None, None)),
+]
+_TX_HINTS = [(f, re.compile(rx), pp, pc) for f, rx, pp, pc in TX_HINTS]
+
+
+def fold_text(s: str) -> str:
+    return (s or "").lower().replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+
+
+def guess_position(t: Tx, company: bool) -> Optional[str]:
+    """Kontor's estimate for a booking without a category, by the words in its name, purpose and booking text (or None)."""
+    name = fold_text(t.name)
+    text = name + " " + fold_text(t.purpose + " " + t.booking_text)
+    for field, rx, pp, pc in _TX_HINTS:
+        if rx.search(name if field == "name" else text):
+            pos = (pc if company else pp)[0 if t.amount > 0 else 1]
+            if pos is not None:
+                return pos or None
+    return None
+
+
+def propose_position(path: str, income: bool) -> str:
+    """Kontor's proposal for a category (by its words); income: its money mostly comes in."""
+    low = fold_text(path)
+    name = low.split(" / ")[-1]
+    for text in (name, low):
+        for words, pin, pout, start in POSITION_FIRST:
+            if pin != "kapitalertraege" and any(w in text for w in FIRST_NOT):
+                continue
+            if _has(words, text, start):
+                return pin if income else pout
+    for words, pin, pout in POSITION_CONTEXT:
+        if _has(words, low):
+            return pin if income else pout
+    for text in (name, low):
+        for words, pin, pout in POSITION_HINTS:
+            if _has(words, text):
+                return pin if income else pout
+    return "sonstige_einnahmen" if income else "sonstige_ausgaben"
+
+
+def category_totals(ledger: Ledger) -> Dict[str, float]:
+    """Sum per category over all booked transactions (whether its money mostly comes in or goes out)."""
+    out: Dict[str, float] = defaultdict(float)
+    for t in ledger.txs:
+        if t.booked and t.category_path:
+            out[norm_cat(t.category_path)] += t.amount
+    return dict(out)
+
+
+def position_of(path: str, config: dict, totals: Dict[str, float]) -> Tuple[str, bool]:
+    """(position, yours) of a category: what you chose for it or for the nearest category above it (Kategorien ->
+    Cashflow-Positionen), otherwise Kontor's proposal."""
+    mine = my_positions(config)
+    parts = path.split(" / ")
+    for i in range(len(parts), 0, -1):
+        p = " / ".join(parts[:i])
+        if p in mine:
+            return mine[p], True
+    return propose_position(path, totals.get(path, 0.0) > 0), False
+
+
+def my_positions(config: dict) -> Dict[str, str]:
+    """The positions you chose: category path -> position (or "umbuchung": a transfer between your own accounts)."""
+    return {norm_cat(k): v for k, v in ((config.get("kapitalfluss") or {}).get("positionen") or {}).items()
+            if (v in POS or v == "umbuchung") and norm_cat(k)}
+
+
+def transfer_check(config: dict) -> Callable[[str], bool]:
+    """Is a category a transfer between your own accounts? Your choice for it or the nearest category above it decides;
+    without one: a transfer category (Einstellungen: umbuchungs_kategorien) -- by its path, one above it or its name."""
+    mine = my_positions(config)
+    names = {fold_text(norm_cat(c)) for c in ((config.get("kapitalfluss") or {}).get("umbuchungs_kategorien") or ["Umbuchung"]) if c}
+    memo: Dict[str, bool] = {}
+
+    def check(path: str) -> bool:
+        p = norm_cat(path)
+        r = memo.get(p)
+        if r is None:
+            parts = p.split(" / ") if p else []
+            r = None
+            for i in range(len(parts), 0, -1):
+                v = mine.get(" / ".join(parts[:i]))
+                if v:
+                    r = v == "umbuchung"
+                    break
+            if r is None:
+                low = [fold_text(x) for x in parts]
+                r = bool(parts) and (low[-1] in names or any(" / ".join(low[:i]) in names for i in range(1, len(low) + 1)))
+            memo[p] = r
+        return r
+    return check
+
+
 def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], config: dict, months: List[Tuple[int, int]],
-             verlauf: Dict[str, str], areas: Optional[Dict[str, str]] = None, company: bool = False):
+             verlauf: Dict[str, str], areas: Optional[Dict[str, str]] = None, company: bool = False,
+             objekte: Optional[Dict[str, str]] = None, learned: Optional[dict] = None):
     """Cash flow rows of an area. Every booking of its accounts counts once: a transfer within the area (both bookings found)
     as one row that leaves the net worth unchanged, everything else with its amount. areas: account -> name of its area (all
-    areas; transfers between areas are contributions/withdrawals); company: this area is a company. Returns (rows, inbound
+    areas; transfers between areas are contributions/withdrawals); company: this area is a company; objekte: category ->
+    property (its own rows); learned: the patterns learned from your categories (categorize) -- a booking without a category
+    counts in the position they suggest, else in Kontor's estimate by its words (marked as estimated). Returns (rows, inbound
     per account and month, warnings); rows.pairs: transfers within the area (for money in transit at month end), rows.reasons:
     amounts left out on purpose (category "Ignore"), rows.no_target: investments whose account is unknown."""
     kf = config.get("kapitalfluss", {}) or {}
     root_leaves = {a.uuid for a in leaves}
     areas = areas or {}
-    transfer_cats = [c.lower() for c in (kf.get("umbuchungs_kategorien") or ["Umbuchung"])]
+    is_transfer = transfer_check(config)
     cost_words = [w.lower() for w in (kf.get("kosten_texte") or COST_WORDS)]
-    invest_cats = [c.lower() for c in (kf.get("investitions_kategorien") or ["invest", "wertpapier", "depot", "immobilienkauf", "beteiligung"])]
-    finance_cats = [c.lower() for c in (kf.get("finanzierungs_kategorien") or ["finanzierung", "tilgung", "kredit"])]
-    cost_cats = [c.lower() for c in (kf.get("finanzierungskosten_kategorien") or ["zinsen", "zinsaufwand", "finanzierungskosten"])]
-    income_cats = [c.lower() for c in (kf.get("einnahmen_kategorien") or [])]
-    kat_sektion: Dict[str, str] = {k.replace("\\", " / ").lower(): v for k, v in (kf.get("kategorie_zuordnung") or {}).items()
-                                   if not k.startswith("_")}
-    kat_zu_konto: Dict[str, str] = {}
+    kat_zu_konto: Dict[str, str] = {}                 # investment category -> the account it goes into
     for cat_name, ref in (kf.get("kategorie_zu_konto") or {}).items():
         try:
-            kat_zu_konto[cat_name.replace("\\", " / ").lower()] = ledger.resolve(ref).uuid
+            kat_zu_konto[norm_cat(cat_name)] = ledger.resolve(ref).uuid
         except KeyError:
             pass
+    totals = category_totals(ledger)
+    objekte = {norm_cat(k): v for k, v in (objekte or {}).items() if k}
     beteiligungs_gruppen = company_accounts(ledger, config)       # payments to and from them: contributions/withdrawals
     stakes = {g: u for g, u in company_stakes(ledger, config).items() if u in root_leaves}     # held by this area
     self_name = next((areas[u] for u in root_leaves if u in areas), None)
@@ -749,53 +944,27 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     no_target: Dict[str, float] = defaultdict(float)
     ignored: Dict[str, float] = defaultdict(float)
 
-    def cat_class(cat: str, top: str) -> tuple:
-        """Einordnung einer Kategorie (Bankkonten): (Abschnitt, ...) -- Finanzierung (art, nw), Investitionen (Zielkonto),
-        Einnahmen, Ausgaben, Ignorieren oder __operativ__ (nach Vorzeichen der Summe)."""
-        tl = top.lower()
-        zu = kat_sektion.get(cat.lower()) or kat_sektion.get(tl)
-        if zu:
-            sec, _, art = zu.partition("/")
-            if sec == "Finanzierung":
-                return ("Finanzierung", "zins" if art.lower().startswith("zins") else "tilgung", art.lower().startswith("zins"))
-            if sec == "Investitionen":
-                return ("Investitionen", kat_zu_konto.get(cat.lower()) or kat_zu_konto.get(tl))
-            if sec in ("Einnahmen", "Ausgaben", "Ignorieren"):
-                return (sec,)
-            return ("__operativ__",)
-        if any(k in tl for k in cost_cats):
-            return ("Finanzierung", "zins", True)
-        if any(k in tl for k in finance_cats):
-            return ("Finanzierung", "tilgung", False)
-        if any(k in tl for k in invest_cats) or cat.lower() in kat_zu_konto or tl in kat_zu_konto:
-            return ("Investitionen", kat_zu_konto.get(cat.lower()) or kat_zu_konto.get(tl))
-        if income_cats and any(k in tl for k in income_cats):
-            return ("Einnahmen",)
-        return ("__operativ__",)
-    cat_memo: Dict[str, tuple] = {}
-    zusammen: Dict[str, str] = kf.get("_zusammen") or {}
-    fold_memo: Dict[str, str] = {}
+    pos_memo: Dict[str, Tuple[str, Optional[str]]] = {}
 
-    def folded(t: Tx) -> str:
-        cat = t.category_path.replace("\\", " / ") or "(ohne Kategorie)"
-        if zusammen:                                     # Einrichtung: Unterkategorien zur Oberkategorie zusammenfassen
-            f = fold_memo.get(cat)
-            if f is None:
-                f = fold_memo[cat] = fold_category(zusammen, cat)
-            cat = f
-        return cat
-
-    def section_of(cat: str) -> tuple:
-        c = cat_memo.get(cat)
-        if c is None:
-            c = cat_memo[cat] = cat_class(cat, cat.split(" / ")[0])
-        return c
+    def place(cat: str) -> Tuple[str, Optional[str]]:
+        """(position, property) of a category: a property's category (and those below it) has its own rows -- unless it is
+        interest or a repayment, or you chose saving or leaving it out."""
+        r = pos_memo.get(cat)
+        if r is None:
+            # the most specific property's category (one property's may lie below another's)
+            hits = [c for c in objekte if cat == c or cat.startswith(c + " / ")]
+            obj = objekte[max(hits, key=len)] if hits else None
+            pos, yours = position_of(cat, config, totals)
+            if obj and (pos in ("tilgung", "zinsen") or (yours and pos in ("anlegen", "ignorieren"))):
+                obj = None
+            r = pos_memo[cat] = (pos, obj)
+        return r
 
     def pairable(t: Tx) -> bool:
-        """A bank booking that may be the other side of a booking in an offline account: no category, or one for a transfer,
-        an investment or a repayment -- never income or an expense."""
-        return not t.category_path or section_of(folded(t))[0] in ("Investitionen",) or section_of(folded(t))[:2] == ("Finanzierung", "tilgung")
-    mate, partner, by_cat = pair_transfers(ledger, in_root, flows, roles, transfer_cats, cost_words, kf, pairable)
+        """A bank booking that may be the other side of a booking in an offline account: no category, or one for saving or a
+        repayment -- never income or an expense."""
+        return not t.category_path or place(norm_cat(t.category_path))[0] in ("anlegen", "tilgung")
+    mate, partner, by_cat = pair_transfers(ledger, in_root, flows, roles, is_transfer, cost_words, kf, pairable)
     pairs: List[Tuple[date, date, float, str, str]] = []
     seen_pair: Set[int] = set()
 
@@ -827,8 +996,6 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                 out_, in_ = (t, o) if t.amount < 0 else (o, t)
                 pairs.append((out_.booking_date, in_.booking_date, -out_.amount, out_.account_uuid, in_.account_uuid))
         p = partner.get(t.id)
-        cat = folded(t)
-        top = cat.split(" / ")[0]
         if role == "ignorieren":
             continue
         if role != "liquiditaet":
@@ -898,33 +1065,54 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             R.add("Unklar", "Umbuchung", "Umbuchung ohne erkannten Partner", mk, t.amount, art="unklar",
                   lbl=("cf_ohne_partner",), glbl=("cf_umbuchung",)); unclear += 1
             continue
-        # Abschnitt je Kategorie nur einmal bestimmen (gleiche Kategorie -> gleiche Einordnung)
-        c = section_of(cat)
-        kind = c[0]
-        lb = {"lbl": ("cf_ohne_kategorie",), "glbl": ("cf_ohne_kategorie",)} if cat == "(ohne Kategorie)" else {}
-        if kind == "Finanzierung":
-            R.add("Finanzierung", top, cat, mk, t.amount, art=c[1], nw=c[2], **lb)
-        elif kind == "Investitionen":
-            target = c[1] if c[1] in root_leaves else (depots[0] if len(depots) == 1 and not c[1] else None)
+        # income and expenses: by position (MoneyMoney's category assigned to it), a property's in its own rows
+        # without a category: the one your categories suggest (learned), else Kontor's estimate by the words -- shown as estimated
+        sec = "Einnahmen" if t.amount > 0 else "Ausgaben"
+        cat = norm_cat(t.category_path)
+        mine = bool(cat)
+        if not cat and learned:
+            hit = suggest_category(learned, t)
+            cat = norm_cat(hit["kategorie"]) if hit else ""
+            if cat and is_transfer(cat):                 # learned from transfers: no estimate (a counterpart was not found)
+                R.add(sec, "Ohne Kategorie", "Ohne Kategorie", mk, t.amount, ord=900, lbl=("cf_ohne_kategorie",))
+                continue
+        if cat:
+            pos, obj = place(cat)
+        else:
+            pos, obj = guess_position(t, company), None
+        # an estimate only ever counts as income or expense (or interest) -- never as saving, repayment, transfer or left out
+        if pos is None or pos not in POS or (not mine and pos in ("anlegen", "tilgung", "ignorieren")):
+            R.add(sec, "Ohne Kategorie", "Ohne Kategorie", mk, t.amount, ord=900, lbl=("cf_ohne_kategorie",))
+            continue
+        det = cat if mine else ""                        # "" = without a category in MoneyMoney (estimated)
+        if obj:
+            # rent or costs: by the category's sum (a subcategory such as "Hausgeld"); on the property's own category by the booking
+            inc = (t.amount > 0) if cat in objekte else totals.get(cat, 0.0) > 0
+            sec = "Einnahmen" if inc else "Ausgaben"
+            row = "%s · %s" % (obj, "Miete" if inc else "Kosten")
+            R.add(sec, row, row, mk, t.amount, ord=POS["vermietung" if inc else "objektkosten"][2] + 0.5, objekt=obj, detail=det,
+                  lbl=("cf_objekt_miete" if inc else "cf_objekt_kosten", obj))
+            continue
+        psec, prow, pord = POS[pos]
+        if pos == "ignorieren":
+            ignored[mk] += t.amount
+        elif pos == "anlegen":
+            parts = cat.split(" / ")
+            c_to = next((kat_zu_konto[" / ".join(parts[:i])] for i in range(len(parts), 0, -1) if " / ".join(parts[:i]) in kat_zu_konto), None)
+            target = c_to if c_to in root_leaves else (depots[0] if len(depots) == 1 and not c_to else None)
             # without a known account the money leaves the net worth -- unless a depot of the area takes it (shown as reason)
             neutral = target is not None or bool(depots)
-            R.add("Investitionen", top, cat, mk, t.amount, konto=target, art="kategorie", nw=not neutral, **lb)
+            R.add("Investitionen", prow, cat, mk, t.amount, konto=target, art="kategorie", nw=not neutral, ord=pord, glbl=("pos_" + pos,))
             if target:
                 inbound[target][mk] += -t.amount
             elif neutral:
                 no_target[mk] += t.amount
-        elif kind == "Ignorieren":
-            ignored[mk] += t.amount
+        elif pos in ("tilgung", "zinsen"):
+            R.add("Finanzierung", prow, prow, mk, t.amount, art="zins" if pos == "zinsen" else "tilgung", nw=pos == "zinsen", ord=pord,
+                  lbl=("pos_" + pos,), detail=det)
         else:
-            R.add(kind, top, cat, mk, t.amount, **lb)
+            R.add(psec, prow, prow, mk, t.amount, ord=pord, lbl=("pos_" + pos,), detail=det)
 
-    for key in [k for k in R.vals if k[0] == "__operativ__"]:
-        vals = R.vals.pop(key)
-        meta = R.meta.pop(key)
-        target = "Einnahmen" if sum(vals.values()) > 0 else "Ausgaben"
-        for mk, v in vals.items():
-            R.vals[(target, key[1])][mk] += v
-        R.meta.setdefault((target, key[1]), meta)
     # a participation took a contribution: what it is worth more (or less) than the money paid in is its valuation
     for st, per in stake_in.items():
         acc = ledger.accounts[st]
@@ -996,8 +1184,9 @@ def reconcile(sektionen: List[dict], nw: Dict[str, float], liq: Dict[str, Option
 
 
 def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereich: dict, roles: Dict[str, str],
-                  rule_warnings: Optional[List[str]] = None, progress: Optional[Callable[[float, str], None]] = None) -> dict:
-    """bereich: {"id", "name", "art", "anteil", "leaves": [Account]}"""
+                  rule_warnings: Optional[List[str]] = None, progress: Optional[Callable[[float, str], None]] = None,
+                  learned: Optional[dict] = None) -> dict:
+    """bereich: {"id", "name", "art", "anteil", "leaves": [Account]}; learned: patterns from your categories (categorize)"""
     step = progress or (lambda f, t: None)
     order = ledger.order()                      # Konten in der Reihenfolge von MoneyMoney
     bcfg = config.get("bilanz", {}) or {}
@@ -1036,15 +1225,20 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
     step(0.3, tr("s_zahlungsstroeme"))
     areas = area_names(ledger, config)
     company = bereich.get("art") == "gesellschaft"
+    learned_sig = None
+    if learned:
+        learned_sig = learned.get("_sig") or hashlib.sha1(json.dumps(learned.get("regeln") or [], sort_keys=True, default=str).encode()).hexdigest()
+    objekte = {str(im.get("kategorie")): str(im.get("name") or "") for im in config.get("immobilien") or []
+               if isinstance(im, dict) and im.get("kategorie") and str(im.get("bereich") or "") == str(bereich.get("id"))}
     ckey = (getattr(ledger, "_kat_sig", None), tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
             json.dumps(config.get("kapitalfluss") or {}, sort_keys=True, default=str), tuple(months[0]) if months else None,
-            tuple(months[-1]) if months else None, len(months), tuple(sorted(quelle.items())), company,
+            tuple(months[-1]) if months else None, len(months), tuple(sorted(quelle.items())), company, learned_sig, tuple(sorted(objekte.items())),
             json.dumps([sorted(areas.items()), config.get("gesellschaften")], sort_keys=True, default=str))
     cache = ledger.__dict__.setdefault("_classify_cache", {})
     if ckey in cache:
         R, inbound, warn_c = copy.deepcopy(cache[ckey])        # Bereich unveraendert (z. B. Verlauf eines anderen Bereichs geaendert)
     else:
-        R, inbound, warn_c = classify(ledger, leaves, roles, config, months, quelle, areas, company)
+        R, inbound, warn_c = classify(ledger, leaves, roles, config, months, quelle, areas, company, objekte, learned)
         if len(cache) > 24:
             cache.clear()
         cache[ckey] = copy.deepcopy((R, inbound, warn_c))
@@ -1143,14 +1337,19 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
             m = R.meta[(s, row)]
             z = {"zeile": row, "gruppe": m["gruppe"], "konto": m["konto"], "art": m["art"], "nw": m["nw"],
                  "werte": {mk: round(vals.get(mk, 0.0), 2) for mk in mkeys}}
-            for k in ("lbl", "glbl"):
-                if m.get(k):
+            for k in ("lbl", "glbl", "ord", "objekt"):
+                if m.get(k) is not None:
                     z[k] = m[k]
+            det = R.det.get((s, row))
+            if det:                                      # the categories inside a position (largest first)
+                z["details"] = sorted(({"kategorie": c, "werte": {mk: round(v.get(mk, 0.0), 2) for mk in mkeys}} for c, v in det.items()),
+                                      key=lambda d: -abs(sum(d["werte"].values())))
             zeilen.append(z)
         gsum = defaultdict(float)
         for z in zeilen:
             gsum[z["gruppe"]] += abs(sum(z["werte"].values()))
-        zeilen.sort(key=lambda z: (-gsum[z["gruppe"]], z["gruppe"], z["zeile"]))
+        # the fixed outline first (positions in their order), then the rest by size
+        zeilen.sort(key=lambda z: (z.get("ord", 500), -gsum[z["gruppe"]], z["gruppe"], z["zeile"]))
         sektionen.append({"name": sec, "zeilen": zeilen})
 
     ueberleitung = reconcile(sektionen, nw, pos_sums.get("liquiditaet") or {}, mkeys, leaves, roles, hist, R, ledger, months, today)
@@ -1342,6 +1541,24 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
     rendite = float(plan.get("rendite_prozent_pa") or 0.0)
     budgets: Dict[str, float] = dataset.get("budgets") or {}
     rows_cfg: Dict[str, dict] = plan.get("zeilen", {}) or {}
+    row_of_cat: Dict[str, str] = {}               # category -> the row it counts in (budgets of a category above several rows)
+    for sek in dataset.get("kapitalfluss", {}).get("sektionen", []):
+        for z in sek["zeilen"]:
+            for d in z.get("details") or []:
+                if d["kategorie"]:
+                    row_of_cat[d["kategorie"]] = sek["name"] + "/" + z["zeile"]
+
+    def position_budget(key: str, z: dict) -> Optional[float]:
+        """A position's budget: the budgets in MoneyMoney of its categories -- a budget on a category above them counts when
+        all of its categories are in this row (then those below it do not count again)."""
+        cats = [d["kategorie"] for d in z.get("details") or [] if d["kategorie"]]
+        if not cats:
+            return budgets.get(z["zeile"])
+        own = {b: v for b, v in budgets.items()
+               if any(c == b or c.startswith(b + " / ") for c in cats)
+               and all(r == key for c, r in row_of_cat.items() if c == b or c.startswith(b + " / "))}
+        own = {b: v for b, v in own.items() if not any(a != b and b.startswith(a + " / ") for a in own)}
+        return round(sum(own.values()), 2) if own else None
     loans_plan: Dict[str, dict] = plan.get("darlehen", {}) or {}
     wert_cfg: Dict[str, dict] = plan.get("wertentwicklung", {}) or {}
     events: List[dict] = [e for e in (plan.get("ereignisse") or []) if isinstance(e, dict) and e.get("aktiv", True)]
@@ -1388,25 +1605,20 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
     immo_extra: List[dict] = []                                   # zusaetzliche Zeilen (Ausschuettung)
     for im in immo or []:
         reihen = im.get("reihen") or {}
-        cat = norm_cat(im.get("kategorie") or "").lower()
-        taken_e = taken_a = False
-        for sek in sektionen:
-            for z in sek["zeilen"]:
-                zl = norm_cat(z["zeile"]).lower()
-                if cat and (zl == cat or zl.startswith(cat + " / ")):
-                    if sek["name"] == "Einnahmen":
-                        immo_rows[(sek["name"], z["zeile"])] = reihen.get("miete", {}) if not taken_e else {}
-                        taken_e = True
-                    elif sek["name"] == "Ausgaben":
-                        immo_rows[(sek["name"], z["zeile"])] = ({mk: reihen.get("kosten", {}).get(mk, 0.0) + reihen.get("ruecklage", {}).get(mk, 0.0)
-                                                                 for mk in future} if not taken_a else {})
-                        taken_a = True
-        if cat and not taken_e:
-            immo_extra.append({"sektion": "Einnahmen", "gruppe": im.get("name", "Immobilie"), "zeile": "%s / Miete (Kalkulation)" % im.get("name", "Immobilie"),
-                               "art": "immobilie", "nw": True, "werte": reihen.get("miete", {})})
-        if cat and not taken_a:
-            immo_extra.append({"sektion": "Ausgaben", "gruppe": im.get("name", "Immobilie"), "zeile": "%s / Kosten (Kalkulation)" % im.get("name", "Immobilie"),
-                               "art": "immobilie", "nw": True, "werte": {mk: reihen.get("kosten", {}).get(mk, 0.0) + reihen.get("ruecklage", {}).get(mk, 0.0) for mk in future}})
+        name = str(im.get("name") or "Immobilie")
+        rent = reihen.get("miete", {})
+        costs = {mk: reihen.get("kosten", {}).get(mk, 0.0) + reihen.get("ruecklage", {}).get(mk, 0.0) for mk in future}
+        # the property's own rows (its categories, classify: objekt) take the calculation; without actual figures new rows
+        for sec_name, row, series, key in (("Einnahmen", "%s · Miete" % name, rent, "cf_objekt_miete"), ("Ausgaben", "%s · Kosten" % name, costs, "cf_objekt_kosten")):
+            if not im.get("kategorie"):
+                continue
+            if any(z.get("objekt") == name for z in sec_by_name[sec_name]["zeilen"]):
+                for z in sec_by_name[sec_name]["zeilen"]:
+                    if z.get("objekt") == name:
+                        immo_rows[(sec_name, z["zeile"])] = series
+            else:
+                immo_extra.append({"sektion": sec_name, "gruppe": row, "zeile": row, "art": "immobilie", "nw": True, "werte": series,
+                                   "objekt": name, "lbl": [key, name]})
         for lname, ref in (im.get("darlehen_konten") or {}).items():
             u = resolve_ref(ref)
             if u and lname in (reihen.get("darlehen") or {}):
@@ -1419,8 +1631,9 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                                "art": "ereignis", "nw": False, "werte": reihen["ausschuettung"]})
     for ex in immo_extra:
         sek = sec_by_name[ex["sektion"]]
-        sek["zeilen"].append({"zeile": ex["zeile"], "gruppe": ex["gruppe"], "konto": None, "art": ex["art"], "nw": ex["nw"],
-                              "werte": {mk: 0.0 for mk in ist}, "synthetisch": True})
+        sek["zeilen"].append(dict({"zeile": ex["zeile"], "gruppe": ex["gruppe"], "konto": None, "art": ex["art"], "nw": ex["nw"],
+                                   "werte": {mk: 0.0 for mk in ist}, "synthetisch": True},
+                                  **{k: ex[k] for k in ("objekt", "lbl") if ex.get(k)}))
         immo_rows[(ex["sektion"], ex["zeile"])] = ex["werte"]
     fixed_rows: Dict[Tuple[str, str], Tuple[Dict[str, float], str]] = {k: (v, "immobilie") for k, v in immo_rows.items()}
 
@@ -1485,7 +1698,8 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
             growth = float(cfg.get("steigerung_prozent_pa", growth_default.get(sek["name"], 0.0)))
             hist_vals = [z["werte"][mk] for mk in full_months]
             overrides = cfg.get("werte", {}) or {}
-            budget = budgets.get(z["zeile"])
+            # a position's budget: the sum of the budgets of its categories in MoneyMoney
+            budget = position_budget(sek["name"] + "/" + z["zeile"], z)
             if budget is not None and sek["name"] == "Ausgaben":
                 budget = -abs(budget)
             z["plan"] = {"methode": method, "betrag": cfg.get("betrag"), "steigerung_prozent_pa": growth, "budget": budget,

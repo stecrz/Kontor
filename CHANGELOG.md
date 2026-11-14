@@ -1,5 +1,15 @@
 # Änderungen
 
+## 3.13.6 (2026-11-14 16:55)
+Cashflow nach festen Positionen statt nach dem Kategorienbaum – gleich für privat, GbR und GmbH.
+- **Feste Gliederung:** Arbeit, Umsatzerlöse, Vermietung, Kapitalerträge, Erstattungen · Wareneinkauf, Personal, Betriebskosten, Wohnen, Lebenshaltung, Mobilität, Versicherungen, Steuern … · Sparen & Anlegen · Tilgung, Zinsen. ▸ vor einer Position zeigt die Kategorien darin.
+- **Kategorien → Cashflow-Positionen:** Kontor schlägt je Kategorie aus MoneyMoney eine Position vor (z. B. „Rückzahlung Finanzamt“ → Erstattungen, „Sparen“ → Sparen & Anlegen); deine Wahl gilt auch für die Kategorien darunter. Ersetzt „Auswahl“ und „Cashflow-Zuordnung“.
+- **Ohne Kategorie geschätzt:** nach deinen bisherigen Kategorien, sonst nach Name und Verwendungszweck (Finanzamt, Gehalt, Krankenkasse, Kartenabrechnung …) – sichtbar als „ohne Kategorie, geschätzt“. Funktioniert damit auch für eine GmbH ohne Kategorien; Zuordnen macht es genauer. In MoneyMoney wird dabei nichts eingetragen.
+- Immobilien-Kategorien als eigene Zeilen „Miete“ und „Kosten“; Zinsen und Tilgung bleiben unter Finanzierung.
+- Planung auf den Positionen (Budgets aus MoneyMoney je Position zusammengezählt). Frühere Planeinstellungen je Kategorie entfallen.
+- Excel: Kategorien unter jeder Position (eingeklappt).
+- Tabellen: senkrechtes Blättern verzieht in Safari nicht mehr die Spalten.
+
 ## 3.13.5 (2026-11-14 15:32)
 Kategorien neu: MoneyMoney ist die einzige Wahrheit, Kontor hilft beim Füllen der Lücken.
 - **Zuordnen trägt direkt in MoneyMoney ein** (nur das Kategoriefeld, direkt vorher geprüft; eine vorhandene Kategorie nur nach Rückfrage). Zur Auswahl stehen nur Kategorien aus MoneyMoney. Einmal am Mac einschalten.

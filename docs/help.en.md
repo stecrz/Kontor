@@ -191,15 +191,15 @@ Financial and real assets are split as in the Bundesbank's statistics: participa
 <a id="cash-flow"></a>
 ## Cash flow
 
-Where the money goes: income and expenses by category, investments (moves into portfolios and investments, contributions to companies), financing (repayment and interest per loan), valuation (value changes of portfolios) and “unclear”.
+Where the money goes: income and expenses by fixed **positions** (work, revenue, rental income, housing, staff, taxes …), investments (saving & investing, contributions to companies), financing (repayment and interest per loan), valuation (value changes of portfolios) and “unclear”. The outline is the same for every area – private, partnership or limited company; a position shows only where there is money in it. ▸ in front of a position shows the categories in it.
 
 ![Cash flow](img/en/cash_flow.png)
 
 Every transaction counts exactly once. Transfers between your own accounts never count as income or expense: Kontor finds the counter-booking of each – by the mark of its own bookings (the repayment names the payment), by the counterparty IBAN (same amount, at most five days apart) or, for the category “Umbuchung” and for manual accounts, by the amount (at most three days). Payments into another area are **contributions or withdrawals**; if you hold a participation in a company, the difference between the money paid in and the value of the participation shows under valuation. Accounts in a foreign currency are not converted; the balance sheet shows them outside net worth.
 
-Two **check rows** compare every month with the balance sheet: the cash flow with the change of the liquid accounts, the rows without “reallocation” with the change in net worth. ✓ means: matches to the cent. A difference names its reason when you hover over it – for example money in transit to a loan over the month end, or a category you set to “Ignore”. What Kontor cannot assign with certainty – such as a transfer without a counter-booking – shows under “unclear” and counts with its amount.
+Two **check rows** compare every month with the balance sheet: the cash flow with the change of the liquid accounts, the rows without “reallocation” with the change in net worth. ✓ means: matches to the cent. A difference names its reason when you hover over it – for example money in transit to a loan over the month end, or a category set to “Leave out”. What Kontor cannot assign with certainty – such as a transfer without a counter-booking – shows under “unclear” and counts with its amount.
 
-Which categories appear as separate rows is set under [Categories → Selection](#categories-selection); which parent category belongs to which section under Categories → Cash flow mapping.
+Which position a MoneyMoney category counts in, Kontor proposes from its name; you change it under [Categories → Cash flow positions](#categories-positions). Transactions **without a category** are estimated: first from your categories so far (same counterparty, same purpose), otherwise from words in name, purpose and booking text (such as “Finanzamt”, “Gehalt”, card settlements). They show in the position as “no category, estimated”; what cannot be estimated shows under “(no category)”. The more you assign, the more exact it gets – it is not required, not even for a limited company with many bookings. Kontor enters nothing in MoneyMoney for this.
 
 <a id="categories"></a>
 ## Categories
@@ -210,7 +210,7 @@ Which categories appear as separate rows is set under [Categories → Selection]
 |---|---|
 | create and rename categories | assign what has no category yet – Kontor enters it in MoneyMoney |
 | fixed rules (settings of the category → rules) | propose rules for you to paste there |
-| | decide how categories show in cash flow (Selection, Cash flow mapping) |
+| | decide which cash flow position a category counts in |
 
 **Assign** shows all transactions of your bank accounts without a category in MoneyMoney, grouped by counterparty (loans, participations and other accounts count by their position, not their category). The suggestion comes from your categories so far; Kontor never takes it over by itself. “Assign” enters the category in MoneyMoney, “Take all suggestions” all at once. Under “Transactions” you deselect single ones – for example for a shop where you buy different things. You choose only from categories that exist in MoneyMoney – create a new one there. Single transactions can also be assigned under Transactions & receipts (click a row or select several); there you can also change a category from MoneyMoney (after asking). In cash flow, “assign” next to “(no category)” leads straight here.
 
@@ -233,17 +233,19 @@ Turn it on once (under Categories or Settings → General, only at the Mac). Saf
 - An existing other category is replaced only after asking; otherwise it stays.
 - Kontor never creates or changes categories or rules in MoneyMoney.
 
-<a id="categories-selection"></a>
-### Selection: how categories show in cash flow
+<a id="categories-positions"></a>
+### Cash flow positions
 
-Under Categories → Selection you decide for each MoneyMoney category:
+The cash flow has a fixed outline; your MoneyMoney categories count in it. Categories → Cash flow positions lists every category with transactions, the sum of the last twelve months and its position:
 
-- **Separate row** – appears as its own row in cash flow and planning.
-- **Into parent category** – counts with its subcategories in the parent category (only cash flow and planning; tax still uses the exact category).
+- **Automatic** – like the category above it, otherwise Kontor's proposal from the name (such as “Einkommen / Rückzahlung Finanzamt” → refunds, “Sparen” → saving & investing).
+- A position you choose also counts for all categories below it that have none of their own.
+- **Saving & investing** is no expense; next to it you choose the account the money goes into. **Transfer** (between own accounts) looks for the counter-booking, **Leave out** takes the category out (the check row names it).
+- A property's categories (Real estate → category) have rows of their own in cash flow, “rent” and “costs”.
 
-“Only top level as rows” tidies up the cash flow with one click. Under Cash flow mapping you decide which section a parent category belongs to. Nothing changes in MoneyMoney.
+Planning works on the positions; a MoneyMoney budget counts for the position of its category. Nothing changes in MoneyMoney.
 
-![Category selection](img/en/category_selection.png)
+![Cash flow positions](img/en/category_positions.png)
 
 <a id="planning"></a>
 ## Planning

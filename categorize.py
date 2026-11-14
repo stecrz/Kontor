@@ -31,13 +31,10 @@ def empty() -> dict:
 
 
 def load(store) -> dict:
-    """The stored state; a file of an older version (Kontor's own categories before 3.13.5) starts empty -- only how the
-    categories show in the cash flow (verwendung) stays."""
+    """The stored state; a file of an older version (Kontor's own categories before 3.13.5) starts empty."""
     d = store.load(FILE, None) or {}
     if d.get("version") != 3:
-        e = empty()
-        set_usage(e, d.get("verwendung") or {})
-        return e
+        return empty()
     d.setdefault("zuordnung", {}); d.setdefault("regeln", [])
     return d
 
@@ -63,34 +60,6 @@ def save(store, d: dict) -> None:
 def digest(d: dict) -> Dict[str, str]:
     """A fingerprint per part (assignments, rules ...): which parts changed since it was read."""
     return {k: hashlib.sha1(json.dumps(v, sort_keys=True, default=str).encode()).hexdigest() for k, v in d.items() if not k.startswith("_")}
-
-
-# ---------------------------------------------------------------------------
-# How MoneyMoney's categories show in the cash flow (Kategorien -> Auswahl): fehlt/"zeile": a row of its own,
-# "zusammen": counts with its subcategories in the parent category (cash flow and planning only)
-# ---------------------------------------------------------------------------
-VERWENDUNG = ("zeile", "zusammen")
-
-
-def set_usage(d: dict, usage: Dict[str, str]) -> None:
-    clean = {}
-    for k, v in (usage or {}).items():
-        p = norm_cat(k)
-        if not p or v != "zusammen" or " / " not in p:          # the top level has no parent to be combined into
-            continue
-        clean[p] = v
-    d["verwendung"] = clean
-
-
-def fold(usage: Dict[str, str], path: str) -> str:
-    """Row in the cash flow: the first category in the path that is to be combined counts in its parent category."""
-    if not usage or " / " not in path:
-        return path
-    parts = path.split(" / ")
-    for i in range(1, len(parts)):
-        if usage.get(" / ".join(parts[:i + 1])) == "zusammen":
-            return " / ".join(parts[:i])
-    return path
 
 
 # ---------------------------------------------------------------------------

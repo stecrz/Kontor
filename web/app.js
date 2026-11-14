@@ -108,7 +108,7 @@ const H = {
   port: t('port_tip'),
   update_quelle: t('update_quelle_tip'),
   pruefen: t('pruefen_tip'),
-  kat_auswahl: t('kat_auswahl_tip'),
+  position_kat: t('position_kat_tip'),
   voll_lesen: t('voll_lesen_tip'),
   kennung: t('interne_kennung_des_bereichs_wird'),
   intervall: t('der_dienst_liest_alle_n'),
@@ -165,7 +165,7 @@ const H = {
 };
 const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   konten_zuordnung: 'accounts', inaktiv: 'accounts', verlauf_kurz: 'history', verlauf: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
-  zuordnen: 'categories', regeln_mm: 'categories-rules', mm_cat: 'categories-write-back', kat_auswahl: 'categories-selection',
+  zuordnen: 'categories', regeln_mm: 'categories-rules', mm_cat: 'categories-write-back', position_kat: 'categories-positions',
   abgleich: 'sync', ab_art: 'sync', voll_lesen: 'sync', monate_zurueck: 'sync', abruf: 'sync', intervall: 'sync',
   bch: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', regel_darlehen_h: 'rules-loans', regel_gesellschaften_h: 'rules-companies',
   darlehen_iban: 'rules-loans', darlehen_konto: 'rules-loans', darlehen_quelle: 'rules-loans', zinsmodell: 'rules-loans', satz: 'rules-loans', basis_override: 'rules-loans',
@@ -222,7 +222,7 @@ document.addEventListener('click', e => {
   window.addEventListener('scroll', hide, true); window.addEventListener('resize', hide);
 })();
 
-const S = { tab: 'overview', modus: 'monate', plan: true, real: false, alle: false, collapsed: {}, csrf: null, bereich: null,
+const S = { tab: 'overview', modus: 'monate', plan: true, real: false, alle: false, collapsed: {}, offen: {}, csrf: null, bereich: null,
             DATA: null, CFG: null, KONTEN: [], KATS: [], STATUS: null, steuerJahr: null, steuerEnt: null, vorschlag: false,
             uf: {entitaet: '', jahr: '', konto: '', q: '', ohne_beleg: false, ohne_kategorie: false, richtung: ''}, sel: new Set(), drawerTx: null };
 
@@ -813,7 +813,7 @@ const MODULES = [
   {id: 'areas', t: t('mod_areas'), d: t('welche_konten_gehoeren_zusammen_privat'), done: () => (S.CFG.bereiche || []).length > 0 || !!S.DATA},
   {id: 'accounts', t: t('mod_accounts'), d: t('jedes_konto_bestaetigen_bereich_und'), done: () => !!S.DATA && !((S.DATA.konten_neu || []).length)},
   {id: 'history', t: t('mod_history'), d: t('bisherigen_verlauf_aller_konten_einmal'), done: () => !!((S.STATUS || {}).moneymoney || {}).historie},
-  {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => !!((S.DATA && S.DATA.kategorien || {}).verwendung) || Object.keys((S.CFG.kapitalfluss || {}).kategorie_zuordnung || {}).length > 0, href: '#categories/selection', optional: true},
+  {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => Object.keys((S.CFG.kapitalfluss || {}).positionen || {}).length > 0, href: '#categories/positions', optional: true},
   {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.kategorien || {}).gesamt || {}).ohne), href: '#categories', optional: true},
   {id: 'rules', t: t('mod_rules'), d: t('darlehen_spiegeln_und_verzinsen_beteil'), done: () => (S.CFG.darlehen || []).length + (S.CFG.gesellschaften || []).length > 0, href: '#rules', optional: true},
   {id: 'properties', t: t('mod_properties'), d: t('kalkulationen_anlegen_mit_konten_und'), done: () => (S.CFG.immobilien || []).length > 0, href: '#properties', optional: true},
@@ -2583,12 +2583,30 @@ function snapLeft(w, target) {
   const b = ths.map(th => Math.round(colX(w, th) - sw)).find(v => v >= target - 1);
   return Math.max(0, Math.min(max, b == null ? max : b));
 }
+// Waagerecht rastet die Tabelle erst ein, wenn du aufgehört hast, waagerecht zu blättern – nicht per CSS-Einrasten: Safari
+// rastet dabei auch beim Blättern nach unten neu ein, und die Tabelle springt zur Seite.
+function snapNearest(w, x) {
+  const ths = $$('thead th', w).slice(1).filter(th => !th.classList.contains('snap-pad')), sw = $('thead th', w).offsetWidth;
+  const max = w.scrollWidth - w.clientWidth, starts = ths.map(th => Math.round(colX(w, th) - sw)).concat([max]);
+  return Math.max(0, Math.min(max, starts.reduce((a, v) => Math.abs(v - x) < Math.abs(a - x) ? v : a, 0)));
+}
 function snapTable(w) {
   const t = $('table', w), first = $('thead th', w); if (!t || !first) return;
   $$('.snap-pad', w).forEach(c => c.remove());
   w.classList.add('snap');
+  if (!w._snap) {
+    w._snap = {x: w.scrollLeft, t: null};
+    w.addEventListener('scroll', () => {
+      const st = w._snap; if (w.scrollLeft === st.x || st.busy) return;      // nur senkrecht geblättert: nichts tun
+      st.x = w.scrollLeft; clearTimeout(st.t);
+      st.t = setTimeout(() => {
+        const x = snapNearest(w, w.scrollLeft); if (Math.abs(x - w.scrollLeft) < 2) return;
+        st.busy = true; w.scrollTo({left: x, behavior: 'smooth'});
+        setTimeout(() => { st.busy = false; st.x = w.scrollLeft; }, 350);
+      }, 180);
+    }, {passive: true});
+  }
   const sw = first.offsetWidth, max = w.scrollWidth - w.clientWidth;
-  w.style.scrollPaddingLeft = sw + 'px';
   if (max <= 0) return;
   // Leerspalte am Ende, damit auch ganz rechts die erste sichtbare Spalte vollstaendig ist
   const starts = $$('thead th', w).slice(1).map(th => colX(w, th) - sw), b = starts.find(v => v >= max - 0.5);
@@ -2659,11 +2677,20 @@ function vKapitalfluss(editable) {
               <button class="save small" title="${t('uebernehmen')}">✓</button>${ov.size ? `<button class="small secondary reset-row" data-key="${esc(key)}" title="${t('alle_ueberschreibungen_loeschen')}">↺</button>` : ''}</div>`;
         }
         const zu = !editable && z.lbl && z.lbl[0] === 'cf_ohne_kategorie' ? ` <a href="#categories" class="small">${t('zuordnen')}</a>` : '';
-        h += `<tr class="${single ? 'ind1' : 'ind2'}" data-key="${esc(key)}"><td title="${esc(full)}">${esc(label)}${zu}${z.nw ? '' : `<span class="tag">${t('umschichtung')}</span>`}${editable && p.methode && p.methode !== 'darlehen' ? `<span class="tag">${METH[p.methode] || p.methode}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
+        const det = (z.details || []).length, open = det && S.offen[key];
+        const disc = det ? `<button class="disc" data-det="${esc(key)}" aria-expanded="${open ? 'true' : 'false'}" title="${t('kategorien_zeigen')}">${open ? '▾' : '▸'}</button>` : '';
+        h += `<tr class="${single ? 'ind1' : 'ind2'}${det ? ' has-det' : ''}" data-key="${esc(key)}"><td title="${esc(full)}">${disc}${esc(label)}${zu}${z.nw ? '' : `<span class="tag">${t('umschichtung')}</span>`}${editable && p.methode && p.methode !== 'darlehen' ? `<span class="tag">${METH[p.methode] || p.methode}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
            + vals.map((v, i) => {
                const c = C[i], isOv = c.plan && c.months.some(mm => ov.has(mm));
                const sug = (S.vorschlag && c.plan) ? `<div class="small muted">${F(sOf(z, c))}</div>` : '';
                return `<td class="${cls(v, c)}${editable && c.plan && !c.year ? ' editable' : ''}${isOv ? ' ov' : ''}" data-month="${c.key}" ${isOv ? `title="${t('vorschlag_0', F(sOf(z, c)))}"` : ''}>${F(v)}${sug}</td>`; }).join('') + '</tr>';
+        // MoneyMoney's categories inside the position: actual figures only (planning works on the position)
+        if (open) for (const d of z.details) {
+          const dv = C.map(c => c.plan || c.months.some(m => m > D.ist_bis) ? null : sumOver(d.werte, c.months));     // actual months only
+          if (!S.alle && dv.every(v => v == null || Math.abs(v) < 0.005)) continue;
+          const nm = d.kategorie ? esc(d.kategorie) : `<span class="tipped" data-tip="${esc(t('cf_geschaetzt_tip'))}" tabindex="0">${t('cf_geschaetzt')}</span>${editable ? '' : ` <a href="#categories" class="small">${t('zuordnen')}</a>`}`;
+          h += `<tr class="det ${single ? 'ind2' : 'ind3'}"><td title="${esc(d.kategorie)}">${nm}</td>${dv.map((v, i) => `<td class="${cls(v ?? null, C[i])}">${v == null ? '' : F(v)}</td>`).join('')}</tr>`;
+        }
       }
     }
   }
@@ -3428,78 +3455,73 @@ async function saveConfig(cfg, findingsEl, trotzdem) {
 // ---------------------------------------------------------------- Kategorien
 const subTabs = (base, items) => `<div class="tabs">${items.map(([k, l]) => `<button data-next="#${base}${k ? '/' + k : ''}" class="${S.sub === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
 async function vKategorien() {
-  // Reiter: Zuordnen (was in MoneyMoney noch keine Kategorie hat) · Regeln für MoneyMoney (Vorschläge) · Auswahl · Kapitalfluss-Zuordnung
+  // Reiter: Zuordnen (was in MoneyMoney noch keine Kategorie hat) · Regeln für MoneyMoney (Vorschläge) · Cashflow-Positionen
   const offen = ((S.DATA && S.DATA.kategorien || {}).gesamt || {}).ohne;
-  const body = S.sub === 'selection' ? (await loadKat(), vKategorienAuswahl()) : S.sub === 'rules' ? await vRegelVorschlaege()
-    : S.sub === 'cashflow' ? (await loadKat(), vKapitalflussZuordnung()) : await vZuordnen();
+  const body = S.sub === 'positions' ? await vPositionen() : S.sub === 'rules' ? await vRegelVorschlaege() : await vZuordnen();
   const nr = KZ.regeln ?? (KZ.offen || {}).regelvorschlaege;
-  const tabs = subTabs('categories', [['', t('zuordnen') + (offen ? ` (${offen})` : '')], ['rules', t('regeln_fuer_moneymoney') + (nr ? ` (${nr})` : '')], ['selection', t('kat_auswahl')], ['cashflow', t('kapitalfluss_zuordnung')]]);
+  const tabs = subTabs('categories', [['', t('zuordnen') + (offen ? ` (${offen})` : '')], ['rules', t('regeln_fuer_moneymoney') + (nr ? ` (${nr})` : '')], ['positions', t('cashflow_positionen')]]);
   return tabs + body;
 }
-function vKategorienAuswahl() {
-  // Je Kategorie aus MoneyMoney: eigene Zeile oder zur Oberkategorie zusammenfassen (nur Cashflow und Planung)
-  const v = (KZ.kat || {}).verwendung || {}, n = (KZ.kat || {}).anzahl || {};
-  const cats = S.KATS.filter(k => !k.standard);
-  if (!cats.length) return `<div class="card"><div class="d">${t('noch_keine_kategorien_geladen_abgleich')}</div></div>`;
-  const sum = p => Object.entries(n).reduce((s, [k, c]) => s + (k === p || k.startsWith(p + ' / ') ? c : 0), 0);    // mit Unterkategorien
-  let h = `<div class="note">${t('kat_auswahl_note', hq('kat_auswahl'))}</div>
-    <div class="toolbar"><button class="secondary small" id="ka-top">${t('nur_oberste_ebene')}</button><button class="secondary small" id="ka-alle">${t('alle_als_zeile')}</button><span class="sp"></span><button id="ka-save">${t('speichern')}</button></div>
-    <div class="wrap auto"><table class="plain ka-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num">${t('umsaetze_2')}</th><th>${t('in_kontor')}</th></tr></thead><tbody>`;
-  for (const k of cats) {
-    const p = k.pfad, root = !p.includes(' / '), cur = v[p] || 'zeile';
-    const opts = [['zeile', t('eigene_zeile')], ...(root ? [] : [['zusammen', t('zur_oberkategorie')]])];
-    h += `<tr data-p="${esc(p)}"><td style="padding-left:${10 + 18 * (p.split(' / ').length - 1)}px">${k.gruppe ? `<b>${esc(k.name)}</b>` : esc(k.name)}</td><td class="num small">${sum(p) || ''}</td>
-      <td><select class="ka-v">${opts.map(([val, l]) => `<option value="${val}" ${cur === val ? 'selected' : ''}>${l}</option>`).join('')}</select></td></tr>`;
-  }
+// Cashflow-Positionen: Kontor's fixed outline; each of MoneyMoney's categories counts in one position (Kontor proposes by
+// name, a choice counts for the categories below it too). A property's categories have their own rows.
+const POS_SEC = {Einnahmen: 'einnahmen', Ausgaben: 'ausgaben', Investitionen: 'sek_investitionen', Finanzierung: 'finanzierung'};
+const posLabel = k => t(`pos_${k}`);
+const OBJ_OUT = ['anlegen', 'tilgung', 'zinsen', 'ignorieren'];            // pos_<key>: every position has its text (tests: Positions)
+async function vPositionen() {
+  const d = KZ.pos = await api('/api/categories/positions');
+  if (!d.kategorien.length) return `<div class="card"><div class="d">${esc(d.hinweis || t('noch_keine_kategorien_geladen_abgleich'))}</div></div>`;
+  const secs = []; for (const [k, sec] of d.positionen) { if (k === 'ignorieren') continue; let g = secs.find(x => x[0] === sec); if (!g) secs.push(g = [sec, []]); g[1].push(k); }
+  const opts = sel => `<option value=""></option>` + secs.map(([sec, ks]) => `<optgroup label="${esc(t(POS_SEC[sec] || sec))}">${ks.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('')}</optgroup>`).join('')
+    + `<optgroup label="${esc(t('sonstiges'))}">${['umbuchung', 'ignorieren'].map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('')}</optgroup>`;
+  // a property's categories have its own rows (rent, costs); only saving, financing or leaving out takes them elsewhere
+  const objOpts = sel => `<option value=""></option>` + OBJ_OUT.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('');
+  let h = `<div class="toolbar"><span class="sp"></span><button id="kp-save" disabled>${t('speichern')}</button></div>
+    <div class="wrap auto"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')}</th></tr></thead><tbody>`;
+  d.kategorien.forEach((r, i) => {
+    const parent = (d.kategorien[i + 1] || {}).ebene > r.ebene, own = r.eigene || '';
+    h += `<tr data-p="${esc(r.pfad)}" data-v="${esc(r.vorschlag)}" data-init="${esc(own)}" data-konto="${esc(r.konto)}" data-own="${r.anzahl ? 1 : 0}"><td style="padding-left:${10 + 18 * r.ebene}px">${parent ? `<b>${esc(r.name)}</b>` : esc(r.name)}</td>
+      <td class="num small kp-n">${r.anzahl_alle || ''}</td><td class="num small kp-n ${r.summe_12m < 0 ? 'neg' : ''}">${r.summe_12m ? F0(r.summe_12m) : ''}</td>
+      <td><select class="kp-pos"${r.objekt ? ` data-obj="${esc(r.objekt)}"` : ''}>${r.objekt ? objOpts(own) : opts(own)}</select></td>
+      <td><select class="kp-konto">${acctOptions(r.konto, k => !k.gruppe && (k.depot || k.rolle === 'anlagen' || k.rolle === 'liquiditaet'))}</select></td></tr>`;
+  });
   return h + '</tbody></table></div>';
 }
-function bindKatAuswahl(main) {
-  const rows = $$('.ka-table tr[data-p]', main); if (!rows.length) return;
-  // Unterkategorien folgen einer Oberkategorie, die zusammengefasst wird
+function bindPositionen(main) {
+  const rows = $$('.kp-table tr[data-p]', main); if (!rows.length) return;
+  const by = Object.fromEntries(rows.map(r => [r.dataset.p, r]));
+  const own = r => ($('.kp-pos', r) || {}).value || '';
+  // without your choice: that of the nearest category above it, else Kontor's proposal
+  const inherited = r => { const parts = r.dataset.p.split(' / '); for (let i = parts.length - 1; i > 0; i--) { const up = by[parts.slice(0, i).join(' / ')]; if (up && own(up)) return own(up); } return ''; };
+  const auto = r => inherited(r) || r.dataset.v;
+  const save = $('#kp-save', main);
+  const acc = v => (v || '').split('|')[0].trim();               // an account by its id (a renamed account is no change)
   const upd = () => {
-    const val = Object.fromEntries(rows.map(r => [r.dataset.p, $('.ka-v', r).value]));
     rows.forEach(r => {
-      const parts = r.dataset.p.split(' / '); let inh = null;
-      for (let i = 1; i < parts.length && !inh; i++) { const a = val[parts.slice(0, i).join(' / ')]; if (a && a !== 'zeile') inh = a; }
-      const sel = $('.ka-v', r); r.classList.toggle('ka-inh', !!inh); sel.disabled = !!inh; sel.title = inh ? t('folgt_der_oberkategorie') : '';
+      const sel = $('.kp-pos', r); if (!sel) return;
+      let a = auto(r);
+      // a property's category leaves its rows for interest or a repayment, or for saving or leaving out that you chose
+      if (sel.dataset.obj && !(['tilgung', 'zinsen'].includes(a) || (inherited(r) && OBJ_OUT.includes(a)))) a = '';
+      const eff = own(r) || a;
+      sel.options[0].textContent = sel.dataset.obj && !a ? t('automatisch_0', t('immobilie_0', sel.dataset.obj)) : a ? t('automatisch_0', posLabel(a)) : t('automatisch_unter');
+      r.classList.toggle('kp-own', !!own(r));
+      const k = $('.kp-konto', r); k.classList.toggle('hidden', eff !== 'anlegen');      // counts for the categories below it too
     });
+    const dirty = rows.some(r => own(r) !== r.dataset.init || ($('.kp-konto', r) && acc($('.kp-konto', r).value) !== acc(r.dataset.konto)));
+    save.disabled = !dirty; DIRTY.on = dirty;
   };
-  rows.forEach(r => $('.ka-v', r).addEventListener('change', upd)); upd();
-  $('#ka-top', main).onclick = () => { rows.forEach(r => { const sel = $('.ka-v', r); if (r.dataset.p.split(' / ').length === 2 && sel.value === 'zeile') sel.value = 'zusammen'; }); upd(); };
-  $('#ka-alle', main).onclick = () => { rows.forEach(r => { $('.ka-v', r).value = 'zeile'; }); upd(); };
-  $('#ka-save', main).onclick = async () => {
-    const verwendung = {}; rows.forEach(r => { const sel = $('.ka-v', r); if (!sel.disabled && sel.value !== 'zeile') verwendung[r.dataset.p] = sel.value; });
-    try { const r = await api('/api/categories/usage', {verwendung}); toast(t('gespeichert')); KZ.kat = null; afterRebuild(r); route(); } catch (e) { toast(e.message, 6000); }
+  $('.kp-table', main).addEventListener('change', upd);
+  upd();
+  save.onclick = async () => {
+    const positionen = {}, konten = {};
+    rows.forEach(r => { if ($('.kp-pos', r) && own(r) !== r.dataset.init) positionen[r.dataset.p] = own(r); const k = $('.kp-konto', r); if (k && acc(k.value) !== acc(r.dataset.konto)) konten[r.dataset.p] = k.value; });
+    save.disabled = true;
+    try { const r = await api('/api/categories/positions', {positionen, konten}); S.CFG = r.config; DIRTY.on = false; toast(t('gespeichert')); afterRebuild(r); route(); }
+    catch (e) { save.disabled = false; toast(e.message, 6000); }
   };
-}
-function vKapitalflussZuordnung() {
-  const kf = S.CFG.kapitalfluss || {}, zu = kf.kategorie_zuordnung || {}, zk = kf.kategorie_zu_konto || {}, umb = kf.umbuchungs_kategorien || ['Umbuchung'];
-  const tops = S.KATS.filter(k => k.ebene === 0 && !k.standard).map(k => ({name: k.name, budget: k.budget}));
-  let h = `<div class="note">${t('zuordnung_der_oberkategorien_kontor_un')}` + (tops.length ? '' : ` <b>${t('noch_keine_kategorien_geladen_abgleich')}</b>`) + '</div>';
-  h += `<div class="wrap auto"><table class="plain"><thead><tr><th>${t('oberkategorie')}</th><th>${t('abschnitt')}</th><th>${t('kaeufe_fliessen_in_depot_anlage')}</th><th class="num">${t('budget_moneymoney')}</th></tr></thead><tbody>`;
-  for (const t of tops) {
-    const cur = zu[t.name] || '';
-    h += `<tr data-cat="${esc(t.name)}"><td>${esc(t.name)}${umb.includes(t.name) ? `<span class="tag">${tx('tag_umbuchung')}</span>` : ''}</td><td><select class="k-sek"><option value="">${tx('automatisch')}</option>${[['Einnahmen', 'sek_einnahmen'], ['Ausgaben', 'sek_ausgaben'], ['Investitionen', 'sek_investitionen'], ['Finanzierung/Tilgung', 'sek_fin_tilgung'], ['Finanzierung/Zinsen', 'sek_fin_zinsen'], ['Ignorieren', 'sek_ignorieren']].map(([x, k]) => `<option value="${x}" ${cur === x ? 'selected' : ''}>${tx(k)}</option>`).join('')}</select></td><td><select class="k-depot">${acctOptions(zk[t.name], k => !k.gruppe && (k.depot || k.rolle === 'anlagen'))}</select></td><td class="num small muted">${t.budget ? F0(t.budget.amount) + ' / ' + esc(t.budget.period || '') : ''}</td></tr>`;
-  }
-  h += '</tbody></table></div>';
-  h += `<div class="form" style="margin-top:12px"><label>${t('umbuchungs_kategorien')}</label><input type="text" id="k-umb" value="${esc(umb.join('; '))}"></div>`;
-  h += `<div class="actions"><button id="save-kats">${t('speichern')}</button></div><div id="findings-k" class="findings"></div>`;
-  const have = new Set(S.KATS.map(k => k.pfad));
-  const rec = [
-    ['Finanzierung', t('oberkategorie_fuer_zins_und_tilgungsbu')],
-    ['Finanzierung / Zinsen', t('zinsbuchungen_der_darlehensregeln_dann')],
-    ['Finanzierung / Tilgung', t('zahlungen_an_private_darlehensgeber')],
-    ['Steuern', t('einkommensteuer_vorauszahlungen_und_na')],
-    ['Einkommen / Gehalt', t('anlage_n')], ['Einkommen / Kapitalerträge', t('anlage_kap_zinsen_dividenden')],
-    ['Einkommen / Ausschüttungen', t('entnahmen_ausschuettungen_aus_beteilig')],
-    [(S.CFG.steuer && S.CFG.steuer.vermietung_kategorie) || 'Vermietung', t('oberkategorie_darunter_je_objekt_miete')],
-  ].filter(([p]) => !have.has(p));
-  if (rec.length && tops.length) h += `<h2>${t('empfohlene_ergaenzungen')} <span class="x">${t('in_moneymoney_anlegen_bestehende_buchu')}</span></h2><div class="wrap auto"><table class="plain"><thead><tr><th>${t('kategorie')}</th><th>${t('zweck')}</th></tr></thead><tbody>` + rec.map(([p, z]) => `<tr><td>${esc(p)}</td><td>${esc(z)}</td></tr>`).join('') + '</tbody></table></div>';
-  return h;
 }
 
 // ---------------------------------------------------------------- Zuordnen: Kategorien kommen aus MoneyMoney, Kontor trägt dort ein
-const KZ = {jahr: '', bereich: '', min: '', open: {}, aus: {}, kat: null, offen: null, regeln: null};
+const KZ = {jahr: '', bereich: '', min: '', open: {}, aus: {}, pos: null, offen: null, regeln: null};
 async function assignCats(ids, kat, extra = {}) {
   // Kontor trägt die Kategorie in MoneyMoney ein (vorher geprüft), in Teilen zu höchstens 2000 Umsätzen. Steht dort schon eine
   // andere (nicht von Kontor gesetzte): nachfragen, ob sie ersetzt werden soll – sonst bleibt sie (MoneyMoney ist maßgeblich).
@@ -3538,7 +3560,6 @@ function assignMsg(r) {
   if (m.wartet) p.push(t('0_in_moneymoney_abweichend', m.wartet));
   return p.join(' · ') || t('nichts_eingetragen');
 }
-async function loadKat() { KZ.kat = await api('/api/categories/kontor'); return KZ.kat; }
 // Kategorien zum Zuordnen: die aus MoneyMoney (keine Ordner, nicht „Unkategorisiert“)
 const katList = id => `<datalist id="${id}">${(S.KATS || []).filter(k => !k.gruppe && !k.standard).map(k => `<option value="${esc(k.pfad)}">`).join('')}</datalist>`;
 function mmOffBanner(lokal) {
@@ -3837,7 +3858,7 @@ function vSicherung() {
   ${S.STATUS.lokal ? `<div class="row tight"><input type="password" id="bk-pw" placeholder="${t('passwort_fuer_die_sicherung')}" autocomplete="new-password" style="width:230px"><input type="password" id="bk-pw2" placeholder="${t('ph_passwort_wiederholen')}" autocomplete="new-password" style="width:230px"><button id="bk-save" class="secondary">${t('sicherung_verschluesselt_herunterladen')}</button></div><div class="small muted">${t('sicherung_passwort_hinweis')}</div>` : `<div class="small muted">${t('nur_am_mac')}</div>`}
   <h2>${t('einstellungspaket')} ${hq('paket')}</h2><div class="note">${t('paket_text', `<code>${t('name_kontor_json')}</code>`)}</div>
   <div class="row tight"><label class="chk">${t('name')} <input type="text" id="pk-name" value="Kontor-Einstellungen"></label><button id="pk-export" class="secondary">${t('paket_herunterladen')}</button></div>
-  <div class="small muted">${t('aktuell_0_darlehen_1_beteiligungen', (C.darlehen || []).length, (C.gesellschaften || []).length, Object.keys((C.kapitalfluss || {}).kategorie_zuordnung || {}).length)}</div>
+  <div class="small muted">${t('aktuell_0_darlehen_1_beteiligungen', (C.darlehen || []).length, (C.gesellschaften || []).length, Object.keys((C.kapitalfluss || {}).positionen || {}).length)}</div>
   <h2>${t('datei_laden')}</h2><div class="drop" id="pk-drop">${t('sicherung_hierher_ziehen')}<br><button id="pk-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button></div><div id="pk-preview"></div>
   ${vEinstellungenDaten()}
   <h2>${t('zuruecksetzen_h')}</h2><div class="note">${t('zuruecksetzen_text')}</div>
@@ -3847,7 +3868,7 @@ function pkgPreview() {
   const el = $('#pk-preview'); if (!PKG) { el.innerHTML = ''; return; }
   const c = PKG.config || {};
   let h = `<div class="card" style="margin-top:12px"><h3>${esc(PKG.name || t('paket'))} <span class="muted">${t('version_0_1', esc(PKG.version || '?'), esc(PKG.erstellt || ''))}</span></h3>
-    <div class="small">${t('0_darlehen_1_beteiligungen_2', (c.darlehen || []).length, (c.gesellschaften || []).length, Object.keys((c.kapitalfluss || {}).kategorie_zuordnung || {}).length, Object.keys((c.steuer || {}).positionen || {}).length, PKG.plan ? t('planung_enthalten') : '')}</div>
+    <div class="small">${t('0_darlehen_1_beteiligungen_2', (c.darlehen || []).length, (c.gesellschaften || []).length, Object.keys((c.kapitalfluss || {}).positionen || {}).length, Object.keys((c.steuer || {}).positionen || {}).length, PKG.plan ? t('planung_enthalten') : '')}</div>
     <div class="row tight" style="margin-top:8px"><div class="seg" id="pk-mode"><button data-m="ergaenzen" class="on">${t('ergaenzen_regeln_hinzufuegen_zuordnung')}</button><button data-m="ersetzen">${t('ersetzen_vorhandene_regeln_verwerfen')}</button></div>${PKG.plan ? `<label class="chk"><input type="checkbox" id="pk-withplan"> ${t('planung_uebernehmen')}</label>` : ''}<button id="pk-import" class="small">${t('uebernehmen')}</button></div>`;
   if (PKG_UNRES && PKG_UNRES.length) {
     h += `<h3 style="margin-top:12px">${t('nicht_gefundene_konten_zuordnen')}</h3><div class="list">` + PKG_UNRES.map((u, i) => `<div class="row tight"><span style="min-width:280px"><b>${esc(u.label)}</b> <span class="small muted">(${esc(u.feld)})</span></span><select class="pk-map" data-ref="${esc(u.ref)}">${acctOptions('')}</select></div>`).join('') + `</div><div class="row tight"><button id="pk-import2" class="small">${t('mit_zuordnung_uebernehmen')}</button><button id="pk-force" class="small secondary">${t('ohne_zuordnung_uebernehmen_namen_bleib')}</button></div>`;
@@ -4056,7 +4077,7 @@ async function route() {
     guardDirty(main);
     vbPoll(); mmhPoll();
     if (S.tab === 'properties') bindImmo(main);
-    if (S.tab === 'categories') { bindZuordnen(main); bindRegelVorschlaege(main); bindKatAuswahl(main); }
+    if (S.tab === 'categories') { bindZuordnen(main); bindRegelVorschlaege(main); bindPositionen(main); }
     if (S.tab === 'settings' && S.sub === 'access') bindZugang(main);
     if (S.tab === 'help') bindHilfe(main);
   } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== 'nicht angemeldet') main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" onclick="route()">${t('erneut_versuchen')}</button></div>`; }
@@ -4145,6 +4166,7 @@ function bind(main) {
   const pa = $('#pos-all', main); if (pa) pa.addEventListener('click', () => { const D = B(), pos = D.bilanz.zeilen.filter(r => r.gruppe), open = !pos.every(r => S.posOpen[r.rolle]); pos.forEach(r => { S.posOpen[r.rolle] = open; }); route(); });
   $$('[data-dep]', main).forEach(el => el.addEventListener('click', e => { e.stopPropagation(); S.depOpen = S.depOpen || {}; S.depOpen[el.dataset.dep] = !S.depOpen[el.dataset.dep]; route(); }));
   $$('tr.sub[data-gid]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.gid] = !S.collapsed[tr.dataset.gid]; route(); }));
+  $$('button.disc[data-det]', main).forEach(b => b.addEventListener('click', e => { e.stopPropagation(); S.offen[b.dataset.det] = !S.offen[b.dataset.det]; route(); }));
   $$('.card[data-b]', main).forEach(c => c.addEventListener('click', () => { S.bereich = c.dataset.b; bereichSeg(); route(); }));
   // Waagerecht: aktuelle Spalte (Monat bzw. Jahr) rechts im Blick, ältere Jahre links davon; Plan-Spalten rechts anschließend
   if (['balance', 'cashflow', 'planning'].includes(S.tab)) $$('.wrap', main).forEach((w, k) => {
@@ -4399,15 +4421,6 @@ function bind(main) {
     preview();
   }
   bindDel(main);
-
-  // Kategorien
-  const sk = $('#save-kats', main); if (sk) sk.addEventListener('click', () => {
-    const cfg = JSON.parse(JSON.stringify(S.CFG)); const kf = cfg.kapitalfluss = cfg.kapitalfluss || {};
-    kf.kategorie_zuordnung = {}; kf.kategorie_zu_konto = {};
-    $$('tr[data-cat]', main).forEach(tr => { const c = tr.dataset.cat; if ($('.k-sek', tr).value) kf.kategorie_zuordnung[c] = $('.k-sek', tr).value; if ($('.k-depot', tr).value) kf.kategorie_zu_konto[c] = $('.k-depot', tr).value; });
-    kf.umbuchungs_kategorien = $('#k-umb').value.split(';').map(x => x.trim()).filter(Boolean);
-    saveConfig(cfg, $('#findings-k'));
-  });
 
   // Einstellungen
   const ss = $('#save-settings', main); if (ss) ss.addEventListener('click', () => { try { saveConfig(collectSettings(), $('#findings-e')); } catch (e) { toast(e.message, 6000); } });

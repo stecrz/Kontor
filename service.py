@@ -43,7 +43,7 @@ import categorize
 import updates
 from receipts import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (REPORT_LOCK, RUN_LOCK, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, fix_start_dates, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+from core import (REPORT_LOCK, RUN_LOCK, positions_overview, save_positions, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, fix_start_dates, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, migrate_booking_state, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
@@ -1221,13 +1221,20 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
 
     if was in ("cashflow", "planning"):
         cols = columns(True)
-        rows, bold = [], []
+        rows, bold, levels, hidden = [], [], [], []
+
+        def line(r, level=0, hide=False):
+            rows.append(r); levels.append(level)
+            if hide:
+                hidden.append(len(rows) - 1)
         for sek in b.get("kapitalfluss", {}).get("sektionen", []):
-            rows.append([tr(SECTION_KEYS[sek["name"]]) if sek["name"] in SECTION_KEYS else sek["name"]] + [None] * len(cols)); bold.append(len(rows) - 1)
+            line([tr(SECTION_KEYS[sek["name"]]) if sek["name"] in SECTION_KEYS else sek["name"]] + [None] * len(cols)); bold.append(len(rows) - 1)
             for z in sek["zeilen"]:
                 allv = dict(z["werte"]); allv.update((z.get("plan") or {}).get("werte", {}))
                 label = "    " + (tr(*z["lbl"]) if z.get("lbl") else z["zeile"]) + ("" if z.get("nw") else tr("x_umschichtung"))
-                rows.append([label] + [round(sum(allv.get(m, 0.0) for m in ms), 2) for _, ms, _p in cols])
+                line([label] + [round(sum(allv.get(m, 0.0) for m in ms), 2) for _, ms, _p in cols])
+                for d in z.get("details") or []:             # the categories inside a position (collapsed; actual figures only)
+                    line(["        " + (d["kategorie"] or tr("cf_geschaetzt"))] + [None if p_ else round(sum(d["werte"].get(m, 0.0) for m in ms), 2) for _, ms, p_ in cols], 1, True)
         sums = b.get("kapitalfluss", {}).get("summen", {})
         ue = b.get("kapitalfluss", {}).get("ueberleitung", {}) or {}
         for k, label in (("Operativ", tr("x_operativ")), ("Cashflow", tr("x_cashflow_gesamt")), ("Nettovermoegen_delta", tr("s_nettovermoegensaenderung"))):
@@ -1244,7 +1251,8 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
                     return round(sum(offs), 2) if offs else 0.0
                 rows.append([tr(check[1])] + [cell(ms, p_) for _, ms, p_ in cols])
         head = [tr("x_position")] + [c[0] + (tr("x_plan_suffix") if c[2] else "") for c in cols]
-        sheets = [Sheet(tr("x_planung" if was == "planning" else "x_kapitalfluss") + " " + name, head, rows, bold_rows=bold)]
+        levels += [0] * (len(rows) - len(levels))
+        sheets = [Sheet(tr("x_planung" if was == "planning" else "x_kapitalfluss") + " " + name, head, rows, bold_rows=bold, levels=levels, hidden_rows=hidden)]
         if was == "planning":
             pr = b.get("bilanz", {}).get("projektion", {})
             pcols = [c for c in cols if c[2]]
@@ -1601,15 +1609,10 @@ def make_handler(app: App):
             if path == "/api/history/mm-status":
                 st = app.store.load_shared("state.json", {}) or {}
                 return self._json(200, dict(app.mmh, letzte=st.get("mm_verlauf"), moneymoney_laeuft=is_running(), lokal=self._is_local(s)))
-            if path == "/api/categories/kontor":
-                kat = categorize.load(app.store)
-                anzahl: Dict[str, int] = {}                # transactions per category in MoneyMoney (for the selection)
-                for t in (app.ledger.txs if app.ledger is not None else []):
-                    if t.id > 0:
-                        p = categorize.mm_of(t)
-                        if p:
-                            anzahl[p] = anzahl.get(p, 0) + 1
-                return self._json(200, {"verwendung": kat.get("verwendung") or {}, "anzahl": anzahl})
+            if path == "/api/categories/positions":
+                if app.ledger is None:
+                    return self._json(200, {"kategorien": [], "positionen": [], "hinweis": tr("s_noch_kein_lauf_moneymoney_lesen")})
+                return self._json(200, positions_overview(app.ledger, app.config, app.categories_raw, date.today()))
             if path == "/api/categories/unassigned":
                 if app.ledger is None:
                     return self._json(200, {"offen": 0, "gruppen": [], "gruppen_gesamt": 0, "hinweis": tr("s_noch_kein_lauf_moneymoney_lesen")})
@@ -2460,14 +2463,16 @@ def make_handler(app: App):
                         kat["regel_erledigt"] = sorted(set(kat.get("regel_erledigt") or []) | {key})[-500:]
                         categorize.save(app.store, kat)
                 return self._json(200, {"ok": True})
-            if path == "/api/categories/usage":
-                with categorize.LOCK:
-                    kat = categorize.load(app.store)
-                    categorize.set_usage(kat, body.get("verwendung") or {})
-                    categorize.save(app.store, kat)
-                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund=tr("s_grund_kategorien_auswahl")) if app.ledger is not None else (False, None)
-                log.info("Category usage saved: %d combined", len(kat["verwendung"]))
-                return self._json(200, {"ok": True, "verwendung": kat["verwendung"], "bericht": ok})
+            if path == "/api/categories/positions":
+                # your cash flow positions for MoneyMoney's categories (settings: kapitalfluss), then the report anew
+                try:
+                    cfg = save_positions(app.config, body, app.ledger)
+                except KeyError as e:
+                    return self._json(400, {"fehler": str(e).strip("'\"")})
+                app.save_config(cfg)
+                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund=tr("s_grund_positionen")) if app.ledger is not None else (False, None)
+                log.info("Cash flow positions saved: %d chosen", len(app.config["kapitalfluss"].get("positionen") or {}))
+                return self._json(200, {"ok": True, "bericht": ok, "config": app.config})
             if path == "/api/categories/settings":
                 if "mm_schreiben" not in body:
                     raise ValueError("mm_schreiben")

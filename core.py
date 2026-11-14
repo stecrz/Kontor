@@ -13,7 +13,7 @@ import platform
 import re
 import threading
 import traceback
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -22,7 +22,7 @@ from model import Account, Ledger, Tx, accounts_from_export, add_months, canon_t
 import mm_categories
 import realestate
 import categorize
-from report import ROLES, account_roles, build_dataset, equity_ratio, holding_key
+from report import POS, ROLES, account_roles, build_dataset, equity_ratio, holding_key, my_positions
 import rules
 from rules import Proposal, parse_start, plan_all
 from storage import Store
@@ -42,7 +42,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "immobilien": [],
     "bilanz": {"monate_zurueck": 0, "rollen": {}, "verlauf": {}, "illiquide_rollen": ["beteiligungen", "immobilien", "sachwerte"],
                "illiquide_konten": [], "inaktiv_monate": 12, "ausgeblendet": [], "immer_anzeigen": [], "ansicht": "positionen"},
-    "kapitalfluss": {"kategorie_zuordnung": {}, "kategorie_zu_konto": {},
+    "kapitalfluss": {"positionen": {}, "kategorie_zu_konto": {},
                      "umbuchungs_kategorien": ["Umbuchung"], "umbuchung_paarung": True, "paarung_manuelle_konten": True},
     "steuer": {"vermietung_kategorie": "Vermietung", "objekt_darlehen": {}, "afa": {}, "positionen": {}, "entitaeten": []},
     "belege": {"ordner": "~/Documents/Kontor-Belege", "unterordner": "{jahr}", "kommentar_schreiben": False, "ordner_bestaetigt": False},
@@ -174,6 +174,11 @@ def merged_config(cfg: Optional[dict]) -> dict:
     for k in ("beteiligungen", "saldo_spiegel"):          # replaced by gesellschaften (3.12.18)
         out.pop(k, None)
     out["kapitalfluss"].pop("beteiligungs_gruppen", None)
+    old = out["kapitalfluss"].pop("kategorie_zuordnung", None)    # sections per category before 3.13.6 -> positions
+    if isinstance(old, dict) and not out["kapitalfluss"].get("positionen"):
+        conv = {"Investitionen": "anlegen", "Finanzierung/Tilgung": "tilgung", "Finanzierung": "tilgung", "Finanzierung/Zinsen": "zinsen",
+                "Ignorieren": "ignorieren"}
+        out["kapitalfluss"]["positionen"] = {norm_cat(str(k)): conv[v] for k, v in old.items() if v in conv and not str(k).startswith("_")}
     for i, b in enumerate(out["bereiche"]):
         b.setdefault("id", "b%d" % (i + 1))
         b.setdefault("name", "Bereich %d" % (i + 1))
@@ -637,6 +642,7 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         return a
 
     def cat(label, name):
+        name = name.replace(" / ", "\\") if name else name                # paths as Kontor's pages write them ("A / B")
         if name and categories and name not in cat_names and name.split("\\")[-1] not in cat_names:
             add("warnung", tr("s_s_kategorie_s_existiert_nicht") % (label, name))
 
@@ -746,11 +752,9 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         if im.get("kategorie"):
             cat("Immobilie %s" % n, str(im["kategorie"]).split("\\")[-1])
     kfc = config.get("kapitalfluss", {}) or {}
-    for k, v in (kfc.get("kategorie_zuordnung") or {}).items():
-        if k.startswith("_"):
-            continue
+    for k, v in (kfc.get("positionen") or {}).items():
         cat(tr("s_chk_kf_zuordnung"), k)
-        if str(v).split("/")[0] not in ("Einnahmen", "Ausgaben", "Investitionen", "Finanzierung"):
+        if v not in POS and v != "umbuchung":
             add("fehler", tr("s_kapitalfluss_zuordnung_s_s_unbekannt") % (k, v))
     for k, v in (kfc.get("kategorie_zu_konto") or {}).items():
         if not k.startswith("_"):
@@ -920,7 +924,7 @@ def budgets_from_categories(categories: List[dict]) -> Dict[str, float]:
             continue
         period = str(b.get("period") or "monthly").lower()
         monthly = amt / 12 if period.startswith("year") else amt / 3 if period.startswith("quart") else amt
-        path = str(c.get("path") or c.get("name") or "").replace("\\", " / ")
+        path = norm_cat(str(c.get("path") or c.get("name") or ""))
         if path and monthly:
             out[path] = round(monthly, 2)
     return out
@@ -1101,6 +1105,81 @@ def prepare_categories(store: Store, ledger: Ledger, config: dict, categories: O
     return kat
 
 
+def positions_overview(ledger: Ledger, config: dict, categories: List[dict], today: date) -> dict:
+    """Kategorien -> Cashflow-Positionen: each of MoneyMoney's categories with bookings in your areas (in MoneyMoney's order):
+    bookings, sum of the last 12 months, Kontor's proposal, what you chose, the property it belongs to, the account saving goes
+    into, transfer category."""
+    from report import POSITIONS, category_totals, propose_position, transfer_check
+    keep = {a.uuid for b in bereiche_for(ledger, config) for a in b["leaves"]}
+    since = (today.replace(day=28) if today.month == 2 and today.day == 29 else today).replace(year=today.year - 1) + timedelta(days=1)
+    count: Counter = Counter()
+    year: Dict[str, float] = defaultdict(float)
+    for t in ledger.txs:
+        p = norm_cat(t.category_path)
+        if t.booked and p and p not in categorize.STANDARD and t.account_uuid in keep:
+            count[p] += 1
+            if since <= t.booking_date <= today:
+                year[p] += t.amount
+    used = set()
+    for p in count:
+        parts = p.split(" / ")
+        used.update(" / ".join(parts[:i]) for i in range(1, len(parts) + 1))
+    order = [norm_cat(str(c.get("path") or c.get("name") or "")) for c in categories or [] if not c.get("default")]
+    paths = [p for p in dict.fromkeys(order) if p in used] + sorted(used - set(order))
+    totals = category_totals(ledger)
+    kf = config.get("kapitalfluss") or {}
+    names_only = dict(config, kapitalfluss=dict(kf, positionen={}))
+    by_name = transfer_check(names_only)                 # a transfer category by its name (Kontor's "proposal")
+    konto = {norm_cat(k): v for k, v in (kf.get("kategorie_zu_konto") or {}).items()}
+    objekte = {norm_cat(str(im.get("kategorie"))): str(im.get("name") or "") for im in config.get("immobilien") or []
+               if isinstance(im, dict) and im.get("kategorie")}
+    mine = my_positions(config)
+    out = []
+    for p in paths:
+        sub = [q for q in count if q == p or q.startswith(p + " / ")]
+        hits = [c for c in objekte if p == c or p.startswith(c + " / ")]
+        obj = objekte[max(hits, key=len)] if hits else None
+        if count.get(p):
+            prop = "umbuchung" if by_name(p) else propose_position(p, totals.get(p, 0.0) > 0)
+        else:                       # only a folder for others: what they get, if it is the same for all ("" = differs)
+            props = {"umbuchung" if by_name(q) else propose_position(q, totals.get(q, 0.0) > 0) for q in sub if count.get(q)}
+            prop = props.pop() if len(props) == 1 else ""
+        out.append({"pfad": p, "name": p.split(" / ")[-1], "ebene": p.count(" / "), "anzahl": count.get(p, 0),
+                    "anzahl_alle": sum(count[q] for q in sub), "summe_12m": round(sum(year.get(q, 0.0) for q in sub), 2),
+                    "vorschlag": prop,
+                    "eigene": mine.get(p), "konto": konto.get(p) or "", "objekt": obj})
+    return {"kategorien": out, "positionen": [[k, sec] for k, sec, _ in POSITIONS], "umbuchung": list(kf.get("umbuchungs_kategorien") or ["Umbuchung"])}
+
+
+def save_positions(config: dict, body: dict, ledger: Optional[Ledger]) -> dict:
+    """The settings with your positions (Kategorien -> Cashflow-Positionen): {pfad: position | "umbuchung" | "" (Kontor's
+    proposal)}, the account saving of a category goes into {pfad: account}. Only the categories sent change."""
+    cfg = copy.deepcopy(config)
+    kf = cfg.setdefault("kapitalfluss", {})
+    pos = {norm_cat(k): v for k, v in (kf.get("positionen") or {}).items()}
+    acc = {norm_cat(k): v for k, v in (kf.get("kategorie_zu_konto") or {}).items()}
+    for k, v in (body.get("positionen") or {}).items():
+        p = norm_cat(str(k))
+        if not p:
+            continue
+        if v not in POS and v not in ("", None, "umbuchung"):
+            raise ValueError(tr("s_kapitalfluss_zuordnung_s_s_unbekannt") % (p, v))
+        pos.pop(p, None)
+        if v:
+            pos[p] = v
+    for k, v in (body.get("konten") or {}).items():
+        p = norm_cat(str(k))
+        if not p:
+            continue
+        acc.pop(p, None)
+        if v:
+            if ledger is not None:
+                ledger.resolve(str(v), groups_ok=False)          # KeyError: unknown account
+            acc[p] = str(v)
+    kf["positionen"], kf["kategorie_zu_konto"] = pos, acc
+    return cfg
+
+
 def bank_accounts(roles: Dict[str, str]) -> set:
     """The accounts a category matters for (cash flow, tax): those with the position "liquidity"."""
     return {u for u, r in roles.items() if r == "liquiditaet"}
@@ -1181,9 +1260,8 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
     step = progress or (lambda f, t: None)
     step(0.05, tr("s_schritt_kategorien"))
     kat = prepare_categories(store, ledger, config, categories, lambda f, t: step(0.05 + 0.2 * f, t))
-    zus = {k: v for k, v in (kat.get("verwendung") or {}).items() if v == "zusammen"}
-    if zus:                       # Kapitalfluss-Zeilen: zusammengefasste Kategorien (nur fuer die Berechnung, nicht gespeichert)
-        config = dict(config, kapitalfluss=dict(config.get("kapitalfluss") or {}, _zusammen=zus))
+    if kat.get("_sig_of") is not kat.get("regeln"):          # the learned patterns (cash flow estimates; "_..." is not stored)
+        kat["_sig"], kat["_sig_of"] = categorize.digest({"regeln": kat.get("regeln") or []})["regeln"], kat.get("regeln")
     record_snapshot(state.setdefault("snapshots", {}), ledger.accounts.values(), today)
     record_holdings(state, getattr(ledger, "portfolios", None) or {}, today)
     # aus MoneyMoney uebernommene Kontostand-Verlaeufe (verschluesselt abgelegt, nur im Speicher in den Zustand gelegt)
@@ -1207,7 +1285,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         step(lo, tr("s_bereich_n") % b["name"])
         sub = (lambda f, t, lo=lo, hi=hi, name=b["name"]: step(lo + (hi - lo) * f, "Bereich %s: %s" % (name, t)))
         try:
-            ds = build_dataset(ledger, config, state, today, b, roles, warnings if (haupt and b["id"] == haupt["id"]) else [], sub)
+            ds = build_dataset(ledger, config, state, today, b, roles, warnings if (haupt and b["id"] == haupt["id"]) else [], sub, kat)
             ds["budgets"] = budgets
             datasets[b["id"]] = ds
         except Exception as e:
@@ -1262,7 +1340,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "warnungen": warnings,
         "kategorien": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles)))),
                                                                                   lambda: categorize.stats(kat, ledger, bank_accounts(roles))))[1],
-                           verwendung=len(kat.get("verwendung") or {})),
+                           positionen=len(my_positions(config))),
         "konten_neu": neu,
     }
     step(0.88, "Speichern")

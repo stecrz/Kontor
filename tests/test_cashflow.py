@@ -175,7 +175,7 @@ class CashflowCases(Reconciles):
         self.assertAddsUp(data)
         r = rows(data["Privat"])
         self.assertEqual(r["Darlehen an Freund / Rückzahlung"]["werte"]["2026-02"], -700.0)
-        self.assertEqual(r["Lebensmittel"]["werte"]["2026-02"], -700.0)
+        self.assertEqual(r["Lebenshaltung"]["werte"]["2026-02"], -700.0)
         self.assertEqual(r["Auto"]["werte"]["2026-02"], 700.0)
 
     def test_pending_refund_and_missing_counterpart(self):
@@ -187,8 +187,8 @@ class CashflowCases(Reconciles):
                       (6, "giro", date(2026, 3, 4), -80.0, {"cat": "Umbuchung"})])                          # no counterpart
         self.assertAddsUp(data)
         r = rows(data["Privat"])
-        self.assertEqual(r["Lebensmittel"]["werte"]["2026-02"], -70.0)
-        self.assertEqual(r["Lebensmittel"]["werte"]["2026-06"], 0.0)
+        self.assertEqual(r["Lebenshaltung"]["werte"]["2026-02"], -70.0)
+        self.assertEqual(r["Lebenshaltung"]["werte"]["2026-06"], 0.0)
         self.assertEqual(r["Umbuchung nach Tagesgeld ohne Gegenbuchung"]["werte"]["2026-03"], -250.0)
         self.assertEqual(r["Umbuchung ohne erkannten Partner"]["werte"]["2026-03"], -80.0)
         self.assertTrue(any("Umbuchung" in w for w in data["Privat"]["warnungen"]))
@@ -208,7 +208,7 @@ class CashflowCases(Reconciles):
         self.assertTrue(any("Dollarkonto (USD)" in w for w in p["warnungen"]))
 
     def test_ignored_category_is_a_named_reason(self):
-        cfg = {"kapitalfluss": {"kategorie_zuordnung": {"Privatentnahme": "Ignorieren"}}}
+        cfg = {"kapitalfluss": {"positionen": {"Privatentnahme": "ignorieren"}}}
         data = build([(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}),
                       (2, "giro", date(2026, 2, 3), -300.0, {"cat": "Privatentnahme"})], cfg)
         self.assertAddsUp(data, allow=("ue_ignoriert",))
@@ -305,6 +305,188 @@ class ReviewCases(Reconciles):
         self.assertFalse([x for x in data["Privat"]["bilanz"]["zeilen"] if x["id"] == "transit"])
 
 
+class Positions(Reconciles):
+    """Income and expenses by Kontor's fixed outline; MoneyMoney's categories inside, assigned once (proposed by name)."""
+
+    def test_proposals_by_name_and_direction(self):
+        import report as R
+        cases = {("Einkommen / Gehälter", True): "arbeit", ("Einkommen / Tantieme", True): "arbeit",
+                 ("Einkommen / Rückzahlung Finanzamt", True): "erstattungen", ("Einkommen / Zinsen", True): "kapitalertraege",
+                 ("Sparen / Unternehmenskauf", False): "anlegen", ("Wohnen / Miete", False): "wohnen", ("Mieteinnahmen", True): "vermietung",
+                 ("Vermietung / Parkweg / Hausgeld", False): "objektkosten", ("Steuern / Einkommensteuer", False): "steuern",
+                 ("Versicherungen / Kfz-Versicherung", False): "versicherungen", ("Steuerberater", False): "verwaltung",
+                 ("Kredit / Zinsen", False): "zinsen", ("Lebensmittel", False): "lebenshaltung", ("Irgendwas", True): "sonstige_einnahmen",
+                 ("Irgendwas", False): "sonstige_ausgaben", ("Immobilienkauf", False): "anlegen", ("Beteiligung", False): "anlegen",
+                 ("Finanzierung", False): "tilgung", ("Vermietung / Parkweg / Zinsen", False): "zinsen", ("Geldautomat", False): "sonstige_ausgaben",
+                 ("Krankenkasse", True): "erstattungen", ("Sparkasse", False): "sonstige_ausgaben", ("Laborkosten", False): "sonstige_ausgaben",
+                 ("Gehälter", False): "personal", ("Abos", False): "freizeit", ("Wareneinkauf", False): "wareneinkauf"}
+        for (path, inc), want in cases.items():
+            self.assertEqual(R.propose_position(path, inc), want, path)
+
+    def test_every_position_has_its_text(self):
+        import json
+        import report as R
+        txt = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "i18n.js"), encoding="utf-8").read()
+        cat = json.loads(txt[txt.index("{"):txt.rindex("}") + 1])
+        self.assertFalse([k for k, _s, _r in R.POSITIONS + [("umbuchung", "", ""), ("einnahmen", "", ""), ("ausgaben", "", "")] if "pos_" + k not in cat])
+
+    def test_your_choice_counts_for_the_category_and_below(self):
+        cfg = {"kapitalfluss": {"positionen": {"Einkommen": "arbeit", "Einkommen / Zinsen": "kapitalertraege", "Sparen": "anlegen"}}}
+        data = build([(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Einkommen\\Gehälter"}),
+                      (2, "giro", date(2026, 2, 5), 500.0, {"cat": "Einkommen\\Tantieme"}),
+                      (3, "giro", date(2026, 2, 6), 12.0, {"cat": "Einkommen\\Zinsen"}),
+                      (4, "giro", date(2026, 2, 7), -800.0, {"cat": "Sparen\\Unternehmenskauf"}),
+                      (5, "giro", date(2026, 2, 8), -40.0, {"cat": "Haushalt\\Drogerie"})], cfg)
+        self.assertAddsUp(data)
+        r = rows(data["Privat"])
+        self.assertEqual(r["Arbeit"]["werte"]["2026-02"], 500.0)
+        self.assertEqual({d["kategorie"] for d in r["Arbeit"]["details"]}, {"Einkommen / Gehälter", "Einkommen / Tantieme"})
+        self.assertEqual(r["Kapitalerträge"]["werte"]["2026-02"], 12.0)
+        self.assertEqual(r["Sparen / Unternehmenskauf"]["gruppe"], "Sparen & Anlegen")           # saving: no expense
+        self.assertEqual(r["Lebenshaltung"]["werte"]["2026-02"], -40.0)                         # proposed by name
+        order = [z["zeile"] for z in data["Privat"]["kapitalfluss"]["sektionen"][0]["zeilen"]]
+        self.assertEqual(order, ["Arbeit", "Kapitalerträge"])                                    # the fixed outline
+
+    def test_without_category_estimated_alike_in_every_area(self):
+        # the company has no categories at all: Kontor estimates by the words; the rest stays without a category
+        data = build([(1, "kk", date(2026, 1, 3), 9500.0, {"name": "Nexi Germany", "purpose": "Kartenumsaetze 02.01."}),
+                      (2, "kk", date(2026, 2, 3), 9500.0, {"name": "Nexi Germany", "purpose": "Kartenumsaetze 02.02."}),
+                      (3, "kk", date(2026, 2, 4), -800.0, {"name": "AOK Bayern", "purpose": "Beitrag 02/2026"}),
+                      (4, "kk", date(2026, 2, 5), -3100.0, {"name": "Finanzamt", "purpose": "UStVA 01/2026"}),
+                      (5, "kk", date(2026, 2, 6), -50.0, {"name": "Grosshandel Nord", "purpose": "RE 4711"}),
+                      (6, "giro", date(2026, 2, 7), -60.0, {"name": "AOK Bayern", "purpose": "Beitrag"}),
+                      (7, "giro", date(2026, 2, 8), 4000.0, {"name": "Arbeitgeber", "purpose": "Gehalt Februar"})])
+        self.assertAddsUp(data)
+        g = rows(data["Muster GbR"])
+        self.assertEqual(g["Umsatzerlöse"]["werte"]["2026-02"], 9500.0)
+        self.assertEqual(g["Umsatzerlöse"]["details"][0]["kategorie"], "")                    # estimated
+        self.assertEqual((g["Personal"]["werte"]["2026-02"], g["Steuern"]["werte"]["2026-02"]), (-800.0, -3100.0))
+        self.assertEqual(g["Ohne Kategorie"]["werte"]["2026-02"], -50.0)
+        p = rows(data["Privat"])
+        self.assertEqual((p["Versicherungen"]["werte"]["2026-02"], p["Arbeit"]["werte"]["2026-02"]), (-60.0, 4000.0))
+
+    def test_words_of_a_booking(self):
+        import report as R
+        from model import Tx
+        def g(name, purpose, amount, company):
+            return R.guess_position(Tx(id=1, account_uuid="x", booking_date=date(2026, 1, 1), value_date=date(2026, 1, 1), amount=amount, currency="EUR", name=name, purpose=purpose), company)
+        self.assertIsNone(g("Muster GmbH Gesellschafter", "Gewinnausschüttung 2025", -50000.0, True))       # equity, no expense
+        self.assertEqual(g("Finanzamt Mitte", "KapESt Gewinnausschüttung", -9000.0, True), "steuern")
+        self.assertIsNone(g("Grosshandel Nord", "RE 4711 Umsatzsteuer 19 % Steuernummer 123", -500.0, True))
+        self.assertEqual(g("Max Muster", "Lohn 02/2026", -2100.0, True), "personal")
+        self.assertIsNone(g("Bank", "Darlehen Zins und Tilgung", -1500.0, False))                       # mixed: no estimate
+        self.assertEqual(g("Bank", "Sollzinsen 4. Quartal", -80.0, False), "zinsen")
+        self.assertEqual(g("Nexi Germany", "Kartenumsätze", 900.0, True), "umsatz")
+        self.assertIsNone(g("Nexi Germany", "Kartenumsätze", 900.0, False))
+
+    def test_an_estimate_is_never_saving_or_repayment(self):
+        import categorize as C
+        txs = [(1, "giro", date(2026, 1, 5), -100.0, {"name": "Broker AG", "cat": "Sparen\\ETF"}),
+               (2, "giro", date(2026, 1, 9), -100.0, {"name": "Broker AG", "cat": "Sparen\\ETF"}),
+               (3, "giro", date(2026, 2, 9), -5000.0, {"name": "Broker AG", "purpose": "Rechnung"})]
+        led = make_ledger(txs)
+        d = C.empty(); C.learn(d, led)
+        config = core.merged_config({"bilanz": {"rollen": {k: v[2] for k, v in ACCOUNTS.items()}}})
+        b = next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat")
+        r = rows(report.build_dataset(led, config, {}, TODAY, b, {k: v[2] for k, v in ACCOUNTS.items()}, learned=d))
+        self.assertEqual(r["Ohne Kategorie"]["werte"]["2026-02"], -5000.0)
+        self.assertEqual(r["Sparen / ETF"]["werte"].get("2026-02", 0.0), 0.0)
+
+    def test_target_account_counts_below_too(self):
+        cfg = {"kapitalfluss": {"kategorie_zu_konto": {"Sparen": "Auto"}}}
+        data = build([(1, "giro", date(2026, 2, 5), -400.0, {"cat": "Sparen\\Bausparvertrag"})], cfg)
+        self.assertAddsUp(data)
+        z = rows(data["Privat"])["Sparen / Bausparvertrag"]
+        self.assertEqual((z["konto"], z["nw"]), ("auto", False))
+
+    def test_learned_from_transfers_is_no_estimate(self):
+        import categorize as C
+        txs = [(1, "giro", date(2026, 1, 5), -100.0, {"name": "Ich", "cat": "Umbuchung"}), (2, "giro", date(2026, 1, 9), -100.0, {"name": "Ich", "cat": "Umbuchung"}),
+               (3, "giro", date(2026, 2, 9), -700.0, {"name": "Ich"})]
+        led = make_ledger(txs)
+        d = C.empty(); C.learn(d, led)
+        config = core.merged_config({"bilanz": {"rollen": {k: v[2] for k, v in ACCOUNTS.items()}}})
+        b = next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat")
+        r = rows(report.build_dataset(led, config, {}, TODAY, b, {k: v[2] for k, v in ACCOUNTS.items()}, learned=d))
+        self.assertEqual(r["Ohne Kategorie"]["werte"]["2026-02"], -700.0)
+
+    def test_property_keeps_its_reserve_unless_you_choose(self):
+        im = [{"id": "i1", "name": "Parkweg", "bereich": "g-Muster GbR", "kategorie": "Vermietung\\Parkweg"}]
+        txs = [(1, "kk", date(2026, 2, 3), 1000.0, {"cat": "Vermietung\\Parkweg\\Miete"}),
+               (2, "kk", date(2026, 2, 4), -100.0, {"cat": "Vermietung\\Parkweg\\Rücklage"})]
+        g = rows(build(txs, {"immobilien": im})["Muster GbR"])
+        self.assertEqual(g["Parkweg · Kosten"]["werte"]["2026-02"], -100.0)                           # proposal "saving" does not count here
+        data = build(txs, {"immobilien": im, "kapitalfluss": {"positionen": {"Vermietung / Parkweg / Rücklage": "anlegen"}}})
+        self.assertAddsUp(data)
+        self.assertIn("Vermietung / Parkweg / Rücklage", rows(data["Muster GbR"]))
+
+    def test_transfer_follows_your_choice(self):
+        cfg = {"kapitalfluss": {"positionen": {"Haushalt": "lebenshaltung", "Umbuchung / Sparplan": "sonstige_ausgaben"}}}
+        data = build([(1, "giro", date(2026, 2, 5), -30.0, {"cat": "Haushalt\\Umbuchung"}),
+                      (2, "giro", date(2026, 2, 6), -40.0, {"cat": "Umbuchung\\Sparplan"}),
+                      (3, "giro", date(2026, 2, 7), -50.0, {"cat": "Umbuchung\\Sonstiges"})], cfg)
+        self.assertAddsUp(data)
+        r = rows(data["Privat"])
+        self.assertEqual(r["Lebenshaltung"]["werte"]["2026-02"], -30.0)
+        self.assertEqual(r["Sonstige Ausgaben"]["werte"]["2026-02"], -40.0)
+        self.assertEqual(r["Umbuchung ohne erkannten Partner"]["werte"]["2026-02"], -50.0)            # still a transfer by its parent
+
+    def test_old_sections_become_positions(self):
+        cfg = core.merged_config({"kapitalfluss": {"kategorie_zuordnung": {"Altersvorsorge": "Investitionen", "Gehalt": "Einnahmen", "Privat": "Ignorieren"}}})
+        self.assertEqual(cfg["kapitalfluss"]["positionen"], {"Altersvorsorge": "anlegen", "Privat": "ignorieren"})
+        self.assertNotIn("kategorie_zuordnung", cfg["kapitalfluss"])
+
+    def test_learned_patterns_come_before_words(self):
+        import categorize as C
+        txs = [(1, "giro", date(2026, 1, 5), -40.0, {"name": "Biomarkt", "cat": "Lebensmittel"}),
+               (2, "giro", date(2026, 1, 9), -45.0, {"name": "Biomarkt", "cat": "Lebensmittel"}),
+               (3, "giro", date(2026, 2, 9), -50.0, {"name": "Biomarkt", "purpose": "Versicherung"})]
+        led = make_ledger(txs)
+        d = C.empty(); C.learn(d, led)
+        config = core.merged_config({"bilanz": {"rollen": {k: v[2] for k, v in ACCOUNTS.items()}}})
+        b = next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat")
+        ds = report.build_dataset(led, config, {}, TODAY, b, {k: v[2] for k, v in ACCOUNTS.items()}, learned=d)
+        r = rows(ds)
+        self.assertEqual(r["Lebenshaltung"]["werte"]["2026-02"], -50.0)                         # not "Versicherungen"
+        self.assertEqual({x["kategorie"] for x in r["Lebenshaltung"]["details"]}, {"Lebensmittel", ""})
+
+    def test_a_property_has_its_own_rows(self):
+        cfg = {"immobilien": [{"id": "i1", "name": "Parkweg", "bereich": "g-Muster GbR", "kategorie": "Vermietung\\Parkweg"}]}
+        data = build([(1, "kk", date(2026, 1, 3), 9500.0, {"cat": "Vermietung\\Parkweg\\Mieteinnahmen"}),
+                      (2, "kk", date(2026, 2, 3), 9500.0, {"cat": "Vermietung\\Parkweg\\Mieteinnahmen"}),
+                      (3, "kk", date(2026, 2, 4), -800.0, {"cat": "Vermietung\\Parkweg\\Hausgeld"})], cfg)
+        self.assertAddsUp(data)
+        g = rows(data["Muster GbR"])
+        self.assertEqual((g["Parkweg · Miete"]["werte"]["2026-02"], g["Parkweg · Miete"]["objekt"]), (9500.0, "Parkweg"))
+        self.assertEqual(g["Parkweg · Kosten"]["werte"]["2026-02"], -800.0)
+
+    def test_property_rows_by_sign_and_the_most_specific_property(self):
+        cfg = {"immobilien": [{"id": "i1", "name": "Altbau", "bereich": "g-Muster GbR", "kategorie": "Vermietung"},
+                              {"id": "i2", "name": "Neubau", "bereich": "g-Muster GbR", "kategorie": "Vermietung\\Neubau"}]}
+        data = build([(1, "kk", date(2026, 1, 3), 1500.0, {"cat": "Vermietung"}), (2, "kk", date(2026, 2, 3), 1500.0, {"cat": "Vermietung"}),
+                      (3, "kk", date(2026, 2, 4), -4000.0, {"cat": "Vermietung"}), (4, "kk", date(2026, 2, 5), 900.0, {"cat": "Vermietung\\Neubau"}),
+                      (5, "kk", date(2026, 2, 6), -300.0, {"cat": "Vermietung\\Neubau\\Zinsen"})], cfg)
+        self.assertAddsUp(data)
+        g = rows(data["Muster GbR"])
+        self.assertEqual((g["Altbau · Miete"]["werte"]["2026-02"], g["Altbau · Kosten"]["werte"]["2026-02"]), (1500.0, -4000.0))
+        self.assertEqual(g["Neubau · Miete"]["werte"]["2026-02"], 900.0)
+        self.assertEqual(g["Zinsen"]["werte"]["2026-02"], -300.0)                                      # financing stays financing
+
+    def test_budget_per_position(self):
+        led = make_ledger([(1, "giro", date(2026, 1, 3), -100.0, {"cat": "Wohnen\\Strom/Gas"}), (2, "giro", date(2026, 1, 4), -900.0, {"cat": "Wohnen\\Miete"}),
+                           (3, "giro", date(2026, 1, 5), -50.0, {"cat": "Lebensmittel\\Supermarkt"})])
+        config = core.merged_config({"bilanz": {"rollen": {k: v[2] for k, v in ACCOUNTS.items()}}})
+        roles = {k: v[2] for k, v in ACCOUNTS.items()}
+        b = next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat")
+        ds = report.build_dataset(led, config, {}, TODAY, b, roles)
+        ds["budgets"] = core.budgets_from_categories([{"path": "Wohnen\\Strom/Gas", "budget": {"amount": 100, "period": "monthly"}},
+                                                      {"path": "Wohnen\\Miete", "budget": {"amount": 900, "period": "monthly"}},
+                                                      {"path": "Lebensmittel", "budget": {"amount": 400, "period": "monthly"}}])
+        report.apply_plan(ds, {}, config)
+        r = rows(ds)
+        self.assertEqual((r["Wohnen"]["plan"]["budget"], r["Lebenshaltung"]["plan"]["budget"]), (-1000.0, -400.0))
+
+
 class MockData(Reconciles):
     def test_every_month_of_the_sample_adds_up(self):
         # the made-up sample of the end-to-end tests (loans with Kontor's bookings, participations, contributions)
@@ -386,7 +568,7 @@ class CashflowFuzz(Reconciles):
     def test_random_months_add_up(self):
         seeds = int(os.environ.get("KONTOR_FUZZ_SEEDS") or 40)
         cfg = {"gesellschaften": [{"bereich": "Muster GbR", "beteiligung": "Beteiligung an Muster GbR"}],
-               "kapitalfluss": {"kategorie_zuordnung": {"Privatentnahme": "Ignorieren"}}}
+               "kapitalfluss": {"positionen": {"Privatentnahme": "ignorieren"}}}
         for seed in range(seeds):
             with self.subTest(seed=seed):
                 txs = self.world(random.Random(seed))
@@ -394,10 +576,12 @@ class CashflowFuzz(Reconciles):
                 self.assertAddsUp(data, allow=("ue_unterwegs", "ue_ignoriert"))
                 # income and expenses never pair with anything: their rows are exactly their bookings
                 p, k = rows(data["Privat"]), rows(data["Kinder"])
-                for cat in ("Gehalt", "Lebensmittel"):
+                for cat, pos in (("Gehalt", "Arbeit"), ("Lebensmittel", "Lebenshaltung"), ("Wohnen\\Miete", "Wohnen")):
                     want = round(sum(e[3] for e in txs if (e[4] or {}).get("cat") == cat and (e[4] or {}).get("booked", True)), 2)
-                    got = round(sum(p[cat]["werte"].values()), 2) if cat in p else 0.0
+                    got = round(sum(p[pos]["werte"].values()), 2) if pos in p else 0.0
                     self.assertAlmostEqual(got, want, 2, cat)
+                    det = {d["kategorie"]: d for d in (p[pos].get("details") or [])} if pos in p else {}
+                    self.assertAlmostEqual(round(sum(det[cat.replace("\\", " / ")]["werte"].values()), 2) if det else 0.0, want, 2)
                 # between two areas: what one pays in, the other receives
                 out = round(sum(p["Einlage/Entnahme Kinder"]["werte"].values()), 2) if "Einlage/Entnahme Kinder" in p else 0.0
                 inn = round(sum(k["Einlage/Entnahme Privat"]["werte"].values()), 2) if "Einlage/Entnahme Privat" in k else 0.0

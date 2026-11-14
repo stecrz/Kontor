@@ -163,6 +163,11 @@ td.plan { opacity:.55; } td.part { opacity:.72; }      /* plan: faded + hatched;
 .wrap td.plan, .wrap th.plan { background-image:repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 6px); }
 th[data-cur] { box-shadow:inset 0 -2px 0 var(--line-2); } th.plan { color:var(--muted); font-weight:500; } .ptable td.plan { opacity:1; background:var(--plan); }
 td.neg { color:var(--neg); } td.pos { color:var(--pos); } td.zero { color:var(--faint); }
+button.disc { border:0; background:none; padding:0 4px 0 0; margin:0; min-height:0; color:var(--muted); font-size:11px; cursor:pointer; box-shadow:none; width:auto; }
+button.disc:hover { color:var(--fg); background:none; }
+tr.det td { font-size:12px; color:var(--muted); } tr.det td:first-child { overflow:hidden; text-overflow:ellipsis; }
+.kp-table select { width:300px; max-width:100%; } .kp-table .kp-konto { width:220px; }
+@media (max-width:700px) { .kp-table .kp-n { display:none; } .kp-table select { width:auto; max-width:190px; } } .kp-table tr:not(.kp-own) .kp-pos { color:var(--muted); } .kp-table td { vertical-align:middle; }
 tr.check td { font-size:12px; color:var(--muted); } tr.check td.zero { color:var(--ok-fg); } tr.check td.warn { background:var(--warn-bg); color:var(--warn-fg); font-weight:600; cursor:help; } tr.check td.info { color:var(--muted); text-decoration:underline dotted; cursor:help; }
 td.ov { box-shadow: inset 3px 0 0 var(--accent); }
 td.plan.editable { cursor:cell; }
@@ -332,8 +337,6 @@ th.bch-on { color:var(--accent); box-shadow:inset 0 -2px 0 var(--accent); }
 .lc-chip input { margin:0; } .lc-chip .nm { white-space:nowrap; }
 #lc-pos-accs { max-height:88px; overflow-y:auto; }          /* three rows at most, the rest scrolls */ .lc-chip.fixed { cursor:default; color:var(--muted); border-style:dashed; } .lc-chip i { width:9px; height:9px; border-radius:3px; }
 /* Tabellen: Spalten rasten ein */
-.wrap.snap { scroll-snap-type:x mandatory; }
-.wrap.snap thead th:not(:first-child) { scroll-snap-align:start; }
 th.snap-pad, td.snap-pad { padding:0 !important; border:0 !important; background:transparent !important; box-shadow:none !important; }
 @keyframes colflash { from { background:color-mix(in srgb, var(--accent) 22%, transparent); } }
 td.flash, th.flash { animation:colflash 1.4s ease-out; }

@@ -4,7 +4,7 @@ Reihenfolge = Priorität. Jeder Punkt ist fertig, wenn alle Kriterien erfüllt s
 veröffentlicht ist (Skill `release`). Geprüfte Seiten verlieren die Markierung „Alpha“.
 
 Geprüft: Bilanz, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll, Hilfe, Auto-Buchungen, Buchungsregeln (3.13),
-Kategorien und Cashflow (3.13.4: jeder Monat stimmt mit der Bilanz überein, Abweichungen mit Grund).
+Kategorien und Cashflow (3.13.4: jeder Monat stimmt mit der Bilanz überein, Abweichungen mit Grund; 3.13.6: feste Positionen für alle Bereiche, ohne Kategorie geschätzt).
 
 ## 1. Immobilien und Steuer
 Ziel: Kalkulation, Ist-Zahlen und Steuer je Objekt und Gesellschaft stimmen und passen zusammen.
@@ -19,7 +19,7 @@ Fertig, wenn
 Ziel: Eine glaubwürdige Vorschau auf Vermögen und Liquidität.
 
 Fertig, wenn
-- die Planung aus den Ist-Zahlen fortschreibt (je Kategorie, Budgets aus MoneyMoney), Darlehen und Immobilien einbezieht und Ereignisse kennt;
+- die Planung aus den Ist-Zahlen fortschreibt (je Cashflow-Position, Budgets aus MoneyMoney), Darlehen und Immobilien einbezieht und Ereignisse kennt;
 - jede Zahl ihre Herkunft zeigt (Ist, Plan, Annahme); nichts wird geschätzt, ohne es so zu kennzeichnen;
 - Tests prüfen Fortschreibung, Zinseszins und Grenzen; Hilfe und Bilder aktuell; ohne „Alpha“.
 
