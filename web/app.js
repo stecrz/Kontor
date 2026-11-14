@@ -19,7 +19,7 @@ function setLang(l, pending) {
   if (l !== LANG) location.reload();
 }
 // pages not fully tested yet: usable, but marked "Alpha" in the menu and next to the page title
-const ALPHA_TABS = new Set(['overview', 'cashflow', 'planning', 'properties', 'tax', 'transactions', 'categories']);
+const ALPHA_TABS = new Set(['overview', 'planning', 'properties', 'tax', 'transactions']);
 const alphaTag = (cls = 'alpha-tag') => `<em class="${cls}" title="${t('alpha_tip')}">${t('alpha')}</em>`;
 // appearance, per device: dark (the default), light, or like the system
 const themeGet = () => { try { return ['light', 'auto'].includes(localStorage.getItem('kontor.theme')) ? localStorage.getItem('kontor.theme') : 'dark'; } catch (e) { return 'dark'; } };
@@ -1384,10 +1384,10 @@ function vBilanz() {
   // outside net worth (guarantees, capital accounts as equity): one collapsible row per kind with its sum, accounts on click
   const out = D.bilanz.ausserhalb || [];
   for (const role of [...new Set(out.map(r => r.rolle))]) {
-    const accs = out.filter(r => r.rolle === role), open = !!S.posOpen[role], [label, color] = ROLE[role] || [role, 'var(--c-neutral)'];
-    const sum = c => { let v = null; for (const r of accs) { const x = lastOf(r.werte, c.months); if (x != null) v = (v || 0) + x; } return v; };
+    const fx = role === 'fremdwaehrung', accs = out.filter(r => r.rolle === role), open = !!S.posOpen[role], [label, color] = fx ? [t('fremdwaehrung_nicht_umgerechnet'), 'var(--c-neutral)'] : ROLE[role] || [role, 'var(--c-neutral)'];
+    const sum = c => { if (fx) return null; let v = null; for (const r of accs) { const x = lastOf(r.werte, c.months); if (x != null) v = (v || 0) + x; } return v; };       // other currencies: no sum
     h += `<tr class="group pos muted" data-pos="${role}"><td><span class="caret">${open ? '▾' : '▸'}</span><i class="pos-dot" style="background:${color}"></i>${esc(label)} <span class="small muted cnt">(${accs.length})</span> <span class="tag">${t('nicht_im_nw_kurz')}</span></td>${cells(C, sum)}</tr>`;
-    if (open) h += accs.map(r => `<tr class="muted ind1"><td title="${esc(r.pfad || r.name)}">${esc(r.name)}</td>${cells(C, c => lastOf(r.werte, c.months))}</tr>`).join('');
+    if (open) h += accs.map(r => `<tr class="muted ind1"><td title="${esc(r.pfad || r.name)}">${esc(r.name)}${fx ? ` <span class="tag">${esc(r.waehrung)}</span>` : ''}</td>${cells(C, c => lastOf(r.werte, c.months))}</tr>`).join('');
   }
   h += '</tbody></table></div>';
   // the order of large chart, table and small charts (default in this order; table and large chart can be moved up and down)
@@ -2598,6 +2598,16 @@ function snapTable(w) {
 }
 
 // ---------------------------------------------------------------- Kapitalfluss / Planung
+// Kapitalfluss-Zeilen: Schluessel (zeile/gruppe) bleiben deutsch, angezeigt wird der Text in deiner Sprache
+const zLabel = z => z.lbl ? t(z.lbl[0], ...(z.lbl.slice(1))) : z.zeile;
+const gLabel = z => z.glbl ? t(z.glbl[0], ...(z.glbl.slice(1))) : z.gruppe;
+// Gruende einer Abweichung (Pruefzeilen): je Monat, als Text fuer den Tooltip (mehrere Monate: mit Monatsnamen)
+function ueGruende(ue, months, key) {
+  const lines = [];
+  for (const m of months) for (const [k, v, d] of (ue[m]?.[key] || [])) lines.push((months.length > 1 ? ML(m) + ': ' : '') + t(k, d) + ': ' + F(v) + ' €');
+  return lines.join('\n');
+}
+const UE_OFFEN = new Set(['ue_rest', 'ue_unbekannt']);       // differences without a known cause: shown as a warning
 const SEC_LABEL = {Einnahmen: t('einnahmen'), Ausgaben: t('ausgaben'), Investitionen: t('investitionen_umschichtung'), Finanzierung: t('finanzierung_tilgung_zinsen'), Bewertung: t('bewertung_manuelle_buchungen_nicht_zah'), Unklar: t('unklar_zuordnung_pruefen')};
 const METH = {gleitend12: t('12_monate'), gleitend6: t('6_monate'), vorjahr: t('vorjahresmonat'), fix: t('fester_betrag_monat'), jahresbetrag: t('meth_jahresbetrag'), budget: t('meth_budget'), keine: t('keine')};
 function vKapitalfluss(editable) {
@@ -2625,19 +2635,19 @@ function vKapitalfluss(editable) {
     if (!sek.zeilen.length && !S.alle) continue;
     h += `<tr class="sec"><td>${SEC_LABEL[sek.name] || sek.name}</td>${tot.map((v, i) => `<td class="${cls(v, C[i])}">${F(v)}</td>`).join('')}</tr>`;
     const groups = [];
-    for (const z of sek.zeilen) { let g = groups.find(x => x.name === z.gruppe); if (!g) groups.push(g = {name: z.gruppe, rows: []}); g.rows.push(z); }
+    for (const z of sek.zeilen) { let g = groups.find(x => x.name === z.gruppe); if (!g) groups.push(g = {name: z.gruppe, label: gLabel(z), rows: []}); g.rows.push(z); }
     for (const g of groups) {
       const gvals = C.map(c => g.rows.reduce((a, z) => a + vOf(z, c), 0));
       const single = g.rows.length === 1 && g.rows[0].zeile === g.name;
       if (!S.alle && gvals.every(v => Math.abs(v) < 0.005)) continue;
       const gid = sek.name + '|' + g.name, coll = S.collapsed[gid];
-      if (!single) h += `<tr class="sub ind1" data-gid="${esc(gid)}"><td>${coll ? '▸ ' : '▾ '}${esc(g.name)}</td>${gvals.map((v, i) => `<td class="${cls(v, C[i])}">${F(v)}</td>`).join('')}</tr>`;
+      if (!single) h += `<tr class="sub ind1" data-gid="${esc(gid)}"><td>${coll ? '▸ ' : '▾ '}${esc(g.label)}</td>${gvals.map((v, i) => `<td class="${cls(v, C[i])}">${F(v)}</td>`).join('')}</tr>`;
       if (coll && !single) continue;
       for (const z of g.rows) {
         const vals = C.map(c => vOf(z, c));
         if (!S.alle && vals.every(v => Math.abs(v) < 0.005)) continue;
         const key = sek.name + '/' + z.zeile;
-        const label = single ? z.zeile : z.zeile.startsWith(g.name + ' / ') ? z.zeile.slice(g.name.length + 3) : z.zeile;
+        const full = zLabel(z), label = single ? full : full.startsWith(g.label + ' / ') ? full.slice(g.label.length + 3) : full;
         let e = '';
         const p = z.plan || {}, ov = new Set(p.ueberschrieben || []);
         if (editable) {
@@ -2649,7 +2659,7 @@ function vKapitalfluss(editable) {
               <input class="pct steig" type="number" step="0.1" placeholder="% p.a." value="${(D.plan.zeilen || {})[key]?.steigerung_prozent_pa ?? ''}" title="${t('steigerung_p_a_leer_standard')}">
               <button class="save small" title="${t('uebernehmen')}">✓</button>${ov.size ? `<button class="small secondary reset-row" data-key="${esc(key)}" title="${t('alle_ueberschreibungen_loeschen')}">↺</button>` : ''}</div>`;
         }
-        h += `<tr class="${single ? 'ind1' : 'ind2'}" data-key="${esc(key)}"><td title="${esc(z.zeile)}">${esc(label)}${z.nw ? '' : `<span class="tag">${t('umschichtung')}</span>`}${editable && p.methode && p.methode !== 'darlehen' ? `<span class="tag">${METH[p.methode] || p.methode}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
+        h += `<tr class="${single ? 'ind1' : 'ind2'}" data-key="${esc(key)}"><td title="${esc(full)}">${esc(label)}${z.nw ? '' : `<span class="tag">${t('umschichtung')}</span>`}${editable && p.methode && p.methode !== 'darlehen' ? `<span class="tag">${METH[p.methode] || p.methode}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
            + vals.map((v, i) => {
                const c = C[i], isOv = c.plan && c.months.some(mm => ov.has(mm));
                const sug = (S.vorschlag && c.plan) ? `<div class="small muted">${F(sOf(z, c))}</div>` : '';
@@ -2657,12 +2667,23 @@ function vKapitalfluss(editable) {
       }
     }
   }
+  // Pruefzeilen: Abweichung zur Bilanz (Liquiditaet bzw. Nettovermoegen); der Grund steht im Tooltip der Zelle
+  const ue = KF.ueberleitung || {};
+  // ✓ only where every month of the column up to today was checked and adds up; a difference with a known cause is shown calmly
+  // (its reason in the tooltip), one without a cause as a warning
+  const check = (label, val, why) => `<tr class="check"><td>${label}</td>${C.map(c => {
+    const ms = c.plan ? [] : c.months.filter(m => m <= D.ist_bis);
+    if (!ms.length || ms.some(m => !ue[m])) return `<td class="${cls(null, c)}"></td>`;
+    const v = ms.reduce((a, m) => a + ue[m][val], 0), off = ms.some(m => Math.abs(ue[m][val]) >= 0.005);
+    if (!off) return `<td class="${cls(0, c)}">✓</td>`;
+    const warn = ms.some(m => (ue[m][why] || []).some(g => UE_OFFEN.has(g[0])));
+    return `<td class="${cls(v || 1, c)} tipped ${warn ? 'warn' : 'info'}" data-tip="${esc(ueGruende(ue, ms, why))}" tabindex="0">${F(v)}</td>`; }).join('')}</tr>`;
   for (const [name, label] of [['Operativ', t('operatives_ergebnis_einnahmen_ausgaben')], ['Zinsen', t('davon_zinsen')], ['Cashflow', t('zahlungsfluss_gesamt_veraenderung_liqu')], ['Nettovermoegen_delta', t('nettovermoegensaenderung_erklaert')]]) {
     const tot = secTotal(name);
     h += `<tr class="total"><td>${label}</td>${tot.map((v, i) => `<td class="${cls(v, C[i])}">${F(v)}</td>`).join('')}</tr>`;
+    if (name === 'Cashflow') h += check(t('abweichung_liquiditaet'), 'abweichung_liq', 'gruende_liq');
+    if (name === 'Nettovermoegen_delta') h += check(t('unerklaerte_vermoegensaenderung_pruefz'), 'unerklaert', 'gruende');
   }
-  const ue = KF.ueberleitung || {};
-  h += `<tr><td>${t('unerklaerte_vermoegensaenderung_pruefz')}</td>${C.map(c => { const v = c.plan ? null : c.months.reduce((a, m) => a + (ue[m]?.unerklaert ?? 0), 0); return `<td class="${cls(v, c)}">${v == null ? '' : F(v)}</td>`; }).join('')}</tr>`;
   h += '</tbody></table></div>';
   if (editable) h += vPlanExtras(D);
   h += `<div class="note">${t('umschichtungen_tilgung_investition_ein')}` + (editable ? t('methoden_12_6_monate_der') : '') + '</div>';

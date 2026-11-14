@@ -15,7 +15,7 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 ## Prüfen
 - Tests: `python3 -m pytest -q tests` (~2½ min; Browser-Tests mit Playwright; `sqlcipher` nur für Testdatenbanken).
   Mehr Zufallsläufe: `KONTOR_FUZZ_SEEDS=400 python3 -m pytest -q tests/test_fuzz.py`.
-- Oberfläche: `node --check web/app.js`; ansehen mit `python3 tests/preview.py <ordner> '#route'` (hell/dunkel, Mac/iPhone).
+- Oberfläche: `node --check web/app.js`; ansehen mit `python3 tests/preview.py <ordner> '#route'` (hell/dunkel, Mac/iPhone; `--js` z. B. für ganze Tabellen).
 
 ## Jede Änderung abschließen (Skill `release`)
 1. Tests grün.
@@ -70,4 +70,4 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 | `realestate.py`, `tax.py`, `receipts.py` | Immobilienkalkulation, Steuer, Belege |
 | `storage.py`, `auth.py`, `updates.py`, `tls_cert.py` | verschlüsselte Ablage, Anmeldung/Touch ID, Updates, Zertifikat |
 | `web/app.js`, `web/i18n.js` | Oberfläche (eine Datei, Seiten über `#…`), Texte |
-| `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_fuzz`, `test_privacy` |
+| `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_fuzz`, `test_privacy` |

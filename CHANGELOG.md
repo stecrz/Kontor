@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.13.4 (2026-11-14 14:04)
+Cashflow und Kategorien sind geprüft – ohne „Alpha“.
+- **Jeder Monat stimmt mit der Bilanz überein:** zwei Prüfzeilen vergleichen den Zahlungsfluss mit der Veränderung der liquiden Konten und die übrigen Zeilen mit der Veränderung des Nettovermögens. ✓ heißt auf den Cent; eine Abweichung nennt beim Darüberfahren ihren Grund (z. B. Geld, das über das Monatsende zu einem Darlehen unterwegs ist).
+- **Umbuchungen Buchung für Buchung gepaart:** Darlehensraten mit Kontors Tilgung (bisher teils „Unklar“ und doppelt gezählt), Gegenbuchungen über die IBAN auch eine Woche auseinander; Bankbuchungen mit Einnahme- oder Ausgabenkategorie werden nie als Umbuchung gedeutet.
+- **Zwischen Bereichen:** Zahlungen in einen anderen Bereich sind Einlage/Entnahme, in einer Gesellschaft „Einlagen/Entnahmen Gesellschafter“. Hältst du die Beteiligung, steht der Unterschied zwischen eingezahltem Geld und ihrem Wert unter Bewertung.
+- Wertanpassungen der Beteiligung mit Kategorie „Umbuchung“ zählen jetzt als Bewertung (fehlten bisher im Cashflow).
+- **Konten in Fremdwährung** zählt Kontor nicht mehr als Euro: Sie stehen in der Bilanz außerhalb des Nettovermögens, in ihrer Währung.
+- Cashflow-Zeilen und Excel-Export auch auf Englisch; Einlagen werden in der Planung nicht mehr als Monatsdurchschnitt fortgeschrieben.
+
 ## 3.13.3 (2026-11-13 14:22)
 - Beteiligung monatlich, vor 3.13.1 „nicht rückwirkend“ eingerichtet: Hattest du Kontors Buchung zum Monatsende in MoneyMoney in den nächsten Monat verschoben, prüfte Kontor das abgelaufene Monatsende nicht mehr und die Beteiligung blieb dort falsch. Jetzt wird es immer geprüft (gefunden von den nächtlichen Zufallstests).
 

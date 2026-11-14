@@ -2476,11 +2476,17 @@ class BrowserTest(unittest.TestCase):
                     pg.click("#nav a[href='#%s']" % tab); pg.wait_for_timeout(400)
                     self.assertTrue(pg.query_selector("#main").inner_html().strip(), tab)
                     if shots: pg.screenshot(path=os.path.join(shots, "ui_%s.png" % tab), full_page=(tab in ("rules", "settings", "tax", "planning", "help", "balance", "setup")))
+                # Cashflow: both checks against the balance sheet, every checked month adds up (✓)
+                pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("tr.check")
+                self.assertEqual(len(pg.query_selector_all("tr.check")), 2)
+                self.assertFalse(pg.query_selector_all("tr.check td.warn"))
+                self.assertIn("✓", pg.inner_text("tr.check"))
                 # Bilanz: Positionen/Gruppen, inaktive, Konto-Klick -> Verlauf
                 pg.click("#nav a[href='#balance']"); pg.wait_for_selector("tr.pos")
                 self.assertIn("Bankguthaben", pg.query_selector("#main").inner_text())
                 # pages not fully tested yet carry "Alpha" in the menu and at the title; the balance sheet does not
-                self.assertTrue(pg.query_selector("#nav a.alpha[href='#cashflow'] .alpha-tag")); self.assertIsNone(pg.query_selector("#nav a[href='#balance'] .alpha-tag"))
+                self.assertTrue(pg.query_selector("#nav a.alpha[href='#planning'] .alpha-tag")); self.assertIsNone(pg.query_selector("#nav a[href='#balance'] .alpha-tag"))
+                self.assertIsNone(pg.query_selector("#nav a[href='#cashflow'] .alpha-tag")); self.assertIsNone(pg.query_selector("#nav a[href='#categories'] .alpha-tag"))
                 self.assertIsNone(pg.query_selector("#page-title .alpha-tag")); self.assertIsNone(pg.query_selector("#nav a[href='#rules'] .alpha-tag"))
                 self.assertEqual(pg.inner_text("#nav a[href='#rules'] span"), "Buchungsregeln"); self.assertEqual(pg.inner_text("#nav a[href='#bookings'] span"), "Auto-Buchungen")
                 # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle

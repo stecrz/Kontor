@@ -451,22 +451,32 @@ class Rows:
         self.meta: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
     def add(self, section: str, gruppe: str, zeile: str, mk: str, amount: float, *,
-            konto: Optional[str] = None, art: str = "kategorie", nw: bool = True):
+            konto: Optional[str] = None, art: str = "kategorie", nw: bool = True, lbl: Optional[tuple] = None,
+            glbl: Optional[tuple] = None):
+        """zeile/gruppe stay German (keys of your planning); lbl/glbl: (text key, value) shown in your language."""
         key = (section, zeile)
         self.vals[key][mk] += amount
-        self.meta.setdefault(key, {"gruppe": gruppe, "konto": konto, "art": art, "nw": nw})
+        if key not in self.meta:
+            self.meta[key] = {"gruppe": gruppe, "konto": konto, "art": art, "nw": nw}
+            if lbl:
+                self.meta[key]["lbl"] = list(lbl)
+            if glbl:
+                self.meta[key]["glbl"] = list(glbl)
 
 
 def transit_series(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], months: List[Tuple[int, int]], quelle: Dict[str, str],
-                   today: date) -> Tuple[Dict[str, float], List[dict]]:
+                   today: date, known: Optional[List[Tuple[date, date, float, str, str]]] = None) -> Tuple[Dict[str, float], List[dict]]:
     """Geld unterwegs am Monatsende: Umbuchung zwischen zwei Konten des Bereichs, deren Buchungen in verschiedene Monate fallen
     (am 31. abgebucht, am 1. gutgeschrieben). Abgebucht, aber noch nicht gutgeschrieben -> +Betrag; umgekehrt -> -Betrag.
     Nur eindeutige Paare: Gegen-IBAN zeigt auf das andere Konto, gleicher Betrag mit umgekehrtem Vorzeichen, hoechstens 5 Tage Abstand.
+    known: die Paare der Kapitalfluss-Zuordnung (pair_transfers) -- dann dieselben, damit Bilanz und Kapitalfluss zusammenpassen.
     Liefert (Betrag je Monatsende, erkannte Umbuchungen ueber ein Monatsende)."""
     mkeys = ["%04d-%02d" % ym for ym in months]
     out = {mk: 0.0 for mk in mkeys}
     if not months:
         return out, []
+    if known is not None:
+        return _transit_from(ledger, months, mkeys, list(known), today)
     area = {a.uuid for a in leaves if roles.get(a.uuid) not in OFF_BALANCE and not _valuation_account(a, quelle.get(a.uuid, ""))}
     own = ledger.own_ibans()
     first = date(months[0][0], months[0][1], 1) - timedelta(days=6)
@@ -497,6 +507,12 @@ def transit_series(ledger: Ledger, leaves: List[Account], roles: Dict[str, str],
             used.update({t.id, o.id})
             if month_key(t.booking_date) != month_key(o.booking_date):
                 pairs.append((t.booking_date, o.booking_date, -t.amount, t.account_uuid, o.account_uuid))
+    return _transit_from(ledger, months, mkeys, pairs, today)
+
+
+def _transit_from(ledger: Ledger, months: List[Tuple[int, int]], mkeys: List[str], pairs: List[Tuple[date, date, float, str, str]],
+                  today: date) -> Tuple[Dict[str, float], List[dict]]:
+    out = {mk: 0.0 for mk in mkeys}
     for (y, m), mk in zip(months, mkeys):
         cut = min(month_end(y, m), today)
         val = sum(p[2] for p in pairs if p[0] <= cut < p[1]) - sum(p[2] for p in pairs if p[1] <= cut < p[0])
@@ -507,29 +523,198 @@ def transit_series(ledger: Ledger, leaves: List[Account], roles: Dict[str, str],
     return out, details
 
 
-def company_accounts(ledger: Ledger, config: dict) -> Dict[str, str]:
-    """Accounts of the companies set up under Booking rules (with a participation or counter account) -> company name."""
-    areas = {str(b.get("id")): b for b in config.get("bereiche") or [] if isinstance(b, dict)}
-    out: Dict[str, str] = {}
+def company_areas(ledger: Ledger, config: dict) -> List[Tuple[dict, dict]]:
+    """The companies set up under Booking rules: (their entry in gesellschaften, their area) -- the area as everywhere else
+    (bereiche_for: with the accounts you moved under Setup)."""
+    from core import bereiche_for                  # imported late (core imports report)
+    areas = bereiche_for(ledger, config)
+    by_id = {str(b["id"]): b for b in areas}
+    out = []
     for g in config.get("gesellschaften") or []:
         if not isinstance(g, dict) or not (g.get("beteiligung") or g.get("gegenkonten")):
             continue
-        b = areas.get(str(g.get("bereich")))
-        for r in (b.get("konten") or []) if b else [str(g.get("bereich"))]:
+        b = by_id.get(str(g.get("bereich")))
+        if b is None:                              # named by its group or an account in it
             try:
-                a = ledger.resolve(r)
+                a = ledger.resolve(str(g.get("bereich")))
             except KeyError:
                 continue
-            for x in (ledger.descendants(a.uuid) if a.group else [a]):
-                out[x.uuid] = (b or {}).get("name") or a.name
+            members = {x.uuid for x in (ledger.descendants(a.uuid) if a.group else [a])}
+            b = next((x for x in areas if members & {y.uuid for y in x["leaves"]}), None)
+        if b is not None:
+            out.append((g, b))
     return out
 
 
+def company_accounts(ledger: Ledger, config: dict) -> Dict[str, str]:
+    """Accounts of the companies set up under Booking rules (with a participation or counter account) -> company name."""
+    return {a.uuid: b["name"] for g, b in company_areas(ledger, config) for a in b["leaves"]}
+
+
+VALUE_MARKS = (MARK + "wert-", MARK + "spiegel-")     # value adjustments of Kontor (participation): never a transfer
+ASSET_LIKE = ASSET_ROLES | {"sonstiges"}               # positions that change only by bookings, valuations and transfers
+PAIR_DAYS_IBAN = 5                                      # counter IBAN known: counterpart at most this many days apart
+PAIR_DAYS_IBAN_BOTH = 14                                # ... and both bookings name each other's account
+PAIR_DAYS = 3                                           # by amount only (transfer category, offline account)
+
+
+def _value_adjustment(t: Tx) -> bool:
+    return any(m.startswith(VALUE_MARKS) for m in marks_in(t.purpose))
+
+
+def foreign_currency(acc: Account) -> bool:
+    """An account kept in another currency than the euro (Kontor does not convert)."""
+    return (acc.currency or "EUR").upper() != "EUR"
+
+
+def area_names(ledger: Ledger, config: dict) -> Dict[str, str]:
+    """Account -> name of its area (all areas, also accounts outside the net worth)."""
+    from core import bereiche_for                  # imported late (core imports report)
+    return {a.uuid: b["name"] for b in bereiche_for(ledger, config) for a in b["leaves"]}
+
+
+def company_stakes(ledger: Ledger, config: dict) -> Dict[str, str]:
+    """Company name -> its participation account (Booking rules), named as in company_accounts."""
+    out: Dict[str, str] = {}
+    for g, b in company_areas(ledger, config):
+        if g.get("beteiligung"):
+            try:
+                out[b["name"]] = ledger.resolve(g["beteiligung"]).uuid
+            except KeyError:
+                pass
+    return out
+
+
+def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[str, str], transfer_cats: List[str],
+                   cost_words: List[str], kf: dict, pairable: Callable[[Tx], bool] = lambda t: True):
+    """Transfers within an area, booking by booking: the counterpart of a transfer is the booking on the other side.
+    Found by Kontor's mark (#kontor-tx-<payment>: the repayment of a loan names the payment), by the counter IBAN (a booking of
+    that account with the same amount, opposite sign, at most 5 days apart) or -- for a transfer category or an offline account
+    -- by amount alone (at most 3 days). Returns (mate: booking -> counterpart in the area, partner: booking -> account on the
+    other side, also outside the area or without a counterpart, category: booking -> marked as transfer by its category)."""
+    own_ibans = ledger.own_ibans()
+    transfer_set = set(transfer_cats)
+    cents = lambda x: int(round(x * 100))
+    idx = ledger.__dict__.get("_tx_index")
+    if idx is None or idx[0] != len(ledger.txs):
+        tags: Dict[str, List[Tx]] = defaultdict(list)
+        for o in ledger.txs:
+            if o.booked and "-tx-" in o.purpose:
+                for tag in marks_in(o.purpose):
+                    if tag.startswith(TX_MARK):
+                        tags[tag].append(o)
+        idx = ledger._tx_index = (len(ledger.txs), {t.id: t for t in ledger.txs if t.booked}, tags)
+    by_id, by_tag = idx[1], idx[2]
+    mate: Dict[int, Tx] = {}
+    partner: Dict[int, str] = {}
+    by_cat: Dict[int, bool] = {}
+
+    def join(a: Tx, b: Tx) -> None:
+        mate[a.id], mate[b.id] = b, a
+        partner[a.id], partner[b.id] = b.account_uuid, a.account_uuid
+
+    # 1. Kontor's mark: the booking names its payment
+    for t in txs:
+        cat_low = t.category_path.lower()
+        by_cat[t.id] = cat_low in transfer_set or cat_low.rsplit("\\", 1)[-1] in transfer_set
+        if "-tx-" not in t.purpose and "-tx-" not in t.comment:
+            continue
+        for tag in marks_in(t.purpose + " " + t.comment):
+            if not tag.startswith(TX_MARK):
+                continue
+            num = tag[len(TX_MARK):]
+            src = by_id.get(int(num)) if num.isdigit() else None
+            cands = [src] if src is not None else [o for o in by_tag.get(tag, ()) if o.id != t.id]
+            for o in cands:
+                if o is None or o.account_uuid == t.account_uuid:
+                    continue
+                if o.account_uuid in root and t.id not in mate and o.id not in mate:
+                    join(t, o)
+                elif t.id not in partner:
+                    partner[t.id] = o.account_uuid
+                break
+    # 2. counter IBAN: the other account's booking with the same amount
+    near: Dict[str, Dict[int, List[Tx]]] = {}
+
+    def bookings_of(u: str) -> Dict[int, List[Tx]]:
+        if u not in near:
+            m: Dict[int, List[Tx]] = defaultdict(list)
+            for o in ledger.transactions(u):
+                m[cents(o.amount)].append(o)
+            near[u] = m
+        return near[u]
+    # first close by, then -- for bookings that name each other -- up to two weeks apart (a missing booking does not shift the
+    # pairs of a recurring transfer)
+    for wide in (False, True):
+        for t in sorted(txs, key=lambda x: (x.booking_date, x.id)):
+            if t.id in mate or (wide and t.id not in partner):
+                continue
+            p = own_ibans.get(t.counter_iban) if t.counter_iban else None
+            if p is None or p == t.account_uuid:
+                continue
+            if p not in root:
+                partner.setdefault(t.id, p)
+                continue
+            best = None
+            for o in bookings_of(p).get(-cents(t.amount), ()):
+                if o.id in mate:
+                    continue
+                gap = abs((o.booking_date - t.booking_date).days)
+                back = own_ibans.get(o.counter_iban) == t.account_uuid
+                if gap > (PAIR_DAYS_IBAN_BOTH if wide and back else PAIR_DAYS_IBAN):
+                    continue
+                rank = (not back, gap, o.id)
+                if best is None or rank < best[0]:
+                    best = (rank, o)
+            if best is not None:
+                join(t, best[1])
+            else:
+                partner[t.id] = p                       # the other account, but its booking is missing
+    # 3. by amount: transfer category or a booking of an offline account (no counterpart known yet)
+    if kf.get("umbuchung_paarung", True):
+        manual_ok = kf.get("paarung_manuelle_konten", True)
+        loose = lambda t: t.id not in mate and t.id not in partner          # the other side is not known yet
+        open_tx = [t for t in txs if by_cat[t.id] and loose(t)]
+        offline = [t for t in txs if manual_ok and loose(t) and roles.get(t.account_uuid) != "liquiditaet"
+                   and (roles.get(t.account_uuid) in ("verbindlichkeiten", "forderungen") or roles.get(t.account_uuid) in ASSET_LIKE)
+                   and ledger.accounts[t.account_uuid].offline and not _is_cost(t, cost_words) and not _value_adjustment(t)]
+        liquid = [t for t in txs if roles.get(t.account_uuid) == "liquiditaet" and loose(t) and (by_cat[t.id] or pairable(t))]
+        pools: Dict[str, Dict[int, List[Tx]]] = {"open": defaultdict(list), "offline": defaultdict(list), "liquid": defaultdict(list)}
+        for name, lst in (("open", open_tx), ("offline", offline), ("liquid", liquid)):
+            for o in lst:
+                pools[name][cents(o.amount)].append(o)
+        kinds: Dict[int, Set[str]] = defaultdict(set)
+        for name, lst in (("open", open_tx), ("offline", offline), ("liquid", liquid)):
+            for o in lst:
+                kinds[o.id].add(name)
+        for t in sorted({o.id: o for o in open_tx + offline + liquid}.values(), key=lambda x: (x.booking_date, x.id)):
+            if t.id in mate:
+                continue
+            k = kinds[t.id]
+            search = (["open"] if "open" in k else []) + (["liquid"] if "offline" in k else []) + (["offline"] if "liquid" in k else [])
+            best = None
+            for name in search:
+                for o in pools[name].get(-cents(t.amount), ()):
+                    if o.id in mate or o.id == t.id or o.account_uuid == t.account_uuid:
+                        continue
+                    gap = abs((o.booking_date - t.booking_date).days)
+                    if gap <= PAIR_DAYS and (best is None or (gap, o.id) < best[0]):
+                        best = ((gap, o.id), o)
+            if best is not None:
+                join(t, best[1])
+    return mate, partner, by_cat
+
+
 def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], config: dict, months: List[Tuple[int, int]],
-             verlauf: Dict[str, str]):
+             verlauf: Dict[str, str], areas: Optional[Dict[str, str]] = None, company: bool = False):
+    """Cash flow rows of an area. Every booking of its accounts counts once: a transfer within the area (both bookings found)
+    as one row that leaves the net worth unchanged, everything else with its amount. areas: account -> name of its area (all
+    areas; transfers between areas are contributions/withdrawals); company: this area is a company. Returns (rows, inbound
+    per account and month, warnings); rows.pairs: transfers within the area (for money in transit at month end), rows.reasons:
+    amounts left out on purpose (category "Ignore"), rows.no_target: investments whose account is unknown."""
     kf = config.get("kapitalfluss", {}) or {}
     root_leaves = {a.uuid for a in leaves}
-    own_ibans = ledger.own_ibans()
+    areas = areas or {}
     transfer_cats = [c.lower() for c in (kf.get("umbuchungs_kategorien") or ["Umbuchung"])]
     cost_words = [w.lower() for w in (kf.get("kosten_texte") or COST_WORDS)]
     invest_cats = [c.lower() for c in (kf.get("investitions_kategorien") or ["invest", "wertpapier", "depot", "immobilienkauf", "beteiligung"])]
@@ -545,87 +730,24 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         except KeyError:
             pass
     beteiligungs_gruppen = company_accounts(ledger, config)       # payments to and from them: contributions/withdrawals
+    stakes = {g: u for g, u in company_stakes(ledger, config).items() if u in root_leaves}     # held by this area
+    self_name = next((areas[u] for u in root_leaves if u in areas), None)
     first = date(months[0][0], months[0][1], 1)
     last = month_end(months[-1][0], months[-1][1])
 
     # Depots mit Verlauf aus Kontostaenden liefern keine Zahlungsfluesse: ihre Wertaenderung ist Bewertung.
     # Andere Konten mit Kontostaenden behalten ihre Buchungen; Abweichungen zu den Kontostaenden werden als Korrektur ausgewiesen.
     flows = {u for u in root_leaves if u in ledger.accounts and not _valuation_account(ledger.accounts[u], verlauf.get(u, ""))}
+    depots = [u for u in root_leaves if u in ledger.accounts and u not in flows]
     in_root = [t for t in ledger.txs if t.account_uuid in flows and t.booked and first <= t.booking_date <= last]
-    # Nummern und Markierungen (#kontor-tx-NNN) einmal je Stand indizieren (fuer alle Bereiche); Partner nur im Zeitraum
-    idx = ledger.__dict__.get("_tx_index")
-    if idx is None or idx[0] != len(ledger.txs):
-        tags: Dict[str, List[Tx]] = defaultdict(list)
-        for o in ledger.txs:
-            if o.booked and "-tx-" in o.purpose:
-                for tag in marks_in(o.purpose):
-                    if tag.startswith(TX_MARK):
-                        tags[tag].append(o)
-        idx = ledger._tx_index = (len(ledger.txs), {t.id: t for t in ledger.txs if t.booked}, tags)
-    by_id_all, tag_all = idx[1], idx[2]
-
-    def by_id_get(i: int) -> Optional[Tx]:
-        o = by_id_all.get(i)
-        return o if o is not None and first <= o.booking_date <= last else None
-    transfer_set = set(transfer_cats)
-
-    partner: Dict[int, Optional[str]] = {}
-    is_transfer: Dict[int, bool] = {}
-    for t in in_root:
-        p = None
-        if t.counter_iban and t.counter_iban in own_ibans and own_ibans[t.counter_iban] != t.account_uuid:
-            p = own_ibans[t.counter_iban]
-        if p is None:
-            for tag in marks_in(t.purpose + " " + t.comment):
-                if tag.startswith(TX_MARK) and tag[len(TX_MARK):].isdigit():
-                    src = by_id_get(int(tag[len(TX_MARK):]))
-                    if src and src.account_uuid != t.account_uuid:
-                        p = src.account_uuid
-                    else:
-                        for o in tag_all.get(tag, ()):
-                            if not first <= o.booking_date <= last:
-                                continue
-                            if o.account_uuid != t.account_uuid:
-                                p = o.account_uuid
-                                break
-        cat_low = t.category_path.lower()
-        transfer = p is not None or cat_low in transfer_set or cat_low.rsplit("\\", 1)[-1] in transfer_set
-        partner[t.id] = p
-        is_transfer[t.id] = transfer
-    if kf.get("umbuchung_paarung", True):
-        manual_ok = kf.get("paarung_manuelle_konten", True)
-        open_tx = [t for t in in_root if is_transfer[t.id] and partner[t.id] is None]
-        manual_side = [t for t in in_root if manual_ok and not is_transfer[t.id]
-                       and (roles.get(t.account_uuid) in ("verbindlichkeiten", "forderungen") or roles.get(t.account_uuid) in ASSET_ROLES)
-                       and ledger.accounts[t.account_uuid].offline and not _is_cost(t, cost_words)]
-        liquid_side = [t for t in in_root if roles.get(t.account_uuid) == "liquiditaet" and partner[t.id] is None]
-        # Gegenstuecke nach Betrag (Cent, Vorzeichen gedreht) indizieren: statt n² nur die wenigen Kandidaten gleicher Hoehe pruefen
-        cents = lambda x: int(round(x * 100))
-        open_ids = {t.id for t in open_tx}
-        open_by_amt: Dict[int, List[Tx]] = defaultdict(list)
-        for o in open_tx:
-            open_by_amt[cents(o.amount)].append(o)
-        liquid_by_amt: Dict[int, List[Tx]] = defaultdict(list)
-        for o in liquid_side:
-            liquid_by_amt[cents(o.amount)].append(o)
-        used: Set[int] = set()
-        for t in open_tx + manual_side:
-            if t.id in used:
-                continue
-            pool = (open_by_amt if t.id in open_ids else liquid_by_amt).get(-cents(t.amount), ())
-            for o in pool:
-                if o.id in used or o.id == t.id or o.account_uuid == t.account_uuid:
-                    continue
-                if abs((o.booking_date - t.booking_date).days) <= 3:
-                    partner[t.id], partner[o.id] = o.account_uuid, t.account_uuid
-                    is_transfer[t.id] = is_transfer[o.id] = True
-                    used.update({t.id, o.id})
-                    break
 
     R = Rows()
     warnings: List[str] = []
     unclear = 0
     inbound: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    stake_in: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    no_target: Dict[str, float] = defaultdict(float)
+    ignored: Dict[str, float] = defaultdict(float)
 
     def cat_class(cat: str, top: str) -> tuple:
         """Einordnung einer Kategorie (Bankkonten): (Abschnitt, ...) -- Finanzierung (art, nw), Investitionen (Zielkonto),
@@ -654,81 +776,147 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     zusammen: Dict[str, str] = kf.get("_zusammen") or {}
     fold_memo: Dict[str, str] = {}
 
-    for t in in_root:
-        acc = ledger.accounts[t.account_uuid]
-        role = roles.get(acc.uuid, "sonstiges")
-        mk = month_key(t.booking_date)
-        p = partner[t.id]
-        p_role = roles.get(p) if p in roles else None
+    def folded(t: Tx) -> str:
         cat = t.category_path.replace("\\", " / ") or "(ohne Kategorie)"
         if zusammen:                                     # Einrichtung: Unterkategorien zur Oberkategorie zusammenfassen
             f = fold_memo.get(cat)
             if f is None:
                 f = fold_memo[cat] = fold_category(zusammen, cat)
             cat = f
+        return cat
+
+    def section_of(cat: str) -> tuple:
+        c = cat_memo.get(cat)
+        if c is None:
+            c = cat_memo[cat] = cat_class(cat, cat.split(" / ")[0])
+        return c
+
+    def pairable(t: Tx) -> bool:
+        """A bank booking that may be the other side of a booking in an offline account: no category, or one for a transfer,
+        an investment or a repayment -- never income or an expense."""
+        return not t.category_path or section_of(folded(t))[0] in ("Investitionen",) or section_of(folded(t))[:2] == ("Finanzierung", "tilgung")
+    mate, partner, by_cat = pair_transfers(ledger, in_root, flows, roles, transfer_cats, cost_words, kf, pairable)
+    pairs: List[Tuple[date, date, float, str, str]] = []
+    seen_pair: Set[int] = set()
+
+    def own_row(t: Tx, acc: Account, role: str, mk: str) -> None:
+        """A booking of an account that is no bank account (loan, receivable, asset): interest or a change of its value."""
+        nonlocal unclear
+        if role == "verbindlichkeiten" and _is_cost(t, cost_words):
+            R.add("Finanzierung", acc.name, acc.name + " / Zinsen", mk, t.amount, konto=acc.uuid, art="zins", nw=True, lbl=("cf_zinsen", acc.name))
+            R.add("Finanzierung", acc.name, acc.name + " / Tilgung", mk, -t.amount, konto=acc.uuid, art="tilgung", nw=False, lbl=("cf_tilgung", acc.name))
+        elif role == "forderungen" and _is_cost(t, cost_words):
+            R.add("Investitionen", acc.name, acc.name + " / Zinsen", mk, t.amount, konto=acc.uuid, art="zins", nw=True, lbl=("cf_zinsen", acc.name))
+            R.add("Investitionen", acc.name, acc.name + " / Rückzahlung", mk, -t.amount, konto=acc.uuid, art="rueckzahlung", nw=False, lbl=("cf_rueckzahlung", acc.name))
+        elif role in ("verbindlichkeiten", "forderungen") or role in ASSET_LIKE:
+            R.add("Bewertung", acc.name, acc.name, mk, t.amount, konto=acc.uuid, art="konto", nw=True)
+        else:
+            R.add("Unklar", "Konto ohne Position", acc.name + " (Position unbekannt)", mk, t.amount, art="unklar",
+                  lbl=("cf_position_unbekannt", acc.name), glbl=("cf_konto_ohne_position",)); unclear += 1
+
+    for t in in_root:
+        acc = ledger.accounts[t.account_uuid]
+        role = roles.get(acc.uuid, "sonstiges")
+        mk = month_key(t.booking_date)
+        o = mate.get(t.id)
+        if o is not None and month_key(o.booking_date) != mk and "liquiditaet" not in (role, roles.get(o.account_uuid)):
+            o = None                                     # e.g. loan and asset a month apart: no money in transit
+        if o is not None and o.id not in seen_pair:
+            seen_pair.update({t.id, o.id})
+            if month_key(o.booking_date) != mk:                   # over a month end: money in transit
+                out_, in_ = (t, o) if t.amount < 0 else (o, t)
+                pairs.append((out_.booking_date, in_.booking_date, -out_.amount, out_.account_uuid, in_.account_uuid))
+        p = partner.get(t.id)
+        cat = folded(t)
         top = cat.split(" / ")[0]
         if role == "ignorieren":
             continue
-        if role == "liquiditaet":
-            if is_transfer[t.id]:
-                if p is not None and p in root_leaves:
-                    if p_role in ("liquiditaet", "ignorieren"):
-                        continue
-                    pacc = ledger.accounts[p]
-                    if p_role in ASSET_ROLES:
-                        R.add("Investitionen", pacc.name, pacc.name, mk, t.amount, konto=p, art="konto", nw=False)
-                        inbound[p][mk] += -t.amount
-                    elif p_role == "forderungen":
-                        R.add("Investitionen", pacc.name, pacc.name + " / Rückzahlung", mk, t.amount, konto=p, art="rueckzahlung", nw=False)
-                    elif p_role == "verbindlichkeiten":
-                        R.add("Finanzierung", pacc.name, pacc.name + " / Tilgung", mk, t.amount, konto=p, art="tilgung", nw=False)
-                    else:
-                        R.add("Unklar", "Umbuchung", "Umbuchung nach " + pacc.name, mk, t.amount, art="unklar"); unclear += 1
-                elif p is not None and p in beteiligungs_gruppen:
-                    g = beteiligungs_gruppen[p]
-                    R.add("Investitionen", "Einlagen/Entnahmen", "Einlage/Entnahme " + g, mk, t.amount, art="extern", nw=False)
-                elif p is not None and roles.get(p) == "eigenkapital":
-                    R.add("Finanzierung", "Gesellschafter", "Einlagen/Entnahmen Gesellschafter", mk, t.amount, art="extern", nw=True)
-                elif p is not None:
-                    R.add("Unklar", "Umbuchung", "Umbuchung nach " + ledger.accounts[p].path, mk, t.amount, art="unklar"); unclear += 1
-                else:
-                    R.add("Unklar", "Umbuchung", "Umbuchung ohne erkannten Partner", mk, t.amount, art="unklar"); unclear += 1
+        if role != "liquiditaet":
+            if o is not None:
+                continue                                 # the other side (or the bank account) shows the transfer
+            own_row(t, acc, role, mk)
+            continue
+        if o is not None:                                # transfer within the area
+            o_role = roles.get(o.account_uuid, "sonstiges")
+            pacc = ledger.accounts[o.account_uuid]
+            if o_role == "liquiditaet":
                 continue
-            # Abschnitt je Kategorie nur einmal bestimmen (gleiche Kategorie -> gleiche Einordnung)
-            c = cat_memo.get(cat)
-            if c is None:
-                c = cat_memo[cat] = cat_class(cat, top)
-            kind = c[0]
-            if kind == "Finanzierung":
-                R.add("Finanzierung", top, cat, mk, t.amount, art=c[1], nw=c[2])
-            elif kind == "Investitionen":
-                R.add("Investitionen", top, cat, mk, t.amount, konto=c[1], art="kategorie", nw=False)
-                if c[1]:
-                    inbound[c[1]][mk] += -t.amount
-            elif kind != "Ignorieren":
-                R.add(kind, top, cat, mk, t.amount)
-        elif role == "verbindlichkeiten":
-            if is_transfer[t.id]:
-                continue
-            if _is_cost(t, cost_words):
-                R.add("Finanzierung", acc.name, acc.name + " / Zinsen", mk, t.amount, konto=acc.uuid, art="zins", nw=True)
-                R.add("Finanzierung", acc.name, acc.name + " / Tilgung", mk, -t.amount, konto=acc.uuid, art="tilgung", nw=False)
+            if o_role in ASSET_LIKE:
+                R.add("Investitionen", pacc.name, pacc.name, mk, t.amount, konto=pacc.uuid, art="konto", nw=False)
+                inbound[pacc.uuid][mk] += -t.amount
+            elif o_role == "forderungen":
+                R.add("Investitionen", pacc.name, pacc.name + " / Rückzahlung", mk, t.amount, konto=pacc.uuid, art="rueckzahlung", nw=False,
+                      lbl=("cf_rueckzahlung", pacc.name))
+            elif o_role == "verbindlichkeiten":
+                R.add("Finanzierung", pacc.name, pacc.name + " / Tilgung", mk, t.amount, konto=pacc.uuid, art="tilgung", nw=False,
+                      lbl=("cf_tilgung", pacc.name))
             else:
-                R.add("Bewertung", acc.name, acc.name, mk, t.amount, konto=acc.uuid, art="konto", nw=True)
-        elif role == "forderungen":
-            if is_transfer[t.id]:
-                continue
-            if _is_cost(t, cost_words):
-                R.add("Investitionen", acc.name, acc.name + " / Zinsen", mk, t.amount, konto=acc.uuid, art="zins", nw=True)
-                R.add("Investitionen", acc.name, acc.name + " / Rückzahlung", mk, -t.amount, konto=acc.uuid, art="rueckzahlung", nw=False)
+                R.add("Unklar", "Umbuchung", "Umbuchung nach " + pacc.name, mk, t.amount, art="unklar",
+                      lbl=("cf_umbuchung_mit", pacc.name), glbl=("cf_umbuchung",)); unclear += 1
+            continue
+        if p is not None and p in depots:               # into a depot valued by its balances: its valuation takes the rest
+            pacc = ledger.accounts[p]
+            R.add("Investitionen", pacc.name, pacc.name, mk, t.amount, konto=p, art="konto", nw=False)
+            inbound[p][mk] += -t.amount
+            continue
+        if p is not None and p in root_leaves:          # an account of the area, but its booking is missing
+            R.add("Unklar", "Umbuchung", "Umbuchung nach %s ohne Gegenbuchung" % ledger.accounts[p].name, mk, t.amount, art="unklar",
+                  lbl=("cf_ohne_gegenbuchung", ledger.accounts[p].name), glbl=("cf_umbuchung",)); unclear += 1
+            continue
+        if p is not None and p in ledger.accounts and foreign_currency(ledger.accounts[p]):    # into another currency
+            name = ledger.accounts[p].name
+            R.add("Investitionen", "Fremdwährung", "Fremdwährung " + name, mk, t.amount, konto=p, art="extern", nw=True,
+                  lbl=("cf_fremdwaehrung", name), glbl=("cf_fremdwaehrung_g",))
+            continue
+        pa = areas.get(p) if p is not None else None
+        same = pa is not None and pa == self_name
+        if p is not None and roles.get(p) == "eigenkapital" and (same or pa is None):
+            R.add("Finanzierung", "Gesellschafter", "Einlagen/Entnahmen Gesellschafter", mk, t.amount, art="extern", nw=True,
+                  lbl=("cf_einlagen_gesellschafter",), glbl=("cf_gesellschafter",))
+            continue
+        if p is not None and not same and p in beteiligungs_gruppen:   # a company: its participation (if held here) takes it
+            g = beteiligungs_gruppen[p]
+            st = stakes.get(g)
+            R.add("Investitionen", "Einlagen/Entnahmen", "Einlage/Entnahme " + g, mk, t.amount, konto=st, art="extern", nw=st is None,
+                  lbl=("cf_einlage", g), glbl=("cf_einlagen",))
+            if st:
+                stake_in[st][mk] += -t.amount
+            continue
+        if p is not None and not same and pa is not None:             # another area of yours
+            if company:
+                R.add("Finanzierung", "Gesellschafter", "Einlagen/Entnahmen Gesellschafter", mk, t.amount, art="extern", nw=True,
+                      lbl=("cf_einlagen_gesellschafter",), glbl=("cf_gesellschafter",))
             else:
-                R.add("Bewertung", acc.name, acc.name, mk, t.amount, konto=acc.uuid, art="konto", nw=True)
-        elif role in ASSET_ROLES:
-            if is_transfer[t.id]:
-                continue
-            R.add("Bewertung", acc.name, acc.name, mk, t.amount, konto=acc.uuid, art="konto", nw=True)
+                R.add("Investitionen", "Einlagen/Entnahmen", "Einlage/Entnahme " + pa, mk, t.amount, art="extern", nw=True,
+                      lbl=("cf_einlage", pa), glbl=("cf_einlagen",))
+            continue
+        if p is not None:
+            R.add("Unklar", "Umbuchung", "Umbuchung nach " + ledger.accounts[p].path, mk, t.amount, art="unklar",
+                  lbl=("cf_umbuchung_mit", ledger.accounts[p].path), glbl=("cf_umbuchung",)); unclear += 1
+            continue
+        if by_cat[t.id]:
+            R.add("Unklar", "Umbuchung", "Umbuchung ohne erkannten Partner", mk, t.amount, art="unklar",
+                  lbl=("cf_ohne_partner",), glbl=("cf_umbuchung",)); unclear += 1
+            continue
+        # Abschnitt je Kategorie nur einmal bestimmen (gleiche Kategorie -> gleiche Einordnung)
+        c = section_of(cat)
+        kind = c[0]
+        lb = {"lbl": ("cf_ohne_kategorie",), "glbl": ("cf_ohne_kategorie",)} if cat == "(ohne Kategorie)" else {}
+        if kind == "Finanzierung":
+            R.add("Finanzierung", top, cat, mk, t.amount, art=c[1], nw=c[2], **lb)
+        elif kind == "Investitionen":
+            target = c[1] if c[1] in root_leaves else (depots[0] if len(depots) == 1 and not c[1] else None)
+            # without a known account the money leaves the net worth -- unless a depot of the area takes it (shown as reason)
+            neutral = target is not None or bool(depots)
+            R.add("Investitionen", top, cat, mk, t.amount, konto=target, art="kategorie", nw=not neutral, **lb)
+            if target:
+                inbound[target][mk] += -t.amount
+            elif neutral:
+                no_target[mk] += t.amount
+        elif kind == "Ignorieren":
+            ignored[mk] += t.amount
         else:
-            R.add("Unklar", "Konto ohne Position", acc.name + " (Position unbekannt)", mk, t.amount, art="unklar"); unclear += 1
+            R.add(kind, top, cat, mk, t.amount, **lb)
 
     for key in [k for k in R.vals if k[0] == "__operativ__"]:
         vals = R.vals.pop(key)
@@ -737,15 +925,75 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         for mk, v in vals.items():
             R.vals[(target, key[1])][mk] += v
         R.meta.setdefault((target, key[1]), meta)
+    # a participation took a contribution: what it is worth more (or less) than the money paid in is its valuation
+    for st, per in stake_in.items():
+        acc = ledger.accounts[st]
+        for mk, v in per.items():
+            R.add("Bewertung", acc.name, acc.name, mk, -v, konto=st, art="konto", nw=True)
 
     if unclear:
         warnings.append(tr("s_d_umbuchung_en_ohne_erkennbaren") % unclear)
+    R.pairs = pairs
+    R.reasons = {"ignoriert": dict(ignored), "ohne_ziel": dict(no_target)}
     return R, inbound, warnings
 
 
 # ---------------------------------------------------------------------------
 # Bilanz je Bereich
 # ---------------------------------------------------------------------------
+
+def reconcile(sektionen: List[dict], nw: Dict[str, float], liq: Dict[str, Optional[float]], mkeys: List[str], leaves: List[Account],
+              roles: Dict[str, str], hist: Dict[str, Dict[str, Optional[float]]], R: "Rows", ledger: Ledger, months: List[Tuple[int, int]],
+              today: date) -> Dict[str, dict]:
+    """Check of the cash flow against the balance sheet, month by month: the rows that change the net worth add up to its change,
+    the cash rows to the change of the liquid accounts (with money in transit). A difference is split into its reasons
+    ([text key, amount, detail]); what no reason explains is shown as such -- never left out."""
+    reasons = getattr(R, "reasons", None) or {}
+    ignored, no_target = reasons.get("ignoriert") or {}, reasons.get("ohne_ziel") or {}
+    liquid = {a.uuid for a in leaves if roles.get(a.uuid) == "liquiditaet"}
+    # transfers over a month end with a side that is no bank account: the bank side counts in its month, the money in transit
+    # counts as liquid in the balance sheet until it arrives
+    mixed = [p for p in (getattr(R, "pairs", None) or []) if not (p[3] in liquid and p[4] in liquid)]
+    transit_mixed, _ = _transit_from(ledger, months, mkeys, mixed, today) if mixed else ({mk: 0.0 for mk in mkeys}, [])
+    names = {a.uuid: a.name for a in leaves}
+    out: Dict[str, dict] = {}
+    for i, mk in enumerate(mkeys):
+        if i == 0:
+            continue
+        prev = mkeys[i - 1]
+        rows = [z for sek in sektionen for z in sek["zeilen"]]
+        explained = round(sum(z["werte"].get(mk, 0.0) for z in rows if z["nw"]), 2)
+        cash = round(sum(z["werte"].get(mk, 0.0) for sek in sektionen if sek["name"] in CASH_SECTIONS for z in sek["zeilen"]), 2)
+        delta = round(nw[mk] - nw[prev], 2)
+        dliq = round((liq.get(mk) or 0.0) - (liq.get(prev) or 0.0), 2)
+        unknown = sorted(names[u] for u in names
+                         if (hist.get(u, {}).get(mk) is None) != (hist.get(u, {}).get(prev) is None))
+        g_nw: List[list] = []
+        g_liq: List[list] = []
+        if abs(ignored.get(mk, 0.0)) >= 0.005:
+            g_nw.append(["ue_ignoriert", round(ignored[mk], 2), ""])
+            g_liq.append(["ue_ignoriert", round(ignored[mk], 2), ""])
+        if abs(no_target.get(mk, 0.0)) >= 0.005:
+            g_nw.append(["ue_ohne_ziel", round(no_target[mk], 2), ""])
+        tm = round(transit_mixed.get(mk, 0.0) - transit_mixed.get(prev, 0.0), 2)
+        if abs(tm) >= 0.005:
+            g_liq.append(["ue_unterwegs", tm, ""])
+        for z in rows:
+            if z["konto"] in liquid and z["art"] in ("korrektur", "depot") and abs(z["werte"].get(mk, 0.0)) >= 0.005:
+                g_liq.append(["ue_korrektur" if z["art"] == "korrektur" else "ue_wert", round(z["werte"][mk], 2), names.get(z["konto"], "")])
+
+        def rest(gaps: List[list], total: float) -> None:
+            left = round(total - sum(g[1] for g in gaps), 2)
+            if abs(left) >= 0.01:
+                gaps.append(["ue_unbekannt", left, ", ".join(unknown)] if unknown else ["ue_rest", left, ""])
+        un = round(delta - explained, 2)
+        ab = round(dliq - cash, 2)
+        rest(g_nw, un)
+        rest(g_liq, ab)
+        out[mk] = {"delta_nw": delta, "erklaert": explained, "unerklaert": un, "gruende": g_nw if abs(un) >= 0.01 else [],
+                   "delta_liq": dliq, "zahlungsfluss": cash, "abweichung_liq": ab, "gruende_liq": g_liq if abs(ab) >= 0.01 else []}
+    return out
+
 
 def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereich: dict, roles: Dict[str, str],
                   rule_warnings: Optional[List[str]] = None, progress: Optional[Callable[[float, str], None]] = None) -> dict:
@@ -754,7 +1002,10 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
     order = ledger.order()                      # Konten in der Reihenfolge von MoneyMoney
     bcfg = config.get("bilanz", {}) or {}
     leaves: List[Account] = [a for a in bereich["leaves"] if roles.get(a.uuid) not in OFF_BALANCE]
-    ausserhalb_accs = [a for a in bereich["leaves"] if roles.get(a.uuid) in ("eigenkapital", "eventual")]
+    # accounts in another currency: not converted (no exchange rates, no estimate) -- shown apart, in their currency
+    foreign = [a for a in leaves if foreign_currency(a)]
+    leaves = [a for a in leaves if not foreign_currency(a)]
+    ausserhalb_accs = [a for a in bereich["leaves"] if roles.get(a.uuid) in ("eigenkapital", "eventual")] + foreign
     leaf_ids = {a.uuid for a in leaves}
     back = int(bcfg.get("monate_zurueck", 0) or 0)
     if back <= 0:
@@ -783,14 +1034,17 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
     hist, warn_h, quelle, fortgeschrieben = balance_history(ledger, leaves, months, snapshots, historie, verlauf_cfg, today, config, historie_mm,
                                                             state.get("historie_mm_anfang") or {})
     step(0.3, tr("s_zahlungsstroeme"))
+    areas = area_names(ledger, config)
+    company = bereich.get("art") == "gesellschaft"
     ckey = (getattr(ledger, "_kat_sig", None), tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
             json.dumps(config.get("kapitalfluss") or {}, sort_keys=True, default=str), tuple(months[0]) if months else None,
-            tuple(months[-1]) if months else None, len(months), tuple(sorted(quelle.items())))
+            tuple(months[-1]) if months else None, len(months), tuple(sorted(quelle.items())), company,
+            json.dumps([sorted(areas.items()), config.get("gesellschaften")], sort_keys=True, default=str))
     cache = ledger.__dict__.setdefault("_classify_cache", {})
     if ckey in cache:
         R, inbound, warn_c = copy.deepcopy(cache[ckey])        # Bereich unveraendert (z. B. Verlauf eines anderen Bereichs geaendert)
     else:
-        R, inbound, warn_c = classify(ledger, leaves, roles, config, months, quelle)
+        R, inbound, warn_c = classify(ledger, leaves, roles, config, months, quelle, areas, company)
         if len(cache) > 24:
             cache.clear()
         cache[ckey] = copy.deepcopy((R, inbound, warn_c))
@@ -818,7 +1072,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                 else:
                     val = round(delta - own.get(mk, 0.0), 2)
                     if abs(val) >= 0.005:
-                        R.add("Bewertung", acc.name, acc.name + " / Korrektur Kontostand", mk, val, konto=acc.uuid, art="korrektur", nw=True)
+                        R.add("Bewertung", acc.name, acc.name + " / Korrektur Kontostand", mk, val, konto=acc.uuid, art="korrektur", nw=True,
+                              lbl=("cf_korrektur", acc.name))
 
     illiquid_roles = set(ILLIQUID_DEFAULT)      # fest nach Position (Liquiditaet und Wertpapiere gelten als verfuegbar)
     illiquid_refs: Set[str] = set()
@@ -850,7 +1105,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                     row["wertpapiere"] = wp
             bilanz_rows.append(row)
     # Geld unterwegs (Umbuchung ueber das Monatsende) zaehlt zur Liquiditaet; sonst knickt das Nettovermoegen am Monatsende ein
-    transit, transit_details = transit_series(ledger, leaves, roles, months, quelle, today)
+    transit, transit_details = transit_series(ledger, leaves, roles, months, quelle, today, getattr(R, "pairs", None))
     if any(abs(v) >= 0.005 for v in transit.values()):
         grp = next((r for r in bilanz_rows if r["id"] == "pos:liquiditaet"), None)
         if grp is None:
@@ -871,10 +1126,12 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
     liquid_nw = {mk: round(nw[mk] - sum((r["werte"][mk] or 0.0) for r in bilanz_rows if not r["gruppe"] and r["illiquide"]), 2) for mk in mkeys}
     # Ausserhalb des Nettovermoegens: Kapitalkonten (Eigenkapital) und Avale/Buergschaften -- nur zur Information
     ausserhalb = []
-    for a in sorted(ausserhalb_accs, key=lambda x: (roles.get(x.uuid) or "", order.get(x.uuid, 10**9))):
+    out_role = lambda a: "fremdwaehrung" if foreign_currency(a) else roles.get(a.uuid)
+    for a in sorted(ausserhalb_accs, key=lambda x: (out_role(x) or "", order.get(x.uuid, 10**9))):
         wh, _, _ = account_balance_series(ledger, a, months, verlauf_quelle(a, verlauf_cfg), snapshots, historie.get(a.uuid) or {}, today, config,
                                              historie_mm.get(a.uuid), (state.get("historie_mm_anfang") or {}).get(a.uuid))
-        ausserhalb.append({"id": a.uuid, "name": a.name, "pfad": a.path, "rolle": roles.get(a.uuid), "werte": {mk: wh[mk] for mk in mkeys}})
+        ausserhalb.append({"id": a.uuid, "name": a.name, "pfad": a.path, "rolle": out_role(a), "waehrung": a.currency or "EUR",
+                           "werte": {mk: wh[mk] for mk in mkeys}})
 
     # Kapitalfluss-Sektionen
     sektionen = []
@@ -884,21 +1141,19 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
             if s != sec:
                 continue
             m = R.meta[(s, row)]
-            zeilen.append({"zeile": row, "gruppe": m["gruppe"], "konto": m["konto"], "art": m["art"], "nw": m["nw"],
-                           "werte": {mk: round(vals.get(mk, 0.0), 2) for mk in mkeys}})
+            z = {"zeile": row, "gruppe": m["gruppe"], "konto": m["konto"], "art": m["art"], "nw": m["nw"],
+                 "werte": {mk: round(vals.get(mk, 0.0), 2) for mk in mkeys}}
+            for k in ("lbl", "glbl"):
+                if m.get(k):
+                    z[k] = m[k]
+            zeilen.append(z)
         gsum = defaultdict(float)
         for z in zeilen:
             gsum[z["gruppe"]] += abs(sum(z["werte"].values()))
         zeilen.sort(key=lambda z: (-gsum[z["gruppe"]], z["gruppe"], z["zeile"]))
         sektionen.append({"name": sec, "zeilen": zeilen})
 
-    ueberleitung = {}
-    for i, mk in enumerate(mkeys):
-        if i == 0:
-            continue
-        explained = sum(z["werte"][mk] for sek in sektionen for z in sek["zeilen"] if z["nw"])
-        delta = round(nw[mk] - nw[mkeys[i - 1]], 2)
-        ueberleitung[mk] = {"delta_nw": delta, "erklaert": round(explained, 2), "unerklaert": round(delta - explained, 2)}
+    ueberleitung = reconcile(sektionen, nw, pos_sums.get("liquiditaet") or {}, mkeys, leaves, roles, hist, R, ledger, months, today)
 
     loans_cfg = {}
     for l in config.get("darlehen", []) or []:
@@ -910,6 +1165,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
             pass
 
     warnings = list(rule_warnings or []) + warn_h + warn_c
+    if foreign:
+        warnings.append(tr("s_fremdwaehrung", ", ".join("%s (%s)" % (a.name, a.currency) for a in foreign)))
     return {
         "erstellt": today.isoformat(),
         "heute": today.isoformat(),
@@ -1219,7 +1476,7 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                 method = fx[1]
             elif cfg.get("methode"):
                 method = cfg["methode"]
-            elif sek["name"] in ("Bewertung", "Unklar"):
+            elif sek["name"] in ("Bewertung", "Unklar") or z.get("art") == "extern":     # contributions/withdrawals: one-offs
                 method = "keine"
             elif sek["name"] == "Investitionen" and z.get("art") in ("extern", "konto", "rueckzahlung", "zins"):
                 method = "keine" if z.get("art") in ("extern", "konto") else default_method

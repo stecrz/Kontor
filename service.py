@@ -1105,6 +1105,8 @@ def _last(d: dict, months: List[str]):
     return None
 
 
+SECTION_KEYS = {"Einnahmen": "einnahmen", "Ausgaben": "ausgaben", "Investitionen": "investitionen_umschichtung",
+                "Finanzierung": "finanzierung_tilgung_zinsen", "Bewertung": "bewertung_manuelle_buchungen_nicht_zah", "Unklar": "unklar_zuordnung_pruefen"}
 EXPORT_FILE_KEYS = {"balance": "xf_balance", "cashflow": "xf_cashflow", "planning": "xf_planning", "tax": "xf_tax", "transactions": "xf_transactions",
                     "holdings": "xf_holdings", "receipts": "xf_receipts", "accounts": "xf_accounts"}       # Dateiname je Export (Sprachkatalog)
 
@@ -1166,10 +1168,11 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
         add(tr("x_davon_liquide"), bil.get("liquides_nettovermoegen", {}), 0, False)
         for role in dict.fromkeys(r["rolle"] for r in bil.get("ausserhalb") or []):       # outside net worth, collapsed per kind
             accs = [r for r in bil["ausserhalb"] if r["rolle"] == role]
-            tot = {m: round(sum((r["werte"].get(m) or 0.0) for r in accs), 2) for m in {m for r in accs for m in r["werte"]}}
-            add(role_label(role) + " (" + tr("x_nicht_im_nw") + ")", tot, 0, False, True)
+            fx = role == "fremdwaehrung"                     # other currencies: each in its own, no sum
+            tot = {} if fx else {m: round(sum((r["werte"].get(m) or 0.0) for r in accs), 2) for m in {m for r in accs for m in r["werte"]}}
+            add((tr("fremdwaehrung_nicht_umgerechnet") if fx else role_label(role) + " (" + tr("x_nicht_im_nw") + ")"), tot, 0, False, True)
             for r in accs:
-                add("    " + r["name"], r["werte"], 1, role not in v.get("open", ()))
+                add("    " + r["name"] + (" (%s)" % r.get("waehrung") if fx else ""), r["werte"], 1, role not in v.get("open", ()))
         head = [tr("x_konto")] + [c[0] + (tr("x_plan_suffix") if c[2] else "") for c in cols]
         return [Sheet(tr("x_bilanz") + " " + name, head, rows, bold_rows=bold, levels=levels, hidden_rows=hidden)]
 
@@ -1177,14 +1180,26 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
         cols = columns(True)
         rows, bold = [], []
         for sek in b.get("kapitalfluss", {}).get("sektionen", []):
-            rows.append([sek["name"]] + [None] * len(cols)); bold.append(len(rows) - 1)
+            rows.append([tr(SECTION_KEYS[sek["name"]]) if sek["name"] in SECTION_KEYS else sek["name"]] + [None] * len(cols)); bold.append(len(rows) - 1)
             for z in sek["zeilen"]:
                 allv = dict(z["werte"]); allv.update((z.get("plan") or {}).get("werte", {}))
-                label = "    " + z["zeile"] + ("" if z.get("nw") else tr("x_umschichtung"))
+                label = "    " + (tr(*z["lbl"]) if z.get("lbl") else z["zeile"]) + ("" if z.get("nw") else tr("x_umschichtung"))
                 rows.append([label] + [round(sum(allv.get(m, 0.0) for m in ms), 2) for _, ms, _p in cols])
         sums = b.get("kapitalfluss", {}).get("summen", {})
+        ue = b.get("kapitalfluss", {}).get("ueberleitung", {}) or {}
         for k, label in (("Operativ", tr("x_operativ")), ("Cashflow", tr("x_cashflow_gesamt")), ("Nettovermoegen_delta", tr("s_nettovermoegensaenderung"))):
             rows.append([label] + [round(sum((sums.get(m) or {}).get(k, 0.0) for m in ms), 2) for _, ms, _p in cols]); bold.append(len(rows) - 1)
+            check = {"Cashflow": ("abweichung_liq", "abweichung_liquiditaet"), "Nettovermoegen_delta": ("unerklaert", "unerklaerte_vermoegensaenderung_pruefz")}.get(k)
+            if check:
+                def cell(ms, plan, key=check[0]):
+                    done = [m for m in ms if m <= b.get("ist_bis", "")]
+                    if plan or not done or any(m not in ue for m in done):
+                        return None                              # not every month checked: no claim
+                    offs = [ue[m][key] for m in done if abs(ue[m][key]) >= 0.005]
+                    if offs and abs(sum(offs)) < 0.005:
+                        return tr("ue_ausgeglichen")             # months differ, but cancel out over the column
+                    return round(sum(offs), 2) if offs else 0.0
+                rows.append([tr(check[1])] + [cell(ms, p_) for _, ms, p_ in cols])
         head = [tr("x_position")] + [c[0] + (tr("x_plan_suffix") if c[2] else "") for c in cols]
         sheets = [Sheet(tr("x_planung" if was == "planning" else "x_kapitalfluss") + " " + name, head, rows, bold_rows=bold)]
         if was == "planning":

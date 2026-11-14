@@ -1,6 +1,7 @@
 """Look at Kontor's interface with the made-up test data: pages as images, light and dark, MacBook and iPhone.
 
-Usage: python3 tests/preview.py OUT_DIR ['#route' ...] [--lang de|en] [--nur hell|dunkel] [--nur mac|iphone]
+Usage: python3 tests/preview.py OUT_DIR ['#route' ...] [--lang de|en] [--nur hell|dunkel] [--nur mac|iphone] [--js CODE]
+--js: JavaScript run on each page before the picture (e.g. whole tables: "document.querySelectorAll('.wrap').forEach(w => w.style.maxHeight = 'none')").
 Without routes: all main pages. Booked as on a first sync with everything new (nothing older waits).
 All names, accounts and amounts come from tests/fixtures.py and are made up."""
 import argparse
@@ -29,6 +30,7 @@ def main() -> None:
     ap.add_argument("routes", nargs="*")
     ap.add_argument("--lang", default="de")
     ap.add_argument("--nur", action="append", default=[])
+    ap.add_argument("--js", default="")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     themes = [t for t in ("dunkel", "hell") if not set(a.nur) & {"dunkel", "hell"} or t in a.nur]
@@ -57,8 +59,12 @@ def main() -> None:
                     ctx.add_cookies(cookies)
                     pg = ctx.new_page()
                     pg.goto(url); pg.evaluate("l => localStorage.setItem('kontor.lang', l)", a.lang)
+                    pg.evaluate("t => localStorage.setItem('kontor.theme', t)", "light" if theme == "hell" else "dark")   # dark is the default
+                    pg.reload()
                     for route in a.routes or PAGES:
                         pg.goto(url + route); pg.wait_for_timeout(1500)
+                        if a.js:
+                            pg.evaluate("() => { %s }" % a.js); pg.wait_for_timeout(300)
                         name = "%s_%s_%s.png" % (route.strip("#").replace("/", "-") or "start", size, theme)
                         pg.screenshot(path=os.path.join(a.out, name), full_page=True)
                         print(os.path.join(a.out, name))

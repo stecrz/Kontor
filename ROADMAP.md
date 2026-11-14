@@ -3,21 +3,10 @@
 Reihenfolge = Priorität. Jeder Punkt ist fertig, wenn alle Kriterien erfüllt sind, die Tests grün sind und die Version
 veröffentlicht ist (Skill `release`). Geprüfte Seiten verlieren die Markierung „Alpha“.
 
-Geprüft: Bilanz, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll, Hilfe, Auto-Buchungen, Buchungsregeln (3.13).
+Geprüft: Bilanz, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll, Hilfe, Auto-Buchungen, Buchungsregeln (3.13),
+Kategorien und Cashflow (3.13.4: jeder Monat stimmt mit der Bilanz überein, Abweichungen mit Grund).
 
-## 1. Kategorien und Cashflow
-Ziel: Jeder Euro ist richtig eingeordnet, der Cashflow geht auf und erklärt die Veränderung des Geldes.
-
-Fertig, wenn
-- jeder Umsatz eine Kategorie hat oder sichtbar als „ohne Kategorie“ zählt; Zuordnen geht schnell (einzeln, mehrere, mit Regel) und lernt dazu;
-- Umbuchungen zwischen eigenen Konten nie als Einnahme oder Ausgabe zählen – auch über Bereiche hinweg (dann Einlage/Entnahme);
-- der Cashflow je Monat aufgeht: Summe aller Zeilen = Veränderung der liquiden Konten, eine Differenz wird mit Grund gezeigt, nie verschwiegen;
-- Darlehen in Zins und Tilgung getrennt sind (aus den Auto-Buchungen), Kapitalanlagen als Investition zählen;
-- das Zurückschreiben nach MoneyMoney nur das Kategoriefeld ändert (Regeln in `CLAUDE.md`);
-- Tests mit erfundenen Daten die Abstimmung je Monat und die Sonderfälle prüfen (Umbuchung über das Monatsende, vorgemerkte Umsätze, Erstattungen, Fremdwährung);
-- Hilfe de/en und Bilder aktuell sind; beide Seiten ohne „Alpha“.
-
-## 2. Immobilien und Steuer
+## 1. Immobilien und Steuer
 Ziel: Kalkulation, Ist-Zahlen und Steuer je Objekt und Gesellschaft stimmen und passen zusammen.
 
 Fertig, wenn
@@ -26,7 +15,7 @@ Fertig, wenn
 - AfA aus der Kalkulation kommt und von Hand überschrieben werden kann;
 - Tests rechnen auf den Cent gegen eine handgerechnete Tabelle; Hilfe und Bilder aktuell; ohne „Alpha“.
 
-## 3. Planung
+## 2. Planung
 Ziel: Eine glaubwürdige Vorschau auf Vermögen und Liquidität.
 
 Fertig, wenn
@@ -34,7 +23,7 @@ Fertig, wenn
 - jede Zahl ihre Herkunft zeigt (Ist, Plan, Annahme); nichts wird geschätzt, ohne es so zu kennzeichnen;
 - Tests prüfen Fortschreibung, Zinseszins und Grenzen; Hilfe und Bilder aktuell; ohne „Alpha“.
 
-## 4. Übersicht
+## 3. Übersicht
 Ziel: Auf einen Blick, was zählt – Vermögen, Liquidität, Sparquote, was zu tun ist.
 
 Fertig, wenn

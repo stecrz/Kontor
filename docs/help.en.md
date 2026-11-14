@@ -195,7 +195,11 @@ Where the money goes: income and expenses by category, investments (moves into p
 
 ![Cash flow](img/en/cash_flow.png)
 
-Kontor recognises transfers between own accounts by the counterparty IBAN, the category “Umbuchung” and matching bookings of the same amount within three days; they do not count as income or expense. The **check row** “unexplained change in net worth” should be close to 0 – otherwise a category or a counter-booking is missing. Which categories appear as separate rows is set under [Categories → Selection](#categories-selection); which parent category belongs to which section under Categories → Cash flow mapping.
+Every transaction counts exactly once. Transfers between your own accounts never count as income or expense: Kontor finds the counter-booking of each – by the mark of its own bookings (the repayment names the payment), by the counterparty IBAN (same amount, at most five days apart) or, for the category “Umbuchung” and for manual accounts, by the amount (at most three days). Payments into another area are **contributions or withdrawals**; if you hold a participation in a company, the difference between the money paid in and the value of the participation shows under valuation. Accounts in a foreign currency are not converted; the balance sheet shows them outside net worth.
+
+Two **check rows** compare every month with the balance sheet: the cash flow with the change of the liquid accounts, the rows without “reallocation” with the change in net worth. ✓ means: matches to the cent. A difference names its reason when you hover over it – for example money in transit to a loan over the month end, or a category you set to “Ignore”. What Kontor cannot assign with certainty – such as a transfer without a counter-booking – shows under “unclear” and counts with its amount.
+
+Which categories appear as separate rows is set under [Categories → Selection](#categories-selection); which parent category belongs to which section under Categories → Cash flow mapping.
 
 <a id="categories"></a>
 ## Categories

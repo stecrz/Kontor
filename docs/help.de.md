@@ -195,7 +195,11 @@ Wohin das Geld fließt: Einnahmen und Ausgaben nach Kategorien, Investitionen (U
 
 ![Cashflow](img/de/cash_flow.png)
 
-Umbuchungen zwischen eigenen Konten erkennt Kontor an der Gegen-IBAN, an der Kategorie „Umbuchung“ und an Gegenbuchungen mit gleichem Betrag innerhalb von drei Tagen; sie zählen nicht als Einnahme oder Ausgabe. Die **Prüfzeile** „unerklärte Vermögensänderung“ sollte nahe 0 liegen – sonst fehlt eine Kategorie oder eine Gegenbuchung. Welche Kategorien als eigene Zeile erscheinen, legst du unter [Kategorien → Auswahl](#categories-selection) fest; welche Oberkategorie zu welchem Abschnitt gehört, unter Kategorien → Cashflow-Zuordnung.
+Jeder Umsatz zählt genau einmal. Umbuchungen zwischen eigenen Konten zählen nie als Einnahme oder Ausgabe: Kontor findet zu jeder die Gegenbuchung – über die Markierung seiner eigenen Buchungen (die Tilgung nennt die Zahlung), über die Gegen-IBAN (gleicher Betrag, höchstens fünf Tage auseinander) oder bei der Kategorie „Umbuchung“ und bei manuellen Konten über den Betrag (höchstens drei Tage). Zahlungen in einen anderen Bereich sind **Einlagen oder Entnahmen**; hältst du an einer Gesellschaft eine Beteiligung, steht der Unterschied zwischen eingezahltem Geld und Wert der Beteiligung unter Bewertung. Konten in Fremdwährung rechnet Kontor nicht um; sie stehen in der Bilanz außerhalb des Nettovermögens.
+
+Zwei **Prüfzeilen** vergleichen jeden Monat mit der Bilanz: der Zahlungsfluss mit der Veränderung der liquiden Konten, die Zeilen ohne „Umschichtung“ mit der Veränderung des Nettovermögens. ✓ heißt: stimmt auf den Cent. Eine Abweichung nennt beim Darüberfahren ihren Grund – etwa Geld, das über das Monatsende zu einem Darlehen unterwegs ist, oder eine Kategorie, die du auf „Ignorieren“ gestellt hast. Was Kontor nicht sicher zuordnen kann – etwa eine Umbuchung ohne Gegenbuchung –, steht unter „Unklar“ und zählt mit seinem Betrag.
+
+Welche Kategorien als eigene Zeile erscheinen, legst du unter [Kategorien → Auswahl](#categories-selection) fest; welche Oberkategorie zu welchem Abschnitt gehört, unter Kategorien → Cashflow-Zuordnung.
 
 <a id="categories"></a>
 ## Kategorien
