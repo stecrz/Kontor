@@ -647,9 +647,15 @@ function bereichSeg() {
 }
 
 // ---------------------------------------------------------------- Spalten, Werte
+// month view: this year and the two before (a table with all months of 25 years is slow to draw); "‹ year" shows earlier ones,
+// the year view all years
+const MONTH_YEARS = 3;
+const firstYear = D => S.vonJahr ?? (+String(D.ist_bis || D.monate[D.monate.length - 1] || '').slice(0, 4) - (MONTH_YEARS - 1));
+const earlierYear = D => S.modus !== 'jahre' && D.monate.length && +D.monate[0].slice(0, 4) < firstYear(D) ? firstYear(D) - 1 : null;
 function cols(D, stocks) {
   // stocks (balance sheet): no year columns in the month view – a year column would only repeat December (or the current month)
-  D = D || B(); const ist = D.monate, plan = planOn() ? (D.plan_monate || []) : [];
+  D = D || B(); const fy = firstYear(D), plan = planOn() ? (D.plan_monate || []) : [];
+  const ist = S.modus === 'jahre' ? D.monate : D.monate.filter(m => +m.slice(0, 4) >= fy);
   const mcol = (m, isPlan) => ({key: m, label: ML(m), months: [m], plan: isPlan, cur: m === D.ist_bis, part: m === D.ist_bis, year: false});
   const all = [...ist.map(m => mcol(m, false)), ...plan.map(m => mcol(m, true))];
   const years = {};
@@ -672,7 +678,11 @@ const lastOf = (vals, months) => { for (let i = months.length - 1; i >= 0; i--) 
 function cls(v, c) { let s = ''; if (c.plan) s += ' plan'; else if (c.part) s += ' part'; if (c.cur && S.modus !== 'jahre') s += ' cur'; if (c.year) s += ' year'; if (c.jan) s += ' ystart'; if (v == null || Math.abs(v) < 0.005) s += ' zero'; else s += v < 0 ? ' neg' : ' pos'; return s; }
 const cells = (C, fn) => C.map(c => { const v = fn(c); return `<td class="${cls(v, c)}">${F(v)}</td>`; }).join('');
 const isCurCol = c => { const D = B(), ib = (D && D.ist_bis) || ''; return c.year ? c.key === ib.slice(0, 4) && S.modus === 'jahre' : c.key === ib; };
-const thead = (first, C) => `<thead><tr><th>${first}</th>${C.map(c => `<th data-key="${c.key}" class="${c.year ? 'year' : ''}${c.jan ? ' ystart' : ''}${c.plan ? ' plan' : ''}"${isCurCol(c) ? ' data-cur="1"' : ''} title="${c.plan ? t('plan') : c.mixed ? t('ist_plan') : t('ist')}">${c.label}</th>`).join('')}</tr></thead>`;
+const thead = (first, C) => {
+  const e = B() && earlierYear(B()), btn = e ? `<button class="earlier" id="cols-earlier" title="${t('fruehere_monate')}">‹ ${e}</button>` : '';
+  // in a header with its own controls (balance sheet) the button sits among them, not in a line of its own
+  const head = btn && first.includes('<span class="sp"></span>') ? first.replace('<span class="sp"></span>', btn + '<span class="sp"></span>') : first + (btn ? ' ' + btn : '');
+  return `<thead><tr><th>${head}</th>${C.map(c => `<th data-key="${c.key}" class="${c.year ? 'year' : ''}${c.jan ? ' ystart' : ''}${c.plan ? ' plan' : ''}"${isCurCol(c) ? ' data-cur="1"' : ''} title="${c.plan ? t('plan') : c.mixed ? t('ist_plan') : t('ist')}">${c.label}</th>`).join('')}</tr></thead>`; };
 const noData = `<div class="card"><div class="v s">${t('noch_keine_daten')}</div><div class="d">${t('unter_einrichtung_den_bericht_erstelle')}</div></div>`;
 const sumsOf = (D, name, months) => months.reduce((a, m) => a + (D.kapitalfluss.summen[m]?.[name] ?? 0) * defl(m), 0);
 
@@ -1787,7 +1797,9 @@ function bchMark(m) {
   const th = $(`.wrap th[data-key="${m}"]`) || $(`.wrap th[data-key="${m.slice(0, 4)}"]`); if (th) th.classList.add('bch-on');
 }
 function bchJump(m) {
-  const w = $('.wrap.snap'), th = w && ($(`th[data-key="${m}"]`, w) || $(`th[data-key="${m.slice(0, 4)}"]`, w)); if (!th) return;
+  const w = $('.wrap.snap'), th = w && ($(`th[data-key="${m}"]`, w) || $(`th[data-key="${m.slice(0, 4)}"]`, w));
+  // a month before the table's months: show from its year on, then go there
+  if (!th) { const D = B(); if (D && S.modus !== 'jahre' && +m.slice(0, 4) < firstYear(D)) { S.vonJahr = +m.slice(0, 4); route().then(() => bchJump(m)); } return; }
   const sw = $('thead th', w).offsetWidth, target = colX(w, th) - sw - (w.clientWidth - sw - th.offsetWidth) / 2;
   w.scrollTo({left: snapLeft(w, target), behavior: 'smooth'});
   const idx = [...th.parentNode.children].indexOf(th);
@@ -2630,8 +2642,10 @@ const METH = {gleitend12: t('12_monate'), gleitend6: t('6_monate'), vorjahr: t('
 function vKapitalfluss(editable) {
   const D = B(); if (!D) return noData;
   const C = cols(), KF = D.kapitalfluss, sums = KF.summen || {}, P = D.plan || {};
-  const vOf = (z, c) => sumOver(Object.assign({}, z.werte, (z.plan && z.plan.werte) || {}), c.months);
-  const sOf = (z, c) => sumOver(Object.assign({}, z.werte, (z.plan && z.plan.vorschlag) || {}), c.months);
+  // actual and plan values of a row merged once (not per cell: a row has hundreds of months)
+  const mv = new Map(), ms = new Map();
+  const vOf = (z, c) => { let v = mv.get(z); if (!v) mv.set(z, v = Object.assign({}, z.werte, (z.plan && z.plan.werte) || {})); return sumOver(v, c.months); };
+  const sOf = (z, c) => { let v = ms.get(z); if (!v) ms.set(z, v = Object.assign({}, z.werte, (z.plan && z.plan.vorschlag) || {})); return sumOver(v, c.months); };
   let h = `<div class="toolbar">${viewCtl()}<span class="tb-sep"></span>${alleCtl(0)}${editable ? swCtl('realan', S.real, t('inflationsbereinigt'), t('inflationsbereinigt_tip')) : planCtl()}<span class="sp"></span>${xlsxBtn(editable ? 'planning' : 'cashflow')}</div>`;
   h += `<div class="legend"><span class="p">${t('plan')}</span><span class="c">${t('laufender_monat')}</span><span class="y">${t('jahressumme')}</span><span class="o">${t('ueberschrieben')}</span>` + (editable ? '<label class="chk"><input type="checkbox" id="vorschlag-an" ' + (S.vorschlag ? 'checked' : '') + `${t('vorschlagswerte_zeigen')}</label><em>${t('doppelklick_auf_eine_planzelle_eigener')}</em>` : '') + (editable && S.real ? `<em class="pill info">${t('planwerte_in_heutiger_kaufkraft')}</em>` : '') + '</div>';
   if (editable) {
@@ -4178,17 +4192,20 @@ function bind(main) {
   $$('[data-dep]', main).forEach(el => el.addEventListener('click', e => { e.stopPropagation(); S.depOpen = S.depOpen || {}; S.depOpen[el.dataset.dep] = !S.depOpen[el.dataset.dep]; route(); }));
   $$('tr.sub[data-gid]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.gid] = !S.collapsed[tr.dataset.gid]; route(); }));
   $$('button.disc[data-det]', main).forEach(b => b.addEventListener('click', e => { e.stopPropagation(); S.offen[b.dataset.det] = !S.offen[b.dataset.det]; route(); }));
+  $$('#cols-earlier', main).forEach(b => b.addEventListener('click', e => { e.stopPropagation(); S.vonJahr = earlierYear(B()); S.toEarlier = true; route(); }));
   $$('.card[data-b]', main).forEach(c => c.addEventListener('click', () => { S.bereich = c.dataset.b; bereichSeg(); route(); }));
   // Waagerecht: aktuelle Spalte (Monat bzw. Jahr) rechts im Blick, ältere Jahre links davon; Plan-Spalten rechts anschließend
   if (['balance', 'cashflow', 'planning'].includes(S.tab)) $$('.wrap', main).forEach((w, k) => {
     snapTable(w);
     const c = $('th[data-cur]', w), keep = (SCROLL.keepX || [])[k];
+    if (S.toEarlier) { w.scrollLeft = 0; return; }                // earlier months shown: start with them
     // the same page redrawn (a row opened, a chart clicked): the table stays where it was, without moving (not after a switch
     // between months and years: other columns)
     if (keep && keep.n === w.querySelectorAll('thead th').length) { w.scrollLeft = keep.x; return; }
     // balance sheet: the current month (or year) is the rightmost column; elsewhere with plan a part of the plan stays in view
     if (c && w.scrollWidth > w.clientWidth) w.scrollLeft = snapLeft(w, colX(w, c) + c.offsetWidth - w.clientWidth * (S.tab !== 'balance' && planOn() ? 0.62 : 1));
   });
+  S.toEarlier = false;
   if (S.tab === 'balance') { bindBilanzChart(main); bindBilanzLines(main); }
   const vs = $('#vorschlag-an', main); if (vs) vs.addEventListener('change', e => { S.vorschlag = e.target.checked; route(); });
   $$('[data-goto]', main).forEach(c => c.addEventListener('click', e => { if (!e.target.closest('a, button, input, select')) location.hash = c.dataset.goto; }));

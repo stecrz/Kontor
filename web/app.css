@@ -163,6 +163,8 @@ td.plan { opacity:.55; } td.part { opacity:.72; }      /* plan: faded + hatched;
 .wrap td.plan, .wrap th.plan { background-image:repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 6px); }
 th[data-cur] { box-shadow:inset 0 -2px 0 var(--line-2); } th.plan { color:var(--muted); font-weight:500; } .ptable td.plan { opacity:1; background:var(--plan); }
 td.neg { color:var(--neg); } td.pos { color:var(--pos); } td.zero { color:var(--faint); }
+button.earlier { border:0; background:none; box-shadow:none; padding:0 0 0 6px; margin:0; min-height:0; width:auto; color:var(--accent); font-size:12px; font-weight:500; cursor:pointer; }
+button.earlier:hover { background:none; text-decoration:underline; }
 button.disc { border:0; background:none; padding:0 4px 0 0; margin:0; min-height:0; color:var(--muted); font-size:11px; cursor:pointer; box-shadow:none; width:auto; }
 button.disc:hover { color:var(--fg); background:none; }
 tr.det td { font-size:12px; color:var(--muted); }

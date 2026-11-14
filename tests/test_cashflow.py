@@ -339,13 +339,13 @@ class Positions(Reconciles):
                       (5, "giro", date(2026, 2, 8), -40.0, {"cat": "Haushalt\\Drogerie"})], cfg)
         self.assertAddsUp(data)
         r = rows(data["Privat"])
-        self.assertEqual(r["Arbeit"]["werte"]["2026-02"], 500.0)
-        self.assertEqual({d["kategorie"] for d in r["Arbeit"]["details"]}, {"Einkommen / Gehälter", "Einkommen / Tantieme"})
+        self.assertEqual(r["Arbeitseinkommen"]["werte"]["2026-02"], 500.0)
+        self.assertEqual({d["kategorie"] for d in r["Arbeitseinkommen"]["details"]}, {"Einkommen / Gehälter", "Einkommen / Tantieme"})
         self.assertEqual(r["Kapitalerträge"]["werte"]["2026-02"], 12.0)
         self.assertEqual(r["Sparen / Unternehmenskauf"]["gruppe"], "Sparen & Anlegen")           # saving: no expense
         self.assertEqual(r["Lebenshaltung"]["werte"]["2026-02"], -40.0)                         # proposed by name
         order = [z["zeile"] for z in data["Privat"]["kapitalfluss"]["sektionen"][0]["zeilen"]]
-        self.assertEqual(order, ["Arbeit", "Kapitalerträge"])                                    # the fixed outline
+        self.assertEqual(order, ["Arbeitseinkommen", "Kapitalerträge"])                                    # the fixed outline
 
     def test_without_category_estimated_alike_in_every_area(self):
         # the company has no categories at all: Kontor estimates by the words; the rest stays without a category
@@ -363,7 +363,7 @@ class Positions(Reconciles):
         self.assertEqual((g["Personal"]["werte"]["2026-02"], g["Umsatzsteuer"]["werte"]["2026-02"]), (-800.0, -3100.0))
         self.assertEqual(g["Ohne Kategorie"]["werte"]["2026-02"], -50.0)
         p = rows(data["Privat"])
-        self.assertEqual((p["Versicherungen"]["werte"]["2026-02"], p["Arbeit"]["werte"]["2026-02"]), (-60.0, 4000.0))
+        self.assertEqual((p["Versicherungen"]["werte"]["2026-02"], p["Arbeitseinkommen"]["werte"]["2026-02"]), (-60.0, 4000.0))
 
     def test_words_of_a_booking(self):
         import report as R
@@ -426,6 +426,16 @@ class Positions(Reconciles):
         self.assertAddsUp(data)
         self.assertIn("Vermietung / Parkweg / Rücklage", rows(data["Muster GbR"]))
 
+    def test_usual_transfer_names(self):
+        import report as R
+        chk = R.transfer_check(core.merged_config({}))
+        for path in ("Umbuchungen", "Übertrag", "Finanzen / Eigene Konten", "Umbuchung / Sparplan"):
+            self.assertTrue(chk(path), path)
+        self.assertFalse(chk("Lebensmittel"))
+        for path in ("Reisen / Transfer", "Übertrag / Familie Ausland", "Transfer"):          # only the category's own usual name
+            self.assertFalse(chk(path), path)
+        self.assertFalse(R.transfer_check(core.merged_config({"kapitalfluss": {"positionen": {"Übertrag": "sonstige_ausgaben"}}}))("Übertrag"))
+
     def test_transfer_follows_your_choice(self):
         cfg = {"kapitalfluss": {"positionen": {"Haushalt": "lebenshaltung", "Umbuchung / Sparplan": "sonstige_ausgaben"}}}
         data = build([(1, "giro", date(2026, 2, 5), -30.0, {"cat": "Haushalt\\Umbuchung"}),
@@ -479,11 +489,21 @@ class Positions(Reconciles):
                 self.assertAlmostEqual(s2[m]["Bankguthaben"] - s2[prev]["Bankguthaben"], s2[m]["Cashflow"], 2, m)
         self.assertEqual(s2["2026-01"]["Bankguthaben"], 5000.0)
         p = rows(build([(1, "giro", date(2026, 1, 3), 100.0, {"cat": "Gehalt"})])["Privat"])
-        self.assertIn("Arbeit", p)
+        self.assertIn("Arbeitseinkommen", p)
         dsp = report.build_dataset(make_ledger([(1, "giro", date(2026, 1, 3), 100.0, {"cat": "Gehalt"})]), config, {}, TODAY,
                                    next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat"), roles)
         report.apply_plan(dsp, {}, config)
         self.assertNotIn("Rohertrag", dsp["kapitalfluss"]["summen"]["2026-01"])
+
+    def test_renamed_row_keeps_its_plan(self):
+        led = make_ledger([(1, "giro", date(2026, 1, 3), 3000.0, {"cat": "Gehalt"})])
+        config = core.merged_config({"bilanz": {"rollen": {k: v[2] for k, v in ACCOUNTS.items()}}})
+        b = next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat")
+        ds = report.build_dataset(led, config, {}, TODAY, b, {k: v[2] for k, v in ACCOUNTS.items()})
+        report.apply_plan(ds, {"zeilen": {"Einnahmen/Arbeit": {"methode": "fix", "betrag": 7000}}}, config)
+        z = rows(ds)["Arbeitseinkommen"]
+        self.assertEqual(z["plan"]["methode"], "fix")
+        self.assertEqual(set(z["plan"]["werte"].values()), {7000.0})
 
     def test_learned_patterns_come_before_words(self):
         import categorize as C
@@ -625,7 +645,7 @@ class CashflowFuzz(Reconciles):
                 self.assertAddsUp(data, allow=("ue_unterwegs", "ue_ignoriert"))
                 # income and expenses never pair with anything: their rows are exactly their bookings
                 p, k = rows(data["Privat"]), rows(data["Kinder"])
-                for cat, pos in (("Gehalt", "Arbeit"), ("Lebensmittel", "Lebenshaltung"), ("Wohnen\\Miete", "Wohnen")):
+                for cat, pos in (("Gehalt", "Arbeitseinkommen"), ("Lebensmittel", "Lebenshaltung"), ("Wohnen\\Miete", "Wohnen")):
                     want = round(sum(e[3] for e in txs if (e[4] or {}).get("cat") == cat and (e[4] or {}).get("booked", True)), 2)
                     got = round(sum(p[pos]["werte"].values()), 2) if pos in p else 0.0
                     self.assertAlmostEqual(got, want, 2, cat)

@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.13.8 (2026-11-14 19:48)
+- **Cashflow, Planung und Bilanz öffnen sofort** (vorher 1–2 Sekunden bei langer Historie): Die Monatsansicht zeigt das laufende und die zwei Jahre davor; „‹ Jahr“ oben links holt frühere Monate dazu, „Jahre“ zeigt alle.
+- „Arbeit“ heißt jetzt **Arbeitseinkommen** (Gehalt, Tantieme, Bonus, Honorare); Planeinstellungen bleiben erhalten.
+- Umbuchungs-Kategorien erkennt Kontor auch unter den Namen „Umbuchungen“, „Übertrag“ und „Eigene Konten“.
+
 ## 3.13.7 (2026-11-14 18:19)
 Cashflow verständlicher und über alle Bereiche vergleichbar.
 - **Summen unten:** Rohertrag (Umsatz − Wareneinkauf, nur wo es Umsätze gibt), Einnahmen − Ausgaben, **nach Zins und Tilgung**, Bankguthaben am Anfang, Veränderung, Bankguthaben am Ende. „davon Zinsen“ entfällt (Zinsen stehen unter Finanzierung).

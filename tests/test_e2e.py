@@ -1012,7 +1012,7 @@ class AppTests(_AppBase):
         def rows(area="priv"):
             b = self.store.load("dataset.json")["bereiche"][F.uid(area)]
             return {z["zeile"]: z for sek in b["kapitalfluss"]["sektionen"] for z in sek["zeilen"]}
-        self.assertIn("Einnahmen / Gehalt", {d["kategorie"] for d in rows()["Arbeit"]["details"]})
+        self.assertIn("Einnahmen / Gehalt", {d["kategorie"] for d in rows()["Arbeitseinkommen"]["details"]})
         code, p = self.call("/api/categories/positions")
         k = {r["pfad"]: r for r in p["kategorien"]}
         self.assertEqual((k["Einnahmen / Gehalt"]["vorschlag"], k["Wohnen / Miete"]["vorschlag"]), ("arbeit", "wohnen"))
@@ -1021,7 +1021,7 @@ class AppTests(_AppBase):
         code, r = self.call("/api/categories/positions", {"positionen": {"Einnahmen / Gehalt": "sonstige_einnahmen", "Wohnen": "ignorieren"}, "warten": True})
         self.assertEqual(code, 200); self.assertEqual(r["config"]["kapitalfluss"]["positionen"], {"Einnahmen / Gehalt": "sonstige_einnahmen", "Wohnen": "ignorieren"})
         z = rows()
-        self.assertNotIn("Arbeit", z); self.assertIn("Einnahmen / Gehalt", {d["kategorie"] for d in z["Sonstige Einnahmen"]["details"]})
+        self.assertNotIn("Arbeitseinkommen", z); self.assertIn("Einnahmen / Gehalt", {d["kategorie"] for d in z["Sonstige Einnahmen"]["details"]})
         self.assertNotIn("Wohnen", z)                                                        # with "Wohnen / Miete" below it
         ue = self.store.load("dataset.json")["bereiche"][F.uid("priv")]["kapitalfluss"]["ueberleitung"]
         self.assertTrue(any(g[0] == "ue_ignoriert" for m in ue.values() for g in m["gruende"]))
@@ -1029,7 +1029,7 @@ class AppTests(_AppBase):
         # back to Kontor's proposal; a transfer category; nothing unknown
         code, r = self.call("/api/categories/positions", {"positionen": {"Einnahmen / Gehalt": "", "Wohnen": "", "Lebensmittel": "umbuchung"}, "warten": True})
         self.assertEqual(r["config"]["kapitalfluss"]["positionen"], {"Lebensmittel": "umbuchung"})
-        self.assertIn("Arbeit", rows()); self.assertNotIn("Lebenshaltung", rows())
+        self.assertIn("Arbeitseinkommen", rows()); self.assertNotIn("Lebenshaltung", rows())
         code, p = self.call("/api/categories/positions")
         self.assertEqual({x["pfad"]: x for x in p["kategorien"]}["Lebensmittel"]["eigene"], "umbuchung")
         code, r = self.call("/api/categories/positions", {"positionen": {"Lebensmittel": ""}})
@@ -1067,7 +1067,7 @@ class AppTests(_AppBase):
         MA.auth.is_loopback = lambda remote: False
         try:
             self.assertEqual(self.call("/api/remote")[1]["lokal"], False)
-            code, r = self.call("/api/plan", {"bereich": F.uid("priv"), "zeile": "Einnahmen/Arbeit", "methode": "fix", "betrag": "1"})
+            code, r = self.call("/api/plan", {"bereich": F.uid("priv"), "zeile": "Einnahmen/Arbeitseinkommen", "methode": "fix", "betrag": "1"})
             self.assertEqual(code, 403); self.assertIn("nur ansehen", r["fehler"])
             self.assertEqual(self.call("/api/remote", {"aktion": "aus"})[0], 403)
         finally:
@@ -1076,7 +1076,7 @@ class AppTests(_AppBase):
         self.assertTrue(r["ok"]); self.assertFalse(r["info"]["nur_ansehen"])
         MA.auth.is_loopback = lambda remote: False
         try:
-            code, r = self.call("/api/plan", {"bereich": F.uid("priv"), "zeile": "Einnahmen/Arbeit", "methode": "fix", "betrag": "1"})
+            code, r = self.call("/api/plan", {"bereich": F.uid("priv"), "zeile": "Einnahmen/Arbeitseinkommen", "methode": "fix", "betrag": "1"})
             self.assertEqual(code, 200)                                                    # bearbeiten erlaubt
             self.assertIsNone(self.call("/api/offline/verifier")[1]["offline"])            # keine Offline-Kopie
             self.assertFalse(self.call("/api/session")[1]["offline_kopie"])
@@ -1499,9 +1499,9 @@ class AppTests(_AppBase):
         self.assertTrue(any(c["pfad"] == "Vermietung / Parkweg / Mieteinnahmen" for c in kats["kategorien"]))
         # Plan je Bereich: Methode, Ueberschreibung, Parameter, Darlehen, Wertentwicklung
         P = ds["haupt"]
-        code, r = self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeit", "methode": "fix", "betrag": "7000", "steigerung": "2"})
+        code, r = self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeitseinkommen", "methode": "fix", "betrag": "7000", "steigerung": "2"})
         self.assertEqual(code, 200)
-        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeit", "monat": "2027-01", "wert": "9000"})
+        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeitseinkommen", "monat": "2027-01", "wert": "9000"})
         self.call("/api/plan", {"bereich": P, "parameter": {"horizont_monate": 36, "inflation_prozent_pa": 3},
                                 "darlehen": {"Darlehen Lindenstraße": {"zins_prozent_pa": "3.6", "modell": "restschuld_monatlich", "zahlung": ""}},
                                 "wertentwicklung": {"Immobilie Lindenstraße": {"prozent_pa": "1.5", "basis": ""}}})
@@ -1509,7 +1509,7 @@ class AppTests(_AppBase):
         b = ds["bereiche"][P]
         self.assertEqual(len(b["plan_monate"]), 37); self.assertEqual(b["plan_monate"][-1][5:], "12")    # 36 Monate, bis Jahresende aufgefuellt
         self.assertEqual(b["plan"]["inflation_prozent_pa"], 3)
-        gz = [z for z in b["kapitalfluss"]["sektionen"][0]["zeilen"] if z["zeile"] == "Arbeit"][0]
+        gz = [z for z in b["kapitalfluss"]["sektionen"][0]["zeilen"] if z["zeile"] == "Arbeitseinkommen"][0]
         self.assertEqual(gz["plan"]["werte"]["2027-01"], 9000.0)
         self.assertAlmostEqual(gz["plan"]["vorschlag"]["2027-01"], round(7000 * 1.02 ** (2 / 12), 2), 2)
         self.assertEqual(gz["plan"]["ueberschrieben"], ["2027-01"])
@@ -1527,9 +1527,9 @@ class AppTests(_AppBase):
         code, plan_pb = self.call("/api/plan?area=" + F.uid("pb"))
         self.assertEqual(plan_pb, {})
         self.assertEqual(len(ds["bereiche"][F.uid("pb")]["plan_monate"]), 25)       # 24 Monate, bis Jahresende aufgefuellt
-        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeit", "alle_ueberschreibungen_loeschen": True})
+        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeitseinkommen", "alle_ueberschreibungen_loeschen": True})
         code, ds = self.call("/api/dataset")
-        gz = [z for z in ds["bereiche"][P]["kapitalfluss"]["sektionen"][0]["zeilen"] if z["zeile"] == "Arbeit"][0]
+        gz = [z for z in ds["bereiche"][P]["kapitalfluss"]["sektionen"][0]["zeilen"] if z["zeile"] == "Arbeitseinkommen"][0]
         self.assertEqual(gz["plan"]["werte"]["2027-01"], gz["plan"]["vorschlag"]["2027-01"])
         # Konfiguration: Fehler wird abgewiesen, gueltige gespeichert, bind geprueft
         code, cfg = self.call("/api/config")
@@ -2267,7 +2267,7 @@ class FeatureTests(_AppBase):
         # Sicherung: alles in einer Datei, wieder einspielbar
         self.run_and_wait()
         P = F.uid("priv")
-        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeit", "methode": "fix", "betrag": "7000", "steigerung": "2"})
+        self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeitseinkommen", "methode": "fix", "betrag": "7000", "steigerung": "2"})
         # nur verschluesselt (eigenes Passwort, mind. 8 Zeichen); Inhalt nicht lesbar
         self.assertEqual(self.call("/api/backup", {"passwort": "kurz"})[0], 400)
         code, sich = self.call("/api/backup", {"passwort": "sicherung-123"})
@@ -2276,7 +2276,7 @@ class FeatureTests(_AppBase):
         import service as MA
         inner = MA.backup_decrypt(sich, "sicherung-123")
         self.assertEqual(inner["kontor_sicherung"], 1); self.assertIn("plan", inner); self.assertIn("kategorien", inner)
-        self.assertEqual(inner["plan"]["bereiche"][P]["zeilen"]["Einnahmen/Arbeit"]["methode"], "fix")
+        self.assertEqual(inner["plan"]["bereiche"][P]["zeilen"]["Einnahmen/Arbeitseinkommen"]["methode"], "fix")
         self.assertNotIn("auth", inner)
         # Zuruecksetzen: nur lokal, nur mit Passwort; danach Einrichtung noetig, Passwort bleibt (ohne mit_passwort)
         self.assertEqual(self.call("/api/reset", {"passwort": "falsch"})[0], 401)
@@ -2295,7 +2295,7 @@ class FeatureTests(_AppBase):
         self.assertEqual(self.call("/api/backup/restore", {"sicherung": sich, "passwort": "falsch-falsch"})[0], 400)
         code, r = self.call("/api/backup/restore", {"sicherung": sich, "passwort": "sicherung-123"})
         self.assertEqual(code, 200); self.assertIn("Planung", r["teile"]); self.assertIn("Einstellungen", r["teile"])
-        self.assertEqual(self.store.load("plan.json")["bereiche"][P]["zeilen"]["Einnahmen/Arbeit"]["methode"], "fix")
+        self.assertEqual(self.store.load("plan.json")["bereiche"][P]["zeilen"]["Einnahmen/Arbeitseinkommen"]["methode"], "fix")
         self.assertEqual(self.call("/api/backup/restore", {"sicherung": {"x": 1}})[0], 400)
 
     def test_verlauf_quellen_semantik(self):
@@ -2514,6 +2514,18 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(len(pg.query_selector_all("tr.check")), 2)
                 self.assertFalse(pg.query_selector_all("tr.check td.warn"))
                 self.assertIn("✓", pg.inner_text("tr.check"))
+                # the month view starts three years back; "‹ year" adds one year and starts there; positions open to their categories
+                self.assertTrue(pg.query_selector("button.disc[data-det]"))
+                pg.click("button.disc[data-det]"); pg.wait_for_selector("tr.det")
+                first = pg.evaluate("document.querySelector('#main thead th[data-key]').dataset.key")
+                pg.evaluate("S.vonJahr = +document.querySelector('#main thead th[data-key]').dataset.key.slice(0, 4) + 1; route()")
+                pg.wait_for_selector("#cols-earlier")
+                n = len(pg.query_selector_all("#main thead th[data-key]"))
+                pg.click("#cols-earlier"); pg.wait_for_timeout(300)
+                self.assertGreater(len(pg.query_selector_all("#main thead th[data-key]")), n)
+                self.assertEqual(pg.evaluate("document.querySelector('#main thead th[data-key]').dataset.key"), first)
+                self.assertEqual(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0)
+                pg.evaluate("S.vonJahr = null")
                 # Bilanz: Positionen/Gruppen, inaktive, Konto-Klick -> Verlauf
                 pg.click("#nav a[href='#balance']"); pg.wait_for_selector("tr.pos")
                 self.assertIn("Bankguthaben", pg.query_selector("#main").inner_text())

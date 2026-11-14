@@ -717,7 +717,7 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
 # ---------------------------------------------------------------------------
 POSITIONS = [  # (key, section, row -- German, the key of your planning; shown in your language via pos_<key>); one outline for
     # every area (a row shows only where there is money in it)
-    ("arbeit", "Einnahmen", "Arbeit"), ("umsatz", "Einnahmen", "Umsatzerlöse"), ("vermietung", "Einnahmen", "Vermietung"),
+    ("arbeit", "Einnahmen", "Arbeitseinkommen"), ("umsatz", "Einnahmen", "Umsatzerlöse"), ("vermietung", "Einnahmen", "Vermietung"),
     ("kapitalertraege", "Einnahmen", "Kapitalerträge"), ("erstattungen", "Einnahmen", "Erstattungen"), ("sonstige_einnahmen", "Einnahmen", "Sonstige Einnahmen"),
     ("wareneinkauf", "Ausgaben", "Wareneinkauf"), ("personal", "Ausgaben", "Personal"), ("betrieb", "Ausgaben", "Betriebskosten"),
     ("wohnen", "Ausgaben", "Wohnen"), ("lebenshaltung", "Ausgaben", "Lebenshaltung"), ("mobilitaet", "Ausgaben", "Mobilität"),
@@ -729,6 +729,7 @@ POSITIONS = [  # (key, section, row -- German, the key of your planning; shown i
     ("ignorieren", "", ""),
 ]
 POS = {k: (sec, row, i) for i, (k, sec, row) in enumerate(POSITIONS)}
+RENAMED_ROWS = {"Einnahmen/Arbeit": "Einnahmen/Arbeitseinkommen"}     # planning keys of rows that were renamed (3.13.8)
 COMPANY_ROWS = {"wohnen": "Raumkosten"}       # the same position, named as a company would (text pos_<key>_g)
 
 
@@ -895,6 +896,10 @@ def my_positions(config: dict) -> Dict[str, str]:
             if (v in POS or v == "umbuchung") and norm_cat(k)}
 
 
+# the usual names of a transfer category -- the category's own name only (not one above it: "Übertrag / Familie" may be anything)
+TRANSFER_NAMES = {"umbuchung", "umbuchungen", "uebertrag", "uebertraege", "kontouebertrag", "eigene konten", "eigenes konto"}
+
+
 def transfer_check(config: dict) -> Callable[[str], bool]:
     """Is a category a transfer between your own accounts? Your choice for it or the nearest category above it decides;
     without one: a transfer category (Einstellungen: umbuchungs_kategorien) -- by its path, one above it or its name."""
@@ -915,7 +920,7 @@ def transfer_check(config: dict) -> Callable[[str], bool]:
                     break
             if r is None:
                 low = [fold_text(x) for x in parts]
-                r = bool(parts) and (low[-1] in names or any(" / ".join(low[:i]) in names for i in range(1, len(low) + 1)))
+                r = bool(parts) and (low[-1] in names or low[-1] in TRANSFER_NAMES or any(" / ".join(low[:i]) in names for i in range(1, len(low) + 1)))
             memo[p] = r
         return r
     return check
@@ -1563,7 +1568,10 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                       "Einnahmen": float(plan.get("steigerung_einnahmen_prozent_pa") or 0.0)}
     rendite = float(plan.get("rendite_prozent_pa") or 0.0)
     budgets: Dict[str, float] = dataset.get("budgets") or {}
-    rows_cfg: Dict[str, dict] = plan.get("zeilen", {}) or {}
+    rows_cfg: Dict[str, dict] = dict(plan.get("zeilen", {}) or {})
+    for old_key, new_key in RENAMED_ROWS.items():          # a row renamed: your settings stay with it
+        if old_key in rows_cfg and new_key not in rows_cfg:
+            rows_cfg[new_key] = rows_cfg[old_key]
     row_of_cat: Dict[str, str] = {}               # category -> the row it counts in (budgets of a category above several rows)
     for sek in dataset.get("kapitalfluss", {}).get("sektionen", []):
         for z in sek["zeilen"]:
