@@ -1237,8 +1237,20 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
                     line(["        " + (d["kategorie"] or tr("cf_geschaetzt"))] + [None if p_ else round(sum(d["werte"].get(m, 0.0) for m in ms), 2) for _, ms, p_ in cols], 1, True)
         sums = b.get("kapitalfluss", {}).get("summen", {})
         ue = b.get("kapitalfluss", {}).get("ueberleitung", {}) or {}
-        for k, label in (("Operativ", tr("x_operativ")), ("Cashflow", tr("x_cashflow_gesamt")), ("Nettovermoegen_delta", tr("s_nettovermoegensaenderung"))):
+        all_m = sorted(sums)
+
+        def balance(m):                                  # bank balance at the end of a month (None: not known or not there)
+            return (sums.get(m) or {}).get("Bankguthaben") if m else None
+        totals = ([("Rohertrag", tr("rohertrag"))] if any("Rohertrag" in (v or {}) for v in sums.values()) else []) + \
+            [("Operativ", tr("x_operativ")), ("Nach_Kapitaldienst", tr("nach_zins_und_tilgung")), ("Cashflow", tr("x_cashflow_gesamt")),
+             ("Nettovermoegen_delta", tr("s_nettovermoegensaenderung"))]
+        for k, label in totals:
+            if k == "Cashflow":
+                rows.append([tr("bankguthaben_anfang")] + [balance(all_m[all_m.index(ms[0]) - 1] if ms and ms[0] in all_m and all_m.index(ms[0]) > 0 else None)
+                                                           for _, ms, _p in cols])
             rows.append([label] + [round(sum((sums.get(m) or {}).get(k, 0.0) for m in ms), 2) for _, ms, _p in cols]); bold.append(len(rows) - 1)
+            if k == "Cashflow":
+                rows.append([tr("bankguthaben_ende")] + [balance(ms[-1]) if ms else None for _, ms, _p in cols])
             check = {"Cashflow": ("abweichung_liq", "abweichung_liquiditaet"), "Nettovermoegen_delta": ("unerklaert", "unerklaerte_vermoegensaenderung_pruefz")}.get(k)
             if check:
                 def cell(ms, plan, key=check[0]):

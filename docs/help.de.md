@@ -191,7 +191,9 @@ Geldvermögen und Sachvermögen sind wie in der Statistik der Bundesbank abgegre
 <a id="cash-flow"></a>
 ## Cashflow
 
-Wohin das Geld fließt: Einnahmen und Ausgaben nach festen **Positionen** (Arbeit, Umsatzerlöse, Vermietung, Wohnen, Personal, Steuern …), Investitionen (Sparen & Anlegen, Einlagen in Beteiligungen), Finanzierung (Tilgung und Zinsen je Darlehen), Bewertung (Wertänderungen von Depots) und „Unklar“. Die Gliederung ist für jeden Bereich gleich – privat, GbR oder GmbH; eine Position erscheint nur, wo Geld darin ist. ▸ vor einer Position zeigt die Kategorien darin.
+Wohin das Geld fließt: Einnahmen und Ausgaben nach festen **Positionen** (Arbeit, Umsatzerlöse, Vermietung, Wohnen, Personal, Steuern, Umsatzsteuer …), Investitionen (Sparen & Anlegen, Einlagen in Beteiligungen), Finanzierung (Tilgung und Zinsen je Darlehen, bei Gesellschaften auch Einlagen und Entnahmen der Gesellschafter), Bewertung (Wertänderungen von Depots) und „Unklar“. Die Gliederung ist für jeden Bereich gleich – privat, GbR oder GmbH –, damit sich die Bereiche vergleichen lassen; bei Gesellschaften heißt „Wohnen“ „Raumkosten“. Eine Position erscheint nur, wo Geld darin ist. ▸ vor einer Position zeigt die Kategorien darin.
+
+Unten stehen die Summen: Rohertrag (Umsatz − Wareneinkauf, nur wo es Umsätze gibt), Einnahmen − Ausgaben, **nach Zins und Tilgung** (was nach dem Schuldendienst bleibt; ein neues Darlehen zählt nicht), Bankguthaben am Anfang, seine Veränderung und am Ende sowie die Änderung des Nettovermögens.
 
 ![Cashflow](img/de/cash_flow.png)
 
@@ -199,7 +201,7 @@ Jeder Umsatz zählt genau einmal. Umbuchungen zwischen eigenen Konten zählen ni
 
 Zwei **Prüfzeilen** vergleichen jeden Monat mit der Bilanz: der Zahlungsfluss mit der Veränderung der liquiden Konten, die Zeilen ohne „Umschichtung“ mit der Veränderung des Nettovermögens. ✓ heißt: stimmt auf den Cent. Eine Abweichung nennt beim Darüberfahren ihren Grund – etwa Geld, das über das Monatsende zu einem Darlehen unterwegs ist, oder eine Kategorie auf „Nicht berücksichtigen“. Was Kontor nicht sicher zuordnen kann – etwa eine Umbuchung ohne Gegenbuchung –, steht unter „Unklar“ und zählt mit seinem Betrag.
 
-In welcher Position eine Kategorie aus MoneyMoney zählt, schlägt Kontor nach ihrem Namen vor; ändern kannst du es unter [Kategorien → Cashflow-Positionen](#categories-positions). Umsätze **ohne Kategorie** schätzt Kontor: zuerst nach deinen bisherigen Kategorien (gleiche Gegenpartei, gleicher Verwendungszweck), sonst nach Wörtern in Name, Verwendungszweck und Buchungstext (etwa „Finanzamt“, „Gehalt“, Kartenabrechnungen). In der Position stehen sie als „ohne Kategorie, geschätzt“; was sich nicht schätzen lässt, steht unter „(ohne Kategorie)“. Je mehr du zuordnest, desto genauer – nötig ist es nicht, auch nicht für eine GmbH mit vielen Buchungen. In MoneyMoney trägt Kontor dabei nichts ein.
+In welcher Position eine Kategorie aus MoneyMoney zählt, schlägt Kontor nach ihrem Namen vor; ändern kannst du es unter [Kategorien → Cashflow-Positionen](#categories-positions). Umsätze **ohne Kategorie** schätzt Kontor: zuerst nach deinen bisherigen Kategorien (gleiche Gegenpartei, gleicher Verwendungszweck), sonst nach Wörtern in Name, Verwendungszweck und Buchungstext (etwa „Gehalt“, Kartenabrechnungen; beim Finanzamt trennt Kontor Lohnsteuer – bei Gesellschaften Teil von Personal –, Umsatzsteuer und übrige Steuern). In der Position stehen sie als „ohne Kategorie, geschätzt“; was sich nicht schätzen lässt, steht unter „(ohne Kategorie)“. Je mehr du zuordnest, desto genauer – nötig ist es nicht, auch nicht für eine GmbH mit vielen Buchungen. In MoneyMoney trägt Kontor dabei nichts ein.
 
 <a id="categories"></a>
 ## Kategorien

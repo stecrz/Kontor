@@ -2042,7 +2042,7 @@ class FeatureTests(_AppBase):
         pr = {r["id"]: r for r in gbr["bilanz"]["projektion"]["zeilen"]}
         self.assertEqual(pr[F.uid("pb.vd")]["werte"]["2026-12"], -1553800.0)
         self.assertEqual(round(pr[F.uid("pb.immo")]["werte"]["2026-12"]), round(1900000 * 1.02 ** (11 / 12)))   # monatliche Wertentwicklung ab dem 2. Monat
-        inv = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Investitionen"][0]["zeilen"] if "Entnahmen Gesellschafter" in z["zeile"]]
+        inv = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Finanzierung"][0]["zeilen"] if z["zeile"] == "Einlagen/Entnahmen Gesellschafter"]
         self.assertTrue(inv); self.assertLess(sum(inv[0]["plan"]["werte"].values()), 0)
         # Steuer: AfA aus der Kalkulation, wenn nicht manuell eingetragen
         code, cfg = self.call("/api/config"); cfg["steuer"]["afa"] = {}

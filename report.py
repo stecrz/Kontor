@@ -723,11 +723,20 @@ POSITIONS = [  # (key, section, row -- German, the key of your planning; shown i
     ("wohnen", "Ausgaben", "Wohnen"), ("lebenshaltung", "Ausgaben", "Lebenshaltung"), ("mobilitaet", "Ausgaben", "Mobilität"),
     ("versicherungen", "Ausgaben", "Versicherungen"), ("gesundheit", "Ausgaben", "Gesundheit"), ("freizeit", "Ausgaben", "Freizeit & Reisen"),
     ("objektkosten", "Ausgaben", "Objektkosten"), ("verwaltung", "Ausgaben", "Beratung & Gebühren"), ("steuern", "Ausgaben", "Steuern"),
+    ("umsatzsteuer", "Ausgaben", "Umsatzsteuer"),
     ("spenden", "Ausgaben", "Geschenke & Spenden"), ("sonstige_ausgaben", "Ausgaben", "Sonstige Ausgaben"),
     ("anlegen", "Investitionen", "Sparen & Anlegen"), ("tilgung", "Finanzierung", "Tilgung"), ("zinsen", "Finanzierung", "Zinsen"),
     ("ignorieren", "", ""),
 ]
 POS = {k: (sec, row, i) for i, (k, sec, row) in enumerate(POSITIONS)}
+COMPANY_ROWS = {"wohnen": "Raumkosten"}       # the same position, named as a company would (text pos_<key>_g)
+
+
+def position_row(pos: str, company: bool) -> Tuple[str, str]:
+    """(row -- German, the key of your planning; text key) of a position in an area."""
+    if company and pos in COMPANY_ROWS:
+        return COMPANY_ROWS[pos], "pos_%s_g" % pos
+    return POS[pos][1], "pos_" + pos
 # words in a category's name -> (position when the money comes in, when it goes out); the first hit wins. Context words in the
 # path first (a category under "Vermietung" is about a property), then the category's own name, then its whole path.
 # words in a category's name -> (position when the money comes in, when it goes out); the first hit wins: saving, financing and
@@ -747,8 +756,10 @@ POSITION_HINTS = [
     (("wareneinkauf", "waren", "lieferant", "material"), "erstattungen", "wareneinkauf"),
     (("personal", "loehne", "sozialversicher", "sozialabgab", "lohnneben"), "erstattungen", "personal"),
     (("umsatzerl", "erloes", "kasseneinnahm", "verkauf"), "umsatz", "sonstige_ausgaben"),
-    (("betriebskost", "betriebsbedarf", "ladenmiete", "raumkost", "marketing", "werbung", "software", "it-kost"), "erstattungen", "betrieb"),
+    (("betriebskost", "betriebsbedarf", "marketing", "werbung", "software", "it-kost"), "erstattungen", "betrieb"),
+    (("ladenmiete", "raumkost", "geschaeftsmiete", "gewerbemiete"), "vermietung", "wohnen"),
     (("hausgeld", "instandhalt", "reparatur", "hausverwalt", "grundsteuer"), "erstattungen", "objektkosten"),
+    (("umsatzsteuer", "vorsteuer", "ust"), "umsatzsteuer", "umsatzsteuer"),
     (("finanzamt", "steuer", "solidarit"), "erstattungen", "steuern"),
     (("gehalt", "gehaelt", "lohn", "loehn", "tantieme", "bonus", "gratifikation", "verguetung", "honorar", "arbeit"), "arbeit", "personal"),
     (("dividend", "kapitalertr", "ausschuett"), "kapitalertraege", "sonstige_ausgaben"),
@@ -783,7 +794,6 @@ def _has(words, text: str, start: bool = False) -> bool:
 # in, goes out) for a person and for a company. None: no estimate from this entry (the next one may have one); "": no estimate
 # at all (e.g. a loan rate mixes repayment and interest). Learned patterns of your categories come first (see classify).
 TX_HINTS = [
-    ("name", r"finanzamt|steuerkasse|bundeskasse|stadtkasse|gemeindekasse", ("erstattungen", "steuern"), ("erstattungen", "steuern")),
     ("text", r"tilgung|annuitaet|darlehensrate|kreditrate|\brate\b", ("", ""), ("", "")),
     ("text", r"ausschuettung|dividend|ertragsgutschrift", ("kapitalertraege", ""), ("kapitalertraege", "")),
     ("text", r"\bzins|sollzins|habenzins|zinsabschluss|kupon", ("kapitalertraege", "zinsen"), ("kapitalertraege", "zinsen")),
@@ -794,9 +804,9 @@ TX_HINTS = [
     ("text", r"bareinzahlung|kartenumsa|kartenzahlung|nexi\b|concardis|adyen|sumup|payone|worldline|elavon|ec-cash|girocard|kassenabrechnung", (None, None), ("umsatz", None)),
     ("name", r"steuerberat|rechtsanwalt|notar|kanzlei|wirtschaftspruef|datev|amtsgericht|handelsregister|bundesanzeiger|\bihk\b", (None, "verwaltung"), (None, "verwaltung")),
     ("text", r"hausgeld|wohngeld|instandhaltungsruecklage|hausverwaltung", ("erstattungen", "wohnen"), ("erstattungen", "objektkosten")),
-    ("text", r"\bmiete\b|mietzahlung|kaltmiete|warmmiete|\bpacht\b|nebenkosten", ("vermietung", "wohnen"), ("vermietung", "betrieb")),
-    ("name", r"stadtwerke|vattenfall|e\.on|\beon\b|\benbw\b|naturstrom|lichtblick|polarstern|\bstrom|fernwaerme|telekom|vodafone|telefonica|\bo2\b|1&1|congstar|m-net|rundfunk|beitragsservice",
-     ("erstattungen", "wohnen"), ("erstattungen", "betrieb")),
+    ("text", r"\bmiete\b|mietzahlung|kaltmiete|warmmiete|\bpacht\b|nebenkosten", ("vermietung", "wohnen"), ("vermietung", "wohnen")),
+    ("name", r"stadtwerke|vattenfall|e\.on|\beon\b|\benbw\b|naturstrom|lichtblick|polarstern|\bstrom|fernwaerme", ("erstattungen", "wohnen"), ("erstattungen", "wohnen")),
+    ("name", r"telekom|vodafone|telefonica|\bo2\b|1&1|congstar|m-net|rundfunk|beitragsservice", ("erstattungen", "wohnen"), ("erstattungen", "betrieb")),
     ("text", r"kontofuehrung|kontoentgelt|gebuehr|kartenpreis|kontopreis|kontomodell", (None, "verwaltung"), (None, "verwaltung")),
     ("name", r"versicherung|allianz|\bhuk\b|\bergo\b|\baxa\b|generali|signal iduna|debeka|\bhdi\b|\bwwk\b|\blvm\b|\bdevk\b|gothaer|provinzial",
      ("erstattungen", "versicherungen"), ("erstattungen", "versicherungen")),
@@ -810,6 +820,10 @@ TX_HINTS = [
      ("erstattungen", "freizeit"), (None, None)),
 ]
 _TX_HINTS = [(f, re.compile(rx), pp, pc) for f, rx, pp, pc in TX_HINTS]
+# the tax office: wage tax is part of staff costs (a company), VAT a position of its own, the rest taxes (or a refund)
+_TAX_OFFICE = re.compile(r"finanzamt|steuerkasse|bundeskasse|stadtkasse|gemeindekasse")
+_WAGE_TAX = re.compile(r"lohnsteuer|\blst\b|lohnst")
+_VAT = re.compile(r"umsatzsteuer|\bust\b|ustva|ust-va|ust-vz|ust-voranmeldung|vorsteuer")
 
 
 def fold_text(s: str) -> str:
@@ -820,6 +834,12 @@ def guess_position(t: Tx, company: bool) -> Optional[str]:
     """Kontor's estimate for a booking without a category, by the words in its name, purpose and booking text (or None)."""
     name = fold_text(t.name)
     text = name + " " + fold_text(t.purpose + " " + t.booking_text)
+    if _TAX_OFFICE.search(name):
+        if _WAGE_TAX.search(text):
+            return "personal" if company and t.amount < 0 else ("erstattungen" if t.amount > 0 else "steuern")
+        if _VAT.search(text):
+            return "umsatzsteuer"
+        return "erstattungen" if t.amount > 0 else "steuern"
     for field, rx, pp, pc in _TX_HINTS:
         if rx.search(name if field == "name" else text):
             pos = (pc if company else pp)[0 if t.amount > 0 else 1]
@@ -1080,6 +1100,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             pos, obj = place(cat)
         else:
             pos, obj = guess_position(t, company), None
+            if pos == "wohnen" and company and objekte and t.amount < 0:    # a landlord: costs of the building
+                pos = "objektkosten"
         # an estimate only ever counts as income or expense (or interest) -- never as saving, repayment, transfer or left out
         if pos is None or pos not in POS or (not mine and pos in ("anlegen", "tilgung", "ignorieren")):
             R.add(sec, "Ohne Kategorie", "Ohne Kategorie", mk, t.amount, ord=900, lbl=("cf_ohne_kategorie",))
@@ -1111,7 +1133,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             R.add("Finanzierung", prow, prow, mk, t.amount, art="zins" if pos == "zinsen" else "tilgung", nw=pos == "zinsen", ord=pord,
                   lbl=("pos_" + pos,), detail=det)
         else:
-            R.add(psec, prow, prow, mk, t.amount, ord=pord, lbl=("pos_" + pos,), detail=det)
+            row, key = position_row(pos, company)
+            R.add(psec, row, row, mk, t.amount, ord=pord, lbl=(key,), detail=det)
 
     # a participation took a contribution: what it is worth more (or less) than the money paid in is its valuation
     for st, per in stake_in.items():
@@ -1602,7 +1625,8 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
     immo_rows: Dict[Tuple[str, str], Dict[str, float]] = {}      # (Sektion, Zeile) -> {mk: wert}
     immo_loans: Dict[str, dict] = {}                              # konto uuid -> {"zins": {mk}, "tilgung": {mk}, "saldo": {mk}}
     immo_wert: Dict[str, Dict[str, float]] = {}                   # objekt konto -> {mk: wert}
-    immo_extra: List[dict] = []                                   # zusaetzliche Zeilen (Ausschuettung)
+    immo_extra: List[dict] = []                                   # zusaetzliche Zeilen (Kalkulation ohne Ist-Zeile)
+    payout: Dict[str, float] = {}                                 # geplante Ausschuettungen aller Objekte je Monat
     for im in immo or []:
         reihen = im.get("reihen") or {}
         name = str(im.get("name") or "Immobilie")
@@ -1627,13 +1651,20 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
         if ou and reihen.get("wert"):
             immo_wert[ou] = reihen["wert"]
         if reihen.get("ausschuettung") and any(abs(v) > 0.005 for v in reihen["ausschuettung"].values()):
-            immo_extra.append({"sektion": "Investitionen", "gruppe": "Einlagen/Entnahmen", "zeile": "Entnahmen Gesellschafter (%s)" % im.get("name", "Immobilie"),
-                               "art": "ereignis", "nw": False, "werte": reihen["ausschuettung"]})
+            for mk, v in reihen["ausschuettung"].items():     # money to the partners: the row of their contributions/withdrawals
+                payout[mk] = payout.get(mk, 0.0) + v
+    if payout:
+        own = "Einlagen/Entnahmen Gesellschafter"
+        if any(z["zeile"] == own for z in sec_by_name["Finanzierung"]["zeilen"]):
+            immo_rows[("Finanzierung", own)] = payout
+        else:
+            immo_extra.append({"sektion": "Finanzierung", "gruppe": "Gesellschafter", "zeile": own, "art": "extern", "nw": True,
+                               "werte": payout, "lbl": ["cf_einlagen_gesellschafter"], "glbl": ["cf_gesellschafter"]})
     for ex in immo_extra:
         sek = sec_by_name[ex["sektion"]]
         sek["zeilen"].append(dict({"zeile": ex["zeile"], "gruppe": ex["gruppe"], "konto": None, "art": ex["art"], "nw": ex["nw"],
                                    "werte": {mk: 0.0 for mk in ist}, "synthetisch": True},
-                                  **{k: ex[k] for k in ("objekt", "lbl") if ex.get(k)}))
+                                  **{k: ex[k] for k in ("objekt", "lbl", "glbl") if ex.get(k)}))
         immo_rows[(ex["sektion"], ex["zeile"])] = ex["werte"]
     fixed_rows: Dict[Tuple[str, str], Tuple[Dict[str, float], str]] = {k: (v, "immobilie") for k, v in immo_rows.items()}
 
@@ -1874,6 +1905,13 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
             s[sek["name"]] = round(sum(val_of(z, mk) for z in sek["zeilen"]), 2)
         s["Zinsen"] = round(sum(val_of(z, mk) for sek in sektionen for z in sek["zeilen"] if z["art"] == "zins"), 2)
         s["Operativ"] = round(s["Einnahmen"] + s["Ausgaben"], 2)
+        # what is left after interest and repayments (a new loan is no income: only payments count)
+        fin = [z for sek in sektionen if sek["name"] == "Finanzierung" for z in sek["zeilen"]]
+        s["Nach_Kapitaldienst"] = round(s["Operativ"] + sum(val_of(z, mk) for z in fin if z["art"] == "zins")
+                                        + sum(min(val_of(z, mk), 0.0) for z in fin if z["art"] == "tilgung"), 2)
+        trade = [z for sek in sektionen for z in sek["zeilen"] if (z.get("lbl") or [""])[0] in ("pos_umsatz", "pos_wareneinkauf")]
+        if any((z.get("lbl") or [""])[0] == "pos_umsatz" for z in trade):          # a trading business: revenue minus goods
+            s["Rohertrag"] = round(sum(val_of(z, mk) for z in trade), 2)
         s["Cashflow"] = round(sum(s[k] for k in CASH_SECTIONS), 2)
         s["Nettovermoegen_delta"] = round(sum(val_of(z, mk) for sek in sektionen for z in sek["zeilen"] if z["nw"]), 2)
         sums[mk] = s
@@ -1885,9 +1923,12 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
     nw_plan: Dict[str, float] = {}
     nw_prev = dataset["bilanz"]["nettovermoegen"][ist[-1]]
     einl_cum = 0.0
+    for mk in ist:                                  # bank balance at the end of the month, as in the balance sheet (money in transit too)
+        sums[mk]["Bankguthaben"] = liq_total[mk]
     for mk in future:
         liq_prev = round(liq_prev + sums[mk]["Cashflow"], 2)
         liq_plan[mk] = liq_prev
+        sums[mk]["Bankguthaben"] = liq_prev
         einl_cum += einlagen_plan.get(mk, 0.0)
         total = liq_prev + sum(plan_rows[u][mk] for u in plan_rows) + einl_cum
         nw_plan[mk] = round(total, 2)

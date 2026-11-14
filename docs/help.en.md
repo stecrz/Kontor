@@ -191,7 +191,9 @@ Financial and real assets are split as in the Bundesbank's statistics: participa
 <a id="cash-flow"></a>
 ## Cash flow
 
-Where the money goes: income and expenses by fixed **positions** (work, revenue, rental income, housing, staff, taxes …), investments (saving & investing, contributions to companies), financing (repayment and interest per loan), valuation (value changes of portfolios) and “unclear”. The outline is the same for every area – private, partnership or limited company; a position shows only where there is money in it. ▸ in front of a position shows the categories in it.
+Where the money goes: income and expenses by fixed **positions** (work, revenue, rental income, housing, staff, taxes, VAT …), investments (saving & investing, contributions to companies), financing (repayment and interest per loan, for companies also partner contributions and withdrawals), valuation (value changes of portfolios) and “unclear”. The outline is the same for every area – private, partnership or limited company – so the areas can be compared; for companies “housing” is called “premises”. A position shows only where there is money in it. ▸ in front of a position shows the categories in it.
+
+The totals follow at the bottom: gross profit (revenue − purchases, only where there is revenue), income − expenses, **after interest and repayment** (what is left after debt service; a new loan does not count), cash at the start, its change and at the end, and the change in net worth.
 
 ![Cash flow](img/en/cash_flow.png)
 
@@ -199,7 +201,7 @@ Every transaction counts exactly once. Transfers between your own accounts never
 
 Two **check rows** compare every month with the balance sheet: the cash flow with the change of the liquid accounts, the rows without “reallocation” with the change in net worth. ✓ means: matches to the cent. A difference names its reason when you hover over it – for example money in transit to a loan over the month end, or a category set to “Leave out”. What Kontor cannot assign with certainty – such as a transfer without a counter-booking – shows under “unclear” and counts with its amount.
 
-Which position a MoneyMoney category counts in, Kontor proposes from its name; you change it under [Categories → Cash flow positions](#categories-positions). Transactions **without a category** are estimated: first from your categories so far (same counterparty, same purpose), otherwise from words in name, purpose and booking text (such as “Finanzamt”, “Gehalt”, card settlements). They show in the position as “no category, estimated”; what cannot be estimated shows under “(no category)”. The more you assign, the more exact it gets – it is not required, not even for a limited company with many bookings. Kontor enters nothing in MoneyMoney for this.
+Which position a MoneyMoney category counts in, Kontor proposes from its name; you change it under [Categories → Cash flow positions](#categories-positions). Transactions **without a category** are estimated: first from your categories so far (same counterparty, same purpose), otherwise from words in name, purpose and booking text (such as “Gehalt”, card settlements; for the tax office Kontor separates wage tax – part of staff for companies –, VAT and other taxes). They show in the position as “no category, estimated”; what cannot be estimated shows under “(no category)”. The more you assign, the more exact it gets – it is not required, not even for a limited company with many bookings. Kontor enters nothing in MoneyMoney for this.
 
 <a id="categories"></a>
 ## Categories

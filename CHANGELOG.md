@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.13.7 (2026-11-14 18:19)
+Cashflow verständlicher und über alle Bereiche vergleichbar.
+- **Summen unten:** Rohertrag (Umsatz − Wareneinkauf, nur wo es Umsätze gibt), Einnahmen − Ausgaben, **nach Zins und Tilgung**, Bankguthaben am Anfang, Veränderung, Bankguthaben am Ende. „davon Zinsen“ entfällt (Zinsen stehen unter Finanzierung).
+- **Finanzamt getrennt:** Lohnsteuer zählt bei Gesellschaften zu Personal, Umsatzsteuer als eigene Position, der Rest unter Steuern.
+- Bei Gesellschaften heißt „Wohnen“ **Raumkosten** (Miete, Nebenkosten, Energie der Geschäftsräume); bei vermietenden Gesellschaften zählen Kosten des Gebäudes zu Objektkosten.
+- Geplante Ausschüttungen einer Immobilie stehen bei den Einlagen und Entnahmen der Gesellschafter unter Finanzierung.
+
 ## 3.13.6 (2026-11-14 16:55)
 Cashflow nach festen Positionen statt nach dem Kategorienbaum – gleich für privat, GbR und GmbH.
 - **Feste Gliederung:** Arbeit, Umsatzerlöse, Vermietung, Kapitalerträge, Erstattungen · Wareneinkauf, Personal, Betriebskosten, Wohnen, Lebenshaltung, Mobilität, Versicherungen, Steuern … · Sparen & Anlegen · Tilgung, Zinsen. ▸ vor einer Position zeigt die Kategorien darin.

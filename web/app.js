@@ -2705,10 +2705,21 @@ function vKapitalfluss(editable) {
     if (!off) return `<td class="${cls(0, c)}">✓</td>`;
     const warn = ms.some(m => (ue[m][why] || []).some(g => UE_OFFEN.has(g[0])));
     return `<td class="${cls(v || 1, c)} tipped ${warn ? 'warn' : 'info'}" data-tip="${esc(ueGruende(ue, ms, why))}" tabindex="0">${F(v)}</td>`; }).join('')}</tr>`;
-  for (const [name, label] of [['Operativ', t('operatives_ergebnis_einnahmen_ausgaben')], ['Zinsen', t('davon_zinsen')], ['Cashflow', t('zahlungsfluss_gesamt_veraenderung_liqu')], ['Nettovermoegen_delta', t('nettovermoegensaenderung_erklaert')]]) {
+  // bank balance at the start and the end of a column (end of the month before / of its last month); unknown stays unknown
+  const allM = [...(D.monate || []), ...(D.plan_monate || [])];
+  // inflation-adjusted the balances would not add up (each month has its own factor): only in today's money they are left out
+  const bal = (label, at) => editable && S.real ? '' : `<tr class="bal"><td>${label}</td>${C.map(c => {
+    const m = at(c), b = m ? sums[m]?.Bankguthaben : undefined;
+    if (b === undefined) return `<td class="${cls(null, c)}"></td>`;
+    return b === null ? `<td class="${cls(null, c)} muted small">${t('unbekannt')}</td>` : `<td class="${cls(b * defl(m), c)}">${F(b * defl(m))}</td>`; }).join('')}</tr>`;
+  const has = k => Object.values(sums).some(x => x && x[k] != null);
+  const totals = [...(has('Rohertrag') ? [['Rohertrag', t('rohertrag')]] : []), ['Operativ', t('operatives_ergebnis_einnahmen_ausgaben')],
+    ['Nach_Kapitaldienst', t('nach_zins_und_tilgung')], ['Cashflow', t('zahlungsfluss_gesamt_veraenderung_liqu')], ['Nettovermoegen_delta', t('nettovermoegensaenderung_erklaert')]];
+  for (const [name, label] of totals) {
     const tot = secTotal(name);
+    if (name === 'Cashflow') h += bal(t('bankguthaben_anfang'), c => allM[allM.indexOf(c.months[0]) - 1]);
     h += `<tr class="total"><td>${label}</td>${tot.map((v, i) => `<td class="${cls(v, C[i])}">${F(v)}</td>`).join('')}</tr>`;
-    if (name === 'Cashflow') h += check(t('abweichung_liquiditaet'), 'abweichung_liq', 'gruende_liq');
+    if (name === 'Cashflow') h += check(t('abweichung_liquiditaet'), 'abweichung_liq', 'gruende_liq') + bal(t('bankguthaben_ende'), c => c.months[c.months.length - 1]);
     if (name === 'Nettovermoegen_delta') h += check(t('unerklaerte_vermoegensaenderung_pruefz'), 'unerklaert', 'gruende');
   }
   h += '</tbody></table></div>';
@@ -3465,7 +3476,7 @@ async function vKategorien() {
 // Cashflow-Positionen: Kontor's fixed outline; each of MoneyMoney's categories counts in one position (Kontor proposes by
 // name, a choice counts for the categories below it too). A property's categories have their own rows.
 const POS_SEC = {Einnahmen: 'einnahmen', Ausgaben: 'ausgaben', Investitionen: 'sek_investitionen', Finanzierung: 'finanzierung'};
-const posLabel = k => t(`pos_${k}`);
+const posLabel = k => t(`pos_${k}`) + (k === 'wohnen' ? ' · ' + t('pos_wohnen_g') : '');   // in a company: Raumkosten
 const OBJ_OUT = ['anlegen', 'tilgung', 'zinsen', 'ignorieren'];            // pos_<key>: every position has its text (tests: Positions)
 async function vPositionen() {
   const d = KZ.pos = await api('/api/categories/positions');

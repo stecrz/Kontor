@@ -360,7 +360,7 @@ class Positions(Reconciles):
         g = rows(data["Muster GbR"])
         self.assertEqual(g["Umsatzerlöse"]["werte"]["2026-02"], 9500.0)
         self.assertEqual(g["Umsatzerlöse"]["details"][0]["kategorie"], "")                    # estimated
-        self.assertEqual((g["Personal"]["werte"]["2026-02"], g["Steuern"]["werte"]["2026-02"]), (-800.0, -3100.0))
+        self.assertEqual((g["Personal"]["werte"]["2026-02"], g["Umsatzsteuer"]["werte"]["2026-02"]), (-800.0, -3100.0))
         self.assertEqual(g["Ohne Kategorie"]["werte"]["2026-02"], -50.0)
         p = rows(data["Privat"])
         self.assertEqual((p["Versicherungen"]["werte"]["2026-02"], p["Arbeit"]["werte"]["2026-02"]), (-60.0, 4000.0))
@@ -372,6 +372,12 @@ class Positions(Reconciles):
             return R.guess_position(Tx(id=1, account_uuid="x", booking_date=date(2026, 1, 1), value_date=date(2026, 1, 1), amount=amount, currency="EUR", name=name, purpose=purpose), company)
         self.assertIsNone(g("Muster GmbH Gesellschafter", "Gewinnausschüttung 2025", -50000.0, True))       # equity, no expense
         self.assertEqual(g("Finanzamt Mitte", "KapESt Gewinnausschüttung", -9000.0, True), "steuern")
+        self.assertEqual(g("Finanzamt Mitte", "LSt 10/2026", -41000.0, True), "personal")                  # wage tax: staff costs
+        self.assertEqual(g("Finanzamt Mitte", "USt-VA 10/2026", -23000.0, True), "umsatzsteuer")
+        self.assertEqual(g("Finanzamt Mitte", "Erstattung USt 09/2026", 1200.0, True), "umsatzsteuer")
+        self.assertEqual(g("Finanzamt Mitte", "ESt-Vorauszahlung", -3000.0, False), "steuern")
+        self.assertEqual(g("Stadtwerke", "Strom Filiale 4", -900.0, True), "wohnen")                       # shown as "Raumkosten"
+        self.assertEqual(g("Telekom", "Rechnung", -60.0, True), "betrieb")
         self.assertIsNone(g("Grosshandel Nord", "RE 4711 Umsatzsteuer 19 % Steuernummer 123", -500.0, True))
         self.assertEqual(g("Max Muster", "Lohn 02/2026", -2100.0, True), "personal")
         self.assertIsNone(g("Bank", "Darlehen Zins und Tilgung", -1500.0, False))                       # mixed: no estimate
@@ -435,6 +441,49 @@ class Positions(Reconciles):
         cfg = core.merged_config({"kapitalfluss": {"kategorie_zuordnung": {"Altersvorsorge": "Investitionen", "Gehalt": "Einnahmen", "Privat": "Ignorieren"}}})
         self.assertEqual(cfg["kapitalfluss"]["positionen"], {"Altersvorsorge": "anlegen", "Privat": "ignorieren"})
         self.assertNotIn("kategorie_zuordnung", cfg["kapitalfluss"])
+
+    def test_same_position_named_for_a_company(self):
+        data = build([(1, "kk", date(2026, 2, 3), -4000.0, {"name": "Vermieter", "purpose": "Miete Laden Februar"}),
+                      (2, "giro", date(2026, 2, 3), -1200.0, {"name": "Vermieter", "purpose": "Miete Februar"})])
+        self.assertEqual(rows(data["Muster GbR"])["Raumkosten"]["lbl"], ["pos_wohnen_g"])
+        self.assertEqual(rows(data["Privat"])["Wohnen"]["werte"]["2026-02"], -1200.0)
+
+    def test_totals_for_planning_and_reading(self):
+        # gross profit only where there is revenue; after interest and repayment (a new loan is no income); bank balance
+        txs = [(1, "kk", date(2026, 1, 3), 10000.0, {"name": "Nexi", "purpose": "Kartenumsaetze"}),
+               (2, "kk", date(2026, 1, 4), -6000.0, {"cat": "Wareneinkauf"}),
+               (3, "kk", date(2026, 1, 5), -500.0, {"name": "Bank", "purpose": "Sollzinsen"}),
+               (4, "vd", date(2026, 1, 6), 300.0, {"name": "Kontokorrent"}), (5, "kk", date(2026, 1, 6), -300.0, {"name": "Verkäuferdarlehen"}),
+               (6, "vd", date(2026, 2, 1), -20000.0, {"name": "Kontokorrent"}), (7, "kk", date(2026, 2, 1), 20000.0, {"name": "Verkäuferdarlehen"})]
+        led = make_ledger(txs)
+        config = core.merged_config({"bilanz": {"rollen": {k: v[2] for k, v in ACCOUNTS.items()}}})
+        roles = {k: v[2] for k, v in ACCOUNTS.items()}
+        b = next(x for x in core.bereiche_for(led, config) if x["name"] == "Muster GbR")
+        ds = report.build_dataset(led, config, {}, TODAY, b, roles)
+        report.apply_plan(ds, {}, config)
+        su = ds["kapitalfluss"]["summen"]
+        self.assertEqual((su["2026-01"]["Rohertrag"], su["2026-01"]["Operativ"]), (4000.0, 4000.0))
+        self.assertEqual(su["2026-01"]["Nach_Kapitaldienst"], 3200.0)                                  # minus interest and repayment
+        self.assertEqual(su["2026-02"]["Nach_Kapitaldienst"], 0.0)                                     # the new loan does not count
+        self.assertEqual((su["2026-01"]["Bankguthaben"], su["2026-02"]["Bankguthaben"]), (3200.0, 23200.0))
+        # start + change = end, also with money in transit over a month end and with an account that comes later
+        txs2 = [(1, "giro", date(2026, 1, 3), 5000.0, {"cat": "Gehalt"}), (2, "giro", date(2026, 2, 27), -1000.0, {"name": "Tagesgeld", "iban": "DE12"}),
+                (3, "tg", date(2026, 3, 2), 1000.0, {"name": "Giro", "iban": "DE11"}), (4, "giro", date(2026, 4, 3), -50.0, {"cat": "Lebensmittel"})]
+        led2 = make_ledger(txs2)
+        ds2 = report.build_dataset(led2, config, {}, TODAY, next(x for x in core.bereiche_for(led2, config) if x["name"] == "Privat"), roles)
+        report.apply_plan(ds2, {}, config)
+        s2, ue = ds2["kapitalfluss"]["summen"], ds2["kapitalfluss"]["ueberleitung"]
+        ms = sorted(m for m in s2 if m >= "2026-01")
+        for prev, m in zip(ms, ms[1:]):
+            if m in ue:
+                self.assertAlmostEqual(s2[m]["Bankguthaben"] - s2[prev]["Bankguthaben"], s2[m]["Cashflow"], 2, m)
+        self.assertEqual(s2["2026-01"]["Bankguthaben"], 5000.0)
+        p = rows(build([(1, "giro", date(2026, 1, 3), 100.0, {"cat": "Gehalt"})])["Privat"])
+        self.assertIn("Arbeit", p)
+        dsp = report.build_dataset(make_ledger([(1, "giro", date(2026, 1, 3), 100.0, {"cat": "Gehalt"})]), config, {}, TODAY,
+                                   next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat"), roles)
+        report.apply_plan(dsp, {}, config)
+        self.assertNotIn("Rohertrag", dsp["kapitalfluss"]["summen"]["2026-01"])
 
     def test_learned_patterns_come_before_words(self):
         import categorize as C
