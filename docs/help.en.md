@@ -10,13 +10,13 @@ Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sh
 | MoneyMoney | Kontor |
 |---|---|
 | Fetches transactions and balances from banks, portfolios and payment services. | Reads this data through MoneyMoney's scripting interface. Kontor never sees bank credentials. |
-| Categorises transactions, manually or by rule. | Uses these categories. You assign transactions without a category in Kontor; optionally Kontor writes the assignment back to MoneyMoney. |
+| Categorises transactions, manually or by rule – the only place for categories. | Uses these categories. What has none yet you assign in Kontor; Kontor enters it in MoneyMoney and proposes rules. |
 | Keeps offline accounts: private loans, equity investments, real estate, capital accounts. | Books only into such offline accounts according to your rules: mirror loan instalments and calculate interest, participations and account mirrors of your companies. |
-| Has no balance sheet, no planning, no tax overview. | Balance sheet per area, cash flow with check row, rolling plan, real estate calculation, annual tax overview, receipts, Excel export. |
+| Has no balance sheet, no planning, no tax overview. | Balance sheet per area, cash flow with check rows, rolling plan, real estate calculation, annual tax overview, receipts, Excel export. |
 
 Kontor never changes bookings, the category tree or rules in MoneyMoney and never initiates transfers.
 
-**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Overview, Cash flow, Planning, Properties, Tax, Transactions & receipts, Categories, Auto bookings and Booking rules) are usable but not fully tested yet – please double-check the figures there. So is the equity ratio in the balance sheet. Tested are Balance sheet, Sync, Setup, Settings, Updates, Log and Help.
+**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Overview, Planning, Properties, Tax and Transactions & receipts) are usable but not fully tested yet – please double-check the figures there. So is the equity ratio in the balance sheet. Tested are Balance sheet, Cash flow, Categories, Auto bookings, Booking rules, Sync, Setup, Settings, Updates, Log and Help.
 
 <a id="setup"></a>
 ## Setup
@@ -204,41 +204,44 @@ Which categories appear as separate rows is set under [Categories → Selection]
 <a id="categories"></a>
 ## Categories
 
-**MoneyMoney is authoritative**: if a transaction has a category there, it applies in Kontor too. You assign transactions without a category in Kontor – under Categories → Assign, grouped by counterparty, with suggestions from learned rules. “Rule for this name” handles the counterparty permanently.
+**MoneyMoney is the only truth.** Kontor has no categories of its own: it shows MoneyMoney's and helps fill the gaps.
+
+| In MoneyMoney | In Kontor |
+|---|---|
+| create and rename categories | assign what has no category yet – Kontor enters it in MoneyMoney |
+| fixed rules (settings of the category → rules) | propose rules for you to paste there |
+| | decide how categories show in cash flow (Selection, Cash flow mapping) |
+
+**Assign** shows all transactions of your bank accounts without a category in MoneyMoney, grouped by counterparty (loans, participations and other accounts count by their position, not their category). The suggestion comes from your categories so far; Kontor never takes it over by itself. “Assign” enters the category in MoneyMoney, “Take all suggestions” all at once. Under “Transactions” you deselect single ones – for example for a shop where you buy different things. You choose only from categories that exist in MoneyMoney – create a new one there. Single transactions can also be assigned under Transactions & receipts (click a row or select several); there you can also change a category from MoneyMoney (after asking). In cash flow, “assign” next to “(no category)” leads straight here.
 
 ![Assign](img/en/assign_categories.png)
 
-The Categories page has four tabs:
+What you assign from the iPhone is remembered and entered at the next sync at the Mac; until then it counts already (⏳ in the transaction list). MoneyMoney's default category “Uncategorised” counts as no category.
 
-- **Assign** – transactions without a category, grouped by counterparty; the number in the tab shows how many are open.
-- **Selection** – which MoneyMoney categories Kontor uses as rows ([more](#categories-selection)).
-- **Kontor categories & rules** – categories that exist only in Kontor (tree taken from MoneyMoney, extendable), your own rules (name, purpose, counter-IBAN, direction) and the learned ones. Rules are learned from the counterparty (IBAN or name, possibly with the start of the purpose) if at least 90 % of its previous transactions have the same category. Your own rules come first; more specific ones win (IBAN before name + purpose before name).
-- **Cash flow mapping** – which top-level category belongs to which cash flow section (income, expenses, investment, financing). Without a mapping the sign decides.
+<a id="categories-rules"></a>
+### Rules for MoneyMoney
 
-**What applies**: the category from MoneyMoney – unless you explicitly override it (“Only in Kontor”). Without one: manual assignment before own rule before learned rule. By default rules only act on transactions without a MoneyMoney category; “Also apply rules to transactions categorised in MoneyMoney” changes that – only in Kontor, MoneyMoney stays unchanged.
-
-Categories are only needed for the breakdown (cash flow rows, planning per row, tax). Balance sheet, net worth, real estate, loans and total income/expenses work without them. Little upkeep: payments between you and your companies are recognised as contributions or withdrawals anyway; categorise in detail mainly where you need cash flow and tax precisely.
+If you assign a counterparty several times in Kontor, MoneyMoney evidently has no rule for it. Kontor proposes one under Categories → Rules for MoneyMoney – in MoneyMoney's syntax, for example `name:"Baumarkt*"` or `remote_account:"DE…" AND purpose:"miete"`. If the same counterparty also has other categories, Kontor adds words of the purpose or the direction of the payment; it proposes only what matches no transaction of another category. Copy the expression, paste it in MoneyMoney into the settings of the category under rules and choose to apply it only to uncategorised transactions – then “Done”.
 
 <a id="categories-write-back"></a>
-### Writing back to MoneyMoney
+### Entering in MoneyMoney
 
-With “Write categories back” (Settings → General or “Turn on” under Categories; only on the Mac) Kontor also sets your assignments in MoneyMoney – so you categorise in one place only. Safeguards:
+Turn it on once (under Categories or Settings → General, only at the Mac). Safeguards:
 
-- Kontor only sets the category field of a transaction; amounts, dates and deleting are not possible with it.
-- Right before writing, Kontor reads the transaction again from MoneyMoney and only writes if it is unchanged and has no category yet (or the one Kontor set).
-- Kontor only replaces another existing category – for example one maintained by a business partner – after asking: “Replace in MoneyMoney” or “Only in Kontor” (MoneyMoney stays, Kontor overrides).
-- Kontor cannot create categories in MoneyMoney (MoneyMoney does not allow it). If one is missing, the assignment waits; after you create it in MoneyMoney, Kontor fills it in at the next sync.
+- Kontor sets only the category field of a transaction; amounts, dates and deleting are not possible this way.
+- Right before writing, Kontor reads the transaction again from MoneyMoney and writes only if it is unchanged and has no category yet (or the one Kontor set).
+- An existing other category is replaced only after asking; otherwise it stays.
+- Kontor never creates or changes categories or rules in MoneyMoney.
 
 <a id="categories-selection"></a>
-### Selection: which categories Kontor uses
+### Selection: how categories show in cash flow
 
 Under Categories → Selection you decide for each MoneyMoney category:
 
 - **Separate row** – appears as its own row in cash flow and planning.
-- **Into parent** – counts towards the parent category including subcategories (cash flow and planning only; tax still uses the exact category).
-- **Not used** – in Kontor as if uncategorised; the transactions appear under “Assign”.
+- **Into parent category** – counts with its subcategories in the parent category (only cash flow and planning; tax still uses the exact category).
 
-“Top level only as rows” tidies up the cash flow in one click. Nothing changes in MoneyMoney.
+“Only top level as rows” tidies up the cash flow with one click. Under Cash flow mapping you decide which section a parent category belongs to. Nothing changes in MoneyMoney.
 
 ![Category selection](img/en/category_selection.png)
 
@@ -400,8 +403,8 @@ In Terminal, the same line as for the [installation](https://github.com/stecrz/K
 - Interface only on this Mac (`127.0.0.1`); optionally also the Tailscale address for your own devices – never on the home network or the internet. No third-party content, no telemetry. The only outside connection is the update check at GitHub.
 - Sign-in with password (PBKDF2-SHA256, 600,000 rounds) or Touch ID on the Mac (needs Apple's command line tools, otherwise only the password; the dialog only appears once you switch to Kontor – never while you work elsewhere). The sign-in cookie only applies to Kontor, other websites cannot trigger anything (CSRF protection, origin check). Lock after idle time or with ⌘L; five failed attempts lock for five minutes. A password change signs out all other devices and renews your own sign-in.
 - All files in the data folder are encrypted (AES-256 + HMAC), the key is in the macOS keychain. If encryption or the keychain does not work, Kontor does not start – it never stores unencrypted and puts no new key into a file next to the data. Receipts are normal files in a folder of your choice; files outside it are linked only at the Mac, and only receipt files – nothing from hidden folders, the data folder or the Library (except iCloud Drive and other cloud folders).
-- **What Kontor writes into MoneyMoney** – nothing else: (1) new bookings of the booking rules, only into offline accounts, each with the mark “#kontor-…” and never twice; (2) with write-back switched on the category of a transaction you assign in Kontor; (3) with the setting “Reference in MoneyMoney” the receipt path, added to the transaction's comment (what is there stays). Kontor never changes or deletes a booking, creates no transfers or direct debits and does not touch MoneyMoney's category tree or rules. If the booking rules cannot be worked out, nothing is booked; everything else goes on.
-- Booking, updates, writing categories back, backup, reset and access settings only on the Mac; from the iPhone view only by default.
+- **What Kontor writes into MoneyMoney** – nothing else: (1) new bookings of the booking rules, only into offline accounts, each with the mark “#kontor-…” and never twice; (2) switched on, the category of a transaction you assign in Kontor (only if it has none there yet, or after asking); (3) with the setting “Reference in MoneyMoney” the receipt path, added to the transaction's comment (what is there stays). Kontor never changes or deletes a booking, creates no transfers or direct debits and does not touch MoneyMoney's category tree or rules. If the booking rules cannot be worked out, nothing is booked; everything else goes on.
+- Booking, updates, switching on entering categories, backup, reset and access settings only on the Mac; from the iPhone view only by default. What you assign from the iPhone is entered only at the next sync at the Mac.
 - Historical balances: you enter the MoneyMoney password in a window of a small Kontor helper that is built from the source only for this and deleted afterwards; Kontor stores it nowhere. Meanwhile the database lies fully decrypted in memory for a moment – this takes trust in that code. If you do not want that, leave the feature out; once read, it is not needed again.
 - The log contains no IBANs, balances, amounts, payees, purposes or passwords (for bookings only how many and of which kind, for areas and properties only identifiers); logs of earlier versions were deleted once. The diagnostics file also replaces account names and the user folder.
 - Limit: the key is in the login keychain so the service runs after login without input. Whoever operates your unlocked Mac can get to it – the Kontor password then protects access, not the files. FileVault remains the basis.

@@ -90,8 +90,7 @@ const H = {
   position: t('die_bilanzposition_eines_kontos_sie'),
   verlauf: t('umsaetze_saldo_am_monatsende_heutiger'),
   zuordnen: t('hier_landen_alle_umsaetze_die'),
-  kontor_kategorien: t('kat_reihenfolge_tip'),
-  mm_ueberschreiben: t('standard_umsaetze_mit_moneymoney_kateg'),
+  regeln_mm: t('regeln_mm_tip'),
   konten_zuordnung: t('bereich_position_und_verlauf_werden'),
   verlauf_import: t('datei_mit_monats_oder_tagesstaenden'),
   inaktiv: t('gilt_fuer_konten_mit_anzeige'),
@@ -166,7 +165,7 @@ const H = {
 };
 const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   konten_zuordnung: 'accounts', inaktiv: 'accounts', verlauf_kurz: 'history', verlauf: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
-  zuordnen: 'categories', kontor_kategorien: 'categories', mm_ueberschreiben: 'categories', mm_cat: 'categories-write-back', kat_auswahl: 'categories-selection',
+  zuordnen: 'categories', regeln_mm: 'categories-rules', mm_cat: 'categories-write-back', kat_auswahl: 'categories-selection',
   abgleich: 'sync', ab_art: 'sync', voll_lesen: 'sync', monate_zurueck: 'sync', abruf: 'sync', intervall: 'sync',
   bch: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', regel_darlehen_h: 'rules-loans', regel_gesellschaften_h: 'rules-companies',
   darlehen_iban: 'rules-loans', darlehen_konto: 'rules-loans', darlehen_quelle: 'rules-loans', zinsmodell: 'rules-loans', satz: 'rules-loans', basis_override: 'rules-loans',
@@ -2659,7 +2658,8 @@ function vKapitalfluss(editable) {
               <input class="pct steig" type="number" step="0.1" placeholder="% p.a." value="${(D.plan.zeilen || {})[key]?.steigerung_prozent_pa ?? ''}" title="${t('steigerung_p_a_leer_standard')}">
               <button class="save small" title="${t('uebernehmen')}">✓</button>${ov.size ? `<button class="small secondary reset-row" data-key="${esc(key)}" title="${t('alle_ueberschreibungen_loeschen')}">↺</button>` : ''}</div>`;
         }
-        h += `<tr class="${single ? 'ind1' : 'ind2'}" data-key="${esc(key)}"><td title="${esc(full)}">${esc(label)}${z.nw ? '' : `<span class="tag">${t('umschichtung')}</span>`}${editable && p.methode && p.methode !== 'darlehen' ? `<span class="tag">${METH[p.methode] || p.methode}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
+        const zu = !editable && z.lbl && z.lbl[0] === 'cf_ohne_kategorie' ? ` <a href="#categories" class="small">${t('zuordnen')}</a>` : '';
+        h += `<tr class="${single ? 'ind1' : 'ind2'}" data-key="${esc(key)}"><td title="${esc(full)}">${esc(label)}${zu}${z.nw ? '' : `<span class="tag">${t('umschichtung')}</span>`}${editable && p.methode && p.methode !== 'darlehen' ? `<span class="tag">${METH[p.methode] || p.methode}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
            + vals.map((v, i) => {
                const c = C[i], isOv = c.plan && c.months.some(mm => ov.has(mm));
                const sug = (S.vorschlag && c.plan) ? `<div class="small muted">${F(sOf(z, c))}</div>` : '';
@@ -3124,6 +3124,7 @@ function bindImmo(main) {
 // ---------------------------------------------------------------- Depots
 // ---------------------------------------------------------------- Umsaetze & Belege
 let UMS = {umsaetze: [], treffer: 0, gesamt: 0, jahre: []};
+const QUELLE_TIP = {moneymoney: t('aus_moneymoney_2'), wartet: t('wartet_auf_moneymoney')};
 async function loadUms() {
   const f = S.uf, q = new URLSearchParams();
   const P = {entitaet: 'entity', jahr: 'year', konto: 'account', q: 'q'};
@@ -3152,21 +3153,20 @@ async function vUmsaetze() {
     ${xlsxBtn('transactions', f.entitaet ? `data-bereich="${f.entitaet}"` : '')} ${xlsxBtn('receipts')}</div>`;
   if (S.sel.size) h += `<div class="banner info" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${t('0_ausgewaehlt_1', S.sel.size, `<input type="text" id="bulk-cat" list="bulk-kats" placeholder="${t('kategorie')}" style="min-width:240px">${katList('bulk-kats')}<button id="bulk-cat-btn" class="small">${t('kategorie_zuweisen')}</button>`)}<button id="bulk-clear" class="small secondary">${t('auswahl_aufheben')}</button></div>`;
   h += `<div class="wrap"><table class="plain" id="ums-table"><thead><tr><th style="width:28px"><input type="checkbox" id="sel-all"></th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('name')}</th><th>${t('verwendungszweck')}</th><th class="num">${t('betrag')}</th><th>${t('kategorie')}</th><th class="num">${t('belege')}</th></tr></thead><tbody>`
-    + UMS.umsaetze.map(u => `<tr class="clickable ${S.sel.has(u.id) ? 'sel' : ''}" data-id="${u.id}"><td><input type="checkbox" class="sel" ${S.sel.has(u.id) ? 'checked' : ''}></td><td class="small" style="white-space:nowrap">${FD(u.datum)}</td><td class="small">${esc(u.konto_name)}</td><td>${esc(u.name)}</td><td class="small muted" style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.zweck)}</td><td class="num ${u.betrag < 0 ? 'neg' : 'pos'}">${F(u.betrag)}</td><td class="small" title="${u.quelle === 'regel' ? t('per_kontor_regel') : u.quelle === 'manuell' ? t('in_kontor_zugeordnet') : u.quelle === 'moneymoney' ? t('aus_moneymoney_2') : ''}">${u.kategorie ? esc(u.kategorie) + (u.quelle === 'regel' ? ' <span class="muted">R</span>' : u.quelle === 'manuell' ? ' <span class="muted">K</span>' : '') : `<span class="pill warn">${t('ohne')}</span>`}</td><td class="num">${u.belege ? `<span class="pill ok">${u.belege}</span>` : `<button class="ghost small add-beleg" title="${t('beleg_hinzufuegen')}">＋</button>`}</td></tr>`).join('')
+    + UMS.umsaetze.map(u => `<tr class="clickable ${S.sel.has(u.id) ? 'sel' : ''}" data-id="${u.id}"><td><input type="checkbox" class="sel" ${S.sel.has(u.id) ? 'checked' : ''}></td><td class="small" style="white-space:nowrap">${FD(u.datum)}</td><td class="small">${esc(u.konto_name)}</td><td>${esc(u.name)}</td><td class="small muted" style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.zweck)}</td><td class="num ${u.betrag < 0 ? 'neg' : 'pos'}">${F(u.betrag)}</td><td class="small" title="${QUELLE_TIP[u.quelle] || ''}">${u.kategorie ? esc(u.kategorie) + (u.quelle === 'wartet' ? ' <span class="muted">⏳</span>' : '') : u.braucht === false ? '<span class="muted">–</span>' : `<span class="pill warn">${t('ohne')}</span>`}</td><td class="num">${u.belege ? `<span class="pill ok">${u.belege}</span>` : `<button class="ghost small add-beleg" title="${t('beleg_hinzufuegen')}">＋</button>`}</td></tr>`).join('')
     + '</tbody></table></div>';
   return h;
 }
 async function openDrawer(txId) {
   const u = UMS.umsaetze.find(x => x.id === txId); if (!u) return;
   S.drawerTx = txId;
-  const [bl] = await Promise.all([api('/api/receipts?files=1'), KZ.kat ? Promise.resolve() : loadKat().catch(() => null)]);
+  const bl = await api('/api/receipts?files=1');
   const mine = bl.eintraege.filter(e => e.tx_id === txId), free = bl.dateien.filter(d => !d.verknuepft);
   const st = S.STATUS;
   const d = $('#drawer');
-  const QUELLE = {manuell: t('in_kontor_zugeordnet'), regel: t('per_kontor_regel'), moneymoney: t('aus_moneymoney_2'), '': ''};
   d.innerHTML = `<button class="close icon">✕</button><h2>${esc(u.name)}</h2>
-    <div class="kv"><div>${t('datum')}</div><div>${FD(u.datum)}</div><div>${t('betrag')}</div><div class="${u.betrag < 0 ? 'neg' : 'pos'}" style="font-weight:600;color:var(--${u.betrag < 0 ? 'neg' : 'pos'})">${F(u.betrag)} €</div><div>${t('konto_2')}</div><div>${esc(u.konto_name)} · ${esc(BN(u.entitaet))}</div><div>${t('zweck')}</div><div>${esc(u.zweck) || '–'}</div><div>${t('kategorie')}</div><div>${esc(u.kategorie) || `<span class="pill warn">${t('ohne')}</span>`}${u.quelle ? ' <span class="small muted">· ' + QUELLE[u.quelle] + '</span>' : ''}</div><div>${t('status')}</div><div>${u.gebucht ? t('gebucht') : t('vorgemerkt')}${u.haken ? t('abgehakt') : ''}</div><div>${t('id')}</div><div class="mono small">${u.id}</div></div>
-    <div class="row tight" style="margin-top:10px"><input type="text" id="dr-kat" list="dr-kats" value="${esc(u.kategorie || '')}" placeholder="${t('kategorie_in_kontor_neu_anlegen')}" style="min-width:240px;flex:1">${katList('dr-kats')}<label class="chk small"><input type="checkbox" id="dr-rule"> ${t('regel_fuer_0', esc((u.name || '').slice(0, 24)))}</label><button id="dr-cat-btn" class="small">${t('zuordnen')}</button></div>${mmWriteNote()}
+    <div class="kv"><div>${t('datum')}</div><div>${FD(u.datum)}</div><div>${t('betrag')}</div><div class="${u.betrag < 0 ? 'neg' : 'pos'}" style="font-weight:600;color:var(--${u.betrag < 0 ? 'neg' : 'pos'})">${F(u.betrag)} €</div><div>${t('konto_2')}</div><div>${esc(u.konto_name)} · ${esc(BN(u.entitaet))}</div><div>${t('zweck')}</div><div>${esc(u.zweck) || '–'}</div><div>${t('kategorie')}</div><div>${esc(u.kategorie) || `<span class="pill warn">${t('ohne')}</span>`}${u.quelle ? ' <span class="small muted">· ' + (QUELLE_TIP[u.quelle] || '') + '</span>' : ''}</div><div>${t('status')}</div><div>${u.gebucht ? t('gebucht') : t('vorgemerkt')}${u.haken ? t('abgehakt') : ''}</div><div>${t('id')}</div><div class="mono small">${u.id}</div></div>
+    ${st.moneymoney && st.moneymoney.kategorisieren_erlaubt && u.braucht !== false ? `<div class="row tight" style="margin-top:10px"><input type="text" id="dr-kat" list="dr-kats" value="${esc(u.kategorie || '')}" placeholder="${t('kategorie_aus_moneymoney')}" style="min-width:240px;flex:1">${katList('dr-kats')}<button id="dr-cat-btn" class="small">${t('in_moneymoney_eintragen')}</button></div>` : ''}
     <h3>${t('belege_n', mine.length)}</h3>
     ${mine.map(e => `<div class="beleg" data-id="${e.id}"><span class="n" title="${esc(e.pfad)}">${e.extern ? `<span class="tag" title="${t('verknuepfung_zu_einer_datei_ausserhalb')}">${t('mac')}</span>` : ''}${esc(e.pfad.split('/').pop())}</span><span class="small muted">${e.extern ? (e.status === 'icloud' ? `<span class="pill warn">${t('icloud_nicht_geladen')}</span>` : e.status === 'fehlt' ? `<span class="pill err">${t('fehlt')}</span>` : '') : (e.groesse / 1024).toFixed(0) + ' KB'}</span><a href="/api/receipts/file?id=${e.id}" target="_blank" class="small">${t('ansehen')}</a>${st.lokal ? `<button class="ghost small bl-show" title="${t('im_finder_zeigen_2')}">${t('finder')}</button>` : ''}<button class="ghost small bl-note" title="${t('notiz')}">✎</button><button class="ghost small bl-del" title="${e.extern ? t('verknuepfung_entfernen_datei_bleibt') : t('zuordnung_entfernen')}">✕</button></div>${e.notiz ? `<div class="small muted" style="padding:0 0 6px">${esc(e.notiz)}</div>` : ''}`).join('') || `<div class="muted small">${t('noch_kein_beleg')}</div>`}
     <div class="drop" id="dr-drop" style="margin-top:12px">${t('datei_hierher_ziehen')}<br><button id="dr-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button> <button id="dr-cam" class="small secondary" style="margin-top:8px">${t('foto_aufnehmen')}</button><div class="small muted" style="margin-top:6px">${t('pdf_bilder_e_mails_office')}</div></div>
@@ -3185,7 +3185,7 @@ async function openDrawer(txId) {
   const el = $('#dr-ext-link', d); if (el) el.onclick = async () => { const pfad = $('#dr-ext', d).value.trim(); if (!pfad) return toast(t('pfad_fehlt')); try { await api('/api/receipts/link', {tx_id: txId, pfad, extern: true}); toast(t('verknuepft')); await refreshUms(txId); } catch (er) { toast(er.message, 6000); } };
   $$('.bl-note', d).forEach(b => b.onclick = async e => { const id = e.target.closest('.beleg').dataset.id, ent = mine.find(x => x.id === id); const n = prompt(t('notiz_zum_beleg'), ent.notiz || ''); if (n === null) return; await api('/api/receipts/update', {id, notiz: n}); await refreshUms(txId); });
   $$('.bl-show', d).forEach(b => b.onclick = async e => { const id = e.target.closest('.beleg').dataset.id, ent = mine.find(x => x.id === id); try { await api('/api/receipts/open', {pfad: ent.pfad}); } catch (er) { toast(er.message, 4000); } });
-  const cb = $('#dr-cat-btn', d); if (cb) cb.onclick = async () => { const kat = $('#dr-kat', d).value.trim(); const extra = ($('#dr-rule', d).checked && kat) ? {regel: {name_enthaelt: u.name}} : {}; try { const r = await assignCats([txId], kat, extra); toast(kat ? assignMsg(r) : t('zuordnung_entfernt'), 5000); await loadAll(); await refreshUms(txId); } catch (e) { toast(e.message, 5000); } };
+  const cb = $('#dr-cat-btn', d); if (cb) cb.onclick = async () => { const kat = $('#dr-kat', d).value.trim(); if (!kat) return toast(t('kategorie_fehlt')); try { const r = await assignCats([txId], kat); toast(assignMsg(r), 5000); await loadAll(); await refreshUms(txId); } catch (e) { toast(e.message, 5000); } };
 }
 function closeDrawer() { $('#drawer').classList.remove('open'); S.drawerTx = null; DRW.key = null; }
 // which drawer is open; a click on the row that opened it closes it (the click outside closes it first -- it must not reopen)
@@ -3428,16 +3428,16 @@ async function saveConfig(cfg, findingsEl, trotzdem) {
 // ---------------------------------------------------------------- Kategorien
 const subTabs = (base, items) => `<div class="tabs">${items.map(([k, l]) => `<button data-next="#${base}${k ? '/' + k : ''}" class="${S.sub === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
 async function vKategorien() {
-  // Reiter: Zuordnen (offene Umsätze) · Auswahl (welche Kategorien Kontor nutzt) · Kategorien & Regeln · Kapitalfluss-Zuordnung
+  // Reiter: Zuordnen (was in MoneyMoney noch keine Kategorie hat) · Regeln für MoneyMoney (Vorschläge) · Auswahl · Kapitalfluss-Zuordnung
   const offen = ((S.DATA && S.DATA.kategorien || {}).gesamt || {}).ohne;
-  const tabs = subTabs('categories', [['', t('zuordnen') + (offen ? ` (${offen})` : '')], ['selection', t('kat_auswahl')], ['rules', t('kontor_kategorien_regeln')], ['cashflow', t('kapitalfluss_zuordnung')]]);
-  if (S.sub === 'selection') { await loadKat(); return tabs + vKategorienAuswahl(); }
-  if (S.sub === 'rules') { await loadKat(); return tabs + vKontorKategorien(); }
-  if (S.sub === 'cashflow') { await loadKat(); return tabs + vKapitalflussZuordnung(); }
-  return tabs + await vZuordnen();
+  const body = S.sub === 'selection' ? (await loadKat(), vKategorienAuswahl()) : S.sub === 'rules' ? await vRegelVorschlaege()
+    : S.sub === 'cashflow' ? (await loadKat(), vKapitalflussZuordnung()) : await vZuordnen();
+  const nr = KZ.regeln ?? (KZ.offen || {}).regelvorschlaege;
+  const tabs = subTabs('categories', [['', t('zuordnen') + (offen ? ` (${offen})` : '')], ['rules', t('regeln_fuer_moneymoney') + (nr ? ` (${nr})` : '')], ['selection', t('kat_auswahl')], ['cashflow', t('kapitalfluss_zuordnung')]]);
+  return tabs + body;
 }
 function vKategorienAuswahl() {
-  // Je Kategorie aus MoneyMoney: eigene Zeile, zur Oberkategorie zusammenfassen oder in Kontor nicht verwenden
+  // Je Kategorie aus MoneyMoney: eigene Zeile oder zur Oberkategorie zusammenfassen (nur Cashflow und Planung)
   const v = (KZ.kat || {}).verwendung || {}, n = (KZ.kat || {}).anzahl || {};
   const cats = S.KATS.filter(k => !k.standard);
   if (!cats.length) return `<div class="card"><div class="d">${t('noch_keine_kategorien_geladen_abgleich')}</div></div>`;
@@ -3447,7 +3447,7 @@ function vKategorienAuswahl() {
     <div class="wrap auto"><table class="plain ka-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num">${t('umsaetze_2')}</th><th>${t('in_kontor')}</th></tr></thead><tbody>`;
   for (const k of cats) {
     const p = k.pfad, root = !p.includes(' / '), cur = v[p] || 'zeile';
-    const opts = [['zeile', t('eigene_zeile')], ...(root ? [] : [['zusammen', t('zur_oberkategorie')]]), ['ignorieren', t('nicht_verwenden')]];
+    const opts = [['zeile', t('eigene_zeile')], ...(root ? [] : [['zusammen', t('zur_oberkategorie')]])];
     h += `<tr data-p="${esc(p)}"><td style="padding-left:${10 + 18 * (p.split(' / ').length - 1)}px">${k.gruppe ? `<b>${esc(k.name)}</b>` : esc(k.name)}</td><td class="num small">${sum(p) || ''}</td>
       <td><select class="ka-v">${opts.map(([val, l]) => `<option value="${val}" ${cur === val ? 'selected' : ''}>${l}</option>`).join('')}</select></td></tr>`;
   }
@@ -3455,7 +3455,7 @@ function vKategorienAuswahl() {
 }
 function bindKatAuswahl(main) {
   const rows = $$('.ka-table tr[data-p]', main); if (!rows.length) return;
-  // Unterkategorien folgen einer Oberkategorie, die zusammengefasst oder nicht verwendet wird
+  // Unterkategorien folgen einer Oberkategorie, die zusammengefasst wird
   const upd = () => {
     const val = Object.fromEntries(rows.map(r => [r.dataset.p, $('.ka-v', r).value]));
     rows.forEach(r => {
@@ -3474,9 +3474,7 @@ function bindKatAuswahl(main) {
 }
 function vKapitalflussZuordnung() {
   const kf = S.CFG.kapitalfluss || {}, zu = kf.kategorie_zuordnung || {}, zk = kf.kategorie_zu_konto || {}, umb = kf.umbuchungs_kategorien || ['Umbuchung'];
-  const kontorTops = KZ.kat ? [...new Set(KZ.kat.baum.map(k => k.pfad.split(' / ')[0]))] : [];
-  const tops = S.KATS.filter(k => k.ebene === 0).map(k => ({name: k.name, budget: k.budget}));
-  for (const n of kontorTops) if (!tops.some(t => t.name === n)) tops.push({name: n, budget: null});
+  const tops = S.KATS.filter(k => k.ebene === 0 && !k.standard).map(k => ({name: k.name, budget: k.budget}));
   let h = `<div class="note">${t('zuordnung_der_oberkategorien_kontor_un')}` + (tops.length ? '' : ` <b>${t('noch_keine_kategorien_geladen_abgleich')}</b>`) + '</div>';
   h += `<div class="wrap auto"><table class="plain"><thead><tr><th>${t('oberkategorie')}</th><th>${t('abschnitt')}</th><th>${t('kaeufe_fliessen_in_depot_anlage')}</th><th class="num">${t('budget_moneymoney')}</th></tr></thead><tbody>`;
   for (const t of tops) {
@@ -3500,103 +3498,152 @@ function vKapitalflussZuordnung() {
   return h;
 }
 
-// ---------------------------------------------------------------- Zuordnen (Kontor-Kategorien)
-const KZ = {jahr: '', bereich: '', min: '', open: {}, kat: null, offen: null};
+// ---------------------------------------------------------------- Zuordnen: Kategorien kommen aus MoneyMoney, Kontor trägt dort ein
+const KZ = {jahr: '', bereich: '', min: '', open: {}, aus: {}, kat: null, offen: null, regeln: null};
 async function assignCats(ids, kat, extra = {}) {
-  // In Kontor zuordnen; ist das Zurückschreiben an, setzt Kontor die Kategorie auch in MoneyMoney (vorher geprüft).
-  // Steht dort schon eine andere (nicht von Kontor gesetzte) Kategorie: nachfragen – überschreiben oder nur in Kontor.
-  const r = await api('/api/categories/assign', Object.assign({ids, kategorie: kat}, extra));
-  const mm = r.mm || {}, f = mm.fremd || [];
+  // Kontor trägt die Kategorie in MoneyMoney ein (vorher geprüft), in Teilen zu höchstens 2000 Umsätzen. Steht dort schon eine
+  // andere (nicht von Kontor gesetzte): nachfragen, ob sie ersetzt werden soll – sonst bleibt sie (MoneyMoney ist maßgeblich).
+  const KEYS = ['geschrieben', 'spaeter', 'fehler', 'wartet', 'nur_am_mac', 'nicht_erreichbar'];
+  const mm = Object.fromEntries(KEYS.map(k => [k, 0])), f = [];
+  let r = {anzahl: 0};
+  for (let i = 0; i < ids.length; i += 2000) {
+    r = await api('/api/categories/assign', Object.assign({ids: ids.slice(i, i + 2000), kategorie: kat}, extra));
+    for (const k of KEYS) mm[k] += (r.mm || {})[k] || 0;
+    f.push(...((r.mm || {}).fremd || []));
+  }
   if (f.length) {
     const bsp = [...new Set(f.map(x => x.mm))].slice(0, 3).map(x => '„' + esc(x) + '“').join(', ');
-    const v = await choose(tn('mm_fremd_frage', f.length, bsp, esc(kat)), [['ueberschreiben', t('in_moneymoney_ueberschreiben')], ['nur_kontor', t('nur_in_kontor'), 'secondary']]);
+    const v = await choose(tn('mm_fremd_frage', f.length, bsp, esc(kat)), [['ueberschreiben', t('in_moneymoney_ueberschreiben')]]);
     if (v) {
-      const r2 = (await api('/api/categories/assign', {ids: f.map(x => x.id), kategorie: kat, modus: v})).mm || {};
-      mm.geschrieben += r2.geschrieben || 0; mm.nur_kontor = (mm.nur_kontor || 0) + (r2.nur_kontor || 0); mm.fehler += r2.fehler || 0;
-    }
-    mm.fremd = v ? [] : f;
+      // ersetzt wird nur, was die Frage gezeigt hat (steht dort inzwischen etwas anderes, bleibt es)
+      for (let i = 0; i < f.length; i += 2000) {
+        const part = f.slice(i, i + 2000);
+        const r2 = (await api('/api/categories/assign', {ids: part.map(x => x.id), kategorie: kat, modus: v, bestaetigt: Object.fromEntries(part.map(x => [x.id, x.mm]))})).mm || {};
+        for (const k of KEYS) mm[k] += r2[k] || 0;
+        mm.fehler += (r2.fremd || []).length;
+      }
+    } else mm.behalten = f.length;
   }
-  return r;
+  return Object.assign({}, r, {anzahl: ids.length, mm});
 }
 function assignMsg(r) {
-  // Rückmeldung: zugeordnet · in MoneyMoney · wartet auf Kategorie · nur in Kontor · abweichend
-  const m = r.mm || {}, p = [t('0_zugeordnet', r.anzahl) + (r.regel ? t('regel_angelegt') : '')];
+  // Rückmeldung: in MoneyMoney eingetragen · beim nächsten Abgleich am Mac · behalten · abweichend
+  const m = r.mm || {}, p = [];
   if (m.geschrieben) p.push(t('0_in_moneymoney_gesetzt', m.geschrieben));
-  if (m.wartet) p.push(t('0_warten_auf_kategorie', m.wartet));
-  if (m.aus) p.push(t('nur_in_kontor_zurueckschreiben_aus'));
+  if (m.spaeter) p.push(t('0_beim_naechsten_abgleich', m.spaeter));
+  if (m.behalten) p.push(tn('0_moneymoney_behalten', m.behalten));
+  if (m.nur_am_mac) p.push(tn('n_nur_am_mac_aendern', m.nur_am_mac));
+  if (m.nicht_erreichbar) p.push(tn('n_mm_nicht_erreichbar', m.nicht_erreichbar));
   if (m.fehler) p.push(t('0_in_moneymoney_abweichend', m.fehler));
-  return p.join(' · ');
-}
-function mmWriteNote() {
-  // Hinweis unter dem Zuordnen: wohin die Zuordnung geht
-  const st = S.STATUS;
-  return `<div class="small muted">${st.lokal && st.moneymoney.kategorisieren_erlaubt ? t('zuordnung_geht_nach_moneymoney') : st.lokal ? t('zuordnung_nur_in_kontor_aus', '<a href="#settings">' + t('einstellungen') + '</a>') : t('zuordnung_nur_in_kontor_unterwegs')}</div>`;
+  if (m.wartet) p.push(t('0_in_moneymoney_abweichend', m.wartet));
+  return p.join(' · ') || t('nichts_eingetragen');
 }
 async function loadKat() { KZ.kat = await api('/api/categories/kontor'); return KZ.kat; }
-const katPaths = () => (KZ.kat ? KZ.kat.baum.map(k => k.pfad) : []);
-const katList = id => `<datalist id="${id}">${katPaths().map(p => `<option value="${esc(p)}">`).join('')}</datalist>`;
+// Kategorien zum Zuordnen: die aus MoneyMoney (keine Ordner, nicht „Unkategorisiert“)
+const katList = id => `<datalist id="${id}">${(S.KATS || []).filter(k => !k.gruppe && !k.standard).map(k => `<option value="${esc(k.pfad)}">`).join('')}</datalist>`;
+function mmOffBanner(lokal) {
+  return `<div class="banner info">${t('kategorien_eintragen_aus')}${lokal ? ` <button class="small" id="kz-mm-on">${t('einschalten')}</button>` : ' ' + t('am_mac_einschalten')}</div>`;
+}
+// alle gewählten Umsätze mit Vorschlag: [id, Kategorie] (der Vorschlag gilt je Umsatz, nicht je Gegenpartei)
+const vorschlagIds = off => off.gruppen.flatMap(g => g.ids.filter(i => !(KZ.aus[g.key] || new Set()).has(i) && g.vorschlaege[i]).map(i => [i, g.vorschlaege[i]]));
 async function vZuordnen() {
   if (!S.DATA) return noData;
-  const [kat, off] = await Promise.all([loadKat(), api(`/api/categories/unassigned?year=${KZ.jahr}&area=${KZ.bereich}&min=${KZ.min}`)]);
-  KZ.offen = off;
-  const st = (S.DATA.kategorien || {}).gesamt || {}, years = Object.keys((S.DATA.kategorien || {}).jahre || {}).sort().reverse();
+  const off = await api(`/api/categories/unassigned?year=${KZ.jahr}&area=${KZ.bereich}&min=${KZ.min}`);
+  KZ.offen = off; KZ.regeln = null;
+  for (const g of off.gruppen) if (KZ.aus[g.key]) { const ids = new Set(g.ids); for (const i of [...KZ.aus[g.key]]) if (!ids.has(i)) KZ.aus[g.key].delete(i); }
+  const years = Object.keys((S.DATA.kategorien || {}).jahre || {}).sort().reverse(), can = off.zurueckschreiben;
+  const mitVorschlag = vorschlagIds(off);
   let h = `<div class="toolbar"><select id="kz-bereich"><option value="">${t('alle_bereiche')}</option>${Object.keys(S.DATA.bereiche).map(k => `<option value="${k}" ${KZ.bereich === k ? 'selected' : ''}>${esc(BN(k))}</option>`).join('')}</select>
     <select id="kz-jahr"><option value="">${t('alle_jahre')}</option>${years.map(y => `<option ${KZ.jahr === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
     <label class="chk small">${t('ab')} <input type="number" id="kz-min" value="${esc(KZ.min)}" placeholder="0" style="width:80px"> €</label>
-    <span class="sp"></span><button id="kz-lernen" class="secondary small" title="${t('regeln_aus_allen_vorhandenen_zuordnung')}">${t('regeln_neu_lernen')}</button></div>
-    <div class="note">${t('0_umsaetze_ohne_kategorie_1', off.offen, off.hinweis ? ' – ' + esc(off.hinweis) : '', off.gruppen_gesamt, st.manuell || 0, st.regel || 0, st.moneymoney || 0, st.ohne || 0, hq('zuordnen'))}</div>` + katList('kz-kats');
-  if (!off.zurueckschreiben && S.STATUS.lokal) h += `<div class="banner info">${t('zurueckschreiben_ist_aus')} <button class="small" id="kz-mm-on">${t('einschalten')}</button></div>`;
-  if ((off.wartend || []).length) h += `<div class="banner">${t('in_moneymoney_anlegen_wartend', off.wartend.map(w => `<b>${esc(w.kategorie.replace(/ \/ /g, ' \\ '))}</b> (${tn('n_umsaetze', w.anzahl, w.anzahl)})`).join(', '))}</div>`;
+    <span class="sp"></span>${can && mitVorschlag.length ? `<button id="kz-alle" class="secondary small">${t('alle_vorschlaege_n', mitVorschlag.length)}</button>` : ''}</div>
+    <div class="note">${tn('n_ohne_kategorie_gruppen', off.offen, hq('zuordnen'))}</div>` + katList('kz-kats');
+  if (!can) h += mmOffBanner(off.lokal);
+  if (off.wartet) h += `<div class="banner info">${tn('n_warten_auf_mac', off.wartet, off.wartet)}</div>`;
   if (!off.gruppen.length) return h + `<div class="card"><div class="v s">${t('nichts_offen_2')}</div><div class="d">${t('alle_umsaetze_haben_eine_kategorie')}</div></div>`;
   h += '<div class="list">';
   for (const g of off.gruppen) {
-    const open = KZ.open[g.key];
+    const open = KZ.open[g.key], aus = KZ.aus[g.key] || new Set(), n = g.ids.filter(i => !aus.has(i)).length, mixed = !g.vorschlag && Object.keys(g.vorschlaege).length > 0;
     h += `<div class="item kz-group" data-key="${esc(g.key)}"><div class="grow">
-      <div class="row tight"><b style="min-width:220px">${esc(g.name)}</b><span class="small muted">${esc(g.konto)}${g.iban ? ' · ' + esc(g.iban) : ''}</span><span class="tag">${g.anzahl}×</span><span class="num ${g.summe < 0 ? 'neg' : 'pos'}" style="font-weight:600">${F(g.summe)} €</span><span class="small muted">${FD(g.von)}${g.von !== g.bis ? ' – ' + FD(g.bis) : ''}</span><button class="ghost small kz-toggle">${open ? t('beispiele') : t('beispiele_2')}</button></div>
-      ${open ? '<div class="small muted" style="margin:4px 0 6px">' + g.beispiele.map(b => `${FD(b.datum)} · ${F(b.betrag)} € · ${esc(b.zweck || '–')}`).join('<br>') + '</div>' : ''}
-      <div class="row tight"><input type="text" class="kz-kat" list="kz-kats" value="${esc(g.vorschlag || '')}" placeholder="${t('kategorie_neu_anlegen_z_b')}" style="min-width:300px">${g.vorschlag ? `<span class="tag" title="${t('vorschlag_aus_regel')} ` + esc(g.regel || '') + `${t('vorschlag_2')}</span>` : ''}
-        <label class="chk small"><input type="checkbox" class="kz-rule" checked> ${t('regel_fuer_0_2', g.iban ? t('diese_iban') : t('diesen_namen'))}</label>
-        <button class="small kz-save">${t('zuordnen')}</button><button class="small secondary kz-umb" title="${t('uebertrag_zwischen_eigenen_konten')}">${t('tag_umbuchung')}</button></div></div></div>`;
+      <div class="row tight"><b style="min-width:220px">${esc(g.name)}</b><span class="small muted">${esc(g.konten.join(', '))}${g.iban ? ' · ' + esc(g.iban) : ''}</span><span class="tag kz-count">${n < g.anzahl ? n + ' / ' : ''}${g.anzahl}×</span><span class="num ${g.summe < 0 ? 'neg' : 'pos'}" style="font-weight:600">${F(g.summe)} €</span><span class="small muted">${FD(g.von)}${g.von !== g.bis ? ' – ' + FD(g.bis) : ''}</span><button class="ghost small kz-toggle" aria-expanded="${open ? 'true' : 'false'}">${open ? t('umsaetze_zu') : t('umsaetze_auf')}</button></div>
+
+      <div class="row tight"><input type="text" class="kz-kat" list="kz-kats" value="${esc(g.vorschlag || '')}" placeholder="${t('kategorie_aus_moneymoney')}" style="min-width:300px" ${can ? '' : 'disabled'}>${g.vorschlag ? `<span class="tag tipped" tabindex="0" data-tip="${esc(t('vorschlag_tip'))}">${t('vorschlag_tag')}</span>` : Object.keys(g.vorschlaege).length ? `<span class="tag tipped" tabindex="0" data-tip="${esc(t('vorschlaege_je_umsatz_tip'))}">${t('vorschlaege_je_umsatz')}</span>` : ''}
+        <button class="small kz-save" ${can && n ? '' : 'disabled'}>${n < g.anzahl ? tn('n_zuordnen', n, n) : t('zuordnen')}</button><button class="small secondary kz-umb" title="${t('uebertrag_zwischen_eigenen_konten')}" ${can ? '' : 'disabled'}>${t('tag_umbuchung')}</button></div>
+      ${open ? `<div class="kz-tx-wrap"><table class="plain small kz-tx"><thead><tr><th><input type="checkbox" class="kz-all" ${aus.size ? '' : 'checked'} aria-label="${t('alle_2')}"></th><th>${t('datum')}</th><th class="num">${t('betrag')}</th><th>${t('zweck')}</th>${g.konten.length > 1 ? `<th>${t('konto_2')}</th>` : ''}${mixed ? `<th>${t('vorschlag_tag')}</th>` : ''}</tr></thead><tbody>${g.umsaetze.map(u => `<tr><td><input type="checkbox" class="kz-sel" data-id="${u.id}" ${aus.has(u.id) ? '' : 'checked'}></td><td style="white-space:nowrap">${FD(u.datum)}</td><td class="num ${u.betrag < 0 ? 'neg' : 'pos'}">${F(u.betrag)}</td><td class="muted">${esc(u.zweck || '–')}</td>${g.konten.length > 1 ? `<td class="muted">${esc(u.konto)}</td>` : ''}${mixed ? `<td class="muted">${esc(u.vorschlag || '–')}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : ''}</div></div>`;
   }
   return h + '</div>';
 }
+async function mmOn() {
+  try { await api('/api/categories/settings', {mm_schreiben: true}); S.CFG = await api('/api/config'); S.STATUS = await api('/api/status'); toast(t('zurueckschreiben_eingeschaltet')); route(); } catch (e) { toast(e.message, 6000); }
+}
 function bindZuordnen(main) {
-  const bindF = (id, key) => { const el = $(id, main); if (el) el.addEventListener('change', e => { KZ[key] = e.target.value; route(); }); };
+  const bindF = (id, key) => { const el = $(id, main); if (el) el.addEventListener('change', e => { KZ[key] = e.target.value; KZ.aus = {}; route(); }); };
   bindF('#kz-bereich', 'bereich'); bindF('#kz-jahr', 'jahr'); bindF('#kz-min', 'min');
-  const on = $('#kz-mm-on', main); if (on) on.addEventListener('click', async () => { try { await api('/api/categories/settings', {mm_schreiben: true}); S.CFG = await api('/api/config'); S.STATUS = await api('/api/status'); toast(t('zurueckschreiben_eingeschaltet')); route(); } catch (e) { toast(e.message, 6000); } });
-  const ln = $('#kz-lernen', main); if (ln) ln.addEventListener('click', async () => { toast(t('lerne'), 10000); try { const r = await api('/api/categories/learn', {}); toast(`${t('0_regeln_aus_1_umsaetzen', r.gelernt.regeln, r.gelernt.muster, r.zugeordnet)}`, 6000); await loadAll(); route(); } catch (e) { toast(e.message, 6000); } });
+  const on = $('#kz-mm-on', main); if (on) on.addEventListener('click', mmOn);
   $$('.kz-toggle', main).forEach(b => b.addEventListener('click', e => { const k = e.target.closest('.kz-group').dataset.key; KZ.open[k] = !KZ.open[k]; route(); }));
+  // einzelne Umsätze einer Gegenpartei abwählen (z. B. ein Händler, bei dem du Verschiedenes kaufst) -- ohne neu zu laden
+  const updGroup = box => {
+    const g = KZ.offen.gruppen.find(x => x.key === box.dataset.key), aus = KZ.aus[g.key] || new Set(), n = g.ids.length - aus.size;
+    const all = $('.kz-all', box); if (all) { all.checked = !aus.size; all.indeterminate = aus.size > 0 && n > 0; }
+    $$('.kz-sel', box).forEach(cb => { cb.checked = !aus.has(+cb.dataset.id); });
+    $('.kz-count', box).textContent = (n < g.anzahl ? n + ' / ' : '') + g.anzahl + '×';
+    const b = $('.kz-save', box); b.textContent = n < g.anzahl ? tn('n_zuordnen', n) : t('zuordnen'); b.disabled = !KZ.offen.zurueckschreiben || !n;
+    const a = $('#kz-alle', main); if (a) a.textContent = t('alle_vorschlaege_n', vorschlagIds(KZ.offen).length);
+  };
+  $$('.kz-group', main).forEach(updGroup);
+  $$('.kz-all', main).forEach(cb => cb.addEventListener('change', e => {
+    const box = e.target.closest('.kz-group'), g = KZ.offen.gruppen.find(x => x.key === box.dataset.key);
+    KZ.aus[g.key] = e.target.checked ? new Set() : new Set(g.ids); updGroup(box);
+  }));
+  $$('.kz-sel', main).forEach(cb => cb.addEventListener('change', e => {
+    const box = e.target.closest('.kz-group'), id = +e.target.dataset.id, aus = KZ.aus[box.dataset.key] || (KZ.aus[box.dataset.key] = new Set());
+    if (e.target.checked) aus.delete(id); else aus.add(id);
+    updGroup(box);
+  }));
   const assign = async (box, kat) => {
     const g = KZ.offen.gruppen.find(x => x.key === box.dataset.key); if (!g || !kat) return toast(t('kategorie_fehlt'));
-    const extra = $('.kz-rule', box).checked ? {regel: g.iban ? {iban: g.iban} : {name_enthaelt: g.name}} : {};
-    try { const r = await assignCats(g.ids, kat, extra); toast(assignMsg(r), 6000); await loadAll(); route(); } catch (e) { toast(e.message, 6000); }
+    const aus = KZ.aus[g.key] || new Set(), ids = g.ids.filter(i => !aus.has(i)), vorher = KZ.offen.regelvorschlaege || 0;
+    if (!ids.length) return;
+    try {
+      const r = await assignCats(ids, kat); delete KZ.aus[g.key]; await loadAll(); await route();
+      toast(assignMsg(r) + ((KZ.offen.regelvorschlaege || 0) > vorher ? ' · ' + t('regel_vorgeschlagen') : ''), 7000);
+    } catch (e) { toast(e.message, 6000); }
   };
   $$('.kz-save', main).forEach(b => b.addEventListener('click', e => { const box = e.target.closest('.kz-group'); assign(box, $('.kz-kat', box).value.trim()); }));
-  $$('.kz-umb', main).forEach(b => b.addEventListener('click', e => { const box = e.target.closest('.kz-group'); assign(box, 'Umbuchung'); }));
+  $$('.kz-umb', main).forEach(b => b.addEventListener('click', e => { const box = e.target.closest('.kz-group'); assign(box, ((S.CFG.kapitalfluss || {}).umbuchungs_kategorien || ['Umbuchung'])[0]); }));
   $$('.kz-kat', main).forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') { const box = e.target.closest('.kz-group'); assign(box, e.target.value.trim()); } }));
+  const all = $('#kz-alle', main); if (all) all.addEventListener('click', async () => {
+    // alle Vorschläge auf einmal, je Umsatz sein eigener Vorschlag (dieselben Prüfungen wie einzeln); Abgewähltes bleibt
+    const items = vorschlagIds(KZ.offen), by = {};
+    for (const [i, k] of items) (by[k] = by[k] || []).push(i);
+    if (!items.length || !confirm(tn('alle_vorschlaege_frage', items.length))) return;
+    const sum = {geschrieben: 0, spaeter: 0, fehler: 0, behalten: 0, nur_am_mac: 0, nicht_erreichbar: 0, wartet: 0};
+    try { for (const [k, ids] of Object.entries(by)) { const r = (await assignCats(ids, k)).mm || {}; for (const x in sum) sum[x] += r[x] || 0; } }
+    catch (e) { toast(e.message, 6000); }
+    KZ.aus = {}; toast(assignMsg({mm: sum}), 6000); await loadAll(); route();
+  });
 }
-function vKontorKategorien() {
-  const kat = KZ.kat; if (!kat) return `<div class="note">${t('lade_2')}</div>`;
-  const e = kat.einstellungen || {}, st = kat.statistik || {}, ges = st.gesamt || {};
-  let h = `<div class="note">${t('kat_regeln_note', hq('kontor_kategorien'))}${more('categories')}</div>
-  <div class="row tight" style="margin-bottom:10px"><label class="switch"><input type="checkbox" id="kk-aktiv" ${e.aktiv !== false ? 'checked' : ''}><i></i>${t('kontor_kategorien_aktiv')}</label><label class="switch"><input type="checkbox" id="kk-lernen" ${e.lernen !== false ? 'checked' : ''}><i></i>${t('bei_jedem_abgleich_regeln_nachlernen')}</label><label class="switch"><input type="checkbox" id="kk-mm" ${e.mm_ueberschreiben ? 'checked' : ''}><i></i>${t('regeln_auch_auf_moneymoney_kategorisie', hq('mm_ueberschreiben'))}</label>
-    <span class="small muted">${t('0_kategorien_regeln_1_eigene', st.kategorien || 0, (st.regeln || {}).manuell || 0, (st.regeln || {}).gelernt || 0, st.gelernt_am ? ' (' + esc(st.gelernt_am) + ')' : '', ges.manuell || 0, ges.regel || 0, ges.moneymoney || 0, ges.ohne || 0)}</span></div>`;
-  h += `<h2>${t('kategorien')} <span class="x">${kat.baum.length}</span></h2><div class="row tight" style="margin-bottom:6px"><input type="text" id="kk-neu" placeholder="${t('neue_kategorie_z_b_wohnen')}" style="min-width:320px"><button id="kk-add" class="small">${t('anlegen')}</button><button id="kk-mmsync" class="small secondary" title="${t('neue_kategorien_aus_moneymoney_in')}">${t('aus_moneymoney_ergaenzen')}</button></div>
-    <div class="wrap auto" style="max-height:420px;overflow:auto"><table class="plain"><thead><tr><th>${t('kategorie')}</th><th>${t('quelle')}</th><th></th></tr></thead><tbody>${kat.baum.map(k => `<tr data-pfad="${esc(k.pfad)}"><td class="ind${Math.min(3, k.pfad.split(' / ').length - 1)}">${esc(k.name)}<span class="small muted"> · ${esc(k.pfad)}</span></td><td class="small">${k.quelle === 'moneymoney' ? 'MoneyMoney' : 'Kontor'}</td><td style="white-space:nowrap"><button class="ghost small kk-ren">${t('umbenennen')}</button><button class="ghost small kk-del">✕</button></td></tr>`).join('')}</tbody></table></div>`;
-  h += `<h2>${t('regeln')} <span class="x">${t('eigene_zuerst_spezifischere_gewinnen_i')}</span></h2>
-    <div class="row tight" style="margin-bottom:6px"><input type="text" id="kr-name" placeholder="${t('name_enthaelt_2')}" style="width:180px"><input type="text" id="kr-zweck" placeholder="${t('zweck_enthaelt_2')}" style="width:180px"><input type="text" id="kr-iban" placeholder="${t('gegen_iban')}" style="width:200px"><select id="kr-richtung"><option value="">${t('beide_richtungen')}</option><option value="aus">${t('ausgaben')}</option><option value="ein">${t('einnahmen')}</option></select><input type="text" id="kr-kat" list="kk-kats" placeholder="${t('kategorie')}" style="width:220px"><button id="kr-add" class="small">${t('regel_anlegen')}</button></div>${katList('kk-kats')}
-    <div class="wrap auto" style="max-height:420px;overflow:auto"><table class="plain"><thead><tr><th>${t('bedingung')}</th><th>${t('kategorie')}</th><th>${t('quelle')}</th><th class="num">${t('treffer')}</th><th></th></tr></thead><tbody>${kat.regeln.map(r => `<tr data-id="${esc(r.id)}"><td class="small">${[r.iban ? 'IBAN ' + esc(r.iban) : '', r.name_ist ? t('name_2') + esc(r.name_ist) + '“' : '', r.name_enthaelt ? t('name_enthaelt') + esc(r.name_enthaelt) + '“' : '', r.zweck_enthaelt ? t('zweck_enthaelt') + esc(r.zweck_enthaelt) + '“' : '', r.richtung ? (r.richtung === 'aus' ? t('ausgaben') : t('einnahmen')) : ''].filter(Boolean).join(' · ')}</td><td>${esc(r.kategorie)}</td><td class="small">${r.quelle === 'manuell' ? t('eigene') : t('gelernt')}</td><td class="num small">${r.treffer ?? ''}</td><td><button class="ghost small kr-del">✕</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">${t('noch_keine_regeln_regeln_neu')}</td></tr>`}</tbody></table></div>`;
+// Regeln für MoneyMoney: Kontor schlägt sie vor (in MoneyMoneys Schreibweise), angelegt werden sie dort
+async function vRegelVorschlaege() {
+  if (!S.DATA) return noData;
+  const r = await api('/api/categories/proposals'), vs = r.vorschlaege || [];
+  KZ.regeln = vs.length;
+  let h = `<div class="note">${t('regeln_mm_note', hq('regeln_mm'))}</div>`;
+  if (!vs.length) return h + `<div class="card"><div class="v s">${t('keine_regelvorschlaege')}</div><div class="d">${t('keine_regelvorschlaege_d')}</div></div>`;
+  h += '<div class="list">' + vs.map(v => `<div class="item rv" data-key="${esc(v.key)}"><div class="grow">
+    <div class="row tight"><b style="min-width:220px">${esc(v.kategorie)}</b><span class="small muted">${tn('aus_n_zuordnungen', v.deine, v.deine)} · ${tn('trifft_n', v.treffer, v.treffer)}${v.offen ? ' · ' + tn('davon_n_offen', v.offen, v.offen) : ''}</span></div>
+    <div class="row tight"><code class="rv-expr" tabindex="0">${esc(v.ausdruck)}</code><button class="small rv-copy">${t('kopieren')}</button><button class="small secondary rv-done" title="${t('regel_erledigt_tip')}">${t('erledigt')}</button></div></div></div>`).join('') + '</div>';
   return h;
 }
-function bindKontorKategorien(main) {
-  const setEinst = async () => { try { await api('/api/categories/settings', {aktiv: $('#kk-aktiv').checked, lernen: $('#kk-lernen').checked, mm_ueberschreiben: $('#kk-mm').checked}); toast(t('gespeichert')); await loadAll(); } catch (e) { toast(e.message, 5000); } };
-  for (const id of ['#kk-aktiv', '#kk-lernen', '#kk-mm']) { const el = $(id, main); if (el) el.addEventListener('change', setEinst); }
-  const add = $('#kk-add', main); if (add) add.addEventListener('click', async () => { const p = $('#kk-neu').value.trim(); if (!p) return; try { await api('/api/categories/tree', {aktion: 'anlegen', pfad: p}); toast(t('angelegt')); await loadKat(); route(); } catch (e) { toast(e.message, 5000); } });
-  const ms = $('#kk-mmsync', main); if (ms) ms.addEventListener('click', async () => { try { await api('/api/categories/tree', {aktion: 'mm_uebernehmen'}); await loadKat(); route(); } catch (e) { toast(e.message, 5000); } });
-  $$('.kk-ren', main).forEach(b => b.addEventListener('click', async e => { const p = e.target.closest('tr').dataset.pfad; const n = prompt(t('neuer_pfad_verschieben_oberkategorie_a'), p); if (!n || n === p) return; try { await api('/api/categories/tree', {aktion: 'umbenennen', pfad: p, neu: n}); await loadKat(); await loadAll(); route(); } catch (er) { toast(er.message, 5000); } }));
-  $$('.kk-del', main).forEach(b => b.addEventListener('click', async e => { const p = e.target.closest('tr').dataset.pfad; const ers = prompt('„' + p + t('loeschen_zuordnungen_und_regeln_umhaen'), ''); if (ers === null) return; try { await api('/api/categories/tree', {aktion: 'loeschen', pfad: p, ersatz: ers}); await loadKat(); await loadAll(); route(); } catch (er) { toast(er.message, 5000); } }));
-  const ra = $('#kr-add', main); if (ra) ra.addEventListener('click', async () => { try { await api('/api/categories/rule', {regel: {name_enthaelt: $('#kr-name').value, zweck_enthaelt: $('#kr-zweck').value, iban: $('#kr-iban').value, richtung: $('#kr-richtung').value, kategorie: $('#kr-kat').value}}); toast(t('regel_angelegt_2')); await loadKat(); await loadAll(); route(); } catch (e) { toast(e.message, 6000); } });
-  $$('.kr-del', main).forEach(b => b.addEventListener('click', async e => { const id = e.target.closest('tr').dataset.id; try { await api('/api/categories/rule', {loeschen: id}); await loadKat(); await loadAll(); route(); } catch (er) { toast(er.message, 5000); } }));
+function bindRegelVorschlaege(main) {
+  $$('.rv-copy', main).forEach(b => b.addEventListener('click', async e => {
+    const code = $('.rv-expr', e.target.closest('.rv')).textContent;
+    try { await navigator.clipboard.writeText(code); toast(t('kopiert')); }
+    catch (er) { const sel = getSelection(), rg = document.createRange(); rg.selectNodeContents($('.rv-expr', e.target.closest('.rv'))); sel.removeAllRanges(); sel.addRange(rg); toast(t('markiert_kopieren')); }
+  }));
+  $$('.rv-done', main).forEach(b => b.addEventListener('click', async e => {
+    try { await api('/api/categories/proposals', {erledigt: e.target.closest('.rv').dataset.key}); route(); } catch (er) { toast(er.message, 5000); }
+  }));
 }
 
 // ---------------------------------------------------------------- Einstellungen
@@ -4009,7 +4056,7 @@ async function route() {
     guardDirty(main);
     vbPoll(); mmhPoll();
     if (S.tab === 'properties') bindImmo(main);
-    if (S.tab === 'categories') { bindZuordnen(main); bindKontorKategorien(main); bindKatAuswahl(main); }
+    if (S.tab === 'categories') { bindZuordnen(main); bindRegelVorschlaege(main); bindKatAuswahl(main); }
     if (S.tab === 'settings' && S.sub === 'access') bindZugang(main);
     if (S.tab === 'help') bindHilfe(main);
   } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== 'nicht angemeldet') main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" onclick="route()">${t('erneut_versuchen')}</button></div>`; }

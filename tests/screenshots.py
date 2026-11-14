@@ -37,6 +37,7 @@ def main():
     d = tempfile.mkdtemp(prefix="kontor-shots-")
     store = Store(d, *load_or_create_master_key(d))
     cfg = T.config_for_test(os.path.join(d, "Belege")); cfg.setdefault("oberflaeche", {})["sprache"] = LANG
+    cfg.setdefault("moneymoney", {})["kategorisieren_erlauben"] = True        # Kategorien: Eintragen in MoneyMoney eingeschaltet
     store.save("config.json", cfg)
     store.save("state.json", dict(T.ALL_NEW))          # everything booked on the first sync (nothing older waits)
     T.reset_mock(); T.patch_today()

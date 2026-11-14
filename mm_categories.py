@@ -16,7 +16,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from mm_bridge import local_date
+from mm_bridge import MoneyMoneyError, local_date
 from model import Ledger, norm_cat
 
 log = logging.getLogger("kontor.mmcat")
@@ -62,15 +62,19 @@ def assignable(idx: Dict[str, Dict[str, Any]], path: str) -> Optional[str]:
 
 
 def _mm_cat(raw: Dict[str, Any]) -> str:
-    return norm_cat(str(raw.get("categoryPath") or raw.get("category") or ""))
+    """The category in MoneyMoney's fresh export; its default category ("Unkategorisiert") counts as none."""
+    from categorize import STANDARD              # imported late (categorize -> model only)
+    p = norm_cat(str(raw.get("categoryPath") or raw.get("category") or ""))
+    return "" if p in STANDARD else p
 
 
 def write(bridge, ledger: Ledger, items: List[Dict[str, Any]], idx: Dict[str, Dict[str, Any]],
           own: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     """items: [{id, neu, alt (was in MoneyMoney zu sehen war, normiert), ueberschreiben}].
     Liefert {geschrieben: [{id, alt, neu}], wartet: [id] (Kategorie fehlt in MoneyMoney), fremd: [{id, mm}] (fremde
-    Kategorie, nicht bestaetigt), gleich: [id], fehler: [{id, grund}]}."""
-    res: Dict[str, Any] = {"geschrieben": [], "wartet": [], "fremd": [], "gleich": [], "fehler": []}
+    Kategorie, nicht bestaetigt), gleich: [id], fehler: [{id, grund}], offen: [id] (nicht versucht: MoneyMoney brach ab,
+    abbruch: der Grund)} -- was bis zum Abbruch geschrieben ist, steht in geschrieben."""
+    res: Dict[str, Any] = {"geschrieben": [], "wartet": [], "fremd": [], "gleich": [], "fehler": [], "offen": []}
     by_id = {t.id: t for t in ledger.txs if t.id > 0}
     todo: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for it in items:
@@ -86,11 +90,17 @@ def write(bridge, ledger: Ledger, items: List[Dict[str, Any]], idx: Dict[str, Di
             res["fehler"].append({"id": t.id, "grund": why})
             continue
         todo[t.account_uuid].append(dict(it, tx=t))
-    for acc, its in todo.items():
+    accounts = list(todo.items())
+    for n, (acc, its) in enumerate(accounts):
         # frisch aus MoneyMoney: nur dieses Konto, nur der Zeitraum der betroffenen Umsaetze (Buchungs- und Wertstellungsdatum)
         days = [d for it in its for d in (it["tx"].booking_date, it["tx"].value_date) if d]
-        fresh = {int(r.get("id") or 0): r for r in bridge.export_transactions(min(days) - timedelta(days=7), max(days) + timedelta(days=7), account=acc)}
-        for it in its:
+        try:
+            fresh = {int(r.get("id") or 0): r for r in bridge.export_transactions(min(days) - timedelta(days=7), max(days) + timedelta(days=7), account=acc)}
+        except MoneyMoneyError as e:
+            res["abbruch"] = str(e)
+            res["offen"] += [it["tx"].id for _, rest in accounts[n:] for it in rest]
+            break
+        for k, it in enumerate(its):
             t, neu = it["tx"], norm_cat(it["neu"])
             r = fresh.get(t.id)
             if r is None:
@@ -104,8 +114,15 @@ def write(bridge, ledger: Ledger, items: List[Dict[str, Any]], idx: Dict[str, Di
             mine = norm_cat((own.get(str(t.id)) or {}).get("neu") or "")
             if cur and cur != mine and not (it.get("ueberschreiben") and cur == norm_cat(it.get("alt") or "")):
                 res["fremd"].append({"id": t.id, "mm": cur}); continue
-            bridge.set_transaction(t.id, category=idx[neu]["uuid"] or idx[neu]["path"])
+            try:
+                bridge.set_transaction(t.id, category=idx[neu]["uuid"] or idx[neu]["path"])
+            except MoneyMoneyError as e:
+                res["abbruch"] = str(e)
+                res["offen"] += [x["tx"].id for x in its[k:]] + [x["tx"].id for _, rest in accounts[n + 1:] for x in rest]
+                break
             res["geschrieben"].append({"id": t.id, "alt": cur, "neu": neu})
+        if res.get("abbruch"):
+            break
     if res["geschrieben"]:
         log.info("Category set in MoneyMoney for %d transaction(s)", len(res["geschrieben"]))
     if res["fehler"]:

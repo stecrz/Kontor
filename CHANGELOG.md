@@ -1,5 +1,15 @@
 # Änderungen
 
+## 3.13.5 (2026-11-14 15:32)
+Kategorien neu: MoneyMoney ist die einzige Wahrheit, Kontor hilft beim Füllen der Lücken.
+- **Zuordnen trägt direkt in MoneyMoney ein** (nur das Kategoriefeld, direkt vorher geprüft; eine vorhandene Kategorie nur nach Rückfrage). Zur Auswahl stehen nur Kategorien aus MoneyMoney. Einmal am Mac einschalten.
+- **Vorschläge** aus deinen bisherigen Kategorien, je Umsatz – Kontor übernimmt sie nie von selbst; „Alle Vorschläge übernehmen“ auf Wunsch. Einzelne Umsätze einer Gegenpartei lassen sich abwählen.
+- **Regeln für MoneyMoney:** Ordnest du eine Gegenpartei mehrmals zu, schlägt Kontor eine Regel in MoneyMoneys Schreibweise vor – kopieren, dort einfügen, fertig.
+- Vom iPhone aus Zugeordnetes trägt Kontor beim nächsten Abgleich am Mac ein; Einschalten und Ändern vorhandener Kategorien nur am Mac.
+- Nur Bankkonten brauchen eine Kategorie; „Unkategorisiert“ zählt als ohne. Im Cashflow führt „zuordnen“ neben „(ohne Kategorie)“ direkt zum Zuordnen.
+- Entfallen: Kontors eigene Kategorien, Regeln und „nicht verwenden“.
+- Ein Einstellungspaket, das vom iPhone aus eingespielt wird, kann nichts mehr ändern, was nur am Mac geht.
+
 ## 3.13.4 (2026-11-14 14:04)
 Cashflow und Kategorien sind geprüft – ohne „Alpha“.
 - **Jeder Monat stimmt mit der Bilanz überein:** zwei Prüfzeilen vergleichen den Zahlungsfluss mit der Veränderung der liquiden Konten und die übrigen Zeilen mit der Veränderung des Nettovermögens. ✓ heißt auf den Cent; eine Abweichung nennt beim Darüberfahren ihren Grund (z. B. Geld, das über das Monatsende zu einem Darlehen unterwegs ist).

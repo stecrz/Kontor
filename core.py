@@ -40,7 +40,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "darlehen": [], "gesellschaften": [],
     "bereiche": [],
     "immobilien": [],
-    "kategorien": {"aktiv": True, "lernen": True, "mm_ueberschreiben": False},
     "bilanz": {"monate_zurueck": 0, "rollen": {}, "verlauf": {}, "illiquide_rollen": ["beteiligungen", "immobilien", "sachwerte"],
                "illiquide_konten": [], "inaktiv_monate": 12, "ausgeblendet": [], "immer_anzeigen": [], "ansicht": "positionen"},
     "kapitalfluss": {"kategorie_zuordnung": {}, "kategorie_zu_konto": {},
@@ -927,8 +926,8 @@ def budgets_from_categories(categories: List[dict]) -> Dict[str, float]:
     return out
 
 
-def compact_transactions(ledger: Ledger, bereiche: List[dict], store: Optional[Store] = None) -> List[dict]:
-    """Umsatzliste fuer Belege und Suche (ohne Gegen-IBAN)."""
+def compact_transactions(ledger: Ledger, bereiche: List[dict], store: Optional[Store] = None, banks: Optional[set] = None) -> List[dict]:
+    """Umsatzliste fuer Belege und Suche (ohne Gegen-IBAN). banks: Konten, bei denen eine Kategorie zaehlt ("braucht")."""
     ent_of: Dict[str, str] = {}
     for b in bereiche:
         for a in b["leaves"]:
@@ -941,7 +940,8 @@ def compact_transactions(ledger: Ledger, bereiche: List[dict], store: Optional[S
         path, q = categorize.effective(kat, t)
         out.append({"id": t.id, "konto": t.account_uuid, "konto_name": ledger.accounts[t.account_uuid].name, "entitaet": ent_of[t.account_uuid],
                     "datum": t.booking_date.isoformat(), "betrag": t.amount, "name": t.name[:80], "zweck": t.purpose[:140],
-                    "kategorie": path, "quelle": q, "gebucht": t.booked, "haken": t.checkmark})
+                    "kategorie": path, "quelle": q, "gebucht": t.booked, "haken": t.checkmark,
+                    "braucht": categorize.needs_category(t, banks)})
     out.sort(key=lambda x: (x["datum"], x["id"]), reverse=True)
     return out
 
@@ -1101,25 +1101,21 @@ def prepare_categories(store: Store, ledger: Ledger, config: dict, categories: O
     return kat
 
 
+def bank_accounts(roles: Dict[str, str]) -> set:
+    """The accounts a category matters for (cash flow, tax): those with the position "liquidity"."""
+    return {u for u, r in roles.items() if r == "liquiditaet"}
+
+
 def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: Optional[List[dict]],
                         step: Callable[[float, str], None]) -> dict:
-    kc = config.get("kategorien") or {}
+    """Categories are MoneyMoney's; on top only what you assigned and what waits to be written there. The patterns for the
+    suggestions are learned at the full read (daily)."""
+    categorize.set_standard(categories)
     kat = categorize.load(store)
     base = categorize.digest(kat)
-    if not kc.get("aktiv", True):
-        categorize.apply_to_ledger(categorize.empty(), ledger)
-        return kat
     changed = False
-    if categories and (not kat.get("mm_uebernommen") or kat.get("mm_pfade") != categorize.MM_PFADE or len(kat["baum"]) < len(categories)):
-        if categorize.seed_from_moneymoney(kat, categories):
-            changed = True
-    # Regeln aus allen Umsaetzen lernen: beim vollstaendigen Lesen (taeglich), beim schnellen Lesen gelten die gelernten weiter
-    if kc.get("lernen", True) and (not getattr(ledger, "incremental", False) or not kat.get("gelernt_am")):
-        before = len(kat["regeln"])
-        categorize.learn(kat, ledger, progress=lambda f: step(0.6 * f, tr("s_kategorien_regeln_lernen")))
-        changed = changed or len(kat["regeln"]) != before or not kat.get("gelernt_am")
-    if categorize.auto_assign(kat, ledger, overwrite_mm=bool(kc.get("mm_ueberschreiben")),
-                                 progress=lambda f: step(0.6 + 0.3 * f, tr("s_kategorien_umsaetze_zuordnen"))):
+    if not getattr(ledger, "incremental", False) or not kat.get("gelernt_am"):
+        categorize.learn(kat, ledger, progress=lambda f: step(0.8 * f, tr("s_kategorien_regeln_lernen")))
         changed = True
     step(0.9, tr("s_kategorien_uebernehmen"))
     if changed:
@@ -1128,11 +1124,10 @@ def _prepare_categories(store: Store, ledger: Ledger, config: dict, categories: 
             dnow = categorize.digest(now)
             if dnow != base:
                 # changed meanwhile (e.g. a category you assigned while the report was being built): that stays; what was
-                # worked out here goes only where nothing changed, then the rules assign again on the result
+                # worked out here goes only where nothing changed
                 for k, v in kat.items():
                     if not k.startswith("_") and (k not in dnow or dnow[k] == base.get(k)):
                         now[k] = v
-                categorize.auto_assign(now, ledger, overwrite_mm=bool(kc.get("mm_ueberschreiben")))
                 kat = now
             categorize.save(store, kat)
     categorize.apply_to_ledger(kat, ledger)
@@ -1265,19 +1260,20 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "immobilien": immobilien,
         "budgets": budgets,
         "warnungen": warnings,
-        "kategorien": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", ledger._kat_sig, lambda: categorize.stats(kat, ledger)))[1],
+        "kategorien": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles)))),
+                                                                                  lambda: categorize.stats(kat, ledger, bank_accounts(roles))))[1],
                            verwendung=len(kat.get("verwendung") or {})),
         "konten_neu": neu,
     }
     step(0.88, "Speichern")
     store.save("dataset.json", dataset)
-    sig = (ledger._kat_sig, _bereiche_sig(bereiche))
+    sig = (ledger._kat_sig, _bereiche_sig(bereiche), tuple(sorted(bank_accounts(roles))))
     cached = getattr(ledger, "_ums_cache", None)
     if cached and cached[0] == sig and store.exists("transactions.json"):
         ums = cached[1]                # Umsatzliste unveraendert (z. B. nur Verlauf geaendert) -> nicht neu schreiben
     else:
         step(0.93, "Umsatzliste")
-        ums = compact_transactions(ledger, bereiche, store)
+        ums = compact_transactions(ledger, bereiche, store, bank_accounts(roles))
         store.save("transactions.json", ums)
         ledger._ums_cache = (sig, ums)
     dataset["_umsaetze"] = ums        # fuer den Dienst: Liste im Speicher behalten (teilt die Strings mit dem Ledger), nicht Teil der Datei

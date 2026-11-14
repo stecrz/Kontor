@@ -30,7 +30,8 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
   (`tests/test_privacy.py` prüft, was sich prüfen lässt).
 - MoneyMoney nur über die AppleScript-Schnittstelle. Schreiben nur in Offline-Konten (Regeln) und – wenn der Nutzer das
   Zurückschreiben eingeschaltet hat – das Kategoriefeld von Umsätzen, die er in Kontor zuordnet (`mm_categories.py`: direkt
-  vorher neu lesen und prüfen, fremde Kategorien nur nach Rückfrage, nur am Mac). Nie Buchungen, den Kategorienbaum oder
+  vorher neu lesen und prüfen, fremde Kategorien nur nach Rückfrage; vom iPhone Zugeordnetes erst beim nächsten Abgleich am Mac).
+  Kontor hat keine eigenen Kategorien und ordnet nie selbst zu (gelernte Muster sind nur Vorschläge). Nie Buchungen, den Kategorienbaum oder
   Regeln des Nutzers ändern oder löschen, keine Überweisungen.
 - Oberfläche nur über 127.0.0.1 bzw. Tailscale erreichbar. Netzverbindungen nur: Update-Prüfung bei GitHub und – nur auf ausdrücklichen Klick (Einrichtung → Historische Kontostände) – das Nachschlagen von Wertpapiernamen bei OpenFIGI (`security_names.py`, sendet nur ISINs).
 - Keine Passwörter oder Zugangsdaten speichern, protokollieren oder zwischenspeichern; Datenordner verschlüsselt.
@@ -64,10 +65,10 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 | `rules.py` | Buchungsregeln – Darlehen, Beteiligung, Kontenspiegel; zustandslos, erkennt Gebuchtes an `#kontor-…` |
 | `model.py` | Konten, Umsätze, `Ledger`, Salden zum Stichtag, Markierungen |
 | `report.py` | Bilanz, Cashflow, Planung je Bereich |
-| `categorize.py` / `mm_categories.py` | Kontor-Kategorien (lernen, zuordnen) / Kategorie nach MoneyMoney zurückschreiben |
+| `categorize.py` / `mm_categories.py` | Kategorien: MoneyMoney ist maßgeblich – Zuordnen, Vorschläge, Regelvorschläge / Kategorie in MoneyMoney eintragen |
 | `mm_bridge.py` + `.jxa` | einzige Schnittstelle zu MoneyMoney (Liste erlaubter Methoden) |
 | `mm_history.py` + `.swift` | Kontostände aus MoneyMoneys Datenbank (Upload, nur Speicher) |
 | `realestate.py`, `tax.py`, `receipts.py` | Immobilienkalkulation, Steuer, Belege |
 | `storage.py`, `auth.py`, `updates.py`, `tls_cert.py` | verschlüsselte Ablage, Anmeldung/Touch ID, Updates, Zertifikat |
 | `web/app.js`, `web/i18n.js` | Oberfläche (eine Datei, Seiten über `#…`), Texte |
-| `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_fuzz`, `test_privacy` |
+| `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_categories`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_fuzz`, `test_privacy` |

@@ -561,3 +561,8 @@ pre.code { background:var(--head); border:1px solid var(--line); border-radius:8
 a.more { white-space:nowrap; }
 @media (max-width: 800px) { .help-layout { grid-template-columns:1fr; } .help-toc { position:static; max-height:none; flex-direction:row; flex-wrap:wrap; } }
 .wrap td .cnt { font-weight:400; }              /* number of accounts or securities next to a row: not bold */
+
+/* rule proposals for MoneyMoney: the expression, selectable as a whole */
+.rv-expr { font:12.5px ui-monospace, SFMono-Regular, Menlo, monospace; background:var(--head); border:1px solid var(--line); border-radius:7px; padding:5px 9px; user-select:all; -webkit-user-select:all; overflow-wrap:anywhere; flex:1; min-width:0; }
+.kz-tx-wrap { max-height:320px; overflow:auto; margin:8px 0 2px; border-top:1px solid var(--line); }
+.kz-tx { width:auto; min-width:min(100%, 560px); } .kz-tx th, .kz-tx td { padding:4px 10px 4px 0; } .kz-tx td.num, .kz-tx th.num { padding-right:16px; } .kz-tx thead th { position:sticky; top:0; background:var(--head); }

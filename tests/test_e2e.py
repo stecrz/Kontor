@@ -919,50 +919,94 @@ class AppTests(_AppBase):
         self.assertIsNot(self.app.ledger, led)
 
     def test_kategorien_zurueckschreiben(self):
-        """Zurueckschreiben nach MoneyMoney: fehlende Kategorie wartet und wird nachgetragen, eigene Kategorie ohne Rueckfrage
-        aenderbar, abweichender Umsatz wird nicht beschrieben, von unterwegs nur in Kontor."""
+        """MoneyMoney ist massgeblich: Zuordnen traegt dort ein (geprueft), eigene Kategorie ohne Rueckfrage aenderbar, ein in
+        MoneyMoney geaenderter Umsatz wird nicht beschrieben; von unterwegs gemerkt und beim naechsten Abgleich eingetragen;
+        nur Bankkonten brauchen eine Kategorie."""
         import mm_categories
+        import service as MA
+        orig_loop = MA.auth.is_loopback
         self.login(); self.run_and_wait()
         cfg = copy.deepcopy(self.app.config); cfg.setdefault("moneymoney", {})["kategorisieren_erlauben"] = True; self.app.save_config(cfg)
         sets = lambda: [w for b in MockBridge.instances for w in b.written if w[0] == "set" and w[2] is not None]
-        # ohne Kategorie in MoneyMoney: Bauhaus-Umsaetze (Kategorie fehlt in MoneyMoney -> wartet)
         MockBridge.state["txs"] += [F.tx("priv.giro", date(2026, 10, 20), -80.0, "Bauhaus", "Werkzeug"),
                                     F.tx("priv.giro", date(2026, 10, 27), -35.0, "Bauhaus", "Schrauben")]
+        MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Werkzeug", 1, False, {}), ("Garten", 1, False, {})]
         self.app.do_run(True, False, full=True)
         ids = [t.id for t in self.app.ledger.txs if t.name == "Bauhaus"]
-        code, r = self.call("/api/categories/assign", {"ids": ids, "kategorie": "Haushalt / Werkzeug", "warten": True})
-        self.assertEqual((r["mm"]["geschrieben"], r["mm"]["wartet"]), (0, 2)); self.assertFalse(sets())
         code, off = self.call("/api/categories/unassigned")
-        self.assertEqual(off["wartend"], [{"kategorie": "Haushalt / Werkzeug", "anzahl": 2}])
-        # in MoneyMoney angelegt -> beim naechsten Lesen nachgetragen (per UUID)
-        MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Werkzeug", 1, False, {})]
-        self.app.do_run(True, False)
+        self.assertIn("Bauhaus", [g["name"] for g in off["gruppen"]]); self.assertTrue(off["zurueckschreiben"])
+        code, r = self.call("/api/categories/assign", {"ids": ids, "kategorie": "Haushalt / Werkzeug", "warten": True})
+        self.assertEqual((r["mm"]["geschrieben"], r["mm"]["spaeter"]), (2, 0))
         self.assertEqual(sorted(w[1] for w in sets()), sorted(ids)); self.assertTrue(all(w[2] == F.uid("cat:Werkzeug") for w in sets()))
-        self.assertFalse([z for z in categorize.load(self.store)["zuordnung"].values() if z.get("w")])
+        self.assertFalse(categorize.load(self.store)["zuordnung"])                 # steht in MoneyMoney -- dort massgeblich
         self.assertEqual(categorize.mm_of(next(t for t in self.app.ledger.txs if t.id == ids[0])), "Haushalt / Werkzeug")
         # von Kontor geschrieben -> erneut aenderbar ohne Rueckfrage
-        MockBridge.extra_cats.append(("Garten", 1, False, {}))
-        self.app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
         code, r = self.call("/api/categories/assign", {"ids": ids[:1], "kategorie": "Haushalt / Garten", "warten": True})
         self.assertEqual((r["mm"]["geschrieben"], r["mm"]["fremd"]), (1, []))
-        # in MoneyMoney geaendert (anderer Betrag) -> nicht schreiben, bleibt in Kontor
+        # in MoneyMoney geaendert (anderer Betrag) -> nicht schreiben, MoneyMoney gilt
         raw = next(t for t in MockBridge.state["txs"] if t["id"] == ids[1]); raw["amount"] = -36.0
         n = len(sets())
         code, r = self.call("/api/categories/assign", {"ids": ids[1:], "kategorie": "Haushalt / Garten", "warten": True})
         self.assertEqual((r["mm"]["geschrieben"], r["mm"]["fehler"]), (0, 1)); self.assertEqual(len(sets()), n)
-        # von unterwegs (nicht vom Mac): nur in Kontor
+        self.assertFalse(categorize.load(self.store)["zuordnung"])
+        # von unterwegs: gemerkt (zaehlt schon), beim naechsten Abgleich am Mac eingetragen
+        raw["amount"] = -35.0
+        MockBridge.state["txs"].append(F.tx("priv.giro", date(2026, 10, 29), -12.0, "Bauhaus", "Duebel"))
+        self.app.do_run(True, False, full=True)
+        new_id = next(t.id for t in self.app.ledger.txs if t.name == "Bauhaus" and abs(t.amount + 12.0) < 0.01)
         orig = self.app.mm_write_allowed
         self.app.mm_write_allowed = lambda local: False
         try:
-            code, r = self.call("/api/categories/assign", {"ids": ids[:1], "kategorie": "Haushalt / Werkzeug", "warten": True})
-            self.assertTrue(r["mm"]["aus"]); self.assertEqual(len(sets()), n)
-            self.assertTrue(categorize.load(self.store)["zuordnung"][str(ids[0])].get("ov"))
+            code, r = self.call("/api/categories/assign", {"ids": [new_id], "kategorie": "Haushalt / Werkzeug", "warten": True})
+            self.assertEqual((r["mm"]["spaeter"], r["mm"]["geschrieben"]), (1, 0)); self.assertEqual(len(sets()), n)
+            self.assertTrue(categorize.waiting(categorize.load(self.store)["zuordnung"][str(new_id)]))
+            self.assertEqual(self.call("/api/categories/unassigned")[1]["wartet"], 1)
+            u = [x for x in self.call("/api/transactions?q=bauhaus")[1]["umsaetze"] if x["id"] == new_id][0]
+            self.assertEqual((u["kategorie"], u["quelle"]), ("Haushalt / Werkzeug", "wartet"))
         finally:
             self.app.mm_write_allowed = orig
+        self.app.do_run(True, False)
+        self.assertIn(new_id, [w[1] for w in sets()]); self.assertFalse(categorize.load(self.store)["zuordnung"])
+        # MoneyMoneys Standardkategorie zaehlt als ohne -- und laesst sich ersetzen, ohne als fremd zu gelten
+        MockBridge.state["txs"].append(dict(F.tx("priv.giro", date(2026, 10, 31), -9.0, "Eisenwaren", "Nägel"), categoryPath="Unkategorisiert", category="Unkategorisiert"))
+        self.app.do_run(True, False, full=True)
+        eid = next(t.id for t in self.app.ledger.txs if t.name == "Eisenwaren")
+        self.assertIn(eid, [i for g in self.call("/api/categories/unassigned")[1]["gruppen"] for i in g["ids"]])
+        code, r = self.call("/api/categories/assign", {"ids": [eid], "kategorie": "Haushalt / Werkzeug", "warten": True})
+        self.assertEqual((r["mm"]["geschrieben"], r["mm"]["fremd"]), (1, []))
+        # Kontors Stand veraltet (leer), in MoneyMoney inzwischen "Garten": Rueckfrage zeigt "Garten", Ersetzen mit genau diesem Wert
+        MockBridge.state["txs"].append(F.tx("priv.giro", date(2026, 10, 31), -4.0, "Samenhandel", "Samen"))
+        self.app.do_run(True, False, full=True)
+        sid = next(t.id for t in self.app.ledger.txs if t.name == "Samenhandel")
+        raw = next(t for t in MockBridge.state["txs"] if t["id"] == sid); raw["categoryPath"] = raw["category"] = "Haushalt\\Garten"
+        code, r = self.call("/api/categories/assign", {"ids": [sid], "kategorie": "Haushalt / Werkzeug", "warten": True})
+        self.assertEqual(r["mm"]["fremd"], [{"id": sid, "mm": "Haushalt / Garten"}])
+        code, r = self.call("/api/categories/assign", {"ids": [sid], "kategorie": "Haushalt / Werkzeug", "modus": "ueberschreiben",
+                                                         "bestaetigt": {str(sid): "Haushalt / Garten"}, "warten": True})
+        self.assertEqual(r["mm"]["geschrieben"], 1)
+        # von unterwegs: Umsatz mit Kategorie in MoneyMoney wird nicht gemerkt (aendern nur am Mac); Einschalten nur am Mac
+        MA.auth.is_loopback = lambda remote: False
+        try:
+            cfgr = copy.deepcopy(self.app.config); cfgr.setdefault("oberflaeche", {})["fern_nur_ansehen"] = False; self.app.save_config(cfgr)
+            code, r = self.call("/api/categories/assign", {"ids": [sid], "kategorie": "Haushalt / Garten", "warten": True})
+            self.assertEqual((r["mm"]["nur_am_mac"], r["mm"]["spaeter"]), (1, 0)); self.assertFalse(categorize.load(self.store)["zuordnung"])
+            self.assertEqual(self.call("/api/categories/settings", {"mm_schreiben": False})[0], 403)
+            code, cfg_now = self.call("/api/config"); cfg_now["moneymoney"]["kategorisieren_erlauben"] = False
+            self.assertEqual(self.call("/api/config", {"config": cfg_now}, method="PUT")[0], 403)
+            code, r = self.call("/api/package/import", {"paket": {"name": "x", "config": {"moneymoney": {"kategorisieren_erlauben": False}, "probelauf": False}}, "trotzdem": True})
+            self.assertTrue(self.app.mm_write_on()); self.assertEqual(self.app.config.get("probelauf", True), cfgr.get("probelauf", True))
+        finally:
+            MA.auth.is_loopback = orig_loop
+        # nur Bankkonten brauchen eine Kategorie: das Verkaeuferdarlehen (Offline-Konto) erscheint nicht unter Zuordnen
+        code, off = self.call("/api/categories/unassigned")
+        self.assertFalse([g for g in off["gruppen"] if any("Verkäuferdarlehen" == k for k in g["konten"])])
+        u = [x for x in self.call("/api/transactions?account=" + F.uid("pb.vd"))[1]["umsaetze"]]
+        self.assertTrue(u and all(x["braucht"] is False for x in u))
+        self.assertFalse(self.call("/api/transactions?uncategorized=1&account=" + F.uid("pb.vd"))[1]["umsaetze"])
 
     def test_kategorien_auswahl(self):
-        """Einrichtung -> Kategorien auswaehlen: zusammenfassen (Kapitalfluss-Zeile = Oberkategorie, Steuer unveraendert) und
-        nicht verwenden (in Kontor ohne Kategorie, erscheint unter Zuordnen); MoneyMoney bleibt unberuehrt."""
+        """Kategorien -> Auswahl: zusammenfassen (Kapitalfluss-Zeile = Oberkategorie, Steuer unveraendert); MoneyMoney bleibt
+        unberuehrt, seine Kategorie gilt immer."""
         self.login(); self.run_and_wait()
         def zeilen():
             ds = self.store.load("dataset.json")
@@ -976,15 +1020,16 @@ class AppTests(_AppBase):
         self.assertIn("Vermietung", z); self.assertFalse([x for x in z if "Parkweg" in x])
         self.assertIn("Wohnen / Miete", z)                                                  # oberste Ebene nicht zusammenfassbar
         self.assertEqual(json.dumps(self.store.load("dataset.json")["steuer"], sort_keys=True), steuer_vorher)   # Steuer: genaue Kategorie
+        # "nicht verwenden" gibt es nicht mehr: die Kategorie aus MoneyMoney gilt immer
         code, r = self.call("/api/categories/usage", {"verwendung": {"Vermietung / Parkweg": "zusammen", "Wohnen": "zusammen",
                                                                    "Lebensmittel": "ignorieren", "Einnahmen / Gehalt": "zeile"}, "warten": True})
-        self.assertEqual(r["verwendung"], {"Vermietung / Parkweg": "zusammen", "Lebensmittel": "ignorieren"})
+        self.assertEqual(r["verwendung"], {"Vermietung / Parkweg": "zusammen"})
         code, off = self.call("/api/categories/unassigned")
-        self.assertGreater(off["offen"], offen_vorher); self.assertIn("Supermarkt", [g["name"] for g in off["gruppen"]])
-        code, k = self.call("/api/categories/kontor"); self.assertEqual(k["verwendung"]["Lebensmittel"], "ignorieren")
+        self.assertEqual(off["offen"], offen_vorher); self.assertNotIn("Supermarkt", [g["name"] for g in off["gruppen"]])
+        code, k = self.call("/api/categories/kontor"); self.assertNotIn("Lebensmittel", k["verwendung"])
         self.assertGreater(k["anzahl"]["Lebensmittel"], 0)
         self.assertFalse([w for b in MockBridge.instances for w in b.written if w[0] == "set" and w[2] is not None])
-        self.assertEqual(self.store.load("dataset.json")["kategorien"]["verwendung"], 2)
+        self.assertEqual(self.store.load("dataset.json")["kategorien"]["verwendung"], 1)
 
     def test_zugriff_vom_iphone(self):
         """Zugriff von anderen Geraeten: Stand, Ein-/Ausschalten nur am Mac, von unterwegs nur ansehen (Standard),
@@ -1548,17 +1593,18 @@ class AppTests(_AppBase):
         self.assertEqual(r["eintrag"]["notiz"], "neu")
         code, r = self.call("/api/receipts/remove", {"id": e["id"], "datei_loeschen": False})
         self.assertTrue(r["ok"]); self.assertTrue(os.path.isfile(os.path.join(self.belege, e["pfad"])))
-        # Kategorisieren: ohne Zurueckschreiben nur in Kontor (uebersteuert MoneyMoney), eingeschaltet geprueft nach MoneyMoney
+        # Kategorisieren: nur mit eingeschaltetem Eintragen, und nur nach MoneyMoney (eine vorhandene Kategorie nach Rueckfrage)
         import mm_categories
         MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Lebensmittel", 1, False, {})]
         self.app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
         kat_of = lambda: [x for x in self.call("/api/transactions?q=supermarkt")[1]["umsaetze"] if x["id"] == tx["id"]][0]
         code, r = self.call("/api/categories/assign", {"ids": [tx["id"]], "kategorie": "Haushalt / Lebensmittel", "warten": True})
-        self.assertEqual(code, 200); self.assertTrue(r["mm"]["aus"]); self.assertEqual(r["mm"]["geschrieben"], 0)
-        self.assertEqual((kat_of()["kategorie"], kat_of()["quelle"]), ("Haushalt / Lebensmittel", "manuell"))
+        self.assertEqual(code, 400)                                                   # aus: Kontor ordnet nichts nur fuer sich zu
         self.assertFalse(any(w[0] == "set" and w[2] is not None for b in MockBridge.instances for w in b.written))
         code, cfg = self.call("/api/config"); cfg["moneymoney"]["kategorisieren_erlauben"] = True
         self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 200)
+        self.assertEqual(self.call("/api/categories/assign", {"ids": [tx["id"]], "kategorie": "Gibt es nicht"})[0], 400)    # nur MoneyMoneys
+        self.assertEqual(self.call("/api/categories/assign", {"ids": [tx["id"]], "kategorie": "Haushalt"})[0], 400)          # Ordner
         # in MoneyMoney steht schon "Lebensmittel" (fremd): erst nachfragen, nichts schreiben
         code, r = self.call("/api/categories/assign", {"ids": [tx["id"]], "kategorie": "Haushalt / Lebensmittel", "warten": True})
         self.assertEqual(r["mm"]["fremd"], [{"id": tx["id"], "mm": "Lebensmittel"}]); self.assertEqual(r["mm"]["geschrieben"], 0)
@@ -2037,62 +2083,40 @@ class FeatureTests(_AppBase):
 
 
     def test_kontor_kategorien_und_konten_zuordnung(self):
+        import mm_categories
         self.login(); self.run_and_wait()
+        cfg = copy.deepcopy(self.app.config); cfg.setdefault("moneymoney", {})["kategorisieren_erlauben"] = True; self.app.save_config(cfg)
+        MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Werkzeug", 1, False, {})]
+        self.app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
         code, k = self.call("/api/categories/kontor")
-        self.assertEqual(code, 200)
-        pfade = {x["pfad"] for x in k["baum"]}
-        self.assertIn("Wohnen / Miete", pfade); self.assertIn("Vermietung / Parkweg / Mieteinnahmen", pfade)   # aus MoneyMoney uebernommen
-        self.assertTrue(k["statistik"]["regeln"]["gelernt"] >= 3)        # Arbeitgeber, Vermieter, Versicherer, Supermarkt, ...
-        regeln = {r.get("name_ist") or r.get("name_enthaelt"): r for r in k["regeln"]}
-        self.assertEqual(regeln["supermarkt"]["kategorie"], "Lebensmittel")
-        # Offene Umsaetze: Baumarkt (ohne Kategorie) als Gruppe
+        self.assertEqual(code, 200); self.assertNotIn("baum", k); self.assertNotIn("regeln", k)
+        self.assertGreater(k["anzahl"]["Lebensmittel"], 0)
+        # Offene Umsaetze: Baumarkt (ohne Kategorie) als Gruppe, ohne Vorschlag; gelernte Muster ordnen nie selbst zu
         code, off = self.call("/api/categories/unassigned")
         self.assertTrue(off["offen"] >= 20)
         g = [x for x in off["gruppen"] if x["name"] == "Baumarkt"][0]
-        self.assertEqual(g["anzahl"], off["offen"] if len(off["gruppen"]) == 1 else g["anzahl"]); self.assertIsNone(g["vorschlag"])
-        # Zuordnen mit Regel -> alle Baumarkt-Umsaetze kategorisiert, Kapitalfluss zeigt die neue Kategorie
-        code, r = self.call("/api/categories/assign", {"ids": g["ids"][:2], "kategorie": "Haushalt / Werkzeug", "regel": {"name_enthaelt": "Baumarkt"}})
-        self.assertEqual(code, 200); self.assertEqual(r["anzahl"], 2); self.assertTrue(r["regel"]); self.assertTrue(r["bericht"])
-        code, off2 = self.call("/api/categories/unassigned")
-        self.assertFalse(any(x["name"] == "Baumarkt" for x in off2["gruppen"]))          # Regel hat den Rest erfasst
+        self.assertIsNone(g["vorschlag"])
+        code, ds = self.call("/api/dataset")
+        self.assertEqual(set(ds["kategorien"]["gesamt"]) - {"moneymoney", "ohne"}, set())
+        # zwei zuordnen -> in MoneyMoney; danach Vorschlag fuer den Rest (nur Vorschlag) und eine Regel fuer MoneyMoney
+        code, r = self.call("/api/categories/assign", {"ids": g["ids"][:2], "kategorie": "Haushalt / Werkzeug", "warten": True})
+        self.assertEqual((code, r["anzahl"], r["mm"]["geschrieben"]), (200, 2, 2)); self.assertTrue(r["bericht"])
+        code, off2 = self.call("/api/categories/unassigned")          # learned right after assigning: suggestion for the rest
+        g2 = [x for x in off2["gruppen"] if x["name"] == "Baumarkt"][0]
+        self.assertEqual((g2["anzahl"], g2["vorschlag"]), (g["anzahl"] - 2, "Haushalt / Werkzeug"))
         code, ds = self.call("/api/dataset")
         az = [s["zeilen"] for s in ds["bereiche"][ds["haupt"]]["kapitalfluss"]["sektionen"] if s["name"] == "Ausgaben"][0]
         self.assertTrue(any(z["zeile"] == "Haushalt / Werkzeug" for z in az))
-        self.assertEqual(ds["kategorien"]["gesamt"]["regel"] >= 20, True)
-        code, u = self.call("/api/transactions?q=baumarkt&limit=3")
-        self.assertEqual(u["umsaetze"][0]["kategorie"], "Haushalt / Werkzeug"); self.assertIn(u["umsaetze"][0]["quelle"], ("manuell", "regel"))
-        # Kategorie umbenennen/verschieben, Regel loeschen, manuelle Zuordnung entfernen
-        code, r = self.call("/api/categories/tree", {"aktion": "umbenennen", "pfad": "Haushalt / Werkzeug", "neu": "Wohnen / Werkzeug"})
-        self.assertTrue(any(x["pfad"] == "Wohnen / Werkzeug" for x in r["baum"]))
-        code, k = self.call("/api/categories/kontor")
-        rid = [x["id"] for x in k["regeln"] if x.get("quelle") == "manuell"][0]
-        self.assertEqual([x["kategorie"] for x in k["regeln"] if x["id"] == rid], ["Wohnen / Werkzeug"])
-        code, r = self.call("/api/categories/rule", {"loeschen": rid})
-        self.assertFalse(any(x["id"] == rid for x in r["regeln"]))
-        code, off3 = self.call("/api/categories/unassigned")
-        self.assertFalse(any(x["name"] == "Baumarkt" for x in off3["gruppen"]))          # aus den 2 manuellen Zuordnungen wurde eine Regel gelernt
-        code, k = self.call("/api/categories/kontor")
-        self.assertTrue(any(x.get("name_ist") == "baumarkt" and x["quelle"] == "gelernt" for x in k["regeln"]))
-        self.assertEqual(self.call("/api/categories/assign", {"ids": g["ids"][:2], "kategorie": ""})[1]["anzahl"], 2)   # manuelle Zuordnungen weg -> Regel verschwindet
-        code, off4 = self.call("/api/categories/unassigned")
-        self.assertEqual([x for x in off4["gruppen"] if x["name"] == "Baumarkt"][0]["anzahl"], g["anzahl"])
-        # Eigene Regel ueber die API, Lernen, Einstellungen
-        code, r = self.call("/api/categories/rule", {"regel": {"iban": "DE02500105170137075030", "kategorie": "Finanzierung / Annuität", "richtung": "aus"}})
-        self.assertTrue(any(x.get("iban") == "DE02500105170137075030" for x in r["regeln"]))
-        self.assertEqual(self.call("/api/categories/rule", {"regel": {"kategorie": "X"}})[0], 400)
-        code, r = self.call("/api/categories/learn", {}); self.assertTrue(r["ok"]); self.assertIn("regeln", r["gelernt"])
-        code, r = self.call("/api/categories/settings", {"mm_ueberschreiben": True})
-        self.assertTrue(r["einstellungen"]["mm_ueberschreiben"])
-        code, u = self.call("/api/transactions?q=VR-Bank&direction=out&limit=3&account=" + F.uid("priv.giro"))
-        self.assertEqual(u["umsaetze"][0]["kategorie"], "Finanzierung / Annuität"); self.assertEqual(u["umsaetze"][0]["quelle"], "regel")   # Regel ueberschreibt 'Umbuchung'
-        self.call("/api/categories/settings", {"mm_ueberschreiben": False})
-        code, u = self.call("/api/transactions?q=VR-Bank&direction=out&limit=3&account=" + F.uid("priv.giro"))
-        self.assertEqual(u["umsaetze"][0]["kategorie"], "Umbuchung"); self.assertEqual(u["umsaetze"][0]["quelle"], "moneymoney")
-        # Kategorien aus: Bericht nutzt nur MoneyMoney
-        self.call("/api/categories/settings", {"aktiv": False})
-        code, ds = self.call("/api/dataset")
-        self.assertEqual(ds["kategorien"]["gesamt"].get("regel", 0), 0)
-        self.call("/api/categories/settings", {"aktiv": True})
+        code, pr = self.call("/api/categories/proposals")
+        v = [x for x in pr["vorschlaege"] if x["kategorie"] == "Haushalt / Werkzeug"]
+        self.assertEqual(len(v), 1); self.assertEqual(v[0]["ausdruck"], 'name:"Baumarkt"')
+        self.assertEqual((v[0]["deine"], v[0]["treffer"], v[0]["offen"]), (2, g["anzahl"], g["anzahl"] - 2))
+        self.assertEqual(self.call("/api/categories/proposals", {"erledigt": v[0]["key"]})[0], 200)
+        self.assertFalse([x for x in self.call("/api/categories/proposals")[1]["vorschlaege"] if x["key"] == v[0]["key"]])
+        self.assertFalse([w for b in MockBridge.instances for w in b.written if w[0] == "set" and w[1] not in g["ids"][:2] and w[2] is not None])
+        # die alten Endpunkte gibt es nicht mehr
+        for path in ("/api/categories/rule", "/api/categories/tree", "/api/categories/learn", "/api/categories/legacy"):
+            self.assertEqual(self.call(path, {})[0], 404)
         # Kontenzuordnung: alle Konten 'neu', nach Bestaetigung nicht mehr; Konto explizit in anderen Bereich
         code, ds = self.call("/api/dataset")
         self.assertTrue(len(ds["konten_neu"]) >= 10); self.assertTrue(any("ohne bestätigte Zuordnung" in w for w in ds["warnungen"]))
@@ -2840,15 +2864,26 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("Dokumente", pg.query_selector("#main").inner_text())
                 pg.click("#nav a[href='#properties']"); pg.wait_for_selector(".card[data-im]")
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_immobilien.png"), full_page=True)
-                # Zuordnen: offene Gegenpartei mit Regel zuordnen -> verschwindet, Kategorien-Seite zeigt Regel
+                # Zuordnen: erst einschalten (am Mac), dann traegt Kontor die Kategorie in MoneyMoney ein -> Gruppe verschwindet
+                import mm_categories
+                MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Werkzeug", 1, False, {})]
+                app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
                 pg.click("#nav a[href='#categories']"); pg.wait_for_selector(".kz-group")
+                self.assertTrue(pg.query_selector(".kz-save").is_disabled())
+                pg.click("#kz-mm-on"); pg.wait_for_selector(".kz-save:not([disabled])")
+                for _ in range(60):                 # the settings change rebuilds the report; wait until it is loaded (no re-render meanwhile)
+                    if pg.evaluate("async () => { try { await pollStatus(); } catch (e) {} return !!S.STATUS && !(S.STATUS.bericht || {}).laeuft && (S.STATUS.bericht || {}).stand === BER.stand; }"):
+                        break
+                    pg.wait_for_timeout(500)
+                pg.wait_for_timeout(800); pg.wait_for_selector(".kz-save:not([disabled])")
                 n_before = len(pg.query_selector_all(".kz-group"))
                 box = pg.query_selector(".kz-group"); box.query_selector(".kz-kat").fill("Haushalt / Werkzeug"); box.query_selector(".kz-save").click()
                 pg.wait_for_timeout(1500)
                 self.assertLess(len(pg.query_selector_all(".kz-group")), n_before)
+                self.assertTrue(any(w[0] == "set" and w[2] == F.uid("cat:Werkzeug") for b in MockBridge.instances for w in b.written))
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_zuordnen.png"), full_page=True)
-                pg.click("#main .tabs button[data-next='#categories/rules']"); pg.wait_for_selector("#kk-add")
-                self.assertIn("Haushalt / Werkzeug", pg.query_selector("#main").inner_text())
+                pg.click("#main .tabs button[data-next='#categories/rules']"); pg.wait_for_selector("#main .note")
+                self.assertIn("Regeln", pg.query_selector("#main").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_kategorien.png"), full_page=True)
                 # Planung: Ereignis anlegen -- erst wenn die Neuberechnung nach dem Zuordnen fertig und geladen ist (sonst baut
                 # das Nachladen die Seite waehrend der Eingabe neu auf)
