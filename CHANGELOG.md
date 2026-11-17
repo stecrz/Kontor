@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.13.17 (2026-11-17 18:07)
+- **Anfangssaldo eines neuen Kontos** (z. B. eine neue Karte, die in MoneyMoney mit der Restschuld der alten startet): Zeigt ein anderes Bankkonto im selben Monat den Gegenbetrag, zählt er als Umbuchung; sonst steht er als „Anfangssaldo“ unter Wertänderungen – nicht mehr als „Kontostand unbekannt“.
+- **„Überschuss“** statt „Operativer Cashflow“ (Einnahmen minus Ausgaben).
+- **Farben:** Überschuss blau, Investitionen gelb-orange, Finanzierung lila.
+- **Cashflow öffnet auf „Überblick“**, die Planung auf „Positionen“.
+- **Ausgaben nach Position:** Betrag und Veränderung zur Vorperiode stehen direkt da; beim Darüberfahren die Aufteilung in eigenen Farben, „Übrige“ mit Vorperiode, Beträge sauber in ihrer Spalte.
+- **Cent-Beträge** in Bilanz und Cashflow klein neben den Euro.
+- Ab 100 000 % (oder aus fast null) zeigen Diagramme keine Steigerung mehr an.
+
 ## 3.13.16 (2026-11-17 17:36)
 - **Cashflow-Farben:** Operativer Cashflow blau, Investitionen gelb, Finanzierung magenta – Grün und Rot bleiben für Geld, das hereinkommt bzw. hinausgeht.
 - **Kürzere Überschriften:** „Investitionen“ und „Finanzierung“ statt „Investitions-Cashflow“ und „Finanzierungs-Cashflow“.

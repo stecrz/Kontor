@@ -1763,7 +1763,7 @@ class AppTests(_AppBase):
         import service as MS
         for was in ("cashflow", "planning"):
             names = [str(r[0]).strip() for r in MS.export_sheets(self.app, was, None, "months")[0].rows if r and r[0]]      # the table (first sheet)
-            for want in ("Operativer Cashflow", "Einnahmen", "Investitionen", "Finanzierung", "Veränderung Bankguthaben", "Abgleich mit der Bilanz", "Veränderung Nettovermögen"):
+            for want in ("Überschuss", "Einnahmen", "Investitionen", "Finanzierung", "Veränderung Bankguthaben", "Abgleich mit der Bilanz", "Veränderung Nettovermögen"):
                 self.assertIn(want, names, was)
             self.assertFalse([n for n in names if "_" in n or "Umschichtung" in n], was)
         # balance sheet: everything in it (positions, accounts, securities), grouped; collapsed as on the page
@@ -2698,14 +2698,14 @@ class BrowserTest(unittest.TestCase):
                 self.assertFalse(pg.query_selector_all("tr.check td.warn"))
                 self.assertIn("✓", pg.inner_text("tr.check"))
                 # one outline: sections open and close, positions open to their categories; three levels (overview: sections and results only)
-                self.assertEqual(pg.get_attribute("#cf-ebene button.on", "aria-label"), "Positionen")     # four levels as icons, named
+                self.assertEqual(pg.get_attribute("#cf-ebene button.on", "aria-label"), "Überblick")     # four levels as icons, named; the overview first
                 self.assertEqual(len(pg.query_selector_all("#cf-ebene button svg")), 4)
                 self.assertTrue(pg.query_selector("#main .cf-tbl thead th:first-child #cf-ebene"))       # in the table, over the triangles
                 self.assertTrue(pg.query_selector("#main .cf-tbl thead th:first-child a.cf-set[href='#positions']"))   # the gear to the positions
                 self.assertIsNone(pg.query_selector("#main .toolbar a[href='#positions']"))
                 # iPhone: one large triangle -- each tap a level further, after everything closed again
                 lv = lambda: pg.evaluate("S.cfEbene")
-                for want in (3, 0, 1, 2):
+                for want in (2, 3, 0, 1, 2):
                     pg.evaluate("document.querySelector('.cf-lv-btn').click()"); pg.wait_for_timeout(250)
                     self.assertEqual(lv(), want)
                 # a cash flow statement: operating (income and expenses within), investing, financing -- then the cash and net worth
@@ -2713,7 +2713,8 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(tops[:3], ["s:Operativ", "s:Investitionen", "s:Finanzierung"])
                 self.assertEqual(pg.eval_on_selector_all(F_ + " tr.sec2", "e => e.map(x => x.dataset.tog)"), ["s:Einnahmen", "s:Ausgaben"])
                 body = pg.inner_text(N_ + " tbody")
-                for gone in ("Überschuss", "Nach Zins und Tilgung", "Rohertrag", "Umschichtung"):
+                self.assertEqual(body.count("Überschuss"), 1)                                           # the operating section's name, no extra result line
+                for gone in ("Nach Zins und Tilgung", "Rohertrag", "Umschichtung"):
                     self.assertNotIn(gone, body)
                 self.assertIn("Tilgung", pg.inner_text(N_ + " tr.sub[data-tog='g:Finanzierung|Tilgung']")); self.assertIn("Darlehen Lindenstraße", body)
                 self.assertIsNone(pg.query_selector("tr.det"))
@@ -2767,7 +2768,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(len(pg.query_selector_all("#cf-months .cf-hit")), 12); self.assertTrue(pg.query_selector("#cf-months .cf-net"))
                 pg.hover("#cf-months .cf-hit >> nth=11"); pg.wait_for_timeout(150)
                 tip = pg.inner_text("#cf-tip")
-                for w in ("Operativer Cashflow", "Investitionen", "Finanzierung", "Veränderung Bankguthaben"):
+                for w in ("Überschuss", "Investitionen", "Finanzierung", "Veränderung Bankguthaben"):
                     self.assertIn(w, tip)
                 self.assertEqual(len(pg.query_selector_all("#cf-tip i.sw")), 3)
                 # 3. sources and uses: both sides the same sum

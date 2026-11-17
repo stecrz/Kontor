@@ -1043,6 +1043,35 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         repayment -- never income or an expense."""
         return not t.category_path or place(norm_cat(t.category_path))[0] in ("anlegen", "tilgung")
     mate, partner, by_cat = pair_transfers(ledger, in_root, flows, roles, is_transfer, cost_words, kf, pairable)
+    # An account that starts within these months with a balance of its own (its opening balance in MoneyMoney: before its first
+    # booking the balance sheet has none): a transfer where a bank account of the area shows the opposite amount that month
+    # and nothing else explains that booking (a balance moved over from an old card, say), else a row of its own among the
+    # changes in value -- never "balance unknown".
+    openings: List[Tuple[str, str, float]] = []
+    n_virtual = 0
+    if int(((config.get("bilanz") or {}).get("monate_zurueck", 0) or 0)) <= 0 and months:
+        first_mk = "%04d-%02d" % months[0]
+        cents = lambda x: int(round(x * 100))
+        for u in sorted(flows, key=lambda x: ledger.accounts[x].name):
+            own_txs = ledger.transactions(u)
+            if not own_txs or verlauf.get(u) == "stand":
+                continue
+            fm = month_key(min(x.booking_date for x in own_txs))
+            op = round(ledger.accounts[u].balance - sum(x.amount for x in own_txs), 2)
+            if abs(op) < 0.005 or fm <= first_mk or fm > month_key(last):
+                continue
+            # only a booking nothing else explains: no category of income or expenses, no other account on its other side
+            cands = [x for x in in_root if x.account_uuid != u and roles.get(x.account_uuid) == "liquiditaet" and x.id not in mate
+                     and (by_cat[x.id] or pairable(x)) and partner.get(x.id) in (None, u)
+                     and month_key(x.booking_date) == fm and cents(x.amount) == -cents(op)]
+            if len(cands) == 1:
+                o = cands[0]
+                n_virtual += 1
+                v = Tx(id=-(2 * 10**9) - n_virtual, account_uuid=u, booking_date=o.booking_date, value_date=None, amount=op,
+                       currency=ledger.accounts[u].currency or "EUR")
+                mate[o.id], partner[o.id] = v, u
+                continue
+            openings.append((u, fm, op))
     pairs: List[Tuple[date, date, float, str, str]] = []
     seen_pair: Set[int] = set()
     paired: Set[int] = set()
@@ -1246,6 +1275,9 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             row, key = position_row(pos, company)
             R.add(psec, row, row, mk, t.amount, ord=pord, lbl=(key,), detail=det)
 
+    for u, fm, op in openings:
+        acc = ledger.accounts[u]
+        R.add("Bewertung", acc.name, acc.name + " / Anfangssaldo", fm, op, konto=u, art="anfang", nw=True, lbl=("cf_anfangssaldo", acc.name))
     # a participation took a contribution: what it is worth more (or less) than the money paid in is its valuation
     for st, per in stake_in.items():
         acc = ledger.accounts[st]
@@ -1325,8 +1357,8 @@ def reconcile(sektionen: List[dict], nw: Dict[str, float], liq: Dict[str, Option
         if abs(tm) >= 0.005:
             g_liq.append(["ue_unterwegs", tm, ""])
         for z in rows:
-            if z["konto"] in liquid and z["art"] in ("korrektur", "depot") and abs(z["werte"].get(mk, 0.0)) >= 0.005:
-                g_liq.append(["ue_korrektur" if z["art"] == "korrektur" else "ue_wert", round(z["werte"][mk], 2), names.get(z["konto"], "")])
+            if z["konto"] in liquid and z["art"] in ("korrektur", "depot", "anfang") and abs(z["werte"].get(mk, 0.0)) >= 0.005:
+                g_liq.append([{"korrektur": "ue_korrektur", "anfang": "ue_anfangssaldo"}.get(z["art"], "ue_wert"), round(z["werte"][mk], 2), names.get(z["konto"], "")])
 
         def rest(gaps: List[list], total: float) -> None:
             left = round(total - sum(g[1] for g in gaps), 2)
@@ -1388,7 +1420,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         learned_sig = learned.get("_sig") or hashlib.sha1(json.dumps(learned.get("regeln") or [], sort_keys=True, default=str).encode()).hexdigest()
     objekte = {str(im.get("kategorie")): str(im.get("name") or "") for im in config.get("immobilien") or []
                if isinstance(im, dict) and im.get("kategorie") and str(im.get("bereich") or "") == str(bereich.get("id"))}
-    ckey = (getattr(ledger, "_kat_sig", None), str(bereich.get("id") or ""), tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
+    ckey = (getattr(ledger, "_kat_sig", None), str(bereich.get("id") or ""), back <= 0, tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
             json.dumps(config.get("kapitalfluss") or {}, sort_keys=True, default=str), tuple(months[0]) if months else None,
             tuple(months[-1]) if months else None, len(months), tuple(sorted(quelle.items())), company, learned_sig, tuple(sorted(objekte.items())),
             json.dumps([sorted(areas.items()), config.get("gesellschaften"), config.get("kontenspiegel")], sort_keys=True, default=str))

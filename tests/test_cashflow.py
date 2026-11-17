@@ -660,6 +660,53 @@ class StatementGroups(Reconciles):
         self.assertEqual(rows(gbr, "Investitionen")["Sparen"]["gruppe"], "Sparen & Anlegen")       # no depot there: no account known
 
 
+class OpeningBalance(Reconciles):
+    """An account that starts later with an opening balance of its own in MoneyMoney (its first booking leaves a rest): a
+    transfer where a bank account shows the opposite amount that month (a balance moved over from an old card), else a row
+    of its own among the changes in value -- never "balance unknown"."""
+
+    def setUp(self):
+        self._acc = dict(ACCOUNTS)
+        ACCOUNTS["karte"] = ("Alte Karte", "Privat", "liquiditaet", None, "bank")
+
+    def tearDown(self):
+        ACCOUNTS.clear(); ACCOUNTS.update(self._acc)
+
+    def data(self, txs):
+        led = make_ledger(txs)
+        led.accounts["tg"].balance = 0.0                 # the new account: opening balance -115.20, paid off in March
+        return datasets(led)
+
+    BASE = [(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}),
+            (2, "karte", date(2026, 1, 9), -115.20, {"cat": "Lebensmittel"}),
+            (3, "giro", date(2026, 3, 12), -115.20, {"iban": "DE12"}), (4, "tg", date(2026, 3, 12), 115.20, {"iban": "DE11"})]
+
+    def test_a_balance_moved_over_is_a_transfer(self):
+        data = self.data(self.BASE + [(5, "karte", date(2026, 3, 2), 115.20, {"name": "Saldoübertrag"})])
+        self.assertAddsUp(data)                                                  # no reason needed at all
+        ds = data["Privat"]
+        self.assertFalse([u for u in ds["kapitalfluss"]["ueberleitung"].values() if u["gruende"] or u["gruende_liq"]])
+        self.assertNotIn("Ohne Kategorie", rows(ds, "Einnahmen")); self.assertNotIn("Tagesgeld / Anfangssaldo", rows(ds))
+        tg = next(r for r in ds["bilanz"]["zeilen"] if r["id"] == "tg")
+        self.assertEqual((tg["werte"]["2026-02"], tg["werte"]["2026-03"]), (None, 0.0))
+
+    def test_otherwise_its_own_row(self):
+        data = self.data(self.BASE)
+        self.assertAddsUp(data, allow=("ue_anfangssaldo",))
+        ds = data["Privat"]
+        z = rows(ds, "Bewertung")["Tagesgeld / Anfangssaldo"]
+        self.assertEqual((z["werte"]["2026-03"], z["nw"], z["lbl"]), (-115.2, True, ["cf_anfangssaldo", "Tagesgeld"]))
+        self.assertEqual(ds["kapitalfluss"]["ueberleitung"]["2026-03"]["gruende_liq"], [["ue_anfangssaldo", -115.2, "Tagesgeld"]])
+        self.assertFalse(any(g[0] == "ue_unbekannt" for u in ds["kapitalfluss"]["ueberleitung"].values() for g in u["gruende"] + u["gruende_liq"]))
+        # a booking of that amount with a category of income, or from another area: it is that, not the balance moved over
+        for extra in ({"cat": "Erstattungen"}, {"iban": "DE21"}):
+            data = self.data(self.BASE + [(5, "karte", date(2026, 3, 2), 115.20, extra)])
+            self.assertIn("Tagesgeld / Anfangssaldo", rows(data["Privat"], "Bewertung"), extra)
+        # two bookings of that amount that month: no guess, its own row
+        data = self.data(self.BASE + [(5, "karte", date(2026, 3, 2), 115.20, {}), (6, "giro", date(2026, 3, 20), 115.20, {})])
+        self.assertIn("Tagesgeld / Anfangssaldo", rows(data["Privat"], "Bewertung"))
+
+
 class SavingByRecipient(Reconciles):
     """Saving that arrives as a booking on none of your accounts (a depot kept by balances): the account per recipient you
     chose, else the category's, else the only depot -- without one it never counts as a depot's gain but stands openly as

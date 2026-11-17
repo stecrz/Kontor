@@ -11,8 +11,8 @@
   --c-liq:#34c759; --c-anl:#12a88a; --c-fest:#1d9fc0; --c-bet:#af52de; --c-ford:#3a6ff0; --c-immo:#9e7458; --c-verb:#ff6b57; --c-ein:#1a8a4a; --c-aus:#c0392b; --c-neutral:#8e8e93; --c-nw:#e8aa00;
   /* cash flow: the activities (operating, investing, financing) and up to six categories within a position -- apart also for
      colour-blind readers, checked for both modes */
-  --cf-op:#2a78d6; --cf-inv:#e0a100; --cf-fin:#c0459c; --cf-unk:#8e8e93;      /* no green or red: those are money in and out */
-  --cat1:#2a78d6; --cat2:#eda100; --cat3:#6250d6; --cat4:#1baf7a;      /* within an expense's red bar: no red */
+  --cf-op:#1e9be6; --cf-inv:#f29a00; --cf-fin:#8f36d4; --cf-unk:#8e8e93;      /* no green or red: those are money in and out */
+  --cat1:#0f9fb0; --cat2:#5b4fd0; --cat3:#a8742a;      /* within an expense's red bar: none of the cash flow's colours, no red or green */
   --radius:14px; --radius-s:9px; --shadow:0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
 }
 :root[data-theme="dark"] {
@@ -23,8 +23,8 @@
           --side:rgba(20,20,22,.94); --side-fg:#f5f5f7;
           --c-nw:#ffd23f; --warn-bg:#3a2a12; --warn-fg:#ffd28a; --err-bg:#3a1515; --err-fg:#ffb3b3; --ok-bg:#12301f; --ok-fg:#9be0b6;
           --c-liq:#30d158; --c-anl:#2ec4a2; --c-fest:#3fbfdc; --c-bet:#bf5af2; --c-ford:#5b8cff; --c-immo:#b08a6e; --c-verb:#ff6961; --c-ein:#30d158; --c-aus:#ff6961;
-          --cf-op:#3987e5; --cf-inv:#b8830c; --cf-fin:#cc4f9a; --cf-unk:#8e8e93;
-          --cat1:#3987e5; --cat2:#c98500; --cat3:#9085e9; --cat4:#199e70;
+          --cf-op:#2a9de6; --cf-inv:#cc7d00; --cf-fin:#8a3cc8; --cf-unk:#8e8e93;
+          --cat1:#17a3b4; --cat2:#857af0; --cat3:#b07a30;
           --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3);
 }
 * { box-sizing:border-box; }
@@ -183,6 +183,7 @@ tr.bal td.plan { color:color-mix(in srgb, var(--muted) 55%, transparent); } tr.b
 .cf-pair .cf-ph { position:static; padding-top:0; padding-bottom:0; }
 th[data-cur] { box-shadow:inset 0 -2px 0 var(--line-2); } th.plan { color:var(--muted); font-weight:500; } .ptable td.plan { color:var(--fg); background:var(--plan); } .ptable td.plan.neg { color:var(--neg); } .ptable td.plan.pos { color:var(--pos); } .ptable td.plan.zero { color:var(--faint); }
 td.neg { color:var(--neg); } td.pos { color:var(--pos); } td.zero { color:var(--faint); }
+td small.ct { font-size:.74em; color:color-mix(in srgb, currentColor 62%, transparent); letter-spacing:0; }      /* cents: there, but out of the way */
 button.disc { border:0; background:none; padding:0 4px 0 0; margin:0; min-height:0; color:var(--muted); font-size:11px; cursor:pointer; box-shadow:none; width:auto; }
 button.disc:hover { color:var(--fg); background:none; }
 tr.det td { font-size:12px; color:var(--muted); }
@@ -663,13 +664,13 @@ a.more { white-space:nowrap; }
 .cf-row.tot .cf-name, .cf-row.tot .cf-num { font-weight:600; }
 .cf-su { display:grid; grid-template-columns:1fr 1fr; gap:24px; } .cf-su-h { font-size:12px; font-weight:600; color:var(--muted); margin-top:6px; }
 /* expenses: name | bar | amount | share | period before | change; hovering splits the bar into the categories */
-.cf-list.ex .cf-row { grid-template-columns:minmax(90px, 42%) 1fr; }
+.cf-list.ex .cf-row { grid-template-columns:minmax(80px, 34%) 1fr auto 46px; } .cf-list.ex .cf-chg { text-align:right; font-size:11.5px; }
 .cf-row.head { font-size:11.5px; color:var(--muted); padding-top:0; padding-bottom:0; } .cf-row.head:hover { background:none; }
 .cf-prev { color:var(--muted); } .cf-chg { font-size:12px; color:var(--muted); }
 .cf-split { position:absolute; top:2px; left:0; height:12px; display:none; gap:2px; z-index:2; }
 .cf-split i { display:block; height:100%; min-width:2px; } .cf-split i:last-child { border-radius:0 4px 4px 0; }
 .cf-row.has-split:is(:hover, :focus) .cf-split { display:flex; } .cf-row.has-split:is(:hover, :focus) .cf-bar { visibility:hidden; }
-.cat1 { background:var(--cat1); } .cat2 { background:var(--cat2); } .cat3 { background:var(--cat3); } .cat4 { background:var(--cat4); } .cat0 { background:var(--cf-unk); }
+.cat1 { background:var(--cat1); } .cat2 { background:var(--cat2); } .cat3 { background:var(--cat3); } .cat0 { background:var(--cf-unk); }
 /* the tooltip with colour keys (values lead, names follow) */
 .cf-tip { position:absolute; z-index:20; min-width:200px; max-width:min(320px, 90vw); background:var(--head); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); padding:8px 10px; font-size:12px; pointer-events:none; }
 .cf-tip > div:not(.cf-tip-sum):not(.cf-tip-h):not(.cf-tip-note):not(.cf-tip-kv), .cf-tip-sum > div { display:flex; align-items:center; gap:7px; line-height:1.6; }
@@ -687,7 +688,7 @@ a.more { white-space:nowrap; }
   /* narrow: name and figures in the first line, the bar beneath (names are not cut) */
   .cf-row { grid-template-columns:1fr auto auto; grid-template-areas:"name num pct" "track track track"; row-gap:3px; }
   .fall .cf-row { grid-template-columns:1fr auto; grid-template-areas:"name num" "track track"; }
-  .cf-list.ex .cf-row { grid-template-columns:minmax(90px, 42%) 1fr; grid-template-areas:"name track"; }
+  .cf-list.ex .cf-row { grid-template-columns:minmax(80px, 34%) 1fr auto 46px; grid-template-areas:"name track num chg"; }
   .cf-row .cf-name { grid-area:name; white-space:normal; } .cf-row .cf-track { grid-area:track; } .cf-row .cf-num { grid-area:num; } .cf-row .cf-pct { grid-area:pct; } .cf-row .cf-chg { grid-area:chg; min-width:52px; }
   .cf-row.head .cf-track { display:none; }
 }
