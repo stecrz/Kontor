@@ -1763,7 +1763,7 @@ class AppTests(_AppBase):
         import service as MS
         for was in ("cashflow", "planning"):
             names = [str(r[0]).strip() for r in MS.export_sheets(self.app, was, None, "months")[0].rows if r and r[0]]      # the table (first sheet)
-            for want in ("Operativer Cashflow", "Einnahmen", "Investitions-Cashflow", "Finanzierungs-Cashflow", "Veränderung Bankguthaben", "Abgleich mit der Bilanz", "Veränderung Nettovermögen"):
+            for want in ("Operativer Cashflow", "Einnahmen", "Investitionen", "Finanzierung", "Veränderung Bankguthaben", "Abgleich mit der Bilanz", "Veränderung Nettovermögen"):
                 self.assertIn(want, names, was)
             self.assertFalse([n for n in names if "_" in n or "Umschichtung" in n], was)
         # balance sheet: everything in it (positions, accounts, securities), grouped; collapsed as on the page
@@ -2767,7 +2767,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(len(pg.query_selector_all("#cf-months .cf-hit")), 12); self.assertTrue(pg.query_selector("#cf-months .cf-net"))
                 pg.hover("#cf-months .cf-hit >> nth=11"); pg.wait_for_timeout(150)
                 tip = pg.inner_text("#cf-tip")
-                for w in ("Operativer Cashflow", "Investitions-Cashflow", "Finanzierungs-Cashflow", "Veränderung Bankguthaben"):
+                for w in ("Operativer Cashflow", "Investitionen", "Finanzierung", "Veränderung Bankguthaben"):
                     self.assertIn(w, tip)
                 self.assertEqual(len(pg.query_selector_all("#cf-tip i.sw")), 3)
                 # 3. sources and uses: both sides the same sum

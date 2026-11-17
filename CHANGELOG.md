@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.13.16 (2026-11-17 17:36)
+- **Cashflow-Farben:** Operativer Cashflow blau, Investitionen gelb, Finanzierung magenta – Grün und Rot bleiben für Geld, das hereinkommt bzw. hinausgeht.
+- **Kürzere Überschriften:** „Investitionen“ und „Finanzierung“ statt „Investitions-Cashflow“ und „Finanzierungs-Cashflow“.
+- Das Zahnrad steht direkt neben der Auswahl der Stufen.
+
 ## 3.13.15 (2026-11-17 17:22)
 - **Zielkonto je Empfänger** (Cashflow-Positionen): Geld für „Sparen & Anlegen“, das auf keinem deiner Konten als Buchung ankommt (etwa in ein Depot mit Kontoständen), ordnest du je Empfänger einem Konto zu. So kann eine Kategorie wie „Sparen“ auf mehrere Konten laufen. Kontor schlägt ein Depot vor, wo es eindeutig ist.
 - **Ohne Zielkonto kein Kursgewinn:** Solches Geld steht im Cashflow unter Wertänderungen als eigene Zeile „Anlage ohne Zielkonto“ (mit Link zur Einstellung), statt still als Wertzuwachs eines Depots zu zählen.

@@ -11,7 +11,7 @@
   --c-liq:#34c759; --c-anl:#12a88a; --c-fest:#1d9fc0; --c-bet:#af52de; --c-ford:#3a6ff0; --c-immo:#9e7458; --c-verb:#ff6b57; --c-ein:#1a8a4a; --c-aus:#c0392b; --c-neutral:#8e8e93; --c-nw:#e8aa00;
   /* cash flow: the activities (operating, investing, financing) and up to six categories within a position -- apart also for
      colour-blind readers, checked for both modes */
-  --cf-op:#1baf7a; --cf-inv:#2a78d6; --cf-fin:#eb6834; --cf-unk:#8e8e93;
+  --cf-op:#2a78d6; --cf-inv:#e0a100; --cf-fin:#c0459c; --cf-unk:#8e8e93;      /* no green or red: those are money in and out */
   --cat1:#2a78d6; --cat2:#eda100; --cat3:#6250d6; --cat4:#1baf7a;      /* within an expense's red bar: no red */
   --radius:14px; --radius-s:9px; --shadow:0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
 }
@@ -23,7 +23,7 @@
           --side:rgba(20,20,22,.94); --side-fg:#f5f5f7;
           --c-nw:#ffd23f; --warn-bg:#3a2a12; --warn-fg:#ffd28a; --err-bg:#3a1515; --err-fg:#ffb3b3; --ok-bg:#12301f; --ok-fg:#9be0b6;
           --c-liq:#30d158; --c-anl:#2ec4a2; --c-fest:#3fbfdc; --c-bet:#bf5af2; --c-ford:#5b8cff; --c-immo:#b08a6e; --c-verb:#ff6961; --c-ein:#30d158; --c-aus:#ff6961;
-          --cf-op:#199e70; --cf-inv:#3987e5; --cf-fin:#d95926; --cf-unk:#8e8e93;
+          --cf-op:#3987e5; --cf-inv:#b8830c; --cf-fin:#cc4f9a; --cf-unk:#8e8e93;
           --cat1:#3987e5; --cat2:#c98500; --cat3:#9085e9; --cat4:#199e70;
           --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3);
 }
@@ -621,7 +621,7 @@ a.more { white-space:nowrap; }
 .cf-lv-btn { display:none; align-items:center; gap:6px; background:none; border:0; box-shadow:none; padding:3px 4px; min-height:0; width:auto; color:var(--muted); font-size:12px; font-weight:600; }
 .cf-lv-btn i { font-style:normal; font-size:13px; color:var(--fg); display:inline-block; width:14px; text-align:center; transition:transform .15s; }
 .cf-lv-btn.lv1 i { transform:rotate(30deg); } .cf-lv-btn.lv2 i { transform:rotate(60deg); } .cf-lv-btn.lv3 i { transform:rotate(90deg); } .cf-lv-btn:hover { background:none; filter:none; color:var(--fg); }
-.cf-set { margin-left:auto; display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; color:var(--muted); }
+.cf-set { margin-left:2px; display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; color:var(--muted); }
 .cf-set:hover, .cf-set:focus-visible { color:var(--fg); background:var(--group); }
 @media (max-width:700px) { .cf-lv .seg { display:none; } .cf-lv-btn { display:inline-flex; } .toolbar .tb-sep { display:none; } }
 @media (max-width:700px) { .cf-tbl:not(.ptable) th:first-child, .cf-tbl:not(.ptable) td:first-child { width:172px; min-width:172px; max-width:172px; } }

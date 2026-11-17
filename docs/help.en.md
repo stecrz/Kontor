@@ -197,8 +197,8 @@ Where the money goes – as a cash flow statement, for every area in the same ou
 | Section | Content |
 |---|---|
 | **Operating cash flow** | **Income** minus **expenses** of everyday life or business, each by fixed positions (earned income, revenue, rental income, housing – “premises” for companies –, staff, taxes, VAT …); in them your MoneyMoney categories. Interest and dividends received count here. |
-| **Investing cash flow** | Buying and selling assets, by kind: real estate (with costs of purchase), securities & deposits, participations, loans granted; below them the single accounts. The money leaves the bank account but stays wealth. |
-| **Financing cash flow** | Payments to and from lenders and owners, by kind: loans taken up, repayment, interest, for companies partners' contributions and withdrawals; below them the single loans. A loan paid out is a loan taken up, not a “negative repayment”. |
+| **Investing** | Buying and selling assets, by kind: real estate (with costs of purchase), securities & deposits, participations, loans granted; below them the single accounts. The money leaves the bank account but stays wealth. |
+| **Financing** | Payments to and from lenders and owners, by kind: loans taken up, repayment, interest, for companies partners' contributions and withdrawals; below them the single loans. A loan paid out is a loan taken up, not a “negative repayment”. |
 | **Change in cash** | the three together (and what is unclear); above and below it the cash at the start and at the end |
 | **Changes in value** | what changes without a payment: prices of portfolios, value adjustments, corrections by hand, [investments without target account](#positions-recipients) |
 | **Change in net worth** | operating cash flow, interest, contributions and withdrawals, changes in value – investing, taking up and repaying loans only reallocate |
