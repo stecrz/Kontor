@@ -19,8 +19,11 @@ description: Jede Änderung an Kontor abschließen – prüfen, Version, Changel
 5. **Changelog:** neuer Abschnitt oben in `CHANGELOG.md`, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` mit
    `TZ=Europe/Berlin date +"%Y-%m-%d %H:%M"`. Deutsch, kurz, aus Sicht des Nutzers (was er merkt), keine Technik.
 6. **Fahrplan:** in `ROADMAP.md` Erledigtes abhaken bzw. den Stand nachtragen.
-7. **Commit und Push:** englische Commit-Nachricht `X.Y.Z: <was sich ändert>`, am Ende die Zuordnungszeilen aus der
-   aktuellen Systemerinnerung der Sitzung. `git push -q origin HEAD:main`. Keine Tags, kein Force-Push.
+7. **Commit und Push:** englische Commit-Nachricht `X.Y.Z: <was sich ändert>`, am Ende nur `Co-Authored-By: …` (kein
+   Sitzungslink). `git push -q origin HEAD:main`. Keine Tags, kein Force-Push.
+   **GitHub Actions prüfen:** `gh api "repos/stecrz/Kontor/actions/runs?per_page=1" --jq '.workflow_runs[0] | [.head_sha[0:7], .status, .conclusion]'`
+   nach ein paar Minuten (spätestens beim nächsten Release); schlägt der Lauf fehl, sofort beheben – lokal grün heißt nicht
+   überall grün (andere Schriften, Python 3.9).
 8. **Mac aktualisieren** (über die Verbindung zum Mac, falls vorhanden):
    `cd "$HOME/mnt/Kontor" && git fetch -q https://github.com/stecrz/Kontor.git main && git reset -q --hard FETCH_HEAD && git update-ref refs/remotes/origin/main FETCH_HEAD && cat VERSION`
    Nicht erreichbar: dem Nutzer sagen, dass er das Update unter „Updates“ in Kontor installieren kann.

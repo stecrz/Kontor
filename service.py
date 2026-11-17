@@ -1851,7 +1851,18 @@ def make_handler(app: App):
             limit = min(5000, int(q.get("limit", "500")))
             out, total = [], 0
             jahre = sorted({t["datum"][:4] for t in ums}, reverse=True)
+            # opened from a chart: these categories (and the ones below them) only
+            want = None
+            if q.get("categories"):
+                try:
+                    want = [categorize.norm_cat(c) for c in json.loads(q["categories"]) if isinstance(c, str) and c.strip()]
+                except ValueError:
+                    want = []
             for t in ums:
+                if want is not None:
+                    k = categorize.norm_cat(t.get("kategorie") or "")
+                    if not k or not any(k == c or k.startswith(c + " / ") for c in want):
+                        continue
                 if q.get("year") and not t["datum"].startswith(q["year"]):
                     continue
                 if q.get("account") and t["konto"] != q["account"]:

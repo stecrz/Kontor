@@ -249,7 +249,7 @@ document.addEventListener('click', e => {
 
 const S = { tab: 'overview', modus: 'monate', plan: true, real: false, alle: false, collapsed: {}, offen: {}, csrf: null, bereich: null, cfEbene: 1, planEbene: 2, cfTog: {}, cfZeit: '12m', cfVon: null, cfBis: null, cfPieArt: 'aus',
             DATA: null, CFG: null, KONTEN: [], KATS: [], STATUS: null, steuerJahr: null, steuerEnt: null, vorschlag: false,
-            uf: {entitaet: '', jahr: '', konto: '', q: '', ohne_beleg: false, ohne_kategorie: false, richtung: ''}, sel: new Set(), drawerTx: null };
+            uf: {entitaet: '', jahr: '', konto: '', q: '', ohne_beleg: false, ohne_kategorie: false, richtung: '', kats: null, von: '', bis: '', titel: '', est: false}, sel: new Set(), drawerTx: null };
 
 function choose(msg, opts) {
   // Rückfrage mit mehreren Antworten (statt confirm): opts = [[wert, text, klasse], ...]; Abbrechen, Escape oder daneben -> null
@@ -1102,7 +1102,7 @@ async function vKontenEditor() {
     h += `<tr data-uuid="${k.uuid}" data-ref="${k.uuid} | ${esc(k.name)}" data-auto="${auto ? 1 : 0}" data-grenze="${grenze}" class="${kontoHidden(vis, auto) ? 'inactive' : ''}${k.bestaetigt ? '' : ' neu'}"><td title="${esc(k.pfad)}">${esc(k.name)}${k.bestaetigt ? '' : `<span class="tag warn">${t('neu')}</span>`}<span class="tag k-vis">${t('ausgeblendet')}</span>${k.veraltet ? `<span class="tag warn" title="${t('saldo_0_aber_seit_1', F(k.saldo), esc(k.letzte_buchung || k.aktualisiert || t('jeher')))}">${t('veraltet')}</span>` : ''}<div class="small muted">${esc(CP(k.pfad.split(' / ').slice(0, -1).join(' / ')))} · ${k.depot ? t('depot') : (k.manuell || k.abruf === 'offline') ? t('manuell') : esc(k.typ || t('bank'))}</div></td><td><select class="k-bereich"><option value="">${t('keiner')}</option>${bereiche.map(([id, n]) => `<option value="${esc(id)}" ${bsel === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td>
       <td><select class="k-rolle${dash(rolle, sv)}" data-vor="${sv}">${ROLE_OPTS.map(([v, l]) => `<option value="${v}" ${rolle === v ? 'selected' : ''}>${l}${v === sv ? ` (${t('vorschlag')})` : ''}</option>`).join('')}</select></td>
       <td class="nowrap"><select class="k-verlauf${dash(quelle, vv)}" data-vor="${vv}">${[['umsaetze', t('umsaetze_2')], ['stand', t('kontostaende')]].map(([v, l]) => `<option value="${v}" ${quelle === v ? 'selected' : ''}>${l}${v === vv ? ` (${t('vorschlag')})` : ''}</option>`).join('')}</select> <button class="ghost small k-hist" title="${t('monatsstaende_ansehen_und_bearbeiten')}">${t('verlauf')}</button></td>
-      <td>${ab[k.uuid] ? `<select class="ab-sel" title="${esc(ab[k.uuid].grund || t('wird_von_moneymoney_bei_bank'))}"><option value="online" ${ab[k.uuid].art === 'online' ? 'selected' : ''}>${t('art_online')}</option><option value="offline" ${ab[k.uuid].art === 'offline' ? 'selected' : ''}>${t('art_offline')}</option></select>` : '–'}</td>
+      <td>${ab[k.uuid] ? `<select class="ab-sel" title="${esc((ab[k.uuid].grund || t('wird_von_moneymoney_bei_bank')) + (ab[k.uuid].art === 'online' && ab[k.uuid].zeit ? ' · ' + t('letzter_abruf') + ' ' + fmtZeit(ab[k.uuid].zeit) : ''))}"><option value="online" ${ab[k.uuid].art === 'online' ? 'selected' : ''}>${t('art_online')}</option><option value="offline" ${ab[k.uuid].art === 'offline' ? 'selected' : ''}>${t('art_offline')}</option></select>` : '–'}</td>
       <td><select class="k-show" title="${auto ? t('kein_bestand_und_kein_umsatz') + (cfg.bilanz.inaktiv_monate ?? 12) + t('monaten') : t('mit_bestand_oder_umsatz_in') + (cfg.bilanz.inaktiv_monate ?? 12) + t('monaten')}"><option value="">${t('nach_aktivitaet')}</option><option value="show" ${vis === 'show' ? 'selected' : ''}>${t('immer_anzeigen')}</option><option value="hide" ${vis === 'hide' ? 'selected' : ''}>${t('ausblenden')}</option></select></td>
       <td class="num ${(k.saldo || 0) < 0 ? 'neg' : 'pos'}">${F(k.saldo)}</td></tr>`;
   }
@@ -2719,7 +2719,7 @@ const UE_OFFEN = new Set(['ue_rest', 'ue_unbekannt']);       // differences with
 const SEC_LABEL = {Operativ: t('cf_operativ'), Einnahmen: t('einnahmen'), Ausgaben: t('ausgaben'), Investitionen: t('cf_investitionen'), Finanzierung: t('cf_finanzierung'), Bewertung: t('cf_wertaenderungen'), Unklar: t('cf_unklar')};
 const SEC_HELP = {Operativ: 'cf_operativ', Investitionen: 'cf_invest', Finanzierung: 'cf_finanz', Bewertung: 'cf_wert', Unklar: 'cf_unklar'};
 const SEC_ABBR = {Operativ: 'CFO', Investitionen: 'CFI', Finanzierung: 'CFF'};     // the official short names (cash flow from operations, investing, financing)
-const SEC_KEY = {Operativ: 'op', Investitionen: 'inv', Finanzierung: 'fin'};          // the colour of the activity in the charts
+const SEC_KEY = {Operativ: 'op', Investitionen: 'inv', Finanzierung: 'fin', Einnahmen: 'ein', Ausgaben: 'aus'};          // the colour of the activity in the charts
 const CF_ACT = [['Operativ', 'op'], ['Investitionen', 'inv'], ['Finanzierung', 'fin']];
 const METH = {gleitend12: t('12_monate'), gleitend6: t('6_monate'), vorjahr: t('vorjahresmonat'), fix: t('fester_betrag_monat'), jahresbetrag: t('meth_jahresbetrag'), budget: t('meth_budget'), keine: t('keine')};
 // How far the table is opened: 0 overview (activities with income, expenses and the kinds of investing and financing: one
@@ -3071,7 +3071,18 @@ function cfDrawMonths() {
   const cut = ext.length >= 6 && ext[ext.length - 1] > 3 * q && q > 0 ? Math.max(...ext.filter(v => v <= 3 * q)) * 1.12 : null;     // just above the largest regular one
   if (cut) { hi = Math.min(hi, cut); lo = Math.max(lo, -cut); }
   const downCut = cut && bs.some(b => -b.dn > cut);
-  const W = Math.max(280, el.clientWidth), H1 = W < 520 ? 170 : 200, H2 = 64, gapH = downCut ? 40 : 26, H = H1 + gapH + H2 + 20, P = {l: W >= 640 ? 58 : 44, r: 8, t: 16};
+  // below, on its own scale: the change in net worth -- saved (what came in less what went out, interest included) and changes
+  // in value (portfolios, properties ...), stacked; the same months a year before as a dashed outline. Single huge months cut.
+  const allM = D.monate || [], msOf = b => byYear ? cur.filter(m => m.startsWith(b.k)) : [b.k];
+  bs.forEach(b => { const ms = msOf(b), pm = ms.map(m => mShift(m, -12));
+    b.nw = cfSum(D, 'Nettovermoegen_delta', ms); b.wert = cfSum(D, 'Bewertung', ms); b.spar = b.nw - b.wert;
+    b.pnw = pm.every(m => allM.includes(m)) ? cfSum(D, 'Nettovermoegen_delta', pm) : null;
+    b.nup = Math.max(0, b.spar) + Math.max(0, b.wert); b.ndn = Math.min(0, b.spar) + Math.min(0, b.wert); });
+  const ends = bs.flatMap(b => [b.nup, -b.ndn, Math.abs(b.pnw || 0)]).filter(v => v > 0.5).sort((p, q) => p - q), q2 = ends[Math.floor((ends.length - 1) * 0.75)] || 0;
+  const cut2 = ends.length >= 6 && ends[ends.length - 1] > 3 * q2 && q2 > 0 ? Math.max(...ends.filter(v => v <= 3 * q2)) * 1.12 : null;
+  const nice = v => { const p = 10 ** Math.floor(Math.log10(v)), f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; };
+  const nmax = nice(Math.max(1, cut2 || ends[ends.length - 1] || 1)), lowDown = !!(cut2 && bs.some(b => -b.ndn > nmax));
+  const W = Math.max(280, el.clientWidth), H1 = W < 520 ? 170 : 200, H2 = 72, gapH = downCut ? 40 : 26, H = H1 + gapH + H2 + 20 + (lowDown ? 12 : 0), P = {l: W >= 640 ? 58 : 44, r: 8, t: 16};
   let ticks = niceTicks(lo, hi, 4); const step = ticks.length > 1 ? ticks[1] - ticks[0] : (hi - lo);
   if (!cut) { if (ticks[0] > lo + step * 1e-6) ticks.unshift(ticks[0] - step); if (ticks[ticks.length - 1] < hi - step * 1e-6) ticks.push(ticks[ticks.length - 1] + step); }
   else ticks = ticks.filter(v => v <= hi + step * 1e-6 && v >= lo - step * 1e-6);
@@ -3103,21 +3114,46 @@ function cfDrawMonths() {
       }
     }
   });
-  // the change in cash, on its own scale below
-  const nmax = Math.max(1, ...bs.map(b => Math.abs(b.net))), t2 = H1 + gapH, z2 = t2 + H2 / 2, y2 = v => z2 - v / nmax * (H2 / 2 - 2);
-  g += `<text class="cf-sub-l" x="${P.l}" y="${(t2 - 8).toFixed(1)}">${esc(t('zahlungsfluss_gesamt_veraenderung_liqu'))}</text>`
-    + `<line class="cf-grid-l zero" x1="${P.l}" x2="${W - P.r}" y1="${z2.toFixed(1)}" y2="${z2.toFixed(1)}"/>`
+  const t2 = H1 + gapH, z2 = t2 + H2 / 2, y2 = v => z2 - Math.max(-nmax, Math.min(nmax, v)) / nmax * (H2 / 2 - 2);
+  g += `<text class="cf-sub-l" x="${P.l}" y="${(t2 - 8).toFixed(1)}">${esc(t('cf_veraenderung_nv'))}</text>`;
+  let lx = W - P.r;          // its legend at the right, from right to left
+  for (const [k, l] of [['prev', t('cf_vorjahr')], ['wert', t('cf_wertaenderung')], ['spar', t('cf_gespart')]]) {
+    const tw = l.length * 5.6; lx -= tw;
+    g += `<text class="cf-sub-lg" x="${lx.toFixed(1)}" y="${(t2 - 8).toFixed(1)}">${esc(l)}</text>` + (k === 'prev' ? `<rect class="cf-prev-o" x="${(lx - 13).toFixed(1)}" y="${(t2 - 16).toFixed(1)}" width="9" height="9" rx="2"/>` : `<rect class="cf-col ${k}" x="${(lx - 13).toFixed(1)}" y="${(t2 - 16).toFixed(1)}" width="9" height="9" rx="2"/>`);
+    lx -= 24;
+  }
+  g += `<line class="cf-grid-l zero" x1="${P.l}" x2="${W - P.r}" y1="${z2.toFixed(1)}" y2="${z2.toFixed(1)}"/>`
     + `<text class="cf-tick" x="${P.l - 7}" y="${(t2 + 6).toFixed(1)}" text-anchor="end">${Fk(nmax, W >= 640, nmax)}</text><text class="cf-tick" x="${P.l - 7}" y="${(t2 + H2).toFixed(1)}" text-anchor="end">${Fk(-nmax, W >= 640, nmax)}</text>`;
-  bs.forEach((b, i) => { if (Math.abs(b.net) < 0.5) return; const a = y2(b.net), top = Math.min(a, z2), hgt = Math.max(1, Math.abs(a - z2));
-    g += `<rect class="cf-col bank${b.part ? ' part' : ''}" x="${x(i).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${Math.min(2, bw / 2)}"/>`; });
+  bs.forEach((b, i) => {
+    for (const sign of [1, -1]) {
+      let acc = 0;
+      for (const k of ['spar', 'wert']) {
+        const v = b[k]; if (v * sign <= 0.005) continue;
+        const a = y2(acc), e = y2(acc + v); acc += v;
+        const top = Math.min(a, e), hgt = Math.abs(e - a); if (hgt < 0.6) continue;
+        g += `<rect class="cf-col ${k}${b.part ? ' part' : ''}" x="${x(i).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${Math.min(2, bw / 2)}"/>`;
+      }
+      const tot = sign > 0 ? b.nup : b.ndn;
+      if (cut2 && Math.abs(tot) > nmax) {
+        const ye = y2(tot) + (sign > 0 ? 7 : -7), x0 = x(i) - 2, x1 = x(i) + bw + 2;
+        g += `<path class="cf-break nw" d="M${x0},${(ye + 2).toFixed(1)}L${x1},${(ye - 2).toFixed(1)}M${x0},${(ye + 6).toFixed(1)}L${x1},${(ye + 2).toFixed(1)}"/>`
+          + `<text class="cf-val-l nw" x="${cx(i).toFixed(1)}" y="${(sign > 0 ? t2 + 7 : t2 + H2 + 11).toFixed(1)}" text-anchor="middle">${(sign > 0 ? '+' : '') + Fk(tot, false, Math.abs(tot))}</text>`;
+      }
+    }
+    if (b.pnw != null && Math.abs(b.pnw) >= 0.5) { const a = y2(b.pnw), top = Math.min(a, z2), hgt = Math.max(1, Math.abs(a - z2));
+      g += `<rect class="cf-prev-o" x="${(x(i) - 1.5).toFixed(1)}" y="${top.toFixed(1)}" width="${(bw + 3).toFixed(1)}" height="${hgt.toFixed(1)}" rx="${Math.min(2, bw / 2)}"/>`; }
+  });
   bs.forEach((b, i) => { if ((bs.length - 1 - i) % every === 0) g += `<text class="cf-tick" x="${cx(i).toFixed(1)}" y="${H - 4}" text-anchor="middle">${esc(b.label)}</text>`; });
   bs.forEach((b, i) => {
     const tip = cfTip(`<div class="cf-tip-h">${esc(b.label)}${b.part ? ` <span class="muted">· ${b.n}${t('mon')}</span>` : ''}</div>`
       + cfTipRow('sw ein', t('einnahmen'), F0(b.ein) + ' €') + cfTipRow('sw aus', t('ausgaben'), F0(b.aus) + ' €')
       + cfTipRow('sw inv', SEC_LABEL.Investitionen, F0(b.inv) + ' €') + cfTipRow('sw fin', SEC_LABEL.Finanzierung, F0(b.fin) + ' €')
       + (Math.abs(b.unk) >= 0.5 ? cfTipRow('sw unk', t('cf_unklar'), F0(b.unk) + ' €') : '')
-      + `<div class="cf-tip-sum">${cfTipRow('sw bank', t('zahlungsfluss_gesamt_veraenderung_liqu'), F0(b.net) + ' €')}</div>`);
-    g += `<rect class="cf-hit" data-cftip="${tip}" tabindex="0" x="${(P.l + slot * i).toFixed(1)}" y="0" width="${slot.toFixed(1)}" height="${H - 16}"/>`; });
+      + `<div class="cf-tip-sum">${cfTipRow('sw bank', t('zahlungsfluss_gesamt_veraenderung_liqu'), F0(b.net) + ' €')}</div>`
+      + `<div class="cf-tip-sum">${cfTipRow('sw spar', t('cf_gespart'), F0(b.spar) + ' €') + cfTipRow('sw wert', t('cf_wertaenderung'), F0(b.wert) + ' €')}${cfTipRow('sw', t('cf_veraenderung_nv'), F0(b.nw) + ' €')}`
+      + (b.pnw != null ? cfTipRow('sw prev-o', t('cf_vorjahr'), F0(b.pnw) + ' €') : '') + `</div>`
+      + `<div class="cf-tip-note">${esc(t(byYear ? 'cf_klick_jahr' : 'cf_klick_zeitraum'))}</div>`);
+    g += `<rect class="cf-hit" data-cftip="${tip}" data-mk="${b.k}" tabindex="0" x="${(P.l + slot * i).toFixed(1)}" y="0" width="${slot.toFixed(1)}" height="${H - 16}"/>`; });
   el.innerHTML = `<svg class="cf-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('cf_je_monat_t'))}">${g}</svg>`;
 }
 
@@ -3127,9 +3163,9 @@ function cfDrawMonths() {
 function cfPieItems(D, sec, months, prev) {
   const sek = D.kapitalfluss.sektionen.find(s => s.name === sec) || {zeilen: []}, has = prev.length > 0, sg = sec === 'Ausgaben' ? -1 : 1;
   let items = sek.zeilen.map(z => ({label: zLabel(z), v: sg * cfRowSum(z, months), p: has ? sg * cfRowSum(z, prev) : null,
-    parts: (z.details || []).map(d => ({label: d.kategorie ? d.kategorie.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt'), v: sg * cfRowSum(d, months), p: has ? sg * cfRowSum(d, prev) : null})).filter(d => d.v >= 0.5)}))
+    parts: (z.details || []).map(d => ({label: d.kategorie ? d.kategorie.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt'), kat: d.kategorie || null, v: sg * cfRowSum(d, months), p: has ? sg * cfRowSum(d, prev) : null})).filter(d => d.v >= 0.5)}))
     .filter(e => e.v >= 0.5).sort((a, b) => b.v - a.v);
-  if (items.length > 7) { const rest = items.slice(6); items = items.slice(0, 6).concat([{label: t('cf_uebrige', rest.length), v: rest.reduce((a, e) => a + e.v, 0), p: cfRestP(rest, has), parts: rest.map(e => ({label: e.label, v: e.v, p: e.p})), rest: true}]); }
+  if (items.length > 7) { const rest = items.slice(6); items = items.slice(0, 6).concat([{label: t('cf_uebrige', rest.length), v: rest.reduce((a, e) => a + e.v, 0), p: cfRestP(rest, has), parts: rest.map(e => ({label: e.label, v: e.v, p: e.p, kats: e.parts.map(d => d.kat).filter(Boolean)})), rest: true}]); }
   return items;
 }
 function cfPie(D, months, prev) {
@@ -3139,7 +3175,8 @@ function cfPie(D, months, prev) {
   const all = sg * cfSum(D, sec, months), before = has ? sg * cfSum(D, sec, prev) : null;
   const neg = ((D.kapitalfluss.sektionen.find(s => s.name === sec) || {zeilen: []}).zeilen).reduce((a, z) => { const v = sg * cfRowSum(z, months); return v <= -0.5 ? a + v : a; }, 0);
   const span = ms => ms.length > 1 ? ML(ms[0]) + ' – ' + ML(ms[ms.length - 1]) : ML(ms[0]);
-  const title = t(has ? (up ? 'cf_einnahmen_vorperiode' : 'cf_ausgaben_vorperiode') : (up ? 'cf_einnahmen_kuchen' : 'cf_ausgaben_kuchen'));
+  const yrs = has ? Math.round(((+months[0].slice(0, 4) - +prev[0].slice(0, 4)) * 12 + (+months[0].slice(5) - +prev[0].slice(5))) / 12) : 0;
+  const title = !has ? t(up ? 'cf_einnahmen_kuchen' : 'cf_ausgaben_kuchen') : yrs === 1 ? t(up ? 'cf_einnahmen_vorjahr' : 'cf_ausgaben_vorjahr') : t(up ? 'cf_einnahmen_vorjahre' : 'cf_ausgaben_vorjahre', yrs);
   CF.pie = items.length ? {items, all, before, up, title, neg, tc: cfChange(all, before, up), prev: has, span: span(months), spanPrev: has ? span(prev) : ''} : null;
   const seg = `<div class="seg small" id="cf-pie-art" role="group">${[['aus', 'ausgaben'], ['ein', 'einnahmen']].map(([k, l]) => `<button data-a="${k}" class="${(up ? 'ein' : 'aus') === k ? 'on' : ''}" aria-pressed="${(up ? 'ein' : 'aus') === k}">${t(l)}</button>`).join('')}</div>`;
   return `<div class="card bch cf-card cf-half" id="cf-pie-card"><div class="lc-head"><b class="lc-title">${title}${hq('cf_ausgaben_kuchen')}</b>${seg}</div>`
@@ -3189,7 +3226,9 @@ function cfDrawPie() {
     else if (i === sel) {
       const one = segs.length === 1 && e.parts.length ? [{...segs[0], mid}] : segs;
       if (!one.length) labels.push({e, i, mid, ch, tip, r: R2});
-      for (const d of one) labels.push({e: d, i, mid: d.mid, ch: cfChange(d.v, d.p, up), tip, r: R2, key: segs.length > 1 ? d.key : ''});
+      const restKats = rest.flatMap(d => d.kat ? [d.kat] : d.kats || []);
+      for (const d of one) labels.push({e: d, i, mid: d.mid, ch: cfChange(d.v, d.p, up), tip, r: R2, key: segs.length > 1 ? d.key : '',
+        kats: d.key === 'cat0' ? restKats : d.kat ? [d.kat] : d.kats || [], est: d.key === 'cat0' ? rest.some(x => !x.kat && !x.kats) : !d.kat && !d.kats});
     }
   });
   for (const l of labels) { l.right = Math.sin(l.mid) >= 0; l.y = cy - (l.r + 14) * Math.cos(l.mid); }
@@ -3200,12 +3239,14 @@ function cfDrawPie() {
     let over = (ls.length ? ls[ls.length - 1].ly : 0) - (H - 16); for (let k = ls.length - 1; k >= 0 && over > 0; k--) { ls[k].ly -= over; over = k ? Math.max(0, ls[k - 1].ly - (ls[k].ly - LH)) : 0; }
   }
   const maxCh = Math.max(4, Math.floor(labW / CW));
+  // a label answers a click over its whole area, also between its two lines (an invisible box behind them)
+  const hw = (l, name) => Math.min(labW + 22, Math.max(name.length + (l.key ? 2 : 0), (F0(l.e.v) + (l.ch ? ' ' + l.ch.txt : '')).length) * CW + 8);
   for (const l of labels) {
     const tx = l.right ? cx + R2 + 22 : cx - R2 - 22, anchor = l.right ? 'start' : 'end';
     const ex = cx + (R2 + 3) * Math.sin(l.mid), ey = cy - (R2 + 3) * Math.cos(l.mid), kx = l.right ? tx - 5 : tx + 5;
     const name = l.e.label.length > maxCh ? l.e.label.slice(0, maxCh - 1) + '…' : l.e.label;
     g += `<path class="cf-pie-lead" d="M${ex.toFixed(1)},${ey.toFixed(1)}L${kx.toFixed(1)},${(l.ly - 4).toFixed(1)}"/>`
-      + `<g class="cf-pie-lab" data-cftip="${l.tip}" data-pie="${l.i}"><text x="${tx.toFixed(1)}" y="${(l.ly - 6).toFixed(1)}" text-anchor="${anchor}" class="cf-pie-n">${l.key ? `<tspan class="cf-pie-k ${l.key}">● </tspan>` : ''}${esc(name)}</text>`
+      + `<g class="cf-pie-lab" data-cftip="${l.tip}" data-pie="${l.i}"${l.kats && l.kats.length ? ` data-kats="${esc(JSON.stringify(l.kats))}" data-name="${esc(l.e.label)}"${l.est ? ' data-est="1"' : ''}` : ''}><rect class="cf-pie-hit" x="${(l.right ? tx - 4 : tx - hw(l, name) + 4).toFixed(1)}" y="${(l.ly - 19).toFixed(1)}" width="${hw(l, name).toFixed(1)}" height="32"/><text x="${tx.toFixed(1)}" y="${(l.ly - 6).toFixed(1)}" text-anchor="${anchor}" class="cf-pie-n">${l.key ? `<tspan class="cf-pie-k ${l.key}">● </tspan>` : ''}${esc(name)}</text>`
       + `<text x="${tx.toFixed(1)}" y="${(l.ly + 9).toFixed(1)}" text-anchor="${anchor}" class="cf-pie-m">${esc(F0(l.e.v))}${l.ch ? `<tspan class="${l.ch.cls}"> ${esc(l.ch.txt)}</tspan>` : ''}</text></g>`;
   }
   // the middle: the total and its change (hovering it names both periods and the amounts) -- or the position kept open
@@ -3242,7 +3283,8 @@ function cfDrawHeat() {
   const lab = (k, full) => q ? k.slice(5) + ' ' + k.slice(2, 4) : full ? ML(k) : MONATE_LANG[+k.slice(5) - 1].slice(0, 3);
   const catName = d => d.kategorie ? d.kategorie.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt');
   for (const z of sek.zeilen) {
-    const k = zLabel(z), r = by.get(k) || {label: k, v: {}, cats: new Map(), none: !!(z.lbl && z.lbl[0] === 'cf_ohne_kategorie')};
+    const k = zLabel(z), r = by.get(k) || {label: k, v: {}, cats: new Map(), paths: new Set(), est: false, none: !!(z.lbl && z.lbl[0] === 'cf_ohne_kategorie')};
+    for (const d of z.details || []) { if (d.kategorie) r.paths.add(d.kategorie); else r.est = true; }
     ms.forEach(m => { r.v[m] = r.v[m] || 0; }); all.forEach(m => { r.v[bk(m)] += sg * (z.werte[m] || 0); });
     for (const d of z.details || []) { const n = catName(d), c = r.cats.get(n) || {}; all.forEach(m => { c[bk(m)] = (c[bk(m)] || 0) + sg * ((d.werte || {})[m] || 0); }); r.cats.set(n, c); }
     by.set(k, r);
@@ -3250,19 +3292,21 @@ function cfDrawHeat() {
   const all2 = [...by.values()].map(r => ({...r, sum: ms.reduce((a, m) => a + r.v[m], 0)})).filter(r => r.sum >= 0.5).sort((a, b) => b.sum - a.sum);
   const none = all2.filter(r => r.none), rows = all2.filter(r => !r.none).slice(0, 10 - none.length).concat(none);
   if (!rows.length || !ms.length) { el.innerHTML = `<div class="cf-empty muted small">${t('cf_keine_zahlungen')}</div>`; return; }
+  CF.heat = {rows, months: m => all.filter(x => bk(x) === m), lab: m => q ? lab(m) : ML(m)};          // a click on a cell: its transactions
   const max = Math.max(1, ...rows.flatMap(r => ms.map(m => r.v[m])));
   const every = Math.max(1, Math.ceil(ms.length * 34 / Math.max(1, el.clientWidth * 0.66)));          // names that fit
   const kv = (k, v) => `<span>${esc(k)}</span><b>${v}</b>`;
   let h = `<div class="cf-heat${up ? ' ein' : ''}" style="--ch:${Math.round(Math.max(18, Math.min(32, 240 / rows.length)))}px;grid-template-columns:minmax(90px, 24%) repeat(${ms.length}, minmax(0, 1fr)) auto"><span></span>${ms.map((m, i) => { const on = (ms.length - 1 - i) % every === 0, first = ms.findIndex((x, j) => (ms.length - 1 - j) % every === 0) === i; return `<span class="cf-heat-m">${on ? esc(lab(m, (first || m.endsWith('-01')) && every * el.clientWidth * 0.66 / ms.length >= 46)) : ''}</span>`; }).join('')}<span class="cf-heat-m cf-heat-avg" title="${esc(t('cf_schnitt_monat'))}">Ø</span>`;
-  for (const r of rows) {
+  rows.forEach((r, ri) => {
+    const open = r.none || r.paths.size;
     h += `<span class="cf-heat-n" title="${esc(r.label)}">${esc(r.label)}</span>` + ms.map(m => { const v = r.v[m], k = v > 0.5 ? Math.min(1, v / max) : 0;
       const cs = [...r.cats].map(([n, c]) => [n, c[m] || 0]).filter(([, x]) => Math.abs(x) >= 0.5).sort((p, q) => q[1] - p[1]);
       const shown = cs.length > 7 ? cs.slice(0, 6) : cs, rest = cs.slice(shown.length);
       const parts = shown.length > 1 || (shown.length === 1 && shown[0][0] !== r.label) ? `<div class="cf-tip-kv cf-tip-parts">${shown.map(([n, x]) => kv(n, cfEur(x))).join('')}${rest.length ? kv(t('cf_uebrige', rest.length), cfEur(rest.reduce((a, [, x]) => a + x, 0))) : ''}</div>` : '';
-      const tip = cfTip(`<div class="cf-tip-h">${esc(r.label)} <span class="muted">· ${esc(q ? lab(m) : ML(m))}</span></div>${cfTipRow(up ? 'sw in' : 'sw out', t(up ? 'einnahmen' : 'ausgaben'), cfEur(v))}${parts}${q && cnt[m] < 3 ? `<div class="cf-tip-note">${esc(t('cf_teilquartal', cnt[m]))}</div>` : ''}`);
-      return `<span class="cf-heat-c${k ? '' : ' none'}${q && cnt[m] < 3 ? ' part' : ''}" style="${k ? `--k:${Math.round(8 + k * 82)}%` : ''}" data-cftip="${tip}" tabindex="0"></span>`; }).join('')
+      const tip = cfTip(`<div class="cf-tip-h">${esc(r.label)} <span class="muted">· ${esc(q ? lab(m) : ML(m))}</span></div>${cfTipRow(up ? 'sw in' : 'sw out', t(up ? 'einnahmen' : 'ausgaben'), cfEur(v))}${parts}${q && cnt[m] < 3 ? `<div class="cf-tip-note">${esc(t('cf_teilquartal', cnt[m]))}</div>` : ''}${open && Math.abs(v) >= 0.5 ? `<div class="cf-tip-note">${esc(t('cf_klick_umsaetze'))}</div>` : ''}`);
+      return `<span class="cf-heat-c${k ? '' : ' none'}${q && cnt[m] < 3 ? ' part' : ''}${open && Math.abs(v) >= 0.5 ? ' open' : ''}" style="${k ? `--k:${Math.round(8 + k * 82)}%` : ''}" data-cftip="${tip}" tabindex="0"${open && Math.abs(v) >= 0.5 ? ` data-hr="${ri}" data-hm="${m}"` : ''}></span>`; }).join('')
       + `<span class="cf-heat-v">${esc(Fk(r.sum / all.length, false, max))}</span>`;
-  }
+  });
   el.innerHTML = h + '</div>';
 }
 // 3. Where the money came from and where it went: everything that came in (income, loans taken up, sales, less cash) and
@@ -3342,6 +3386,25 @@ function cfShowTip(el) {
   let top = r.top - host.top - bh - 8; if (top < 0) top = r.bottom - host.top + 8;
   box.style.left = left + 'px'; box.style.top = top + 'px';
 }
+// a click on a month: the twelve months up to it (a year where years are shown); on the iPhone the first tap shows its numbers
+function cfSetCycle(k) {
+  const D = B(), ms = cfDone(D);
+  if (/^\d{4}$/.test(k)) {
+    if (cfPeriods(D).some(p => p[0] === k)) S.cfZeit = k;
+    else { const y = ms.filter(m => m.startsWith(k)); if (!y.length) return; S.cfZeit = 'eigen'; S.cfVon = y[0]; S.cfBis = y[y.length - 1]; }
+  } else {
+    const i = ms.indexOf(k); if (i < 0) return;
+    const sel = ms.slice(Math.max(0, i - 11), i + 1); S.cfVon = sel[0]; S.cfBis = sel[sel.length - 1];
+    S.cfZeit = sel.join() === ms.slice(-12).join() ? '12m' : 'eigen';
+  }
+  CF.pieSel = null; route();
+}
+// the transactions behind a cell of the heat map or a category of the ring, under „Umsätze & Belege“ (filter shown there)
+function cfOpenTx(o) {
+  Object.assign(S.uf, {entitaet: S.bereich || '', jahr: '', konto: '', q: '', ohne_beleg: false, richtung: '', ohne_kategorie: !!o.none,
+    kats: o.none ? null : o.kats, von: o.months[0] + '-01', bis: o.months[o.months.length - 1] + '-31', titel: o.titel, est: !!o.est});
+  S.sel.clear(); go('#transactions');
+}
 function bindCfCharts(main) {
   if (CF.ro) { CF.ro.disconnect(); CF.ro = null; }
   const wrap = $('.cf-charts', main); if (!wrap) return;
@@ -3361,13 +3424,24 @@ function bindCfCharts(main) {
     S.cfZeit = sel.join() === ms.slice(-12).join() ? '12m' : sel.join() === ms.filter(m => m.startsWith(y)).join() && b.startsWith(y) && cfPeriods(D).some(p => p[0] === y) ? y : 'eigen';
     CF.pieSel = null; route();
   });
+  // touch: the first tap on a month or a cell shows its numbers, the second acts
+  wrap.addEventListener('pointerdown', e => { CF.touch = e.pointerType === 'touch'; }, true);
+  const act = (el, key) => { if (CF.touch && CF.armed !== key) { CF.armed = key; return false; } CF.armed = null; return true; };
   wrap.addEventListener('click', e => {
+    const mh = e.target.closest('#cf-months .cf-hit[data-mk]');
+    if (mh) { if (act(mh, 'm' + mh.dataset.mk)) { hide(); cfSetCycle(mh.dataset.mk); } return; }
+    const hc = e.target.closest('#cf-heat .cf-heat-c[data-hr]');
+    if (hc) { const r = CF.heat && CF.heat.rows[+hc.dataset.hr]; if (r && act(hc, 'h' + hc.dataset.hr + hc.dataset.hm)) { hide(); cfOpenTx({kats: [...r.paths], est: r.est, none: r.none, months: CF.heat.months(hc.dataset.hm), titel: r.label + ' · ' + CF.heat.lab(hc.dataset.hm)}); } return; }
+    const pl = e.target.closest('#cf-pie .cf-pie-lab[data-kats]');
+    if (pl && CF.pie) { hide(); const [cur] = cfMonths(B(), S.cfZeit); cfOpenTx({kats: JSON.parse(pl.dataset.kats), est: pl.dataset.est === '1', months: cur, titel: pl.dataset.name + ' · ' + CF.pie.span}); return; }
     const sw = e.target.closest('#cf-pie-art button');
     if (sw) { if (sw.dataset.a === S.cfPieArt) return; S.cfPieArt = sw.dataset.a; CF.pieSel = null; hide();
       const D = B(), [cur, prev] = cfMonths(D, S.cfZeit), old = $('#cf-pie-card'); if (old) { old.outerHTML = cfPie(D, cur, prev); cfDrawPie(); }
       const hc = $('#cf-heat-card'); if (hc) { hc.outerHTML = cfHeatCard(hc.classList.contains('cf-full') ? 'cf-full' : 'cf-half'); cfDrawHeat(); } return; }
     if (!e.target.closest('#cf-pie')) return; pin(e.target.closest('#cf-pie [data-pie]')); });
-  wrap.addEventListener('keydown', e => { if (!e.target.closest('#cf-pie')) return;
+  wrap.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('#cf-months .cf-hit[data-mk], #cf-heat .cf-heat-c[data-hr], #cf-pie .cf-pie-lab[data-kats]')) { e.preventDefault(); CF.touch = false; e.target.dispatchEvent(new MouseEvent('click', {bubbles: true})); return; }
+    if (!e.target.closest('#cf-pie')) return;
     if (e.key === 'Escape' && CF.pieSel) { e.preventDefault(); CF.pieSel = null; hide(); cfDrawPie(); }
     else if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('[data-pie]')) { e.preventDefault(); pin(e.target.closest('[data-pie]')); } });
   let last = wrap.clientWidth;
@@ -3378,7 +3452,7 @@ function bindCfCharts(main) {
 // ---------------------------------------------------------------- Synchronisierung
 async function vSync() {
   const st = S.STATUS, m = st.moneymoney || {}, z = st.dienst || {}, l = st.letzter_lauf, r = await api('/api/sync');
-  const online = r.konten.filter(k => k.art === 'online'), offline = r.konten.filter(k => k.art === 'offline'), stale = online.filter(k => k.zurueck);
+  const stale = r.konten.filter(k => k.art === 'online' && k.zurueck);          // only what needs a look: accounts MoneyMoney has not refreshed for a while
   const tage = t => r.neuester && t ? Math.floor((new Date(r.neuester.replace(' ', 'T')) - new Date(t.replace(' ', 'T'))) / 864e5) : null;
   const card = (t, v, d) => `<div class="card"><div class="l">${t}</div><div class="v s">${v}</div><div class="d">${d}</div></div>`;
   let h = `<div class="cards">
@@ -3389,17 +3463,8 @@ async function vSync() {
   </div>
   <div class="toolbar"><button id="sync-now" ${OFFLINE.mode ? 'disabled' : ''}>${t('jetzt_synchronisieren')}</button><span class="muted small">${t('liest_sofort_aus_moneymoney_wendet')}</span></div>
   <div class="toolbar"><button id="sync-full" class="secondary" ${OFFLINE.mode ? 'disabled' : ''}>${t('alles_neu_lesen')}</button><span class="muted small">${t('voll_lesen_info', r.voll && r.voll.zuletzt ? esc(fmtZeit(r.voll.zuletzt)) : '–', (r.voll || {}).tage || 30)} ${hq('voll_lesen')}</span></div>`;
-  if (stale.length) h += `<div class="banner">${t('0_mehr_als_einen_tag', stale.length === 1 ? t('1_konto_liegt') : stale.length + t('konten_liegen'), esc(stale.map(k => k.name).join(', ')))}</div>`;
-  const row = k => {
-    const d = tage(k.zeit);
-    const stand = k.alt ? `<span class="tag">${t('ruht_seit_ueber')} ` + ((S.CFG.bilanz || {}).inaktiv_monate || 12) + ` ${t('monaten_kein_abruf')}</span>` : k.zurueck ? `<span class="tag warn">${t('0_1_zurueck', d, d === 1 ? t('tag') : t('tage'))}</span>` : d != null && d >= 1 && !(k.saldo) ? `<span class="muted">${t('0_tage_zurueck_ohne_saldo', d)}</span>` : `<span class="tag ok">${t('aktuell')}</span>`;
-    return `<tr data-uuid="${k.uuid}"><td>${esc(k.name)}<div class="small muted">${esc(CP(k.pfad.split(' / ').slice(0, -1).join(' / ')))}</div></td><td class="small">${esc(k.bereich || '–')}</td>
-      <td class="nowrap">${k.zeit ? esc(fmtZeit(k.zeit)) : '–'}</td><td>${stand}</td></tr>`;
-  };
+  if (stale.length) h += `<div class="banner">${t('0_mehr_als_einen_tag', stale.length === 1 ? t('1_konto_liegt') : stale.length + t('konten_liegen'), esc(stale.map(k => { const d = tage(k.zeit); return d ? `${k.name} (${d} ${d === 1 ? t('tag') : t('tage')})` : k.name; }).join(', ')))}</div>`;
   if (m.problem) h += `<div class="banner err">${t('moneymoney_lief_am_0_kontor', esc(fmtZeit(m.problem.zeit)), esc(m.problem.text))}</div>`;
-  h += `<h2>${t('sync_mit_abruf', online.length, hq('abruf'))}</h2><div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>${t('konto_2')}</th><th>${t('bereich')}</th><th>${t('letzter_abruf')}</th><th>${t('stand')}</th></tr></thead><tbody>${online.map(row).join('') || `<tr><td colspan="4" class="muted">${t('keine')}</td></tr>`}</tbody></table></div>`;
-  // accounts kept by hand are not refreshed: only how many, and where to say online or offline (an account's own setting)
-  if (offline.length) h += `<p class="small muted">${offline.length === 1 ? t('sync_offline_1') : t('sync_offline_n', offline.length)} <a href="#accounts">${t('art_festlegen')}</a></p>`;
   return h;
 }
 
@@ -3770,6 +3835,7 @@ async function loadUms() {
   for (const k in P) if (f[k]) q.set(P[k], f[k]);
   if (f.richtung) q.set('direction', f.richtung === 'aus' ? 'out' : 'in');
   if (f.ohne_beleg) q.set('without_receipt', '1'); if (f.ohne_kategorie) q.set('uncategorized', '1');
+  if (f.kats) q.set('categories', JSON.stringify(f.kats)); if (f.von) q.set('from', f.von); if (f.bis) q.set('to', f.bis);      // opened from a chart
   q.set('limit', '400');
   UMS = await api('/api/transactions?' + q.toString());
 }
@@ -3786,6 +3852,7 @@ async function vUmsaetze() {
     <label class="switch"><input type="checkbox" id="uf-ob" ${f.ohne_beleg ? 'checked' : ''}><i></i>${t('ohne_beleg_2')}</label>
     <label class="switch"><input type="checkbox" id="uf-ok" ${f.ohne_kategorie ? 'checked' : ''}><i></i>${t('ohne_kategorie_2')}</label>
   </div>
+  ${f.titel ? `<div class="toolbar"><span class="chip">${esc(f.titel)}${f.est ? ` <span class="muted">· ${t('uf_ohne_geschaetzte')}</span>` : ''}<button id="uf-chip-x" class="icon ghost" title="${esc(t('uf_filter_aufheben'))}" aria-label="${esc(t('uf_filter_aufheben'))}">✕</button></span></div>` : ''}
   <div class="toolbar"><span class="muted small">${t('0_treffer_1_von_2', UMS.treffer, UMS.treffer > UMS.umsaetze.length ? ' (erste ' + UMS.umsaetze.length + t('angezeigt_filter_verfeinern') : '', UMS.gesamt)}</span><span class="sp"></span>
     <button id="bl-folder" class="secondary small" ${st.lokal ? '' : t('disabled_title_nur_am_mac')}>${t('belegordner_oeffnen')}</button>
     <button id="bl-export" class="secondary small">${t('belege_exportieren_zip')}</button>
@@ -4464,8 +4531,8 @@ async function vEinstellungenZugang() {
     <label>${t('von_unterwegs')} ${hq('fern_was')}</label><label class="chk"><select id="fz-modus" ${lokal ? '' : 'disabled'}><option value="lesen" ${!r || r.nur_ansehen ? 'selected' : ''}>${t('nur_ansehen')}</option><option value="bearbeiten" ${r && !r.nur_ansehen ? 'selected' : ''}>${t('ansehen_und_bearbeiten')}</option></select></label>
     <label>${t('offline_ansicht_0', hq('offline'))}</label><label class="chk"><input type="checkbox" id="fz-offline" ${!r || r.offline_kopie ? 'checked' : ''} ${lokal ? '' : 'disabled'}> ${t('offline_kopie_erlauben')}</label>
   </div>`;
-  h += `<div class="kv" style="margin-top:12px"><div>${t('auf_diesem_geraet')}</div><div id="sw-state">${IS_LOCAL ? t('sw_am_mac') : navigator.serviceWorker && navigator.serviceWorker.controller ? t('aktiv_die_zuletzt_geladenen_daten') : (location.protocol === 'https:' || location.hostname === '127.0.0.1' ? t('wird_beim_naechsten_laden_aktiv') : t('nicht_moeglich_ueber_http_tailscale'))}</div></div>
-    ${IS_LOCAL ? '' : `<div class="actions"><button id="sw-clear" class="secondary">${t('gespeicherte_daten_auf_diesem_geraet')}</button></div>`}`;
+  if (!IS_LOCAL) h += `<div class="kv" style="margin-top:12px"><div>${t('auf_diesem_geraet')}</div><div id="sw-state">${navigator.serviceWorker && navigator.serviceWorker.controller ? t('aktiv_die_zuletzt_geladenen_daten') : (location.protocol === 'https:' || location.hostname === '127.0.0.1' ? t('wird_beim_naechsten_laden_aktiv') : t('nicht_moeglich_ueber_http_tailscale'))}</div></div>
+    <div class="actions"><button id="sw-clear" class="secondary">${t('gespeicherte_daten_auf_diesem_geraet')}</button></div>`;      // on the Mac nothing to say: the offline view is only for the iPhone
   return h;
 }
 function bindZugang(main) {
@@ -5053,6 +5120,7 @@ function bind(main) {
   // Umsaetze & Belege
   const uf = S.uf;
   const bindF = (id, key, prop = 'value') => { const el = $(id, main); if (el) el.addEventListener('change', e => { uf[key] = e.target[prop]; S.sel.clear(); route(); }); };
+  const ux = $('#uf-chip-x', main); if (ux) ux.addEventListener('click', () => { Object.assign(uf, {kats: null, von: '', bis: '', titel: '', est: false, ohne_kategorie: uf.titel ? false : uf.ohne_kategorie}); S.sel.clear(); route(); });
   bindF('#uf-ent', 'entitaet'); bindF('#uf-jahr', 'jahr'); bindF('#uf-konto', 'konto'); bindF('#uf-ob', 'ohne_beleg', 'checked'); bindF('#uf-ok', 'ohne_kategorie', 'checked');
   const q = $('#uf-q', main); if (q) { let t; q.addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { uf.q = e.target.value; route().then(() => { const n = $('#uf-q'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }); }, 350); }); }
   $$('.seg button[data-r]', main).forEach(b => b.addEventListener('click', () => { uf.richtung = b.dataset.r; route(); }));

@@ -1140,6 +1140,21 @@ class AppTests(_AppBase):
         u = [x for x in self.call("/api/transactions?account=" + F.uid("pb.vd"))[1]["umsaetze"]]
         self.assertTrue(u and all(x["braucht"] is False for x in u))
         self.assertFalse(self.call("/api/transactions?uncategorized=1&account=" + F.uid("pb.vd"))[1]["umsaetze"])
+        # opened from a chart: these categories and the ones below them, in these days; nonsense is no filter error
+        alle = self.call("/api/transactions?limit=5000")[1]["umsaetze"]
+        mit = [x for x in alle if x["kategorie"]]
+        self.assertTrue(mit)
+        top = mit[0]["kategorie"].replace(" › ", " / ").split(" / ")[0]
+        von, bis = min(x["datum"] for x in alle), max(x["datum"] for x in alle)
+        q = urllib.parse.quote(json.dumps([top]))
+        got = self.call("/api/transactions?limit=5000&categories=%s&from=%s&to=%s" % (q, von, bis))[1]["umsaetze"]
+        want = [x["id"] for x in alle if x["kategorie"] and (x["kategorie"].replace(" › ", " / ") + " / ").startswith(top + " / ")]
+        self.assertEqual(sorted(x["id"] for x in got), sorted(want))
+        self.assertFalse(self.call("/api/transactions?categories=%s" % urllib.parse.quote(json.dumps(["Gibt es nicht"])))[1]["umsaetze"])
+        self.assertEqual(self.call("/api/transactions?categories=kaputt")[0], 200)
+        m = mit[0]["datum"][:7]
+        one = self.call("/api/transactions?limit=5000&categories=%s&from=%s-01&to=%s-31" % (q, m, m))[1]["umsaetze"]
+        self.assertTrue(one and all(x["datum"].startswith(m) for x in one))
 
     def test_cashflow_positionen(self):
         """Kategorien -> Cashflow-Positionen: Kontor schlaegt je Kategorie eine Position vor, deine Wahl gilt auch darunter;
@@ -2732,12 +2747,13 @@ class BrowserTest(unittest.TestCase):
                 self.assertNotIn("Privat", pg.query_selector("#main .toolbar").inner_text())            # Bereich nicht doppelt genannt
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".cards")
                 # Status unten links fuehrt zur Seite Synchronisierung
-                pg.click("#status-mini .sm-link"); pg.wait_for_selector(".sync-table")
+                pg.click("#status-mini .sm-link"); pg.wait_for_selector("#sync-now")
                 main = pg.query_selector("#main").inner_text()
-                self.assertIn("ohne Abruf (Offline-Kont", main); self.assertNotIn("Verkäuferdarlehen", main)        # offline accounts: only how many
+                self.assertFalse(pg.query_selector(".sync-table")); self.assertNotIn("Verkäuferdarlehen", main)      # no list of accounts: only what lags
                 self.assertNotIn("Depots: Wertverlauf", main); self.assertFalse(pg.query_selector(".ab-sel"))
                 self.assertIn("MoneyMoney-Sync", pg.inner_text("#main .tabs .on"))
-                pg.click("#main a[href='#accounts']"); pg.wait_for_selector(".acct-table .ab-sel")                 # online or offline: an account's own setting
+                pg.evaluate("location.hash = '#accounts'"); pg.wait_for_selector(".acct-table .ab-sel")             # online or offline: an account's own setting
+                self.assertIn("Letzter Abruf", pg.eval_on_selector("tr[data-uuid='%s'] .ab-sel" % F.uid("priv.giro"), "e => e.title"))
                 # portfolios' history and the import from a file: under Kontostände
                 pg.evaluate("location.hash = '#accounts/history'"); pg.wait_for_selector(".dep-hist")
                 self.assertIn("Depots: Wertverlauf", pg.inner_text("#main")); self.assertTrue(pg.query_selector("#hi-drop"))
@@ -2858,17 +2874,22 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("Tilgung", pg.inner_text("#cf-tip")); pg.mouse.move(5, 5)
                 # 2. per month: income, expenses, investing, financing stacked; the change in cash on its own scale below
                 self.assertEqual(len(pg.query_selector_all("#cf-months .cf-hit")), 12)
-                for c in ("ein", "aus", "inv", "fin", "bank"):
+                for c in ("ein", "aus", "inv", "fin", "spar", "wert"):          # below: the change in net worth, saved and change in value
                     self.assertTrue(pg.query_selector("#cf-months .cf-col." + c), c)
+                self.assertTrue(pg.query_selector("#cf-months .cf-prev-o"))           # the year before, dashed
+                nwk = pg.evaluate("""(() => { const D = B(), m = D.monate.filter(m => m < D.ist_bis).slice(-1)[0], s = D.kapitalfluss.summen[m]; return [s.Nettovermoegen_delta, s.Bewertung]; })()""")
                 pg.hover("#cf-months .cf-hit >> nth=11"); pg.wait_for_timeout(150)
                 tip = pg.inner_text("#cf-tip")
-                for w in ("Einnahmen", "Ausgaben", "Investitionen", "Finanzierung", "Veränderung Bankguthaben"):
+                for w in ("Einnahmen", "Ausgaben", "Investitionen", "Finanzierung", "Veränderung Bankguthaben", "gespart", "Wertänderung", "Veränderung Nettovermögen", "Vorjahr", "zwölf Monate"):
                     self.assertIn(w, tip)
+                f0 = lambda v: pg.evaluate("v => F0(v)", v)
+                self.assertIn(f0(nwk[0] - nwk[1]), tip.split("gespart")[1][:24]); self.assertIn(f0(nwk[0]), tip.split("Veränderung Nettovermögen")[1][:24])
+                pg.mouse.move(5, 5)
                 self.assertGreaterEqual(len(pg.query_selector_all("#cf-tip i.sw")), 5)
                 # a few months far larger than the rest: the scale follows the rest, those bars are cut, marked and labelled
                 cut = pg.evaluate("""(() => { const D = JSON.parse(JSON.stringify(B())), ms = D.monate.filter(m => m < D.ist_bis).slice(-12), id = S.bereich, keep = S.DATA.bereiche[id];
                     D.kapitalfluss.summen[ms[3]].Investitionen = -400000; D.kapitalfluss.summen[ms[3]].Finanzierung = 400000; S.DATA.bereiche[id] = D;
-                    try { cfDrawMonths(); return [document.querySelectorAll('#cf-months .cf-break').length, document.querySelector('#cf-months .cf-val-l').textContent]; } finally { S.DATA.bereiche[id] = keep; cfDrawMonths(); } })()""")
+                    try { cfDrawMonths(); return [document.querySelectorAll('#cf-months .cf-break:not(.nw)').length, document.querySelector('#cf-months .cf-val-l:not(.nw)').textContent]; } finally { S.DATA.bereiche[id] = keep; cfDrawMonths(); } })()""")
                 self.assertEqual(cut[0], 2); self.assertTrue(cut[1].startswith("+40"), cut[1])                  # 406.500: income and the loan
                 # the charts end at the last closed month: the running month is half booked (the table shows it hatched)
                 done, running = pg.evaluate("(() => { const D = B(); return [ML(D.monate.filter(m => m < D.ist_bis).slice(-1)[0]), ML(D.ist_bis)]; })()")
@@ -2893,11 +2914,12 @@ class BrowserTest(unittest.TestCase):
                 # the expenses as a ring: positions in shades of red, the total in the middle, each with amount and change beside it
                 self.assertGreaterEqual(len(pg.query_selector_all(".cf-pie-sl")), 2); self.assertIn("€", pg.text_content("#cf-pie .cf-pie-v"))
                 self.assertEqual(len(pg.query_selector_all(".cf-pie-lab")), len(pg.query_selector_all(".cf-pie-sl")))       # each named beside its slice
-                self.assertIsNone(pg.query_selector(".cf-pie-prev")); self.assertTrue(pg.inner_text("#cf-pie-card .lc-title").startswith("Ausgaben gegenüber Vorperiode"))
+                self.assertIsNone(pg.query_selector(".cf-pie-prev")); self.assertTrue(pg.inner_text("#cf-pie-card .lc-title").startswith("Vorjahresvergleich der Ausgaben"))
                 pg.hover("#cf-pie .cf-pie-c"); pg.wait_for_timeout(150)                 # the middle names both periods
                 self.assertEqual(pg.inner_text("#cf-tip").count("–"), 2); pg.mouse.move(5, 5)
                 # a click keeps a slice open: its categories named around it, the position in the middle; a click there goes back
                 first = pg.evaluate("CF.pie.items[0].label")
+                self.assertTrue(pg.evaluate("(() => { const g = document.querySelector('#cf-pie .cf-pie-lab'), r = g.getBoundingClientRect(); return g.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); })()"))   # also between its two lines
                 pg.click("#cf-pie .cf-pie-lab[data-pie='0']"); pg.wait_for_selector("#cf-pie .cf-pie-sl.on")             # its name, like the slice
                 self.assertEqual(pg.text_content("#cf-pie .cf-pie-cn"), first); self.assertTrue(pg.query_selector("#cf-pie .cf-pie-sl.off"))
                 self.assertIn("›", pg.text_content("#cf-pie .cf-pie-lab"))                   # a category, not a position
@@ -2915,7 +2937,7 @@ class BrowserTest(unittest.TestCase):
                 # switched to income: green, the income in the middle, the title says so; and back
                 pg.click("#cf-pie-art button[data-a='ein']"); pg.wait_for_selector("#cf-pie svg.ein"); pg.wait_for_selector("#cf-heat .cf-heat.ein")
                 self.assertEqual(pg.inner_text("#cf-heat-card .lc-title").strip().split("\n")[0], "Einnahmen je Monat")
-                self.assertTrue(pg.inner_text("#cf-pie-card .lc-title").startswith("Einnahmen gegenüber Vorperiode"))
+                self.assertTrue(pg.inner_text("#cf-pie-card .lc-title").startswith("Vorjahresvergleich der Einnahmen"))
                 self.assertEqual(num(pg.text_content("#cf-pie .cf-pie-v")), want["ein"])
                 pg.click("#cf-pie-art button[data-a='aus']"); pg.wait_for_selector("#cf-pie svg:not(.ein)")
                 # the slice's tooltip: amount, share, the period before, change
@@ -2960,6 +2982,29 @@ class BrowserTest(unittest.TestCase):
                 pg.select_option("#cf-von", y + "-01"); pg.wait_for_timeout(300)                  # a whole year (so far) lights up its button
                 self.assertEqual(pg.evaluate("S.cfZeit"), y); self.assertTrue(pg.query_selector("#cf-zeit button.on[data-z='%s']" % y))
                 pg.click("#cf-zeit button[data-z='12m']"); pg.wait_for_timeout(200)
+                # a click on a month: the twelve months up to it, every chart follows; a click marks nothing that does nothing
+                ms = pg.evaluate("cfDone(B())")
+                pg.click("#cf-months .cf-hit >> nth=5"); pg.wait_for_timeout(300)
+                self.assertEqual(pg.evaluate("[S.cfZeit, S.cfVon, S.cfBis, document.querySelector('#cf-von').value, document.querySelector('#cf-bis').value]"),
+                                 ["eigen", ms[-18], ms[-7], ms[-18], ms[-7]])
+                self.assertEqual(pg.evaluate("document.querySelectorAll('#cf-months .cf-hit').length"), 12)
+                pg.click("#cf-bridge .cf-br-row >> nth=1"); pg.mouse.move(5, 5); pg.wait_for_timeout(100)
+                self.assertEqual(pg.evaluate("getComputedStyle(document.querySelectorAll('#cf-bridge .cf-br-bg')[1]).fill"), "rgba(0, 0, 0, 0)")
+                pg.click("#cf-zeit button[data-z='12m']"); pg.wait_for_timeout(200)
+                # a cell of the heat map: its transactions, the filter named above them and cleared with one click
+                cell = pg.evaluate("""(() => { const c = document.querySelector('#cf-heat .cf-heat-c[data-hr]'), r = CF.heat.rows[+c.dataset.hr]; c.scrollIntoView(); return [r.label, [...r.paths], c.dataset.hm]; })()""")
+                pg.click("#cf-heat .cf-heat-c[data-hr='%s'][data-hm='%s']" % (pg.evaluate("document.querySelector('#cf-heat .cf-heat-c[data-hr]').dataset.hr"), cell[2]))
+                pg.wait_for_selector("#uf-chip-x")
+                self.assertTrue(pg.inner_text(".chip").startswith(cell[0] + " · "))
+                rows = pg.evaluate("UMS.umsaetze.map(u => [u.datum, u.kategorie])")
+                self.assertTrue(rows)
+                norm = lambda c: " / ".join(p.strip() for p in re.split(r"\\| / | › ", c or "") if p.strip())
+                for d, k in rows:
+                    self.assertTrue(d.startswith(cell[2]), d)
+                    self.assertTrue(any(norm(k) == norm(c) or norm(k).startswith(norm(c) + " / ") for c in cell[1]), k)
+                n_all = pg.evaluate("UMS.gesamt"); pg.click("#uf-chip-x"); pg.wait_for_timeout(400)
+                self.assertIsNone(pg.query_selector(".chip")); self.assertGreater(pg.evaluate("UMS.treffer"), len(rows)); self.assertEqual(pg.evaluate("UMS.gesamt"), n_all)
+                pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("#cf-pie .cf-pie-sl")
                 # where a category counts is a setting: its own page under Verwaltung, linked from here (the old address leads there)
                 pg.click("#main a[href='#accounts/positions']"); pg.wait_for_selector(".kp-table tr[data-p]")
                 self.assertEqual(pg.inner_text("#page-title"), "Konten & Regeln"); self.assertTrue(pg.query_selector("#nav a.on[href='#accounts']"))
@@ -3467,7 +3512,7 @@ class BrowserTest(unittest.TestCase):
                 pg.evaluate("location.hash = '#accounts'"); pg.wait_for_selector(".ab-sel")          # leaving after ⌘S: no question (a late change event does not count)
                 sel = "tr[data-uuid='%s'] .ab-sel" % F.uid("priv.bet.pb")
                 self.assertEqual(pg.eval_on_selector(sel, "e => e.value"), "offline")
-                self.assertEqual(pg.eval_on_selector(sel, "e => e.title"), "Offline-Konto")                       # why: as recognised
+                self.assertEqual(pg.eval_on_selector(sel, "e => e.title"), "Offline-Konto")                       # why: as recognised (an offline account: no refresh)
                 pg.select_option(sel, "online"); pg.wait_for_timeout(900)                                          # saved at once ...
                 self.assertIn(F.uid("priv.bet.pb"), " ".join(store.load("config.json")["abruf"]["online"]))
                 self.assertFalse(pg.evaluate("DIRTY.on"))                                                          # ... so no unsaved change

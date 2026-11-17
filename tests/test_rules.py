@@ -430,10 +430,10 @@ class CatalogTests(unittest.TestCase):
         i18n.set_lang("en")
         try:
             self.assertEqual(i18n.tr("s_moneymoney_laeuft_nicht"), "MoneyMoney is not running.")
-            self.assertEqual(i18n.tr("sync_offline_n", 3), "3 accounts without refresh (offline accounts).")
+            self.assertEqual(i18n.tr("cf_ausgaben_vorjahre", 2), "Expenses compared with 2 years before")
         finally:
             i18n.set_lang("de")
-        self.assertEqual(i18n.tr("sync_offline_n", 3), "3 Konten ohne Abruf (Offline-Konten).")
+        self.assertEqual(i18n.tr("cf_ausgaben_vorjahre", 2), "Ausgaben im Vergleich zu 2 Jahren davor")
         self.assertEqual(i18n.tr("unbekannter_schluessel"), "unbekannter_schluessel")
 
 

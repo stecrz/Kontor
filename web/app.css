@@ -11,7 +11,7 @@
   --c-liq:#34c759; --c-anl:#12a88a; --c-fest:#1d9fc0; --c-bet:#af52de; --c-ford:#3a6ff0; --c-immo:#9e7458; --c-verb:#ff6b57; --c-ein:#1a8a4a; --c-aus:#c0392b; --c-neutral:#8e8e93; --c-nw:#e8aa00;
   /* cash flow: the activities (operating, investing, financing) and up to six categories within a position -- apart also for
      colour-blind readers, checked for both modes */
-  --cf-op:#0899c4; --cf-inv:#e5a800; --cf-fin:#cf2f96; --cf-unk:#8e8e93;      /* cyan, yellow, magenta */      /* no green or red: those are money in and out */
+  --cf-op:#0899c4; --cf-inv:#e5a800; --cf-fin:#cf2f96; --cf-unk:#8e8e93; --cf-wert:#6f5bd0;      /* cyan, yellow, magenta */      /* no green or red: those are money in and out */
   --cat1:#2d4bb0; --cat2:#b07428; --cat3:#a78bf0;      /* within an expense's red bar: none of the cash flow's colours, no red or green */
   --radius:14px; --radius-s:9px; --shadow:0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
 }
@@ -23,7 +23,7 @@
           --side:rgba(20,20,22,.94); --side-fg:#f5f5f7;
           --c-nw:#ffd23f; --warn-bg:#3a2a12; --warn-fg:#ffd28a; --err-bg:#3a1515; --err-fg:#ffb3b3; --ok-bg:#12301f; --ok-fg:#9be0b6;
           --c-liq:#30d158; --c-anl:#2ec4a2; --c-fest:#3fbfdc; --c-bet:#bf5af2; --c-ford:#5b8cff; --c-immo:#b08a6e; --c-verb:#ff6961; --c-ein:#30d158; --c-aus:#ff6961;
-          --cf-op:#14a2c4; --cf-inv:#bb8a00; --cf-fin:#b8338c; --cf-unk:#8e8e93;
+          --cf-op:#14a2c4; --cf-inv:#bb8a00; --cf-fin:#b8338c; --cf-unk:#8e8e93; --cf-wert:#9a8cf0;
           --cat1:#3a5bd0; --cat2:#ad772e; --cat3:#9b84ea;
           --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3);
 }
@@ -444,6 +444,7 @@ tr.clickable td { cursor:pointer; }
 label .hq { vertical-align:-2px; }
 .form label { display:flex; align-items:center; gap:2px; }
 .form label.chk { gap:8px; }          /* Text und Eingabefeld nicht aneinanderkleben */
+.form label.chk > select { width:auto; min-width:140px; flex-shrink:0; }      /* a menu beside its text: as wide as its entries, the text stays on one line */
 
 /* Einrichtung */
 .modules { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:12px; margin-bottom:16px; }
@@ -612,7 +613,7 @@ a.more { white-space:nowrap; }
 .cf-tbl tr.sec td, .cf-tbl tr.sec td:first-child { background:var(--sub); font-weight:650; }
 .cf-tbl tr.sec2 td, .cf-tbl tr.sec2 td:first-child { background:var(--head); font-weight:600; }
 .cf-key { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:7px; vertical-align:1px; }
-.cf-key.op { background:var(--cf-op); } .cf-key.inv { background:var(--cf-inv); } .cf-key.fin { background:var(--cf-fin); }
+.cf-key.op { background:var(--cf-op); } .cf-key.inv { background:var(--cf-inv); } .cf-key.fin { background:var(--cf-fin); } .cf-key.ein { background:var(--pos); } .cf-key.aus { background:var(--neg); }
 .cf-tbl tr.sub td, .cf-tbl tr.sub td:first-child { background:var(--head); font-weight:500; } .cf-tbl tr.sub td:not(:first-child) { cursor:default; }
 .cf-tbl tr.total td, .cf-tbl tr.total td:first-child { background:var(--group); font-weight:700; border-top:1px solid var(--line-2); border-bottom-color:var(--line-2); }
 .cf-tbl tr.total td:first-child, .cf-tbl tr.bal td:first-child, .cf-tbl tr.check td:first-child { padding-left:25px; }
@@ -652,9 +653,9 @@ a.more { white-space:nowrap; }
 .cf-break { fill:none; stroke:var(--head); stroke-width:2; }
 .cf-fl-n.ein { fill:var(--pos); } .cf-fl-n.aus { fill:var(--neg); } .cf-fl-n.inv { fill:var(--cf-inv); } .cf-fl-n.fin { fill:var(--cf-fin); } .cf-fl-n.tot, .cf-fl-n.unk { fill:var(--cf-unk); }
 .cf-fl-b { fill-opacity:.34; } .cf-fl-b.ein { fill:var(--pos); } .cf-fl-b.aus { fill:var(--neg); } .cf-fl-b.inv { fill:var(--cf-inv); } .cf-fl-b.fin { fill:var(--cf-fin); } .cf-fl-b.tot, .cf-fl-b.unk { fill:var(--cf-unk); }
-.cf-fl-g { outline:none; cursor:default; } .cf-fl-g:is(:hover, :focus) .cf-fl-b { fill-opacity:.6; } .cf-fl-m { fill:color-mix(in srgb, var(--fg) 45%, transparent); }
+.cf-fl-g { outline:none; cursor:default; } .cf-fl-g:is(:hover, :focus-visible) .cf-fl-b { fill-opacity:.6; } .cf-fl-m { fill:color-mix(in srgb, var(--fg) 45%, transparent); }
 .cf-fl-t { fill:var(--fg); font-size:12px; } .cf-fl-v { fill:var(--muted); font-variant-numeric:tabular-nums; } .cf-fl-lead { fill:none; stroke:var(--line-2); stroke-width:1; } .cf-sub-l { fill:var(--muted); font-size:11px; }
-.cf-br-bg { fill:transparent; } .cf-br-row { outline:none; cursor:default; } .cf-br-row:is(:hover, :focus) .cf-br-bg { fill:var(--sub); }
+.cf-br-bg { fill:transparent; } .cf-br-row { outline:none; cursor:default; } .cf-br-row:is(:hover, :focus-visible) .cf-br-bg { fill:var(--sub); }
 .cf-br-n { fill:var(--fg); font-size:12px; } .cf-br-row.kid .cf-br-n { fill:var(--muted); font-size:11.5px; } .cf-br-row:is(.tot, .grp) .cf-br-n { font-weight:600; }
 .cf-br-abbr { fill:var(--muted); font-size:9.5px; font-weight:500; letter-spacing:.04em; }
 .cf-br-v { fill:var(--fg); font-size:12px; font-variant-numeric:tabular-nums; } .cf-br-row.kid .cf-br-v { fill:var(--muted); font-size:11.5px; } .cf-br-row:is(.tot, .grp) .cf-br-v { font-weight:600; }
@@ -675,7 +676,7 @@ a.more { white-space:nowrap; }
 .cf-pie-v { fill:var(--fg); font-size:15px; font-weight:650; font-variant-numeric:tabular-nums; } .cf-pie-d { fill:var(--muted); font-size:12.5px; } .cf-pie-d.pos { fill:var(--pos); } .cf-pie-d.neg { fill:var(--neg); }
 .cf-pie-lead { fill:none; stroke:var(--line-2); stroke-width:1; }
 .cf-pie-n { fill:var(--fg); font-size:11.5px; } .cf-pie-m { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; } .cf-pie-m .pos { fill:var(--pos); } .cf-pie-m .neg { fill:var(--neg); }
-.cf-pie-sl, .cf-pie-lab, .cf-pie-c { cursor:pointer; } .cf-pie-c { outline:none; } .cf-pie-c circle { fill:transparent; }
+.cf-pie-sl, .cf-pie-lab, .cf-pie-c { cursor:pointer; } .cf-pie-c { outline:none; } .cf-pie-c circle, .cf-pie-hit { fill:transparent; }
 .cf-pie-sl.on .cf-pie-sub { display:inline; } .cf-pie-sl.on .cf-pie-a { stroke:var(--fg); stroke-width:1.5; } .cf-pie-sl.off .cf-pie-a { opacity:.32; }
 .cf-pie-cn { fill:var(--muted); font-size:11.5px; } .cf-pie-k.cat1 { fill:var(--cat1); } .cf-pie-k.cat2 { fill:var(--cat2); } .cf-pie-k.cat3 { fill:var(--cat3); } .cf-pie-k.cat0 { fill:var(--cf-unk); }
 
@@ -686,7 +687,12 @@ a.more { white-space:nowrap; }
 .cf-heat-c { height:var(--ch, 20px); border-radius:3px; background:color-mix(in srgb, var(--neg) var(--k), transparent); outline:none; } .cf-heat.ein .cf-heat-c { background:color-mix(in srgb, var(--pos) var(--k), transparent); }
 .cf-heat-c.none { background:var(--sub); } .cf-heat-c.part { background-image:repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, var(--head) 60%, transparent) 3px 5px); } .cf-heat-c:hover, .cf-heat-c:focus-visible { box-shadow:inset 0 0 0 1.5px var(--fg); }
 .cf-dot { fill:var(--fg); stroke:var(--head); stroke-width:2; }
-.cf-hit { fill:var(--fg); fill-opacity:0; cursor:default; outline:none; } .cf-hit:hover, .cf-hit:focus { fill-opacity:.06; }
+.cf-col.spar { fill:color-mix(in srgb, var(--fg) 58%, transparent); } .cf-col.wert { fill:var(--cf-wert); }
+.cf-prev-o { fill:none; stroke:var(--fg); stroke-opacity:.55; stroke-width:1; stroke-dasharray:3 2; } .cf-sub-lg { fill:var(--muted); font-size:10.5px; }
+.sw.spar { background:color-mix(in srgb, var(--fg) 58%, transparent); } .sw.wert { background:var(--cf-wert); } .sw.prev-o { background:none; border:1px dashed color-mix(in srgb, var(--fg) 55%, transparent); box-sizing:border-box; }
+.chip { display:inline-flex; align-items:center; gap:6px; padding:3px 4px 3px 11px; border-radius:999px; background:var(--group); font-size:12.5px; } .chip button.icon { padding:1px 7px; font-size:11px; }
+.cf-heat-c.open { cursor:pointer; } .cf-pie-lab[data-kats]:hover .cf-pie-n { text-decoration:underline; }
+.cf-hit { fill:var(--fg); fill-opacity:0; cursor:pointer; outline:none; } .cf-hit:hover, .cf-hit:focus-visible { fill-opacity:.06; }
 .cf-card .lc-title .hq { margin-left:2px; }
 .cf-card .lc-head { flex-wrap:wrap; row-gap:4px; } .cf-card .lc-title { flex:0 0 auto; max-width:100%; } .cf-card .cf-leg { flex-shrink:1; margin-left:auto; }      /* the title whole, the key below it when narrow */
 .cf-list { display:flex; flex-direction:column; gap:2px; margin-top:6px; }

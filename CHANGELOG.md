@@ -1,5 +1,15 @@
 # Änderungen
 
+## 3.13.23 (2026-11-17 22:30)
+- **Zu- und Abflüsse je Monat:** unten jetzt die Veränderung des Nettovermögens – gespart und Wertänderung gestapelt, gestrichelt derselbe Monat ein Jahr davor. Ein Klick auf einen Monat wählt die zwölf Monate bis zu ihm.
+- **Umsätze aus den Diagrammen:** Ein Klick auf ein Feld der Heatmap oder auf eine Kategorie im offenen Ring zeigt die Umsätze dazu; der Filter steht oben und lässt sich mit einem Klick aufheben.
+- **Vorjahresvergleich der Ausgaben** (statt „gegenüber Vorperiode“) – gemeint sind immer dieselben Monate ein Jahr davor.
+- Ein Klick markiert nur noch, was etwas bewirkt; Beschriftungen im Ring reagieren auf ihrer ganzen Fläche.
+- Cashflow-Tabelle: Einnahmen grün und Ausgaben rot markiert wie in den Diagrammen.
+- MoneyMoney-Sync ohne Kontenliste – nur Konten, die zurückliegen, mit der Zahl der Tage; den letzten Abruf je Konto zeigt der Tooltip unter Konten & Regeln → Konten. Die Hilfe erklärt, wozu Kontor online und offline unterscheidet.
+- Weniger Text: Touch ID und Offline-Ansicht ohne Erklärungen neben dem Schalter, am Mac keine Zeile zur Offline-Ansicht; schmale Auswahlfelder unter Einstellungen.
+- Die automatischen Tests bei GitHub laufen wieder durch.
+
 ## 3.13.22 (2026-11-17 21:52)
 - **Einstellungen → MoneyMoney-Sync** (statt „MoneyMoney & Abgleich“) zeigt nur noch den Stand des Abgleichs: Verbindung, Zeitplan, Abruf je Online-Konto.
 - **Online oder offline** stellst du jetzt je Konto unter Konten & Regeln → Konten ein (Spalte „Art“, gilt sofort; der Grund der Erkennung steht im Tooltip).
