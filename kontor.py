@@ -45,7 +45,7 @@ import updates  # noqa: E402
 import i18n  # noqa: E402
 import mm_categories  # noqa: E402
 from mm_bridge import Bridge, MoneyMoneyError  # noqa: E402
-from core import (account_tree, check_config, diagnose, export_package, fetch, import_package, merged_config,  # noqa: E402
+from core import (before_slash_keys, follow_slashes, account_tree, check_config, diagnose, export_package, fetch, import_package, merged_config,  # noqa: E402
                      migrate_booking_state, run_once, unavailable_text, version)
 from model import Ledger, accounts_from_export, fmt_eur  # noqa: E402
 from storage import Store, load_or_create_master_key  # noqa: E402
@@ -298,6 +298,9 @@ def cmd_paket_import(args) -> int:
     if unresolved and not args.trotzdem:
         print(tr("s_nicht_uebernommen_konten_in_moneymoney"))
         return 1
+    if before_slash_keys(pkg.get("version")):            # its category keys split every slash: they follow (MoneyMoney's last categories)
+        cats = mm_categories.with_paths((store.load_shared("state.json", {}) or {}).get("kategorien_roh") or [])
+        new_cfg = (follow_slashes(new_cfg, cats) if cats else None) or new_cfg
     store.save("config.json", merged_config(new_cfg))
     if pkg.get("plan") and args.mit_plan:
         store.save("plan.json", pkg["plan"])

@@ -35,7 +35,7 @@ from datetime import date, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from categorize import party_key, suggest as suggest_category
-from model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
+from model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat, legacy_cat
 from model import MARK, marks_in
 from i18n import tr
 
@@ -892,16 +892,20 @@ def recognised_position(path: str, income: bool) -> Optional[str]:
     """The position a category's words name -- None when none of them is known (then it is "other" income or expenses)."""
     low = fold_text(path)
     name = low.split(" / ")[-1]
-    for text in (name, low):
+    low_l = fold_text(legacy_cat(path))                # read as before 3.13.19 (every slash a level) first: the same proposals
+    name_l = low_l.split(" / ")[-1]
+    texts = list(dict.fromkeys((name_l, low_l, name, low)))
+    for text in texts:
         for words, pin, pout, start in POSITION_FIRST:
             if pin != "kapitalertraege" and any(w in text for w in FIRST_NOT):
                 continue
             if _has(words, text, start):
                 return pin if income else pout
-    for words, pin, pout in POSITION_CONTEXT:
-        if _has(words, low):
-            return pin if income else pout
-    for text in (name, low):
+    for text in dict.fromkeys((low_l, low)):
+        for words, pin, pout in POSITION_CONTEXT:
+            if _has(words, text):
+                return pin if income else pout
+    for text in texts:
         for words, pin, pout in POSITION_HINTS:
             if _has(words, text):
                 return pin if income else pout
@@ -944,7 +948,8 @@ def transfer_check(config: dict) -> Callable[[str], bool]:
     """Is a category a transfer between your own accounts? Your choice for it or the nearest category above it decides;
     without one: a transfer category (Einstellungen: umbuchungs_kategorien) -- by its path, one above it or its name."""
     mine = my_positions(config)
-    names = {fold_text(norm_cat(c)) for c in ((config.get("kapitalfluss") or {}).get("umbuchungs_kategorien") or ["Umbuchung"]) if c}
+    names = {fold_text(f(c)) for c in ((config.get("kapitalfluss") or {}).get("umbuchungs_kategorien") or ["Umbuchung"]) if c
+             for f in (norm_cat, legacy_cat)}                # "Finanzen/Intern" written by hand: also as two levels
     memo: Dict[str, bool] = {}
 
     def check(path: str) -> bool:
@@ -958,9 +963,13 @@ def transfer_check(config: dict) -> Callable[[str], bool]:
                 if v:
                     r = v == "umbuchung"
                     break
-            if r is None:
-                low = [fold_text(x) for x in parts]
-                r = bool(parts) and (low[-1] in names or low[-1] in TRANSFER_NAMES or any(" / ".join(low[:i]) in names for i in range(1, len(low) + 1)))
+            if r is None:                              # by its name -- also read as before 3.13.19 ('Eigene Konten/Umbuchung')
+                r = False
+                for ps in (parts, legacy_cat(p).split(" / ") if p else []):
+                    low = [fold_text(x) for x in ps]
+                    if ps and (low[-1] in names or low[-1] in TRANSFER_NAMES or any(" / ".join(low[:i]) in names for i in range(1, len(low) + 1))):
+                        r = True
+                        break
             memo[p] = r
         return r
     return check

@@ -1,6 +1,6 @@
 # Kontor – Help
 
-Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sheet, a cash flow, a plan and a tax overview – for you privately and for each company separately. It runs as a small service on your Mac; you open the interface in your browser at `http://127.0.0.1:8765/` – or as an app of its own in the Dock (Safari: File → Add to Dock). **⌘L** locks. This help is also available in Kontor itself (menu “Help”, searchable).
+Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sheet, a cash flow, a plan and a tax overview – for you privately and for each company separately. It runs as a small service on your Mac; you open the interface in your browser at `http://127.0.0.1:8765/` – or as an app of its own in the Dock (Safari: File → Add to Dock); there the menu leads everywhere, a two-finger swipe does not page back. **⌘L** locks. This help is also available in Kontor itself (menu “Help”, searchable).
 
 ![Overview](img/en/overview.png)
 
@@ -210,18 +210,14 @@ A row shows only where there is money in it. How far the table is opened you cho
 <a id="cash-flow-charts"></a>
 ### Charts
 
-Below the table, charts show the same figures for a period you choose above them (the last twelve months, a year, or everything). Colour stands for the activity – operating, investing, financing – as at the table's sections:
+Below the table, charts show the same figures for a period you choose above them: the last twelve months (default), a year, or a range of your own (click a month). They end at the last closed month: a month just begun would look too cheap next to whole ones; the table shows it hatched. Colour stands for the activity – operating, investing, financing – as at the table's sections; income is green, expenses red:
 
-- **From cash at the start to cash at the end** – a bridge: income, expenses and each kind of investing and financing as a column of its own, each starting where the one before ends. At a glance you see how much came in and where it went.
-- **Cash flow per month** – inflows up, outflows down, stacked by activity; the line is the change in cash. Large one-offs (a loan, buying a property) stand out at once. With more than three years, per year.
+- **Cash bridge** – from the cash at the start to the cash at the end: per activity (surplus, investing, financing) its sum and below it its parts, each bar starting where the one before ended; beside it the change against the period before. Hovering shows the period before, the share of income and the parts.
+- **Inflows and outflows by month** – income and other inflows up, expenses and other outflows down, stacked by kind; below, on a scale of its own, the change in cash. When single months are far larger than the rest (a property bought, say), the scale follows the rest; those bars are cut, marked with two strokes and labelled with their height. With more than three years per year.
+- **Cumulative surplus** – the surplus added up month by month, over the period against the period before; above, the total and its change.
+- **Expenses vs. period before** – expenses by position as a ring (switchable to income, then in green), the darker the larger the share; the period before is the same months a year earlier (for more than twelve months, further back accordingly); in the middle the total and its change, beside it each position's amount and change (without a period before it is called “What expenses are made of”). Hovering the middle names both periods and amounts; hovering a slice shows its categories in an outer ring. A click keeps the slice open and labels its categories; a second click, a click beside it or Esc goes back. A change of ±0 % means the same amount; “Others” show a change only where each of them has a period before.
+- **Expenses by month** – beside the ring and switched to income with it: one strip per position, the darker, the more that month. Every cell is on the same scale, so a large position stands out against a small one; annual payments and outliers stand out. On the right the average per month (more than two years: cells by quarter); hovering a cell shows which categories made up that month.
 - **Sources and uses of cash** – on the left everything that came in (income, loans, sales, less cash), on the right what it was used for (expenses, investments, repayment, interest, more cash); both sides add up to the same sum.
-- **Expenses by position** and **income by position** – amount and change against the period before (the twelve months before, or the same months of the year before). Hovering a position splits its bar into its categories; the tooltip names share, the period before and the categories with colour, amount and change.
-- **What expenses are made of** – the same positions as a ring, the darker the larger the share; in the middle the total and its change, beside it each position's amount and change. Hovering a slice shows its categories in an outer ring.
-- **Rolling 12 months** – income, expenses and surplus, each point the sum of the last twelve months: one-offs are spread out, the trend remains.
-- **Savings rate** – the surplus as a share of income over the last twelve months, with the figure a year earlier.
-- **Expenses by month** – one strip per position; the darker the red, the more went out that month (compared with the other months of the same position). Annual payments and outliers stand out.
-- **Cash runway** – how many months the bank balance covers the average expenses, interest and repayments of the last twelve months; with plan the line continues dashed.
-- **Surplus through the year** – added up month by month, this year against the year before.
 
 Hovering a column or bar shows the exact amounts.
 
@@ -236,7 +232,7 @@ Which position a MoneyMoney category counts in, Kontor proposes from its name; y
 <a id="categories"></a>
 ## Categories
 
-**MoneyMoney is the only truth.** Kontor has no categories of its own: it shows MoneyMoney's and helps fill the gaps.
+**MoneyMoney is the only truth.** Kontor has no categories of its own: it shows MoneyMoney's and helps fill the gaps. Subcategories follow their parent after “›” (Wohnen › Miete); a “/” is part of a name.
 
 | In MoneyMoney | In Kontor |
 |---|---|
@@ -272,7 +268,7 @@ Turn it on once (under Categories or Settings → General, only at the Mac). Saf
 
 The cash flow has a fixed outline; your MoneyMoney categories count in it. The page Cash flow positions (under Administration) is this mapping: on the left every MoneyMoney category with transactions and the sum of the last twelve months, on the right its position in the cash flow:
 
-- **Automatic** – like the category above it, otherwise Kontor's proposal from the name (such as “Einkommen / Rückzahlung Finanzamt” → refunds, “Sparen” → saving & investing).
+- **Automatic** – like the category above it, otherwise Kontor's proposal from the name (such as “Einkommen › Rückzahlung Finanzamt” → refunds, “Sparen” → saving & investing).
 - A position you choose also counts for all categories below it that have none of their own.
 - **Saving & investing** is no expense; under “Invested in” next to it you choose the account the money goes into (for this position only; more precisely per recipient, see below). **Transfer** (between own accounts) looks for the counter-booking, **Leave out** takes the category out (the check row names it).
 - A property's categories (Real estate → category) have rows of their own in cash flow, “rent” and “costs”.

@@ -134,3 +134,44 @@ class Proposals(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SlashInNames(unittest.TestCase):
+    """A slash within a category's name ('Strom/Gas') is part of the name, not another level; what was stored under its old
+    key follows once (made-up categories)."""
+
+    def test_keys(self):
+        from model import norm_cat, legacy_cat
+        self.assertEqual(norm_cat("Wohnen\\Strom/Gas"), "Wohnen / Strom/Gas")
+        self.assertEqual(norm_cat("Wohnen › Strom/Gas"), "Wohnen / Strom/Gas")         # as the page shows it
+        self.assertEqual(norm_cat("Wohnen / Miete"), "Wohnen / Miete")
+        self.assertEqual(legacy_cat("Wohnen / Strom/Gas"), "Wohnen / Strom / Gas")
+
+    def test_settings_follow(self):
+        import core
+        cats = [{"uuid": "a", "name": "Wohnen", "path": "Wohnen", "group": True}, {"uuid": "b", "name": "Strom/Gas", "path": "Wohnen\\Strom/Gas"},
+                {"uuid": "c", "name": "Miete", "path": "Wohnen\\Miete"}]
+        self.assertEqual(core.slash_renames(cats), {"Wohnen / Strom / Gas": "Wohnen / Strom/Gas"})
+        cfg = core.merged_config({"kapitalfluss": {"positionen": {"Wohnen / Strom / Gas": "wohnen", "Wohnen / Miete": "wohnen"},
+                                                   "kategorie_zu_konto": {}, "umbuchungs_kategorien": ["Umbuchung"]},
+                                  "immobilien": [{"id": "1", "name": "X", "kategorie": "Wohnen\\Strom\\Gas"}]})
+        out = core.follow_slashes(cfg, cats)
+        self.assertEqual(out["kapitalfluss"]["positionen"], {"Wohnen / Strom/Gas": "wohnen", "Wohnen / Miete": "wohnen"})
+        self.assertEqual(out["immobilien"][0]["kategorie"], "Wohnen\\Strom/Gas")
+        self.assertIsNone(core.follow_slashes(out, cats))                                 # once
+        # ambiguous (both forms exist): nothing moves
+        self.assertEqual(core.slash_renames(cats + [{"uuid": "d", "name": "Gas", "path": "Wohnen\\Strom\\Gas"}]), {})
+
+    def test_names_still_recognised(self):
+        """Recognising a category by its words reads a slash as before too: transfer and position proposals stay the same."""
+        import report
+        check = report.transfer_check({"kapitalfluss": {"umbuchungs_kategorien": ["Umbuchung"]}})
+        for p in ("Eigene Konten/Umbuchung", "Umbuchung/Sparen", "Finanzen\\Umbuchung"):
+            self.assertTrue(check(p), p)
+        self.assertFalse(check("Wohnen\\Strom/Gas"))
+        self.assertEqual(report.recognised_position("Steuern / Erstattung/Nachzahlung", False), report.recognised_position("Steuern / Erstattung / Nachzahlung", False))
+
+    def test_tax_setting_as_shown(self):
+        import tax
+        m = {"Versicherung › Haftpflicht": "Sonderausgaben"}
+        self.assertEqual(tax._position_for("Versicherung / Haftpflicht", m), "Sonderausgaben")

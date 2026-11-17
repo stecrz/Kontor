@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyNotRunning
-from model import UUID_RE, Account, Ledger, Tx, accounts_from_export, add_months, canon_tag, fmt_eur, marks_in, month_key, tx_from_export, norm_cat
+from model import UUID_RE, Account, Ledger, Tx, accounts_from_export, add_months, canon_tag, fmt_eur, marks_in, month_key, tx_from_export, norm_cat, legacy_cat
 import mm_categories
 import realestate
 import categorize
@@ -279,6 +279,57 @@ def recategorized(base: Ledger, fresh: List[Tx]) -> int:
 def category_tree(categories: Optional[List[dict]]) -> set:
     """MoneyMoney's categories as a set of (id, path): differs when one was added, deleted, renamed or moved."""
     return {(str(c.get("uuid") or ""), norm_cat(str(c.get("path") or c.get("name") or ""))) for c in categories or []}
+
+
+SLASH_VERSION = (3, 13, 19)          # from this version on a slash within a category's name is part of the name
+
+
+def before_slash_keys(v) -> bool:
+    """Was a package or backup made before 3.13.19 (its category keys split every slash)? Unknown counts as before."""
+    try:
+        return tuple(int(x) for x in str(v or "").split(".")[:3]) < SLASH_VERSION
+    except ValueError:
+        return True
+
+
+def slash_renames(categories: Optional[List[dict]]) -> Dict[str, str]:
+    """Categories with a slash within a name ('Strom/Gas'): their key before 3.13.19 (every slash split it) -> their key now,
+    where that is unambiguous."""
+    now = {norm_cat(str(c.get("path") or c.get("name") or "")) for c in categories or [] if isinstance(c, dict)}
+    by_old: Dict[str, List[str]] = defaultdict(list)
+    for p in now:
+        if p and legacy_cat(p) != p:
+            by_old[legacy_cat(p)].append(p)
+    return {o: ps[0] for o, ps in by_old.items() if len(ps) == 1 and o not in now}
+
+
+def follow_slashes(config: dict, categories: Optional[List[dict]]) -> Optional[dict]:
+    """What you set for such a category under its old key follows it to its key now (cash flow position, target account, a
+    property's category, transfer categories). None when nothing changed."""
+    ren = slash_renames(categories)
+    if not ren:
+        return None
+    cfg = copy.deepcopy(config)
+    kf = cfg.setdefault("kapitalfluss", {})
+    changed = False
+    for key in ("positionen", "kategorie_zu_konto"):
+        out = {}
+        for k, v in (kf.get(key) or {}).items():
+            p = norm_cat(str(k))
+            if p in ren:
+                out[ren[p]], changed = v, True
+            else:
+                out[k] = v
+        kf[key] = out
+    if isinstance(kf.get("umbuchungs_kategorien"), list):
+        new = [ren.get(norm_cat(str(x)), x) for x in kf["umbuchungs_kategorien"]]
+        if new != kf["umbuchungs_kategorien"]:
+            kf["umbuchungs_kategorien"], changed = new, True
+    for im in cfg.get("immobilien") or []:
+        p = norm_cat(str(im.get("kategorie") or "")) if isinstance(im, dict) else ""
+        if p and p in ren:
+            im["kategorie"], changed = ren[p].replace(" / ", "\\"), True
+    return cfg if changed else None
 
 
 def follow_categories(config: dict, old: Optional[List[dict]], new: Optional[List[dict]]) -> Optional[dict]:
@@ -740,7 +791,7 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         return ref(label, r, **kw)
 
     def cat(label, name):
-        name = name.replace(" / ", "\\") if name else name                # paths as Kontor's pages write them ("A / B")
+        name = norm_cat(name).replace(" / ", "\\") if name else name      # paths as Kontor's pages write them ("A / B", "A › B")
         if name and categories and name not in cat_names and name.split("\\")[-1] not in cat_names:
             add("warnung", tr("s_s_kategorie_s_existiert_nicht") % (label, name))
 

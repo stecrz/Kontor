@@ -43,7 +43,7 @@ import categorize
 import updates
 from receipts import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (REPORT_LOCK, RUN_LOCK, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, fix_start_dates, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+from core import (REPORT_LOCK, RUN_LOCK, slash_renames, follow_slashes, before_slash_keys, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, fix_start_dates, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, migrate_booking_state, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
@@ -313,6 +313,7 @@ class App:
         next read compares with is stored -- also when nothing else changed -- and what you set for a category follows it."""
         old = self.categories_raw
         self.categories_raw = cats
+        self._follow_slashes(cats)
         if category_tree(old) == category_tree(cats):
             return False
         self.store.update("state.json", lambda st: st.__setitem__("kategorien_roh", cats), {})
@@ -321,6 +322,49 @@ class App:
             self.save_config(cfg)
             log.info("Categories changed in MoneyMoney: settings followed")
         return bool(old)
+
+    SLASH_FLAG = "kategorie_schluessel_3_13_19"
+
+    def _follow_slashes(self, cats: list, force: bool = False) -> None:
+        """Since 3.13.19 a slash within a category's name ('Strom/Gas') no longer splits it: what was stored under its old key
+        (your settings, assignments waiting for MoneyMoney, learned and dismissed suggestions, the record of what Kontor wrote
+        there) follows -- once, at the first read of the categories (later a missing three-level category is one you renamed or
+        deleted, not an old key), and again right after a backup made before 3.13.19 was restored (force)."""
+        if not cats or (not force and (self.store.load_shared("state.json", {}) or {}).get(self.SLASH_FLAG)):
+            return
+        ren = slash_renames(cats)
+        if ren:
+            cfg = follow_slashes(self.config, cats)
+            if cfg is not None:
+                self.save_config(cfg)
+                log.info("Categories with a slash in their name: settings followed")
+            with categorize.LOCK:
+                kat = categorize.load(self.store)
+                moved = 0
+                for z in (kat.get("zuordnung") or {}).values():
+                    if isinstance(z, dict) and categorize.norm_cat(z.get("k") or "") in ren:
+                        z["k"] = ren[categorize.norm_cat(z["k"])]; moved += 1
+                for r in kat.get("regeln") or []:              # learned suggestions (learned anew at the next full read)
+                    if isinstance(r, dict) and categorize.norm_cat(r.get("kategorie") or "") in ren:
+                        r["kategorie"] = ren[categorize.norm_cat(r["kategorie"])]; moved += 1
+                done = []
+                for k in kat.get("regel_erledigt") or []:     # dismissed rule proposals: "category|expression"
+                    c, sep, rest = str(k).partition("|")
+                    if sep and categorize.norm_cat(c) in ren:
+                        k, moved = ren[categorize.norm_cat(c)] + "|" + rest, moved + 1
+                    done.append(k)
+                if moved:
+                    kat["regel_erledigt"] = done
+                    kat.pop("_idx", None)
+                    categorize.save(self.store, kat)
+
+        def fix(st: dict) -> None:
+            for e in (st.get(mm_categories.LOG_KEY) or {}).values():
+                for f in ("neu", "alt"):
+                    if ren and isinstance(e, dict) and categorize.norm_cat(e.get(f) or "") in ren:
+                        e[f] = ren[categorize.norm_cat(e[f])]
+            st[self.SLASH_FLAG] = True
+        self.store.update("state.json", fix, {})
 
     def set_ledger(self, ledger: Ledger, reuse: bool = False) -> None:
         """Neuen MoneyMoney-Stand uebernehmen. reuse=True: sind die Daten unveraendert, bleibt der bisherige Stand mit seinen
@@ -1025,6 +1069,10 @@ class App:
         category in MoneyMoney meanwhile, that one counts."""
         if not self.mm_write_on() or self.ledger is None:
             return 0
+        if not (self.store.load_shared("state.json", {}) or {}).get(self.SLASH_FLAG):
+            self._follow_slashes(self.categories_raw)        # keys from before 3.13.19 first (MoneyMoney's last known categories)
+            if not (self.store.load_shared("state.json", {}) or {}).get(self.SLASH_FLAG):
+                return 0                                     # no categories known yet: nothing is written (nor dropped)
         with categorize.LOCK:                            # nothing you assign meanwhile gets lost
             return self._flush_pending()
 
@@ -2115,6 +2163,8 @@ def make_handler(app: App):
                 if isinstance(pkg, str):
                     pkg = json.loads(pkg)
                 cfg, unresolved, report = import_package(app.config, pkg, app.ledger, body.get("modus") or "ergaenzen", body.get("zuordnung") or {})
+                if before_slash_keys(pkg.get("version")) and app.categories_raw:
+                    cfg = follow_slashes(cfg, app.categories_raw) or cfg       # its category keys split every slash
                 if not local:                              # what is switched only at the Mac stays as it is (as when saving settings)
                     cfg["probelauf"] = app.config.get("probelauf", True)
                     cfg.setdefault("moneymoney", {})["kategorisieren_erlauben"] = app.mm_write_on()
@@ -2229,6 +2279,11 @@ def make_handler(app: App):
                     app.store.save("receipts.json", sich["belege"]); teile.append(tr("s_teil_belegindex"))
                 if isinstance(sich.get("mm_verlauf"), dict) and sich["mm_verlauf"]:
                     app.store.save(MM_HISTORY_FILE, sich["mm_verlauf"]); teile.append(tr("s_teil_mm_verlauf"))
+                if before_slash_keys(sich.get("version")):     # its category keys split every slash: they follow once more
+                    if app.categories_raw:
+                        app._follow_slashes(app.categories_raw, force=True)
+                    else:
+                        app.store.update("state.json", lambda st: st.pop(App.SLASH_FLAG, None), {})
                 log.info("Backup restored: %s", ", ".join(teile))
                 ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund=tr("s_grund_sicherung")) if app.ledger is not None else (False, None)
                 return self._json(200, {"ok": True, "teile": teile, "bericht": ok, "config": app.config})

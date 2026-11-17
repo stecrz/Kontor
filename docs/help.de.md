@@ -1,6 +1,6 @@
 # Kontor – Hilfe
 
-Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilanz, einen Cashflow, eine Planung und eine Steuerübersicht – für dich privat und für jede Gesellschaft getrennt. Es läuft als kleiner Dienst auf deinem Mac, die Oberfläche öffnest du im Browser unter `http://127.0.0.1:8765/` – oder als eigene App im Dock (Safari: Ablage → Zum Dock hinzufügen). **⌘L** sperrt. Diese Hilfe steht auch in Kontor selbst (Menü „Hilfe“, durchsuchbar).
+Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilanz, einen Cashflow, eine Planung und eine Steuerübersicht – für dich privat und für jede Gesellschaft getrennt. Es läuft als kleiner Dienst auf deinem Mac, die Oberfläche öffnest du im Browser unter `http://127.0.0.1:8765/` – oder als eigene App im Dock (Safari: Ablage → Zum Dock hinzufügen); dort führt das Menü überallhin, Wischen mit zwei Fingern blättert nicht zurück. **⌘L** sperrt. Diese Hilfe steht auch in Kontor selbst (Menü „Hilfe“, durchsuchbar).
 
 ![Übersicht](img/de/overview.png)
 
@@ -210,18 +210,14 @@ Eine Zeile erscheint nur, wo Geld darin ist. Wie weit die Tabelle aufgeklappt is
 <a id="cash-flow-charts"></a>
 ### Diagramme
 
-Unter der Tabelle zeigen Diagramme dieselben Zahlen für einen Zeitraum, den du darüber wählst (die letzten zwölf Monate, ein Jahr oder alles). Die Farbe steht für die Tätigkeit – Überschuss, Investition, Finanzierung – wie an den Abschnitten der Tabelle:
+Unter der Tabelle zeigen Diagramme dieselben Zahlen für einen Zeitraum, den du darüber wählst: die letzten zwölf Monate (Standard), ein Jahr oder von–bis nach Wahl (Klick auf den Monat). Sie enden am letzten abgeschlossenen Monat: Ein angefangener Monat sähe neben ganzen zu günstig aus; in der Tabelle steht er schraffiert. Die Farbe steht für die Tätigkeit – Überschuss, Investition, Finanzierung – wie an den Abschnitten der Tabelle; Einnahmen sind grün, Ausgaben rot:
 
-- **Vom Bankguthaben am Anfang zum Ende** – eine Brücke: Einnahmen, Ausgaben und jede Art von Investition und Finanzierung als eigene Säule, jede beginnt, wo die vorige endet. So siehst du auf einen Blick, wie viel hereinkam und wohin es ging.
-- **Cashflow je Monat** – Zuflüsse nach oben, Abflüsse nach unten, nach Tätigkeit gestapelt; die Linie ist die Veränderung des Bankguthabens. Große Einmalposten (ein Darlehen, ein Immobilienkauf) fallen sofort auf. Bei mehr als drei Jahren je Jahr.
+- **Liquiditätsbrücke** – vom Bankguthaben am Anfang zum Ende: je Tätigkeit (Überschuss, Investitionen, Finanzierung) die Summe und darunter ihre Teile, jeder Balken beginnt, wo der vorige endet; daneben die Veränderung zur Vorperiode. Beim Darüberfahren: Vorperiode, Anteil an den Einnahmen und die Teile.
+- **Zu- und Abflüsse je Monat** – Einnahmen und andere Zuflüsse nach oben, Ausgaben und andere Abflüsse nach unten, nach Art gestapelt; darunter auf eigener Skala die Veränderung des Bankguthabens. Sind einzelne Monate viel größer als die übrigen (etwa ein Immobilienkauf), richtet sich die Skala nach den übrigen; diese Balken sind gekappt, mit zwei Strichen markiert und mit ihrer Höhe beschriftet. Bei mehr als drei Jahren je Jahr.
+- **Überschuss kumuliert** – der Überschuss Monat für Monat aufaddiert, im Zeitraum gegen die Vorperiode; oben die Summe und ihre Veränderung.
+- **Ausgaben gegenüber Vorperiode** – die Ausgaben nach Position als Ring (umschaltbar auf Einnahmen, dann in Grün), je dunkler, desto größer der Anteil; Vorperiode sind dieselben Monate ein Jahr davor (bei mehr als zwölf Monaten entsprechend weiter zurück); in der Mitte die Summe und ihre Veränderung, daneben je Position Betrag und Veränderung (ohne Vorperiode heißt er „Zusammensetzung der Ausgaben“). Fährst du über die Mitte, nennt sie beide Zeiträume und Beträge; über ein Stück, zeigt ein äußerer Ring seine Kategorien. Ein Klick hält das Stück offen und beschriftet seine Kategorien; ein zweiter Klick, ein Klick daneben oder Esc führt zurück. Eine Veränderung von ±0 % heißt: derselbe Betrag; „Übrige“ zeigen eine Veränderung nur, wenn jede darin eine Vorperiode hat.
+- **Ausgaben je Monat** – neben dem Ring und mit ihm umschaltbar auf Einnahmen: je Position ein Streifen, je dunkler, desto mehr in dem Monat. Alle Felder stehen auf derselben Skala, eine große Position hebt sich also von einer kleinen ab; Jahreszahlungen und Ausreißer fallen auf. Rechts steht der Durchschnitt je Monat (bei mehr als zwei Jahren Felder je Quartal); ein Feld zeigt beim Darüberfahren, aus welchen Kategorien sich der Monat zusammensetzt.
 - **Mittelherkunft und -verwendung** – links alles, was hereinkam (Einnahmen, Darlehen, Verkäufe, Abbau des Bankguthabens), rechts, wofür es verwendet wurde (Ausgaben, Investitionen, Tilgung, Zinsen, Aufbau des Bankguthabens); beide Seiten ergeben dieselbe Summe.
-- **Ausgaben nach Position** und **Einnahmen nach Position** – Betrag und Veränderung zur Vorperiode (die zwölf Monate davor bzw. dieselben Monate des Vorjahrs). Fährst du über eine Position, teilt sich ihr Balken in ihre Kategorien; der Tooltip nennt Anteil, Vorperiode und die Kategorien mit Farbe, Betrag und Veränderung.
-- **Zusammensetzung der Ausgaben** – dieselben Positionen als Ring, je dunkler, desto größer der Anteil; in der Mitte die Summe und ihre Veränderung, daneben je Position Betrag und Veränderung. Fährst du über ein Stück, zeigt ein äußerer Ring seine Kategorien.
-- **Rollierend 12 Monate** – Einnahmen, Ausgaben und Überschuss, jeder Punkt die Summe der letzten zwölf Monate: Einmalzahlungen verteilen sich, der Trend bleibt.
-- **Sparquote** – der Überschuss in Prozent der Einnahmen über die letzten zwölf Monate, mit dem Stand vor einem Jahr.
-- **Ausgaben je Monat** – je Position ein Streifen; je dunkler das Rot, desto mehr ging in dem Monat hinaus (im Verhältnis zu den anderen Monaten derselben Position). Jahreszahlungen und Ausreißer fallen auf.
-- **Reichweite des Bankguthabens** – wie viele Monate das Bankguthaben die durchschnittlichen Ausgaben, Zinsen und Tilgungen der letzten zwölf Monate deckt; mit Plan geht die Linie gestrichelt weiter.
-- **Überschuss im Jahresverlauf** – Monat für Monat aufaddiert, dieses Jahr gegen das Vorjahr.
 
 Fährst du über eine Säule oder einen Balken, stehen die genauen Beträge da.
 
@@ -236,7 +232,7 @@ In welcher Position eine Kategorie aus MoneyMoney zählt, schlägt Kontor nach i
 <a id="categories"></a>
 ## Kategorien
 
-**MoneyMoney ist die einzige Wahrheit.** Kontor hat keine eigenen Kategorien: Es zeigt die aus MoneyMoney und hilft, die Lücken zu füllen.
+**MoneyMoney ist die einzige Wahrheit.** Kontor hat keine eigenen Kategorien: Es zeigt die aus MoneyMoney und hilft, die Lücken zu füllen. Unterkategorien stehen mit „›“ hinter der übergeordneten (Wohnen › Miete); ein „/“ gehört zum Namen.
 
 | In MoneyMoney | In Kontor |
 |---|---|
@@ -272,7 +268,7 @@ Einmal einschalten (unter Kategorien oder Einstellungen → Allgemein, nur am Ma
 
 Der Cashflow hat eine feste Gliederung; deine Kategorien aus MoneyMoney zählen darin. Die Seite Cashflow-Positionen (unter Verwaltung) ist diese Zuordnung: links jede Kategorie aus MoneyMoney mit Umsätzen und der Summe der letzten zwölf Monate, rechts ihre Position im Cashflow:
 
-- **Automatisch** – wie die Kategorie darüber, sonst Kontors Vorschlag nach dem Namen (etwa „Einkommen / Rückzahlung Finanzamt“ → Erstattungen, „Sparen“ → Sparen & Anlegen).
+- **Automatisch** – wie die Kategorie darüber, sonst Kontors Vorschlag nach dem Namen (etwa „Einkommen › Rückzahlung Finanzamt“ → Erstattungen, „Sparen“ → Sparen & Anlegen).
 - Eine gewählte Position gilt auch für alle Kategorien darunter, solange sie keine eigene haben.
 - **Sparen & Anlegen** zählt nicht als Ausgabe; unter „Angelegt auf“ wählst du daneben das Konto, in das das Geld fließt (nur bei dieser Position; genauer je Empfänger, siehe unten). **Umbuchung** (zwischen eigenen Konten) sucht die Gegenbuchung, **Nicht berücksichtigen** nimmt die Kategorie heraus (die Prüfzeile nennt sie).
 - Kategorien einer Immobilie (Immobilien → Kategorie) haben im Cashflow eigene Zeilen „Miete“ und „Kosten“.

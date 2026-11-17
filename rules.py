@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from model import MARK, TAG_RE, Ledger, Tx, canon_tag, fmt_eur, has_mark, marks_in, month_end, months_between
+from model import MARK, TAG_RE, Ledger, Tx, canon_tag, fmt_eur, has_mark, marks_in, month_end, months_between, norm_cat
 from i18n import tr
 
 
@@ -365,14 +365,14 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
                                  fmt_eur(year_cache[y][2])))
         return year_cache[y]
 
-    zins_cat = str(cat_zins or "").split("\\")[-1].strip().lower()
+    zins_cat = norm_cat(str(cat_zins or "")).split(" / ")[-1].lower()           # its name ('Zinsen/Gebühren' stays whole)
 
     def own_interest(t: Tx) -> bool:
         """Interest you booked yourself: no mark of Kontor, "Zins" in its text or the interest category."""
         if has_mark(t.purpose + " " + t.comment):
             return False
         path = t.mm_category_path if t.mm_category_path is not None else t.category_path
-        return "zins" in t.text.lower() or bool(zins_cat and str(path or "").replace("\\", "/").split("/")[-1].strip().lower() == zins_cat)
+        return "zins" in t.text.lower() or bool(zins_cat and norm_cat(str(path or "")).split(" / ")[-1].lower() == zins_cat)
     own: Dict[Tuple[int, int], List[Tx]] = {}
     for t in loan_txs:
         if own_interest(t):

@@ -1,5 +1,16 @@
 # Änderungen
 
+## 3.13.19 (2026-11-17 19:43)
+- **Zeitraum der Diagramme:** 12 Monate (Standard), ein Jahr oder Von–Bis nach Wahl, gut sichtbar neben der Auswahl; „Alle“ entfällt. Alle Diagramme enden am letzten abgeschlossenen Monat und folgen dem Zeitraum; Vorperiode sind dieselben Monate ein Jahr davor.
+- **Liquiditätsbrücke** (statt „Vom Bankguthaben …“): Anfangsbestand, je Tätigkeit Summe und Teile, Endbestand, Veränderung zur Vorperiode; Details beim Darüberfahren.
+- **Zu- und Abflüsse je Monat:** Einnahmen, Ausgaben, Investitionen und Finanzierung gestapelt, die Veränderung des Bankguthabens auf eigener Skala darunter; einzelne Riesenmonate gekappt und beschriftet.
+- **Ausgaben gegenüber Vorperiode:** Ring umschaltbar auf Einnahmen; Mitte mit beiden Zeiträumen beim Darüberfahren; ein Klick hält eine Position offen und beschriftet ihre Kategorien. „±0 %“ nur bei gleichem Betrag, „Übrige“ nur mit vollständigem Vergleich.
+- **Heatmap** neben dem Ring, schaltet mit ihm um: eine Skala für alle Felder, Ø je Monat rechts, im Tooltip die Kategorien des Monats.
+- **Überschuss kumuliert** über den Zeitraum gegen die Vorperiode.
+- Entfernt: Balken nach Position, Sparquote, Reichweite, Rollierend 12 Monate.
+- **Kategorienpfade mit „›“:** Ein „/“ im Namen (z. B. „Strom/Gas“) ist keine eigene Ebene mehr; Einstellungen und wartende Zuordnungen ziehen einmalig mit.
+- **Web-App im Dock:** Wischen mit zwei Fingern blättert nicht mehr zurück.
+
 ## 3.13.18 (2026-11-17 18:36)
 - **Neue Diagramme im Cashflow zur Auswahl:** Zusammensetzung der Ausgaben (Ring mit Beschriftung rundherum, beim Darüberfahren die Kategorien), Einnahmen nach Position, Rollierend 12 Monate, Sparquote, Ausgaben je Monat (Jahreszahlungen und Ausreißer auf einen Blick), Reichweite des Bankguthabens und Überschuss im Jahresverlauf.
 - **Abkürzungen:** CFO, CFI und CFF klein neben Überschuss, Investitionen und Finanzierung.

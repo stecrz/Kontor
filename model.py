@@ -22,11 +22,22 @@ ROOT_NAMES = {"alle konten", "all accounts"}
 
 
 
+_CAT_SPLIT = re.compile(r"\s*\\\s*|\s+/\s+|\s*\u203a\s*")
+
+
 @lru_cache(maxsize=4096)
 def norm_cat(path: str) -> str:
-    """Kategoriepfad vereinheitlichen: 'A\\B', 'A \\ B' und 'A / B' werden zu 'A / B' (Teile getrimmt)."""
-    parts = [p.strip() for p in re.split(r"[\\/]", str(path or ""))]
+    """Kategoriepfad vereinheitlichen: 'A\\B' (MoneyMoney), 'A / B' (Kontors Schluessel) und 'A › B' (wie Kontor ihn zeigt)
+    werden zu 'A / B' (Teile getrimmt). Ein Schraegstrich ohne Leerzeichen gehoert zum Namen ('Strom/Gas')."""
+    parts = [p.strip() for p in _CAT_SPLIT.split(str(path or ""))]
     return " / ".join(p for p in parts if p)
+
+
+def legacy_cat(path: str) -> str:
+    """A category's key before 3.13.19: every slash split it, also one within a name."""
+    parts = [p.strip() for p in re.split(r"[\\/\u203a]", str(path or ""))]
+    return " / ".join(p for p in parts if p)
+
 
 @dataclass
 class Account:

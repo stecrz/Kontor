@@ -21,7 +21,7 @@ from collections import defaultdict
 from datetime import date
 from typing import Dict, List, Optional
 
-from model import Ledger, Tx
+from model import Ledger, Tx, norm_cat
 from report import ASSET_ROLES, COST_WORDS, account_roles, _is_cost
 from model import MARK, marks_in
 
@@ -62,7 +62,7 @@ def _position_for(path: str, mapping: Dict[str, str]) -> str:
     for k, v in mapping.items():
         if k.startswith("_"):
             continue
-        kl = k.replace("\\", " / ").lower()
+        kl = norm_cat(k).lower()                         # "A\\B", "A / B" or "A › B" (as the page shows it)
         if low == kl or low.startswith(kl + " / ") or low.split(" / ")[0] == kl:
             return v
     for hint, pos in POSITION_HINTS:
