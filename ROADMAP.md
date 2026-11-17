@@ -31,7 +31,7 @@ Fertig, wenn
 - sie am iPhone genauso gut lesbar ist wie am Mac; ohne „Alpha“.
 
 ## Als Nächstes (Cashflow und Kategorien)
-- 3.13.15 Anlageziel je Empfänger (IBAN) statt je Kategorie; Anlagen ohne Ziel nicht als Kursgewinn, sondern offen ausweisen.
+- [x] 3.13.15 Anlageziel je Empfänger (IBAN) statt je Kategorie; Anlagen ohne Ziel nicht als Kursgewinn, sondern offen ausweisen.
 - 3.13.16 Empfohlener Kategorienbaum (Checkliste zum Anlegen in MoneyMoney; Kontor legt selbst nur an, falls MoneyMoney es anbietet und du freigibst), Hinweis bei gemischten Kategorien, Zuordnen je Empfänger in einem Schritt, Fortschritt „sicher zugeordnet / geschätzt“.
 
 ## Laufend

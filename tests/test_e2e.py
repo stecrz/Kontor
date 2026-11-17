@@ -1156,6 +1156,16 @@ class AppTests(_AppBase):
         self.assertEqual(r["config"]["kapitalfluss"]["positionen"], {})
         self.assertEqual(self.call("/api/categories/positions", {"positionen": {"Lebensmittel": "erfunden"}})[0], 400)
         self.assertEqual(self.call("/api/categories/positions", {"konten": {"Sparen": "kein Konto"}})[0], 400)
+        # the account per recipient (Zielkonto je Empfänger): your choice for the broker comes before the category's account
+        an = lambda: {a["key"]: a for a in self.store.load("dataset.json")["bereiche"][F.uid("priv")]["kapitalfluss"]["anlagen"]}
+        self.assertEqual((an()["broker"]["wie"], an()["broker"]["ziel"]), ("kategorie", F.uid("priv.depot")))
+        code, r = self.call("/api/categories/positions", {"empfaenger": {F.uid("priv"): {"broker": "extern"}}, "warten": True})
+        self.assertEqual(r["config"]["kapitalfluss"]["empfaenger_zu_konto"], {F.uid("priv"): {"broker": "extern"}})
+        self.assertEqual(an()["broker"]["wie"], "extern"); self.assertIn("Sparen & Anlegen", {z["gruppe"] for z in rows().values()})
+        self.assertEqual(self.call("/api/categories/positions", {"empfaenger": {F.uid("priv"): {"broker": "kein Konto"}}})[0], 400)
+        self.assertEqual(self.call("/api/categories/positions", {"empfaenger": {F.uid("priv"): ["broker"]}})[0], 400)
+        code, r = self.call("/api/categories/positions", {"empfaenger": {F.uid("priv"): {"broker": ""}}, "warten": True})
+        self.assertEqual(r["config"]["kapitalfluss"]["empfaenger_zu_konto"], {}); self.assertEqual(an()["broker"]["wie"], "kategorie")
         self.assertFalse([w for b in MockBridge.instances for w in b.written if w[0] == "set" and w[2] is not None])
 
     def test_zugriff_vom_iphone(self):
@@ -2688,13 +2698,14 @@ class BrowserTest(unittest.TestCase):
                 self.assertFalse(pg.query_selector_all("tr.check td.warn"))
                 self.assertIn("✓", pg.inner_text("tr.check"))
                 # one outline: sections open and close, positions open to their categories; three levels (overview: sections and results only)
-                self.assertEqual(pg.inner_text("#cf-ebene button.on"), "Positionen")
+                self.assertEqual(pg.get_attribute("#cf-ebene button.on", "aria-label"), "Positionen")     # four levels as icons, named
+                self.assertEqual(len(pg.query_selector_all("#cf-ebene button svg")), 4)
                 self.assertTrue(pg.query_selector("#main .cf-tbl thead th:first-child #cf-ebene"))       # in the table, over the triangles
                 self.assertTrue(pg.query_selector("#main .cf-tbl thead th:first-child a.cf-set[href='#positions']"))   # the gear to the positions
                 self.assertIsNone(pg.query_selector("#main .toolbar a[href='#positions']"))
                 # iPhone: one large triangle -- each tap a level further, after everything closed again
                 lv = lambda: pg.evaluate("S.cfEbene")
-                for want in (2, 0, 1):
+                for want in (3, 0, 1, 2):
                     pg.evaluate("document.querySelector('.cf-lv-btn').click()"); pg.wait_for_timeout(250)
                     self.assertEqual(lv(), want)
                 # a cash flow statement: operating (income and expenses within), investing, financing -- then the cash and net worth
@@ -2709,14 +2720,17 @@ class BrowserTest(unittest.TestCase):
                 pg.click("button.disc[data-tog^='d:']"); pg.wait_for_selector("tr.det")                 # a position: its categories
                 pg.click(N_ + " tr.sec2[data-tog='s:Einnahmen'] td"); pg.wait_for_timeout(200)      # income closes (its total stays)
                 self.assertIsNone(pg.query_selector("tr[data-key^='Einnahmen/']")); self.assertTrue(pg.query_selector("tr[data-key^='Ausgaben/']"))
-                pg.click("#cf-ebene button[data-e='0']"); pg.wait_for_timeout(200)                        # overview: activities with their kinds, no positions
+                pg.click("#cf-ebene button[data-e='0']"); pg.wait_for_timeout(200)                        # main lines: the three cash flows, the results
+                self.assertEqual(pg.eval_on_selector_all(F_ + " tbody tr", "e => e.filter(x => !x.matches('.sec, .total, .bal, .check')).length"), 0)
+                self.assertEqual(pg.eval_on_selector_all(F_ + " tr.sec", "e => e.map(x => x.dataset.tog)")[:3], ["s:Operativ", "s:Investitionen", "s:Finanzierung"])
+                pg.click("#cf-ebene button[data-e='1']"); pg.wait_for_timeout(200)                        # overview: activities with their kinds, no positions
                 self.assertEqual(len(pg.query_selector_all("#main .cf-tbl tr[data-key^='Einnahmen/'], #main .cf-tbl tr[data-key^='Ausgaben/'], #main .cf-tbl tr[data-key^='Investitionen/']")), 0)
                 self.assertTrue(pg.query_selector("tr.sec2[data-tog='s:Einnahmen']")); self.assertTrue(pg.query_selector("tr.sub[data-tog='g:Investitionen|Wertpapiere & Geldanlagen']"))
                 self.assertEqual(len(pg.query_selector_all(F_ + " tr.total")), 2); self.assertEqual(len(pg.query_selector_all(F_ + " tr.check")), 2)
                 self.assertLess(pg.evaluate("document.querySelector('#main .cf-tbl').offsetHeight"), 760)   # fits on a page
-                pg.click("#cf-ebene button[data-e='2']"); pg.wait_for_selector("tr.det")                 # details: everything open
+                pg.click("#cf-ebene button[data-e='3']"); pg.wait_for_selector("tr.det")                 # details: everything open
                 self.assertGreater(len(pg.query_selector_all(F_ + " tr.det")), 2)
-                pg.click("#cf-ebene button[data-e='1']"); pg.wait_for_timeout(200)
+                pg.click("#cf-ebene button[data-e='2']"); pg.wait_for_timeout(200)
                 for tip in pg.eval_on_selector_all("#main .cf-tbl .hq", "e => e.map(x => x.dataset.tip)"):  # headings are explained by their "?"
                     self.assertTrue(tip)
                 self.assertNotIn("Tilgung +", pg.inner_text(N_))
@@ -2763,7 +2777,14 @@ class BrowserTest(unittest.TestCase):
                 # 4. expenses by position: amount, share, the period before, change; their sum
                 card = ".cf-card:has(.cf-list.ex)"
                 self.assertEqual(num(pg.inner_text(card + " .cf-val")), -want["aus"])
-                self.assertEqual(pg.eval_on_selector_all(card + " .cf-row.head span", "e => e.map(x => x.textContent).filter(Boolean)"), ["Betrag", "Anteil", "Vorperiode", "Veränderung"])
+                # red bars (expenses), narrow beside the bridge; the figures in the tooltip (hover, on the iPhone a tap)
+                self.assertTrue(pg.query_selector(card + " .cf-bar.out")); self.assertIsNone(pg.query_selector(card + " .cf-row.head"))
+                self.assertEqual(pg.evaluate("getComputedStyle(document.querySelector('.cf-card:has(.cf-list.ex)')).gridColumnStart"), "span 1")
+                pg.hover(card + " .cf-row.cf-ex >> nth=0"); pg.wait_for_timeout(150)
+                tip = pg.inner_text("#cf-tip")
+                for w in ("Betrag", "Anteil", "Vorperiode", "Veränderung"):
+                    self.assertIn(w, tip)
+                pg.mouse.move(5, 5)
                 # a position with several categories splits its bar, the tooltip names them with their colour and change
                 html = pg.evaluate("""(() => { const D = JSON.parse(JSON.stringify(B())), ms = D.monate.filter(m => m <= D.ist_bis);
                     const z = D.kapitalfluss.sektionen.find(s => s.name === 'Ausgaben').zeilen[0], w = Object.fromEntries(ms.map(m => [m, -100]));
@@ -2789,6 +2810,11 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#main a[href='#positions']"); pg.wait_for_selector(".kp-table tr[data-p]")
                 self.assertEqual(pg.inner_text("#page-title"), "Cashflow-Positionen"); self.assertTrue(pg.query_selector("#nav a.on[href='#positions']"))
                 self.assertIn("→", pg.inner_text(".kp-table tbody tr td.kp-arrow"))
+                # the account per recipient: Kontor's choice named in the first entry; a choice of your own can be saved
+                sel = ".ka-table tr[data-key='broker'] select.ka-ziel"
+                self.assertIn("Depot", pg.inner_text(sel + " option >> nth=0")); self.assertTrue(pg.is_disabled("#kp-save"))
+                pg.select_option(sel, "extern"); self.assertFalse(pg.is_disabled("#kp-save"))
+                pg.select_option(sel, ""); self.assertTrue(pg.is_disabled("#kp-save"))
                 pg.evaluate("location.hash = '#categories/positions'"); pg.wait_for_timeout(400)
                 self.assertEqual(pg.evaluate("location.hash"), "#positions"); self.assertTrue(pg.query_selector(".kp-table"))
                 pg.click("#nav a[href='#categories']"); pg.wait_for_timeout(400)

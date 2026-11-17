@@ -112,7 +112,7 @@ const H = {
   cf_operativ: t('cf_operativ_tip'), cf_invest: t('cf_invest_tip'), cf_finanz: t('cf_finanz_tip'), cf_bruecke: t('cf_bruecke_tip'), cf_je_monat_t: t('cf_je_monat_tip'), cf_herkunft_verwendung: t('cf_herkunft_verwendung_tip'),
   cf_unklar: t('cf_unklar_tip'), cf_wert: t('cf_wert_tip'), cf_bank: t('cf_bank_tip'), cf_nv: t('cf_nv_tip'), cf_abgleich_bank: t('cf_abgleich_bank_tip'),
   cf_abgleich_nv: t('cf_abgleich_nv_tip'),
-  zielkonto: t('zielkonto_tip'),
+  zielkonto: t('zielkonto_tip'), anl_empfaenger: t('anl_tip'),
   voll_lesen: t('voll_lesen_tip'),
   kennung: t('interne_kennung_des_bereichs_wird'),
   intervall: t('der_dienst_liest_alle_n'),
@@ -169,7 +169,7 @@ const H = {
 };
 const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   konten_zuordnung: 'accounts', inaktiv: 'accounts', verlauf_kurz: 'history', verlauf: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
-  zuordnen: 'categories', regeln_mm: 'categories-rules', mm_cat: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'categories-positions',
+  zuordnen: 'categories', regeln_mm: 'categories-rules', mm_cat: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'categories-positions', anl_empfaenger: 'positions-recipients',
   cf_operativ: 'cash-flow', cf_invest: 'cash-flow', cf_finanz: 'cash-flow', cf_unklar: 'cash-flow', cf_wert: 'cash-flow',
   cf_bank: 'cash-flow', cf_nv: 'cash-flow', cf_abgleich_bank: 'cash-flow', cf_abgleich_nv: 'cash-flow', cf_bruecke: 'cash-flow-charts', cf_je_monat_t: 'cash-flow-charts', cf_herkunft_verwendung: 'cash-flow-charts',
   abgleich: 'sync', ab_art: 'sync', voll_lesen: 'sync', monate_zurueck: 'sync', abruf: 'sync', intervall: 'sync',
@@ -229,7 +229,7 @@ document.addEventListener('click', e => {
   window.addEventListener('scroll', hide, true); window.addEventListener('resize', hide);
 })();
 
-const S = { tab: 'overview', modus: 'monate', plan: true, real: false, alle: false, collapsed: {}, offen: {}, csrf: null, bereich: null, cfEbene: 1, cfTog: {}, cfZeit: '12m',
+const S = { tab: 'overview', modus: 'monate', plan: true, real: false, alle: false, collapsed: {}, offen: {}, csrf: null, bereich: null, cfEbene: 2, cfTog: {}, cfZeit: '12m',
             DATA: null, CFG: null, KONTEN: [], KATS: [], STATUS: null, steuerJahr: null, steuerEnt: null, vorschlag: false,
             uf: {entitaet: '', jahr: '', konto: '', q: '', ohne_beleg: false, ohne_kategorie: false, richtung: ''}, sel: new Set(), drawerTx: null };
 
@@ -2685,7 +2685,7 @@ const METH = {gleitend12: t('12_monate'), gleitend6: t('6_monate'), vorjahr: t('
 // How far the table is opened: 0 overview (activities with income, expenses and the kinds of investing and financing: one
 // page), 1 positions (and the accounts and loans), 2 everything (MoneyMoney's categories). A row you open or close yourself
 // keeps that until you choose a level again. depth: 0 activity, 1 income/expenses or a kind, 2 a position or account, 3 more.
-const cfOpen = (id, depth) => S.cfTog[id] ?? (S.cfEbene >= 2 || depth <= S.cfEbene);
+const cfOpen = (id, depth) => S.cfTog[id] ?? (S.cfEbene >= 3 || depth < S.cfEbene);      // levels 0-3: main lines ... everything
 // the first year of the month view, one year back or forth (the year view shows all years)
 function yearCtl() {
   const D = B(); if (!D || S.modus === 'jahre' || !(D.monate || []).length) return '';
@@ -2702,11 +2702,14 @@ function vKapitalfluss(editable) {
   const mv = new Map(), ms = new Map();
   const vOf = (z, c) => { let v = mv.get(z); if (!v) mv.set(z, v = Object.assign({}, z.werte, (z.plan && z.plan.werte) || {})); return sumOver(v, c.months); };
   const sOf = (z, c) => { let v = ms.get(z); if (!v) ms.set(z, v = Object.assign({}, z.werte, (z.plan && z.plan.vorschlag) || {})); return sumOver(v, c.months); };
-  const levels = [t('cf_ueberblick'), t('cf_positionen'), t('cf_details')];
-  // The header cell of the table: how far it is opened, right above the triangles (Mac: the three levels; iPhone: one large
-  // triangle -- each tap opens a level more, after everything it closes again), and the gear to the positions' settings.
-  const lvTips = [t('cf_ebene_tip_0'), t('cf_ebene_tip_1'), t('cf_ebene_tip_2')], nextLv = (S.cfEbene + 1) % 3;
-  const lvCtl = `<div class="cf-lv"><div class="seg small" id="cf-ebene" role="group" aria-label="${esc(t('cf_ebene_tip'))}">${levels.map((l, i) => `<button data-e="${i}" class="${S.cfEbene === i ? 'on' : ''}" title="${esc(lvTips[i])}">${l}</button>`).join('')}</div>`
+  const levels = [t('cf_hauptebenen'), t('cf_ueberblick'), t('cf_positionen'), t('cf_details')];
+  // The header cell of the table: how far it is opened, right above the triangles (Mac: four small outline icons, named in
+  // their tooltips; iPhone: one large triangle -- each tap opens a level more, after everything it closes again), and the gear to the
+  // positions' settings.
+  const lvTips = [t('cf_ebene_tip_0'), t('cf_ebene_tip_1'), t('cf_ebene_tip_2'), t('cf_ebene_tip_3')], nextLv = (S.cfEbene + 1) % 4;
+  // each level as a small outline: its lines indented as deep as the level opens the table (main lines: all flush left)
+  const lvIcon = n => `<svg viewBox="0 0 18 16" width="18" height="16" aria-hidden="true" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">${[[0, 0, 0], [0, 1, 1], [0, 1, 2], [0, 1, 2, 3]][n].map((d, k, a) => { const y = 2 + k * (12 / (a.length - 1)), x = 1.2 + d * 3.2; return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.1" stroke="none"/><path d="M${(x + 2.6).toFixed(1)} ${y.toFixed(1)}h${(9.4 - d * 1.4).toFixed(1)}"/>`; }).join('')}</svg>`;
+  const lvCtl = `<div class="cf-lv"><div class="seg small" id="cf-ebene" role="group" aria-label="${esc(t('cf_ebene_tip'))}">${levels.map((l, i) => `<button data-e="${i}" class="${S.cfEbene === i ? 'on' : ''}" title="${esc(lvTips[i])}" aria-label="${esc(l)}">${lvIcon(i)}</button>`).join('')}</div>`
     + `<button class="cf-lv-btn lv${S.cfEbene}" data-e="${nextLv}" title="${esc(t(nextLv ? 'cf_weiter_aufklappen' : 'cf_alles_zuklappen'))}" aria-label="${esc(t(nextLv ? 'cf_weiter_aufklappen' : 'cf_alles_zuklappen'))}"><i>▸</i><span>${levels[S.cfEbene]}</span></button>`
     + `<a class="cf-set" href="#positions" title="${esc(t('cf_positionen_einstellen'))}" aria-label="${esc(t('cf_positionen_einstellen'))}">${ICON.gear}</a></div>`;
   let h = `<div class="toolbar">${viewCtl()}${yearCtl()}<span class="tb-sep"></span>${alleCtl(0)}${editable ? swCtl('realan', S.real, t('inflationsbereinigt'), t('inflationsbereinigt_tip')) : planCtl()}<span class="sp"></span>`
@@ -2766,7 +2769,8 @@ function vKapitalfluss(editable) {
               <input class="pct steig" type="number" step="0.1" placeholder="% p.a." value="${(D.plan.zeilen || {})[key]?.steigerung_prozent_pa ?? ''}" title="${t('steigerung_p_a_leer_standard')}">
               <button class="save small" title="${t('uebernehmen')}">✓</button>${ov.size ? `<button class="small secondary reset-row" data-key="${esc(key)}" title="${t('alle_ueberschreibungen_loeschen')}">↺</button>` : ''}</div>`;
         }
-        const zu = !editable && z.lbl && z.lbl[0] === 'cf_ohne_kategorie' ? ` <a href="#categories" class="small">${t('zuordnen')}</a>` : '';
+        const zu = editable || !z.lbl ? '' : z.lbl[0] === 'cf_ohne_kategorie' ? ` <a href="#categories" class="small">${t('zuordnen')}</a>`
+          : z.lbl[0] === 'cf_anlage_ohne_ziel' ? ` <a href="#positions" class="small">${t('cf_ziel_festlegen')}</a>` : '';
         const det = (z.details || []).length, open = det && cfOpen(did, depth);
         o += `<tr class="${ind(depth).trim()}${det ? ' has-det' : ''}" data-key="${esc(key)}"${det ? ` data-tog="${esc(did)}" data-depth="${depth}"` : ''}><td title="${esc(full)}">${det ? caret(did, depth, open) : NOCARET}${esc(label)}${zu}${editable && p.methode && p.methode !== 'darlehen' ? `<span class="tag">${METH[p.methode] || p.methode}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
           + vals.map((v, i) => {
@@ -2905,9 +2909,12 @@ function vCfCharts(D) {
     return h + `<div class="card cf-empty muted small">${t('cf_keine_zahlungen')}</div></div>`;          // nothing to draw
   CF.tips = [];
   const leg = `<span class="cf-leg">${CF_ACT.map(([n, k]) => `<span><i class="sw ${k}"></i>${SEC_LABEL[n]}</span>`).join('')}</span>`;
-  h += `<div class="card bch cf-card"><div class="lc-head"><b class="lc-title">${t('cf_bruecke')}${hq('cf_bruecke')}</b>${leg}</div><div class="cf-plot" id="cf-bridge"></div></div>`;
-  h += `<div class="card bch cf-card"><div class="lc-head"><b class="lc-title">${t('cf_je_monat_t')}${hq('cf_je_monat_t')}</b><span class="cf-leg">${CF_ACT.map(([n, k]) => `<span><i class="sw ${k}"></i>${SEC_LABEL[n]}</span>`).join('')}<span><i class="ln"></i>${t('zahlungsfluss_gesamt_veraenderung_liqu')}</span></span></div><div class="cf-plot" id="cf-months"></div></div>`;
-  h += cfSourcesUses(D, cur) + cfExpenses(D, cur, cfMonths(D, S.cfZeit)[1]) + `<div class="cf-tip hidden" id="cf-tip" role="tooltip"></div></div>`;
+  // two rows of a three-column grid: the wide charts beside a narrow one (the bridge beside the expenses, the months beside sources
+  // and uses); a narrow window stacks them
+  const ex = cfExpenses(D, cur, cfMonths(D, S.cfZeit)[1]), su = cfSourcesUses(D, cur), wide = side => side ? 'cf-wide' : 'cf-full';
+  h += `<div class="cf-grid"><div class="card bch cf-card ${wide(ex)}"><div class="lc-head"><b class="lc-title">${t('cf_bruecke')}${hq('cf_bruecke')}</b>${leg}</div><div class="cf-plot" id="cf-bridge"></div></div>` + ex;
+  h += `<div class="card bch cf-card ${wide(su)}"><div class="lc-head"><b class="lc-title">${t('cf_je_monat_t')}${hq('cf_je_monat_t')}</b><span class="cf-leg">${CF_ACT.map(([n, k]) => `<span><i class="sw ${k}"></i>${SEC_LABEL[n]}</span>`).join('')}<span><i class="ln"></i>${t('zahlungsfluss_gesamt_veraenderung_liqu')}</span></span></div><div class="cf-plot" id="cf-months"></div></div>`;
+  h += su + `</div><div class="cf-tip hidden" id="cf-tip" role="tooltip"></div></div>`;
   return h;
 }
 // a tooltip with colour keys (the plain one shows text only): its HTML is built here, every name escaped
@@ -3055,12 +3062,12 @@ function cfSourcesUses(D, months) {
   if (total < 0.5) return '';
   const max = Math.max(...src.map(e => e.v), ...use.map(e => e.v), 1);
   const col = (title, list) => `<div class="cf-su-col"><div class="cf-su-h">${title}</div><div class="cf-list">${list.sort((a, b) => b.v - a.v).map(e => `<div class="cf-row tipped" data-tip="${esc(e.label + ': ' + F(e.v) + ' € · ' + cfPct(e.v, total) + ' %')}" tabindex="0"><span class="cf-name">${esc(e.label)}</span><span class="cf-track"><i class="cf-bar ${e.act}" style="left:0;width:${Math.max(e.v / max * 100, 0.8).toFixed(2)}%"></i></span><span class="cf-num">${F0(e.v)}</span><span class="cf-pct">${cfPct(e.v, total)} %</span></div>`).join('')}</div></div>`;
-  return `<div class="card bch cf-card"><div class="lc-head"><b class="lc-title">${t('cf_herkunft_verwendung')}${hq('cf_herkunft_verwendung')}</b><span class="muted small">${t('cf_summe_0', F0(total))}</span></div>`
+  return `<div class="card bch cf-card cf-narrow"><div class="lc-head"><b class="lc-title">${t('cf_herkunft_verwendung')}${hq('cf_herkunft_verwendung')}</b><span class="muted small">${t('cf_summe_0', F0(total))}</span></div>`
     + `<div class="cf-su">${col(t('cf_herkunft'), src)}${col(t('cf_verwendung'), use)}</div></div>`;
 }
 
-// 4. Expenses by position: amount, share, the period before and its change -- hovering a row splits its bar into MoneyMoney's
-// categories (their colours in the tooltip)
+// 4. Expenses by position: a red bar each (they are expenses) -- amount, share, the period before and its change in the tooltip
+// (hover; on the iPhone a tap), where the bar also splits into MoneyMoney's categories in colours other than red
 function cfExpenses(D, months, prev) {
   const sek = D.kapitalfluss.sektionen.find(s => s.name === 'Ausgaben') || {zeilen: []};
   let items = sek.zeilen.map(z => ({label: zLabel(z), v: -cfRowSum(z, months), p: prev.length ? -cfRowSum(z, prev) : null,
@@ -3069,20 +3076,22 @@ function cfExpenses(D, months, prev) {
   if (items.length < 2) return '';
   if (items.length > 9) { const rest = items.slice(8); items = items.slice(0, 8).concat([{label: t('cf_uebrige', rest.length), v: rest.reduce((a, e) => a + e.v, 0), p: prev.length ? rest.reduce((a, e) => a + (e.p || 0), 0) : null, parts: []}]); }
   const total = -cfSum(D, 'Ausgaben', months), before = prev.length ? -cfSum(D, 'Ausgaben', prev) : null, max = Math.max(...items.map(e => Math.abs(e.v)), 1);
-  const tc = cfChange(total, before, false);
+  const tc = cfChange(total, before, false), NCAT = 4;
+  const kv = (k, v, cls) => `<span>${esc(k)}</span><b class="${cls || ''}">${v}</b>`;
   const body = items.map(e => {
     const ch = cfChange(e.v, e.p, false), w = Math.max(Math.abs(e.v) / max * 100, 0.8);
-    const ps = e.parts.filter(d => d.v > 0).sort((a, b) => b.v - a.v), shown = ps.slice(0, 6), other = ps.slice(6).reduce((a, d) => a + d.v, 0);
-    const segs = shown.map((d, k) => ({...d, key: 'cat' + (k + 1)})).concat(other >= 0.5 ? [{label: t('cf_uebrige', ps.length - 6), v: other, key: 'cat0'}] : []);
+    const ps = e.parts.filter(d => d.v > 0).sort((a, b) => b.v - a.v), shown = ps.slice(0, NCAT), other = ps.slice(NCAT).reduce((a, d) => a + d.v, 0);
+    const segs = shown.map((d, k) => ({...d, key: 'cat' + (k + 1)})).concat(other >= 0.5 ? [{label: t('cf_uebrige', ps.length - NCAT), v: other, key: 'cat0'}] : []);
     const sum = segs.reduce((a, d) => a + d.v, 0) || 1;
     const split = segs.length > 1 ? `<span class="cf-split" style="width:${w.toFixed(2)}%">${segs.map(d => `<i class="${d.key}" style="flex:${(d.v / sum).toFixed(4)}"></i>`).join('')}</span>` : '';
-    const tip = cfTip(`<div class="cf-tip-h">${esc(e.label)} <span class="muted">· ${F0(e.v)} €${ch ? ' · ' + ch.txt : ''}</span></div>`
-      + (segs.length > 1 ? segs.map(d => cfTipRow(d.key, d.label, F0(d.v) + ' €', cfChange(d.v, d.p, false))).join('') : `<div class="cf-tip-note">${esc(t('cf_vorperiode'))}: ${e.p != null ? F0(e.p) + ' €' : '–'}</div>`));
-    return `<div class="cf-row cf-ex${split ? ' has-split' : ''}" data-cftip="${tip}" tabindex="0"><span class="cf-name">${esc(e.label)}</span><span class="cf-track"><i class="cf-bar ${e.v < 0 ? 'tot' : 'op'}" style="left:0;width:${w.toFixed(2)}%"></i>${split}</span>`
-      + `<span class="cf-num">${F0(e.v)}</span><span class="cf-pct">${total > 0.005 ? cfPct(e.v, total) + ' %' : ''}</span><span class="cf-prev">${e.p != null ? F0(e.p) : '–'}</span><span class="cf-chg ${ch ? ch.cls : ''}">${ch ? ch.txt : ''}</span></div>`; }).join('');
-  return `<div class="card bch cf-card"><div class="lc-head"><b class="lc-title">${t('cf_ausgaben_nach')}</b></div>`
+    const tip = cfTip(`<div class="cf-tip-h">${esc(e.label)}</div><div class="cf-tip-kv">${kv(t('betrag'), F0(e.v) + ' €')}${kv(t('anteil'), total > 0.005 ? cfPct(e.v, total) + ' %' : '–')}`
+      + `${kv(t('cf_vorperiode'), e.p != null ? F0(e.p) + ' €' : '–')}${kv(t('cf_veraenderung'), ch ? ch.txt : '–', ch && ch.cls)}</div>`
+      + (segs.length > 1 ? segs.map(d => cfTipRow(d.key, d.label, F0(d.v) + ' €', cfChange(d.v, d.p, false))).join('') : ''));
+    return `<div class="cf-row cf-ex${split ? ' has-split' : ''}" data-cftip="${tip}" tabindex="0" aria-label="${esc(e.label + ': ' + F0(e.v) + ' €')}"><span class="cf-name">${esc(e.label)}</span>`
+      + `<span class="cf-track"><i class="cf-bar ${e.v < 0 ? 'tot' : 'out'}" style="left:0;width:${w.toFixed(2)}%"></i>${split}</span></div>`; }).join('');
+  return `<div class="card bch cf-card cf-narrow"><div class="lc-head"><b class="lc-title">${t('cf_ausgaben_nach')}</b></div>`
     + `<div class="lc-row2"><span class="cf-val">${F0(total)} €</span>${before != null ? `<span class="muted small">${t('cf_vorperiode')} ${F0(before)} €</span>` : ''}${tc ? `<span class="cf-delta ${tc.cls}">${tc.txt}</span>` : ''}</div>`
-    + `<div class="cf-list ex"><div class="cf-row cf-ex head"><span class="cf-name"></span><span class="cf-track"></span><span class="cf-num">${t('betrag')}</span><span class="cf-pct">${t('anteil')}</span><span class="cf-prev">${t('cf_vorperiode')}</span><span class="cf-chg">${t('cf_veraenderung')}</span></div>${body}</div></div>`;
+    + `<div class="cf-list ex">${body}</div></div>`;
 }
 // the tooltip with colour keys: beside the row or column it belongs to, also on keyboard focus (on the iPhone: a tap)
 function cfShowTip(el) {
@@ -3852,7 +3861,35 @@ async function vPositionen() {
       <td><select class="kp-pos"${r.objekt ? ` data-obj="${esc(r.objekt)}"` : ''}>${r.objekt ? objOpts(own) : opts(own, r.gesellschaft)}</select></td>
       <td><select class="kp-konto">${acctOptions(r.konto, k => !k.gruppe && (k.depot || k.rolle === 'anlagen' || k.rolle === 'liquiditaet')).replace(t('waehlen'), t('automatisch'))}</select></td></tr>`;
   });
-  return h + '</tbody></table></div>';
+  return h + '</tbody></table></div>' + vAnlageEmpfaenger();
+}
+// Zielkonto je Empfänger: saving that arrives as a booking on none of your accounts (a depot kept by its balances, an account
+// outside MoneyMoney) -- per area the account per recipient; Kontor proposes one where it is clear, it counts once chosen
+function vAnlageEmpfaenger() {
+  const areas = Object.entries((S.DATA || {}).bereiche || {}).filter(([, d]) => !d.fehler && ((d.kapitalfluss || {}).anlagen || []).length);
+  if (!areas.length) return '';
+  const cfg = ((S.CFG || {}).kapitalfluss || {}).empfaenger_zu_konto || {}, lab = acctLabels(S.KONTEN || []);
+  const nm = u => lab.get(u) || (S.KONTEN.find(k => k.uuid === u) || {}).name || u;
+  let h = `<h2 class="kp-h">${t('anl_titel')} ${hq('anl_empfaenger')}</h2>`;
+  for (const [id, d] of areas) {
+    const KF = d.kapitalfluss, mine = cfg[id] || {};
+    if (areas.length > 1) h += `<h3 class="kp-h3">${esc(BN(id))}</h3>`;
+    h += `<div class="wrap auto"><table class="plain kp-table ka-table"><thead><tr><th>${t('empfaenger')}</th><th class="kp-n">${t('kategorie')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('summe_label')}</th><th class="kp-arrow"></th><th>${t('zielkonto')}</th></tr></thead><tbody>`;
+    for (const a of KF.anlagen) {
+      const own = mine[a.key] || '', ownId = own === 'extern' ? '' : own.split('|')[0].trim();
+      const ziele = new Set([...(KF.anlage_ziele || []), ownId].filter(Boolean));
+      const auto = a.auto_wie === 'gemischt' ? t('anl_nach_kategorie') : a.auto_ziel ? nm(a.auto_ziel) : t('anl_ohne_ziel');
+      const opts = acctOptions(ownId, k => ziele.has(k.uuid)).replace(t('waehlen'), () => esc(t('automatisch_0', auto)))
+        + `<option value="extern" ${own === 'extern' ? 'selected' : ''}>${t('anl_extern')}</option>`;
+      const prop = a.vorschlag && !own ? ` <button class="small secondary ka-take" data-v="${esc(a.vorschlag)}">${esc(t('vorschlag_0', nm(a.vorschlag)))}</button>` : '';
+      const stale = own && own !== 'extern' && a.wie !== 'empfaenger' && S.KONTEN.some(k => k.uuid === ownId);   // in another area now: Kontor's choice applies
+      h += `<tr data-area="${esc(id)}" data-key="${esc(a.key)}" data-init="${esc(own)}" class="${a.wie === '' || (own && own !== 'extern' && a.wie !== 'empfaenger') ? 'ka-open' : ''}"${stale ? ` title="${esc(t('anl_nicht_im_bereich'))}"` : ''}><td>${esc(a.name)}${a.iban ? `<div class="small muted">${esc(a.iban)}</div>` : ''}</td>
+        <td class="small kp-n">${a.kategorien.map(esc).join(', ')}</td><td class="num small kp-n">${a.anzahl}</td><td class="num small kp-n ${a.summe < 0 ? 'neg' : ''}">${F0(a.summe)}</td>
+        <td class="kp-arrow" aria-hidden="true">→</td><td><select class="ka-ziel">${opts}</select>${prop}</td></tr>`;
+    }
+    h += '</tbody></table></div>';
+  }
+  return h;
 }
 function bindPositionen(main) {
   const rows = $$('.kp-table tr[data-p]', main); if (!rows.length) return;
@@ -3875,16 +3912,26 @@ function bindPositionen(main) {
       r.classList.toggle('kp-own', !!own(r));
       const k = $('.kp-konto', r); k.classList.toggle('hidden', eff !== 'anlegen');      // counts for the categories below it too
     });
-    const dirty = rows.some(r => own(r) !== r.dataset.init || ($('.kp-konto', r) && acc($('.kp-konto', r).value) !== acc(r.dataset.konto)));
+    const dirty = rows.some(r => own(r) !== r.dataset.init || ($('.kp-konto', r) && acc($('.kp-konto', r).value) !== acc(r.dataset.konto))) || kaDirty().length > 0;
     save.disabled = !dirty; DIRTY.on = dirty;
   };
-  $('.kp-table', main).addEventListener('change', upd);
-  upd();
+  // the account per recipient (Zielkonto je Empfänger): a choice of its own, or Kontor's proposal taken over
+  const ka = $$('.ka-table tr[data-key]', main), kaVal = r => { const v = $('.ka-ziel', r).value; return v === 'extern' ? v : acc(v); };
+  const kaDirty = () => ka.filter(r => kaVal(r) !== (r.dataset.init === 'extern' ? 'extern' : acc(r.dataset.init)));
+  const upd2 = () => { ka.forEach(r => r.classList.toggle('kp-own', !!$('.ka-ziel', r).value)); upd(); };
+  $$('.kp-table', main).forEach(tb => tb.addEventListener('change', upd2));
+  $$('.ka-take', main).forEach(b => b.addEventListener('click', () => {
+    const sel = $('.ka-ziel', b.closest('tr')), o = [...sel.options].find(x => acc(x.value) === b.dataset.v);
+    if (o) { sel.value = o.value; b.remove(); upd2(); }
+  }));
+  upd2();
   save.onclick = async () => {
     const positionen = {}, konten = {};
     rows.forEach(r => { if ($('.kp-pos', r) && own(r) !== r.dataset.init) positionen[r.dataset.p] = own(r); const k = $('.kp-konto', r); if (k && acc(k.value) !== acc(r.dataset.konto)) konten[r.dataset.p] = k.value; });
+    const empfaenger = {};
+    kaDirty().forEach(r => { (empfaenger[r.dataset.area] = empfaenger[r.dataset.area] || {})[r.dataset.key] = $('.ka-ziel', r).value; });
     save.disabled = true;
-    try { const r = await api('/api/categories/positions', {positionen, konten}); S.CFG = r.config; DIRTY.on = false; toast(t('gespeichert')); afterRebuild(r); route(); }
+    try { const r = await api('/api/categories/positions', {positionen, konten, empfaenger}); S.CFG = r.config; DIRTY.on = false; toast(t('gespeichert')); afterRebuild(r); route(); }
     catch (e) { save.disabled = false; toast(e.message, 6000); }
   };
 }

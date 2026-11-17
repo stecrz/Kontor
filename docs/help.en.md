@@ -200,10 +200,10 @@ Where the money goes – as a cash flow statement, for every area in the same ou
 | **Investing cash flow** | Buying and selling assets, by kind: real estate (with costs of purchase), securities & deposits, participations, loans granted; below them the single accounts. The money leaves the bank account but stays wealth. |
 | **Financing cash flow** | Payments to and from lenders and owners, by kind: loans taken up, repayment, interest, for companies partners' contributions and withdrawals; below them the single loans. A loan paid out is a loan taken up, not a “negative repayment”. |
 | **Change in cash** | the three together (and what is unclear); above and below it the cash at the start and at the end |
-| **Changes in value** | what changes without a payment: prices of portfolios, value adjustments, corrections by hand |
+| **Changes in value** | what changes without a payment: prices of portfolios, value adjustments, corrections by hand, [investments without target account](#positions-recipients) |
 | **Change in net worth** | operating cash flow, interest, contributions and withdrawals, changes in value – investing, taking up and repaying loans only reallocate |
 
-A row shows only where there is money in it. How far the table is opened you choose in its header cell, right above the triangles (on the iPhone the large triangle there opens a level further with each tap, and finally closes again): **Overview** (the three cash flows with income, expenses and the kinds of investing and financing – the whole cash flow on one page), **Positions** (with the positions, accounts and loans) or **Details** (down to the MoneyMoney categories). Every row with ▸ also opens and closes by itself; the “?” at a row explains it. The gear next to it leads to the cash flow positions.
+A row shows only where there is money in it. How far the table is opened you choose in its header cell, right above the triangles, with four symbols – the deeper indented, the further opened (on the iPhone the large triangle there opens a level further with each tap, and finally closes again): **Main lines** (only the three cash flows, bank balance and changes in value), **Overview** (the three cash flows with income, expenses and the kinds of investing and financing – the whole cash flow on one page), **Positions** (with the positions, accounts and loans) or **Details** (down to the MoneyMoney categories). Every row with ▸ also opens and closes by itself; the “?” at a row explains it. The gear next to it leads to the cash flow positions.
 
 ![Cash flow](img/en/cash_flow.png)
 
@@ -268,12 +268,23 @@ The cash flow has a fixed outline; your MoneyMoney categories count in it. The p
 
 - **Automatic** – like the category above it, otherwise Kontor's proposal from the name (such as “Einkommen / Rückzahlung Finanzamt” → refunds, “Sparen” → saving & investing).
 - A position you choose also counts for all categories below it that have none of their own.
-- **Saving & investing** is no expense; under “Invested in” next to it you choose the account the money goes into (for this position only). **Transfer** (between own accounts) looks for the counter-booking, **Leave out** takes the category out (the check row names it).
+- **Saving & investing** is no expense; under “Invested in” next to it you choose the account the money goes into (for this position only; more precisely per recipient, see below). **Transfer** (between own accounts) looks for the counter-booking, **Leave out** takes the category out (the check row names it).
 - A property's categories (Real estate → category) have rows of their own in cash flow, “rent” and “costs”.
 
 Planning works on the positions; a MoneyMoney budget counts for the position of its category. Nothing changes in MoneyMoney.
 
 ![Cash flow positions](img/en/category_positions.png)
+
+<a id="positions-recipients"></a>
+#### Target account by recipient
+
+When you transfer to an account of your own in MoneyMoney, Kontor finds the counter-booking itself. Not so for money that arrives as a booking on none of your accounts, such as a portfolio kept by its balances only. For those payments, the recipients are listed below the table with category, count and sum. Per recipient you choose the account the money goes into:
+
+- **Automatic** – the category's account under “Invested in”; where none is chosen there, the area's only portfolio.
+- **An account** – applies to every payment to this recipient, whatever its category; this comes before “Invested in”. This way one category such as “Sparen” can go into several accounts.
+- **No account in MoneyMoney** – the money leaves the net worth Kontor sees.
+
+Where it is clear, Kontor proposes a portfolio (the same bank as the recipient's IBAN, or a word shared in the name); it counts only once you take it over and save. Money without a target account does not count as price gain: in cash flow it stands under changes in value as a row of its own, **Investment without target account**, which offsets the portfolio's rise, with a link here. An account that no longer belongs to the area is named under Setup; then the automatic choice applies again.
 
 <a id="planning"></a>
 ## Planning

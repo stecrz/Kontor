@@ -141,6 +141,12 @@ def purpose_key(s: str, words: int = 3) -> str:
     return " ".join(norm_name(s).split()[:words])
 
 
+def party_key(t: Tx) -> str:
+    """The other side of a booking: its IBAN, else its name, else the start of its purpose (e.g. a savings plan the bank debits
+    itself)."""
+    return (t.counter_iban or "").replace(" ", "").upper() or norm_name(t.name) or ("zweck:" + purpose_key(t.purpose, 4))
+
+
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower().replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")).strip("-")[:80] or "k"
 
@@ -292,7 +298,7 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
         if min_betrag and abs(t.amount) < min_betrag:
             continue
         total += 1
-        key = (t.counter_iban or "").replace(" ", "").upper() or norm_name(t.name) or ("zweck:" + purpose_key(t.purpose, 4))
+        key = party_key(t)
         g = groups.get(key)
         if g is None:
             g = groups[key] = {"key": key, "name": t.name[:80] or t.purpose[:80], "iban": (t.counter_iban or "")[:34], "anzahl": 0, "summe": 0.0, "ids": [],

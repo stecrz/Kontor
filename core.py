@@ -44,6 +44,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "bilanz": {"monate_zurueck": 0, "rollen": {}, "verlauf": {}, "illiquide_rollen": ["beteiligungen", "immobilien", "sachwerte"],
                "illiquide_konten": [], "inaktiv_monate": 12, "ausgeblendet": [], "immer_anzeigen": [], "ansicht": "positionen"},
     "kapitalfluss": {"positionen": {}, "kategorie_zu_konto": {},
+                     "empfaenger_zu_konto": {},      # per area: recipient (IBAN, else name) -> the account saving goes into | "extern"
                      "umbuchungs_kategorien": ["Umbuchung"], "umbuchung_paarung": True, "paarung_manuelle_konten": True},
     "steuer": {"vermietung_kategorie": "Vermietung", "objekt_darlehen": {}, "afa": {}, "positionen": {}, "entitaeten": []},
     "belege": {"ordner": "~/Documents/Kontor-Belege", "unterordner": "{jahr}", "kommentar_schreiben": False, "ordner_bestaetigt": False},
@@ -86,6 +87,11 @@ def _shape(cfg: dict) -> dict:
             cfg.pop(k)
         elif k in cfg and isinstance(v, list) and k != "zuordnen_ohne":       # lists of entries (zuordnen_ohne: of area ids, below)
             cfg[k] = dicts(cfg[k])
+    kf = cfg.get("kapitalfluss")
+    if isinstance(kf, dict) and "empfaenger_zu_konto" in kf:
+        e = kf["empfaenger_zu_konto"]
+        kf["empfaenger_zu_konto"] = {str(a): {str(k): v for k, v in m.items() if isinstance(v, str) and v}
+                                     for a, m in (e.items() if isinstance(e, dict) else []) if isinstance(m, dict)}
     for b in cfg.get("bereiche") or []:
         for f in ("id", "name", "art"):
             if f in b and not isinstance(b[f], str):
@@ -883,6 +889,18 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
     for k, v in (kfc.get("kategorie_zu_konto") or {}).items():
         if not k.startswith("_"):
             ref(tr("s_kapitalfluss_depot_fuer_s") % k, v, group_ok=False)
+    # the account per recipient: gone, or no longer in that area -- Kontor's choice applies again (a note only)
+    area_accs = {str(b["id"]): {a.uuid for a in b["leaves"]} for b in bereiche_for(ledger, config)} if ledger is not None else {}
+    for area, m in (kfc.get("empfaenger_zu_konto") or {}).items():
+        for k, v in (m or {}).items():
+            if v == "extern" or ledger is None:
+                continue
+            try:
+                a = ledger.resolve(v)
+            except KeyError as e:
+                add("warnung", "%s: %s" % (tr("s_kapitalfluss_ziel_fuer_s") % k, e)); continue
+            if area not in area_accs or a.uuid not in area_accs[area]:
+                add("warnung", tr("s_kapitalfluss_ziel_bereich") % (tr("s_kapitalfluss_ziel_fuer_s") % k, a.name))
     st = config.get("steuer", {}) or {}
     for k, v in (st.get("objekt_darlehen") or {}).items():
         ref(tr("s_steuer_darlehen_fuer_objekt_s") % v, k)
@@ -1401,6 +1419,24 @@ def save_positions(config: dict, body: dict, ledger: Optional[Ledger]) -> dict:
                 ledger.resolve(str(v), groups_ok=False)          # KeyError: unknown account
             acc[p] = str(v)
     kf["positionen"], kf["kategorie_zu_konto"] = pos, acc
+    # the account saving goes into, per area and recipient: {area: {recipient: account | "extern" | "" (Kontor's)}}
+    emp = {a: dict(m) for a, m in (kf.get("empfaenger_zu_konto") or {}).items() if isinstance(m, dict)}
+    sent = body.get("empfaenger", {})
+    if not isinstance(sent, dict):
+        raise ValueError("empfaenger")
+    for area, m in sent.items():
+        if not isinstance(m, dict):
+            raise ValueError("empfaenger")
+        mine = emp.setdefault(str(area), {})
+        for k, v in m.items():
+            if not isinstance(k, str) or not k or len(k) > 120 or not isinstance(v, (str, type(None))):
+                raise ValueError("empfaenger")
+            mine.pop(k, None)
+            if v:
+                if v != "extern" and ledger is not None:
+                    ledger.resolve(v, groups_ok=False)           # KeyError: unknown account
+                mine[k] = v
+    kf["empfaenger_zu_konto"] = {a: m for a, m in emp.items() if m}
     return cfg
 
 
@@ -1920,6 +1956,7 @@ def export_package(config: dict, name: str = "Kontor-Einstellungen", strip_uuids
     cfg.pop("oberflaeche", None)
     cfg.pop("updates", None)
     cfg.pop("nicht_buchen", None)                 # decisions about bookings in your MoneyMoney: they stay here
+    (cfg.get("kapitalfluss") or {}).pop("empfaenger_zu_konto", None)       # so do your recipients (their IBANs)
     (cfg.get("belege") or {}).pop("ordner", None)
     ids = {str(b.get("id")) for b in cfg.get("bereiche") or [] if isinstance(b, dict)}
     if ids:                                   # rules of companies whose area no longer exists do not travel along
@@ -1948,6 +1985,8 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
     inc = copy.deepcopy(pkg["config"])
     for k in ("oberflaeche", "updates", "nicht_buchen"):
         inc.pop(k, None)
+    if isinstance(inc.get("kapitalfluss"), dict):
+        inc["kapitalfluss"].pop("empfaenger_zu_konto", None)
     mapping = mapping or {}
     unresolved: List[dict] = []
     report: List[str] = []
@@ -1973,9 +2012,12 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
     if mode == "ersetzen":
         if "gesellschaften" in inc and "kontenspiegel" not in inc:      # a package from before 3.13.10: its mirrors are with its companies
             base["kontenspiegel"] = []
+        keep = copy.deepcopy((base.get("kapitalfluss") or {}).get("empfaenger_zu_konto") or {})
         for k, v in inc.items():
             base[k] = v
             report.append("%s ersetzt" % k)
+        if keep and isinstance(base.get("kapitalfluss"), dict):      # a package never carries your recipients: they stay
+            base["kapitalfluss"]["empfaenger_zu_konto"] = keep
     else:
         for k, v in inc.items():
             if k == "kontenspiegel":                   # pair by pair, whichever way round
@@ -2048,6 +2090,9 @@ def diagnose(store: Store, data_dir: str, config: dict, status: dict, mask_names
     cfg = copy.deepcopy(config)
     cfg.pop("oberflaeche", None)
     cfg["nicht_buchen"] = len(cfg.get("nicht_buchen") or [])        # only how many (amounts and texts stay out)
+    kfd = cfg.get("kapitalfluss") if isinstance(cfg.get("kapitalfluss"), dict) else {}
+    if kfd.get("empfaenger_zu_konto"):                                # recipients (names, IBANs): only how many per area
+        kfd["empfaenger_zu_konto"] = {"Bereich%d" % i: len(m or {}) for i, m in enumerate(kfd["empfaenger_zu_konto"].values())}
     names: Dict[str, str] = {}
     if mask_names:
         ds = store.load("dataset.json", {}) or {}

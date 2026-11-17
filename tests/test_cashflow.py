@@ -660,6 +660,155 @@ class StatementGroups(Reconciles):
         self.assertEqual(rows(gbr, "Investitionen")["Sparen"]["gruppe"], "Sparen & Anlegen")       # no depot there: no account known
 
 
+class SavingByRecipient(Reconciles):
+    """Saving that arrives as a booking on none of your accounts (a depot kept by balances): the account per recipient you
+    chose, else the category's, else the only depot -- without one it never counts as a depot's gain but stands openly as
+    "without target account". All IBANs, names and amounts are made up."""
+    ONE = "DE02100100100006820101"          # banks' public sample IBANs: at the bank of the first depot (bank code 10010010)
+    TWO = "DE02120300000000202051"          # ... and of the second (12030000)
+
+    def setUp(self):
+        self._acc = dict(ACCOUNTS)
+        ACCOUNTS["depot2"] = ("Depot Zwei", "Privat", "wertpapiere", None, "portfolio")
+
+    def tearDown(self):
+        ACCOUNTS.clear(); ACCOUNTS.update(self._acc)
+
+    def data(self, txs, cfg=None, hist=None):
+        led = make_ledger(txs)
+        led.accounts["depot"].bank_code, led.accounts["depot2"].bank_code = "10010010", "12030000"
+        config = core.merged_config(dict({"bilanz": {"rollen": {k: v[2] for k, v in ACCOUNTS.items()}},
+                                          "kapitalfluss": {"positionen": {"Sparen": "anlegen"}}}, **(cfg or {})))
+        b = next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat")
+        return b["id"], config, report.build_dataset(led, config, {"historie": hist or {}}, TODAY, b, {k: v[2] for k, v in ACCOUNTS.items()})
+
+    def txs(self):
+        return [(1, "giro", date(2026, 1, 5), 9000.0, {"cat": "Gehalt"}),
+                (2, "giro", date(2026, 6, 3), -1000.0, {"cat": "Sparen", "name": "Broker Zwei AG", "iban": self.TWO}),
+                (3, "giro", date(2026, 6, 4), -300.0, {"cat": "Sparen / ETF", "name": "Broker Eins", "iban": self.ONE}),
+                (9, "depot2", date(2026, 1, 1), 1000.0, {})]          # depot two: worth 1000 today, 0 before (history below)
+
+    def test_without_a_target_it_is_no_gain_and_stands_openly(self):
+        _, _, ds = self.data(self.txs(), hist={"depot2": {"2026-01": 0.0}})
+        self.assertAddsUp({"Privat": ds})
+        r = rows(ds)
+        self.assertEqual(r["Anlage ohne Zielkonto"]["werte"]["2026-06"], -1300.0)           # out of the net worth Kontor sees ...
+        self.assertTrue(r["Anlage ohne Zielkonto"]["nw"])
+        self.assertEqual(r["Depot Zwei"]["werte"]["2026-06"], 1000.0)                      # ... which the depot's rise brings back
+        self.assertEqual((r["Sparen"]["konto"], r["Sparen"]["nw"]), (None, False))
+        an = {a["key"]: a for a in ds["kapitalfluss"]["anlagen"]}
+        self.assertEqual([a["key"] for a in ds["kapitalfluss"]["anlagen"]], [self.TWO, self.ONE])     # largest first
+        self.assertEqual((an[self.TWO]["wie"], an[self.TWO]["vorschlag"]), ("", "depot2"))           # proposals by the bank of the IBAN
+        self.assertEqual(an[self.ONE]["vorschlag"], "depot")
+        self.assertEqual((an[self.ONE]["anzahl"], an[self.ONE]["summe"], an[self.ONE]["kategorien"]), (1, -300.0, ["Sparen / ETF"]))
+        self.assertEqual(ds["kapitalfluss"]["anlage_ziele"], ["depot", "depot2"])
+
+    def test_the_account_you_chose_takes_it(self):
+        area, _, _ = self.data(self.txs())
+        cfg = {"kapitalfluss": {"positionen": {"Sparen": "anlegen"}, "empfaenger_zu_konto": {area: {self.TWO: "Depot Zwei", self.ONE: "extern"}}}}
+        _, _, ds = self.data(self.txs(), cfg, hist={"depot2": {"2026-01": 0.0}})
+        self.assertAddsUp({"Privat": ds})
+        r = rows(ds)
+        self.assertNotIn("Anlage ohne Zielkonto", r)
+        self.assertAlmostEqual(r.get("Depot Zwei", {"werte": {}})["werte"].get("2026-06", 0.0), 0.0)     # paid in, not a gain
+        self.assertEqual((r["Sparen → Depot Zwei"]["konto"], r["Sparen → Depot Zwei"]["nw"]), ("depot2", False))
+        self.assertEqual((r["Sparen / ETF → extern"]["konto"], r["Sparen / ETF → extern"]["nw"]), (None, True))   # none in MoneyMoney: leaves the net worth
+        an = {a["key"]: a for a in ds["kapitalfluss"]["anlagen"]}
+        self.assertEqual((an[self.TWO]["wie"], an[self.TWO]["ziel"], an[self.TWO]["vorschlag"]), ("empfaenger", "depot2", None))
+        self.assertEqual((an[self.ONE]["wie"], an[self.ONE]["auto_wie"]), ("extern", ""))
+        # the recipient's choice comes before the category's account; an account of another area does not count here
+        cfg["kapitalfluss"]["kategorie_zu_konto"] = {"Sparen": "Depot"}
+        cfg["kapitalfluss"]["empfaenger_zu_konto"] = {area: {self.TWO: "Depot Zwei"}, "anders": {self.ONE: "Depot"}}
+        _, _, ds = self.data(self.txs(), cfg)
+        an = {a["key"]: a for a in ds["kapitalfluss"]["anlagen"]}
+        self.assertEqual((an[self.TWO]["ziel"], an[self.TWO]["auto_ziel"], an[self.TWO]["auto_wie"]), ("depot2", "depot", "kategorie"))
+        self.assertEqual((an[self.ONE]["ziel"], an[self.ONE]["wie"]), ("depot", "kategorie"))        # "Sparen / ETF" lies below "Sparen"
+        cfg["kapitalfluss"]["empfaenger_zu_konto"] = {area: {self.TWO: "Kontokorrent"}}                         # an account of the company: not here
+        _, _, ds = self.data(self.txs(), cfg)
+        self.assertEqual({a["key"]: a["wie"] for a in ds["kapitalfluss"]["anlagen"]}[self.TWO], "kategorie")
+
+    def test_one_recipient_over_categories_with_different_accounts(self):
+        txs = self.txs() + [(4, "giro", date(2026, 5, 4), -200.0, {"cat": "Altersvorsorge", "name": "Broker Zwei AG", "iban": self.TWO})]
+        _, _, ds = self.data(txs, {"kapitalfluss": {"positionen": {"Sparen": "anlegen", "Altersvorsorge": "anlegen"}, "kategorie_zu_konto": {"Sparen": "Depot"}}})
+        an = {a["key"]: a for a in ds["kapitalfluss"]["anlagen"]}
+        self.assertEqual((an[self.TWO]["wie"], an[self.TWO]["auto_wie"], an[self.TWO]["anzahl"]), ("gemischt", "gemischt", 2))
+        self.assertEqual(sorted(an[self.TWO]["kategorien"]), ["Altersvorsorge", "Sparen"])
+
+    def test_one_category_into_several_accounts(self):
+        """The case it is for: one category ("Sparen") to two recipients with different accounts -- each its own row, every
+        month adds up."""
+        area, _, _ = self.data(self.txs())
+        txs = [x if x[0] != 3 else (3, "giro", date(2026, 6, 4), -300.0, {"cat": "Sparen", "name": "Broker Eins", "iban": self.ONE}) for x in self.txs()]
+        for order in (txs, [txs[0], txs[2], txs[1], txs[3]]):
+            cfg = {"kapitalfluss": {"positionen": {"Sparen": "anlegen"}, "empfaenger_zu_konto": {area: {self.TWO: "Depot Zwei", self.ONE: "extern"}}}}
+            _, _, ds = self.data(order, cfg, hist={"depot2": {"2026-01": 0.0}})
+            self.assertAddsUp({"Privat": ds})
+            r = rows(ds, "Investitionen")
+            self.assertEqual((r["Sparen → Depot Zwei"]["konto"], r["Sparen → Depot Zwei"]["nw"], r["Sparen → Depot Zwei"]["werte"]["2026-06"]), ("depot2", False, -1000.0))
+            self.assertEqual((r["Sparen → extern"]["nw"], r["Sparen → extern"]["lbl"], r["Sparen → extern"]["werte"]["2026-06"]), (True, ["cf_anlage_extern", "Sparen"], -300.0))
+            self.assertNotIn("Sparen", r); self.assertNotIn("Anlage ohne Zielkonto", rows(ds))
+            plan = report.apply_plan(ds, {}, core.merged_config({})) or ds          # planning: each row with its own account
+            self.assertTrue(rows(ds, "Investitionen")["Sparen → Depot Zwei"]["plan"])
+
+    def test_an_account_kept_by_balances_takes_it_as_paid_in(self):
+        """An asset kept by balances (no depot): the payment is paid in, not a correction of its balance; a bank account set
+        for the category keeps its old way (no "without target account")."""
+        area, _, _ = self.data(self.txs())
+        txs = self.txs()[:1] + [(5, "giro", date(2026, 2, 3), -1000.0, {"cat": "Sparen", "name": "Goldhandel", "iban": self.TWO})]
+        cfg = {"bilanz": {"rollen": {k: v[2] for k, v in ACCOUNTS.items()}, "verlauf": {"Auto": "stand"}},
+               "kapitalfluss": {"positionen": {"Sparen": "anlegen"}, "empfaenger_zu_konto": {area: {self.TWO: "Auto"}}}}
+        led = make_ledger(txs); led.accounts["auto"].balance = 1000.0                 # worth 1000 today, 0 in January
+        config = core.merged_config(cfg)
+        b = next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat")
+        ds = report.build_dataset(led, config, {"historie": {"auto": {"2026-01": 0.0}}}, TODAY, b, {k: v[2] for k, v in ACCOUNTS.items()})
+        self.assertAddsUp({"Privat": ds})
+        r = rows(ds)
+        self.assertNotIn("Auto / Korrektur Kontostand", r); self.assertEqual(r["Sparen → Auto"]["konto"], "auto")
+        _, _, ds = self.data(txs, {"kapitalfluss": {"positionen": {"Sparen": "anlegen"}, "kategorie_zu_konto": {"Sparen": "Tagesgeld"}}})
+        self.assertNotIn("Anlage ohne Zielkonto", rows(ds)); self.assertEqual(rows(ds)["Sparen"]["konto"], "tg")
+
+    def test_the_category_account_elsewhere_keeps_the_depot_out(self):
+        """As before: a category whose account lies in another area does not go into this area's only depot by guess."""
+        del ACCOUNTS["depot2"]
+        data = build([(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}), (2, "giro", date(2026, 3, 3), -500.0, {"cat": "Sparen", "name": "Bank"})],
+                     {"kapitalfluss": {"positionen": {"Sparen": "anlegen"}, "kategorie_zu_konto": {"Sparen": "Kontokorrent"}}})
+        self.assertAddsUp(data)
+        self.assertEqual(rows(data["Privat"])["Anlage ohne Zielkonto"]["werte"]["2026-03"], -500.0)
+        self.assertEqual(data["Privat"]["kapitalfluss"]["anlagen"][0]["wie"], "")
+
+    def test_saving_settings(self):
+        led = make_ledger(self.txs())
+        cfg = core.save_positions(core.merged_config({}), {"empfaenger": {"p": {self.TWO: "Depot Zwei", self.ONE: "extern"}}}, led)
+        self.assertEqual(cfg["kapitalfluss"]["empfaenger_zu_konto"], {"p": {self.TWO: "Depot Zwei", self.ONE: "extern"}})
+        cfg = core.save_positions(cfg, {"empfaenger": {"p": {self.ONE: ""}}}, led)           # "" = Kontor's choice again
+        self.assertEqual(cfg["kapitalfluss"]["empfaenger_zu_konto"], {"p": {self.TWO: "Depot Zwei"}})
+        cfg2 = core.save_positions(cfg, {"empfaenger": {"p": {self.TWO: None}}}, led)
+        self.assertEqual(cfg2["kapitalfluss"]["empfaenger_zu_konto"], {})
+        with self.assertRaises(KeyError):
+            core.save_positions(cfg, {"empfaenger": {"p": {self.TWO: "kein Konto"}}}, led)
+        for bad in ({"empfaenger": []}, {"empfaenger": {"p": "x"}}, {"empfaenger": {"p": {"": "depot"}}}, {"empfaenger": {"p": {self.TWO: 5}}}):
+            with self.assertRaises(ValueError):
+                core.save_positions(cfg, bad, led)
+        # odd shapes by hand are dropped; a package never carries your recipients (their IBANs), nor takes them in
+        shaped = core.merged_config({"kapitalfluss": {"empfaenger_zu_konto": {"p": {self.TWO: "depot2", "x": 3}, "q": "nein"}}})
+        self.assertEqual(shaped["kapitalfluss"]["empfaenger_zu_konto"], {"p": {self.TWO: "depot2"}})
+        self.assertEqual(core.merged_config({"kapitalfluss": {"empfaenger_zu_konto": "nein"}})["kapitalfluss"]["empfaenger_zu_konto"], {})
+        pkg = core.export_package(cfg, ledger=led)
+        self.assertNotIn("empfaenger_zu_konto", pkg["config"]["kapitalfluss"])
+        merged, _, _ = core.import_package(core.merged_config({}), {"kontor_paket": 1, "config": {"kapitalfluss": {"empfaenger_zu_konto": {"p": {self.TWO: "depot2"}}}}}, led)
+        self.assertEqual(merged["kapitalfluss"].get("empfaenger_zu_konto") or {}, {})
+        for mode in ("ersetzen", "ergaenzen"):                     # your own stay, also when a package replaces the cash flow settings
+            merged, _, _ = core.import_package(cfg, {"kontor_paket": 1, "config": {"kapitalfluss": {"positionen": {"Sparen": "anlegen"}}}}, led, mode)
+            self.assertEqual(merged["kapitalfluss"]["empfaenger_zu_konto"], {"p": {self.TWO: "Depot Zwei"}}, mode)
+        # a gone account: a note, not an error (Kontor's choice applies again)
+        found = core.check_config(led, [], dict(cfg, kapitalfluss=dict(cfg["kapitalfluss"], empfaenger_zu_konto={"p": {self.TWO: "weg | Altes Depot"}})))
+        self.assertTrue(any(f["stufe"] == "warnung" and self.TWO in f["text"] for f in found))
+        self.assertFalse(any(f["stufe"] == "fehler" and self.TWO in f["text"] for f in found))
+        area = next(x for x in core.bereiche_for(led, cfg) if x["name"] == "Privat")["id"]          # an account of another area: a note
+        found = core.check_config(led, [], dict(cfg, kapitalfluss=dict(cfg["kapitalfluss"], empfaenger_zu_konto={area: {self.TWO: "Kontokorrent"}})))
+        self.assertTrue(any(f["stufe"] == "warnung" and "Kontokorrent" in f["text"] for f in found))
+
+
 class MirrorsAndCompanies(Reconciles):
     def test_a_mirror_into_a_company_counts_at_once(self):
         """A company counts as set up with an account mirror into one of its accounts: a payment to it from another company is

@@ -34,7 +34,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from categorize import suggest as suggest_category
+from categorize import party_key, suggest as suggest_category
 from model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat
 from model import MARK, marks_in
 from i18n import tr
@@ -968,14 +968,16 @@ def transfer_check(config: dict) -> Callable[[str], bool]:
 
 def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], config: dict, months: List[Tuple[int, int]],
              verlauf: Dict[str, str], areas: Optional[Dict[str, str]] = None, company: bool = False,
-             objekte: Optional[Dict[str, str]] = None, learned: Optional[dict] = None):
+             objekte: Optional[Dict[str, str]] = None, learned: Optional[dict] = None, area_id: str = ""):
     """Cash flow rows of an area. Every booking of its accounts counts once: a transfer within the area (both bookings found)
     as one row that leaves the net worth unchanged, everything else with its amount. areas: account -> name of its area (all
     areas; transfers between areas are contributions/withdrawals); company: this area is a company; objekte: category ->
     property (its own rows); learned: the patterns learned from your categories (categorize) -- a booking without a category
     counts in the position they suggest, else in Kontor's estimate by its words (marked as estimated). Returns (rows, inbound
     per account and month, warnings); rows.pairs: transfers within the area (for money in transit at month end), rows.reasons:
-    amounts left out on purpose (category "Ignore"), rows.no_target: investments whose account is unknown."""
+    amounts left out on purpose (category "Ignore"), rows.anlagen: saving without a booking on the other side, by recipient
+    (where it went: your choice per recipient, else the category's account, else the only depot), rows.mapped_in: what that
+    put into accounts kept by balances that are no depot. area_id: this area (your choices per recipient are per area)."""
     kf = config.get("kapitalfluss", {}) or {}
     root_leaves = {a.uuid for a in leaves}
     areas = areas or {}
@@ -985,6 +987,15 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     for cat_name, ref in (kf.get("kategorie_zu_konto") or {}).items():
         try:
             kat_zu_konto[norm_cat(cat_name)] = ledger.resolve(ref).uuid
+        except KeyError:
+            pass
+    emp_zu_konto: Dict[str, str] = {}                 # recipient -> the account saving goes into ("extern": none in MoneyMoney)
+    for key, ref in ((kf.get("empfaenger_zu_konto") or {}).get(str(area_id)) or {}).items():
+        if ref == "extern":
+            emp_zu_konto[key] = ref
+            continue
+        try:
+            emp_zu_konto[key] = ledger.resolve(ref).uuid
         except KeyError:
             pass
     totals = category_totals(ledger, {a.uuid for a in leaves})      # the direction of a category within this area
@@ -1007,6 +1018,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     inbound: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
     stake_in: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
     no_target: Dict[str, float] = defaultdict(float)
+    mapped_in: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    savings: Dict[str, dict] = {}
     ignored: Dict[str, float] = defaultdict(float)
 
     pos_memo: Dict[str, Tuple[str, Optional[str]]] = {}
@@ -1184,18 +1197,48 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         if pos == "ignorieren":
             ignored[mk] += t.amount
         elif pos == "anlegen":
+            # where it went: your choice for the recipient, else the category's account, else -- where no account is set for
+            # the category -- the area's only depot (an account of another area does not count here). "extern": an account not
+            # in MoneyMoney -- the money leaves the net worth. Without a known account the money goes out of the cash flow and
+            # stands as "without target account" among the changes in value, where it takes out what a depot rose by it.
+            key = party_key(t)
             parts = cat.split(" / ")
             c_to = next((kat_zu_konto[" / ".join(parts[:i])] for i in range(len(parts), 0, -1) if " / ".join(parts[:i]) in kat_zu_konto), None)
-            target = c_to if c_to in root_leaves else (depots[0] if len(depots) == 1 and not c_to else None)
-            # without a known account the money leaves the net worth -- unless a depot of the area takes it (shown as reason)
-            neutral = target is not None or bool(depots)
+            e_to = emp_zu_konto.get(key)
+            auto = (c_to, "kategorie") if c_to in root_leaves else (depots[0], "depot") if len(depots) == 1 and not c_to else (None, "")
+            target, how = (None, "extern") if e_to == "extern" else (e_to, "empfaenger") if e_to in root_leaves else auto
             kind = roles.get(target, "sparen") if target else "sparen"          # the kind of the account it goes into, else "saving"
-            R.add("Investitionen", zeile=cat, mk=mk, amount=t.amount, konto=target, art="kategorie", nw=not neutral,
-                  **_grp(INVEST_GROUPS, kind if kind in INVEST_GROUPS else "sparen"))
-            if target:
+            # one row per category -- what your choice per recipient sends elsewhere has a row of its own (its account, its
+            # effect on the net worth); the category's row keeps its name (the key of your planning)
+            zeile, lbl = cat, None
+            if how == "extern":
+                zeile, lbl = cat + " → extern", ("cf_anlage_extern", cat)
+            elif how == "empfaenger" and target != auto[0]:
+                acc_t = ledger.accounts[target]                   # by its path where another account of the area has its name
+                same = any(ledger.accounts[u].name == acc_t.name for u in root_leaves if u != target and u in ledger.accounts)
+                zeile = "%s → %s" % (cat, acc_t.path if same else acc_t.name)
+            R.add("Investitionen", zeile=zeile, mk=mk, amount=t.amount, konto=target, art="kategorie", nw=how == "extern",
+                  **({"lbl": lbl} if lbl else {}), **_grp(INVEST_GROUPS, kind if kind in INVEST_GROUPS else "sparen"))
+            if target in depots:
                 inbound[target][mk] += -t.amount
-            elif neutral:
+            elif target and verlauf.get(target) == "stand" and roles.get(target) in ASSET_LIKE:
+                mapped_in[target][mk] += -t.amount      # an asset kept by balances: paid in, not a correction of its balance
+            elif not target and how != "extern":
                 no_target[mk] += t.amount
+            sv = savings.get(key)
+            if sv is None:
+                sv = savings[key] = {"key": key, "name": (t.name or t.purpose or t.booking_text)[:80], "iban": (t.counter_iban or "").replace(" ", "").upper()[:34],
+                                     "anzahl": 0, "summe": 0.0, "von": t.booking_date.isoformat(), "bis": t.booking_date.isoformat(),
+                                     "kategorien": [], "ziel": target, "wie": how, "auto_ziel": auto[0], "auto_wie": auto[1]}
+            sv["anzahl"] += 1
+            sv["summe"] = round(sv["summe"] + t.amount, 2)
+            sv["von"], sv["bis"] = min(sv["von"], t.booking_date.isoformat()), max(sv["bis"], t.booking_date.isoformat())
+            if cat not in sv["kategorien"]:
+                sv["kategorien"].append(cat)
+            if (sv["ziel"], sv["wie"]) != (target, how):         # by category: the recipient's bookings may go to different accounts
+                sv["wie"], sv["ziel"] = "gemischt", None
+            if (sv["auto_ziel"], sv["auto_wie"]) != auto:
+                sv["auto_wie"], sv["auto_ziel"] = "gemischt", None
         elif pos in ("tilgung", "zinsen"):
             R.add("Finanzierung", zeile=prow, mk=mk, amount=t.amount, art="zins" if pos == "zinsen" else "tilgung", nw=pos == "zinsen",
                   lbl=("pos_" + pos,), detail=det, **_grp(FIN_GROUPS, "zins" if pos == "zinsen" else "tilgung"))
@@ -1208,13 +1251,39 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         acc = ledger.accounts[st]
         for mk, v in per.items():
             R.add("Bewertung", acc.name, acc.name, mk, -v, konto=st, art="konto", nw=True)
+    # saving whose account is unknown: out of the net worth Kontor sees, until you name the account (Cashflow-Positionen) --
+    # where it did go into a depot, that depot's change in value holds it, and this row takes it out again
+    for mk, v in no_target.items():
+        if abs(v) >= 0.005:
+            R.add("Bewertung", "Anlage ohne Zielkonto", "Anlage ohne Zielkonto", mk, round(v, 2), art="ohne_ziel", nw=True,
+                  lbl=("cf_anlage_ohne_ziel",), glbl=("cf_anlage_ohne_ziel",))
 
     if unclear:
         warnings.append(tr("s_d_umbuchung_en_ohne_erkennbaren") % unclear)
     R.pairs = pairs
     R.paired = paired
-    R.reasons = {"ignoriert": dict(ignored), "ohne_ziel": dict(no_target)}
+    R.reasons = {"ignoriert": dict(ignored)}
+    R.mapped_in = {u: dict(v) for u, v in mapped_in.items()}
+    R.anlagen = _savings_list(ledger, savings, depots)
     return R, inbound, warnings
+
+
+def _savings_list(ledger: Ledger, savings: Dict[str, dict], depots: List[str]) -> List[dict]:
+    """The recipients of saving without a counter-booking, largest first, each with Kontor's proposal for its account where it
+    is clear (not where you chose one): the one depot of the area at the bank of the recipient's IBAN, else the one whose name
+    shares a word with the recipient's. Only a proposal -- it counts once you choose it."""
+    generic = {"bank", "gmbh", "depot", "konto", "sparkasse", "volksbank", "capital", "invest", "verrechnungskonto", "wertpapiere"}
+    words = lambda s: {w for w in re.sub(r"[^\wäöüß]+", " ", (s or "").lower()).split() if len(w) >= 4 and w not in generic}
+    code = {u: re.sub(r"\D", "", ledger.accounts[u].bank_code or "") for u in depots}
+    out = []
+    for sv in sorted(savings.values(), key=lambda x: (-abs(x["summe"]), x["name"])):
+        prop = None
+        if sv["wie"] not in ("empfaenger", "extern") and len(depots) > 1:      # not where you chose
+            at_bank = [u for u in depots if len(code[u]) >= 4 and sv["iban"][4:4 + len(code[u])] == code[u]]
+            named = [u for u in depots if words(sv["name"]) & words(ledger.accounts[u].name)]
+            prop = at_bank[0] if len(at_bank) == 1 else (named[0] if len(named) == 1 else None)
+        out.append(dict(sv, vorschlag=prop if prop != sv["ziel"] else None))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1228,7 +1297,7 @@ def reconcile(sektionen: List[dict], nw: Dict[str, float], liq: Dict[str, Option
     the cash rows to the change of the liquid accounts (with money in transit). A difference is split into its reasons
     ([text key, amount, detail]); what no reason explains is shown as such -- never left out."""
     reasons = getattr(R, "reasons", None) or {}
-    ignored, no_target = reasons.get("ignoriert") or {}, reasons.get("ohne_ziel") or {}
+    ignored = reasons.get("ignoriert") or {}
     liquid = {a.uuid for a in leaves if roles.get(a.uuid) == "liquiditaet"}
     # transfers over a month end with a side that is no bank account: the bank side counts in its month, the money in transit
     # counts as liquid in the balance sheet until it arrives
@@ -1252,8 +1321,6 @@ def reconcile(sektionen: List[dict], nw: Dict[str, float], liq: Dict[str, Option
         if abs(ignored.get(mk, 0.0)) >= 0.005:
             g_nw.append(["ue_ignoriert", round(ignored[mk], 2), ""])
             g_liq.append(["ue_ignoriert", round(ignored[mk], 2), ""])
-        if abs(no_target.get(mk, 0.0)) >= 0.005:
-            g_nw.append(["ue_ohne_ziel", round(no_target[mk], 2), ""])
         tm = round(transit_mixed.get(mk, 0.0) - transit_mixed.get(prev, 0.0), 2)
         if abs(tm) >= 0.005:
             g_liq.append(["ue_unterwegs", tm, ""])
@@ -1321,7 +1388,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         learned_sig = learned.get("_sig") or hashlib.sha1(json.dumps(learned.get("regeln") or [], sort_keys=True, default=str).encode()).hexdigest()
     objekte = {str(im.get("kategorie")): str(im.get("name") or "") for im in config.get("immobilien") or []
                if isinstance(im, dict) and im.get("kategorie") and str(im.get("bereich") or "") == str(bereich.get("id"))}
-    ckey = (getattr(ledger, "_kat_sig", None), tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
+    ckey = (getattr(ledger, "_kat_sig", None), str(bereich.get("id") or ""), tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
             json.dumps(config.get("kapitalfluss") or {}, sort_keys=True, default=str), tuple(months[0]) if months else None,
             tuple(months[-1]) if months else None, len(months), tuple(sorted(quelle.items())), company, learned_sig, tuple(sorted(objekte.items())),
             json.dumps([sorted(areas.items()), config.get("gesellschaften"), config.get("kontenspiegel")], sort_keys=True, default=str))
@@ -1329,7 +1396,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
     if ckey in cache:
         R, inbound, warn_c = copy.deepcopy(cache[ckey])        # Bereich unveraendert (z. B. Verlauf eines anderen Bereichs geaendert)
     else:
-        R, inbound, warn_c = classify(ledger, leaves, roles, config, months, quelle, areas, company, objekte, learned)
+        R, inbound, warn_c = classify(ledger, leaves, roles, config, months, quelle, areas, company, objekte, learned, str(bereich.get("id") or ""))
         if len(cache) > 24:
             cache.clear()
         cache[ckey] = copy.deepcopy((R, inbound, warn_c))
@@ -1356,8 +1423,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                     val = round(delta - inbound[acc.uuid].get(mk, 0.0), 2)
                     if abs(val) >= 0.005:
                         R.add("Bewertung", acc.name, acc.name, mk, val, konto=acc.uuid, art="depot", nw=True)
-                else:
-                    val = round(delta - own.get(mk, 0.0), 2)
+                else:                                   # saving you sent there without a booking counts as paid in
+                    val = round(delta - own.get(mk, 0.0) - ((getattr(R, "mapped_in", None) or {}).get(acc.uuid) or {}).get(mk, 0.0), 2)
                     if abs(val) >= 0.005:
                         R.add("Bewertung", acc.name, acc.name + " / Korrektur Kontostand", mk, val, konto=acc.uuid, art="korrektur", nw=True,
                               lbl=("cf_korrektur", acc.name))
@@ -1462,6 +1529,9 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         except KeyError:
             pass
 
+    # accounts saving can go into without a booking there (Cashflow-Positionen: the account per recipient): kept by balances
+    anlage_ziele = [a.uuid for a in sorted(leaves, key=lambda x: order.get(x.uuid, 10**9))
+                    if quelle.get(a.uuid) == "stand" and roles.get(a.uuid) in ASSET_LIKE]
     warnings = list(rule_warnings or []) + warn_h + warn_c
     if foreign:
         warnings.append(tr("s_fremdwaehrung", ", ".join("%s (%s)" % (a.name, a.currency) for a in foreign)))
@@ -1473,7 +1543,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         "bereich": {"id": bereich["id"], "name": bereich["name"], "art": bereich.get("art"), "anteil": bereich.get("anteil")},
         "bilanz": {"zeilen": bilanz_rows, "nettovermoegen": nw, "aktiva": aktiva, "passiva": passiva,
                    "liquides_nettovermoegen": liquid_nw, "positionen": {r: role_label(r) for r in pos_sums}, "ausserhalb": ausserhalb},
-        "kapitalfluss": {"sektionen": sektionen, "ueberleitung": ueberleitung},
+        "kapitalfluss": {"sektionen": sektionen, "ueberleitung": ueberleitung, "anlagen": list(getattr(R, "anlagen", None) or []),
+                         "anlage_ziele": anlage_ziele},
         "darlehen_konfig": loans_cfg,
         "konten_inaktiv": sorted(inactive),
         "konten_inaktiv_auto": sorted(inactive_auto),

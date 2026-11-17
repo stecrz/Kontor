@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.13.15 (2026-11-17 17:22)
+- **Zielkonto je Empfänger** (Cashflow-Positionen): Geld für „Sparen & Anlegen“, das auf keinem deiner Konten als Buchung ankommt (etwa in ein Depot mit Kontoständen), ordnest du je Empfänger einem Konto zu. So kann eine Kategorie wie „Sparen“ auf mehrere Konten laufen. Kontor schlägt ein Depot vor, wo es eindeutig ist.
+- **Ohne Zielkonto kein Kursgewinn:** Solches Geld steht im Cashflow unter Wertänderungen als eigene Zeile „Anlage ohne Zielkonto“ (mit Link zur Einstellung), statt still als Wertzuwachs eines Depots zu zählen.
+- **Cashflow-Tabelle:** vier Stufen als kleine Symbole in der Kopfzelle; die erste zeigt nur die Hauptebenen. Planspalten sind in allen Zeilen schraffiert, auch in den Summen.
+- **Diagramme:** je zwei nebeneinander. „Ausgaben nach Position“ steht schmal neben der Brücke und hat rote Balken; Betrag, Anteil, Vorperiode und Veränderung erscheinen beim Darüberfahren bzw. Antippen, die Unterkategorien dann in Farben ohne Rot.
+
 ## 3.13.14 (2026-11-17 16:45)
 - **Cashflow und Planung in Safari:** Beim schnellen Scrollen erschienen die Zeilennamen verspätet und die Spalten wirkten verrutscht. Die Namensspalte ist jetzt ein festes Stück und erscheint sofort mit den Zahlen.
 - **Bankguthaben:** Monate, in denen ein Konto noch nicht existierte, zeigen wieder den Betrag statt „unbekannt“ – das Konto zählt dort mit 0, wie in der Bilanz.

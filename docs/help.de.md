@@ -200,10 +200,10 @@ Wohin das Geld fließt – als Kapitalflussrechnung, für jeden Bereich in derse
 | **Investitions-Cashflow** | Kauf und Verkauf von Vermögen, nach Art: Immobilien (mit Kaufnebenkosten), Wertpapiere & Geldanlagen, Beteiligungen, gewährte Darlehen; darunter die einzelnen Konten. Das Geld verlässt das Bankkonto, bleibt aber Vermögen. |
 | **Finanzierungs-Cashflow** | Zahlungen an und von Geldgebern, nach Art: Darlehensaufnahme, Tilgung, Zinsen, bei Gesellschaften Einlagen und Entnahmen der Gesellschafter; darunter die einzelnen Darlehen. Die Auszahlung eines Darlehens ist eine Darlehensaufnahme, keine „negative Tilgung“. |
 | **Veränderung Bankguthaben** | die drei zusammen (und was unklar ist); darüber und darunter das Bankguthaben am Anfang und am Ende |
-| **Wertänderungen** | was sich ohne Zahlung ändert: Kurse von Depots, Wertanpassungen, Korrekturen von Hand |
+| **Wertänderungen** | was sich ohne Zahlung ändert: Kurse von Depots, Wertanpassungen, Korrekturen von Hand, [Anlagen ohne Zielkonto](#positions-recipients) |
 | **Veränderung Nettovermögen** | operativer Cashflow, Zinsen, Einlagen und Entnahmen, Wertänderungen – Anlegen, Darlehen aufnehmen und tilgen schichten nur um |
 
-Eine Zeile erscheint nur, wo Geld darin ist. Wie weit die Tabelle aufgeklappt ist, wählst du in ihrer Kopfzelle, direkt über den Pfeilen (am iPhone klappt der große Pfeil dort mit jedem Tippen eine Stufe weiter auf, zuletzt wieder zu): **Überblick** (die drei Cashflows mit Einnahmen, Ausgaben und den Arten von Investition und Finanzierung – der ganze Cashflow auf einer Seite), **Positionen** (dazu die Positionen, Konten und Darlehen) oder **Details** (bis zu den Kategorien aus MoneyMoney). Jede Zeile mit ▸ öffnest und schließt du auch einzeln; das „?“ an einer Zeile erklärt sie. Das Zahnrad daneben führt zu den Cashflow-Positionen.
+Eine Zeile erscheint nur, wo Geld darin ist. Wie weit die Tabelle aufgeklappt ist, wählst du in ihrer Kopfzelle, direkt über den Pfeilen, mit vier Symbolen – je tiefer eingerückt, desto weiter aufgeklappt (am iPhone klappt der große Pfeil dort mit jedem Tippen eine Stufe weiter auf, zuletzt wieder zu): **Hauptebenen** (nur die drei Cashflows, Bankguthaben und Wertänderungen), **Überblick** (die drei Cashflows mit Einnahmen, Ausgaben und den Arten von Investition und Finanzierung – der ganze Cashflow auf einer Seite), **Positionen** (dazu die Positionen, Konten und Darlehen) oder **Details** (bis zu den Kategorien aus MoneyMoney). Jede Zeile mit ▸ öffnest und schließt du auch einzeln; das „?“ an einer Zeile erklärt sie. Das Zahnrad daneben führt zu den Cashflow-Positionen.
 
 ![Cashflow](img/de/cash_flow.png)
 
@@ -268,12 +268,23 @@ Der Cashflow hat eine feste Gliederung; deine Kategorien aus MoneyMoney zählen 
 
 - **Automatisch** – wie die Kategorie darüber, sonst Kontors Vorschlag nach dem Namen (etwa „Einkommen / Rückzahlung Finanzamt“ → Erstattungen, „Sparen“ → Sparen & Anlegen).
 - Eine gewählte Position gilt auch für alle Kategorien darunter, solange sie keine eigene haben.
-- **Sparen & Anlegen** zählt nicht als Ausgabe; unter „Angelegt auf“ wählst du daneben das Konto, in das das Geld fließt (nur bei dieser Position). **Umbuchung** (zwischen eigenen Konten) sucht die Gegenbuchung, **Nicht berücksichtigen** nimmt die Kategorie heraus (die Prüfzeile nennt sie).
+- **Sparen & Anlegen** zählt nicht als Ausgabe; unter „Angelegt auf“ wählst du daneben das Konto, in das das Geld fließt (nur bei dieser Position; genauer je Empfänger, siehe unten). **Umbuchung** (zwischen eigenen Konten) sucht die Gegenbuchung, **Nicht berücksichtigen** nimmt die Kategorie heraus (die Prüfzeile nennt sie).
 - Kategorien einer Immobilie (Immobilien → Kategorie) haben im Cashflow eigene Zeilen „Miete“ und „Kosten“.
 
 Die Planung arbeitet auf den Positionen; ein Budget aus MoneyMoney zählt für die Position seiner Kategorie. In MoneyMoney ändert sich nichts.
 
 ![Cashflow-Positionen](img/de/category_positions.png)
+
+<a id="positions-recipients"></a>
+#### Zielkonto je Empfänger
+
+Überweist du auf ein eigenes Konto in MoneyMoney, erkennt Kontor die Gegenbuchung selbst. Anders bei Geld, das auf keinem deiner Konten als Buchung ankommt, etwa bei einem Depot, das nur Kontostände hat. Dafür stehen unter der Tabelle die Empfänger dieser Zahlungen mit Kategorie, Anzahl und Summe. Je Empfänger wählst du das Konto, in das das Geld fließt:
+
+- **Automatisch** – das Konto unter „Angelegt auf“ der Kategorie, ist dort keins gewählt, das einzige Depot des Bereichs.
+- **Ein Konto** – gilt für alle Zahlungen an diesen Empfänger, gleich in welcher Kategorie; das geht vor „Angelegt auf“. So kann eine Kategorie wie „Sparen“ auf mehrere Konten laufen.
+- **Kein Konto in MoneyMoney** – das Geld verlässt das Vermögen, das Kontor sieht.
+
+Wo es eindeutig ist, schlägt Kontor ein Depot vor (gleiche Bank wie die IBAN des Empfängers oder ein gemeinsames Wort im Namen); es zählt erst, wenn du es übernimmst und speicherst. Geld ohne Zielkonto zählt nicht als Kursgewinn: Es steht im Cashflow unter Wertänderungen als eigene Zeile **Anlage ohne Zielkonto**, die den Anstieg des Depots ausgleicht, mit einem Link hierher. Ein Konto, das nicht mehr zum Bereich gehört, nennt Kontor unter Einrichtung; dann gilt wieder die automatische Wahl.
 
 <a id="planning"></a>
 ## Planung
