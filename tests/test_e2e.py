@@ -1721,6 +1721,13 @@ class AppTests(_AppBase):
                 self.assertEqual(code, 200, (was, data[:200])); self.assertIn("spreadsheetml", hdr["Content-Type"])
                 with zipfile.ZipFile(io.BytesIO(data)) as z:
                     self.assertIn("xl/workbook.xml", z.namelist()); self.assertIn("xl/worksheets/sheet1.xml", z.namelist())
+        # cash flow and planning: the names of the page (every row a text of the catalogue, none a bare key; no "Umschichtung")
+        import service as MS
+        for was in ("cashflow", "planning"):
+            names = [str(r[0]).strip() for r in MS.export_sheets(self.app, was, None, "months")[0].rows if r and r[0]]      # the table (first sheet)
+            for want in ("Einnahmen", "Überschuss", "Veränderung Bankguthaben", "Abgleich mit der Bilanz", "Veränderung Nettovermögen"):
+                self.assertIn(want, names, was)
+            self.assertFalse([n for n in names if "_" in n or "Umschichtung" in n], was)
         # balance sheet: everything in it (positions, accounts, securities), grouped; collapsed as on the page
         code, data, hdr = self.call("/api/export/balance.xlsx?mode=months&open=wertpapiere&dep=" + F.uid("priv.depot"), raw=True)
         with zipfile.ZipFile(io.BytesIO(data)) as z:
@@ -2645,18 +2652,67 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(len(pg.query_selector_all("tr.check")), 2)
                 self.assertFalse(pg.query_selector_all("tr.check td.warn"))
                 self.assertIn("✓", pg.inner_text("tr.check"))
-                # the month view starts three years back; "‹ year" adds one year and starts there; positions open to their categories
-                self.assertTrue(pg.query_selector("button.disc[data-det]"))
-                pg.click("button.disc[data-det]"); pg.wait_for_selector("tr.det")
+                # one outline: sections open and close, positions open to their categories; three levels (overview: sections and results only)
+                self.assertEqual(pg.inner_text("#cf-ebene button.on"), "Positionen")
+                self.assertTrue(pg.query_selector("tr.sec[data-tog='s:Einnahmen']")); self.assertIsNone(pg.query_selector("tr.det"))
+                pg.click("button.disc[data-tog^='d:']"); pg.wait_for_selector("tr.det")                 # a position: its categories
+                pg.click("tr.sec[data-tog='s:Einnahmen'] td:first-child"); pg.wait_for_timeout(200)       # a section closes (its total stays)
+                self.assertIsNone(pg.query_selector("tr[data-key^='Einnahmen/']")); self.assertTrue(pg.query_selector("tr[data-key^='Ausgaben/']"))
+                pg.click("#cf-ebene button[data-e='0']"); pg.wait_for_timeout(200)                        # overview: every section closed
+                self.assertEqual(len(pg.query_selector_all("#main .cf-tbl tr[data-key]")), 0)
+                self.assertEqual(len(pg.query_selector_all("#main .cf-tbl tr.total")), 3); self.assertEqual(len(pg.query_selector_all("tr.check")), 2)
+                self.assertLess(pg.evaluate("document.querySelector('#main .cf-tbl').offsetHeight"), 620)   # fits on a page
+                pg.click("#cf-ebene button[data-e='2']"); pg.wait_for_selector("tr.det")                 # details: everything open
+                self.assertGreater(len(pg.query_selector_all("#main .cf-tbl tr.det")), 2)
+                pg.click("#cf-ebene button[data-e='1']"); pg.wait_for_timeout(200)
+                for tip in pg.eval_on_selector_all("#main .cf-tbl .hq", "e => e.map(x => x.dataset.tip)"):  # headings are explained by their "?"
+                    self.assertTrue(tip)
+                self.assertNotIn("Umschichtung", pg.inner_text("#main .cf-tbl")); self.assertNotIn("Tilgung +", pg.inner_text("#main .cf-tbl"))
+                # the month view starts three years back; the year stepper moves its first year back and forth
                 first = pg.evaluate("document.querySelector('#main thead th[data-key]').dataset.key")
-                pg.evaluate("S.vonJahr = +document.querySelector('#main thead th[data-key]').dataset.key.slice(0, 4) + 1; route()")
-                pg.wait_for_selector("#cols-earlier")
+                self.assertTrue(pg.is_disabled("#von-jahr button[data-d='-1']"))                        # no earlier data
+                pg.click("#von-jahr button[data-d='1']"); pg.wait_for_timeout(300)
                 n = len(pg.query_selector_all("#main thead th[data-key]"))
-                pg.click("#cols-earlier"); pg.wait_for_timeout(300)
+                self.assertGreater(pg.evaluate("document.querySelector('#main thead th[data-key]').dataset.key"), first)
+                pg.click("#von-jahr button[data-d='-1']"); pg.wait_for_timeout(300)
                 self.assertGreater(len(pg.query_selector_all("#main thead th[data-key]")), n)
                 self.assertEqual(pg.evaluate("document.querySelector('#main thead th[data-key]').dataset.key"), first)
                 self.assertEqual(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0)
-                pg.evaluate("S.vonJahr = null")
+                self.assertIsNone(pg.evaluate("S.vonJahr"))
+                # scrolling sideways is left alone (no snapping a moment later)
+                pg.evaluate("document.querySelector('#main .wrap').scrollLeft = 37"); pg.wait_for_timeout(700)
+                self.assertEqual(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 37)
+                pg.click("button.disc[data-tog^='d:']"); pg.wait_for_selector("tr.det")                 # ... and a row opened moves nothing
+                self.assertEqual(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 37)
+                pg.click("button.disc[data-tog^='d:']"); pg.wait_for_timeout(200)
+                # charts below the table: one period for all, each mark with its figures
+                self.assertTrue(pg.query_selector("#cf-time-plot svg .cf-col.ein")); self.assertTrue(pg.query_selector("#cf-time-plot svg .cf-col.aus"))
+                self.assertEqual(len(pg.query_selector_all("#cf-time-plot .cf-hit")), 12)
+                self.assertIn("Überschuss", pg.get_attribute("#cf-time-plot .cf-hit", "data-tip"))
+                names = pg.eval_on_selector_all(".cf-card:first-child .cf-name", "e => e.map(x => x.textContent)")
+                self.assertEqual((names[0], names[1], names[-1]), ("Einnahmen", "Ausgaben", "Veränderung Bankguthaben"))
+                self.assertGreaterEqual(len(pg.query_selector_all(".cf-card:nth-child(2) .cf-row")), 3)     # expenses by position
+                # the charts hold the table's figures: the composition ends in the change in cash of the twelve months, its steps add up
+                num = lambda t: int("".join(c for c in t.replace("\u2212", "-") if c.isdigit() or c == "-"))
+                vals = [num(t) for t in pg.eval_on_selector_all(".cf-card:first-child .cf-num", "e => e.map(x => x.textContent)")]
+                want = pg.evaluate("(() => { const D = B(), ms = D.monate.filter(m => m <= D.ist_bis).slice(-12), s = n => Math.round(ms.reduce((a, m) => a + (D.kapitalfluss.summen[m][n] || 0), 0)); return [s('Einnahmen'), s('Ausgaben'), s('Operativ'), s('Cashflow')]; })()")
+                self.assertEqual([vals[0], vals[1], vals[2], vals[-1]], want); self.assertEqual(vals[0] + vals[1], vals[2])
+                self.assertLessEqual(abs(sum(vals[3:-1]) + vals[2] - vals[-1]), 2)                          # rounded to whole euros
+                top = num(pg.inner_text(".cf-card:nth-child(2) .cf-val"))
+                self.assertEqual(top, -want[1])                                                             # expenses by position: their sum
+                fig = lambda: pg.inner_text(".cf-time .cf-val")
+                before = fig()
+                pg.click("#cf-zeit button[data-z='alle']"); pg.wait_for_timeout(300)
+                self.assertNotEqual(fig(), before); self.assertGreater(len(pg.query_selector_all("#cf-time-plot .cf-hit")), 12)
+                pg.click("#cf-zeit button[data-z='12m']"); pg.wait_for_timeout(200)
+                # where a category counts is a setting: its own page under Verwaltung, linked from here (the old address leads there)
+                pg.click("#main a[href='#positions']"); pg.wait_for_selector(".kp-table tr[data-p]")
+                self.assertEqual(pg.inner_text("#page-title"), "Cashflow-Positionen"); self.assertTrue(pg.query_selector("#nav a.on[href='#positions']"))
+                self.assertIn("→", pg.inner_text(".kp-table tbody tr td.kp-arrow"))
+                pg.evaluate("location.hash = '#categories/positions'"); pg.wait_for_timeout(400)
+                self.assertEqual(pg.evaluate("location.hash"), "#positions"); self.assertTrue(pg.query_selector(".kp-table"))
+                pg.click("#nav a[href='#categories']"); pg.wait_for_timeout(400)
+                self.assertEqual(len(pg.query_selector_all("#main .tabs button")), 2)
                 # Bilanz: Positionen/Gruppen, inaktive, Konto-Klick -> Verlauf
                 pg.click("#nav a[href='#balance']"); pg.wait_for_selector("tr.pos")
                 self.assertIn("Bankguthaben", pg.query_selector("#main").inner_text())

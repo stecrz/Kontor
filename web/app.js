@@ -109,6 +109,9 @@ const H = {
   update_quelle: t('update_quelle_tip'),
   pruefen: t('pruefen_tip'),
   position_kat: t('position_kat_tip'),
+  cf_ueberschuss: t('cf_ueberschuss_tip'), cf_rohertrag: t('cf_rohertrag_tip'), cf_nach_kd: t('cf_nach_kd_tip'), cf_invest: t('cf_invest_tip'), cf_finanz: t('cf_finanz_tip'),
+  cf_unklar: t('cf_unklar_tip'), cf_wert: t('cf_wert_tip'), cf_bank: t('cf_bank_tip'), cf_nv: t('cf_nv_tip'), cf_abgleich_bank: t('cf_abgleich_bank_tip'),
+  cf_abgleich_nv: t('cf_abgleich_nv_tip'), cf_zusammensetzung: t('cf_zusammensetzung_tip'),
   zielkonto: t('zielkonto_tip'),
   voll_lesen: t('voll_lesen_tip'),
   kennung: t('interne_kennung_des_bereichs_wird'),
@@ -167,6 +170,8 @@ const H = {
 const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   konten_zuordnung: 'accounts', inaktiv: 'accounts', verlauf_kurz: 'history', verlauf: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
   zuordnen: 'categories', regeln_mm: 'categories-rules', mm_cat: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'categories-positions',
+  cf_ueberschuss: 'cash-flow', cf_rohertrag: 'cash-flow', cf_nach_kd: 'cash-flow', cf_invest: 'cash-flow', cf_finanz: 'cash-flow', cf_unklar: 'cash-flow', cf_wert: 'cash-flow',
+  cf_bank: 'cash-flow', cf_nv: 'cash-flow', cf_abgleich_bank: 'cash-flow', cf_abgleich_nv: 'cash-flow', cf_zusammensetzung: 'cash-flow-charts',
   abgleich: 'sync', ab_art: 'sync', voll_lesen: 'sync', monate_zurueck: 'sync', abruf: 'sync', intervall: 'sync',
   bch: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', regel_darlehen_h: 'rules-loans', regel_gesellschaften_h: 'rules-companies',
   darlehen_iban: 'rules-loans', darlehen_konto: 'rules-loans', darlehen_quelle: 'rules-loans', zinsmodell: 'rules-loans', satz: 'rules-loans', basis_override: 'rules-loans',
@@ -223,7 +228,7 @@ document.addEventListener('click', e => {
   window.addEventListener('scroll', hide, true); window.addEventListener('resize', hide);
 })();
 
-const S = { tab: 'overview', modus: 'monate', plan: true, real: false, alle: false, collapsed: {}, offen: {}, csrf: null, bereich: null,
+const S = { tab: 'overview', modus: 'monate', plan: true, real: false, alle: false, collapsed: {}, offen: {}, csrf: null, bereich: null, cfEbene: 1, cfTog: {}, cfZeit: '12m',
             DATA: null, CFG: null, KONTEN: [], KATS: [], STATUS: null, steuerJahr: null, steuerEnt: null, vorschlag: false,
             uf: {entitaet: '', jahr: '', konto: '', q: '', ohne_beleg: false, ohne_kategorie: false, richtung: ''}, sel: new Set(), drawerTx: null };
 
@@ -615,7 +620,7 @@ function statusMini() {
 const BER = {stand: '', timer: null};
 const SYNC = {busy: false};
 const MMH = {busy: false};
-const DATA_TABS = ['overview', 'balance', 'cashflow', 'planning', 'tax', 'properties', 'transactions', 'categories', 'bookings'];
+const DATA_TABS = ['overview', 'balance', 'cashflow', 'planning', 'tax', 'properties', 'transactions', 'categories', 'positions', 'bookings'];
 async function pollStatus(all) {
   // Status holen; läuft ein Abgleich oder Berichtsneubau, öfter nachsehen und nach Abschluss die Daten frisch laden
   // all (after "Sync"): the open page is drawn again whatever it is, not only the pages with figures
@@ -649,11 +654,10 @@ function bereichSeg() {
 }
 
 // ---------------------------------------------------------------- Spalten, Werte
-// month view: this year and the two before (a table with all months of 25 years is slow to draw); "‹ year" shows earlier ones,
-// the year view all years
+// month view: this year and the two before (a table with all months of 25 years is slow to draw); the year stepper of the
+// toolbar (yearCtl) moves its first year back and forth, the year view shows all years
 const MONTH_YEARS = 3;
 const firstYear = D => S.vonJahr ?? (+String(D.ist_bis || D.monate[D.monate.length - 1] || '').slice(0, 4) - (MONTH_YEARS - 1));
-const earlierYear = D => S.modus !== 'jahre' && D.monate.length && +D.monate[0].slice(0, 4) < firstYear(D) ? firstYear(D) - 1 : null;
 function cols(D, stocks) {
   // stocks (balance sheet): no year columns in the month view – a year column would only repeat December (or the current month)
   D = D || B(); const fy = firstYear(D), plan = planOn() ? (D.plan_monate || []) : [];
@@ -680,11 +684,7 @@ const lastOf = (vals, months) => { for (let i = months.length - 1; i >= 0; i--) 
 function cls(v, c) { let s = ''; if (c.plan) s += ' plan'; else if (c.part) s += ' part'; if (c.cur && S.modus !== 'jahre') s += ' cur'; if (c.year) s += ' year'; if (c.jan) s += ' ystart'; if (v == null || Math.abs(v) < 0.005) s += ' zero'; else s += v < 0 ? ' neg' : ' pos'; return s; }
 const cells = (C, fn) => C.map(c => { const v = fn(c); return `<td class="${cls(v, c)}">${F(v)}</td>`; }).join('');
 const isCurCol = c => { const D = B(), ib = (D && D.ist_bis) || ''; return c.year ? c.key === ib.slice(0, 4) && S.modus === 'jahre' : c.key === ib; };
-const thead = (first, C) => {
-  const e = B() && earlierYear(B()), btn = e ? `<button class="earlier" id="cols-earlier" title="${t('fruehere_monate')}">‹ ${e}</button>` : '';
-  // in a header with its own controls (balance sheet) the button sits among them, not in a line of its own
-  const head = btn && first.includes('<span class="sp"></span>') ? first.replace('<span class="sp"></span>', btn + '<span class="sp"></span>') : first + (btn ? ' ' + btn : '');
-  return `<thead><tr><th>${head}</th>${C.map(c => `<th data-key="${c.key}" class="${c.year ? 'year' : ''}${c.jan ? ' ystart' : ''}${c.plan ? ' plan' : ''}"${isCurCol(c) ? ' data-cur="1"' : ''} title="${c.plan ? t('plan') : c.mixed ? t('ist_plan') : t('ist')}">${c.label}</th>`).join('')}</tr></thead>`; };
+const thead = (first, C) => `<thead><tr><th>${first}</th>${C.map(c => `<th data-key="${c.key}" class="${c.year ? 'year' : ''}${c.jan ? ' ystart' : ''}${c.plan ? ' plan' : ''}"${isCurCol(c) ? ' data-cur="1"' : ''} title="${c.plan ? t('plan') : c.mixed ? t('ist_plan') : t('ist')}">${c.label}</th>`).join('')}</tr></thead>`;
 const noData = `<div class="card"><div class="v s">${t('noch_keine_daten')}</div><div class="d">${t('unter_einrichtung_den_bericht_erstelle')}</div></div>`;
 const sumsOf = (D, name, months) => months.reduce((a, m) => a + (D.kapitalfluss.summen[m]?.[name] ?? 0) * defl(m), 0);
 
@@ -740,7 +740,7 @@ function chartCashflow(D) {
   });
   s += `<path d="${op.map((v, i) => (i ? 'L' : 'M') + (x(i) + bw / 2).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ')}" fill="none" stroke="var(--fg)" stroke-width="2"/>`;
   s += `<line x1="${P.l}" x2="${W - P.r}" y1="${y(0)}" y2="${y(0)}" stroke="var(--line-2)"/>`;
-  return s + `</svg><div class="chart-legend"><span><i style="background:var(--c-ein)"></i>${t('einnahmen')}</span><span><i style="background:var(--c-aus)"></i>${t('ausgaben')}</span><span><i style="background:var(--fg)"></i>${t('operatives_ergebnis')}</span>` + (pm.length ? `<span class="muted">${t('blass_plan')}</span>` : '') + '</div>';
+  return s + `</svg><div class="chart-legend"><span><i style="background:var(--c-ein)"></i>${t('einnahmen')}</span><span><i style="background:var(--c-aus)"></i>${t('ausgaben')}</span><span><i style="background:var(--fg)"></i>${t('cf_ueberschuss')}</span>` + (pm.length ? `<span class="muted">${t('blass_plan')}</span>` : '') + '</div>';
 }
 function niceTicks(min, max, n, least = 0) {
   // about n round steps (1, 2, 5 × 10^k); with fewer than "least" lines a finer round step (also 2.5: 0 / 25 / 50 / 75 / 100 Tsd.)
@@ -787,9 +787,9 @@ async function vUebersicht() {
   h += `<h2>${t('jahresvergleich')} <span class="x">${t('kumulierte_werte_spalte_0_bis', ly, MONATE[+cur.slice(5) - 1])}</span></h2><div class="wrap auto"><table><thead><tr><th>${t('position')}</th>${ycols.map(c => `<th class="year${c.plan ? ' plan' : ''}">${lab(c)}</th>`).join('')}${lytd.length ? `<th class="year">${t('0_bis_1', ly, MONATE[+cur.slice(5) - 1])}</th>` : ''}</tr></thead><tbody>`;
   const rowY = (label, fn, total) => `<tr class="${total ? 'total' : ''}"><td>${label}</td>${ycols.map(c => { const v = fn(c.months); return `<td class="${cls(v, c)}">${F0(v)}</td>`; }).join('')}${lytd.length ? `<td class="year ${(fn(lytd) || 0) < 0 ? 'neg' : 'pos'}">${F0(fn(lytd))}</td>` : ''}</tr>`;
   for (const [k, l] of [['Einnahmen', t('einnahmen')], ['Ausgaben', t('ausgaben')], ['Zinsen', t('davon_zinsen')]]) h += rowY(l, ms => sumsOf(D, k, ms));
-  h += rowY(t('operatives_ergebnis'), ms => sumsOf(D, 'Operativ', ms), true);
-  for (const [k, l] of [['Investitionen', t('investitionen_umschichtung')], ['Finanzierung', t('finanzierung_tilgung_zinsen')], ['Bewertung', t('bewertung_wertaenderungen')]]) h += rowY(l, ms => sumsOf(D, k, ms));
-  h += rowY(t('nettovermoegensaenderung'), ms => sumsOf(D, 'Nettovermoegen_delta', ms), true);
+  h += rowY(t('cf_ueberschuss'), ms => sumsOf(D, 'Operativ', ms), true);
+  for (const [k, l] of [['Investitionen', t('sek_investitionen')], ['Finanzierung', t('finanzierung')], ['Bewertung', t('cf_wertaenderungen')]]) h += rowY(l, ms => sumsOf(D, k, ms));
+  h += rowY(t('cf_veraenderung_nv'), ms => sumsOf(D, 'Nettovermoegen_delta', ms), true);
   h += rowY(t('nettovermoegen_am_jahresende'), ms => lastOf(Object.assign({}, nw, proj ? proj.nettovermoegen : {}), ms));
   h += '</tbody></table></div>';
   // Offene Punkte + naechste Monate
@@ -825,7 +825,7 @@ const MODULES = [
   {id: 'areas', t: t('mod_areas'), d: t('welche_konten_gehoeren_zusammen_privat'), done: () => (S.CFG.bereiche || []).length > 0 || !!S.DATA},
   {id: 'accounts', t: t('mod_accounts'), d: t('jedes_konto_bestaetigen_bereich_und'), done: () => !!S.DATA && !((S.DATA.konten_neu || []).length)},
   {id: 'history', t: t('mod_history'), d: t('bisherigen_verlauf_aller_konten_einmal'), done: () => !!((S.STATUS || {}).moneymoney || {}).historie},
-  {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => Object.keys((S.CFG.kapitalfluss || {}).positionen || {}).length > 0, href: '#categories/positions', optional: true},
+  {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => Object.keys((S.CFG.kapitalfluss || {}).positionen || {}).length > 0, href: '#positions', optional: true},
   {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.kategorien || {}).gesamt || {}).ohne), href: '#categories', optional: true},
   {id: 'rules', t: t('mod_rules'), d: t('darlehen_spiegeln_und_verzinsen_beteil'), done: () => hasRules(), href: '#rules', optional: true},
   {id: 'properties', t: t('mod_properties'), d: t('kalkulationen_anlegen_mit_konten_und'), done: () => (S.CFG.immobilien || []).length > 0, href: '#properties', optional: true},
@@ -1342,7 +1342,7 @@ function vBilanz() {
   S.depOpen = S.depOpen || {};                          // portfolios opened into their securities (each on its own)
   const ord = bilBlocks(), at = ord.indexOf('table');
   // top: the view (months/years) for chart and table; the table options sit in its header cell (no gap to the chart)
-  const top = `<div class="toolbar">${viewCtl()}<span class="sp"></span>${viewBtns()}${xlsxBtn('balance')}</div>`, chart = vBilanzChart(D);
+  const top = `<div class="toolbar">${viewCtl()}${yearCtl()}<span class="sp"></span>${viewBtns()}${xlsxBtn('balance')}</div>`, chart = vBilanzChart(D);
   let h = '';                                           // the table (placed above, between or below the charts, see the end)
   const tag = r => (r.offline && !r.gruppe ? `<span class="tag">${t('manuell')}</span>` : '') + (r.inaktiv ? `<span class="tag">${t('ausgeblendet')}</span>` : '')
     + (r.fortgeschrieben_vor ? `<span class="tag warn" title="${t('vor_0_ist_kein_stand', ML(r.fortgeschrieben_vor))}">${t('vor_0_unbekannt', ML(r.fortgeschrieben_vor))}</span>` : '');
@@ -2597,29 +2597,21 @@ function snapLeft(w, target) {
   const b = ths.map(th => Math.round(colX(w, th) - sw)).find(v => v >= target - 1);
   return Math.max(0, Math.min(max, b == null ? max : b));
 }
-// Waagerecht rastet die Tabelle erst ein, wenn du aufgehört hast, waagerecht zu blättern – nicht per CSS-Einrasten: Safari
-// rastet dabei auch beim Blättern nach unten neu ein, und die Tabelle springt zur Seite.
-function snapNearest(w, x) {
-  const ths = $$('thead th', w).slice(1).filter(th => !th.classList.contains('snap-pad')), sw = $('thead th', w).offsetWidth;
-  const max = w.scrollWidth - w.clientWidth, starts = ths.map(th => Math.round(colX(w, th) - sw)).concat([max]);
-  return Math.max(0, Math.min(max, starts.reduce((a, v) => Math.abs(v - x) < Math.abs(a - x) ? v : a, 0)));
+// The table is put on a column's start once, when it is drawn; scrolling itself is left alone (snapping afterwards moved
+// the figures a moment after you had stopped).
+// where each value column starts (scroll position that puts it right after the first column)
+function colStarts(w) {
+  const first = $('thead th', w); if (!first) return [];
+  return $$('thead th', w).slice(1).filter(th => !th.classList.contains('snap-pad')).map(th => Math.round(colX(w, th) - first.offsetWidth));
 }
+// A table drawn again stays where it was: the same column at the same distance from the first one (other figures can make
+// the columns before it a little wider or narrower).
+function scrollMark(w) { const x = w.scrollLeft, st = colStarts(w); let i = 0; st.forEach((v, k) => { if (v <= x + 1) i = k; }); return {x, n: w.querySelectorAll('thead th').length, i, off: st.length ? x - st[i] : 0}; }
+function scrollBack(w, mark) { const st = colStarts(w); w.scrollLeft = mark.i < st.length ? Math.max(0, st[mark.i] + mark.off) : mark.x; }
 function snapTable(w) {
   const t = $('table', w), first = $('thead th', w); if (!t || !first) return;
   $$('.snap-pad', w).forEach(c => c.remove());
   w.classList.add('snap');
-  if (!w._snap) {
-    w._snap = {x: w.scrollLeft, t: null};
-    w.addEventListener('scroll', () => {
-      const st = w._snap; if (w.scrollLeft === st.x || st.busy) return;      // nur senkrecht geblättert: nichts tun
-      st.x = w.scrollLeft; clearTimeout(st.t);
-      st.t = setTimeout(() => {
-        const x = snapNearest(w, w.scrollLeft); if (Math.abs(x - w.scrollLeft) < 2) return;
-        st.busy = true; w.scrollTo({left: x, behavior: 'smooth'});
-        setTimeout(() => { st.busy = false; st.x = w.scrollLeft; }, 350);
-      }, 180);
-    }, {passive: true});
-  }
   const sw = first.offsetWidth, max = w.scrollWidth - w.clientWidth;
   if (max <= 0) return;
   // Leerspalte am Ende, damit auch ganz rechts die erste sichtbare Spalte vollstaendig ist
@@ -2639,8 +2631,21 @@ function ueGruende(ue, months, key) {
   return lines.join('\n');
 }
 const UE_OFFEN = new Set(['ue_rest', 'ue_unbekannt']);       // differences without a known cause: shown as a warning
-const SEC_LABEL = {Einnahmen: t('einnahmen'), Ausgaben: t('ausgaben'), Investitionen: t('investitionen_umschichtung'), Finanzierung: t('finanzierung_tilgung_zinsen'), Bewertung: t('bewertung_manuelle_buchungen_nicht_zah'), Unklar: t('unklar_zuordnung_pruefen')};
+const SEC_LABEL = {Einnahmen: t('einnahmen'), Ausgaben: t('ausgaben'), Investitionen: t('sek_investitionen'), Finanzierung: t('finanzierung'), Bewertung: t('cf_wertaenderungen'), Unklar: t('cf_unklar')};
+const SEC_HELP = {Investitionen: 'cf_invest', Finanzierung: 'cf_finanz', Bewertung: 'cf_wert', Unklar: 'cf_unklar'};
 const METH = {gleitend12: t('12_monate'), gleitend6: t('6_monate'), vorjahr: t('vorjahresmonat'), fix: t('fester_betrag_monat'), jahresbetrag: t('meth_jahresbetrag'), budget: t('meth_budget'), keine: t('keine')};
+// How far the table is opened: 0 overview (sections and results: one page), 1 positions, 2 everything. A row you open or close
+// yourself keeps that until you choose a level again. depth: 0 section, 1 group or position, 2 a row within a group.
+const cfOpen = (id, depth) => S.cfTog[id] ?? (S.cfEbene >= 2 || depth < S.cfEbene);
+// the first year of the month view, one year back or forth (the year view shows all years)
+function yearCtl() {
+  const D = B(); if (!D || S.modus === 'jahre' || !(D.monate || []).length) return '';
+  const min = +D.monate[0].slice(0, 4), max = +String(D.ist_bis || D.monate[D.monate.length - 1]).slice(0, 4);
+  if (min >= max) return '';
+  const fy = Math.min(max, Math.max(min, firstYear(D)));
+  return `<div class="stepper" id="von-jahr" data-min="${min}" data-max="${max}" data-y="${fy}" title="${t('von_jahr_tip')}"><button data-d="-1" ${fy <= min ? 'disabled' : ''} aria-label="${t('frueheres_jahr')}">‹</button>`
+    + `<span>${t('ab_jahr', fy)}</span><button data-d="1" ${fy >= max ? 'disabled' : ''} aria-label="${t('spaeteres_jahr')}">›</button></div>`;
+}
 function vKapitalfluss(editable) {
   const D = B(); if (!D) return noData;
   const C = cols(), KF = D.kapitalfluss, sums = KF.summen || {}, P = D.plan || {};
@@ -2648,8 +2653,11 @@ function vKapitalfluss(editable) {
   const mv = new Map(), ms = new Map();
   const vOf = (z, c) => { let v = mv.get(z); if (!v) mv.set(z, v = Object.assign({}, z.werte, (z.plan && z.plan.werte) || {})); return sumOver(v, c.months); };
   const sOf = (z, c) => { let v = ms.get(z); if (!v) ms.set(z, v = Object.assign({}, z.werte, (z.plan && z.plan.vorschlag) || {})); return sumOver(v, c.months); };
-  let h = `<div class="toolbar">${viewCtl()}<span class="tb-sep"></span>${alleCtl(0)}${editable ? swCtl('realan', S.real, t('inflationsbereinigt'), t('inflationsbereinigt_tip')) : planCtl()}<span class="sp"></span>${xlsxBtn(editable ? 'planning' : 'cashflow')}</div>`;
-  h += `<div class="legend"><span class="p">${t('plan')}</span><span class="c">${t('laufender_monat')}</span><span class="y">${t('jahressumme')}</span><span class="o">${t('ueberschrieben')}</span>` + (editable ? '<label class="chk"><input type="checkbox" id="vorschlag-an" ' + (S.vorschlag ? 'checked' : '') + `${t('vorschlagswerte_zeigen')}</label><em>${t('doppelklick_auf_eine_planzelle_eigener')}</em>` : '') + (editable && S.real ? `<em class="pill info">${t('planwerte_in_heutiger_kaufkraft')}</em>` : '') + '</div>';
+  const levels = [t('cf_ueberblick'), t('cf_positionen'), t('cf_details')];
+  let h = `<div class="toolbar">${viewCtl()}${yearCtl()}<div class="seg" id="cf-ebene" title="${t('cf_ebene_tip')}">${levels.map((l, i) => `<button data-e="${i}" class="${S.cfEbene === i ? 'on' : ''}">${l}</button>`).join('')}</div>`
+    + `<span class="tb-sep"></span>${alleCtl(0)}${editable ? swCtl('realan', S.real, t('inflationsbereinigt'), t('inflationsbereinigt_tip')) : planCtl()}<span class="sp"></span>`
+    + `${editable ? '' : `<a class="small" href="#positions">${t('zu_den_positionen')}</a>`}${xlsxBtn(editable ? 'planning' : 'cashflow')}</div>`;
+  if (editable || planOn()) h += `<div class="legend"><span class="p">${t('plan')}</span><span class="c">${t('laufender_monat')}</span>` + (editable ? `<span class="o">${t('ueberschrieben')}</span><label class="chk"><input type="checkbox" id="vorschlag-an" ` + (S.vorschlag ? 'checked' : '') + `${t('vorschlagswerte_zeigen')}</label><em>${t('doppelklick_auf_eine_planzelle_eigener')}</em>` : '') + (editable && S.real ? `<em class="pill info">${t('planwerte_in_heutiger_kaufkraft')}</em>` : '') + '</div>';
   if (editable) {
     h += `<div class="card" style="margin-bottom:12px"><h3>${t('parameter')}</h3><div class="row tight">
       <label>${t('horizont')} <input id="p_horizont" type="number" min="1" max="240" value="${P.horizont_monate ?? 24}" style="width:70px"> ${t('monate')}</label>
@@ -2661,25 +2669,33 @@ function vKapitalfluss(editable) {
       <button id="p_save" class="small">${t('uebernehmen')}</button><button id="p_reset" class="small secondary" title="${t('alle_planeinstellungen_dieses_bereichs')}">${t('plan_zuruecksetzen')}</button></div>
       <div class="note" style="margin:6px 0 0">${t('ausgaben_steigen_standardmaessig_mit_d_2')}</div></div>`;
   }
-  h += '<div class="wrap"><table' + (editable ? ' class="ptable"' : '') + '>' + thead(t('position'), C) + '<tbody>';
+  h += '<div class="wrap"><table class="cf-tbl' + (editable ? ' ptable' : '') + '">' + thead(t('position'), C) + '<tbody>';
   const secTotal = name => C.map(c => c.months.reduce((a, m) => a + (sums[m]?.[name] ?? 0) * defl(m), 0));
-  for (const sek of KF.sektionen) {
-    const tot = secTotal(sek.name);
-    if (!sek.zeilen.length && !S.alle) continue;
-    h += `<tr class="sec"><td>${SEC_LABEL[sek.name] || sek.name}</td>${tot.map((v, i) => `<td class="${cls(v, C[i])}">${F(v)}</td>`).join('')}</tr>`;
+  const nums = vals => vals.map((v, i) => `<td class="${cls(v, C[i])}">${F(v)}</td>`).join('');
+  // the triangle that opens and closes a row (rows without one keep its room, so the names stand in a line)
+  const caret = (id, depth, open) => `<button class="disc" data-tog="${esc(id)}" data-depth="${depth}" aria-expanded="${open ? 'true' : 'false'}" title="${t(open ? 'cf_zuklappen' : 'cf_aufklappen')}">${open ? '▾' : '▸'}</button>`;
+  const NOCARET = '<span class="disc none"></span>';
+  // a name with its "?": the mark stays with the last word (where a narrow screen breaks the name)
+  const named = (label, help) => { const q = help ? hq(help) : '', i = label.lastIndexOf(' '); return !q ? label : label.slice(0, i + 1) + `<span class="nw">${label.slice(i + 1)}${q}</span>`; };
+  const section = name => {
+    const sek = KF.sektionen.find(s => s.name === name);
+    if (!sek || (!sek.zeilen.length && !S.alle)) return '';
+    const sid = 's:' + name, sOpen = cfOpen(sid, 0);
+    let o = `<tr class="sec" data-tog="${esc(sid)}" data-depth="0"><td>${caret(sid, 0, sOpen)}${named(SEC_LABEL[name] || esc(name), SEC_HELP[name])}</td>${nums(secTotal(name))}</tr>`;
+    if (!sOpen) return o;
     const groups = [];
     for (const z of sek.zeilen) { let g = groups.find(x => x.name === z.gruppe); if (!g) groups.push(g = {name: z.gruppe, label: gLabel(z), rows: []}); g.rows.push(z); }
     for (const g of groups) {
       const gvals = C.map(c => g.rows.reduce((a, z) => a + vOf(z, c), 0));
       const single = g.rows.length === 1 && g.rows[0].zeile === g.name;
       if (!S.alle && gvals.every(v => Math.abs(v) < 0.005)) continue;
-      const gid = sek.name + '|' + g.name, coll = S.collapsed[gid];
-      if (!single) h += `<tr class="sub ind1" data-gid="${esc(gid)}"><td>${coll ? '▸ ' : '▾ '}${esc(g.label)}</td>${gvals.map((v, i) => `<td class="${cls(v, C[i])}">${F(v)}</td>`).join('')}</tr>`;
-      if (coll && !single) continue;
+      const gid = 'g:' + name + '|' + g.name, gOpen = single || cfOpen(gid, 1);
+      if (!single) o += `<tr class="sub ind1" data-tog="${esc(gid)}" data-depth="1"><td>${caret(gid, 1, gOpen)}${esc(g.label)}</td>${nums(gvals)}</tr>`;
+      if (!gOpen) continue;
       for (const z of g.rows) {
         const vals = C.map(c => vOf(z, c));
         if (!S.alle && vals.every(v => Math.abs(v) < 0.005)) continue;
-        const key = sek.name + '/' + z.zeile;
+        const key = name + '/' + z.zeile, did = 'd:' + key, depth = single ? 1 : 2;
         const full = zLabel(z), label = single ? full : full.startsWith(g.label + ' / ') ? full.slice(g.label.length + 3) : full;
         let e = '';
         const p = z.plan || {}, ov = new Set(p.ueberschrieben || []);
@@ -2693,28 +2709,28 @@ function vKapitalfluss(editable) {
               <button class="save small" title="${t('uebernehmen')}">✓</button>${ov.size ? `<button class="small secondary reset-row" data-key="${esc(key)}" title="${t('alle_ueberschreibungen_loeschen')}">↺</button>` : ''}</div>`;
         }
         const zu = !editable && z.lbl && z.lbl[0] === 'cf_ohne_kategorie' ? ` <a href="#categories" class="small">${t('zuordnen')}</a>` : '';
-        const det = (z.details || []).length, open = det && S.offen[key];
-        const disc = det ? `<button class="disc" data-det="${esc(key)}" aria-expanded="${open ? 'true' : 'false'}" title="${t('kategorien_zeigen')}">${open ? '▾' : '▸'}</button>` : '';
-        h += `<tr class="${single ? 'ind1' : 'ind2'}${det ? ' has-det' : ''}" data-key="${esc(key)}"><td title="${esc(full)}">${disc}${esc(label)}${zu}${z.nw ? '' : `<span class="tag">${t('umschichtung')}</span>`}${editable && p.methode && p.methode !== 'darlehen' ? `<span class="tag">${METH[p.methode] || p.methode}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
-           + vals.map((v, i) => {
-               const c = C[i], isOv = c.plan && c.months.some(mm => ov.has(mm));
-               const sug = (S.vorschlag && c.plan) ? `<div class="small muted">${F(sOf(z, c))}</div>` : '';
-               return `<td class="${cls(v, c)}${editable && c.plan && !c.year ? ' editable' : ''}${isOv ? ' ov' : ''}" data-month="${c.key}" ${isOv ? `title="${t('vorschlag_0', F(sOf(z, c)))}"` : ''}>${F(v)}${sug}</td>`; }).join('') + '</tr>';
+        const det = (z.details || []).length, open = det && cfOpen(did, depth);
+        o += `<tr class="${single ? 'ind1' : 'ind2'}${det ? ' has-det' : ''}" data-key="${esc(key)}"${det ? ` data-tog="${esc(did)}" data-depth="${depth}"` : ''}><td title="${esc(full)}">${det ? caret(did, depth, open) : NOCARET}${esc(label)}${zu}${editable && p.methode && p.methode !== 'darlehen' ? `<span class="tag">${METH[p.methode] || p.methode}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
+          + vals.map((v, i) => {
+              const c = C[i], isOv = c.plan && c.months.some(mm => ov.has(mm));
+              const sug = (S.vorschlag && c.plan) ? `<div class="small muted">${F(sOf(z, c))}</div>` : '';
+              return `<td class="${cls(v, c)}${editable && c.plan && !c.year ? ' editable' : ''}${isOv ? ' ov' : ''}" data-month="${c.key}" ${isOv ? `title="${t('vorschlag_0', F(sOf(z, c)))}"` : ''}>${F(v)}${sug}</td>`; }).join('') + '</tr>';
         // MoneyMoney's categories inside the position: actual figures only (planning works on the position)
         if (open) for (const d of z.details) {
           const dv = C.map(c => c.plan || c.months.some(m => m > D.ist_bis) ? null : sumOver(d.werte, c.months));     // actual months only
           if (!S.alle && dv.every(v => v == null || Math.abs(v) < 0.005)) continue;
           const nm = d.kategorie ? esc(d.kategorie) : `<span class="tipped" data-tip="${esc(t('cf_geschaetzt_tip'))}" tabindex="0">${t('cf_geschaetzt')}</span>${editable ? '' : ` <a href="#categories" class="small">${t('zuordnen')}</a>`}`;
-          h += `<tr class="det ${single ? 'ind2' : 'ind3'}"><td title="${esc(d.kategorie)}">${nm}</td>${dv.map((v, i) => `<td class="${cls(v ?? null, C[i])}">${v == null ? '' : F(v)}</td>`).join('')}</tr>`;
+          o += `<tr class="det ${single ? 'ind2' : 'ind3'}"><td title="${esc(d.kategorie)}">${NOCARET}${nm}</td>${dv.map((v, i) => `<td class="${cls(v ?? null, C[i])}">${v == null ? '' : F(v)}</td>`).join('')}</tr>`;
         }
       }
     }
-  }
-  // Pruefzeilen: Abweichung zur Bilanz (Liquiditaet bzw. Nettovermoegen); der Grund steht im Tooltip der Zelle
-  const ue = KF.ueberleitung || {};
+    return o;
+  };
+  // check rows: the difference to the balance sheet (bank balance, net worth); the reason is in the cell's tooltip.
   // ✓ only where every month of the column up to today was checked and adds up; a difference with a known cause is shown calmly
   // (its reason in the tooltip), one without a cause as a warning
-  const check = (label, val, why) => `<tr class="check"><td>${label}</td>${C.map(c => {
+  const ue = KF.ueberleitung || {};
+  const check = (help, val, why) => `<tr class="check"><td>${named(t('cf_abgleich'), help)}</td>${C.map(c => {
     const ms = c.plan ? [] : c.months.filter(m => m <= D.ist_bis);
     if (!ms.length || ms.some(m => !ue[m])) return `<td class="${cls(null, c)}"></td>`;
     const v = ms.reduce((a, m) => a + ue[m][val], 0), off = ms.some(m => Math.abs(ue[m][val]) >= 0.005);
@@ -2729,18 +2745,22 @@ function vKapitalfluss(editable) {
     if (b === undefined) return `<td class="${cls(null, c)}"></td>`;
     return b === null ? `<td class="${cls(null, c)} muted small">${t('unbekannt')}</td>` : `<td class="${cls(b * defl(m), c)}">${F(b * defl(m))}</td>`; }).join('')}</tr>`;
   const has = k => Object.values(sums).some(x => x && x[k] != null);
-  const totals = [...(has('Rohertrag') ? [['Rohertrag', t('rohertrag')]] : []), ['Operativ', t('operatives_ergebnis_einnahmen_ausgaben')],
-    ['Nach_Kapitaldienst', t('nach_zins_und_tilgung')], ['Cashflow', t('zahlungsfluss_gesamt_veraenderung_liqu')], ['Nettovermoegen_delta', t('nettovermoegensaenderung_erklaert')]];
-  for (const [name, label] of totals) {
-    const tot = secTotal(name);
-    if (name === 'Cashflow') h += bal(t('bankguthaben_anfang'), c => allM[allM.indexOf(c.months[0]) - 1]);
-    h += `<tr class="total"><td>${label}</td>${tot.map((v, i) => `<td class="${cls(v, C[i])}">${F(v)}</td>`).join('')}</tr>`;
-    if (name === 'Cashflow') h += check(t('abweichung_liquiditaet'), 'abweichung_liq', 'gruende_liq') + bal(t('bankguthaben_ende'), c => c.months[c.months.length - 1]);
-    if (name === 'Nettovermoegen_delta') h += check(t('unerklaerte_vermoegensaenderung_pruefz'), 'unerklaert', 'gruende');
-  }
+  const result = (name, label, help, quiet) => `<tr class="${quiet ? 'quiet' : 'total'}"><td>${named(label, help)}</td>${nums(secTotal(name))}</tr>`;
+  // what you earn and spend, and what is left of it
+  h += section('Einnahmen') + section('Ausgaben');
+  if (has('Rohertrag')) h += result('Rohertrag', t('cf_rohertrag'), 'cf_rohertrag', true);
+  h += result('Operativ', t('cf_ueberschuss'), 'cf_ueberschuss');
+  const op = secTotal('Operativ'), kd = secTotal('Nach_Kapitaldienst');
+  if (S.alle || kd.some((v, i) => Math.abs(v - op[i]) >= 0.005)) h += result('Nach_Kapitaldienst', t('nach_zins_und_tilgung'), 'cf_nach_kd', true);
+  // where it goes, and what that makes of the bank balance
+  h += section('Investitionen') + section('Finanzierung') + section('Unklar');
+  h += bal(t('bankguthaben_anfang'), c => allM[allM.indexOf(c.months[0]) - 1]) + result('Cashflow', t('zahlungsfluss_gesamt_veraenderung_liqu'), 'cf_bank')
+    + check('cf_abgleich_bank', 'abweichung_liq', 'gruende_liq') + bal(t('bankguthaben_ende'), c => c.months[c.months.length - 1]);
+  // what changed without a payment, and net worth
+  h += section('Bewertung') + result('Nettovermoegen_delta', t('cf_veraenderung_nv'), 'cf_nv') + check('cf_abgleich_nv', 'unerklaert', 'gruende');
   h += '</tbody></table></div>';
-  if (editable) h += vPlanExtras(D);
-  h += `<div class="note">${t('umschichtungen_tilgung_investition_ein')}` + (editable ? t('methoden_12_6_monate_der') : '') + '</div>';
+  if (editable) h += vPlanExtras(D) + `<div class="note">${t('methoden_12_6_monate_der').trim()}</div>`;
+  else h += vCfCharts(D);
   return h;
 }
 function vPlanExtras(D) {
@@ -2782,6 +2802,132 @@ function vPlanExtras(D) {
   for (const e of evs) h += evRow(e, false);
   h += evRow({}, true) + '</div>';
   return h;
+}
+
+// ---------------------------------------------------------------- Cashflow: Diagramme
+// One period for all of them (a row above): the last 12 months, a calendar year, or everything. Actual figures only; the
+// table above holds every number shown here.
+const CF = {ro: null};
+function cfPeriods(D) {
+  const ms = (D.monate || []).filter(m => m <= D.ist_bis), years = [...new Set(ms.map(m => m.slice(0, 4)))].sort().reverse();
+  const out = [['12m', t('cf_12_monate')], ...years.slice(0, 4).map(y => [y, y])];
+  if (ms.length > 12) out.push(['alle', t('alle')]);
+  return out;
+}
+// the months of the period and those to compare with: the 12 months before, or the same months a year earlier
+function cfMonths(D, key) {
+  const ms = (D.monate || []).filter(m => m <= D.ist_bis);
+  if (/^\d{4}$/.test(key)) { const cur = ms.filter(m => m.startsWith(key)), prev = cur.map(m => (+key - 1) + m.slice(4)).filter(m => ms.includes(m)); return [cur, prev.length === cur.length ? prev : []]; }
+  if (key === 'alle') return [ms, []];
+  const cur = ms.slice(-12), prev = ms.slice(-24, -12);
+  return [cur, prev.length === cur.length ? prev : []];
+}
+const cfSum = (D, name, months) => months.reduce((a, m) => a + ((D.kapitalfluss.summen || {})[m]?.[name] ?? 0), 0);
+const cfPct = (part, whole) => whole ? Math.round(part / whole * 100) : null;
+// change against the period before, as text: "+3 % zur Vorperiode" (good or bad by direction)
+function cfDelta(cur, prev, upGood) {
+  if (prev == null || Math.abs(prev) < 0.005) return '';
+  const d = (cur - prev) / Math.abs(prev) * 100, same = Math.abs(d) < 0.5;
+  return `<span class="cf-delta ${same ? '' : (d > 0) === upGood ? 'pos' : 'neg'}">${same ? '±0' : (d > 0 ? '+' : '−') + Math.abs(d).toLocaleString(LOCALE, {maximumFractionDigits: Math.abs(d) < 10 ? 1 : 0})} % ${t('cf_zur_vorperiode')}</span>`;
+}
+function vCfCharts(D) {
+  const ist = (D.monate || []).filter(m => m <= D.ist_bis);
+  if (ist.length < 2) return '';
+  const per = cfPeriods(D); if (!per.some(p => p[0] === S.cfZeit)) S.cfZeit = '12m';
+  const [cur, prev] = cfMonths(D, S.cfZeit);
+  if (!cur.length) return '';
+  const span = cur.length > 1 ? ML(cur[0]) + ' – ' + ML(cur[cur.length - 1]) : ML(cur[0]);
+  const net = cfSum(D, 'Operativ', cur), ein = cfSum(D, 'Einnahmen', cur);
+  let h = `<div class="cf-charts"><div class="toolbar cf-period"><div class="seg small" id="cf-zeit">${per.map(([k, l]) => `<button data-z="${k}" class="${S.cfZeit === k ? 'on' : ''}">${l}</button>`).join('')}</div><span class="muted small">${span}</span></div>`;
+  if (!['Einnahmen', 'Ausgaben', 'Investitionen', 'Finanzierung', 'Unklar'].some(n => cur.some(m => Math.abs((D.kapitalfluss.summen || {})[m]?.[n] ?? 0) >= 0.005)))
+    return h + `<div class="card cf-empty muted small">${t('cf_keine_zahlungen')}</div></div>`;          // nothing to draw
+  h += `<div class="card bch cf-time"><div class="lc-head"><b class="lc-title">${t('cf_ein_aus')}</b><span class="cf-leg"><span><i class="sw ein"></i>${t('einnahmen')}</span><span><i class="sw aus"></i>${t('ausgaben')}</span><span><i class="ln"></i>${t('cf_ueberschuss')}</span></span></div>`
+    + `<div class="lc-row2"><span class="cf-val">${F0(net)} €</span><span class="muted small">${t('cf_ueberschuss')}${ein > 0.005 ? ' · ' + t('cf_anteil_einnahmen', cfPct(net, ein)) : ''} · ${t('cf_je_monat', F0(net / cur.length))}</span>${cfDelta(net, prev.length ? cfSum(D, 'Operativ', prev) : null, true)}</div>`
+    + `<div class="cf-plot" id="cf-time-plot"></div></div>`;
+  h += `<div class="cards cf-grid">${cfWaterfall(D, cur)}${cfRanked(D, 'Ausgaben', cur, prev)}${cfRanked(D, 'Einnahmen', cur, prev)}</div></div>`;
+  return h;
+}
+// Einnahmen up, Ausgaben down from one baseline, the Überschuss as a line -- per month (more than three years: per year)
+function cfDrawTime() {
+  const D = B(), el = $('#cf-time-plot'); if (!D || !el) return;
+  const [cur] = cfMonths(D, S.cfZeit), byYear = cur.length > 36;
+  const keys = byYear ? [...new Set(cur.map(m => m.slice(0, 4)))] : cur;
+  const bs = keys.map(k => { const ms = byYear ? cur.filter(m => m.startsWith(k)) : [k];
+    return {k, label: byYear ? k : ML(k), ein: cfSum(D, 'Einnahmen', ms), aus: cfSum(D, 'Ausgaben', ms), net: cfSum(D, 'Operativ', ms), part: ms.includes(D.ist_bis)}; });
+  const hi = Math.max(0, ...bs.map(b => Math.max(b.ein, b.aus, b.net))), lo = Math.min(0, ...bs.map(b => Math.min(b.ein, b.aus, b.net)));
+  if (hi - lo < 0.005) { el.innerHTML = `<div class="cf-empty muted small">${t('cf_keine_zahlungen')}</div>`; return; }
+  const W = Math.max(300, el.clientWidth), H = W < 520 ? 200 : 240, P = {l: W >= 640 ? 62 : 46, r: 10, t: 10, b: 22};
+  let ticks = niceTicks(lo, hi, W < 520 ? 4 : 5); const step = ticks.length > 1 ? ticks[1] - ticks[0] : (hi - lo);
+  if (ticks[0] > lo + step * 1e-6) ticks.unshift(ticks[0] - step);
+  if (ticks[ticks.length - 1] < hi - step * 1e-6) ticks.push(ticks[ticks.length - 1] + step);
+  const y0 = ticks[0], y1 = ticks[ticks.length - 1], ref = Math.max(Math.abs(y0), Math.abs(y1));
+  const y = v => P.t + (y1 - v) / (y1 - y0) * (H - P.t - P.b), zero = y(0);
+  const slot = (W - P.l - P.r) / bs.length, bw = Math.max(2, Math.min(24, slot - 6)), x = i => P.l + slot * i + (slot - bw) / 2;
+  // a column from the baseline (square, 1px off it: the gap between the two) to its rounded end
+  // (income below or expenses above the line -- more refunded than spent --: the two stand side by side, half as wide)
+  const col = (i, v, c, part, half) => { if (Math.abs(v) < 0.005) return ''; const w = half ? (bw - 2) / 2 : bw, xa = x(i) + (half === 2 ? w + 2 : 0);
+    const up = v > 0, a = zero + (up ? -1 : 1), e = y(v), r = Math.min(4, w / 2, Math.abs(e - a)), k = up ? r : -r, x0 = xa.toFixed(1), x1 = (xa + w).toFixed(1);
+    if (Math.abs(e - a) < 0.5) return '';
+    return `<path class="cf-col ${c}${part ? ' part' : ''}" d="M${x0},${a.toFixed(1)}L${x0},${(e + k).toFixed(1)}Q${x0},${e.toFixed(1)} ${(xa + r).toFixed(1)},${e.toFixed(1)}L${(xa + w - r).toFixed(1)},${e.toFixed(1)}Q${x1},${e.toFixed(1)} ${x1},${(e + k).toFixed(1)}L${x1},${a.toFixed(1)}Z"/>`; };
+  const cx = i => P.l + slot * (i + 0.5), every = Math.max(1, Math.ceil((byYear ? 34 : 46) / slot));
+  let g = '';
+  for (const v of ticks) g += `<line class="cf-grid-l${Math.abs(v) < step * 1e-6 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="cf-tick" x="${P.l - 8}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end">${Fk(v, W >= 640, ref)}</text>`;
+  bs.forEach((b, i) => { const same = b.ein * b.aus > 0; g += col(i, b.ein, 'ein', b.part, same ? 1 : 0) + col(i, b.aus, 'aus', b.part, same ? 2 : 0); if ((bs.length - 1 - i) % every === 0) g += `<text class="cf-tick" x="${cx(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(b.label)}</text>`; });
+  g += `<path class="cf-net" d="${bs.map((b, i) => (i ? 'L' : 'M') + cx(i).toFixed(1) + ',' + y(b.net).toFixed(1)).join('')}"/>`;
+  if (slot >= 16) bs.forEach((b, i) => { g += `<circle class="cf-dot${b.part ? ' part' : ''}" cx="${cx(i).toFixed(1)}" cy="${y(b.net).toFixed(1)}" r="4"/>`; });
+  else g += `<circle class="cf-dot" cx="${cx(bs.length - 1).toFixed(1)}" cy="${y(bs[bs.length - 1].net).toFixed(1)}" r="4"/>`;
+  // each month is its own target (the whole slot); the table above holds the same figures
+  bs.forEach((b, i) => { const tip = [b.label + (b.part ? ' · ' + t('laufender_monat') : ''), t('einnahmen') + ': ' + F(b.ein) + ' €', t('ausgaben') + ': ' + F(b.aus) + ' €', t('cf_ueberschuss') + ': ' + F(b.net) + ' €'].join('\n');
+    g += `<rect class="cf-hit tipped" x="${(P.l + slot * i).toFixed(1)}" y="${P.t}" width="${slot.toFixed(1)}" height="${H - P.t - P.b}" data-tip="${esc(tip)}"/>`; });
+  el.innerHTML = `<svg class="cf-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('cf_ein_aus'))}">${g}</svg>`;
+}
+// rows of a bar list: name, track with the bar(s), amount
+const cfRow = (name, track, num, tip, cls = '') => `<div class="cf-row tipped ${cls}" data-tip="${esc(tip)}" tabindex="0"><span class="cf-name">${esc(name)}</span><span class="cf-track">${track}</span><span class="cf-num">${num}</span></div>`;
+// how the change of the bank balance comes about: each step starts where the one before ended
+function cfWaterfall(D, months) {
+  const ein = cfSum(D, 'Einnahmen', months);
+  const steps = [['Einnahmen', t('einnahmen')], ['Ausgaben', t('ausgaben')], ['=', t('cf_ueberschuss')], ['Investitionen', t('sek_investitionen')], ['Finanzierung', t('finanzierung')], ['Unklar', t('cf_unklar')], ['=', t('zahlungsfluss_gesamt_veraenderung_liqu')]];
+  let cum = 0; const rows = [];
+  for (const [k, label] of steps) {
+    if (k === '=') { rows.push({k, label, a: 0, b: cum, v: cum, total: true}); continue; }
+    const v = cfSum(D, k, months);
+    if (Math.abs(v) < 0.005 && !['Einnahmen', 'Ausgaben'].includes(k)) continue;
+    rows.push({k, label, a: cum, b: cum + v, v}); cum += v;
+  }
+  const lo = Math.min(0, ...rows.map(r => Math.min(r.a, r.b))), hi = Math.max(0, ...rows.map(r => Math.max(r.a, r.b))), span = (hi - lo) || 1, pos = v => ((v - lo) / span * 100).toFixed(2);
+  const body = rows.map((r, i) => {
+    const l = Math.min(r.a, r.b), w = Math.abs(r.b - r.a) / span * 100;
+    const track = `<i class="cf-zero" style="left:${pos(0)}%"></i>` + (Math.abs(r.v) < 0.005 ? '' : `<i class="cf-bar ${r.total ? 'tot' : r.v >= 0 ? 'ein' : 'aus'} ${r.b >= r.a ? 'r' : 'l'}" style="left:${pos(l)}%;width:${Math.max(w, 0.8).toFixed(2)}%"></i>`)
+      + (i < rows.length - 1 ? `<i class="cf-link" style="left:${pos(r.b)}%"></i>` : '');
+    const tip = r.label + '\n' + F(r.v) + ' €' + (ein > 0.005 && r.k !== 'Einnahmen' ? ' · ' + t('cf_anteil_einnahmen', cfPct(r.v, ein)) : '');
+    return cfRow(r.label, track, F0(r.v), tip, r.total ? 'tot' : ''); }).join('');
+  return `<div class="card bch cf-card"><div class="lc-head"><b class="lc-title">${t('cf_zusammensetzung')}${hq('cf_zusammensetzung')}</b></div><div class="cf-list fall">${body}</div></div>`;
+}
+// the positions of a section by size (the seven largest, the rest as one)
+function cfRanked(D, sec, months, prev) {
+  const sek = D.kapitalfluss.sektionen.find(s => s.name === sec) || {zeilen: []}, sign = sec === 'Ausgaben' ? -1 : 1;
+  const sum = (z, ms) => ms.reduce((a, m) => a + (z.werte[m] ?? 0), 0) * sign;
+  const agg = new Map();
+  for (const z of sek.zeilen) { const l = zLabel(z), e = agg.get(l) || {label: l, v: 0, p: 0}; e.v += sum(z, months); e.p += sum(z, prev); agg.set(l, e); }
+  let items = [...agg.values()].filter(e => Math.abs(e.v) > 0.005).sort((a, b) => b.v - a.v);
+  if (items.length < 2) return '';          // one position is a number, not a chart (it is in the table)
+  if (items.length > 8) { const rest = items.slice(7); items = items.slice(0, 7).concat([{label: t('cf_uebrige', rest.length), v: rest.reduce((a, e) => a + e.v, 0), p: rest.reduce((a, e) => a + e.p, 0)}]); }
+  const total = cfSum(D, sec, months) * sign, before = prev.length ? cfSum(D, sec, prev) * sign : null, max = Math.max(0, ...items.map(e => Math.abs(e.v))) || 1;
+  const kind = sec === 'Ausgaben' ? 'aus' : 'ein', of = t(sec === 'Ausgaben' ? 'cf_der_ausgaben' : 'cf_der_einnahmen');
+  const body = items.map(e => {
+    const tip = [e.label, F(e.v) + ' €' + (e.v > 0 && total > 0.005 ? ' · ' + cfPct(e.v, total) + ' % ' + of : e.v < 0 ? ' · ' + t('cf_gegenlaeufig') : '')].concat(prev.length ? [t('cf_vorperiode') + ': ' + F(e.p) + ' €'] : []).join('\n');
+    return cfRow(e.label, `<i class="cf-bar ${e.v < 0 ? 'tot' : kind} r" style="left:0;width:${Math.max(Math.abs(e.v) / max * 100, 0.8).toFixed(2)}%"></i>`, F0(e.v), tip); }).join('');
+  return `<div class="card bch cf-card"><div class="lc-head"><b class="lc-title">${t(sec === 'Ausgaben' ? 'cf_ausgaben_nach' : 'cf_einnahmen_nach')}</b></div>`
+    + `<div class="lc-row2"><span class="cf-val">${F0(total)} €</span>${cfDelta(total, before, sec !== 'Ausgaben')}</div>`
+    + (items.length ? `<div class="cf-list">${body}</div>` : `<div class="cf-empty muted small">${t('cf_keine_zahlungen')}</div>`) + `</div>`;
+}
+function bindCfCharts(main) {
+  if (CF.ro) { CF.ro.disconnect(); CF.ro = null; }
+  const el = $('#cf-time-plot', main); if (!el) return;
+  cfDrawTime();
+  let last = el.clientWidth;
+  CF.ro = new ResizeObserver(() => { const p = $('#cf-time-plot'); if (p && Math.abs(p.clientWidth - last) > 2) { last = p.clientWidth; cfDrawTime(); } });
+  CF.ro.observe(el);
 }
 
 // ---------------------------------------------------------------- Synchronisierung
@@ -3490,11 +3636,12 @@ async function saveConfig(cfg, findingsEl, trotzdem) {
 // ---------------------------------------------------------------- Kategorien
 const subTabs = (base, items) => `<div class="tabs">${items.map(([k, l]) => `<button data-next="#${base}${k ? '/' + k : ''}" class="${S.sub === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
 async function vKategorien() {
-  // Reiter: Zuordnen (was in MoneyMoney noch keine Kategorie hat) · Regeln für MoneyMoney (Vorschläge) · Cashflow-Positionen
+  // Reiter: Zuordnen (was in MoneyMoney noch keine Kategorie hat) · Regeln für MoneyMoney (Vorschläge). Where a category counts in
+  // the cash flow is a setting: its own page under Verwaltung (#positions).
   const offen = ((S.DATA && S.DATA.kategorien || {}).gesamt || {}).ohne;
-  const body = S.sub === 'positions' ? await vPositionen() : S.sub === 'rules' ? await vRegelVorschlaege() : await vZuordnen();
+  const body = S.sub === 'rules' ? await vRegelVorschlaege() : await vZuordnen();
   const nr = KZ.regeln ?? (KZ.offen || {}).regelvorschlaege;
-  const tabs = subTabs('categories', [['', t('zuordnen') + (offen ? ` (${offen})` : '')], ['rules', t('regeln_fuer_moneymoney') + (nr ? ` (${nr})` : '')], ['positions', t('cashflow_positionen')]]);
+  const tabs = subTabs('categories', [['', t('zuordnen') + (offen ? ` (${offen})` : '')], ['rules', t('regeln_fuer_moneymoney') + (nr ? ` (${nr})` : '')]]);
   return tabs + body;
 }
 // Cashflow-Positionen: Kontor's fixed outline; each of MoneyMoney's categories counts in one position (Kontor proposes by
@@ -3510,12 +3657,12 @@ async function vPositionen() {
     + `<optgroup label="${esc(t('sonstiges'))}">${['umbuchung', 'ignorieren'].map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('')}</optgroup>`;
   // a property's categories have its own rows (rent, costs); only saving, financing or leaving out takes them elsewhere
   const objOpts = sel => `<option value=""></option>` + OBJ_OUT.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('');
-  let h = `<div class="toolbar"><span class="sp"></span><button id="kp-save" disabled>${t('speichern')}</button></div>
-    <div class="wrap auto"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')} ${hq('zielkonto')}</th></tr></thead><tbody>`;
+  let h = `<div class="toolbar"><a class="small" href="#cashflow">${t('zum_cashflow')}</a><span class="sp"></span><button id="kp-save" disabled>${t('speichern')}</button></div>
+    <div class="wrap auto"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th class="kp-arrow"></th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')} ${hq('zielkonto')}</th></tr></thead><tbody>`;
   d.kategorien.forEach((r, i) => {
     const parent = (d.kategorien[i + 1] || {}).ebene > r.ebene, own = r.eigene || '';
     h += `<tr data-p="${esc(r.pfad)}" data-v="${esc(r.vorschlag)}" data-v2="${esc((r.vorschlag_auch || []).join(','))}" data-init="${esc(own)}" data-konto="${esc(r.konto)}" data-own="${r.anzahl ? 1 : 0}" data-firma="${r.gesellschaft ? 1 : ''}"><td style="padding-left:${10 + 18 * r.ebene}px">${parent ? `<b>${esc(r.name)}</b>` : esc(r.name)}</td>
-      <td class="num small kp-n">${r.anzahl_alle || ''}</td><td class="num small kp-n ${r.summe_12m < 0 ? 'neg' : ''}">${r.summe_12m ? F0(r.summe_12m) : ''}</td>
+      <td class="num small kp-n">${r.anzahl_alle || ''}</td><td class="num small kp-n ${r.summe_12m < 0 ? 'neg' : ''}">${r.summe_12m ? F0(r.summe_12m) : ''}</td><td class="kp-arrow" aria-hidden="true">→</td>
       <td><select class="kp-pos"${r.objekt ? ` data-obj="${esc(r.objekt)}"` : ''}>${r.objekt ? objOpts(own) : opts(own, r.gesellschaft)}</select></td>
       <td><select class="kp-konto">${acctOptions(r.konto, k => !k.gruppe && (k.depot || k.rolle === 'anlagen' || k.rolle === 'liquiditaet')).replace(t('waehlen'), t('automatisch'))}</select></td></tr>`;
   });
@@ -3740,7 +3887,7 @@ function vEinstellungenSteuer() {
   return `<div class="note">${t('steuer_einstellungen_note')}</div><div class="form">
     <label>${t('vermietungs_oberkategorie')}</label><input type="text" id="e-verm" value="${esc(st.vermietung_kategorie || 'Vermietung')}">
     <div class="full"><h3>${t('darlehen_objekt')}</h3>${loans.length ? `<table class="plain objloans"><thead><tr><th>${t('darlehenskonto')}</th><th>${t('objekt_wie_in_der_kategorie')}</th></tr></thead><tbody>${loans.map(l => `<tr><td>${esc(l.name)}<div class="small muted">${esc(l.pfad.split(' / ').slice(0, -1).join(' / '))}</div></td><td><input type="text" class="e-obj" data-ref="${l.uuid} | ${esc(l.name)}" value="${esc((st.objekt_darlehen || {})[l.uuid + ' | ' + l.name] || Object.entries(st.objekt_darlehen || {}).find(([k]) => k.startsWith(l.uuid))?.[1] || '')}" placeholder="${t('objektname_wie_in_der_kategorie')}"></td></tr>`).join('')}</tbody></table>` : `<span class="muted small">${t('keine_darlehenskonten_erkannt')}</span>`}</div>
-    <label>${t('kategorie_steuerposition')}</label><div class="list" id="positions">${Object.entries(st.positionen || {}).filter(([k]) => !k.startsWith('_')).map(([k, v]) => posRow(k, v)).join('')}<button id="add-pos" class="secondary small" style="align-self:flex-start;width:auto">${t('zuordnung_hinzufuegen')}</button></div>
+    <label>${t('kategorie_steuerposition')}</label><div class="list" id="tax-positions">${Object.entries(st.positionen || {}).filter(([k]) => !k.startsWith('_')).map(([k, v]) => posRow(k, v)).join('')}<button id="add-pos" class="secondary small" style="align-self:flex-start;width:auto">${t('zuordnung_hinzufuegen')}</button></div>
   </div>
   <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
 }
@@ -4050,7 +4197,7 @@ function bindHilfe(main) {
 }
 
 // ---------------------------------------------------------------- Steuerung
-const TITLES = {overview: t('uebersicht'), balance: t('bilanz'), cashflow: t('kapitalfluss'), planning: t('planung'), bookings: t('nav_auto_buchungen'), tax: t('steuer'), properties: t('immobilien'), transactions: t('umsaetze_belege'), setup: t('einrichtung'), rules: t('nav_auto_regeln'), categories: t('kategorien'), settings: t('einstellungen'), sync: t('synchronisierung'), updates: t('updates'), log: t('protokoll'), help: t('hilfe')};
+const TITLES = {overview: t('uebersicht'), balance: t('bilanz'), cashflow: t('kapitalfluss'), planning: t('planung'), bookings: t('nav_auto_buchungen'), tax: t('steuer'), properties: t('immobilien'), transactions: t('umsaetze_belege'), setup: t('einrichtung'), rules: t('nav_auto_regeln'), categories: t('kategorien'), positions: t('cashflow_positionen'), settings: t('einstellungen'), sync: t('synchronisierung'), updates: t('updates'), log: t('protokoll'), help: t('hilfe')};
 const SUBTITLES = {};
 // Earlier German addresses (bookmarks, home screen) lead to the English ones
 const OLD_ROUTES = {uebersicht: 'overview', bilanz: 'balance', kapitalfluss: 'cashflow', planung: 'planning', buchungen: 'bookings', steuer: 'tax', immobilien: 'properties',
@@ -4059,6 +4206,7 @@ const OLD_SUBS = {setup: {verbindung: 'connect', bereiche: 'areas', konten: 'acc
   settings: {zugang: 'access', steuer: 'tax', sichern: 'backup'}};
 function newRoute(raw) {
   const [path, qs] = raw.split('?'), [tab, sub] = path.split('/');
+  if (tab === 'categories' && sub === 'positions') return '#positions';          // a page of its own since 3.13.11
   if (!OLD_ROUTES[tab]) return null;
   const nt = OLD_ROUTES[tab], ns = sub ? ((OLD_SUBS[nt] || {})[sub] || sub) : '';
   return '#' + nt + (ns ? '/' + ns : '') + (qs && nt !== 'transactions' ? '?' + qs : '');
@@ -4099,6 +4247,7 @@ async function route() {
     else if (S.tab === 'transactions') h = await vUmsaetze();
     else if (S.tab === 'rules') h = vRegeln();
     else if (S.tab === 'categories') h = await vKategorien();
+    else if (S.tab === 'positions') h = await vPositionen();
     else if (S.tab === 'settings') h = await vEinstellungen();
     else if (S.tab === 'sync') h = await vSync();
     else if (S.tab === 'updates') h = await vUpdates();
@@ -4106,7 +4255,7 @@ async function route() {
     else if (S.tab === 'help') h = await vHilfe();
     clearTimeout(slow);
     if (ROUTE_SEQ !== myRoute) return;          // inzwischen woanders hin geklickt
-    const keepX = sameTab ? $$('.wrap', main).map(w => ({x: w.scrollLeft, n: w.querySelectorAll('thead th').length})) : null;   // same page again: tables stay put
+    const keepX = sameTab ? $$('.wrap', main).map(scrollMark) : null;   // same page again: tables stay put
     main.style.paddingBottom = '';               // room left by routeKeeping
     main.innerHTML = `<div class="fade">${h}</div>`;
     SCROLL.key = key; SCROLL.keepX = keepX;
@@ -4115,7 +4264,9 @@ async function route() {
     guardDirty(main);
     vbPoll(); mmhPoll();
     if (S.tab === 'properties') bindImmo(main);
-    if (S.tab === 'categories') { bindZuordnen(main); bindRegelVorschlaege(main); bindPositionen(main); }
+    if (S.tab === 'cashflow') bindCfCharts(main);
+    if (S.tab === 'categories') { bindZuordnen(main); bindRegelVorschlaege(main); }
+    if (S.tab === 'positions') bindPositionen(main);
     if (S.tab === 'settings' && S.sub === 'access') bindZugang(main);
     if (S.tab === 'help') bindHilfe(main);
   } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== 'nicht angemeldet') main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" onclick="route()">${t('erneut_versuchen')}</button></div>`; }
@@ -4203,9 +4354,10 @@ function bind(main) {
   $$('tr.pos[data-pos]', main).forEach(tr => tr.addEventListener('click', e => { const td = valueCell(e, tr); if (td) { bchFlash(tr, td); return; } S.posOpen[tr.dataset.pos] = !S.posOpen[tr.dataset.pos]; route(); }));
   const pa = $('#pos-all', main); if (pa) pa.addEventListener('click', () => { const D = B(), pos = D.bilanz.zeilen.filter(r => r.gruppe), open = !pos.every(r => S.posOpen[r.rolle]); pos.forEach(r => { S.posOpen[r.rolle] = open; }); route(); });
   $$('[data-dep]', main).forEach(el => el.addEventListener('click', e => { e.stopPropagation(); S.depOpen = S.depOpen || {}; S.depOpen[el.dataset.dep] = !S.depOpen[el.dataset.dep]; route(); }));
-  $$('tr.sub[data-gid]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.gid] = !S.collapsed[tr.dataset.gid]; route(); }));
-  $$('button.disc[data-det]', main).forEach(b => b.addEventListener('click', e => { e.stopPropagation(); S.offen[b.dataset.det] = !S.offen[b.dataset.det]; route(); }));
-  $$('#cols-earlier', main).forEach(b => b.addEventListener('click', e => { e.stopPropagation(); S.vonJahr = earlierYear(B()); S.toEarlier = true; route(); }));
+  // cash flow / planning: a click on the triangle or the name opens and closes a row (not on a field or link in it)
+  $$('.cf-tbl [data-tog]', main).forEach(el => el.addEventListener('click', e => {
+    if (el.tagName === 'TR' && (e.target.closest('td') !== el.firstElementChild || e.target.closest('select, input, a, .edit, .hq, .tag, button:not(.disc)'))) return;
+    e.stopPropagation(); S.cfTog[el.dataset.tog] = !cfOpen(el.dataset.tog, +el.dataset.depth); route(); }));
   $$('.card[data-b]', main).forEach(c => c.addEventListener('click', () => { S.bereich = c.dataset.b; bereichSeg(); route(); }));
   // Waagerecht: aktuelle Spalte (Monat bzw. Jahr) rechts im Blick, ältere Jahre links davon; Plan-Spalten rechts anschließend
   if (['balance', 'cashflow', 'planning'].includes(S.tab)) $$('.wrap', main).forEach((w, k) => {
@@ -4214,7 +4366,7 @@ function bind(main) {
     if (S.toEarlier) { w.scrollLeft = 0; return; }                // earlier months shown: start with them
     // the same page redrawn (a row opened, a chart clicked): the table stays where it was, without moving (not after a switch
     // between months and years: other columns)
-    if (keep && keep.n === w.querySelectorAll('thead th').length) { w.scrollLeft = keep.x; return; }
+    if (keep && keep.n === w.querySelectorAll('thead th').length) { scrollBack(w, keep); return; }
     // balance sheet: the current month (or year) is the rightmost column; elsewhere with plan a part of the plan stays in view
     if (c && w.scrollWidth > w.clientWidth) w.scrollLeft = snapLeft(w, colX(w, c) + c.offsetWidth - w.clientWidth * (S.tab !== 'balance' && planOn() ? 0.62 : 1));
   });
@@ -4570,6 +4722,13 @@ async function startRun(dry, freigabe, anchor) {
 
 window.addEventListener('hashchange', route);
 document.addEventListener('click', e => { const b = e.target.closest('#modus-seg button'); if (b) { S.modus = b.dataset.m; route(); } });
+document.addEventListener('click', e => {
+  const lv = e.target.closest('#cf-ebene button'); if (lv) { S.cfEbene = +lv.dataset.e; S.cfTog = {}; route(); return; }       // a level: every row as the level has it
+  const z = e.target.closest('#cf-zeit button'); if (z) { S.cfZeit = z.dataset.z; route(); return; }
+  const st = e.target.closest('#von-jahr button'); if (st && !st.disabled) {
+    const box = st.closest('#von-jahr'), y = Math.min(+box.dataset.max, Math.max(+box.dataset.min, +box.dataset.y + +st.dataset.d));
+    S.vonJahr = y === +box.dataset.max - (MONTH_YEARS - 1) ? null : y; S.toEarlier = +st.dataset.d < 0; route(); }      // an earlier year: start with it
+});
 document.addEventListener('change', e => { const id = e.target.id; if (id === 'planan') { S.plan = e.target.checked; route(); } else if (id === 'realan') { S.real = e.target.checked; route(); } else if (id === 'alle-zeilen') { if (S.tab === 'balance') S.alleB = e.target.checked; else S.alle = e.target.checked; route(); } });
 $('#menu-btn').addEventListener('click', () => $('.side').classList.toggle('open'));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });

@@ -113,7 +113,7 @@ Die Seite „Synchronisierung“ zeigt je Konto den letzten Abruf und meldet Kon
 Überall wählst du **Monate** (mit Jahressummen) oder nur **Jahre**. Jahresspalten sind kumuliert: Zahlungsflüsse als Summe, Bestände als Stand zum Jahresende. Blass sind der laufende Monat und das laufende Jahr (noch nicht abgeschlossen), blass und schraffiert die Planwerte.
 
 - **▸ in der Kopfzelle** der Bilanz klappt alle Positionen auf; das **Auge** daneben (mit Anzahl, nur wenn es welche gibt) zeigt auch leere und nach Aktivität ausgeblendete Konten (mitgezählt werden sie immer). Steht bei einer Position „(9/12)“, sind 9 von 12 Konten zu sehen. **Leere Zeilen** (Cashflow, Planung) zeigt auch Zeilen ohne Werte.
-- Die **Monatsansicht** zeigt das laufende und die zwei Jahre davor; der Knopf mit dem früheren Jahr (z. B. „‹ 2023“) oben links holt ein Jahr dazu, „Jahre“ zeigt alle Jahre. Ein Klick in der Bilanz-Grafik auf einen früheren Monat holt ihn ebenfalls dazu.
+- Die **Monatsansicht** zeigt das laufende und die zwei Jahre davor; mit **‹ ab 2024 ›** neben „Monate / Jahre“ beginnt sie ein Jahr früher oder später, „Jahre“ zeigt alle Jahre. Ein Klick in der Bilanz-Grafik auf einen früheren Monat holt ihn ebenfalls dazu.
 - **Plan** (Cashflow) hängt die Planwerte rechts an; aus = nur Ist-Werte. Bilanz und Planung zeigen den Plan immer.
 - **inflationsbereinigt** (Planung) zeigt Planwerte in heutiger Kaufkraft.
 - Die Übersicht vergleicht zusätzlich mit dem gleichen Zeitraum des Vorjahrs.
@@ -192,17 +192,40 @@ Geldvermögen und Sachvermögen sind wie in der Statistik der Bundesbank abgegre
 <a id="cash-flow"></a>
 ## Cashflow
 
-Wohin das Geld fließt: Einnahmen und Ausgaben nach festen **Positionen** (Arbeitseinkommen, Umsatzerlöse, Vermietung, Wohnen, Personal, Steuern, Umsatzsteuer …), Investitionen (Sparen & Anlegen, Einlagen in Beteiligungen), Finanzierung (Tilgung und Zinsen je Darlehen, bei Gesellschaften auch Einlagen und Entnahmen der Gesellschafter), Bewertung (Wertänderungen von Depots) und „Unklar“. Die Gliederung ist für jeden Bereich gleich – privat, GbR oder GmbH –, damit sich die Bereiche vergleichen lassen; bei Gesellschaften heißt „Wohnen“ „Raumkosten“. Eine Position erscheint nur, wo Geld darin ist. ▸ vor einer Position zeigt die Kategorien darin.
+Wohin das Geld fließt – für jeden Bereich in derselben Gliederung, damit sich privat, GbR und GmbH vergleichen lassen:
 
-Unten stehen die Summen: Rohertrag (Umsatz − Wareneinkauf, nur wo es Umsätze gibt), Einnahmen − Ausgaben, **nach Zins und Tilgung** (was nach dem Schuldendienst bleibt; ein neues Darlehen zählt nicht), Bankguthaben am Anfang, seine Veränderung und am Ende sowie die Änderung des Nettovermögens.
+| Abschnitt | Inhalt |
+|---|---|
+| **Einnahmen**, **Ausgaben** | feste Positionen (Arbeitseinkommen, Umsatzerlöse, Vermietung, Wohnen – bei Gesellschaften „Raumkosten“ –, Personal, Steuern, Umsatzsteuer …); darin deine Kategorien aus MoneyMoney |
+| **Überschuss** | Einnahmen minus Ausgaben; darunter **nach Zins und Tilgung** (was nach den Raten deiner Darlehen bleibt), bei Handelsfirmen davor der Rohertrag (Umsatz minus Wareneinkauf) |
+| **Investitionen** | Geld, das du anlegst oder zurückholst: Sparen & Anlegen, gewährte Darlehen, Einlagen in deine Gesellschaften. Es verlässt das Bankkonto, bleibt aber dein Vermögen. |
+| **Finanzierung** | Zahlungen an und von Geldgebern: je Darlehen Tilgung und Zinsen, bei Gesellschaften Einlagen und Entnahmen der Gesellschafter. Die Tilgung senkt nur die Schuld, die Zinsen kosten Vermögen – beides steht hier, weil es zusammen die Rate ist. |
+| **Veränderung Bankguthaben** | Summe aller Zahlungen; darüber und darunter das Bankguthaben am Anfang und am Ende |
+| **Wertänderungen** | was sich ohne Zahlung ändert: Kurse von Depots, Wertanpassungen, Korrekturen von Hand |
+| **Veränderung Nettovermögen** | Überschuss, Zinsen, Einlagen und Entnahmen, Wertänderungen – Anlegen und Tilgen schichten nur um |
+
+Eine Zeile erscheint nur, wo Geld darin ist. Wie weit die Tabelle aufgeklappt ist, wählst du oben: **Überblick** (nur Abschnitte und Ergebnisse – der ganze Cashflow auf einer Seite), **Positionen** oder **Details** (bis zu den Kategorien aus MoneyMoney und den einzelnen Darlehen). Jede Zeile mit ▸ öffnest und schließt du auch einzeln; das „?“ an einer Zeile erklärt sie.
 
 ![Cashflow](img/de/cash_flow.png)
 
-Jeder Umsatz zählt genau einmal. Umbuchungen zwischen eigenen Konten zählen nie als Einnahme oder Ausgabe (eine Kategorie mit dem Namen „Umbuchung“, „Übertrag“ oder „Eigene Konten“ erkennt Kontor; eine anders benannte stellst du unter Cashflow-Positionen auf „Umbuchung“): Kontor findet zu jeder die Gegenbuchung – über die Markierung seiner eigenen Buchungen (die Tilgung nennt die Zahlung), über die Gegen-IBAN (gleicher Betrag, höchstens fünf Tage auseinander) oder bei der Kategorie „Umbuchung“ und bei manuellen Konten über den Betrag (höchstens drei Tage). Zahlungen in einen anderen Bereich sind **Einlagen oder Entnahmen** – außer du hast damit etwas bezahlt: Mit einer Kategorie, deren Position du gewählt hast oder deren Name sie klar benennt (dein Gehalt aus der eigenen GmbH, die Miete an die eigene GbR), zählen sie in dieser Position, ohne Kategorie schätzt Kontor nach dem Verwendungszweck; hältst du an einer Gesellschaft eine Beteiligung, steht der Unterschied zwischen eingezahltem Geld und Wert der Beteiligung unter Bewertung. Konten in Fremdwährung rechnet Kontor nicht um; sie stehen in der Bilanz außerhalb des Nettovermögens.
+<a id="cash-flow-charts"></a>
+### Diagramme
 
-Zwei **Prüfzeilen** vergleichen jeden Monat mit der Bilanz: der Zahlungsfluss mit der Veränderung der liquiden Konten, die Zeilen ohne „Umschichtung“ mit der Veränderung des Nettovermögens. ✓ heißt: stimmt auf den Cent. Eine Abweichung nennt beim Darüberfahren ihren Grund – etwa Geld, das über das Monatsende zu einem Darlehen unterwegs ist, oder eine Kategorie auf „Nicht berücksichtigen“. Was Kontor nicht sicher zuordnen kann – etwa eine Umbuchung ohne Gegenbuchung –, steht unter „Unklar“ und zählt mit seinem Betrag.
+Unter der Tabelle zeigen Diagramme dieselben Zahlen für einen Zeitraum, den du darüber wählst (die letzten zwölf Monate, ein Jahr oder alles):
 
-In welcher Position eine Kategorie aus MoneyMoney zählt, schlägt Kontor nach ihrem Namen vor; ändern kannst du es unter [Kategorien → Cashflow-Positionen](#categories-positions). Umsätze **ohne Kategorie** schätzt Kontor: zuerst nach deinen bisherigen Kategorien (gleiche Gegenpartei, gleicher Verwendungszweck), sonst nach Wörtern in Name, Verwendungszweck und Buchungstext (etwa „Gehalt“, Kartenabrechnungen; beim Finanzamt trennt Kontor Lohnsteuer – bei Gesellschaften Teil von Personal –, Umsatzsteuer und übrige Steuern). In der Position stehen sie als „ohne Kategorie, geschätzt“; was sich nicht schätzen lässt, steht unter „(ohne Kategorie)“. Je mehr du zuordnest, desto genauer – nötig ist es nicht, auch nicht für eine GmbH mit vielen Buchungen. In MoneyMoney trägt Kontor dabei nichts ein.
+- **Einnahmen und Ausgaben** je Monat – Einnahmen nach oben, Ausgaben nach unten, der Überschuss als Linie; der laufende Monat blass. Bei mehr als drei Jahren je Jahr.
+- **Zusammensetzung** – wie aus Einnahmen, Ausgaben, Investitionen und Finanzierung die Veränderung des Bankguthabens wird; jeder Balken beginnt, wo der vorige endet.
+- **Ausgaben nach Position** und **Einnahmen nach Position** – die größten Positionen, mit dem Vergleich zur Vorperiode (die zwölf Monate davor bzw. dieselben Monate des Vorjahrs).
+
+Fährst du über einen Balken, steht der genaue Betrag da.
+
+![Diagramme im Cashflow](img/de/cash_flow_charts.png)
+
+Jeder Umsatz zählt genau einmal. Umbuchungen zwischen eigenen Konten zählen nie als Einnahme oder Ausgabe (eine Kategorie mit dem Namen „Umbuchung“, „Übertrag“ oder „Eigene Konten“ erkennt Kontor; eine anders benannte stellst du unter Cashflow-Positionen auf „Umbuchung“): Kontor findet zu jeder die Gegenbuchung – über die Markierung seiner eigenen Buchungen (die Tilgung nennt die Zahlung), über die Gegen-IBAN (gleicher Betrag, höchstens fünf Tage auseinander) oder bei der Kategorie „Umbuchung“ und bei manuellen Konten über den Betrag (höchstens drei Tage). Zahlungen in einen anderen Bereich sind **Einlagen oder Entnahmen** – außer du hast damit etwas bezahlt: Mit einer Kategorie, deren Position du gewählt hast oder deren Name sie klar benennt (dein Gehalt aus der eigenen GmbH, die Miete an die eigene GbR), zählen sie in dieser Position, ohne Kategorie schätzt Kontor nach dem Verwendungszweck; hältst du an einer Gesellschaft eine Beteiligung, steht der Unterschied zwischen eingezahltem Geld und Wert der Beteiligung unter Wertänderungen. Konten in Fremdwährung rechnet Kontor nicht um; sie stehen in der Bilanz außerhalb des Nettovermögens.
+
+Zwei Zeilen **Abgleich mit der Bilanz** vergleichen jeden Monat mit der Bilanz: die Veränderung des Bankguthabens mit der der liquiden Konten, die Veränderung des Nettovermögens mit der in der Bilanz. ✓ heißt: stimmt auf den Cent. Eine Abweichung nennt beim Darüberfahren ihren Grund – etwa Geld, das über das Monatsende zu einem Darlehen unterwegs ist, oder eine Kategorie auf „Nicht berücksichtigen“. Was Kontor nicht sicher zuordnen kann – etwa eine Umbuchung ohne Gegenbuchung –, steht unter „Unklar“ und zählt mit seinem Betrag.
+
+In welcher Position eine Kategorie aus MoneyMoney zählt, schlägt Kontor nach ihrem Namen vor; ändern kannst du es unter [Cashflow-Positionen](#categories-positions) (Verwaltung; der Link steht auch oben rechts im Cashflow). Umsätze **ohne Kategorie** schätzt Kontor: zuerst nach deinen bisherigen Kategorien (gleiche Gegenpartei, gleicher Verwendungszweck), sonst nach Wörtern in Name, Verwendungszweck und Buchungstext (etwa „Gehalt“, Kartenabrechnungen; beim Finanzamt trennt Kontor Lohnsteuer – bei Gesellschaften Teil von Personal –, Umsatzsteuer und übrige Steuern). In der Position stehen sie als „ohne Kategorie, geschätzt“; was sich nicht schätzen lässt, steht unter „(ohne Kategorie)“. Je mehr du zuordnest, desto genauer – nötig ist es nicht, auch nicht für eine GmbH mit vielen Buchungen. In MoneyMoney trägt Kontor dabei nichts ein.
 
 <a id="categories"></a>
 ## Kategorien
@@ -213,7 +236,7 @@ In welcher Position eine Kategorie aus MoneyMoney zählt, schlägt Kontor nach i
 |---|---|
 | Kategorien anlegen und umbenennen | zuordnen, was noch keine Kategorie hat – Kontor trägt es in MoneyMoney ein |
 | feste Regeln (Einstellungen der Kategorie → Regeln) | Regeln vorschlagen, die du dort einfügst |
-| | festlegen, in welcher Position des Cashflows eine Kategorie zählt |
+| | festlegen, in welcher Position des Cashflows eine Kategorie zählt (Cashflow-Positionen) |
 
 **Zuordnen** zeigt alle Umsätze deiner Bankkonten ohne Kategorie in MoneyMoney, nach Gegenpartei gruppiert (Darlehen, Beteiligungen und andere Konten zählen nach ihrer Position, nicht nach Kategorie). Umbuchungen zwischen Konten desselben Bereichs stehen nicht in der Liste – auch nicht, wenn die Gegenbuchung von Hand in einem manuellen Konto steht: Sie sind nie Einnahme oder Ausgabe. Zahlungen zwischen zwei deiner Bereiche stehen darin, bis sie eine Kategorie haben: Gehalt oder Miete ordnest du zu, eine Einlage oder Entnahme bekommt deine Umbuchungs-Kategorie. Der Vorschlag kommt aus deinen bisherigen Kategorien; Kontor übernimmt ihn nie von selbst. „Zuordnen“ trägt die Kategorie in MoneyMoney ein, „Alle Vorschläge übernehmen“ alle auf einmal. Unter „Umsätze“ wählst du einzelne ab – etwa bei einem Händler, bei dem du Verschiedenes kaufst. Zur Auswahl stehen nur Kategorien, die es in MoneyMoney gibt – eine neue legst du dort an. Einzelne Umsätze ordnest du auch unter Umsätze & Belege zu (Klick auf die Zeile oder mehrere markieren); dort kannst du auch eine Kategorie aus MoneyMoney ändern (nach Rückfrage). Im Cashflow führt „zuordnen“ neben „(ohne Kategorie)“ direkt hierher.
 
@@ -241,11 +264,11 @@ Einmal einschalten (unter Kategorien oder Einstellungen → Allgemein, nur am Ma
 <a id="categories-positions"></a>
 ### Cashflow-Positionen
 
-Der Cashflow hat eine feste Gliederung; deine Kategorien aus MoneyMoney zählen darin. Unter Kategorien → Cashflow-Positionen steht jede Kategorie mit Umsätzen, der Summe der letzten zwölf Monate und ihrer Position:
+Der Cashflow hat eine feste Gliederung; deine Kategorien aus MoneyMoney zählen darin. Die Seite Cashflow-Positionen (unter Verwaltung) ist diese Zuordnung: links jede Kategorie aus MoneyMoney mit Umsätzen und der Summe der letzten zwölf Monate, rechts ihre Position im Cashflow:
 
 - **Automatisch** – wie die Kategorie darüber, sonst Kontors Vorschlag nach dem Namen (etwa „Einkommen / Rückzahlung Finanzamt“ → Erstattungen, „Sparen“ → Sparen & Anlegen).
 - Eine gewählte Position gilt auch für alle Kategorien darunter, solange sie keine eigene haben.
-- **Sparen & Anlegen** zählt nicht als Ausgabe; daneben wählst du das Konto, in das das Geld fließt. **Umbuchung** (zwischen eigenen Konten) sucht die Gegenbuchung, **Nicht berücksichtigen** nimmt die Kategorie heraus (die Prüfzeile nennt sie).
+- **Sparen & Anlegen** zählt nicht als Ausgabe; unter „Angelegt auf“ wählst du daneben das Konto, in das das Geld fließt (nur bei dieser Position). **Umbuchung** (zwischen eigenen Konten) sucht die Gegenbuchung, **Nicht berücksichtigen** nimmt die Kategorie heraus (die Prüfzeile nennt sie).
 - Kategorien einer Immobilie (Immobilien → Kategorie) haben im Cashflow eigene Zeilen „Miete“ und „Kosten“.
 
 Die Planung arbeitet auf den Positionen; ein Budget aus MoneyMoney zählt für die Position seiner Kategorie. In MoneyMoney ändert sich nichts.

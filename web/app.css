@@ -9,6 +9,7 @@
   --side:rgba(246,246,248,.92); --side-fg:#1d1d1f;
   --warn-bg:#fff4df; --warn-fg:#8a4b00; --err-bg:#fde8e8; --err-fg:#8a1c1c; --ok-bg:#e6f5ec; --ok-fg:#0f5a30;
   --c-liq:#34c759; --c-anl:#12a88a; --c-fest:#1d9fc0; --c-bet:#af52de; --c-ford:#3a6ff0; --c-immo:#9e7458; --c-verb:#ff6b57; --c-ein:#1a8a4a; --c-aus:#c0392b; --c-neutral:#8e8e93; --c-nw:#e8aa00;
+  --cf-ein:#0f8f7a; --cf-aus:#d9480f;      /* cash flow charts: income and expenses, apart also for colour-blind readers (checked for both modes) */
   --radius:14px; --radius-s:9px; --shadow:0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
 }
 :root[data-theme="dark"] {
@@ -18,7 +19,7 @@
           --neg:#ff6b57; --pos:#5ad38a; --accent:#f2f2f5; --check:#cfcfd5; --accent-soft:#2c2c31; --accent-fg:#ffffff; --accent-ink:#111113;
           --side:rgba(20,20,22,.94); --side-fg:#f5f5f7;
           --c-nw:#ffd23f; --warn-bg:#3a2a12; --warn-fg:#ffd28a; --err-bg:#3a1515; --err-fg:#ffb3b3; --ok-bg:#12301f; --ok-fg:#9be0b6;
-          --c-liq:#30d158; --c-anl:#2ec4a2; --c-fest:#3fbfdc; --c-bet:#bf5af2; --c-ford:#5b8cff; --c-immo:#b08a6e; --c-verb:#ff6961; --c-ein:#30d158; --c-aus:#ff6961;
+          --c-liq:#30d158; --c-anl:#2ec4a2; --c-fest:#3fbfdc; --c-bet:#bf5af2; --c-ford:#5b8cff; --c-immo:#b08a6e; --c-verb:#ff6961; --c-ein:#30d158; --c-aus:#ff6961; --cf-ein:#16a086; --cf-aus:#e8612f;
           --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3);
 }
 * { box-sizing:border-box; }
@@ -163,8 +164,6 @@ td.plan { opacity:.55; } td.part { opacity:.72; }      /* plan: faded + hatched;
 .wrap td.plan, .wrap th.plan { background-image:repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 6px); }
 th[data-cur] { box-shadow:inset 0 -2px 0 var(--line-2); } th.plan { color:var(--muted); font-weight:500; } .ptable td.plan { opacity:1; background:var(--plan); }
 td.neg { color:var(--neg); } td.pos { color:var(--pos); } td.zero { color:var(--faint); }
-button.earlier { border:0; background:none; box-shadow:none; padding:0 0 0 6px; margin:0; min-height:0; width:auto; color:var(--accent); font-size:12px; font-weight:500; cursor:pointer; }
-button.earlier:hover { background:none; text-decoration:underline; }
 button.disc { border:0; background:none; padding:0 4px 0 0; margin:0; min-height:0; color:var(--muted); font-size:11px; cursor:pointer; box-shadow:none; width:auto; }
 button.disc:hover { color:var(--fg); background:none; }
 tr.det td { font-size:12px; color:var(--muted); }
@@ -576,3 +575,55 @@ a.more { white-space:nowrap; }
 .rv-expr { font:12.5px ui-monospace, SFMono-Regular, Menlo, monospace; background:var(--head); border:1px solid var(--line); border-radius:7px; padding:5px 9px; user-select:all; -webkit-user-select:all; overflow-wrap:anywhere; flex:1; min-width:0; }
 .kz-tx-wrap { max-height:320px; overflow:auto; margin:8px 0 2px; border-top:1px solid var(--line); }
 .kz-tx { width:auto; min-width:min(100%, 560px); } .kz-tx th, .kz-tx td { padding:4px 10px 4px 0; } .kz-tx td.num, .kz-tx th.num { padding-right:16px; } .kz-tx thead th { position:sticky; top:0; background:var(--head); }
+
+/* the first year of the month view, back and forth (toolbar of balance sheet, cash flow, planning) */
+.stepper { display:inline-flex; align-items:center; background:var(--group); border:1px solid var(--line); border-radius:9px; padding:2px; }
+.stepper button { background:transparent; border:0; box-shadow:none; color:var(--muted); padding:4px 9px; min-height:0; border-radius:7px; font-size:13px; line-height:1.15; width:auto; }
+.stepper button:hover:not(:disabled) { color:var(--fg); background:var(--head); filter:none; } .stepper button:disabled { opacity:.3; cursor:default; }
+.stepper span { font-size:12.5px; font-weight:500; padding:0 5px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+
+/* cash flow / planning: one outline -- sections (open and close), positions, MoneyMoney's categories; the results stand out */
+.cf-tbl .disc { display:inline-block; width:16px; padding:0; text-align:left; font-size:10px; vertical-align:1px; }
+.cf-tbl span.disc { visibility:hidden; }                                  /* no triangle: its room stays, the names stand in a line */
+.cf-tbl tr[data-tog] td:first-child { cursor:pointer; }
+.cf-tbl:not(.ptable) th:first-child, .cf-tbl:not(.ptable) td:first-child { width:290px; min-width:290px; max-width:290px; }     /* opening a row never moves the figures */
+.cf-tbl tr.sec td, .cf-tbl tr.sec td:first-child { background:var(--sub); font-weight:650; }
+.cf-tbl tr.sub td, .cf-tbl tr.sub td:first-child { background:var(--head); font-weight:500; } .cf-tbl tr.sub td:not(:first-child) { cursor:default; }
+.cf-tbl tr.total td, .cf-tbl tr.total td:first-child { background:var(--group); font-weight:700; border-top:1px solid var(--line-2); border-bottom-color:var(--line-2); }
+.cf-tbl tr.quiet td { font-size:12.5px; } .cf-tbl tr.quiet td:first-child { color:var(--muted); font-weight:500; }
+.cf-tbl tr.total td:first-child, .cf-tbl tr.quiet td:first-child, .cf-tbl tr.bal td:first-child, .cf-tbl tr.check td:first-child { padding-left:25px; }
+.cf-tbl .hq { font-weight:400; } .cf-tbl .nw { white-space:nowrap; }
+@media (max-width:700px) { .cf-tbl:not(.ptable) th:first-child, .cf-tbl:not(.ptable) td:first-child { width:172px; min-width:172px; max-width:172px; } }
+
+/* cash flow charts: one period row above, a wide chart over time, bar lists beside each other */
+.cf-charts { margin-top:18px; } .cf-period { margin:0 0 10px; } .cf-time { margin-bottom:0; }
+.cf-grid { grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); margin:14px 0 0; align-items:start; } .cf-card { margin-bottom:0; min-width:0; max-width:760px; }
+.cf-leg { display:flex; gap:12px; font-size:12px; color:var(--muted); flex-shrink:0; flex-wrap:wrap; justify-content:flex-end; } .cf-leg span { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+.cf-leg .sw { width:10px; height:10px; border-radius:3px; } .cf-leg .sw.ein { background:var(--cf-ein); } .cf-leg .sw.aus { background:var(--cf-aus); } .cf-leg .ln { width:14px; height:2px; border-radius:1px; background:var(--fg); }
+.cf-val { font-size:20px; font-weight:600; letter-spacing:-.01em; }
+.cf-delta { font-size:12px; color:var(--muted); margin-left:auto; white-space:nowrap; } .cf-delta.pos { color:var(--pos); } .cf-delta.neg { color:var(--neg); }
+.cf-plot { min-height:200px; margin-top:4px; } .cf-svg { display:block; max-width:100%; height:auto; }
+.cf-grid-l { stroke:var(--line); stroke-width:1; shape-rendering:crispEdges; } .cf-grid-l.zero { stroke:var(--line-2); }
+.cf-tick { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
+.cf-col.ein { fill:var(--cf-ein); } .cf-col.aus { fill:var(--cf-aus); } .cf-col.part { opacity:.45; }
+.cf-net { fill:none; stroke:var(--fg); stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+.cf-dot { fill:var(--fg); stroke:var(--head); stroke-width:2; }
+.cf-hit { fill:var(--fg); fill-opacity:0; cursor:default; } .cf-hit:hover { fill-opacity:.06; }
+.cf-card .lc-title .hq { margin-left:2px; }
+.cf-list { display:flex; flex-direction:column; gap:2px; margin-top:6px; }
+.cf-row { display:grid; grid-template-columns:minmax(84px, 36%) 1fr auto; align-items:center; gap:10px; padding:4px 6px; margin:0 -6px; border-radius:7px; font-size:12.5px; cursor:default; text-decoration:none; outline:none; }
+.cf-row:hover, .cf-row:focus-visible { background:var(--sub); }
+.cf-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cf-track { position:relative; height:16px; }
+.cf-bar { position:absolute; top:2px; height:12px; min-width:2px; z-index:1; } .cf-bar.r { border-radius:0 4px 4px 0; } .cf-bar.l { border-radius:4px 0 0 4px; }
+.cf-bar.ein { background:var(--cf-ein); } .cf-bar.aus { background:var(--cf-aus); } .cf-bar.tot { background:var(--c-neutral); }
+.cf-zero { position:absolute; top:-5px; bottom:-5px; width:1px; background:var(--line-2); }
+.cf-link { position:absolute; top:50%; height:26px; width:1px; background:var(--line-2); }
+.cf-num { font-variant-numeric:tabular-nums; text-align:right; min-width:58px; }
+.cf-row.tot .cf-name, .cf-row.tot .cf-num { font-weight:600; }
+.cf-empty { padding:24px 0; text-align:center; }
+.kp-table .kp-arrow { color:var(--faint); padding-left:2px; padding-right:2px; width:18px; text-align:center; }
+@media (max-width:700px) {
+  .cf-time .lc-head { flex-wrap:wrap; } .cf-time .lc-title { flex:1 0 100%; } .cf-leg { justify-content:flex-start; }
+  .cf-tbl:not(.ptable) tr:is(.total, .quiet, .bal, .check) td:first-child { white-space:normal; line-height:1.25; }      /* long names of results break instead of being cut */
+}

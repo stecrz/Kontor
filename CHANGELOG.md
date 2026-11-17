@@ -1,5 +1,15 @@
 # Änderungen
 
+## 3.13.11 (2026-11-17 06:45)
+Cashflow neu gegliedert, mit Diagrammen.
+- **Eine Gliederung, drei Stufen:** „Überblick“ zeigt den ganzen Cashflow auf einer Seite (Einnahmen, Ausgaben, Überschuss, Investitionen, Finanzierung, Veränderung Bankguthaben, Wertänderungen, Veränderung Nettovermögen), „Positionen“ und „Details“ klappen bis zu den Kategorien und einzelnen Darlehen auf. Jeder Abschnitt lässt sich ein- und ausklappen, auch Einnahmen und Ausgaben.
+- **Klare Überschriften**, erklärt am „?“: „Investitionen“, „Finanzierung“, „Wertänderungen“, „Überschuss“. Die Markierung „Umschichtung“ und der Erklärtext unter der Tabelle entfallen.
+- **Diagramme** unter der Tabelle für einen wählbaren Zeitraum: Einnahmen und Ausgaben je Monat mit Überschuss, Zusammensetzung der Veränderung des Bankguthabens, Ausgaben und Einnahmen nach Position mit Vergleich zur Vorperiode.
+- **Jahre vor und zurück:** „‹ ab 2024 ›“ neben „Monate / Jahre“ (auch in Bilanz und Planung) ersetzt den Knopf, der nur zurück führte.
+- Tabellen rasten beim seitlichen Blättern nicht mehr nachträglich ein; die erste Spalte ist fest breit, Aufklappen verschiebt keine Zahlen.
+- Excel-Export und Übersicht nennen die Zeilen wie die Seite („Überschuss“, „Veränderung Nettovermögen“).
+- **Cashflow-Positionen** ist eine eigene Seite unter Verwaltung (Kategorie in MoneyMoney → Position im Cashflow), erreichbar auch oben rechts im Cashflow. „Zielkonto“ heißt „Angelegt auf“.
+
 ## 3.13.10 (2026-11-17 05:52)
 - **Kontenspiegel sind eine eigene Regel:** eigener Abschnitt unter Buchungsregeln, zwischen zwei beliebigen Konten – ohne Gesellschaft oder Beteiligung –, jeder mit eigenem „Buchen ab“. Bisherige Kontenspiegel sind übernommen und buchen wie zuvor. Der Abschnitt „Gesellschaften“ heißt jetzt „Beteiligungen“; „optional“ entfällt.
 - Kontenspiegel zwischen Konten verschiedener Währungen bucht Kontor nicht mehr (es rechnet nicht um) und sagt es.

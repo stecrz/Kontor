@@ -20,7 +20,7 @@ from http.server import ThreadingHTTPServer            # noqa: E402
 from playwright.sync_api import sync_playwright        # noqa: E402
 
 PAGES = ["#overview", "#balance", "#cashflow", "#planning", "#properties", "#tax", "#transactions", "#bookings", "#sync",
-         "#setup", "#rules", "#categories", "#settings", "#updates", "#log", "#help"]
+         "#setup", "#rules", "#positions", "#categories", "#settings", "#updates", "#log", "#help"]
 SIZES = {"mac": dict(viewport={"width": 1360, "height": 820}), "iphone": dict(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)}
 
 

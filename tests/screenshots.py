@@ -70,9 +70,9 @@ def main():
                     break
             pg.reload(); pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_timeout(1200)
             pg.evaluate("document.querySelectorAll('.banner').forEach(b => b.remove())")
-            shots = [("overview", "#overview", None), ("balance_sheet", "#balance", "bilanz"), ("cash_flow", "#cashflow", None),
+            shots = [("overview", "#overview", None), ("balance_sheet", "#balance", "bilanz"), ("cash_flow", "#cashflow", None), ("cash_flow_charts", "#cashflow", "cfcharts"),
                      ("planning", "#planning", None), ("setup", "#setup", None), ("accounts", "#setup/accounts", None),
-                     ("assign_categories", "#categories", None), ("rules", "#rules", "rules"), ("category_positions", "#categories/positions", None), ("sync", "#sync", None),
+                     ("assign_categories", "#categories", None), ("rules", "#rules", "rules"), ("category_positions", "#positions", None), ("sync", "#sync", None),
                      ("access", "#settings/access", None), ("backup", "#settings/backup", None), ("property", "#properties", "immo")]
             for name, h, special in shots:
                 pg.goto(U + h); pg.wait_for_timeout(1400)
@@ -81,6 +81,9 @@ def main():
                     pg.click("tr.pos[data-pos='liquiditaet'] td:first-child"); pg.wait_for_timeout(500)
                 if special == "rules":                 # numbers loaded
                     pg.wait_for_timeout(1200)
+                if special == "cfcharts":              # the charts below the table
+                    pg.mouse.move(4, 4)                # no mark hovered
+                    pg.evaluate("window.scrollTo(0, document.querySelector('.cf-charts').getBoundingClientRect().top + window.scrollY - 70)"); pg.wait_for_timeout(400)
                 if special == "immo":
                     pg.click(".card[data-im]"); pg.wait_for_timeout(1500)
                 save(pg, name)
