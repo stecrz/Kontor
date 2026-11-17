@@ -37,7 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG: Dict[str, Any] = {
     "probelauf": True,
     "zeitplan": {"intervall_minuten": 30, "automatisch": True, "voll_lesen_tage": 7},
-    "darlehen": [], "gesellschaften": [],
+    "darlehen": [], "gesellschaften": [], "kontenspiegel": [],
     "bereiche": [],
     "immobilien": [],
     "bilanz": {"monate_zurueck": 0, "rollen": {}, "verlauf": {}, "illiquide_rollen": ["beteiligungen", "immobilien", "sachwerte"],
@@ -130,6 +130,11 @@ def _shape(cfg: dict) -> dict:
             g["gegenkonten"] = [{"konto": text(x.get("konto")), "quelle": text(x.get("quelle"))} for x in dicts(g["gegenkonten"])]
         if "schwelle" in g:
             g["schwelle"] = number(g["schwelle"], 0.01)
+    if "kontenspiegel" in cfg:
+        cfg["kontenspiegel"] = [dict({"a": text(m.get("a")), "b": text(m.get("b")), "ab": text(m.get("ab"))},
+                                     **dict({f: text(m[f]) for f in ("kategorie",) if text(m.get(f))},      # bereich: kept with that company
+                                            **({"bereich": str(m["bereich"]) if isinstance(m["bereich"], (str, int)) and not isinstance(m["bereich"], bool) else "?"}
+                                               if m.get("bereich") else {}))) for m in dicts(cfg["kontenspiegel"])]
     bil = cfg.get("bilanz")
     if isinstance(bil, dict):
         for f in ("rollen", "verlauf", "konten_zuordnung"):
@@ -174,6 +179,13 @@ def merged_config(cfg: Optional[dict]) -> dict:
     for k in ("beteiligungen", "saldo_spiegel"):          # replaced by gesellschaften (3.12.18)
         out.pop(k, None)
     out["kapitalfluss"].pop("beteiligungs_gruppen", None)
+    # account mirrors were kept with a company until 3.13.9: now a list of their own (with the company's "Buchen ab"; "bereich"
+    # names that company -- for such a mirror everything stays as it was, rules.mirrors)
+    if any(isinstance(g, dict) and "gegenkonten" in g for g in out.get("gesellschaften") or []):
+        out["kontenspiegel"] = [{k: v for k, v in m.items() if v or k not in ("kategorie", "bereich")} for m in rules.mirrors(out)]
+        for g in out["gesellschaften"]:
+            if isinstance(g, dict):
+                g.pop("gegenkonten", None)
     old = out["kapitalfluss"].pop("kategorie_zuordnung", None)    # sections per category before 3.13.6 -> positions
     if isinstance(old, dict) and not out["kapitalfluss"].get("positionen"):
         conv = {"Investitionen": "anlegen", "Finanzierung/Tilgung": "tilgung", "Finanzierung": "tilgung", "Finanzierung/Zinsen": "zinsen",
@@ -227,8 +239,8 @@ def earliest_needed(config: dict, today: date) -> date:
             start = min(start, date(ab.year - 1, 1, 1))
         except Exception:
             pass
-    for g in config.get("gesellschaften", []) or []:
-        rs = parse_start((g or {}).get("rueckwirkend_ab"))
+    for ab in [(g or {}).get("rueckwirkend_ab") for g in config.get("gesellschaften", []) or []] + [m["ab"] for m in rules.mirrors(config)]:
+        rs = parse_start(ab)
         if rs == "alles":
             start = min(start, date(2000, 1, 1))
         elif rs:
@@ -270,10 +282,11 @@ def follow_categories(config: dict, old: Optional[List[dict]], new: Optional[Lis
         return None
     moved = {p: now[u] for u, p in was.items() if u in now and now[u] != p and p}
     vanished = {p for u, p in was.items() if u not in now and p}
-    if len(vanished) > max(3, len(was) // 2):          # another set of categories altogether (another database): keep everything
-        return None
-    # deleted: its entry goes -- unless a new category has its name (deleted and made again); one renamed into the name wins
+    # deleted: its entry goes -- unless a new category has its name (deleted and made again); one renamed into the name wins.
+    # Most of them gone at once (another database, or a big tidy-up): nothing is dropped -- renamed ones still follow (by id).
     gone = {p for p in vanished if p not in set(now.values()) or p in set(moved.values())}
+    if len(vanished) > max(3, len(was) // 2):
+        gone = gone & set(moved.values())
     if not moved and not gone:
         return None
     cfg = copy.deepcopy(config)
@@ -451,14 +464,13 @@ def rule_accounts(ledger: Ledger, config: dict) -> set:
             add(d.get("darlehenskonto"))
             for src in d.get("quellkonten") or []:
                 add(src)
-    companies = [g for g in config.get("gesellschaften") or [] if isinstance(g, dict) and (g.get("beteiligung") or g.get("gegenkonten"))]
+    for m in rules.mirrors(config):
+        add(m["a"]); add(m["b"])
+    companies = [g for g in config.get("gesellschaften") or [] if isinstance(g, dict) and g.get("beteiligung")]
     if companies:
         areas = {str(b["id"]): b for b in bereiche_for(ledger, config)}
         for g in companies:
             add(g.get("beteiligung"))
-            for k in g.get("gegenkonten") or []:
-                if isinstance(k, dict):
-                    add(k.get("konto")); add(k.get("quelle"))
             area = areas.get(str(g.get("bereich")))
             if area:
                 out.update(a.uuid for a in area["leaves"] if not a.group)
@@ -764,7 +776,7 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
     by_id = {b["id"]: b for b in bereiche}
     used: Dict[str, str] = {}
     for g in config.get("gesellschaften") or []:
-        if not isinstance(g, dict) or not (g.get("beteiligung") or g.get("gegenkonten")):
+        if not isinstance(g, dict) or not g.get("beteiligung"):
             continue
         b = by_id.get(str(g.get("bereich")))
         if b is None:              # area removed or changed: the rules wait (no error, so the areas can still be saved)
@@ -774,7 +786,7 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         if g.get("takt") not in (None, "", "taeglich", "monatlich"):
             add("fehler", tr("s_s_takt_unbekannt") % (n, g.get("takt")))
         rs = parse_start(g.get("rueckwirkend_ab")) if g.get("rueckwirkend_ab") else ""
-        if rs is None or (isinstance(rs, date) and rs > date.today()):
+        if rs is None or (rs not in ("", "alles") and rs > date.today()):
             add("fehler", tr("s_s_rueckwirkend_ungueltig") % (n, g["rueckwirkend_ab"]))
         targets = []
         if g.get("beteiligung"):
@@ -785,25 +797,58 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
                 targets.append(a)
                 if roles.get(a.uuid) != "beteiligungen":
                     add("warnung", tr("s_s_keine_position_beteiligungen") % (tr("s_regel_beteiligung") % n, a.name))
-        for x in g.get("gegenkonten") or []:
-            if not isinstance(x, dict) or not x.get("konto") or not x.get("quelle"):
-                continue
-            a = ref(tr("s_regel_gegenkonto") % n, x["konto"], group_ok=False)
-            q = ref(tr("s_chk_gegenkonto_quelle") % n, x["quelle"], group_ok=False)
-            if a is not None:
-                targets.append(a)
-            if a is not None and q is not None and not (ledger.writable(a.uuid, config) or ledger.writable(q.uuid, config)):
-                add("warnung", tr("s_s_spiegel_kein_offline") % (tr("s_regel_gegenkonto") % n, a.name, q.name))
-            if q is not None and q.uuid not in inside:
-                add("warnung", tr("s_s_quelle_nicht_in_gesellschaft") % (n, q.path))
-            if q is not None and g.get("beteiligung") and roles.get(q.uuid) in rules.VALUE_OFF:
-                add("warnung", tr("s_s_doppelt_gezaehlt") % (n, q.name))
         for a in targets:
             if a.uuid in inside:
                 add("fehler", tr("s_s_zielkonto_liegt_innerhalb_der") % ("%s: %s" % (n, a.name)))
             if a.uuid in used:
                 add("fehler", tr("s_konto_s_mehrfach_ziel") % (a.path, used[a.uuid], n))
             used.setdefault(a.uuid, n)
+    # account mirrors (a list of their own; any two accounts, at least one of them an offline account). One kept with a company
+    # until 3.13.9 (bereich) is checked as then: its account a outside the company, b in it.
+    with_stake = {a.uuid: b["name"] for g in config.get("gesellschaften") or [] if isinstance(g, dict) and g.get("beteiligung")
+                  for b in [by_id.get(str(g.get("bereich")))] if b for a in b["leaves"]}
+    waiting = set()
+    for i, m in enumerate(rules.mirrors(config)):
+        bid = m.get("bereich") or ""
+        home = by_id.get(bid) if bid else None
+        if bid and home is None:                       # its company's area removed or off: the mirror waits, nothing else to say
+            if bid not in waiting:
+                waiting.add(bid)
+                w = tr("s_gesellschaft_s_bereich_fehlt") % bid
+                if not any(f["text"] == w for f in out):
+                    add("warnung", w)
+            continue
+        label = tr("s_regel_gegenkonto") % str(i + 1)
+        a = ref(label, m["a"], group_ok=False)
+        q = ref(label, m["b"], group_ok=False)
+        n = tr("s_regel_gegenkonto") % (a.name if a is not None else str(i + 1))
+        rs = parse_start(m.get("ab")) if m.get("ab") else ""
+        if rs is None or (rs not in ("", "alles") and rs > date.today()):
+            add("fehler", tr("s_s_rueckwirkend_ungueltig") % (n, m["ab"]))
+        if a is None or q is None:
+            continue
+        if a.uuid == q.uuid and not bid:
+            add("fehler", tr("s_s_spiegel_selbst") % n)
+            continue
+        if (a.currency or "EUR").upper() != (q.currency or "EUR").upper():
+            add("warnung", tr("s_s_spiegel_waehrung") % n)
+        if not (ledger.writable(a.uuid, config) or ledger.writable(q.uuid, config)):
+            add("warnung", tr("s_s_spiegel_kein_offline") % (n, a.name, q.name))
+        if home is not None:
+            inside = {x.uuid for x in home["leaves"]}
+            if a.uuid in inside:
+                add("fehler", tr("s_s_zielkonto_liegt_innerhalb_der") % ("%s: %s" % (home["name"], a.name)))
+            if q.uuid not in inside:
+                add("warnung", tr("s_s_quelle_nicht_in_gesellschaft") % (home["name"], q.path))
+        # also booked by another rule (a participation, another mirror): kept with a company, its account a (as until 3.13.9);
+        # a mirror of its own, every side Kontor books into
+        for x in ([a] if bid else [x for x in (a, q) if ledger.writable(x.uuid, config)]):
+            if x.uuid in used:
+                add("fehler", tr("s_konto_s_mehrfach_ziel") % (x.path, used[x.uuid], n))
+            used.setdefault(x.uuid, n)
+        for x in (a, q):
+            if x.uuid in with_stake and roles.get(x.uuid) in rules.VALUE_OFF:
+                add("warnung", tr("s_s_doppelt_gezaehlt") % (with_stake[x.uuid], x.name))
     for r in bil.get("illiquide_konten") or []:
         setting(tr("s_chk_bilanz_illiquide"), r)
     for k, v in (bil.get("rollen") or {}).items():
@@ -899,23 +944,59 @@ def migrate_booking_state(store: Store) -> bool:
 
 
 def fix_start_dates(ledger: Ledger, config: dict, today: date) -> Optional[dict]:
-    """"Buchen ab" of each company as a day: until 3.13.0 it could be empty (from now on). An empty one gets the day of Kontor's
-    first booking for the company's rules (so everything since is kept right), otherwise today -- and never moves again.
-    Returns the changed configuration, or None."""
-    gs = [g for g in config.get("gesellschaften") or [] if isinstance(g, dict) and (g.get("beteiligung") or g.get("gegenkonten"))
-          and parse_start(g.get("rueckwirkend_ab")) is None]
-    if not gs:
+    """"Buchen ab" of each company and of each account mirror as a day: until 3.13.0 it could be empty (from now on). An empty
+    one gets the day of Kontor's first booking for the rule (so everything since is kept right), otherwise today -- and never
+    moves again. A mirror kept with a company until 3.13.9 gets its company's day. Returns the changed configuration, or None."""
+    def empty(m) -> bool:
+        return isinstance(m, dict) and bool(m.get("a")) and bool(m.get("b")) and parse_start(m.get("ab")) is None
+    kept = lambda cfg, bid: [m for m in cfg.get("kontenspiegel") or [] if isinstance(m, dict) and str(m.get("bereich") or "") == bid]
+    gs = [g for g in config.get("gesellschaften") or [] if isinstance(g, dict) and parse_start(g.get("rueckwirkend_ab")) is None
+          and (g.get("beteiligung") or g.get("gegenkonten") or kept(config, str(g.get("bereich"))))]
+    if not gs and not any(empty(m) for m in config.get("kontenspiegel") or []):
         return None
     new = copy.deepcopy(config)
     areas = {str(b["id"]): b for b in bereiche_for(ledger, config)}
     changed = False
+    days: Dict[str, str] = {}
+    known = set()
     for g in new.get("gesellschaften") or []:
-        if not isinstance(g, dict) or not (g.get("beteiligung") or g.get("gegenkonten")) or parse_start(g.get("rueckwirkend_ab")) is not None:
+        if not isinstance(g, dict):
             continue
-        area = areas.get(str(g.get("bereich")))
-        if area is not None:
-            g["rueckwirkend_ab"] = (rules.default_start(ledger, g, area, today) or rules.current_day(g, today)).isoformat()
+        bid = str(g.get("bereich"))
+        known.add(bid)
+        start = parse_start(g.get("rueckwirkend_ab"))
+        if start is None and (g.get("beteiligung") or g.get("gegenkonten") or kept(new, bid)):
+            area = areas.get(bid)
+            if area is None:
+                continue
+            start = rules.company_start(ledger, new, g, area, today) or rules.current_day(g, today)
+            g["rueckwirkend_ab"] = start.isoformat()
             changed = True
+        if start is not None:
+            days[bid] = start if start == "alles" else start.isoformat()
+    for m in new.get("kontenspiegel") or []:
+        if not empty(m):
+            continue
+        bid = str(m.get("bereich") or "")
+        if bid and bid in known:                       # its company's day (a company whose area is missing waits, the mirror too)
+            if bid in days:
+                m["ab"] = days[bid]
+                changed = True
+            continue
+        try:
+            accs = [ledger.resolve(str(m[f])).uuid for f in ("a", "b")]
+        except KeyError:                               # an account is missing: waits (the check names it)
+            continue
+        first = None
+        if bid and bid in areas:                       # its company has no entry any more: as the company's day would be
+            first = rules.company_start(ledger, new, {"bereich": bid}, areas[bid], today)
+        elif not bid:
+            first = rules._first_mark(ledger, accs, rules.VALUE_TAGS + (rules.MIRROR_TAG,))
+            first = min(first, today) if first else None
+        elif bid:
+            continue
+        m["ab"] = (first or today).isoformat()
+        changed = True
     return new if changed else None
 
 
@@ -1209,9 +1290,10 @@ def prune_account_settings(config: dict, ledger: Optional[Ledger]) -> dict:
 
     def known(r) -> bool:
         return not account_deleted(ledger, r)
-    roles = [k for k in (bil.get("rollen") or {}) if not str(k).startswith("_")] if isinstance(bil.get("rollen"), dict) else []
-    lost = sum(1 for k in roles if not known(k))
-    if lost > max(3, len(roles) // 2):                 # other accounts altogether (another database open): nothing is dropped
+    refs = [k for key in ("rollen", "verlauf") if isinstance(bil.get(key), dict) for k in bil[key] if not str(k).startswith("_")] \
+        + [r for key in ("illiquide_konten", "ausgeblendet", "immer_anzeigen") if isinstance(bil.get(key), list) for r in bil[key]]
+    lost = len({str(r).split("|")[0].strip() for r in refs if not known(r)})
+    if lost > max(3, len({str(r).split("|")[0].strip() for r in refs}) // 2):     # other accounts altogether (another database open): nothing is dropped
         return config
     for key in ("rollen", "verlauf"):
         if isinstance(bil.get(key), dict):
@@ -1248,7 +1330,22 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
         used.update(" / ".join(parts[:i]) for i in range(1, len(parts) + 1))
     order = [norm_cat(str(c.get("path") or c.get("name") or "")) for c in categories or [] if not c.get("default")]
     paths = [p for p in dict.fromkeys(order) if p in used] + sorted(used - set(order))
-    totals = category_totals(ledger)
+    # the direction of a category counts within each area, as in the cash flow ("Gehalt": income for you, an expense of your
+    # company): the proposal of the area with the most bookings first, those of the others after it
+    per_area = []
+    for b in bereiche:
+        accs = {a.uuid for a in b["leaves"]}
+        n = Counter(norm_cat(t.category_path) for t in ledger.txs if t.booked and t.category_path and t.account_uuid in accs)
+        per_area.append((category_totals(ledger, accs), n))
+
+    def proposals(p: str) -> List[str]:
+        if by_name(p):
+            return ["umbuchung"]
+        c: Counter = Counter()
+        for tot, n in per_area:
+            if n.get(p):
+                c[propose_position(p, tot.get(p, 0.0) > 0)] += n[p]
+        return [k for k, _ in c.most_common()]
     kf = config.get("kapitalfluss") or {}
     names_only = dict(config, kapitalfluss=dict(kf, positionen={}))
     by_name = transfer_check(names_only)                 # a transfer category by its name (Kontor's "proposal")
@@ -1261,14 +1358,15 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
         sub = [q for q in count if q == p or q.startswith(p + " / ")]
         hits = [c for c in objekte if p == c or p.startswith(c + " / ")]
         obj = objekte[max(hits, key=len)] if hits else None
+        also: List[str] = []
         if count.get(p):
-            prop = "umbuchung" if by_name(p) else propose_position(p, totals.get(p, 0.0) > 0)
+            prop, also = (proposals(p) + [""])[0], proposals(p)[1:]
         else:                       # only a folder for others: what they get, if it is the same for all ("" = differs)
-            props = {"umbuchung" if by_name(q) else propose_position(q, totals.get(q, 0.0) > 0) for q in sub if count.get(q)}
+            props = {(proposals(q) + [""])[0] for q in sub if count.get(q)}
             prop = props.pop() if len(props) == 1 else ""
         out.append({"pfad": p, "name": p.split(" / ")[-1], "ebene": p.count(" / "), "anzahl": count.get(p, 0),
                     "anzahl_alle": sum(count[q] for q in sub), "summe_12m": round(sum(year.get(q, 0.0) for q in sub), 2),
-                    "vorschlag": prop,
+                    "vorschlag": prop, "vorschlag_auch": also,
                     "eigene": mine.get(p), "konto": konto.get(p) or "", "objekt": obj,
                     "gesellschaft": 2 * sum(in_firm[q] for q in sub) > sum(count[q] for q in sub)})
     return {"kategorien": out, "positionen": [[k, sec] for k, sec, _ in POSITIONS], "umbuchung": list(kf.get("umbuchungs_kategorien") or ["Umbuchung"])}
@@ -1600,7 +1698,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
             return {"status": "fehler", "text": tr("s_moneymoney_fehler_s") % e}
         # a new version builds the report again (new figures, e.g. after an update); the rules run again when their basis
         # changed: their settings (your "Don't book" among them) and the day (interest at month end, values)
-        basis = json.dumps([[config.get(k) for k in ("darlehen", "gesellschaften", "bereiche", "abruf", "probelauf", "bilanz", "nicht_buchen")],
+        basis = json.dumps([[config.get(k) for k in ("darlehen", "gesellschaften", "kontenspiegel", "bereiche", "abruf", "probelauf", "bilanz", "nicht_buchen")],
                             today.isoformat()], sort_keys=True, default=str)
         fp = "%s@%s#%s" % (ledger_fp(ledger), version(), hashlib.sha256(basis.encode()).hexdigest()[:16])
         if fp == state.get("fingerprint") and not force:
@@ -1791,6 +1889,10 @@ def _walk_refs(cfg: dict, fn: Callable[[str, str], str]) -> None:
             for f in ("konto", "quelle"):
                 if isinstance(x, dict) and x.get(f):
                     x[f] = fn("gesellschaften.gegenkonten." + f, x[f])
+    for m in cfg.get("kontenspiegel") or []:
+        for f in ("a", "b"):
+            if isinstance(m, dict) and m.get(f):
+                m[f] = fn("kontenspiegel." + f, m[f])
     kf = cfg.setdefault("kapitalfluss", {})
     if kf.get("kategorie_zu_konto"):
         kf["kategorie_zu_konto"] = {k: (fn("kapitalfluss.kategorie_zu_konto", v) if not k.startswith("_") else v)
@@ -1819,6 +1921,7 @@ def export_package(config: dict, name: str = "Kontor-Einstellungen", strip_uuids
     ids = {str(b.get("id")) for b in cfg.get("bereiche") or [] if isinstance(b, dict)}
     if ids:                                   # rules of companies whose area no longer exists do not travel along
         cfg["gesellschaften"] = [g for g in cfg.get("gesellschaften") or [] if isinstance(g, dict) and str(g.get("bereich")) in ids]
+        cfg["kontenspiegel"] = [m for m in cfg.get("kontenspiegel") or [] if isinstance(m, dict) and (not m.get("bereich") or str(m["bereich"]) in ids)]
     if strip_uuids:
         def strip(field: str, r: str) -> str:
             if "|" not in r:
@@ -1865,11 +1968,28 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
     _walk_refs(inc, resolve)
     base = copy.deepcopy(merged_config(current))
     if mode == "ersetzen":
+        if "gesellschaften" in inc and "kontenspiegel" not in inc:      # a package from before 3.13.10: its mirrors are with its companies
+            base["kontenspiegel"] = []
         for k, v in inc.items():
             base[k] = v
             report.append("%s ersetzt" % k)
     else:
         for k, v in inc.items():
+            if k == "kontenspiegel":                   # pair by pair, whichever way round
+                pair = lambda m: frozenset(str(m.get(f) or "").split("|")[0].strip() for f in ("a", "b"))
+                base.setdefault(k, [])
+                have = {pair(x): i for i, x in enumerate(base[k]) if isinstance(x, dict)}
+                for item in v or []:
+                    if not isinstance(item, dict) or not item.get("a") or not item.get("b"):
+                        continue
+                    if pair(item) in have:
+                        base[k][have[pair(item)]] = item
+                        report.append(tr("s_s_s_aktualisiert") % (k, ""))
+                    else:
+                        have[pair(item)] = len(base[k])
+                        base[k].append(item)
+                        report.append(tr("s_s_s_hinzugefuegt") % (k, ""))
+                continue
             if k in ("darlehen", "gesellschaften", "bereiche", "immobilien"):
                 key = {"bereiche": "id", "immobilien": "id", "gesellschaften": "bereich"}.get(k, "name")
                 existing = {x.get(key): i for i, x in enumerate(base.get(k) or []) if isinstance(x, dict)}

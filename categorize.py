@@ -275,6 +275,7 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
     groups: Dict[str, dict] = {}
     total = 0
     skip = transfers(ledger, bereich_of)
+    own = ledger.own_ibans()
     for t in ledger.txs:
         if not needs_category(t, banks) or t.id in skip:
             continue
@@ -292,7 +293,8 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
         g = groups.get(key)
         if g is None:
             g = groups[key] = {"key": key, "name": t.name[:80] or t.purpose[:80], "iban": (t.counter_iban or "")[:34], "anzahl": 0, "summe": 0.0, "ids": [],
-                               "umsaetze": [], "vorschlaege": {}, "konten": [], "von": t.booking_date.isoformat(), "bis": t.booking_date.isoformat()}
+                               "umsaetze": [], "vorschlaege": {}, "konten": [], "von": t.booking_date.isoformat(), "bis": t.booking_date.isoformat(),
+                               "eigen": bool(t.counter_iban and own.get(t.counter_iban))}      # the other side is an account of yours (another area)
         r = suggest(d, t)
         if r:
             g["vorschlaege"][t.id] = r["kategorie"]

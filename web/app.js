@@ -130,7 +130,7 @@ const H = {
   regel_darlehen_h: t('regel_darlehen_h'), regel_gesellschaften_h: t('regel_gesellschaften_h'),
   h_l_name: t('h_l_name'), h_l_aktiv: t('h_l_aktiv'), h_l_art: t('h_l_art'), h_l_text: t('h_l_text'), h_l_excl: t('h_l_excl'), h_l_zinstag: t('h_l_zinstag'),
   h_l_ab: t('h_l_ab'), h_l_gp: t('h_l_gp'), h_l_kt: t('h_l_kt'), h_l_kz: t('h_l_kz'),
-  auto_buchungen_h: t('auto_buchungen_h'), h_co_anteil: t('h_co_anteil'), h_co_bet: t('h_co_bet'), h_co_gk: t('h_co_gk'), h_co_rueck: t('h_co_rueck'), h_co_schwelle: t('h_co_schwelle'), h_co_gp: t('h_co_gp'),
+  auto_buchungen_h: t('auto_buchungen_h'), h_co_anteil: t('h_co_anteil'), h_co_bet: t('h_co_bet'), h_co_gk: t('h_co_gk'), h_co_rueck: t('h_co_rueck'), h_gk_rueck: t('h_gk_rueck'), h_co_schwelle: t('h_co_schwelle'), h_co_gp: t('h_co_gp'),
   methode: t('12_6_monate_durchschnitt_der'),
   inflation: t('ausgaben_steigen_standardmaessig_mit_d'),
   steig_ein: t('jaehrliche_steigerung_der_einnahmen_z'),
@@ -171,7 +171,7 @@ const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl:
   bch: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', regel_darlehen_h: 'rules-loans', regel_gesellschaften_h: 'rules-companies',
   darlehen_iban: 'rules-loans', darlehen_konto: 'rules-loans', darlehen_quelle: 'rules-loans', zinsmodell: 'rules-loans', satz: 'rules-loans', basis_override: 'rules-loans',
   h_l_name: 'rules-loans', h_l_aktiv: 'rules-loans', h_l_art: 'rules-loans', h_l_text: 'rules-loans', h_l_excl: 'rules-loans', h_l_zinstag: 'rules-loans', h_l_ab: 'rules-loans',
-  h_l_gp: 'rules-loans', h_l_kt: 'rules-loans', h_l_kz: 'rules-loans', h_co_anteil: 'areas', h_co_bet: 'rules-companies', h_co_gk: 'rules-companies',
+  h_l_gp: 'rules-loans', h_l_kt: 'rules-loans', h_l_kz: 'rules-loans', h_co_anteil: 'areas', h_co_bet: 'rules-companies', h_co_gk: 'rules-mirrors', h_gk_rueck: 'rules-mirrors',
   auto_buchungen_h: 'auto-bookings', h_co_rueck: 'rules-back', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', methode: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', ereignis: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', paket: 'backup', timemachine: 'backup', diagnose: 'troubleshooting', pruefen: 'setup', updates: 'updates',
@@ -566,7 +566,7 @@ const swCtl = (id, on, label, tip) => `<label class="switch"${tip ? ` title="${e
 const alleCtl = (n, bilanz) => swCtl('alle-zeilen', S.alle, bilanz ? t('ausgeblendete_n', n ? ` (${n})` : '') : t('leere_zeilen'), bilanz ? t('alle_zeilen_tip_n', n) : t('alle_zeilen_tip'));
 const planCtl = () => swCtl('planan', S.plan, t('plan'), t('plan_tip'));
 const planOn = () => S.plan || S.tab === 'balance' || S.tab === 'planning';     // in Bilanz und Planung immer mit Plan
-function hasRules() { const c = S.CFG || {}; return !!((c.darlehen || []).length || (c.gesellschaften || []).length); }
+function hasRules() { const c = S.CFG || {}; return !!((c.darlehen || []).length || (c.gesellschaften || []).length || (c.kontenspiegel || []).length); }
 function navBadge(href, text, title) {
   const a = $(`#nav a[href="${href}"]`); if (!a) return;
   let d = a.querySelector('.nbadge');
@@ -827,7 +827,7 @@ const MODULES = [
   {id: 'history', t: t('mod_history'), d: t('bisherigen_verlauf_aller_konten_einmal'), done: () => !!((S.STATUS || {}).moneymoney || {}).historie},
   {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => Object.keys((S.CFG.kapitalfluss || {}).positionen || {}).length > 0, href: '#categories/positions', optional: true},
   {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.kategorien || {}).gesamt || {}).ohne), href: '#categories', optional: true},
-  {id: 'rules', t: t('mod_rules'), d: t('darlehen_spiegeln_und_verzinsen_beteil'), done: () => (S.CFG.darlehen || []).length + (S.CFG.gesellschaften || []).length > 0, href: '#rules', optional: true},
+  {id: 'rules', t: t('mod_rules'), d: t('darlehen_spiegeln_und_verzinsen_beteil'), done: () => hasRules(), href: '#rules', optional: true},
   {id: 'properties', t: t('mod_properties'), d: t('kalkulationen_anlegen_mit_konten_und'), done: () => (S.CFG.immobilien || []).length > 0, href: '#properties', optional: true},
   {id: 'planning', t: t('mod_planning'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planning', optional: true},
   {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.steuer || {}).vermietung_kategorie, href: '#settings/tax', optional: true},
@@ -3298,9 +3298,11 @@ function vRegeln() {
   h += `<section class="rule-sec"><div class="sec-head"><h2>${t('darlehen')}${hq('regel_darlehen_h')}</h2><span class="sp"></span><button id="add-loan" class="secondary small add-rule">${t('darlehen_hinzufuegen')}</button></div>`
     + `<p class="sec-sub">${t('darlehen_sub')}</p><div class="list" id="loans">${(C.darlehen || []).map((l, i) => loanForm(l, i)).join('')}</div><div class="empty small muted">${t('leer_darlehen')}</div></section>`;
   const cos = companyAreas();
-  h += `<section class="rule-sec"><div class="sec-head"><h2>${t('gesellschaften')}${hq('regel_gesellschaften_h')}</h2></div><p class="sec-sub">${t('gesellschaften_sub')}</p>`
+  h += `<section class="rule-sec"><div class="sec-head"><h2>${t('regel_beteiligungen')}${hq('regel_gesellschaften_h')}</h2></div><p class="sec-sub">${t('gesellschaften_sub')}</p>`
     + `<div id="companies">${cos.map(b => companyCard(b, (C.gesellschaften || []).find(g => String(g.bereich) === String(b.id)) || {})).join('')}</div>`
     + (cos.length ? '' : `<div class="empty small muted">${t('leer_gesellschaften')} <a href="#setup/areas">${t('mod_areas')} →</a></div>`) + `</section>`;
+  h += `<section class="rule-sec"><div class="sec-head"><h2>${t('co_gegenkonten')}${hq('h_co_gk')}</h2><span class="sp"></span><button id="add-mirror" class="secondary small add-rule">${t('gegenkonto_hinzufuegen')}</button></div>`
+    + `<p class="sec-sub">${t('spiegel_sub')}</p><div id="mirrors">${(C.kontenspiegel || []).map(mirrorRow).join('')}</div><div class="empty small muted">${t('leer_spiegel')}</div></section>`;
   h += `<div id="rules-warn" class="findings"></div><div id="findings" class="findings"></div>`
     + `<div class="savebar"><span class="small muted"><span id="rules-state">${t('regeln_gespeichert')}</span>${more('rules')}</span><span class="sp"></span>`
     + `<button id="save-rules" data-cmd-s title="⌘S" disabled>${t('speichern_und_pruefen')}</button></div></div>`;
@@ -3319,18 +3321,20 @@ function acctSel(cls, selected, filter, empty) {
     + (sel && !list.some(k => k.uuid === sel) ? `<option value="${esc(selected)}" selected>${S.KONTEN.some(k => k.uuid === sel) ? t('0_nicht_waehlbar', esc(refName(selected))) : t('0_nicht_gefunden', esc(refName(selected) || selected))}</option>` : '') + `</select>`;
 }
 // counter account: a private manual account (outside the company) = counterpart of one account of the company
-function gkRow(x, bid) {
-  const inside = k => k.bereich_id === String(bid);
-  return `<div class="gk-row">${acctSel('g-konto', x.konto, k => !k.gruppe && !inside(k), t('privates_konto'))}`
-    + `<span class="gk-arrow" title="${esc(t('gk_spiegel'))}" aria-label="${esc(t('gk_spiegel'))}">⇄</span>${acctSel('g-quelle', x.quelle, k => !k.gruppe && inside(k), t('konto_der_gesellschaft'))}`
-    + `<button class="ico gk-del" title="${esc(t('entfernen'))}" aria-label="${esc(t('entfernen'))}">×</button><div class="pv small"></div></div>`;
+// an account mirror: any two accounts (your own, a company's, two companies'), booked from its own day on
+function mirrorRow(m) {
+  const pick = k => !k.gruppe;
+  return `<div class="gk-row" data-kat="${esc(m.kategorie || '')}" data-bereich="${esc(m.bereich || '')}">${acctSel('g-a', m.a, pick, t('konto_waehlen'))}`
+    + `<span class="gk-arrow" title="${esc(t('gk_spiegel'))}" aria-label="${esc(t('gk_spiegel'))}">⇄</span>${acctSel('g-b', m.b, pick, t('konto_waehlen'))}`
+    + `<button class="ico gk-del" title="${esc(t('entfernen'))}" aria-label="${esc(t('entfernen'))}">×</button>`
+    + `<div class="gk-ab"><span class="small muted">${t('co_rueck')}${hq('h_gk_rueck')}</span>${backField(m.ab, 'rueck_alles_spiegel')}</div><div class="pv small"></div></div>`;
 }
 // "Buchen ab": from a day (new: today) or everything since the company exists
 const isoToday = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
-function backField(v) {
+function backField(v, allKey = 'rueck_alles') {
   v = String(v || ''); const day = /^\d{4}-\d{2}(-\d{2})?$/.test(v) ? (v.length === 7 ? v + '-01' : v) : isoToday();
   const all = v === 'alles';
-  return `<div class="row tight"><select class="c-rmode"><option value="datum" ${all ? '' : 'selected'}>${t('rueck_datum')}</option><option value="alles" ${all ? 'selected' : ''}>${t('rueck_alles')}</option></select>`
+  return `<div class="row tight"><select class="c-rmode"><option value="datum" ${all ? '' : 'selected'}>${t('rueck_datum')}</option><option value="alles" ${all ? 'selected' : ''}>${t(allKey)}</option></select>`
     + `<input type="date" class="c-ab${all ? ' hidden' : ''}" value="${esc(day)}" max="${isoToday()}"></div>`;
 }
 const backValue = c => $('.c-rmode', c).value === 'alles' ? 'alles' : ($('.c-ab', c).value || isoToday());
@@ -3340,11 +3344,10 @@ const taktTip = takt => { const auto = S.CFG.probelauf === false, monthly = takt
 function companyCard(b, g) {
   // all settings of a company in one card, nothing folded away; no account chosen in advance (choosing one starts the bookings)
   const has = b.anteil != null && b.anteil !== '', bid = String(b.id);
-  const row = (label, help, field, opt) => `<div class="co-row"><div class="co-l">${label}${hq(help)}${opt ? `<span class="opt">${t('optional')}</span>` : ''}</div><div class="co-f">${field}</div></div>`;
+  const row = (label, help, field) => `<div class="co-row"><div class="co-l">${label}${hq(help)}</div><div class="co-f">${field}</div></div>`;
   return `<div class="co-card" data-b="${esc(bid)}"><div class="co-head"><h3>${esc(b.name)}</h3>`
     + (has ? `<a class="pill neutral" href="#setup/areas">${t('anteil_0', pctText(b.anteil))}</a>` : `<a class="pill warn" href="#setup/areas">${t('anteil_fehlt')}</a>`) + hq('h_co_anteil') + `</div>`
     + row(t('co_beteiligung'), 'h_co_bet', `${acctSel('c-bet', g.beteiligung, betCandidate(bid), t('keine_2'))}<div class="pv small" data-pv="b"></div>`)
-    + `<div class="co-row"><div class="co-l">${t('co_gegenkonten')}${hq('h_co_gk')}<span class="opt">${t('optional')}</span></div><div class="co-f gks">${(g.gegenkonten || []).map(x => gkRow(x, bid)).join('')}<button class="secondary small add-gk">${t('gegenkonto_hinzufuegen')}</button></div></div>`
     + row(t('co_takt'), 'h_co_takt', `<select class="c-takt"><option value="taeglich" ${g.takt !== 'monatlich' ? 'selected' : ''}>${t('takt_taeglich')}</option><option value="monatlich" ${g.takt === 'monatlich' ? 'selected' : ''}>${t('takt_monatlich')}</option></select><div class="small muted c-takt-tip">${taktTip(g.takt)}</div>`)
     + row(t('co_rueck'), 'h_co_rueck', backField(g.rueckwirkend_ab))
     + row(t('co_schwelle'), 'h_co_schwelle', `<div class="row tight"><input type="number" step="0.01" min="0.01" class="c-sw" value="${g.schwelle ?? 0.01}" style="width:110px"> €</div>`)
@@ -3361,14 +3364,18 @@ function rulesPreviewShow(rp, r) {
       if (el) el.innerHTML = p.buchungen ? `<span class="pv-diff">${p.buchungen === 1 ? t('buchung_offen_1') : t('buchungen_offen_n', p.buchungen)}</span>` : `<span class="pv-ok">✓ ${t('aktuell')}</span>`;
       continue;
     }
-    const card = $$('.co-card', rp).find(c => c.dataset.b === String(p.bereich));
-    const row = card && (p.art === 'beteiligung' ? card : $$('.gk-row', card)[p.i]);
-    const el = row && $(p.art === 'beteiligung' ? '[data-pv="b"]' : '.pv', row);
-    if (el && p.art === 'gegenkonto' && p.richtung) {          // mirror: which way, how many mirrored, what is open
-      el.innerHTML = t(p.richtung === 'beide' ? 'gk_beide' : p.richtung === 'zu_a' ? 'gk_zu_mir' : 'gk_zu_ges') + (p.gespiegelt ? ` · ${t('gk_gespiegelt_n', p.gespiegelt)}` : '') + ' · '
+    if (p.art === 'spiegel') {          // mirror: which way, how many mirrored, what is open (the i-th complete row, as saved)
+      const accId = (r, c) => $(c, r).value.split('|')[0].trim();
+      const rows = $$('#mirrors .gk-row', rp).filter(r => $('.g-a', r).value && $('.g-b', r).value);
+      const row = (p.a && rows.find(r => accId(r, '.g-a') === p.a && accId(r, '.g-b') === p.b)) || rows[p.i], el = row && $('.pv', row);
+      if (!el || !p.richtung) continue;
+      const nm = c => { const o = $(c, row).selectedOptions[0]; return o ? o.textContent.trim() : ''; };
+      el.innerHTML = (p.richtung === 'beide' ? t('gk_beide') : t('gk_nur_in', esc(nm(p.richtung === 'zu_a' ? '.g-a' : '.g-b')))) + (p.gespiegelt ? ` · ${t('gk_gespiegelt_n', p.gespiegelt)}` : '') + ' · '
         + (p.offen ? `<span class="pv-diff">${p.offen === 1 ? t('buchung_offen_1') : t('buchungen_offen_n', p.offen)}</span>` : `<span class="pv-ok">✓ ${t('aktuell')}</span>`);
       continue;
     }
+    const card = $$('.co-card', rp).find(c => c.dataset.b === String(p.bereich));
+    const el = card && p.art === 'beteiligung' ? $('[data-pv="b"]', card) : null;
     if (!el || p.soll == null) continue;
     const ok = !p.offen;
     // target with its calculation (quiet), actual; no difference -- what is to book is listed under Auto bookings
@@ -3435,9 +3442,10 @@ function collectRules() {
     return l;
   });
   cfg.gesellschaften = $$('#companies .co-card').map(c => ({ bereich: c.dataset.b, beteiligung: $('.c-bet', c).value,
-    gegenkonten: $$('.gk-row', c).map(r => ({konto: $('.g-konto', r).value, quelle: $('.g-quelle', r).value})),
     rueckwirkend_ab: backValue(c), takt: $('.c-takt', c).value, schwelle: parseFloat($('.c-sw', c).value) || 0.01, gegenpartei: $('.c-gp', c).value.trim() }))
-    .filter(g => g.beteiligung || g.gegenkonten.length);
+    .filter(g => g.beteiligung || g.gegenpartei);          // a counterparty alone: the name on mirrored bookings
+  cfg.kontenspiegel = $$('#mirrors .gk-row').map(r => Object.assign({a: $('.g-a', r).value, b: $('.g-b', r).value, ab: backValue(r)}, r.dataset.kat ? {kategorie: r.dataset.kat} : {}, r.dataset.bereich ? {bereich: r.dataset.bereich} : {}))
+    .filter(m => m.a && m.b);
   delete cfg.beteiligungen; delete cfg.saldo_spiegel;
   return cfg;
 }
@@ -3506,7 +3514,7 @@ async function vPositionen() {
     <div class="wrap auto"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')} ${hq('zielkonto')}</th></tr></thead><tbody>`;
   d.kategorien.forEach((r, i) => {
     const parent = (d.kategorien[i + 1] || {}).ebene > r.ebene, own = r.eigene || '';
-    h += `<tr data-p="${esc(r.pfad)}" data-v="${esc(r.vorschlag)}" data-init="${esc(own)}" data-konto="${esc(r.konto)}" data-own="${r.anzahl ? 1 : 0}" data-firma="${r.gesellschaft ? 1 : ''}"><td style="padding-left:${10 + 18 * r.ebene}px">${parent ? `<b>${esc(r.name)}</b>` : esc(r.name)}</td>
+    h += `<tr data-p="${esc(r.pfad)}" data-v="${esc(r.vorschlag)}" data-v2="${esc((r.vorschlag_auch || []).join(','))}" data-init="${esc(own)}" data-konto="${esc(r.konto)}" data-own="${r.anzahl ? 1 : 0}" data-firma="${r.gesellschaft ? 1 : ''}"><td style="padding-left:${10 + 18 * r.ebene}px">${parent ? `<b>${esc(r.name)}</b>` : esc(r.name)}</td>
       <td class="num small kp-n">${r.anzahl_alle || ''}</td><td class="num small kp-n ${r.summe_12m < 0 ? 'neg' : ''}">${r.summe_12m ? F0(r.summe_12m) : ''}</td>
       <td><select class="kp-pos"${r.objekt ? ` data-obj="${esc(r.objekt)}"` : ''}>${r.objekt ? objOpts(own) : opts(own, r.gesellschaft)}</select></td>
       <td><select class="kp-konto">${acctOptions(r.konto, k => !k.gruppe && (k.depot || k.rolle === 'anlagen' || k.rolle === 'liquiditaet')).replace(t('waehlen'), t('automatisch'))}</select></td></tr>`;
@@ -3529,7 +3537,8 @@ function bindPositionen(main) {
       // a property's category leaves its rows for interest or a repayment, or for saving or leaving out that you chose
       if (sel.dataset.obj && !(['tilgung', 'zinsen'].includes(a) || (inherited(r) && OBJ_OUT.includes(a)))) a = '';
       const eff = own(r) || a;
-      sel.options[0].textContent = sel.dataset.obj && !a ? t('automatisch_0', t('immobilie_0', sel.dataset.obj)) : a ? t('automatisch_0', posLabel(a, r.dataset.firma)) : t('automatisch_unter');
+      const also = !inherited(r) && a === r.dataset.v && r.dataset.v2 ? r.dataset.v2.split(',') : [];       // another area counts it the other way round
+      sel.options[0].textContent = sel.dataset.obj && !a ? t('automatisch_0', t('immobilie_0', sel.dataset.obj)) : a ? t('automatisch_0', [posLabel(a, r.dataset.firma), ...also.map(k => posLabel(k))].join(' / ')) : t('automatisch_unter');
       r.classList.toggle('kp-own', !!own(r));
       const k = $('.kp-konto', r); k.classList.toggle('hidden', eff !== 'anlegen');      // counts for the categories below it too
     });
@@ -3617,7 +3626,7 @@ async function vZuordnen() {
 
       ${g.anzahl === 1 && g.umsaetze[0] ? `<div class="small muted kz-one">${esc(g.umsaetze[0].zweck || '')}${g.umsaetze[0].art ? ` <span class="tag">${esc(g.umsaetze[0].art)}</span>` : ''}</div>` : ''}
       <div class="row tight"><input type="text" class="kz-kat" list="kz-kats" value="${esc(g.vorschlag || '')}" placeholder="${t('kategorie_aus_moneymoney')}" style="min-width:300px" ${can ? '' : 'disabled'}>${g.vorschlag ? `<span class="tag tipped" tabindex="0" data-tip="${esc(t('vorschlag_tip'))}">${t('vorschlag_tag')}</span>` : Object.keys(g.vorschlaege).length ? `<span class="tag tipped" tabindex="0" data-tip="${esc(t('vorschlaege_je_umsatz_tip'))}">${t('vorschlaege_je_umsatz')}</span>` : ''}
-        <button class="small kz-save" ${can && n ? '' : 'disabled'}>${n < g.anzahl ? tn('n_zuordnen', n, n) : t('zuordnen')}</button></div>
+        <button class="small kz-save" ${can && n ? '' : 'disabled'}>${n < g.anzahl ? tn('n_zuordnen', n, n) : t('zuordnen')}</button>${g.eigen && off.umbuchung ? `<button class="small secondary kz-umb" title="${esc(t('kz_umbuchung_tip'))}" ${can ? '' : 'disabled'}>${esc(off.umbuchung)}</button>` : ''}</div>
       ${open ? `<div class="kz-tx-wrap"><table class="plain small kz-tx"><thead><tr><th><input type="checkbox" class="kz-all" ${aus.size ? '' : 'checked'} aria-label="${t('alle_2')}"></th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('zweck')}</th><th class="num">${t('betrag')}</th>${mixed ? `<th>${t('vorschlag_tag')}</th>` : ''}</tr></thead><tbody>${g.umsaetze.map(u => `<tr><td><input type="checkbox" class="kz-sel" data-id="${u.id}" ${aus.has(u.id) ? '' : 'checked'}></td><td style="white-space:nowrap">${FD(u.datum)}</td><td style="white-space:nowrap">${esc(u.konto)}</td><td class="kz-zweck">${u.name && u.name !== g.name ? `<b>${esc(u.name)}</b> ` : ''}${esc(u.zweck || '–')}${u.art ? ` <span class="tag">${esc(u.art)}</span>` : ''}</td><td class="num ${u.betrag < 0 ? 'neg' : 'pos'}">${F(u.betrag)}</td>${mixed ? `<td class="muted">${esc(u.vorschlag || '–')}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : ''}</div></div>`;
   }
   return h + '</div>';
@@ -3659,6 +3668,8 @@ function bindZuordnen(main) {
     } catch (e) { toast(e.message, 6000); }
   };
   $$('.kz-save', main).forEach(b => b.addEventListener('click', e => { const box = e.target.closest('.kz-group'); assign(box, $('.kz-kat', box).value.trim()); }));
+  // between two of your areas: a contribution or withdrawal gets your transfer category in one click
+  $$('.kz-umb', main).forEach(b => b.addEventListener('click', e => assign(e.target.closest('.kz-group'), KZ.offen.umbuchung)));
   $$('.kz-kat', main).forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') { const box = e.target.closest('.kz-group'); assign(box, e.target.value.trim()); } }));
   const all = $('#kz-alle', main); if (all) all.addEventListener('click', async () => {
     // alle Vorschläge auf einmal, je Umsatz sein eigener Vorschlag (dieselben Prüfungen wie einzeln); Abgewähltes bleibt
@@ -4407,7 +4418,7 @@ function bind(main) {
     const sr = $('#save-rules', rp), st = $('#rules-state', rp);
     let pvTimer = null, pvSeq = 0;
     const preview = async () => { const n = ++pvSeq; try { const r = await api('/api/rules/preview', {config: collectRules()}); if (n === pvSeq) rulesPreviewShow(rp, r); } catch (e) { /* preview only */ } };
-    const rulesJson = () => { const c = collectRules(); return JSON.stringify([c.darlehen, c.gesellschaften]); };
+    const rulesJson = () => { const c = collectRules(); return JSON.stringify([c.darlehen, c.gesellschaften, $$('#mirrors .gk-row', rp).map(r => [$('.g-a', r).value, $('.g-b', r).value, backValue(r), r.dataset.bereich || ''])]); };   // rows as they stand, also unfinished ones
     let saved = rulesJson();
     const changed = () => {
       const same = rulesJson() === saved;
@@ -4420,29 +4431,33 @@ function bind(main) {
       const it = $('#loans', rp).lastElementChild; it.scrollIntoView({block: 'nearest', behavior: 'smooth'}); const n = $('.f-name', it); n.focus(); n.select();
     });
     rp.addEventListener('input', e => {
-      if (!e.target.closest('.rule, .co-card')) return;
+      if (!e.target.closest('.rule, .co-card, #mirrors')) return;
       changed();
       const r = e.target.closest('.rule'); if (r && e.target.classList.contains('f-name')) $('.r-name', r).textContent = e.target.value || t('ohne_namen');
     });
     rp.addEventListener('change', e => {
-      if (!e.target.closest('.rule, .co-card')) return;
+      if (!e.target.closest('.rule, .co-card, #mirrors')) return;
       if (e.target.classList.contains('f-modell')) e.target.closest('.form').classList.toggle('no-zins', !e.target.value);
       if (e.target.classList.contains('c-takt')) $('.c-takt-tip', e.target.closest('.co-card')).textContent = taktTip(e.target.value);
-      if (e.target.classList.contains('c-rmode')) { const f = $('.c-ab', e.target.closest('.co-card')); f.classList.toggle('hidden', e.target.value !== 'datum'); if (e.target.value === 'datum') { if (!f.value) f.value = isoToday(); f.focus(); } }
-      e.target.closest('.gk-row')?.classList.remove('invalid');
+      if (e.target.classList.contains('c-rmode')) { const f = $('.c-ab', e.target.closest('.co-card, .gk-row')); f.classList.toggle('hidden', e.target.value !== 'datum'); if (e.target.value === 'datum') { if (!f.value) f.value = isoToday(); f.focus(); } }
+      const gk = e.target.closest('.gk-row');
+      if (gk) { gk.classList.remove('invalid'); if (e.target.matches('.g-a, .g-b')) delete gk.dataset.bereich; }      // other accounts: a mirror of its own
       changed();
     });
     rp.addEventListener('click', e => {
       if (e.target.closest('.rule .del')) { setTimeout(changed); return; }
-      const add = e.target.closest('.add-gk');
-      if (add) { add.insertAdjacentHTML('beforebegin', gkRow({}, add.closest('.co-card').dataset.b)); $('.g-konto', add.previousElementSibling).focus(); changed(); return; }
+      if (e.target.closest('#add-mirror')) { $('#mirrors', rp).insertAdjacentHTML('beforeend', mirrorRow({})); $('#mirrors .gk-row:last-child .g-a', rp).focus(); changed(); return; }
       const del = e.target.closest('.gk-del'); if (del) { del.closest('.gk-row').remove(); changed(); return; }
     });
     sr.addEventListener('click', async () => {
       const rows = $$('.gk-row', rp);
-      rows.filter(r => !$('.g-konto', r).value && !$('.g-quelle', r).value).forEach(r => r.remove());
-      const bad = rows.filter(r => r.isConnected && (!$('.g-konto', r).value || !$('.g-quelle', r).value));
-      if (bad.length) { bad.forEach(r => r.classList.add('invalid')); bad[0].scrollIntoView({block: 'center', behavior: 'smooth'}); toast(t('gk_unvollstaendig'), 5000); return; }
+      rows.filter(r => !$('.g-a', r).value && !$('.g-b', r).value).forEach(r => r.remove());
+      const same = r => !!$('.g-a', r).value && $('.g-a', r).value === $('.g-b', r).value;
+      const pairOf = r => [$('.g-a', r).value, $('.g-b', r).value].map(v => v.split('|')[0].trim()).sort().join('|');
+      const live = rows.filter(r => r.isConnected);
+      const twice = r => !!$('.g-a', r).value && !!$('.g-b', r).value && live.findIndex(x => pairOf(x) === pairOf(r)) < live.indexOf(r);
+      const bad = live.filter(r => !$('.g-a', r).value || !$('.g-b', r).value || same(r) || twice(r));
+      if (bad.length) { bad.forEach(r => r.classList.add('invalid')); bad[0].scrollIntoView({block: 'center', behavior: 'smooth'}); toast(t(bad.every(same) ? 'gk_gleiches_konto' : bad.every(twice) ? 'gk_doppelt' : 'gk_unvollstaendig'), 5000); return; }
       if (await saveConfig(collectRules(), $('#findings', rp))) {
         saved = rulesJson(); sr.disabled = true; st.textContent = t('regeln_gespeichert'); preview();
         rulesFollowUp(preview);

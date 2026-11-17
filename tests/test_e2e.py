@@ -361,7 +361,16 @@ class CoreTests(unittest.TestCase):
         cfg["bereiche"].append(7); cfg["bilanz"] = "kaputt"; cfg["abruf"] = {"offline": 4}
         m = core.merged_config(cfg)
         self.assertEqual(len(m["darlehen"]), 2); self.assertEqual(m["darlehen"][0]["quellkonten"], ["nur ein Text"]); self.assertFalse(m["darlehen"][1]["aktiv"])
-        self.assertEqual(m["gesellschaften"], [{"bereich": F.uid("pb"), "beteiligung": "", "gegenkonten": [{"konto": "", "quelle": F.uid("pb.kap.s")}], "schwelle": 0.01}])
+        # mirrors kept with a company (until 3.13.9) move into the list of their own; an incomplete one is dropped
+        self.assertEqual(m["gesellschaften"], [{"bereich": F.uid("pb"), "beteiligung": "", "schwelle": 0.01}])
+        self.assertEqual(m["kontenspiegel"], [])
+        m2 = core.merged_config({"gesellschaften": [{"bereich": "x", "beteiligung": "B", "rueckwirkend_ab": "2026-03-01", "gegenkonten": [{"konto": "A | a", "quelle": "Q | q"}]}],
+                                 "kontenspiegel": [{"a": "C", "b": "D", "ab": "alles"}, {"a": "Q", "b": "A", "ab": ""}]})
+        self.assertEqual(m2["kontenspiegel"], [{"a": "C", "b": "D", "ab": "alles"}, {"a": "Q", "b": "A", "ab": ""}])      # the same pair once
+        m3 = core.merged_config({"gesellschaften": [{"bereich": "x", "rueckwirkend_ab": "2026-03-01", "gegenkonten": [{"konto": "A | a", "quelle": "Q | q"}]}]})
+        self.assertEqual(m3["kontenspiegel"], [{"a": "A | a", "b": "Q | q", "ab": "2026-03-01", "bereich": "x"}])      # kept with company x: stays as it was
+        self.assertNotIn("gegenkonten", m3["gesellschaften"][0])
+        self.assertEqual(core.merged_config(m3)["kontenspiegel"], m3["kontenspiegel"])                               # stable
         self.assertEqual(m["bilanz"]["inaktiv_monate"], 12); self.assertEqual(m["abruf"]["offline"], [])
         r = core.run_once(self.store, m, TODAY, dry=True, force=True, bridge_factory=MockBridge)
         self.assertEqual(r["status"], "ok")
@@ -803,6 +812,9 @@ class IncrementalReadTests(unittest.TestCase):
         self.assertEqual(got["kapitalfluss"]["positionen"], {"Lebensmittel": "lebenshaltung", "C": "freizeit"})
         # another set of categories altogether (another database opened in MoneyMoney): nothing is dropped
         self.assertIsNone(core.follow_categories(cfg, old, [{"uuid": "x%d" % i, "path": "Neu %d" % i} for i in range(6)]))
+        # ... but one renamed in a big tidy-up still follows (by its id)
+        got = core.follow_categories(cfg, old, [{"uuid": "1", "path": "Nahrung"}] + [{"uuid": "x%d" % i, "path": "Neu %d" % i} for i in range(6)])
+        self.assertEqual(got["kapitalfluss"]["positionen"], {"Lebensmittel": "ignorieren", "C": "freizeit", "Nahrung": "lebenshaltung"})
         # MoneyMoney's default category counts as none: its first real category is no move
         import categorize
         std, categorize.STANDARD = categorize.STANDARD, {"Unkategorisiert"}
@@ -836,6 +848,8 @@ class IncrementalReadTests(unittest.TestCase):
         self.assertIn("Konto das es nie gab", core.prune_account_settings(cfg2, led)["bilanz"]["rollen"])
         cfg3 = {"bilanz": {"rollen": {"%08d-0000-4000-8000-000000000000 | X%d" % (i, i): "sonstiges" for i in range(8)}}}
         self.assertEqual(core.prune_account_settings(cfg3, led), cfg3)
+        cfg4 = {"bilanz": {"rollen": {}, "verlauf": {"%08d-0000-4000-8000-000000000000 | X%d" % (i, i): "stand" for i in range(8)}}}
+        self.assertEqual(core.prune_account_settings(cfg4, led), cfg4)
 
 
 class _AppBase(unittest.TestCase):
@@ -1002,12 +1016,18 @@ class AppTests(_AppBase):
         cfg = copy.deepcopy(self.app.config); cfg.setdefault("moneymoney", {})["kategorisieren_erlauben"] = True; self.app.save_config(cfg)
         sets = lambda: [w for b in MockBridge.instances for w in b.written if w[0] == "set" and w[2] is not None]
         MockBridge.state["txs"] += [F.tx("priv.giro", date(2026, 10, 20), -80.0, "Bauhaus", "Werkzeug"),
-                                    F.tx("priv.giro", date(2026, 10, 27), -35.0, "Bauhaus", "Schrauben")]
+                                    F.tx("priv.giro", date(2026, 10, 27), -35.0, "Bauhaus", "Schrauben"),
+                                    F.tx("priv.giro", date(2026, 10, 28), -900.0, "Alpha GbR", "Einlage Oktober", "", "DE02701500000000594937")]
         MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Werkzeug", 1, False, {}), ("Garten", 1, False, {})]
         self.app.do_run(True, False, full=True)
         ids = [t.id for t in self.app.ledger.txs if t.name == "Bauhaus"]
         code, off = self.call("/api/categories/unassigned")
         self.assertIn("Bauhaus", [g["name"] for g in off["gruppen"]]); self.assertTrue(off["zurueckschreiben"])
+        # a payment into another area of yours: marked as such, with your category for transfers in MoneyMoney to assign
+        self.assertEqual({g["name"]: g["eigen"] for g in off["gruppen"] if g["name"] in ("Bauhaus", "Alpha GbR")}, {"Bauhaus": False, "Alpha GbR": True})
+        self.assertEqual(off["umbuchung"], "Umbuchung")
+        um = next(g for g in off["gruppen"] if g["name"] == "Alpha GbR")["umsaetze"][0]
+        self.assertEqual((um["konto"], um["zweck"]), ("Hausbank Giro", "Einlage Oktober"))
         code, r = self.call("/api/categories/assign", {"ids": ids, "kategorie": "Haushalt / Werkzeug", "warten": True})
         self.assertEqual((r["mm"]["geschrieben"], r["mm"]["spaeter"]), (2, 0))
         self.assertEqual(sorted(w[1] for w in sets()), sorted(ids)); self.assertTrue(all(w[2] == F.uid("cat:Werkzeug") for w in sets()))
@@ -3089,13 +3109,31 @@ class BrowserTest(unittest.TestCase):
                 card = """n => { const d = document.createElement('div'); d.innerHTML = companyCard({id: 'x', name: n, anteil: 0.5}, {}); return [d.querySelector('.c-bet').value, d.querySelector('.c-rmode').value, !!d.querySelector('details')]; }"""
                 self.assertEqual(pg.evaluate(card, "Beta GbR"), ["", "datum", False])          # no preselection, from a day (today), nothing folded
                 # an incomplete counter account is not saved
-                pg.click(".co-card .add-gk"); pg.select_option(".gk-row .g-konto", index=1); pg.click("#save-rules"); pg.wait_for_timeout(300)
-                self.assertTrue(pg.query_selector(".gk-row.invalid")); self.assertNotIn("gegenkonten", json.dumps(store.load("config.json")["gesellschaften"]))
-                pg.click(".gk-row .gk-del")
+                # account mirrors: a section of their own (no company needed); an incomplete one is not saved
+                self.assertIsNone(pg.query_selector(".co-card .gk-row")); self.assertIsNone(pg.query_selector(".co-card .opt"))
+                pg.click("#add-mirror"); pg.select_option("#mirrors .gk-row .g-a", index=1); pg.click("#save-rules"); pg.wait_for_timeout(300)
+                self.assertTrue(pg.query_selector("#mirrors .gk-row.invalid")); self.assertEqual(store.load("config.json").get("kontenspiegel") or [], [])
+                self.assertTrue(pg.query_selector("#mirrors .gk-row .c-rmode"))                    # its own "Buchen ab"
+                pick = """([sel, txt]) => { const s = document.querySelector(sel), o = [...s.options].find(o => o.textContent.includes(txt)); s.value = o.value; s.dispatchEvent(new Event('change', {bubbles: true})); }"""
+                pg.evaluate(pick, ["#mirrors .gk-row .g-a", "Immobilie Lindenstraße"]); pg.evaluate(pick, ["#mirrors .gk-row .g-b", "Immobilie Lindenstraße"])
+                pg.click("#save-rules"); pg.wait_for_timeout(300)                                  # the same account twice: said so, not saved
+                self.assertTrue(pg.query_selector("#mirrors .gk-row.invalid")); self.assertIn("dasselbe Konto", pg.inner_text("#toast"))
+                self.assertEqual(store.load("config.json").get("kontenspiegel") or [], [])
+                # two accounts, no company involved: saved as a rule of its own, with what it would book
+                pg.evaluate(pick, ["#mirrors .gk-row .g-b", "Kapitalkonto B"])
+                pg.select_option("#mirrors .gk-row .c-rmode", "alles"); pg.wait_for_timeout(1200)      # (the test's day is fixed: "today" here would be in its future)
+                self.assertTrue(pg.is_hidden("#mirrors .gk-row .c-ab"))
+                self.assertTrue(pg.inner_text("#mirrors .gk-row .pv").strip())
+                pg.click("#save-rules"); pg.wait_for_timeout(900)
+                ms = store.load("config.json")["kontenspiegel"]
+                self.assertEqual([(m["a"].split(" | ")[0], m["b"].split(" | ")[0], m["ab"], "bereich" in m) for m in ms],
+                                 [(F.uid("priv.immo"), F.uid("pb.kap.p"), "alles", False)])
+                pg.click("#mirrors .gk-row .gk-del")
                 pg.fill(".co-card .c-sw", "1")
                 pg.keyboard.press("Meta+s"); pg.wait_for_timeout(900)          # ⌘S saves
                 self.assertIn("Gespeichert", pg.query_selector("#findings").inner_text())
                 self.assertEqual(store.load("config.json")["gesellschaften"][0]["schwelle"], 1); self.assertTrue(pg.is_disabled("#save-rules"))
+                self.assertEqual(store.load("config.json")["kontenspiegel"], [])                   # removed again
                 # Sync: online or offline per account as a menu; offline accounts recognised as "Offline-Konto"
                 self.assertFalse(pg.evaluate("DIRTY.on"))
                 pg.click("#nav a[href='#sync']"); pg.wait_for_selector(".ab-sel")          # leaving after ⌘S: no question (a late change event does not count)

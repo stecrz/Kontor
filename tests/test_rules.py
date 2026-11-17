@@ -1,4 +1,5 @@
 import copy
+import json
 import os
 import sys
 import unittest
@@ -9,6 +10,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from model import Ledger, accounts_from_export, tx_from_export, fmt_eur  # noqa: E402
 from rules import Seen, plan_loan, plan_all  # noqa: E402
+from rules import mirrors as rules_mirrors  # noqa: E402
 import fixtures as F  # noqa: E402
 
 
@@ -921,6 +923,188 @@ class MirrorTests(unittest.TestCase):
         real = led.without_planned(keep=[p.key for p in res.proposals])
         again = plan_all(real.fork(), self.cfg(), self.today)
         self.assertEqual(again.proposals, []); self.assertEqual(again.warnings, []); self.assertEqual(again.preview[0]["gespiegelt"], 5)
+
+    def test_mirror_of_its_own_without_a_company(self):
+        """A mirror is a rule of its own: between any two accounts (here two of your own, no company, no participation), with
+        its own "Buchen ab". Settings written before 3.13.10 (kept with a company) plan the same bookings."""
+        a, b = F.uid("priv.immo"), F.uid("priv.bet.pb")
+        cfg = {"bereiche": [{"id": "p", "name": "Privat", "art": "privat", "haupt": True, "konten": [F.uid("priv") + " | Privat"]}],
+               "kontenspiegel": [{"a": a + " | A", "b": b + " | B", "ab": "2026-10-01"}]}
+        txs = [F.tx("priv.immo", date(2026, 9, 1), 900.0, "x", "vor Buchen ab"), F.tx("priv.immo", date(2026, 10, 5), 500.0, "x", "Zugang"),
+               F.tx("priv.bet.pb", date(2026, 10, 9), -40.0, "y", "Abgang")]
+        led = make_ledger({}, txs)
+        res = plan_all(led, cfg, self.today)
+        self.assertEqual(sorted((p.account_uuid, p.booking_date, p.amount, p.kind) for p in res.proposals),
+                         sorted([(b, date(2026, 10, 5), -500.0, "spiegel"), (a, date(2026, 10, 9), 40.0, "spiegel")]))
+        self.assertEqual(res.warnings, [])
+        self.assertEqual([(v["art"], v["i"], v["richtung"]) for v in res.preview], [("spiegel", 0, "beide")])
+        self.assertEqual({p.payee for p in res.proposals}, {"Privat"})                     # whose account the original is in
+        real = led.without_planned(keep=[p.key for p in res.proposals])
+        self.assertEqual(plan_all(real.fork(), cfg, self.today).proposals, [])            # written: nothing again
+        # the same account on both sides, a group: a note, nothing booked
+        self.assertTrue(plan_all(make_ledger({}, txs), dict(cfg, kontenspiegel=[{"a": a, "b": a, "ab": "alles"}]), self.today).warnings)
+        self.assertEqual(plan_all(make_ledger({}, txs), dict(cfg, kontenspiegel=[{"a": a, "b": a, "ab": "alles"}]), self.today).proposals, [])
+        # kept with a company before: the same list (once), the company's "Buchen ab", the same bookings
+        old = self.cfg()
+        import rules as R
+        self.assertEqual([(m["a"].split(" | ")[0], m["b"].split(" | ")[0], m["ab"]) for m in R.mirrors(old)], [(F.uid("priv.bet.shs"), F.uid("shs.kap.s"), "alles")])
+        new = dict(company_cfg(), kontenspiegel=[{"a": F.uid("priv.bet.shs"), "b": F.uid("shs.kap.s"), "ab": "alles"}])
+        new["gesellschaften"] = []
+        tx2 = [F.tx("shs.kap.s", date(2026, 9, 1), -5000.0, "Ich", "Einlage"), F.tx("priv.bet.shs", date(2026, 10, 2), 1200.0, "Beta GbR", "Entnahme")]
+        want = sorted((p.account_uuid, p.booking_date, p.amount, p.payee, p.tag) for p in plan_all(make_ledger({}, tx2), old, self.today).proposals)
+        got = sorted((p.account_uuid, p.booking_date, p.amount, p.payee, p.tag) for p in plan_all(make_ledger({}, tx2), new, self.today).proposals)
+        self.assertTrue(want); self.assertEqual(got, want)
+
+    def test_company_with_only_a_mirror_and_start_days(self):
+        """A company counts as set up with a mirror into one of its accounts alone (payments to it: contributions), as before
+        3.13.10; a mirror of your own accounts makes no company. A mirror without "Buchen ab" (settings before 3.13.1) gets
+        a day once: Kontor's first booking in the two accounts, otherwise today."""
+        import core, report
+        old = dict(self.cfg()); old["gesellschaften"] = [dict(g, beteiligung="") for g in old["gesellschaften"]]
+        new = core.merged_config(old)
+        self.assertNotIn("gegenkonten", json.dumps(new["gesellschaften"])); self.assertEqual(len(new["kontenspiegel"]), 1)
+        led = make_ledger({}, [])
+        self.assertEqual(set(report.company_accounts(led, old).values()), set(report.company_accounts(led, new).values()))
+        self.assertTrue(report.company_accounts(led, new))
+        own = dict(new, kontenspiegel=[{"a": F.uid("priv.immo"), "b": F.uid("priv.bet.pb"), "ab": "alles"}])
+        self.assertEqual(report.company_accounts(led, own), {})
+        # start days
+        m = dict(new, kontenspiegel=[{"a": F.uid("priv.bet.shs"), "b": F.uid("shs.kap.s"), "ab": ""}])
+        self.assertEqual(core.fix_start_dates(make_ledger({}, []), m, self.today)["kontenspiegel"][0]["ab"], self.today.isoformat())
+        marked = make_ledger({}, [F.tx("priv.bet.shs", date(2026, 3, 4), 10.0, "x", "alt #kontor-gk-77")])
+        self.assertEqual(core.fix_start_dates(marked, m, self.today)["kontenspiegel"][0]["ab"], "2026-03-04")
+        self.assertIsNone(core.fix_start_dates(marked, dict(m, kontenspiegel=[dict(m["kontenspiegel"][0], ab="alles")]), self.today))
+
+    def test_kept_with_a_company_stays_as_it_was(self):
+        """Settings from before 3.13.10 taken over (core.merged_config): a mirror kept with a company books exactly as then --
+        not while the company's area is off, not with both accounts in the company or the other one in another company. Its
+        accounts chosen anew (no "bereich") make it a mirror of its own."""
+        import core, report
+        txs = [F.tx("shs.kap.s", date(2026, 9, 1), -5000.0, "Ich", "Einlage"), F.tx("priv.bet.shs", date(2026, 10, 2), 1200.0, "Beta GbR", "Entnahme")]
+        ok = core.merged_config(self.cfg())
+        self.assertEqual((ok["kontenspiegel"][0]["bereich"], ok["kontenspiegel"][0]["ab"]), ("b", "alles"))
+        res = plan_all(make_ledger({}, txs), ok, self.today)
+        self.assertEqual(sorted((p.amount, p.payee) for p in res.proposals), [(-1200.0, "Privat"), (5000.0, "Beta GbR")])
+        named = core.merged_config(self.cfg()); named["gesellschaften"][0]["gegenpartei"] = "Beta"       # the name you set for the company
+        self.assertEqual(sorted((p.amount, p.payee) for p in plan_all(make_ledger({}, txs), named, self.today).proposals), [(-1200.0, "Privat"), (5000.0, "Beta")])
+        off = core.merged_config(self.cfg())
+        next(b for b in off["bereiche"] if b["id"] == "b")["aktiv"] = False
+        res = plan_all(make_ledger({}, txs), off, self.today)
+        self.assertEqual(res.proposals, []); self.assertEqual(len(res.warnings), 1)
+        self.assertEqual(report.company_accounts(make_ledger({}, txs), off), {})
+        self.assertTrue([f for f in core.check_config(make_ledger({}, txs), [], off) if f["stufe"] == "warnung"])
+        both = core.merged_config(company_cfg(gesellschaften=[{"bereich": "b", "rueckwirkend_ab": "alles", "gegenkonten": [
+            {"konto": F.uid("shs.kap.p"), "quelle": F.uid("shs.kap.s")}]}]))
+        res = plan_all(make_ledger({}, txs), both, self.today)
+        self.assertEqual(res.proposals, []); self.assertTrue(res.warnings)
+        self.assertTrue([f for f in core.check_config(make_ledger({}, txs), [], both) if f["stufe"] == "fehler"])
+        other = core.merged_config(company_cfg(gesellschaften=[{"bereich": "b", "rueckwirkend_ab": "alles", "gegenkonten": [
+            {"konto": F.uid("priv.bet.shs"), "quelle": F.uid("pb.kap.s")}]}]))
+        tx2 = [F.tx("pb.kap.s", date(2026, 9, 1), -5000.0, "Ich", "Einlage")]
+        res = plan_all(make_ledger({}, tx2), other, self.today)
+        self.assertEqual(res.proposals, []); self.assertTrue(res.warnings)
+        self.assertEqual(set(report.company_accounts(make_ledger({}, tx2), other).values()), {"Beta GbR"})      # the company it was kept with
+        free = dict(other, kontenspiegel=[{k: v for k, v in other["kontenspiegel"][0].items() if k != "bereich"}])
+        res = plan_all(make_ledger({}, tx2), free, self.today)
+        self.assertEqual([(p.amount, p.payee) for p in res.proposals], [(5000.0, "Alpha GbR")]); self.assertEqual(res.warnings, [])
+        self.assertEqual(set(report.company_accounts(make_ledger({}, tx2), free).values()), {"Alpha GbR"})      # the company it books into
+
+    def test_start_day_of_a_mirror_kept_with_a_company(self):
+        """A company from before 3.13.1 without "Buchen ab": its mirror starts where the company's rules started (Kontor's first
+        booking in the participation account or the mirror's accounts) -- an older booking read anew is not mirrored, before
+        and after the day is fixed (core.fix_start_dates gives the mirror its company's day)."""
+        import core
+        cfg = core.merged_config(company_cfg(gesellschaften=[{"bereich": "b", "beteiligung": F.uid("priv.bet.shs"), "gegenkonten": [
+            {"konto": F.uid("priv.immo"), "quelle": F.uid("shs.kap.s")}]}]))
+        self.assertEqual((cfg["kontenspiegel"][0]["ab"], cfg["kontenspiegel"][0]["bereich"]), ("", "b"))
+        txs = [F.tx("priv.bet.shs", date(2026, 10, 3), 10.0, "Beta GbR", "Wertanpassung #kontor-wert-20261003"),
+               F.tx("shs.kap.s", date(2026, 9, 1), -5000.0, "Ich", "vorher"), F.tx("shs.kap.s", date(2026, 10, 5), -100.0, "Ich", "danach")]
+        got = lambda c: sorted((p.booking_date, p.amount) for p in plan_all(make_ledger({}, txs), c, self.today).proposals if p.kind == "spiegel")
+        self.assertEqual(got(cfg), [(date(2026, 10, 5), 100.0)])
+        fixed = core.fix_start_dates(make_ledger({}, txs), cfg, self.today)
+        self.assertEqual((fixed["gesellschaften"][0]["rueckwirkend_ab"], fixed["kontenspiegel"][0]["ab"]), ("2026-10-03", "2026-10-03"))
+        self.assertEqual(got(fixed), [(date(2026, 10, 5), 100.0)])
+        self.assertIsNone(core.fix_start_dates(make_ledger({}, txs), fixed, self.today))
+
+    def test_checks_package_and_reading(self):
+        """The check names what is wrong with a mirror; a package adds mirrors pair by pair (none is lost); "Buchen ab" of a
+        mirror is read that far back."""
+        import core
+        A, B, C = F.uid("priv.immo"), F.uid("priv.bet.pb"), F.uid("priv.bet.shs")
+        led = make_ledger({}, [])
+        base = {"bereiche": company_cfg()["bereiche"]}
+        errors = lambda ms, **over: [f["text"] for f in core.check_config(led, [], core.merged_config(dict(base, kontenspiegel=ms, **over))) if f["stufe"] == "fehler"]
+        warns = lambda ms: [f["text"] for f in core.check_config(led, [], core.merged_config(dict(base, kontenspiegel=ms))) if f["stufe"] == "warnung"]
+        self.assertEqual(errors([{"a": A, "b": B, "ab": "alles"}]), [])
+        self.assertEqual(len(errors([{"a": A, "b": A, "ab": "alles"}])), 1)                                   # the same account
+        self.assertEqual(len(errors([{"a": "nope | Weg", "b": B, "ab": "alles"}])), 1)                        # an account is gone
+        self.assertIn("Kontenspiegel 1", errors([{"a": "nope | Weg", "b": B, "ab": "alles"}])[0])
+        self.assertEqual(len(errors([{"a": A, "b": B, "ab": "2099-01-01"}])), 1)                              # a day in the future
+        self.assertEqual(len(errors([{"a": A, "b": B, "ab": "alles"}, {"a": A, "b": C, "ab": "alles"}])), 1)  # booked by two rules
+        self.assertEqual(len(errors([{"a": B, "b": A, "ab": "alles"}], gesellschaften=[{"bereich": "a", "beteiligung": B}])), 1)
+        self.assertTrue(warns([{"a": F.uid("priv.giro"), "b": F.uid("pb.kk"), "ab": "alles"}]))               # no offline account
+        # package
+        cur = core.merged_config(dict(base, kontenspiegel=[{"a": A, "b": B, "ab": "alles"}]))
+        pkg = core.export_package(core.merged_config(base), "Test", ledger=led)
+        self.assertEqual(len(core.import_package(cur, pkg, led, "ergaenzen")[0]["kontenspiegel"]), 1)         # a package without mirrors
+        pkg2 = core.export_package(core.merged_config(dict(base, kontenspiegel=[{"a": B, "b": A, "ab": "2026-01-01"}, {"a": A, "b": C, "ab": "alles"}])), "Test", ledger=led)
+        got = core.import_package(cur, pkg2, led, "ergaenzen")[0]["kontenspiegel"]
+        self.assertEqual([(m["a"].split(" | ")[0], m["b"].split(" | ")[0], m["ab"]) for m in got], [(B, A, "2026-01-01"), (A, C, "alles")])
+        # reading
+        short = {"bilanz": {"monate_zurueck": 12}}
+        self.assertGreater(core.earliest_needed(core.merged_config(short), self.today), date(2025, 1, 1))
+        self.assertEqual(core.earliest_needed(core.merged_config(dict(short, kontenspiegel=[{"a": A, "b": B, "ab": "alles"}])), self.today), date(2000, 1, 1))
+        self.assertEqual(core.earliest_needed(core.merged_config(dict(short, kontenspiegel=[{"a": A, "b": B, "ab": "2022-05-01"}])), self.today), date(2021, 1, 1))
+
+    def test_old_settings_in_odd_shapes(self):
+        """What the interface never wrote but a file may hold: a company without an area (its mirror waits), the same pair kept
+        with two companies (both stay), a package from before 3.13.10 that replaces the settings (its mirrors replace yours),
+        two currencies (nothing is mirrored)."""
+        import core
+        A, B, K = F.uid("priv.immo"), F.uid("priv.bet.pb"), F.uid("shs.kap.s")
+        txs = [F.tx("priv.immo", date(2026, 10, 5), 500.0, "x", "Zugang")]
+        nowhere = core.merged_config(dict(company_cfg(), gesellschaften=[{"rueckwirkend_ab": "alles", "gegenkonten": [{"konto": A, "quelle": B}]}]))
+        self.assertEqual(nowhere["kontenspiegel"][0]["bereich"], "?")
+        res = plan_all(make_ledger({}, txs), nowhere, self.today)
+        self.assertEqual(res.proposals, []); self.assertEqual(len(res.warnings), 1)
+        self.assertEqual([f["stufe"] for f in core.check_config(make_ledger({}, txs), [], nowhere) if f["stufe"] == "fehler"], [])
+        # the same two accounts kept with two companies, each from its side: both stay, each company counts, nothing twice
+        two = core.merged_config(company_cfg(gesellschaften=[
+            {"bereich": "b", "rueckwirkend_ab": "alles", "gegenkonten": [{"konto": F.uid("pb.kap.s"), "quelle": K}]},
+            {"bereich": "a", "rueckwirkend_ab": "alles", "gegenkonten": [{"konto": K, "quelle": F.uid("pb.kap.s")}]}]))
+        self.assertEqual([m["bereich"] for m in two["kontenspiegel"]], ["b", "a"])
+        led = make_ledger({}, [F.tx("shs.kap.s", date(2026, 9, 1), -5000.0, "Ich", "Einlage")])
+        res = plan_all(led, two, self.today)
+        self.assertEqual([(p.account_uuid, p.amount) for p in res.proposals], [(F.uid("pb.kap.s"), 5000.0)])
+        self.assertEqual([f for f in core.check_config(led, [], two) if f["stufe"] == "fehler"], [])
+        # your own mirrors: the same pair once, whichever way round
+        self.assertEqual(len(rules_mirrors({"kontenspiegel": [{"a": A, "b": B}, {"a": B + " | x", "b": A}, {"a": A, "b": K}]})), 2)
+        # a mirror of its own is checked on every side Kontor books into
+        base = {"bereiche": company_cfg()["bereiche"]}
+        errors = lambda cfg: [f["text"] for f in core.check_config(make_ledger({}, []), [], core.merged_config(dict(base, **cfg))) if f["stufe"] == "fehler"]
+        self.assertEqual(len(errors({"kontenspiegel": [{"a": A, "b": B, "ab": "alles"}], "gesellschaften": [{"bereich": "a", "beteiligung": B}]})), 1)
+        self.assertEqual(len(errors({"kontenspiegel": [{"a": B, "b": A, "ab": "alles"}, {"a": F.uid("priv.bet.shs"), "b": A, "ab": "alles"}]})), 1)
+        # a waiting company's mirror only waits (no other finding); kept with a company, the same account twice is a note as before
+        off = core.merged_config(company_cfg(gesellschaften=[{"bereich": "b", "rueckwirkend_ab": "2099-01-01", "gegenkonten": [{"konto": "nope | Weg", "quelle": K}]}]))
+        next(b for b in off["bereiche"] if b["id"] == "b")["aktiv"] = False
+        self.assertEqual([f["stufe"] for f in core.check_config(make_ledger({}, []), [], off) if "Kontenspiegel" in f["text"] and f["stufe"] == "fehler"], [])
+        # a package from before 3.13.10 replacing the settings: its mirrors (with its companies) replace yours
+        cur = core.merged_config(dict(base, kontenspiegel=[{"a": A, "b": B, "ab": "alles"}]))
+        pkg = {"kontor_paket": 1, "name": "alt", "config": {"bereiche": base["bereiche"], "gesellschaften": [
+            {"bereich": "b", "rueckwirkend_ab": "alles", "gegenkonten": [{"konto": F.uid("priv.bet.shs"), "quelle": K}]}]}}
+        got = core.import_package(cur, pkg, make_ledger({}, []), "ersetzen")[0]["kontenspiegel"]
+        self.assertEqual([(m["a"].split(" | ")[0], m["b"].split(" | ")[0], m["bereich"]) for m in got], [(F.uid("priv.bet.shs"), K, "b")])
+        added = core.import_package(cur, pkg, make_ledger({}, []), "ergaenzen")[0]["kontenspiegel"]
+        self.assertEqual(len(added), 2)
+        # the mirror of a company whose area is gone does not travel in a package
+        gone = core.merged_config(dict(base, kontenspiegel=[{"a": A, "b": B, "ab": "alles", "bereich": "weg"}, {"a": A, "b": K, "ab": "alles"}]))
+        self.assertEqual(len(core.export_package(gone, "Test")["config"]["kontenspiegel"]), 1)
+        # two currencies: Kontor does not convert, so it mirrors nothing and says so
+        led = make_ledger({}, txs)
+        led.accounts[B].currency = "USD"
+        res = plan_all(led, cur, self.today)
+        self.assertEqual(res.proposals, []); self.assertEqual(len(res.warnings), 1)
+        self.assertTrue([f for f in core.check_config(led, [], cur) if f["stufe"] == "warnung"])
 
     def test_from_a_day_and_bank_account_one_way(self):
         old = F.tx("shs.kk", date(2026, 10, 1), -300.0, "Ich", "vor dem Start")

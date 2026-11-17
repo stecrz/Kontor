@@ -348,7 +348,7 @@ class App:
         self._save_ledger_cache(ledger)
 
     def _fix_start_dates(self) -> None:
-        """"Buchen ab" of companies set up before 3.13.1 (empty): fixed to a day once (core.fix_start_dates)."""
+        """"Buchen ab" of companies and account mirrors set up before 3.13.1 (empty): fixed to a day once (core.fix_start_dates)."""
         if self.ledger is None:
             return
         try:
@@ -357,10 +357,11 @@ class App:
             log.exception("Start dates of the companies")
             return
         if new is not None:
-            n = sum(1 for a, b in zip(self.config.get("gesellschaften") or [], new.get("gesellschaften") or [])
-                    if isinstance(a, dict) and isinstance(b, dict) and a.get("rueckwirkend_ab") != b.get("rueckwirkend_ab"))
+            n = sum(1 for key, f in (("gesellschaften", "rueckwirkend_ab"), ("kontenspiegel", "ab"))
+                    for a, b in zip(self.config.get(key) or [], new.get(key) or [])
+                    if isinstance(a, dict) and isinstance(b, dict) and a.get(f) != b.get(f))
             self.save_config(new)
-            log.info("Start date of the booking rules of %d company(ies) fixed", n)
+            log.info("Start date of %d booking rule(s) fixed", n)
 
     def _freeze_assignments(self) -> None:
         if self.ledger is None:
@@ -656,14 +657,17 @@ class App:
         try:
             b = self.bridge_factory(True)
             step("categories")
-            moved = False
+            cats = None
             try:                                      # first: a changed category tree means older transactions are read again
-                moved = self.take_categories(mm_categories.with_paths(b.export_categories()))
+                cats = mm_categories.with_paths(b.export_categories())
             except MoneyMoneyError:
                 pass
+            moved = cats is not None and bool(self.categories_raw) and category_tree(self.categories_raw) != category_tree(cats)
             ledger = fetch(b, self.config, date.today(), with_portfolio=True, progress=step, base=self.ledger,
                            full=True if moved else (self.full_read_due() if full is None else full))
             log.info("MoneyMoney read (%.1f s)", time.time() - t0)
+            if cats is not None:                      # taken over only now: had the read failed, the next one sees the change again
+                self.take_categories(cats)
             step("save")
             self.set_ledger(ledger, reuse=True)
             self._baseline(ledger)
@@ -1096,7 +1100,7 @@ class App:
         if led is None:
             return None
         n_inakt = int((self.config.get("bilanz") or {}).get("inaktiv_monate", 12) or 12)
-        key = (id(led), n_inakt, json.dumps([self.config.get(k) for k in ("abruf", "darlehen", "gesellschaften")], sort_keys=True, default=str))
+        key = (id(led), n_inakt, json.dumps([self.config.get(k) for k in ("abruf", "darlehen", "gesellschaften", "kontenspiegel")], sort_keys=True, default=str))
         if self._bankabruf_cache[0] == key:
             return self._bankabruf_cache[1]
         kinds = abruf_arten(led, self.config)
@@ -1648,6 +1652,13 @@ def make_handler(app: App):
                 bereich_of = {a.uuid: b["id"] for b in bereiche_for(app.ledger, app.config) for a in b["leaves"]}
                 res = categorize.open_items(kat, app.ledger, bereich_of, int(q["year"]) if q.get("year") else None, q.get("area") or None,
                                             float(q.get("min") or 0), int(q.get("limit") or 300), bank_accounts(account_roles(app.ledger, app.config)))
+                if getattr(app.ledger, "_paired", None) is None:
+                    app.request_rebuild("Zuordnen")              # which bookings are transfers comes with the report (page reloads then)
+                # your category for transfers in MoneyMoney (for a contribution or withdrawal between two areas)
+                from report import transfer_check
+                is_transfer = transfer_check(app.config)
+                res["umbuchung"] = next((p for p in (categorize.norm_cat(str(c.get("path") or c.get("name") or "")) for c in app.categories_raw
+                                                     if not c.get("group") and not c.get("default")) if p and is_transfer(p)), None)
                 res["wartet"] = sum(1 for z in kat["zuordnung"].values() if categorize.waiting(z))      # written at the next sync
                 res["regelvorschlaege"] = len(app.rule_proposals(kat))
                 res["zurueckschreiben"] = app.mm_write_on()

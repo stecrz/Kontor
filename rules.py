@@ -691,12 +691,12 @@ def current_day(cfg: dict, today: date) -> date:
     return date(today.year, today.month, 1) - timedelta(days=1) if cfg.get("takt") == "monatlich" else today
 
 
-def default_start(ledger: Ledger, cfg: dict, area: dict, today: date) -> Optional[date]:
+def default_start(ledger: Ledger, cfg: dict, area: dict, today: date, extra: Iterable[str] = ()) -> Optional[date]:
     """For a company set up before 3.13.1 without "Buchen ab": since Kontor's first booking for its rules (the participation's
-    value adjustments, the mirrored bookings), at the latest the day booked for now (a booking of Kontor's you moved to a
-    later day must not leave that day out) -- None if there is none."""
+    value adjustments, the mirrored bookings; extra: the accounts of the mirrors kept with it), at the latest the day booked
+    for now (a booking of Kontor's you moved to a later day must not leave that day out) -- None if there is none."""
     accs: List[str] = []
-    for ref in [cfg.get("beteiligung")] + [x.get(f) for x in cfg.get("gegenkonten") or [] if isinstance(x, dict) for f in ("konto", "quelle")]:
+    for ref in [cfg.get("beteiligung")] + [x.get(f) for x in cfg.get("gegenkonten") or [] if isinstance(x, dict) for f in ("konto", "quelle")] + list(extra):
         try:
             accs.append(ledger.resolve(str(ref or "")).uuid)
         except KeyError:
@@ -705,41 +705,109 @@ def default_start(ledger: Ledger, cfg: dict, area: dict, today: date) -> Optiona
     return min(first, current_day(cfg, today)) if first else None
 
 
+def company_start(ledger: Ledger, config: Optional[dict], cfg: dict, area: dict, today: date):
+    """"Buchen ab" of a company -- for its participation and for the mirrors kept with it until 3.13.9 that have no day of
+    their own: the day set (or "alles"), without one default_start over all their accounts."""
+    start = parse_start(cfg.get("rueckwirkend_ab"))
+    if start is None:
+        bid = str(cfg.get("bereich"))
+        start = default_start(ledger, cfg, area, today, [m[f] for m in mirrors(config or {}) if m.get("bereich") == bid for f in ("a", "b")])
+    return start
+
+
+def mirrors(config: dict) -> List[dict]:
+    """The account mirrors: {"a", "b", "ab" (Buchen ab: a day, "alles"), "kategorie", "bereich"} -- the list of their own
+    (config kontenspiegel) and, from settings written before 3.13.10, those kept with a company (gesellschaften[].gegenkonten:
+    its "Buchen ab" counts). "bereich": the company an old one was kept with -- for it everything stays as it was (it books
+    only while that area is there, b lies in it and a outside; the company's name on the bookings; one whose company names
+    no area waits: "?"); "" = any two accounts. The same pair counts once (per company it was kept with)."""
+    out: List[dict] = []
+    seen_pairs = set()                                 # (pair, the company it was kept with)
+
+    def add(a, b, ab, kat, bereich) -> None:
+        pair = frozenset((str(a or "").split("|")[0].strip(), str(b or "").split("|")[0].strip()))
+        if not a or not b or (pair, "") in seen_pairs or (pair, bereich) in seen_pairs or (not bereich and any(p == pair for p, _ in seen_pairs)):
+            return
+        seen_pairs.add((pair, bereich))
+        out.append({"a": str(a), "b": str(b), "ab": str(ab or ""), "kategorie": str(kat or ""), "bereich": bereich})
+    for m in config.get("kontenspiegel") or []:
+        if isinstance(m, dict):
+            add(m.get("a"), m.get("b"), m.get("ab"), m.get("kategorie"), str(m.get("bereich") or ""))
+    for g in config.get("gesellschaften") or []:
+        for x in (g.get("gegenkonten") or []) if isinstance(g, dict) else []:
+            if isinstance(x, dict):
+                add(x.get("konto"), x.get("quelle"), g.get("rueckwirkend_ab"), g.get("kategorie"), str(g.get("bereich") or "") or "?")
+    return out
+
+
+def plan_account_mirror(ledger: Ledger, m: dict, i: int, today: date, config: Optional[dict] = None, skip: Optional[set] = None,
+                        edits: Optional[Dict[str, dict]] = None, owner: Optional[Dict[str, str]] = None, seen: Optional[Seen] = None,
+                        auto: bool = False, areas: Optional[Dict[str, dict]] = None) -> RuleResult:
+    """One account mirror (plan_mirror) between any two accounts: of your own, of a company, of two companies. Booked from its
+    "Buchen ab" on. One kept with a company until 3.13.9 (m["bereich"]) books exactly as then: only while the company's area
+    is there, b in it and a outside; without a day of its own from the company's "Buchen ab"; the company's counterparty as
+    the name on bookings from b. owner: account -> the name of its area."""
+    res = RuleResult()
+    pv = {"art": "spiegel", "i": i}
+    areas = areas or {}
+    try:
+        a, b = ledger.resolve(m["a"]), ledger.resolve(m["b"])
+    except KeyError as e:
+        res.warnings.append("%s: %s" % (tr("s_regel_gegenkonto") % str(i + 1), e))
+        return res
+    pv.update(a=a.uuid, b=b.uuid)
+    rule = tr("s_regel_gegenkonto") % a.name
+    if a.group or b.group:
+        res.warnings.append(tr("s_s_quelle_ist_eine_gruppe") % rule)
+        return res
+    if (a.currency or "EUR").upper() != (b.currency or "EUR").upper():      # Kontor does not convert: nothing is mirrored
+        res.warnings.append(tr("s_s_spiegel_waehrung") % rule)
+        return res
+    companies = {str(g.get("bereich")): g for g in (config or {}).get("gesellschaften") or [] if isinstance(g, dict)}
+    party = lambda bid, area: (companies.get(bid, {}).get("gegenpartei") or "").strip() or area["name"]
+    who = dict(owner or {})
+    bid = m.get("bereich") or ""
+    start = parse_start(m.get("ab"))
+    if bid:
+        area = areas.get(bid)
+        if area is None:                               # the company's area is gone or off: its rules wait
+            res.warnings.append(tr("s_gesellschaft_s_bereich_fehlt") % bid)
+            return res
+        inside = {x.uuid for x in area["leaves"]}
+        if a.uuid in inside or b.uuid not in inside or a.uuid == b.uuid:
+            res.warnings.append(tr("s_s_zielkonto_liegt_innerhalb_der") % rule)
+            return res
+        who[b.uuid] = party(bid, area)
+        if start is None:
+            start = company_start(ledger, config, companies.get(bid) or {"bereich": bid}, area, today)
+    else:
+        if a.uuid == b.uuid:
+            res.warnings.append(tr("s_s_spiegel_selbst") % rule)
+            return res
+        for k, area in areas.items():                  # an account of a company: the counterparty you set for it
+            if str(k) in companies:
+                who.update({x.uuid: party(str(k), area) for x in (a, b) if x.uuid in {y.uuid for y in area["leaves"]}})
+        if start is None:                              # no day (not written by the interface): Kontor's first booking in the two
+            first = _first_mark(ledger, [a.uuid, b.uuid], VALUE_TAGS + (MIRROR_TAG,))
+            start = min(first, today) if first else None
+    plan_mirror(ledger, res, rule, a, b, {"kategorie": m.get("kategorie") or ""}, config, pv, skip, edits, bid, who, seen, start, auto)
+    res.preview.append(pv)
+    return res
+
+
 def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Optional[Dict[str, str]] = None,
                  config: Optional[dict] = None, skip: Optional[set] = None, edits: Optional[Dict[str, dict]] = None,
                  owner: Optional[Dict[str, str]] = None, seen: Optional[Seen] = None, auto: bool = False) -> RuleResult:
-    """One company (an area of the kind "Gesellschaft"): its account mirrors mirror each booking (plan_mirror), then the
-    participation account follows share x value of the company (its accounts without the partners' equity) -- so what was
-    mirrored into the company counts in its value. Both from "Buchen ab" of the company on (rueckwirkend_ab)."""
+    """One company (an area of the kind "Gesellschaft"): the participation account follows share x value of the company (its
+    accounts without the partners' equity), from "Buchen ab" of the company on (rueckwirkend_ab). The account mirrors are
+    planned before (plan_account_mirror), so what was mirrored into the company counts in its value."""
     seen = seen or Seen()
     res = RuleResult()
     roles = roles or {}
     name = area["name"]
     inside = {a.uuid for a in area["leaves"]}
     payee = (cfg.get("gegenpartei") or "").strip() or name
-    start = parse_start(cfg.get("rueckwirkend_ab"))
-    if start is None:
-        start = default_start(ledger, cfg, area, today)
-    for i, g in enumerate(cfg.get("gegenkonten") or []):
-        if not isinstance(g, dict) or not g.get("konto") or not g.get("quelle"):
-            continue
-        pv = {"art": "gegenkonto", "bereich": area["id"], "i": i}
-        try:
-            mine, theirs = ledger.resolve(g["konto"]), ledger.resolve(g["quelle"])
-        except KeyError as e:
-            res.warnings.append("%s: %s" % (tr("s_regel_gegenkonto") % name, e))
-            continue
-        rule = tr("s_regel_gegenkonto") % mine.name
-        if mine.group or theirs.group:
-            res.warnings.append(tr("s_s_quelle_ist_eine_gruppe") % rule)
-            continue
-        if mine.uuid in inside or theirs.uuid not in inside or mine.uuid == theirs.uuid:
-            res.warnings.append(tr("s_s_zielkonto_liegt_innerhalb_der") % rule)
-            continue
-        who = dict(owner or {})
-        who[theirs.uuid] = payee                       # the company (or the counterparty you set for it)
-        plan_mirror(ledger, res, rule, mine, theirs, cfg, config, pv, skip, edits, str(area["id"]), who, seen, start, auto)
-        res.preview.append(pv)
+    start = company_start(ledger, config, cfg, area, today)
     if cfg.get("beteiligung"):
         rule = tr("s_regel_beteiligung") % name
         pv = {"art": "beteiligung", "bereich": area["id"]}
@@ -782,25 +850,32 @@ def plan_all(ledger: Ledger, config: dict, today: date, hold: Optional[set] = No
     hold = set(hold or ())
 
     def add(r: RuleResult) -> None:
-        total.proposals += r.proposals; total.warnings += r.warnings; total.info += r.info; total.preview += r.preview
+        total.proposals += r.proposals; total.info += r.info; total.preview += r.preview
+        total.warnings += [w for w in r.warnings if w not in total.warnings]          # a waiting company: named once
     # order: loans first (they change the values of the companies), then mirrors and participations
     for i, cfg in enumerate(config.get("darlehen", []) or []):
         if cfg.get("aktiv", True):
             r = plan_loan(ledger, cfg, today, config, skip, edits, seen, hold, auto)
             r.preview.append({"art": "darlehen", "i": i, "buchungen": len(r.proposals)})
             add(r)
-    if config.get("gesellschaften"):
+    ms = mirrors(config)
+    if config.get("gesellschaften") or ms:
         from report import account_roles          # imported late (report/core import rules)
         from core import bereiche_for
         roles = account_roles(ledger, config)
         areas = {b["id"]: b for b in bereiche_for(ledger, config)}
         owner = {a.uuid: b["name"] for b in areas.values() for a in b["leaves"]}          # an account's area: the company or person
-        for cfg in config.get("gesellschaften") or []:
-            if not isinstance(cfg, dict) or not (cfg.get("beteiligung") or cfg.get("gegenkonten")):
+        companies = [c for c in config.get("gesellschaften") or [] if isinstance(c, dict)]
+        for i, m in enumerate(ms):                    # mirrors first: what they bring into a company counts in its value
+            add(plan_account_mirror(ledger, m, i, today, config, skip | hold, edits, owner, seen, auto, areas))
+        for cfg in companies:
+            if not cfg.get("beteiligung"):
                 continue
             area = areas.get(str(cfg.get("bereich")))
             if area is None:
-                total.warnings.append(tr("s_gesellschaft_s_bereich_fehlt") % cfg.get("bereich"))
+                w = tr("s_gesellschaft_s_bereich_fehlt") % cfg.get("bereich")
+                if w not in total.warnings:
+                    total.warnings.append(w)
                 continue
             add(plan_company(ledger, cfg, area, today, roles, config, skip | hold, edits, owner, seen, auto))
     return total

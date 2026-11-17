@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.13.10 (2026-11-17 05:52)
+- **Kontenspiegel sind eine eigene Regel:** eigener Abschnitt unter Buchungsregeln, zwischen zwei beliebigen Konten – ohne Gesellschaft oder Beteiligung –, jeder mit eigenem „Buchen ab“. Bisherige Kontenspiegel sind übernommen und buchen wie zuvor. Der Abschnitt „Gesellschaften“ heißt jetzt „Beteiligungen“; „optional“ entfällt.
+- Kontenspiegel zwischen Konten verschiedener Währungen bucht Kontor nicht mehr (es rechnet nicht um) und sagt es.
+- **Zuordnen:** Bei Zahlungen an einen anderen deiner Bereiche (z. B. Einlage in die GbR) trägt ein Knopf deine Umbuchungs-Kategorie aus MoneyMoney ein.
+- Eine Kategorie, die bei dir Einnahme und in deiner Gesellschaft Ausgabe ist (Gehalt), zählt in jedem Bereich in der passenden Position; Zinsen zwischen deinen Bereichen zählen als Zinsen.
+- Nach großem Umräumen der Kategorien in MoneyMoney folgen umbenannte Kategorien weiter; Einstellungen gelöschter Konten räumt Kontor zuverlässiger auf.
+
 ## 3.13.9 (2026-11-17 04:21)
 - **Sync** lädt die offene Seite neu, sobald sich etwas geändert hat.
 - **Speichern scheitert nicht mehr an gelöschten Konten:** Einstellungen zu Konten, die es in MoneyMoney nicht mehr gibt, entfallen von selbst; bei einem Fehler stehen nur noch die Probleme da, nicht mehr jede geprüfte Zeile.

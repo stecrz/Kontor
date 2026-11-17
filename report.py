@@ -532,15 +532,28 @@ def _transit_from(ledger: Ledger, months: List[Tuple[int, int]], mkeys: List[str
 
 
 def company_areas(ledger: Ledger, config: dict) -> List[Tuple[dict, dict]]:
-    """The companies set up under Booking rules: (their entry in gesellschaften, their area) -- the area as everywhere else
-    (bereiche_for: with the accounts you moved under Setup)."""
+    """The companies set up under Booking rules -- with a participation, or with an account mirror: one kept with the company
+    until 3.13.9 (its "bereich"), or one into an account of the company. (Their entry in gesellschaften, their area) -- the
+    area as everywhere else (bereiche_for: with the accounts you moved under Setup)."""
     from core import bereiche_for                  # imported late (core imports report)
+    import rules
     areas = bereiche_for(ledger, config)
     by_id = {str(b["id"]): b for b in areas}
+    ms = rules.mirrors(config)
+    kept = {m["bereich"] for m in ms if m.get("bereich")}
+    free: Set[str] = set()
+    for m in ms:
+        for f in ("a", "b"):
+            if not m.get("bereich"):
+                try:
+                    free.add(ledger.resolve(m[f]).uuid)
+                except KeyError:
+                    pass
+    entries = [g for g in config.get("gesellschaften") or [] if isinstance(g, dict)]
+    entries += [{"bereich": bid} for bid in sorted(kept - {str(g.get("bereich")) for g in entries})]
     out = []
-    for g in config.get("gesellschaften") or []:
-        if not isinstance(g, dict) or not (g.get("beteiligung") or g.get("gegenkonten")):
-            continue
+    done: Set[str] = set()
+    for g in entries:
         b = by_id.get(str(g.get("bereich")))
         if b is None:                              # named by its group or an account in it
             try:
@@ -549,13 +562,18 @@ def company_areas(ledger: Ledger, config: dict) -> List[Tuple[dict, dict]]:
                 continue
             members = {x.uuid for x in (ledger.descendants(a.uuid) if a.group else [a])}
             b = next((x for x in areas if members & {y.uuid for y in x["leaves"]}), None)
-        if b is not None:
+        if b is not None and (g.get("beteiligung") or g.get("gegenkonten") or str(g.get("bereich")) in kept
+                              or free & {a.uuid for a in b["leaves"]}):
             out.append((g, b))
+            done.add(str(b["id"]))
+    for b in areas:                                # a mirror into a company that has no entry of its own
+        if b.get("art") == "gesellschaft" and str(b["id"]) not in done and free & {a.uuid for a in b["leaves"]}:
+            out.append(({"bereich": b["id"]}, b))
     return out
 
 
 def company_accounts(ledger: Ledger, config: dict) -> Dict[str, str]:
-    """Accounts of the companies set up under Booking rules (with a participation or counter account) -> company name."""
+    """Accounts of the companies set up under Booking rules (with a participation or an account mirror) -> company name."""
     return {a.uuid: b["name"] for g, b in company_areas(ledger, config) for a in b["leaves"]}
 
 
@@ -875,11 +893,12 @@ def recognised_position(path: str, income: bool) -> Optional[str]:
     return None
 
 
-def category_totals(ledger: Ledger) -> Dict[str, float]:
-    """Sum per category over all booked transactions (whether its money mostly comes in or goes out)."""
+def category_totals(ledger: Ledger, accounts: Optional[Set[str]] = None) -> Dict[str, float]:
+    """Sum per category over all booked transactions (whether its money mostly comes in or goes out). accounts: only those of
+    an area -- "Gehalt" is income for you and an expense for your company."""
     out: Dict[str, float] = defaultdict(float)
     for t in ledger.txs:
-        if t.booked and t.category_path:
+        if t.booked and t.category_path and (accounts is None or t.account_uuid in accounts):
             out[norm_cat(t.category_path)] += t.amount
     return dict(out)
 
@@ -953,7 +972,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             kat_zu_konto[norm_cat(cat_name)] = ledger.resolve(ref).uuid
         except KeyError:
             pass
-    totals = category_totals(ledger)
+    totals = category_totals(ledger, {a.uuid for a in leaves})      # the direction of a category within this area
     objekte = {norm_cat(k): v for k, v in (objekte or {}).items() if k}
     beteiligungs_gruppen = company_accounts(ledger, config)       # payments to and from them: contributions/withdrawals
     stakes = {g: u for g, u in company_stakes(ledger, config).items() if u in root_leaves}     # held by this area
@@ -1083,7 +1102,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                     g0 = recognised_position(c0, totals.get(c0, 0.0) > 0)
             else:
                 g0 = guess_position(t, company, by_name=False)
-            if g0 in POS and POS[g0][0] in ("Einnahmen", "Ausgaben"):
+            if g0 in POS and (POS[g0][0] in ("Einnahmen", "Ausgaben") or g0 == "zinsen"):      # interest paid is a cost as well
                 p, guess = None, (None if c0 else g0)
         if p is not None and roles.get(p) == "eigenkapital" and (same or pa is None):
             R.add("Finanzierung", "Gesellschafter", "Einlagen/Entnahmen Gesellschafter", mk, t.amount, art="extern", nw=True,
@@ -1285,7 +1304,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
     ckey = (getattr(ledger, "_kat_sig", None), tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
             json.dumps(config.get("kapitalfluss") or {}, sort_keys=True, default=str), tuple(months[0]) if months else None,
             tuple(months[-1]) if months else None, len(months), tuple(sorted(quelle.items())), company, learned_sig, tuple(sorted(objekte.items())),
-            json.dumps([sorted(areas.items()), config.get("gesellschaften")], sort_keys=True, default=str))
+            json.dumps([sorted(areas.items()), config.get("gesellschaften"), config.get("kontenspiegel")], sort_keys=True, default=str))
     cache = ledger.__dict__.setdefault("_classify_cache", {})
     if ckey in cache:
         R, inbound, warn_c = copy.deepcopy(cache[ckey])        # Bereich unveraendert (z. B. Verlauf eines anderen Bereichs geaendert)

@@ -196,6 +196,14 @@ class CashflowCases(Reconciles):
         self.assertFalse({"Sonstige Ausgaben", "Sonstige Einnahmen", "Erstattungen", "Freizeit & Reisen"} & (set(p) | set(g)))
         data = build(txs, {"kapitalfluss": {"positionen": {"Einlage": "sonstige_ausgaben"}}})
         self.assertEqual(rows(data["Privat"])["Sonstige Ausgaben"]["werte"]["2026-02"], -10000.0)
+        # the same category on both sides: income for one area, an expense for the other (the direction within the area)
+        data = build([(1, "kk", date(2026, 2, 3), -4000.0, {"iban": "DE11", "cat": "Gehalt"}), (2, "giro", date(2026, 2, 3), 4000.0, {"iban": "DE21", "cat": "Gehalt"}),
+                      (3, "kk", date(2026, 2, 4), -9000.0, {"cat": "Gehalt", "name": "Mitarbeiter"}),
+                      (4, "giro", date(2026, 2, 5), -300.0, {"iban": "DE21", "purpose": "Zinsen Darlehen"}), (5, "kk", date(2026, 2, 5), 300.0, {"iban": "DE11", "purpose": "Zinsen Darlehen"})])
+        self.assertAddsUp(data)
+        p, g = rows(data["Privat"]), rows(data["Muster GbR"])
+        self.assertEqual((p["Arbeitseinkommen"]["werte"]["2026-02"], g["Personal"]["werte"]["2026-02"]), (4000.0, -13000.0))
+        self.assertEqual((p["Zinsen"]["werte"]["2026-02"], g["Kapitalerträge"]["werte"]["2026-02"]), (-300.0, 300.0))
 
     def test_transfers_need_no_category(self):
         import categorize as C
@@ -538,6 +546,11 @@ class Positions(Reconciles):
         self.assertEqual(s2["2026-01"]["Bankguthaben"], 5000.0)
         p = rows(build([(1, "giro", date(2026, 1, 3), 100.0, {"cat": "Gehalt"})])["Privat"])
         self.assertIn("Arbeitseinkommen", p)
+        # Cashflow-Positionen proposes what each area counts: income for you, staff costs of the company (the area with more bookings first)
+        both = make_ledger([(1, "giro", date(2026, 1, 3), 100.0, {"cat": "Gehalt"}), (2, "kk", date(2026, 1, 3), -100.0, {"cat": "Gehalt"}),
+                            (3, "kk", date(2026, 2, 3), -100.0, {"cat": "Gehalt"})])
+        row = next(r for r in core.positions_overview(both, config, [], TODAY)["kategorien"] if r["pfad"] == "Gehalt")
+        self.assertEqual((row["vorschlag"], row["vorschlag_auch"]), ("personal", ["arbeit"]))
         dsp = report.build_dataset(make_ledger([(1, "giro", date(2026, 1, 3), 100.0, {"cat": "Gehalt"})]), config, {}, TODAY,
                                    next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat"), roles)
         report.apply_plan(dsp, {}, config)
@@ -602,6 +615,22 @@ class Positions(Reconciles):
         report.apply_plan(ds, {}, config)
         r = rows(ds)
         self.assertEqual((r["Wohnen"]["plan"]["budget"], r["Lebenshaltung"]["plan"]["budget"]), (-1000.0, -400.0))
+
+
+class MirrorsAndCompanies(Reconciles):
+    def test_a_mirror_into_a_company_counts_at_once(self):
+        """A company counts as set up with an account mirror into one of its accounts: a payment to it from another company is
+        a contribution there (Investitionen) -- also when only the mirror was added and nothing changed in MoneyMoney."""
+        areas = [{"id": "p", "name": "Privat", "art": "privat", "haupt": True, "konten": ["Privat"]},
+                 {"id": "m", "name": "Muster GbR", "art": "gesellschaft", "konten": ["Muster GbR"]},
+                 {"id": "k", "name": "Kinder", "art": "gesellschaft", "konten": ["Kinder"]}]
+        led = make_ledger([(1, "kk", date(2026, 3, 3), -10000.0, {"iban": "DE31"}), (2, "kind", date(2026, 3, 3), 10000.0, {"iban": "DE21"})])
+        before = datasets(led, {"bereiche": areas})
+        self.assertEqual([s for s in ("Investitionen", "Finanzierung") if rows(before["Muster GbR"], s)], ["Finanzierung"])
+        after = datasets(led, {"bereiche": areas, "kontenspiegel": [{"a": "Auto", "b": "Kinderkonto", "ab": "alles"}]})
+        self.assertEqual([s for s in ("Investitionen", "Finanzierung") if rows(after["Muster GbR"], s)], ["Investitionen"])
+        for data in (before, after):
+            self.assertAddsUp(data)
 
 
 class MockData(Reconciles):
