@@ -22,7 +22,7 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 2. `VERSION`: dritte Stelle +1 (3.9.6 → 3.9.7) – auch bei mehreren Verbesserungen auf einmal. Zweite Stelle nur bei
    erheblichen Änderungen und nur nach Rückfrage. Erste Stelle nie.
 3. `CHANGELOG.md`: neuer Abschnitt oben, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` (Ortszeit des Nutzers, Europe/Berlin), kurz, auf Deutsch.
-4. Commit und Push auf `main` selbst erledigen, ohne nachzufragen. Keine Tags.
+4. Commit und Push auf `main` selbst erledigen, ohne nachzufragen. Keine Tags, kein Sitzungslink in der Commit-Nachricht.
 5. Ist der Mac des Nutzers verbunden: dort den Kontor-Ordner auf den neuen Stand bringen (`git fetch` + `git reset --hard`).
 
 ## Sicherheit (ohne Ausnahme)
@@ -33,7 +33,7 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
   vorher neu lesen und prüfen, fremde Kategorien nur nach Rückfrage; vom iPhone Zugeordnetes erst beim nächsten Abgleich am Mac).
   Kontor hat keine eigenen Kategorien und ordnet nie selbst zu (gelernte Muster sind nur Vorschläge); nur im Cashflow schätzt es die Position von Umsätzen ohne Kategorie – sichtbar als „geschätzt“, ohne etwas in MoneyMoney einzutragen. Nie Buchungen, den Kategorienbaum oder
   Regeln des Nutzers ändern oder löschen, keine Überweisungen.
-- Oberfläche nur über 127.0.0.1 bzw. Tailscale erreichbar. Netzverbindungen nur: Update-Prüfung bei GitHub und – nur auf ausdrücklichen Klick (Einrichtung → Historische Kontostände) – das Nachschlagen von Wertpapiernamen bei OpenFIGI (`security_names.py`, sendet nur ISINs).
+- Oberfläche nur über 127.0.0.1 bzw. Tailscale erreichbar. Netzverbindungen nur: Update-Prüfung bei GitHub und – nur auf ausdrücklichen Klick (Konten & Regeln → Kontostände) – das Nachschlagen von Wertpapiernamen bei OpenFIGI (`security_names.py`, sendet nur ISINs).
 - Keine Passwörter oder Zugangsdaten speichern, protokollieren oder zwischenspeichern; Datenordner verschlüsselt.
 - Kontostände aus MoneyMoney (`mm_history.py`): Datenbankdatei nur per Upload, nur im Arbeitsspeicher; Passwort nur im Swift-Helfer,
   der nur für den Vorgang erzeugt und danach gelöscht wird; Puffer danach überschreiben; keine dauerhaften Freigaben.
@@ -46,7 +46,7 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
   (app.js) bzw. `tr("schluessel", …)` (Python). Keine Texte fest im Code. Platzhalter `{0}` (JS) bzw. `%s` (Python).
 - Texte, die nach MoneyMoney geschrieben werden (Verwendungszwecke), Kategorienamen und Datenschlüssel bleiben unübersetzt.
 - Englisch: Datei- und Modulnamen, Datendateien, API-Endpunkte, URL-Pfade und -Parameter (auch die #-Adressen der Oberfläche und die Anker der Hilfe), Kommandozeilenbefehle, Protokollmeldungen, Code-Kommentare. Deutsch ist nur der Text, den der Nutzer liest.
-- Hilfe: `docs/help.de.md` und `docs/help.en.md` gemeinsam pflegen (gleiche Anker); Bilder mit `tests/screenshots.py` (de/en) aus erfundenen Daten erzeugen.
+- Hilfe: `docs/help.de.md` und `docs/help.en.md` gemeinsam pflegen (gleiche Anker); Bilder mit `tests/screenshots.py` (de/en) aus erfundenen Daten erzeugen – nur wenn sich eine gezeigte Seite wesentlich verändert hat, nicht bei jedem Release.
 - Präfix `mm_` nur für Teile, die direkt mit MoneyMoney sprechen.
 
 ## Oberfläche
@@ -54,6 +54,7 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 - Zielgeräte: 14-Zoll-MacBook (Safari, Fenster fast im Vollbild) und iPhone; im Dunkelmodus gut lesbar (keine Pastelltöne).
 - Texte auf Deutsch, kurz, ohne Fachbegriffe, Einzahl/Mehrzahl korrekt. Keine überflüssigen Erklärtexte: was Tooltip oder Hilfe sagt, steht nicht noch einmal auf der Seite.
 - Konten in der Reihenfolge von MoneyMoney.
+- Wo was liegt: Was die Zahlen bestimmt, unter „Konten & Regeln“ (Konten, Bereiche, Kontostände, Cashflow-Positionen, Buchungsregeln, Steuer); wie Kontor arbeitet (Verbindung, Abgleich, Zugang, Belege, Updates, Sicherung), unter „Einstellungen“. Die Einrichtung ist nur ein geführter Weg durch diese Seiten, keine eigene Ablage.
 - Hinweise für den Nutzer im Chat, nicht als Dateien im Repo.
 
 ## Aufbau

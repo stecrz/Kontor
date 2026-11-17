@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.13.20 (2026-11-17 20:45)
+- **Menü neu geordnet:** „Konten & Regeln“ bündelt alles, was deine Zahlen bestimmt (Konten, Bereiche, Kontostände, Cashflow-Positionen, Buchungsregeln, Steuer). „Einstellungen“ zeigt, wie Kontor arbeitet (Allgemein, MoneyMoney & Abgleich mit der bisherigen Synchronisierung, Zugang, Belege, Updates, Sichern). Alte Lesezeichen führen an die neue Stelle.
+- **Einrichtung als geführter Weg** durch diese Seiten; sie verschwindet aus dem Menü, sobald die nötigen Schritte erledigt sind („Einrichtung prüfen“ oben rechts unter Konten & Regeln). Historische Kontostände sind optional.
+- **Auto-Buchen** nur noch bei den Buchungsregeln.
+- **Geldfluss** statt der Liste „Mittelherkunft und -verwendung“: Herkunft links, Verwendung rechts, jedes Band so breit wie sein Betrag.
+- „Überschuss kumuliert“ entfernt; Liquiditätsbrücke und Zu- und Abflüsse je halb breit nebeneinander.
+- Heatmap: „(ohne Kategorie)“ immer unten. Große Veränderungen abgekürzt (+1,2T %, +10T %).
+- Ungespeicherte Eingaben bleiben erhalten, wenn ein Knopf die Seite neu zeichnet; MoneyMoney wird nur noch abgefragt, solange die Verbindung fehlt.
+
 ## 3.13.19 (2026-11-17 19:43)
 - **Zeitraum der Diagramme:** 12 Monate (Standard), ein Jahr oder Von–Bis nach Wahl, gut sichtbar neben der Auswahl; „Alle“ entfällt. Alle Diagramme enden am letzten abgeschlossenen Monat und folgen dem Zeitraum; Vorperiode sind dieselben Monate ein Jahr davor.
 - **Liquiditätsbrücke** (statt „Vom Bankguthaben …“): Anfangsbestand, je Tätigkeit Summe und Teile, Endbestand, Veränderung zur Vorperiode; Details beim Darüberfahren.

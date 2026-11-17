@@ -23,7 +23,9 @@ Kontor never changes bookings, the category tree or rules in MoneyMoney and neve
 
 The “?” next to fields explain briefly; a click on one (on the iPhone: a second tap) opens the matching section of this help.
 
-**Setup** lists all building blocks in a sensible order. Each shows whether it is done; the first four build on each other, the rest is optional and can be done any time. “Check setup” (at the bottom) reads MoneyMoney and reports whether all accounts and categories your setup refers to still exist there – for example after renaming something in MoneyMoney.
+**Where things are** – a rule of thumb: what sets your figures is under **Accounts & rules** (accounts, areas, balances, cash flow positions, booking rules, tax). How Kontor works is under **Settings** (General, MoneyMoney & sync, Access, Receipts, Updates, Back up & reset).
+
+**Setup** is a guided path through exactly these pages: all building blocks in a sensible order, each shows whether it is done and opens its page. The first four build on each other, the rest is optional and can be done any time. Once the required steps are done, Setup leaves the menu; “Check setup” at the top right of Accounts & rules opens it again. There “Check setup” reads MoneyMoney and reports whether all accounts and categories your settings refer to still exist – for example after you renamed something in MoneyMoney.
 
 ![Setup](img/en/setup.png)
 
@@ -77,7 +79,7 @@ Kontor estimates nothing. Clicking an account in the balance sheet opens its his
 
 The panel also checks the backward calculation: opening balance before the first booking in MoneyMoney, pending transactions, negative balances on accounts that cannot go below zero. Portfolios without imported history show “before … unknown”.
 
-**Balances from a file** (Setup → Accounts or the history panel): CSV or Excel (.xlsx), as a list (date, account, balance) or as a table with reference dates in the header row or the first column. Imported accounts are then set to “Balances”.
+**Balances from a file** (Accounts & rules → Accounts or the history panel): CSV or Excel (.xlsx), as a list (date, account, balance) or as a table with reference dates in the header row or the first column. Imported accounts are then set to “Balances”.
 
 ![History of an account](img/en/account_history.png)
 
@@ -103,9 +105,9 @@ The data has two stages: **banks → MoneyMoney** (MoneyMoney fetches from the b
 - **Check**: Kontor checks every balance. If it does not match the transactions read, something older changed in MoneyMoney – e.g. a late booking with an old date or a deleted transaction. Then Kontor reads everything at once (at most every 12 hours).
 - **Complete read**: every 7 days (adjustable) and with “Read everything again”. Kontor's own bookings need none: Kontor keeps them until then. Only changed categories of older transactions (e.g. a rule in MoneyMoney applied to all transactions) appear just then – use “Read everything again” for that.
 - A bank refresh without new data does not trigger a recalculation.
-- **Read transactions** (Settings → General): how far back Kontor reads; 0 = all (recommended).
+- **Read transactions** (Settings → MoneyMoney & sync): how far back Kontor reads; 0 = all (recommended).
 
-The Sync page shows the last refresh per account and reports accounts that lag behind. Offline accounts (kept by hand: never refreshed, without bank and account number, created as offline account or booked by Kontor) are listed separately as “Offline account”; if sorted wrongly, change it per account under “Type” to “Online” or “Offline”. Kontor books only into offline accounts – also into one with a bank code typed in, once it is set to “Offline” there. If MoneyMoney is closed or locked, nothing happens – the next sync catches up.
+Settings → MoneyMoney & sync shows under “Sync” the last refresh per account and reports accounts that lag behind. Offline accounts (kept by hand: never refreshed, without bank and account number, created as offline account or booked by Kontor) are listed separately as “Offline account”; if sorted wrongly, change it per account under “Type” to “Online” or “Offline”. Kontor books only into offline accounts – also into one with a bank code typed in, once it is set to “Offline” there. If MoneyMoney is closed or locked, nothing happens – the next sync catches up.
 
 <a id="tables"></a>
 ## Tables, switches and Excel
@@ -138,7 +140,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 
 - Click the **name** of a position to expand its accounts (**▸** in the header cell: all positions; **▸** in front of a portfolio: its securities). Click the name of an account to open its history (view and edit month-end balances); a second click closes it again; the same for a security.
 - Click a **value** to make its area and month light up briefly in the main chart (the chart moves to the month if needed). Clicking a month heading moves the chart so that the month sits exactly above the column; so does a click on a net worth value, and its dot in the chart blinks briefly. The single charts keep their length and end with that month – so they show the change up to it. The page itself stays put. Hovering over a name marks the same area in the chart.
-- The **eye** in the header cell (only when there are any, with a count) also shows empty accounts and securities and those hidden by activity – they are always counted. What counts as hidden is set under [Setup → Accounts](#accounts) (column “Display” and “By activity … months”, default 12); securities without a value in that period count as hidden too. “(9/12)” means 9 of 12 are shown.
+- The **eye** in the header cell (only when there are any, with a count) also shows empty accounts and securities and those hidden by activity – they are always counted. What counts as hidden is set under [Accounts & rules → Accounts](#accounts) (column “Display” and “By activity … months”, default 12); securities without a value in that period count as hidden too. “(9/12)” means 9 of 12 are shown.
 - **Portfolios**: past months from the balances read from MoneyMoney (otherwise from Kontor's monthly record), the current month from MoneyMoney; what the securities do not explain is shown as “Other”. Hovering over a security always shows MoneyMoney's name and the ISIN, and whether the name was looked up or changed. Rename accounts in MoneyMoney – Kontor takes the names from there.
 - Year columns show the balance at year end (the running year: today). The month view has no year columns – they would only repeat December; a thin line separates the years.
 - Drag the right edge of the first column to make it wider or narrower (double-click: default width); the width is part of the view.
@@ -214,10 +216,9 @@ Below the table, charts show the same figures for a period you choose above them
 
 - **Cash bridge** – from the cash at the start to the cash at the end: per activity (surplus, investing, financing) its sum and below it its parts, each bar starting where the one before ended; beside it the change against the period before. Hovering shows the period before, the share of income and the parts.
 - **Inflows and outflows by month** – income and other inflows up, expenses and other outflows down, stacked by kind; below, on a scale of its own, the change in cash. When single months are far larger than the rest (a property bought, say), the scale follows the rest; those bars are cut, marked with two strokes and labelled with their height. With more than three years per year.
-- **Cumulative surplus** – the surplus added up month by month, over the period against the period before; above, the total and its change.
-- **Expenses vs. period before** – expenses by position as a ring (switchable to income, then in green), the darker the larger the share; the period before is the same months a year earlier (for more than twelve months, further back accordingly); in the middle the total and its change, beside it each position's amount and change (without a period before it is called “What expenses are made of”). Hovering the middle names both periods and amounts; hovering a slice shows its categories in an outer ring. A click keeps the slice open and labels its categories; a second click, a click beside it or Esc goes back. A change of ±0 % means the same amount; “Others” show a change only where each of them has a period before.
+- **Expenses vs. period before** – expenses by position as a ring (switchable to income, then in green), the darker the larger the share; the period before is the same months a year earlier (for more than twelve months, further back accordingly); in the middle the total and its change, beside it each position's amount and change (without a period before it is called “What expenses are made of”). Hovering the middle names both periods and amounts; hovering a slice shows its categories in an outer ring. A click keeps the slice open and labels its categories; a second click, a click beside it or Esc goes back. A change of ±0 % means the same amount, from 1,000 % on it is shortened (+10k % = about 10,000 %); “Others” show a change only where each of them has a period before.
 - **Expenses by month** – beside the ring and switched to income with it: one strip per position, the darker, the more that month. Every cell is on the same scale, so a large position stands out against a small one; annual payments and outliers stand out. On the right the average per month (more than two years: cells by quarter); hovering a cell shows which categories made up that month.
-- **Sources and uses of cash** – on the left everything that came in (income, loans, sales, less cash), on the right what it was used for (expenses, investments, repayment, interest, more cash); both sides add up to the same sum.
+- **Money flow** – on the left everything that came in (income, loans, sales, less cash), on the right what it was used for (expenses, investments, repayment, interest, more cash); each band as wide as its amount, both sides add up to the same total (top right). Money carries no label, so all bands run through one column in the middle instead of tying an income to an expense. Hovering shows the share.
 
 Hovering a column or bar shows the exact amounts.
 
@@ -227,7 +228,7 @@ Every transaction counts exactly once. Transfers between your own accounts never
 
 Two rows **Check against the balance sheet** compare every month with the balance sheet: the change in cash with that of the liquid accounts, the change in net worth with that of the balance sheet. ✓ means: matches to the cent. A difference names its reason when you hover over it – for example money in transit to a loan over the month end, or a category set to “Leave out”. What Kontor cannot assign with certainty – such as a transfer without a counter-booking – shows under “unclear” and counts with its amount.
 
-Which position a MoneyMoney category counts in, Kontor proposes from its name; you change it under [Cash flow positions](#categories-positions) (Administration, or the gear in the header cell of the cash flow table). Transactions **without a category** are estimated: first from your categories so far (same counterparty, same purpose), otherwise from words in name, purpose and booking text (such as “Gehalt”, card settlements; for the tax office Kontor separates wage tax – part of staff for companies –, VAT and other taxes). They show in the position as “no category, estimated”; what cannot be estimated shows under “(no category)”. The more you assign, the more exact it gets – it is not required, not even for a limited company with many bookings. Kontor enters nothing in MoneyMoney for this.
+Which position a MoneyMoney category counts in, Kontor proposes from its name; you change it under [Cash flow positions](#categories-positions) (Accounts & rules, or the gear in the header cell of the cash flow table). Transactions **without a category** are estimated: first from your categories so far (same counterparty, same purpose), otherwise from words in name, purpose and booking text (such as “Gehalt”, card settlements; for the tax office Kontor separates wage tax – part of staff for companies –, VAT and other taxes). They show in the position as “no category, estimated”; what cannot be estimated shows under “(no category)”. The more you assign, the more exact it gets – it is not required, not even for a limited company with many bookings. Kontor enters nothing in MoneyMoney for this.
 
 <a id="categories"></a>
 ## Categories
@@ -256,7 +257,7 @@ If you assign a counterparty several times in Kontor, MoneyMoney evidently has n
 <a id="categories-write-back"></a>
 ### Entering in MoneyMoney
 
-Turn it on once (under Categories or Settings → General, only at the Mac). Safeguards:
+Turn it on once (under Categories or Settings → MoneyMoney & sync, only at the Mac). Safeguards:
 
 - Kontor sets only the category field of a transaction; amounts, dates and deleting are not possible this way.
 - Right before writing, Kontor reads the transaction again from MoneyMoney and writes only if it is unchanged and has no category yet (or the one Kontor set).
@@ -266,7 +267,7 @@ Turn it on once (under Categories or Settings → General, only at the Mac). Saf
 <a id="categories-positions"></a>
 ### Cash flow positions
 
-The cash flow has a fixed outline; your MoneyMoney categories count in it. The page Cash flow positions (under Administration) is this mapping: on the left every MoneyMoney category with transactions and the sum of the last twelve months, on the right its position in the cash flow:
+The cash flow has a fixed outline; your MoneyMoney categories count in it. Accounts & rules → Cash flow positions is this mapping: on the left every MoneyMoney category with transactions and the sum of the last twelve months, on the right its position in the cash flow:
 
 - **Automatic** – like the category above it, otherwise Kontor's proposal from the name (such as “Einkommen › Rückzahlung Finanzamt” → refunds, “Sparen” → saving & investing).
 - A position you choose also counts for all categories below it that have none of their own.
@@ -321,7 +322,7 @@ Result: monthly and annual table (rent, costs, interest, repayment, depreciation
 <a id="tax"></a>
 ## Tax
 
-Per entity (main area = private, each company with your share from the areas) and year: rental income per property from the categories `Vermietung \ Object \ Type` (any number of properties, private ones too), loan interest per loan (mapping loan → property under Settings → Tax), depreciation, tax items from category names (adjustable under Settings → Tax) and bookings without category as items to check. A year's receipts can be exported as a ZIP with an overview. No tax advice.
+Per entity (main area = private, each company with your share from the areas) and year: rental income per property from the categories `Vermietung \ Object \ Type` (any number of properties, private ones too), loan interest per loan (mapping loan → property under Accounts & rules → Tax), depreciation, tax items from category names (adjustable under Accounts & rules → Tax) and bookings without category as items to check. A year's receipts can be exported as a ZIP with an overview. No tax advice.
 
 <a id="receipts"></a>
 ## Transactions and receipts
@@ -364,9 +365,9 @@ Kontor recognises the instalment on the source account – by the lender's IBAN 
 <a id="rules-companies"></a>
 ### Participations
 
-Every area of the kind “company” (Setup → Areas) appears as a card, with your **share**. The share is set there only; the card links to it.
+Every area of the kind “company” (Accounts & rules → Areas) appears as a card, with your **share**. The share is set there only; the card links to it.
 
-- **Participation account**: your offline account for this company – you can choose offline accounts with the position “Participations” (Setup → Accounts); none is chosen in advance, because the bookings start as soon as you choose one and save. Kontor keeps it at **share × value of the company**. Value = all accounts of its area, i.e. assets minus debts (without accounts with the position “Capital accounts (equity)”, guarantees and off-balance accounts).
+- **Participation account**: your offline account for this company – you can choose offline accounts with the position “Participations” (Accounts & rules → Accounts); none is chosen in advance, because the bookings start as soon as you choose one and save. Kontor keeps it at **share × value of the company**. Value = all accounts of its area, i.e. assets minus debts (without accounts with the position “Capital accounts (equity)”, guarantees and off-balance accounts).
 
 Participation and account mirror together count nothing twice if the capital accounts are kept as debts in the company (the default for accounts with “Kapitalkonto” or “Gesellschafterdarlehen” in their name): the receivable is your capital account, the participation your share of the rest – increases in value and undistributed surpluses. This also holds for unequal contributions. If you keep a capital account as the company's equity instead, it is already part of the participation's value; an account mirror for it then counts twice, and “Save and check” warns.
 

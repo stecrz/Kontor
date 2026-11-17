@@ -23,7 +23,9 @@ Kontor ändert in MoneyMoney nie Buchungen, den Kategorienbaum oder Regeln und l
 
 Die „?“ neben Feldern erklären kurz; ein Klick darauf (am iPhone: zweites Tippen) öffnet den passenden Abschnitt dieser Hilfe.
 
-Unter **Einrichtung** stehen alle Bausteine in einer sinnvollen Reihenfolge. Jeder zeigt, ob er schon eingerichtet ist; die ersten vier bauen aufeinander auf, der Rest ist optional und jederzeit nachholbar. „Einrichtung prüfen“ (unten) liest MoneyMoney und meldet, ob alle Konten und Kategorien, auf die sich deine Einrichtung bezieht, dort noch existieren – etwa nachdem du in MoneyMoney etwas umbenannt hast.
+**Wo was liegt** – eine Faustregel: Was deine Zahlen bestimmt, steht unter **Konten & Regeln** (Konten, Bereiche, Kontostände, Cashflow-Positionen, Buchungsregeln, Steuer). Wie Kontor arbeitet, steht unter **Einstellungen** (Allgemein, MoneyMoney & Abgleich, Zugang, Belege, Updates, Sichern & Zurücksetzen).
+
+Die **Einrichtung** ist ein geführter Weg durch genau diese Seiten: alle Bausteine in einer sinnvollen Reihenfolge, jeder zeigt, ob er schon eingerichtet ist, und öffnet seine Seite. Die ersten vier bauen aufeinander auf, der Rest ist optional und jederzeit nachholbar. Sind die nötigen Schritte erledigt, verschwindet die Einrichtung aus dem Menü; „Einrichtung prüfen“ oben rechts unter Konten & Regeln öffnet sie wieder. Dort liest „Einrichtung prüfen“ MoneyMoney und meldet, ob alle Konten und Kategorien, auf die sich deine Einstellungen beziehen, noch existieren – etwa nachdem du in MoneyMoney etwas umbenannt hast.
 
 ![Einrichtung](img/de/setup.png)
 
@@ -77,7 +79,7 @@ Kontor schätzt nichts. Ein Klick auf ein Konto in der Bilanz öffnet sein Verla
 
 Das Fenster prüft auch die Rückrechnung: Anfangssaldo vor der ersten Buchung in MoneyMoney, vorgemerkte Umsätze, negative Stände bei Konten, die nicht ins Minus können. Bei Depots ohne übernommenen Verlauf steht „vor … unbekannt“.
 
-**Stände aus einer Datei** (Einrichtung → Konten oder Verlauf-Fenster): CSV oder Excel (.xlsx), als Liste (Datum, Konto, Saldo) oder als Tabelle mit Stichtagen in der Kopfzeile oder in der ersten Spalte. Importierte Konten stehen danach auf „Kontostände“.
+**Stände aus einer Datei** (Konten & Regeln → Konten oder Verlauf-Fenster): CSV oder Excel (.xlsx), als Liste (Datum, Konto, Saldo) oder als Tabelle mit Stichtagen in der Kopfzeile oder in der ersten Spalte. Importierte Konten stehen danach auf „Kontostände“.
 
 ![Verlauf eines Kontos](img/de/account_history.png)
 
@@ -103,9 +105,9 @@ Der Datenstand hat zwei Stufen: **Banken → MoneyMoney** (MoneyMoney ruft bei d
 - **Kontrolle**: Dabei prüft Kontor jeden Kontostand. Passt er nicht zu den gelesenen Umsätzen, hat sich in MoneyMoney etwas Älteres geändert – etwa eine nachträgliche Buchung mit altem Datum oder ein gelöschter Umsatz. Dann liest Kontor sofort alles (höchstens alle 12 Stunden).
 - **Vollständig lesen**: alle 7 Tage (einstellbar) und mit „Alles neu lesen“. Eigene Buchungen von Kontor brauchen keins: Kontor behält sie bis dahin. Nur geänderte Kategorien älterer Umsätze (z. B. eine Regel in MoneyMoney auf alle Umsätze angewendet) erscheinen erst dann – dafür „Alles neu lesen“.
 - Ein Bankabruf ohne neue Daten löst keine Neuberechnung aus.
-- **Umsätze lesen** (Einstellungen → Allgemein): wie weit zurück Kontor liest; 0 = alle (empfohlen).
+- **Umsätze lesen** (Einstellungen → MoneyMoney & Abgleich): wie weit zurück Kontor liest; 0 = alle (empfohlen).
 
-Die Seite „Synchronisierung“ zeigt je Konto den letzten Abruf und meldet Konten, die zurückliegen. Offline-Konten (von Hand geführt: nie abgerufen, ohne Bank- und Kontonummer, als Offline-Konto angelegt oder von Kontor bebucht) stehen getrennt als „Offline-Konto“; falsch eingeordnet, je Konto unter „Art“ auf „Online“ oder „Offline“ ändern. Nur in Offline-Konten bucht Kontor – auch in eines mit eingetragener Bankleitzahl, wenn es dort auf „Offline“ steht. Ist MoneyMoney zu oder gesperrt, passiert nichts – der nächste Abgleich holt alles nach.
+Einstellungen → MoneyMoney & Abgleich zeigt unter „Synchronisierung“ je Konto den letzten Abruf und meldet Konten, die zurückliegen. Offline-Konten (von Hand geführt: nie abgerufen, ohne Bank- und Kontonummer, als Offline-Konto angelegt oder von Kontor bebucht) stehen getrennt als „Offline-Konto“; falsch eingeordnet, je Konto unter „Art“ auf „Online“ oder „Offline“ ändern. Nur in Offline-Konten bucht Kontor – auch in eines mit eingetragener Bankleitzahl, wenn es dort auf „Offline“ steht. Ist MoneyMoney zu oder gesperrt, passiert nichts – der nächste Abgleich holt alles nach.
 
 <a id="tables"></a>
 ## Tabellen, Schalter und Excel
@@ -138,7 +140,7 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 
 - Klick auf den **Namen** einer Position klappt ihre Konten auf (**▸** in der Kopfzelle: alle Positionen; **▸** vor einem Depot: seine Wertpapiere). Klick auf den Namen eines Kontos öffnet seinen Verlauf (Monatsstände ansehen und bearbeiten), ein zweiter Klick schließt ihn wieder; bei einem Wertpapier ebenso.
 - Klick auf einen **Wert** lässt Fläche und Monat in der großen Grafik kurz aufleuchten (die Grafik rückt dafür nötigenfalls zum Monat). Klick auf eine Monatsüberschrift verschiebt die Grafik so, dass der Monat genau über der Spalte steht; ein Klick auf einen Wert des Nettovermögens ebenso, dazu blinkt sein Punkt in der Grafik kurz auf. Die einzelnen Grafiken behalten dabei ihre Länge und enden mit diesem Monat – so zeigen sie die Veränderung bis dahin. Die Seite selbst bleibt stehen. Fährst du über einen Namen, ist dieselbe Fläche in der Grafik hervorgehoben.
-- Das **Auge** in der Kopfzelle (nur wenn es welche gibt, mit Anzahl) zeigt auch leere und nach Aktivität ausgeblendete Konten und Wertpapiere – mitgezählt werden sie immer. Was als ausgeblendet gilt, legst du unter [Einrichtung → Konten](#accounts) fest (Spalte „Anzeige“ und „Nach Aktivität … Monaten“, Standard 12); Wertpapiere ohne Wert in diesem Zeitraum gelten ebenfalls als ausgeblendet. „(9/12)“ heißt: 9 von 12 zu sehen.
+- Das **Auge** in der Kopfzelle (nur wenn es welche gibt, mit Anzahl) zeigt auch leere und nach Aktivität ausgeblendete Konten und Wertpapiere – mitgezählt werden sie immer. Was als ausgeblendet gilt, legst du unter [Konten & Regeln → Konten](#accounts) fest (Spalte „Anzeige“ und „Nach Aktivität … Monaten“, Standard 12); Wertpapiere ohne Wert in diesem Zeitraum gelten ebenfalls als ausgeblendet. „(9/12)“ heißt: 9 von 12 zu sehen.
 - **Depots**: frühere Monate aus den eingelesenen MoneyMoney-Kontoständen (sonst aus Kontors monatlicher Aufzeichnung), der laufende Monat aus MoneyMoney; was die Wertpapiere nicht erklären, steht als „Übrige“. Beim Darüberfahren über ein Wertpapier stehen immer der Name aus MoneyMoney und die ISIN dabei, ebenso ob der Name nachgeschlagen oder geändert ist. Konten benennst du in MoneyMoney um – Kontor übernimmt die Namen von dort.
 - Jahresspalten zeigen den Stand zum Jahresende (das laufende Jahr: heute). In der Monatsansicht gibt es keine Jahresspalten – sie wären nur der Dezember; ein feiner Strich trennt die Jahre.
 - Die erste Spalte ziehst du an ihrem rechten Rand breiter oder schmaler (Doppelklick: Standardbreite); die Breite gehört zur Ansicht.
@@ -214,10 +216,9 @@ Unter der Tabelle zeigen Diagramme dieselben Zahlen für einen Zeitraum, den du 
 
 - **Liquiditätsbrücke** – vom Bankguthaben am Anfang zum Ende: je Tätigkeit (Überschuss, Investitionen, Finanzierung) die Summe und darunter ihre Teile, jeder Balken beginnt, wo der vorige endet; daneben die Veränderung zur Vorperiode. Beim Darüberfahren: Vorperiode, Anteil an den Einnahmen und die Teile.
 - **Zu- und Abflüsse je Monat** – Einnahmen und andere Zuflüsse nach oben, Ausgaben und andere Abflüsse nach unten, nach Art gestapelt; darunter auf eigener Skala die Veränderung des Bankguthabens. Sind einzelne Monate viel größer als die übrigen (etwa ein Immobilienkauf), richtet sich die Skala nach den übrigen; diese Balken sind gekappt, mit zwei Strichen markiert und mit ihrer Höhe beschriftet. Bei mehr als drei Jahren je Jahr.
-- **Überschuss kumuliert** – der Überschuss Monat für Monat aufaddiert, im Zeitraum gegen die Vorperiode; oben die Summe und ihre Veränderung.
-- **Ausgaben gegenüber Vorperiode** – die Ausgaben nach Position als Ring (umschaltbar auf Einnahmen, dann in Grün), je dunkler, desto größer der Anteil; Vorperiode sind dieselben Monate ein Jahr davor (bei mehr als zwölf Monaten entsprechend weiter zurück); in der Mitte die Summe und ihre Veränderung, daneben je Position Betrag und Veränderung (ohne Vorperiode heißt er „Zusammensetzung der Ausgaben“). Fährst du über die Mitte, nennt sie beide Zeiträume und Beträge; über ein Stück, zeigt ein äußerer Ring seine Kategorien. Ein Klick hält das Stück offen und beschriftet seine Kategorien; ein zweiter Klick, ein Klick daneben oder Esc führt zurück. Eine Veränderung von ±0 % heißt: derselbe Betrag; „Übrige“ zeigen eine Veränderung nur, wenn jede darin eine Vorperiode hat.
+- **Ausgaben gegenüber Vorperiode** – die Ausgaben nach Position als Ring (umschaltbar auf Einnahmen, dann in Grün), je dunkler, desto größer der Anteil; Vorperiode sind dieselben Monate ein Jahr davor (bei mehr als zwölf Monaten entsprechend weiter zurück); in der Mitte die Summe und ihre Veränderung, daneben je Position Betrag und Veränderung (ohne Vorperiode heißt er „Zusammensetzung der Ausgaben“). Fährst du über die Mitte, nennt sie beide Zeiträume und Beträge; über ein Stück, zeigt ein äußerer Ring seine Kategorien. Ein Klick hält das Stück offen und beschriftet seine Kategorien; ein zweiter Klick, ein Klick daneben oder Esc führt zurück. Eine Veränderung von ±0 % heißt: derselbe Betrag, ab 1 000 % ist sie abgekürzt (+10T % = rund 10 000 %); „Übrige“ zeigen eine Veränderung nur, wenn jede darin eine Vorperiode hat.
 - **Ausgaben je Monat** – neben dem Ring und mit ihm umschaltbar auf Einnahmen: je Position ein Streifen, je dunkler, desto mehr in dem Monat. Alle Felder stehen auf derselben Skala, eine große Position hebt sich also von einer kleinen ab; Jahreszahlungen und Ausreißer fallen auf. Rechts steht der Durchschnitt je Monat (bei mehr als zwei Jahren Felder je Quartal); ein Feld zeigt beim Darüberfahren, aus welchen Kategorien sich der Monat zusammensetzt.
-- **Mittelherkunft und -verwendung** – links alles, was hereinkam (Einnahmen, Darlehen, Verkäufe, Abbau des Bankguthabens), rechts, wofür es verwendet wurde (Ausgaben, Investitionen, Tilgung, Zinsen, Aufbau des Bankguthabens); beide Seiten ergeben dieselbe Summe.
+- **Geldfluss** – links alles, was hereinkam (Einnahmen, Darlehen, Verkäufe, Abbau des Bankguthabens), rechts, wofür es verwendet wurde (Ausgaben, Investitionen, Tilgung, Zinsen, Aufbau des Bankguthabens); jedes Band so breit wie sein Betrag, beide Seiten ergeben dieselbe Summe (oben rechts). Geld trägt kein Etikett, deshalb laufen alle Bänder durch eine Mitte, statt eine Einnahme einer Ausgabe zuzuordnen. Beim Darüberfahren der Anteil.
 
 Fährst du über eine Säule oder einen Balken, stehen die genauen Beträge da.
 
@@ -227,7 +228,7 @@ Jeder Umsatz zählt genau einmal. Umbuchungen zwischen eigenen Konten zählen ni
 
 Zwei Zeilen **Abgleich mit der Bilanz** vergleichen jeden Monat mit der Bilanz: die Veränderung des Bankguthabens mit der der liquiden Konten, die Veränderung des Nettovermögens mit der in der Bilanz. ✓ heißt: stimmt auf den Cent. Eine Abweichung nennt beim Darüberfahren ihren Grund – etwa Geld in Transit über das Monatsende zu einem Darlehen, oder eine Kategorie auf „Nicht berücksichtigen“. Was Kontor nicht sicher zuordnen kann – etwa eine Umbuchung ohne Gegenbuchung –, steht unter „Unklar“ und zählt mit seinem Betrag.
 
-In welcher Position eine Kategorie aus MoneyMoney zählt, schlägt Kontor nach ihrem Namen vor; ändern kannst du es unter [Cashflow-Positionen](#categories-positions) (Verwaltung, oder das Zahnrad in der Kopfzelle der Cashflow-Tabelle). Umsätze **ohne Kategorie** schätzt Kontor: zuerst nach deinen bisherigen Kategorien (gleiche Gegenpartei, gleicher Verwendungszweck), sonst nach Wörtern in Name, Verwendungszweck und Buchungstext (etwa „Gehalt“, Kartenabrechnungen; beim Finanzamt trennt Kontor Lohnsteuer – bei Gesellschaften Teil von Personal –, Umsatzsteuer und übrige Steuern). In der Position stehen sie als „ohne Kategorie, geschätzt“; was sich nicht schätzen lässt, steht unter „(ohne Kategorie)“. Je mehr du zuordnest, desto genauer – nötig ist es nicht, auch nicht für eine GmbH mit vielen Buchungen. In MoneyMoney trägt Kontor dabei nichts ein.
+In welcher Position eine Kategorie aus MoneyMoney zählt, schlägt Kontor nach ihrem Namen vor; ändern kannst du es unter [Cashflow-Positionen](#categories-positions) (Konten & Regeln, oder das Zahnrad in der Kopfzelle der Cashflow-Tabelle). Umsätze **ohne Kategorie** schätzt Kontor: zuerst nach deinen bisherigen Kategorien (gleiche Gegenpartei, gleicher Verwendungszweck), sonst nach Wörtern in Name, Verwendungszweck und Buchungstext (etwa „Gehalt“, Kartenabrechnungen; beim Finanzamt trennt Kontor Lohnsteuer – bei Gesellschaften Teil von Personal –, Umsatzsteuer und übrige Steuern). In der Position stehen sie als „ohne Kategorie, geschätzt“; was sich nicht schätzen lässt, steht unter „(ohne Kategorie)“. Je mehr du zuordnest, desto genauer – nötig ist es nicht, auch nicht für eine GmbH mit vielen Buchungen. In MoneyMoney trägt Kontor dabei nichts ein.
 
 <a id="categories"></a>
 ## Kategorien
@@ -256,7 +257,7 @@ Ordnest du eine Gegenpartei mehrmals in Kontor zu, hat MoneyMoney dafür offenba
 <a id="categories-write-back"></a>
 ### In MoneyMoney eintragen
 
-Einmal einschalten (unter Kategorien oder Einstellungen → Allgemein, nur am Mac). Sicherungen:
+Einmal einschalten (unter Kategorien oder Einstellungen → MoneyMoney & Abgleich, nur am Mac). Sicherungen:
 
 - Kontor setzt nur das Kategoriefeld eines Umsatzes; Beträge, Daten und Löschen sind damit nicht möglich.
 - Direkt vor dem Schreiben liest Kontor den Umsatz neu aus MoneyMoney und schreibt nur, wenn er unverändert ist und noch keine Kategorie hat (oder die von Kontor gesetzte).
@@ -266,7 +267,7 @@ Einmal einschalten (unter Kategorien oder Einstellungen → Allgemein, nur am Ma
 <a id="categories-positions"></a>
 ### Cashflow-Positionen
 
-Der Cashflow hat eine feste Gliederung; deine Kategorien aus MoneyMoney zählen darin. Die Seite Cashflow-Positionen (unter Verwaltung) ist diese Zuordnung: links jede Kategorie aus MoneyMoney mit Umsätzen und der Summe der letzten zwölf Monate, rechts ihre Position im Cashflow:
+Der Cashflow hat eine feste Gliederung; deine Kategorien aus MoneyMoney zählen darin. Konten & Regeln → Cashflow-Positionen ist diese Zuordnung: links jede Kategorie aus MoneyMoney mit Umsätzen und der Summe der letzten zwölf Monate, rechts ihre Position im Cashflow:
 
 - **Automatisch** – wie die Kategorie darüber, sonst Kontors Vorschlag nach dem Namen (etwa „Einkommen › Rückzahlung Finanzamt“ → Erstattungen, „Sparen“ → Sparen & Anlegen).
 - Eine gewählte Position gilt auch für alle Kategorien darunter, solange sie keine eigene haben.
@@ -321,7 +322,7 @@ Ergebnis: Monats- und Jahrestabelle (Miete, Kosten, Zinsen, Tilgung, AfA, steuer
 <a id="tax"></a>
 ## Steuer
 
-Je Entität (Hauptbereich = privat, jede Gesellschaft mit deinem Anteil aus den Bereichen) und Jahr: Vermietung je Objekt aus den Kategorien `Vermietung \ Objekt \ Art` (beliebig viele Objekte, auch privat), Schuldzinsen je Darlehen (Zuordnung Darlehen → Objekt unter Einstellungen → Steuer), AfA, Steuerpositionen aus Kategorienamen (anpassbar unter Einstellungen → Steuer) und Buchungen ohne Kategorie als Prüfposten. Die Belege eines Jahres lassen sich als ZIP mit Übersicht exportieren. Keine Steuerberatung.
+Je Entität (Hauptbereich = privat, jede Gesellschaft mit deinem Anteil aus den Bereichen) und Jahr: Vermietung je Objekt aus den Kategorien `Vermietung \ Objekt \ Art` (beliebig viele Objekte, auch privat), Schuldzinsen je Darlehen (Zuordnung Darlehen → Objekt unter Konten & Regeln → Steuer), AfA, Steuerpositionen aus Kategorienamen (anpassbar unter Konten & Regeln → Steuer) und Buchungen ohne Kategorie als Prüfposten. Die Belege eines Jahres lassen sich als ZIP mit Übersicht exportieren. Keine Steuerberatung.
 
 <a id="receipts"></a>
 ## Umsätze und Belege
@@ -364,9 +365,9 @@ Kontor erkennt die Rate auf dem Quellkonto – über die IBAN des Darlehensgeber
 <a id="rules-companies"></a>
 ### Beteiligungen
 
-Jeder Bereich der Art „Gesellschaft“ (Einrichtung → Bereiche) erscheint als Karte, mit deinem **Anteil**. Der Anteil steht nur dort; die Karte verlinkt hin.
+Jeder Bereich der Art „Gesellschaft“ (Konten & Regeln → Bereiche) erscheint als Karte, mit deinem **Anteil**. Der Anteil steht nur dort; die Karte verlinkt hin.
 
-- **Beteiligungskonto**: dein Offline-Konto für diese Gesellschaft – zur Wahl stehen Offline-Konten mit der Position „Beteiligungen“ (Einrichtung → Konten); vorausgewählt ist keins, denn sobald du eines wählst und speicherst, beginnen die Buchungen. Kontor hält es auf **Anteil × Wert der Gesellschaft**. Wert = alle Konten ihres Bereichs, also Vermögen minus Schulden (ohne Konten mit der Position „Kapitalkonten (Eigenkapital)“, Avale und nicht bilanzierte Konten).
+- **Beteiligungskonto**: dein Offline-Konto für diese Gesellschaft – zur Wahl stehen Offline-Konten mit der Position „Beteiligungen“ (Konten & Regeln → Konten); vorausgewählt ist keins, denn sobald du eines wählst und speicherst, beginnen die Buchungen. Kontor hält es auf **Anteil × Wert der Gesellschaft**. Wert = alle Konten ihres Bereichs, also Vermögen minus Schulden (ohne Konten mit der Position „Kapitalkonten (Eigenkapital)“, Avale und nicht bilanzierte Konten).
 
 Beteiligung und Kontenspiegel zusammen zählen nichts doppelt, wenn die Kapitalkonten in der Gesellschaft als Schuld geführt sind (Standard für Konten mit „Kapitalkonto“ oder „Gesellschafterdarlehen“ im Namen): Die Forderung ist dein Kapitalkonto, die Beteiligung dein Anteil am Rest – Wertzuwachs und nicht verteilte Überschüsse. Das stimmt auch bei ungleichen Einlagen. Führst du ein Kapitalkonto dagegen als Eigenkapital der Gesellschaft, steckt es schon im Wert der Beteiligung; ein Kontenspiegel dazu zählt dann doppelt, und „Speichern und prüfen“ warnt.
 

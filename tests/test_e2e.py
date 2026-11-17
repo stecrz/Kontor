@@ -2681,10 +2681,17 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("document.querySelector('#bereich-seg .on').textContent"), "Alpha GbR")
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_uebersicht_gbr.png"), full_page=True)
                 pg.click("#bereich-seg button:nth-child(1)"); pg.wait_for_timeout(300)
-                for tab in ("balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "sync", "setup", "rules", "categories", "settings", "updates", "log", "help"):
+                for tab in ("balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "categories", "accounts", "settings", "log", "help"):
                     pg.click("#nav a[href='#%s']" % tab); pg.wait_for_timeout(400)
                     self.assertTrue(pg.query_selector("#main").inner_html().strip(), tab)
-                    if shots: pg.screenshot(path=os.path.join(shots, "ui_%s.png" % tab), full_page=(tab in ("rules", "settings", "tax", "planning", "help", "balance", "setup")))
+                    if shots: pg.screenshot(path=os.path.join(shots, "ui_%s.png" % tab), full_page=(tab in ("accounts", "settings", "tax", "planning", "help", "balance")))
+                # every tab of "Konten & Regeln" and "Einstellungen" draws (the old pages live there now)
+                for h in ("#accounts/areas", "#accounts/history", "#accounts/positions", "#accounts/rules", "#accounts/tax", "#settings/moneymoney", "#settings/access", "#settings/receipts", "#settings/updates", "#settings/backup", "#setup"):
+                    pg.evaluate("location.hash = '%s'" % h); pg.wait_for_timeout(400)
+                    self.assertEqual(pg.evaluate("location.hash"), h); self.assertTrue(pg.query_selector("#main").inner_html().strip(), h)
+                    self.assertIsNone(pg.query_selector("#main .banner.err"), h)
+                pg.evaluate("location.hash = '#overview'"); pg.wait_for_timeout(300)               # the setup in the menu only while a step is open
+                self.assertEqual(pg.evaluate("document.querySelector('#nav-setup').classList.contains('hidden')"), not pg.evaluate("setupOpen()"))
                 # Cashflow: both checks against the balance sheet, every checked month adds up (✓)
                 pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("tr.check")
                 F_ = "#main table.cf-tbl:not(.cf-names)"; N_ = "#main table.cf-names"        # the figures; the names pinned as one piece over them
@@ -2701,8 +2708,8 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.get_attribute("#cf-ebene button.on", "aria-label"), "Überblick")     # four levels as icons, named; the overview first
                 self.assertEqual(len(pg.query_selector_all("#cf-ebene button svg")), 4)
                 self.assertTrue(pg.query_selector("#main .cf-tbl thead th:first-child #cf-ebene"))       # in the table, over the triangles
-                self.assertTrue(pg.query_selector("#main .cf-tbl thead th:first-child a.cf-set[href='#positions']"))   # the gear to the positions
-                self.assertIsNone(pg.query_selector("#main .toolbar a[href='#positions']"))
+                self.assertTrue(pg.query_selector("#main .cf-tbl thead th:first-child a.cf-set[href='#accounts/positions']"))   # the gear to the positions
+                self.assertIsNone(pg.query_selector("#main .toolbar a[href='#accounts/positions']"))
                 # iPhone: one large triangle -- each tap a level further, after everything closed again
                 lv = lambda: pg.evaluate("S.cfEbene")
                 for want in (2, 3, 0, 1, 2):
@@ -2788,17 +2795,18 @@ class BrowserTest(unittest.TestCase):
                 # the charts end at the last closed month: the running month is half booked (the table shows it hatched)
                 done, running = pg.evaluate("(() => { const D = B(); return [ML(D.monate.filter(m => m < D.ist_bis).slice(-1)[0]), ML(D.ist_bis)]; })()")
                 self.assertTrue(tip.startswith(done), tip); self.assertNotIn(running, pg.inner_text(".cf-period"))
-                # 3. sources and uses: both sides the same sum
-                cols = pg.eval_on_selector_all(".cf-su-col", "e => e.map(c => [...c.querySelectorAll('.cf-num')].map(n => n.textContent))")
-                self.assertEqual(sum(num(x) for x in cols[0]) // 10, sum(num(x) for x in cols[1]) // 10)
-                self.assertIn("Arbeitseinkommen", pg.inner_text(".cf-su-col >> nth=0")); self.assertIn("Mehr Bankguthaben", pg.inner_text(".cf-su-col >> nth=1"))
+                # 3. money flow: sources on the left, uses on the right, through one column; both sides the same sum, each band its amount
+                fl = pg.evaluate("(() => { const F = CF.flow; return [F.src.reduce((a, e) => a + e.v, 0), F.use.reduce((a, e) => a + e.v, 0), F.src.map(e => e.label), F.use.map(e => e.label)]; })()")
+                self.assertLess(abs(fl[0] - fl[1]), 1); self.assertIn("Arbeitseinkommen", fl[2]); self.assertIn("Mehr Bankguthaben", fl[3])
+                self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), len(fl[2]) + len(fl[3])); self.assertTrue(pg.query_selector("#cf-flow .cf-fl-m"))
+                self.assertIn("Arbeitseinkommen", pg.text_content("#cf-flow")); self.assertIsNone(pg.query_selector(".cf-su-col"))
+                pg.hover("#cf-flow .cf-fl-n >> nth=0"); pg.wait_for_timeout(150); self.assertIn("%", pg.inner_text("#cf-tip")); pg.mouse.move(5, 5)
                 # 4. expenses by position as a ring: their sum in the middle
                 self.assertEqual(num(pg.text_content("#cf-pie .cf-pie-v")), -want["aus"])
                 self.assertIsNone(pg.query_selector(".cf-list.ex"))                          # the bars by position went (the ring covers them)
                 # further charts to choose from: rolling twelve months, savings rate, expenses by month, cash runway, the year so far
-                for sel in ("#cf-yoy svg .cf-ln.prev", "#cf-heat .cf-heat-c"):
-                    self.assertTrue(pg.query_selector(sel), sel)
-                for gone in ("#cf-rate", "#cf-reach", "#cf-roll"):                   # removed as not useful (rolling: in the months chart)
+                self.assertTrue(pg.query_selector("#cf-heat .cf-heat-c"))
+                for gone in ("#cf-rate", "#cf-reach", "#cf-roll", "#cf-yoy"):                   # removed as not useful (rolling: in the months chart)
                     self.assertIsNone(pg.query_selector(gone), gone)
                 # the heatmap beside the ring, one scale for all: the largest position darker than a smaller one
                 self.assertEqual(pg.evaluate("getComputedStyle(document.querySelector('#cf-heat-card')).gridColumnStart"), "span 3")
@@ -2822,8 +2830,8 @@ class BrowserTest(unittest.TestCase):
                 self.assertIsNone(pg.query_selector("#cf-pie .cf-pie-sl.on")); self.assertEqual(len(pg.query_selector_all(".cf-pie-lab")), len(pg.query_selector_all(".cf-pie-sl")))
                 # "Übrige" compare only where each of them had a period before; ±0 % only for the same amount
                 self.assertEqual(pg.evaluate("[cfRestP([{p: 10}, {p: null}], true), cfRestP([{p: 10}, {p: 5}], true), cfRestP([{p: 10}], false)]"), [None, 15, None])
-                self.assertEqual(pg.evaluate("[cfChange(1000, 1000, false).txt, cfChange(1002, 1000, false).txt, cfChange(1000000.6, 1000000, false).txt, cfChange(100050, 100000, false).txt]"),
-                                 ["±0 %", "+0,2 %", "+<0,01 %", "+0,05 %"])                                  # never rounded up
+                self.assertEqual(pg.evaluate("[cfChange(1000, 1000, false).txt, cfChange(1002, 1000, false).txt, cfChange(1000000.6, 1000000, false).txt, cfChange(100050, 100000, false).txt, cfChange(10532, 100, false).txt, cfChange(1334, 100, false).txt]"),
+                                 ["±0 %", "+0,2 %", "+<0,01 %", "+0,05 %", "+10T %", "+1,2T %"])                                  # never rounded up
                 pg.hover("#cf-heat .cf-heat-c >> nth=0"); pg.wait_for_timeout(150); self.assertIn("€", pg.inner_text("#cf-tip")); self.assertNotIn("Ø", pg.inner_text("#cf-tip")); pg.mouse.move(5, 5)
                 self.assertEqual(len(pg.query_selector_all("#cf-heat .cf-heat-v")), len(pg.query_selector_all("#cf-heat .cf-heat-n")))     # the average per row
                 # switched to income: green, the income in the middle, the title says so; and back
@@ -2875,8 +2883,9 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("S.cfZeit"), y); self.assertTrue(pg.query_selector("#cf-zeit button.on[data-z='%s']" % y))
                 pg.click("#cf-zeit button[data-z='12m']"); pg.wait_for_timeout(200)
                 # where a category counts is a setting: its own page under Verwaltung, linked from here (the old address leads there)
-                pg.click("#main a[href='#positions']"); pg.wait_for_selector(".kp-table tr[data-p]")
-                self.assertEqual(pg.inner_text("#page-title"), "Cashflow-Positionen"); self.assertTrue(pg.query_selector("#nav a.on[href='#positions']"))
+                pg.click("#main a[href='#accounts/positions']"); pg.wait_for_selector(".kp-table tr[data-p]")
+                self.assertEqual(pg.inner_text("#page-title"), "Konten & Regeln"); self.assertTrue(pg.query_selector("#nav a.on[href='#accounts']"))
+                self.assertTrue(pg.query_selector(".tabs button.on[data-next='#accounts/positions']"))
                 self.assertIn("→", pg.inner_text(".kp-table tbody tr td.kp-arrow"))
                 # the account per recipient: Kontor's choice named in the first entry; a choice of your own can be saved
                 sel = ".ka-table tr[data-key='broker'] select.ka-ziel"
@@ -2884,7 +2893,10 @@ class BrowserTest(unittest.TestCase):
                 pg.select_option(sel, "extern"); self.assertFalse(pg.is_disabled("#kp-save"))
                 pg.select_option(sel, ""); self.assertTrue(pg.is_disabled("#kp-save"))
                 pg.evaluate("location.hash = '#categories/positions'"); pg.wait_for_timeout(400)
-                self.assertEqual(pg.evaluate("location.hash"), "#positions"); self.assertTrue(pg.query_selector(".kp-table"))
+                self.assertEqual(pg.evaluate("location.hash"), "#accounts/positions"); self.assertTrue(pg.query_selector(".kp-table"))
+                for old, new in (("#rules", "#accounts/rules"), ("#sync", "#settings/moneymoney"), ("#updates", "#settings/updates"), ("#settings/tax", "#accounts/tax"), ("#setup/areas", "#accounts/areas")):
+                    pg.evaluate("location.hash = '%s'" % old); pg.wait_for_timeout(250)      # earlier addresses lead to the new place
+                    self.assertEqual(pg.evaluate("location.hash"), new)
                 pg.click("#nav a[href='#categories']"); pg.wait_for_timeout(400)
                 self.assertEqual(len(pg.query_selector_all("#main .tabs button")), 2)
                 # Bilanz: Positionen/Gruppen, inaktive, Konto-Klick -> Verlauf
@@ -2893,8 +2905,8 @@ class BrowserTest(unittest.TestCase):
                 # pages not fully tested yet carry "Alpha" in the menu and at the title; the balance sheet does not
                 self.assertTrue(pg.query_selector("#nav a.alpha[href='#planning'] .alpha-tag")); self.assertIsNone(pg.query_selector("#nav a[href='#balance'] .alpha-tag"))
                 self.assertIsNone(pg.query_selector("#nav a[href='#cashflow'] .alpha-tag")); self.assertIsNone(pg.query_selector("#nav a[href='#categories'] .alpha-tag"))
-                self.assertIsNone(pg.query_selector("#page-title .alpha-tag")); self.assertIsNone(pg.query_selector("#nav a[href='#rules'] .alpha-tag"))
-                self.assertEqual(pg.inner_text("#nav a[href='#rules'] span"), "Buchungsregeln"); self.assertEqual(pg.inner_text("#nav a[href='#bookings'] span"), "Auto-Buchungen")
+                self.assertIsNone(pg.query_selector("#page-title .alpha-tag")); self.assertIsNone(pg.query_selector("#nav a[href='#accounts'] .alpha-tag"))
+                self.assertEqual(pg.inner_text("#nav a[href='#accounts'] span"), "Konten & Regeln"); self.assertIsNone(pg.query_selector("#nav a[href='#rules']")); self.assertEqual(pg.inner_text("#nav a[href='#bookings'] span"), "Auto-Buchungen")
                 # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
                 self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
                 self.assertTrue(pg.query_selector("#main thead th.plan")); self.assertNotIn("Fortschreibung", pg.query_selector("#main").inner_text())
@@ -2997,7 +3009,7 @@ class BrowserTest(unittest.TestCase):
                 pg.evaluate("S.lcSel = null")
                 # old German addresses lead to the English ones
                 pg.evaluate("location.hash = '#einrichtung/konten'"); pg.wait_for_timeout(400)
-                self.assertEqual(pg.evaluate("location.hash"), "#setup/accounts")
+                self.assertEqual(pg.evaluate("location.hash"), "#accounts")
                 pg.click("#nav a[href='#balance']"); pg.wait_for_selector("tr.pos")
                 # Grafik: waagerechtes Wischen verschiebt bei gleicher Laenge (auch am linken Rand), Doppelklick halbiert den Zeitraum
                 self.assertIsNone(pg.query_selector("#bch-on"))
@@ -3151,7 +3163,7 @@ class BrowserTest(unittest.TestCase):
                 # Einrichtung: Bausteine, Positionen-Editor speichern
                 pg.click("#nav a[href='#setup']"); pg.wait_for_selector(".setup-list")
                 self.assertIn("Bereiche", pg.query_selector("#main").inner_text())
-                pg.goto("http://127.0.0.1:%d/#setup/accounts" % port); pg.wait_for_selector("#save-konten")
+                pg.goto("http://127.0.0.1:%d/#accounts" % port); pg.wait_for_selector("#save-konten")
                 for _ in range(2):          # "Verlauf..." laesst sich wiederholt oeffnen
                     pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.depot")); pg.wait_for_selector("#drawer.open #h-grid")
                     pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
@@ -3303,7 +3315,7 @@ class BrowserTest(unittest.TestCase):
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_umsaetze_drawer.png"))
                 pg.keyboard.press("Escape")
                 # Regeln speichern (unveraendert) -> Befunde ok
-                pg.click("#nav a[href='#rules']"); pg.wait_for_selector("#save-rules")
+                pg.evaluate("location.hash = '#accounts/rules'"); pg.wait_for_selector("#save-rules")
                 auto = pg.evaluate("S.CFG.probelauf === false"); self.assertEqual(pg.is_checked("#auto-book"), auto)      # the setting as a switch at the top
                 self.assertIn("Kontor bucht" if auto else "Freigabe", pg.inner_text(".set-row"))
                 pg.click("#nav a[href='#bookings']"); pg.wait_for_selector(".mode-chip"); self.assertIn("Vollautomatisch" if auto else "Mit Freigabe", pg.inner_text(".mode-chip"))
@@ -3324,7 +3336,7 @@ class BrowserTest(unittest.TestCase):
                 n_wait = pg.evaluate("((S.STATUS.letzter_lauf || {}).probelauf && (S.STATUS.letzter_lauf.vorschlaege || []).length) || 0")
                 self.assertEqual(pg.evaluate("(document.querySelector('#nav a[href=\"#bookings\"] .nbadge') || {}).textContent || ''"), str(n_wait) if n_wait else "")
                 pg.evaluate("window.__st = S.STATUS; S.STATUS = Object.assign({}, S.STATUS, {letzter_lauf: {probelauf: true, zeit: 'x', vorschlaege: [{}, {}, {}]}, update: {neuer: true, verfuegbar: '9.9.9'}}); statusMini()")
-                self.assertEqual(pg.inner_text("#nav a[href='#bookings'] .nbadge"), "3"); self.assertTrue(pg.query_selector("#nav a[href='#updates'] .nbadge"))
+                self.assertEqual(pg.inner_text("#nav a[href='#bookings'] .nbadge"), "3"); self.assertTrue(pg.query_selector("#nav a[href='#settings'] .nbadge"))
                 pg.evaluate("S.STATUS = Object.assign({}, S.STATUS, {letzter_lauf: {probelauf: true, zeit: 'x', vorschlaege: Array(250).fill({})}}); statusMini()")
                 self.assertEqual(pg.inner_text("#nav a[href='#bookings'] .nbadge"), "99+")
                 self.assertNotIn("Freigabe", pg.inner_text("#status-mini")); self.assertIsNone(pg.query_selector("#nav a[href='#bookings'] .alpha-tag"))
@@ -3374,7 +3386,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(store.load("config.json")["kontenspiegel"], [])                   # removed again
                 # Sync: online or offline per account as a menu; offline accounts recognised as "Offline-Konto"
                 self.assertFalse(pg.evaluate("DIRTY.on"))
-                pg.click("#nav a[href='#sync']"); pg.wait_for_selector(".ab-sel")          # leaving after ⌘S: no question (a late change event does not count)
+                pg.evaluate("location.hash = '#settings/moneymoney'"); pg.wait_for_selector(".ab-sel")          # leaving after ⌘S: no question (a late change event does not count)
                 self.assertIn("Offline-Konto", pg.inner_text("#main")); self.assertIn("Offline-Konten", pg.inner_text("#main"))
                 self.assertEqual(pg.eval_on_selector("tr[data-uuid='%s'] .ab-sel" % F.uid("priv.bet.pb"), "e => e.value"), "offline")
                 # ⌘L locks
@@ -3511,7 +3523,7 @@ class BrowserWizardTest(unittest.TestCase):
                 pg.click("#main a[href='#setup'] button"); pg.wait_for_selector(".setup-list")
                 self.assertEqual(pg.query_selector(".srow .n").inner_text().strip(), "1")      # geordnete Liste, Schritt 1 offen
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_leer.png"), full_page=True)
-                pg.click(".srow a[href='#setup/connect'] button"); pg.wait_for_selector(".steps")
+                pg.click(".srow a[href='#settings/moneymoney'] button"); pg.wait_for_selector(".steps")
                 self.assertIn("Wofür", pg.evaluate("document.querySelector('.steps .hq').dataset.tip"))      # Erklaerung im Hilfe-Symbol
                 self.assertNotIn("Wofür", pg.query_selector("#main").inner_text())                            # nicht doppelt im Text
                 pg.click("#w-check")
@@ -3520,16 +3532,16 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertIn("Konten gelesen", pg.query_selector("#w-findings").inner_text())
                 self.assertNotIn("Belegordner", pg.query_selector("#w-findings").inner_text())
                 self.assertNotIn("Keine Bereiche", pg.query_selector("#w-findings").inner_text())
-                self.assertTrue(pg.query_selector(".steps button[data-next='#setup/areas']"))           # Knopf statt Link
-                # Schritt 1 wird auf dieser Seite alle paar Sekunden neu geprueft
+                self.assertTrue(pg.query_selector(".steps button[data-next='#accounts/areas']"))           # Knopf statt Link
+                # step 1 is checked every few seconds only while the connection is not there yet: connected, MoneyMoney is left alone
                 n0 = len([r for r in reqs if "/api/status?fresh=1" in r]); pg.wait_for_timeout(3500)
-                self.assertGreater(len([r for r in reqs if "/api/status?fresh=1" in r]), n0)
+                self.assertEqual(len([r for r in reqs if "/api/status?fresh=1" in r]), n0)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_verbindung.png"), full_page=True)
                 # Tooltip bleibt im Fenster (auch ganz oben)
                 pg.hover(".steps .hq"); pg.wait_for_selector(".tip")
                 box = pg.evaluate("(() => { const r = document.querySelector('.tip').getBoundingClientRect(); return [r.top, r.left, r.right, window.innerWidth]; })()")
                 self.assertGreaterEqual(box[0], 0); self.assertGreaterEqual(box[1], 0); self.assertLessEqual(box[2], box[3])
-                pg.click(".steps button[data-next='#setup/areas']"); pg.wait_for_selector("#save-bereiche")
+                pg.click(".steps button[data-next='#accounts/areas']"); pg.wait_for_selector("#save-bereiche")
                 self.assertEqual(len(pg.query_selector_all("#bereiche .item")), 3)          # Vorschlag: jede Gruppe der obersten Ebene
                 names = lambda: pg.evaluate("[...document.querySelectorAll('#bereiche .item .b-name')].map(i => i.value)")
                 self.assertEqual(names()[0], "Privat")                                       # Hauptbereich zuerst
@@ -3557,15 +3569,15 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertTrue(pg.evaluate("[...document.querySelectorAll('#bereiche .item')].find(i => i.querySelector('.b-name').value === 'Privat').querySelector('.b-anteil-row').classList.contains('hidden')"))
                 self.assertFalse(pg.evaluate("[...document.querySelectorAll('#bereiche .item')].find(i => i.querySelector('.b-name').value === 'Alpha GbR').querySelector('.b-anteil-row').classList.contains('hidden')"))
                 # "Speichern und weiter": speichert, wartet mit Ladeanzeige auf die Auswertung, dann erst Positionen & Verlauf
-                pg.click("button[data-savenext='#setup/accounts']")
+                pg.click("button[data-savenext='#accounts']")
                 pg.wait_for_selector(".busy-ov", timeout=5000)
                 pg.wait_for_selector("#save-konten", timeout=30000)
                 self.assertIsNone(pg.query_selector(".busy-ov"))
                 self.assertFalse(self.__class__ is None or app.bericht_status()["laeuft"])
-                self.assertTrue(pg.query_selector("button[data-savenext='#setup/history']")); self.assertTrue(pg.query_selector("button[data-next='#setup']"))
+                self.assertTrue(pg.query_selector("button[data-savenext='#accounts/history']")); self.assertTrue(pg.query_selector("button[data-next='#setup']"))
                 # Schritt 4: Kontostaende aus MoneyMoney (Finder zeigen, Datei ziehen) -- MoneyMoney laeuft im Test
-                pg.goto("http://127.0.0.1:%d/#setup/history" % port); pg.wait_for_selector("#mmh-drop")
-                self.assertEqual(pg.query_selector("h2.sub-h").inner_text(), "Historische Kontostände")
+                pg.goto("http://127.0.0.1:%d/#accounts/history" % port); pg.wait_for_selector("#mmh-drop")
+                self.assertEqual(pg.inner_text(".tabs button.on"), "Kontostände")                     # a tab of "Konten & Regeln"
                 self.assertIn("⌘Q", pg.query_selector("#mmh-s1").inner_text()); self.assertTrue(pg.query_selector("#mmh-zeigen"))
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_historie.png"), full_page=True)
                 # names of the securities: all listed (MoneyMoney's name first), changeable by hand; nothing is sent without a click
@@ -3577,15 +3589,16 @@ class BrowserWizardTest(unittest.TestCase):
                 pg.click("#wp-names-save"); pg.wait_for_selector("#wp-look-res .ok", timeout=30000)
                 self.assertEqual(store.load("state.json")["wp_suche"]["eigene"], {"DE0007164600": "Mein Fonds"})
                 store.update("state.json", lambda cur: cur.pop("wp_suche", None), {})
-                pg.goto("http://127.0.0.1:%d/#setup/accounts" % port); pg.wait_for_selector("#save-konten")
+                pg.goto("http://127.0.0.1:%d/#accounts" % port); pg.wait_for_selector("#save-konten")
                 cfg0 = store.load("config.json")
                 self.assertEqual([b["name"] for b in cfg0["bereiche"]], ["Privat", "Alpha GbR"]); self.assertEqual(sum(1 for b in cfg0["bereiche"] if b["haupt"]), 1)
                 self.assertTrue(all(b["id"] for b in cfg0["bereiche"]))
-                pg.goto("http://127.0.0.1:%d/#setup/areas" % port); pg.wait_for_selector("#save-bereiche")
+                pg.goto("http://127.0.0.1:%d/#accounts/areas" % port); pg.wait_for_selector("#save-bereiche")
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Alpha GbR"][0]["anteil"], 0.49)       # Prozent -> Anteil
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Privat"][0]["art"], "privat")
                 # Paket laden mit Zuordnung
-                pg.click("#nav a[href='#settings']"); pg.wait_for_selector("#e-autobook")
+                pg.click("#nav a[href='#settings']"); pg.wait_for_selector("#e-lang")
+                self.assertIsNone(pg.query_selector("#e-autobook"))                              # booking automatically: on the booking rules only
                 pg.click("#main .tabs button[data-next='#settings/backup']"); pg.wait_for_selector("#pk-pick")
                 with pg.expect_file_chooser() as fc:
                     pg.click("#pk-pick")

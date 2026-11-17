@@ -116,7 +116,7 @@ const H = {
   pruefen: t('pruefen_tip'),
   position_kat: t('position_kat_tip'),
   cf_operativ: t('cf_operativ_tip'), cf_invest: t('cf_invest_tip'), cf_finanz: t('cf_finanz_tip'), cf_bruecke: t('cf_bruecke_tip'), cf_je_monat_t: t('cf_je_monat_tip'), cf_herkunft_verwendung: t('cf_herkunft_verwendung_tip'),
-  cf_ausgaben_kuchen: t('cf_ausgaben_kuchen_tip'), cf_jahresverlauf: t('cf_jahresverlauf_tip'), cf_heatmap: t('cf_heatmap_tip'),
+  cf_ausgaben_kuchen: t('cf_ausgaben_kuchen_tip'), cf_heatmap: t('cf_heatmap_tip'),
   cf_unklar: t('cf_unklar_tip'), cf_wert: t('cf_wert_tip'), cf_bank: t('cf_bank_tip'), cf_nv: t('cf_nv_tip'), cf_abgleich_bank: t('cf_abgleich_bank_tip'),
   cf_abgleich_nv: t('cf_abgleich_nv_tip'),
   zielkonto: t('zielkonto_tip'), anl_empfaenger: t('anl_tip'),
@@ -179,7 +179,7 @@ const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl:
   zuordnen: 'categories', regeln_mm: 'categories-rules', mm_cat: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'categories-positions', anl_empfaenger: 'positions-recipients',
   cf_operativ: 'cash-flow', cf_invest: 'cash-flow', cf_finanz: 'cash-flow', cf_unklar: 'cash-flow', cf_wert: 'cash-flow',
   cf_bank: 'cash-flow', cf_nv: 'cash-flow', cf_abgleich_bank: 'cash-flow', cf_abgleich_nv: 'cash-flow', cf_bruecke: 'cash-flow-charts', cf_je_monat_t: 'cash-flow-charts', cf_herkunft_verwendung: 'cash-flow-charts',
-  cf_ausgaben_kuchen: 'cash-flow-charts', cf_jahresverlauf: 'cash-flow-charts', cf_heatmap: 'cash-flow-charts',
+  cf_ausgaben_kuchen: 'cash-flow-charts', cf_heatmap: 'cash-flow-charts',
   abgleich: 'sync', ab_art: 'sync', voll_lesen: 'sync', monate_zurueck: 'sync', abruf: 'sync', intervall: 'sync',
   bch: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', regel_darlehen_h: 'rules-loans', regel_gesellschaften_h: 'rules-companies',
   darlehen_iban: 'rules-loans', darlehen_konto: 'rules-loans', darlehen_quelle: 'rules-loans', zinsmodell: 'rules-loans', satz: 'rules-loans', basis_override: 'rules-loans',
@@ -527,7 +527,7 @@ $('#lang-sel').addEventListener('change', e => setLang(e.target.value, true));
 $('#pw-instead').addEventListener('click', () => { LOGIN.pw = true; showLogin(); });
 $('#tid-instead').addEventListener('click', () => { LOGIN.pw = false; showLogin(); });
 $('#sync-btn').addEventListener('click', () => syncNow(false, true));
-$('.side .brand').addEventListener('click', e => { go(e.target.closest('#ver') ? '#updates' : '#overview'); });
+$('.side .brand').addEventListener('click', e => { go(e.target.closest('#ver') ? '#settings/updates' : '#overview'); });
 async function lockNow() { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; OFFKEY = null; TID.skipNext = true; await checkSession(); }
 $('#lock-btn').addEventListener('click', lockNow);
 $('#lock-btn').title = t('sperren_tip');
@@ -557,7 +557,7 @@ async function loadAll() {
   if (S.DATA) { const keys = Object.keys(S.DATA.bereiche || {}); if (!S.bereich || !keys.includes(S.bereich)) S.bereich = S.DATA.haupt || keys[0]; }
   if (OFFLINE.mode) offlineBanner();
   else if (status.update && status.update.neuer) banner('Kontor ' + status.update.verfuegbar + t('ist_verfuegbar_unter_updates_installie'), 'info');
-  else if (S.DATA && (S.DATA.konten_neu || []).length) { const b = $('#banner'); b.innerHTML = `${t('neue_oder_unbestaetigte_konten_0', esc(S.DATA.konten_neu.slice(0, 4).map(k => k.name).join(', ')), S.DATA.konten_neu.length > 4 ? ' …' : '')} <a href="#setup/accounts">${t('bereich_und_position_bestaetigen')}</a>`; b.className = 'banner info'; }
+  else if (S.DATA && (S.DATA.konten_neu || []).length) { const b = $('#banner'); b.innerHTML = `${t('neue_oder_unbestaetigte_konten_0', esc(S.DATA.konten_neu.slice(0, 4).map(k => k.name).join(', ')), S.DATA.konten_neu.length > 4 ? ' …' : '')} <a href="#accounts">${t('bereich_und_position_bestaetigen')}</a>`; b.className = 'banner info'; }
   else if (S.DATA) banner('');
   statusMini(); bereichSeg();
 }
@@ -611,15 +611,15 @@ function statusMini() {
   if (m.stand || ba) {
     const n = ba ? ba.zurueck_anzahl : 0;
     const warn = n ? ` <span class="sm-badge" title="${esc(n + (n === 1 ? t('konto') : t('konten')) + t('laenger_nicht_abgerufen') + ba.zurueck.slice(0, 5).map(k => k.name).join(', ') + (n > 5 ? ' …' : '') + t('details_unter_synchronisierung'))}">⚠ ${n}</span>` : '';
-    h += `<a href="#sync" class="sm-link" title="${t('details_zur_synchronisierung')}">`
+    h += `<a href="#settings/moneymoney" class="sm-link" title="${t('details_zur_synchronisierung')}">`
       + zeile(t('banken_mm'), (ba ? esc(fmtZeit(ba.neuester)) : '–') + warn, '')
       + zeile(t('mm_kontor'), m.stand ? esc(fmtZeit(m.stand)) : '–', '') + '</a>';
   } else h += `<div>${t('noch_keine_daten_aus_moneymoney')}</div>`;
   if (st.neustart_ausstehend) h += `<div class="sm-busy"><span class="spin xs"></span>${t('version')} ` + esc(st.neustart_ausstehend) + ` ${t('wird_geladen')}</div>`;
   else if ((st.dienst || {}).laeuft) h += `<div class="sm-busy"><span class="spin xs"></span>${runStep(st)}</div>`;
   else if (b.laeuft) h += `<div class="sm-busy"><span class="spin xs"></span>${t('wird_neu_berechnet')}</div>`;
-  if (m.luecken) h += `<div><a href="#sync">${t('depotstaende_pruefen')}</a></div>`;
-  if (m.problem) h += `<div><a href="#sync" title="${esc(m.problem.text)}">${t('moneymoney_lief_kontor_konnte_nicht')}</a></div>`;
+  if (m.luecken) h += `<div><a href="#settings/moneymoney">${t('depotstaende_pruefen')}</a></div>`;
+  if (m.problem) h += `<div><a href="#settings/moneymoney" title="${esc(m.problem.text)}">${t('moneymoney_lief_kontor_konnte_nicht')}</a></div>`;
   $('#status-mini').innerHTML = h;
   const sb = $('#sync-btn');
   if (sb) {
@@ -630,7 +630,7 @@ function statusMini() {
   // something to do: bookings waiting for approval (count) or a failed run (!), an update (dot) -- in the sidebar and on the app icon
   const waiting = l && l.probelauf && !l.fehler ? (l.vorschlaege || []).length : 0, notes = l && !l.fehler && !waiting ? (l.warnungen || []).length : 0;
   navBadge('#bookings', l && l.fehler ? '!' : waiting ? (waiting > 99 ? '99+' : String(waiting)) : notes ? '•' : '', l && l.fehler ? t('letzter_abgleich_mit_fehler') : waiting ? t('0_buchungsvorschlaege', waiting) : tn('n_hinweise_auto', notes));
-  navBadge('#updates', st.update && st.update.neuer ? '•' : '', st.update && st.update.neuer ? t('update') + st.update.verfuegbar + t('verfuegbar') : '');
+  navBadge('#settings', st.update && st.update.neuer ? '•' : '', st.update && st.update.neuer ? t('update') + st.update.verfuegbar + t('verfuegbar') : '');
   const mb = $('#menu-btn'); if (mb) mb.classList.toggle('has-badge', !!(waiting || notes || (l && l.fehler) || (st.update && st.update.neuer)));     // narrow window: the sidebar is closed
   try { if (navigator.setAppBadge) { if (waiting) navigator.setAppBadge(waiting); else navigator.clearAppBadge(); } } catch (e) { /* not supported */ }
   if (!st.ablage.verschluesselt) banner(t('daten_liegen_unverschluesselt_verschlu'), 'err');
@@ -639,7 +639,7 @@ function statusMini() {
 const BER = {stand: '', timer: null};
 const SYNC = {busy: false};
 const MMH = {busy: false};
-const DATA_TABS = ['overview', 'balance', 'cashflow', 'planning', 'tax', 'properties', 'transactions', 'categories', 'positions', 'bookings'];
+const DATA_TABS = ['overview', 'balance', 'cashflow', 'planning', 'tax', 'properties', 'transactions', 'categories', 'accounts/positions', 'bookings'];
 async function pollStatus(all) {
   // Status holen; läuft ein Abgleich oder Berichtsneubau, öfter nachsehen und nach Abschluss die Daten frisch laden
   // all (after "Sync"): the open page is drawn again whatever it is, not only the pages with figures
@@ -655,7 +655,7 @@ async function pollStatus(all) {
     await loadAll();
     const dr = $('#drawer');
     if (dr.classList.contains('open') && HD.uuid && $('#hq-seg', dr)) { if (!HD.live && !$$('#h-grid input:not(.auto)', dr).some(i => i.value !== i.defaultValue)) { try { await openHistDrawer(HD.uuid); } catch (e) {} } }
-    else if ((DATA_TABS.includes(S.tab) || all) && !dr.classList.contains('open') && !DIRTY.on) route();
+    else if ((DATA_TABS.includes(S.tab) || DATA_TABS.includes(S.tab + '/' + S.sub) || all) && !dr.classList.contains('open') && !DIRTY.on) route();
     toastQuiet(t('auswertung_aktualisiert'));
   }
 }
@@ -817,11 +817,11 @@ async function vUebersicht() {
   const lastRun = S.STATUS.letzter_lauf, items = [];
   if (lastRun && lastRun.probelauf && lastRun.vorschlaege && lastRun.vorschlaege.length) items.push(['warn', lastRun.vorschlaege.length + t('buchungsvorschlaege_warten_testmodus'), '#bookings']);
   if (ok.treffer) items.push(['warn', ok.treffer + t('umsaetze') + yr + t('ohne_kategorie_zuordnen'), '#categories']);
-  if ((S.DATA.konten_neu || []).length) items.push(['warn', nKonten(S.DATA.konten_neu.length) + t('ohne_bestaetigte_zuordnung_bereich_pos'), '#setup/accounts']);
+  if ((S.DATA.konten_neu || []).length) items.push(['warn', nKonten(S.DATA.konten_neu.length) + t('ohne_bestaetigte_zuordnung_bereich_pos'), '#accounts']);
   if (ob.treffer) items.push(['neutral', ob.treffer + t('ausgaben_3') + yr + t('ohne_beleg'), '#transactions?no_receipt=1']);
   const ue = (D.kapitalfluss.ueberleitung || {})[cur]; if (ue && Math.abs(ue.unerklaert) > 1) items.push(['warn', t('unerklaerte_vermoegensaenderung_im_lau') + F(ue.unerklaert) + t('pruefzeile'), '#cashflow']);
   for (const w of (D.warnungen || []).slice(0, 6)) items.push(['warn', w, '#bookings']);
-  if (S.STATUS.update && S.STATUS.update.neuer) items.push(['info', t('update') + S.STATUS.update.verfuegbar + t('verfuegbar'), '#updates']);
+  if (S.STATUS.update && S.STATUS.update.neuer) items.push(['info', t('update') + S.STATUS.update.verfuegbar + t('verfuegbar'), '#settings/updates']);
   let nx = '';
   if (pm.length) {
     const sums = D.kapitalfluss.summen;
@@ -840,30 +840,26 @@ async function vUebersicht() {
 
 // ---------------------------------------------------------------- Einrichtung (modular)
 const MODULES = [
-  {id: 'connect', t: t('mod_connect'), d: t('moneymoney_laeuft_und_ist_entsperrt'), done: () => S.KONTEN.length > 0},
-  {id: 'areas', t: t('mod_areas'), d: t('welche_konten_gehoeren_zusammen_privat'), done: () => (S.CFG.bereiche || []).length > 0 || !!S.DATA},
-  {id: 'accounts', t: t('mod_accounts'), d: t('jedes_konto_bestaetigen_bereich_und'), done: () => !!S.DATA && !((S.DATA.konten_neu || []).length)},
-  {id: 'history', t: t('mod_history'), d: t('bisherigen_verlauf_aller_konten_einmal'), done: () => !!((S.STATUS || {}).moneymoney || {}).historie},
-  {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => Object.keys((S.CFG.kapitalfluss || {}).positionen || {}).length > 0, href: '#positions', optional: true},
+  {id: 'connect', t: t('mod_connect'), d: t('moneymoney_laeuft_und_ist_entsperrt'), done: () => S.KONTEN.length > 0, href: '#settings/moneymoney'},
+  {id: 'areas', t: t('mod_areas'), d: t('welche_konten_gehoeren_zusammen_privat'), done: () => (S.CFG.bereiche || []).length > 0 || !!S.DATA, href: '#accounts/areas'},
+  {id: 'accounts', t: t('mod_accounts'), d: t('jedes_konto_bestaetigen_bereich_und'), done: () => !!S.DATA && !((S.DATA.konten_neu || []).length), href: '#accounts'},
+  {id: 'history', t: t('mod_history'), d: t('bisherigen_verlauf_aller_konten_einmal'), done: () => !!((S.STATUS || {}).moneymoney || {}).historie, href: '#accounts/history', optional: true},
+  {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => Object.keys((S.CFG.kapitalfluss || {}).positionen || {}).length > 0, href: '#accounts/positions', optional: true},
   {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.kategorien || {}).gesamt || {}).ohne), href: '#categories', optional: true},
-  {id: 'rules', t: t('mod_rules'), d: t('darlehen_spiegeln_und_verzinsen_beteil'), done: () => hasRules(), href: '#rules', optional: true},
+  {id: 'rules', t: t('mod_rules'), d: t('darlehen_spiegeln_und_verzinsen_beteil'), done: () => hasRules(), href: '#accounts/rules', optional: true},
   {id: 'properties', t: t('mod_properties'), d: t('kalkulationen_anlegen_mit_konten_und'), done: () => (S.CFG.immobilien || []).length > 0, href: '#properties', optional: true},
   {id: 'planning', t: t('mod_planning'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planning', optional: true},
-  {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.steuer || {}).vermietung_kategorie, href: '#settings/tax', optional: true},
-  {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.belege || {}).ordner, href: '#settings', optional: true},
+  {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.steuer || {}).vermietung_kategorie, href: '#accounts/tax', optional: true},
+  {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.belege || {}).ordner, href: '#settings/receipts', optional: true},
   {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => ((S.CFG.oberflaeche || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
-  {id: 'operation', t: t('mod_operation'), d: t('testmodus_automatischer_abgleich_mitte'), done: () => true, href: '#settings'},
+  {id: 'operation', t: t('mod_operation'), d: t('testmodus_automatischer_abgleich_mitte'), done: () => true, href: '#settings/moneymoney'},
 ];
+const setupOpen = () => MODULES.some(m => !m.optional && !m.done());
 function vEinrichtung(sub) {
-  const sh = id => `<h2 class="sub-h">${esc((MODULES.find(m => m.id === id) || {}).t || '')}</h2>`;      // gleicher Name wie im Einrichtungsplan
-  if (sub === 'areas') return sh('areas') + vBereicheEditor();
-  if (sub === 'accounts') return sh('accounts') + vKontenEditor();
-  if (sub === 'connect') return sh('connect') + vVerbindung();
-  if (sub === 'history') return sh('history') + vMMHistorie();
   let h = `<div class="lang-pick"><label for="w-lang" class="small muted">${t('sprache_label')}</label><select id="w-lang">${langOpts()}</select></div>${S.KONTEN.length ? '' : `<div class="note">${t('noch_keine_konten_aus_moneymoney')}</div>`}<div class="setup-list">`;
   MODULES.forEach((m, i) => {
     const ok = m.done();
-    h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? t('eingerichtet') : (m.optional ? t('optional') : t('offen'))}</span></div><div class="d">${esc(m.d)}</div></div><div class="a"><a href="${m.href || ('#setup/' + m.id)}"><button class="small ${ok ? 'secondary' : ''}">${ok ? t('anpassen') : t('einrichten')}</button></a></div></div>`;
+    h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? t('eingerichtet') : (m.optional ? t('optional') : t('offen'))}</span></div><div class="d">${esc(m.d)}</div></div><div class="a"><a href="${m.href}"><button class="small ${ok ? 'secondary' : ''}">${ok ? t('anpassen') : t('einrichten')}</button></a></div></div>`;
   });
   h += '</div>';
   h += `<div class="actions"><button id="check-btn" class="secondary">${t('einrichtung_pruefen')}</button>${hq('pruefen')}</div><div id="findings-e" class="findings"></div>`;
@@ -885,7 +881,7 @@ function vMMHistorie() {
     <div class="step"><div class="b"><b>${t('datei_im_finder_zeigen')}</b>${t('kontor_oeffnet_ein_finder_fenster')}<div class="actions"><button id="mmh-zeigen" class="small">${t('im_finder_zeigen')}</button></div><div class="small muted">${t('kein_fenster_in_moneymoney_hilfe')}</div></div></div>
     <div class="step ${last ? 'done' : ''}"><div class="b"><b>${t('hierher_ziehen_passwort_eingeben')}</b>${t('danach_erscheint_ein_fenster_von')}<div class="drop" id="mmh-drop">${t('moneymoney_sqlite_hierher_ziehen')}<br><button id="mmh-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button><input type="file" id="mmh-file" class="hidden"></div><div id="mmh-res" class="findings"></div></div></div>
     <div class="step hidden" id="mmh-names"></div>
-    <div class="step"><div class="b"><b>${t('weiter')}</b><div class="actions"><button data-next="#categories" ${last ? '' : 'class="secondary"'}>${t('weiter_kategorien_amp_zuordnen')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button></div></div></div></div>`;
+    ${setupOpen() ? `<div class="step"><div class="b"><b>${t('weiter')}</b><div class="actions"><button data-next="#categories" ${last ? '' : 'class="secondary"'}>${t('weiter_kategorien_amp_zuordnen')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button></div></div></div>` : ''}</div>`;
 }
 const MMH_TXT = {received: t('gleich_erscheint_das_passwortfenster_v'), password: t('bitte_im_fenster_von_macos'), decrypt: t('wird_im_arbeitsspeicher_entschluesselt'), search: t('kontostaende_werden_gesucht_und_geprue')};
 async function mmhFollow() {
@@ -897,7 +893,7 @@ async function mmhFollow() {
     const e = r.ergebnis || {};
     if (e.ok) { try { S.STATUS = await api('/api/status'); statusMini(); } catch (x) {} }
     const msg = e.ok ? `${t('kontostaende_von_0_uebernommen_1', e.konten === 1 ? t('einem_konto') : e.konten + t('konten'), e.von ? ` ${t('0_bis_1_3', ML(e.von), ML(e.bis))}` : '', e.depots ? `${t('davon_0', e.depots === 1 ? t('ein_depot') : e.depots + t('depots'))}` : '')}` : (e.text || t('nicht_uebernommen'));
-    if (S.tab === 'setup' && S.sub === 'history') { if (e.ok) { try { S.DATA = await api('/api/dataset'); } catch (x) {} await route(); } const res2 = $('#mmh-res'); if (res2) showFindings(res2, [], msg, e.ok ? 'ok' : 'fehler'); }
+    if (S.tab === 'accounts' && S.sub === 'history') { if (e.ok) { try { S.DATA = await api('/api/dataset'); } catch (x) {} await route(); } const res2 = $('#mmh-res'); if (res2) showFindings(res2, [], msg, e.ok ? 'ok' : 'fehler'); }
     else toast(msg, 8000);
     return;
   }
@@ -935,7 +931,7 @@ const MMHP = {timer: null};
 function mmhPoll() {
   // Auf der Seite "Kontostände aus MoneyMoney": alle 3 s pruefen, ob MoneyMoney beendet ist
   clearTimeout(MMHP.timer);
-  if (!(S.tab === 'setup' && S.sub === 'history')) return;
+  if (!(S.tab === 'accounts' && S.sub === 'history')) return;
   MMHP.timer = setTimeout(async () => {
     try { S.STATUS = await api('/api/status?fresh=1'); statusMini(); const el = $('#mmh-s1'); if (el) { el.className = 'step ' + ((S.STATUS.moneymoney || {}).laeuft ? '' : 'done'); el.innerHTML = mmhStep1(S.STATUS); } } catch (e) {}
     mmhPoll();
@@ -975,7 +971,7 @@ function readProgress() {
 function vbPoll() {
   // Auf der Seite "Verbindung" alle 3 s pruefen, ob MoneyMoney laeuft und entsperrt ist
   clearTimeout(VB.timer);
-  if (!(S.tab === 'setup' && S.sub === 'connect')) return;
+  if (!(S.tab === 'settings' && S.sub === 'moneymoney') || (mmStepDone(S.STATUS) && S.KONTEN.length)) return;
   VB.timer = setTimeout(async () => {
     try { S.STATUS = await api('/api/status?fresh=1'); statusMini(); const el = $('#vb-mm'); if (el) { el.className = 'step ' + (mmStepDone(S.STATUS) ? 'done' : ''); el.innerHTML = mmStepInner(S.STATUS); } } catch (e) {}
     vbPoll();
@@ -986,7 +982,7 @@ function vVerbindung() {
   return `<div class="steps">
     <div class="step ${mmStepDone(st) ? 'done' : ''}" id="vb-mm">${mmStepInner(st)}</div>
     <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>${t('zugriff_erlauben_und_konten_lesen', hq('berechtigung'))}</b>${t('macos_fragt_einmal_ob_python3')}<div class="actions"><button id="w-check" class="small">${t('verbindung_pruefen')}</button></div><div id="w-busy" class="prog-wrap hidden"><div class="prog"><i id="w-prog"></i></div><span class="prog-l" id="w-prog-l">${t('lese_konten_und_umsaetze_aus')}</span></div><div id="w-findings" class="findings"></div></div></div>
-    <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>${t('weiter')}</b><div class="actions"><button data-next="#setup/areas" ${S.KONTEN.length ? '' : 'class="secondary"'}>${t('weiter_bereiche')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button></div></div></div></div>`;
+    ${setupOpen() ? `<div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>${t('weiter')}</b><div class="actions"><button data-next="#accounts/areas" ${S.KONTEN.length ? '' : 'class="secondary"'}>${t('weiter_bereiche')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button></div></div></div>` : ''}</div>`;
 }
 const FIRMA_RE = /\b(gmbh|ug|ag|se|kg|ohg|gbr|egbr|e\.?\s?k\.?|e\.?\s?v\.?|eg|ltd|inc|llc|holding|verwaltung|beteiligung|immobilien|stiftung|verein|genossenschaft|partner|&\s?co)\b/i;
 const guessArt = name => FIRMA_RE.test(name || '') || /(gmbh|gbr|holding)/i.test(name || '') ? 'gesellschaft' : 'privat';
@@ -997,7 +993,7 @@ function vBereicheEditor() {
   if (!(S.CFG.bereiche || []).length) list = list.map((b, i) => [b, i]).sort((x, y) => (!x[0].haupt - !y[0].haupt) || (((x[0].art || guessArt(x[0].name)) !== 'privat') - ((y[0].art || guessArt(y[0].name)) !== 'privat')) || x[1] - y[1]).map(x => x[0]);
   let h = `<div class="note">${t('bereiche_note', more('areas'), S.KONTEN.length ? '' : `<b>${t('noch_keine_konten_geladen_zuerst')}</b>`)}</div><div class="list" id="bereiche">`;
   list.forEach((b, i) => { h += bereichForm(b, i); });
-  h += `</div><div class="actions"><button id="add-bereich" class="secondary">${t('bereich_hinzufuegen')}</button><button id="save-bereiche" class="secondary">${t('speichern')}</button><button data-savenext="#setup/accounts" data-save="bereiche">${t('speichern_und_weiter_konten')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button></div><div id="findings-b" class="findings"></div>`;
+  h += `</div><div class="actions"><button id="add-bereich" class="secondary">${t('bereich_hinzufuegen')}</button><button id="save-bereiche" class="${setupOpen() ? 'secondary' : ''}">${t('speichern')}</button>${setupOpen() ? `<button data-savenext="#accounts" data-save="bereiche">${t('speichern_und_weiter_konten')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button>` : ''}</div><div id="findings-b" class="findings"></div>`;
   return h;
 }
 function bereichForm(b, i) {
@@ -1087,7 +1083,7 @@ function vKontenEditor() {
       <td><select class="k-show" title="${auto ? t('kein_bestand_und_kein_umsatz') + (cfg.bilanz.inaktiv_monate ?? 12) + t('monaten') : t('mit_bestand_oder_umsatz_in') + (cfg.bilanz.inaktiv_monate ?? 12) + t('monaten')}"><option value="">${t('nach_aktivitaet')}</option><option value="show" ${vis === 'show' ? 'selected' : ''}>${t('immer_anzeigen')}</option><option value="hide" ${vis === 'hide' ? 'selected' : ''}>${t('ausblenden')}</option></select></td>
       <td class="num ${(k.saldo || 0) < 0 ? 'neg' : 'pos'}">${F(k.saldo)}</td></tr>`;
   }
-  h += `</tbody></table></div><div class="actions"><button id="save-konten" class="secondary">${t('speichern')}</button><button data-savenext="#setup/history" data-save="konten">${t('speichern_und_weiter_kontostaende_aus')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button></div><div id="findings-k2" class="findings"></div>`;
+  h += `</tbody></table></div><div class="actions"><button id="save-konten" class="${setupOpen() ? 'secondary' : ''}">${t('speichern')}</button>${setupOpen() ? `<button data-savenext="#accounts/history" data-save="konten">${t('speichern_und_weiter_kontostaende_aus')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button>` : ''}</div><div id="findings-k2" class="findings"></div>`;
   h += `<h2>${t('saldenverlauf_importieren_0', hq('verlauf_import'))}</h2><div class="note">${t('fuer_depots_und_konten_ohne')}</div>
     <div class="drop" id="hi-drop">${t('datei_hierher_ziehen')}<br><button id="hi-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button></div><div id="hi-preview"></div>`;
   return h;
@@ -2736,7 +2732,7 @@ function vKapitalfluss(editable) {
   const lvIcon = n => `<svg viewBox="0 0 18 16" width="18" height="16" aria-hidden="true" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">${[[0, 0, 0], [0, 1, 1], [0, 1, 2], [0, 1, 2, 3]][n].map((d, k, a) => { const y = 2 + k * (12 / (a.length - 1)), x = 1.2 + d * 3.2; return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.1" stroke="none"/><path d="M${(x + 2.6).toFixed(1)} ${y.toFixed(1)}h${(9.4 - d * 1.4).toFixed(1)}"/>`; }).join('')}</svg>`;
   const lvCtl = `<div class="cf-lv"><div class="seg small" id="cf-ebene" role="group" aria-label="${esc(t('cf_ebene_tip'))}">${levels.map((l, i) => `<button data-e="${i}" class="${cfLevel() === i ? 'on' : ''}" title="${esc(lvTips[i])}" aria-label="${esc(l)}">${lvIcon(i)}</button>`).join('')}</div>`
     + `<button class="cf-lv-btn lv${cfLevel()}" data-e="${nextLv}" title="${esc(t(nextLv ? 'cf_weiter_aufklappen' : 'cf_alles_zuklappen'))}" aria-label="${esc(t(nextLv ? 'cf_weiter_aufklappen' : 'cf_alles_zuklappen'))}"><i>▸</i><span>${levels[cfLevel()]}</span></button>`
-    + `<a class="cf-set" href="#positions" title="${esc(t('cf_positionen_einstellen'))}" aria-label="${esc(t('cf_positionen_einstellen'))}">${ICON.gear}</a></div>`;
+    + `<a class="cf-set" href="#accounts/positions" title="${esc(t('cf_positionen_einstellen'))}" aria-label="${esc(t('cf_positionen_einstellen'))}">${ICON.gear}</a></div>`;
   let h = `<div class="toolbar">${viewCtl()}${yearCtl()}<span class="tb-sep"></span>${alleCtl(0)}${editable ? swCtl('realan', S.real, t('inflationsbereinigt'), t('inflationsbereinigt_tip')) : planCtl()}<span class="sp"></span>`
     + `${xlsxBtn(editable ? 'planning' : 'cashflow')}</div>`;
   // hatched = plan, faded = the running month: plain to see (it lies ahead), so no legend for it; planning names what you overrode
@@ -2797,7 +2793,7 @@ function vKapitalfluss(editable) {
               <button class="save small" title="${t('uebernehmen')}">✓</button>${ov.size ? `<button class="small secondary reset-row" data-key="${esc(key)}" title="${t('alle_ueberschreibungen_loeschen')}">↺</button>` : ''}</div>`;
         }
         const zu = editable || !z.lbl ? '' : z.lbl[0] === 'cf_ohne_kategorie' ? ` <a href="#categories" class="small">${t('zuordnen')}</a>`
-          : z.lbl[0] === 'cf_anlage_ohne_ziel' ? ` <a href="#positions" class="small">${t('cf_ziel_festlegen')}</a>` : '';
+          : z.lbl[0] === 'cf_anlage_ohne_ziel' ? ` <a href="#accounts/positions" class="small">${t('cf_ziel_festlegen')}</a>` : '';
         const det = (z.details || []).length, open = det && cfOpen(did, depth);
         o += `<tr class="${ind(depth).trim()}${det ? ' has-det' : ''}" data-key="${esc(key)}"${det ? ` data-tog="${esc(did)}" data-depth="${depth}"` : ''}><td title="${esc(full)}">${det ? caret(did, depth, open) : NOCARET}${esc(label)}${zu}${editable && p.methode && p.methode !== 'darlehen' ? `<span class="tag">${METH[p.methode] || p.methode}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
           + vals.map((v, i) => {
@@ -2920,7 +2916,8 @@ function cfChange(cur, prev, upGood) {
   const d = (cur - prev) / Math.abs(prev) * 100;
   if (Math.abs(d) >= 100000) return null;                     // from almost nothing: says nothing
   if (Math.abs(cur - prev) < 0.5) return {txt: '±0 %', cls: ''};      // only the same amount is unchanged; a small change keeps its sign
-  const a = Math.abs(d), txt = a < 0.01 ? '<' + (0.01).toLocaleString(LOCALE) : a.toLocaleString(LOCALE, {maximumFractionDigits: a < 0.1 ? 2 : a < 10 ? 1 : 0});
+  const a = Math.abs(d), txt = a >= 999.5 ? (a / 1000).toLocaleString(LOCALE, {maximumFractionDigits: a >= 10000 ? 0 : 1}) + t('tsd_kurz')      // short, as in the balance sheet: +10T %
+    : a < 0.01 ? '<' + (0.01).toLocaleString(LOCALE) : a.toLocaleString(LOCALE, {maximumFractionDigits: a < 0.1 ? 2 : a < 10 ? 1 : 0});
   return {txt: (d > 0 ? '+' : '−') + txt + ' %', cls: (d > 0) === upGood ? 'pos' : 'neg'};
 }
 // the period before of a group of positions or categories ("Übrige"): only where each of them had one -- a sum with gaps would
@@ -2953,9 +2950,8 @@ function vCfCharts(D) {
   // a grid of six columns: wide charts take four beside a narrow one of two, the ring and its neighbour three each
   const pie = cfPie(D, cur, prev);
   const legM = legOf([['ein', t('einnahmen')], ['aus', t('ausgaben')], ['inv', SEC_LABEL.Investitionen], ['fin', SEC_LABEL.Finanzierung]]);
-  h += `<div class="cf-grid">` + card('cf-narrow', 'cf_bruecke', '', 'cf-bridge')
-    + card('cf-narrow', 'cf_je_monat_t', '', 'cf-months', `<div class="lc-row2 cf-leg-row">${legM}</div>`)
-    + card('cf-narrow', 'cf_jahresverlauf', '<span class="cf-leg" id="cf-yoy-leg"></span>', 'cf-yoy', '<div class="lc-row2" id="cf-yoy-hero"></div>')
+  h += `<div class="cf-grid">` + card('cf-half', 'cf_bruecke', '', 'cf-bridge')
+    + card('cf-half', 'cf_je_monat_t', '', 'cf-months', `<div class="lc-row2 cf-leg-row">${legM}</div>`)
     + pie + cfHeatCard(pie ? 'cf-half' : 'cf-full') + su
     + `</div><div class="cf-tip hidden" id="cf-tip" role="tooltip"></div></div>`;
   return h;
@@ -3210,53 +3206,7 @@ function cfDrawPie() {
   el.innerHTML = `<svg class="cf-svg${up ? ' ein' : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(P0.title)}">${g}</svg>`;
 }
 // ---- further charts, to choose from: trends without one-offs, savings rate, seasonality, how long the cash lasts, the year so far
-// A line chart: one axis, a few series (each its colour, dashed from where it is planned), every month with a tooltip of all
-// series; the last value of each series named at the line's end in text colour (the line carries the colour).
-function cfDrawLines(el, labels, series, fAxis, fTip, aria) {
-  if (!el) return;
-  const all = series.flatMap(sr => sr.vals).filter(v => v != null && isFinite(v));
-  if (all.length < 2) { el.innerHTML = `<div class="cf-empty muted small">${t('cf_zu_wenig_monate')}</div>`; return; }
-  let lo = Math.min(0, ...all), hi = Math.max(0, ...all); if (hi - lo < 1e-9) hi = lo + 1;
-  const W = Math.max(260, el.clientWidth), H = W < 520 ? 190 : 230, P = {l: W >= 640 ? 62 : 48, r: 14, t: 12, b: 22};
-  let ticks = niceTicks(lo, hi, W < 520 ? 4 : 5); const step = ticks.length > 1 ? ticks[1] - ticks[0] : (hi - lo);
-  if (ticks[0] > lo + step * 1e-6) ticks.unshift(ticks[0] - step);
-  if (ticks[ticks.length - 1] < hi - step * 1e-6) ticks.push(ticks[ticks.length - 1] + step);
-  const y0 = ticks[0], y1 = ticks[ticks.length - 1], ref = Math.max(Math.abs(y0), Math.abs(y1));
-  const y = v => P.t + (y1 - v) / (y1 - y0) * (H - P.t - P.b), n = labels.length, slot = (W - P.l - P.r) / n, x = i => P.l + slot * (i + 0.5);
-  const every = Math.max(1, Math.ceil(46 / slot));
-  let g = '';
-  for (const v of ticks) g += `<line class="cf-grid-l${Math.abs(v) < step * 1e-6 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="cf-tick" x="${P.l - 8}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end">${fAxis(v, W >= 640, ref)}</text>`;
-  labels.forEach((l, i) => { if ((n - 1 - i) % every === 0) g += `<text class="cf-tick" x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(l)}</text>`; });
-  for (const sr of series) {
-    // solid up to the plan, dashed from the last actual point on; a gap where there is no value
-    const seg = (from, to) => { let d = '', pen = false; for (let i = from; i <= to; i++) { const v = sr.vals[i]; if (v == null || !isFinite(v)) { pen = false; continue; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(v).toFixed(1); pen = true; } return d; };
-    const pf = sr.planFrom == null ? n : sr.planFrom;
-    const a = seg(0, Math.min(n - 1, pf - 1)), b = pf < n ? seg(Math.max(0, pf - 1), n - 1) : '';
-    if (a) g += `<path class="cf-ln ${sr.cls}" d="${a}"/>`;
-    if (b) g += `<path class="cf-ln ${sr.cls} plan" d="${b}"/>`;
-    const li = sr.vals.reduce((k, v, i) => (v != null && isFinite(v) && i < pf ? i : k), -1);
-    if (li >= 0) g += `<circle class="cf-ln-dot ${sr.cls}" cx="${x(li).toFixed(1)}" cy="${y(sr.vals[li]).toFixed(1)}" r="3.5"/>`;
-  }
-  labels.forEach((l, i) => {
-    const rows = series.filter(sr => sr.vals[i] != null && isFinite(sr.vals[i])).map(sr => cfTipRow('sw ' + sr.cls, sr.name, fTip(sr.vals[i])));
-    if (!rows.length) return;
-    const tip = cfTip(`<div class="cf-tip-h">${esc(l)}${series.some(sr => sr.planFrom != null && i >= sr.planFrom) ? ` <span class="muted">· ${t('plan')}</span>` : ''}</div>` + rows.join(''));
-    g += `<rect class="cf-hit" data-cftip="${tip}" tabindex="0" x="${(P.l + slot * i).toFixed(1)}" y="${P.t}" width="${slot.toFixed(1)}" height="${H - P.t - P.b}"/>`;
-  });
-  el.innerHTML = `<svg class="cf-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(aria)}">${g}</svg>`;
-}
 const cfEur = v => F0(v) + ' €';
-// 8. The surplus added up month by month over the period, against the period before (the same months a year earlier)
-function cfDrawYoY() {
-  const D = B(), el = $('#cf-yoy'), hero = $('#cf-yoy-hero'), leg = $('#cf-yoy-leg'); if (!D || !el) return;
-  const [cur, prev] = cfMonths(D, S.cfZeit), sums = D.kapitalfluss.summen || {};
-  const cum = ms => { let a = 0; return ms.map(m => (a += (sums[m] || {}).Operativ || 0)); };
-  const span = ms => ms.length > 1 ? ML(ms[0]) + ' – ' + ML(ms[ms.length - 1]) : ML(ms[0]);
-  const now = cum(cur), was = prev.length ? cum(prev) : [], a = now[now.length - 1], b = was.length ? was[was.length - 1] : null, ch = cfChange(a, b, true);
-  if (leg) leg.innerHTML = `<span><i class="sw op"></i>${esc(t('cf_zeitraum'))}</span>` + (was.length ? `<span><i class="sw prev"></i>${esc(t('cf_vorperiode'))}</span>` : '');
-  if (hero) hero.innerHTML = `<span class="cf-val">${cfEur(a)}</span>` + (b != null ? `<span class="muted small">${esc(t('cf_vorperiode'))} ${cfEur(b)}</span>${ch ? `<span class="cf-delta ${ch.cls}">${ch.txt}</span>` : ''}` : '');
-  cfDrawLines(el, cur.map(ML), [{cls: 'op', name: span(cur), vals: now}, ...(was.length ? [{cls: 'prev', name: span(prev), vals: was}] : [])], Fk, cfEur, t('cf_jahresverlauf'));
-}
 // 9. Expenses (or income, as the ring beside it) by month and position: the darker, the more that month -- one scale for every
 // cell, so a large position stands out against a small one; the amount in the tooltip
 const cfHeatQ = () => { const D = B(); return !!D && cfMonths(D, S.cfZeit)[0].length > 24; };
@@ -3271,17 +3221,18 @@ function cfDrawHeat() {
   const lab = (k, full) => q ? k.slice(5) + ' ' + k.slice(2, 4) : full ? ML(k) : MONATE_LANG[+k.slice(5) - 1].slice(0, 3);
   const catName = d => d.kategorie ? d.kategorie.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt');
   for (const z of sek.zeilen) {
-    const k = zLabel(z), r = by.get(k) || {label: k, v: {}, cats: new Map()};
+    const k = zLabel(z), r = by.get(k) || {label: k, v: {}, cats: new Map(), none: !!(z.lbl && z.lbl[0] === 'cf_ohne_kategorie')};
     ms.forEach(m => { r.v[m] = r.v[m] || 0; }); all.forEach(m => { r.v[bk(m)] += sg * (z.werte[m] || 0); });
     for (const d of z.details || []) { const n = catName(d), c = r.cats.get(n) || {}; all.forEach(m => { c[bk(m)] = (c[bk(m)] || 0) + sg * ((d.werte || {})[m] || 0); }); r.cats.set(n, c); }
     by.set(k, r);
   }
-  const rows = [...by.values()].map(r => ({...r, sum: ms.reduce((a, m) => a + r.v[m], 0)})).filter(r => r.sum >= 0.5).sort((a, b) => b.sum - a.sum).slice(0, 10);
+  const all2 = [...by.values()].map(r => ({...r, sum: ms.reduce((a, m) => a + r.v[m], 0)})).filter(r => r.sum >= 0.5).sort((a, b) => b.sum - a.sum);
+  const none = all2.filter(r => r.none), rows = all2.filter(r => !r.none).slice(0, 10 - none.length).concat(none);
   if (!rows.length || !ms.length) { el.innerHTML = `<div class="cf-empty muted small">${t('cf_keine_zahlungen')}</div>`; return; }
   const max = Math.max(1, ...rows.flatMap(r => ms.map(m => r.v[m])));
   const every = Math.max(1, Math.ceil(ms.length * 34 / Math.max(1, el.clientWidth * 0.66)));          // names that fit
   const kv = (k, v) => `<span>${esc(k)}</span><b>${v}</b>`;
-  let h = `<div class="cf-heat${up ? ' ein' : ''}" style="--ch:${Math.round(Math.max(18, Math.min(32, 240 / rows.length)))}px;grid-template-columns:minmax(90px, 24%) repeat(${ms.length}, minmax(0, 1fr)) auto"><span></span>${ms.map((m, i) => { const on = (ms.length - 1 - i) % every === 0, first = ms.findIndex((x, j) => (ms.length - 1 - j) % every === 0) === i; return `<span class="cf-heat-m">${on ? esc(lab(m, first || m.endsWith('-01'))) : ''}</span>`; }).join('')}<span class="cf-heat-m cf-heat-avg" title="${esc(t('cf_schnitt_monat'))}">Ø</span>`;
+  let h = `<div class="cf-heat${up ? ' ein' : ''}" style="--ch:${Math.round(Math.max(18, Math.min(32, 240 / rows.length)))}px;grid-template-columns:minmax(90px, 24%) repeat(${ms.length}, minmax(0, 1fr)) auto"><span></span>${ms.map((m, i) => { const on = (ms.length - 1 - i) % every === 0, first = ms.findIndex((x, j) => (ms.length - 1 - j) % every === 0) === i; return `<span class="cf-heat-m">${on ? esc(lab(m, (first || m.endsWith('-01')) && every * el.clientWidth * 0.66 / ms.length >= 46)) : ''}</span>`; }).join('')}<span class="cf-heat-m cf-heat-avg" title="${esc(t('cf_schnitt_monat'))}">Ø</span>`;
   for (const r of rows) {
     h += `<span class="cf-heat-n" title="${esc(r.label)}">${esc(r.label)}</span>` + ms.map(m => { const v = r.v[m], k = v > 0.5 ? Math.min(1, v / max) : 0;
       const cs = [...r.cats].map(([n, c]) => [n, c[m] || 0]).filter(([, x]) => Math.abs(x) >= 0.5).sort((p, q) => q[1] - p[1]);
@@ -3316,11 +3267,49 @@ function cfSourcesUses(D, months) {
   }
   if (change <= -0.5) src.push({label: t('cf_bank_weniger'), v: -change, act: 'tot'}); else if (change >= 0.5) use.push({label: t('cf_bank_mehr'), v: change, act: 'tot'});
   const total = src.reduce((a, e) => a + e.v, 0);
-  if (total < 0.5) return '';
-  const max = Math.max(...src.map(e => e.v), ...use.map(e => e.v), 1);
-  const col = (title, list) => `<div class="cf-su-col"><div class="cf-su-h">${title}</div><div class="cf-list">${list.sort((a, b) => b.v - a.v).map(e => `<div class="cf-row tipped" data-tip="${esc(e.label + ': ' + F(e.v) + ' € · ' + cfPct(e.v, total) + ' %')}" tabindex="0"><span class="cf-name">${esc(e.label)}</span><span class="cf-track"><i class="cf-bar ${e.act}" style="left:0;width:${Math.max(e.v / max * 100, 0.8).toFixed(2)}%"></i></span><span class="cf-num">${F0(e.v)}</span><span class="cf-pct">${cfPct(e.v, total)} %</span></div>`).join('')}</div></div>`;
+  if (total < 0.5) { CF.flow = null; return ''; }
+  // colour by what it is: income green, expenses red, investing and financing as in the table, cash grey
+  src.forEach(e => { if (e.act === 'op') e.act = 'ein'; }); use.forEach(e => { if (e.act === 'op') e.act = 'aus'; });
+  CF.flow = {src: src.sort((p, q) => q.v - p.v), use: use.sort((p, q) => q.v - p.v), total};
   return `<div class="card bch cf-card cf-full"><div class="lc-head"><b class="lc-title">${t('cf_herkunft_verwendung')}${hq('cf_herkunft_verwendung')}</b><span class="muted small">${t('cf_summe_0', F0(total))}</span></div>`
-    + `<div class="cf-su">${col(t('cf_herkunft'), src)}${col(t('cf_verwendung'), use)}</div></div>`;
+    + `<div class="cf-plot" id="cf-flow"></div></div>`;
+}
+// The money flow: everything that came in on the left, everything it went to on the right, both through one column in the
+// middle -- money has no label, so no source is tied to a use; each band as wide as its amount, the names beside the bars
+function cfDrawFlow() {
+  const el = $('#cf-flow'), F = CF.flow; if (!el || !F) return;
+  const W = Math.max(300, el.clientWidth), narrow = W < 560, LW = narrow ? Math.max(96, W * 0.31) : Math.min(250, W * 0.28), RW = LW, nodeW = 10, gap = 6, LH = narrow ? 28 : 18;      // narrow: the amount below the name
+  const n = Math.max(F.src.length, F.use.length), H = Math.max(180, n * (LH + 4) + 20), top = 8, bot = H - 8;
+  // one scale for both sides; the thinnest bars keep 1.5 px, so the scale leaves room for them (many tiny items stay inside)
+  const avail = side => (bot - top) - gap * (side.length - 1);
+  let k = Math.min(avail(F.src), avail(F.use)) / F.total;
+  for (let i = 0; i < 6; i++) { const over = Math.max(...[F.src, F.use].map(sd => sd.reduce((a, e) => a + Math.max(1.5, e.v * k), 0) - avail(sd))); if (over <= 0.5) break; k *= Math.max(0.1, 1 - over / (bot - top)); }
+  const xL = LW, xM = W / 2 - nodeW / 2, xR = W - RW - nodeW;
+  // each side and the middle centred in the height
+  const lay = list => { const sh = list.reduce((a, e) => a + Math.max(1.5, e.v * k), 0) + gap * (list.length - 1); let y = top + ((bot - top) - sh) / 2;
+    return list.map(e => { const h = Math.max(1.5, e.v * k), o = {...e, y, h}; y += h + gap; return o; }); };
+  const L = lay(F.src), R = lay(F.use), mH = F.total * k, mTop = top + ((bot - top) - mH) / 2;
+  const kv = (a, b) => `<span>${esc(a)}</span><b>${b}</b>`;
+  const tipOf = (e, side) => cfTip(`<div class="cf-tip-h">${esc(e.label)} <span class="muted">· ${esc(t(side))}</span></div><div class="cf-tip-kv">${kv(t('betrag'), cfEur(e.v))}${kv(t('anteil'), cfPct(e.v, F.total) + ' %')}</div>`);
+  const band = (x0, y0a, y0b, x1, y1a, y1b) => { const c = (x0 + x1) / 2;
+    return `M${x0.toFixed(1)},${y0a.toFixed(1)}C${c.toFixed(1)},${y0a.toFixed(1)} ${c.toFixed(1)},${y1a.toFixed(1)} ${x1.toFixed(1)},${y1a.toFixed(1)}L${x1.toFixed(1)},${y1b.toFixed(1)}C${c.toFixed(1)},${y1b.toFixed(1)} ${c.toFixed(1)},${y0b.toFixed(1)} ${x0.toFixed(1)},${y0b.toFixed(1)}Z`; };
+  let g = '', mY = mTop;
+  for (const e of L) { const tip = tipOf(e, 'cf_herkunft'), h = e.v * k;
+    g += `<g class="cf-fl-g" data-cftip="${tip}" tabindex="0" aria-label="${esc(e.label + ': ' + cfEur(e.v))}"><path class="cf-fl-b ${e.act}" d="${band(xL + nodeW, e.y, e.y + h, xM, mY, mY + h)}"/><rect class="cf-fl-n ${e.act}" x="${xL}" y="${e.y.toFixed(1)}" width="${nodeW}" height="${e.h.toFixed(1)}" rx="2"/></g>`; mY += h; }
+  mY = mTop;
+  for (const e of R) { const tip = tipOf(e, 'cf_verwendung'), h = e.v * k;
+    g += `<g class="cf-fl-g" data-cftip="${tip}" tabindex="0" aria-label="${esc(e.label + ': ' + cfEur(e.v))}"><path class="cf-fl-b ${e.act}" d="${band(xM + nodeW, mY, mY + h, xR, e.y, e.y + h)}"/><rect class="cf-fl-n ${e.act}" x="${xR}" y="${e.y.toFixed(1)}" width="${nodeW}" height="${e.h.toFixed(1)}" rx="2"/></g>`; mY += h; }
+  g += `<rect class="cf-fl-m" x="${xM.toFixed(1)}" y="${mTop.toFixed(1)}" width="${nodeW}" height="${mH.toFixed(1)}" rx="2"/>`;
+  // names beside the bars: at their middle, pushed apart where bars are thin (a short line leads to the bar)
+  const labels = (list, left) => { let yPrev = -Infinity; const out = list.map(e => { const y = Math.max(e.y + e.h / 2, yPrev + LH, top + 6); yPrev = y; return {e, y}; });
+    let over = out.length ? out[out.length - 1].y - (bot - 4) : 0; for (let i = out.length - 1; i >= 0 && over > 0; i--) { out[i].y -= over; over = i ? Math.max(0, out[i - 1].y - (out[i].y - LH)) : 0; }
+    const room = Math.floor((LW - 12) / 6.3) - (narrow ? 0 : 7);
+    return out.map(({e, y}) => { const x = left ? xL - 6 : xR + nodeW + 6, nm = e.label.length > room ? e.label.slice(0, Math.max(3, room - 1)) + '…' : e.label, mid = e.y + e.h / 2;
+      return (Math.abs(y - mid) > 2 ? `<path class="cf-fl-lead" d="M${(left ? xL - 1 : xR + nodeW + 1).toFixed(1)},${mid.toFixed(1)}L${(left ? xL - 5 : xR + nodeW + 5).toFixed(1)},${y.toFixed(1)}"/>` : '')
+        + (narrow ? `<text class="cf-fl-t" x="${x.toFixed(1)}" y="${(y - 2).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(nm)}</text><text class="cf-fl-t cf-fl-v" x="${x.toFixed(1)}" y="${(y + 11).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(F0(e.v))}</text>`
+          : `<text class="cf-fl-t" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(nm)} <tspan class="cf-fl-v">${esc(F0(e.v))}</tspan></text>`); }).join(''); };
+  g += labels(L, true) + labels(R, false);
+  el.innerHTML = `<svg class="cf-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('cf_herkunft_verwendung'))}">${g}</svg>`;
 }
 
 // the tooltip with colour keys: beside the row or column it belongs to, also on keyboard focus (on the iPhone: a tap)
@@ -3335,7 +3324,7 @@ function cfShowTip(el) {
 function bindCfCharts(main) {
   if (CF.ro) { CF.ro.disconnect(); CF.ro = null; }
   const wrap = $('.cf-charts', main); if (!wrap) return;
-  const draw = () => { cfDrawBridge(); cfDrawMonths(); cfDrawPie(); cfDrawYoY(); cfDrawHeat(); };
+  const draw = () => { cfDrawBridge(); cfDrawMonths(); cfDrawPie(); cfDrawHeat(); cfDrawFlow(); };
   draw();
   const hide = () => { const b = $('#cf-tip'); if (b) b.classList.add('hidden'); };
   for (const [ev, fn] of [['pointerover', e => { const el = e.target.closest('[data-cftip]'); if (el) cfShowTip(el); }], ['focusin', e => { const el = e.target.closest('[data-cftip]'); if (el) cfShowTip(el); }],
@@ -3374,7 +3363,7 @@ async function vSync() {
   let h = `<div class="cards">
     ${card('MoneyMoney', `<span class="dot ${mmState(st).cls}"></span>${mmState(st).text}`, m.laeuft ? (m.gesperrt ? t('zum_lesen_in_moneymoney_entsperren') : t('kontor_kann_lesen')) : t('kontor_rechnet_mit_dem_zuletzt'))}
     ${card(t('banken_moneymoney'), r.neuester ? esc(fmtZeit(r.neuester)) : '–', t('neuester_bankabruf_in_moneymoney_den'))}
-    ${card(t('moneymoney_kontor'), r.gelesen ? esc(fmtZeit(r.gelesen)) : '–', (z.automatisch ? t('automatisch_alle') + z.intervall_minuten + t('minuten_wenn_moneymoney_laeuft_und') : t('automatischer_abgleich_ist_aus')) + ` (<a href="#settings">${t('einstellungen')}</a>).`)}
+    ${card(t('moneymoney_kontor'), r.gelesen ? esc(fmtZeit(r.gelesen)) : '–', (z.automatisch ? t('automatisch_alle') + z.intervall_minuten + t('minuten_wenn_moneymoney_laeuft_und') : t('automatischer_abgleich_ist_aus')) + '.')}
     ${hasRules() ? card(t('regeln_zuletzt_angewendet'), l ? esc(fmtZeit(l.zeit)) : '–', `${t('nur_wenn_sich_in_moneymoney')} <a href="#bookings">${t('nav_auto_buchungen')}</a>`) : ''}
   </div>
   <div class="toolbar"><button id="sync-now" ${OFFLINE.mode ? 'disabled' : ''}>${t('jetzt_synchronisieren')}</button><span class="muted small">${t('liest_sofort_aus_moneymoney_wendet')}</span></div>
@@ -3391,7 +3380,7 @@ async function vSync() {
   if (m.problem) h += `<div class="banner err">${t('moneymoney_lief_am_0_kontor', esc(fmtZeit(m.problem.zeit)), esc(m.problem.text))}</div>`;
   if ((r.luecken || []).length) h += `<div class="banner">${t('moeglicherweise_fehlen_depotstaende_mo', r.luecken.map(l => `<b>${esc(l.name)}</b> ${l.monate.map(ML).join(', ')}`).join('; '))} <button class="small secondary" id="gap-ok">${t('hinweis_ausblenden')}</button></div>`;
   if (dep.length) h += `<h2>${t('depots_wertverlauf_0', hq('depotverlauf'))}</h2><div class="note">${t('depot_verlauf_note', r.aufzeichnung_seit ? ML(r.aufzeichnung_seit) : t('heute'))}${more('balances')}</div>
-    <div class="small" style="margin:6px 0 10px">${r.mm_verlauf ? `${t('verlauf_aus_moneymoney_uebernommen_am', esc(fmtZeit(r.mm_verlauf.zeit)))}` : t('bisheriger_verlauf_noch_nicht_uebernom')} <a href="#setup/history">${t('kontostaende_aus_moneymoney_0_einlesen', r.mm_verlauf ? 'erneut ' : '')}</a></div>
+    <div class="small" style="margin:6px 0 10px">${r.mm_verlauf ? `${t('verlauf_aus_moneymoney_uebernommen_am', esc(fmtZeit(r.mm_verlauf.zeit)))}` : t('bisheriger_verlauf_noch_nicht_uebernom')} <a href="#accounts/history">${t('kontostaende_aus_moneymoney_0_einlesen', r.mm_verlauf ? 'erneut ' : '')}</a></div>
     <div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>${t('depot')}</th><th>${t('bereich')}</th><th>${t('bekannt_ab')}</th><th></th></tr></thead><tbody>${dep.map(k => `<tr data-uuid="${k.uuid}"><td>${esc(k.name)}<div class="small muted">${esc(CP(k.pfad.split(' / ').slice(0, -1).join(' / ')))}</div></td><td class="small">${esc(k.bereich || '–')}</td><td>${k.erster_stand ? ML(k.erster_stand) : '–'}${k.aus_moneymoney ? ` <span class="small muted">${t('aus_moneymoney')}</span>` : ''}${k.eigene ? ` <span class="small muted">${t('0_eingetragen', k.eigene)}</span>` : ''}</td><td class="c"><button class="small secondary dep-hist">${t('staende_eintragen')}</button></td></tr>`).join('')}</tbody></table></div>`;
   h += `<h2>${t('sync_mit_abruf', online.length, hq('abruf'))}</h2><div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>${t('konto_2')}</th><th>${t('bereich')}</th><th>${t('letzter_abruf')}</th><th>${t('stand')}</th><th>${t('art')}${hq('ab_art')}</th></tr></thead><tbody>${online.map(row).join('') || `<tr><td colspan="5" class="muted">${t('keine')}</td></tr>`}</tbody></table></div>`;
   h += `<h2>${t('sync_ohne_abruf', offline.length)}</h2><div class="note">${t('von_hand_gefuehrte_konten_z')}</div>
@@ -3447,11 +3436,11 @@ async function nbRefresh() {
 // read), booking fully automatically a sync books what is new
 async function rulesFollowUp(after) {
   if (OFFLINE.mode) return;
-  if (S.CFG.probelauf === false) { await syncNow(); if (after && S.tab === 'rules') after(); return; }
+  if (S.CFG.probelauf === false) { await syncNow(); if (after && S.tab === 'accounts' && S.sub === 'rules') after(); return; }
   try {
     const r = await api('/api/bookings/refresh', {});
     S.STATUS = await api('/api/status'); statusMini();
-    if (after && S.tab === 'rules') after();
+    if (after && S.tab === 'accounts' && S.sub === 'rules') after();
     if (r.status === 'ok' && r.wartend) toast(r.wartend === 1 ? t('aktualisiert_1') : t('aktualisiert_n', r.wartend), 4500);
   } catch (e) { /* the next sync plans it */ }
 }
@@ -3479,8 +3468,8 @@ function vBuchungen(runs) {
   let h = `<div class="toolbar">
     ${pending ? `<button id="run-live" class="ico" ${local ? '' : t('disabled_title_nur_am_mac')}>${ICON.check}<span>${t('jetzt_buchen')} (<span id="sel-n">${pending}</span>)</span></button>` : ''}
     ${ask ? `<button id="bk-refresh" class="secondary ico" title="${esc(t('freigabe_aktualisieren_tip'))}" ${OFFLINE.mode ? 'disabled' : ''}>${ICON.refresh}<span>${t('aktualisieren')}</span></button>` : ''}
-    <span class="sp"></span><a class="small" href="#rules">${t('zu_den_regeln')}</a>
-    <a class="mode-chip${ask ? '' : ' auto'}" href="#rules" title="${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')}">${ask ? ICON.hand : ICON.bolt}${t(ask ? 'modus_freigabe' : 'modus_automatisch')}</a>
+    <span class="sp"></span><a class="small" href="#accounts/rules">${t('zu_den_regeln')}</a>
+    <a class="mode-chip${ask ? '' : ' auto'}" href="#accounts/rules" title="${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')}">${ask ? ICON.hand : ICON.bolt}${t(ask ? 'modus_freigabe' : 'modus_automatisch')}</a>
   </div>`;
   if (l) {
     const head = pending ? `${t('wartet_freigabe')} <span class="x">${pending}</span>` : `${t('zuletzt_geprueft')} <span class="x">${esc(l.zeit)} · ${l.geschrieben} ${t('gebucht')}</span>`;
@@ -3835,7 +3824,7 @@ async function belegeApi(path, body) {
   try { return await api(path, body); }
   catch (e) {
     if (!(e.data && e.data.ordner_bestaetigen)) throw e;
-    if (!confirm(t('belege_werden_im_ordner') + e.data.ordner + t('abgelegt_den_ordner_jetzt_anlegen'))) { go('#settings'); throw new Error(t('err_kein_belegordner')); }
+    if (!confirm(t('belege_werden_im_ordner') + e.data.ordner + t('abgelegt_den_ordner_jetzt_anlegen'))) { go('#settings/receipts'); throw new Error(t('err_kein_belegordner')); }
     return api(path, Object.assign({}, body, {ordner_anlegen: true}));
   }
 }
@@ -3891,7 +3880,7 @@ function vRegeln() {
   const cos = companyAreas();
   h += `<section class="rule-sec"><div class="sec-head"><h2>${t('regel_beteiligungen')}${hq('regel_gesellschaften_h')}</h2></div><p class="sec-sub">${t('gesellschaften_sub')}</p>`
     + `<div id="companies">${cos.map(b => companyCard(b, (C.gesellschaften || []).find(g => String(g.bereich) === String(b.id)) || {})).join('')}</div>`
-    + (cos.length ? '' : `<div class="empty small muted">${t('leer_gesellschaften')} <a href="#setup/areas">${t('mod_areas')} →</a></div>`) + `</section>`;
+    + (cos.length ? '' : `<div class="empty small muted">${t('leer_gesellschaften')} <a href="#accounts/areas">${t('mod_areas')} →</a></div>`) + `</section>`;
   h += `<section class="rule-sec"><div class="sec-head"><h2>${t('co_gegenkonten')}${hq('h_co_gk')}</h2><span class="sp"></span><button id="add-mirror" class="secondary small add-rule">${t('gegenkonto_hinzufuegen')}</button></div>`
     + `<p class="sec-sub">${t('spiegel_sub')}</p><div id="mirrors">${(C.kontenspiegel || []).map(mirrorRow).join('')}</div><div class="empty small muted">${t('leer_spiegel')}</div></section>`;
   h += `<div id="rules-warn" class="findings"></div><div id="findings" class="findings"></div>`
@@ -3937,7 +3926,7 @@ function companyCard(b, g) {
   const has = b.anteil != null && b.anteil !== '', bid = String(b.id);
   const row = (label, help, field) => `<div class="co-row"><div class="co-l">${label}${hq(help)}</div><div class="co-f">${field}</div></div>`;
   return `<div class="co-card" data-b="${esc(bid)}"><div class="co-head"><h3>${esc(b.name)}</h3>`
-    + (has ? `<a class="pill neutral" href="#setup/areas">${t('anteil_0', pctText(b.anteil))}</a>` : `<a class="pill warn" href="#setup/areas">${t('anteil_fehlt')}</a>`) + hq('h_co_anteil') + `</div>`
+    + (has ? `<a class="pill neutral" href="#accounts/areas">${t('anteil_0', pctText(b.anteil))}</a>` : `<a class="pill warn" href="#accounts/areas">${t('anteil_fehlt')}</a>`) + hq('h_co_anteil') + `</div>`
     + row(t('co_beteiligung'), 'h_co_bet', `${acctSel('c-bet', g.beteiligung, betCandidate(bid), t('keine_2'))}<div class="pv small" data-pv="b"></div>`)
     + row(t('co_takt'), 'h_co_takt', `<select class="c-takt"><option value="taeglich" ${g.takt !== 'monatlich' ? 'selected' : ''}>${t('takt_taeglich')}</option><option value="monatlich" ${g.takt === 'monatlich' ? 'selected' : ''}>${t('takt_monatlich')}</option></select><div class="small muted c-takt-tip">${taktTip(g.takt)}</div>`)
     + row(t('co_rueck'), 'h_co_rueck', backField(g.rueckwirkend_ab))
@@ -4082,7 +4071,7 @@ async function saveConfig(cfg, findingsEl, trotzdem) {
 const subTabs = (base, items) => `<div class="tabs">${items.map(([k, l]) => `<button data-next="#${base}${k ? '/' + k : ''}" class="${S.sub === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
 async function vKategorien() {
   // Reiter: Zuordnen (was in MoneyMoney noch keine Kategorie hat) · Regeln für MoneyMoney (Vorschläge). Where a category counts in
-  // the cash flow is a setting: its own page under Verwaltung (#positions).
+  // the cash flow is a setting: its own page under Verwaltung (#accounts/positions).
   const offen = ((S.DATA && S.DATA.kategorien || {}).gesamt || {}).ohne;
   const body = S.sub === 'rules' ? await vRegelVorschlaege() : await vZuordnen();
   const nr = KZ.regeln ?? (KZ.offen || {}).regelvorschlaege;
@@ -4345,33 +4334,46 @@ function bindRegelVorschlaege(main) {
 
 // ---------------------------------------------------------------- Einstellungen
 async function vEinstellungen() {
-  // Reiter: Allgemein · Zugang · Updates · Steuer · Sichern & Zuruecksetzen (Bereiche, Konten, Kategorien, Regeln: Einrichtung)
-  const tabs = subTabs('settings', [['', t('allgemein')], ['access', t('zugang')], ['updates', t('updates')], ['tax', t('steuer')], ['backup', t('sichern_zuruecksetzen')]]);
-  const v = {access: vEinstellungenZugang, updates: vEinstellungenUpdates, tax: vEinstellungenSteuer, backup: vSicherung}[S.sub] || vEinstellungenAllgemein;
+  // How Kontor runs (nothing here changes a figure): Allgemein · MoneyMoney & Abgleich · Zugang · Belege · Updates · Sichern.
+  // What sets your figures (areas, accounts, positions, rules, tax) is under "Konten & Regeln".
+  const tabs = subTabs('settings', [['', t('allgemein')], ['moneymoney', t('einst_mm')], ['access', t('zugang')], ['receipts', t('belege')], ['updates', t('updates')], ['backup', t('sichern_zuruecksetzen')]]);
+  const v = {moneymoney: vEinstellungenMM, access: vEinstellungenZugang, receipts: vEinstellungenBelege, updates: () => vUpdates(vEinstellungenUpdates()), backup: vSicherung}[S.sub] || vEinstellungenAllgemein;
   return tabs + await v();
 }
+const saveBar = () => `<div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
 function vEinstellungenAllgemein() {
-  const C = S.CFG, z = C.zeitplan || {}, b = C.bilanz || {}, bl = C.belege || {}, mm = C.moneymoney || {};
-  let h = `<div class="note">${t('einstellungen_vs_einrichtung', '<a href="#setup">' + t('einrichtung') + '</a>')}</div><h2>${t('betrieb')}</h2><div class="form">
+  return `<div class="note">${t('einstellungen_vs_einrichtung', '<a href="#accounts">' + t('konten_regeln') + '</a>')}</div><div class="form">
     <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang">${langOpts()}</select> <span class="small muted">${t('sprache_hinweis')}</span></label>
     <label>${t('design_label')}</label><label class="chk"><select id="e-theme">${[['dark', t('design_dunkel')], ['light', t('design_hell')], ['auto', t('design_system')]].map(([k, l]) => `<option value="${k}" ${themeGet() === k ? 'selected' : ''}>${l}</option>`).join('')}</select> <span class="small muted">${t('design_hinweis')}</span></label>
-    <label>${t('auto_buchen')} ${hq('probelauf')}</label><label class="chk"><input type="checkbox" id="e-autobook" ${C.probelauf === false ? 'checked' : ''} ${(S.STATUS || {}).lokal ? '' : 'disabled'}> ${t('auto_buchen_kurz')}</label>
+  </div>${saveBar()}`;
+}
+// Konten & Regeln: everything that sets your figures -- which accounts there are and where they belong (accounts, areas,
+// balances) and by which rules Kontor counts and books (cash flow positions, booking rules, tax). The accounts open first.
+async function vKontenRegeln() {
+  const tabs = [['', t('mod_accounts')], ['areas', t('mod_areas')], ['history', t('kontostaende_tab')], ['positions', t('cashflow_positionen')], ['rules', t('nav_auto_regeln')], ['tax', t('steuer')]];
+  const v = {areas: vBereicheEditor, history: vMMHistorie, positions: vPositionen, rules: vRegeln, tax: vEinstellungenSteuer}[S.sub] || vKontenEditor;
+  return `<div class="tabs-row">${subTabs('accounts', tabs)}${setupOpen() ? '' : `<a class="small tabs-aside" href="#setup">${t('einrichtung_pruefen')}</a>`}</div>` + await v();
+}
+// MoneyMoney & Abgleich: the connection, when and how much Kontor reads, what it may write, and where every account stands
+async function vEinstellungenMM() {
+  const C = S.CFG, z = C.zeitplan || {}, b = C.bilanz || {}, mm = C.moneymoney || {};
+  return `<h2>${t('verbindung')}</h2>${vVerbindung()}
+  <h2>${t('abgleich_h')}</h2><div class="form">
     <label>${t('automatischer_abgleich_0', hq('abgleich'))}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatisch !== false ? 'checked' : ''}> ${t('alle_2')} <input type="number" id="e-intervall" min="5" value="${z.intervall_minuten ?? 30}" style="width:70px"> ${t('minuten_nur_wenn_moneymoney_laeuft')}</label>
     <label>${t('alles_neu_lesen_0', hq('voll_lesen'))}</label><label class="chk">${t('alle_2')} <input type="number" id="e-voll" min="1" value="${z.voll_lesen_tage ?? 7}" style="width:70px"> ${t('tage')}</label>
-  </div>
-  <h2>MoneyMoney</h2><div class="form">
     <label>${t('umsaetze_lesen_0', hq('monate_zurueck'))}</label><label class="chk">${t('die_letzten')} <input type="number" id="e-monate" min="0" value="${b.monate_zurueck ?? 0}" style="width:70px"> ${t('monate_0_alle')}</label>
     <label>${t('kategorisieren_erlauben_0', hq('mm_cat'))}</label><label class="chk"><input type="checkbox" id="e-mm-cat" ${mm.kategorisieren_erlauben ? 'checked' : ''}> ${t('umsaetzen_aus_kontor_eine_kategorie')}</label>
-  </div>
-  <h2>${t('belege')}</h2><div class="form">
+  </div>${saveBar()}
+  <h2>${t('synchronisierung')}</h2>${await vSync()}`;
+}
+function vEinstellungenBelege() {
+  const bl = S.CFG.belege || {};
+  return `<div class="form">
     <label>${t('belegordner_0', hq('belege_ordner'))}</label><div><input type="text" id="e-bl-ordner" value="${esc(bl.ordner || '~/Documents/Kontor-Belege')}" style="width:100%"><div class="small muted">${bl.ordner_bestaetigt ? t('wird_beim_ersten_beleg_angelegt') : t('noch_nicht_angelegt_beim_ersten')}</div></div>
     <label>${t('unterordner_muster_0', hq('belege_sub'))}</label><input type="text" id="e-bl-sub" value="${esc(bl.unterordner || '{jahr}')}" placeholder="${t('jahr_jahr_entitaet_entitaet_jahr')}">
     <label>${t('verweis_in_moneymoney_0', hq('belege_kommentar'))}</label><label class="chk"><input type="checkbox" id="e-bl-comment" ${bl.kommentar_schreiben ? 'checked' : ''}> ${t('dateipfad_als_kommentar_an_den')}</label>
     <div class="full note">${t('belege_werden_als_normale_dateien_2')}</div>
-  </div>
-  <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>
-`;
-  return h;
+  </div>${saveBar()}`;
 }
 function vEinstellungenSteuer() {
   const st = S.CFG.steuer || {}, loans = S.KONTEN.filter(k => !k.gruppe && k.rolle === 'verbindlichkeiten');
@@ -4484,9 +4486,7 @@ function bindZugang(main) {
 }
 function vEinstellungenUpdates() {
   const up = S.CFG.updates || {};
-  const st = S.STATUS.update || {};
-  return `<div class="banner info">${t('updates_seite_hinweis', esc(S.STATUS.version || ''))}${st.neuer ? ' ' + t('update_verfuegbar_0', esc(st.verfuegbar || '')) : ''} <a href="#updates"><button class="small">${t('zur_seite_updates')}</button></a></div>
-  <h2>${t('updates')}</h2><div class="form">
+  return `<h2>${t('einstellungen')}</h2><div class="form">
     <label>${t('automatisch_pruefen_0', hq('updates'))}</label><label class="chk"><select id="e-up-pruefen">${[['taeglich', t('taeglich')], ['woechentlich', t('woechentlich')], ['aus', t('nie')]].map(([v, l]) => `<option value="${v}" ${(up.pruefen || 'taeglich') === v ? 'selected' : ''}>${l}</option>`).join('')}</select> <span class="small muted">${t('nur_github_installieren_erst_nach_klick')}</span></label>
     <label>${t('quelle_github_0', hq('update_quelle'))}</label><input type="text" id="e-up-repo" value="https://github.com/${esc(up.repo || 'stecrz/Kontor')}">
   </div>
@@ -4501,15 +4501,15 @@ const posRow = (k, v) => `<div class="row tight pos-row"><input type="text" clas
 function collectSettings() {
   // nur die Felder des sichtbaren Reiters; alles andere bleibt, wie es ist
   const cfg = JSON.parse(JSON.stringify(S.CFG));
-  if ($('#e-autobook')) {
-    cfg.probelauf = !$('#e-autobook').checked; delete cfg.mitteilungen;
+  if ($('#e-lang')) cfg.oberflaeche = Object.assign(cfg.oberflaeche || {}, { sprache: $('#e-lang').value });
+  if ($('#e-auto')) {
+    delete cfg.mitteilungen;
     cfg.zeitplan = { automatisch: $('#e-auto').checked, intervall_minuten: Math.max(5, parseInt($('#e-intervall').value) || 30), voll_lesen_tage: Math.max(1, parseInt($('#e-voll').value) || 7) };
     cfg.bilanz = Object.assign(cfg.bilanz || {}, { monate_zurueck: parseInt($('#e-monate').value) || 0 });
     cfg.moneymoney = Object.assign(cfg.moneymoney || {}, { kategorisieren_erlauben: $('#e-mm-cat').checked });
-    cfg.belege = Object.assign(cfg.belege || {}, { ordner: $('#e-bl-ordner').value.trim() || '~/Documents/Kontor-Belege', unterordner: $('#e-bl-sub').value.trim() || '{jahr}', kommentar_schreiben: $('#e-bl-comment').checked,
-      ordner_bestaetigt: !!(cfg.belege || {}).ordner_bestaetigt || $('#e-bl-ordner').value.trim() !== ((S.CFG.belege || {}).ordner || '') });    // ein hier gewählter Ordner gilt als bestätigt
-    cfg.oberflaeche = Object.assign(cfg.oberflaeche || {}, { sprache: $('#e-lang').value });
   }
+  if ($('#e-bl-ordner')) cfg.belege = Object.assign(cfg.belege || {}, { ordner: $('#e-bl-ordner').value.trim() || '~/Documents/Kontor-Belege', unterordner: $('#e-bl-sub').value.trim() || '{jahr}', kommentar_schreiben: $('#e-bl-comment').checked,
+      ordner_bestaetigt: !!(cfg.belege || {}).ordner_bestaetigt || $('#e-bl-ordner').value.trim() !== ((S.CFG.belege || {}).ordner || '') });    // ein hier gewählter Ordner gilt als bestätigt
   if ($('#e-verm')) cfg.steuer = Object.assign(cfg.steuer || {}, { vermietung_kategorie: $('#e-verm').value.trim() || 'Vermietung',
       objekt_darlehen: Object.fromEntries($$('.e-obj').map(i => [i.dataset.ref, i.value.trim()]).filter(([, v]) => v)),
       positionen: Object.fromEntries($$('.pos-row').map(r => [$('.p-kat', r).value.trim(), $('.p-pos', r).value.trim()]).filter(([k, v]) => k && v)) });
@@ -4602,12 +4602,12 @@ function clSplit(cl) {
   if (!parts.length) return '';
   return `<h2>${t('neueste_aenderungen')}</h2>${clHtml(parts[0])}` + (parts.length > 1 ? `<details class="changelog"><summary>${t('fruehere_aenderungen')}</summary>${clHtml(parts.slice(1).join('\n'))}</details>` : '');
 }
-async function vUpdates() {
+async function vUpdates(form) {
   const r = await api('/api/update/status'), st = S.STATUS, info = r.info;
   let h = `<div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.datum ? `<span class="vdate">${t('vom_0', FDT(r.datum))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
     <div class="card"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.fehler ? '<span class="pill err">?</span>' : esc(info.verfuegbar || '–') + (info.datum ? `<span class="vdate">${t('vom_0', FDT(info.datum))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.fehler ? esc(info.fehler) : (info.neuer ? `<span class="pill ok">${t('neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + t('quelle_2') + esc(info.quelle || '')) : t('noch_nicht_geprueft')}${r.geprueft ? t('geprueft') + new Date(r.geprueft * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
-    <div class="note">${t('automatisch_pruefen_status', {taeglich: t('taeglich'), woechentlich: t('woechentlich'), aus: t('nie')}[(S.CFG.updates || {}).pruefen || 'taeglich'])} <a href="#settings/updates">${t('aendern')}</a></div>
     <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${info && info.neuer && st.lokal ? '' : 'disabled'}>${t('update_installieren_und_dienst_neu')}</button></div>
+    ${form || ''}
     ${info && info.notizen && info.neuer ? `<h2>${t('neu_in_0', esc(info.verfuegbar))}</h2>${clHtml(info.notizen)}` : ''}
     ${clSplit(r.changelog)}
     <div class="note">${t('updates_note', esc('https://github.com/' + ((S.CFG.updates || {}).repo || 'stecrz/Kontor')))}${more('updates')}</div>`;
@@ -4688,19 +4688,21 @@ function bindHilfe(main) {
 }
 
 // ---------------------------------------------------------------- Steuerung
-const TITLES = {overview: t('uebersicht'), balance: t('bilanz'), cashflow: t('kapitalfluss'), planning: t('planung'), bookings: t('nav_auto_buchungen'), tax: t('steuer'), properties: t('immobilien'), transactions: t('umsaetze_belege'), setup: t('einrichtung'), rules: t('nav_auto_regeln'), categories: t('kategorien'), positions: t('cashflow_positionen'), settings: t('einstellungen'), sync: t('synchronisierung'), updates: t('updates'), log: t('protokoll'), help: t('hilfe')};
+const TITLES = {overview: t('uebersicht'), balance: t('bilanz'), cashflow: t('kapitalfluss'), planning: t('planung'), bookings: t('nav_auto_buchungen'), tax: t('steuer'), properties: t('immobilien'), transactions: t('umsaetze_belege'), setup: t('einrichtung'), accounts: t('konten_regeln'), categories: t('kategorien'), settings: t('einstellungen'), log: t('protokoll'), help: t('hilfe')};
 const SUBTITLES = {};
 // Earlier German addresses (bookmarks, home screen) lead to the English ones
 const OLD_ROUTES = {uebersicht: 'overview', bilanz: 'balance', kapitalfluss: 'cashflow', planung: 'planning', buchungen: 'bookings', steuer: 'tax', immobilien: 'properties',
   umsaetze: 'transactions', einrichtung: 'setup', regeln: 'rules', kategorien: 'categories', einstellungen: 'settings', synchronisierung: 'sync', protokoll: 'log', hilfe: 'help'};
 const OLD_SUBS = {setup: {verbindung: 'connect', bereiche: 'areas', konten: 'accounts', historie: 'history'}, categories: {auswahl: 'selection', regeln: 'rules', kapitalfluss: 'cashflow'},
   settings: {zugang: 'access', steuer: 'tax', sichern: 'backup'}};
+// since 3.13.20: what sets your figures under "Konten & Regeln", how Kontor runs under "Einstellungen"
+const MOVED = {'setup/areas': 'accounts/areas', 'setup/accounts': 'accounts', 'setup/history': 'accounts/history', 'setup/connect': 'settings/moneymoney',
+  rules: 'accounts/rules', positions: 'accounts/positions', 'categories/positions': 'accounts/positions', 'settings/tax': 'accounts/tax', sync: 'settings/moneymoney',
+  updates: 'settings/updates'};
 function newRoute(raw) {
   const [path, qs] = raw.split('?'), [tab, sub] = path.split('/');
-  if (tab === 'categories' && sub === 'positions') return '#positions';          // a page of its own since 3.13.11
-  if (!OLD_ROUTES[tab]) return null;
-  const nt = OLD_ROUTES[tab], ns = sub ? ((OLD_SUBS[nt] || {})[sub] || sub) : '';
-  return '#' + nt + (ns ? '/' + ns : '') + (qs && nt !== 'transactions' ? '?' + qs : '');
+  const nt = OLD_ROUTES[tab] || tab, ns = sub ? ((OLD_SUBS[nt] || {})[sub] || sub) : '', p = nt + (ns ? '/' + ns : ''), np = MOVED[p] || p;
+  return np === path ? null : '#' + np + (qs && !np.startsWith('transactions') ? '?' + qs : '');
 }
 async function route() {
   { const nr = newRoute((location.hash || '').slice(1)); if (nr) history.replaceState(null, '', nr); }
@@ -4716,6 +4718,7 @@ async function route() {
   if (!sameTab) KEEP_OPEN.clear();          // folded sections open only while the same page is drawn again
   if (qs && S.tab === 'transactions') { const p = new URLSearchParams(qs); S.uf.ohne_kategorie = p.get('uncategorized') === '1'; S.uf.ohne_beleg = p.get('no_receipt') === '1'; if (p.get('year')) S.uf.jahr = p.get('year'); if (p.get('entity')) S.uf.entitaet = p.get('entity'); history.replaceState(null, '', '#transactions'); }
   $$('#nav a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + S.tab));
+  { const ns = $('#nav-setup'); if (ns) ns.classList.toggle('hidden', !setupOpen() && S.tab !== 'setup'); }
   $('#page-title').textContent = SUBTITLES[S.tab + '/' + S.sub] || (S.tab === 'properties' && S.sub ? t('immobilie') : TITLES[S.tab]);
   if (ALPHA_TABS.has(S.tab)) $('#page-title').insertAdjacentHTML('beforeend', alphaTag('alpha-tag big'));
   if (S.tab === 'bookings') $('#page-title').insertAdjacentHTML('beforeend', ' ' + hq('auto_buchungen_h'));       // what this page is (a click: its help section)
@@ -4735,13 +4738,10 @@ async function route() {
     else if (S.tab === 'tax') h = vSteuer();
     else if (S.tab === 'properties') h = vImmobilien(S.sub);
     else if (S.tab === 'setup') h = vEinrichtung(S.sub);
+    else if (S.tab === 'accounts') h = await vKontenRegeln();
     else if (S.tab === 'transactions') h = await vUmsaetze();
-    else if (S.tab === 'rules') h = vRegeln();
     else if (S.tab === 'categories') h = await vKategorien();
-    else if (S.tab === 'positions') h = await vPositionen();
     else if (S.tab === 'settings') h = await vEinstellungen();
-    else if (S.tab === 'sync') h = await vSync();
-    else if (S.tab === 'updates') h = await vUpdates();
     else if (S.tab === 'log') h = await vProtokoll();
     else if (S.tab === 'help') h = await vHilfe();
     clearTimeout(slow);
@@ -4757,21 +4757,22 @@ async function route() {
     if (S.tab === 'properties') bindImmo(main);
     if (S.tab === 'cashflow') bindCfCharts(main);
     if (S.tab === 'categories') { bindZuordnen(main); bindRegelVorschlaege(main); }
-    if (S.tab === 'positions') bindPositionen(main);
+    if (S.tab === 'accounts' && S.sub === 'positions') bindPositionen(main);
     if (S.tab === 'settings' && S.sub === 'access') bindZugang(main);
     if (S.tab === 'help') bindHilfe(main);
   } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== 'nicht angemeldet') main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" onclick="route()">${t('erneut_versuchen')}</button></div>`; }
 }
 let ROUTE_SEQ = 0;
+const softRoute = () => DIRTY.on ? statusMini() : route();      // redraw unless something on the page is not saved yet
 const SCROLL = {key: '', pos: {}};
 // Ungespeicherte Aenderungen: Formulare auf Seiten mit Speichern-Knopf melden Aenderungen; Wegnavigieren fragt nach
 const DIRTY = {on: false, hash: location.hash};
-const GUARDED = ['setup/areas', 'setup/accounts', 'settings', 'settings/access', 'settings/updates', 'settings/tax', 'rules'];
+const GUARDED = ['accounts', 'accounts/areas', 'accounts/rules', 'accounts/tax', 'settings', 'settings/moneymoney', 'settings/receipts', 'settings/access', 'settings/updates'];
 const guarded = () => GUARDED.includes(S.tab + (S.sub ? '/' + S.sub : ''));
 (function dirtyListeners() {
   // einmal am Hauptbereich (bleibt bestehen); ob die Seite geschuetzt ist, wird beim Ereignis geprueft
   const main = $('#main');
-  const mark = e => { if (!guarded() || e.target.closest('#hi-preview, .toolbar, .rules-page') || e.target.id === 'k-show-inactive') return; DIRTY.on = true; };
+  const mark = e => { if (!guarded() || e.target.closest('#hi-preview, .toolbar, .rules-page, .sync-table') || e.target.id === 'k-show-inactive') return; DIRTY.on = true; };
   main.addEventListener('input', mark); main.addEventListener('change', mark);
   main.addEventListener('click', e => { if (guarded() && e.target.closest('.del, #add-bereich, .add-item, .b-mv')) DIRTY.on = true; });
 })();
@@ -4877,7 +4878,7 @@ function bind(main) {
     let r; try { r = await api('/api/check', {}); } catch (e) { stop(); wc.classList.remove('busy'); wc.disabled = false; if (busy) busy.classList.add('hidden'); showFindings($('#w-findings'), [], e.message, 'fehler'); return; }
     stop();
     if (!r.verfuegbar) { wc.classList.remove('busy'); wc.disabled = false; if (busy) busy.classList.add('hidden'); showFindings($('#w-findings'), [], r.text, 'fehler'); return; }
-    S.KONTEN = r.konten; S.KATS = r.kategorien || S.KATS; await route(); showFindings($('#w-findings'), r.befunde, t('verbindung_steht') + r.konten.length + t('konten_gelesen'), 'ok'); });
+    S.KONTEN = r.konten; S.KATS = r.kategorien || S.KATS; await softRoute(); showFindings($('#w-findings'), r.befunde, t('verbindung_steht') + r.konten.length + t('konten_gelesen'), 'ok'); });
   const wr = $('#w-report', main); if (wr) wr.addEventListener('click', () => rebuildReport(true));
   const et = $('#e-theme', main); if (et) et.addEventListener('change', () => { try { localStorage.setItem('kontor.theme', et.value); } catch (e) {} applyTheme(et.value); route(); });
   const wl = $('#w-lang', main); if (wl) wl.addEventListener('change', async () => { if (wl.value === LANG) return; try { await api('/api/language', {sprache: wl.value}); setLang(wl.value); } catch (e) { wl.value = LANG; toast(e.message, 5000); } });
@@ -4918,12 +4919,12 @@ function bind(main) {
     $('#mmh-pick', main).addEventListener('click', () => $('#mmh-file', main).click());
     $('#mmh-file', main).addEventListener('change', e => { send(e.target.files[0]); e.target.value = ''; });
   }
-  const go = $('#gap-ok', main); if (go) go.addEventListener('click', async () => { try { await api('/api/sync/gaps', {}); S.STATUS = await api('/api/status'); statusMini(); route(); } catch (e) { toast(e.message, 5000); } });
+  const go = $('#gap-ok', main); if (go) go.addEventListener('click', async () => { try { await api('/api/sync/gaps', {}); S.STATUS = await api('/api/status'); statusMini(); softRoute(); } catch (e) { toast(e.message, 5000); } });
   $$('.dep-hist', main).forEach(b => b.addEventListener('click', async () => { b.classList.add('busy'); try { await openHistDrawer(b.closest('tr').dataset.uuid); } catch (e) { toast(e.message, 6000); } finally { b.classList.remove('busy'); } }));
   const sn = $('#sync-now', main); if (sn) sn.addEventListener('click', async () => { sn.classList.add('busy'); try { await syncNow(); } finally { sn.classList.remove('busy'); } });
   const sf = $('#sync-full', main); if (sf) sf.addEventListener('click', async () => { sf.classList.add('busy'); try { await syncNow(true); } finally { sf.classList.remove('busy'); } });
   $$('.ab-sel', main).forEach(sel => sel.addEventListener('change', async () => {
-    try { await api('/api/sync', {konto: sel.closest('tr').dataset.uuid, abgerufen: sel.value === 'online'}); S.STATUS = await api('/api/status'); S.KONTEN = (await api('/api/accounts')).konten || S.KONTEN; statusMini(); route(); }
+    try { await api('/api/sync', {konto: sel.closest('tr').dataset.uuid, abgerufen: sel.value === 'online'}); S.STATUS = await api('/api/status'); S.KONTEN = (await api('/api/accounts')).konten || S.KONTEN; statusMini(); softRoute(); }
     catch (e) { toast(e.message, 5000); sel.value = sel.value === 'online' ? 'offline' : 'online'; }
   }));
   const ksi = $('#k-show-inactive', main); if (ksi) ksi.addEventListener('change', e => $$('tr.inactive', main).forEach(tr => tr.style.display = e.target.checked ? '' : 'none'));
@@ -5143,7 +5144,7 @@ function bind(main) {
   const pd = $('#pk-drop', main); if (pd) { pd.addEventListener('dragover', e => { e.preventDefault(); pd.classList.add('over'); }); pd.addEventListener('dragleave', () => pd.classList.remove('over')); pd.addEventListener('drop', e => { e.preventDefault(); pd.classList.remove('over'); if (e.dataTransfer.files[0]) readPkgFile(e.dataTransfer.files[0]); }); if (PKG) pkgPreview(); }
 
   // Updates
-  const uc = $('#up-check', main); if (uc) uc.addEventListener('click', async () => { toast(t('pruefe')); await api('/api/update/check', {}); S.STATUS = await api('/api/status'); route(); });
+  const uc = $('#up-check', main); if (uc) uc.addEventListener('click', async () => { toast(t('pruefe')); await api('/api/update/check', {}); S.STATUS = await api('/api/status'); softRoute(); });
   const ui = $('#up-install', main); if (ui) ui.addEventListener('click', async () => { if (!confirm(t('update_installieren_und_dienst_neu_2'))) return; toast(t('update_wird_installiert'), 30000); try { const r = await api('/api/update/install', {}); toast(r.text, 8000); if (r.ok && r.neustart) waitAndReload(true); } catch (e) { toast(e.message, 8000); } });
   const lr = $('#log-refresh', main); if (lr) lr.addEventListener('click', route);
   const ls = $('#log-show', main); if (ls) ls.addEventListener('click', async () => { try { await api('/api/file/reveal', {pfad: ((S.STATUS.ablage || {}).ordner || '') + '/kontor.log'}); } catch (e) { toast(e.message, 5000); } });
@@ -5192,7 +5193,7 @@ async function syncNow(voll, page) {
       const [cfg, konten, kats] = await Promise.all([api('/api/config'), api('/api/accounts'), api('/api/categories')]);
       S.CFG = cfg; S.KONTEN = konten.konten || []; S.KATS = kats.kategorien || [];
       if (!$('#drawer').classList.contains('open')) route();
-    } else if (S.tab === 'bookings' || S.tab === 'sync') route();
+    } else if (S.tab === 'bookings' || (S.tab === 'settings' && S.sub === 'moneymoney')) softRoute();
     pollStatus(changed).catch(() => {});                             // the figures follow: loaded once the report is rebuilt
   } catch (e) { toast(t('synchronisieren_fehlgeschlagen') + e.message, 6000); }
   finally { SYNC.busy = false; statusMini(); }

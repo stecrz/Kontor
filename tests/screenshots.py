@@ -71,8 +71,8 @@ def main():
             pg.reload(); pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_timeout(1200)
             pg.evaluate("document.querySelectorAll('.banner').forEach(b => b.remove())")
             shots = [("overview", "#overview", None), ("balance_sheet", "#balance", "bilanz"), ("cash_flow", "#cashflow", None), ("cash_flow_charts", "#cashflow", "cfcharts"),
-                     ("planning", "#planning", None), ("setup", "#setup", None), ("accounts", "#setup/accounts", None),
-                     ("assign_categories", "#categories", None), ("rules", "#rules", "rules"), ("category_positions", "#positions", None), ("sync", "#sync", None),
+                     ("planning", "#planning", None), ("setup", "#setup", None), ("accounts", "#accounts", None),
+                     ("assign_categories", "#categories", None), ("rules", "#accounts/rules", "rules"), ("category_positions", "#accounts/positions", None), ("sync", "#settings/moneymoney", None),
                      ("access", "#settings/access", None), ("backup", "#settings/backup", None), ("property", "#properties", "immo")]
             for name, h, special in shots:
                 pg.goto(U + h); pg.wait_for_timeout(1400)
