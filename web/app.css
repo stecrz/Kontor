@@ -11,8 +11,8 @@
   --c-liq:#34c759; --c-anl:#12a88a; --c-fest:#1d9fc0; --c-bet:#af52de; --c-ford:#3a6ff0; --c-immo:#9e7458; --c-verb:#ff6b57; --c-ein:#1a8a4a; --c-aus:#c0392b; --c-neutral:#8e8e93; --c-nw:#e8aa00;
   /* cash flow: the activities (operating, investing, financing) and up to six categories within a position -- apart also for
      colour-blind readers, checked for both modes */
-  --cf-op:#1e9be6; --cf-inv:#f29a00; --cf-fin:#8f36d4; --cf-unk:#8e8e93;      /* no green or red: those are money in and out */
-  --cat1:#0f9fb0; --cat2:#5b4fd0; --cat3:#a8742a;      /* within an expense's red bar: none of the cash flow's colours, no red or green */
+  --cf-op:#0899c4; --cf-inv:#e5a800; --cf-fin:#cf2f96; --cf-unk:#8e8e93;      /* cyan, yellow, magenta */      /* no green or red: those are money in and out */
+  --cat1:#2d4bb0; --cat2:#b07428; --cat3:#a78bf0;      /* within an expense's red bar: none of the cash flow's colours, no red or green */
   --radius:14px; --radius-s:9px; --shadow:0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
 }
 :root[data-theme="dark"] {
@@ -23,8 +23,8 @@
           --side:rgba(20,20,22,.94); --side-fg:#f5f5f7;
           --c-nw:#ffd23f; --warn-bg:#3a2a12; --warn-fg:#ffd28a; --err-bg:#3a1515; --err-fg:#ffb3b3; --ok-bg:#12301f; --ok-fg:#9be0b6;
           --c-liq:#30d158; --c-anl:#2ec4a2; --c-fest:#3fbfdc; --c-bet:#bf5af2; --c-ford:#5b8cff; --c-immo:#b08a6e; --c-verb:#ff6961; --c-ein:#30d158; --c-aus:#ff6961;
-          --cf-op:#2a9de6; --cf-inv:#cc7d00; --cf-fin:#8a3cc8; --cf-unk:#8e8e93;
-          --cat1:#17a3b4; --cat2:#857af0; --cat3:#b07a30;
+          --cf-op:#14a2c4; --cf-inv:#bb8a00; --cf-fin:#b8338c; --cf-unk:#8e8e93;
+          --cat1:#3a5bd0; --cat2:#ad772e; --cat3:#9b84ea;
           --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3);
 }
 * { box-sizing:border-box; }
@@ -614,7 +614,7 @@ a.more { white-space:nowrap; }
 .cf-tbl tr.sub td, .cf-tbl tr.sub td:first-child { background:var(--head); font-weight:500; } .cf-tbl tr.sub td:not(:first-child) { cursor:default; }
 .cf-tbl tr.total td, .cf-tbl tr.total td:first-child { background:var(--group); font-weight:700; border-top:1px solid var(--line-2); border-bottom-color:var(--line-2); }
 .cf-tbl tr.total td:first-child, .cf-tbl tr.bal td:first-child, .cf-tbl tr.check td:first-child { padding-left:25px; }
-.cf-tbl .hq { font-weight:400; } .cf-tbl .nw { white-space:nowrap; }
+.cf-tbl .hq { font-weight:400; } .cf-abbr { margin-left:6px; font-size:10.5px; font-weight:500; color:var(--muted); letter-spacing:.03em; } .cf-tbl .nw { white-space:nowrap; }
 /* the header cell of the table: the levels over the triangles (they start where the triangles stand), the gear at its end */
 .cf-tbl thead th:first-child { padding-top:4px; padding-bottom:4px; vertical-align:middle; }
 .cf-lv { display:flex; align-items:center; gap:6px; margin-left:-3px; } .cf-lv .seg { background:var(--group); }
@@ -629,9 +629,9 @@ a.more { white-space:nowrap; }
 
 /* cash flow charts: one period row above; bridge and months full width; sources and uses side by side; expenses as a table */
 .cf-charts { margin-top:18px; position:relative; } .cf-period { margin:0 0 10px; }
-.cf-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:14px; } .cf-grid > .cf-card { margin:0; min-width:0; }
-.cf-wide { grid-column:span 2; } .cf-full { grid-column:1 / -1; } .cf-narrow { grid-column:span 1; }
-@media (max-width:1180px) { .cf-grid { grid-template-columns:minmax(0, 1fr); } .cf-wide, .cf-narrow, .cf-full { grid-column:auto; } }
+.cf-grid { display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:14px; } .cf-grid > .cf-card { margin:0; min-width:0; }
+.cf-wide { grid-column:span 4; } .cf-full { grid-column:1 / -1; } .cf-narrow { grid-column:span 2; } .cf-half { grid-column:span 3; }
+@media (max-width:1180px) { .cf-grid { grid-template-columns:minmax(0, 1fr); } .cf-wide, .cf-narrow, .cf-full, .cf-half { grid-column:auto; } }
 .cf-narrow .cf-su { grid-template-columns:minmax(0, 1fr); gap:4px; }
 .cf-leg { display:flex; gap:4px 12px; font-size:12px; color:var(--muted); flex-shrink:0; flex-wrap:wrap; justify-content:flex-end; } .cf-leg span { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
 .cf-leg .sw, .cf-tip .sw { width:10px; height:10px; border-radius:3px; display:inline-block; flex-shrink:0; }
@@ -646,6 +646,25 @@ a.more { white-space:nowrap; }
 .cf-link-l { stroke:var(--line-2); stroke-width:1; shape-rendering:crispEdges; }
 .cf-col.op { fill:var(--cf-op); } .cf-col.inv { fill:var(--cf-inv); } .cf-col.fin { fill:var(--cf-fin); } .cf-col.unk, .cf-col.tot { fill:var(--cf-unk); } .cf-col.part { opacity:.45; }
 .cf-net { fill:none; stroke:var(--fg); stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+.cf-ln { fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; } .cf-ln.plan { stroke-dasharray:5 4; }
+.cf-ln.ein { stroke:var(--pos); } .cf-ln.aus { stroke:var(--neg); } .cf-ln.op { stroke:var(--cf-op); } .cf-ln.prev { stroke:var(--faint); stroke-dasharray:4 3; }
+.cf-ln-dot { stroke:var(--head); stroke-width:2; } .cf-ln-dot.ein { fill:var(--pos); } .cf-ln-dot.aus { fill:var(--neg); } .cf-ln-dot.op { fill:var(--cf-op); } .cf-ln-dot.prev { fill:var(--faint); }
+.sw.ein { background:var(--pos); } .sw.aus, .sw.out { background:var(--neg); } .sw.prev { background:var(--faint); }
+.cf-bar.in { background:var(--pos); }
+.cf-pie-a { fill:color-mix(in srgb, var(--neg) var(--k), var(--head)); } .cf-pie-a.rest { fill:var(--cf-unk); }
+.cf-pie-sub { display:none; } .cf-pie-sl, .cf-pie-lab { outline:none; cursor:default; }
+.cf-pie-sl:is(:hover, :focus) .cf-pie-sub { display:inline; } .cf-pie-sl:is(:hover, :focus) .cf-pie-a { stroke:var(--fg); stroke-width:1.5; }
+.cf-pie-sub.cat1 { fill:var(--cat1); } .cf-pie-sub.cat2 { fill:var(--cat2); } .cf-pie-sub.cat3 { fill:var(--cat3); } .cf-pie-sub.cat0 { fill:var(--cf-unk); }
+.cf-pie-v { fill:var(--fg); font-size:15px; font-weight:650; font-variant-numeric:tabular-nums; } .cf-pie-d { fill:var(--muted); font-size:12.5px; } .cf-pie-d.pos { fill:var(--pos); } .cf-pie-d.neg { fill:var(--neg); }
+.cf-pie-lead { fill:none; stroke:var(--line-2); stroke-width:1; }
+.cf-pie-n { fill:var(--fg); font-size:11.5px; } .cf-pie-m { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; } .cf-pie-m .pos { fill:var(--pos); } .cf-pie-m .neg { fill:var(--neg); }
+.cf-pie-prev { margin-top:6px; }
+
+.cf-heat { display:grid; gap:2px; align-items:center; font-size:11.5px; margin-top:8px; }
+.cf-heat-m { color:var(--muted); text-align:center; white-space:nowrap; overflow:visible; font-size:10.5px; height:16px; }
+.cf-heat-n { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:8px; }
+.cf-heat-c { height:20px; border-radius:3px; background:color-mix(in srgb, var(--neg) var(--k), transparent); outline:none; }
+.cf-heat-c.none { background:var(--sub); } .cf-heat-c:hover, .cf-heat-c:focus-visible { box-shadow:inset 0 0 0 1.5px var(--fg); }
 .cf-dot { fill:var(--fg); stroke:var(--head); stroke-width:2; }
 .cf-hit { fill:var(--fg); fill-opacity:0; cursor:default; outline:none; } .cf-hit:hover, .cf-hit:focus { fill-opacity:.06; }
 .cf-card .lc-title .hq { margin-left:2px; }

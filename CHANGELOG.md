@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.13.18 (2026-11-17 18:36)
+- **Neue Diagramme im Cashflow zur Auswahl:** Zusammensetzung der Ausgaben (Ring mit Beschriftung rundherum, beim Darüberfahren die Kategorien), Einnahmen nach Position, Rollierend 12 Monate, Sparquote, Ausgaben je Monat (Jahreszahlungen und Ausreißer auf einen Blick), Reichweite des Bankguthabens und Überschuss im Jahresverlauf.
+- **Abkürzungen:** CFO, CFI und CFF klein neben Überschuss, Investitionen und Finanzierung.
+- **Farben:** die drei Cashflows in Cyan, Gelb und Magenta; Unterkategorien in eigenen Farben.
+- **Bilanz:** Ein ruhendes Konto erscheint, wo es in den gezeigten Monaten noch ein Guthaben hatte; eine Position ohne Betrag in den gezeigten Monaten verschwindet ganz.
+- „Geld in Transit“ statt „Geld unterwegs“.
+
 ## 3.13.17 (2026-11-17 18:07)
 - **Anfangssaldo eines neuen Kontos** (z. B. eine neue Karte, die in MoneyMoney mit der Restschuld der alten startet): Zeigt ein anderes Bankkonto im selben Monat den Gegenbetrag, zählt er als Umbuchung; sonst steht er als „Anfangssaldo“ unter Wertänderungen – nicht mehr als „Kontostand unbekannt“.
 - **„Überschuss“** statt „Operativer Cashflow“ (Einnahmen minus Ausgaben).

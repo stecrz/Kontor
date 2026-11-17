@@ -2778,9 +2778,17 @@ class BrowserTest(unittest.TestCase):
                 # 4. expenses by position: amount, share, the period before, change; their sum
                 card = ".cf-card:has(.cf-list.ex)"
                 self.assertEqual(num(pg.inner_text(card + " .cf-val")), -want["aus"])
+                # further charts to choose from: rolling twelve months, savings rate, expenses by month, cash runway, the year so far
+                for sel in ("#cf-roll svg .cf-ln.ein", "#cf-roll svg .cf-ln.aus", "#cf-rate svg .cf-ln.op", "#cf-reach svg .cf-ln.op", "#cf-yoy svg .cf-ln.prev", "#cf-heat .cf-heat-c"):
+                    self.assertTrue(pg.query_selector(sel), sel)
+                self.assertIn("%", pg.inner_text("#cf-rate-hero")); self.assertTrue(pg.inner_text("#cf-reach-hero").strip())
+                # the expenses as a ring: positions in shades of red, the total in the middle, each with amount and change beside it
+                self.assertGreaterEqual(len(pg.query_selector_all(".cf-pie-sl")), 2); self.assertIn("€", pg.text_content("#cf-pie .cf-pie-v"))
+                self.assertEqual(len(pg.query_selector_all(".cf-pie-lab")), len(pg.query_selector_all(".cf-pie-sl")))       # each named beside its slice
+                pg.hover("#cf-heat .cf-heat-c >> nth=0"); pg.wait_for_timeout(150); self.assertIn("€", pg.inner_text("#cf-tip")); pg.mouse.move(5, 5)
                 # red bars (expenses), narrow beside the bridge; the figures in the tooltip (hover, on the iPhone a tap)
                 self.assertTrue(pg.query_selector(card + " .cf-bar.out")); self.assertIsNone(pg.query_selector(card + " .cf-row.head"))
-                self.assertEqual(pg.evaluate("getComputedStyle(document.querySelector('.cf-card:has(.cf-list.ex)')).gridColumnStart"), "span 1")
+                self.assertEqual(pg.evaluate("getComputedStyle(document.querySelector('.cf-card:has(.cf-list.ex)')).gridColumnStart"), "span 2")
                 pg.hover(card + " .cf-row.cf-ex >> nth=0"); pg.wait_for_timeout(150)
                 tip = pg.inner_text("#cf-tip")
                 for w in ("Betrag", "Anteil", "Vorperiode", "Veränderung"):

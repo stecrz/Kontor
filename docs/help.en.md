@@ -215,7 +215,13 @@ Below the table, charts show the same figures for a period you choose above them
 - **From cash at the start to cash at the end** – a bridge: income, expenses and each kind of investing and financing as a column of its own, each starting where the one before ends. At a glance you see how much came in and where it went.
 - **Cash flow per month** – inflows up, outflows down, stacked by activity; the line is the change in cash. Large one-offs (a loan, buying a property) stand out at once. With more than three years, per year.
 - **Sources and uses of cash** – on the left everything that came in (income, loans, sales, less cash), on the right what it was used for (expenses, investments, repayment, interest, more cash); both sides add up to the same sum.
-- **Expenses by position** – amount, share of expenses, the period before (the twelve months before, or the same months of the year before) and change. Hovering a position splits its bar into its categories; the tooltip names them with colour, amount and change.
+- **Expenses by position** and **income by position** – amount and change against the period before (the twelve months before, or the same months of the year before). Hovering a position splits its bar into its categories; the tooltip names share, the period before and the categories with colour, amount and change.
+- **What expenses are made of** – the same positions as a ring, the darker the larger the share; in the middle the total and its change, beside it each position's amount and change. Hovering a slice shows its categories in an outer ring.
+- **Rolling 12 months** – income, expenses and surplus, each point the sum of the last twelve months: one-offs are spread out, the trend remains.
+- **Savings rate** – the surplus as a share of income over the last twelve months, with the figure a year earlier.
+- **Expenses by month** – one strip per position; the darker the red, the more went out that month (compared with the other months of the same position). Annual payments and outliers stand out.
+- **Cash runway** – how many months the bank balance covers the average expenses, interest and repayments of the last twelve months; with plan the line continues dashed.
+- **Surplus through the year** – added up month by month, this year against the year before.
 
 Hovering a column or bar shows the exact amounts.
 
