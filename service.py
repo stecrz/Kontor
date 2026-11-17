@@ -1168,8 +1168,6 @@ def _last(d: dict, months: List[str]):
     return None
 
 
-SECTION_KEYS = {"Einnahmen": "einnahmen", "Ausgaben": "ausgaben", "Investitionen": "sek_investitionen",
-                "Finanzierung": "finanzierung", "Bewertung": "cf_wertaenderungen", "Unklar": "cf_unklar"}
 EXPORT_FILE_KEYS = {"balance": "xf_balance", "cashflow": "xf_cashflow", "planning": "xf_planning", "tax": "xf_tax", "transactions": "xf_transactions",
                     "holdings": "xf_holdings", "receipts": "xf_receipts", "accounts": "xf_accounts"}       # Dateiname je Export (Sprachkatalog)
 
@@ -1247,41 +1245,61 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
             rows.append(r); levels.append(level)
             if hide:
                 hidden.append(len(rows) - 1)
-        for sek in b.get("kapitalfluss", {}).get("sektionen", []):
-            line([tr(SECTION_KEYS[sek["name"]]) if sek["name"] in SECTION_KEYS else sek["name"]] + [None] * len(cols)); bold.append(len(rows) - 1)
-            for z in sek["zeilen"]:
-                allv = dict(z["werte"]); allv.update((z.get("plan") or {}).get("werte", {}))
-                label = "    " + (tr(*z["lbl"]) if z.get("lbl") else z["zeile"])
-                line([label] + [round(sum(allv.get(m, 0.0) for m in ms), 2) for _, ms, _p in cols])
-                for d in z.get("details") or []:             # the categories inside a position (collapsed; actual figures only)
-                    line(["        " + (d["kategorie"] or tr("cf_geschaetzt"))] + [None if p_ else round(sum(d["werte"].get(m, 0.0) for m in ms), 2) for _, ms, p_ in cols], 1, True)
+        # as on the page: operating (income, expenses), investing and financing by kind, the change in cash between the cash at
+        # the start and at the end, changes in value, the change in net worth -- each with its sum; the rows beneath grouped
+        secs = {sek["name"]: sek for sek in b.get("kapitalfluss", {}).get("sektionen", [])}
         sums = b.get("kapitalfluss", {}).get("summen", {})
         ue = b.get("kapitalfluss", {}).get("ueberleitung", {}) or {}
         all_m = sorted(sums)
+        total = lambda k: [round(sum((sums.get(m) or {}).get(k, 0.0) for m in ms), 2) for _, ms, _p in cols]
+        allv = lambda z: dict(z["werte"], **((z.get("plan") or {}).get("werte", {})))
+        val = lambda z: [round(sum(allv(z).get(m, 0.0) for m in ms), 2) for _, ms, _p in cols]
+
+        def section(name, label, level):
+            sek = secs.get(name)
+            if not sek or not sek["zeilen"]:
+                return
+            line(["    " * level + label] + total(name), level); bold.append(len(rows) - 1)
+            groups = {}
+            for z in sek["zeilen"]:
+                groups.setdefault(z["gruppe"], []).append(z)
+            for g, zs in groups.items():
+                single = len(zs) == 1 and zs[0]["zeile"] == g
+                depth = level + 1
+                if not single:
+                    glabel = tr(*zs[0]["glbl"]) if zs[0].get("glbl") else g
+                    line(["    " * depth + glabel] + [round(sum(v), 2) for v in zip(*[val(z) for z in zs])], depth)
+                    depth += 1
+                for z in zs:
+                    line(["    " * depth + (tr(*z["lbl"]) if z.get("lbl") else z["zeile"])] + val(z), depth, not single and depth > level + 2)
+                    for d in z.get("details") or []:             # the categories inside a position (collapsed; actual figures only)
+                        line(["    " * (depth + 1) + (d["kategorie"] or tr("cf_geschaetzt"))] + [None if p_ else round(sum(d["werte"].get(m, 0.0) for m in ms), 2) for _, ms, p_ in cols], depth + 1, True)
+        line([tr("cf_operativ")] + total("Operativ")); bold.append(len(rows) - 1)
+        section("Einnahmen", tr("einnahmen"), 1)
+        section("Ausgaben", tr("ausgaben"), 1)
+        for name, key in (("Investitionen", "cf_investitionen"), ("Finanzierung", "cf_finanzierung"), ("Unklar", "cf_unklar")):
+            section(name, tr(key), 0)
 
         def balance(m):                                  # bank balance at the end of a month (None: not known or not there)
             return (sums.get(m) or {}).get("Bankguthaben") if m else None
-        totals = ([("Rohertrag", tr("cf_rohertrag"))] if any("Rohertrag" in (v or {}) for v in sums.values()) else []) + \
-            [("Operativ", tr("cf_ueberschuss")), ("Nach_Kapitaldienst", tr("nach_zins_und_tilgung")), ("Cashflow", tr("zahlungsfluss_gesamt_veraenderung_liqu")),
-             ("Nettovermoegen_delta", tr("cf_veraenderung_nv"))]
-        for k, label in totals:
-            if k == "Cashflow":
-                rows.append([tr("bankguthaben_anfang")] + [balance(all_m[all_m.index(ms[0]) - 1] if ms and ms[0] in all_m and all_m.index(ms[0]) > 0 else None)
-                                                           for _, ms, _p in cols])
-            rows.append([label] + [round(sum((sums.get(m) or {}).get(k, 0.0) for m in ms), 2) for _, ms, _p in cols]); bold.append(len(rows) - 1)
-            if k == "Cashflow":
-                rows.append([tr("bankguthaben_ende")] + [balance(ms[-1]) if ms else None for _, ms, _p in cols])
-            check = {"Cashflow": ("abweichung_liq", tr("cf_abgleich")), "Nettovermoegen_delta": ("unerklaert", tr("cf_abgleich"))}.get(k)
-            if check:
-                def cell(ms, plan, key=check[0]):
-                    done = [m for m in ms if m <= b.get("ist_bis", "")]
-                    if plan or not done or any(m not in ue for m in done):
-                        return None                              # not every month checked: no claim
-                    offs = [ue[m][key] for m in done if abs(ue[m][key]) >= 0.005]
-                    if offs and abs(sum(offs)) < 0.005:
-                        return tr("ue_ausgeglichen")             # months differ, but cancel out over the column
-                    return round(sum(offs), 2) if offs else 0.0
-                rows.append([check[1]] + [cell(ms, p_) for _, ms, p_ in cols])
+
+        def check(key):
+            def cell(ms, plan):
+                done = [m for m in ms if m <= b.get("ist_bis", "")]
+                if plan or not done or any(m not in ue for m in done):
+                    return None                              # not every month checked: no claim
+                offs = [ue[m][key] for m in done if abs(ue[m][key]) >= 0.005]
+                if offs and abs(sum(offs)) < 0.005:
+                    return tr("ue_ausgeglichen")             # months differ, but cancel out over the column
+                return round(sum(offs), 2) if offs else 0.0
+            line([tr("cf_abgleich")] + [cell(ms, p_) for _, ms, p_ in cols])
+        line([tr("bankguthaben_anfang")] + [balance(all_m[all_m.index(ms[0]) - 1] if ms and ms[0] in all_m and all_m.index(ms[0]) > 0 else None) for _, ms, _p in cols])
+        line([tr("zahlungsfluss_gesamt_veraenderung_liqu")] + total("Cashflow")); bold.append(len(rows) - 1)
+        check("abweichung_liq")
+        line([tr("bankguthaben_ende")] + [balance(ms[-1]) if ms else None for _, ms, _p in cols])
+        section("Bewertung", tr("cf_wertaenderungen"), 0)
+        line([tr("cf_veraenderung_nv")] + total("Nettovermoegen_delta")); bold.append(len(rows) - 1)
+        check("unerklaert")
         head = [tr("x_position")] + [c[0] + (tr("x_plan_suffix") if c[2] else "") for c in cols]
         levels += [0] * (len(rows) - len(levels))
         sheets = [Sheet(tr("x_planung" if was == "planning" else "x_kapitalfluss") + " " + name, head, rows, bold_rows=bold, levels=levels, hidden_rows=hidden)]
@@ -1651,7 +1669,8 @@ def make_handler(app: App):
                 kat = categorize.load(app.store)
                 bereich_of = {a.uuid: b["id"] for b in bereiche_for(app.ledger, app.config) for a in b["leaves"]}
                 res = categorize.open_items(kat, app.ledger, bereich_of, int(q["year"]) if q.get("year") else None, q.get("area") or None,
-                                            float(q.get("min") or 0), int(q.get("limit") or 300), bank_accounts(account_roles(app.ledger, app.config)))
+                                            float(q.get("min") or 0), int(q.get("limit") or 300), bank_accounts(account_roles(app.ledger, app.config)),
+                                            set(app.config.get("zuordnen_ohne") or []))
                 if getattr(app.ledger, "_paired", None) is None:
                     app.request_rebuild("Zuordnen")              # which bookings are transfers comes with the report (page reloads then)
                 # your category for transfers in MoneyMoney (for a contribution or withdrawal between two areas)
@@ -2512,6 +2531,16 @@ def make_handler(app: App):
                 app.save_config(cfg)
                 ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund=tr("s_grund_positionen")) if app.ledger is not None else (False, None)
                 log.info("Cash flow positions saved: %d chosen", len(app.config["kapitalfluss"].get("positionen") or {}))
+                return self._json(200, {"ok": True, "bericht": ok, "config": app.config})
+            if path == "/api/categories/areas":
+                # the areas you categorise (the others are left out under Kategorien; the cash flow estimates them as before)
+                ohne = body.get("ohne")
+                if not isinstance(ohne, list) or not all(isinstance(x, str) for x in ohne):
+                    raise ValueError("ohne")
+                cfg = copy.deepcopy(app.config)
+                cfg["zuordnen_ohne"] = sorted(set(ohne))
+                app.save_config(cfg)
+                ok, _err = app.rebuild_report(wait=bool(body.get("warten")), grund=tr("s_grund_zuordnen")) if app.ledger is not None else (False, None)
                 return self._json(200, {"ok": True, "bericht": ok, "config": app.config})
             if path == "/api/categories/settings":
                 if "mm_schreiben" not in body:

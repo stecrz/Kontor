@@ -192,32 +192,32 @@ Geldvermögen und Sachvermögen sind wie in der Statistik der Bundesbank abgegre
 <a id="cash-flow"></a>
 ## Cashflow
 
-Wohin das Geld fließt – für jeden Bereich in derselben Gliederung, damit sich privat, GbR und GmbH vergleichen lassen:
+Wohin das Geld fließt – als Kapitalflussrechnung, für jeden Bereich in derselben Gliederung, damit sich privat, GbR und GmbH vergleichen lassen:
 
 | Abschnitt | Inhalt |
 |---|---|
-| **Einnahmen**, **Ausgaben** | feste Positionen (Arbeitseinkommen, Umsatzerlöse, Vermietung, Wohnen – bei Gesellschaften „Raumkosten“ –, Personal, Steuern, Umsatzsteuer …); darin deine Kategorien aus MoneyMoney |
-| **Überschuss** | Einnahmen minus Ausgaben; darunter **nach Zins und Tilgung** (was nach den Raten deiner Darlehen bleibt), bei Handelsfirmen davor der Rohertrag (Umsatz minus Wareneinkauf) |
-| **Investitionen** | Geld, das du anlegst oder zurückholst: Sparen & Anlegen, gewährte Darlehen, Einlagen in deine Gesellschaften. Es verlässt das Bankkonto, bleibt aber dein Vermögen. |
-| **Finanzierung** | Zahlungen an und von Geldgebern: je Darlehen Tilgung und Zinsen, bei Gesellschaften Einlagen und Entnahmen der Gesellschafter. Die Tilgung senkt nur die Schuld, die Zinsen kosten Vermögen – beides steht hier, weil es zusammen die Rate ist. |
-| **Veränderung Bankguthaben** | Summe aller Zahlungen; darüber und darunter das Bankguthaben am Anfang und am Ende |
+| **Operativer Cashflow** | **Einnahmen** minus **Ausgaben** des laufenden Lebens oder Geschäfts, je nach festen Positionen (Arbeitseinkommen, Umsatzerlöse, Vermietung, Wohnen – bei Gesellschaften „Raumkosten“ –, Personal, Steuern, Umsatzsteuer …); darin deine Kategorien aus MoneyMoney. Erhaltene Zinsen und Dividenden zählen hier. |
+| **Investitions-Cashflow** | Kauf und Verkauf von Vermögen, nach Art: Immobilien (mit Kaufnebenkosten), Wertpapiere & Geldanlagen, Beteiligungen, gewährte Darlehen; darunter die einzelnen Konten. Das Geld verlässt das Bankkonto, bleibt aber Vermögen. |
+| **Finanzierungs-Cashflow** | Zahlungen an und von Geldgebern, nach Art: Darlehensaufnahme, Tilgung, Zinsen, bei Gesellschaften Einlagen und Entnahmen der Gesellschafter; darunter die einzelnen Darlehen. Die Auszahlung eines Darlehens ist eine Darlehensaufnahme, keine „negative Tilgung“. |
+| **Veränderung Bankguthaben** | die drei zusammen (und was unklar ist); darüber und darunter das Bankguthaben am Anfang und am Ende |
 | **Wertänderungen** | was sich ohne Zahlung ändert: Kurse von Depots, Wertanpassungen, Korrekturen von Hand |
-| **Veränderung Nettovermögen** | Überschuss, Zinsen, Einlagen und Entnahmen, Wertänderungen – Anlegen und Tilgen schichten nur um |
+| **Veränderung Nettovermögen** | operativer Cashflow, Zinsen, Einlagen und Entnahmen, Wertänderungen – Anlegen, Darlehen aufnehmen und tilgen schichten nur um |
 
-Eine Zeile erscheint nur, wo Geld darin ist. Wie weit die Tabelle aufgeklappt ist, wählst du in ihrer Kopfzelle, direkt über den Pfeilen (am iPhone klappt der große Pfeil dort mit jedem Tippen eine Stufe weiter auf, zuletzt wieder zu): **Überblick** (nur Abschnitte und Ergebnisse – der ganze Cashflow auf einer Seite), **Positionen** oder **Details** (bis zu den Kategorien aus MoneyMoney und den einzelnen Darlehen). Jede Zeile mit ▸ öffnest und schließt du auch einzeln; das „?“ an einer Zeile erklärt sie.
+Eine Zeile erscheint nur, wo Geld darin ist. Wie weit die Tabelle aufgeklappt ist, wählst du in ihrer Kopfzelle, direkt über den Pfeilen (am iPhone klappt der große Pfeil dort mit jedem Tippen eine Stufe weiter auf, zuletzt wieder zu): **Überblick** (die drei Cashflows mit Einnahmen, Ausgaben und den Arten von Investition und Finanzierung – der ganze Cashflow auf einer Seite), **Positionen** (dazu die Positionen, Konten und Darlehen) oder **Details** (bis zu den Kategorien aus MoneyMoney). Jede Zeile mit ▸ öffnest und schließt du auch einzeln; das „?“ an einer Zeile erklärt sie. Das Zahnrad daneben führt zu den Cashflow-Positionen.
 
 ![Cashflow](img/de/cash_flow.png)
 
 <a id="cash-flow-charts"></a>
 ### Diagramme
 
-Unter der Tabelle zeigen Diagramme dieselben Zahlen für einen Zeitraum, den du darüber wählst (die letzten zwölf Monate, ein Jahr oder alles):
+Unter der Tabelle zeigen Diagramme dieselben Zahlen für einen Zeitraum, den du darüber wählst (die letzten zwölf Monate, ein Jahr oder alles). Die Farbe steht für die Tätigkeit – operativ, Investition, Finanzierung – wie an den Abschnitten der Tabelle:
 
-- **Einnahmen und Ausgaben** je Monat – Einnahmen nach oben, Ausgaben nach unten, der Überschuss als Linie; der laufende Monat blass. Bei mehr als drei Jahren je Jahr.
-- **Zusammensetzung** – wie aus Einnahmen, Ausgaben, Investitionen und Finanzierung die Veränderung des Bankguthabens wird; jeder Balken beginnt, wo der vorige endet.
-- **Ausgaben nach Position** und **Einnahmen nach Position** – die größten Positionen, mit dem Vergleich zur Vorperiode (die zwölf Monate davor bzw. dieselben Monate des Vorjahrs).
+- **Vom Bankguthaben am Anfang zum Ende** – eine Brücke: Einnahmen, Ausgaben und jede Art von Investition und Finanzierung als eigene Säule, jede beginnt, wo die vorige endet. So siehst du auf einen Blick, wie viel hereinkam und wohin es ging.
+- **Cashflow je Monat** – Zuflüsse nach oben, Abflüsse nach unten, nach Tätigkeit gestapelt; die Linie ist die Veränderung des Bankguthabens. Große Einmalposten (ein Darlehen, ein Immobilienkauf) fallen sofort auf. Bei mehr als drei Jahren je Jahr.
+- **Mittelherkunft und -verwendung** – links alles, was hereinkam (Einnahmen, Darlehen, Verkäufe, Abbau des Bankguthabens), rechts, wofür es verwendet wurde (Ausgaben, Investitionen, Tilgung, Zinsen, Aufbau des Bankguthabens); beide Seiten ergeben dieselbe Summe.
+- **Ausgaben nach Position** – Betrag, Anteil an den Ausgaben, Vorperiode (die zwölf Monate davor bzw. dieselben Monate des Vorjahrs) und Veränderung. Fährst du über eine Position, teilt sich ihr Balken in ihre Kategorien; der Tooltip nennt sie mit Farbe, Betrag und Veränderung.
 
-Fährst du über einen Balken, steht der genaue Betrag da.
+Fährst du über eine Säule oder einen Balken, stehen die genauen Beträge da.
 
 ![Diagramme im Cashflow](img/de/cash_flow_charts.png)
 
@@ -238,7 +238,7 @@ In welcher Position eine Kategorie aus MoneyMoney zählt, schlägt Kontor nach i
 | feste Regeln (Einstellungen der Kategorie → Regeln) | Regeln vorschlagen, die du dort einfügst |
 | | festlegen, in welcher Position des Cashflows eine Kategorie zählt (Cashflow-Positionen) |
 
-**Zuordnen** zeigt alle Umsätze deiner Bankkonten ohne Kategorie in MoneyMoney, nach Gegenpartei gruppiert (Darlehen, Beteiligungen und andere Konten zählen nach ihrer Position, nicht nach Kategorie). Umbuchungen zwischen Konten desselben Bereichs stehen nicht in der Liste – auch nicht, wenn die Gegenbuchung von Hand in einem manuellen Konto steht: Sie sind nie Einnahme oder Ausgabe. Zahlungen zwischen zwei deiner Bereiche stehen darin, bis sie eine Kategorie haben: Gehalt oder Miete ordnest du zu, eine Einlage oder Entnahme bekommt deine Umbuchungs-Kategorie. Der Vorschlag kommt aus deinen bisherigen Kategorien; Kontor übernimmt ihn nie von selbst. „Zuordnen“ trägt die Kategorie in MoneyMoney ein, „Alle Vorschläge übernehmen“ alle auf einmal. Unter „Umsätze“ wählst du einzelne ab – etwa bei einem Händler, bei dem du Verschiedenes kaufst. Zur Auswahl stehen nur Kategorien, die es in MoneyMoney gibt – eine neue legst du dort an. Einzelne Umsätze ordnest du auch unter Umsätze & Belege zu (Klick auf die Zeile oder mehrere markieren); dort kannst du auch eine Kategorie aus MoneyMoney ändern (nach Rückfrage). Im Cashflow führt „zuordnen“ neben „(ohne Kategorie)“ direkt hierher.
+**Zuordnen** zeigt alle Umsätze deiner Bankkonten ohne Kategorie in MoneyMoney – nur die Bereiche, die du oben anhakst (eine GmbH mit sehr vielen Buchungen lässt du etwa weg; ihre Positionen schätzt Kontor im Cashflow weiter) –, nach Gegenpartei gruppiert (Darlehen, Beteiligungen und andere Konten zählen nach ihrer Position, nicht nach Kategorie). Umbuchungen zwischen Konten desselben Bereichs stehen nicht in der Liste – auch nicht, wenn die Gegenbuchung von Hand in einem manuellen Konto steht: Sie sind nie Einnahme oder Ausgabe. Zahlungen zwischen zwei deiner Bereiche stehen darin, bis sie eine Kategorie haben: Gehalt oder Miete ordnest du zu, eine Einlage oder Entnahme bekommt deine Umbuchungs-Kategorie. Der Vorschlag kommt aus deinen bisherigen Kategorien; Kontor übernimmt ihn nie von selbst. „Zuordnen“ trägt die Kategorie in MoneyMoney ein, „Alle Vorschläge übernehmen“ alle auf einmal. Unter „Umsätze“ wählst du einzelne ab – etwa bei einem Händler, bei dem du Verschiedenes kaufst. Zur Auswahl stehen nur Kategorien, die es in MoneyMoney gibt – eine neue legst du dort an. Einzelne Umsätze ordnest du auch unter Umsätze & Belege zu (Klick auf die Zeile oder mehrere markieren); dort kannst du auch eine Kategorie aus MoneyMoney ändern (nach Rückfrage). Im Cashflow führt „zuordnen“ neben „(ohne Kategorie)“ direkt hierher.
 
 ![Zuordnen](img/de/assign_categories.png)
 

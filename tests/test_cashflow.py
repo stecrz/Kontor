@@ -277,10 +277,10 @@ class CashflowCases(Reconciles):
         data = build([(1, "kk", date(2026, 1, 3), 9500.0, {"cat": "Miete"}),
                       (2, "vd", date(2026, 2, 28), -4400.0, {"purpose": "Zinsen · #kontor-zins-2026-02"})])
         z = rows(data["Muster GbR"])["Verkäuferdarlehen / Zinsen"]
-        self.assertEqual(z["lbl"], ["cf_zinsen", "Verkäuferdarlehen"])
+        self.assertEqual((z["lbl"], z["glbl"], z["gruppe"]), (["cf_name", "Verkäuferdarlehen"], ["cf_g_zinsen"], "Zinsen"))     # the loan, in the group "Zinsen"
         try:
             i18n.set_lang("en")
-            self.assertEqual(i18n.tr(*z["lbl"]), "Verkäuferdarlehen / Interest")
+            self.assertEqual((i18n.tr(*z["lbl"]), i18n.tr(*z["glbl"])), ("Verkäuferdarlehen", "Interest"))
         finally:
             i18n.set_lang("de")
 
@@ -398,7 +398,7 @@ class Positions(Reconciles):
         self.assertEqual(r["Arbeitseinkommen"]["werte"]["2026-02"], 500.0)
         self.assertEqual({d["kategorie"] for d in r["Arbeitseinkommen"]["details"]}, {"Einkommen / Gehälter", "Einkommen / Tantieme"})
         self.assertEqual(r["Kapitalerträge"]["werte"]["2026-02"], 12.0)
-        self.assertEqual(r["Sparen / Unternehmenskauf"]["gruppe"], "Sparen & Anlegen")           # saving: no expense
+        self.assertEqual(r["Sparen / Unternehmenskauf"]["gruppe"], "Wertpapiere & Geldanlagen")  # saving: no expense, an investment
         self.assertEqual(r["Lebenshaltung"]["werte"]["2026-02"], -40.0)                         # proposed by name
         order = [z["zeile"] for z in data["Privat"]["kapitalfluss"]["sektionen"][0]["zeilen"]]
         self.assertEqual(order, ["Arbeitseinkommen", "Kapitalerträge"])                                    # the fixed outline
@@ -615,6 +615,49 @@ class Positions(Reconciles):
         report.apply_plan(ds, {}, config)
         r = rows(ds)
         self.assertEqual((r["Wohnen"]["plan"]["budget"], r["Lebenshaltung"]["plan"]["budget"]), (-1000.0, -400.0))
+
+
+class StatementGroups(Reconciles):
+    def test_loan_taken_up_repaid_and_interest(self):
+        """Financing by kind: a loan paid out is "taken up" (its own row, never a negative repayment), repayment and interest
+        in their groups with the loan as the row; investing by the kind of account. The amounts and checks stay as before."""
+        txs = [(1, "darl", date(2026, 2, 2), -400000.0, {"iban": "DE11"}), (2, "giro", date(2026, 2, 2), 400000.0, {"iban": "DE13"}),
+               (3, "giro", date(2026, 3, 1), -1500.0, {"iban": "DE13"}), (4, "darl", date(2026, 3, 1), 1500.0, {"iban": "DE11"}),
+               (5, "darl", date(2026, 3, 31), -600.0, {"purpose": "Zinsen · #kontor-zins-2026-03"}),
+               (6, "giro", date(2026, 3, 5), -2000.0, {"iban": "DE15"})]
+        data = build(txs)
+        self.assertAddsUp(data)
+        r = rows(data["Privat"], "Finanzierung")
+        self.assertEqual((r["Darlehen Hausbau / Aufnahme"]["gruppe"], r["Darlehen Hausbau / Aufnahme"]["werte"]["2026-02"]), ("Darlehensaufnahme", 400000.0))
+        self.assertEqual(r["Darlehen Hausbau / Tilgung"]["werte"]["2026-02"], 0.0)
+        self.assertEqual((r["Darlehen Hausbau / Tilgung"]["werte"]["2026-03"], r["Darlehen Hausbau / Zinsen"]["werte"]["2026-03"]), (-900.0, -600.0))
+        self.assertEqual([z["gruppe"] for z in data["Privat"]["kapitalfluss"]["sektionen"][3]["zeilen"]], ["Darlehensaufnahme", "Tilgung", "Zinsen"])
+        self.assertEqual(rows(data["Privat"], "Investitionen")["Depot"]["gruppe"], "Wertpapiere & Geldanlagen")
+        config = core.merged_config({"bilanz": {"rollen": {k: v[2] for k, v in ACCOUNTS.items()}}})
+        ds = data["Privat"]
+        report.apply_plan(ds, {}, config)
+        z = rows(ds, "Finanzierung")["Darlehen Hausbau / Aufnahme"]
+        self.assertEqual(z["plan"]["methode"], "keine"); self.assertFalse(any(abs(v) > 0.005 for v in z["plan"]["werte"].values()))
+        # a loan taken up in the plan raises the debt as much as the cash: net worth stays
+        fut = sorted(ds["plan_monate"])[2]
+        planned = build(txs)["Privat"]
+        report.apply_plan(planned, {"zeilen": {"Finanzierung/Darlehen Hausbau / Aufnahme": {"werte": {fut: 100000.0}}}}, config)
+        pp, p0 = planned["bilanz"]["projektion"], ds["bilanz"]["projektion"]
+        self.assertAlmostEqual(pp["liquiditaet"][fut] - p0["liquiditaet"][fut], 100000.0, 2)
+        self.assertAlmostEqual(pp["nettovermoegen"][fut], p0["nettovermoegen"][fut], 2)
+
+    def test_saving_without_an_account_and_by_category(self):
+        """Saving by a category without a known account is "saving" (not securities); a category row beside the loans of its
+        group is "by category", an account named like its group keeps its name."""
+        data = build([(1, "giro", date(2026, 3, 3), -500.0, {"cat": "Sparen"}), (2, "giro", date(2026, 3, 1), -300.0, {"cat": "Tilgung"}),
+                      (3, "giro", date(2026, 3, 1), -1500.0, {"iban": "DE13"}), (4, "darl", date(2026, 3, 1), 1500.0, {"iban": "DE11"})],
+                     {"kapitalfluss": {"positionen": {"Sparen": "anlegen", "Tilgung": "tilgung"}}})
+        inv, fin = rows(data["Privat"], "Investitionen"), rows(data["Privat"], "Finanzierung")
+        self.assertEqual(inv["Sparen"]["gruppe"], "Wertpapiere & Geldanlagen" if any(v[4] == "portfolio" for v in ACCOUNTS.values() if v[1] == "Privat") else "Sparen & Anlegen")
+        self.assertEqual((fin["Tilgung"]["gruppe"], fin["Tilgung"]["lbl"]), ("Tilgung", ["cf_per_kategorie"]))
+        self.assertEqual(fin["Darlehen Hausbau / Tilgung"]["lbl"], ["cf_name", "Darlehen Hausbau"])
+        gbr = build([(1, "kk", date(2026, 3, 3), -500.0, {"cat": "Sparen"})], {"kapitalfluss": {"positionen": {"Sparen": "anlegen"}}})["Muster GbR"]
+        self.assertEqual(rows(gbr, "Investitionen")["Sparen"]["gruppe"], "Sparen & Anlegen")       # no depot there: no account known
 
 
 class MirrorsAndCompanies(Reconciles):

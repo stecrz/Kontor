@@ -38,6 +38,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "probelauf": True,
     "zeitplan": {"intervall_minuten": 30, "automatisch": True, "voll_lesen_tage": 7},
     "darlehen": [], "gesellschaften": [], "kontenspiegel": [],
+    "zuordnen_ohne": [],          # areas whose transactions you do not categorise (their ids): left out under Kategorien
     "bereiche": [],
     "immobilien": [],
     "bilanz": {"monate_zurueck": 0, "rollen": {}, "verlauf": {}, "illiquide_rollen": ["beteiligungen", "immobilien", "sachwerte"],
@@ -83,7 +84,7 @@ def _shape(cfg: dict) -> dict:
     for k, v in DEFAULT_CONFIG.items():
         if k in cfg and isinstance(v, dict) and not isinstance(cfg[k], dict):
             cfg.pop(k)
-        elif k in cfg and isinstance(v, list):
+        elif k in cfg and isinstance(v, list) and k != "zuordnen_ohne":       # lists of entries (zuordnen_ohne: of area ids, below)
             cfg[k] = dicts(cfg[k])
     for b in cfg.get("bereiche") or []:
         for f in ("id", "name", "art"):
@@ -130,6 +131,8 @@ def _shape(cfg: dict) -> dict:
             g["gegenkonten"] = [{"konto": text(x.get("konto")), "quelle": text(x.get("quelle"))} for x in dicts(g["gegenkonten"])]
         if "schwelle" in g:
             g["schwelle"] = number(g["schwelle"], 0.01)
+    if "zuordnen_ohne" in cfg:
+        cfg["zuordnen_ohne"] = [str(x) for x in cfg["zuordnen_ohne"] if isinstance(x, (str, int)) and not isinstance(x, bool)] if isinstance(cfg["zuordnen_ohne"], list) else []
     if "kontenspiegel" in cfg:
         cfg["kontenspiegel"] = [dict({"a": text(m.get("a")), "b": text(m.get("b")), "ab": text(m.get("ab"))},
                                      **dict({f: text(m[f]) for f in ("kategorie",) if text(m.get(f))},      # bereich: kept with that company
@@ -1564,8 +1567,8 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "immobilien": immobilien,
         "budgets": budgets,
         "warnungen": warnings,
-        "kategorien": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig),
-                                                                                  lambda: categorize.stats(kat, ledger, bank_accounts(roles), area_of)))[1],
+        "kategorien": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig, tuple(sorted(config.get("zuordnen_ohne") or []))),
+                                                                                  lambda: categorize.stats(kat, ledger, bank_accounts(roles), area_of, set(config.get("zuordnen_ohne") or []))))[1],
                            positionen=len(my_positions(config))),
         "konten_neu": neu,
     }

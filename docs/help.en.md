@@ -192,32 +192,32 @@ Financial and real assets are split as in the Bundesbank's statistics: participa
 <a id="cash-flow"></a>
 ## Cash flow
 
-Where the money goes – for every area in the same outline, so that private, partnership and limited company can be compared:
+Where the money goes – as a cash flow statement, for every area in the same outline, so that private, partnership and limited company can be compared:
 
 | Section | Content |
 |---|---|
-| **Income**, **Expenses** | fixed positions (earned income, revenue, rental income, housing – “premises” for companies –, staff, taxes, VAT …); in them your MoneyMoney categories |
-| **Surplus** | income minus expenses; below it **after interest and repayment** (what is left after the instalments of your loans), for trading firms above it the gross profit (revenue minus purchases) |
-| **Investments** | money you invest or take back: saving & investing, loans granted, contributions to your companies. It leaves the bank account but stays your wealth. |
-| **Financing** | payments to and from lenders and owners: repayment and interest per loan, for companies partner contributions and withdrawals. Repayment only lowers the debt, interest costs wealth – both are here because together they are the instalment. |
-| **Change in cash** | sum of all payments; above and below it the cash at the start and at the end |
+| **Operating cash flow** | **Income** minus **expenses** of everyday life or business, each by fixed positions (earned income, revenue, rental income, housing – “premises” for companies –, staff, taxes, VAT …); in them your MoneyMoney categories. Interest and dividends received count here. |
+| **Investing cash flow** | Buying and selling assets, by kind: real estate (with costs of purchase), securities & deposits, participations, loans granted; below them the single accounts. The money leaves the bank account but stays wealth. |
+| **Financing cash flow** | Payments to and from lenders and owners, by kind: loans taken up, repayment, interest, for companies partners' contributions and withdrawals; below them the single loans. A loan paid out is a loan taken up, not a “negative repayment”. |
+| **Change in cash** | the three together (and what is unclear); above and below it the cash at the start and at the end |
 | **Changes in value** | what changes without a payment: prices of portfolios, value adjustments, corrections by hand |
-| **Change in net worth** | surplus, interest, contributions and withdrawals, changes in value – investing and repaying only reallocate |
+| **Change in net worth** | operating cash flow, interest, contributions and withdrawals, changes in value – investing, taking up and repaying loans only reallocate |
 
-A row shows only where there is money in it. How far the table is opened you choose in its header cell, right above the triangles (on the iPhone the large triangle there opens a level further with each tap, and finally closes again): **Overview** (sections and results only – the whole cash flow on one page), **Positions** or **Details** (down to the MoneyMoney categories and the single loans). Every row with ▸ also opens and closes by itself; the “?” at a row explains it.
+A row shows only where there is money in it. How far the table is opened you choose in its header cell, right above the triangles (on the iPhone the large triangle there opens a level further with each tap, and finally closes again): **Overview** (the three cash flows with income, expenses and the kinds of investing and financing – the whole cash flow on one page), **Positions** (with the positions, accounts and loans) or **Details** (down to the MoneyMoney categories). Every row with ▸ also opens and closes by itself; the “?” at a row explains it. The gear next to it leads to the cash flow positions.
 
 ![Cash flow](img/en/cash_flow.png)
 
 <a id="cash-flow-charts"></a>
 ### Charts
 
-Below the table, charts show the same figures for a period you choose above them (the last twelve months, a year, or everything):
+Below the table, charts show the same figures for a period you choose above them (the last twelve months, a year, or everything). Colour stands for the activity – operating, investing, financing – as at the table's sections:
 
-- **Income and expenses** per month – income upwards, expenses downwards, the surplus as a line; the current month faded. With more than three years, per year.
-- **Composition** – how income, expenses, investments and financing make up the change in cash; each bar starts where the one before ends.
-- **Expenses by position** and **Income by position** – the largest positions, compared with the period before (the twelve months before, or the same months of the year before).
+- **From cash at the start to cash at the end** – a bridge: income, expenses and each kind of investing and financing as a column of its own, each starting where the one before ends. At a glance you see how much came in and where it went.
+- **Cash flow per month** – inflows up, outflows down, stacked by activity; the line is the change in cash. Large one-offs (a loan, buying a property) stand out at once. With more than three years, per year.
+- **Sources and uses of cash** – on the left everything that came in (income, loans, sales, less cash), on the right what it was used for (expenses, investments, repayment, interest, more cash); both sides add up to the same sum.
+- **Expenses by position** – amount, share of expenses, the period before (the twelve months before, or the same months of the year before) and change. Hovering a position splits its bar into its categories; the tooltip names them with colour, amount and change.
 
-Hovering over a bar shows the exact amount.
+Hovering a column or bar shows the exact amounts.
 
 ![Cash flow charts](img/en/cash_flow_charts.png)
 
@@ -238,7 +238,7 @@ Which position a MoneyMoney category counts in, Kontor proposes from its name; y
 | fixed rules (settings of the category → rules) | propose rules for you to paste there |
 | | decide which cash flow position a category counts in (Cash flow positions) |
 
-**Assign** shows all transactions of your bank accounts without a category in MoneyMoney, grouped by counterparty (loans, participations and other accounts count by their position, not their category). Transfers between accounts of the same area are not in the list – not even when the counter-booking was entered by hand in a manual account: they are never income or expense. Payments between two of your areas are in it until they have a category: assign salary or rent, give a contribution or withdrawal your transfer category. The suggestion comes from your categories so far; Kontor never takes it over by itself. “Assign” enters the category in MoneyMoney, “Take all suggestions” all at once. Under “Transactions” you deselect single ones – for example for a shop where you buy different things. You choose only from categories that exist in MoneyMoney – create a new one there. Single transactions can also be assigned under Transactions & receipts (click a row or select several); there you can also change a category from MoneyMoney (after asking). In cash flow, “assign” next to “(no category)” leads straight here.
+**Assign** shows all transactions of your bank accounts without a category in MoneyMoney – only the areas you tick at the top (leave out a company with very many bookings, say; Kontor keeps estimating its positions in the cash flow) –, grouped by counterparty (loans, participations and other accounts count by their position, not their category). Transfers between accounts of the same area are not in the list – not even when the counter-booking was entered by hand in a manual account: they are never income or expense. Payments between two of your areas are in it until they have a category: assign salary or rent, give a contribution or withdrawal your transfer category. The suggestion comes from your categories so far; Kontor never takes it over by itself. “Assign” enters the category in MoneyMoney, “Take all suggestions” all at once. Under “Transactions” you deselect single ones – for example for a shop where you buy different things. You choose only from categories that exist in MoneyMoney – create a new one there. Single transactions can also be assigned under Transactions & receipts (click a row or select several); there you can also change a category from MoneyMoney (after asking). In cash flow, “assign” next to “(no category)” leads straight here.
 
 ![Assign](img/en/assign_categories.png)
 

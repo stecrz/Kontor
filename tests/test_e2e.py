@@ -1005,6 +1005,34 @@ class AppTests(_AppBase):
         self.assertNotEqual(self.app.do_run(None, False)["status"], "unveraendert")
         self.assertIsNot(self.app.ledger, led)
 
+    def test_areas_left_out_of_categorising(self):
+        """Areas you do not categorise (a company with countless bookings) stay out of the list and the count; at least one
+        stays; the choice is kept in the settings."""
+        self.login(); self.run_and_wait()
+        led = self.app.ledger
+        area = {a.uuid: str(b["id"]) for b in core.bereiche_for(led, self.app.config) for a in b["leaves"]}
+        by_id = {t.id: t for t in led.txs}
+        code, off = self.call("/api/categories/unassigned")
+        ids = [i for g in off["gruppen"] for i in g["ids"]]
+        self.assertTrue(ids)
+        hide = area[by_id[ids[0]].account_uuid]
+        before = self.store.load("dataset.json")["kategorien"]["gesamt"].get("ohne", 0)
+        code, r = self.call("/api/categories/areas", {"ohne": [hide], "warten": True})
+        self.assertEqual((code, r["config"]["zuordnen_ohne"]), (200, [hide]))
+        n_all = self.store.load("dataset.json")["kategorien"]["gesamt"].get("ohne", 0)
+        self.assertLess(n_all, before)                                                                  # the count follows at once
+        code, off2 = self.call("/api/categories/unassigned")
+        left = [i for g in off2["gruppen"] for i in g["ids"]]
+        self.assertTrue(all(area[by_id[i].account_uuid] != hide for i in left)); self.assertLess(len(left), len(ids))
+        self.assertEqual(self.call("/api/categories/areas", {"ohne": "x"})[0], 400)
+        self.assertEqual(self.store.load("dataset.json")["kategorien"]["gesamt"].get("ohne", 0), n_all)       # the count without that area (set before)
+        self.call("/api/categories/areas", {"ohne": [], "warten": True})
+        self.assertEqual(len([i for g in self.call("/api/categories/unassigned")[1]["gruppen"] for i in g["ids"]]), len(ids))
+        import categorize as CZ
+        all_n = CZ.stats(CZ.load(self.store), led, None, area)["gesamt"].get("ohne", 0)
+        part_n = CZ.stats(CZ.load(self.store), led, None, area, {hide})["gesamt"].get("ohne", 0)
+        self.assertLess(part_n, all_n)
+
     def test_kategorien_zurueckschreiben(self):
         """MoneyMoney ist massgeblich: Zuordnen traegt dort ein (geprueft), eigene Kategorie ohne Rueckfrage aenderbar, ein in
         MoneyMoney geaenderter Umsatz wird nicht beschrieben; von unterwegs gemerkt und beim naechsten Abgleich eingetragen;
@@ -1725,7 +1753,7 @@ class AppTests(_AppBase):
         import service as MS
         for was in ("cashflow", "planning"):
             names = [str(r[0]).strip() for r in MS.export_sheets(self.app, was, None, "months")[0].rows if r and r[0]]      # the table (first sheet)
-            for want in ("Einnahmen", "Überschuss", "Veränderung Bankguthaben", "Abgleich mit der Bilanz", "Veränderung Nettovermögen"):
+            for want in ("Operativer Cashflow", "Einnahmen", "Investitions-Cashflow", "Finanzierungs-Cashflow", "Veränderung Bankguthaben", "Abgleich mit der Bilanz", "Veränderung Nettovermögen"):
                 self.assertIn(want, names, was)
             self.assertFalse([n for n in names if "_" in n or "Umschichtung" in n], was)
         # balance sheet: everything in it (positions, accounts, securities), grouped; collapsed as on the page
@@ -2662,20 +2690,29 @@ class BrowserTest(unittest.TestCase):
                 for want in (2, 0, 1):
                     pg.evaluate("document.querySelector('.cf-lv-btn').click()"); pg.wait_for_timeout(250)
                     self.assertEqual(lv(), want)
-                self.assertTrue(pg.query_selector("tr.sec[data-tog='s:Einnahmen']")); self.assertIsNone(pg.query_selector("tr.det"))
+                # a cash flow statement: operating (income and expenses within), investing, financing -- then the cash and net worth
+                tops = pg.eval_on_selector_all("#main .cf-tbl tr.sec", "e => e.map(x => x.dataset.tog)")
+                self.assertEqual(tops[:3], ["s:Operativ", "s:Investitionen", "s:Finanzierung"])
+                self.assertEqual(pg.eval_on_selector_all("#main .cf-tbl tr.sec2", "e => e.map(x => x.dataset.tog)"), ["s:Einnahmen", "s:Ausgaben"])
+                body = pg.inner_text("#main .cf-tbl tbody")
+                for gone in ("Überschuss", "Nach Zins und Tilgung", "Rohertrag", "Umschichtung"):
+                    self.assertNotIn(gone, body)
+                self.assertIn("Darlehen Lindenstraße", pg.inner_text("tr.sub[data-tog='g:Finanzierung|Tilgung']").split("\n")[0] + pg.inner_text("#main .cf-tbl tbody"))
+                self.assertIsNone(pg.query_selector("tr.det"))
                 pg.click("button.disc[data-tog^='d:']"); pg.wait_for_selector("tr.det")                 # a position: its categories
-                pg.click("tr.sec[data-tog='s:Einnahmen'] td:first-child"); pg.wait_for_timeout(200)       # a section closes (its total stays)
+                pg.click("tr.sec2[data-tog='s:Einnahmen'] td:first-child"); pg.wait_for_timeout(200)      # income closes (its total stays)
                 self.assertIsNone(pg.query_selector("tr[data-key^='Einnahmen/']")); self.assertTrue(pg.query_selector("tr[data-key^='Ausgaben/']"))
-                pg.click("#cf-ebene button[data-e='0']"); pg.wait_for_timeout(200)                        # overview: every section closed
-                self.assertEqual(len(pg.query_selector_all("#main .cf-tbl tr[data-key]")), 0)
-                self.assertEqual(len(pg.query_selector_all("#main .cf-tbl tr.total")), 3); self.assertEqual(len(pg.query_selector_all("tr.check")), 2)
-                self.assertLess(pg.evaluate("document.querySelector('#main .cf-tbl').offsetHeight"), 620)   # fits on a page
+                pg.click("#cf-ebene button[data-e='0']"); pg.wait_for_timeout(200)                        # overview: activities with their kinds, no positions
+                self.assertEqual(len(pg.query_selector_all("#main .cf-tbl tr[data-key^='Einnahmen/'], #main .cf-tbl tr[data-key^='Ausgaben/'], #main .cf-tbl tr[data-key^='Investitionen/']")), 0)
+                self.assertTrue(pg.query_selector("tr.sec2[data-tog='s:Einnahmen']")); self.assertTrue(pg.query_selector("tr.sub[data-tog='g:Investitionen|Wertpapiere & Geldanlagen']"))
+                self.assertEqual(len(pg.query_selector_all("#main .cf-tbl tr.total")), 2); self.assertEqual(len(pg.query_selector_all("tr.check")), 2)
+                self.assertLess(pg.evaluate("document.querySelector('#main .cf-tbl').offsetHeight"), 760)   # fits on a page
                 pg.click("#cf-ebene button[data-e='2']"); pg.wait_for_selector("tr.det")                 # details: everything open
                 self.assertGreater(len(pg.query_selector_all("#main .cf-tbl tr.det")), 2)
                 pg.click("#cf-ebene button[data-e='1']"); pg.wait_for_timeout(200)
                 for tip in pg.eval_on_selector_all("#main .cf-tbl .hq", "e => e.map(x => x.dataset.tip)"):  # headings are explained by their "?"
                     self.assertTrue(tip)
-                self.assertNotIn("Umschichtung", pg.inner_text("#main .cf-tbl")); self.assertNotIn("Tilgung +", pg.inner_text("#main .cf-tbl"))
+                self.assertNotIn("Tilgung +", pg.inner_text("#main .cf-tbl"))
                 # the month view starts three years back; the year stepper moves its first year back and forth
                 first = pg.evaluate("document.querySelector('#main thead th[data-key]').dataset.key")
                 self.assertTrue(pg.is_disabled("#von-jahr button[data-d='-1']"))                        # no earlier data
@@ -2693,25 +2730,53 @@ class BrowserTest(unittest.TestCase):
                 pg.click("button.disc[data-tog^='d:']"); pg.wait_for_selector("tr.det")                 # ... and a row opened moves nothing
                 self.assertEqual(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 37)
                 pg.click("button.disc[data-tog^='d:']"); pg.wait_for_timeout(200)
-                # charts below the table: one period for all, each mark with its figures
-                self.assertTrue(pg.query_selector("#cf-time-plot svg .cf-col.ein")); self.assertTrue(pg.query_selector("#cf-time-plot svg .cf-col.aus"))
-                self.assertEqual(len(pg.query_selector_all("#cf-time-plot .cf-hit")), 12)
-                self.assertIn("Überschuss", pg.get_attribute("#cf-time-plot .cf-hit", "data-tip"))
-                names = pg.eval_on_selector_all(".cf-card:first-child .cf-name", "e => e.map(x => x.textContent)")
-                self.assertEqual((names[0], names[1], names[-1]), ("Einnahmen", "Ausgaben", "Veränderung Bankguthaben"))
-                self.assertGreaterEqual(len(pg.query_selector_all(".cf-card:nth-child(2) .cf-row")), 3)     # expenses by position
-                # the charts hold the table's figures: the composition ends in the change in cash of the twelve months, its steps add up
+                # charts below the table: one period for all, colour = activity, each mark with its figures
                 num = lambda t: int("".join(c for c in t.replace("\u2212", "-") if c.isdigit() or c == "-"))
-                vals = [num(t) for t in pg.eval_on_selector_all(".cf-card:first-child .cf-num", "e => e.map(x => x.textContent)")]
-                want = pg.evaluate("(() => { const D = B(), ms = D.monate.filter(m => m <= D.ist_bis).slice(-12), s = n => Math.round(ms.reduce((a, m) => a + (D.kapitalfluss.summen[m][n] || 0), 0)); return [s('Einnahmen'), s('Ausgaben'), s('Operativ'), s('Cashflow')]; })()")
-                self.assertEqual([vals[0], vals[1], vals[2], vals[-1]], want); self.assertEqual(vals[0] + vals[1], vals[2])
-                self.assertLessEqual(abs(sum(vals[3:-1]) + vals[2] - vals[-1]), 2)                          # rounded to whole euros
-                top = num(pg.inner_text(".cf-card:nth-child(2) .cf-val"))
-                self.assertEqual(top, -want[1])                                                             # expenses by position: their sum
-                fig = lambda: pg.inner_text(".cf-time .cf-val")
+                want = pg.evaluate("""(() => { const D = B(), ms = D.monate.filter(m => m <= D.ist_bis).slice(-12), s = n => Math.round(ms.reduce((a, m) => a + (D.kapitalfluss.summen[m][n] || 0), 0));
+                    const prev = D.monate[D.monate.indexOf(ms[0]) - 1]; return {ein: s('Einnahmen'), aus: s('Ausgaben'), cash: s('Cashflow'), start: Math.round(D.kapitalfluss.summen[prev].Bankguthaben), end: Math.round(D.kapitalfluss.summen[ms[11]].Bankguthaben)}; })()""")
+                # 1. bridge: from the cash at the start to the cash at the end, every step starts where the one before ended
+                self.assertTrue(pg.query_selector("#cf-bridge svg .cf-col.op")); self.assertTrue(pg.query_selector("#cf-bridge svg .cf-col.inv")); self.assertTrue(pg.query_selector("#cf-bridge svg .cf-col.fin"))
+                tips = pg.eval_on_selector_all("#cf-bridge .cf-hit", "e => e.map(x => x.dataset.tip.split('\\n')[0])")
+                self.assertTrue(tips[0].startswith("Bankguthaben am Anfang")); self.assertTrue(tips[-1].startswith("Bankguthaben am Ende"))
+                steps = [num(x.split(": ")[1].split(",")[0]) for x in tips]
+                self.assertEqual((steps[0], steps[1], steps[2], steps[-1]), (want["start"], want["ein"], want["aus"], want["end"]))
+                self.assertLessEqual(abs(sum(steps[1:-1]) - (want["end"] - want["start"])), len(steps))      # rounded to whole euros
+                self.assertTrue(any(x.startswith("Tilgung") for x in tips)); self.assertTrue(any(x.startswith("Wertpapiere & Geldanlagen") for x in tips))
+                # 2. per month by activity, the change in cash as the line; a tooltip with colour keys
+                self.assertEqual(len(pg.query_selector_all("#cf-months .cf-hit")), 12); self.assertTrue(pg.query_selector("#cf-months .cf-net"))
+                pg.hover("#cf-months .cf-hit >> nth=11"); pg.wait_for_timeout(150)
+                tip = pg.inner_text("#cf-tip")
+                for w in ("Operativer Cashflow", "Investitions-Cashflow", "Finanzierungs-Cashflow", "Veränderung Bankguthaben"):
+                    self.assertIn(w, tip)
+                self.assertEqual(len(pg.query_selector_all("#cf-tip i.sw")), 3)
+                # 3. sources and uses: both sides the same sum
+                cols = pg.eval_on_selector_all(".cf-su-col", "e => e.map(c => [...c.querySelectorAll('.cf-num')].map(n => n.textContent))")
+                self.assertEqual(sum(num(x) for x in cols[0]) // 10, sum(num(x) for x in cols[1]) // 10)
+                self.assertIn("Arbeitseinkommen", pg.inner_text(".cf-su-col >> nth=0")); self.assertIn("Mehr Bankguthaben", pg.inner_text(".cf-su-col >> nth=1"))
+                # 4. expenses by position: amount, share, the period before, change; their sum
+                card = ".cf-card:has(.cf-list.ex)"
+                self.assertEqual(num(pg.inner_text(card + " .cf-val")), -want["aus"])
+                self.assertEqual(pg.eval_on_selector_all(card + " .cf-row.head span", "e => e.map(x => x.textContent).filter(Boolean)"), ["Betrag", "Anteil", "Vorperiode", "Veränderung"])
+                # a position with several categories splits its bar, the tooltip names them with their colour and change
+                html = pg.evaluate("""(() => { const D = JSON.parse(JSON.stringify(B())), ms = D.monate.filter(m => m <= D.ist_bis);
+                    const z = D.kapitalfluss.sektionen.find(s => s.name === 'Ausgaben').zeilen[0], w = Object.fromEntries(ms.map(m => [m, -100]));
+                    z.werte = Object.fromEntries(ms.map(m => [m, -300])); z.details = [{kategorie: 'Wohnen / Miete', werte: Object.fromEntries(ms.map(m => [m, -200]))}, {kategorie: 'Wohnen / Strom <b>', werte: w}];
+                    CF.tips = []; const h = cfExpenses(D, ms.slice(-12), ms.slice(-24, -12)); return [h, CF.tips.join('')]; })()""")
+                self.assertIn('class="cf-split"', html[0]); self.assertIn('class="cat1"', html[0]); self.assertIn('class="cat2"', html[0])
+                self.assertIn("Wohnen / Strom &lt;b&gt;", html[1]); self.assertNotIn("<b>", html[1].replace("<b>2.400", "").replace("<b>1.200", "").split("Strom")[1][:20])
+                # the balance sheet shows more than the payments (left out on purpose, money in transit): a step of its own, the bridge ends there
+                st = pg.evaluate("""(() => { const D = JSON.parse(JSON.stringify(B())), ms = D.monate.filter(m => m <= D.ist_bis).slice(-12);
+                    D.kapitalfluss.summen[ms[11]].Bankguthaben += 1000; const s = cfBridgeSteps(D, ms, []);
+                    return s.map(x => [x.label, Math.round(x.v), Math.round(x.b), !!x.total]); })()""")
+                self.assertEqual(st[-2][:2], ["Abgleich mit der Bilanz", 1000]); self.assertEqual(st[-2][2], st[-1][1])
+                # an unknown bank balance is never shown as a number
+                st2 = pg.evaluate("""(() => { const D = JSON.parse(JSON.stringify(B())), ms = D.monate.filter(m => m <= D.ist_bis).slice(-12), prev = D.monate[D.monate.indexOf(ms[0]) - 1];
+                    D.bilanz.zeilen.find(r => !r.gruppe && r.rolle === 'liquiditaet').werte[prev] = null; return cfBridgeSteps(D, ms, []).map(x => x.label); })()""")
+                self.assertNotIn("Bankguthaben am Anfang", st2); self.assertEqual(st2[-1], "Veränderung Bankguthaben")
+                fig = lambda: pg.inner_text(card + " .cf-val")
                 before = fig()
                 pg.click("#cf-zeit button[data-z='alle']"); pg.wait_for_timeout(300)
-                self.assertNotEqual(fig(), before); self.assertGreater(len(pg.query_selector_all("#cf-time-plot .cf-hit")), 12)
+                self.assertNotEqual(fig(), before); self.assertGreater(len(pg.query_selector_all("#cf-months .cf-hit")), 12)
                 pg.click("#cf-zeit button[data-z='12m']"); pg.wait_for_timeout(200)
                 # where a category counts is a setting: its own page under Verwaltung, linked from here (the old address leads there)
                 pg.click("#main a[href='#positions']"); pg.wait_for_selector(".kp-table tr[data-p]")
@@ -3121,6 +3186,10 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("2026", pg.query_selector("#main thead").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_kapitalfluss_jahre.png"))
                 pg.click("#modus-seg button[data-m='monate']"); pg.wait_for_timeout(200)
+                # Planung: the loan plan by the loans' names (their rows are grouped by kind)
+                pg.click("#nav a[href='#planning']"); pg.wait_for_selector(".edit")
+                loans = pg.eval_on_selector_all("tr[data-loan]", "e => e.map(x => x.dataset.loan)")
+                self.assertIn("Darlehen Lindenstraße", loans); self.assertFalse({"Tilgung", "Zinsen", "Darlehensaufnahme"} & set(loans))
                 # Planung: Methode setzen
                 pg.click("#nav a[href='#planning']"); pg.wait_for_selector(".edit")
                 first = pg.query_selector(".edit"); first.query_selector(".meth").select_option("fix"); first.query_selector(".betrag").fill("1234"); first.query_selector(".save").click()

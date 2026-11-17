@@ -452,7 +452,7 @@ class Rows:
         self.meta: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self.det: Dict[Tuple[str, str], Dict[str, Dict[str, float]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
 
-    def add(self, section: str, gruppe: str, zeile: str, mk: str, amount: float, *,
+    def add(self, section: str, gruppe: Optional[str] = None, zeile: str = "", mk: str = "", amount: float = 0.0, *,
             konto: Optional[str] = None, art: str = "kategorie", nw: bool = True, lbl: Optional[tuple] = None,
             glbl: Optional[tuple] = None, ord: Optional[float] = None, objekt: Optional[str] = None, detail: Optional[str] = None):
         """zeile/gruppe stay German (keys of your planning); lbl/glbl: (text key, value) shown in your language; ord: place in
@@ -579,6 +579,21 @@ def company_accounts(ledger: Ledger, config: dict) -> Dict[str, str]:
 
 VALUE_MARKS = (MARK + "wert-", MARK + "spiegel-")     # value adjustments of Kontor (participation): never a transfer
 ASSET_LIKE = ASSET_ROLES | {"sonstiges"}               # positions that change only by bookings, valuations and transfers
+# Investing and financing by kind, as in a cash flow statement (group, its text key, place): the accounts and loans are the
+# rows within. The row names (keys of your planning) stay as they were.
+INVEST_GROUPS = {"immobilien": ("Immobilien", "cf_g_immobilien", 610), "sachwerte": ("Sachwerte", "cf_g_sachwerte", 620),
+                 "wertpapiere": ("Wertpapiere & Geldanlagen", "cf_g_anlagen", 630), "anlagen": ("Wertpapiere & Geldanlagen", "cf_g_anlagen", 630),
+                 "sonstiges": ("Sonstige Anlagen", "cf_g_sonstige", 635), "beteiligungen": ("Beteiligungen", "cf_g_beteiligungen", 640),
+                 "bereiche": ("Andere Bereiche", "cf_g_bereiche", 645), "forderungen": ("Gewährte Darlehen", "cf_g_forderungen", 650),
+                 "fremd": ("Fremdwährung", "cf_fremdwaehrung_g", 660), "sparen": ("Sparen & Anlegen", "pos_anlegen", 628)}
+FIN_GROUPS = {"aufnahme": ("Darlehensaufnahme", "cf_g_aufnahme", 710), "tilgung": ("Tilgung", "cf_g_tilgung", 720),
+              "zins": ("Zinsen", "cf_g_zinsen", 730), "gesellschafter": ("Einlagen/Entnahmen Gesellschafter", "cf_einlagen_gesellschafter", 740)}
+
+
+def _grp(table: Dict[str, tuple], kind: str) -> dict:
+    """The keyword arguments of Rows.add for a row in the group of its kind (investing or financing)."""
+    g, key, o = table[kind]
+    return {"glbl": (key,), "ord": o, "gruppe": g}
 PAIR_DAYS_IBAN = 5                                      # counter IBAN known: counterpart at most this many days apart
 PAIR_DAYS_IBAN_BOTH = 14                                # ... and both bookings name each other's account
 PAIR_DAYS = 3                                           # by amount only (transfer category, offline account)
@@ -1023,11 +1038,11 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         """A booking of an account that is no bank account (loan, receivable, asset): interest or a change of its value."""
         nonlocal unclear
         if role == "verbindlichkeiten" and _is_cost(t, cost_words):
-            R.add("Finanzierung", acc.name, acc.name + " / Zinsen", mk, t.amount, konto=acc.uuid, art="zins", nw=True, lbl=("cf_zinsen", acc.name))
-            R.add("Finanzierung", acc.name, acc.name + " / Tilgung", mk, -t.amount, konto=acc.uuid, art="tilgung", nw=False, lbl=("cf_tilgung", acc.name))
+            R.add("Finanzierung", zeile=acc.name + " / Zinsen", mk=mk, amount=t.amount, konto=acc.uuid, art="zins", nw=True, lbl=("cf_name", acc.name), **_grp(FIN_GROUPS, "zins"))
+            R.add("Finanzierung", zeile=acc.name + " / Tilgung", mk=mk, amount=-t.amount, konto=acc.uuid, art="tilgung", nw=False, lbl=("cf_name", acc.name), **_grp(FIN_GROUPS, "tilgung"))
         elif role == "forderungen" and _is_cost(t, cost_words):
-            R.add("Investitionen", acc.name, acc.name + " / Zinsen", mk, t.amount, konto=acc.uuid, art="zins", nw=True, lbl=("cf_zinsen", acc.name))
-            R.add("Investitionen", acc.name, acc.name + " / Rückzahlung", mk, -t.amount, konto=acc.uuid, art="rueckzahlung", nw=False, lbl=("cf_rueckzahlung", acc.name))
+            R.add("Investitionen", zeile=acc.name + " / Zinsen", mk=mk, amount=t.amount, konto=acc.uuid, art="zins", nw=True, lbl=("cf_zinsen", acc.name), **_grp(INVEST_GROUPS, "forderungen"))
+            R.add("Investitionen", zeile=acc.name + " / Rückzahlung", mk=mk, amount=-t.amount, konto=acc.uuid, art="rueckzahlung", nw=False, lbl=("cf_name", acc.name), **_grp(INVEST_GROUPS, "forderungen"))
         elif role in ("verbindlichkeiten", "forderungen") or role in ASSET_LIKE:
             R.add("Bewertung", acc.name, acc.name, mk, t.amount, konto=acc.uuid, art="konto", nw=True)
         else:
@@ -1062,21 +1077,24 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             if o_role == "liquiditaet":
                 continue
             if o_role in ASSET_LIKE:
-                R.add("Investitionen", pacc.name, pacc.name, mk, t.amount, konto=pacc.uuid, art="konto", nw=False)
+                R.add("Investitionen", zeile=pacc.name, mk=mk, amount=t.amount, konto=pacc.uuid, art="konto", nw=False, **_grp(INVEST_GROUPS, o_role))
                 inbound[pacc.uuid][mk] += -t.amount
             elif o_role == "forderungen":
-                R.add("Investitionen", pacc.name, pacc.name + " / Rückzahlung", mk, t.amount, konto=pacc.uuid, art="rueckzahlung", nw=False,
-                      lbl=("cf_rueckzahlung", pacc.name))
+                R.add("Investitionen", zeile=pacc.name + " / Rückzahlung", mk=mk, amount=t.amount, konto=pacc.uuid, art="rueckzahlung", nw=False,
+                      lbl=("cf_name", pacc.name), **_grp(INVEST_GROUPS, "forderungen"))
+            elif o_role == "verbindlichkeiten" and t.amount > 0:      # paid out by the lender: a loan taken up (never "negative repayment")
+                R.add("Finanzierung", zeile=pacc.name + " / Aufnahme", mk=mk, amount=t.amount, konto=pacc.uuid, art="aufnahme", nw=False,
+                      lbl=("cf_name", pacc.name), **_grp(FIN_GROUPS, "aufnahme"))
             elif o_role == "verbindlichkeiten":
-                R.add("Finanzierung", pacc.name, pacc.name + " / Tilgung", mk, t.amount, konto=pacc.uuid, art="tilgung", nw=False,
-                      lbl=("cf_tilgung", pacc.name))
+                R.add("Finanzierung", zeile=pacc.name + " / Tilgung", mk=mk, amount=t.amount, konto=pacc.uuid, art="tilgung", nw=False,
+                      lbl=("cf_name", pacc.name), **_grp(FIN_GROUPS, "tilgung"))
             else:
                 R.add("Unklar", "Umbuchung", "Umbuchung nach " + pacc.name, mk, t.amount, art="unklar",
                       lbl=("cf_umbuchung_mit", pacc.name), glbl=("cf_umbuchung",)); unclear += 1
             continue
         if p is not None and p in depots:               # into a depot valued by its balances: its valuation takes the rest
             pacc = ledger.accounts[p]
-            R.add("Investitionen", pacc.name, pacc.name, mk, t.amount, konto=p, art="konto", nw=False)
+            R.add("Investitionen", zeile=pacc.name, mk=mk, amount=t.amount, konto=p, art="konto", nw=False, **_grp(INVEST_GROUPS, "wertpapiere"))
             inbound[p][mk] += -t.amount
             continue
         if p is not None and p in root_leaves:          # an account of the area, but its booking is missing
@@ -1085,8 +1103,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             continue
         if p is not None and p in ledger.accounts and foreign_currency(ledger.accounts[p]):    # into another currency
             name = ledger.accounts[p].name
-            R.add("Investitionen", "Fremdwährung", "Fremdwährung " + name, mk, t.amount, konto=p, art="extern", nw=True,
-                  lbl=("cf_fremdwaehrung", name), glbl=("cf_fremdwaehrung_g",))
+            R.add("Investitionen", zeile="Fremdwährung " + name, mk=mk, amount=t.amount, konto=p, art="extern", nw=True,
+                  lbl=("cf_name", name), **_grp(INVEST_GROUPS, "fremd"))
             continue
         pa = areas.get(p) if p is not None else None
         same = pa is not None and pa == self_name
@@ -1105,24 +1123,24 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             if g0 in POS and (POS[g0][0] in ("Einnahmen", "Ausgaben") or g0 == "zinsen"):      # interest paid is a cost as well
                 p, guess = None, (None if c0 else g0)
         if p is not None and roles.get(p) == "eigenkapital" and (same or pa is None):
-            R.add("Finanzierung", "Gesellschafter", "Einlagen/Entnahmen Gesellschafter", mk, t.amount, art="extern", nw=True,
-                  lbl=("cf_einlagen_gesellschafter",), glbl=("cf_gesellschafter",))
+            R.add("Finanzierung", zeile="Einlagen/Entnahmen Gesellschafter", mk=mk, amount=t.amount, art="extern", nw=True,
+                  lbl=("cf_einlagen_gesellschafter",), **_grp(FIN_GROUPS, "gesellschafter"))
             continue
         if p is not None and not same and p in beteiligungs_gruppen:   # a company: its participation (if held here) takes it
             g = beteiligungs_gruppen[p]
             st = stakes.get(g)
-            R.add("Investitionen", "Einlagen/Entnahmen", "Einlage/Entnahme " + g, mk, t.amount, konto=st, art="extern", nw=st is None,
-                  lbl=("cf_einlage", g), glbl=("cf_einlagen",))
+            R.add("Investitionen", zeile="Einlage/Entnahme " + g, mk=mk, amount=t.amount, konto=st, art="extern", nw=st is None,
+                  lbl=("cf_name", g), **_grp(INVEST_GROUPS, "beteiligungen"))
             if st:
                 stake_in[st][mk] += -t.amount
             continue
         if p is not None and not same and pa is not None:             # another area of yours
             if company:
-                R.add("Finanzierung", "Gesellschafter", "Einlagen/Entnahmen Gesellschafter", mk, t.amount, art="extern", nw=True,
-                      lbl=("cf_einlagen_gesellschafter",), glbl=("cf_gesellschafter",))
+                R.add("Finanzierung", zeile="Einlagen/Entnahmen Gesellschafter", mk=mk, amount=t.amount, art="extern", nw=True,
+                      lbl=("cf_einlagen_gesellschafter",), **_grp(FIN_GROUPS, "gesellschafter"))
             else:
-                R.add("Investitionen", "Einlagen/Entnahmen", "Einlage/Entnahme " + pa, mk, t.amount, art="extern", nw=True,
-                      lbl=("cf_einlage", pa), glbl=("cf_einlagen",))
+                R.add("Investitionen", zeile="Einlage/Entnahme " + pa, mk=mk, amount=t.amount, art="extern", nw=True,
+                      lbl=("cf_name", pa), **_grp(INVEST_GROUPS, "bereiche"))
             continue
         if p is not None:
             R.add("Unklar", "Umbuchung", "Umbuchung nach " + ledger.accounts[p].path, mk, t.amount, art="unklar",
@@ -1171,14 +1189,16 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             target = c_to if c_to in root_leaves else (depots[0] if len(depots) == 1 and not c_to else None)
             # without a known account the money leaves the net worth -- unless a depot of the area takes it (shown as reason)
             neutral = target is not None or bool(depots)
-            R.add("Investitionen", prow, cat, mk, t.amount, konto=target, art="kategorie", nw=not neutral, ord=pord, glbl=("pos_" + pos,))
+            kind = roles.get(target, "sparen") if target else "sparen"          # the kind of the account it goes into, else "saving"
+            R.add("Investitionen", zeile=cat, mk=mk, amount=t.amount, konto=target, art="kategorie", nw=not neutral,
+                  **_grp(INVEST_GROUPS, kind if kind in INVEST_GROUPS else "sparen"))
             if target:
                 inbound[target][mk] += -t.amount
             elif neutral:
                 no_target[mk] += t.amount
         elif pos in ("tilgung", "zinsen"):
-            R.add("Finanzierung", prow, prow, mk, t.amount, art="zins" if pos == "zinsen" else "tilgung", nw=pos == "zinsen", ord=pord,
-                  lbl=("pos_" + pos,), detail=det)
+            R.add("Finanzierung", zeile=prow, mk=mk, amount=t.amount, art="zins" if pos == "zinsen" else "tilgung", nw=pos == "zinsen",
+                  lbl=("pos_" + pos,), detail=det, **_grp(FIN_GROUPS, "zins" if pos == "zinsen" else "tilgung"))
         else:
             row, key = position_row(pos, company)
             R.add(psec, row, row, mk, t.amount, ord=pord, lbl=(key,), detail=det)
@@ -1419,8 +1439,14 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                                       key=lambda d: -abs(sum(d["werte"].values())))
             zeilen.append(z)
         gsum = defaultdict(float)
+        gcount = defaultdict(int)
         for z in zeilen:
             gsum[z["gruppe"]] += abs(sum(z["werte"].values()))
+            gcount[z["gruppe"]] += 1
+        for z in zeilen:                                 # e.g. "Tilgung" by category beside the loans of the group "Tilgung"
+            if sec in ("Investitionen", "Finanzierung") and gcount[z["gruppe"]] > 1 and z["zeile"] == z["gruppe"] and not z.get("konto") \
+                    and z["art"] in ("tilgung", "zins", "kategorie"):
+                z["lbl"] = ["cf_per_kategorie"]
         # the fixed outline first (positions in their order), then the rest by size
         zeilen.sort(key=lambda z: (z.get("ord", 500), -gsum[z["gruppe"]], z["gruppe"], z["zeile"]))
         sektionen.append({"name": sec, "zeilen": zeilen})
@@ -1711,13 +1737,13 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
         if any(z["zeile"] == own for z in sec_by_name["Finanzierung"]["zeilen"]):
             immo_rows[("Finanzierung", own)] = payout
         else:
-            immo_extra.append({"sektion": "Finanzierung", "gruppe": "Gesellschafter", "zeile": own, "art": "extern", "nw": True,
-                               "werte": payout, "lbl": ["cf_einlagen_gesellschafter"], "glbl": ["cf_gesellschafter"]})
+            immo_extra.append({"sektion": "Finanzierung", "gruppe": own, "zeile": own, "art": "extern", "nw": True,
+                               "werte": payout, "lbl": ["cf_einlagen_gesellschafter"], "glbl": ["cf_einlagen_gesellschafter"], "ord": FIN_GROUPS["gesellschafter"][2]})
     for ex in immo_extra:
         sek = sec_by_name[ex["sektion"]]
         sek["zeilen"].append(dict({"zeile": ex["zeile"], "gruppe": ex["gruppe"], "konto": None, "art": ex["art"], "nw": ex["nw"],
                                    "werte": {mk: 0.0 for mk in ist}, "synthetisch": True},
-                                  **{k: ex[k] for k in ("objekt", "lbl", "glbl") if ex.get(k)}))
+                                  **{k: ex[k] for k in ("objekt", "lbl", "glbl", "ord") if ex.get(k)}))
         immo_rows[(ex["sektion"], ex["zeile"])] = ex["werte"]
     fixed_rows: Dict[Tuple[str, str], Tuple[Dict[str, float], str]] = {k: (v, "immobilie") for k, v in immo_rows.items()}
 
@@ -1773,7 +1799,7 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                 method = fx[1]
             elif cfg.get("methode"):
                 method = cfg["methode"]
-            elif sek["name"] in ("Bewertung", "Unklar") or z.get("art") == "extern":     # contributions/withdrawals: one-offs
+            elif sek["name"] in ("Bewertung", "Unklar") or z.get("art") in ("extern", "aufnahme"):     # contributions/withdrawals, loans taken up: one-offs
                 method = "keine"
             elif sek["name"] == "Investitionen" and z.get("art") in ("extern", "konto", "rueckzahlung", "zins"):
                 method = "keine" if z.get("art") in ("extern", "konto") else default_method
@@ -1881,6 +1907,11 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                 if b < 0 < nb:      # Verbindlichkeit nicht ueber null hinaus tilgen
                     nb = 0.0
                 bal[nach] = round(nb, 2)
+        # Darlehen aufgenommen (geplant): die Schuld steigt, vor den Zinsen des Monats
+        for uuid, parts in loan_groups.items():
+            z = parts.get("aufnahme")
+            if z and uuid in bal and uuid not in immo_loans:
+                bal[uuid] = round(bal[uuid] - z["plan"]["werte"].get(mk, 0.0), 2)
         # Darlehen mit Zinsmodell
         for uuid, st in loan_state.items():
             b = bal[uuid]

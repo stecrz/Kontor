@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.13.13 (2026-11-17 16:11)
+Cashflow als Kapitalflussrechnung.
+- **Gliederung wie in einer professionellen Kapitalflussrechnung:** Operativer Cashflow (Einnahmen und Ausgaben), Investitions-Cashflow, Finanzierungs-Cashflow, dann Veränderung des Bankguthabens. „Überschuss“, „Nach Zins und Tilgung“ und „Rohertrag“ entfallen.
+- **Investition und Finanzierung nach Art:** Immobilien, Wertpapiere & Geldanlagen, Beteiligungen, gewährte Darlehen bzw. Darlehensaufnahme, Tilgung, Zinsen, Einlagen und Entnahmen – die Konten und Darlehen darunter. Die Auszahlung eines Darlehens steht als **Darlehensaufnahme**, nicht mehr als „negative Tilgung“; die Planung zählt sie nicht mehr in die durchschnittliche Rate.
+- **Neue Diagramme:** eine Brücke vom Bankguthaben am Anfang zum Ende, Cashflow je Monat nach Tätigkeit, Mittelherkunft und -verwendung sowie Ausgaben nach Position mit Anteil, Vorperiode und Veränderung – beim Darüberfahren teilt sich der Balken in die Kategorien.
+- **Kategorien:** Bereiche, die du nicht zuordnest (z. B. eine GmbH), lassen sich abwählen; sie erscheinen nicht mehr in der Liste und zählen nicht mehr als offen.
+- Excel-Export und Übersicht in derselben Gliederung.
+- Ist ein Bankstand nicht bekannt, steht im Cashflow „unbekannt“ statt einer Zahl; die Legende „Plan / laufender Monat“ entfällt.
+
 ## 3.13.12 (2026-11-17 15:25)
 - **Kontenspiegel und andere Kontoauswahlen:** Konten mit gleichem Namen zeigen ihre Gesellschaft (z. B. „Kapitalkonto A · Alpha GbR“) – in der Liste und im gewählten Eintrag.
 - **Cashflow:** Die Auswahl „Überblick / Positionen / Details“ steht in der Kopfzelle der Tabelle, direkt über den Pfeilen; am iPhone klappt dort ein großer Pfeil mit jedem Tippen eine Stufe weiter auf, zuletzt wieder zu. Das Zahnrad daneben führt zu den Cashflow-Positionen (statt des Links oben rechts).
