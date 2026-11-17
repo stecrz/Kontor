@@ -2866,8 +2866,28 @@ class BrowserTest(unittest.TestCase):
                 bar = dict(bars)
                 self.assertEqual((bar["Einnahmen"], bar["Ausgaben"], bar["Anfangsbestand"], bar["Endbestand"]), ("in", "out", "tot", "tot"))
                 for (k, n, v), (_, c) in zip(rows, bars):
-                    if k in ("grp", "kid") and num(v):
+                    if k == "kid" and num(v):
                         self.assertEqual(c, "in" if num(v) > 0 else "out", n)
+                # an open activity is a bracket in its colour over its parts (not a step of its own), marked like the table
+                self.assertEqual(pg.eval_on_selector_all("#cf-bridge .cf-br-row.grp.br .cf-br-brace", "e => e.map(x => x.classList[1])"), ["op", "inv", "fin"])
+                self.assertEqual(pg.eval_on_selector_all("#cf-bridge .cf-br-row.grp .cf-br-key", "e => e.map(x => x.classList[1])"), ["op", "inv", "fin"])
+                self.assertFalse(pg.query_selector("#cf-bridge .cf-br-row.grp .cf-br-bar"))
+                # a click closes an activity: one step instead; on its parts: their positions, which add up to them
+                pg.click("#cf-bridge .cf-br-row[data-br='inv']"); pg.wait_for_timeout(150)
+                self.assertTrue(pg.query_selector("#cf-bridge .cf-br-row[data-br='inv'] .cf-br-bar.out")); self.assertIsNone(pg.query_selector("#cf-bridge .cf-br-row[data-br='inv'] .cf-br-brace"))
+                self.assertNotIn("Beteiligungen", [n for _, n, _ in pg.eval_on_selector_all("#cf-bridge .cf-br-row", "e => e.map(r => [0, r.getAttribute('aria-label').split(': ')[0], 0])")])
+                pg.click("#cf-bridge .cf-br-row[data-br='op|Ausgaben']"); pg.wait_for_timeout(150)
+                deep = pg.eval_on_selector_all("#cf-bridge .cf-br-row", "e => e.map(r => [r.getAttribute('aria-label').split(': ')[0], r.querySelector('.cf-br-v').textContent, r.classList.contains('br')])")
+                i = [d[0] for d in deep].index("Ausgaben"); self.assertTrue(deep[i][2])
+                parts = []
+                for d in deep[i + 1:]:
+                    if d[0] in ("Investitionen", "Finanzierung", "Endbestand"): break
+                    parts.append(num(d[1]))
+                self.assertGreater(len(parts), 1); self.assertLessEqual(abs(sum(parts) - num(deep[i][1])), len(parts))      # whole euros, rounded each
+                self.assertEqual(pg.eval_on_selector("#cf-bridge .cf-br-row[data-br='op|Ausgaben'] .cf-br-brace", "e => e.classList[1]"), "deep")
+                end_before = pg.text_content("#cf-bridge .cf-br-row.tot >> nth=1")
+                self.assertEqual(rows[-1][2], pg.eval_on_selector_all("#cf-bridge .cf-br-row.tot .cf-br-v", "e => e[1].textContent"))   # the end stays the end
+                pg.click("#cf-bridge .cf-br-row[data-br='op|Ausgaben']"); pg.click("#cf-bridge .cf-br-row[data-br='inv']"); pg.mouse.move(5, 5); pg.wait_for_timeout(150)
                 pg.hover("#cf-bridge .cf-br-row.tot >> nth=0"); pg.wait_for_timeout(150)
                 self.assertIn("Bankguthaben am Anfang", pg.inner_text("#cf-tip")); self.assertIn("Stand Ende", pg.inner_text("#cf-tip"))
                 pg.hover("#cf-bridge .cf-br-row.grp >> nth=2"); pg.wait_for_timeout(150)                  # an activity names its parts

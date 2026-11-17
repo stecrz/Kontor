@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.13.24 (2026-11-17 22:44)
+- **Liquiditätsbrücke aufklappbar:** Überschuss (CFO), Investitionen (CFI) und Finanzierung (CFF) tragen ihre Farbe und spannen eine Klammer über ihre Teile – sie sind kein eigener Schritt, sondern deren Summe. Ein Klick auf eine Zeile mit ▸ teilt sie weiter auf (Positionen, Kategorien), ▾ fasst sie wieder zusammen.
+- „Zu- und Abflüsse je Monat“ heißt jetzt **Monatlicher Cashflow nach Tätigkeit**.
+- Auf dem iPhone steht die Legende unter „Veränderung Nettovermögen“ in eigener Zeile.
+
 ## 3.13.23 (2026-11-17 22:30)
 - **Zu- und Abflüsse je Monat:** unten jetzt die Veränderung des Nettovermögens – gespart und Wertänderung gestapelt, gestrichelt derselbe Monat ein Jahr davor. Ein Klick auf einen Monat wählt die zwölf Monate bis zu ihm.
 - **Umsätze aus den Diagrammen:** Ein Klick auf ein Feld der Heatmap oder auf eine Kategorie im offenen Ring zeigt die Umsätze dazu; der Filter steht oben und lässt sich mit einem Klick aufheben.

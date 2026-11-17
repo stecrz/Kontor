@@ -661,7 +661,10 @@ a.more { white-space:nowrap; }
 .cf-br-v { fill:var(--fg); font-size:12px; font-variant-numeric:tabular-nums; } .cf-br-row.kid .cf-br-v { fill:var(--muted); font-size:11.5px; } .cf-br-row:is(.tot, .grp) .cf-br-v { font-weight:600; }
 .cf-br-c { fill:var(--muted); font-size:10.5px; font-variant-numeric:tabular-nums; } .cf-br-c.pos { fill:var(--pos); } .cf-br-c.neg { fill:var(--neg); }
 .cf-br-bar.in { fill:var(--pos); } .cf-br-bar.out { fill:var(--neg); } .cf-br-bar.unk, .cf-br-bar.tot { fill:var(--cf-unk); }
-.cf-br-bar.kid { fill-opacity:.62; } .cf-br-link { stroke:var(--line-2); stroke-width:1; stroke-dasharray:2 2; } .cf-br-zero { stroke:var(--line); stroke-width:1; }
+.cf-br-bar.kid { fill-opacity:.62; } .cf-br-row.more { cursor:pointer; } .cf-br-disc { fill:var(--muted); font-size:9.5px; }
+.cf-br-key.op { fill:var(--cf-op); } .cf-br-key.inv { fill:var(--cf-inv); } .cf-br-key.fin { fill:var(--cf-fin); }
+.cf-br-brace { fill:none; stroke-width:2; stroke-linejoin:round; } .cf-br-brace.op { stroke:var(--cf-op); } .cf-br-brace.inv { stroke:var(--cf-inv); } .cf-br-brace.fin { stroke:var(--cf-fin); }
+.cf-br-brace.deep { stroke:color-mix(in srgb, var(--fg) 45%, transparent); stroke-width:1.5; } .cf-br-row.kid.br .cf-br-n, .cf-br-row.kid.br .cf-br-v { font-weight:600; fill:var(--fg); } .cf-br-link { stroke:var(--line-2); stroke-width:1; stroke-dasharray:2 2; } .cf-br-zero { stroke:var(--line); stroke-width:1; }
 .cf-col.ein { fill:var(--pos); } .cf-col.aus { fill:var(--neg); } .cf-col.bank { fill:color-mix(in srgb, var(--fg) 55%, transparent); } .cf-col.op { fill:var(--cf-op); } .cf-col.inv { fill:var(--cf-inv); } .cf-col.fin { fill:var(--cf-fin); } .cf-col.unk, .cf-col.tot { fill:var(--cf-unk); } .cf-col.part { opacity:.45; }
 .cf-net { fill:none; stroke:var(--fg); stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
 .cf-ln { fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; } .cf-ln.plan { stroke-dasharray:5 4; }
