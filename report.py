@@ -795,6 +795,8 @@ POSITION_HINTS = [
     (("hausgeld", "instandhalt", "reparatur", "hausverwalt", "grundsteuer"), "erstattungen", "objektkosten"),
     (("umsatzsteuer", "vorsteuer", "ust"), "umsatzsteuer", "umsatzsteuer"),
     (("finanzamt", "steuer", "solidarit"), "erstattungen", "steuern"),
+    (("mieteink", "pachteink"), "vermietung", "objektkosten"),
+    (("kapitaleink",), "kapitalertraege", "sonstige_ausgaben"),
     (("gehalt", "gehaelt", "lohn", "loehn", "tantieme", "bonus", "gratifikation", "verguetung", "honorar", "arbeit"), "arbeit", "personal"),
     (("dividend", "kapitalertr", "ausschuett"), "kapitalertraege", "sonstige_ausgaben"),
     (("mieteinnahm", "pacht"), "vermietung", "objektkosten"),
@@ -909,6 +911,10 @@ def recognised_position(path: str, income: bool) -> Optional[str]:
         for words, pin, pout in POSITION_HINTS:
             if _has(words, text):
                 return pin if income else pout
+    # "Einkommen" names work income only as the category's own name (its subcategories -- child benefit, pension -- are no
+    # salary) and as a word of its own ("Hereinkommende Zahlungen" is none)
+    if income and any(_has(("einkommen",), n, True) for n in dict.fromkeys((name_l, name))):
+        return "arbeit"
     return None
 
 
@@ -999,6 +1005,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         except KeyError:
             pass
     emp_zu_konto: Dict[str, str] = {}                 # recipient -> the account saving goes into ("extern": none in MoneyMoney)
+    unsure: Dict[str, float] = {}                     # category -> amount between your areas counted as contribution/withdrawal
     for key, ref in ((kf.get("empfaenger_zu_konto") or {}).get(str(area_id)) or {}).items():
         if ref == "extern":
             emp_zu_konto[key] = ref
@@ -1165,6 +1172,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             # category or its name clearly says (not "other") -- without a category by the words of its purpose (estimated).
             # Everything else between areas is a contribution or withdrawal.
             c0 = norm_cat(t.category_path)
+            yours = False
             if c0:
                 g0, yours = position_of(c0, config, totals)
                 if not yours:
@@ -1173,6 +1181,10 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                 g0 = guess_position(t, company, by_name=False)
             if g0 in POS and (POS[g0][0] in ("Einnahmen", "Ausgaben") or g0 == "zinsen"):      # interest paid is a cost as well
                 p, guess = None, (None if c0 else g0)
+            elif c0 and g0 is None and not yours:
+                # a category Kontor does not know and you did not place: shown under "other" on the positions page, but between
+                # your areas it counts as a contribution or withdrawal -- named there, so that the difference is no surprise
+                unsure[c0] = unsure.get(c0, 0.0) + abs(t.amount)
         if p is not None and roles.get(p) == "eigenkapital" and (same or pa is None):
             R.add("Finanzierung", zeile="Einlagen/Entnahmen Gesellschafter", mk=mk, amount=t.amount, art="extern", nw=True,
                   lbl=("cf_einlagen_gesellschafter",), **_grp(FIN_GROUPS, "gesellschafter"))
@@ -1306,6 +1318,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     R.reasons = {"ignoriert": dict(ignored)}
     R.mapped_in = {u: dict(v) for u, v in mapped_in.items()}
     R.anlagen = _savings_list(ledger, savings, depots)
+    R.unsicher = {c: round(v, 2) for c, v in unsure.items() if abs(v) >= 0.005}
     return R, inbound, warnings
 
 
@@ -1585,6 +1598,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         "bilanz": {"zeilen": bilanz_rows, "nettovermoegen": nw, "aktiva": aktiva, "passiva": passiva,
                    "liquides_nettovermoegen": liquid_nw, "positionen": {r: role_label(r) for r in pos_sums}, "ausserhalb": ausserhalb},
         "kapitalfluss": {"sektionen": sektionen, "ueberleitung": ueberleitung, "anlagen": list(getattr(R, "anlagen", None) or []),
+                         "unsicher": dict(getattr(R, "unsicher", None) or {}),
                          "anlage_ziele": anlage_ziele},
         "darlehen_konfig": loans_cfg,
         "konten_inaktiv": sorted(inactive),

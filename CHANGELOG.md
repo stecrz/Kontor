@@ -1,5 +1,15 @@
 # Änderungen
 
+## 3.13.25 (2026-11-17 23:27)
+- **Cashflow-Tabelle kompakter:** „Veränderung Bankguthaben“ klappt zu Anfangs- und Endbestand auf; der Abgleich mit der Bilanz steht als kleines ✓ an der Zahl, eine eigene Zeile nur bei Abweichung. Ab der Ebene „Positionen“ der **Free Cashflow** (CFO + CFI).
+- **Heatmap:** Riesenbeträge in einzelnen Monaten färben nicht mehr alles andere blass – sie bekommen die dunkelsten Töne und eine Markierung. Neu: eine Zeile mit allen Ausgaben (bzw. Einnahmen) zusammen, auf eigener Skala.
+- **Umsätze & Belege – weitere Filter:** Zeitraum von–bis und Kategorien von Hand setzen, entfernen und ergänzen; nach einem Klick aus der Heatmap sind sie schon gesetzt.
+- **Zeitraum der Diagramme:** ‹ und › verschieben ihn um einen Monat; ein Klick auf einen Monat springt nicht mehr. „Monatlicher Cashflow“ heißt jetzt so.
+- **Liquiditätsbrücke ohne Tooltip** – Betrag und Veränderung stehen rechts, die Teile öffnet ein Klick.
+- **Kategorie „Einkommen“** wird als Arbeitseinkommen erkannt. Cashflow-Positionen markieren Kategorien mit Zahlungen zwischen deinen Bereichen, die erst mit deiner Zuordnung als Einnahme oder Ausgabe zählen („zwischen Bereichen“).
+- **Monatlicher Cashflow:** mindestens vier Achsenstufen, unten Mitte und Rand beschriftet, „Veränderung Nettovermögen“ als eigener Titel; im Tooltip tragen Summen keine Farbe mehr.
+- Die halb breiten Diagramme bleiben nebeneinander, bis das Fenster deutlich schmaler ist.
+
 ## 3.13.24 (2026-11-17 22:44)
 - **Liquiditätsbrücke aufklappbar:** Überschuss (CFO), Investitionen (CFI) und Finanzierung (CFF) tragen ihre Farbe und spannen eine Klammer über ihre Teile – sie sind kein eigener Schritt, sondern deren Summe. Ein Klick auf eine Zeile mit ▸ teilt sie weiter auf (Positionen, Kategorien), ▾ fasst sie wieder zusammen.
 - „Zu- und Abflüsse je Monat“ heißt jetzt **Monatlicher Cashflow nach Tätigkeit**.

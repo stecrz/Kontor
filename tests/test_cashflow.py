@@ -194,7 +194,11 @@ class CashflowCases(Reconciles):
         self.assertEqual(p["Einlage/Entnahme Muster GbR"]["werte"]["2026-02"], -5000.0)
         self.assertEqual(g["Einlagen/Entnahmen Gesellschafter"]["werte"]["2026-02"], 5000.0)
         self.assertFalse({"Sonstige Ausgaben", "Sonstige Einnahmen", "Erstattungen", "Freizeit & Reisen"} & (set(p) | set(g)))
+        # named for the positions page: categories Kontor does not know and you did not place (between areas they stay contributions)
+        self.assertEqual(data["Privat"]["kapitalfluss"]["unsicher"], {"Einlage": 10000.0})           # moved, either way
+        self.assertEqual(data["Muster GbR"]["kapitalfluss"]["unsicher"], {"Privat / Entnahmen und Einlagen": 10000.0})
         data = build(txs, {"kapitalfluss": {"positionen": {"Einlage": "sonstige_ausgaben"}}})
+        self.assertNotIn("Einlage", data["Privat"]["kapitalfluss"]["unsicher"])         # your choice: no longer unsure
         self.assertEqual(rows(data["Privat"])["Sonstige Ausgaben"]["werte"]["2026-02"], -10000.0)
         # the same category on both sides: income for one area, an expense for the other (the direction within the area)
         data = build([(1, "kk", date(2026, 2, 3), -4000.0, {"iban": "DE11", "cat": "Gehalt"}), (2, "giro", date(2026, 2, 3), 4000.0, {"iban": "DE21", "cat": "Gehalt"}),
@@ -375,7 +379,10 @@ class Positions(Reconciles):
                  ("Irgendwas", False): "sonstige_ausgaben", ("Immobilienkauf", False): "anlegen", ("Beteiligung", False): "anlegen",
                  ("Finanzierung", False): "tilgung", ("Vermietung / Parkweg / Zinsen", False): "zinsen", ("Geldautomat", False): "sonstige_ausgaben",
                  ("Krankenkasse", True): "erstattungen", ("Sparkasse", False): "sonstige_ausgaben", ("Laborkosten", False): "sonstige_ausgaben",
-                 ("Gehälter", False): "personal", ("Abos", False): "freizeit", ("Wareneinkauf", False): "wareneinkauf"}
+                 ("Gehälter", False): "personal", ("Abos", False): "freizeit", ("Wareneinkauf", False): "wareneinkauf",
+                 ("Einkommen", True): "arbeit", ("Privat / Einkommen", True): "arbeit", ("Mieteinkommen", True): "vermietung",
+                 ("Kapitaleinkommen", True): "kapitalertraege", ("Einkommensteuer", False): "steuern",
+                 ("Einkommen / Kindergeld", True): "sonstige_einnahmen", ("Hereinkommende Zahlungen", True): "sonstige_einnahmen"}
         for (path, inc), want in cases.items():
             self.assertEqual(R.propose_position(path, inc), want, path)
 

@@ -38,6 +38,7 @@ Fertig, wenn
 - [x] 3.13.22 „MoneyMoney-Sync“; Online/Offline je Konto unter Konten, Depot-Verlauf und Datei-Import unter Kontostände; Liquiditätsbrücke grün/rot; vollständig lesen alle 30 Tage.
 - [x] 3.13.23 Nettovermögen je Monat, Klick auf Monat (zwölf Monate) und auf Heatmap/Ring (Umsätze), Vorjahresvergleich; Sync-Seite ohne Kontenliste.
 - [x] 3.13.24 Liquiditätsbrücke aufklappbar, Cashflow-Gruppen in ihren Farben.
+- [x] 3.13.25 Cashflow-Tabelle kompakter (✓ am Wert, FCF), Heatmap robust mit Gesamtzeile, Filter in Umsätze & Belege, Zeitraum per ‹ ›.
 - Danach: Empfohlener Kategorienbaum (Checkliste zum Anlegen in MoneyMoney; Kontor legt selbst nur an, falls MoneyMoney es anbietet und du freigibst), Hinweis bei gemischten Kategorien, Zuordnen je Empfänger in einem Schritt, Fortschritt „sicher zugeordnet / geschätzt“; alles Freigegebene sichtbar und rückgängig zu machen.
 
 ## Laufend
