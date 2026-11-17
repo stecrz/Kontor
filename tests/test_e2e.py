@@ -2677,7 +2677,14 @@ class BrowserTest(unittest.TestCase):
                     if shots: pg.screenshot(path=os.path.join(shots, "ui_%s.png" % tab), full_page=(tab in ("rules", "settings", "tax", "planning", "help", "balance", "setup")))
                 # Cashflow: both checks against the balance sheet, every checked month adds up (✓)
                 pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("tr.check")
-                self.assertEqual(len(pg.query_selector_all("tr.check")), 2)
+                F_ = "#main table.cf-tbl:not(.cf-names)"; N_ = "#main table.cf-names"        # the figures; the names pinned as one piece over them
+                self.assertEqual(len(pg.query_selector_all(F_ + " tr.check")), 2)
+                # Safari draws pinned cells one by one, too late while scrolling: the names are one table, the figures have no pinned cell
+                self.assertEqual(pg.evaluate("[...document.querySelectorAll('#main .cf-pair td')].filter(c => getComputedStyle(c).position === 'sticky').length"), 0)
+                self.assertEqual(pg.evaluate("getComputedStyle(document.querySelector('#main .cf-names')).position"), "sticky")
+                self.assertEqual(pg.evaluate("""(() => { const a = [...document.querySelectorAll('#main table.cf-tbl:not(.cf-names) tr')], b = [...document.querySelectorAll('#main .cf-names tr')];
+                    return a.length === b.length && a.every((r, i) => Math.abs(r.getBoundingClientRect().top - b[i].getBoundingClientRect().top) < 1 && Math.abs(r.offsetHeight - b[i].offsetHeight) < 1); })()"""), True)
+                self.assertFalse(pg.evaluate("[...document.querySelectorAll('#main td.plan, #main td.part')].some(c => getComputedStyle(c).opacity !== '1')"))
                 self.assertFalse(pg.query_selector_all("tr.check td.warn"))
                 self.assertIn("✓", pg.inner_text("tr.check"))
                 # one outline: sections open and close, positions open to their categories; three levels (overview: sections and results only)
@@ -2691,28 +2698,28 @@ class BrowserTest(unittest.TestCase):
                     pg.evaluate("document.querySelector('.cf-lv-btn').click()"); pg.wait_for_timeout(250)
                     self.assertEqual(lv(), want)
                 # a cash flow statement: operating (income and expenses within), investing, financing -- then the cash and net worth
-                tops = pg.eval_on_selector_all("#main .cf-tbl tr.sec", "e => e.map(x => x.dataset.tog)")
+                tops = pg.eval_on_selector_all(F_ + " tr.sec", "e => e.map(x => x.dataset.tog)")
                 self.assertEqual(tops[:3], ["s:Operativ", "s:Investitionen", "s:Finanzierung"])
-                self.assertEqual(pg.eval_on_selector_all("#main .cf-tbl tr.sec2", "e => e.map(x => x.dataset.tog)"), ["s:Einnahmen", "s:Ausgaben"])
-                body = pg.inner_text("#main .cf-tbl tbody")
+                self.assertEqual(pg.eval_on_selector_all(F_ + " tr.sec2", "e => e.map(x => x.dataset.tog)"), ["s:Einnahmen", "s:Ausgaben"])
+                body = pg.inner_text(N_ + " tbody")
                 for gone in ("Überschuss", "Nach Zins und Tilgung", "Rohertrag", "Umschichtung"):
                     self.assertNotIn(gone, body)
-                self.assertIn("Darlehen Lindenstraße", pg.inner_text("tr.sub[data-tog='g:Finanzierung|Tilgung']").split("\n")[0] + pg.inner_text("#main .cf-tbl tbody"))
+                self.assertIn("Tilgung", pg.inner_text(N_ + " tr.sub[data-tog='g:Finanzierung|Tilgung']")); self.assertIn("Darlehen Lindenstraße", body)
                 self.assertIsNone(pg.query_selector("tr.det"))
                 pg.click("button.disc[data-tog^='d:']"); pg.wait_for_selector("tr.det")                 # a position: its categories
-                pg.click("tr.sec2[data-tog='s:Einnahmen'] td:first-child"); pg.wait_for_timeout(200)      # income closes (its total stays)
+                pg.click(N_ + " tr.sec2[data-tog='s:Einnahmen'] td"); pg.wait_for_timeout(200)      # income closes (its total stays)
                 self.assertIsNone(pg.query_selector("tr[data-key^='Einnahmen/']")); self.assertTrue(pg.query_selector("tr[data-key^='Ausgaben/']"))
                 pg.click("#cf-ebene button[data-e='0']"); pg.wait_for_timeout(200)                        # overview: activities with their kinds, no positions
                 self.assertEqual(len(pg.query_selector_all("#main .cf-tbl tr[data-key^='Einnahmen/'], #main .cf-tbl tr[data-key^='Ausgaben/'], #main .cf-tbl tr[data-key^='Investitionen/']")), 0)
                 self.assertTrue(pg.query_selector("tr.sec2[data-tog='s:Einnahmen']")); self.assertTrue(pg.query_selector("tr.sub[data-tog='g:Investitionen|Wertpapiere & Geldanlagen']"))
-                self.assertEqual(len(pg.query_selector_all("#main .cf-tbl tr.total")), 2); self.assertEqual(len(pg.query_selector_all("tr.check")), 2)
+                self.assertEqual(len(pg.query_selector_all(F_ + " tr.total")), 2); self.assertEqual(len(pg.query_selector_all(F_ + " tr.check")), 2)
                 self.assertLess(pg.evaluate("document.querySelector('#main .cf-tbl').offsetHeight"), 760)   # fits on a page
                 pg.click("#cf-ebene button[data-e='2']"); pg.wait_for_selector("tr.det")                 # details: everything open
-                self.assertGreater(len(pg.query_selector_all("#main .cf-tbl tr.det")), 2)
+                self.assertGreater(len(pg.query_selector_all(F_ + " tr.det")), 2)
                 pg.click("#cf-ebene button[data-e='1']"); pg.wait_for_timeout(200)
                 for tip in pg.eval_on_selector_all("#main .cf-tbl .hq", "e => e.map(x => x.dataset.tip)"):  # headings are explained by their "?"
                     self.assertTrue(tip)
-                self.assertNotIn("Tilgung +", pg.inner_text("#main .cf-tbl"))
+                self.assertNotIn("Tilgung +", pg.inner_text(N_))
                 # the month view starts three years back; the year stepper moves its first year back and forth
                 first = pg.evaluate("document.querySelector('#main thead th[data-key]').dataset.key")
                 self.assertTrue(pg.is_disabled("#von-jahr button[data-d='-1']"))                        # no earlier data
@@ -2769,10 +2776,10 @@ class BrowserTest(unittest.TestCase):
                     D.kapitalfluss.summen[ms[11]].Bankguthaben += 1000; const s = cfBridgeSteps(D, ms, []);
                     return s.map(x => [x.label, Math.round(x.v), Math.round(x.b), !!x.total]); })()""")
                 self.assertEqual(st[-2][:2], ["Abgleich mit der Bilanz", 1000]); self.assertEqual(st[-2][2], st[-1][1])
-                # an unknown bank balance is never shown as a number
+                # an account that did not exist yet (no balance in the balance sheet) had nothing: the bank balance is known all the same
                 st2 = pg.evaluate("""(() => { const D = JSON.parse(JSON.stringify(B())), ms = D.monate.filter(m => m <= D.ist_bis).slice(-12), prev = D.monate[D.monate.indexOf(ms[0]) - 1];
                     D.bilanz.zeilen.find(r => !r.gruppe && r.rolle === 'liquiditaet').werte[prev] = null; return cfBridgeSteps(D, ms, []).map(x => x.label); })()""")
-                self.assertNotIn("Bankguthaben am Anfang", st2); self.assertEqual(st2[-1], "Veränderung Bankguthaben")
+                self.assertEqual((st2[0], st2[-1]), ("Bankguthaben am Anfang", "Bankguthaben am Ende"))
                 fig = lambda: pg.inner_text(card + " .cf-val")
                 before = fig()
                 pg.click("#cf-zeit button[data-z='alle']"); pg.wait_for_timeout(300)

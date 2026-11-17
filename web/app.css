@@ -4,7 +4,7 @@
 :root {
   color-scheme:light;
   --bg:#f5f5f7; --fg:#1d1d1f; --muted:#6e6e73; --faint:#aeaeb2; --line:#e5e5ea; --line-2:#d2d2d7; --head:#ffffff; --sub:#fafafa;
-  --plan:#f7f7f9; --hatch:rgba(0,0,0,.13); --cur:#f0f0f4; --year:#f2f2f7; --group:#f5f5f7;
+  --plan:#f7f7f9; --hatch:rgba(0,0,0,.13); --hatch-td:rgba(0,0,0,.075); --cur:#f0f0f4; --year:#f2f2f7; --group:#f5f5f7;
   --neg:#c0392b; --pos:#1a8a4a; --accent:#1d1d1f; --check:#48484d; --accent-soft:#e8e8ed; --accent-fg:#1d1d1f; --accent-ink:#ffffff;
   --side:rgba(246,246,248,.92); --side-fg:#1d1d1f;
   --warn-bg:#fff4df; --warn-fg:#8a4b00; --err-bg:#fde8e8; --err-fg:#8a1c1c; --ok-bg:#e6f5ec; --ok-fg:#0f5a30;
@@ -18,7 +18,7 @@
 :root[data-theme="dark"] {
   color-scheme:dark;
   --bg:#000000; --fg:#f5f5f7; --muted:#98989d; --faint:#636366; --line:#2c2c2e; --line-2:#3a3a3c; --head:#1c1c1e; --sub:#161618;
-          --plan:#1f1f22; --hatch:rgba(255,255,255,.14); --cur:#1e1e22; --year:#232326; --group:#232326;
+          --plan:#1f1f22; --hatch:rgba(255,255,255,.14); --hatch-td:rgba(255,255,255,.08); --cur:#1e1e22; --year:#232326; --group:#232326;
           --neg:#ff6b57; --pos:#5ad38a; --accent:#f2f2f5; --check:#cfcfd5; --accent-soft:#2c2c31; --accent-fg:#ffffff; --accent-ink:#111113;
           --side:rgba(20,20,22,.94); --side-fg:#f5f5f7;
           --c-nw:#ffd23f; --warn-bg:#3a2a12; --warn-fg:#ffd28a; --err-bg:#3a1515; --err-fg:#ffb3b3; --ok-bg:#12301f; --ok-fg:#9be0b6;
@@ -165,9 +165,23 @@ tr.sub td { background:var(--sub); font-weight:600; cursor:pointer; } tr.sub td:
 tr.sec td { background:var(--group); font-weight:700; } tr.sec td:first-child { background:var(--group); }
 tr.total td { font-weight:700; border-top:2px solid var(--line-2); }
 tr.sel td { background:var(--accent-soft) !important; }
-td.plan { opacity:.55; } td.part { opacity:.72; }      /* plan: faded + hatched; current month / year (not complete yet): faded only */
-.wrap td.plan, .wrap th.plan { background-image:repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 6px); }
-th[data-cur] { box-shadow:inset 0 -2px 0 var(--line-2); } th.plan { color:var(--muted); font-weight:500; } .ptable td.plan { opacity:1; background:var(--plan); }
+/* plan: faded + hatched; current month / year (not complete yet): faded only -- by the colour of the text, not opacity (Safari
+   gives every faded cell a layer of its own, and a long table hundreds of them, drawn too late while scrolling) */
+td.plan { color:color-mix(in srgb, var(--fg) 55%, transparent); } td.part { color:color-mix(in srgb, var(--fg) 72%, transparent); }
+td.plan.neg { color:color-mix(in srgb, var(--neg) 55%, transparent); } td.part.neg { color:color-mix(in srgb, var(--neg) 72%, transparent); }
+td.plan.pos { color:color-mix(in srgb, var(--pos) 55%, transparent); } td.part.pos { color:color-mix(in srgb, var(--pos) 72%, transparent); }
+td.plan.zero { color:color-mix(in srgb, var(--faint) 55%, transparent); } td.part.zero { color:color-mix(in srgb, var(--faint) 72%, transparent); }
+tr.bal td.plan { color:color-mix(in srgb, var(--muted) 55%, transparent); } tr.bal td.part { color:color-mix(in srgb, var(--muted) 72%, transparent); }
+.wrap th.plan { background-image:repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 6px); }
+.wrap td.plan { background-image:repeating-linear-gradient(135deg, var(--hatch-td) 0 1px, transparent 1px 6px); }
+/* a long table's names as one pinned piece over its first column (freezeNames): not hundreds of pinned cells */
+.cf-pair { display:flex; align-items:flex-start; width:max-content; min-width:100%; }
+.cf-pair > table { flex:1 0 auto; min-width:0; }
+.cf-pair > .cf-names { order:-1; flex:0 0 auto; position:sticky; left:0; z-index:3; }
+.cf-pair > .cf-names th, .cf-pair > .cf-names td { position:static; }
+.cf-pair > .cf-names thead th { background:transparent; border-bottom-color:transparent; padding:0; }      /* room for the table's heading row */
+.cf-pair .cf-ph { position:static; padding-top:0; padding-bottom:0; }
+th[data-cur] { box-shadow:inset 0 -2px 0 var(--line-2); } th.plan { color:var(--muted); font-weight:500; } .ptable td.plan { color:var(--fg); background:var(--plan); } .ptable td.plan.neg { color:var(--neg); } .ptable td.plan.pos { color:var(--pos); } .ptable td.plan.zero { color:var(--faint); }
 td.neg { color:var(--neg); } td.pos { color:var(--pos); } td.zero { color:var(--faint); }
 button.disc { border:0; background:none; padding:0 4px 0 0; margin:0; min-height:0; color:var(--muted); font-size:11px; cursor:pointer; box-shadow:none; width:auto; }
 button.disc:hover { color:var(--fg); background:none; }

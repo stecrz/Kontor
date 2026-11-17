@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.13.14 (2026-11-17 16:45)
+- **Cashflow und Planung in Safari:** Beim schnellen Scrollen erschienen die Zeilennamen verspätet und die Spalten wirkten verrutscht. Die Namensspalte ist jetzt ein festes Stück und erscheint sofort mit den Zahlen.
+- **Bankguthaben:** Monate, in denen ein Konto noch nicht existierte, zeigen wieder den Betrag statt „unbekannt“ – das Konto zählt dort mit 0, wie in der Bilanz.
+
 ## 3.13.13 (2026-11-17 16:11)
 Cashflow als Kapitalflussrechnung.
 - **Gliederung wie in einer professionellen Kapitalflussrechnung:** Operativer Cashflow (Einnahmen und Ausgaben), Investitions-Cashflow, Finanzierungs-Cashflow, dann Veränderung des Bankguthabens. „Überschuss“, „Nach Zins und Tilgung“ und „Rohertrag“ entfallen.

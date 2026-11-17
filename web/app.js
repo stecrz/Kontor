@@ -1627,7 +1627,7 @@ function tablePan(w, dx) {
   w._panT = setTimeout(() => {
     w._pan = false;
     const sw = $('thead th', w).offsetWidth, max = w.scrollWidth - w.clientWidth, cur = w.scrollLeft;
-    const starts = $$('thead th', w).slice(1).filter(th => !th.classList.contains('snap-pad')).map(th => Math.round(colX(w, th) - sw));
+    const starts = colHeads(w).map(th => Math.round(colX(w, th) - sw));
     const best = starts.reduce((b, v) => Math.abs(v - cur) < Math.abs(b - cur) ? v : b, 0);
     w.style.scrollSnapType = ''; w.scrollTo({left: Math.max(0, Math.min(max, best)), behavior: 'smooth'});
   }, 180);
@@ -2591,9 +2591,52 @@ function bindBilanzLines(main) {
 
 // ---------------------------------------------------------------- Tabellen: Spalten rasten ein (nichts angeschnitten)
 const colX = (w, el) => el.getBoundingClientRect().left - w.getBoundingClientRect().left - w.clientLeft + w.scrollLeft;   // Lage im Inhalt
+// the column headings of a table after its first (names) column -- not the end padding, not the empty cell of a frozen names column
+const colHeads = w => $$('thead th', w).slice(1).filter(th => !th.classList.contains('snap-pad') && !th.classList.contains('cf-ph'));
+// Safari draws every pinned cell as a layer of its own and, scrolling fast, hundreds of them too late: the figures are there,
+// the names come after. So the names of a long table are a table of their own, pinned to the left as one piece and lying over
+// the table's first column, which keeps its heading (the corner) and empty cells -- the same columns, the same handlers.
+// Both get the same widths and row heights.
+function freezeNames(t) {
+  if (!t || t.dataset.frozen || !t.closest('.wrap') || !t.tBodies.length) return;
+  const left = document.createElement('table'), pair = document.createElement('div');
+  left.className = t.className + ' cf-names'; left.setAttribute('role', 'presentation'); pair.className = 'cf-pair';
+  if (t.tHead) left.appendChild(document.createElement('thead')).appendChild(document.createElement('tr')).appendChild(document.createElement('th')).className = 'cf-ph';
+  for (const part of t.tBodies) {
+    const dst = left.appendChild(document.createElement('tbody'));
+    for (const tr of [...part.rows]) {
+      const row = dst.appendChild(document.createElement('tr')), c = tr.cells[0];
+      for (const a of tr.attributes) row.setAttribute(a.name, a.value);
+      const ph = document.createElement(c.tagName); ph.className = 'cf-ph';
+      tr.replaceChild(ph, c); row.appendChild(c);
+    }
+  }
+  t.dataset.frozen = '1';
+  t.parentNode.insertBefore(pair, t); pair.append(t, left);
+  syncRows(t, left);
+}
+function syncRows(t, left) {
+  // widths: the names' column as wide as the wider of the names and the corner; then every row as high as the higher side
+  const corner = t.tHead && t.tHead.rows[0] && t.tHead.rows[0].cells[0], cells = [...left.querySelectorAll('tbody td, tbody th')];
+  [left, corner].forEach(e => { if (e) e.style.width = e.style.minWidth = ''; });
+  const w = Math.max(left.getBoundingClientRect().width, corner ? corner.getBoundingClientRect().width : 0);
+  if (corner) corner.style.width = corner.style.minWidth = w + 'px';
+  left.style.width = left.style.minWidth = w + 'px'; left.style.marginRight = -w + 'px';
+  if (!cells.length) return;
+  const ra = [...t.rows], rb = [...left.rows];
+  if (ra.length !== rb.length) return;
+  ra.concat(rb).forEach(r => { r.style.height = ''; });
+  const ha = ra.map(r => r.getBoundingClientRect().height), hb = rb.map(r => r.getBoundingClientRect().height);
+  ra.forEach((r, i) => { const h = Math.max(ha[i], hb[i]); if (h - ha[i] > 0.2) r.style.height = h + 'px'; if (h - hb[i] > 0.2) rb[i].style.height = h + 'px'; });
+}
+let FROZEN_W = 0;
+window.addEventListener('resize', () => {            // another width can break names onto two lines (or back)
+  const w = window.innerWidth; if (Math.abs(w - FROZEN_W) < 2) return; FROZEN_W = w;
+  clearTimeout(syncRows.t); syncRows.t = setTimeout(() => $$('.cf-pair').forEach(p => { const a = $(':scope > table:not(.cf-names)', p), b = $(':scope > .cf-names', p); if (a && b) syncRows(a, b); }), 120);
+});
 function snapLeft(w, target) {
   // naechster Spaltenanfang ab target (erste Spalte bleibt stehen)
-  const ths = $$('thead th', w).slice(1).filter(th => !th.classList.contains('snap-pad')), sw = $('thead th', w).offsetWidth;
+  const ths = colHeads(w), sw = $('thead th', w).offsetWidth;
   const max = w.scrollWidth - w.clientWidth;
   const b = ths.map(th => Math.round(colX(w, th) - sw)).find(v => v >= target - 1);
   return Math.max(0, Math.min(max, b == null ? max : b));
@@ -2603,20 +2646,20 @@ function snapLeft(w, target) {
 // where each value column starts (scroll position that puts it right after the first column)
 function colStarts(w) {
   const first = $('thead th', w); if (!first) return [];
-  return $$('thead th', w).slice(1).filter(th => !th.classList.contains('snap-pad')).map(th => Math.round(colX(w, th) - first.offsetWidth));
+  return colHeads(w).map(th => Math.round(colX(w, th) - first.offsetWidth));
 }
 // A table drawn again stays where it was: the same column at the same distance from the first one (other figures can make
 // the columns before it a little wider or narrower).
 function scrollMark(w) { const x = w.scrollLeft, st = colStarts(w); let i = 0; st.forEach((v, k) => { if (v <= x + 1) i = k; }); return {x, n: w.querySelectorAll('thead th').length, i, off: st.length ? x - st[i] : 0}; }
 function scrollBack(w, mark) { const st = colStarts(w); w.scrollLeft = mark.i < st.length ? Math.max(0, st[mark.i] + mark.off) : mark.x; }
 function snapTable(w) {
-  const t = $('table', w), first = $('thead th', w); if (!t || !first) return;
+  const t = $('table:not(.cf-names)', w), first = $('thead th', w); if (!t || !first) return;
   $$('.snap-pad', w).forEach(c => c.remove());
   w.classList.add('snap');
   const sw = first.offsetWidth, max = w.scrollWidth - w.clientWidth;
   if (max <= 0) return;
   // Leerspalte am Ende, damit auch ganz rechts die erste sichtbare Spalte vollstaendig ist
-  const starts = $$('thead th', w).slice(1).map(th => colX(w, th) - sw), b = starts.find(v => v >= max - 0.5);
+  const starts = colHeads(w).map(th => colX(w, th) - sw), b = starts.find(v => v >= max - 0.5);
   const padw = b == null ? 0 : b - max;
   if (padw > 0.5) $$('tr', t).forEach(tr => { const c = document.createElement(tr.parentNode.tagName === 'THEAD' ? 'th' : 'td'); c.className = 'snap-pad'; c.style.minWidth = c.style.width = padw + 'px'; tr.appendChild(c); });
 }
@@ -2758,7 +2801,7 @@ function vKapitalfluss(editable) {
   const bal = (label, at) => editable && S.real ? '' : `<tr class="bal"><td>${label}</td>${C.map(c => {
     const m = at(c), b = m ? sums[m]?.Bankguthaben : undefined;
     if (b === undefined) return `<td class="${cls(null, c)}"></td>`;
-    return b === null || !liqKnown(D, m) ? `<td class="${cls(null, c)} muted small">${t('unbekannt')}</td>` : `<td class="${cls(b * defl(m), c)}">${F(b * defl(m))}</td>`; }).join('')}</tr>`;
+    return b === null ? `<td class="${cls(null, c)} muted small">${t('unbekannt')}</td>` : `<td class="${cls(b * defl(m), c)}">${F(b * defl(m))}</td>`; }).join('')}</tr>`;
   const result = (name, label, help) => `<tr class="total"><td>${named(label, help)}</td>${nums(secTotal(name))}</tr>`;
   // operating: income and expenses within; then investing, financing and what could not be placed
   const opOpen = cfOpen('s:Operativ', 0);
@@ -2835,9 +2878,6 @@ function cfMonths(D, key) {
   return [cur, prev.length === cur.length ? prev : []];
 }
 const cfSum = (D, name, months) => months.reduce((a, m) => a + ((D.kapitalfluss.summen || {})[m]?.[name] ?? 0), 0);
-// the bank balance at the end of a month is known only where every bank account's is (a plan month: as its last actual one)
-const liqKnown = (D, m) => { const ist = D.ist_bis || ''; const k = m > ist ? ist : m;
-  return (D.bilanz.zeilen || []).every(r => r.gruppe || r.rolle !== 'liquiditaet' || !(k in (r.werte || {})) || r.werte[k] != null); };
 const cfRowSum = (z, months) => months.reduce((a, m) => a + (z.werte[m] ?? 0), 0);
 const cfPct = (part, whole) => whole ? Math.round(part / whole * 100) : null;
 // change against the period before as a short text ("+12 %"), and whether that is good
@@ -2878,7 +2918,7 @@ function cfTip(html) { CF.tips.push(html); return CF.tips.length - 1; }
 function cfBridgeSteps(D, months, prev) {
   const sums = D.kapitalfluss.summen || {}, allM = D.monate || [];
   const before = allM[allM.indexOf(months[0]) - 1], last = months[months.length - 1];
-  const start = before && liqKnown(D, before) ? sums[before]?.Bankguthaben : null, end = liqKnown(D, last) ? sums[last]?.Bankguthaben : null;
+  const start = before ? sums[before]?.Bankguthaben : null, end = sums[last]?.Bankguthaben;
   const known = start != null && end != null;
   const steps = [];
   if (known) steps.push({label: t('bankguthaben_anfang'), v: start, total: true});
@@ -3006,7 +3046,7 @@ function cfSourcesUses(D, months) {
   put(t('cf_unklar'), cfSum(D, 'Unklar', months), 'unk');
   let change = cfSum(D, 'Cashflow', months);
   const sums = D.kapitalfluss.summen || {}, allM = D.monate || [], before = allM[allM.indexOf(months[0]) - 1], last = months[months.length - 1];
-  if (before && liqKnown(D, before) && liqKnown(D, last) && sums[before]?.Bankguthaben != null && sums[last]?.Bankguthaben != null) {
+  if (before && sums[before]?.Bankguthaben != null && sums[last]?.Bankguthaben != null) {
     const real = sums[last].Bankguthaben - sums[before].Bankguthaben;
     put(t('cf_abgleich'), real - change, 'unk'); change = real;
   }
@@ -4508,7 +4548,9 @@ function bind(main) {
   $$('tr.pos[data-pos]', main).forEach(tr => tr.addEventListener('click', e => { const td = valueCell(e, tr); if (td) { bchFlash(tr, td); return; } S.posOpen[tr.dataset.pos] = !S.posOpen[tr.dataset.pos]; route(); }));
   const pa = $('#pos-all', main); if (pa) pa.addEventListener('click', () => { const D = B(), pos = D.bilanz.zeilen.filter(r => r.gruppe), open = !pos.every(r => S.posOpen[r.rolle]); pos.forEach(r => { S.posOpen[r.rolle] = open; }); route(); });
   $$('[data-dep]', main).forEach(el => el.addEventListener('click', e => { e.stopPropagation(); S.depOpen = S.depOpen || {}; S.depOpen[el.dataset.dep] = !S.depOpen[el.dataset.dep]; route(); }));
-  // cash flow / planning: a click on the triangle or the name opens and closes a row (not on a field or link in it)
+  // cash flow / planning: the names as one pinned piece (see freezeNames); a click on the triangle or the name opens and closes
+  // a row (not on a field or link in it)
+  $$('table.cf-tbl:not(.cf-names)', main).forEach(freezeNames);
   $$('.cf-tbl [data-tog]', main).forEach(el => el.addEventListener('click', e => {
     if (el.tagName === 'TR' && (e.target.closest('td') !== el.firstElementChild || e.target.closest('select, input, a, .edit, .hq, .tag, button:not(.disc)'))) return;
     e.stopPropagation(); S.cfTog[el.dataset.tog] = !cfOpen(el.dataset.tog, +el.dataset.depth); route(); }));
