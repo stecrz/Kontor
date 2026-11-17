@@ -2983,7 +2983,7 @@ function vCfCharts(D) {
   // a grid of six columns: wide charts take four beside a narrow one of two, the ring and its neighbour three each
   const pie = cfPie(D, cur, prev);
   const legM = legOf([['ein', t('einnahmen')], ['aus', t('ausgaben')], ['inv', SEC_LABEL.Investitionen], ['fin', SEC_LABEL.Finanzierung]]);
-  h += `<div class="cf-grid">` + card('cf-half', 'cf_bruecke', '', 'cf-bridge')
+  h += `<div class="cf-grid">` + card('cf-half', 'cf_bruecke', `<button id="cf-br-reset" class="small secondary hidden">${t('cf_br_ganz')}</button>`, 'cf-bridge')
     + card('cf-half', 'cf_je_monat_t', '', 'cf-months', `<div class="lc-row2 cf-leg-row">${legM}</div>`)
     + pie + cfHeatCard(pie ? 'cf-half' : 'cf-full') + su
     + `</div><div class="cf-tip hidden" id="cf-tip" role="tooltip"></div></div>`;
@@ -3070,13 +3070,21 @@ function cfDrawBridge() {
   let lvl = 0;
   list.forEach(r => { if (r.kind === 'tot') { r.a = 0; r.b = r.v; lvl = r.v; } else if (!r.br) { r.a = lvl; r.b = lvl + r.v; lvl = r.b; } });
   list.forEach((r, i) => { if (r.br) { const parts = list.slice(i + 1, r.end).filter(x => !x.br); r.a = parts.length ? parts[0].a : lvl; r.b = parts.length ? parts[parts.length - 1].b : lvl; } });
-  const W = Math.max(280, el.clientWidth), rh = r => r.kind === 'tot' || r.depth === 0 ? 24 : r.depth === 1 ? 21 : 19, H = list.reduce((a, r) => a + rh(r), 0) + 6;
+  const W = Math.max(280, el.clientWidth), rh = r => r.kind === 'tot' || r.depth === 0 ? 24 : r.depth === 1 ? 21 : 19, rowsH = list.reduce((a, r) => a + rh(r), 0) + 6, AX = 18, H = rowsH + AX;
   const cw = r => r.depth ? 6.1 : 6.9, ind = r => 16 + r.depth * 12, disc = 11;          // the colour of an activity left of its triangle; parts one step further in
   const need = r => ind(r) + disc + r.label.length * cw(r) + (r.abbr ? 26 : 0);
   const nameW = Math.min(W * 0.45, Math.max(...list.filter(r => !r.depth).map(need), Math.min(W * 0.38, Math.max(90, ...list.map(need))))), numW = 66, chW = has ? 44 : 0, L = nameW + 6, R = W - numW - chW - 8;
-  const lo = Math.min(0, ...list.map(r => Math.min(r.a, r.b))), hi = Math.max(0, ...list.map(r => Math.max(r.a, r.b))), sp = (hi - lo) || 1;
-  const X = v => L + (v - lo) / sp * (R - L);
-  let g = lo < 0 ? `<line class="cf-br-zero" x1="${X(0).toFixed(1)}" x2="${X(0).toFixed(1)}" y1="2" y2="${H - 2}"/>` : '', y = 3, prevEnd = null;
+  const lo0 = Math.min(0, ...list.map(r => Math.min(r.a, r.b))), hi0 = Math.max(0, ...list.map(r => Math.max(r.a, r.b)));
+  // zoomed in (a range dragged on the chart): that range fills the width, longer bars are cut at the edge and marked
+  const z = S.cfBrZoom && S.cfBrZoom[1] > S.cfBrZoom[0] && S.cfBrZoom[0] < hi0 && S.cfBrZoom[1] > lo0 ? S.cfBrZoom : null;
+  const lo = z ? z[0] : lo0, hi = z ? z[1] : hi0, sp = (hi - lo) || 1, clamp = v => Math.max(lo, Math.min(hi, v));
+  const X = v => L + (clamp(v) - lo) / sp * (R - L);
+  CF.br = {L, R, lo, hi, rowsH};
+  const rb = $('#cf-br-reset'); if (rb) rb.classList.toggle('hidden', !z);
+  // a quiet amount axis: a few round values as thin vertical lines, their amounts below
+  const ticks = niceTicks(lo, hi, Math.max(2, Math.min(5, Math.floor((R - L) / 70))), 3).filter(v => v >= lo - sp * 1e-6 && v <= hi + sp * 1e-6);
+  let g = ticks.map(v => `<line class="cf-br-grid${Math.abs(v) < sp * 1e-6 ? ' zero' : ''}" x1="${X(v).toFixed(1)}" x2="${X(v).toFixed(1)}" y1="2" y2="${rowsH}"/><text class="cf-tick" x="${X(v).toFixed(1)}" y="${rowsH + 13}" text-anchor="middle">${esc(Fk(v, false, Math.max(Math.abs(lo), Math.abs(hi))))}</text>`).join('')
+    + `<rect class="cf-br-axis" x="${L}" y="${rowsH}" width="${(R - L).toFixed(1)}" height="${AX}"/>`, y = 3, prevEnd = null;
   list.forEach(r => {
     const h = rh(r), mid = y + h / 2, bh = r.kind === 'tot' ? 12 : r.depth === 0 ? 10 : r.depth === 1 ? 8 : 6, x0 = X(Math.min(r.a, r.b)), x1 = X(Math.max(r.a, r.b));
     const ch = r.kind === 'tot' ? null : cfChange(r.v, r.p, r.v >= 0), kind = r.kind === 'tot' ? 'tot' : r.kind === 'one' ? 'one' : r.depth === 0 ? 'grp' : 'kid';
@@ -3087,22 +3095,26 @@ function cfDrawBridge() {
     const nx = ind(r) + disc, room = Math.floor((nameW - nx - (r.abbr ? 26 : 0)) / cw(r));
     let mark = '';
     if (r.br) {          // a bracket over the parts: what they add up to, in the activity's colour (deeper: grey)
-      const yb = mid, e0 = X(r.a), e1 = X(r.b), c = r.depth === 0 ? r.act : 'deep';
+      const yb = mid, e0 = X(r.a), e1 = X(r.b), c = r.depth === 0 ? r.act : r.depth === 1 ? 'deep' : 'deep deeper';      // each level thinner
       mark = `<path class="cf-br-brace ${c}" d="M${e0.toFixed(1)},${(yb + 4).toFixed(1)}V${(yb - 1).toFixed(1)}H${e1.toFixed(1)}V${(yb + 4).toFixed(1)}"/>`;
     } else if (Math.abs(r.v) >= 0.005) {
       const cls = r.kind === 'tot' ? 'tot' : r.kind === 'one' ? 'unk' : r.v >= 0 ? 'in' : 'out';          // money in green, out red
       mark = `<rect class="cf-br-bar ${cls}${r.depth ? ' kid' : ''}" x="${x0.toFixed(1)}" y="${(mid - bh / 2).toFixed(1)}" width="${Math.max(2, x1 - x0).toFixed(1)}" height="${bh}" rx="${Math.min(3, bh / 2)}"/>`;
+      // cut at the edge of the zoomed range: two slanted strokes
+      for (const [cutAt, edge] of [[Math.min(r.a, r.b) < lo - sp * 1e-6, L], [Math.max(r.a, r.b) > hi + sp * 1e-6, R]]) if (cutAt)
+        mark += `<path class="cf-break" d="M${(edge - 3).toFixed(1)},${(mid + bh / 2 + 2).toFixed(1)}L${(edge + 1).toFixed(1)},${(mid - bh / 2 - 2).toFixed(1)}M${(edge + 1).toFixed(1)},${(mid + bh / 2 + 2).toFixed(1)}L${(edge + 5).toFixed(1)},${(mid - bh / 2 - 2).toFixed(1)}"/>`;
     }
     // no tooltip: the amount and its change stand at the right, the parts open with a click (a shortened name: its full one)
     const cutName = r.label.length > room;
     g += `<g class="cf-br-row ${kind}${r.br ? ' br' : ''}${r.hasKids ? ' more' : ''}"${r.hasKids ? ` tabindex="0" role="button" data-br="${esc(r.id)}" aria-expanded="${r.br}"` : ''} aria-label="${esc(r.label + ': ' + cfEur(r.v))}">${cutName ? `<title>${esc(r.label)}</title>` : ''}<rect class="cf-br-bg" x="0" y="${y}" width="${W}" height="${h}" rx="4"/>`
       + key + dsc + `<text class="cf-br-n" x="${nx}" y="${(mid + 4).toFixed(1)}">${esc(cutName ? r.label.slice(0, Math.max(3, room - 1)) + '…' : r.label)}${r.abbr ? `<tspan class="cf-br-abbr"> ${r.abbr}</tspan>` : ''}</text>`
       + mark + `<text class="cf-br-v" x="${(W - chW - 4).toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end">${(r.kind === 'tot' || r.v < 0 ? '' : '+') + esc(F0(r.v))}</text>`
-      + (chW && ch ? `<text class="cf-br-c ${ch.cls}" x="${(W - 2).toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end">${esc(ch.txt.replace(' %', '%'))}</text>` : '') + `</g>`;
+      + (chW && ch ? `<text class="cf-br-c ${ch.cls}" x="${(W - 2).toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end" data-cftip="${cfTip(`<div class="cf-tip-h">${esc(r.label)}</div><div class="cf-tip-kv"><span>${esc(t('betrag'))}</span><b>${cfEur(r.v)}</b><span>${esc(t('cf_vorjahr'))}</span><b>${r.p != null ? cfEur(r.p) : '–'}</b><span>${esc(t('cf_veraenderung'))}</span><b class="${ch.cls}">${esc(ch.txt)}</b></div>`
+        + (r.hasKids ? r.kids.map(k => cfTipRow('sw ' + (k.v >= 0 ? 'in' : 'out'), k.label, cfEur(k.v), cfChange(k.v, k.p, k.v >= 0) || {cls: '', txt: ''})).join('') : ''))}">${esc(ch.txt.replace(' %', '%'))}</text>` : '') + `</g>`;
     if (!r.br) prevEnd = mid + bh / 2;
     y += h;
   });
-  el.innerHTML = `<svg class="cf-svg cf-br" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('cf_bruecke'))}">${g}</svg>`;
+  el.innerHTML = `<svg class="cf-svg cf-br${z ? ' zoomed' : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('cf_bruecke'))}">${g}</svg>`;
 }
 
 // 2. Per month (more than three years: per year): income, expenses, investing and financing stacked from one baseline --
@@ -3385,17 +3397,21 @@ function cfDrawHeat() {
 // 3. Where the money came from and where it went: everything that came in (income, loans taken up, sales, less cash) and
 // everything it was used for (expenses, investments, repayment, interest, more cash) -- both sides add up to the same sum
 function cfSourcesUses(D, months) {
+  // every item with its parts (a position: its categories; a kind of investing or financing: its rows) -- a click opens them
   const src = [], use = [];
-  const put = (label, v, act) => { if (v >= 0.5) src.push({label, v, act}); else if (v <= -0.5) use.push({label, v: -v, act}); };
-  for (const [sec, act] of [['Einnahmen', 'op'], ['Ausgaben', 'op']]) {
+  const put = (label, v, act, kids) => { const k = (kids || []).map(x => ({...x, v: v >= 0 ? x.v : -x.v})).filter(x => x.v >= 0.5);
+    if (v >= 0.5) src.push({label, v, act, kids: k.length > 1 ? k : null}); else if (v <= -0.5) use.push({label, v: -v, act, kids: k.length > 1 ? k : null}); };
+  const cats = zs => { const m = new Map(); for (const z of zs) for (const d of z.details || []) { const k = d.kategorie ? d.kategorie.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt'); m.set(k, (m.get(k) || 0) + cfRowSum(d, months)); }
+    return [...m.entries()].map(([label, v]) => ({label, v})).sort((a, b) => Math.abs(b.v) - Math.abs(a.v)); };
+  for (const [sec, act] of [['Einnahmen', 'ein'], ['Ausgaben', 'aus']]) {
     const sek = D.kapitalfluss.sektionen.find(s => s.name === sec) || {zeilen: []}, by = new Map();
-    for (const z of sek.zeilen) by.set(zLabel(z), (by.get(zLabel(z)) || 0) + cfRowSum(z, months));
-    const list = [...by.entries()].filter(([, v]) => Math.abs(v) >= 0.5).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-    const top = list.slice(0, 5), rest = list.slice(5).reduce((a, [, v]) => a + v, 0);
-    top.forEach(([l, v]) => put(l, v, act));
-    if (Math.abs(rest) >= 0.5) put(t(sec === 'Ausgaben' ? 'cf_uebrige_ausgaben' : 'cf_uebrige_einnahmen'), rest, act);
+    for (const z of sek.zeilen) { const k = zLabel(z), r = by.get(k) || {v: 0, zs: []}; r.v += cfRowSum(z, months); r.zs.push(z); by.set(k, r); }
+    for (const [l, r] of by) if (Math.abs(r.v) >= 0.5) put(l, r.v, act, cats(r.zs));
   }
-  for (const [sec, act] of [['Investitionen', 'inv'], ['Finanzierung', 'fin']]) for (const g of cfGroups(D, sec, months)) put(g.label, g.v, act);
+  for (const [sec, act] of [['Investitionen', 'inv'], ['Finanzierung', 'fin']]) for (const g of cfGroups(D, sec, months)) {
+    const by = new Map(); for (const z of g.rows) by.set(zLabel(z), (by.get(zLabel(z)) || 0) + cfRowSum(z, months));
+    put(g.label, g.v, act, [...by.entries()].map(([label, v]) => ({label, v})));
+  }
   put(t('cf_unklar'), cfSum(D, 'Unklar', months), 'unk');
   let change = cfSum(D, 'Cashflow', months);
   const sums = D.kapitalfluss.summen || {}, allM = D.monate || [], before = allM[allM.indexOf(months[0]) - 1], last = months[months.length - 1];
@@ -3406,48 +3422,74 @@ function cfSourcesUses(D, months) {
   if (change <= -0.5) src.push({label: t('cf_bank_weniger'), v: -change, act: 'tot'}); else if (change >= 0.5) use.push({label: t('cf_bank_mehr'), v: change, act: 'tot'});
   const total = src.reduce((a, e) => a + e.v, 0);
   if (total < 0.5) { CF.flow = null; return ''; }
-  // colour by what it is: income green, expenses red, investing and financing as in the table, cash grey
-  src.forEach(e => { if (e.act === 'op') e.act = 'ein'; }); use.forEach(e => { if (e.act === 'op') e.act = 'aus'; });
-  CF.flow = {src: src.sort((p, q) => q.v - p.v), use: use.sort((p, q) => q.v - p.v), total};
-  return `<div class="card bch cf-card cf-full"><div class="lc-head"><b class="lc-title">${t('cf_herkunft_verwendung')}${hq('cf_herkunft_verwendung')}</b><span class="muted small">${t('cf_summe_0', F0(total))}</span></div>`
+  // small flows (under 3 % of everything) together as "the others" -- so that every name stays readable; a click opens them
+  const group = (list, side) => { list.sort((p, q) => q.v - p.v); const small = list.filter(e => e.v < total * 0.03);
+    if (small.length < 2) return list;
+    return list.filter(e => e.v >= total * 0.03).concat([{label: t('cf_uebrige_n', small.length), v: small.reduce((a, e) => a + e.v, 0), act: 'mix', kids: small, key: side + '|~'}]); };
+  CF.flow = {src: group(src, 's'), use: group(use, 'u'), total};
+  return `<div class="card bch cf-card cf-full"><div class="lc-head"><b class="lc-title">${t('cf_herkunft_verwendung')}${hq('cf_herkunft_verwendung')}</b></div>`
     + `<div class="cf-plot" id="cf-flow"></div></div>`;
 }
-// The money flow: everything that came in on the left, everything it went to on the right, both through one column in the
-// middle -- money has no label, so no source is tied to a use; each band as wide as its amount, the names beside the bars
+// The money flow as a Sankey diagram: everything that came in on the left, everything it went to on the right; the bands run
+// into one another in the middle with a soft change of colour -- money has no label, so no source is tied to a use. Each band
+// as wide as its amount; the larger ones carry their share. A click on a name with ▸ opens its parts (▾ closes them).
 function cfDrawFlow() {
   const el = $('#cf-flow'), F = CF.flow; if (!el || !F) return;
-  const W = Math.max(300, el.clientWidth), narrow = W < 560, LW = narrow ? Math.max(96, W * 0.31) : Math.min(250, W * 0.28), RW = LW, nodeW = 10, gap = 6, LH = narrow ? 28 : 18;      // narrow: the amount below the name
-  const n = Math.max(F.src.length, F.use.length), H = Math.max(180, n * (LH + 4) + 20), top = 8, bot = H - 8;
-  // one scale for both sides; the thinnest bars keep 1.5 px, so the scale leaves room for them (many tiny items stay inside)
+  const open = CF.flowOpen || (CF.flowOpen = {});
+  const keyOf = (e, side, parent) => e.key || side + '|' + (parent ? parent + '›' : '') + e.label;
+  // the nodes of a side: an open item gives way to its parts, their heights in proportion within it
+  const flat = (list, side) => { const out = [];
+    const walk = (e, h0, depth, parent, act, pLabel) => { const key = keyOf(e, side, parent), kids = e.kids && e.kids.length > 1 ? e.kids : null;
+      if (kids && open[key]) { const sum = kids.reduce((a, k) => a + k.v, 0) || 1; kids.forEach(k => walk(k, h0 * k.v / sum, depth + 1, key, e.act === 'mix' ? k.act : act, e.act === 'mix' ? t('cf_uebrige_kurz') : e.label)); }
+      else out.push({...e, act: e.act === 'mix' ? 'unk' : act, key, depth, parentKey: parent, parentLabel: pLabel, hv: h0, more: !!kids}); };
+    list.forEach(e => walk(e, e.v, 0, null, e.act, null));
+    return out; };
+  const L0 = flat(F.src, 's'), R0 = flat(F.use, 'u');
+  const W = Math.max(300, el.clientWidth), narrow = W < 560, LW = narrow ? Math.max(100, W * 0.32) : Math.min(240, W * 0.3), RW = LW, nodeW = 8, gap = 5, LH = narrow ? 28 : 18;
+  const n = Math.max(L0.length, R0.length), H = Math.max(200, n * (LH + 3) + 28), top = 22, bot = H - 6;
   const avail = side => (bot - top) - gap * (side.length - 1);
-  let k = Math.min(avail(F.src), avail(F.use)) / F.total;
-  for (let i = 0; i < 6; i++) { const over = Math.max(...[F.src, F.use].map(sd => sd.reduce((a, e) => a + Math.max(1.5, e.v * k), 0) - avail(sd))); if (over <= 0.5) break; k *= Math.max(0.1, 1 - over / (bot - top)); }
-  const xL = LW, xM = W / 2 - nodeW / 2, xR = W - RW - nodeW;
-  // each side and the middle centred in the height
-  const lay = list => { const sh = list.reduce((a, e) => a + Math.max(1.5, e.v * k), 0) + gap * (list.length - 1); let y = top + ((bot - top) - sh) / 2;
-    return list.map(e => { const h = Math.max(1.5, e.v * k), o = {...e, y, h}; y += h + gap; return o; }); };
-  const L = lay(F.src), R = lay(F.use), mH = F.total * k, mTop = top + ((bot - top) - mH) / 2;
-  const kv = (a, b) => `<span>${esc(a)}</span><b>${b}</b>`;
-  const tipOf = (e, side) => cfTip(`<div class="cf-tip-h">${esc(e.label)} <span class="muted">· ${esc(t(side))}</span></div><div class="cf-tip-kv">${kv(t('betrag'), cfEur(e.v))}${kv(t('anteil'), cfPct(e.v, F.total) + ' %')}</div>`);
+  let k = Math.min(avail(L0), avail(R0)) / F.total;
+  for (let i = 0; i < 6; i++) { const over = Math.max(...[L0, R0].map(sd => sd.reduce((a, e) => a + Math.max(1.5, e.hv * k), 0) - avail(sd))); if (over <= 0.5) break; k *= Math.max(0.1, 1 - over / (bot - top)); }
+  const xL = LW, xM = W / 2, xR = W - RW - nodeW;
+  const lay = list => { const sh = list.reduce((a, e) => a + Math.max(1.5, e.hv * k), 0) + gap * (list.length - 1); let y = top + ((bot - top) - sh) / 2;
+    return list.map(e => { const h = Math.max(1.5, e.hv * k), o = {...e, y, h}; y += h + gap; return o; }); };
+  const L = lay(L0), R = lay(R0), mH = F.total * k, mTop = top + ((bot - top) - mH) / 2;
+  // the colours as values (the bands mix them): each band runs from its own colour to the colour of everything that came in
+  // (the sources mixed by amount) where all bands meet in the middle -- one colour flows into the next, nothing turns transparent
+  const css = getComputedStyle(document.documentElement), rgb = v => { const h = css.getPropertyValue(v).trim().replace('#', ''); const f = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+    return /^[0-9a-f]{6}$/i.test(f) ? [0, 2, 4].map(i => parseInt(f.slice(i, i + 2), 16)) : [142, 142, 147]; };
+  const COLV = {ein: rgb('--pos'), aus: rgb('--neg'), inv: rgb('--cf-inv'), fin: rgb('--cf-fin'), unk: rgb('--cf-unk'), tot: rgb('--cf-unk')};
+  const mixOf = list => { const w = list.reduce((a, e) => a + e.v, 0) || 1; return [0, 1, 2].map(i => Math.round(list.reduce((a, e) => a + (COLV[e.act] || COLV.unk)[i] * e.v, 0) / w)); };
+  const hex = c => '#' + c.map(x => x.toString(16).padStart(2, '0')).join(''), COL = Object.fromEntries(Object.entries(COLV).map(([k, v]) => [k, hex(v)]));
   const band = (x0, y0a, y0b, x1, y1a, y1b) => { const c = (x0 + x1) / 2;
     return `M${x0.toFixed(1)},${y0a.toFixed(1)}C${c.toFixed(1)},${y0a.toFixed(1)} ${c.toFixed(1)},${y1a.toFixed(1)} ${x1.toFixed(1)},${y1a.toFixed(1)}L${x1.toFixed(1)},${y1b.toFixed(1)}C${c.toFixed(1)},${y1b.toFixed(1)} ${c.toFixed(1)},${y0b.toFixed(1)} ${x0.toFixed(1)},${y0b.toFixed(1)}Z`; };
-  let g = '', mY = mTop;
-  for (const e of L) { const tip = tipOf(e, 'cf_herkunft'), h = e.v * k;
-    g += `<g class="cf-fl-g" data-cftip="${tip}" tabindex="0" aria-label="${esc(e.label + ': ' + cfEur(e.v))}"><path class="cf-fl-b ${e.act}" d="${band(xL + nodeW, e.y, e.y + h, xM, mY, mY + h)}"/><rect class="cf-fl-n ${e.act}" x="${xL}" y="${e.y.toFixed(1)}" width="${nodeW}" height="${e.h.toFixed(1)}" rx="2"/></g>`; mY += h; }
+  let defs = '', g = '', mY = mTop, gi = 0;
+  // a band's colour: its own at the bar, a quiet grey where all of them meet in the middle -- one band runs into the next
+  const midC = hex(mixOf(L));
+  const grad = (from, to) => { const id = 'cffl' + (gi++); defs += `<linearGradient id="${id}" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient>`; return id; };
+  const share = (e, x, y, anchor) => e.h >= 15 && e.v / F.total >= 0.05 ? `<text class="cf-fl-p" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${anchor}">${cfPct(e.v, F.total)} %</text>` : '';
+  for (const e of L) { const h = e.hv * k, id = grad(COL[e.act], midC);
+    g += `<g class="cf-fl-g${e.more ? ' more' : ''}"${e.more ? ` data-fl="${esc(e.key)}" tabindex="0" role="button" aria-expanded="false"` : ''} aria-label="${esc(e.label + ': ' + cfEur(e.v))}"><path class="cf-fl-b" fill="url(#${id})" d="${band(xL + nodeW, e.y, e.y + h, xM, mY, mY + h)}"/><rect class="cf-fl-n ${e.act}" x="${xL}" y="${e.y.toFixed(1)}" width="${nodeW}" height="${e.h.toFixed(1)}" rx="2"/>${share(e, xL + nodeW + 6, e.y + e.h / 2, 'start')}</g>`; mY += h; }
   mY = mTop;
-  for (const e of R) { const tip = tipOf(e, 'cf_verwendung'), h = e.v * k;
-    g += `<g class="cf-fl-g" data-cftip="${tip}" tabindex="0" aria-label="${esc(e.label + ': ' + cfEur(e.v))}"><path class="cf-fl-b ${e.act}" d="${band(xM + nodeW, mY, mY + h, xR, e.y, e.y + h)}"/><rect class="cf-fl-n ${e.act}" x="${xR}" y="${e.y.toFixed(1)}" width="${nodeW}" height="${e.h.toFixed(1)}" rx="2"/></g>`; mY += h; }
-  g += `<rect class="cf-fl-m" x="${xM.toFixed(1)}" y="${mTop.toFixed(1)}" width="${nodeW}" height="${mH.toFixed(1)}" rx="2"/>`;
-  // names beside the bars: at their middle, pushed apart where bars are thin (a short line leads to the bar)
+  for (const e of R) { const h = e.hv * k, id = grad(midC, COL[e.act]);
+    g += `<g class="cf-fl-g${e.more ? ' more' : ''}"${e.more ? ` data-fl="${esc(e.key)}" tabindex="0" role="button" aria-expanded="false"` : ''} aria-label="${esc(e.label + ': ' + cfEur(e.v))}"><path class="cf-fl-b" fill="url(#${id})" d="${band(xM, mY, mY + h, xR, e.y, e.y + h)}"/><rect class="cf-fl-n ${e.act}" x="${xR}" y="${e.y.toFixed(1)}" width="${nodeW}" height="${e.h.toFixed(1)}" rx="2"/>${share(e, xR - 6, e.y + e.h / 2, 'end')}</g>`; mY += h; }
+  // the amount that ran through the period, quietly above the middle
+  g += `<text class="cf-fl-mid" x="${xM.toFixed(1)}" y="${(mTop - 7).toFixed(1)}" text-anchor="middle">${esc(F0(F.total))} €</text>`;
+  // names beside the bars: at their middle, pushed apart where bars are thin (a short line leads to the bar); opened parts carry
+  // their item's name, and a row to close them again
   const labels = (list, left) => { let yPrev = -Infinity; const out = list.map(e => { const y = Math.max(e.y + e.h / 2, yPrev + LH, top + 6); yPrev = y; return {e, y}; });
     let over = out.length ? out[out.length - 1].y - (bot - 4) : 0; for (let i = out.length - 1; i >= 0 && over > 0; i--) { out[i].y -= over; over = i ? Math.max(0, out[i - 1].y - (out[i].y - LH)) : 0; }
-    const room = Math.floor((LW - 12) / 6.3) - (narrow ? 0 : 7);
-    return out.map(({e, y}) => { const x = left ? xL - 6 : xR + nodeW + 6, nm = e.label.length > room ? e.label.slice(0, Math.max(3, room - 1)) + '…' : e.label, mid = e.y + e.h / 2;
-      return (Math.abs(y - mid) > 2 ? `<path class="cf-fl-lead" d="M${(left ? xL - 1 : xR + nodeW + 1).toFixed(1)},${mid.toFixed(1)}L${(left ? xL - 5 : xR + nodeW + 5).toFixed(1)},${y.toFixed(1)}"/>` : '')
+    const room = Math.floor((LW - 14) / 6.3) - (narrow ? 0 : 7);
+    return out.map(({e, y}, i) => { const x = left ? xL - 6 : xR + nodeW + 6, disc = e.more ? '▸ ' : '', mid = e.y + e.h / 2;
+      const head = e.parentKey && (i === 0 || out[i - 1].e.parentKey !== e.parentKey);
+      const lab = disc + e.label, nm = lab.length > room ? lab.slice(0, Math.max(3, room - 1)) + '…' : lab;
+      const close = head ? `<text class="cf-fl-up" data-fl="${esc(e.parentKey)}" x="${x.toFixed(1)}" y="${(y - (narrow ? 15 : 12)).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">▾ ${esc(e.parentLabel || '')}</text>` : '';
+      return close + (Math.abs(y - mid) > 2 ? `<path class="cf-fl-lead" d="M${(left ? xL - 1 : xR + nodeW + 1).toFixed(1)},${mid.toFixed(1)}L${(left ? xL - 5 : xR + nodeW + 5).toFixed(1)},${y.toFixed(1)}"/>` : '')
+        + `<g class="cf-fl-l${e.more ? ' more' : ''}"${e.more ? ` data-fl="${esc(e.key)}"` : ''}>`
         + (narrow ? `<text class="cf-fl-t" x="${x.toFixed(1)}" y="${(y - 2).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(nm)}</text><text class="cf-fl-t cf-fl-v" x="${x.toFixed(1)}" y="${(y + 11).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(F0(e.v))}</text>`
-          : `<text class="cf-fl-t" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(nm)} <tspan class="cf-fl-v">${esc(F0(e.v))}</tspan></text>`); }).join(''); };
+          : `<text class="cf-fl-t" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(nm)} <tspan class="cf-fl-v">${esc(F0(e.v))}</tspan></text>`) + `</g>`; }).join(''); };
   g += labels(L, true) + labels(R, false);
-  el.innerHTML = `<svg class="cf-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('cf_herkunft_verwendung'))}">${g}</svg>`;
+  el.innerHTML = `<svg class="cf-svg cf-fl" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('cf_herkunft_verwendung'))}"><defs>${defs}</defs>${g}</svg>`;
 }
 
 // the tooltip with colour keys: beside the row or column it belongs to, also on keyboard focus (on the iPhone: a tap)
@@ -3479,7 +3521,7 @@ function bindCfCharts(main) {
     if (e && CF.pieSel) { const f = $(`#cf-pie .cf-pie-sl[data-pie="${i}"]`); if (f) f.focus({preventScroll: true}); } };
   const setRange = (v, b) => {
     const D = B(), ms = cfDone(D), sel = ms.filter(m => m >= v && m <= b), y = v.slice(0, 4);
-    S.cfVon = v; S.cfBis = b;
+    S.cfVon = v; S.cfBis = b; S.cfBrZoom = null;
     S.cfZeit = sel.join() === ms.slice(-12).join() ? '12m' : sel.join() === ms.filter(m => m.startsWith(y)).join() && b.startsWith(y) && cfPeriods(D).some(p => p[0] === y) ? y : 'eigen';
     CF.pieSel = null; route();
   };
@@ -3488,10 +3530,32 @@ function bindCfCharts(main) {
     let v = $('#cf-von').value, b = $('#cf-bis').value; if (v > b) [v, b] = e.target.id === 'cf-von' ? [v, v] : [b, b];
     setRange(v, b);
   });
+  // the bridge: drag across it to zoom into that range of amounts; the button above or a click on the axis shows it whole again
+  const brEl = $('#cf-bridge', main);
+  if (brEl) {
+    let dr = null;
+    const xIn = e => { const r = brEl.getBoundingClientRect(); return Math.max(CF.br.L, Math.min(CF.br.R, e.clientX - r.left)); };
+    brEl.addEventListener('pointerdown', e => { if (e.button > 0 || !CF.br) return; const r = brEl.getBoundingClientRect(), x = e.clientX - r.left;
+      if (x < CF.br.L || x > CF.br.R) return; dr = {x0: x, x1: x, id: e.pointerId, moved: false}; });
+    brEl.addEventListener('pointermove', e => { if (!dr) return; dr.x1 = xIn(e);
+      if (!dr.moved && Math.abs(dr.x1 - dr.x0) > 6) { dr.moved = true; try { brEl.setPointerCapture(dr.id); } catch (x) {} hide(); }
+      if (dr.moved) { const svg = $('svg', brEl); if (!svg) return; let sel = $('.cf-br-sel', svg);
+        if (!sel) { sel = document.createElementNS('http://www.w3.org/2000/svg', 'rect'); sel.setAttribute('class', 'cf-br-sel'); svg.appendChild(sel); }
+        sel.setAttribute('x', Math.min(dr.x0, dr.x1)); sel.setAttribute('width', Math.abs(dr.x1 - dr.x0)); sel.setAttribute('y', 0); sel.setAttribute('height', CF.br.rowsH); } });
+    const end = () => { if (!dr) return; const d = dr; dr = null;
+      if (d.moved && Math.abs(d.x1 - d.x0) > 12) { const v = x => CF.br.lo + (x - CF.br.L) / (CF.br.R - CF.br.L) * (CF.br.hi - CF.br.lo);
+        S.cfBrZoom = [v(Math.min(d.x0, d.x1)), v(Math.max(d.x0, d.x1))]; CF.brDragged = true; setTimeout(() => { CF.brDragged = false; }, 0); cfDrawBridge(); }
+      else if (d.moved) cfDrawBridge(); };
+    brEl.addEventListener('pointerup', end); brEl.addEventListener('pointercancel', () => { dr = null; cfDrawBridge(); });
+  }
   // touch: the first tap on a month or a cell shows its numbers, the second acts
   wrap.addEventListener('pointerdown', e => { CF.touch = e.pointerType === 'touch'; }, true);
   const act = (el, key) => { if (CF.touch && CF.armed !== key) { CF.armed = key; return false; } CF.armed = null; return true; };
   wrap.addEventListener('click', e => {
+    const fl = e.target.closest('#cf-flow [data-fl]');
+    if (fl) { const o = CF.flowOpen || (CF.flowOpen = {}); o[fl.dataset.fl] = !o[fl.dataset.fl]; cfDrawFlow(); return; }
+    if (e.target.closest('#cf-br-reset, #cf-bridge .cf-br-axis')) { S.cfBrZoom = null; CF.brDragged = false; hide(); cfDrawBridge(); return; }
+    if (CF.brDragged) { CF.brDragged = false; return; }                     // the end of a drag is no click
     const br = e.target.closest('#cf-bridge .cf-br-row[data-br]');
     if (br) { const id = br.dataset.br, o = S.cfBrOpen || (S.cfBrOpen = {op: true, inv: true, fin: true}); o[id] = !o[id]; hide(); cfDrawBridge();
       const f = $(`#cf-bridge .cf-br-row[data-br="${CSS.escape(id)}"]`); if (f && e.detail === 0) f.focus({preventScroll: true}); return; }
@@ -3508,7 +3572,7 @@ function bindCfCharts(main) {
       const hc = $('#cf-heat-card'); if (hc) { hc.outerHTML = cfHeatCard(hc.classList.contains('cf-full') ? 'cf-full' : 'cf-half'); cfDrawHeat(); } return; }
     if (!e.target.closest('#cf-pie')) return; pin(e.target.closest('#cf-pie [data-pie]')); });
   wrap.addEventListener('keydown', e => {
-    if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('#cf-heat .cf-heat-c[data-hr], #cf-pie .cf-pie-lab[data-kats], #cf-bridge .cf-br-row[data-br]')) { e.preventDefault(); CF.touch = false; e.target.dispatchEvent(new MouseEvent('click', {bubbles: true})); return; }
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('#cf-heat .cf-heat-c[data-hr], #cf-pie .cf-pie-lab[data-kats], #cf-bridge .cf-br-row[data-br], #cf-flow [data-fl]')) { e.preventDefault(); CF.touch = false; e.target.dispatchEvent(new MouseEvent('click', {bubbles: true})); return; }
     if (!e.target.closest('#cf-pie')) return;
     if (e.key === 'Escape' && CF.pieSel) { e.preventDefault(); CF.pieSel = null; hide(); cfDrawPie(); }
     else if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('[data-pie]')) { e.preventDefault(); pin(e.target.closest('[data-pie]')); } });
@@ -5385,7 +5449,7 @@ window.addEventListener('hashchange', route);
 document.addEventListener('click', e => { const b = e.target.closest('#modus-seg button'); if (b) { S.modus = b.dataset.m; route(); } });
 document.addEventListener('click', e => {
   const lv = e.target.closest('#cf-ebene button, .cf-lv-btn'); if (lv) { S[S.tab === 'planning' ? 'planEbene' : 'cfEbene'] = +lv.dataset.e; S.cfTog = {}; route(); return; }       // a level: every row as the level has it
-  const z = e.target.closest('#cf-zeit button'); if (z) { S.cfZeit = z.dataset.z; route(); return; }
+  const z = e.target.closest('#cf-zeit button'); if (z) { S.cfZeit = z.dataset.z; S.cfBrZoom = null; route(); return; }
   const st = e.target.closest('#von-jahr button'); if (st && !st.disabled) {
     const box = st.closest('#von-jahr'), y = Math.min(+box.dataset.max, Math.max(+box.dataset.min, +box.dataset.y + +st.dataset.d));
     S.vonJahr = y === +box.dataset.max - (MONTH_YEARS - 1) ? null : y; S.toEarlier = +st.dataset.d < 0; route(); }      // an earlier year: start with it

@@ -655,8 +655,9 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 .cf-link-l { stroke:var(--line-2); stroke-width:1; shape-rendering:crispEdges; }
 .cf-break { fill:none; stroke:var(--head); stroke-width:2; }
 .cf-fl-n.ein { fill:var(--pos); } .cf-fl-n.aus { fill:var(--neg); } .cf-fl-n.inv { fill:var(--cf-inv); } .cf-fl-n.fin { fill:var(--cf-fin); } .cf-fl-n.tot, .cf-fl-n.unk { fill:var(--cf-unk); }
-.cf-fl-b { fill-opacity:.34; } .cf-fl-b.ein { fill:var(--pos); } .cf-fl-b.aus { fill:var(--neg); } .cf-fl-b.inv { fill:var(--cf-inv); } .cf-fl-b.fin { fill:var(--cf-fin); } .cf-fl-b.tot, .cf-fl-b.unk { fill:var(--cf-unk); }
-.cf-fl-g { outline:none; cursor:default; } .cf-fl-g:is(:hover, :focus-visible) .cf-fl-b { fill-opacity:.6; } .cf-fl-m { fill:color-mix(in srgb, var(--fg) 45%, transparent); }
+.cf-fl-b { fill-opacity:.62; transition:opacity .15s; } .cf-fl-p { fill:var(--fg); font-size:11px; font-weight:600; pointer-events:none; } .cf-fl-mid { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
+.cf-fl:hover .cf-fl-g { opacity:.4; } .cf-fl .cf-fl-g:hover { opacity:1; } .cf-fl-g { transition:opacity .15s; } .cf-fl .more, .cf-fl-up { cursor:pointer; } .cf-fl-up { fill:var(--muted); font-size:11px; } .cf-fl-l.more:hover .cf-fl-t:not(.cf-fl-v) { text-decoration:underline; }
+.cf-fl-g { outline:none; } .cf-fl-g:focus-visible .cf-fl-n { stroke:var(--fg); stroke-width:1.5; }
 .cf-fl-t { fill:var(--fg); font-size:12px; } .cf-fl-v { fill:var(--muted); font-variant-numeric:tabular-nums; } .cf-fl-lead { fill:none; stroke:var(--line-2); stroke-width:1; } .cf-sub-l { fill:var(--fg); font-size:12px; font-weight:600; }
 .cf-br-bg { fill:transparent; } .cf-br-row { outline:none; cursor:default; } .cf-br-row:is(:hover, :focus-visible) .cf-br-bg { fill:var(--sub); }
 .cf-br-n { fill:var(--fg); font-size:12px; } .cf-br-row.kid .cf-br-n { fill:var(--muted); font-size:11.5px; } .cf-br-row:is(.tot, .grp) .cf-br-n { font-weight:600; }
@@ -664,10 +665,13 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 .cf-br-v { fill:var(--fg); font-size:12px; font-variant-numeric:tabular-nums; } .cf-br-row.kid .cf-br-v { fill:var(--muted); font-size:11.5px; } .cf-br-row:is(.tot, .grp) .cf-br-v { font-weight:600; }
 .cf-br-c { fill:var(--muted); font-size:10.5px; font-variant-numeric:tabular-nums; } .cf-br-c.pos { fill:var(--pos); } .cf-br-c.neg { fill:var(--neg); }
 .cf-br-bar.in { fill:var(--pos); } .cf-br-bar.out { fill:var(--neg); } .cf-br-bar.unk, .cf-br-bar.tot { fill:var(--cf-unk); }
+.cf-br-grid { stroke:var(--line); stroke-width:1; } .cf-br-grid.zero { stroke:var(--line-2); } .cf-br-axis { fill:transparent; cursor:zoom-out; }
+.cf-br .cf-br-axis { pointer-events:none; } .cf-br.zoomed .cf-br-axis { pointer-events:all; } #cf-bridge { touch-action:pan-y; cursor:crosshair; } #cf-bridge .cf-br-row.more { cursor:pointer; }
+.cf-br-sel { fill:color-mix(in srgb, var(--fg) 10%, transparent); stroke:color-mix(in srgb, var(--fg) 40%, transparent); stroke-width:1; pointer-events:none; } .cf-br-c[data-cftip] { cursor:default; }
 .cf-br-bar.kid { fill-opacity:.62; } .cf-br-row.more { cursor:pointer; } .cf-br-disc { fill:var(--muted); font-size:9.5px; }
 .cf-br-key.op { fill:var(--cf-op); } .cf-br-key.inv { fill:var(--cf-inv); } .cf-br-key.fin { fill:var(--cf-fin); }
 .cf-br-brace { fill:none; stroke-width:2; stroke-linejoin:round; } .cf-br-brace.op { stroke:var(--cf-op); } .cf-br-brace.inv { stroke:var(--cf-inv); } .cf-br-brace.fin { stroke:var(--cf-fin); }
-.cf-br-brace.deep { stroke:color-mix(in srgb, var(--fg) 45%, transparent); stroke-width:1.5; } .cf-br-row.kid.br .cf-br-n, .cf-br-row.kid.br .cf-br-v { font-weight:600; fill:var(--fg); } .cf-br-link { stroke:var(--line-2); stroke-width:1; stroke-dasharray:2 2; } .cf-br-zero { stroke:var(--line); stroke-width:1; }
+.cf-br-brace.deep { stroke:color-mix(in srgb, var(--fg) 40%, transparent); stroke-width:1.75; } .cf-br-brace.deeper { stroke:color-mix(in srgb, var(--fg) 34%, transparent); stroke-width:1; } .cf-br-row.kid.br .cf-br-n, .cf-br-row.kid.br .cf-br-v { font-weight:600; fill:var(--fg); } .cf-br-link { stroke:var(--line-2); stroke-width:1; stroke-dasharray:2 2; } .cf-br-zero { stroke:var(--line); stroke-width:1; }
 .cf-col.ein { fill:var(--pos); } .cf-col.aus { fill:var(--neg); } .cf-col.bank { fill:color-mix(in srgb, var(--fg) 55%, transparent); } .cf-col.op { fill:var(--cf-op); } .cf-col.inv { fill:var(--cf-inv); } .cf-col.fin { fill:var(--cf-fin); } .cf-col.unk, .cf-col.tot { fill:var(--cf-unk); } .cf-col.part { opacity:.45; }
 .cf-net { fill:none; stroke:var(--fg); stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
 .cf-ln { fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; } .cf-ln.plan { stroke-dasharray:5 4; }

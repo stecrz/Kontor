@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.13.26 (2026-11-17 23:45)
+- **Liquiditätsbrücke:** dezente Achse mit Beträgen; einen Bereich mit der Maus aufziehen vergrößert ihn (längere Balken am Rand gekappt und markiert), „Ganze Brücke“ zeigt wieder alles. Ein Tooltip nur noch an der Veränderung: Betrag, Vorjahr, Veränderung und die Teile. Klammern je Ebene feiner: Tätigkeiten farbig, darunter grau, noch tiefer dünner.
+- **Mittelherkunft & -verwendung** (statt „Geldfluss“), ein Sankey-Diagramm: Die Farben der Bänder gehen in der Mitte ineinander über statt eines grauen Balkens; breite Bänder tragen ihren Anteil; Ströme unter 3 % stehen zusammen unter „Übrige“; ein Klick auf einen Namen mit ▸ öffnet seine Teile. Fährst du über ein Band, treten die anderen zurück; die Summe steht dezent über der Mitte.
+
 ## 3.13.25 (2026-11-17 23:27)
 - **Cashflow-Tabelle kompakter:** „Veränderung Bankguthaben“ klappt zu Anfangs- und Endbestand auf; der Abgleich mit der Bilanz steht als kleines ✓ an der Zahl, eine eigene Zeile nur bei Abweichung. Ab der Ebene „Positionen“ der **Free Cashflow** (CFO + CFI).
 - **Heatmap:** Riesenbeträge in einzelnen Monaten färben nicht mehr alles andere blass – sie bekommen die dunkelsten Töne und eine Markierung. Neu: eine Zeile mit allen Ausgaben (bzw. Einnahmen) zusammen, auf eigener Skala.

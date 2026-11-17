@@ -2907,7 +2907,16 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#cf-bridge .cf-br-row[data-br='op|Ausgaben']"); pg.click("#cf-bridge .cf-br-row[data-br='inv']"); pg.mouse.move(5, 5); pg.wait_for_timeout(150)
                 pg.hover("#cf-bridge .cf-br-row.grp >> nth=2"); pg.wait_for_timeout(150)                  # no tooltip covering the bridge
                 self.assertTrue(pg.evaluate("document.querySelector('#cf-tip').classList.contains('hidden') || !document.querySelector('#cf-tip').textContent.trim()")); pg.mouse.move(5, 5)
-                self.assertFalse(pg.query_selector("#cf-bridge [data-cftip]"))
+                self.assertFalse(pg.query_selector("#cf-bridge [data-cftip]:not(.cf-br-c)"))                # only the change has one: amount, year before, change
+                pg.hover("#cf-bridge .cf-br-row.grp .cf-br-c >> nth=0"); pg.wait_for_timeout(150)
+                self.assertIn("Vorjahr", pg.inner_text("#cf-tip")); pg.mouse.move(5, 5)
+                # a quiet amount axis; dragging across the chart zooms into that range, the button shows it whole again
+                self.assertGreaterEqual(len(pg.query_selector_all("#cf-bridge .cf-br-grid")), 3)
+                bb = pg.evaluate("(() => { const r = document.querySelector('#cf-bridge').getBoundingClientRect(); return [r.left + CF.br.L, r.left + CF.br.R, r.top + 30]; })()")
+                pg.mouse.move(bb[0] + 20, bb[2]); pg.mouse.down(); pg.mouse.move(bb[0] + 60, bb[2], steps=5); pg.mouse.move(bb[0] + 120, bb[2], steps=5); pg.mouse.up(); pg.wait_for_timeout(200)
+                self.assertTrue(pg.evaluate("!!S.cfBrZoom")); self.assertTrue(pg.is_visible("#cf-br-reset")); self.assertTrue(pg.query_selector("#cf-bridge svg.zoomed"))
+                pg.click("#cf-br-reset"); pg.wait_for_timeout(150)
+                self.assertFalse(pg.evaluate("!!S.cfBrZoom")); self.assertTrue(pg.is_hidden("#cf-br-reset"))
                 # 2. per month: income, expenses, investing, financing stacked; the change in cash on its own scale below
                 self.assertEqual(len(pg.query_selector_all("#cf-months .cf-hit")), 12)
                 for c in ("ein", "aus", "inv", "fin", "spar", "wert"):          # below: the change in net worth, saved and change in value
@@ -2933,9 +2942,24 @@ class BrowserTest(unittest.TestCase):
                 # 3. money flow: sources on the left, uses on the right, through one column; both sides the same sum, each band its amount
                 fl = pg.evaluate("(() => { const F = CF.flow; return [F.src.reduce((a, e) => a + e.v, 0), F.use.reduce((a, e) => a + e.v, 0), F.src.map(e => e.label), F.use.map(e => e.label)]; })()")
                 self.assertLess(abs(fl[0] - fl[1]), 1); self.assertIn("Arbeitseinkommen", fl[2]); self.assertIn("Mehr Bankguthaben", fl[3])
-                self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), len(fl[2]) + len(fl[3])); self.assertTrue(pg.query_selector("#cf-flow .cf-fl-m"))
+                self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), len(fl[2]) + len(fl[3]))
+                self.assertIsNone(pg.query_selector("#cf-flow .cf-fl-m")); self.assertTrue(pg.query_selector("#cf-flow linearGradient"))      # no grey bar: the colours run into one another
                 self.assertIn("Arbeitseinkommen", pg.text_content("#cf-flow")); self.assertIsNone(pg.query_selector(".cf-su-col"))
-                pg.hover("#cf-flow .cf-fl-n >> nth=0"); pg.wait_for_timeout(150); self.assertIn("%", pg.inner_text("#cf-tip")); pg.mouse.move(5, 5)
+                self.assertIn("%", pg.text_content("#cf-flow .cf-fl-p")); self.assertFalse(pg.query_selector("#cf-flow [data-cftip]"))       # shares inside, no tooltip
+                # a click opens a position into its categories (heights within it), the name above closes it again
+                key = pg.evaluate("(() => { const g = document.querySelector('#cf-flow .cf-fl-g[data-fl]'); return g ? g.dataset.fl : null; })()")
+                if key:
+                    n0 = len(pg.query_selector_all("#cf-flow .cf-fl-g"))
+                    pg.dispatch_event("#cf-flow .cf-fl-g[data-fl='%s']" % key, "click"); pg.wait_for_timeout(150)
+                    self.assertGreater(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0); self.assertTrue(pg.query_selector("#cf-flow .cf-fl-up"))
+                    pg.dispatch_event("#cf-flow .cf-fl-up", "click"); pg.wait_for_timeout(150)
+                    self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
+                # small flows (under 3 %) together as "the others", every amount kept
+                grp = pg.evaluate("""(() => { const D = JSON.parse(JSON.stringify(B())), ms = cfDone(D).slice(-12), sek = D.kapitalfluss.sektionen.find(s => s.name === 'Ausgaben');
+                    sek.zeilen.push({...sek.zeilen[0], zeile: 'Klein A', lbl: null, werte: {[ms[0]]: -10}, details: []}, {...sek.zeilen[0], zeile: 'Klein B', lbl: null, werte: {[ms[1]]: -20}, details: []});
+                    const keep = CF.flow; cfSourcesUses(D, ms); const F = CF.flow; CF.flow = keep;
+                    const o = F.use.find(e => e.kids && e.kids.some(k => k.label === 'Klein A')); return [!!o, o ? o.kids.map(k => k.label) : [], o ? Math.round(o.v - o.kids.reduce((a, k) => a + k.v, 0)) : null]; })()""")
+                self.assertTrue(grp[0]); self.assertIn("Klein B", grp[1]); self.assertEqual(grp[2], 0)          # the others add up
                 # 4. expenses by position as a ring: their sum in the middle
                 self.assertEqual(num(pg.text_content("#cf-pie .cf-pie-v")), -want["aus"])
                 self.assertIsNone(pg.query_selector(".cf-list.ex"))                          # the bars by position went (the ring covers them)
