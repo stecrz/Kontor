@@ -1,10 +1,18 @@
 # Änderungen
 
+## 3.13.22 (2026-11-17 21:52)
+- **Einstellungen → MoneyMoney-Sync** (statt „MoneyMoney & Abgleich“) zeigt nur noch den Stand des Abgleichs: Verbindung, Zeitplan, Abruf je Online-Konto.
+- **Online oder offline** stellst du jetzt je Konto unter Konten & Regeln → Konten ein (Spalte „Art“, gilt sofort; der Grund der Erkennung steht im Tooltip).
+- **Kontostände** (Konten & Regeln) bündeln alles zum Verlauf: Übernahme aus MoneyMoney, Wertverlauf der Depots mit Hinweis auf fehlende Monate und den Import aus einer Datei.
+- **Liquiditätsbrücke:** Zuflüsse grün, Abflüsse rot, Anfangs- und Endbestand neutral.
+- **Vollständig lesen** alle 30 statt 7 Tage – Kontor liest ohnehin sofort alles, wenn ein Kontostand nicht passt, sich der Kategorienbaum ändert oder neuere Umsätze umkategorisiert wurden. Wer den alten Standard hatte, bekommt einmalig den neuen.
+- README und NOTICE ohne Altlasten (frühere Lizenz, Herstellername).
+
 ## 3.13.21 (2026-11-17 21:23)
 - **Automatische Sperre wirkt auch bei offener Seite:** Nur echte Bedienung (Tippen, Klicken, Scrollen, Ablegen) hält die Anmeldung offen, die Statusabfrage im Hintergrund nicht mehr. Sitzungen auf anderen Geräten und die Grenze von 12 Stunden bleiben wie bisher.
 - **Schlüsselbund:** Antwortet er nicht oder verweigert er den Zugriff, legt Kontor keinen neuen Schlüssel an und ersetzt keinen, sondern startet nicht; eine vorhandene Schlüsseldatei, die die Daten öffnet, wird weiter genutzt. Ein neuer Schlüssel nur, wenn es wirklich keinen Eintrag gibt.
 - **Belegordner:** Verweise darin auf Dateien außerhalb werden weder angeboten noch verknüpft, angezeigt oder exportiert; Löschen trifft nie etwas außerhalb des Ordners. Ein Beleg- oder Unterordner, der selbst z. B. nach iCloud Drive zeigt, funktioniert weiter. Gesperrte Orte (Library, Datenordner) lassen sich auch mit anderer Schreibweise nicht verknüpfen.
-- **Lizenz:** Apache 2.0 statt CC0 (Versionen bis 3.13.20 bleiben CC0); Urheber und Unabhängigkeit von MoneyMoney stehen in NOTICE.
+- **Lizenz:** Apache 2.0 statt CC0; Urheber und Unabhängigkeit von MoneyMoney stehen in NOTICE.
 
 ## 3.13.20 (2026-11-17 20:45)
 - **Menü neu geordnet:** „Konten & Regeln“ bündelt alles, was deine Zahlen bestimmt (Konten, Bereiche, Kontostände, Cashflow-Positionen, Buchungsregeln, Steuer). „Einstellungen“ zeigt, wie Kontor arbeitet (Allgemein, MoneyMoney & Abgleich mit der bisherigen Synchronisierung, Zugang, Belege, Updates, Sichern). Alte Lesezeichen führen an die neue Stelle.

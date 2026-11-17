@@ -47,8 +47,8 @@ Aktualisieren, neu einrichten und entfernen: [Updates](docs/help.de.md#updates) 
 
 ## Lizenz
 
-Apache License 2.0 ([LICENSE](LICENSE), Hinweise in [NOTICE](NOTICE)): Nutzen, Ändern und Weitergeben ist erlaubt – privat wie geschäftlich –, solange der Lizenztext und die Hinweise aus NOTICE erhalten bleiben und Änderungen als solche gekennzeichnet sind. Rechte an Name und Logo gibt die Lizenz nicht. Versionen bis einschließlich 3.13.20 wurden unter CC0 veröffentlicht.
+Apache License 2.0 ([LICENSE](LICENSE), Hinweise in [NOTICE](NOTICE)): Nutzen, Ändern und Weitergeben ist erlaubt – privat wie geschäftlich –, solange der Lizenztext und die Hinweise aus NOTICE erhalten bleiben und Änderungen als solche gekennzeichnet sind. Rechte an Name und Logo gibt die Lizenz nicht.
 
-Entwickelt von stecrz mit Hilfe von KI (Claude von Anthropic). Kontor ist ein unabhängiges Projekt und nicht mit der MRH applications GmbH, dem Hersteller von MoneyMoney, verbunden.
+Entwickelt von stecrz mit Hilfe von KI (Claude von Anthropic). Kontor ist ein unabhängiges Projekt und nicht mit dem Hersteller von MoneyMoney verbunden.
 
 Keine Gewähr, keine Steuer- oder Anlageberatung.

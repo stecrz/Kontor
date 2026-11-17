@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "probelauf": True,
-    "zeitplan": {"intervall_minuten": 30, "automatisch": True, "voll_lesen_tage": 7},
+    "zeitplan": {"intervall_minuten": 30, "automatisch": True, "voll_lesen_tage": 30},
     "darlehen": [], "gesellschaften": [], "kontenspiegel": [],
     "zuordnen_ohne": [],          # areas whose transactions you do not categorise (their ids): left out under Kategorien
     "bereiche": [],

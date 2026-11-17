@@ -753,7 +753,23 @@ class IncrementalReadTests(unittest.TestCase):
         self.assertFalse(app.full_read_due(dt(2026, 11, 11, 14, 0)))          # knapp 7 Tage
         self.assertTrue(app.full_read_due(dt(2026, 11, 11, 15, 0)))           # 7 Tage
         app.config = {}
-        self.assertEqual(app.full_read_info()["tage"], 7)                      # Standard
+        self.assertEqual(app.full_read_info()["tage"], 30)                     # Standard (since 3.13.22)
+
+    def test_full_read_every_30_days_once_for_the_old_default(self):
+        """3.13.22: the old default (7 days) becomes 30 -- once; a number set by hand stays, also 7 set after the update."""
+        import service as MA
+        for before, after in ((7, 30), (14, 14), (None, 30)):
+            d = tempfile.mkdtemp(prefix="kontor-voll-")
+            try:
+                st = Store(d, None)
+                st.save("config.json", {"zeitplan": {"voll_lesen_tage": before}} if before else {})
+                app = MA.App(st, d, bridge_factory=MockBridge)
+                self.assertEqual(app.full_read_days(), after, before)
+                self.assertTrue(st.load("state.json")[MA.App.FULL_READ_FLAG])
+                cfg = copy.deepcopy(app.config); cfg["zeitplan"]["voll_lesen_tage"] = 7; app.save_config(cfg)
+                self.assertEqual(MA.App(st, d, bridge_factory=MockBridge).full_read_days(), 7)     # your choice after it stays
+            finally:
+                shutil.rmtree(d, ignore_errors=True)
 
     def test_late_booking_triggers_full_read(self):
         """Nachtraegliche Buchung mit altem Datum (vor dem 30-Tage-Fenster): der Kontostand passt nicht mehr -> alles lesen."""
@@ -2717,8 +2733,14 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".cards")
                 # Status unten links fuehrt zur Seite Synchronisierung
                 pg.click("#status-mini .sm-link"); pg.wait_for_selector(".sync-table")
-                self.assertIn("Offline-Konten", pg.query_selector("#main").inner_text()); self.assertIn("Verkäuferdarlehen", pg.query_selector_all(".sync-table")[-1].inner_text())
-                self.assertIn("Depots: Wertverlauf", pg.query_selector("#main").inner_text()); self.assertTrue(pg.query_selector(".dep-hist"))
+                main = pg.query_selector("#main").inner_text()
+                self.assertIn("ohne Abruf (Offline-Kont", main); self.assertNotIn("Verkäuferdarlehen", main)        # offline accounts: only how many
+                self.assertNotIn("Depots: Wertverlauf", main); self.assertFalse(pg.query_selector(".ab-sel"))
+                self.assertIn("MoneyMoney-Sync", pg.inner_text("#main .tabs .on"))
+                pg.click("#main a[href='#accounts']"); pg.wait_for_selector(".acct-table .ab-sel")                 # online or offline: an account's own setting
+                # portfolios' history and the import from a file: under Kontostände
+                pg.evaluate("location.hash = '#accounts/history'"); pg.wait_for_selector(".dep-hist")
+                self.assertIn("Depots: Wertverlauf", pg.inner_text("#main")); self.assertTrue(pg.query_selector("#hi-drop"))
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".cards")
                 # Bereich wechseln
                 pg.click("#bereich-seg button:nth-child(2)"); pg.wait_for_timeout(500)
@@ -2823,8 +2845,13 @@ class BrowserTest(unittest.TestCase):
                 grp = [(n, num(v)) for k, n, v in rows if k == "grp"]
                 self.assertEqual([n.split()[0] for n, _ in grp], ["Überschuss", "Investitionen", "Finanzierung"])
                 self.assertLessEqual(abs(sum(v for _, v in grp) - (want["end"] - want["start"])), 3)      # rounded to whole euros
-                for c in ("op", "inv", "fin"):
-                    self.assertTrue(pg.query_selector("#cf-bridge .cf-br-bar." + c), c)
+                # money in green, out red -- by sign, not by activity; opening and closing cash neutral
+                bars = pg.eval_on_selector_all("#cf-bridge .cf-br-row", "e => e.map(r => [r.getAttribute('aria-label').split(': ')[0], (r.querySelector('.cf-br-bar') || {classList: [null, '']}).classList[1]])")
+                bar = dict(bars)
+                self.assertEqual((bar["Einnahmen"], bar["Ausgaben"], bar["Anfangsbestand"], bar["Endbestand"]), ("in", "out", "tot", "tot"))
+                for (k, n, v), (_, c) in zip(rows, bars):
+                    if k in ("grp", "kid") and num(v):
+                        self.assertEqual(c, "in" if num(v) > 0 else "out", n)
                 pg.hover("#cf-bridge .cf-br-row.tot >> nth=0"); pg.wait_for_timeout(150)
                 self.assertIn("Bankguthaben am Anfang", pg.inner_text("#cf-tip")); self.assertIn("Stand Ende", pg.inner_text("#cf-tip"))
                 pg.hover("#cf-bridge .cf-br-row.grp >> nth=2"); pg.wait_for_timeout(150)                  # an activity names its parts
@@ -3437,9 +3464,15 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(store.load("config.json")["kontenspiegel"], [])                   # removed again
                 # Sync: online or offline per account as a menu; offline accounts recognised as "Offline-Konto"
                 self.assertFalse(pg.evaluate("DIRTY.on"))
-                pg.evaluate("location.hash = '#settings/moneymoney'"); pg.wait_for_selector(".ab-sel")          # leaving after ⌘S: no question (a late change event does not count)
-                self.assertIn("Offline-Konto", pg.inner_text("#main")); self.assertIn("Offline-Konten", pg.inner_text("#main"))
-                self.assertEqual(pg.eval_on_selector("tr[data-uuid='%s'] .ab-sel" % F.uid("priv.bet.pb"), "e => e.value"), "offline")
+                pg.evaluate("location.hash = '#accounts'"); pg.wait_for_selector(".ab-sel")          # leaving after ⌘S: no question (a late change event does not count)
+                sel = "tr[data-uuid='%s'] .ab-sel" % F.uid("priv.bet.pb")
+                self.assertEqual(pg.eval_on_selector(sel, "e => e.value"), "offline")
+                self.assertEqual(pg.eval_on_selector(sel, "e => e.title"), "Offline-Konto")                       # why: as recognised
+                pg.select_option(sel, "online"); pg.wait_for_timeout(900)                                          # saved at once ...
+                self.assertIn(F.uid("priv.bet.pb"), " ".join(store.load("config.json")["abruf"]["online"]))
+                self.assertFalse(pg.evaluate("DIRTY.on"))                                                          # ... so no unsaved change
+                pg.wait_for_selector(sel); pg.select_option(sel, "offline"); pg.wait_for_timeout(900)
+                self.assertNotIn(F.uid("priv.bet.pb"), " ".join(store.load("config.json")["abruf"]["online"]))
                 # ⌘L locks
                 pg.keyboard.press("Meta+l"); pg.wait_for_selector("#login:not(.hidden)")
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg)
@@ -3589,6 +3622,7 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertEqual(len([r for r in reqs if "/api/status?fresh=1" in r]), n0)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_einrichtung_verbindung.png"), full_page=True)
                 # Tooltip bleibt im Fenster (auch ganz oben)
+                pg.evaluate("window.scrollTo(0, 0)")              # (clicking the button may have scrolled the short page: the symbol then sits under the title)
                 pg.hover(".steps .hq"); pg.wait_for_selector(".tip")
                 box = pg.evaluate("(() => { const r = document.querySelector('.tip').getBoundingClientRect(); return [r.top, r.left, r.right, window.innerWidth]; })()")
                 self.assertGreaterEqual(box[0], 0); self.assertGreaterEqual(box[1], 0); self.assertLessEqual(box[2], box[3])

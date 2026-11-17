@@ -23,7 +23,7 @@ Kontor ändert in MoneyMoney nie Buchungen, den Kategorienbaum oder Regeln und l
 
 Die „?“ neben Feldern erklären kurz; ein Klick darauf (am iPhone: zweites Tippen) öffnet den passenden Abschnitt dieser Hilfe.
 
-**Wo was liegt** – eine Faustregel: Was deine Zahlen bestimmt, steht unter **Konten & Regeln** (Konten, Bereiche, Kontostände, Cashflow-Positionen, Buchungsregeln, Steuer). Wie Kontor arbeitet, steht unter **Einstellungen** (Allgemein, MoneyMoney & Abgleich, Zugang, Belege, Updates, Sichern & Zurücksetzen).
+**Wo was liegt** – eine Faustregel: Was deine Zahlen bestimmt, steht unter **Konten & Regeln** (Konten, Bereiche, Kontostände, Cashflow-Positionen, Buchungsregeln, Steuer). Wie Kontor arbeitet, steht unter **Einstellungen** (Allgemein, MoneyMoney-Sync, Zugang, Belege, Updates, Sichern & Zurücksetzen).
 
 Die **Einrichtung** ist ein geführter Weg durch genau diese Seiten: alle Bausteine in einer sinnvollen Reihenfolge, jeder zeigt, ob er schon eingerichtet ist, und öffnet seine Seite. Die ersten vier bauen aufeinander auf, der Rest ist optional und jederzeit nachholbar. Sind die nötigen Schritte erledigt, verschwindet die Einrichtung aus dem Menü; „Einrichtung prüfen“ oben rechts unter Konten & Regeln öffnet sie wieder. Dort liest „Einrichtung prüfen“ MoneyMoney und meldet, ob alle Konten und Kategorien, auf die sich deine Einstellungen beziehen, noch existieren – etwa nachdem du in MoneyMoney etwas umbenannt hast.
 
@@ -79,7 +79,7 @@ Kontor schätzt nichts. Ein Klick auf ein Konto in der Bilanz öffnet sein Verla
 
 Das Fenster prüft auch die Rückrechnung: Anfangssaldo vor der ersten Buchung in MoneyMoney, vorgemerkte Umsätze, negative Stände bei Konten, die nicht ins Minus können. Bei Depots ohne übernommenen Verlauf steht „vor … unbekannt“.
 
-**Stände aus einer Datei** (Konten & Regeln → Konten oder Verlauf-Fenster): CSV oder Excel (.xlsx), als Liste (Datum, Konto, Saldo) oder als Tabelle mit Stichtagen in der Kopfzeile oder in der ersten Spalte. Importierte Konten stehen danach auf „Kontostände“.
+**Stände aus einer Datei** (Konten & Regeln → Kontostände oder Verlauf-Fenster): CSV oder Excel (.xlsx), als Liste (Datum, Konto, Saldo) oder als Tabelle mit Stichtagen in der Kopfzeile oder in der ersten Spalte. Importierte Konten stehen danach auf „Kontostände“.
 
 ![Verlauf eines Kontos](img/de/account_history.png)
 
@@ -92,7 +92,7 @@ MoneyMoney gibt den Verlauf der Kontostände über seine Schnittstelle nicht her
 
 Erneutes Einlesen ersetzt alle bisher eingelesenen Stände – ein Zurücksetzen vorher ist nicht nötig. Wertpapiere, zu denen MoneyMoney weder Namen noch ISIN mehr gespeichert hat (oft lange verkaufte), heißen „Unbenannt 1, 2, …“ und lassen sich nicht nachschlagen.
 
-**Danach zeichnet Kontor selbst auf**: Bankkonten rechnet Kontor ohnehin exakt aus den Umsätzen zurück. Für Depots merkt sich Kontor bei jedem Lesen den aktuellen Wert. Der Dienst läuft ab der Anmeldung am Mac im Hintergrund, auch ohne geöffnetes Kontor-Fenster, und liest innerhalb von etwa 20 Sekunden, sobald MoneyMoney offen und entsperrt ist – ein kurzer Blick in MoneyMoney genügt. Jeder Stand zählt für den Monat, in dem MoneyMoney ihn bei der Bank abgerufen hat. Hat MoneyMoney abgerufen, während Kontor nicht lief, oder fehlt ein Monat, weist die Seite „Synchronisierung“ darauf hin.
+**Danach zeichnet Kontor selbst auf**: Bankkonten rechnet Kontor ohnehin exakt aus den Umsätzen zurück. Für Depots merkt sich Kontor bei jedem Lesen den aktuellen Wert. Der Dienst läuft ab der Anmeldung am Mac im Hintergrund, auch ohne geöffnetes Kontor-Fenster, und liest innerhalb von etwa 20 Sekunden, sobald MoneyMoney offen und entsperrt ist – ein kurzer Blick in MoneyMoney genügt. Jeder Stand zählt für den Monat, in dem MoneyMoney ihn bei der Bank abgerufen hat. Hat MoneyMoney abgerufen, während Kontor nicht lief, oder fehlt ein Monat, weist Konten & Regeln → Kontostände darauf hin; dort steht auch je Depot, ab wann Kontor Stände kennt.
 
 <a id="sync"></a>
 ## Synchronisierung
@@ -103,11 +103,11 @@ Der Datenstand hat zwei Stufen: **Banken → MoneyMoney** (MoneyMoney ruft bei d
 
 - **Schnell lesen**: Ein Abgleich liest nur die Umsätze der letzten 30 Tage und übernimmt ältere aus dem letzten vollständigen Lesen.
 - **Kontrolle**: Dabei prüft Kontor jeden Kontostand. Passt er nicht zu den gelesenen Umsätzen, hat sich in MoneyMoney etwas Älteres geändert – etwa eine nachträgliche Buchung mit altem Datum oder ein gelöschter Umsatz. Dann liest Kontor sofort alles (höchstens alle 12 Stunden).
-- **Vollständig lesen**: alle 7 Tage (einstellbar) und mit „Alles neu lesen“. Eigene Buchungen von Kontor brauchen keins: Kontor behält sie bis dahin. Nur geänderte Kategorien älterer Umsätze (z. B. eine Regel in MoneyMoney auf alle Umsätze angewendet) erscheinen erst dann – dafür „Alles neu lesen“.
+- **Vollständig lesen**: alle 30 Tage (einstellbar) und mit „Alles neu lesen“ – außerdem sofort, wenn sich der Kategorienbaum in MoneyMoney ändert oder neuere Umsätze eine andere Kategorie bekommen (dann hast du vermutlich auch ältere umsortiert). Eigene Buchungen von Kontor brauchen keins: Kontor behält sie bis dahin. Nur eine einzeln geänderte Kategorie eines Umsatzes, der älter als 30 Tage ist, erscheint erst dann – dafür „Alles neu lesen“.
 - Ein Bankabruf ohne neue Daten löst keine Neuberechnung aus.
-- **Umsätze lesen** (Einstellungen → MoneyMoney & Abgleich): wie weit zurück Kontor liest; 0 = alle (empfohlen).
+- **Umsätze lesen** (Einstellungen → MoneyMoney-Sync): wie weit zurück Kontor liest; 0 = alle (empfohlen).
 
-Einstellungen → MoneyMoney & Abgleich zeigt unter „Synchronisierung“ je Konto den letzten Abruf und meldet Konten, die zurückliegen. Offline-Konten (von Hand geführt: nie abgerufen, ohne Bank- und Kontonummer, als Offline-Konto angelegt oder von Kontor bebucht) stehen getrennt als „Offline-Konto“; falsch eingeordnet, je Konto unter „Art“ auf „Online“ oder „Offline“ ändern. Nur in Offline-Konten bucht Kontor – auch in eines mit eingetragener Bankleitzahl, wenn es dort auf „Offline“ steht. Ist MoneyMoney zu oder gesperrt, passiert nichts – der nächste Abgleich holt alles nach.
+Einstellungen → MoneyMoney-Sync zeigt je Konto, das MoneyMoney bei der Bank abruft, den letzten Abruf und meldet Konten, die zurückliegen. Offline-Konten (von Hand geführt: nie abgerufen, ohne Bank- und Kontonummer, als Offline-Konto angelegt oder von Kontor bebucht) erkennt Kontor selbst; falsch eingeordnet, unter Konten & Regeln → Konten in der Spalte „Art“ auf „Online“ oder „Offline“ ändern (gilt sofort). Nur in Offline-Konten bucht Kontor – auch in eines mit eingetragener Bankleitzahl, wenn es dort auf „Offline“ steht. Ist MoneyMoney zu oder gesperrt, passiert nichts – der nächste Abgleich holt alles nach.
 
 <a id="tables"></a>
 ## Tabellen, Schalter und Excel
@@ -257,7 +257,7 @@ Ordnest du eine Gegenpartei mehrmals in Kontor zu, hat MoneyMoney dafür offenba
 <a id="categories-write-back"></a>
 ### In MoneyMoney eintragen
 
-Einmal einschalten (unter Kategorien oder Einstellungen → MoneyMoney & Abgleich, nur am Mac). Sicherungen:
+Einmal einschalten (unter Kategorien oder Einstellungen → MoneyMoney-Sync, nur am Mac). Sicherungen:
 
 - Kontor setzt nur das Kategoriefeld eines Umsatzes; Beträge, Daten und Löschen sind damit nicht möglich.
 - Direkt vor dem Schreiben liest Kontor den Umsatz neu aus MoneyMoney und schreibt nur, wenn er unverändert ist und noch keine Kategorie hat (oder die von Kontor gesetzte).

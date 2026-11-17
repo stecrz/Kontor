@@ -160,6 +160,7 @@ class App:
         self.config = merged_config(store.load("config.json", {}) or {})
         self.apply_language()
         self.sessions = auth.Sessions(idle_minutes=int(self.config["oberflaeche"].get("sperre_minuten", 15)))
+        self._full_read_monthly()
         self.ledger: Optional[Ledger] = None            # letzter Stand aus MoneyMoney
         self.ledger_time: Optional[datetime] = None
         self.umsaetze: Optional[list] = None            # kompakte Umsatzliste des letzten Berichts (sonst aus umsaetze.json)
@@ -322,6 +323,24 @@ class App:
             self.save_config(cfg)
             log.info("Categories changed in MoneyMoney: settings followed")
         return bool(old)
+
+    FULL_READ_FLAG = "voll_lesen_30_tage_3_13_22"
+
+    def _full_read_monthly(self) -> None:
+        """Since 3.13.22 everything is read every 30 days (before 7): a sync reads everything anyway when a balance does not fit,
+        the category tree changed or newer transactions were recategorised. The old default follows once; a number you set
+        yourself stays."""
+        try:
+            if (self.store.load("state.json", {}) or {}).get(self.FULL_READ_FLAG):
+                return
+            if ((self.store.load("config.json", {}) or {}).get("zeitplan") or {}).get("voll_lesen_tage") == 7:
+                cfg = copy.deepcopy(self.config)
+                cfg["zeitplan"]["voll_lesen_tage"] = 30
+                self.save_config(cfg)
+                log.info("Full read: every 30 days instead of 7 (the old default)")
+            self.store.update("state.json", lambda st: st.__setitem__(self.FULL_READ_FLAG, True), {})
+        except Exception:  # pragma: no cover - the service starts anyway
+            log.exception("Full read interval not migrated")
 
     SLASH_FLAG = "kategorie_schluessel_3_13_19"
 
@@ -671,7 +690,7 @@ class App:
 
     # -- MoneyMoney --------------------------------------------------------
     def full_read_days(self) -> int:
-        return max(1, int((self.config.get("zeitplan") or {}).get("voll_lesen_tage", 7) or 7))
+        return max(1, int((self.config.get("zeitplan") or {}).get("voll_lesen_tage", 30) or 30))
 
     def full_read_due(self, now: Optional[datetime] = None) -> bool:
         """Read all transactions when the last full read is at least N days old (setting, default 7). In between the quick

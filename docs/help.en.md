@@ -23,7 +23,7 @@ Kontor never changes bookings, the category tree or rules in MoneyMoney and neve
 
 The “?” next to fields explain briefly; a click on one (on the iPhone: a second tap) opens the matching section of this help.
 
-**Where things are** – a rule of thumb: what sets your figures is under **Accounts & rules** (accounts, areas, balances, cash flow positions, booking rules, tax). How Kontor works is under **Settings** (General, MoneyMoney & sync, Access, Receipts, Updates, Back up & reset).
+**Where things are** – a rule of thumb: what sets your figures is under **Accounts & rules** (accounts, areas, balances, cash flow positions, booking rules, tax). How Kontor works is under **Settings** (General, MoneyMoney sync, Access, Receipts, Updates, Back up & reset).
 
 **Setup** is a guided path through exactly these pages: all building blocks in a sensible order, each shows whether it is done and opens its page. The first four build on each other, the rest is optional and can be done any time. Once the required steps are done, Setup leaves the menu; “Check setup” at the top right of Accounts & rules opens it again. There “Check setup” reads MoneyMoney and reports whether all accounts and categories your settings refer to still exist – for example after you renamed something in MoneyMoney.
 
@@ -79,7 +79,7 @@ Kontor estimates nothing. Clicking an account in the balance sheet opens its his
 
 The panel also checks the backward calculation: opening balance before the first booking in MoneyMoney, pending transactions, negative balances on accounts that cannot go below zero. Portfolios without imported history show “before … unknown”.
 
-**Balances from a file** (Accounts & rules → Accounts or the history panel): CSV or Excel (.xlsx), as a list (date, account, balance) or as a table with reference dates in the header row or the first column. Imported accounts are then set to “Balances”.
+**Balances from a file** (Accounts & rules → Balances or the history panel): CSV or Excel (.xlsx), as a list (date, account, balance) or as a table with reference dates in the header row or the first column. Imported accounts are then set to “Balances”.
 
 ![History of an account](img/en/account_history.png)
 
@@ -92,7 +92,7 @@ MoneyMoney does not provide the history of balances through its interface – es
 
 Importing again replaces all balances imported so far – no reset is needed beforehand. Securities for which MoneyMoney no longer keeps a name or an ISIN (often ones sold long ago) are called “Unnamed 1, 2, …” and cannot be looked up.
 
-**After that Kontor records itself**: bank accounts are calculated exactly backwards from the transactions anyway. For portfolios Kontor notes the current value on every read. The service runs in the background from login, even without an open Kontor window, and reads within about 20 seconds as soon as MoneyMoney is open and unlocked – a quick look at MoneyMoney is enough. Each value counts for the month in which MoneyMoney retrieved it from the bank. If MoneyMoney retrieved data while Kontor was not running, or a month is missing, the “Synchronisation” page points it out.
+**After that Kontor records itself**: bank accounts are calculated exactly backwards from the transactions anyway. For portfolios Kontor notes the current value on every read. The service runs in the background from login, even without an open Kontor window, and reads within about 20 seconds as soon as MoneyMoney is open and unlocked – a quick look at MoneyMoney is enough. Each value counts for the month in which MoneyMoney retrieved it from the bank. If MoneyMoney retrieved data while Kontor was not running, or a month is missing, Accounts & rules → Balances points it out; it also shows per portfolio from when Kontor knows values.
 
 <a id="sync"></a>
 ## Sync
@@ -103,11 +103,11 @@ The data has two stages: **banks → MoneyMoney** (MoneyMoney fetches from the b
 
 - **Quick read**: a sync only reads the transactions of the last 30 days and takes older ones from the last complete read.
 - **Check**: Kontor checks every balance. If it does not match the transactions read, something older changed in MoneyMoney – e.g. a late booking with an old date or a deleted transaction. Then Kontor reads everything at once (at most every 12 hours).
-- **Complete read**: every 7 days (adjustable) and with “Read everything again”. Kontor's own bookings need none: Kontor keeps them until then. Only changed categories of older transactions (e.g. a rule in MoneyMoney applied to all transactions) appear just then – use “Read everything again” for that.
+- **Complete read**: every 30 days (adjustable) and with “Read everything again” – also at once when the category tree in MoneyMoney changes or newer transactions get another category (then you probably re-sorted older ones too). Kontor's own bookings need none: Kontor keeps them until then. Only a single changed category of a transaction older than 30 days appears just then – use “Read everything again” for that.
 - A bank refresh without new data does not trigger a recalculation.
-- **Read transactions** (Settings → MoneyMoney & sync): how far back Kontor reads; 0 = all (recommended).
+- **Read transactions** (Settings → MoneyMoney sync): how far back Kontor reads; 0 = all (recommended).
 
-Settings → MoneyMoney & sync shows under “Sync” the last refresh per account and reports accounts that lag behind. Offline accounts (kept by hand: never refreshed, without bank and account number, created as offline account or booked by Kontor) are listed separately as “Offline account”; if sorted wrongly, change it per account under “Type” to “Online” or “Offline”. Kontor books only into offline accounts – also into one with a bank code typed in, once it is set to “Offline” there. If MoneyMoney is closed or locked, nothing happens – the next sync catches up.
+Settings → MoneyMoney sync shows the last refresh of every account MoneyMoney refreshes from the bank and reports accounts that lag behind. Offline accounts (kept by hand: never refreshed, without bank and account number, created as offline account or booked by Kontor) are recognised by Kontor; if sorted wrongly, change it under Accounts & rules → Accounts in the column “Type” to “Online” or “Offline” (applies at once). Kontor books only into offline accounts – also into one with a bank code typed in, once it is set to “Offline” there. If MoneyMoney is closed or locked, nothing happens – the next sync catches up.
 
 <a id="tables"></a>
 ## Tables, switches and Excel
@@ -257,7 +257,7 @@ If you assign a counterparty several times in Kontor, MoneyMoney evidently has n
 <a id="categories-write-back"></a>
 ### Entering in MoneyMoney
 
-Turn it on once (under Categories or Settings → MoneyMoney & sync, only at the Mac). Safeguards:
+Turn it on once (under Categories or Settings → MoneyMoney sync, only at the Mac). Safeguards:
 
 - Kontor sets only the category field of a transaction; amounts, dates and deleting are not possible this way.
 - Right before writing, Kontor reads the transaction again from MoneyMoney and writes only if it is unchanged and has no category yet (or the one Kontor set).
