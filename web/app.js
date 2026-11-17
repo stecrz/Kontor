@@ -185,6 +185,7 @@ const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')
 const ICON = {
   pencil: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg>',
   check: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   refresh: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
   bolt: '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M13.5 2 4 13.5h6.5L9.5 22 20 9.5h-6.6z"/></svg>',
   hand: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11m0-6.5v-.5a1.5 1.5 0 0 1 3 0V11m0-5.5a1.5 1.5 0 0 1 3 0V12m0-3.5a1.5 1.5 0 0 1 3 0V15a7 7 0 0 1-7 7h-1.2a7 7 0 0 1-5.6-2.8L3.4 15a1.6 1.6 0 0 1 2.4-2.1L8 15"/></svg>',
@@ -2654,9 +2655,14 @@ function vKapitalfluss(editable) {
   const vOf = (z, c) => { let v = mv.get(z); if (!v) mv.set(z, v = Object.assign({}, z.werte, (z.plan && z.plan.werte) || {})); return sumOver(v, c.months); };
   const sOf = (z, c) => { let v = ms.get(z); if (!v) ms.set(z, v = Object.assign({}, z.werte, (z.plan && z.plan.vorschlag) || {})); return sumOver(v, c.months); };
   const levels = [t('cf_ueberblick'), t('cf_positionen'), t('cf_details')];
-  let h = `<div class="toolbar">${viewCtl()}${yearCtl()}<div class="seg" id="cf-ebene" title="${t('cf_ebene_tip')}">${levels.map((l, i) => `<button data-e="${i}" class="${S.cfEbene === i ? 'on' : ''}">${l}</button>`).join('')}</div>`
-    + `<span class="tb-sep"></span>${alleCtl(0)}${editable ? swCtl('realan', S.real, t('inflationsbereinigt'), t('inflationsbereinigt_tip')) : planCtl()}<span class="sp"></span>`
-    + `${editable ? '' : `<a class="small" href="#positions">${t('zu_den_positionen')}</a>`}${xlsxBtn(editable ? 'planning' : 'cashflow')}</div>`;
+  // The header cell of the table: how far it is opened, right above the triangles (Mac: the three levels; iPhone: one large
+  // triangle -- each tap opens a level more, after everything it closes again), and the gear to the positions' settings.
+  const lvTips = [t('cf_ebene_tip_0'), t('cf_ebene_tip_1'), t('cf_ebene_tip_2')], nextLv = (S.cfEbene + 1) % 3;
+  const lvCtl = `<div class="cf-lv"><div class="seg small" id="cf-ebene" role="group" aria-label="${esc(t('cf_ebene_tip'))}">${levels.map((l, i) => `<button data-e="${i}" class="${S.cfEbene === i ? 'on' : ''}" title="${esc(lvTips[i])}">${l}</button>`).join('')}</div>`
+    + `<button class="cf-lv-btn lv${S.cfEbene}" data-e="${nextLv}" title="${esc(t(nextLv ? 'cf_weiter_aufklappen' : 'cf_alles_zuklappen'))}" aria-label="${esc(t(nextLv ? 'cf_weiter_aufklappen' : 'cf_alles_zuklappen'))}"><i>▸</i><span>${levels[S.cfEbene]}</span></button>`
+    + `<a class="cf-set" href="#positions" title="${esc(t('cf_positionen_einstellen'))}" aria-label="${esc(t('cf_positionen_einstellen'))}">${ICON.gear}</a></div>`;
+  let h = `<div class="toolbar">${viewCtl()}${yearCtl()}<span class="tb-sep"></span>${alleCtl(0)}${editable ? swCtl('realan', S.real, t('inflationsbereinigt'), t('inflationsbereinigt_tip')) : planCtl()}<span class="sp"></span>`
+    + `${xlsxBtn(editable ? 'planning' : 'cashflow')}</div>`;
   if (editable || planOn()) h += `<div class="legend"><span class="p">${t('plan')}</span><span class="c">${t('laufender_monat')}</span>` + (editable ? `<span class="o">${t('ueberschrieben')}</span><label class="chk"><input type="checkbox" id="vorschlag-an" ` + (S.vorschlag ? 'checked' : '') + `${t('vorschlagswerte_zeigen')}</label><em>${t('doppelklick_auf_eine_planzelle_eigener')}</em>` : '') + (editable && S.real ? `<em class="pill info">${t('planwerte_in_heutiger_kaufkraft')}</em>` : '') + '</div>';
   if (editable) {
     h += `<div class="card" style="margin-bottom:12px"><h3>${t('parameter')}</h3><div class="row tight">
@@ -2669,7 +2675,7 @@ function vKapitalfluss(editable) {
       <button id="p_save" class="small">${t('uebernehmen')}</button><button id="p_reset" class="small secondary" title="${t('alle_planeinstellungen_dieses_bereichs')}">${t('plan_zuruecksetzen')}</button></div>
       <div class="note" style="margin:6px 0 0">${t('ausgaben_steigen_standardmaessig_mit_d_2')}</div></div>`;
   }
-  h += '<div class="wrap"><table class="cf-tbl' + (editable ? ' ptable' : '') + '">' + thead(t('position'), C) + '<tbody>';
+  h += '<div class="wrap"><table class="cf-tbl' + (editable ? ' ptable' : '') + '">' + thead(lvCtl, C) + '<tbody>';
   const secTotal = name => C.map(c => c.months.reduce((a, m) => a + (sums[m]?.[name] ?? 0) * defl(m), 0));
   const nums = vals => vals.map((v, i) => `<td class="${cls(v, C[i])}">${F(v)}</td>`).join('');
   // the triangle that opens and closes a row (rows without one keep its room, so the names stand in a line)
@@ -3425,10 +3431,20 @@ async function uploadFiles(txId, files) {
 }
 
 // ---------------------------------------------------------------- Regeln
+// The name of each account in a list; accounts of the same name (the "Kontokorrent" of each company) also name their area
+// -- or, within one area, their group in MoneyMoney -- so the menu and the chosen entry tell them apart.
+function acctLabels(list) {
+  const count = (xs, f) => xs.reduce((m, k) => m.set(f(k), (m.get(f(k)) || 0) + 1), new Map());
+  const parent = k => k.pfad.split(' / ').slice(0, -1).join(' / ');
+  const byName = count(list, k => k.name), where = k => (k.bereich || '').split(', ')[0] || k.pfad.split(' / ')[0];
+  const first = new Map(list.map(k => [k.uuid, byName.get(k.name) > 1 && where(k) !== k.name ? k.name + ' · ' + where(k) : k.name]));
+  const again = count(list, k => first.get(k.uuid));
+  return new Map(list.map(k => [k.uuid, again.get(first.get(k.uuid)) > 1 && parent(k) ? k.name + ' · ' + parent(k) : first.get(k.uuid)]));
+}
 function acctOptions(selected, filter) {
-  const sel = (selected || '').split('|')[0].trim();
-  return `<option value="">${t('waehlen')}</option>` + S.KONTEN.filter(filter || (() => true)).map(k =>
-    `<option value="${k.uuid} | ${esc(k.name)}" ${k.uuid === sel ? 'selected' : ''}>${' '.repeat(k.ebene * 3)}${esc(k.name)}${k.gruppe ? t('gruppe_suffix') : (k.manuell ? t('manuell_2') : '')}</option>`).join('')
+  const sel = (selected || '').split('|')[0].trim(), list = S.KONTEN.filter(filter || (() => true)), lab = acctLabels(list);
+  return `<option value="">${t('waehlen')}</option>` + list.map(k =>
+    `<option value="${k.uuid} | ${esc(k.name)}" ${k.uuid === sel ? 'selected' : ''}>${' '.repeat(k.ebene * 3)}${esc(lab.get(k.uuid))}${k.gruppe ? t('gruppe_suffix') : (k.manuell ? t('manuell_2') : '')}</option>`).join('')
     + (sel && !S.KONTEN.some(k => k.uuid === sel) ? `<option value="${esc(selected)}" selected>${t('0_nicht_gefunden', esc(selected))}</option>` : '');
 }
 const onlyManual = k => !k.gruppe && k.manuell, onlyGroups = k => k.gruppe, onlyLeaves = k => !k.gruppe;
@@ -3462,8 +3478,8 @@ function companyAreas() {
 }
 const pctText = v => (Math.round(parseFloat(v) * 10000) / 100).toLocaleString(LOCALE) + ' %';
 function acctSel(cls, selected, filter, empty) {
-  const sel = (selected || '').split('|')[0].trim(), list = S.KONTEN.filter(filter);
-  return `<select class="${cls}"><option value="">${empty}</option>` + list.map(k => `<option value="${k.uuid} | ${esc(k.name)}" ${k.uuid === sel ? 'selected' : ''}>${esc(k.name)}</option>`).join('')
+  const sel = (selected || '').split('|')[0].trim(), list = S.KONTEN.filter(filter), lab = acctLabels(list);
+  return `<select class="${cls}"><option value="">${empty}</option>` + list.map(k => `<option value="${k.uuid} | ${esc(k.name)}" ${k.uuid === sel ? 'selected' : ''}>${esc(lab.get(k.uuid))}</option>`).join('')
     + (sel && !list.some(k => k.uuid === sel) ? `<option value="${esc(selected)}" selected>${S.KONTEN.some(k => k.uuid === sel) ? t('0_nicht_waehlbar', esc(refName(selected))) : t('0_nicht_gefunden', esc(refName(selected) || selected))}</option>` : '') + `</select>`;
 }
 // counter account: a private manual account (outside the company) = counterpart of one account of the company
@@ -4093,8 +4109,8 @@ async function readPkgFile(file) {
 
 // ---------------------------------------------------------------- Updates
 function clHtml(md) {
-  // CHANGELOG (Markdown-Ausschnitt): Versionen als Ueberschrift, Punkte als Liste, `Code`
-  const inl = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+  // CHANGELOG (Markdown-Ausschnitt): Versionen als Ueberschrift, Punkte als Liste, `Code`, **fett**
+  const inl = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
   let h = '', open = false;
   for (const line of md.split('\n')) {
     const v = line.match(/^##\s+(\S+)(?:\s+\((\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\))?/), li = line.match(/^\s*[-*]\s+(.*)/);
@@ -4723,7 +4739,7 @@ async function startRun(dry, freigabe, anchor) {
 window.addEventListener('hashchange', route);
 document.addEventListener('click', e => { const b = e.target.closest('#modus-seg button'); if (b) { S.modus = b.dataset.m; route(); } });
 document.addEventListener('click', e => {
-  const lv = e.target.closest('#cf-ebene button'); if (lv) { S.cfEbene = +lv.dataset.e; S.cfTog = {}; route(); return; }       // a level: every row as the level has it
+  const lv = e.target.closest('#cf-ebene button, .cf-lv-btn'); if (lv) { S.cfEbene = +lv.dataset.e; S.cfTog = {}; route(); return; }       // a level: every row as the level has it
   const z = e.target.closest('#cf-zeit button'); if (z) { S.cfZeit = z.dataset.z; route(); return; }
   const st = e.target.closest('#von-jahr button'); if (st && !st.disabled) {
     const box = st.closest('#von-jahr'), y = Math.min(+box.dataset.max, Math.max(+box.dataset.min, +box.dataset.y + +st.dataset.d));

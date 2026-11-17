@@ -204,7 +204,7 @@ Where the money goes – for every area in the same outline, so that private, pa
 | **Changes in value** | what changes without a payment: prices of portfolios, value adjustments, corrections by hand |
 | **Change in net worth** | surplus, interest, contributions and withdrawals, changes in value – investing and repaying only reallocate |
 
-A row shows only where there is money in it. How far the table is opened you choose at the top: **Overview** (sections and results only – the whole cash flow on one page), **Positions** or **Details** (down to the MoneyMoney categories and the single loans). Every row with ▸ also opens and closes by itself; the “?” at a row explains it.
+A row shows only where there is money in it. How far the table is opened you choose in its header cell, right above the triangles (on the iPhone the large triangle there opens a level further with each tap, and finally closes again): **Overview** (sections and results only – the whole cash flow on one page), **Positions** or **Details** (down to the MoneyMoney categories and the single loans). Every row with ▸ also opens and closes by itself; the “?” at a row explains it.
 
 ![Cash flow](img/en/cash_flow.png)
 
@@ -225,7 +225,7 @@ Every transaction counts exactly once. Transfers between your own accounts never
 
 Two rows **Check against the balance sheet** compare every month with the balance sheet: the change in cash with that of the liquid accounts, the change in net worth with that of the balance sheet. ✓ means: matches to the cent. A difference names its reason when you hover over it – for example money in transit to a loan over the month end, or a category set to “Leave out”. What Kontor cannot assign with certainty – such as a transfer without a counter-booking – shows under “unclear” and counts with its amount.
 
-Which position a MoneyMoney category counts in, Kontor proposes from its name; you change it under [Cash flow positions](#categories-positions) (Administration; the link is also at the top right of the cash flow). Transactions **without a category** are estimated: first from your categories so far (same counterparty, same purpose), otherwise from words in name, purpose and booking text (such as “Gehalt”, card settlements; for the tax office Kontor separates wage tax – part of staff for companies –, VAT and other taxes). They show in the position as “no category, estimated”; what cannot be estimated shows under “(no category)”. The more you assign, the more exact it gets – it is not required, not even for a limited company with many bookings. Kontor enters nothing in MoneyMoney for this.
+Which position a MoneyMoney category counts in, Kontor proposes from its name; you change it under [Cash flow positions](#categories-positions) (Administration, or the gear in the header cell of the cash flow table). Transactions **without a category** are estimated: first from your categories so far (same counterparty, same purpose), otherwise from words in name, purpose and booking text (such as “Gehalt”, card settlements; for the tax office Kontor separates wage tax – part of staff for companies –, VAT and other taxes). They show in the position as “no category, estimated”; what cannot be estimated shows under “(no category)”. The more you assign, the more exact it gets – it is not required, not even for a limited company with many bookings. Kontor enters nothing in MoneyMoney for this.
 
 <a id="categories"></a>
 ## Categories

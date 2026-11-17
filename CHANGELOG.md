@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.13.12 (2026-11-17 15:25)
+- **Kontenspiegel und andere Kontoauswahlen:** Konten mit gleichem Namen zeigen ihre Gesellschaft (z. B. „Kapitalkonto A · Alpha GbR“) – in der Liste und im gewählten Eintrag.
+- **Cashflow:** Die Auswahl „Überblick / Positionen / Details“ steht in der Kopfzelle der Tabelle, direkt über den Pfeilen; am iPhone klappt dort ein großer Pfeil mit jedem Tippen eine Stufe weiter auf, zuletzt wieder zu. Das Zahnrad daneben führt zu den Cashflow-Positionen (statt des Links oben rechts).
+- **Updates:** Fettgedrucktes in den Änderungen erscheint fett.
+
 ## 3.13.11 (2026-11-17 06:45)
 Cashflow neu gegliedert, mit Diagrammen.
 - **Eine Gliederung, drei Stufen:** „Überblick“ zeigt den ganzen Cashflow auf einer Seite (Einnahmen, Ausgaben, Überschuss, Investitionen, Finanzierung, Veränderung Bankguthaben, Wertänderungen, Veränderung Nettovermögen), „Positionen“ und „Details“ klappen bis zu den Kategorien und einzelnen Darlehen auf. Jeder Abschnitt lässt sich ein- und ausklappen, auch Einnahmen und Ausgaben.

@@ -593,6 +593,16 @@ a.more { white-space:nowrap; }
 .cf-tbl tr.quiet td { font-size:12.5px; } .cf-tbl tr.quiet td:first-child { color:var(--muted); font-weight:500; }
 .cf-tbl tr.total td:first-child, .cf-tbl tr.quiet td:first-child, .cf-tbl tr.bal td:first-child, .cf-tbl tr.check td:first-child { padding-left:25px; }
 .cf-tbl .hq { font-weight:400; } .cf-tbl .nw { white-space:nowrap; }
+/* the header cell of the table: the levels over the triangles (they start where the triangles stand), the gear at its end */
+.cf-tbl thead th:first-child { padding-top:4px; padding-bottom:4px; vertical-align:middle; }
+.cf-lv { display:flex; align-items:center; gap:6px; margin-left:-3px; } .cf-lv .seg { background:var(--group); }
+.cf-lv .seg button { padding:2px 8px; font-size:11.5px; }
+.cf-lv-btn { display:none; align-items:center; gap:6px; background:none; border:0; box-shadow:none; padding:3px 4px; min-height:0; width:auto; color:var(--muted); font-size:12px; font-weight:600; }
+.cf-lv-btn i { font-style:normal; font-size:13px; color:var(--fg); display:inline-block; width:14px; text-align:center; transition:transform .15s; }
+.cf-lv-btn.lv1 i { transform:rotate(45deg); } .cf-lv-btn.lv2 i { transform:rotate(90deg); } .cf-lv-btn:hover { background:none; filter:none; color:var(--fg); }
+.cf-set { margin-left:auto; display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; color:var(--muted); }
+.cf-set:hover, .cf-set:focus-visible { color:var(--fg); background:var(--group); }
+@media (max-width:700px) { .cf-lv .seg { display:none; } .cf-lv-btn { display:inline-flex; } .toolbar .tb-sep { display:none; } }
 @media (max-width:700px) { .cf-tbl:not(.ptable) th:first-child, .cf-tbl:not(.ptable) td:first-child { width:172px; min-width:172px; max-width:172px; } }
 
 /* cash flow charts: one period row above, a wide chart over time, bar lists beside each other */

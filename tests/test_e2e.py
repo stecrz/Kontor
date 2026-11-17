@@ -2654,6 +2654,14 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("✓", pg.inner_text("tr.check"))
                 # one outline: sections open and close, positions open to their categories; three levels (overview: sections and results only)
                 self.assertEqual(pg.inner_text("#cf-ebene button.on"), "Positionen")
+                self.assertTrue(pg.query_selector("#main .cf-tbl thead th:first-child #cf-ebene"))       # in the table, over the triangles
+                self.assertTrue(pg.query_selector("#main .cf-tbl thead th:first-child a.cf-set[href='#positions']"))   # the gear to the positions
+                self.assertIsNone(pg.query_selector("#main .toolbar a[href='#positions']"))
+                # iPhone: one large triangle -- each tap a level further, after everything closed again
+                lv = lambda: pg.evaluate("S.cfEbene")
+                for want in (2, 0, 1):
+                    pg.evaluate("document.querySelector('.cf-lv-btn').click()"); pg.wait_for_timeout(250)
+                    self.assertEqual(lv(), want)
                 self.assertTrue(pg.query_selector("tr.sec[data-tog='s:Einnahmen']")); self.assertIsNone(pg.query_selector("tr.det"))
                 pg.click("button.disc[data-tog^='d:']"); pg.wait_for_selector("tr.det")                 # a position: its categories
                 pg.click("tr.sec[data-tog='s:Einnahmen'] td:first-child"); pg.wait_for_timeout(200)       # a section closes (its total stays)
@@ -3171,6 +3179,10 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(pg.query_selector("#mirrors .gk-row.invalid")); self.assertEqual(store.load("config.json").get("kontenspiegel") or [], [])
                 self.assertTrue(pg.query_selector("#mirrors .gk-row .c-rmode"))                    # its own "Buchen ab"
                 pick = """([sel, txt]) => { const s = document.querySelector(sel), o = [...s.options].find(o => o.textContent.includes(txt)); s.value = o.value; s.dispatchEvent(new Event('change', {bubbles: true})); }"""
+                # accounts of the same name name their company: in the menu and as the chosen entry
+                opts = pg.eval_on_selector_all("#mirrors .gk-row .g-a option", "e => e.map(o => o.textContent)")
+                self.assertIn("Kapitalkonto A · Alpha GbR", opts); self.assertIn("Kapitalkonto A · Beta GbR", opts)
+                self.assertIn("Immobilie Lindenstraße", opts); self.assertNotIn("Immobilie Lindenstraße · Privat", opts)    # a name of its own: as it is
                 pg.evaluate(pick, ["#mirrors .gk-row .g-a", "Immobilie Lindenstraße"]); pg.evaluate(pick, ["#mirrors .gk-row .g-b", "Immobilie Lindenstraße"])
                 pg.click("#save-rules"); pg.wait_for_timeout(300)                                  # the same account twice: said so, not saved
                 self.assertTrue(pg.query_selector("#mirrors .gk-row.invalid")); self.assertIn("dasselbe Konto", pg.inner_text("#toast"))
