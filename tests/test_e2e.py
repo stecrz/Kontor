@@ -1992,6 +1992,50 @@ class BereichOrderTests(unittest.TestCase):
         self.assertTrue(out[0]["haupt"]); self.assertEqual([b["art"] for b in out], ["privat", "privat", "gesellschaft", "gesellschaft"])
 
 
+class SecurityHttpTests(_AppBase):
+    """Over HTTP (made-up data): background requests keep no session open; a link in the receipts folder to a file elsewhere
+    is not handed out."""
+
+    def _get(self, path, background=False):
+        req = urllib.request.Request("http://127.0.0.1:%d%s" % (self.port, path))
+        if background:
+            req.add_header("X-Kontor-Background", "1")
+        try:
+            with self.opener.open(req) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    def test_background_requests_are_no_activity(self):
+        self.login()
+        tok = next(c.value for c in self.jar if c.name == "kontor_session")
+        s = self.app.sessions._s[tok]
+        s["last"] -= 600; was = s["last"]
+        self.assertEqual(self._get("/api/status", background=True), 200)
+        self.assertEqual(s["last"], was)                                  # checked, not counted as activity
+        self.assertEqual(self._get("/api/status"), 200)
+        self.assertGreater(s["last"], was)                                # a request you made: activity
+        s["last"] -= 16 * 60
+        self.assertEqual(self._get("/api/status", background=True), 401)  # idle longer than the lock: locked
+
+    def test_link_to_a_file_elsewhere_is_not_handed_out(self):
+        self.login()
+        from receipts import Belege
+        os.makedirs(self.belege, exist_ok=True)
+        secret = os.path.join(self.dir, "geheim.pdf")
+        with open(secret, "wb") as f:
+            f.write(b"%PDF-1.4 geheim")
+        os.symlink(secret, os.path.join(self.belege, "Fremd.pdf"))
+        with open(os.path.join(self.belege, "Echt.pdf"), "wb") as f:
+            f.write(b"%PDF-1.4 echt")
+        bl = Belege(self.app.store, self.app.config)
+        bl.entries().extend([{"id": "aa11bb", "pfad": "Fremd.pdf", "name": "x"}, {"id": "cc22dd", "pfad": "Echt.pdf", "name": "y"}]); bl._save()
+        self.assertEqual(self._get("/api/receipts/file?id=aa11bb"), 404)
+        self.assertEqual(self._get("/api/receipts/file?id=cc22dd"), 200)
+        code, r = self.call("/api/receipts/link", {"pfad": "Fremd.pdf"})
+        self.assertEqual(code, 400)
+
+
 class FeatureTests(_AppBase):
     """Bereiche unabhaengig von der MoneyMoney-Gruppierung, Positionen, Verlaufsquellen, inaktive Konten, Ereignisse, Immobilien, Dateiverknuepfungen."""
 
@@ -2690,6 +2734,13 @@ class BrowserTest(unittest.TestCase):
                     pg.evaluate("location.hash = '%s'" % h); pg.wait_for_timeout(400)
                     self.assertEqual(pg.evaluate("location.hash"), h); self.assertTrue(pg.query_selector("#main").inner_html().strip(), h)
                     self.assertIsNone(pg.query_selector("#main .banner.err"), h)
+                # requests the page makes on its own a minute after you last touched it say so (they keep no session open)
+                bg = []
+                pg.on("request", lambda r: bg.append(r.headers.get("x-kontor-background")) if r.url.endswith("/api/status") else None)
+                pg.evaluate("USER_ACT = Date.now() - 120000"); pg.evaluate("api('/api/status')"); pg.wait_for_timeout(200)
+                self.assertEqual(bg[-1], "1")
+                pg.mouse.move(40, 40); pg.mouse.move(60, 60); pg.evaluate("api('/api/status')"); pg.wait_for_timeout(200)
+                self.assertIsNone(bg[-1])
                 pg.evaluate("location.hash = '#overview'"); pg.wait_for_timeout(300)               # the setup in the menu only while a step is open
                 self.assertEqual(pg.evaluate("document.querySelector('#nav-setup').classList.contains('hidden')"), not pg.evaluate("setupOpen()"))
                 # Cashflow: both checks against the balance sheet, every checked month adds up (✓)

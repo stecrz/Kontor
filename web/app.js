@@ -288,10 +288,15 @@ function banner(msg, kind = '') { const b = $('#banner'); if (!msg) { b.classLis
 // Am Mac selbst gibt es keine Offline-Ansicht: der Dienst ist erreichbar oder nicht (Tests können das Gerät als "entfernt" markieren)
 let IS_LOCAL = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(location.hostname);
 try { if (localStorage.getItem('kontor.testRemote') === '1') IS_LOCAL = false; } catch (e) {}
+// the last time you touched the page: requests made later than a minute after it (status poll, progress) do not keep the
+// session open -- the idle lock comes after the set minutes even with the window open
+let USER_ACT = Date.now();
+for (const ev of ['pointerdown', 'pointermove', 'keydown', 'touchstart', 'wheel', 'dragover', 'drop']) document.addEventListener(ev, () => { USER_ACT = Date.now(); }, {passive: true, capture: true});
 async function api(path, body, method, netMode, renewed) {
   const opts = { method: method || (body === undefined ? 'GET' : 'POST'), headers: {}, credentials: 'same-origin' };
   if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   if (S.csrf) opts.headers['X-CSRF-Token'] = S.csrf;
+  if (Date.now() - USER_ACT > 60000) opts.headers['X-Kontor-Background'] = '1';      // not touched for a minute: no activity (idle lock)
   const mode = netMode || (IS_LOCAL ? 'direct' : (OFFLINE.mode && opts.method === 'GET' ? 'cache' : ''));
   if (mode) opts.headers['X-Kontor-Net'] = mode;
   let ctl = null;
@@ -312,7 +317,7 @@ async function api(path, body, method, netMode, renewed) {
     const at = r.headers.get('X-Kontor-Cached-At'); if (at) OFFLINE.stand = at;
     if (IS_LOCAL) throw new Error(t('err_dienst_antwortet_nicht'));
   } else if (OFFLINE.mode && opts.method === 'GET' && r.ok && path !== '/api/session') { OFFLINE.mode = false; OFFLINE.stand = null; offlineBanner(); }
-  if (r.status === 401 && path !== '/api/session') { S.csrf = null; if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.stand = null; checkSession(); } else showLogin(); throw new Error('nicht angemeldet'); }
+  if (r.status === 401 && path !== '/api/session') { S.csrf = null; if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.stand = null; checkSession(); } else showLogin(); const e = new Error('nicht angemeldet'); e.status = 401; throw e; }
   if (r.status === 403 && data.csrf === 'ungueltig' && !renewed) {
     // signed in again meanwhile (e.g. in another window): the token of this page is old -- take the current one, try once more
     try { const s = await fetch('/api/session', {credentials: 'same-origin'}).then(x => x.json()); if (s.angemeldet && s.csrf) { S.csrf = s.csrf; return await api(path, body, method, netMode, true); } } catch (e) {}
@@ -4806,7 +4811,7 @@ async function waitRebuild(title) {
   try {
     for (let i = 0; i < 1500; i++) {
       await new Promise(r => setTimeout(r, i < 5 ? 150 : 400));
-      let st; try { st = await api('/api/status'); } catch (e) { continue; }
+      let st; try { st = await api('/api/status'); } catch (e) { if (e.status === 401) return false; continue; }    // locked meanwhile: the sign-in, not the progress
       S.STATUS = st; const b = st.bericht || {};
       if (!b.laeuft) {
         if (b.fehler) { toast(t('auswertung_konnte_nicht_aktualisiert_w') + b.fehler, 8000); return false; }

@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import io
 import os
+import sys
 import re
 import secrets
 import zipfile
@@ -23,6 +24,20 @@ from i18n import tr
 DEFAULT_FOLDER = "~/Documents/Kontor-Belege"
 ALLOWED_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".heic", ".gif", ".txt", ".csv", ".xlsx", ".docx", ".eml", ".msg", ".zip"}
 MAX_FILE = 60 * 1024 * 1024
+
+
+FOLD_CASE = sys.platform == "darwin"      # macOS: names differing only in case are the same file
+
+
+def _canon(path: str) -> str:
+    """A path as the file system sees it, for comparing places: links followed; on macOS case folded and the data volume's
+    second name (/System/Volumes/Data/...) taken off."""
+    full = os.path.realpath(path)
+    if FOLD_CASE:
+        if full.startswith("/System/Volumes/Data/"):
+            full = full[len("/System/Volumes/Data"):]
+        full = full.lower()
+    return full
 
 
 def file_status(full: str) -> str:
@@ -119,13 +134,42 @@ class Belege:
         self._save()
         return entry
 
+    def inside(self, full: str) -> bool:
+        """Is the file really in the receipts folder -- also after following links? The folder itself may be a link (e.g. into
+        iCloud Drive); a link in it to a file elsewhere does not count (a file elsewhere: "link" at the Mac, external_ok)."""
+        root = os.path.realpath(self.folder)
+        return os.path.realpath(full).startswith(root + os.sep)
+
+    def allowed(self, e: dict) -> bool:
+        """May Kontor hand out the file of this entry (view, export)? Linked from outside: only what external_ok allows. In the
+        folder: really in it -- or, where a subfolder is a link elsewhere (e.g. into iCloud Drive), what external_ok allows
+        there. A file that is itself a link to somewhere else never counts."""
+        full = self.full_path(e)
+        if e.get("extern"):
+            return self.external_ok(full)
+        return full.startswith(os.path.normpath(self.folder) + os.sep) and (
+            self.inside(full) or (not os.path.islink(full) and self.external_ok(full)))
+
+    def deletable(self, e: dict) -> bool:
+        """May "delete with file" remove the file? Never a linked one from outside. In the folder: a file really in it -- or one
+        Kontor put there itself through a subfolder that is a link elsewhere (its name ends with the entry's id)."""
+        if e.get("extern") or not self.allowed(e):
+            return False
+        full = self.full_path(e)
+        return self.inside(full) or os.path.splitext(os.path.basename(full))[0].endswith("_" + str(e.get("id")))
+
+    def servable(self, e: dict) -> Optional[str]:
+        """Path of the entry's file if it exists and may be handed out, else None."""
+        full = self.full_path(e)
+        return full if self.allowed(e) and os.path.isfile(full) else None
+
     def link_existing(self, tx: Optional[dict], rel_path: str, notiz: str = "") -> dict:
         full = os.path.normpath(os.path.join(self.folder, rel_path))
-        if not full.startswith(os.path.normpath(self.folder) + os.sep) or not os.path.isfile(full):
+        if not full.startswith(os.path.normpath(self.folder) + os.sep) or not self.inside(full) or not os.path.isfile(full):
             raise ValueError(tr("s_datei_liegt_nicht_im_belegordner"))
         entry = {"id": secrets.token_hex(3), "tx_id": (tx or {}).get("id"), "konto": (tx or {}).get("konto"), "entitaet": (tx or {}).get("entitaet"),
                  "datum": (tx or {}).get("datum") or date.today().isoformat(), "betrag": (tx or {}).get("betrag"),
-                 "name": (tx or {}).get("name") or os.path.basename(rel_path), "pfad": rel_path.replace("\\", "/"),
+                 "name": (tx or {}).get("name") or os.path.basename(rel_path), "pfad": os.path.relpath(full, os.path.normpath(self.folder)).replace("\\", "/"),
                  "groesse": os.path.getsize(full), "hinzugefuegt": datetime.now().strftime("%Y-%m-%d %H:%M"), "notiz": notiz, "original": os.path.basename(rel_path)}
         self.entries().append(entry)
         self._save()
@@ -134,17 +178,17 @@ class Belege:
     def external_ok(self, full: str) -> bool:
         """A file outside the receipts folder that may be linked and handed out: a document type of receipts, not hidden, not
         in Kontor's data folder and not in ~/Library -- except the cloud folders there (iCloud Drive, Dropbox, OneDrive ...)."""
-        full = os.path.realpath(full)
+        full = _canon(full)
         if os.path.splitext(full)[1].lower() not in ALLOWED_EXT:
             return False
         if any(p.startswith(".") for p in full.split(os.sep) if p):
             return False
-        data = os.path.realpath(self.store.data_dir)
+        data = _canon(self.store.data_dir)
         if full == data or full.startswith(data + os.sep):
             return False
-        lib = os.path.realpath(os.path.expanduser("~/Library"))
+        lib = _canon(os.path.expanduser("~/Library"))
         if full.startswith(lib + os.sep):
-            return any(full.startswith(os.path.join(lib, c) + os.sep) for c in ("Mobile Documents", "CloudStorage"))
+            return any(full.startswith(_canon(os.path.join(lib, c)) + os.sep) for c in ("Mobile Documents", "CloudStorage"))
         return True
 
     def link_external(self, tx: Optional[dict], abs_path: str, notiz: str = "") -> dict:
@@ -175,9 +219,9 @@ class Belege:
         for e in list(self.entries()):
             if e["id"] == entry_id:
                 self.entries().remove(e)
-                if delete_file and not e.get("extern"):      # externe Dateien werden nie geloescht
+                if delete_file and self.deletable(e):
                     try:
-                        os.remove(os.path.join(self.folder, e["pfad"]))
+                        os.remove(self.full_path(e))
                     except OSError:
                         pass
                 self._save()
@@ -206,13 +250,15 @@ class Belege:
                 if fn.startswith("."):
                     continue
                 rel = os.path.relpath(os.path.join(root, fn), self.folder).replace("\\", "/")
+                if not self.inside(os.path.join(root, fn)):    # a link to a file elsewhere: not offered
+                    continue
                 out.append({"pfad": rel, "groesse": os.path.getsize(os.path.join(root, fn)), "verknuepft": rel in linked})
         out.sort(key=lambda x: x["pfad"])
         return out
 
     def check(self) -> List[str]:
         """Fehlende Dateien im Index (iCloud-Platzhalter gelten als vorhanden)."""
-        return [e["pfad"] for e in self.entries() if file_status(self.full_path(e)) == "fehlt"]
+        return [e["pfad"] for e in self.entries() if file_status(self.full_path(e)) == "fehlt" or not self.allowed(e)]
 
     # -- Export ------------------------------------------------------------
     def export_zip(self, jahr: Optional[str], entitaet: Optional[str], names: Dict[str, str]) -> str:
@@ -230,8 +276,8 @@ class Belege:
         w.writerow([tr("x_datum"), tr("x_betrag"), tr("x_name"), tr("x_konto"), tr("s_entitaet"), tr("x_datei"), tr("x_notiz"), tr("x_umsatz_id")])
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
             for e in sel:
-                full = self.full_path(e)
-                if os.path.isfile(full):
+                full = self.servable(e)
+                if full:
                     z.write(full, ("extern/" + os.path.basename(full)) if e.get("extern") else e["pfad"])
                 w.writerow([e.get("datum"), ("%.2f" % e["betrag"]).replace(".", ",") if isinstance(e.get("betrag"), (int, float)) else "",
                             e.get("name"), names.get(e.get("konto") or "", e.get("konto") or ""), names.get(e.get("entitaet") or "", ""),

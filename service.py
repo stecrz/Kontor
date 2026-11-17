@@ -1459,7 +1459,8 @@ def make_handler(app: App):
             return None
 
         def _session(self) -> Optional[dict]:
-            return app.sessions.get(self._cookie())
+            # a request the page sends without you having touched it for a minute (status poll, progress) is no activity
+            return app.sessions.get(self._cookie(), touch=self.headers.get("X-Kontor-Background") != "1")
 
         def _sec_headers(self) -> None:
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -1641,8 +1642,8 @@ def make_handler(app: App):
                 e = next((x for x in bl.entries() if x["id"] == q.get("id")), None)
                 if e is None:
                     return self._json(404, {"fehler": tr("s_beleg_nicht_im_index")})
-                full = bl.full_path(e)
-                if (not e.get("extern") and not full.startswith(os.path.normpath(bl.folder) + os.sep)) or (e.get("extern") and not bl.external_ok(full)) or not os.path.isfile(full):
+                full = bl.servable(e)
+                if not full:
                     return self._json(404, {"fehler": tr("s_datei_fehlt_oder_nicht_geladen") % e["pfad"]})
                 with open(full, "rb") as f:
                     data = f.read()

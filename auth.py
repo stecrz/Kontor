@@ -95,7 +95,9 @@ class Sessions:
             self._s[token] = s
         return s
 
-    def get(self, token: Optional[str]) -> Optional[dict]:
+    def get(self, token: Optional[str], touch: bool = True) -> Optional[dict]:
+        """The session of a token while valid. touch=False (a request the page made on its own, e.g. the status every 30 s)
+        checks it without counting as activity -- so the idle lock comes after the set minutes even with the page open."""
         if not token:
             return None
         now = time.time()
@@ -106,7 +108,8 @@ class Sessions:
             if now - s["last"] > self.idle or now - s["created"] > self.max:
                 self._s.pop(token, None)
                 return None
-            s["last"] = now
+            if touch:
+                s["last"] = now
             return s
 
     def drop(self, token: Optional[str]) -> None:

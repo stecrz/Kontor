@@ -45,4 +45,10 @@ Aktualisieren, neu einrichten und entfernen: [Updates](docs/help.de.md#updates) 
 - Regeln für Änderungen (Version, Sprache, Sicherheit): [CLAUDE.md](CLAUDE.md). Fahrplan: [ROADMAP.md](ROADMAP.md). Änderungen: [CHANGELOG.md](CHANGELOG.md).
 - Jeder Push wird automatisch getestet (GitHub Actions, Python 3.9 und neu), nachts mit 1000 Zufallsläufen der Buchungsregeln.
 
-Lizenz: CC0. Keine Gewähr, keine Steuer- oder Anlageberatung.
+## Lizenz
+
+Apache License 2.0 ([LICENSE](LICENSE), Hinweise in [NOTICE](NOTICE)): Nutzen, Ändern und Weitergeben ist erlaubt – privat wie geschäftlich –, solange der Lizenztext und die Hinweise aus NOTICE erhalten bleiben und Änderungen als solche gekennzeichnet sind. Rechte an Name und Logo gibt die Lizenz nicht. Versionen bis einschließlich 3.13.20 wurden unter CC0 veröffentlicht.
+
+Entwickelt von stecrz mit Hilfe von KI (Claude von Anthropic). Kontor ist ein unabhängiges Projekt und nicht mit der MRH applications GmbH, dem Hersteller von MoneyMoney, verbunden.
+
+Keine Gewähr, keine Steuer- oder Anlageberatung.

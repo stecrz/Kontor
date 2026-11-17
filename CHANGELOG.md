@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.13.21 (2026-11-17 21:23)
+- **Automatische Sperre wirkt auch bei offener Seite:** Nur echte Bedienung (Tippen, Klicken, Scrollen, Ablegen) hält die Anmeldung offen, die Statusabfrage im Hintergrund nicht mehr. Sitzungen auf anderen Geräten und die Grenze von 12 Stunden bleiben wie bisher.
+- **Schlüsselbund:** Antwortet er nicht oder verweigert er den Zugriff, legt Kontor keinen neuen Schlüssel an und ersetzt keinen, sondern startet nicht; eine vorhandene Schlüsseldatei, die die Daten öffnet, wird weiter genutzt. Ein neuer Schlüssel nur, wenn es wirklich keinen Eintrag gibt.
+- **Belegordner:** Verweise darin auf Dateien außerhalb werden weder angeboten noch verknüpft, angezeigt oder exportiert; Löschen trifft nie etwas außerhalb des Ordners. Ein Beleg- oder Unterordner, der selbst z. B. nach iCloud Drive zeigt, funktioniert weiter. Gesperrte Orte (Library, Datenordner) lassen sich auch mit anderer Schreibweise nicht verknüpfen.
+- **Lizenz:** Apache 2.0 statt CC0 (Versionen bis 3.13.20 bleiben CC0); Urheber und Unabhängigkeit von MoneyMoney stehen in NOTICE.
+
 ## 3.13.20 (2026-11-17 20:45)
 - **Menü neu geordnet:** „Konten & Regeln“ bündelt alles, was deine Zahlen bestimmt (Konten, Bereiche, Kontostände, Cashflow-Positionen, Buchungsregeln, Steuer). „Einstellungen“ zeigt, wie Kontor arbeitet (Allgemein, MoneyMoney & Abgleich mit der bisherigen Synchronisierung, Zugang, Belege, Updates, Sichern). Alte Lesezeichen führen an die neue Stelle.
 - **Einrichtung als geführter Weg** durch diese Seiten; sie verschwindet aus dem Menü, sobald die nötigen Schritte erledigt sind („Einrichtung prüfen“ oben rechts unter Konten & Regeln). Historische Kontostände sind optional.

@@ -47,8 +47,10 @@ def _security(args, input_text: Optional[str] = None) -> Tuple[int, str, str]:
     try:
         r = subprocess.run(["security"] + args, capture_output=True, text=True, timeout=30, input=input_text)
         return r.returncode, r.stdout, r.stderr
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+    except FileNotFoundError as e:                       # no `security` (not macOS)
         return 127, "", str(e)
+    except subprocess.TimeoutExpired as e:               # the keychain did not answer (locked, a prompt waiting): not "no keychain"
+        return 124, "", str(e)
 
 
 def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
@@ -57,8 +59,8 @@ def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
     as soon as that works (and the file removed); only if the keychain cannot be used at all, the file stays (with a warning)."""
     rc, out, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
     key_file = os.path.join(data_dir, "master.key")
-    if rc == 0 and len(out.strip()) == 64:
-        kc = bytes.fromhex(out.strip())
+    kc = _hex_key(out) if rc == 0 else None
+    if kc:
         if os.path.exists(key_file):
             # a key file besides the keychain entry: the one that opens the data stays (in the keychain), the file goes
             fk = _read_key_file(key_file)
@@ -74,6 +76,16 @@ def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
         return kc, "schluesselbund"
     if rc == 127:   # kein `security` (nicht macOS)
         return _file_key(key_file), "datei"
+    if rc != 44:
+        # only 44 means "no entry". Anything else -- no answer in time (124), access refused, locked, an entry with unexpected
+        # content: its key is unknown, so no new one is made and none replaced. Only a key file that opens the data already
+        # there is used; otherwise Kontor stops (and starts again once the keychain answers).
+        old = _read_key_file(key_file)
+        if old and _opens(old, data_dir):
+            log.warning("Keychain did not give the key (code %s) -- the existing key file that opens the data is used this time", rc)
+            return old, "datei"
+        log.error("Keychain did not give the key (code %s) -- no key created; Kontor stops.", rc)
+        raise StoreError(tr("s_schluesselbund_antwortet_nicht" if rc == 124 else "s_schluesselbund_nicht_nutzbar"))
     # Schluesselbund vorhanden, aber kein Eintrag: der Schluessel einer frueheren Ausweichdatei (sonst ein neuer) kommt hinein
     old = _read_key_file(key_file)
     key = old or secrets.token_bytes(32)
@@ -92,6 +104,15 @@ def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
         raise StoreError(tr("s_schluesselbund_nicht_nutzbar"))
     log.warning("Keychain not usable (%s) -- the existing key file is used until the keychain works (less protected).", err.strip()[:120])
     return old, "datei"
+
+
+def _hex_key(text: str) -> Optional[bytes]:
+    """The 32-byte key the keychain holds (64 hex digits) -- None for anything else."""
+    try:
+        raw = text.strip()
+        return bytes.fromhex(raw) if len(raw) == 64 else None
+    except ValueError:
+        return None
 
 
 def _opens(key: bytes, data_dir: str) -> bool:
