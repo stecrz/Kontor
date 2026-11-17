@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.13.9 (2026-11-17 04:21)
+- **Sync** lädt die offene Seite neu, sobald sich etwas geändert hat.
+- **Speichern scheitert nicht mehr an gelöschten Konten:** Einstellungen zu Konten, die es in MoneyMoney nicht mehr gibt, entfallen von selbst; bei einem Fehler stehen nur noch die Probleme da, nicht mehr jede geprüfte Zeile.
+- **Kategorien in MoneyMoney umgeräumt** (umbenannt, verschoben, gelöscht, Umsätze umgehängt): Kontor liest dann alle Umsätze neu, deine Cashflow-Position bleibt bei der Kategorie.
+- **Zuordnen:** Umbuchungen innerhalb eines Bereichs stehen nicht mehr in der Liste (auch mit Gegenbuchung von Hand in einem manuellen Konto) – sie brauchen keine Kategorie. Jeder Umsatz mit Konto, ganzem Verwendungszweck und Buchungstext. Der Knopf „Umbuchung“ entfällt.
+- **Zahlungen zwischen deinen Bereichen**, mit denen du etwas bezahlst (Gehalt aus der eigenen GmbH, Miete an die eigene GbR), zählen in ihrer Position statt als Einlage oder Entnahme – nach der Kategorie, ohne Kategorie nach dem Verwendungszweck.
+- Cashflow-Positionen: je Kategorie ein Name („Raumkosten“ bei Kategorien einer Gesellschaft, sonst „Wohnen“); „Zielkonto“ erklärt.
+
 ## 3.13.8 (2026-11-14 19:48)
 - **Cashflow, Planung und Bilanz öffnen sofort** (vorher 1–2 Sekunden bei langer Historie): Die Monatsansicht zeigt das laufende und die zwei Jahre davor; „‹ Jahr“ oben links holt frühere Monate dazu, „Jahre“ zeigt alle.
 - „Arbeit“ heißt jetzt **Arbeitseinkommen** (Gehalt, Tantieme, Bonus, Honorare); Planeinstellungen bleiben erhalten.

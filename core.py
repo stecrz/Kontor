@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyNotRunning
-from model import Account, Ledger, Tx, accounts_from_export, add_months, canon_tag, fmt_eur, marks_in, month_key, tx_from_export, norm_cat
+from model import UUID_RE, Account, Ledger, Tx, accounts_from_export, add_months, canon_tag, fmt_eur, marks_in, month_key, tx_from_export, norm_cat
 import mm_categories
 import realestate
 import categorize
@@ -240,6 +240,66 @@ INCREMENT_DAYS = 30          # quick read: only the last 30 days of transactions
 RECHECK_HOURS = 12           # a balance the quick read cannot explain triggers a full read at most this often
 
 
+def recategorized(base: Ledger, fresh: List[Tx]) -> int:
+    """Transactions of the quick read that changed from one category to another in MoneyMoney (not: got their first one). You
+    are rearranging categories there -- older transactions may have moved as well, so everything is read."""
+    def cat(path: Optional[str]) -> str:
+        p = norm_cat(path or "")
+        return "" if p in categorize.STANDARD else p            # MoneyMoney's default category counts as none
+    old = {t.id: cat(t.mm_category_path if t.mm_category_path is not None else t.category_path) for t in base.txs if t.id > 0}
+    n = 0
+    for t in fresh:
+        was = old.get(t.id)
+        if was and was != cat(t.category_path):
+            n += 1
+    return n
+
+
+def category_tree(categories: Optional[List[dict]]) -> set:
+    """MoneyMoney's categories as a set of (id, path): differs when one was added, deleted, renamed or moved."""
+    return {(str(c.get("uuid") or ""), norm_cat(str(c.get("path") or c.get("name") or ""))) for c in categories or []}
+
+
+def follow_categories(config: dict, old: Optional[List[dict]], new: Optional[List[dict]]) -> Optional[dict]:
+    """A category renamed, moved or deleted in MoneyMoney: what you set for it in Kontor follows (cash flow position, target
+    account, a property's category) or goes with it. Returns the changed settings, or None when nothing changed. Only with both
+    lists known and ids in them (never guesses by name)."""
+    was = {str(c.get("uuid")): norm_cat(str(c.get("path") or c.get("name") or "")) for c in old or [] if c.get("uuid")}
+    now = {str(c.get("uuid")): norm_cat(str(c.get("path") or c.get("name") or "")) for c in new or [] if c.get("uuid")}
+    if not was or not now:
+        return None
+    moved = {p: now[u] for u, p in was.items() if u in now and now[u] != p and p}
+    vanished = {p for u, p in was.items() if u not in now and p}
+    if len(vanished) > max(3, len(was) // 2):          # another set of categories altogether (another database): keep everything
+        return None
+    # deleted: its entry goes -- unless a new category has its name (deleted and made again); one renamed into the name wins
+    gone = {p for p in vanished if p not in set(now.values()) or p in set(moved.values())}
+    if not moved and not gone:
+        return None
+    cfg = copy.deepcopy(config)
+    kf = cfg.setdefault("kapitalfluss", {})
+    changed = False
+    for key in ("positionen", "kategorie_zu_konto"):
+        out, follow = {}, {}
+        for k, v in (kf.get(key) or {}).items():
+            p = norm_cat(str(k))
+            if p in moved:
+                changed = True
+                follow[moved[p]] = v
+            elif p in gone:
+                changed = True
+            else:
+                out[k] = v
+        out.update(follow)
+        kf[key] = out
+    for im in cfg.get("immobilien") or []:
+        p = norm_cat(str(im.get("kategorie") or "")) if isinstance(im, dict) else ""
+        if p and p in moved:
+            im["kategorie"] = moved[p].replace(" / ", "\\")
+            changed = True
+    return cfg if changed else None
+
+
 def unexplained_balances(base: Ledger, accounts: Dict[str, Account], fresh: List[Tx], cut: date) -> List[str]:
     """Accounts whose balance changed by more than the transactions since `cut` explain: something older than `cut` changed
     in MoneyMoney (a late booking with an old date, an edited or deleted transaction). Portfolios are skipped (their value
@@ -330,6 +390,16 @@ def fetch(bridge: Bridge, config: dict, today: date, with_portfolio: bool = Fals
         elif bad:
             log.info("Quick read does not explain the balance of %d account(s); last full read %s, next one later",
                      len(bad), base.full_at.strftime("%Y-%m-%d %H:%M"))
+    if inc:
+        moved = recategorized(base, txs)
+        if moved:
+            log.info("%d transaction(s) moved to another category in MoneyMoney -- reading all transactions", moved)
+            step("transactions")
+            raw = bridge.export_transactions(since)
+            step("parse")
+            txs = tx_from_export(raw)
+            del raw
+            n_read, inc = len(txs), None
     if inc:
         txs = _base_txs(base, accounts, {t.id for t in txs}, inc, txs) + txs
         # the accounts the booking rules read or book are always read in full: the rules never plan on an older state of them
@@ -641,6 +711,13 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
             add("ok", "%s → %s" % (label, a.path))
         return a
 
+    def setting(label, r, **kw):
+        """A setting kept per account (position, history, shown/hidden): an account deleted in MoneyMoney is no finding --
+        the entry is ignored and goes with the next save (prune_account_settings)."""
+        if account_deleted(ledger, r):
+            return None
+        return ref(label, r, **kw)
+
     def cat(label, name):
         name = name.replace(" / ", "\\") if name else name                # paths as Kontor's pages write them ("A / B")
         if name and categories and name not in cat_names and name.split("\\")[-1] not in cat_names:
@@ -728,18 +805,18 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
                 add("fehler", tr("s_konto_s_mehrfach_ziel") % (a.path, used[a.uuid], n))
             used.setdefault(a.uuid, n)
     for r in bil.get("illiquide_konten") or []:
-        ref(tr("s_chk_bilanz_illiquide"), r)
+        setting(tr("s_chk_bilanz_illiquide"), r)
     for k, v in (bil.get("rollen") or {}).items():
         if not k.startswith("_"):
-            ref(tr("s_position_fuer"), k)
+            setting(tr("s_position_fuer"), k)
             if v not in ROLES:
                 add("fehler", tr("s_unbekannte_position_s_fuer_s") % (v, k))
     for k, v in (bil.get("verlauf") or {}).items():
-        ref(tr("s_verlauf_fuer"), k, group_ok=False)
+        setting(tr("s_verlauf_fuer"), k, group_ok=False)
         if v not in ("umsaetze", "stand"):
             add("fehler", tr("s_unbekannte_verlaufsquelle_s_fuer_s") % (v, k))
     for k in (bil.get("ausgeblendet") or []) + (bil.get("immer_anzeigen") or []):
-        ref(tr("s_chk_bilanz_anzeige"), k)
+        setting(tr("s_chk_bilanz_anzeige"), k)
     for im in config.get("immobilien") or []:
         n = im.get("name") or "?"
         if im.get("objekt_konto"):
@@ -752,13 +829,11 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         if im.get("kategorie"):
             cat("Immobilie %s" % n, str(im["kategorie"]).split("\\")[-1])
     kfc = config.get("kapitalfluss", {}) or {}
-    for k, v in (kfc.get("positionen") or {}).items():
-        cat(tr("s_chk_kf_zuordnung"), k)
+    for k, v in (kfc.get("positionen") or {}).items():      # a category gone in MoneyMoney: its entry is ignored (no finding)
         if v not in POS and v != "umbuchung":
             add("fehler", tr("s_kapitalfluss_zuordnung_s_s_unbekannt") % (k, v))
     for k, v in (kfc.get("kategorie_zu_konto") or {}).items():
         if not k.startswith("_"):
-            cat(tr("s_chk_kf_depotzuordnung"), k)
             ref(tr("s_kapitalfluss_depot_fuer_s") % k, v, group_ok=False)
     st = config.get("steuer", {}) or {}
     for k, v in (st.get("objekt_darlehen") or {}).items():
@@ -938,14 +1013,18 @@ def compact_transactions(ledger: Ledger, bereiche: List[dict], store: Optional[S
             ent_of.setdefault(a.uuid, b["id"])
     out = []
     kat = categorize.load(store) if store is not None else categorize.empty()
+    skip = categorize.transfers(ledger, ent_of)
     for t in ledger.txs:
         if t.account_uuid not in ent_of:
             continue
         path, q = categorize.effective(kat, t)
-        out.append({"id": t.id, "konto": t.account_uuid, "konto_name": ledger.accounts[t.account_uuid].name, "entitaet": ent_of[t.account_uuid],
-                    "datum": t.booking_date.isoformat(), "betrag": t.amount, "name": t.name[:80], "zweck": t.purpose[:140],
-                    "kategorie": path, "quelle": q, "gebucht": t.booked, "haken": t.checkmark,
-                    "braucht": categorize.needs_category(t, banks)})
+        row = {"id": t.id, "konto": t.account_uuid, "konto_name": ledger.accounts[t.account_uuid].name, "entitaet": ent_of[t.account_uuid],
+               "datum": t.booking_date.isoformat(), "betrag": t.amount, "name": t.name[:80], "zweck": t.purpose[:140],
+               "kategorie": path, "quelle": q, "gebucht": t.booked, "haken": t.checkmark,
+               "braucht": categorize.needs_category(t, banks)}
+        if t.id in skip:
+            row["umbuchung"] = True                    # between your accounts: counts as a transfer, no category needed
+        out.append(row)
     out.sort(key=lambda x: (x["datum"], x["id"]), reverse=True)
     return out
 
@@ -1105,19 +1184,62 @@ def prepare_categories(store: Store, ledger: Ledger, config: dict, categories: O
     return kat
 
 
+def account_deleted(ledger: Ledger, r) -> bool:
+    """A reference "id | name" whose account is gone in MoneyMoney (the id unknown, the name not found either). A name alone
+    that is unknown or ambiguous is not that: it stays a finding."""
+    head = str(r or "").split("|", 1)[0].strip()
+    if not UUID_RE.match(head) or head.lower() in {u.lower() for u in ledger.accounts}:
+        return False
+    try:
+        ledger.resolve(str(r))
+        return False
+    except KeyError:
+        return True
+
+
+def prune_account_settings(config: dict, ledger: Optional[Ledger]) -> dict:
+    """Settings kept per account (position, history, shown/hidden, illiquid) of accounts that no longer exist in MoneyMoney
+    are dropped -- nothing you could correct, and they must not stand in the way of saving something else."""
+    if ledger is None or not ledger.accounts:
+        return config
+    cfg = copy.deepcopy(config)
+    bil = cfg.get("bilanz")
+    if not isinstance(bil, dict):
+        return cfg
+
+    def known(r) -> bool:
+        return not account_deleted(ledger, r)
+    roles = [k for k in (bil.get("rollen") or {}) if not str(k).startswith("_")] if isinstance(bil.get("rollen"), dict) else []
+    lost = sum(1 for k in roles if not known(k))
+    if lost > max(3, len(roles) // 2):                 # other accounts altogether (another database open): nothing is dropped
+        return config
+    for key in ("rollen", "verlauf"):
+        if isinstance(bil.get(key), dict):
+            bil[key] = {k: v for k, v in bil[key].items() if str(k).startswith("_") or known(k)}
+    for key in ("illiquide_konten", "ausgeblendet", "immer_anzeigen"):
+        if isinstance(bil.get(key), list):
+            bil[key] = [r for r in bil[key] if known(r)]
+    return cfg
+
+
 def positions_overview(ledger: Ledger, config: dict, categories: List[dict], today: date) -> dict:
     """Kategorien -> Cashflow-Positionen: each of MoneyMoney's categories with bookings in your areas (in MoneyMoney's order):
     bookings, sum of the last 12 months, Kontor's proposal, what you chose, the property it belongs to, the account saving goes
     into, transfer category."""
     from report import POSITIONS, category_totals, propose_position, transfer_check
-    keep = {a.uuid for b in bereiche_for(ledger, config) for a in b["leaves"]}
+    bereiche = bereiche_for(ledger, config)
+    keep = {a.uuid for b in bereiche for a in b["leaves"]}
+    firm = {a.uuid for b in bereiche if b.get("art") == "gesellschaft" for a in b["leaves"]}
     since = (today.replace(day=28) if today.month == 2 and today.day == 29 else today).replace(year=today.year - 1) + timedelta(days=1)
     count: Counter = Counter()
+    in_firm: Counter = Counter()                          # bookings in a company's accounts (its names for the positions)
     year: Dict[str, float] = defaultdict(float)
     for t in ledger.txs:
         p = norm_cat(t.category_path)
         if t.booked and p and p not in categorize.STANDARD and t.account_uuid in keep:
             count[p] += 1
+            if t.account_uuid in firm:
+                in_firm[p] += 1
             if since <= t.booking_date <= today:
                 year[p] += t.amount
     used = set()
@@ -1147,7 +1269,8 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
         out.append({"pfad": p, "name": p.split(" / ")[-1], "ebene": p.count(" / "), "anzahl": count.get(p, 0),
                     "anzahl_alle": sum(count[q] for q in sub), "summe_12m": round(sum(year.get(q, 0.0) for q in sub), 2),
                     "vorschlag": prop,
-                    "eigene": mine.get(p), "konto": konto.get(p) or "", "objekt": obj})
+                    "eigene": mine.get(p), "konto": konto.get(p) or "", "objekt": obj,
+                    "gesellschaft": 2 * sum(in_firm[q] for q in sub) > sum(count[q] for q in sub)})
     return {"kategorien": out, "positionen": [[k, sec] for k, sec, _ in POSITIONS], "umbuchung": list(kf.get("umbuchungs_kategorien") or ["Umbuchung"])}
 
 
@@ -1321,6 +1444,11 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
             log.debug("Area %s: %d months (%s to %s), %d accounts, %d inactive, %d warning(s)", str(bid)[:8],
                       len(ds["monate"]), ds["monate"][0] if ds["monate"] else "-", ds["monate"][-1] if ds["monate"] else "-",
                       sum(1 for r in ds["bilanz"]["zeilen"] if not r["gruppe"]), len(ds.get("konten_inaktiv") or []), len(ds.get("warnungen") or []))
+    # bank bookings that are transfers (no category needed): within an area, or paired by the cash flow just built
+    area_of = {a.uuid: str(b["id"]) for b in bereiche for a in b["leaves"]}
+    if isinstance(getattr(ledger, "_paired", None), dict):
+        ledger._paired = {k: v for k, v in ledger._paired.items() if k in {str(b["id"]) for b in bereiche}}     # areas that still exist
+    transfer_sig = hash(frozenset(categorize.transfers(ledger, area_of)))
     dataset = {
         "erstellt": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "heute": today.isoformat(),
@@ -1338,14 +1466,14 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "immobilien": immobilien,
         "budgets": budgets,
         "warnungen": warnings,
-        "kategorien": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles)))),
-                                                                                  lambda: categorize.stats(kat, ledger, bank_accounts(roles))))[1],
+        "kategorien": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig),
+                                                                                  lambda: categorize.stats(kat, ledger, bank_accounts(roles), area_of)))[1],
                            positionen=len(my_positions(config))),
         "konten_neu": neu,
     }
     step(0.88, "Speichern")
     store.save("dataset.json", dataset)
-    sig = (ledger._kat_sig, _bereiche_sig(bereiche), tuple(sorted(bank_accounts(roles))))
+    sig = (ledger._kat_sig, _bereiche_sig(bereiche), tuple(sorted(bank_accounts(roles))), transfer_sig)
     cached = getattr(ledger, "_ums_cache", None)
     if cached and cached[0] == sig and store.exists("transactions.json"):
         ums = cached[1]                # Umsatzliste unveraendert (z. B. nur Verlauf geaendert) -> nicht neu schreiben
@@ -1449,9 +1577,6 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         t_start = time.time()
         prefetched = ledger is not None
         try:
-            if not prefetched:
-                step("lesen", 0, 0)
-                ledger = fetch(bridge, config, today, with_portfolio=with_report, base=base, full=full)
             if categories is None and prefetched:
                 categories = state.get("kategorien_roh") or []
             elif categories is None:
@@ -1459,6 +1584,13 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                     categories = mm_categories.with_paths(bridge.export_categories())
                 except MoneyMoneyError:
                     categories = state.get("kategorien_roh") or []
+            if not prefetched:
+                step("lesen", 0, 0)
+                # a category added, deleted, renamed or moved in MoneyMoney: older transactions may carry another one now
+                if not full and state.get("kategorien_roh") and category_tree(categories) != category_tree(mm_categories.with_paths(state["kategorien_roh"])):
+                    log.info("Categories changed in MoneyMoney -- reading all transactions")
+                    full = True
+                ledger = fetch(bridge, config, today, with_portfolio=with_report, base=base, full=full)
         except MoneyMoneyError as e:
             txt = unavailable_text(e)
             if txt:

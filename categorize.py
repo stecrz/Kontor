@@ -250,14 +250,33 @@ def needs_category(t: Tx, banks: Optional[set]) -> bool:
     return t.booked and t.id > 0 and (banks is None or t.account_uuid in banks) and not has_mark(t.purpose)
 
 
+def transfers(ledger: Ledger, area_of: Optional[Dict[str, str]] = None) -> set:
+    """Bank bookings that are a transfer whatever their category, so none is needed: the other side is another account of the
+    same area (counter IBAN), or the cash flow found the counter-booking (e.g. entered by hand in a manual account; set when
+    the report is built, report.build_dataset). A payment between two of your areas is not among them: a category says
+    whether it is a salary or rent, or a contribution or withdrawal. area_of: account -> area (None: areas unknown, then only
+    what the cash flow paired)."""
+    ids: set = set()
+    if area_of:
+        own = ledger.own_ibans()
+        for t in ledger.txs:
+            p = own.get(t.counter_iban) if t.counter_iban else None
+            if p is not None and p != t.account_uuid and area_of.get(p) is not None and area_of.get(p) == area_of.get(t.account_uuid):
+                ids.add(t.id)
+    for part in (getattr(ledger, "_paired", None) or {}).values():
+        ids |= part
+    return ids
+
+
 def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Optional[int] = None, bereich: Optional[str] = None,
                min_betrag: float = 0.0, limit: int = 400, banks: Optional[set] = None) -> Dict[str, Any]:
     """Transactions without a category (in MoneyMoney, nothing waiting), grouped by counterparty, with a suggestion.
-    banks: the accounts a category matters for (bank accounts); None: all."""
+    banks: the accounts a category matters for (bank accounts); None: all. Transfers between your accounts are left out."""
     groups: Dict[str, dict] = {}
     total = 0
+    skip = transfers(ledger, bereich_of)
     for t in ledger.txs:
-        if not needs_category(t, banks):
+        if not needs_category(t, banks) or t.id in skip:
             continue
         path, q = effective(d, t)
         if path:
@@ -285,8 +304,8 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
             g["konten"].append(acc)
         g["von"] = min(g["von"], t.booking_date.isoformat()); g["bis"] = max(g["bis"], t.booking_date.isoformat())
         if len(g["umsaetze"]) < 300:                # the transactions of the group: choose some of them (e.g. a shop that sells many things)
-            g["umsaetze"].append({"id": t.id, "datum": t.booking_date.isoformat(), "betrag": t.amount, "zweck": t.purpose[:120], "konto": acc,
-                                  "vorschlag": r["kategorie"] if r else None})
+            g["umsaetze"].append({"id": t.id, "datum": t.booking_date.isoformat(), "betrag": t.amount, "name": t.name[:80], "zweck": t.purpose[:400],
+                                  "art": t.booking_text[:60], "konto": acc, "vorschlag": r["kategorie"] if r else None})
     out = sorted(groups.values(), key=lambda g: (-abs(g["summe"]), -g["anzahl"]))
     for g in out:
         g["umsaetze"].sort(key=lambda u: (u["datum"], u["id"]), reverse=True)
@@ -297,13 +316,16 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
     return {"offen": total, "gruppen": out[:limit], "gruppen_gesamt": len(out)}
 
 
-def stats(d: dict, ledger: Ledger, banks: Optional[set] = None) -> Dict[str, Any]:
+def stats(d: dict, ledger: Ledger, banks: Optional[set] = None, area_of: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     c: Counter = Counter()
     years: Dict[int, Counter] = defaultdict(Counter)
+    skip = transfers(ledger, area_of)
     for t in ledger.txs:
         if not needs_category(t, banks):
             continue
         path, q = effective(d, t)
+        if not path and t.id in skip:                  # a transfer between your accounts: no category needed
+            continue
         k = q or "ohne"
         c[k] += 1
         years[t.booking_date.year][k] += 1

@@ -109,6 +109,7 @@ const H = {
   update_quelle: t('update_quelle_tip'),
   pruefen: t('pruefen_tip'),
   position_kat: t('position_kat_tip'),
+  zielkonto: t('zielkonto_tip'),
   voll_lesen: t('voll_lesen_tip'),
   kennung: t('interne_kennung_des_bereichs_wird'),
   intervall: t('der_dienst_liest_alle_n'),
@@ -165,7 +166,7 @@ const H = {
 };
 const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   konten_zuordnung: 'accounts', inaktiv: 'accounts', verlauf_kurz: 'history', verlauf: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
-  zuordnen: 'categories', regeln_mm: 'categories-rules', mm_cat: 'categories-write-back', position_kat: 'categories-positions',
+  zuordnen: 'categories', regeln_mm: 'categories-rules', mm_cat: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'categories-positions',
   abgleich: 'sync', ab_art: 'sync', voll_lesen: 'sync', monate_zurueck: 'sync', abruf: 'sync', intervall: 'sync',
   bch: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', probelauf: 'rules', regel_darlehen_h: 'rules-loans', regel_gesellschaften_h: 'rules-companies',
   darlehen_iban: 'rules-loans', darlehen_konto: 'rules-loans', darlehen_quelle: 'rules-loans', zinsmodell: 'rules-loans', satz: 'rules-loans', basis_override: 'rules-loans',
@@ -501,7 +502,7 @@ $('#touchid-btn').addEventListener('click', () => tryTouchId(false));
 $('#lang-sel').addEventListener('change', e => setLang(e.target.value, true));
 $('#pw-instead').addEventListener('click', () => { LOGIN.pw = true; showLogin(); });
 $('#tid-instead').addEventListener('click', () => { LOGIN.pw = false; showLogin(); });
-$('#sync-btn').addEventListener('click', () => syncNow());
+$('#sync-btn').addEventListener('click', () => syncNow(false, true));
 $('.side .brand').addEventListener('click', e => { location.hash = e.target.closest('#ver') ? '#updates' : '#overview'; });
 async function lockNow() { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; OFFKEY = null; TID.skipNext = true; await checkSession(); }
 $('#lock-btn').addEventListener('click', lockNow);
@@ -615,21 +616,22 @@ const BER = {stand: '', timer: null};
 const SYNC = {busy: false};
 const MMH = {busy: false};
 const DATA_TABS = ['overview', 'balance', 'cashflow', 'planning', 'tax', 'properties', 'transactions', 'categories', 'bookings'];
-async function pollStatus() {
+async function pollStatus(all) {
   // Status holen; läuft ein Abgleich oder Berichtsneubau, öfter nachsehen und nach Abschluss die Daten frisch laden
+  // all (after "Sync"): the open page is drawn again whatever it is, not only the pages with figures
   S.STATUS = await api('/api/status'); statusMini();
   if (checkVersion(S.STATUS.version)) return;
   if (S.STATUS.neustart_ausstehend) { clearTimeout(BER.timer); BER.timer = setTimeout(() => pollStatus().catch(() => waitAndReload(true)), 3000); return; }
   const b = S.STATUS.bericht || {};
   clearTimeout(BER.timer);
-  if (b.laeuft || (S.STATUS.dienst || {}).laeuft) { BER.timer = setTimeout(() => pollStatus().catch(() => {}), 3000); return; }
+  if (b.laeuft || (S.STATUS.dienst || {}).laeuft) { BER.timer = setTimeout(() => pollStatus(all).catch(() => {}), 3000); return; }
   if ((b.stand || '') !== BER.stand) {
     BER.stand = b.stand || '';
     if (b.fehler) { toast(t('auswertung_konnte_nicht_aktualisiert_w') + b.fehler, 6000); return; }
     await loadAll();
     const dr = $('#drawer');
     if (dr.classList.contains('open') && HD.uuid && $('#hq-seg', dr)) { if (!HD.live && !$$('#h-grid input:not(.auto)', dr).some(i => i.value !== i.defaultValue)) { try { await openHistDrawer(HD.uuid); } catch (e) {} } }
-    else if (DATA_TABS.includes(S.tab) && !dr.classList.contains('open')) route();
+    else if ((DATA_TABS.includes(S.tab) || all) && !dr.classList.contains('open') && !DIRTY.on) route();
     toastQuiet(t('auswertung_aktualisiert'));
   }
 }
@@ -3471,7 +3473,7 @@ async function saveConfig(cfg, findingsEl, trotzdem) {
     S.STATUS = await api('/api/status'); statusMini();
     return true;
   } catch (e) {
-    if (e.data && e.data.befunde) { showFindings(findingsEl, e.data.befunde, t('nicht_gespeichert_fehler_beheben_oder'), 'fehler'); findingsEl.insertAdjacentHTML('beforeend', '<div class="actions"><button id="save-anyway" class="danger small">Trotzdem speichern</button></div>'); $('#save-anyway').addEventListener('click', () => saveConfig(cfg, findingsEl, true)); }
+    if (e.data && e.data.befunde) { showFindings(findingsEl, e.data.befunde.filter(f => f.stufe !== 'ok'), t('nicht_gespeichert_fehler_beheben_oder'), 'fehler'); findingsEl.insertAdjacentHTML('beforeend', `<div class="actions"><button id="save-anyway" class="danger small">${t('trotzdem_speichern')}</button></div>`); $('#save-anyway').addEventListener('click', () => saveConfig(cfg, findingsEl, true)); }
     else toast(t('fehler_3') + e.message, 5000);
     return false;
   }
@@ -3490,24 +3492,24 @@ async function vKategorien() {
 // Cashflow-Positionen: Kontor's fixed outline; each of MoneyMoney's categories counts in one position (Kontor proposes by
 // name, a choice counts for the categories below it too). A property's categories have their own rows.
 const POS_SEC = {Einnahmen: 'einnahmen', Ausgaben: 'ausgaben', Investitionen: 'sek_investitionen', Finanzierung: 'finanzierung'};
-const posLabel = k => t(`pos_${k}`) + (k === 'wohnen' ? ' · ' + t('pos_wohnen_g') : '');   // in a company: Raumkosten
+const posLabel = (k, firma) => t(firma && k === 'wohnen' ? 'pos_wohnen_g' : `pos_${k}`);   // one name: a company's where the category is a company's
 const OBJ_OUT = ['anlegen', 'tilgung', 'zinsen', 'ignorieren'];            // pos_<key>: every position has its text (tests: Positions)
 async function vPositionen() {
   const d = KZ.pos = await api('/api/categories/positions');
   if (!d.kategorien.length) return `<div class="card"><div class="d">${esc(d.hinweis || t('noch_keine_kategorien_geladen_abgleich'))}</div></div>`;
   const secs = []; for (const [k, sec] of d.positionen) { if (k === 'ignorieren') continue; let g = secs.find(x => x[0] === sec); if (!g) secs.push(g = [sec, []]); g[1].push(k); }
-  const opts = sel => `<option value=""></option>` + secs.map(([sec, ks]) => `<optgroup label="${esc(t(POS_SEC[sec] || sec))}">${ks.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('')}</optgroup>`).join('')
+  const opts = (sel, firma) => `<option value=""></option>` + secs.map(([sec, ks]) => `<optgroup label="${esc(t(POS_SEC[sec] || sec))}">${ks.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k, firma))}</option>`).join('')}</optgroup>`).join('')
     + `<optgroup label="${esc(t('sonstiges'))}">${['umbuchung', 'ignorieren'].map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('')}</optgroup>`;
   // a property's categories have its own rows (rent, costs); only saving, financing or leaving out takes them elsewhere
   const objOpts = sel => `<option value=""></option>` + OBJ_OUT.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('');
   let h = `<div class="toolbar"><span class="sp"></span><button id="kp-save" disabled>${t('speichern')}</button></div>
-    <div class="wrap auto"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')}</th></tr></thead><tbody>`;
+    <div class="wrap auto"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')} ${hq('zielkonto')}</th></tr></thead><tbody>`;
   d.kategorien.forEach((r, i) => {
     const parent = (d.kategorien[i + 1] || {}).ebene > r.ebene, own = r.eigene || '';
-    h += `<tr data-p="${esc(r.pfad)}" data-v="${esc(r.vorschlag)}" data-init="${esc(own)}" data-konto="${esc(r.konto)}" data-own="${r.anzahl ? 1 : 0}"><td style="padding-left:${10 + 18 * r.ebene}px">${parent ? `<b>${esc(r.name)}</b>` : esc(r.name)}</td>
+    h += `<tr data-p="${esc(r.pfad)}" data-v="${esc(r.vorschlag)}" data-init="${esc(own)}" data-konto="${esc(r.konto)}" data-own="${r.anzahl ? 1 : 0}" data-firma="${r.gesellschaft ? 1 : ''}"><td style="padding-left:${10 + 18 * r.ebene}px">${parent ? `<b>${esc(r.name)}</b>` : esc(r.name)}</td>
       <td class="num small kp-n">${r.anzahl_alle || ''}</td><td class="num small kp-n ${r.summe_12m < 0 ? 'neg' : ''}">${r.summe_12m ? F0(r.summe_12m) : ''}</td>
-      <td><select class="kp-pos"${r.objekt ? ` data-obj="${esc(r.objekt)}"` : ''}>${r.objekt ? objOpts(own) : opts(own)}</select></td>
-      <td><select class="kp-konto">${acctOptions(r.konto, k => !k.gruppe && (k.depot || k.rolle === 'anlagen' || k.rolle === 'liquiditaet'))}</select></td></tr>`;
+      <td><select class="kp-pos"${r.objekt ? ` data-obj="${esc(r.objekt)}"` : ''}>${r.objekt ? objOpts(own) : opts(own, r.gesellschaft)}</select></td>
+      <td><select class="kp-konto">${acctOptions(r.konto, k => !k.gruppe && (k.depot || k.rolle === 'anlagen' || k.rolle === 'liquiditaet')).replace(t('waehlen'), t('automatisch'))}</select></td></tr>`;
   });
   return h + '</tbody></table></div>';
 }
@@ -3527,7 +3529,7 @@ function bindPositionen(main) {
       // a property's category leaves its rows for interest or a repayment, or for saving or leaving out that you chose
       if (sel.dataset.obj && !(['tilgung', 'zinsen'].includes(a) || (inherited(r) && OBJ_OUT.includes(a)))) a = '';
       const eff = own(r) || a;
-      sel.options[0].textContent = sel.dataset.obj && !a ? t('automatisch_0', t('immobilie_0', sel.dataset.obj)) : a ? t('automatisch_0', posLabel(a)) : t('automatisch_unter');
+      sel.options[0].textContent = sel.dataset.obj && !a ? t('automatisch_0', t('immobilie_0', sel.dataset.obj)) : a ? t('automatisch_0', posLabel(a, r.dataset.firma)) : t('automatisch_unter');
       r.classList.toggle('kp-own', !!own(r));
       const k = $('.kp-konto', r); k.classList.toggle('hidden', eff !== 'anlegen');      // counts for the categories below it too
     });
@@ -3613,9 +3615,10 @@ async function vZuordnen() {
     h += `<div class="item kz-group" data-key="${esc(g.key)}"><div class="grow">
       <div class="row tight"><b style="min-width:220px">${esc(g.name)}</b><span class="small muted">${esc(g.konten.join(', '))}${g.iban ? ' · ' + esc(g.iban) : ''}</span><span class="tag kz-count">${n < g.anzahl ? n + ' / ' : ''}${g.anzahl}×</span><span class="num ${g.summe < 0 ? 'neg' : 'pos'}" style="font-weight:600">${F(g.summe)} €</span><span class="small muted">${FD(g.von)}${g.von !== g.bis ? ' – ' + FD(g.bis) : ''}</span><button class="ghost small kz-toggle" aria-expanded="${open ? 'true' : 'false'}">${open ? t('umsaetze_zu') : t('umsaetze_auf')}</button></div>
 
+      ${g.anzahl === 1 && g.umsaetze[0] ? `<div class="small muted kz-one">${esc(g.umsaetze[0].zweck || '')}${g.umsaetze[0].art ? ` <span class="tag">${esc(g.umsaetze[0].art)}</span>` : ''}</div>` : ''}
       <div class="row tight"><input type="text" class="kz-kat" list="kz-kats" value="${esc(g.vorschlag || '')}" placeholder="${t('kategorie_aus_moneymoney')}" style="min-width:300px" ${can ? '' : 'disabled'}>${g.vorschlag ? `<span class="tag tipped" tabindex="0" data-tip="${esc(t('vorschlag_tip'))}">${t('vorschlag_tag')}</span>` : Object.keys(g.vorschlaege).length ? `<span class="tag tipped" tabindex="0" data-tip="${esc(t('vorschlaege_je_umsatz_tip'))}">${t('vorschlaege_je_umsatz')}</span>` : ''}
-        <button class="small kz-save" ${can && n ? '' : 'disabled'}>${n < g.anzahl ? tn('n_zuordnen', n, n) : t('zuordnen')}</button><button class="small secondary kz-umb" title="${t('uebertrag_zwischen_eigenen_konten')}" ${can ? '' : 'disabled'}>${t('tag_umbuchung')}</button></div>
-      ${open ? `<div class="kz-tx-wrap"><table class="plain small kz-tx"><thead><tr><th><input type="checkbox" class="kz-all" ${aus.size ? '' : 'checked'} aria-label="${t('alle_2')}"></th><th>${t('datum')}</th><th class="num">${t('betrag')}</th><th>${t('zweck')}</th>${g.konten.length > 1 ? `<th>${t('konto_2')}</th>` : ''}${mixed ? `<th>${t('vorschlag_tag')}</th>` : ''}</tr></thead><tbody>${g.umsaetze.map(u => `<tr><td><input type="checkbox" class="kz-sel" data-id="${u.id}" ${aus.has(u.id) ? '' : 'checked'}></td><td style="white-space:nowrap">${FD(u.datum)}</td><td class="num ${u.betrag < 0 ? 'neg' : 'pos'}">${F(u.betrag)}</td><td class="muted">${esc(u.zweck || '–')}</td>${g.konten.length > 1 ? `<td class="muted">${esc(u.konto)}</td>` : ''}${mixed ? `<td class="muted">${esc(u.vorschlag || '–')}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : ''}</div></div>`;
+        <button class="small kz-save" ${can && n ? '' : 'disabled'}>${n < g.anzahl ? tn('n_zuordnen', n, n) : t('zuordnen')}</button></div>
+      ${open ? `<div class="kz-tx-wrap"><table class="plain small kz-tx"><thead><tr><th><input type="checkbox" class="kz-all" ${aus.size ? '' : 'checked'} aria-label="${t('alle_2')}"></th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('zweck')}</th><th class="num">${t('betrag')}</th>${mixed ? `<th>${t('vorschlag_tag')}</th>` : ''}</tr></thead><tbody>${g.umsaetze.map(u => `<tr><td><input type="checkbox" class="kz-sel" data-id="${u.id}" ${aus.has(u.id) ? '' : 'checked'}></td><td style="white-space:nowrap">${FD(u.datum)}</td><td style="white-space:nowrap">${esc(u.konto)}</td><td class="kz-zweck">${u.name && u.name !== g.name ? `<b>${esc(u.name)}</b> ` : ''}${esc(u.zweck || '–')}${u.art ? ` <span class="tag">${esc(u.art)}</span>` : ''}</td><td class="num ${u.betrag < 0 ? 'neg' : 'pos'}">${F(u.betrag)}</td>${mixed ? `<td class="muted">${esc(u.vorschlag || '–')}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : ''}</div></div>`;
   }
   return h + '</div>';
 }
@@ -3656,7 +3659,6 @@ function bindZuordnen(main) {
     } catch (e) { toast(e.message, 6000); }
   };
   $$('.kz-save', main).forEach(b => b.addEventListener('click', e => { const box = e.target.closest('.kz-group'); assign(box, $('.kz-kat', box).value.trim()); }));
-  $$('.kz-umb', main).forEach(b => b.addEventListener('click', e => { const box = e.target.closest('.kz-group'); assign(box, ((S.CFG.kapitalfluss || {}).umbuchungs_kategorien || ['Umbuchung'])[0]); }));
   $$('.kz-kat', main).forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') { const box = e.target.closest('.kz-group'); assign(box, e.target.value.trim()); } }));
   const all = $('#kz-alle', main); if (all) all.addEventListener('click', async () => {
     // alle Vorschläge auf einmal, je Umsatz sein eigener Vorschlag (dieselben Prüfungen wie einzeln); Abgewähltes bleibt
@@ -4506,7 +4508,8 @@ async function plan(body) {
   try { await api('/api/plan', Object.assign({bereich: S.bereich}, body)); S.DATA = await api('/api/dataset'); route(); toast(t('plan_gespeichert')); }
   catch (e) { toast(t('fehler_3') + e.message, 4000); }
 }
-async function syncNow(voll) {
+async function syncNow(voll, page) {
+  // page: asked for by you (the Sync button): the open page is drawn again when something changed
   // Wie der automatische Abgleich, nur sofort: MoneyMoney lesen, Regeln anwenden (Testmodus laut Einstellung), Auswertung bauen.
   // voll: read all transactions instead of only the last 30 days
   if (SYNC.busy) return;
@@ -4522,8 +4525,15 @@ async function syncNow(voll) {
       : r.status === 'ok' ? t('synchronisiert') + (r.gebucht ? ' – ' + r.gebucht + ' ' + t('gebucht') : '') + (r.probelauf && n ? ' – ' + n + t('buchungsvorschlaege_testmodus') : '') + ((r.warnungen || []).length ? ' – ' + r.warnungen.length + t('hinweise_unter_buchungen') : '')
       : (r.text || r.fehler || t('synchronisiert'));
     toast(msg, r.status === 'nicht_verfuegbar' || r.status === 'fehler' ? 7000 : 4500);
-    if (S.tab === 'bookings' || S.tab === 'sync') route();          // what is new for these is there now
-    pollStatus().catch(() => {});                                    // the figures follow: loaded once the report is rebuilt
+    // the open page shows the new state: at once (accounts, categories and settings may have changed), and again once the
+    // report is rebuilt (pollStatus) -- unless you are in the middle of changing something on it
+    const changed = !!page && r.status === 'ok' && !DIRTY.on;
+    if (changed) {
+      const [cfg, konten, kats] = await Promise.all([api('/api/config'), api('/api/accounts'), api('/api/categories')]);
+      S.CFG = cfg; S.KONTEN = konten.konten || []; S.KATS = kats.kategorien || [];
+      if (!$('#drawer').classList.contains('open')) route();
+    } else if (S.tab === 'bookings' || S.tab === 'sync') route();
+    pollStatus(changed).catch(() => {});                             // the figures follow: loaded once the report is rebuilt
   } catch (e) { toast(t('synchronisieren_fehlgeschlagen') + e.message, 6000); }
   finally { SYNC.busy = false; statusMini(); }
 }

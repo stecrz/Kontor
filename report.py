@@ -831,9 +831,10 @@ def fold_text(s: str) -> str:
     return (s or "").lower().replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
 
 
-def guess_position(t: Tx, company: bool) -> Optional[str]:
-    """Kontor's estimate for a booking without a category, by the words in its name, purpose and booking text (or None)."""
-    name = fold_text(t.name)
+def guess_position(t: Tx, company: bool, by_name: bool = True) -> Optional[str]:
+    """Kontor's estimate for a booking without a category, by the words in its name, purpose and booking text (or None).
+    by_name=False: the name says nothing (the other side is one of your own areas) -- purpose and booking text only."""
+    name = fold_text(t.name) if by_name else ""
     text = name + " " + fold_text(t.purpose + " " + t.booking_text)
     if _TAX_OFFICE.search(name):
         if _WAGE_TAX.search(text):
@@ -851,6 +852,11 @@ def guess_position(t: Tx, company: bool) -> Optional[str]:
 
 def propose_position(path: str, income: bool) -> str:
     """Kontor's proposal for a category (by its words); income: its money mostly comes in."""
+    return recognised_position(path, income) or ("sonstige_einnahmen" if income else "sonstige_ausgaben")
+
+
+def recognised_position(path: str, income: bool) -> Optional[str]:
+    """The position a category's words name -- None when none of them is known (then it is "other" income or expenses)."""
     low = fold_text(path)
     name = low.split(" / ")[-1]
     for text in (name, low):
@@ -866,7 +872,7 @@ def propose_position(path: str, income: bool) -> str:
         for words, pin, pout in POSITION_HINTS:
             if _has(words, text):
                 return pin if income else pout
-    return "sonstige_einnahmen" if income else "sonstige_ausgaben"
+    return None
 
 
 def category_totals(ledger: Ledger) -> Dict[str, float]:
@@ -992,6 +998,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     mate, partner, by_cat = pair_transfers(ledger, in_root, flows, roles, is_transfer, cost_words, kf, pairable)
     pairs: List[Tuple[date, date, float, str, str]] = []
     seen_pair: Set[int] = set()
+    paired: Set[int] = set()
 
     def own_row(t: Tx, acc: Account, role: str, mk: str) -> None:
         """A booking of an account that is no bank account (loan, receivable, asset): interest or a change of its value."""
@@ -1015,6 +1022,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         o = mate.get(t.id)
         if o is not None and month_key(o.booking_date) != mk and "liquiditaet" not in (role, roles.get(o.account_uuid)):
             o = None                                     # e.g. loan and asset a month apart: no money in transit
+        if o is not None and role == "liquiditaet":
+            paired.add(t.id)                             # one side of a transfer: needs no category
         if o is not None and o.id not in seen_pair:
             seen_pair.update({t.id, o.id})
             if month_key(o.booking_date) != mk:                   # over a month end: money in transit
@@ -1062,6 +1071,20 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             continue
         pa = areas.get(p) if p is not None else None
         same = pa is not None and pa == self_name
+        guess = None
+        if p is not None and not same and (pa is not None or p in beteiligungs_gruppen) and not by_cat[t.id]:
+            # between two of your areas, but paid for something (a salary, rent): it counts in the position you chose for its
+            # category or its name clearly says (not "other") -- without a category by the words of its purpose (estimated).
+            # Everything else between areas is a contribution or withdrawal.
+            c0 = norm_cat(t.category_path)
+            if c0:
+                g0, yours = position_of(c0, config, totals)
+                if not yours:
+                    g0 = recognised_position(c0, totals.get(c0, 0.0) > 0)
+            else:
+                g0 = guess_position(t, company, by_name=False)
+            if g0 in POS and POS[g0][0] in ("Einnahmen", "Ausgaben"):
+                p, guess = None, (None if c0 else g0)
         if p is not None and roles.get(p) == "eigenkapital" and (same or pa is None):
             R.add("Finanzierung", "Gesellschafter", "Einlagen/Entnahmen Gesellschafter", mk, t.amount, art="extern", nw=True,
                   lbl=("cf_einlagen_gesellschafter",), glbl=("cf_gesellschafter",))
@@ -1095,7 +1118,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         sec = "Einnahmen" if t.amount > 0 else "Ausgaben"
         cat = norm_cat(t.category_path)
         mine = bool(cat)
-        if not cat and learned:
+        if not cat and learned and guess is None:
             hit = suggest_category(learned, t)
             cat = norm_cat(hit["kategorie"]) if hit else ""
             if cat and is_transfer(cat):                 # learned from transfers: no estimate (a counterpart was not found)
@@ -1104,7 +1127,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         if cat:
             pos, obj = place(cat)
         else:
-            pos, obj = guess_position(t, company), None
+            pos, obj = guess or guess_position(t, company), None
             if pos == "wohnen" and company and objekte and t.amount < 0:    # a landlord: costs of the building
                 pos = "objektkosten"
         # an estimate only ever counts as income or expense (or interest) -- never as saving, repayment, transfer or left out
@@ -1150,6 +1173,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     if unclear:
         warnings.append(tr("s_d_umbuchung_en_ohne_erkennbaren") % unclear)
     R.pairs = pairs
+    R.paired = paired
     R.reasons = {"ignoriert": dict(ignored), "ohne_ziel": dict(no_target)}
     return R, inbound, warnings
 
@@ -1270,6 +1294,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         if len(cache) > 24:
             cache.clear()
         cache[ckey] = copy.deepcopy((R, inbound, warn_c))
+    # bank bookings that are one side of a transfer in this area (Kategorien -> Zuordnen leaves them out)
+    ledger.__dict__.setdefault("_paired", {})[str(bereich.get("id"))] = set(getattr(R, "paired", ()) or ())
     step(0.85, tr("x_bilanz"))
     inactive, inactive_auto = inactive_accounts(ledger, leaves, hist, mkeys, config, today, state.get("konten_seit"))
     limits = activity_limits(ledger, leaves, hist, mkeys, today, state.get("konten_seit"))

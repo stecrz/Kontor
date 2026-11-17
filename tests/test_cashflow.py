@@ -165,6 +165,54 @@ class CashflowCases(Reconciles):
         for ds in data.values():
             self.assertNotIn("Ausgaben", [s["name"] for s in ds["kapitalfluss"]["sektionen"] if s["zeilen"] and s["name"] != "Einnahmen"])
 
+    def test_between_areas_paid_for_something_counts_by_category(self):
+        # a salary from your own company, rent to your own partnership: income and expense, not a contribution or withdrawal
+        data = build([(1, "kk", date(2026, 2, 3), -4000.0, {"iban": "DE11", "name": "Inhaber", "purpose": "Gehalt Februar"}),
+                      (2, "giro", date(2026, 2, 3), 4000.0, {"iban": "DE21", "cat": "Gehalt"}),
+                      (3, "giro", date(2026, 2, 5), -900.0, {"iban": "DE21", "cat": "Wohnen\\Miete"}),
+                      (4, "kk", date(2026, 2, 5), 900.0, {"iban": "DE11", "purpose": "Miete Februar"}),
+                      (5, "giro", date(2026, 2, 7), -500.0, {"iban": "DE21", "purpose": "Einlage"}),
+                      (6, "kk", date(2026, 2, 7), 500.0, {"iban": "DE11", "purpose": "Einlage"}),
+                      (7, "giro", date(2026, 2, 9), -50.0, {"iban": "DE21", "cat": "Umbuchung"}),
+                      (8, "kk", date(2026, 2, 9), 50.0, {"iban": "DE11", "cat": "Umbuchung"})])
+        self.assertAddsUp(data)
+        p, g = rows(data["Privat"]), rows(data["Muster GbR"])
+        self.assertEqual((p["Arbeitseinkommen"]["werte"]["2026-02"], p["Wohnen"]["werte"]["2026-02"]), (4000.0, -900.0))
+        self.assertEqual(p["Einlage/Entnahme Muster GbR"]["werte"]["2026-02"], -550.0)          # only what was paid for nothing
+        self.assertEqual((g["Personal"]["werte"]["2026-02"], g["Vermietung"]["werte"]["2026-02"]), (-4000.0, 900.0))   # by its words (estimated)
+        self.assertEqual(g["Personal"]["details"][0]["kategorie"], "")
+        self.assertEqual(g["Einlagen/Entnahmen Gesellschafter"]["werte"]["2026-02"], 550.0)
+        # a category that does not clearly name income or an expense ("Einlage", anything unknown), and the name of your own
+        # company ("Zahnarztpraxis", "Hotel"), change nothing: a contribution or withdrawal -- unless you chose a position
+        txs = [(1, "giro", date(2026, 2, 3), -10000.0, {"iban": "DE21", "cat": "Einlage", "name": "Hotel Muster GbR"}),
+               (2, "kk", date(2026, 2, 3), 10000.0, {"iban": "DE11", "cat": "Privat\\Entnahmen und Einlagen", "name": "Zahnarzt"}),
+               (3, "kk", date(2026, 2, 5), -5000.0, {"iban": "DE11", "name": "Zahnarztpraxis Inhaber"}),
+               (4, "giro", date(2026, 2, 5), 5000.0, {"iban": "DE21", "name": "Hotel Muster GbR"})]
+        data = build(txs)
+        self.assertAddsUp(data)
+        p, g = rows(data["Privat"]), rows(data["Muster GbR"])
+        self.assertEqual(p["Einlage/Entnahme Muster GbR"]["werte"]["2026-02"], -5000.0)
+        self.assertEqual(g["Einlagen/Entnahmen Gesellschafter"]["werte"]["2026-02"], 5000.0)
+        self.assertFalse({"Sonstige Ausgaben", "Sonstige Einnahmen", "Erstattungen", "Freizeit & Reisen"} & (set(p) | set(g)))
+        data = build(txs, {"kapitalfluss": {"positionen": {"Einlage": "sonstige_ausgaben"}}})
+        self.assertEqual(rows(data["Privat"])["Sonstige Ausgaben"]["werte"]["2026-02"], -10000.0)
+
+    def test_transfers_need_no_category(self):
+        import categorize as C
+        txs = [(1, "giro", date(2026, 2, 3), -200.0, {"iban": "DE12"}), (2, "tg", date(2026, 2, 3), 200.0, {"iban": "DE11"}),
+               (3, "giro", date(2026, 2, 5), -700.0, {"name": "Freund"}), (4, "ford", date(2026, 2, 6), 700.0, {"name": "Freund"}),
+               (5, "giro", date(2026, 2, 8), -30.0, {"name": "Laden"})]
+        txs += [(6, "giro", date(2026, 2, 9), -400.0, {"iban": "DE21"}), (7, "kk", date(2026, 2, 9), 400.0, {"iban": "DE11"})]   # to another area
+        led = make_ledger(txs)
+        datasets(led)                                                        # the report finds the counter-booking in the manual account
+        banks = {k for k, v in ACCOUNTS.items() if v[2] == "liquiditaet"}
+        area_of = {k: v[1] for k, v in ACCOUNTS.items()}
+        off = C.open_items(C.empty(), led, area_of, banks=banks)
+        # between two areas a category matters (salary or contribution?): those stay in the list
+        self.assertEqual(sorted(i for g in off["gruppen"] for i in g["ids"]), [5, 6, 7])
+        self.assertEqual(C.stats(C.empty(), led, banks, area_of)["gesamt"], {"ohne": 3})
+        self.assertEqual({u["konto"] for g in off["gruppen"] for u in g["umsaetze"]}, {"Giro", "Kontokorrent"})
+
     def test_offline_booking_paired_by_amount(self):
         # a loan to a friend: paid from the bank account, booked by hand in the offline receivable two days later
         data = build([(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}),

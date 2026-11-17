@@ -43,7 +43,7 @@ import categorize
 import updates
 from receipts import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (REPORT_LOCK, RUN_LOCK, positions_overview, save_positions, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, fix_start_dates, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+from core import (REPORT_LOCK, RUN_LOCK, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, fix_start_dates, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, migrate_booking_state, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
@@ -308,10 +308,26 @@ class App:
                 log.warning("MoneyMoney data not cached: %s", e)
         threading.Thread(target=work, name="kontor-cache-save", daemon=True).start()
 
+    def take_categories(self, cats: list) -> bool:
+        """MoneyMoney's categories as just read. True when the tree changed (one added, deleted, renamed, moved): the list the
+        next read compares with is stored -- also when nothing else changed -- and what you set for a category follows it."""
+        old = self.categories_raw
+        self.categories_raw = cats
+        if category_tree(old) == category_tree(cats):
+            return False
+        self.store.update("state.json", lambda st: st.__setitem__("kategorien_roh", cats), {})
+        cfg = follow_categories(self.config, old, cats)
+        if cfg is not None:
+            self.save_config(cfg)
+            log.info("Categories changed in MoneyMoney: settings followed")
+        return bool(old)
+
     def set_ledger(self, ledger: Ledger, reuse: bool = False) -> None:
         """Neuen MoneyMoney-Stand uebernehmen. reuse=True: sind die Daten unveraendert, bleibt der bisherige Stand mit seinen
         Zwischenergebnissen (Kategorien, Zahlungsstroeme) in Gebrauch -- nur der Lesezeitpunkt wird aktualisiert."""
         old = self.ledger
+        if old is not None and old is not ledger and getattr(old, "_paired", None) and not getattr(ledger, "_paired", None):
+            ledger._paired = dict(old._paired)             # Kategorien -> Zuordnen: transfers stay out until the report is rebuilt
         if reuse and old is not None and old is not ledger:
             try:
                 same = self.ledger_cache_fp is not None and ledger_fp(ledger) == self.ledger_cache_fp
@@ -639,15 +655,15 @@ class App:
             self.lesen.update(schritt=name, seit=now)
         try:
             b = self.bridge_factory(True)
-            ledger = fetch(b, self.config, date.today(), with_portfolio=True, progress=step, base=self.ledger,
-                           full=self.full_read_due() if full is None else full)
-            log.info("MoneyMoney read (%.1f s)", time.time() - t0)
             step("categories")
-            try:
-                self.categories_raw = mm_categories.with_paths(b.export_categories())
-                self.store.update("state.json", lambda st: st.__setitem__("kategorien_roh", self.categories_raw), {})
+            moved = False
+            try:                                      # first: a changed category tree means older transactions are read again
+                moved = self.take_categories(mm_categories.with_paths(b.export_categories()))
             except MoneyMoneyError:
                 pass
+            ledger = fetch(b, self.config, date.today(), with_portfolio=True, progress=step, base=self.ledger,
+                           full=True if moved else (self.full_read_due() if full is None else full))
+            log.info("MoneyMoney read (%.1f s)", time.time() - t0)
             step("save")
             self.set_ledger(ledger, reuse=True)
             self._baseline(ledger)
@@ -692,7 +708,7 @@ class App:
                 self.set_ledger(ledger, reuse=res.get("status") == "unveraendert")
                 self._baseline(ledger)
             if cats:
-                self.categories_raw = cats
+                self.take_categories(cats)
             if res.get("status") in ("ok", "fehler") and with_report:
                 self.request_rebuild(tr("s_nach_freigabe" if approve is not None else "s_nach_abgleich"))   # the figures follow
             self.last_result = res
@@ -1744,7 +1760,7 @@ def make_handler(app: App):
                     continue
                 if q.get("entity") and t["entitaet"] != q["entity"]:
                     continue
-                if q.get("uncategorized") == "1" and (t["kategorie"] or not t.get("braucht", True)):
+                if q.get("uncategorized") == "1" and (t["kategorie"] or not t.get("braucht", True) or t.get("umbuchung")):
                     continue
                 if q.get("without_receipt") == "1" and counts.get(t["id"]):
                     continue
@@ -1913,6 +1929,7 @@ def make_handler(app: App):
                     return self._json(400, {"fehler": tr("s_port_ungueltig")})
                 if new_port != int(old_ui.get("port") or 8765) and not port_free(new_port):
                     return self._json(409, {"fehler": tr("s_port_belegt", new_port)})
+                cfg = prune_account_settings(cfg, app.ledger)        # entries of accounts deleted in MoneyMoney go
                 findings = check_config(app.ledger, app.categories_raw, merged_config(cfg)) if app.ledger is not None else []
                 if any(f["stufe"] == "fehler" for f in findings) and not body.get("trotzdem"):
                     return self._json(409, {"fehler": tr("s_konfiguration_hat_fehler"), "befunde": findings})

@@ -766,6 +766,78 @@ class IncrementalReadTests(unittest.TestCase):
         self.assertIn(late["id"], {t.id for t in r.txs})
 
 
+    def test_categories_rearranged_in_moneymoney(self):
+        """Moved to another category, a category renamed or deleted in MoneyMoney: everything is read again and what you set
+        for the category in Kontor follows."""
+        from datetime import datetime as dt
+        full = core.fetch(MockBridge(True), self.cfg, TODAY)
+        full.full_at = dt.now() - timedelta(hours=1)
+        recent = [t for t in MockBridge.state["txs"] if t.get("categoryPath") and mm_bridge.local_date(t["bookingDate"]) >= TODAY - timedelta(days=20)]
+        fresh = [t for t in recent if not t.get("x")][:1]
+        self.assertTrue(fresh)
+        # the first category of one that had none: the quick read is enough
+        blank = [t for t in MockBridge.state["txs"] if not t.get("categoryPath") and mm_bridge.local_date(t["bookingDate"]) >= TODAY - timedelta(days=20)]
+        if blank:
+            blank[0]["categoryPath"] = blank[0]["category"] = "Lebensmittel"
+            self.assertTrue(core.fetch(MockBridge(True), self.cfg, TODAY, base=full, full=False).incremental)
+        # moved from one category to another: older ones may have moved as well
+        fresh[0]["categoryPath"] = fresh[0]["category"] = "Lebensmittel" if fresh[0]["categoryPath"] != "Lebensmittel" else "Zinsen"
+        self.assertFalse(core.fetch(MockBridge(True), self.cfg, TODAY, base=full, full=False).incremental)
+        # the tree: ids decide (never names)
+        old = [{"uuid": "1", "path": "Einkommen"}, {"uuid": "2", "path": "Einkommen\\Lohn"}, {"uuid": "3", "path": "Sparen"}, {"uuid": "4", "path": "Alt"}]
+        new = [{"uuid": "1", "path": "Einnahmen"}, {"uuid": "2", "path": "Einnahmen\\Gehalt"}, {"uuid": "3", "path": "Sparen"}]
+        self.assertNotEqual(core.category_tree(old), core.category_tree(new)); self.assertEqual(core.category_tree(old), core.category_tree(copy.deepcopy(old)))
+        cfg = {"kapitalfluss": {"positionen": {"Einkommen / Lohn": "arbeit", "Alt": "ignorieren", "Sparen": "anlegen"},
+                                "kategorie_zu_konto": {"Alt": "x", "Sparen": "y"}},
+               "immobilien": [{"name": "Haus", "kategorie": "Einkommen\\Lohn"}]}
+        got = core.follow_categories(cfg, old, new)
+        self.assertEqual(got["kapitalfluss"]["positionen"], {"Einnahmen / Gehalt": "arbeit", "Sparen": "anlegen"})
+        self.assertEqual(got["kapitalfluss"]["kategorie_zu_konto"], {"Sparen": "y"})
+        self.assertEqual(got["immobilien"][0]["kategorie"], "Einnahmen\\Gehalt")
+        self.assertIsNone(core.follow_categories(cfg, old, copy.deepcopy(old)))
+        self.assertIsNone(core.follow_categories(cfg, [], new))                           # nothing to compare with: nothing changes
+        # one deleted, another renamed into its name: the renamed one's choice counts; deleted and made again: its choice stays
+        old = [{"uuid": "1", "path": "Essen"}, {"uuid": "2", "path": "Lebensmittel"}, {"uuid": "3", "path": "A"}, {"uuid": "4", "path": "B"}, {"uuid": "5", "path": "C"}]
+        cfg = {"kapitalfluss": {"positionen": {"Essen": "lebenshaltung", "Lebensmittel": "ignorieren", "C": "freizeit"}}}
+        got = core.follow_categories(cfg, old, [{"uuid": "1", "path": "Lebensmittel"}, {"uuid": "3", "path": "A"}, {"uuid": "4", "path": "B"}, {"uuid": "9", "path": "C"}])
+        self.assertEqual(got["kapitalfluss"]["positionen"], {"Lebensmittel": "lebenshaltung", "C": "freizeit"})
+        # another set of categories altogether (another database opened in MoneyMoney): nothing is dropped
+        self.assertIsNone(core.follow_categories(cfg, old, [{"uuid": "x%d" % i, "path": "Neu %d" % i} for i in range(6)]))
+        # MoneyMoney's default category counts as none: its first real category is no move
+        import categorize
+        std, categorize.STANDARD = categorize.STANDARD, {"Unkategorisiert"}
+        try:
+            base = core.fetch(MockBridge(True), self.cfg, TODAY)
+            t0 = next(t for t in base.txs if t.id > 0)
+            t0.category_path = t0.mm_category_path = "Unkategorisiert"
+            import dataclasses
+            self.assertEqual(core.recategorized(base, [dataclasses.replace(t0, category_path="Lebensmittel")]), 0)
+            t0.category_path = t0.mm_category_path = "Zinsen"
+            self.assertEqual(core.recategorized(base, [dataclasses.replace(t0, category_path="Lebensmittel")]), 1)
+        finally:
+            categorize.STANDARD = std
+
+    def test_settings_of_deleted_accounts_go(self):
+        led = core.fetch(MockBridge(True), self.cfg, TODAY)
+        cfg = copy.deepcopy(self.cfg)
+        gone = "0d8ae4d1-0000-4000-8000-000000000000 | Gibt es nicht mehr"
+        bil = cfg.setdefault("bilanz", {})
+        bil.setdefault("rollen", {})[gone] = "beteiligungen"; bil.setdefault("verlauf", {})[gone] = "stand"
+        bil["ausgeblendet"] = [gone]
+        n = len(bil["rollen"])
+        self.assertFalse([f for f in core.check_config(led, [], core.merged_config(cfg)) if f["stufe"] == "fehler"])     # no finding ...
+        out = core.prune_account_settings(cfg, led)
+        self.assertEqual((len(out["bilanz"]["rollen"]), gone in out["bilanz"]["verlauf"], out["bilanz"]["ausgeblendet"]), (n - 1, False, []))   # ... and gone with the next save
+        self.assertEqual(core.prune_account_settings(cfg, None), cfg)
+        # a name alone that is unknown stays a finding (nothing says the account was deleted); many gone at once: another
+        # database is open -- nothing is dropped
+        cfg2 = copy.deepcopy(self.cfg); cfg2.setdefault("bilanz", {}).setdefault("rollen", {})["Konto das es nie gab"] = "sonstiges"
+        self.assertTrue([f for f in core.check_config(led, [], core.merged_config(cfg2)) if f["stufe"] == "fehler"])
+        self.assertIn("Konto das es nie gab", core.prune_account_settings(cfg2, led)["bilanz"]["rollen"])
+        cfg3 = {"bilanz": {"rollen": {"%08d-0000-4000-8000-000000000000 | X%d" % (i, i): "sonstiges" for i in range(8)}}}
+        self.assertEqual(core.prune_account_settings(cfg3, led), cfg3)
+
+
 class _AppBase(unittest.TestCase):
     """Gemeinsamer Aufbau: Dienst auf freiem Port, Cookie-Jar, CSRF."""
 
@@ -2088,6 +2160,45 @@ class FeatureTests(_AppBase):
         code, r = self.call("/api/file/choose", {"art": "datei"})
         self.assertIn(code, (400, 403))
 
+
+    def test_category_renamed_in_moneymoney(self):
+        """Renamed in MoneyMoney: your cash flow position follows -- also when "check" (not a sync) reads the new names first --
+        and all transactions are read again."""
+        self.login(); self.run_and_wait()
+        cfg = copy.deepcopy(self.app.config); cfg["kapitalfluss"]["positionen"] = {"Einnahmen / Gehalt": "sonstige_einnahmen"}; self.app.save_config(cfg)
+        orig = MockBridge.export_categories
+
+        def renamed(b):
+            out = orig(b)
+            for c in out:
+                if c["name"] == "Gehalt":
+                    c["name"] = "Lohn"
+            return out
+        MockBridge.export_categories = renamed
+        try:
+            for t in MockBridge.state["txs"]:
+                if t.get("categoryPath") == "Einnahmen\\Gehalt":
+                    t["categoryPath"], t["category"] = "Einnahmen\\Lohn", "Lohn"
+            code, r = self.call("/api/check", {})
+            self.assertEqual(code, 200)
+            self.assertEqual(self.app.config["kapitalfluss"]["positionen"], {"Einnahmen / Lohn": "sonstige_einnahmen"})
+            self.assertFalse(self.app.ledger.incremental)                                   # everything read again
+            self.assertFalse([t for t in self.app.ledger.txs if t.category_path == "Einnahmen\\Gehalt"])
+            self.assertEqual({c["name"] for c in self.store.load("state.json")["kategorien_roh"]} & {"Lohn", "Gehalt"}, {"Lohn"})
+        finally:
+            MockBridge.export_categories = orig
+
+    def test_saving_with_a_deleted_account(self):
+        """An account deleted in MoneyMoney still has a position in the settings: saving something else works, the entry goes."""
+        self.login(); self.run_and_wait()
+        code, cfg = self.call("/api/config")
+        gone = "0d8ae4d1-0000-4000-8000-000000000000 | Gibt es nicht mehr"
+        cfg["bilanz"].setdefault("rollen", {})[gone] = "beteiligungen"; cfg["bilanz"].setdefault("verlauf", {})[gone] = "stand"
+        self.app.save_config(cfg)
+        code, cfg = self.call("/api/config"); self.assertIn(gone, cfg["bilanz"]["rollen"])
+        code, r = self.call("/api/config", {"config": cfg}, method="PUT")
+        self.assertEqual(code, 200, r)
+        self.assertNotIn(gone, r["config"]["bilanz"]["rollen"]); self.assertNotIn(gone, r["config"]["bilanz"]["verlauf"])
 
     def test_kontor_kategorien_und_konten_zuordnung(self):
         import mm_categories
