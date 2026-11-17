@@ -1167,6 +1167,7 @@ def compact_transactions(ledger: Ledger, bereiche: List[dict], store: Optional[S
     out = []
     kat = categorize.load(store) if store is not None else categorize.empty()
     skip = categorize.transfers(ledger, ent_of)
+    own = ledger.own_ibans()
     for t in ledger.txs:
         if t.account_uuid not in ent_of:
             continue
@@ -1177,6 +1178,10 @@ def compact_transactions(ledger: Ledger, bereiche: List[dict], store: Optional[S
                "braucht": categorize.needs_category(t, banks)}
         if t.id in skip:
             row["umbuchung"] = True                    # between your accounts: counts as a transfer, no category needed
+        else:
+            p = own.get(t.counter_iban) if t.counter_iban else None
+            if p is not None and ent_of.get(p) is not None and ent_of.get(p) != ent_of[t.account_uuid]:
+                row["andere_bereich"] = True           # to or from another of your areas (without a category: a contribution or withdrawal)
         out.append(row)
     out.sort(key=lambda x: (x["datum"], x["id"]), reverse=True)
     return out

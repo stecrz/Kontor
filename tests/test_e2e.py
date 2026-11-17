@@ -1150,6 +1150,12 @@ class AppTests(_AppBase):
         got = self.call("/api/transactions?limit=5000&categories=%s&from=%s&to=%s" % (q, von, bis))[1]["umsaetze"]
         want = [x["id"] for x in alle if x["kategorie"] and (x["kategorie"].replace(" › ", " / ") + " / ").startswith(top + " / ")]
         self.assertEqual(sorted(x["id"] for x in got), sorted(want))
+        # the total of a heat map row: also those without a category -- but not a payment between two of your areas (a contribution)
+        got = self.call("/api/transactions?limit=5000&with_uncategorized=1&categories=%s&from=%s&to=%s" % (q, von, bis))[1]["umsaetze"]
+        none = [x["id"] for x in alle if not x["kategorie"] and x.get("braucht", True) and not x.get("umbuchung") and not x.get("andere_bereich")]
+        self.assertTrue(none); self.assertEqual(sorted(x["id"] for x in got), sorted(want + none))
+        self.assertTrue([x for x in alle if x.get("andere_bereich")])
+        self.assertFalse([x for x in got if x.get("andere_bereich") and not x["kategorie"]])
         self.assertFalse(self.call("/api/transactions?categories=%s" % urllib.parse.quote(json.dumps(["Gibt es nicht"])))[1]["umsaetze"])
         self.assertEqual(self.call("/api/transactions?categories=kaputt")[0], 200)
         m = mit[0]["datum"][:7]
@@ -1794,9 +1800,15 @@ class AppTests(_AppBase):
         import service as MS
         for was in ("cashflow", "planning"):
             names = [str(r[0]).strip() for r in MS.export_sheets(self.app, was, None, "months")[0].rows if r and r[0]]      # the table (first sheet)
-            for want in ("Überschuss", "Einnahmen", "Investitionen", "Finanzierung", "Veränderung Bankguthaben", "Abgleich mit der Bilanz", "Veränderung Nettovermögen"):
+            for want in ("Überschuss", "Einnahmen", "Investitionen", "Finanzierung", "Veränderung Bankguthaben", "Abgleich mit der Bilanz", "Umschichtungen", "Veränderung Nettovermögen"):
                 self.assertIn(want, names, was)
-            self.assertFalse([n for n in names if "_" in n or "Umschichtung" in n], was)
+            self.assertFalse([n for n in names if "_" in n or ("Umschichtung" in n and n != "Umschichtungen")], was)
+        # the rows add up: change in cash + moves between accounts + changes in value = change in net worth (each column)
+        sh = MS.export_sheets(self.app, "cashflow", None, "months")[0]
+        rowof = {str(r[0]).strip(): r for r in sh.rows if r and r[0]}
+        for i in range(1, len(sh.header)):
+            got = sum((rowof[k][i] or 0) for k in ("Veränderung Bankguthaben", "Umschichtungen", "Wertänderungen") if k in rowof)
+            self.assertAlmostEqual(got, rowof["Veränderung Nettovermögen"][i] or 0, delta=0.02, msg=sh.header[i])
         # balance sheet: everything in it (positions, accounts, securities), grouped; collapsed as on the page
         code, data, hdr = self.call("/api/export/balance.xlsx?mode=months&open=wertpapiere&dep=" + F.uid("priv.depot"), raw=True)
         with zipfile.ZipFile(io.BytesIO(data)) as z:
@@ -2784,6 +2796,16 @@ class BrowserTest(unittest.TestCase):
                 # Cashflow: both checks against the balance sheet as ✓ at the change in cash and in net worth; no row of their own while all adds up
                 pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("#main table.cf-tbl:not(.cf-names) tr.total")
                 F_ = "#main table.cf-tbl:not(.cf-names)"; N_ = "#main table.cf-names"        # the figures; the names pinned as one piece over them
+                # it opens on the last finished month, the running one beside it and (four columns or more) the first plan month
+                vis = pg.evaluate("""(() => { const w = document.querySelector('#main .wrap'), sw = w.querySelector('thead th').offsetWidth, x0 = w.scrollLeft + sw - 1, x1 = w.scrollLeft + w.clientWidth + 1;
+                  const ths = [...w.querySelectorAll('thead th[data-key]')], cur = ths.findIndex(th => th.dataset.cur), real = ths.filter(th => !(S.modus !== 'jahre' && th.classList.contains('year')));
+                  const seen = real.filter(th => colX(w, th) >= x0 && colX(w, th) + th.offsetWidth <= x1).map(th => th.dataset.key);
+                  const last = real[real.indexOf(ths[cur]) - 1].dataset.key, plan = real.slice(real.indexOf(ths[cur]) + 1).filter(th => th.classList.contains('plan')).map(th => th.dataset.key);
+                  return {seen, last, cur: ths[cur].dataset.key, plan}; })()""")
+                self.assertIn(vis["last"], vis["seen"]); self.assertIn(vis["cur"], vis["seen"])
+                if len(vis["seen"]) >= 4: self.assertIn(vis["plan"][0], vis["seen"])
+                if len(vis["seen"]) < 8: self.assertNotIn(vis["plan"][1], vis["seen"])
+                self.assertEqual(pg.evaluate("firstYear(B())"), int(vis["cur"][:4]) - 1)                     # the running year and the one before
                 self.assertEqual(len(pg.query_selector_all(F_ + " tr.check")), 0)
                 self.assertEqual(pg.eval_on_selector_all(F_ + " tr.total", "e => e.map(r => r.querySelectorAll('.ok-mark').length > 0)"), [True, True])
                 self.assertIsNone(pg.query_selector(F_ + " tr.bal")); self.assertIsNone(pg.query_selector(F_ + " tr.fcf"))      # overview: start and end inside, no FCF
@@ -2797,7 +2819,10 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("✓", pg.inner_text(F_ + " tr.total"))
                 # a difference: its row below the change in cash, with the amount (made up); the ✓ stays where it adds up
                 pg.evaluate("""(() => { const D = B(), m = D.monate.filter(m => m < D.ist_bis).slice(-1)[0]; window._keep = [m, D.kapitalfluss.ueberleitung[m].abweichung_liq]; D.kapitalfluss.ueberleitung[m].abweichung_liq = 12; return route(); })()""")
+                pg.wait_for_timeout(200); self.assertIsNone(pg.query_selector(F_ + " tr.check"))          # inside the change in cash: the missing ✓ says so
+                pg.evaluate("S.cfTog['t:bank'] = true; route()")
                 pg.wait_for_selector(F_ + " tr.check"); self.assertEqual(len(pg.query_selector_all(F_ + " tr.check")), 1); self.assertIn("12", pg.inner_text(F_ + " tr.check"))
+                pg.evaluate("delete S.cfTog['t:bank']"); pg.wait_for_timeout(50)
                 pg.evaluate("(() => { const D = B(); D.kapitalfluss.ueberleitung[window._keep[0]].abweichung_liq = window._keep[1]; return route(); })()"); pg.wait_for_timeout(200)
                 self.assertEqual(len(pg.query_selector_all(F_ + " tr.check")), 0)
                 # one outline: sections open and close, positions open to their categories; three levels (overview: sections and results only)
@@ -2817,8 +2842,9 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.eval_on_selector_all(F_ + " tr.sec2", "e => e.map(x => x.dataset.tog)"), ["s:Einnahmen", "s:Ausgaben"])
                 body = pg.inner_text(N_ + " tbody")
                 self.assertEqual(body.count("Überschuss"), 1)                                           # the operating section's name, no extra result line
-                for gone in ("Nach Zins und Tilgung", "Rohertrag", "Umschichtung"):
+                for gone in ("Nach Zins und Tilgung", "Rohertrag"):
                     self.assertNotIn(gone, body)
+                self.assertNotIn("Umschichtung", body.replace("Umschichtungen", ""))                 # transfers are no row; moves between accounts are
                 self.assertIn("Tilgung", pg.inner_text(N_ + " tr.sub[data-tog='g:Finanzierung|Tilgung']")); self.assertIn("Darlehen Lindenstraße", body)
                 self.assertIsNone(pg.query_selector("tr.det"))
                 pg.click("button.disc[data-tog^='d:']"); pg.wait_for_selector("tr.det")                 # a position: its categories
@@ -2849,16 +2875,16 @@ class BrowserTest(unittest.TestCase):
                 for tip in pg.eval_on_selector_all("#main .cf-tbl .hq", "e => e.map(x => x.dataset.tip)"):  # headings are explained by their "?"
                     self.assertTrue(tip)
                 self.assertNotIn("Tilgung +", pg.inner_text(N_))
-                # the month view starts three years back; the year stepper moves its first year back and forth
+                # the month view starts a year back; the year stepper moves its first year back and forth
                 first = pg.evaluate("document.querySelector('#main thead th[data-key]').dataset.key")
-                self.assertTrue(pg.is_disabled("#von-jahr button[data-d='-1']"))                        # no earlier data
-                pg.click("#von-jahr button[data-d='1']"); pg.wait_for_timeout(300)
                 n = len(pg.query_selector_all("#main thead th[data-key]"))
-                self.assertGreater(pg.evaluate("document.querySelector('#main thead th[data-key]').dataset.key"), first)
-                pg.click("#von-jahr button[data-d='-1']"); pg.wait_for_timeout(300)
+                pg.click("#von-jahr button[data-d='-1']"); pg.wait_for_timeout(300)                      # an earlier year: it starts with it
+                self.assertLess(pg.evaluate("document.querySelector('#main thead th[data-key]').dataset.key"), first)
                 self.assertGreater(len(pg.query_selector_all("#main thead th[data-key]")), n)
-                self.assertEqual(pg.evaluate("document.querySelector('#main thead th[data-key]').dataset.key"), first)
+                self.assertTrue(pg.is_disabled("#von-jahr button[data-d='-1']"))                        # no earlier data
                 self.assertEqual(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0)
+                pg.click("#von-jahr button[data-d='1']"); pg.wait_for_timeout(300)
+                self.assertEqual(pg.evaluate("document.querySelector('#main thead th[data-key]').dataset.key"), first)
                 self.assertIsNone(pg.evaluate("S.vonJahr"))
                 # scrolling sideways is left alone (no snapping a moment later)
                 pg.evaluate("document.querySelector('#main .wrap').scrollLeft = 37"); pg.wait_for_timeout(700)
@@ -2870,6 +2896,14 @@ class BrowserTest(unittest.TestCase):
                 num = lambda t: int("".join(c for c in t.replace("\u2212", "-") if c.isdigit() or c == "-"))
                 want = pg.evaluate("""(() => { const D = B(), ms = D.monate.filter(m => m < D.ist_bis).slice(-12), s = n => Math.round(ms.reduce((a, m) => a + (D.kapitalfluss.summen[m][n] || 0), 0));
                     const prev = D.monate[D.monate.indexOf(ms[0]) - 1]; return {ein: s('Einnahmen'), aus: s('Ausgaben'), cash: s('Cashflow'), start: Math.round(D.kapitalfluss.summen[prev].Bankguthaben), end: Math.round(D.kapitalfluss.summen[ms[11]].Bankguthaben)}; })()""")
+                # the table's bottom rows add up: change in cash + moves between accounts + changes in value = change in net worth
+                tb = pg.evaluate("""(() => { const v = tr => tr ? [...tr.querySelectorAll('td')].slice(1).map(td => td.textContent.replace('✓', '').trim()) : null;
+                  return [v(document.querySelector('.cf-tbl tr[data-tog="t:bank"]')), v(document.querySelector('.cf-tbl tr[data-tog="t:umsch"]')),
+                    v(document.querySelector('.cf-tbl tr[data-tog="s:Bewertung"]')), v([...document.querySelectorAll('.cf-tbl tr.total')].pop())]; })()""")
+                self.assertTrue(tb[1], "Umschichtungen")
+                pn = lambda x: float(x.replace(".", "").replace(",", ".").replace("−", "-")) if x and x.strip() not in ("", "–") else 0.0
+                for i in range(len(tb[3])):
+                    self.assertAlmostEqual(pn(tb[0][i]) + pn(tb[1][i]) + (pn(tb[2][i]) if tb[2] else 0), pn(tb[3][i]), delta=0.02, msg=i)
                 # 1. cash bridge: opening cash, each activity with its sum and its parts, closing cash; every bar starts where the one before ended
                 rows = pg.eval_on_selector_all("#cf-bridge .cf-br-row", "e => e.map(r => [r.classList[1], r.getAttribute('aria-label').split(': ')[0], r.querySelector('.cf-br-v').textContent])")
                 self.assertEqual((rows[0][:2], rows[-1][:2]), (["tot", "Anfangsbestand"], ["tot", "Endbestand"]))
@@ -2888,7 +2922,10 @@ class BrowserTest(unittest.TestCase):
                         self.assertEqual(c, "in" if num(v) > 0 else "out", n)
                 # an open activity is a bracket in its colour over its parts (not a step of its own), marked like the table
                 self.assertEqual(pg.eval_on_selector_all("#cf-bridge .cf-br-row.grp.br .cf-br-brace", "e => e.map(x => x.classList[1])"), ["op", "inv", "fin"])
-                self.assertEqual(pg.eval_on_selector_all("#cf-bridge .cf-br-row.grp .cf-br-key", "e => e.map(x => x.classList[1])"), ["op", "inv", "fin"])
+                self.assertEqual(pg.eval_on_selector_all("#cf-bridge .cf-br-row.grp .cf-br-dot", "e => e.map(x => x.classList[1])"), ["op", "inv", "fin"])
+                # opening rows never changes the width of the names (the bars keep their place)
+                x0 = pg.evaluate("CF.br_liq.L"); pg.click("#cf-bridge .cf-br-row[data-br='op|Ausgaben']"); pg.wait_for_timeout(100)
+                self.assertEqual(pg.evaluate("CF.br_liq.L"), x0); pg.click("#cf-bridge .cf-br-row[data-br='op|Ausgaben']"); pg.wait_for_timeout(100)
                 self.assertFalse(pg.query_selector("#cf-bridge .cf-br-row.grp .cf-br-bar"))
                 # a click closes an activity: one step instead; on its parts: their positions, which add up to them
                 pg.click("#cf-bridge .cf-br-row[data-br='inv']"); pg.wait_for_timeout(150)
@@ -2912,11 +2949,47 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("Vorjahr", pg.inner_text("#cf-tip")); pg.mouse.move(5, 5)
                 # a quiet amount axis; dragging across the chart zooms into that range, the button shows it whole again
                 self.assertGreaterEqual(len(pg.query_selector_all("#cf-bridge .cf-br-grid")), 3)
-                bb = pg.evaluate("(() => { const r = document.querySelector('#cf-bridge').getBoundingClientRect(); return [r.left + CF.br.L, r.left + CF.br.R, r.top + 30]; })()")
-                pg.mouse.move(bb[0] + 20, bb[2]); pg.mouse.down(); pg.mouse.move(bb[0] + 60, bb[2], steps=5); pg.mouse.move(bb[0] + 120, bb[2], steps=5); pg.mouse.up(); pg.wait_for_timeout(200)
+                bb = pg.evaluate("(() => { const r = document.querySelector('#cf-bridge').getBoundingClientRect(); return [r.left + CF.br_liq.L, r.left + CF.br_liq.R, r.top + 30]; })()")
+                pg.mouse.move(bb[0] + 20, bb[2]); pg.mouse.down(); pg.mouse.move(bb[0] + 60, bb[2], steps=5); pg.mouse.move(bb[0] + 120, bb[2] + 90, steps=5); pg.mouse.up(); pg.wait_for_timeout(200)
+                self.assertEqual(pg.evaluate("getSelection().toString()"), "")                                # moving across the rows selects no text
                 self.assertTrue(pg.evaluate("!!S.cfBrZoom")); self.assertTrue(pg.is_visible("#cf-br-reset")); self.assertTrue(pg.query_selector("#cf-bridge svg.zoomed"))
                 pg.click("#cf-br-reset"); pg.wait_for_timeout(150)
                 self.assertFalse(pg.evaluate("!!S.cfBrZoom")); self.assertTrue(pg.is_hidden("#cf-br-reset"))
+                # 6. the net worth bridge: from the net worth at the start to that at the end, only what changes it (no investing, no repaying)
+                wb = pg.eval_on_selector_all("#cf-wbridge .cf-br-row", "e => e.map(r => [r.getAttribute('aria-label').split(': ')[0], r.querySelector('.cf-br-v').textContent, [...r.classList]])")
+                self.assertEqual((wb[0][0], wb[-1][0]), ("Anfangsvermögen", "Endvermögen"))
+                names = [w[0] for w in wb]
+                for n in ("Gespart", "Wertänderungen", "Einnahmen", "Ausgaben", "Zinsen"): self.assertIn(n, names)
+                for n in ("Tilgung", "Wertpapiere & Geldanlagen", "Investitionen", "Finanzierung"): self.assertNotIn(n, names)
+                exp = pg.evaluate("""(() => { const D = B(), [cur] = cfMonths(D, S.cfZeit), nw = D.bilanz.nettovermoegen, b = D.monate[D.monate.indexOf(cur[0]) - 1];
+                  return [nw[b], nw[cur[cur.length - 1]], cfSum(D, 'Nettovermoegen_delta', cur)]; })()""")
+                self.assertAlmostEqual(num(wb[0][1]), exp[0], delta=1); self.assertAlmostEqual(num(wb[-1][1]), exp[1], delta=1)
+                tops = [num(w[1]) for w in wb[1:-1] if "grp" in w[2] or "one" in w[2]]
+                self.assertLessEqual(abs(num(wb[0][1]) + sum(tops) - num(wb[-1][1])), len(tops) + 1)          # the steps add up, whole euros
+                if abs(exp[1] - exp[0] - exp[2]) < 0.5: self.assertNotIn("Abgleich Bilanz", names)             # reconciled: no extra step
+                # the same with made-up rows: parts under 50 cents count (no false balance step), the year before from all rows,
+                # saving "→ extern" between you and others, value rows by their translated group
+                wt = pg.evaluate("""(() => { const M = ['2024-01', '2024-02', '2025-01', '2025-02'], w = o => Object.fromEntries(M.map(m => [m, o[m] || 0]));
+                  const z = (zeile, art, nw, werte, x = {}) => ({zeile, gruppe: zeile, art, nw, werte: w(werte), details: [], ...x});
+                  const D = {monate: ['2023-12', ...M], bilanz: {nettovermoegen: {'2024-12': 1000, '2025-02': 1000 + 1000 + 1.6 - 200 + 300 - 0.4 + 0.4}},
+                    kapitalfluss: {sektionen: [
+                      {name: 'Einnahmen', zeilen: [z('Gehalt', 'kategorie', true, {'2025-01': 300, '2024-01': 1000})]},
+                      {name: 'Ausgaben', zeilen: []},
+                      {name: 'Investitionen', zeilen: [z('Sparplan → extern', 'kategorie', true, {'2025-02': -200}), z('Depot A', 'konto', false, {'2025-01': -500})]},
+                      {name: 'Finanzierung', zeilen: [z('K / Zinsen', 'zins', true, {'2025-01': -0.4, '2024-02': -500}), z('L / Zinsen', 'zins', true, {'2025-02': 0.4})]},
+                      {name: 'Bewertung', zeilen: [z('Depot A', 'depot', true, {'2025-01': 1000}), ...['B', 'C', 'D'].map(n => z('Depot ' + n, 'depot', true, {'2025-02': 0.4})),
+                        z('Anlage ohne Zielkonto', 'ohne_ziel', true, {'2025-02': 0.4}, {glbl: ['cf_anlage_ohne_ziel']})]},
+                      {name: 'Unklar', zeilen: []}]}};
+                  D.monate = ['2023-12', '2024-01', '2024-02', '2024-12', '2025-01', '2025-02'];
+                  return cfWealthTree(D, ['2025-01', '2025-02'], ['2024-01', '2024-02']).map(r => [r.id, Math.round(r.v * 100) / 100, r.p == null ? null : Math.round(r.p * 100) / 100]); })()""")
+                ids = {r[0]: r for r in wt}
+                self.assertNotIn("off", ids); self.assertNotIn("unk", ids)
+                self.assertEqual(ids["wert"][1], 1001.6); self.assertEqual(ids["ext"][1], -200); self.assertEqual(ids["spar"][1:], [300, 500])   # year before: 1000 − 500
+                self.assertEqual(round(ids["nw0"][1] + ids["spar"][1] + ids["ext"][1] + ids["wert"][1], 2), ids["nw1"][1])
+                pg.click("#cf-wbridge .cf-br-row[data-br='spar|aus']"); pg.wait_for_timeout(150)
+                self.assertTrue(pg.query_selector("#cf-wbridge .cf-br-row[data-br='spar|aus'] .cf-br-brace"))
+                self.assertIsNone(pg.query_selector("#cf-bridge .cf-br-row[data-br='spar|aus']"))              # the cash bridge is left alone
+                pg.click("#cf-wbridge .cf-br-row[data-br='spar|aus']"); pg.wait_for_timeout(100)
                 # 2. per month: income, expenses, investing, financing stacked; the change in cash on its own scale below
                 self.assertEqual(len(pg.query_selector_all("#cf-months .cf-hit")), 12)
                 for c in ("ein", "aus", "inv", "fin", "spar", "wert"):          # below: the change in net worth, saved and change in value
@@ -2937,7 +3010,7 @@ class BrowserTest(unittest.TestCase):
                     try { cfDrawMonths(); return [document.querySelectorAll('#cf-months .cf-break:not(.nw)').length, document.querySelector('#cf-months .cf-val-l:not(.nw)').textContent]; } finally { S.DATA.bereiche[id] = keep; cfDrawMonths(); } })()""")
                 self.assertEqual(cut[0], 2); self.assertTrue(cut[1].startswith("+40"), cut[1])                  # 406.500: income and the loan
                 # the charts end at the last closed month: the running month is half booked (the table shows it hatched)
-                done, running = pg.evaluate("(() => { const D = B(); return [ML(D.monate.filter(m => m < D.ist_bis).slice(-1)[0]), ML(D.ist_bis)]; })()")
+                done, running = pg.evaluate("(() => { const D = B(); return [MLL(D.monate.filter(m => m < D.ist_bis).slice(-1)[0]), ML(D.ist_bis)]; })()")
                 self.assertTrue(tip.startswith(done), tip); self.assertNotIn(running, pg.inner_text(".cf-period"))
                 # 3. money flow: sources on the left, uses on the right, through one column; both sides the same sum, each band its amount
                 fl = pg.evaluate("(() => { const F = CF.flow; return [F.src.reduce((a, e) => a + e.v, 0), F.use.reduce((a, e) => a + e.v, 0), F.src.map(e => e.label), F.use.map(e => e.label)]; })()")
@@ -2953,6 +3026,13 @@ class BrowserTest(unittest.TestCase):
                     pg.dispatch_event("#cf-flow .cf-fl-g[data-fl='%s']" % key, "click"); pg.wait_for_timeout(150)
                     self.assertGreater(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0); self.assertTrue(pg.query_selector("#cf-flow .cf-fl-up"))
                     pg.dispatch_event("#cf-flow .cf-fl-up", "click"); pg.wait_for_timeout(150)
+                    self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
+                    # a part that opens no further closes its group again: on its band or its name
+                    pg.dispatch_event("#cf-flow .cf-fl-g[data-fl='%s']" % key, "click"); pg.wait_for_timeout(150)
+                    pg.dispatch_event("#cf-flow .cf-fl-g.back >> nth=0", "click"); pg.wait_for_timeout(150)
+                    self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
+                    pg.dispatch_event("#cf-flow .cf-fl-g[data-fl='%s']" % key, "click"); pg.wait_for_timeout(150)
+                    pg.dispatch_event("#cf-flow .cf-fl-l.back >> nth=0", "click"); pg.wait_for_timeout(150)
                     self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
                 # small flows (under 3 %) together as "the others", every amount kept
                 grp = pg.evaluate("""(() => { const D = JSON.parse(JSON.stringify(B())), ms = cfDone(D).slice(-12), sek = D.kapitalfluss.sektionen.find(s => s.name === 'Ausgaben');
@@ -3086,6 +3166,13 @@ class BrowserTest(unittest.TestCase):
                     self.assertEqual(len(pg.query_selector_all(".uf-ext .chip")), len(cell[1]) - 1)
                 n_all = pg.evaluate("UMS.gesamt"); pg.click("#uf-chip-x"); pg.wait_for_timeout(400)
                 self.assertIsNone(pg.query_selector(".uf-ext .chip")); self.assertGreater(pg.evaluate("UMS.treffer"), len(rows)); self.assertEqual(pg.evaluate("UMS.gesamt"), n_all)
+                # the total row of the heat map: all categories of the expenses as one chip, with those without a category, outgoing only
+                pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("#cf-heat .cf-heat-n.tot")
+                pg.click("#cf-heat .cf-heat-sep ~ .cf-heat-c[data-hr] >> nth=11"); pg.wait_for_selector("#uf-von")
+                self.assertEqual(len(pg.query_selector_all(".uf-ext .chip")), 1); self.assertIn("Ausgaben gesamt", pg.inner_text(".uf-ext .chip"))
+                self.assertTrue(all(a < 0 for a in pg.evaluate("UMS.umsaetze.map(u => u.betrag)")))
+                pg.click("[data-kat-all]"); pg.wait_for_timeout(300); self.assertIsNone(pg.query_selector(".uf-ext .chip"))
+                pg.click("#uf-chip-x"); pg.wait_for_timeout(300)
                 if not pg.query_selector("#uf-kat-add"): pg.click("#uf-ext")
                 pg.wait_for_selector("#uf-kat-add")                                                   # set by hand: a category of MoneyMoney
                 kat = pg.evaluate("document.querySelector('#uf-kats option').value")

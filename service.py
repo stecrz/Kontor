@@ -1364,6 +1364,19 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
         line([tr("zahlungsfluss_gesamt_veraenderung_liqu")] + total("Cashflow")); bold.append(len(rows) - 1)
         check("abweichung_liq")
         line([tr("bankguthaben_ende")] + [balance(ms[-1]) if ms else None for _, ms, _p in cols])
+        # investing, repaying, loans: only moved between your accounts -- added back, the rows add up to the change in net worth
+        moves = {}
+        for name, sek in secs.items():
+            if name != "Bewertung":
+                for z in sek["zeilen"]:
+                    if not z.get("nw"):
+                        moves.setdefault(tr(*z["glbl"]) if z.get("glbl") else z["gruppe"], []).append(z)
+        mv = {g: [round(-sum(v), 2) for v in zip(*[val(z) for z in zs])] for g, zs in moves.items()}
+        mv = {g: v for g, v in mv.items() if any(abs(x) >= 0.005 for x in v)}
+        if mv:
+            line([tr("cf_umschichtungen")] + [round(sum(v), 2) for v in zip(*mv.values())]); bold.append(len(rows) - 1)
+            for g, v in mv.items():
+                line(["    " + g] + v, 1)
         section("Bewertung", tr("cf_wertaenderungen"), 0)
         line([tr("cf_veraenderung_nv")] + total("Nettovermoegen_delta")); bold.append(len(rows) - 1)
         check("unerklaert")
@@ -1861,7 +1874,9 @@ def make_handler(app: App):
             for t in ums:
                 if want is not None:
                     k = categorize.norm_cat(t.get("kategorie") or "")
-                    if not k or not any(k == c or k.startswith(c + " / ") for c in want):
+                    none_ok = (q.get("with_uncategorized") == "1" and not k and t.get("braucht", True) and not t.get("umbuchung")
+                               and not t.get("andere_bereich"))          # between two of your areas: not an expense or income
+                    if not none_ok and (not k or not any(k == c or k.startswith(c + " / ") for c in want)):
                         continue
                 if q.get("year") and not t["datum"].startswith(q["year"]):
                     continue

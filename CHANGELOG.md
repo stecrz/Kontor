@@ -1,5 +1,15 @@
 # Änderungen
 
+## 3.13.27 (2026-11-18 00:38)
+- **Vermögensbrücke** (neu, neben Mittelherkunft & -verwendung): vom Nettovermögen am Anfang zum Ende – gespart (Einnahmen, Ausgaben, Zinsen), Einlagen & Entnahmen, Wertänderungen je Konto. Anlegen und Tilgen fehlen, sie verschieben nur Geld.
+- **Cashflow-Tabelle:** neue Zeile „Umschichtungen“ (Investieren, Tilgen, Darlehen) – jetzt ergeben Veränderung Bankguthaben, Umschichtungen und Wertänderungen zusammen die Veränderung des Nettovermögens. Der Abgleich mit der Bilanz steht in „Veränderung Bankguthaben“ (aufklappen, wenn das ✓ fehlt); das ✓ ist grau. Hauptzeilen stehen ganz links.
+- **Tabelle öffnet** auf dem letzten abgeschlossenen Monat (je nach Breite mit laufendem, Vormonat, ab vier Spalten dem ersten Planmonat, ab acht zwei); die Monatsansicht zeigt das laufende und das vorige Jahr.
+- **Liquiditätsbrücke:** Achse und „Ganze Brücke“ oben; beim Aufziehen wird kein Text mehr markiert; die Namensbreite bleibt beim Aufklappen gleich; Farbe der Tätigkeit als Punkt vor CFO/CFI/CFF, weniger Einrückung.
+- **Vorjahresvergleich:** Anteile klein in den Stücken, Beschriftung näher am Ring, Hauptgruppen etwas größer; Veränderung in Klammern.
+- **Monatlicher Cashflow:** ohne Legende; unterer Teil abgesetzt; Einlagen & Entnahmen eigener Teil (wie in der Vermögensbrücke); im Tooltip der Monat ausgeschrieben, nur Summen fett.
+- **Heatmap:** Gesamtzeile klickbar (alle Kategorien als ein Filter, dazu ohne Kategorie, ohne Zahlungen zwischen deinen Bereichen); Ausreißer mit zwei Schrägstrichen und verständlicher Erklärung; Hinweis „Klicken zeigt die Umsätze“ kleiner.
+- **Mittelherkunft & -verwendung:** halbe Breite; ein Klick auf einen Teil (Band oder Name) schließt seine Gruppe wieder.
+
 ## 3.13.26 (2026-11-17 23:45)
 - **Liquiditätsbrücke:** dezente Achse mit Beträgen; einen Bereich mit der Maus aufziehen vergrößert ihn (längere Balken am Rand gekappt und markiert), „Ganze Brücke“ zeigt wieder alles. Ein Tooltip nur noch an der Veränderung: Betrag, Vorjahr, Veränderung und die Teile. Klammern je Ebene feiner: Tätigkeiten farbig, darunter grau, noch tiefer dünner.
 - **Mittelherkunft & -verwendung** (statt „Geldfluss“), ein Sankey-Diagramm: Die Farben der Bänder gehen in der Mitte ineinander über statt eines grauen Balkens; breite Bänder tragen ihren Anteil; Ströme unter 3 % stehen zusammen unter „Übrige“; ein Klick auf einen Namen mit ▸ öffnet seine Teile. Fährst du über ein Band, treten die anderen zurück; die Summe steht dezent über der Mitte.
