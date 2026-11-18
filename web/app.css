@@ -23,7 +23,7 @@
           --side:rgba(20,20,22,.94); --side-fg:#f5f5f7;
           --c-nw:#ffd23f; --warn-bg:#3a2a12; --warn-fg:#ffd28a; --err-bg:#3a1515; --err-fg:#ffb3b3; --ok-bg:#12301f; --ok-fg:#9be0b6;
           --c-liq:#30d158; --c-anl:#2ec4a2; --c-fest:#3fbfdc; --c-bet:#bf5af2; --c-ford:#5b8cff; --c-immo:#b08a6e; --c-verb:#ff6961; --c-ein:#30d158; --c-aus:#ff6961;
-          --cf-op:#14a2c4; --cf-inv:#bb8a00; --cf-fin:#b8338c; --cf-unk:#8e8e93; --cf-wert:#8aa1b6; --cf-umsch:#a8916b; --cf-bank:#b4b8be;
+          --cf-op:#14a2c4; --cf-inv:#bb8a00; --cf-fin:#b8338c; --cf-unk:#8e8e93; --cf-wert:#5b7fd6; --cf-umsch:#a8916b; --cf-bank:#c9ccd1;
           --cat1:#3d52c4; --cat2:#7487e8; --cat3:#a6b1fa;
           --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3);
 }
@@ -671,7 +671,7 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 .cf-tick { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; } .cf-xl.tot { fill:var(--fg); font-weight:600; } .cf-tick.end { fill:var(--fg); font-weight:600; }          /* the first and last month: the range shown */
 .cf-val-l { fill:var(--fg); font-size:11px; font-variant-numeric:tabular-nums; } .cf-val-l.tot { font-weight:600; }
 .cf-link-l { stroke:var(--line-2); stroke-width:1; shape-rendering:crispEdges; }
-.cf-break { fill:none; stroke:var(--head); stroke-width:2; } .cf-xaxis { fill:transparent; cursor:ew-resize; touch-action:none; } .cf-yax { fill:transparent; cursor:ns-resize; touch-action:none; } .cf-yax:hover { fill:var(--group); opacity:.6; } .cf-yax.on { fill:var(--accent-soft); opacity:.6; } body.cf-ydrag, body.cf-ydrag * { cursor:ns-resize !important; user-select:none; } body.cf-dragging, body.cf-dragging * { cursor:ew-resize !important; user-select:none; }
+.cf-break { fill:none; stroke:var(--head); stroke-width:2; } .cf-xaxis { fill:transparent; cursor:ew-resize; touch-action:none; } .cf-yax { fill:transparent; cursor:ns-resize; touch-action:none; } .cf-yax:hover { fill:var(--group); opacity:.6; } .cf-yax.on { fill:var(--accent-soft); opacity:.6; } body.cf-ydrag, body.cf-ydrag * { cursor:ns-resize !important; user-select:none; } body.cf-dragging, body.cf-dragging * { cursor:ew-resize !important; user-select:none; } .cf-net { stroke:var(--muted); stroke-width:1; stroke-linecap:round; opacity:.7; pointer-events:none; } .cf-net.nw { stroke:var(--fg); stroke-width:2; opacity:1; }          /* the result of a month: quiet above, clear below */
 .cf-fl-n.ein { fill:var(--pos); } .cf-fl-n.aus { fill:var(--neg); } .cf-fl-n.inv { fill:var(--cf-inv); } .cf-fl-n.fin { fill:var(--cf-fin); } .cf-fl-n.tot, .cf-fl-n.unk { fill:var(--cf-unk); }
 .cf-svg.cf-fl { display:block; } .cf-fl-b { transition:opacity .15s; } .cf-fl-span { font-size:10px; } .cf-fl-all { cursor:pointer; } .cf-fl-all:hover { fill:var(--fg); } .cf-fl-p { fill:var(--fg); opacity:.78; font-size:10.5px; font-weight:500; font-variant-numeric:tabular-nums; pointer-events:none; }          /* as the ring's shares */ .cf-fl-mid { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
 .cf-fl-veil { fill:var(--head); opacity:.62; pointer-events:none; } .cf-fl .more, .cf-fl .back, .cf-fl-up { cursor:pointer; } .cf-fl-up { fill:var(--muted); font-size:11px; } .cf-fl-l.more:hover .cf-fl-t:not(.cf-fl-v) { text-decoration:underline; }
@@ -727,7 +727,7 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 .cf-heat .cf-heat-c.ahead, .cf-heat.ein .cf-heat-c.ahead { background-image:repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 5px); }          /* running month, plan: over every other background */
 .cf-dot { fill:var(--fg); stroke:var(--head); stroke-width:2; }
 .cf-col.wert { fill:var(--cf-wert); } .cf-col.bank { fill:var(--cf-bank); } .cf-col.umsch { fill:var(--cf-umsch); }
-.cf-prev-o { fill:none; stroke:var(--fg); stroke-opacity:.55; stroke-width:1; stroke-dasharray:3 2; } .cf-sub-lg { fill:var(--muted); font-size:10.5px; }
+.cf-prev-o { fill:none; stroke:var(--fg); stroke-opacity:.55; stroke-width:1; stroke-dasharray:3 2; }
 .sw.wert { background:var(--cf-wert); } .sw.bank { background:var(--cf-bank); } .sw.umsch { background:var(--cf-umsch); } .sw.prev-o { background:none; border:1px dashed color-mix(in srgb, var(--fg) 55%, transparent); box-sizing:border-box; }
 .cf-tip-hint { font-size:10px; color:var(--muted); margin-top:4px; }
 .chip { display:inline-flex; align-items:center; gap:6px; padding:3px 4px 3px 11px; border-radius:999px; background:var(--group); font-size:12.5px; } .chip button.icon { padding:1px 7px; font-size:11px; }
@@ -787,5 +787,6 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 @media (max-width: 700px) { .bk-table td:nth-last-child(-n+2):not(.num):not(.nowrap) { min-width:240px; } }          /* iPhone: the purpose keeps a width (scrolls sideways) instead of very tall rows */
 #drawer .cf-tx-why { margin:2px 0 12px; padding-left:18px; font-size:13px; line-height:1.45; }
 #cf-bridge.cf-plot, #cf-wbridge.cf-plot { margin-top:-4px; min-height:0; }          /* the amount axis close under the title (no heading above it) */
-.cf-card.fl-all { cursor:pointer; } .cf-card.fl-all :is(.cf-fl-g, .cf-fl-l):not(.more):not(.back) { cursor:default; }          /* beside the bands: all open or closed */
 .cf-tip .cf-tip-parts { border-top:1px solid var(--line); margin-top:5px; padding-top:5px; }          /* the parts below a line: clearly the parts */
+@media (hover:none) { .cf-tbl:not(.ptable) tr[data-tog] td:not(:first-child) { -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; } }          /* holding a figure opens its row, selects nothing */
+.cf-tip b.cf-tip-pv { font-weight:400; } .cf-tip b.cf-tip-pv em { min-width:0; margin-left:6px; }          /* the year before: amount and change side by side */

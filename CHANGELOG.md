@@ -1,5 +1,15 @@
 # Änderungen
 
+## 3.14.2 (2026-11-18 15:14)
+- Brücken: Veränderungen ab 1000 % kurz als Tausender („+2T“).
+- Cashflow-Tabelle: Doppelklick oder langes Halten auf eine Zahl klappt die Zeile auf bzw. zu.
+- Cashflow-Tabelle: startet mit der Vergangenheit – letzter abgeschlossener und laufender Monat, eine Planspalte erst ab acht Spalten.
+- Monatlicher Cashflow: Ergebnis je Monat als kurzer Strich (Nettovermögen deutlich, Bankguthaben dezent); unteres Diagramm etwas höher, ohne Legende; Höhen abgeschnittener Balken darüber statt auf dem Balken.
+- Dunkelmodus: Wertänderungen blau statt graublau, Bankguthaben heller – klar unterscheidbar.
+- Ausgaben je Monat: im Tooltip Summe rechtsbündig, Vorjahr und Veränderung nebeneinander.
+- Gesamtcashflow: Tooltip neben der Grafik auf Höhe des Zeigers (immer sichtbar); neben den Bändern normaler Mauszeiger.
+- Vorjahresvergleich: Umschalten hält die Position auch am Seitenende.
+
 ## 3.14.1 (2026-11-18 14:22)
 - Seitenfenster: zweiter Klick auf dieselbe Zahl schließt es.
 - „Abgleich mit der Bilanz“: Klick zeigt Gründe und die Buchungen dahinter.

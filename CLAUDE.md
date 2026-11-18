@@ -26,8 +26,9 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 5. Ist der Mac des Nutzers verbunden: dort den Kontor-Ordner auf den neuen Stand bringen (`git fetch` + `git reset --hard`).
 
 ## Kleine und große Versionen
-- Kleine Versionen (dritte Stelle): zügig vorankommen – Funktionen, Verbesserungen, neue Features; die üblichen Prüfungen,
-  Hilfe-Bilder und README nur bei Bedarf.
+- Kleine Versionen (dritte Stelle): zügig vorankommen – Funktionen, Verbesserungen, neue Features im Code; die üblichen Prüfungen.
+  **Keine** Hilfe-Bilder, **keine** Überarbeitung von README und Hilfe (`docs/`) – das gibt es nur beim großen Versionssprung
+  (unnötige Änderungen im Repo vermeiden). Tooltips in `web/i18n.js` gehören zum Code und werden mit gepflegt.
 - Großer Versionssprung (zweite Stelle, z. B. 3.11.5 → 3.12.0; auf Wunsch des Nutzers oder nach Rückfrage): vorher eine
   Gesamtprüfung mit voller Kraft – die letzten Änderungen final abnehmen, alle Referenzen aktuell, fehlerfrei. Gefundenes direkt
   verbessern, dann in perfekter Form veröffentlichen:
@@ -61,7 +62,7 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
   (app.js) bzw. `tr("schluessel", …)` (Python). Keine Texte fest im Code. Platzhalter `{0}` (JS) bzw. `%s` (Python).
 - Texte, die nach MoneyMoney geschrieben werden (Verwendungszwecke), Kategorienamen und Datenschlüssel bleiben unübersetzt.
 - Englisch: Datei- und Modulnamen, Datendateien, API-Endpunkte, URL-Pfade und -Parameter (auch die #-Adressen der Oberfläche und die Anker der Hilfe), Kommandozeilenbefehle, Protokollmeldungen, Code-Kommentare. Deutsch ist nur der Text, den der Nutzer liest.
-- Hilfe: `docs/help.de.md` und `docs/help.en.md` gemeinsam pflegen (gleiche Anker); Bilder mit `tests/screenshots.py` (de/en) aus erfundenen Daten erzeugen – nur wenn sich eine gezeigte Seite wesentlich verändert hat, nicht bei jedem Release.
+- Hilfe: `docs/help.de.md` und `docs/help.en.md` gemeinsam pflegen (gleiche Anker); Bilder mit `tests/screenshots.py` (de/en) aus erfundenen Daten erzeugen – beides nur beim großen Versionssprung (zweite Stelle), nie bei kleinen Versionen.
 - Präfix `mm_` nur für Teile, die direkt mit MoneyMoney sprechen.
 
 ## Oberfläche

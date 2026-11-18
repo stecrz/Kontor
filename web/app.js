@@ -2688,10 +2688,11 @@ window.addEventListener('resize', () => {            // another width can break 
 function cfScrollTo(w, c) {
   const ths = colHeads(w), i = ths.indexOf(c), avail = w.clientWidth - $('thead th', w).offsetWidth;
   const L = th => colX(w, th), Rt = th => colX(w, th) + th.offsetWidth, isSum = th => S.modus !== 'jahre' && th.classList.contains('year');
-  const before = ths.slice(0, Math.max(0, i)).filter(th => !isSum(th)), prev = before[before.length - 1], prev2 = before[before.length - 2] || prev;
-  const plans = ths.slice(i + 1).filter(th => th.classList.contains('plan') && !isSum(th)), [plan, plan2] = plans, prev5 = before[before.length - 5] || before[0];
-  const right = plan2 && prev5 && avail >= Rt(plan2) - L(prev5) - 1 ? Rt(plan2) : plan && avail >= Rt(plan) - L(prev2 || c) - 1 ? Rt(plan)
-    : !prev || avail >= Rt(c) - L(prev) - 1 ? Rt(c) : Rt(prev);
+  // in view first the last closed month, then the running one, then the months before; a plan month only where eight columns
+  // fit (six closed months, the running one and the first plan month) -- as in the balance sheet, the past comes first
+  const before = ths.slice(0, Math.max(0, i)).filter(th => !isSum(th)), prev = before[before.length - 1], prev6 = before[before.length - 6];
+  const plan = ths.slice(i + 1).find(th => th.classList.contains('plan') && !isSum(th));
+  const right = plan && prev6 && avail >= Rt(plan) - L(prev6) - 1 ? Rt(plan) : !prev || avail >= Rt(c) - L(prev) - 1 ? Rt(c) : Rt(prev);
   return snapLeft(w, right - w.clientWidth);
 }
 function snapLeft(w, target) {
@@ -3011,11 +3012,13 @@ function cfChange(cur, prev, upGood) {
   if (prev == null || Math.abs(prev) < 0.005) return null;
   const d = (cur - prev) / Math.abs(prev) * 100;
   if (Math.abs(d) >= 100000) return null;                     // from almost nothing: says nothing
-  if (Math.abs(cur - prev) < 0.5) return {txt: '±0 %', cls: ''};      // only the same amount is unchanged; a small change keeps its sign
+  if (Math.abs(cur - prev) < 0.5) return {txt: '±0 %', cls: '', d: 0};      // only the same amount is unchanged; a small change keeps its sign
   const a = Math.abs(d), txt = a >= 999.5 ? (a / 1000).toLocaleString(LOCALE, {maximumFractionDigits: a >= 10000 ? 0 : 1}) + t('tsd_kurz')      // short, as in the balance sheet: +10T %
     : a < 0.01 ? '<' + (0.01).toLocaleString(LOCALE) : a.toLocaleString(LOCALE, {maximumFractionDigits: a < 0.1 ? 2 : a < 10 ? 1 : 0});
-  return {txt: (d > 0 ? '+' : '−') + txt + ' %', cls: (d > 0) === upGood ? 'pos' : 'neg'};
+  return {txt: (d > 0 ? '+' : '−') + txt + ' %', cls: (d > 0) === upGood ? 'pos' : 'neg', d};
 }
+// the change in a narrow column (the bridges): from 1000 % on only the rounded thousands ("+2T"), else as above without the space
+const cfChgShort = ch => Math.abs(ch.d || 0) >= 999.5 ? (ch.d > 0 ? '+' : '−') + Math.round(Math.abs(ch.d) / 1000).toLocaleString(LOCALE) + t('tsd_kurz') : ch.txt.replace(' %', '%');
 // the period before of a group of positions or categories ("Übrige"): only where each of them had one -- a sum with gaps would
 // compare something else than it shows
 const cfRestP = (list, has) => has && list.length && list.every(d => d.p != null && Math.abs(d.p) >= 0.5) ? list.reduce((a, d) => a + d.p, 0) : null;
@@ -3317,7 +3320,7 @@ function cfDrawBridge(which = 'liq') {
     g += `<g class="cf-br-row ${kind}${r.br ? ' br' : ''}${r.hasKids || r.bal ? ' more' : ''}"${r.hasKids ? ` tabindex="0" role="button" data-br="${esc(r.id)}" aria-expanded="${r.br}"` : r.bal ? ` tabindex="0" role="link" data-bal="${esc(r.bal)}"` : ''} aria-label="${esc(r.label + ': ' + cfEur(r.v))}">${cutName || r.long || balT ? `<title>${esc(balT || r.long || r.label)}</title>` : ''}<rect class="cf-br-bg" x="0" y="${y}" width="${W}" height="${h}" rx="4"/>`
       + dsc + `<text class="cf-br-n" x="${nx}" y="${(mid + 4).toFixed(1)}">${esc(cutName ? r.label.slice(0, Math.max(3, room - 1)) + '…' : r.label)}${r.kind === 'act' && r.act !== 'plain' ? `<tspan class="cf-br-dot ${r.act}" dx="4" dy="-1">●</tspan>` : ''}${r.abbr ? `<tspan class="cf-br-abbr" dx="3" dy="${r.kind === 'act' ? 1 : 0}">${r.abbr}</tspan>` : ''}</text>`
       + mark + `<text class="cf-br-v" x="${(W - chW - 4).toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end"${tipI != null ? ` data-cftip="${tipI}"` : ''}>${(r.kind === 'tot' || r.v < 0 ? '' : '+') + esc(F0(r.v))}</text>`
-      + (tipI != null ? `<text class="cf-br-c ${ch.cls}" x="${(W - 2).toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end" data-cftip="${tipI}">${esc(ch.txt.replace(' %', '%'))}</text>` : '') + `</g>`;
+      + (tipI != null ? `<text class="cf-br-c ${ch.cls}" x="${(W - 2).toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end" data-cftip="${tipI}">${esc(cfChgShort(ch))}</text>` : '') + `</g>`;
     if (!r.br) prevEnd = mid + bh / 2;
     y += h;
   });
@@ -3361,10 +3364,8 @@ function cfDrawMonths() {
   const nice = v => { const p = 10 ** Math.floor(Math.log10(v)), f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; };
   const zNw = Z.nw || 1, nmax = zNw !== 1 ? Math.max(1, (cut2 || ends[ends.length - 1] || 1) * zNw) : nice(Math.max(1, cut2 || ends[ends.length - 1] || 1)), clip2 = !!cut2 || zNw !== 1;
   const lowDown = clip2 && bs.some(b => -b.ndn > nmax);
-  const LEG = [['wert', t('cf_wertaenderungen')], ['umsch', t('cf_umschichtungen')], ['bank', t('cf_bankguthaben_kurz')]], CW = 5.9, legW = LEG.reduce((a, [, l]) => a + l.length * CW + 24, 0);
-  const W0 = Math.max(280, el.clientWidth), twoL = (W0 >= 640 ? 58 : 44) + t('cf_veraenderung_nv').length * 6.4 + 12 + legW > W0 - 8;     // narrow: the legend below its title
-  const legRows = [[]]; { let used = 0; for (const it of LEG) { const w = it[1].length * CW + 24; if (used + w > W0 - 8 && legRows[legRows.length - 1].length) { legRows.push([]); used = 0; } legRows[legRows.length - 1].push(it); used += w; } }      // very narrow: two rows
-  const W = W0, H1 = W < 520 ? 170 : 200, H2 = 72, gapH = (downCut ? 40 : 26) + 18 + (twoL ? 14 : 0) + (legRows.length - 1) * 14, H = H1 + gapH + H2 + 20 + (lowDown ? 12 : 0), P = {l: W >= 640 ? 58 : 44, r: 8, t: 16};          // +18: the lower panel a little apart
+  // no key: the tooltip names the colours; the room above the lower panel holds its title and the heights of cut bars
+  const W = Math.max(280, el.clientWidth), H1 = W < 520 ? 170 : 200, H2 = 88, upCut2 = clip2 && bs.some(b => b.nup > nmax), gapH = (downCut ? 40 : 26) + 18 + (upCut2 ? 8 : 0), H = H1 + gapH + H2 + 20 + (lowDown ? 12 : 0), P = {l: W >= 640 ? 58 : 44, r: 8, t: 16};          // +18: the lower panel a little apart
   let ticks = niceTicks(lo, hi, 4, 4); const step = ticks.length > 1 ? ticks[1] - ticks[0] : (hi - lo);          // at least four lines
   if (!clip) { if (ticks[0] > lo + step * 1e-6) ticks.unshift(ticks[0] - step); if (ticks[ticks.length - 1] < hi - step * 1e-6) ticks.push(ticks[ticks.length - 1] + step); }
   else ticks = ticks.filter(v => v <= hi + step * 1e-6 && v >= lo - step * 1e-6);
@@ -3398,14 +3399,11 @@ function cfDrawMonths() {
       }
     }
   });
+  // the change in cash: a quiet short mark at its height -- only where it stands clear of the zero line (no clutter there)
+  const over = Math.max(0, Math.min(3, (slot - bw) / 2 - 1.5));          // the marks a little wider than the bar -- never touching the next one
+  bs.forEach((b, i) => { const yn = y(b.net); if (Math.abs(yn - y(0)) >= 4) g += `<line class="cf-net" x1="${(x(i) - over * 0.7).toFixed(1)}" x2="${(x(i) + bw + over * 0.7).toFixed(1)}" y1="${yn.toFixed(1)}" y2="${yn.toFixed(1)}"/>`; });
   const t2 = H1 + gapH, z2 = t2 + H2 / 2, y2 = v => z2 - Math.max(-nmax, Math.min(nmax, v)) / nmax * (H2 / 2 - 2);
-  g += `<text class="cf-sub-l" x="${twoL ? 4 : P.l}" y="${(t2 - 8 - (twoL ? 15 : 0) - (legRows.length - 1) * 14).toFixed(1)}">${esc(t('cf_veraenderung_nv'))}</text>`;
-  legRows.forEach((row, r) => { let lx = W - P.r; const ly = t2 - 8 - r * 14;          // its legend at the right, from right to left
-    for (const [k, l] of row) {
-      const tw = l.length * CW; lx -= tw;
-      g += `<text class="cf-sub-lg" x="${lx.toFixed(1)}" y="${ly.toFixed(1)}">${esc(l)}</text>` + `<rect class="cf-col ${k}" x="${(lx - 13).toFixed(1)}" y="${(ly - 8).toFixed(1)}" width="9" height="9" rx="2"/>`;
-      lx -= 24;
-    } });
+  g += `<text class="cf-sub-l" x="4" y="${(t2 - (upCut2 ? 20 : 10)).toFixed(1)}">${esc(t('cf_veraenderung_nv'))}</text>`;
   // its scale: the top, the middle (0) and the bottom labelled, halfway a faint line
   for (const v of [nmax, nmax / 2, 0, -nmax / 2, -nmax]) {
     const yy = y2(v), lab = v === 0 || Math.abs(v) === nmax;
@@ -3424,9 +3422,11 @@ function cfDrawMonths() {
       if (clip2 && Math.abs(tot) > nmax) {
         const ye = y2(tot) + (sign > 0 ? 7 : -7), x0 = x(i) - 2, x1 = x(i) + bw + 2;
         g += `<path class="cf-break nw" d="M${x0},${(ye + 2).toFixed(1)}L${x1},${(ye - 2).toFixed(1)}M${x0},${(ye + 6).toFixed(1)}L${x1},${(ye + 2).toFixed(1)}"/>`
-          + `<text class="cf-val-l nw" x="${cx(i).toFixed(1)}" y="${(sign > 0 ? t2 + 7 : t2 + H2 + 11).toFixed(1)}" text-anchor="middle">${cutLab(tot)}</text>`;
+          + `<text class="cf-val-l nw" x="${cx(i).toFixed(1)}" y="${(sign > 0 ? t2 - 5 : t2 + H2 + 11).toFixed(1)}" text-anchor="middle">${cutLab(tot)}</text>`;
       }
     }
+    // the result -- the change in net worth -- as a short line at its height, across the bar (beyond the range: none, the tooltip has it)
+    if (Math.abs(b.nup) + Math.abs(b.ndn) >= 0.5 && Math.abs(b.nw) <= nmax) { const yn = y2(b.nw); g += `<line class="cf-net nw" x1="${(x(i) - over).toFixed(1)}" x2="${(x(i) + bw + over).toFixed(1)}" y1="${yn.toFixed(1)}" y2="${yn.toFixed(1)}"/>`; }
   });
   { const n = bs.length, lab = i => byYear || i === 0 || i === n - 1 || bs[i].k.endsWith('-01') ? bs[i].label : MONATE[+bs[i].k.slice(5) - 1];
     const order = [0, n - 1, ...bs.map((b, i) => i).filter(i => i > 0 && i < n - 1 && (byYear || bs[i].k.endsWith('-01'))), ...bs.map((b, i) => i).filter(i => i > 0 && i < n - 1)];
@@ -3632,9 +3632,9 @@ function cfDrawHeat() {
       const cs = [...r.cats].map(([n, c]) => [n, c[m] || 0]).filter(([, x]) => Math.abs(x) >= 0.5).sort((p, q) => q[1] - p[1]);
       const shown = cs.length > 7 ? cs.slice(0, 6) : cs, rest = cs.slice(shown.length);
       const p = prevY(r, m), pch = cfChange(v, p, up);          // the year before and the change, in one line
-      const before = p != null ? cfTipRow('', t('cf_vorjahr'), cfEur(p), pch || {cls: '', txt: '–'}) : '';
+      const before = p != null ? `<div><i></i><span>${esc(t('cf_vorjahr'))}</span><b class="cf-tip-pv">${cfEur(p)}<em class="${pch ? pch.cls : ''}">${pch ? pch.txt : '–'}</em></b></div>` : '';          // value and change side by side, at the right
       const parts = shown.length > 1 || (shown.length === 1 && shown[0][0] !== r.label) ? `<div class="cf-tip-kv cf-tip-parts">${shown.map(([n, x]) => kv(n, cfEur(x))).join('')}${rest.length ? kv(t('cf_uebrige', rest.length), cfEur(rest.reduce((a, [, x]) => a + x, 0))) : ''}</div>` : '';
-      const tip = cfTip(`<div class="cf-tip-h">${esc(r.label)} <span class="muted">· ${esc(q ? lab(m) : ML(m))}</span></div>${cfTipRow(up ? 'sw in' : 'sw out', t(up ? 'einnahmen' : 'ausgaben'), cfEur(v), before ? {cls: '', txt: ''} : null)}${before}${parts}${q && cnt[m] < 3 ? `<div class="cf-tip-note">${esc(t('cf_teilquartal', cnt[m]))}</div>` : ''}${open && Math.abs(v) >= 0.5 ? `<div class="cf-tip-hint">${esc(t('cf_klick_umsaetze'))}</div>` : ''}`);
+      const tip = cfTip(`<div class="cf-tip-h">${esc(r.label)} <span class="muted">· ${esc(q ? lab(m) : ML(m))}</span></div>${cfTipRow(up ? 'sw in' : 'sw out', t(up ? 'einnahmen' : 'ausgaben'), cfEur(v))}${before}${parts}${q && cnt[m] < 3 ? `<div class="cf-tip-note">${esc(t('cf_teilquartal', cnt[m]))}</div>` : ''}${open && Math.abs(v) >= 0.5 ? `<div class="cf-tip-hint">${esc(t('cf_klick_umsaetze'))}</div>` : ''}`);
       return `<span class="cf-heat-c${k ? '' : ' none'}${q && cnt[m] < 3 ? ' part' : ''}${open && Math.abs(v) >= 0.5 ? ' open' : ''}${big ? ' big' : ''}${ahead.has(m) ? ' ahead' : ''}" style="${k ? `--k:${Math.round(k * 100)}%` : ''}" data-cftip="${tip}" tabindex="0"${open && Math.abs(v) >= 0.5 ? ` data-hr="${ri}" data-hm="${m}"` : ''}>${big ? `<b class="cf-heat-x">${esc(Fs(v, 0))}</b>` : ''}</span>`; }).join('')          // an outlier: its amount in the cell
       + `<span class="cf-heat-v${r.total ? ' tot' : ''}">${esc(Fk(r.sum / all.length, false, r.total ? Math.abs(r.sum / all.length) : avgMax))}</span>`;
   });
@@ -3704,7 +3704,7 @@ function cfDrawFlow() {
   // every item with parts, at every level: a click on the total opens them all (and closes them again)
   const allKeys = []; { const walk = (e, side, parent) => { const key = keyOf(e, side, parent); if (e.kids && e.kids.length > 1) { allKeys.push(key); e.kids.forEach(k => walk(k, side, key)); } };
     F.src.forEach(e => walk(e, 's', null)); F.use.forEach(e => walk(e, 'u', null)); }
-  CF.flowAll = allKeys; const anyOpen = allKeys.some(x => open[x]); { const c = el.closest('.cf-card'); if (c) c.classList.toggle('fl-all', allKeys.length > 0); }          // a click beside the chart: all open -- or, when any is, all closed
+  CF.flowAll = allKeys; const anyOpen = allKeys.some(x => open[x]);          // a click beside the bands: all open, or all closed (a normal pointer there)          // a click beside the chart: all open -- or, when any is, all closed
   // amounts short (17,4T): the names take less room, the bands more
   // half width: the amount small below the name, both as short as they can be -- the bands keep the middle
   const amt = v => Fs(v);
@@ -3799,8 +3799,15 @@ function cfShowTip(el) {
   const host = box.parentElement.getBoundingClientRect(), r = el.getBoundingClientRect(), bw = box.offsetWidth, bh = box.offsetHeight;
   let left = r.left - host.left + r.width / 2 - bw / 2; left = Math.max(0, Math.min(left, host.width - bw));
   let top = r.top - host.top - bh - 8; if (top < 0) top = r.bottom - host.top + 8;
-  const fl = el.closest('#cf-flow svg');          // sources and uses: above the chart (below it where there is no room) -- nothing of it hidden
-  if (fl) { const a = fl.getBoundingClientRect(); top = a.top - host.top - bh - 4; if (top < 0) top = a.bottom - host.top + 4; }
+  // sources and uses: beside the chart (it can be taller than the window), at the height of the pointer and always in view --
+  // where there is no room beside it, over its other half; a narrow screen: as everywhere (above or below the item)
+  const fl = el.closest('#cf-flow svg');
+  if (fl && host.width >= 600) { const a = fl.getBoundingClientRect(), recent = CF.pt && Date.now() - CF.pt.t < 400;
+    const cy = recent ? CF.pt.y : r.top + r.height / 2, vt = Math.max(8, Math.min(innerHeight - bh - 8, cy - bh / 2));
+    top = vt - host.top;
+    if (host.right - a.right >= bw + 8) left = a.right - host.left + 8;
+    else if (a.left - host.left >= bw + 8) left = a.left - host.left - bw - 8;
+    else left = (r.left + r.width / 2 > a.left + a.width / 2) ? a.left - host.left + 4 : a.right - host.left - bw - 4; }
   const br = el.closest('#cf-bridge svg, #cf-wbridge svg');          // the bridges: right of the row's figures, beside the chart (where there is room)
   if (br) { const a = br.getBoundingClientRect(), x = a.right - host.left + 8;
     if (x + bw <= host.width) { left = x; top = Math.max(0, r.top - host.top + r.height / 2 - bh / 2); } }
@@ -3840,7 +3847,7 @@ function bindCfCharts(main) {
   draw();
   if (CF.focusAfter) { const f = $('#' + CF.focusAfter, main); CF.focusAfter = null; if (f) f.focus({preventScroll: true}); }          // after choosing a month: back on its button
   const hide = () => { const b = $('#cf-tip'); if (b) b.classList.add('hidden'); };
-  for (const [ev, fn] of [['pointerover', e => { const el = e.target.closest('[data-cftip]'); if (el) cfShowTip(el); }], ['focusin', e => { const el = e.target.closest('[data-cftip]'); if (el) cfShowTip(el); }],
+  for (const [ev, fn] of [['pointerover', e => { CF.pt = {x: e.clientX, y: e.clientY, t: Date.now()}; const el = e.target.closest('[data-cftip]'); if (el) cfShowTip(el); }], ['focusin', e => { const el = e.target.closest('[data-cftip]'); if (el) cfShowTip(el); }],
     ['pointerout', e => { const el = e.target.closest('[data-cftip]'); if (el && !(e.relatedTarget && el.contains(e.relatedTarget))) hide(); }], ['focusout', hide]]) wrap.addEventListener(ev, fn);
   // the month under the pointer in the monthly chart: its column heading in the table lights up softly (the chosen end month keeps its mark)
   const colMark = k => { $$('.cf-tbl thead th.cf-hov', main).forEach(th => th.classList.remove('cf-hov')); if (k) $$(`.cf-tbl:not(.cf-names) thead th[data-key="${CSS.escape(k)}"]`, main).forEach(th => th.classList.add('cf-hov')); };
@@ -3973,9 +3980,12 @@ function bindCfCharts(main) {
     const sw = e.target.closest('#cf-pie-art button');
     if (sw) { if (sw.dataset.a === S.cfPieArt) return; S.cfPieArt = sw.dataset.a; CF.pieSel = null; hide();
       // the switch stays where it is: the cards are drawn anew (for a moment shorter), then the page is moved back by what it moved
+      // the card keeps at least its height: at the end of the page a shorter one would pull the page (and the switch) up
+      const duo = sw.closest('.cf-duo'), h0 = duo ? duo.offsetHeight : 0;
       keepPlace(sw, () => `#cf-pie-art button[data-a="${sw.dataset.a}"]`, () => {
         const D = B(), [cur, prev] = cfMonths(D, S.cfZeit), old = $('#cf-pie-card'); if (old) { old.outerHTML = cfPie(D, cur, prev); cfDrawPie(); }
-        const hc = $('#cf-heat-card'); if (hc) { hc.outerHTML = cfHeatCard(!$('#cf-pie-card')); cfDrawHeat(); } }); return; }
+        const hc = $('#cf-heat-card'); if (hc) { hc.outerHTML = cfHeatCard(!$('#cf-pie-card')); cfDrawHeat(); }
+        if (duo && duo.offsetHeight < h0) duo.style.minHeight = h0 + 'px'; }); return; }
     if (!e.target.closest('#cf-pie')) return; pin(e.target.closest('#cf-pie [data-pie]')); });
   wrap.addEventListener('keydown', e => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('#cf-heat .cf-heat-c[data-hr], #cf-heat .cf-heat-n[data-hr], #cf-pie .cf-pie-lab[data-kats], #cf-bridge .cf-br-row[data-br], #cf-wbridge .cf-br-row[data-br], #cf-flow [data-fl], #cf-flow [data-flall], [data-bal]')) { e.preventDefault(); CF.touch = false; e.target.dispatchEvent(new MouseEvent('click', {bubbles: true})); return; }
@@ -5525,6 +5535,22 @@ function bind(main) {
   $$('.cf-tbl:not(.ptable) tr.det[data-kat] td:not(:first-child)', main).forEach(td => td.addEventListener('click', () => {
     const c = (CF.tblCols || [])[td.cellIndex - 1], kat = td.parentNode.dataset.kat; if (!c || !c.months.length || !kat) return;
     cfOpenTx({kats: [kat], months: c.months, titel: CP(kat).split(' › ').slice(-1)[0] + ' · ' + c.label}); }));
+  // a figure double-clicked or held: its row opens or closes, as on its name (the side panel of the first click closes again)
+  $$('.cf-tbl:not(.ptable):not(.cf-names)', main).forEach(tbl => {
+    const cell = e => { const td = e.target.closest('td'); return td && td !== td.parentNode.firstElementChild && td.parentNode.matches('tr[data-tog]') ? td : null; };
+    const toggle = td => { closeDrawer(); const n = td.parentNode.firstElementChild; if (n) n.dispatchEvent(new MouseEvent('click', {bubbles: true})); };
+    let hold = null;
+    const stop = () => { if (hold) { clearTimeout(hold.t); hold = null; } };
+    tbl.addEventListener('mousedown', e => { if (e.detail > 1 && cell(e)) e.preventDefault(); });          // no word selected by the double click
+    tbl.addEventListener('dblclick', e => { const td = cell(e); if (td) toggle(td); });
+    tbl.addEventListener('pointerdown', e => { const td = cell(e); stop(); CF.held = 0; if (!td || e.button) return;          // a new press: what the last hold blocked is over
+      hold = {x: e.clientX, y: e.clientY, t: setTimeout(() => { hold = null; toggle(td); CF.held = Date.now(); }, 550)}; });
+    tbl.addEventListener('pointermove', e => { if (hold && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 8) stop(); });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) tbl.addEventListener(ev, stop);
+    // the click that ends a hold opens nothing; nor does the menu of a long touch
+    tbl.addEventListener('click', e => { if (Date.now() - (CF.held || 0) < 700) { e.stopPropagation(); e.preventDefault(); CF.held = 0; } }, true);
+    tbl.addEventListener('contextmenu', e => { if (Date.now() - (CF.held || 0) < 700 && cell(e)) e.preventDefault(); });
+  });
   // a click on a row's name opens or closes it (its figures show the bookings behind them; in planning they are edited)
   $$('.cf-tbl [data-tog]', main).forEach(el => el.addEventListener('click', e => {
     if (el.tagName === 'TR' && (e.target.closest('td') !== el.firstElementChild || e.target.closest('select, input, a, .edit, .hq, .tag, .to-bal, .tipped, button:not(.disc)'))) return;

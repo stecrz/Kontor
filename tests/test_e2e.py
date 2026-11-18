@@ -2934,6 +2934,12 @@ class BrowserTest(unittest.TestCase):
                 pg.click(N_ + " tr.sec[data-tog='s:Investitionen'] td"); pg.wait_for_timeout(250)
                 self.assertIsNone(pg.query_selector(F_ + " tr[data-key^='Investitionen/']"))
                 pg.click(N_ + " tr.sec[data-tog='s:Investitionen'] td"); pg.wait_for_timeout(250)
+                # a figure double-clicked: its row closes (as on the name), no side panel stays open; held: it opens again
+                pg.dblclick(F_ + " tr.sec[data-tog='s:Investitionen'] td.tx >> nth=-1"); pg.wait_for_timeout(400)
+                self.assertIsNone(pg.query_selector(F_ + " tr[data-key^='Investitionen/']")); self.assertFalse(pg.evaluate("$('#drawer').classList.contains('open')"))
+                bx = pg.query_selector(F_ + " tr.sec[data-tog='s:Investitionen'] td.tx >> nth=-1").bounding_box()
+                pg.mouse.move(bx["x"] + bx["width"] / 2, bx["y"] + bx["height"] / 2); pg.mouse.down(); pg.wait_for_timeout(750); pg.mouse.up(); pg.wait_for_timeout(300)
+                self.assertTrue(pg.query_selector(F_ + " tr[data-key^='Investitionen/']")); self.assertFalse(pg.evaluate("$('#drawer').classList.contains('open')"))
                 kat = pg.eval_on_selector(F_ + " tr.det[data-kat]", "tr => tr.dataset.kat")
                 pg.click(F_ + " tr.det[data-kat] td:nth-child(2)"); pg.wait_for_selector("#drawer.open #cftx-page")      # a side panel: the cash flow stays
                 pg.click(F_ + " tr.det[data-kat] td:nth-child(2)"); pg.wait_for_timeout(250)                    # the same figure again: closed
@@ -3127,6 +3133,7 @@ class BrowserTest(unittest.TestCase):
                 for c in ("ein", "aus", "inv", "fin", "bank", "umsch", "wert"):          # below: as the table -- change in cash, moves between accounts, change in value
                     self.assertTrue(pg.query_selector("#cf-months .cf-col." + c), c)
                 self.assertIsNone(pg.query_selector("#cf-months .cf-prev-o"))         # no year before in it (too little gain, confusing)
+                nets = pg.evaluate("[...document.querySelectorAll('#cf-months line.cf-net.nw')].length"); self.assertGreater(nets, 0); self.assertLessEqual(nets, 12)      # the result of each month as a short line
                 nwk = pg.evaluate("""(() => { const D = B(), m = D.monate.filter(m => m < D.ist_bis).slice(-1)[0], s = D.kapitalfluss.summen[m];
                     const u = -D.kapitalfluss.sektionen.reduce((a, sk) => sk.name === 'Bewertung' ? a : a + sk.zeilen.reduce((c, z) => z.nw ? c : c + ((z.werte || {})[m] || 0), 0), 0);
                     return [s.Nettovermoegen_delta, s.Bewertung, u]; })()""")
@@ -3187,11 +3194,11 @@ class BrowserTest(unittest.TestCase):
                     pg.dispatch_event(".cf-card[data-cfid='flow']", "click"); pg.wait_for_timeout(150); self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
                     pg.dispatch_event("#cf-flow .cf-fl-g[data-fl='%s']" % key, "click"); pg.wait_for_timeout(150)
                     pg.dispatch_event("#cf-flow svg", "click"); pg.wait_for_timeout(150); self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
-                    # hover on a name or band: exact amount, share and the period before -- above the chart, which stays free
+                    # hover on a name or band: exact amount, share and the period before -- beside the chart, always in view
                     pg.dispatch_event("#cf-flow .cf-fl-l >> nth=0", "pointerover"); pg.wait_for_timeout(100)
                     tip = pg.inner_text("#cf-tip"); self.assertIn("Betrag", tip); self.assertIn("Anteil", tip); self.assertIn("€", tip)
                     self.assertTrue(pg.evaluate("""(() => { const a = document.querySelector('#cf-tip').getBoundingClientRect(), b = document.querySelector('#cf-flow svg').getBoundingClientRect();
-                        return a.bottom <= b.top + 1 || a.top >= b.bottom - 1; })()"""))
+                        return a.top >= 0 && a.bottom <= innerHeight && (innerWidth < 700 || a.right <= b.left + b.width / 2 + 1 || a.left >= b.left + b.width / 2 - 1); })()"""))      # in view, at most over the other half
                     pg.dispatch_event("#cf-flow .cf-fl-l >> nth=0", "pointerout"); pg.wait_for_timeout(50)
                     # opening an item never narrows the bands: the names keep their share of the width
                     pg.dispatch_event("#cf-flow .cf-fl-g[data-fl='%s']" % key, "click"); pg.wait_for_timeout(150)
@@ -3261,6 +3268,8 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("[cfRestP([{p: 10}, {p: null}], true), cfRestP([{p: 10}, {p: 5}], true), cfRestP([{p: 10}], false)]"), [None, 15, None])
                 self.assertEqual(pg.evaluate("[cfChange(1000, 1000, false).txt, cfChange(1002, 1000, false).txt, cfChange(1000000.6, 1000000, false).txt, cfChange(100050, 100000, false).txt, cfChange(10532, 100, false).txt, cfChange(1334, 100, false).txt]"),
                                  ["±0 %", "+0,2 %", "+<0,01 %", "+0,05 %", "+10T %", "+1,2T %"])                                  # never rounded up
+                self.assertEqual(pg.evaluate("[cfChgShort(cfChange(1334, 100, false)), cfChgShort(cfChange(350, 100, true)), cfChgShort(cfChange(-2500, 100, true)), cfChgShort(cfChange(100, 100, true))]"),
+                                 ["+1T", "+250%", "−3T", "±0%"])                                                                 # the bridges' narrow column: from 1000 % only thousands
                 pg.hover("#cf-heat .cf-heat-c >> nth=0"); pg.wait_for_timeout(150); self.assertIn("€", pg.inner_text("#cf-tip")); self.assertNotIn("Ø", pg.inner_text("#cf-tip")); pg.mouse.move(5, 5)
                 self.assertEqual(len(pg.query_selector_all("#cf-heat .cf-heat-v")), len(pg.query_selector_all("#cf-heat .cf-heat-n")))     # the average per row
                 # all positions together: a row of its own below a line, on its own scale

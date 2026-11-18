@@ -10,9 +10,8 @@ description: Jede Änderung an Kontor abschließen – prüfen, Version, Changel
    - `python3 -m pyflakes *.py` – keine neuen Warnungen
    - `python3 -m pytest -q tests` (~2½ min, im Hintergrund laufen lassen)
    - Rechenlogik oder Buchungsregeln geändert: zusätzlich `KONTOR_FUZZ_SEEDS=400 python3 -m pytest -q tests/test_fuzz.py`
-2. **Oberfläche oder Hilfe geändert:** Skill `ui-check`; Hilfe `docs/help.de.md` und `docs/help.en.md` mit gleichen Ankern;
-   Hilfe-Bilder (`python3 tests/screenshots.py - de` / `- en`) nur neu, wenn sich eine gezeigte Seite wesentlich verändert hat –
-   nicht bei jedem Release (Entwicklungsphase: der Fokus liegt auf der App; die Version steht ohnehin im Bild).
+2. **Oberfläche geändert:** Skill `ui-check`. Hilfe (`docs/help.*.md`), README und Hilfe-Bilder (`tests/screenshots.py`)
+   **nur beim großen Versionssprung** (zweite Stelle) – bei kleinen Versionen nicht anfassen, auch keine Bilder neu erzeugen.
 3. **Unabhängig prüfen** (Rechenlogik, Schreibzugriffe auf MoneyMoney, Sicherheit): Agent `reviewer` auf die Änderung
    ansetzen, Befunde beheben oder begründet verwerfen.
 4. **Version:** `VERSION` dritte Stelle +1. Zweite Stelle nur bei erheblichen Änderungen und nur nach Rückfrage. Erste nie.
