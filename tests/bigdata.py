@@ -59,7 +59,7 @@ def build(n_tx: int = 190_000, years: int = 25, seed: int = 7, today: date = dat
     for i in range(5):
         leaf("priv.cc%d" % i, "Kreditkarte %d" % i, 3, "Kreditkarte", weight=2.0 if i < 2 else 0.5, last=None if i < 2 else date(2010 + i, 1, 1))
     # GmbH: 23 Konten
-    group("gmbh", "Muster Biomarkt GmbH", 1)
+    group("gmbh", "Muster Handel GmbH", 1)
     group("gmbh.liq", "Liquidität", 2)
     for i in range(10):
         leaf("gmbh.giro%d" % i, "Geschäftskonto %d" % i, 3, weight=12.0 if i < 4 else 2.0, last=None if i < 7 else date(2019 + i - 7, 6, 1))
@@ -70,19 +70,19 @@ def build(n_tx: int = 190_000, years: int = 25, seed: int = 7, today: date = dat
     for i in range(5):
         leaf("gmbh.s%d" % i, "Sonstiges %d" % i, 3, "Offline-Konto", weight=0.1)
     # GbR A: 6 Konten, GbR B: 7 Konten (jung)
-    group("pb", "Alpha Asset eGbR", 1)
-    leaf("pb.kk", "Kontokorrent", 2, weight=0.5, balance=40000)
-    leaf("pb.immo", "Immobilie Parkweg", 2, "Offline-Konto", weight=0.01, balance=1900000)
-    leaf("pb.vd", "Verkäuferdarlehen", 2, "Offline-Konto", weight=0.05, balance=-1600000)
+    group("ga", "Alpha eGbR", 1)
+    leaf("ga.kk", "Kontokorrent", 2, weight=0.5, balance=40000)
+    leaf("ga.immo", "Immobilie Parkweg", 2, "Offline-Konto", weight=0.01, balance=1900000)
+    leaf("ga.vd", "Verkäuferdarlehen", 2, "Offline-Konto", weight=0.05, balance=-1600000)
     for i in range(3):
-        leaf("pb.k%d" % i, "Kapitalkonto %d" % i, 2, "Offline-Konto", weight=0.02, balance=-120000)
-    group("shs", "Beta Verwaltung eGbR", 1)
-    leaf("shs.kk", "Kontokorrent", 2, weight=0.5, balance=15000)
-    leaf("shs.immo", "Immobilie Bahnhofstraße", 2, "Offline-Konto", weight=0.01, balance=3300000)
+        leaf("ga.k%d" % i, "Kapitalkonto %d" % i, 2, "Offline-Konto", weight=0.02, balance=-120000)
+    group("gb", "Beta eGbR", 1)
+    leaf("gb.kk", "Kontokorrent", 2, weight=0.5, balance=15000)
+    leaf("gb.immo", "Immobilie Bahnhofstraße", 2, "Offline-Konto", weight=0.01, balance=3300000)
     for i in range(3):
-        leaf("shs.d%d" % i, "Darlehen %d" % i, 2, "Darlehenskonto", weight=0.3, balance=-1000000)
+        leaf("gb.d%d" % i, "Darlehen %d" % i, 2, "Darlehenskonto", weight=0.3, balance=-1000000)
     for i in range(2):
-        leaf("shs.k%d" % i, "Kapitalkonto %d" % i, 2, "Offline-Konto", weight=0.02, balance=-74000)
+        leaf("gb.k%d" % i, "Kapitalkonto %d" % i, 2, "Offline-Konto", weight=0.02, balance=-74000)
     # Rest bis 100 Konten: alte Konten in einer Gruppe "Archiv"
     group("priv.archiv", "Archiv", 2)
     i = 0
@@ -103,7 +103,7 @@ def build(n_tx: int = 190_000, years: int = 25, seed: int = 7, today: date = dat
         if key.startswith("gmbh"):
             cat = rnd.choice(CATS[17:23] + ["Umbuchung", ""])
             amt = rnd.choice([-1, -1, -1, 1]) * round(rnd.uniform(5, 25000), 2)
-        elif key in ("pb.kk", "shs.kk"):
+        elif key in ("ga.kk", "gb.kk"):
             cat = rnd.choice(["Vermietung\\Objekt A\\Mieteinnahmen", "Vermietung\\Objekt A\\Hausgeld", "Finanzierung\\Zinsen", "Umbuchung"])
             amt = rnd.choice([-1, 1]) * round(rnd.uniform(100, 12000), 2)
         else:
@@ -132,9 +132,9 @@ def config_for_big() -> Dict:
         "darlehen": [], "gesellschaften": [],
         "bereiche": [
             {"id": "b-priv", "name": "Max Mustermann", "art": "privat", "haupt": True, "anteil": None, "aktiv": True, "konten": [F.uid("priv") + " | Max Mustermann"]},
-            {"id": "b-gmbh", "name": "Muster Biomarkt GmbH", "art": "firma", "haupt": False, "anteil": None, "aktiv": True, "konten": [F.uid("gmbh") + " | Muster Biomarkt GmbH"]},
-            {"id": "b-pb", "name": "Alpha Asset eGbR", "art": "gesellschaft", "haupt": False, "anteil": 0.49, "aktiv": True, "konten": [F.uid("pb") + " | Alpha Asset eGbR"]},
-            {"id": "b-shs", "name": "Beta Verwaltung eGbR", "art": "gesellschaft", "haupt": False, "anteil": 0.49, "aktiv": True, "konten": [F.uid("shs") + " | Beta Verwaltung eGbR"]},
+            {"id": "b-gmbh", "name": "Muster Handel GmbH", "art": "firma", "haupt": False, "anteil": None, "aktiv": True, "konten": [F.uid("gmbh") + " | Muster Handel GmbH"]},
+            {"id": "b-ga", "name": "Alpha eGbR", "art": "gesellschaft", "haupt": False, "anteil": 0.4, "aktiv": True, "konten": [F.uid("ga") + " | Alpha eGbR"]},
+            {"id": "b-gb", "name": "Beta eGbR", "art": "gesellschaft", "haupt": False, "anteil": 0.4, "aktiv": True, "konten": [F.uid("gb") + " | Beta eGbR"]},
         ],
         "bilanz": {"monate_zurueck": 0, "inaktiv_monate": 12},
         "kategorien": {"aktiv": True, "lernen": True, "mm_ueberschreiben": False},

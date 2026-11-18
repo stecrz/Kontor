@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.14.0 (2026-11-18 06:40)
+- Gesamtprüfung: Tests mit 1000 Zufallsläufen, alle Seiten hell/dunkel auf Mac und iPhone, Hilfe, Tooltips, README und Hilfe-Bilder aktualisiert.
+- Cashflow-Tabelle: jede Zahl zeigt die Umsätze dahinter (auch zusammengefasste Zeilen wie „Unklar“); auf- und zuklappen nur über den Namen.
+- Sicherheit: Update-Quelle nur am Mac änderbar und angezeigt, wenn sie abweicht; Protokoll ohne Fehlertexte abgelehnter Anfragen; Parameter geprüft.
+- iPhone: Hilfe nicht mehr breiter als der Bildschirm; Auto-Buchungen kompakter.
+- Umsätze & Belege: Knöpfe in einer Zeile.
+- Testdaten neutralisiert.
+
 ## 3.13.34 (2026-11-18 05:39)
 - Umsätze hinter einer Zahl immer im Seitenfenster, auch bei „Unklar“.
 - Update installieren ohne Rückfrage.
@@ -282,7 +290,7 @@ Prüfung aller Funktionen, Schwerpunkt: nie etwas in MoneyMoney kaputt machen.
 
 ## 3.12.34 (2026-11-10 17:14)
 - Gegenkonten sind jetzt ein Spiegel: Jede Buchung im einen Konto kommt mit umgekehrtem Vorzeichen ins andere – in beide Richtungen, soweit beide Offline-Konten sind. Früher beidseitig von Hand gebuchte Paare werden erkannt. Fehlt das Original einer Gegenbuchung oder wurde es geändert, steht ein Hinweis unter „Auto-Buchungen“. Das Feld „Faktor“ entfällt.
-- Wertanpassungen der Beteiligung nennen die Rechnung: „Wertanpassung: 49 % × … (Wert …) = …“.
+- Wertanpassungen der Beteiligung nennen die Rechnung: „Wertanpassung: Anteil × … (Wert …) = …“.
 - Auto-Buchungen: Hilfe-Symbol mit Kurzhilfe (Klick: Hilfe) und Link zu den Buchungsregeln.
 - Nach einem Update lädt die Seite erst neu, wenn der Dienst wieder antwortet – keine Fehlerseite mehr in der Web-App.
 - Neue Konten aus MoneyMoney erscheinen sofort, nicht erst nach dem ersten Umsatz.

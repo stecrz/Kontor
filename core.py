@@ -1665,6 +1665,9 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "konten_neu": neu,
     }
     step(0.88, "Speichern")
+    # the bookings behind each cash flow row: in a file of their own (large; fetched on a click, not sent with every page)
+    ids = {bid: (b.get("kapitalfluss") or {}).pop("cf_ids", {}) for bid, b in (dataset.get("bereiche") or {}).items() if isinstance(b, dict)}
+    store.save("cf-ids.json", ids)
     store.save("dataset.json", dataset)
     sig = (ledger._kat_sig, _bereiche_sig(bereiche), tuple(sorted(bank_accounts(roles))), transfer_sig)
     cached = getattr(ledger, "_ums_cache", None)

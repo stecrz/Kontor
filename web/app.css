@@ -368,7 +368,7 @@ th.snap-pad, td.snap-pad { padding:0 !important; border:0 !important; background
 @keyframes colflash { from { background:color-mix(in srgb, var(--accent) 22%, transparent); } }
 td.flash, th.flash { animation:colflash 1.4s ease-out; }
 td.flash-hit { animation:cellhit 2.2s ease-out; } @keyframes cellhit { 0%, 45% { box-shadow:inset 0 0 0 2px var(--accent); background-color:var(--accent-soft); } 100% { box-shadow:inset 0 0 0 2px transparent; } }
-.cf-tbl:not(.ptable) tr[data-tog] td, .cf-tbl:not(.ptable) tr.det[data-kat] td, .cf-tbl:not(.ptable) tr.ux td:not(:first-child) { cursor:pointer; } .cf-tbl:not(.ptable) tr.det[data-kat] td:not(:first-child):hover { text-decoration:underline dotted; }
+.cf-tbl:not(.ptable) tr[data-tog] td:first-child, .cf-tbl:not(.ptable) tr.det[data-kat] td:not(:first-child), .cf-tbl:not(.ptable) td.tx { cursor:pointer; } .cf-tbl:not(.ptable) td.tx:hover { text-decoration:underline dotted; text-underline-offset:3px; } .cf-tbl:not(.ptable) tr.det[data-kat] td:not(:first-child):hover { text-decoration:underline dotted; }
 .cf-tbl td.to-bal { cursor:pointer; } .cf-tbl td.to-bal:hover { text-decoration:underline dotted; }
 .chart-legend { display:flex; gap:12px; font-size:12px; color:var(--muted); flex-wrap:wrap; margin-top:6px; }
 .chart-legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px; }
@@ -595,7 +595,7 @@ details.adv { margin:14px 0 4px; } details.adv summary { cursor:pointer; color:v
 .help mark.hm { background:#ffe58a; color:#1d1d1f; border-radius:2px; }
 pre.code { background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font:12px/1.5 ui-monospace, Menlo, monospace; overflow:auto; white-space:pre; }
 a.more { white-space:nowrap; }
-@media (max-width: 800px) { .help-layout { grid-template-columns:1fr; } .help-toc { position:static; max-height:none; flex-direction:row; flex-wrap:wrap; } }
+@media (max-width: 800px) { .help-layout { grid-template-columns:minmax(0, 1fr); } .help-layout > :last-child { overflow-wrap:anywhere; } .help-toc { position:static; max-height:none; flex-direction:row; flex-wrap:wrap; } }
 .wrap td .cnt { font-weight:400; }              /* number of accounts or securities next to a row: not bold */
 
 /* rule proposals for MoneyMoney: the expression, selectable as a whole */
@@ -781,3 +781,5 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
   .cf-tbl:not(.ptable) tr:is(.total, .bal, .check) td:first-child { white-space:normal; line-height:1.25; }      /* long names of results break instead of being cut */
 }
 .kz-areas { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.toolbar .ums-hits { flex:1 1 0; min-width:180px; }          /* the count and its hint wrap, the buttons stay in one row */
+@media (max-width: 700px) { .bk-table td:nth-last-child(-n+2):not(.num):not(.nowrap) { min-width:240px; } }          /* iPhone: the purpose keeps a width (scrolls sideways) instead of very tall rows */

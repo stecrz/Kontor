@@ -1258,12 +1258,21 @@ def filter_transactions(app: "App", q: dict):
     want = None
     if q.get("categories"):
         try:
-            want = [categorize.norm_cat(c) for c in json.loads(q["categories"]) if isinstance(c, str) and c.strip()]
+            got = json.loads(q["categories"])
+            want = [categorize.norm_cat(c) for c in (got if isinstance(got, list) else []) if isinstance(c, str) and c.strip()]
         except ValueError:
             want = []
     only = None
-    if q.get("ids"):                                   # the bookings of an unclear row of the cash flow
+    if q.get("ids"):                                   # bookings by their ids
         only = {int(x) for x in q["ids"].split(",") if x.strip().isdigit()}
+    if q.get("cf_rows"):                               # the bookings behind cash flow rows in these months (a figure clicked)
+        try:
+            keys = json.loads(q["cf_rows"])
+        except ValueError:
+            keys = []
+        months = [m for m in (q.get("cf_months") or "").split(",") if m]
+        rows = ((app.store.load_shared("cf-ids.json", {}) or {}).get(str(q.get("cf_area") or "")) or {})
+        only = {i for k in (keys if isinstance(keys, list) else []) if isinstance(k, str) for m in months for i in ((rows.get(k) or {}).get(m) or [])}
     out = []
     for t in ums:
         if only is not None and t["id"] not in only:
@@ -1726,7 +1735,7 @@ def make_handler(app: App):
                                         "angelegt": kontor_bookings(app.ledger)[:500], "nicht_buchen": list(reversed(app.config.get("nicht_buchen") or [])),
                                         "lokal": self._is_local(s)})
             if path == "/api/log":
-                n = min(2000, int(q.get("n", "300")))
+                n = max(1, min(2000, int(q.get("n", "300"))))
                 try:
                     with open(os.path.join(app.data_dir, "kontor.log"), encoding="utf-8", errors="replace") as f:
                         lines = f.readlines()[-n:]
@@ -1820,7 +1829,7 @@ def make_handler(app: App):
                 kat = categorize.load(app.store)
                 bereich_of = {a.uuid: b["id"] for b in bereiche_for(app.ledger, app.config) for a in b["leaves"]}
                 res = categorize.open_items(kat, app.ledger, bereich_of, int(q["year"]) if q.get("year") else None, q.get("area") or None,
-                                            float(q.get("min") or 0), int(q.get("limit") or 300), bank_accounts(account_roles(app.ledger, app.config)),
+                                            float(q.get("min") or 0), max(1, min(5000, int(q.get("limit") or 300))), bank_accounts(account_roles(app.ledger, app.config)),
                                             set(app.config.get("zuordnen_ohne") or []))
                 if getattr(app.ledger, "_paired", None) is None:
                     app.request_rebuild("assigning")              # which bookings are transfers comes with the report (page reloads then)
@@ -1929,10 +1938,10 @@ def make_handler(app: App):
 
         def _umsaetze(self, q: dict) -> dict:
             hits, counts, ums = filter_transactions(app, q)
-            limit = min(5000, int(q.get("limit", "500")))
+            limit = max(1, min(5000, int(q.get("limit", "500"))))
             jahre = sorted({t["datum"][:4] for t in ums}, reverse=True)
             out = [dict(t, belege=counts.get(t["id"], 0)) for t in hits[:limit]]
-            return {"umsaetze": out, "treffer": len(hits), "gesamt": len(ums), "jahre": jahre}
+            return {"umsaetze": out, "treffer": len(hits), "summe": round(sum(t["betrag"] for t in hits), 2), "gesamt": len(ums), "jahre": jahre}
 
         # -- POST/PUT ------------------------------------------------------
         def do_POST(self):
@@ -2016,7 +2025,7 @@ def make_handler(app: App):
                 log.debug("%s %s: done in %.2f s", self.command, u.path, time.time() - t0)
                 return res
             except ValueError as e:
-                log.warning("%s %s rejected: %s", self.command, u.path, e)
+                log.warning("%s %s rejected (invalid input)", self.command, u.path)          # its text may name a category: not in the log
                 return self._json(400, {"fehler": str(e)})
             except MoneyMoneyError as e:
                 log.warning("%s %s: MoneyMoney not available: %s", self.command, u.path, e)
@@ -2076,6 +2085,9 @@ def make_handler(app: App):
                     return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})      # entering categories in MoneyMoney: only at the Mac
                 old_b, new_b = app.config.get("belege") or {}, cfg.get("belege") or {}
                 if any((old_b.get(k) or "") != (new_b.get(k) or "") for k in ("ordner", "unterordner")) and not local:
+                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+                # where updates come from: only at the Mac (an update is installed with one click there)
+                if ((cfg.get("updates") or {}).get("repo") or "stecrz/Kontor") != ((app.config.get("updates") or {}).get("repo") or "stecrz/Kontor") and not local:
                     return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
                 new_port = int(new_ui.get("port") or 8765)
                 if not 1024 <= new_port <= 65535:
@@ -2368,7 +2380,7 @@ def make_handler(app: App):
                 if not auth.verify_password(str(body.get("passwort", "")), app.auth_record()):
                     time.sleep(0.5)
                     return self._json(401, {"fehler": tr("s_passwort_falsch")})
-                dateien = ["config.json", "plan.json", "state.json", "dataset.json", "transactions.json", "categories.json", "receipts.json", "moneymoney-ledger.bin", "mm-history.json"]
+                dateien = ["config.json", "plan.json", "state.json", "dataset.json", "cf-ids.json", "transactions.json", "categories.json", "receipts.json", "moneymoney-ledger.bin", "mm-history.json"]
                 if body.get("mit_passwort"):
                     dateien.append("auth.json")
                 for name in dateien:

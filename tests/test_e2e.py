@@ -124,11 +124,11 @@ def private_transactions(until):
         out.append(F.tx("priv.giro", date(y, m, 2), -1000.0, "Broker", "Übertrag", "Umbuchung", "DE02100500000054540402"))
         out.append(F.tx("priv.tr", date(y, m, 2), 1000.0, "Hausbank", "Übertrag", "Umbuchung", "DE02120300000000202051"))
         out.append(F.tx("priv.tr", date(y, m, 4), -1000.0, "Broker", "Sparplan ETF", "Investments\\ETF"))
-        out.append(F.tx("pb.kk", date(y, m, 5), 9500.0, "Mieter", "Miete", "Vermietung\\Parkweg\\Mieteinnahmen"))
-        out.append(F.tx("pb.kk", date(y, m, 6), -800.0, "Hausverwaltung", "Hausgeld", "Vermietung\\Parkweg\\Hausgeld"))
+        out.append(F.tx("ga.kk", date(y, m, 5), 9500.0, "Mieter", "Miete", "Vermietung\\Parkweg\\Mieteinnahmen"))
+        out.append(F.tx("ga.kk", date(y, m, 6), -800.0, "Hausverwaltung", "Hausgeld", "Vermietung\\Parkweg\\Hausgeld"))
         if m == 6:
             out.append(F.tx("priv.giro", date(y, 6, 20), -10000.0, "Alpha GbR", "Einlage", "Umbuchung", "DE02701500000000594937"))
-            out.append(F.tx("pb.kk", date(y, 6, 20), 10000.0, "Gesellschafter A", "Einlage", "Umbuchung", "DE02120300000000202051"))
+            out.append(F.tx("ga.kk", date(y, 6, 20), 10000.0, "Gesellschafter A", "Einlage", "Umbuchung", "DE02120300000000202051"))
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)
     return out
 
@@ -138,19 +138,19 @@ def config_for_test(belege_dir=None):
         "probelauf": False, "mitteilungen": False,
         "zeitplan": {"intervall_minuten": 30, "automatisch": False},
         "darlehen": [{
-            "name": "Verkäuferdarlehen", "darlehenskonto": F.uid("pb.vd") + " | Verkäuferdarlehen",
-            "quellkonten": [F.uid("pb.kk") + " | Stadtbank Kontokorrent"],
+            "name": "Verkäuferdarlehen", "darlehenskonto": F.uid("ga.vd") + " | Verkäuferdarlehen",
+            "quellkonten": [F.uid("ga.kk") + " | Stadtbank Kontokorrent"],
             "erkennung": {"gegen_iban": F.SELLER_IBAN}, "ab_datum": "2026-01-01",
             "zins": {"modell": "jahresbasis", "satz": [{"ab": "2025-11-20", "prozent": 3.3}], "buchungstag": "mit_rate"},
             "buchung": {"gegenpartei": "Verkäufer", "kategorie_tilgung": "Umbuchung", "kategorie_zins": "Zinsen"},
             "quelle_kommentar": True}],
         "bereiche": [
             {"id": F.uid("priv"), "name": "Privat", "art": "privat", "haupt": True, "konten": [F.uid("priv") + " | Privat"]},
-            {"id": F.uid("pb"), "name": "Alpha GbR", "art": "gesellschaft", "anteil": 0.49, "konten": [F.uid("pb") + " | Alpha GbR"]},
-            {"id": F.uid("shs"), "name": "Beta GbR", "art": "gesellschaft", "anteil": 0.49, "konten": [F.uid("shs") + " | Beta GbR"]}],
+            {"id": F.uid("ga"), "name": "Alpha GbR", "art": "gesellschaft", "anteil": 0.4, "konten": [F.uid("ga") + " | Alpha GbR"]},
+            {"id": F.uid("gb"), "name": "Beta GbR", "art": "gesellschaft", "anteil": 0.4, "konten": [F.uid("gb") + " | Beta GbR"]}],
         "gesellschaften": [
-            {"bereich": F.uid("pb"), "beteiligung": F.uid("priv.bet.pb") + " | Beteiligung an Alpha GbR"},
-            {"bereich": F.uid("shs"), "beteiligung": F.uid("priv.bet.shs") + " | Beteiligung an Beta GbR"}],
+            {"bereich": F.uid("ga"), "beteiligung": F.uid("priv.bet.ga") + " | Beteiligung an Alpha GbR"},
+            {"bereich": F.uid("gb"), "beteiligung": F.uid("priv.bet.gb") + " | Beteiligung an Beta GbR"}],
         "bilanz": {"monate_zurueck": 24, "illiquide_rollen": ["beteiligungen"],
                    "illiquide_konten": [F.uid("priv.darl") + " | Darlehen Lindenstraße"]},
         "kapitalfluss": {"kategorie_zu_konto": {"Investments\\ETF": F.uid("priv.depot") + " | Depot"}},
@@ -167,7 +167,7 @@ ALL_NEW = {"gesehen": {"id": 0, "tag": "2000-01-01"}}       # Kontor last looked
 
 
 def reset_mock():
-    MockBridge.state = {"accounts": F.accounts_raw({"pb.vd": -1600000.0}), "txs": F.pb_transactions(TODAY) + private_transactions(TODAY)}
+    MockBridge.state = {"accounts": F.accounts_raw({"ga.vd": -1600000.0}), "txs": F.ga_transactions(TODAY) + private_transactions(TODAY)}
     MockBridge.instances = []
     MockBridge.reads = []
     MockBridge.extra_cats = []
@@ -207,7 +207,7 @@ class CoreTests(unittest.TestCase):
         res = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
         props = res["vorschlaege"]; self.assertEqual(len(props), 24); self.assertTrue(all(p["tag"].startswith("#kontor-") for p in props))
         self.assertEqual(MA.kontor_bookings(res["_ledger"].without_planned()), [])     # planned, not made: nothing "created by Kontor"
-        self.assertEqual(res["_ledger"].without_planned().accounts[F.uid("pb.vd")].balance, -1600000.0)
+        self.assertEqual(res["_ledger"].without_planned().accounts[F.uid("ga.vd")].balance, -1600000.0)
         zins = [p for p in props if p["art"] == "zins"]; tilg = [p for p in props if p["art"] == "tilgung"]
         wert = [p for p in props if p["art"] == "wert"]                     # two companies: the same mark, two accounts
         self.assertEqual(len({p["tag"] for p in wert}), 1); self.assertEqual(len({p["key"] for p in wert}), 2)
@@ -272,7 +272,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(r["status"], "ok", r); self.assertEqual(core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)["vorschlaege"], [])
         # a value adjustment of a past month end deleted in MoneyMoney: its day checked again (not under "not booked")
         txs = MockBridge.state["txs"]
-        wert = sorted((t for t in txs if "#kontor-wert-2026" in (t.get("purpose") or "") and t["accountUuid"] == F.uid("priv.bet.pb")), key=lambda t: t["bookingDate"])[2]
+        wert = sorted((t for t in txs if "#kontor-wert-2026" in (t.get("purpose") or "") and t["accountUuid"] == F.uid("priv.bet.ga")), key=lambda t: t["bookingDate"])[2]
         txs.remove(wert)
         acc = next(a for a in MockBridge.state["accounts"] if a["uuid"] == wert["accountUuid"]); acc["balance"][0][0] = round(acc["balance"][0][0] - wert["amount"], 2)
         r = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
@@ -293,10 +293,10 @@ class CoreTests(unittest.TestCase):
         (it may be in the other account by hand already, on another day); what is booked afterwards is mirrored at once."""
         cfg = core.merged_config(self.store.load("config.json")); cfg["probelauf"] = False
         self.store.save("state.json", {})              # Kontor looks for the first time: what is there now is older
-        cfg["gesellschaften"][1] = {"bereich": F.uid("shs"), "rueckwirkend_ab": "alles", "gegenkonten": [
-            {"konto": F.uid("priv.bet.shs") + " | Beteiligung an Beta GbR", "quelle": F.uid("shs.kap.s") + " | Kapitalkonto A"}]}
+        cfg["gesellschaften"][1] = {"bereich": F.uid("gb"), "rueckwirkend_ab": "alles", "gegenkonten": [
+            {"konto": F.uid("priv.bet.gb") + " | Beteiligung an Beta GbR", "quelle": F.uid("gb.kap.a") + " | Kapitalkonto A"}]}
         txs = MockBridge.state["txs"]
-        old = F.tx("shs.kap.s", date(2026, 9, 1), -5000.0, "Ich", "Einlage alt"); txs.append(old)
+        old = F.tx("gb.kap.a", date(2026, 9, 1), -5000.0, "Ich", "Einlage alt"); txs.append(old)
         r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertEqual(r["status"], "ok", r)
         gk = [t for t in txs if "#kontor-gk-" in (t.get("purpose") or "")]
@@ -305,10 +305,10 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(r["probelauf"]); self.assertEqual([(p["rueckwirkend"], p["betrag"], p["gegenpartei"]) for p in wait], [(True, 5000.0, "Beta GbR")])
         self.assertGreaterEqual(self.store.load("state.json")["gesehen"]["id"], old["id"])
         # booked after the mirror was set up: mirrored at the next sync without asking; the older one keeps waiting
-        new = F.tx("shs.kap.s", TODAY, 300.0, "Ich", "Entnahme neu"); txs.append(new)
+        new = F.tx("gb.kap.a", TODAY, 300.0, "Ich", "Entnahme neu"); txs.append(new)
         r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         gk = [t for t in txs if "#kontor-gk-" in (t.get("purpose") or "")]
-        self.assertEqual([(t["amount"], t["accountUuid"], t["name"]) for t in gk], [(-300.0, F.uid("priv.bet.shs"), "Beta GbR")])
+        self.assertEqual([(t["amount"], t["accountUuid"], t["name"]) for t in gk], [(-300.0, F.uid("priv.bet.gb"), "Beta GbR")])
         self.assertIn("Entnahme neu · gespiegelt von Kapitalkonto A · #kontor-gk-%d" % new["id"], gk[0]["purpose"])
         self.assertEqual([p["betrag"] for p in r["vorschlaege"] if p["art"] == "spiegel"], [5000.0])
         # approved: booked; nothing mirrored back, nothing twice
@@ -321,7 +321,7 @@ class CoreTests(unittest.TestCase):
         self.assertFalse([w for w in r["warnungen"] if "Original" in w])
         # the original deleted in MoneyMoney: a note to delete the mirrored booking too (Kontor deletes nothing)
         txs.remove(new)
-        acc = next(a for a in MockBridge.state["accounts"] if a["uuid"] == F.uid("shs.kap.s")); acc["balance"][0][0] = round(acc["balance"][0][0] - 300.0, 2)
+        acc = next(a for a in MockBridge.state["accounts"] if a["uuid"] == F.uid("gb.kap.a")); acc["balance"][0][0] = round(acc["balance"][0][0] - 300.0, 2)
         n = len(txs)
         r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertTrue([w for w in r["warnungen"] if "kein Original mehr" in w], r["warnungen"]); self.assertEqual(len(txs), n)
@@ -338,8 +338,8 @@ class CoreTests(unittest.TestCase):
             raise RuntimeError("unerwartet")
         core.plan_all = boom
         try:
-            MockBridge.state["txs"].append(F.tx("pb.kk", TODAY, -99.0, "x", "y"))        # something to do: the company is worth less
-            kk = next(a for a in MockBridge.state["accounts"] if a["uuid"] == F.uid("pb.kk")); kk["balance"][0][0] = round(kk["balance"][0][0] - 99.0, 2)
+            MockBridge.state["txs"].append(F.tx("ga.kk", TODAY, -99.0, "x", "y"))        # something to do: the company is worth less
+            kk = next(a for a in MockBridge.state["accounts"] if a["uuid"] == F.uid("ga.kk")); kk["balance"][0][0] = round(kk["balance"][0][0] - 99.0, 2)
             with self.assertLogs(level="ERROR") as cm:
                 r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         finally:
@@ -357,12 +357,12 @@ class CoreTests(unittest.TestCase):
         """A configuration changed by hand or imported with the wrong kind of value somewhere: dropped when loaded, nothing fails."""
         cfg = self.store.load("config.json")
         cfg["darlehen"].append("kein Darlehen"); cfg["darlehen"][0]["quellkonten"] = "nur ein Text"; cfg["darlehen"].append({"name": 5, "ab_datum": "2026-13-45"})
-        cfg["gesellschaften"] = [None, {"bereich": F.uid("pb"), "beteiligung": 12, "gegenkonten": [3, {"konto": [], "quelle": F.uid("pb.kap.s")}], "schwelle": "viel"}]
+        cfg["gesellschaften"] = [None, {"bereich": F.uid("ga"), "beteiligung": 12, "gegenkonten": [3, {"konto": [], "quelle": F.uid("ga.kap.a")}], "schwelle": "viel"}]
         cfg["bereiche"].append(7); cfg["bilanz"] = "kaputt"; cfg["abruf"] = {"offline": 4}
         m = core.merged_config(cfg)
         self.assertEqual(len(m["darlehen"]), 2); self.assertEqual(m["darlehen"][0]["quellkonten"], ["nur ein Text"]); self.assertFalse(m["darlehen"][1]["aktiv"])
         # mirrors kept with a company (until 3.13.9) move into the list of their own; an incomplete one is dropped
-        self.assertEqual(m["gesellschaften"], [{"bereich": F.uid("pb"), "beteiligung": "", "schwelle": 0.01}])
+        self.assertEqual(m["gesellschaften"], [{"bereich": F.uid("ga"), "beteiligung": "", "schwelle": 0.01}])
         self.assertEqual(m["kontenspiegel"], [])
         m2 = core.merged_config({"gesellschaften": [{"bereich": "x", "beteiligung": "B", "rueckwirkend_ab": "2026-03-01", "gegenkonten": [{"konto": "A | a", "quelle": "Q | q"}]}],
                                  "kontenspiegel": [{"a": "C", "b": "D", "ab": "alles"}, {"a": "Q", "b": "A", "ab": ""}]})
@@ -447,7 +447,7 @@ class CoreTests(unittest.TestCase):
         self.assertAlmostEqual(secs["Finanzierung"]["Darlehen Lindenstraße / Zinsen"]["werte"]["2026-10"], -900.0, 2)
         self.assertAlmostEqual(secs["Investitionen"]["Einlage/Entnahme Alpha GbR"]["werte"]["2026-06"], -10000.0, 2)
         # GbR-Bereich: Mieteinnahmen in den Einnahmen, Verkaeuferdarlehen in der Finanzierung
-        g = ds["bereiche"][F.uid("pb")]
+        g = ds["bereiche"][F.uid("ga")]
         gs = {s["name"]: {z["zeile"]: z for z in s["zeilen"]} for s in g["kapitalfluss"]["sektionen"]}
         self.assertIn("Vermietung", gs["Einnahmen"])                                     # the position, its categories inside
         self.assertTrue(any("Mieteinnahmen" in d["kategorie"] for d in gs["Einnahmen"]["Vermietung"]["details"]))
@@ -479,7 +479,7 @@ class CoreTests(unittest.TestCase):
         cfg = core.merged_config(config_for_test())
         t = build_tax(led, cfg, TODAY)
         pb = [e for e in t["entitaeten"] if e["name"] == "Alpha GbR"][0]
-        self.assertEqual(pb["art"], "gbr"); self.assertEqual(pb["anteil"], 0.49)
+        self.assertEqual(pb["art"], "gbr"); self.assertEqual(pb["anteil"], 0.4)
         j = pb["jahre"]["2026"]
         self.assertIn("Parkweg", j["objekte"])
         o = j["objekte"]["Parkweg"]
@@ -487,7 +487,7 @@ class CoreTests(unittest.TestCase):
         self.assertAlmostEqual(o["arten"]["Hausgeld"], -11 * 800.0, 2)
         self.assertEqual(o["afa"], 40000.0)
         self.assertAlmostEqual(o["ergebnis"], 11 * 9500 - 11 * 800 - 40000, 2)
-        self.assertAlmostEqual(o["anteil_ergebnis"], round(o["ergebnis"] * 0.49, 2), 2)
+        self.assertAlmostEqual(o["anteil_ergebnis"], round(o["ergebnis"] * 0.4, 2), 2)
         priv = [e for e in t["entitaeten"] if e["name"] == "Privat"][0]["jahre"]["2026"]
         self.assertIn("Anlage N (Arbeitslohn)", priv["positionen"])
         self.assertAlmostEqual(priv["positionen"]["Anlage N (Arbeitslohn)"]["betrag"], 11 * 6500.0, 2)
@@ -508,16 +508,16 @@ class CoreTests(unittest.TestCase):
         pkg = core.export_package(cfg, "Test", strip_uuids=True, ledger=led)
         self.assertEqual(pkg["kontor_paket"], 1)
         txt = json.dumps(pkg, ensure_ascii=False)
-        self.assertNotIn(F.uid("pb.vd"), txt); self.assertNotIn("oberflaeche", pkg["config"]); self.assertIn("Verkäuferdarlehen", txt)
+        self.assertNotIn(F.uid("ga.vd"), txt); self.assertNotIn("oberflaeche", pkg["config"]); self.assertIn("Verkäuferdarlehen", txt)
         new_cfg, unresolved, report = core.import_package(core.merged_config({}), pkg, led, "ergaenzen")
         self.assertEqual(unresolved, [], unresolved)
-        self.assertEqual(new_cfg["darlehen"][0]["darlehenskonto"].split(" | ")[0], F.uid("pb.vd"))
+        self.assertEqual(new_cfg["darlehen"][0]["darlehenskonto"].split(" | ")[0], F.uid("ga.vd"))
         self.assertEqual(len(new_cfg["gesellschaften"]), 2)
         pkg2 = copy.deepcopy(pkg); pkg2["config"]["darlehen"][0]["darlehenskonto"] = "Darlehen Fremd"
         _, unresolved, _ = core.import_package(core.merged_config({}), pkg2, led, "ergaenzen")
         self.assertEqual(len(unresolved), 1); self.assertEqual(unresolved[0]["label"], "Darlehen Fremd")
-        new_cfg, unresolved, _ = core.import_package(core.merged_config({}), pkg2, led, "ergaenzen", {"Darlehen Fremd": F.uid("pb.vd") + " | Verkäuferdarlehen"})
-        self.assertEqual(unresolved, []); self.assertIn(F.uid("pb.vd"), new_cfg["darlehen"][0]["darlehenskonto"])
+        new_cfg, unresolved, _ = core.import_package(core.merged_config({}), pkg2, led, "ergaenzen", {"Darlehen Fremd": F.uid("ga.vd") + " | Verkäuferdarlehen"})
+        self.assertEqual(unresolved, []); self.assertIn(F.uid("ga.vd"), new_cfg["darlehen"][0]["darlehenskonto"])
         again, _, _ = core.import_package(new_cfg, pkg, led, "ergaenzen")
         self.assertEqual(len(again["darlehen"]), 1)
 
@@ -982,7 +982,7 @@ class AppTests(_AppBase):
         self.assertEqual(code, 200); self.assertEqual((r["status"], r["wartend"]), ("ok", 1))
         reads = set(MockBridge.reads)
         self.assertNotIn(None, reads)                                       # not all accounts
-        self.assertTrue({wert["accountUuid"], F.uid("pb.vd"), F.uid("pb.kk"), F.uid("priv.bet.shs")} <= reads)
+        self.assertTrue({wert["accountUuid"], F.uid("ga.vd"), F.uid("ga.kk"), F.uid("priv.bet.gb")} <= reads)
         self.assertNotIn(F.uid("priv.giro"), reads)
         lr = self.store.load("state.json")["letzter_lauf"]
         self.assertTrue(lr["probelauf"]); self.assertEqual([p["konto_id"] for p in lr["vorschlaege"]], [wert["accountUuid"]])
@@ -1004,7 +1004,7 @@ class AppTests(_AppBase):
         # MoneyMoney has them (no stand-ins), nothing is proposed again
         jan = [t for t in led.txs if "#kontor-zins-2026-01" in t.purpose]
         self.assertEqual(len(jan), 1); self.assertGreater(jan[0].id, 0)
-        self.assertIn(F.uid("pb.vd"), set(MockBridge.reads)); self.assertNotIn(F.uid("priv.giro"), set(MockBridge.reads))
+        self.assertIn(F.uid("ga.vd"), set(MockBridge.reads)); self.assertNotIn(F.uid("priv.giro"), set(MockBridge.reads))
         again = self.app.do_run(True, True); self.assertEqual(again["vorschlaege"], []); self.assertTrue(self.app.ledger.incremental)
         led = self.app.ledger
         time.sleep(0.01)
@@ -1137,9 +1137,9 @@ class AppTests(_AppBase):
         # nur Bankkonten brauchen eine Kategorie: das Verkaeuferdarlehen (Offline-Konto) erscheint nicht unter Zuordnen
         code, off = self.call("/api/categories/unassigned")
         self.assertFalse([g for g in off["gruppen"] if any("Verkäuferdarlehen" == k for k in g["konten"])])
-        u = [x for x in self.call("/api/transactions?account=" + F.uid("pb.vd"))[1]["umsaetze"]]
+        u = [x for x in self.call("/api/transactions?account=" + F.uid("ga.vd"))[1]["umsaetze"]]
         self.assertTrue(u and all(x["braucht"] is False for x in u))
-        self.assertFalse(self.call("/api/transactions?uncategorized=1&account=" + F.uid("pb.vd"))[1]["umsaetze"])
+        self.assertFalse(self.call("/api/transactions?uncategorized=1&account=" + F.uid("ga.vd"))[1]["umsaetze"])
         # opened from a chart: these categories and the ones below them, in these days; nonsense is no filter error
         alle = self.call("/api/transactions?limit=5000")[1]["umsaetze"]
         mit = [x for x in alle if x["kategorie"]]
@@ -1298,12 +1298,12 @@ class AppTests(_AppBase):
         self.login(); self.run_and_wait()
         led = copy.deepcopy(self.app.ledger)
         neu = max(a.refresh for a in led.accounts.values() if a.refresh)
-        for key in ("pb.vd", "priv.bet.pb"):                 # Regelziele mit Zeitstempel (wie nach einer Buchung)
+        for key in ("ga.vd", "priv.bet.ga"):                 # Regelziele mit Zeitstempel (wie nach einer Buchung)
             led.accounts[F.uid(key)].refresh = neu - timedelta(days=20)
         led.fp = "x"; self.app.ledger = led
         kinds = core.abruf_arten(led, self.app.config)
-        self.assertEqual(kinds[F.uid("pb.vd")]["art"], "offline"); self.assertEqual(kinds[F.uid("pb.vd")]["grund"], "Offline-Konto")
-        self.assertEqual(kinds[F.uid("priv.bet.pb")]["art"], "offline")
+        self.assertEqual(kinds[F.uid("ga.vd")]["art"], "offline"); self.assertEqual(kinds[F.uid("ga.vd")]["grund"], "Offline-Konto")
+        self.assertEqual(kinds[F.uid("priv.bet.ga")]["art"], "offline")
         self.assertEqual(kinds[F.uid("priv.giro")]["art"], "online"); self.assertEqual(kinds[F.uid("priv.depot")]["art"], "online")
         self.assertEqual(self.app.bankabruf()["zurueck_anzahl"], 0)
         code, r = self.call("/api/sync"); self.assertEqual(code, 200)
@@ -1421,7 +1421,7 @@ class AppTests(_AppBase):
             per_day = {}
             for tx in led.transactions(a.uuid):
                 per_day[tx.booking_date] = round(per_day.get(tx.booking_date, 0.0) + tx.amount, 2)
-            if a.uuid == F.uid("pb.immo"):
+            if a.uuid == F.uid("ga.immo"):
                 per_day = {date(2025, 3, 3): 123.0, date(2025, 4, 3): 246.0, date(2025, 5, 3): -50.0}   # passt nicht zu den Umsaetzen
             for d, v in sorted(per_day.items()):
                 sql.append("INSERT INTO balance_chart VALUES(%d, 'EUR', %d, %r);" % (i, ts(d) + 37000, v + (1000.0 if versatz else 0.0)))
@@ -1492,7 +1492,7 @@ class AppTests(_AppBase):
             self.assertFalse([f for f in os.listdir(self.dir) if f.startswith("kontor-") or f.endswith(".sqlite") and f != "MoneyMoney.sqlite"])
             mm = self.store.load(MM_HISTORY_FILE)["konten"]
             dep = mm[F.uid("priv.depot")]
-            self.assertNotIn(F.uid("pb.immo"), mm)                                      # Punkte passen nicht zu den Umsaetzen: nicht uebernommen
+            self.assertNotIn(F.uid("ga.immo"), mm)                                      # Punkte passen nicht zu den Umsaetzen: nicht uebernommen
             look = __import__("service").balance_lookup(self.app.ledger)
             for u in mm:                                                                # Monatsende = aktueller Saldo minus spaetere Veraenderungen
                 if not self.app.ledger.accounts[u].portfolio:
@@ -1691,9 +1691,9 @@ class AppTests(_AppBase):
         mz2 = [z for z in [s for s in ds["bereiche"][P]["kapitalfluss"]["sektionen"] if s["name"] == "Ausgaben"][0]["zeilen"] if z["zeile"] == "Wohnen"][0]
         self.assertEqual(mz2["plan"]["methode"], "budget"); self.assertAlmostEqual(mz2["plan"]["vorschlag"][b["plan_monate"][0]], round(-1500.0 * 1.03 ** (1 / 12), 2), 2)
         # anderer Bereich hat eigenen (leeren) Plan
-        code, plan_pb = self.call("/api/plan?area=" + F.uid("pb"))
-        self.assertEqual(plan_pb, {})
-        self.assertEqual(len(ds["bereiche"][F.uid("pb")]["plan_monate"]), 25)       # 24 Monate, bis Jahresende aufgefuellt
+        code, plan_ga = self.call("/api/plan?area=" + F.uid("ga"))
+        self.assertEqual(plan_ga, {})
+        self.assertEqual(len(ds["bereiche"][F.uid("ga")]["plan_monate"]), 25)       # 24 Monate, bis Jahresende aufgefuellt
         self.call("/api/plan", {"bereich": P, "zeile": "Einnahmen/Arbeitseinkommen", "alle_ueberschreibungen_loeschen": True})
         code, ds = self.call("/api/dataset")
         gz = [z for z in ds["bereiche"][P]["kapitalfluss"]["sektionen"][0]["zeilen"] if z["zeile"] == "Arbeitseinkommen"][0]
@@ -1798,6 +1798,15 @@ class AppTests(_AppBase):
                     self.assertIn("xl/workbook.xml", z.namelist()); self.assertIn("xl/worksheets/sheet1.xml", z.namelist())
         # cash flow and planning: the names of the page (every row a text of the catalogue, none a bare key; no "Umschichtung")
         import service as MS
+        # the bookings behind a cash flow figure: kept apart from the dataset, resolved on request
+        self.assertNotIn('"cf_ids"', json.dumps(self.call("/api/dataset")[1])[:10**7])
+        allids = self.app.store.load_shared("cf-ids.json", {})
+        area, rows = next((a, r) for a, r in allids.items() if r)
+        key, per = next(iter(rows.items())); m = next(iter(per))
+        code, lst = self.call("/api/transactions?" + urllib.parse.urlencode({"cf_rows": json.dumps([key]), "cf_area": area, "cf_months": m}))
+        self.assertEqual(code, 200); self.assertTrue(0 < lst["treffer"] <= len(set(per[m]))); self.assertTrue(all(u["id"] in per[m] for u in lst["umsaetze"]))
+        code, lst = self.call("/api/transactions?" + urllib.parse.urlencode({"cf_rows": "5", "cf_area": area, "cf_months": m}))
+        self.assertEqual((code, lst["treffer"]), (200, 0))                                       # not a list: nothing (no error)
         # transactions: as filtered on the page -- every match (not only the first shown), nothing else
         for flt in ({"direction": "out"}, {"direction": "in", "limit": "1"}, {"q": "zzz-nichts"}):
             code, lst = self.call("/api/transactions?" + urllib.parse.urlencode(flt))
@@ -1837,11 +1846,11 @@ class AppTests(_AppBase):
             self.assertEqual(ws["A1"].value, "Position"); self.assertTrue(any(str(c.value).startswith("20") for c in ws[1][1:]))
         # Paket-Export/-Import ueber die API
         code, data, hdr = self.call("/api/package/export?without_uuid=1&name=Test", raw=True)
-        pkg = json.loads(data.decode()); self.assertEqual(pkg["name"], "Test"); self.assertNotIn(F.uid("pb.vd"), data.decode())
+        pkg = json.loads(data.decode()); self.assertEqual(pkg["name"], "Test"); self.assertNotIn(F.uid("ga.vd"), data.decode())
         pkg["config"]["darlehen"][0]["darlehenskonto"] = "Darlehen Fremd"
         code, r = self.call("/api/package/import", {"paket": pkg, "modus": "ergaenzen"})
         self.assertFalse(r["ok"]); self.assertEqual(r["unaufgeloest"][0]["label"], "Darlehen Fremd")
-        code, r = self.call("/api/package/import", {"paket": pkg, "modus": "ergaenzen", "zuordnung": {"Darlehen Fremd": F.uid("pb.vd") + " | Verkäuferdarlehen"}})
+        code, r = self.call("/api/package/import", {"paket": pkg, "modus": "ergaenzen", "zuordnung": {"Darlehen Fremd": F.uid("ga.vd") + " | Verkäuferdarlehen"}})
         self.assertTrue(r["ok"], r); self.assertEqual(len(r["config"]["darlehen"]), 1)
         # Diagnose maskiert, Update-Status; MoneyMoney-Aktualisierung gibt es nicht mehr
         code, data, hdr = self.call("/api/diagnostics", raw=True)
@@ -1851,7 +1860,7 @@ class AppTests(_AppBase):
         code, r = self.call("/api/update/check", {}); self.assertEqual(code, 200); self.assertIn("info", r)
 
 
-PB_EINGABEN = {
+GA_EINGABEN = {
     "name": "Parkweg", "art": "gewerbe", "kaufpreis": 1900000, "uebergang": "2026-01-01", "horizont_jahre": 24,
     "nebenkosten": {"grunderwerbsteuer_prozent": 3.5, "notar": 9689.37, "grundbuch": 4127.5},
     "gebaeudeanteil_prozent": 76, "afa_prozent": 2,
@@ -1870,7 +1879,7 @@ class ImmoEngineTests(unittest.TestCase):
 
     def test_parity_with_spreadsheet(self):
         import realestate
-        r = realestate.berechne(PB_EINGABEN, TODAY)
+        r = realestate.berechne(GA_EINGABEN, TODAY)
         J = {j["jahr"]: j for j in r["jahre"]}
         # Jahr 1: Miete, Zins (3,3 % auf Stand 1.1.), Tilgung = 12 x 8.250 - Zins, AfA 2 % x 76 % x (KP + NK)
         self.assertEqual(J[2026]["miete"], 151200.0)
@@ -2165,8 +2174,8 @@ class FeatureTests(_AppBase):
         # Bereiche frei aus Konten zusammensetzen (unabhaengig von der Gruppierung) + Position ueberschreiben + Ausblenden
         cfg["bereiche"] = [
             {"id": "privat", "name": "Privat", "art": "privat", "haupt": True, "konten": [F.uid("priv") + " | Privat"]},
-            {"id": "objekte", "name": "Alle Objekte", "art": "gesellschaft", "anteil": 0.49,
-             "konten": [F.uid("pb.immo") + " | Immobilie Parkweg", F.uid("shs.immo") + " | Immobilie Bahnhofstraße", F.uid("pb.vd") + " | Verkäuferdarlehen", F.uid("pb.kk") + " | Stadtbank Kontokorrent"]}]
+            {"id": "objekte", "name": "Alle Objekte", "art": "gesellschaft", "anteil": 0.4,
+             "konten": [F.uid("ga.immo") + " | Immobilie Parkweg", F.uid("gb.immo") + " | Immobilie Bahnhofstraße", F.uid("ga.vd") + " | Verkäuferdarlehen", F.uid("ga.kk") + " | Stadtbank Kontokorrent"]}]
         cfg["bilanz"]["rollen"] = {F.uid("priv.immo") + " | Immobilie Lindenstraße": "immobilien", F.uid("priv.tr") + " | Broker Giro": "anlagen"}
         cfg["bilanz"]["ausgeblendet"] = [F.uid("priv.tr") + " | Broker Giro"]
         cfg["bilanz"]["inaktiv_monate"] = 0
@@ -2177,8 +2186,8 @@ class FeatureTests(_AppBase):
         self.assertEqual(set(ds["bereiche"]), {"privat", "objekte"}); self.assertEqual(ds["haupt"], "privat")
         ob = ds["bereiche"]["objekte"]
         saldo = {k["uuid"]: k["saldo"] for k in ds["konten"] if not k["gruppe"]}
-        self.assertEqual(ob["bilanz"]["nettovermoegen"]["2026-11"], round(sum(saldo[F.uid(k)] for k in ("pb.immo", "shs.immo", "pb.vd", "pb.kk")), 2))
-        self.assertEqual(saldo[F.uid("shs.immo")], 3300000.0)
+        self.assertEqual(ob["bilanz"]["nettovermoegen"]["2026-11"], round(sum(saldo[F.uid(k)] for k in ("ga.immo", "gb.immo", "ga.vd", "ga.kk")), 2))
+        self.assertEqual(saldo[F.uid("gb.immo")], 3300000.0)
         self.assertEqual(ds["bereich_info"]["objekte"]["anzahl_konten"], 4); self.assertEqual(ds["bereich_info"]["objekte"]["art"], "gesellschaft")
         pr = ds["bereiche"]["privat"]
         immo = [r for r in pr["bilanz"]["zeilen"] if r["id"] == F.uid("priv.immo")][0]
@@ -2186,7 +2195,7 @@ class FeatureTests(_AppBase):
         tr = [r for r in pr["bilanz"]["zeilen"] if r["id"] == F.uid("priv.tr")][0]
         self.assertEqual(tr["rolle"], "anlagen"); self.assertTrue(tr["inaktiv"])      # ausgeblendet = wie inaktiv, zaehlt aber mit
         self.assertFalse([r for r in pr["bilanz"]["zeilen"] if r["id"] == F.uid("priv.alt")][0]["inaktiv"])   # inaktiv_monate 0 = nie
-        self.assertTrue(any(e["name"] == "Alle Objekte" and e["anteil"] == 0.49 for e in ds["steuer"]["entitaeten"]))
+        self.assertTrue(any(e["name"] == "Alle Objekte" and e["anteil"] == 0.4 for e in ds["steuer"]["entitaeten"]))
         # Konten-Export und Pakete enthalten die Bereiche
         code, data, hdr = self.call("/api/package/export?name=B", raw=True)
         pkg = json.loads(data.decode()); self.assertEqual(len(pkg["config"]["bereiche"]), 2)
@@ -2226,25 +2235,25 @@ class FeatureTests(_AppBase):
         code, ds = self.call("/api/dataset")
         self.assertEqual([e["text"] for e in ds["bereiche"][P]["plan"]["ereignisse"]], ["Kita"])
         # Beteiligung an anderem Bereich: Wert = Anteil x geplantes Nettovermoegen der GbR
-        code, r = self.call("/api/plan", {"bereich": P, "wertentwicklung": {"Beteiligung an Alpha GbR": {"bereich": F.uid("pb"), "anteil": "0.49"}}})
+        code, r = self.call("/api/plan", {"bereich": P, "wertentwicklung": {"Beteiligung an Alpha GbR": {"bereich": F.uid("ga"), "anteil": "0.4"}}})
         code, ds = self.call("/api/dataset"); b = ds["bereiche"][P]
-        self.assertEqual(b["plan"]["wertentwicklung"]["Beteiligung an Alpha GbR"], {"anteil": 0.49, "bereich": F.uid("pb")})
+        self.assertEqual(b["plan"]["wertentwicklung"]["Beteiligung an Alpha GbR"], {"anteil": 0.4, "bereich": F.uid("ga")})
         pr = {r["id"]: r for r in b["bilanz"]["projektion"]["zeilen"]}
-        gbr_nw = ds["bereiche"][F.uid("pb")]["bilanz"]["projektion"]["nettovermoegen"]
-        self.assertAlmostEqual(pr[F.uid("priv.bet.pb")]["werte"][fm[5]], round(gbr_nw[fm[5]] * 0.49, 2), 0)
+        gbr_nw = ds["bereiche"][F.uid("ga")]["bilanz"]["projektion"]["nettovermoegen"]
+        self.assertAlmostEqual(pr[F.uid("priv.bet.ga")]["werte"][fm[5]], round(gbr_nw[fm[5]] * 0.4, 2), 0)
 
     def test_equity_ratio(self):
         """Equity ratio looking through the companies: own debts plus the share of each linked company's debts; the partners'
         capital accounts are equity, never debts; nothing estimated."""
         self.login(); self.run_and_wait()
         code, ds = self.call("/api/dataset")
-        P, A, B_ = F.uid("priv"), F.uid("pb"), F.uid("shs")
+        P, A, B_ = F.uid("priv"), F.uid("ga"), F.uid("gb")
         priv = ds["bereiche"][P]["bilanz"]["ek_quote"]["monate"]; alpha = ds["bereiche"][A]["bilanz"]["ek_quote"]["monate"]
         mk = sorted(priv)[-2]; e = priv[mk]; ea = alpha[mk]
         self.assertEqual(e["nw"], ds["bereiche"][P]["bilanz"]["nettovermoegen"][mk]); self.assertEqual(e["kapital"], 0)
         self.assertEqual([f["name"] for f in e["firmen"]], ["Alpha GbR", "Beta GbR"])
-        fa = e["firmen"][0]; self.assertAlmostEqual(fa["anteil"], 0.49); self.assertAlmostEqual(fa["schulden"], ea["eigene"], 2)
-        self.assertAlmostEqual(fa["anteilig"], round(0.49 * ea["eigene"], 2), 2)
+        fa = e["firmen"][0]; self.assertAlmostEqual(fa["anteil"], 0.4); self.assertAlmostEqual(fa["schulden"], ea["eigene"], 2)
+        self.assertAlmostEqual(fa["anteilig"], round(0.4 * ea["eigene"], 2), 2)
         self.assertAlmostEqual(e["schulden"], e["eigene"] + sum(f["anteilig"] for f in e["firmen"]), 2)
         self.assertAlmostEqual(e["quote"], round(e["ek"] / (e["ek"] + e["schulden"]), 4), 4)
         # in the company: the partners' capital accounts are equity (added back), not debts
@@ -2255,20 +2264,20 @@ class FeatureTests(_AppBase):
     def test_immobilien_api_plan_tax_export(self):
         self.login(); self.run_and_wait()
         code, r = self.call("/api/properties/template"); self.assertEqual(r["eingaben"]["name"], "Neues Objekt")
-        code, r = self.call("/api/properties/calculate", {"eingaben": PB_EINGABEN, "ohne_monate": True})
+        code, r = self.call("/api/properties/calculate", {"eingaben": GA_EINGABEN, "ohne_monate": True})
         self.assertEqual(code, 200); self.assertNotIn("monate", r); self.assertEqual(r["jahre"][0]["cashflow"], 12893.83)
         self.assertEqual(self.call("/api/properties/calculate", {"eingaben": {"kaufpreis": "abc"}})[0], 400)
         # Objekt anlegen, Kalkulation speichern, zweites Szenario, aktiv wechseln
-        code, r = self.call("/api/properties", {"aktion": "anlegen", "name": "Parkweg", "bereich": F.uid("pb"), "kategorie": "Vermietung \\ Parkweg",
-                                                "objekt_konto": F.uid("pb.immo") + " | Immobilie Parkweg"})
+        code, r = self.call("/api/properties", {"aktion": "anlegen", "name": "Parkweg", "bereich": F.uid("ga"), "kategorie": "Vermietung \\ Parkweg",
+                                                "objekt_konto": F.uid("ga.immo") + " | Immobilie Parkweg"})
         self.assertEqual(code, 200); iid = r["immobilie"]["id"]
-        code, r = self.call("/api/properties", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "Basis", "eingaben": PB_EINGABEN}})
+        code, r = self.call("/api/properties", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "Basis", "eingaben": GA_EINGABEN}})
         self.assertEqual(code, 200); k1 = r["immobilie"]["kalkulationen"][0]; self.assertTrue(k1["aktiv"])
-        var = copy.deepcopy(PB_EINGABEN); var["miete"]["nettokalt_monat"] = 13000
+        var = copy.deepcopy(GA_EINGABEN); var["miete"]["nettokalt_monat"] = 13000
         code, r = self.call("/api/properties", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "Mehr Miete", "eingaben": var}})
         k2 = r["immobilie"]["kalkulationen"][1]; self.assertFalse(k2["aktiv"])
         self.assertEqual(self.call("/api/properties", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "kaputt", "eingaben": {"kaufpreis": -5}}})[0], 400)
-        code, r = self.call("/api/properties", {"aktion": "aendern", "id": iid, "in_planung": True, "darlehen_konten": {"Verkäuferdarlehen": F.uid("pb.vd") + " | Verkäuferdarlehen"}})
+        code, r = self.call("/api/properties", {"aktion": "aendern", "id": iid, "in_planung": True, "darlehen_konten": {"Verkäuferdarlehen": F.uid("ga.vd") + " | Verkäuferdarlehen"}})
         self.assertTrue(r["bericht"])
         code, ds = self.call("/api/dataset")
         im = [x for x in ds["immobilien"] if x["id"] == iid][0]
@@ -2280,14 +2289,14 @@ class FeatureTests(_AppBase):
         self.assertEqual(si[2026]["kosten_ist"], -800.0 * 11); self.assertEqual(si[2026]["restschuld_soll"], 1553800.0)
         self.assertIsNotNone(si[2026]["restschuld_ist"])
         # Planung der GbR: Mietzeile folgt der Kalkulation, Darlehenssaldo folgt der Kalkulation, Ausschuettung als Entnahme
-        gbr = ds["bereiche"][F.uid("pb")]; fm = gbr["plan_monate"]
+        gbr = ds["bereiche"][F.uid("ga")]; fm = gbr["plan_monate"]
         ez = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Einnahmen"][0]["zeilen"] if z.get("objekt") == "Parkweg"][0]
         self.assertEqual(ez["plan"]["methode"], "immobilie"); self.assertEqual(ez["plan"]["werte"][fm[0]], 13600.0)   # NKM + Umlage
         jan27 = [m for m in fm if m == "2027-01"][0]
         self.assertEqual(ez["plan"]["werte"][jan27], 13839.4)        # 12600 x 1,019 + 1000
         pr = {r["id"]: r for r in gbr["bilanz"]["projektion"]["zeilen"]}
-        self.assertEqual(pr[F.uid("pb.vd")]["werte"]["2026-12"], -1553800.0)
-        self.assertEqual(round(pr[F.uid("pb.immo")]["werte"]["2026-12"]), round(1900000 * 1.02 ** (11 / 12)))   # monatliche Wertentwicklung ab dem 2. Monat
+        self.assertEqual(pr[F.uid("ga.vd")]["werte"]["2026-12"], -1553800.0)
+        self.assertEqual(round(pr[F.uid("ga.immo")]["werte"]["2026-12"]), round(1900000 * 1.02 ** (11 / 12)))   # monatliche Wertentwicklung ab dem 2. Monat
         inv = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Finanzierung"][0]["zeilen"] if z["zeile"] == "Einlagen/Entnahmen Gesellschafter"]
         self.assertTrue(inv); self.assertLess(sum(inv[0]["plan"]["werte"].values()), 0)
         # Steuer: AfA aus der Kalkulation, wenn nicht manuell eingetragen
@@ -2295,12 +2304,12 @@ class FeatureTests(_AppBase):
         self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 200)
         self.call("/api/report", {})
         code, ds = self.call("/api/dataset")
-        ent = [e for e in ds["steuer"]["entitaeten"] if e["uuid"] == F.uid("pb")][0]
+        ent = [e for e in ds["steuer"]["entitaeten"] if e["uuid"] == F.uid("ga")][0]
         self.assertEqual(ent["jahre"]["2026"]["objekte"]["Parkweg"]["afa"], 30100.82)
         self.assertEqual(ent["jahre"]["2026"]["objekte"]["Parkweg"].get("afa_quelle"), "kalkulation")
         # Szenario aktiv wechseln -> andere Miete in der Planung; Szenario loeschen
         code, r = self.call("/api/properties", {"aktion": "kalkulation_aktiv", "id": iid, "kalkulation_id": k2["id"]})
-        code, ds = self.call("/api/dataset"); gbr = ds["bereiche"][F.uid("pb")]
+        code, ds = self.call("/api/dataset"); gbr = ds["bereiche"][F.uid("ga")]
         ez = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Einnahmen"][0]["zeilen"] if z.get("objekt") == "Parkweg"][0]
         self.assertEqual(ez["plan"]["werte"][fm[0]], 14000.0)
         code, r = self.call("/api/properties", {"aktion": "kalkulation_loeschen", "id": iid, "kalkulation_id": k2["id"]})
@@ -2418,7 +2427,7 @@ class FeatureTests(_AppBase):
         self.assertEqual(neu[F.uid("priv.depot")]["bereich"], F.uid("priv")); self.assertEqual(neu[F.uid("priv.depot")]["position"], "wertpapiere")
         code, cfg = self.call("/api/config")
         cfg["bilanz"]["konten_zuordnung"] = {k["uuid"] + " | " + k["name"]: {"bereich": k["bereich"], "position": "", "bestaetigt": True} for k in ds["konten_neu"]}
-        cfg["bilanz"]["konten_zuordnung"][F.uid("priv.immo") + " | Immobilie Lindenstraße"] = {"bereich": F.uid("pb"), "position": "immobilien", "bestaetigt": True}
+        cfg["bilanz"]["konten_zuordnung"][F.uid("priv.immo") + " | Immobilie Lindenstraße"] = {"bereich": F.uid("ga"), "position": "immobilien", "bestaetigt": True}
         self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 200)
         self.call("/api/report/rebuild", {})
         code, ds = self.call("/api/dataset")
@@ -2436,12 +2445,12 @@ class FeatureTests(_AppBase):
         self.assertEqual([x for x in k["konten"] if x["uuid"] == F.uid("priv.giro")][0]["rolle"], "liquiditaet")
         giro["name"], giro["type"] = "Hausbank Giro", "Girokonto"
         self.run_and_wait()
-        pb_rows = {r["id"]: r for r in ds["bereiche"][F.uid("pb")]["bilanz"]["zeilen"] if not r["gruppe"]}
-        self.assertIn(F.uid("priv.immo"), pb_rows); self.assertEqual(pb_rows[F.uid("priv.immo")]["rolle"], "immobilien")
+        ga_rows = {r["id"]: r for r in ds["bereiche"][F.uid("ga")]["bilanz"]["zeilen"] if not r["gruppe"]}
+        self.assertIn(F.uid("priv.immo"), ga_rows); self.assertEqual(ga_rows[F.uid("priv.immo")]["rolle"], "immobilien")
         self.assertNotIn(F.uid("priv.immo"), {r["id"] for r in ds["bereiche"][ds["haupt"]]["bilanz"]["zeilen"]})
         code, k = self.call("/api/accounts")
         self.assertTrue(all(x["bestaetigt"] for x in k["konten"] if not x["gruppe"]))
-        self.assertEqual([x for x in k["konten"] if x["uuid"] == F.uid("priv.immo")][0]["bereich_id"], F.uid("pb"))
+        self.assertEqual([x for x in k["konten"] if x["uuid"] == F.uid("priv.immo")][0]["bereich_id"], F.uid("ga"))
         # Neues Konto in MoneyMoney -> wieder 'neu'
         accts = MockBridge.state["accounts"]
         accts.insert([a["uuid"] for a in accts].index(F.uid("priv.tr")) + 1, F.acc("priv.neu", "Neues Tagesgeld", 3, "Sparkonto", balance=5000.0, iban="DE02100100100006820102", bank="10010010"))
@@ -2645,12 +2654,12 @@ class FeatureTests(_AppBase):
         self.assertEqual(role("Haushaltskasse", "Bargeld", 300), "liquiditaet")
         self.assertEqual(role("Kreditkarte", "Kreditkarte", -300), "liquiditaet")
         self.login(); self.run_and_wait()
-        code, ds = self.call("/api/dataset"); pb = ds["bereiche"][F.uid("pb")]
+        code, ds = self.call("/api/dataset"); pb = ds["bereiche"][F.uid("ga")]
         self.assertEqual(pb["bilanz"]["ausserhalb"], [])                                   # Kapitalkonten zaehlen als Schuld der GbR
         rows = {r["id"]: r for r in pb["bilanz"]["zeilen"]}
-        self.assertEqual(rows[F.uid("pb.kap.s")]["rolle"], "verbindlichkeiten")
+        self.assertEqual(rows[F.uid("ga.kap.a")]["rolle"], "verbindlichkeiten")
         saldo = {k["uuid"]: k["saldo"] for k in ds["konten"] if not k["gruppe"]}
-        self.assertEqual(pb["bilanz"]["nettovermoegen"]["2026-11"], round(sum(saldo[F.uid(k)] for k in ("pb.kk", "pb.immo", "pb.vd", "pb.kap.s", "pb.kap.p")), 2))
+        self.assertEqual(pb["bilanz"]["nettovermoegen"]["2026-11"], round(sum(saldo[F.uid(k)] for k in ("ga.kk", "ga.immo", "ga.vd", "ga.kap.a", "ga.kap.b")), 2))
         code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
         self.assertNotIn("geschaetzt_bis", h); self.assertIn("fortgeschrieben", h["hinweis"])          # keine Schaetzung mehr
         # Pruefung im Verlauf-Fenster: Anfangssaldo und Buchungen
@@ -2905,10 +2914,16 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("[monthEnd('2028-02'), monthEnd('2026-02'), monthEnd('2026-12')]"), ["2028-02-29", "2026-02-28", "2026-12-31"])
                 pg.click("#cf-ebene button[data-e='3']"); pg.wait_for_selector("tr.det")                 # details: everything open
                 self.assertGreater(len(pg.query_selector_all(F_ + " tr.det")), 2)
-                # a figure: a section's closes it, as its name does; a category's opens its transactions for that column
-                pg.click(F_ + " tr.sec[data-tog='s:Investitionen'] td:nth-child(3)"); pg.wait_for_timeout(250)
+                # a figure shows the bookings behind it -- also a section's (all its rows), in the side panel; only the name opens or closes it
+                exp = pg.evaluate("""(() => { const td = [...document.querySelectorAll('#main table.cf-tbl:not(.cf-names) tr.sec[data-tog="s:Investitionen"] td.tx')].pop(), c = CF.tblCols[td.cellIndex - 1],
+                    zs = CF.zs[+td.parentNode.dataset.zs].zs; td.scrollIntoView({block: 'center', inline: 'center'}); return zs.reduce((a, z) => a + c.months.reduce((b, m) => b + ((z.n || {})[m] || 0), 0), 0); })()""")
+                pg.click(F_ + " tr.sec[data-tog='s:Investitionen'] td.tx >> nth=-1"); pg.wait_for_selector("#drawer.open #cftx-page")
+                got = len(pg.query_selector_all("#drawer tbody tr")); self.assertGreater(got, 0); self.assertLessEqual(got, exp)     # fetched on the click (each booking once)
+                self.assertTrue(pg.inner_text("#drawer h2").startswith("Investitionen · "))                # named as the row, without its abbreviation
+                self.assertTrue(pg.query_selector(F_ + " tr[data-key^='Investitionen/']")); pg.click("#drawer .close"); pg.wait_for_timeout(200)       # still open
+                pg.click(N_ + " tr.sec[data-tog='s:Investitionen'] td"); pg.wait_for_timeout(250)
                 self.assertIsNone(pg.query_selector(F_ + " tr[data-key^='Investitionen/']"))
-                pg.click(F_ + " tr.sec[data-tog='s:Investitionen'] td:nth-child(3)"); pg.wait_for_timeout(250)
+                pg.click(N_ + " tr.sec[data-tog='s:Investitionen'] td"); pg.wait_for_timeout(250)
                 kat = pg.eval_on_selector(F_ + " tr.det[data-kat]", "tr => tr.dataset.kat")
                 pg.click(F_ + " tr.det[data-kat] td:nth-child(2)"); pg.wait_for_selector("#drawer.open #cftx-page")      # a side panel: the cash flow stays
                 self.assertEqual(pg.evaluate("S.tab"), "cashflow"); self.assertTrue(pg.query_selector_all("#drawer tbody tr"))
@@ -3582,7 +3597,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertIsNone(pg.query_selector("#main .bil-tbl tr.ekq"))           # folded by default; the name of net worth opens it
                 pg.click("#main .bil-tbl tr.total td:first-child"); pg.wait_for_selector("#main .bil-tbl tr.ekq")
                 pg.click("#main .bil-tbl tr.ekq td:first-child"); pg.wait_for_selector("#drawer.open .ekq-tbl")
-                self.assertIn("Eigenkapitalquote", pg.inner_text("#drawer")); self.assertIn("Alpha GbR: 49 % von", pg.inner_text("#drawer"))
+                self.assertIn("Eigenkapitalquote", pg.inner_text("#drawer")); self.assertIn("Alpha GbR: 40 % von", pg.inner_text("#drawer"))
                 pg.click("#drawer .close"); pg.wait_for_timeout(300)
                 # a click on a net worth value: aligned as by the month heading, and the net worth dot blinks once
                 k = pg.evaluate("Array.from(document.querySelectorAll('#main .bil-tbl tr.total td')).findIndex((td, n) => n > 0 && (() => { const r = td.getBoundingClientRect(), w = document.querySelector('#main .wrap').getBoundingClientRect(); return r.left > w.left + 300 && r.right < w.right - 20; })())")
@@ -3826,8 +3841,8 @@ class BrowserTest(unittest.TestCase):
                 pg.click(".mode-chip"); pg.wait_for_selector("#save-rules")
                 # companies come from the areas: one card each with its share, the participation chosen, target/actual live
                 self.assertEqual(pg.eval_on_selector_all(".co-card h3", "e => e.map(x => x.textContent)"), ["Alpha GbR", "Beta GbR"])
-                self.assertIn("49", pg.inner_text(".co-card .co-head"))
-                self.assertEqual(pg.eval_on_selector(".co-card .c-bet", "e => e.value").split(" | ")[0], F.uid("priv.bet.pb"))
+                self.assertIn("40", pg.inner_text(".co-card .co-head"))
+                self.assertEqual(pg.eval_on_selector(".co-card .c-bet", "e => e.value").split(" | ")[0], F.uid("priv.bet.ga"))
                 pg.wait_for_function("(document.querySelector('.co-card [data-pv=\"b\"]') || {}).textContent?.includes('Soll')", timeout=8000)
                 self.assertGreaterEqual(len(pg.query_selector_all(".co-card .hq")), 6); self.assertGreaterEqual(len(pg.query_selector_all("#loans .hq")), 15)
                 self.assertTrue(pg.is_disabled("#save-rules"))
@@ -3859,7 +3874,7 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#save-rules"); pg.wait_for_timeout(900)
                 ms = store.load("config.json")["kontenspiegel"]
                 self.assertEqual([(m["a"].split(" | ")[0], m["b"].split(" | ")[0], m["ab"], "bereich" in m) for m in ms],
-                                 [(F.uid("priv.immo"), F.uid("pb.kap.p"), "alles", False)])
+                                 [(F.uid("priv.immo"), F.uid("ga.kap.b"), "alles", False)])
                 pg.click("#mirrors .gk-row .gk-del")
                 pg.fill(".co-card .c-sw", "1")
                 pg.keyboard.press("Meta+s"); pg.wait_for_timeout(900)          # ⌘S saves
@@ -3869,14 +3884,14 @@ class BrowserTest(unittest.TestCase):
                 # Sync: online or offline per account as a menu; offline accounts recognised as "Offline-Konto"
                 self.assertFalse(pg.evaluate("DIRTY.on"))
                 pg.evaluate("location.hash = '#accounts'"); pg.wait_for_selector(".ab-sel")          # leaving after ⌘S: no question (a late change event does not count)
-                sel = "tr[data-uuid='%s'] .ab-sel" % F.uid("priv.bet.pb")
+                sel = "tr[data-uuid='%s'] .ab-sel" % F.uid("priv.bet.ga")
                 self.assertEqual(pg.eval_on_selector(sel, "e => e.value"), "offline")
                 self.assertEqual(pg.eval_on_selector(sel, "e => e.title"), "Offline-Konto")                       # why: as recognised (an offline account: no refresh)
                 pg.select_option(sel, "online"); pg.wait_for_timeout(900)                                          # saved at once ...
-                self.assertIn(F.uid("priv.bet.pb"), " ".join(store.load("config.json")["abruf"]["online"]))
+                self.assertIn(F.uid("priv.bet.ga"), " ".join(store.load("config.json")["abruf"]["online"]))
                 self.assertFalse(pg.evaluate("DIRTY.on"))                                                          # ... so no unsaved change
                 pg.wait_for_selector(sel); pg.select_option(sel, "offline"); pg.wait_for_timeout(900)
-                self.assertNotIn(F.uid("priv.bet.pb"), " ".join(store.load("config.json")["abruf"]["online"]))
+                self.assertNotIn(F.uid("priv.bet.ga"), " ".join(store.load("config.json")["abruf"]["online"]))
                 # ⌘L locks
                 pg.keyboard.press("Meta+l"); pg.wait_for_selector("#login:not(.hidden)")
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg)
@@ -4043,13 +4058,13 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertTrue(items["Privat"].query_selector(".b-haupt").is_checked()); self.assertEqual(items["Privat"].query_selector(".b-art").input_value(), "privat")
                 self.assertEqual(items["Alpha GbR"].query_selector(".b-art").input_value(), "gesellschaft"); self.assertFalse(items["Alpha GbR"].query_selector(".b-haupt").is_checked())
                 alpha = items["Alpha GbR"]
-                self.assertTrue(alpha.query_selector(".b-k[value^='%s']" % F.uid("pb.kk")).is_disabled())     # unter der Gruppe: enthalten, gesperrt
-                alpha.query_selector(".b-anteil").fill("49")
+                self.assertTrue(alpha.query_selector(".b-k[value^='%s']" % F.uid("ga.kk")).is_disabled())     # unter der Gruppe: enthalten, gesperrt
+                alpha.query_selector(".b-anteil").fill("40")
                 beta = items["Beta GbR"]
-                beta.query_selector(".b-k[value^='%s']" % F.uid("shs")).click(); pg.wait_for_timeout(100)      # Gruppe abwaehlen -> Konten frei
-                self.assertFalse(beta.query_selector(".b-k[value^='%s']" % F.uid("shs.kk")).is_disabled()); self.assertFalse(beta.query_selector(".b-k[value^='%s']" % F.uid("shs.kk")).is_checked())
-                beta.query_selector(".b-k[value^='%s']" % F.uid("shs")).click(); pg.wait_for_timeout(100)      # wieder anhaken -> alle darunter
-                self.assertTrue(beta.query_selector(".b-k[value^='%s']" % F.uid("shs.kk")).is_checked())
+                beta.query_selector(".b-k[value^='%s']" % F.uid("gb")).click(); pg.wait_for_timeout(100)      # Gruppe abwaehlen -> Konten frei
+                self.assertFalse(beta.query_selector(".b-k[value^='%s']" % F.uid("gb.kk")).is_disabled()); self.assertFalse(beta.query_selector(".b-k[value^='%s']" % F.uid("gb.kk")).is_checked())
+                beta.query_selector(".b-k[value^='%s']" % F.uid("gb")).click(); pg.wait_for_timeout(100)      # wieder anhaken -> alle darunter
+                self.assertTrue(beta.query_selector(".b-k[value^='%s']" % F.uid("gb.kk")).is_checked())
                 pg.evaluate("[...document.querySelectorAll('#bereiche .item')].find(i => i.querySelector('.b-name').value === 'Beta GbR').querySelector('.del').click()")   # Beta GbR nicht als Bereich
                 pg.wait_for_timeout(100)
                 self.assertNotIn("Kennung", pg.query_selector("#bereiche").inner_text())
@@ -4083,7 +4098,7 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertEqual([b["name"] for b in cfg0["bereiche"]], ["Privat", "Alpha GbR"]); self.assertEqual(sum(1 for b in cfg0["bereiche"] if b["haupt"]), 1)
                 self.assertTrue(all(b["id"] for b in cfg0["bereiche"]))
                 pg.goto("http://127.0.0.1:%d/#accounts/areas" % port); pg.wait_for_selector("#save-bereiche")
-                self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Alpha GbR"][0]["anteil"], 0.49)       # Prozent -> Anteil
+                self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Alpha GbR"][0]["anteil"], 0.4)       # Prozent -> Anteil
                 self.assertEqual([b for b in cfg0["bereiche"] if b["name"] == "Privat"][0]["art"], "privat")
                 # Paket laden mit Zuordnung
                 pg.click("#nav a[href='#settings']"); pg.wait_for_selector("#e-lang")
@@ -4093,12 +4108,12 @@ class BrowserWizardTest(unittest.TestCase):
                     pg.click("#pk-pick")
                 fc.value.set_files(pkg_path); pg.wait_for_selector("#pk-import")
                 pg.click("#pk-import"); pg.wait_for_selector(".pk-map")
-                pg.select_option(".pk-map", F.uid("pb.vd") + " | Verkäuferdarlehen")
+                pg.select_option(".pk-map", F.uid("ga.vd") + " | Verkäuferdarlehen")
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_pakete_zuordnung.png"), full_page=True)
                 pg.click("#pk-import2"); pg.wait_for_timeout(800)
                 self.assertIn("Übernommen", pg.query_selector("#pk-report").inner_text())
                 cfg = store.load("config.json")
-                self.assertEqual(cfg["darlehen"][0]["darlehenskonto"].split(" | ")[0], F.uid("pb.vd"))
+                self.assertEqual(cfg["darlehen"][0]["darlehenskonto"].split(" | ")[0], F.uid("ga.vd"))
                 self.assertEqual(len(cfg["gesellschaften"]), 2)
                 # Bericht erstellen -> Uebersicht mit Kennzahlen
                 pg.click("#nav a[href='#setup']"); pg.wait_for_selector(".setup-list")

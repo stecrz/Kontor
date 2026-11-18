@@ -62,7 +62,7 @@ def main():
             # property with a calculation (for the image and the plan)
             res = pg.evaluate("""async (a) => { try { const r = await api('/api/properties', {aktion: 'anlegen', name: 'Parkweg', bereich: a.b, kategorie: 'Vermietung \\\\ Parkweg'});
                 await api('/api/properties', {aktion: 'kalkulation_speichern', id: r.immobilie.id, kalkulation: {name: 'Basis', eingaben: a.e}}); return 'ok'; } catch (e) { return e.message; } }""",
-                              {"b": F.uid("pb"), "e": T.PB_EINGABEN})
+                              {"b": F.uid("ga"), "e": T.GA_EINGABEN})
             print("Immobilie:", res)
             for _ in range(60):                    # wait for the recalculation (otherwise "recalculating" shows in the image)
                 pg.wait_for_timeout(500)

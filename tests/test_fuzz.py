@@ -30,7 +30,7 @@ from model import TAG_RE, marks_in  # noqa: E402
 from storage import Store, load_or_create_master_key  # noqa: E402
 from test_e2e import TODAY, MockBridge, config_for_test, patch_today, reset_mock  # noqa: E402
 
-BET, MINE, THEIRS, LOAN = "priv.bet.pb", "priv.bet.shs", "shs.kap.s", "pb.vd"
+BET, MINE, THEIRS, LOAN = "priv.bet.ga", "priv.bet.gb", "gb.kap.a", "ga.vd"
 TARGETS = {F.uid(k) for k in (BET, MINE, THEIRS, LOAN)}             # the only accounts the rules of this test may book into
 
 
@@ -110,8 +110,8 @@ class FuzzTests(unittest.TestCase):
         cfg = core.merged_config(config_for_test(os.path.join(self.dir, "Belege")))
         cfg["darlehen"][0].pop("quelle_kommentar", None)
         cfg["gesellschaften"] = [
-            dict(bereich=F.uid("pb"), beteiligung=F.uid(BET) + " | B", rueckwirkend_ab=rnd.choice(["", "2026-06-01", "alles"]), takt=rnd.choice(["taeglich", "monatlich"])),
-            dict(bereich=F.uid("shs"), rueckwirkend_ab=rnd.choice(["", "alles"]), gegenkonten=[{"konto": F.uid(MINE) + " | M", "quelle": F.uid(THEIRS) + " | T"}])]
+            dict(bereich=F.uid("ga"), beteiligung=F.uid(BET) + " | B", rueckwirkend_ab=rnd.choice(["", "2026-06-01", "alles"]), takt=rnd.choice(["taeglich", "monatlich"])),
+            dict(bereich=F.uid("gb"), rueckwirkend_ab=rnd.choice(["", "alles"]), gegenkonten=[{"konto": F.uid(MINE) + " | M", "quelle": F.uid(THEIRS) + " | T"}])]
         self.store.save("config.json", cfg)
         for d, amt in ((date(2026, 8, 3), -700.0), (date(2026, 9, 9), 250.0)):          # there before the mirror is set up
             F_t = F.tx(THEIRS, d, amt, "Ich", "früher"); self.txs().append(F_t)
@@ -142,7 +142,7 @@ class FuzzTests(unittest.TestCase):
                     t = rnd.choice(vals); d = rnd.choice([-40.0, 15.5])
                     t["amount"] = round(t["amount"] + d, 2); b = self.balance(t["accountUuid"]); b[0] = round(b[0] + d, 2)
             elif act == "pay":                                                      # the company's value moves
-                self.add("pb.kk", TODAY - timedelta(days=rnd.randint(0, 50)), rnd.choice([-1234.5, 800.0, 96.25]), "Zahlung")
+                self.add("ga.kk", TODAY - timedelta(days=rnd.randint(0, 50)), rnd.choice([-1234.5, 800.0, 96.25]), "Zahlung")
             elif act == "mirror":                                                   # a new booking in one of the mirrored accounts
                 self.add(rnd.choice([MINE, THEIRS]), TODAY - timedelta(days=rnd.randint(0, 20)), rnd.choice([-300.0, 120.0, 55.55]), "Einlage/Entnahme")
             elif act == "again" and cfg.get("nicht_buchen"):                       # "Propose again"
@@ -160,14 +160,14 @@ class FuzzTests(unittest.TestCase):
                 else:
                     d = rnd.choice([-10.0, 33.3]); t["amount"] = round(t["amount"] + d, 2); b = self.balance(t["accountUuid"]); b[0] = round(b[0] + d, 2)
                     self.frozen[t["id"]] = copy.deepcopy(t)
-            elif act == "renumber" and self.mine([MINE, THEIRS, "pb.kk"]):         # deleted and entered again in MoneyMoney: a new number
-                t = rnd.choice(self.mine([MINE, THEIRS, "pb.kk"]))
+            elif act == "renumber" and self.mine([MINE, THEIRS, "ga.kk"]):         # deleted and entered again in MoneyMoney: a new number
+                t = rnd.choice(self.mine([MINE, THEIRS, "ga.kk"]))
                 self.remove(t)
                 again = self.add(next(k for k, u in F.U.items() if u == t["accountUuid"]), date(2026, 1, 1), t["amount"], t["purpose"])
                 again.update({k: t[k] for k in ("bookingDate", "valueDate", "name", "accountNumber", "category", "categoryPath")})
                 self.frozen[again["id"]] = copy.deepcopy(again)
             elif act == "paydel":                                                   # a loan payment deleted in MoneyMoney
-                pays = [t for t in self.mine(["pb.kk"]) if t.get("accountNumber") == F.SELLER_IBAN]
+                pays = [t for t in self.mine(["ga.kk"]) if t.get("accountNumber") == F.SELLER_IBAN]
                 if pays:
                     self.remove(rnd.choice(pays))
             self.check(where)
@@ -183,13 +183,13 @@ class FuzzTests(unittest.TestCase):
         end = self.run_once(cfg, True)
         self.assertEqual(end["vorschlaege"], [], "seed %d: something is still to book" % seed)
         led = core.fetch(MockBridge(True), cfg, TODAY)
-        value = sum(a.balance for a in led.descendants(F.uid("pb")))
+        value = sum(a.balance for a in led.descendants(F.uid("ga")))
         if cfg["gesellschaften"][0]["takt"] == "taeglich":          # daily: the participation is at share x value now
-            self.assertAlmostEqual(led.accounts[F.uid(BET)].balance, round(0.49 * value, 2), 2, "seed %d: participation off" % seed)
+            self.assertAlmostEqual(led.accounts[F.uid(BET)].balance, round(0.4 * value, 2), 2, "seed %d: participation off" % seed)
         else:                                                        # monthly: at the end of last month
             end_of = date(TODAY.year, TODAY.month, 1) - timedelta(days=1)
-            then = sum(led.balance_at(a.uuid, end_of) for a in led.descendants(F.uid("pb")))
-            self.assertAlmostEqual(led.balance_at(F.uid(BET), end_of), round(0.49 * then, 2), 2, "seed %d: participation off at month end" % seed)
+            then = sum(led.balance_at(a.uuid, end_of) for a in led.descendants(F.uid("ga")))
+            self.assertAlmostEqual(led.balance_at(F.uid(BET), end_of), round(0.4 * then, 2), 2, "seed %d: participation off at month end" % seed)
         # every booking of the mirrored accounts has its counterpart: the two balances moved by the same amounts
         mine = sorted(round(t["amount"], 2) for t in self.txs() if t["accountUuid"] == F.uid(MINE))
         theirs = sorted(round(-t["amount"], 2) for t in self.txs() if t["accountUuid"] == F.uid(THEIRS))

@@ -253,7 +253,7 @@ document.addEventListener('click', e => {
 
 const S = { tab: 'overview', modus: 'monate', plan: true, real: false, alle: false, collapsed: {}, offen: {}, csrf: null, bereich: null, cfEbene: 0, planEbene: 2, cfTog: {'s:Operativ': true},          /* at the start: main lines, income and expenses open (a level clicked: exactly that level) */ cfZeit: '12m', cfVon: null, cfBis: null, cfPieArt: 'aus',
             DATA: null, CFG: null, KONTEN: [], KATS: [], STATUS: null, steuerJahr: null, steuerEnt: null, vorschlag: false,
-            uf: {entitaet: '', jahr: '', konto: '', q: '', ohne_beleg: false, ohne_kategorie: false, richtung: '', kats: null, von: '', bis: '', titel: '', est: false, ext: false, mitOhne: false, katsLabel: '', rChart: false, ids: null}, sel: new Set(), drawerTx: null };
+            uf: {entitaet: '', jahr: '', konto: '', q: '', ohne_beleg: false, ohne_kategorie: false, richtung: '', kats: null, von: '', bis: '', titel: '', est: false, ext: false, mitOhne: false, katsLabel: '', rChart: false, ids: null, cfRows: null}, sel: new Set(), drawerTx: null };
 
 function choose(msg, opts) {
   // Rückfrage mit mehreren Antworten (statt confirm): opts = [[wert, text, klasse], ...]; Abbrechen, Escape oder daneben -> null
@@ -2760,7 +2760,7 @@ function yearCtl() {
 function vKapitalfluss(editable) {
   const D = B(); if (!D) return noData;
   const C = cols(), KF = D.kapitalfluss, sums = KF.summen || {}, P = D.plan || {};
-  CF.tblCols = C.map(c => ({months: c.months.filter(m => m <= D.ist_bis), label: c.label})); CF.ux = [];          // a click on a category's figure: its transactions
+  CF.tblCols = C.map(c => ({months: c.months.filter(m => m <= D.ist_bis), label: c.label})); CF.zs = [];          // a click on a category's figure: its transactions
   // actual and plan values of a row merged once (not per cell: a row has hundreds of months)
   const mv = new Map(), ms = new Map();
   const vOf = (z, c) => { let v = mv.get(z); if (!v) mv.set(z, v = Object.assign({}, z.werte, (z.plan && z.plan.werte) || {})); return sumOver(v, c.months); };
@@ -2794,7 +2794,11 @@ function vKapitalfluss(editable) {
   const secTotal = name => C.map(c => c.months.reduce((a, m) => a + (sums[m]?.[name] ?? 0) * defl(m), 0));
   // movements with their sign (+ too), balances without; in planning the figures stay as you edit them
   const FV = v => (!editable && v > 0.005 ? '+' : '') + FC(v);
-  const nums = vals => vals.map((v, i) => `<td class="${cls(v, C[i])}">${FV(v)}</td>`).join('');
+  // a figure with bookings behind it: a click shows them (side panel) -- a row's name opens or closes it
+  const hasTx = (zs, c) => !editable && zs.some(z => z.n && c.months.some(m => m <= D.ist_bis && z.n[m]));
+  CF.zsec = new Map(KF.sektionen.flatMap(x => x.zeilen.map(z => [z, x.name])));          // a row's section (its key: section and row)
+  const zsOf = (zs, label) => editable ? '' : ` data-zs="${CF.zs.push({zs, label}) - 1}"`;
+  const nums = (vals, zs) => vals.map((v, i) => `<td class="${cls(v, C[i])}${zs && hasTx(zs, C[i]) ? ' tx' : ''}">${FV(v)}</td>`).join('');
   // the triangle that opens and closes a row (rows without one keep its room, so the names stand in a line)
   const caret = (id, depth, open) => `<button class="disc" data-tog="${esc(id)}" data-depth="${depth}" aria-expanded="${open ? 'true' : 'false'}" title="${t(open ? 'cf_zuklappen' : 'cf_aufklappen')}">${open ? '▾' : '▸'}</button>`;
   const NOCARET = '<span class="disc none"></span>';
@@ -2809,7 +2813,7 @@ function vKapitalfluss(editable) {
     const sek = KF.sektionen.find(s => s.name === name);
     if (!sek || (!sek.zeilen.length && !S.alle)) return '';
     const sid = 's:' + name, sOpen = cfOpen(sid, name === 'Bewertung' || name === 'Unklar' ? d0 + 1 : d0);      // overview: their sum only
-    let o = `<tr class="${d0 ? 'sec2' : 'sec'}${ind(d0)}" data-tog="${esc(sid)}" data-depth="${d0}"><td>${caret(sid, d0, sOpen)}${dot(SEC_KEY[name])}${named(SEC_LABEL[name] || esc(name), SEC_HELP[name], d0 ? '' : SEC_ABBR[name])}</td>${nums(secTotal(name))}</tr>`;
+    let o = `<tr class="${d0 ? 'sec2' : 'sec'}${ind(d0)}" data-tog="${esc(sid)}" data-depth="${d0}"${zsOf(sek.zeilen, SEC_LABEL[name] || name)}><td>${caret(sid, d0, sOpen)}${dot(SEC_KEY[name])}${named(SEC_LABEL[name] || esc(name), SEC_HELP[name], d0 ? '' : SEC_ABBR[name])}</td>${nums(secTotal(name), sek.zeilen)}</tr>`;
     if (!sOpen) return o;
     const groups = [];
     for (const z of sek.zeilen) { let g = groups.find(x => x.name === z.gruppe); if (!g) groups.push(g = {name: z.gruppe, label: gLabel(z), rows: []}); g.rows.push(z); }
@@ -2818,7 +2822,7 @@ function vKapitalfluss(editable) {
       const single = g.rows.length === 1 && g.rows[0].zeile === g.name;
       if (!S.alle && gvals.every(v => Math.abs(v) < 0.005)) continue;
       const gd = d0 + 1, gid = 'g:' + name + '|' + g.name, gOpen = single || cfOpen(gid, gd);
-      if (!single) o += `<tr class="sub${ind(gd)}" data-tog="${esc(gid)}" data-depth="${gd}"><td>${caret(gid, gd, gOpen)}${esc(g.label)}</td>${nums(gvals)}</tr>`;
+      if (!single) o += `<tr class="sub${ind(gd)}" data-tog="${esc(gid)}" data-depth="${gd}"${zsOf(g.rows, g.label)}><td>${caret(gid, gd, gOpen)}${esc(g.label)}</td>${nums(gvals, g.rows)}</tr>`;
       if (!gOpen) continue;
       for (const z of g.rows) {
         const vals = C.map(c => vOf(z, c));
@@ -2839,11 +2843,11 @@ function vKapitalfluss(editable) {
         const zu = editable || !z.lbl ? '' : z.lbl[0] === 'cf_ohne_kategorie' ? ` <a href="#categories" class="small">${t('zuordnen')}</a>`
           : z.lbl[0] === 'cf_anlage_ohne_ziel' ? ` <a href="#accounts/positions" class="small">${t('cf_ziel_festlegen')}</a>` : '';
         const det = (z.details || []).length, open = det && cfOpen(did, depth);
-        o += `<tr class="${ind(depth).trim()}${det ? ' has-det' : ''}${z.ids && !editable ? ' ux' : ''}" data-key="${esc(key)}"${z.ids && !editable ? ` data-ux="${CF.ux.push(z) - 1}"` : ''}${det ? ` data-tog="${esc(did)}" data-depth="${depth}"` : ''}><td title="${esc(full)}">${det ? caret(did, depth, open) : NOCARET}${esc(label)}${zu}${editable && p.methode && p.methode !== 'darlehen' ? `<span class="tag">${METH[p.methode] || p.methode}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
+        o += `<tr class="${ind(depth).trim()}${det ? ' has-det' : ''}" data-key="${esc(key)}"${zsOf([z], zLabel(z))}${det ? ` data-tog="${esc(did)}" data-depth="${depth}"` : ''}><td title="${esc(full)}">${det ? caret(did, depth, open) : NOCARET}${esc(label)}${zu}${editable && p.methode && p.methode !== 'darlehen' ? `<span class="tag">${METH[p.methode] || p.methode}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
           + vals.map((v, i) => {
               const c = C[i], isOv = c.plan && c.months.some(mm => ov.has(mm));
               const sug = (S.vorschlag && c.plan) ? `<div class="small muted">${F(sOf(z, c))}</div>` : '';
-              return `<td class="${cls(v, c)}${editable && c.plan && !c.year ? ' editable' : ''}${isOv ? ' ov' : ''}" data-month="${c.key}" ${isOv ? `title="${t('vorschlag_0', F(sOf(z, c)))}"` : ''}>${FV(v)}${sug}</td>`; }).join('') + '</tr>';
+              return `<td class="${cls(v, c)}${editable && c.plan && !c.year ? ' editable' : ''}${isOv ? ' ov' : ''}${hasTx([z], c) ? ' tx' : ''}" data-month="${c.key}" ${isOv ? `title="${t('vorschlag_0', F(sOf(z, c)))}"` : ''}>${FV(v)}${sug}</td>`; }).join('') + '</tr>';
         // MoneyMoney's categories inside the position: actual figures only (planning works on the position)
         if (open) for (const d of z.details) {
           const dv = C.map(c => c.plan || c.months.some(m => m > D.ist_bis) ? null : sumOver(d.werte, c.months));     // actual months only
@@ -2874,21 +2878,23 @@ function vKapitalfluss(editable) {
     if (b === undefined) return `<td class="${cls(null, c)}"></td>`;
     return b === null ? `<td class="${cls(null, c)} muted small">${t('unbekannt')}</td>` : `<td class="${cls(b * defl(m), c)} to-bal" data-bal="liq|${m}" title="${esc(t('cf_zur_bilanz_liq', ML(m)))}">${FC(b * defl(m))}</td>`; }).join('')}</tr>`;
   // operating: income and expenses within; then investing, financing and what could not be placed
-  const opOpen = cfOpen('s:Operativ', 0);
-  h += `<tr class="sec" data-tog="s:Operativ" data-depth="0"><td>${caret('s:Operativ', 0, opOpen)}${dot('op')}${named(SEC_LABEL.Operativ, SEC_HELP.Operativ, SEC_ABBR.Operativ)}</td>${nums(secTotal('Operativ'))}</tr>`;
+  const opOpen = cfOpen('s:Operativ', 0), opZs = ['Einnahmen', 'Ausgaben'].flatMap(n => (KF.sektionen.find(x => x.name === n) || {zeilen: []}).zeilen);
+  h += `<tr class="sec" data-tog="s:Operativ" data-depth="0"${zsOf(opZs, SEC_LABEL.Operativ)}><td>${caret('s:Operativ', 0, opOpen)}${dot('op')}${named(SEC_LABEL.Operativ, SEC_HELP.Operativ, SEC_ABBR.Operativ)}</td>${nums(secTotal('Operativ'), opZs)}</tr>`;
   if (opOpen) h += section('Einnahmen', 1) + section('Ausgaben', 1);
   // the check with the balance sheet per column: ✓ beside the figure; a row of its own only where something differs
   const colState = (c, val) => { const ms = c.plan || c.mixed ? [] : c.months.filter(m => m <= D.ist_bis);
     if (!ms.length || ms.some(m => !ue[m])) return null; return ms.some(m => Math.abs(ue[m][val]) >= 0.005) ? 'off' : 'ok'; };
   const anyOff = val => C.some(c => colState(c, val) === 'off');
   // all adding up is the normal case: no mark; where it does not, a small "!" (the difference in the row "check against the balance sheet")
-  const checked = (vals, val) => vals.map((v, i) => `<td class="${cls(v, C[i])} chk">${FV(v)}${colState(C[i], val) === 'off' ? `<span class="off-mark" title="${esc(t('cf_abgleich_ab'))}">✱</span>` : ''}</td>`).join('');
+  const checked = (vals, val, zs) => vals.map((v, i) => `<td class="${cls(v, C[i])} chk${zs && hasTx(zs, C[i]) ? ' tx' : ''}">${FV(v)}${colState(C[i], val) === 'off' ? `<span class="off-mark" title="${esc(t('cf_abgleich_ab'))}">✱</span>` : ''}</td>`).join('');
   // Free Cashflow (CFO + CFI): what is left after living and investing -- or what had to be financed (from the level "positions")
   const fcf = (() => { const o = secTotal('Operativ'), i2 = secTotal('Investitionen'); return o.map((v, i) => v + i2[i]); })();
-  h += section('Investitionen') + (cfLevel() >= 2 ? `<tr class="fcf"><td>${NOCARET}${named(t('cf_fcf'), 'cf_fcf', 'FCF')}</td>${nums(fcf)}</tr>` : '') + section('Finanzierung') + section('Unklar');
+  const fcfZs = [...opZs, ...(KF.sektionen.find(x => x.name === 'Investitionen') || {zeilen: []}).zeilen];
+  h += section('Investitionen') + (cfLevel() >= 2 ? `<tr class="fcf"${zsOf(fcfZs, t('cf_fcf'))}><td>${NOCARET}${named(t('cf_fcf'), 'cf_fcf', 'FCF')}</td>${nums(fcf, fcfZs)}</tr>` : '') + section('Finanzierung') + section('Unklar');
   // the change in cash -- the bank balance at the start and the end inside it (open from the level "positions")
   const bOpen = cfOpen('t:bank', 1);
-  h += `<tr class="total" data-tog="t:bank" data-depth="0"><td>${caret('t:bank', 0, bOpen)}${named(t('zahlungsfluss_gesamt_veraenderung_liqu'), 'cf_bank')}</td>${checked(secTotal('Cashflow'), 'abweichung_liq')}</tr>`;
+  const cashZs = KF.sektionen.filter(x => x.name !== 'Bewertung').flatMap(x => x.zeilen);
+  h += `<tr class="total" data-tog="t:bank" data-depth="0"${zsOf(cashZs, t('zahlungsfluss_gesamt_veraenderung_liqu'))}><td>${caret('t:bank', 0, bOpen)}${named(t('zahlungsfluss_gesamt_veraenderung_liqu'), 'cf_bank')}</td>${checked(secTotal('Cashflow'), 'abweichung_liq', cashZs)}</tr>`;
   // inside it: start + change + difference to the balance sheet = end (the difference before the end: it is added)
   if (bOpen) h += bal(t('bankguthaben_anfang'), c => allM[allM.indexOf(c.months[0]) - 1])
     + (anyOff('abweichung_liq') ? check('cf_abgleich_bank', 'abweichung_liq', 'gruende_liq') : '') + bal(t('bankguthaben_ende'), c => c.months[c.months.length - 1]);
@@ -2896,12 +2902,13 @@ function vKapitalfluss(editable) {
   // added back here, then the changes in value: the rows above add up to the change in net worth
   const moves = [];
   for (const sek of KF.sektionen) if (sek.name !== 'Bewertung') for (const z of sek.zeilen) if (!z.nw) { const l = gLabel(z); let m = moves.find(x => x.l === l); if (!m) moves.push(m = {l, zs: []}); m.zs.push(z); }
-  const mv2 = moves.map(m => ({l: m.l, v: C.map(c => -m.zs.reduce((a, z) => a + vOf(z, c), 0))})).filter(m => S.alle || m.v.some(v => Math.abs(v) >= 0.005));
+  const mv2 = moves.map(m => ({l: m.l, zs: m.zs, v: C.map(c => -m.zs.reduce((a, z) => a + vOf(z, c), 0))})).filter(m => S.alle || m.v.some(v => Math.abs(v) >= 0.005));
   const h0 = h.length;          // from here on no longer the cash flow statement: from cash to net worth
   if (mv2.length) {
     const uOpen = cfOpen('t:umsch', 2), uv = C.map((_, i) => mv2.reduce((a, m) => a + m.v[i], 0));
-    h += `<tr class="sec umsch" data-tog="t:umsch" data-depth="0"><td>${caret('t:umsch', 0, uOpen)}${dot('umsch')}${named(t('cf_umschichtungen'), 'cf_umsch')}</td>${nums(uv)}</tr>`;
-    if (uOpen) for (const m of mv2) h += `<tr class="ind1"><td>${NOCARET}${esc(m.l)}</td>${nums(m.v)}</tr>`;
+    const uZs = mv2.flatMap(m => m.zs);
+    h += `<tr class="sec umsch" data-tog="t:umsch" data-depth="0"${zsOf(uZs, t('cf_umschichtungen'))}><td>${caret('t:umsch', 0, uOpen)}${dot('umsch')}${named(t('cf_umschichtungen'), 'cf_umsch')}</td>${nums(uv, uZs)}</tr>`;
+    if (uOpen) for (const m of mv2) h += `<tr class="ind1"${zsOf(m.zs, m.l)}><td>${NOCARET}${esc(m.l)}</td>${nums(m.v, m.zs)}</tr>`;
   }
   // what changed without a payment, and net worth
   // the change in net worth -- like the change in cash: the net worth at the start and the end inside it, the check with the balance sheet too
@@ -2909,7 +2916,8 @@ function vKapitalfluss(editable) {
   const nvbal = (label, at) => editable && S.real ? '' : `<tr class="bal"><td title="${esc(t('cf_nv_bal_tip'))}">${label}</td>${C.map(c => {
     const m = at(c), b = m ? nwAt(m) : undefined; if (b == null) return `<td class="${cls(null, c)}"></td>`;
     return `<td class="${cls(b * defl(m), c)} to-bal" data-bal="nw|${m}" title="${esc(t('cf_zur_bilanz_nv', ML(m)))}">${FC(b * defl(m))}</td>`; }).join('')}</tr>`;
-  h += section('Bewertung') + `<tr class="total" data-tog="t:nv" data-depth="0"><td>${caret('t:nv', 0, nOpen)}${named(t('cf_veraenderung_nv'), 'cf_nv')}</td>${checked(secTotal('Nettovermoegen_delta'), 'unerklaert')}</tr>`;
+  const nvZs = KF.sektionen.flatMap(x => x.zeilen.filter(z => z.nw));
+  h += section('Bewertung') + `<tr class="total" data-tog="t:nv" data-depth="0"${zsOf(nvZs, t('cf_veraenderung_nv'))}><td>${caret('t:nv', 0, nOpen)}${named(t('cf_veraenderung_nv'), 'cf_nv')}</td>${checked(secTotal('Nettovermoegen_delta'), 'unerklaert', nvZs)}</tr>`;
   if (nOpen) h += nvbal(t('cf_nv_anfang_z'), c => allM[allM.indexOf(c.months[0]) - 1])
     + (anyOff('unerklaert') ? check('cf_abgleich_nv', 'unerklaert', 'gruende') : '') + nvbal(t('cf_nv_ende_z'), c => c.months[c.months.length - 1]);
   h = h.slice(0, h0) + h.slice(h0).split('<tr class="').join('<tr class="nwp ');          // from cash to net worth: a little lighter, the focus on the cash flow
@@ -3747,15 +3755,16 @@ const monthEnd = m => `${m}-${String(new Date(+m.slice(0, 4), +m.slice(5), 0).ge
 function cfOpenTx(o, page = false) {
   const f = {entitaet: S.bereich || '', jahr: '', konto: '', q: '', ohne_beleg: false, richtung: o.richtung || '', ohne_kategorie: !!o.none,
     kats: o.none ? null : o.kats, von: o.months[0] + '-01', bis: monthEnd(o.months[o.months.length - 1]), titel: o.titel, est: !!o.est, ext: true,
-    mitOhne: !!o.mitOhne, katsLabel: (o.kats || []).length > 1 ? o.katsLabel || '' : '', rChart: !!o.rChart, ids: o.ids || null};
+    mitOhne: !!o.mitOhne, katsLabel: (o.kats || []).length > 1 ? o.katsLabel || '' : '', rChart: !!o.rChart, ids: o.ids || null,
+    cfRows: o.cfRows || null, cfArea: o.cfRows ? S.bereich : null, cfMonths: o.cfRows ? o.months : null};
   if (page) { Object.assign(S.uf, f); S.sel.clear(); go('#transactions'); return; }
   const d = $('#drawer'), q = umsQuery(f); q.set('limit', '500');
   d.innerHTML = `<button class="close icon">✕</button><h2>${esc(o.titel || '')}</h2><div class="muted small">${t('wird_geladen')}</div>`;
   d.classList.add('open'); DRW.key = 'cftx'; $('.close', d).onclick = closeDrawer;
   api('/api/transactions?' + q.toString()).then(r => { if (DRW.key !== 'cftx') return;
-    const sum = r.umsaetze.reduce((a, u) => a + u.betrag, 0);
+    // a category's figure: its sum (all matches); bookings behind other rows can differ from the figure (a transfer, interest on a loan account): their number only
     d.innerHTML = `<button class="close icon">✕</button><h2>${esc(o.titel || '')}</h2>
-      <div class="note">${tn('cf_tx_n', r.treffer, F(sum))}${f.est ? ' · ' + t('uf_ohne_geschaetzte') : ''} · <a href="#" id="cftx-page">${t('cf_tx_seite')}</a></div>
+      <div class="note">${o.kats ? tn('cf_tx_n', r.treffer, F(r.summe)) : tn('cf_tx_anzahl', r.treffer)}${f.est ? ' · ' + t('uf_ohne_geschaetzte') : ''} · <a href="#" id="cftx-page">${t('cf_tx_seite')}</a></div>
       <div class="wrap auto"><table class="plain small"><tbody>`
       + r.umsaetze.map(u => `<tr><td>${FD(u.datum)}</td><td>${esc(u.name)}<div class="muted">${esc(u.zweck)}</div></td><td class="num">${F(u.betrag)}</td></tr>`).join('')
       + `</tbody></table></div>`;
@@ -4292,7 +4301,8 @@ function umsQuery(f = S.uf) {
   for (const k in P) if (f[k]) q.set(P[k], f[k]);
   if (f.richtung) q.set('direction', f.richtung === 'aus' ? 'out' : 'in');
   if (f.ohne_beleg) q.set('without_receipt', '1'); if (f.ohne_kategorie) q.set('uncategorized', '1');
-  if (f.ids && f.ids.length) q.set('ids', f.ids.join(','));          // the bookings of an unclear row
+  if (f.ids && f.ids.length) q.set('ids', f.ids.join(','));          // bookings by their ids
+  if (f.cfRows) { q.set('cf_rows', JSON.stringify(f.cfRows)); q.set('cf_area', f.cfArea || ''); q.set('cf_months', (f.cfMonths || []).join(',')); }      // behind a figure of the cash flow
   if (f.kats) q.set('categories', JSON.stringify(f.kats)); if (f.kats && f.mitOhne) q.set('with_uncategorized', '1'); if (f.von) q.set('from', f.von); if (f.bis) q.set('to', f.bis);      // opened from a chart
   return q;
 }
@@ -4311,15 +4321,15 @@ async function vUmsaetze() {
     <label class="switch"><input type="checkbox" id="uf-ok" ${f.ohne_kategorie ? 'checked' : ''}><i></i>${t('ohne_kategorie_2')}</label>
     <button id="uf-ext" class="secondary small${f.von || f.bis || f.kats || f.ids ? ' on' : ''}" aria-expanded="${!!(f.ext || f.von || f.bis || f.kats || f.ids)}">${t('uf_erweitert')}${f.von || f.bis || f.kats || f.ids ? ' •' : ''}</button>
   </div>
-  ${f.ext || f.von || f.bis || f.kats || f.ids ? `<div class="toolbar uf-ext">${f.ids ? `<span class="chip">${esc(t('uf_unklare', f.titel || ''))}<button class="icon ghost" data-ids-x="1" aria-label="${esc(t('entfernen'))}">✕</button></span>` : ''}
+  ${f.ext || f.von || f.bis || f.kats || f.ids || f.cfRows ? `<div class="toolbar uf-ext">${f.ids || f.cfRows ? `<span class="chip">${esc(f.cfRows ? f.titel || '' : t('uf_unklare', f.titel || ''))}<button class="icon ghost" data-ids-x="1" aria-label="${esc(t('entfernen'))}">✕</button></span>` : ''}
     <label class="small">${t('cf_von')} <input type="date" id="uf-von" value="${esc(f.von)}"></label><label class="small">${t('cf_bis')} <input type="date" id="uf-bis" value="${esc(f.bis)}"></label>
     <span class="small muted">${t('kategorien')}</span>${f.katsLabel && f.kats ? `<span class="chip">${esc(t('uf_alle_kats', f.katsLabel, f.kats.length))}${f.mitOhne ? ` · ${esc(t('ohne_kategorie_2'))}` : ''}<button class="icon ghost" data-kat-all="1" aria-label="${esc(t('entfernen'))}">✕</button></span>`
       : (f.kats || []).map((k, i) => `<span class="chip">${esc(CP(k))}<button class="icon ghost" data-kat-x="${i}" aria-label="${esc(t('entfernen'))}">✕</button></span>`).join('')}
     <input type="text" id="uf-kat-add" list="uf-kats" placeholder="${t('uf_kategorie_hinzu')}" style="min-width:200px"><datalist id="uf-kats">${(S.KATS || []).filter(k => !k.standard).map(k => `<option value="${esc(CP(k.pfad))}">`).join('')}</datalist>
     ${f.est ? `<span class="small muted">${t('uf_ohne_geschaetzte')}</span>` : ''}
-    ${f.von || f.bis || f.kats || f.ids ? `<button id="uf-chip-x" class="ghost small">${t('uf_filter_aufheben')}</button>` : ''}
+    ${f.von || f.bis || f.kats || f.ids || f.cfRows ? `<button id="uf-chip-x" class="ghost small">${t('uf_filter_aufheben')}</button>` : ''}
   </div>` : ''}
-  <div class="toolbar"><span class="muted small">${t('0_treffer_1_von_2', UMS.treffer, UMS.treffer > UMS.umsaetze.length ? ' (erste ' + UMS.umsaetze.length + t('angezeigt_filter_verfeinern') : '', UMS.gesamt)}</span><span class="sp"></span>
+  <div class="toolbar"><span class="muted small ums-hits">${t('0_treffer_1_von_2', UMS.treffer, UMS.treffer > UMS.umsaetze.length ? ' (erste ' + UMS.umsaetze.length + t('angezeigt_filter_verfeinern') : '', UMS.gesamt)}</span><span class="sp"></span>
     <button id="bl-folder" class="secondary small" ${st.lokal ? '' : t('disabled_title_nur_am_mac')}>${t('belegordner_oeffnen')}</button>
     <button id="bl-export" class="secondary small">${t('belege_exportieren_zip')}</button>
     ${xlsxBtn('transactions', `title="${esc(t('uf_excel_tip'))}"`)}</div>`;          // the transactions as filtered (all matches, not only those shown)
@@ -5164,7 +5174,7 @@ async function vUpdates(form) {
   const r = await api('/api/update/status'), st = S.STATUS, info = r.info;
   let h = `<div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.datum ? `<span class="vdate">${t('vom_0', FDT(r.datum))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
     <div class="card"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.fehler ? '<span class="pill err">?</span>' : esc(info.verfuegbar || '–') + (info.datum ? `<span class="vdate">${t('vom_0', FDT(info.datum))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.fehler ? esc(info.fehler) : (info.neuer ? `<span class="pill ok">${t('neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + t('quelle_2') + esc(info.quelle || '')) : t('noch_nicht_geprueft')}${r.geprueft ? t('geprueft') + new Date(r.geprueft * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
-    <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${info && info.neuer && st.lokal ? '' : 'disabled'}>${t('update_installieren_und_dienst_neu')}</button></div>
+    <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${info && info.neuer && st.lokal ? '' : 'disabled'}>${t('update_installieren_und_dienst_neu')}</button>${((S.CFG.updates || {}).repo || 'stecrz/Kontor') !== 'stecrz/Kontor' ? ` <span class="tag warn">${t('update_fremde_quelle', esc((S.CFG.updates || {}).repo))}</span>` : ''}</div>
     ${form || ''}
     ${info && info.notizen && info.neuer ? `<h2>${t('neu_in_0', esc(info.verfuegbar))}</h2>${clHtml(info.notizen)}` : ''}
     ${clSplit(r.changelog)}
@@ -5426,18 +5436,18 @@ function bind(main) {
         if (k.length === 7) { b = k; v = pick.find(m => m >= mShift(k, -11)) || k; } else { const ys = pick.filter(m => m.startsWith(k)); if (!ys.length) return; v = ys[0]; b = ys[ys.length - 1]; }
         cfSetRange(v, b); }); });
   }          // the bank balance: shown in the balance sheet
-  // an unclear figure: its bookings, to see what is missing (e.g. the other side of a transfer)
-  $$('.cf-tbl:not(.ptable) tr.ux td:not(:first-child)', main).forEach(td => td.addEventListener('click', () => {
-    const c = (CF.tblCols || [])[td.cellIndex - 1], z = (CF.ux || [])[+td.parentNode.dataset.ux]; if (!c || !z) return;
-    const ids = c.months.flatMap(m => (z.ids || {})[m] || []); if (!ids.length) return;
-    cfOpenTx({ids, months: c.months, titel: zLabel(z) + ' · ' + c.label}); }));
+  // a figure: the bookings behind it -- of a single row or of all rows under it (e.g. everything unclear at once), in the side panel
+  $$('.cf-tbl:not(.ptable) tr[data-zs] td.tx', main).forEach(td => td.addEventListener('click', e => {
+    e.stopPropagation(); const tr = td.parentNode, c = (CF.tblCols || [])[td.cellIndex - 1], row = (CF.zs || [])[+tr.dataset.zs]; if (!c || !row) return;
+    const keys = row.zs.filter(z => z.n && c.months.some(m => z.n[m])).map(z => CF.zsec.get(z) + '\u001f' + z.zeile); if (!keys.length) return;
+    cfOpenTx({cfRows: keys, months: c.months, titel: row.label + ' · ' + c.label}); }));
   // a category's figure: the transactions behind it (that column's closed months), as from the heat map
   $$('.cf-tbl:not(.ptable) tr.det[data-kat] td:not(:first-child)', main).forEach(td => td.addEventListener('click', () => {
     const c = (CF.tblCols || [])[td.cellIndex - 1], kat = td.parentNode.dataset.kat; if (!c || !c.months.length || !kat) return;
     cfOpenTx({kats: [kat], months: c.months, titel: CP(kat).split(' › ').slice(-1)[0] + ' · ' + c.label}); }));
-  // a click on a row's name -- or, in the cash flow, on any of its figures -- opens or closes it (in planning the figures are edited)
+  // a click on a row's name opens or closes it (its figures show the bookings behind them; in planning they are edited)
   $$('.cf-tbl [data-tog]', main).forEach(el => el.addEventListener('click', e => {
-    if (el.tagName === 'TR' && ((e.target.closest('td') !== el.firstElementChild && el.closest('.ptable')) || e.target.closest('select, input, a, .edit, .hq, .tag, .to-bal, .tipped, button:not(.disc)'))) return;
+    if (el.tagName === 'TR' && (e.target.closest('td') !== el.firstElementChild || e.target.closest('select, input, a, .edit, .hq, .tag, .to-bal, .tipped, button:not(.disc)'))) return;
     e.stopPropagation(); S.cfTog[el.dataset.tog] = !cfOpen(el.dataset.tog, +el.dataset.depth);
     // the page is drawn anew: the row stays where it was on the screen (not scrolled up)
     const id = el.dataset.tog, top0 = el.getBoundingClientRect().top;
@@ -5635,8 +5645,8 @@ function bind(main) {
   // Umsaetze & Belege
   const uf = S.uf;
   const bindF = (id, key, prop = 'value') => { const el = $(id, main); if (el) el.addEventListener('change', e => { uf[key] = e.target[prop]; S.sel.clear(); route(); }); };
-  $$('[data-ids-x]', main).forEach(b => b.addEventListener('click', () => { Object.assign(uf, {ids: null, titel: '', von: '', bis: ''}); S.sel.clear(); route(); }));
-  const ux = $('#uf-chip-x', main); if (ux) ux.addEventListener('click', () => { Object.assign(uf, {ids: null, kats: null, von: '', bis: '', titel: '', est: false, katsLabel: '', mitOhne: false, ohne_kategorie: uf.titel ? false : uf.ohne_kategorie, richtung: uf.titel || uf.rChart ? '' : uf.richtung, rChart: false}); S.sel.clear(); route(); });
+  $$('[data-ids-x]', main).forEach(b => b.addEventListener('click', () => { Object.assign(uf, {ids: null, cfRows: null, titel: '', von: '', bis: ''}); S.sel.clear(); route(); }));
+  const ux = $('#uf-chip-x', main); if (ux) ux.addEventListener('click', () => { Object.assign(uf, {ids: null, cfRows: null, kats: null, von: '', bis: '', titel: '', est: false, katsLabel: '', mitOhne: false, ohne_kategorie: uf.titel ? false : uf.ohne_kategorie, richtung: uf.titel || uf.rChart ? '' : uf.richtung, rChart: false}); S.sel.clear(); route(); });
   const ue = $('#uf-ext', main); if (ue) ue.addEventListener('click', () => { uf.ext = !(uf.ext || uf.von || uf.bis || uf.kats); if (!uf.ext) Object.assign(uf, {kats: null, von: '', bis: '', titel: '', est: false}); route(); });
   for (const [id, key] of [['#uf-von', 'von'], ['#uf-bis', 'bis']]) { const el = $(id, main); if (el) el.addEventListener('change', () => { uf[key] = el.value; uf.titel = ''; S.sel.clear(); route(); }); }
   const ka = $('#uf-kat-add', main); if (ka) ka.addEventListener('change', () => { const v = ka.value.trim(); if (!v) return;

@@ -451,7 +451,8 @@ class Rows:
         self.vals: Dict[Tuple[str, str], Dict[str, float]] = defaultdict(lambda: defaultdict(float))
         self.meta: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self.det: Dict[Tuple[str, str], Dict[str, Dict[str, float]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
-        self.ids: Dict[Tuple[str, str], Dict[str, List[int]]] = defaultdict(lambda: defaultdict(list))   # unclear rows: their bookings
+        self.ids: Dict[Tuple[str, str], Dict[str, List[int]]] = defaultdict(lambda: defaultdict(list))   # each row: its bookings
+        self.cur: Optional[int] = None                     # the booking being placed (rows added meanwhile hold it)
 
     def add(self, section: str, gruppe: Optional[str] = None, zeile: str = "", mk: str = "", amount: float = 0.0, *,
             konto: Optional[str] = None, art: str = "kategorie", nw: bool = True, lbl: Optional[tuple] = None,
@@ -461,8 +462,9 @@ class Rows:
         the fixed outline (positions); objekt: the property the row belongs to; detail: the category inside the row."""
         key = (section, zeile)
         self.vals[key][mk] += amount
-        if tx is not None and len(self.ids[key][mk]) < 300:          # which bookings an unclear row holds (to look at them)
-            self.ids[key][mk].append(tx)
+        tid = tx if tx is not None else self.cur
+        if tid is not None and tid > 0 and tid not in self.ids[key][mk][-3:]:      # which bookings a row holds (to look at them; kept on the Mac)
+            self.ids[key][mk].append(tid)
         if detail is not None:
             self.det[key][detail][mk] += amount
         if key not in self.meta:
@@ -1131,10 +1133,10 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         nonlocal unclear
         if role == "verbindlichkeiten" and _is_cost(t, cost_words):
             R.add("Finanzierung", zeile=acc.name + " / Zinsen", mk=mk, amount=t.amount, konto=acc.uuid, art="zins", nw=True, lbl=("cf_name", acc.name), **_grp(FIN_GROUPS, "zins"))
-            R.add("Finanzierung", zeile=acc.name + " / Tilgung", mk=mk, amount=-t.amount, konto=acc.uuid, art="tilgung", nw=False, lbl=("cf_name", acc.name), **_grp(FIN_GROUPS, "tilgung"))
+            R.add("Finanzierung", zeile=acc.name + " / Tilgung", mk=mk, amount=-t.amount, konto=acc.uuid, art="tilgung", nw=False, lbl=("cf_name", acc.name), tx=-1, **_grp(FIN_GROUPS, "tilgung"))      # its other side: the booking is listed with the interest
         elif role == "forderungen" and _is_cost(t, cost_words):
             R.add("Investitionen", zeile=acc.name + " / Zinsen", mk=mk, amount=t.amount, konto=acc.uuid, art="zins", nw=True, lbl=("cf_zinsen", acc.name), **_grp(INVEST_GROUPS, "forderungen"))
-            R.add("Investitionen", zeile=acc.name + " / Rückzahlung", mk=mk, amount=-t.amount, konto=acc.uuid, art="rueckzahlung", nw=False, lbl=("cf_name", acc.name), **_grp(INVEST_GROUPS, "forderungen"))
+            R.add("Investitionen", zeile=acc.name + " / Rückzahlung", mk=mk, amount=-t.amount, konto=acc.uuid, art="rueckzahlung", nw=False, lbl=("cf_name", acc.name), tx=-1, **_grp(INVEST_GROUPS, "forderungen"))
         elif role in ("verbindlichkeiten", "forderungen") or role in ASSET_LIKE:
             R.add("Bewertung", acc.name, acc.name, mk, t.amount, konto=acc.uuid, art="konto", nw=True)
         else:
@@ -1142,6 +1144,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                   lbl=("cf_position_unbekannt", acc.name), glbl=("cf_konto_ohne_position",)); unclear += 1
 
     for t in in_root:
+        R.cur = t.id                                     # every row added for it holds it (a click shows the bookings behind a figure)
         acc = ledger.accounts[t.account_uuid]
         role = roles.get(acc.uuid, "sonstiges")
         mk = month_key(t.booking_date)
@@ -1330,6 +1333,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             row, key = position_row(pos, company)
             R.add(psec, row, row, mk, t.amount, ord=pord, lbl=(key,), detail=det)
 
+    R.cur = None
     for u, fm, op in openings:
         acc = ledger.accounts[u]
         R.add("Bewertung", acc.name, acc.name + " / Anfangssaldo", fm, op, konto=u, art="anfang", nw=True, lbl=("cf_anfangssaldo", acc.name))
@@ -1577,6 +1581,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
 
     # Kapitalfluss-Sektionen
     sektionen = []
+    cf_ids: Dict[str, Dict[str, List[int]]] = {}         # "section\x1frow" -> month -> bookings (saved apart from the dataset)
     for sec in SECTIONS:
         zeilen = []
         for (s, row), vals in R.vals.items():
@@ -1589,8 +1594,9 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                 if m.get(k) is not None:
                     z[k] = m[k]
             ids = R.ids.get((s, row))
-            if ids:                                      # an unclear row: its bookings per month
-                z["ids"] = {mk: list(v) for mk, v in ids.items() if v}
+            if ids:                                      # how many bookings per month (the ids themselves: kept apart, fetched on a click)
+                z["n"] = {mk: len(v) for mk, v in ids.items() if v}
+                cf_ids[s + "\u001f" + row] = {mk: list(v) for mk, v in ids.items() if v}
             det = R.det.get((s, row))
             if det:                                      # the categories inside a position (largest first)
                 z["details"] = sorted(({"kategorie": c, "werte": {mk: round(v.get(mk, 0.0), 2) for mk in mkeys}} for c, v in det.items()),
@@ -1636,7 +1642,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                    "liquides_nettovermoegen": liquid_nw, "positionen": {r: role_label(r) for r in pos_sums}, "ausserhalb": ausserhalb},
         "kapitalfluss": {"sektionen": sektionen, "ueberleitung": ueberleitung, "anlagen": list(getattr(R, "anlagen", None) or []),
                          "unsicher": dict(getattr(R, "unsicher", None) or {}),
-                         "anlage_ziele": anlage_ziele},
+                         "anlage_ziele": anlage_ziele, "cf_ids": cf_ids},
         "darlehen_konfig": loans_cfg,
         "konten_inaktiv": sorted(inactive),
         "konten_inaktiv_auto": sorted(inactive_auto),

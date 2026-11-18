@@ -272,13 +272,13 @@ class CashflowCases(Reconciles):
                       (11, "giro", date(2026, 6, 5), 1000.0, {"cat": "Umbuchung"})])
         self.assertAddsUp(data)
         p = data["Privat"]
-        ids = {mk: sorted(v) for mk, v in rows(p)["Umbuchung ohne erkannten Partner"]["ids"].items()}
+        ids = {mk: sorted(v) for mk, v in p["kapitalfluss"]["cf_ids"]["Unklar\u001fUmbuchung ohne erkannten Partner"].items()}
         self.assertEqual(ids, {"2026-04": [6, 7, 12], "2026-05": [10], "2026-06": [11]})
         transit = next(r for r in p["bilanz"]["zeilen"] if r["id"] == "transit")
         self.assertEqual(transit["werte"]["2026-02"], -624.0)                    # booked on PayPal, not yet at the bank
 
     def test_transfer_pairs_closest_first(self):
-        unclear = lambda data: {mk: sorted(v) for mk, v in rows(data["Privat"]).get("Umbuchung ohne erkannten Partner", {}).get("ids", {}).items()}
+        unclear = lambda data: {mk: sorted(v) for mk, v in data["Privat"]["kapitalfluss"]["cf_ids"].get("Unklar\u001fUmbuchung ohne erkannten Partner", {}).items()}
         transit = lambda data, mk: next((r["werte"][mk] for r in data["Privat"]["bilanz"]["zeilen"] if r["id"] == "transit"), 0.0)      # no row: nothing in transit
         base = [(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"})]
         # a closer booking keeps its counterpart: the one a week before stays unclear (nothing in transit at the month end)
@@ -646,9 +646,9 @@ class Positions(Reconciles):
 
     def test_learned_patterns_come_before_words(self):
         import categorize as C
-        txs = [(1, "giro", date(2026, 1, 5), -40.0, {"name": "Biomarkt", "cat": "Lebensmittel"}),
-               (2, "giro", date(2026, 1, 9), -45.0, {"name": "Biomarkt", "cat": "Lebensmittel"}),
-               (3, "giro", date(2026, 2, 9), -50.0, {"name": "Biomarkt", "purpose": "Versicherung"})]
+        txs = [(1, "giro", date(2026, 1, 5), -40.0, {"name": "Supermarkt", "cat": "Lebensmittel"}),
+               (2, "giro", date(2026, 1, 9), -45.0, {"name": "Supermarkt", "cat": "Lebensmittel"}),
+               (3, "giro", date(2026, 2, 9), -50.0, {"name": "Supermarkt", "purpose": "Versicherung"})]
         led = make_ledger(txs)
         d = C.empty(); C.learn(d, led)
         config = core.merged_config({"bilanz": {"rollen": {k: v[2] for k, v in ACCOUNTS.items()}}})

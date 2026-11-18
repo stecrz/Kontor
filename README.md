@@ -13,7 +13,13 @@ Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https:
 - Drei einzelne Grafiken (Nettovermögen, frei gewählte Positionen wie „Geldanlagen“, Zusammensetzung einer Position); jede kann die große werden.
 - Ansicht je Gerät speichern, Anordnung frei, dunkel (Standard) oder hell, Excel-Export mit aufklappbaren Zeilen.
 
-**Stand:** Bilanz, Synchronisierung und Einrichtung sind geprüft. Die übrigen Seiten (Übersicht, Cashflow, Planung, Immobilien, Steuer, Umsätze & Belege, Kategorien, Buchungen, Regeln) sind nutzbar, aber noch als „Alpha“ markiert – Zahlen dort bitte gegenprüfen.
+**Cashflow** – Überschuss (CFO), Investitionen (CFI) und Finanzierung (CFF) je Monat, Quartal oder Jahr, bis zu den Kategorien aus MoneyMoney:
+
+- Jede Zahl führt zu den Umsätzen dahinter (Seitenfenster), auch zusammengefasste Zeilen wie „Unklar“; Monat für Monat gegen die Bilanz abgestimmt (Bankguthaben und Nettovermögen), Abweichungen mit Grund.
+- Liquiditäts- und Vermögensbrücke, Monatlicher Cashflow (zoombar), Mittelherkunft & -verwendung als Sankey, Vorjahresvergleich und Ausgaben je Monat – für einen frei wählbaren Zeitraum, auch in den Plan hinein.
+- Umbuchungen zwischen eigenen Konten werden gepaart (Gegen-IBAN, Kategorie, Betrag), Umsätze ohne Kategorie sichtbar geschätzt – ohne etwas in MoneyMoney einzutragen.
+
+**Stand:** Bilanz, Cashflow, Kategorien, Auto-Buchungen, Synchronisierung und Einrichtung sind geprüft. Übersicht, Planung, Immobilien, Steuer sowie Umsätze & Belege sind nutzbar, aber noch als „Alpha“ markiert – Zahlen dort bitte gegenprüfen.
 
 **Anleitung: [Hilfe](docs/help.de.md)** · English: [help](docs/help.en.md) – dieselbe Hilfe steht in Kontor unter „Hilfe“ (durchsuchbar). Dort steht alles Weitere: was MoneyMoney und was Kontor macht, die Einrichtung, jede Seite, [Sicherheit](docs/help.de.md#security), Kommandozeile und Datenordner, Hilfe bei Fehlern. Alle Bilder zeigen frei erfundene Daten.
 
