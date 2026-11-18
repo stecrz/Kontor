@@ -673,7 +673,7 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 .cf-link-l { stroke:var(--line-2); stroke-width:1; shape-rendering:crispEdges; }
 .cf-break { fill:none; stroke:var(--head); stroke-width:2; }
 .cf-fl-n.ein { fill:var(--pos); } .cf-fl-n.aus { fill:var(--neg); } .cf-fl-n.inv { fill:var(--cf-inv); } .cf-fl-n.fin { fill:var(--cf-fin); } .cf-fl-n.tot, .cf-fl-n.unk { fill:var(--cf-unk); }
-.cf-fl-b { fill-opacity:.62; transition:opacity .15s; } .cf-fl-p { fill:var(--fg); font-size:11px; font-weight:600; pointer-events:none; } .cf-fl-mid { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
+.cf-svg.cf-fl { display:block; } .cf-fl-b { fill-opacity:.62; transition:opacity .15s; } .cf-fl-p { fill:var(--fg); font-size:11px; font-weight:600; pointer-events:none; } .cf-fl-mid { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
 .cf-fl:hover .cf-fl-g { opacity:.4; } .cf-fl .cf-fl-g:hover { opacity:1; } .cf-fl-g { transition:opacity .15s; } .cf-fl .more, .cf-fl .back, .cf-fl-up { cursor:pointer; } .cf-fl-up { fill:var(--muted); font-size:11px; } .cf-fl-l.more:hover .cf-fl-t:not(.cf-fl-v) { text-decoration:underline; }
 .cf-fl-g { outline:none; } .cf-fl-g:focus-visible .cf-fl-n { stroke:var(--fg); stroke-width:1.5; }
 .cf-fl-t { fill:var(--fg); font-size:12px; } .cf-fl-t.cf-fl-v2 { font-size:10.5px; } .cf-fl-v { fill:var(--muted); font-variant-numeric:tabular-nums; } .cf-fl-lead { fill:none; stroke:var(--line-2); stroke-width:1; } .cf-sub-l { fill:var(--fg); font-size:12px; font-weight:600; }

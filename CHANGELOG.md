@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.13.31 (2026-11-18 03:04)
+- Einstellungen → Zugang: Seite sofort da, der Tailscale-Teil lädt nach.
+- Gesamtcashflow: Höhe nach dem Diagramm daneben (wuchs bei jedem Neuzeichnen).
+
 ## 3.13.30 (2026-11-18 02:47)
 - Tabelle: Bewegungen mit Vorzeichen (+); startet auf Hauptebenen mit Einnahmen/Ausgaben; Nettovermögen klappt zu Anfang/Ende auf.
 - Tabelle: Umschichtungen bis Nettovermögen etwas dünner statt abgesetzt; „✱“ statt „!“; Hand-Cursor überall; Aufklappen scrollt nicht mehr.

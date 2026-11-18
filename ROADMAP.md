@@ -44,6 +44,7 @@ Fertig, wenn
 - [x] 3.13.28 Zeitraum mit Monatskalender und Plan, neue Anordnung der Diagramme, Sprung in die Bilanz.
 - [x] 3.13.29 Protokoll schlank (eine Datei, Filter), Diagramme verschiebbar, Klicks in Tabelle und Geldtransit.
 - [x] 3.13.30 Vorzeichen, Nettovermögen aufklappbar, Unklar anklickbar, Diagramm-Paare, Schraffur in Brücken.
+- [x] 3.13.31 Zugang lädt sofort, Gesamtcashflow-Höhe stabil.
 - Danach: Empfohlener Kategorienbaum (Checkliste zum Anlegen in MoneyMoney; Kontor legt selbst nur an, falls MoneyMoney es anbietet und du freigibst), Hinweis bei gemischten Kategorien, Zuordnen je Empfänger in einem Schritt, Fortschritt „sicher zugeordnet / geschätzt“; alles Freigegebene sichtbar und rückgängig zu machen.
 
 ## Laufend

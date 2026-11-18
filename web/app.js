@@ -3640,7 +3640,10 @@ function cfDrawFlow() {
   // the names take a fixed share of the width -- opening an item never narrows the bands (longer names shortened, whole on hover)
   const W = Math.max(300, el.clientWidth), narrow = W < 760;
   const LW = narrow ? Math.max(90, W * 0.24) : Math.min(220, W * 0.24), RW = LW, nodeW = 8, gap = 5, LH = narrow ? 28 : 18;
-  el.innerHTML = ''; const card = el.closest('.cf-card'), room = card && card.classList.contains('cf-half') ? Math.min(640, card.getBoundingClientRect().bottom - el.getBoundingClientRect().top - 16) : 0;
+  // beside another chart in the same row: as tall as that one's content (its plot -- not the card, which the row stretches)
+  el.innerHTML = ''; const card = el.closest('.cf-card'), ct = card ? card.getBoundingClientRect().top : 0;
+  const sib = card && card.classList.contains('cf-half') ? [card.previousElementSibling, card.nextElementSibling].find(x => x && x.classList.contains('cf-half') && Math.abs(x.getBoundingClientRect().top - ct) < 2) : null;
+  const sp = sib && $('.cf-plot', sib), room = sp ? Math.min(640, sp.getBoundingClientRect().bottom - el.getBoundingClientRect().top) : 0;
   const n = Math.max(L0.length, R0.length), H = Math.max(200, n * (LH + 3) + 28 + (narrow ? 12 : 0), room), top = 22, bot = H - 6 - (narrow ? 12 : 0);       // narrow: the amount on a second line; beside a taller card: its height
   const avail = side => (bot - top) - gap * (side.length - 1);
   let k = Math.min(avail(L0), avail(R0)) / F.total;
@@ -4876,7 +4879,11 @@ function vTsHarden(ts, r) {
 async function vEinstellungenZugang() {
   // On the Mac (lock, Touch ID, address, password), below: access from the iPhone via Tailscale (state, setup, who/where/what, options, hardening)
   const o = S.CFG.oberflaeche || {};
-  let r = null; try { r = await api('/api/remote'); } catch (e) {}
+  // the state of Tailscale can take a while (its app answers slowly): the page shows at once, that part follows when it is there
+  const rc = S.remoteCache && Date.now() - S.remoteCache.t < 60000 ? S.remoteCache.r : null, r = rc;
+  if (!rc && !S.remoteLoading) { S.remoteLoading = true;
+    api('/api/remote').then(x => { S.remoteCache = {t: Date.now(), r: x}; }).catch(() => { S.remoteCache = {t: Date.now(), r: null}; })
+      .finally(() => { S.remoteLoading = false; if (S.tab === 'settings' && S.sub === 'access' && !DIRTY.on) route(); }); }
   const ts = (r && r.tailscale) || {}, lokal = r ? r.lokal : S.STATUS.lokal;
   const ok = b => `<span class="dot ${b ? 'ok' : 'warn'}"></span>`;
   let h = `<h2>${t('am_mac')}</h2><div class="form">
@@ -4893,6 +4900,7 @@ async function vEinstellungenZugang() {
   <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>
   <h2>${t('passwort')}</h2><div class="form"><label>${t('altes_passwort')}</label><input type="password" id="pw-alt" autocomplete="current-password"><label>${t('neues_passwort')}</label><input type="password" id="pw-neu" autocomplete="new-password"></div><div class="actions"><button id="pw-save" class="secondary">${t('passwort_aendern')}</button></div>`;
   h += `<h2>${t('zugriff_vom_iphone')} ${hq('fern')}</h2>`;
+  if (!r && S.remoteLoading) return h + `<div class="note"><span class="spin"></span> ${t('wird_geladen')}</div>`;
   if (r && r.aktiv) {
     h += `<div class="banner ${r.lauscht ? 'ok' : 'warn'}">${r.lauscht ? t('fern_an', `<b>${esc(r.url)}</b>`) : t('fern_an_wartet', esc(r.fehler || ''))}</div>
       <div class="row tight"><button class="secondary small" id="fz-copy" data-url="${esc(r.url)}">${t('link_kopieren')}</button>${lokal ? `<button class="danger small" id="fz-aus">${t('zugriff_ausschalten')}</button>` : ''}</div>
@@ -4924,13 +4932,14 @@ function bindZugang(main) {
   // the service restarts with the new address: wait for the *new* process (see restartTo), then reload
   const restartWait = before => { msg(t('kontor_startet_neu'), 'hinweis'); return restartTo(location.port || (location.protocol === 'https:' ? 443 : 80), before); };
   const act = async (aktion, extra = {}) => {
+    S.remoteCache = null;
     try { const r = await api('/api/remote', Object.assign({aktion}, extra)); if (!r.ok) { msg(r.text, 'fehler'); return; } if (r.neustart) return restartWait(r.instanz); S.CFG = await api('/api/config'); route(); }
     catch (e) { msg(e.message, 'fehler'); }
   };
   const on = $('#fz-ein', main); if (on) on.addEventListener('click', () => { on.disabled = true; on.classList.add('busy'); msg(t('fern_zertifikat_wird_geholt'), 'hinweis'); act('ein').finally(() => { on.disabled = false; on.classList.remove('busy'); }); });
   const onh = $('#fz-ein-http', main); if (onh) onh.addEventListener('click', () => { if (confirm(t('ohne_zertifikat_frage'))) act('ein_http'); });
   const off = $('#fz-aus', main); if (off) off.addEventListener('click', () => { if (confirm(t('zugriff_ausschalten_frage'))) act('aus'); });
-  const rc = $('#fz-recheck', main); if (rc) rc.addEventListener('click', async () => { rc.classList.add('busy'); try { await api('/api/remote?fresh=1'); } catch (e) {} route(); });
+  const rc = $('#fz-recheck', main); if (rc) rc.addEventListener('click', async () => { rc.classList.add('busy'); try { S.remoteCache = {t: Date.now(), r: await api('/api/remote?fresh=1')}; } catch (e) { S.remoteCache = null; } route(); });
   // which ports Tailscale lets in on this Mac (rules as Tailscale applies them)
   const aclState = $('#fz-acl-state', main);
   const aclCheck = async () => {
