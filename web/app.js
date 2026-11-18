@@ -4788,12 +4788,16 @@ function bindPositionen(main) {
   // without your choice: that of the nearest category above it, else Kontor's proposal
   const inherited = r => { const parts = r.dataset.p.split(' / '); for (let i = parts.length - 1; i > 0; i--) { const up = by[parts.slice(0, i).join(' / ')]; if (up && own(up)) return own(up); } return ''; };
   const auto = r => inherited(r) || r.dataset.v;
+  // a category with subcategories and no choice of yours (here or above): each subcategory counts on its own -- shown so;
+  // a choice of yours on it passes down to them
+  const parents = new Set(rows.map(r => r.dataset.p.split(' / ')).filter(p => p.length > 1).flatMap(p => p.slice(1).map((_, i) => p.slice(0, i + 1).join(' / '))));
   const save = $('#kp-save', main);
   const acc = v => (v || '').split('|')[0].trim();               // an account by its id (a renamed account is no change)
   const upd = () => {
     rows.forEach(r => {
       const sel = $('.kp-pos', r); if (!sel) return;
       let a = auto(r);
+      if (!sel.dataset.obj && parents.has(r.dataset.p) && !own(r) && !inherited(r)) a = '';
       // a property's category leaves its rows for interest or a repayment, or for saving or leaving out that you chose
       if (sel.dataset.obj && !(['tilgung', 'zinsen'].includes(a) || (inherited(r) && OBJ_OUT.includes(a)))) a = '';
       const eff = own(r) || a;

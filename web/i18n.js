@@ -1064,7 +1064,7 @@ const I18N = {
 "immobilie_0":["Immobilie {0}", "Property {0}"],
 "automatisch_unter":["Je Unterkategorie (automatisch)", "Per subcategory (automatic)"],
 "automatisch_0":["{0} (automatisch)", "{0} (automatic)"],
-"position_kat_tip":["In welcher Position des Cashflows die Kategorie zählt. „Automatisch“: wie die Kategorie darüber, sonst Kontors Vorschlag nach dem Namen. Kategorien einer Immobilie haben eigene Zeilen.", "Which cash flow position the category counts in. “Automatic”: like the category above it, otherwise Kontor's proposal from its name. A property's categories have rows of their own."],
+"position_kat_tip":["In welcher Position des Cashflows die Kategorie zählt. „Automatisch“: wie deine Wahl bei der Kategorie darüber, sonst Kontors Vorschlag nach dem Namen; eine Oberkategorie ohne deine Wahl zählt je Unterkategorie. Kategorien einer Immobilie haben eigene Zeilen.", "Which cash flow position the category counts in. “Automatic”: like your choice for the category above it, otherwise Kontor's proposal from its name; a parent category without your choice counts per subcategory. A property's categories have rows of their own."],
 "s_grund_positionen":["Cashflow-Positionen", "Cash flow positions"],
 "pos_umsatz":["Umsatzerlöse", "Revenue"],
 "pos_wareneinkauf":["Wareneinkauf", "Purchase of goods"],

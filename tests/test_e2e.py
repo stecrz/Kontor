@@ -3436,6 +3436,18 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.inner_text("#page-title"), "Konten & Regeln"); self.assertTrue(pg.query_selector("#nav a.on[href='#accounts']"))
                 self.assertTrue(pg.query_selector(".tabs button.on[data-next='#accounts/positions']"))
                 self.assertIn("→", pg.inner_text(".kp-table tbody tr td.kp-arrow"))
+                # a parent category without a choice of yours counts per subcategory; a choice on it passes down to them
+                par = pg.evaluate("""(() => { const rs = [...document.querySelectorAll('.kp-table tr[data-p]')];
+                    const p = rs.find(r => !r.querySelector('.kp-pos').dataset.obj && !r.querySelector('.kp-pos').value && rs.some(x => x.dataset.p.startsWith(r.dataset.p + ' / ')));
+                    return p ? p.dataset.p : null; })()""")
+                if par:
+                    first = lambda p: pg.evaluate("p => document.querySelector(`.kp-table tr[data-p=\"${CSS.escape(p)}\"] .kp-pos`).options[0].textContent", p)
+                    kid = pg.evaluate("p => [...document.querySelectorAll('.kp-table tr[data-p]')].find(r => r.dataset.p.startsWith(p + ' / ')).dataset.p", par)
+                    self.assertEqual(first(par), "Je Unterkategorie (automatisch)")
+                    opt = pg.evaluate("p => { const s = document.querySelector(`.kp-table tr[data-p=\"${CSS.escape(p)}\"] .kp-pos`); return [s.options[2].value, s.options[2].textContent]; }", par)
+                    pg.select_option('.kp-table tr[data-p="%s"] .kp-pos' % par, opt[0]); pg.wait_for_timeout(100)
+                    self.assertIn(opt[1], first(kid))
+                    pg.select_option('.kp-table tr[data-p="%s"] .kp-pos' % par, ""); pg.wait_for_timeout(100); self.assertEqual(first(par), "Je Unterkategorie (automatisch)")
                 # the account per recipient: Kontor's choice named in the first entry; a choice of your own can be saved
                 sel = ".ka-table tr[data-key='broker'] select.ka-ziel"
                 self.assertIn("Depot", pg.inner_text(sel + " option >> nth=0")); self.assertTrue(pg.is_disabled("#kp-save"))

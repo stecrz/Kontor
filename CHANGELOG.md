@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.14.6 (2026-11-18 16:03)
+- Cashflow-Positionen: Oberkategorie ohne eigene Wahl zeigt „Je Unterkategorie (automatisch)“; eine Wahl dort gilt für die Unterkategorien.
+
 ## 3.14.5 (2026-11-18 15:59)
 - Einrichtung: bleibt in der Seitenleiste und führt Schritt für Schritt, bis du „Einrichtung abgeschlossen“ drückst; danach wieder einblendbar.
 
