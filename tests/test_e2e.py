@@ -3714,6 +3714,15 @@ class BrowserTest(unittest.TestCase):
                 # Einrichtung: Bausteine, Positionen-Editor speichern
                 pg.click("#nav a[href='#setup']"); pg.wait_for_selector(".setup-list")
                 self.assertIn("Bereiche", pg.query_selector("#main").inner_text())
+                # it stays in the menu until you close it yourself; then it can be shown again
+                if not pg.evaluate("setupMissing()"):
+                    pg.click("#setup-done"); pg.wait_for_function("location.hash === '#overview'"); pg.wait_for_timeout(200)
+                    self.assertTrue(pg.evaluate("document.querySelector('#nav-setup').classList.contains('hidden')")); self.assertTrue(pg.evaluate("S.CFG.oberflaeche.einrichtung_fertig"))
+                    pg.goto("http://127.0.0.1:%d/#setup" % port); pg.wait_for_selector("#setup-again"); pg.click("#setup-again"); pg.wait_for_selector("#setup-done")
+                    self.assertFalse(pg.evaluate("S.CFG.oberflaeche.einrichtung_fertig")); pg.wait_for_timeout(200)
+                    self.assertFalse(pg.evaluate("document.querySelector('#nav-setup').classList.contains('hidden')"))
+                else:
+                    self.assertTrue(pg.evaluate("document.querySelector('#setup-done').disabled"))
                 pg.goto("http://127.0.0.1:%d/#accounts" % port); pg.wait_for_selector("#save-konten")
                 for _ in range(2):          # "Verlauf..." laesst sich wiederholt oeffnen
                     pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.depot")); pg.wait_for_selector("#drawer.open #h-grid")

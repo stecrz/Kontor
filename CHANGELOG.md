@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.14.5 (2026-11-18 15:59)
+- Einrichtung: bleibt in der Seitenleiste und führt Schritt für Schritt, bis du „Einrichtung abgeschlossen“ drückst; danach wieder einblendbar.
+
 ## 3.14.4 (2026-11-18 15:53)
 - Konten: Tooltip zur Position erklärt die Wahl (nach Verfügbarkeit, mit Beispielen) statt Kontors Erkennungsreihenfolge.
 - Position „Kapitalkonten (Eigenkapital)“ heißt „Eigenkapital“ und steht nur noch zur Auswahl, wo ein Konto sie schon nutzt.

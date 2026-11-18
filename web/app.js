@@ -864,7 +864,9 @@ const MODULES = [
   {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => ((S.CFG.oberflaeche || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
   {id: 'operation', t: t('mod_operation'), d: t('testmodus_automatischer_abgleich_mitte'), done: () => true, href: '#settings/moneymoney'},
 ];
-const setupOpen = () => MODULES.some(m => !m.optional && !m.done());
+// the setup stays in the menu (and guides from step to step) until you close it yourself: "Einrichtung abgeschlossen"
+const setupMissing = () => MODULES.some(m => !m.optional && !m.done());
+const setupOpen = () => !(S.CFG.oberflaeche || {}).einrichtung_fertig;
 function vEinrichtung(sub) {
   let h = `<div class="lang-pick"><label for="w-lang" class="small muted">${t('sprache_label')}</label><select id="w-lang">${langOpts()}</select></div>${S.KONTEN.length ? '' : `<div class="note">${t('noch_keine_konten_aus_moneymoney')}</div>`}<div class="setup-list">`;
   MODULES.forEach((m, i) => {
@@ -872,7 +874,10 @@ function vEinrichtung(sub) {
     h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? t('eingerichtet') : (m.optional ? t('optional') : t('offen'))}</span></div><div class="d">${esc(m.d)}</div></div><div class="a"><a href="${m.href}"><button class="small ${ok ? 'secondary' : ''}">${ok ? t('anpassen') : t('einrichten')}</button></a></div></div>`;
   });
   h += '</div>';
-  h += `<div class="actions"><button id="check-btn" class="secondary">${t('einrichtung_pruefen')}</button>${hq('pruefen')}</div><div id="findings-e" class="findings"></div>`;
+  const miss = setupMissing(), close = setupOpen()
+    ? `<button id="setup-done" ${miss ? `disabled title="${esc(t('einrichtung_erst_noetige'))}"` : `title="${esc(t('einrichtung_abschliessen_tip'))}"`}>${t('einrichtung_abschliessen')}</button>`
+    : `<button id="setup-again" class="secondary" title="${esc(t('einrichtung_wieder_tip'))}">${t('einrichtung_wieder')}</button>`;
+  h += `<div class="actions"><button id="check-btn" class="secondary">${t('einrichtung_pruefen')}</button>${close}${hq('pruefen')}</div><div id="findings-e" class="findings"></div>`;
   if (!S.DATA) h += `<div class="card"><h3>${t('erste_auswertung_erstellen')}</h3><div class="small muted">${t('liest_alle_umsaetze_aus_moneymoney')}</div><div class="actions"><button id="w-report" class="small">${t('auswertung_erstellen')}</button></div></div>`;
   return h;
 }
@@ -5837,6 +5842,9 @@ function bind(main) {
 
   // Einstellungen
   const ss = $('#save-settings', main); if (ss) ss.addEventListener('click', () => { try { saveConfig(collectSettings(), $('#findings-e')); } catch (e) { toast(e.message, 6000); } });
+  for (const [id, done] of [['#setup-done', true], ['#setup-again', false]]) { const b = $(id, main); if (b) b.addEventListener('click', async () => {
+    const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.oberflaeche = Object.assign({}, cfg.oberflaeche, {einrichtung_fertig: done});
+    if (await saveConfig(cfg, $('#findings-e', main)) !== false) { if (done) go('#overview'); else route(); } }); }
   const cb = $('#check-btn', main); if (cb) cb.addEventListener('click', async () => { toast(t('pruefe')); const r = await api('/api/check', {}); if (!r.verfuegbar) { showFindings($('#findings-e'), [], r.text, 'fehler'); return; } S.KONTEN = r.konten; S.KATS = r.kategorien || S.KATS; showFindings($('#findings-e'), r.befunde, t('geprueft_gegen_den_aktuellen_stand') + r.konten.length + t('konten_klammer_zu'), 'ok'); });
   const ap = $('#add-pos', main); if (ap) ap.addEventListener('click', e => { e.target.insertAdjacentHTML('beforebegin', posRow('', '')); bindDel(main); });
   const pw = $('#pw-save', main); if (pw) pw.addEventListener('click', async () => { try { const neu = $('#pw-neu').value; await api('/api/password', {alt: $('#pw-alt').value, neu}); OFFKEY = null; await offKeyEnsure(neu); toast(t('passwort_geaendert')); $('#pw-alt').value = $('#pw-neu').value = ''; } catch (e) { toast(e.message, 4000); } });
