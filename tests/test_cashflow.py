@@ -253,6 +253,55 @@ class CashflowCases(Reconciles):
         self.assertEqual(r["Umbuchung ohne erkannten Partner"]["werte"]["2026-03"], -80.0)
         self.assertTrue(any("Umbuchung" in w for w in data["Privat"]["warnungen"]))
 
+    def test_transfers_by_category_days_apart_and_undone_on_one_account(self):
+        # PayPal books on the day, the bank days later: both marked as transfers -> a pair up to a week apart
+        data = build([(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}),
+                      (2, "tg", date(2026, 3, 13), 4.2, {"cat": "Umbuchung", "name": "Bank Account (direct debit)"}),
+                      (3, "giro", date(2026, 3, 17), -4.2, {"cat": "Umbuchung", "name": "Zahldienst"}),       # 4 days
+                      (4, "tg", date(2026, 2, 27), 624.0, {"cat": "Umbuchung"}),
+                      (5, "giro", date(2026, 3, 3), -624.0, {"cat": "Umbuchung"}),                         # over the month end
+                      (6, "tg", date(2026, 4, 1), 9.0, {"cat": "Umbuchung"}),
+                      (7, "giro", date(2026, 4, 10), -9.0, {"cat": "Umbuchung"}),                          # 9 days: too far apart
+                      (12, "tg", date(2026, 4, 14), 7.0, {"cat": "Umbuchung"}),
+                      (13, "giro", date(2026, 4, 18), -7.0, {"cat": "Lebensmittel"}),                      # one side only: 3 days at most
+                      # a top-up booked back on the same account in the same month: together nothing
+                      (8, "giro", date(2026, 5, 16), -3000.0, {"cat": "Umbuchung"}),
+                      (9, "giro", date(2026, 5, 16), 3000.0, {"cat": "Umbuchung"}),
+                      # a deposit paid back the next month: away over the month end -- stays unclear
+                      (10, "giro", date(2026, 5, 24), -1000.0, {"cat": "Umbuchung"}),
+                      (11, "giro", date(2026, 6, 5), 1000.0, {"cat": "Umbuchung"})])
+        self.assertAddsUp(data)
+        p = data["Privat"]
+        ids = {mk: sorted(v) for mk, v in rows(p)["Umbuchung ohne erkannten Partner"]["ids"].items()}
+        self.assertEqual(ids, {"2026-04": [6, 7, 12], "2026-05": [10], "2026-06": [11]})
+        transit = next(r for r in p["bilanz"]["zeilen"] if r["id"] == "transit")
+        self.assertEqual(transit["werte"]["2026-02"], -624.0)                    # booked on PayPal, not yet at the bank
+
+    def test_transfer_pairs_closest_first(self):
+        unclear = lambda data: {mk: sorted(v) for mk, v in rows(data["Privat"]).get("Umbuchung ohne erkannten Partner", {}).get("ids", {}).items()}
+        transit = lambda data, mk: next((r["werte"][mk] for r in data["Privat"]["bilanz"]["zeilen"] if r["id"] == "transit"), 0.0)      # no row: nothing in transit
+        base = [(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"})]
+        # a closer booking keeps its counterpart: the one a week before stays unclear (nothing in transit at the month end)
+        d = build(base + [(2, "tg", date(2026, 2, 28), 9.0, {"cat": "Umbuchung"}), (3, "tg", date(2026, 3, 6), 9.0, {"cat": "Umbuchung"}),
+                          (4, "giro", date(2026, 3, 7), -9.0, {"cat": "Umbuchung"})])
+        self.assertAddsUp(d); self.assertEqual(unclear(d), {"2026-02": [2]}); self.assertEqual(transit(d, "2026-02"), 0.0)
+        # booked back the same day on the same account: that pair first, the other account's booking stays unclear
+        d = build(base + [(2, "giro", date(2026, 5, 16), -3000.0, {"cat": "Umbuchung"}), (3, "giro", date(2026, 5, 16), 3000.0, {"cat": "Umbuchung"}),
+                          (4, "tg", date(2026, 5, 20), 3000.0, {"cat": "Umbuchung"})])
+        self.assertAddsUp(d); self.assertEqual(unclear(d), {"2026-05": [4]})
+        # a week apart still pairs, eight days do not; two out against one in: the closer one
+        d = build(base + [(2, "tg", date(2026, 3, 2), 5.0, {"cat": "Umbuchung"}), (3, "giro", date(2026, 3, 9), -5.0, {"cat": "Umbuchung"}),
+                          (4, "tg", date(2026, 4, 1), 6.0, {"cat": "Umbuchung"}), (5, "giro", date(2026, 4, 9), -6.0, {"cat": "Umbuchung"}),
+                          (6, "giro", date(2026, 4, 20), -8.0, {"cat": "Umbuchung"}), (7, "giro", date(2026, 4, 27), -8.0, {"cat": "Umbuchung"}),
+                          (8, "tg", date(2026, 4, 25), 8.0, {"cat": "Umbuchung"})])
+        self.assertAddsUp(d); self.assertEqual(unclear(d), {"2026-04": [4, 5, 6]})
+        # undone on an account that is no bank account (a loan, an asset): together nothing as well
+        d = build(base + [(2, "kredit", date(2026, 6, 3), -400.0, {"cat": "Umbuchung"}), (3, "kredit", date(2026, 6, 9), 400.0, {"cat": "Umbuchung"})])
+        self.assertAddsUp(d); self.assertEqual(unclear(d), {}); self.assertNotIn("Privatkredit", rows(d["Privat"]))
+        # in from one counterparty, out to another: no booking back -- both stay unclear
+        d = build(base + [(2, "giro", date(2026, 6, 1), 500.0, {"cat": "Umbuchung", "iban": "DE90"}), (3, "giro", date(2026, 6, 20), -500.0, {"cat": "Umbuchung", "iban": "DE91"})])
+        self.assertAddsUp(d); self.assertEqual(unclear(d), {"2026-06": [2, 3]})
+
     def test_foreign_currency_is_kept_apart(self):
         data = build([(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}),
                       (2, "giro", date(2026, 2, 3), -1000.0, {"iban": "DE14", "cat": "Umbuchung"}),

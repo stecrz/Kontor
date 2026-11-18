@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.13.33 (2026-11-18 04:39)
+- Vermögensbrücke: „Überschuss“ und „Zinsen“ statt „Gespart“.
+- Monatlicher Cashflow: ohne Vorjahresbalken; Tooltip ohne Zeilen mit 0,00.
+- Tabelle: „Veränderung Bankguthaben“ ohne Farbpunkt.
+- Gesamtcashflow: Farbe in der Mitte je Höhe aus links und rechts; keine Haarlinien; Abblenden nur über einem Band; Name und Betrag in einer Zeile (iPhone zweizeilig).
+- Klick auf eine Kategorie-Zahl: Umsätze im Seitenfenster statt Reiterwechsel („Unklar“ weiter auf der Seite).
+- Unklar: Umbuchungen mit Kategorie auf beiden Seiten bis 7 Tage gepaart (PayPal); Rückbuchung auf demselben Konto im selben Monat zählt nicht.
+
 ## 3.13.32 (2026-11-18 04:08)
 - Standard-Reihenfolge: Liquiditätsbrücke und Monatlicher Cashflow, darunter Vermögensbrücke und Gesamtcashflow.
 - Monatlicher Cashflow: unten wie die Tabelle (Bankguthaben, Umschichtungen, Wertänderungen); Vorzeichen; erster/letzter Monat immer beschriftet.

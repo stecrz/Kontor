@@ -671,10 +671,10 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 .cf-tick { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; } .cf-xl.tot { fill:var(--fg); font-weight:600; }
 .cf-val-l { fill:var(--fg); font-size:11px; font-variant-numeric:tabular-nums; } .cf-val-l.tot { font-weight:600; }
 .cf-link-l { stroke:var(--line-2); stroke-width:1; shape-rendering:crispEdges; }
-.cf-break { fill:none; stroke:var(--head); stroke-width:2; } .cf-xaxis { fill:transparent; cursor:ew-resize; touch-action:none; } body.cf-dragging, body.cf-dragging * { cursor:ew-resize !important; user-select:none; } .cf-val-l.prev { fill:var(--muted); }
+.cf-break { fill:none; stroke:var(--head); stroke-width:2; } .cf-xaxis { fill:transparent; cursor:ew-resize; touch-action:none; } body.cf-dragging, body.cf-dragging * { cursor:ew-resize !important; user-select:none; }
 .cf-fl-n.ein { fill:var(--pos); } .cf-fl-n.aus { fill:var(--neg); } .cf-fl-n.inv { fill:var(--cf-inv); } .cf-fl-n.fin { fill:var(--cf-fin); } .cf-fl-n.tot, .cf-fl-n.unk { fill:var(--cf-unk); }
 .cf-svg.cf-fl { display:block; } .cf-fl-b { transition:opacity .15s; } .cf-fl-span { font-size:10px; } .cf-fl-all { cursor:pointer; } .cf-fl-all:hover { fill:var(--fg); } .cf-fl-p { fill:var(--fg); font-size:11px; font-weight:600; pointer-events:none; } .cf-fl-mid { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
-.cf-fl:hover .cf-fl-g { opacity:.4; } .cf-fl .cf-fl-g:hover { opacity:1; } .cf-fl-g { transition:opacity .15s; } .cf-fl .more, .cf-fl .back, .cf-fl-up { cursor:pointer; } .cf-fl-up { fill:var(--muted); font-size:11px; } .cf-fl-l.more:hover .cf-fl-t:not(.cf-fl-v) { text-decoration:underline; }
+.cf-fl-veil { fill:var(--head); opacity:.62; pointer-events:none; } .cf-fl .more, .cf-fl .back, .cf-fl-up { cursor:pointer; } .cf-fl-up { fill:var(--muted); font-size:11px; } .cf-fl-l.more:hover .cf-fl-t:not(.cf-fl-v) { text-decoration:underline; }
 .cf-fl-g { outline:none; } .cf-fl-g:focus-visible .cf-fl-n { stroke:var(--fg); stroke-width:1.5; }
 .cf-fl-t { fill:var(--fg); font-size:12px; } .cf-fl-t.cf-fl-v2 { font-size:10.5px; } .cf-fl-v { fill:var(--muted); font-variant-numeric:tabular-nums; } .cf-fl-lead { fill:none; stroke:var(--line-2); stroke-width:1; } .cf-sub-l { fill:var(--fg); font-size:12px; font-weight:600; }
 .cf-br-bg { fill:transparent; } .cf-br-row { outline:none; cursor:default; } .cf-br-row:is(:hover, :focus-visible) .cf-br-bg { fill:var(--sub); }

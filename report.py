@@ -601,6 +601,7 @@ def _grp(table: Dict[str, tuple], kind: str) -> dict:
 PAIR_DAYS_IBAN = 5                                      # counter IBAN known: counterpart at most this many days apart
 PAIR_DAYS_IBAN_BOTH = 14                                # ... and both bookings name each other's account
 PAIR_DAYS = 3                                           # by amount only (transfer category, offline account)
+PAIR_DAYS_CAT = 7                                       # ... both bookings with a transfer category (PayPal books on the day, the bank days later)
 
 
 def _value_adjustment(t: Tx) -> bool:
@@ -635,7 +636,8 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
     """Transfers within an area, booking by booking: the counterpart of a transfer is the booking on the other side.
     Found by Kontor's mark (#kontor-tx-<payment>: the repayment of a loan names the payment), by the counter IBAN (a booking of
     that account with the same amount, opposite sign, at most 5 days apart) or -- for a transfer category or an offline account
-    -- by amount alone (at most 3 days). Returns (mate: booking -> counterpart in the area, partner: booking -> account on the
+    -- by amount alone (at most 3 days; a week when both have a transfer category). Two transfers on one account that undo each
+    other within a month are each other's counterpart (together nothing). Returns (mate: booking -> counterpart in the area, partner: booking -> account on the
     other side, also outside the area or without a counterpart, category: booking -> marked as transfer by its category)."""
     own_ibans = ledger.own_ibans()
     cents = lambda x: int(round(x * 100))
@@ -730,21 +732,32 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
         for name, lst in (("open", open_tx), ("offline", offline), ("liquid", liquid)):
             for o in lst:
                 kinds[o.id].add(name)
-        for t in sorted({o.id: o for o in open_tx + offline + liquid}.values(), key=lambda x: (x.booking_date, x.id)):
-            if t.id in mate:
-                continue
+        # every possible pair, the closest first (a booking never takes the counterpart of a closer one): by amount on two
+        # accounts -- within a week when both carry a transfer category (PayPal books on the day, the bank days later), else 3 days --
+        # and two transfers on one account that undo each other within the month (a top-up booked back: together nothing)
+        cands = []
+        for t in {o.id: o for o in open_tx + offline + liquid}.values():
             k = kinds[t.id]
             search = (["open"] if "open" in k else []) + (["liquid"] if "offline" in k else []) + (["offline"] if "liquid" in k else [])
-            best = None
             for name in search:
                 for o in pools[name].get(-cents(t.amount), ()):
-                    if o.id in mate or o.id == t.id or o.account_uuid == t.account_uuid:
+                    if o.id == t.id:
                         continue
                     gap = abs((o.booking_date - t.booking_date).days)
-                    if gap <= PAIR_DAYS and (best is None or (gap, o.id) < best[0]):
-                        best = ((gap, o.id), o)
-            if best is not None:
-                join(t, best[1])
+                    if o.account_uuid == t.account_uuid:
+                        ok = (name == "open" and "open" in k and month_key(o.booking_date) == month_key(t.booking_date)
+                              and not (t.counter_iban and o.counter_iban and t.counter_iban != o.counter_iban))      # booked back: the same counterparty
+                    else:
+                        ok = gap <= (PAIR_DAYS_CAT if name == "open" and "open" in k else PAIR_DAYS)
+                    if ok:
+                        cands.append((gap, min(t.id, o.id), max(t.id, o.id), t, o))
+        for _gap, _a, _b, t, o in sorted(cands, key=lambda c: c[:3]):
+            if t.id in mate or o.id in mate:
+                continue
+            if o.account_uuid == t.account_uuid:
+                mate[t.id], mate[o.id] = o, t                    # no partner account: nothing moved anywhere
+            else:
+                join(t, o)
     return mate, partner, by_cat
 
 
