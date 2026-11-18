@@ -141,7 +141,7 @@ def config_for_test(belege_dir=None):
             "name": "Verkäuferdarlehen", "darlehenskonto": F.uid("ga.vd") + " | Verkäuferdarlehen",
             "quellkonten": [F.uid("ga.kk") + " | Stadtbank Kontokorrent"],
             "erkennung": {"gegen_iban": F.SELLER_IBAN}, "ab_datum": "2026-01-01",
-            "zins": {"modell": "jahresbasis", "satz": [{"ab": "2025-11-20", "prozent": 3.3}], "buchungstag": "mit_rate"},
+            "zins": {"modell": "jahresbasis", "satz": [{"ab": "2025-11-20", "prozent": 3.0}], "buchungstag": "mit_rate"},
             "buchung": {"gegenpartei": "Verkäufer", "kategorie_tilgung": "Umbuchung", "kategorie_zins": "Zinsen"},
             "quelle_kommentar": True}],
         "bereiche": [
@@ -167,7 +167,7 @@ ALL_NEW = {"gesehen": {"id": 0, "tag": "2000-01-01"}}       # Kontor last looked
 
 
 def reset_mock():
-    MockBridge.state = {"accounts": F.accounts_raw({"ga.vd": -1600000.0}), "txs": F.ga_transactions(TODAY) + private_transactions(TODAY)}
+    MockBridge.state = {"accounts": F.accounts_raw({"ga.vd": -1200000.0}), "txs": F.ga_transactions(TODAY) + private_transactions(TODAY)}
     MockBridge.instances = []
     MockBridge.reads = []
     MockBridge.extra_cats = []
@@ -207,7 +207,7 @@ class CoreTests(unittest.TestCase):
         res = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)
         props = res["vorschlaege"]; self.assertEqual(len(props), 24); self.assertTrue(all(p["tag"].startswith("#kontor-") for p in props))
         self.assertEqual(MA.kontor_bookings(res["_ledger"].without_planned()), [])     # planned, not made: nothing "created by Kontor"
-        self.assertEqual(res["_ledger"].without_planned().accounts[F.uid("ga.vd")].balance, -1600000.0)
+        self.assertEqual(res["_ledger"].without_planned().accounts[F.uid("ga.vd")].balance, -1200000.0)
         zins = [p for p in props if p["art"] == "zins"]; tilg = [p for p in props if p["art"] == "tilgung"]
         wert = [p for p in props if p["art"] == "wert"]                     # two companies: the same mark, two accounts
         self.assertEqual(len({p["tag"] for p in wert}), 1); self.assertEqual(len({p["key"] for p in wert}), 2)
@@ -395,7 +395,7 @@ class CoreTests(unittest.TestCase):
         self.assertFalse([w for b in MockBridge.instances for w in b.written if w[0] == "set"])
         self.assertEqual(len(res["vorschlaege"]), 24)
         vd = [a for a in MockBridge.state["accounts"] if a["name"] == "Verkäuferdarlehen"][0]["balance"][0][0]
-        self.assertAlmostEqual(vd, -1600000 + 11 * 8250 - 11 * 4400, 2)
+        self.assertAlmostEqual(vd, -1200000 + 11 * 6000 - 11 * 3000, 2)
         res2 = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertEqual(res2["geschrieben"], 0)
         self.assertEqual(core.run_once(self.store, cfg, TODAY, dry=False, force=False, bridge_factory=MockBridge)["status"], "unveraendert")
@@ -471,7 +471,7 @@ class CoreTests(unittest.TestCase):
             self.assertNotIn(p["text"], logtext); self.assertNotIn(fmt_eur(p["betrag"]), logtext)
         self.assertNotIn("Verkäuferdarlehen", logtext); self.assertNotIn("€", logtext)
         vd = [a for a in MockBridge.state["accounts"] if a["name"] == "Verkäuferdarlehen"][0]["balance"][0][0]
-        self.assertEqual(vd, -1600000.0)
+        self.assertEqual(vd, -1200000.0)
         self.assertTrue(any("Freigabe" in w for w in self.store.load("dataset.json")["warnungen"]))
 
     def test_tax_report(self):
@@ -1860,88 +1860,93 @@ class AppTests(_AppBase):
         code, r = self.call("/api/update/check", {}); self.assertEqual(code, 200); self.assertIn("info", r)
 
 
-GA_EINGABEN = {
-    "name": "Parkweg", "art": "gewerbe", "kaufpreis": 1900000, "uebergang": "2026-01-01", "horizont_jahre": 24,
-    "nebenkosten": {"grunderwerbsteuer_prozent": 3.5, "notar": 9689.37, "grundbuch": 4127.5},
-    "gebaeudeanteil_prozent": 76, "afa_prozent": 2,
-    "miete": {"nettokalt_monat": 12600, "nebenkosten_monat": 1000,
-              "index": {"art": "vpi", "vpi_basis": 122.7, "vpi_aktuell": 122.7, "vpi_steigerung_prozent": 1.9, "faktor": 1, "schwelle_prozent": 0}},
-    "kosten": {"nicht_umlagefaehig_pa": 2928, "ruecklage_pa": 5000, "steigerung": "vpi"},
-    "darlehen": [{"name": "Verkäuferdarlehen", "betrag": 1600000, "zins_prozent": 3.3, "art": "annuitaet", "annuitaet_monat": 8250, "abrechnung": "jaehrlich"}],
-    "gesellschafter": [{"name": "A", "anteil_prozent": 49, "steuersatz_prozent": 47.475}, {"name": "B", "anteil_prozent": 49, "steuersatz_prozent": 47.475},
-                       {"name": "C", "anteil_prozent": 1, "steuersatz_prozent": 47.475}, {"name": "D", "anteil_prozent": 1, "steuersatz_prozent": 40}],
-    "ausschuettung_prozent": 48, "steuererstattung_in_cashflow": False,
+GA_EINGABEN = {          # invented figures (round on purpose): a commercial property bought with a seller's loan
+    "name": "Parkweg", "art": "gewerbe", "kaufpreis": 1500000, "uebergang": "2026-01-01", "horizont_jahre": 24,
+    "nebenkosten": {"grunderwerbsteuer_prozent": 3.5, "notar": 7500, "grundbuch": 3000},
+    "gebaeudeanteil_prozent": 70, "afa_prozent": 2,
+    "miete": {"nettokalt_monat": 9000, "nebenkosten_monat": 800,
+              "index": {"art": "vpi", "vpi_basis": 120.0, "vpi_aktuell": 120.0, "vpi_steigerung_prozent": 2.0, "faktor": 1, "schwelle_prozent": 0}},
+    "kosten": {"nicht_umlagefaehig_pa": 2400, "ruecklage_pa": 4000, "steigerung": "vpi"},
+    "darlehen": [{"name": "Verkäuferdarlehen", "betrag": 1200000, "zins_prozent": 3.0, "art": "annuitaet", "annuitaet_monat": 6000, "abrechnung": "jaehrlich"}],
+    "gesellschafter": [{"name": "A", "anteil_prozent": 45, "steuersatz_prozent": 42}, {"name": "B", "anteil_prozent": 45, "steuersatz_prozent": 42},
+                       {"name": "C", "anteil_prozent": 5, "steuersatz_prozent": 42}, {"name": "D", "anteil_prozent": 5, "steuersatz_prozent": 30}],
+    "ausschuettung_prozent": 50, "steuererstattung_in_cashflow": False,
 }
 
 
 class ImmoEngineTests(unittest.TestCase):
-    """Kalkulationskern gegen die Werte einer handgerechneten Excel-Kalkulation (jaehrliche Zinsabrechnung, Indexmiete, Gesellschafter)."""
+    """Kalkulationskern gegen nachgerechnete Werte erfundener Kalkulationen (jaehrliche Zinsabrechnung, Indexmiete, Gesellschafter)."""
 
     def test_parity_with_spreadsheet(self):
         import realestate
         r = realestate.berechne(GA_EINGABEN, TODAY)
         J = {j["jahr"]: j for j in r["jahre"]}
-        # Jahr 1: Miete, Zins (3,3 % auf Stand 1.1.), Tilgung = 12 x 8.250 - Zins, AfA 2 % x 76 % x (KP + NK)
-        self.assertEqual(J[2026]["miete"], 151200.0)
-        self.assertEqual(J[2026]["zins"], -52800.0); self.assertEqual(J[2026]["tilgung"], -46200.0)
-        self.assertEqual(J[2026]["afa"], -30100.82); self.assertEqual(J[2026]["ergebnis"], 65371.18)
-        self.assertAlmostEqual(J[2026]["steuer"], -30986.10, delta=0.02)
-        self.assertEqual(J[2026]["ausschuettung"], -31378.17)
-        self.assertEqual(J[2026]["cashflow"], 12893.83); self.assertEqual(J[2026]["vermoegensaufbau"], 59093.83)
-        self.assertAlmostEqual(J[2026]["ek_rendite"], 0.1554, 4); self.assertEqual(J[2026]["restschuld"], 1553800.0)
-        # Jahr 2: Indexmiete +1,9 % (Faktor 1, Schwelle 0), Zins auf neuen Jahresstand, Kosten mit VPI
-        self.assertEqual(J[2027]["miete"], 154072.8); self.assertEqual(J[2027]["zins"], -51275.4)
-        self.assertEqual(J[2027]["tilgung"], -47724.6); self.assertEqual(J[2027]["restschuld"], 1506075.4)
-        self.assertEqual(J[2027]["kosten"], -2983.63); self.assertEqual(J[2027]["ruecklage"], -5095.0)
-        self.assertEqual(J[2027]["cashflow"], 13531.95); self.assertEqual(J[2029]["cashflow"], 14813.52)
-        self.assertEqual(J[2029]["restschuld"], 1405849.49)
+        # Jahr 1: Miete 12 x 9.000; Zins 3 % auf den Stand 1.1.; Tilgung = 12 x 6.000 - Zins; AfA 2 % x 70 % x (KP + NK 63.000);
+        # Ergebnis = Miete - Zins - AfA - Kosten; Steuer 41,4 % (45/45/5 % zu 42 %, 5 % zu 30 %); Ausschuettung 50 % des Ergebnisses
+        self.assertEqual(J[2026]["miete"], 108000.0)
+        self.assertEqual(J[2026]["zins"], -36000.0); self.assertEqual(J[2026]["tilgung"], -36000.0)
+        self.assertEqual(J[2026]["afa"], -21882.0); self.assertEqual(J[2026]["ergebnis"], 47718.0)
+        self.assertAlmostEqual(J[2026]["steuer"], -19755.25, delta=0.02)
+        self.assertEqual(J[2026]["ausschuettung"], -23859.0)
+        self.assertEqual(J[2026]["cashflow"], 5741.0); self.assertEqual(J[2026]["vermoegensaufbau"], 41741.0)
+        self.assertAlmostEqual(J[2026]["ek_rendite"], 0.115, 4); self.assertEqual(J[2026]["restschuld"], 1164000.0)
+        # Jahr 2: Indexmiete +2 % (Faktor 1, Schwelle 0), Zins auf neuen Jahresstand, Kosten mit VPI
+        self.assertEqual(J[2027]["miete"], 110160.0); self.assertEqual(J[2027]["zins"], -34920.0)
+        self.assertEqual(J[2027]["tilgung"], -37080.0); self.assertEqual(J[2027]["restschuld"], 1126920.0)
+        self.assertEqual(J[2027]["kosten"], -2448.0); self.assertEqual(J[2027]["ruecklage"], -4080.0)
+        self.assertEqual(J[2027]["cashflow"], 6177.0); self.assertEqual(J[2029]["cashflow"], 7058.86)
+        self.assertEqual(J[2029]["restschuld"], 1049389.43); self.assertEqual(J[2029]["miete"], 114610.46)
         K = r["kennzahlen"]
-        self.assertEqual(K["eigenkapital_inkl_nk"], 380316.87); self.assertEqual(K["afa_jahr"], 30100.82)
-        self.assertAlmostEqual(K["kaufpreisfaktor"], 1900000 / 151200, 2)
-        self.assertAlmostEqual(K["bruttomietrendite"], 151200 / 1900000, 4)
+        self.assertEqual(K["eigenkapital_inkl_nk"], 363000.0); self.assertEqual(K["afa_jahr"], 21882.0)
+        self.assertAlmostEqual(K["kaufpreisfaktor"], 1500000 / 108000, 2)
+        self.assertAlmostEqual(K["bruttomietrendite"], 108000 / 1500000, 4)
         self.assertEqual(len(r["jahre"]), 24); self.assertEqual(len(r["monate"]), 24 * 12)
         # Planreihen: Monatswerte summieren sich auf das Jahr
         reihen = realestate.planreihen(r)
-        self.assertAlmostEqual(sum(v for k, v in reihen["miete"].items() if k.startswith("2027")), 154072.8 + 12000, 1)   # inkl. Umlage (Zahlungsstrom)
-        self.assertAlmostEqual(sum(v for k, v in reihen["kosten"].items() if k.startswith("2027")), -2983.63 - 12000, 1)
-        self.assertEqual(round(reihen["darlehen"]["Verkäuferdarlehen"]["saldo"]["2026-12"], 2), -1553800.0)
+        self.assertAlmostEqual(sum(v for k, v in reihen["miete"].items() if k.startswith("2027")), 110160.0 + 9600, 1)   # inkl. Umlage (Zahlungsstrom)
+        self.assertAlmostEqual(sum(v for k, v in reihen["kosten"].items() if k.startswith("2027")), -2448.0 - 9600, 1)
+        self.assertEqual(round(reihen["darlehen"]["Verkäuferdarlehen"]["saldo"]["2026-12"], 2), -1164000.0)
         sheets = realestate.sheets(r)
         self.assertEqual([x.name for x in sheets], ["Eingaben", "Kennzahlen", "Jahre", "Monate"])
 
     def test_parity_second_and_third_sheet(self):
-        """Zwei weitere handgerechnete Kalkulationen: Teiljahr ab Mai, drei Darlehensarten (endfaellig, Tilgung mit spaeterer
+        """Zwei weitere erfundene, nachgerechnete Kalkulationen: Teiljahr ab Mai, drei Darlehensarten (endfaellig, Tilgung mit spaeterer
         Sondertilgung, Annuitaet), Indexmiete mit Schwelle 5 % und Faktor 0,75, RND statt AfA-Satz; und ein einfaches Wohnobjekt."""
         import realestate
-        o = {"name": "G", "kaufpreis": 4000000, "uebergang": "2026-05-01", "horizont_jahre": 10,
-             "nebenkosten": {"grunderwerbsteuer_prozent": 3.5, "notar": 18122.9, "grundbuch": 11788.0},
-             "gebaeudeanteil_prozent": 51.44, "restnutzungsdauer_jahre": 18,
-             "miete": {"nettokalt_monat": 18603.18, "nebenkosten_monat": 2300,
-                       "index": {"art": "vpi", "vpi_basis": 122.6, "vpi_aktuell": 122.8, "vpi_steigerung_prozent": 1.9, "faktor": 0.75, "schwelle_prozent": 5}},
-             "kosten": {"nicht_umlagefaehig_pa": 20600, "ruecklage_pa": 10000, "steigerung": "keine"},
-             "darlehen": [{"name": "E", "betrag": 800000, "zins_prozent": 3.39, "art": "endfaellig", "abrechnung": "jaehrlich", "faelligkeit": "2031-02"},
-                          {"name": "T", "betrag": 1300000, "zins_prozent": 3.49, "art": "tilgung", "tilgung_monat": 4450, "sondertilgung_monat": 2260, "sondertilgung_ab": "2031-04", "abrechnung": "jaehrlich"},
-                          {"name": "A", "betrag": 1300000, "zins_prozent": 4.0, "art": "annuitaet", "annuitaet_monat": 8080.2, "abrechnung": "jaehrlich"}],
-             "gesellschafter": [{"name": "A", "anteil_prozent": 49, "steuersatz_prozent": 47.475}, {"name": "B", "anteil_prozent": 49, "steuersatz_prozent": 47.475},
-                                {"name": "C", "anteil_prozent": 1, "steuersatz_prozent": 47.475}, {"name": "D", "anteil_prozent": 1, "steuersatz_prozent": 40}],
-             "ausschuettung_prozent": 48, "steuererstattung_in_cashflow": True}
+        o = {"name": "G", "kaufpreis": 3000000, "uebergang": "2026-05-01", "horizont_jahre": 10,          # invented figures
+             "nebenkosten": {"grunderwerbsteuer_prozent": 3.5, "notar": 15000, "grundbuch": 9000},
+             "gebaeudeanteil_prozent": 55, "restnutzungsdauer_jahre": 20,
+             "miete": {"nettokalt_monat": 14000, "nebenkosten_monat": 2000,
+                       "index": {"art": "vpi", "vpi_basis": 120.0, "vpi_aktuell": 120.2, "vpi_steigerung_prozent": 1.9, "faktor": 0.75, "schwelle_prozent": 5}},
+             "kosten": {"nicht_umlagefaehig_pa": 15000, "ruecklage_pa": 8000, "steigerung": "keine"},
+             "darlehen": [{"name": "E", "betrag": 600000, "zins_prozent": 3.5, "art": "endfaellig", "abrechnung": "jaehrlich", "faelligkeit": "2031-02"},
+                          {"name": "T", "betrag": 1000000, "zins_prozent": 3.5, "art": "tilgung", "tilgung_monat": 3500, "sondertilgung_monat": 2000, "sondertilgung_ab": "2031-04", "abrechnung": "jaehrlich"},
+                          {"name": "A", "betrag": 1000000, "zins_prozent": 4.0, "art": "annuitaet", "annuitaet_monat": 6000, "abrechnung": "jaehrlich"}],
+             "gesellschafter": [{"name": "A", "anteil_prozent": 45, "steuersatz_prozent": 42}, {"name": "B", "anteil_prozent": 45, "steuersatz_prozent": 42},
+                                {"name": "C", "anteil_prozent": 5, "steuersatz_prozent": 42}, {"name": "D", "anteil_prozent": 5, "steuersatz_prozent": 30}],
+             "ausschuettung_prozent": 50, "steuererstattung_in_cashflow": True}
         J = {j["jahr"]: j for j in realestate.berechne(o, TODAY)["jahre"]}
-        self.assertEqual(J[2026]["monate"], 8); self.assertEqual(J[2026]["miete"], 148825.44); self.assertEqual(J[2026]["afa"], -79444.52)
-        self.assertAlmostEqual(J[2026]["ergebnis"], -27345.75, delta=0.02); self.assertAlmostEqual(J[2026]["steuer"], 12961.95, delta=0.02)
-        self.assertAlmostEqual(J[2026]["cashflow"], -7180.87, delta=0.02); self.assertAlmostEqual(J[2026]["ek_rendite"], 0.0758, 3)
-        self.assertEqual(J[2026]["darlehen"]["T"]["saldo"], -1264400.0); self.assertEqual(J[2026]["darlehen"]["A"]["saldo"], -1270025.07)
-        self.assertEqual(J[2027]["zins"], -122048.56); self.assertAlmostEqual(J[2027]["cashflow"], -10686.12, delta=0.03)
-        self.assertEqual(J[2028]["miete"], 223238.16); self.assertEqual(J[2029]["miete"], 233253.06)    # Indexanpassung erst ab >5 % VPI-Aenderung
-        self.assertAlmostEqual(J[2030]["cashflow"], -5209.56, delta=0.02)
-        self.assertEqual(J[2031]["sondertilgung"], -20340.0)                                        # 9 x 2.260 (April bis Dezember)
-        o2 = {"name": "W", "art": "wohnen", "kaufpreis": 344000, "uebergang": "2026-01-01", "horizont_jahre": 5,
-              "nebenkosten": {"grunderwerbsteuer_prozent": 3.5, "notar": 5160}, "gebaeudeanteil_prozent": 44.46, "afa_prozent": 2.0,
-              "miete": {"nettokalt_monat": 800, "nebenkosten_monat": 200, "index": {"art": "keine"}},
-              "kosten": {"nicht_umlagefaehig_pa": 1000, "steigerung": "keine"},
-              "darlehen": [{"name": "B", "betrag": 326000, "zins_prozent": 3.75, "annuitaet_monat": 1510, "abrechnung": "jaehrlich"}],
-              "gesellschafter": [{"name": "S", "anteil_prozent": 100, "steuersatz_prozent": 47.475}], "ausschuettung_prozent": 49, "steuererstattung_in_cashflow": True}
+        # 8 Monate: Miete 8 x 14.000; AfA (KP + NK 129.000) x 55 % / 20 Jahre x 8/12; Zins je 8/12 der Jahreszinsen: 14.000 + 23.333,33 + 26.666,67
+        self.assertEqual(J[2026]["monate"], 8); self.assertEqual(J[2026]["miete"], 112000.0); self.assertEqual(J[2026]["afa"], -57365.0)
+        self.assertEqual(J[2026]["zins"], -64000.0); self.assertEqual(J[2026]["kosten"], -10000.0)
+        self.assertAlmostEqual(J[2026]["ergebnis"], -19365.0, delta=0.02); self.assertAlmostEqual(J[2026]["steuer"], 8017.09, delta=0.03)
+        self.assertAlmostEqual(J[2026]["cashflow"], -8649.57, delta=0.02); self.assertAlmostEqual(J[2026]["ek_rendite"], 0.0769, 3)
+        self.assertEqual(J[2026]["darlehen"]["T"]["saldo"], -972000.0); self.assertEqual(J[2026]["darlehen"]["A"]["saldo"], -978666.67)
+        self.assertEqual(J[2027]["zins"], -94166.67); self.assertAlmostEqual(J[2027]["cashflow"], -12753.33, delta=0.03)
+        # Indexmiete erst ab >5 % VPI-Aenderung (2029: +5,98 % x Faktor 0,75), dann wieder drei Jahre spaeter
+        self.assertEqual(J[2028]["miete"], 168000.0); self.assertEqual(J[2029]["miete"], 175541.52); self.assertEqual(J[2032]["miete"], 183189.41)
+        self.assertAlmostEqual(J[2030]["cashflow"], -7448.04, delta=0.02)
+        self.assertEqual(J[2031]["sondertilgung"], -18000.0)                                        # 9 x 2.000 (April bis Dezember)
+        o2 = {"name": "W", "art": "wohnen", "kaufpreis": 300000, "uebergang": "2026-01-01", "horizont_jahre": 5,
+              "nebenkosten": {"grunderwerbsteuer_prozent": 3.5, "notar": 4500}, "gebaeudeanteil_prozent": 50, "afa_prozent": 2.0,
+              "miete": {"nettokalt_monat": 900, "nebenkosten_monat": 150, "index": {"art": "keine"}},
+              "kosten": {"nicht_umlagefaehig_pa": 900, "steigerung": "keine"},
+              "darlehen": [{"name": "B", "betrag": 280000, "zins_prozent": 3.5, "annuitaet_monat": 1300, "abrechnung": "jaehrlich"}],
+              "gesellschafter": [{"name": "S", "anteil_prozent": 100, "steuersatz_prozent": 42}], "ausschuettung_prozent": 50, "steuererstattung_in_cashflow": True}
         J2 = {j["jahr"]: j for j in realestate.berechne(o2, TODAY)["jahre"]}
-        self.assertEqual(J2[2026]["ergebnis"], -6836.79); self.assertEqual(J2[2026]["steuer"], 3245.77); self.assertEqual(J2[2026]["cashflow"], -6274.23)
-        self.assertEqual(J2[2026]["restschuld"], 320105.0); self.assertEqual(J2[2029]["restschuld"], 301060.15); self.assertEqual(J2[2030]["ek_rendite"], 0.0033)
+        # Ergebnis 10.800 - 9.800 Zins - 3.150 AfA - 900 = -3.050 -> 42 % zurueck (im Cashflow); Tilgung 15.600 - 9.800
+        self.assertEqual(J2[2026]["ergebnis"], -3050.0); self.assertEqual(J2[2026]["steuer"], 1281.0); self.assertEqual(J2[2026]["cashflow"], -4419.0)
+        self.assertEqual(J2[2026]["restschuld"], 274200.0); self.assertEqual(J2[2029]["restschuld"], 255553.33); self.assertEqual(J2[2030]["ek_rendite"], 0.0455)
 
     def test_loan_variants_and_hints(self):
         import realestate
@@ -2187,7 +2192,7 @@ class FeatureTests(_AppBase):
         ob = ds["bereiche"]["objekte"]
         saldo = {k["uuid"]: k["saldo"] for k in ds["konten"] if not k["gruppe"]}
         self.assertEqual(ob["bilanz"]["nettovermoegen"]["2026-11"], round(sum(saldo[F.uid(k)] for k in ("ga.immo", "gb.immo", "ga.vd", "ga.kk")), 2))
-        self.assertEqual(saldo[F.uid("gb.immo")], 3300000.0)
+        self.assertEqual(saldo[F.uid("gb.immo")], 2800000.0)
         self.assertEqual(ds["bereich_info"]["objekte"]["anzahl_konten"], 4); self.assertEqual(ds["bereich_info"]["objekte"]["art"], "gesellschaft")
         pr = ds["bereiche"]["privat"]
         immo = [r for r in pr["bilanz"]["zeilen"] if r["id"] == F.uid("priv.immo")][0]
@@ -2265,7 +2270,7 @@ class FeatureTests(_AppBase):
         self.login(); self.run_and_wait()
         code, r = self.call("/api/properties/template"); self.assertEqual(r["eingaben"]["name"], "Neues Objekt")
         code, r = self.call("/api/properties/calculate", {"eingaben": GA_EINGABEN, "ohne_monate": True})
-        self.assertEqual(code, 200); self.assertNotIn("monate", r); self.assertEqual(r["jahre"][0]["cashflow"], 12893.83)
+        self.assertEqual(code, 200); self.assertNotIn("monate", r); self.assertEqual(r["jahre"][0]["cashflow"], 5741.0)
         self.assertEqual(self.call("/api/properties/calculate", {"eingaben": {"kaufpreis": "abc"}})[0], 400)
         # Objekt anlegen, Kalkulation speichern, zweites Szenario, aktiv wechseln
         code, r = self.call("/api/properties", {"aktion": "anlegen", "name": "Parkweg", "bereich": F.uid("ga"), "kategorie": "Vermietung \\ Parkweg",
@@ -2273,7 +2278,7 @@ class FeatureTests(_AppBase):
         self.assertEqual(code, 200); iid = r["immobilie"]["id"]
         code, r = self.call("/api/properties", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "Basis", "eingaben": GA_EINGABEN}})
         self.assertEqual(code, 200); k1 = r["immobilie"]["kalkulationen"][0]; self.assertTrue(k1["aktiv"])
-        var = copy.deepcopy(GA_EINGABEN); var["miete"]["nettokalt_monat"] = 13000
+        var = copy.deepcopy(GA_EINGABEN); var["miete"]["nettokalt_monat"] = 9500
         code, r = self.call("/api/properties", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "Mehr Miete", "eingaben": var}})
         k2 = r["immobilie"]["kalkulationen"][1]; self.assertFalse(k2["aktiv"])
         self.assertEqual(self.call("/api/properties", {"aktion": "kalkulation_speichern", "id": iid, "kalkulation": {"name": "kaputt", "eingaben": {"kaufpreis": -5}}})[0], 400)
@@ -2281,22 +2286,22 @@ class FeatureTests(_AppBase):
         self.assertTrue(r["bericht"])
         code, ds = self.call("/api/dataset")
         im = [x for x in ds["immobilien"] if x["id"] == iid][0]
-        self.assertEqual(im["kennzahlen"]["afa_jahr"], 30100.82); self.assertTrue(im["in_planung"])
+        self.assertEqual(im["kennzahlen"]["afa_jahr"], 21882.0); self.assertTrue(im["in_planung"])
         self.assertEqual(len(im["kalkulationen"]), 2)
         # Soll/Ist: Mieteinnahmen 2026 aus Umsaetzen (9.500 x 11 Monate bis Nov) gegen Kalkulation
         si = {x["jahr"]: x for x in im["soll_ist"]}
-        self.assertEqual(si[2026]["miete_soll"], 151200.0); self.assertEqual(si[2026]["miete_ist"], 9500.0 * 11)
-        self.assertEqual(si[2026]["kosten_ist"], -800.0 * 11); self.assertEqual(si[2026]["restschuld_soll"], 1553800.0)
+        self.assertEqual(si[2026]["miete_soll"], 108000.0); self.assertEqual(si[2026]["miete_ist"], 9500.0 * 11)
+        self.assertEqual(si[2026]["kosten_ist"], -800.0 * 11); self.assertEqual(si[2026]["restschuld_soll"], 1164000.0)
         self.assertIsNotNone(si[2026]["restschuld_ist"])
         # Planung der GbR: Mietzeile folgt der Kalkulation, Darlehenssaldo folgt der Kalkulation, Ausschuettung als Entnahme
         gbr = ds["bereiche"][F.uid("ga")]; fm = gbr["plan_monate"]
         ez = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Einnahmen"][0]["zeilen"] if z.get("objekt") == "Parkweg"][0]
-        self.assertEqual(ez["plan"]["methode"], "immobilie"); self.assertEqual(ez["plan"]["werte"][fm[0]], 13600.0)   # NKM + Umlage
+        self.assertEqual(ez["plan"]["methode"], "immobilie"); self.assertEqual(ez["plan"]["werte"][fm[0]], 9800.0)   # NKM + Umlage
         jan27 = [m for m in fm if m == "2027-01"][0]
-        self.assertEqual(ez["plan"]["werte"][jan27], 13839.4)        # 12600 x 1,019 + 1000
+        self.assertEqual(ez["plan"]["werte"][jan27], 9980.0)        # 9000 x 1,02 + 800
         pr = {r["id"]: r for r in gbr["bilanz"]["projektion"]["zeilen"]}
-        self.assertEqual(pr[F.uid("ga.vd")]["werte"]["2026-12"], -1553800.0)
-        self.assertEqual(round(pr[F.uid("ga.immo")]["werte"]["2026-12"]), round(1900000 * 1.02 ** (11 / 12)))   # monatliche Wertentwicklung ab dem 2. Monat
+        self.assertEqual(pr[F.uid("ga.vd")]["werte"]["2026-12"], -1164000.0)
+        self.assertEqual(round(pr[F.uid("ga.immo")]["werte"]["2026-12"]), round(1500000 * 1.02 ** (11 / 12)))   # monatliche Wertentwicklung ab dem 2. Monat
         inv = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Finanzierung"][0]["zeilen"] if z["zeile"] == "Einlagen/Entnahmen Gesellschafter"]
         self.assertTrue(inv); self.assertLess(sum(inv[0]["plan"]["werte"].values()), 0)
         # Steuer: AfA aus der Kalkulation, wenn nicht manuell eingetragen
@@ -2305,13 +2310,13 @@ class FeatureTests(_AppBase):
         self.call("/api/report", {})
         code, ds = self.call("/api/dataset")
         ent = [e for e in ds["steuer"]["entitaeten"] if e["uuid"] == F.uid("ga")][0]
-        self.assertEqual(ent["jahre"]["2026"]["objekte"]["Parkweg"]["afa"], 30100.82)
+        self.assertEqual(ent["jahre"]["2026"]["objekte"]["Parkweg"]["afa"], 21882.0)
         self.assertEqual(ent["jahre"]["2026"]["objekte"]["Parkweg"].get("afa_quelle"), "kalkulation")
         # Szenario aktiv wechseln -> andere Miete in der Planung; Szenario loeschen
         code, r = self.call("/api/properties", {"aktion": "kalkulation_aktiv", "id": iid, "kalkulation_id": k2["id"]})
         code, ds = self.call("/api/dataset"); gbr = ds["bereiche"][F.uid("ga")]
         ez = [z for z in [s for s in gbr["kapitalfluss"]["sektionen"] if s["name"] == "Einnahmen"][0]["zeilen"] if z.get("objekt") == "Parkweg"][0]
-        self.assertEqual(ez["plan"]["werte"][fm[0]], 14000.0)
+        self.assertEqual(ez["plan"]["werte"][fm[0]], 10300.0)   # 9.500 + 800
         code, r = self.call("/api/properties", {"aktion": "kalkulation_loeschen", "id": iid, "kalkulation_id": k2["id"]})
         self.assertTrue(r["immobilie"]["kalkulationen"][0]["aktiv"])
         # Excel-Export der Kalkulation
@@ -2854,6 +2859,11 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(len(pg.query_selector_all(F_ + " tr[data-tog='t:bank'] .off-mark")), 1)
                 pg.evaluate("S.cfTog['t:bank'] = true; route()")
                 pg.wait_for_selector(F_ + " tr.check"); self.assertEqual(len(pg.query_selector_all(F_ + " tr.check")), 1); self.assertIn("12", pg.inner_text(F_ + " tr.check"))
+                # a click on it: its reasons in the side panel (here without single bookings behind them)
+                pg.evaluate("(() => { const u = B().kapitalfluss.ueberleitung[window._keep[0]]; window._keep.push(u.gruende_liq); u.gruende_liq = [['ue_rest', 12, '']]; return route(); })()"); pg.wait_for_timeout(200)
+                pg.click(F_ + " tr.check td.tx[data-chk]"); pg.wait_for_selector("#drawer.open .cf-tx-why li")
+                self.assertTrue(pg.inner_text("#drawer h2").startswith("Abgleich mit der Bilanz · ")); self.assertIn("Ohne erkannte Ursache", pg.inner_text("#drawer .cf-tx-why"))
+                pg.keyboard.press("Escape"); pg.evaluate("B().kapitalfluss.ueberleitung[window._keep[0]].gruende_liq = window._keep.pop()")
                 pg.evaluate("delete S.cfTog['t:bank']"); pg.wait_for_timeout(50)
                 pg.evaluate("(() => { const D = B(); D.kapitalfluss.ueberleitung[window._keep[0]].abweichung_liq = window._keep[1]; return route(); })()"); pg.wait_for_timeout(200)
                 self.assertEqual(len(pg.query_selector_all(F_ + " tr.check")), 0)
@@ -2926,6 +2936,9 @@ class BrowserTest(unittest.TestCase):
                 pg.click(N_ + " tr.sec[data-tog='s:Investitionen'] td"); pg.wait_for_timeout(250)
                 kat = pg.eval_on_selector(F_ + " tr.det[data-kat]", "tr => tr.dataset.kat")
                 pg.click(F_ + " tr.det[data-kat] td:nth-child(2)"); pg.wait_for_selector("#drawer.open #cftx-page")      # a side panel: the cash flow stays
+                pg.click(F_ + " tr.det[data-kat] td:nth-child(2)"); pg.wait_for_timeout(250)                    # the same figure again: closed
+                self.assertFalse(pg.evaluate("$('#drawer').classList.contains('open')"))
+                pg.click(F_ + " tr.det[data-kat] td:nth-child(2)"); pg.wait_for_selector("#drawer.open #cftx-page")      # and again: open
                 self.assertEqual(pg.evaluate("S.tab"), "cashflow"); self.assertTrue(pg.query_selector_all("#drawer tbody tr"))
                 pg.click("#cftx-page"); pg.wait_for_selector("#uf-von")                                  # ... and from there the page, to correct
                 self.assertEqual(pg.evaluate("S.uf.kats"), [kat]); self.assertEqual(pg.evaluate("S.tab"), "transactions")
@@ -3010,9 +3023,13 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#cf-bridge .cf-br-row[data-br='op|Ausgaben']"); pg.click("#cf-bridge .cf-br-row[data-br='inv']"); pg.mouse.move(5, 5); pg.wait_for_timeout(150)
                 pg.hover("#cf-bridge .cf-br-row.grp >> nth=2"); pg.wait_for_timeout(150)                  # no tooltip covering the bridge
                 self.assertTrue(pg.evaluate("document.querySelector('#cf-tip').classList.contains('hidden') || !document.querySelector('#cf-tip').textContent.trim()")); pg.mouse.move(5, 5)
-                self.assertFalse(pg.query_selector("#cf-bridge [data-cftip]:not(.cf-br-c)"))                # only the change has one: amount, year before, change
+                self.assertFalse(pg.query_selector("#cf-bridge [data-cftip]:not(.cf-br-c):not(.cf-br-v)"))      # the change and the amount: amount, year before, change
+                self.assertEqual(pg.eval_on_selector_all("#cf-bridge .cf-br-row", "rs => rs.filter(r => r.querySelector('.cf-br-c')).every(r => r.querySelector('.cf-br-v').dataset.cftip === r.querySelector('.cf-br-c').dataset.cftip)"), True)
                 pg.hover("#cf-bridge .cf-br-row.grp .cf-br-c >> nth=0"); pg.wait_for_timeout(150)
-                self.assertIn("Vorjahr", pg.inner_text("#cf-tip")); pg.mouse.move(5, 5)
+                self.assertIn("Vorjahr", pg.inner_text("#cf-tip"))
+                if pg.viewport_size["width"] >= 1000:                                                     # beside the chart, right of the figures (Mac: room there)
+                    self.assertTrue(pg.evaluate("document.querySelector('#cf-tip').getBoundingClientRect().left >= document.querySelector('#cf-bridge svg').getBoundingClientRect().right"))
+                pg.mouse.move(5, 5)
                 # a quiet amount axis; dragging across the chart zooms into that range, the button shows it whole again
                 self.assertGreaterEqual(len(pg.query_selector_all("#cf-bridge .cf-br-grid")), 3)
                 bb = pg.evaluate("(() => { const r = document.querySelector('#cf-bridge').getBoundingClientRect(); return [r.left + CF.br_liq.L, r.left + CF.br_liq.R, r.top + 30]; })()")
@@ -3036,16 +3053,23 @@ class BrowserTest(unittest.TestCase):
                 r = pg.query_selector("#cf-bridge .cf-br-row[data-bal^='liq|']"); start = r and r.get_attribute("data-bal").split("|")[1]
                 self.assertTrue(start and pg.evaluate("m => B().monate.includes(m) && +m.slice(0, 4) < firstYear(B())", start), start)
                 if start:
+                    pg.evaluate("window._lcSave = Object.fromEntries(Object.entries(LC).filter(([id, st]) => st && st.d).map(([id, st]) => [id, [st.i0, st.i1, st.btn]]))")
                     pg.click("#cf-bridge .cf-br-row[data-bal^='liq|'] >> nth=0"); pg.wait_for_selector("#main tr[data-pos='liquiditaet'] td.flash-hit", timeout=6000)
                     hit = pg.evaluate("(() => { const td = document.querySelector('#main tr[data-pos=\"liquiditaet\"] td.flash-hit'), i = [...td.parentNode.children].indexOf(td); return document.querySelectorAll('#main .wrap.snap thead th')[i].dataset.key; })()")
                     self.assertEqual(hit, start); pg.wait_for_timeout(900)
                     self.assertTrue(pg.evaluate("""(() => { const td = document.querySelector('#main tr[data-pos="liquiditaet"] td.flash-hit'), w = td.closest('.wrap'), a = w.getBoundingClientRect(), r = td.getBoundingClientRect();
                         return r.left >= a.left + w.querySelector('thead th').offsetWidth - 2 && r.right <= a.right + 2 && r.top >= 0 && r.bottom <= innerHeight; })()"""))      # the table moved there: the cell in view
+                    # ... and as after a click on that cell, the charts line up with the month: the large one shows it, the small ones end with it
+                    self.assertEqual(pg.evaluate("""m => { const i = bchIndex(m), small = Object.entries(LC).filter(([id, st]) => st && st.d && document.querySelector('#lc-' + id + '-svg'));
+                        return [!!BCH.d && i >= BCH.i0 && i <= BCH.i1, small.length > 0 && small.every(([id, st]) => st.d.months[st.i1] === m)]; }""", start), [True, True])
+                    pg.evaluate("Object.entries(window._lcSave).forEach(([id, v]) => lcSet(id, ...v))")      # the small charts back as before, for what follows
                     pg.evaluate("S.vonJahr = null")
                     pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("#cf-bridge .cf-br-row")
                 pg.click("#cf-zeit button[data-z='12m']"); pg.wait_for_timeout(300)
                 # 6. the net worth bridge: from the net worth at the start to that at the end, only what changes it (no investing, no repaying)
-                wb = pg.eval_on_selector_all("#cf-wbridge .cf-br-row", "e => e.map(r => [r.getAttribute('aria-label').split(': ')[0], r.querySelector('.cf-br-v').textContent, [...r.classList]])")
+                wbr = lambda: pg.eval_on_selector_all("#cf-wbridge .cf-br-row", "e => e.map(r => [r.getAttribute('aria-label').split(': ')[0], r.querySelector('.cf-br-v').textContent, [...r.classList]])")
+                wb = wbr(); self.assertNotIn("Einnahmen", [w[0] for w in wb])                                # closed at first
+                pg.click("#cf-wbridge .cf-br-row[data-br='op']"); pg.wait_for_timeout(150); wb = wbr()
                 self.assertEqual((wb[0][0], wb[-1][0]), ("Anfangsvermögen", "Endvermögen"))
                 names = [w[0] for w in wb]
                 for n in ("Überschuss", "Zinsen", "Wertänderungen", "Einnahmen", "Ausgaben"): self.assertIn(n, names)
@@ -3108,6 +3132,9 @@ class BrowserTest(unittest.TestCase):
                     return [s.Nettovermoegen_delta, s.Bewertung, u]; })()""")
                 pg.hover("#cf-months .cf-hit >> nth=11"); pg.wait_for_timeout(150)
                 tip = pg.inner_text("#cf-tip")
+                self.assertIn("=\nVeränderung Bankguthaben", tip)                                     # the results: "=" instead of a colour
+                k11 = pg.get_attribute("#cf-months .cf-hit >> nth=11", "data-k")                          # its month heading in the table, softly
+                self.assertEqual(pg.eval_on_selector_all(".cf-tbl:not(.cf-names) thead th.cf-hov", "e => e.map(x => x.dataset.key)"), [k11])
                 for w in ("Einnahmen", "Ausgaben", "Investitionen", "Finanzierung", "Veränderung Bankguthaben", "Umschichtungen", "Wertänderungen", "Veränderung Nettovermögen"):
                     self.assertIn(w, tip)
                 f0 = lambda v: pg.evaluate("v => F0(v)", v)
@@ -3129,7 +3156,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), len(fl[2]) + len(fl[3]))
                 self.assertIsNone(pg.query_selector("#cf-flow .cf-fl-m")); self.assertTrue(pg.query_selector("#cf-flow linearGradient"))      # no grey bar: the colours run into one another
                 self.assertIn("Arbeitseinkommen", pg.text_content("#cf-flow")); self.assertIsNone(pg.query_selector(".cf-su-col"))
-                self.assertIn("%", pg.text_content("#cf-flow .cf-fl-p")); self.assertFalse(pg.query_selector("#cf-flow [data-cftip]"))       # shares inside, no tooltip
+                self.assertIn("%", pg.text_content("#cf-flow .cf-fl-p")); self.assertTrue(pg.query_selector("#cf-flow .cf-fl-g[data-cftip]"))       # shares inside, the rest on hover
                 # a click opens a position into its categories (heights within it), the name above closes it again
                 # (the made-up data has no position with several categories in the period: the largest use gets two invented parts)
                 pg.evaluate("(() => { if (document.querySelector('#cf-flow .cf-fl-g[data-fl]')) return; const e = CF.flow.use[0]; e.kids = [{label: 'Teil A', v: e.v * 0.6}, {label: 'Teil B', v: e.v * 0.4}]; cfDrawFlow(); })()")
@@ -3155,6 +3182,17 @@ class BrowserTest(unittest.TestCase):
                     self.assertGreater(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
                     pg.dispatch_event("#cf-flow [data-flall]", "click"); pg.wait_for_timeout(150)
                     self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0); self.assertTrue(pg.query_selector("#cf-flow .cf-fl-span"))      # the period small above the total
+                    # the same with a click beside the chart (the period, the empty card); one item open: the click closes all first
+                    pg.dispatch_event("#cf-flow .cf-fl-span", "click"); pg.wait_for_timeout(150); self.assertGreater(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
+                    pg.dispatch_event(".cf-card[data-cfid='flow']", "click"); pg.wait_for_timeout(150); self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
+                    pg.dispatch_event("#cf-flow .cf-fl-g[data-fl='%s']" % key, "click"); pg.wait_for_timeout(150)
+                    pg.dispatch_event("#cf-flow svg", "click"); pg.wait_for_timeout(150); self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
+                    # hover on a name or band: exact amount, share and the period before -- above the chart, which stays free
+                    pg.dispatch_event("#cf-flow .cf-fl-l >> nth=0", "pointerover"); pg.wait_for_timeout(100)
+                    tip = pg.inner_text("#cf-tip"); self.assertIn("Betrag", tip); self.assertIn("Anteil", tip); self.assertIn("€", tip)
+                    self.assertTrue(pg.evaluate("""(() => { const a = document.querySelector('#cf-tip').getBoundingClientRect(), b = document.querySelector('#cf-flow svg').getBoundingClientRect();
+                        return a.bottom <= b.top + 1 || a.top >= b.bottom - 1; })()"""))
+                    pg.dispatch_event("#cf-flow .cf-fl-l >> nth=0", "pointerout"); pg.wait_for_timeout(50)
                     # opening an item never narrows the bands: the names keep their share of the width
                     pg.dispatch_event("#cf-flow .cf-fl-g[data-fl='%s']" % key, "click"); pg.wait_for_timeout(150)
                     xs = pg.evaluate("[...document.querySelectorAll('#cf-flow .cf-fl-n')].map(r => +r.getAttribute('x'))")
@@ -3227,6 +3265,9 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(len(pg.query_selector_all("#cf-heat .cf-heat-v")), len(pg.query_selector_all("#cf-heat .cf-heat-n")))     # the average per row
                 # all positions together: a row of its own below a line, on its own scale
                 self.assertTrue(pg.query_selector("#cf-heat .cf-heat-sep + .cf-heat-n.tot")); self.assertEqual(pg.inner_text("#cf-heat .cf-heat-n.tot"), "Ausgaben gesamt")
+                for sel, pre in (("#cf-heat .cf-heat-n.tot", "Ausgaben gesamt · "), ("#cf-heat .cf-heat-n.tot ~ .cf-heat-c[data-hr] >> nth=-1", "Ausgaben gesamt · "), ("#cf-heat .cf-heat-n.open >> nth=0", "")):
+                    pg.click(sel); pg.wait_for_selector("#drawer.open #cftx-page"); self.assertTrue(pg.inner_text("#drawer h2").startswith(pre))
+                    self.assertTrue(pg.query_selector_all("#drawer tbody tr")); pg.keyboard.press("Escape"); pg.wait_for_timeout(100)
                 # a few huge cells (20.000 and 100.000 among values up to 2.000): they get the darkest tones and a mark, the others keep their range
                 hk = pg.evaluate("""(() => { const D = JSON.parse(JSON.stringify(B())), id = S.bereich, keep = S.DATA.bereiche[id], ms = D.monate.filter(m => m < D.ist_bis).slice(-12);
                     const sek = D.kapitalfluss.sektionen.find(s => s.name === 'Ausgaben');
@@ -3238,7 +3279,9 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(len(bigs), 2); self.assertGreaterEqual(min(bigs), 86)
                 self.assertLess(min(normal), 20); self.assertGreater(max(normal), 70)               # small and large regular values stay apart
                 # switched to income: green, the income in the middle, the title says so; and back
+                y0 = pg.evaluate("(() => { const b = document.querySelector(\"#cf-pie-art button[data-a='ein']\"); b.scrollIntoView({block: 'center'}); return b.getBoundingClientRect().top; })()")
                 pg.click("#cf-pie-art button[data-a='ein']"); pg.wait_for_selector("#cf-pie svg.ein"); pg.wait_for_selector("#cf-heat .cf-heat.ein")
+                self.assertAlmostEqual(pg.evaluate("document.querySelector(\"#cf-pie-art button[data-a='ein']\").getBoundingClientRect().top"), y0, delta=2)     # the switch stays where it was
                 self.assertEqual(pg.inner_text("#cf-heat-card .lc-title").strip().split("\n")[0], "Einnahmen je Monat")
                 self.assertTrue(pg.inner_text("#cf-pie-card .lc-title").startswith("Vorjahresvergleich der Einnahmen"))
                 self.assertEqual(num(pg.text_content("#cf-pie .cf-pie-v")), want["ein"])
@@ -3420,6 +3463,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(name([r for r in av if r != 'beteiligungen']), "Nettovermögen ohne Beteiligungen")
                 self.assertEqual(name(['liquiditaet', 'wertpapiere', 'anlagen', 'immobilien']), "Geldanlagen + Immobilien")      # a tie: in plus
                 self.assertEqual(name(['liquiditaet', 'immobilien']), "Bankguthaben + Immobilien"); self.assertEqual(name(av), "Nettovermögen")
+                pg.eval_on_selector("#lc-sel-title", "e => e.scrollIntoView({block: 'center'})"); pg.wait_for_timeout(200)      # below the table: in view first (a scroll hides a tip)
                 pg.hover("#lc-sel-title"); pg.wait_for_selector(".tip"); self.assertIn("Bankguthaben + Wertpapiere", pg.inner_text(".tip")); self.assertIn("+ Wertpapiere\n= Liquides Vermögen", pg.inner_text(".tip")); pg.mouse.move(5, 5)
                 # the names as one written sum, each word once
                 self.assertEqual(pg.evaluate("a => lcSumTip(a)", av).split("\n"), ["\u2007 Bankguthaben", "+ Wertpapiere", "= Liquides Vermögen", "+ Festanlagen", "= Geldanlagen", "+ Beteiligungen",
@@ -3473,13 +3517,13 @@ class BrowserTest(unittest.TestCase):
                 # table and large chart can be moved up and down (small arrows in their headers), kept with "Ansicht speichern"
                 order3 = lambda: pg.evaluate("""() => [...document.querySelectorAll('#main #bch, #main .wrap.bil-tbl, #main #lc-grid')].map(e => e.id === 'bch' ? 'chart' : e.id === 'lc-grid' ? 'lines' : 'table')""")
                 tbl = lambda mv: ".wrap .th-mv[data-blk='table'][data-mv='%s']" % mv
-                self.assertEqual(order3(), ["chart", "table", "lines"]); pg.click(tbl(-1)); pg.wait_for_timeout(300); self.assertEqual(order3(), ["table", "chart", "lines"])
-                self.assertFalse(pg.is_visible(tbl(-1))); pg.click(tbl(1)); pg.wait_for_timeout(300); pg.click(tbl(1)); pg.wait_for_timeout(300)
-                self.assertEqual(order3(), ["chart", "lines", "table"])
+                self.assertEqual(order3(), ["table", "chart", "lines"]); self.assertFalse(pg.is_visible(tbl(-1)))          # the table first
+                pg.click(tbl(1)); pg.wait_for_timeout(300); self.assertEqual(order3(), ["chart", "table", "lines"])
+                pg.click(tbl(1)); pg.wait_for_timeout(300); self.assertEqual(order3(), ["chart", "lines", "table"])
                 pg.click("#bch .th-mv[data-blk='chart'][data-mv='1']"); pg.wait_for_timeout(300); self.assertEqual(order3(), ["lines", "chart", "table"])
                 pg.click("#view-save"); pg.wait_for_timeout(200)
                 self.assertEqual(pg.evaluate("JSON.parse(localStorage.getItem('kontor.bilanzView')).views.monate.blocks"), ["lines", "chart", "table"])
-                pg.click("#view-reset"); pg.wait_for_timeout(300); self.assertEqual(order3(), ["chart", "table", "lines"]); pg.click("#pos-all"); pg.wait_for_timeout(300)
+                pg.click("#view-reset"); pg.wait_for_timeout(300); self.assertEqual(order3(), ["table", "chart", "lines"]); pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # the same in the table: a portfolio opens into its securities (without opening the account's history)
                 if not pg.query_selector("[data-dep]"):
                     pg.click("tr.pos[data-pos='wertpapiere'] td:first-child")
@@ -3537,7 +3581,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertAlmostEqual(pg.evaluate("document.querySelector('.bil-tbl thead th').getBoundingClientRect().width"), w0 + 60, delta=3); self.assertTrue(pg.evaluate("S.bilW > 0"))
                 pg.dblclick(".bil-tbl .col-grip"); pg.wait_for_timeout(100); self.assertIsNone(pg.evaluate("S.bilW"))
                 self.assertAlmostEqual(pg.evaluate("document.querySelector('.bil-tbl thead th').getBoundingClientRect().width"), w0, delta=1)
-                pg.evaluate("window.scrollTo(0, 0)"); pg.wait_for_timeout(100)
+                pg.evaluate("document.querySelector('#bch').scrollIntoView({block: 'center'})"); pg.wait_for_timeout(150)      # the large chart below the table: in view
                 # the area under the pointer stands out, its row in the tip too
                 c = pg.evaluate("""() => { const ps = [...document.querySelectorAll('#bch-svg .bch-area')].map(p => p.getBoundingClientRect()).sort((a, b) => b.width * b.height - a.width * a.height);
                     const r = ps[0]; return [r.left + r.width / 2, r.top + r.height / 2]; }""")
@@ -3614,6 +3658,7 @@ class BrowserTest(unittest.TestCase):
                     const r = th.getBoundingClientRect(), tick = [...document.querySelectorAll('#bch-svg .bch-tick')].map(l => +l.getAttribute('x1') + svg.left);
                     return Math.min(...tick.map(x => Math.abs(x - (r.left + r.width / 2)))); }""")
                 self.assertLess(off, 1.5)
+                pg.evaluate("document.querySelector('#bch').scrollIntoView({block: 'center'})"); pg.wait_for_timeout(200)      # below the table: in view
                 bb = pg.query_selector("#bch-hit").bounding_box(); pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + 60); pg.wait_for_timeout(150)
                 self.assertFalse(pg.is_visible("#bch-tip"))
                 # swiping and dragging on the chart (also on the axes) scroll the table
@@ -3739,15 +3784,15 @@ class BrowserTest(unittest.TestCase):
                 pg.goto("http://127.0.0.1:%d/#properties" % port); pg.wait_for_selector("#im-new")
                 pg.once("dialog", lambda d: d.accept("Parkweg")); pg.click("#im-new"); pg.wait_for_selector("#im-kalk-new")
                 pg.once("dialog", lambda d: d.accept("Basis")); pg.click("#im-kalk-new"); pg.wait_for_selector("#im-calc")
-                pg.fill("input[data-p='kaufpreis']", "1900000"); pg.fill("input[data-p='miete.nettokalt_monat']", "12600")
+                pg.fill("input[data-p='kaufpreis']", "1500000"); pg.fill("input[data-p='miete.nettokalt_monat']", "9000")
                 pg.click("#im-loan-add"); pg.wait_for_selector(".loan-box")
-                pg.fill(".loan-box input[data-p='darlehen.0.betrag']", "1600000"); pg.fill(".loan-box input[data-p='darlehen.0.annuitaet_monat']", "8250")
+                pg.fill(".loan-box input[data-p='darlehen.0.betrag']", "1200000"); pg.fill(".loan-box input[data-p='darlehen.0.annuitaet_monat']", "6000")
                 pg.click("#im-calc"); pg.wait_for_timeout(900)
                 self.assertIn("Kaufpreisfaktor", pg.query_selector("#im-result").inner_text())
                 pg.click("#im-kalk-save"); pg.wait_for_timeout(1500)
                 cfg_im = store.load("config.json")["immobilien"]
-                self.assertEqual(cfg_im[0]["kalkulationen"][0]["eingaben"]["kaufpreis"], 1900000)
-                self.assertEqual(cfg_im[0]["kalkulationen"][0]["eingaben"]["darlehen"][0]["betrag"], 1600000)
+                self.assertEqual(cfg_im[0]["kalkulationen"][0]["eingaben"]["kaufpreis"], 1500000)
+                self.assertEqual(cfg_im[0]["kalkulationen"][0]["eingaben"]["darlehen"][0]["betrag"], 1200000)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_immobilie.png"), full_page=True)
                 pg.click(".tabs button[data-t='jahre']"); pg.wait_for_timeout(500)
                 self.assertIn("Restschuld", pg.query_selector("#main").inner_text())
@@ -3930,10 +3975,11 @@ class BrowserTest(unittest.TestCase):
                 # eine Tabelle: Positionen zugeklappt, aufklappbar; Plan-Spalten rechts in derselben Tabelle
                 self.assertEqual(len(pg.query_selector_all("#main table")), 1); self.assertIsNone(pg.query_selector("tr.acct"))
                 self.assertTrue(pg.query_selector("#main thead th.plan")); self.assertNotIn("Fortschreibung", pg.query_selector("#main").inner_text())
-                pg.click("tr.pos[data-pos='liquiditaet'] td:first-child"); pg.wait_for_selector("tr.acct")
-                pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # waagerecht zur aktuellen Spalte gescrollt (auch in der Jahresansicht)
                 self.assertGreater(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0)
+                pg.dispatch_event("tr.pos[data-pos='liquiditaet'] td:first-child", "click"); pg.wait_for_selector("tr.acct")      # (a Playwright click would first scroll the sticky name column into view)
+                pg.click("#pos-all"); pg.wait_for_timeout(300)
+                self.assertGreater(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0, "after opening rows")
                 pg.click("#modus-seg button[data-m='jahre']"); pg.wait_for_timeout(300)
                 self.assertIsNotNone(pg.query_selector("#main thead th[data-cur]"))
                 pg.click("#modus-seg button[data-m='monate']"); pg.wait_for_timeout(300)

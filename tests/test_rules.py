@@ -21,7 +21,7 @@ def loan_cfg(**over):
         "quellkonten": ["Alpha GbR / Liquidität / Stadtbank Kontokorrent"],
         "erkennung": {"gegen_iban": F.SELLER_IBAN, "text_enthaelt": ["Urkunde 1234/2025"]},
         "ab_datum": "2026-01-01",
-        "zins": {"modell": "jahresbasis", "satz": [{"ab": "2025-11-20", "prozent": 3.3}], "buchungstag": "ultimo"},
+        "zins": {"modell": "jahresbasis", "satz": [{"ab": "2025-11-20", "prozent": 3.0}], "buchungstag": "ultimo"},
         "buchung": {"gegenpartei": "Verkäufer", "kategorie_tilgung": "Umbuchung", "kategorie_zins": "Zinsen"},
         "quelle_kommentar": True,
     }
@@ -69,12 +69,12 @@ class TreeTests(unittest.TestCase):
 
     def test_group_balance_and_balance_at(self):
         txs = F.ga_transactions(date(2026, 11, 4))
-        bal = {"ga.vd": -1600000.0 + 8250.0 * 11}          # 11 Annuitaeten bereits gespiegelt? nein: nur KK
+        bal = {"ga.vd": -1200000.0 + 6000.0 * 11}          # 11 Annuitaeten bereits gespiegelt? nein: nur KK
         led = make_ledger({"ga.kk": 40000.0}, txs)
         pb = led.resolve("Alpha GbR")
-        self.assertAlmostEqual(led.group_balance(pb.uuid), 40000 + 1900000 - 1600000 - 240000, 2)
-        # KK-Saldo am 31.12.2025 = heute - alle Buchungen 2026 (11 x -8250)
-        self.assertAlmostEqual(led.balance_at(F.uid("ga.kk"), date(2025, 12, 31)), 40000 + 11 * 8250, 2)
+        self.assertAlmostEqual(led.group_balance(pb.uuid), 40000 + 1500000 - 1200000 - 240000, 2)
+        # KK-Saldo am 31.12.2025 = heute - alle Buchungen 2026 (11 x -6000)
+        self.assertAlmostEqual(led.balance_at(F.uid("ga.kk"), date(2025, 12, 31)), 40000 + 11 * 6000, 2)
         # Datumskonvertierung: lokale Mitternacht -> Datum bleibt der 1.
         kk = led.transactions(F.uid("ga.kk"))
         self.assertEqual(kk[0].booking_date, date(2026, 1, 1))
@@ -83,7 +83,7 @@ class TreeTests(unittest.TestCase):
 class LoanTests(unittest.TestCase):
     def test_first_run_books_all_months(self):
         today = date(2026, 11, 4)
-        led = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today))
+        led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         res = plan_loan(led, loan_cfg(), today)
         tilg = [p for p in res.proposals if p.kind == "tilgung"]
         zins = [p for p in res.proposals if p.kind == "zins"]
@@ -91,20 +91,20 @@ class LoanTests(unittest.TestCase):
         self.assertEqual(len(zins), 10)                      # Jan..Okt (Nov-Ultimo liegt in der Zukunft)
         self.assertEqual({p.kind for p in res.proposals}, {"tilgung", "zins"})        # the payments themselves are never touched
         self.assertTrue(all(p.account_uuid == led.resolve(loan_cfg()["darlehenskonto"]).uuid for p in res.proposals))
-        self.assertTrue(all(p.amount == 8250.0 for p in tilg))
-        self.assertTrue(all(p.amount == -4400.0 for p in zins))   # 1.600.000 x 3,3 % / 12
+        self.assertTrue(all(p.amount == 6000.0 for p in tilg))
+        self.assertTrue(all(p.amount == -3000.0 for p in zins))   # 1.200.000 x 3,0 % / 12
         self.assertEqual(zins[0].booking_date, date(2026, 1, 31))
         self.assertIn("#kontor-zins-2026-01", zins[0].purpose)
         self.assertIn("#kontor-tx-", tilg[0].purpose)
         self.assertTrue(tilg[0].purpose.startswith("Annuität "))
         # In-Memory-Saldo nach allen Buchungen
         vd = led.resolve("Verkäuferdarlehen")
-        self.assertAlmostEqual(vd.balance, -1600000 + 11 * 8250 - 10 * 4400, 2)
+        self.assertAlmostEqual(vd.balance, -1200000 + 11 * 6000 - 10 * 3000, 2)
         self.assertFalse(res.warnings, res.warnings)
 
     def test_idempotent_second_run(self):
         today = date(2026, 11, 4)
-        led = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today))
+        led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         res1 = plan_loan(led, loan_cfg(), today)
         # Zweiter Lauf: Buchungen "existieren" jetzt im Ledger (in-memory) -> nichts Neues
         res2 = plan_loan(led, loan_cfg(), today)
@@ -119,22 +119,22 @@ class LoanTests(unittest.TestCase):
         zins = [p for p in res.proposals if p.kind == "zins" and p.booking_date.year == 2026]
         self.assertEqual(len(zins), 12)
         total = round(sum(-p.amount for p in zins), 2)
-        self.assertAlmostEqual(total, round(1234567.0 * 0.033, 2), 2)
+        self.assertAlmostEqual(total, round(1234567.0 * 0.03, 2), 2)
 
     def test_year_base_follows_prior_year_end_and_sondertilgung(self):
         # Sondertilgung im Maerz 2026 aendert 2026 nichts, 2027 schon
         today = date(2027, 2, 15)
         extra = [F.tx("ga.kk", date(2026, 3, 15), -50000.0, "Verkäufer", "Sondertilgung " + F.ANNUITY_TEXT, "", F.SELLER_IBAN)]
         txs = F.ga_transactions(today, extra=extra)
-        led = make_ledger({"ga.vd": -1600000.0}, txs)
+        led = make_ledger({"ga.vd": -1200000.0}, txs)
         res = plan_loan(led, loan_cfg(), today)
         z26 = [p for p in res.proposals if p.kind == "zins" and p.booking_date.year == 2026]
         z27 = [p for p in res.proposals if p.kind == "zins" and p.booking_date.year == 2027]
-        self.assertTrue(all(p.amount == -4400.0 for p in z26))
-        # Basis 2027 = Stand 31.12.2026 = -1.600.000 + 12*8.250 + 50.000 - 52.800 Zinsen
-        base27 = 1600000 - 12 * 8250 - 50000 + 52800
+        self.assertTrue(all(p.amount == -3000.0 for p in z26))
+        # Basis 2027 = Stand 31.12.2026 = -1.200.000 + 12*6.000 + 50.000 - 36.000 Zinsen
+        base27 = 1200000 - 12 * 6000 - 50000 + 36000
         self.assertEqual(len(z27), 1)
-        self.assertAlmostEqual(z27[0].amount, -round(round(base27 * 0.033, 2) / 12, 2), 2)
+        self.assertAlmostEqual(z27[0].amount, -round(round(base27 * 0.03, 2) / 12, 2), 2)
         sonder = [p for p in res.proposals if p.kind == "tilgung" and p.amount == 50000.0]
         self.assertEqual(len(sonder), 1)
         self.assertTrue(sonder[0].purpose.startswith("Sondertilgung "))
@@ -143,18 +143,18 @@ class LoanTests(unittest.TestCase):
         today = date(2026, 11, 4)
         # Jan..Okt manuell gebucht, Automatik ab 2026-11-01
         txs = F.ga_transactions(today, with_manual_interest_until=date(2026, 10, 1))
-        led = make_ledger({"ga.vd": -1600000.0 + 10 * 8250 - 10 * 4400}, txs)
+        led = make_ledger({"ga.vd": -1200000.0 + 10 * 6000 - 10 * 3000}, txs)
         res = plan_loan(led, loan_cfg(ab_datum="2026-11-01"), today)
         tilg = [p for p in res.proposals if p.kind == "tilgung"]
         zins = [p for p in res.proposals if p.kind == "zins"]
         self.assertEqual(len(tilg), 1)                       # nur November
         self.assertEqual(len(zins), 0)                       # November-Ultimo noch nicht erreicht
         # Basis 2026 bleibt der Stand 31.12.2025 trotz manueller Buchungen
-        self.assertTrue(any("Zinsbasis 2026 = 1.600.000,00" in i for i in res.info), res.info)
+        self.assertTrue(any("Zinsbasis 2026 = 1.200.000,00" in i for i in res.info), res.info)
         # repayments and interest you booked yourself (no mark): the repayments count as booked, the months of your interest
         # are left to you -- one note, no warning, nothing twice
         txs2 = F.ga_transactions(today, with_manual_interest_until=date(2026, 10, 1))
-        led2 = make_ledger({"ga.vd": -1600000.0}, txs2)
+        led2 = make_ledger({"ga.vd": -1200000.0}, txs2)
         res2 = plan_loan(led2, loan_cfg(ab_datum="2026-01-01"), today)
         self.assertEqual(len([p for p in res2.proposals if p.kind == "zins"]), 0)
         self.assertEqual([p.booking_date for p in res2.proposals if p.kind == "tilgung"], [date(2026, 11, 1)])
@@ -164,12 +164,12 @@ class LoanTests(unittest.TestCase):
 
     def test_missing_base_warns(self):
         today = date(2026, 6, 1)
-        led = make_ledger({"ga.vd": -1600000.0}, [F.tx("ga.vd", date(2026, 2, 1), -1600000.0, "V", "Start")])
+        led = make_ledger({"ga.vd": -1200000.0}, [F.tx("ga.vd", date(2026, 2, 1), -1200000.0, "V", "Start")])
         res = plan_loan(led, loan_cfg(quellkonten=[], erwartet_monatlich=False), today)
         self.assertTrue(any("Jahresanfangsbasis" in w for w in res.warnings))
         self.assertEqual([p for p in res.proposals if p.kind == "zins"], [])
         cfg = loan_cfg(quellkonten=[], erwartet_monatlich=False)
-        cfg["zins"]["basis_override"] = {"2026": 1600000}
+        cfg["zins"]["basis_override"] = {"2026": 1200000}
         res = plan_loan(led, cfg, today)
         self.assertEqual(len([p for p in res.proposals if p.kind == "zins"]), 5)
 
@@ -189,17 +189,17 @@ class LoanTests(unittest.TestCase):
 
     def test_no_payment_warning(self):
         today = date(2026, 11, 4)
-        led = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(date(2026, 8, 1)))
+        led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(date(2026, 8, 1)))
         res = plan_loan(led, loan_cfg(), today)
         self.assertTrue(any("seit über 35 Tagen" in w for w in res.warnings))
         # Automatik gerade erst gestartet, Rate noch nicht gelaufen: nur Info
-        led = make_ledger({"ga.vd": -1600000.0}, [F.tx("ga.vd", date(2025, 12, 1), -1600000.0, "V", "Start")])
+        led = make_ledger({"ga.vd": -1200000.0}, [F.tx("ga.vd", date(2025, 12, 1), -1200000.0, "V", "Start")])
         res = plan_loan(led, loan_cfg(ab_datum="2026-11-01"), today)
         self.assertFalse(any("keine passende Zahlung" in w for w in res.warnings))
         self.assertTrue(any("keine passende Zahlung" in i for i in res.info))
         # IBAN-only Erkennung mit Ausschlusstext
         txs = F.ga_transactions(today, extra=[F.tx("ga.kk", date(2026, 10, 20), -300.0, "Verkäufer", "Nebenkostenabrechnung", "", F.SELLER_IBAN)])
-        led = make_ledger({"ga.vd": -1600000.0}, txs)
+        led = make_ledger({"ga.vd": -1200000.0}, txs)
         cfg = loan_cfg(erkennung={"gegen_iban": F.SELLER_IBAN, "ausschliessen_text": ["Nebenkosten"]})
         res = plan_loan(led, cfg, today)
         self.assertEqual(len([p for p in res.proposals if p.kind == "tilgung"]), 11)
@@ -219,7 +219,7 @@ class CompanyTests(unittest.TestCase):
         today = date(2026, 11, 4)
         led = make_ledger({}, [])
         res = plan_all(led, company_cfg(), today)
-        ga_value = 40000 + 1900000 - 1600000 - 120000 - 120000      # = 100.000 (capital accounts are debts of the company)
+        ga_value = 40000 + 1500000 - 1200000 - 120000 - 120000      # = 100.000 (capital accounts are debts of the company)
         want = round(0.4 * ga_value, 2)
         self.assertEqual(len(res.proposals), 1)
         self.assertEqual((res.proposals[0].kind, res.proposals[0].booking_date), ("wert", today))
@@ -236,15 +236,15 @@ class CompanyTests(unittest.TestCase):
 
     def test_loans_before_participation_and_equity_roles(self):
         today = date(2026, 11, 4)
-        led = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today))
+        led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         config = company_cfg(darlehen=[loan_cfg()])
         res = plan_all(led, config, today)
         wert = [p for p in res.proposals if p.kind == "wert"]
         self.assertEqual(len(wert), 1)
-        ga_value = 40000 + 1900000 + (-1600000 + 11 * 8250 - 10 * 4400) - 240000
+        ga_value = 40000 + 1500000 + (-1200000 + 11 * 6000 - 10 * 3000) - 240000
         self.assertAlmostEqual(wert[0].amount, round(0.4 * ga_value, 2) + 90000.0, 2)
         # capital accounts kept as the company's equity are not part of its value
-        led2 = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today))
+        led2 = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         config["bilanz"] = {"rollen": {F.uid("ga.kap.a") + " | Kapitalkonto A": "eigenkapital", F.uid("ga.kap.b") + " | Kapitalkonto B": "eigenkapital"}}
         wert2 = [p for p in plan_all(led2, config, today).proposals if p.kind == "wert"]
         self.assertAlmostEqual(wert2[0].amount, round(0.4 * (ga_value + 240000), 2) + 90000.0, 2)
@@ -264,7 +264,7 @@ class CompanyTests(unittest.TestCase):
 
     def test_back_to_month_ends(self):
         today = date(2026, 11, 4)
-        led = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today))
+        led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         cfg = company_cfg(darlehen=[loan_cfg()])
         cfg["gesellschaften"][0].update(rueckwirkend_ab="2026-03", takt="monatlich")
         res = plan_all(led, cfg, today, seen=Seen(Seen.top_id(led), today))
@@ -290,7 +290,7 @@ class CompanyTests(unittest.TestCase):
     def test_back_to_daily(self):
         """Daily (default): back to every day on which the company's value changed, then today; once done only today."""
         today = date(2026, 11, 4)
-        led = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today))
+        led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         cfg = company_cfg(darlehen=[loan_cfg()])
         cfg["gesellschaften"][0]["rueckwirkend_ab"] = "2026-03"
         res = plan_all(led, cfg, today, seen=Seen(Seen.top_id(led), today))
@@ -305,7 +305,7 @@ class CompanyTests(unittest.TestCase):
         self.assertTrue(wert and all(p.retro for p in wert))          # the past waits for you (nothing new since the last check) ...
         self.assertEqual([p for p in plan_all(led, cfg, today).proposals if p.kind == "wert"], [])        # all there: nothing
         # ... and left out, today's value is booked at once: the difference of all of them
-        led3 = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today))
+        led3 = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         seen, hold = Seen(Seen.top_id(led3), today), set()
         for rounds in range(1, 9):                    # as a run does: left out, planned again, until nothing depends on it
             held = plan_all(led3.fork(), cfg, today, hold=hold, seen=seen)
@@ -321,12 +321,12 @@ class CompanyTests(unittest.TestCase):
     def test_back_to_a_day_or_everything(self):
         """"Rückwirkend ab": a day (monthly: the month ends from then on) or "alles" (since the company's first transaction)."""
         today = date(2026, 11, 4)
-        led = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today))
+        led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         cfg = company_cfg(darlehen=[loan_cfg()])
         cfg["gesellschaften"][0].update(rueckwirkend_ab="2026-03-15", takt="monatlich")
         days = [p.booking_date for p in plan_all(led, cfg, today).proposals if p.kind == "wert"]
         self.assertEqual(days[0], date(2026, 3, 31)); self.assertEqual(days[-1], date(2026, 10, 31))
-        led = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today))
+        led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         cfg["gesellschaften"][0].update(rueckwirkend_ab="alles", takt="taeglich")
         res = plan_all(led, cfg, today, seen=Seen(Seen.top_id(led), today))
         first = min(t.booking_date for a in led.descendants(F.uid("ga")) for t in led.transactions(a.uuid) if t.id > 0)
@@ -732,13 +732,13 @@ class SecurityHardeningTests(unittest.TestCase):
 class KontorBookingsTests(unittest.TestCase):
     def test_list_of_created_bookings(self):
         import service
-        txs = [F.tx("ga.vd", date(2026, 10, 31), -4400.0, "Zinsen", "Zinsen Oktober #mm-zins-2026-10"),
+        txs = [F.tx("ga.vd", date(2026, 10, 31), -3000.0, "Zinsen", "Zinsen Oktober #mm-zins-2026-10"),
                F.tx("priv.bet.ga", date(2026, 11, 2), 1500.0, "Wertanpassung", "Anteil 40 % #mm-wert-20261102-1"),
                F.tx("priv.giro", date(2026, 10, 3), -900.0, "Bank", "Rate", comment="→ Darlehen gespiegelt (#mm-tx-7)")]
         led = Ledger(accounts_from_export(F.accounts_raw({})), tx_from_export(txs))
         out = service.kontor_bookings(led)
         self.assertEqual([(x["art"], x["markierung"]) for x in out], [("wert", "#kontor-wert-20261102-1"), ("zins", "#kontor-zins-2026-10")])   # newest first; a comment alone is no booking
-        self.assertEqual(out[1]["zweck"], "Zinsen Oktober"); self.assertEqual(out[1]["betrag"], -4400.0)
+        self.assertEqual(out[1]["zweck"], "Zinsen Oktober"); self.assertEqual(out[1]["betrag"], -3000.0)
         self.assertEqual(service.kontor_bookings(None), [])
 
 
@@ -749,7 +749,7 @@ class StatelessLoanTests(unittest.TestCase):
 
     def booked(self, cfg=None):
         """All of the loan booked (as if written), then MoneyMoney read again."""
-        led = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(self.today))
+        led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(self.today))
         res = plan_loan(led, cfg or loan_cfg(), self.today)
         return led.without_planned(keep=[p.key for p in res.proposals]), res
 
@@ -785,22 +785,22 @@ class StatelessLoanTests(unittest.TestCase):
         r = plan_loan(gone.fork(), loan_cfg(), self.today)
         self.assertEqual(r.proposals, []); self.assertTrue(any("keiner erkannten Zahlung" in w for w in r.warnings), r.warnings)
         # interest of Kontor's and yours in the same month: a warning (one of them is too much)
-        both = real.fork(); both.post(F.uid("ga.vd"), date(2026, 7, 15), -4400.0, "Bank", "Zinsen Juli laut Bank").planned = False
+        both = real.fork(); both.post(F.uid("ga.vd"), date(2026, 7, 15), -3000.0, "Bank", "Zinsen Juli laut Bank").planned = False
         r = plan_loan(both, loan_cfg(), self.today)
         self.assertEqual(r.proposals, []); self.assertTrue(any("07/2026" in w for w in r.warnings), r.warnings)
 
     def test_new_since_last_check_and_dont_book(self):
         today = self.today
-        led = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(date(2026, 10, 30)))
+        led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(date(2026, 10, 30)))
         last = max(t.id for t in led.txs)
         before = plan_loan(led, loan_cfg(), date(2026, 10, 30))          # all booked until the last check on 30 October
         real = led.without_planned(keep=[p.key for p in before.proposals])
-        real = Ledger(real.accounts, real.txs + tx_from_export([F.tx("ga.kk", date(2026, 11, 1), -8250.0, "Verkäufer", F.ANNUITY_TEXT, "", F.SELLER_IBAN)]))
+        real = Ledger(real.accounts, real.txs + tx_from_export([F.tx("ga.kk", date(2026, 11, 1), -6000.0, "Verkäufer", F.ANNUITY_TEXT, "", F.SELLER_IBAN)]))
         res = plan_loan(real.fork(), loan_cfg(), today, seen=Seen(last, date(2026, 10, 30)))
         self.assertEqual(sorted((p.kind, p.booking_date.isoformat(), p.retro) for p in res.proposals),
                          [("tilgung", "2026-11-01", False), ("zins", "2026-10-31", False)])       # the payment after it, the month ended after it
         # an older repayment left out (waiting for you): the interest after it waits too -- it is computed from the balance
-        led = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today))
+        led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         t3 = next(p for p in plan_loan(led.fork(), loan_cfg(), today).proposals if p.kind == "tilgung" and p.booking_date == date(2026, 3, 1))
         res = plan_loan(led.fork(), loan_cfg(), today, seen=Seen(0, date(2000, 1, 1)), hold={t3.key})
         self.assertNotIn(t3.key, [p.key for p in res.proposals])
@@ -808,13 +808,13 @@ class StatelessLoanTests(unittest.TestCase):
         self.assertFalse([p for p in res.proposals if p.kind == "zins" and p.booking_date < date(2026, 3, 1) and p.retro])
         # "Don't book" (settings): never proposed
         cfg = {"darlehen": [loan_cfg()], "nicht_buchen": [{"key": t3.key}]}
-        self.assertNotIn(t3.key, [p.key for p in plan_all(make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today)), cfg, today).proposals])
+        self.assertNotIn(t3.key, [p.key for p in plan_all(make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today)), cfg, today).proposals])
 
     def test_two_equal_payments_one_booked_by_hand(self):
         txs = [F.tx("ga.kk", date(2026, 10, 1), -500.0, "Verkäufer", F.ANNUITY_TEXT, "", F.SELLER_IBAN),
                F.tx("ga.kk", date(2026, 10, 2), -500.0, "Verkäufer", F.ANNUITY_TEXT, "", F.SELLER_IBAN),
                F.tx("ga.vd", date(2026, 10, 1), 500.0, "Ich", "Rate von Hand")]
-        led = make_ledger({"ga.vd": -1600000.0}, txs)
+        led = make_ledger({"ga.vd": -1200000.0}, txs)
         cfg = loan_cfg(ab_datum="2026-10-01", zins={}, erwartet_monatlich=False)
         res = plan_loan(led, cfg, date(2026, 10, 20))
         self.assertEqual([(p.kind, p.booking_date) for p in res.proposals], [("tilgung", date(2026, 10, 2))])     # each booking counts once
@@ -841,7 +841,7 @@ class ChainTests(unittest.TestCase):
     today = date(2026, 11, 4)
 
     def setUp(self):
-        self.base = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(self.today))         # the same bookings (ids) each time
+        self.base = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(self.today))         # the same bookings (ids) each time
 
     def plan(self, led=None, **kw):
         led = led or self.base.fork()
@@ -1279,7 +1279,7 @@ class MarkTests(unittest.TestCase):
         self.assertTrue(has_mark("x #mm-tx-5")); self.assertFalse(has_mark("#mmm kein Zeichen"))
         today = date(2026, 11, 4)
         # everything booked by an older version (old marks): nothing is proposed again
-        led = make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today))
+        led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         cfg = company_cfg(darlehen=[loan_cfg()])
         res = plan_all(led, cfg, today)
         self.assertTrue(res.proposals); self.assertTrue(all(p.tag.startswith("#kontor-") and p.tag in p.purpose for p in res.proposals))
@@ -1298,7 +1298,7 @@ class MarkTests(unittest.TestCase):
         import rules
         self.assertEqual(rules.bkey("a", "#mm-zins-2026-01"), rules.bkey("a", "#kontor-zins-2026-01"))
         z = next(p for p in res.proposals if p.kind == "zins")
-        again = plan_all(make_ledger({"ga.vd": -1600000.0}, F.ga_transactions(today)), dict(cfg, nicht_buchen=[{"key": z.account_uuid + "|" + z.tag.replace("#kontor-", "#mm-")}]), today)
+        again = plan_all(make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today)), dict(cfg, nicht_buchen=[{"key": z.account_uuid + "|" + z.tag.replace("#kontor-", "#mm-")}]), today)
         self.assertNotIn(z.tag, [p.tag for p in again.proposals])
 
 

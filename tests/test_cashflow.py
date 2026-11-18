@@ -118,19 +118,22 @@ class CashflowCases(Reconciles):
         ue = p["kapitalfluss"]["ueberleitung"]
         self.assertEqual(ue["2026-01"]["gruende_liq"], [["ue_unterwegs", 1500.0, ""]])
         self.assertEqual(ue["2026-02"]["gruende_liq"], [["ue_unterwegs", -1500.0, ""]])
+        # a click on the difference: the side of the transfer booked in that month
+        self.assertEqual(p["kapitalfluss"]["cf_ids"]["\u001fabgleich_liq"], {"2026-01": [2], "2026-02": [3]})
+        self.assertEqual([ue[m]["n_liq"] for m in ("2026-01", "2026-02", "2026-03")], [1, 1, 0])
 
     def test_kontor_repayment_is_matched_to_the_payment(self):
         # the payment goes to the seller (no own IBAN); Kontor books the repayment and the interest in the offline loan
         data = build([(1, "kk", date(2026, 1, 3), 9500.0, {"cat": "Miete"}),
-                      (2, "kk", date(2026, 2, 1), -8250.0, {"iban": "DE99", "cat": "Umbuchung"}),
-                      (3, "vd", date(2026, 2, 1), 8250.0, {"purpose": "Annuität · #kontor-tx-2", "cat": "Umbuchung"}),
-                      (4, "vd", date(2026, 2, 28), -4400.0, {"purpose": "Zinsen 02/2026 · #kontor-zins-2026-02", "cat": "Zinsen"})])
+                      (2, "kk", date(2026, 2, 1), -6000.0, {"iban": "DE99", "cat": "Umbuchung"}),
+                      (3, "vd", date(2026, 2, 1), 6000.0, {"purpose": "Annuität · #kontor-tx-2", "cat": "Umbuchung"}),
+                      (4, "vd", date(2026, 2, 28), -3000.0, {"purpose": "Zinsen 02/2026 · #kontor-zins-2026-02", "cat": "Zinsen"})])
         g = data["Muster GbR"]
         self.assertAddsUp(data)
         r = rows(g)
         self.assertNotIn("Unklar", [s["name"] for s in g["kapitalfluss"]["sektionen"] if s["zeilen"]])
-        self.assertEqual(r["Verkäuferdarlehen / Tilgung"]["werte"]["2026-02"], -3850.0)
-        self.assertEqual(r["Verkäuferdarlehen / Zinsen"]["werte"]["2026-02"], -4400.0)
+        self.assertEqual(r["Verkäuferdarlehen / Tilgung"]["werte"]["2026-02"], -3000.0)
+        self.assertEqual(r["Verkäuferdarlehen / Zinsen"]["werte"]["2026-02"], -3000.0)
 
     def test_contribution_into_a_company_and_its_participation(self):
         cfg = {"gesellschaften": [{"bereich": "Muster GbR", "beteiligung": "Beteiligung an Muster GbR"}]}
@@ -346,11 +349,14 @@ class CashflowCases(Reconciles):
         u = data["Privat"]["kapitalfluss"]["ueberleitung"]["2026-02"]
         self.assertEqual(u["gruende"], [["ue_ignoriert", -300.0, ""]])
         self.assertEqual(u["gruende_liq"], [["ue_ignoriert", -300.0, ""]])
+        ids = data["Privat"]["kapitalfluss"]["cf_ids"]                 # the booking behind it, for a click on either check
+        self.assertEqual((ids["\u001fabgleich_liq"], ids["\u001fabgleich_nv"]), ({"2026-02": [2]}, {"2026-02": [2]}))
+        self.assertEqual((u["n_liq"], u["n_nw"]), (1, 1))
 
     def test_labels_are_translated(self):
         import i18n
         data = build([(1, "kk", date(2026, 1, 3), 9500.0, {"cat": "Miete"}),
-                      (2, "vd", date(2026, 2, 28), -4400.0, {"purpose": "Zinsen · #kontor-zins-2026-02"})])
+                      (2, "vd", date(2026, 2, 28), -3000.0, {"purpose": "Zinsen · #kontor-zins-2026-02"})])
         z = rows(data["Muster GbR"])["Verkäuferdarlehen / Zinsen"]
         self.assertEqual((z["lbl"], z["glbl"], z["gruppe"]), (["cf_name", "Verkäuferdarlehen"], ["cf_g_zinsen"], "Zinsen"))     # the loan, in the group "Zinsen"
         try:

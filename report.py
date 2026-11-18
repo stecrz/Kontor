@@ -1073,6 +1073,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     mapped_in: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
     savings: Dict[str, dict] = {}
     ignored: Dict[str, float] = defaultdict(float)
+    ignored_ids: Dict[str, List[int]] = defaultdict(list)      # the bookings behind it (a click on the check row)
 
     pos_memo: Dict[str, Tuple[str, Optional[str]]] = {}
 
@@ -1157,7 +1158,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             seen_pair.update({t.id, o.id})
             if month_key(o.booking_date) != mk:                   # over a month end: money in transit
                 out_, in_ = (t, o) if t.amount < 0 else (o, t)
-                pairs.append((out_.booking_date, in_.booking_date, -out_.amount, out_.account_uuid, in_.account_uuid))
+                pairs.append((out_.booking_date, in_.booking_date, -out_.amount, out_.account_uuid, in_.account_uuid, out_.id, in_.id))
         p = partner.get(t.id)
         if role == "ignorieren":
             continue
@@ -1283,6 +1284,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         psec, prow, pord = POS[pos]
         if pos == "ignorieren":
             ignored[mk] += t.amount
+            ignored_ids[mk].append(t.id)
         elif pos == "anlegen":
             # where it went: your choice for the recipient, else the category's account, else -- where no account is set for
             # the category -- the area's only depot (an account of another area does not count here). "extern": an account not
@@ -1353,7 +1355,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         warnings.append(tr("s_d_umbuchung_en_ohne_erkennbaren") % unclear)
     R.pairs = pairs
     R.paired = paired
-    R.reasons = {"ignoriert": dict(ignored)}
+    R.reasons = {"ignoriert": dict(ignored), "ignoriert_ids": dict(ignored_ids)}
     R.mapped_in = {u: dict(v) for u, v in mapped_in.items()}
     R.anlagen = _savings_list(ledger, savings, depots)
     R.unsicher = {c: round(v, 2) for c, v in unsure.items() if abs(v) >= 0.005}
@@ -1384,12 +1386,14 @@ def _savings_list(ledger: Ledger, savings: Dict[str, dict], depots: List[str]) -
 
 def reconcile(sektionen: List[dict], nw: Dict[str, float], liq: Dict[str, Optional[float]], mkeys: List[str], leaves: List[Account],
               roles: Dict[str, str], hist: Dict[str, Dict[str, Optional[float]]], R: "Rows", ledger: Ledger, months: List[Tuple[int, int]],
-              today: date) -> Dict[str, dict]:
+              today: date, ids_out: Optional[Dict[str, Dict[str, List[int]]]] = None) -> Dict[str, dict]:
     """Check of the cash flow against the balance sheet, month by month: the rows that change the net worth add up to its change,
     the cash rows to the change of the liquid accounts (with money in transit). A difference is split into its reasons
-    ([text key, amount, detail]); what no reason explains is shown as such -- never left out."""
+    ([text key, amount, detail]); what no reason explains is shown as such -- never left out. ids_out (when given) gets the
+    bookings behind the reasons, per check and month (left out; a transfer in transit: its side in the month)."""
     reasons = getattr(R, "reasons", None) or {}
     ignored = reasons.get("ignoriert") or {}
+    ignored_ids = reasons.get("ignoriert_ids") or {}
     liquid = {a.uuid for a in leaves if roles.get(a.uuid) == "liquiditaet"}
     # transfers over a month end with a side that is no bank account: the bank side counts in its month, the money in transit
     # counts as liquid in the balance sheet until it arrives
@@ -1428,8 +1432,17 @@ def reconcile(sektionen: List[dict], nw: Dict[str, float], liq: Dict[str, Option
         ab = round(dliq - cash, 2)
         rest(g_nw, un)
         rest(g_liq, ab)
+        ids_nw = list(ignored_ids.get(mk) or []) if abs(un) >= 0.01 and abs(ignored.get(mk, 0.0)) >= 0.005 else []
+        ids_liq = list(ignored_ids.get(mk) or []) if abs(ab) >= 0.01 and abs(ignored.get(mk, 0.0)) >= 0.005 else []
+        if abs(ab) >= 0.01 and abs(tm) >= 0.005:          # a transfer over a month end: the side booked in this month
+            ids_liq += [i for p in mixed if len(p) > 6 for d, i in ((p[0], p[5]), (p[1], p[6])) if month_key(d) == mk and month_key(p[0]) != month_key(p[1])]
+        if ids_out is not None:
+            for k, v in (("abgleich_liq", ids_liq), ("abgleich_nv", ids_nw)):
+                if v:
+                    ids_out.setdefault("\u001f" + k, {})[mk] = v
         out[mk] = {"delta_nw": delta, "erklaert": explained, "unerklaert": un, "gruende": g_nw if abs(un) >= 0.01 else [],
-                   "delta_liq": dliq, "zahlungsfluss": cash, "abweichung_liq": ab, "gruende_liq": g_liq if abs(ab) >= 0.01 else []}
+                   "delta_liq": dliq, "zahlungsfluss": cash, "abweichung_liq": ab, "gruende_liq": g_liq if abs(ab) >= 0.01 else [],
+                   "n_liq": len(ids_liq), "n_nw": len(ids_nw)}
     return out
 
 
@@ -1615,7 +1628,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         zeilen.sort(key=lambda z: (z.get("ord", 500), -gsum[z["gruppe"]], z["gruppe"], z["zeile"]))
         sektionen.append({"name": sec, "zeilen": zeilen})
 
-    ueberleitung = reconcile(sektionen, nw, pos_sums.get("liquiditaet") or {}, mkeys, leaves, roles, hist, R, ledger, months, today)
+    ueberleitung = reconcile(sektionen, nw, pos_sums.get("liquiditaet") or {}, mkeys, leaves, roles, hist, R, ledger, months, today, cf_ids)
 
     loans_cfg = {}
     for l in config.get("darlehen", []) or []:

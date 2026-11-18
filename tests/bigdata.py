@@ -72,13 +72,13 @@ def build(n_tx: int = 190_000, years: int = 25, seed: int = 7, today: date = dat
     # GbR A: 6 Konten, GbR B: 7 Konten (jung)
     group("ga", "Alpha eGbR", 1)
     leaf("ga.kk", "Kontokorrent", 2, weight=0.5, balance=40000)
-    leaf("ga.immo", "Immobilie Parkweg", 2, "Offline-Konto", weight=0.01, balance=1900000)
-    leaf("ga.vd", "Verkäuferdarlehen", 2, "Offline-Konto", weight=0.05, balance=-1600000)
+    leaf("ga.immo", "Immobilie Parkweg", 2, "Offline-Konto", weight=0.01, balance=1500000)
+    leaf("ga.vd", "Verkäuferdarlehen", 2, "Offline-Konto", weight=0.05, balance=-1200000)
     for i in range(3):
         leaf("ga.k%d" % i, "Kapitalkonto %d" % i, 2, "Offline-Konto", weight=0.02, balance=-120000)
     group("gb", "Beta eGbR", 1)
     leaf("gb.kk", "Kontokorrent", 2, weight=0.5, balance=15000)
-    leaf("gb.immo", "Immobilie Bahnhofstraße", 2, "Offline-Konto", weight=0.01, balance=3300000)
+    leaf("gb.immo", "Immobilie Bahnhofstraße", 2, "Offline-Konto", weight=0.01, balance=2800000)
     for i in range(3):
         leaf("gb.d%d" % i, "Darlehen %d" % i, 2, "Darlehenskonto", weight=0.3, balance=-1000000)
     for i in range(2):

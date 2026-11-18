@@ -55,21 +55,21 @@ def accounts_raw(balances: Dict[str, float]) -> List[dict]:
         acc("ga.liq", "Liquidität", 2, "Kontengruppe", True),
         acc("ga.kk", "Stadtbank Kontokorrent", 3, "Girokonto", balance=b("ga.kk", 40000.0), iban="DE02701500000000594937", bank="70150000"),
         acc("ga.anl", "Anlagen", 2, "Kontengruppe", True),
-        acc("ga.immo", "Immobilie Parkweg", 3, "Festgeldanlage", balance=b("ga.immo", 1900000.0)),
+        acc("ga.immo", "Immobilie Parkweg", 3, "Festgeldanlage", balance=b("ga.immo", 1500000.0)),
         acc("ga.verb", "Verbindlichkeiten", 2, "Kontengruppe", True),
-        acc("ga.vd", "Verkäuferdarlehen", 3, "Darlehenskonto", balance=b("ga.vd", -1600000.0)),
+        acc("ga.vd", "Verkäuferdarlehen", 3, "Darlehenskonto", balance=b("ga.vd", -1200000.0)),
         acc("ga.kap.a", "Kapitalkonto A", 3, "Darlehenskonto", balance=b("ga.kap.a", -120000.0)),
         acc("ga.kap.b", "Kapitalkonto B", 3, "Darlehenskonto", balance=b("ga.kap.b", -120000.0)),
         acc("gb", "Beta GbR", 1, "Kontengruppe", True),
         acc("gb.liq", "Liquidität", 2, "Kontengruppe", True),
         acc("gb.kk", "Stadtbank Kontokorrent", 3, "Girokonto", balance=b("gb.kk", 15000.0), iban="DE02701500000000594938", bank="70150000"),
         acc("gb.anl", "Anlagen", 2, "Kontengruppe", True),
-        acc("gb.immo", "Immobilie Bahnhofstraße", 3, "Festgeldanlage", balance=b("gb.immo", 3300000.0)),
+        acc("gb.immo", "Immobilie Bahnhofstraße", 3, "Festgeldanlage", balance=b("gb.immo", 2800000.0)),
         acc("gb.verb", "Verbindlichkeiten", 2, "Kontengruppe", True),
-        acc("gb.d1", "Darlehen Beta fest", 3, "Darlehenskonto", balance=b("gb.d1", -1300000.0), iban="DE02500105170137075031", bank="50010517"),
-        acc("gb.d2", "Darlehen Beta variabel", 3, "Darlehenskonto", balance=b("gb.d2", -2000000.0), iban="DE02500105170137075032", bank="50010517"),
-        acc("gb.kap.a", "Kapitalkonto A", 3, "Darlehenskonto", balance=b("gb.kap.a", -74145.0)),
-        acc("gb.kap.b", "Kapitalkonto B", 3, "Darlehenskonto", balance=b("gb.kap.b", -74145.0)),
+        acc("gb.d1", "Darlehen Beta fest", 3, "Darlehenskonto", balance=b("gb.d1", -1100000.0), iban="DE02500105170137075031", bank="50010517"),
+        acc("gb.d2", "Darlehen Beta variabel", 3, "Darlehenskonto", balance=b("gb.d2", -1500000.0), iban="DE02500105170137075032", bank="50010517"),
+        acc("gb.kap.a", "Kapitalkonto A", 3, "Darlehenskonto", balance=b("gb.kap.a", -60000.0)),
+        acc("gb.kap.b", "Kapitalkonto B", 3, "Darlehenskonto", balance=b("gb.kap.b", -60000.0)),
     ]
 
 
@@ -91,16 +91,16 @@ ANNUITY_TEXT = "Annuität Darlehen - Darlehensvertrag Objekt Parkweg 7 (Urkunde 
 SELLER_IBAN = "DE02300209000106531065"
 
 
-def ga_transactions(until: date, with_manual_interest_until: date = None, annuity=8250.0, extra=None) -> List[dict]:
+def ga_transactions(until: date, with_manual_interest_until: date = None, annuity=6000.0, extra=None) -> List[dict]:
     """Kontokorrent der GbR: Annuitaet am 1. jedes Monats ab 2026-01; Darlehen: Startbuchung 2025-12."""
-    out = [tx("ga.vd", date(2025, 11, 20), -1650000.0, "Verkäufer", "Kaufpreisstundung"),
+    out = [tx("ga.vd", date(2025, 11, 20), -1250000.0, "Verkäufer", "Kaufpreisstundung"),
            tx("ga.vd", date(2025, 12, 15), 50000.0, "GbR", "Anzahlung")]
     y, m = 2026, 1
     while date(y, m, 1) <= until:
         out.append(tx("ga.kk", date(y, m, 1), -annuity, "Verkäufer", ANNUITY_TEXT, "Umbuchung", SELLER_IBAN))
         if with_manual_interest_until and date(y, m, 1) <= with_manual_interest_until:
             out.append(tx("ga.vd", date(y, m, 1), annuity, "GbR", "Annuität %02d/%d" % (m, y), "Umbuchung"))
-            out.append(tx("ga.vd", date(y, m, 1), -4400.0, "Verkäufer", "Zinsen %02d/%d" % (m, y), "Zinsen"))
+            out.append(tx("ga.vd", date(y, m, 1), -3000.0, "Verkäufer", "Zinsen %02d/%d" % (m, y), "Zinsen"))
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)
     for e in (extra or []):
         out.append(e)

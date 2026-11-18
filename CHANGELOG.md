@@ -1,5 +1,19 @@
 # Änderungen
 
+## 3.14.1 (2026-11-18 14:22)
+- Seitenfenster: zweiter Klick auf dieselbe Zahl schließt es.
+- „Abgleich mit der Bilanz“: Klick zeigt Gründe und die Buchungen dahinter.
+- „Ausgaben je Monat“: Klick auf einen Namen (auch „Ausgaben gesamt“) zeigt die Umsätze des Zeitraums; Tooltip mit Vorjahr und Linie vor den Unterkategorien.
+- Sprung in die Bilanz: Markierung länger, Grafiken richten sich auf den Monat aus.
+- Bilanz: Tabelle standardmäßig vor der großen Grafik.
+- Vermögensbrücke anfangs zugeklappt; Brücken: weniger Abstand unter dem Titel, Pfeile auf dem iPhone in der Titelzeile.
+- Brücken: Tooltip auch auf dem Betrag, rechts neben der Grafik.
+- Gesamtcashflow: Titel ohne Zusatz (steht im Tooltip); Tooltip mit genauem Betrag, Anteil, Vorperiode, Veränderung und Unterpositionen (über der Grafik); Klick neben die Bänder klappt alles auf bzw. zu; Anteile dezenter.
+- Monatlicher Cashflow: erster und letzter Monat fett; im Tooltip „=“ vor den Ergebniszeilen; Monat unter dem Zeiger in der Tabelle leicht markiert.
+- Vorjahresvergleich: Umschalten Ausgaben/Einnahmen hält die Position.
+- Immobilien: Kennzahlen und Mieterhöhungen mit Dezimalkomma, „Mon.“ übersetzt.
+- Testdaten: erfundene Immobilienzahlen; Hilfe-Bilder erneuert.
+
 ## 3.14.0 (2026-11-18 06:40)
 - Gesamtprüfung: Tests mit 1000 Zufallsläufen, alle Seiten hell/dunkel auf Mac und iPhone, Hilfe, Tooltips, README und Hilfe-Bilder aktualisiert.
 - Cashflow-Tabelle: jede Zahl zeigt die Umsätze dahinter (auch zusammengefasste Zeilen wie „Unklar“); auf- und zuklappen nur über den Namen.
