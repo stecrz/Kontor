@@ -95,6 +95,7 @@ class Bridge:
         self.dry_run = dry_run
         self.timeout = timeout
         self.written: List[Dict[str, Any]] = []   # im Probelauf: was geschrieben worden waere
+        self.quiet = False                        # quick checks every 30 s: log only what is slow or goes wrong (locked: not even that)
 
     # -- Low level ---------------------------------------------------------
 
@@ -105,7 +106,8 @@ class Bridge:
             raise MoneyMoneyNotRunning(tr("s_moneymoney_laeuft_nicht"))
         payload = json.dumps({"method": method, "args": args}, ensure_ascii=False)
         t0 = time.time()
-        log.debug("MoneyMoney %s (%s)", method, ", ".join(sorted(args or {})))      # only the names of the arguments: no amounts, payees or texts
+        if not self.quiet:
+            log.debug("MoneyMoney %s (%s)", method, ", ".join(sorted(args or {})))      # only the names of the arguments: no amounts, payees or texts
         try:
             r = subprocess.run(
                 ["osascript", "-l", "JavaScript", JXA_FILE, payload],
@@ -115,15 +117,19 @@ class Bridge:
             log.error("MoneyMoney %s: timeout of %ds exceeded", method, self.timeout)
             raise MoneyMoneyTimeout(
                 tr("s_moneymoney_antwortet_nicht_zeitlimit_d") % self.timeout)
-        log.debug("MoneyMoney %s: status %d, %d chars, %.1f s", method, r.returncode, len(r.stdout or ""), time.time() - t0)
+        took = time.time() - t0
+        if not self.quiet or took > 5:
+            log.debug("MoneyMoney %s: status %d, %d chars, %.1f s", method, r.returncode, len(r.stdout or ""), took)
         if r.returncode != 0:
-            err = (r.stderr or r.stdout or "").strip()
-            log.warning("MoneyMoney %s failed: %s", method, err[:500])
+            err = (r.stderr or r.stdout or "").strip().replace(JXA_FILE + ": ", "")      # without the path of the script
             low = err.lower()
+            locked = "locked" in low or "gesperrt" in low or "verschl" in low or "password" in low or "passwort" in low
+            if not (self.quiet and locked):
+                (log.info if locked else log.warning)("MoneyMoney %s: %s", method, err[:500])
             if "-1743" in err or "not permitted" in low or "nicht erlaubt" in low or "nicht berechtigt" in low:
                 raise MoneyMoneyNotPermitted(
                     tr("s_keine_berechtigung_moneymoney_zu_steue_2") + err)
-            if "locked" in low or "gesperrt" in low or "verschl" in low or "password" in low or "passwort" in low:
+            if locked:
                 raise MoneyMoneyLocked(tr("s_moneymoney_datenbank_ist_gesperrt_orig") + err)
             if "-600" in err or "-10810" in err:
                 raise MoneyMoneyNotRunning(tr("s_moneymoney_nicht_erreichbar_original") + err)

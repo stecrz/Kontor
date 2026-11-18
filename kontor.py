@@ -56,6 +56,27 @@ DATA_DIR = os.environ.get("KONTOR_DIR") or os.path.expanduser("~/Library/Applica
 LAUNCHD_LABEL = updates.LABEL
 
 
+class OneFileHandler(logging.handlers.RotatingFileHandler):
+    """The log as one file: grown past maxBytes, it keeps its newest half (from the start of a line) instead of numbered copies."""
+
+    def doRollover(self):
+        if self.stream:
+            self.stream.close()
+            self.stream = None
+        try:
+            with open(self.baseFilename, "rb") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                f.seek(max(0, size - self.maxBytes // 2))
+                data = f.read()
+            cut = data.find(b"\n")
+            with open(self.baseFilename, "wb") as f:
+                f.write(data[cut + 1:] if cut >= 0 else data)
+        except OSError:
+            pass
+        self.stream = self._open()
+
+
 def setup_logging(quiet: bool) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     try:
@@ -77,24 +98,17 @@ def setup_logging(quiet: bool) -> None:
                 f.write(version())
         except OSError:
             pass
-    fh = logging.handlers.RotatingFileHandler(path, maxBytes=5_000_000, backupCount=5, encoding="utf-8")
-    # Neue Version: frische Protokolldatei beginnen (die alte bleibt als kontor.log.1 usw.)
-    marker = os.path.join(DATA_DIR, "log.version")
-    try:
-        with open(marker, encoding="utf-8") as f:
-            last = f.read().strip()
-    except OSError:
-        last = ""
-    if last != version() and os.path.exists(path) and os.path.getsize(path) > 0:
+    # one file, no numbered copies: past 2 MB it keeps its newest half (copies of earlier versions are removed)
+    for n in range(1, 10):
         try:
-            fh.doRollover()
+            os.remove("%s.%d" % (path, n))
         except OSError:
             pass
     try:
-        with open(marker, "w", encoding="utf-8") as f:
-            f.write(version())
+        os.remove(os.path.join(DATA_DIR, "log.version"))
     except OSError:
         pass
+    fh = OneFileHandler(path, maxBytes=2_000_000, encoding="utf-8")
     fh.setFormatter(fmt)
     fh.setLevel(logging.DEBUG)
     root = logging.getLogger()

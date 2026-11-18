@@ -1,20 +1,27 @@
 # Änderungen
 
+## 3.13.29 (2026-11-18 01:41)
+- Protokoll: eine Datei (max. 2 MB), alte nummerierte gelöscht; keine Zeile je Seitenabruf oder 30-s-Prüfung; „gesperrt“ nur einmal.
+- Protokoll-Seite: Filter Alles / Hinweise / Warnungen & Fehler; Warnungen gelb, Fehler rot.
+- Diagramme mit ↑ ↓ verschiebbar (beim Darüberfahren); Vorjahresvergleich standardmäßig unten.
+- Sankey und Vermögensbrücke je halb; Sankey mit fester Namensbreite, Beträge kurz.
+- Vorjahresvergleich: Namen links/rechts ausgeglichen; Schalter im Ring; Trennlinie mittig.
+- Heatmap: Ausreißer mit Rahmen und Betrag.
+- Tabelle: Klick auf eine Zahl klappt die Zeile; bei Kategorien öffnet er die Umsätze.
+- Bilanz, Geldtransit: Klick auf einen Monat zeigt die Umbuchungen über dessen Ende.
+
 ## 3.13.28 (2026-11-18 01:12)
-- **Zeitraum der Diagramme:** links von–bis mit ‹ ›; ein Klick auf einen Monat öffnet einen kleinen Kalender statt einer langen Liste. Rechts 12 Monate, laufendes Jahr und die zwei davor. Der Zeitraum kann jetzt auch in den laufenden Monat und in den Plan reichen – diese Monate sind in den Diagrammen schraffiert, Planmonate zählen mit Planwerten, Endstände dann mit „(Plan)“.
-- **Anordnung:** Vorjahresvergleich und Ausgaben je Monat in einer Karte mit einem gemeinsamen Schalter; Mittelherkunft & -verwendung breiter (⅔) neben der Vermögensbrücke, Beträge dort kurz (17,4T).
-- **Liquiditätsbrücke:** Anfangs- und Endbestand (und in der Tabelle die Zeilen Bankguthaben am Anfang/Ende) führen per Klick in die Bilanz, die Zelle leuchtet kurz auf; in der Vermögensbrücke ebenso das Nettovermögen.
-- **Cashflow-Tabelle:** statt Haken überall nur ein kleines „!“, wo etwas von der Bilanz abweicht; laufender Monat so blass wie Planmonate; Umschichtungen bis Nettovermögen leicht abgesetzt; Tooltips zu CFO/CFI/CFF sagen klar, wo Zinsen, Tilgung und Investitionen stehen.
+- Zeitraum: Monatskalender statt Liste; auch laufender Monat und Plan (schraffiert); Voreinstellungen rechts.
+- Diagramme neu angeordnet; Vorjahresvergleich und Ausgaben je Monat in einer Karte.
+- Anfangs-/Endbestand und Bankguthaben-Zeilen: Klick springt in die Bilanz.
+- Tabelle: „!“ statt Haken bei Abweichungen; laufender Monat blass wie Plan; Tooltips CFO/CFI/CFF klarer.
 
 ## 3.13.27 (2026-11-18 00:38)
-- **Vermögensbrücke** (neu, neben Mittelherkunft & -verwendung): vom Nettovermögen am Anfang zum Ende – gespart (Einnahmen, Ausgaben, Zinsen), Einlagen & Entnahmen, Wertänderungen je Konto. Anlegen und Tilgen fehlen, sie verschieben nur Geld.
-- **Cashflow-Tabelle:** neue Zeile „Umschichtungen“ (Investieren, Tilgen, Darlehen) – jetzt ergeben Veränderung Bankguthaben, Umschichtungen und Wertänderungen zusammen die Veränderung des Nettovermögens. Der Abgleich mit der Bilanz steht in „Veränderung Bankguthaben“ (aufklappen, wenn das ✓ fehlt); das ✓ ist grau. Hauptzeilen stehen ganz links.
-- **Tabelle öffnet** auf dem letzten abgeschlossenen Monat (je nach Breite mit laufendem, Vormonat, ab vier Spalten dem ersten Planmonat, ab acht zwei); die Monatsansicht zeigt das laufende und das vorige Jahr.
-- **Liquiditätsbrücke:** Achse und „Ganze Brücke“ oben; beim Aufziehen wird kein Text mehr markiert; die Namensbreite bleibt beim Aufklappen gleich; Farbe der Tätigkeit als Punkt vor CFO/CFI/CFF, weniger Einrückung.
-- **Vorjahresvergleich:** Anteile klein in den Stücken, Beschriftung näher am Ring, Hauptgruppen etwas größer; Veränderung in Klammern.
-- **Monatlicher Cashflow:** ohne Legende; unterer Teil abgesetzt; Einlagen & Entnahmen eigener Teil (wie in der Vermögensbrücke); im Tooltip der Monat ausgeschrieben, nur Summen fett.
-- **Heatmap:** Gesamtzeile klickbar (alle Kategorien als ein Filter, dazu ohne Kategorie, ohne Zahlungen zwischen deinen Bereichen); Ausreißer mit zwei Schrägstrichen und verständlicher Erklärung; Hinweis „Klicken zeigt die Umsätze“ kleiner.
-- **Mittelherkunft & -verwendung:** halbe Breite; ein Klick auf einen Teil (Band oder Name) schließt seine Gruppe wieder.
+- Neu: Vermögensbrücke.
+- Tabelle: Zeile „Umschichtungen“ (Bankguthaben → Nettovermögen geht auf); öffnet auf dem letzten abgeschlossenen Monat; Monatsansicht ab Vorjahr.
+- Liquiditätsbrücke: Achse oben, keine Textmarkierung beim Zoomen, feste Namensbreite.
+- Vorjahresvergleich: Anteile im Ring, größere Schrift; Monatlicher Cashflow ohne Legende.
+- Heatmap: Gesamtzeile klickbar; Sankey: Gruppen per Klick schließen.
 
 ## 3.13.26 (2026-11-17 23:45)
 - **Liquiditätsbrücke:** dezente Achse mit Beträgen; einen Bereich mit der Maus aufziehen vergrößert ihn (längere Balken am Rand gekappt und markiert), „Ganze Brücke“ zeigt wieder alles. Ein Tooltip nur noch an der Veränderung: Betrag, Vorjahr, Veränderung und die Teile. Klammern je Ebene feiner: Tätigkeiten farbig, darunter grau, noch tiefer dünner.

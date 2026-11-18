@@ -2039,6 +2039,21 @@ class SecurityHttpTests(_AppBase):
     """Over HTTP (made-up data): background requests keep no session open; a link in the receipts folder to a file elsewhere
     is not handed out."""
 
+    def test_log_has_no_line_per_read(self):
+        """A read that worked writes no line (the page asks every few seconds); one that failed does -- without its query."""
+        self.login()
+        import logging as _lg
+        with self.assertLogs("kontor.app", level="DEBUG") as cm:
+            _lg.getLogger("kontor.app").debug("start")
+            self.call("/api/status"); self.call("/api/transactions?q=Erfundener+Name")
+            try:
+                self.call("/api/gibt-es-nicht?q=Erfundener+Name")
+            except Exception:
+                pass
+        text = "\n".join(cm.output)
+        self.assertNotIn("/api/status", text); self.assertNotIn("Erfundener", text)
+        self.assertIn("/api/gibt-es-nicht 404", text)
+
     def _get(self, path, background=False):
         req = urllib.request.Request("http://127.0.0.1:%d%s" % (self.port, path))
         if background:
@@ -2674,7 +2689,7 @@ class FeatureTests(_AppBase):
             if not st["bericht"]["laeuft"] and st["bericht"]["stand"]:
                 break
             time.sleep(0.1)
-        self.assertFalse(st["bericht"]["laeuft"]); self.assertIsNone(st["bericht"]["fehler"]); self.assertIn("Verlauf", st["bericht"]["grund"])
+        self.assertFalse(st["bericht"]["laeuft"]); self.assertIsNone(st["bericht"]["fehler"]); self.assertIn("history", st["bericht"]["grund"])
         code, ds = self.call("/api/dataset")
         row = [z for z in ds["bereiche"][F.uid("priv")]["bilanz"]["zeilen"] if z["id"] == uuid][0]
         self.assertEqual(row["werte"]["2026-09"], 72000.0)
@@ -2872,6 +2887,15 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("[monthEnd('2028-02'), monthEnd('2026-02'), monthEnd('2026-12')]"), ["2028-02-29", "2026-02-28", "2026-12-31"])
                 pg.click("#cf-ebene button[data-e='3']"); pg.wait_for_selector("tr.det")                 # details: everything open
                 self.assertGreater(len(pg.query_selector_all(F_ + " tr.det")), 2)
+                # a figure: a section's closes it, as its name does; a category's opens its transactions for that column
+                pg.click(F_ + " tr.sec[data-tog='s:Investitionen'] td:nth-child(3)"); pg.wait_for_timeout(250)
+                self.assertIsNone(pg.query_selector(F_ + " tr[data-key^='Investitionen/']"))
+                pg.click(F_ + " tr.sec[data-tog='s:Investitionen'] td:nth-child(3)"); pg.wait_for_timeout(250)
+                kat = pg.eval_on_selector(F_ + " tr.det[data-kat]", "tr => tr.dataset.kat")
+                pg.click(F_ + " tr.det[data-kat] td:nth-child(2)"); pg.wait_for_selector("#uf-von")
+                self.assertEqual(pg.evaluate("S.uf.kats"), [kat]); self.assertEqual(pg.evaluate("S.tab"), "transactions")
+                pg.evaluate("Object.assign(S.uf, {kats: null, von: '', bis: '', titel: '', est: false, ext: false})")
+                pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector(F_ + " tr.det")
                 pg.click("#cf-ebene button[data-e='2']"); pg.wait_for_timeout(200)
                 for tip in pg.eval_on_selector_all("#main .cf-tbl .hq", "e => e.map(x => x.dataset.tip)"):  # headings are explained by their "?"
                     self.assertTrue(tip)
@@ -3034,6 +3058,11 @@ class BrowserTest(unittest.TestCase):
                     self.assertGreater(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0); self.assertTrue(pg.query_selector("#cf-flow .cf-fl-up"))
                     pg.dispatch_event("#cf-flow .cf-fl-up", "click"); pg.wait_for_timeout(150)
                     self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
+                    # opening an item never narrows the bands: the names keep their share of the width
+                    pg.dispatch_event("#cf-flow .cf-fl-g[data-fl='%s']" % key, "click"); pg.wait_for_timeout(150)
+                    xs = pg.evaluate("[...document.querySelectorAll('#cf-flow .cf-fl-n')].map(r => +r.getAttribute('x'))")
+                    pg.dispatch_event("#cf-flow .cf-fl-up", "click"); pg.wait_for_timeout(150)
+                    self.assertEqual(sorted(set(xs)), sorted(set(pg.evaluate("[...document.querySelectorAll('#cf-flow .cf-fl-n')].map(r => +r.getAttribute('x'))"))))
                     # a part that opens no further closes its group again: on its band or its name
                     pg.dispatch_event("#cf-flow .cf-fl-g[data-fl='%s']" % key, "click"); pg.wait_for_timeout(150)
                     pg.dispatch_event("#cf-flow .cf-fl-g.back >> nth=0", "click"); pg.wait_for_timeout(150)
@@ -3055,9 +3084,21 @@ class BrowserTest(unittest.TestCase):
                 for gone in ("#cf-rate", "#cf-reach", "#cf-roll", "#cf-yoy"):                   # removed as not useful (rolling: in the months chart)
                     self.assertIsNone(pg.query_selector(gone), gone)
                 # the heatmap beside the ring, one scale for all: the largest position darker than a smaller one
-                # ... in one card with the ring (one switch for both, at its right); sources & uses wide beside the net worth bridge
-                self.assertTrue(pg.query_selector(".cf-duo #cf-pie-card + #cf-heat-card #cf-pie-art"))
-                self.assertEqual(pg.evaluate("[getComputedStyle(document.querySelector('.cf-duo')).gridColumnEnd, getComputedStyle(document.querySelector('#cf-flow').closest('.cf-card')).gridColumnStart, getComputedStyle(document.querySelector('#cf-wbridge').closest('.cf-card')).gridColumnStart]"), ["-1", "span 4", "span 2"])
+                # ... in one card with the ring (one switch for both, at its right); sources & uses beside the net worth bridge, half each
+                self.assertTrue(pg.query_selector(".cf-duo #cf-pie-card #cf-pie-art")); self.assertTrue(pg.query_selector(".cf-duo #cf-pie-card + #cf-heat-card"))
+                # the line between ring and heat map exactly in the middle of the card (where the gap between two half cards is)
+                mid = pg.evaluate("(() => { const c = document.querySelector('.cf-duo').getBoundingClientRect(), h = document.querySelector('#cf-heat-card').getBoundingClientRect(); return [h.left - c.left, c.width / 2]; })()")
+                self.assertLess(abs(mid[0] - mid[1]), 1.5)
+                # the order: ↑ ↓ at each chart (shown on hover), kept in the browser; a half chart without a half neighbour takes the whole width
+                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "months", "flow", "wealth", "duo"])
+                pg.click(".cf-card[data-cfid='months'] .th-mv[data-d='1']", force=True); pg.wait_for_timeout(400)
+                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "flow", "months", "wealth", "duo"])
+                pg.click(".cf-card[data-cfid='duo'] .th-mv[data-d='-1']", force=True); pg.wait_for_timeout(400)
+                pg.click(".cf-card[data-cfid='duo'] .th-mv[data-d='-1']", force=True); pg.wait_for_timeout(400)
+                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => [c.dataset.cfid, c.classList.contains('cf-full')])"),
+                                 [["bridge", False], ["flow", False], ["duo", True], ["months", False], ["wealth", False]])
+                pg.evaluate("localStorage.removeItem('kontor.cfOrder')"); pg.evaluate("route()"); pg.wait_for_timeout(400)
+                self.assertEqual(pg.evaluate("[getComputedStyle(document.querySelector('.cf-duo')).gridColumnEnd, getComputedStyle(document.querySelector('#cf-flow').closest('.cf-card')).gridColumnStart, getComputedStyle(document.querySelector('#cf-wbridge').closest('.cf-card')).gridColumnStart]"), ["-1", "span 3", "span 3"])
                 ks = pg.evaluate("[...document.querySelectorAll('#cf-heat .cf-heat-c:not(.none)')].map(c => parseInt(c.style.getPropertyValue('--k')))")
                 self.assertGreater(max(ks), min(ks) + 20)
                 # the expenses as a ring: positions in shades of red, the total in the middle, each with amount and change beside it

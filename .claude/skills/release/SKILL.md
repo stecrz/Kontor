@@ -17,7 +17,8 @@ description: Jede Änderung an Kontor abschließen – prüfen, Version, Changel
    ansetzen, Befunde beheben oder begründet verwerfen.
 4. **Version:** `VERSION` dritte Stelle +1. Zweite Stelle nur bei erheblichen Änderungen und nur nach Rückfrage. Erste nie.
 5. **Changelog:** neuer Abschnitt oben in `CHANGELOG.md`, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` mit
-   `TZ=Europe/Berlin date +"%Y-%m-%d %H:%M"`. Deutsch, kurz, aus Sicht des Nutzers (was er merkt), keine Technik.
+   `TZ=Europe/Berlin date +"%Y-%m-%d %H:%M"`. Deutsch, aus Sicht des Nutzers (was er merkt), keine Technik. Kompakt: je Änderung ein
+   Punkt mit wenigen Stichworten in einer Zeile, auf einen Blick lesbar – keine Erklärungen, keine Begründungen.
 6. **Fahrplan:** in `ROADMAP.md` Erledigtes abhaken bzw. den Stand nachtragen.
 7. **Commit und Push:** englische Commit-Nachricht `X.Y.Z: <was sich ändert>`, am Ende nur `Co-Authored-By: …` (kein
    Sitzungslink). `git push -q origin HEAD:main`. Keine Tags, kein Force-Push.

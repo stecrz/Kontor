@@ -137,7 +137,10 @@ def check(repo: str) -> Dict[str, object]:
                 tag = max((str(t["name"]) for t in tags), key=_vtuple)
                 out.update({"verfuegbar": tag, "quelle": "tag", "zip": archive_url(repo, tag)})
         out["neuer"] = _vtuple(str(out["verfuegbar"])) > _vtuple(cur)
-        log.info("Update check: available %s (%s)%s", out["verfuegbar"], out["quelle"], " -- newer than installed" if out["neuer"] else "")
+        if out["neuer"]:
+            log.info("Update check: %s available (%s), newer than installed", out["verfuegbar"], out["quelle"])
+        else:
+            log.info("Update check: up to date (%s shows %s)", out["quelle"], out["verfuegbar"])
     except urllib.error.HTTPError as e:
         out["fehler"] = tr("s_update_pruefung_nicht_moeglich_http") % (e.code, e.geturl(), e.reason)
         log.warning("Update check failed: %s", out["fehler"])

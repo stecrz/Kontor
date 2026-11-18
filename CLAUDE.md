@@ -21,7 +21,7 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 1. Tests grün.
 2. `VERSION`: dritte Stelle +1 (3.9.6 → 3.9.7) – auch bei mehreren Verbesserungen auf einmal. Zweite Stelle nur bei
    erheblichen Änderungen und nur nach Rückfrage. Erste Stelle nie.
-3. `CHANGELOG.md`: neuer Abschnitt oben, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` (Ortszeit des Nutzers, Europe/Berlin), kurz, auf Deutsch.
+3. `CHANGELOG.md`: neuer Abschnitt oben, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` (Ortszeit des Nutzers, Europe/Berlin), auf Deutsch, kompakt: je Änderung ein kurzer Punkt (Stichworte, eine Zeile), auf einen Blick lesbar – keine Erklärungen.
 4. Commit und Push auf `main` selbst erledigen, ohne nachzufragen. Keine Tags, kein Sitzungslink in der Commit-Nachricht.
 5. Ist der Mac des Nutzers verbunden: dort den Kontor-Ordner auf den neuen Stand bringen (`git fetch` + `git reset --hard`).
 
