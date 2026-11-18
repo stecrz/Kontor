@@ -2675,7 +2675,8 @@ function syncRows(t, left) {
   if (ra.length !== rb.length) return;
   ra.concat(rb).forEach(r => { r.style.height = ''; });
   const ha = ra.map(r => r.getBoundingClientRect().height), hb = rb.map(r => r.getBoundingClientRect().height);
-  ra.forEach((r, i) => { const h = Math.max(ha[i], hb[i]); if (h - ha[i] > 0.2) r.style.height = h + 'px'; if (h - hb[i] > 0.2) rb[i].style.height = h + 'px'; });
+  // both sides the same whole pixels: fractional heights round differently in two tables (Safari) -- the row lines would not meet
+  ra.forEach((r, i) => { const h = Math.ceil(Math.max(ha[i], hb[i]) - 0.01) + 'px'; r.style.height = h; rb[i].style.height = h; });
 }
 let FROZEN_W = 0;
 window.addEventListener('resize', () => {            // another width can break names onto two lines (or back)

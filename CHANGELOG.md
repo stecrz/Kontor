@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.14.3 (2026-11-18 15:22)
+- Cashflow und Planung: Zeilenlinien der festen Namensspalte genau auf Höhe der Zahlen (kein Pixelversatz).
+
 ## 3.14.2 (2026-11-18 15:14)
 - Brücken: Veränderungen ab 1000 % kurz als Tausender („+2T“).
 - Cashflow-Tabelle: Doppelklick oder langes Halten auf eine Zahl klappt die Zeile auf bzw. zu.
