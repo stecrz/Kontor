@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.14.7 (2026-11-18 16:24)
+- Einrichtung: „Einrichtung abgeschlossen“ vor „Einrichtung prüfen“; ein Hilfe-Tooltip erklärt beide Knöpfe.
+
 ## 3.14.6 (2026-11-18 16:03)
 - Cashflow-Positionen: Oberkategorie ohne eigene Wahl zeigt „Je Unterkategorie (automatisch)“; eine Wahl dort gilt für die Unterkategorien.
 

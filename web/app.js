@@ -118,7 +118,7 @@ const H = {
   diagnose: t('diagnose_tip'),
   port: t('port_tip'),
   update_quelle: t('update_quelle_tip'),
-  pruefen: t('pruefen_tip'),
+  einrichtung_knoepfe: t('einrichtung_knoepfe_tip'),
   position_kat: t('position_kat_tip'),
   cf_operativ: t('cf_operativ_tip'), cf_invest: t('cf_invest_tip'), cf_finanz: t('cf_finanz_tip'), cf_bruecke: t('cf_bruecke_tip'), cf_verm_bruecke: t('cf_verm_bruecke_tip'), cf_je_monat_t: t('cf_je_monat_tip'), cf_herkunft_verwendung: t('cf_herkunft_verwendung_tip'),
   cf_ausgaben_kuchen: t('cf_ausgaben_kuchen_tip'), cf_heatmap: t('cf_heatmap_tip'),
@@ -192,7 +192,7 @@ const HELP_AT = {bereich: 'areas', haupt: 'areas', anteil: 'areas', gruppenwahl:
   h_l_gp: 'rules-loans', h_l_kt: 'rules-loans', h_l_kz: 'rules-loans', h_co_anteil: 'areas', h_co_bet: 'rules-companies', h_co_gk: 'rules-mirrors', h_gk_rueck: 'rules-mirrors',
   auto_buchungen_h: 'auto-bookings', h_co_rueck: 'rules-back', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', methode: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', ereignis: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
-  port: 'iphone', touchid: 'security', paket: 'backup', timemachine: 'backup', diagnose: 'troubleshooting', pruefen: 'setup', updates: 'updates',
+  port: 'iphone', touchid: 'security', paket: 'backup', timemachine: 'backup', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
   update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', dokumente: 'properties', immo_planung: 'properties'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 const ICON = {
@@ -877,7 +877,7 @@ function vEinrichtung(sub) {
   const miss = setupMissing(), close = setupOpen()
     ? `<button id="setup-done" ${miss ? `disabled title="${esc(t('einrichtung_erst_noetige'))}"` : `title="${esc(t('einrichtung_abschliessen_tip'))}"`}>${t('einrichtung_abschliessen')}</button>`
     : `<button id="setup-again" class="secondary" title="${esc(t('einrichtung_wieder_tip'))}">${t('einrichtung_wieder')}</button>`;
-  h += `<div class="actions"><button id="check-btn" class="secondary">${t('einrichtung_pruefen')}</button>${close}${hq('pruefen')}</div><div id="findings-e" class="findings"></div>`;
+  h += `<div class="actions">${close}<button id="check-btn" class="secondary">${t('einrichtung_pruefen')}</button>${hq('einrichtung_knoepfe')}</div><div id="findings-e" class="findings"></div>`;
   if (!S.DATA) h += `<div class="card"><h3>${t('erste_auswertung_erstellen')}</h3><div class="small muted">${t('liest_alle_umsaetze_aus_moneymoney')}</div><div class="actions"><button id="w-report" class="small">${t('auswertung_erstellen')}</button></div></div>`;
   return h;
 }
