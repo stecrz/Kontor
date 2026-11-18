@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.14.4 (2026-11-18 15:53)
+- Konten: Tooltip zur Position erklärt die Wahl (nach Verfügbarkeit, mit Beispielen) statt Kontors Erkennungsreihenfolge.
+- Position „Kapitalkonten (Eigenkapital)“ heißt „Eigenkapital“ und steht nur noch zur Auswahl, wo ein Konto sie schon nutzt.
+
 ## 3.14.3 (2026-11-18 15:22)
 - Cashflow und Planung: Zeilenlinien der festen Namensspalte genau auf Höhe der Zahlen (kein Pixelversatz).
 

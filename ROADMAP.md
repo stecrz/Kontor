@@ -55,3 +55,6 @@ Fertig, wenn
 - Sicherheit vor allem: nichts in MoneyMoney kaputt machen, keine Daten nach außen.
 - Jede Rechenlogik mit Abstimmungstests (Summen müssen aufgehen) und, wo Zustände sich ändern, mit Zufallsläufen.
 - Oberfläche nach Apples Human Interface Guidelines, hell und dunkel, Mac und iPhone.
+
+## Beim nächsten großen Versionssprung (Hilfe, README, Bilder)
+- Hilfe „Konten → Positionen“: erklären, was der Nutzer wählt (nach Verfügbarkeit), statt der Reihenfolge, in der Kontor vorschlägt.
