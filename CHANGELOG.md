@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.14.9 (2026-11-18 17:26)
+- Einstellungen → Sicherung: Kontor deinstallieren (Dienst, Kontors Dateien, Protokoll, Schlüssel, Programmordner; Belege, verknüpfte Dokumente, fremde Dateien und MoneyMoney bleiben); Programmordner wird angezeigt.
+- Installation: wartet auf Apples Kommandozeilen-Werkzeuge und läuft dann von selbst weiter.
+
 ## 3.14.8 (2026-11-18 16:36)
 - Deinstallation nennt, wie man die macOS-Freigaben (Automation) entfernt.
 

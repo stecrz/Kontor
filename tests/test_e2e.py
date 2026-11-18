@@ -2597,6 +2597,87 @@ class FeatureTests(_AppBase):
         self.assertEqual(self.store.load("plan.json")["bereiche"][P]["zeilen"]["Einnahmen/Arbeitseinkommen"]["methode"], "fix")
         self.assertEqual(self.call("/api/backup/restore", {"sicherung": {"x": 1}})[0], 400)
 
+    def test_uninstall_removes_kontor_keeps_receipts(self):
+        """Uninstall: only at the Mac and with the password; removes the service file, Kontor's own files in the data folder (also
+        the log), the data key and the program folder -- the receipts folder, linked documents and foreign files stay; folders that
+        are not Kontor's are refused, the key stays while encrypted data remain."""
+        import service as MA
+        self.login(); self.run_and_wait()
+        tmp = tempfile.mkdtemp(prefix="kontor-uninst-")
+        prog = os.path.join(tmp, "Kontor")
+        os.makedirs(os.path.join(prog, "web"))
+        for f in ("kontor.py", "service.py", "VERSION", "web/app.js"):
+            open(os.path.join(prog, f), "w").close()
+        os.makedirs(os.path.join(prog, "Dokumente")); open(os.path.join(prog, "Dokumente", "Vertrag.pdf"), "w").close()    # a linked document
+        plist = os.path.join(tmp, "LaunchAgents", "de.kontor.service.plist"); os.makedirs(os.path.dirname(plist)); open(plist, "w").close()
+        os.makedirs(self.belege, exist_ok=True)
+        with open(os.path.join(self.belege, "Rechnung.pdf"), "wb") as f:
+            f.write(b"%PDF-1.4")
+        for name in ("kontor.log", "service.out.log", "Steuer 2024.pdf"):          # the last one is not Kontor's
+            with open(os.path.join(self.dir, name), "w") as f:
+                f.write("x")
+        cfg = self.store.load("config.json"); cfg.setdefault("immobilien", []).append({"id": "x", "name": "X", "dokumente": [{"pfad": os.path.join(prog, "Dokumente", "Vertrag.pdf")}]})
+        self.store.save("config.json", cfg); self.app.config = MA.merged_config(cfg)
+        calls = []
+        self.app.program_dir = prog
+        self.app.uninstall_key = lambda: calls.append("key") or True        # never the real keychain
+        self.app.uninstall_finish = lambda: calls.append("finish")          # never a real exit
+        old_plist, old_home = MA.updates.plist_path, os.environ.get("HOME")
+        MA.updates.plist_path = lambda label=MA.updates.LABEL: plist
+        try:
+            self.assertEqual(self.call("/api/uninstall", {"passwort": "falsch"})[0], 401)
+            self.assertTrue(os.path.exists(self.store.path("config.json")))
+            # folders that are not Kontor's: a home folder (a made-up one), a program folder without Kontor's files
+            fake_home = os.path.join(tmp, "home"); os.makedirs(fake_home); open(os.path.join(fake_home, "config.json"), "w").close()
+            os.environ["HOME"] = fake_home
+            bad = MA.App.__new__(MA.App); bad.data_dir, bad.program_dir, bad.config, bad.store = fake_home, prog, {}, self.store
+            self.assertIn("fehler", MA.App.uninstall(bad, True)); self.assertTrue(os.path.exists(os.path.join(fake_home, "config.json")))
+            bad.data_dir, bad.program_dir = self.dir, tmp
+            self.assertIn("fehler", MA.App.uninstall(bad, True))
+            os.environ["HOME"] = old_home or ""
+            code, r = self.call("/api/uninstall", {"passwort": "sehr-geheimes-passwort", "programm": True})
+            self.assertEqual(code, 200); time.sleep(0.2)
+            self.assertFalse(os.path.exists(plist)); self.assertFalse(os.path.exists(os.path.join(prog, "kontor.py")))
+            self.assertTrue(os.path.exists(os.path.join(prog, "Dokumente", "Vertrag.pdf")))                 # linked: stays
+            self.assertFalse(os.path.exists(self.store.path("config.json"))); self.assertFalse(os.path.exists(os.path.join(self.dir, "kontor.log")))
+            self.assertTrue(os.path.exists(os.path.join(self.belege, "Rechnung.pdf")))                       # the receipts stay
+            self.assertEqual(sorted(os.listdir(self.dir)), ["Belege", "Steuer 2024.pdf"])                     # and what is not Kontor's
+            self.assertEqual(calls, ["key", "finish"]); self.assertTrue(r["schluessel"]); self.assertEqual(r["fremd"], ["Steuer 2024.pdf"]); self.assertEqual(r["geblieben"], [])
+        finally:
+            MA.updates.plist_path = old_plist
+            if old_home is not None:
+                os.environ["HOME"] = old_home
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_uninstall_keeps_the_key_while_data_remain(self):
+        """The receipts folder is the data folder itself: Kontor's files go, the receipts stay; an encrypted file that cannot be
+        removed keeps the key."""
+        import service as MA
+        self.login()
+        os.makedirs(self.belege, exist_ok=True)
+        cfg = self.store.load("config.json"); cfg["belege"]["ordner"] = self.dir
+        self.store.save("config.json", cfg); self.app.config = MA.merged_config(cfg)
+        open(os.path.join(self.dir, "Beleg.pdf"), "w").close()
+        calls = []
+        self.app.program_dir = "/nonexistent"
+        self.app.uninstall_key = lambda: calls.append("key") or True
+        old_plist = MA.updates.plist_path
+        MA.updates.plist_path = lambda label=MA.updates.LABEL: os.path.join(self.dir, "none.plist")
+        real_remove = os.remove
+        def stuck(p):
+            if p.endswith("state.json.enc"):
+                raise OSError("busy")
+            real_remove(p)
+        try:
+            MA.os.remove = stuck
+            r = self.app.uninstall(False)
+        finally:
+            MA.os.remove = real_remove; MA.updates.plist_path = old_plist
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "Beleg.pdf"))); self.assertFalse(os.path.exists(self.store.path("config.json")))
+        self.assertIn(self.dir, r["geblieben"]); self.assertEqual(calls, []); self.assertFalse(r["schluessel"])          # data left: key kept
+        r = self.app.uninstall(False)
+        self.assertEqual(calls, ["key"]); self.assertTrue(r["schluessel"])
+
     def test_verlauf_quellen_semantik(self):
         """Umsaetze: nur Buchungen. Kontostaende (Bankkonto): eingetragene Staende sind Anker, dazwischen mit Buchungen gerechnet,
         Abweichung als Korrektur im Kapitalfluss. Vorschau im Verlauf-Fenster sofort, ohne auf den Neubau zu warten."""

@@ -13,10 +13,12 @@ DIR="${KONTOR_HOME:-$HOME/Kontor}"
 REF="${KONTOR_REF:-main}"
 if [ "$(uname)" != "Darwin" ]; then echo "Kontor laeuft nur unter macOS (MoneyMoney)."; exit 1; fi
 if ! xcode-select -p >/dev/null 2>&1; then
-  echo "Die Kommandozeilen-Werkzeuge von Apple fehlen (python3, git, swiftc). Installation wird angestossen --"
-  echo "nach Abschluss diese Zeile bitte noch einmal ausfuehren."
+  echo "Die Kommandozeilen-Werkzeuge von Apple fehlen (python3, git, swiftc)."
+  echo "Im Fenster von macOS bitte \"Installieren\" waehlen -- danach geht es hier von selbst weiter."
   xcode-select --install || true
-  exit 1
+  echo "(Warte auf die Installation -- abbrechen mit ctrl-C.)"
+  until xcode-select -p >/dev/null 2>&1 && [ -x "$(xcode-select -p)/usr/bin/git" ]; do sleep 5; done
+  echo "Kommandozeilen-Werkzeuge sind da."
 fi
 if [ -d "$DIR/.git" ]; then
   echo "Aktualisiere $DIR ..."

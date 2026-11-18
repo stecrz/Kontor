@@ -19,6 +19,7 @@ import ipaddress
 import json
 import re
 import secrets
+import shutil
 import logging
 import mimetypes
 import os
@@ -152,6 +153,7 @@ class App:
     def __init__(self, store: Store, data_dir: str, bridge_factory=Bridge):
         self.store = store
         self.data_dir = data_dir
+        self.program_dir = HERE                      # what an uninstall may remove besides the data (tests: a copy)
         self.bridge_factory = bridge_factory
         try:
             migrate_booking_state(store)        # until 3.13.0: Kontor's own lists of its bookings (only your decisions stay)
@@ -1208,6 +1210,86 @@ class App:
         return {"neuester": r["neuester"], "zurueck": r["zurueck"], "zurueck_anzahl": r["zurueck_anzahl"],
                 "konten": sum(1 for k in r["konten"] if k["art"] == "online")}
 
+    # -- uninstall: service, data (with log), data key, optionally the program -- never the receipts or MoneyMoney --------------------
+    def uninstall(self, program: bool = True) -> dict:
+        """Removes Kontor from this Mac: the background service (its launchd file), Kontor's own files in the data folder
+        (settings, data, log, certificate -- nothing else that may lie there; the folder itself only when empty then), the data
+        key in the keychain (only when no encrypted file is left: a key is never deleted while data it opens remain) and, if
+        wanted, the program folder. The receipts folder and linked documents stay, also inside the program folder; MoneyMoney is
+        not touched. Refuses folders that do not look like Kontor's."""
+        from receipts import _canon
+        home = _canon(os.path.expanduser("~"))
+        bel = (self.config.get("belege") or {}).get("ordner") or "~/Documents/Kontor-Belege"
+        keep = [_canon(os.path.expanduser(bel))] + [_canon(p) for p in self.linked_files()]
+        data, prog = os.path.realpath(self.data_dir), os.path.realpath(self.program_dir)
+        cdata, cprog = _canon(data), _canon(prog)
+        under = lambda a, b: a == b or a.startswith(b.rstrip(os.sep) + os.sep)
+        if cdata in (home, "/") or under(home, cdata) or not os.path.isdir(data) or not _KONTOR_FILE.search(" ".join(os.listdir(data))):
+            return {"fehler": tr("s_deinstall_ordner_unklar") % data}
+        if program and (cprog in (home, "/") or under(home, cprog) or under(cdata, cprog)
+                        or not all(os.path.exists(os.path.join(prog, f)) for f in ("kontor.py", "service.py", "VERSION"))):
+            return {"fehler": tr("s_deinstall_ordner_unklar") % prog}
+        if under(cprog, cdata):                       # the program inside the data folder: only together with the program
+            if not program:
+                return {"fehler": tr("s_deinstall_ordner_unklar") % prog}
+        done, left = [], []
+        plist = updates.plist_path()
+        if os.path.exists(plist):
+            try:
+                os.remove(plist); done.append(plist)
+            except OSError:
+                left.append(plist)
+        if program:
+            (done if _remove_tree(prog, keep) else left).append(prog)
+        # the data folder: only Kontor's own files (whatever else lies there stays), then the folder when it is empty
+        foreign, failed = _remove_own_files(data, keep)
+        (left if failed else done).append(data)
+        key = False
+        if not any(n.endswith((".enc", ".enc.tmp")) for n in (os.listdir(data) if os.path.isdir(data) else [])):
+            key = self.uninstall_key()
+        log.warning("Uninstalled: %d removed, %d left, key %s", len(done), len(left), "removed" if key else "kept")
+        return {"ok": True, "entfernt": done, "geblieben": left, "schluessel": key, "fremd": foreign,
+                "belege": bel if os.path.isdir(os.path.expanduser(bel)) else ""}
+
+    def linked_files(self) -> List[str]:
+        """Documents you linked (receipts outside the receipts folder, property documents): they stay where they are."""
+        out = []
+        for im in self.config.get("immobilien") or []:
+            out += [d.get("pfad") for d in (im.get("dokumente") or []) if isinstance(d, dict) and d.get("pfad")]
+        try:
+            idx = self.store.load("receipts.json", {}) or {}
+            for v in (idx.values() if isinstance(idx, dict) else []):
+                for e in (v if isinstance(v, list) else [v]):
+                    if isinstance(e, dict) and isinstance(e.get("pfad"), str) and os.path.isabs(e["pfad"]):
+                        out.append(e["pfad"])
+        except Exception:
+            pass
+        return [os.path.expanduser(p) for p in out if isinstance(p, str)]
+
+    def uninstall_key(self) -> bool:
+        """Deletes Kontor's data key in the keychain (only its own entry). True when it is gone."""
+        if self.store.key_source != "schluesselbund":
+            return False
+        import storage
+        rc, _, _ = storage._security(["delete-generic-password", "-s", storage.KEYCHAIN_SERVICE, "-a", storage.KEYCHAIN_ACCOUNT])
+        return rc == 0
+
+    def uninstall_finish(self) -> None:
+        """After the answer: launchd drops the service (it stops this process) -- else the process ends by itself; launchd
+        must not start it again (KeepAlive), so a failed bootout is followed by a removal of the job."""
+        try:
+            time.sleep(1.5)
+            if sys.platform == "darwin":
+                job = "gui/%d/%s" % (os.getuid(), updates.LABEL)
+                r = subprocess.run(["launchctl", "bootout", job], capture_output=True, timeout=20)
+                if r.returncode != 0:
+                    subprocess.run(["launchctl", "remove", updates.LABEL], capture_output=True, timeout=20)
+            time.sleep(1.5)
+        except Exception:
+            log.exception("Uninstall: service not stopped by launchd")
+        finally:
+            os._exit(0)
+
     def status(self, loopback: bool, frisch: bool = False) -> dict:
         st = self.store.load_shared("state.json", {}) or {}
         bcfg = self.config.get("belege") or {}
@@ -1220,7 +1302,7 @@ class App:
                            "stand": self.ledger_time.strftime("%Y-%m-%d %H:%M") if self.ledger_time else None,
                            "bankabruf": self.bankabruf(), "luecken": len(st.get("luecken") or []), "problem": st.get("abgleich_problem"), "historie": st.get("mm_verlauf"),
                            "kategorisieren_erlaubt": bool((self.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False))},
-            "ablage": {"verschluesselt": self.store.encrypted, "schluessel": self.store.key_source, "ordner": self.data_dir},
+            "ablage": {"verschluesselt": self.store.encrypted, "schluessel": self.store.key_source, "ordner": self.data_dir, "programm": self.program_dir},
             "belege": {"ordner": os.path.expanduser(bcfg.get("ordner") or "~/Documents/Kontor-Belege")},
             "probelauf": self.config.get("probelauf", True),
             "letzter_lauf": st.get("letzter_lauf"),
@@ -2390,6 +2472,18 @@ def make_handler(app: App):
                 app.sessions.drop_all()
                 log.warning("Program reset (%s); receipt files and log kept", ", ".join(dateien))
                 return self._json(200, {"ok": True, "neu_einrichten": bool(body.get("mit_passwort"))}, self._set_cookie("", clear=True))
+            if path == "/api/uninstall":
+                if not local:
+                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+                if not auth.verify_password(str(body.get("passwort", "")), app.auth_record()):
+                    time.sleep(0.5)
+                    return self._json(401, {"fehler": tr("s_passwort_falsch")})
+                rep = app.uninstall(bool(body.get("programm", True)))
+                if rep.get("fehler"):
+                    return self._json(409, rep)
+                app.sessions.drop_all()
+                threading.Thread(target=app.uninstall_finish, daemon=True).start()        # the answer first, then the service goes
+                return self._json(200, rep, self._set_cookie("", clear=True))
             if path == "/api/remote":
                 return self._remote_setup(body, local)
             if path == "/api/timemachine-exclusion":
@@ -2957,6 +3051,62 @@ def backup_decrypt(wrapper: dict, password: str) -> dict:
         return json.loads(decrypt(key, blob).decode("utf-8"))
     except (KeyError, ValueError, StoreError, binascii.Error):
         raise ValueError(tr("s_sicherung_passwort_falsch"))
+
+
+# Kontor's own files in its data folder (the store, its log and service files, a key file, the certificate): only these go
+_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*)\.json(?:\.enc)?(?:\.tmp)?"
+                          r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp)?|kontor\.log[\w.]*|log\.(?:clean|version)|service\.(?:out\.log|err\.log|lock)|master\.key|tls)(?=\s|$)")
+
+
+def _remove_own_files(data: str, keep: List[str]) -> Tuple[List[str], List[str]]:
+    """Deletes Kontor's own files in the data folder; the folder itself when nothing else is left. Returns (names of files that
+    are not Kontor's -- they stay, names of Kontor's files that could not be removed); kept ones (receipts) stay silently."""
+    from receipts import _canon
+    foreign, failed, kept = [], [], False
+    for name in sorted(os.listdir(data)):
+        full = os.path.join(data, name)
+        if any(_canon(full) == k or k.startswith(_canon(full).rstrip(os.sep) + os.sep) for k in keep):
+            kept = True; continue
+        if not _KONTOR_FILE.fullmatch(name):
+            foreign.append(name); continue
+        try:
+            if os.path.isdir(full) and not os.path.islink(full):
+                shutil.rmtree(full)
+            else:
+                os.remove(full)
+        except OSError:
+            log.exception("Not removed: %s", name)
+            failed.append(name)
+    if not (foreign or failed or kept):
+        try:
+            os.rmdir(data)
+        except OSError:
+            pass
+    return foreign, failed
+
+
+def _remove_tree(path: str, keep: List[str]) -> bool:
+    """Deletes path, except what is in keep (canonical paths: files or folders, with what lies in them; their parents stay as
+    far as needed). True when done -- also when only kept things are left."""
+    from receipts import _canon
+    cp = _canon(path)
+    inside = [k for k in keep if k == cp or k.startswith(cp.rstrip(os.sep) + os.sep)]
+    try:
+        if not inside:
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+            return True
+        if cp in inside:
+            return True
+        for name in os.listdir(path):
+            if not _remove_tree(os.path.join(path, name), keep):
+                return False
+        return True
+    except OSError:
+        log.exception("Not removed: %s", os.path.basename(path))
+        return False
 
 
 def timemachine_status(path: str) -> str:

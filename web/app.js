@@ -351,7 +351,7 @@ async function offlinePing() {
   if (!OFFLINE.mode || document.hidden) return;
   try { const s = await api('/api/session'); if (!s.offline) await revalidate(); } catch (e) {}
 }
-setInterval(offlinePing, 30000);
+setInterval(() => { if (!S.bye) offlinePing(); }, 30000);
 // The offline copy on this device is encrypted (see sw.js): a key pair per device; the public key encrypts every stored
 // answer, the private key lies on the device only encrypted with a key from the Kontor password (PBKDF2) and is unlocked
 // into memory at a password sign-in -- never stored readable, gone when the page locks or closes.
@@ -5154,7 +5154,7 @@ function vEinstellungenUpdates() {
   <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
 }
 function vEinstellungenDaten() {
-  return `<h2>${t('daten')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.ablage.ordner)}</div><div>${t('verschluesselung')}</div><div>${S.STATUS.ablage.verschluesselt ? t('aes_256_schluessel_im') + (S.STATUS.ablage.schluessel === 'schluesselbund' ? t('macos_schluesselbund') : t('dateisystem_0600')) : 'KEINE'}</div><div>${t('belegordner')}</div><div>${esc(S.STATUS.belege.ordner)}</div>
+  return `<h2>${t('daten')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.ablage.ordner)}</div>${S.STATUS.ablage.programm ? `<div>${t('programmordner')}</div><div>${esc(S.STATUS.ablage.programm)}</div>` : ''}<div>${t('verschluesselung')}</div><div>${S.STATUS.ablage.verschluesselt ? t('aes_256_schluessel_im') + (S.STATUS.ablage.schluessel === 'schluesselbund' ? t('macos_schluesselbund') : t('dateisystem_0600')) : 'KEINE'}</div><div>${t('belegordner')}</div><div>${esc(S.STATUS.belege.ordner)}</div>
     <div>Time Machine ${hq('timemachine')}</div><div><span id="tm-state" class="muted">…</span> <button id="tm-toggle" class="secondary small hidden"></button></div>
     <div>${t('protokoll')}</div><div><a href="#log">${t('protokoll_und_diagnose')}</a></div></div>`;
 }
@@ -5199,7 +5199,9 @@ function vSicherung() {
   <h2>${t('datei_laden')}</h2><div class="drop" id="pk-drop">${t('sicherung_hierher_ziehen')}<br><button id="pk-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button></div><div id="pk-preview"></div>
   ${vEinstellungenDaten()}
   <h2>${t('zuruecksetzen_h')}</h2><div class="note">${t('zuruecksetzen_text')}</div>
-  <div class="row tight"><input type="password" id="rs-pw" placeholder="${t('passwort_zur_bestaetigung')}" autocomplete="current-password" style="width:220px"><label class="chk"><input type="checkbox" id="rs-pw-reset"> ${t('passwort_ebenfalls_zuruecksetzen_einri')}</label><button id="rs-go" class="danger" ${S.STATUS.lokal ? '' : t('disabled_title_nur_am_mac')}>${t('programm_zuruecksetzen')}</button></div><div id="rs-report" class="findings"></div>`;
+  <div class="row tight"><input type="password" id="rs-pw" placeholder="${t('passwort_zur_bestaetigung')}" autocomplete="current-password" style="width:220px"><label class="chk"><input type="checkbox" id="rs-pw-reset"> ${t('passwort_ebenfalls_zuruecksetzen_einri')}</label><button id="rs-go" class="danger" ${S.STATUS.lokal ? '' : t('disabled_title_nur_am_mac')}>${t('programm_zuruecksetzen')}</button></div><div id="rs-report" class="findings"></div>
+  <h2>${t('deinstallieren_h')}</h2><div class="note">${t('deinstallieren_text')}</div>
+  <div class="row tight"><input type="password" id="un-pw" placeholder="${t('passwort_zur_bestaetigung')}" autocomplete="current-password" style="width:220px"><label class="chk"><input type="checkbox" id="un-prog" checked> ${t('deinstall_programmordner')}</label><button id="un-go" class="danger" ${S.STATUS.lokal ? '' : t('disabled_title_nur_am_mac')}>${t('kontor_deinstallieren')}</button></div><div id="un-report" class="findings"></div>`;
 }
 function pkgPreview() {
   const el = $('#pk-preview'); if (!PKG) { el.innerHTML = ''; return; }
@@ -5865,6 +5867,16 @@ function bind(main) {
     try { const r = await api('/api/backup', {passwort: pw}); saveJson(r, `Kontor-Sicherung-${new Date().toISOString().slice(0, 10)}.kontor-sicherung.json`); $('#bk-pw', main).value = $('#bk-pw2', main).value = ''; toast(t('sicherung_erstellt'), 5000); } catch (e) { toast(e.message, 6000); }
   });
   const swc = $('#sw-clear', main); if (swc) swc.addEventListener('click', async () => { try { await offForget(); toast(t('gespeicherte_daten_geloescht')); } catch (e) { toast(t('nicht_moeglich') + e.message, 4000); } });
+  // uninstall: everything of Kontor on this Mac; afterwards a last page that needs nothing from the (then gone) service
+  const un = $('#un-go', main); if (un) un.addEventListener('click', async () => {
+    const pw = $('#un-pw').value, prog = $('#un-prog').checked;
+    if (!pw) return showFindings($('#un-report'), [], t('passwort_eingeben'), 'fehler');
+    if (!confirm(t('deinstall_frage'))) return;
+    try { const r = await api('/api/uninstall', {passwort: pw, programm: prog});
+      S.csrf = null; S.bye = true;          // nothing more from the service: it is gone
+      const left = r.geblieben || [], other = r.fremd || [];
+      document.body.innerHTML = `<div class="bye"><h1>${esc(t('deinstalliert_h'))}</h1><p>${esc(t(r.schluessel ? 'deinstalliert_text' : 'deinstalliert_ohne_schluessel'))}</p>${r.belege ? `<p>${esc(t('deinstall_belege_bleiben', r.belege))}</p>` : ''}${left.length ? `<p>${esc(t('deinstall_geblieben', left.join(', ')))}</p>` : ''}${other.length ? `<p>${esc(t('deinstall_fremd', S.STATUS.ablage.ordner, other.join(', ')))}</p>` : ''}<p>${esc(t('deinstall_freigaben'))}</p><pre>tccutil reset AppleEvents org.python.python</pre><p class="muted">${esc(t('fenster_schliessen'))}</p></div>`;
+    } catch (e) { showFindings($('#un-report'), [], e.message, 'fehler'); } });
   const rs = $('#rs-go', main); if (rs) rs.addEventListener('click', async () => {
     const pw = $('#rs-pw').value, withPw = $('#rs-pw-reset').checked;
     if (!pw) return showFindings($('#rs-report'), [], t('passwort_eingeben'), 'fehler');

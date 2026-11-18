@@ -58,3 +58,4 @@ Fertig, wenn
 
 ## Beim nächsten großen Versionssprung (Hilfe, README, Bilder)
 - Hilfe „Konten → Positionen“: erklären, was der Nutzer wählt (nach Verfügbarkeit), statt der Reihenfolge, in der Kontor vorschlägt.
+- Hilfe und README: Deinstallieren in der App (Einstellungen → Sicherung), Programmordner in den Daten; Installation als ein Schritt (wartet auf Apples Werkzeuge).

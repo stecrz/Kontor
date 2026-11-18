@@ -8,9 +8,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
 if [ "$(uname)" != "Darwin" ]; then echo "Kontor laeuft nur unter macOS (MoneyMoney)."; exit 1; fi
 if ! xcode-select -p >/dev/null 2>&1; then
-  echo "Die Kommandozeilen-Werkzeuge fehlen (python3, swiftc). Installation wird angestossen -- danach bitte install.sh erneut ausfuehren."
+  echo "Die Kommandozeilen-Werkzeuge fehlen (python3, swiftc). Im Fenster von macOS bitte \"Installieren\" waehlen -- danach geht es hier von selbst weiter."
   xcode-select --install || true
-  exit 1
+  echo "(Warte auf die Installation -- abbrechen mit ctrl-C.)"
+  until xcode-select -p >/dev/null 2>&1; do sleep 5; done
 fi
 PY="$(command -v python3 || true)"
 if [ -z "$PY" ]; then echo "python3 nicht gefunden."; exit 1; fi
