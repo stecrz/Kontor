@@ -1798,6 +1798,13 @@ class AppTests(_AppBase):
                     self.assertIn("xl/workbook.xml", z.namelist()); self.assertIn("xl/worksheets/sheet1.xml", z.namelist())
         # cash flow and planning: the names of the page (every row a text of the catalogue, none a bare key; no "Umschichtung")
         import service as MS
+        # transactions: as filtered on the page -- every match (not only the first shown), nothing else
+        for flt in ({"direction": "out"}, {"direction": "in", "limit": "1"}, {"q": "zzz-nichts"}):
+            code, lst = self.call("/api/transactions?" + urllib.parse.urlencode(flt))
+            rows = MS.export_sheets(self.app, "transactions", None, "months", None, flt)[0].rows
+            self.assertEqual(len(rows), lst["treffer"], flt)
+            if flt.get("direction") == "out": self.assertTrue(rows and all(r[4] < 0 for r in rows))
+        self.assertEqual(len(MS.export_sheets(self.app, "transactions", None, "months", None, {})[0].rows), lst["gesamt"])
         for was in ("cashflow", "planning"):
             names = [str(r[0]).strip() for r in MS.export_sheets(self.app, was, None, "months")[0].rows if r and r[0]]      # the table (first sheet)
             for want in ("Überschuss", "Einnahmen", "Investitionen", "Finanzierung", "Veränderung Bankguthaben", "Abgleich mit der Bilanz", "Umschichtungen", "Veränderung Nettovermögen"):
@@ -2997,6 +3004,17 @@ class BrowserTest(unittest.TestCase):
                 hit = pg.evaluate("(() => { const td = document.querySelector('#main tr[data-pos=\"liquiditaet\"] td.flash-hit'), i = [...td.parentNode.children].indexOf(td); return document.querySelectorAll('#main .wrap.snap thead th')[i].dataset.key; })()")
                 self.assertEqual(hit, pg.evaluate("cfMonths(B(), S.cfZeit)[0].slice(-1)[0]"))
                 pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("#cf-bridge .cf-br-row")
+                # an earlier year: its opening cash is before the balance sheet's first year -- it shows from that year on, the cell lights up
+                # (the balance sheet set to start with the current year: the opening month of the 12 months lies before it)
+                pg.evaluate("S.vonJahr = +String(B().ist_bis).slice(0, 4)")
+                r = pg.query_selector("#cf-bridge .cf-br-row[data-bal^='liq|']"); start = r and r.get_attribute("data-bal").split("|")[1]
+                self.assertTrue(start and pg.evaluate("m => B().monate.includes(m) && +m.slice(0, 4) < firstYear(B())", start), start)
+                if start:
+                    pg.click("#cf-bridge .cf-br-row[data-bal^='liq|'] >> nth=0"); pg.wait_for_selector("#main tr[data-pos='liquiditaet'] td.flash-hit", timeout=6000)
+                    hit = pg.evaluate("(() => { const td = document.querySelector('#main tr[data-pos=\"liquiditaet\"] td.flash-hit'), i = [...td.parentNode.children].indexOf(td); return document.querySelectorAll('#main .wrap.snap thead th')[i].dataset.key; })()")
+                    self.assertEqual(hit, start); pg.evaluate("S.vonJahr = null")
+                    pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("#cf-bridge .cf-br-row")
+                pg.click("#cf-zeit button[data-z='12m']"); pg.wait_for_timeout(300)
                 # 6. the net worth bridge: from the net worth at the start to that at the end, only what changes it (no investing, no repaying)
                 wb = pg.eval_on_selector_all("#cf-wbridge .cf-br-row", "e => e.map(r => [r.getAttribute('aria-label').split(': ')[0], r.querySelector('.cf-br-v').textContent, [...r.classList]])")
                 self.assertEqual((wb[0][0], wb[-1][0]), ("Anfangsvermögen", "Endvermögen"))
@@ -3028,22 +3046,43 @@ class BrowserTest(unittest.TestCase):
                 self.assertNotIn("off", ids); self.assertNotIn("unk", ids)
                 self.assertEqual(ids["wert"][1], 1001.6); self.assertEqual(ids["ext"][1], -200); self.assertEqual(ids["spar"][1:], [300, 500])   # year before: 1000 − 500
                 self.assertEqual(round(ids["nw0"][1] + ids["spar"][1] + ids["ext"][1] + ids["wert"][1], 2), ids["nw1"][1])
+                flh = lambda: pg.evaluate("document.querySelector('#cf-flow svg').getBoundingClientRect().height")
+                h0 = flh()
                 pg.click("#cf-wbridge .cf-br-row[data-br='spar|aus']"); pg.wait_for_timeout(150)
                 self.assertTrue(pg.query_selector("#cf-wbridge .cf-br-row[data-br='spar|aus'] .cf-br-brace"))
                 self.assertIsNone(pg.query_selector("#cf-bridge .cf-br-row[data-br='spar|aus']"))              # the cash bridge is left alone
+                bot = lambda sel: pg.evaluate("s => document.querySelector(s).getBoundingClientRect().bottom", sel)
+                opened = []
+                for _ in range(8):                                                                         # open parts until the bridge is taller than the total beside it
+                    if bot("#cf-wbridge") > bot("#cf-flow svg") + 30: break
+                    k = pg.evaluate("(() => { const r = [...document.querySelectorAll('#cf-wbridge .cf-br-row[data-br]')].find(r => r.textContent.includes('▸')); return r ? r.dataset.br : null; })()")
+                    if not k: break
+                    pg.dispatch_event("#cf-wbridge .cf-br-row[data-br='%s']" % k, "click"); pg.wait_for_timeout(150); opened.append(k)
+                if bot("#cf-wbridge") > h0 + 30 + pg.evaluate("document.querySelector('#cf-flow svg').getBoundingClientRect().top"):
+                    self.assertLess(abs(bot("#cf-flow svg") - bot("#cf-wbridge")), 3); self.assertGreater(flh(), h0 + 20)      # beside it the total grows with it ...
+                for k in reversed(opened): pg.dispatch_event("#cf-wbridge .cf-br-row[data-br='%s']" % k, "click"); pg.wait_for_timeout(120)
                 pg.click("#cf-wbridge .cf-br-row[data-br='spar|aus']"); pg.wait_for_timeout(100)
+                self.assertLess(abs(flh() - h0), 2)                                                       # ... and shrinks back
                 # 2. per month: income, expenses, investing, financing stacked; the change in cash on its own scale below
+                tips = pg.evaluate("[...document.querySelectorAll('#cf-bridge [data-bal], #cf-wbridge [data-bal]')].map(e => (e.querySelector('title') || {}).textContent || e.getAttribute('title') || e.getAttribute('aria-label') || '')")
+                self.assertTrue(tips); self.assertFalse([x for x in tips if "undefined" in x or "NaN" in x], tips)      # start and end: the month written out
                 self.assertEqual(len(pg.query_selector_all("#cf-months .cf-hit")), 12)
-                for c in ("ein", "aus", "inv", "fin", "spar", "wert"):          # below: the change in net worth, saved and change in value
+                ends = pg.evaluate("(() => { const D = B(), [ms] = cfMonths(D, S.cfZeit); return [ML(ms[0]), ML(ms[ms.length - 1])]; })()")
+                ticks = pg.eval_on_selector_all("#cf-months text.cf-tick", "e => e.map(x => x.textContent)")
+                for w in ends: self.assertIn(w, ticks)                                                     # the first and the last month always labelled
+                for c in ("ein", "aus", "inv", "fin", "bank", "umsch", "wert"):          # below: as the table -- change in cash, moves between accounts, change in value
                     self.assertTrue(pg.query_selector("#cf-months .cf-col." + c), c)
                 self.assertTrue(pg.query_selector("#cf-months .cf-prev-o"))           # the year before, dashed
-                nwk = pg.evaluate("""(() => { const D = B(), m = D.monate.filter(m => m < D.ist_bis).slice(-1)[0], s = D.kapitalfluss.summen[m]; return [s.Nettovermoegen_delta, s.Bewertung]; })()""")
+                nwk = pg.evaluate("""(() => { const D = B(), m = D.monate.filter(m => m < D.ist_bis).slice(-1)[0], s = D.kapitalfluss.summen[m];
+                    const u = -D.kapitalfluss.sektionen.reduce((a, sk) => sk.name === 'Bewertung' ? a : a + sk.zeilen.reduce((c, z) => z.nw ? c : c + ((z.werte || {})[m] || 0), 0), 0);
+                    return [s.Nettovermoegen_delta, s.Bewertung, u]; })()""")
                 pg.hover("#cf-months .cf-hit >> nth=11"); pg.wait_for_timeout(150)
                 tip = pg.inner_text("#cf-tip")
-                for w in ("Einnahmen", "Ausgaben", "Investitionen", "Finanzierung", "Veränderung Bankguthaben", "gespart", "Wertänderung", "Veränderung Nettovermögen", "Vorjahr"):
+                for w in ("Einnahmen", "Ausgaben", "Investitionen", "Finanzierung", "Veränderung Bankguthaben", "Umschichtungen", "Wertänderungen", "Veränderung Nettovermögen", "Vorjahr"):
                     self.assertIn(w, tip)
                 f0 = lambda v: pg.evaluate("v => F0(v)", v)
-                self.assertIn(f0(nwk[0] - nwk[1]), tip.split("gespart")[1][:24]); self.assertIn(f0(nwk[0]), tip.split("Veränderung Nettovermögen")[1][:24])
+                self.assertIn(f0(nwk[2]), tip.split("Umschichtungen")[1][:24]); self.assertIn(f0(nwk[0] - nwk[1] - nwk[2]), tip.split("Bankguthaben")[-1][:24])          # below: the short word, as in the legend
+                self.assertIn(f0(nwk[0]), tip.split("Veränderung Nettovermögen")[1][:24]); self.assertIn("+", tip)              # movements with a sign
                 pg.mouse.move(5, 5)
                 self.assertGreaterEqual(len(pg.query_selector_all("#cf-tip i.sw")), 5)
                 # a few months far larger than the rest: the scale follows the rest, those bars are cut, marked and labelled
@@ -3062,13 +3101,22 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("Arbeitseinkommen", pg.text_content("#cf-flow")); self.assertIsNone(pg.query_selector(".cf-su-col"))
                 self.assertIn("%", pg.text_content("#cf-flow .cf-fl-p")); self.assertFalse(pg.query_selector("#cf-flow [data-cftip]"))       # shares inside, no tooltip
                 # a click opens a position into its categories (heights within it), the name above closes it again
+                # (the made-up data has no position with several categories in the period: the largest use gets two invented parts)
+                pg.evaluate("(() => { if (document.querySelector('#cf-flow .cf-fl-g[data-fl]')) return; const e = CF.flow.use[0]; e.kids = [{label: 'Teil A', v: e.v * 0.6}, {label: 'Teil B', v: e.v * 0.4}]; cfDrawFlow(); })()")
                 key = pg.evaluate("(() => { const g = document.querySelector('#cf-flow .cf-fl-g[data-fl]'); return g ? g.dataset.fl : null; })()")
+                self.assertTrue(key)
                 if key:
                     n0 = len(pg.query_selector_all("#cf-flow .cf-fl-g"))
                     pg.dispatch_event("#cf-flow .cf-fl-g[data-fl='%s']" % key, "click"); pg.wait_for_timeout(150)
                     self.assertGreater(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0); self.assertTrue(pg.query_selector("#cf-flow .cf-fl-up"))
                     pg.dispatch_event("#cf-flow .cf-fl-up", "click"); pg.wait_for_timeout(150)
                     self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
+                    # a click on the total opens everything (every level), a second one closes it all again
+                    pg.dispatch_event("#cf-flow [data-flall]", "click"); pg.wait_for_timeout(150)
+                    self.assertEqual(pg.get_attribute("#cf-flow [data-flall]", "aria-expanded"), "true"); self.assertIsNone(pg.query_selector("#cf-flow .cf-fl-g[aria-expanded='false']"))
+                    self.assertGreater(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
+                    pg.dispatch_event("#cf-flow [data-flall]", "click"); pg.wait_for_timeout(150)
+                    self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0); self.assertTrue(pg.query_selector("#cf-flow .cf-fl-span"))      # the period small above the total
                     # opening an item never narrows the bands: the names keep their share of the width
                     pg.dispatch_event("#cf-flow .cf-fl-g[data-fl='%s']" % key, "click"); pg.wait_for_timeout(150)
                     xs = pg.evaluate("[...document.querySelectorAll('#cf-flow .cf-fl-n')].map(r => +r.getAttribute('x'))")
@@ -3101,16 +3149,17 @@ class BrowserTest(unittest.TestCase):
                 mid = pg.evaluate("(() => { const c = document.querySelector('.cf-duo').getBoundingClientRect(), h = document.querySelector('#cf-heat-card').getBoundingClientRect(); return [h.left - c.left, c.width / 2]; })()")
                 self.assertLess(abs(mid[0] - mid[1]), 1.5)
                 # the order: ↑ ↓ at each chart (shown on hover), kept in the browser; a half chart without a half neighbour takes the whole width
-                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "wealth", "months", "flow", "duo"])
+                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "months", "wealth", "flow", "duo"])
                 self.assertIsNone(pg.query_selector("#cf-order-reset"))                                  # the default: nothing to reset
                 pg.click(".cf-card[data-cfid='months'] .th-mv[data-d='1']", force=True); pg.wait_for_timeout(400)
-                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "wealth", "flow", "months", "duo"])
+                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "wealth", "months", "flow", "duo"])
                 pg.click(".cf-card[data-cfid='duo'] .th-mv[data-d='-1']", force=True); pg.wait_for_timeout(400)
                 pg.click(".cf-card[data-cfid='duo'] .th-mv[data-d='-1']", force=True); pg.wait_for_timeout(400)
                 self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => [c.dataset.cfid, c.classList.contains('cf-full')])"),
-                                 [["bridge", False], ["wealth", False], ["duo", True], ["flow", False], ["months", False]])
+                                 [["bridge", False], ["wealth", False], ["duo", True], ["months", False], ["flow", False]])
+                self.assertTrue(pg.query_selector(".view-btns #cf-order-reset"))                          # styled as on the balance sheet
                 pg.click("#cf-order-reset"); pg.wait_for_timeout(400)                                     # "Ansicht zurücksetzen": the default again
-                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "wealth", "months", "flow", "duo"])
+                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "months", "wealth", "flow", "duo"])
                 self.assertIsNone(pg.query_selector("#cf-order-reset"))
                 self.assertEqual(pg.evaluate("[getComputedStyle(document.querySelector('.cf-duo')).gridColumnEnd, getComputedStyle(document.querySelector('#cf-flow').closest('.cf-card')).gridColumnStart, getComputedStyle(document.querySelector('#cf-wbridge').closest('.cf-card')).gridColumnStart]"), ["-1", "span 3", "span 3"])
                 ks = pg.evaluate("[...document.querySelectorAll('#cf-heat .cf-heat-c:not(.none)')].map(c => parseInt(c.style.getPropertyValue('--k')))")
@@ -3196,8 +3245,12 @@ class BrowserTest(unittest.TestCase):
                 hm = pg.evaluate("""(() => { const ms = cfMonths(B(), S.cfZeit)[0], n = ms.length <= 24 ? ms.length : new Set(ms.map(m => m.slice(0, 4) + Math.ceil(+m.slice(5) / 3))).size;
                     return [n, document.querySelector('#cf-heat .cf-heat').style.gridTemplateColumns]; })()""")      # the heatmap covers the whole period
                 self.assertIn("repeat(%d," % hm[0], hm[1])
-                pg.click("#cf-zeit button[data-z='12m']"); pg.wait_for_timeout(200)
+                pg.evaluate("document.querySelector('#main .wrap').scrollLeft = 0")
+                pg.click("#cf-zeit button[data-z='12m']"); pg.wait_for_timeout(900)
                 self.assertEqual(pg.evaluate("S.cfZeit"), "12m")
+                vis = pg.evaluate("""(() => { const w = document.querySelector('#main .wrap'), th = w.querySelector('thead th.cf-endsel'), a = w.getBoundingClientRect(), r = th.getBoundingClientRect();
+                    return r.left >= a.left + w.querySelector('thead th').offsetWidth - 2 && r.right <= a.right + 2; })()""")
+                self.assertTrue(vis)                                                                       # a preset: the table scrolls to its last month
                 y = pg.evaluate("cfDone(B()).slice(-1)[0].slice(0, 4)")
                 pickm("#cf-von", y + "-01")                                                         # a whole year (so far) lights up its button
                 self.assertEqual(pg.evaluate("S.cfZeit"), y); self.assertTrue(pg.query_selector("#cf-zeit button.on[data-z='%s']" % y))
@@ -3225,6 +3278,13 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("document.querySelector('#cf-bis').dataset.m"), ms[-2]); pg.wait_for_timeout(200)
                 pg.hover("#cf-months"); pg.mouse.wheel(120, 0); pg.wait_for_timeout(500)
                 self.assertEqual(pg.evaluate("S.cfZeit"), "12m")
+                # ... over the axis also with a mouse wheel (up and down), and by dragging it
+                pg.hover("#cf-months .cf-xaxis"); pg.mouse.wheel(0, -120); pg.wait_for_timeout(500)
+                self.assertEqual(pg.evaluate("document.querySelector('#cf-bis').dataset.m"), ms[-2]); pg.wait_for_timeout(200)
+                bb = pg.query_selector("#cf-months .cf-xaxis").bounding_box(); slot = float(pg.get_attribute("#cf-months .cf-xaxis", "data-slot"))
+                pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + 8); pg.mouse.down()
+                pg.mouse.move(bb["x"] + bb["width"] / 2 - slot * 1.3, bb["y"] + 8, steps=4); pg.wait_for_timeout(400); pg.mouse.up()
+                self.assertEqual(pg.evaluate("S.cfZeit"), "12m")                                         # pulled to the left: a month later again
                 # a month's heading in the table: the charts end there (12 months up to it)
                 pg.click("#main table.cf-tbl:not(.cf-names) thead th[data-key='%s']" % ms[-4]); pg.wait_for_timeout(400)
                 self.assertEqual(pg.evaluate("[document.querySelector('#cf-von').dataset.m, document.querySelector('#cf-bis').dataset.m]"), [ms[-15], ms[-4]])

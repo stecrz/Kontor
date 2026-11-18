@@ -11,7 +11,7 @@
   --c-liq:#34c759; --c-anl:#12a88a; --c-fest:#1d9fc0; --c-bet:#af52de; --c-ford:#3a6ff0; --c-immo:#9e7458; --c-verb:#ff6b57; --c-ein:#1a8a4a; --c-aus:#c0392b; --c-neutral:#8e8e93; --c-nw:#e8aa00;
   /* cash flow: the activities (operating, investing, financing) and up to six categories within a position -- apart also for
      colour-blind readers, checked for both modes */
-  --cf-op:#0899c4; --cf-inv:#e5a800; --cf-fin:#cf2f96; --cf-unk:#8e8e93; --cf-wert:#6f5bd0;      /* cyan, yellow, magenta */      /* no green or red: those are money in and out */
+  --cf-op:#0899c4; --cf-inv:#e5a800; --cf-fin:#cf2f96; --cf-unk:#8e8e93; --cf-wert:#7d93a8; --cf-umsch:#b39a70; --cf-ext:#a88aa4; --cf-bank:#5f646b;      /* cyan, yellow, magenta */      /* no green or red: those are money in and out */
   --cat1:#2d4bb0; --cat2:#b07428; --cat3:#a78bf0;      /* within an expense's red bar: none of the cash flow's colours, no red or green */
   --radius:14px; --radius-s:9px; --shadow:0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
 }
@@ -23,7 +23,7 @@
           --side:rgba(20,20,22,.94); --side-fg:#f5f5f7;
           --c-nw:#ffd23f; --warn-bg:#3a2a12; --warn-fg:#ffd28a; --err-bg:#3a1515; --err-fg:#ffb3b3; --ok-bg:#12301f; --ok-fg:#9be0b6;
           --c-liq:#30d158; --c-anl:#2ec4a2; --c-fest:#3fbfdc; --c-bet:#bf5af2; --c-ford:#5b8cff; --c-immo:#b08a6e; --c-verb:#ff6961; --c-ein:#30d158; --c-aus:#ff6961;
-          --cf-op:#14a2c4; --cf-inv:#bb8a00; --cf-fin:#b8338c; --cf-unk:#8e8e93; --cf-wert:#9a8cf0;
+          --cf-op:#14a2c4; --cf-inv:#bb8a00; --cf-fin:#b8338c; --cf-unk:#8e8e93; --cf-wert:#8aa1b6; --cf-umsch:#a8916b; --cf-ext:#a690a2; --cf-bank:#b4b8be;
           --cat1:#3a5bd0; --cat2:#ad772e; --cat3:#9b84ea;
           --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3);
 }
@@ -368,7 +368,7 @@ th.snap-pad, td.snap-pad { padding:0 !important; border:0 !important; background
 @keyframes colflash { from { background:color-mix(in srgb, var(--accent) 22%, transparent); } }
 td.flash, th.flash { animation:colflash 1.4s ease-out; }
 td.flash-hit { animation:cellhit 2.2s ease-out; } @keyframes cellhit { 0%, 45% { box-shadow:inset 0 0 0 2px var(--accent); background-color:var(--accent-soft); } 100% { box-shadow:inset 0 0 0 2px transparent; } }
-.cf-tbl:not(.ptable) tr[data-tog] td, .cf-tbl:not(.ptable) tr.det[data-kat] td { cursor:pointer; } .cf-tbl:not(.ptable) tr.det[data-kat] td:not(:first-child):hover { text-decoration:underline dotted; }
+.cf-tbl:not(.ptable) tr[data-tog] td, .cf-tbl:not(.ptable) tr.det[data-kat] td, .cf-tbl:not(.ptable) tr.ux td:not(:first-child) { cursor:pointer; } .cf-tbl:not(.ptable) tr.det[data-kat] td:not(:first-child):hover { text-decoration:underline dotted; }
 .cf-tbl td.to-bal { cursor:pointer; } .cf-tbl td.to-bal:hover { text-decoration:underline dotted; }
 .chart-legend { display:flex; gap:12px; font-size:12px; color:var(--muted); flex-wrap:wrap; margin-top:6px; }
 .chart-legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px; }
@@ -615,15 +615,15 @@ a.more { white-space:nowrap; }
 .cf-tbl tr[data-tog] td:first-child { cursor:pointer; }
 .cf-tbl:not(.ptable) th:first-child, .cf-tbl:not(.ptable) td:first-child { width:290px; min-width:290px; max-width:290px; }     /* opening a row never moves the figures */
 .cf-tbl tr.sec td, .cf-tbl tr.sec td:first-child { background:var(--sub); font-weight:650; }
-.cf-tbl tr.sec2 td, .cf-tbl tr.sec2 td:first-child { background:var(--head); font-weight:600; }
+.cf-tbl tr.sec2 td, .cf-tbl tr.sec2 td:first-child { background:var(--head); font-weight:500; }          /* income and expenses: as the parts of the other activities, lighter than the surplus */
 .chk { position:relative; } .off-mark { position:absolute; top:1px; right:1px; font-size:9px; line-height:1; color:color-mix(in srgb, var(--fg) 50%, transparent); font-weight:400; cursor:help; }          /* a note, no error */
 tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--line); } tr.fcf td:first-child { color:var(--fg); }
 .cf-key { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:7px; vertical-align:1px; }
-.cf-key.op { background:var(--cf-op); } .cf-key.inv { background:var(--cf-inv); } .cf-key.fin { background:var(--cf-fin); } .cf-key.ein { background:var(--pos); } .cf-key.aus { background:var(--neg); }
+.cf-key.op { background:var(--cf-op); } .cf-key.inv { background:var(--cf-inv); } .cf-key.fin { background:var(--cf-fin); } .cf-key.ein { background:var(--pos); } .cf-key.aus { background:var(--neg); } .cf-key.bank { background:var(--cf-bank); } .cf-key.umsch { background:var(--cf-umsch); } .cf-key.wert { background:var(--cf-wert); }          /* from cash to net worth: quiet colours, as in the chart */
 .cf-tbl tr.sub td, .cf-tbl tr.sub td:first-child { background:var(--head); font-weight:500; } .cf-tbl.ptable tr.sub td:not(:first-child) { cursor:default; }
 .cf-tbl tr.total td, .cf-tbl tr.total td:first-child { background:var(--group); font-weight:700; border-top:1px solid var(--line-2); border-bottom-color:var(--line-2); }
 .cf-tbl tr.bal td:first-child, .cf-tbl tr.check td:first-child { padding-left:38px; }
-.cf-tbl tr.nwp td, .cf-tbl tr.nwp td:first-child { font-weight:400; } .cf-tbl tr.sec.nwp td, .cf-tbl tr.sec.nwp td:first-child { font-weight:560; } .cf-tbl tr.total.nwp td, .cf-tbl tr.total.nwp td:first-child { font-weight:600; }          /* from cash to net worth: a little lighter */          /* the main rows stand at the left edge, their parts one step in */
+.cf-tbl tr.nwp td, .cf-tbl tr.nwp td:first-child { font-weight:400; } .cf-tbl tr.sec.nwp td, .cf-tbl tr.sec.nwp td:first-child { font-weight:500; } .cf-tbl tr.total.nwp td, .cf-tbl tr.total.nwp td:first-child { font-weight:590; }          /* from cash to net worth: a little lighter */          /* the main rows stand at the left edge, their parts one step in */
 .cf-tbl .hq { font-weight:400; } .cf-abbr { margin-left:6px; font-size:10.5px; font-weight:500; color:var(--muted); letter-spacing:.03em; } .cf-tbl .nw { white-space:nowrap; }
 /* the header cell of the table: the levels over the triangles (they start where the triangles stand), the gear at its end */
 .cf-tbl thead th:first-child { padding-top:4px; padding-bottom:4px; vertical-align:middle; }
@@ -671,9 +671,9 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 .cf-tick { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; } .cf-xl.tot { fill:var(--fg); font-weight:600; }
 .cf-val-l { fill:var(--fg); font-size:11px; font-variant-numeric:tabular-nums; } .cf-val-l.tot { font-weight:600; }
 .cf-link-l { stroke:var(--line-2); stroke-width:1; shape-rendering:crispEdges; }
-.cf-break { fill:none; stroke:var(--head); stroke-width:2; }
+.cf-break { fill:none; stroke:var(--head); stroke-width:2; } .cf-xaxis { fill:transparent; cursor:ew-resize; touch-action:none; } body.cf-dragging, body.cf-dragging * { cursor:ew-resize !important; user-select:none; } .cf-val-l.prev { fill:var(--muted); }
 .cf-fl-n.ein { fill:var(--pos); } .cf-fl-n.aus { fill:var(--neg); } .cf-fl-n.inv { fill:var(--cf-inv); } .cf-fl-n.fin { fill:var(--cf-fin); } .cf-fl-n.tot, .cf-fl-n.unk { fill:var(--cf-unk); }
-.cf-svg.cf-fl { display:block; } .cf-fl-b { fill-opacity:.62; transition:opacity .15s; } .cf-fl-p { fill:var(--fg); font-size:11px; font-weight:600; pointer-events:none; } .cf-fl-mid { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
+.cf-svg.cf-fl { display:block; } .cf-fl-b { transition:opacity .15s; } .cf-fl-span { font-size:10px; } .cf-fl-all { cursor:pointer; } .cf-fl-all:hover { fill:var(--fg); } .cf-fl-p { fill:var(--fg); font-size:11px; font-weight:600; pointer-events:none; } .cf-fl-mid { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
 .cf-fl:hover .cf-fl-g { opacity:.4; } .cf-fl .cf-fl-g:hover { opacity:1; } .cf-fl-g { transition:opacity .15s; } .cf-fl .more, .cf-fl .back, .cf-fl-up { cursor:pointer; } .cf-fl-up { fill:var(--muted); font-size:11px; } .cf-fl-l.more:hover .cf-fl-t:not(.cf-fl-v) { text-decoration:underline; }
 .cf-fl-g { outline:none; } .cf-fl-g:focus-visible .cf-fl-n { stroke:var(--fg); stroke-width:1.5; }
 .cf-fl-t { fill:var(--fg); font-size:12px; } .cf-fl-t.cf-fl-v2 { font-size:10.5px; } .cf-fl-v { fill:var(--muted); font-variant-numeric:tabular-nums; } .cf-fl-lead { fill:none; stroke:var(--line-2); stroke-width:1; } .cf-sub-l { fill:var(--fg); font-size:12px; font-weight:600; }
@@ -689,8 +689,8 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 .cf-br-bar.kid { fill-opacity:.62; } .cf-br-row.more { cursor:pointer; } .cf-br-disc { fill:var(--muted); font-size:9.5px; }
 #cf-bridge, #cf-wbridge { -webkit-user-select:none; user-select:none; }          /* dragging to zoom selects no text */
 .cf-br-dot { font-size:8px; } .cf-br-dot.op { fill:var(--cf-op); } .cf-br-dot.inv { fill:var(--cf-inv); } .cf-br-dot.fin { fill:var(--cf-fin); }
-.cf-br-dot.spar { fill:color-mix(in srgb, var(--fg) 58%, transparent); } .cf-br-dot.wert { fill:var(--cf-wert); } .cf-br-dot.ext { fill:var(--cf-fin); }
-.cf-br-brace.spar { stroke:color-mix(in srgb, var(--fg) 58%, transparent); } .cf-br-brace.wert { stroke:var(--cf-wert); } .cf-br-brace.ext { stroke:var(--cf-fin); }
+.cf-br-dot.spar { fill:color-mix(in srgb, var(--fg) 58%, transparent); } .cf-br-dot.wert { fill:var(--cf-wert); } .cf-br-dot.ext { fill:var(--cf-ext); }
+.cf-br-brace.spar { stroke:color-mix(in srgb, var(--fg) 58%, transparent); } .cf-br-brace.wert { stroke:var(--cf-wert); } .cf-br-brace.ext { stroke:var(--cf-ext); }
 .cf-br-brace { fill:none; stroke-width:2; stroke-linejoin:round; } .cf-br-brace.op { stroke:var(--cf-op); } .cf-br-brace.inv { stroke:var(--cf-inv); } .cf-br-brace.fin { stroke:var(--cf-fin); }
 .cf-br-brace.deep { stroke:color-mix(in srgb, var(--fg) 40%, transparent); stroke-width:1.75; } .cf-br-brace.deeper { stroke:color-mix(in srgb, var(--fg) 34%, transparent); stroke-width:1; } .cf-br-row.kid.br .cf-br-n, .cf-br-row.kid.br .cf-br-v { font-weight:600; fill:var(--fg); } .cf-br-link { stroke:var(--line-2); stroke-width:1; stroke-dasharray:2 2; } .cf-br-zero { stroke:var(--line); stroke-width:1; }
 .cf-col.ein { fill:var(--pos); } .cf-col.aus { fill:var(--neg); } .cf-col.bank { fill:color-mix(in srgb, var(--fg) 55%, transparent); } .cf-col.op { fill:var(--cf-op); } .cf-col.inv { fill:var(--cf-inv); } .cf-col.fin { fill:var(--cf-fin); } .cf-col.unk, .cf-col.tot { fill:var(--cf-unk); } .cf-col.part { opacity:.45; }
@@ -726,9 +726,9 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 .cf-heat-c.none { background:var(--sub); } .cf-heat-c.part { background-image:repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, var(--head) 60%, transparent) 3px 5px); } .cf-heat-c:hover, .cf-heat-c:focus-visible { box-shadow:inset 0 0 0 1.5px var(--fg); }
 .cf-heat .cf-heat-c.ahead, .cf-heat.ein .cf-heat-c.ahead { background-image:repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 5px); }          /* running month, plan: over every other background */
 .cf-dot { fill:var(--fg); stroke:var(--head); stroke-width:2; }
-.cf-col.spar { fill:color-mix(in srgb, var(--fg) 58%, transparent); } .cf-col.wert { fill:var(--cf-wert); } .cf-col.ext { fill:var(--cf-fin); }
+.cf-col.spar { fill:color-mix(in srgb, var(--fg) 58%, transparent); } .cf-col.wert { fill:var(--cf-wert); } .cf-col.ext { fill:var(--cf-ext); } .cf-col.bank { fill:var(--cf-bank); } .cf-col.umsch { fill:var(--cf-umsch); }
 .cf-prev-o { fill:none; stroke:var(--fg); stroke-opacity:.55; stroke-width:1; stroke-dasharray:3 2; } .cf-sub-lg { fill:var(--muted); font-size:10.5px; }
-.sw.spar { background:color-mix(in srgb, var(--fg) 58%, transparent); } .sw.wert { background:var(--cf-wert); } .sw.ext { background:var(--cf-fin); } .sw.prev-o { background:none; border:1px dashed color-mix(in srgb, var(--fg) 55%, transparent); box-sizing:border-box; }
+.sw.spar { background:color-mix(in srgb, var(--fg) 58%, transparent); } .sw.wert { background:var(--cf-wert); } .sw.ext { background:var(--cf-ext); } .sw.bank { background:var(--cf-bank); } .sw.umsch { background:var(--cf-umsch); } .sw.prev-o { background:none; border:1px dashed color-mix(in srgb, var(--fg) 55%, transparent); box-sizing:border-box; }
 .cf-tip-hint { font-size:10px; color:var(--muted); margin-top:4px; }
 .chip { display:inline-flex; align-items:center; gap:6px; padding:3px 4px 3px 11px; border-radius:999px; background:var(--group); font-size:12.5px; } .chip button.icon { padding:1px 7px; font-size:11px; }
 .cf-heat-c.open { cursor:pointer; } .cf-pie-lab[data-kats]:hover .cf-pie-n { text-decoration:underline; }

@@ -1,5 +1,17 @@
 # Änderungen
 
+## 3.13.32 (2026-11-18 04:08)
+- Standard-Reihenfolge: Liquiditätsbrücke und Monatlicher Cashflow, darunter Vermögensbrücke und Gesamtcashflow.
+- Monatlicher Cashflow: unten wie die Tabelle (Bankguthaben, Umschichtungen, Wertänderungen); Vorzeichen; erster/letzter Monat immer beschriftet.
+- Ruhigere Farben für Umschichtungen, Wertänderungen, Einlagen; dieselben Punkte in der Tabelle.
+- Gesamtcashflow: schmalere Mitte mit Zeitraum über der Summe; ohne Trennlinie; wächst mit dem Nachbarn; Klick auf die Summe klappt alles auf/zu.
+- Tabelle: Abgleich vor „am Ende“; Einnahmen/Ausgaben, Umschichtungen, Wertänderungen dünner; Hand-Cursor bei „Unklar“.
+- Fix: Tooltip am Anfangs-/Endbestand („undefined“); Sprung zur Bilanz bei früheren Jahren.
+- „Ansicht zurücksetzen“ im Cashflow sauber ausgerichtet.
+- Umsätze & Belege: nur noch ein Excel-Knopf; exportiert die gefilterten Umsätze (alle Treffer).
+- Monatlicher Cashflow: gekappter Vorjahresbalken markiert; Zeitraum per Ziehen/Scrollen über der x-Achse verschieben.
+- Zeitraum-Knöpfe (12 Monate, Jahre) scrollen die Tabelle zum letzten Monat.
+
 ## 3.13.31 (2026-11-18 03:04)
 - Einstellungen → Zugang: Seite sofort da, der Tailscale-Teil lädt nach.
 - Gesamtcashflow: Höhe nach dem Diagramm daneben (wuchs bei jedem Neuzeichnen).

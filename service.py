@@ -1248,7 +1248,59 @@ EXPORT_FILE_KEYS = {"balance": "xf_balance", "cashflow": "xf_cashflow", "plannin
                     "holdings": "xf_holdings", "receipts": "xf_receipts", "accounts": "xf_accounts"}       # Dateiname je Export (Sprachkatalog)
 
 
-def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: Optional[dict] = None) -> List[Sheet]:
+def filter_transactions(app: "App", q: dict):
+    """The transactions page's filter (entity, year, account, search, direction, receipts, categories from a chart, ids):
+    the matching transactions in their order, the receipt counts and all transactions -- for the list and its Excel export."""
+    ums = app.umsatzliste()
+    counts = Belege(app.store, app.config).counts()
+    qs = (q.get("q") or "").lower().strip()
+    # opened from a chart: these categories (and the ones below them) only
+    want = None
+    if q.get("categories"):
+        try:
+            want = [categorize.norm_cat(c) for c in json.loads(q["categories"]) if isinstance(c, str) and c.strip()]
+        except ValueError:
+            want = []
+    only = None
+    if q.get("ids"):                                   # the bookings of an unclear row of the cash flow
+        only = {int(x) for x in q["ids"].split(",") if x.strip().isdigit()}
+    out = []
+    for t in ums:
+        if only is not None and t["id"] not in only:
+            continue
+        if want is not None:
+            k = categorize.norm_cat(t.get("kategorie") or "")
+            none_ok = (q.get("with_uncategorized") == "1" and not k and t.get("braucht", True) and not t.get("umbuchung")
+                       and not t.get("andere_bereich"))          # between two of your areas: not an expense or income
+            if not none_ok and (not k or not any(k == c or k.startswith(c + " / ") for c in want)):
+                continue
+        if q.get("year") and not t["datum"].startswith(q["year"]):
+            continue
+        if q.get("account") and t["konto"] != q["account"]:
+            continue
+        if q.get("entity") and t["entitaet"] != q["entity"]:
+            continue
+        if q.get("uncategorized") == "1" and (t["kategorie"] or not t.get("braucht", True) or t.get("umbuchung")):
+            continue
+        if q.get("without_receipt") == "1" and counts.get(t["id"]):
+            continue
+        if q.get("with_receipt") == "1" and not counts.get(t["id"]):
+            continue
+        if q.get("direction") == "out" and t["betrag"] >= 0:
+            continue
+        if q.get("direction") == "in" and t["betrag"] < 0:
+            continue
+        if q.get("from") and t["datum"] < q["from"]:
+            continue
+        if q.get("to") and t["datum"] > q["to"]:
+            continue
+        if qs and qs not in (t["name"] + " " + t["zweck"] + " " + t["kategorie"] + " " + t["konto_name"] + " " + str(t["betrag"])).lower():
+            continue
+        out.append(t)
+    return out, counts, ums
+
+
+def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: Optional[dict] = None, query: Optional[dict] = None) -> List[Sheet]:
     """view (balance sheet): the state of the table on screen -- open positions, open portfolios, hidden rows shown --
     so that the workbook opens like the page; everything else is in it too, collapsed (Excel's outline)."""
     ds = app.dataset()
@@ -1434,10 +1486,16 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
         return sheets or [Sheet(tr("x_steuer"), [tr("x_hinweis")], [[tr("x_keine_daten")]])]
 
     if was == "transactions":
-        ums = app.umsatzliste()
-        if bereich:
-            ums = [u for u in ums if u["entitaet"] == bereich]
-        counts = Belege(app.store, app.config).counts()
+        # as on the page: the filtered transactions, all of them (not only the first shown)
+        if query is not None:
+            ums, counts, _ = filter_transactions(app, query)
+            bereich = query.get("entity") or None
+            name = (ds.get("bereich_namen") or {}).get(bereich or "", "")
+        else:
+            ums = app.umsatzliste()
+            if bereich:
+                ums = [u for u in ums if u["entitaet"] == bereich]
+            counts = Belege(app.store, app.config).counts()
         rows = [[u["datum"], u["konto_name"], u["name"], u["zweck"], u["betrag"], u["kategorie"], counts.get(u["id"], 0), u["id"]] for u in ums]
         return [Sheet(tr("s_umsaetze") + (name if bereich else ""), [tr("x_datum"), tr("x_konto"), tr("x_name"), tr("x_zweck"), tr("x_betrag"), tr("x_kategorie"), tr("x_belege"), "ID"],
                       rows, widths=[12, 26, 30, 50, 14, 30, 8, 10], freeze="A2")]
@@ -1709,7 +1767,7 @@ def make_handler(app: App):
             if path.startswith("/api/export/"):
                 was = path[len("/api/export/"):].replace(".xlsx", "")
                 view = {"open": set((q.get("open") or "").split(",")) - {""}, "dep": set((q.get("dep") or "").split(",")) - {""}, "all": q.get("all") == "1"}
-                data = workbook(export_sheets(app, was, q.get("area"), "jahre" if q.get("mode") == "years" else "monate", view))
+                data = workbook(export_sheets(app, was, q.get("area"), "jahre" if q.get("mode") == "years" else "monate", view, q if was == "transactions" else None))
                 return self._raw(200, data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                  {"Content-Disposition": 'attachment; filename="Kontor-%s-%s.xlsx"' % (tr(EXPORT_FILE_KEYS[was]) if was in EXPORT_FILE_KEYS else was, date.today().isoformat())})
             if path == "/api/package/export":
@@ -1870,57 +1928,11 @@ def make_handler(app: App):
             return out
 
         def _umsaetze(self, q: dict) -> dict:
-            ums = app.umsatzliste()
-            counts = Belege(app.store, app.config).counts()
-            qs = (q.get("q") or "").lower().strip()
+            hits, counts, ums = filter_transactions(app, q)
             limit = min(5000, int(q.get("limit", "500")))
-            out, total = [], 0
             jahre = sorted({t["datum"][:4] for t in ums}, reverse=True)
-            # opened from a chart: these categories (and the ones below them) only
-            want = None
-            if q.get("categories"):
-                try:
-                    want = [categorize.norm_cat(c) for c in json.loads(q["categories"]) if isinstance(c, str) and c.strip()]
-                except ValueError:
-                    want = []
-            only = None
-            if q.get("ids"):                                   # the bookings of an unclear row of the cash flow
-                only = {int(x) for x in q["ids"].split(",") if x.strip().isdigit()}
-            for t in ums:
-                if only is not None and t["id"] not in only:
-                    continue
-                if want is not None:
-                    k = categorize.norm_cat(t.get("kategorie") or "")
-                    none_ok = (q.get("with_uncategorized") == "1" and not k and t.get("braucht", True) and not t.get("umbuchung")
-                               and not t.get("andere_bereich"))          # between two of your areas: not an expense or income
-                    if not none_ok and (not k or not any(k == c or k.startswith(c + " / ") for c in want)):
-                        continue
-                if q.get("year") and not t["datum"].startswith(q["year"]):
-                    continue
-                if q.get("account") and t["konto"] != q["account"]:
-                    continue
-                if q.get("entity") and t["entitaet"] != q["entity"]:
-                    continue
-                if q.get("uncategorized") == "1" and (t["kategorie"] or not t.get("braucht", True) or t.get("umbuchung")):
-                    continue
-                if q.get("without_receipt") == "1" and counts.get(t["id"]):
-                    continue
-                if q.get("with_receipt") == "1" and not counts.get(t["id"]):
-                    continue
-                if q.get("direction") == "out" and t["betrag"] >= 0:
-                    continue
-                if q.get("direction") == "in" and t["betrag"] < 0:
-                    continue
-                if q.get("from") and t["datum"] < q["from"]:
-                    continue
-                if q.get("to") and t["datum"] > q["to"]:
-                    continue
-                if qs and qs not in (t["name"] + " " + t["zweck"] + " " + t["kategorie"] + " " + t["konto_name"] + " " + str(t["betrag"])).lower():
-                    continue
-                total += 1
-                if len(out) < limit:
-                    out.append(dict(t, belege=counts.get(t["id"], 0)))
-            return {"umsaetze": out, "treffer": total, "gesamt": len(ums), "jahre": jahre}
+            out = [dict(t, belege=counts.get(t["id"], 0)) for t in hits[:limit]]
+            return {"umsaetze": out, "treffer": len(hits), "gesamt": len(ums), "jahre": jahre}
 
         # -- POST/PUT ------------------------------------------------------
         def do_POST(self):
