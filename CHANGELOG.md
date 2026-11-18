@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.14.8 (2026-11-18 16:36)
+- Deinstallation nennt, wie man die macOS-Freigaben (Automation) entfernt.
+
 ## 3.14.7 (2026-11-18 16:24)
 - Einrichtung: „Einrichtung abgeschlossen“ vor „Einrichtung prüfen“; ein Hilfe-Tooltip erklärt beide Knöpfe.
 

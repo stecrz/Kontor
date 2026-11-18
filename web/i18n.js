@@ -1914,6 +1914,7 @@ const I18N = {
 "s_dienst_eingerichtet_startet_beim_anmel":["Dienst eingerichtet (startet beim Anmelden, läuft dauerhaft): %s", "Service set up (starts at login, runs permanently): %s"],
 "s_oberflaeche_s_python3_kontor_py":["Oberfläche: %s  (python3 kontor.py open)", "Interface: %s  (python3 kontor.py open)"],
 "s_beim_ersten_lauf_fragt_macos":["Beim ersten Lauf fragt macOS, ob das Programm MoneyMoney steuern darf -- bitte erlauben.", "On the first run macOS asks whether the program may control MoneyMoney -- please allow."],
+"s_freigaben_entfernen":["Freigaben unter Datenschutz & Sicherheit → Automation bleiben; macOS entfernt sie nur im Terminal:\n  tccutil reset AppleEvents org.python.python   (nur Python)\n  tccutil reset AppleEvents com.apple.Terminal  (nur Terminal)\n  tccutil reset AppleEvents                     (alle Apps – fragen danach neu)", "Permissions under Privacy & Security → Automation remain; macOS removes them only in Terminal:\n  tccutil reset AppleEvents org.python.python   (Python only)\n  tccutil reset AppleEvents com.apple.Terminal  (Terminal only)\n  tccutil reset AppleEvents                     (all apps – they ask again afterwards)"],
 "s_dienst_entfernt_daten_bleiben_in":["Dienst entfernt. Daten bleiben in %s (bei Bedarf von Hand löschen).", "Service removed. Data remains in %s (delete manually if needed)."],
 "s_fehler_s":["Fehler: %s", "Error: %s"],
 "s_zertifikat_fuer_s_geholt_gueltig":["Zertifikat für %s geholt (gültig bis %s), Adresse %s.", "Certificate for %s obtained (valid until %s), address %s."],

@@ -398,6 +398,8 @@ def cmd_uninstall(args) -> int:
         except FileNotFoundError:
             pass
     print(tr("s_dienst_entfernt_daten_bleiben_in") % DATA_DIR)
+    if sys.platform == "darwin":            # macOS keeps the automation permissions (MoneyMoney, System Events); only tccutil removes them
+        print(tr("s_freigaben_entfernen"))
     return 0
 
 
