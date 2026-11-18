@@ -3094,12 +3094,18 @@ function balFlash(main, tries = 0) {
   const f = S.balFlash; if (!f) return; const [kind, m] = f.split('|'), w = $('.wrap.snap', main); if (!w) { S.balFlash = null; return; }
   const th = $(`th[data-key="${m}"]`, w) || (S.modus === 'jahre' ? $(`th[data-key="${m.slice(0, 4)}"]`, w) : null);
   // a month before the table's first year (e.g. the start of an earlier year): show from its year on -- the new page runs this again
-  if (!th) { const D = B(); if (D && S.modus !== 'jahre' && +m.slice(0, 4) < firstYear(D)) { S.vonJahr = +m.slice(0, 4); route(); } else S.balFlash = null; return; }
+  // a plan month while the plan is hidden: shown -- the new page runs this again
+  if (!th) { const D = B(); if (D && S.modus !== 'jahre' && +m.slice(0, 4) < firstYear(D)) { S.vonJahr = +m.slice(0, 4); route(); }
+    else if (D && !S.plan && (D.plan_monate || []).includes(m)) { S.plan = true; route(); } else S.balFlash = null; return; }
   S.balFlash = null; bchJump(m);
   const idx = [...th.parentNode.children].indexOf(th);
   const tr = kind === 'nw' ? [...$$('tr.total', w)].find(r => r.querySelector('.nw-sw')) : $('tr[data-pos="liquiditaet"]', w);
   const c = tr && tr.children[idx]; if (!c) return;
-  c.classList.remove('flash-hit'); void c.offsetWidth; c.classList.add('flash-hit'); tr.scrollIntoView({block: 'center', behavior: 'smooth'});
+  c.classList.remove('flash-hit'); void c.offsetWidth; c.classList.add('flash-hit');
+  // up or down only (scrollIntoView would also move the table sideways -- back to the row's start, away from the month)
+  let sc = document.scrollingElement; for (let p = w.parentElement; p; p = p.parentElement) { const o = getComputedStyle(p).overflowY; if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) { sc = p; break; } }
+  const top = sc === document.scrollingElement ? 0 : sc.getBoundingClientRect().top, vh = sc === document.scrollingElement ? innerHeight : sc.clientHeight;
+  sc.scrollBy({top: tr.getBoundingClientRect().top - top - vh / 2, behavior: 'smooth'});
 }
 function cfBridgeSteps(D, months, prev) {
   const sums = D.kapitalfluss.summen || {}, allM = [...new Set([...(D.monate || []), ...(D.plan_monate || [])])].sort();
@@ -3203,9 +3209,10 @@ function cfWealthTree(D, months, prev) {
   if (known) out.push({id: 'nw0', kind: 'tot', bal: 'nw|' + before, label: t('cf_nv_anfang'), v: start});
   // as in the table: the surplus (income and expenses), then the interest (financing, but it costs net worth -- repaying does not)
   grp('op', SEC_LABEL.Operativ, [...by.ein, ...by.aus], [node('op|ein', t('einnahmen'), by.ein, zLabel), node('op|aus', t('ausgaben'), by.aus, zLabel)]);
-  grp('fin', t('zinsen'), by.zins, by.zins.length ? node('zins', '', by.zins, zLabel).kids || [] : [], 'zins');
+  // colours only where the table has them (surplus, changes in value): interest and contributions without one
+  grp('plain', t('zinsen'), by.zins, by.zins.length ? node('zins', '', by.zins, zLabel).kids || [] : [], 'zins');
   const opRow = out.find(r => r.id === 'op'); if (opRow) opRow.abbr = SEC_ABBR.Operativ;          // named as in the cash bridge
-  grp('ext', t('cf_einlagen_entnahmen'), by.ext, by.ext.length ? node('ext', '', by.ext, zLabel).kids || [] : []);
+  grp('plain', t('cf_einlagen_entnahmen'), by.ext, by.ext.length ? node('ext', '', by.ext, zLabel).kids || [] : [], 'ext');
   grp('wert', t('cf_wertaenderungen'), by.wert, by.wert.length ? node('wert', '', by.wert, gLabel).kids || [] : []);
   const unk = sum(by.unk, z => cfRowSum(z, months)); if (Math.abs(unk) >= 0.005) out.push({id: 'unk', kind: 'one', label: t('cf_unklar'), v: unk, p: null, kids: null});
   // what the balance sheet shows beyond these rows (unknown balances, corrections): its own step, as in the cash bridge
@@ -3277,7 +3284,7 @@ function cfDrawBridge(which = 'liq') {
     const cutName = r.label.length > room;
     const balT = r.bal ? t(r.bal.startsWith('nw') ? 'cf_zur_bilanz_nv' : 'cf_zur_bilanz_liq', ML(r.bal.split('|')[1])) : '';          // a total: a click shows it in the balance sheet
     g += `<g class="cf-br-row ${kind}${r.br ? ' br' : ''}${r.hasKids || r.bal ? ' more' : ''}"${r.hasKids ? ` tabindex="0" role="button" data-br="${esc(r.id)}" aria-expanded="${r.br}"` : r.bal ? ` tabindex="0" role="link" data-bal="${esc(r.bal)}"` : ''} aria-label="${esc(r.label + ': ' + cfEur(r.v))}">${cutName || r.long || balT ? `<title>${esc(balT || r.long || r.label)}</title>` : ''}<rect class="cf-br-bg" x="0" y="${y}" width="${W}" height="${h}" rx="4"/>`
-      + dsc + `<text class="cf-br-n" x="${nx}" y="${(mid + 4).toFixed(1)}">${esc(cutName ? r.label.slice(0, Math.max(3, room - 1)) + '…' : r.label)}${r.kind === 'act' ? `<tspan class="cf-br-dot ${r.act}" dx="4" dy="-1">●</tspan>` : ''}${r.abbr ? `<tspan class="cf-br-abbr" dx="3" dy="${r.kind === 'act' ? 1 : 0}">${r.abbr}</tspan>` : ''}</text>`
+      + dsc + `<text class="cf-br-n" x="${nx}" y="${(mid + 4).toFixed(1)}">${esc(cutName ? r.label.slice(0, Math.max(3, room - 1)) + '…' : r.label)}${r.kind === 'act' && r.act !== 'plain' ? `<tspan class="cf-br-dot ${r.act}" dx="4" dy="-1">●</tspan>` : ''}${r.abbr ? `<tspan class="cf-br-abbr" dx="3" dy="${r.kind === 'act' ? 1 : 0}">${r.abbr}</tspan>` : ''}</text>`
       + mark + `<text class="cf-br-v" x="${(W - chW - 4).toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end">${(r.kind === 'tot' || r.v < 0 ? '' : '+') + esc(F0(r.v))}</text>`
       + (chW && ch ? `<text class="cf-br-c ${ch.cls}" x="${(W - 2).toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end" data-cftip="${cfTip(`<div class="cf-tip-h">${esc(r.label)}</div><div class="cf-tip-kv"><span>${esc(t('betrag'))}</span><b>${cfEur(r.v)}</b><span>${esc(t('cf_vorjahr'))}</span><b>${r.p != null ? cfEur(r.p) : '–'}</b><span>${esc(t('cf_veraenderung'))}</span><b class="${ch.cls}">${esc(ch.txt)}</b></div>`
         + (r.hasKids ? r.kids.map(k => cfTipRow('sw ' + (k.v >= 0 ? 'in' : 'out'), k.label, cfEur(k.v), cfChange(k.v, k.p, k.v >= 0) || {cls: '', txt: ''})).join('') : ''))}">${esc(ch.txt.replace(' %', '%'))}</text>` : '') + `</g>`;
@@ -3307,7 +3314,9 @@ function cfDrawMonths() {
   const ext = bs.flatMap(b => [b.up, -b.dn]).filter(v => v > 0.5).sort((p, q) => p - q), q = ext[Math.floor((ext.length - 1) * 0.75)] || 0;
   const cut = ext.length >= 6 && ext[ext.length - 1] > 3 * q && q > 0 ? Math.max(...ext.filter(v => v <= 3 * q)) * 1.12 : null;     // just above the largest regular one
   if (cut) { hi = Math.min(hi, cut); lo = Math.max(lo, -cut); }
-  const downCut = cut && bs.some(b => -b.dn > cut);
+  // zoomed on its axis (drag up/down there): the range scaled -- bars beyond it cut and labelled like the outliers
+  const Z = S.cfMoZ || {}, zUp = Z.up || 1, clip = !!cut || zUp !== 1; if (zUp !== 1) { hi *= zUp; lo *= zUp; }
+  const downCut = clip && bs.some(b => b.dn < lo - 0.005);
   // below, on its own scale: the change in net worth -- saved (what came in less what went out, interest included) and changes
   // in value (portfolios, properties ...), stacked; the same months a year before as a dashed outline. Single huge months cut.
   const msOf = b => byYear ? cur.filter(m => m.startsWith(b.k)) : [b.k];
@@ -3320,17 +3329,19 @@ function cfDrawMonths() {
   const ends = bs.flatMap(b => [b.nup, -b.ndn]).filter(v => v > 0.5).sort((p, q) => p - q), q2 = ends[Math.floor((ends.length - 1) * 0.75)] || 0;
   const cut2 = ends.length >= 6 && ends[ends.length - 1] > 3 * q2 && q2 > 0 ? Math.max(...ends.filter(v => v <= 3 * q2)) * 1.12 : null;
   const nice = v => { const p = 10 ** Math.floor(Math.log10(v)), f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; };
-  const nmax = nice(Math.max(1, cut2 || ends[ends.length - 1] || 1)), lowDown = !!(cut2 && bs.some(b => -b.ndn > nmax));
+  const zNw = Z.nw || 1, nmax = zNw !== 1 ? Math.max(1, (cut2 || ends[ends.length - 1] || 1) * zNw) : nice(Math.max(1, cut2 || ends[ends.length - 1] || 1)), clip2 = !!cut2 || zNw !== 1;
+  const lowDown = clip2 && bs.some(b => -b.ndn > nmax);
   const LEG = [['wert', t('cf_wertaenderungen')], ['umsch', t('cf_umschichtungen')], ['bank', t('cf_bankguthaben_kurz')]], CW = 5.9, legW = LEG.reduce((a, [, l]) => a + l.length * CW + 24, 0);
   const W0 = Math.max(280, el.clientWidth), twoL = (W0 >= 640 ? 58 : 44) + t('cf_veraenderung_nv').length * 6.4 + 12 + legW > W0 - 8;     // narrow: the legend below its title
   const legRows = [[]]; { let used = 0; for (const it of LEG) { const w = it[1].length * CW + 24; if (used + w > W0 - 8 && legRows[legRows.length - 1].length) { legRows.push([]); used = 0; } legRows[legRows.length - 1].push(it); used += w; } }      // very narrow: two rows
   const W = W0, H1 = W < 520 ? 170 : 200, H2 = 72, gapH = (downCut ? 40 : 26) + 18 + (twoL ? 14 : 0) + (legRows.length - 1) * 14, H = H1 + gapH + H2 + 20 + (lowDown ? 12 : 0), P = {l: W >= 640 ? 58 : 44, r: 8, t: 16};          // +18: the lower panel a little apart
   let ticks = niceTicks(lo, hi, 4, 4); const step = ticks.length > 1 ? ticks[1] - ticks[0] : (hi - lo);          // at least four lines
-  if (!cut) { if (ticks[0] > lo + step * 1e-6) ticks.unshift(ticks[0] - step); if (ticks[ticks.length - 1] < hi - step * 1e-6) ticks.push(ticks[ticks.length - 1] + step); }
+  if (!clip) { if (ticks[0] > lo + step * 1e-6) ticks.unshift(ticks[0] - step); if (ticks[ticks.length - 1] < hi - step * 1e-6) ticks.push(ticks[ticks.length - 1] + step); }
   else ticks = ticks.filter(v => v <= hi + step * 1e-6 && v >= lo - step * 1e-6);
-  const y0 = cut ? lo : ticks[0], y1 = cut ? hi : ticks[ticks.length - 1], ref = Math.max(Math.abs(y0), Math.abs(y1));
+  const y0 = clip ? lo : ticks[0], y1 = clip ? hi : ticks[ticks.length - 1], ref = Math.max(Math.abs(y0), Math.abs(y1));
   const y = v => P.t + (y1 - Math.max(y0, Math.min(y1, v))) / ((y1 - y0) || 1) * (H1 - P.t);
-  const slot = (W - P.l - P.r) / bs.length, bw = Math.max(2, Math.min(22, slot - 5)), x = i => P.l + slot * i + (slot - bw) / 2, cx = i => P.l + slot * (i + 0.5);
+  const slot = (W - P.l - P.r) / bs.length, cutLab = v => { const l = (v > 0 ? '+' : '') + Fk(v, false, Math.abs(v)); return l.length * 6.2 > slot - 3 ? (v > 0 ? '+' : '') + Fs(v) : l; },          // a cut bar's height: short where columns are narrow
+    bw = Math.max(2, Math.min(22, slot - 5)), x = i => P.l + slot * i + (slot - bw) / 2, cx = i => P.l + slot * (i + 0.5);
   // the running month and plan months: hatched behind their bars, as in the table
   let g = `<defs><pattern id="cf-m-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="cf-hatch-l" x1="0" y1="0" x2="0" y2="6"/></pattern></defs>`
     + bs.map((b, i) => msOf(b).some(m => cfIsOpen(D, m)) ? `<rect class="cf-ahead" x="${(P.l + slot * i + 1).toFixed(1)}" y="2" width="${(slot - 2).toFixed(1)}" height="${H - 20}" rx="3"/>` : '').join('');
@@ -3350,10 +3361,10 @@ function cfDrawMonths() {
       });
       // cut: two slanted strokes across the bar near its end, the full height above (or below) it
       const tot = sign > 0 ? b.up : b.dn;
-      if (cut && Math.abs(tot) > cut) {
+      if (clip && (sign > 0 ? tot > y1 + 0.005 : tot < y0 - 0.005)) {
         const ye = y(tot) + (sign > 0 ? 9 : -9), x0 = x(i) - 2, x1 = x(i) + bw + 2;
         g += `<path class="cf-break" d="M${x0},${(ye + 2).toFixed(1)}L${x1},${(ye - 2).toFixed(1)}M${x0},${(ye + 6).toFixed(1)}L${x1},${(ye + 2).toFixed(1)}"/>`
-          + `<text class="cf-val-l" x="${cx(i).toFixed(1)}" y="${(sign > 0 ? P.t - 4 : H1 + 12).toFixed(1)}" text-anchor="middle">${(sign > 0 ? '+' : '') + Fk(tot, false, Math.abs(tot))}</text>`;
+          + `<text class="cf-val-l" x="${cx(i).toFixed(1)}" y="${(sign > 0 ? P.t - 4 : H1 + 12).toFixed(1)}" text-anchor="middle">${cutLab(tot)}</text>`;
       }
     }
   });
@@ -3380,10 +3391,10 @@ function cfDrawMonths() {
         g += `<rect class="cf-col ${k}${b.part ? ' part' : ''}" x="${x(i).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${Math.min(2, bw / 2)}"/>`;
       }
       const tot = sign > 0 ? b.nup : b.ndn;
-      if (cut2 && Math.abs(tot) > nmax) {
+      if (clip2 && Math.abs(tot) > nmax) {
         const ye = y2(tot) + (sign > 0 ? 7 : -7), x0 = x(i) - 2, x1 = x(i) + bw + 2;
         g += `<path class="cf-break nw" d="M${x0},${(ye + 2).toFixed(1)}L${x1},${(ye - 2).toFixed(1)}M${x0},${(ye + 6).toFixed(1)}L${x1},${(ye + 2).toFixed(1)}"/>`
-          + `<text class="cf-val-l nw" x="${cx(i).toFixed(1)}" y="${(sign > 0 ? t2 + 7 : t2 + H2 + 11).toFixed(1)}" text-anchor="middle">${(sign > 0 ? '+' : '') + Fk(tot, false, Math.abs(tot))}</text>`;
+          + `<text class="cf-val-l nw" x="${cx(i).toFixed(1)}" y="${(sign > 0 ? t2 + 7 : t2 + H2 + 11).toFixed(1)}" text-anchor="middle">${cutLab(tot)}</text>`;
       }
     }
   });
@@ -3392,7 +3403,10 @@ function cfDrawMonths() {
     const kept = []; for (const i of [...new Set(order)]) { const w = lab(i).length * 6.2 + 8, xc = Math.min(cx(i), W - lab(i).length * 3.1 - 2);
       if (kept.some(k => Math.abs(k.xc - xc) < (k.w + w) / 2)) continue; kept.push({i, w, xc}); }
     for (const {i, xc} of kept) g += `<text class="cf-tick" x="${xc.toFixed(1)}" y="${H - 4}" text-anchor="middle">${esc(lab(i))}</text>`;
-    g += `<rect class="cf-xaxis" x="${P.l}" y="${H - 16}" width="${W - P.l}" height="16" data-slot="${slot.toFixed(1)}"><title>${esc(t('cf_achse_ziehen'))}</title></rect>`; }          // the axis: drag or scroll along it to move the period
+    g += `<rect class="cf-xaxis" x="${P.l}" y="${H - 16}" width="${W - P.l}" height="16" data-slot="${slot.toFixed(1)}"><title>${esc(t('cf_achse_ziehen'))}</title></rect>`
+      // each scale: drag up/down (or scroll) on it to zoom, a click sets it back -- marked while changed
+      + `<rect class="cf-yax${zUp !== 1 ? ' on' : ''}" data-p="up" x="0" y="0" width="${P.l - 2}" height="${H1 + 4}"><title>${esc(t('cf_yax_tip'))}</title></rect>`
+      + `<rect class="cf-yax${zNw !== 1 ? ' on' : ''}" data-p="nw" x="0" y="${(t2 - 4).toFixed(1)}" width="${P.l - 2}" height="${H2 + 8}"><title>${esc(t('cf_yax_tip'))}</title></rect>`; }          // the axis: drag or scroll along it to move the period
   const sgn = v => (v > 0.5 ? '+' : '') + F0(v) + ' €', nz = (c, l, v) => Math.abs(v) >= 0.005 ? cfTipRow(c, l, sgn(v)) : '';          // rows of exactly 0,00: left out
   bs.forEach((b, i) => {
     const tip = cfTip(`<div class="cf-tip-h">${esc(byYear ? b.label : MLL(b.k))}${b.part ? ` <span class="muted">· ${b.n}${t('mon')}</span>` : ''}</div>`
@@ -3679,32 +3693,23 @@ function cfDrawFlow() {
   // the bands opaque, their colours softened towards the background: where they meet there is no seam
   const BG = rgb('--head'), soft = c => { const v = /^#([0-9a-f]{6})$/i.test(c) ? [0, 2, 4].map(i => parseInt(c.slice(1 + i, 3 + i), 16)) : [142, 142, 147]; return hex(v.map((x, i) => Math.round(x * 0.62 + BG[i] * 0.38))); };
   const sc = e => soft(COL[e.act] || COL.unk);
-  // the middle, from top to bottom in small steps: at each height the mean of the colour arriving from the left and the one leaving
-  // to the right there, then smoothed from step to step -- a short blend downwards. Each band runs softly from its own colour
-  // at the bar to the middle's
-  { const span = Math.max(1, mH), rgbOf = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
-    const side = list => { let yy = 0; return list.map(e => { const hw = e.hv * k * WAIST, o = [yy, yy + hw, rgbOf(sc(e))]; yy += hw; return o; }); };
-    const Ls = side(L), Rs = side(R), at = (arr, y) => (arr.find(x => y < x[1]) || arr[arr.length - 1])[2];
-    const N = Math.max(12, Math.min(90, Math.round(span / 4))), raw = [];
-    for (let i = 0; i <= N; i++) { const y = span * (i + 0.5) / (N + 1), l = at(Ls, y), r = at(Rs, y); raw.push([0, 1, 2].map(j => (l[j] + r[j]) / 2)); }
-    const w = Math.max(1, Math.round(5 / (span / (N + 1))));          // a short blend between two colours (about 5 px up and down)
-    const stops = raw.map((_, i) => { const s = [0, 0, 0]; let n = 0; for (let j = Math.max(0, i - w); j <= Math.min(N, i + w); j++) { for (let c = 0; c < 3; c++) s[c] += raw[j][c]; n++; }
-      return `<stop offset="${((i + 0.5) / (N + 1)).toFixed(4)}" stop-color="${hex(s.map(x => Math.round(x / n)))}"/>`; }).join('');
-    const xa = xM - NECK, xb = xM + NECK;
-    defs += `<linearGradient id="cfmid" gradientUnits="userSpaceOnUse" x1="0" x2="0" y1="${mTop.toFixed(1)}" y2="${(mTop + span).toFixed(1)}">${stops}</linearGradient>`
-      + `<linearGradient id="cfmLg" gradientUnits="userSpaceOnUse" x1="${(xL + nodeW).toFixed(1)}" x2="${xa.toFixed(1)}" y1="0" y2="0"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></linearGradient>`
-      + `<linearGradient id="cfmRg" gradientUnits="userSpaceOnUse" x1="${xb.toFixed(1)}" x2="${xR.toFixed(1)}" y1="0" y2="0"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></linearGradient>`
-      + `<mask id="cfmL" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="url(#cfmLg)"/></mask>`
-      + `<mask id="cfmR" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="url(#cfmRg)"/></mask>`; }
+  // where all bands meet they fade out (the mix of all, mostly background -- opaque, so layers never show as lines): each band keeps
+  // its own colour for most of the way and fades only close to the middle; the same colour for all there, so no seam
+  const rgbOf = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+  const midC = (() => { const w = L.reduce((a, e) => a + e.v, 0) || 1, m = [0, 1, 2].map(c => L.reduce((a, e) => a + rgbOf(sc(e))[c] * e.v, 0) / w), gr = BG;
+    return hex(m.map((x, c) => Math.round(x * 0.4 + gr[c] * 0.6))); })();
+  let gi = 0;
+  const grad = (e, left) => { const id = 'cffl' + (gi++), own = sc(e);
+    defs += `<linearGradient id="${id}" x1="0" x2="1" y1="0" y2="0">${left ? `<stop offset="0.7" stop-color="${own}"/><stop offset="1" stop-color="${midC}"/>` : `<stop offset="0" stop-color="${midC}"/><stop offset="0.3" stop-color="${own}"/>`}</linearGradient>`; return id; };
   const share = (e, x, y, anchor) => e.h >= 15 && e.v / F.total >= 0.05 ? `<text class="cf-fl-p" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${anchor}">${cfPct(e.v, F.total)} %</text>` : '';
   // a click: an item with parts opens them; a part that has none closes its group again (on the band or its name)
   const tgt = e => e.more ? ` data-fl="${esc(e.key)}" tabindex="0" role="button" aria-expanded="false"` : e.parentKey ? ` data-fl="${esc(e.parentKey)}" tabindex="0" role="button" aria-expanded="true"` : '';
   const tcls = e => e.more ? ' more' : e.parentKey ? ' back' : '';
   for (const e of L) { const h = e.hv * k, d = band(xL + nodeW, e.y, e.y + h, xM + 0.8 - NECK, mY, mY + h * WAIST + 0.7) + neck(xM - NECK, xM + 0.8, mY, mY + h * WAIST + 0.7);          // +0.7: under the next band, no hairline between them
-    g += `<g class="cf-fl-g${tcls(e)}"${tgt(e)} aria-label="${esc(e.label + ': ' + cfEur(e.v))}"><path class="cf-fl-b" fill="${sc(e)}" d="${d}"/><path class="cf-fl-b" fill="url(#cfmid)" mask="url(#cfmL)" d="${d}"/><rect class="cf-fl-n ${e.act}" x="${xL}" y="${e.y.toFixed(1)}" width="${nodeW}" height="${e.h.toFixed(1)}" rx="2"/></g>`; shares += share(e, xL + nodeW + 6, e.y + e.h / 2, 'start'); mY += h * WAIST; }
+    g += `<g class="cf-fl-g${tcls(e)}"${tgt(e)} aria-label="${esc(e.label + ': ' + cfEur(e.v))}"><path class="cf-fl-b" fill="url(#${grad(e, true)})" d="${d}"/><rect class="cf-fl-n ${e.act}" x="${xL}" y="${e.y.toFixed(1)}" width="${nodeW}" height="${e.h.toFixed(1)}" rx="2"/></g>`; shares += share(e, xL + nodeW + 6, e.y + e.h / 2, 'start'); mY += h * WAIST; }
   mY = mTop;
   for (const e of R) { const h = e.hv * k, d = neck(xM - 0.8, xM + NECK, mY, mY + h * WAIST + 0.7) + band(xM - 0.8 + NECK, mY, mY + h * WAIST + 0.7, xR, e.y, e.y + h);
-    g += `<g class="cf-fl-g${tcls(e)}"${tgt(e)} aria-label="${esc(e.label + ': ' + cfEur(e.v))}"><path class="cf-fl-b" fill="url(#cfmid)" d="${d}"/><path class="cf-fl-b" fill="${sc(e)}" mask="url(#cfmR)" d="${d}"/><rect class="cf-fl-n ${e.act}" x="${xR}" y="${e.y.toFixed(1)}" width="${nodeW}" height="${e.h.toFixed(1)}" rx="2"/></g>`; shares += share(e, xR - 6, e.y + e.h / 2, 'end'); mY += h * WAIST; }
+    g += `<g class="cf-fl-g${tcls(e)}"${tgt(e)} aria-label="${esc(e.label + ': ' + cfEur(e.v))}"><path class="cf-fl-b" fill="url(#${grad(e, false)})" d="${d}"/><rect class="cf-fl-n ${e.act}" x="${xR}" y="${e.y.toFixed(1)}" width="${nodeW}" height="${e.h.toFixed(1)}" rx="2"/></g>`; shares += share(e, xR - 6, e.y + e.h / 2, 'end'); mY += h * WAIST; }
   g += shares;
   // the amount that ran through the period, quietly above the middle
   g += `<text class="cf-fl-mid${allKeys.length ? ' cf-fl-all' : ''}" x="${xM.toFixed(1)}" y="${(mTop - 7).toFixed(1)}" text-anchor="middle"${allKeys.length ? ` data-flall tabindex="0" role="button" aria-expanded="${allOpen}"` : ''}>${allKeys.length ? `<title>${esc(t(allOpen ? 'cf_alles_zuklappen' : 'cf_alles_aufklappen'))}</title>` : ''}${esc(F0(F.total))} €</text>`
@@ -3738,8 +3743,8 @@ function cfShowTip(el) {
 }
 const monthEnd = m => `${m}-${String(new Date(+m.slice(0, 4), +m.slice(5), 0).getDate()).padStart(2, '0')}`;
 // the transactions behind a cell of the heat map or a category of the ring, under „Umsätze & Belege“ (filter shown there)
-// the transactions behind a figure: in a side panel (the cash flow stays); unclear ones -- to correct -- on their page
-function cfOpenTx(o, page = !!o.ids) {
+// the transactions behind a figure, whatever it is (a category, unclear ones): in a side panel -- the cash flow stays; from there the page
+function cfOpenTx(o, page = false) {
   const f = {entitaet: S.bereich || '', jahr: '', konto: '', q: '', ohne_beleg: false, richtung: o.richtung || '', ohne_kategorie: !!o.none,
     kats: o.none ? null : o.kats, von: o.months[0] + '-01', bis: monthEnd(o.months[o.months.length - 1]), titel: o.titel, est: !!o.est, ext: true,
     mitOhne: !!o.mitOhne, katsLabel: (o.kats || []).length > 1 ? o.katsLabel || '' : '', rChart: !!o.rChart, ids: o.ids || null};
@@ -3801,7 +3806,16 @@ function bindCfCharts(main) {
   const cfStep = d => { const D = B(), ms = cfPick(D), [cur] = cfMonths(D, S.cfZeit), i0 = ms.indexOf(cur[0]) + d, i1 = ms.indexOf(cur[cur.length - 1]) + d;
     if (i0 < 0 || i1 >= ms.length) return false;
     CF.wheelBusy = true; hide(); Promise.resolve(cfSetRange(ms[i0], ms[i1])).then(() => setTimeout(() => { CF.wheelBusy = false; }, 80)); return true; };
+  const zSet = (p, f) => { const Z = S.cfMoZ || (S.cfMoZ = {}); if (f == null || Math.abs(f - 1) < 0.02) delete Z[p]; else Z[p] = Math.max(0.05, Math.min(4, f)); hide(); cfDrawMonths(); };
+  if (mEl) mEl.addEventListener('pointerdown', e => {          // a scale: drag down = wider range, up = closer; a click: automatic again
+    const ax = e.target.closest('.cf-yax'); if (!ax || e.button !== 0) return;
+    e.preventDefault(); const p = ax.dataset.p, f0 = (S.cfMoZ || {})[p] || 1, y0 = e.clientY; let moved = false;
+    const move = ev => { const dy = ev.clientY - y0; if (Math.abs(dy) > 3) moved = true; if (moved) zSet(p, f0 * Math.exp(dy * 0.01)); };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.body.classList.remove('cf-ydrag'); if (!moved) zSet(p, null); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.body.classList.add('cf-ydrag');
+  });
   if (mEl) mEl.addEventListener('wheel', e => {
+    const ya = e.target.closest('.cf-yax'); if (ya) { e.preventDefault(); const p = ya.dataset.p; zSet(p, ((S.cfMoZ || {})[p] || 1) * Math.exp(e.deltaY * 0.004)); return; }
     // over the axis also up and down (a mouse wheel); elsewhere up and down scrolls the page
     let dx = e.deltaX; if (Math.abs(dx) <= Math.abs(e.deltaY)) { if (!e.target.closest('.cf-xaxis')) return; dx = e.deltaY; }
     e.preventDefault(); if (CF.wheelBusy) return;
@@ -5736,7 +5750,9 @@ function bind(main) {
 
   // Updates
   const uc = $('#up-check', main); if (uc) uc.addEventListener('click', async () => { toast(t('pruefe')); await api('/api/update/check', {}); S.STATUS = await api('/api/status'); softRoute(); });
-  const ui = $('#up-install', main); if (ui) ui.addEventListener('click', async () => { if (!confirm(t('update_installieren_und_dienst_neu_2'))) return; toast(t('update_wird_installiert'), 30000); try { const r = await api('/api/update/install', {}); toast(r.text, 8000); if (r.ok && r.neustart) waitAndReload(true); } catch (e) { toast(e.message, 8000); } });
+  // the click is the decision: installed without a second question (the button rests meanwhile -- a double click installs once)
+  const ui = $('#up-install', main); if (ui) ui.addEventListener('click', async () => { if (ui.disabled) return; ui.disabled = true; toast(t('update_wird_installiert'), 30000);
+    try { const r = await api('/api/update/install', {}); toast(r.text, 8000); if (r.ok && r.neustart) waitAndReload(true); else ui.disabled = false; } catch (e) { ui.disabled = false; toast(e.message, 8000); } });
   const lr = $('#log-refresh', main); if (lr) lr.addEventListener('click', route);
   $$('#log-min button', main).forEach(bt => bt.addEventListener('click', () => { S.logMin = +bt.dataset.min; route(); }));
   const ls = $('#log-show', main); if (ls) ls.addEventListener('click', async () => { try { await api('/api/file/reveal', {pfad: ((S.STATUS.ablage || {}).ordner || '') + '/kontor.log'}); } catch (e) { toast(e.message, 5000); } });

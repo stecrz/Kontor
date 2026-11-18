@@ -47,6 +47,7 @@ Fertig, wenn
 - [x] 3.13.31 Zugang lädt sofort, Gesamtcashflow-Höhe stabil.
 - [x] 3.13.32 Monatlicher Cashflow wie die Tabelle, ruhigere Farben, Gesamtcashflow mit Taille und „alles aufklappen“, Sprung zur Bilanz.
 - [x] 3.13.33 Vermögensbrücke mit Überschuss/Zinsen, Seitenfenster für Umsätze, Sankey-Farben, PayPal-Umbuchungen gepaart.
+- [x] 3.13.34 Seitenfenster überall, senkrechter Zoom, Farben nach Tabelle, Bilanz-Sprung, umgezogene Karte.
 - Danach: Empfohlener Kategorienbaum (Checkliste zum Anlegen in MoneyMoney; Kontor legt selbst nur an, falls MoneyMoney es anbietet und du freigibst), Hinweis bei gemischten Kategorien, Zuordnen je Empfänger in einem Schritt, Fortschritt „sicher zugeordnet / geschätzt“; alles Freigegebene sichtbar und rückgängig zu machen.
 
 ## Laufend

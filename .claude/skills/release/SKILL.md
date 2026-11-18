@@ -16,6 +16,7 @@ description: Jede Änderung an Kontor abschließen – prüfen, Version, Changel
 3. **Unabhängig prüfen** (Rechenlogik, Schreibzugriffe auf MoneyMoney, Sicherheit): Agent `reviewer` auf die Änderung
    ansetzen, Befunde beheben oder begründet verwerfen.
 4. **Version:** `VERSION` dritte Stelle +1. Zweite Stelle nur bei erheblichen Änderungen und nur nach Rückfrage. Erste nie.
+   Großer Sprung (zweite Stelle): vorher die Gesamtprüfung aus `CLAUDE.md` („Großer Versionssprung“) vollständig durchführen.
 5. **Changelog:** neuer Abschnitt oben in `CHANGELOG.md`, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` mit
    `TZ=Europe/Berlin date +"%Y-%m-%d %H:%M"`. Deutsch, aus Sicht des Nutzers (was er merkt), keine Technik. Kompakt: je Änderung ein
    Punkt mit wenigen Stichworten in einer Zeile, auf einen Blick lesbar – keine Erklärungen, keine Begründungen.

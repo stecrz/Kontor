@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.13.34 (2026-11-18 05:39)
+- Umsätze hinter einer Zahl immer im Seitenfenster, auch bei „Unklar“.
+- Update installieren ohne Rückfrage.
+- Gesamtcashflow: Bänder behalten ihre Farbe und blassen erst kurz vor der Mitte aus.
+- Vermögensbrücke: Zinsen, Einlagen/Entnahmen ohne Farbpunkt; Ring: Kategorien in eigener Farbe (Indigo-Stufen).
+- Monatlicher Cashflow: Skalen senkrecht zoombar (ziehen/scrollen, Klick setzt zurück), gekappte Balken beschriftet.
+- Sprung zur Bilanz: Tabelle scrollt zum Monat (auch frühere Jahre, Planmonate).
+- Unklar: Lastschrift auf eine umgezogene Karte (alte IBAN) wird gepaart.
+
 ## 3.13.33 (2026-11-18 04:39)
 - Vermögensbrücke: „Überschuss“ und „Zinsen“ statt „Gespart“.
 - Monatlicher Cashflow: ohne Vorjahresbalken; Tooltip ohne Zeilen mit 0,00.

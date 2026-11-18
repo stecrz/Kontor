@@ -302,6 +302,28 @@ class CashflowCases(Reconciles):
         d = build(base + [(2, "giro", date(2026, 6, 1), 500.0, {"cat": "Umbuchung", "iban": "DE90"}), (3, "giro", date(2026, 6, 20), -500.0, {"cat": "Umbuchung", "iban": "DE91"})])
         self.assertAddsUp(d); self.assertEqual(unclear(d), {"2026-06": [2, 3]})
 
+    def test_transfer_to_a_card_moved_to_another_bank(self):
+        # the debit names the old card's IBAN, the payment arrives on the new card: paired all the same (same IBAN on both, or
+        # an outdated IBAN with the transfer category on both sides) -- no "without counterpart"
+        from unittest import mock
+        for new_iban, first in (("DE12", False), ("DE12", True), (None, False), ("DE21", False), ("DE21", True)):      # DE21: also an account of another area
+            neu = {"neu": ("Karte neu", "Privat", "liquiditaet", new_iban, "bank")}
+            with mock.patch.dict(ACCOUNTS, dict(neu, **ACCOUNTS) if first else dict(ACCOUNTS, **neu), clear=True):          # before or after the old one
+                d = datasets(make_ledger([(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}),
+                                          (2, "giro", date(2026, 3, 22), -398.85, {"iban": "DE12", "cat": "Umbuchung"}),
+                                          (3, "neu", date(2026, 3, 22), 398.85, {"cat": "Umbuchung"})]),
+                             {"bilanz": {"rollen": {k: v[2] for k, v in ACCOUNTS.items()}}})
+                self.assertAddsUp(d)
+                self.assertFalse([z for z in rows(d["Privat"], "Unklar")], new_iban)
+                self.assertFalse([k for k in rows(d["Privat"]) if k.startswith("Einlage")], new_iban)
+        # the IBAN's account really lacks it and nothing else fits: still named as missing there -- not booked back against a payment
+        # on the same account, not taken by an offline account
+        base = [(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}), (2, "giro", date(2026, 3, 2), -250.0, {"iban": "DE12", "cat": "Umbuchung"})]
+        for extra in ([], [(3, "giro", date(2026, 3, 20), 250.0, {"cat": "Umbuchung"})], [(3, "kredit", date(2026, 3, 3), 250.0, {})]):
+            d = build(base + extra)
+            self.assertAddsUp(d); r = rows(d["Privat"])
+            self.assertIn("Umbuchung nach Tagesgeld ohne Gegenbuchung", r, extra); self.assertNotIn("Privatkredit / Tilgung", r)
+
     def test_foreign_currency_is_kept_apart(self):
         data = build([(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}),
                       (2, "giro", date(2026, 2, 3), -1000.0, {"iban": "DE14", "cat": "Umbuchung"}),

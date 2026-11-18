@@ -25,6 +25,17 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 4. Commit und Push auf `main` selbst erledigen, ohne nachzufragen. Keine Tags, kein Sitzungslink in der Commit-Nachricht.
 5. Ist der Mac des Nutzers verbunden: dort den Kontor-Ordner auf den neuen Stand bringen (`git fetch` + `git reset --hard`).
 
+## Großer Versionssprung (zweite Stelle, z. B. 3.11.5 → 3.12.0)
+Vorher eine Gesamtprüfung mit voller Kraft – die letzten Änderungen final abnehmen, nicht nur die üblichen Checks:
+- Alle Tests, dazu viele Zufallsläufe (`KONTOR_FUZZ_SEEDS=1000`), zusätzlich eigene Testdaten mit Sonderfällen und
+  Fehlerfällen; alte Funktionen gezielt nachprüfen, ob ein Update sie beschädigt hat.
+- Jede Seite in hell/dunkel, Mac/iPhone ansehen (`ui-check`); alle Verlinkungen und Sprünge, alle Hilfe-Icons und Tooltips
+  gegen den heutigen Stand; Texte de/en vollständig und einheitlich.
+- `README.md`, Hilfe (de/en, gleiche Anker) und Hilfe-Bilder (`tests/screenshots.py`) aktualisieren.
+- Einheitlichkeit: gleiche Dinge überall gleich gelöst (Bedienung, Farben, Begriffe, Cursor); Überflüssiges entfernen.
+- Sicherheit und Datenschutz erneut prüfen (Agent `reviewer` auf den ganzen Stand seit dem letzten großen Sprung).
+- Gefundenes beheben und sinnvoll optimieren; Änderungen mit Geschmacks- oder Produktfrage vor dem Push mit dem Nutzer klären.
+
 ## Sicherheit (ohne Ausnahme)
 - Öffentliches Repo: keine persönlichen Daten (Namen, Konten, IBANs, Beträge, Pfade). Testdaten frei erfunden
   (`tests/test_privacy.py` prüft, was sich prüfen lässt).

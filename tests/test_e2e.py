@@ -2914,6 +2914,12 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("S.tab"), "cashflow"); self.assertTrue(pg.query_selector_all("#drawer tbody tr"))
                 pg.click("#cftx-page"); pg.wait_for_selector("#uf-von")                                  # ... and from there the page, to correct
                 self.assertEqual(pg.evaluate("S.uf.kats"), [kat]); self.assertEqual(pg.evaluate("S.tab"), "transactions")
+                # unclear bookings (by their ids) open the same side panel
+                pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector(F_ + " tr.det")
+                pg.evaluate("""api('/api/transactions?limit=2').then(r => cfOpenTx({ids: r.umsaetze.map(u => u.id), months: [r.umsaetze[1].datum.slice(0, 7), r.umsaetze[0].datum.slice(0, 7)].sort(), titel: 'Unklar'}))""")
+                pg.wait_for_selector("#drawer.open #cftx-page"); self.assertEqual(pg.evaluate("S.tab"), "cashflow")
+                self.assertEqual(len(pg.query_selector_all("#drawer tbody tr")), 2); pg.click("#drawer .close")
+                pg.click("#nav a[href='#transactions']"); pg.wait_for_selector("#uf-von")
                 pg.evaluate("Object.assign(S.uf, {kats: null, von: '', bis: '', titel: '', est: false, ext: false})")
                 pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector(F_ + " tr.det")
                 pg.click("#cf-ebene button[data-e='2']"); pg.wait_for_timeout(200)
@@ -3005,6 +3011,9 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("S.tab"), "balance")
                 hit = pg.evaluate("(() => { const td = document.querySelector('#main tr[data-pos=\"liquiditaet\"] td.flash-hit'), i = [...td.parentNode.children].indexOf(td); return document.querySelectorAll('#main .wrap.snap thead th')[i].dataset.key; })()")
                 self.assertEqual(hit, pg.evaluate("cfMonths(B(), S.cfZeit)[0].slice(-1)[0]"))
+                pg.wait_for_timeout(900)
+                self.assertTrue(pg.evaluate("""(() => { const td = document.querySelector('#main tr[data-pos="liquiditaet"] td.flash-hit'), w = td.closest('.wrap'), a = w.getBoundingClientRect(), r = td.getBoundingClientRect();
+                    return r.left >= a.left + w.querySelector('thead th').offsetWidth - 2 && r.right <= a.right + 2; })()"""))
                 pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("#cf-bridge .cf-br-row")
                 # an earlier year: its opening cash is before the balance sheet's first year -- it shows from that year on, the cell lights up
                 # (the balance sheet set to start with the current year: the opening month of the 12 months lies before it)
@@ -3014,7 +3023,10 @@ class BrowserTest(unittest.TestCase):
                 if start:
                     pg.click("#cf-bridge .cf-br-row[data-bal^='liq|'] >> nth=0"); pg.wait_for_selector("#main tr[data-pos='liquiditaet'] td.flash-hit", timeout=6000)
                     hit = pg.evaluate("(() => { const td = document.querySelector('#main tr[data-pos=\"liquiditaet\"] td.flash-hit'), i = [...td.parentNode.children].indexOf(td); return document.querySelectorAll('#main .wrap.snap thead th')[i].dataset.key; })()")
-                    self.assertEqual(hit, start); pg.evaluate("S.vonJahr = null")
+                    self.assertEqual(hit, start); pg.wait_for_timeout(900)
+                    self.assertTrue(pg.evaluate("""(() => { const td = document.querySelector('#main tr[data-pos="liquiditaet"] td.flash-hit'), w = td.closest('.wrap'), a = w.getBoundingClientRect(), r = td.getBoundingClientRect();
+                        return r.left >= a.left + w.querySelector('thead th').offsetWidth - 2 && r.right <= a.right + 2 && r.top >= 0 && r.bottom <= innerHeight; })()"""))      # the table moved there: the cell in view
+                    pg.evaluate("S.vonJahr = null")
                     pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("#cf-bridge .cf-br-row")
                 pg.click("#cf-zeit button[data-z='12m']"); pg.wait_for_timeout(300)
                 # 6. the net worth bridge: from the net worth at the start to that at the end, only what changes it (no investing, no repaying)
@@ -3296,6 +3308,14 @@ class BrowserTest(unittest.TestCase):
                 pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + 8); pg.mouse.down()
                 pg.mouse.move(bb["x"] + bb["width"] / 2 - slot * 1.3, bb["y"] + 8, steps=4); pg.wait_for_timeout(400); pg.mouse.up()
                 self.assertEqual(pg.evaluate("S.cfZeit"), "12m")                                         # pulled to the left: a month later again
+                # a scale: dragged up it zooms in (marked; bars beyond it cut and labelled), a click sets it back
+                ya = pg.query_selector("#cf-months .cf-yax[data-p='up']").bounding_box(); n_br = len(pg.query_selector_all("#cf-months .cf-break"))
+                pg.mouse.move(ya["x"] + ya["width"] / 2, ya["y"] + ya["height"] / 2); pg.mouse.down()
+                pg.mouse.move(ya["x"] + ya["width"] / 2, ya["y"] + ya["height"] / 2 - 120, steps=6); pg.mouse.up(); pg.wait_for_timeout(200)
+                self.assertLess(pg.evaluate("S.cfMoZ.up"), 0.5); self.assertTrue(pg.query_selector("#cf-months .cf-yax.on[data-p='up']"))
+                self.assertGreater(len(pg.query_selector_all("#cf-months .cf-break")), n_br)
+                pg.click("#cf-months .cf-yax[data-p='up']"); pg.wait_for_timeout(200)
+                self.assertIsNone(pg.evaluate("(S.cfMoZ || {}).up ?? null")); self.assertIsNone(pg.query_selector("#cf-months .cf-yax.on"))
                 # a month's heading in the table: the charts end there (12 months up to it)
                 pg.click("#main table.cf-tbl:not(.cf-names) thead th[data-key='%s']" % ms[-4]); pg.wait_for_timeout(400)
                 self.assertEqual(pg.evaluate("[document.querySelector('#cf-von').dataset.m, document.querySelector('#cf-bis').dataset.m]"), [ms[-15], ms[-4]])

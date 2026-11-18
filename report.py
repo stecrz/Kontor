@@ -640,6 +640,10 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
     other within a month are each other's counterpart (together nothing). Returns (mate: booking -> counterpart in the area, partner: booking -> account on the
     other side, also outside the area or without a counterpart, category: booking -> marked as transfer by its category)."""
     own_ibans = ledger.own_ibans()
+    same_iban: Dict[str, List[str]] = defaultdict(list)          # an IBAN on several of your accounts (a card moved to a new bank)
+    for a in ledger.accounts.values():
+        if a.iban:
+            same_iban[a.iban.replace(" ", "").upper()].append(a.uuid)
     cents = lambda x: int(round(x * 100))
     idx = ledger.__dict__.get("_tx_index")
     if idx is None or idx[0] != len(ledger.txs):
@@ -697,11 +701,13 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
             p = own_ibans.get(t.counter_iban) if t.counter_iban else None
             if p is None or p == t.account_uuid:
                 continue
-            if p not in root:
+            # the same IBAN on several accounts (a card moved to a new bank): the counterpart is looked for in those of this area too
+            accs = ([p] if p in root else []) + [u for u in same_iban.get(t.counter_iban, ()) if u not in (p, t.account_uuid) and u in root]
+            if not accs:
                 partner.setdefault(t.id, p)
                 continue
             best = None
-            for o in bookings_of(p).get(-cents(t.amount), ()):
+            for o in (x for u in accs for x in bookings_of(u).get(-cents(t.amount), ())):
                 if o.id in mate:
                     continue
                 gap = abs((o.booking_date - t.booking_date).days)
@@ -713,8 +719,13 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
                     best = (rank, o)
             if best is not None:
                 join(t, best[1])
+            elif p not in root:
+                partner.setdefault(t.id, p)              # as before: an account of another area
             else:
                 partner[t.id] = p                       # the other account, but its booking is missing
+    # a transfer by its category whose IBAN names an account without the counterpart: it may still pair by amount below (the
+    # IBAN can be outdated -- a card moved to another bank collects from the old account's IBAN); if not, it stays as it was
+    held = {t.id: partner.pop(t.id) for t in txs if by_cat[t.id] and t.id not in mate and t.id in partner and partner[t.id] in root}
     # 3. by amount: transfer category or a booking of an offline account (no counterpart known yet)
     if kf.get("umbuchung_paarung", True):
         manual_ok = kf.get("paarung_manuelle_konten", True)
@@ -744,11 +755,14 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
                     if o.id == t.id:
                         continue
                     gap = abs((o.booking_date - t.booking_date).days)
-                    if o.account_uuid == t.account_uuid:
-                        ok = (name == "open" and "open" in k and month_key(o.booking_date) == month_key(t.booking_date)
+                    both = name == "open" and "open" in k
+                    if t.id in held or o.id in held:             # its IBAN named another account: only another transfer on another account
+                        ok = both and o.account_uuid != t.account_uuid and gap <= PAIR_DAYS_CAT
+                    elif o.account_uuid == t.account_uuid:
+                        ok = (both and month_key(o.booking_date) == month_key(t.booking_date)
                               and not (t.counter_iban and o.counter_iban and t.counter_iban != o.counter_iban))      # booked back: the same counterparty
                     else:
-                        ok = gap <= (PAIR_DAYS_CAT if name == "open" and "open" in k else PAIR_DAYS)
+                        ok = gap <= (PAIR_DAYS_CAT if both else PAIR_DAYS)
                     if ok:
                         cands.append((gap, min(t.id, o.id), max(t.id, o.id), t, o))
         for _gap, _a, _b, t, o in sorted(cands, key=lambda c: c[:3]):
@@ -758,6 +772,9 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
                 mate[t.id], mate[o.id] = o, t                    # no partner account: nothing moved anywhere
             else:
                 join(t, o)
+    for i, p in held.items():
+        if i not in mate:
+            partner[i] = p
     return mate, partner, by_cat
 
 
