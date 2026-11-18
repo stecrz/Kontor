@@ -44,13 +44,15 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 ## Sicherheit (ohne Ausnahme)
 - Öffentliches Repo: keine persönlichen Daten (Namen, Konten, IBANs, Beträge, Pfade). Testdaten frei erfunden
   (`tests/test_privacy.py` prüft, was sich prüfen lässt).
-- MoneyMoney nur über die AppleScript-Schnittstelle. Schreiben nur in Offline-Konten (Regeln) und – wenn der Nutzer das
-  Zurückschreiben eingeschaltet hat – das Kategoriefeld von Umsätzen, die er in Kontor zuordnet (`mm_categories.py`: direkt
-  vorher neu lesen und prüfen, fremde Kategorien nur nach Rückfrage; vom iPhone Zugeordnetes erst beim nächsten Abgleich am Mac).
+- MoneyMoney nur über die AppleScript-Schnittstelle. Schreiben nur in Offline-Konten (Regeln) und das Kategoriefeld von Umsätzen, die er in Kontor
+  zuordnet – sein Klick ist die Freigabe, kein Schalter (`mm_categories.py`: direkt
+  vorher neu lesen und prüfen, fremde Kategorien nur nach Rückfrage; vom iPhone Zugeordnetes erst beim nächsten Abgleich am Mac; Eingetragenes lässt sich unter Zuordnen → Eingetragen rückgängig machen, nur am Mac).
   Kontor hat keine eigenen Kategorien und ordnet nie selbst zu (gelernte Muster sind nur Vorschläge); nur im Cashflow schätzt es die Position von Umsätzen ohne Kategorie – sichtbar als „geschätzt“, ohne etwas in MoneyMoney einzutragen. Nie Buchungen, den Kategorienbaum oder
   Regeln des Nutzers ändern oder löschen, keine Überweisungen.
 - Oberfläche nur über 127.0.0.1 bzw. Tailscale erreichbar. Netzverbindungen nur: Update-Prüfung bei GitHub und – nur auf ausdrücklichen Klick (Konten & Regeln → Kontostände) – das Nachschlagen von Wertpapiernamen bei OpenFIGI (`security_names.py`, sendet nur ISINs).
 - Keine Passwörter oder Zugangsdaten speichern, protokollieren oder zwischenspeichern; Datenordner verschlüsselt.
+- Kommandozeile (`kontor.py`) ohne Zugriff auf Daten: nur start, open, install, uninstall, password, version; Passwort neu setzen und Deinstallieren nur mit
+  Kontor-Passwort oder Touch ID. Alles andere nur angemeldet in der Oberfläche.
 - Kontostände aus MoneyMoney (`mm_history.py`): Datenbankdatei nur per Upload, nur im Arbeitsspeicher; Passwort nur im Swift-Helfer,
   der nur für den Vorgang erzeugt und danach gelöscht wird; Puffer danach überschreiben; keine dauerhaften Freigaben.
 - Keine Kontostände schätzen. Unbekanntes als „unbekannt“ kennzeichnen.
@@ -76,7 +78,7 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 ## Aufbau
 | Teil | Aufgabe |
 |---|---|
-| `kontor.py` | Kommandozeile (start, run, …) |
+| `kontor.py` | Kommandozeile (start, open, install, uninstall, password, version – ohne Daten) |
 | `service.py` | Dienst: HTTP-API, statische Dateien, Zeitplan, Bericht im Hintergrund |
 | `core.py` | Lesen aus MoneyMoney (schnell/voll), Einstellungen (`merged_config`, `check_config`), Lauf (`run_once`), Bericht, Pakete |
 | `rules.py` | Buchungsregeln – Darlehen, Beteiligung, Kontenspiegel; zustandslos, erkennt Gebuchtes an `#kontor-…` |

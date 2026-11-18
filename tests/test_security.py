@@ -398,6 +398,35 @@ class CommandLine(unittest.TestCase):
         self.K.open_store()
         self.assertEqual(seen[2], (True, False))                   # the lock was given back each time
 
+    def test_password_only_with_the_current_one_or_touch_id(self):
+        """kontor.py password: the terminal is no way around signing in -- the current password (or Touch ID) first."""
+        import argparse
+        sec = storage._security
+        storage._security = lambda args, input_text=None: (127, "", "no security")     # never the real keychain
+        self.addCleanup(setattr, storage, "_security", sec)
+        st = storage.Store(self.dir, *storage.load_or_create_master_key(self.dir))
+        st.save("auth.json", auth.with_offline(auth.hash_password("altes-passwort-123"), "altes-passwort-123"))
+        fresh = lambda: storage.Store(self.dir, *storage.load_or_create_master_key(self.dir)).load("auth.json")
+        with mock.patch.object(self.K.auth, "touchid_available", return_value=False), mock.patch.object(self.K.time, "sleep"):
+            with mock.patch.object(self.K.getpass, "getpass", side_effect=["falsch"] * 3):
+                self.assertEqual(self.K.cmd_passwort(argparse.Namespace()), 1)
+            self.assertTrue(auth.verify_password("altes-passwort-123", fresh()))
+            with mock.patch.object(self.K.getpass, "getpass", side_effect=["altes-passwort-123", "neues-passwort-456", "neues-passwort-456"]):
+                self.assertEqual(self.K.cmd_passwort(argparse.Namespace()), 0)
+            self.assertTrue(auth.verify_password("neues-passwort-456", fresh()))
+        with mock.patch.object(self.K.auth, "touchid_available", return_value=True), mock.patch.object(self.K.auth, "touchid_verify", return_value=True), \
+                mock.patch.object(self.K.getpass, "getpass", side_effect=["drittes-passwort-789", "drittes-passwort-789"]):
+            self.assertEqual(self.K.cmd_passwort(argparse.Namespace()), 0)          # Touch ID instead of the password
+        self.assertTrue(auth.verify_password("drittes-passwort-789", fresh()))
+
+    def test_only_these_commands(self):
+        """Everything that reads or changes your data goes through the interface (signed in) -- not through the terminal."""
+        import contextlib
+        import io
+        for cmd in ("run", "status", "accounts", "check", "package-export", "package-import", "diagnostics", "update", "tls"):
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                self.K.main([cmd])
+
     def test_uninstall_stops_when_the_settings_do_not_open(self):
         import argparse
         sec = storage._security

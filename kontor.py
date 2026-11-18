@@ -1,24 +1,14 @@
 #!/usr/bin/env python3
 """Kontor -- Automatisierung, Bilanz, Kapitalfluss, Planung und Belege auf MoneyMoney (macOS).
 
-Befehle:
-  start             Dienst starten: Web-Oberflaeche (http://127.0.0.1:8765/) + automatische Laeufe
-  open              Oberflaeche im Browser oeffnen (Dienst muss laufen)
-  run               Einmaliger Lauf ohne Dienst (--dry-run / --live / --force)
-  accounts          Kontenbaum mit UUIDs, Typ, Rolle, letzter Aktualisierung
-  check             Konfiguration gegen MoneyMoney pruefen
-  status            Letzter Lauf, Verlauf
-  password          Passwort der Oberflaeche (neu) setzen -- nur im Terminal am Mac
-  package-export    Einstellungen als Paket (.kontor.json) ausgeben (--without-uuid: nur Kontonamen)
-  package-import    Einstellungspaket einlesen (DATEI [--replace])
-  diagnostics       Diagnosedatei (Protokoll + Konfiguration, maskiert) ausgeben
-  update            Neue Version von GitHub pruefen (--install spielt sie ein)
-  install           Dienst als Hintergrundprogramm einrichten (startet beim Anmelden, laeuft dauerhaft);
-                    uebersetzt den Touch-ID-Helfer
-  uninstall         Kontor entfernen: Dienst, Einstellungen, Daten, Protokoll, Datenschluessel (--program: auch den
-                    Programmordner; --yes: ohne Rueckfrage) -- Belege und MoneyMoney bleiben
-  tls               https über Tailscale einrichten (Zertifikat holen, Adresse setzen) -- nötig für die Offline-Ansicht am iPhone
-  version           Versionsnummer
+Commands (everything else only in the interface, after signing in -- the terminal is no way around it):
+  start             run the service: web interface (http://127.0.0.1:8765/) and the scheduled syncs
+  open              open the interface in the browser (the service must run)
+  install           set up the service in the background (starts at login, keeps running); builds the Touch ID helper
+  uninstall         remove Kontor: service, settings, data, log, data key (--program: the program folder too; --yes: without
+                    the question) -- receipts and MoneyMoney stay; with the Kontor password or Touch ID
+  password          set a new Kontor password -- with the current one or Touch ID
+  version           version number
 
 Datenordner: ~/Library/Application Support/Kontor (oder Umgebungsvariable KONTOR_DIR).
 Alle Dateien dort sind verschluesselt (Schluessel im macOS-Schluesselbund); nur kontor.log ist Klartext
@@ -29,14 +19,13 @@ from __future__ import annotations
 import argparse
 import fcntl
 import getpass
-import json
 import logging
 import logging.handlers
 import os
 import plistlib
 import subprocess
 import sys
-from datetime import date
+import time
 from typing import List, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -45,11 +34,7 @@ sys.path.insert(0, HERE)
 import auth  # noqa: E402
 import updates  # noqa: E402
 import i18n  # noqa: E402
-import mm_categories  # noqa: E402
-from mm_bridge import Bridge, MoneyMoneyError  # noqa: E402
-from core import (account_tree, check_config, diagnose, export_package, fetch, import_package, merged_config,  # noqa: E402
-                     run_once, unavailable_text, version)
-from model import Ledger, accounts_from_export, fmt_eur  # noqa: E402
+from core import merged_config, version  # noqa: E402
 import storage  # noqa: E402
 from storage import Store, load_or_create_master_key  # noqa: E402
 from i18n import tr  # noqa: E402
@@ -173,85 +158,39 @@ def cmd_oeffnen(args) -> int:
     return 0
 
 
-def cmd_run(args) -> int:
-    store = open_store()
-    cfg = load_config(store)
-    dry = cfg.get("dry_run", True)
-    if args.scharf:
-        dry = False
-    if args.probelauf:
-        dry = True
-    res = run_once(store, cfg, date.today(), dry, args.force)
-    res.pop("_ledger", None); res.pop("_categories", None)
-    st = res.get("status")
-    if st == "unavailable":
-        print(res.get("text")); return 0
-    if st == "unchanged":
-        print(tr("s_keine_aenderung_in_moneymoney_seit_2")); return 0
-    if st == "already_running":
-        print(tr("s_ein_lauf_ist_bereits_aktiv")); return 1
-    if st == "error":
-        print("FEHLER: %s" % res.get("text")); return 1
-    for v in res.get("proposals", []):
-        print("  %s  %-50s %14s  %s" % (v["date"], v["account"][-50:], fmt_eur(v["amount"]), v["text"]))
-    for w in res.get("warnings", []):
-        print("HINWEIS " + w)
-    print(tr("s_s_d_vorschlag_vorschlaege_d") % ("Probelauf" if dry else "Lauf", len(res.get("proposals", [])),
-                                                        res.get("written", 0), (" -- FEHLER: " + res["error"]) if res.get("error") else ""))
-    print(tr("s_oberflaeche_python3_kontor_py_oeffnen"))
-    return 1 if res.get("error") else 0
-
-
-def cmd_konten(args) -> int:
-    store = open_store()
-    cfg = load_config(store)
-    try:
-        ledger = Ledger(accounts_from_export(Bridge(dry_run=True).export_accounts()), [])
-    except MoneyMoneyError as e:
-        print(unavailable_text(e) or str(e)); return 2
-    print("%-58s %-36s %-8s %-17s %-16s %s" % (tr("s_konto_pfad"), "UUID", tr("x_typ"), tr("x_rolle"), tr("x_aktualisiert"), tr("x_saldo")))
-    for k in account_tree(ledger, cfg):
-        typ = tr("x_gruppe" if k["group"] else ("x_depot" if k["depot"] else ("x_manuell" if k["manual"] else "x_bank")))
-        print("%-58s %-36s %-8s %-17s %-16s %s" % ("  " * k["depth"] + k["name"], k["uuid"], typ, k["role"],
-                                                   k["updated"] or "", "" if k["group"] else fmt_eur(k["balance_amount"])))
-    return 0
-
-
-def cmd_check(args) -> int:
-    store = open_store()
-    cfg = load_config(store)
-    b = Bridge(dry_run=True)
-    try:
-        ledger = fetch(b, cfg, date.today())
-        cats = mm_categories.with_paths(b.export_categories())
-    except MoneyMoneyError as e:
-        print(unavailable_text(e) or str(e)); return 2
-    findings = check_config(ledger, cats, cfg)
-    for f in findings:
-        print("%-8s %s" % (f["severity"].upper(), f["text"]))
-    bad = any(f["severity"] == "error" for f in findings)
-    print(tr("s_probelauf_s") % (tr("aus") if cfg.get("dry_run", True) else tr("an")))
-    print("Ergebnis: %s" % ("alles in Ordnung" if not bad else "FEHLER vorhanden"))
-    return 1 if bad else 0
-
-
-def cmd_status(args) -> int:
-    store = open_store()
-    st = store.load("state.json", {}) or {}
-    last = st.get("last_run")
-    print("Kontor %s -- Datenordner %s" % (version(), DATA_DIR))
-    if not last:
-        print(tr("s_noch_kein_lauf")); return 0
-    print(json.dumps({k: v for k, v in last.items() if k != "proposals"}, ensure_ascii=False, indent=2))
-    for v in last.get("proposals", []):
-        print("  %s %s %s %s" % (v["date"], v["account"], fmt_eur(v["amount"]), v["text"]))
-    return 0
+def confirm_identity(store: Store) -> bool:
+    """As in the interface: Touch ID where it is switched on, else (or after a cancel) the Kontor password, three tries. No
+    password set yet: nothing to confirm."""
+    rec = store.load("auth.json", None)
+    if not rec:
+        return True
+    cfg = merged_config(store.load("config.json", {}) or {})
+    if (cfg.get("ui") or {}).get("touchid", True) and auth.touchid_available():
+        print(tr("s_cli_touchid"))
+        if auth.touchid_verify():
+            return True
+    for _ in range(3):
+        try:
+            pw = getpass.getpass(tr("s_cli_passwort"))
+        except (EOFError, KeyboardInterrupt):
+            return False
+        if auth.verify_password(pw, rec):
+            return True
+        time.sleep(1)
+        print(tr("s_passwort_falsch"))
+    return False
 
 
 def cmd_passwort(args) -> int:
     store = open_store()
+    try:
+        ok = confirm_identity(store)
+    except Exception as e:                  # the password check does not open: nothing is changed
+        print(tr("s_fehler_s") % e); return 1
+    if not ok:
+        print(tr("s_cli_nicht_bestaetigt")); return 1
     pw = getpass.getpass(tr("s_neues_passwort_fuer_die_oberflaeche"))
-    if pw != getpass.getpass("Wiederholen: "):
+    if pw != getpass.getpass(tr("s_cli_wiederholen")):
         print(tr("s_stimmt_nicht_ueberein")); return 1
     err = auth.password_ok(pw)
     if err:
@@ -259,85 +198,6 @@ def cmd_passwort(args) -> int:
     store.save("auth.json", auth.with_offline(auth.hash_password(pw), pw))
     print(tr("s_passwort_gesetzt_laufende_sitzungen_bl"))
     return 0
-
-
-def cmd_paket_export(args) -> int:
-    store = open_store()
-    cfg = load_config(store)
-    ledger = None
-    if args.ohne_uuid:
-        try:
-            ledger = fetch(Bridge(dry_run=True), cfg, date.today())
-        except MoneyMoneyError:
-            pass
-    pkg = export_package(cfg, args.name or "Kontor-Einstellungen", strip_uuids=args.ohne_uuid,
-                         plan=(store.load("plan.json", {}) if args.mit_plan else None), ledger=ledger)
-    text = json.dumps(pkg, ensure_ascii=False, indent=2)
-    if args.datei:
-        with open(args.datei, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.chmod(args.datei, 0o600)
-        print("Geschrieben: %s" % args.datei)
-    else:
-        print(text)
-    return 0
-
-
-def cmd_paket_import(args) -> int:
-    store = open_store()
-    cfg = load_config(store)
-    with open(args.datei, encoding="utf-8") as f:
-        pkg = json.load(f)
-    if "kontor_package" not in pkg and "config" not in pkg and isinstance(pkg, dict):
-        pkg = {"kontor_package": 1, "name": os.path.basename(args.datei), "config": pkg}   # rohe Konfiguration
-    ledger = None
-    try:
-        ledger = fetch(Bridge(dry_run=True), cfg, date.today())
-    except MoneyMoneyError as e:
-        print(tr("s_hinweis_s_kontoreferenzen_werden_nicht") % (unavailable_text(e) or e))
-    new_cfg, unresolved, report = import_package(cfg, pkg, ledger, "replace" if args.ersetzen else "merge")
-    for line in report:
-        print("  " + line)
-    for u in unresolved:
-        print("  NICHT GEFUNDEN: %s (%s)" % (u["label"], u["field"]))
-    if unresolved and not args.trotzdem:
-        print(tr("s_nicht_uebernommen_konten_in_moneymoney"))
-        return 1
-    store.save("config.json", merged_config(new_cfg))
-    if pkg.get("plan") and args.mit_plan:
-        store.save("plan.json", pkg["plan"])
-    print(tr("s_einstellungen_uebernommen_pruefen_pyth"))
-    return 0
-
-
-def cmd_diagnose(args) -> int:
-    store = open_store()
-    cfg = load_config(store)
-    txt = diagnose(store, DATA_DIR, cfg, {"version": version(), "data_folder": DATA_DIR}, mask_names=not args.namen)
-    if args.datei:
-        with open(args.datei, "w", encoding="utf-8") as f:
-            f.write(txt)
-        print("Geschrieben: %s" % args.datei)
-    else:
-        print(txt)
-    return 0
-
-
-def cmd_update(args) -> int:
-    store = open_store()
-    cfg = load_config(store)
-    repo = (cfg.get("updates") or {}).get("repo") or "stecrz/Kontor"
-    info = updates.check(repo)
-    if info.get("error"):
-        print(info["error"]); return 2
-    print(tr("s_installiert_s_verfuegbar_s_s") % (info["current"], info["available"], info["source"]))
-    if not info["newer"]:
-        print(tr("s_kontor_ist_aktuell")); return 0
-    if not args.installieren:
-        print("Einspielen: python3 kontor.py update --install"); return 0
-    res = updates.install(repo, info.get("zip"), restart=True)
-    print(res.get("text"))
-    return 0 if res.get("ok") else 1
 
 
 def launchd_path(label: str = LAUNCHD_LABEL) -> str:
@@ -402,9 +262,12 @@ def cmd_uninstall(args) -> int:
         store = Store(DATA_DIR, None)       # nothing encrypted is there: nothing to open
     try:
         cfg = merged_config(store.load("config.json", {}) or {})
+        ok = confirm_identity(store)        # as in the interface: only with the Kontor password (or Touch ID)
     except Exception as e:                  # the settings do not open: nothing is deleted
         print(tr("s_fehler_s") % e)
         return 1
+    if not ok:
+        print(tr("s_cli_nicht_bestaetigt")); return 1
     if sys.platform == "darwin":            # stop the service: launchd would start it again
         subprocess.run(["launchctl", "bootout", "gui/%d/%s" % (os.getuid(), LAUNCHD_LABEL)], capture_output=True)
     app = service.App.__new__(service.App)
@@ -425,32 +288,6 @@ def cmd_uninstall(args) -> int:
     return 0
 
 
-def cmd_tls(args) -> int:
-    import tls_cert
-    store = open_store()
-    cfg = load_config(store)
-    if args.aus:
-        cfg["ui"].update({"tls_cert": "", "tls_key": ""})
-        store.save("config.json", cfg)
-        print("TLS abgeschaltet (Adresse bleibt %s)." % cfg["ui"].get("bind"))
-    else:
-        try:
-            r = tls_cert.setup(cfg, DATA_DIR)
-        except Exception as e:
-            print(tr("s_fehler_s") % e); return 1
-        cfg["ui"] = r["ui"]
-        store.save("config.json", cfg)
-        print(tr("s_zertifikat_fuer_s_geholt_gueltig") % (r["name"], (r["valid_until"] or "?")[:10], r["ip"]))
-        print(tr("s_oberflaeche_nach_dem_neustart_s") % r["url"])
-        print(tr("s_das_zertifikat_wird_vom_laufenden"))
-    if os.path.exists(launchd_path()):
-        r2 = subprocess.run(["launchctl", "kickstart", "-k", "gui/%d/%s" % (os.getuid(), LAUNCHD_LABEL)], capture_output=True, text=True)
-        print(tr("s_dienst_neu_gestartet") if r2.returncode == 0 else tr("s_dienst_bitte_neu_starten_bash"))
-    else:
-        print(tr("s_dienst_neu_starten_bash_install"))
-    return 0
-
-
 def cmd_version(args) -> int:
     print(version())
     return 0
@@ -460,24 +297,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="kontor", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--quiet", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name, fn in (("start", cmd_start), ("open", cmd_oeffnen), ("accounts", cmd_konten), ("check", cmd_check), ("status", cmd_status),
-                     ("password", cmd_passwort), ("install", cmd_install), ("version", cmd_version)):
+    for name, fn in (("start", cmd_start), ("open", cmd_oeffnen), ("password", cmd_passwort), ("install", cmd_install), ("version", cmd_version)):
         sub.add_parser(name).set_defaults(fn=fn)
     un = sub.add_parser("uninstall"); un.set_defaults(fn=cmd_uninstall)
     un.add_argument("--program", action="store_true"); un.add_argument("--yes", action="store_true")
-    r = sub.add_parser("run"); r.set_defaults(fn=cmd_run)
-    r.add_argument("--dry-run", dest="probelauf", action="store_true"); r.add_argument("--live", dest="scharf", action="store_true")
-    r.add_argument("--force", action="store_true")
-    pe = sub.add_parser("package-export"); pe.set_defaults(fn=cmd_paket_export)
-    pe.add_argument("datei", nargs="?", metavar="file"); pe.add_argument("--name")
-    pe.add_argument("--without-uuid", dest="ohne_uuid", action="store_true"); pe.add_argument("--with-plan", dest="mit_plan", action="store_true")
-    pi = sub.add_parser("package-import"); pi.set_defaults(fn=cmd_paket_import)
-    pi.add_argument("datei", metavar="file"); pi.add_argument("--replace", dest="ersetzen", action="store_true")
-    pi.add_argument("--anyway", dest="trotzdem", action="store_true"); pi.add_argument("--with-plan", dest="mit_plan", action="store_true")
-    dg = sub.add_parser("diagnostics"); dg.set_defaults(fn=cmd_diagnose)
-    dg.add_argument("datei", nargs="?", metavar="file"); dg.add_argument("--names", dest="namen", action="store_true")
-    up = sub.add_parser("update"); up.set_defaults(fn=cmd_update); up.add_argument("--install", dest="installieren", action="store_true")
-    tl = sub.add_parser("tls"); tl.set_defaults(fn=cmd_tls); tl.add_argument("--off", dest="aus", action="store_true")
     args = ap.parse_args(argv)
     setup_logging(args.quiet)
     return args.fn(args)

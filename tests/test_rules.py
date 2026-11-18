@@ -1219,6 +1219,12 @@ class ReferenceTests(unittest.TestCase):
         self.assertFalse(sorted(set(_re.findall(r"hq\('(\w+)'\)", js)) - tips - {"schluessel"}), "help icon without a text")
         self.assertFalse(sorted(v for v in at.values() if v not in a_de), "help icon pointing to a section that is not there")
         self.assertFalse(sorted(k for k in at if k not in tips), "section for a help icon that is not there")
+        # beside every page title: its line of text and its section (the general settings: the line only)
+        i18 = read("web", "i18n.js"); cat = json.loads(i18[i18.index("{"):i18.rindex("}") + 1])
+        pg = js[js.index("const PAGE_HELP = {"):]; pg = dict(_re.findall(r"'?([\w/]+)'?: '([\w-]*)'", pg[:pg.index("};")]))
+        self.assertTrue(len(pg) > 20 and all(v in a_de for v in pg.values() if v), pg)
+        self.assertFalse(sorted(k for k in pg if "page_" + k.replace("/", "_") not in cat), "page without its line of text")
+        self.assertTrue(set(pages) - {"help"} <= {k.split("/")[0] for k in pg} if (pages := set(_re.findall(r"(\w+):", js[js.index("const TITLES"):][:js[js.index("const TITLES"):].index("};")]))) else True)
         links = set(_re.findall(r"#help/([\w-]+)", js)) | set(_re.findall(r"more\('([\w-]+)'\)", js))
         self.assertFalse(sorted(x for x in links if x not in a_de))
         for text in (de, en):

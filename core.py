@@ -48,7 +48,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                      "transfer_categories": ["Umbuchung"], "transfer_pairing": True, "pairing_manual_accounts": True},
     "tax": {"rental_category": "Vermietung", "property_loans": {}, "depreciation": {}, "positions": {}, "entities": []},
     "receipts": {"folder": "~/Documents/Kontor-Belege", "subfolder": "{year}", "write_comment": False, "folder_confirmed": False},
-    "moneymoney": {"allow_categorize": False},
     "fetch": {"online": [], "offline": []},      # eigene Festlegung: Konto wird von MoneyMoney abgerufen / nicht (sonst erkannt)
     "not_book": [],      # bookings of the rules you chose not to book: {"key": account|mark, "datum", "betrag", "konto", "art", "text", "regel", "seit"}
     "updates": {"repo": "stecrz/Kontor", "check_mode": "daily"},   # pruefen: taeglich | woechentlich | aus

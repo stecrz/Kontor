@@ -127,9 +127,10 @@ const H = {
   cf_abgleich_nv: t('cf_abgleich_nv_tip'),
   zielkonto: t('zielkonto_tip'), anl_empfaenger: t('anl_tip'),
   voll_lesen: t('voll_lesen_tip'),
+  sync_knoepfe: t('sync_knoepfe_tip'),
   kennung: t('interne_kennung_des_bereichs_wird'),
   intervall: t('der_dienst_liest_alle_n'),
-  mm_cat: t('erlaubt_einzelnen_umsaetzen_aus_kontor'),
+  kz_eingetragen: t('kz_eingetragen_tip'),
   belege_ordner: t('belege_werden_als_normale_dateien'),
   belege_sub: t('platzhalter_jahr_monat_entitaet_bereic'),
   belege_kommentar: t('schreibt_den_dateinamen_des_belegs'),
@@ -146,7 +147,7 @@ const H = {
   regel_darlehen_h: t('regel_darlehen_h'), regel_gesellschaften_h: t('regel_gesellschaften_h'),
   h_l_name: t('h_l_name'), h_l_aktiv: t('h_l_aktiv'), h_l_art: t('h_l_art'), h_l_text: t('h_l_text'), h_l_excl: t('h_l_excl'), h_l_zinstag: t('h_l_zinstag'),
   h_l_ab: t('h_l_ab'), h_l_gp: t('h_l_gp'), h_l_kt: t('h_l_kt'), h_l_kz: t('h_l_kz'),
-  auto_buchungen_h: t('auto_buchungen_h'), h_co_anteil: t('h_co_anteil'), h_co_bet: t('h_co_bet'), h_co_gk: t('h_co_gk'), h_co_rueck: t('h_co_rueck'), h_gk_rueck: t('h_gk_rueck'), h_co_schwelle: t('h_co_schwelle'), h_co_gp: t('h_co_gp'),
+  h_co_anteil: t('h_co_anteil'), h_co_bet: t('h_co_bet'), h_co_gk: t('h_co_gk'), h_co_rueck: t('h_co_rueck'), h_gk_rueck: t('h_gk_rueck'), h_co_schwelle: t('h_co_schwelle'), h_co_gp: t('h_co_gp'),
   method: t('12_6_monate_durchschnitt_der'),
   inflation: t('ausgaben_steigen_standardmaessig_mit_d'),
   steig_ein: t('jaehrliche_steigerung_der_einnahmen_z'),
@@ -182,20 +183,28 @@ const H = {
 };
 const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   accounts_mapping: 'accounts', inactive: 'accounts', verlauf_kurz: 'history', history_source: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
-  zuordnen: 'categories', regeln_mm: 'categories-rules', mm_cat: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'categories-positions', anl_empfaenger: 'positions-recipients',
+  zuordnen: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'categories-positions', anl_empfaenger: 'positions-recipients',
   cf_operativ: 'cash-flow', cf_invest: 'cash-flow', cf_finanz: 'cash-flow', cf_unklar: 'cash-flow', cf_wert: 'cash-flow',
-  cf_bank: 'cash-flow', cf_umsch: 'cash-flow', cf_fcf: 'cash-flow', cf_nv: 'cash-flow', cf_abgleich_bank: 'cash-flow', cf_abgleich_nv: 'cash-flow', cf_bruecke: 'cash-flow-charts', cf_verm_bruecke: 'cash-flow-charts', cf_je_monat_t: 'cash-flow-charts', cf_herkunft_verwendung: 'cash-flow-charts',
-  cf_ausgaben_kuchen: 'cash-flow-charts', cf_heatmap: 'cash-flow-charts',
-  abgleich: 'sync', ab_art: 'sync', voll_lesen: 'sync', months_back: 'sync', fetch: 'sync', intervall: 'sync',
-  bch: 'balance-sheet', bilanz_tabelle: 'balance-sheet', geld_unterwegs: 'balance-sheet', dry_run: 'rules', regel_darlehen_h: 'rules-loans', regel_gesellschaften_h: 'rules-companies',
+  cf_bank: 'cash-flow', cf_umsch: 'cash-flow', cf_fcf: 'cash-flow', cf_nv: 'cash-flow', cf_abgleich_bank: 'cash-flow', cf_abgleich_nv: 'cash-flow', cf_bruecke: 'cash-flow-bridge', cf_verm_bruecke: 'cash-flow-wealth', cf_je_monat_t: 'cash-flow-months', cf_herkunft_verwendung: 'cash-flow-total',
+  cf_ausgaben_kuchen: 'cash-flow-ring', cf_heatmap: 'cash-flow-heatmap',
+  abgleich: 'sync', ab_art: 'sync', voll_lesen: 'sync', sync_knoepfe: 'sync', months_back: 'sync', fetch: 'sync', intervall: 'sync',
+  bch: 'balance-sheet-chart', bilanz_tabelle: 'balance-sheet-table', geld_unterwegs: 'balance-sheet-table', dry_run: 'rules', regel_darlehen_h: 'rules-loans', regel_gesellschaften_h: 'rules-companies',
   darlehen_iban: 'rules-loans', darlehen_konto: 'rules-loans', darlehen_quelle: 'rules-loans', zinsmodell: 'rules-loans', rate_list: 'rules-loans', base_override: 'rules-loans',
   h_l_name: 'rules-loans', h_l_aktiv: 'rules-loans', h_l_art: 'rules-loans', h_l_text: 'rules-loans', h_l_excl: 'rules-loans', h_l_zinstag: 'rules-loans', h_l_ab: 'rules-loans',
   h_l_gp: 'rules-loans', h_l_kt: 'rules-loans', h_l_kz: 'rules-loans', h_co_anteil: 'areas', h_co_bet: 'rules-companies', h_co_gk: 'rules-mirrors', h_gk_rueck: 'rules-mirrors',
-  auto_buchungen_h: 'auto-bookings', h_co_rueck: 'rules-back', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
+  h_co_rueck: 'rules-back', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
   update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
+// beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
+const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
+  transactions: 'receipts', categories: 'categories', 'categories/rules': 'categories-rules', 'categories/written': 'categories-write-back', bookings: 'auto-bookings',
+  setup: 'setup', accounts: 'accounts', 'accounts/areas': 'areas', 'accounts/history': 'balances', 'accounts/positions': 'categories-positions', 'accounts/rules': 'rules',
+  'accounts/tax': 'tax', settings: '', 'settings/moneymoney': 'sync', 'settings/access': 'iphone', 'settings/receipts': 'receipts', 'settings/updates': 'updates',
+  'settings/backup': 'backup', log: 'log'};
+const pageHq = (tab, sub) => { const k = (tab + '/' + sub) in PAGE_HELP ? tab + '/' + sub : tab, id = PAGE_HELP[k]; if (id == null) return '';
+  return `<span class="hq page-hq" tabindex="0" data-tip="${esc(t(`page_${k.replace('/', '_')}`))}"${id ? ` data-help="${id}"` : ''}>?</span>`; };
 const ICON = {
   pencil: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg>',
   check: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
@@ -255,7 +264,7 @@ document.addEventListener('click', e => {
 
 const S = { tab: 'overview', mode: 'months', plan: true, real: false, all: false, collapsed: {}, open: {}, csrf: null, area: null, cfEbene: 0, planEbene: 2, cfTog: {'s:operating': true},          /* at the start: main lines, income and expenses open (a level clicked: exactly that level) */ cfZeit: '12m', cfVon: null, cfBis: null, cfPieArt: 'aus',
             DATA: null, CFG: null, KONTEN: [], KATS: [], STATUS: null, steuerJahr: null, steuerEnt: null, proposal: false,
-            uf: {entity: '', year: '', account: '', q: '', ohne_beleg: false, uncategorized_flag: false, direction: '', kats: null, date_from: '', date_to: '', title: '', est: false, ext: false, mitOhne: false, katsLabel: '', rChart: false, ids: null, cfRows: null}, sel: new Set(), drawerTx: null };
+            uf: {entity: '', year: '', account: '', q: '', ohne_beleg: false, uncategorized_flag: false, direction: '', kats: null, date_from: '', date_to: '', title: '', est: false, mitOhne: false, katsLabel: '', rChart: false, ids: null, cfRows: null}, sel: new Set(), drawerTx: null };
 
 function choose(msg, opts) {
   // Rückfrage mit mehreren Antworten (statt confirm): opts = [[wert, text, klasse], ...]; Abbrechen, Escape oder daneben -> null
@@ -337,6 +346,56 @@ const xlsxBtn = (was, extra = '') => `<button class="xlsx small" data-xlsx="${wa
 
 // ---------------------------------------------------------------- Offline (PWA am iPhone, Mac nicht erreichbar)
 const OFFLINE = {mode: false, as_of: null, idle: null};
+// ---------------------------------------------------------------- Drucken (⌘P, or a chart's own menu): the page as shown
+// A line on top names what is printed (page, area, period), Kontor's version, when it was printed and the state of the data from
+// MoneyMoney. Nothing is drawn anew for the paper: the page is scaled to the page width (a wide table prints what is in view).
+const PRINT = {on: false, off: null};
+const fmtStamp = ts => ts ? FD(ts) + (ts.length >= 16 ? ' ' + ts.slice(11, 16) : '') : '–';
+function printHead() {
+  const st = S.STATUS || {}, m = st.moneymoney || {}, ttl = $('#page-title'), area = $('#bereich-seg:not(.hidden) button.on');
+  let what = `<b>${esc(ttl && ttl.firstChild ? ttl.firstChild.textContent.trim() : '')}</b>` + (area ? ' · ' + esc(area.textContent) : '');
+  const D = B(); if (S.tab === 'cashflow' && D) { const [cur] = cfMonths(D, S.cfZeit); if (cur && cur.length) what += ' · ' + esc(cfSpanLabel(cur)) + ' (' + esc(spanText(cur.length)) + ')'; }
+  const now = new Date(), stamp = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0') + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  return `<span>${what}</span><span>Kontor ${esc(PAGE_VERSION)} · ${esc(t('druck_am', fmtStamp(stamp)))} · ${esc(t('druck_mm_stand', fmtStamp(m.as_of)))}</span>`;
+}
+window.addEventListener('beforeprint', () => {
+  PRINT.on = true;
+  const main = $('#main'); if (!main) return;
+  document.documentElement.style.setProperty('--print-zoom', String(Math.min(1, 1040 / Math.max(1, main.getBoundingClientRect().width))));
+  let h = $('#print-head'); if (!h) { h = document.createElement('div'); h.id = 'print-head'; main.parentNode.insertBefore(h, main); }
+  h.innerHTML = printHead();
+});
+window.addEventListener('afterprint', () => {
+  PRINT.on = false; document.documentElement.style.removeProperty('--print-zoom');
+  const h = $('#print-head'); if (h) h.remove();
+  (PRINT.off || []).forEach(x => x.classList.remove('print-off', 'print-path')); PRINT.off = null; document.body.classList.remove('print-one');
+});
+// one chart alone: everything beside its way up to the page is left out while printing
+function printOne(card) {
+  const marked = [];
+  for (let el = card; el && el.parentElement && el !== document.body; el = el.parentElement) {
+    if (el !== card) { el.classList.add('print-path'); marked.push(el); }
+    for (const sib of el.parentElement.children) if (sib !== el) { sib.classList.add('print-off'); marked.push(sib); }
+  }
+  PRINT.off = marked; document.body.classList.add('print-one'); window.print();
+}
+// a right click (or ctrl-click) on a chart: its own small menu -- "Grafik drucken" (with shift: the browser's menu)
+function ctxMenu(x, y, items) {
+  const old = $('#ctx'); if (old) old.remove();
+  const m = document.createElement('div'); m.id = 'ctx'; m.className = 'ctx'; m.setAttribute('role', 'menu');
+  m.innerHTML = items.map(([l], i) => `<button role="menuitem" data-i="${i}">${esc(l)}</button>`).join(''); document.body.appendChild(m);
+  const r = m.getBoundingClientRect(); m.style.left = Math.min(x, innerWidth - r.width - 8) + 'px'; m.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
+  const close = () => { m.remove(); document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', esc_, true); window.removeEventListener('scroll', close); };
+  const away = e => { if (!m.contains(e.target)) close(); }, esc_ = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('pointerdown', away, true); document.addEventListener('keydown', esc_, true); window.addEventListener('scroll', close);          // the page scrolled (not a table inside it)
+  m.addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (!b) return; close(); items[+b.dataset.i][1](); });
+  $('button', m).focus();
+}
+document.addEventListener('contextmenu', e => {
+  const card = e.target.closest && e.target.closest('#main #bch, #main .lc-card, #main .cf-card, #main .ov-card, #main .h-chart');
+  if (!card || e.shiftKey || e.target.closest('input, textarea, select, a')) return;
+  e.preventDefault(); ctxMenu(e.clientX, e.clientY, [[t('grafik_drucken'), () => printOne(card)]]);
+});
 function offlineBanner() {
   if (OFFLINE.mode) { const b = $('#banner'); b.innerHTML = `${t('offline_ansicht_der_mac_ist', OFFLINE.as_of ? new Date(OFFLINE.as_of).toLocaleString(LOCALE, {dateStyle: 'short', timeStyle: 'short'}) : t('unbekannt'), hq('offline'))}`; b.className = 'banner info'; }
   else if (S.DATA) banner('');
@@ -748,14 +807,15 @@ async function vUebersicht() {
   const ue = (D.cashflow.reconciliation || {})[cur]; if (ue && Math.abs(ue.unexplained) > 1) items.push(['warn', t('unerklaerte_vermoegensaenderung_im_lau') + F(ue.unexplained) + t('pruefzeile'), '#cashflow']);
   for (const w of (D.warnings || []).slice(0, 3)) items.push(['warn', w, '#bookings']);
   if (S.STATUS.update && S.STATUS.update.newer) items.push(['info', t('update') + S.STATUS.update.available + t('verfuegbar'), '#settings/updates']);
-  const todo = items.length ? `<div class="ov-todo">${items.map(([k, x, href]) => `<a href="${href}" class="pill ${k}">${esc(x)}</a>`).join('')}</div>` : '';
+  // below the charts (they stay a fixed dashboard): what is open, each line leads where it is done -- the list scrolls if long
+  const todo = items.length ? `<div class="card ov-todo"><div class="ov-head"><b>${t('ov_offen')}</b><span class="ov-fig"><span class="ov-s">${items.length}</span></span></div><div class="ov-todo-l">${items.map(([k, x, href]) => `<a href="${href}" class="ov-todo-i ${k}"><i class="ov-todo-d"></i><span>${esc(x)}</span><span class="ov-todo-c" aria-hidden="true">›</span></a>`).join('')}</div></div>` : '';
   const card = (id, title, go, foot = '') => `<div class="card link ov-card" data-ov="${id}" data-ovgo="${go}" role="link" tabindex="0" aria-label="${esc(title)}"><div class="ov-head"><b>${esc(title)}</b><span class="ov-fig" id="ov-fig-${id}"></span></div><div class="ov-plot" id="ov-${id}"></div>${foot}</div>`;
   const key = [['ein', t('einnahmen')], ['aus', t('ausgaben')], ['inv', t('cf_investitionen')], ['fin', t('cf_finanzierung')]].map(([c, l]) => `<span><i class="sw ${c === 'ein' ? 'in' : c === 'aus' ? 'out' : c}"></i>${esc(l)}</span>`).join('')
     + `<span><i class="sw net"></i>${esc(t('zahlungsfluss_gesamt_veraenderung_liqu'))}</span>`;
-  return todo + `<div class="ov-grid">${card('nw', t('nettovermoegen'), 'nw')}${card('comp', t('vermoegensstruktur'), 'table')}${card('months', t('cf_je_monat_t'), 'months', `<div class="ov-key">${key}</div>`)}${card('wealth', t('cf_verm_bruecke'), 'wealth')}</div>`;
+  return `<div class="ov-grid">${card('nw', t('nettovermoegen'), 'nw')}${card('comp', t('vermoegensstruktur'), 'table')}${card('months', t('cf_je_monat_t'), 'months', `<div class="ov-key">${key}</div>`)}${card('wealth', t('cf_verm_bruecke'), 'wealth')}</div>` + todo;
 }
 // where a chart leads: the balance sheet's chart or table, the cash flow's months or net worth bridge (the last 12 months, as here)
-const OV_GO = {nw: ['#balance', '#bch'], table: ['#balance', '.fade'], months: ['#cashflow', '[data-cfid="months"]'], wealth: ['#cashflow', '[data-cfid="wealth"]']};
+const OV_GO = {nw: ['#balance', '#bch'], table: ['#balance', '.wrap.bil-tbl'], months: ['#cashflow', '[data-cfid="months"]'], wealth: ['#cashflow', '[data-cfid="wealth"]']};
 function ovGo(k) {
   const [hash, sel] = OV_GO[k] || ['#overview', null];
   if (hash === '#cashflow') { S.cfZeit = '12m'; S.cfBrZoom = S.cfWbZoom = null; }
@@ -764,7 +824,7 @@ function ovGo(k) {
 function ovArrive(main) {          // after the page is drawn: its chart in view
   const sel = S.ovGo; S.ovGo = null; if (!sel) return;
   const el = $(sel, main); if (!el) return;
-  setTimeout(() => { window.scrollTo(0, sel === '.fade' ? 0 : Math.max(0, el.getBoundingClientRect().top + window.scrollY - 12)); if (sel === '.fade') return; el.classList.add('ov-hit'); setTimeout(() => el.classList.remove('ov-hit'), 1600); }, 60);
+  setTimeout(() => { window.scrollTo(0, Math.max(0, el.getBoundingClientRect().top + window.scrollY - 12)); el.classList.add('ov-hit'); setTimeout(() => el.classList.remove('ov-hit'), 1600); }, 60);
 }
 function bindOverview(main) {
   const grid = $('.ov-grid', main); if (!grid) return;
@@ -776,7 +836,8 @@ function ovDraw() {
   const D = B(), grid = $('#main .ov-grid'); if (!D || !grid) return;
   // one screen: the grid takes the height left below it (a narrow window stacks the cards, each of its own height)
   const wide = window.innerWidth > 760;
-  grid.style.height = wide ? Math.max(480, window.innerHeight - grid.getBoundingClientRect().top - window.scrollY - 24) + 'px' : '';
+  const td = $('#main .ov-todo'), tdH = td ? td.getBoundingClientRect().height + 14 : 0;          // the open points below keep their room
+  grid.style.height = wide ? Math.max(480, window.innerHeight - grid.getBoundingClientRect().top - window.scrollY - 24 - tdH) + 'px' : '';
   // the figure first (it can take a second line on a narrow screen), then the chart in the room left
   const put = (id, fn) => { const el = $('#ov-' + id); if (!el) return; const f = $('#ov-fig-' + id); el.innerHTML = '';
     if (f) f.innerHTML = fn(D, 320, 200).fig || '';
@@ -851,7 +912,7 @@ function ovMonths(D, W, H) {
       g += `<rect class="cf-col ${c}" x="${x0.toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${(y2 - y1).toFixed(1)}"/>`; }
     if ((cut && b.up > hi + 0.5) || (cut && b.dn < lo - 0.5)) { const yc = b.up > hi + 0.5 ? P.t + 4 : H - P.b - 4;
       g += `<path class="cf-break" d="M${(x0 - 2).toFixed(1)},${(yc + 3).toFixed(1)}L${(x0 + bw + 2).toFixed(1)},${(yc - 3).toFixed(1)}"/>`; }
-    if (Math.abs(b.net) >= 0.5) g += `<line class="cf-net" x1="${(x0 - 3).toFixed(1)}" x2="${(x0 + bw + 3).toFixed(1)}" y1="${y(b.net).toFixed(1)}" y2="${y(b.net).toFixed(1)}"/>`;
+    if (Math.abs(b.net) >= 0.5 && Math.abs(y(b.net) - y(0)) >= 4) g += `<line class="cf-net" x1="${(x0 - 3).toFixed(1)}" x2="${(x0 + bw + 3).toFixed(1)}" y1="${y(b.net).toFixed(1)}" y2="${y(b.net).toFixed(1)}"/>`;
     if (i === 0 || i === bs.length - 1 || (bs.length > 6 && i === Math.floor(bs.length / 2))) g += `<text class="cf-tick${i === bs.length - 1 ? ' end' : ''}" x="${(x0 + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${esc(ML(b.k))}</text>`;
   });
   const net = bs.reduce((a, b) => a + b.net, 0);
@@ -2168,7 +2229,7 @@ function bindBilanzChart(main) {
     bchLinkPan($('#bch-svg', main));
   } else $$('.wrap thead th[data-key]', main).forEach(th => { th.classList.add('jump'); th.addEventListener('click', () => bchFocus(th.dataset.key)); });
   if (BCH.ro) BCH.ro.disconnect();
-  let last = 0; BCH.ro = new ResizeObserver(() => { const w = $('#bch-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; bchDraw(); } });
+  let last = 0; BCH.ro = new ResizeObserver(() => { if (PRINT.on) return; const w = $('#bch-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; bchDraw(); } });
   BCH.ro.observe($('#bch-plot', main));
 }
 
@@ -2342,7 +2403,7 @@ function lcBil(D) {
 // which of the four charts is the large one at the top (the others are the small ones below the table)
 // (S.lcOrder: the large one first, then the small ones in their order; enlarging a small one swaps it with the large one)
 const VIEW_ORDER = ['balance', 'nw', 'sel', 'pos'];
-const BIL_BLOCKS = ['table', 'chart', 'lines'];          // the balance sheet page from the top: table, large chart, small charts
+const BIL_BLOCKS = ['chart', 'table', 'lines'];          // the balance sheet page from the top: large chart, table, small charts (opening rows does not move the chart)
 const bilBlocks = () => Array.isArray(S.blocks) && S.blocks.length === 3 && BIL_BLOCKS.every(k => S.blocks.includes(k)) ? S.blocks.slice() : BIL_BLOCKS.slice();
 const bigType = () => (S.lcOrder || VIEW_ORDER)[0];
 // The balance sheet view: changes while using it last for this session only. "Ansicht speichern" keeps the current view on this
@@ -2670,7 +2731,7 @@ function bindBilanzLines(main) {
   }));
   draw();
   if (LC.ro) LC.ro.disconnect();
-  let last = 0; LC.ro = new ResizeObserver(() => { const w = $('.lc-plot', grid); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; ['nw', 'sel', 'pos', 'bil'].forEach(id => { if (has(id) && LC[id]) lcDraw(id); }); } });
+  let last = 0; LC.ro = new ResizeObserver(() => { if (PRINT.on) return; const w = $('.lc-plot', grid); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; ['nw', 'sel', 'pos', 'bil'].forEach(id => { if (has(id) && LC[id]) lcDraw(id); }); } });
   LC.ro.observe(grid);
 }
 
@@ -2717,9 +2778,9 @@ function syncRows(t, left) {
 }
 let FROZEN_W = 0;
 let OV_T = null;
-window.addEventListener('resize', () => { clearTimeout(OV_T); OV_T = setTimeout(() => { if (S.tab === 'overview') ovDraw(); }, 120); });
+window.addEventListener('resize', () => { clearTimeout(OV_T); OV_T = setTimeout(() => { if (S.tab === 'overview' && !PRINT.on) ovDraw(); }, 120); });
 window.addEventListener('resize', () => {            // another width can break names onto two lines (or back)
-  const w = window.innerWidth; if (Math.abs(w - FROZEN_W) < 2) return; FROZEN_W = w;
+  const w = window.innerWidth; if (PRINT.on || Math.abs(w - FROZEN_W) < 2) return; FROZEN_W = w;
   clearTimeout(syncRows.t); syncRows.t = setTimeout(() => $$('.cf-pair').forEach(p => { const a = $(':scope > table:not(.cf-names)', p), b = $(':scope > .cf-names', p); if (a && b) syncRows(a, b); }), 120);
 });
 // The cash flow opens on the last finished month, the most important one: as many columns as fit -- one: that month; two: and the
@@ -3057,8 +3118,15 @@ function cfChange(cur, prev, upGood) {
     : a < 0.01 ? '<' + (0.01).toLocaleString(LOCALE) : a.toLocaleString(LOCALE, {maximumFractionDigits: a < 0.1 ? 2 : a < 10 ? 1 : 0});
   return {txt: (d > 0 ? '+' : '−') + txt + ' %', cls: (d > 0) === upGood ? 'pos' : 'neg', d};
 }
-// the change in a narrow column (the bridges): from 1000 % on only the rounded thousands ("+2T"), else as above without the space
-const cfChgShort = ch => Math.abs(ch.d || 0) >= 999.5 ? (ch.d > 0 ? '+' : '−') + Math.round(Math.abs(ch.d) / 1000).toLocaleString(LOCALE) + t('tsd_kurz') : ch.txt.replace(' %', '%');
+// the change in a narrow column (the bridges): from 1000 % on only the rounded thousands ("+2T%"), else as above without the space
+const cfChgShort = ch => Math.abs(ch.d || 0) >= 999.5 ? (ch.d > 0 ? '+' : '−') + Math.round(Math.abs(ch.d) / 1000).toLocaleString(LOCALE) + t('tsd_kurz') + '%' : ch.txt.replace(' %', '%');
+// the change of a signed amount (money in +, out −): of its size while the sign stays (expenses +10 %: more was spent), across
+// zero of the amount itself; colour (better / worse for you) only where that is beyond doubt -- income and expenses (colour)
+function cfChangeAmt(cur, prev, colour) {
+  if (prev == null) return null;
+  const c = cur * prev < 0 ? cfChange(cur, prev, true) : prev < 0 || (prev === 0 && cur < 0) ? cfChange(Math.abs(cur), Math.abs(prev), false) : cfChange(cur, prev, true);
+  return c && !colour ? {...c, cls: ''} : c;
+}
 // the period before of a group of positions or categories ("Übrige"): only where each of them had one -- a sum with gaps would
 // compare something else than it shows
 const cfRestP = (list, has) => has && list.length && list.every(d => d.p != null && Math.abs(d.p) >= 0.5) ? list.reduce((a, d) => a + d.p, 0) : null;
@@ -3332,7 +3400,7 @@ function cfDrawBridge(which = 'liq') {
     + `<rect class="cf-br-axis" x="${L}" y="0" width="${(R - L).toFixed(1)}" height="${AX}"/>`, y = AX + 3, prevEnd = null;
   list.forEach(r => {
     const h = rh(r), mid = y + h / 2, bh = r.kind === 'tot' ? 12 : r.depth === 0 ? 10 : r.depth === 1 ? 8 : 6, x0 = X(Math.min(r.a, r.b)), x1 = X(Math.max(r.a, r.b));
-    const ch = r.kind === 'tot' ? null : cfChange(r.v, r.p, r.v >= 0), kind = r.kind === 'tot' ? 'tot' : r.kind === 'one' ? 'one' : r.depth === 0 ? 'grp' : 'kid';
+    const ch = r.kind === 'tot' ? null : cfChangeAmt(r.v, r.p, r.act === 'op'), kind = r.kind === 'tot' ? 'tot' : r.kind === 'one' ? 'one' : r.depth === 0 ? 'grp' : 'kid';          // investing, financing, interest, values: no colour (better or worse is not known)
     // a dashed line joins each step to the one before (a bracket is no step)
     if (!r.br && prevEnd != null) { const xj = X(r.kind === 'tot' ? r.b : r.a); g += `<line class="cf-br-link" x1="${xj.toFixed(1)}" x2="${xj.toFixed(1)}" y1="${prevEnd.toFixed(1)}" y2="${(mid - bh / 2).toFixed(1)}"/>`; }
     const dsc = r.hasKids ? `<text class="cf-br-disc" x="${ind(r)}" y="${(mid + 4).toFixed(1)}">${r.br ? '▾' : '▸'}</text>` : '';
@@ -3354,8 +3422,8 @@ function cfDrawBridge(which = 'liq') {
     // the amount and its change stand at the right, the parts open with a click (a shortened name: its full one); on the amount
     // or the change: both exact, with the period before and the parts
     const cutName = r.label.length > room;
-    const tipI = chW && ch ? cfTip(`<div class="cf-tip-h">${esc(r.label)}</div><div class="cf-tip-kv"><span>${esc(t('betrag'))}</span><b>${cfEur(r.v)}</b><span>${esc(t('cf_vorjahr'))}</span><b>${r.p != null ? cfEur(r.p) : '–'}</b><span>${esc(t('cf_veraenderung'))}</span><b class="${ch.cls}">${esc(ch.txt)}</b></div>`
-        + (r.hasKids ? r.kids.map(k => cfTipRow('sw ' + (k.v >= 0 ? 'in' : 'out'), k.label, cfEur(k.v), cfChange(k.v, k.p, k.v >= 0) || {cls: '', txt: ''})).join('') : '')) : null;
+    const tipI = chW && ch ? cfTip(`<div class="cf-tip-h">${esc(r.label)}</div><div class="cf-tip-kv"><span>${esc(t('betrag'))}</span><b>${cfEur(r.v)}</b><span>${esc(t('cf_vorjahr'))}</span><b class="pl">${r.p != null ? cfEur(r.p) : '–'}</b><span>${esc(t('cf_veraenderung'))}</span><b class="pl ${ch.cls}">${esc(ch.txt)}</b></div>`
+        + (r.hasKids ? r.kids.map(k => cfTipRow('sw ' + (k.v >= 0 ? 'in' : 'out'), k.label, cfEur(k.v), cfChangeAmt(k.v, k.p, r.act === 'op') || {cls: '', txt: ''})).join('') : '')) : null;
     const balT = r.bal ? t(r.bal.startsWith('nw') ? 'cf_zur_bilanz_nv' : 'cf_zur_bilanz_liq', ML(r.bal.split('|')[1])) : '';          // a total: a click shows it in the balance sheet
     g += `<g class="cf-br-row ${kind}${r.br ? ' br' : ''}${r.hasKids || r.bal ? ' more' : ''}"${r.hasKids ? ` tabindex="0" role="button" data-br="${esc(r.id)}" aria-expanded="${r.br}"` : r.bal ? ` tabindex="0" role="link" data-bal="${esc(r.bal)}"` : ''} aria-label="${esc(r.label + ': ' + cfEur(r.v))}">${cutName || r.long || balT ? `<title>${esc(balT || r.long || r.label)}</title>` : ''}<rect class="cf-br-bg" x="0" y="${y}" width="${W}" height="${h}" rx="4"/>`
       + dsc + `<text class="cf-br-n" x="${nx}" y="${(mid + 4).toFixed(1)}">${esc(cutName ? r.label.slice(0, Math.max(3, room - 1)) + '…' : r.label)}${r.kind === 'act' && r.act !== 'plain' ? `<tspan class="cf-br-dot ${r.act}" dx="4" dy="-1">●</tspan>` : ''}${r.abbr ? `<tspan class="cf-br-abbr" dx="3" dy="${r.kind === 'act' ? 1 : 0}">${r.abbr}</tspan>` : ''}</text>`
@@ -3405,7 +3473,7 @@ function cfDrawMonths() {
   const zNw = Z.nw || 1, nmax = zNw !== 1 ? Math.max(1, (cut2 || ends[ends.length - 1] || 1) * zNw) : nice(Math.max(1, cut2 || ends[ends.length - 1] || 1)), clip2 = !!cut2 || zNw !== 1;
   const lowDown = clip2 && bs.some(b => -b.ndn > nmax);
   // no key: the tooltip names the colours; the room above the lower panel holds its title and the heights of cut bars
-  const W = Math.max(280, el.clientWidth), H1 = W < 520 ? 170 : 200, H2 = 88, upCut2 = clip2 && bs.some(b => b.nup > nmax), gapH = (downCut ? 40 : 26) + 18 + (upCut2 ? 8 : 0), H = H1 + gapH + H2 + 20 + (lowDown ? 12 : 0), P = {l: W >= 640 ? 58 : 44, r: 8, t: 16};          // +18: the lower panel a little apart
+  const W = Math.max(280, el.clientWidth), H1 = W < 520 ? 170 : 200, H2 = 88, upCut2 = clip2 && bs.some(b => b.nup > nmax), gapH = (downCut ? 40 : 26) + 15 + (upCut2 ? 8 : 0), H = H1 + gapH + H2 + 20 + (lowDown ? 12 : 0), P = {l: W >= 640 ? 58 : 44, r: 8, t: 16};          // +18: the lower panel a little apart
   let ticks = niceTicks(lo, hi, 4, 4); const step = ticks.length > 1 ? ticks[1] - ticks[0] : (hi - lo);          // at least four lines
   if (!clip) { if (ticks[0] > lo + step * 1e-6) ticks.unshift(ticks[0] - step); if (ticks[ticks.length - 1] < hi - step * 1e-6) ticks.push(ticks[ticks.length - 1] + step); }
   else ticks = ticks.filter(v => v <= hi + step * 1e-6 && v >= lo - step * 1e-6);
@@ -3443,7 +3511,7 @@ function cfDrawMonths() {
   const over = Math.max(0, Math.min(3, (slot - bw) / 2 - 1.5));          // the marks a little wider than the bar -- never touching the next one
   bs.forEach((b, i) => { const yn = y(b.net); if (Math.abs(yn - y(0)) >= 4) g += `<line class="cf-net" x1="${(x(i) - over * 0.7).toFixed(1)}" x2="${(x(i) + bw + over * 0.7).toFixed(1)}" y1="${yn.toFixed(1)}" y2="${yn.toFixed(1)}"/>`; });
   const t2 = H1 + gapH, z2 = t2 + H2 / 2, y2 = v => z2 - Math.max(-nmax, Math.min(nmax, v)) / nmax * (H2 / 2 - 2);
-  g += `<text class="cf-sub-l" x="4" y="${(t2 - (upCut2 ? 20 : 10)).toFixed(1)}">${esc(t('cf_veraenderung_nv'))}</text>`;
+  g += `<text class="cf-sub-l" x="4" y="${(t2 - (upCut2 ? 25 : 15)).toFixed(1)}">${esc(t('cf_veraenderung_nv'))}</text>`;          // a little room below the title
   // its scale: the top, the middle (0) and the bottom labelled, halfway a faint line
   for (const v of [nmax, nmax / 2, 0, -nmax / 2, -nmax]) {
     const yy = y2(v), lab = v === 0 || Math.abs(v) === nmax;
@@ -3452,11 +3520,11 @@ function cfDrawMonths() {
   bs.forEach((b, i) => {
     for (const sign of [1, -1]) {
       let acc = 0;
-      for (const k of ['bank', 'umsch', 'value']) {
+      for (const [k, c] of [['bank', 'bank'], ['realloc', 'umsch'], ['value', 'value']]) {
         const v = b[k]; if (v * sign <= 0.005) continue;
         const a = y2(acc), e = y2(acc + v); acc += v;
         const top = Math.min(a, e), hgt = Math.abs(e - a); if (hgt < 0.6) continue;
-        g += `<rect class="cf-col ${k}${b.part ? ' part' : ''}" x="${x(i).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${Math.min(2, bw / 2)}"/>`;
+        g += `<rect class="cf-col ${c}${b.part ? ' part' : ''}" x="${x(i).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${Math.min(2, bw / 2)}"/>`;
       }
       const tot = sign > 0 ? b.nup : b.ndn;
       if (clip2 && Math.abs(tot) > nmax) {
@@ -3466,7 +3534,7 @@ function cfDrawMonths() {
       }
     }
     // the result -- the change in net worth -- as a short line at its height, across the bar (beyond the range: none, the tooltip has it)
-    if (Math.abs(b.nup) + Math.abs(b.ndn) >= 0.5 && Math.abs(b.nw) <= nmax) { const yn = y2(b.nw); g += `<line class="cf-net nw" x1="${(x(i) - over).toFixed(1)}" x2="${(x(i) + bw + over).toFixed(1)}" y1="${yn.toFixed(1)}" y2="${yn.toFixed(1)}"/>`; }
+    if (Math.abs(b.nup) + Math.abs(b.ndn) >= 0.5 && Math.abs(b.nw) <= nmax) { const yn = y2(b.nw); if (Math.abs(yn - y2(0)) >= 4) g += `<line class="cf-net" x1="${(x(i) - over * 0.7).toFixed(1)}" x2="${(x(i) + bw + over * 0.7).toFixed(1)}" y1="${yn.toFixed(1)}" y2="${yn.toFixed(1)}"/>`; }          // as above: only clear of the zero line
   });
   { const n = bs.length, lab = i => byYear || i === 0 || i === n - 1 || bs[i].k.endsWith('-01') ? bs[i].label : MONATE[+bs[i].k.slice(5) - 1];
     const order = [0, n - 1, ...bs.map((b, i) => i).filter(i => i > 0 && i < n - 1 && (byYear || bs[i].k.endsWith('-01'))), ...bs.map((b, i) => i).filter(i => i > 0 && i < n - 1)];
@@ -3484,7 +3552,7 @@ function cfDrawMonths() {
     const tip = cfTip(`<div class="cf-tip-h">${esc(byYear ? b.label : MLL(b.k))}${b.part ? ` <span class="muted">· ${b.n}${t('mon')}</span>` : ''}</div>`
       + nz('sw ein', t('einnahmen'), b.ein) + nz('sw aus', t('ausgaben'), b.aus) + nz('sw inv', SEC_LABEL.investing, b.inv) + nz('sw fin', SEC_LABEL.financing, b.fin) + nz('sw unk', t('cf_unklar'), b.unk)
       + `<div class="cf-tip-res">${cfTipTot(t('zahlungsfluss_gesamt_veraenderung_liqu'), sgn(b.net))}</div>`          // the sum of the bars above: no colour of its own, bold
-      + `<div class="cf-tip-sum">${nz('sw bank', t('cf_bankguthaben_kurz'), b.bank) + nz('sw umsch', t('cf_umschichtungen'), b.realloc) + nz('sw wert', t('cf_wertaenderungen'), b.value)}${cfTipTot(t('cf_veraenderung_nv'), sgn(b.nw))}`
+      + `<div class="cf-tip-sum">${nz('sw bank', t('cf_bankguthaben_kurz'), b.bank) + nz('sw umsch', t('cf_umschichtungen'), b.realloc) + nz('sw value', t('cf_wertaenderungen'), b.value)}${cfTipTot(t('cf_veraenderung_nv'), sgn(b.nw))}`
       + `</div>`
       );
     g += `<rect class="cf-hit" data-cftip="${tip}" data-k="${b.k}" tabindex="0" x="${(P.l + slot * i).toFixed(1)}" y="0" width="${slot.toFixed(1)}" height="${H - 16}"/>`; });
@@ -3511,7 +3579,7 @@ function cfPie(D, months, prev) {
   const span = cfSpanLabel;
   const yrs = has ? Math.round(((+months[0].slice(0, 4) - +prev[0].slice(0, 4)) * 12 + (+months[0].slice(5) - +prev[0].slice(5))) / 12) : 0;
   const title = !has ? t(up ? 'cf_einnahmen_kuchen' : 'cf_ausgaben_kuchen') : yrs === 1 ? t(up ? 'cf_einnahmen_vorjahr' : 'cf_ausgaben_vorjahr') : t(up ? 'cf_einnahmen_vorjahre' : 'cf_ausgaben_vorjahre', yrs);
-  CF.pie = items.length ? {items, all, before, up, title, neg, tc: cfChange(all, before, up), prev: has, span: span(months), spanPrev: has ? span(prev) : ''} : null;
+  CF.pie = items.length ? {items, all, before, up, title, neg, tc: cfChange(all, before, up), prev: has, span: span(months), spanPrev: has ? span(prev) : '', n: months.length} : null;
   return `<div class="cf-duo-p" id="cf-pie-card"><div class="lc-head"><b class="lc-title">${title}${hq('cf_ausgaben_kuchen')}</b>${cfMv('duo')}${cfArtSeg()}</div>`
     + (items.length ? `<div class="cf-plot" id="cf-pie"></div>` : `<div class="cf-empty muted small">${t('cf_keine_zahlungen')}</div>`) + `</div>`;
 }
@@ -3550,8 +3618,8 @@ function cfDrawPie() {
     for (const d of segs) { const w = (a1 - a0) * d.v / sum, b1 = b + w; d.mid = (b + b1) / 2;
       if (segs.length > 1) sub += `<path class="cf-pie-sub ${d.key}" d="${arc(b + 0.004, Math.max(b + 0.006, b1 - 0.004), R1 + 3, R2)}"/>`; b = b1; }
     const ch = cfChange(e.v, e.p, up);
-    const tip = cfTip(`<div class="cf-tip-h">${esc(e.label)}</div><div class="cf-tip-kv">${kv(t('betrag'), cfEur(e.v))}${kv(t('anteil'), cfPct(e.v, total) + ' %')}`
-      + (P0.prev ? `${kv(t('cf_vorperiode'), e.p != null ? cfEur(e.p) : '–')}${kv(t('cf_veraenderung'), ch ? ch.txt : '–', ch && ch.cls)}` : '') + `</div>`
+    const tip = cfTip(`<div class="cf-tip-h">${esc(e.label)}</div><div class="cf-tip-kv">${kv(t('betrag'), cfEur(e.v))}${kv(t('anteil'), cfPct(e.v, total) + ' %', 'pl')}`
+      + (P0.prev ? `${kv(t('cf_vorperiode'), e.p != null ? cfEur(e.p) : '–', 'pl')}${kv(t('cf_veraenderung'), ch ? ch.txt : '–', 'pl ' + (ch ? ch.cls : ''))}` : '') + `</div>`
       + (segs.length > 1 ? segs.map(d => cfTipRow(d.key, d.label, cfEur(d.v), cfChange(d.v, d.p, up) || {cls: '', txt: ''})).join('') : ''));
     const st = sel < 0 ? '' : i === sel ? ' on' : ' off';
     // its share, small, inside the slice where the box fits between the ring's edges and the slice's sides
@@ -3608,9 +3676,10 @@ function cfDrawPie() {
     return;
   }
   const ctip = cfTip(`<div class="cf-tip-h">${esc(t(up ? 'einnahmen' : 'ausgaben'))}</div><div class="cf-tip-kv">${kv(P0.span, cfEur(all))}`
-    + (P0.neg <= -0.5 ? kv(t('cf_gegenposten'), cfEur(P0.neg)) : '')
-    + (P0.before != null ? `${kv(P0.spanPrev, cfEur(P0.before))}${kv(t('cf_veraenderung'), (diff > 0.5 ? '+' : diff < -0.5 ? '−' : '±') + cfEur(Math.abs(diff)) + (tc ? ' (' + tc.txt + ')' : ''), tc && tc.cls)}` : '') + `</div>`);
+    + (P0.neg <= -0.5 ? kv(t('cf_gegenposten'), cfEur(P0.neg), 'pl') : '')
+    + (P0.before != null ? `${kv(P0.spanPrev, cfEur(P0.before), 'pl')}${kv(t('cf_veraenderung'), (diff > 0.5 ? '+' : diff < -0.5 ? '−' : '±') + cfEur(Math.abs(diff)) + (tc ? ' (' + tc.txt + ')' : ''), 'pl ' + (tc ? tc.cls : ''))}` : '') + `</div>`);
   g += `<g class="cf-pie-c" data-cftip="${ctip}" tabindex="0" aria-label="${esc(t(up ? 'einnahmen' : 'ausgaben') + ': ' + cfEur(all))}"><circle cx="${cx}" cy="${cy}" r="${(R0 - 2).toFixed(1)}"/>`
+    + `<text class="cf-pie-len" x="${cx}" y="${cy + (tc ? -19 : -14)}" text-anchor="middle">${esc(spanText(P0.n))}</text>`          // how long the period is, quietly above the total
     + `<text class="cf-pie-v" x="${cx}" y="${cy + (tc ? 1 : 6)}" text-anchor="middle">${esc(F0(all))} €</text>` + (tc ? `<text class="cf-pie-d ${tc.cls}" x="${cx}" y="${cy + 21}" text-anchor="middle">${esc(tc.txt)}</text>` : '') + `</g>`;
   el.innerHTML = `<svg class="cf-svg${up ? ' ein' : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(P0.title)}">${g}</svg>`;
 }
@@ -3622,7 +3691,13 @@ const cfHeatQ = () => { const D = B(); return !!D && cfMonths(D, S.cfZeit)[0].le
 // expenses or income: one switch for the ring and the heat map beside it (at the right of their card)
 const cfArtSeg = () => { const up = S.cfPieArt === 'ein'; return `<div class="seg small" id="cf-pie-art" role="group">${[['aus', 'ausgaben'], ['ein', 'einnahmen']].map(([k, l]) => `<button data-a="${k}" class="${(up ? 'ein' : 'aus') === k ? 'on' : ''}" aria-pressed="${(up ? 'ein' : 'aus') === k}">${t(l)}</button>`).join('')}</div>`; };
 // the switch and the arrows at the top right of the card: in the ring's head (above when stacked), in the heat map's without a ring
-const cfHeatCard = (own = false) => `<div class="cf-duo-h" id="cf-heat-card"><div class="lc-head"><b class="lc-title">${t(S.cfPieArt === 'ein' ? (cfHeatQ() ? 'cf_heatmap_ein_q' : 'cf_heatmap_ein') : (cfHeatQ() ? 'cf_heatmap_q' : 'cf_heatmap'))}${hq('cf_heatmap')}</b>${own ? cfMv('duo') + cfArtSeg() : ''}</div><div id="cf-heat"></div></div>`;
+// amounts or the change against the year before (the same month a year earlier): amounts at first, a switch at the top right
+const cfHeatChg = () => S.cfHeatMode === 'chg';
+const cfHeatSeg = () => `<div class="seg small" id="cf-heat-mode" role="group" aria-label="${esc(t('cf_heat_modus'))}">${[['abs', 'cf_heat_betraege', 'cf_heat_betraege_tip'], ['chg', 'cf_heat_vj', 'cf_heat_vj_tip']].map(([k, l, tip]) => `<button data-hmode="${k}" class="${(cfHeatChg() ? 'chg' : 'abs') === k ? 'on' : ''}" aria-pressed="${(cfHeatChg() ? 'chg' : 'abs') === k}" title="${esc(t(tip))}">${t(l)}</button>`).join('')}</div>`;
+const cfHeatCard = (own = false) => `<div class="cf-duo-h" id="cf-heat-card"><div class="lc-head"><b class="lc-title">${t(S.cfPieArt === 'ein' ? (cfHeatQ() ? 'cf_heatmap_ein_q' : 'cf_heatmap_ein') : (cfHeatQ() ? 'cf_heatmap_q' : 'cf_heatmap'))}${hq('cf_heatmap')}</b>${own ? cfMv('duo') + cfArtSeg() : ''}${cfHeatSeg()}</div><div id="cf-heat"></div></div>`;
+// a change in a small cell: whole percent, from 1000 % on in thousands ("+1,5T%", "+12T%") -- the percent sign always there
+const pctCell = d => { const a = Math.abs(d), s = d > 0 ? '+' : d < 0 ? '−' : '±';
+  return s + (a >= 999.5 ? (a / 1000).toLocaleString(LOCALE, {maximumFractionDigits: a >= 9950 ? 0 : 1}) + t('tsd_kurz') : Math.round(a).toLocaleString(LOCALE)) + '%'; };
 function cfDrawHeat() {
   // per row the position's average month at the right; hovering a cell shows what made up that month (categories, largest first)
   const D = B(), el = $('#cf-heat'); if (!D || !el) return;
@@ -3659,27 +3734,39 @@ function cfDrawHeat() {
       const q3 = xs[Math.floor((xs.length - 1) * 0.75)]; return xs.length >= 4 ? Math.max(...xs.filter(v => v <= 3 * q3)) : xs[xs.length - 1]; });
     const top = Math.max(0, ...lines.flat()), cap = Math.max(...regular, 0.5);
     return {cap, k: v => v <= 0.5 ? 0 : v <= cap ? 0.08 + 0.74 * v / cap : 0.86 + 0.14 * (top > cap ? Math.log(v / cap) / Math.log(top / cap) : 1)}; };
-  const sc = scale(rows.map(r => ms.map(m => r.v[m]))), scT = scale([ms.map(m => tot.v[m])]);
+  // the change against the year before: per cell new (nothing then, something now -- the strongest colour), unknown (the year
+  // before is not in the data: grey, as no amount) or the percentage; one robust scale on its size, as for the amounts
+  const chgMode = cfHeatChg();
+  const chg = (r, m) => { const v = r.v[m], p = prevY(r, m); if (p == null) return null; if (Math.abs(p) < 0.5) return Math.abs(v) < 0.5 ? {d: 0} : {d: v > 0 ? Infinity : -Infinity, neu: true};
+    return {d: (v - p) / Math.abs(p) * 100}; };
+  if (chgMode) for (const r of rows.concat([tot])) { r.c = {}; ms.forEach(m => { r.c[m] = ahead.has(m) ? null : chg(r, m); }); }          // a month begun or planned: no comparison
+  const finite = r => ms.map(m => r.c[m] && isFinite(r.c[m].d) ? Math.abs(r.c[m].d) : 0);
+  const sc = chgMode ? scale(rows.map(finite)) : scale(rows.map(r => ms.map(m => r.v[m]))), scT = chgMode ? scale([finite(tot)]) : scale([ms.map(m => tot.v[m])]);
   const avgMax = Math.max(1, ...rows.map(r => Math.abs(r.sum / all.length)));          // the averages' unit follows the largest of them
+  // the change over the whole period (only the months whose year before is known): the column at the right
+  const heatAll = r => { const ks = ms.filter(m => r.c[m] != null); if (!ks.length) return '–'; const v = ks.reduce((a, m) => a + r.v[m], 0), p = ks.reduce((a, m) => a + prevY(r, m), 0);
+    return Math.abs(p) < 0.5 ? (Math.abs(v) < 0.5 ? '±0%' : t('cf_heat_neu')) : pctCell((v - p) / Math.abs(p) * 100); };
   const every = Math.max(1, Math.ceil(ms.length * 34 / Math.max(1, el.clientWidth * 0.66)));          // names that fit
   const kv = (k, v) => `<span>${esc(k)}</span><b>${v}</b>`;
-  let h = `<div class="cf-heat${up ? ' ein' : ''}" style="--ch:${Math.round(Math.max(18, Math.min(32, 240 / rows.length)))}px;grid-template-columns:minmax(90px, 24%) repeat(${ms.length}, minmax(0, 1fr)) auto"><span></span>${ms.map((m, i) => { const on = (ms.length - 1 - i) % every === 0, first = ms.findIndex((x, j) => (ms.length - 1 - j) % every === 0) === i; return `<span class="cf-heat-m">${on ? esc(lab(m, (first || m.endsWith('-01')) && every * el.clientWidth * 0.66 / ms.length >= 46)) : ''}</span>`; }).join('')}<span class="cf-heat-m cf-heat-avg" title="${esc(t('cf_schnitt_monat'))}">Ø</span>`;
+  let h = `<div class="cf-heat${up ? ' ein' : ''}${chgMode ? ' chg' : ''}" style="--ch:${Math.round(Math.max(18, Math.min(32, 240 / rows.length)))}px;grid-template-columns:minmax(90px, 24%) repeat(${ms.length}, minmax(0, 1fr)) auto"><span></span>${ms.map((m, i) => { const on = (ms.length - 1 - i) % every === 0, first = ms.findIndex((x, j) => (ms.length - 1 - j) % every === 0) === i; return `<span class="cf-heat-m">${on ? esc(lab(m, (first || m.endsWith('-01')) && every * el.clientWidth * 0.66 / ms.length >= 46)) : ''}</span>`; }).join('')}<span class="cf-heat-m cf-heat-avg" title="${esc(t(chgMode ? 'cf_heat_vj_ges' : 'cf_schnitt_monat'))}">${chgMode ? '±' : 'Ø'}</span>`;
   CF.heat.rows.forEach((r, ri) => {
     const open = r.none || r.paths.size, S2 = r.total ? scT : sc;
     if (r.total) h += `<span class="cf-heat-sep"></span>`;
     // the name: the bookings of the whole period (as a cell does for its month)
-    h += `<span class="cf-heat-n${r.total ? ' tot' : ''}${open ? ' open' : ''}" title="${esc(r.label)}"${open ? ` data-hr="${ri}" data-hm="*" tabindex="0"` : ''}>${esc(r.label)}</span>` + ms.map(m => { const v = r.v[m], k = S2.k(v), big = v > S2.cap;
+    h += `<span class="cf-heat-n${r.total ? ' tot' : ''}${open ? ' open' : ''}" title="${esc(r.label)}"${open ? ` data-hr="${ri}" data-hm="*" tabindex="0"` : ''}>${esc(r.label)}</span>` + ms.map(m => { const v = r.v[m], c = chgMode ? r.c[m] : null;
+      const k = chgMode ? (!c ? 0 : c.neu ? 1 : S2.k(Math.abs(c.d))) : S2.k(v), big = chgMode ? !!c && (c.neu || Math.abs(c.d) > S2.cap) : v > S2.cap;
+      const good = k && c && c.d ? (c.d > 0) === up : null, mark = chgMode ? (!c ? '' : c.neu ? t('cf_heat_neu') : pctCell(c.d)) : Fs(v, 0);
       const cs = [...r.cats].map(([n, c]) => [n, c[m] || 0]).filter(([, x]) => Math.abs(x) >= 0.5).sort((p, q) => q[1] - p[1]);
       const shown = cs.length > 7 ? cs.slice(0, 6) : cs, rest = cs.slice(shown.length);
       const p = prevY(r, m), pch = cfChange(v, p, up);          // the year before and the change, in one line
       const before = p != null ? `<div><i></i><span>${esc(t('cf_vorjahr'))}</span><b class="cf-tip-pv">${cfEur(p)}<em class="${pch ? pch.cls : ''}">${pch ? pch.txt : '–'}</em></b></div>` : '';          // value and change side by side, at the right
       const parts = shown.length > 1 || (shown.length === 1 && shown[0][0] !== r.label) ? `<div class="cf-tip-kv cf-tip-parts">${shown.map(([n, x]) => kv(n, cfEur(x))).join('')}${rest.length ? kv(t('cf_uebrige', rest.length), cfEur(rest.reduce((a, [, x]) => a + x, 0))) : ''}</div>` : '';
       const tip = cfTip(`<div class="cf-tip-h">${esc(r.label)} <span class="muted">· ${esc(q ? lab(m) : ML(m))}</span></div>${cfTipRow(up ? 'sw in' : 'sw out', t(up ? 'einnahmen' : 'ausgaben'), cfEur(v))}${before}${parts}${q && cnt[m] < 3 ? `<div class="cf-tip-note">${esc(t('cf_teilquartal', cnt[m]))}</div>` : ''}${open && Math.abs(v) >= 0.5 ? `<div class="cf-tip-hint">${esc(t('cf_klick_umsaetze'))}</div>` : ''}`);
-      return `<span class="cf-heat-c${k ? '' : ' none'}${q && cnt[m] < 3 ? ' part' : ''}${open && Math.abs(v) >= 0.5 ? ' open' : ''}${big ? ' big' : ''}${ahead.has(m) ? ' ahead' : ''}" style="${k ? `--k:${Math.round(k * 100)}%` : ''}" data-cftip="${tip}" tabindex="0"${open && Math.abs(v) >= 0.5 ? ` data-hr="${ri}" data-hm="${m}"` : ''}>${big ? `<b class="cf-heat-x">${esc(Fs(v, 0))}</b>` : ''}</span>`; }).join('')          // an outlier: its amount in the cell
-      + `<span class="cf-heat-v${r.total ? ' tot' : ''}">${esc(Fk(r.sum / all.length, false, r.total ? Math.abs(r.sum / all.length) : avgMax))}</span>`;
+      return `<span class="cf-heat-c${k ? '' : ' none'}${chgMode && !c ? ' na' : ''}${good === true ? ' good' : good === false ? ' bad' : ''}${q && cnt[m] < 3 ? ' part' : ''}${open && Math.abs(v) >= 0.5 ? ' open' : ''}${big ? ' big' : ''}${ahead.has(m) ? ' ahead' : ''}" style="${k ? `--k:${Math.round(k * 100)}%` : ''}" data-cftip="${tip}" tabindex="0"${open && Math.abs(v) >= 0.5 ? ` data-hr="${ri}" data-hm="${m}"` : ''}>${big ? `<b class="cf-heat-x" data-up="${!c || c.d > 0 ? 1 : 0}">${esc(mark)}</b>` : ''}</span>`; }).join('')          // an outlier: its amount (its change) in the cell
+      + `<span class="cf-heat-v${r.total ? ' tot' : ''}">${esc(chgMode ? heatAll(r) : Fk(r.sum / all.length, false, r.total ? Math.abs(r.sum / all.length) : avgMax))}</span>`;
   });
   el.innerHTML = h + '</div>';
-  for (const b of $$('.cf-heat-x', el)) if (b.scrollWidth > b.parentNode.clientWidth - 4) { b.textContent = '▲'; b.classList.add('mark'); }          // too narrow for the amount: a mark
+  for (const b of $$('.cf-heat-x', el)) if (b.scrollWidth > b.parentNode.clientWidth - 4) { b.textContent = b.dataset.up === '0' ? '▼' : '▲'; b.classList.add('mark'); }          // too narrow for the amount: a mark
 }
 // 3. Where the money came from and where it went: everything that came in (income, loans taken up, sales, less cash) and
 // everything it was used for (expenses, investments, repayment, interest, more cash) -- both sides add up to the same sum
@@ -3696,7 +3783,7 @@ function cfSourcesUses(D, months, prev = []) {
   const group = (list, side) => { list.sort((p, q) => q.v - p.v); const small = list.filter(e => e.v < total * 0.03);
     if (small.length < 2) return list;
     return list.filter(e => e.v >= total * 0.03).concat([{label: t('cf_uebrige_n', small.length), v: small.reduce((a, e) => a + e.v, 0), p: cfRestP(small, has), act: 'mix', kids: small, key: side + '|~'}]); };
-  CF.flow = {src: group(src, 's'), use: group(use, 'u'), total, has, span: months.length > 1 ? ML(months[0]) + ' – ' + ML(months[months.length - 1]) : ML(months[0])};
+  CF.flow = {src: group(src, 's'), use: group(use, 'u'), total, has, span: months.length > 1 ? ML(months[0]) + ' – ' + ML(months[months.length - 1]) : ML(months[0]), n: months.length};
   return `<div class="card bch cf-card __CLS__" data-cfid="flow"><div class="lc-head"><b class="lc-title">${t('cf_herkunft_verwendung')}${hq('cf_herkunft_verwendung')}</b>${cfMv('flow')}</div>`
     + `<div class="cf-plot" id="cf-flow"></div></div>`;
 }
@@ -3741,10 +3828,10 @@ function cfDrawFlow() {
     list.forEach(e => walk(e, e.v, 0, null, e.act, null));
     return out; };
   const L0 = flat(F.src, 's'), R0 = flat(F.use, 'u');
-  // every item with parts, at every level: a click on the total opens them all (and closes them again)
+  // every item with parts, at every level: a click beside the bands opens them all (and closes them again)
   const allKeys = []; { const walk = (e, side, parent) => { const key = keyOf(e, side, parent); if (e.kids && e.kids.length > 1) { allKeys.push(key); e.kids.forEach(k => walk(k, side, key)); } };
     F.src.forEach(e => walk(e, 's', null)); F.use.forEach(e => walk(e, 'u', null)); }
-  CF.flowAll = allKeys; const anyOpen = allKeys.some(x => open[x]);          // a click beside the bands: all open, or all closed (a normal pointer there)          // a click beside the chart: all open -- or, when any is, all closed
+  CF.flowAll = allKeys;          // a click beside the bands: all open -- or, when any is, all closed (a normal pointer there)
   // amounts short (17,4T): the names take less room, the bands more
   // half width: the amount small below the name, both as short as they can be -- the bands keep the middle
   const amt = v => Fs(v);
@@ -3756,7 +3843,7 @@ function cfDrawFlow() {
   const sib = card && card.classList.contains('cf-half') ? [card.previousElementSibling, card.nextElementSibling].find(x => x && x.classList.contains('cf-half') && Math.abs(x.getBoundingClientRect().top - ct) < 2) : null;
   const sp = sib && $('.cf-plot', sib), room = sp ? Math.min(640, sp.getBoundingClientRect().bottom - el.getBoundingClientRect().top) : 0;
   const heads = list => list.filter((e, i) => e.parentKey && (i === 0 || list[i - 1].parentKey !== e.parentKey)).length;
-  const n = Math.max(L0.length * (LH + 3) + heads(L0) * HEAD, R0.length * (LH + 3) + heads(R0) * HEAD), H = Math.max(200, n + 28 + (tiny ? 12 : 0), room), top = 22, bot = H - 6 - (tiny ? 12 : 0);       // beside a taller card: its height
+  const n = Math.max(L0.length * (LH + 3) + heads(L0) * HEAD, R0.length * (LH + 3) + heads(R0) * HEAD), H = Math.max(200, n + 22 + (tiny ? 12 : 0), room), top = 16, bot = H - 6 - (tiny ? 12 : 0);       // beside a taller card: its height
   const avail = side => (bot - top) - gap * (side.length - 1);
   let k = Math.min(avail(L0), avail(R0)) / F.total;
   for (let i = 0; i < 6; i++) { const over = Math.max(...[L0, R0].map(sd => sd.reduce((a, e) => a + Math.max(1.5, e.hv * k), 0) - avail(sd))); if (over <= 0.5) break; k *= Math.max(0.1, 1 - over / (bot - top)); }
@@ -3764,7 +3851,7 @@ function cfDrawFlow() {
   const lay = list => { const sh = list.reduce((a, e) => a + Math.max(1.5, e.hv * k), 0) + gap * (list.length - 1); let y = top + ((bot - top) - sh) / 2;
     return list.map(e => { const h = Math.max(1.5, e.hv * k), o = {...e, y, h}; y += h + gap; return o; }); };
   // the waist: the bands meet a little narrower in the middle than at the sides -- just enough for the period and the total above it
-  const WAIST = Math.max(0.6, Math.min(0.88, ((bot - top) - 2 * ((narrow ? 50 : 44) - top)) / (F.total * k))), L = lay(L0), R = lay(R0), mH = F.total * k * WAIST, mTop = top + ((bot - top) - mH) / 2;
+  const WAIST = Math.max(0.6, Math.min(0.88, ((bot - top) - 2 * ((narrow ? 44 : 38) - top)) / (F.total * k))), L = lay(L0), R = lay(R0), mH = F.total * k * WAIST, mTop = top + ((bot - top) - mH) / 2;
   // the colours as values (the bands mix them): each band runs from its own colour to the colour of everything that came in
   // (the sources mixed by amount) where all bands meet in the middle -- one colour flows into the next, nothing turns transparent
   const css = getComputedStyle(document.documentElement), rgb = v => { const h = css.getPropertyValue(v).trim().replace('#', ''); const f = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
@@ -3774,7 +3861,8 @@ function cfDrawFlow() {
   const band = (x0, y0a, y0b, x1, y1a, y1b) => { const c = (x0 + x1) / 2;
     return `M${x0.toFixed(1)},${y0a.toFixed(1)}C${c.toFixed(1)},${y0a.toFixed(1)} ${c.toFixed(1)},${y1a.toFixed(1)} ${x1.toFixed(1)},${y1a.toFixed(1)}L${x1.toFixed(1)},${y1b.toFixed(1)}C${c.toFixed(1)},${y1b.toFixed(1)} ${c.toFixed(1)},${y0b.toFixed(1)} ${x0.toFixed(1)},${y0b.toFixed(1)}Z`; };
   // narrow: the bands rise steeply -- they run flat for a short stretch in the middle, where the period and the total stand
-  const NECK = narrow ? Math.min((xM - xL - nodeW) * 0.4, Math.max(F.span.length, 9) * 2.9 + 4) : 0;
+  const full = F.span + ' · ' + spanText(F.n), spanTxt = full.length * 5.8 <= (xR - xL - nodeW) * 0.66 ? full : spanText(F.n);          // the period and its length (no room: the length -- the period stands above the charts)
+  const NECK = narrow ? Math.min((xM - xL - nodeW) * 0.4, Math.max(spanTxt.length, 9) * 2.9 + 4) : 0;
   const neck = (xa, xb, ya, yb) => NECK ? `M${xa.toFixed(1)},${ya.toFixed(1)}L${xb.toFixed(1)},${ya.toFixed(1)}L${xb.toFixed(1)},${yb.toFixed(1)}L${xa.toFixed(1)},${yb.toFixed(1)}Z` : '';
   let defs = '', g = '', mY = mTop, shares = '';          // the shares drawn last: no later band covers them
   // the bands opaque, their colours softened towards the background: where they meet there is no seam
@@ -3800,8 +3888,8 @@ function cfDrawFlow() {
     const mix = e.key.endsWith('|~'), ch = chg(e.v, e.p, upG(e.act)), ks = (e.kids || []).slice().sort((a, b) => b.v - a.v);
     const shown = ks.length > 8 ? ks.slice(0, 7) : ks, rest = ks.slice(shown.length);
     const row = (label, v, p, act) => cfTipRow('none', label, cfEur(v), chg(v, p, upG(act)) || {cls: '', txt: ''});
-    const i = cfTip(`<div class="cf-tip-h">${esc(e.label)}</div><div class="cf-tip-kv">${kv(t('betrag'), cfEur(e.v))}${kv(t('anteil'), cfPct(e.v, F.total) + ' %')}`
-      + (F.has ? kv(t('cf_vorperiode'), e.p != null ? cfEur(e.p) : '–') + kv(t('cf_veraenderung'), ch ? ch.txt : '–', ch && ch.cls) : '') + `</div>`
+    const i = cfTip(`<div class="cf-tip-h">${esc(e.label)}</div><div class="cf-tip-kv">${kv(t('betrag'), cfEur(e.v))}${kv(t('anteil'), cfPct(e.v, F.total) + ' %', 'pl')}`
+      + (F.has ? kv(t('cf_vorperiode'), e.p != null ? cfEur(e.p) : '–', 'pl') + kv(t('cf_veraenderung'), ch ? ch.txt : '–', 'pl ' + (ch ? ch.cls : '')) : '') + `</div>`
       + (ks.length > 1 ? shown.map(k => row(k.label, k.v, k.p, mix ? k.act : e.act)).join('')
         + (rest.length ? row(t('cf_uebrige', rest.length), rest.reduce((a, k) => a + k.v, 0), cfRestP(rest, F.has), mix ? null : e.act) : '') : ''));
     tips.set(e.key, i); return i; };
@@ -3812,8 +3900,8 @@ function cfDrawFlow() {
     g += `<g class="cf-fl-g${tcls(e)}"${tgt(e)} data-cftip="${tipOf(e)}" aria-label="${esc(e.label + ': ' + cfEur(e.v))}"><path class="cf-fl-b" fill="url(#${grad(e, false)})" d="${d}"/><rect class="cf-fl-n ${e.act}" x="${xR}" y="${e.y.toFixed(1)}" width="${nodeW}" height="${e.h.toFixed(1)}" rx="2"/></g>`; shares += share(e, xR - 6, e.y + e.h / 2, 'end'); mY += h * WAIST; }
   g += shares;
   // the amount that ran through the period, quietly above the middle
-  g += `<text class="cf-fl-mid${allKeys.length ? ' cf-fl-all' : ''}" x="${xM.toFixed(1)}" y="${(mTop - 7).toFixed(1)}" text-anchor="middle"${allKeys.length ? ` data-flall tabindex="0" role="button" aria-expanded="${anyOpen}"` : ''}>${allKeys.length ? `<title>${esc(t(anyOpen ? 'cf_alles_zuklappen' : 'cf_alles_aufklappen'))}</title>` : ''}${esc(F0(F.total))} €</text>`
-    + `<text class="cf-fl-mid cf-fl-span" x="${xM.toFixed(1)}" y="${(mTop - 21).toFixed(1)}" text-anchor="middle">${esc(F.span)}</text>`;          // the period, small above the total
+  g += `<text class="cf-fl-mid" x="${xM.toFixed(1)}" y="${(mTop - 7).toFixed(1)}" text-anchor="middle">${esc(F0(F.total))} €</text>`
+    + `<text class="cf-fl-mid cf-fl-span" x="${xM.toFixed(1)}" y="${(mTop - 21).toFixed(1)}" text-anchor="middle">${esc(spanTxt)}</text>`;          // the period, small above the total
   // names beside the bars: at their middle, pushed apart where bars are thin (a short line leads to the bar); opened parts carry
   // their item's name, and a row to close them again
   const labels = (list, left) => { let yPrev = -Infinity;
@@ -3995,7 +4083,7 @@ function bindCfCharts(main) {
     const fl = e.target.closest('#cf-flow [data-fl]');
     if (fl) { const o = CF.flowOpen || (CF.flowOpen = {}); o[fl.dataset.fl] = !o[fl.dataset.fl]; cfDrawFlow(); return; }
     // anywhere beside the bands and names (the total, the period, the empty card): everything open -- or, when anything is, all closed
-    if (e.target.closest('#cf-flow [data-flall]') || (e.target.closest('.cf-card[data-cfid="flow"]') && !e.target.closest('button, a, input, .hq, .cf-fl-g, .cf-fl-l, .cf-fl-up'))) {
+    if (e.target.closest('.cf-card[data-cfid="flow"]') && !e.target.closest('button, a, input, .hq, .cf-fl-g, .cf-fl-l, .cf-fl-up')) {
       const o = CF.flowOpen || {}, all = CF.flowAll || []; if (!all.length) return;
       CF.flowOpen = all.some(x => o[x]) ? {} : Object.fromEntries(all.map(x => [x, true])); hide(); cfDrawFlow(); return; }
     const brW = Object.keys(BRIDGES).find(k => e.target.closest(`#${BRIDGES[k].reset}, #${BRIDGES[k].el} .cf-br-axis`));
@@ -4017,6 +4105,9 @@ function bindCfCharts(main) {
         : {kats: [...r.paths], est: r.est, none: r.none, months: CF.heat.months(hc.dataset.hm), title: r.label + ' · ' + CF.heat.lab(hc.dataset.hm)}); } return; }
     const pl = e.target.closest('#cf-pie .cf-pie-lab[data-kats]');
     if (pl && CF.pie) { hide(); const [cur] = cfMonths(B(), S.cfZeit); cfOpenTx({kats: JSON.parse(pl.dataset.kats), est: pl.dataset.est === '1', months: cur, title: pl.dataset.name + ' · ' + CF.pie.span}); return; }
+    const hmb = e.target.closest('#cf-heat-mode button');
+    if (hmb) { if ((cfHeatChg() ? 'chg' : 'abs') === hmb.dataset.hmode) return; S.cfHeatMode = hmb.dataset.hmode; hide();
+      keepPlace(hmb, () => `#cf-heat-mode button[data-hmode="${hmb.dataset.hmode}"]`, () => { const hcard = $('#cf-heat-card'); if (hcard) { hcard.outerHTML = cfHeatCard(!$('#cf-pie-card')); cfDrawHeat(); } }); return; }
     const sw = e.target.closest('#cf-pie-art button');
     if (sw) { if (sw.dataset.a === S.cfPieArt) return; S.cfPieArt = sw.dataset.a; CF.pieSel = null; hide();
       // the switch stays where it is: the cards are drawn anew (for a moment shorter), then the page is moved back by what it moved
@@ -4028,12 +4119,12 @@ function bindCfCharts(main) {
         if (duo && duo.offsetHeight < h0) duo.style.minHeight = h0 + 'px'; }); return; }
     if (!e.target.closest('#cf-pie')) return; pin(e.target.closest('#cf-pie [data-pie]')); });
   wrap.addEventListener('keydown', e => {
-    if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('#cf-heat .cf-heat-c[data-hr], #cf-heat .cf-heat-n[data-hr], #cf-pie .cf-pie-lab[data-kats], #cf-bridge .cf-br-row[data-br], #cf-wbridge .cf-br-row[data-br], #cf-flow [data-fl], #cf-flow [data-flall], [data-bal]')) { e.preventDefault(); CF.touch = false; e.target.dispatchEvent(new MouseEvent('click', {bubbles: true})); return; }
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('#cf-heat .cf-heat-c[data-hr], #cf-heat .cf-heat-n[data-hr], #cf-pie .cf-pie-lab[data-kats], #cf-bridge .cf-br-row[data-br], #cf-wbridge .cf-br-row[data-br], #cf-flow [data-fl], [data-bal]')) { e.preventDefault(); CF.touch = false; e.target.dispatchEvent(new MouseEvent('click', {bubbles: true})); return; }
     if (!e.target.closest('#cf-pie')) return;
     if (e.key === 'Escape' && CF.pieSel) { e.preventDefault(); CF.pieSel = null; hide(); cfDrawPie(); }
     else if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('[data-pie]')) { e.preventDefault(); pin(e.target.closest('[data-pie]')); } });
   let last = wrap.clientWidth;
-  CF.ro = new ResizeObserver(() => { const w = $('.cf-charts'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; draw(); } });
+  CF.ro = new ResizeObserver(() => { if (PRINT.on) return; const w = $('.cf-charts'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; draw(); } });
   CF.ro.observe(wrap);
 }
 
@@ -4049,8 +4140,8 @@ async function vSync() {
     ${card(t('moneymoney_kontor'), r.read_at ? esc(fmtZeit(r.read_at)) : '–', (z.automatic ? t('automatisch_alle') + z.interval_minutes + t('minuten_wenn_moneymoney_laeuft_und') : t('automatischer_abgleich_ist_aus')) + '.')}
     ${hasRules() ? card(t('regeln_zuletzt_angewendet'), l ? esc(fmtZeit(l.time)) : '–', `${t('nur_wenn_sich_in_moneymoney')} <a href="#bookings">${t('nav_auto_buchungen')}</a>`) : ''}
   </div>
-  <div class="toolbar"><button id="sync-now" ${OFFLINE.mode ? 'disabled' : ''}>${t('jetzt_synchronisieren')}</button><span class="muted small">${t('liest_sofort_aus_moneymoney_wendet')}</span></div>
-  <div class="toolbar"><button id="sync-full" class="secondary" ${OFFLINE.mode ? 'disabled' : ''}>${t('alles_neu_lesen')}</button><span class="muted small">${t('voll_lesen_info', r.full_read && r.full_read.last ? esc(fmtZeit(r.full_read.last)) : '–', (r.full_read || {}).days || 30)} ${hq('voll_lesen')}</span></div>`;
+  <div class="toolbar"><button id="sync-now" ${OFFLINE.mode ? 'disabled' : ''}>${t('jetzt_synchronisieren')}</button><button id="sync-full" class="secondary" ${OFFLINE.mode ? 'disabled' : ''}>${t('alles_neu_lesen')}</button>${hq('sync_knoepfe')}<span class="sp"></span><a class="small" href="#log">${t('protokoll')}</a></div>
+  <div class="small muted sync-full-info">${t('voll_lesen_info', r.full_read && r.full_read.last ? esc(fmtZeit(r.full_read.last)) : '–', (r.full_read || {}).days || 30)}</div>`;
   if (stale.length) h += `<div class="banner">${t('0_mehr_als_einen_tag', stale.length === 1 ? t('1_konto_liegt') : stale.length + t('konten_liegen'), esc(stale.map(k => { const d = tage(k.time); return d ? `${k.name} (${d} ${d === 1 ? t('tag') : t('tage')})` : k.name; }).join(', ')))}</div>`;
   if (m.problem_text) h += `<div class="banner err">${t('moneymoney_lief_am_0_kontor', esc(fmtZeit(m.problem_text.time)), esc(m.problem_text.text))}</div>`;
   return h;
@@ -4434,24 +4525,25 @@ async function vUmsaetze() {
   if (!S.DATA) return noData;
   await loadUms();
   const f = S.uf, st = S.STATUS, konten = S.DATA.accounts.filter(k => !k.group && (!f.entity || k.path.startsWith(BN(f.entity))));
-  let h = `<div class="toolbar">
+  // all filters always in view: what (area, year, account, search), which (direction, receipt, category state, dates), categories
+  let h = `<div class="uf-filters"><div class="toolbar">
     <select id="uf-ent"><option value="">${t('alle_bereiche')}</option>${Object.keys(S.DATA.areas).map(k => `<option value="${k}" ${f.entity === k ? 'selected' : ''}>${esc(BN(k))}</option>`).join('')}</select>
     <select id="uf-jahr"><option value="">${t('alle_jahre')}</option>${UMS.years.map(y => `<option ${f.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
     <select id="uf-konto"><option value="">${t('alle_konten')}</option>${konten.map(k => `<option value="${k.uuid}" ${f.account === k.uuid ? 'selected' : ''}>${esc(k.name)}</option>`).join('')}</select>
     <input type="search" id="uf-q" placeholder="${t('suche_name_zweck_kategorie_betrag')}" value="${esc(f.q)}" style="min-width:220px">
+  </div><div class="toolbar">
     <div class="seg"><button data-r="" class="${!f.direction ? 'on' : ''}">${t('alle_2')}</button><button data-r="aus" class="${f.direction === 'aus' ? 'on' : ''}">${t('ausgaben')}</button><button data-r="ein" class="${f.direction === 'ein' ? 'on' : ''}">${t('einnahmen')}</button></div>
     <label class="switch"><input type="checkbox" id="uf-ob" ${f.ohne_beleg ? 'checked' : ''}><i></i>${t('ohne_beleg_2')}</label>
     <label class="switch"><input type="checkbox" id="uf-ok" ${f.uncategorized_flag ? 'checked' : ''}><i></i>${t('ohne_kategorie_2')}</label>
-    <button id="uf-ext" class="secondary small${f.date_from || f.date_to || f.kats || f.ids ? ' on' : ''}" aria-expanded="${!!(f.ext || f.date_from || f.date_to || f.kats || f.ids)}">${t('uf_erweitert')}${f.date_from || f.date_to || f.kats || f.ids ? ' •' : ''}</button>
-  </div>
-  ${f.ext || f.date_from || f.date_to || f.kats || f.ids || f.cfRows ? `<div class="toolbar uf-ext">${f.ids || f.cfRows ? `<span class="chip">${esc(f.cfRows ? f.title || '' : t('uf_unklare', f.title || ''))}<button class="icon ghost" data-ids-x="1" aria-label="${esc(t('entfernen'))}">✕</button></span>` : ''}
     <label class="small">${t('cf_von')} <input type="date" id="uf-von" value="${esc(f.date_from)}"></label><label class="small">${t('cf_bis')} <input type="date" id="uf-bis" value="${esc(f.date_to)}"></label>
+  </div>
+  <div class="toolbar uf-ext">${f.ids || f.cfRows ? `<span class="chip">${esc(f.cfRows ? f.title || '' : t('uf_unklare', f.title || ''))}<button class="icon ghost" data-ids-x="1" aria-label="${esc(t('entfernen'))}">✕</button></span>` : ''}
     <span class="small muted">${t('kategorien')}</span>${f.katsLabel && f.kats ? `<span class="chip">${esc(t('uf_alle_kats', f.katsLabel, f.kats.length))}${f.mitOhne ? ` · ${esc(t('ohne_kategorie_2'))}` : ''}<button class="icon ghost" data-kat-all="1" aria-label="${esc(t('entfernen'))}">✕</button></span>`
       : (f.kats || []).map((k, i) => `<span class="chip">${esc(CP(k))}<button class="icon ghost" data-kat-x="${i}" aria-label="${esc(t('entfernen'))}">✕</button></span>`).join('')}
     <input type="text" id="uf-kat-add" list="uf-kats" placeholder="${t('uf_kategorie_hinzu')}" style="min-width:200px"><datalist id="uf-kats">${(S.KATS || []).filter(k => !k.default).map(k => `<option value="${esc(CP(k.path))}">`).join('')}</datalist>
     ${f.est ? `<span class="small muted">${t('uf_ohne_geschaetzte')}</span>` : ''}
     ${f.date_from || f.date_to || f.kats || f.ids || f.cfRows ? `<button id="uf-chip-x" class="ghost small">${t('uf_filter_aufheben')}</button>` : ''}
-  </div>` : ''}
+  </div></div>
   <div class="toolbar"><span class="muted small ums-hits">${t('0_treffer_1_von_2', UMS.hits, UMS.hits > UMS.transactions.length ? ' (erste ' + UMS.transactions.length + t('angezeigt_filter_verfeinern') : '', UMS.total)}</span><span class="sp"></span>
     <button id="bl-folder" class="secondary small" ${st.local ? '' : t('disabled_title_nur_am_mac')}>${t('belegordner_oeffnen')}</button>
     <button id="bl-export" class="secondary small">${t('belege_exportieren_zip')}</button>
@@ -4471,7 +4563,7 @@ async function openDrawer(txId) {
   const d = $('#drawer');
   d.innerHTML = `<button class="close icon">✕</button><h2>${esc(u.name)}</h2>
     <div class="kv"><div>${t('datum')}</div><div>${FD(u.date)}</div><div>${t('betrag')}</div><div class="${u.amount < 0 ? 'neg' : 'pos'}" style="font-weight:600;color:var(--${u.amount < 0 ? 'neg' : 'pos'})">${F(u.amount)} €</div><div>${t('konto_2')}</div><div>${esc(u.account_name)} · ${esc(BN(u.entity))}</div><div>${t('zweck')}</div><div>${esc(u.purpose) || '–'}</div><div>${t('kategorie')}</div><div>${esc(u.category) || `<span class="pill warn">${t('ohne')}</span>`}${u.source ? ' <span class="small muted">· ' + (QUELLE_TIP[u.source] || '') + '</span>' : ''}</div><div>${t('status')}</div><div>${u.booked_count ? t('gebucht') : t('vorgemerkt')}${u.checkmark ? t('abgehakt') : ''}</div><div>${t('id')}</div><div class="mono small">${u.id}</div></div>
-    ${st.moneymoney && st.moneymoney.categorize_allowed && u.needs !== false ? `<div class="row tight" style="margin-top:10px"><input type="text" id="dr-kat" list="dr-kats" value="${esc(CP(u.category))}" placeholder="${t('kategorie_aus_moneymoney')}" style="min-width:240px;flex:1">${katList('dr-kats')}<button id="dr-cat-btn" class="small">${t('in_moneymoney_eintragen')}</button></div>` : ''}
+    ${u.needs !== false ? `<div class="row tight" style="margin-top:10px"><input type="text" id="dr-kat" list="dr-kats" value="${esc(CP(u.category))}" placeholder="${t('kategorie_aus_moneymoney')}" style="min-width:240px;flex:1">${katList('dr-kats')}<button id="dr-cat-btn" class="small">${t('in_moneymoney_eintragen')}</button></div>` : ''}
     <h3>${t('belege_n', mine.length)}</h3>
     ${mine.map(e => `<div class="beleg" data-id="${e.id}"><span class="n" title="${esc(e.path)}">${e.external ? `<span class="tag" title="${t('verknuepfung_zu_einer_datei_ausserhalb')}">${t('mac')}</span>` : ''}${esc(e.path.split('/').pop())}</span><span class="small muted">${e.external ? (e.status === 'icloud' ? `<span class="pill warn">${t('icloud_nicht_geladen')}</span>` : e.status === 'lacking' ? `<span class="pill err">${t('fehlt')}</span>` : '') : (e.size_bytes / 1024).toFixed(0) + ' KB'}</span><a href="/api/receipts/file?id=${e.id}" target="_blank" class="small">${t('ansehen')}</a>${st.local ? `<button class="ghost small bl-show" title="${t('im_finder_zeigen_2')}">${t('finder')}</button>` : ''}<button class="ghost small bl-note" title="${t('notiz')}">✎</button><button class="ghost small bl-del" title="${e.external ? t('verknuepfung_entfernen_datei_bleibt') : t('zuordnung_entfernen')}">✕</button></div>${e.note ? `<div class="small muted" style="padding:0 0 6px">${esc(e.note)}</div>` : ''}`).join('') || `<div class="muted small">${t('noch_kein_beleg')}</div>`}
     <div class="drop" id="dr-drop" style="margin-top:12px">${t('datei_hierher_ziehen')}<br><button id="dr-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button> <button id="dr-cam" class="small secondary" style="margin-top:8px">${t('foto_aufnehmen')}</button><div class="small muted" style="margin-top:6px">${t('pdf_bilder_e_mails_office')}</div></div>
@@ -4750,13 +4842,47 @@ async function saveConfig(cfg, findingsEl, trotzdem) {
 // ---------------------------------------------------------------- Kategorien
 const subTabs = (base, items) => `<div class="tabs">${items.map(([k, l]) => `<button data-next="#${base}${k ? '/' + k : ''}" class="${S.sub === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
 async function vKategorien() {
-  // Reiter: Zuordnen (was in MoneyMoney noch keine Kategorie hat) · Regeln für MoneyMoney (Vorschläge). Where a category counts in
-  // the cash flow is a setting: its own page under Verwaltung (#accounts/positions).
+  // Zuordnen -- tabs: Offen (what has no category in MoneyMoney yet) · Regeln für MoneyMoney (proposals) · Eingetragen (what
+  // Kontor entered in MoneyMoney, to take back). Where a category counts in the cash flow is a setting: Cashflow-Positionen.
   const offen = ((S.DATA && S.DATA.categories || {}).total || {}).without;
-  const body = S.sub === 'rules' ? await vRegelVorschlaege() : await vZuordnen();
+  const body = S.sub === 'rules' ? await vRegelVorschlaege() : S.sub === 'written' ? await vEingetragen() : await vZuordnen();
   const nr = KZ.rules ?? (KZ.open || {}).rule_proposals;
-  const tabs = subTabs('categories', [['', t('zuordnen') + (offen ? ` (${offen})` : '')], ['rules', t('regeln_fuer_moneymoney') + (nr ? ` (${nr})` : '')]]);
-  return tabs + body;
+  const tabs = subTabs('categories', [['', t('kz_tab_offen') + (offen ? ` (${offen})` : '')], ['rules', t('regeln_fuer_moneymoney') + (nr ? ` (${nr})` : '')], ['written', t('kz_tab_eingetragen') + (KZ.written ? ` (${KZ.written})` : '')]]);
+  return `<div class="tabs-row">${tabs}<a class="small tabs-aside" href="#accounts/positions" title="${esc(t('kz_zu_positionen_tip'))}">${t('cashflow_positionen')}</a></div>` + body;
+}
+// Eingetragen: what Kontor entered in MoneyMoney (newest first); taken back -- one or many -- MoneyMoney gets the category it had
+// before. Only at the Mac, only where MoneyMoney still shows Kontor's category.
+async function vEingetragen() {
+  const r = KZ.w = await api('/api/categories/written'); KZ.written = r.total;
+  KZ.wsel = new Set([...(KZ.wsel || [])].filter(i => r.items.some(x => x.id === i && x.undo)));
+  let h = `<div class="note">${t('kz_eingetragen_note', hq('kz_eingetragen'))}</div>`;
+  if (!r.items.length) return h + `<div class="card"><div class="v s">${t('kz_eingetragen_leer')}</div></div>`;
+  const can = r.items.filter(x => x.undo).length, cat = p => p ? esc(CP(p)) : `<span class="muted">${t('ohne_kategorie_2')}</span>`;
+  h += `<div class="toolbar"><span class="small muted">${tn('kz_eingetragen_n', r.total, r.total)}</span><span class="sp"></span><button id="kw-undo" class="secondary" disabled ${r.local ? '' : t('disabled_title_nur_am_mac')}>${t('kz_rueckgaengig')}</button></div>`;
+  h += `<div class="wrap auto kw-wrap"><table class="plain small kw-table"><thead><tr><th><input type="checkbox" id="kw-all" aria-label="${t('alle_2')}" ${can && r.local ? '' : 'disabled'}></th><th>${t('kz_eingetragen_am')}</th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('name')}</th><th class="num">${t('betrag')}</th><th>${t('kz_vorher')}</th><th>${t('kz_eingetragen_col')}</th><th></th></tr></thead><tbody>`
+    + r.items.map(x => `<tr class="${x.undo ? '' : 'off'}" data-id="${x.id}"><td><input type="checkbox" class="kw-sel" data-id="${x.id}" ${x.undo && r.local ? '' : 'disabled'} ${KZ.wsel.has(x.id) ? 'checked' : ''}></td>`
+      + `<td style="white-space:nowrap">${esc(FDT(x.time || ''))}</td><td style="white-space:nowrap">${x.date ? FD(x.date) : '–'}</td><td>${esc(x.account || '–')}</td><td>${esc(x.name || '–')}</td>`
+      + `<td class="num ${x.amount < 0 ? 'neg' : 'pos'}">${x.amount == null ? '–' : F(x.amount)}</td><td>${cat(x.old)}</td><td>${cat(x.new)}</td>`
+      + `<td>${x.undo ? '' : `<span class="tag tipped" tabindex="0" data-tip="${esc(t(x.date ? 'kz_geaendert_tip' : 'kz_nicht_gelesen_tip'))}">${t(x.date ? 'kz_geaendert' : 'kz_nicht_gelesen')}</span>`}</td></tr>`).join('')
+    + '</tbody></table></div>';
+  return h;
+}
+function bindEingetragen(main) {
+  const btn = $('#kw-undo', main); if (!btn) return;
+  const upd = () => { const n = KZ.wsel.size; btn.disabled = !n || !KZ.w.local; btn.textContent = n ? tn('kz_rueckgaengig_n', n, n) : t('kz_rueckgaengig');
+    const all = $('#kw-all', main), m = $$('.kw-sel:not(:disabled)', main).length; if (all) { all.checked = n > 0 && n === m; all.indeterminate = n > 0 && n < m; } };
+  $$('.kw-sel', main).forEach(cb => cb.addEventListener('change', () => { const i = +cb.dataset.id; if (cb.checked) KZ.wsel.add(i); else KZ.wsel.delete(i); upd(); }));
+  const all = $('#kw-all', main); if (all) all.addEventListener('change', () => { $$('.kw-sel:not(:disabled)', main).forEach(cb => { cb.checked = all.checked; const i = +cb.dataset.id; if (all.checked) KZ.wsel.add(i); else KZ.wsel.delete(i); }); upd(); });
+  btn.addEventListener('click', async () => {
+    const ids = [...KZ.wsel]; if (!ids.length || !confirm(tn('kz_rueckgaengig_frage', ids.length, ids.length))) return;
+    btn.classList.add('busy'); btn.disabled = true;
+    try {
+      const r = await api('/api/categories/undo', {ids, wait: true}); KZ.wsel = new Set();
+      toast(tn('kz_rueckgaengig_ok', r.undone, r.undone) + (r.changed ? ' · ' + tn('kz_rueckgaengig_geaendert', r.changed, r.changed) : '') + (r.error ? ' · ' + tn('kz_rueckgaengig_fehler', r.error, r.error) : ''), 7000);
+      await loadAll(); route();
+    } catch (e) { toast(e.message, 7000); btn.classList.remove('busy'); upd(); }
+  });
+  upd();
 }
 // Cashflow-Positionen: Kontor's fixed outline; each of MoneyMoney's categories counts in one position (Kontor proposes by
 // name, a choice counts for the categories below it too). A property's categories have their own rows.
@@ -4864,7 +4990,7 @@ function bindPositionen(main) {
 }
 
 // ---------------------------------------------------------------- Zuordnen: Kategorien kommen aus MoneyMoney, Kontor trägt dort ein
-const KZ = {year: '', area: '', min: '', expanded: {}, aus: {}, pos: null, open: null, rules: null};
+const KZ = {year: '', area: '', min: '', expanded: {}, aus: {}, pos: null, open: null, rules: null, written: null, w: null, wsel: new Set()};
 async function assignCats(ids, kat, extra = {}) {
   // Kontor trägt die Kategorie in MoneyMoney ein (vorher geprüft), in Teilen zu höchstens 2000 Umsätzen. Steht dort schon eine
   // andere (nicht von Kontor gesetzte): nachfragen, ob sie ersetzt werden soll – sonst bleibt sie (MoneyMoney ist maßgeblich).
@@ -4905,17 +5031,14 @@ function assignMsg(r) {
 }
 // Kategorien zum Zuordnen: die aus MoneyMoney (keine Ordner, nicht „Unkategorisiert“)
 const katList = id => `<datalist id="${id}">${(S.KATS || []).filter(k => !k.group && !k.default).map(k => `<option value="${esc(CP(k.path))}">`).join('')}</datalist>`;
-function mmOffBanner(lokal) {
-  return `<div class="banner info">${t('kategorien_eintragen_aus')}${lokal ? ` <button class="small" id="kz-mm-on">${t('einschalten')}</button>` : ' ' + t('am_mac_einschalten')}</div>`;
-}
 // alle gewählten Umsätze mit Vorschlag: [id, Kategorie] (der Vorschlag gilt je Umsatz, nicht je Gegenpartei)
 const vorschlagIds = off => off.groups.flatMap(g => g.ids.filter(i => !(KZ.aus[g.key] || new Set()).has(i) && g.proposals[i]).map(i => [i, g.proposals[i]]));
 async function vZuordnen() {
   if (!S.DATA) return noData;
   const off = await api(`/api/categories/unassigned?year=${KZ.year}&min=${KZ.min}`);
-  KZ.open = off; KZ.rules = null;
+  KZ.open = off; KZ.rules = null; KZ.written = off.written;
   for (const g of off.groups) if (KZ.aus[g.key]) { const ids = new Set(g.ids); for (const i of [...KZ.aus[g.key]]) if (!ids.has(i)) KZ.aus[g.key].delete(i); }
-  const years = Object.keys((S.DATA.categories || {}).years || {}).sort().reverse(), can = off.write_back;
+  const years = Object.keys((S.DATA.categories || {}).years || {}).sort().reverse(), can = true;          // assigning is the release (from the iPhone: entered at the next sync at the Mac)
   const mitVorschlag = vorschlagIds(off);
   // the areas you categorise: the others (a company with countless bookings, say) stay out of the list and of the count
   const ohne = new Set(S.CFG.assign_without || []), areas = Object.keys(S.DATA.areas || {});
@@ -4925,7 +5048,6 @@ async function vZuordnen() {
     <label class="chk small">${t('ab')} <input type="number" id="kz-min" value="${esc(KZ.min)}" placeholder="0" style="width:80px"> €</label>
     <span class="sp"></span>${can && mitVorschlag.length ? `<button id="kz-alle" class="secondary small">${t('alle_vorschlaege_n', mitVorschlag.length)}</button>` : ''}</div>
     <div class="note">${tn('n_ohne_kategorie_gruppen', off.open, hq('zuordnen'))}</div>` + katList('kz-kats');
-  if (!can) h += mmOffBanner(off.local);
   if (off.waiting) h += `<div class="banner info">${tn('n_warten_auf_mac', off.waiting, off.waiting)}</div>`;
   if (!off.groups.length) return h + `<div class="card"><div class="v s">${t('nichts_offen_2')}</div><div class="d">${t('alle_umsaetze_haben_eine_kategorie')}</div></div>`;
   h += '<div class="list">';
@@ -4941,9 +5063,6 @@ async function vZuordnen() {
   }
   return h + '</div>';
 }
-async function mmOn() {
-  try { await api('/api/categories/settings', {mm_write: true}); S.CFG = await api('/api/config'); S.STATUS = await api('/api/status'); toast(t('zurueckschreiben_eingeschaltet')); route(); } catch (e) { toast(e.message, 6000); }
-}
 function bindZuordnen(main) {
   const bindF = (id, key) => { const el = $(id, main); if (el) el.addEventListener('change', e => { KZ[key] = e.target.value; KZ.aus = {}; route(); }); };
   bindF('#kz-jahr', 'year'); bindF('#kz-min', 'min');
@@ -4952,7 +5071,6 @@ function bindZuordnen(main) {
     if (ohne.length === $$('input[data-area]', ka).length) { toast(t('kz_ein_bereich')); route(); return; }       // at least one stays
     try { const r = await api('/api/categories/areas', {without: ohne, wait: true}); S.CFG = r.config; KZ.aus = {}; await loadAll(); route(); } catch (e) { toast(e.message, 5000); }
   });
-  const on = $('#kz-mm-on', main); if (on) on.addEventListener('click', mmOn);
   $$('.kz-toggle', main).forEach(b => b.addEventListener('click', e => { const k = e.target.closest('.kz-group').dataset.key; KZ.expanded[k] = !KZ.expanded[k]; route(); }));
   // einzelne Umsätze einer Gegenpartei abwählen (z. B. ein Händler, bei dem du Verschiedenes kaufst) -- ohne neu zu laden
   const updGroup = box => {
@@ -4960,7 +5078,7 @@ function bindZuordnen(main) {
     const all = $('.kz-all', box); if (all) { all.checked = !aus.size; all.indeterminate = aus.size > 0 && n > 0; }
     $$('.kz-sel', box).forEach(cb => { cb.checked = !aus.has(+cb.dataset.id); });
     $('.kz-count', box).textContent = (n < g.count ? n + ' / ' : '') + g.count + '×';
-    const b = $('.kz-save', box); b.textContent = n < g.count ? tn('n_zuordnen', n) : t('zuordnen'); b.disabled = !KZ.open.write_back || !n;
+    const b = $('.kz-save', box); b.textContent = n < g.count ? tn('n_zuordnen', n) : t('zuordnen'); b.disabled = !n;
     const a = $('#kz-alle', main); if (a) a.textContent = t('alle_vorschlaege_n', vorschlagIds(KZ.open).length);
   };
   $$('.kz-group', main).forEach(updGroup);
@@ -5033,7 +5151,7 @@ function vEinstellungenAllgemein() {
   return `<div class="note">${t('einstellungen_vs_einrichtung', '<a href="#accounts">' + t('konten_regeln') + '</a>')}</div><div class="form">
     <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang">${langOpts()}</select> <span class="small muted">${t('sprache_hinweis')}</span></label>
     <label>${t('design_label')}</label><label class="chk"><select id="e-theme">${[['dark', t('design_dunkel')], ['light', t('design_hell')], ['auto', t('design_system')]].map(([k, l]) => `<option value="${k}" ${themeGet() === k ? 'selected' : ''}>${l}</option>`).join('')}</select> <span class="small muted">${t('design_hinweis')}</span></label>
-  </div>${saveBar()}`;
+  </div>`;          // both take effect at once (no save button)
 }
 // Konten & Regeln: everything that sets your figures -- which accounts there are and where they belong (accounts, areas,
 // balances) and by which rules Kontor counts and books (cash flow positions, booking rules, tax). The accounts open first.
@@ -5044,13 +5162,12 @@ async function vKontenRegeln() {
 }
 // MoneyMoney sync: the connection, when and how much Kontor reads, what it may write, and where every account stands
 async function vEinstellungenMM() {
-  const C = S.CFG, z = C.schedule || {}, b = C.balance || {}, mm = C.moneymoney || {};
+  const C = S.CFG, z = C.schedule || {}, b = C.balance || {};
   return `<h2>${t('verbindung')}</h2>${vVerbindung()}
   <h2>${t('abgleich_h')}</h2><div class="form">
     <label>${t('automatischer_abgleich_0', hq('abgleich'))}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatic !== false ? 'checked' : ''}> ${t('alle_2')} <input type="number" id="e-intervall" min="5" value="${z.interval_minutes ?? 30}" style="width:70px"> ${t('minuten_nur_wenn_moneymoney_laeuft')}</label>
     <label>${t('alles_neu_lesen_0', hq('voll_lesen'))}</label><label class="chk">${t('alle_2')} <input type="number" id="e-voll" min="1" value="${z.full_read_days ?? 30}" style="width:70px"> ${t('tage')}</label>
     <label>${t('umsaetze_lesen_0', hq('months_back'))}</label><label class="chk">${t('die_letzten')} <input type="number" id="e-monate" min="0" value="${b.months_back ?? 0}" style="width:70px"> ${t('monate_0_alle')}</label>
-    <label>${t('kategorisieren_erlauben_0', hq('mm_cat'))}</label><label class="chk"><input type="checkbox" id="e-mm-cat" ${mm.allow_categorize ? 'checked' : ''}> ${t('umsaetzen_aus_kontor_eine_kategorie')}</label>
   </div>${saveBar()}
   <h2>${t('synchronisierung')}</h2>${await vSync()}`;
 }
@@ -5197,11 +5314,9 @@ const posRow = (k, v) => `<div class="row tight pos-row"><input type="text" clas
 function collectSettings() {
   // nur die Felder des sichtbaren Reiters; alles andere bleibt, wie es ist
   const cfg = JSON.parse(JSON.stringify(S.CFG));
-  if ($('#e-lang')) cfg.ui = Object.assign(cfg.ui || {}, { language: $('#e-lang').value });
   if ($('#e-auto')) {
     cfg.schedule = { automatic: $('#e-auto').checked, interval_minutes: Math.max(5, parseInt($('#e-intervall').value) || 30), full_read_days: Math.max(1, parseInt($('#e-voll').value) || 30) };
     cfg.balance = Object.assign(cfg.balance || {}, { months_back: parseInt($('#e-monate').value) || 0 });
-    cfg.moneymoney = Object.assign(cfg.moneymoney || {}, { allow_categorize: $('#e-mm-cat').checked });
   }
   if ($('#e-bl-ordner')) cfg.receipts = Object.assign(cfg.receipts || {}, { folder: $('#e-bl-ordner').value.trim() || '~/Documents/Kontor-Belege', subfolder: $('#e-bl-sub').value.trim() || '{year}', write_comment: $('#e-bl-comment').checked,
       folder_confirmed: !!(cfg.receipts || {}).folder_confirmed || $('#e-bl-ordner').value.trim() !== ((S.CFG.receipts || {}).folder || '') });    // ein hier gewählter Ordner gilt als bestätigt
@@ -5355,7 +5470,9 @@ function mdHtml(md) {
       if (!table) { flush(); table = `<div class="wrap auto"><table class="plain"><thead><tr>${cells.map(c => `<th>${mdInline(c)}</th>`).join('')}</tr></thead><tbody>`; continue; }
       table += `<tr>${cells.map(c => `<td>${mdInline(c)}</td>`).join('')}</tr>`; continue;
     }
-    if (li) { const kind = li[1] ? 'ol' : 'ul'; if (para.length || table || (list && list !== kind)) flush(); if (!list) { list = kind; out.push(`<${kind}>`); } out.push(`<li>${mdInline(li[2])}</li>`); continue; }
+    if (li) { const kind = li[1] ? 'ol' : 'ul'; if (para.length || table || (list && list !== kind)) flush(); if (!list) { list = kind; out.push(`<${kind}>`); }
+      const la = li[2].match(/^<a id="([\w-]+)"><\/a>/);          // an anchor at the start of an item: the help icon of a chart leads right there
+      out.push(`<li${la ? ` id="hl-${la[1]}"` : ''}>${mdInline(la ? li[2].slice(la[0].length) : li[2])}</li>`); continue; }
     if (!line.trim()) { flush(); continue; }
     if (list) flush();
     para.push(line.trim());
@@ -5367,7 +5484,7 @@ async function vHilfe() {
   if (HELP.md === null || HELP.lang !== LANG) { try { const r = await api('/api/help?lang=' + LANG); HELP.md = r.text || ''; HELP.images = r.images || {}; HELP.lang = LANG; } catch (e) { return `<div class="card">${esc(e.message)}</div>`; } }
   const toc = [...HELP.md.matchAll(/<a id="([\w-]+)"><\/a>\n##\s+(.*)/g)].map(m => [m[1], m[2]]);
   return `<div class="help-top"><input type="search" id="help-q" placeholder="${t('hilfe_durchsuchen')}" value="${esc(HELP.q)}"><span class="small muted" id="help-n"></span></div>
-    <div class="help-layout"><nav class="help-toc">${toc.map(([id, title]) => `<a href="#help/${id}" data-a="${id}">${mdInline(title)}</a>`).join('')}</nav>
+    <div class="help-layout"><nav class="help-toc">${toc.map(([id, title]) => `<a href="#help/${id}" data-a="${id}">${mdInline(title)}</a>`).join('')}<a href="#log" class="help-toc-x">${t('protokoll')}</a></nav>
     <div class="help" id="help-body">${mdHtml(HELP.md)}</div></div>`;
 }
 function bindHilfe(main) {
@@ -5394,7 +5511,7 @@ function bindHilfe(main) {
 }
 
 // ---------------------------------------------------------------- Steuerung
-const TITLES = {overview: t('uebersicht'), balance: t('bilanz'), cashflow: t('kapitalfluss'), planning: t('planung'), bookings: t('nav_auto_buchungen'), tax: t('steuer'), properties: t('immobilien'), transactions: t('umsaetze_belege'), setup: t('einrichtung'), accounts: t('konten_regeln'), categories: t('kategorien'), settings: t('einstellungen'), log: t('protokoll'), help: t('hilfe')};
+const TITLES = {overview: t('uebersicht'), balance: t('bilanz'), cashflow: t('kapitalfluss'), planning: t('planung'), bookings: t('nav_auto_buchungen'), tax: t('steuer'), properties: t('immobilien'), transactions: t('umsaetze_belege'), setup: t('einrichtung'), accounts: t('konten_regeln'), categories: t('nav_zuordnen'), settings: t('einstellungen'), log: t('protokoll'), help: t('hilfe')};
 const SUBTITLES = {};
 async function route() {
   if (DIRTY.on && location.hash !== DIRTY.hash) {
@@ -5408,11 +5525,11 @@ async function route() {
   const key = S.tab + '/' + S.sub, sameTab = key === SCROLL.key;
   if (!sameTab) KEEP_OPEN.clear();          // folded sections open only while the same page is drawn again
   if (qs && S.tab === 'transactions') { const p = new URLSearchParams(qs); S.uf.uncategorized_flag = p.get('uncategorized') === '1'; S.uf.ohne_beleg = p.get('no_receipt') === '1'; if (p.get('year')) S.uf.year = p.get('year'); if (p.get('entity')) S.uf.entity = p.get('entity'); history.replaceState(null, '', '#transactions'); }
-  $$('#nav a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + S.tab));
+  $$('#nav a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + (S.tab === 'log' ? 'settings' : S.tab)));          // the log: reached from the settings (and the help)
   { const ns = $('#nav-setup'); if (ns) ns.classList.toggle('hidden', !setupOpen() && S.tab !== 'setup'); }
   $('#page-title').textContent = SUBTITLES[S.tab + '/' + S.sub] || (S.tab === 'properties' && S.sub ? t('immobilie') : TITLES[S.tab]);
   if (ALPHA_TABS.has(S.tab)) $('#page-title').insertAdjacentHTML('beforeend', alphaTag('alpha-tag big'));
-  if (S.tab === 'bookings') $('#page-title').insertAdjacentHTML('beforeend', ' ' + hq('auto_buchungen_h'));       // what this page is (a click: its help section)
+  $('#page-title').insertAdjacentHTML('beforeend', pageHq(S.tab, S.sub));       // what this page is (a click: its help section)
   $('#bereich-seg').classList.toggle('hidden', !(S.DATA && Object.keys(S.DATA.areas || {}).length > 1 && ['overview', 'balance', 'cashflow', 'planning'].includes(S.tab)));
   $('.side').classList.remove('open');
   if (S.tab !== 'transactions') closeDrawer();
@@ -5449,7 +5566,7 @@ async function route() {
     if (S.tab === 'cashflow') bindCfCharts(main);
     if (S.tab === 'overview') bindOverview(main);
     ovArrive(main);
-    if (S.tab === 'categories') { bindZuordnen(main); bindRegelVorschlaege(main); }
+    if (S.tab === 'categories') { bindZuordnen(main); bindRegelVorschlaege(main); bindEingetragen(main); }
     if (S.tab === 'accounts' && S.sub === 'positions') bindPositionen(main);
     if (S.tab === 'settings' && S.sub === 'access') bindZugang(main);
     if (S.tab === 'help') bindHilfe(main);
@@ -5525,6 +5642,21 @@ const SAVE = {
   accounts: async () => saveConfig(collectKonten(), $('#findings-k2')),
 };
 window.addEventListener('beforeunload', e => { if (DIRTY.on) { e.preventDefault(); e.returnValue = ''; } });
+// A figure in a table double-clicked or held (a long touch): toggle(td) -- its row opens or closes. cell(e): the figure, if
+// its row opens at all. The click that ends a hold does nothing else, nor does the menu of a long touch.
+const HOLD = {at: 0};          // when a hold last opened a row: the page is drawn anew, the click that ends the hold lands on the new table
+function rowByFigure(tbl, cell, toggle) {
+  let hold = null;
+  const stop = () => { if (hold) { clearTimeout(hold.t); hold = null; } };
+  tbl.addEventListener('mousedown', e => { if (e.detail > 1 && cell(e)) e.preventDefault(); });          // no word selected by the double click
+  tbl.addEventListener('dblclick', e => { const td = cell(e); if (td) toggle(td); });
+  tbl.addEventListener('pointerdown', e => { const td = cell(e); stop(); HOLD.at = 0; if (!td || e.button) return;          // a new press: what the last hold blocked is over
+    hold = {x: e.clientX, y: e.clientY, t: setTimeout(() => { hold = null; toggle(td); HOLD.at = Date.now(); }, 550)}; });          // after the toggle: its own click goes through
+  tbl.addEventListener('pointermove', e => { if (hold && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 8) stop(); });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) tbl.addEventListener(ev, stop);
+  tbl.addEventListener('click', e => { if (Date.now() - HOLD.at < 700) { e.stopPropagation(); e.preventDefault(); HOLD.at = 0; } }, true);
+  tbl.addEventListener('contextmenu', e => { if (Date.now() - HOLD.at < 700 && cell(e)) e.preventDefault(); });
+}
 function bind(main) {
   $$('tr.group[data-id]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.id] = !S.collapsed[tr.dataset.id]; route(); }));
   // balance sheet: a click on the name opens the position (or the account's history), on a value it marks month and row in the chart
@@ -5569,21 +5701,13 @@ function bind(main) {
     const c = (CF.tblCols || [])[td.cellIndex - 1], kat = td.parentNode.dataset.kat; if (!c || !c.months.length || !kat) return;
     cfOpenTx({kats: [kat], months: c.months, title: CP(kat).split(' › ').slice(-1)[0] + ' · ' + c.label}); }));
   // a figure double-clicked or held: its row opens or closes, as on its name (the side panel of the first click closes again)
-  $$('.cf-tbl:not(.ptable):not(.cf-names)', main).forEach(tbl => {
-    const cell = e => { const td = e.target.closest('td'); return td && td !== td.parentNode.firstElementChild && td.parentNode.matches('tr[data-tog]') ? td : null; };
-    const toggle = td => { closeDrawer(); const n = td.parentNode.firstElementChild; if (n) n.dispatchEvent(new MouseEvent('click', {bubbles: true})); };
-    let hold = null;
-    const stop = () => { if (hold) { clearTimeout(hold.t); hold = null; } };
-    tbl.addEventListener('mousedown', e => { if (e.detail > 1 && cell(e)) e.preventDefault(); });          // no word selected by the double click
-    tbl.addEventListener('dblclick', e => { const td = cell(e); if (td) toggle(td); });
-    tbl.addEventListener('pointerdown', e => { const td = cell(e); stop(); CF.held = 0; if (!td || e.button) return;          // a new press: what the last hold blocked is over
-      hold = {x: e.clientX, y: e.clientY, t: setTimeout(() => { hold = null; toggle(td); CF.held = Date.now(); }, 550)}; });
-    tbl.addEventListener('pointermove', e => { if (hold && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 8) stop(); });
-    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) tbl.addEventListener(ev, stop);
-    // the click that ends a hold opens nothing; nor does the menu of a long touch
-    tbl.addEventListener('click', e => { if (Date.now() - (CF.held || 0) < 700) { e.stopPropagation(); e.preventDefault(); CF.held = 0; } }, true);
-    tbl.addEventListener('contextmenu', e => { if (Date.now() - (CF.held || 0) < 700 && cell(e)) e.preventDefault(); });
-  });
+  $$('.cf-tbl:not(.ptable):not(.cf-names)', main).forEach(tbl => rowByFigure(tbl,
+    e => { const td = e.target.closest('td'); return td && td !== td.parentNode.firstElementChild && td.parentNode.matches('tr[data-tog]') ? td : null; },
+    td => { closeDrawer(); const n = td.parentNode.firstElementChild; if (n) n.dispatchEvent(new MouseEvent('click', {bubbles: true})); }));
+  // the same in the balance sheet: a position, a portfolio's securities, the key figures under the net worth
+  $$('.bil-tbl table', main).forEach(tbl => rowByFigure(tbl,
+    e => { const td = e.target.closest('td'), tr = td && td.parentNode; return td && td !== tr.firstElementChild && (tr.matches('tr.pos[data-pos], tr.total.fold') || tr.querySelector('[data-dep]')) ? td : null; },
+    td => { const tr = td.parentNode, el = tr.querySelector('[data-dep]') || tr.firstElementChild; el.dispatchEvent(new MouseEvent('click', {bubbles: true})); }));
   // a click on a row's name opens or closes it (its figures show the bookings behind them; in planning they are edited)
   $$('.cf-tbl [data-tog]', main).forEach(el => el.addEventListener('click', e => {
     if (el.tagName === 'TR' && (e.target.closest('td') !== el.firstElementChild || e.target.closest('select, input, a, .edit, .hq, .tag, .to-bal, .tipped, button:not(.disc)'))) return;
@@ -5624,7 +5748,7 @@ function bind(main) {
     S.KONTEN = r.accounts; S.KATS = r.categories || S.KATS; await softRoute(); showFindings($('#w-findings'), r.findings, t('verbindung_steht') + r.accounts.length + t('konten_gelesen'), 'ok'); });
   const wr = $('#w-report', main); if (wr) wr.addEventListener('click', () => rebuildReport(true));
   const et = $('#e-theme', main); if (et) et.addEventListener('change', () => { try { localStorage.setItem('kontor.theme', et.value); } catch (e) {} applyTheme(et.value); route(); });
-  const wl = $('#w-lang', main); if (wl) wl.addEventListener('change', async () => { if (wl.value === LANG) return; try { await api('/api/language', {language: wl.value}); setLang(wl.value); } catch (e) { wl.value = LANG; toast(e.message, 5000); } });
+  for (const wl of [$('#w-lang', main), $('#e-lang', main)]) if (wl) wl.addEventListener('change', async () => { if (wl.value === LANG) return; try { await api('/api/language', {language: wl.value}); setLang(wl.value); } catch (e) { wl.value = LANG; toast(e.message, 5000); } });
   const abr = $('#add-bereich', main); if (abr) { bindBereichKonten(main); abr.addEventListener('click', () => { $('#bereiche').insertAdjacentHTML('beforeend', bereichForm({name: t('neuer_bereich'), id: '', accounts: [], main_area: false}, $$('#bereiche .item').length)); bindDel(main); bindBereichKonten($('#bereiche .item:last-child')); bereichMvState(); }); }
   const bli = $('#bereiche', main); if (bli) {
     bereichMvState();
@@ -5786,7 +5910,6 @@ function bind(main) {
   const bindF = (id, key, prop = 'value') => { const el = $(id, main); if (el) el.addEventListener('change', e => { uf[key] = e.target[prop]; S.sel.clear(); route(); }); };
   $$('[data-ids-x]', main).forEach(b => b.addEventListener('click', () => { Object.assign(uf, {ids: null, cfRows: null, title: '', date_from: '', date_to: ''}); S.sel.clear(); route(); }));
   const ux = $('#uf-chip-x', main); if (ux) ux.addEventListener('click', () => { Object.assign(uf, {ids: null, cfRows: null, kats: null, date_from: '', date_to: '', title: '', est: false, katsLabel: '', mitOhne: false, uncategorized_flag: uf.title ? false : uf.uncategorized_flag, direction: uf.title || uf.rChart ? '' : uf.direction, rChart: false}); S.sel.clear(); route(); });
-  const ue = $('#uf-ext', main); if (ue) ue.addEventListener('click', () => { uf.ext = !(uf.ext || uf.date_from || uf.date_to || uf.kats); if (!uf.ext) Object.assign(uf, {kats: null, date_from: '', date_to: '', title: '', est: false}); route(); });
   for (const [id, key] of [['#uf-von', 'date_from'], ['#uf-bis', 'date_to']]) { const el = $(id, main); if (el) el.addEventListener('change', () => { uf[key] = el.value; uf.title = ''; S.sel.clear(); route(); }); }
   const ka = $('#uf-kat-add', main); if (ka) ka.addEventListener('change', () => { const v = ka.value.trim(); if (!v) return;
     const k = v.split(' › ').join(' / '); uf.kats = [...new Set([...(uf.katsLabel ? [] : uf.kats || []), k])]; Object.assign(uf, {title: '', est: false, katsLabel: '', mitOhne: false}); S.sel.clear(); route(); });
@@ -6020,7 +6143,7 @@ try { const own = new Set(['kontor.lang', 'kontor.lang.pending', 'kontor.theme',
   Object.keys(localStorage).filter(k => k.startsWith('kontor.') && !own.has(k)).forEach(k => localStorage.removeItem(k)); } catch (e) {}
 viewApply(viewLoad());
 let SNAP_T = null;
-window.addEventListener('resize', () => { clearTimeout(SNAP_T); SNAP_T = setTimeout(() => { if (['balance', 'cashflow', 'planning'].includes(S.tab)) $$('#main .wrap.snap').forEach(w => { const l = w.scrollLeft; snapTable(w); w.scrollLeft = snapLeft(w, l); }); }, 150); });
+window.addEventListener('resize', () => { clearTimeout(SNAP_T); SNAP_T = setTimeout(() => { if (!PRINT.on && ['balance', 'cashflow', 'planning'].includes(S.tab)) $$('#main .wrap.snap').forEach(w => { const l = w.scrollLeft; snapTable(w); w.scrollLeft = snapLeft(w, l); }); }, 150); });
 window.addEventListener('beforeunload', () => { try { localStorage.setItem('kontor.ui', JSON.stringify({plan: S.plan, real: S.real, area: S.area})); } catch (e) {} });
 setInterval(async () => { if (S.csrf && !document.hidden && !OFFLINE.mode) { try { await pollStatus(); } catch (e) {} } }, 30000);
 // Zurück im Fenster (z. B. nach MoneyMoney): sofort nachsehen statt bis zu 30 s einen alten Stand zu zeigen

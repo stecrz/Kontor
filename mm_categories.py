@@ -69,11 +69,13 @@ def _mm_cat(raw: Dict[str, Any]) -> str:
 
 
 def write(bridge, ledger: Ledger, items: List[Dict[str, Any]], idx: Dict[str, Dict[str, Any]],
-          own: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+          own: Dict[str, Dict[str, Any]], allow_default: bool = False, only_own: bool = False) -> Dict[str, Any]:
     """items: [{id, neu, alt (was in MoneyMoney zu sehen war, normiert), ueberschreiben}].
     Liefert {geschrieben: [{id, alt, neu}], wartet: [id] (Kategorie fehlt in MoneyMoney), fremd: [{id, mm}] (fremde
     Kategorie, nicht bestaetigt), gleich: [id], fehler: [{id, grund}], offen: [id] (nicht versucht: MoneyMoney brach ab,
-    abbruch: der Grund)} -- was bis zum Abbruch geschrieben ist, steht in geschrieben."""
+    abbruch: der Grund)} -- was bis zum Abbruch geschrieben ist, steht in geschrieben. allow_default: MoneyMoney's default category
+    may be set (taking back an entry where there was none before). only_own: written only where MoneyMoney shows exactly the
+    category Kontor entered last (taking back) -- anything else, none included, counts as foreign."""
     res: Dict[str, Any] = {"written": [], "waiting": [], "foreign": [], "equal": [], "error": [], "open": []}
     by_id = {t.id: t for t in ledger.txs if t.id > 0}
     todo: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
@@ -83,6 +85,8 @@ def write(bridge, ledger: Ledger, items: List[Dict[str, Any]], idx: Dict[str, Di
             res["error"].append({"id": it["id"], "reason": "unknown"})
             continue
         why = assignable(idx, it["new"])
+        if why == "default" and allow_default:
+            why = None
         if why == "lacking":
             res["waiting"].append(t.id)
             continue
@@ -112,7 +116,7 @@ def write(bridge, ledger: Ledger, items: List[Dict[str, Any]], idx: Dict[str, Di
             if cur == neu:
                 res["equal"].append(t.id); continue
             mine = norm_cat((own.get(str(t.id)) or {}).get("new") or "")
-            if cur and cur != mine and not (it.get("overwrite") and cur == norm_cat(it.get("old") or "")):
+            if (only_own and cur != mine) or (cur and cur != mine and not (it.get("overwrite") and cur == norm_cat(it.get("old") or ""))):
                 res["foreign"].append({"id": t.id, "mm": cur}); continue
             try:
                 bridge.set_transaction(t.id, category=idx[neu]["uuid"] or idx[neu]["path"])
@@ -148,12 +152,21 @@ def apply_to_ledger(ledger: Ledger, idx: Dict[str, Dict[str, Any]], written: Lis
         t.category_uuid = idx[w["new"]]["uuid"]
 
 
+def forget(state: dict, ids) -> None:
+    """Taken back: these transactions leave the log (MoneyMoney shows their earlier category again)."""
+    lg = state.get(LOG_KEY) or {}
+    for i in ids:
+        lg.pop(str(i), None)
+
+
 def remember(state: dict, written: List[Dict[str, Any]]) -> None:
     """Protokoll: Umsatz -> zuletzt von Kontor geschriebene Kategorie (begrenzt auf die neuesten LOG_MAX)."""
     lg = state.setdefault(LOG_KEY, {})
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     for w in written:
-        lg[str(w["id"])] = {"new": w["new"], "old": w["old"], "time": now}
+        prev = lg.get(str(w["id"]))          # over Kontor's own entry: "old" stays the category from before Kontor (taking back goes there)
+        old = prev.get("old") or "" if prev and norm_cat(prev.get("new") or "") == norm_cat(w["old"] or "") else w["old"]
+        lg[str(w["id"])] = {"new": w["new"], "old": old, "time": now}
     if len(lg) > LOG_MAX:
         for k, _ in sorted(lg.items(), key=lambda kv: kv[1].get("time") or "")[:len(lg) - LOG_MAX]:
             lg.pop(k, None)

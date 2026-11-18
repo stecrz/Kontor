@@ -1,5 +1,21 @@
 # Änderungen
 
+## 3.15.1 (2026-11-18 22:18)
+- Zuordnen (vorher „Kategorien“): kein Schalter fürs Eintragen; Reiter „Eingetragen“ mit Rückgängig; Link zu Cashflow-Positionen.
+- Kommandozeile ohne Datenzugriff; Passwort und Deinstallieren nur mit Kontor-Passwort oder Touch ID.
+- Drucken (⌘P) mit Grafiken und Kopfzeile; einzelne Grafik per Rechtsklick.
+- Übersicht: offene Punkte als Liste unter den Grafiken.
+- Hilfe-Symbol neben jedem Seitentitel; Symbole an Grafiken und Tabellen führen zum passenden Absatz.
+- Bilanz: Grafik über der Tabelle; Doppelklick/Halten auf Wert klappt auf; Verlauf auch in erster Spalte.
+- Ausgaben je Monat: Umschalter Beträge / ± Vorjahr.
+- Brücken: Prozent immer mit %, Farbe nur bei Einnahmen/Ausgaben, mehr Ausgaben = + und rot (war vertauscht).
+- Cashflow-Grafiken: Tooltips nur Betrag fett; Zeitraumlänge in Ring und Gesamtcashflow; Summe ohne Hover; Ergebnis-Striche dezent gestrichelt; Wertänderungen gedeckter.
+- Monatlicher Cashflow: Umschichtungen und Wertänderungen unten wieder sichtbar (Fehler aus 3.15.0).
+- Einstellungen: Sprache gilt sofort; Sync-Knöpfe nebeneinander mit Tooltip.
+- Protokoll nicht mehr im Menü (Sichern & Zurücksetzen, Synchronisierung, Hilfe).
+- Umsätze & Belege: alle Filter immer sichtbar.
+- Hilfe und Bilder aktualisiert.
+
 ## 3.15.0 (2026-11-18 20:28)
 - Neu installieren: Einstellungen und Daten älterer Versionen werden nicht übernommen.
 - Übersicht neu: vier Grafiken auf einer Seite, Klick führt in Bilanz oder Cashflow; ohne Tabellen, ohne „Alpha“.

@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -1032,7 +1033,6 @@ class AppTests(_AppBase):
         import service as MA
         orig_loop = MA.auth.is_loopback
         self.login(); self.run_and_wait()
-        cfg = copy.deepcopy(self.app.config); cfg.setdefault("moneymoney", {})["allow_categorize"] = True; self.app.save_config(cfg)
         sets = lambda: [w for b in MockBridge.instances for w in b.written if w[0] == "set" and w[2] is not None]
         MockBridge.state["txs"] += [F.tx("priv.giro", date(2026, 10, 20), -80.0, "Bauhaus", "Werkzeug"),
                                     F.tx("priv.giro", date(2026, 10, 27), -35.0, "Bauhaus", "Schrauben"),
@@ -1041,7 +1041,7 @@ class AppTests(_AppBase):
         self.app.do_run(True, False, full=True)
         ids = [t.id for t in self.app.ledger.txs if t.name == "Bauhaus"]
         code, off = self.call("/api/categories/unassigned")
-        self.assertIn("Bauhaus", [g["name"] for g in off["groups"]]); self.assertTrue(off["write_back"])
+        self.assertIn("Bauhaus", [g["name"] for g in off["groups"]]); self.assertEqual(off["written"], 0)          # no switch: assigning is the release
         # a payment into another area of yours: marked as such, with your category for transfers in MoneyMoney to assign
         self.assertEqual({g["name"]: g["own_account"] for g in off["groups"] if g["name"] in ("Bauhaus", "Alpha GbR")}, {"Bauhaus": False, "Alpha GbR": True})
         self.assertEqual(off["transfer"], "Umbuchung")
@@ -1055,6 +1055,27 @@ class AppTests(_AppBase):
         # von Kontor geschrieben -> erneut aenderbar ohne Rueckfrage
         code, r = self.call("/api/categories/assign", {"ids": ids[:1], "category": "Haushalt / Garten", "wait": True})
         self.assertEqual((r["mm"]["written"], r["mm"]["foreign"]), (1, []))
+        # Eingetragen: what Kontor entered, newest first; "before" is the category from before Kontor (none here)
+        code, w = self.call("/api/categories/written"); by = {x["id"]: x for x in w["items"]}
+        self.assertEqual((w["total"], self.call("/api/categories/unassigned")[1]["written"]), (2, 2))
+        self.assertEqual((by[ids[0]]["old"], by[ids[0]]["new"], by[ids[0]]["undo"], by[ids[0]]["name"]), ("", "Haushalt / Garten", True, "Bauhaus"))
+        self.assertEqual(w["items"][0]["id"], ids[0]) if w["items"][0]["time"] != w["items"][1]["time"] else None
+        # taken back (several at once): MoneyMoney's default category again (there was none); a transaction changed there stays
+        raw1 = next(t for t in MockBridge.state["txs"] if t["id"] == ids[1]); raw1["categoryPath"] = raw1["category"] = "Haushalt\\Garten"
+        n0 = len(sets())
+        code, r = self.call("/api/categories/undo", {"ids": ids, "wait": True})
+        self.assertEqual((code, r["undone"], r["changed"], r["error"]), (200, 1, 1, 0))
+        self.assertEqual(sets()[n0:], [("set", ids[0], F.uid("cat:Unkategorisiert"), None)])
+        self.assertEqual(categorize.mm_of(next(t for t in self.app.ledger.txs if t.id == ids[0])), "")
+        code, w = self.call("/api/categories/written"); self.assertEqual([x["id"] for x in w["items"]], [ids[1]])
+        # MoneyMoney shows no category any more (set back there): taken back only where it still shows Kontor's -- nothing written
+        raw1["categoryPath"] = raw1["category"] = "Unkategorisiert"
+        n1 = len(sets()); code, r = self.call("/api/categories/undo", {"ids": [ids[1]], "wait": True})
+        self.assertEqual((r["undone"], r["changed"]), (0, 1)); self.assertEqual(len(sets()), n1)
+        raw1["categoryPath"] = raw1["category"] = "Haushalt\\Werkzeug"
+        self.assertEqual(self.call("/api/categories/undo", {"ids": []})[0], 400)
+        code, r = self.call("/api/categories/assign", {"ids": ids[:1], "category": "Haushalt / Garten", "wait": True})
+        self.assertEqual(r["mm"]["written"], 1)
         # in MoneyMoney geaendert (anderer Betrag) -> nicht schreiben, MoneyMoney gilt
         raw = next(t for t in MockBridge.state["txs"] if t["id"] == ids[1]); raw["amount"] = -36.0
         n = len(sets())
@@ -1102,11 +1123,10 @@ class AppTests(_AppBase):
             cfgr = copy.deepcopy(self.app.config); cfgr.setdefault("ui", {})["remote_read_only"] = False; self.app.save_config(cfgr)
             code, r = self.call("/api/categories/assign", {"ids": [sid], "category": "Haushalt / Garten", "wait": True})
             self.assertEqual((r["mm"]["mac_only"], r["mm"]["later"]), (1, 0)); self.assertFalse(categorize.load(self.store)["assignment"])
-            self.assertEqual(self.call("/api/categories/settings", {"mm_write": False})[0], 403)
-            code, cfg_now = self.call("/api/config"); cfg_now["moneymoney"]["allow_categorize"] = False
-            self.assertEqual(self.call("/api/config", {"config": cfg_now}, method="PUT")[0], 403)
-            code, r = self.call("/api/package/import", {"package": {"name": "x", "config": {"moneymoney": {"allow_categorize": False}, "dry_run": False}}, "anyway": True})
-            self.assertTrue(self.app.mm_write_on()); self.assertEqual(self.app.config.get("dry_run", True), cfgr.get("dry_run", True))
+            self.assertEqual(self.call("/api/categories/undo", {"ids": [sid]})[0], 403)          # taking back: only at the Mac
+            self.assertEqual(self.call("/api/categories/written")[1]["local"], False)
+            code, r = self.call("/api/package/import", {"package": {"name": "x", "config": {"dry_run": False}}, "anyway": True})
+            self.assertEqual(self.app.config.get("dry_run", True), cfgr.get("dry_run", True))
         finally:
             MA.auth.is_loopback = orig_loop
         # nur Bankkonten brauchen eine Kategorie: das Verkaeuferdarlehen (Offline-Konto) erscheint nicht unter Zuordnen
@@ -1742,16 +1762,11 @@ class AppTests(_AppBase):
         self.assertEqual(r["entry"]["note"], "new")
         code, r = self.call("/api/receipts/remove", {"id": e["id"], "delete_file": False})
         self.assertTrue(r["ok"]); self.assertTrue(os.path.isfile(os.path.join(self.belege, e["path"])))
-        # Kategorisieren: nur mit eingeschaltetem Eintragen, und nur nach MoneyMoney (eine vorhandene Kategorie nach Rueckfrage)
+        # Kategorisieren: nur nach MoneyMoney (eine vorhandene Kategorie nach Rueckfrage)
         import mm_categories
         MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Lebensmittel", 1, False, {})]
         self.app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
         kat_of = lambda: [x for x in self.call("/api/transactions?q=supermarkt")[1]["transactions"] if x["id"] == tx["id"]][0]
-        code, r = self.call("/api/categories/assign", {"ids": [tx["id"]], "category": "Haushalt / Lebensmittel", "wait": True})
-        self.assertEqual(code, 400)                                                   # aus: Kontor ordnet nichts nur fuer sich zu
-        self.assertFalse(any(w[0] == "set" and w[2] is not None for b in MockBridge.instances for w in b.written))
-        code, cfg = self.call("/api/config"); cfg["moneymoney"]["allow_categorize"] = True
-        self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 200)
         self.assertEqual(self.call("/api/categories/assign", {"ids": [tx["id"]], "category": "Gibt es nicht"})[0], 400)    # nur MoneyMoneys
         self.assertEqual(self.call("/api/categories/assign", {"ids": [tx["id"]], "category": "Haushalt"})[0], 400)          # Ordner
         # in MoneyMoney steht schon "Lebensmittel" (fremd): erst nachfragen, nichts schreiben
@@ -2641,7 +2656,13 @@ class FeatureTests(_AppBase):
         MA.App.uninstall_key = lambda app: calls.append("key") or True          # never the real keychain
         MA.updates.plist_path = lambda label=MA.updates.LABEL: os.path.join(prog, "none.plist")
         try:
-            self.assertEqual(K.cmd_uninstall(argparse.Namespace(yes=True, program=False)), 0)
+            with mock.patch.object(K.auth, "touchid_available", return_value=False), mock.patch.object(K.time, "sleep"):
+                # as in the interface: only with the Kontor password -- wrong three times, nothing is removed
+                with mock.patch.object(K.getpass, "getpass", return_value="falsch") as gp:
+                    self.assertEqual(K.cmd_uninstall(argparse.Namespace(yes=True, program=False)), 1)
+                self.assertEqual(gp.call_count, 3); self.assertEqual(calls, []); self.assertTrue(os.path.exists(self.store.path("config.json")))
+                with mock.patch.object(K.getpass, "getpass", return_value="sehr-geheimes-passwort"):
+                    self.assertEqual(K.cmd_uninstall(argparse.Namespace(yes=True, program=False)), 0)
         finally:
             K.DATA_DIR, K.HERE, MA.App.uninstall_key, MA.updates.plist_path = old
         self.assertEqual(calls, ["key"]); self.assertFalse(os.path.exists(self.store.path("config.json")))
@@ -2876,7 +2897,8 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(pg.evaluate("(() => { const t = document.querySelector('#bch').getBoundingClientRect().top; return t >= -2 && (t < 60 || scrollY + innerHeight >= document.documentElement.scrollHeight - 2); })()"))
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-card[data-ov='comp'] svg")
                 pg.focus(".ov-card[data-ov='comp']"); pg.keyboard.press("Enter"); pg.wait_for_selector("tr.pos"); pg.wait_for_timeout(300)
-                self.assertEqual(pg.evaluate("[location.hash, Math.round(scrollY)]"), ["#balance", 0])
+                self.assertEqual(pg.evaluate("location.hash"), "#balance")
+                self.assertTrue(pg.evaluate("(() => { const t = document.querySelector('.wrap.bil-tbl').getBoundingClientRect().top; return t >= -2 && (t < 60 || scrollY + innerHeight >= document.documentElement.scrollHeight - 2); })()"))
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-card[data-ov='wealth'] svg")
                 pg.click(".ov-card[data-ov='wealth']"); pg.wait_for_selector("[data-cfid='wealth'] svg")
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-grid")
@@ -2928,10 +2950,29 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("document.querySelector('#bereich-seg .on').textContent"), "Alpha GbR")
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_uebersicht_gbr.png"), full_page=True)
                 pg.click("#bereich-seg button:nth-child(1)"); pg.wait_for_timeout(300)
-                for tab in ("balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "categories", "accounts", "settings", "log", "help"):
+                for tab in ("balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "categories", "accounts", "settings", "help"):
                     pg.click("#nav a[href='#%s']" % tab); pg.wait_for_timeout(400)
                     self.assertTrue(pg.query_selector("#main").inner_html().strip(), tab)
+                    self.assertTrue(tab == "help" or pg.query_selector("#page-title .page-hq[data-tip]"), tab)          # beside every title: what the page does
                     if shots: pg.screenshot(path=os.path.join(shots, "ui_%s.png" % tab), full_page=(tab in ("accounts", "settings", "tax", "planning", "help", "balance")))
+                # the log: not in the menu -- below the help's topics and under Sichern & Zurücksetzen (the menu marks the settings)
+                self.assertIsNone(pg.query_selector("#nav a[href='#log']"))
+                pg.click(".help-toc a.help-toc-x[href='#log']"); pg.wait_for_selector("#log-min")
+                self.assertTrue(pg.query_selector("#nav a.on[href='#settings']"))
+                pg.evaluate("location.hash = '#settings/backup'"); pg.wait_for_selector("#main a[href='#log']")
+                # the help icon beside a title: a click opens its section; a chart's icon its own paragraph
+                pg.click("#nav a[href='#balance']"); pg.wait_for_selector("#bch svg")
+                self.assertEqual(pg.get_attribute("#page-title .page-hq", "data-help"), "balance-sheet"); self.assertEqual(pg.get_attribute("#bch .hq", "data-help"), "balance-sheet-chart")
+                pg.click("#bch .hq"); pg.wait_for_selector("#hl-balance-sheet-chart")
+                self.assertEqual(pg.evaluate("location.hash"), "#help/balance-sheet-chart")
+                # printing one chart: its own menu (right click), everything beside it left out while printing, then back
+                pg.click("#nav a[href='#balance']"); pg.wait_for_selector("#bch svg"); pg.evaluate("window.print = () => { PRINT.printed = document.body.classList.contains('print-one') && !!document.querySelector('.print-off'); }")
+                pg.wait_for_timeout(800)          # the page settled (a scroll of the page closes the menu)
+                pg.click("#bch .bch-head", button="right"); pg.wait_for_selector("#ctx button")
+                pg.dispatch_event("#ctx button", "click"); self.assertTrue(pg.evaluate("PRINT.printed")); self.assertIsNone(pg.query_selector("#ctx"))
+                pg.evaluate("window.dispatchEvent(new Event('beforeprint'))"); self.assertIn("Kontor", pg.inner_text("#print-head"))
+                pg.evaluate("window.dispatchEvent(new Event('afterprint'))")
+                self.assertFalse(pg.evaluate("!!document.querySelector('.print-off, .print-path, #print-head') || document.body.classList.contains('print-one')"))
                 # every tab of "Konten & Regeln" and "Einstellungen" draws (the old pages live there now)
                 for h in ("#accounts/areas", "#accounts/history", "#accounts/positions", "#accounts/rules", "#accounts/tax", "#settings/moneymoney", "#settings/access", "#settings/receipts", "#settings/updates", "#settings/backup", "#setup"):
                     pg.evaluate("location.hash = '%s'" % h); pg.wait_for_timeout(400)
@@ -3250,7 +3291,9 @@ class BrowserTest(unittest.TestCase):
                 for c in ("ein", "aus", "inv", "fin", "bank", "umsch", "value"):          # below: as the table -- change in cash, moves between accounts, change in value
                     self.assertTrue(pg.query_selector("#cf-months .cf-col." + c), c)
                 self.assertIsNone(pg.query_selector("#cf-months .cf-prev-o"))         # no year before in it (too little gain, confusing)
-                nets = pg.evaluate("[...document.querySelectorAll('#cf-months line.cf-net.nw')].length"); self.assertGreater(nets, 0); self.assertLessEqual(nets, 12)      # the result of each month as a short line
+                nets = pg.evaluate("[...document.querySelectorAll('#cf-months line.cf-net')].length"); self.assertGreater(nets, 0); self.assertLessEqual(nets, 24)      # the result of each month as a short line (both panels)
+                self.assertFalse(pg.evaluate("[...document.querySelectorAll('#main svg *')].some(e => [...e.attributes].some(a => a.value.includes('NaN')))"))      # every part drawn (no unknown value)
+                self.assertTrue(pg.query_selector("#cf-months rect.cf-col.umsch, #cf-months rect.cf-col.value"))      # reallocation and changes in value below
                 nwk = pg.evaluate("""(() => { const D = B(), m = D.months.filter(m => m < D.actual_until).slice(-1)[0], s = D.cashflow.sums[m];
                     const u = -D.cashflow.sections.reduce((a, sk) => sk.name === 'valuation' ? a : a + sk.rows.reduce((c, z) => z.nw ? c : c + ((z.amounts || {})[m] || 0), 0), 0);
                     return [s.net_worth_delta, s.valuation, u]; })()""")
@@ -3300,12 +3343,13 @@ class BrowserTest(unittest.TestCase):
                     self.assertGreater(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0); self.assertTrue(pg.query_selector("#cf-flow .cf-fl-up"))
                     pg.dispatch_event("#cf-flow .cf-fl-up", "click"); pg.wait_for_timeout(150)
                     self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
-                    # a click on the total opens everything (every level), a second one closes it all again
-                    pg.dispatch_event("#cf-flow [data-flall]", "click"); pg.wait_for_timeout(150)
-                    self.assertEqual(pg.get_attribute("#cf-flow [data-flall]", "aria-expanded"), "true"); self.assertIsNone(pg.query_selector("#cf-flow .cf-fl-g[aria-expanded='false']"))
-                    self.assertGreater(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
-                    pg.dispatch_event("#cf-flow [data-flall]", "click"); pg.wait_for_timeout(150)
-                    self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0); self.assertTrue(pg.query_selector("#cf-flow .cf-fl-span"))      # the period small above the total
+                    # a click beside the bands opens everything (every level), a second one closes it all again; the total is no button
+                    self.assertIsNone(pg.query_selector("#cf-flow [data-flall], #cf-flow .cf-fl-mid[role]"))
+                    pg.dispatch_event("#cf-flow .cf-fl-mid:not(.cf-fl-span)", "click"); pg.wait_for_timeout(150)
+                    self.assertIsNone(pg.query_selector("#cf-flow .cf-fl-g[aria-expanded='false']")); self.assertGreater(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
+                    pg.dispatch_event("#cf-flow .cf-fl-mid:not(.cf-fl-span)", "click"); pg.wait_for_timeout(150)
+                    self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
+                    self.assertTrue(pg.evaluate("/Jahr|Monat/.test(document.querySelector('#cf-flow .cf-fl-span').textContent)"))      # the period and its length small above the total
                     # the same with a click beside the chart (the period, the empty card); one item open: the click closes all first
                     pg.dispatch_event("#cf-flow .cf-fl-span", "click"); pg.wait_for_timeout(150); self.assertGreater(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
                     pg.dispatch_event(".cf-card[data-cfid='flow']", "click"); pg.wait_for_timeout(150); self.assertEqual(len(pg.query_selector_all("#cf-flow .cf-fl-g")), n0)
@@ -3386,7 +3430,11 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("[cfChange(1000, 1000, false).txt, cfChange(1002, 1000, false).txt, cfChange(1000000.6, 1000000, false).txt, cfChange(100050, 100000, false).txt, cfChange(10532, 100, false).txt, cfChange(1334, 100, false).txt]"),
                                  ["±0 %", "+0,2 %", "+<0,01 %", "+0,05 %", "+10T %", "+1,2T %"])                                  # never rounded up
                 self.assertEqual(pg.evaluate("[cfChgShort(cfChange(1334, 100, false)), cfChgShort(cfChange(350, 100, true)), cfChgShort(cfChange(-2500, 100, true)), cfChgShort(cfChange(100, 100, true))]"),
-                                 ["+1T", "+250%", "−3T", "±0%"])                                                                 # the bridges' narrow column: from 1000 % only thousands
+                                 ["+1T%", "+250%", "−3T%", "±0%"])                                                               # the bridges' narrow column: from 1000 % only thousands, the sign of percent always
+                # signed amounts (the bridges): a change of size (expenses up: worse), across zero of the amount; colour only where asked
+                self.assertEqual(pg.evaluate("[cfChangeAmt(-1200, -1000, true), cfChangeAmt(900, 1000, true), cfChangeAmt(300, -500, true), cfChangeAmt(-1200, -1000, false)].map(c => [c.txt, c.cls])"),
+                                 [["+20 %", "neg"], ["−10 %", "neg"], ["+160 %", "pos"], ["+20 %", ""]])
+                self.assertEqual(pg.evaluate("[pctCell(45.4), pctCell(250), pctCell(1499), pctCell(12000), pctCell(-100), pctCell(0)]"), ["+45%", "+250%", "+1,5T%", "+12T%", "−100%", "±0%"])
                 pg.hover("#cf-heat .cf-heat-c >> nth=0"); pg.wait_for_timeout(150); self.assertIn("€", pg.inner_text("#cf-tip")); self.assertNotIn("Ø", pg.inner_text("#cf-tip")); pg.mouse.move(5, 5)
                 self.assertEqual(len(pg.query_selector_all("#cf-heat .cf-heat-v")), len(pg.query_selector_all("#cf-heat .cf-heat-n")))     # the average per row
                 # all positions together: a row of its own below a line, on its own scale
@@ -3540,17 +3588,17 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(all(a < 0 for a in pg.evaluate("UMS.transactions.map(u => u.amount)")))
                 pg.click("[data-kat-all]"); pg.wait_for_timeout(300); self.assertIsNone(pg.query_selector(".uf-ext .chip"))
                 pg.click("#uf-chip-x"); pg.wait_for_timeout(300)
-                if not pg.query_selector("#uf-kat-add"): pg.click("#uf-ext")
+                self.assertIsNone(pg.query_selector("#uf-ext"))                                       # every filter always in view
                 pg.wait_for_selector("#uf-kat-add")                                                   # set by hand: a category of MoneyMoney
                 kat = pg.evaluate("document.querySelector('#uf-kats option').value")
                 pg.fill("#uf-kat-add", kat); pg.dispatch_event("#uf-kat-add", "change"); pg.wait_for_selector(".uf-ext .chip")
                 self.assertTrue(all(norm(k2) == norm(kat) or norm(k2).startswith(norm(kat) + " / ") for k2 in pg.evaluate("UMS.transactions.map(u => u.category)")))
-                pg.click("#uf-chip-x"); pg.wait_for_timeout(300); pg.click("#uf-ext"); pg.wait_for_timeout(300)
-                self.assertIsNone(pg.query_selector("#uf-von"))
+                pg.click("#uf-chip-x"); pg.wait_for_timeout(300)
+                self.assertIsNone(pg.query_selector(".uf-ext .chip")); self.assertEqual(pg.input_value("#uf-von"), "")
                 pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("#cf-pie .cf-pie-sl")
                 # where a category counts is a setting: its own page under Verwaltung, linked from here (the old address leads there)
                 pg.click("#main a[href='#accounts/positions']"); pg.wait_for_selector(".kp-table tr[data-p]")
-                self.assertEqual(pg.inner_text("#page-title"), "Konten & Regeln"); self.assertTrue(pg.query_selector("#nav a.on[href='#accounts']"))
+                self.assertTrue(pg.inner_text("#page-title").startswith("Konten & Regeln")); self.assertTrue(pg.query_selector("#nav a.on[href='#accounts']"))
                 self.assertTrue(pg.query_selector(".tabs button.on[data-next='#accounts/positions']"))
                 self.assertIn("→", pg.inner_text(".kp-table tbody tr td.kp-arrow"))
                 # a parent category without a choice of yours counts per subcategory; a choice on it passes down to them
@@ -3573,7 +3621,7 @@ class BrowserTest(unittest.TestCase):
                 pg.evaluate("location.hash = '#accounts/positions'"); pg.wait_for_timeout(400)
                 self.assertEqual(pg.evaluate("location.hash"), "#accounts/positions"); self.assertTrue(pg.query_selector(".kp-table"))
                 pg.click("#nav a[href='#categories']"); pg.wait_for_timeout(400)
-                self.assertEqual(len(pg.query_selector_all("#main .tabs button")), 2)
+                self.assertEqual(len(pg.query_selector_all("#main .tabs button")), 3)          # Offen, Regeln für MoneyMoney, Eingetragen
                 # Bilanz: Positionen/Gruppen, inaktive, Konto-Klick -> Verlauf
                 pg.click("#nav a[href='#balance']"); pg.wait_for_selector("tr.pos")
                 self.assertIn("Bankguthaben", pg.query_selector("#main").inner_text())
@@ -3652,13 +3700,14 @@ class BrowserTest(unittest.TestCase):
                 # table and large chart can be moved up and down (small arrows in their headers), kept with "Ansicht speichern"
                 order3 = lambda: pg.evaluate("""() => [...document.querySelectorAll('#main #bch, #main .wrap.bil-tbl, #main #lc-grid')].map(e => e.id === 'bch' ? 'chart' : e.id === 'lc-grid' ? 'lines' : 'table')""")
                 tbl = lambda mv: ".wrap .th-mv[data-blk='table'][data-mv='%s']" % mv
-                self.assertEqual(order3(), ["table", "chart", "lines"]); self.assertFalse(pg.is_visible(tbl(-1)))          # the table first
+                self.assertEqual(order3(), ["chart", "table", "lines"])          # the chart first: opening rows does not move it
+                pg.click(tbl(-1)); pg.wait_for_timeout(300); self.assertEqual(order3(), ["table", "chart", "lines"]); self.assertFalse(pg.is_visible(tbl(-1)))
                 pg.click(tbl(1)); pg.wait_for_timeout(300); self.assertEqual(order3(), ["chart", "table", "lines"])
                 pg.click(tbl(1)); pg.wait_for_timeout(300); self.assertEqual(order3(), ["chart", "lines", "table"])
                 pg.click("#bch .th-mv[data-blk='chart'][data-mv='1']"); pg.wait_for_timeout(300); self.assertEqual(order3(), ["lines", "chart", "table"])
                 pg.click("#view-save"); pg.wait_for_timeout(200)
                 self.assertEqual(pg.evaluate("JSON.parse(localStorage.getItem('kontor.balanceView')).views.months.blocks"), ["lines", "chart", "table"])
-                pg.click("#view-reset"); pg.wait_for_timeout(300); self.assertEqual(order3(), ["table", "chart", "lines"]); pg.click("#pos-all"); pg.wait_for_timeout(300)
+                pg.click("#view-reset"); pg.wait_for_timeout(300); self.assertEqual(order3(), ["chart", "table", "lines"]); pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # the same in the table: a portfolio opens into its securities (without opening the account's history)
                 if not pg.query_selector("[data-dep]"):
                     pg.click("tr.pos[data-pos='securities'] td:first-child")
@@ -3828,7 +3877,7 @@ class BrowserTest(unittest.TestCase):
                 pg.click("tr.acct[data-id='%s'] td" % F.uid("priv.giro")); pg.wait_for_selector("#drawer.open #h-grid")     # zweites Oeffnen
                 self.assertIn("Hausbank Giro", pg.query_selector("#drawer").inner_text())
                 self.assertTrue(pg.query_selector("#drawer #h-chart svg"))                                  # Verlauf als Grafik
-                pg.click("#page-title"); pg.wait_for_selector("#drawer:not(.open)")                        # Klick daneben schliesst
+                pg.click("#page-title", position={"x": 5, "y": 5}); pg.wait_for_selector("#drawer:not(.open)")                        # Klick daneben schliesst
                 pg.click("tr.acct[data-id='%s'] td" % F.uid("priv.depot")); pg.wait_for_selector("#drawer.open #h-grid")
                 pg.fill("#drawer input[data-mk='2026-09']", "77000"); pg.click("#h-save"); pg.wait_for_timeout(1200)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_verlauf_drawer.png"))
@@ -3941,24 +3990,29 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("Dokumente", pg.query_selector("#main").inner_text())
                 pg.click("#nav a[href='#properties']"); pg.wait_for_selector(".card[data-im]")
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_immobilien.png"), full_page=True)
-                # Zuordnen: erst einschalten (am Mac), dann traegt Kontor die Kategorie in MoneyMoney ein -> Gruppe verschwindet
+                # Zuordnen: Kontor traegt die Kategorie in MoneyMoney ein (kein Schalter) -> Gruppe verschwindet
                 import mm_categories
                 MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Werkzeug", 1, False, {})]
                 app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
                 pg.click("#nav a[href='#categories']"); pg.wait_for_selector(".kz-group")
-                self.assertTrue(pg.query_selector(".kz-save").is_disabled())
-                pg.click("#kz-mm-on"); pg.wait_for_selector(".kz-save:not([disabled])")
-                for _ in range(60):                 # the settings change rebuilds the report; wait until it is loaded (no re-render meanwhile)
-                    if pg.evaluate("async () => { try { await pollStatus(); } catch (e) {} return !!S.STATUS && !(S.STATUS.report || {}).running && (S.STATUS.report || {}).as_of === BER.as_of; }"):
-                        break
-                    pg.wait_for_timeout(500)
-                pg.wait_for_timeout(800); pg.wait_for_selector(".kz-save:not([disabled])")
+                self.assertTrue(pg.inner_text("#page-title").startswith("Zuordnen")); self.assertEqual(pg.get_attribute("#page-title .page-hq", "data-help"), "categories"); self.assertIsNone(pg.query_selector("#kz-mm-on"))
+                pg.wait_for_selector(".kz-save:not([disabled])")
                 n_before = len(pg.query_selector_all(".kz-group"))
                 box = pg.query_selector(".kz-group"); box.query_selector(".kz-kat").fill("Haushalt / Werkzeug"); box.query_selector(".kz-save").click()
                 pg.wait_for_timeout(1500)
                 self.assertLess(len(pg.query_selector_all(".kz-group")), n_before)
                 self.assertTrue(any(w[0] == "set" and w[2] == F.uid("cat:Werkzeug") for b in MockBridge.instances for w in b.written))
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_zuordnen.png"), full_page=True)
+                # Eingetragen: the entry listed; taken back (with the question), it leaves the list
+                pg.click("#main .tabs button[data-next='#categories/written']"); pg.wait_for_selector(".kw-table tr[data-id]")
+                self.assertTrue(pg.query_selector("#kw-undo").is_disabled())
+                n_w = len(pg.query_selector_all(".kw-table tr[data-id]")); first_id = pg.get_attribute(".kw-sel:not([disabled])", "data-id")
+                pg.click(".kw-sel:not([disabled])"); self.assertIn("1", pg.inner_text("#kw-undo"))
+                pg.once("dialog", lambda d: d.accept()); pg.click("#kw-undo")
+                pg.wait_for_selector(".kw-table tr[data-id='%s']" % first_id, state="detached", timeout=15000)
+                self.assertEqual(len(pg.query_selector_all(".kw-table tr[data-id]")), n_w - 1)
+                self.assertTrue(any(w[0] == "set" and w[2] == F.uid("cat:Unkategorisiert") for b in MockBridge.instances for w in b.written))
+                self.assertTrue(pg.query_selector("#main .tabs-aside[href='#accounts/positions']"))          # where categories count: one click away
                 pg.click("#main .tabs button[data-next='#categories/rules']"); pg.wait_for_selector("#main .note")
                 self.assertIn("Regeln", pg.query_selector("#main").inner_text())
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_kategorien.png"), full_page=True)
