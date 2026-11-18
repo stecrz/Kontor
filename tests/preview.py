@@ -37,7 +37,7 @@ def main() -> None:
     sizes = [s for s in SIZES if not set(a.nur) & set(SIZES) or s in a.nur]
     d = tempfile.mkdtemp(prefix="kontor-preview-")
     store = Store(d, *load_or_create_master_key(d))
-    cfg = T.config_for_test(os.path.join(d, "Belege")); cfg.setdefault("oberflaeche", {})["sprache"] = a.lang
+    cfg = T.config_for_test(os.path.join(d, "Belege")); cfg.setdefault("ui", {})["language"] = a.lang
     store.save("config.json", cfg); store.save("state.json", dict(T.ALL_NEW))
     T.reset_mock(); T.patch_today()
     app = App(store, d, bridge_factory=T.MockBridge); app.do_run(False, True)

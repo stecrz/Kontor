@@ -1,13 +1,12 @@
 #!/bin/bash
-# Entfernt den Dienst. Daten und Belege bleiben, sofern nicht gewuenscht.
+# Kontor entfernen (Doppelklick): Hintergrunddienst, Einstellungen, Daten, Protokoll und Datenschluessel -- auf Wunsch auch
+# diesen Programmordner. Belege im Belegordner und MoneyMoney bleiben unangetastet. Dasselbe wie in Kontor unter
+# Einstellungen -> Sicherung -> Deinstallieren.
 cd "$(dirname "$0")"
-python3 ./kontor.py uninstall
-DATA="$HOME/Library/Application Support/Kontor"
-read -r -p "Datenordner ($DATA) und Datenschluessel im Schluesselbund ebenfalls loeschen? [j/N] " ANS
-if [ "$ANS" = "j" ] || [ "$ANS" = "J" ]; then
-  rm -rf "$DATA"
-  security delete-generic-password -s kontor.datenschluessel -a kontor >/dev/null 2>&1 || true
-  echo "Datenordner und Schluessel geloescht. Belege im Belegordner (Standard ~/Documents/Kontor-Belege) bleiben."
+read -r -p "Auch den Programmordner $(pwd) loeschen? [j/N] " P
+if [ "$P" = "j" ] || [ "$P" = "J" ]; then
+  python3 ./kontor.py --quiet uninstall --program
+else
+  python3 ./kontor.py --quiet uninstall
 fi
-echo "Programmordner kann jetzt in den Papierkorb."
 read -r -p "Fenster mit Eingabetaste schliessen." _

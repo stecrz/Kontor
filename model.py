@@ -34,7 +34,7 @@ def norm_cat(path: str) -> str:
 
 
 def legacy_cat(path: str) -> str:
-    """A category's key before 3.13.19: every slash split it, also one within a name."""
+    """A category path read with every slash as a level (also one within a name): for matching names written by hand."""
     parts = [p.strip() for p in re.split(r"[\\/\u203a]", str(path or ""))]
     return " / ".join(p for p in parts if p)
 
@@ -374,7 +374,7 @@ class Ledger:
         account, so several signs count; your own choice (Sync: "retrieved") comes first. Bookings planned in this run do
         not count."""
         a = self.accounts[uuid]
-        ab = (config or {}).get("abruf") or {}
+        ab = (config or {}).get("fetch") or {}
 
         def marked(key: str) -> bool:
             for r in ab.get(key) or []:
@@ -537,7 +537,7 @@ def ledger_to_bytes(ledger: "Ledger", saved_at: Optional[datetime] = None) -> by
                 v = t.mm_category_path
             row.append(enc(v))
         txs.append(row)
-    data = {"format": LEDGER_CACHE_FORMAT, "gespeichert": (saved_at or datetime.now()).isoformat(), "account_fields": afields, "accounts": accounts,
+    data = {"format": LEDGER_CACHE_FORMAT, "saved": (saved_at or datetime.now()).isoformat(), "account_fields": afields, "accounts": accounts,
             "tx_fields": tfields, "txs": txs, "portfolios": getattr(ledger, "portfolios", {}) or {}, "fp": getattr(ledger, "fp", None),
             "since": enc(getattr(ledger, "since", None)), "full_at": enc(getattr(ledger, "full_at", None))}
     return gzip.compress(json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8"), compresslevel=3)
@@ -579,6 +579,6 @@ def ledger_from_bytes(raw: bytes) -> Tuple["Ledger", Optional[datetime]]:
     # Zeitraum und Zeitpunkt des letzten vollstaendigen Lesens (Grundlage fuers schnelle Lesen; fehlt -> naechstes Lesen vollstaendig)
     ledger.since = date.fromisoformat(data["since"]) if data.get("since") else None
     ledger.full_at = datetime.fromisoformat(data["full_at"]) if data.get("full_at") else None
-    saved = data.get("gespeichert")
+    saved = data.get("saved")
     return ledger, (datetime.fromisoformat(saved) if saved else None)
 

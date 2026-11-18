@@ -19,7 +19,9 @@ Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https:
 - Liquiditäts- und Vermögensbrücke, Monatlicher Cashflow (zoombar), Gesamtcashflow als Sankey (Mittelherkunft und -verwendung), Vorjahresvergleich und Ausgaben je Monat – für einen frei wählbaren Zeitraum, auch in den Plan hinein.
 - Umbuchungen zwischen eigenen Konten werden gepaart (Gegen-IBAN, Kategorie, Betrag), Umsätze ohne Kategorie sichtbar geschätzt – ohne etwas in MoneyMoney einzutragen.
 
-**Stand:** Bilanz, Cashflow, Kategorien, Auto-Buchungen, Synchronisierung und Einrichtung sind geprüft. Übersicht, Planung, Immobilien, Steuer sowie Umsätze & Belege sind nutzbar, aber noch als „Alpha“ markiert – Zahlen dort bitte gegenprüfen.
+**Übersicht** – die vier wichtigsten Grafiken auf einer Bildschirmseite: Nettovermögen, Vermögensstruktur, monatlicher Cashflow und Vermögensbrücke; ein Klick führt an ihre Stelle in Bilanz oder Cashflow.
+
+**Stand:** Übersicht, Bilanz, Cashflow, Kategorien, Auto-Buchungen, Synchronisierung und Einrichtung sind geprüft. Planung, Immobilien, Steuer sowie Umsätze & Belege sind nutzbar, aber noch als „Alpha“ markiert – Zahlen dort bitte gegenprüfen.
 
 **Anleitung: [Hilfe](docs/help.de.md)** · English: [help](docs/help.en.md) – dieselbe Hilfe steht in Kontor unter „Hilfe“ (durchsuchbar). Dort steht alles Weitere: was MoneyMoney und was Kontor macht, die Einrichtung, jede Seite, [Sicherheit](docs/help.de.md#security), Kommandozeile und Datenordner, Hilfe bei Fehlern. Alle Bilder zeigen frei erfundene Daten.
 
@@ -34,14 +36,14 @@ Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https:
 
 Voraussetzungen: macOS, MoneyMoney, Kommandozeilen-Werkzeuge von Apple (`xcode-select --install`, liefert `python3` und `swiftc`).
 
-1. Eine Zeile im Terminal (Programme → Dienstprogramme → Terminal), lädt nach `~/Kontor` und richtet alles ein:
+1. Eine Zeile im Terminal (Programme → Dienstprogramme → Terminal) – lädt Kontor nach `~/Kontor`, richtet den Hintergrunddienst ein und öffnet die Oberfläche:
    ```
-   bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/get.sh)
+   bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/install.sh)
    ```
-   Dieselbe Zeile aktualisiert später auf den neuesten Stand. Alternativ von Hand: `git clone https://github.com/stecrz/Kontor.git ~/Kontor && cd ~/Kontor && bash install.sh`. (Ein ZIP aus dem Browser geht auch, aber Gatekeeper blockiert dann Skripte per Doppelklick; `bash install.sh` im entpackten Ordner entfernt die Sperre. Ein echter Doppelklick-Installer bräuchte eine Apple-Entwicklersignatur.)
-2. Der Browser öffnet `http://127.0.0.1:8765/`: Passwort festlegen, dann führt die [Einrichtung](docs/help.de.md#setup) Schritt für Schritt durch alles.
+   Dieselbe Zeile aktualisiert später auf den neuesten Stand. (Ein echter Doppelklick-Installer bräuchte eine Apple-Entwicklersignatur.)
+2. Im Browser unter `http://127.0.0.1:8765/` ein Passwort festlegen, dann führt die [Einrichtung](docs/help.de.md#setup) Schritt für Schritt durch alles.
 
-Aktualisieren, neu einrichten und entfernen: [Updates](docs/help.de.md#updates) und [Für Fortgeschrittene](docs/help.de.md#advanced).
+**Entfernen**: in Kontor unter Einstellungen → Sichern & Zurücksetzen → Deinstallieren, oder Doppelklick auf `Uninstall.command` im Programmordner. Dienst, Einstellungen, Daten, Protokoll und Datenschlüssel werden gelöscht; Belege und MoneyMoney bleiben. Mehr: [Updates](docs/help.de.md#updates) und [Für Fortgeschrittene](docs/help.de.md#advanced).
 
 ## Entwicklung
 

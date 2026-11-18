@@ -2,9 +2,21 @@
 
 Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sheet, a cash flow, a plan and a tax overview – for you privately and for each company separately. It runs as a small service on your Mac; you open the interface in your browser at `http://127.0.0.1:8765/` – or as an app of its own in the Dock (Safari: File → Add to Dock); there the menu leads everywhere, a two-finger swipe does not page back. **⌘L** locks. This help is also available in Kontor itself (menu “Help”, searchable).
 
+<a id="overview"></a>
+## Overview
+
+The four most important charts at a glance – no tables and no plan values, on the Mac on one screen:
+
+- **Net worth**: the last two years, beside it the current figure and the change over twelve months.
+- **Asset structure**: assets by position and the debts in the current month.
+- **Monthly cash flow**: the last twelve closed months – income and other inflows up, expenses and outflows down; the stroke shows the change in cash.
+- **Net worth bridge**: where the change in net worth over these twelve months came from.
+
+A click on a chart opens its place in the balance sheet or the cash flow. Above them stands what there is to do (e.g. transactions without a category), if anything.
+
 ![Overview](img/en/overview.png)
 
-<a id="overview"></a>
+<a id="kontor-and-moneymoney"></a>
 ## What MoneyMoney does and what Kontor does
 
 | MoneyMoney | Kontor |
@@ -16,7 +28,7 @@ Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sh
 
 Kontor never changes bookings, the category tree or rules in MoneyMoney and never initiates transfers.
 
-**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Overview, Planning, Properties, Tax and Transactions & receipts) are usable but not fully tested yet – please double-check the figures there. So is the equity ratio in the balance sheet. Tested are Balance sheet, Cash flow, Categories, Auto bookings, Booking rules, Sync, Setup, Settings, Updates, Log and Help.
+**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Planning, Properties, Tax and Transactions & receipts) are usable but not fully tested yet – please double-check the figures there. So is the equity ratio in the balance sheet. Tested are Balance sheet, Cash flow, Categories, Auto bookings, Booking rules, Sync, Setup, Settings, Updates, Log and Help.
 
 <a id="setup"></a>
 ## Setup
@@ -50,7 +62,7 @@ Each account gets an area, a position in the balance sheet and a history source.
 
 ![Accounts](img/en/accounts.png)
 
-**Positions** (balance sheet rows, ordered by availability):
+**Positions** (balance sheet rows, ordered by availability). For each account you choose how quickly and without a discount it turns into money – or whether it is a debt:
 
 | Position | What belongs there |
 |---|---|
@@ -60,9 +72,9 @@ Each account gets an area, a position in the balance sheet and a history source.
 | Real estate, equity investments, tangible assets | tied up long-term; equity investments include credit balances on capital and shareholder accounts (shareholder loans too) |
 | Receivables | Loans to others, deposits |
 | Liabilities | Loans, credit card debt, debts on capital accounts |
-| outside net worth | Equity (capital accounts, only when explicitly chosen), guarantees & sureties, “not on the balance sheet” |
+| outside net worth | Guarantees & sureties, “not on the balance sheet” |
 
-**How Kontor suggests** (in this order): portfolio → account name (e.g. “Immobilie”, “Darlehen”, “Kapitalkonto”, “Aval”, “Bauspar”) → unambiguous account type (current account, credit card, loan) → name of the group in MoneyMoney → remaining account type. Rule of thumb between securities and term investments: cash within a few days without a discount? Then securities, otherwise term investments. Loans and deposits count as receivables when in credit and as liabilities when in debt. Capital and shareholder accounts (shareholder loans too) count as equity investments when in credit – it is risk capital that bears losses and only comes back when you leave – and as liabilities when in debt: in the company that is a debt to the shareholder. The value of a stake is then your share of the rest; together with the capital account that is your whole share, even with unequal contributions.
+Rule of thumb between securities and term investments: cash within a few days without a discount? Then securities, otherwise term investments. Kontor suggests a position – by portfolio, account name (e.g. “Immobilie”, “Darlehen”, “Kapitalkonto”, “Aval”, “Bauspar”), account type and group in MoneyMoney. Loans and deposits count as receivables when in credit and as liabilities when in debt. Capital and shareholder accounts (shareholder loans too) count as equity investments when in credit – it is risk capital that bears losses and only comes back when you leave – and as liabilities when in debt: in the company that is a debt to the shareholder. The value of a stake is then your share of the rest; together with the capital account that is your whole share, even with unequal contributions.
 
 **Display**: “by activity” hides accounts without balance or transactions for N months; “always show” or “hide” fixes it. Hidden accounts still count in all totals.
 
@@ -120,7 +132,6 @@ Everywhere you choose **months** (with annual totals) or **years** only. Year co
 - The **month view** shows the current year and the one before; **‹ from 2025 ›** next to “Months / Years” starts it a year earlier or later, “Years” shows all years. In the cash flow the last finished month is in view when it opens: depending on the width, beside it the running month, the month before and from four columns the first plan month (from eight the first two). Clicking an earlier month in the balance sheet chart adds it as well.
 - **Plan** (cash flow) appends the plan values on the right; off = actual values only. Balance sheet and planning always show the plan.
 - **inflation-adjusted** (planning) shows plan values in today's purchasing power.
-- The overview also compares with the same period of the previous year.
 
 Every table has an **Excel** button: balance sheet, cash flow, planning (with projection and parameters), tax, transactions (as filtered, every match), portfolios, accounts and every property calculation.
 
@@ -147,7 +158,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 - Year columns show the balance at year end (the running year: today). The month view has no year columns – they would only repeat December; a thin line separates the years.
 - Drag the right edge of the first column to make it wider or narrower (double-click: default width); the width is part of the view.
 - **Equity ratio** (alpha; a click on “Net worth” opens the key figures below it): how much of your assets you own free of debt – equity ÷ (equity + debts). Looking through your companies: their debts count with your share (areas) if the participation is entered under Booking rules → Companies, otherwise the ratio would look too good, because the bank loans sit there. Debts are accounts with a negative balance; capital and shareholder accounts are equity, participations themselves never debts. How you book capital accounts changes nothing. Participations without this entry count with their value only; if accounts of a company are in no area, the ratio is unknown. A click shows the month's calculation step by step.
-- Below net worth, guarantees and capital accounts as equity (not in net worth) are each collected in one expandable row.
+- Below net worth, guarantees (not in net worth) are collected in one expandable row.
 - **Cash in transit**: If the two bookings of a transfer between your own accounts fall into different months (debited on the 31st, credited on the 1st), the amount counts as “cash in transit” to cash at the month end – otherwise net worth would briefly look too low. A click on the name shows the detected booking pairs, a click on a month only those under way at its end.
 
 **Main chart** – any of the four charts can be the large one: the ⤢ symbol in a small chart swaps it with the large one (default: the balance sheet).
@@ -371,9 +382,9 @@ Kontor recognises the instalment on the source account – by the lender's IBAN 
 
 Every area of the kind “company” (Accounts & rules → Areas) appears as a card, with your **share**. The share is set there only; the card links to it.
 
-- **Participation account**: your offline account for this company – you can choose offline accounts with the position “Participations” (Accounts & rules → Accounts); none is chosen in advance, because the bookings start as soon as you choose one and save. Kontor keeps it at **share × value of the company**. Value = all accounts of its area, i.e. assets minus debts (without accounts with the position “Capital accounts (equity)”, guarantees and off-balance accounts).
+- **Participation account**: your offline account for this company – you can choose offline accounts with the position “Participations” (Accounts & rules → Accounts); none is chosen in advance, because the bookings start as soon as you choose one and save. Kontor keeps it at **share × value of the company**. Value = all accounts of its area, i.e. assets minus debts (without guarantees and off-balance accounts).
 
-Participation and account mirror together count nothing twice if the capital accounts are kept as debts in the company (the default for accounts with “Kapitalkonto” or “Gesellschafterdarlehen” in their name): the receivable is your capital account, the participation your share of the rest – increases in value and undistributed surpluses. This also holds for unequal contributions. If you keep a capital account as the company's equity instead, it is already part of the participation's value; an account mirror for it then counts twice, and “Save and check” warns.
+Participation and account mirror together count nothing twice if the capital accounts are kept as debts in the company (the default for accounts with “Kapitalkonto” or “Gesellschafterdarlehen” in their name): the receivable is your capital account, the participation your share of the rest – increases in value and undistributed surpluses. This also holds for unequal contributions. If you keep a capital account off the balance sheet (“not on the balance sheet”) instead, it is already part of the participation's value; an account mirror for it then counts twice, and “Save and check” warns.
 
 Also per company:
 
@@ -437,16 +448,18 @@ Kontor itself also requires the Kontor password and, by default, only allows vie
 ![Backup and reset](img/en/backup.png)
 
 - **Backup** – for you: restore Kontor exactly as it was on a new Mac or after a reset. Contains all settings, areas, rules, real estate, planning, categories and assignments, month-end balances and the receipt index – not the transactions (they come from MoneyMoney), no receipt files, not the Kontor password. Because it contains your financial data, it is encrypted with its own password, which Kontor does not store. Only on the Mac.
-- **Settings package** – for others: your rules and assignments as a template, e.g. for a business partner with their own MoneyMoney. Accounts by name only, without balances, transactions, planning, passwords or address. Loan rules contain the lender's counterparty IBAN – check before sharing. When loading, Kontor matches accounts by name; anything not found you assign in the interface. “Add” adds rules and overwrites assignments, “Replace” discards the existing setup. A template is in the `templates/` folder.
+- **Settings package** – for others: your rules and assignments as a template, e.g. for a business partner with their own MoneyMoney. Accounts by name only, without balances, transactions, planning, passwords or address. Loan rules contain the lender's counterparty IBAN – check before sharing. When loading, Kontor matches accounts by name; anything not found you assign in the interface. “Add” adds rules and overwrites assignments, “Replace” discards the existing setup.
 - **Time Machine** backs up the data folder by default – as encrypted files, the key is in the keychain, not in the folder. The page shows the status. “Exclude” does not change Time Machine's settings but sets the “do not back up” mark on the data folder itself (common for caches, no admin rights needed). That is why the folder does not appear in Time Machine's exclusion list. Recommendation: keep it backed up.
+- **Renew data key** (only on the Mac, with password): Kontor encrypts all files in the data folder with a new random key. The old one is deleted only once everything opens with the new one; if the Mac is switched off in the middle, Kontor finishes it at the next start. Useful if a copy of the data folder together with the keychain may have fallen into other hands. Backups stay readable (they have their own password).
 - **Reset** (only on the Mac, with password) deletes settings, planning, categories, history and evaluations, optionally also the password. Receipt files, key and log remain.
+- **Uninstall** (only on the Mac, with password) removes Kontor from this Mac: the background service, Kontor's files in the data folder (settings, data, log), the data key in the keychain and – if ticked – the program folder. Receipts, linked documents and MoneyMoney stay untouched; so do other files in the data folder. A double click on `Uninstall.command` in the program folder does the same. The macOS permissions (automation) can only be removed by macOS itself – Kontor names the commands afterwards.
 
 <a id="updates"></a>
 ## Updates
 
 Kontor asks GitHub for the latest version (daily, weekly or never – Settings → Updates) and installs only when you click. The update check is Kontor's only network connection: it asks `raw.githubusercontent.com` for the file `VERSION` on the main branch of the repository (default: [github.com/stecrz/Kontor](https://github.com/stecrz/Kontor)). Other servers are deliberately not possible.
 
-When installing, Kontor downloads that version as an archive from github.com, replaces the program folder (the old files stay next to it as `.alt`), restarts the service and reloads the page; if the program folder is a git clone, `git pull` runs instead. Data folder and settings remain. All steps are in the log. The Updates page shows the changes of the newest version, earlier ones folded below.
+When installing, Kontor downloads that version as an archive from github.com, replaces the program folder (the old files stay next to it as `.old`), restarts the service and reloads the page; if the program folder is a git clone, `git pull` runs instead. Data folder and settings remain. All steps are in the log. The Updates page shows the changes of the newest version, earlier ones folded below.
 
 In Terminal, the same line as for the [installation](https://github.com/stecrz/Kontor#installation) updates.
 
@@ -455,17 +468,17 @@ In Terminal, the same line as for the [installation](https://github.com/stecrz/K
 
 - Interface only on this Mac (`127.0.0.1`); optionally also the Tailscale address for your own devices – never on the home network or the internet. No third-party content, no telemetry. The only outside connection is the update check at GitHub.
 - Sign-in with password (PBKDF2-SHA256, 600,000 rounds) or Touch ID on the Mac (needs Apple's command line tools, otherwise only the password; the dialog only appears once you switch to Kontor – never while you work elsewhere). The sign-in cookie only applies to Kontor, other websites cannot trigger anything (CSRF protection, origin check). Lock after idle time or with ⌘L; five failed attempts lock for five minutes. A password change signs out all other devices and renews your own sign-in.
-- All files in the data folder are encrypted (AES-256 + HMAC), the key is in the macOS keychain. If encryption or the keychain does not work, Kontor does not start – it never stores unencrypted and puts no new key into a file next to the data. Receipts are normal files in a folder of your choice; files outside it are linked only at the Mac, and only receipt files – nothing from hidden folders, the data folder or the Library (except iCloud Drive and other cloud folders).
+- All files in the data folder are encrypted (AES-256 + HMAC) with a random data key kept in the macOS keychain (entry “Kontor Datenschlüssel”) – not your password, which only controls access. Every new installation creates a new key; it can be renewed at any time under Settings → Backup & reset. If encryption or the keychain does not work, Kontor does not start – it never stores unencrypted, puts no new key into a file next to the data and creates no new one while encrypted data without their key are there. Receipts are normal files in a folder of your choice; files outside it are linked only at the Mac, and only receipt files – nothing from hidden folders, the data folder or the Library (except iCloud Drive and other cloud folders).
 - **What Kontor writes into MoneyMoney** – nothing else: (1) new bookings of the booking rules, only into offline accounts, each with the mark “#kontor-…” and never twice; (2) switched on, the category of a transaction you assign in Kontor (only if it has none there yet, or after asking); (3) with the setting “Reference in MoneyMoney” the receipt path, added to the transaction's comment (what is there stays). Kontor never changes or deletes a booking, creates no transfers or direct debits and does not touch MoneyMoney's category tree or rules. If the booking rules cannot be worked out, nothing is booked; everything else goes on.
 - Booking, updates, switching on entering categories, backup, reset and access settings only on the Mac; from the iPhone view only by default. What you assign from the iPhone is entered only at the next sync at the Mac.
 - Historical balances: you enter the MoneyMoney password in a window of a small Kontor helper that is built from the source only for this and deleted afterwards; Kontor stores it nowhere. Meanwhile the database lies fully decrypted in memory for a moment – this takes trust in that code. If you do not want that, leave the feature out; once read, it is not needed again.
-- The log contains no IBANs, balances, amounts, payees, purposes or passwords (for bookings only how many and of which kind, for areas and properties only identifiers); logs of earlier versions were deleted once. The diagnostics file also replaces account names and the user folder.
-- Limit: the key is in the login keychain so the service runs after login without input. Whoever operates your unlocked Mac can get to it – the Kontor password then protects access, not the files. FileVault remains the basis.
+- The log contains no IBANs, balances, amounts, payees, purposes or passwords (for bookings only how many and of which kind, for areas and properties only identifiers). The diagnostics file also replaces account names and the user folder.
+- Limit: the key is in the login keychain so the service runs after login without input. Programs running under your user and whoever operates your unlocked Mac can get to it – the Kontor password then protects access, not the files. The encryption protects copies of the data folder (Time Machine, another user, a removed drive). Kontor deliberately does not use a keychain lock that makes every program ask first: it would also stop the service itself at start until someone agrees. FileVault remains the basis.
 
 <a id="advanced"></a>
 ## Advanced
 
-**Install, update, remove**: installation is described in the [README](https://github.com/stecrz/Kontor#installation). `bash install.sh` in the program folder can be repeated at any time: it replaces the service and leaves data folder and settings untouched. Remove: `python3 kontor.py uninstall` or `Uninstall.command` (asks whether data and key should be deleted). The service starts at login, runs permanently and restarts after crashes (launchd, `de.kontor.service`).
+**Install, update, remove**: installation is one line in Terminal (see the [README](https://github.com/stecrz/Kontor#installation)); the same line – or `bash install.sh` in the program folder – updates and can be repeated at any time: it replaces the service and leaves data folder and settings untouched. Remove: in Kontor under Settings → Backup & reset → Uninstall, with a double click on `Uninstall.command` or with `python3 kontor.py uninstall [--program]`. Kontor shows the program folder under Settings → Backup & reset → Data. The service starts at login, runs permanently and restarts after crashes (launchd, `de.kontor.service`).
 
 **Command line** – `python3 ~/Kontor/kontor.py …`:
 
@@ -475,7 +488,7 @@ In Terminal, the same line as for the [installation](https://github.com/stecrz/K
 - `password` – reset the Kontor password
 - `package-export [FILE] [--without-uuid] [--with-plan]`, `package-import FILE [--replace] [--anyway]` – settings package
 - `diagnostics [FILE]` – write a diagnostics file; `update [--install]` – check for or install updates
-- `install` / `uninstall` – set up or remove the service; `tls [--off]` – turn access via Tailscale on or off
+- `install` – set up the service; `uninstall [--program] [--yes]` – remove Kontor (as in the interface, asks first); `tls [--off]` – turn access via Tailscale on or off
 
 **Data folder** `~/Library/Application Support/Kontor/` (the environment variable `KONTOR_DIR` changes it). Everything encrypted except the log:
 
@@ -495,5 +508,6 @@ In Terminal, the same line as for the [installation](https://github.com/stecrz/K
 | No matching payment | The loan rule does not find the instalment: check counterparty IBAN or text and source account. Only a note for up to 35 days after “automatic from”. |
 | Port not usable | Another program uses the port: Settings → Access → Advanced. |
 | Data key stored as a file | The keychain was not usable (e.g. started without login): Kontor works, but the key is then stored with permissions 0600 in the data folder. As soon as the keychain works again, Kontor moves it there and deletes the file. Without a keychain and without an existing file Kontor does not start. |
+| The key for the encrypted data is missing | The entry “Kontor Datenschlüssel” in the keychain was deleted or the data folder comes from another Mac. Kontor then creates no new key so nothing is overwritten. Restore the entry (Keychain Access, Time Machine) – or uninstall Kontor, install it again and load a backup. |
 
 For support questions: Log → “Diagnostics file (masked)”. In addition to the log it contains status and settings, account names replaced by Konto01, Konto02 … – without IBANs, balances or passwords.

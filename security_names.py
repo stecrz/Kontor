@@ -76,7 +76,7 @@ def catalog(history_wp: Dict[str, list], seen_names: Dict[str, str]) -> Dict[str
 def set_names(found: dict, names: Dict[str, str], known: Dict[str, str]) -> None:
     """Names changed by hand in the list of all securities: a name differing from MoneyMoney's (or the looked-up one) is kept as
     your own; empty or the same again means none of your own. Only ISINs of the list (known: ISIN -> MoneyMoney's name)."""
-    looked, own = found.get("namen") or {}, dict(found.get("eigene") or {})
+    looked, own = found.get("names") or {}, dict(found.get("own") or {})
     for isin, name in (names or {}).items():
         isin, name = str(isin).strip().upper(), str(name or "").strip()[:120]
         if isin not in known and isin not in looked:
@@ -85,7 +85,7 @@ def set_names(found: dict, names: Dict[str, str], known: Dict[str, str]) -> None
             own[isin] = name
         else:
             own.pop(isin, None)
-    found["eigene"] = own
+    found["own"] = own
 
 
 def _post(jobs: list) -> list:

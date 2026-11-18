@@ -44,8 +44,8 @@ import categorize
 import updates
 from receipts import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (REPORT_LOCK, RUN_LOCK, slash_renames, follow_slashes, before_slash_keys, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, fix_start_dates, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
-                     immo_results, import_package, ledger_fp, merge_holdings, merged_config, migrate_booking_state, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
+from core import (REPORT_LOCK, RUN_LOCK, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+                     immo_results, import_package, ledger_fp, merge_holdings, merged_config, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
 from model import marks_in
@@ -59,8 +59,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(HERE, "web")
 MAX_BODY = 2 * 1024 * 1024
 MAX_UPLOAD = 90 * 1024 * 1024      # Base64 eines 60-MB-Belegs
-PLAN_PARAMS = ("horizont_monate", "standard_methode", "inflation_prozent_pa", "steigerung_einnahmen_prozent_pa",
-               "steigerung_ausgaben_prozent_pa", "rendite_prozent_pa", "fi_rendite_real_prozent")
+PLAN_PARAMS = ("horizon_months", "default_method", "inflation_percent_pa", "income_increase_percent_pa",
+               "expense_increase_percent_pa", "return_percent_pa", "fi_real_return_percent")
 
 
 
@@ -76,22 +76,22 @@ def approval(raw) -> Tuple[Optional[Dict[str, dict]], Optional[str]]:
         ch = ch if isinstance(ch, dict) else {}
         c: dict = {}
         try:
-            if ch.get("betrag") not in (None, ""):
-                c["betrag"] = round(float(str(ch["betrag"]).replace(",", ".")), 2)
-                if abs(c["betrag"]) < 0.01 or abs(c["betrag"]) > 1e9:
+            if ch.get("amount") not in (None, ""):
+                c["amount"] = round(float(str(ch["amount"]).replace(",", ".")), 2)
+                if abs(c["amount"]) < 0.01 or abs(c["amount"]) > 1e9:
                     raise ValueError
-            if ch.get("datum"):
-                d = date.fromisoformat(str(ch["datum"]))
+            if ch.get("date"):
+                d = date.fromisoformat(str(ch["date"]))
                 if not date(1990, 1, 1) <= d <= date.today() + timedelta(days=366):
                     raise ValueError
-                c["datum"] = d.isoformat()
+                c["date"] = d.isoformat()
         except ValueError:
             return None, tr("s_aenderung_ungueltig")
-        if ch.get("zweck") is not None:
-            c["zweck"] = str(ch["zweck"])[:300]
+        if ch.get("purpose") is not None:
+            c["purpose"] = str(ch["purpose"])[:300]
         try:                    # the amount you saw: booked only if it is still the same
-            if ch.get("angezeigt") not in (None, ""):
-                c["angezeigt"] = round(float(ch["angezeigt"]), 2)
+            if ch.get("shown") not in (None, ""):
+                c["shown"] = round(float(ch["shown"]), 2)
         except (TypeError, ValueError):
             return None, tr("s_aenderung_ungueltig")
         out[rules_bkey(acc, tag)] = c         # the mark in its current form (older lists carry "#mm-...")
@@ -103,16 +103,16 @@ def kontor_bookings(ledger) -> List[dict]:
     out: List[dict] = []
     if ledger is None:
         return out
-    kinds = {"tx": "tilgung", "zins": "zins", "wert": "wert", "spiegel": "wert", "gk": "spiegel"}
+    kinds = {"tx": "repayment", "zins": "interest", "wert": "value", "spiegel": "value", "gk": "mirror"}
     for t in ledger.txs:                                 # the ledger holds no planned bookings (Ledger.without_planned)
         ms = marks_in(t.purpose)
         if not ms or getattr(t, "planned", False):
             continue
         acc = ledger.accounts.get(t.account_uuid)
         k = ms[0].split("-")[1] if ms[0].count("-") >= 2 else ""
-        out.append({"datum": t.booking_date.isoformat(), "konto": acc.name if acc else "", "art": kinds.get(k, k), "betrag": round(t.amount, 2),
-                    "gegenpartei": t.name, "zweck": TAG_RE.sub("", t.purpose).strip(" ·"), "markierung": ms[0]})
-    out.sort(key=lambda x: (x["datum"], x["markierung"]), reverse=True)
+        out.append({"date": t.booking_date.isoformat(), "account": acc.name if acc else "", "kind": kinds.get(k, k), "amount": round(t.amount, 2),
+                    "counterparty": t.name, "purpose": TAG_RE.sub("", t.purpose).strip(" ·"), "mark": ms[0]})
+    out.sort(key=lambda x: (x["date"], x["mark"]), reverse=True)
     return out
 
 
@@ -155,19 +155,14 @@ class App:
         self.data_dir = data_dir
         self.program_dir = HERE                      # what an uninstall may remove besides the data (tests: a copy)
         self.bridge_factory = bridge_factory
-        try:
-            migrate_booking_state(store)        # until 3.13.0: Kontor's own lists of its bookings (only your decisions stay)
-        except Exception:  # pragma: no cover - the service starts anyway
-            log.exception("Booking lists not migrated")
         self.config = merged_config(store.load("config.json", {}) or {})
         self.apply_language()
-        self.sessions = auth.Sessions(idle_minutes=int(self.config["oberflaeche"].get("sperre_minuten", 15)))
-        self._full_read_monthly()
+        self.sessions = auth.Sessions(idle_minutes=int(self.config["ui"].get("lock_minutes", 15)))
         self.ledger: Optional[Ledger] = None            # letzter Stand aus MoneyMoney
         self.ledger_time: Optional[datetime] = None
         self.umsaetze: Optional[list] = None            # kompakte Umsatzliste des letzten Berichts (sonst aus umsaetze.json)
         st = store.load("state.json", {}) or {}
-        self.categories_raw: list = mm_categories.with_paths(st.get("kategorien_roh") or [])
+        self.categories_raw: list = mm_categories.with_paths(st.get("categories_raw") or [])
         self.started = datetime.now()
         self.instance = secrets.token_hex(6)              # changes with every (re)start; the page waits for a new one after a restart
         self.last_run_at: Optional[float] = None
@@ -187,14 +182,14 @@ class App:
         self.rebuild_pending = False
         self.rebuild_running = False
         self.rebuild_reasons: List[str] = []
-        self.bericht: dict = {"stand": None, "dauer": None, "fehler": None, "grund": None}
+        self.bericht: dict = {"as_of": None, "duration": None, "error": None, "reason": None}
         self._mm_locked_logged = False          # "locked" logged once, "unlocked" once again (not every 30 s)
-        self.bericht_fortschritt: dict = {"anteil": 0.0, "schritt": ""}
+        self.bericht_fortschritt: dict = {"share": 0.0, "step": ""}
         self.check_lock = threading.Lock()
         self.ledger_cache_fp: Optional[str] = None
         self.ledger_from_cache = False
         threading.Thread(target=self._load_ledger_cache, name="kontor-cache", daemon=True).start()
-        self.mmh: dict = {"laeuft": False, "schritt": None, "ergebnis": None}   # Kontostaende aus MoneyMoney einlesen
+        self.mmh: dict = {"running": False, "step": None, "result": None}   # Kontostaende aus MoneyMoney einlesen
         if sys.platform == "darwin":          # Touch-ID-Helfer bei Bedarf (neu) uebersetzen
             threading.Thread(target=lambda: log.info("Touch ID helper: %s", auth.build_touchid()), name="kontor-touchid", daemon=True).start()
         self.restart_allowed = False        # nur der echte Dienst (serve) startet sich bei neuem Code selbst neu
@@ -213,7 +208,7 @@ class App:
         self._hb_written = 0.0
         self.prev_seen: Optional[datetime] = None       # wann der Dienst vor diesem Start zuletzt lief
         try:
-            ps = (store.load("state.json", {}) or {}).get("dienst_zuletzt")
+            ps = (store.load("state.json", {}) or {}).get("service_last")
             self.prev_seen = datetime.fromisoformat(ps) if ps else None
         except Exception:
             self.prev_seen = None
@@ -226,14 +221,14 @@ class App:
         self.config = new
         self.store.save("config.json", self.config)
         log.info("Configuration saved (changed: %s)", ", ".join(changed) or "nothing")
-        self.sessions.set_idle(int(self.config["oberflaeche"].get("sperre_minuten", 15)))
+        self.sessions.set_idle(int(self.config["ui"].get("lock_minutes", 15)))
         self._cfg_mtime = self._config_mtime()
         self.apply_language()
         if i18n.lang() != old_lang and self.ledger is not None:
             self.request_rebuild("language")          # Hinweise der Auswertung in der neuen Sprache
 
     def apply_language(self) -> None:
-        i18n.set_lang((self.config.get("oberflaeche") or {}).get("sprache") or "de")
+        i18n.set_lang((self.config.get("ui") or {}).get("language") or "de")
 
     def _config_mtime(self) -> float:
         try:
@@ -248,7 +243,7 @@ class App:
             return False
         self._cfg_mtime = m
         self.config = merged_config(self.store.load("config.json", {}) or {})
-        self.sessions.set_idle(int(self.config["oberflaeche"].get("sperre_minuten", 15)))
+        self.sessions.set_idle(int(self.config["ui"].get("lock_minutes", 15)))
         self.apply_language()
         log.info("Configuration reloaded (changed outside the service).")
         return True
@@ -260,18 +255,18 @@ class App:
         out = []
         for c in self.categories_raw:
             b = c.get("budget") if isinstance(c.get("budget"), dict) else None
-            out.append({"name": c.get("name"), "pfad": str(c.get("path") or c.get("name") or "").replace("\\", " / "),
-                        "roh": str(c.get("path") or c.get("name") or ""),
-                        "gruppe": bool(c.get("group", False)), "ebene": int(c.get("indentation") or 0),
-                        "standard": bool(c.get("default", False)), "budget": b if b and b.get("amount") else None})
+            out.append({"name": c.get("name"), "path": str(c.get("path") or c.get("name") or "").replace("\\", " / "),
+                        "raw": str(c.get("path") or c.get("name") or ""),
+                        "group": bool(c.get("group", False)), "depth": int(c.get("indentation") or 0),
+                        "default": bool(c.get("default", False)), "budget": b if b and b.get("amount") else None})
         return out
 
     def touchid_on(self) -> bool:
-        return bool((self.config.get("oberflaeche") or {}).get("touchid", True))
+        return bool((self.config.get("ui") or {}).get("touchid", True))
 
     def config_has_rules(self) -> bool:
         c = self.config
-        return bool(c.get("darlehen") or c.get("gesellschaften") or c.get("bereiche") or c.get("immobilien"))
+        return bool(c.get("loans") or c.get("companies") or c.get("areas") or c.get("real_estate"))
 
     # -- MoneyMoney-Stand zwischenspeichern ---------------------------------
     def _load_ledger_cache(self) -> None:
@@ -317,76 +312,14 @@ class App:
         next read compares with is stored -- also when nothing else changed -- and what you set for a category follows it."""
         old = self.categories_raw
         self.categories_raw = cats
-        self._follow_slashes(cats)
         if category_tree(old) == category_tree(cats):
             return False
-        self.store.update("state.json", lambda st: st.__setitem__("kategorien_roh", cats), {})
+        self.store.update("state.json", lambda st: st.__setitem__("categories_raw", cats), {})
         cfg = follow_categories(self.config, old, cats)
         if cfg is not None:
             self.save_config(cfg)
             log.info("Categories changed in MoneyMoney: settings followed")
         return bool(old)
-
-    FULL_READ_FLAG = "voll_lesen_30_tage_3_13_22"
-
-    def _full_read_monthly(self) -> None:
-        """Since 3.13.22 everything is read every 30 days (before 7): a sync reads everything anyway when a balance does not fit,
-        the category tree changed or newer transactions were recategorised. The old default follows once; a number you set
-        yourself stays."""
-        try:
-            if (self.store.load("state.json", {}) or {}).get(self.FULL_READ_FLAG):
-                return
-            if ((self.store.load("config.json", {}) or {}).get("zeitplan") or {}).get("voll_lesen_tage") == 7:
-                cfg = copy.deepcopy(self.config)
-                cfg["zeitplan"]["voll_lesen_tage"] = 30
-                self.save_config(cfg)
-                log.info("Full read: every 30 days instead of 7 (the old default)")
-            self.store.update("state.json", lambda st: st.__setitem__(self.FULL_READ_FLAG, True), {})
-        except Exception:  # pragma: no cover - the service starts anyway
-            log.exception("Full read interval not migrated")
-
-    SLASH_FLAG = "kategorie_schluessel_3_13_19"
-
-    def _follow_slashes(self, cats: list, force: bool = False) -> None:
-        """Since 3.13.19 a slash within a category's name ('Strom/Gas') no longer splits it: what was stored under its old key
-        (your settings, assignments waiting for MoneyMoney, learned and dismissed suggestions, the record of what Kontor wrote
-        there) follows -- once, at the first read of the categories (later a missing three-level category is one you renamed or
-        deleted, not an old key), and again right after a backup made before 3.13.19 was restored (force)."""
-        if not cats or (not force and (self.store.load_shared("state.json", {}) or {}).get(self.SLASH_FLAG)):
-            return
-        ren = slash_renames(cats)
-        if ren:
-            cfg = follow_slashes(self.config, cats)
-            if cfg is not None:
-                self.save_config(cfg)
-                log.info("Categories with a slash in their name: settings followed")
-            with categorize.LOCK:
-                kat = categorize.load(self.store)
-                moved = 0
-                for z in (kat.get("zuordnung") or {}).values():
-                    if isinstance(z, dict) and categorize.norm_cat(z.get("k") or "") in ren:
-                        z["k"] = ren[categorize.norm_cat(z["k"])]; moved += 1
-                for r in kat.get("regeln") or []:              # learned suggestions (learned anew at the next full read)
-                    if isinstance(r, dict) and categorize.norm_cat(r.get("kategorie") or "") in ren:
-                        r["kategorie"] = ren[categorize.norm_cat(r["kategorie"])]; moved += 1
-                done = []
-                for k in kat.get("regel_erledigt") or []:     # dismissed rule proposals: "category|expression"
-                    c, sep, rest = str(k).partition("|")
-                    if sep and categorize.norm_cat(c) in ren:
-                        k, moved = ren[categorize.norm_cat(c)] + "|" + rest, moved + 1
-                    done.append(k)
-                if moved:
-                    kat["regel_erledigt"] = done
-                    kat.pop("_idx", None)
-                    categorize.save(self.store, kat)
-
-        def fix(st: dict) -> None:
-            for e in (st.get(mm_categories.LOG_KEY) or {}).values():
-                for f in ("neu", "alt"):
-                    if ren and isinstance(e, dict) and categorize.norm_cat(e.get(f) or "") in ren:
-                        e[f] = ren[categorize.norm_cat(e[f])]
-            st[self.SLASH_FLAG] = True
-        self.store.update("state.json", fix, {})
 
     def set_ledger(self, ledger: Ledger, reuse: bool = False) -> None:
         """Neuen MoneyMoney-Stand uebernehmen. reuse=True: sind die Daten unveraendert, bleibt der bisherige Stand mit seinen
@@ -413,22 +346,6 @@ class App:
         self.ledger, self.ledger_time, self.ledger_from_cache = ledger, datetime.now(), False
         self._save_ledger_cache(ledger)
 
-    def _fix_start_dates(self) -> None:
-        """"Buchen ab" of companies and account mirrors set up before 3.13.1 (empty): fixed to a day once (core.fix_start_dates)."""
-        if self.ledger is None:
-            return
-        try:
-            new = fix_start_dates(self.ledger, self.config, date.today())
-        except Exception:  # pragma: no cover
-            log.exception("Start dates of the companies")
-            return
-        if new is not None:
-            n = sum(1 for key, f in (("gesellschaften", "rueckwirkend_ab"), ("kontenspiegel", "ab"))
-                    for a, b in zip(self.config.get(key) or [], new.get(key) or [])
-                    if isinstance(a, dict) and isinstance(b, dict) and a.get(f) != b.get(f))
-            self.save_config(new)
-            log.info("Start date of %d booking rule(s) fixed", n)
-
     def _freeze_assignments(self) -> None:
         if self.ledger is None:
             return
@@ -445,53 +362,53 @@ class App:
         """Hintergrund: Kontostand-Verlauf aller Konten aus der hochgeladenen MoneyMoney-Datenbank uebernehmen.
         Der Puffer wird in jedem Fall ueberschrieben; gespeichert werden nur Monatsend-Staende (verschluesselt)."""
         def step(t: str) -> None:
-            self.mmh["schritt"] = t
+            self.mmh["step"] = t
         res: dict
         aufbau = os.path.join(HERE, "mm-history-schema.txt")
         try:
             ledger = self.ledger
             if ledger is None:
                 raise mm_history.HistorieError(tr("s_erst_die_konten_aus_moneymoney"))
-            accounts = {a.uuid: {"saldo": a.balance, "depot": a.portfolio, "iban": a.iban, "nummer": a.account_number, "blz": a.bank_code,
-                                 "name": a.name, "waehrung": a.currency} for a in ledger.accounts.values() if not a.group}
+            accounts = {a.uuid: {"balance_amount": a.balance, "depot": a.portfolio, "iban": a.iban, "number": a.account_number, "sort_code": a.bank_code,
+                                 "name": a.name, "currency": a.currency} for a in ledger.accounts.values() if not a.group}
             found, tables, fmt = mm_history.run(buf, accounts, date.today(), step=step, balance_at=balance_lookup(ledger),
                                                 since=earliest_needed(self.config, date.today()))
-            if not found or not found["konten"]:
+            if not found or not found["accounts"]:
                 with open(aufbau, "w", encoding="utf-8") as f:       # nur Tabellen-/Spaltennamen, keine Inhalte
                     f.write(mm_history.schema_text(tables, fmt))
                 log.info("MoneyMoney database read (%s, %d tables), balances not recognized", fmt, len(tables))
                 res = {"ok": False, "text": tr("s_die_kontostaende_wurden_in_der")}
             else:
-                konten = found["konten"]
+                konten = found["accounts"]
                 monate = sorted({mk for v in konten.values() for mk in v})
                 now = datetime.now().strftime("%Y-%m-%d %H:%M")
-                self.store.save(MM_HISTORY_FILE, {"stand": now, "konten": konten, "anfang": found.get("anfang") or {},
-                                                  "wertpapiere": found.get("wertpapiere") or {}})   # replaces the previous state
-                meta = {"zeit": now, "konten": len(konten), "werte": sum(len(v) for v in konten.values()),
+                self.store.save(MM_HISTORY_FILE, {"as_of": now, "accounts": konten, "opening": found.get("opening") or {},
+                                                  "securities": found.get("securities") or {}})   # replaces the previous state
+                meta = {"time": now, "accounts": len(konten), "amounts": sum(len(v) for v in konten.values()),
                         "depots": sum(1 for u in konten if u in ledger.accounts and ledger.accounts[u].portfolio),
-                        "von": monate[0] if monate else None, "bis": monate[-1] if monate else None}
-                self.store.update("state.json", lambda cur: cur.__setitem__("mm_verlauf", meta), {})
+                        "date_from": monate[0] if monate else None, "date_to": monate[-1] if monate else None}
+                self.store.update("state.json", lambda cur: cur.__setitem__("mm_history_src", meta), {})
                 if os.path.exists(aufbau):
                     os.remove(aufbau)
                 log.info("Balances imported from MoneyMoney (%s): %d accounts, %d monthly values (check %d/%d)",
-                         fmt, meta["konten"], meta["werte"], found["treffer"], found["geprueft"])
+                         fmt, meta["accounts"], meta["amounts"], found["hits"], found["verified"])
                 self.request_rebuild("balances from MoneyMoney")
                 res = dict(meta, ok=True)
         except mm_history.HistorieError as e:
-            if str(e) != "abgebrochen":
+            if str(e) != "aborted":
                 log.info("MoneyMoney database not read: %s", str(e)[:120])
-            res = {"ok": False, "text": tr("s_abgebrochen") if str(e) == "abgebrochen" else str(e)}
+            res = {"ok": False, "text": tr("s_abgebrochen") if str(e) == "aborted" else str(e)}
         except Exception:  # pragma: no cover
             log.exception("Balances from MoneyMoney")
             res = {"ok": False, "text": tr("s_unerwarteter_fehler_details_im_protoko")}
         finally:
             mm_history._wipe(buf)
-        self.mmh = {"laeuft": False, "schritt": None, "ergebnis": res}
+        self.mmh = {"running": False, "step": None, "result": res}
 
     def _rebuild_now(self) -> Tuple[bool, Optional[str]]:
         """Bericht aus dem letzten bekannten Stand neu bauen (synchron; nur aus dem Hintergrund-Thread aufrufen)."""
         def progress(f: float, text: str) -> None:
-            self.bericht_fortschritt = {"anteil": round(f, 2), "schritt": text}
+            self.bericht_fortschritt = {"share": round(f, 2), "step": text}
         if self.ledger is None:
             progress(0.02, tr("s_moneymoney_wird_gelesen"))
             ledger, err = self.refresh_ledger()
@@ -503,9 +420,9 @@ class App:
         with REPORT_LOCK:       # one report at a time (dataset.json); a run (reading, rules, booking) goes on beside it
             st = self.store.load("state.json", {}) or {}
             try:
-                warn = list((st.get("letzter_lauf") or {}).get("warnungen") or [])       # the notes of the last run stay in the report
+                warn = list((st.get("last_run") or {}).get("warnings") or [])       # the notes of the last run stay in the report
                 ds = build_report(self.store, self.ledger, self.config, st, date.today(), warn, self.categories_raw, progress)
-                self.umsaetze = ds.pop("_umsaetze", None)
+                self.umsaetze = ds.pop("_transactions", None)
             except Exception as e:  # pragma: no cover
                 log.exception("Report from last data failed")
                 return False, tr("s_bericht_fehlgeschlagen_s") % e
@@ -527,8 +444,8 @@ class App:
             log.debug("Rebuilding report (%s)", ", ".join(reasons) or "requested")
             ok, err = self._rebuild_now()
             with self.rebuild_cv:
-                self.bericht = {"stand": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "dauer": round(time.time() - t0, 1),
-                                "fehler": None if ok else err, "grund": ", ".join(reasons)}
+                self.bericht = {"as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "duration": round(time.time() - t0, 1),
+                                "error": None if ok else err, "reason": ", ".join(reasons)}
                 self.rebuild_cv.notify_all()
 
     def request_rebuild(self, grund: str = "") -> None:
@@ -539,55 +456,55 @@ class App:
                 self.rebuild_reasons.append(grund)
             if not self.rebuild_running:
                 self.rebuild_running = True
-                threading.Thread(target=self._rebuild_worker, name="kontor-bericht", daemon=True).start()
+                threading.Thread(target=self._rebuild_worker, name="kontor-report", daemon=True).start()
 
     def rebuild_report(self, wait: bool = False, grund: str = "", timeout: float = 600.0):
         """Neubau anstossen. wait=True wartet auf das Ergebnis und liefert (ok, fehler); sonst ('angefordert', None)."""
         self.request_rebuild(grund)
         if not wait:
-            return "angefordert", None
+            return "requested", None
         with self.rebuild_cv:
             self.rebuild_cv.wait_for(lambda: not self.rebuild_running and not self.rebuild_pending, timeout=timeout)
             b = self.bericht
-        return (b.get("fehler") is None and b.get("stand") is not None), b.get("fehler")
+        return (b.get("error") is None and b.get("as_of") is not None), b.get("error")
 
     def securities_known(self) -> Tuple[dict, dict, dict]:
         st = self.store.load_shared("state.json", {}) or {}
         mmh = self.store.load_shared(MM_HISTORY_FILE, {}) or {}
-        return st, mmh, security_names.catalog(mmh.get("wertpapiere") or {}, st.get("wp_namen") or {})
+        return st, mmh, security_names.catalog(mmh.get("securities") or {}, st.get("sec_names") or {})
 
     def securities_unnamed(self) -> dict:
         """Securities that have only an ISIN (no name in MoneyMoney) and the list of all securities with their names: MoneyMoney's,
         looked up, your own."""
         st, mmh, known = self.securities_known()
-        done = st.get("wp_suche") or {}
-        found, own = done.get("namen") or {}, done.get("eigene") or {}
-        offen = security_names.unnamed(mmh.get("wertpapiere") or {}, st.get("snapshots_wp") or {}, st.get("wp_namen") or {},
-                                       list(found) + list(done.get("ohne") or []) + list(own))
-        liste = [{"isin": i, "mm": known.get(i, ""), "such": found.get(i, ""), "eigen": own.get(i, "")} for i in set(known) | set(found)]
-        liste.sort(key=lambda x: ((x["eigen"] or x["mm"] or x["such"] or "~").lower(), x["isin"]))
-        return {"offen": offen, "gefunden": len(found), "ohne": len(done.get("ohne") or []), "zeit": done.get("zeit"), "liste": liste,
-                "aus_mm": sum(1 for x in liste if x["mm"])}
+        done = st.get("sec_search") or {}
+        found, own = done.get("names") or {}, done.get("own") or {}
+        offen = security_names.unnamed(mmh.get("securities") or {}, st.get("snapshots_sec") or {}, st.get("sec_names") or {},
+                                       list(found) + list(done.get("without") or []) + list(own))
+        liste = [{"isin": i, "mm": known.get(i, ""), "looked_up": found.get(i, ""), "own_name": own.get(i, "")} for i in set(known) | set(found)]
+        liste.sort(key=lambda x: ((x["own_name"] or x["mm"] or x["looked_up"] or "~").lower(), x["isin"]))
+        return {"open": offen, "found": len(found), "without": len(done.get("without") or []), "time": done.get("time"), "list": liste,
+                "from_mm": sum(1 for x in liste if x["mm"])}
 
     def securities_lookup(self) -> dict:
         """Look up the names of the securities without one (only on request): sends only their ISINs to OpenFIGI."""
-        offen = self.securities_unnamed()["offen"]
+        offen = self.securities_unnamed()["open"]
         names = security_names.lookup(offen) if offen else {}
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         def upd(cur: dict) -> None:
-            w = cur.setdefault("wp_suche", {})
-            w["zeit"] = now
-            w.setdefault("namen", {}).update(names)
-            w["ohne"] = sorted((set(w.get("ohne") or []) | set(offen)) - set(w["namen"]))
+            w = cur.setdefault("sec_search", {})
+            w["time"] = now
+            w.setdefault("names", {}).update(names)
+            w["without"] = sorted((set(w.get("without") or []) | set(offen)) - set(w["names"]))
         self.store.update("state.json", upd, {})
         log.info("Security names: %d ISINs looked up, %d names found", len(offen), len(names))
-        return {"gesendet": len(offen), "neu": len(names)}
+        return {"sent": len(offen), "new": len(names)}
 
     def bericht_status(self) -> dict:
         with self.rebuild_cv:
             laeuft = self.rebuild_running or self.rebuild_pending
-            return {"laeuft": laeuft, **self.bericht, "fortschritt": self.bericht_fortschritt if laeuft else None}
+            return {"running": laeuft, **self.bericht, "progress": self.bericht_fortschritt if laeuft else None}
 
     def moneymoney_gesperrt(self, max_age: float = 45.0) -> Optional[bool]:
         """Ist MoneyMoney gesperrt? Kurzer Lesezugriff auf die Kontenliste, hoechstens alle max_age Sekunden; None = laeuft nicht."""
@@ -610,11 +527,11 @@ class App:
     # -- Zugriff von anderen Geraeten (iPhone ueber Tailscale) --------------
     def remote_readonly(self) -> bool:
         """Von unterwegs nur ansehen (Standard): Aenderungen nur am Mac."""
-        return bool((self.config.get("oberflaeche") or {}).get("fern_nur_ansehen", True))
+        return bool((self.config.get("ui") or {}).get("remote_read_only", True))
 
     def offline_copy(self) -> bool:
         """Darf das iPhone die zuletzt geladenen Daten fuer die Offline-Ansicht behalten?"""
-        return bool((self.config.get("oberflaeche") or {}).get("offline_kopie", True))
+        return bool((self.config.get("ui") or {}).get("offline_copy", True))
 
     def tailscale(self, fresh: bool = False) -> dict:
         """Tailscale state (tls_cert.status). Older than 30 s: answer with the last state and refresh in the background, so a
@@ -636,7 +553,7 @@ class App:
         return st
 
     def remote_info(self) -> dict:
-        ui = self.config.get("oberflaeche") or {}
+        ui = self.config.get("ui") or {}
         bind = (ui.get("bind") or "127.0.0.1").strip()
         port = int(ui.get("port") or 8765)
         ts = self.tailscale()
@@ -647,10 +564,10 @@ class App:
             e = tls_cert.cert_expiry(ui["tls_cert"])
             exp = e.date().isoformat() if e else None
         host = (os.path.basename(ui.get("tls_cert") or "")[:-4] if tls else "") or bind
-        return {"aktiv": bind != "127.0.0.1", "adresse": bind, "port": port, "tls": tls, "gueltig_bis": exp,
+        return {"active": bind != "127.0.0.1", "address": bind, "port": port, "tls": tls, "valid_until": exp,
                 "url": ("https://%s:%d/" % (host, port)) if tls else ("http://%s:%d/" % (bind, port)) if bind != "127.0.0.1" else None,
-                "lauscht": bool(self.remote_listening), "fehler": self.remote_error,
-                "nur_ansehen": self.remote_readonly(), "offline_kopie": self.offline_copy(), "tailscale": ts}
+                "listening": bool(self.remote_listening), "error": self.remote_error,
+                "read_only": self.remote_readonly(), "offline_copy": self.offline_copy(), "tailscale": ts}
 
     def request_restart(self) -> None:
         """Dienst neu starten (neue Adresse/Zertifikat), kurz nachdem die Antwort raus ist. Nur im echten Dienst."""
@@ -661,7 +578,7 @@ class App:
     def start_remote(self) -> None:
         """Zweiten Zugang auf der eingestellten Tailscale-Adresse oeffnen (mit TLS, wenn ein Zertifikat eingetragen ist).
         Klappt das nicht (Tailscale noch nicht verbunden), versucht es der Zeitplaner jede Minute erneut."""
-        ui = self.config.get("oberflaeche", {}) or {}
+        ui = self.config.get("ui", {}) or {}
         extra = (ui.get("bind") or "127.0.0.1").strip()
         self.remote_tried = time.time()
         if self._handler is None or extra == "127.0.0.1" or self.remote_listening:
@@ -694,7 +611,7 @@ class App:
 
     # -- MoneyMoney --------------------------------------------------------
     def full_read_days(self) -> int:
-        return max(1, int((self.config.get("zeitplan") or {}).get("voll_lesen_tage", 30) or 30))
+        return max(1, int((self.config.get("schedule") or {}).get("full_read_days", 30) or 30))
 
     def full_read_due(self, now: Optional[datetime] = None) -> bool:
         """Read all transactions when the last full read is at least N days old (setting, default 7). In between the quick
@@ -707,20 +624,20 @@ class App:
 
     def full_read_info(self) -> dict:
         fa = getattr(self.ledger, "full_at", None) if self.ledger is not None else None
-        return {"zuletzt": fa.strftime("%Y-%m-%d %H:%M") if fa else None, "tage": self.full_read_days()}
+        return {"last": fa.strftime("%Y-%m-%d %H:%M") if fa else None, "days": self.full_read_days()}
 
     def refresh_ledger(self, full: Optional[bool] = None) -> Tuple[Optional[Ledger], Optional[str]]:
-        """MoneyMoney lesen. Der Fortschritt (Schritt, Beginn, Dauer der Schritte beim letzten Mal) steht in self.lesen."""
+        """MoneyMoney lesen. Der Fortschritt (Schritt, Beginn, Dauer der Schritte beim letzten Mal) steht in self.read_state."""
         t0 = time.time()
         st = self.store.load_shared("state.json", {}) or {}
-        self.lesen = {"laeuft": True, "schritt": None, "seit": t0, "start": t0, "dauer": dict(st.get("lesen_dauer") or {})}
+        self.read_state = {"running": True, "step": None, "since": t0, "start": t0, "duration": dict(st.get("read_duration") or {})}
         took: Dict[str, float] = {}
 
         def step(name: str) -> None:
             now = time.time()
-            if self.lesen.get("schritt"):
-                took[self.lesen["schritt"]] = round(now - self.lesen["seit"], 2)
-            self.lesen.update(schritt=name, seit=now)
+            if self.read_state.get("step"):
+                took[self.read_state["step"]] = round(now - self.read_state["since"], 2)
+            self.read_state.update(step=name, since=now)
         try:
             b = self.bridge_factory(True)
             step("categories")
@@ -739,30 +656,29 @@ class App:
             self.set_ledger(ledger, reuse=True)
             self._baseline(ledger)
             step("done")
-            self.store.update("state.json", lambda st: st.__setitem__("lesen_dauer", took), {})
+            self.store.update("state.json", lambda st: st.__setitem__("read_duration", took), {})
             return self.ledger, None
         except MoneyMoneyError as e:
             log.warning("MoneyMoney not readable: %s", e)
             return None, unavailable_text(e) or (tr("s_moneymoney_fehler_s") % e)
         finally:
-            self.lesen["laeuft"] = False
+            self.read_state["running"] = False
 
     def do_run(self, dry: Optional[bool], force: bool, with_report: bool = True, full: Optional[bool] = None,
                approve: Optional[Dict[str, dict]] = None) -> dict:
         with self.lock:
             if self.running:
-                return {"status": "laeuft_bereits", "text": tr("s_ein_abgleich_laeuft_bereits")}
+                return {"status": "already_running", "text": tr("s_ein_abgleich_laeuft_bereits")}
             self.running = True
         try:
-            d = self.config.get("probelauf", True) if dry is None else dry
+            d = self.config.get("dry_run", True) if dry is None else dry
             self._freeze_assignments()
-            self._fix_start_dates()
             t0 = time.time()
             log.info("Run started (%s%s%s)", "dry run" if d else "live", ", forced" if force else "", ", without report" if not with_report else "")
             full = self.full_read_due() if full is None else full
 
             def step(name: str, n: int, of: int) -> None:
-                self.run_step = {"schritt": name, "n": n, "von": of}
+                self.run_step = {"step": name, "n": n, "date_from": of}
             # the report follows in the background: the bookings and the approval list are there at once
             res = run_once(self.store, self.config, date.today(), d, force, self.bridge_factory, with_report, base=self.ledger, full=full,
                            approve=approve, report=False, progress=step)
@@ -770,17 +686,17 @@ class App:
             self.last_run_at = time.time()
             ledger = res.pop("_ledger", None)
             if ledger is not None:                        # the state in MoneyMoney (the report shows the planned bookings)
-                ledger = ledger.without_planned(res.pop("_gebucht", None) or ())
-            cats = res.pop("_kategorien", None)
-            ums = res.pop("_umsaetze", None)
+                ledger = ledger.without_planned(res.pop("_booked", None) or ())
+            cats = res.pop("_categories", None)
+            ums = res.pop("_transactions", None)
             if ums is not None:
                 self.umsaetze = ums
             if ledger is not None:
-                self.set_ledger(ledger, reuse=res.get("status") == "unveraendert")
+                self.set_ledger(ledger, reuse=res.get("status") == "unchanged")
                 self._baseline(ledger)
             if cats:
                 self.take_categories(cats)
-            if res.get("status") in ("ok", "fehler") and with_report:
+            if res.get("status") in ("ok", "error") and with_report:
                 self.request_rebuild("after approval" if approve is not None else "after sync")   # the figures follow
             self.last_result = res
             try:
@@ -790,7 +706,7 @@ class App:
             return res
         except Exception as e:  # pragma: no cover - letzte Sicherung, damit der Dienst weiterlaeuft
             log.exception("Run failed")
-            self.last_result = {"status": "fehler", "text": tr("s_unerwarteter_fehler_s") % e}
+            self.last_result = {"status": "error", "text": tr("s_unerwarteter_fehler_s") % e}
             return self.last_result
         finally:
             self.running, self.run_step = False, None
@@ -800,32 +716,32 @@ class App:
         and the rules planned (a dry run: nothing is written, no report)."""
         with self.lock:
             if self.running:
-                return {"status": "laeuft_bereits", "text": tr("s_ein_abgleich_laeuft_bereits")}
+                return {"status": "already_running", "text": tr("s_ein_abgleich_laeuft_bereits")}
             self.running = True
         try:
             base = self.ledger
             if base is None:
-                return {"status": "fehler", "text": tr("s_noch_kein_stand_aus_moneymoney")}
+                return {"status": "error", "text": tr("s_noch_kein_stand_aus_moneymoney")}
             t0 = time.time()
             uuids = rule_accounts(base, self.config)
             try:
                 led = refresh_accounts(self.bridge_factory(True), base, self.config, date.today(), uuids)
             except MoneyMoneyError as e:
                 log.info("Approval list not refreshed: %s", str(e)[:120])
-                return {"status": "nicht_verfuegbar", "text": unavailable_text(e) or (tr("s_moneymoney_fehler_s") % e)}
+                return {"status": "unavailable", "text": unavailable_text(e) or (tr("s_moneymoney_fehler_s") % e)}
             res = run_once(self.store, self.config, date.today(), True, True, self.bridge_factory, with_report=False,
                            report=False, ledger=led)
             ledger = res.pop("_ledger", None)
             if ledger is not None:
                 self.set_ledger(ledger.without_planned())
-            for k in ("_kategorien", "_umsaetze", "_gebucht"):
+            for k in ("_categories", "_transactions", "_booked"):
                 res.pop(k, None)
             log.info("Approval list %s from %d account(s) (%.1f s)", "refreshed" if ledger is not None else "not refreshed (%s)" % res.get("status"),
                      len(uuids), time.time() - t0)
             return res
         except Exception as e:  # pragma: no cover - the service keeps running
             log.exception("Refreshing the approval list failed")
-            return {"status": "fehler", "text": tr("s_unerwarteter_fehler_s") % e}
+            return {"status": "error", "text": tr("s_unerwarteter_fehler_s") % e}
         finally:
             self.running = False
 
@@ -858,14 +774,14 @@ class App:
                 msg = str(e)[:200]
                 log.warning("Quick capture not possible although MoneyMoney is running: %s", msg)
                 stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-                self.store.update("state.json", lambda cur: cur.__setitem__("abgleich_problem", {"zeit": stamp, "text": msg}), {})
+                self.store.update("state.json", lambda cur: cur.__setitem__("sync_problem", {"time": stamp, "text": msg}), {})
             return
         self.mm_probe = (time.time(), False)
         if self._mm_locked_logged:
             self._mm_locked_logged = False
             log.info("MoneyMoney unlocked")
-        if (self.store.load_shared("state.json", {}) or {}).get("abgleich_problem"):
-            self.store.update("state.json", lambda cur: cur.pop("abgleich_problem", None), {})
+        if (self.store.load_shared("state.json", {}) or {}).get("sync_problem"):
+            self.store.update("state.json", lambda cur: cur.pop("sync_problem", None), {})
         accs = accounts_from_export(raw)
         sig = account_sig(accs)
         if sig == self._capture_sig:
@@ -878,7 +794,7 @@ class App:
         self.store.update("state.json", lambda cur: record_snapshot(cur.setdefault("snapshots", {}), accs.values(), today), {})
         if first:
             self._check_gaps(accs)
-        if known and (self.config.get("zeitplan") or {}).get("automatisch", True):
+        if known and (self.config.get("schedule") or {}).get("automatic", True):
             # neue Daten in MoneyMoney: vollstaendig abgleichen, sobald der Abruf dort fertig ist (Stand 45 s unveraendert,
             # spaetestens 3 Minuten nach der ersten Aenderung) -- sonst liefe bei jeder einzelnen Bank ein eigener Abgleich
             now = time.time()
@@ -904,20 +820,20 @@ class App:
                 months.append("%04d-%02d" % (y, m))
                 y, m = (y + 1, 1) if m == 12 else (y, m + 1)
             if months:
-                found.append({"konto": a.uuid, "name": a.name, "monate": months, "erkannt": datetime.now().strftime("%Y-%m-%d %H:%M")})
+                found.append({"account": a.uuid, "name": a.name, "months": months, "detected": datetime.now().strftime("%Y-%m-%d %H:%M")})
         if found:
             log.info("Portfolio values possibly incomplete (MoneyMoney refreshed while Kontor was not running): %d portfolio(s)", len(found))
 
             def upd(cur):
-                old = [x for x in cur.get("luecken") or [] if x.get("konto") not in {f["konto"] for f in found}]
-                cur["luecken"] = old + found
+                old = [x for x in cur.get("gaps") or [] if x.get("account") not in {f["account"] for f in found}]
+                cur["gaps"] = old + found
             self.store.update("state.json", upd, {})
 
     def heartbeat(self) -> None:
         if time.time() - self._hb_written >= 300:
             self._hb_written = time.time()
             now = datetime.now().isoformat(timespec="seconds")
-            self.store.update("state.json", lambda cur: cur.__setitem__("dienst_zuletzt", now), {})
+            self.store.update("state.json", lambda cur: cur.__setitem__("service_last", now), {})
 
     def code_changed(self) -> Optional[str]:
         """Neue Version im Programmordner (git pull, Update, Dateien ersetzt)? Liefert die neue Versionsnummer."""
@@ -926,7 +842,7 @@ class App:
 
     def restart_if_code_changed(self) -> bool:
         new = self.code_changed()
-        if not new or self.running or self.bericht_status().get("laeuft") or not self.restart_allowed:
+        if not new or self.running or self.bericht_status().get("running") or not self.restart_allowed:
             return False
         log.info("New version %s in program folder (running %s) -- restarting service", new, version())
         self.stop.set()
@@ -939,10 +855,10 @@ class App:
                 if self.restart_if_code_changed():
                     return
                 self.reload_config_if_changed()
-                z = self.config.get("zeitplan", {}) or {}
-                interval = max(5, int(z.get("intervall_minuten", 30))) * 60
-                due = z.get("automatisch", True) and (self.last_run_at is None or time.time() - self.last_run_at >= interval)
-                retry = z.get("automatisch", True) and self.mm_retry_at is not None and time.time() >= self.mm_retry_at
+                z = self.config.get("schedule", {}) or {}
+                interval = max(5, int(z.get("interval_minutes", 30))) * 60
+                due = z.get("automatic", True) and (self.last_run_at is None or time.time() - self.last_run_at >= interval)
+                retry = z.get("automatic", True) and self.mm_retry_at is not None and time.time() >= self.mm_retry_at
                 if due or retry:
                     if not is_running():
                         if due:
@@ -962,11 +878,11 @@ class App:
                         self.mm_retry_at = None
                         self._change_since = None
                         res = self.do_run(None, force=False)
-                        if res.get("status") in ("nicht_verfuegbar", "laeuft_bereits"):     # z. B. Neuberechnung lief gerade
+                        if res.get("status") in ("unavailable", "already_running"):     # z. B. Neuberechnung lief gerade
                             self.mm_retry_at = time.time() + 60
                 up = self.config.get("updates", {}) or {}
-                every = {"taeglich": 86400, "woechentlich": 7 * 86400}.get(up.get("pruefen") or "taeglich")      # "aus": nie
-                wait = every if every and not (self.update_info or {}).get("fehler") else 7200                   # offline/Fehler: in 2 h erneut
+                every = {"daily": 86400, "weekly": 7 * 86400}.get(up.get("check_mode") or "daily")      # "aus": nie
+                wait = every if every and not (self.update_info or {}).get("error") else 7200                   # offline/Fehler: in 2 h erneut
                 if every and not mm_history.AKTIV.is_set() and (self.update_checked is None or time.time() - self.update_checked > wait):
                     self.update_checked = time.time()
                     # eigener Thread: eine haengende Verbindung (offline) blockiert weder Zeitplaner noch Oberflaeche
@@ -976,20 +892,20 @@ class App:
                     self.tls_checked = time.time()
                     import tls_cert
                     if tls_cert.renew_if_due(self.config, self.data_dir):
-                        ui = self.config.get("oberflaeche") or {}
+                        ui = self.config.get("ui") or {}
                         self.tls_ctx.load_cert_chain(ui["tls_cert"], ui["tls_key"])
                         log.info("TLS certificate renewed and reloaded")
             except Exception:  # pragma: no cover
                 log.exception("Scheduler")
             try:
-                bind = ((self.config.get("oberflaeche") or {}).get("bind") or "127.0.0.1").strip()
+                bind = ((self.config.get("ui") or {}).get("bind") or "127.0.0.1").strip()
                 if bind != "127.0.0.1" and not self.remote_listening and self._handler is not None and time.time() - self.remote_tried >= 60:
                     self.start_remote()
             except Exception:  # pragma: no cover
                 log.exception("Remote access")
             try:
                 self.heartbeat()
-                if (self.config.get("zeitplan") or {}).get("automatisch", True):
+                if (self.config.get("schedule") or {}).get("automatic", True):
                     self.capture()
             except Exception:  # pragma: no cover
                 log.exception("Quick capture")
@@ -998,14 +914,14 @@ class App:
     # -- Daten fuer die Oberflaeche ---------------------------------------
     def plan_all(self) -> dict:
         plan = self.store.load("plan.json", {}) or {}
-        if "bereiche" in plan:
+        if "areas" in plan:
             return plan
         ds = self.store.load_shared("dataset.json", {}) or {}
-        haupt = ds.get("haupt")
-        return {"bereiche": ({haupt: plan} if plan and haupt else {})}
+        haupt = ds.get("main_area")
+        return {"areas": ({haupt: plan} if plan and haupt else {})}
 
     def plan_for(self, bereich: str) -> dict:
-        return (self.plan_all().get("bereiche") or {}).get(bereich) or {}
+        return (self.plan_all().get("areas") or {}).get(bereich) or {}
 
     # -- Kategorien: MoneyMoney ist massgeblich, Kontor traegt dort ein -------------------
     @property
@@ -1020,7 +936,7 @@ class App:
 
     def mm_write_on(self) -> bool:
         """Writing categories into MoneyMoney is switched on (once, at the Mac)."""
-        return bool((self.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False))
+        return bool((self.config.get("moneymoney") or {}).get("allow_categorize", False))
 
     def mm_write_allowed(self, local: bool) -> bool:
         """Switched on and asked from the Mac itself (from elsewhere: remembered, written at the next sync at the Mac)."""
@@ -1036,23 +952,23 @@ class App:
         path = categorize.norm_cat(path)
         led = self.ledger
         by_id = {t.id: t for t in led.txs if t.id > 0} if led is not None else {}
-        out: Dict[str, Any] = {"geschrieben": 0, "wartet": 0, "fremd": [], "fehler": 0, "spaeter": 0, "nur_am_mac": 0, "nicht_erreichbar": 0}
+        out: Dict[str, Any] = {"written": 0, "waiting": 0, "foreign": [], "error": 0, "later": 0, "mac_only": 0, "unreachable": 0}
 
         def later(rest: List[int], reachable_later: bool) -> None:
             for i in rest:                                   # waits (p) -- only what has no category in MoneyMoney
                 if i in by_id and categorize.mm_of(by_id[i]):
-                    kat["zuordnung"].pop(str(i), None)       # changing a category needs your answer at the Mac, now
-                    out["nur_am_mac" if reachable_later else "nicht_erreichbar"] += 1
+                    kat["assignment"].pop(str(i), None)       # changing a category needs your answer at the Mac, now
+                    out["mac_only" if reachable_later else "unreachable"] += 1
                 else:
-                    out["spaeter"] += 1
+                    out["later"] += 1
         if not path or not ids:
             return out
         if not self.mm_write_allowed(local) or led is None:
             later(ids, True)
             return out
         conf = confirmed or {}
-        items = [{"id": i, "neu": path, "alt": categorize.norm_cat(conf[str(i)]) if str(i) in conf else categorize.mm_of(by_id[i]),
-                  "ueberschreiben": modus == "ueberschreiben"} for i in ids if i in by_id]
+        items = [{"id": i, "new": path, "old": categorize.norm_cat(conf[str(i)]) if str(i) in conf else categorize.mm_of(by_id[i]),
+                  "overwrite": modus == "overwrite"} for i in ids if i in by_id]
         own = (self.store.load_shared("state.json", {}) or {}).get(mm_categories.LOG_KEY) or {}
         idx = mm_categories.index(self.categories_raw)
         try:
@@ -1061,21 +977,21 @@ class App:
             log.info("Categories wait for MoneyMoney: %s", e)
             later(ids, False)
             return out
-        written = res["geschrieben"]
+        written = res["written"]
         if written:
             mm_categories.apply_to_ledger(led, idx, written)
             self.store.update("state.json", lambda cur: mm_categories.remember(cur, written), {})
             self._save_ledger_cache(led, force=True)
-        for i in [w["id"] for w in written] + res["gleich"]:
-            kat["zuordnung"].pop(str(i), None)          # in MoneyMoney now -- the truth
-        for i in res["wartet"]:                          # the category is not (any more) in MoneyMoney
-            kat["zuordnung"].pop(str(i), None)
-        for f in res["fremd"] + res["fehler"]:           # another category there (it counts) or the transaction changed there
-            kat["zuordnung"].pop(str(f["id"]), None)
-        if res.get("abbruch"):
+        for i in [w["id"] for w in written] + res["equal"]:
+            kat["assignment"].pop(str(i), None)          # in MoneyMoney now -- the truth
+        for i in res["waiting"]:                          # the category is not (any more) in MoneyMoney
+            kat["assignment"].pop(str(i), None)
+        for f in res["foreign"] + res["error"]:           # another category there (it counts) or the transaction changed there
+            kat["assignment"].pop(str(f["id"]), None)
+        if res.get("abort"):
             log.info("Categories: MoneyMoney stopped after %d, the rest waits", len(written))
-            later(res["offen"], False)
-        out.update(geschrieben=len(written), wartet=len(res["wartet"]), fremd=res["fremd"], fehler=len(res["fehler"]))
+            later(res["open"], False)
+        out.update(written=len(written), waiting=len(res["waiting"]), foreign=res["foreign"], error=len(res["error"]))
         return out
 
     def rule_proposals(self, kat: dict) -> List[dict]:
@@ -1086,7 +1002,7 @@ class App:
         idx = mm_categories.index(self.categories_raw)
         ok = {p for p in idx if mm_categories.assignable(idx, p) is None}
         key = (id(self.ledger), hash(tuple((t.id, t.category_path) for t in self.ledger.txs)), json.dumps(
-            [own, kat.get("zuordnung"), kat.get("regel_erledigt"), sorted(ok)], sort_keys=True, default=str))
+            [own, kat.get("assignment"), kat.get("rule_done"), sorted(ok)], sort_keys=True, default=str))
         cached = getattr(self, "_proposals", None)
         if cached and cached[0] == key:
             return cached[1]
@@ -1099,10 +1015,8 @@ class App:
         category in MoneyMoney meanwhile, that one counts."""
         if not self.mm_write_on() or self.ledger is None:
             return 0
-        if not (self.store.load_shared("state.json", {}) or {}).get(self.SLASH_FLAG):
-            self._follow_slashes(self.categories_raw)        # keys from before 3.13.19 first (MoneyMoney's last known categories)
-            if not (self.store.load_shared("state.json", {}) or {}).get(self.SLASH_FLAG):
-                return 0                                     # no categories known yet: nothing is written (nor dropped)
+        if not self.categories_raw:
+            return 0                                     # no categories known yet: nothing is written (nor dropped)
         with categorize.LOCK:                            # nothing you assign meanwhile gets lost
             return self._flush_pending()
 
@@ -1110,19 +1024,19 @@ class App:
         kat = categorize.load(self.store)
         by_id = {t.id: t for t in self.ledger.txs if t.id > 0}
         pend: Dict[str, List[int]] = {}
-        for tid, z in list(kat["zuordnung"].items()):
+        for tid, z in list(kat["assignment"].items()):
             if not categorize.waiting(z):
                 continue
             t = by_id.get(int(tid)) if str(tid).lstrip("-").isdigit() else None
             if t is None or categorize.mm_of(t):
-                kat["zuordnung"].pop(tid, None)          # gone, or categorized in MoneyMoney meanwhile
+                kat["assignment"].pop(tid, None)          # gone, or categorized in MoneyMoney meanwhile
                 continue
             pend.setdefault(z["k"], []).append(int(tid))
         n = 0
         for path, ids in pend.items():
             res = self.write_categories(kat, ids, path, "auto", True)
-            n += res["geschrieben"]
-            if res["spaeter"]:
+            n += res["written"]
+            if res["later"]:
                 break                                    # MoneyMoney not reachable: next time
         if n:
             categorize.learn(kat, self.ledger)
@@ -1140,35 +1054,35 @@ class App:
 
     def dataset(self) -> dict:
         raw = self.store.load_shared("dataset.json", None)
-        if raw is None or "bereiche" not in raw:
-            return {"leer": True, "einrichtung": not self.config_has_rules(), "version": version()}
+        if raw is None or "areas" not in raw:
+            return {"empty": True, "setup": not self.config_has_rules(), "version": version()}
         ds = copy.deepcopy(raw)
         immo_res = immo_results(self.config, date.today())
         resolve = self.ledger.resolve if self.ledger is not None else None
-        bereiche = ds.get("bereiche") or {}
+        bereiche = ds.get("areas") or {}
 
         def run(bid: str, fremd: dict) -> None:
             b = bereiche[bid]
-            if "fehler" in b:
+            if "error" in b:
                 return
             try:
                 apply_plan(b, self.plan_for(bid), self.config, fremd_nw=fremd, immo=immo_for_plan(self.config, bid, immo_res), ledger_resolve=resolve)
             except Exception as e:  # pragma: no cover - fehlerhafte Plandaten duerfen die Anzeige nicht stoppen
                 log.exception("Planning for area %s", bid)
-                b["fehler"] = tr("s_planung_fehlgeschlagen") % e
+                b["error"] = tr("s_planung_fehlgeschlagen") % e
 
         # 1. Durchgang: alle Bereiche; 2. Durchgang: Bereiche mit Beteiligungs-Verknuepfung auf andere Bereiche
         for bid in bereiche:
             run(bid, {})
-        fremd = {bid: (b.get("bilanz", {}).get("projektion", {}).get("nettovermoegen") or {}) for bid, b in bereiche.items() if "fehler" not in b}
+        fremd = {bid: (b.get("balance", {}).get("projection", {}).get("net_worth") or {}) for bid, b in bereiche.items() if "error" not in b}
         for bid in list(bereiche):
-            wcfg = (self.plan_for(bid).get("wertentwicklung") or {})
-            if any(isinstance(v, dict) and v.get("bereich") for v in wcfg.values()):
-                bereiche[bid] = copy.deepcopy(raw["bereiche"][bid])
+            wcfg = (self.plan_for(bid).get("appreciation") or {})
+            if any(isinstance(v, dict) and v.get("area") for v in wcfg.values()):
+                bereiche[bid] = copy.deepcopy(raw["areas"][bid])
                 run(bid, fremd)
-        ds["einrichtung"] = not self.config_has_rules()
+        ds["setup"] = not self.config_has_rules()
         ds["version"] = version()
-        ds["positionen"] = [{"id": r, "name": role_label(r)} for r in ROLES]
+        ds["positions"] = [{"id": r, "name": role_label(r)} for r in ROLES]
         return ds
 
     def abruf(self) -> Optional[dict]:
@@ -1177,38 +1091,38 @@ class App:
         led = self.ledger
         if led is None:
             return None
-        n_inakt = int((self.config.get("bilanz") or {}).get("inaktiv_monate", 12) or 12)
-        key = (id(led), n_inakt, json.dumps([self.config.get(k) for k in ("abruf", "darlehen", "gesellschaften", "kontenspiegel")], sort_keys=True, default=str))
+        n_inakt = int((self.config.get("balance") or {}).get("inactive_months", 12) or 12)
+        key = (id(led), n_inakt, json.dumps([self.config.get(k) for k in ("fetch", "loans", "companies", "account_mirrors")], sort_keys=True, default=str))
         if self._bankabruf_cache[0] == key:
             return self._bankabruf_cache[1]
         kinds = abruf_arten(led, self.config)
         leaves = [a for a in led.accounts.values() if not a.group and a.path]
-        online = [a for a in leaves if kinds[a.uuid]["art"] == "online" and a.refresh is not None and a.refresh.year >= 2005]
+        online = [a for a in leaves if kinds[a.uuid]["kind"] == "online" and a.refresh is not None and a.refresh.year >= 2005]
         newest = max((a.refresh for a in online), default=None)
         cutoff = newest - timedelta(days=30.5 * n_inakt) if newest else None
         konten, lag = [], []
         for a in leaves:
             k = kinds[a.uuid]
             refreshed = a.refresh is not None and a.refresh.year >= 2005
-            zurueck = bool(newest and k["art"] == "online" and refreshed and cutoff <= a.refresh < newest - timedelta(days=1)
+            zurueck = bool(newest and k["kind"] == "online" and refreshed and cutoff <= a.refresh < newest - timedelta(days=1)
                            and (a.portfolio or abs(a.balance) > 0.005))
-            alt = bool(newest and k["art"] == "online" and refreshed and a.refresh < cutoff)
-            konten.append({"uuid": a.uuid, "name": a.name, "pfad": a.path, "art": k["art"], "grund": k["grund"], "saldo": a.balance,
-                           "zeit": a.refresh.strftime("%Y-%m-%d %H:%M") if refreshed else None, "zurueck": zurueck, "alt": alt})
+            alt = bool(newest and k["kind"] == "online" and refreshed and a.refresh < cutoff)
+            konten.append({"uuid": a.uuid, "name": a.name, "path": a.path, "kind": k["kind"], "reason": k["reason"], "balance_amount": a.balance,
+                           "time": a.refresh.strftime("%Y-%m-%d %H:%M") if refreshed else None, "back": zurueck, "old": alt})
             if zurueck:
                 lag.append(a)
         lag.sort(key=lambda a: a.refresh)
-        res = {"neuester": newest.strftime("%Y-%m-%d %H:%M") if newest else None, "konten": konten,
-               "zurueck": [{"name": a.name, "zeit": a.refresh.strftime("%Y-%m-%d %H:%M")} for a in lag[:12]], "zurueck_anzahl": len(lag)}
+        res = {"newest": newest.strftime("%Y-%m-%d %H:%M") if newest else None, "accounts": konten,
+               "back": [{"name": a.name, "time": a.refresh.strftime("%Y-%m-%d %H:%M")} for a in lag[:12]], "back_count": len(lag)}
         self._bankabruf_cache = (key, res)
         return res
 
     def bankabruf(self) -> Optional[dict]:
         r = self.abruf()
-        if not r or not r["neuester"]:
+        if not r or not r["newest"]:
             return None
-        return {"neuester": r["neuester"], "zurueck": r["zurueck"], "zurueck_anzahl": r["zurueck_anzahl"],
-                "konten": sum(1 for k in r["konten"] if k["art"] == "online")}
+        return {"newest": r["newest"], "back": r["back"], "back_count": r["back_count"],
+                "accounts": sum(1 for k in r["accounts"] if k["kind"] == "online")}
 
     # -- uninstall: service, data (with log), data key, optionally the program -- never the receipts or MoneyMoney --------------------
     def uninstall(self, program: bool = True) -> dict:
@@ -1219,19 +1133,19 @@ class App:
         not touched. Refuses folders that do not look like Kontor's."""
         from receipts import _canon
         home = _canon(os.path.expanduser("~"))
-        bel = (self.config.get("belege") or {}).get("ordner") or "~/Documents/Kontor-Belege"
+        bel = (self.config.get("receipts") or {}).get("folder") or "~/Documents/Kontor-Belege"
         keep = [_canon(os.path.expanduser(bel))] + [_canon(p) for p in self.linked_files()]
         data, prog = os.path.realpath(self.data_dir), os.path.realpath(self.program_dir)
         cdata, cprog = _canon(data), _canon(prog)
         under = lambda a, b: a == b or a.startswith(b.rstrip(os.sep) + os.sep)
         if cdata in (home, "/") or under(home, cdata) or not os.path.isdir(data) or not _KONTOR_FILE.search(" ".join(os.listdir(data))):
-            return {"fehler": tr("s_deinstall_ordner_unklar") % data}
+            return {"error": tr("s_deinstall_ordner_unklar") % data}
         if program and (cprog in (home, "/") or under(home, cprog) or under(cdata, cprog)
                         or not all(os.path.exists(os.path.join(prog, f)) for f in ("kontor.py", "service.py", "VERSION"))):
-            return {"fehler": tr("s_deinstall_ordner_unklar") % prog}
+            return {"error": tr("s_deinstall_ordner_unklar") % prog}
         if under(cprog, cdata):                       # the program inside the data folder: only together with the program
             if not program:
-                return {"fehler": tr("s_deinstall_ordner_unklar") % prog}
+                return {"error": tr("s_deinstall_ordner_unklar") % prog}
         done, left = [], []
         plist = updates.plist_path()
         if os.path.exists(plist):
@@ -1248,29 +1162,30 @@ class App:
         if not any(n.endswith((".enc", ".enc.tmp")) for n in (os.listdir(data) if os.path.isdir(data) else [])):
             key = self.uninstall_key()
         log.warning("Uninstalled: %d removed, %d left, key %s", len(done), len(left), "removed" if key else "kept")
-        return {"ok": True, "entfernt": done, "geblieben": left, "schluessel": key, "fremd": foreign,
-                "belege": bel if os.path.isdir(os.path.expanduser(bel)) else ""}
+        return {"ok": True, "removed": done, "kept": left, "key_removed": key, "foreign": foreign,
+                "receipts": bel if os.path.isdir(os.path.expanduser(bel)) else ""}
 
     def linked_files(self) -> List[str]:
         """Documents you linked (receipts outside the receipts folder, property documents): they stay where they are."""
         out = []
-        for im in self.config.get("immobilien") or []:
-            out += [d.get("pfad") for d in (im.get("dokumente") or []) if isinstance(d, dict) and d.get("pfad")]
+        for im in self.config.get("real_estate") or []:
+            out += [d.get("path") for d in (im.get("documents") or []) if isinstance(d, dict) and d.get("path")]
         try:
             idx = self.store.load("receipts.json", {}) or {}
             for v in (idx.values() if isinstance(idx, dict) else []):
                 for e in (v if isinstance(v, list) else [v]):
-                    if isinstance(e, dict) and isinstance(e.get("pfad"), str) and os.path.isabs(e["pfad"]):
-                        out.append(e["pfad"])
+                    if isinstance(e, dict) and isinstance(e.get("path"), str) and os.path.isabs(e["path"]):
+                        out.append(e["path"])
         except Exception:
             pass
         return [os.path.expanduser(p) for p in out if isinstance(p, str)]
 
     def uninstall_key(self) -> bool:
         """Deletes Kontor's data key in the keychain (only its own entry). True when it is gone."""
-        if self.store.key_source != "schluesselbund":
+        if self.store.key_source != "keychain":
             return False
         import storage
+        storage._security(["delete-generic-password", "-s", storage.KEYCHAIN_SERVICE, "-a", storage.KEYCHAIN_NEXT])
         rc, _, _ = storage._security(["delete-generic-password", "-s", storage.KEYCHAIN_SERVICE, "-a", storage.KEYCHAIN_ACCOUNT])
         return rc == 0
 
@@ -1292,26 +1207,26 @@ class App:
 
     def status(self, loopback: bool, frisch: bool = False) -> dict:
         st = self.store.load_shared("state.json", {}) or {}
-        bcfg = self.config.get("belege") or {}
+        bcfg = self.config.get("receipts") or {}
         return {
             "version": version(),
-            "dienst": {"gestartet": self.started.strftime("%Y-%m-%d %H:%M"), "laeuft": self.running, "schritt": self.run_step,
-                       "automatisch": (self.config.get("zeitplan") or {}).get("automatisch", True),
-                       "intervall_minuten": (self.config.get("zeitplan") or {}).get("intervall_minuten", 30)},
-            "moneymoney": {"laeuft": is_running(), "gesperrt": self.moneymoney_gesperrt(max_age=3.0 if frisch else 45.0), "aus_zwischenspeicher": self.ledger_from_cache,
-                           "stand": self.ledger_time.strftime("%Y-%m-%d %H:%M") if self.ledger_time else None,
-                           "bankabruf": self.bankabruf(), "luecken": len(st.get("luecken") or []), "problem": st.get("abgleich_problem"), "historie": st.get("mm_verlauf"),
-                           "kategorisieren_erlaubt": bool((self.config.get("moneymoney") or {}).get("kategorisieren_erlauben", False))},
-            "ablage": {"verschluesselt": self.store.encrypted, "schluessel": self.store.key_source, "ordner": self.data_dir, "programm": self.program_dir},
-            "belege": {"ordner": os.path.expanduser(bcfg.get("ordner") or "~/Documents/Kontor-Belege")},
-            "probelauf": self.config.get("probelauf", True),
-            "letzter_lauf": st.get("letzter_lauf"),
-            "letztes_ergebnis": self.last_result,
-            "bericht": self.bericht_status(),
-            "neustart_ausstehend": self.code_changed(),
+            "service": {"started": self.started.strftime("%Y-%m-%d %H:%M"), "running": self.running, "step": self.run_step,
+                       "automatic": (self.config.get("schedule") or {}).get("automatic", True),
+                       "interval_minutes": (self.config.get("schedule") or {}).get("interval_minutes", 30)},
+            "moneymoney": {"running": is_running(), "locked": self.moneymoney_gesperrt(max_age=3.0 if frisch else 45.0), "from_cache": self.ledger_from_cache,
+                           "as_of": self.ledger_time.strftime("%Y-%m-%d %H:%M") if self.ledger_time else None,
+                           "bank_fetch": self.bankabruf(), "gaps": len(st.get("gaps") or []), "problem_text": st.get("sync_problem"), "history": st.get("mm_history_src"),
+                           "categorize_allowed": bool((self.config.get("moneymoney") or {}).get("allow_categorize", False))},
+            "storage": {"encrypted": self.store.encrypted, "key_source": self.store.key_source, "folder": self.data_dir, "program_folder": self.program_dir},
+            "receipts": {"folder": os.path.expanduser(bcfg.get("folder") or "~/Documents/Kontor-Belege")},
+            "dry_run": self.config.get("dry_run", True),
+            "last_run": st.get("last_run"),
+            "last_result": self.last_result,
+            "report": self.bericht_status(),
+            "restart_pending": self.code_changed(),
             "update": self.update_info,
-            "touchid": auth.touchid_available() and loopback, "touchid_aktiv": self.touchid_on(),
-            "lokal": loopback,
+            "touchid": auth.touchid_available() and loopback, "touchid_active": self.touchid_on(),
+            "local": loopback,
         }
 
 
@@ -1360,32 +1275,32 @@ def filter_transactions(app: "App", q: dict):
         if only is not None and t["id"] not in only:
             continue
         if want is not None:
-            k = categorize.norm_cat(t.get("kategorie") or "")
-            none_ok = (q.get("with_uncategorized") == "1" and not k and t.get("braucht", True) and not t.get("umbuchung")
-                       and not t.get("andere_bereich"))          # between two of your areas: not an expense or income
+            k = categorize.norm_cat(t.get("category") or "")
+            none_ok = (q.get("with_uncategorized") == "1" and not k and t.get("needs", True) and not t.get("transfer")
+                       and not t.get("other_area"))          # between two of your areas: not an expense or income
             if not none_ok and (not k or not any(k == c or k.startswith(c + " / ") for c in want)):
                 continue
-        if q.get("year") and not t["datum"].startswith(q["year"]):
+        if q.get("year") and not t["date"].startswith(q["year"]):
             continue
-        if q.get("account") and t["konto"] != q["account"]:
+        if q.get("account") and t["account"] != q["account"]:
             continue
-        if q.get("entity") and t["entitaet"] != q["entity"]:
+        if q.get("entity") and t["entity"] != q["entity"]:
             continue
-        if q.get("uncategorized") == "1" and (t["kategorie"] or not t.get("braucht", True) or t.get("umbuchung")):
+        if q.get("uncategorized") == "1" and (t["category"] or not t.get("needs", True) or t.get("transfer")):
             continue
         if q.get("without_receipt") == "1" and counts.get(t["id"]):
             continue
         if q.get("with_receipt") == "1" and not counts.get(t["id"]):
             continue
-        if q.get("direction") == "out" and t["betrag"] >= 0:
+        if q.get("direction") == "out" and t["amount"] >= 0:
             continue
-        if q.get("direction") == "in" and t["betrag"] < 0:
+        if q.get("direction") == "in" and t["amount"] < 0:
             continue
-        if q.get("from") and t["datum"] < q["from"]:
+        if q.get("from") and t["date"] < q["from"]:
             continue
-        if q.get("to") and t["datum"] > q["to"]:
+        if q.get("to") and t["date"] > q["to"]:
             continue
-        if qs and qs not in (t["name"] + " " + t["zweck"] + " " + t["kategorie"] + " " + t["konto_name"] + " " + str(t["betrag"])).lower():
+        if qs and qs not in (t["name"] + " " + t["purpose"] + " " + t["category"] + " " + t["account_name"] + " " + str(t["amount"])).lower():
             continue
         out.append(t)
     return out, counts, ums
@@ -1395,19 +1310,19 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
     """view (balance sheet): the state of the table on screen -- open positions, open portfolios, hidden rows shown --
     so that the workbook opens like the page; everything else is in it too, collapsed (Excel's outline)."""
     ds = app.dataset()
-    if ds.get("leer"):
+    if ds.get("empty"):
         raise ValueError(tr("s_noch_keine_daten_zuerst_einen"))
-    key = bereich or ds.get("haupt") or ""
-    b = (ds.get("bereiche") or {}).get(key, {})
-    name = (ds.get("bereich_namen") or {}).get(key, "")
-    if was in ("balance", "cashflow", "planning") and (not b or "fehler" in b):
+    key = bereich or ds.get("main_area") or ""
+    b = (ds.get("areas") or {}).get(key, {})
+    name = (ds.get("area_names") or {}).get(key, "")
+    if was in ("balance", "cashflow", "planning") and (not b or "error" in b):
         raise ValueError(tr("s_bereich_nicht_vorhanden_oder_fehlerhaf"))
 
     def columns(include_plan: bool):
-        ist = b.get("monate", [])
-        plan = b.get("plan_monate", []) if include_plan else []
+        ist = b.get("months", [])
+        plan = b.get("plan_months", []) if include_plan else []
         allm = ist + plan
-        if modus == "jahre":
+        if modus == "years":
             years = sorted({m[:4] for m in allm})
             return [(y, [m for m in allm if m.startswith(y)], any(m in plan for m in allm if m.startswith(y))) for y in years]
         return [(m, [m], m in plan) for m in allm]
@@ -1415,12 +1330,12 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
     if was == "balance":
         v = view or {}
         cols = columns(True)
-        bil = b.get("bilanz", {})
-        proj = {r["id"]: r.get("werte") or {} for r in ((bil.get("projektion") or {}).get("zeilen") or [])}
-        allw = lambda r: dict(r.get("werte") or {}, **proj.get(r.get("id"), {}))
-        cur = (b.get("monate") or [""])[-1]
-        inakt = int(((app.config.get("bilanz") or {}).get("inaktiv_monate") or 12))
-        recent = (b.get("monate") or [])[-inakt:]
+        bil = b.get("balance", {})
+        proj = {r["id"]: r.get("amounts") or {} for r in ((bil.get("projection") or {}).get("rows") or [])}
+        allw = lambda r: dict(r.get("amounts") or {}, **proj.get(r.get("id"), {}))
+        cur = (b.get("months") or [""])[-1]
+        inakt = int(((app.config.get("balance") or {}).get("inactive_months") or 12))
+        recent = (b.get("months") or [])[-inakt:]
         empty = lambda w: all(_last(w, ms) is None or abs(_last(w, ms)) < 0.005 for _, ms, _p in cols)
         rows, bold, levels, hidden = [], [], [], []
 
@@ -1432,27 +1347,27 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
             if hide:
                 hidden.append(len(rows) - 1)
         role_open = False
-        for r in bil.get("zeilen", []):
-            if r["gruppe"]:
-                role_open = r["rolle"] in v.get("open", ())
+        for r in bil.get("rows", []):
+            if r["group"]:
+                role_open = r["role"] in v.get("open", ())
                 add(r["name"], allw(r), 0, False, True)
                 continue
-            skip = not v.get("all") and (r.get("inaktiv") or empty(allw(r)))
+            skip = not v.get("all") and (r.get("inactive") or empty(allw(r)))
             add("    " + r["name"], allw(r), 1, not role_open or skip)
             dep_open = role_open and not skip and r["id"] in v.get("dep", ())
-            for w in r.get("wertpapiere") or []:
-                gone = not v.get("all") and (empty(w["werte"]) or not any(w["werte"].get(m) not in (None, 0) for m in recent))
-                add("        " + w["name"] + (" (%s)" % w["isin"] if w.get("isin") and w["isin"] != w["name"] else ""), w["werte"], 2, not dep_open or gone)
-        nw = dict(bil.get("nettovermoegen", {}), **((bil.get("projektion") or {}).get("nettovermoegen") or {}))
+            for w in r.get("securities") or []:
+                gone = not v.get("all") and (empty(w["amounts"]) or not any(w["amounts"].get(m) not in (None, 0) for m in recent))
+                add("        " + w["name"] + (" (%s)" % w["isin"] if w.get("isin") and w["isin"] != w["name"] else ""), w["amounts"], 2, not dep_open or gone)
+        nw = dict(bil.get("net_worth", {}), **((bil.get("projection") or {}).get("net_worth") or {}))
         add(tr("x_nettovermoegen"), nw, 0, False, True)
-        add(tr("x_davon_liquide"), bil.get("liquides_nettovermoegen", {}), 0, False)
-        for role in dict.fromkeys(r["rolle"] for r in bil.get("ausserhalb") or []):       # outside net worth, collapsed per kind
-            accs = [r for r in bil["ausserhalb"] if r["rolle"] == role]
-            fx = role == "fremdwaehrung"                     # other currencies: each in its own, no sum
-            tot = {} if fx else {m: round(sum((r["werte"].get(m) or 0.0) for r in accs), 2) for m in {m for r in accs for m in r["werte"]}}
+        add(tr("x_davon_liquide"), bil.get("liquid_net_worth", {}), 0, False)
+        for role in dict.fromkeys(r["role"] for r in bil.get("outside") or []):       # outside net worth, collapsed per kind
+            accs = [r for r in bil["outside"] if r["role"] == role]
+            fx = role == "foreign_currency"                     # other currencies: each in its own, no sum
+            tot = {} if fx else {m: round(sum((r["amounts"].get(m) or 0.0) for r in accs), 2) for m in {m for r in accs for m in r["amounts"]}}
             add((tr("fremdwaehrung_nicht_umgerechnet") if fx else role_label(role) + " (" + tr("x_nicht_im_nw") + ")"), tot, 0, False, True)
             for r in accs:
-                add("    " + r["name"] + (" (%s)" % r.get("waehrung") if fx else ""), r["werte"], 1, role not in v.get("open", ()))
+                add("    " + r["name"] + (" (%s)" % r.get("currency") if fx else ""), r["amounts"], 1, role not in v.get("open", ()))
         head = [tr("x_konto")] + [c[0] + (tr("x_plan_suffix") if c[2] else "") for c in cols]
         return [Sheet(tr("x_bilanz") + " " + name, head, rows, bold_rows=bold, levels=levels, hidden_rows=hidden)]
 
@@ -1466,45 +1381,45 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
                 hidden.append(len(rows) - 1)
         # as on the page: operating (income, expenses), investing and financing by kind, the change in cash between the cash at
         # the start and at the end, changes in value, the change in net worth -- each with its sum; the rows beneath grouped
-        secs = {sek["name"]: sek for sek in b.get("kapitalfluss", {}).get("sektionen", [])}
-        sums = b.get("kapitalfluss", {}).get("summen", {})
-        ue = b.get("kapitalfluss", {}).get("ueberleitung", {}) or {}
+        secs = {sek["name"]: sek for sek in b.get("cashflow", {}).get("sections", [])}
+        sums = b.get("cashflow", {}).get("sums", {})
+        ue = b.get("cashflow", {}).get("reconciliation", {}) or {}
         all_m = sorted(sums)
         total = lambda k: [round(sum((sums.get(m) or {}).get(k, 0.0) for m in ms), 2) for _, ms, _p in cols]
-        allv = lambda z: dict(z["werte"], **((z.get("plan") or {}).get("werte", {})))
+        allv = lambda z: dict(z["amounts"], **((z.get("plan") or {}).get("amounts", {})))
         val = lambda z: [round(sum(allv(z).get(m, 0.0) for m in ms), 2) for _, ms, _p in cols]
 
         def section(name, label, level):
             sek = secs.get(name)
-            if not sek or not sek["zeilen"]:
+            if not sek or not sek["rows"]:
                 return
             line(["    " * level + label] + total(name), level); bold.append(len(rows) - 1)
             groups = {}
-            for z in sek["zeilen"]:
-                groups.setdefault(z["gruppe"], []).append(z)
+            for z in sek["rows"]:
+                groups.setdefault(z["group"], []).append(z)
             for g, zs in groups.items():
-                single = len(zs) == 1 and zs[0]["zeile"] == g
+                single = len(zs) == 1 and zs[0]["row"] == g
                 depth = level + 1
                 if not single:
                     glabel = tr(*zs[0]["glbl"]) if zs[0].get("glbl") else g
                     line(["    " * depth + glabel] + [round(sum(v), 2) for v in zip(*[val(z) for z in zs])], depth)
                     depth += 1
                 for z in zs:
-                    line(["    " * depth + (tr(*z["lbl"]) if z.get("lbl") else z["zeile"])] + val(z), depth, not single and depth > level + 2)
+                    line(["    " * depth + (tr(*z["lbl"]) if z.get("lbl") else z["row"])] + val(z), depth, not single and depth > level + 2)
                     for d in z.get("details") or []:             # the categories inside a position (collapsed; actual figures only)
-                        line(["    " * (depth + 1) + (d["kategorie"] or tr("cf_geschaetzt"))] + [None if p_ else round(sum(d["werte"].get(m, 0.0) for m in ms), 2) for _, ms, p_ in cols], depth + 1, True)
-        line([tr("cf_operativ")] + total("Operativ")); bold.append(len(rows) - 1)
-        section("Einnahmen", tr("einnahmen"), 1)
-        section("Ausgaben", tr("ausgaben"), 1)
-        for name, key in (("Investitionen", "cf_investitionen"), ("Finanzierung", "cf_finanzierung"), ("Unklar", "cf_unklar")):
+                        line(["    " * (depth + 1) + (d["category"] or tr("cf_geschaetzt"))] + [None if p_ else round(sum(d["amounts"].get(m, 0.0) for m in ms), 2) for _, ms, p_ in cols], depth + 1, True)
+        line([tr("cf_operativ")] + total("operating")); bold.append(len(rows) - 1)
+        section("income", tr("einnahmen"), 1)
+        section("expenses", tr("ausgaben"), 1)
+        for name, key in (("investing", "cf_investitionen"), ("financing", "cf_finanzierung"), ("unclear", "cf_unklar")):
             section(name, tr(key), 0)
 
         def balance(m):                                  # bank balance at the end of a month (None: not known or not there)
-            return (sums.get(m) or {}).get("Bankguthaben") if m else None
+            return (sums.get(m) or {}).get("bank") if m else None
 
         def check(key):
             def cell(ms, plan):
-                done = [m for m in ms if m <= b.get("ist_bis", "")]
+                done = [m for m in ms if m <= b.get("actual_until", "")]
                 if plan or not done or any(m not in ue for m in done):
                     return None                              # not every month checked: no claim
                 offs = [ue[m][key] for m in done if abs(ue[m][key]) >= 0.005]
@@ -1513,66 +1428,66 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
                 return round(sum(offs), 2) if offs else 0.0
             line([tr("cf_abgleich")] + [cell(ms, p_) for _, ms, p_ in cols])
         line([tr("bankguthaben_anfang")] + [balance(all_m[all_m.index(ms[0]) - 1] if ms and ms[0] in all_m and all_m.index(ms[0]) > 0 else None) for _, ms, _p in cols])
-        line([tr("zahlungsfluss_gesamt_veraenderung_liqu")] + total("Cashflow")); bold.append(len(rows) - 1)
-        check("abweichung_liq")
+        line([tr("zahlungsfluss_gesamt_veraenderung_liqu")] + total("cash_change")); bold.append(len(rows) - 1)
+        check("diff_cash")
         line([tr("bankguthaben_ende")] + [balance(ms[-1]) if ms else None for _, ms, _p in cols])
         # investing, repaying, loans: only moved between your accounts -- added back, the rows add up to the change in net worth
         moves = {}
         for name, sek in secs.items():
-            if name != "Bewertung":
-                for z in sek["zeilen"]:
+            if name != "valuation":
+                for z in sek["rows"]:
                     if not z.get("nw"):
-                        moves.setdefault(tr(*z["glbl"]) if z.get("glbl") else z["gruppe"], []).append(z)
+                        moves.setdefault(tr(*z["glbl"]) if z.get("glbl") else z["group"], []).append(z)
         mv = {g: [round(-sum(v), 2) for v in zip(*[val(z) for z in zs])] for g, zs in moves.items()}
         mv = {g: v for g, v in mv.items() if any(abs(x) >= 0.005 for x in v)}
         if mv:
             line([tr("cf_umschichtungen")] + [round(sum(v), 2) for v in zip(*mv.values())]); bold.append(len(rows) - 1)
             for g, v in mv.items():
                 line(["    " + g] + v, 1)
-        section("Bewertung", tr("cf_wertaenderungen"), 0)
-        line([tr("cf_veraenderung_nv")] + total("Nettovermoegen_delta")); bold.append(len(rows) - 1)
-        check("unerklaert")
+        section("valuation", tr("cf_wertaenderungen"), 0)
+        line([tr("cf_veraenderung_nv")] + total("net_worth_delta")); bold.append(len(rows) - 1)
+        check("unexplained")
         head = [tr("x_position")] + [c[0] + (tr("x_plan_suffix") if c[2] else "") for c in cols]
         levels += [0] * (len(rows) - len(levels))
         sheets = [Sheet(tr("x_planung" if was == "planning" else "x_kapitalfluss") + " " + name, head, rows, bold_rows=bold, levels=levels, hidden_rows=hidden)]
         if was == "planning":
-            pr = b.get("bilanz", {}).get("projektion", {})
+            pr = b.get("balance", {}).get("projection", {})
             pcols = [c for c in cols if c[2]]
             prow, pbold = [], []
-            for r in pr.get("zeilen", []):
-                prow.append(["    " * r["ebene"] + r["name"]] + [_last(r["werte"], ms) for _, ms, _p in pcols])
-                if r.get("gruppe"):
+            for r in pr.get("rows", []):
+                prow.append(["    " * r["depth"] + r["name"]] + [_last(r["amounts"], ms) for _, ms, _p in pcols])
+                if r.get("group"):
                     pbold.append(len(prow) - 1)
-            prow.append([tr("x_nw_plan")] + [_last(pr.get("nettovermoegen", {}), ms) for _, ms, _p in pcols]); pbold.append(len(prow) - 1)
-            prow.append([tr("x_liq_plan")] + [_last(pr.get("liquiditaet", {}), ms) for _, ms, _p in pcols])
+            prow.append([tr("x_nw_plan")] + [_last(pr.get("net_worth", {}), ms) for _, ms, _p in pcols]); pbold.append(len(prow) - 1)
+            prow.append([tr("x_liq_plan")] + [_last(pr.get("cash", {}), ms) for _, ms, _p in pcols])
             sheets.append(Sheet(tr("x_fortschreibung"), [tr("x_position")] + [c[0] for c in pcols], prow, bold_rows=pbold))
             P = b.get("plan", {})
             prm = [[k, P.get(k)] for k in PLAN_PARAMS]
-            for zn, zc in (P.get("zeilen") or {}).items():
+            for zn, zc in (P.get("rows") or {}).items():
                 prm.append([tr("x_zeile") % zn, json.dumps(zc, ensure_ascii=False)])
             sheets.append(Sheet(tr("x_parameter"), [tr("x_parameter"), tr("x_wert")], prm, widths=[40, 60], freeze="A2"))
         return sheets
 
     if was == "tax":
-        T = ds.get("steuer", {})
+        T = ds.get("tax", {})
         sheets = []
-        for ent in T.get("entitaeten", []):
+        for ent in T.get("entities", []):
             rows, bold = [], []
-            for y, J in sorted(ent["jahre"].items()):
+            for y, J in sorted(ent["years"].items()):
                 rows.append([y, "", None, None]); bold.append(len(rows) - 1)
-                for pos, p in J["positionen"].items():
-                    rows.append(["", pos, p["betrag"], None]); bold.append(len(rows) - 1)
-                    for k in p["kategorien"]:
-                        rows.append(["", "        " + k["pfad"], k["betrag"], k["anzahl"]])
-                for o, d in J["objekte"].items():
-                    rows.append(["", tr("x_vermietung") % o, d["ergebnis"], None]); bold.append(len(rows) - 1)
-                    for a, v in d["arten"].items():
+                for pos, p in J["positions"].items():
+                    rows.append(["", pos, p["amount"], None]); bold.append(len(rows) - 1)
+                    for k in p["categories"]:
+                        rows.append(["", "        " + k["path"], k["amount"], k["count"]])
+                for o, d in J["properties_list"].items():
+                    rows.append(["", tr("x_vermietung") % o, d["result"], None]); bold.append(len(rows) - 1)
+                    for a, v in d["kinds"].items():
                         rows.append(["", "        " + a, v, None])
-                    for l, v in d["schuldzinsen"].items():
+                    for l, v in d["debt_interest"].items():
                         rows.append(["", "        " + tr("x_schuldzinsen") % l, v, None])
-                    rows.append(["", "        " + tr("x_afa"), -abs(d["afa"]) if d["afa"] else 0, None])
-                if J["ohne_kategorie"]["anzahl"]:
-                    rows.append(["", tr("x_ohne_kategorie"), J["ohne_kategorie"]["betrag"], J["ohne_kategorie"]["anzahl"]])
+                    rows.append(["", "        " + tr("x_afa"), -abs(d["depreciation"]) if d["depreciation"] else 0, None])
+                if J["uncategorized_flag"]["count"]:
+                    rows.append(["", tr("x_ohne_kategorie"), J["uncategorized_flag"]["amount"], J["uncategorized_flag"]["count"]])
             sheets.append(Sheet(ent["name"], [tr("x_jahr"), tr("x_position"), tr("x_betrag"), tr("x_buchungen")], rows, widths=[8, 56, 16, 12], freeze="A2", bold_rows=bold))
         return sheets or [Sheet(tr("x_steuer"), [tr("x_hinweis")], [[tr("x_keine_daten")]])]
 
@@ -1581,38 +1496,38 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
         if query is not None:
             ums, counts, _ = filter_transactions(app, query)
             bereich = query.get("entity") or None
-            name = (ds.get("bereich_namen") or {}).get(bereich or "", "")
+            name = (ds.get("area_names") or {}).get(bereich or "", "")
         else:
             ums = app.umsatzliste()
             if bereich:
-                ums = [u for u in ums if u["entitaet"] == bereich]
+                ums = [u for u in ums if u["entity"] == bereich]
             counts = Belege(app.store, app.config).counts()
-        rows = [[u["datum"], u["konto_name"], u["name"], u["zweck"], u["betrag"], u["kategorie"], counts.get(u["id"], 0), u["id"]] for u in ums]
+        rows = [[u["date"], u["account_name"], u["name"], u["purpose"], u["amount"], u["category"], counts.get(u["id"], 0), u["id"]] for u in ums]
         return [Sheet(tr("s_umsaetze") + (name if bereich else ""), [tr("x_datum"), tr("x_konto"), tr("x_name"), tr("x_zweck"), tr("x_betrag"), tr("x_kategorie"), tr("x_belege"), "ID"],
                       rows, widths=[12, 26, 30, 50, 14, 30, 8, 10], freeze="A2")]
 
     if was == "holdings":
         rows, bold = [], []
         for d in ds.get("depots", []):
-            rows.append([d["name"], "", "", "", None, None, d["einstand"], d["summe"]]); bold.append(len(rows) - 1)
-            for p in d["positionen"]:
-                rows.append(["", p["name"], p["isin"], p["klasse"], p["menge"], p["kurs"], p["einstand"], p["wert"]])
+            rows.append([d["name"], "", "", "", None, None, d["cost_basis"], d["sum"]]); bold.append(len(rows) - 1)
+            for p in d["positions"]:
+                rows.append(["", p["name"], p["isin"], p["asset_class"], p["quantity"], p["price"], p["cost_basis"], p["value"]])
         return [Sheet(tr("x_depots"), [tr("x_depot"), tr("x_position"), "ISIN", tr("x_klasse"), tr("x_menge"), tr("x_kurs"), tr("x_einstand"), tr("x_wert")], rows,
                       widths=[26, 36, 16, 14, 12, 12, 14, 14], freeze="A2", bold_rows=bold)]
 
     if was == "receipts":
         bl = Belege(app.store, app.config)
-        names = {k["uuid"]: k["name"] for k in ds.get("konten", [])}
-        names.update(ds.get("bereich_namen") or {})
-        rows = [[e.get("datum"), e.get("betrag"), e.get("name"), names.get(e.get("konto") or "", ""), names.get(e.get("entitaet") or "", ""),
-                 e["pfad"], e.get("notiz", ""), e.get("tx_id")] for e in bl.entries()]
+        names = {k["uuid"]: k["name"] for k in ds.get("accounts", [])}
+        names.update(ds.get("area_names") or {})
+        rows = [[e.get("date"), e.get("amount"), e.get("name"), names.get(e.get("account") or "", ""), names.get(e.get("entity") or "", ""),
+                 e["path"], e.get("note", ""), e.get("tx_id")] for e in bl.entries()]
         return [Sheet(tr("x_belege"), [tr("x_datum"), tr("x_betrag"), tr("x_name"), tr("x_konto"), tr("x_bereich"), tr("x_datei"), tr("x_notiz"), tr("x_umsatz_id")], rows,
                       widths=[12, 14, 30, 26, 20, 50, 30, 10], freeze="A2")]
 
     if was == "accounts":
-        rows = [["    " * k["ebene"] + k["name"], k["uuid"],
-                 tr("x_gruppe" if k["gruppe"] else ("x_depot" if k["depot"] else ("x_manuell" if k["manuell"] else "x_bank"))),
-                 role_label(k["rolle"]) if k["rolle"] else "", k["saldo"], k.get("aktualisiert") or ""] for k in ds.get("konten", [])]
+        rows = [["    " * k["depth"] + k["name"], k["uuid"],
+                 tr("x_gruppe" if k["group"] else ("x_depot" if k["depot"] else ("x_manuell" if k["manual"] else "x_bank"))),
+                 role_label(k["role"]) if k["role"] else "", k["balance_amount"], k.get("updated") or ""] for k in ds.get("accounts", [])]
         return [Sheet(tr("x_konten"), [tr("x_konto"), "UUID", tr("x_typ"), tr("x_rolle"), tr("x_saldo"), tr("x_aktualisiert")], rows, widths=[46, 38, 10, 16, 16, 18])]
     raise ValueError(tr("s_unbekannter_export") % was)
 
@@ -1745,26 +1660,26 @@ def make_handler(app: App):
             if u.path == "/api/session":
                 s = self._session()
                 rec = app.auth_record()
-                return self._json(200, {"angemeldet": s is not None, "csrf": s["csrf"] if s else None,
-                                        "einrichtung_noetig": not rec and self._loopback(),
-                                        "einrichtung_nur_lokal": not rec and not self._loopback(),
+                return self._json(200, {"signed_in": s is not None, "csrf": s["csrf"] if s else None,
+                                        "setup_needed": not rec and self._loopback(),
+                                        "setup_local_only": not rec and not self._loopback(),
                                         "touchid": auth.touchid_available() and self._loopback() and app.touchid_on(),
-                                        "touchid_verfuegbar": auth.touchid_available() and self._loopback(),
-                                        "gesperrt_sekunden": app.sessions.locked(self._remote()), "lokal": self._loopback(), "instanz": app.instance,
-                                        "offline_kopie": app.offline_copy(), "version": version()})
+                                        "touchid_available": auth.touchid_available() and self._loopback(),
+                                        "locked_seconds": app.sessions.locked(self._remote()), "local": self._loopback(), "instance": app.instance,
+                                        "offline_copy": app.offline_copy(), "version": version()})
             s = self._session()
             if s is None:
-                return self._json(401, {"fehler": "nicht angemeldet"})
+                return self._json(401, {"error": "nicht angemeldet"})
             try:
                 return self._get(u.path, q, s)
             except ValueError as e:
-                return self._json(400, {"fehler": str(e)})
+                return self._json(400, {"error": str(e)})
             except (BrokenPipeError, ConnectionResetError):
                 log.debug("GET %s: connection closed by client", u.path)
                 return None
             except Exception as e:
                 log.exception("GET %s", u.path)
-                return self._json(500, {"fehler": tr("s_interner_fehler_s") % e})
+                return self._json(500, {"error": tr("s_interner_fehler_s") % e})
 
         def _get(self, path: str, q: dict, s: dict):
             if path == "/api/status":
@@ -1780,22 +1695,22 @@ def make_handler(app: App):
             if path == "/api/accounts":
                 ds = app.store.load_shared("dataset.json", {}) or {}
                 if app.ledger is not None:
-                    return self._json(200, {"konten": account_tree(app.ledger, app.config, None, ds.get("bereiche") or None), "stand": app.ledger_time.isoformat()})
-                return self._json(200, {"konten": ds.get("konten", []), "stand": ds.get("erstellt")})
+                    return self._json(200, {"accounts": account_tree(app.ledger, app.config, None, ds.get("areas") or None), "as_of": app.ledger_time.isoformat()})
+                return self._json(200, {"accounts": ds.get("accounts", []), "as_of": ds.get("created")})
             if path == "/api/categories":
-                return self._json(200, {"kategorien": app.categories()})
+                return self._json(200, {"categories": app.categories()})
             if path == "/api/offline/verifier":
                 rec = app.auth_record()
-                return self._json(200, {"offline": rec.get("offline") if app.offline_copy() else None, "sperre_minuten": int(app.config["oberflaeche"].get("sperre_minuten", 15)),
-                                        "stand": datetime.now().strftime("%Y-%m-%d %H:%M")})
+                return self._json(200, {"offline": rec.get("offline") if app.offline_copy() else None, "lock_minutes": int(app.config["ui"].get("lock_minutes", 15)),
+                                        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M")})
             if path == "/api/sync":
-                r = app.abruf() or {"neuester": None, "konten": [], "zurueck": [], "zurueck_anzahl": 0}
+                r = app.abruf() or {"newest": None, "accounts": [], "back": [], "back_count": 0}
                 ds = app.store.load_shared("dataset.json", {}) or {}
-                bereich = {k["uuid"]: k.get("bereich") or "" for k in ds.get("konten") or []}
+                bereich = {k["uuid"]: k.get("area") or "" for k in ds.get("accounts") or []}
                 # Depots: MoneyMoney gibt ihren Wertverlauf nicht heraus -- Kontor zeichnet ihn selbst auf (Monatsende-Staende)
                 st = app.store.load_shared("state.json", {}) or {}
-                snaps, hist = st.get("snapshots") or {}, st.get("historie") or {}
-                mmk = (app.store.load_shared(MM_HISTORY_FILE, {}) or {}).get("konten") or {}
+                snaps, hist = st.get("snapshots") or {}, st.get("history") or {}
+                mmk = (app.store.load_shared(MM_HISTORY_FILE, {}) or {}).get("accounts") or {}
                 depots = []
                 for a in (app.ledger.accounts.values() if app.ledger is not None else []):
                     if a.group or not a.portfolio or not a.path:
@@ -1804,18 +1719,18 @@ def make_handler(app: App):
                     own = sorted(mk for mk, v in (hist.get(a.uuid) or {}).items() if v is not None)
                     aus_mm = sorted(mmk.get(a.uuid) or {})
                     known = sorted(set(rec) | set(own) | set(aus_mm))
-                    depots.append({"uuid": a.uuid, "name": a.name, "pfad": a.path, "bereich": bereich.get(a.uuid, ""),
-                                   "aufgezeichnet_seit": rec[0] if rec else None, "eigene": len(own), "aus_moneymoney": len(aus_mm), "erster_stand": known[0] if known else None,
-                                   "erste_buchung": None})
-                return self._json(200, dict(r, konten=[dict(k, bereich=bereich.get(k["uuid"], "")) for k in r["konten"]], depots=depots, luecken=st.get("luecken") or [], mm_verlauf=st.get("mm_verlauf"),
-                                            aufzeichnung_seit=min(snaps) if snaps else None,
-                                            gelesen=app.ledger_time.strftime("%Y-%m-%d %H:%M") if app.ledger_time else None,
-                                            voll=app.full_read_info()))
+                    depots.append({"uuid": a.uuid, "name": a.name, "path": a.path, "area": bereich.get(a.uuid, ""),
+                                   "recorded_since": rec[0] if rec else None, "own": len(own), "from_moneymoney": len(aus_mm), "first_balance": known[0] if known else None,
+                                   "first_booking": None})
+                return self._json(200, dict(r, accounts=[dict(k, area=bereich.get(k["uuid"], "")) for k in r["accounts"]], depots=depots, gaps=st.get("gaps") or [], mm_history_src=st.get("mm_history_src"),
+                                            recorded_since=min(snaps) if snaps else None,
+                                            read_at=app.ledger_time.strftime("%Y-%m-%d %H:%M") if app.ledger_time else None,
+                                            full_read=app.full_read_info()))
             if path == "/api/runs":
                 st = app.store.load("state.json", {}) or {}
-                return self._json(200, {"letzter_lauf": st.get("letzter_lauf"), "verlauf": list(reversed(st.get("verlauf", []))),
-                                        "angelegt": kontor_bookings(app.ledger)[:500], "nicht_buchen": list(reversed(app.config.get("nicht_buchen") or [])),
-                                        "lokal": self._is_local(s)})
+                return self._json(200, {"last_run": st.get("last_run"), "history_source": list(reversed(st.get("history_source", []))),
+                                        "created_at": kontor_bookings(app.ledger)[:500], "not_book": list(reversed(app.config.get("not_book") or [])),
+                                        "local": self._is_local(s)})
             if path == "/api/log":
                 n = max(1, min(2000, int(q.get("n", "300"))))
                 try:
@@ -1823,42 +1738,42 @@ def make_handler(app: App):
                         lines = f.readlines()[-n:]
                 except FileNotFoundError:
                     lines = []
-                return self._json(200, {"zeilen": [l.rstrip("\n") for l in lines]})
+                return self._json(200, {"rows": [l.rstrip("\n") for l in lines]})
             if path == "/api/transactions":
                 return self._json(200, self._umsaetze(q))
             if path == "/api/receipts":
                 bl = Belege(app.store, app.config)
-                return self._json(200, {"eintraege": [dict(e, status=file_status(bl.full_path(e))) if e.get("extern") else e for e in reversed(bl.entries())],
-                                        "fehlend": bl.check(), "ordner": bl.folder, "dateien": bl.listing() if q.get("files") == "1" else []})
+                return self._json(200, {"entry_list": [dict(e, status=file_status(bl.full_path(e))) if e.get("external") else e for e in reversed(bl.entries())],
+                                        "missing": bl.check(), "folder": bl.folder, "files": bl.listing() if q.get("files") == "1" else []})
             if path == "/api/receipts/file":
                 bl = Belege(app.store, app.config)
                 e = next((x for x in bl.entries() if x["id"] == q.get("id")), None)
                 if e is None:
-                    return self._json(404, {"fehler": tr("s_beleg_nicht_im_index")})
+                    return self._json(404, {"error": tr("s_beleg_nicht_im_index")})
                 full = bl.servable(e)
                 if not full:
-                    return self._json(404, {"fehler": tr("s_datei_fehlt_oder_nicht_geladen") % e["pfad"]})
+                    return self._json(404, {"error": tr("s_datei_fehlt_oder_nicht_geladen") % e["path"]})
                 with open(full, "rb") as f:
                     data = f.read()
                 ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
                 disp = "inline" if ctype.startswith(("image/", "application/pdf", "text/")) else "attachment"
                 return self._raw(200, data, ctype, {"Content-Disposition": '%s; filename="%s"' % (disp, os.path.basename(full).replace('"', ""))})
             if path == "/api/export/property.xlsx":
-                im = next((x for x in app.config.get("immobilien") or [] if str(x.get("id")) == q.get("id")), None)
+                im = next((x for x in app.config.get("real_estate") or [] if str(x.get("id")) == q.get("id")), None)
                 if not im:
-                    return self._json(404, {"fehler": tr("s_immobilie_nicht_gefunden")})
-                kalks = im.get("kalkulationen") or []
-                k = next((x for x in kalks if str(x.get("id")) == q.get("calculation")), None) or next((x for x in kalks if x.get("aktiv")), kalks[0] if kalks else None)
+                    return self._json(404, {"error": tr("s_immobilie_nicht_gefunden")})
+                kalks = im.get("calcs") or []
+                k = next((x for x in kalks if str(x.get("id")) == q.get("calculation")), None) or next((x for x in kalks if x.get("active")), kalks[0] if kalks else None)
                 if not k:
-                    return self._json(404, {"fehler": "Keine Kalkulation."})
-                res = realestate.berechne(k.get("eingaben") or {}, date.today())
+                    return self._json(404, {"error": "Keine Kalkulation."})
+                res = realestate.berechne(k.get("inputs") or {}, date.today())
                 data = workbook(realestate.sheets(res))
                 return self._raw(200, data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                  {"Content-Disposition": 'attachment; filename="Kontor-%s-%s-%s.xlsx"' % (tr("xf_property"), str(im.get("name") or tr("x_objekt")).replace('"', "").replace("/", "-"), date.today().isoformat())})
             if path.startswith("/api/export/"):
                 was = path[len("/api/export/"):].replace(".xlsx", "")
                 view = {"open": set((q.get("open") or "").split(",")) - {""}, "dep": set((q.get("dep") or "").split(",")) - {""}, "all": q.get("all") == "1"}
-                data = workbook(export_sheets(app, was, q.get("area"), "jahre" if q.get("mode") == "years" else "monate", view, q if was == "transactions" else None))
+                data = workbook(export_sheets(app, was, q.get("area"), "years" if q.get("mode") == "years" else "months", view, q if was == "transactions" else None))
                 return self._raw(200, data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                  {"Content-Disposition": 'attachment; filename="Kontor-%s-%s.xlsx"' % (tr(EXPORT_FILE_KEYS[was]) if was in EXPORT_FILE_KEYS else was, date.today().isoformat())})
             if path == "/api/package/export":
@@ -1869,20 +1784,20 @@ def make_handler(app: App):
                                  {"Content-Disposition": 'attachment; filename="%s.kontor.json"' % name})
             if path == "/api/help":
                 # help = docs/help.de.md or docs/help.en.md (the same file as on GitHub)
-                fn = "help.en.md" if (q.get("lang") or (app.config.get("oberflaeche") or {}).get("sprache")) == "en" else "help.de.md"
+                fn = "help.en.md" if (q.get("lang") or (app.config.get("ui") or {}).get("language")) == "en" else "help.de.md"
                 try:
                     with open(os.path.join(HERE, "docs", fn), encoding="utf-8") as f:
                         text = f.read()
                 except OSError:
-                    return self._json(200, {"text": "", "bilder": {}})
-                return self._json(200, {"text": text, "bilder": help_image_sizes(text)})
+                    return self._json(200, {"text": "", "images": {}})
+                return self._json(200, {"text": text, "images": help_image_sizes(text)})
             if path == "/api/remote/acl":
                 import tls_cert
-                return self._json(200, tls_cert.access_check(int((app.config.get("oberflaeche") or {}).get("port") or 8765)))
+                return self._json(200, tls_cert.access_check(int((app.config.get("ui") or {}).get("port") or 8765)))
             if path == "/api/remote":
                 if q.get("fresh"):
                     app.tailscale(fresh=True)
-                return self._json(200, dict(app.remote_info(), lokal=self._is_local(s)))
+                return self._json(200, dict(app.remote_info(), local=self._is_local(s)))
             if path == "/api/timemachine":
                 return self._json(200, {"status": timemachine_status(app.data_dir)})
             if path == "/api/diagnostics":
@@ -1890,57 +1805,56 @@ def make_handler(app: App):
                 return self._raw(200, txt.encode("utf-8"), "text/plain; charset=utf-8",
                                  {"Content-Disposition": 'attachment; filename="Kontor-Diagnose-%s.txt"' % date.today().isoformat()})
             if path == "/api/check/status":
-                return self._json(200, dict(getattr(app, "lesen", {"laeuft": False}), jetzt=time.time()))
+                return self._json(200, dict(getattr(app, "read_state", {"running": False}), now=time.time()))
             if path == "/api/update/status":
-                return self._json(200, {"info": app.update_info, "geprueft": app.update_checked, "version": version(), "datum": updates.installed_date(),
+                return self._json(200, {"info": app.update_info, "verified": app.update_checked, "version": version(), "date": updates.installed_date(),
                                         "changelog": updates.changelog()})
             if path == "/api/history":
-                return self._json(200, self._historie(q.get("account") or "", q.get("source") if q.get("source") in ("umsaetze", "stand") else None))
+                return self._json(200, self._historie(q.get("account") or "", q.get("source") if q.get("source") in ("transactions", "balances") else None))
             if path == "/api/securities/lookup":
-                return self._json(200, dict(app.securities_unnamed(), lokal=self._is_local(s)))
+                return self._json(200, dict(app.securities_unnamed(), local=self._is_local(s)))
             if path == "/api/history/mm-status":
-                st = app.store.load_shared("state.json", {}) or {}
-                return self._json(200, dict(app.mmh, letzte=st.get("mm_verlauf"), moneymoney_laeuft=is_running(), lokal=self._is_local(s)))
+                return self._json(200, dict(app.mmh, local=self._is_local(s)))
             if path == "/api/categories/positions":
                 if app.ledger is None:
-                    return self._json(200, {"kategorien": [], "positionen": [], "hinweis": tr("s_noch_kein_lauf_moneymoney_lesen")})
+                    return self._json(200, {"categories": [], "positions": [], "hint": tr("s_noch_kein_lauf_moneymoney_lesen")})
                 return self._json(200, positions_overview(app.ledger, app.config, app.categories_raw, date.today()))
             if path == "/api/categories/unassigned":
                 if app.ledger is None:
-                    return self._json(200, {"offen": 0, "gruppen": [], "gruppen_gesamt": 0, "hinweis": tr("s_noch_kein_lauf_moneymoney_lesen")})
+                    return self._json(200, {"open": 0, "groups": [], "groups_total": 0, "hint": tr("s_noch_kein_lauf_moneymoney_lesen")})
                 kat = categorize.load(app.store)
                 bereich_of = {a.uuid: b["id"] for b in bereiche_for(app.ledger, app.config) for a in b["leaves"]}
                 res = categorize.open_items(kat, app.ledger, bereich_of, int(q["year"]) if q.get("year") else None, q.get("area") or None,
                                             float(q.get("min") or 0), max(1, min(5000, int(q.get("limit") or 300))), bank_accounts(account_roles(app.ledger, app.config)),
-                                            set(app.config.get("zuordnen_ohne") or []))
+                                            set(app.config.get("assign_without") or []))
                 if getattr(app.ledger, "_paired", None) is None:
                     app.request_rebuild("assigning")              # which bookings are transfers comes with the report (page reloads then)
                 # your category for transfers in MoneyMoney (for a contribution or withdrawal between two areas)
                 from report import transfer_check
                 is_transfer = transfer_check(app.config)
-                res["umbuchung"] = next((p for p in (categorize.norm_cat(str(c.get("path") or c.get("name") or "")) for c in app.categories_raw
+                res["transfer"] = next((p for p in (categorize.norm_cat(str(c.get("path") or c.get("name") or "")) for c in app.categories_raw
                                                      if not c.get("group") and not c.get("default")) if p and is_transfer(p)), None)
-                res["wartet"] = sum(1 for z in kat["zuordnung"].values() if categorize.waiting(z))      # written at the next sync
-                res["regelvorschlaege"] = len(app.rule_proposals(kat))
-                res["zurueckschreiben"] = app.mm_write_on()
-                res["lokal"] = self._is_local(s)
+                res["waiting"] = sum(1 for z in kat["assignment"].values() if categorize.waiting(z))      # written at the next sync
+                res["rule_proposals"] = len(app.rule_proposals(kat))
+                res["write_back"] = app.mm_write_on()
+                res["local"] = self._is_local(s)
                 return self._json(200, res)
             if path == "/api/categories/proposals":
                 if app.ledger is None:
-                    return self._json(200, {"vorschlaege": []})
-                return self._json(200, {"vorschlaege": app.rule_proposals(categorize.load(app.store))})
+                    return self._json(200, {"proposals": []})
+                return self._json(200, {"proposals": app.rule_proposals(categorize.load(app.store))})
             if path == "/api/properties":
-                return self._json(200, {"immobilien": app.config.get("immobilien") or [], "ergebnisse": {k: {kk: vv for kk, vv in v.items() if kk != "reihen"}
+                return self._json(200, {"real_estate": app.config.get("real_estate") or [], "results": {k: {kk: vv for kk, vv in v.items() if kk != "series_data"}
                                                                                                         for k, v in immo_results(app.config, date.today()).items()}})
             if path == "/api/properties/template":
-                return self._json(200, {"eingaben": realestate.normalize({"name": "Neues Objekt", "uebergang": date.today().replace(day=1).isoformat()})})
+                return self._json(200, {"inputs": realestate.normalize({"name": "Neues Objekt", "transfer_date": date.today().replace(day=1).isoformat()})})
             if path == "/api/file/status":
                 if not self._is_local(s):
-                    return self._json(403, {"fehler": tr("s_dateizugriff_nur_von_diesem_mac")})
+                    return self._json(403, {"error": tr("s_dateizugriff_nur_von_diesem_mac")})
                 full = os.path.expanduser(q.get("path") or "")
-                st = file_status(full) if full else "fehlt"
-                return self._json(200, {"status": st, "groesse": os.path.getsize(full) if st == "ok" else None})
-            return self._json(404, {"fehler": "unbekannt"})
+                st = file_status(full) if full else "lacking"
+                return self._json(200, {"status": st, "size_bytes": os.path.getsize(full) if st == "ok" else None})
+            return self._json(404, {"error": "unknown"})
 
         def _historie_einlesen(self, s: dict):
             """Kontostaende aus MoneyMoney: hochgeladene (verschluesselte) Datenbank nur in den Arbeitsspeicher lesen und im
@@ -1959,9 +1873,9 @@ def make_handler(app: App):
                 mm_history._wipe(tmp)
                 return self._json(code, {"ok": False, feld: text})
             if not self._is_local(s):
-                return ablehnen(403, tr("s_nur_direkt_am_mac_moeglich"), "fehler")
-            if mm_history.AKTIV.is_set() or app.mmh.get("laeuft"):
-                return ablehnen(409, tr("s_laeuft_bereits_bitte_das_passwortfenst"), "fehler")
+                return ablehnen(403, tr("s_nur_direkt_am_mac_moeglich"), "error")
+            if mm_history.AKTIV.is_set() or app.mmh.get("running"):
+                return ablehnen(409, tr("s_laeuft_bereits_bitte_das_passwortfenst"), "error")
             if is_running():
                 return ablehnen(200, tr("s_bitte_moneymoney_zuerst_beenden_q"))
             if app.ledger is None:
@@ -1971,59 +1885,59 @@ def make_handler(app: App):
             except mm_history.HistorieError as e:
                 self.close_connection = True
                 return self._json(200, {"ok": False, "text": str(e)})
-            app.mmh = {"laeuft": True, "schritt": "received", "ergebnis": None}
-            threading.Thread(target=app.historie_einlesen, args=(buf,), name="kontor-mm-historie", daemon=True).start()
+            app.mmh = {"running": True, "step": "received", "result": None}
+            threading.Thread(target=app.historie_einlesen, args=(buf,), name="kontor-mm-history", daemon=True).start()
             del buf
-            return self._json(200, {"ok": True, "laeuft": True})
+            return self._json(200, {"ok": True, "running": True})
 
         def _historie(self, uuid: str, quelle: Optional[str] = None) -> dict:
             """Verlauf eines Kontos fuer das Verlauf-Fenster. Mit MoneyMoney-Stand im Speicher direkt fuer dieses eine Konto
             gerechnet (Millisekunden, unabhaengig vom Neubau der gesamten Auswertung), sonst aus dem letzten Bericht."""
             st = app.store.load_shared("state.json", {}) or {}
-            hist = dict((st.get("historie") or {}).get(uuid) or {})
+            hist = dict((st.get("history") or {}).get(uuid) or {})
             snaps = {mk: v[uuid] for mk, v in (st.get("snapshots") or {}).items() if uuid in v}
             mmh = app.store.load_shared(MM_HISTORY_FILE, {}) or {}
-            mmv, mm_start = dict((mmh.get("konten") or {}).get(uuid) or {}), (mmh.get("anfang") or {}).get(uuid)
-            vcfg = (app.config.get("bilanz") or {}).get("verlauf") or {}
-            explizit = next((v for ref, v in vcfg.items() if ref.split("|")[0].strip() == uuid and v in ("umsaetze", "stand")), None)
+            mmv, mm_start = dict((mmh.get("accounts") or {}).get(uuid) or {}), (mmh.get("opening") or {}).get(uuid)
+            vcfg = (app.config.get("balance") or {}).get("history_source") or {}
+            explizit = next((v for ref, v in vcfg.items() if ref.split("|")[0].strip() == uuid and v in ("transactions", "balances")), None)
             ledger = app.ledger
             acc = ledger.accounts.get(uuid) if ledger is not None else None
             ds = app.store.load_shared("dataset.json", {}) or {}
-            kinfo = next((x for x in ds.get("konten", []) if x.get("uuid") == uuid), {})
+            kinfo = next((x for x in ds.get("accounts", []) if x.get("uuid") == uuid), {})
             depot = bool(acc.portfolio) if acc else bool(kinfo.get("depot"))
-            q = quelle or explizit or ("stand" if depot else "umsaetze")
-            out = {"konto": uuid, "name": acc.name if acc else kinfo.get("name", ""), "quelle": q, "quelle_explizit": bool(explizit or quelle),
-                   "quelle_gespeichert": explizit or ("stand" if depot else "umsaetze"),
-                   "depot": depot, "manuell": hist, "aufgezeichnet": snaps, "moneymoney": mmv, "werte": {}, "hinweis": None, "anker": [],
-                   "live": acc is not None, "bericht_laeuft": app.bericht_status().get("laeuft", False)}
+            q = quelle or explizit or ("balances" if depot else "transactions")
+            out = {"account": uuid, "name": acc.name if acc else kinfo.get("name", ""), "source": q, "source_explicit": bool(explizit or quelle),
+                   "source_saved": explizit or ("balances" if depot else "transactions"),
+                   "depot": depot, "manual": hist, "recorded": snaps, "moneymoney": mmv, "amounts": {}, "hint": None, "anchor": [],
+                   "live": acc is not None, "report_running": app.bericht_status().get("running", False)}
             if acc is not None:
                 today = date.today()
                 months = account_months(ledger, acc, today, list(hist) + (list(snaps) + list(mmv) if depot else []))
                 werte, hinweis, anker = account_balance_series(ledger, acc, months, q, st.get("snapshots") or {}, hist, today, app.config, mmv, mm_start)
-                out.update({"werte": werte, "hinweis": hinweis, "anker": anker})
+                out.update({"amounts": werte, "hint": hinweis, "anchor": anker})
                 # Pruefung der Rueckrechnung: vorgemerkte Umsaetze, Anfangssaldo vor der ersten Buchung
                 alle = ledger.transactions(uuid, booked_only=False)
                 vorgemerkt = [t for t in alle if not t.booked]
                 gebucht = [t for t in alle if t.booked]
-                info = {"vorgemerkt_anzahl": len(vorgemerkt), "vorgemerkt_summe": round(sum(t.amount for t in vorgemerkt), 2),
-                        "buchungen": len(gebucht), "erste_buchung": min((t.booking_date for t in gebucht), default=None),
-                        "anfangssaldo": round(acc.balance - sum(t.amount for t in gebucht), 2)}
-                if info["erste_buchung"]:
-                    info["erste_buchung"] = info["erste_buchung"].isoformat()
-                out["pruefung"] = info
+                info = {"pending_count": len(vorgemerkt), "pending_sum": round(sum(t.amount for t in vorgemerkt), 2),
+                        "bookings": len(gebucht), "first_booking": min((t.booking_date for t in gebucht), default=None),
+                        "opening_balance": round(acc.balance - sum(t.amount for t in gebucht), 2)}
+                if info["first_booking"]:
+                    info["first_booking"] = info["first_booking"].isoformat()
+                out["check"] = info
             else:
-                for b in ds.get("bereiche", {}).values():
-                    for r in (b.get("bilanz") or {}).get("zeilen") or []:
+                for b in ds.get("areas", {}).values():
+                    for r in (b.get("balance") or {}).get("rows") or []:
                         if r.get("id") == uuid:
-                            out["werte"] = r.get("werte") or {}
+                            out["amounts"] = r.get("amounts") or {}
             return out
 
         def _umsaetze(self, q: dict) -> dict:
             hits, counts, ums = filter_transactions(app, q)
             limit = max(1, min(5000, int(q.get("limit", "500"))))
-            jahre = sorted({t["datum"][:4] for t in ums}, reverse=True)
-            out = [dict(t, belege=counts.get(t["id"], 0)) for t in hits[:limit]]
-            return {"umsaetze": out, "treffer": len(hits), "summe": round(sum(t["betrag"] for t in hits), 2), "gesamt": len(ums), "jahre": jahre}
+            jahre = sorted({t["date"][:4] for t in ums}, reverse=True)
+            out = [dict(t, receipts=counts.get(t["id"], 0)) for t in hits[:limit]]
+            return {"transactions": out, "hits": len(hits), "sum": round(sum(t["amount"] for t in hits), 2), "total": len(ums), "years": jahre}
 
         # -- POST/PUT ------------------------------------------------------
         def do_POST(self):
@@ -2035,69 +1949,69 @@ def make_handler(app: App):
         def _mutating(self):
             u = urlparse(self.path)
             if not u.path.startswith("/api/") or not self._origin_ok() or not self._host_ok():
-                return self._json(403, {"fehler": "abgelehnt"})
+                return self._json(403, {"error": "rejected"})
             try:
                 body = {} if u.path == "/api/history/mm-import" else self._body(MAX_UPLOAD if u.path == "/api/receipts/upload" else MAX_BODY)
             except (ValueError, json.JSONDecodeError) as e:
-                return self._json(400, {"fehler": tr("s_ungueltige_anfrage_s") % e})
+                return self._json(400, {"error": tr("s_ungueltige_anfrage_s") % e})
             remote = self._remote()
 
             if u.path == "/api/setup":
                 if app.auth_record() or not self._loopback():
-                    return self._json(403, {"fehler": tr("s_einrichtung_nur_einmal_und_nur")})
-                err = auth.password_ok(str(body.get("passwort", "")))
+                    return self._json(403, {"error": tr("s_einrichtung_nur_einmal_und_nur")})
+                err = auth.password_ok(str(body.get("password", "")))
                 if err:
-                    return self._json(400, {"fehler": err})
-                app.store.save("auth.json", auth.with_offline(auth.hash_password(str(body["passwort"])), str(body["passwort"])))
-                if isinstance(body.get("touchid"), bool) or body.get("sprache") in i18n.LANGS:
+                    return self._json(400, {"error": err})
+                app.store.save("auth.json", auth.with_offline(auth.hash_password(str(body["password"])), str(body["password"])))
+                if isinstance(body.get("touchid"), bool) or body.get("language") in i18n.LANGS:
                     cfg = copy.deepcopy(app.config)
                     if isinstance(body.get("touchid"), bool):
-                        cfg.setdefault("oberflaeche", {})["touchid"] = body["touchid"]
-                    if body.get("sprache") in i18n.LANGS:
-                        cfg.setdefault("oberflaeche", {})["sprache"] = body["sprache"]
+                        cfg.setdefault("ui", {})["touchid"] = body["touchid"]
+                    if body.get("language") in i18n.LANGS:
+                        cfg.setdefault("ui", {})["language"] = body["language"]
                     app.save_config(cfg)
-                s = app.sessions.create(remote, "passwort")
+                s = app.sessions.create(remote, "password")
                 log.info("Password set, setup started")
                 return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
             if u.path == "/api/login":
                 wait = app.sessions.locked(remote)
                 if wait:
-                    return self._json(429, {"fehler": tr("s_zu_viele_fehlversuche") % wait})
+                    return self._json(429, {"error": tr("s_zu_viele_fehlversuche") % wait})
                 rec = app.auth_record()
                 if not rec:
-                    return self._json(403, {"fehler": tr("s_noch_kein_passwort_festgelegt_einricht")})
-                if auth.verify_password(str(body.get("passwort", "")), rec):
+                    return self._json(403, {"error": tr("s_noch_kein_passwort_festgelegt_einricht")})
+                if auth.verify_password(str(body.get("password", "")), rec):
                     app.sessions.clear_fails(remote)
                     if not rec.get("offline"):
-                        app.store.save("auth.json", auth.with_offline(rec, str(body.get("passwort", ""))))
+                        app.store.save("auth.json", auth.with_offline(rec, str(body.get("password", ""))))
                         log.info("Offline verifier for the iPhone view created")
-                    s = app.sessions.create(remote, "passwort")
+                    s = app.sessions.create(remote, "password")
                     log.info("Login with password from %s", remote)
                     return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
                 app.sessions.fail(remote)
                 time.sleep(0.5)
                 log.warning("Failed login from %s", remote)
-                return self._json(401, {"fehler": tr("s_passwort_falsch")})
+                return self._json(401, {"error": tr("s_passwort_falsch")})
             if u.path == "/api/touchid":
                 if not self._loopback() or not auth.touchid_available():
-                    return self._json(403, {"fehler": tr("s_touch_id_nur_an_diesem")})
+                    return self._json(403, {"error": tr("s_touch_id_nur_an_diesem")})
                 if not app.touchid_on():
-                    return self._json(403, {"fehler": tr("s_touch_id_ist_in_den")})
+                    return self._json(403, {"error": tr("s_touch_id_ist_in_den")})
                 if not app.auth_record():
-                    return self._json(403, {"fehler": tr("s_zuerst_ein_passwort_festlegen")})
+                    return self._json(403, {"error": tr("s_zuerst_ein_passwort_festlegen")})
                 if auth.touchid_verify():
                     s = app.sessions.create(remote, "touchid")
                     log.info("Login with Touch ID")
                     return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
-                return self._json(401, {"fehler": tr("s_touch_id_nicht_bestaetigt")})
+                return self._json(401, {"error": tr("s_touch_id_nicht_bestaetigt")})
 
             s = self._session()
             if s is None:
-                return self._json(401, {"fehler": "nicht angemeldet"})
+                return self._json(401, {"error": "nicht angemeldet"})
             if self.headers.get("X-CSRF-Token") != s["csrf"]:
-                return self._json(403, {"fehler": tr("s_csrf_pruefung_fehlgeschlagen_seite_neu"), "csrf": "ungueltig"})
+                return self._json(403, {"error": tr("s_csrf_pruefung_fehlgeschlagen_seite_neu"), "csrf": "invalid"})
             if not self._is_local(s) and app.remote_readonly() and u.path not in ("/api/logout", "/api/lock"):
-                return self._json(403, {"fehler": tr("s_von_unterwegs_nur_ansehen")})
+                return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
             if u.path == "/api/history/mm-import":
                 return self._historie_einlesen(s)
             t0 = time.time()
@@ -2108,19 +2022,19 @@ def make_handler(app: App):
                 return res
             except ValueError as e:
                 log.warning("%s %s rejected (invalid input)", self.command, u.path)          # its text may name a category: not in the log
-                return self._json(400, {"fehler": str(e)})
+                return self._json(400, {"error": str(e)})
             except MoneyMoneyError as e:
                 log.warning("%s %s: MoneyMoney not available: %s", self.command, u.path, e)
-                return self._json(502, {"fehler": unavailable_text(e) or (tr("s_moneymoney_fehler_s") % e)})
+                return self._json(502, {"error": unavailable_text(e) or (tr("s_moneymoney_fehler_s") % e)})
             except (BrokenPipeError, ConnectionResetError):
                 log.debug("%s %s: connection closed by client", self.command, u.path)
                 return None
             except OSError as e:
                 log.exception("%s %s: file error", self.command, u.path)
-                return self._json(500, {"fehler": "Dateifehler: %s" % e})
+                return self._json(500, {"error": "Dateifehler: %s" % e})
             except Exception as e:
                 log.exception("%s %s", self.command, u.path)
-                return self._json(500, {"fehler": tr("s_interner_fehler_s") % e})
+                return self._json(500, {"error": tr("s_interner_fehler_s") % e})
 
         def _is_local(self, s: dict) -> bool:
             return auth.is_loopback(s.get("remote", "")) and self._loopback()
@@ -2135,12 +2049,12 @@ def make_handler(app: App):
                 return self._json(200, {"ok": True}, self._set_cookie("", clear=True))
             if path == "/api/password":
                 rec = app.auth_record()
-                if not auth.verify_password(str(body.get("alt", "")), rec):
-                    return self._json(401, {"fehler": tr("s_altes_passwort_falsch")})
-                err = auth.password_ok(str(body.get("neu", "")))
+                if not auth.verify_password(str(body.get("old", "")), rec):
+                    return self._json(401, {"error": tr("s_altes_passwort_falsch")})
+                err = auth.password_ok(str(body.get("new", "")))
                 if err:
-                    return self._json(400, {"fehler": err})
-                app.store.save("auth.json", auth.with_offline(auth.hash_password(str(body["neu"])), str(body["neu"])))
+                    return self._json(400, {"error": err})
+                app.store.save("auth.json", auth.with_offline(auth.hash_password(str(body["new"])), str(body["new"])))
                 n = app.sessions.drop_others(s["token"])                # other devices have to sign in with the new password
                 new = app.sessions.rotate(s["token"])                    # and this one goes on under a new token
                 log.info("Password changed, %d other session(s) ended, this one renewed", n)
@@ -2148,175 +2062,175 @@ def make_handler(app: App):
             if path == "/api/config":
                 cfg = body.get("config")
                 if not isinstance(cfg, dict):
-                    return self._json(400, {"fehler": tr("s_config_fehlt")})
-                cfg = dict(cfg, nicht_buchen=copy.deepcopy(app.config.get("nicht_buchen") or []))     # changed only under Auto bookings
-                b = (cfg.get("oberflaeche") or {}).get("bind", "127.0.0.1") or "127.0.0.1"
+                    return self._json(400, {"error": tr("s_config_fehlt")})
+                cfg = dict(cfg, not_book=copy.deepcopy(app.config.get("not_book") or []))     # changed only under Auto bookings
+                b = (cfg.get("ui") or {}).get("bind", "127.0.0.1") or "127.0.0.1"
                 if not bind_allowed(b):
-                    return self._json(400, {"fehler": tr("s_adresse_s_nicht_erlaubt_nur") % b})
+                    return self._json(400, {"error": tr("s_adresse_s_nicht_erlaubt_nur") % b})
                 # address, port and certificate: only on the Mac; a new port must be free; afterwards restart on it
-                old_ui, new_ui = app.config.get("oberflaeche") or {}, cfg.get("oberflaeche") or {}
+                old_ui, new_ui = app.config.get("ui") or {}, cfg.get("ui") or {}
                 net_keys = ("bind", "port", "tls_cert", "tls_key")
                 net_changed = any((old_ui.get(k) or "") != (new_ui.get(k) or "") for k in net_keys if k != "port") or \
                     int(old_ui.get("port") or 8765) != int(new_ui.get("port") or 8765)
                 if net_changed and not local:
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 # where files are read and written (receipts folder and its sub-folders): only at the Mac
-                if bool(cfg.get("probelauf", True)) != bool(app.config.get("probelauf", True)) and not local:
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})      # booking without asking: switched only at the Mac
-                if bool((cfg.get("moneymoney") or {}).get("kategorisieren_erlauben")) != app.mm_write_on() and not local:
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})      # entering categories in MoneyMoney: only at the Mac
-                old_b, new_b = app.config.get("belege") or {}, cfg.get("belege") or {}
-                if any((old_b.get(k) or "") != (new_b.get(k) or "") for k in ("ordner", "unterordner")) and not local:
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+                if bool(cfg.get("dry_run", True)) != bool(app.config.get("dry_run", True)) and not local:
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})      # booking without asking: switched only at the Mac
+                if bool((cfg.get("moneymoney") or {}).get("allow_categorize")) != app.mm_write_on() and not local:
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})      # entering categories in MoneyMoney: only at the Mac
+                old_b, new_b = app.config.get("receipts") or {}, cfg.get("receipts") or {}
+                if any((old_b.get(k) or "") != (new_b.get(k) or "") for k in ("folder", "subfolder")) and not local:
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 # where updates come from: only at the Mac (an update is installed with one click there)
                 if ((cfg.get("updates") or {}).get("repo") or "stecrz/Kontor") != ((app.config.get("updates") or {}).get("repo") or "stecrz/Kontor") and not local:
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 new_port = int(new_ui.get("port") or 8765)
                 if not 1024 <= new_port <= 65535:
-                    return self._json(400, {"fehler": tr("s_port_ungueltig")})
+                    return self._json(400, {"error": tr("s_port_ungueltig")})
                 if new_port != int(old_ui.get("port") or 8765) and not port_free(new_port):
-                    return self._json(409, {"fehler": tr("s_port_belegt", new_port)})
+                    return self._json(409, {"error": tr("s_port_belegt", new_port)})
                 cfg = prune_account_settings(cfg, app.ledger)        # entries of accounts deleted in MoneyMoney go
                 findings = check_config(app.ledger, app.categories_raw, merged_config(cfg)) if app.ledger is not None else []
-                if any(f["stufe"] == "fehler" for f in findings) and not body.get("trotzdem"):
-                    return self._json(409, {"fehler": tr("s_konfiguration_hat_fehler"), "befunde": findings})
+                if any(f["severity"] == "error" for f in findings) and not body.get("anyway"):
+                    return self._json(409, {"error": tr("s_konfiguration_hat_fehler"), "findings": findings})
                 app.save_config(cfg)
                 log.info("Configuration saved (%d loans, %d companies with rules)",
-                         len(app.config.get("darlehen") or []), len(app.config.get("gesellschaften") or []))
+                         len(app.config.get("loans") or []), len(app.config.get("companies") or []))
                 if net_changed:
                     log.info("Address or port changed -- restarting on port %d", new_port)
                     app.request_restart()
-                return self._json(200, {"ok": True, "befunde": findings, "config": app.config, "neustart": net_changed and app.restart_allowed,
-                                        "port": new_port, "instanz": app.instance})
+                return self._json(200, {"ok": True, "findings": findings, "config": app.config, "restart": net_changed and app.restart_allowed,
+                                        "port": new_port, "instance": app.instance})
             if path == "/api/rules/preview":
                 # what the rules would book now, for a configuration being edited (nothing is saved or written)
                 cfg = body.get("config")
                 if not isinstance(cfg, dict) or app.ledger is None:
-                    return self._json(200, {"vorschau": [], "warnungen": [], "buchungen": 0})
+                    return self._json(200, {"preview": [], "warnings": [], "bookings": 0})
                 st = app.store.load("state.json", {}) or {}
                 led = app.ledger.fork()
                 try:
-                    res = plan_rules(led, merged_config(dict(cfg, nicht_buchen=app.config.get("nicht_buchen") or [])), date.today(),
-                                     seen=Seen.from_state(st.get("gesehen"), led, date.today()))
+                    res = plan_rules(led, merged_config(dict(cfg, not_book=app.config.get("not_book") or [])), date.today(),
+                                     seen=Seen.from_state(st.get("seen"), led, date.today()))
                 except Exception as e:          # something unexpected in MoneyMoney or the rules: named, the page stays usable
                     log.warning("Rules preview failed (%s)", type(e).__name__)
-                    return self._json(200, {"vorschau": [], "warnungen": [tr("s_regeln_fehler") % type(e).__name__], "buchungen": 0})
-                return self._json(200, {"vorschau": res.preview, "warnungen": res.warnings, "buchungen": len(res.proposals)})
+                    return self._json(200, {"preview": [], "warnings": [tr("s_regeln_fehler") % type(e).__name__], "bookings": 0})
+                return self._json(200, {"preview": res.preview, "warnings": res.warnings, "bookings": len(res.proposals)})
             if path == "/api/check":
                 if not app.check_lock.acquire(blocking=False):
-                    return self._json(409, {"fehler": tr("s_die_pruefung_laeuft_bereits_bitte")})
+                    return self._json(409, {"error": tr("s_die_pruefung_laeuft_bereits_bitte")})
                 try:
                     ledger, err = app.refresh_ledger()
                     if ledger is None:
-                        return self._json(200, {"verfuegbar": False, "text": err, "befunde": []})
+                        return self._json(200, {"available": False, "text": err, "findings": []})
                     app.request_rebuild("connection checked")      # Auswertung auf den frischen Stand bringen (im Hintergrund)
                     findings = check_config(ledger, app.categories_raw, app.config)
-                    return self._json(200, {"verfuegbar": True, "befunde": findings, "konten": account_tree(ledger, app.config),
-                                            "kategorien": app.categories()})
+                    return self._json(200, {"available": True, "findings": findings, "accounts": account_tree(ledger, app.config),
+                                            "categories": app.categories()})
                 finally:
                     app.check_lock.release()
             if path == "/api/sync/gaps":
-                app.store.update("state.json", lambda cur: cur.pop("luecken", None), {})
+                app.store.update("state.json", lambda cur: cur.pop("gaps", None), {})
                 return self._json(200, {"ok": True})
             if path == "/api/sync":
                 if app.ledger is None:
-                    return self._json(409, {"fehler": tr("s_noch_kein_stand_aus_moneymoney")})
+                    return self._json(409, {"error": tr("s_noch_kein_stand_aus_moneymoney")})
                 try:
-                    acc = app.ledger.resolve(str(body.get("konto") or ""))
+                    acc = app.ledger.resolve(str(body.get("account") or ""))
                 except KeyError as e:
-                    return self._json(400, {"fehler": str(e)})
-                want = body.get("abgerufen")
+                    return self._json(400, {"error": str(e)})
+                want = body.get("fetched")
                 cfg = copy.deepcopy(app.config)
-                ab = cfg.setdefault("abruf", {})
+                ab = cfg.setdefault("fetch", {})
                 for k in ("online", "offline"):
                     ab[k] = [r for r in ab.get(k) or [] if r.split("|")[0].strip() != acc.uuid]
-                detected = abruf_arten(app.ledger, cfg)[acc.uuid]["art"]
+                detected = abruf_arten(app.ledger, cfg)[acc.uuid]["kind"]
                 if isinstance(want, bool) and (want != (detected == "online")):
                     ab["online" if want else "offline"].append("%s | %s" % (acc.uuid, acc.name))
                 app.save_config(cfg)
-                return self._json(200, {"ok": True, "abruf": app.abruf()})
+                return self._json(200, {"ok": True, "fetch": app.abruf()})
             if path == "/api/bookings/reject":
                 # a proposed booking you do not want: never proposed again (settings: nicht_buchen), until "Propose again"
                 key = str(body.get("key") or "")
                 acc, _, tag = key.partition("|")
                 if not re.fullmatch(r"[0-9A-Za-z-]{8,64}", acc) or not TAG_RE.fullmatch(tag):
-                    return self._json(400, {"fehler": tr("s_markierung_ungueltig")})
+                    return self._json(400, {"error": tr("s_markierung_ungueltig")})
                 key = rules_bkey(acc, tag)
-                lr = (app.store.load("state.json", {}) or {}).get("letzter_lauf") or {}
-                row = next((x for x in lr.get("vorschlaege") or [] if x.get("key") == key), None) or {"konto_name": "", "text": ""}
+                lr = (app.store.load("state.json", {}) or {}).get("last_run") or {}
+                row = next((x for x in lr.get("proposals") or [] if x.get("key") == key), None) or {"account_name": "", "text": ""}
                 cfg = copy.deepcopy(app.config)
-                cfg["nicht_buchen"] = [x for x in cfg.get("nicht_buchen") or [] if x.get("key") != key] + [not_booked_entry(row, key)]
+                cfg["not_book"] = [x for x in cfg.get("not_book") or [] if x.get("key") != key] + [not_booked_entry(row, key)]
                 app.save_config(cfg)
 
                 def upd(cur: dict) -> None:
                     # what still waits, planned again without it (the next value adjustment of that account takes up the
                     # difference) -- from the last state read, nothing is written
-                    lr = cur.get("letzter_lauf") or {}
-                    if lr.get("vorschlaege"):
-                        lr["vorschlaege"] = [x for x in lr["vorschlaege"] if x.get("key") != key]
-                        if lr.get("probelauf") and app.ledger is not None:
+                    lr = cur.get("last_run") or {}
+                    if lr.get("proposals"):
+                        lr["proposals"] = [x for x in lr["proposals"] if x.get("key") != key]
+                        if lr.get("dry_run") and app.ledger is not None:
                             try:
-                                lr["vorschlaege"] = plan_pending(app.ledger, app.config, cur, date.today())
+                                lr["proposals"] = plan_pending(app.ledger, app.config, cur, date.today())
                             except Exception as e:          # the list stays as it was; the next check plans it again
                                 log.warning("Approval list not recalculated: %s", e)
-                        lr["probelauf"] = bool(lr["vorschlaege"]) and lr.get("probelauf", False)
+                        lr["dry_run"] = bool(lr["proposals"]) and lr.get("dry_run", False)
                 app.store.update("state.json", upd, {})
                 log.info("Booking set to not be booked")
                 return self._json(200, {"ok": True})
             if path == "/api/bookings/plan":
                 # the approval list for your selection: what you leave out (halten) or change (aenderungen) and everything
                 # planned after it, recalculated from the last state read -- nothing is saved or written
-                hold = body.get("halten") or []
+                hold = body.get("hold") or []
                 if not isinstance(hold, list) or len(hold) > 2000 or not all(
                         isinstance(k, str) and re.fullmatch(r"[0-9A-Za-z-]{8,64}", k.partition("|")[0]) and TAG_RE.fullmatch(k.partition("|")[2]) for k in hold):
-                    return self._json(400, {"fehler": tr("s_markierung_ungueltig")})
-                edits, err = approval(body.get("aenderungen") or {})
+                    return self._json(400, {"error": tr("s_markierung_ungueltig")})
+                edits, err = approval(body.get("changes") or {})
                 if err:
-                    return self._json(400, {"fehler": err})
+                    return self._json(400, {"error": err})
                 hold = [rules_bkey(k.partition("|")[0], k.partition("|")[2]) for k in hold]
                 if app.ledger is None:
-                    return self._json(200, {"vorschlaege": None})
+                    return self._json(200, {"proposals": None})
                 st = app.store.load("state.json", {}) or {}
                 try:
-                    return self._json(200, {"vorschlaege": plan_pending(app.ledger, app.config, st, date.today(), set(hold), edits)})
+                    return self._json(200, {"proposals": plan_pending(app.ledger, app.config, st, date.today(), set(hold), edits)})
                 except Exception as e:          # the list stays as it was
                     log.warning("Approval list not recalculated (%s)", type(e).__name__)
-                    return self._json(409, {"fehler": tr("s_regeln_fehler") % type(e).__name__})
+                    return self._json(409, {"error": tr("s_regeln_fehler") % type(e).__name__})
             if path == "/api/bookings/restore":
                 # "Propose again" under "Not booked": out of the list -- the next check proposes it if it is still needed (it
                 # waits for your approval when it is older than the last check, also booking fully automatically)
                 key = str(body.get("key") or "")
                 acc, _, tag = key.partition("|")
                 if not re.fullmatch(r"[0-9A-Za-z-]{8,64}", acc) or not TAG_RE.fullmatch(tag):
-                    return self._json(400, {"fehler": tr("s_markierung_ungueltig")})
+                    return self._json(400, {"error": tr("s_markierung_ungueltig")})
                 key = rules_bkey(acc, tag)
                 cfg = copy.deepcopy(app.config)
-                cfg["nicht_buchen"] = [x for x in cfg.get("nicht_buchen") or [] if x.get("key") != key]
+                cfg["not_book"] = [x for x in cfg.get("not_book") or [] if x.get("key") != key]
                 app.save_config(cfg)
                 log.info("Booking to be proposed again")
                 return self._json(200, {"ok": True})
             if path == "/api/bookings/refresh":
                 # "Aktualisieren" under Auto bookings: only the accounts of the rules read again, the approval list planned again
                 res = app.refresh_bookings()
-                code = 409 if res.get("status") == "laeuft_bereits" else 200
-                return self._json(code, dict({k: res.get(k) for k in ("status", "text", "probelauf")},
-                                             wartend=len(res.get("vorschlaege") or []) if res.get("probelauf") else 0))
+                code = 409 if res.get("status") == "already_running" else 200
+                return self._json(code, dict({k: res.get(k) for k in ("status", "text", "dry_run")},
+                                             wartend=len(res.get("proposals") or []) if res.get("dry_run") else 0))
             if path == "/api/run":
-                dry = body.get("probelauf")
+                dry = body.get("dry_run")
                 if dry is False and not local:
-                    return self._json(403, {"fehler": tr("s_buchen_nur_von_diesem_mac")})
+                    return self._json(403, {"error": tr("s_buchen_nur_von_diesem_mac")})
                 if not local:
                     dry = True          # from elsewhere never a live run, whatever the test mode says (the Mac's schedule books)
                 if app.running:
-                    return self._json(409, {"fehler": tr("s_ein_abgleich_laeuft_bereits")})
-                full = True if body.get("voll") else None          # „Alles neu lesen“; sonst schnell, solange kein vollstaendiges Lesen faellig ist
+                    return self._json(409, {"error": tr("s_ein_abgleich_laeuft_bereits")})
+                full = True if body.get("full_read") else None          # „Alles neu lesen“; sonst schnell, solange kein vollstaendiges Lesen faellig ist
                 approve = None
-                if dry is False and body.get("freigabe") is not None:      # "Book selected": only these, with your changes
-                    approve, err = approval(body.get("freigabe"))
+                if dry is False and body.get("approval") is not None:      # "Book selected": only these, with your changes
+                    approve, err = approval(body.get("approval"))
                     if err:
-                        return self._json(400, {"fehler": err})
+                        return self._json(400, {"error": err})
                 threading.Thread(target=app.do_run, args=(dry, bool(body.get("force", True))), kwargs={"full": full, "approve": approve}, daemon=True).start()
-                return self._json(202, {"gestartet": True})
+                return self._json(202, {"started": True})
             if path == "/api/report":
                 ledger, err = app.refresh_ledger()
                 if ledger is None:
@@ -2328,38 +2242,36 @@ def make_handler(app: App):
             if path.startswith("/api/receipts/"):
                 return self._belege(path, body, local)
             if path == "/api/package/import":
-                pkg = body.get("paket")
+                pkg = body.get("package")
                 if isinstance(pkg, str):
                     pkg = json.loads(pkg)
-                cfg, unresolved, report = import_package(app.config, pkg, app.ledger, body.get("modus") or "ergaenzen", body.get("zuordnung") or {})
-                if before_slash_keys(pkg.get("version")) and app.categories_raw:
-                    cfg = follow_slashes(cfg, app.categories_raw) or cfg       # its category keys split every slash
+                cfg, unresolved, report = import_package(app.config, pkg, app.ledger, body.get("mode") or "merge", body.get("assignment") or {})
                 if not local:                              # what is switched only at the Mac stays as it is (as when saving settings)
-                    cfg["probelauf"] = app.config.get("probelauf", True)
-                    cfg.setdefault("moneymoney", {})["kategorisieren_erlauben"] = app.mm_write_on()
-                    for sec, keys in (("oberflaeche", ("bind", "port", "tls_cert", "tls_key")), ("belege", ("ordner", "unterordner"))):
+                    cfg["dry_run"] = app.config.get("dry_run", True)
+                    cfg.setdefault("moneymoney", {})["allow_categorize"] = app.mm_write_on()
+                    for sec, keys in (("ui", ("bind", "port", "tls_cert", "tls_key")), ("receipts", ("folder", "subfolder"))):
                         old_s, new_s = app.config.get(sec) or {}, cfg.setdefault(sec, {})
                         for k in keys:
                             if k in old_s:
                                 new_s[k] = old_s[k]
                             else:
                                 new_s.pop(k, None)
-                if unresolved and not body.get("trotzdem"):
-                    return self._json(200, {"ok": False, "unaufgeloest": unresolved, "bericht": report,
-                                            "hinweis": tr("s_konten_zuordnen_oder_trotzdem_ueberneh")})
+                if unresolved and not body.get("anyway"):
+                    return self._json(200, {"ok": False, "unresolved": unresolved, "report": report,
+                                            "hint": tr("s_konten_zuordnen_oder_trotzdem_ueberneh")})
                 findings = check_config(app.ledger, app.categories_raw, cfg) if app.ledger is not None else []
                 app.save_config(cfg)
-                if pkg.get("plan") and body.get("mit_plan"):
+                if pkg.get("plan") and body.get("with_plan"):
                     app.store.save("plan.json", pkg["plan"])
-                log.info("Settings package '%s' imported (%s)", pkg.get("name"), body.get("modus") or "ergaenzen")
-                return self._json(200, {"ok": True, "bericht": report, "befunde": findings, "config": app.config})
+                log.info("Settings package '%s' imported (%s)", pkg.get("name"), body.get("mode") or "merge")
+                return self._json(200, {"ok": True, "report": report, "findings": findings, "config": app.config})
             if path == "/api/update/check":
                 app.update_info = updates.check((app.config.get("updates") or {}).get("repo") or "stecrz/Kontor")
                 app.update_checked = time.time()
                 return self._json(200, {"info": app.update_info, "version": version()})
             if path == "/api/update/install":
                 if not local:
-                    return self._json(403, {"fehler": tr("s_updates_nur_von_diesem_mac")})
+                    return self._json(403, {"error": tr("s_updates_nur_von_diesem_mac")})
                 res = updates.install((app.config.get("updates") or {}).get("repo") or "stecrz/Kontor", restart=True)
                 if res.get("ok"):
                     log.info("Update installed: %s", res.get("version"))
@@ -2369,36 +2281,36 @@ def make_handler(app: App):
             if path == "/api/history/import":
                 return self._json(200, self._historie_import(body))
             if path == "/api/language":
-                if body.get("sprache") not in i18n.LANGS:
-                    raise ValueError("sprache: de|en")
+                if body.get("language") not in i18n.LANGS:
+                    raise ValueError("language: de|en")
                 cfg = copy.deepcopy(app.config)
-                cfg.setdefault("oberflaeche", {})["sprache"] = body["sprache"]
+                cfg.setdefault("ui", {})["language"] = body["language"]
                 app.save_config(cfg)
-                return self._json(200, {"ok": True, "sprache": i18n.lang()})
+                return self._json(200, {"ok": True, "language": i18n.lang()})
             if path == "/api/securities/lookup":
                 # names of securities by their ISIN (OpenFIGI): only on request, only at the Mac; "entfernen" drops them again
                 if not local:
-                    return self._json(403, {"fehler": tr("s_nur_direkt_am_mac_moeglich")})
-                if body.get("aktion") == "entfernen":
-                    app.store.update("state.json", lambda cur: cur.pop("wp_suche", None), {})
-                    res = {"entfernt": True}
-                elif body.get("aktion") == "namen":
+                    return self._json(403, {"error": tr("s_nur_direkt_am_mac_moeglich")})
+                if body.get("action") == "remove":
+                    app.store.update("state.json", lambda cur: cur.pop("sec_search", None), {})
+                    res = {"removed": True}
+                elif body.get("action") == "names":
                     # the list of looked-up names, changed by hand (only ISINs already looked up; empty = no name)
-                    namen = body.get("namen") if isinstance(body.get("namen"), dict) else {}
+                    namen = body.get("names") if isinstance(body.get("names"), dict) else {}
                     known = app.securities_known()[2]
-                    app.store.update("state.json", lambda cur: security_names.set_names(cur.setdefault("wp_suche", {}), namen, known), {})
-                    res = {"gespeichert": True}
+                    app.store.update("state.json", lambda cur: security_names.set_names(cur.setdefault("sec_search", {}), namen, known), {})
+                    res = {"saved": True}
                 else:
                     try:
                         res = app.securities_lookup()
                     except (OSError, ValueError) as e:
                         log.warning("Security names: lookup failed: %s", e)
-                        return self._json(502, {"fehler": tr("s_wp_suche_fehler") % e})
+                        return self._json(502, {"error": tr("s_wp_suche_fehler") % e})
                 ok, err = app.rebuild_report(wait=True, grund="rebuild requested")
                 return self._json(200, dict(app.securities_unnamed(), **res, ok=ok, text=err))
             if path == "/api/history/mm-reveal":
                 if not self._is_local(s):
-                    return self._json(403, {"fehler": tr("s_nur_direkt_am_mac_moeglich")})
+                    return self._json(403, {"error": tr("s_nur_direkt_am_mac_moeglich")})
                 mm_history.reveal()
                 return self._json(200, {"ok": True})
             if path.startswith("/api/categories/"):
@@ -2408,62 +2320,58 @@ def make_handler(app: App):
             if path.startswith("/api/file/"):
                 return self._datei(path, body, local)
             if path == "/api/report/rebuild":
-                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="rebuild requested")
-                return self._json(200, {"ok": ok, "text": err, "bericht": app.bericht_status()})
+                ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="rebuild requested")
+                return self._json(200, {"ok": ok, "text": err, "report": app.bericht_status()})
             if path == "/api/backup":
                 # vollstaendige Sicherung, mit einem eigenen Passwort verschluesselt (nur am Mac; Passwort wird nirgends abgelegt)
                 if not local:
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 st = app.store.load("state.json", {}) or {}
-                sich = {"kontor_sicherung": 1, "version": version(), "erstellt": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        "config": app.config, "plan": app.plan_all(), "kategorien": categorize.load(app.store),
-                        "historie": st.get("historie") or {}, "snapshots": st.get("snapshots") or {},
-                        "belege": app.store.load("receipts.json", {}) or {}, "mm_verlauf": app.store.load(MM_HISTORY_FILE, {}) or {}}
-                out = backup_encrypt(sich, str(body.get("passwort") or ""))
+                sich = {"kontor_backup": 1, "version": version(), "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "config": app.config, "plan": app.plan_all(), "categories": categorize.load(app.store),
+                        "history": st.get("history") or {}, "snapshots": st.get("snapshots") or {},
+                        "receipts": app.store.load("receipts.json", {}) or {}, "mm_history_src": app.store.load(MM_HISTORY_FILE, {}) or {}}
+                out = backup_encrypt(sich, str(body.get("password") or ""))
                 log.info("Encrypted backup of all settings created")
                 return self._json(200, out)
             if path == "/api/backup/restore":
                 if not local:
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
-                sich = body.get("sicherung") or {}
-                if isinstance(sich, dict) and sich.get("kontor_sicherung_verschluesselt"):
-                    sich = backup_decrypt(sich, str(body.get("passwort") or ""))
-                if not isinstance(sich, dict) or not sich.get("kontor_sicherung") or not isinstance(sich.get("config"), dict):
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                sich = body.get("backup") or {}
+                if isinstance(sich, dict) and sich.get("kontor_backup_encrypted"):
+                    sich = backup_decrypt(sich, str(body.get("password") or ""))
+                if not isinstance(sich, dict) or not sich.get("kontor_backup") or not isinstance(sich.get("config"), dict):
                     raise ValueError(tr("s_keine_kontor_sicherung"))
+                check_file_version(sich)
                 teile = []
                 app.save_config(sich["config"]); teile.append(tr("s_teil_einstellungen"))
                 if isinstance(sich.get("plan"), dict):
                     app.store.save("plan.json", sich["plan"]); teile.append(tr("s_teil_planung"))
-                if isinstance(sich.get("kategorien"), dict):
-                    categorize.save(app.store, sich["kategorien"]); teile.append(tr("s_teil_kategorien"))
+                if isinstance(sich.get("categories"), dict):
+                    categorize.save(app.store, sich["categories"]); teile.append(tr("s_teil_kategorien"))
                 def _merge(st):
-                    if isinstance(sich.get("historie"), dict):
-                        st["historie"] = sich["historie"]
+                    if isinstance(sich.get("history"), dict):
+                        st["history"] = sich["history"]
                     if isinstance(sich.get("snapshots"), dict) and sich["snapshots"]:
                         st["snapshots"] = {**sich["snapshots"], **(st.get("snapshots") or {})}
                 app.store.update("state.json", _merge, {})
-                if isinstance(sich.get("historie"), dict):
+                if isinstance(sich.get("history"), dict):
                     teile.append(tr("s_teil_verlauf"))
-                if isinstance(sich.get("belege"), dict) and sich["belege"] and body.get("mit_belegen", True):
-                    app.store.save("receipts.json", sich["belege"]); teile.append(tr("s_teil_belegindex"))
-                if isinstance(sich.get("mm_verlauf"), dict) and sich["mm_verlauf"]:
-                    app.store.save(MM_HISTORY_FILE, sich["mm_verlauf"]); teile.append(tr("s_teil_mm_verlauf"))
-                if before_slash_keys(sich.get("version")):     # its category keys split every slash: they follow once more
-                    if app.categories_raw:
-                        app._follow_slashes(app.categories_raw, force=True)
-                    else:
-                        app.store.update("state.json", lambda st: st.pop(App.SLASH_FLAG, None), {})
+                if isinstance(sich.get("receipts"), dict) and sich["receipts"] and body.get("with_receipts", True):
+                    app.store.save("receipts.json", sich["receipts"]); teile.append(tr("s_teil_belegindex"))
+                if isinstance(sich.get("mm_history_src"), dict) and sich["mm_history_src"]:
+                    app.store.save(MM_HISTORY_FILE, sich["mm_history_src"]); teile.append(tr("s_teil_mm_verlauf"))
                 log.info("Backup restored: %s", ", ".join(teile))
-                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="backup restored") if app.ledger is not None else (False, None)
-                return self._json(200, {"ok": True, "teile": teile, "bericht": ok, "config": app.config})
+                ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="backup restored") if app.ledger is not None else (False, None)
+                return self._json(200, {"ok": True, "parts": teile, "report": ok, "config": app.config})
             if path == "/api/reset":
                 if not local:
-                    return self._json(403, {"fehler": tr("s_zuruecksetzen_nur_von_diesem_mac")})
-                if not auth.verify_password(str(body.get("passwort", "")), app.auth_record()):
+                    return self._json(403, {"error": tr("s_zuruecksetzen_nur_von_diesem_mac")})
+                if not auth.verify_password(str(body.get("password", "")), app.auth_record()):
                     time.sleep(0.5)
-                    return self._json(401, {"fehler": tr("s_passwort_falsch")})
+                    return self._json(401, {"error": tr("s_passwort_falsch")})
                 dateien = ["config.json", "plan.json", "state.json", "dataset.json", "cf-ids.json", "transactions.json", "categories.json", "receipts.json", "moneymoney-ledger.bin", "mm-history.json"]
-                if body.get("mit_passwort"):
+                if body.get("with_password"):
                     dateien.append("auth.json")
                 for name in dateien:
                     app.store.delete(name)
@@ -2471,60 +2379,73 @@ def make_handler(app: App):
                 app.ledger, app.ledger_time, app.categories_raw, app.last_result, app.last_run_at, app.umsaetze = None, None, [], None, None, None
                 app.sessions.drop_all()
                 log.warning("Program reset (%s); receipt files and log kept", ", ".join(dateien))
-                return self._json(200, {"ok": True, "neu_einrichten": bool(body.get("mit_passwort"))}, self._set_cookie("", clear=True))
+                return self._json(200, {"ok": True, "setup_again": bool(body.get("with_password"))}, self._set_cookie("", clear=True))
             if path == "/api/uninstall":
                 if not local:
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
-                if not auth.verify_password(str(body.get("passwort", "")), app.auth_record()):
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                if not auth.verify_password(str(body.get("password", "")), app.auth_record()):
                     time.sleep(0.5)
-                    return self._json(401, {"fehler": tr("s_passwort_falsch")})
-                rep = app.uninstall(bool(body.get("programm", True)))
-                if rep.get("fehler"):
+                    return self._json(401, {"error": tr("s_passwort_falsch")})
+                rep = app.uninstall(bool(body.get("program_folder", True)))
+                if rep.get("error"):
                     return self._json(409, rep)
                 app.sessions.drop_all()
                 threading.Thread(target=app.uninstall_finish, daemon=True).start()        # the answer first, then the service goes
                 return self._json(200, rep, self._set_cookie("", clear=True))
+            if path == "/api/key/renew":
+                # a new data key: everything re-encrypted, the old key gone only once all opens with the new one (only at the Mac)
+                if not local:
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                if not auth.verify_password(str(body.get("password", "")), app.auth_record()):
+                    time.sleep(0.5)
+                    return self._json(401, {"error": tr("s_passwort_falsch")})
+                from storage import StoreError
+                try:
+                    n = app.store.renew_key()
+                except StoreError as e:
+                    return self._json(409, {"error": str(e)})
+                return self._json(200, {"ok": True, "files": n})
             if path == "/api/remote":
                 return self._remote_setup(body, local)
             if path == "/api/timemachine-exclusion":
                 if not local:
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
-                flag = "addexclusion" if body.get("ausschliessen") else "removeexclusion"
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                flag = "addexclusion" if body.get("exclude") else "removeexclusion"
                 try:
                     r = subprocess.run(["tmutil", flag, app.data_dir], capture_output=True, text=True, timeout=30)
                     return self._json(200, {"ok": r.returncode == 0, "text": (r.stdout + r.stderr).strip(), "status": timemachine_status(app.data_dir)})
                 except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-                    return self._json(200, {"ok": False, "text": str(e), "status": "unbekannt"})
-            return self._json(404, {"fehler": "unbekannt"})
+                    return self._json(200, {"ok": False, "text": str(e), "status": "unknown"})
+            return self._json(404, {"error": "unknown"})
 
         def _remote_setup(self, body: dict, local: bool):
             """Zugriff vom iPhone ein-/ausschalten und fein einstellen -- nur am Mac."""
             import tls_cert
             if not local:
-                return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
-            aktion = body.get("aktion")
+                return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+            aktion = body.get("action")
             cfg = copy.deepcopy(app.config)
-            ui = cfg.setdefault("oberflaeche", {})
+            ui = cfg.setdefault("ui", {})
             neustart = False
-            if aktion == "einstellungen":
-                for k in ("fern_nur_ansehen", "offline_kopie"):
+            if aktion == "settings":
+                for k in ("remote_read_only", "offline_copy"):
                     if k in body:
                         ui[k] = bool(body[k])
-            elif aktion == "ein":                 # Zertifikat ueber Tailscale, Adresse = Tailscale-Adresse des Macs
+            elif aktion == "enable":                 # Zertifikat ueber Tailscale, Adresse = Tailscale-Adresse des Macs
                 try:
                     r = tls_cert.setup(cfg, app.data_dir)
                 except Exception as e:
                     log.warning("Remote access: certificate not available: %s", e)
                     return self._json(200, {"ok": False, "text": str(e), "tailscale": app.tailscale(fresh=True)})
-                cfg["oberflaeche"] = dict(r["oberflaeche"], bind=r["ip"])
+                cfg["ui"] = dict(r["ui"], bind=r["ip"])
                 neustart = True
-            elif aktion == "ein_http":            # ohne Zertifikat (nur ueber Tailscale verschluesselt, keine Offline-Ansicht)
+            elif aktion == "enable_http":            # ohne Zertifikat (nur ueber Tailscale verschluesselt, keine Offline-Ansicht)
                 st = app.tailscale(fresh=True)
-                if not st.get("verbunden") or not st.get("ip"):
+                if not st.get("connected") or not st.get("ip"):
                     return self._json(200, {"ok": False, "text": tr("s_tailscale_ist_nicht_verbunden_kein"), "tailscale": st})
                 ui.update(bind=st["ip"], tls_cert="", tls_key="")
                 neustart = True
-            elif aktion == "aus":
+            elif aktion == "disable":
                 ui["bind"] = "127.0.0.1"
                 neustart = True
             else:
@@ -2533,23 +2454,23 @@ def make_handler(app: App):
             log.info("Remote access settings changed: %s", aktion)
             if neustart:
                 app.request_restart()
-            return self._json(200, {"ok": True, "neustart": neustart and app.restart_allowed, "instanz": app.instance, "info": app.remote_info()})
+            return self._json(200, {"ok": True, "restart": neustart and app.restart_allowed, "instance": app.instance, "info": app.remote_info()})
 
         def _belege(self, path: str, body: dict, local: bool):
             bl = Belege(app.store, app.config)
             # Der Belegordner wird erst nach Rueckfrage angelegt (einmalig; ein in den Einstellungen gewaehlter Ordner gilt als bestaetigt)
             if path in ("/api/receipts/upload", "/api/receipts/open", "/api/receipts/export") and not os.path.isdir(bl.folder):
-                bcfg = app.config.get("belege") or {}
-                if body.get("ordner_anlegen"):
+                bcfg = app.config.get("receipts") or {}
+                if body.get("create_folder"):
                     cfg = copy.deepcopy(app.config)
-                    cfg.setdefault("belege", {})["ordner_bestaetigt"] = True
+                    cfg.setdefault("receipts", {})["folder_confirmed"] = True
                     app.save_config(cfg)
-                elif not bcfg.get("ordner_bestaetigt"):
-                    return self._json(409, {"fehler": tr("s_der_belegordner_s_existiert_noch") % bl.folder, "ordner_bestaetigen": True, "ordner": bl.folder})
+                elif not bcfg.get("folder_confirmed"):
+                    return self._json(409, {"error": tr("s_der_belegordner_s_existiert_noch") % bl.folder, "confirm_folder": True, "folder": bl.folder})
             ums = {t["id"]: t for t in (app.umsatzliste())}
             ds = app.store.load_shared("dataset.json", {}) or {}
-            names = {k["uuid"]: k["name"] for k in ds.get("konten", [])}
-            names.update(ds.get("bereich_namen") or {})
+            names = {k["uuid"]: k["name"] for k in ds.get("accounts", [])}
+            names.update(ds.get("area_names") or {})
 
             def tx_of(body):
                 tid = body.get("tx_id")
@@ -2558,79 +2479,79 @@ def make_handler(app: App):
                 t = ums.get(int(tid))
                 if t is None:
                     raise ValueError(tr("s_umsatz_s_nicht_gefunden_liste") % tid)
-                return dict(t, entitaet_name=names.get(t["entitaet"], ""))
+                return dict(t, entity_name=names.get(t["entity"], ""))
 
             if path == "/api/receipts/upload":
                 try:
-                    data = base64.b64decode(str(body.get("inhalt") or ""), validate=True)
+                    data = base64.b64decode(str(body.get("content") or ""), validate=True)
                 except Exception:
                     raise ValueError(tr("s_dateiinhalt_unlesbar"))
-                e = bl.add_bytes(tx_of(body), str(body.get("datei_name") or "Beleg"), data, str(body.get("notiz") or ""))
-                if (app.config.get("belege") or {}).get("kommentar_schreiben") and e.get("tx_id") is not None and local:
+                e = bl.add_bytes(tx_of(body), str(body.get("file_name") or "Beleg"), data, str(body.get("note") or ""))
+                if (app.config.get("receipts") or {}).get("write_comment") and e.get("tx_id") is not None and local:
                     # your setting "Reference in MoneyMoney": added to the comment that is there (read just before), never
                     # in its place
                     u = ums.get(int(e["tx_id"])) or {}
                     try:
-                        if u.get("konto") and u.get("datum"):
-                            app.bridge_factory(False).append_comment(int(e["tx_id"]), u["konto"], date.fromisoformat(u["datum"]), "Beleg: " + e["pfad"])
+                        if u.get("account") and u.get("date"):
+                            app.bridge_factory(False).append_comment(int(e["tx_id"]), u["account"], date.fromisoformat(u["date"]), "Beleg: " + e["path"])
                     except (MoneyMoneyError, ValueError) as ex:
                         log.warning("Receipt reference not written to MoneyMoney: %s", ex)
                 log.info("Receipt stored (%d KB)", len(data) // 1024)
-                return self._json(200, {"ok": True, "eintrag": e})
+                return self._json(200, {"ok": True, "entry": e})
             if path == "/api/receipts/link":
-                if body.get("extern") and not local:            # a file outside the receipts folder: only chosen at the Mac
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
-                if body.get("extern"):
-                    e = dict(bl.link_external(tx_of(body), str(body.get("pfad") or ""), str(body.get("notiz") or "")))
-                    e["status"] = file_status(e["pfad"])
+                if body.get("external") and not local:            # a file outside the receipts folder: only chosen at the Mac
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                if body.get("external"):
+                    e = dict(bl.link_external(tx_of(body), str(body.get("path") or ""), str(body.get("note") or "")))
+                    e["status"] = file_status(e["path"])
                 else:
-                    e = bl.link_existing(tx_of(body), str(body.get("pfad") or ""), str(body.get("notiz") or ""))
-                return self._json(200, {"ok": True, "eintrag": e})
+                    e = bl.link_existing(tx_of(body), str(body.get("path") or ""), str(body.get("note") or ""))
+                return self._json(200, {"ok": True, "entry": e})
             if path == "/api/receipts/remove":
-                ok = bl.remove(str(body.get("id") or ""), bool(body.get("datei_loeschen")))
+                ok = bl.remove(str(body.get("id") or ""), bool(body.get("delete_file")))
                 return self._json(200, {"ok": ok})
             if path == "/api/receipts/update":
-                fields = {k: v for k, v in body.items() if k in ("notiz", "name", "datum", "betrag")}
+                fields = {k: v for k, v in body.items() if k in ("note", "name", "date", "amount")}
                 if "tx_id" in body:
                     t = tx_of(body)
-                    fields.update({"tx_id": t["id"], "konto": t["konto"], "entitaet": t["entitaet"]} if t else {"tx_id": None})
+                    fields.update({"tx_id": t["id"], "account": t["account"], "entity": t["entity"]} if t else {"tx_id": None})
                 e = bl.update(str(body.get("id") or ""), **fields)
-                return self._json(200, {"ok": e is not None, "eintrag": e})
+                return self._json(200, {"ok": e is not None, "entry": e})
             if path == "/api/receipts/open":
                 if not local:
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 err = bl.ensure_folder()
                 if err:
-                    return self._json(500, {"fehler": err})
+                    return self._json(500, {"error": err})
                 target = bl.folder
-                if body.get("pfad"):
-                    cand = os.path.normpath(os.path.join(bl.folder, str(body["pfad"])))
+                if body.get("path"):
+                    cand = os.path.normpath(os.path.join(bl.folder, str(body["path"])))
                     if cand.startswith(os.path.normpath(bl.folder) + os.sep) and os.path.exists(cand):
                         target = cand
-                    elif os.path.isabs(str(body["pfad"])) and os.path.exists(str(body["pfad"])):
-                        target = os.path.normpath(str(body["pfad"]))
+                    elif os.path.isabs(str(body["path"])) and os.path.exists(str(body["path"])):
+                        target = os.path.normpath(str(body["path"]))
                 if sys.platform != "darwin":
-                    return self._json(400, {"fehler": tr("s_oeffnen_im_finder_nur_unter")})
+                    return self._json(400, {"error": tr("s_oeffnen_im_finder_nur_unter")})
                 subprocess.Popen(["open", "-R", target] if os.path.isfile(target) else ["open", target])
                 return self._json(200, {"ok": True})
             if path == "/api/receipts/export":
-                target = bl.export_zip(str(body.get("jahr") or "") or None, str(body.get("entitaet") or "") or None, names)
+                target = bl.export_zip(str(body.get("year") or "") or None, str(body.get("entity") or "") or None, names)
                 if local and sys.platform == "darwin":
                     subprocess.Popen(["open", "-R", target])
                 log.info("Receipt export created")
-                return self._json(200, {"ok": True, "datei": target})
-            return self._json(404, {"fehler": "unbekannt"})
+                return self._json(200, {"ok": True, "file": target})
+            return self._json(404, {"error": "unknown"})
 
         def _historie_set(self, body: dict) -> dict:
-            uuid = str(body.get("konto") or "")
+            uuid = str(body.get("account") or "")
             if not uuid:
                 raise ValueError(tr("s_konto_fehlt"))
             n = 0
 
             def _apply(st):
                 nonlocal n
-                hist = st.setdefault("historie", {}).setdefault(uuid, {})
-                for mk, v in (body.get("werte") or {}).items():
+                hist = st.setdefault("history", {}).setdefault(uuid, {})
+                for mk, v in (body.get("amounts") or {}).items():
                     mk = str(mk)[:7]
                     if len(mk) != 7 or not mk[:4].isdigit() or not mk[5:7].isdigit():
                         continue
@@ -2639,33 +2560,33 @@ def make_handler(app: App):
                     else:
                         hist[mk] = float(str(v).replace(".", "").replace(",", ".")) if isinstance(v, str) and "," in str(v) else float(v)
                     n += 1
-                if body.get("loeschen"):
-                    st["historie"].pop(uuid, None)
+                if body.get("delete"):
+                    st["history"].pop(uuid, None)
                 if not hist:
-                    st["historie"].pop(uuid, None)
+                    st["history"].pop(uuid, None)
             app.store.update("state.json", _apply, {})
-            if body.get("quelle") in ("umsaetze", "stand"):
+            if body.get("source") in ("transactions", "balances"):
                 cfg = copy.deepcopy(app.config)
-                cfg.setdefault("bilanz", {}).setdefault("verlauf", {})
-                ref = next((("%s | %s" % (k["uuid"], k["name"])) for k in (app.store.load_shared("dataset.json", {}) or {}).get("konten", []) if k["uuid"] == uuid), uuid)
-                for k in list(cfg["bilanz"]["verlauf"]):
+                cfg.setdefault("balance", {}).setdefault("history_source", {})
+                ref = next((("%s | %s" % (k["uuid"], k["name"])) for k in (app.store.load_shared("dataset.json", {}) or {}).get("accounts", []) if k["uuid"] == uuid), uuid)
+                for k in list(cfg["balance"]["history_source"]):
                     if k.split("|", 1)[0].strip() == uuid:
-                        cfg["bilanz"]["verlauf"].pop(k)
-                cfg["bilanz"]["verlauf"][ref] = body["quelle"]
+                        cfg["balance"]["history_source"].pop(k)
+                cfg["balance"]["history_source"][ref] = body["source"]
                 app.save_config(cfg)
-            ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="history")
-            log.info("History of account %s: %d month(s) changed%s", uuid[:8], n, (", source " + body["quelle"]) if body.get("quelle") in ("umsaetze", "stand") else "")
-            return {"ok": True, "bericht": ok, "text": err, "historie": self._historie(uuid)}
+            ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="history")
+            log.info("History of account %s: %d month(s) changed%s", uuid[:8], n, (", source " + body["source"]) if body.get("source") in ("transactions", "balances") else "")
+            return {"ok": True, "report": ok, "text": err, "history": self._historie(uuid)}
 
         def _historie_import(self, body: dict) -> dict:
             """Saldenverlauf aus CSV-Text oder Datei (CSV/XLSX): Langformat (Datum, Konto, Saldo), Matrix oder transponiert.
             Vorschau mit Kontovorschlaegen; 'zuordnung' (Tabellenname -> Kontoreferenz) und 'uebernehmen' schreiben die Werte."""
-            konto = str(body.get("konto") or "")
-            mapping = body.get("zuordnung") or {}
+            konto = str(body.get("account") or "")
+            mapping = body.get("assignment") or {}
             hints: List[str] = []
-            if body.get("datei"):
+            if body.get("file"):
                 try:
-                    raw = base64.b64decode(str(body["datei"]))
+                    raw = base64.b64decode(str(body["file"]))
                 except (binascii.Error, ValueError):
                     raise ValueError(tr("s_dateiinhalt_unlesbar"))
                 if len(raw) > 30 * 1024 * 1024:
@@ -2675,7 +2596,7 @@ def make_handler(app: App):
                 parsed = _parse_balance_csv(str(body.get("csv") or ""))
             if not parsed:
                 raise ValueError(tr("s_keine_werte_erkannt_erwartet_datum"))
-            konten = {k["name"]: k["uuid"] for k in (app.store.load_shared("dataset.json", {}) or {}).get("konten", []) if not k["gruppe"]}
+            konten = {k["name"]: k["uuid"] for k in (app.store.load_shared("dataset.json", {}) or {}).get("accounts", []) if not k["group"]}
             if app.ledger is not None:
                 konten.update({a.name: a.uuid for a in app.ledger.accounts.values() if not a.group})
             uuid_name = {v: k for k, v in konten.items()}
@@ -2688,45 +2609,45 @@ def make_handler(app: App):
                     target = (mapping.get(name) or "").split("|", 1)[0].strip() or None
                 else:
                     target = konten.get(name) or history_import.match_account(name, konten)
-                preview.append({"name": name or tr("s_ohne_konto"), "uuid": target, "konto": uuid_name.get(target or "", ""), "anzahl": len(months), "von": min(months), "bis": max(months),
-                                "sicher": bool(name in konten or name in mapping or (konto and (name == "" or len(parsed) == 1)))})
+                preview.append({"name": name or tr("s_ohne_konto"), "uuid": target, "account": uuid_name.get(target or "", ""), "count": len(months), "date_from": min(months), "date_to": max(months),
+                                "certain": bool(name in konten or name in mapping or (konto and (name == "" or len(parsed) == 1)))})
                 if target:
                     assign.setdefault(target, {}).update(months)
-            if not body.get("uebernehmen"):
-                return {"ok": True, "vorschau": preview, "hinweise": hints}
+            if not body.get("take_over"):
+                return {"ok": True, "preview": preview, "hints": hints}
             total = 0
 
             def _apply(st):
                 nonlocal total
-                h = st.setdefault("historie", {})
+                h = st.setdefault("history", {})
                 for uuid, months in assign.items():
-                    if body.get("nur_luecken"):
+                    if body.get("gaps_only"):
                         months = {mk: v for mk, v in months.items() if mk not in (h.get(uuid) or {})}
                     h.setdefault(uuid, {}).update(months)
                     total += len(months)
             app.store.update("state.json", _apply, {})
             # importierte Werte sollen gelten -> diese Konten auf "Kontostaende" stellen
             cfg = copy.deepcopy(app.config)
-            vc = cfg.setdefault("bilanz", {}).setdefault("verlauf", {})
+            vc = cfg.setdefault("balance", {}).setdefault("history_source", {})
             umgestellt = 0
             for uuid in assign:
-                if not any(k.split("|", 1)[0].strip() == uuid and v == "stand" for k, v in vc.items()):
+                if not any(k.split("|", 1)[0].strip() == uuid and v == "balances" for k, v in vc.items()):
                     for k in [k for k in vc if k.split("|", 1)[0].strip() == uuid]:
                         vc.pop(k)
-                    vc["%s | %s" % (uuid, uuid_name.get(uuid, ""))] = "stand"
+                    vc["%s | %s" % (uuid, uuid_name.get(uuid, ""))] = "balances"
                     umgestellt += 1
             if umgestellt:
                 app.save_config(cfg)
-            ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="history import")
+            ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="history import")
             log.info("History import: %d values for %d accounts", total, len(assign))
-            return {"ok": True, "uebernommen": total, "konten": len(assign), "umgestellt": umgestellt, "bericht": ok, "text": err, "vorschau": preview, "hinweise": hints}
+            return {"ok": True, "taken_over": total, "accounts": len(assign), "switched": umgestellt, "report": ok, "text": err, "preview": preview, "hints": hints}
 
         def _kategorien(self, path: str, body: dict, local: bool):
             if path == "/api/categories/assign":
                 # your assignment goes into MoneyMoney (only categories that exist there); at the Mac right away, from
                 # elsewhere at the next sync at the Mac -- until then it waits in Kontor and counts already
                 ids = [int(x) for x in (body.get("ids") or [])]
-                pfad = categorize.norm_cat(str(body.get("kategorie") or ""))
+                pfad = categorize.norm_cat(str(body.get("category") or ""))
                 if not ids:
                     raise ValueError(tr("s_keine_umsaetze_angegeben"))
                 if len(ids) > 2000:                        # the page sends larger selections in parts
@@ -2736,26 +2657,26 @@ def make_handler(app: App):
                 if pfad:
                     why = mm_categories.assignable(mm_categories.index(app.categories_raw), pfad)
                     if why:
-                        raise ValueError(tr({"fehlt": "s_kategorie_in_mm_anlegen", "ordner": "s_kategorie_ist_ordner"}.get(why, "s_kategorie_standard"), pfad))
-                modus = "ueberschreiben" if body.get("modus") == "ueberschreiben" else "auto"
-                confirmed = body.get("bestaetigt") if isinstance(body.get("bestaetigt"), dict) else None
+                        raise ValueError(tr({"lacking": "s_kategorie_in_mm_anlegen", "folder": "s_kategorie_ist_ordner"}.get(why, "s_kategorie_standard"), pfad))
+                modus = "overwrite" if body.get("mode") == "overwrite" else "auto"
+                confirmed = body.get("confirmed") if isinstance(body.get("confirmed"), dict) else None
                 with categorize.LOCK:
                     kat = categorize.load(app.store)
                     n = categorize.set_waiting(kat, ids, pfad)
                     mm = app.write_categories(kat, ids, pfad, modus, local, confirmed)
-                    if mm["geschrieben"] and app.ledger is not None:
+                    if mm["written"] and app.ledger is not None:
                         categorize.learn(kat, app.ledger)           # suggestions for the rest at once
                     categorize.save(app.store, kat)
-                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="assignment") if app.ledger is not None else (False, None)
-                log.info("%d transaction(s) assigned (%d written to MoneyMoney, %d later)", n, mm["geschrieben"], mm["spaeter"])
-                return self._json(200, {"ok": True, "anzahl": n, "mm": mm, "bericht": ok, "text": err})
+                ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="assignment") if app.ledger is not None else (False, None)
+                log.info("%d transaction(s) assigned (%d written to MoneyMoney, %d later)", n, mm["written"], mm["later"])
+                return self._json(200, {"ok": True, "count": n, "mm": mm, "report": ok, "text": err})
             if path == "/api/categories/proposals":
                 # a rule proposal you took over into MoneyMoney (or do not want): not shown again
-                key = str(body.get("erledigt") or "")
+                key = str(body.get("done_items") or "")
                 if key:
                     with categorize.LOCK:
                         kat = categorize.load(app.store)
-                        kat["regel_erledigt"] = sorted(set(kat.get("regel_erledigt") or []) | {key})[-500:]
+                        kat["rule_done"] = sorted(set(kat.get("rule_done") or []) | {key})[-500:]
                         categorize.save(app.store, kat)
                 return self._json(200, {"ok": True})
             if path == "/api/categories/positions":
@@ -2763,131 +2684,131 @@ def make_handler(app: App):
                 try:
                     cfg = save_positions(app.config, body, app.ledger)
                 except KeyError as e:
-                    return self._json(400, {"fehler": str(e).strip("'\"")})
+                    return self._json(400, {"error": str(e).strip("'\"")})
                 app.save_config(cfg)
-                ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="cash flow positions") if app.ledger is not None else (False, None)
-                log.info("Cash flow positions saved: %d chosen", len(app.config["kapitalfluss"].get("positionen") or {}))
-                return self._json(200, {"ok": True, "bericht": ok, "config": app.config})
+                ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="cash flow positions") if app.ledger is not None else (False, None)
+                log.info("Cash flow positions saved: %d chosen", len(app.config["cashflow"].get("positions") or {}))
+                return self._json(200, {"ok": True, "report": ok, "config": app.config})
             if path == "/api/categories/areas":
                 # the areas you categorise (the others are left out under Kategorien; the cash flow estimates them as before)
-                ohne = body.get("ohne")
+                ohne = body.get("without")
                 if not isinstance(ohne, list) or not all(isinstance(x, str) for x in ohne):
-                    raise ValueError("ohne")
+                    raise ValueError("without")
                 cfg = copy.deepcopy(app.config)
-                cfg["zuordnen_ohne"] = sorted(set(ohne))
+                cfg["assign_without"] = sorted(set(ohne))
                 app.save_config(cfg)
-                ok, _err = app.rebuild_report(wait=bool(body.get("warten")), grund="assigning") if app.ledger is not None else (False, None)
-                return self._json(200, {"ok": True, "bericht": ok, "config": app.config})
+                ok, _err = app.rebuild_report(wait=bool(body.get("wait")), grund="assigning") if app.ledger is not None else (False, None)
+                return self._json(200, {"ok": True, "report": ok, "config": app.config})
             if path == "/api/categories/settings":
-                if "mm_schreiben" not in body:
-                    raise ValueError("mm_schreiben")
+                if "mm_write" not in body:
+                    raise ValueError("mm_write")
                 if not local:                              # writing into MoneyMoney: switched only at the Mac
-                    return self._json(403, {"fehler": tr("s_nur_von_diesem_mac_aus")})
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 cfg = copy.deepcopy(app.config)
-                cfg.setdefault("moneymoney", {})["kategorisieren_erlauben"] = bool(body["mm_schreiben"])
+                cfg.setdefault("moneymoney", {})["allow_categorize"] = bool(body["mm_write"])
                 app.save_config(cfg)
-                return self._json(200, {"ok": True, "mm_schreiben": app.mm_write_on()})
-            return self._json(404, {"fehler": "unbekannt"})
+                return self._json(200, {"ok": True, "mm_write": app.mm_write_on()})
+            return self._json(404, {"error": "unknown"})
 
         def _immobilien(self, path: str, body: dict, local: bool = True):
             if path == "/api/properties/calculate":
-                res = realestate.berechne(body.get("eingaben") or {}, date.today())
-                res.pop("monate", None) if body.get("ohne_monate") else None
+                res = realestate.berechne(body.get("inputs") or {}, date.today())
+                res.pop("months", None) if body.get("without_months") else None
                 return self._json(200, res)
             cfg = copy.deepcopy(app.config)
-            lst = cfg.setdefault("immobilien", [])
-            aktion = str(body.get("aktion") or "")
+            lst = cfg.setdefault("real_estate", [])
+            aktion = str(body.get("action") or "")
             now = datetime.now().strftime("%Y-%m-%d %H:%M")
             im = next((x for x in lst if str(x.get("id")) == str(body.get("id"))), None)
-            if aktion == "anlegen":
+            if aktion == "create":
                 iid = "im%d" % (max([int(str(x.get("id"))[2:]) for x in lst if str(x.get("id", "")).startswith("im") and str(x.get("id"))[2:].isdigit()] + [0]) + 1)
-                im = {"id": iid, "name": str(body.get("name") or "Neues Objekt"), "bereich": body.get("bereich") or "", "kategorie": body.get("kategorie") or "",
-                      "objekt_konto": body.get("objekt_konto") or "", "darlehen_konten": {}, "in_planung": False, "kalkulationen": [], "dokumente": [], "notizen": ""}
+                im = {"id": iid, "name": str(body.get("name") or "Neues Objekt"), "area": body.get("area") or "", "category": body.get("category") or "",
+                      "property_account": body.get("property_account") or "", "loan_accounts": {}, "in_planning": False, "calcs": [], "documents": [], "notes": ""}
                 lst.append(im)
             elif im is None:
-                return self._json(404, {"fehler": tr("s_immobilie_nicht_gefunden")})
-            elif aktion == "loeschen":
+                return self._json(404, {"error": tr("s_immobilie_nicht_gefunden")})
+            elif aktion == "delete":
                 lst.remove(im)
                 app.save_config(cfg)
                 log.info("Property deleted")
                 return self._json(200, {"ok": True})
-            if aktion in ("anlegen", "aendern"):
-                for k in ("name", "bereich", "kategorie", "objekt_konto", "notizen"):
+            if aktion in ("create", "update"):
+                for k in ("name", "area", "category", "property_account", "notes"):
                     if k in body:
                         im[k] = body[k]
-                if "in_planung" in body:
-                    im["in_planung"] = bool(body["in_planung"])
-                if isinstance(body.get("darlehen_konten"), dict):
-                    im["darlehen_konten"] = {str(k): v for k, v in body["darlehen_konten"].items()}
-            elif aktion == "kalkulation_speichern":
-                k = body.get("kalkulation") or {}
-                eing = k.get("eingaben") or {}
+                if "in_planning" in body:
+                    im["in_planning"] = bool(body["in_planning"])
+                if isinstance(body.get("loan_accounts"), dict):
+                    im["loan_accounts"] = {str(k): v for k, v in body["loan_accounts"].items()}
+            elif aktion == "calc_save":
+                k = body.get("calc") or {}
+                eing = k.get("inputs") or {}
                 realestate.berechne(eing, date.today())          # validiert
                 kid = str(k.get("id") or "")
-                existing = next((x for x in im["kalkulationen"] if str(x.get("id")) == kid), None) if kid else None
+                existing = next((x for x in im["calcs"] if str(x.get("id")) == kid), None) if kid else None
                 if existing:
-                    existing["eingaben"] = eing; existing["name"] = k.get("name") or existing.get("name"); existing["geaendert"] = now
+                    existing["inputs"] = eing; existing["name"] = k.get("name") or existing.get("name"); existing["changed"] = now
                 else:
-                    kid = "k%d" % (len(im["kalkulationen"]) + 1 + int(datetime.now().timestamp()) % 1000)
-                    im["kalkulationen"].append({"id": kid, "name": k.get("name") or ("Kalkulation %d" % (len(im["kalkulationen"]) + 1)),
-                                                "erstellt": now, "aktiv": not im["kalkulationen"], "eingaben": eing})
-                if k.get("aktiv"):
-                    for x in im["kalkulationen"]:
-                        x["aktiv"] = str(x.get("id")) == kid
-            elif aktion == "kalkulation_loeschen":
-                im["kalkulationen"] = [x for x in im["kalkulationen"] if str(x.get("id")) != str(body.get("kalkulation_id"))]
-                if im["kalkulationen"] and not any(x.get("aktiv") for x in im["kalkulationen"]):
-                    im["kalkulationen"][0]["aktiv"] = True
-            elif aktion == "kalkulation_aktiv":
-                for x in im["kalkulationen"]:
-                    x["aktiv"] = str(x.get("id")) == str(body.get("kalkulation_id"))
-            elif aktion == "dokument_hinzufuegen":
+                    kid = "k%d" % (len(im["calcs"]) + 1 + int(datetime.now().timestamp()) % 1000)
+                    im["calcs"].append({"id": kid, "name": k.get("name") or ("Kalkulation %d" % (len(im["calcs"]) + 1)),
+                                                "created": now, "active": not im["calcs"], "inputs": eing})
+                if k.get("active"):
+                    for x in im["calcs"]:
+                        x["active"] = str(x.get("id")) == kid
+            elif aktion == "calc_delete":
+                im["calcs"] = [x for x in im["calcs"] if str(x.get("id")) != str(body.get("calc_id"))]
+                if im["calcs"] and not any(x.get("active") for x in im["calcs"]):
+                    im["calcs"][0]["active"] = True
+            elif aktion == "calc_activate":
+                for x in im["calcs"]:
+                    x["active"] = str(x.get("id")) == str(body.get("calc_id"))
+            elif aktion == "doc_add":
                 if not local:                                   # links to files on the Mac: only set there
-                    return self._json(403, {"fehler": tr("s_dateizugriff_nur_von_diesem_mac")})
-                pfad = os.path.expanduser(str(body.get("pfad") or ""))
-                if not pfad or file_status(pfad) == "fehlt":
-                    return self._json(400, {"fehler": tr("s_datei_nicht_gefunden_s") % pfad})
-                im.setdefault("dokumente", []).append({"id": "d%d" % int(datetime.now().timestamp() * 1000 % 10 ** 9), "titel": body.get("titel") or os.path.basename(pfad),
-                                                       "pfad": pfad, "art": body.get("art") or "", "hinzugefuegt": now})
-            elif aktion == "dokument_entfernen":
-                im["dokumente"] = [d for d in im.get("dokumente") or [] if str(d.get("id")) != str(body.get("dokument_id"))]
+                    return self._json(403, {"error": tr("s_dateizugriff_nur_von_diesem_mac")})
+                pfad = os.path.expanduser(str(body.get("path") or ""))
+                if not pfad or file_status(pfad) == "lacking":
+                    return self._json(400, {"error": tr("s_datei_nicht_gefunden_s") % pfad})
+                im.setdefault("documents", []).append({"id": "d%d" % int(datetime.now().timestamp() * 1000 % 10 ** 9), "title": body.get("title") or os.path.basename(pfad),
+                                                       "path": pfad, "kind": body.get("kind") or "", "added": now})
+            elif aktion == "doc_remove":
+                im["documents"] = [d for d in im.get("documents") or [] if str(d.get("id")) != str(body.get("document_id"))]
             else:
-                return self._json(400, {"fehler": "Unbekannte Aktion."})
+                return self._json(400, {"error": "Unbekannte Aktion."})
             app.save_config(cfg)
             log.info("Property %s: %s", im.get("id"), aktion)
-            ok, err = app.rebuild_report(wait=bool(body.get("warten")), grund="property") if app.ledger is not None else (False, None)
-            return self._json(200, {"ok": True, "immobilie": im, "bericht": ok})
+            ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="property") if app.ledger is not None else (False, None)
+            return self._json(200, {"ok": True, "property": im, "report": ok})
 
         def _datei(self, path: str, body: dict, local: bool):
             if not local:
-                return self._json(403, {"fehler": tr("s_dateizugriff_nur_von_diesem_mac")})
+                return self._json(403, {"error": tr("s_dateizugriff_nur_von_diesem_mac")})
             if sys.platform != "darwin":
-                return self._json(400, {"fehler": "Nur unter macOS."})
+                return self._json(400, {"error": "Nur unter macOS."})
             if path == "/api/file/choose":
-                art = body.get("art") or "datei"
+                art = body.get("kind") or "file"
                 prompt = str(body.get("prompt") or tr("s_datei_waehlen")).replace('"', "")
-                script = ('POSIX path of (choose folder with prompt "%s")' if art == "ordner" else 'POSIX path of (choose file with prompt "%s")') % prompt
+                script = ('POSIX path of (choose folder with prompt "%s")' if art == "folder" else 'POSIX path of (choose file with prompt "%s")') % prompt
                 try:
                     r = subprocess.run(["osascript", "-e", 'tell application "System Events" to activate', "-e", script], capture_output=True, text=True, timeout=600)
                 except subprocess.TimeoutExpired:
                     return self._json(200, {"ok": False, "text": "Zeitueberschreitung."})
                 if r.returncode != 0:
                     return self._json(200, {"ok": False, "text": "Abgebrochen."})
-                p = r.stdout.strip().rstrip("/") if art == "ordner" else r.stdout.strip()
-                return self._json(200, {"ok": True, "pfad": p, "name": os.path.basename(p), "status": file_status(p) if art != "ordner" else "ok",
-                                        "groesse": os.path.getsize(p) if os.path.isfile(p) else None})
-            pfad = os.path.expanduser(str(body.get("pfad") or ""))
+                p = r.stdout.strip().rstrip("/") if art == "folder" else r.stdout.strip()
+                return self._json(200, {"ok": True, "path": p, "name": os.path.basename(p), "status": file_status(p) if art != "folder" else "ok",
+                                        "size_bytes": os.path.getsize(p) if os.path.isfile(p) else None})
+            pfad = os.path.expanduser(str(body.get("path") or ""))
             if not pfad or not os.path.isabs(pfad):
-                return self._json(400, {"fehler": tr("s_pfad_fehlt")})
+                return self._json(400, {"error": tr("s_pfad_fehlt")})
             if path == "/api/file/open":
                 st = file_status(pfad)
-                if st == "fehlt":
-                    return self._json(404, {"fehler": tr("s_datei_nicht_gefunden")})
+                if st == "lacking":
+                    return self._json(404, {"error": tr("s_datei_nicht_gefunden")})
                 subprocess.Popen(["open", pfad])
                 return self._json(200, {"ok": True, "status": st})
             if path == "/api/file/reveal":
-                if not os.path.exists(pfad) and file_status(pfad) == "fehlt":
-                    return self._json(404, {"fehler": tr("s_datei_nicht_gefunden")})
+                if not os.path.exists(pfad) and file_status(pfad) == "lacking":
+                    return self._json(404, {"error": tr("s_datei_nicht_gefunden")})
                 subprocess.Popen(["open", "-R", pfad])
                 return self._json(200, {"ok": True})
             if path == "/api/file/load":
@@ -2896,16 +2817,16 @@ def make_handler(app: App):
                     return self._json(200, {"ok": r.returncode == 0, "text": (r.stdout + r.stderr).strip()})
                 except (FileNotFoundError, subprocess.TimeoutExpired) as e:
                     return self._json(200, {"ok": False, "text": str(e)})
-            return self._json(404, {"fehler": "unbekannt"})
+            return self._json(404, {"error": "unknown"})
 
         def _update_plan(self, body: dict) -> dict:
             plan_all = app.plan_all()
-            bereich = str(body.get("bereich") or (app.store.load_shared("dataset.json", {}) or {}).get("haupt") or "")
+            bereich = str(body.get("area") or (app.store.load_shared("dataset.json", {}) or {}).get("main_area") or "")
             if not bereich:
                 raise ValueError("Kein Bereich angegeben.")
-            plan = plan_all["bereiche"].setdefault(bereich, {})
-            if body.get("zuruecksetzen"):
-                plan_all["bereiche"][bereich] = {}
+            plan = plan_all["areas"].setdefault(bereich, {})
+            if body.get("reset_flag"):
+                plan_all["areas"][bereich] = {}
                 app.store.save("plan.json", plan_all)
                 return {"ok": True, "plan": {}}
             if "parameter" in body:
@@ -2915,70 +2836,70 @@ def make_handler(app: App):
                             plan.pop(k, None)
                         else:
                             plan[k] = v
-            if "darlehen" in body:
-                d = plan.setdefault("darlehen", {})
-                for name, params in (body["darlehen"] or {}).items():
+            if "loans" in body:
+                d = plan.setdefault("loans", {})
+                for name, params in (body["loans"] or {}).items():
                     if params is None:
                         d.pop(name, None)
                     else:
-                        d[name] = {k: v for k, v in params.items() if k in ("zins_prozent_pa", "modell", "zahlung") and v not in (None, "")}
+                        d[name] = {k: v for k, v in params.items() if k in ("interest_percent_pa", "model", "payment") and v not in (None, "")}
                         if not d[name]:
                             d.pop(name, None)
-            if "wertentwicklung" in body:
-                w = plan.setdefault("wertentwicklung", {})
-                for name, params in (body["wertentwicklung"] or {}).items():
+            if "appreciation" in body:
+                w = plan.setdefault("appreciation", {})
+                for name, params in (body["appreciation"] or {}).items():
                     if params is None:
                         w.pop(name, None)
                     else:
-                        entry = {k: float(v) for k, v in params.items() if k in ("prozent_pa", "basis", "anteil") and v not in (None, "")}
-                        if params.get("bereich"):
-                            entry["bereich"] = str(params["bereich"])
-                            entry.setdefault("anteil", 1.0)
+                        entry = {k: float(v) for k, v in params.items() if k in ("percent_pa", "base", "share") and v not in (None, "")}
+                        if params.get("area"):
+                            entry["area"] = str(params["area"])
+                            entry.setdefault("share", 1.0)
                         w[name] = entry
                         if not w[name]:
                             w.pop(name, None)
-            if "ereignis" in body:
-                ev = body["ereignis"] or {}
-                lst = plan.setdefault("ereignisse", [])
-                if ev.get("loeschen"):
-                    plan["ereignisse"] = [e for e in lst if str(e.get("id")) != str(ev.get("id"))]
+            if "event" in body:
+                ev = body["event"] or {}
+                lst = plan.setdefault("events", [])
+                if ev.get("delete"):
+                    plan["events"] = [e for e in lst if str(e.get("id")) != str(ev.get("id"))]
                 else:
                     clean = {"id": str(ev.get("id") or ("e%d" % int(time.time() * 1000 % 10 ** 9))), "text": str(ev.get("text") or "Ereignis")[:80],
-                             "monat": str(ev.get("monat") or "")[:7], "betrag": float(str(ev.get("betrag") or 0).replace(",", ".")),
-                             "art": ev.get("art") if ev.get("art") in ("umschichtung", "einnahme", "ausgabe") else "umschichtung",
-                             "von": ev.get("von") or None, "nach": ev.get("nach") or None,
-                             "wiederholung": ev.get("wiederholung") if ev.get("wiederholung") in ("einmalig", "monatlich", "quartal", "jaehrlich") else "einmalig",
-                             "bis": (str(ev.get("bis") or "")[:7] or None), "aktiv": ev.get("aktiv", True)}
-                    if len(clean["monat"]) != 7:
+                             "month": str(ev.get("month") or "")[:7], "amount": float(str(ev.get("amount") or 0).replace(",", ".")),
+                             "kind": ev.get("kind") if ev.get("kind") in ("reallocation", "income", "expense") else "reallocation",
+                             "date_from": ev.get("date_from") or None, "after": ev.get("after") or None,
+                             "recurrence": ev.get("recurrence") if ev.get("recurrence") in ("once", "monthly", "quarterly", "yearly") else "once",
+                             "date_to": (str(ev.get("date_to") or "")[:7] or None), "active": ev.get("active", True)}
+                    if len(clean["month"]) != 7:
                         raise ValueError(tr("s_monat_fehlt"))
                     idx = next((i for i, e in enumerate(lst) if str(e.get("id")) == clean["id"]), None)
                     if idx is None:
                         lst.append(clean)
                     else:
                         lst[idx] = clean
-                if not plan.get("ereignisse"):
-                    plan.pop("ereignisse", None)
-            key = str(body.get("zeile") or "")
+                if not plan.get("events"):
+                    plan.pop("events", None)
+            key = str(body.get("row") or "")
             if key:
-                zeilen = plan.setdefault("zeilen", {})
+                zeilen = plan.setdefault("rows", {})
                 row = zeilen.setdefault(key, {})
-                if "monat" in body:
-                    werte = row.setdefault("werte", {})
-                    v = str(body.get("wert", "")).strip().replace(",", ".")
+                if "month" in body:
+                    werte = row.setdefault("amounts", {})
+                    v = str(body.get("value", "")).strip().replace(",", ".")
                     if v == "":
-                        werte.pop(body["monat"], None)
+                        werte.pop(body["month"], None)
                     else:
-                        werte[body["monat"]] = float(v)
+                        werte[body["month"]] = float(v)
                     if not werte:
-                        row.pop("werte", None)
-                if body.get("alle_ueberschreibungen_loeschen"):
-                    row.pop("werte", None)
-                if "methode" in body:
-                    if body["methode"]:
-                        row["methode"] = str(body["methode"])
+                        row.pop("amounts", None)
+                if body.get("clear_all_overrides"):
+                    row.pop("amounts", None)
+                if "method" in body:
+                    if body["method"]:
+                        row["method"] = str(body["method"])
                     else:
-                        row.pop("methode", None)
-                for fld, dst in (("betrag", "betrag"), ("steigerung", "steigerung_prozent_pa")):
+                        row.pop("method", None)
+                for fld, dst in (("amount", "amount"), ("increase", "increase_percent_pa")):
                     if fld in body:
                         v = str(body.get(fld, "")).strip().replace(",", ".")
                         if v == "":
@@ -2988,9 +2909,9 @@ def make_handler(app: App):
                 if not row:
                     zeilen.pop(key, None)
                 if not zeilen:
-                    plan.pop("zeilen", None)
+                    plan.pop("rows", None)
             app.store.save("plan.json", plan_all)
-            return {"ok": True, "plan": plan_all["bereiche"].get(bereich, {})}
+            return {"ok": True, "plan": plan_all["areas"].get(bereich, {})}
 
     return H
 
@@ -3038,15 +2959,15 @@ def backup_encrypt(data: dict, password: str) -> dict:
     salt = secrets.token_bytes(16)
     key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, BACKUP_ITER, 32)
     blob = encrypt(key, json.dumps(data, ensure_ascii=False).encode("utf-8"))
-    return {"kontor_sicherung_verschluesselt": 1, "version": data.get("version"), "erstellt": data.get("erstellt"),
-            "kdf": "pbkdf2-sha256", "iter": BACKUP_ITER, "salt": base64.b64encode(salt).decode(), "daten": base64.b64encode(blob).decode()}
+    return {"kontor_backup_encrypted": 1, "version": data.get("version"), "created": data.get("created"),
+            "kdf": "pbkdf2-sha256", "iter": BACKUP_ITER, "salt": base64.b64encode(salt).decode(), "data": base64.b64encode(blob).decode()}
 
 
 def backup_decrypt(wrapper: dict, password: str) -> dict:
     import hashlib
     from storage import StoreError, decrypt
     try:
-        salt = base64.b64decode(wrapper["salt"]); blob = base64.b64decode(wrapper["daten"])
+        salt = base64.b64decode(wrapper["salt"]); blob = base64.b64decode(wrapper["data"])
         key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, int(wrapper.get("iter") or BACKUP_ITER), 32)
         return json.loads(decrypt(key, blob).decode("utf-8"))
     except (KeyError, ValueError, StoreError, binascii.Error):
@@ -3054,8 +2975,8 @@ def backup_decrypt(wrapper: dict, password: str) -> dict:
 
 
 # Kontor's own files in its data folder (the store, its log and service files, a key file, the certificate): only these go
-_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*)\.json(?:\.enc)?(?:\.tmp)?"
-                          r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp)?|kontor\.log[\w.]*|log\.(?:clean|version)|service\.(?:out\.log|err\.log|lock)|master\.key|tls)(?=\s|$)")
+_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*)\.json(?:\.enc)?(?:\.tmp|\.renew)?"
+                          r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|master\.key|tls)(?=\s|$)")
 
 
 def _remove_own_files(data: str, keep: List[str]) -> Tuple[List[str], List[str]]:
@@ -3063,8 +2984,11 @@ def _remove_own_files(data: str, keep: List[str]) -> Tuple[List[str], List[str]]
     are not Kontor's -- they stay, names of Kontor's files that could not be removed); kept ones (receipts) stay silently."""
     from receipts import _canon
     foreign, failed, kept = [], [], False
-    for name in sorted(os.listdir(data)):
+    # a key in a file goes last, and only when no encrypted file is left (a key is never deleted while data it opens remain)
+    for name in sorted(os.listdir(data), key=lambda n: (n == "master.key", n)):
         full = os.path.join(data, name)
+        if name == "master.key" and any(n.endswith((".enc", ".enc.tmp", ".enc.renew")) for n in os.listdir(data)):
+            failed.append(name); continue
         if any(_canon(full) == k or k.startswith(_canon(full).rstrip(os.sep) + os.sep) for k in keep):
             kept = True; continue
         if not _KONTOR_FILE.fullmatch(name):
@@ -3114,9 +3038,9 @@ def timemachine_status(path: str) -> str:
     try:
         r = subprocess.run(["tmutil", "isexcluded", path], capture_output=True, text=True, timeout=10)
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        return "unbekannt"
+        return "unknown"
     out = r.stdout or ""
-    return "ausgeschlossen" if "[Excluded]" in out else "gesichert" if "[Included]" in out else "unbekannt"
+    return "excluded" if "[Excluded]" in out else "backed_up" if "[Included]" in out else "unknown"
 
 
 def restart_process() -> None:
@@ -3144,7 +3068,7 @@ class _Server(ThreadingHTTPServer):
 def serve(app: App) -> None:
     """Oberflaeche auf 127.0.0.1 (immer, http -- fuer den Mac mit Touch ID) und zusaetzlich auf der
     eingestellten Tailscale-Adresse (fuer das iPhone; mit TLS, wenn ein Zertifikat eingetragen ist)."""
-    ui = app.config.get("oberflaeche", {}) or {}
+    ui = app.config.get("ui", {}) or {}
     extra = (ui.get("bind") or "127.0.0.1").strip()
     if not bind_allowed(extra):
         log.error("Bind address %s not allowed -- 127.0.0.1 only", extra)
@@ -3163,7 +3087,7 @@ def serve(app: App) -> None:
     threading.Thread(target=app.scheduler, daemon=True).start()
     log.info("Kontor %s: UI at %s (data %s)", version(),
              ", ".join("%s://%s:%d/" % (sc, h, port) for sc, h, _ in servers + ([(app.remote_listening[0], app.remote_listening[1], None)] if app.remote_listening else [])),
-             "verschluesselt" if app.store.encrypted else "KLARTEXT")
+             "encrypted" if app.store.encrypted else "KLARTEXT")
     try:
         servers[0][2].serve_forever()
     except KeyboardInterrupt:

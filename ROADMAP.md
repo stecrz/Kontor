@@ -4,7 +4,7 @@ Reihenfolge = Priorität. Jeder Punkt ist fertig, wenn alle Kriterien erfüllt s
 veröffentlicht ist (Skill `release`). Geprüfte Seiten verlieren die Markierung „Alpha“.
 
 Geprüft: Bilanz, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll, Hilfe, Auto-Buchungen, Buchungsregeln (3.13),
-Kategorien und Cashflow (3.13.4: jeder Monat stimmt mit der Bilanz überein, Abweichungen mit Grund; 3.13.6: feste Positionen für alle Bereiche, ohne Kategorie geschätzt); 3.13.10: Kontenspiegel als eigene Regel zwischen beliebigen Konten; 3.13.11: Cashflow in drei Stufen mit Diagrammen, Cashflow-Positionen unter Verwaltung; 3.13.13: Kapitalflussrechnung mit Brücke).
+Kategorien und Cashflow (3.13.4: jeder Monat stimmt mit der Bilanz überein, Abweichungen mit Grund; 3.13.6: feste Positionen für alle Bereiche, ohne Kategorie geschätzt); 3.13.10: Kontenspiegel als eigene Regel zwischen beliebigen Konten; 3.13.11: Cashflow in drei Stufen mit Diagrammen, Cashflow-Positionen unter Verwaltung; 3.13.13: Kapitalflussrechnung mit Brücke); Übersicht (3.15.0: vier Grafiken aus Bilanz und Cashflow, ohne eigene Rechnung).
 
 ## 1. Immobilien und Steuer
 Ziel: Kalkulation, Ist-Zahlen und Steuer je Objekt und Gesellschaft stimmen und passen zusammen.
@@ -23,12 +23,8 @@ Fertig, wenn
 - jede Zahl ihre Herkunft zeigt (Ist, Plan, Annahme); nichts wird geschätzt, ohne es so zu kennzeichnen;
 - Tests prüfen Fortschreibung, Zinseszins und Grenzen; Hilfe und Bilder aktuell; ohne „Alpha“.
 
-## 3. Übersicht
-Ziel: Auf einen Blick, was zählt – Vermögen, Liquidität, Sparquote, was zu tun ist.
-
-Fertig, wenn
-- alle Kennzahlen aus geprüften Seiten stammen und dorthin verlinken;
-- sie am iPhone genauso gut lesbar ist wie am Mac; ohne „Alpha“.
+## ~~3. Übersicht~~ (erledigt in 3.15.0)
+Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt an ihre Stelle; am iPhone untereinander; ohne „Alpha“.
 
 ## Als Nächstes (Cashflow und Kategorien)
 - [x] 3.13.15 Anlageziel je Empfänger (IBAN) statt je Kategorie; Anlagen ohne Ziel nicht als Kursgewinn, sondern offen ausweisen.
@@ -57,5 +53,4 @@ Fertig, wenn
 - Oberfläche nach Apples Human Interface Guidelines, hell und dunkel, Mac und iPhone.
 
 ## Beim nächsten großen Versionssprung (Hilfe, README, Bilder)
-- Hilfe „Konten → Positionen“: erklären, was der Nutzer wählt (nach Verfügbarkeit), statt der Reihenfolge, in der Kontor vorschlägt.
-- Hilfe und README: Deinstallieren in der App (Einstellungen → Sicherung), Programmordner in den Daten; Installation als ein Schritt (wartet auf Apples Werkzeuge).
+(derzeit nichts offen – 3.15.0: Positionen nach Verfügbarkeit, Deinstallieren, Installation in einer Zeile, Übersicht, Datenschlüssel)

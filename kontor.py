@@ -14,7 +14,9 @@ Befehle:
   diagnostics       Diagnosedatei (Protokoll + Konfiguration, maskiert) ausgeben
   update            Neue Version von GitHub pruefen (--install spielt sie ein)
   install           Dienst als Hintergrundprogramm einrichten (startet beim Anmelden, laeuft dauerhaft);
-                    uebersetzt den Touch-ID-Helfer.   uninstall entfernt den Dienst wieder (Daten bleiben)
+                    uebersetzt den Touch-ID-Helfer
+  uninstall         Kontor entfernen: Dienst, Einstellungen, Daten, Protokoll, Datenschluessel (--program: auch den
+                    Programmordner; --yes: ohne Rueckfrage) -- Belege und MoneyMoney bleiben
   tls               https über Tailscale einrichten (Zertifikat holen, Adresse setzen) -- nötig für die Offline-Ansicht am iPhone
   version           Versionsnummer
 
@@ -45,9 +47,10 @@ import updates  # noqa: E402
 import i18n  # noqa: E402
 import mm_categories  # noqa: E402
 from mm_bridge import Bridge, MoneyMoneyError  # noqa: E402
-from core import (before_slash_keys, follow_slashes, account_tree, check_config, diagnose, export_package, fetch, import_package, merged_config,  # noqa: E402
-                     migrate_booking_state, run_once, unavailable_text, version)
+from core import (account_tree, check_config, diagnose, export_package, fetch, import_package, merged_config,  # noqa: E402
+                     run_once, unavailable_text, version)
 from model import Ledger, accounts_from_export, fmt_eur  # noqa: E402
+import storage  # noqa: E402
 from storage import Store, load_or_create_master_key  # noqa: E402
 from i18n import tr  # noqa: E402
 
@@ -85,29 +88,6 @@ def setup_logging(quiet: bool) -> None:
         pass
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S")
     path = os.path.join(DATA_DIR, "kontor.log")
-    # logs of earlier versions could hold amounts, payees and names (e.g. of dry runs): removed once, before the file is opened
-    clean = os.path.join(DATA_DIR, "log.clean")
-    if not os.path.exists(clean):
-        for n in [""] + [".%d" % i for i in range(1, 10)]:
-            try:
-                os.remove(path + n)
-            except OSError:
-                pass
-        try:
-            with open(clean, "w", encoding="utf-8") as f:
-                f.write(version())
-        except OSError:
-            pass
-    # one file, no numbered copies: past 2 MB it keeps its newest half (copies of earlier versions are removed)
-    for n in range(1, 10):
-        try:
-            os.remove("%s.%d" % (path, n))
-        except OSError:
-            pass
-    try:
-        os.remove(os.path.join(DATA_DIR, "log.version"))
-    except OSError:
-        pass
     fh = OneFileHandler(path, maxBytes=2_000_000, encoding="utf-8")
     fh.setFormatter(fmt)
     fh.setLevel(logging.DEBUG)
@@ -125,18 +105,29 @@ def setup_logging(quiet: bool) -> None:
         root.addHandler(sh)
 
 
-def open_store() -> Store:
-    key, source = load_or_create_master_key(DATA_DIR)
+def open_store(finish: Optional[bool] = None) -> Store:
+    """The encrypted store. An unfinished renewal of the data key is finished only under the service's lock: by the service
+    (finish=True, it holds the lock) or by a command that gets the lock while no service runs; two processes never finish it
+    at the same time. A command beside the running service leaves it to the service."""
+    lock = None
+    if finish is None:
+        try:
+            lock = open(os.path.join(DATA_DIR, "service.lock"), "a")
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finish = True
+        except OSError:
+            finish = False
+    try:
+        key, source = load_or_create_master_key(DATA_DIR, finish=finish)
+    finally:
+        if lock:
+            lock.close()                    # releases the lock: launchd may start the service now
     return Store(DATA_DIR, key, source)
 
 
 def load_config(store: Store) -> dict:
-    try:
-        migrate_booking_state(store)            # until 3.13.0: Kontor's own lists of its bookings (only your decisions stay)
-    except Exception:  # pragma: no cover
-        log.exception("Booking lists not migrated")
     cfg = merged_config(store.load("config.json", {}) or {})
-    i18n.set_lang((cfg.get("oberflaeche") or {}).get("sprache") or "de")
+    i18n.set_lang((cfg.get("ui") or {}).get("language") or "de")
     return cfg
 
 
@@ -163,16 +154,16 @@ class Lock:
 
 def cmd_start(args) -> int:
     from service import App, serve
-    store = open_store()
     with Lock("service.lock"):
+        store = open_store(finish=True)
         app = App(store, DATA_DIR)
         serve(app)
     return 0
 
 
 def ui_url(cfg: dict) -> str:
-    port = int((cfg.get("oberflaeche") or {}).get("port") or 8765)
-    scheme = "https" if (cfg.get("oberflaeche") or {}).get("tls_cert") else "http"
+    port = int((cfg.get("ui") or {}).get("port") or 8765)
+    scheme = "https" if (cfg.get("ui") or {}).get("tls_cert") else "http"
     return "%s://127.0.0.1:%d/" % (scheme, port)
 
 
@@ -185,30 +176,30 @@ def cmd_oeffnen(args) -> int:
 def cmd_run(args) -> int:
     store = open_store()
     cfg = load_config(store)
-    dry = cfg.get("probelauf", True)
+    dry = cfg.get("dry_run", True)
     if args.scharf:
         dry = False
     if args.probelauf:
         dry = True
     res = run_once(store, cfg, date.today(), dry, args.force)
-    res.pop("_ledger", None); res.pop("_kategorien", None)
+    res.pop("_ledger", None); res.pop("_categories", None)
     st = res.get("status")
-    if st == "nicht_verfuegbar":
+    if st == "unavailable":
         print(res.get("text")); return 0
-    if st == "unveraendert":
+    if st == "unchanged":
         print(tr("s_keine_aenderung_in_moneymoney_seit_2")); return 0
-    if st == "laeuft_bereits":
+    if st == "already_running":
         print(tr("s_ein_lauf_ist_bereits_aktiv")); return 1
-    if st == "fehler":
+    if st == "error":
         print("FEHLER: %s" % res.get("text")); return 1
-    for v in res.get("vorschlaege", []):
-        print("  %s  %-50s %14s  %s" % (v["datum"], v["konto"][-50:], fmt_eur(v["betrag"]), v["text"]))
-    for w in res.get("warnungen", []):
+    for v in res.get("proposals", []):
+        print("  %s  %-50s %14s  %s" % (v["date"], v["account"][-50:], fmt_eur(v["amount"]), v["text"]))
+    for w in res.get("warnings", []):
         print("HINWEIS " + w)
-    print(tr("s_s_d_vorschlag_vorschlaege_d") % ("Probelauf" if dry else "Lauf", len(res.get("vorschlaege", [])),
-                                                        res.get("geschrieben", 0), (" -- FEHLER: " + res["fehler"]) if res.get("fehler") else ""))
+    print(tr("s_s_d_vorschlag_vorschlaege_d") % ("Probelauf" if dry else "Lauf", len(res.get("proposals", [])),
+                                                        res.get("written", 0), (" -- FEHLER: " + res["error"]) if res.get("error") else ""))
     print(tr("s_oberflaeche_python3_kontor_py_oeffnen"))
-    return 1 if res.get("fehler") else 0
+    return 1 if res.get("error") else 0
 
 
 def cmd_konten(args) -> int:
@@ -220,9 +211,9 @@ def cmd_konten(args) -> int:
         print(unavailable_text(e) or str(e)); return 2
     print("%-58s %-36s %-8s %-17s %-16s %s" % (tr("s_konto_pfad"), "UUID", tr("x_typ"), tr("x_rolle"), tr("x_aktualisiert"), tr("x_saldo")))
     for k in account_tree(ledger, cfg):
-        typ = tr("x_gruppe" if k["gruppe"] else ("x_depot" if k["depot"] else ("x_manuell" if k["manuell"] else "x_bank")))
-        print("%-58s %-36s %-8s %-17s %-16s %s" % ("  " * k["ebene"] + k["name"], k["uuid"], typ, k["rolle"],
-                                                   k["aktualisiert"] or "", "" if k["gruppe"] else fmt_eur(k["saldo"])))
+        typ = tr("x_gruppe" if k["group"] else ("x_depot" if k["depot"] else ("x_manuell" if k["manual"] else "x_bank")))
+        print("%-58s %-36s %-8s %-17s %-16s %s" % ("  " * k["depth"] + k["name"], k["uuid"], typ, k["role"],
+                                                   k["updated"] or "", "" if k["group"] else fmt_eur(k["balance_amount"])))
     return 0
 
 
@@ -237,9 +228,9 @@ def cmd_check(args) -> int:
         print(unavailable_text(e) or str(e)); return 2
     findings = check_config(ledger, cats, cfg)
     for f in findings:
-        print("%-8s %s" % (f["stufe"].upper(), f["text"]))
-    bad = any(f["stufe"] == "fehler" for f in findings)
-    print(tr("s_probelauf_s") % (tr("aus") if cfg.get("probelauf", True) else tr("an")))
+        print("%-8s %s" % (f["severity"].upper(), f["text"]))
+    bad = any(f["severity"] == "error" for f in findings)
+    print(tr("s_probelauf_s") % (tr("aus") if cfg.get("dry_run", True) else tr("an")))
     print("Ergebnis: %s" % ("alles in Ordnung" if not bad else "FEHLER vorhanden"))
     return 1 if bad else 0
 
@@ -247,13 +238,13 @@ def cmd_check(args) -> int:
 def cmd_status(args) -> int:
     store = open_store()
     st = store.load("state.json", {}) or {}
-    last = st.get("letzter_lauf")
+    last = st.get("last_run")
     print("Kontor %s -- Datenordner %s" % (version(), DATA_DIR))
     if not last:
         print(tr("s_noch_kein_lauf")); return 0
-    print(json.dumps({k: v for k, v in last.items() if k != "vorschlaege"}, ensure_ascii=False, indent=2))
-    for v in last.get("vorschlaege", []):
-        print("  %s %s %s %s" % (v["datum"], v["konto"], fmt_eur(v["betrag"]), v["text"]))
+    print(json.dumps({k: v for k, v in last.items() if k != "proposals"}, ensure_ascii=False, indent=2))
+    for v in last.get("proposals", []):
+        print("  %s %s %s %s" % (v["date"], v["account"], fmt_eur(v["amount"]), v["text"]))
     return 0
 
 
@@ -297,24 +288,21 @@ def cmd_paket_import(args) -> int:
     cfg = load_config(store)
     with open(args.datei, encoding="utf-8") as f:
         pkg = json.load(f)
-    if "kontor_paket" not in pkg and "config" not in pkg and isinstance(pkg, dict):
-        pkg = {"kontor_paket": 1, "name": os.path.basename(args.datei), "config": pkg}   # rohe Konfiguration
+    if "kontor_package" not in pkg and "config" not in pkg and isinstance(pkg, dict):
+        pkg = {"kontor_package": 1, "name": os.path.basename(args.datei), "config": pkg}   # rohe Konfiguration
     ledger = None
     try:
         ledger = fetch(Bridge(dry_run=True), cfg, date.today())
     except MoneyMoneyError as e:
         print(tr("s_hinweis_s_kontoreferenzen_werden_nicht") % (unavailable_text(e) or e))
-    new_cfg, unresolved, report = import_package(cfg, pkg, ledger, "ersetzen" if args.ersetzen else "ergaenzen")
+    new_cfg, unresolved, report = import_package(cfg, pkg, ledger, "replace" if args.ersetzen else "merge")
     for line in report:
         print("  " + line)
     for u in unresolved:
-        print("  NICHT GEFUNDEN: %s (%s)" % (u["label"], u["feld"]))
+        print("  NICHT GEFUNDEN: %s (%s)" % (u["label"], u["field"]))
     if unresolved and not args.trotzdem:
         print(tr("s_nicht_uebernommen_konten_in_moneymoney"))
         return 1
-    if before_slash_keys(pkg.get("version")):            # its category keys split every slash: they follow (MoneyMoney's last categories)
-        cats = mm_categories.with_paths((store.load_shared("state.json", {}) or {}).get("kategorien_roh") or [])
-        new_cfg = (follow_slashes(new_cfg, cats) if cats else None) or new_cfg
     store.save("config.json", merged_config(new_cfg))
     if pkg.get("plan") and args.mit_plan:
         store.save("plan.json", pkg["plan"])
@@ -325,7 +313,7 @@ def cmd_paket_import(args) -> int:
 def cmd_diagnose(args) -> int:
     store = open_store()
     cfg = load_config(store)
-    txt = diagnose(store, DATA_DIR, cfg, {"version": version(), "datenordner": DATA_DIR}, mask_names=not args.namen)
+    txt = diagnose(store, DATA_DIR, cfg, {"version": version(), "data_folder": DATA_DIR}, mask_names=not args.namen)
     if args.datei:
         with open(args.datei, "w", encoding="utf-8") as f:
             f.write(txt)
@@ -340,10 +328,10 @@ def cmd_update(args) -> int:
     cfg = load_config(store)
     repo = (cfg.get("updates") or {}).get("repo") or "stecrz/Kontor"
     info = updates.check(repo)
-    if info.get("fehler"):
-        print(info["fehler"]); return 2
-    print(tr("s_installiert_s_verfuegbar_s_s") % (info["aktuell"], info["verfuegbar"], info["quelle"]))
-    if not info["neuer"]:
+    if info.get("error"):
+        print(info["error"]); return 2
+    print(tr("s_installiert_s_verfuegbar_s_s") % (info["current"], info["available"], info["source"]))
+    if not info["newer"]:
         print(tr("s_kontor_ist_aktuell")); return 0
     if not args.installieren:
         print("Einspielen: python3 kontor.py update --install"); return 0
@@ -391,13 +379,47 @@ def cmd_install(args) -> int:
 
 
 def cmd_uninstall(args) -> int:
-    if os.path.exists(launchd_path()):
-        subprocess.run(["launchctl", "unload", launchd_path()], capture_output=True)
+    """The same as Settings -> Backup -> Uninstall: the service, Kontor's own files in the data folder (settings, data, log),
+    the data key (only when no encrypted file is left) and, with --program, the program folder. Receipts, linked documents and
+    MoneyMoney stay. Asks first (unless --yes)."""
+    import service
+    if not args.yes:
         try:
-            os.remove(launchd_path())
-        except FileNotFoundError:
-            pass
-    print(tr("s_dienst_entfernt_daten_bleiben_in") % DATA_DIR)
+            ans = input(tr("deinstall_frage") + (" " + tr("deinstall_programmordner") if args.program else "") + " [j/N] ").strip().lower()
+        except EOFError:
+            ans = ""
+        if ans not in ("j", "ja", "y", "yes"):
+            print(tr("s_deinstall_abgebrochen"))
+            return 1
+    # the key first: encrypted data that cannot be opened stay, and so does everything else (the key might still be needed)
+    try:
+        key, source = storage.read_master_key(DATA_DIR)
+        store = Store(DATA_DIR, key, source)
+    except Exception as e:
+        if storage._enc_files(DATA_DIR):
+            print(tr("s_fehler_s") % e)
+            return 1
+        store = Store(DATA_DIR, None)       # nothing encrypted is there: nothing to open
+    try:
+        cfg = merged_config(store.load("config.json", {}) or {})
+    except Exception as e:                  # the settings do not open: nothing is deleted
+        print(tr("s_fehler_s") % e)
+        return 1
+    if sys.platform == "darwin":            # stop the service: launchd would start it again
+        subprocess.run(["launchctl", "bootout", "gui/%d/%s" % (os.getuid(), LAUNCHD_LABEL)], capture_output=True)
+    app = service.App.__new__(service.App)
+    app.data_dir, app.program_dir, app.store, app.config = DATA_DIR, HERE, store, cfg
+    r = service.App.uninstall(app, program=args.program)
+    if r.get("error"):
+        print(r["error"])
+        return 1
+    print(tr("deinstalliert_text" if r["key_removed"] else "deinstalliert_ohne_schluessel"))
+    if r.get("receipts"):
+        print(tr("deinstall_belege_bleiben", r["receipts"]))
+    if r.get("foreign"):
+        print(tr("deinstall_fremd", DATA_DIR, ", ".join(r["foreign"])))
+    if r.get("kept"):
+        print(tr("deinstall_geblieben", ", ".join(r["kept"])))
     if sys.platform == "darwin":            # macOS keeps the automation permissions (MoneyMoney, System Events); only tccutil removes them
         print(tr("s_freigaben_entfernen"))
     return 0
@@ -408,17 +430,17 @@ def cmd_tls(args) -> int:
     store = open_store()
     cfg = load_config(store)
     if args.aus:
-        cfg["oberflaeche"].update({"tls_cert": "", "tls_key": ""})
+        cfg["ui"].update({"tls_cert": "", "tls_key": ""})
         store.save("config.json", cfg)
-        print("TLS abgeschaltet (Adresse bleibt %s)." % cfg["oberflaeche"].get("bind"))
+        print("TLS abgeschaltet (Adresse bleibt %s)." % cfg["ui"].get("bind"))
     else:
         try:
             r = tls_cert.setup(cfg, DATA_DIR)
         except Exception as e:
             print(tr("s_fehler_s") % e); return 1
-        cfg["oberflaeche"] = r["oberflaeche"]
+        cfg["ui"] = r["ui"]
         store.save("config.json", cfg)
-        print(tr("s_zertifikat_fuer_s_geholt_gueltig") % (r["name"], (r["gueltig_bis"] or "?")[:10], r["ip"]))
+        print(tr("s_zertifikat_fuer_s_geholt_gueltig") % (r["name"], (r["valid_until"] or "?")[:10], r["ip"]))
         print(tr("s_oberflaeche_nach_dem_neustart_s") % r["url"])
         print(tr("s_das_zertifikat_wird_vom_laufenden"))
     if os.path.exists(launchd_path()):
@@ -439,8 +461,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--quiet", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, fn in (("start", cmd_start), ("open", cmd_oeffnen), ("accounts", cmd_konten), ("check", cmd_check), ("status", cmd_status),
-                     ("password", cmd_passwort), ("install", cmd_install), ("uninstall", cmd_uninstall), ("version", cmd_version)):
+                     ("password", cmd_passwort), ("install", cmd_install), ("version", cmd_version)):
         sub.add_parser(name).set_defaults(fn=fn)
+    un = sub.add_parser("uninstall"); un.set_defaults(fn=cmd_uninstall)
+    un.add_argument("--program", action="store_true"); un.add_argument("--yes", action="store_true")
     r = sub.add_parser("run"); r.set_defaults(fn=cmd_run)
     r.add_argument("--dry-run", dest="probelauf", action="store_true"); r.add_argument("--live", dest="scharf", action="store_true")
     r.add_argument("--force", action="store_true")

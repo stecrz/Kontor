@@ -95,7 +95,7 @@ def keys_from_dialog(salt: bytes) -> List[bytearray]:
             raise HistorieError(tr("s_keine_eingabe_im_passwortfenster_zeitl"))
         if code == 1:
             _wipe(buf)
-            raise HistorieError("abgebrochen")
+            raise HistorieError("aborted")
         keys: List[bytearray] = []
         try:
             for line in bytes(buf[:got]).split(b"\n"):
@@ -300,16 +300,16 @@ def schema_of(db: "MemDB") -> List[Dict]:
             n = db.one("SELECT count(*) FROM %s" % _q(name))[0]
         except sqlite3.DatabaseError:
             n = None
-        tables.append({"name": name, "spalten": columns(db, name), "zeilen": n})
-    tables += [{"name": name, "spalten": [], "zeilen": None, "virtuell": True} for name in virtual]
+        tables.append({"name": name, "columns": columns(db, name), "rows": n})
+    tables += [{"name": name, "columns": [], "rows": None, "virtual": True} for name in virtual]
     return tables
 
 
 def schema_text(tables: List[Dict], fmt: str) -> str:
     lines = ["MoneyMoney database schema (names and row counts only, no contents)", "Format: %s" % fmt, ""]
     for t in tables:
-        lines.append("%s  (%s)" % (t["name"], "virtual, skipped" if t.get("virtuell") else "%s rows" % ("?" if t["zeilen"] is None else t["zeilen"])))
-        lines.append("  " + ", ".join("%s %s" % (c, ty) for c, ty in t["spalten"]))
+        lines.append("%s  (%s)" % (t["name"], "virtual, skipped" if t.get("virtual") else "%s rows" % ("?" if t["rows"] is None else t["rows"])))
+        lines.append("  " + ", ".join("%s %s" % (c, ty) for c, ty in t["columns"]))
     return "\n".join(lines) + "\n"
 
 
@@ -382,7 +382,7 @@ def _match_accounts(db: "MemDB", accounts: Dict[str, Dict]) -> Tuple[Dict[int, T
     Gelesen werden nur diese Kennzeichen (keine Zugangsdaten). Liefert (rowid -> (uuid, Merkmal) fuer eindeutige Treffer,
     uuid -> [rowid, ...] fuer mehrdeutige Namen; die entscheidet spaeter der aktuelle Saldo)."""
     have = {c for c, _ty in columns(db, "accounts")}
-    want = [c for c in ("iban", "account", "bankcode", "name", "portfolio") if c in have]
+    want = [c for c in ("iban", "account", "bank_code", "name", "portfolio") if c in have]
     if "name" not in want:
         return {}, {}
     rows = [dict(zip(["rowid"] + want, r)) for r in db.rows("SELECT rowid, %s FROM accounts" % ", ".join(_q(c) for c in want))]
@@ -393,8 +393,8 @@ def _match_accounts(db: "MemDB", accounts: Dict[str, Dict]) -> Tuple[Dict[int, T
         hit, how = [], ""
         if _norm(a.get("iban")):
             hit, how = [r for r in rows if _norm(r.get("iban")) == _norm(a["iban"])], "iban"
-        if not hit and _norm(a.get("nummer")) and _norm(a.get("blz")):
-            hit, how = [r for r in rows if _norm(r.get("account")) == _norm(a["nummer"]) and _norm(r.get("bankcode")) == _norm(a["blz"])], "nummer"
+        if not hit and _norm(a.get("number")) and _norm(a.get("sort_code")):
+            hit, how = [r for r in rows if _norm(r.get("account")) == _norm(a["number"]) and _norm(r.get("bank_code")) == _norm(a["sort_code"])], "number"
         if not hit and a.get("name"):
             hit, how = [r for r in rows if str(r.get("name") or "").strip() == a["name"].strip()
                         and ("portfolio" not in r or bool(r["portfolio"]) == bool(a.get("depot")))], "name"
@@ -437,7 +437,7 @@ def _load_series(db: "MemDB", plain: List[str], keys: List[int], info: Callable[
                                    "AND typeof(balance) IN ('integer', 'real') ORDER BY timestamp" % _in(len(keys)), keys):
             by_key.setdefault(k, {}).setdefault(c or "", []).append((ts, v))
         for k, per in by_key.items():
-            rows = per.get(info(k).get("waehrung") or "") or (next(iter(per.values())) if len(per) == 1 else None)
+            rows = per.get(info(k).get("currency") or "") or (next(iter(per.values())) if len(per) == 1 else None)
             if rows:
                 series[k] = ("balance_chart", _series(rows, kind))
     return series
@@ -513,7 +513,7 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
             break
     cur = "%04d-%02d" % (today.year, today.month)
     for k, per in recs.items():
-        bal = info(k).get("saldo") or 0.0
+        bal = info(k).get("balance_amount") or 0.0
         now = held.get(k) if k in held else {sk for sk, r in per.items() if r[-1][0] == max(x[-1][0] for x in per.values())}
         level_now = sum(r[-1][1] for sk, r in per.items() if sk in now)
         delta_now = sum(v for r in per.values() for _d, v in r)
@@ -547,7 +547,7 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
             pct = lambda x: "%d %%" % round(100.0 * x / bal) if abs(bal) >= 1.0 else "-"
             price_now = sum(r[-1][1] * qty[sk] for sk, r in per.items() if sk in now and sk in qty)
             last = max(r[-1][0] for r in per.values())
-            out[k] = {"fehler": "%d securities (%d held), last point %d days ago; of the current value: values %s, sum of changes %s, "
+            out[k] = {"error": "%d securities (%d held), last point %d days ago; of the current value: values %s, sum of changes %s, "
                                 "value x quantity %s%s" % (len(per), len(now), (today - last).days, pct(level_now), pct(delta_now), pct(price_now),
                                                            "; " + check if check else "")}
             continue
@@ -597,13 +597,13 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
                     if upto and (until is None or until >= nxt):
                         parts[sk]["%04d-%02d" % (y, m)] = round(upto[-1], 2)
                     y, m = nxt.year, nxt.month
-        wp = [{"name": names.get(sk, ("", ""))[0], "isin": names.get(sk, ("", ""))[1], "werte": v} for sk, v in parts.items()
+        wp = [{"name": names.get(sk, ("", ""))[0], "isin": names.get(sk, ("", ""))[1], "amounts": v} for sk, v in parts.items()
               if any(abs(x) >= 0.005 for x in v.values())]
         log.debug("Portfolio %d: %d series, %d of them in the securities table, %d with ISIN, %d with a name", k, len(recs[k]),
                   sum(1 for sk in recs[k] if sk in names), sum(1 for sk in recs[k] if names.get(sk, ("", ""))[1]), sum(1 for sk in recs[k] if names.get(sk, ("", ""))[0]))
         log.debug("Portfolio %d: read as %s; series (points, first, last, held or gone): %s", k, art, "; ".join(
             "%d, %s, %s, %s" % (len(r), r[0][0], r[-1][0], "held" if sk in now else gone.get(sk) or "-") for sk, r in sorted(recs[k].items(), key=lambda x: x[1][0][0])))
-        out[k] = {"werte": werte, "anfang": 0.0, "art": "level" if art == "total" else art, "wertpapiere": wp}
+        out[k] = {"amounts": werte, "opening": 0.0, "kind": "level" if art == "total" else art, "securities": wp}
     return out
 
 
@@ -677,7 +677,7 @@ def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at
     matched, unclear = _match_accounts(db, accounts)
     hows = [h for _u, h in matched.values()]
     log.info("MoneyMoney database: %d tables (%d virtual skipped); %d of %d accounts matched (IBAN %d, number %d, name %d), %d names ambiguous",
-             len(plain), len(virtual), len(matched), len(accounts), hows.count("iban"), hows.count("nummer"), hows.count("name"), len(unclear))
+             len(plain), len(virtual), len(matched), len(accounts), hows.count("iban"), hows.count("number"), hows.count("name"), len(unclear))
     if not matched and not unclear:
         return None
     owner = {k: u for u, ks in unclear.items() for k in ks}           # Kandidat -> ein Konto gleichen Namens (Waehrung, Depot)
@@ -714,7 +714,7 @@ def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at
             ok[k], use[k] = fit, mode[0]
             continue
         # ohne Umsaetze (Depots): Summe aller Veraenderungen = aktueller Wert, sonst juengster Stand = aktueller Wert
-        bal = info(k).get("saldo") or 0.0
+        bal = info(k).get("balance_amount") or 0.0
         d_all = sum(days[k]["delta"].values()) * scale
         last = days[k]["level"][max(days[k]["level"])] * scale if days[k]["level"] else None
         tol = max(1.0, 0.01 * abs(bal))
@@ -743,25 +743,25 @@ def find_history(db: "MemDB", accounts: Dict[str, Dict], today: date, balance_at
     wertpapiere: Dict[str, List[Dict]] = {}             # portfolio -> its securities with month-end values
     for k in series:
         if k in matched and ok.get(k):
-            bal = info(k).get("saldo") or 0.0
+            bal = info(k).get("balance_amount") or 0.0
             vals = _month_ends(days[k][use[k]], use[k], mode[1], scale, bal, today)
             if vals:
                 konten[matched[k][0]] = vals
                 if use[k] == "delta":
                     anfang[matched[k][0]] = round(bal - sum(days[k]["delta"].values()) * scale, 2)
     for k, r in depots.items():
-        if "fehler" in r:
-            log.info("MoneyMoney database: portfolio (%s) not taken over: %s", matched[k][1], r["fehler"])
-        elif r["werte"]:
-            konten[matched[k][0]], anfang[matched[k][0]] = r["werte"], r["anfang"]
-            if r.get("wertpapiere"):
-                wertpapiere[matched[k][0]] = r["wertpapiere"]
-    log.info("MoneyMoney database: %d of %d portfolios from portfolio_chart", sum(1 for r in depots.values() if "werte" in r), len(depots))
+        if "error" in r:
+            log.info("MoneyMoney database: portfolio (%s) not taken over: %s", matched[k][1], r["error"])
+        elif r["amounts"]:
+            konten[matched[k][0]], anfang[matched[k][0]] = r["amounts"], r["opening"]
+            if r.get("securities"):
+                wertpapiere[matched[k][0]] = r["securities"]
+    log.info("MoneyMoney database: %d of %d portfolios from portfolio_chart", sum(1 for r in depots.values() if "amounts" in r), len(depots))
     if not konten:
         return None
-    tabellen = sorted({series[k][0] for k in series if k in matched and ok.get(k)} | ({"portfolio_chart"} if any("werte" in r for r in depots.values()) else set()))
-    return {"tabelle": "+".join(tabellen), "spalten": ["account_key", "timestamp", "balance"], "konten": konten, "anfang": anfang, "wertpapiere": wertpapiere,
-            "treffer": hits, "geprueft": len(with_tx)}
+    tabellen = sorted({series[k][0] for k in series if k in matched and ok.get(k)} | ({"portfolio_chart"} if any("amounts" in r for r in depots.values()) else set()))
+    return {"table_name": "+".join(tabellen), "columns": ["account_key", "timestamp", "balance"], "accounts": konten, "opening": anfang, "securities": wertpapiere,
+            "hits": hits, "verified": len(with_tx)}
 
 
 def run(buf: bytearray, accounts: Dict[str, Dict], today: date, keys_fn: Optional[Callable[[bytes], List[bytearray]]] = None,

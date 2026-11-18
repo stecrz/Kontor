@@ -85,12 +85,12 @@ class FuzzTests(unittest.TestCase):
     def run_once(self, cfg, dry, approve=None):
         r = core.run_once(self.store, cfg, TODAY, dry=dry, force=True, bridge_factory=MockBridge, approve=approve, with_report=False)
         self.assertEqual(r["status"], "ok", r)
-        self.assertFalse([w for w in r["warnungen"] if "nach Buchung" in w], r["warnungen"])        # balances after booking as planned
+        self.assertFalse([w for w in r["warnings"] if "nach Buchung" in w], r["warnings"])        # balances after booking as planned
         return r
 
     def approve(self, cfg, rnd, part=True):
         r = self.run_once(cfg, True)
-        rows = r["vorschlaege"]
+        rows = r["proposals"]
         if not rows:
             return
         hold = {p["key"] for p in rows if part and rnd.random() < 0.4}
@@ -98,20 +98,20 @@ class FuzzTests(unittest.TestCase):
         shown = core.plan_pending(led, cfg, self.store.load("state.json") or {}, TODAY, hold)
         self.assertFalse(hold & {p["key"] for p in shown})
         before = len(self.txs())
-        r = self.run_once(cfg, False, {p["key"]: {"angezeigt": p["betrag"]} for p in shown})
-        self.assertNotIn(core.tr("s_betraege_geaendert"), r["warnungen"])          # booked is what was shown
-        self.assertEqual(len(self.txs()) - before, len(shown)); self.assertEqual(r["gebucht"], len(shown))
+        r = self.run_once(cfg, False, {p["key"]: {"shown": p["amount"]} for p in shown})
+        self.assertNotIn(core.tr("s_betraege_geaendert"), r["warnings"])          # booked is what was shown
+        self.assertEqual(len(self.txs()) - before, len(shown)); self.assertEqual(r["booked_count"], len(shown))
         made = {t["accountUuid"] + "|" + m: t["amount"] for t in self.txs() for m in marks_in(t.get("purpose"))}
         for p in shown:
-            self.assertAlmostEqual(made[p["key"]], p["betrag"], 2)
+            self.assertAlmostEqual(made[p["key"]], p["amount"], 2)
 
     def scenario(self, seed):
         rnd = random.Random(seed)
         cfg = core.merged_config(config_for_test(os.path.join(self.dir, "Belege")))
-        cfg["darlehen"][0].pop("quelle_kommentar", None)
-        cfg["gesellschaften"] = [
-            dict(bereich=F.uid("ga"), beteiligung=F.uid(BET) + " | B", rueckwirkend_ab=rnd.choice(["", "2026-06-01", "alles"]), takt=rnd.choice(["taeglich", "monatlich"])),
-            dict(bereich=F.uid("gb"), rueckwirkend_ab=rnd.choice(["", "alles"]), gegenkonten=[{"konto": F.uid(MINE) + " | M", "quelle": F.uid(THEIRS) + " | T"}])]
+        cfg["companies"] = [
+            dict(area=F.uid("ga"), participation=F.uid(BET) + " | B", retroactive_from=rnd.choice(["", "2026-06-01", "all"]), cycle=rnd.choice(["daily", "monthly"])),
+            dict(area=F.uid("gb"))]
+        cfg["account_mirrors"] = [{"a": F.uid(MINE) + " | M", "b": F.uid(THEIRS) + " | T", "from_date": rnd.choice(["", "all"])}]
         self.store.save("config.json", cfg)
         for d, amt in ((date(2026, 8, 3), -700.0), (date(2026, 9, 9), 250.0)):          # there before the mirror is set up
             F_t = F.tx(THEIRS, d, amt, "Ich", "früher"); self.txs().append(F_t)
@@ -120,7 +120,7 @@ class FuzzTests(unittest.TestCase):
         touched_mirror = False
         for i in range(18):
             auto = rnd.random() < 0.35
-            cfg["probelauf"] = not auto
+            cfg["dry_run"] = not auto
             act = rnd.choice(["sync", "sync", "approve", "approve", "reject", "delete", "change", "pay", "mirror", "again", "unmark",
                               "redate", "original", "renumber", "paydel"])
             steps.append(act + ("/auto" if auto else ""))
@@ -130,10 +130,10 @@ class FuzzTests(unittest.TestCase):
             elif act == "approve":
                 self.approve(cfg, rnd)
             elif act == "reject":                                                   # "Don't book" (settings)
-                rows = self.run_once(cfg, True)["vorschlaege"]
+                rows = self.run_once(cfg, True)["proposals"]
                 if rows:
                     p = rnd.choice(rows)
-                    cfg["nicht_buchen"] = [x for x in cfg.get("nicht_buchen") or [] if x["key"] != p["key"]] + [core.not_booked_entry(p, p["key"])]
+                    cfg["not_book"] = [x for x in cfg.get("not_book") or [] if x["key"] != p["key"]] + [core.not_booked_entry(p, p["key"])]
             elif act == "delete" and self.kontor_txs():
                 self.remove(rnd.choice(self.kontor_txs()))                      # you delete a booking of Kontor's in MoneyMoney
             elif act == "change":
@@ -145,8 +145,8 @@ class FuzzTests(unittest.TestCase):
                 self.add("ga.kk", TODAY - timedelta(days=rnd.randint(0, 50)), rnd.choice([-1234.5, 800.0, 96.25]), "Zahlung")
             elif act == "mirror":                                                   # a new booking in one of the mirrored accounts
                 self.add(rnd.choice([MINE, THEIRS]), TODAY - timedelta(days=rnd.randint(0, 20)), rnd.choice([-300.0, 120.0, 55.55]), "Einlage/Entnahme")
-            elif act == "again" and cfg.get("nicht_buchen"):                       # "Propose again"
-                cfg["nicht_buchen"].remove(rnd.choice(cfg["nicht_buchen"]))
+            elif act == "again" and cfg.get("not_book"):                       # "Propose again"
+                cfg["not_book"].remove(rnd.choice(cfg["not_book"]))
             elif act == "unmark" and self.kontor_txs():                             # you remove Kontor's mark from a booking's text
                 t = rnd.choice(self.kontor_txs())
                 t["purpose"] = TAG_RE.sub("", t["purpose"]).strip(" ·")
@@ -172,19 +172,19 @@ class FuzzTests(unittest.TestCase):
                     self.remove(rnd.choice(pays))
             self.check(where)
         # in the end: everything approved until nothing is left
-        cfg["probelauf"] = True
+        cfg["dry_run"] = True
 
-        cfg["nicht_buchen"] = []          # everything under "Not booked" proposed again
+        cfg["not_book"] = []          # everything under "Not booked" proposed again
         for _ in range(8):
-            if not self.run_once(cfg, True)["vorschlaege"]:
+            if not self.run_once(cfg, True)["proposals"]:
                 break
             self.approve(cfg, rnd, part=False)
             self.check("seed %d settling" % seed)
         end = self.run_once(cfg, True)
-        self.assertEqual(end["vorschlaege"], [], "seed %d: something is still to book" % seed)
+        self.assertEqual(end["proposals"], [], "seed %d: something is still to book" % seed)
         led = core.fetch(MockBridge(True), cfg, TODAY)
         value = sum(a.balance for a in led.descendants(F.uid("ga")))
-        if cfg["gesellschaften"][0]["takt"] == "taeglich":          # daily: the participation is at share x value now
+        if cfg["companies"][0]["cycle"] == "daily":          # daily: the participation is at share x value now
             self.assertAlmostEqual(led.accounts[F.uid(BET)].balance, round(0.4 * value, 2), 2, "seed %d: participation off" % seed)
         else:                                                        # monthly: at the end of last month
             end_of = date(TODAY.year, TODAY.month, 1) - timedelta(days=1)
@@ -193,7 +193,7 @@ class FuzzTests(unittest.TestCase):
         # every booking of the mirrored accounts has its counterpart: the two balances moved by the same amounts
         mine = sorted(round(t["amount"], 2) for t in self.txs() if t["accountUuid"] == F.uid(MINE))
         theirs = sorted(round(-t["amount"], 2) for t in self.txs() if t["accountUuid"] == F.uid(THEIRS))
-        if cfg["gesellschaften"][1]["rueckwirkend_ab"] == "alles" and not touched_mirror:      # (an original you changed: a note, Kontor changes nothing)
+        if cfg["account_mirrors"][0]["from_date"] == "all" and not touched_mirror:      # (an original you changed: a note, Kontor changes nothing)
             self.assertEqual(mine, theirs, "seed %d: mirror incomplete" % seed)
         return steps
 

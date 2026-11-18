@@ -54,7 +54,7 @@ def _entity_type(name: str) -> str:
         return "gbr"
     if "gmbh" in low or "ag" == low[-2:]:
         return "gmbh"
-    return "privat"
+    return "private"
 
 
 def _position_for(path: str, mapping: Dict[str, str]) -> str:
@@ -78,18 +78,18 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
         from core import bereiche_for
         bereiche = bereiche_for(ledger, config)
     immo_afa = immo_afa or {}
-    st = config.get("steuer", {}) or {}
-    kf = config.get("kapitalfluss", {}) or {}
-    verm = (st.get("vermietung_kategorie") or "Vermietung").lower()
+    st = config.get("tax", {}) or {}
+    kf = config.get("cashflow", {}) or {}
+    verm = (st.get("rental_category") or "Vermietung").lower()
     from report import transfer_check
     transfer_cat = transfer_check(config)          # the same transfer categories as the cash flow (your positions first)
-    cost_words = [w.lower() for w in (kf.get("kosten_texte") or COST_WORDS)]
-    afa_cfg = st.get("afa") or {}
-    pos_map = st.get("positionen") or {}
+    cost_words = [w.lower() for w in (kf.get("costs_texts") or COST_WORDS)]
+    afa_cfg = st.get("depreciation") or {}
+    pos_map = st.get("positions") or {}
 
     # Objekt-Zuordnung der Darlehen (Referenz -> Objektname)
     loan_obj: Dict[str, str] = {}
-    for ref, obj in (st.get("objekt_darlehen") or {}).items():
+    for ref, obj in (st.get("property_loans") or {}).items():
         if ref.startswith("_"):
             continue
         try:
@@ -99,28 +99,28 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
     # Entitaeten = Bereiche (Hauptbereich = privat, andere nach Art/Name)
     ents: List[dict] = []
     for b in bereiche or []:
-        art = b.get("art") or _entity_type(b["name"])
-        if art == "gesellschaft":
-            art = "gbr" if "gbr" in b["name"].lower() else ("gmbh" if "gmbh" in b["name"].lower() else "gesellschaft")
-        ents.append({"id": b["id"], "name": b["name"], "leaves": b["leaves"], "art": art,
-                     "anteil": b.get("anteil") if b.get("anteil") not in (None, "", 0) else None})
+        art = b.get("kind") or _entity_type(b["name"])
+        if art == "company":
+            art = "gbr" if "gbr" in b["name"].lower() else ("gmbh" if "gmbh" in b["name"].lower() else "company")
+        ents.append({"id": b["id"], "name": b["name"], "leaves": b["leaves"], "kind": art,
+                     "share": b.get("share") if b.get("share") not in (None, "", 0) else None})
 
     by_year: Dict[int, List[Tx]] = defaultdict(list)
     for t in ledger.txs:
         if t.booked:
             by_year[t.booking_date.year].append(t)
     years = sorted(set(by_year) | {today.year})
-    out = {"jahre": years, "entitaeten": [], "vermietung_kategorie": st.get("vermietung_kategorie") or "Vermietung"}
+    out = {"years": years, "entities": [], "rental_category": st.get("rental_category") or "Vermietung"}
 
     roles = roles if roles is not None else account_roles(ledger, config)
     for e in ents:
-        leaves = [a for a in e["leaves"] if roles.get(a.uuid) not in ("ignorieren", "eigenkapital", "eventual")]
+        leaves = [a for a in e["leaves"] if roles.get(a.uuid) not in ("ignore", "contingent")]
         leaf_ids = {a.uuid for a in leaves}
         own_ibans = {a.iban.replace(" ", "").upper() for a in leaves if a.iban}
-        ent = {"name": e["name"], "uuid": e["id"], "art": e["art"], "anteil": e["anteil"], "jahre": {}}
+        ent = {"name": e["name"], "uuid": e["id"], "kind": e["kind"], "share": e["share"], "years": {}}
         for y in years:
-            cats: Dict[str, Dict[str, float]] = defaultdict(lambda: {"betrag": 0.0, "anzahl": 0})
-            no_cat = {"betrag": 0.0, "anzahl": 0}
+            cats: Dict[str, Dict[str, float]] = defaultdict(lambda: {"amount": 0.0, "count": 0})
+            no_cat = {"amount": 0.0, "count": 0}
             objekte: Dict[str, dict] = {}
             schuldzinsen: Dict[str, float] = defaultdict(float)
             for t in by_year.get(y, ()):
@@ -134,7 +134,7 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
                               any(tag.startswith((MARK + "wert-", MARK + "spiegel-", MARK + "gk-")) for tag in marks_in(t.purpose))
                 if acc.portfolio:
                     continue
-                if role in ("verbindlichkeiten", "forderungen"):
+                if role in ("liabilities", "receivables"):
                     if _is_cost(t, cost_words):
                         schuldzinsen[acc.name] += t.amount
                     continue
@@ -144,15 +144,15 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
                     continue
                 path = t.category_path.replace("\\", " / ")
                 if not path:
-                    no_cat["betrag"] += t.amount; no_cat["anzahl"] += 1
+                    no_cat["amount"] += t.amount; no_cat["count"] += 1
                     continue
-                cats[path]["betrag"] += t.amount; cats[path]["anzahl"] += 1
+                cats[path]["amount"] += t.amount; cats[path]["count"] += 1
                 parts = path.split(" / ")
                 if parts[0].lower() == verm:
                     obj = parts[1] if len(parts) >= 3 else "(allgemein)"
                     art = parts[-1] if len(parts) >= 2 else "(ohne Art)"
-                    o = objekte.setdefault(obj, {"arten": defaultdict(float), "schuldzinsen": {}, "afa": 0.0})
-                    o["arten"][art] += t.amount
+                    o = objekte.setdefault(obj, {"kinds": defaultdict(float), "debt_interest": {}, "depreciation": 0.0})
+                    o["kinds"][art] += t.amount
             # Schuldzinsen den Objekten zuordnen
             obj_names = list(objekte.keys())
             for loan_name, amt in schuldzinsen.items():
@@ -162,8 +162,8 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
                     target = obj_names[0]
                 if target is None:
                     target = "(Darlehen ohne Objekt)"
-                o = objekte.setdefault(target, {"arten": defaultdict(float), "schuldzinsen": {}, "afa": 0.0})
-                o["schuldzinsen"][loan_name] = round(amt, 2)
+                o = objekte.setdefault(target, {"kinds": defaultdict(float), "debt_interest": {}, "depreciation": 0.0})
+                o["debt_interest"][loan_name] = round(amt, 2)
             # AfA (manuell) und Ergebnis je Objekt
             obj_out = {}
             for name, o in objekte.items():
@@ -171,43 +171,43 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
                 afa_quelle = ""
                 a = afa_cfg.get(name)
                 if isinstance(a, dict) and a.get(str(y)) not in (None, ""):
-                    afa_val = float(a.get(str(y)) or 0.0); afa_quelle = "manuell"
+                    afa_val = float(a.get(str(y)) or 0.0); afa_quelle = "manual"
                 elif a is not None and not isinstance(a, dict):
                     try:
-                        afa_val = float(a); afa_quelle = "manuell"
+                        afa_val = float(a); afa_quelle = "manual"
                     except (TypeError, ValueError):
                         afa_val = 0.0
                 if not afa_quelle and name in immo_afa and str(y) in immo_afa[name]:
-                    afa_val = abs(float(immo_afa[name][str(y)])); afa_quelle = "kalkulation"
-                einnahmen = round(sum(v for v in o["arten"].values() if v > 0), 2)
-                werbung = round(sum(v for v in o["arten"].values() if v < 0), 2)
-                zinsen = round(sum(o["schuldzinsen"].values()), 2)
+                    afa_val = abs(float(immo_afa[name][str(y)])); afa_quelle = "calc"
+                einnahmen = round(sum(v for v in o["kinds"].values() if v > 0), 2)
+                werbung = round(sum(v for v in o["kinds"].values() if v < 0), 2)
+                zinsen = round(sum(o["debt_interest"].values()), 2)
                 ergebnis = round(einnahmen + werbung + zinsen - afa_val, 2)
-                obj_out[name] = {"arten": {k: round(v, 2) for k, v in sorted(o["arten"].items())},
-                                 "schuldzinsen": o["schuldzinsen"], "afa": afa_val, "afa_quelle": afa_quelle, "einnahmen": einnahmen,
-                                 "werbungskosten": werbung, "zinsen": zinsen, "ergebnis": ergebnis,
-                                 "anteil_ergebnis": round(ergebnis * e["anteil"], 2) if e["anteil"] else None}
+                obj_out[name] = {"kinds": {k: round(v, 2) for k, v in sorted(o["kinds"].items())},
+                                 "debt_interest": o["debt_interest"], "depreciation": afa_val, "depreciation_source": afa_quelle, "income_sum": einnahmen,
+                                 "deductible_costs": werbung, "loan_interest": zinsen, "result": ergebnis,
+                                 "share_result": round(ergebnis * e["share"], 2) if e["share"] else None}
             # Positionen (privat) bzw. Kategorien
-            positionen: Dict[str, dict] = defaultdict(lambda: {"betrag": 0.0, "kategorien": []})
+            positionen: Dict[str, dict] = defaultdict(lambda: {"amount": 0.0, "categories": []})
             for path, v in cats.items():
                 if path.split(" / ")[0].lower() == verm:
                     pos = "Anlage V (Vermietung)"
                 else:
-                    pos = _position_for(path, pos_map) if e["art"] == "privat" else path.split(" / ")[0]
-                positionen[pos]["betrag"] += v["betrag"]
-                positionen[pos]["kategorien"].append({"pfad": path, "betrag": round(v["betrag"], 2), "anzahl": v["anzahl"]})
+                    pos = _position_for(path, pos_map) if e["kind"] == "private" else path.split(" / ")[0]
+                positionen[pos]["amount"] += v["amount"]
+                positionen[pos]["categories"].append({"path": path, "amount": round(v["amount"], 2), "count": v["count"]})
             for pos in positionen.values():
-                pos["betrag"] = round(pos["betrag"], 2)
-                pos["kategorien"].sort(key=lambda c: -abs(c["betrag"]))
-            ent["jahre"][str(y)] = {
-                "kategorien": sorted([{"pfad": k, "betrag": round(v["betrag"], 2), "anzahl": v["anzahl"]} for k, v in cats.items()],
-                                     key=lambda c: -abs(c["betrag"])),
-                "ohne_kategorie": {"betrag": round(no_cat["betrag"], 2), "anzahl": no_cat["anzahl"]},
-                "objekte": obj_out,
-                "schuldzinsen": {k: round(v, 2) for k, v in schuldzinsen.items()},
-                "positionen": dict(sorted(positionen.items())),
-                "summe_einnahmen": round(sum(v["betrag"] for v in cats.values() if v["betrag"] > 0), 2),
-                "summe_ausgaben": round(sum(v["betrag"] for v in cats.values() if v["betrag"] < 0), 2),
+                pos["amount"] = round(pos["amount"], 2)
+                pos["categories"].sort(key=lambda c: -abs(c["amount"]))
+            ent["years"][str(y)] = {
+                "categories": sorted([{"path": k, "amount": round(v["amount"], 2), "count": v["count"]} for k, v in cats.items()],
+                                     key=lambda c: -abs(c["amount"])),
+                "uncategorized_flag": {"amount": round(no_cat["amount"], 2), "count": no_cat["count"]},
+                "properties_list": obj_out,
+                "debt_interest": {k: round(v, 2) for k, v in schuldzinsen.items()},
+                "positions": dict(sorted(positionen.items())),
+                "sum_income": round(sum(v["amount"] for v in cats.values() if v["amount"] > 0), 2),
+                "sum_expenses": round(sum(v["amount"] for v in cats.values() if v["amount"] < 0), 2),
             }
-        out["entitaeten"].append(ent)
+        out["entities"].append(ent)
     return out

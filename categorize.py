@@ -27,15 +27,15 @@ FILE = "categories.json"
 
 
 def empty() -> dict:
-    return {"version": 3, "zuordnung": {}, "regeln": [], "gelernt_am": None}
+    return {"version": 3, "assignment": {}, "rules": [], "learned_at": None}
 
 
 def load(store) -> dict:
-    """The stored state; a file of an older version (Kontor's own categories before 3.13.5) starts empty."""
+    """The stored state (empty when there is none or it has an unknown shape)."""
     d = store.load(FILE, None) or {}
     if d.get("version") != 3:
         return empty()
-    d.setdefault("zuordnung", {}); d.setdefault("regeln", [])
+    d.setdefault("assignment", {}); d.setdefault("rules", [])
     return d
 
 
@@ -83,9 +83,9 @@ def effective(d: dict, t: Tx) -> Tuple[str, str]:
     mm = mm_of(t)
     if mm:
         return mm, "moneymoney"
-    z = d["zuordnung"].get(str(t.id))
+    z = d["assignment"].get(str(t.id))
     if waiting(z):
-        return z["k"], "wartet"
+        return z["k"], "waiting"
     return "", ""
 
 
@@ -104,7 +104,7 @@ def apply_to_ledger(d: dict, ledger: Ledger) -> Dict[str, int]:
             t.category = norm_cat(t.mm_category_path).split(" / ")[-1] if t.mm_category_path else ""
         else:
             t.category_path, t.category = "", ""
-        counts[q or "ohne"] += 1
+        counts[q or "without"] += 1
     return dict(counts)
 
 
@@ -114,9 +114,9 @@ def set_waiting(d: dict, tx_ids: Iterable[int], path: str) -> int:
     n = 0
     for tid in tx_ids:
         if path:
-            d["zuordnung"][str(tid)] = {"k": path, "q": "manuell", "p": 1}
+            d["assignment"][str(tid)] = {"k": path, "q": "manual", "p": 1}
         else:
-            d["zuordnung"].pop(str(tid), None)
+            d["assignment"].pop(str(tid), None)
         n += 1
     return n
 
@@ -144,7 +144,7 @@ def purpose_key(s: str, words: int = 3) -> str:
 def party_key(t: Tx) -> str:
     """The other side of a booking: its IBAN, else its name, else the start of its purpose (e.g. a savings plan the bank debits
     itself)."""
-    return (t.counter_iban or "").replace(" ", "").upper() or norm_name(t.name) or ("zweck:" + purpose_key(t.purpose, 4))
+    return (t.counter_iban or "").replace(" ", "").upper() or norm_name(t.name) or ("purpose:" + purpose_key(t.purpose, 4))
 
 
 def _slug(text: str) -> str:
@@ -154,29 +154,29 @@ def _slug(text: str) -> str:
 def rule_matches(r: dict, t: Tx) -> bool:
     if r.get("iban") and r["iban"] != (t.counter_iban or "").replace(" ", "").upper():
         return False
-    if r.get("name_ist") and r["name_ist"] != norm_name(t.name):
+    if r.get("name_is") and r["name_is"] != norm_name(t.name):
         return False
-    if r.get("zweck_enthaelt") and r["zweck_enthaelt"] not in norm_name(t.purpose + " " + t.booking_text):
+    if r.get("purpose_contains") and r["purpose_contains"] not in norm_name(t.purpose + " " + t.booking_text):
         return False
-    return bool(r.get("iban") or r.get("name_ist"))
+    return bool(r.get("iban") or r.get("name_is"))
 
 
 def _specificity(r: dict) -> int:
-    return (3 if r.get("iban") else 0) + (2 if r.get("zweck_enthaelt") else 0) + (2 if r.get("name_ist") else 0)
+    return (3 if r.get("iban") else 0) + (2 if r.get("purpose_contains") else 0) + (2 if r.get("name_is") else 0)
 
 
 def _rule_index(d: dict) -> dict:
     """Learned patterns by IBAN and by name (kept in memory with the rules they were made of)."""
     idx = d.get("_idx")
-    if idx is None or idx[0] is not d["regeln"]:
+    if idx is None or idx[0] is not d["rules"]:
         by_iban: Dict[str, List[dict]] = defaultdict(list)
         by_name: Dict[str, List[dict]] = defaultdict(list)
-        for r in d["regeln"]:
+        for r in d["rules"]:
             if r.get("iban"):
                 by_iban[r["iban"]].append(r)
-            elif r.get("name_ist"):
-                by_name[r["name_ist"]].append(r)
-        idx = d["_idx"] = (d["regeln"], by_iban, by_name)
+            elif r.get("name_is"):
+                by_name[r["name_is"]].append(r)
+        idx = d["_idx"] = (d["rules"], by_iban, by_name)
     return idx
 
 
@@ -231,19 +231,19 @@ def learn(d: dict, ledger: Ledger, min_count: int = 2, min_share: float = 0.9, p
             continue
         rid = "g-" + _slug(kind + "-" + key)[:70]
         if kind == "iban":
-            r = {"id": rid, "kategorie": path, "iban": key, "quelle": "gelernt", "treffer": total, "aktiv": True}
+            r = {"id": rid, "category": path, "iban": key, "source": "learned", "hits": total, "active": True}
         elif kind == "name":
-            r = {"id": rid, "kategorie": path, "name_ist": key, "quelle": "gelernt", "treffer": total, "aktiv": True}
+            r = {"id": rid, "category": path, "name_is": key, "source": "learned", "hits": total, "active": True}
         else:
             nm, pk = key.split("|", 1)
             if nm in seen_names:
                 continue
-            r = {"id": rid, "kategorie": path, "name_ist": nm, "zweck_enthaelt": pk, "quelle": "gelernt", "treffer": total, "aktiv": True}
+            r = {"id": rid, "category": path, "name_is": nm, "purpose_contains": pk, "source": "learned", "hits": total, "active": True}
         learned.append(r)
         stats[kind] += 1
-    d["regeln"] = learned
-    d["gelernt_am"] = time.strftime("%Y-%m-%d %H:%M")
-    return {"regeln": len(learned), "muster": len(samples), **{k: v for k, v in stats.items()}}
+    d["rules"] = learned
+    d["learned_at"] = time.strftime("%Y-%m-%d %H:%M")
+    return {"rules": len(learned), "pattern": len(samples), **{k: v for k, v in stats.items()}}
 
 
 # ---------------------------------------------------------------------------
@@ -301,30 +301,30 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
         key = party_key(t)
         g = groups.get(key)
         if g is None:
-            g = groups[key] = {"key": key, "name": t.name[:80] or t.purpose[:80], "iban": (t.counter_iban or "")[:34], "anzahl": 0, "summe": 0.0, "ids": [],
-                               "umsaetze": [], "vorschlaege": {}, "konten": [], "von": t.booking_date.isoformat(), "bis": t.booking_date.isoformat(),
-                               "eigen": bool(t.counter_iban and own.get(t.counter_iban))}      # the other side is an account of yours (another area)
+            g = groups[key] = {"key": key, "name": t.name[:80] or t.purpose[:80], "iban": (t.counter_iban or "")[:34], "count": 0, "sum": 0.0, "ids": [],
+                               "transactions": [], "proposals": {}, "accounts": [], "date_from": t.booking_date.isoformat(), "date_to": t.booking_date.isoformat(),
+                               "own_account": bool(t.counter_iban and own.get(t.counter_iban))}      # the other side is an account of yours (another area)
         r = suggest(d, t)
         if r:
-            g["vorschlaege"][t.id] = r["kategorie"]
+            g["proposals"][t.id] = r["category"]
         acc = ledger.accounts[t.account_uuid].name if t.account_uuid in ledger.accounts else ""
-        g["anzahl"] += 1
-        g["summe"] = round(g["summe"] + t.amount, 2)
+        g["count"] += 1
+        g["sum"] = round(g["sum"] + t.amount, 2)
         g["ids"].append(t.id)
-        if acc not in g["konten"]:
-            g["konten"].append(acc)
-        g["von"] = min(g["von"], t.booking_date.isoformat()); g["bis"] = max(g["bis"], t.booking_date.isoformat())
-        if len(g["umsaetze"]) < 300:                # the transactions of the group: choose some of them (e.g. a shop that sells many things)
-            g["umsaetze"].append({"id": t.id, "datum": t.booking_date.isoformat(), "betrag": t.amount, "name": t.name[:80], "zweck": t.purpose[:400],
-                                  "art": t.booking_text[:60], "konto": acc, "vorschlag": r["kategorie"] if r else None})
-    out = sorted(groups.values(), key=lambda g: (-abs(g["summe"]), -g["anzahl"]))
+        if acc not in g["accounts"]:
+            g["accounts"].append(acc)
+        g["date_from"] = min(g["date_from"], t.booking_date.isoformat()); g["date_to"] = max(g["date_to"], t.booking_date.isoformat())
+        if len(g["transactions"]) < 300:                # the transactions of the group: choose some of them (e.g. a shop that sells many things)
+            g["transactions"].append({"id": t.id, "date": t.booking_date.isoformat(), "amount": t.amount, "name": t.name[:80], "purpose": t.purpose[:400],
+                                  "kind": t.booking_text[:60], "account": acc, "proposal": r["category"] if r else None})
+    out = sorted(groups.values(), key=lambda g: (-abs(g["sum"]), -g["count"]))
     for g in out:
-        g["umsaetze"].sort(key=lambda u: (u["datum"], u["id"]), reverse=True)
-        kinds = set(g["vorschlaege"].values())
+        g["transactions"].sort(key=lambda u: (u["date"], u["id"]), reverse=True)
+        kinds = set(g["proposals"].values())
         # the group's suggestion only where every transaction has the same one (e.g. rent and service charges differ)
-        g["vorschlag"] = next(iter(kinds)) if len(kinds) == 1 and len(g["vorschlaege"]) == g["anzahl"] else None
-        g["vorschlaege"] = {str(k): v for k, v in g["vorschlaege"].items()}
-    return {"offen": total, "gruppen": out[:limit], "gruppen_gesamt": len(out)}
+        g["proposal"] = next(iter(kinds)) if len(kinds) == 1 and len(g["proposals"]) == g["count"] else None
+        g["proposals"] = {str(k): v for k, v in g["proposals"].items()}
+    return {"open": total, "groups": out[:limit], "groups_total": len(out)}
 
 
 def stats(d: dict, ledger: Ledger, banks: Optional[set] = None, area_of: Optional[Dict[str, str]] = None,
@@ -342,10 +342,10 @@ def stats(d: dict, ledger: Ledger, banks: Optional[set] = None, area_of: Optiona
         path, q = effective(d, t)
         if not path and t.id in skip:                  # a transfer between your accounts: no category needed
             continue
-        k = q or "ohne"
+        k = q or "without"
         c[k] += 1
         years[t.booking_date.year][k] += 1
-    return {"gesamt": dict(c), "jahre": {str(y): dict(v) for y, v in sorted(years.items())}, "gelernt_am": d.get("gelernt_am")}
+    return {"total": dict(c), "years": {str(y): dict(v) for y, v in sorted(years.items())}, "learned_at": d.get("learned_at")}
 
 
 # ---------------------------------------------------------------------------
@@ -407,11 +407,11 @@ def _matches(p: dict, t: Tx) -> bool:
     if p.get("name"):
         if "_name" not in p:
             p["_name"] = _tokens(_fold(p["name"]))   # folded once per rule
-        if not p["_name"] or not _phrase_in(p["_name"], _tokens(name), bool(p.get("weiter"))):
+        if not p["_name"] or not _phrase_in(p["_name"], _tokens(name), bool(p.get("more"))):
             return False
-    if p.get("zweck") and not set(p["zweck"]) <= words:
+    if p.get("purpose") and not set(p["purpose"]) <= words:
         return False
-    if p.get("vorzeichen") and (t.amount < 0) != (p["vorzeichen"] < 0):
+    if p.get("sign") and (t.amount < 0) != (p["sign"] < 0):
         return False
     return True
 
@@ -422,11 +422,11 @@ def expression(p: dict) -> str:
     if p.get("iban"):
         parts.append('remote_account:"%s"' % p["iban"])
     if p.get("name"):
-        parts.append('name:"%s%s"' % (p["name"], "*" if p.get("weiter") else ""))
-    for w in p.get("zweck") or []:
+        parts.append('name:"%s%s"' % (p["name"], "*" if p.get("more") else ""))
+    for w in p.get("purpose") or []:
         parts.append('purpose:"%s"' % w)
-    if p.get("vorzeichen"):
-        parts.append("amount<0" if p["vorzeichen"] < 0 else "amount>0")
+    if p.get("sign"):
+        parts.append("amount<0" if p["sign"] < 0 else "amount>0")
     return " AND ".join(parts)
 
 
@@ -440,13 +440,13 @@ def rule_proposals(d: dict, ledger: Ledger, written: Dict[str, Any], assignable:
     by_id = {t.id: t for t in ledger.txs if t.id > 0 and t.booked and not has_mark(t.purpose)}
     cats = {i: effective(d, t)[0] for i, t in by_id.items()}
     cat_of = lambda t: cats.get(t.id, "")
-    done = set(d.get("regel_erledigt") or [])
+    done = set(d.get("rule_done") or [])
     chosen: Dict[Tuple[str, str], List[Tx]] = defaultdict(list)            # (counterparty, category) -> your transactions
     for tid, w in (written or {}).items():
         t = by_id.get(int(tid)) if str(tid).lstrip("-").isdigit() else None
-        if t is not None and mm_of(t) and mm_of(t) == norm_cat(w.get("neu") or ""):
+        if t is not None and mm_of(t) and mm_of(t) == norm_cat(w.get("new") or ""):
             chosen[(_party(t), mm_of(t))].append(t)
-    for tid, z in d["zuordnung"].items():
+    for tid, z in d["assignment"].items():
         t = by_id.get(int(tid)) if str(tid).lstrip("-").isdigit() else None
         if t is not None and waiting(z) and not mm_of(t):
             chosen[(_party(t), z["k"])].append(t)
@@ -469,7 +469,7 @@ def rule_proposals(d: dict, ledger: Ledger, written: Dict[str, Any], assignable:
         words = _tokens(_fold(p.get("name") or ""))
         if not words:
             return list(by_id.values())
-        whole = words[:-1] if p.get("weiter") else words
+        whole = words[:-1] if p.get("more") else words
         if whole:
             return min((by_word.get(w, []) for w in whole), key=len)
         return list({t.id: t for w, ts in by_word.items() if w.startswith(words[-1]) for t in ts}.values())
@@ -485,11 +485,11 @@ def rule_proposals(d: dict, ledger: Ledger, written: Dict[str, Any], assignable:
             common = set.intersection(*(_txt(t)[1] for t in mine))
             words = sorted((w for w in common if not any(w in _txt(o)[1] for o in others)), key=lambda w: (-len(w), w))[:2]
             if words:
-                p["zweck"] = words
+                p["purpose"] = words
             elif all(t.amount < 0 for t in mine) and all(o.amount > 0 for o in others):
-                p["vorzeichen"] = -1
+                p["sign"] = -1
             elif all(t.amount > 0 for t in mine) and all(o.amount < 0 for o in others):
-                p["vorzeichen"] = 1
+                p["sign"] = 1
             else:
                 continue                            # cannot be told apart safely
         hits, clash = [], False
@@ -506,9 +506,9 @@ def rule_proposals(d: dict, ledger: Ledger, written: Dict[str, Any], assignable:
         latest = max(hits, key=lambda t: (t.booking_date, t.id))
         if key in done or any(o["key"] == key for o in out) or (mm_of(latest) == cat and str(latest.id) not in (written or {})):
             continue                                # dismissed, twice, or the newest one MoneyMoney categorized itself: rule exists
-        out.append({"key": key, "kategorie": cat, "ausdruck": ausdruck, "name": mine[0].name[:80],
-                    "deine": len(mine), "treffer": len(hits), "offen": sum(1 for t in hits if not cat_of(t))})
-    out.sort(key=lambda x: (-x["offen"], -x["deine"], x["kategorie"]))
+        out.append({"key": key, "category": cat, "phrase": ausdruck, "name": mine[0].name[:80],
+                    "yours": len(mine), "hits": len(hits), "open": sum(1 for t in hits if not cat_of(t))})
+    out.sort(key=lambda x: (-x["open"], -x["yours"], x["category"]))
     _TXT.clear()
     return out[:limit]
 
@@ -525,4 +525,4 @@ def _base_rule(txs: List[Tx]) -> Optional[dict]:
     phrase, more = _name_phrase([t.name for t in txs])
     if len(_fold(phrase)) < 3:
         return None
-    return {"name": phrase, "weiter": more}
+    return {"name": phrase, "more": more}

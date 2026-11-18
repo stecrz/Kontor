@@ -179,9 +179,6 @@ def build_touchid(force: bool = False) -> str:
         if r.returncode == 0:
             os.chmod(TOUCHID_BIN, 0o755)
             subprocess.run(["codesign", "--force", "--sign", "-", TOUCHID_APP], capture_output=True, timeout=60)     # ad hoc, as a whole bundle
-            old = os.path.join(os.path.dirname(TOUCHID_APP), "Kontor")      # the plain helper of earlier versions
-            if os.path.isfile(old):
-                os.remove(old)
             return "ok"
         return tr("s_swiftc_fehler") % (r.stderr or r.stdout)[-300:]
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:

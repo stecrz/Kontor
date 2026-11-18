@@ -22,6 +22,7 @@ import logging
 import os
 import secrets
 import subprocess
+import sys
 import threading
 from typing import Any, Dict, Optional, Tuple
 from i18n import tr
@@ -31,8 +32,10 @@ CACHE_MAX_BYTES = 24 * 1024 * 1024
 log = logging.getLogger("kontor.store")
 
 MAGIC = b"MMT1"
-KEYCHAIN_SERVICE = "kontor.datenschluessel"
+KEYCHAIN_SERVICE = "kontor.datenschluessel"       # the entry in the keychain (kept: it lives outside Kontor's folder)
 KEYCHAIN_ACCOUNT = "kontor"
+KEYCHAIN_NEXT = "kontor-next"                      # a new key while the data are re-encrypted (renew_master_key)
+KEYCHAIN_LABEL = "Kontor Datenschlüssel"
 
 
 class StoreError(Exception):
@@ -53,10 +56,89 @@ def _security(args, input_text: Optional[str] = None) -> Tuple[int, str, str]:
         return 124, "", str(e)
 
 
-def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
-    """Liefert (Schluessel, Quelle). Quelle: 'schluesselbund' | 'datei'.
-    The key belongs in the keychain, not next to the data: a key file left from an earlier fallback is moved into the keychain
-    as soon as that works (and the file removed); only if the keychain cannot be used at all, the file stays (with a warning)."""
+def _kc_read(account: str) -> Tuple[int, Optional[bytes]]:
+    rc, out, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account, "-w"])
+    return rc, (_hex_key(out) if rc == 0 else None)
+
+
+def _kc_write(account: str, key: bytes) -> bool:
+    """Puts the key into the keychain entry and reads it back: True only when the entry holds exactly this key."""
+    rc, _, _ = _security(["add-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account, "-l", KEYCHAIN_LABEL, "-w", key.hex(), "-U"])
+    return rc == 0 and _kc_read(account)[1] == key
+
+
+def _enc_files(data_dir: str) -> list:
+    try:
+        return sorted(n for n in os.listdir(data_dir) if n.endswith(".enc"))
+    except OSError:
+        return []
+
+
+def _finish_renewal(data_dir: str) -> Optional[bytes]:
+    """A renewal of the data key that did not finish (the Mac went off in the middle): the new key waits in its own entry.
+    Every file that still opens with the old key is re-encrypted with the new one, then the new key takes the main entry.
+    Returns the key that opens the data, or None when there is nothing to finish. Never deletes a key that opens a file."""
+    rc, new = _kc_read(KEYCHAIN_NEXT)
+    if rc == 44 or rc == 127:                          # no unfinished renewal
+        for n in os.listdir(data_dir) if os.path.isdir(data_dir) else []:
+            if n.endswith(".enc.renew"):                 # written with a key that was never kept: worthless
+                _remove(os.path.join(data_dir, n))
+        return None
+    if rc != 0 or new is None:                         # no answer, refused, odd content: unknown -- stop rather than guess
+        log.error("Keychain did not answer about an unfinished renewal of the data key (code %s) -- Kontor stops.", rc)
+        raise StoreError(tr("s_schluesselbund_antwortet_nicht" if rc == 124 else "s_schluesselbund_nicht_nutzbar"))
+    _, old = _kc_read(KEYCHAIN_ACCOUNT)
+    for n in _enc_files(data_dir):
+        p = os.path.join(data_dir, n)
+        with open(p, "rb") as f:
+            raw = f.read()
+        try:
+            decrypt(new, raw)
+            continue
+        except StoreError:
+            pass
+        if old is None:
+            raise StoreError(tr("s_schluessel_passt_nicht"))
+        plain = decrypt(old, raw)                        # neither key opens it: stops here, both entries stay
+        _write_atomic(p, encrypt(new, plain))
+    for n in os.listdir(data_dir):
+        if n.endswith(".enc.renew"):
+            _remove(os.path.join(data_dir, n))
+    if not _kc_write(KEYCHAIN_ACCOUNT, new):         # the data open with it: start, and move it into the main entry next time
+        log.warning("Keychain did not take the new data key into its main entry -- tried again at the next start")
+        return new
+    _security(["delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_NEXT])
+    log.warning("Renewal of the data key finished after an interruption")
+    return new
+
+
+def read_master_key(data_dir: str) -> Tuple[bytes, str]:
+    """The key that opens the data -- read only: none is made, moved or replaced (for removing Kontor). The main entry, the key
+    of an unfinished renewal, or a key file: the first that opens the encrypted files."""
+    data = bool(_enc_files(data_dir))
+    for k, src in ((_kc_read(KEYCHAIN_ACCOUNT)[1], "keychain"), (_kc_read(KEYCHAIN_NEXT)[1], "keychain"),
+                   (_read_key_file(os.path.join(data_dir, "master.key")), "file")):
+        if k and (not data or _opens(k, data_dir)):
+            return k, src
+    raise StoreError(tr("s_schluessel_passt_nicht"))
+
+
+def load_or_create_master_key(data_dir: str, finish: bool = True) -> Tuple[bytes, str]:
+    """Liefert (Schluessel, Quelle). Quelle: 'keychain' | 'file'.
+    The key belongs in the keychain, not next to the data: a key file left from a fallback is moved into the keychain as soon
+    as that works (and the file removed); only if the keychain cannot be used at all, the file stays (with a warning). A new
+    key is made only when no encrypted data are there: a key is never replaced before it is clear which one opens the data.
+    finish=False (a command while the service runs): an unfinished renewal is left to the service; its key is used if only it
+    opens the data."""
+    if sys.platform == "darwin":
+        if finish:
+            done = _finish_renewal(data_dir)
+            if done is not None:
+                return done, "keychain"
+        else:
+            _, nxt = _kc_read(KEYCHAIN_NEXT)
+            if nxt is not None and _opens(nxt, data_dir) and not _opens(_kc_read(KEYCHAIN_ACCOUNT)[1] or b"", data_dir):
+                return nxt, "keychain"
     rc, out, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
     key_file = os.path.join(data_dir, "master.key")
     kc = _hex_key(out) if rc == 0 else None
@@ -65,17 +147,17 @@ def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
             # a key file besides the keychain entry: the one that opens the data stays (in the keychain), the file goes
             fk = _read_key_file(key_file)
             if fk and fk != kc and _opens(fk, data_dir) and not _opens(kc, data_dir):
-                rc2, _, _ = _security(["add-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-l", "Kontor Datenschlüssel", "-w", fk.hex(), "-U"])
+                rc2, _, _ = _security(["add-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-l", KEYCHAIN_LABEL, "-w", fk.hex(), "-U"])
                 rc3, out3, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
                 if rc2 != 0 or rc3 != 0 or out3.strip() != fk.hex():
                     log.warning("Key file opens the data, but the keychain did not take it -- the file stays")
-                    return fk, "datei"
+                    return fk, "file"
                 kc = fk
             _wipe(key_file)
             log.info("Key file besides the keychain entry removed")
-        return kc, "schluesselbund"
+        return kc, "keychain"
     if rc == 127:   # kein `security` (nicht macOS)
-        return _file_key(key_file), "datei"
+        return _file_key(key_file), "file"
     if rc != 44:
         # only 44 means "no entry". Anything else -- no answer in time (124), access refused, locked, an entry with unexpected
         # content: its key is unknown, so no new one is made and none replaced. Only a key file that opens the data already
@@ -83,27 +165,30 @@ def load_or_create_master_key(data_dir: str) -> Tuple[bytes, str]:
         old = _read_key_file(key_file)
         if old and _opens(old, data_dir):
             log.warning("Keychain did not give the key (code %s) -- the existing key file that opens the data is used this time", rc)
-            return old, "datei"
+            return old, "file"
         log.error("Keychain did not give the key (code %s) -- no key created; Kontor stops.", rc)
         raise StoreError(tr("s_schluesselbund_antwortet_nicht" if rc == 124 else "s_schluesselbund_nicht_nutzbar"))
-    # Schluesselbund vorhanden, aber kein Eintrag: der Schluessel einer frueheren Ausweichdatei (sonst ein neuer) kommt hinein
+    # keychain there, no entry: the key of a fallback file goes into it -- otherwise a new one, but only without encrypted data
     old = _read_key_file(key_file)
+    if not old and _enc_files(data_dir):
+        log.error("Encrypted data without their key -- no new key created; Kontor stops.")
+        raise StoreError(tr("s_schluessel_passt_nicht"))
     key = old or secrets.token_bytes(32)
     rc2, _, err = _security(["add-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT,
-                             "-l", "Kontor Datenschlüssel", "-w", key.hex(), "-U"])
+                             "-l", KEYCHAIN_LABEL, "-w", key.hex(), "-U"])
     if rc2 == 0:
         rc3, out3, _ = _security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
         if rc3 == 0 and out3.strip() == key.hex():
             if old:
                 _wipe(key_file)
                 log.info("Data key moved from the key file into the keychain; file removed")
-            return key, "schluesselbund"
+            return key, "keychain"
     if not old:
         # on the Mac a new key never goes into a file next to the data: without the keychain Kontor does not start
         log.error("Keychain not usable (%s) -- no key file created; Kontor stops.", err.strip()[:120])
         raise StoreError(tr("s_schluesselbund_nicht_nutzbar"))
     log.warning("Keychain not usable (%s) -- the existing key file is used until the keychain works (less protected).", err.strip()[:120])
-    return old, "datei"
+    return old, "file"
 
 
 def _hex_key(text: str) -> Optional[bytes]:
@@ -149,12 +234,31 @@ def _wipe(path: str) -> None:
         log.warning("Key file not removed: %s", e)
 
 
+def _remove(path: str) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _write_atomic(path: str, payload: bytes) -> None:
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(payload)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
 def _file_key(path: str) -> bytes:
     if os.path.exists(path):
         with open(path, "rb") as f:
             raw = f.read().strip()
         if len(raw) == 64:
             return bytes.fromhex(raw.decode())
+    if _enc_files(os.path.dirname(path)):             # a broken or missing key file next to encrypted data: never a new one
+        raise StoreError(tr("s_schluessel_passt_nicht"))
     key = secrets.token_bytes(32)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
@@ -234,6 +338,7 @@ class Store:
         self._cache: Dict[str, Tuple[Tuple[int, int], Any]] = {}     # name -> ((mtime_ns, size), Objekt)
         self._cache_lock = threading.Lock()
         self._file_locks: Dict[str, threading.RLock] = {}
+        self._key_lock = threading.RLock()            # no file is read or written while the key is renewed
 
     # Pfade
     def path(self, name: str) -> str:
@@ -309,23 +414,77 @@ class Store:
     # Bytes (z.B. bericht.html)
     def read_bytes(self, name: str) -> Optional[bytes]:
         p = self.path(name)
-        if not os.path.exists(p):
-            return None
-        with open(p, "rb") as f:
-            raw = f.read()
-        if self.encrypted:
-            return decrypt(self.master, raw)
-        return raw
+        with self._key_lock:
+            if not os.path.exists(p):
+                return None
+            with open(p, "rb") as f:
+                raw = f.read()
+            if self.encrypted:
+                return decrypt(self.master, raw)
+            return raw
 
     def write_bytes(self, name: str, data: bytes) -> None:
         p = self.path(name)
         tmp = p + ".tmp"
-        payload = encrypt(self.master, data) if self.encrypted else data
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "wb") as f:
-            f.write(payload)
-        os.replace(tmp, p)
-        os.chmod(p, 0o600)
+        with self._key_lock:
+            payload = encrypt(self.master, data) if self.encrypted else data
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as f:
+                f.write(payload)
+            os.replace(tmp, p)
+            os.chmod(p, 0o600)
+
+    def renew_key(self) -> int:
+        """A new data key: every encrypted file in the folder is decrypted with the old key and written anew with the new one.
+        The old key stays until all files provably open with the new one: first everything is written beside the files and
+        checked, then the new key is kept in its own keychain entry and checked, only then the files are replaced and the new
+        key takes the main entry. Interrupted after that, the next start finishes it (_finish_renewal). Only with the keychain,
+        and never while an earlier renewal is unfinished (its key would be lost). Returns the number of files."""
+        if not self.encrypted:
+            raise StoreError(tr("s_ohne_verschluesselung"))
+        if self.key_source != "keychain":
+            raise StoreError(tr("s_schluessel_erneuern_schluesselbund"))
+        rc_next, nxt = _kc_read(KEYCHAIN_NEXT)        # asked before the lock: a slow keychain does not hold up the files
+        rc_main, main = _kc_read(KEYCHAIN_ACCOUNT)
+        with self._key_lock:
+            if rc_next != 44 or rc_main != 0 or main != self.master:
+                half = rc_next == 0 and nxt == self.master            # this Kontor runs with a key the main entry did not take
+                raise StoreError(tr("s_schluessel_erneuern_halb" if half else "s_schluessel_erneuern_nicht"))
+            old = self.master
+            names = _enc_files(self.data_dir)
+            plain: Dict[str, bytes] = {}
+            for n in names:                              # everything opens with the old key, or nothing changes
+                with open(os.path.join(self.data_dir, n), "rb") as f:
+                    plain[n] = decrypt(old, f.read())
+            new = secrets.token_bytes(32)
+            if new == old or not selftest(new):
+                raise StoreError(tr("s_ohne_verschluesselung"))
+            written = []
+            try:
+                for n, data in plain.items():
+                    p = os.path.join(self.data_dir, n + ".renew")
+                    _write_atomic(p, encrypt(new, data))
+                    written.append(p)
+                    with open(p, "rb") as f:
+                        if decrypt(new, f.read()) != data:
+                            raise StoreError(tr("s_schluessel_erneuern_fehler"))
+                if not _kc_write(KEYCHAIN_NEXT, new):
+                    raise StoreError(tr("s_schluesselbund_nicht_nutzbar"))
+            except Exception:
+                for p in written:
+                    _remove(p)
+                _security(["delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_NEXT])     # no file uses it yet
+                raise
+            for n in names:                              # from here on the new key opens every replaced file
+                os.replace(os.path.join(self.data_dir, n + ".renew"), os.path.join(self.data_dir, n))
+            if not _kc_write(KEYCHAIN_ACCOUNT, new):
+                self.master = new                        # the files need it now; the next start moves it into the main entry
+                raise StoreError(tr("s_schluessel_erneuern_halb"))
+            _security(["delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_NEXT])
+            self.master = new
+            plain.clear()
+            log.warning("Data key renewed: %d files encrypted with the new key", len(names))
+            return len(names)
 
     def delete(self, name: str) -> None:
         with self._cache_lock:

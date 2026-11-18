@@ -7,7 +7,7 @@ schreibt nur, wenn er noch so aussieht wie in Kontor (gleiches Konto, Datum, Bet
   - die Kategorie traegt, die Kontor selbst zuletzt geschrieben hat, oder
   - die Ueberschreibung einer fremden Kategorie ausdruecklich bestaetigt wurde und MoneyMoney noch genau die Kategorie
     zeigt, die bei der Bestaetigung zu sehen war.
-Jede geschriebene Aenderung landet im Protokoll (state.json, mm_kategorien_log: Umsatz -> zuletzt geschriebene Kategorie).
+Jede geschriebene Aenderung landet im Protokoll (state.json, mm_category_log: Umsatz -> zuletzt geschriebene Kategorie).
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from model import Ledger, norm_cat
 
 log = logging.getLogger("kontor.mmcat")
 
-LOG_KEY = "mm_kategorien_log"
+LOG_KEY = "mm_category_log"
 LOG_MAX = 20000
 
 
@@ -53,11 +53,11 @@ def assignable(idx: Dict[str, Dict[str, Any]], path: str) -> Optional[str]:
     """Grund, warum `path` in MoneyMoney nicht gesetzt werden kann (None = geht): fehlt, Ordner, Standardkategorie."""
     c = idx.get(norm_cat(path))
     if c is None:
-        return "fehlt"
+        return "lacking"
     if c["group"]:
-        return "ordner"
+        return "folder"
     if c["default"]:
-        return "standard"
+        return "default"
     return None
 
 
@@ -74,20 +74,20 @@ def write(bridge, ledger: Ledger, items: List[Dict[str, Any]], idx: Dict[str, Di
     Liefert {geschrieben: [{id, alt, neu}], wartet: [id] (Kategorie fehlt in MoneyMoney), fremd: [{id, mm}] (fremde
     Kategorie, nicht bestaetigt), gleich: [id], fehler: [{id, grund}], offen: [id] (nicht versucht: MoneyMoney brach ab,
     abbruch: der Grund)} -- was bis zum Abbruch geschrieben ist, steht in geschrieben."""
-    res: Dict[str, Any] = {"geschrieben": [], "wartet": [], "fremd": [], "gleich": [], "fehler": [], "offen": []}
+    res: Dict[str, Any] = {"written": [], "waiting": [], "foreign": [], "equal": [], "error": [], "open": []}
     by_id = {t.id: t for t in ledger.txs if t.id > 0}
     todo: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for it in items:
         t = by_id.get(int(it["id"]))
         if t is None:
-            res["fehler"].append({"id": it["id"], "grund": "unbekannt"})
+            res["error"].append({"id": it["id"], "reason": "unknown"})
             continue
-        why = assignable(idx, it["neu"])
-        if why == "fehlt":
-            res["wartet"].append(t.id)
+        why = assignable(idx, it["new"])
+        if why == "lacking":
+            res["waiting"].append(t.id)
             continue
         if why:
-            res["fehler"].append({"id": t.id, "grund": why})
+            res["error"].append({"id": t.id, "reason": why})
             continue
         todo[t.account_uuid].append(dict(it, tx=t))
     accounts = list(todo.items())
@@ -97,37 +97,37 @@ def write(bridge, ledger: Ledger, items: List[Dict[str, Any]], idx: Dict[str, Di
         try:
             fresh = {int(r.get("id") or 0): r for r in bridge.export_transactions(min(days) - timedelta(days=7), max(days) + timedelta(days=7), account=acc)}
         except MoneyMoneyError as e:
-            res["abbruch"] = str(e)
-            res["offen"] += [it["tx"].id for _, rest in accounts[n:] for it in rest]
+            res["abort"] = str(e)
+            res["open"] += [it["tx"].id for _, rest in accounts[n:] for it in rest]
             break
         for k, it in enumerate(its):
-            t, neu = it["tx"], norm_cat(it["neu"])
+            t, neu = it["tx"], norm_cat(it["new"])
             r = fresh.get(t.id)
             if r is None:
-                res["fehler"].append({"id": t.id, "grund": "nicht_gefunden"}); continue
+                res["error"].append({"id": t.id, "reason": "not_found"}); continue
             if (str(r.get("accountUuid") or "") != t.account_uuid or local_date(r.get("bookingDate")) != t.booking_date
                     or abs(float(r.get("amount") or 0) - t.amount) > 0.005 or str(r.get("name") or "") != t.name):
-                res["fehler"].append({"id": t.id, "grund": "abweichend"}); continue
+                res["error"].append({"id": t.id, "reason": "differs"}); continue
             cur = _mm_cat(r)
             if cur == neu:
-                res["gleich"].append(t.id); continue
-            mine = norm_cat((own.get(str(t.id)) or {}).get("neu") or "")
-            if cur and cur != mine and not (it.get("ueberschreiben") and cur == norm_cat(it.get("alt") or "")):
-                res["fremd"].append({"id": t.id, "mm": cur}); continue
+                res["equal"].append(t.id); continue
+            mine = norm_cat((own.get(str(t.id)) or {}).get("new") or "")
+            if cur and cur != mine and not (it.get("overwrite") and cur == norm_cat(it.get("old") or "")):
+                res["foreign"].append({"id": t.id, "mm": cur}); continue
             try:
                 bridge.set_transaction(t.id, category=idx[neu]["uuid"] or idx[neu]["path"])
             except MoneyMoneyError as e:
-                res["abbruch"] = str(e)
-                res["offen"] += [x["tx"].id for x in its[k:]] + [x["tx"].id for _, rest in accounts[n + 1:] for x in rest]
+                res["abort"] = str(e)
+                res["open"] += [x["tx"].id for x in its[k:]] + [x["tx"].id for _, rest in accounts[n + 1:] for x in rest]
                 break
-            res["geschrieben"].append({"id": t.id, "alt": cur, "neu": neu})
-        if res.get("abbruch"):
+            res["written"].append({"id": t.id, "old": cur, "new": neu})
+        if res.get("abort"):
             break
-    if res["geschrieben"]:
-        log.info("Category set in MoneyMoney for %d transaction(s)", len(res["geschrieben"]))
-    if res["fehler"]:
-        log.warning("Category not set in MoneyMoney for %d transaction(s): %s", len(res["fehler"]),
-                    ", ".join(sorted({f["grund"] for f in res["fehler"]})))
+    if res["written"]:
+        log.info("Category set in MoneyMoney for %d transaction(s)", len(res["written"]))
+    if res["error"]:
+        log.warning("Category not set in MoneyMoney for %d transaction(s): %s", len(res["error"]),
+                    ", ".join(sorted({f["reason"] for f in res["error"]})))
     return res
 
 
@@ -139,13 +139,13 @@ def apply_to_ledger(ledger: Ledger, idx: Dict[str, Dict[str, Any]], written: Lis
         t = by_id.get(w["id"])
         if t is None:
             continue
-        raw = idx[w["neu"]]["path"]
+        raw = idx[w["new"]]["path"]
         if t.mm_category_path is not None:
             t.mm_category_path = raw
         else:
             t.category_path = raw
             t.category = raw.split("\\")[-1]
-        t.category_uuid = idx[w["neu"]]["uuid"]
+        t.category_uuid = idx[w["new"]]["uuid"]
 
 
 def remember(state: dict, written: List[Dict[str, Any]]) -> None:
@@ -153,7 +153,7 @@ def remember(state: dict, written: List[Dict[str, Any]]) -> None:
     lg = state.setdefault(LOG_KEY, {})
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     for w in written:
-        lg[str(w["id"])] = {"neu": w["neu"], "alt": w["alt"], "zeit": now}
+        lg[str(w["id"])] = {"new": w["new"], "old": w["old"], "time": now}
     if len(lg) > LOG_MAX:
-        for k, _ in sorted(lg.items(), key=lambda kv: kv[1].get("zeit") or "")[:len(lg) - LOG_MAX]:
+        for k, _ in sorted(lg.items(), key=lambda kv: kv[1].get("time") or "")[:len(lg) - LOG_MAX]:
             lg.pop(k, None)

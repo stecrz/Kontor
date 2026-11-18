@@ -36,19 +36,19 @@ def save(pg, name, clip=None, full=False):
 def main():
     d = tempfile.mkdtemp(prefix="kontor-shots-")
     store = Store(d, *load_or_create_master_key(d))
-    cfg = T.config_for_test(os.path.join(d, "Belege")); cfg.setdefault("oberflaeche", {})["sprache"] = LANG
-    cfg.setdefault("moneymoney", {})["kategorisieren_erlauben"] = True        # Kategorien: Eintragen in MoneyMoney eingeschaltet
+    cfg = T.config_for_test(os.path.join(d, "Belege")); cfg.setdefault("ui", {})["language"] = LANG
+    cfg.setdefault("moneymoney", {})["allow_categorize"] = True        # Kategorien: Eintragen in MoneyMoney eingeschaltet
     store.save("config.json", cfg)
     store.save("state.json", dict(T.ALL_NEW))          # everything booked on the first sync (nothing older waits)
     T.reset_mock(); T.patch_today()
     T.MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Lebensmittel", 1, False, {})]
     T.MockBridge.state["txs"] += [F.tx("priv.giro", date(2026, 8, 31), -2500.0, "Broker", "Übertrag", "Umbuchung", "DE02100500000054540402"),
                                   F.tx("priv.tr", date(2026, 9, 1), 2500.0, "Hausbank", "Übertrag", "Umbuchung", "DE02120300000000202051")]
-    app = App(store, d, bridge_factory=T.MockBridge); app.do_run(False, True); app._fix_start_dates()
+    app = App(store, d, bridge_factory=T.MockBridge); app.do_run(False, True)
     import service as MA
-    MA.App.tailscale = lambda a, fresh=False: {"gefunden": True, "verbunden": True, "ip": "100.101.102.103", "name": "macbook.tail1234.ts.net",
-                                               "https": True, "konto": "max@example.com",
-                                               "geraete": [{"name": "iPhone", "os": "iOS", "online": True}]}
+    MA.App.tailscale = lambda a, fresh=False: {"found": True, "connected": True, "ip": "100.101.102.103", "name": "macbook.tail1234.ts.net",
+                                               "https": True, "account": "max@example.com",
+                                               "devices": [{"name": "iPhone", "os": "iOS", "online": True}]}
     srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     U = "http://127.0.0.1:%d/" % port
@@ -60,25 +60,25 @@ def main():
             pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
             pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_timeout(800)
             # property with a calculation (for the image and the plan)
-            res = pg.evaluate("""async (a) => { try { const r = await api('/api/properties', {aktion: 'anlegen', name: 'Parkweg', bereich: a.b, kategorie: 'Vermietung \\\\ Parkweg'});
-                await api('/api/properties', {aktion: 'kalkulation_speichern', id: r.immobilie.id, kalkulation: {name: 'Basis', eingaben: a.e}}); return 'ok'; } catch (e) { return e.message; } }""",
+            res = pg.evaluate("""async (a) => { try { const r = await api('/api/properties', {action: 'create', name: 'Parkweg', area: a.b, category: 'Vermietung \\\\ Parkweg'});
+                await api('/api/properties', {action: 'calc_save', id: r.property.id, calc: {name: 'Basis', inputs: a.e}}); return 'ok'; } catch (e) { return e.message; } }""",
                               {"b": F.uid("ga"), "e": T.GA_EINGABEN})
             print("Immobilie:", res)
             for _ in range(60):                    # wait for the recalculation (otherwise "recalculating" shows in the image)
                 pg.wait_for_timeout(500)
-                if not pg.evaluate("fetch('/api/status').then(r => r.json()).then(s => !!(s.bericht || {}).laeuft)"):
+                if not pg.evaluate("fetch('/api/status').then(r => r.json()).then(s => !!(s.report || {}).running)"):
                     break
             pg.reload(); pg.wait_for_selector("#shell:not(.hidden)"); pg.wait_for_timeout(1200)
             pg.evaluate("document.querySelectorAll('.banner').forEach(b => b.remove())")
-            shots = [("overview", "#overview", None), ("balance_sheet", "#balance", "bilanz"), ("cash_flow", "#cashflow", None), ("cash_flow_charts", "#cashflow", "cfcharts"),
+            shots = [("overview", "#overview", None), ("balance_sheet", "#balance", "balance"), ("cash_flow", "#cashflow", None), ("cash_flow_charts", "#cashflow", "cfcharts"),
                      ("planning", "#planning", None), ("setup", "#setup", None), ("accounts", "#accounts", None),
                      ("assign_categories", "#categories", None), ("rules", "#accounts/rules", "rules"), ("category_positions", "#accounts/positions", None), ("sync", "#settings/moneymoney", None),
                      ("access", "#settings/access", None), ("backup", "#settings/backup", None), ("property", "#properties", "immo")]
             for name, h, special in shots:
                 pg.goto(U + h); pg.wait_for_timeout(1400)
                 pg.evaluate("document.querySelectorAll('#banner').forEach(b => { b.className = 'hidden'; b.innerHTML = ''; })")
-                if special == "bilanz" and not pg.query_selector("tr.acct"):
-                    pg.click("tr.pos[data-pos='liquiditaet'] td:first-child"); pg.wait_for_timeout(500)
+                if special == "balance" and not pg.query_selector("tr.acct"):
+                    pg.click("tr.pos[data-pos='cash'] td:first-child"); pg.wait_for_timeout(500)
                 if special == "rules":                 # numbers loaded
                     pg.wait_for_timeout(1200)
                 if special == "cfcharts":              # the charts below the table
@@ -86,11 +86,15 @@ def main():
                     pg.evaluate("window.scrollTo(0, document.querySelector('.cf-charts').getBoundingClientRect().top + window.scrollY - 70)"); pg.wait_for_timeout(400)
                 if special == "immo":
                     pg.click(".card[data-im]"); pg.wait_for_timeout(1500)
+                if name == "backup":                   # the folders as on a Mac (not the test machine's paths), the key in the keychain
+                    pg.evaluate("""Object.assign(S.STATUS.storage, {folder: '~/Library/Application Support/Kontor', program_folder: '~/Kontor', key_source: 'keychain'});
+                      S.STATUS.receipts.folder = '~/Documents/Kontor-Belege'; S.CFG.receipts.folder = '~/Documents/Kontor-Belege'; route()""")
+                    pg.wait_for_timeout(800)
                 save(pg, name)
             # history panel of an account
             pg.goto(U + "#balance"); pg.wait_for_timeout(1200)
             if not pg.query_selector("tr.acct"):
-                pg.click("tr.pos[data-pos='liquiditaet'] td:first-child"); pg.wait_for_timeout(400)
+                pg.click("tr.pos[data-pos='cash'] td:first-child"); pg.wait_for_timeout(400)
             pg.click("tr.acct td"); pg.wait_for_selector("#drawer.open"); pg.wait_for_timeout(800)
             save(pg, "account_history", clip={"x": 860, "y": 0, "width": 500, "height": 820})
             # iPhone

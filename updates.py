@@ -4,7 +4,7 @@ Einzige Netzverbindung von Kontor -- nur zu github.com und nur auf Wunsch
 (Einstellungen: taeglich pruefen und/oder "Jetzt pruefen"). Installiert wird
 nie automatisch, sondern nach Klick. Der Datenordner wird nicht angefasst.
 Integritaet: HTTPS zu GitHub, feste Host-Liste, das Archiv muss kontor.py und
-VERSION enthalten; alte Dateien bleiben als Sicherung (Programmordner/.alt).
+VERSION enthalten; alte Dateien bleiben als Sicherung (Programmordner/.old).
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ log = logging.getLogger("kontor.update")
 HERE = os.path.dirname(os.path.abspath(__file__))
 ALLOWED_HOSTS = ("api.github.com", "codeload.github.com", "github.com", "raw.githubusercontent.com", "objects.githubusercontent.com")
 TIMEOUT = 25
-KEEP = {".alt", ".touchid", "web/.DS_Store"}       # nicht ueberschreiben/loeschen
+KEEP = {".old", ".touchid", "web/.DS_Store"}       # nicht ueberschreiben/loeschen
 
 
 def current_version() -> str:
@@ -106,17 +106,17 @@ def check(repo: str) -> Dict[str, object]:
     """Neueste Version auf GitHub: VERSION im Hauptzweig (eine kleine Datei, kein API-Limit); nur wenn das
     nicht geht, Release bzw. Tag. Tags sind damit keine Voraussetzung mehr fuer ein Update."""
     cur = current_version()
-    out: Dict[str, object] = {"aktuell": cur, "verfuegbar": None, "datum": "", "neuer": False, "notizen": "", "quelle": "", "fehler": None}
+    out: Dict[str, object] = {"current": cur, "available": None, "date": "", "newer": False, "notes": "", "source": "", "error": None}
     log.info("Update check: installed %s, repo %s", cur, repo)
     try:
         try:
             v = _get("https://raw.githubusercontent.com/%s/main/VERSION" % repo, "text/plain").decode("utf-8").strip()
             if not re.match(r"^v?\d+(\.\d+)*$", v):
                 raise ValueError(tr("s_version_im_hauptzweig_unlesbar_r") % v[:40])
-            out.update({"verfuegbar": v, "quelle": "main", "zip": archive_url(repo, "main", "heads")})
+            out.update({"available": v, "source": "main", "zip": archive_url(repo, "main", "heads")})
             try:
                 cl = _get("https://raw.githubusercontent.com/%s/main/CHANGELOG.md" % repo, "text/plain").decode("utf-8", "replace")
-                out["notizen"], out["datum"] = changelog_section(cl, v)
+                out["notes"], out["date"] = changelog_section(cl, v)
             except Exception as e:      # Neuerungen sind nur Beiwerk
                 log.debug("CHANGELOG not readable: %s", e)
         except urllib.error.HTTPError as e:
@@ -126,8 +126,8 @@ def check(repo: str) -> Dict[str, object]:
             try:
                 rel = json.loads(_get("https://api.github.com/repos/%s/releases/latest" % repo).decode("utf-8"))
                 tag = str(rel.get("tag_name") or "")
-                out.update({"verfuegbar": tag, "notizen": (rel.get("body") or "")[:4000], "datum": str(rel.get("published_at") or "")[:10],
-                            "quelle": "release", "zip": archive_url(repo, tag)})
+                out.update({"available": tag, "notes": (rel.get("body") or "")[:4000], "date": str(rel.get("published_at") or "")[:10],
+                            "source": "release", "zip": archive_url(repo, tag)})
             except urllib.error.HTTPError as e2:
                 if e2.code != 404:
                     raise
@@ -135,18 +135,18 @@ def check(repo: str) -> Dict[str, object]:
                 if not tags:
                     raise
                 tag = max((str(t["name"]) for t in tags), key=_vtuple)
-                out.update({"verfuegbar": tag, "quelle": "tag", "zip": archive_url(repo, tag)})
-        out["neuer"] = _vtuple(str(out["verfuegbar"])) > _vtuple(cur)
-        if out["neuer"]:
-            log.info("Update check: %s available (%s), newer than installed", out["verfuegbar"], out["quelle"])
+                out.update({"available": tag, "source": "tag", "zip": archive_url(repo, tag)})
+        out["newer"] = _vtuple(str(out["available"])) > _vtuple(cur)
+        if out["newer"]:
+            log.info("Update check: %s available (%s), newer than installed", out["available"], out["source"])
         else:
-            log.info("Update check: up to date (%s shows %s)", out["quelle"], out["verfuegbar"])
+            log.info("Update check: up to date (%s shows %s)", out["source"], out["available"])
     except urllib.error.HTTPError as e:
-        out["fehler"] = tr("s_update_pruefung_nicht_moeglich_http") % (e.code, e.geturl(), e.reason)
-        log.warning("Update check failed: %s", out["fehler"])
+        out["error"] = tr("s_update_pruefung_nicht_moeglich_http") % (e.code, e.geturl(), e.reason)
+        log.warning("Update check failed: %s", out["error"])
     except Exception as e:  # Netz aus, Repo privat, Ratenlimit ...
-        out["fehler"] = tr("s_update_pruefung_nicht_moeglich_s") % (type(e).__name__, str(e)[:200])
-        log.warning("Update check failed: %s", out["fehler"], exc_info=True)
+        out["error"] = tr("s_update_pruefung_nicht_moeglich_s") % (type(e).__name__, str(e)[:200])
+        log.warning("Update check failed: %s", out["error"], exc_info=True)
     return out
 
 
@@ -164,7 +164,7 @@ def install_via_git(restart: bool = True) -> Optional[Dict[str, object]]:
     if r.returncode != 0:
         return {"ok": False, "text": tr("s_git_pull_fehlgeschlagen") % (r.stderr or r.stdout).strip()[:300]}
     restarted = schedule_restart() if (restart and sys.platform == "darwin") else False
-    return {"ok": True, "version": current_version(), "dateien": 0, "neustart": restarted,
+    return {"ok": True, "version": current_version(), "files": 0, "restart": restarted,
             "text": tr("s_repo_aktualisiert") % ((r.stdout.strip().splitlines() or ["ok"])[-1][:80], tr("s_dienst_startet_neu") if restarted else "")}
 
 
@@ -172,10 +172,10 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
     via_git = install_via_git(restart)
     if via_git is not None:
         return via_git
-    info = check(repo) if not zip_url else {"zip": zip_url, "verfuegbar": "?"}
+    info = check(repo) if not zip_url else {"zip": zip_url, "available": "?"}
     url = zip_url or info.get("zip")
     if not url:
-        return {"ok": False, "text": info.get("fehler") or tr("s_keine_version_gefunden")}
+        return {"ok": False, "text": info.get("error") or tr("s_keine_version_gefunden")}
     log.info("Update: downloading %s", url)
     try:
         data = _get(str(url), "*/*")
@@ -206,7 +206,7 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
     tmp = tempfile.mkdtemp(prefix="kontor-update-")
     zf.extractall(tmp)
     src = os.path.join(tmp, base)
-    backup = os.path.join(HERE, ".alt")
+    backup = os.path.join(HERE, ".old")
     shutil.rmtree(backup, ignore_errors=True)
     os.makedirs(backup, exist_ok=True)
     changed = 0
@@ -227,7 +227,7 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
                 os.chmod(dst, 0o755)
             changed += 1
     shutil.rmtree(tmp, ignore_errors=True)
-    log.info("Update to %s applied (%d files), backup in .alt", new_version, changed)
+    log.info("Update to %s applied (%d files), backup in .old", new_version, changed)
     # Touch-ID-Helfer bei Bedarf neu uebersetzen (ohne Fehler zu werfen)
     try:
         if sys.platform == "darwin":
@@ -239,7 +239,7 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
     if restart and sys.platform == "darwin":
         restarted = schedule_restart()
         log.info("Update: service restart %s", "scheduled" if restarted else "not possible")
-    return {"ok": True, "version": new_version, "dateien": changed, "neustart": restarted,
+    return {"ok": True, "version": new_version, "files": changed, "restart": restarted,
             "text": tr("s_version_installiert") % (new_version, tr("s_dienst_startet_neu") if restarted else tr("s_bitte_dienst_neu_starten"))}
 
 

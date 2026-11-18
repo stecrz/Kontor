@@ -1,5 +1,15 @@
 # Änderungen
 
+## 3.15.0 (2026-11-18 20:28)
+- Neu installieren: Einstellungen und Daten älterer Versionen werden nicht übernommen.
+- Übersicht neu: vier Grafiken auf einer Seite, Klick führt in Bilanz oder Cashflow; ohne Tabellen, ohne „Alpha“.
+- Datenschlüssel erneuerbar (Einstellungen → Sichern & Zurücksetzen); nie ein neuer Schlüssel über vorhandene Daten.
+- Installation in einer Zeile (`install.sh`); `Uninstall.command` deinstalliert wie die App.
+- Position „Eigenkapital“ entfällt.
+- Interne Namen englisch (Einstellungen, Daten, API, Sicherung, Paket).
+- Altlasten und unbenutzte Dateien entfernt.
+- Hilfe, README und Bilder aktualisiert.
+
 ## 3.14.9 (2026-11-18 17:26)
 - Einstellungen → Sicherung: Kontor deinstallieren (Dienst, Kontors Dateien, Protokoll, Schlüssel, Programmordner; Belege, verknüpfte Dokumente, fremde Dateien und MoneyMoney bleiben); Programmordner wird angezeigt.
 - Installation: wartet auf Apples Kommandozeilen-Werkzeuge und läuft dann von selbst weiter.

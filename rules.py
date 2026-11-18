@@ -4,7 +4,7 @@ Stateless: every run derives everything from MoneyMoney and the settings. What i
 its purpose (#kontor-tx-<id>, #kontor-zins-YYYY-MM, #kontor-wert-..., #kontor-gk-<id>; "#mm-..." until 3.12) or by an equal
 booking you made yourself. Kontor keeps no list of its own bookings, so nothing can get out of step with MoneyMoney: a booking
 deleted there is simply missing again, one changed there (with its mark) counts as it is now. Kept are only your decisions
-"Don't book" (settings: nicht_buchen) and up to where Kontor had looked when it last booked on its own (Seen).
+"Don't book" (settings: not_book) and up to where Kontor had looked when it last booked on its own (Seen).
 
 Each rule returns proposals and notes; it never changes MoneyMoney itself (that is core.apply_proposals).
 """
@@ -94,7 +94,7 @@ class Seen:
 
 VALUE_TAGS = (MARK + "wert-", MARK + "spiegel-")          # "spiegel": balance adjustments of counter accounts until 3.12.33
 MIRROR_TAG = MARK + "gk-"
-EDIT_AMOUNT = ("tilgung", "zins")       # kinds whose amount and date you may change before approving (the others follow MoneyMoney)
+EDIT_AMOUNT = ("repayment", "interest")       # kinds whose amount and date you may change before approving (the others follow MoneyMoney)
 
 
 def is_value_tag(tag) -> bool:
@@ -110,7 +110,7 @@ def present_marks(ledger: Ledger) -> set:
 def not_booked_keys(config: Optional[dict]) -> set:
     """Your "Don't book" decisions (settings: nicht_buchen), as account|mark."""
     out = set()
-    for x in (config or {}).get("nicht_buchen") or []:
+    for x in (config or {}).get("not_book") or []:
         acc, _, tag = str((x or {}).get("key") if isinstance(x, dict) else "").partition("|")
         if acc and TAG_RE.fullmatch(tag):
             out.add(bkey(acc, tag))
@@ -123,12 +123,12 @@ def apply_edit(p: "Proposal", ch: Optional[dict]) -> None:
     if not ch:
         return
     if p.kind in EDIT_AMOUNT:
-        if ch.get("betrag") is not None:
-            p.amount = round(float(ch["betrag"]), 2)
-        if ch.get("datum"):
-            p.booking_date = date.fromisoformat(str(ch["datum"]))
-    if ch.get("zweck") is not None:
-        text = TAG_RE.sub("", str(ch["zweck"])).strip(" ·")
+        if ch.get("amount") is not None:
+            p.amount = round(float(ch["amount"]), 2)
+        if ch.get("date"):
+            p.booking_date = date.fromisoformat(str(ch["date"]))
+    if ch.get("purpose") is not None:
+        text = TAG_RE.sub("", str(ch["purpose"])).strip(" ·")
         p.purpose = ("%s · %s" % (text, p.tag)) if text else p.tag
 
 
@@ -156,19 +156,19 @@ def _fill(template: str, **kw) -> str:
 
 def _rate_at(rates: List[dict], day: date) -> Optional[float]:
     best = None
-    for r in sorted(rates, key=lambda x: x.get("ab", "0000-00-00")):
-        ab = date.fromisoformat(r["ab"]) if r.get("ab") else date(1900, 1, 1)
+    for r in sorted(rates, key=lambda x: x.get("from_date", "0000-00-00")):
+        ab = date.fromisoformat(r["from_date"]) if r.get("from_date") else date(1900, 1, 1)
         if ab <= day:
-            best = float(r["prozent"])
+            best = float(r["percent"])
     return best
 
 
 def _matches(t: Tx, erk: dict) -> bool:
-    ibans = erk.get("gegen_iban") or []
+    ibans = erk.get("counter_iban") or []
     if isinstance(ibans, str):
         ibans = [ibans]
     ibans = [i.replace(" ", "").upper() for i in ibans if i]
-    texts = erk.get("text_enthaelt") or []
+    texts = erk.get("text_contains") or []
     if isinstance(texts, str):
         texts = [texts]
     if not ibans and not texts:
@@ -177,15 +177,15 @@ def _matches(t: Tx, erk: dict) -> bool:
     hit_text = bool(texts) and any(s.lower() in t.text.lower() for s in texts)
     if not (hit_iban or hit_text):
         return False
-    excl = erk.get("ausschliessen_text") or []
+    excl = erk.get("exclude_text") or []
     if isinstance(excl, str):
         excl = [excl]
     if excl and any(x.lower() in t.text.lower() for x in excl):
         return False
-    richtung = erk.get("richtung", "abgang")
-    if richtung == "abgang" and t.amount >= 0:
+    richtung = erk.get("direction", "outflow")
+    if richtung == "outflow" and t.amount >= 0:
         return False
-    if richtung == "zugang" and t.amount <= 0:
+    if richtung == "inflow" and t.amount <= 0:
         return False
     return True
 
@@ -219,10 +219,10 @@ def payment_kind(t: Tx) -> str:
 
 
 DEFAULT_TEXTS = {
-    "tilgung_text": "{art} {datum} von {quelle} · {tag}",
-    "zins_text": "Zinsen {monat} · {prozent} % p.a. auf {basis} · {tag}",
-    "wert_text": "Wertanpassung: {anteil} % × {wert} (Wert {quelle}) = {soll} · {tag}",
-    "spiegel_text": "{text} · gespiegelt von {quelle} · {tag}",
+    "repayment_text": "{kind} {date} von {source} · {tag}",
+    "interest_text": "Zinsen {month} · {percent} % p.a. auf {base} · {tag}",
+    "value_text": "Wertanpassung: {share} % × {value} (Wert {source}) = {target} · {tag}",
+    "mirror_text": "{text} · gespiegelt von {source} · {tag}",
 }
 
 SAME_PAYMENT_DAYS = 7       # a repayment you booked yourself (or one whose payment MoneyMoney replaced) counts within these days
@@ -247,11 +247,11 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
     seen = seen or Seen()
     waits: List[date] = []                               # days of this loan's bookings that wait for you
     res = RuleResult()
-    name = cfg.get("name") or cfg.get("darlehenskonto")
+    name = cfg.get("name") or cfg.get("loan_account")
     rule = "Darlehen %s" % name
     try:
-        loan = ledger.resolve(cfg["darlehenskonto"])
-        sources = [ledger.resolve(s) for s in cfg.get("quellkonten", [])]
+        loan = ledger.resolve(cfg["loan_account"])
+        sources = [ledger.resolve(s) for s in cfg.get("source_accounts", [])]
     except KeyError as e:
         res.warnings.append("%s: %s" % (rule, e))
         return res
@@ -262,14 +262,14 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
         res.warnings.append(tr("s_s_konto_hat_eine_bankanbindung") % rule)
         return res
 
-    ab = date.fromisoformat(cfg["ab_datum"])
-    richtung = cfg.get("art", "verbindlichkeit")       # verbindlichkeit | forderung
-    sign = -1.0 if richtung == "verbindlichkeit" else 1.0
+    ab = date.fromisoformat(cfg["from_date"])
+    richtung = cfg.get("kind", "liability")       # verbindlichkeit | forderung
+    sign = -1.0 if richtung == "liability" else 1.0
     texts = dict(DEFAULT_TEXTS)
-    texts.update(cfg.get("buchung", {}) or {})
-    cat_tilgung = texts.get("kategorie_tilgung", "Umbuchung")
-    cat_zins = texts.get("kategorie_zins", "Zinsen")
-    payee = texts.get("gegenpartei", name)
+    texts.update(cfg.get("booking", {}) or {})
+    cat_tilgung = texts.get("category_repayment", "Umbuchung")
+    cat_zins = texts.get("category_interest", "Zinsen")
+    payee = texts.get("counterparty", name)
     loan_txs = ledger.transactions(loan.uuid)
     marks: Dict[str, Tx] = {}
     for t in loan_txs:
@@ -277,7 +277,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             marks.setdefault(m, t)
 
     # 1. Repayments ---------------------------------------------------------
-    erk = cfg.get("erkennung") or {}
+    erk = cfg.get("detection") or {}
     matched = sorted((t for src in sources for t in ledger.transactions(src.uuid) if t.booking_date >= ab and _matches(t, erk)),
                      key=lambda t: (t.booking_date, t.id))
     src_name = {s.uuid: s.name for s in sources}
@@ -310,17 +310,17 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             waits.append(t.booking_date)
             if auto or _skipped(hold, loan.uuid, tag):
                 continue
-        purpose = _fill(texts["tilgung_text"], art=payment_kind(t), datum=t.booking_date.strftime("%d.%m.%Y"),
-                        quelle=src_name.get(t.account_uuid, ""), betrag=fmt_eur(abs(t.amount)), tag=tag)
+        purpose = _fill(texts["repayment_text"], kind=payment_kind(t), date=t.booking_date.strftime("%d.%m.%Y"),
+                        source=src_name.get(t.account_uuid, ""), amount=fmt_eur(abs(t.amount)), tag=tag)
         # the payment itself (your bank transaction) is never touched: no comment, no category
-        _emit(res, ledger, Proposal(rule, "tilgung", loan.uuid, loan.path, t.booking_date, amount, payee, purpose, cat_tilgung, tag,
+        _emit(res, ledger, Proposal(rule, "repayment", loan.uuid, loan.path, t.booking_date, amount, payee, purpose, cat_tilgung, tag,
                                     retro=not seen.new_tx(t)), edits)
     known_from = getattr(ledger, "since", None)
     for t in orphans:
         if id(t) not in claimed and t.booking_date >= ab and not (known_from and t.booking_date < known_from):
             res.warnings.append(tr("s_tilgung_ohne_zahlung") % (rule, t.booking_date.strftime("%d.%m.%Y"), fmt_eur(t.amount)))
 
-    if cfg.get("erwartet_monatlich", True) and sources:
+    if cfg.get("expected_monthly", True) and sources:
         recent = [t for t in matched if t.booking_date >= today - timedelta(days=35)]
         if not matched:
             msg = tr("s_s_seit_s_keine_passende") % (
@@ -332,17 +332,17 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
                                 (rule, max(t.booking_date for t in matched).isoformat()))
 
     # 2. Interest ----------------------------------------------------------
-    zins = cfg.get("zins") or {}
-    rates = zins.get("satz") or []
+    zins = cfg.get("interest") or {}
+    rates = zins.get("rate_list") or []
     if not rates:
         res.info.append(tr("s_s_kein_zinssatz_hinterlegt_keine") % rule)
         return res
-    modell = zins.get("modell", "jahresbasis")
-    if modell not in ("jahresbasis", "restschuld_monatlich"):
+    modell = zins.get("model", "yearly_base")
+    if modell not in ("yearly_base", "remaining_debt_monthly"):
         res.warnings.append("%s: unbekanntes Zinsmodell '%s'." % (rule, modell))
         return res
-    buchungstag = zins.get("buchungstag", "ultimo")
-    overrides = {str(k): float(v) for k, v in (zins.get("basis_override") or {}).items()}
+    buchungstag = zins.get("booking_day", "ultimo")
+    overrides = {str(k): float(v) for k, v in (zins.get("base_override") or {}).items()}
     year_cache: Dict[int, Tuple[float, float, float]] = {}   # year -> (basis, rate, yearly interest)
 
     def year_basis(y: int) -> Tuple[float, float, float]:
@@ -379,10 +379,10 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             own.setdefault((t.booking_date.year, t.booking_date.month), []).append(t)
     own_months: List[str] = []
     for (y, m) in months_between(ab, today):
-        if modell == "jahresbasis":
+        if modell == "yearly_base":
             year_basis(y)
         pay = min((t for t in matched if (t.booking_date.year, t.booking_date.month) == (y, m)), key=lambda t: (t.booking_date, t.id), default=None)
-        bday = pay.booking_date if buchungstag == "mit_rate" and pay is not None else month_end(y, m)
+        bday = pay.booking_date if buchungstag == "with_payment" and pay is not None else month_end(y, m)
         if bday > today or bday < ab:
             continue
         tag = MARK + "zins-%04d-%02d" % (y, m)
@@ -396,12 +396,12 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             continue
         if _skipped(skip, loan.uuid, tag):
             continue
-        new = (seen.after(bday) or (buchungstag == "mit_rate" and pay is not None and seen.new_tx(pay))) and not any(w <= bday for w in waits)
+        new = (seen.after(bday) or (buchungstag == "with_payment" and pay is not None and seen.new_tx(pay))) and not any(w <= bday for w in waits)
         if not new or _skipped(hold, loan.uuid, tag):
             waits.append(bday)
             if auto or _skipped(hold, loan.uuid, tag):
                 continue
-        if modell == "jahresbasis":
+        if modell == "yearly_base":
             base, rate, yearly = year_basis(y)
             if yearly <= 0:
                 continue
@@ -415,9 +415,9 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             interest = round(base * rate / 1200.0, 2)
         if interest <= 0:
             continue
-        purpose = _fill(texts["zins_text"], monat="%02d/%04d" % (m, y),
-                        prozent=("%.3f" % rate).rstrip("0").rstrip(".").replace(".", ","), basis=fmt_eur(base), tag=tag)
-        _emit(res, ledger, Proposal(rule, "zins", loan.uuid, loan.path, bday, round(sign * interest, 2), payee, purpose, cat_zins, tag,
+        purpose = _fill(texts["interest_text"], month="%02d/%04d" % (m, y),
+                        percent=("%.3f" % rate).rstrip("0").rstrip(".").replace(".", ","), base=fmt_eur(base), tag=tag)
+        _emit(res, ledger, Proposal(rule, "interest", loan.uuid, loan.path, bday, round(sign * interest, 2), payee, purpose, cat_zins, tag,
                                     retro=not new), edits)
     if own_months:
         res.info.append(tr("s_zins_selbst_gebucht") % (rule, ", ".join(own_months[:12]) + (" …" if len(own_months) > 12 else "")))
@@ -428,15 +428,15 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
 # Companies: participation (share x value of the company) and account mirrors
 # ---------------------------------------------------------------------------
 
-VALUE_OFF = {"eigenkapital", "eventual", "ignorieren"}      # not part of a company's value: partners' equity, contingent, ignored
+VALUE_OFF = {"contingent", "ignore"}      # not part of a company's value: contingent, ignored
 
 
 def parse_start(s):
     """"Buchen ab" of a company: a day ('2025-03-14'), "alles" (since the company exists), older '2025-03' (first of the
     month); anything else (empty: set up before 3.13.1) -> None."""
     s = str(s or "").strip()
-    if s == "alles":
-        return "alles"
+    if s == "all":
+        return "all"
     try:
         parts = [int(x) for x in s.split("-")]
         d = date(parts[0], parts[1], parts[2] if len(parts) > 2 else 1)
@@ -452,10 +452,10 @@ class ValueSeries:
     Nothing is estimated."""
 
     def __init__(self, ledger: Ledger, accs, config: Optional[dict] = None, factor: float = 1.0):
-        bil = (config or {}).get("bilanz") or {}
-        full = int(bil.get("monate_zurueck", 0) or 0) <= 0
+        bil = (config or {}).get("balance") or {}
+        full = int(bil.get("months_back", 0) or 0) <= 0
         src: Dict[str, str] = {}
-        for ref, v in (bil.get("verlauf") or {}).items():
+        for ref, v in (bil.get("history_source") or {}).items():
             try:
                 src[ledger.resolve(ref).uuid] = v
             except KeyError:
@@ -465,7 +465,7 @@ class ValueSeries:
         for a in accs:
             txs = sorted(ledger.transactions(a.uuid), key=lambda t: t.booking_date)
             self.now += a.balance
-            if src.get(a.uuid) == "stand" or (a.portfolio and src.get(a.uuid) != "umsaetze"):
+            if src.get(a.uuid) == "balances" or (a.portfolio and src.get(a.uuid) != "transactions"):
                 if abs(a.balance) >= 0.005 or txs:
                     self.unknown.append(a.name)
                 continue
@@ -513,8 +513,8 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, target, series: Valu
     MoneyMoney, or left out) is made up by one booking on that day -- the ones after it stay as they are. start None: only
     now (daily) or the month just ended (monthly). Days with an unknown value are skipped, nothing is estimated. auto: what
     booking fully automatically books -- an older day waits, the next new one makes it up."""
-    schwelle = max(float(cfg.get("schwelle") or 0.01), 0.01)
-    monthly = cfg.get("takt") == "monatlich"
+    schwelle = max(float(cfg.get("threshold") or 0.01), 0.01)
+    monthly = cfg.get("cycle") == "monthly"
     last_end = date(today.year, today.month, 1) - timedelta(days=1)
     days: List[Optional[date]]
     if monthly:
@@ -526,9 +526,9 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, target, series: Valu
     opening = target.balance - sum(t.amount for t in txs)
     used = {m for t in txs for m in marks_in(t.purpose)}
     want_now, src_now, _ = series.at(None)
-    preview.update(ziel=target.uuid, ist=round(target.balance, 2), soll=want_now, quelle=src_now, diff=round(want_now - target.balance, 2),
-                   rueck=0, rueck_summe=0.0, offen=0, unbekannt=[], takt="monatlich" if monthly else "taeglich",
-                   beginn=start.isoformat() if isinstance(start, date) else None)
+    preview.update(target=target.uuid, ist=round(target.balance, 2), soll=want_now, source=src_now, diff=round(want_now - target.balance, 2),
+                   retro_count=0, back_sum=0.0, open=0, unknown=[], cycle="monthly" if monthly else "daily",
+                   begin=start.isoformat() if isinstance(start, date) else None)
     unknown_months: List[str] = []
     i, cum, posted = 0, 0.0, 0.0
     for d in days:
@@ -559,18 +559,18 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, target, series: Valu
         new = d is None or seen.since(d) or (fresh_from is not None and fresh_from <= d)
         if auto and not new:
             continue
-        p = Proposal(rule, "wert", target.uuid, target.path, day, diff, payee, purpose(src_value, tag, want), cfg.get("kategorie") or "", tag,
+        p = Proposal(rule, "value", target.uuid, target.path, day, diff, payee, purpose(src_value, tag, want), cfg.get("category") or "", tag,
                      group=group, retro=not new)
         t = _emit(res, ledger, p, edits)
         used.add(tag)
         if d is not None:
             posted += t.amount
-        preview["offen"] += 1
+        preview["open"] += 1
         if p.retro:
-            preview["rueck"] += 1
-            preview["rueck_summe"] = round(preview["rueck_summe"] + p.amount, 2)
+            preview["retro_count"] += 1
+            preview["back_sum"] = round(preview["back_sum"] + p.amount, 2)
     if unknown_months:
-        preview["unbekannt"] = unknown_months
+        preview["unknown"] = unknown_months
         res.info.append(tr("s_wert_unbekannt") % (rule, ", ".join(unknown_months[:6]) + (" …" if len(unknown_months) > 6 else ""),
                                                    ", ".join(series.unknown[:3])))
     if monthly:          # what is open now is booked at the end of the month
@@ -613,7 +613,7 @@ def plan_mirror(ledger: Ledger, res: RuleResult, rule: str, a, b, cfg: dict, con
     real = {x.uuid: list(ledger.transactions(x.uuid)) for x in (a, b)}
 
     def counts(t: Tx) -> bool:
-        if start == "alles":
+        if start == "all":
             return True
         if isinstance(start, date):
             return t.booking_date >= start
@@ -676,27 +676,27 @@ def plan_mirror(ledger: Ledger, res: RuleResult, rule: str, a, b, cfg: dict, con
             if _skipped(skip, target.uuid, tag) or (auto and not seen.new_tx(t)):
                 continue
             text = TAG_RE.sub("", (t.purpose or t.name or "")).strip(" ·") or "-"          # the original's own mark stays there
-            p = Proposal(rule, "spiegel", target.uuid, target.path, t.booking_date, round(-t.amount, 2), (owner or {}).get(x.uuid) or x.name,
-                         _fill(DEFAULT_TEXTS["spiegel_text"], quelle=x.name, text=text, tag=tag), cfg.get("kategorie") or "", tag,
+            p = Proposal(rule, "mirror", target.uuid, target.path, t.booking_date, round(-t.amount, 2), (owner or {}).get(x.uuid) or x.name,
+                         _fill(DEFAULT_TEXTS["mirror_text"], source=x.name, text=text, tag=tag), cfg.get("category") or "", tag,
                          group=group, retro=not seen.new_tx(t))
             _emit(res, ledger, p, edits)
             booked += 1
-    pv.update(richtung="beide" if len(sides) == 2 else ("zu_a" if sides[0] is a else "zu_b"), gespiegelt=marked + pairs, offen=booked,
+    pv.update(direction="both" if len(sides) == 2 else ("to_a" if sides[0] is a else "to_b"), mirrored=marked + pairs, open=booked,
               paare=pairs, saldo_a=round(a.balance, 2), saldo_b=round(b.balance, 2),
-              beginn=start.isoformat() if isinstance(start, date) else start if start == "alles" else None)
+              begin=start.isoformat() if isinstance(start, date) else start if start == "all" else None)
 
 
 def current_day(cfg: dict, today: date) -> date:
     """The day a participation is booked for now: today (daily), the end of last month (monthly)."""
-    return date(today.year, today.month, 1) - timedelta(days=1) if cfg.get("takt") == "monatlich" else today
+    return date(today.year, today.month, 1) - timedelta(days=1) if cfg.get("cycle") == "monthly" else today
 
 
 def default_start(ledger: Ledger, cfg: dict, area: dict, today: date, extra: Iterable[str] = ()) -> Optional[date]:
-    """For a company set up before 3.13.1 without "Buchen ab": since Kontor's first booking for its rules (the participation's
-    value adjustments, the mirrored bookings; extra: the accounts of the mirrors kept with it), at the latest the day booked
-    for now (a booking of Kontor's you moved to a later day must not leave that day out) -- None if there is none."""
+    """For a company without "Buchen ab" (not written by the interface): since Kontor's first booking for its participation
+    (its value adjustments; extra: further accounts), at the latest the day booked for now (a booking of Kontor's you moved to
+    a later day must not leave that day out) -- None if there is none."""
     accs: List[str] = []
-    for ref in [cfg.get("beteiligung")] + [x.get(f) for x in cfg.get("gegenkonten") or [] if isinstance(x, dict) for f in ("konto", "quelle")] + list(extra):
+    for ref in [cfg.get("participation")] + list(extra):
         try:
             accs.append(ledger.resolve(str(ref or "")).uuid)
         except KeyError:
@@ -706,37 +706,27 @@ def default_start(ledger: Ledger, cfg: dict, area: dict, today: date, extra: Ite
 
 
 def company_start(ledger: Ledger, config: Optional[dict], cfg: dict, area: dict, today: date):
-    """"Buchen ab" of a company -- for its participation and for the mirrors kept with it until 3.13.9 that have no day of
-    their own: the day set (or "alles"), without one default_start over all their accounts."""
-    start = parse_start(cfg.get("rueckwirkend_ab"))
+    """"Buchen ab" of a company's participation: the day set (or "all"), without one default_start."""
+    start = parse_start(cfg.get("retroactive_from"))
     if start is None:
-        bid = str(cfg.get("bereich"))
-        start = default_start(ledger, cfg, area, today, [m[f] for m in mirrors(config or {}) if m.get("bereich") == bid for f in ("a", "b")])
+        start = default_start(ledger, cfg, area, today)
     return start
 
 
 def mirrors(config: dict) -> List[dict]:
-    """The account mirrors: {"a", "b", "ab" (Buchen ab: a day, "alles"), "kategorie", "bereich"} -- the list of their own
-    (config kontenspiegel) and, from settings written before 3.13.10, those kept with a company (gesellschaften[].gegenkonten:
-    its "Buchen ab" counts). "bereich": the company an old one was kept with -- for it everything stays as it was (it books
-    only while that area is there, b lies in it and a outside; the company's name on the bookings; one whose company names
-    no area waits: "?"); "" = any two accounts. The same pair counts once (per company it was kept with)."""
+    """The account mirrors (config account_mirrors): {"a", "b", "from_date" (Buchen ab: a day, "all"), "category"} between any
+    two accounts. The same pair counts once."""
     out: List[dict] = []
-    seen_pairs = set()                                 # (pair, the company it was kept with)
-
-    def add(a, b, ab, kat, bereich) -> None:
+    seen_pairs = set()
+    for m in config.get("account_mirrors") or []:
+        if not isinstance(m, dict):
+            continue
+        a, b = m.get("a"), m.get("b")
         pair = frozenset((str(a or "").split("|")[0].strip(), str(b or "").split("|")[0].strip()))
-        if not a or not b or (pair, "") in seen_pairs or (pair, bereich) in seen_pairs or (not bereich and any(p == pair for p, _ in seen_pairs)):
-            return
-        seen_pairs.add((pair, bereich))
-        out.append({"a": str(a), "b": str(b), "ab": str(ab or ""), "kategorie": str(kat or ""), "bereich": bereich})
-    for m in config.get("kontenspiegel") or []:
-        if isinstance(m, dict):
-            add(m.get("a"), m.get("b"), m.get("ab"), m.get("kategorie"), str(m.get("bereich") or ""))
-    for g in config.get("gesellschaften") or []:
-        for x in (g.get("gegenkonten") or []) if isinstance(g, dict) else []:
-            if isinstance(x, dict):
-                add(x.get("konto"), x.get("quelle"), g.get("rueckwirkend_ab"), g.get("kategorie"), str(g.get("bereich") or "") or "?")
+        if not a or not b or pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        out.append({"a": str(a), "b": str(b), "from_date": str(m.get("from_date") or ""), "category": str(m.get("category") or "")})
     return out
 
 
@@ -744,11 +734,9 @@ def plan_account_mirror(ledger: Ledger, m: dict, i: int, today: date, config: Op
                         edits: Optional[Dict[str, dict]] = None, owner: Optional[Dict[str, str]] = None, seen: Optional[Seen] = None,
                         auto: bool = False, areas: Optional[Dict[str, dict]] = None) -> RuleResult:
     """One account mirror (plan_mirror) between any two accounts: of your own, of a company, of two companies. Booked from its
-    "Buchen ab" on. One kept with a company until 3.13.9 (m["bereich"]) books exactly as then: only while the company's area
-    is there, b in it and a outside; without a day of its own from the company's "Buchen ab"; the company's counterparty as
-    the name on bookings from b. owner: account -> the name of its area."""
+    "Buchen ab" on. owner: account -> the name of its area."""
     res = RuleResult()
-    pv = {"art": "spiegel", "i": i}
+    pv = {"kind": "mirror", "i": i}
     areas = areas or {}
     try:
         a, b = ledger.resolve(m["a"]), ledger.resolve(m["b"])
@@ -763,34 +751,20 @@ def plan_account_mirror(ledger: Ledger, m: dict, i: int, today: date, config: Op
     if (a.currency or "EUR").upper() != (b.currency or "EUR").upper():      # Kontor does not convert: nothing is mirrored
         res.warnings.append(tr("s_s_spiegel_waehrung") % rule)
         return res
-    companies = {str(g.get("bereich")): g for g in (config or {}).get("gesellschaften") or [] if isinstance(g, dict)}
-    party = lambda bid, area: (companies.get(bid, {}).get("gegenpartei") or "").strip() or area["name"]
+    companies = {str(g.get("area")): g for g in (config or {}).get("companies") or [] if isinstance(g, dict)}
+    party = lambda bid, area: (companies.get(bid, {}).get("counterparty") or "").strip() or area["name"]
     who = dict(owner or {})
-    bid = m.get("bereich") or ""
-    start = parse_start(m.get("ab"))
-    if bid:
-        area = areas.get(bid)
-        if area is None:                               # the company's area is gone or off: its rules wait
-            res.warnings.append(tr("s_gesellschaft_s_bereich_fehlt") % bid)
-            return res
-        inside = {x.uuid for x in area["leaves"]}
-        if a.uuid in inside or b.uuid not in inside or a.uuid == b.uuid:
-            res.warnings.append(tr("s_s_zielkonto_liegt_innerhalb_der") % rule)
-            return res
-        who[b.uuid] = party(bid, area)
-        if start is None:
-            start = company_start(ledger, config, companies.get(bid) or {"bereich": bid}, area, today)
-    else:
-        if a.uuid == b.uuid:
-            res.warnings.append(tr("s_s_spiegel_selbst") % rule)
-            return res
-        for k, area in areas.items():                  # an account of a company: the counterparty you set for it
-            if str(k) in companies:
-                who.update({x.uuid: party(str(k), area) for x in (a, b) if x.uuid in {y.uuid for y in area["leaves"]}})
-        if start is None:                              # no day (not written by the interface): Kontor's first booking in the two
-            first = _first_mark(ledger, [a.uuid, b.uuid], VALUE_TAGS + (MIRROR_TAG,))
-            start = min(first, today) if first else None
-    plan_mirror(ledger, res, rule, a, b, {"kategorie": m.get("kategorie") or ""}, config, pv, skip, edits, bid, who, seen, start, auto)
+    start = parse_start(m.get("from_date"))
+    if a.uuid == b.uuid:
+        res.warnings.append(tr("s_s_spiegel_selbst") % rule)
+        return res
+    for k, area in areas.items():                      # an account of a company: the counterparty you set for it
+        if str(k) in companies:
+            who.update({x.uuid: party(str(k), area) for x in (a, b) if x.uuid in {y.uuid for y in area["leaves"]}})
+    if start is None:                                  # no day (not written by the interface): Kontor's first booking in the two
+        first = _first_mark(ledger, [a.uuid, b.uuid], VALUE_TAGS + (MIRROR_TAG,))
+        start = min(first, today) if first else None
+    plan_mirror(ledger, res, rule, a, b, {"category": m.get("category") or ""}, config, pv, skip, edits, "", who, seen, start, auto)
     res.preview.append(pv)
     return res
 
@@ -806,17 +780,17 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
     roles = roles or {}
     name = area["name"]
     inside = {a.uuid for a in area["leaves"]}
-    payee = (cfg.get("gegenpartei") or "").strip() or name
+    payee = (cfg.get("counterparty") or "").strip() or name
     start = company_start(ledger, config, cfg, area, today)
-    if cfg.get("beteiligung"):
+    if cfg.get("participation"):
         rule = tr("s_regel_beteiligung") % name
-        pv = {"art": "beteiligung", "bereich": area["id"]}
+        pv = {"kind": "participation", "area": area["id"]}
         try:
-            target = ledger.resolve(cfg["beteiligung"])
+            target = ledger.resolve(cfg["participation"])
         except KeyError as e:
             res.warnings.append("%s: %s" % (rule, e))
             target = None
-        anteil = area.get("anteil")
+        anteil = area.get("share")
         if target is not None and anteil is None:
             res.warnings.append(tr("s_s_anteil_fehlt") % rule)
         elif target is not None and _target_ok(ledger, config, res, rule, target, inside):
@@ -824,12 +798,12 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
             share = float(anteil)
             pct = ("%.4f" % (share * 100)).rstrip("0").rstrip(".").replace(".", ",")
             series = ValueSeries(ledger, accs, config, share)
-            begin = (series.change_days[0] if series.change_days else None) if start == "alles" else start
+            begin = (series.change_days[0] if series.change_days else None) if start == "all" else start
             # a value that changed through a new transaction of the company (or a new booking planned now) is new on its day
             fresh_from = None if seen.max_id is None else min(
                 (t.booking_date for a in accs for t in ledger.transactions(a.uuid) if seen.new_tx(t)), default=None)
             _keep_value(ledger, res, rule, target, series, cfg, today, payee,
-                        lambda v, tag, want: _fill(DEFAULT_TEXTS["wert_text"], anteil=pct, quelle=name, wert=fmt_eur(v), soll=fmt_eur(want), tag=tag),
+                        lambda v, tag, want: _fill(DEFAULT_TEXTS["value_text"], share=pct, source=name, value=fmt_eur(v), target=fmt_eur(want), tag=tag),
                         pv, skip, str(area["id"]), edits, seen, begin, fresh_from, auto)
             res.preview.append(pv)
     return res
@@ -853,27 +827,27 @@ def plan_all(ledger: Ledger, config: dict, today: date, hold: Optional[set] = No
         total.proposals += r.proposals; total.info += r.info; total.preview += r.preview
         total.warnings += [w for w in r.warnings if w not in total.warnings]          # a waiting company: named once
     # order: loans first (they change the values of the companies), then mirrors and participations
-    for i, cfg in enumerate(config.get("darlehen", []) or []):
-        if cfg.get("aktiv", True):
+    for i, cfg in enumerate(config.get("loans", []) or []):
+        if cfg.get("active", True):
             r = plan_loan(ledger, cfg, today, config, skip, edits, seen, hold, auto)
-            r.preview.append({"art": "darlehen", "i": i, "buchungen": len(r.proposals)})
+            r.preview.append({"kind": "loans", "i": i, "bookings": len(r.proposals)})
             add(r)
     ms = mirrors(config)
-    if config.get("gesellschaften") or ms:
+    if config.get("companies") or ms:
         from report import account_roles          # imported late (report/core import rules)
         from core import bereiche_for
         roles = account_roles(ledger, config)
         areas = {b["id"]: b for b in bereiche_for(ledger, config)}
         owner = {a.uuid: b["name"] for b in areas.values() for a in b["leaves"]}          # an account's area: the company or person
-        companies = [c for c in config.get("gesellschaften") or [] if isinstance(c, dict)]
+        companies = [c for c in config.get("companies") or [] if isinstance(c, dict)]
         for i, m in enumerate(ms):                    # mirrors first: what they bring into a company counts in its value
             add(plan_account_mirror(ledger, m, i, today, config, skip | hold, edits, owner, seen, auto, areas))
         for cfg in companies:
-            if not cfg.get("beteiligung"):
+            if not cfg.get("participation"):
                 continue
-            area = areas.get(str(cfg.get("bereich")))
+            area = areas.get(str(cfg.get("area")))
             if area is None:
-                w = tr("s_gesellschaft_s_bereich_fehlt") % cfg.get("bereich")
+                w = tr("s_gesellschaft_s_bereich_fehlt") % cfg.get("area")
                 if w not in total.warnings:
                     total.warnings.append(w)
                 continue

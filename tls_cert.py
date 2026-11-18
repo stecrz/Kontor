@@ -118,7 +118,7 @@ def access_check(port: int) -> dict:
         except (RuntimeError, ValueError) as e:
             why = str(e)
     if not isinstance(data, list):
-        return {"zustand": "unbekannt", "fehler": why[:200], "port": port}
+        return {"state": "unknown", "error": why[:200], "port": port}
     ranges = []
     for r in data:
         for d in (r.get("DstPorts") or r.get("Dsts") or []) if isinstance(r, dict) else []:
@@ -126,10 +126,10 @@ def access_check(port: int) -> dict:
             ranges.append((int(p.get("First", 0)), int(p.get("Last", 65535))))
     kontor = any(a <= port <= b for a, b in ranges)
     other = sorted({(a, b) for a, b in ranges if not a == b == port})
-    info = {"alle": any(a <= 1 and b >= 65535 for a, b in other), "ports": [list(x) for x in other[:6]], "port": port}
+    info = {"all": any(a <= 1 and b >= 65535 for a, b in other), "ports": [list(x) for x in other[:6]], "port": port}
     if not kontor:
-        return dict(info, zustand="gesperrt")
-    return dict(info, zustand="offen" if other else "abgesichert")
+        return dict(info, state="locked")
+    return dict(info, state="open" if other else "secured")
 
 
 def status_json(binary: Optional[str], timeout: int = 15) -> dict:
@@ -173,12 +173,12 @@ def status() -> dict:
     (die Kontor erreichen koennten). Nichts davon wird gespeichert oder protokolliert."""
     binary = find_tailscale()
     if not binary and not localapi_endpoint():
-        return {"gefunden": False}
+        return {"found": False}
     try:
         st = status_json(binary)
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as e:
         log.warning("Tailscale status unreadable: %s", e)
-        return {"gefunden": True, "verbunden": False, "zustand": "", "fehler": str(e)[:200]}
+        return {"found": True, "connected": False, "state": "", "error": str(e)[:200]}
     if st.get("BackendState") != "Running":
         log.info("Tailscale state: %s", st.get("BackendState") or "?")
     me = st.get("Self") or {}
@@ -186,11 +186,11 @@ def status() -> dict:
     user = (st.get("User") or {}).get(str(me.get("UserID")), {}) if me.get("UserID") is not None else {}
     peers = [{"name": p.get("HostName") or (p.get("DNSName") or "").split(".")[0], "os": p.get("OS") or "", "online": bool(p.get("Online"))}
              for p in (st.get("Peer") or {}).values()]
-    return {"gefunden": True, "verbunden": st.get("BackendState") == "Running", "zustand": st.get("BackendState") or "",
+    return {"found": True, "connected": st.get("BackendState") == "Running", "state": st.get("BackendState") or "",
             "name": (me.get("DNSName") or "").rstrip("."), "ip": next((ip for ip in (me.get("TailscaleIPs") or []) if ":" not in ip), ""),
             "tailnet": tn.get("Name") or "", "magicdns": bool(tn.get("MagicDNSEnabled", bool(me.get("DNSName")))),
-            "https": bool(st.get("CertDomains")), "konto": user.get("LoginName") or "",
-            "geraete": sorted(peers, key=lambda x: (not x["online"], x["name"].lower()))}
+            "https": bool(st.get("CertDomains")), "account": user.get("LoginName") or "",
+            "devices": sorted(peers, key=lambda x: (not x["online"], x["name"].lower()))}
 
 
 def cert_expiry(cert_path: str) -> Optional[datetime]:
@@ -279,19 +279,19 @@ def setup(config: dict, data_dir: str) -> dict:
         raise RuntimeError(tr("s_tailscale_nicht_gefunden"))
     me = tailscale_self(binary)
     crt, key = issue(binary, me["name"], data_dir)
-    ui = dict(config.get("oberflaeche") or {})
+    ui = dict(config.get("ui") or {})
     ui["tls_cert"], ui["tls_key"] = crt, key
     if not ui.get("bind") or ui.get("bind") == "127.0.0.1":
         ui["bind"] = me["ip"]
     port = int(ui.get("port") or 8765)
     exp = cert_expiry(crt)
-    return {"oberflaeche": ui, "url": "https://%s:%d/" % (me["name"], port), "name": me["name"], "ip": me["ip"],
-            "gueltig_bis": exp.isoformat() if exp else None}
+    return {"ui": ui, "url": "https://%s:%d/" % (me["name"], port), "name": me["name"], "ip": me["ip"],
+            "valid_until": exp.isoformat() if exp else None}
 
 
 def renew_if_due(config: dict, data_dir: str, days: int = RENEW_DAYS) -> bool:
     """Erneuert ein von Kontor verwaltetes Tailscale-Zertifikat, wenn es in weniger als ``days`` Tagen ablaeuft."""
-    ui = config.get("oberflaeche") or {}
+    ui = config.get("ui") or {}
     crt = ui.get("tls_cert") or ""
     if not crt or not crt.startswith(os.path.join(data_dir, "tls") + os.sep):
         return False

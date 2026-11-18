@@ -2,9 +2,21 @@
 
 Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilanz, einen Cashflow, eine Planung und eine Steuerübersicht – für dich privat und für jede Gesellschaft getrennt. Es läuft als kleiner Dienst auf deinem Mac, die Oberfläche öffnest du im Browser unter `http://127.0.0.1:8765/` – oder als eigene App im Dock (Safari: Ablage → Zum Dock hinzufügen); dort führt das Menü überallhin, Wischen mit zwei Fingern blättert nicht zurück. **⌘L** sperrt. Diese Hilfe steht auch in Kontor selbst (Menü „Hilfe“, durchsuchbar).
 
+<a id="overview"></a>
+## Übersicht
+
+Die vier wichtigsten Grafiken auf einen Blick – ohne Tabellen und ohne Planwerte, am Mac auf einer Bildschirmseite:
+
+- **Nettovermögen**: die letzten zwei Jahre, daneben der Stand und die Veränderung in zwölf Monaten.
+- **Vermögensstruktur**: das Vermögen nach Positionen und die Schulden im aktuellen Monat.
+- **Monatlicher Cashflow**: die letzten zwölf abgeschlossenen Monate – Einnahmen und andere Zuflüsse nach oben, Ausgaben und Abflüsse nach unten; der Strich zeigt die Veränderung des Bankguthabens.
+- **Vermögensbrücke**: woher die Veränderung des Nettovermögens in diesen zwölf Monaten kam.
+
+Ein Klick auf eine Grafik öffnet ihre Stelle in Bilanz oder Cashflow. Darüber steht, was zu tun ist (z. B. Umsätze ohne Kategorie), falls es etwas gibt.
+
 ![Übersicht](img/de/overview.png)
 
-<a id="overview"></a>
+<a id="kontor-and-moneymoney"></a>
 ## Was MoneyMoney macht und was Kontor macht
 
 | MoneyMoney | Kontor |
@@ -16,7 +28,7 @@ Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilan
 
 Kontor ändert in MoneyMoney nie Buchungen, den Kategorienbaum oder Regeln und löst keine Überweisungen aus.
 
-**Alpha**: Seiten, die im Menü blass und mit „Alpha“ markiert sind (derzeit Übersicht, Planung, Immobilien, Steuer und Umsätze & Belege), sind nutzbar, aber noch nicht vollständig geprüft – Zahlen dort bitte gegenprüfen. Ebenso die Eigenkapitalquote in der Bilanz. Geprüft sind Bilanz, Cashflow, Kategorien, Auto-Buchungen, Buchungsregeln, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll und Hilfe.
+**Alpha**: Seiten, die im Menü blass und mit „Alpha“ markiert sind (derzeit Planung, Immobilien, Steuer und Umsätze & Belege), sind nutzbar, aber noch nicht vollständig geprüft – Zahlen dort bitte gegenprüfen. Ebenso die Eigenkapitalquote in der Bilanz. Geprüft sind Bilanz, Cashflow, Kategorien, Auto-Buchungen, Buchungsregeln, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll und Hilfe.
 
 <a id="setup"></a>
 ## Einrichtung
@@ -50,7 +62,7 @@ Jedes Konto bekommt einen Bereich, eine Position in der Bilanz und eine Verlaufs
 
 ![Konten](img/de/accounts.png)
 
-**Positionen** (Zeilen der Bilanz, sortiert nach Verfügbarkeit):
+**Positionen** (Zeilen der Bilanz, sortiert nach Verfügbarkeit). Für jedes Konto wählst du, wie schnell und ohne Abschlag es zu Geld wird – oder ob es eine Schuld ist:
 
 | Position | Was dazugehört |
 |---|---|
@@ -60,9 +72,9 @@ Jedes Konto bekommt einen Bereich, eine Position in der Bilanz und eine Verlaufs
 | Immobilien, Beteiligungen, Sachwerte | langfristig gebunden; zu Beteiligungen gehören auch Guthaben auf Kapital- und Gesellschafterkonten (auch Gesellschafterdarlehen) |
 | Forderungen | Darlehen an andere, Kautionen |
 | Verbindlichkeiten | Darlehen, Kreditkartenschulden, Schulden auf Kapitalkonten |
-| außerhalb des Nettovermögens | Eigenkapital (Kapitalkonten, nur ausdrücklich gewählt), Avale & Bürgschaften, „nicht bilanzieren“ |
+| außerhalb des Nettovermögens | Avale & Bürgschaften, „nicht bilanzieren“ |
 
-**So schlägt Kontor vor** (in dieser Reihenfolge): Depot → Kontoname (z. B. „Immobilie“, „Darlehen“, „Kapitalkonto“, „Aval“, „Bauspar“) → eindeutiger Kontotyp (Giro, Kreditkarte, Darlehen) → Name der Gruppe in MoneyMoney → übriger Kontotyp. Faustregel zwischen Wertpapieren und Festanlagen: In wenigen Tagen ohne Abschlag zu Geld? Dann Wertpapiere, sonst Festanlagen. Darlehen und Kautionen zählen mit Guthaben als Forderung, mit Schuld als Verbindlichkeit. Kapital- und Gesellschafterkonten (auch Gesellschafterdarlehen) zählen mit Guthaben zu den Beteiligungen – es ist Risikokapital, das Verluste mitträgt und erst beim Ausscheiden zurückfließt –, mit Schuld als Verbindlichkeit: In der Gesellschaft ist das eine Schuld an den Gesellschafter. Der Wert einer Beteiligung ist dann dein Anteil am Rest; zusammen mit dem Kapitalkonto ergibt das deinen ganzen Anteil, auch bei ungleichen Einlagen.
+Faustregel zwischen Wertpapieren und Festanlagen: In wenigen Tagen ohne Abschlag zu Geld? Dann Wertpapiere, sonst Festanlagen. Kontor schlägt eine Position vor – nach Depot, Kontoname (z. B. „Immobilie“, „Darlehen“, „Kapitalkonto“, „Aval“, „Bauspar“), Kontotyp und Gruppe in MoneyMoney. Darlehen und Kautionen zählen mit Guthaben als Forderung, mit Schuld als Verbindlichkeit. Kapital- und Gesellschafterkonten (auch Gesellschafterdarlehen) zählen mit Guthaben zu den Beteiligungen – es ist Risikokapital, das Verluste mitträgt und erst beim Ausscheiden zurückfließt –, mit Schuld als Verbindlichkeit: In der Gesellschaft ist das eine Schuld an den Gesellschafter. Der Wert einer Beteiligung ist dann dein Anteil am Rest; zusammen mit dem Kapitalkonto ergibt das deinen ganzen Anteil, auch bei ungleichen Einlagen.
 
 **Anzeige**: „nach Aktivität“ blendet Konten aus, die seit N Monaten weder Bestand noch Umsatz haben; „immer anzeigen“ oder „ausblenden“ legt es fest. Ausgeblendete Konten zählen in allen Summen mit.
 
@@ -120,7 +132,6 @@ Einstellungen → MoneyMoney-Sync meldet Konten, die MoneyMoney länger als eine
 - Die **Monatsansicht** zeigt das laufende Jahr und das davor; mit **‹ ab 2025 ›** neben „Monate / Jahre“ beginnt sie ein Jahr früher oder später, „Jahre“ zeigt alle Jahre. Im Cashflow steht beim Öffnen der letzte abgeschlossene Monat im Blick: je nach Breite daneben der laufende Monat, der Monat davor und ab vier Spalten der erste Planmonat (ab acht die ersten zwei). Ein Klick in der Bilanz-Grafik auf einen früheren Monat holt ihn ebenfalls dazu.
 - **Plan** (Cashflow) hängt die Planwerte rechts an; aus = nur Ist-Werte. Bilanz und Planung zeigen den Plan immer.
 - **inflationsbereinigt** (Planung) zeigt Planwerte in heutiger Kaufkraft.
-- Die Übersicht vergleicht zusätzlich mit dem gleichen Zeitraum des Vorjahrs.
 
 Jede Tabelle hat einen **Excel**-Knopf: Bilanz, Cashflow, Planung (mit Fortschreibung und Parametern), Steuer, Umsätze (wie gefiltert, alle Treffer), Depots, Konten und jede Immobilienkalkulation.
 
@@ -147,7 +158,7 @@ Die Bilanz zeigt je Bereich das Vermögen nach Positionen, Monat für Monat oder
 - Jahresspalten zeigen den Stand zum Jahresende (das laufende Jahr: heute). In der Monatsansicht gibt es keine Jahresspalten – sie wären nur der Dezember; ein feiner Strich trennt die Jahre.
 - Die erste Spalte ziehst du an ihrem rechten Rand breiter oder schmaler (Doppelklick: Standardbreite); die Breite gehört zur Ansicht.
 - **Eigenkapitalquote** (Alpha; Klick auf „Nettovermögen“ klappt die Kennzahlen darunter auf): wie viel deines Vermögens dir schuldenfrei gehört – Eigenkapital ÷ (Eigenkapital + Schulden). Durchgerechnet durch deine Gesellschaften: Deren Schulden zählen mit deinem Anteil (Bereiche), wenn die Beteiligung unter Buchungsregeln → Gesellschaften eingetragen ist, sonst sähe die Quote zu gut aus, weil die Bankdarlehen dort liegen. Schulden sind Konten mit negativem Stand; Kapital- und Gesellschafterkonten sind Eigenkapital, Beteiligungen selbst nie Schulden. Wie du Kapitalkonten buchst, ändert nichts. Beteiligungen ohne diesen Eintrag zählen nur mit ihrem Wert; liegen Konten einer Gesellschaft in keinem Bereich, ist die Quote unbekannt. Ein Klick zeigt die Rechnung des Monats Schritt für Schritt.
-- Unter dem Nettovermögen stehen Avale & Bürgschaften und Kapitalkonten als Eigenkapital (nicht im Nettovermögen), je gesammelt in einer aufklappbaren Zeile.
+- Unter dem Nettovermögen stehen Avale & Bürgschaften (nicht im Nettovermögen), gesammelt in einer aufklappbaren Zeile.
 - **Geldtransit**: Liegen die beiden Buchungen einer Umbuchung zwischen eigenen Konten in verschiedenen Monaten (am 31. abgebucht, am 1. gutgeschrieben), zählt der Betrag am Monatsende als „Geldtransit“ zum Bankguthaben – sonst sähe das Nettovermögen kurz zu niedrig aus. Ein Klick auf den Namen zeigt die erkannten Buchungspaare, ein Klick auf einen Monat nur die, die über dessen Ende unterwegs waren.
 
 **Große Grafik** – jede der vier Grafiken kann die große sein: das Symbol ⤢ in einer kleinen Grafik tauscht sie mit der großen (Standard: die Bilanz).
@@ -371,9 +382,9 @@ Kontor erkennt die Rate auf dem Quellkonto – über die IBAN des Darlehensgeber
 
 Jeder Bereich der Art „Gesellschaft“ (Konten & Regeln → Bereiche) erscheint als Karte, mit deinem **Anteil**. Der Anteil steht nur dort; die Karte verlinkt hin.
 
-- **Beteiligungskonto**: dein Offline-Konto für diese Gesellschaft – zur Wahl stehen Offline-Konten mit der Position „Beteiligungen“ (Konten & Regeln → Konten); vorausgewählt ist keins, denn sobald du eines wählst und speicherst, beginnen die Buchungen. Kontor hält es auf **Anteil × Wert der Gesellschaft**. Wert = alle Konten ihres Bereichs, also Vermögen minus Schulden (ohne Konten mit der Position „Kapitalkonten (Eigenkapital)“, Avale und nicht bilanzierte Konten).
+- **Beteiligungskonto**: dein Offline-Konto für diese Gesellschaft – zur Wahl stehen Offline-Konten mit der Position „Beteiligungen“ (Konten & Regeln → Konten); vorausgewählt ist keins, denn sobald du eines wählst und speicherst, beginnen die Buchungen. Kontor hält es auf **Anteil × Wert der Gesellschaft**. Wert = alle Konten ihres Bereichs, also Vermögen minus Schulden (ohne Avale und nicht bilanzierte Konten).
 
-Beteiligung und Kontenspiegel zusammen zählen nichts doppelt, wenn die Kapitalkonten in der Gesellschaft als Schuld geführt sind (Standard für Konten mit „Kapitalkonto“ oder „Gesellschafterdarlehen“ im Namen): Die Forderung ist dein Kapitalkonto, die Beteiligung dein Anteil am Rest – Wertzuwachs und nicht verteilte Überschüsse. Das stimmt auch bei ungleichen Einlagen. Führst du ein Kapitalkonto dagegen als Eigenkapital der Gesellschaft, steckt es schon im Wert der Beteiligung; ein Kontenspiegel dazu zählt dann doppelt, und „Speichern und prüfen“ warnt.
+Beteiligung und Kontenspiegel zusammen zählen nichts doppelt, wenn die Kapitalkonten in der Gesellschaft als Schuld geführt sind (Standard für Konten mit „Kapitalkonto“ oder „Gesellschafterdarlehen“ im Namen): Die Forderung ist dein Kapitalkonto, die Beteiligung dein Anteil am Rest – Wertzuwachs und nicht verteilte Überschüsse. Das stimmt auch bei ungleichen Einlagen. Führst du ein Kapitalkonto dagegen außerhalb der Bilanz („nicht bilanzieren“), steckt es schon im Wert der Beteiligung; ein Kontenspiegel dazu zählt dann doppelt, und „Speichern und prüfen“ warnt.
 
 Außerdem je Gesellschaft:
 
@@ -437,16 +448,18 @@ Kontor selbst verlangt zusätzlich das Kontor-Passwort und lässt vom iPhone sta
 ![Sichern und Zurücksetzen](img/de/backup.png)
 
 - **Sicherung** – für dich: Kontor auf einem neuen Mac oder nach dem Zurücksetzen genau so wiederherstellen. Enthält alle Einstellungen, Bereiche, Regeln, Immobilien, Planung, Kategorien und Zuordnungen, Monatsstände und den Belegindex – nicht die Umsätze (kommen aus MoneyMoney), keine Belegdateien, nicht das Kontor-Passwort. Weil sie deine Finanzdaten enthält, wird sie mit einem eigenen Passwort verschlüsselt, das Kontor nicht speichert. Nur am Mac.
-- **Einstellungspaket** – für andere: deine Regeln und Zuordnungen als Vorlage, z. B. für einen Geschäftspartner mit eigenem MoneyMoney. Konten nur mit Namen, ohne Kontostände, Umsätze, Planung, Passwörter oder Adresse. Darlehensregeln enthalten die Gegen-IBAN des Darlehensgebers – vor dem Weitergeben prüfen. Beim Laden ordnet Kontor die Konten über die Namen zu; was nicht gefunden wird, ordnest du in der Oberfläche zu. „Ergänzen“ fügt Regeln hinzu und überschreibt Zuordnungen, „Ersetzen“ verwirft die vorhandene Einrichtung. Eine Vorlage liegt im Ordner `templates/`.
+- **Einstellungspaket** – für andere: deine Regeln und Zuordnungen als Vorlage, z. B. für einen Geschäftspartner mit eigenem MoneyMoney. Konten nur mit Namen, ohne Kontostände, Umsätze, Planung, Passwörter oder Adresse. Darlehensregeln enthalten die Gegen-IBAN des Darlehensgebers – vor dem Weitergeben prüfen. Beim Laden ordnet Kontor die Konten über die Namen zu; was nicht gefunden wird, ordnest du in der Oberfläche zu. „Ergänzen“ fügt Regeln hinzu und überschreibt Zuordnungen, „Ersetzen“ verwirft die vorhandene Einrichtung.
 - **Time Machine** sichert den Datenordner standardmäßig mit – als verschlüsselte Dateien, der Schlüssel liegt im Schlüsselbund, nicht im Ordner. Die Seite zeigt den Stand. „Ausschließen“ ändert nicht die Einstellungen von Time Machine, sondern setzt am Datenordner selbst die Markierung „nicht sichern“ (wie bei Zwischenspeichern üblich, ohne Administratorrechte). Deshalb erscheint der Ordner nicht in der Ausschlussliste von Time Machine. Empfehlung: gesichert lassen.
+- **Datenschlüssel erneuern** (nur am Mac, mit Passwort): Kontor verschlüsselt alle Dateien im Datenordner mit einem neuen, zufälligen Schlüssel. Der alte wird erst gelöscht, wenn sich alles mit dem neuen öffnen lässt; wird der Mac mittendrin ausgeschaltet, schließt Kontor das beim nächsten Start ab. Sinnvoll, wenn eine Kopie des Datenordners samt Schlüsselbund in fremde Hände geraten sein könnte. Sicherungen bleiben lesbar (sie haben ihr eigenes Passwort).
 - **Zurücksetzen** (nur am Mac, mit Passwort) löscht Einstellungen, Planung, Kategorien, Verlauf und Auswertungen, wahlweise auch das Passwort. Belegdateien, Schlüssel und Protokoll bleiben.
+- **Deinstallieren** (nur am Mac, mit Passwort) entfernt Kontor von diesem Mac: Hintergrunddienst, Kontors Dateien im Datenordner (Einstellungen, Daten, Protokoll), den Datenschlüssel im Schlüsselbund und – wenn angehakt – den Programmordner. Belege, verknüpfte Dokumente und MoneyMoney bleiben unangetastet; fremde Dateien im Datenordner ebenso. Dasselbe macht ein Doppelklick auf `Uninstall.command` im Programmordner. Die Freigaben von macOS (Automation) entfernt nur macOS selbst – die Befehle dafür nennt Kontor danach.
 
 <a id="updates"></a>
 ## Updates
 
 Kontor fragt GitHub nach der neuesten Version (täglich, wöchentlich oder nie – Einstellungen → Updates) und installiert nur nach Klick. Die Update-Prüfung ist die einzige Netzverbindung von Kontor: Sie fragt `raw.githubusercontent.com` nach der Datei `VERSION` im Hauptzweig des Repositorys (Standard: [github.com/stecrz/Kontor](https://github.com/stecrz/Kontor)). Andere Server sind bewusst nicht möglich.
 
-Beim Installieren lädt Kontor diesen Stand als Archiv von github.com, ersetzt den Programmordner (die alten Dateien bleiben daneben als `.alt`), startet den Dienst neu und lädt die Seite neu; ist der Programmordner ein Git-Klon, läuft stattdessen `git pull`. Datenordner und Einstellungen bleiben. Alle Schritte stehen im Protokoll. Die Seite Updates zeigt die Änderungen der neuesten Version, darunter aufklappbar die früheren.
+Beim Installieren lädt Kontor diesen Stand als Archiv von github.com, ersetzt den Programmordner (die alten Dateien bleiben daneben als `.old`), startet den Dienst neu und lädt die Seite neu; ist der Programmordner ein Git-Klon, läuft stattdessen `git pull`. Datenordner und Einstellungen bleiben. Alle Schritte stehen im Protokoll. Die Seite Updates zeigt die Änderungen der neuesten Version, darunter aufklappbar die früheren.
 
 Im Terminal aktualisiert dieselbe Zeile wie bei der [Installation](https://github.com/stecrz/Kontor#installation).
 
@@ -455,17 +468,17 @@ Im Terminal aktualisiert dieselbe Zeile wie bei der [Installation](https://githu
 
 - Oberfläche nur auf diesem Mac (`127.0.0.1`); optional zusätzlich die Tailscale-Adresse für deine eigenen Geräte – nie im Heimnetz oder Internet. Keine fremden Inhalte, keine Telemetrie. Einzige Verbindung nach außen ist die Update-Prüfung bei GitHub.
 - Anmeldung mit Passwort (PBKDF2-SHA256, 600 000 Runden) oder Touch ID am Mac (braucht die Kommandozeilen-Werkzeuge von Apple, sonst gilt nur das Passwort; der Dialog erscheint erst, wenn du zu Kontor wechselst – nie, während du woanders arbeitest). Das Anmelde-Cookie gilt nur für Kontor, fremde Webseiten können nichts auslösen (CSRF-Schutz, Herkunftsprüfung). Sperre nach Leerlauf oder mit ⌘L; fünf Fehlversuche sperren fünf Minuten. Ein Passwortwechsel meldet alle anderen Geräte ab und erneuert die eigene Anmeldung.
-- Alle Dateien im Datenordner sind verschlüsselt (AES-256 + HMAC), der Schlüssel liegt im macOS-Schlüsselbund. Funktioniert die Verschlüsselung oder der Schlüsselbund nicht, startet Kontor nicht – es speichert nie unverschlüsselt und legt keinen neuen Schlüssel als Datei neben die Daten. Belege liegen als normale Dateien in einem Ordner deiner Wahl; Dateien außerhalb davon verknüpfst du nur am Mac, und nur Belegdateien – nichts aus versteckten Ordnern, dem Datenordner oder der Library (außer iCloud Drive und anderen Cloud-Ordnern).
+- Alle Dateien im Datenordner sind verschlüsselt (AES-256 + HMAC) mit einem zufälligen Datenschlüssel, der im macOS-Schlüsselbund liegt (Eintrag „Kontor Datenschlüssel“) – nicht dein Passwort, das nur den Zugang regelt. Jede Neuinstallation erzeugt einen neuen Schlüssel; erneuern lässt er sich jederzeit unter Einstellungen → Sichern & Zurücksetzen. Funktioniert die Verschlüsselung oder der Schlüsselbund nicht, startet Kontor nicht – es speichert nie unverschlüsselt, legt keinen neuen Schlüssel als Datei neben die Daten und keinen neuen an, solange verschlüsselte Daten ohne ihren Schlüssel da sind. Belege liegen als normale Dateien in einem Ordner deiner Wahl; Dateien außerhalb davon verknüpfst du nur am Mac, und nur Belegdateien – nichts aus versteckten Ordnern, dem Datenordner oder der Library (außer iCloud Drive und anderen Cloud-Ordnern).
 - **Was Kontor in MoneyMoney schreibt** – sonst nichts: (1) neue Buchungen der Buchungsregeln, nur in Offline-Konten, jede mit der Markierung „#kontor-…“ und nie zweimal; (2) eingeschaltet die Kategorie eines Umsatzes, den du in Kontor zuordnest (nur wenn er dort noch keine hat oder nach Rückfrage); (3) mit der Einstellung „Verweis in MoneyMoney“ den Belegpfad, angehängt an den Kommentar des Umsatzes (was dort steht, bleibt). Kontor ändert oder löscht keine Buchung, legt keine Überweisungen oder Lastschriften an und fasst Kategorienbaum und Regeln von MoneyMoney nicht an. Rechnen die Buchungsregeln einmal nicht, wird nichts gebucht; alles andere läuft weiter.
 - Buchen, Updates, Einschalten des Kategorie-Eintragens, Sicherung, Zurücksetzen und Zugangseinstellungen nur am Mac; vom iPhone standardmäßig nur ansehen. Vom iPhone aus Zugeordnetes trägt Kontor erst beim nächsten Abgleich am Mac ein.
 - Historische Kontostände: Das MoneyMoney-Passwort gibst du in einem Fenster eines kleinen Kontor-Helfers ein, der nur für diesen Vorgang aus dem Quellcode gebaut und danach gelöscht wird; Kontor speichert es nirgends. Die Datenbank liegt dabei kurz vollständig entschlüsselt im Arbeitsspeicher – das erfordert Vertrauen in diesen Code. Wer das nicht möchte, lässt die Funktion aus; einmal eingelesen, wird sie nicht mehr gebraucht.
-- Das Protokoll enthält keine IBANs, Salden, Beträge, Empfänger, Verwendungszwecke oder Passwörter (bei Buchungen nur ihre Anzahl und Art, bei Bereichen und Objekten nur Kennungen); Protokolle älterer Versionen hat Kontor einmalig gelöscht. Die Diagnosedatei ersetzt zusätzlich Kontonamen und den Benutzerordner.
-- Grenze: Der Schlüssel liegt im Login-Schlüsselbund, damit der Dienst nach der Anmeldung ohne Eingabe läuft. Wer deinen entsperrten Mac bedient, kommt an ihn heran – das Kontor-Passwort schützt dann den Zugang, nicht die Dateien. FileVault bleibt die Basis.
+- Das Protokoll enthält keine IBANs, Salden, Beträge, Empfänger, Verwendungszwecke oder Passwörter (bei Buchungen nur ihre Anzahl und Art, bei Bereichen und Objekten nur Kennungen). Die Diagnosedatei ersetzt zusätzlich Kontonamen und den Benutzerordner.
+- Grenze: Der Schlüssel liegt im Login-Schlüsselbund, damit der Dienst nach der Anmeldung ohne Eingabe läuft. Programme, die unter deinem Benutzer laufen, und wer deinen entsperrten Mac bedient, kommen an ihn heran – das Kontor-Passwort schützt dann den Zugang, nicht die Dateien. Die Verschlüsselung schützt Kopien des Datenordners (Time Machine, ein anderer Benutzer, ein ausgebauter Datenträger). Eine Sperre im Schlüsselbund, bei der jedes Programm erst fragen muss, nutzt Kontor bewusst nicht: Sie würde auch den Dienst selbst beim Start anhalten, bis jemand zustimmt. FileVault bleibt die Basis.
 
 <a id="advanced"></a>
 ## Für Fortgeschrittene
 
-**Installieren, aktualisieren, entfernen**: Die Installation steht in der [README](https://github.com/stecrz/Kontor#installation). `bash install.sh` im Programmordner ist jederzeit wiederholbar: Es ersetzt den Dienst und lässt Datenordner und Einstellungen unangetastet. Entfernen: `python3 kontor.py uninstall` oder `Uninstall.command` (fragt, ob Daten und Schlüssel gelöscht werden sollen). Der Dienst startet beim Anmelden, läuft dauerhaft und startet nach Abstürzen neu (launchd, `de.kontor.service`).
+**Installieren, aktualisieren, entfernen**: Die Installation ist eine Zeile im Terminal (siehe [README](https://github.com/stecrz/Kontor#installation)); dieselbe Zeile – oder `bash install.sh` im Programmordner – aktualisiert und ist jederzeit wiederholbar: Sie ersetzt den Dienst und lässt Datenordner und Einstellungen unangetastet. Entfernen: in Kontor unter Einstellungen → Sichern & Zurücksetzen → Deinstallieren, per Doppelklick auf `Uninstall.command` oder mit `python3 kontor.py uninstall [--program]`. Den Programmordner zeigt Kontor unter Einstellungen → Sichern & Zurücksetzen → Daten. Der Dienst startet beim Anmelden, läuft dauerhaft und startet nach Abstürzen neu (launchd, `de.kontor.service`).
 
 **Kommandozeile** – `python3 ~/Kontor/kontor.py …`:
 
@@ -475,7 +488,7 @@ Im Terminal aktualisiert dieselbe Zeile wie bei der [Installation](https://githu
 - `password` – Kontor-Passwort zurücksetzen
 - `package-export [DATEI] [--without-uuid] [--with-plan]`, `package-import DATEI [--replace] [--anyway]` – Einstellungspaket
 - `diagnostics [DATEI]` – Diagnosedatei schreiben; `update [--install]` – Updates suchen bzw. installieren
-- `install` / `uninstall` – Dienst einrichten bzw. entfernen; `tls [--off]` – Zugriff über Tailscale ein- bzw. ausschalten
+- `install` – Dienst einrichten; `uninstall [--program] [--yes]` – Kontor entfernen (wie in der Oberfläche, mit Rückfrage); `tls [--off]` – Zugriff über Tailscale ein- bzw. ausschalten
 
 **Datenordner** `~/Library/Application Support/Kontor/` (die Umgebungsvariable `KONTOR_DIR` ändert das). Alles verschlüsselt außer dem Protokoll:
 
@@ -495,5 +508,6 @@ Im Terminal aktualisiert dieselbe Zeile wie bei der [Installation](https://githu
 | Keine passende Zahlung | Die Darlehensregel findet die Rate nicht: Gegen-IBAN oder Text und Quellkonto prüfen. Bis 35 Tage nach „Automatik ab“ nur ein Hinweis. |
 | Port nicht nutzbar | Ein anderes Programm belegt den Port: Einstellungen → Zugang → Erweitert. |
 | Datenschlüssel liegt als Datei | Der Schlüsselbund war nicht nutzbar (z. B. Start ohne Anmeldung): Kontor funktioniert, der Schlüssel liegt dann aber mit Rechten 0600 im Datenordner. Sobald der Schlüsselbund wieder geht, zieht Kontor ihn dorthin um und löscht die Datei. Ohne Schlüsselbund und ohne vorhandene Datei startet Kontor nicht. |
+| Zu den verschlüsselten Daten fehlt der Schlüssel | Der Eintrag „Kontor Datenschlüssel“ im Schlüsselbund wurde gelöscht oder der Datenordner stammt von einem anderen Mac. Kontor legt dann keinen neuen Schlüssel an, damit nichts überschrieben wird. Den Eintrag wiederherstellen (Schlüsselbundverwaltung, Time Machine) – oder Kontor deinstallieren, neu installieren und eine Sicherung laden. |
 
 Für Rückfragen: Protokoll → „Diagnosedatei (maskiert)“. Sie enthält zusätzlich zum Protokoll Status und Einstellungen, Kontonamen ersetzt durch Konto01, Konto02 … – ohne IBANs, Salden oder Passwörter.

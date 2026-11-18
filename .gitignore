@@ -1,7 +1,7 @@
 __pycache__/
 *.pyc
 .DS_Store
-.alt/
+.old/
 mm_touchid
 .touchid/
 config.json
