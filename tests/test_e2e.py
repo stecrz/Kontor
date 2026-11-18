@@ -2842,14 +2842,14 @@ class BrowserTest(unittest.TestCase):
                 pg.evaluate("(() => { const D = B(); D.kapitalfluss.ueberleitung[window._keep[0]].abweichung_liq = window._keep[1]; return route(); })()"); pg.wait_for_timeout(200)
                 self.assertEqual(len(pg.query_selector_all(F_ + " tr.check")), 0)
                 # one outline: sections open and close, positions open to their categories; three levels (overview: sections and results only)
-                self.assertEqual(pg.get_attribute("#cf-ebene button.on", "aria-label"), "Überblick")     # four levels as icons, named; the overview first
+                self.assertEqual(pg.get_attribute("#cf-ebene button.on", "aria-label"), "Hauptebenen")   # four levels as icons, named; the most reduced first
                 self.assertEqual(len(pg.query_selector_all("#cf-ebene button svg")), 4)
                 self.assertTrue(pg.query_selector("#main .cf-tbl thead th:first-child #cf-ebene"))       # in the table, over the triangles
                 self.assertTrue(pg.query_selector("#main .cf-tbl thead th:first-child a.cf-set[href='#accounts/positions']"))   # the gear to the positions
                 self.assertIsNone(pg.query_selector("#main .toolbar a[href='#accounts/positions']"))
                 # iPhone: one large triangle -- each tap a level further, after everything closed again
                 lv = lambda: pg.evaluate("S.cfEbene")
-                for want in (2, 3, 0, 1, 2):
+                for want in (1, 2, 3, 0, 1, 2):
                     pg.evaluate("document.querySelector('.cf-lv-btn').click()"); pg.wait_for_timeout(250)
                     self.assertEqual(lv(), want)
                 # a cash flow statement: operating (income and expenses within), investing, financing -- then the cash and net worth
@@ -2867,7 +2867,7 @@ class BrowserTest(unittest.TestCase):
                 pg.click(N_ + " tr.sec2[data-tog='s:Einnahmen'] td"); pg.wait_for_timeout(200)      # income closes (its total stays)
                 self.assertIsNone(pg.query_selector("tr[data-key^='Einnahmen/']")); self.assertTrue(pg.query_selector("tr[data-key^='Ausgaben/']"))
                 pg.click("#cf-ebene button[data-e='0']"); pg.wait_for_timeout(200)                        # main lines: the three cash flows, the results
-                self.assertEqual(pg.eval_on_selector_all(F_ + " tbody tr", "e => e.filter(x => !x.matches('.sec, .total, .bal, .check')).length"), 0)
+                self.assertEqual(pg.eval_on_selector_all(F_ + " tbody tr", "e => e.filter(x => !x.matches('.sec, .sec2, .total, .bal, .check')).length"), 0)
                 self.assertEqual(pg.eval_on_selector_all(F_ + " tr.sec", "e => e.map(x => x.dataset.tog)")[:3], ["s:Operativ", "s:Investitionen", "s:Finanzierung"])
                 pg.click("#cf-ebene button[data-e='1']"); pg.wait_for_timeout(200)                        # overview: activities with their kinds, no positions
                 self.assertEqual(len(pg.query_selector_all("#main .cf-tbl tr[data-key^='Einnahmen/'], #main .cf-tbl tr[data-key^='Ausgaben/'], #main .cf-tbl tr[data-key^='Investitionen/']")), 0)
@@ -2876,10 +2876,21 @@ class BrowserTest(unittest.TestCase):
                 self.assertLess(pg.evaluate("document.querySelector('#main .cf-tbl').offsetHeight"), 760)   # fits on a page
                 # from the level "positions": the free cash flow (CFO + CFI) and the cash at the start and the end inside its change
                 pg.click("#cf-ebene button[data-e='2']"); pg.wait_for_selector(F_ + " tr.fcf")
+                # the change in net worth opens like the change in cash: net worth at the start and the end (from the balance sheet)
+                pg.evaluate("S.cfTog['t:nv'] = true; route()"); pg.wait_for_timeout(300)
+                nvr = pg.eval_on_selector_all(F_ + " tr[data-tog='t:nv'] ~ tr.bal td.to-bal", "e => e.map(td => td.dataset.bal)")
+                self.assertTrue(nvr and all(x.startswith("nw|") for x in nvr))
+                pg.evaluate("delete S.cfTog['t:nv']; route()"); pg.wait_for_timeout(300)
+                # opening a row far down keeps it where it was on the screen (the page is drawn anew)
+                rowtop = "document.querySelector('#main table.cf-tbl:not(.cf-names) tr[data-tog=\"t:bank\"]').getBoundingClientRect().top"
+                pg.evaluate("document.querySelector('#main table.cf-tbl:not(.cf-names) tr[data-tog=\"t:bank\"]').scrollIntoView({block: 'end'})"); pg.wait_for_timeout(150)
+                y0 = pg.evaluate(rowtop); pg.click(N_ + " tr[data-tog='t:bank'] td"); pg.wait_for_timeout(400)
+                self.assertLess(abs(pg.evaluate(rowtop) - y0), 8)
+                pg.click(N_ + " tr[data-tog='t:bank'] td"); pg.wait_for_timeout(300)
                 val = lambda sel: [float(x.strip().replace(".", "").replace(",", ".").replace("\u2212", "-") or 0) for x in pg.eval_on_selector_all(sel + " td", "e => e.slice(1, 4).map(c => c.firstChild ? c.firstChild.textContent + (c.childNodes[1] && c.childNodes[1].nodeType === 1 && !c.childNodes[1].classList.contains('ok-mark') ? c.childNodes[1].textContent : '') : '')")]
                 o, i2, f = val(F_ + " tr.sec[data-tog='s:Operativ']"), val(F_ + " tr.sec[data-tog='s:Investitionen']"), val(F_ + " tr.fcf")
                 self.assertEqual([round(a + b, 2) for a, b in zip(o, i2)], f)
-                self.assertEqual(len(pg.query_selector_all(F_ + " tr.bal")), 2)
+                self.assertEqual(len(pg.query_selector_all(F_ + " tr.bal")), 4)          # cash and net worth: start and end each
                 # a year with plan months: no ✓ (only actual months are checked); the end of February
                 yi = pg.evaluate("[...document.querySelectorAll('#main table.cf-tbl:not(.cf-names) thead th')].findIndex(th => th.dataset.key === B().ist_bis.slice(0, 4))")
                 if yi > 0 and pg.evaluate("S.plan"):
@@ -3084,20 +3095,23 @@ class BrowserTest(unittest.TestCase):
                 for gone in ("#cf-rate", "#cf-reach", "#cf-roll", "#cf-yoy"):                   # removed as not useful (rolling: in the months chart)
                     self.assertIsNone(pg.query_selector(gone), gone)
                 # the heatmap beside the ring, one scale for all: the largest position darker than a smaller one
-                # ... in one card with the ring (one switch for both, at its right); sources & uses beside the net worth bridge, half each
+                # ... in one card with the ring (one switch for both, in the ring's head); the two bridges side by side, then the two flows
                 self.assertTrue(pg.query_selector(".cf-duo #cf-pie-card #cf-pie-art")); self.assertTrue(pg.query_selector(".cf-duo #cf-pie-card + #cf-heat-card"))
                 # the line between ring and heat map exactly in the middle of the card (where the gap between two half cards is)
                 mid = pg.evaluate("(() => { const c = document.querySelector('.cf-duo').getBoundingClientRect(), h = document.querySelector('#cf-heat-card').getBoundingClientRect(); return [h.left - c.left, c.width / 2]; })()")
                 self.assertLess(abs(mid[0] - mid[1]), 1.5)
                 # the order: ↑ ↓ at each chart (shown on hover), kept in the browser; a half chart without a half neighbour takes the whole width
-                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "months", "flow", "wealth", "duo"])
+                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "wealth", "months", "flow", "duo"])
+                self.assertIsNone(pg.query_selector("#cf-order-reset"))                                  # the default: nothing to reset
                 pg.click(".cf-card[data-cfid='months'] .th-mv[data-d='1']", force=True); pg.wait_for_timeout(400)
-                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "flow", "months", "wealth", "duo"])
+                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "wealth", "flow", "months", "duo"])
                 pg.click(".cf-card[data-cfid='duo'] .th-mv[data-d='-1']", force=True); pg.wait_for_timeout(400)
                 pg.click(".cf-card[data-cfid='duo'] .th-mv[data-d='-1']", force=True); pg.wait_for_timeout(400)
                 self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => [c.dataset.cfid, c.classList.contains('cf-full')])"),
-                                 [["bridge", False], ["flow", False], ["duo", True], ["months", False], ["wealth", False]])
-                pg.evaluate("localStorage.removeItem('kontor.cfOrder')"); pg.evaluate("route()"); pg.wait_for_timeout(400)
+                                 [["bridge", False], ["wealth", False], ["duo", True], ["flow", False], ["months", False]])
+                pg.click("#cf-order-reset"); pg.wait_for_timeout(400)                                     # "Ansicht zurücksetzen": the default again
+                self.assertEqual(pg.eval_on_selector_all(".cf-grid > .cf-card", "e => e.map(c => c.dataset.cfid)"), ["bridge", "wealth", "months", "flow", "duo"])
+                self.assertIsNone(pg.query_selector("#cf-order-reset"))
                 self.assertEqual(pg.evaluate("[getComputedStyle(document.querySelector('.cf-duo')).gridColumnEnd, getComputedStyle(document.querySelector('#cf-flow').closest('.cf-card')).gridColumnStart, getComputedStyle(document.querySelector('#cf-wbridge').closest('.cf-card')).gridColumnStart]"), ["-1", "span 3", "span 3"])
                 ks = pg.evaluate("[...document.querySelectorAll('#cf-heat .cf-heat-c:not(.none)')].map(c => parseInt(c.style.getPropertyValue('--k')))")
                 self.assertGreater(max(ks), min(ks) + 20)
@@ -3201,10 +3215,21 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("document.querySelector('#cf-bis').dataset.m"), pg.evaluate("cfPick(B()).filter(m => m >= B().ist_bis)[1]"))
                 self.assertTrue(pg.query_selector("#cf-bis.open")); self.assertEqual(len(pg.query_selector_all("#cf-months .cf-ahead")), 2)
                 self.assertGreaterEqual(len(pg.query_selector_all("#cf-heat .cf-heat-c.ahead")), 2)
+                self.assertTrue(pg.query_selector("#cf-bridge .cf-br-hatch")); self.assertTrue(pg.query_selector("#cf-wbridge .cf-br-hatch"))      # the bridges hatched too
                 wt2 = pg.evaluate("(() => { const [c] = cfMonths(B(), S.cfZeit), r = cfWealthTree(B(), c, []); return r.map(x => x.id); })()")
                 self.assertNotIn("off", wt2); self.assertEqual((wt2[0], wt2[-1]), ("nw0", "nw1"))          # into the plan: it still adds up
                 pg.click("#cf-zeit button[data-z='12m']"); pg.wait_for_timeout(300)
                 self.assertEqual(pg.eval_on_selector_all("#cf-zeit button", "e => e.length"), 1 + len({m[:4] for m in ms[-36:]} & {str(int(ms[-1][:4]) - k) for k in range(3)}))
+                # two fingers sideways on the monthly chart: the period moves a month (back and forward again)
+                pg.hover("#cf-months"); pg.mouse.wheel(-120, 0); pg.wait_for_timeout(500)
+                self.assertEqual(pg.evaluate("document.querySelector('#cf-bis').dataset.m"), ms[-2]); pg.wait_for_timeout(200)
+                pg.hover("#cf-months"); pg.mouse.wheel(120, 0); pg.wait_for_timeout(500)
+                self.assertEqual(pg.evaluate("S.cfZeit"), "12m")
+                # a month's heading in the table: the charts end there (12 months up to it)
+                pg.click("#main table.cf-tbl:not(.cf-names) thead th[data-key='%s']" % ms[-4]); pg.wait_for_timeout(400)
+                self.assertEqual(pg.evaluate("[document.querySelector('#cf-von').dataset.m, document.querySelector('#cf-bis').dataset.m]"), [ms[-15], ms[-4]])
+                self.assertTrue(pg.query_selector("#main table.cf-tbl:not(.cf-names) thead th.cf-endsel[data-key='%s']" % ms[-4]))
+                pg.click("#cf-zeit button[data-z='12m']"); pg.wait_for_timeout(300)
                 pg.click("#cf-months .cf-hit >> nth=5"); pg.wait_for_timeout(200)
                 self.assertEqual(pg.evaluate("S.cfZeit"), "12m")                                       # a month in the chart: no jump
                 pg.click("#cf-bridge .cf-br-row >> nth=1"); pg.mouse.move(5, 5); pg.wait_for_timeout(100)

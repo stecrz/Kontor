@@ -1883,7 +1883,12 @@ def make_handler(app: App):
                     want = [categorize.norm_cat(c) for c in json.loads(q["categories"]) if isinstance(c, str) and c.strip()]
                 except ValueError:
                     want = []
+            only = None
+            if q.get("ids"):                                   # the bookings of an unclear row of the cash flow
+                only = {int(x) for x in q["ids"].split(",") if x.strip().isdigit()}
             for t in ums:
+                if only is not None and t["id"] not in only:
+                    continue
                 if want is not None:
                     k = categorize.norm_cat(t.get("kategorie") or "")
                     none_ok = (q.get("with_uncategorized") == "1" and not k and t.get("braucht", True) and not t.get("umbuchung")

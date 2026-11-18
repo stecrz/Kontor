@@ -182,7 +182,7 @@ tr.bal td.plan { color:color-mix(in srgb, var(--muted) 55%, transparent); } tr.b
 .cf-pair > .cf-names th, .cf-pair > .cf-names td { position:static; }
 .cf-pair > .cf-names thead th { background:transparent; border-bottom-color:transparent; padding:0; }      /* room for the table's heading row */
 .cf-pair .cf-ph { position:static; padding-top:0; padding-bottom:0; }
-th[data-cur] { box-shadow:inset 0 -2px 0 var(--line-2); } th.plan { color:var(--muted); font-weight:500; } .ptable td.plan { color:var(--fg); background:var(--plan); } .ptable td.plan.neg { color:var(--neg); } .ptable td.plan.pos { color:var(--pos); } .ptable td.plan.zero { color:var(--faint); }
+th[data-cur] { box-shadow:inset 0 -2px 0 var(--line-2); } .cf-tbl:not(.ptable) thead th[data-key] { cursor:pointer; } th.cf-endsel { color:var(--accent-fg); box-shadow:inset 0 -2px 0 var(--accent-fg); }          /* the month the charts end with */ th.plan { color:var(--muted); font-weight:500; } .ptable td.plan { color:var(--fg); background:var(--plan); } .ptable td.plan.neg { color:var(--neg); } .ptable td.plan.pos { color:var(--pos); } .ptable td.plan.zero { color:var(--faint); }
 td.neg { color:var(--neg); } td.pos { color:var(--pos); } td.zero { color:var(--faint); }
 td small.ct { font-size:.74em; color:color-mix(in srgb, currentColor 62%, transparent); letter-spacing:0; }      /* cents: there, but out of the way */
 button.disc { border:0; background:none; padding:0 4px 0 0; margin:0; min-height:0; color:var(--muted); font-size:11px; cursor:pointer; box-shadow:none; width:auto; }
@@ -616,14 +616,14 @@ a.more { white-space:nowrap; }
 .cf-tbl:not(.ptable) th:first-child, .cf-tbl:not(.ptable) td:first-child { width:290px; min-width:290px; max-width:290px; }     /* opening a row never moves the figures */
 .cf-tbl tr.sec td, .cf-tbl tr.sec td:first-child { background:var(--sub); font-weight:650; }
 .cf-tbl tr.sec2 td, .cf-tbl tr.sec2 td:first-child { background:var(--head); font-weight:600; }
-.chk { position:relative; } .off-mark { position:absolute; top:1px; right:2px; font-size:9.5px; line-height:1; color:var(--warn-fg); font-weight:700; cursor:help; }
+.chk { position:relative; } .off-mark { position:absolute; top:1px; right:1px; font-size:9px; line-height:1; color:color-mix(in srgb, var(--fg) 50%, transparent); font-weight:400; cursor:help; }          /* a note, no error */
 tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--line); } tr.fcf td:first-child { color:var(--fg); }
 .cf-key { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:7px; vertical-align:1px; }
 .cf-key.op { background:var(--cf-op); } .cf-key.inv { background:var(--cf-inv); } .cf-key.fin { background:var(--cf-fin); } .cf-key.ein { background:var(--pos); } .cf-key.aus { background:var(--neg); }
-.cf-tbl tr.sub td, .cf-tbl tr.sub td:first-child { background:var(--head); font-weight:500; } .cf-tbl tr.sub td:not(:first-child) { cursor:default; }
+.cf-tbl tr.sub td, .cf-tbl tr.sub td:first-child { background:var(--head); font-weight:500; } .cf-tbl.ptable tr.sub td:not(:first-child) { cursor:default; }
 .cf-tbl tr.total td, .cf-tbl tr.total td:first-child { background:var(--group); font-weight:700; border-top:1px solid var(--line-2); border-bottom-color:var(--line-2); }
 .cf-tbl tr.bal td:first-child, .cf-tbl tr.check td:first-child { padding-left:38px; }
-.cf-tbl tr.nwb td { border-top:8px solid var(--head); }          /* the cash flow statement ends: from cash to net worth a little apart */          /* the main rows stand at the left edge, their parts one step in */
+.cf-tbl tr.nwp td, .cf-tbl tr.nwp td:first-child { font-weight:400; } .cf-tbl tr.sec.nwp td, .cf-tbl tr.sec.nwp td:first-child { font-weight:560; } .cf-tbl tr.total.nwp td, .cf-tbl tr.total.nwp td:first-child { font-weight:600; }          /* from cash to net worth: a little lighter */          /* the main rows stand at the left edge, their parts one step in */
 .cf-tbl .hq { font-weight:400; } .cf-abbr { margin-left:6px; font-size:10.5px; font-weight:500; color:var(--muted); letter-spacing:.03em; } .cf-tbl .nw { white-space:nowrap; }
 /* the header cell of the table: the levels over the triangles (they start where the triangles stand), the gear at its end */
 .cf-tbl thead th:first-child { padding-top:4px; padding-bottom:4px; vertical-align:middle; }
@@ -655,7 +655,7 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 .cf-range-in { display:inline-flex; align-items:center; gap:2px; } .cf-shift { font-size:17px; line-height:1; padding:2px 8px; border-radius:7px; color:var(--fg); background:transparent; border:1px solid transparent; } .cf-shift:hover:not(:disabled) { background:var(--sub); border-color:var(--line); } .cf-shift:disabled { color:var(--faint); }
 .cf-grid { display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:14px; } .cf-grid > .cf-card { margin:0; min-width:0; }
 .cf-wide { grid-column:span 4; } .cf-full { grid-column:1 / -1; } .cf-narrow { grid-column:span 2; } .cf-half { grid-column:span 3; }
-.cf-mv { margin-left:auto; display:inline-flex; flex:0 0 auto; } .cf-card .lc-head > .seg, .cf-card .lc-head > button { margin-left:auto; }          /* title left, switch and arrows right */ .lc-head .cf-mv + * { margin-left:0; } .lc-head > .seg + .cf-mv, .lc-head > button:not(.hidden) + .cf-mv { margin-left:6px; }
+.cf-mv { margin-left:-4px; margin-right:auto; display:inline-flex; flex:0 0 auto; } .cf-card .lc-head > .seg, .cf-card .lc-head > button { margin-left:auto; }          /* the arrows right beside the title's ?, switch and buttons at the right */
 .cf-duo { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); column-gap:0; }          /* the line exactly in the middle, between the cards above */ .cf-duo.solo { grid-template-columns:minmax(0, 1fr); }
 .cf-duo-h { border-left:1px solid var(--line); padding-left:22px; min-width:0; } .cf-duo.solo .cf-duo-h { border-left:0; padding-left:0; } .cf-duo-p { min-width:0; padding-right:22px; } .cf-duo.solo .cf-duo-p { padding-right:0; }      /* one card, two parts */
 @media (max-width:1020px) { .cf-grid { grid-template-columns:minmax(0, 1fr); } .cf-wide, .cf-narrow, .cf-full, .cf-half { grid-column:auto; }
@@ -717,9 +717,11 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 .cf-heat-n { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:8px; }
 .cf-heat-v { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; text-align:right; padding-left:6px; align-self:center; white-space:nowrap; } .cf-heat-avg { text-align:right; padding-left:6px; }
 .cf-heat-sep { grid-column:1 / -1; height:1px; background:var(--line); margin:5px 0 3px; } .cf-heat-n.tot, .cf-heat-v.tot { font-weight:600; color:var(--fg); }
+.cf-br-hatch { pointer-events:none; } .cf-br-hatch-l { stroke:color-mix(in srgb, var(--head) 60%, transparent); stroke-width:1.6; }          /* bridges: running month, plan */
 .cf-ahead { fill:url(#cf-m-hatch); } .cf-hatch-l { stroke:var(--hatch); stroke-width:1.5; }
-.cf-heat-c.big { display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--fg) 75%, transparent); }          /* an outlier: framed, its amount inside */
-.cf-heat-x { font-size:9.5px; font-weight:700; color:var(--head); letter-spacing:-.2px; pointer-events:none; white-space:nowrap; }
+.cf-heat-c.big { display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--neg) 62%, var(--fg)); }          /* an outlier: framed (deeper red), its amount inside */
+.cf-heat.ein .cf-heat-c.big { box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--pos) 62%, var(--fg)); }
+.cf-heat-x { font-size:10px; font-weight:500; color:var(--fg); letter-spacing:-.2px; pointer-events:none; white-space:nowrap; } .cf-heat-x.mark { font-size:7px; }
 .cf-heat-c { height:var(--ch, 20px); border-radius:3px; background:color-mix(in srgb, var(--neg) var(--k), transparent); outline:none; } .cf-heat.ein .cf-heat-c { background:color-mix(in srgb, var(--pos) var(--k), transparent); }
 .cf-heat-c.none { background:var(--sub); } .cf-heat-c.part { background-image:repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, var(--head) 60%, transparent) 3px 5px); } .cf-heat-c:hover, .cf-heat-c:focus-visible { box-shadow:inset 0 0 0 1.5px var(--fg); }
 .cf-heat .cf-heat-c.ahead, .cf-heat.ein .cf-heat-c.ahead { background-image:repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 5px); }          /* running month, plan: over every other background */

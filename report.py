@@ -451,14 +451,18 @@ class Rows:
         self.vals: Dict[Tuple[str, str], Dict[str, float]] = defaultdict(lambda: defaultdict(float))
         self.meta: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self.det: Dict[Tuple[str, str], Dict[str, Dict[str, float]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+        self.ids: Dict[Tuple[str, str], Dict[str, List[int]]] = defaultdict(lambda: defaultdict(list))   # unclear rows: their bookings
 
     def add(self, section: str, gruppe: Optional[str] = None, zeile: str = "", mk: str = "", amount: float = 0.0, *,
             konto: Optional[str] = None, art: str = "kategorie", nw: bool = True, lbl: Optional[tuple] = None,
-            glbl: Optional[tuple] = None, ord: Optional[float] = None, objekt: Optional[str] = None, detail: Optional[str] = None):
+            glbl: Optional[tuple] = None, ord: Optional[float] = None, objekt: Optional[str] = None, detail: Optional[str] = None,
+            tx: Optional[int] = None):
         """zeile/gruppe stay German (keys of your planning); lbl/glbl: (text key, value) shown in your language; ord: place in
         the fixed outline (positions); objekt: the property the row belongs to; detail: the category inside the row."""
         key = (section, zeile)
         self.vals[key][mk] += amount
+        if tx is not None and len(self.ids[key][mk]) < 300:          # which bookings an unclear row holds (to look at them)
+            self.ids[key][mk].append(tx)
         if detail is not None:
             self.det[key][detail][mk] += amount
         if key not in self.meta:
@@ -1104,7 +1108,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         elif role in ("verbindlichkeiten", "forderungen") or role in ASSET_LIKE:
             R.add("Bewertung", acc.name, acc.name, mk, t.amount, konto=acc.uuid, art="konto", nw=True)
         else:
-            R.add("Unklar", "Konto ohne Position", acc.name + " (Position unbekannt)", mk, t.amount, art="unklar",
+            R.add("Unklar", "Konto ohne Position", acc.name + " (Position unbekannt)", mk, t.amount, art="unklar", tx=t.id,
                   lbl=("cf_position_unbekannt", acc.name), glbl=("cf_konto_ohne_position",)); unclear += 1
 
     for t in in_root:
@@ -1147,7 +1151,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                 R.add("Finanzierung", zeile=pacc.name + " / Tilgung", mk=mk, amount=t.amount, konto=pacc.uuid, art="tilgung", nw=False,
                       lbl=("cf_name", pacc.name), **_grp(FIN_GROUPS, "tilgung"))
             else:
-                R.add("Unklar", "Umbuchung", "Umbuchung nach " + pacc.name, mk, t.amount, art="unklar",
+                R.add("Unklar", "Umbuchung", "Umbuchung nach " + pacc.name, mk, t.amount, art="unklar", tx=t.id,
                       lbl=("cf_umbuchung_mit", pacc.name), glbl=("cf_umbuchung",)); unclear += 1
             continue
         if p is not None and p in depots:               # into a depot valued by its balances: its valuation takes the rest
@@ -1156,7 +1160,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             inbound[p][mk] += -t.amount
             continue
         if p is not None and p in root_leaves:          # an account of the area, but its booking is missing
-            R.add("Unklar", "Umbuchung", "Umbuchung nach %s ohne Gegenbuchung" % ledger.accounts[p].name, mk, t.amount, art="unklar",
+            R.add("Unklar", "Umbuchung", "Umbuchung nach %s ohne Gegenbuchung" % ledger.accounts[p].name, mk, t.amount, art="unklar", tx=t.id,
                   lbl=("cf_ohne_gegenbuchung", ledger.accounts[p].name), glbl=("cf_umbuchung",)); unclear += 1
             continue
         if p is not None and p in ledger.accounts and foreign_currency(ledger.accounts[p]):    # into another currency
@@ -1206,11 +1210,11 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                       lbl=("cf_name", pa), **_grp(INVEST_GROUPS, "bereiche"))
             continue
         if p is not None:
-            R.add("Unklar", "Umbuchung", "Umbuchung nach " + ledger.accounts[p].path, mk, t.amount, art="unklar",
+            R.add("Unklar", "Umbuchung", "Umbuchung nach " + ledger.accounts[p].path, mk, t.amount, art="unklar", tx=t.id,
                   lbl=("cf_umbuchung_mit", ledger.accounts[p].path), glbl=("cf_umbuchung",)); unclear += 1
             continue
         if by_cat[t.id]:
-            R.add("Unklar", "Umbuchung", "Umbuchung ohne erkannten Partner", mk, t.amount, art="unklar",
+            R.add("Unklar", "Umbuchung", "Umbuchung ohne erkannten Partner", mk, t.amount, art="unklar", tx=t.id,
                   lbl=("cf_ohne_partner",), glbl=("cf_umbuchung",)); unclear += 1
             continue
         # income and expenses: by position (MoneyMoney's category assigned to it), a property's in its own rows
@@ -1554,6 +1558,9 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
             for k in ("lbl", "glbl", "ord", "objekt"):
                 if m.get(k) is not None:
                     z[k] = m[k]
+            ids = R.ids.get((s, row))
+            if ids:                                      # an unclear row: its bookings per month
+                z["ids"] = {mk: list(v) for mk, v in ids.items() if v}
             det = R.det.get((s, row))
             if det:                                      # the categories inside a position (largest first)
                 z["details"] = sorted(({"kategorie": c, "werte": {mk: round(v.get(mk, 0.0), 2) for mk in mkeys}} for c, v in det.items()),

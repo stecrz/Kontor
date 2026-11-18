@@ -1,5 +1,16 @@
 # Änderungen
 
+## 3.13.30 (2026-11-18 02:47)
+- Tabelle: Bewegungen mit Vorzeichen (+); startet auf Hauptebenen mit Einnahmen/Ausgaben; Nettovermögen klappt zu Anfang/Ende auf.
+- Tabelle: Umschichtungen bis Nettovermögen etwas dünner statt abgesetzt; „✱“ statt „!“; Hand-Cursor überall; Aufklappen scrollt nicht mehr.
+- Tabelle: Klick auf „Unklar“-Zahlen zeigt die Buchungen dahinter.
+- Diagramme: Brücken nebeneinander, darunter Monatlicher Cashflow und Gesamtcashflow; „Ansicht zurücksetzen“; Pfeile neben dem Titel.
+- Brücken schraffiert bei laufendem Monat/Plan; Gesamtcashflow mit Zeitraum, füllt die Höhe, Beträge mit einer Nachkommastelle.
+- Heatmap: Ausreißer dezenter gerahmt, Betrag ohne Nachkommastelle, ▲ wenn zu schmal; Tooltip ohne Zusatztext.
+- Vorjahresvergleich: nur Stücke nahe 12/6 Uhr wechseln nach rechts.
+- Zeitraum: Klick auf eine Monatsüberschrift der Tabelle = 12 Monate bis dorthin; zwei Finger seitwärts über dem Monatlichen Cashflow verschieben ihn.
+- Tooltip Veränderung Bankguthaben: „= Netto-Cashflow“; Bilanz: „Ansicht zurücksetzen“.
+
 ## 3.13.29 (2026-11-18 01:41)
 - Protokoll: eine Datei (max. 2 MB), alte nummerierte gelöscht; keine Zeile je Seitenabruf oder 30-s-Prüfung; „gesperrt“ nur einmal.
 - Protokoll-Seite: Filter Alles / Hinweise / Warnungen & Fehler; Warnungen gelb, Fehler rot.
