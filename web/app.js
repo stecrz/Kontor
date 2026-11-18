@@ -2859,10 +2859,10 @@ function vKapitalfluss(editable) {
   // bank balance at the start and the end of a column (end of the month before / of its last month); unknown stays unknown
   const allM = [...(D.monate || []), ...(D.plan_monate || [])];
   // inflation-adjusted the balances would not add up (each month has its own factor): only in today's money they are left out
-  const bal = (label, at) => editable && S.real ? '' : `<tr class="bal"><td>${label}</td>${C.map(c => {
+  const bal = (label, at) => editable && S.real ? '' : `<tr class="bal"><td title="${esc(t('cf_bal_tip', (D.bilanz.positionen || {}).liquiditaet || ROLE.liquiditaet[0]))}">${label}</td>${C.map(c => {
     const m = at(c), b = m ? sums[m]?.Bankguthaben : undefined;
     if (b === undefined) return `<td class="${cls(null, c)}"></td>`;
-    return b === null ? `<td class="${cls(null, c)} muted small">${t('unbekannt')}</td>` : `<td class="${cls(b * defl(m), c)}">${FC(b * defl(m))}</td>`; }).join('')}</tr>`;
+    return b === null ? `<td class="${cls(null, c)} muted small">${t('unbekannt')}</td>` : `<td class="${cls(b * defl(m), c)} to-bal" data-bal="liq|${m}" title="${esc(t('cf_zur_bilanz_liq', ML(m)))}">${FC(b * defl(m))}</td>`; }).join('')}</tr>`;
   // operating: income and expenses within; then investing, financing and what could not be placed
   const opOpen = cfOpen('s:Operativ', 0);
   h += `<tr class="sec" data-tog="s:Operativ" data-depth="0"><td>${caret('s:Operativ', 0, opOpen)}${dot('op')}${named(SEC_LABEL.Operativ, SEC_HELP.Operativ, SEC_ABBR.Operativ)}</td>${nums(secTotal('Operativ'))}</tr>`;
@@ -2871,7 +2871,8 @@ function vKapitalfluss(editable) {
   const colState = (c, val) => { const ms = c.plan || c.mixed ? [] : c.months.filter(m => m <= D.ist_bis);
     if (!ms.length || ms.some(m => !ue[m])) return null; return ms.some(m => Math.abs(ue[m][val]) >= 0.005) ? 'off' : 'ok'; };
   const anyOff = val => C.some(c => colState(c, val) === 'off');
-  const checked = (vals, val) => vals.map((v, i) => `<td class="${cls(v, C[i])} chk">${FC(v)}${colState(C[i], val) === 'ok' ? `<span class="ok-mark" title="${esc(t('cf_abgleich_ok'))}">✓</span>` : ''}</td>`).join('');
+  // all adding up is the normal case: no mark; where it does not, a small "!" (the difference in the row "check against the balance sheet")
+  const checked = (vals, val) => vals.map((v, i) => `<td class="${cls(v, C[i])} chk">${FC(v)}${colState(C[i], val) === 'off' ? `<span class="off-mark" title="${esc(t('cf_abgleich_ab'))}">!</span>` : ''}</td>`).join('');
   // Free Cashflow (CFO + CFI): what is left after living and investing -- or what had to be financed (from the level "positions")
   const fcf = (() => { const o = secTotal('Operativ'), i2 = secTotal('Investitionen'); return o.map((v, i) => v + i2[i]); })();
   h += section('Investitionen') + (cfLevel() >= 2 ? `<tr class="fcf"><td>${NOCARET}${named(t('cf_fcf'), 'cf_fcf', 'FCF')}</td>${nums(fcf)}</tr>` : '') + section('Finanzierung') + section('Unklar');
@@ -2886,6 +2887,7 @@ function vKapitalfluss(editable) {
   const moves = [];
   for (const sek of KF.sektionen) if (sek.name !== 'Bewertung') for (const z of sek.zeilen) if (!z.nw) { const l = gLabel(z); let m = moves.find(x => x.l === l); if (!m) moves.push(m = {l, zs: []}); m.zs.push(z); }
   const mv2 = moves.map(m => ({l: m.l, v: C.map(c => -m.zs.reduce((a, z) => a + vOf(z, c), 0))})).filter(m => S.alle || m.v.some(v => Math.abs(v) >= 0.005));
+  const h0 = h.length;          // from here on no longer the cash flow statement: from cash to net worth, set a little apart
   if (mv2.length) {
     const uOpen = cfOpen('t:umsch', 2), uv = C.map((_, i) => mv2.reduce((a, m) => a + m.v[i], 0));
     h += `<tr class="sec umsch" data-tog="t:umsch" data-depth="0"><td>${caret('t:umsch', 0, uOpen)}${named(t('cf_umschichtungen'), 'cf_umsch')}</td>${nums(uv)}</tr>`;
@@ -2894,6 +2896,7 @@ function vKapitalfluss(editable) {
   // what changed without a payment, and net worth
   h += section('Bewertung') + `<tr class="total"><td>${NOCARET}${named(t('cf_veraenderung_nv'), 'cf_nv')}</td>${checked(secTotal('Nettovermoegen_delta'), 'unerklaert')}</tr>`;
   if (anyOff('unerklaert')) h += check('cf_abgleich_nv', 'unerklaert', 'gruende');
+  h = h.slice(0, h0) + h.slice(h0).replace('<tr class="', '<tr class="nwb ');
   h += '</tbody></table></div>';
   if (editable) h += vPlanExtras(D) + `<div class="note">${t('methoden_12_6_monate_der').trim()}</div>`;
   else h += vCfCharts(D);
@@ -2948,22 +2951,34 @@ function vPlanExtras(D) {
 // investing, financing) as at the table's sections; the table holds every figure.
 const CF = {ro: null, tips: []};
 const cfDone = D => (D.monate || []).filter(m => m < D.ist_bis);
+// what can be chosen: the closed months, the running one and (with the plan on) the plan months -- the last two hatched in the charts
+const cfPick = D => [...new Set([...(D.monate || []), ...(planOn() ? D.plan_monate || [] : [])])].sort();
+const cfIsOpen = (D, m) => m >= D.ist_bis;
+// the presets: the last 12 months, the running year (so far) and the two before
 function cfPeriods(D) {
-  const years = [...new Set(cfDone(D).map(m => m.slice(0, 4)))].sort().reverse();
-  return [['12m', t('cf_12_monate')], ...years.slice(0, 4).map(y => [y, y])];
+  const y0 = +String(D.ist_bis || '').slice(0, 4), done = cfDone(D);
+  return [['12m', t('cf_12_monate')], ...[y0, y0 - 1, y0 - 2].map(String).filter(y => done.some(m => m.startsWith(y))).map(y => [y, y])];
 }
 const mShift = (m, n) => { const k = +m.slice(0, 4) * 12 + +m.slice(5) - 1 + n; return `${Math.floor(k / 12)}-${String(k % 12 + 1).padStart(2, '0')}`; };
 // the months of the period -- the last 12, a calendar year or a range of your own (von/bis) -- and those to compare with: the
 // same months a year earlier (a period longer than a year: whole years further back, so it does not overlap and the seasons match)
 function cfMonths(D, key) {
-  const ms = cfDone(D);
-  let cur = /^\d{4}$/.test(key) ? ms.filter(m => m.startsWith(key)) : key === 'eigen' && S.cfVon && S.cfBis ? ms.filter(m => m >= S.cfVon && m <= S.cfBis) : ms.slice(-12);
-  if (!cur.length) cur = ms.slice(-12);
-  const back = Math.max(1, Math.ceil(cur.length / 12)) * 12, prev = cur.map(m => mShift(m, -back)).filter(m => ms.includes(m));
+  const ms = cfDone(D), all = cfPick(D);
+  let cur = /^\d{4}$/.test(key) ? ms.filter(m => m.startsWith(key)) : key === 'eigen' && S.cfVon && S.cfBis ? all.filter(m => m >= S.cfVon && m <= S.cfBis) : ms.slice(-12);
+  if (!cur.length || (key === 'eigen' && S.cfBis && !all.includes(S.cfBis))) { cur = ms.slice(-12); if (key === 'eigen') S.cfZeit = '12m'; }
+  const back = Math.max(1, Math.ceil(cur.length / 12)) * 12, prev = cur.map(m => mShift(m, -back)).filter(m => all.includes(m));
   return [cur, prev.length === cur.length ? prev : []];
 }
 const cfSum = (D, name, months) => months.reduce((a, m) => a + ((D.kapitalfluss.summen || {})[m]?.[name] ?? 0), 0);
-const cfRowSum = (z, months) => months.reduce((a, m) => a + (z.werte[m] ?? 0), 0);
+// a row's values: actual figures, for plan months the plan (as in the table)
+const cfVals = z => { const w = CF.vals || (CF.vals = new WeakMap()); let v = w.get(z); if (!v) w.set(z, v = Object.assign({}, z.werte, (z.plan && z.plan.werte) || {})); return v; };
+const cfRowSum = (z, months) => { const v = cfVals(z); return months.reduce((a, m) => a + (v[m] ?? 0), 0); };
+// a row's categories; in plan months the plan is per position, so it stands as a part of its own ("as planned") -- the parts add up
+const cfDet = z => { const w = CF.dets || (CF.dets = new WeakMap()); let r = w.get(z); if (r) return r;
+  const ds = z.details || [], pv = (z.plan && z.plan.werte) || {}, rest = {};
+  for (const m of Object.keys(pv)) { const x = (cfVals(z)[m] ?? 0) - ds.reduce((a, d) => a + ((d.werte || {})[m] ?? 0), 0); if (Math.abs(x) >= 0.005) rest[m] = x; }
+  r = Object.keys(rest).length && ds.length ? [...ds, {kategorie: null, plan: true, werte: rest}] : ds; w.set(z, r); return r; };
+const cfDetName = d => d.plan ? t('cf_laut_plan') : d.kategorie ? d.kategorie.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt');
 const cfPct = (part, whole) => whole ? Math.round(part / whole * 100) : null;
 // change against the period before as a short text ("+12 %"), and whether that is good
 function cfChange(cur, prev, upGood) {
@@ -2990,11 +3005,11 @@ function vCfCharts(D) {
   const per = cfPeriods(D); if (S.cfZeit !== 'eigen' && !per.some(p => p[0] === S.cfZeit)) S.cfZeit = '12m';
   const [cur] = cfMonths(D, S.cfZeit);
   if (!cur.length) return '';
-  const sel = (id, v, lab) => `<span class="cf-sel"><select id="${id}" aria-label="${esc(lab)}">${ist.map(m => `<option value="${m}"${m === v ? ' selected' : ''}>${esc(ML(m))}</option>`).join('')}</select></span>`;
-  let h = `<div class="cf-charts"><div class="toolbar cf-period"><div class="seg small" id="cf-zeit">${per.map(([k, l]) => `<button data-z="${k}" class="${S.cfZeit === k ? 'on' : ''}">${l}</button>`).join('')}</div>`
-    + `<span class="cf-range"><button class="cf-shift icon" data-shift="-1" title="${esc(t('cf_monat_zurueck'))}" aria-label="${esc(t('cf_monat_zurueck'))}" ${ist.indexOf(cur[0]) <= 0 ? 'disabled' : ''}>‹</button>`
-    + `<span class="cf-range-in" title="${esc(t('cf_zeitraum_tip'))}">${sel('cf-von', cur[0], t('cf_von'))}<span class="muted">–</span>${sel('cf-bis', cur[cur.length - 1], t('cf_bis'))}</span>`
-    + `<button class="cf-shift icon" data-shift="1" title="${esc(t('cf_monat_vor'))}" aria-label="${esc(t('cf_monat_vor'))}" ${ist.indexOf(cur[cur.length - 1]) >= ist.length - 1 ? 'disabled' : ''}>›</button></span></div>`;
+  const pick = cfPick(D), mb = (id, v, lab) => `<button class="cf-mbtn${cfIsOpen(D, v) ? ' open' : ''}" id="${id}" data-m="${v}" aria-haspopup="dialog" aria-label="${esc(lab + ': ' + MLL(v))}">${esc(ML(v))}</button>`;
+  let h = `<div class="cf-charts"><div class="toolbar cf-period"><span class="cf-range"><button class="cf-shift icon" data-shift="-1" title="${esc(t('cf_monat_zurueck'))}" aria-label="${esc(t('cf_monat_zurueck'))}" ${pick.indexOf(cur[0]) <= 0 ? 'disabled' : ''}>‹</button>`
+    + `<span class="cf-range-in" title="${esc(t('cf_zeitraum_tip'))}">${mb('cf-von', cur[0], t('cf_von'))}<span class="muted">–</span>${mb('cf-bis', cur[cur.length - 1], t('cf_bis'))}</span>`
+    + `<button class="cf-shift icon" data-shift="1" title="${esc(t('cf_monat_vor'))}" aria-label="${esc(t('cf_monat_vor'))}" ${pick.indexOf(cur[cur.length - 1]) >= pick.length - 1 ? 'disabled' : ''}>›</button></span>`
+    + `<div class="seg small" id="cf-zeit">${per.map(([k, l]) => `<button data-z="${k}" class="${S.cfZeit === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
   if (!['Einnahmen', 'Ausgaben', 'Investitionen', 'Finanzierung', 'Unklar'].some(n => cur.some(m => Math.abs((D.kapitalfluss.summen || {})[m]?.[n] ?? 0) >= 0.005)))
     return h + `<div class="card cf-empty muted small">${t('cf_keine_zahlungen')}</div></div>`;          // nothing to draw
   CF.tips = [];
@@ -3007,8 +3022,8 @@ function vCfCharts(D) {
   const pie = cfPie(D, cur, prev);
   h += `<div class="cf-grid">` + card('cf-half', 'cf_bruecke', `<button id="cf-br-reset" class="small secondary hidden">${t('cf_br_ganz')}</button>`, 'cf-bridge')
     + card('cf-half', 'cf_je_monat_t', '', 'cf-months')          // no legend: the colours are the table's, the tooltip names them
-    + pie + cfHeatCard(pie ? 'cf-half' : 'cf-full') + su + (cfWealthTree(D, cur, prev).some(r => r.kind !== 'tot')
-      ? card(su ? 'cf-half' : 'cf-full', 'cf_verm_bruecke', `<button id="cf-wb-reset" class="small secondary hidden">${t('cf_br_ganz')}</button>`, 'cf-wbridge') : '')
+    + `<div class="card bch cf-card cf-full cf-duo${pie ? '' : ' solo'}">${pie}${cfHeatCard()}</div>` + su + (cfWealthTree(D, cur, prev).some(r => r.kind !== 'tot')
+      ? card(su ? 'cf-narrow' : 'cf-full', 'cf_verm_bruecke', `<button id="cf-wb-reset" class="small secondary hidden">${t('cf_br_ganz')}</button>`, 'cf-wbridge') : '')
     + `</div><div class="cf-tip hidden" id="cf-tip" role="tooltip"></div></div>`;
   return h;
 }
@@ -3018,8 +3033,22 @@ const cfTipTot = (name, val) => `<div class="tot"><i class="sw"></i><span>${esc(
 function cfTip(html) { CF.tips.push(html); return CF.tips.length - 1; }
 
 // 1. Bridge: from the cash at the start to the cash at the end -- income, expenses, each kind of investing and financing
+const cfMonthBefore = (D, m) => { const all = [...new Set([...(D.monate || []), ...(D.plan_monate || [])])].sort(); return all[all.indexOf(m) - 1] || mShift(m, -1); };
+// from a figure in the cash flow to the balance sheet: its month in view, the cell lights up (cash: the position of cash; net
+// worth: its total row)
+function cfToBalance(bal) { S.balFlash = bal; go('#balance'); }
+function balFlash(main, tries = 0) {
+  const f = S.balFlash; if (!f) return; const [kind, m] = f.split('|'), w = $('.wrap.snap', main); if (!w) { S.balFlash = null; return; }
+  const th = $(`th[data-key="${m}"]`, w) || (S.modus === 'jahre' ? $(`th[data-key="${m.slice(0, 4)}"]`, w) : null);
+  if (!th) { if (tries < 1) { bchJump(m); setTimeout(() => balFlash($('#main'), tries + 1), 450); } else S.balFlash = null; return; }
+  S.balFlash = null; bchJump(m);
+  const idx = [...th.parentNode.children].indexOf(th);
+  const tr = kind === 'nw' ? [...$$('tr.total', w)].find(r => r.querySelector('.nw-sw')) : $('tr[data-pos="liquiditaet"]', w);
+  const c = tr && tr.children[idx]; if (!c) return;
+  c.classList.remove('flash-hit'); void c.offsetWidth; c.classList.add('flash-hit'); tr.scrollIntoView({block: 'center', behavior: 'smooth'});
+}
 function cfBridgeSteps(D, months, prev) {
-  const sums = D.kapitalfluss.summen || {}, allM = D.monate || [];
+  const sums = D.kapitalfluss.summen || {}, allM = [...new Set([...(D.monate || []), ...(D.plan_monate || [])])].sort();
   const before = allM[allM.indexOf(months[0]) - 1], last = months[months.length - 1];
   const start = before ? sums[before]?.Bankguthaben : null, end = sums[last]?.Bankguthaben;
   const known = start != null && end != null;
@@ -3054,7 +3083,7 @@ function cfBridgeTree(D, months, prev) {
     return kids.slice(0, 7).concat([{id: id + '|~', label: t('cf_uebrige', rest.length), v: sum(rest, k => k.v), p: cfRestP(rest, has), kids: null}]);
   };
   const cats = (id, zs) => { const m = new Map();
-    for (const z of zs) for (const d of z.details || []) { const k = d.kategorie || '~', c = m.get(k) || {id: id + '|' + k, label: d.kategorie ? d.kategorie.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt'), v: 0, p: has ? 0 : null, kids: null};
+    for (const z of zs) for (const d of cfDet(z)) { const k = d.plan ? '~plan' : d.kategorie || '~', c = m.get(k) || {id: id + '|' + k, label: cfDetName(d), v: 0, p: has ? 0 : null, kids: null};
       c.v += cfRowSum(d, months); if (has) c.p += cfRowSum(d, prev); m.set(k, c); }
     return limit(id, [...m.values()]); };
   const rows = (id, zs) => { const m = new Map();
@@ -3070,8 +3099,8 @@ function cfBridgeTree(D, months, prev) {
   };
   const ACT = {op: 'Operativ', inv: 'Investitionen', fin: 'Finanzierung'}, out = [];
   for (const s of steps) {
-    if (s.total) { const first = s === steps[0] && steps.length > 1;
-      out.push({id: s.label, kind: 'tot', label: s.label === t('bankguthaben_anfang') ? t('cf_anfangsbestand') : s.label === t('bankguthaben_ende') ? t('cf_endbestand') : s.label, full: s.label, v: s.v, first }); continue; }
+    if (s.total) { const first = s === steps[0] && steps.length > 1, pl = !first && (D.plan_monate || []).includes(months[months.length - 1]);
+      out.push({id: s.label, kind: 'tot', bal: s.label === t('bankguthaben_anfang') ? 'liq|' + cfMonthBefore(D, months[0]) : s.label === t('bankguthaben_ende') ? 'liq|' + months[months.length - 1] : null, label: (s.label === t('bankguthaben_anfang') ? t('cf_anfangsbestand') : s.label === t('bankguthaben_ende') ? t('cf_endbestand') : s.label) + (pl ? ' ' + t('cf_plan_klammer') : ''), full: s.label, v: s.v, first }); continue; }
     if (!ACT[s.act]) { out.push({id: s.label, kind: 'one', label: s.label === t('cf_abgleich') ? t('cf_abgleich_kurz') : s.label, full: s.label, v: s.v, p: null, kids: null}); continue; }
     let g = out.find(r => r.act === s.act);
     if (!g) out.push(g = {id: s.act, kind: 'act', act: s.act, label: SEC_LABEL[ACT[s.act]], abbr: SEC_ABBR[ACT[s.act]], v: 0, kids: []});
@@ -3087,9 +3116,9 @@ function cfBridgeTree(D, months, prev) {
 // withdrawals, money moved out of what Kontor sees), a change in value, unclear -- or nothing (investing, repaying: null)
 const cfNwKind = (sec, z) => !z.nw ? null : sec === 'Bewertung' ? 'wert' : z.art === 'zins' ? 'spar' : sec === 'Einnahmen' || sec === 'Ausgaben' ? 'spar' : sec === 'Unklar' ? 'unk' : 'ext';
 function cfWealthTree(D, months, prev) {
-  const has = prev.length > 0, nwOf = (D.bilanz || {}).nettovermoegen || {}, allM = D.monate || [];
-  const before = allM[allM.indexOf(months[0]) - 1], last = months[months.length - 1];
-  const start = before ? nwOf[before] : null, end = nwOf[last], known = start != null && end != null;
+  const has = prev.length > 0, bil = D.bilanz || {}, allM = cfPick(D), nwAt = m => (bil.nettovermoegen || {})[m] ?? ((bil.projektion || {}).nettovermoegen || {})[m];
+  const before = allM[allM.indexOf(months[0]) - 1] || (D.monate || [])[(D.monate || []).indexOf(months[0]) - 1], last = months[months.length - 1];
+  const start = before ? nwAt(before) : null, end = nwAt(last), known = start != null && end != null;
   const sum = (list, f) => list.reduce((a, x) => a + f(x), 0);
   const limit = (id, kids) => {          // at most eight parts: the smaller ones together as "the others"
     kids = kids.filter(k => Math.abs(k.v) >= 0.5).sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
@@ -3098,7 +3127,7 @@ function cfWealthTree(D, months, prev) {
     return kids.slice(0, 7).concat([{id: id + '|~', label: t('cf_uebrige', rest.length), v: sum(rest, k => k.v), p: cfRestP(rest, has), kids: null}]);
   };
   const cats = (id, zs) => { const m = new Map();
-    for (const z of zs) for (const d of z.details || []) { const k = d.kategorie || '~', c = m.get(k) || {id: id + '|' + k, label: d.kategorie ? d.kategorie.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt'), v: 0, p: has ? 0 : null, kids: null};
+    for (const z of zs) for (const d of cfDet(z)) { const k = d.plan ? '~plan' : d.kategorie || '~', c = m.get(k) || {id: id + '|' + k, label: cfDetName(d), v: 0, p: has ? 0 : null, kids: null};
       c.v += cfRowSum(d, months); if (has) c.p += cfRowSum(d, prev); m.set(k, c); }
     return limit(id, [...m.values()]); };
   const node = (id, label, zs, by) => {          // a step and its parts: rows grouped by their name (or by the account, for values)
@@ -3110,10 +3139,14 @@ function cfWealthTree(D, months, prev) {
   };
   const by = {ein: [], aus: [], zins: [], ext: [], wert: [], unk: []};
   for (const sek of D.kapitalfluss.sektionen) for (const z of sek.zeilen) { const k = cfNwKind(sek.name, z); if (k) by[k === 'spar' ? (z.art === 'zins' ? 'zins' : sek.name === 'Einnahmen' ? 'ein' : 'aus') : k].push(z); }
+  // plan months: what the plan expects the assets to gain or lose beyond these rows (the table's changes in value hold it too)
+  const sums = D.kapitalfluss.summen || {}, wz = (D.kapitalfluss.sektionen.find(x => x.name === 'Bewertung') || {zeilen: []}).zeilen, planW = {};
+  for (const m of [...months, ...prev]) if ((D.plan_monate || []).includes(m)) { const x = (sums[m]?.Bewertung ?? 0) - wz.reduce((a, z) => a + (cfVals(z)[m] ?? 0), 0); if (Math.abs(x) >= 0.005) planW[m] = x; }
+  if (Object.keys(planW).length) by.wert.push({zeile: t('cf_wert_plan'), gruppe: t('cf_wert_plan'), art: 'plan', nw: true, werte: planW, details: []});
   // a group's amount and its year before from all its rows (parts under 50 cents are not shown, but count)
   const out = [], grp = (act, label, zs, kids) => { const v = sum(zs, z => cfRowSum(z, months)); if (Math.abs(v) < 0.005 && !kids.length) return;
     out.push({id: act, kind: 'act', act, label, v, p: has ? sum(zs, z => cfRowSum(z, prev)) : null, kids: kids.filter(k => Math.abs(k.v) >= 0.5)}); };
-  if (known) out.push({id: 'nw0', kind: 'tot', label: t('cf_nv_anfang'), v: start});
+  if (known) out.push({id: 'nw0', kind: 'tot', bal: 'nw|' + before, label: t('cf_nv_anfang'), v: start});
   grp('spar', t('cf_gespart_g'), [...by.ein, ...by.aus, ...by.zins], [node('spar|ein', t('einnahmen'), by.ein, zLabel), node('spar|aus', t('ausgaben'), by.aus, zLabel), node('spar|zins', t('zinsen'), by.zins, zLabel)]);
   grp('ext', t('cf_einlagen_entnahmen'), by.ext, by.ext.length ? node('ext', '', by.ext, zLabel).kids || [] : []);
   grp('wert', t('cf_wertaenderungen'), by.wert, by.wert.length ? node('wert', '', by.wert, gLabel).kids || [] : []);
@@ -3121,7 +3154,8 @@ function cfWealthTree(D, months, prev) {
   // what the balance sheet shows beyond these rows (unknown balances, corrections): its own step, as in the cash bridge
   const moved = sum(out, r => r.kind === 'tot' ? 0 : r.v), off = known ? end - start - moved : 0;
   if (Math.abs(off) >= 0.5) out.push({id: 'off', kind: 'one', label: t('cf_abgleich_kurz'), long: t('cf_abgleich'), v: off, p: null, kids: null});
-  out.push(known ? {id: 'nw1', kind: 'tot', label: t('cf_nv_ende'), v: end} : {id: 'nw1', kind: 'tot', label: t('cf_veraenderung_nv'), v: moved});
+  const pl = (D.plan_monate || []).includes(last) ? ' ' + t('cf_plan_klammer') : '';          // ending in the plan: a planned figure, named so
+  out.push(known ? {id: 'nw1', kind: 'tot', bal: 'nw|' + last, label: t('cf_nv_ende') + pl, v: end} : {id: 'nw1', kind: 'tot', label: t('cf_veraenderung_nv') + pl, v: moved});
   return out;
 }
 // both bridges are drawn alike: where each keeps its open rows and its zoom
@@ -3181,7 +3215,8 @@ function cfDrawBridge(which = 'liq') {
     }
     // no tooltip: the amount and its change stand at the right, the parts open with a click (a shortened name: its full one)
     const cutName = r.label.length > room;
-    g += `<g class="cf-br-row ${kind}${r.br ? ' br' : ''}${r.hasKids ? ' more' : ''}"${r.hasKids ? ` tabindex="0" role="button" data-br="${esc(r.id)}" aria-expanded="${r.br}"` : ''} aria-label="${esc(r.label + ': ' + cfEur(r.v))}">${cutName || r.long ? `<title>${esc(r.long || r.label)}</title>` : ''}<rect class="cf-br-bg" x="0" y="${y}" width="${W}" height="${h}" rx="4"/>`
+    const balT = r.bal ? t(r.bal.startsWith('nw') ? 'cf_zur_bilanz_nv' : 'cf_zur_bilanz_liq', ML(r.bal.slice(3))) : '';          // a total: a click shows it in the balance sheet
+    g += `<g class="cf-br-row ${kind}${r.br ? ' br' : ''}${r.hasKids || r.bal ? ' more' : ''}"${r.hasKids ? ` tabindex="0" role="button" data-br="${esc(r.id)}" aria-expanded="${r.br}"` : r.bal ? ` tabindex="0" role="link" data-bal="${esc(r.bal)}"` : ''} aria-label="${esc(r.label + ': ' + cfEur(r.v))}">${cutName || r.long || balT ? `<title>${esc(balT || r.long || r.label)}</title>` : ''}<rect class="cf-br-bg" x="0" y="${y}" width="${W}" height="${h}" rx="4"/>`
       + dsc + `<text class="cf-br-n" x="${nx}" y="${(mid + 4).toFixed(1)}">${esc(cutName ? r.label.slice(0, Math.max(3, room - 1)) + '…' : r.label)}${r.kind === 'act' ? `<tspan class="cf-br-dot ${r.act}" dx="4" dy="-1">●</tspan>` : ''}${r.abbr ? `<tspan class="cf-br-abbr" dx="3" dy="${r.kind === 'act' ? 1 : 0}">${r.abbr}</tspan>` : ''}</text>`
       + mark + `<text class="cf-br-v" x="${(W - chW - 4).toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end">${(r.kind === 'tot' || r.v < 0 ? '' : '+') + esc(F0(r.v))}</text>`
       + (chW && ch ? `<text class="cf-br-c ${ch.cls}" x="${(W - 2).toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end" data-cftip="${cfTip(`<div class="cf-tip-h">${esc(r.label)}</div><div class="cf-tip-kv"><span>${esc(t('betrag'))}</span><b>${cfEur(r.v)}</b><span>${esc(t('cf_vorjahr'))}</span><b>${r.p != null ? cfEur(r.p) : '–'}</b><span>${esc(t('cf_veraenderung'))}</span><b class="${ch.cls}">${esc(ch.txt)}</b></div>`
@@ -3235,7 +3270,9 @@ function cfDrawMonths() {
   const y = v => P.t + (y1 - Math.max(y0, Math.min(y1, v))) / ((y1 - y0) || 1) * (H1 - P.t);
   const slot = (W - P.l - P.r) / bs.length, bw = Math.max(2, Math.min(22, slot - 5)), x = i => P.l + slot * i + (slot - bw) / 2, cx = i => P.l + slot * (i + 0.5);
   const every = Math.max(1, Math.ceil((byYear ? 34 : 46) / slot));
-  let g = '';
+  // the running month and plan months: hatched behind their bars, as in the table
+  let g = `<defs><pattern id="cf-m-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="cf-hatch-l" x1="0" y1="0" x2="0" y2="6"/></pattern></defs>`
+    + bs.map((b, i) => msOf(b).some(m => cfIsOpen(D, m)) ? `<rect class="cf-ahead" x="${(P.l + slot * i + 1).toFixed(1)}" y="2" width="${(slot - 2).toFixed(1)}" height="${H - 20}" rx="3"/>` : '').join('');
   for (const v of ticks) g += `<line class="cf-grid-l${Math.abs(v) < step * 1e-6 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="cf-tick" x="${P.l - 7}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end">${Fk(v, W >= 640, ref)}</text>`;
   bs.forEach((b, i) => {
     for (const sign of [1, -1]) {
@@ -3311,7 +3348,7 @@ function cfDrawMonths() {
 function cfPieItems(D, sec, months, prev) {
   const sek = D.kapitalfluss.sektionen.find(s => s.name === sec) || {zeilen: []}, has = prev.length > 0, sg = sec === 'Ausgaben' ? -1 : 1;
   let items = sek.zeilen.map(z => ({label: zLabel(z), v: sg * cfRowSum(z, months), p: has ? sg * cfRowSum(z, prev) : null,
-    parts: (z.details || []).map(d => ({label: d.kategorie ? d.kategorie.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt'), kat: d.kategorie || null, v: sg * cfRowSum(d, months), p: has ? sg * cfRowSum(d, prev) : null})).filter(d => d.v >= 0.5)}))
+    parts: cfDet(z).map(d => ({label: cfDetName(d), kat: d.kategorie || null, plan: !!d.plan, v: sg * cfRowSum(d, months), p: has ? sg * cfRowSum(d, prev) : null})).filter(d => d.v >= 0.5)}))
     .filter(e => e.v >= 0.5).sort((a, b) => b.v - a.v);
   if (items.length > 7) { const rest = items.slice(6); items = items.slice(0, 6).concat([{label: t('cf_uebrige', rest.length), v: rest.reduce((a, e) => a + e.v, 0), p: cfRestP(rest, has), parts: rest.map(e => ({label: e.label, v: e.v, p: e.p, kats: e.parts.map(d => d.kat).filter(Boolean)})), rest: true}]); }
   return items;
@@ -3326,8 +3363,7 @@ function cfPie(D, months, prev) {
   const yrs = has ? Math.round(((+months[0].slice(0, 4) - +prev[0].slice(0, 4)) * 12 + (+months[0].slice(5) - +prev[0].slice(5))) / 12) : 0;
   const title = !has ? t(up ? 'cf_einnahmen_kuchen' : 'cf_ausgaben_kuchen') : yrs === 1 ? t(up ? 'cf_einnahmen_vorjahr' : 'cf_ausgaben_vorjahr') : t(up ? 'cf_einnahmen_vorjahre' : 'cf_ausgaben_vorjahre', yrs);
   CF.pie = items.length ? {items, all, before, up, title, neg, tc: cfChange(all, before, up), prev: has, span: span(months), spanPrev: has ? span(prev) : ''} : null;
-  const seg = `<div class="seg small" id="cf-pie-art" role="group">${[['aus', 'ausgaben'], ['ein', 'einnahmen']].map(([k, l]) => `<button data-a="${k}" class="${(up ? 'ein' : 'aus') === k ? 'on' : ''}" aria-pressed="${(up ? 'ein' : 'aus') === k}">${t(l)}</button>`).join('')}</div>`;
-  return `<div class="card bch cf-card cf-half" id="cf-pie-card"><div class="lc-head"><b class="lc-title">${title}${hq('cf_ausgaben_kuchen')}</b>${seg}</div>`
+  return `<div class="cf-duo-p" id="cf-pie-card"><div class="lc-head"><b class="lc-title">${title}${hq('cf_ausgaben_kuchen')}</b></div>`
     + (items.length ? `<div class="cf-plot" id="cf-pie"></div>` : `<div class="cf-empty muted small">${t('cf_keine_zahlungen')}</div>`) + `</div>`;
 }
 function cfDrawPie() {
@@ -3424,7 +3460,9 @@ const cfEur = v => F0(v) + ' €';
 // 9. Expenses (or income, as the ring beside it) by month and position: the darker, the more that month -- one scale for every
 // cell, so a large position stands out against a small one; the amount in the tooltip
 const cfHeatQ = () => { const D = B(); return !!D && cfMonths(D, S.cfZeit)[0].length > 24; };
-const cfHeatCard = cls => `<div class="card bch cf-card ${cls}" id="cf-heat-card"><div class="lc-head"><b class="lc-title">${t(S.cfPieArt === 'ein' ? (cfHeatQ() ? 'cf_heatmap_ein_q' : 'cf_heatmap_ein') : (cfHeatQ() ? 'cf_heatmap_q' : 'cf_heatmap'))}${hq('cf_heatmap')}</b></div><div id="cf-heat"></div></div>`;
+// expenses or income: one switch for the ring and the heat map beside it (at the right of their card)
+const cfArtSeg = () => { const up = S.cfPieArt === 'ein'; return `<div class="seg small" id="cf-pie-art" role="group">${[['aus', 'ausgaben'], ['ein', 'einnahmen']].map(([k, l]) => `<button data-a="${k}" class="${(up ? 'ein' : 'aus') === k ? 'on' : ''}" aria-pressed="${(up ? 'ein' : 'aus') === k}">${t(l)}</button>`).join('')}</div>`; };
+const cfHeatCard = () => `<div class="cf-duo-h" id="cf-heat-card"><div class="lc-head"><b class="lc-title">${t(S.cfPieArt === 'ein' ? (cfHeatQ() ? 'cf_heatmap_ein_q' : 'cf_heatmap_ein') : (cfHeatQ() ? 'cf_heatmap_q' : 'cf_heatmap'))}${hq('cf_heatmap')}</b>${cfArtSeg()}</div><div id="cf-heat"></div></div>`;
 function cfDrawHeat() {
   // per row the position's average month at the right; hovering a cell shows what made up that month (categories, largest first)
   const D = B(), el = $('#cf-heat'); if (!D || !el) return;
@@ -3432,13 +3470,14 @@ function cfDrawHeat() {
   const all = cfMonths(D, S.cfZeit)[0], q = all.length > 24, bk = m => q ? m.slice(0, 4) + '-Q' + Math.ceil(+m.slice(5) / 3) : m;
   const cnt = {}; all.forEach(m => { cnt[bk(m)] = (cnt[bk(m)] || 0) + 1; });
   const ms = [...new Set(all.map(bk))], sek = D.kapitalfluss.sektionen.find(s => s.name === sec) || {zeilen: []}, by = new Map();
+  const ahead = new Set(all.filter(m => cfIsOpen(D, m)).map(bk));          // the running month and plan months: hatched
   const lab = (k, full) => q ? k.slice(5) + ' ' + k.slice(2, 4) : full ? ML(k) : MONATE_LANG[+k.slice(5) - 1].slice(0, 3);
-  const catName = d => d.kategorie ? d.kategorie.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt');
+  const catName = cfDetName;
   for (const z of sek.zeilen) {
     const k = zLabel(z), r = by.get(k) || {label: k, v: {}, cats: new Map(), paths: new Set(), est: false, none: !!(z.lbl && z.lbl[0] === 'cf_ohne_kategorie')};
     for (const d of z.details || []) { if (d.kategorie) r.paths.add(d.kategorie); else r.est = true; }
-    ms.forEach(m => { r.v[m] = r.v[m] || 0; }); all.forEach(m => { r.v[bk(m)] += sg * (z.werte[m] || 0); });
-    for (const d of z.details || []) { const n = catName(d), c = r.cats.get(n) || {}; all.forEach(m => { c[bk(m)] = (c[bk(m)] || 0) + sg * ((d.werte || {})[m] || 0); }); r.cats.set(n, c); }
+    ms.forEach(m => { r.v[m] = r.v[m] || 0; }); all.forEach(m => { r.v[bk(m)] += sg * (cfVals(z)[m] || 0); });
+    for (const d of cfDet(z)) { const n = catName(d), c = r.cats.get(n) || {}; all.forEach(m => { c[bk(m)] = (c[bk(m)] || 0) + sg * ((d.werte || {})[m] || 0); }); r.cats.set(n, c); }
     by.set(k, r);
   }
   const all2 = [...by.values()].map(r => ({...r, sum: ms.reduce((a, m) => a + r.v[m], 0)})).filter(r => r.sum >= 0.5).sort((a, b) => b.sum - a.sum);
@@ -3446,7 +3485,7 @@ function cfDrawHeat() {
   if (!rows.length || !ms.length) { el.innerHTML = `<div class="cf-empty muted small">${t('cf_keine_zahlungen')}</div>`; return; }
   // all positions together, as a row of its own below the others, on its own scale (the sum is always far larger)
   const tot = {label: t(up ? 'cf_heat_summe_ein' : 'cf_heat_summe_aus'), v: {}, cats: new Map(), paths: new Set(), est: false, total: true};
-  ms.forEach(m => { tot.v[m] = 0; }); for (const z of sek.zeilen) all.forEach(m => { tot.v[bk(m)] += sg * (z.werte[m] || 0); });
+  ms.forEach(m => { tot.v[m] = 0; }); for (const z of sek.zeilen) all.forEach(m => { tot.v[bk(m)] += sg * (cfVals(z)[m] || 0); });
   for (const r of by.values()) { r.paths.forEach(x => tot.paths.add(x)); tot.est = tot.est || r.est; ms.forEach(m => { if (Math.abs(r.v[m]) >= 0.5) { const c = tot.cats.get(r.label) || {}; c[m] = r.v[m]; tot.cats.set(r.label, c); } }); }
   tot.sum = ms.reduce((a, m) => a + tot.v[m], 0);
   CF.heat = {rows: rows.concat([tot]), months: m => all.filter(x => bk(x) === m), lab: m => q ? lab(m) : ML(m)};          // a click on a cell: its transactions
@@ -3470,7 +3509,7 @@ function cfDrawHeat() {
       const shown = cs.length > 7 ? cs.slice(0, 6) : cs, rest = cs.slice(shown.length);
       const parts = shown.length > 1 || (shown.length === 1 && shown[0][0] !== r.label) ? `<div class="cf-tip-kv cf-tip-parts">${shown.map(([n, x]) => kv(n, cfEur(x))).join('')}${rest.length ? kv(t('cf_uebrige', rest.length), cfEur(rest.reduce((a, [, x]) => a + x, 0))) : ''}</div>` : '';
       const tip = cfTip(`<div class="cf-tip-h">${esc(r.label)} <span class="muted">· ${esc(q ? lab(m) : ML(m))}</span></div>${cfTipRow(up ? 'sw in' : 'sw out', t(up ? 'einnahmen' : 'ausgaben'), cfEur(v))}${parts}${q && cnt[m] < 3 ? `<div class="cf-tip-note">${esc(t('cf_teilquartal', cnt[m]))}</div>` : ''}${big ? `<div class="cf-tip-note">${esc(t('cf_heat_ausreisser'))}</div>` : ''}${open && Math.abs(v) >= 0.5 ? `<div class="cf-tip-hint">${esc(t('cf_klick_umsaetze'))}</div>` : ''}`);
-      return `<span class="cf-heat-c${k ? '' : ' none'}${q && cnt[m] < 3 ? ' part' : ''}${open && Math.abs(v) >= 0.5 ? ' open' : ''}${big ? ' big' : ''}" style="${k ? `--k:${Math.round(k * 100)}%` : ''}" data-cftip="${tip}" tabindex="0"${open && Math.abs(v) >= 0.5 ? ` data-hr="${ri}" data-hm="${m}"` : ''}></span>`; }).join('')
+      return `<span class="cf-heat-c${k ? '' : ' none'}${q && cnt[m] < 3 ? ' part' : ''}${open && Math.abs(v) >= 0.5 ? ' open' : ''}${big ? ' big' : ''}${ahead.has(m) ? ' ahead' : ''}" style="${k ? `--k:${Math.round(k * 100)}%` : ''}" data-cftip="${tip}" tabindex="0"${open && Math.abs(v) >= 0.5 ? ` data-hr="${ri}" data-hm="${m}"` : ''}></span>`; }).join('')
       + `<span class="cf-heat-v${r.total ? ' tot' : ''}">${esc(Fk(r.sum / all.length, false, r.total ? Math.abs(r.sum / all.length) : avgMax))}</span>`;
   });
   el.innerHTML = h + '</div>';
@@ -3482,7 +3521,7 @@ function cfSourcesUses(D, months) {
   const src = [], use = [];
   const put = (label, v, act, kids) => { const k = (kids || []).map(x => ({...x, v: v >= 0 ? x.v : -x.v})).filter(x => x.v >= 0.5);
     if (v >= 0.5) src.push({label, v, act, kids: k.length > 1 ? k : null}); else if (v <= -0.5) use.push({label, v: -v, act, kids: k.length > 1 ? k : null}); };
-  const cats = zs => { const m = new Map(); for (const z of zs) for (const d of z.details || []) { const k = d.kategorie ? d.kategorie.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt'); m.set(k, (m.get(k) || 0) + cfRowSum(d, months)); }
+  const cats = zs => { const m = new Map(); for (const z of zs) for (const d of cfDet(z)) { const k = cfDetName(d); m.set(k, (m.get(k) || 0) + cfRowSum(d, months)); }
     return [...m.entries()].map(([label, v]) => ({label, v})).sort((a, b) => Math.abs(b.v) - Math.abs(a.v)); };
   for (const [sec, act] of [['Einnahmen', 'ein'], ['Ausgaben', 'aus']]) {
     const sek = D.kapitalfluss.sektionen.find(s => s.name === sec) || {zeilen: []}, by = new Map();
@@ -3508,7 +3547,7 @@ function cfSourcesUses(D, months) {
     if (small.length < 2) return list;
     return list.filter(e => e.v >= total * 0.03).concat([{label: t('cf_uebrige_n', small.length), v: small.reduce((a, e) => a + e.v, 0), act: 'mix', kids: small, key: side + '|~'}]); };
   CF.flow = {src: group(src, 's'), use: group(use, 'u'), total};
-  return `<div class="card bch cf-card ${cfWealthTree(D, months, cfMonths(D, S.cfZeit)[1]).some(r => r.kind !== 'tot') ? 'cf-half' : 'cf-full'}"><div class="lc-head"><b class="lc-title">${t('cf_herkunft_verwendung')}${hq('cf_herkunft_verwendung')}</b></div>`
+  return `<div class="card bch cf-card ${cfWealthTree(D, months, cfMonths(D, S.cfZeit)[1]).some(r => r.kind !== 'tot') ? 'cf-wide' : 'cf-full'}"><div class="lc-head"><b class="lc-title">${t('cf_herkunft_verwendung')}${hq('cf_herkunft_verwendung')}</b></div>`
     + `<div class="cf-plot" id="cf-flow"></div></div>`;
 }
 // The money flow as a Sankey diagram: everything that came in on the left, everything it went to on the right; the bands run
@@ -3526,7 +3565,10 @@ function cfDrawFlow() {
     list.forEach(e => walk(e, e.v, 0, null, e.act, null));
     return out; };
   const L0 = flat(F.src, 's'), R0 = flat(F.use, 'u');
-  const W = Math.max(300, el.clientWidth), narrow = W < 560, LW = narrow ? Math.max(100, W * 0.32) : Math.min(240, W * 0.3), RW = LW, nodeW = 8, gap = 5, LH = narrow ? 31 : 18;
+  // amounts short (17,4T): the names take less room, the bands more
+  const amt = v => Fk(v, false, Math.abs(v)), labLen = e => ((e.more ? '▸ ' : '') + e.label).length + 1 + amt(e.v).length;
+  const W = Math.max(300, el.clientWidth), narrow = W < 460, need = Math.max(...[...L0, ...R0].map(labLen)) * 6.3 + 14;
+  const LW = narrow ? Math.max(100, W * 0.32) : Math.max(110, Math.min(220, W * 0.28, need)), RW = LW, nodeW = 8, gap = 5, LH = narrow ? 31 : 18;
   const n = Math.max(L0.length, R0.length), H = Math.max(200, n * (LH + 3) + 28 + (narrow ? 12 : 0)), top = 22, bot = H - 6 - (narrow ? 12 : 0);       // narrow: the amount on a second line
   const avail = side => (bot - top) - gap * (side.length - 1);
   let k = Math.min(avail(L0), avail(R0)) / F.total;
@@ -3563,15 +3605,15 @@ function cfDrawFlow() {
   // their item's name, and a row to close them again
   const labels = (list, left) => { let yPrev = -Infinity; const out = list.map(e => { const y = Math.max(e.y + e.h / 2, yPrev + LH, top + 6); yPrev = y; return {e, y}; });
     let over = out.length ? out[out.length - 1].y - (bot - 4) : 0; for (let i = out.length - 1; i >= 0 && over > 0; i--) { out[i].y -= over; over = i ? Math.max(0, out[i - 1].y - (out[i].y - LH)) : 0; }
-    const room = Math.floor((LW - 14) / 6.3) - (narrow ? 0 : 7);
+    const room = Math.floor((LW - 14) / 6.3) - (narrow ? 0 : 6);
     return out.map(({e, y}, i) => { const x = left ? xL - 6 : xR + nodeW + 6, disc = e.more ? '▸ ' : '', mid = e.y + e.h / 2;
       const head = e.parentKey && (i === 0 || out[i - 1].e.parentKey !== e.parentKey);
       const lab = disc + e.label, nm = lab.length > room ? lab.slice(0, Math.max(3, room - 1)) + '…' : lab;
       const close = head ? `<text class="cf-fl-up" data-fl="${esc(e.parentKey)}" x="${x.toFixed(1)}" y="${(y - (narrow ? 15 : 12)).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">▾ ${esc(e.parentLabel || '')}</text>` : '';
       return close + (Math.abs(y - mid) > 2 ? `<path class="cf-fl-lead" d="M${(left ? xL - 1 : xR + nodeW + 1).toFixed(1)},${mid.toFixed(1)}L${(left ? xL - 5 : xR + nodeW + 5).toFixed(1)},${y.toFixed(1)}"/>` : '')
         + `<g class="cf-fl-l${tcls(e)}"${e.more || e.parentKey ? ` data-fl="${esc(e.more ? e.key : e.parentKey)}"` : ''}>${nm !== lab ? `<title>${esc(e.label)}</title>` : ''}`
-        + (narrow ? `<text class="cf-fl-t" x="${x.toFixed(1)}" y="${(y - 2).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(nm)}</text><text class="cf-fl-t cf-fl-v" x="${x.toFixed(1)}" y="${(y + 11).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(F0(e.v))}</text>`
-          : `<text class="cf-fl-t" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(nm)} <tspan class="cf-fl-v">${esc(F0(e.v))}</tspan></text>`) + `</g>`; }).join(''); };
+        + (narrow ? `<text class="cf-fl-t" x="${x.toFixed(1)}" y="${(y - 2).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(nm)}</text><text class="cf-fl-t cf-fl-v" x="${x.toFixed(1)}" y="${(y + 11).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(amt(e.v))}</text>`
+          : `<text class="cf-fl-t" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">${esc(nm)} <tspan class="cf-fl-v">${esc(amt(e.v))}</tspan></text>`) + `</g>`; }).join(''); };
   g += labels(L, true) + labels(R, false);
   el.innerHTML = `<svg class="cf-svg cf-fl" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('cf_herkunft_verwendung'))}"><defs>${defs}</defs>${g}</svg>`;
 }
@@ -3598,6 +3640,7 @@ function bindCfCharts(main) {
   const wrap = $('.cf-charts', main); if (!wrap) return;
   const draw = () => { cfDrawBridge('liq'); cfDrawBridge('nw'); cfDrawMonths(); cfDrawPie(); cfDrawHeat(); cfDrawFlow(); };
   draw();
+  if (CF.focusAfter) { const f = $('#' + CF.focusAfter, main); CF.focusAfter = null; if (f) f.focus({preventScroll: true}); }          // after choosing a month: back on its button
   const hide = () => { const b = $('#cf-tip'); if (b) b.classList.add('hidden'); };
   for (const [ev, fn] of [['pointerover', e => { const el = e.target.closest('[data-cftip]'); if (el) cfShowTip(el); }], ['focusin', e => { const el = e.target.closest('[data-cftip]'); if (el) cfShowTip(el); }],
     ['pointerout', e => { const el = e.target.closest('[data-cftip]'); if (el && !(e.relatedTarget && el.contains(e.relatedTarget))) hide(); }], ['focusout', hide]]) wrap.addEventListener(ev, fn);
@@ -3605,16 +3648,36 @@ function bindCfCharts(main) {
     CF.pieSel = e && CF.pieSel !== e.label ? e.label : null; hide(); cfDrawPie();
     if (e && CF.pieSel) { const f = $(`#cf-pie .cf-pie-sl[data-pie="${i}"]`); if (f) f.focus({preventScroll: true}); } };
   const setRange = (v, b) => {
-    const D = B(), ms = cfDone(D), sel = ms.filter(m => m >= v && m <= b), y = v.slice(0, 4);
+    const D = B(), ms = cfDone(D), sel = cfPick(D).filter(m => m >= v && m <= b), y = v.slice(0, 4);
     S.cfVon = v; S.cfBis = b; S.cfBrZoom = S.cfWbZoom = null;
     S.cfZeit = sel.join() === ms.slice(-12).join() ? '12m' : sel.join() === ms.filter(m => m.startsWith(y)).join() && b.startsWith(y) && cfPeriods(D).some(p => p[0] === y) ? y : 'eigen';
     CF.pieSel = null; route();
   };
-  wrap.addEventListener('change', e => {
-    if (!e.target.closest('#cf-von, #cf-bis')) return;
-    let v = $('#cf-von').value, b = $('#cf-bis').value; if (v > b) [v, b] = e.target.id === 'cf-von' ? [v, v] : [b, b];
-    setRange(v, b);
-  });
+  // a month of the period: a small calendar of the year (‹ › other years), the months that have figures; plan months hatched
+  const mpClose = () => { const p = $('#cf-mpick'); if (p) p.remove(); document.removeEventListener('pointerdown', CF.mpOut, true); CF.mpOut = null; };
+  const mpOpen = (btn, year) => {
+    mpClose();
+    const D = B(), pick = cfPick(D), which = btn.id, v = $('#cf-von').dataset.m, b = $('#cf-bis').dataset.m, y = year || +btn.dataset.m.slice(0, 4);
+    const y0 = +pick[0].slice(0, 4), y1 = +pick[pick.length - 1].slice(0, 4);
+    const cell = k => { const m = `${y}-${String(k + 1).padStart(2, '0')}`, ok = pick.includes(m), on = m === btn.dataset.m, inR = m >= v && m <= b;
+      return `<button data-pm="${m}" class="${on ? 'on' : inR ? 'in' : ''}${ok && cfIsOpen(D, m) ? ' open' : ''}"${ok ? '' : ' disabled'} aria-pressed="${on}" aria-label="${esc(MLL(m))}">${esc(MONATE[k])}</button>`; };
+    const box = document.createElement('div'); box.id = 'cf-mpick'; box.className = 'cf-mpick'; box.setAttribute('role', 'dialog'); box.dataset.for = which;
+    box.innerHTML = `<div class="cf-mp-h"><button class="icon" data-py="${y - 1}" ${y <= y0 ? 'disabled' : ''} aria-label="${esc(String(y - 1))}">‹</button><b>${y}</b><button class="icon" data-py="${y + 1}" ${y >= y1 ? 'disabled' : ''} aria-label="${esc(String(y + 1))}">›</button></div>`
+      + `<div class="cf-mp-g">${[...Array(12).keys()].map(cell).join('')}</div>`;
+    wrap.appendChild(box);
+    const host = wrap.getBoundingClientRect(), r = btn.getBoundingClientRect();
+    box.style.left = Math.max(0, Math.min(r.left - host.left, host.width - box.offsetWidth)) + 'px'; box.style.top = (r.bottom - host.top + 6) + 'px';
+    const f = $('button.on', box) || $('button[data-pm]:not([disabled])', box); if (f) f.focus({preventScroll: true});
+    CF.mpOut = e => { if (!e.target.closest('#cf-mpick, .cf-mbtn')) mpClose(); }; document.addEventListener('pointerdown', CF.mpOut, true);
+  };
+  wrap.addEventListener('click', e => {
+    const mbn = e.target.closest('.cf-mbtn'); if (mbn) { e.stopPropagation(); const p = $('#cf-mpick'); if (p && p.dataset.for === mbn.id) mpClose(); else mpOpen(mbn); return; }
+    const py = e.target.closest('#cf-mpick [data-py]'); if (py) { e.stopPropagation(); mpOpen($('#' + $('#cf-mpick').dataset.for), +py.dataset.py); return; }
+    const pm = e.target.closest('#cf-mpick [data-pm]'); if (pm) { e.stopPropagation(); const which = $('#cf-mpick').dataset.for, m = pm.dataset.pm;
+      let v = $('#cf-von').dataset.m, b = $('#cf-bis').dataset.m; if (which === 'cf-von') { v = m; if (v > b) b = v; } else { b = m; if (b < v) v = b; }
+      mpClose(); CF.focusAfter = which; setRange(v, b); }
+  }, true);
+  wrap.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#cf-mpick')) { const f = $('#' + $('#cf-mpick').dataset.for); mpClose(); if (f) f.focus(); } });
   // the bridges: drag across one to zoom into that range of amounts; the button above or a click on the axis shows it whole again
   for (const [which, P] of Object.entries(BRIDGES)) {
     const brEl = $('#' + P.el, main); if (!brEl) continue;
@@ -3639,6 +3702,7 @@ function bindCfCharts(main) {
   wrap.addEventListener('pointerdown', e => { CF.touch = e.pointerType === 'touch'; }, true);
   const act = (el, key) => { if (CF.touch && CF.armed !== key) { CF.armed = key; return false; } CF.armed = null; return true; };
   wrap.addEventListener('click', e => {
+    const bl = e.target.closest('[data-bal]'); if (bl && !CF.brDragged) { cfToBalance(bl.dataset.bal); return; }
     const fl = e.target.closest('#cf-flow [data-fl]');
     if (fl) { const o = CF.flowOpen || (CF.flowOpen = {}); o[fl.dataset.fl] = !o[fl.dataset.fl]; cfDrawFlow(); return; }
     const brW = Object.keys(BRIDGES).find(k => e.target.closest(`#${BRIDGES[k].reset}, #${BRIDGES[k].el} .cf-br-axis`));
@@ -3648,7 +3712,7 @@ function bindCfCharts(main) {
     if (br) { const which = br.closest('#cf-wbridge') ? 'nw' : 'liq', P = BRIDGES[which], id = br.dataset.br, o = P.open(); o[id] = !o[id]; hide(); cfDrawBridge(which);
       const f = $(`#${P.el} .cf-br-row[data-br="${CSS.escape(id)}"]`); if (f && e.detail === 0) f.focus({preventScroll: true}); return; }
     const sh = e.target.closest('.cf-shift');
-    if (sh) { const D = B(), ms = cfDone(D), [cur] = cfMonths(D, S.cfZeit), d = +sh.dataset.shift, i0 = ms.indexOf(cur[0]) + d, i1 = ms.indexOf(cur[cur.length - 1]) + d;
+    if (sh) { const D = B(), ms = cfPick(D), [cur] = cfMonths(D, S.cfZeit), d = +sh.dataset.shift, i0 = ms.indexOf(cur[0]) + d, i1 = ms.indexOf(cur[cur.length - 1]) + d;
       if (i0 >= 0 && i1 < ms.length) setRange(ms[i0], ms[i1]); return; }
     const hc = e.target.closest('#cf-heat .cf-heat-c[data-hr]');
     if (hc) { const r = CF.heat && CF.heat.rows[+hc.dataset.hr]; if (r && act(hc, 'h' + hc.dataset.hr + hc.dataset.hm)) { hide();
@@ -3660,10 +3724,10 @@ function bindCfCharts(main) {
     const sw = e.target.closest('#cf-pie-art button');
     if (sw) { if (sw.dataset.a === S.cfPieArt) return; S.cfPieArt = sw.dataset.a; CF.pieSel = null; hide();
       const D = B(), [cur, prev] = cfMonths(D, S.cfZeit), old = $('#cf-pie-card'); if (old) { old.outerHTML = cfPie(D, cur, prev); cfDrawPie(); }
-      const hc = $('#cf-heat-card'); if (hc) { hc.outerHTML = cfHeatCard(hc.classList.contains('cf-full') ? 'cf-full' : 'cf-half'); cfDrawHeat(); } return; }
+      const hc = $('#cf-heat-card'); if (hc) { hc.outerHTML = cfHeatCard(); cfDrawHeat(); } return; }
     if (!e.target.closest('#cf-pie')) return; pin(e.target.closest('#cf-pie [data-pie]')); });
   wrap.addEventListener('keydown', e => {
-    if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('#cf-heat .cf-heat-c[data-hr], #cf-pie .cf-pie-lab[data-kats], #cf-bridge .cf-br-row[data-br], #cf-wbridge .cf-br-row[data-br], #cf-flow [data-fl]')) { e.preventDefault(); CF.touch = false; e.target.dispatchEvent(new MouseEvent('click', {bubbles: true})); return; }
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('#cf-heat .cf-heat-c[data-hr], #cf-pie .cf-pie-lab[data-kats], #cf-bridge .cf-br-row[data-br], #cf-wbridge .cf-br-row[data-br], #cf-flow [data-fl], [data-bal]')) { e.preventDefault(); CF.touch = false; e.target.dispatchEvent(new MouseEvent('click', {bubbles: true})); return; }
     if (!e.target.closest('#cf-pie')) return;
     if (e.key === 'Escape' && CF.pieSel) { e.preventDefault(); CF.pieSel = null; hide(); cfDrawPie(); }
     else if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('[data-pie]')) { e.preventDefault(); pin(e.target.closest('[data-pie]')); } });
@@ -5166,6 +5230,7 @@ function bind(main) {
   // cash flow / planning: the names as one pinned piece (see freezeNames); a click on the triangle or the name opens and closes
   // a row (not on a field or link in it)
   $$('table.cf-tbl:not(.cf-names)', main).forEach(freezeNames);
+  $$('.cf-tbl td.to-bal', main).forEach(td => td.addEventListener('click', () => cfToBalance(td.dataset.bal)));          // the bank balance: shown in the balance sheet
   $$('.cf-tbl [data-tog]', main).forEach(el => el.addEventListener('click', e => {
     if (el.tagName === 'TR' && (e.target.closest('td') !== el.firstElementChild || e.target.closest('select, input, a, .edit, .hq, .tag, button:not(.disc)'))) return;
     e.stopPropagation(); S.cfTog[el.dataset.tog] = !cfOpen(el.dataset.tog, +el.dataset.depth); route(); }));
@@ -5183,7 +5248,7 @@ function bind(main) {
       : snapLeft(w, colX(w, c) + c.offsetWidth - w.clientWidth * (S.tab !== 'balance' && planOn() ? 0.62 : 1));
   });
   S.toEarlier = false;
-  if (S.tab === 'balance') { bindBilanzChart(main); bindBilanzLines(main); }
+  if (S.tab === 'balance') { bindBilanzChart(main); bindBilanzLines(main); setTimeout(() => balFlash(main), 30); }
   const vs = $('#vorschlag-an', main); if (vs) vs.addEventListener('change', e => { S.vorschlag = e.target.checked; route(); });
   $$('[data-goto]', main).forEach(c => c.addEventListener('click', e => { if (!e.target.closest('a, button, input, select')) go(c.dataset.goto); }));
   $$('[data-xlsx]', main).forEach(b => b.addEventListener('click', () => download(b.dataset.xlsx === 'property' ? `/api/export/property.xlsx?id=${encodeURIComponent(b.dataset.immo || '')}&calculation=${encodeURIComponent(b.dataset.kalk || '')}` : `/api/export/${b.dataset.xlsx}.xlsx?area=${encodeURIComponent(b.dataset.bereich || S.bereich || '')}&mode=${S.modus === 'jahre' ? 'years' : 'months'}`

@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.13.28 (2026-11-18 01:12)
+- **Zeitraum der Diagramme:** links von–bis mit ‹ ›; ein Klick auf einen Monat öffnet einen kleinen Kalender statt einer langen Liste. Rechts 12 Monate, laufendes Jahr und die zwei davor. Der Zeitraum kann jetzt auch in den laufenden Monat und in den Plan reichen – diese Monate sind in den Diagrammen schraffiert, Planmonate zählen mit Planwerten, Endstände dann mit „(Plan)“.
+- **Anordnung:** Vorjahresvergleich und Ausgaben je Monat in einer Karte mit einem gemeinsamen Schalter; Mittelherkunft & -verwendung breiter (⅔) neben der Vermögensbrücke, Beträge dort kurz (17,4T).
+- **Liquiditätsbrücke:** Anfangs- und Endbestand (und in der Tabelle die Zeilen Bankguthaben am Anfang/Ende) führen per Klick in die Bilanz, die Zelle leuchtet kurz auf; in der Vermögensbrücke ebenso das Nettovermögen.
+- **Cashflow-Tabelle:** statt Haken überall nur ein kleines „!“, wo etwas von der Bilanz abweicht; laufender Monat so blass wie Planmonate; Umschichtungen bis Nettovermögen leicht abgesetzt; Tooltips zu CFO/CFI/CFF sagen klar, wo Zinsen, Tilgung und Investitionen stehen.
+
 ## 3.13.27 (2026-11-18 00:38)
 - **Vermögensbrücke** (neu, neben Mittelherkunft & -verwendung): vom Nettovermögen am Anfang zum Ende – gespart (Einnahmen, Ausgaben, Zinsen), Einlagen & Entnahmen, Wertänderungen je Konto. Anlegen und Tilgen fehlen, sie verschieben nur Geld.
 - **Cashflow-Tabelle:** neue Zeile „Umschichtungen“ (Investieren, Tilgen, Darlehen) – jetzt ergeben Veränderung Bankguthaben, Umschichtungen und Wertänderungen zusammen die Veränderung des Nettovermögens. Der Abgleich mit der Bilanz steht in „Veränderung Bankguthaben“ (aufklappen, wenn das ✓ fehlt); das ✓ ist grau. Hauptzeilen stehen ganz links.
