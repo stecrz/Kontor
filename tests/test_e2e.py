@@ -3988,8 +3988,12 @@ class BrowserTest(unittest.TestCase):
                 pg.fill(".loan-box input[data-p='loans.0.amount']", "1200000"); pg.fill(".loan-box input[data-p='loans.0.annuity_month']", "6000")
                 pg.click("#im-calc"); pg.wait_for_timeout(900)
                 self.assertIn("Kaufpreisfaktor", pg.query_selector("#im-result").inner_text())
-                pg.click("#im-kalk-save"); pg.wait_for_timeout(1500)
-                cfg_im = store.load("config.json")["real_estate"]
+                pg.click("#im-kalk-save")
+                for _ in range(60):                                                                       # saved (a slow machine: not after a fixed time)
+                    cfg_im = store.load("config.json").get("real_estate") or []
+                    if cfg_im and cfg_im[0].get("calcs") and "purchase_price" in (cfg_im[0]["calcs"][0].get("inputs") or {}):
+                        break
+                    pg.wait_for_timeout(250)
                 self.assertEqual(cfg_im[0]["calcs"][0]["inputs"]["purchase_price"], 1500000)
                 self.assertEqual(cfg_im[0]["calcs"][0]["inputs"]["loans"][0]["amount"], 1200000)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_immobilie.png"), full_page=True)
