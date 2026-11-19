@@ -34,9 +34,10 @@ jobs:
           node-version: "20"
       - name: Tools
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q sqlcipher
+          # the runners' package mirror fails now and then: try a few times before giving up
+          for i in 1 2 3 4; do sudo apt-get update -q && sudo apt-get install -y -q sqlcipher && break; sleep 30; done
           uv pip install -q pytest playwright pillow cryptography
-          python -m playwright install --with-deps chromium
+          for i in 1 2 3 4; do python -m playwright install --with-deps chromium && break; sleep 30; done
       - name: Interface
         run: node --check web/app.js && node --check web/i18n.js && node --check web/sw.js
       - name: Tests

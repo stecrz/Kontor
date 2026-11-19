@@ -125,7 +125,7 @@ const H = {
   cf_ausgaben_kuchen: t('cf_ausgaben_kuchen_tip'), cf_heatmap: t('cf_heatmap_tip'),
   cf_unklar: t('cf_unklar_tip'), cf_wert: t('cf_wert_tip'), cf_fcf: t('cf_fcf_tip'), cf_bank: t('cf_bank_tip'), cf_umsch: t('cf_umschichtungen_tip'), cf_nv: t('cf_nv_tip'), cf_abgleich_bank: t('cf_abgleich_bank_tip'),
   cf_abgleich_nv: t('cf_abgleich_nv_tip'),
-  zielkonto: t('zielkonto_tip'), anl_empfaenger: t('anl_tip'), kb: t('kb_tip'),
+  zielkonto: t('zielkonto_tip'), anl_empfaenger: t('anl_tip'), kb: t('kb_tip'), sicherung: t('sicherung_tip'),
   voll_lesen: t('voll_lesen_tip'),
   sync_knoepfe: t('sync_knoepfe_tip'),
   kennung: t('interne_kennung_des_bereichs_wird'),
@@ -183,7 +183,7 @@ const H = {
 };
 const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   accounts_mapping: 'accounts', inactive: 'accounts', verlauf_kurz: 'history', history_source: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
-  zuordnen: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', kb: 'categories-tree',
+  zuordnen: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', kb: 'categories-tree', sicherung: 'backup',
   cf_operativ: 'cash-flow', cf_invest: 'cash-flow', cf_finanz: 'cash-flow', cf_unklar: 'cash-flow', cf_wert: 'cash-flow',
   cf_bank: 'cash-flow', cf_umsch: 'cash-flow', cf_fcf: 'cash-flow', cf_nv: 'cash-flow', cf_abgleich_bank: 'cash-flow', cf_abgleich_nv: 'cash-flow', cf_bruecke: 'cash-flow-bridge', cf_verm_bruecke: 'cash-flow-wealth', cf_je_monat_t: 'cash-flow-months', cf_herkunft_verwendung: 'cash-flow-total',
   cf_ausgaben_kuchen: 'cash-flow-ring', cf_heatmap: 'cash-flow-heatmap',
@@ -1010,7 +1010,7 @@ function mmhStep1(st) {
 async function vMMHistorie() {
   let r = {}; try { r = await api('/api/sync'); } catch (e) {}
   const rest = depotSection(r) + histImportSection();
-  return `<h2>${t('verlauf_aus_mm_h')}</h2>` + (S.STATUS.local ? vMMImport() : `<div class="note">${t('nur_direkt_am_mac_moeglich')}</div>`) + rest;
+  return setupNav('history') + `<h2>${t('verlauf_aus_mm_h')}</h2>` + (S.STATUS.local ? vMMImport() : `<div class="note">${t('nur_direkt_am_mac_moeglich')}</div>`) + rest;
 }
 function histImportSection() {
   return `<h2>${t('saldenverlauf_importieren_0', hq('verlauf_import'))}</h2><div class="note">${t('fuer_depots_und_konten_ohne')}</div>
@@ -1026,7 +1026,7 @@ function vMMImport() {
     <div class="step"><div class="b"><b>${t('datei_im_finder_zeigen')}</b>${t('kontor_oeffnet_ein_finder_fenster')}<div class="actions"><button id="mmh-zeigen" class="small">${t('im_finder_zeigen')}</button></div><div class="small muted">${t('kein_fenster_in_moneymoney_hilfe')}</div></div></div>
     <div class="step ${last ? 'done' : ''}"><div class="b"><b>${t('hierher_ziehen_passwort_eingeben')}</b>${t('danach_erscheint_ein_fenster_von')}<div class="drop" id="mmh-drop">${t('moneymoney_sqlite_hierher_ziehen')}<br><button id="mmh-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button><input type="file" id="mmh-file" class="hidden"></div><div id="mmh-res" class="findings"></div></div></div>
     <div class="step hidden" id="mmh-names"></div>
-    ${setupOpen() ? `<div class="step"><div class="b"><b>${t('weiter')}</b><div class="actions"><button data-next="${nextModule('history').href}" ${last ? '' : 'class="secondary"'}>${t('weiter_zu', nextModule('history').t)}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button></div></div></div>` : ''}</div>`;
+    </div>`;
 }
 // Kontostände: what history Kontor knows per portfolio (MoneyMoney does not give it out) and months that may be missing
 function depotSection(r) {
@@ -1124,6 +1124,7 @@ function readProgress() {
 function vbPoll() {
   // Auf der Seite "Verbindung" alle 3 s pruefen, ob MoneyMoney laeuft und entsperrt ist
   clearTimeout(VB.timer);
+  if (!(S.tab === 'settings' && S.sub === 'moneymoney')) VB.checked = null;
   if (!(S.tab === 'settings' && S.sub === 'moneymoney') || (mmStepDone(S.STATUS) && S.KONTEN.length)) return;
   VB.timer = setTimeout(async () => {
     try { S.STATUS = await api('/api/status?fresh=1'); statusMini(); const el = $('#vb-mm'); if (el) { el.className = 'step ' + (mmStepDone(S.STATUS) ? 'done' : ''); el.innerHTML = mmStepInner(S.STATUS); } } catch (e) {}
@@ -1135,7 +1136,7 @@ function vVerbindung() {
   return `<div class="steps">
     <div class="step ${mmStepDone(st) ? 'done' : ''}" id="vb-mm">${mmStepInner(st)}</div>
     <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>${t('zugriff_erlauben_und_konten_lesen', hq('berechtigung'))}</b>${t('macos_fragt_einmal_ob_python3')}<div class="actions"><button id="w-check" class="small">${t('verbindung_pruefen')}</button></div><div id="w-busy" class="prog-wrap hidden"><div class="prog"><i id="w-prog"></i></div><span class="prog-l" id="w-prog-l">${t('lese_konten_und_umsaetze_aus')}</span></div><div id="w-findings" class="findings"></div></div></div>
-    ${setupOpen() ? `<div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>${t('weiter')}</b><div class="actions"><button data-next="#accounts/areas" ${S.KONTEN.length ? '' : 'class="secondary"'}>${t('weiter_bereiche')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button></div></div></div>` : ''}</div>`;
+    </div>`;
 }
 const FIRMA_RE = /\b(gmbh|ug|ag|se|kg|ohg|gbr|egbr|e\.?\s?k\.?|e\.?\s?v\.?|eg|ltd|inc|llc|holding|verwaltung|beteiligung|immobilien|stiftung|verein|genossenschaft|partner|&\s?co)\b/i;
 const guessArt = name => FIRMA_RE.test(name || '') || /(gmbh|gbr|holding)/i.test(name || '') ? 'company' : 'private';
@@ -5238,14 +5239,21 @@ async function vKontenRegeln() {
 // MoneyMoney sync: the connection, when and how much Kontor reads, what it may write, and where every account stands
 async function vEinstellungenMM() {
   const C = S.CFG, z = C.schedule || {}, b = C.balance || {};
-  return `<h2>${t('verbindung')}</h2>${vVerbindung()}
+  const ok = mmStepDone(S.STATUS) && S.KONTEN.length > 0 && VB.checked !== location.hash;     // just checked here: the page stays as it was
+  const conn = ok ? `<details class="conn-fold" data-keep="mm-conn"${keepOpen('mm-conn')}><summary><h2>${t('verbindung')}</h2><span class="dot ok"></span><span class="small muted">${t('mm_verbunden')}</span></summary>${vVerbindung()}</details>`
+    : `<h2>${t('verbindung')}</h2>${vVerbindung()}`;
+  return setupNav('connect') + (ok ? '' : conn) + `<h2>${t('synchronisierung')}</h2>${await vSync()}
   <h2>${t('abgleich_h')}</h2><div class="form">
     <label>${t('automatischer_abgleich_0', hq('abgleich'))}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatic !== false ? 'checked' : ''}> ${t('alle_2')} <input type="number" id="e-intervall" min="5" value="${z.interval_minutes ?? 30}" style="width:70px"> ${t('minuten_nur_wenn_moneymoney_laeuft')}</label>
     <label>${t('alles_neu_lesen_0', hq('voll_lesen'))}</label><label class="chk">${t('alle_2')} <input type="number" id="e-voll" min="1" value="${z.full_read_days ?? 30}" style="width:70px"> ${t('tage')}</label>
     <label>${t('umsaetze_lesen_0', hq('months_back'))}</label><label class="chk">${t('die_letzten')} <input type="number" id="e-monate" min="0" value="${b.months_back ?? 0}" style="width:70px"> ${t('monate_0_alle')}</label>
-  </div>${saveBar()}
-  <h2>${t('synchronisierung')}</h2>${await vSync()}`;
+  </div>${saveBar()}` + (ok ? conn : '');
 }
+// the setup's way on, as one slim line above a page it leads through (only while the setup is open)
+const setupNav = id => { const n = nextModule(id); return setupOpen() && n ? `<div class="setup-nav small"><span class="muted">${t('einrichtung_kurz')}</span><a href="#setup">‹ ${esc(t('zurueck_zur_einrichtung'))}</a><a href="${n.href}" class="next">${esc(t('weiter_zu', n.t))} ›</a></div>` : ''; };
+// the sub-folder pattern: braces only around the placeholders (as the service checks)
+const SUB_PLACEHOLDERS = ['year', 'month', 'entity', 'account'];
+const subPatternProblem = v => /[{}]/.test(String(v || '').replace(new RegExp(`\\{(${SUB_PLACEHOLDERS.join('|')})\\}`, 'g'), '')) ? t('muster_nur_platzhalter', SUB_PLACEHOLDERS.map(x => `{${x}}`).join(', ')) : '';
 function vEinstellungenBelege() {
   const bl = S.CFG.receipts || {};
   return `<div class="form">
@@ -5379,7 +5387,7 @@ function vEinstellungenUpdates() {
   <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
 }
 function vEinstellungenDaten() {
-  return `<h2>${t('daten')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.storage.folder)}</div>${S.STATUS.storage.program_folder ? `<div>${t('programmordner')}</div><div>${esc(S.STATUS.storage.program_folder)}</div>` : ''}<div>${t('verschluesselung')}</div><div>${S.STATUS.storage.encrypted ? t('aes_256_schluessel_im') + (S.STATUS.storage.key_source === 'keychain' ? t('macos_schluesselbund') : t('dateisystem_0600')) : t('keine_verschluesselung')}</div><div>${t('belegordner')}</div><div>${esc(S.STATUS.receipts.folder)}</div>
+  return `<h2>${t('daten')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.storage.folder)}</div>${S.STATUS.storage.program_folder ? `<div>${t('programmordner')}</div><div>${esc(S.STATUS.storage.program_folder)}</div>` : ''}<div>${t('verschluesselung')}</div><div>${S.STATUS.storage.encrypted ? t('aes_256_schluessel_im') + (S.STATUS.storage.key_source === 'keychain' ? t('macos_schluesselbund') : t('dateisystem_0600')) : t('keine_verschluesselung')}</div><div>${t('belegordner')}</div><div><a href="#settings/receipts" title="${esc(t('belegordner_aendern'))}">${esc(S.STATUS.receipts.folder)}</a></div>
     <div>Time Machine ${hq('timemachine')}</div><div><span id="tm-state" class="muted">…</span> <button id="tm-toggle" class="secondary small hidden"></button></div>
     <div>${t('protokoll')}</div><div><a href="#log">${t('protokoll_und_diagnose')}</a></div></div>
   ${S.STATUS.storage.encrypted && S.STATUS.storage.key_source === 'keychain' ? `<h2>${t('datenschluessel_h')} ${hq('datenschluessel')}</h2>
@@ -5393,6 +5401,7 @@ function collectSettings() {
     cfg.schedule = { automatic: $('#e-auto').checked, interval_minutes: Math.max(5, parseInt($('#e-intervall').value) || 30), full_read_days: Math.max(1, parseInt($('#e-voll').value) || 30) };
     cfg.balance = Object.assign(cfg.balance || {}, { months_back: parseInt($('#e-monate').value) || 0 });
   }
+  if ($('#e-bl-sub') && subPatternProblem($('#e-bl-sub').value.trim())) { $('#e-bl-sub').classList.add('invalid'); $('#e-bl-sub').focus(); throw new Error(subPatternProblem($('#e-bl-sub').value.trim())); }
   if ($('#e-bl-ordner')) cfg.receipts = Object.assign(cfg.receipts || {}, { folder: $('#e-bl-ordner').value.trim() || '~/Documents/Kontor-Belege', subfolder: $('#e-bl-sub').value.trim() || '{year}', write_comment: $('#e-bl-comment').checked,
       folder_confirmed: !!(cfg.receipts || {}).folder_confirmed || $('#e-bl-ordner').value.trim() !== ((S.CFG.receipts || {}).folder || '') });    // ein hier gewählter Ordner gilt als bestätigt
   if ($('#e-verm')) cfg.tax = Object.assign(cfg.tax || {}, { rental_category: $('#e-verm').value.trim() || 'Vermietung',
@@ -5414,8 +5423,7 @@ let PKG = null, PKG_UNRES = null;
 function vSicherung() {
   // Sicherung (alles) · Einstellungspaket (zum Weitergeben) · Laden für beides über dieselbe Fläche · Zurücksetzen
   const C = S.CFG;
-  return `<div class="cards two"><div class="card"><div class="l">${t('sicherung_h')}</div><div class="d">${t('sicherung_wofuer')}</div></div><div class="card"><div class="l">${t('einstellungspaket')}</div><div class="d">${t('paket_wofuer')}</div></div></div>
-  <h2>${t('sicherung_h')}</h2><div class="note">${t('sicherung_text')}</div>
+  return `<h2>${t('sicherung_h')} ${hq('sicherung')}</h2><div class="note">${t('sicherung_text')}</div>
   ${S.STATUS.local ? `<div class="row tight"><input type="password" id="bk-pw" placeholder="${t('passwort_fuer_die_sicherung')}" autocomplete="new-password" style="width:230px"><input type="password" id="bk-pw2" placeholder="${t('ph_passwort_wiederholen')}" autocomplete="new-password" style="width:230px"><button id="bk-save" class="secondary">${t('sicherung_verschluesselt_herunterladen')}</button></div><div class="small muted">${t('sicherung_passwort_hinweis')}</div>` : `<div class="small muted">${t('nur_am_mac')}</div>`}
   <h2>${t('einstellungspaket')} ${hq('package')}</h2><div class="note">${t('paket_text', `<code>${t('name_kontor_json')}</code>`)}</div>
   <div class="row tight"><label class="chk">${t('name')} <input type="text" id="pk-name" value="Kontor-Einstellungen"></label><button id="pk-export" class="secondary">${t('paket_herunterladen')}</button></div>
@@ -5820,7 +5828,7 @@ function bind(main) {
     let r; try { r = await api('/api/check', {}); } catch (e) { stop(); wc.classList.remove('busy'); wc.disabled = false; if (busy) busy.classList.add('hidden'); showFindings($('#w-findings'), [], e.message, 'error'); return; }
     stop();
     if (!r.available) { wc.classList.remove('busy'); wc.disabled = false; if (busy) busy.classList.add('hidden'); showFindings($('#w-findings'), [], r.text, 'error'); return; }
-    S.KONTEN = r.accounts; S.KATS = r.categories || S.KATS; await softRoute(); showFindings($('#w-findings'), r.findings, t('verbindung_steht') + r.accounts.length + t('konten_gelesen'), 'ok'); });
+    S.KONTEN = r.accounts; S.KATS = r.categories || S.KATS; VB.checked = location.hash; await softRoute(); showFindings($('#w-findings'), r.findings, t('verbindung_steht') + r.accounts.length + t('konten_gelesen'), 'ok'); });
   const wr = $('#w-report', main); if (wr) wr.addEventListener('click', () => rebuildReport(true));
   const et = $('#e-theme', main); if (et) et.addEventListener('change', () => { try { localStorage.setItem('kontor.theme', et.value); } catch (e) {} applyTheme(et.value); route(); });
   for (const wl of [$('#w-lang', main), $('#e-lang', main)]) if (wl) wl.addEventListener('change', async () => { if (wl.value === LANG) return; try { await api('/api/language', {language: wl.value}); setLang(wl.value); } catch (e) { wl.value = LANG; toast(e.message, 5000); } });
@@ -6067,6 +6075,7 @@ function bind(main) {
 
   // Einstellungen
   const ss = $('#save-settings', main); if (ss) ss.addEventListener('click', () => { try { saveConfig(collectSettings(), $('#findings-e')); } catch (e) { toast(e.message, 6000); } });
+  const bs = $('#e-bl-sub', main); if (bs) bs.addEventListener('input', () => { const why = subPatternProblem(bs.value.trim()); bs.classList.toggle('invalid', !!why); bs.title = why; });
   for (const [id, done] of [['#setup-done', true], ['#setup-again', false]]) { const b = $(id, main); if (b) b.addEventListener('click', async () => {
     const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.ui = Object.assign({}, cfg.ui, {setup_done: done});
     if (await saveConfig(cfg, $('#findings-e', main)) !== false) { if (done) go('#overview'); else route(); } }); }

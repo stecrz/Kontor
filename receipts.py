@@ -22,6 +22,18 @@ from storage import Store
 from i18n import tr
 
 DEFAULT_FOLDER = "~/Documents/Kontor-Belege"
+PLACEHOLDERS = ("year", "month", "entity", "account")         # what a sub-folder pattern may hold in braces
+
+
+def pattern_problem(pattern: str) -> Optional[str]:
+    """Why a sub-folder pattern cannot be saved (None: fine): braces only around the placeholders, always inside the folder."""
+    rest = re.sub(r"\{(%s)\}" % "|".join(PLACEHOLDERS), "", pattern or "")
+    if "{" in rest or "}" in rest:
+        return tr("s_muster_nur_platzhalter") % ", ".join("{%s}" % x for x in PLACEHOLDERS)
+    parts = re.split(r"[\\/]+", pattern or "")
+    if (pattern or "").startswith(("/", "\\", "~")) or ".." in parts:
+        return tr("s_muster_im_belegordner")
+    return None
 ALLOWED_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".heic", ".gif", ".txt", ".csv", ".xlsx", ".docx", ".eml", ".msg", ".zip"}
 MAX_FILE = 60 * 1024 * 1024
 

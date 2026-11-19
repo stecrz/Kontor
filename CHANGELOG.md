@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.15.5 (2026-11-19 13:39)
+- MoneyMoney-Sync: Synchronisierung oben, dann Abgleich; Verbindung eingeklappt am Ende, sobald sie steht.
+- Einrichtung: „Weiter“ und „Zurück zur Einrichtung“ als schmale Zeile oben (MoneyMoney-Sync, Kontostände).
+- Sichern & Zurücksetzen: Erklärungen zu Sicherung und Einstellungspaket im Hilfe-Symbol statt oben; Belegordner anklickbar (zur Einstellung); Zeile Time Machine bündig.
+- Belege: Unterordner-Muster nur mit bekannten Platzhaltern in geschweiften Klammern speicherbar.
+
 ## 3.15.4 (2026-11-19 13:25)
 - Einlagen mit Gegenbuchung im Kapitalkonto: bis 7 Tage Abstand (Wochenende, Feiertage, Kontenspiegel); nächste Buchung zuerst, wöchentliche Einlagen bleiben verbunden.
 - Einstellungen → Allgemein: keine Rückfrage mehr wegen ungespeicherter Änderungen.

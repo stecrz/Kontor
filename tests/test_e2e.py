@@ -998,6 +998,17 @@ class AppTests(_AppBase):
         self.assertNotEqual(self.app.do_run(None, False)["status"], "unchanged")
         self.assertIsNot(self.app.ledger, led)
 
+    def test_receipt_pattern_only_known_placeholders(self):
+        """A sub-folder pattern with braces around anything but the placeholders is not saved (at the Mac too)."""
+        self.login()
+        for pat, want in (("{jahr}", 400), ("{year}/{entity}/{nope}", 400), ("../{year}", 400), ("{year}-{month}", 200)):
+            cfg = copy.deepcopy(self.app.config); cfg.setdefault("receipts", {})["subfolder"] = pat
+            code, r = self.call("/api/config", {"config": cfg, "anyway": True}, method="PUT")
+            self.assertEqual(code, want, (pat, r))
+            if want == 400:
+                self.assertIn("{year}", r["error"]) if "{" in pat and ".." not in pat else self.assertTrue(r["error"])
+        self.assertEqual(self.app.config["receipts"]["subfolder"], "{year}-{month}")
+
     def test_areas_left_out_of_categorising(self):
         """Areas you do not categorise (a company with countless bookings) stay out of the list and the count; at least one
         stays; the choice is kept in the settings."""
@@ -4297,7 +4308,8 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertIn("Konten gelesen", pg.query_selector("#w-findings").inner_text())
                 self.assertNotIn("Belegordner", pg.query_selector("#w-findings").inner_text())
                 self.assertNotIn("Keine Bereiche", pg.query_selector("#w-findings").inner_text())
-                self.assertTrue(pg.query_selector(".steps button[data-next='#accounts/areas']"))           # Knopf statt Link
+                self.assertTrue(pg.query_selector(".setup-nav a.next[href='#accounts/areas']"))           # the setup's way on: one slim line
+                self.assertTrue(pg.is_visible(".steps"))                                                   # just checked: the connection stays in view
                 # step 1 is checked every few seconds only while the connection is not there yet: connected, MoneyMoney is left alone
                 n0 = len([r for r in reqs if "/api/status?fresh=1" in r]); pg.wait_for_timeout(3500)
                 self.assertEqual(len([r for r in reqs if "/api/status?fresh=1" in r]), n0)
@@ -4307,7 +4319,7 @@ class BrowserWizardTest(unittest.TestCase):
                 pg.hover(".steps .hq"); pg.wait_for_selector(".tip")
                 box = pg.evaluate("(() => { const r = document.querySelector('.tip').getBoundingClientRect(); return [r.top, r.left, r.right, window.innerWidth]; })()")
                 self.assertGreaterEqual(box[0], 0); self.assertGreaterEqual(box[1], 0); self.assertLessEqual(box[2], box[3])
-                pg.click(".steps button[data-next='#accounts/areas']"); pg.wait_for_selector("#save-bereiche")
+                pg.click(".setup-nav a.next"); pg.wait_for_selector("#save-bereiche")
                 self.assertEqual(len(pg.query_selector_all("#bereiche .item")), 3)          # Vorschlag: jede Gruppe der obersten Ebene
                 names = lambda: pg.evaluate("[...document.querySelectorAll('#bereiche .item .b-name')].map(i => i.value)")
                 self.assertEqual(names()[0], "Privat")                                       # Hauptbereich zuerst

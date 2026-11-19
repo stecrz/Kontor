@@ -42,7 +42,7 @@ import security_names
 import history_import
 import categorize
 import updates
-from receipts import Belege, file_status
+from receipts import Belege, file_status, pattern_problem
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
 from core import (REPORT_LOCK, RUN_LOCK, assign_skipped, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
@@ -2141,6 +2141,10 @@ def make_handler(app: App):
                 old_b, new_b = app.config.get("receipts") or {}, cfg.get("receipts") or {}
                 if any((old_b.get(k) or "") != (new_b.get(k) or "") for k in ("folder", "subfolder")) and not local:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                if (new_b.get("subfolder") or "") != (old_b.get("subfolder") or ""):
+                    why = pattern_problem(str(new_b.get("subfolder") or ""))
+                    if why:
+                        return self._json(400, {"error": why})
                 # where updates come from: only at the Mac (an update is installed with one click there)
                 if ((cfg.get("updates") or {}).get("repo") or "stecrz/Kontor") != ((app.config.get("updates") or {}).get("repo") or "stecrz/Kontor") and not local:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})

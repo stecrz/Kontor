@@ -695,6 +695,11 @@ class SecurityHardeningTests(unittest.TestCase):
         for pat, want in (("../../{year}", "2026"), ("/etc/{year}", "2026"), ("{year}/{month}", os.path.join("2026", "03")), ("{jahr.__class__}", "2026")):
             bl = receipts.Belege(st, {"receipts": {"folder": os.path.join(d, "B"), "subfolder": pat}})
             self.assertEqual(bl.subfolder({"date": "2026-03-04"}), want, pat)
+        # saving a pattern: braces only around the placeholders, always inside the folder
+        for pat in ("{year}", "{year}/{month}", "Belege {entity}/{account}", "", "2026"):
+            self.assertIsNone(receipts.pattern_problem(pat), pat)
+        for pat in ("{jahr}", "{year", "year}", "{year:>4}", "{0}", "{jahr.__class__}", "{{year}}", "../{year}", "/etc/{year}", "~/x", "a/../b"):
+            self.assertTrue(receipts.pattern_problem(pat), pat)
 
     def test_key_file_besides_keychain(self):
         import tempfile, storage
