@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.15.10 (2026-11-19 18:20)
+- Übersicht: Hover-Infos in allen Grafiken (Monat, Kachel, Schritt der Brücke).
+- Updates ersetzen die Dateien direkt, ohne Sicherungsordner; nicht mehr benötigte Dateien werden entfernt.
+
 ## 3.15.9 (2026-11-19 17:09)
 - Seitenfenster steht immer neben der Seite (die Seite rückt zur Seite); nur bei schmalem Fenster liegt es darüber.
 
