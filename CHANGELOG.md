@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.15.11 (2026-11-19 18:43)
+- Übersicht: „Vermögensaufbau“ je Baustein (Beteiligungen, Immobilien, Liquidität, Schulden) mit Geldfluss und Wertänderung statt der Kennzahlen.
+- Vermögensstruktur: Vorjahresvergleich nur mit bekanntem Stand; kein „neu“, ±0 % nur ohne Veränderung.
+
 ## 3.15.10 (2026-11-19 18:20)
 - Übersicht: Hover-Infos in allen Grafiken (Monat, Kachel, Schritt der Brücke).
 - Updates ersetzen die Dateien direkt, ohne Sicherungsordner; nicht mehr benötigte Dateien werden entfernt.
