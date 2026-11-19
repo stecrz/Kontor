@@ -46,6 +46,7 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
 - [x] 3.13.34 Seitenfenster überall, senkrechter Zoom, Farben nach Tabelle, Bilanz-Sprung, umgezogene Karte.
 - [x] 3.14.0 Gesamtprüfung; jede Cashflow-Zahl zeigt ihre Umsätze; Sicherheit (Update-Quelle, Protokoll); iPhone-Feinschliff.
 - [x] 3.15.1 Eingetragene Kategorien sichtbar und rückgängig zu machen.
+- [x] 3.15.3 Einlagen mit Gegenbuchung im eigenen Kapitalkonto: ohne Scheinänderung des Nettovermögens.
 - [x] 3.15.2 Empfohlene Kategorien als Checkliste unter Cashflow-Positionen (MoneyMoneys Schnittstelle kann keine Kategorien anlegen); Zielkonto einheitlich benannt und erklärt.
 - Danach: Hinweis bei gemischten Kategorien (etwa eine Immobilien-Kategorie mit Kaufpreis, Auszahlung und Miete), Kategorisieren je Empfänger in einem Schritt, Fortschritt „sicher zugeordnet / geschätzt“.
 

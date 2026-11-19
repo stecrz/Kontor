@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.15.3 (2026-11-19 12:30)
+- Cashflow: Einlagen/Entnahmen zwischen deinen Bereichen, die du im eigenen Kapitalkonto gegenbuchst, gehen in dieses Konto – keine Änderung des Nettovermögens, keine Wertänderung mehr (beide Seiten, auch mit Beteiligungsregel).
+
 ## 3.15.2 (2026-11-19 04:27)
 - „Zuordnen“ heißt jetzt „Kategorisieren“; anfangs nur private Bereiche ausgewählt.
 - Einrichtung: Buchungsregeln vor Cashflow-Positionen, Kategorisieren am Ende; „Weiter“ führt zum nächsten Schritt.

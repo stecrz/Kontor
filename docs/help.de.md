@@ -321,7 +321,7 @@ Die Planung arbeitet auf den Positionen; ein Budget aus MoneyMoney zählt für d
 | Immobilie ‹Name› › Kauf (Kaufpreis, Nebenkosten) | Sparen & Anlegen (selbst wählen), Zielkonto: das Konto der Immobilie |
 | Umbuchung | Umbuchung – zwischen deinen Konten und Bereichen, auch Einlagen und Entnahmen |
 
-Diese Namen erkennt Kontor und schlägt die Position selbst vor; ein ✓ heißt, dass eine deiner Kategorien schon dort zählt. Anlegen musst du sie in MoneyMoney – Kontor legt keine Kategorien an. Zahlungen in eine Beteiligung, die Kontor im Beteiligungs- oder Kapitalkonto gegenbucht, gehören zu Sparen & Anlegen: Kontor verbindet sie mit der Gegenbuchung.
+Diese Namen erkennt Kontor und schlägt die Position selbst vor; ein ✓ heißt, dass eine deiner Kategorien schon dort zählt. Anlegen musst du sie in MoneyMoney – Kontor legt keine Kategorien an. Zahlungen zwischen zwei deiner Bereiche (etwa eine Einlage in deine GbR) zählen als Einlage oder Entnahme, solange ihre Kategorie keine Einnahme oder Ausgabe ist – am klarsten mit „Umbuchung“. Buchst du sie zusätzlich in einem manuellen Kapitalkonto gegen (bei dir eine Beteiligung oder Forderung, in der Gesellschaft eine Verbindlichkeit), verbindet Kontor die Zahlung mit dieser Gegenbuchung: Das Nettovermögen bleibt, eine Wertänderung entsteht nicht.
 
 ![Cashflow-Positionen](img/de/category_positions.png)
 

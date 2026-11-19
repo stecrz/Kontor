@@ -911,6 +911,8 @@ const I18N = {
 "cf_g_tilgung":["Tilgung", "Repayment"],
 "cf_g_zinsen":["Zinsen", "Interest"],
 "cf_einlagen_gesellschafter":["Einlagen & Entnahmen der Gesellschafter", "Partners' contributions & withdrawals"],
+"cf_einlagen_gesellschafter_auf":["Einlagen & Entnahmen der Gesellschafter → {0}", "Partners' contributions & withdrawals → {0}"],
+"cf_einlage_auf":["{0} → {1}", "{0} → {1}"],
 "cf_umbuchung":["Umbuchung", "Transfer"],
 "cf_umbuchung_mit":["Umbuchung mit {0}", "Transfer with {0}"],
 "cf_ohne_gegenbuchung":["Umbuchung mit {0} ohne Gegenbuchung", "Transfer with {0} without counter-booking"],

@@ -30,7 +30,7 @@ import copy
 import hashlib
 import json
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
@@ -1129,6 +1129,77 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     pairs: List[Tuple[date, date, float, str, str]] = []
     seen_pair: Set[int] = set()
     paired: Set[int] = set()
+    # A contribution or withdrawal between two of your areas that you also booked against a manual account of this area (your
+    # capital account at home -- a participation or receivable --, the partner's capital account in the company -- a liability):
+    # same month, opposite amount, at most PAIR_DAYS apart -- the money went into (came out of) that account, the net worth
+    # stays; not a change in value. Only offline accounts, never a car or a depot; one payment to one booking only: first where
+    # the account is tied to the other area (an account mirror into it, its participation, its name in the account or booking),
+    # then the rest -- a booking that two payments could claim stays as it was.
+    cents_ = lambda x: int(round(x * 100))
+    pool: Dict[int, List[Tx]] = defaultdict(list)
+    for o in in_root:
+        oa = ledger.accounts[o.account_uuid]
+        if roles.get(oa.uuid, "other") not in ("participations", "receivables", "liabilities") or not oa.offline or oa.uuid in depots \
+                or mate.get(o.id) is not None or _value_adjustment(o) or foreign_currency(oa) or _is_cost(o, cost_words):
+            continue
+        pool[cents_(o.amount)].append(o)
+    mirror_areas: Dict[str, Set[str]] = defaultdict(set)
+    for m in config.get("account_mirrors") or []:
+        try:
+            ma, mb = ledger.resolve(str(m.get("a") or "")).uuid, ledger.resolve(str(m.get("b") or "")).uuid
+        except (KeyError, AttributeError):
+            continue
+        if mb in areas:
+            mirror_areas[ma].add(areas[mb])
+        if ma in areas:
+            mirror_areas[mb].add(areas[ma])
+    stake_company = {u: g for g, u in stakes.items()}
+
+    def tied(o: Tx, name: str) -> bool:
+        oa, n = ledger.accounts[o.account_uuid], name.casefold()
+        return name in mirror_areas.get(oa.uuid, ()) or stake_company.get(oa.uuid) == name \
+            or any(n in (x or "").casefold() for x in (oa.name, o.name, o.purpose))
+    def between_position(t: Tx) -> Tuple[str, Optional[str], bool]:
+        """A payment between two of your areas: (its category, the position it counts in, chosen by you)."""
+        c0 = norm_cat(t.category_path)
+        if not c0:
+            return c0, guess_position(t, company, by_name=False), False
+        g0, yours = position_of(c0, config, totals)
+        return c0, (g0 if yours else recognised_position(c0, totals.get(c0, 0.0) > 0)), yours
+
+    def paid_for(g0: Optional[str]) -> bool:
+        return g0 in POS and (POS[g0][0] in ("income", "expenses") or g0 == "loan_interest")      # interest paid is a cost as well
+
+    claims_by: List[Tuple[Tx, List[Tx], List[Tx]]] = []
+    for t in in_root:
+        p_t = partner.get(t.id)
+        if roles.get(t.account_uuid) != "cash" or mate.get(t.id) is not None or p_t is None:
+            continue
+        name = beteiligungs_gruppen.get(p_t) or areas.get(p_t)
+        if not name or name == self_name or (p_t in ledger.accounts and foreign_currency(ledger.accounts[p_t])) \
+                or (not by_cat[t.id] and paid_for(between_position(t)[1])):
+            continue                                     # paid for something, or into another currency: no contribution
+        c = [o for o in pool.get(-cents_(t.amount), []) if month_key(o.booking_date) == month_key(t.booking_date)
+             and abs((o.booking_date - t.booking_date).days) <= PAIR_DAYS]
+        if c:
+            claims_by.append((t, [o for o in c if tied(o, name)], c))
+    reserved: Dict[int, Tx] = {}
+    tied_ids = {o.id for _, lk, _ in claims_by for o in lk}
+    for phase in (1, 2):
+        lists = [(t, lk if phase == 1 else [o for o in c if o.id not in tied_ids]) for t, lk, c in claims_by if t.id not in reserved]
+        used = {o.id for o in reserved.values()}
+        lists = [(t, [o for o in c if o.id not in used]) for t, c in lists]
+        n_claims = Counter(o.id for _, c in lists for o in c)
+        for t, c in lists:
+            if len(c) == 1 and n_claims[c[0].id] == 1:
+                reserved[t.id] = c[0]
+
+    def counter_booking(t: Tx, mk: str) -> Optional[Tx]:
+        o = reserved.get(t.id)
+        if o is None:
+            return None
+        stake_in[o.account_uuid][mk] += -t.amount           # its change in value: what it moved by beyond this money
+        return o
 
     def own_row(t: Tx, acc: Account, role: str, mk: str) -> None:
         """A booking of an account that is no bank account (loan, receivable, asset): interest or a change of its value."""
@@ -1210,15 +1281,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             # between two of your areas, but paid for something (a salary, rent): it counts in the position you chose for its
             # category or its name clearly says (not "other") -- without a category by the words of its purpose (estimated).
             # Everything else between areas is a contribution or withdrawal.
-            c0 = norm_cat(t.category_path)
-            yours = False
-            if c0:
-                g0, yours = position_of(c0, config, totals)
-                if not yours:
-                    g0 = recognised_position(c0, totals.get(c0, 0.0) > 0)
-            else:
-                g0 = guess_position(t, company, by_name=False)
-            if g0 in POS and (POS[g0][0] in ("income", "expenses") or g0 == "loan_interest"):      # interest paid is a cost as well
+            c0, g0, yours = between_position(t)
+            if paid_for(g0):
                 p, guess = None, (None if c0 else g0)
             elif c0 and g0 is None and not yours:
                 # a category Kontor does not know and you did not place: shown under "other" on the positions page, but between
@@ -1227,15 +1291,34 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         if p is not None and not same and p in beteiligungs_gruppen:   # a company: its participation (if held here) takes it
             g = beteiligungs_gruppen[p]
             st = stakes.get(g)
-            R.add("investing", row="Einlage/Entnahme " + g, mk=mk, amount=t.amount, account=st, kind="external", nw=st is None,
-                  lbl=("cf_name", g), **_grp(INVEST_GROUPS, "participations"))
-            if st:
+            cb = counter_booking(t, mk)                # booked against an account by you: that, else the participation
+            if cb:
+                ca = ledger.accounts[cb.account_uuid]
+                R.add("investing", row="Einlage/Entnahme %s / %s" % (g, ca.name), mk=mk, amount=t.amount, account=ca.uuid, kind="external",
+                      nw=False, lbl=("cf_einlage_auf", g, ca.name), **_grp(INVEST_GROUPS, "participations"))
+                R.ids[("investing", "Einlage/Entnahme %s / %s" % (g, ca.name))][mk].append(cb.id)        # its counter-booking too (a click)
+            elif st:
                 stake_in[st][mk] += -t.amount
+                R.add("investing", row="Einlage/Entnahme " + g, mk=mk, amount=t.amount, account=st, kind="external", nw=False,
+                      lbl=("cf_name", g), **_grp(INVEST_GROUPS, "participations"))
+            else:
+                R.add("investing", row="Einlage/Entnahme " + g, mk=mk, amount=t.amount, kind="external", nw=True,
+                      lbl=("cf_name", g), **_grp(INVEST_GROUPS, "participations"))
             continue
         if p is not None and not same and pa is not None:             # another area of yours
-            if company:
+            cb = counter_booking(t, mk)
+            ca = ledger.accounts[cb.account_uuid] if cb else None
+            if company and ca:
+                R.add("financing", row="Einlagen/Entnahmen Gesellschafter / " + ca.name, mk=mk, amount=t.amount, account=ca.uuid, kind="external",
+                      nw=False, lbl=("cf_einlagen_gesellschafter_auf", ca.name), **_grp(FIN_GROUPS, "partners"))
+                R.ids[("financing", "Einlagen/Entnahmen Gesellschafter / " + ca.name)][mk].append(cb.id)
+            elif company:
                 R.add("financing", row="Einlagen/Entnahmen Gesellschafter", mk=mk, amount=t.amount, kind="external", nw=True,
                       lbl=("cf_einlagen_gesellschafter",), **_grp(FIN_GROUPS, "partners"))
+            elif ca:
+                R.add("investing", row="Einlage/Entnahme %s / %s" % (pa, ca.name), mk=mk, amount=t.amount, account=ca.uuid, kind="external",
+                      nw=False, lbl=("cf_einlage_auf", pa, ca.name), **_grp(INVEST_GROUPS, "areas"))
+                R.ids[("investing", "Einlage/Entnahme %s / %s" % (pa, ca.name))][mk].append(cb.id)
             else:
                 R.add("investing", row="Einlage/Entnahme " + pa, mk=mk, amount=t.amount, kind="external", nw=True,
                       lbl=("cf_name", pa), **_grp(INVEST_GROUPS, "areas"))
@@ -1598,6 +1681,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
             if s != sec:
                 continue
             m = R.meta[(s, row)]
+            if s == "valuation" and m["kind"] == "account" and all(abs(vals.get(mk, 0.0)) < 0.005 for mk in mkeys):
+                continue                                 # an account whose bookings all went with a payment (a contribution booked against it)
             z = {"row": row, "group": m["group"], "account": m["account"], "kind": m["kind"], "nw": m["nw"],
                  "amounts": {mk: round(vals.get(mk, 0.0), 2) for mk in mkeys}}
             for k in ("lbl", "glbl", "ord", "property_name"):
@@ -2057,7 +2142,8 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
         for mk in ist:
             if mk.endswith("-12"):
                 year_base[r["id"]][int(mk[:4]) + 1] = r["amounts"][mk] or 0.0
-    inv_rows = [z for sek in sektionen if sek["name"] == "investing" for z in sek["rows"]]
+    counter_rows = [z for sek in sektionen for z in sek["rows"] if (z.get("lbl") or [""])[0] in ("cf_einlage_auf", "cf_einlagen_gesellschafter_auf")]
+    inv_rows = [z for sek in sektionen if sek["name"] == "investing" for z in sek["rows"] if z not in counter_rows]
     growth_of: Dict[str, Tuple[float, Optional[float]]] = {}
     fremd_link: Dict[str, Tuple[str, float]] = {}
     for r in leaf_rows:
@@ -2131,10 +2217,10 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                 nb = 0.0
                 tilg["plan"]["amounts"][mk] = round(b, 2)
             bal[uuid] = round(nb, 2)
-        # Investitionen in Konten
-        for z in inv_rows:
+        # Investitionen in Konten (a contribution booked against your capital account: that account)
+        for z in inv_rows + counter_rows:
             v = z["plan"]["amounts"].get(mk, 0.0)
-            if z.get("account") and z["account"] in bal and z["kind"] in ("account", "category", "payback"):
+            if z.get("account") in bal and (z["kind"] in ("account", "category", "payback") or z in counter_rows):
                 bal[z["account"]] = round(bal[z["account"]] - v, 2)
             elif z["kind"] == "external":
                 einlagen_plan[mk] = einlagen_plan.get(mk, 0.0) - v

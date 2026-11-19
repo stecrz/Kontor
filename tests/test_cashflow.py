@@ -150,6 +150,74 @@ class CashflowCases(Reconciles):
         self.assertTrue(g["Einlagen/Entnahmen Gesellschafter"]["nw"])
         self.assertEqual(g["Einlagen/Entnahmen Gesellschafter"]["lbl"], ["cf_einlagen_gesellschafter"])
 
+    def test_contribution_booked_against_your_capital_accounts(self):
+        """Paid into a company of yours and booked against a manual account on both sides (your capital account at home, the
+        partner's capital account in the company): the money went into that account -- no change in net worth, no change in
+        value, whatever the category. Only the one booking of the opposite amount in that month; otherwise as before."""
+        base = [(1, "giro", date(2026, 1, 5), 30000.0, {"cat": "Gehalt"})]
+        four = lambda i, d, amt, cat: [(i, "giro", d, -amt, {"iban": "DE21", "cat": cat}), (i + 1, "stake", d, amt, {"cat": cat, "purpose": "Einlage"}),
+                                      (i + 2, "kk", d, amt, {"iban": "DE11", "cat": cat}), (i + 3, "kap", d, -amt, {"cat": cat, "purpose": "Einlage"})]
+        for cat in ("Umbuchung", "GbR A", ""):
+            data = build(base + four(2, date(2026, 2, 10), 10000.0, cat) + four(10, date(2026, 4, 20), -2500.0, cat))      # in, then out
+            self.assertAddsUp(data)
+            p, g = rows(data["Privat"]), rows(data["Muster GbR"])
+            z = p["Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR"]
+            self.assertEqual((z["amounts"]["2026-02"], z["amounts"]["2026-04"], z["nw"], z["lbl"], z["account"]),
+                             (-10000.0, 2500.0, False, ["cf_einlage_auf", "Muster GbR", "Beteiligung an Muster GbR"], "stake"), cat)
+            k = g["Einlagen/Entnahmen Gesellschafter / Kapitalkonto"]
+            self.assertEqual((k["amounts"]["2026-02"], k["amounts"]["2026-04"], k["nw"]), (10000.0, -2500.0, False), cat)
+            self.assertNotIn("Beteiligung an Muster GbR", p); self.assertNotIn("Kapitalkonto", g)         # no change in value
+        # without the counter-booking that month, or two of that amount: as before (leaves the net worth, its own change in value)
+        txs = base + four(2, date(2026, 2, 10), 10000.0, "Umbuchung")
+        later = [x if x[0] != 3 else (3, "stake", date(2026, 3, 2), 10000.0, x[4]) for x in txs]
+        twice = txs + [(9, "stake", date(2026, 2, 11), 10000.0, {"purpose": "Einlage"}), (8, "stake", date(2026, 2, 25), -10000.0, {})]
+        for case in (later, twice):
+            data = build(case)
+            self.assertAddsUp(data)
+            p = rows(data["Privat"])
+            self.assertTrue(p["Einlage/Entnahme Muster GbR"]["nw"]); self.assertIn("Beteiligung an Muster GbR", p)
+        # two payments of that amount (to the children, to the company) and one booking: the one tied to it by name takes it
+        data = build(base + four(2, date(2026, 2, 10), 1000.0, "Umbuchung") + [(30, "giro", date(2026, 2, 9), -1000.0, {"iban": "DE31"}),
+                                                                                  (31, "kind", date(2026, 2, 9), 1000.0, {"iban": "DE11"})])
+        self.assertAddsUp(data)
+        p = rows(data["Privat"])
+        self.assertEqual(p["Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR"]["amounts"]["2026-02"], -1000.0)
+        self.assertTrue(p["Einlage/Entnahme Kinder"]["nw"]); self.assertNotIn("Einlage/Entnahme Kinder / Beteiligung an Muster GbR", p)
+        # rent of the same amount to the company (paid for something) claims nothing
+        data = build(base + four(2, date(2026, 2, 10), 1000.0, "Umbuchung") + [(60, "giro", date(2026, 2, 8), -1000.0, {"iban": "DE21", "cat": "Wohnen\\Miete"}),
+                                                                                  (61, "kk", date(2026, 2, 8), 1000.0, {"iban": "DE11", "purpose": "Miete"})])
+        self.assertAddsUp(data)
+        p = rows(data["Privat"])
+        self.assertEqual((p["Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR"]["amounts"]["2026-02"], p["Wohnen"]["amounts"]["2026-02"]), (-1000.0, -1000.0))
+        # a bank account is never the other side (a loan the company paid into directly), nor a car
+        data = build(base + [(40, "giro", date(2026, 2, 9), -800.0, {"iban": "DE31"}), (41, "kind", date(2026, 2, 9), 800.0, {"iban": "DE11"}),
+                             (42, "darl", date(2026, 2, 10), 800.0, {"purpose": "Sondertilgung"}), (43, "auto", date(2026, 2, 10), 800.0, {})])
+        self.assertAddsUp(data)
+        self.assertTrue(rows(data["Privat"])["Einlage/Entnahme Kinder"]["nw"])
+        # with a participation set up (Kontor keeps its value) and your capital account kept beside it: the money went into that
+        cfg = {"companies": [{"area": "Muster GbR", "participation": "Beteiligung an Muster GbR"}]}
+        data = build(base + [(50, "giro", date(2026, 2, 10), -10000.0, {"iban": "DE21"}), (51, "ford", date(2026, 2, 10), 10000.0, {"purpose": "Einlage Muster GbR"}),
+                             (52, "kk", date(2026, 2, 10), 10000.0, {"iban": "DE11"}), (53, "kap", date(2026, 2, 10), -10000.0, {})], cfg)
+        self.assertAddsUp(data)
+        p = rows(data["Privat"])
+        self.assertFalse(p["Einlage/Entnahme Muster GbR / Darlehen an Freund"]["nw"])
+        self.assertNotIn("Darlehen an Freund", p); self.assertNotIn("Beteiligung an Muster GbR", p)
+        # planning: a contribution planned on such a row moves the account, no change in value is made up
+        ds = build(base + four(2, date(2026, 2, 10), 10000.0, "Umbuchung"))
+        for name, row, sec in (("Privat", "Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR", "investing"),
+                               ("Muster GbR", "Einlagen/Entnahmen Gesellschafter / Kapitalkonto", "financing")):
+            d = ds[name]
+            report.apply_plan(d, {"rows": {sec + "/" + row: {"method": "none", "amounts": {"2026-08": -5000.0 if sec == "investing" else 5000.0}}}}, core.merged_config({}))
+            self.assertAlmostEqual(d["cashflow"]["sums"]["2026-08"]["valuation"], 0.0, 2, name)
+
+        # one with, one without in the same month: two rows, each right
+        data = build(base + four(2, date(2026, 2, 10), 10000.0, "Umbuchung") + [(20, "giro", date(2026, 2, 20), -700.0, {"iban": "DE21"}),
+                                                                                   (21, "kk", date(2026, 2, 20), 700.0, {"iban": "DE11"})])
+        self.assertAddsUp(data)
+        p, g = rows(data["Privat"]), rows(data["Muster GbR"])
+        self.assertEqual((p["Einlage/Entnahme Muster GbR"]["amounts"]["2026-02"], p["Einlage/Entnahme Muster GbR"]["nw"]), (-700.0, True))
+        self.assertEqual(g["Einlagen/Entnahmen Gesellschafter"]["amounts"]["2026-02"], 700.0)
+
     def test_without_participation_a_contribution_leaves_the_net_worth(self):
         data = build([(1, "giro", date(2026, 1, 5), 30000.0, {"cat": "Gehalt"}),
                       (2, "giro", date(2026, 2, 10), -10000.0, {"iban": "DE21"}),

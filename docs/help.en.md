@@ -321,7 +321,7 @@ Above the table stands what Kontor needs from your categories in MoneyMoney – 
 | Immobilie ‹name› › Kauf (purchase price, costs) | Saving & investing (choose it), target account: the property's account |
 | Umbuchung | Transfer – between your accounts and areas, also contributions and withdrawals |
 
-Kontor recognises these (German) names and proposes the position itself; a ✓ means one of your categories counts there already. You create them in MoneyMoney – Kontor creates no categories. Payments into a participation that Kontor books against in the participation or capital account belong to Saving & investing: Kontor links them with the counter-booking.
+Kontor recognises these (German) names and proposes the position itself; a ✓ means one of your categories counts there already. You create them in MoneyMoney – Kontor creates no categories. Payments between two of your areas (a contribution to your partnership, say) count as a contribution or withdrawal as long as their category is no income or expense – clearest with “Umbuchung”. If you also book them against a manual capital account (at home a participation or receivable, in the company a liability), Kontor links the payment with that counter-booking: the net worth stays, no change in value arises.
 
 ![Cash flow positions](img/en/category_positions.png)
 
