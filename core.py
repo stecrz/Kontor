@@ -15,7 +15,7 @@ import threading
 import traceback
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyNotRunning
 from model import UUID_RE, Account, Ledger, Tx, accounts_from_export, add_months, fmt_eur, marks_in, month_key, tx_from_export, norm_cat
@@ -38,7 +38,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "dry_run": True,
     "schedule": {"interval_minutes": 30, "automatic": True, "full_read_days": 30},
     "loans": [], "companies": [], "account_mirrors": [],
-    "assign_without": [],          # areas whose transactions you do not categorise (their ids): left out under Kategorien
+    "assign_without": None,        # areas whose transactions you do not categorise (their ids): left out under Kategorisieren;
+                                   # None: not chosen yet -- all but the private areas (assign_skipped)
     "areas": [],
     "real_estate": [],
     "balance": {"months_back": 0, "roles": {}, "history_source": {}, "illiquid_roles": ["participations", "real_estate", "tangibles"],
@@ -134,7 +135,7 @@ def _shape(cfg: dict) -> dict:
                 g[f] = text(g[f])
         if "threshold" in g:
             g["threshold"] = number(g["threshold"], 0.01)
-    if "assign_without" in cfg:
+    if cfg.get("assign_without") is not None:
         cfg["assign_without"] = [str(x) for x in cfg["assign_without"] if isinstance(x, (str, int)) and not isinstance(x, bool)] if isinstance(cfg["assign_without"], list) else []
     if "account_mirrors" in cfg:
         cfg["account_mirrors"] = [dict({"a": text(m.get("a")), "b": text(m.get("b")), "from_date": text(m.get("from_date"))},
@@ -191,6 +192,16 @@ def merged_config(cfg: Optional[dict]) -> dict:
         im.setdefault("documents", [])
         im.setdefault("loan_accounts", {})
     return out
+
+
+def assign_skipped(config: dict, bereiche: List[dict]) -> Set[str]:
+    """The areas left out under Kategorisieren: your choice; before you chose, all but the private ones (the main area if none
+    is private) -- a company with countless bookings stays out until you tick it."""
+    v = config.get("assign_without")
+    if isinstance(v, list):
+        return {str(x) for x in v}
+    keep = {str(b["id"]) for b in bereiche if b.get("kind") == "private"} or {str(b["id"]) for b in bereiche if b.get("main_area")}
+    return {str(b["id"]) for b in bereiche if str(b["id"]) not in keep}
 
 
 def version_on_disk() -> str:
@@ -1477,8 +1488,8 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "real_estate": immobilien,
         "budgets": budgets,
         "warnings": warnings,
-        "categories": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig, tuple(sorted(config.get("assign_without") or []))),
-                                                                                  lambda: categorize.stats(kat, ledger, bank_accounts(roles), area_of, set(config.get("assign_without") or []))))[1],
+        "categories": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig, tuple(sorted(assign_skipped(config, bereiche)))),
+                                                                                  lambda: categorize.stats(kat, ledger, bank_accounts(roles), area_of, assign_skipped(config, bereiche))))[1],
                            positions=len(my_positions(config))),
         "accounts_new": neu,
     }

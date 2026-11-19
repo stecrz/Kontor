@@ -125,7 +125,7 @@ const H = {
   cf_ausgaben_kuchen: t('cf_ausgaben_kuchen_tip'), cf_heatmap: t('cf_heatmap_tip'),
   cf_unklar: t('cf_unklar_tip'), cf_wert: t('cf_wert_tip'), cf_fcf: t('cf_fcf_tip'), cf_bank: t('cf_bank_tip'), cf_umsch: t('cf_umschichtungen_tip'), cf_nv: t('cf_nv_tip'), cf_abgleich_bank: t('cf_abgleich_bank_tip'),
   cf_abgleich_nv: t('cf_abgleich_nv_tip'),
-  zielkonto: t('zielkonto_tip'), anl_empfaenger: t('anl_tip'),
+  zielkonto: t('zielkonto_tip'), anl_empfaenger: t('anl_tip'), kb: t('kb_tip'),
   voll_lesen: t('voll_lesen_tip'),
   sync_knoepfe: t('sync_knoepfe_tip'),
   kennung: t('interne_kennung_des_bereichs_wird'),
@@ -183,7 +183,7 @@ const H = {
 };
 const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   accounts_mapping: 'accounts', inactive: 'accounts', verlauf_kurz: 'history', history_source: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
-  zuordnen: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'categories-positions', anl_empfaenger: 'positions-recipients',
+  zuordnen: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', kb: 'categories-tree',
   cf_operativ: 'cash-flow', cf_invest: 'cash-flow', cf_finanz: 'cash-flow', cf_unklar: 'cash-flow', cf_wert: 'cash-flow',
   cf_bank: 'cash-flow', cf_umsch: 'cash-flow', cf_fcf: 'cash-flow', cf_nv: 'cash-flow', cf_abgleich_bank: 'cash-flow', cf_abgleich_nv: 'cash-flow', cf_bruecke: 'cash-flow-bridge', cf_verm_bruecke: 'cash-flow-wealth', cf_je_monat_t: 'cash-flow-months', cf_herkunft_verwendung: 'cash-flow-total',
   cf_ausgaben_kuchen: 'cash-flow-ring', cf_heatmap: 'cash-flow-heatmap',
@@ -807,12 +807,12 @@ async function vUebersicht() {
   const ue = (D.cashflow.reconciliation || {})[cur]; if (ue && Math.abs(ue.unexplained) > 1) items.push(['warn', t('unerklaerte_vermoegensaenderung_im_lau') + F(ue.unexplained) + t('pruefzeile'), '#cashflow']);
   for (const w of (D.warnings || []).slice(0, 3)) items.push(['warn', w, '#bookings']);
   if (S.STATUS.update && S.STATUS.update.newer) items.push(['info', t('update') + S.STATUS.update.available + t('verfuegbar'), '#settings/updates']);
-  // below the charts (they stay a fixed dashboard): what is open, each line leads where it is done -- the list scrolls if long
-  const todo = items.length ? `<div class="card ov-todo"><div class="ov-head"><b>${t('ov_offen')}</b><span class="ov-fig"><span class="ov-s">${items.length}</span></span></div><div class="ov-todo-l">${items.map(([k, x, href]) => `<a href="${href}" class="ov-todo-i ${k}"><i class="ov-todo-d"></i><span>${esc(x)}</span><span class="ov-todo-c" aria-hidden="true">›</span></a>`).join('')}</div></div>` : '';
+  // beside the monthly chart (lower right): what is open, each line leads where it is done -- the list scrolls if long
+  const todo = items.length ? `<div class="card ov-todo" data-ov="todo"><div class="ov-head"><b>${t('ov_offen')}</b><span class="ov-fig"><span class="ov-s">${items.length}</span></span></div><div class="ov-todo-l">${items.map(([k, x, href]) => `<a href="${href}" class="ov-todo-i ${k}"><i class="ov-todo-d"></i><span>${esc(x)}</span><span class="ov-todo-c" aria-hidden="true">›</span></a>`).join('')}</div></div>` : '';
   const card = (id, title, go, foot = '') => `<div class="card link ov-card" data-ov="${id}" data-ovgo="${go}" role="link" tabindex="0" aria-label="${esc(title)}"><div class="ov-head"><b>${esc(title)}</b><span class="ov-fig" id="ov-fig-${id}"></span></div><div class="ov-plot" id="ov-${id}"></div>${foot}</div>`;
   const key = [['ein', t('einnahmen')], ['aus', t('ausgaben')], ['inv', t('cf_investitionen')], ['fin', t('cf_finanzierung')]].map(([c, l]) => `<span><i class="sw ${c === 'ein' ? 'in' : c === 'aus' ? 'out' : c}"></i>${esc(l)}</span>`).join('')
     + `<span><i class="sw net"></i>${esc(t('zahlungsfluss_gesamt_veraenderung_liqu'))}</span>`;
-  return `<div class="ov-grid">${card('nw', t('nettovermoegen'), 'nw')}${card('comp', t('vermoegensstruktur'), 'table')}${card('months', t('cf_je_monat_t'), 'months', `<div class="ov-key">${key}</div>`)}${card('wealth', t('cf_verm_bruecke'), 'wealth')}</div>` + todo;
+  return `<div class="ov-grid${todo ? '' : ' no-todo'}">${card('nw', t('nettovermoegen'), 'nw')}${card('comp', t('vermoegensstruktur'), 'table')}${card('wealth', t('cf_verm_bruecke'), 'wealth')}${card('months', t('cf_je_monat_t'), 'months', `<div class="ov-key">${key}</div>`)}${todo}</div>`;
 }
 // where a chart leads: the balance sheet's chart or table, the cash flow's months or net worth bridge (the last 12 months, as here)
 const OV_GO = {nw: ['#balance', '#bch'], table: ['#balance', '.wrap.bil-tbl'], months: ['#cashflow', '[data-cfid="months"]'], wealth: ['#cashflow', '[data-cfid="wealth"]']};
@@ -834,10 +834,10 @@ function bindOverview(main) {
 }
 function ovDraw() {
   const D = B(), grid = $('#main .ov-grid'); if (!D || !grid) return;
-  // one screen: the grid takes the height left below it (a narrow window stacks the cards, each of its own height)
-  const wide = window.innerWidth > 760;
-  const td = $('#main .ov-todo'), tdH = td ? td.getBoundingClientRect().height + 14 : 0;          // the open points below keep their room
-  grid.style.height = wide ? Math.max(480, window.innerHeight - grid.getBoundingClientRect().top - window.scrollY - 24 - tdH) + 'px' : '';
+  // one screen in three columns: the grid takes the height left below it, not more than a calm size (a narrower window: the
+  // cards of their own height, in two columns or stacked)
+  const wide = window.innerWidth > 1100;
+  grid.style.height = wide ? Math.min(660, Math.max(460, window.innerHeight - grid.getBoundingClientRect().top - window.scrollY - 24)) + 'px' : '';
   // the figure first (it can take a second line on a narrow screen), then the chart in the room left
   const put = (id, fn) => { const el = $('#ov-' + id); if (!el) return; const f = $('#ov-fig-' + id); el.innerHTML = '';
     if (f) f.innerHTML = fn(D, 320, 200).fig || '';
@@ -861,29 +861,51 @@ function ovNetWorth(D, W, H) {
   return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${g}</svg>`,
     fig: `<span class="ov-v">${F0(last)} €</span>${yago != null ? `<span class="ov-s">${t('ov_12_monate')} ${ovDelta(last - yago)}</span>` : ''}`};
 }
-// 2. What the net worth consists of now: assets by position and the debts as two bars on one scale, the positions named beside
+// 2. What the net worth consists of now, as a balance sheet: the assets as a treemap (each position by its size, with its share),
+// beside them in one column what pays for them -- equity and debts, on the same scale (so the equity ratio shows at a glance)
+function treemap(vals, x, y, w, h) {          // squarified: [{i, x, y, w, h}] for values sorted from the largest
+  const out = [], total = vals.reduce((a, v) => a + v, 0); if (total <= 0 || w <= 0 || h <= 0) return out;
+  let items = vals.map((v, i) => ({i, a: v * w * h / total}));
+  const worst = (row, side) => { const sum = row.reduce((a, e) => a + e.a, 0), mx = Math.max(...row.map(e => e.a)), mn = Math.min(...row.map(e => e.a));
+    return Math.max(side * side * mx / (sum * sum), sum * sum / (side * side * mn)); };
+  while (items.length) {
+    const side = Math.min(w, h), row = [items[0]]; let rest = items.slice(1);
+    while (rest.length && worst([...row, rest[0]], side) <= worst(row, side)) row.push(rest.shift());
+    const sum = row.reduce((a, e) => a + e.a, 0);
+    if (w >= h) { const rw = sum / h; let yy = y; for (const e of row) { const eh = e.a / rw; out.push({i: e.i, x, y: yy, w: rw, h: eh}); yy += eh; } x += rw; w -= rw; }
+    else { const rh = sum / w; let xx = x; for (const e of row) { const ew = e.a / rh; out.push({i: e.i, x: xx, y, w: ew, h: rh}); xx += ew; } y += rh; h -= rh; }
+    items = rest;
+  }
+  return out;
+}
 function ovComposition(D, W, H) {
   const k = (D.months || [])[D.months.length - 1], pos = D.balance.rows.filter(r => r.group && ROLE[r.role] && r.role !== 'contingent' && r.role !== 'ignore');
   const val = r => (r.amounts || {})[k] || 0, assets = pos.filter(r => r.role !== 'liabilities' && val(r) > 0.5).sort((a, b) => val(b) - val(a));
-  const debts = pos.filter(r => val(r) < -0.5).reduce((a, r) => a + val(r), 0), sumA = assets.reduce((a, r) => a + val(r), 0);
-  if (sumA < 0.5 && debts > -0.5) return ovEmpty(t('noch_keine_bestaende'));
-  const max = Math.max(sumA, -debts), lw = Math.min(150, Math.max(96, W * 0.3)), bx = lw + 8, bw = W - bx - 8, sc = v => v / (max || 1) * bw;
-  const bh = Math.min(26, Math.max(16, H * 0.11)), rows = assets.length + (debts < -0.5 ? 1 : 0), lh = Math.min(22, Math.max(15, (H - 2 * bh - 30) / Math.max(1, rows)));
-  let g = '', xx = bx;
-  g += `<text class="ov-bl" x="${bx - 8}" y="${(6 + bh / 2 + 4).toFixed(1)}" text-anchor="end">${esc(t('ov_vermoegen'))}</text>`;
-  for (const r of assets) { const w = sc(val(r)); g += `<rect class="ov-seg" x="${xx.toFixed(1)}" y="6" width="${Math.max(1, w - 2).toFixed(1)}" height="${bh}" rx="3" style="fill:${ROLE[r.role][1]}"/>`; xx += w; }
-  if (debts < -0.5) g += `<text class="ov-bl" x="${bx - 8}" y="${(12 + bh * 1.5 + 4).toFixed(1)}" text-anchor="end">${esc(t('ov_schulden'))}</text><rect class="ov-seg" x="${bx}" y="${(12 + bh).toFixed(1)}" width="${Math.max(1, sc(-debts)).toFixed(1)}" height="${bh}" rx="3" style="fill:var(--c-verb)"/>`;
-  // the legend: each position with its amount and share of the assets (as many as fit)
-  let y = 12 + 2 * bh + 22; const fits = Math.max(1, Math.floor((H - y + lh - 6) / lh));
-  const list = [...assets.map(r => [ROLE[r.role][1], r.name, val(r), sumA ? val(r) / sumA : null]), ...(debts < -0.5 ? [['var(--c-verb)', t('pos_verbindlichkeiten'), debts, null]] : [])];
-  const shown = list.length > fits ? list.slice(0, fits - 1).concat([['var(--c-neutral)', t('cf_uebrige', list.length - fits + 1), list.slice(fits - 1).reduce((a, x) => a + x[2], 0), null]]) : list;
-  for (const [c, n, v, sh] of shown) {
-    g += `<rect x="${bx}" y="${(y - 9).toFixed(1)}" width="10" height="10" rx="2" style="fill:${c}"/><text class="ov-ln" x="${bx + 16}" y="${y.toFixed(1)}">${esc(n)}</text>`
-      + `<text class="ov-lv" x="${W - 8}" y="${y.toFixed(1)}" text-anchor="end">${esc(F0(v))} €${sh != null ? `<tspan class="ov-lp"> · ${FN(sh * 100, 0)} %</tspan>` : ''}</text>`;
-    y += lh;
-  }
-  return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${g}</svg>`,
-    fig: `<span class="ov-s">${esc(ML(k))}</span>`};
+  const debts = -pos.filter(r => val(r) < -0.5).reduce((a, r) => a + val(r), 0), sumA = assets.reduce((a, r) => a + val(r), 0), equity = sumA - debts;
+  if (sumA < 0.5 && debts < 0.5) return ovEmpty(t('noch_keine_bestaende'));
+  const total = Math.max(sumA, debts), pct = v => FN(v / (total || 1) * 100, 0) + ' %';
+  // a tile: a quiet tint of the position's colour with a solid edge, its name and figures inside where they fit (all in the hover)
+  const tile = (x, y, w, h, color, name, v, share) => {
+    x += 1; y += 1; w -= 2; h -= 2; if (w < 1 || h < 1) return '';
+    const room = n => Math.floor((w - 14) / n), cut = (txt, n) => txt.length > room(n) ? txt.slice(0, Math.max(1, room(n) - 1)) + '…' : txt;
+    let g = `<g><title>${esc(name)}: ${esc(F0(v))} € · ${share}</title><rect class="ov-tm" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="4" style="--c:${color}"/>`
+      + `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="3" height="${h.toFixed(1)}" rx="1.5" style="fill:${color}"/>`;
+    if (w >= 46 && h >= 20) {
+      g += `<text class="ov-tm-n" x="${(x + 9).toFixed(1)}" y="${(y + 15).toFixed(1)}">${esc(cut(name, 6.8))}</text>`;
+      if (h >= 36) g += `<text class="ov-tm-v" x="${(x + 9).toFixed(1)}" y="${(y + 30).toFixed(1)}">${esc(cut(share, 6.2))}</text>`;
+      if (h >= 52 && w >= 80) g += `<text class="ov-tm-v" x="${(x + 9).toFixed(1)}" y="${(y + 45).toFixed(1)}">${esc(cut(F0(v) + ' €', 6.2))}</text>`;
+    }
+    return g + '</g>';
+  };
+  const pw = Math.round(Math.min(140, Math.max(104, W * 0.28))), tw = W - pw - 8, ha = H * sumA / (total || 1);
+  let g = treemap(assets.map(val), 0, H - ha, tw, ha).map(q => { const r = assets[q.i]; return tile(q.x, q.y, q.w, q.h, ROLE[r.role][1], r.name, val(r), pct(val(r))); }).join('');
+  // what pays for it: equity on top, debts below (negative equity: the debts are larger than the assets)
+  const x2 = tw + 8, he = equity > 0.5 ? H * equity / (total || 1) : 0, hd = H * debts / (total || 1);
+  if (he) g += tile(x2, H - he - hd, pw, he, 'var(--c-nw)', t('re_eigenkapital'), equity, pct(equity));
+  if (hd >= 0.5) g += tile(x2, H - hd, pw, hd, 'var(--c-verb)', t('ov_schulden'), -debts, pct(debts));
+  if (equity < -0.5 && H - ha >= 1) g += tile(0, 0, tw, H - ha, 'var(--c-neutral)', t('ov_fehlbetrag'), equity, pct(-equity));          // debts above the assets: the gap
+  return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('vermoegensstruktur'))}">${g}</svg>`,
+    fig: `<span class="ov-v">${F0(total)} €</span><span class="ov-s">${esc(t('ov_bilanzsumme', ML(k)))}</span>`};
 }
 // 3. The last twelve closed months: money in up, money out down (income, expenses, investing, financing), the change in cash as
 // a short stroke -- the upper part of the cash flow's monthly chart; a few far larger months are cut (marked) so the rest stays readable
@@ -912,7 +934,7 @@ function ovMonths(D, W, H) {
       g += `<rect class="cf-col ${c}" x="${x0.toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${(y2 - y1).toFixed(1)}"/>`; }
     if ((cut && b.up > hi + 0.5) || (cut && b.dn < lo - 0.5)) { const yc = b.up > hi + 0.5 ? P.t + 4 : H - P.b - 4;
       g += `<path class="cf-break" d="M${(x0 - 2).toFixed(1)},${(yc + 3).toFixed(1)}L${(x0 + bw + 2).toFixed(1)},${(yc - 3).toFixed(1)}"/>`; }
-    if (Math.abs(b.net) >= 0.5 && Math.abs(y(b.net) - y(0)) >= 4) g += `<line class="cf-net" x1="${(x0 - 3).toFixed(1)}" x2="${(x0 + bw + 3).toFixed(1)}" y1="${y(b.net).toFixed(1)}" y2="${y(b.net).toFixed(1)}"/>`;
+    if (Math.abs(b.net) >= 0.5 && b.net >= lo - 0.5 && b.net <= hi + 0.5 && Math.abs(y(b.net) - y(0)) >= 4) g += `<line class="cf-net" x1="${(x0 - 3).toFixed(1)}" x2="${(x0 + bw + 3).toFixed(1)}" y1="${y(b.net).toFixed(1)}" y2="${y(b.net).toFixed(1)}"/>`;
     if (i === 0 || i === bs.length - 1 || (bs.length > 6 && i === Math.floor(bs.length / 2))) g += `<text class="cf-tick${i === bs.length - 1 ? ' end' : ''}" x="${(x0 + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${esc(ML(b.k))}</text>`;
   });
   const net = bs.reduce((a, b) => a + b.net, 0);
@@ -948,17 +970,18 @@ const MODULES = [
   {id: 'areas', t: t('mod_areas'), d: t('welche_konten_gehoeren_zusammen_privat'), done: () => (S.CFG.areas || []).length > 0 || !!S.DATA, href: '#accounts/areas'},
   {id: 'accounts', t: t('mod_accounts'), d: t('jedes_konto_bestaetigen_bereich_und'), done: () => !!S.DATA && !((S.DATA.accounts_new || []).length), href: '#accounts'},
   {id: 'history', t: t('mod_history'), d: t('bisherigen_verlauf_aller_konten_einmal'), done: () => !!((S.STATUS || {}).moneymoney || {}).history, href: '#accounts/history', optional: true},
-  {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => Object.keys((S.CFG.cashflow || {}).positions || {}).length > 0, href: '#accounts/positions', optional: true},
-  {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.categories || {}).total || {}).without), href: '#categories', optional: true},
   {id: 'rules', t: t('mod_rules'), d: t('darlehen_spiegeln_und_verzinsen_beteil'), done: () => hasRules(), href: '#accounts/rules', optional: true},
+  {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => Object.keys((S.CFG.cashflow || {}).positions || {}).length > 0, href: '#accounts/positions', optional: true},
   {id: 'properties', t: t('mod_properties'), d: t('kalkulationen_anlegen_mit_konten_und'), done: () => (S.CFG.real_estate || []).length > 0, href: '#properties', optional: true},
   {id: 'planning', t: t('mod_planning'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planning', optional: true},
   {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.tax || {}).rental_category, href: '#accounts/tax', optional: true},
   {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.receipts || {}).folder, href: '#settings/receipts', optional: true},
   {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => ((S.CFG.ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
+  {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.categories || {}).total || {}).without), href: '#categories', optional: true},
   {id: 'operation', t: t('mod_operation'), d: t('testmodus_automatischer_abgleich_mitte'), done: () => true, href: '#settings/moneymoney'},
 ];
 // the setup stays in the menu (and guides from step to step) until you close it yourself: "Einrichtung abgeschlossen"
+const nextModule = id => MODULES[MODULES.findIndex(m => m.id === id) + 1];          // the next step of the setup
 const setupMissing = () => MODULES.some(m => !m.optional && !m.done());
 const setupOpen = () => !(S.CFG.ui || {}).setup_done;
 function vEinrichtung(sub) {
@@ -998,7 +1021,7 @@ function vMMImport() {
     <div class="step"><div class="b"><b>${t('datei_im_finder_zeigen')}</b>${t('kontor_oeffnet_ein_finder_fenster')}<div class="actions"><button id="mmh-zeigen" class="small">${t('im_finder_zeigen')}</button></div><div class="small muted">${t('kein_fenster_in_moneymoney_hilfe')}</div></div></div>
     <div class="step ${last ? 'done' : ''}"><div class="b"><b>${t('hierher_ziehen_passwort_eingeben')}</b>${t('danach_erscheint_ein_fenster_von')}<div class="drop" id="mmh-drop">${t('moneymoney_sqlite_hierher_ziehen')}<br><button id="mmh-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button><input type="file" id="mmh-file" class="hidden"></div><div id="mmh-res" class="findings"></div></div></div>
     <div class="step hidden" id="mmh-names"></div>
-    ${setupOpen() ? `<div class="step"><div class="b"><b>${t('weiter')}</b><div class="actions"><button data-next="#categories" ${last ? '' : 'class="secondary"'}>${t('weiter_kategorien_amp_zuordnen')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button></div></div></div>` : ''}</div>`;
+    ${setupOpen() ? `<div class="step"><div class="b"><b>${t('weiter')}</b><div class="actions"><button data-next="${nextModule('history').href}" ${last ? '' : 'class="secondary"'}>${t('weiter_zu', nextModule('history').t)}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button></div></div></div>` : ''}</div>`;
 }
 // Kontostände: what history Kontor knows per portfolio (MoneyMoney does not give it out) and months that may be missing
 function depotSection(r) {
@@ -3507,9 +3530,9 @@ function cfDrawMonths() {
       }
     }
   });
-  // the change in cash: a quiet short mark at its height -- only where it stands clear of the zero line (no clutter there)
+  // the change in cash: a quiet short mark at its height -- only clear of the zero line and within the axis (bars cut: none, the tooltip has it)
   const over = Math.max(0, Math.min(3, (slot - bw) / 2 - 1.5));          // the marks a little wider than the bar -- never touching the next one
-  bs.forEach((b, i) => { const yn = y(b.net); if (Math.abs(yn - y(0)) >= 4) g += `<line class="cf-net" x1="${(x(i) - over * 0.7).toFixed(1)}" x2="${(x(i) + bw + over * 0.7).toFixed(1)}" y1="${yn.toFixed(1)}" y2="${yn.toFixed(1)}"/>`; });
+  bs.forEach((b, i) => { const yn = y(b.net); if (b.net >= y0 - 0.005 && b.net <= y1 + 0.005 && Math.abs(yn - y(0)) >= 4) g += `<line class="cf-net" x1="${(x(i) - over * 0.7).toFixed(1)}" x2="${(x(i) + bw + over * 0.7).toFixed(1)}" y1="${yn.toFixed(1)}" y2="${yn.toFixed(1)}"/>`; });
   const t2 = H1 + gapH, z2 = t2 + H2 / 2, y2 = v => z2 - Math.max(-nmax, Math.min(nmax, v)) / nmax * (H2 / 2 - 2);
   g += `<text class="cf-sub-l" x="4" y="${(t2 - (upCut2 ? 25 : 15)).toFixed(1)}">${esc(t('cf_veraenderung_nv'))}</text>`;          // a little room below the title
   // its scale: the top, the middle (0) and the bottom labelled, halfway a faint line
@@ -4540,7 +4563,7 @@ async function vUmsaetze() {
   <div class="toolbar uf-ext">${f.ids || f.cfRows ? `<span class="chip">${esc(f.cfRows ? f.title || '' : t('uf_unklare', f.title || ''))}<button class="icon ghost" data-ids-x="1" aria-label="${esc(t('entfernen'))}">✕</button></span>` : ''}
     <span class="small muted">${t('kategorien')}</span>${f.katsLabel && f.kats ? `<span class="chip">${esc(t('uf_alle_kats', f.katsLabel, f.kats.length))}${f.mitOhne ? ` · ${esc(t('ohne_kategorie_2'))}` : ''}<button class="icon ghost" data-kat-all="1" aria-label="${esc(t('entfernen'))}">✕</button></span>`
       : (f.kats || []).map((k, i) => `<span class="chip">${esc(CP(k))}<button class="icon ghost" data-kat-x="${i}" aria-label="${esc(t('entfernen'))}">✕</button></span>`).join('')}
-    <input type="text" id="uf-kat-add" list="uf-kats" placeholder="${t('uf_kategorie_hinzu')}" style="min-width:200px"><datalist id="uf-kats">${(S.KATS || []).filter(k => !k.default).map(k => `<option value="${esc(CP(k.path))}">`).join('')}</datalist>
+    <input type="text" id="uf-kat-add" list="uf-kats" placeholder="${t('uf_kategorie_hinzu')}" style="min-width:230px"><datalist id="uf-kats">${(S.KATS || []).filter(k => !k.default).map(k => `<option value="${esc(CP(k.path))}">`).join('')}</datalist>
     ${f.est ? `<span class="small muted">${t('uf_ohne_geschaetzte')}</span>` : ''}
     ${f.date_from || f.date_to || f.kats || f.ids || f.cfRows ? `<button id="uf-chip-x" class="ghost small">${t('uf_filter_aufheben')}</button>` : ''}
   </div></div>
@@ -4648,7 +4671,7 @@ function vRegeln() {
     + (S.KONTEN.length ? '' : `<div class="note"><b>${t('noch_keine_konten_geladen_unter')}</b></div>`);
   h += `<div class="group"><div class="set-row"><div class="grow"><b>${t('auto_buchen')}</b><div class="small muted">${t(auto ? 'auto_buchen_an' : 'auto_buchen_aus')}${loc ? '' : ' ' + t('nur_am_mac_klammer')}</div></div>`
     + `<label class="switch${loc ? '' : ' off'}"><input type="checkbox" id="auto-book" ${auto ? 'checked' : ''} ${loc ? '' : 'disabled'}><i></i></label></div></div>`;
-  h += `<section class="rule-sec"><div class="sec-head"><h2>${t('darlehen')}${hq('regel_darlehen_h')}</h2><span class="sp"></span><button id="add-loan" class="secondary small add-rule">${t('darlehen_hinzufuegen')}</button></div>`
+  h += `<section class="rule-sec"><div class="sec-head"><h2>${t('regel_darlehen_titel')}${hq('regel_darlehen_h')}</h2><span class="sp"></span><button id="add-loan" class="secondary small add-rule">${t('darlehen_hinzufuegen')}</button></div>`
     + `<p class="sec-sub">${t('darlehen_sub')}</p><div class="list" id="loans">${(C.loans || []).map((l, i) => loanForm(l, i)).join('')}</div><div class="empty small muted">${t('leer_darlehen')}</div></section>`;
   const cos = companyAreas();
   h += `<section class="rule-sec"><div class="sec-head"><h2>${t('regel_beteiligungen')}${hq('regel_gesellschaften_h')}</h2></div><p class="sec-sub">${t('gesellschaften_sub')}</p>`
@@ -4673,12 +4696,35 @@ function acctSel(cls, selected, filter, empty) {
   return `<select class="${cls}"><option value="">${empty}</option>` + list.map(k => `<option value="${k.uuid} | ${esc(k.name)}" ${k.uuid === sel ? 'selected' : ''}>${esc(lab.get(k.uuid))}</option>`).join('')
     + (sel && !list.some(k => k.uuid === sel) ? `<option value="${esc(selected)}" selected>${S.KONTEN.some(k => k.uuid === sel) ? t('0_nicht_waehlbar', esc(refName(selected))) : t('0_nicht_gefunden', esc(refName(selected) || selected))}</option>` : '') + `</select>`;
 }
+// an account in two steps, side by side: the area, then its accounts -- the account select keeps its class and value
+// (one area only: one select)
+const AP = new Map(); let apN = 0;
+const apAreaName = id => id ? (((S.CFG.areas || []).find(b => String(b.id) === id) || {}).name || BN(id) || id) : t('ohne_bereich');
+function acctPick(cls, selected, filter, empty) {
+  const sel = (selected || '').split('|')[0].trim(), list = S.KONTEN.filter(filter), lab = acctLabels(list), areaOf = k => String(k.area_id || '');
+  const order = (S.CFG.areas || []).map(b => String(b.id)), rank = id => id === '' ? 1e6 : (order.indexOf(id) + 1 || 1e5);
+  const ids = [...new Set(list.map(areaOf))].sort((a, b) => rank(a) - rank(b));
+  if (ids.length < 2) return acctSel(cls, selected, filter, empty);
+  const cur = list.find(k => k.uuid === sel), area = cur ? areaOf(cur) : ids[0], n = String(++apN);
+  const missing = sel && !cur ? `<option value="${esc(selected)}" selected>${S.KONTEN.some(k => k.uuid === sel) ? t('0_nicht_waehlbar', esc(refName(selected))) : t('0_nicht_gefunden', esc(refName(selected) || selected))}</option>` : '';
+  AP.set(n, {opts: list.map(k => ({a: areaOf(k), v: `${k.uuid} | ${k.name}`, l: lab.get(k.uuid), on: k.uuid === sel})), empty, missing});
+  return `<span class="acct-pick"><select class="ap-area" data-ap="${n}" aria-label="${esc(t('bereich'))}">${ids.map(id => `<option value="${esc(id)}" ${id === area ? 'selected' : ''}>${esc(apAreaName(id))}</option>`).join('')}</select>`
+    + `<select class="${cls}" data-apk="${n}">${apOptions(n, area)}</select></span>`;
+}
+const apOptions = (n, area) => { const d = AP.get(n); return `<option value="">${d.empty}</option>` + d.opts.filter(o => o.a === area).map(o => `<option value="${esc(o.v)}" ${o.on ? 'selected' : ''}>${esc(o.l)}</option>`).join('') + d.missing; };
+// another area: its accounts (nothing chosen) -- before the page's own change handler sees the event
+document.addEventListener('change', e => {
+  const a = e.target; if (!a.matches || !a.matches('select.ap-area')) return;
+  const d = AP.get(a.dataset.ap), acc = a.parentElement.querySelector(`select[data-apk="${a.dataset.ap}"]`); if (!d || !acc) return;
+  d.opts.forEach(o => { o.on = false; }); d.missing = '';
+  acc.innerHTML = apOptions(a.dataset.ap, a.value);
+}, true);
 // counter account: a private manual account (outside the company) = counterpart of one account of the company
 // an account mirror: any two accounts (your own, a company's, two companies'), booked from its own day on
 function mirrorRow(m) {
   const pick = k => !k.group;
-  return `<div class="gk-row" data-kat="${esc(m.category || '')}">${acctSel('g-a', m.a, pick, t('konto_waehlen'))}`
-    + `<span class="gk-arrow" title="${esc(t('gk_spiegel'))}" aria-label="${esc(t('gk_spiegel'))}">⇄</span>${acctSel('g-b', m.b, pick, t('konto_waehlen'))}`
+  return `<div class="gk-row" data-kat="${esc(m.category || '')}">${acctPick('g-a', m.a, pick, t('konto_waehlen'))}`
+    + `<span class="gk-arrow" title="${esc(t('gk_spiegel'))}" aria-label="${esc(t('gk_spiegel'))}">⇄</span>${acctPick('g-b', m.b, pick, t('konto_waehlen'))}`
     + `<button class="ico gk-del" title="${esc(t('entfernen'))}" aria-label="${esc(t('entfernen'))}">×</button>`
     + `<div class="gk-ab"><span class="small muted">${t('co_rueck')}${hq('h_gk_rueck')}</span>${backField(m.from_date, 'rueck_alles_spiegel')}</div><div class="pv small"></div></div>`;
 }
@@ -4756,8 +4802,8 @@ function loanForm(l, i) {
     + f(t('name'), 'h_l_name', `<input type="text" class="f-name" value="${esc(l.name || '')}">`)
     + f(t('l_aktiv'), 'h_l_aktiv', `<label class="chk"><input type="checkbox" class="f-aktiv" ${l.active === false ? '' : 'checked'}></label>`)
     + g(t('fg_konten'))
-    + f(t('l_darlehenskonto'), 'darlehen_konto', `<select class="f-konto">${acctOptions(l.loan_account, onlyManual)}</select>`)
-    + f(t('l_zahlungen_von'), 'darlehen_quelle', `<select class="f-quelle">${acctOptions((l.source_accounts || [])[0], onlyLeaves)}</select>`)
+    + f(t('l_darlehenskonto'), 'darlehen_konto', acctPick('f-konto', l.loan_account, onlyManual, t('waehlen')))
+    + f(t('l_zahlungen_von'), 'darlehen_quelle', acctPick('f-quelle', (l.source_accounts || [])[0], onlyLeaves, t('waehlen')))
     + f(t('art'), 'h_l_art', `<select class="f-art"><option value="liability" ${l.kind !== 'forderung' ? 'selected' : ''}>${t('verbindlichkeit_ich_zahle')}</option><option value="forderung" ${l.kind === 'forderung' ? 'selected' : ''}>${t('forderung_ich_erhalte')}</option></select>`)
     + g(t('fg_erkennen'))
     + f(t('l_gegen_iban'), 'darlehen_iban', `<input type="text" class="f-iban" value="${esc(e.counter_iban || '')}" placeholder="${t('de_iban_des_darlehensgebers_nehmers')}">`)
@@ -4898,7 +4944,7 @@ async function vPositionen() {
   // a property's categories have its own rows (rent, costs); only saving, financing or leaving out takes them elsewhere
   const objOpts = sel => `<option value=""></option>` + OBJ_OUT.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('');
   let h = `<div class="toolbar"><a class="small" href="#cashflow">${t('zum_cashflow')}</a><span class="sp"></span><button id="kp-save" disabled>${t('speichern')}</button></div>
-    <div class="wrap auto"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th class="kp-arrow"></th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')} ${hq('zielkonto')}</th></tr></thead><tbody>`;
+    ${kbCard(d)}<div class="wrap kp-wrap"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th class="kp-arrow"></th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')} ${hq('zielkonto')}</th></tr></thead><tbody>`;
   // categories Kontor does not know and you did not place, with payments between your areas: those count as contributions or
   // withdrawals, not under the "other" shown here -- named, so that a later choice changing the figures is no surprise
   const npath = x => String(x || '').split(/ › |\\| \/ /).map(p => p.trim()).filter(Boolean).join(' / '), UNS = {};
@@ -4912,6 +4958,30 @@ async function vPositionen() {
   });
   return h + '</tbody></table></div>' + vAnlageEmpfaenger();
 }
+// a clean category tree in MoneyMoney: one category per purpose, with names Kontor recognises (✓: one of yours counts there
+// already); created in MoneyMoney -- Kontor does not create categories
+const KB_ROWS = [['kb_r_gehalt', ['work_income']], ['kb_r_kapital', ['capital_income']], ['kb_r_wohnen', ['housing']], ['kb_r_leben', ['living']],
+  ['kb_r_weitere', ['mobility', 'insurance', 'health', 'leisure', 'taxes'], 'kb_p_gleich'], ['kb_r_sparen', ['saving'], 'kb_p_sparen'],
+  ['kb_r_darlehen', ['repayment', 'loan_interest']], ['kb_r_immo', ['property'], 'kb_p_immo'], ['kb_r_immo_kauf', ['property_saving'], 'kb_p_immo_kauf'],
+  ['kb_r_umbuchung', ['transfer']]];
+let kbSeen = false;
+function kbCard(d) {
+  if (!kbSeen && setupOpen()) KEEP_OPEN.add('kp-kb');          // open while you set Kontor up (closed afterwards: as you left it)
+  kbSeen = true;
+  const own = Object.fromEntries(d.categories.map(r => [r.path, r.own || ''])), used = new Set();
+  for (const r of d.categories) {
+    if (!r.count) continue;
+    const parts = r.path.split(' / '); let eff = r.own || '';
+    for (let i = parts.length - 1; i > 0 && !eff; i--) eff = own[parts.slice(0, i).join(' / ')] || '';
+    eff = eff || r.proposal;
+    if (r.property_name) used.add(eff === 'saving' ? 'property_saving' : ['repayment', 'loan_interest', 'ignore'].includes(eff) ? eff : 'property');
+    else used.add(eff);
+  }
+  const rows = KB_ROWS.map(([k, ps, pk]) => { const ok = ps.some(p => used.has(p));
+    return `<tr class="${ok ? 'kb-ok' : ''}"><td><span class="kb-mark" aria-label="${esc(t(ok ? 'kb_vorhanden' : 'kb_fehlt'))}">${ok ? '✓' : '○'}</span>${esc(t(k))}</td><td class="kp-arrow" aria-hidden="true">→</td><td>${esc(pk ? t(pk) : ps.map(p => posLabel(p)).join(', '))}</td></tr>`; }).join('');
+  return `<details class="card kb" data-keep="kp-kb"${keepOpen('kp-kb')}><summary>${t('kb_titel')} ${hq('kb')}</summary><div class="small muted kb-regel">${t('kb_regel')}</div>`
+    + `<table class="plain kb-table"><tbody>${rows}</tbody></table></details>`;
+}
 // Zielkonto je Empfänger: saving that arrives as a booking on none of your accounts (a depot kept by its balances, an account
 // outside MoneyMoney) -- per area the account per recipient; Kontor proposes one where it is clear, it counts once chosen
 function vAnlageEmpfaenger() {
@@ -4923,7 +4993,7 @@ function vAnlageEmpfaenger() {
   for (const [id, d] of areas) {
     const KF = d.cashflow, mine = cfg[id] || {};
     if (areas.length > 1) h += `<h3 class="kp-h3">${esc(BN(id))}</h3>`;
-    h += `<div class="wrap auto"><table class="plain kp-table ka-table"><thead><tr><th>${t('empfaenger')}</th><th class="kp-n">${t('kategorie')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('summe_label')}</th><th class="kp-arrow"></th><th>${t('zielkonto')}</th></tr></thead><tbody>`;
+    h += `<div class="wrap kp-wrap"><table class="plain kp-table ka-table"><thead><tr><th>${t('empfaenger')}</th><th class="kp-n">${t('kategorie')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('summe_label')}</th><th class="kp-arrow"></th><th>${t('zielkonto')}</th></tr></thead><tbody>`;
     for (const a of KF.saving_recipients) {
       const own = mine[a.key] || '', ownId = own === 'external' ? '' : own.split('|')[0].trim();
       const ziele = new Set([...(KF.saving_targets || []), ownId].filter(Boolean));
@@ -5041,7 +5111,7 @@ async function vZuordnen() {
   const years = Object.keys((S.DATA.categories || {}).years || {}).sort().reverse(), can = true;          // assigning is the release (from the iPhone: entered at the next sync at the Mac)
   const mitVorschlag = vorschlagIds(off);
   // the areas you categorise: the others (a company with countless bookings, say) stay out of the list and of the count
-  const ohne = new Set(S.CFG.assign_without || []), areas = Object.keys(S.DATA.areas || {});
+  const ohne = new Set(off.skipped || S.CFG.assign_without || []), areas = Object.keys(S.DATA.areas || {});
   const chips = areas.length > 1 ? `<div class="kz-areas" role="group" aria-label="${esc(t('kz_bereiche'))}" title="${esc(t('kz_bereiche_tip'))}">${areas.map(k => `<label class="lc-chip"><input type="checkbox" data-area="${esc(k)}" ${ohne.has(String(k)) ? '' : 'checked'}>${esc(BN(k))}</label>`).join('')}</div>` : '';
   let h = `<div class="toolbar">${chips}
     <select id="kz-jahr"><option value="">${t('alle_jahre')}</option>${years.map(y => `<option ${KZ.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>

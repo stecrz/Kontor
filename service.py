@@ -44,7 +44,7 @@ import categorize
 import updates
 from receipts import Belege, file_status
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (REPORT_LOCK, RUN_LOCK, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+from core import (REPORT_LOCK, RUN_LOCK, assign_skipped, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
@@ -1882,10 +1882,12 @@ def make_handler(app: App):
                 if app.ledger is None:
                     return self._json(200, {"open": 0, "groups": [], "groups_total": 0, "hint": tr("s_noch_kein_lauf_moneymoney_lesen")})
                 kat = categorize.load(app.store)
-                bereich_of = {a.uuid: b["id"] for b in bereiche_for(app.ledger, app.config) for a in b["leaves"]}
+                areas = bereiche_for(app.ledger, app.config)
+                bereich_of = {a.uuid: b["id"] for b in areas for a in b["leaves"]}
                 res = categorize.open_items(kat, app.ledger, bereich_of, int(q["year"]) if q.get("year") else None, q.get("area") or None,
                                             float(q.get("min") or 0), max(1, min(5000, int(q.get("limit") or 300))), bank_accounts(account_roles(app.ledger, app.config)),
-                                            set(app.config.get("assign_without") or []))
+                                            assign_skipped(app.config, areas))
+                res["skipped"] = sorted(assign_skipped(app.config, areas))
                 if getattr(app.ledger, "_paired", None) is None:
                     app.request_rebuild("assigning")              # which bookings are transfers comes with the report (page reloads then)
                 # your category for transfers in MoneyMoney (for a contribution or withdrawal between two areas)
@@ -1971,7 +1973,7 @@ def make_handler(app: App):
                    "live": acc is not None, "report_running": app.bericht_status().get("running", False)}
             if acc is not None:
                 today = date.today()
-                months = account_months(ledger, acc, today, list(hist) + (list(snaps) + list(mmv) if depot else []))
+                months = account_months(ledger, acc, today, list(hist) + list(mmv) + (list(snaps) if depot else []))
                 werte, hinweis, anker = account_balance_series(ledger, acc, months, q, st.get("snapshots") or {}, hist, today, app.config, mmv, mm_start)
                 out.update({"amounts": werte, "hint": hinweis, "anchor": anker})
                 # Pruefung der Rueckrechnung: vorgemerkte Umsaetze, Anfangssaldo vor der ersten Buchung

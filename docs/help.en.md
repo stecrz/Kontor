@@ -5,14 +5,14 @@ Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sh
 <a id="overview"></a>
 ## Overview
 
-The four most important charts at a glance – no tables and no plan values, on the Mac on one screen:
+The four most important charts at a glance – no tables and no plan values, on the Mac in three columns on one screen:
 
 - **Net worth**: the last two years, beside it the current figure and the change over twelve months.
-- **Asset structure**: assets by position and the debts in the current month.
+- **Asset structure**: the balance sheet of the current month – on the left the assets as tiles, each position as large as its share of total assets; on the right in one column what stands against them: equity and debts on the same scale. Hover for the amount.
 - **Monthly cash flow**: the last twelve closed months – income and other inflows up, expenses and outflows down; the dashed stroke shows the change in cash.
 - **Net worth bridge**: where the change in net worth over these twelve months came from.
 
-A click on a chart opens its place in the balance sheet or the cash flow. Below them, **Open** lists what there is to do (e.g. transactions without a category, accounts without a confirmed assignment, an available update) – a click on a point opens the page where it can be done. If nothing is open, the box is not there.
+A click on a chart opens its place in the balance sheet or the cash flow. At the bottom right, **Open** lists what there is to do (e.g. transactions without a category, accounts without a confirmed assignment, an available update) – a click on a point opens the page where it can be done. If nothing is open, the box is not there and the cash flow takes the full width.
 
 **Help on every page**: the **?** beside the page title says in one sentence what the page does; a click on it opens its section of this help. The **?** at tables and charts lead to their own paragraph.
 
@@ -41,7 +41,7 @@ The “?” next to fields explain briefly; a click on one (on the iPhone: a sec
 
 **Where things are** – a rule of thumb: what sets your figures is under **Accounts & rules** (accounts, areas, balances, cash flow positions, booking rules, tax). How Kontor works is under **Settings** (General, MoneyMoney sync, Access, Receipts, Updates, Back up & reset).
 
-**Setup** is a guided path through exactly these pages: all building blocks in a sensible order, each shows whether it is done and opens its page. The first four build on each other, the rest is optional and can be done any time. Once the required steps are done, Setup leaves the menu; “Check setup” at the top right of Accounts & rules opens it again. There “Check setup” reads MoneyMoney and reports whether all accounts and categories your settings refer to still exist – for example after you renamed something in MoneyMoney.
+**Setup** is a guided path through exactly these pages: all building blocks in a sensible order, each shows whether it is done and opens its page. The first four build on each other, the rest is optional and can be done any time; “Categorise” comes late on purpose, as it is the most work and booking rules and cash flow positions make it easier. Once the required steps are done, Setup leaves the menu; “Check setup” at the top right of Accounts & rules opens it again. There “Check setup” reads MoneyMoney and reports whether all accounts and categories your settings refer to still exist – for example after you renamed something in MoneyMoney.
 
 ![Setup](img/en/setup.png)
 
@@ -49,8 +49,9 @@ The “?” next to fields explain briefly; a click on one (on the iPhone: a sec
 2. **Areas** – which accounts belong together.
 3. **Accounts** – confirm area, position and history of each account.
 4. **Historical balances** – take over the past history from MoneyMoney once.
-5. **Cash flow positions** (where each category counts) and **Assign** (give transactions without a category one).
-6. **Booking rules**, **Properties**, **Planning**, **Tax**, **Receipts**, **iPhone access**, **Sync and approval**.
+5. **Booking rules** and **Cash flow positions** (where each category counts; with a recommendation for your categories in MoneyMoney).
+6. **Properties**, **Planning**, **Tax**, **Receipts**, **iPhone access**.
+7. **Categorise** (give transactions without a category one) and finally **Sync and approval**.
 
 After that, “Create report” builds the first report. Choose the language (German or English) on the login page, in the setup or under Settings → General. The appearance is set there too: dark (default), light or like the system – per device. Both take effect at once, without saving.
 
@@ -87,7 +88,7 @@ Rule of thumb between securities and term investments: cash within a few days wi
 
 Where an account's month-end balances come from:
 
-- **Transactions** (default for bank accounts): month-end balance = today's balance minus all later booked transactions – the way MoneyMoney calculates it too. Pending transactions do not count. Before the first transaction there is no balance.
+- **Transactions** (default for bank accounts): month-end balance = today's balance minus all later booked transactions – the way MoneyMoney calculates it too. Pending transactions do not count. Before the first transaction there is no balance – unless the account existed earlier at 0 (balances taken over from MoneyMoney or your own, all 0, and no opening balance of its own): then 0 from there on.
 - **Balances**: entered or imported balances are anchors; Kontor calculates the months in between from the bookings. Differences appear in the cash flow as “balance correction”.
 - **Portfolios**: have no bookings. Kontor uses the balances imported from MoneyMoney and records each month itself afterwards.
 
@@ -257,7 +258,7 @@ The **check against the balance sheet** compares every month: the change in cash
 Which position a MoneyMoney category counts in, Kontor proposes from its name; you change it under [Cash flow positions](#categories-positions) (Accounts & rules, or the gear in the header cell of the cash flow table). Transactions **without a category** are estimated: first from your categories so far (same counterparty, same purpose), otherwise from words in name, purpose and booking text (such as “Gehalt”, card settlements; for the tax office Kontor separates wage tax – part of staff for companies –, VAT and other taxes). They show in the position as “no category, estimated”; what cannot be estimated shows under “(no category)”. The more you assign, the more exact it gets – it is not required, not even for a limited company with many bookings. Kontor enters nothing in MoneyMoney for this.
 
 <a id="categories"></a>
-## Assign
+## Categorise
 
 **MoneyMoney is the only truth.** Kontor has no categories of its own: it shows MoneyMoney's and helps fill the gaps. Subcategories follow their parent after “›” (Wohnen › Miete); a “/” is part of a name.
 
@@ -269,9 +270,9 @@ Which position a MoneyMoney category counts in, Kontor proposes from its name; y
 
 The page has three tabs: **Open** (what has no category yet), **Rules for MoneyMoney** and **Entered** (what Kontor entered in MoneyMoney).
 
-**Open** shows all transactions of your bank accounts without a category in MoneyMoney – only the areas you tick at the top (leave out a company with very many bookings, say; Kontor keeps estimating its positions in the cash flow) –, grouped by counterparty (loans, participations and other accounts count by their position, not their category). Transfers between accounts of the same area are not in the list – not even when the counter-booking was entered by hand in a manual account: they are never income or expense. Payments between two of your areas are in it until they have a category: assign salary or rent, give a contribution or withdrawal your transfer category. The suggestion comes from your categories so far; Kontor never takes it over by itself. “Assign” enters the category in MoneyMoney, “Take all suggestions” all at once. Under “Transactions” you deselect single ones – for example for a shop where you buy different things. You choose only from categories that exist in MoneyMoney – create a new one there. Single transactions can also be assigned under Transactions & receipts (click a row or select several); there you can also change a category from MoneyMoney (after asking). In cash flow, “assign” next to “(no category)” leads straight here.
+**Open** shows all transactions of your bank accounts without a category in MoneyMoney – only the areas you tick at the top (at first the private ones; leave out a company with very many bookings, say, Kontor keeps estimating its positions in the cash flow; your choice is kept) –, grouped by counterparty (loans, participations and other accounts count by their position, not their category). Transfers between accounts of the same area are not in the list – not even when the counter-booking was entered by hand in a manual account: they are never income or expense. Payments between two of your areas are in it until they have a category: assign salary or rent, give a contribution or withdrawal your transfer category. The suggestion comes from your categories so far; Kontor never takes it over by itself. “Assign” enters the category in MoneyMoney, “Take all suggestions” all at once. Under “Transactions” you deselect single ones – for example for a shop where you buy different things. You choose only from categories that exist in MoneyMoney – create a new one there. Single transactions can also be assigned under Transactions & receipts (click a row or select several); there you can also change a category from MoneyMoney (after asking). In cash flow, “assign” next to “(no category)” leads straight here.
 
-![Assign](img/en/assign_categories.png)
+![Categorise](img/en/assign_categories.png)
 
 If you rearrange things in MoneyMoney – a category renamed, moved or deleted, transactions dragged into another category – Kontor reads all transactions again at the next sync; your cash flow position stays with the category.
 
@@ -280,7 +281,7 @@ What you assign from the iPhone is remembered and entered at the next sync at th
 <a id="categories-rules"></a>
 ### Rules for MoneyMoney
 
-If you assign a counterparty several times in Kontor, MoneyMoney evidently has no rule for it. Kontor proposes one under Assign → Rules for MoneyMoney – in MoneyMoney's syntax, for example `name:"Baumarkt*"` or `remote_account:"DE…" AND purpose:"miete"`. If the same counterparty also has other categories, Kontor adds words of the purpose or the direction of the payment; it proposes only what matches no transaction of another category. Copy the expression, paste it in MoneyMoney into the settings of the category under rules and choose to apply it only to uncategorised transactions – then “Done”.
+If you assign a counterparty several times in Kontor, MoneyMoney evidently has no rule for it. Kontor proposes one under Categorise → Rules for MoneyMoney – in MoneyMoney's syntax, for example `name:"Baumarkt*"` or `remote_account:"DE…" AND purpose:"miete"`. If the same counterparty also has other categories, Kontor adds words of the purpose or the direction of the payment; it proposes only what matches no transaction of another category. Copy the expression, paste it in MoneyMoney into the settings of the category under rules and choose to apply it only to uncategorised transactions – then “Done”.
 
 <a id="categories-write-back"></a>
 ### Entering in MoneyMoney and taking back
@@ -301,23 +302,39 @@ The cash flow has a fixed outline; your MoneyMoney categories count in it. Accou
 
 - **Automatic** – like the category above it, otherwise Kontor's proposal from the name (such as “Einkommen › Rückzahlung Finanzamt” → refunds, “Sparen” → saving & investing).
 - A position you choose also counts for all categories below it that have none of their own.
-- **Saving & investing** is no expense; under “Invested in” next to it you choose the account the money goes into (for this position only; more precisely per recipient, see below). **Transfer** (between own accounts) looks for the counter-booking, **Leave out** takes the category out (the check row names it).
+- **Saving & investing** is no expense; under **Target account** next to it you choose the account the money goes into (for this position only; more precisely per recipient, see below). **Transfer** – money between your accounts or areas, neither income nor expense – looks for the counter-booking. **Leave out** takes the category out altogether: its amount counts in no row and shows as a difference in the check against the balance sheet (with this reason) – only for exceptions such as a wrong booking that is reversed later.
 - A property's categories (Real estate → category) have rows of their own in cash flow, “rent” and “costs”.
 
-Planning works on the positions; a MoneyMoney budget counts for the position of its category. Nothing changes in MoneyMoney.
+Planning works on the positions; a MoneyMoney budget counts for the position of its category. Nothing changes in MoneyMoney. The column headers stay in place as you scroll.
+
+<a id="categories-tree"></a>
+#### Recommended categories
+
+Above the table stands what Kontor needs from your categories in MoneyMoney – open during setup. The basic rule: **one category per purpose**. What belongs in different positions never belongs in the same category – a category “Immobilie” holding purchase price, costs, loan rate, loan payout and rent, say, turns the payout into rental income and the purchase price into costs. Better:
+
+| Category in MoneyMoney | Position |
+|---|---|
+| Gehalt, Kapitalerträge, Wohnen › Miete …, Lebenshaltung › …, Mobilität, Versicherungen … | the one of the same name each |
+| Sparen › one per investment (portfolio, fixed deposit, pension plan with capital …) | Saving & investing, target account per subcategory |
+| Darlehen › Tilgung, Zinsen | Repayment, Interest |
+| Immobilie ‹name› › Miete, Kosten | the property's rows (Properties → category) |
+| Immobilie ‹name› › Kauf (purchase price, costs) | Saving & investing (choose it), target account: the property's account |
+| Umbuchung | Transfer – between your accounts and areas, also contributions and withdrawals |
+
+Kontor recognises these (German) names and proposes the position itself; a ✓ means one of your categories counts there already. You create them in MoneyMoney – Kontor creates no categories. Payments into a participation that Kontor books against in the participation or capital account belong to Saving & investing: Kontor links them with the counter-booking.
 
 ![Cash flow positions](img/en/category_positions.png)
 
 <a id="positions-recipients"></a>
 #### Target account by recipient
 
-When you transfer to an account of your own in MoneyMoney, Kontor finds the counter-booking itself. Not so for money that arrives as a booking on none of your accounts, such as a portfolio kept by its balances only. For those payments, the recipients are listed below the table with category, count and sum. Per recipient you choose the account the money goes into:
+When you transfer to an account of your own in MoneyMoney, Kontor finds the counter-booking itself. Not so for money that arrives as a booking on none of your accounts, such as a portfolio or a pension plan kept by their balances only. For those, all recipients of such payments under “Saving & investing” are listed below the table with category, count and sum. Kontor chooses the **target account** in this order: your choice per recipient, otherwise the category's target account (also for its subcategories), otherwise the area's only portfolio. Where “automatic” shows the right account, nothing is to do; recipients without a target account are marked. Per recipient you choose:
 
-- **Automatic** – the category's account under “Invested in”; where none is chosen there, the area's only portfolio.
-- **An account** – applies to every payment to this recipient, whatever its category; this comes before “Invested in”. This way one category such as “Sparen” can go into several accounts.
+- **Automatic** – as just described; the result stands in the menu.
+- **An account** – applies to every payment to this recipient, whatever its category; this comes before the category's target account. This way one category such as “Sparen” can go into several accounts (say, a portfolio at one bank, another at a second).
 - **No account in MoneyMoney** – the money leaves the net worth Kontor sees.
 
-Where it is clear, Kontor proposes a portfolio (the same bank as the recipient's IBAN, or a word shared in the name); it counts only once you take it over and save. Money without a target account does not count as price gain: in cash flow it stands under changes in value as a row of its own, **Investment without target account**, which offsets the portfolio's rise, with a link here. An account that no longer belongs to the area is named under Setup; then the automatic choice applies again.
+Where it is clear, Kontor proposes a portfolio (the same bank as the recipient's IBAN, or a word shared in the name); it counts only once you take it over and save. Money without a target account does not count as price gain: in cash flow it stands under changes in value as a row of its own, **Investment without target account**, which offsets the portfolio's rise, with a link here – so the net worth is right even without a target account, only payments and growth are not told apart. An account that no longer belongs to the area is named under Setup; then the automatic choice applies again.
 
 <a id="planning"></a>
 ## Planning
@@ -386,9 +403,9 @@ Each loan is one row (name → loan account, on the right what is open); a click
 **Value adjustment deleted or changed** (participation): a balance is the sum of all bookings up to that day. If an adjustment of day X is missing or has another amount in MoneyMoney, every later balance is off by exactly that amount. At every sync Kontor checks the whole period from “Book from” and books on day X only what is missing there – usually exactly the deleted booking (with the same mark), nothing if you booked the value yourself; the bookings after it stay as they are.
 
 <a id="rules-loans"></a>
-### Loans
+### Manually kept loans
 
-Kontor recognises the instalment on the source account – by the lender's IBAN or a text in the purpose – and books it as repayment to the loan account (an offline account). The interest comes on top every month. So the remaining debt in MoneyMoney is right without manual work. “Type”: liability (you pay) or receivable (you receive). “Book from”: only from this day. Without an interest model (“no interest”) Kontor only mirrors the instalments.
+For loans you keep as a manual (offline) account in MoneyMoney – a loan with its own bank account in MoneyMoney needs none of this, the bank books repayment and interest there. Kontor recognises the instalment on the source account – by the lender's IBAN or a text in the purpose – and books it as repayment to the loan account (an offline account). The interest comes on top every month. So the remaining debt in MoneyMoney is right without manual work. “Type”: liability (you pay) or receivable (you receive). “Book from”: only from this day. Without an interest model (“no interest”) Kontor only mirrors the instalments.
 
 **Interest**: annual basis = interest rate × balance on 31 Dec of the previous year, one twelfth per month, the cent remainder in December – or monthly on the outstanding balance. The model is simplified (30/360); reconcile once a year with the bank's interest statement. **Actual interest**: change Kontor's interest booking in MoneyMoney to the bank's amount (the mark stays) – or book the interest yourself (with “Zins” in the text or the interest category): Kontor then books nothing for that month. If a month holds interest from Kontor and from you, you get a note under “Auto bookings” – likewise if the account is missing or no matching payment comes.
 
@@ -407,12 +424,12 @@ Also per company:
 - **Book from** – from a day (new: today) or “everything” since the company's first booking, see below.
 - **Minimum difference** (Kontor does not book smaller differences) and **counterparty** of the bookings (empty: name of the company).
 
-Into the participation account Kontor always books only the difference to the balance in MoneyMoney (purpose with the calculation, e.g. “Wertanpassung: 40 % × 150.000,00 € (Wert Alpha GbR) = 60.000,00 €”, and the mark “#kontor-wert-…”). Payments between you and a company with a participation or account mirror count as contributions or withdrawals in the cash flow, and the equity ratio in the balance sheet looks through the companies via the participations.
+Into the participation account Kontor always books only the difference to the balance in MoneyMoney (purpose with the calculation, e.g. “Anteilswertanpassung: 40 % × 150.000,00 € (Wert Alpha GbR) = 60.000,00 €”, and the mark “#kontor-wert-…”). Payments between you and a company with a participation or account mirror count as contributions or withdrawals in the cash flow, and the equity ratio in the balance sheet looks through the companies via the participations.
 
 <a id="rules-mirrors"></a>
 ### Account mirrors
 
-An account mirror links any two accounts that show the same thing from two sides – your own, a company's, or those of two companies; no participation is needed for it. Every mirror has its own “Book from”. Example: your capital account is a debt to you in the partnership and a receivable for you (“loan to the partnership”). Kontor books every booking of one account into the other with the opposite sign and the same date – in both directions as far as both are offline accounts; if one is a bank account, only into the other. Sender or recipient is who the other account belongs to (the company or your area), the text is the original's with “gespiegelt von <account>” and the mark “#kontor-gk-…” (with the original's number). Mirrored bookings are never mirrored back, value adjustments never mirrored. Accounts in different currencies are not mirrored (Kontor does not convert). Mirrored is from its “Book from”; what was booked before the last check is mirrored only with your approval (note “older”) – also fully automatically, as it may be in the other account by hand already. Bookings you made on both sides by hand (same day, same amount, opposite sign) count as a pair and are not created twice; if an original gets a new number in MoneyMoney (deleted and entered again), its mirrored booking still counts as long as day and amount are the same. Kontor cannot change or delete anything: if the original of a mirrored booking is gone or has another amount or day, Kontor reports it under “Auto bookings” and you correct it yourself; if you delete a mirrored booking, Kontor proposes it again – if you do not want it, “Don't book”.
+An account mirror links any two accounts that show the same thing from two sides – your own, a company's, or those of two companies; no participation is needed for it. Every mirror has its own “Book from”. You choose each account in two steps side by side: first the area, then one of its accounts (the same for loans). Example: your capital account is a debt to you in the partnership and a receivable for you (“loan to the partnership”). Kontor books every booking of one account into the other with the opposite sign and the same date – in both directions as far as both are offline accounts; if one is a bank account, only into the other. Sender or recipient is who the other account belongs to (the company or your area), the text is the original's with “gespiegelt von <account>” and the mark “#kontor-gk-…” (with the original's number). Mirrored bookings are never mirrored back, value adjustments never mirrored. Accounts in different currencies are not mirrored (Kontor does not convert). Mirrored is from its “Book from”; what was booked before the last check is mirrored only with your approval (note “older”) – also fully automatically, as it may be in the other account by hand already. Bookings you made on both sides by hand (same day, same amount, opposite sign) count as a pair and are not created twice; if an original gets a new number in MoneyMoney (deleted and entered again), its mirrored booking still counts as long as day and amount are the same. Kontor cannot change or delete anything: if the original of a mirrored booking is gone or has another amount or day, Kontor reports it under “Auto bookings” and you correct it yourself; if you delete a mirrored booking, Kontor proposes it again – if you do not want it, “Don't book”.
 
 <a id="rules-back"></a>
 ### Book from
@@ -485,7 +502,7 @@ In Terminal, the same line as for the [installation](https://github.com/stecrz/K
 - Interface only on this Mac (`127.0.0.1`); optionally also the Tailscale address for your own devices – never on the home network or the internet. No third-party content, no telemetry. The only outside connection is the update check at GitHub.
 - Sign-in with password (PBKDF2-SHA256, 600,000 rounds) or Touch ID on the Mac (needs Apple's command line tools, otherwise only the password; the dialog only appears once you switch to Kontor – never while you work elsewhere). The sign-in cookie only applies to Kontor, other websites cannot trigger anything (CSRF protection, origin check). Lock after idle time or with ⌘L; five failed attempts lock for five minutes. A password change signs out all other devices and renews your own sign-in.
 - All files in the data folder are encrypted (AES-256 + HMAC) with a random data key kept in the macOS keychain (entry “Kontor Datenschlüssel”) – not your password, which only controls access. Every new installation creates a new key; it can be renewed at any time under Settings → Backup & reset. If encryption or the keychain does not work, Kontor does not start – it never stores unencrypted, puts no new key into a file next to the data and creates no new one while encrypted data without their key are there. Receipts are normal files in a folder of your choice; files outside it are linked only at the Mac, and only receipt files – nothing from hidden folders, the data folder or the Library (except iCloud Drive and other cloud folders).
-- **What Kontor writes into MoneyMoney** – nothing else: (1) new bookings of the booking rules, only into offline accounts, each with the mark “#kontor-…” and never twice; (2) the category of a transaction you assign in Kontor (only if it has none there yet, or after asking) – and, if you wish, the one from before again (Assign → Entered); (3) with the setting “Reference in MoneyMoney” the receipt path, added to the transaction's comment (what is there stays). Kontor never changes or deletes a booking, creates no transfers or direct debits and does not touch MoneyMoney's category tree or rules. If the booking rules cannot be worked out, nothing is booked; everything else goes on.
+- **What Kontor writes into MoneyMoney** – nothing else: (1) new bookings of the booking rules, only into offline accounts, each with the mark “#kontor-…” and never twice; (2) the category of a transaction you assign in Kontor (only if it has none there yet, or after asking) – and, if you wish, the one from before again (Categorise → Entered); (3) with the setting “Reference in MoneyMoney” the receipt path, added to the transaction's comment (what is there stays). Kontor never changes or deletes a booking, creates no transfers or direct debits and does not touch MoneyMoney's category tree or rules. If the booking rules cannot be worked out, nothing is booked; everything else goes on.
 - Booking, updates, taking back entered categories, backup, reset and access settings only on the Mac; from the iPhone view only by default. What you assign from the iPhone is entered only at the next sync at the Mac.
 - Historical balances: you enter the MoneyMoney password in a window of a small Kontor helper that is built from the source only for this and deleted afterwards; Kontor stores it nowhere. Meanwhile the database lies fully decrypted in memory for a moment – this takes trust in that code. If you do not want that, leave the feature out; once read, it is not needed again.
 - The Terminal (`kontor.py`) only offers what needs no data: starting and setting up the service, opening the interface, the version. Setting a new password and uninstalling work there only with the current Kontor password or Touch ID – as in the interface. Everything that shows or changes your data (sync, booking, settings, diagnostics) works only signed in, in the interface.

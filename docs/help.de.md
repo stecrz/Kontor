@@ -5,14 +5,14 @@ Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilan
 <a id="overview"></a>
 ## Übersicht
 
-Die vier wichtigsten Grafiken auf einen Blick – ohne Tabellen und ohne Planwerte, am Mac auf einer Bildschirmseite:
+Die vier wichtigsten Grafiken auf einen Blick – ohne Tabellen und ohne Planwerte, am Mac in drei Spalten auf einer Bildschirmseite:
 
 - **Nettovermögen**: die letzten zwei Jahre, daneben der Stand und die Veränderung in zwölf Monaten.
-- **Vermögensstruktur**: das Vermögen nach Positionen und die Schulden im aktuellen Monat.
+- **Vermögensstruktur**: die Bilanz des aktuellen Monats – links das Vermögen als Kacheln, jede Position so groß wie ihr Anteil an der Bilanzsumme; rechts in einer Spalte, was dafür steht: Eigenkapital und Schulden im selben Maßstab. Beim Darüberfahren der Betrag.
 - **Monatlicher Cashflow**: die letzten zwölf abgeschlossenen Monate – Einnahmen und andere Zuflüsse nach oben, Ausgaben und Abflüsse nach unten; der gestrichelte Strich zeigt die Veränderung des Bankguthabens.
 - **Vermögensbrücke**: woher die Veränderung des Nettovermögens in diesen zwölf Monaten kam.
 
-Ein Klick auf eine Grafik öffnet ihre Stelle in Bilanz oder Cashflow. Darunter steht unter **Offen**, was zu tun ist (z. B. Umsätze ohne Kategorie, Konten ohne bestätigte Zuordnung, ein verfügbares Update) – ein Klick auf einen Punkt öffnet die Seite, auf der er sich erledigen lässt. Ist nichts offen, fehlt der Kasten.
+Ein Klick auf eine Grafik öffnet ihre Stelle in Bilanz oder Cashflow. Rechts unten steht unter **Offen**, was zu tun ist (z. B. Umsätze ohne Kategorie, Konten ohne bestätigte Zuordnung, ein verfügbares Update) – ein Klick auf einen Punkt öffnet die Seite, auf der er sich erledigen lässt. Ist nichts offen, fehlt der Kasten, und der Cashflow nimmt die ganze Breite.
 
 **Hilfe auf jeder Seite**: Das **?** neben dem Seitentitel sagt in einem Satz, was die Seite tut; ein Klick darauf öffnet ihren Abschnitt in dieser Hilfe. Die **?** an Tabellen und Grafiken führen jeweils zu deren eigenem Absatz.
 
@@ -41,7 +41,7 @@ Die „?“ neben Feldern erklären kurz; ein Klick darauf (am iPhone: zweites T
 
 **Wo was liegt** – eine Faustregel: Was deine Zahlen bestimmt, steht unter **Konten & Regeln** (Konten, Bereiche, Kontostände, Cashflow-Positionen, Buchungsregeln, Steuer). Wie Kontor arbeitet, steht unter **Einstellungen** (Allgemein, MoneyMoney-Sync, Zugang, Belege, Updates, Sichern & Zurücksetzen).
 
-Die **Einrichtung** ist ein geführter Weg durch genau diese Seiten: alle Bausteine in einer sinnvollen Reihenfolge, jeder zeigt, ob er schon eingerichtet ist, und öffnet seine Seite. Die ersten vier bauen aufeinander auf, der Rest ist optional und jederzeit nachholbar. Sind die nötigen Schritte erledigt, verschwindet die Einrichtung aus dem Menü; „Einrichtung prüfen“ oben rechts unter Konten & Regeln öffnet sie wieder. Dort liest „Einrichtung prüfen“ MoneyMoney und meldet, ob alle Konten und Kategorien, auf die sich deine Einstellungen beziehen, noch existieren – etwa nachdem du in MoneyMoney etwas umbenannt hast.
+Die **Einrichtung** ist ein geführter Weg durch genau diese Seiten: alle Bausteine in einer sinnvollen Reihenfolge, jeder zeigt, ob er schon eingerichtet ist, und öffnet seine Seite. Die ersten vier bauen aufeinander auf, der Rest ist optional und jederzeit nachholbar; „Kategorisieren“ steht bewusst spät, weil es am meisten Arbeit macht und Buchungsregeln und Cashflow-Positionen es leichter machen. Sind die nötigen Schritte erledigt, verschwindet die Einrichtung aus dem Menü; „Einrichtung prüfen“ oben rechts unter Konten & Regeln öffnet sie wieder. Dort liest „Einrichtung prüfen“ MoneyMoney und meldet, ob alle Konten und Kategorien, auf die sich deine Einstellungen beziehen, noch existieren – etwa nachdem du in MoneyMoney etwas umbenannt hast.
 
 ![Einrichtung](img/de/setup.png)
 
@@ -49,8 +49,9 @@ Die **Einrichtung** ist ein geführter Weg durch genau diese Seiten: alle Bauste
 2. **Bereiche** – welche Konten zusammengehören.
 3. **Konten** – Bereich, Position und Verlauf jedes Kontos bestätigen.
 4. **Historische Kontostände** – den bisherigen Verlauf einmalig aus MoneyMoney übernehmen.
-5. **Cashflow-Positionen** (wo jede Kategorie zählt) und **Zuordnen** (Umsätzen ohne Kategorie eine geben).
-6. **Buchungsregeln**, **Immobilien**, **Planung**, **Steuer**, **Belege**, **iPhone-Zugriff**, **Abgleich und Freigabe**.
+5. **Buchungsregeln** und **Cashflow-Positionen** (wo jede Kategorie zählt; mit einer Empfehlung für deine Kategorien in MoneyMoney).
+6. **Immobilien**, **Planung**, **Steuer**, **Belege**, **iPhone-Zugriff**.
+7. **Kategorisieren** (Umsätzen ohne Kategorie eine geben) und zum Schluss **Abgleich und Freigabe**.
 
 Danach erstellt „Auswertung erstellen“ die erste Auswertung. Die Sprache (Deutsch oder Englisch) wählst du auf der Anmeldeseite, in der Einrichtung oder unter Einstellungen → Allgemein. Dort stellst du auch das Erscheinungsbild ein: dunkel (Standard), hell oder wie das System – je Gerät. Beides gilt sofort, ohne Speichern.
 
@@ -87,7 +88,7 @@ Faustregel zwischen Wertpapieren und Festanlagen: In wenigen Tagen ohne Abschlag
 
 Woher die Monatsstände eines Kontos kommen:
 
-- **Umsätze** (Standard für Bankkonten): Stand am Monatsende = heutiger Saldo minus alle späteren gebuchten Umsätze – so rechnet auch MoneyMoney. Vorgemerkte Umsätze zählen nicht. Vor dem ersten Umsatz gibt es keinen Stand.
+- **Umsätze** (Standard für Bankkonten): Stand am Monatsende = heutiger Saldo minus alle späteren gebuchten Umsätze – so rechnet auch MoneyMoney. Vorgemerkte Umsätze zählen nicht. Vor dem ersten Umsatz gibt es keinen Stand – außer das Konto bestand schon länger mit 0 (aus MoneyMoney übernommene oder eigene Kontostände, alle 0, und kein eigener Anfangssaldo): dann steht ab dort 0.
 - **Kontostände**: eingetragene oder übernommene Stände sind Anker; die Monate dazwischen rechnet Kontor mit den Buchungen. Abweichungen erscheinen im Cashflow als „Korrektur Kontostand“.
 - **Depots**: haben keine Buchungen. Kontor nimmt die aus MoneyMoney übernommenen Stände und zeichnet danach jeden Monat selbst auf.
 
@@ -257,7 +258,7 @@ Der **Abgleich mit der Bilanz** vergleicht jeden Monat: die Veränderung des Ban
 In welcher Position eine Kategorie aus MoneyMoney zählt, schlägt Kontor nach ihrem Namen vor; ändern kannst du es unter [Cashflow-Positionen](#categories-positions) (Konten & Regeln, oder das Zahnrad in der Kopfzelle der Cashflow-Tabelle). Umsätze **ohne Kategorie** schätzt Kontor: zuerst nach deinen bisherigen Kategorien (gleiche Gegenpartei, gleicher Verwendungszweck), sonst nach Wörtern in Name, Verwendungszweck und Buchungstext (etwa „Gehalt“, Kartenabrechnungen; beim Finanzamt trennt Kontor Lohnsteuer – bei Gesellschaften Teil von Personal –, Umsatzsteuer und übrige Steuern). In der Position stehen sie als „ohne Kategorie, geschätzt“; was sich nicht schätzen lässt, steht unter „(ohne Kategorie)“. Je mehr du zuordnest, desto genauer – nötig ist es nicht, auch nicht für eine GmbH mit vielen Buchungen. In MoneyMoney trägt Kontor dabei nichts ein.
 
 <a id="categories"></a>
-## Zuordnen
+## Kategorisieren
 
 **MoneyMoney ist die einzige Wahrheit.** Kontor hat keine eigenen Kategorien: Es zeigt die aus MoneyMoney und hilft, die Lücken zu füllen. Unterkategorien stehen mit „›“ hinter der übergeordneten (Wohnen › Miete); ein „/“ gehört zum Namen.
 
@@ -269,9 +270,9 @@ In welcher Position eine Kategorie aus MoneyMoney zählt, schlägt Kontor nach i
 
 Die Seite hat drei Reiter: **Offen** (was noch keine Kategorie hat), **Regeln für MoneyMoney** und **Eingetragen** (was Kontor in MoneyMoney eingetragen hat).
 
-**Offen** zeigt alle Umsätze deiner Bankkonten ohne Kategorie in MoneyMoney – nur die Bereiche, die du oben anhakst (eine GmbH mit sehr vielen Buchungen lässt du etwa weg; ihre Positionen schätzt Kontor im Cashflow weiter) –, nach Gegenpartei gruppiert (Darlehen, Beteiligungen und andere Konten zählen nach ihrer Position, nicht nach Kategorie). Umbuchungen zwischen Konten desselben Bereichs stehen nicht in der Liste – auch nicht, wenn die Gegenbuchung von Hand in einem manuellen Konto steht: Sie sind nie Einnahme oder Ausgabe. Zahlungen zwischen zwei deiner Bereiche stehen darin, bis sie eine Kategorie haben: Gehalt oder Miete ordnest du zu, eine Einlage oder Entnahme bekommt deine Umbuchungs-Kategorie. Der Vorschlag kommt aus deinen bisherigen Kategorien; Kontor übernimmt ihn nie von selbst. „Zuordnen“ trägt die Kategorie in MoneyMoney ein, „Alle Vorschläge übernehmen“ alle auf einmal. Unter „Umsätze“ wählst du einzelne ab – etwa bei einem Händler, bei dem du Verschiedenes kaufst. Zur Auswahl stehen nur Kategorien, die es in MoneyMoney gibt – eine neue legst du dort an. Einzelne Umsätze ordnest du auch unter Umsätze & Belege zu (Klick auf die Zeile oder mehrere markieren); dort kannst du auch eine Kategorie aus MoneyMoney ändern (nach Rückfrage). Im Cashflow führt „zuordnen“ neben „(ohne Kategorie)“ direkt hierher.
+**Offen** zeigt alle Umsätze deiner Bankkonten ohne Kategorie in MoneyMoney – nur die Bereiche, die du oben anhakst (anfangs die privaten; eine GmbH mit sehr vielen Buchungen lässt du etwa weg, ihre Positionen schätzt Kontor im Cashflow weiter; deine Wahl bleibt gespeichert) –, nach Gegenpartei gruppiert (Darlehen, Beteiligungen und andere Konten zählen nach ihrer Position, nicht nach Kategorie). Umbuchungen zwischen Konten desselben Bereichs stehen nicht in der Liste – auch nicht, wenn die Gegenbuchung von Hand in einem manuellen Konto steht: Sie sind nie Einnahme oder Ausgabe. Zahlungen zwischen zwei deiner Bereiche stehen darin, bis sie eine Kategorie haben: Gehalt oder Miete ordnest du zu, eine Einlage oder Entnahme bekommt deine Umbuchungs-Kategorie. Der Vorschlag kommt aus deinen bisherigen Kategorien; Kontor übernimmt ihn nie von selbst. „Zuordnen“ trägt die Kategorie in MoneyMoney ein, „Alle Vorschläge übernehmen“ alle auf einmal. Unter „Umsätze“ wählst du einzelne ab – etwa bei einem Händler, bei dem du Verschiedenes kaufst. Zur Auswahl stehen nur Kategorien, die es in MoneyMoney gibt – eine neue legst du dort an. Einzelne Umsätze ordnest du auch unter Umsätze & Belege zu (Klick auf die Zeile oder mehrere markieren); dort kannst du auch eine Kategorie aus MoneyMoney ändern (nach Rückfrage). Im Cashflow führt „zuordnen“ neben „(ohne Kategorie)“ direkt hierher.
 
-![Zuordnen](img/de/assign_categories.png)
+![Kategorisieren](img/de/assign_categories.png)
 
 Räumst du in MoneyMoney um – Kategorie umbenannt, verschoben oder gelöscht, Umsätze in eine andere Kategorie gezogen –, liest Kontor beim nächsten Abgleich alle Umsätze neu; deine Cashflow-Position bleibt bei der Kategorie.
 
@@ -280,7 +281,7 @@ Vom iPhone aus Zugeordnetes merkt sich Kontor und trägt es beim nächsten Abgle
 <a id="categories-rules"></a>
 ### Regeln für MoneyMoney
 
-Ordnest du eine Gegenpartei mehrmals in Kontor zu, hat MoneyMoney dafür offenbar keine Regel. Kontor schlägt sie unter Zuordnen → Regeln für MoneyMoney vor – in MoneyMoneys Schreibweise, zum Beispiel `name:"Baumarkt*"` oder `remote_account:"DE…" AND purpose:"miete"`. Hat dieselbe Gegenpartei auch andere Kategorien, nimmt Kontor Wörter aus dem Verwendungszweck oder die Richtung der Zahlung dazu; vorgeschlagen wird nur, was keinen Umsatz einer anderen Kategorie trifft. Ausdruck kopieren, in MoneyMoney in den Einstellungen der Kategorie unter Regeln einfügen und „Nur auf noch nicht kategorisierte Umsätze anwenden“ wählen – dann „Erledigt“.
+Ordnest du eine Gegenpartei mehrmals in Kontor zu, hat MoneyMoney dafür offenbar keine Regel. Kontor schlägt sie unter Kategorisieren → Regeln für MoneyMoney vor – in MoneyMoneys Schreibweise, zum Beispiel `name:"Baumarkt*"` oder `remote_account:"DE…" AND purpose:"miete"`. Hat dieselbe Gegenpartei auch andere Kategorien, nimmt Kontor Wörter aus dem Verwendungszweck oder die Richtung der Zahlung dazu; vorgeschlagen wird nur, was keinen Umsatz einer anderen Kategorie trifft. Ausdruck kopieren, in MoneyMoney in den Einstellungen der Kategorie unter Regeln einfügen und „Nur auf noch nicht kategorisierte Umsätze anwenden“ wählen – dann „Erledigt“.
 
 <a id="categories-write-back"></a>
 ### In MoneyMoney eintragen und rückgängig machen
@@ -301,23 +302,39 @@ Der Cashflow hat eine feste Gliederung; deine Kategorien aus MoneyMoney zählen 
 
 - **Automatisch** – wie die Kategorie darüber, sonst Kontors Vorschlag nach dem Namen (etwa „Einkommen › Rückzahlung Finanzamt“ → Erstattungen, „Sparen“ → Sparen & Anlegen).
 - Eine gewählte Position gilt auch für alle Kategorien darunter, solange sie keine eigene haben.
-- **Sparen & Anlegen** zählt nicht als Ausgabe; unter „Angelegt auf“ wählst du daneben das Konto, in das das Geld fließt (nur bei dieser Position; genauer je Empfänger, siehe unten). **Umbuchung** (zwischen eigenen Konten) sucht die Gegenbuchung, **Nicht berücksichtigen** nimmt die Kategorie heraus (die Prüfzeile nennt sie).
+- **Sparen & Anlegen** zählt nicht als Ausgabe; unter **Zielkonto** wählst du daneben das Konto, in das das Geld fließt (nur bei dieser Position; genauer je Empfänger, siehe unten). **Umbuchung** – Geld zwischen deinen Konten oder Bereichen, weder Einnahme noch Ausgabe – sucht die Gegenbuchung. **Nicht berücksichtigen** nimmt die Kategorie ganz heraus: Ihr Betrag zählt in keiner Zeile und steht als Abweichung im Abgleich mit der Bilanz (mit diesem Grund) – nur für Ausnahmen wie eine Fehlbuchung, die sich später aufhebt.
 - Kategorien einer Immobilie (Immobilien → Kategorie) haben im Cashflow eigene Zeilen „Miete“ und „Kosten“.
 
-Die Planung arbeitet auf den Positionen; ein Budget aus MoneyMoney zählt für die Position seiner Kategorie. In MoneyMoney ändert sich nichts.
+Die Planung arbeitet auf den Positionen; ein Budget aus MoneyMoney zählt für die Position seiner Kategorie. In MoneyMoney ändert sich nichts. Die Spaltenköpfe bleiben beim Blättern stehen.
+
+<a id="categories-tree"></a>
+#### Empfohlene Kategorien
+
+Über der Tabelle steht, was Kontor von deinen Kategorien in MoneyMoney braucht – in der Einrichtung aufgeklappt. Die Grundregel: **eine Kategorie je Zweck**. Was in verschiedene Positionen gehört, gehört nie in dieselbe Kategorie – eine Kategorie „Immobilie“ mit Kaufpreis, Nebenkosten, Rate, Darlehensauszahlung und Miete etwa macht aus der Auszahlung eine Mieteinnahme und aus dem Kaufpreis Kosten. Besser:
+
+| Kategorie in MoneyMoney | Position |
+|---|---|
+| Gehalt, Kapitalerträge, Wohnen › Miete …, Lebenshaltung › …, Mobilität, Versicherungen … | jeweils die gleichnamige |
+| Sparen › je Anlage eine (Depot, Festgeld, Rentenversicherung mit Kapital …) | Sparen & Anlegen, Zielkonto je Unterkategorie |
+| Darlehen › Tilgung, Zinsen | Tilgung, Zinsen |
+| Immobilie ‹Name› › Miete, Kosten | die Zeilen der Immobilie (Immobilien → Kategorie) |
+| Immobilie ‹Name› › Kauf (Kaufpreis, Nebenkosten) | Sparen & Anlegen (selbst wählen), Zielkonto: das Konto der Immobilie |
+| Umbuchung | Umbuchung – zwischen deinen Konten und Bereichen, auch Einlagen und Entnahmen |
+
+Diese Namen erkennt Kontor und schlägt die Position selbst vor; ein ✓ heißt, dass eine deiner Kategorien schon dort zählt. Anlegen musst du sie in MoneyMoney – Kontor legt keine Kategorien an. Zahlungen in eine Beteiligung, die Kontor im Beteiligungs- oder Kapitalkonto gegenbucht, gehören zu Sparen & Anlegen: Kontor verbindet sie mit der Gegenbuchung.
 
 ![Cashflow-Positionen](img/de/category_positions.png)
 
 <a id="positions-recipients"></a>
 #### Zielkonto je Empfänger
 
-Überweist du auf ein eigenes Konto in MoneyMoney, erkennt Kontor die Gegenbuchung selbst. Anders bei Geld, das auf keinem deiner Konten als Buchung ankommt, etwa bei einem Depot, das nur Kontostände hat. Dafür stehen unter der Tabelle die Empfänger dieser Zahlungen mit Kategorie, Anzahl und Summe. Je Empfänger wählst du das Konto, in das das Geld fließt:
+Überweist du auf ein eigenes Konto in MoneyMoney, erkennt Kontor die Gegenbuchung selbst. Anders bei Geld, das auf keinem deiner Konten als Buchung ankommt, etwa bei einem Depot oder einer Rentenversicherung, die nur Kontostände haben. Dafür stehen unter der Tabelle alle Empfänger solcher Zahlungen unter „Sparen & Anlegen“ mit Kategorie, Anzahl und Summe. Kontor wählt das **Zielkonto** der Reihe nach: deine Wahl je Empfänger, sonst das Zielkonto der Kategorie (gilt auch für ihre Unterkategorien), sonst das einzige Depot des Bereichs. Zeigt „automatisch“ das richtige Konto, ist nichts zu tun; markiert sind die Empfänger ohne Zielkonto. Je Empfänger wählst du:
 
-- **Automatisch** – das Konto unter „Angelegt auf“ der Kategorie, ist dort keins gewählt, das einzige Depot des Bereichs.
-- **Ein Konto** – gilt für alle Zahlungen an diesen Empfänger, gleich in welcher Kategorie; das geht vor „Angelegt auf“. So kann eine Kategorie wie „Sparen“ auf mehrere Konten laufen.
+- **Automatisch** – wie eben beschrieben; was dabei herauskommt, steht in der Auswahl.
+- **Ein Konto** – gilt für alle Zahlungen an diesen Empfänger, gleich in welcher Kategorie; das geht vor dem Zielkonto der Kategorie. So kann eine Kategorie wie „Sparen“ auf mehrere Konten laufen (etwa ein Depot bei einer Bank, ein anderes bei einer zweiten).
 - **Kein Konto in MoneyMoney** – das Geld verlässt das Vermögen, das Kontor sieht.
 
-Wo es eindeutig ist, schlägt Kontor ein Depot vor (gleiche Bank wie die IBAN des Empfängers oder ein gemeinsames Wort im Namen); es zählt erst, wenn du es übernimmst und speicherst. Geld ohne Zielkonto zählt nicht als Kursgewinn: Es steht im Cashflow unter Wertänderungen als eigene Zeile **Anlage ohne Zielkonto**, die den Anstieg des Depots ausgleicht, mit einem Link hierher. Ein Konto, das nicht mehr zum Bereich gehört, nennt Kontor unter Einrichtung; dann gilt wieder die automatische Wahl.
+Wo es eindeutig ist, schlägt Kontor ein Depot vor (gleiche Bank wie die IBAN des Empfängers oder ein gemeinsames Wort im Namen); es zählt erst, wenn du es übernimmst und speicherst. Geld ohne Zielkonto zählt nicht als Kursgewinn: Es steht im Cashflow unter Wertänderungen als eigene Zeile **Anlage ohne Zielkonto**, die den Anstieg des Depots ausgleicht, mit einem Link hierher – das Nettovermögen stimmt also auch ohne Zielkonto, nur Einzahlung und Wertzuwachs sind nicht getrennt. Ein Konto, das nicht mehr zum Bereich gehört, nennt Kontor unter Einrichtung; dann gilt wieder die automatische Wahl.
 
 <a id="planning"></a>
 ## Planung
@@ -386,9 +403,9 @@ Unter „Auto-Buchungen“ siehst du, was die Buchungsregeln buchen wollen und g
 **Wertanpassung gelöscht oder geändert** (Beteiligung): Ein Kontostand ist die Summe aller Buchungen bis zu diesem Tag. Fehlt eine Anpassung vom Tag X oder hat sie in MoneyMoney einen anderen Betrag, liegt jeder spätere Stand um genau diesen Betrag daneben. Kontor prüft bei jedem Abgleich den ganzen Zeitraum ab „Buchen ab“ und bucht am Tag X nur, was dort fehlt – meist genau die gelöschte Buchung (mit derselben Markierung), nichts, wenn du den Wert selbst gebucht hast; die Buchungen danach bleiben, wie sie sind.
 
 <a id="rules-loans"></a>
-### Darlehen
+### Manuelle Darlehen
 
-Kontor erkennt die Rate auf dem Quellkonto – über die IBAN des Darlehensgebers oder einen Text im Verwendungszweck – und bucht sie als Tilgung auf das Darlehenskonto (ein Offline-Konto). Dazu kommen jeden Monat die Zinsen. So stimmt die Restschuld in MoneyMoney ohne Handarbeit. „Art“: Verbindlichkeit (du zahlst) oder Forderung (du bekommst). „Buchen ab“: erst ab diesem Tag. Ohne Zinsmodell („keine Zinsen“) spiegelt Kontor nur die Raten.
+Für Darlehen, die du in MoneyMoney als manuelles Konto (Offline-Konto) führst – ein Darlehen mit eigenem Bankkonto in MoneyMoney braucht das nicht, dort bucht die Bank Tilgung und Zinsen selbst. Kontor erkennt die Rate auf dem Quellkonto – über die IBAN des Darlehensgebers oder einen Text im Verwendungszweck – und bucht sie als Tilgung auf das Darlehenskonto (ein Offline-Konto). Dazu kommen jeden Monat die Zinsen. So stimmt die Restschuld in MoneyMoney ohne Handarbeit. „Art“: Verbindlichkeit (du zahlst) oder Forderung (du bekommst). „Buchen ab“: erst ab diesem Tag. Ohne Zinsmodell („keine Zinsen“) spiegelt Kontor nur die Raten.
 
 **Zinsen**: Jahresbasis = Zinssatz × Stand am 31.12. des Vorjahres, je Monat ein Zwölftel, im Dezember mit dem Cent-Rest – oder monatlich auf die Restschuld. Das Modell ist vereinfacht (30/360); einmal im Jahr mit der Zinsabrechnung der Bank abgleichen. **Echte Zinsen**: Ändere Kontors Zinsbuchung in MoneyMoney auf den Betrag der Bank (die Markierung bleibt) – oder buche die Zinsen selbst (mit „Zins“ im Text oder der Zinskategorie): Für diesen Monat bucht Kontor dann nichts. Stehen in einem Monat Zinsen von Kontor und von dir, kommt ein Hinweis unter „Auto-Buchungen“ – ebenso, wenn das Konto fehlt oder keine passende Zahlung kommt.
 
@@ -407,12 +424,12 @@ Außerdem je Gesellschaft:
 - **Buchen ab** – ab einem Tag (neu: heute) oder „alles“ seit der ersten Buchung der Gesellschaft, siehe unten.
 - **Mindestdifferenz** (kleinere Abweichungen bucht Kontor nicht) und **Gegenpartei** der Buchungen (leer: Name der Gesellschaft).
 
-In das Beteiligungskonto bucht Kontor jeweils nur die Differenz zum Stand in MoneyMoney (Verwendungszweck mit der Rechnung, z. B. „Wertanpassung: 40 % × 150.000,00 € (Wert Alpha GbR) = 60.000,00 €“, und der Markierung „#kontor-wert-…“). Zahlungen zwischen dir und einer Gesellschaft mit Beteiligung oder Kontenspiegel zählen im Cashflow als Einlage bzw. Entnahme, und die Eigenkapitalquote in der Bilanz rechnet über die Beteiligungen durch die Gesellschaften hindurch.
+In das Beteiligungskonto bucht Kontor jeweils nur die Differenz zum Stand in MoneyMoney (Verwendungszweck mit der Rechnung, z. B. „Anteilswertanpassung: 40 % × 150.000,00 € (Wert Alpha GbR) = 60.000,00 €“, und der Markierung „#kontor-wert-…“). Zahlungen zwischen dir und einer Gesellschaft mit Beteiligung oder Kontenspiegel zählen im Cashflow als Einlage bzw. Entnahme, und die Eigenkapitalquote in der Bilanz rechnet über die Beteiligungen durch die Gesellschaften hindurch.
 
 <a id="rules-mirrors"></a>
 ### Kontenspiegel
 
-Ein Kontenspiegel verbindet zwei beliebige Konten, die dasselbe von zwei Seiten zeigen – eigene, die einer Gesellschaft oder die zweier Gesellschaften; eine Beteiligung braucht es dafür nicht. Jeder Spiegel hat sein eigenes „Buchen ab“. Beispiel: Dein Kapitalkonto ist in der GbR eine Schuld an dich, bei dir eine Forderung („Darlehen an die GbR“). Jede Buchung im einen Konto bucht Kontor mit umgekehrtem Vorzeichen und gleichem Datum ins andere – in beide Richtungen, soweit beide Offline-Konten sind; ist eines ein Bankkonto, nur ins andere. Sender bzw. Empfänger ist, wem das andere Konto gehört (die Gesellschaft bzw. dein Bereich), der Text der des Originals mit „gespiegelt von <Konto>“ und der Markierung „#kontor-gk-…“ (mit der Nummer des Originals). Gespiegelte Buchungen werden nie zurückgespiegelt, Wertanpassungen nie gespiegelt. Konten in verschiedenen Währungen spiegelt Kontor nicht (es rechnet nicht um). Gespiegelt wird ab seinem „Buchen ab“; was vor der letzten Prüfung gebucht war, spiegelt Kontor nur nach deiner Freigabe (Hinweis „älter“) – auch vollautomatisch, denn vielleicht steht es schon von Hand im anderen Konto. Buchungen, die du auf beiden Seiten von Hand angelegt hast (gleicher Tag, gleicher Betrag, umgekehrtes Vorzeichen), gelten als Paar und werden nicht doppelt angelegt; bekommt ein Original in MoneyMoney eine neue Nummer (gelöscht und neu erfasst), zählt seine gespiegelte Buchung weiter, solange Tag und Betrag gleich sind. Ändern oder löschen kann Kontor nichts: Fehlt das Original einer gespiegelten Buchung oder hat es einen anderen Betrag oder Tag, meldet Kontor das unter „Auto-Buchungen“, und du korrigierst sie selbst; löschst du eine gespiegelte Buchung, schlägt Kontor sie wieder vor – willst du sie nicht, „Nicht buchen“.
+Ein Kontenspiegel verbindet zwei beliebige Konten, die dasselbe von zwei Seiten zeigen – eigene, die einer Gesellschaft oder die zweier Gesellschaften; eine Beteiligung braucht es dafür nicht. Jeder Spiegel hat sein eigenes „Buchen ab“. Jedes Konto wählst du in zwei Schritten nebeneinander: erst den Bereich, dann eines seiner Konten (ebenso bei Darlehen). Beispiel: Dein Kapitalkonto ist in der GbR eine Schuld an dich, bei dir eine Forderung („Darlehen an die GbR“). Jede Buchung im einen Konto bucht Kontor mit umgekehrtem Vorzeichen und gleichem Datum ins andere – in beide Richtungen, soweit beide Offline-Konten sind; ist eines ein Bankkonto, nur ins andere. Sender bzw. Empfänger ist, wem das andere Konto gehört (die Gesellschaft bzw. dein Bereich), der Text der des Originals mit „gespiegelt von <Konto>“ und der Markierung „#kontor-gk-…“ (mit der Nummer des Originals). Gespiegelte Buchungen werden nie zurückgespiegelt, Wertanpassungen nie gespiegelt. Konten in verschiedenen Währungen spiegelt Kontor nicht (es rechnet nicht um). Gespiegelt wird ab seinem „Buchen ab“; was vor der letzten Prüfung gebucht war, spiegelt Kontor nur nach deiner Freigabe (Hinweis „älter“) – auch vollautomatisch, denn vielleicht steht es schon von Hand im anderen Konto. Buchungen, die du auf beiden Seiten von Hand angelegt hast (gleicher Tag, gleicher Betrag, umgekehrtes Vorzeichen), gelten als Paar und werden nicht doppelt angelegt; bekommt ein Original in MoneyMoney eine neue Nummer (gelöscht und neu erfasst), zählt seine gespiegelte Buchung weiter, solange Tag und Betrag gleich sind. Ändern oder löschen kann Kontor nichts: Fehlt das Original einer gespiegelten Buchung oder hat es einen anderen Betrag oder Tag, meldet Kontor das unter „Auto-Buchungen“, und du korrigierst sie selbst; löschst du eine gespiegelte Buchung, schlägt Kontor sie wieder vor – willst du sie nicht, „Nicht buchen“.
 
 <a id="rules-back"></a>
 ### Buchen ab
@@ -485,7 +502,7 @@ Im Terminal aktualisiert dieselbe Zeile wie bei der [Installation](https://githu
 - Oberfläche nur auf diesem Mac (`127.0.0.1`); optional zusätzlich die Tailscale-Adresse für deine eigenen Geräte – nie im Heimnetz oder Internet. Keine fremden Inhalte, keine Telemetrie. Einzige Verbindung nach außen ist die Update-Prüfung bei GitHub.
 - Anmeldung mit Passwort (PBKDF2-SHA256, 600 000 Runden) oder Touch ID am Mac (braucht die Kommandozeilen-Werkzeuge von Apple, sonst gilt nur das Passwort; der Dialog erscheint erst, wenn du zu Kontor wechselst – nie, während du woanders arbeitest). Das Anmelde-Cookie gilt nur für Kontor, fremde Webseiten können nichts auslösen (CSRF-Schutz, Herkunftsprüfung). Sperre nach Leerlauf oder mit ⌘L; fünf Fehlversuche sperren fünf Minuten. Ein Passwortwechsel meldet alle anderen Geräte ab und erneuert die eigene Anmeldung.
 - Alle Dateien im Datenordner sind verschlüsselt (AES-256 + HMAC) mit einem zufälligen Datenschlüssel, der im macOS-Schlüsselbund liegt (Eintrag „Kontor Datenschlüssel“) – nicht dein Passwort, das nur den Zugang regelt. Jede Neuinstallation erzeugt einen neuen Schlüssel; erneuern lässt er sich jederzeit unter Einstellungen → Sichern & Zurücksetzen. Funktioniert die Verschlüsselung oder der Schlüsselbund nicht, startet Kontor nicht – es speichert nie unverschlüsselt, legt keinen neuen Schlüssel als Datei neben die Daten und keinen neuen an, solange verschlüsselte Daten ohne ihren Schlüssel da sind. Belege liegen als normale Dateien in einem Ordner deiner Wahl; Dateien außerhalb davon verknüpfst du nur am Mac, und nur Belegdateien – nichts aus versteckten Ordnern, dem Datenordner oder der Library (außer iCloud Drive und anderen Cloud-Ordnern).
-- **Was Kontor in MoneyMoney schreibt** – sonst nichts: (1) neue Buchungen der Buchungsregeln, nur in Offline-Konten, jede mit der Markierung „#kontor-…“ und nie zweimal; (2) die Kategorie eines Umsatzes, den du in Kontor zuordnest (nur wenn er dort noch keine hat oder nach Rückfrage) – und auf deinen Wunsch wieder die davor (Zuordnen → Eingetragen); (3) mit der Einstellung „Verweis in MoneyMoney“ den Belegpfad, angehängt an den Kommentar des Umsatzes (was dort steht, bleibt). Kontor ändert oder löscht keine Buchung, legt keine Überweisungen oder Lastschriften an und fasst Kategorienbaum und Regeln von MoneyMoney nicht an. Rechnen die Buchungsregeln einmal nicht, wird nichts gebucht; alles andere läuft weiter.
+- **Was Kontor in MoneyMoney schreibt** – sonst nichts: (1) neue Buchungen der Buchungsregeln, nur in Offline-Konten, jede mit der Markierung „#kontor-…“ und nie zweimal; (2) die Kategorie eines Umsatzes, den du in Kontor zuordnest (nur wenn er dort noch keine hat oder nach Rückfrage) – und auf deinen Wunsch wieder die davor (Kategorisieren → Eingetragen); (3) mit der Einstellung „Verweis in MoneyMoney“ den Belegpfad, angehängt an den Kommentar des Umsatzes (was dort steht, bleibt). Kontor ändert oder löscht keine Buchung, legt keine Überweisungen oder Lastschriften an und fasst Kategorienbaum und Regeln von MoneyMoney nicht an. Rechnen die Buchungsregeln einmal nicht, wird nichts gebucht; alles andere läuft weiter.
 - Buchen, Updates, Rückgängigmachen eingetragener Kategorien, Sicherung, Zurücksetzen und Zugangseinstellungen nur am Mac; vom iPhone standardmäßig nur ansehen. Vom iPhone aus Zugeordnetes trägt Kontor erst beim nächsten Abgleich am Mac ein.
 - Historische Kontostände: Das MoneyMoney-Passwort gibst du in einem Fenster eines kleinen Kontor-Helfers ein, der nur für diesen Vorgang aus dem Quellcode gebaut und danach gelöscht wird; Kontor speichert es nirgends. Die Datenbank liegt dabei kurz vollständig entschlüsselt im Arbeitsspeicher – das erfordert Vertrauen in diesen Code. Wer das nicht möchte, lässt die Funktion aus; einmal eingelesen, wird sie nicht mehr gebraucht.
 - Im Terminal (`kontor.py`) gibt es nur, was ohne Daten auskommt: den Dienst starten und einrichten, die Oberfläche öffnen, die Version. Ein neues Passwort setzen und Deinstallieren gehen dort nur mit dem aktuellen Kontor-Passwort oder Touch ID – wie in der Oberfläche. Alles, was deine Daten zeigt oder ändert (Abgleich, Buchen, Einstellungen, Diagnose), geht nur angemeldet in der Oberfläche.

@@ -221,7 +221,7 @@ def payment_kind(t: Tx) -> str:
 DEFAULT_TEXTS = {
     "repayment_text": "{kind} {date} von {source} · {tag}",
     "interest_text": "Zinsen {month} · {percent} % p.a. auf {base} · {tag}",
-    "value_text": "Wertanpassung: {share} % × {value} (Wert {source}) = {target} · {tag}",
+    "value_text": "Anteilswertanpassung: {share} % × {value} (Wert {source}) = {target} · {tag}",
     "mirror_text": "{text} · gespiegelt von {source} · {tag}",
 }
 

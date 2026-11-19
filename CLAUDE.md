@@ -46,7 +46,7 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
   (`tests/test_privacy.py` prüft, was sich prüfen lässt).
 - MoneyMoney nur über die AppleScript-Schnittstelle. Schreiben nur in Offline-Konten (Regeln) und das Kategoriefeld von Umsätzen, die er in Kontor
   zuordnet – sein Klick ist die Freigabe, kein Schalter (`mm_categories.py`: direkt
-  vorher neu lesen und prüfen, fremde Kategorien nur nach Rückfrage; vom iPhone Zugeordnetes erst beim nächsten Abgleich am Mac; Eingetragenes lässt sich unter Zuordnen → Eingetragen rückgängig machen, nur am Mac).
+  vorher neu lesen und prüfen, fremde Kategorien nur nach Rückfrage; vom iPhone Zugeordnetes erst beim nächsten Abgleich am Mac; Eingetragenes lässt sich unter Kategorisieren → Eingetragen rückgängig machen, nur am Mac).
   Kontor hat keine eigenen Kategorien und ordnet nie selbst zu (gelernte Muster sind nur Vorschläge); nur im Cashflow schätzt es die Position von Umsätzen ohne Kategorie – sichtbar als „geschätzt“, ohne etwas in MoneyMoney einzutragen. Nie Buchungen, den Kategorienbaum oder
   Regeln des Nutzers ändern oder löschen, keine Überweisungen.
 - Oberfläche nur über 127.0.0.1 bzw. Tailscale erreichbar. Netzverbindungen nur: Update-Prüfung bei GitHub und – nur auf ausdrücklichen Klick (Konten & Regeln → Kontostände) – das Nachschlagen von Wertpapiernamen bei OpenFIGI (`security_names.py`, sendet nur ISINs).
@@ -84,7 +84,7 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 | `rules.py` | Buchungsregeln – Darlehen, Beteiligung, Kontenspiegel; zustandslos, erkennt Gebuchtes an `#kontor-…` |
 | `model.py` | Konten, Umsätze, `Ledger`, Salden zum Stichtag, Markierungen |
 | `report.py` | Bilanz, Cashflow (feste Positionen für alle Bereiche; Kategorien zählen darin), Planung je Bereich |
-| `categorize.py` / `mm_categories.py` | Kategorien: MoneyMoney ist maßgeblich – Zuordnen, Vorschläge, Regelvorschläge / Kategorie in MoneyMoney eintragen |
+| `categorize.py` / `mm_categories.py` | Kategorien: MoneyMoney ist maßgeblich – Kategorisieren, Vorschläge, Regelvorschläge / Kategorie in MoneyMoney eintragen |
 | `mm_bridge.py` + `.jxa` | einzige Schnittstelle zu MoneyMoney (Liste erlaubter Methoden) |
 | `mm_history.py` + `.swift` | Kontostände aus MoneyMoneys Datenbank (Upload, nur Speicher) |
 | `realestate.py`, `tax.py`, `receipts.py` | Immobilienkalkulation, Steuer, Belege |

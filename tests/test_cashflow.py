@@ -775,6 +775,37 @@ class OpeningBalance(Reconciles):
         data = self.data(self.BASE + [(5, "karte", date(2026, 3, 2), 115.20, {}), (6, "giro", date(2026, 3, 20), 115.20, {})])
         self.assertIn("Tagesgeld / Anfangssaldo", rows(data["Privat"], "valuation"))
 
+    def test_opened_before_its_first_booking(self):
+        """Kept by its bookings: before the first booking no balance -- unless MoneyMoney recorded the account earlier at 0
+        (opened then, nothing on it): from there on 0. No estimate: an opening balance of its own, or a known balance other
+        than 0 before the first booking, keeps it unknown there (and the row "Anfangssaldo" where it was)."""
+        roles = {k: v[2] for k, v in ACCOUNTS.items()}
+        config = core.merged_config({"balance": {"roles": roles}})
+
+        def run(txs, mm, tg_balance=None):
+            led = make_ledger(txs)
+            if tg_balance is not None:
+                led.accounts["tg"].balance = tg_balance
+            b = next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat")
+            ds = report.build_dataset(led, config, {"history_mm": {"tg": mm}} if mm else {}, TODAY, b, roles)
+            return ds, next(r for r in ds["balance"]["rows"] if r["id"] == "tg")["amounts"]
+        txs = [(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}), (2, "tg", date(2026, 4, 2), 500.0, {"iban": "DE99"})]
+        ds, plain = run(txs, None)
+        self.assertEqual((plain["2026-02"], plain["2026-03"], plain["2026-04"]), (None, None, 500.0))
+        ds, rec = run(txs, {"2026-02": 0.0, "2026-03": 0.0})
+        self.assertEqual((rec["2026-01"], rec["2026-02"], rec["2026-03"], rec["2026-04"]), (None, 0.0, 0.0, 500.0))
+        self.assertAddsUp({"Privat": ds}, allow=("ue_unbekannt",))
+        self.assertFalse(any(g[0] == "ue_unbekannt" and g[2] == "Tagesgeld" for mk in ("2026-03", "2026-04")
+                             for g in ds["cashflow"]["reconciliation"][mk]["reasons"] + ds["cashflow"]["reconciliation"][mk]["reasons_cash"]))
+        # MoneyMoney knew another balance before the first booking: Kontor does not assume nothing happened
+        ds, other = run(txs, {"2026-02": 0.0, "2026-03": 100.0})
+        self.assertEqual((other["2026-02"], other["2026-03"], other["2026-04"]), (None, None, 500.0))
+        # an opening balance of its own (-115.20): unknown before the first booking, the row "Anfangssaldo" in its month, as before
+        ds, op = run(txs, {"2026-02": -115.2, "2026-03": -115.2}, tg_balance=500.0 - 115.2)
+        self.assertEqual((op["2026-03"], op["2026-04"]), (None, 384.8))
+        self.assertAddsUp({"Privat": ds}, allow=("ue_anfangssaldo",))
+        self.assertEqual(rows(ds, "valuation")["Tagesgeld / Anfangssaldo"]["amounts"]["2026-04"], -115.2)
+
 
 class SavingByRecipient(Reconciles):
     """Saving that arrives as a booking on none of your accounts (a depot kept by balances): the account per recipient you

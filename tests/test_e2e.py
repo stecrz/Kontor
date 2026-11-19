@@ -1005,7 +1005,16 @@ class AppTests(_AppBase):
         led = self.app.ledger
         area = {a.uuid: str(b["id"]) for b in core.bereiche_for(led, self.app.config) for a in b["leaves"]}
         by_id = {t.id: t for t in led.txs}
+        # before you choose: only the private areas
+        areas = core.bereiche_for(led, self.app.config)
+        self.assertIsNone(self.app.config["assign_without"])
         code, off = self.call("/api/categories/unassigned")
+        self.assertEqual(off["skipped"], sorted(str(b["id"]) for b in areas if b["kind"] != "private"))
+        self.assertTrue(off["skipped"]); self.assertTrue(all(area[by_id[i].account_uuid] not in off["skipped"] for g in off["groups"] for i in g["ids"]))
+        self.call("/api/categories/areas", {"without": [], "wait": True})                              # all: kept as chosen
+        self.assertEqual(self.app.config["assign_without"], [])
+        code, off = self.call("/api/categories/unassigned")
+        self.assertEqual(off["skipped"], [])
         ids = [i for g in off["groups"] for i in g["ids"]]
         self.assertTrue(ids)
         hide = area[by_id[ids[0]].account_uuid]
@@ -3995,7 +4004,7 @@ class BrowserTest(unittest.TestCase):
                 MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Werkzeug", 1, False, {})]
                 app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
                 pg.click("#nav a[href='#categories']"); pg.wait_for_selector(".kz-group")
-                self.assertTrue(pg.inner_text("#page-title").startswith("Zuordnen")); self.assertEqual(pg.get_attribute("#page-title .page-hq", "data-help"), "categories"); self.assertIsNone(pg.query_selector("#kz-mm-on"))
+                self.assertTrue(pg.inner_text("#page-title").startswith("Kategorisieren")); self.assertEqual(pg.get_attribute("#page-title .page-hq", "data-help"), "categories"); self.assertIsNone(pg.query_selector("#kz-mm-on"))
                 pg.wait_for_selector(".kz-save:not([disabled])")
                 n_before = len(pg.query_selector_all(".kz-group"))
                 box = pg.query_selector(".kz-group"); box.query_selector(".kz-kat").fill("Haushalt / Werkzeug"); box.query_selector(".kz-save").click()
@@ -4098,16 +4107,24 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(pg.query_selector("#mirrors .gk-row.invalid")); self.assertEqual(store.load("config.json").get("account_mirrors") or [], [])
                 self.assertTrue(pg.query_selector("#mirrors .gk-row .c-rmode"))                    # its own "Buchen ab"
                 pick = """([sel, txt]) => { const s = document.querySelector(sel), o = [...s.options].find(o => o.textContent.includes(txt)); s.value = o.value; s.dispatchEvent(new Event('change', {bubbles: true})); }"""
+                # an account in two steps: the area, then its accounts (only those)
+                self.assertEqual(pg.eval_on_selector_all("#mirrors .gk-row .acct-pick:first-child .ap-area option", "e => e.map(o => o.textContent)")[:3], ["Privat", "Alpha GbR", "Beta GbR"])
                 # accounts of the same name name their company: in the menu and as the chosen entry
+                pg.evaluate(pick, ["#mirrors .gk-row .acct-pick:first-child .ap-area", "Alpha GbR"])
+                self.assertEqual(pg.eval_on_selector("#mirrors .gk-row .g-a", "e => e.value"), "")          # another area: nothing chosen
                 opts = pg.eval_on_selector_all("#mirrors .gk-row .g-a option", "e => e.map(o => o.textContent)")
-                self.assertIn("Kapitalkonto A · Alpha GbR", opts); self.assertIn("Kapitalkonto A · Beta GbR", opts)
+                self.assertIn("Kapitalkonto A · Alpha GbR", opts); self.assertNotIn("Kapitalkonto A · Beta GbR", opts); self.assertNotIn("Immobilie Lindenstraße", opts)
+                pg.evaluate(pick, ["#mirrors .gk-row .acct-pick:first-child .ap-area", "Beta GbR"])
+                self.assertIn("Kapitalkonto A · Beta GbR", pg.eval_on_selector_all("#mirrors .gk-row .g-a option", "e => e.map(o => o.textContent)"))
+                pg.evaluate(pick, ["#mirrors .gk-row .acct-pick:first-child .ap-area", "Privat"])
+                opts = pg.eval_on_selector_all("#mirrors .gk-row .g-a option", "e => e.map(o => o.textContent)")
                 self.assertIn("Immobilie Lindenstraße", opts); self.assertNotIn("Immobilie Lindenstraße · Privat", opts)    # a name of its own: as it is
                 pg.evaluate(pick, ["#mirrors .gk-row .g-a", "Immobilie Lindenstraße"]); pg.evaluate(pick, ["#mirrors .gk-row .g-b", "Immobilie Lindenstraße"])
                 pg.click("#save-rules"); pg.wait_for_timeout(300)                                  # the same account twice: said so, not saved
                 self.assertTrue(pg.query_selector("#mirrors .gk-row.invalid")); self.assertIn("dasselbe Konto", pg.inner_text("#toast"))
                 self.assertEqual(store.load("config.json").get("account_mirrors") or [], [])
                 # two accounts, no company involved: saved as a rule of its own, with what it would book
-                pg.evaluate(pick, ["#mirrors .gk-row .g-b", "Kapitalkonto B"])
+                pg.evaluate(pick, ["#mirrors .gk-row .gk-arrow + .acct-pick .ap-area", "Alpha GbR"]); pg.evaluate(pick, ["#mirrors .gk-row .g-b", "Kapitalkonto B"])
                 pg.select_option("#mirrors .gk-row .c-rmode", "all"); pg.wait_for_timeout(1200)      # (the test's day is fixed: "today" here would be in its future)
                 self.assertTrue(pg.is_hidden("#mirrors .gk-row .c-ab"))
                 self.assertTrue(pg.inner_text("#mirrors .gk-row .pv").strip())

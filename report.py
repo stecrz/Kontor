@@ -279,6 +279,14 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
         full = int(((config or {}).get("balance") or {}).get("months_back", 0) or 0) <= 0
         first = min((t.booking_date for t in ledger.transactions(acc.uuid)), default=None) if full else None
         opened = month_key(first) if first else None
+        # Opened before its first booking with nothing on it: from MoneyMoney's first balance (or one of yours) on it stands at 0
+        # -- only if the account started at 0 and every known balance before the first booking says 0 (no estimate; an opening
+        # balance of its own keeps its row "Anfangssaldo" in the month of the first booking)
+        if opened:
+            before = {k: v for k, v in manual.items() if k < opened}
+            if before and abs(round(acc.balance - sum(t.amount for t in ledger.transactions(acc.uuid)), 2)) < 0.005 \
+                    and all(abs(v) < 0.005 for v in before.values()):
+                opened = min(before)
         for k in mkeys:
             h[k] = acc.balance if k >= cur_key else (None if opened and k < opened else ends[k])
         t = (acc.type or "").lower()

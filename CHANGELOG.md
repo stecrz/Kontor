@@ -1,5 +1,17 @@
 # Änderungen
 
+## 3.15.2 (2026-11-19 04:27)
+- „Zuordnen“ heißt jetzt „Kategorisieren“; anfangs nur private Bereiche ausgewählt.
+- Einrichtung: Buchungsregeln vor Cashflow-Positionen, Kategorisieren am Ende; „Weiter“ führt zum nächsten Schritt.
+- Cashflow-Positionen: Empfohlene Kategorien für MoneyMoney (Checkliste); „Zielkonto“ statt „Angelegt auf“, Erklärung der Reihenfolge; Tooltip zu „Umbuchung“ und „Nicht berücksichtigen“; feste Spaltenköpfe.
+- Übersicht in drei Spalten, kleinere Grafiken; Vermögensstruktur als Bilanz-Kacheln mit Eigenkapital und Schulden; „Offen“ rechts unten.
+- Verlauf aus Umsätzen: Stand 0 ab Kontoeröffnung laut MoneyMoney, auch vor dem ersten Umsatz.
+- Buchungsregeln: Konto in zwei Schritten (Bereich, dann Konto); „Manuelle Darlehen“; Buchungstext „Anteilswertanpassung“.
+- Monatlicher Cashflow: Ergebnis-Strich nur innerhalb der Achse.
+- Umsätze & Belege: „Kategoriefilter hinzufügen“.
+- Hilfe-Symbol am Seitentitel mittig und mit etwas Abstand.
+- Hilfe-Texte angepasst.
+
 ## 3.15.1 (2026-11-18 22:18)
 - Zuordnen (vorher „Kategorien“): kein Schalter fürs Eintragen; Reiter „Eingetragen“ mit Rückgängig; Link zu Cashflow-Positionen.
 - Kommandozeile ohne Datenzugriff; Passwort und Deinstallieren nur mit Kontor-Passwort oder Touch ID.
