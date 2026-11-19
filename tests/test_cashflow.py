@@ -167,10 +167,13 @@ class CashflowCases(Reconciles):
             k = g["Einlagen/Entnahmen Gesellschafter / Kapitalkonto"]
             self.assertEqual((k["amounts"]["2026-02"], k["amounts"]["2026-04"], k["nw"]), (10000.0, -2500.0, False), cat)
             self.assertNotIn("Beteiligung an Muster GbR", p); self.assertNotIn("Kapitalkonto", g)         # no change in value
-        # without the counter-booking that month, or two of that amount: as before (leaves the net worth, its own change in value)
+        # without the counter-booking that month, or two of that amount on the same day: as before (leaves the net worth, its own
+        # change in value) -- of two at different distances the nearer one counts
         txs = base + four(2, date(2026, 2, 10), 10000.0, "Umbuchung")
         later = [x if x[0] != 3 else (3, "stake", date(2026, 3, 2), 10000.0, x[4]) for x in txs]
-        twice = txs + [(9, "stake", date(2026, 2, 11), 10000.0, {"purpose": "Einlage"}), (8, "stake", date(2026, 2, 25), -10000.0, {})]
+        twice = txs + [(9, "stake", date(2026, 2, 10), 10000.0, {"purpose": "Einlage"}), (8, "stake", date(2026, 2, 25), -10000.0, {})]
+        nearer = txs + [(9, "stake", date(2026, 2, 12), 10000.0, {"purpose": "Einlage"}), (8, "stake", date(2026, 2, 25), -10000.0, {})]
+        self.assertFalse(rows(build(nearer)["Privat"])["Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR"]["nw"])
         for case in (later, twice):
             data = build(case)
             self.assertAddsUp(data)
@@ -183,6 +186,22 @@ class CashflowCases(Reconciles):
         p = rows(data["Privat"])
         self.assertEqual(p["Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR"]["amounts"]["2026-02"], -1000.0)
         self.assertTrue(p["Einlage/Entnahme Kinder"]["nw"]); self.assertNotIn("Einlage/Entnahme Kinder / Beteiligung an Muster GbR", p)
+        # mirrored: your capital account keeps the day you paid (Thursday before Easter), the company's money came on Tuesday
+        # -- up to a week apart it is the same contribution; more than that, not
+        for gap, linked in ((5, True), (7, True), (8, False)):
+            d0 = date(2026, 4, 2)
+            txs = base + [(70, "giro", d0, -3000.0, {"iban": "DE21"}), (71, "stake", d0, 3000.0, {}),
+                          (72, "kk", d0 + timedelta(days=gap), 3000.0, {"iban": "DE11"}), (73, "kap", d0, -3000.0, {"purpose": "gespiegelt"})]
+            data = build(txs)
+            self.assertAddsUp(data)
+            self.assertEqual("Einlagen/Entnahmen Gesellschafter / Kapitalkonto" in rows(data["Muster GbR"]), linked, gap)
+        # the same amount every week, each booked on its day: all linked
+        weekly = [x for i, d in enumerate((date(2026, 3, 2), date(2026, 3, 9), date(2026, 3, 16), date(2026, 3, 23))) for x in four(80 + 4 * i, d, 500.0, "Umbuchung")]
+        data = build(base + weekly)
+        self.assertAddsUp(data)
+        self.assertEqual(rows(data["Privat"])["Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR"]["amounts"]["2026-03"], -2000.0)
+        self.assertEqual(rows(data["Muster GbR"])["Einlagen/Entnahmen Gesellschafter / Kapitalkonto"]["amounts"]["2026-03"], 2000.0)
+        self.assertNotIn("Beteiligung an Muster GbR", rows(data["Privat"]))
         # rent of the same amount to the company (paid for something) claims nothing
         data = build(base + four(2, date(2026, 2, 10), 1000.0, "Umbuchung") + [(60, "giro", date(2026, 2, 8), -1000.0, {"iban": "DE21", "cat": "Wohnen\\Miete"}),
                                                                                   (61, "kk", date(2026, 2, 8), 1000.0, {"iban": "DE11", "purpose": "Miete"})])

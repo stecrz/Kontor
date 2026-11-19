@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.15.4 (2026-11-19 13:25)
+- Einlagen mit Gegenbuchung im Kapitalkonto: bis 7 Tage Abstand (Wochenende, Feiertage, Kontenspiegel); nächste Buchung zuerst, wöchentliche Einlagen bleiben verbunden.
+- Einstellungen → Allgemein: keine Rückfrage mehr wegen ungespeicherter Änderungen.
+- Hilfe-Symbol am Seitentitel nennt den Reiter („Belege: …“).
+
 ## 3.15.3 (2026-11-19 12:30)
 - Cashflow: Einlagen/Entnahmen zwischen deinen Bereichen, die du im eigenen Kapitalkonto gegenbuchst, gehen in dieses Konto – keine Änderung des Nettovermögens, keine Wertänderung mehr (beide Seiten, auch mit Beteiligungsregel).
 

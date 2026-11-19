@@ -1542,6 +1542,7 @@ const I18N = {
 "page_settings_receipts":["Wo Belege liegen und wie sie heißen.", "Where receipts are kept and how they are named."],
 "page_settings_updates":["Neue Versionen von GitHub.", "New versions from GitHub."],
 "page_settings_backup":["Sichern, Zurücksetzen, Datenschlüssel, Deinstallieren, Protokoll.", "Backup, reset, data key, uninstall, log."],
+"tab_zu":["{0}: {1}", "{0}: {1}"],
 "page_log":["Was Kontor zuletzt getan hat – ohne Beträge, IBANs oder Passwörter.", "What Kontor did recently – without amounts, IBANs or passwords."],
 "druck_am":["gedruckt {0}", "printed {0}"],
 "druck_mm_stand":["Daten aus MoneyMoney vom {0}", "data from MoneyMoney of {0}"],

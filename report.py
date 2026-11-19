@@ -606,6 +606,8 @@ PAIR_DAYS_IBAN = 5                                      # counter IBAN known: co
 PAIR_DAYS_IBAN_BOTH = 14                                # ... and both bookings name each other's account
 PAIR_DAYS = 3                                           # by amount only (transfer category, offline account)
 PAIR_DAYS_CAT = 7                                       # ... both bookings with a transfer category (PayPal books on the day, the bank days later)
+COUNTER_DAYS = 7                                        # a contribution and its counter-booking in a capital account (a mirrored booking
+                                                        # keeps the sender's day; the money arrives a business day later -- over Easter: 5-6 days)
 
 
 def _value_adjustment(t: Tx) -> bool:
@@ -1131,7 +1133,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     paired: Set[int] = set()
     # A contribution or withdrawal between two of your areas that you also booked against a manual account of this area (your
     # capital account at home -- a participation or receivable --, the partner's capital account in the company -- a liability):
-    # same month, opposite amount, at most PAIR_DAYS apart -- the money went into (came out of) that account, the net worth
+    # same month, opposite amount, at most COUNTER_DAYS apart -- the money went into (came out of) that account, the net worth
     # stays; not a change in value. Only offline accounts, never a car or a depot; one payment to one booking only: first where
     # the account is tied to the other area (an account mirror into it, its participation, its name in the account or booking),
     # then the rest -- a booking that two payments could claim stays as it was.
@@ -1180,19 +1182,24 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                 or (not by_cat[t.id] and paid_for(between_position(t)[1])):
             continue                                     # paid for something, or into another currency: no contribution
         c = [o for o in pool.get(-cents_(t.amount), []) if month_key(o.booking_date) == month_key(t.booking_date)
-             and abs((o.booking_date - t.booking_date).days) <= PAIR_DAYS]
+             and abs((o.booking_date - t.booking_date).days) <= COUNTER_DAYS]
         if c:
             claims_by.append((t, [o for o in c if tied(o, name)], c))
+    # in steps by distance (the same day, PAIR_DAYS, COUNTER_DAYS), each with the tied accounts first: what is clear in an
+    # earlier step is out of the later ones (a contribution every week stays linked; a mirrored booking that came days
+    # later is found all the same)
     reserved: Dict[int, Tx] = {}
     tied_ids = {o.id for _, lk, _ in claims_by for o in lk}
-    for phase in (1, 2):
-        lists = [(t, lk if phase == 1 else [o for o in c if o.id not in tied_ids]) for t, lk, c in claims_by if t.id not in reserved]
-        used = {o.id for o in reserved.values()}
-        lists = [(t, [o for o in c if o.id not in used]) for t, c in lists]
-        n_claims = Counter(o.id for _, c in lists for o in c)
-        for t, c in lists:
-            if len(c) == 1 and n_claims[c[0].id] == 1:
-                reserved[t.id] = c[0]
+    for limit in (0, PAIR_DAYS, COUNTER_DAYS):
+        for phase in (1, 2):
+            used = {o.id for o in reserved.values()}
+            lists = [(t, [o for o in (lk if phase == 1 else [x for x in c if x.id not in tied_ids])
+                          if o.id not in used and abs((o.booking_date - t.booking_date).days) <= limit])
+                     for t, lk, c in claims_by if t.id not in reserved]
+            n_claims = Counter(o.id for _, c in lists for o in c)
+            for t, c in lists:
+                if len(c) == 1 and n_claims[c[0].id] == 1:
+                    reserved[t.id] = c[0]
 
     def counter_booking(t: Tx, mk: str) -> Optional[Tx]:
         o = reserved.get(t.id)

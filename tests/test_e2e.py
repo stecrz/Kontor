@@ -4365,6 +4365,9 @@ class BrowserWizardTest(unittest.TestCase):
                 # Paket laden mit Zuordnung
                 pg.click("#nav a[href='#settings']"); pg.wait_for_selector("#e-lang")
                 self.assertIsNone(pg.query_selector("#e-autobook"))                              # booking automatically: on the booking rules only
+                pg.select_option("#e-theme", "light"); pg.wait_for_selector("#e-theme"); pg.select_option("#e-theme", "dark"); pg.wait_for_selector("#e-theme")
+                self.assertFalse(pg.evaluate("DIRTY.on"))                                        # saves at once: nothing unsaved to ask about
+                self.assertTrue(pg.get_attribute("#page-title .page-hq", "data-tip").startswith("Allgemein: "))   # the tab it is about
                 pg.click("#main .tabs button[data-next='#settings/backup']"); pg.wait_for_selector("#pk-pick")
                 with pg.expect_file_chooser() as fc:
                     pg.click("#pk-pick")

@@ -203,8 +203,13 @@ const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'ca
   setup: 'setup', accounts: 'accounts', 'accounts/areas': 'areas', 'accounts/history': 'balances', 'accounts/positions': 'categories-positions', 'accounts/rules': 'rules',
   'accounts/tax': 'tax', settings: '', 'settings/moneymoney': 'sync', 'settings/access': 'iphone', 'settings/receipts': 'receipts', 'settings/updates': 'updates',
   'settings/backup': 'backup', log: 'log'};
+// pages with tabs: the title stays, so the line names the tab it is about ("Belege: …")
+const SUB_LABEL = {settings: {'': 'allgemein', moneymoney: 'einst_mm', access: 'zugang', receipts: 'belege', updates: 'updates', backup: 'sichern_zuruecksetzen'},
+  accounts: {'': 'mod_accounts', areas: 'mod_areas', history: 'kontostaende_tab', positions: 'cashflow_positionen', rules: 'nav_auto_regeln', tax: 'steuer'},
+  categories: {'': 'kz_tab_offen', rules: 'regeln_fuer_moneymoney', written: 'kz_tab_eingetragen'}};
 const pageHq = (tab, sub) => { const k = (tab + '/' + sub) in PAGE_HELP ? tab + '/' + sub : tab, id = PAGE_HELP[k]; if (id == null) return '';
-  return `<span class="hq page-hq" tabindex="0" data-tip="${esc(t(`page_${k.replace('/', '_')}`))}"${id ? ` data-help="${id}"` : ''}>?</span>`; };
+  const lab = (SUB_LABEL[tab] || {})[sub || ''], txt = t(`page_${k.replace('/', '_')}`);
+  return `<span class="hq page-hq" tabindex="0" data-tip="${esc(lab ? t('tab_zu', t(lab), txt) : txt)}"${id ? ` data-help="${id}"` : ''}>?</span>`; };
 const ICON = {
   pencil: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg>',
   check: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
@@ -5212,7 +5217,7 @@ function bindRegelVorschlaege(main) {
 async function vEinstellungen() {
   // How Kontor runs (nothing here changes a figure): Allgemein · MoneyMoney & Abgleich · Zugang · Belege · Updates · Sichern.
   // What sets your figures (areas, accounts, positions, rules, tax) is under "Konten & Regeln".
-  const tabs = subTabs('settings', [['', t('allgemein')], ['moneymoney', t('einst_mm')], ['access', t('zugang')], ['receipts', t('belege')], ['updates', t('updates')], ['backup', t('sichern_zuruecksetzen')]]);
+  const tabs = subTabs('settings', Object.entries(SUB_LABEL.settings).map(([k, l]) => [k, t(l)]));
   const v = {moneymoney: vEinstellungenMM, access: vEinstellungenZugang, receipts: vEinstellungenBelege, updates: () => vUpdates(vEinstellungenUpdates()), backup: vSicherung}[S.sub] || vEinstellungenAllgemein;
   return tabs + await v();
 }
@@ -5226,7 +5231,7 @@ function vEinstellungenAllgemein() {
 // Konten & Regeln: everything that sets your figures -- which accounts there are and where they belong (accounts, areas,
 // balances) and by which rules Kontor counts and books (cash flow positions, booking rules, tax). The accounts open first.
 async function vKontenRegeln() {
-  const tabs = [['', t('mod_accounts')], ['areas', t('mod_areas')], ['history', t('kontostaende_tab')], ['positions', t('cashflow_positionen')], ['rules', t('nav_auto_regeln')], ['tax', t('steuer')]];
+  const tabs = Object.entries(SUB_LABEL.accounts).map(([k, l]) => [k, t(l)]);
   const v = {areas: vBereicheEditor, history: vMMHistorie, positions: vPositionen, rules: vRegeln, tax: vEinstellungenSteuer}[S.sub] || vKontenEditor;
   return `<div class="tabs-row">${subTabs('accounts', tabs)}${setupOpen() ? '' : `<a class="small tabs-aside" href="#setup">${t('einrichtung_pruefen')}</a>`}</div>` + await v();
 }
@@ -5647,7 +5652,7 @@ const softRoute = () => DIRTY.on ? statusMini() : route();      // redraw unless
 const SCROLL = {key: '', pos: {}};
 // Ungespeicherte Aenderungen: Formulare auf Seiten mit Speichern-Knopf melden Aenderungen; Wegnavigieren fragt nach
 const DIRTY = {on: false, hash: location.hash};
-const GUARDED = ['accounts', 'accounts/areas', 'accounts/rules', 'accounts/tax', 'settings', 'settings/moneymoney', 'settings/receipts', 'settings/access', 'settings/updates'];
+const GUARDED = ['accounts', 'accounts/areas', 'accounts/rules', 'accounts/tax', 'settings/moneymoney', 'settings/receipts', 'settings/access', 'settings/updates'];   // "Allgemein" saves at once
 const guarded = () => GUARDED.includes(S.tab + (S.sub ? '/' + S.sub : ''));
 (function dirtyListeners() {
   // einmal am Hauptbereich (bleibt bestehen); ob die Seite geschuetzt ist, wird beim Ereignis geprueft
