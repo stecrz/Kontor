@@ -4237,6 +4237,13 @@ class BrowserTest(unittest.TestCase):
                     Object.assign(BOOK, sv); return r.map(x => [x.k.slice(-10), x.off, x.gone, x.b, x.adjusted, x.new]); }""")
                 self.assertEqual(rows, [["20260131-1", True, False, 50, False, False], ["20260228-1", False, False, 150, True, False],
                                         ["20260430-1", False, True, 7, False, False], ["20260331-1", False, False, 5, False, True]])
+                # none chosen (also what a recalculation had added): nothing to work out, no new booking chosen by itself
+                none = pg.evaluate("""async () => { const sv = {...BOOK}, r0 = route, a0 = api; let asked = 0;
+                    route = () => {}; api = async () => { asked++; return {proposals: [{key: 'x', amount: 1}]}; };
+                    Object.assign(BOOK, {runs: {last_run: {dry_run: true, proposals: [{key: 'a', amount: 1}, {key: 'b', amount: 2}]}}, off: new Set(['a', 'b', 'c']), extra: {c: {key: 'c', amount: 3}}, calc: [{key: 'c', amount: 3}], edits: {}});
+                    try { await bkRecalc(); return [asked, BOOK.calc, Object.keys(BOOK.extra), bkRows(BOOK.runs.last_run).filter(x => !x.off).length]; }
+                    finally { route = r0; api = a0; Object.assign(BOOK, sv); } }""")
+                self.assertEqual(none, [0, None, [], 0])
                 # folded sections stay open when the page is drawn again (e.g. "Not booked" while booking several again); no
                 # explanations the button at the top already gives on hover
                 pg.click("details[data-keep='bk-hist'] summary"); pg.evaluate("routeKeeping(\"details[data-keep='bk-hist']\")"); pg.wait_for_timeout(500)

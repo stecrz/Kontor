@@ -4363,6 +4363,9 @@ async function bkRecalc() {
   if (!l.dry_run) return;
   const edits = {}; Object.entries(BOOK.edits).forEach(([k, e]) => { if (e.amount != null || e.date) edits[k] = {amount: e.amount, date: e.date}; });
   if (!BOOK.off.size && !Object.keys(edits).length) { BOOK.calc = null; BOOK.extra = {}; return route(); }
+  // everything left out: nothing is booked, nothing to work out (holding all would only bring recalculated ones, chosen by default)
+  const keys = (l.proposals || []).map(v => v.key).concat(Object.keys(BOOK.extra)).filter(Boolean);
+  if (keys.length && keys.every(k => BOOK.off.has(k))) { BOOK.calc = null; BOOK.extra = {}; return route(); }
   try {
     const r = await api('/api/bookings/plan', {hold: [...BOOK.off], changes: edits});
     if (my !== BOOK.seq) return;                    // a newer change is on its way
@@ -6128,7 +6131,11 @@ function bind(main) {
     const count = () => { const n = rows().filter(r => !BOOK.off.has(r.dataset.key)).length, b = $('#run-live', main); if (b) { $('#sel-n', b).textContent = n; b.disabled = !n || !(S.STATUS || {}).local; } };
     bt.addEventListener('change', e => {
       // what you leave out or change moves the bookings after it: the list is recalculated (what you see is what is booked)
-      if (e.target.id === 'bk-all') { rows().forEach(x => { x.classList.toggle('off', !e.target.checked); $('.bk-on', x).checked = e.target.checked; if (e.target.checked) BOOK.off.delete(x.dataset.key); else BOOK.off.add(x.dataset.key); }); count(); return bkRecalc(); }
+      // all or none: every booking of the list, also those added by a recalculation (none: nothing left to work out)
+      if (e.target.id === 'bk-all') { const all = bkRows((BOOK.runs || {}).last_run || {}).map(x => x.k).filter(Boolean);
+        BOOK.off = e.target.checked ? new Set() : new Set(all);
+        $$('tr[data-key]', bt).forEach(x => { if (!x.dataset.key) return; x.classList.toggle('off', !e.target.checked); const c = $('.bk-on', x); if (c) c.checked = e.target.checked; });
+        count(); return bkRecalc(); }
       const r = e.target.closest('tr[data-key]'); if (!r || !r.dataset.key) return;
       const key = r.dataset.key;
       if (e.target.classList.contains('bk-on')) { r.classList.toggle('off', !e.target.checked); if (e.target.checked) BOOK.off.delete(key); else BOOK.off.add(key); count(); return bkRecalc(); }
