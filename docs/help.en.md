@@ -495,7 +495,7 @@ In Terminal, the same line as for the [installation](https://github.com/stecrz/K
 <a id="advanced"></a>
 ## Advanced
 
-**Install, update, remove**: installation is one line in Terminal (see the [README](https://github.com/stecrz/Kontor#installation)); the same line – or `bash install.sh` in the program folder – updates and can be repeated at any time: it replaces the service and leaves data folder and settings untouched. Remove: in Kontor under Settings → Backup & reset → Uninstall, with a double click on `Uninstall.command` or with `python3 kontor.py uninstall [--program]` (both with the Kontor password or Touch ID). Kontor shows the program folder under Settings → Backup & reset → Data. The service starts at login, runs permanently and restarts after crashes (launchd, `de.kontor.service`).
+**Install, update, remove**: installation is one line in Terminal (see the [README](https://github.com/stecrz/Kontor#installation)); the program folder is `~/Kontor`, another one can be chosen with `KONTOR_HOME`. The same line updates and can be repeated at any time: it replaces the service and leaves data folder and settings untouched. `bash install.sh` in a moved program folder sets it up again. Remove: in Kontor under Settings → Backup & reset → Uninstall, with a double click on `Uninstall.command` or with `python3 kontor.py uninstall [--program]` (both with the Kontor password or Touch ID). Kontor shows the program folder under Settings → Backup & reset → Data. The service starts at login, runs permanently and restarts after crashes (launchd, `de.kontor.service`).
 
 **Command line** – `python3 ~/Kontor/kontor.py …`, only without data (everything else in the interface):
 

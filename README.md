@@ -36,11 +36,15 @@ Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https:
 
 Voraussetzungen: macOS, MoneyMoney, Kommandozeilen-Werkzeuge von Apple (`xcode-select --install`, liefert `python3` und `swiftc`).
 
-1. Eine Zeile im Terminal (Programme → Dienstprogramme → Terminal) – lädt Kontor nach `~/Kontor`, richtet den Hintergrunddienst ein und öffnet die Oberfläche:
+1. Eine Zeile im Terminal (Programme → Dienstprogramme → Terminal) – lädt Kontor in den Programmordner `~/Kontor`, richtet den Hintergrunddienst ein und öffnet die Oberfläche:
    ```
    bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/install.sh)
    ```
-   Dieselbe Zeile aktualisiert später auf den neuesten Stand. (Ein echter Doppelklick-Installer bräuchte eine Apple-Entwicklersignatur.)
+   **Anderer Ordner:** den Pfad mit `KONTOR_HOME` davorsetzen, etwa für den aktuellen Ordner:
+   ```
+   KONTOR_HOME="$PWD/Kontor" bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/install.sh)
+   ```
+   Auch später verschiebbar: Ordner verschieben, darin `bash install.sh` ausführen. Einstellungen und Daten liegen unabhängig davon in `~/Library/Application Support/Kontor`. Aktualisieren: in Kontor unter Einstellungen → Updates (oder dieselbe Zeile wie oben, mit demselben `KONTOR_HOME`).
 2. Im Browser unter `http://127.0.0.1:8765/` ein Passwort festlegen, dann führt die [Einrichtung](docs/help.de.md#setup) Schritt für Schritt durch alles.
 
 **Entfernen**: in Kontor unter Einstellungen → Sichern & Zurücksetzen → Deinstallieren, oder Doppelklick auf `Uninstall.command` im Programmordner. Dienst, Einstellungen, Daten, Protokoll und Datenschlüssel werden gelöscht; Belege und MoneyMoney bleiben. Mehr: [Updates](docs/help.de.md#updates) und [Für Fortgeschrittene](docs/help.de.md#advanced).
