@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.15.12 (2026-11-19 19:36)
+- Bilanz in Jahren: keine grau hinterlegten Jahresspalten mehr.
+- Cashflow-Tabelle: Zeilenlinien neben den Namen ohne Versatz (Safari).
+- Auto-Buchungen: „alle abwählen“ wählt wirklich alles ab.
+
 ## 3.15.11 (2026-11-19 18:43)
 - Übersicht: „Vermögensaufbau“ je Baustein (Beteiligungen, Immobilien, Liquidität, Schulden) mit Geldfluss und Wertänderung statt der Kennzahlen.
 - Vermögensstruktur: Vorjahresvergleich nur mit bekanntem Stand; kein „neu“, ±0 % nur ohne Veränderung.
