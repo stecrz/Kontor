@@ -419,7 +419,7 @@ pre.log .lg-debug { color:var(--muted); } pre.log .lg-warning { color:var(--warn
 .drawer { position:fixed; top:0; right:-420px; width:400px; max-width:100vw; height:100vh; background:var(--head); border-left:1px solid var(--line); box-shadow:-10px 0 40px rgba(0,0,0,.15); z-index:30; transition:right .22s ease; overflow:auto; padding:18px 20px; }
 .drawer.open { right:0; }
 main { transition:margin-right .22s ease; }
-@media (min-width:1000px) { body.dock main { margin-right:400px; } }          /* room beside the side panel: what you clicked stays in view */
+@media (min-width:1280px) { body.dock main { margin-right:400px; } }          /* the side panel beside the page; narrower: over it (the page would be too narrow) */
 .drawer h2 { margin-top:0; }
 /* the bookings behind a figure: fit the panel's width -- date and amount fixed, name and purpose wrap (also long references) */
 .drawer table.dr-tx { table-layout:fixed; width:100%; min-width:0; } .dr-tx col.c-d { width:92px; } .dr-tx col.c-a { width:104px; } .dr-tx td:first-child { white-space:nowrap; overflow-wrap:normal; }

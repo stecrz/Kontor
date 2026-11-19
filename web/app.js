@@ -4709,25 +4709,22 @@ async function openDrawer(txId) {
 function closeDrawer() { $('#drawer').classList.remove('open'); S.drawerTx = null; DRW.key = null; }
 // which drawer is open; a click on the row that opened it closes it (the click outside closes it first -- it must not reopen)
 const DRW = {key: null, closed: null, src: null, shown: null, key2: null};
-// the figure behind the side panel stays in view: it is marked while the panel is open, and where the panel would cover it
-// (a wide window), the page makes room beside the panel -- like an inspector on the Mac -- and brings it into view
+// The side panel stands beside the page, like an inspector on the Mac: the page makes room for it whenever it is open (a window too
+// narrow for both: it lies over the page -- CSS). The figure behind it is marked while it is open and stays in view.
 document.addEventListener('click', e => {
   if (!e.target.closest || e.target.closest('#drawer')) return;
   DRW.src = e.target.closest('#main') ? (e.target.closest('td, th, .cf-hit, [data-cftip], .cf-br-row, .item, tr') || e.target) : null;
 }, true);
 function drawerReveal() {
-  const d = $('#drawer'), open = d && d.classList.contains('open');
-  if (!open) { document.body.classList.remove('dock'); $$('.dr-src').forEach(x => x.classList.remove('dr-src')); DRW.shown = null; return; }
+  const d = $('#drawer'), open = !!(d && d.classList.contains('open'));
+  document.body.classList.toggle('dock', open);
+  if (!open) { $$('.dr-src').forEach(x => x.classList.remove('dr-src')); DRW.shown = null; return; }
   const src = DRW.src && document.contains(DRW.src) ? DRW.src : null;
   if (!src || src === DRW.shown) return;
   DRW.shown = src; DRW.key2 = srcKey(src);
   const mark = el => { $$('.dr-src').forEach(x => x.classList.remove('dr-src')); if (el && !(el instanceof SVGElement)) el.classList.add('dr-src'); };
   mark(src);
-  if (window.innerWidth < 1000) return;                 // narrow: the panel covers the page anyway (closing shows it again)
-  const r = src.getBoundingClientRect();
-  if (r.right <= window.innerWidth - d.offsetWidth - 8 && !document.body.classList.contains('dock')) return;
-  document.body.classList.add('dock');
-  // a chart is drawn anew for the narrower page: the same figure, found again by its marks
+  // the narrower page (a chart drawn anew): the same figure, found again by its marks, in view
   setTimeout(() => { const el = document.contains(src) ? src : srcFind(DRW.key2); if (!el || !$('#drawer').classList.contains('open')) return;
     DRW.shown = el; mark(el); el.scrollIntoView({block: 'nearest', inline: 'nearest', behavior: 'smooth'}); }, 320);
 }

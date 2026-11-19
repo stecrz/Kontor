@@ -3509,10 +3509,16 @@ class BrowserTest(unittest.TestCase):
                     pg.click(sel); pg.wait_for_selector("#drawer.open #cftx-page"); self.assertTrue(pg.inner_text("#drawer h2").startswith(pre))
                     self.assertTrue(pg.query_selector_all("#drawer tbody tr"))
                     self.assertLessEqual(*pg.evaluate("(() => { const w = document.querySelector('#drawer .dr-wrap'); return [w.scrollWidth, w.clientWidth]; })()"))   # no sideways scrolling
-                    vis = pg.evaluate("(() => { const s = document.querySelector('.dr-src'); if (!s) return true; const r = s.getBoundingClientRect(); return r.right <= innerWidth - document.querySelector('#drawer').offsetWidth + 2; })()")
-                    pg.wait_for_timeout(400); self.assertTrue(vis or pg.evaluate("document.body.classList.contains('dock')"))      # what you clicked: not under the panel
+                    pg.wait_for_timeout(450)                                                     # a wide window: the panel always beside the page
+                    self.assertTrue(pg.evaluate("document.body.classList.contains('dock') && getComputedStyle(document.querySelector('main')).marginRight === '400px'"))
+                    self.assertTrue(pg.evaluate("(() => { const s = document.querySelector('.dr-src'); if (!s) return true; return s.getBoundingClientRect().right <= innerWidth - 400 + 2; })()"))   # what you clicked: in view
                     pg.keyboard.press("Escape"); pg.wait_for_timeout(100)
                 pg.wait_for_function("!document.body.classList.contains('dock')"); pg.wait_for_timeout(600)      # the page takes its width back (charts drawn anew)
+                # a window too narrow for both: the panel lies over the page
+                pg.set_viewport_size({"width": 1200, "height": 900}); pg.wait_for_timeout(300)
+                pg.click("#cf-heat .cf-heat-n.tot"); pg.wait_for_selector("#drawer.open #cftx-page"); pg.wait_for_timeout(300)
+                self.assertEqual(pg.evaluate("getComputedStyle(document.querySelector('main')).marginRight"), "0px")
+                pg.keyboard.press("Escape"); pg.set_viewport_size({"width": 1440, "height": 900}); pg.wait_for_timeout(600)
                 # a few huge cells (20.000 and 100.000 among values up to 2.000): they get the darkest tones and a mark, the others keep their range
                 hk = pg.evaluate("""(() => { const D = JSON.parse(JSON.stringify(B())), id = S.area, keep = S.DATA.areas[id], ms = D.months.filter(m => m < D.actual_until).slice(-12);
                     const sek = D.cashflow.sections.find(s => s.name === 'expenses');

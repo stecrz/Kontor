@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.15.9 (2026-11-19 17:09)
+- Seitenfenster steht immer neben der Seite (die Seite rückt zur Seite); nur bei schmalem Fenster liegt es darüber.
+
 ## 3.15.8 (2026-11-19 16:44)
 - Übersicht: neue Karte „Kennzahlen“ (Sparquote, Ausgaben je Monat, Reserve, finanzielle Freiheit, Schulden, Eigenkapitalquote); Monatlicher Cashflow nur noch ein Drittel breit.
 - Vermögensstruktur: Vermögen | Finanziert durch, je Kachel Betrag und Veränderung zum Vorjahr; Summe „Vermögen“ statt „Bilanzsumme“.
