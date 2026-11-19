@@ -19,11 +19,14 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 
 ## Jede Änderung abschließen (Skill `release`)
 1. Tests grün.
-2. `VERSION`: dritte Stelle +1 (3.9.6 → 3.9.7) – auch bei mehreren Verbesserungen auf einmal. Zweite Stelle nur bei
-   erheblichen Änderungen und nur nach Rückfrage. Erste Stelle nie.
-3. `CHANGELOG.md`: neuer Abschnitt oben, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` (Ortszeit des Nutzers, Europe/Berlin), auf Deutsch, kompakt: je Änderung ein kurzer Punkt (Stichworte, eine Zeile), auf einen Blick lesbar – keine Erklärungen.
-4. Commit und Push auf `main` selbst erledigen, ohne nachzufragen. Keine Tags, kein Sitzungslink in der Commit-Nachricht.
-5. Den Mac aktualisiert der Nutzer selbst – kein Zugriff darauf, im Abschluss nicht erwähnen.
+2. Alle Änderungen (Code, Tests, Texte, Fahrplan) committen und auf `main` pushen – **ohne** `VERSION` und `CHANGELOG.md`.
+   GitHub Actions abwarten; schlägt der Lauf fehl, beheben und erneut pushen, bis er grün ist.
+3. Erst dann, als letzter Commit: `VERSION` dritte Stelle +1 (3.9.6 → 3.9.7) – auch bei mehreren Verbesserungen auf einmal –
+   und `CHANGELOG.md`. Die Update-Prüfung liest `VERSION` auf `main`: Die neue Version darf erst erscheinen, wenn alles
+   andere schon auf GitHub ist. Zweite Stelle nur bei erheblichen Änderungen und nur nach Rückfrage. Erste Stelle nie.
+4. `CHANGELOG.md`: neuer Abschnitt oben, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` (Ortszeit des Nutzers, Europe/Berlin), auf Deutsch, kompakt: je Änderung ein kurzer Punkt (Stichworte, eine Zeile), auf einen Blick lesbar – keine Erklärungen.
+5. Commit und Push auf `main` selbst erledigen, ohne nachzufragen. Keine Tags, kein Sitzungslink in der Commit-Nachricht.
+6. Den Mac aktualisiert der Nutzer selbst – kein Zugriff darauf, im Abschluss nicht erwähnen.
 
 ## Kleine und große Versionen
 - Kleine Versionen (dritte Stelle): zügig vorankommen – Funktionen, Verbesserungen, neue Features im Code; die üblichen Prüfungen.
