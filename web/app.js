@@ -5452,12 +5452,14 @@ async function vEinstellungenMM() {
   const ok = mmStepDone(S.STATUS) && S.KONTEN.length > 0 && VB.checked !== location.hash;     // just checked here: the page stays as it was
   const conn = ok ? `<details class="conn-fold" data-keep="mm-conn"${keepOpen('mm-conn')}><summary><h2>${t('verbindung')}</h2><span class="dot ok"></span><span class="small muted">${t('mm_verbunden')}</span></summary>${vVerbindung()}</details>`
     : `<h2>${t('verbindung')}</h2>${vVerbindung()}`;
-  return setupNav('connect') + (ok ? '' : conn) + `<h2>${t('synchronisierung')}</h2>${await vSync()}
+  // while you set Kontor up: the connection first, open (it is this step), the way on right below it
+  const setup = setupNav('connect'), first = setup ? `<h2>${t('verbindung')}</h2>${vVerbindung()}${setup.replace('class="setup-nav', 'class="setup-nav below')}` : ok ? '' : conn;
+  return first + `<h2>${t('synchronisierung')}</h2>${await vSync()}
   <h2>${t('abgleich_h')}</h2><div class="form">
     <label>${t('automatischer_abgleich_0', hq('abgleich'))}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatic !== false ? 'checked' : ''}> ${t('alle_2')} <input type="number" id="e-intervall" min="5" value="${z.interval_minutes ?? 30}" style="width:70px"> ${t('minuten_nur_wenn_moneymoney_laeuft')}</label>
     <label>${t('alles_neu_lesen_0', hq('voll_lesen'))}</label><label class="chk">${t('alle_2')} <input type="number" id="e-voll" min="1" value="${z.full_read_days ?? 30}" style="width:70px"> ${t('tage')}</label>
     <label>${t('umsaetze_lesen_0', hq('months_back'))}</label><label class="chk">${t('die_letzten')} <input type="number" id="e-monate" min="0" value="${b.months_back ?? 0}" style="width:70px"> ${t('monate_0_alle')}</label>
-  </div>${saveBar()}` + (ok ? conn : '');
+  </div>${saveBar()}` + (ok && !setup ? conn : '');
 }
 // the setup's way on, as one slim line above a page it leads through (only while the setup is open)
 const setupNav = id => { const n = nextModule(id); return setupOpen() && n ? `<div class="setup-nav small"><span class="muted">${t('einrichtung_kurz')}</span><a href="#setup">‹ ${esc(t('zurueck_zur_einrichtung'))}</a><a href="${n.href}" class="next">${esc(t('weiter_zu', n.t))} ›</a></div>` : ''; };

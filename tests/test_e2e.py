@@ -4542,6 +4542,7 @@ class BrowserWizardTest(unittest.TestCase):
                 self.assertNotIn("Belegordner", pg.query_selector("#w-findings").inner_text())
                 self.assertNotIn("Keine Bereiche", pg.query_selector("#w-findings").inner_text())
                 self.assertTrue(pg.query_selector(".setup-nav a.next[href='#accounts/areas']"))           # the setup's way on: one slim line
+                self.assertTrue(pg.evaluate("(() => { const n = document.querySelector('.setup-nav'), h = document.querySelector('#main h2'); return n.classList.contains('below') && !!(h.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING) && !document.querySelector('details.conn-fold'); })()"))   # below the open connection, not on top
                 self.assertTrue(pg.is_visible(".steps"))                                                   # just checked: the connection stays in view
                 # step 1 is checked every few seconds only while the connection is not there yet: connected, MoneyMoney is left alone
                 n0 = len([r for r in reqs if "/api/status?fresh=1" in r]); pg.wait_for_timeout(3500)

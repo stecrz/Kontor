@@ -895,6 +895,7 @@ table.kb-table { width:auto; min-width:0; } table.kb-table tr:hover td { backgro
 
 /* the setup's way on: one slim line above the page (only while the setup is open) */
 .setup-nav { display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px; margin:0 0 12px; padding:6px 12px; border:1px solid var(--line); border-radius:9px; background:var(--head); }
+.setup-nav.below { margin:14px 0 18px; }          /* below the section it belongs to */
 .setup-nav .muted { font-weight:600; } .setup-nav a { text-decoration:none !important; } .setup-nav a.next { margin-left:auto; font-weight:600; }
 details.conn-fold { margin-top:26px; } details.conn-fold > summary { display:flex; align-items:center; gap:8px; cursor:pointer; list-style:none; }
 details.conn-fold > summary::-webkit-details-marker { display:none; } details.conn-fold > summary h2 { margin:0; }
