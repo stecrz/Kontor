@@ -4052,6 +4052,11 @@ class BrowserTest(unittest.TestCase):
                 # Auswahlfelder gleich breit -> "Verlauf…" steht sauber untereinander
                 xs = pg.evaluate("[...document.querySelectorAll('.acct-table .k-hist')].map(b => Math.round(b.getBoundingClientRect().left))")
                 self.assertEqual(len(set(xs)), 1, xs)
+                for _ in range(40):                                                       # the side panel closed: the page has its width back
+                    if pg.evaluate("getComputedStyle(document.querySelector('main')).marginRight") == "0px":
+                        break
+                    pg.wait_for_timeout(50)
+                pg.wait_for_timeout(100)
                 self.assertLessEqual(pg.evaluate("document.querySelector('.acct-table').scrollWidth"), pg.evaluate("document.querySelector('#main').clientWidth"))   # passt in die Breite
                 pg.select_option("tr[data-uuid='%s'] .k-rolle" % F.uid("priv.immo"), "real_estate")
                 self.assertIsNone(pg.query_selector("#k-neu"))                                          # kein "Bericht aktualisieren" im Einrichtungsschritt
