@@ -4007,6 +4007,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertGreater(pg.evaluate("document.querySelector('#main .wrap').scrollLeft"), 0)
                 pg.click("#modus-seg button[data-m='years']"); pg.wait_for_timeout(300)
                 self.assertIsNotNone(pg.query_selector("#main thead th[data-cur]"))
+                if pg.evaluate("S.tab") == "balance": self.assertIsNone(pg.query_selector("#main td.year, #main th.year"))      # only years: none marked as a year
                 pg.click("#modus-seg button[data-m='months']"); pg.wait_for_timeout(300)
                 # senkrecht: Position je Reiter, nicht vom einen in den anderen uebertragen
                 pg.set_viewport_size({"width": 1440, "height": 500}); pg.evaluate("window.scrollTo(0, 300)"); y_bil = pg.evaluate("window.scrollY")
@@ -4370,6 +4371,57 @@ class BrowserTest(unittest.TestCase):
         finally:
             if not stopped:
                 srv.shutdown(); srv.server_close()
+            shutil.rmtree(d, ignore_errors=True)
+
+
+class SafariTablesTest(unittest.TestCase):
+    """WebKit (Safari's engine, where installed -- GitHub Actions): the cash flow's pinned names and its figures meet row by
+    row, on every row, also with everything open and scrolled sideways; the balance sheet's year view has no year marks."""
+
+    def test_rows_meet(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        d = tempfile.mkdtemp(prefix="kontor-wk-")
+        key, src = load_or_create_master_key(d)
+        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        app.do_run(False, True)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with sync_playwright() as p:
+                try:
+                    b = p.webkit.launch()
+                except Exception:
+                    self.skipTest("WebKit nicht installiert")
+                for scale in (1, 2):
+                    pg = b.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=scale)
+                    pg.goto("http://127.0.0.1:%d/" % port)
+                    if pg.query_selector("#login-pw2:not(.hidden)") and pg.is_visible("#login-pw2"):
+                        pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort")
+                    else:
+                        pg.fill("#login-pw", "sehr-geheimes-passwort")
+                    pg.click("#login-btn"); wait_shell(pg)
+                    pg.evaluate("location.hash = '#cashflow'"); pg.wait_for_selector("table.cf-names")
+                    pg.click("#cf-ebene button[data-e='3']"); pg.wait_for_selector("tr.det"); pg.wait_for_timeout(500)
+                    measure = """() => { const a = document.querySelector('.cf-pair > table:not(.cf-names)'), n = document.querySelector('.cf-pair > .cf-names');
+                        return [...a.rows].map((r, i) => { const x = r.getBoundingClientRect(), y = n.rows[i].getBoundingClientRect(); return [i, +(x.top - y.top).toFixed(2), +(x.bottom - y.bottom).toFixed(2)]; })
+                          .filter(e => Math.abs(e[1]) > 0.25 || Math.abs(e[2]) > 0.25); }"""
+                    self.assertEqual(pg.evaluate(measure), [], "scale %d" % scale)
+                    pg.evaluate("document.querySelector('.cf-pair').parentElement.scrollLeft = 200; window.scrollBy(0, 333)"); pg.wait_for_timeout(300)
+                    self.assertEqual(pg.evaluate(measure), [], "scale %d, scrolled" % scale)
+                    # the balance sheet in years: no column marked as a year (nothing else to tell it from)
+                    pg.evaluate("location.hash = '#balance'"); pg.wait_for_selector("tr.pos")
+                    pg.click("#modus-seg button[data-m='years']"); pg.wait_for_timeout(300)
+                    self.assertIsNone(pg.query_selector("#main td.year, #main th.year"))
+                    pg.click("#modus-seg button[data-m='months']"); pg.wait_for_timeout(200)
+                    pg.close()
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
             shutil.rmtree(d, ignore_errors=True)
 
 
