@@ -318,6 +318,16 @@ class CoreTests(unittest.TestCase):
         r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
         self.assertEqual(len([t for t in txs if "#kontor-gk-" in (t.get("purpose") or "")]), 2)
         self.assertFalse([p for p in r["proposals"] if p["kind"] == "mirror" and r["dry_run"]])         # no mirrored booking waits
+        # entered by hand on the other side 12 days before (no pair: too far apart): a new booking is not mirrored on its own,
+        # it waits with a note where the possible counterpart is
+        txs.append(F.tx("priv.bet.gb", TODAY - timedelta(days=12), 700.0, "Beta GbR", "von Hand vorher"))
+        txs.append(F.tx("gb.kap.a", TODAY, -700.0, "Ich", "von Hand, Eingang"))
+        r = core.run_once(self.store, cfg, TODAY, dry=False, force=True, bridge_factory=MockBridge)
+        self.assertEqual(len([t for t in txs if "#kontor-gk-" in (t.get("purpose") or "")]), 2)          # nothing booked on its own
+        wait = [p for p in r["proposals"] if p["kind"] == "mirror" and abs(p["amount"]) == 700.0 and p["note"]]
+        self.assertEqual(len(wait), 2)
+        self.assertEqual(sorted(any(d in p["note"] for d in [TODAY.strftime("%d.%m.%Y")]) for p in wait), [False, True])
+        self.assertTrue(any((TODAY - timedelta(days=12)).strftime("%d.%m.%Y") in p["note"] for p in wait))       # each names the other's day
         self.assertFalse([w for w in r["warnings"] if "Original" in w])
         # the original deleted in MoneyMoney: a note to delete the mirrored booking too (Kontor deletes nothing)
         txs.remove(new)
@@ -3588,8 +3598,21 @@ class BrowserTest(unittest.TestCase):
                     try { cfDrawHeat(); const ks = [...document.querySelectorAll('#cf-heat .cf-heat-n:not(.tot) ~ .cf-heat-c')].slice(0, 12 * (sek.rows.length)).map(c => [parseInt(c.style.getPropertyValue('--k')) || 0, c.classList.contains('big')]);
                       return ks; } finally { S.DATA.areas[id] = keep; cfDrawHeat(); } })()""")
                 normal = [k for k, big in hk if not big]; bigs = [k for k, big in hk if big]
-                self.assertEqual(len(bigs), 2); self.assertGreaterEqual(min(bigs), 86)
-                self.assertLess(min(normal), 20); self.assertGreater(max(normal), 70)               # small and large regular values stay apart
+                self.assertEqual(len(bigs), 2); self.assertEqual(min(bigs), 100)
+                self.assertLess(min(normal), 20); self.assertEqual(max(normal), 100)                # the highest regular value: the strongest colour too
+                # the change against a year before: the regular scale ends at 100 % at the latest; beyond it the strongest colour,
+                # a frame and one to three marks by how far; new (nothing a year before): the strongest colour and ✦, no frame
+                hc = pg.evaluate("""(() => { const D = JSON.parse(JSON.stringify(B())), id = S.area, keep = S.DATA.areas[id], mode = S.cfHeatMode, ms = D.months.filter(m => m < D.actual_until);
+                    const sek = D.cashflow.sections.find(s => s.name === 'expenses'), l12 = ms.slice(-12);
+                    sek.rows.forEach((z, i) => ms.forEach((m, j) => { z.amounts[m] = -Math.round(1000 * (1 + ((i * 37 + j * 53) % 41 - 20) / 100)); }));
+                    sek.rows[0].amounts[l12[4]] = -30000; sek.rows[1 % sek.rows.length].amounts[mShift(l12[6], -12)] = 0; S.DATA.areas[id] = D; S.cfHeatMode = 'chg';
+                    try { cfDrawHeat(); return [...document.querySelectorAll('#cf-heat .cf-heat-n:not(.tot) ~ .cf-heat-c')].slice(0, 12 * sek.rows.length)
+                      .map(c => [parseInt(c.style.getPropertyValue('--k')) || 0, c.classList.contains('big'), c.classList.contains('neu'), c.textContent]); }
+                    finally { S.DATA.areas[id] = keep; S.cfHeatMode = mode; cfDrawHeat(); } })()""")
+                big = [x for x in hc if x[1]]; neu = [x for x in hc if x[2]]
+                self.assertEqual(len(big), 1); self.assertEqual(big[0][0], 100); self.assertTrue(big[0][3] in ("▲▲▲", "+2.900%", "+2,9T%") or big[0][3].startswith("+"), big)
+                self.assertEqual(len(neu), 1); self.assertEqual((neu[0][0], neu[0][3]), (100, "✦")); self.assertNotIn("neu", [x[3] for x in hc])
+                self.assertEqual(max(x[0] for x in hc if not x[1] and not x[2]), 100)
                 # switched to income: green, the income in the middle, the title says so; and back
                 y0 = pg.evaluate("(() => { const b = document.querySelector(\"#cf-pie-art button[data-a='ein']\"); b.scrollIntoView({block: 'center'}); return b.getBoundingClientRect().top; })()")
                 pg.click("#cf-pie-art button[data-a='ein']"); pg.wait_for_selector("#cf-pie svg.ein"); pg.wait_for_selector("#cf-heat .cf-heat.ein")
@@ -4228,6 +4251,9 @@ class BrowserTest(unittest.TestCase):
                     pg.evaluate("location.hash = '#accounts/rules'"); pg.wait_for_selector("#save-rules")
                 self.assertIn("Kontor bucht" if auto else "Freigabe", pg.inner_text(".set-row"))
                 pg.click("#nav a[href='#bookings']"); pg.wait_for_selector(".mode-chip"); self.assertIn("Vollautomatisch" if auto else "Mit Freigabe", pg.inner_text(".mode-chip"))
+                cells = pg.evaluate("""[...document.querySelectorAll('#main table.plain')].flatMap(tb => { const i = [...tb.querySelectorAll('thead th')].findIndex(th => th.textContent.trim() === 'Konto');
+                    return i < 0 ? [] : [...tb.querySelectorAll('tbody tr')].map(r => r.cells[i]).filter(Boolean).map(c => [c.firstChild && c.firstChild.textContent, (c.querySelector('.small.muted') || {}).textContent || '']); })""")
+                self.assertTrue(cells and all(a in ("Privat", "Alpha GbR", "Beta GbR") for _, a in cells[:5]), cells[:5])      # each account with its area below it
                 self.assertIsNone(pg.query_selector("#run-dry"))              # checked at every sync, no button of its own
                 # the approval list with your selection: left out, recalculated (adjusted), new, not needed any more
                 rows = pg.evaluate("""() => { const sv = {...BOOK}, A = 'a|#kontor-wert-20260131-1', B = 'a|#kontor-wert-20260228-1', C = 'a|#kontor-wert-20260331-1', D = 'a|#kontor-wert-20260430-1';

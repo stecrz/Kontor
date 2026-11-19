@@ -944,7 +944,7 @@ def proposal_rows(ledger: Ledger, proposals: List[Proposal]) -> List[dict]:
     """Bookings waiting for approval, as the interface shows them."""
     return [{"kind": x.kind, "account": x.account_path, "account_name": ledger.accounts[x.account_uuid].name if x.account_uuid in ledger.accounts else "",
              "account_id": x.account_uuid, "key": x.key, "date": x.booking_date.isoformat(), "amount": x.amount, "text": x.purpose,
-             "category": x.category, "tag": x.tag, "rule": x.rule, "retroactive": x.retro, "counterparty": x.payee}
+             "category": x.category, "tag": x.tag, "rule": x.rule, "retroactive": x.retro, "counterparty": x.payee, "note": x.note}
             for x in proposals]
 
 
@@ -1686,7 +1686,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         def wanted(p: Proposal) -> bool:
             """Booked in this run: what you approved; booking fully automatically what is new since the last check -- what is
             backdated or missing again (deleted in MoneyMoney) waits for you, and a loan's interest after it too."""
-            return p.key in approve if approving else not p.retro
+            return p.key in approve if approving else not p.retro and not p.note
         failed = False
         moved: List[str] = []
         try:

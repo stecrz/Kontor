@@ -3866,24 +3866,24 @@ function cfDrawHeat() {
   tot.sum = ms.reduce((a, m) => a + tot.v[m], 0);
   CF.heat = {rows: rows.concat([tot]), months: m => all.filter(x => bk(x) === m), lab: m => q ? lab(m) : ML(m)};          // a click on a cell: its transactions
   // colour by amount, robust against a few huge months: the scale follows the regular cells (up to three times the upper
-  // quartile); cells above it share the darkest tones (still ordered among themselves) and carry a mark
-  const scale = lines => {
+  // quartile) -- the highest of them in the strongest colour; cells above it the strongest colour too, framed and marked
+  const scale = (lines, most = Infinity) => {          // most: the regular scale's end at the latest (a change: 100 %)
     const regular = lines.map(vals => { const xs = vals.filter(v => v > 0.5).sort((p, r) => p - r); if (!xs.length) return 0;
       const q3 = xs[Math.floor((xs.length - 1) * 0.75)]; return xs.length >= 4 ? Math.max(...xs.filter(v => v <= 3 * q3)) : xs[xs.length - 1]; });
-    const top = Math.max(0, ...lines.flat()), cap = Math.max(...regular, 0.5);
-    return {cap, k: v => v <= 0.5 ? 0 : v <= cap ? 0.08 + 0.74 * v / cap : 0.86 + 0.14 * (top > cap ? Math.log(v / cap) / Math.log(top / cap) : 1)}; };
-  // the change against the year before: per cell new (nothing then, something now -- the strongest colour), unknown (the year
+    const top = Math.max(0, ...lines.flat()), cap = Math.min(Math.max(...regular, 0.5), most);
+    return {cap, top, k: v => v <= 0.5 ? 0 : v <= cap ? 0.1 + 0.9 * v / cap : 1}; };
+  // the change against the year before: per cell new (nothing then, something now -- the strongest colour and ✦), unknown (the year
   // before is not in the data: grey, as no amount) or the percentage; one robust scale on its size, as for the amounts
   const chgMode = cfHeatChg();
   const chg = (r, m) => { const v = r.v[m], p = prevY(r, m); if (p == null) return null; if (Math.abs(p) < 0.5) return Math.abs(v) < 0.5 ? {d: 0} : {d: v > 0 ? Infinity : -Infinity, neu: true};
     return {d: (v - p) / Math.abs(p) * 100}; };
   if (chgMode) for (const r of rows.concat([tot])) { r.c = {}; ms.forEach(m => { r.c[m] = ahead.has(m) ? null : chg(r, m); }); }          // a month begun or planned: no comparison
   const finite = r => ms.map(m => r.c[m] && isFinite(r.c[m].d) ? Math.abs(r.c[m].d) : 0);
-  const sc = chgMode ? scale(rows.map(finite)) : scale(rows.map(r => ms.map(m => r.v[m]))), scT = chgMode ? scale([finite(tot)]) : scale([ms.map(m => tot.v[m])]);
+  const sc = chgMode ? scale(rows.map(finite), 100) : scale(rows.map(r => ms.map(m => r.v[m]))), scT = chgMode ? scale([finite(tot)], 100) : scale([ms.map(m => tot.v[m])]);
   const avgMax = Math.max(1, ...rows.map(r => Math.abs(r.sum / all.length)));          // the averages' unit follows the largest of them
   // the change over the whole period (only the months whose year before is known): the column at the right
   const heatAll = r => { const ks = ms.filter(m => r.c[m] != null); if (!ks.length) return '–'; const v = ks.reduce((a, m) => a + r.v[m], 0), p = ks.reduce((a, m) => a + prevY(r, m), 0);
-    return Math.abs(p) < 0.5 ? (Math.abs(v) < 0.5 ? '±0%' : t('cf_heat_neu')) : pctCell((v - p) / Math.abs(p) * 100); };
+    return Math.abs(p) < 0.5 ? (Math.abs(v) < 0.5 ? '±0%' : '✦') : pctCell((v - p) / Math.abs(p) * 100); };          // new: its mark, as in the cells
   const every = Math.max(1, Math.ceil(ms.length * 34 / Math.max(1, el.clientWidth * 0.66)));          // names that fit
   const kv = (k, v) => `<span>${esc(k)}</span><b>${v}</b>`;
   let h = `<div class="cf-heat${up ? ' ein' : ''}${chgMode ? ' chg' : ''}" style="--ch:${Math.round(Math.max(18, Math.min(32, 240 / rows.length)))}px;grid-template-columns:minmax(90px, 24%) repeat(${ms.length}, minmax(0, 1fr)) auto"><span></span>${ms.map((m, i) => { const on = (ms.length - 1 - i) % every === 0, first = ms.findIndex((x, j) => (ms.length - 1 - j) % every === 0) === i; return `<span class="cf-heat-m">${on ? esc(lab(m, (first || m.endsWith('-01')) && every * el.clientWidth * 0.66 / ms.length >= 46)) : ''}</span>`; }).join('')}<span class="cf-heat-m cf-heat-avg" title="${esc(t(chgMode ? 'cf_heat_vj_ges' : 'cf_schnitt_monat'))}">${chgMode ? '±' : 'Ø'}</span>`;
@@ -3892,19 +3892,21 @@ function cfDrawHeat() {
     if (r.total) h += `<span class="cf-heat-sep"></span>`;
     // the name: the bookings of the whole period (as a cell does for its month)
     h += `<span class="cf-heat-n${r.total ? ' tot' : ''}${open ? ' open' : ''}" title="${esc(r.label)}"${open ? ` data-hr="${ri}" data-hm="*" tabindex="0"` : ''}>${esc(r.label)}</span>` + ms.map(m => { const v = r.v[m], c = chgMode ? r.c[m] : null;
-      const k = chgMode ? (!c ? 0 : c.neu ? 1 : S2.k(Math.abs(c.d))) : S2.k(v), big = chgMode ? !!c && (c.neu || Math.abs(c.d) > S2.cap) : v > S2.cap;
-      const good = k && c && c.d ? (c.d > 0) === up : null, mark = chgMode ? (!c ? '' : c.neu ? t('cf_heat_neu') : pctCell(c.d)) : Fs(v, 0);
+      // new (nothing a year before): the strongest colour and a mark, no frame (no outlier)
+      const k = chgMode ? (!c ? 0 : c.neu ? 1 : S2.k(Math.abs(c.d))) : S2.k(v), big = chgMode ? !!c && !c.neu && Math.abs(c.d) > S2.cap : v > S2.cap, neu = chgMode && !!c && !!c.neu;
+      const good = k && c && c.d ? (c.d > 0) === up : null, mark = chgMode ? (!c ? '' : pctCell(c.d)) : Fs(v, 0);
       const cs = [...r.cats].map(([n, c]) => [n, c[m] || 0]).filter(([, x]) => Math.abs(x) >= 0.5).sort((p, q) => q[1] - p[1]);
       const shown = cs.length > 7 ? cs.slice(0, 6) : cs, rest = cs.slice(shown.length);
       const p = prevY(r, m), pch = cfChange(v, p, up);          // the year before and the change, in one line
       const before = p != null ? `<div><i></i><span>${esc(t('cf_vorjahr'))}</span><b class="cf-tip-pv">${cfEur(p)}<em class="${pch ? pch.cls : ''}">${pch ? pch.txt : '–'}</em></b></div>` : '';          // value and change side by side, at the right
       const parts = shown.length > 1 || (shown.length === 1 && shown[0][0] !== r.label) ? `<div class="cf-tip-kv cf-tip-parts">${shown.map(([n, x]) => kv(n, cfEur(x))).join('')}${rest.length ? kv(t('cf_uebrige', rest.length), cfEur(rest.reduce((a, [, x]) => a + x, 0))) : ''}</div>` : '';
       const tip = cfTip(`<div class="cf-tip-h">${esc(r.label)} <span class="muted">· ${esc(q ? lab(m) : ML(m))}</span></div>${cfTipRow(up ? 'sw in' : 'sw out', t(up ? 'einnahmen' : 'ausgaben'), cfEur(v))}${before}${parts}${q && cnt[m] < 3 ? `<div class="cf-tip-note">${esc(t('cf_teilquartal', cnt[m]))}</div>` : ''}${open && Math.abs(v) >= 0.5 ? `<div class="cf-tip-hint">${esc(t('cf_klick_umsaetze'))}</div>` : ''}`);
-      return `<span class="cf-heat-c${k ? '' : ' none'}${chgMode && !c ? ' na' : ''}${good === true ? ' good' : good === false ? ' bad' : ''}${q && cnt[m] < 3 ? ' part' : ''}${open && Math.abs(v) >= 0.5 ? ' open' : ''}${big ? ' big' : ''}${ahead.has(m) ? ' ahead' : ''}" style="${k ? `--k:${Math.round(k * 100)}%` : ''}" data-cftip="${tip}" tabindex="0"${open && Math.abs(v) >= 0.5 ? ` data-hr="${ri}" data-hm="${m}"` : ''}>${big ? `<b class="cf-heat-x" data-up="${!c || c.d > 0 ? 1 : 0}">${esc(mark)}</b>` : ''}</span>`; }).join('')          // an outlier: its amount (its change) in the cell
+      return `<span class="cf-heat-c${k ? '' : ' none'}${chgMode && !c ? ' na' : ''}${good === true ? ' good' : good === false ? ' bad' : ''}${q && cnt[m] < 3 ? ' part' : ''}${open && Math.abs(v) >= 0.5 ? ' open' : ''}${big ? ' big' : ''}${neu ? ' neu' : ''}${ahead.has(m) ? ' ahead' : ''}" style="${k ? `--k:${Math.round(k * 100)}%` : ''}" data-cftip="${tip}" tabindex="0"${open && Math.abs(v) >= 0.5 ? ` data-hr="${ri}" data-hm="${m}"` : ''}>${big ? `<b class="cf-heat-x" data-up="${!c || c.d > 0 ? 1 : 0}" data-lvl="${(x => x > 10 ? 3 : x > 3 ? 2 : 1)((chgMode ? Math.abs(c.d) : v) / S2.cap)}">${esc(mark)}</b>` : neu ? `<b class="cf-heat-x neu" aria-label="${esc(t('cf_heat_neu'))}">✦</b>` : ''}</span>`; }).join('')          // an outlier: its amount (its change) in the cell
       + `<span class="cf-heat-v${r.total ? ' tot' : ''}">${esc(chgMode ? heatAll(r) : Fk(r.sum / all.length, false, r.total ? Math.abs(r.sum / all.length) : avgMax))}</span>`;
   });
   el.innerHTML = h + '</div>';
-  for (const b of $$('.cf-heat-x', el)) if (b.scrollWidth > b.parentNode.clientWidth - 4) { b.textContent = b.dataset.up === '0' ? '▼' : '▲'; b.classList.add('mark'); }          // too narrow for the amount: a mark
+  // too narrow for the amount (the change): a mark -- one, two or three by how far beyond the regular scale (3 and 10 times)
+  for (const b of $$('.cf-heat-x:not(.neu)', el)) if (b.scrollWidth > b.parentNode.clientWidth - 4) { b.textContent = (b.dataset.up === '0' ? '▼' : '▲').repeat(+b.dataset.lvl || 1); b.classList.add('mark'); }
 }
 // 3. Where the money came from and where it went: everything that came in (income, loans taken up, sales, less cash) and
 // everything it was used for (expenses, investments, repayment, interest, more cash) -- both sides add up to the same sum
@@ -4376,6 +4378,9 @@ async function bkRecalc() {
     route();
   } catch (e) { toast(e.message, 5000); }
 }
+// an account in the lists of bookings with its area below it, small and grey (account names repeat across areas)
+const areaOfAcct = id => { const k = (S.KONTEN || []).find(x => x.uuid === id), a = k && ((S.CFG || {}).areas || []).find(b => String(b.id) === String(k.area_id)); return a ? a.name : ''; };
+const acctCell = (name, id) => { const a = areaOfAcct(id); return esc(name) + (a ? `<div class="small muted">${esc(a)}</div>` : ''); };
 function vBuchungen(runs) {
   BOOK.runs = runs;
   // Auto-Buchungen: what the auto rules would book (waiting for approval) and have booked; the rules themselves under Auto-Regeln
@@ -4400,11 +4405,11 @@ function vBuchungen(runs) {
           const d = e.date ?? v.date, z = e.purpose ?? plain(v.text), changed = Object.keys(e).length > 0, loan = v.kind === 'repayment' || v.kind === 'interest';
           const pills = (changed ? ` <span class="pill info">${t('geaendert')}</span>` : '') + (adjusted ? ` <span class="pill info" title="${esc(t('angepasst_tip'))}">${t('angepasst')}</span>` : '')
             + (neu ? ` <span class="pill info" title="${esc(t('neu_dazu_tip'))}">${t('neu_dazu')}</span>` : '')
-            + (!ask && v.retroactive ? ` <span class="pill neutral" title="${esc(t('aelter_tip'))}">${t('aelter')}</span>` : '') + (gone ? ` <span class="pill neutral" title="${esc(t('entfaellt_tip'))}">${t('entfaellt')}</span>` : '');
+            + (!ask && v.retroactive ? ` <span class="pill neutral" title="${esc(t('aelter_tip'))}">${t('aelter')}</span>` : '') + (v.note ? ` <span class="pill warn">${t('bk_pruefen')}</span>` : '') + (gone ? ` <span class="pill neutral" title="${esc(t('entfaellt_tip'))}">${t('entfaellt')}</span>` : '');
           return `<tr data-key="${esc(k)}" class="${off || gone ? 'off' : ''}${gone ? ' gone' : ''}${BOOK.editing.has(k) ? ' editing' : ''}">${pick ? `<td class="c">${k ? `<input type="checkbox" class="bk-on" title="${esc(t('bk_on_tip'))}" ${off || gone ? '' : 'checked'}${gone ? ' disabled' : ''}>` : ''}</td>` : ''}`
-            + `<td style="white-space:nowrap"><span class="${loan ? 'v' : ''}">${FD(d)}</span>${loan ? `<input type="date" class="bk-d e" value="${esc(d)}">` : ''}</td><td>${esc(v.account_name || v.account)}</td><td>${esc(artL[v.kind] || v.kind)}</td>`
+            + `<td style="white-space:nowrap"><span class="${loan ? 'v' : ''}">${FD(d)}</span>${loan ? `<input type="date" class="bk-d e" value="${esc(d)}">` : ''}</td><td>${acctCell(v.account_name || v.account, v.account_id)}</td><td>${esc(artL[v.kind] || v.kind)}</td>`
             + `<td class="num ${b < 0 ? 'neg' : 'pos'}"><span class="${loan ? 'v' : ''}">${F(b)}</span>${loan ? `<input type="number" step="0.01" class="bk-b e" value="${b}">` : ''}</td>`
-            + `<td><span class="v">${esc(z)}</span><input type="text" class="bk-z e" value="${esc(z)}">${pills}<div class="small muted">${esc(v.rule || '')}${v.category ? ' · ' + esc(v.category) : ''}</div></td>`
+            + `<td><span class="v">${esc(z)}</span><input type="text" class="bk-z e" value="${esc(z)}">${pills}<div class="small muted">${esc(v.rule || '')}${v.category ? ' · ' + esc(v.category) : ''}</div>${v.note ? `<div class="small bk-note">${esc(v.note)}</div>` : ''}</td>`
             + (ed ? `<td class="nowrap">${k ? (local ? `<button class="icon bk-edit" title="${esc(t('bearbeiten'))}" aria-label="${esc(t('bearbeiten'))}">${ICON.pencil}</button>` : '') + `<button class="icon bk-rej" title="${esc(t('verwerfen'))}" aria-label="${esc(t('verwerfen'))}">✕</button>` : ''}</td>` : '') + `</tr>`;
         }).join('') + '</tbody></table></div>';
       if (l.dry_run && l.proposals.some(v => !v.key)) h += `<div class="note">${t('einmal_sync_fuer_auswahl')}</div>`;
@@ -4415,14 +4420,14 @@ function vBuchungen(runs) {
   // not booked: the proposals you chose not to book (kept in the settings) -- "Propose again" takes one off the list
   const rej = runs.not_book || [];
   if (rej.length) h += `<details class="calc" id="nb-list" data-keep="bk-nb"${keepOpen('bk-nb')}><summary>${t('nicht_gebucht_titel')} (${rej.length})</summary><div class="wrap auto"><table class="plain"><tbody>`
-    + rej.map(v => `<tr><td style="white-space:nowrap">${FD(v.date)}</td><td>${esc(v.account || '')}</td><td>${esc(artL[v.kind] || v.kind || '')}</td><td class="num">${v.amount != null ? F(v.amount) : ''}</td>`
+    + rej.map(v => `<tr><td style="white-space:nowrap">${FD(v.date)}</td><td>${acctCell(v.account || '', String(v.key || '').split('|')[0])}</td><td>${esc(artL[v.kind] || v.kind || '')}</td><td class="num">${v.amount != null ? F(v.amount) : ''}</td>`
       + `<td class="small">${esc(v.text || '')}<div class="small muted">${esc(v.rule || '')}</div></td>`
       + `<td><button class="secondary small re-book" data-key="${esc(v.key)}" title="${esc(t('wieder_vorschlagen_tip'))}">${t('wieder_vorschlagen')}</button></td></tr>`).join('') + '</tbody></table></div></details>';
   // what Kontor made in MoneyMoney: the bookings carrying its mark
   const ang = runs.created_at || [];
   h += `<h2>${t('angelegt_titel')} <span class="x">${ang.length}</span></h2>`
     + (ang.length ? `<div class="wrap auto" style="max-height:420px"><table class="plain"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th><th>${t('markierung')}</th></tr></thead><tbody>`
-      + ang.slice(0, 300).map(v => `<tr><td style="white-space:nowrap">${FD(v.date)}</td><td>${esc(v.account)}</td><td>${esc(artL[v.kind] || v.kind)}</td><td class="num ${v.amount < 0 ? 'neg' : 'pos'}">${F(v.amount)}</td><td class="small">${esc(v.purpose || v.counterparty)}</td><td class="small muted" style="white-space:nowrap">${esc(v.mark)}</td></tr>`).join('')
+      + ang.slice(0, 300).map(v => `<tr><td style="white-space:nowrap">${FD(v.date)}</td><td>${acctCell(v.account, v.account_id)}</td><td>${esc(artL[v.kind] || v.kind)}</td><td class="num ${v.amount < 0 ? 'neg' : 'pos'}">${F(v.amount)}</td><td class="small">${esc(v.purpose || v.counterparty)}</td><td class="small muted" style="white-space:nowrap">${esc(v.mark)}</td></tr>`).join('')
       + `</tbody></table></div>` : `<div class="muted small">${t('keine_angelegt')}</div>`);
   // history: only the checks (when, how many proposed and booked, errors) -- the bookings themselves are listed above
   h += `<details class="calc" data-keep="bk-hist"${keepOpen('bk-hist')}><summary>${t('verlauf_2')} (${(runs.history_source || []).length})</summary><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th></tr></thead><tbody>`

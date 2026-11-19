@@ -110,7 +110,7 @@ def kontor_bookings(ledger) -> List[dict]:
             continue
         acc = ledger.accounts.get(t.account_uuid)
         k = ms[0].split("-")[1] if ms[0].count("-") >= 2 else ""
-        out.append({"date": t.booking_date.isoformat(), "account": acc.name if acc else "", "kind": kinds.get(k, k), "amount": round(t.amount, 2),
+        out.append({"date": t.booking_date.isoformat(), "account": acc.name if acc else "", "account_id": t.account_uuid, "kind": kinds.get(k, k), "amount": round(t.amount, 2),
                     "counterparty": t.name, "purpose": TAG_RE.sub("", t.purpose).strip(" ·"), "mark": ms[0]})
     out.sort(key=lambda x: (x["date"], x["mark"]), reverse=True)
     return out

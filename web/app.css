@@ -737,6 +737,7 @@ tr.fcf td { font-style:normal; color:var(--muted); border-top:1px dashed var(--l
 .cf-heat-c.big { display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--neg) 62%, var(--fg)); }          /* an outlier: framed (deeper red), its amount inside */
 .cf-heat.ein .cf-heat-c.big { box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--pos) 62%, var(--fg)); }
 .cf-heat-x { font-size:10px; font-weight:500; color:var(--fg); letter-spacing:-.2px; pointer-events:none; white-space:nowrap; } .cf-heat-x.mark { font-size:7px; }
+.cf-heat-c.neu { display:flex; align-items:center; justify-content:center; } .cf-heat-x.neu { font-size:9px; }          /* new (nothing a year before): its mark, no frame */
 .cf-heat-c { height:var(--ch, 20px); border-radius:3px; background:color-mix(in srgb, var(--neg) var(--k), transparent); outline:none; } .cf-heat.ein .cf-heat-c { background:color-mix(in srgb, var(--pos) var(--k), transparent); }
 .cf-heat-c.none { background:var(--sub); } .cf-heat-c.part { background-image:repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, var(--head) 60%, transparent) 3px 5px); } .cf-heat-c:hover, .cf-heat-c:focus-visible { box-shadow:inset 0 0 0 1.5px var(--fg); }
 .cf-heat.chg .cf-heat-c.good { background-color:color-mix(in srgb, var(--pos) var(--k), transparent); } .cf-heat.chg .cf-heat-c.bad { background-color:color-mix(in srgb, var(--neg) var(--k), transparent); }          /* the change: better green, worse red */
@@ -900,3 +901,4 @@ details.conn-fold > summary::-webkit-details-marker { display:none; } details.co
 details.conn-fold > summary::before { content:"▸"; color:var(--muted); font-size:11px; transition:transform .15s; } details.conn-fold[open] > summary::before { transform:rotate(90deg); }
 details.conn-fold[open] > summary { margin-bottom:10px; }
 input.invalid { border-color:var(--neg) !important; }
+.bk-note { color:var(--warn-fg); }          /* a proposal to look at before booking (a possible counterpart by hand) */

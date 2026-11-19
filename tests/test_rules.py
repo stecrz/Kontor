@@ -923,14 +923,57 @@ class MirrorTests(unittest.TestCase):
         led = make_ledger({}, txs)
         res = plan_all(led, self.cfg(), self.today)
         got = sorted((p.account_uuid, p.booking_date, p.amount) for p in res.proposals)
-        self.assertEqual(got, sorted([(F.uid("gb.kap.a"), date(2026, 10, 2), -1200.0), (F.uid("priv.bet.gb"), date(2026, 9, 1), 5000.0),
-                                      (F.uid("priv.bet.gb"), date(2026, 10, 20), -70.0), (F.uid("gb.kap.a"), date(2026, 10, 21), 70.0)]))   # a day apart: no pair
+        self.assertEqual(got, sorted([(F.uid("gb.kap.a"), date(2026, 10, 2), -1200.0), (F.uid("priv.bet.gb"), date(2026, 9, 1), 5000.0)]))   # a day apart: a pair too
         pv = res.preview[0]
-        self.assertEqual((pv["direction"], pv["paare"], pv["open"]), ("both", 1, 4))
+        self.assertEqual((pv["direction"], pv["paare"], pv["open"]), ("both", 2, 2))
+        self.assertTrue(any("20.10.2026 ↔ 21.10.2026" in i for i in res.info))                # the pair named, a wrong one would be seen
         # written: nothing again, nothing mirrored back
         real = led.without_planned(keep=[p.key for p in res.proposals])
         again = plan_all(real.fork(), self.cfg(), self.today)
-        self.assertEqual(again.proposals, []); self.assertEqual(again.warnings, []); self.assertEqual(again.preview[0]["mirrored"], 5)
+        self.assertEqual(again.proposals, []); self.assertEqual(again.warnings, []); self.assertEqual(again.preview[0]["mirrored"], 4)
+
+    def test_hand_pairs_days_apart(self):
+        """Counter-bookings entered by hand at the two ends of a transfer between banks (days apart, over a weekend, over the
+        month's end) count as mirrored -- as many pairs as there can be, each booking in one pair only; up to a week (8 days: no
+        pair); a month apart: proposed, but with a note, and never booked on its own."""
+        txs = [F.tx("priv.bet.gb", date(2026, 9, 29), 3000.0, "Beta GbR", "Einlage von Hand"), F.tx("gb.kap.a", date(2026, 10, 2), -3000.0, "Ich", "Eingang +3 Tage"),
+               F.tx("priv.bet.gb", date(2026, 10, 1), 200.0, "Beta GbR", "a"), F.tx("priv.bet.gb", date(2026, 10, 8), 200.0, "Beta GbR", "b"),
+               F.tx("gb.kap.a", date(2026, 10, 8), -200.0, "Ich", "zu a (7 Tage)"), F.tx("gb.kap.a", date(2026, 10, 15), -200.0, "Ich", "zu b (7 Tage)"),
+               F.tx("priv.bet.gb", date(2026, 10, 16), 90.0, "Beta GbR", "c"), F.tx("gb.kap.a", date(2026, 10, 24), -90.0, "Ich", "8 Tage: kein Paar"),
+               F.tx("priv.bet.gb", date(2026, 9, 1), 800.0, "Beta GbR", "Einlage"), F.tx("gb.kap.a", date(2026, 9, 20), -800.0, "Ich", "19 Tage später"),
+               F.tx("priv.bet.gb", date(2026, 10, 25), 250.0, "Beta GbR", "ohne Gegenstück")]
+        led = make_ledger({}, txs)
+        res = plan_all(led, self.cfg(), self.today)
+        got = sorted((p.account_uuid, p.booking_date, p.amount, bool(p.note)) for p in res.proposals)
+        self.assertEqual(got, sorted([(F.uid("gb.kap.a"), date(2026, 9, 1), -800.0, True), (F.uid("priv.bet.gb"), date(2026, 9, 20), 800.0, True),
+                                      (F.uid("gb.kap.a"), date(2026, 10, 16), -90.0, True), (F.uid("priv.bet.gb"), date(2026, 10, 24), 90.0, True),
+                                      (F.uid("gb.kap.a"), date(2026, 10, 25), -250.0, False)]))
+        self.assertEqual(res.preview[0]["paare"], 3)                                           # 3000 and both 200 (one week each)
+        noted = next(p for p in res.proposals if p.note and p.amount == -800.0)
+        self.assertIn("20.09.2026", noted.note)                                               # where the possible counterpart is
+        import core
+        rows = core.proposal_rows(led, res.proposals)
+        self.assertEqual(sorted(bool(r["note"]) for r in rows), [False, True, True, True, True])          # the approval list shows it
+
+    def test_hand_booking_after_kontors_mirror_and_refused_ones(self):
+        """The other end entered by hand after Kontor had mirrored the first (a sync between the two bank days): a note and a
+        warning, not booked on its own -- one of the two is too many. A booking whose mirror you turned down pairs with nothing
+        (it must not swallow a new one)."""
+        cfg = self.cfg()
+        orig = F.tx("priv.bet.gb", date(2026, 9, 29), 3000.0, "Beta GbR", "Einlage von Hand")
+        first = plan_all(make_ledger({}, [orig]), cfg, self.today)
+        mirrored = F.tx("gb.kap.a", date(2026, 9, 29), -3000.0, "Ich", first.proposals[0].purpose)          # Kontor mirrored: GbR −3000 on 29.09.
+        again = plan_all(make_ledger({}, [orig, mirrored, F.tx("gb.kap.a", date(2026, 10, 2), -3000.0, "Ich", "Eingang von Hand")]), cfg, self.today)
+        p = [x for x in again.proposals if x.kind == "mirror"]
+        self.assertEqual([(x.account_uuid, x.booking_date, x.amount) for x in p], [(F.uid("priv.bet.gb"), date(2026, 10, 2), 3000.0)])
+        self.assertIn("29.09.2026", p[0].note); self.assertTrue(any("zu viel" in w or "too many" in w for w in again.warnings))
+        # turned down: the 500 of 21.09. and 01.10. (10 days apart) were not mirrored; a new 500 on 04.10. is mirrored all the same
+        old = [F.tx("priv.bet.gb", date(2026, 9, 21), 500.0, "Beta GbR", "alt"), F.tx("gb.kap.a", date(2026, 10, 1), -500.0, "Ich", "alt")]
+        refuse = plan_all(make_ledger({}, old), cfg, self.today).proposals
+        self.assertEqual(len(refuse), 2); self.assertTrue(all(x.note for x in refuse))
+        cfg2 = dict(cfg, not_book=[{"key": x.key} for x in refuse])
+        res = plan_all(make_ledger({}, old + [F.tx("priv.bet.gb", date(2026, 10, 4), 500.0, "Beta GbR", "neu")]), cfg2, self.today, set(x.key for x in refuse))
+        self.assertEqual([(x.booking_date, x.amount) for x in res.proposals if x.kind == "mirror"], [(date(2026, 10, 4), -500.0)])
 
     def test_mirror_of_its_own_without_a_company(self):
         """A mirror is a rule of its own: between any two accounts (here two of your own, no company, no participation), with
