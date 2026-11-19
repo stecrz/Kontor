@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.15.14 (2026-11-19 21:26)
+- Kontenspiegel: Gegenbuchungen von Hand gelten nur am selben Tag als Paar; mit Tagen Abstand „prüfen“ mit Gegenstück, anfangs abgewählt, nie automatisch.
+- Auto-Buchungen: Verwerfen einer Hälfte verwirft beide Seiten auf einmal.
+
 ## 3.15.13 (2026-11-19 20:22)
 - Kontenspiegel: Gegenbuchungen von Hand mit bis zu 7 Tagen Abstand gelten als gespiegelt (in den Rechenwegen genannt); weiter auseinander oder doppelt zu Kontors Spiegelbuchung: Vorschlag mit „prüfen“, nie automatisch.
 - Auto-Buchungen: Bereich unter jedem Konto.
