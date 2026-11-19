@@ -571,7 +571,8 @@ class CoreTests(unittest.TestCase):
         self.assertIsNone(updates.install_via_git(restart=False)) if not os.path.isdir(os.path.join(updates.HERE, ".git")) else None
 
     def test_update_install_from_archive(self):
-        """Archiv wie von GitHub (Wurzelordner mit kontor.py + VERSION) wird in den Programmordner eingespielt, Sicherung unter .alt."""
+        """Archiv wie von GitHub (Wurzelordner mit kontor.py + VERSION) wird in den Programmordner eingespielt -- direkt, ohne
+        Sicherung; was die vorige Version brachte und die neue nicht mehr hat, wird entfernt (nur das, nie andere Dateien)."""
         src = os.path.join(os.path.dirname(__file__), "..")
         prog = os.path.join(self.dir, "prog")
         shutil.copytree(src, prog, ignore=shutil.ignore_patterns("tests", "__pycache__", ".git", ".old"))
@@ -588,6 +589,10 @@ class CoreTests(unittest.TestCase):
                         data = b"// neu\n" + data
                     z.writestr("stecrz-Kontor-abc123/" + rel, data)
             z.writestr("stecrz-Kontor-abc123/neu.txt", b"x")
+        os.makedirs(os.path.join(prog, ".old")); open(os.path.join(prog, ".old", "VERSION"), "w").write("1.0.0")      # a backup of before
+        open(os.path.join(prog, "weg.py"), "w").write("x"); open(os.path.join(prog, "eigen.txt"), "w").write("x")
+        open(os.path.join(prog, ".files"), "w").write("weg.py\nVERSION\n../draussen.txt\n")      # the version before brought weg.py
+        open(os.path.join(self.dir, "draussen.txt"), "w").write("x")
         old_get, old_here = updates._get, updates.HERE
         updates._get = lambda url, accept="": buf.getvalue()
         updates.HERE = prog
@@ -599,9 +604,57 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(open(os.path.join(prog, "VERSION")).read().strip(), "9.9.9")
         self.assertTrue(open(os.path.join(prog, "web", "app.js")).read().startswith("// neu"))
         self.assertTrue(os.path.exists(os.path.join(prog, "neu.txt")))
-        self.assertTrue(os.path.exists(os.path.join(prog, ".old", "VERSION")))
-        self.assertEqual(open(os.path.join(prog, ".old", "VERSION")).read().strip(), updates.current_version())
+        self.assertFalse(os.path.exists(os.path.join(prog, ".old")))                         # no backup (an old one: gone)
+        self.assertFalse(os.path.exists(os.path.join(prog, "weg.py")))                        # no longer part of Kontor: removed
+        self.assertTrue(os.path.exists(os.path.join(prog, "eigen.txt")))                      # never brought by an update: stays
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "draussen.txt")))               # outside the program folder: never
+        listed = open(os.path.join(prog, ".files")).read().split()
+        self.assertIn("web/app.js", listed); self.assertIn("neu.txt", listed); self.assertNotIn("weg.py", listed)
+        self.assertFalse([x for x in listed if x.startswith(".")])                            # no hidden folders (.github, .claude)
         self.assertFalse(os.path.exists(os.path.join(prog, "tests")))
+        # again, with the cases that must not go wrong: a renamed case of a name stays (the Mac's disks are alike for both);
+        # a linked folder leads outside: nothing deleted there; stopped half-way: the old number, offered again, nothing restarted
+        out = os.path.join(self.dir, "fremd"); os.makedirs(out); open(os.path.join(out, "alt.md"), "w").write("x")
+        os.symlink(out, os.path.join(prog, "verlinkt"))
+        open(os.path.join(prog, "Kontor_Alt.py"), "w").write("x")
+        open(os.path.join(prog, ".files"), "a").write("verlinkt/alt.md\nKontor_Alt.py\n")
+        buf2 = io.BytesIO()
+        with zipfile.ZipFile(buf2, "w") as z, zipfile.ZipFile(buf) as z0:
+            for n in z0.namelist():
+                z.writestr(n, b"9.9.10\n" if n.endswith("/VERSION") else z0.read(n))
+            z.writestr("stecrz-Kontor-abc123/kontor_alt.py", b"y")
+        updates._get = lambda url, accept="": buf2.getvalue(); updates.HERE = prog
+        try:
+            self.assertTrue(updates.install("stecrz/Kontor", zip_url="https://codeload.github.com/x", restart=False)["ok"])
+        finally:
+            updates._get, updates.HERE = old_get, old_here
+        self.assertTrue(os.path.exists(os.path.join(out, "alt.md")))                          # behind a link: never
+        self.assertTrue(os.path.exists(os.path.join(prog, "Kontor_Alt.py")))                  # only its case changed: kept
+        buf3 = io.BytesIO()
+        with zipfile.ZipFile(buf3, "w") as z, zipfile.ZipFile(buf2) as z0:
+            for n in z0.namelist():
+                z.writestr(n, b"9.9.11\n" if n.endswith("/VERSION") else z0.read(n))
+        real_copy = updates.shutil.copy2
+        def stop(a, b, **kw):
+            if os.sep + "web" + os.sep in b:
+                raise OSError("Festplatte voll")
+            return real_copy(a, b, **kw)
+        updates._get = lambda url, accept="": buf3.getvalue(); updates.HERE = prog; updates.shutil.copy2 = stop
+        try:
+            res = updates.install("stecrz/Kontor", zip_url="https://codeload.github.com/x", restart=False)
+        finally:
+            updates._get, updates.HERE, updates.shutil.copy2 = old_get, old_here, real_copy
+        self.assertFalse(res["ok"]); self.assertIn("Festplatte voll", res["text"])
+        self.assertEqual(open(os.path.join(prog, "VERSION")).read().strip(), "9.9.10")         # the old number: offered again
+        self.assertFalse([d for d in os.listdir(tempfile.gettempdir()) if d.startswith("kontor-update-") and os.path.getmtime(os.path.join(tempfile.gettempdir(), d)) > time.time() - 30])
+        # no list yet (the first update with this code): nothing removed
+        os.remove(os.path.join(prog, ".files")); open(os.path.join(prog, "bleibt.py"), "w").write("x")
+        updates._get = lambda url, accept="": buf3.getvalue(); updates.HERE = prog
+        try:
+            self.assertTrue(updates.install("stecrz/Kontor", zip_url="https://codeload.github.com/x", restart=False)["ok"])
+        finally:
+            updates._get, updates.HERE = old_get, old_here
+        self.assertTrue(os.path.exists(os.path.join(prog, "bleibt.py"))); self.assertEqual(open(os.path.join(prog, "VERSION")).read().strip(), "9.9.11")
 
 
 class TailscaleTests(unittest.TestCase):
@@ -2959,7 +3012,13 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-kpi")
                 pg.click(".ov-kpi-t >> nth=0"); pg.wait_for_selector("table.cf-tbl"); self.assertEqual(pg.evaluate("location.hash"), "#cashflow")
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-grid")
-                self.assertRegex(pg.inner_text(".ov-card[data-ov='comp'] .ov-head"), r"Vermögen \w+ \d\d"); self.assertNotIn("Bilanzsumme", pg.inner_text(".ov-card[data-ov='comp'] .ov-head"))
+                self.assertRegex(pg.inner_text(".ov-card[data-ov='comp'] .ov-head"), r"Vermögen \w+ \d\d")
+                # hovering a chart: the figures under the pointer (a month, a tile, a step of the bridge, a month of the net worth)
+                for sel, needle in (("#ov-months .cf-hit >> nth=3", "Veränderung Bankguthaben"), ("#ov-comp .ov-tile >> nth=0", "Anteil"),
+                                    ("#ov-wealth .cf-hit >> nth=1", "€"), ("#ov-nw .ov-pt >> nth=5", "ggü. Vormonat")):
+                    pg.hover(sel); pg.wait_for_timeout(120)
+                    self.assertFalse(pg.evaluate("document.querySelector('#cf-tip').classList.contains('hidden')"), sel); self.assertIn(needle, pg.inner_text("#cf-tip"))
+                pg.mouse.move(5, 5); pg.wait_for_timeout(100); self.assertTrue(pg.evaluate("document.querySelector('#cf-tip').classList.contains('hidden')")); self.assertNotIn("Bilanzsumme", pg.inner_text(".ov-card[data-ov='comp'] .ov-head"))
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_uebersicht.png"), full_page=True)
                 # Datenstand unten links (zweistufig), keine Infozeile mehr in der Übersicht, Synchronisieren
                 sm = pg.query_selector("#status-mini").inner_text()

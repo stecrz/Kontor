@@ -834,7 +834,7 @@ async function vUebersicht() {
   const key = [['ein', t('einnahmen')], ['aus', t('ausgaben')], ['inv', t('cf_investitionen')], ['fin', t('cf_finanzierung')]].map(([c, l]) => `<span><i class="sw ${c === 'ein' ? 'in' : c === 'aus' ? 'out' : c}"></i>${esc(l)}</span>`).join('')
     + `<span><i class="sw net"></i>${esc(t('zahlungsfluss_gesamt_veraenderung_liqu'))}</span>`;
   const kpi = ovKpi(D);
-  return `<div class="ov-grid${todo ? '' : ' no-todo'}">${card('nw', t('nettovermoegen'), 'nw')}${card('comp', t('vermoegensstruktur'), 'table')}${card('wealth', t('cf_verm_bruecke'), 'wealth')}${card('months', t('cf_je_monat_t'), 'months', `<div class="ov-key">${key}</div>`)}`
+  return `<div class="ov-grid${todo ? '' : ' no-todo'}"><div class="cf-tip hidden" id="cf-tip" role="tooltip"></div>${card('nw', t('nettovermoegen'), 'nw')}${card('comp', t('vermoegensstruktur'), 'table')}${card('wealth', t('cf_verm_bruecke'), 'wealth')}${card('months', t('cf_je_monat_t'), 'months', `<div class="ov-key">${key}</div>`)}`
     + (kpi ? `<div class="card link ov-card ov-kpi" data-ov="kpi" data-ovgo="cftable" role="link" tabindex="0" aria-label="${esc(t('ov_kennzahlen'))}"><div class="ov-head"><b>${esc(t('ov_kennzahlen'))}</b><span class="ov-fig"><span class="ov-s">${esc(kpi.when)}</span></span></div><div class="ov-kpi-g">${kpi.html}</div></div>` : '') + `${todo}</div>`;
 }
 // 5. Key figures: what decides how your wealth grows, each from the same closed months as the charts, a click leads to its place.
@@ -889,6 +889,10 @@ function ovArrive(main) {          // after the page is drawn: its chart in view
 }
 function bindOverview(main) {
   const grid = $('.ov-grid', main); if (!grid) return;
+  // hovering a chart: the figures of the month, tile or step under the pointer, as in the cash flow's charts
+  const hide = () => { const b = $('#cf-tip'); if (b) b.classList.add('hidden'); };
+  grid.addEventListener('pointerover', e => { const el = e.target.closest('[data-cftip]'); if (el) cfShowTip(el); });
+  grid.addEventListener('pointerout', e => { const el = e.target.closest('[data-cftip]'); if (el && !(e.relatedTarget && el.contains(e.relatedTarget))) hide(); });
   $$('.ov-card', main).forEach(c => { c.addEventListener('click', e => { if (!e.target.closest('a, button')) ovGo(e.target.closest('[data-ovgo]').dataset.ovgo); });          // a key figure: its own place
     c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ovGo(c.dataset.ovgo); } }); });
   ovDraw();
@@ -899,7 +903,8 @@ function ovDraw() {
   // cards of their own height, in two columns or stacked)
   const wide = window.innerWidth > 1100;
   grid.style.height = wide ? Math.min(660, Math.max(460, window.innerHeight - grid.getBoundingClientRect().top - window.scrollY - 24)) + 'px' : '';
-  // the figure first (it can take a second line on a narrow screen), then the chart in the room left
+  // the figure first (it can take a second line on a narrow screen), then the chart in the room left; the hover texts anew
+  CF.tips = []; const tipBox = $('#cf-tip'); if (tipBox) tipBox.classList.add('hidden');
   const put = (id, fn) => { const el = $('#ov-' + id); if (!el) return; const f = $('#ov-fig-' + id); el.innerHTML = '';
     if (f) f.innerHTML = fn(D, 320, 200).fig || '';
     const r = el.getBoundingClientRect(), out = fn(D, Math.max(240, Math.floor(r.width)), Math.max(130, Math.floor(r.height))); el.innerHTML = out.svg; };
@@ -918,8 +923,15 @@ function ovNetWorth(D, W, H) {
   let g = ticks.map(tk => `<line class="cf-grid-l${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${y(tk).toFixed(1)}" y2="${y(tk).toFixed(1)}"/><text class="cf-tick" x="${P.l - 6}" y="${(y(tk) + 4).toFixed(1)}" text-anchor="end">${esc(Fk(tk, false, ref))}</text>`).join('');
   g += `<polygon class="ov-area" points="${x(0).toFixed(1)},${y(Math.max(lo, 0)).toFixed(1)} ${pts} ${x(ms.length - 1).toFixed(1)},${y(Math.max(lo, 0)).toFixed(1)}"/><polyline class="ov-line" points="${pts}"/>`;
   g += `<circle class="ov-dot" cx="${x(ms.length - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="4"/>`;
+  // each month: a guide and its point under the pointer, the figure and its changes in the tooltip
+  const sw = (W - P.l - P.r) / Math.max(1, ms.length - 1), sgn = d => (d > 0.5 ? '+' : '') + F0(d) + ' €';
+  ms.forEach((k, i) => { const tip = cfTip(`<div class="cf-tip-h">${esc(MLL(k))}</div>` + cfTipRow('sw nwc', t('nettovermoegen'), F0(v[i]) + ' €')
+      + (i ? cfTipRow('none', t('ov_ggue_vormonat'), sgn(v[i] - v[i - 1])) : '') + (i >= 12 ? cfTipRow('none', t('ov_ggue_vorjahr'), sgn(v[i] - v[i - 12])) : ''));
+    const x0 = Math.max(P.l, x(i) - sw / 2), x1 = Math.min(W - P.r, x(i) + sw / 2);
+    g += `<g class="ov-pt" data-cftip="${tip}"><rect class="cf-hit" x="${x0.toFixed(1)}" y="0" width="${(x1 - x0).toFixed(1)}" height="${H - P.b}"/>`
+      + `<line class="ov-hl" x1="${x(i).toFixed(1)}" x2="${x(i).toFixed(1)}" y1="${P.t}" y2="${H - P.b}"/><circle class="ov-hd" cx="${x(i).toFixed(1)}" cy="${y(v[i]).toFixed(1)}" r="4"/></g>`; });
   for (const i of [0, Math.floor((ms.length - 1) / 2), ms.length - 1]) g += `<text class="cf-tick${i === ms.length - 1 ? ' end' : ''}" x="${x(i).toFixed(1)}" y="${H - 4}" text-anchor="${i === 0 ? 'start' : i === ms.length - 1 ? 'end' : 'middle'}">${esc(ML(ms[i]))}</text>`;
-  return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${g}</svg>`,
+  return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('nettovermoegen'))}">${g}</svg>`,
     fig: `<span class="ov-v">${F0(last)} €</span><span class="ov-s">${esc(ML(ms[ms.length - 1]))}${yago != null ? ` · ${t('ov_12_monate')} ${ovDelta(last - yago)}` : ''}</span>`};
 }
 // a change in percent, as short as it can be: one decimal under 100 %, whole numbers above, thousands abbreviated
@@ -956,11 +968,13 @@ function ovComposition(D, W, H) {
   // a tile: a quiet tint of the position's colour with a solid edge, its name and figures inside where they fit (all in the hover)
   // a tile: a quiet tint of the position's colour with a solid edge; its name, amount and change against a year before inside
   // where they fit (all of it, with its share of the total, in the hover). good: a rise is good (assets) or bad (debts)
-  const tile = (x, y, w, h, color, name, v, chg, good = true) => {
+  const tile = (x, y, w, h, color, name, v, chg, good = true, v0 = null) => {
     x += 1; y += 1; w -= 2; h -= 2; if (w < 1 || h < 1) return '';
     const room = n => Math.floor((w - 14) / n), cut = (txt, n) => txt.length > room(n) ? txt.slice(0, Math.max(1, room(n) - 1)) + '…' : txt;
     const share = FN(Math.abs(v) / (total || 1) * 100, 0) + ' %', cls = !chg || chg.startsWith('±') || chg === t('cf_heat_neu') ? '' : (chg.startsWith('+') === good ? ' pos' : ' neg');
-    let g = `<g><title>${esc(name)}: ${esc(F0(v))} € · ${esc(t('ov_anteil', share))}${chg ? ' · ' + esc(t('ov_ggue', chg, ML(k0))) : ''}</title><rect class="ov-tm" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="4" style="--c:${color}"/>`
+    const tip = cfTip(`<div class="cf-tip-h">${esc(name)}</div>` + cfTipRow('none', ML(k), F0(v) + ' €') + (v0 != null && has0 ? cfTipRow('none', ML(k0), F0(v0) + ' €', chg ? {cls: cls.trim(), txt: esc(chg)} : null) : '')
+      + `<div class="cf-tip-note">${esc(t('ov_anteil', share))}</div>`);
+    let g = `<g class="ov-tile" data-cftip="${tip}"><rect class="ov-tm" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="4" style="--c:${color}"/>`
       + `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="3" height="${h.toFixed(1)}" rx="1.5" style="fill:${color}"/>`;
     if (w >= 46 && h >= 20) {
       g += `<text class="ov-tm-n" x="${(x + 9).toFixed(1)}" y="${(y + 15).toFixed(1)}">${esc(cut(name, 6.8))}</text>`;
@@ -974,13 +988,14 @@ function ovComposition(D, W, H) {
   // balance sheet total: what is kept on no account (stock, payment terms, provisions) Kontor does not know
   const cap = 16, half = (W - 10) / 2, x2 = half + 10, ph = H - cap;
   const debtRows = D.balance.rows.filter(r => !r.group && r.role === 'liabilities' && val(r) < -0.5).sort((a, b) => val(a) - val(b));
-  const passiva = [...(equity > 0.5 ? [['var(--c-nw)', t('nettovermoegen'), equity, yoy(equity, sumAt(k0) - debtsAt(k0)), true]] : []),
-    ...debtRows.map(r => ['var(--c-verb)', r.name, -val(r), yoy(-val(r), -val(r, k0)), false])];
+  const eq0 = sumAt(k0) - debtsAt(k0);          // each entry: colour, name, amount, change, a rise is good, a year before
+  const passiva = [...(equity > 0.5 ? [['var(--c-nw)', t('nettovermoegen'), equity, yoy(equity, eq0), true, eq0]] : []),
+    ...debtRows.map(r => ['var(--c-verb)', r.name, -val(r), yoy(-val(r), -val(r, k0)), false, -val(r, k0)])];
   // a position below 0 that is no debt (an overdrawn account, a participation worth less than nothing): with its own name
-  for (const r of pos.filter(r => r.role !== 'liabilities' && val(r) < -0.5)) passiva.push(['var(--c-verb)', r.name, -val(r), yoy(-val(r), -val(r, k0)), false]);
-  const aktiva = assets.map(r => [ROLE[r.role][1], r.name, val(r), yoy(val(r), val(r, k0)), true]);
-  if (equity < -0.5) aktiva.push(['var(--c-neutral)', t('ov_fehlbetrag'), -equity, '', true]);
-  const side = (list, x0) => treemap(list.map(e => e[2]), x0, cap, half, ph).map(q => { const [c, n, v, chg, good] = list[q.i]; return tile(q.x, q.y, q.w, q.h, c, n, v, chg, good); }).join('');
+  for (const r of pos.filter(r => r.role !== 'liabilities' && val(r) < -0.5)) passiva.push(['var(--c-verb)', r.name, -val(r), yoy(-val(r), -val(r, k0)), false, -val(r, k0)]);
+  const aktiva = assets.map(r => [ROLE[r.role][1], r.name, val(r), yoy(val(r), val(r, k0)), true, val(r, k0)]);
+  if (equity < -0.5) aktiva.push(['var(--c-neutral)', t('ov_fehlbetrag'), -equity, '', true, null]);
+  const side = (list, x0) => treemap(list.map(e => e[2]), x0, cap, half, ph).map(q => { const [c, n, v, chg, good, v0] = list[q.i]; return tile(q.x, q.y, q.w, q.h, c, n, v, chg, good, v0); }).join('');
   let g = `<text class="ov-cap" x="2" y="11">${esc(t('ov_aktiva'))}</text><text class="ov-cap" x="${(x2 + 2).toFixed(1)}" y="11">${esc(t('ov_passiva'))}</text>`
     + side(aktiva, 0) + side(passiva, x2);
   return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('vermoegensstruktur'))}">${g}</svg>`,
@@ -1016,8 +1031,13 @@ function ovMonths(D, W, H) {
     if (Math.abs(b.net) >= 0.5 && b.net >= lo - 0.5 && b.net <= hi + 0.5 && Math.abs(y(b.net) - y(0)) >= 4) g += `<line class="cf-net" x1="${(x0 - 3).toFixed(1)}" x2="${(x0 + bw + 3).toFixed(1)}" y1="${y(b.net).toFixed(1)}" y2="${y(b.net).toFixed(1)}"/>`;
     if (i === 0 || i === bs.length - 1 || (bs.length > 6 && i === Math.floor(bs.length / 2))) g += `<text class="cf-tick${i === bs.length - 1 ? ' end' : ''}" x="${(x0 + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${esc(ML(b.k))}</text>`;
   });
+  const sgn = v => (v > 0.5 ? '+' : '') + F0(v) + ' €', nz = (c, l, v) => Math.abs(v) >= 0.005 ? cfTipRow(c, l, sgn(v)) : '';
+  bs.forEach((b, i) => {          // a month under the pointer: its parts and the change in cash, as in the cash flow
+    const tip = cfTip(`<div class="cf-tip-h">${esc(MLL(b.k))}</div>` + nz('sw ein', t('einnahmen'), b.ein) + nz('sw aus', t('ausgaben'), b.aus) + nz('sw inv', SEC_LABEL.investing, b.inv)
+      + nz('sw fin', SEC_LABEL.financing, b.fin) + nz('sw unk', t('cf_unklar'), b.unk) + `<div class="cf-tip-res">${cfTipTot(t('zahlungsfluss_gesamt_veraenderung_liqu'), sgn(b.net))}</div>`);
+    g += `<rect class="cf-hit" data-cftip="${tip}" x="${(P.l + slot * i).toFixed(1)}" y="0" width="${slot.toFixed(1)}" height="${H - P.b}"/>`; });
   const net = bs.reduce((a, b) => a + b.net, 0);
-  return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${g}</svg>`,
+  return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('cf_je_monat_t'))}">${g}</svg>`,
     fig: `<span class="ov-s">${t('ov_bank_12')} ${ovDelta(net)}</span>`};
 }
 // 4. Where the net worth of the last twelve closed months came from: start, the steps (surplus, interest, changes in value ...), end
@@ -1036,10 +1056,15 @@ function ovWealth(D, W, H) {
     g += `<text class="ov-ln${r.kind === 'tot' ? ' tot' : ''}" x="2" y="${(mid + 4).toFixed(1)}">${esc(lab)}</text>`;
     if (Math.abs(r.v) >= 0.005) g += `<rect class="cf-br-bar ${cls}" x="${x0.toFixed(1)}" y="${(mid - bh / 2).toFixed(1)}" width="${Math.max(2, x1 - x0).toFixed(1)}" height="${bh.toFixed(1)}" rx="3"/>`;
     g += `<text class="ov-lv${r.kind === 'tot' ? ' tot' : ''}" x="${W - 4}" y="${(mid + 4).toFixed(1)}" text-anchor="end">${(r.kind === 'tot' || r.v < 0 ? '' : '+') + esc(F0(r.v))}</text>`;
+    // the step under the pointer: its amount and its largest parts
+    const sg = v => (r.kind === 'tot' || v < 0 ? '' : '+') + F0(v) + ' €', kids = (r.kids || []).slice(0, 8);
+    const tip = cfTip(`<div class="cf-tip-h">${esc(r.label)}</div>` + (kids.length ? kids.map(c => cfTipRow('none', c.label, (c.v < 0 ? '' : '+') + F0(c.v) + ' €')).join('') + `<div class="cf-tip-res">${cfTipTot(r.label, sg(r.v))}</div>`
+      : cfTipRow('none', `${ML(ms[0])} – ${ML(ms[ms.length - 1])}`, sg(r.v))));
+    g += `<rect class="cf-hit" data-cftip="${tip}" x="0" y="${yy.toFixed(1)}" width="${W}" height="${rh.toFixed(1)}" rx="4"/>`;
     prevEnd = mid + bh / 2; yy += rh;
   }
   const tot = list.filter(r => r.kind === 'tot'), chg = tot.length > 1 ? tot[tot.length - 1].v - tot[0].v : null;
-  return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${g}</svg>`,
+  return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('cf_verm_bruecke'))}">${g}</svg>`,
     fig: `<span class="ov-s">${esc(ML(ms[0]))} – ${esc(ML(ms[ms.length - 1]))}${chg != null ? ' · ' + ovDelta(chg) : ''}</span>`};
 }
 

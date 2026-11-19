@@ -493,7 +493,7 @@ Kontor itself also requires the Kontor password and, by default, only allows vie
 
 Kontor asks GitHub for the latest version (daily, weekly or never – Settings → Updates) and installs only when you click. The update check is Kontor's only network connection: it asks `raw.githubusercontent.com` for the file `VERSION` on the main branch of the repository (default: [github.com/stecrz/Kontor](https://github.com/stecrz/Kontor)). Other servers are deliberately not possible.
 
-When installing, Kontor downloads that version as an archive from github.com, replaces the program folder (the old files stay next to it as `.old`), restarts the service and reloads the page; if the program folder is a git clone, `git pull` runs instead. Data folder and settings remain. All steps are in the log. The Updates page shows the changes of the newest version, earlier ones folded below.
+When installing, Kontor downloads that version as an archive from github.com, replaces the program files (files no longer part of Kontor are removed), restarts the service and reloads the page; if the program folder is a git clone, `git pull` runs instead. Data folder and settings remain. All steps are in the log. The Updates page shows the changes of the newest version, earlier ones folded below.
 
 In Terminal, the same line as for the [installation](https://github.com/stecrz/Kontor#installation) updates.
 

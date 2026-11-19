@@ -4,7 +4,11 @@ Einzige Netzverbindung von Kontor -- nur zu github.com und nur auf Wunsch
 (Einstellungen: taeglich pruefen und/oder "Jetzt pruefen"). Installiert wird
 nie automatisch, sondern nach Klick. Der Datenordner wird nicht angefasst.
 Integritaet: HTTPS zu GitHub, feste Host-Liste, das Archiv muss kontor.py und
-VERSION enthalten; alte Dateien bleiben als Sicherung (Programmordner/.old).
+VERSION enthalten. Die Programmdateien werden direkt ersetzt, ohne Sicherung: VERSION
+zuletzt -- bricht ein Update ab, bleibt die alte Nummer, der Dienst startet nicht neu
+(die alte Version laeuft im Speicher weiter) und das Update laesst sich wiederholen.
+Dateien, die die vorige Version gebracht hat und die neue nicht mehr enthaelt, werden
+entfernt -- nur diese (Liste in .files), nur im Programmordner.
 """
 from __future__ import annotations
 
@@ -28,7 +32,8 @@ log = logging.getLogger("kontor.update")
 HERE = os.path.dirname(os.path.abspath(__file__))
 ALLOWED_HOSTS = ("api.github.com", "codeload.github.com", "github.com", "raw.githubusercontent.com", "objects.githubusercontent.com")
 TIMEOUT = 25
-KEEP = {".old", ".touchid", "web/.DS_Store"}       # nicht ueberschreiben/loeschen
+KEEP = {".touchid", "web/.DS_Store"}       # nicht ueberschreiben/loeschen
+MANIFEST = ".files"                         # what the installed version brought: removed again when the next one no longer has it
 
 
 def current_version() -> str:
@@ -168,6 +173,43 @@ def install_via_git(restart: bool = True) -> Optional[Dict[str, object]]:
             "text": tr("s_repo_aktualisiert") % ((r.stdout.strip().splitlines() or ["ok"])[-1][:80], tr("s_dienst_startet_neu") if restarted else "")}
 
 
+def _manifest() -> set:
+    """The files the installed version brought (empty before the first update that wrote the list: nothing is removed then)."""
+    try:
+        with open(os.path.join(HERE, MANIFEST), encoding="utf-8") as f:
+            return {ln.strip() for ln in f if ln.strip() and not ln.startswith("/") and ".." not in ln.split("/")}
+    except OSError:
+        return set()
+
+
+def _put(src: str, rel: str) -> None:
+    dst = os.path.join(HERE, rel)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    shutil.copy2(src, dst)
+    if rel.endswith((".py", ".sh", ".command")):
+        os.chmod(dst, 0o755)
+
+
+def _remove_gone(before: set, installed: set) -> int:
+    """Remove what the previous version brought and this one no longer has -- only files of that list, really inside the
+    program folder (links resolved), never one this version just wrote under another case of its name (the Mac's disks
+    do not tell Foo.py from foo.py)."""
+    home, now, n = os.path.realpath(HERE), {x.casefold() for x in installed}, 0
+    for rel in sorted(before - installed):
+        if rel in KEEP or rel.casefold() in now:
+            continue
+        dst = os.path.join(HERE, rel)
+        real = os.path.realpath(dst)
+        if os.path.commonpath([real, home]) != home or real == home or not os.path.isfile(dst):
+            continue
+        try:
+            os.remove(dst)
+            n += 1
+        except OSError as e:
+            log.warning("Update: %s not removed: %s", rel, e)
+    return n
+
+
 def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> Dict[str, object]:
     via_git = install_via_git(restart)
     if via_git is not None:
@@ -204,30 +246,38 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
     new_version = zf.read(base + "/VERSION").decode("utf-8").strip()
     log.info("Update: archive contains version %s (%d files), program folder %s", new_version, len(names), HERE)
     tmp = tempfile.mkdtemp(prefix="kontor-update-")
-    zf.extractall(tmp)
-    src = os.path.join(tmp, base)
-    backup = os.path.join(HERE, ".old")
-    shutil.rmtree(backup, ignore_errors=True)
-    os.makedirs(backup, exist_ok=True)
-    changed = 0
-    for root, dirs, files in os.walk(src):
-        dirs[:] = [d for d in dirs if d not in (".git", "tests", "__pycache__")]
-        rel_root = os.path.relpath(root, src)
-        for fn in files:
-            rel = os.path.normpath(os.path.join(rel_root, fn))
-            if rel in KEEP or fn.startswith("."):
-                continue
-            dst = os.path.join(HERE, rel)
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            if os.path.exists(dst):
-                os.makedirs(os.path.dirname(os.path.join(backup, rel)), exist_ok=True)
-                shutil.copy2(dst, os.path.join(backup, rel))
-            shutil.copy2(os.path.join(root, fn), dst)
-            if fn.endswith((".py", ".sh", ".command")):
-                os.chmod(dst, 0o755)
-            changed += 1
-    shutil.rmtree(tmp, ignore_errors=True)
-    log.info("Update to %s applied (%d files), backup in .old", new_version, changed)
+    before, installed = _manifest(), set()
+    try:
+        zf.extractall(tmp)
+        src = os.path.join(tmp, base)
+        # VERSION last: an update stopped half-way keeps the old number -- offered again, the service not restarted on a mix
+        for root, dirs, files in os.walk(src):
+            dirs[:] = [d for d in dirs if d not in ("tests", "__pycache__") and not d.startswith(".")]
+            rel_root = os.path.relpath(root, src)
+            for fn in files:
+                rel = os.path.normpath(os.path.join(rel_root, fn))
+                if rel in KEEP or fn.startswith(".") or rel == "VERSION":
+                    continue
+                _put(os.path.join(root, fn), rel)
+                installed.add(rel.replace(os.sep, "/"))
+        removed = _remove_gone(before, installed)
+        try:
+            with open(os.path.join(HERE, MANIFEST), "w", encoding="utf-8") as f:
+                f.write("\n".join(sorted(installed | {"VERSION"})) + "\n")
+        except OSError as e:
+            log.warning("Update: file list not written: %s", e)
+        _put(os.path.join(src, "VERSION"), "VERSION")
+        installed.add("VERSION")
+    except OSError as e:
+        log.error("Update: stopped while copying: %s", e, exc_info=True)
+        return {"ok": False, "text": tr("s_update_abgebrochen") % str(e)[:200]}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    for d in (".old",) + (() if os.path.isdir(os.path.join(HERE, ".git")) else (".github", ".claude")):
+        if os.path.isdir(os.path.join(HERE, d)) and not os.path.islink(os.path.join(HERE, d)):
+            shutil.rmtree(os.path.join(HERE, d), ignore_errors=True)          # the backup of earlier versions; folders earlier updates copied
+    changed = len(installed)
+    log.info("Update to %s applied (%d files, %d removed)", new_version, changed, removed)
     # Touch-ID-Helfer bei Bedarf neu uebersetzen (ohne Fehler zu werfen)
     try:
         if sys.platform == "darwin":
