@@ -1006,6 +1006,13 @@ class AppTests(_AppBase):
         self.assertEqual(self.call("/api/bookings/reject", {"key": k})[0], 200)
         lr = self.store.load("state.json")["last_run"]
         self.assertTrue(lr["dry_run"]); self.assertEqual({p["key"]: p["amount"] for p in lr["proposals"]}, rows)
+        # several at once (both halves of a pair entered by hand): all turned down, none proposed again; nonsense refused
+        two = [p["key"] for p in lr["proposals"]][:2]
+        self.assertEqual(self.call("/api/bookings/reject", {"keys": two})[0], 200)
+        nb = {x["key"] for x in self.app.config.get("not_book") or []}
+        self.assertTrue(set(two) <= nb); self.assertFalse(set(two) & {p["key"] for p in self.store.load("state.json")["last_run"].get("proposals") or []})
+        self.assertEqual(self.call("/api/bookings/reject", {"keys": ["rm -rf"]})[0], 400); self.assertEqual(self.call("/api/bookings/reject", {"keys": []})[0], 400)
+        self.assertEqual(self.call("/api/bookings/reject", {"keys": [two[0]] * 21})[0], 400)          # more than 20: refused, nothing cut off
 
     def test_refresh_reads_only_the_accounts_of_the_rules(self):
         """"Aktualisieren" under Auto bookings: only the accounts the rules read or book are read again, the approval list
@@ -4263,6 +4270,26 @@ class BrowserTest(unittest.TestCase):
                     Object.assign(BOOK, sv); return r.map(x => [x.k.slice(-10), x.off, x.gone, x.b, x.adjusted, x.new]); }""")
                 self.assertEqual(rows, [["20260131-1", True, False, 50, False, False], ["20260228-1", False, False, 150, True, False],
                                         ["20260430-1", False, True, 7, False, False], ["20260331-1", False, False, 5, False, True]])
+                # a new list: what carries a note (a counterpart entered by hand?) starts not chosen -- ticked by you
+                ini = pg.evaluate("""() => { const sv = {...BOOK}; try { const h = vBuchungen({last_run: {time: 'T-note', dry_run: true, proposals: [
+                      {key: 'aaaaaaaa-1|#kontor-gk-1', kind: 'mirror', date: '2026-10-01', amount: 5, text: 'x', note: 'Prüfen: …', pair: 'bbbbbbbb-2|#kontor-gk-2'},
+                      {key: 'bbbbbbbb-2|#kontor-gk-2', kind: 'mirror', date: '2026-10-02', amount: -5, text: 'y', note: 'Prüfen: …', pair: 'aaaaaaaa-1|#kontor-gk-1'},
+                      {key: 'cccccccc-3|#kontor-gk-3', kind: 'mirror', date: '2026-10-03', amount: 7, text: 'z'}]}, history_source: [], created_at: [], not_book: []});
+                    return [[...BOOK.off].sort(), BOOK.needCalc, (h.match(/bk-note/g) || []).length]; } finally { Object.assign(BOOK, sv); } }""")
+                self.assertEqual(ini, [["aaaaaaaa-1|#kontor-gk-1", "bbbbbbbb-2|#kontor-gk-2"], True, 2])
+                # discarding one half: both at once (one question naming both sides); without the other half in the list: one
+                sent = pg.evaluate("""async () => { const a0 = api, c0 = window.confirm, out = []; let asked = '';
+                    window.confirm = q => { asked = q; return true; };
+                    const P = (k, d, n, pair) => ({key: k, kind: 'mirror', date: d, amount: n, text: 't', account: 'X', account_name: 'X', note: 'Prüfen', pair});
+                    const fake = {last_run: {time: 'T-pair', dry_run: true, proposals: [P('aaaaaaaa-1|#kontor-gk-1', '2026-10-01', 5, 'bbbbbbbb-2|#kontor-gk-2'),
+                      P('bbbbbbbb-2|#kontor-gk-2', '2026-10-03', -5, 'aaaaaaaa-1|#kontor-gk-1'), P('cccccccc-3|#kontor-gk-3', '2026-10-05', 7, 'dddddddd-4|#kontor-gk-4')]}, history_source: [], created_at: [], not_book: []};
+                    api = async (path, body) => { if (path === '/api/runs') return fake; if (path === '/api/bookings/reject') { out.push([asked, body.keys]); return {ok: true}; } if (path === '/api/bookings/plan') return {proposals: []}; return a0(path, body); };
+                    try { if (location.hash !== '#bookings') go('#bookings'); await new Promise(r => setTimeout(r, 300)); await route(); await new Promise(r => setTimeout(r, 300));
+                      document.querySelector('tr[data-key="aaaaaaaa-1|#kontor-gk-1"] .bk-rej').click(); await new Promise(r => setTimeout(r, 400));
+                      document.querySelector('tr[data-key="cccccccc-3|#kontor-gk-3"] .bk-rej').click(); await new Promise(r => setTimeout(r, 400));
+                      return out; } finally { api = a0; window.confirm = c0; } }""")
+                self.assertEqual([k for _, k in sent], [["aaaaaaaa-1|#kontor-gk-1", "bbbbbbbb-2|#kontor-gk-2"], ["cccccccc-3|#kontor-gk-3"]])
+                self.assertIn("Beide Seiten", sent[0][0]); self.assertNotIn("Beide Seiten", sent[1][0])
                 # none chosen (also what a recalculation had added): nothing to work out, no new booking chosen by itself
                 none = pg.evaluate("""async () => { const sv = {...BOOK}, r0 = route, a0 = api; let asked = 0;
                     route = () => {}; api = async () => { asked++; return {proposals: [{key: 'x', amount: 1}]}; };

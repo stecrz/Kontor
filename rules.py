@@ -40,6 +40,7 @@ class Proposal:
     group: str = ""           # company (area id) of a participation or account mirror
     retro: bool = False       # older than the last check (backdated, or missing again): never booked without your approval
     note: str = ""            # something to look at before booking (a possible counterpart booked by hand): never booked on its own
+    pair: str = ""            # the other half of such a hand-made pair: the key of its own proposal (turned down together)
 
     @property
     def key(self) -> str:
@@ -603,8 +604,8 @@ def plan_mirror(ledger: Ledger, res: RuleResult, rule: str, a, b, cfg: dict, con
     "alles"; None: what is new since the last check) comes into the other with the opposite sign -- same day, its text, a mark
     naming the original (#kontor-gk-<id>) -- into each side that is an offline account. A mirrored booking is never mirrored
     back, a value adjustment never mirrored. Mirrored is what has its counterpart: by the mark, or booked by hand on both sides
-    (same amount, opposite sign, up to MIRROR_DAYS apart -- the two ends of a transfer between banks; further apart a proposal
-    carries a note and waits for you); a mirrored booking whose original got a new number in
+    (same day, same amount, opposite sign -- a mirror is exact; days apart, as the two ends of a transfer between banks entered
+    on their days: the proposal names the possible counterpart and waits for you); a mirrored booking whose original got a new number in
     MoneyMoney (same day and amount) still counts. Kontor never changes or deletes: a mirrored booking whose original is gone
     or changed is a note to correct it there; one deleted itself is proposed again."""
     seen = seen or Seen()
@@ -653,31 +654,25 @@ def plan_mirror(ledger: Ledger, res: RuleResult, rule: str, a, b, cfg: dict, con
             done_ids.add(hit.id); marked += 1
             continue
         res.warnings.append(tr("s_s_spiegel_original_weg") % (x.name, m.booking_date.strftime("%d.%m.%Y"), fmt_eur(m.amount), src.name, x.name))
-    # pairs booked by hand on both sides: the same amount with the opposite sign, up to MIRROR_DAYS apart (a transfer between
-    # two banks takes days -- the counter-bookings of its two ends were entered on their days). One pass in order of date, each
-    # with the earliest free one in reach (as many pairs as there can be); each booking in one pair only. Days apart only between
-    # bookings that count (from "Buchen ab") and whose mirror you did not turn down ("Don't book" -- it must not swallow another).
-    # Further apart (up to NEAR_DAYS): no pair, but the proposal says so and waits for you
+    # pairs booked by hand on both sides: the same day, the same amount with the opposite sign, each booking in one pair only;
+    # not a booking whose mirror you turned down ("Don't book" -- it must not swallow another). Days apart (the two ends of a
+    # transfer between banks, entered on their days -- only in what was there before the mirror): no pair, the proposal names
+    # the possible counterpart and waits for your approval
     cents = lambda t: int(round(t.amount * 100))
     refused = not_booked_keys(config)
     free = lambda t, x: bkey(other[x.uuid].uuid, MIRROR_TAG + str(t.id)) not in refused
-    free_b: Dict[int, List[Tx]] = {}
+    free_b: Dict[Tuple[date, int], List[Tx]] = {}
     for u in sorted(originals[b.uuid], key=lambda t: (t.booking_date, t.id)):
         if u.id not in done_ids and free(u, b):
-            free_b.setdefault(cents(u), []).append(u)
-    pairs, apart = 0, []
+            free_b.setdefault((u.booking_date, cents(u)), []).append(u)
+    pairs = 0
     for t in sorted(originals[a.uuid], key=lambda t: (t.booking_date, t.id)):
         if t.id in done_ids or not free(t, a):
             continue
-        d_of = lambda u: abs((u.booking_date - t.booking_date).days)
-        u = next((u for u in free_b.get(-cents(t), ()) if u.id not in done_ids and (d_of(u) == 0 or (d_of(u) <= MIRROR_DAYS and counts(t) and counts(u)))), None)
-        if u is not None:
+        hit = free_b.get((t.booking_date, -cents(t)))
+        if hit:
+            u = hit.pop(0)
             done_ids.update((t.id, u.id)); pairs += 1
-            if d_of(u):
-                apart.append((min(t.booking_date, u.booking_date), max(t.booking_date, u.booking_date), abs(t.amount)))
-    if apart:                                    # named one by one: a wrong pair (two bookings of their own) is seen
-        res.info.append(tr("s_s_spiegel_paare_versatz") % (rule, "; ".join("%s ↔ %s · %s" % (d0.strftime("%d.%m.%Y"), d1.strftime("%d.%m.%Y"), fmt_eur(v))
-                                                                          for d0, d1, v in apart[:12]) + (" …" if len(apart) > 12 else "")))
     # entered by hand where Kontor had mirrored already (the other end's booking came first): one of the two is too many
     kontor_m = {x.uuid: [m for m in real[x.uuid] if _mirror_of(m) is not None] for x in (a, b)}
     twin: Dict[int, Tx] = {}
@@ -691,7 +686,17 @@ def plan_mirror(ledger: Ledger, res: RuleResult, rule: str, a, b, cfg: dict, con
             if m is not None:
                 used.add(m.id); twin[t.id] = m
                 res.warnings.append(tr("s_s_spiegel_doppelt_hand") % (x.name, t.booking_date.strftime("%d.%m.%Y"), fmt_eur(t.amount), m.booking_date.strftime("%d.%m.%Y")))
-    left = {x.uuid: [t for t in originals[x.uuid] if t.id not in done_ids] for x in (a, b)}
+    # the possible counterpart of a booking left without a pair: the nearest one of the same amount on the other side, up to
+    # NEAR_DAYS apart, itself without a pair and not turned down; the two halves name each other only where each is the
+    # other's nearest and the other half is proposed too (its side an offline account, from "Buchen ab")
+    left = {x.uuid: [t for t in originals[x.uuid] if t.id not in done_ids and free(t, x)] for x in (a, b)}
+    near_of: Dict[int, Tx] = {}
+    for x in (a, b):
+        for t in left[x.uuid]:
+            u = min((u for u in left[other[x.uuid].uuid] if cents(u) == -cents(t) and abs((u.booking_date - t.booking_date).days) <= NEAR_DAYS),
+                    key=lambda u: (abs((u.booking_date - t.booking_date).days), u.id), default=None)
+            if u is not None:
+                near_of[t.id] = u
     booked = 0
     for x in (a, b):
         target = other[x.uuid]
@@ -704,14 +709,15 @@ def plan_mirror(ledger: Ledger, res: RuleResult, rule: str, a, b, cfg: dict, con
             if _skipped(skip, target.uuid, tag) or (auto and not seen.new_tx(t)):
                 continue
             text = TAG_RE.sub("", (t.purpose or t.name or "")).strip(" ·") or "-"          # the original's own mark stays there
-            near = min((u for u in left[target.uuid] if cents(u) == -cents(t) and abs((u.booking_date - t.booking_date).days) <= NEAR_DAYS),
-                       key=lambda u: (abs((u.booking_date - t.booking_date).days), u.id), default=None)
+            near = near_of.get(t.id)
+            mutual = near is not None and t.id not in twin and near_of.get(near.id) is t and x in sides and counts(near)
+            pair = bkey(x.uuid, MIRROR_TAG + str(near.id)) if mutual else ""          # the other half: its own proposal, mirrored here
             note = (tr("s_spiegel_doppelt_note") % (x.name, twin[t.id].booking_date.strftime("%d.%m.%Y")) if t.id in twin
-                    else tr("s_spiegel_gegenstueck") % (target.name, near.booking_date.strftime("%d.%m.%Y")) if near else "")
+                    else tr("s_spiegel_gegenstueck" if mutual else "s_spiegel_gegenstueck_1") % (target.name, near.booking_date.strftime("%d.%m.%Y")) if near else "")
             p = Proposal(rule, "mirror", target.uuid, target.path, t.booking_date, round(-t.amount, 2), (owner or {}).get(x.uuid) or x.name,
                          _fill(DEFAULT_TEXTS["mirror_text"], source=x.name, text=text, tag=tag), cfg.get("category") or "", tag,
                          group=group, retro=not seen.new_tx(t),
-                         note=note)
+                         note=note, pair=pair)
             _emit(res, ledger, p, edits)
             booked += 1
     pv.update(direction="both" if len(sides) == 2 else ("to_a" if sides[0] is a else "to_b"), mirrored=marked + pairs, open=booked,
@@ -719,8 +725,8 @@ def plan_mirror(ledger: Ledger, res: RuleResult, rule: str, a, b, cfg: dict, con
               begin=start.isoformat() if isinstance(start, date) else start if start == "all" else None)
 
 
-MIRROR_DAYS = 7     # a mirror: counter-bookings entered by hand on both sides count as one pair up to a week apart
-NEAR_DAYS = 31      # further apart, up to a month: a proposal with such a booking on the other side says so and waits for you
+MIRROR_DAYS = 7     # a mirror: a booking by hand this close to Kontor's own mirrored one of the same amount -- one is too many
+NEAR_DAYS = 31      # a booking by hand on the other side up to a month apart: the proposal says so and waits for you
 
 
 def current_day(cfg: dict, today: date) -> date:

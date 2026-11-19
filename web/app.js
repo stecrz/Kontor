@@ -4398,7 +4398,9 @@ function vBuchungen(runs) {
     h += `<h2>${head}${l.error ? ' <span class="pill err">' + esc(l.error) + '</span>' : ''}</h2>`;
     if ((l.proposals || []).length) {
       const pick = pending && local, ed = pending;          // choose and change only while waiting; booking only at the Mac
-      if (BOOK.time !== l.time) Object.assign(BOOK, {time: l.time, edits: {}, off: new Set(), calc: null, extra: {}, editing: new Set()});
+      // a new list: what carries a note (a possible counterpart entered by hand) starts not chosen -- you tick it yourself
+      if (BOOK.time !== l.time) { const noted = (l.proposals || []).filter(v => v.note && v.key).map(v => v.key);
+        Object.assign(BOOK, {time: l.time, edits: {}, off: new Set(noted), calc: null, extra: {}, editing: new Set(), needCalc: noted.length > 0}); }
       const plain = txt => String(txt || '').replace(/\s*·?\s*#(?:kontor|mm)-[a-z]+-[A-Za-z0-9-]+/g, '').trim();
       h += `<div class="wrap auto"><table class="plain bk-table"><thead><tr>${pick ? `<th class="c"><input type="checkbox" id="bk-all" ${BOOK.off.size || bkRows(l).some(r => r.gone) ? '' : 'checked'} aria-label="${esc(t('alle'))}"></th>` : ''}<th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>`
         + bkRows(l).map(({v, k, off, e, gone, b, neu, adjusted}) => {
@@ -6158,15 +6160,19 @@ function bind(main) {
       const r = e.target.closest('tr[data-key]'); if (!r || !r.dataset.key) return;
       if (e.target.closest('.bk-edit')) { const k = r.dataset.key, on = !BOOK.editing.has(k); if (on) { BOOK.editing.add(k); r.classList.add('editing'); ($('.bk-b', r) || $('.bk-z', r)).focus(); } else { BOOK.editing.delete(k); route(); } return; }
       if (e.target.closest('.bk-rej')) {
-        if (!confirm(t('verwerfen_frage'))) return;
+        // half of a pair entered by hand (days apart): both halves at once
+        const l = (BOOK.runs || {}).last_run || {}, v = (l.proposals || []).find(x => x.key === r.dataset.key) || {}, other = v.pair && (l.proposals || []).some(x => x.key === v.pair) ? v.pair : null;
+        if (!confirm(t(other ? 'verwerfen_paar_frage' : 'verwerfen_frage'))) return;
+        const keys = other ? [r.dataset.key, other] : [r.dataset.key];
         try {
-          await api('/api/bookings/reject', {key: r.dataset.key}); BOOK.off.delete(r.dataset.key); delete BOOK.edits[r.dataset.key]; delete BOOK.extra[r.dataset.key];
+          await api('/api/bookings/reject', {keys}); keys.forEach(k => { BOOK.off.delete(k); delete BOOK.edits[k]; delete BOOK.extra[k]; });
           toast(t('verworfen_ok')); BOOK.calc = null; await route();
           if (BOOK.off.size || Object.keys(BOOK.edits).length) bkRecalc();
         } catch (er) { toast(er.message, 5000); }
       }
     });
     count();
+    if (BOOK.needCalc) { BOOK.needCalc = false; bkRecalc(); }          // noted ones not chosen: the list as it would be booked
   }
   $$('.re-book', main).forEach(b => b.addEventListener('click', async () => {
     // propose again: off the list; if it is still needed it waits for approval (planned again at once) -- "Not booked" stays

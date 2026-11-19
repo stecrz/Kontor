@@ -2216,16 +2216,23 @@ def make_handler(app: App):
                 app.save_config(cfg)
                 return self._json(200, {"ok": True, "fetch": app.abruf()})
             if path == "/api/bookings/reject":
-                # a proposed booking you do not want: never proposed again (settings: nicht_buchen), until "Propose again"
-                key = str(body.get("key") or "")
-                acc, _, tag = key.partition("|")
-                if not re.fullmatch(r"[0-9A-Za-z-]{8,64}", acc) or not TAG_RE.fullmatch(tag):
+                # a proposed booking you do not want: never proposed again (settings: nicht_buchen), until "Propose again";
+                # keys: several at once (both halves of a pair entered by hand)
+                raw = body.get("keys") if isinstance(body.get("keys"), list) else [body.get("key")]
+                if len(raw) > 20:
                     return self._json(400, {"error": tr("s_markierung_ungueltig")})
-                key = rules_bkey(acc, tag)
+                keys = []
+                for k in raw:
+                    acc, _, tag = str(k or "").partition("|")
+                    if not re.fullmatch(r"[0-9A-Za-z-]{8,64}", acc) or not TAG_RE.fullmatch(tag):
+                        return self._json(400, {"error": tr("s_markierung_ungueltig")})
+                    keys.append(rules_bkey(acc, tag))
+                if not keys:
+                    return self._json(400, {"error": tr("s_markierung_ungueltig")})
                 lr = (app.store.load("state.json", {}) or {}).get("last_run") or {}
-                row = next((x for x in lr.get("proposals") or [] if x.get("key") == key), None) or {"account_name": "", "text": ""}
                 cfg = copy.deepcopy(app.config)
-                cfg["not_book"] = [x for x in cfg.get("not_book") or [] if x.get("key") != key] + [not_booked_entry(row, key)]
+                cfg["not_book"] = [x for x in cfg.get("not_book") or [] if x.get("key") not in keys] + [
+                    not_booked_entry(next((x for x in lr.get("proposals") or [] if x.get("key") == key), None) or {"account_name": "", "text": ""}, key) for key in keys]
                 app.save_config(cfg)
 
                 def upd(cur: dict) -> None:
@@ -2233,7 +2240,7 @@ def make_handler(app: App):
                     # difference) -- from the last state read, nothing is written
                     lr = cur.get("last_run") or {}
                     if lr.get("proposals"):
-                        lr["proposals"] = [x for x in lr["proposals"] if x.get("key") != key]
+                        lr["proposals"] = [x for x in lr["proposals"] if x.get("key") not in keys]
                         if lr.get("dry_run") and app.ledger is not None:
                             try:
                                 lr["proposals"] = plan_pending(app.ledger, app.config, cur, date.today())

@@ -944,7 +944,7 @@ def proposal_rows(ledger: Ledger, proposals: List[Proposal]) -> List[dict]:
     """Bookings waiting for approval, as the interface shows them."""
     return [{"kind": x.kind, "account": x.account_path, "account_name": ledger.accounts[x.account_uuid].name if x.account_uuid in ledger.accounts else "",
              "account_id": x.account_uuid, "key": x.key, "date": x.booking_date.isoformat(), "amount": x.amount, "text": x.purpose,
-             "category": x.category, "tag": x.tag, "rule": x.rule, "retroactive": x.retro, "counterparty": x.payee, "note": x.note}
+             "category": x.category, "tag": x.tag, "rule": x.rule, "retroactive": x.retro, "counterparty": x.payee, "note": x.note, "pair": x.pair}
             for x in proposals]
 
 
