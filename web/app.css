@@ -184,6 +184,9 @@ tr.bal td.plan { color:color-mix(in srgb, var(--muted) 55%, transparent); } tr.b
 .cf-pair > .cf-names th, .cf-pair > .cf-names td { position:static; }
 .cf-pair > .cf-names thead th { background:transparent; border-bottom-color:transparent; padding:0; }      /* room for the table's heading row */
 .cf-pair .cf-ph { position:static; padding-top:0; padding-bottom:0; }
+/* the row lines beside the names are the figures' own, seen through the names table: both sides meet exactly, also where Safari
+   places the pinned names a fraction of a pixel apart (its own layer, rounded on its own) */
+.cf-pair > .cf-names td, .cf-pair > .cf-names th { border-top-color:transparent !important; border-bottom-color:transparent !important; background-clip:padding-box !important; }
 th[data-cur] { box-shadow:inset 0 -2px 0 var(--line-2); } .cf-tbl:not(.ptable) thead th[data-key] { cursor:pointer; } th.cf-endsel { color:var(--accent-fg); box-shadow:inset 0 -2px 0 var(--accent-fg); }          /* the month the charts end with */ th.plan { color:var(--muted); font-weight:500; } .ptable td.plan { color:var(--fg); background:var(--plan); } .ptable td.plan.neg { color:var(--neg); } .ptable td.plan.pos { color:var(--pos); } .ptable td.plan.zero { color:var(--faint); }
 td.neg { color:var(--neg); } td.pos { color:var(--pos); } td.zero { color:var(--faint); }
 td small.ct { font-size:.74em; color:color-mix(in srgb, currentColor 62%, transparent); letter-spacing:0; }      /* cents: there, but out of the way */

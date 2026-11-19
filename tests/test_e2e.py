@@ -3110,6 +3110,8 @@ class BrowserTest(unittest.TestCase):
                 # Cashflow: both checks against the balance sheet as ✓ at the change in cash and in net worth; no row of their own while all adds up
                 pg.click("#nav a[href='#cashflow']"); pg.wait_for_selector("#main table.cf-tbl:not(.cf-names) tr.total")
                 F_ = "#main table.cf-tbl:not(.cf-names)"; N_ = "#main table.cf-names"        # the figures; the names pinned as one piece over them
+                # the row lines beside the names are the figures' own, seen through (Safari may place the pinned table a fraction apart)
+                self.assertTrue(pg.evaluate("[...document.querySelectorAll('.cf-pair > .cf-names tbody td')].every(c => { const s = getComputedStyle(c); return s.backgroundClip === 'padding-box' && s.borderBottomColor === 'rgba(0, 0, 0, 0)'; })"))
                 # it opens on the last finished month, the running one beside it and (four columns or more) the first plan month
                 vis = pg.evaluate("""(() => { const w = document.querySelector('#main .wrap'), sw = w.querySelector('thead th').offsetWidth, x0 = w.scrollLeft + sw - 1, x1 = w.scrollLeft + w.clientWidth + 1;
                   const ths = [...w.querySelectorAll('thead th[data-key]')], cur = ths.findIndex(th => th.dataset.cur), real = ths.filter(th => !(S.mode !== 'years' && th.classList.contains('year')));
@@ -4413,6 +4415,7 @@ class SafariTablesTest(unittest.TestCase):
                     self.assertEqual(pg.evaluate(measure), [], "scale %d" % scale)
                     pg.evaluate("document.querySelector('.cf-pair').parentElement.scrollLeft = 200; window.scrollBy(0, 333)"); pg.wait_for_timeout(300)
                     self.assertEqual(pg.evaluate(measure), [], "scale %d, scrolled" % scale)
+                    self.assertTrue(pg.evaluate("[...document.querySelectorAll('.cf-pair > .cf-names tbody td')].every(c => { const s = getComputedStyle(c); return s.backgroundClip === 'padding-box' && s.borderBottomColor === 'rgba(0, 0, 0, 0)'; })"))
                     # the balance sheet in years: no column marked as a year (nothing else to tell it from)
                     pg.evaluate("location.hash = '#balance'"); pg.wait_for_selector("tr.pos")
                     pg.click("#modus-seg button[data-m='years']"); pg.wait_for_timeout(300)
