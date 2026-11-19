@@ -167,7 +167,20 @@ class CashflowCases(Reconciles):
             k = g["Einlagen/Entnahmen Gesellschafter / Kapitalkonto"]
             self.assertEqual((k["amounts"]["2026-02"], k["amounts"]["2026-04"], k["nw"]), (10000.0, -2500.0, False), cat)
             self.assertNotIn("Beteiligung an Muster GbR", p); self.assertNotIn("Kapitalkonto", g)         # no change in value
-        # without the counter-booking that month, or two of that amount on the same day: as before (leaves the net worth, its own
+        # over a month end (paid on the 30th, booked or arrived on the 1st): the same, with the money in transit at the month end
+        for amt in (4000.0, -4000.0):                                                     # paid in, taken out
+            txs = base + [(60, "giro", date(2026, 1, 30), -amt, {"iban": "DE21"}), (61, "stake", date(2026, 1, 30), amt, {}),
+                          (62, "kk", date(2026, 2, 2), amt, {"iban": "DE11"}), (63, "kap", date(2026, 1, 30), -amt, {"purpose": "gespiegelt"})]
+            data = build(txs)
+            self.assertAddsUp(data, allow=("ue_unterwegs",))
+            g = data["Muster GbR"]
+            k = rows(g)["Einlagen/Entnahmen Gesellschafter / Kapitalkonto"]
+            self.assertEqual((k["amounts"]["2026-01"], k["amounts"]["2026-02"], k["nw"]), (0.0, amt, False), amt)
+            self.assertNotIn("Kapitalkonto", rows(g))                                     # no change in value
+            tr_row = next(r for r in g["balance"]["rows"] if r["id"] == "transit")
+            self.assertEqual((tr_row["amounts"]["2026-01"], tr_row["amounts"]["2026-02"]), (amt, 0.0), amt)
+            self.assertEqual(round(g["balance"]["net_worth"]["2026-01"] - g["balance"]["net_worth"]["2025-12"] if "2025-12" in g["balance"]["net_worth"] else 0.0, 2), 0.0)
+        # without the counter-booking near it, or two of that amount on the same day: as before (leaves the net worth, its own
         # change in value) -- of two at different distances the nearer one counts
         txs = base + four(2, date(2026, 2, 10), 10000.0, "Umbuchung")
         later = [x if x[0] != 3 else (3, "stake", date(2026, 3, 2), 10000.0, x[4]) for x in txs]

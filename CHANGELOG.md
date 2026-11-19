@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.15.6 (2026-11-19 14:17)
+- Einlagen mit Gegenbuchung im Kapitalkonto auch über das Monatsende verbunden (als „Geld unterwegs“).
+- Geld unterwegs im laufenden Monat nicht mehr doppelt, wenn eine Buchung nach heute datiert ist.
+
 ## 3.15.5 (2026-11-19 13:39)
 - MoneyMoney-Sync: Synchronisierung oben, dann Abgleich; Verbindung eingeklappt am Ende, sobald sie steht.
 - Einrichtung: „Weiter“ und „Zurück zur Einrichtung“ als schmale Zeile oben (MoneyMoney-Sync, Kontostände).

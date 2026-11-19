@@ -455,6 +455,11 @@ class TransitTests(unittest.TestCase):
         t = self.run_transit([("a", date(2026, 1, 31), -500.0, "DE22"), ("b", date(2026, 2, 2), 500.0, "")])
         self.assertEqual(t, {"2026-01": 500.0, "2026-02": 0.0, "2026-03": 0.0})
 
+    def test_laufender_monat_ohne_unterwegs(self):
+        # today's balances hold every booking, also one dated after today: in the running month nothing is on its way
+        t = self.run_transit([("a", date(2026, 2, 27), -300.0, "DE22"), ("b", date(2026, 3, 4), 300.0, "")], today=date(2026, 3, 2))
+        self.assertEqual(t, {"2026-01": 0.0, "2026-02": 300.0, "2026-03": 0.0})
+
     def test_gutschrift_zuerst(self):
         t = self.run_transit([("b", date(2026, 1, 30), 200.0, "DE11"), ("a", date(2026, 2, 1), -200.0, "")])
         self.assertEqual(t["2026-01"], -200.0)

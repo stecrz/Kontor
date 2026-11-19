@@ -535,7 +535,9 @@ def _transit_from(ledger: Ledger, months: List[Tuple[int, int]], mkeys: List[str
                   today: date) -> Tuple[Dict[str, float], List[dict]]:
     out = {mk: 0.0 for mk in mkeys}
     for (y, m), mk in zip(months, mkeys):
-        cut = min(month_end(y, m), today)
+        if mk >= month_key(today):
+            continue                                     # the running month stands at today's balances, which hold every booking: nothing on its way
+        cut = month_end(y, m)
         val = sum(p[2] for p in pairs if p[0] <= cut < p[1]) - sum(p[2] for p in pairs if p[1] <= cut < p[0])
         out[mk] = round(val, 2)
     name = lambda u: ledger.accounts[u].name if u in ledger.accounts else u
@@ -1133,7 +1135,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     paired: Set[int] = set()
     # A contribution or withdrawal between two of your areas that you also booked against a manual account of this area (your
     # capital account at home -- a participation or receivable --, the partner's capital account in the company -- a liability):
-    # same month, opposite amount, at most COUNTER_DAYS apart -- the money went into (came out of) that account, the net worth
+    # opposite amount, at most COUNTER_DAYS apart (over a month end: money in transit) -- the money went into (came out of) that account, the net worth
     # stays; not a change in value. Only offline accounts, never a car or a depot; one payment to one booking only: first where
     # the account is tied to the other area (an account mirror into it, its participation, its name in the account or booking),
     # then the rest -- a booking that two payments could claim stays as it was.
@@ -1181,8 +1183,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         if not name or name == self_name or (p_t in ledger.accounts and foreign_currency(ledger.accounts[p_t])) \
                 or (not by_cat[t.id] and paid_for(between_position(t)[1])):
             continue                                     # paid for something, or into another currency: no contribution
-        c = [o for o in pool.get(-cents_(t.amount), []) if month_key(o.booking_date) == month_key(t.booking_date)
-             and abs((o.booking_date - t.booking_date).days) <= COUNTER_DAYS]
+        c = [o for o in pool.get(-cents_(t.amount), []) if abs((o.booking_date - t.booking_date).days) <= COUNTER_DAYS]
         if c:
             claims_by.append((t, [o for o in c if tied(o, name)], c))
     # in steps by distance (the same day, PAIR_DAYS, COUNTER_DAYS), each with the tied accounts first: what is clear in an
@@ -1205,7 +1206,11 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         o = reserved.get(t.id)
         if o is None:
             return None
-        stake_in[o.account_uuid][mk] += -t.amount           # its change in value: what it moved by beyond this money
+        # its change in value (in the month of the counter-booking): what it moved by beyond this money
+        stake_in[o.account_uuid][month_key(o.booking_date)] += -t.amount
+        if month_key(o.booking_date) != mk:              # over a month end (paid on the 30th, booked or arrived on the 1st): in transit
+            out_, in_ = (t, o) if t.amount < 0 else (o, t)
+            pairs.append((out_.booking_date, in_.booking_date, -out_.amount, out_.account_uuid, in_.account_uuid, out_.id, in_.id))
         return o
 
     def own_row(t: Tx, acc: Account, role: str, mk: str) -> None:
