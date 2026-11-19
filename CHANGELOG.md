@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.15.13 (2026-11-19 20:22)
+- Kontenspiegel: Gegenbuchungen von Hand mit bis zu 7 Tagen Abstand gelten als gespiegelt (in den Rechenwegen genannt); weiter auseinander oder doppelt zu Kontors Spiegelbuchung: Vorschlag mit „prüfen“, nie automatisch.
+- Auto-Buchungen: Bereich unter jedem Konto.
+- Ausgaben je Monat: höchster Wert in kräftigster Farbe, Ausreißer gerahmt mit ▲/▲▲/▲▲▲, neu mit ✦; Vorjahresskala bis 100 %.
+- Einrichtung: Weg zum nächsten Schritt unter der Verbindung statt oben.
+
 ## 3.15.12 (2026-11-19 19:36)
 - Bilanz in Jahren: keine grau hinterlegten Jahresspalten mehr.
 - Cashflow-Tabelle: Zeilenlinien neben den Namen ohne Versatz (Safari).
