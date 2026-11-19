@@ -1,6 +1,6 @@
 ---
 name: release
-description: Jede Änderung an Kontor abschließen – prüfen, Version, Changelog, Commit, Push, Mac aktualisieren. Am Ende jeder Änderung verwenden, auch bei kleinen.
+description: Jede Änderung an Kontor abschließen – prüfen, Version, Changelog, Commit, Push. Am Ende jeder Änderung verwenden, auch bei kleinen.
 ---
 
 # Release
@@ -25,7 +25,5 @@ description: Jede Änderung an Kontor abschließen – prüfen, Version, Changel
    **GitHub Actions prüfen:** `gh api "repos/stecrz/Kontor/actions/runs?per_page=1" --jq '.workflow_runs[0] | [.head_sha[0:7], .status, .conclusion]'`
    nach ein paar Minuten (spätestens beim nächsten Release); schlägt der Lauf fehl, sofort beheben – lokal grün heißt nicht
    überall grün (andere Schriften, Python 3.9).
-8. **Mac aktualisieren** (über die Verbindung zum Mac, falls vorhanden):
-   `cd "$HOME/mnt/Kontor" && git fetch -q https://github.com/stecrz/Kontor.git main && git reset -q --hard FETCH_HEAD && git update-ref refs/remotes/origin/main FETCH_HEAD && cat VERSION`
-   Nicht erreichbar: dem Nutzer sagen, dass er das Update unter „Updates“ in Kontor installieren kann.
-9. **Antwort an den Nutzer:** auf Deutsch, kurz – was sich für ihn ändert, Version, ob der Mac aktuell ist. Keine Aufzählung der Arbeitsschritte.
+8. **Antwort an den Nutzer:** auf Deutsch, kurz – was sich für ihn ändert und die Version. Keine Aufzählung der Arbeitsschritte.
+   Den Mac aktualisiert der Nutzer selbst (Einstellungen → Updates): nicht darauf zugreifen und nicht erwähnen.
