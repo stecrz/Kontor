@@ -5,14 +5,15 @@ Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sh
 <a id="overview"></a>
 ## Overview
 
-The four most important charts at a glance – no tables and no plan values, on the Mac in three columns on one screen:
+The most important charts and key figures at a glance – no tables and no plan values, from the closed months, on the Mac in three columns on one screen:
 
-- **Net worth**: the last two years, beside it the current figure and the change over twelve months.
-- **Asset structure**: the balance sheet of the current month – on the left the assets as tiles, each position as large as its share of total assets; on the right in one column what stands against them: equity and debts on the same scale. Hover for the amount.
+- **Net worth**: the last twelve closed months, beside it the figure and the change.
+- **Asset structure**: the last closed month – on the left the assets as tiles, on the right what stands against them: net worth and debts on the same scale; in each tile its amount and the change against a year before. No balance sheet total: for a company what is on no account is missing (stock, open invoices, provisions).
 - **Monthly cash flow**: the last twelve closed months – income and other inflows up, expenses and outflows down; the dashed stroke shows the change in cash.
 - **Net worth bridge**: where the change in net worth over these twelve months came from.
+- **Key figures**: saving rate, spending a month, reserve, financial independence, debts and equity ratio (for a company its surplus instead of financial independence); hover for how each is computed, a click leads to its place.
 
-A click on a chart opens its place in the balance sheet or the cash flow. At the bottom right, **Open** lists what there is to do (e.g. transactions without a category, accounts without a confirmed assignment, an available update) – a click on a point opens the page where it can be done. If nothing is open, the box is not there and the cash flow takes the full width.
+A click on a chart opens its place in the balance sheet or the cash flow. At the bottom right, **Open** lists what there is to do (e.g. transactions without a category, accounts without a confirmed assignment, an available update) – a click on a point opens the page where it can be done. If nothing is open, the box is not there and the key figures take its place.
 
 **Help on every page**: the **?** beside the page title says in one sentence what the page does; a click on it opens its section of this help. The **?** at tables and charts lead to their own paragraph.
 
@@ -199,7 +200,7 @@ Below the table:
 = Financial assets
 + Real assets (Real estate + Tangible assets)
 + Other
-= Gross assets (total assets)
+= Gross assets
 + Liabilities
 = Net worth
 

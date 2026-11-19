@@ -23,7 +23,15 @@ Fertig, wenn
 - jede Zahl ihre Herkunft zeigt (Ist, Plan, Annahme); nichts wird geschätzt, ohne es so zu kennzeichnen;
 - Tests prüfen Fortschreibung, Zinseszins und Grenzen; Hilfe und Bilder aktuell; ohne „Alpha“.
 
-## ~~3. Übersicht~~ (erledigt in 3.15.0)
+## 3. BWA und Summen- und Saldenliste (Gesellschaften)
+Ziel: Die Bilanz einer Gesellschaft stimmt mit der des Steuerberaters überein.
+
+Fertig, wenn
+- BWA und SuSa (DATEV-Export, CSV/PDF) je Gesellschaft geladen werden können, nur lokal und verschlüsselt;
+- Posten, die auf keinem Konto stehen (Ware, Forderungen/Zahlungsziele, Rückstellungen, Gewinnvortrag), daraus in Bilanz und Übersicht erscheinen, gekennzeichnet mit Stand und Quelle;
+- Bruttovermögen dann als Bilanzsumme abgestimmt; Tests mit erfundenen Exporten.
+
+## ~~Übersicht~~ (erledigt in 3.15.0)
 Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt an ihre Stelle; am iPhone untereinander; ohne „Alpha“.
 
 ## Als Nächstes (Cashflow und Kategorien)
@@ -48,6 +56,7 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
 - [x] 3.15.1 Eingetragene Kategorien sichtbar und rückgängig zu machen.
 - [x] 3.15.3 Einlagen mit Gegenbuchung im eigenen Kapitalkonto: ohne Scheinänderung des Nettovermögens.
 - [x] 3.15.2 Empfohlene Kategorien als Checkliste unter Cashflow-Positionen (MoneyMoneys Schnittstelle kann keine Kategorien anlegen); Zielkonto einheitlich benannt und erklärt.
+- [x] 3.15.8 Übersicht mit Kennzahlen, Vermögen statt Bilanzsumme; offene Buchungen und Positionen anklickbar; Kategorien-Bedarf live.
 - Danach: Hinweis bei gemischten Kategorien (etwa eine Immobilien-Kategorie mit Kaufpreis, Auszahlung und Miete), Kategorisieren je Empfänger in einem Schritt, Fortschritt „sicher zugeordnet / geschätzt“.
 
 ## Laufend
@@ -57,4 +66,4 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
 - Oberfläche nach Apples Human Interface Guidelines, hell und dunkel, Mac und iPhone.
 
 ## Beim nächsten großen Versionssprung (Hilfe, README, Bilder)
-- Hilfe-Bilder neu: Übersicht (drei Spalten), Kategorisieren, Cashflow-Positionen (Empfehlung), Buchungsregeln (Bereich + Konto) – 3.15.2 hat nur die Texte angepasst.
+- Hilfe-Bilder und -Texte neu: Übersicht (drei Spalten, Kennzahlen), Kategorisieren, Cashflow-Positionen (Empfehlung), Buchungsregeln (Bereich + Konto) – 3.15.2 hat nur die Texte angepasst.

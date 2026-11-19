@@ -1170,6 +1170,16 @@ class AppTests(_AppBase):
         none = [x["id"] for x in alle if not x["category"] and x.get("needs", True) and not x.get("transfer") and not x.get("other_area")]
         self.assertTrue(none); self.assertEqual(sorted(x["id"] for x in got), sorted(want + none))
         self.assertTrue([x for x in alle if x.get("other_area")])
+        # as the categories count them (a count clicked): booked, with MoneyMoney's own category -- not pending, not waiting
+        keep = self.app.umsaetze
+        try:
+            base = dict(mit[0], booked_count=True, source="moneymoney")
+            self.app.umsaetze = [dict(base, id=9001), dict(base, id=9002, booked_count=False), dict(base, id=9003, source="waiting")]
+            got = self.call("/api/transactions?limit=5000&counted=1&categories=%s" % q)[1]["transactions"]
+            self.assertEqual([x["id"] for x in got], [9001])
+            self.assertEqual(len(self.call("/api/transactions?limit=5000&categories=%s" % q)[1]["transactions"]), 3)
+        finally:
+            self.app.umsaetze = keep
         self.assertFalse([x for x in got if x.get("other_area") and not x["category"]])
         self.assertFalse(self.call("/api/transactions?categories=%s" % urllib.parse.quote(json.dumps(["Gibt es nicht"])))[1]["transactions"])
         self.assertEqual(self.call("/api/transactions?categories=kaputt")[0], 200)
@@ -2922,6 +2932,34 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-card[data-ov='wealth'] svg")
                 pg.click(".ov-card[data-ov='wealth']"); pg.wait_for_selector("[data-cfid='wealth'] svg")
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-grid")
+                # key figures: six, each from the closed months; the monthly cash flow takes a third; a figure leads to its own place
+                self.assertEqual(len(pg.query_selector_all(".ov-kpi .ov-kpi-t")), 6); self.assertIn("Sparquote", pg.inner_text(".ov-kpi"))
+                w = pg.evaluate("[document.querySelector('.ov-card[data-ov=\"months\"]').offsetWidth, document.querySelector('.ov-grid').offsetWidth]")
+                self.assertLess(w[0], w[1] * 0.36)
+                self.assertTrue(pg.evaluate("[...document.querySelectorAll('.ov-kpi-t')].every(t => t.title)"))           # each says how it is computed
+                # the figures computed: three closed months, interest paid (spending) and got (income) apart, no equity ratio of the
+                # balance sheet (net worth over net worth and debts), nothing a year before; one month: singular; a company: its surplus
+                kpi = pg.evaluate("""(kind, n) => { const ms = ['2026-01', '2026-02', '2026-03'].slice(-n), sums = {};
+                    ms.forEach(m => { sums[m] = {income: 3000, expenses: -1000, operating: 2000, Zinsen: 0, bank: 6000}; });
+                    const D = {months: [...ms, '2026-04'], actual_until: '2026-04', area: {kind}, figures: {fi_real_return_percent: 3},
+                      cashflow: {sums, sections: [{name: 'financing', rows: [{kind: 'interest', amounts: Object.fromEntries(ms.map(m => [m, -100]))}, {kind: 'interest', amounts: {'2026-03': 300}}]}]},
+                      balance: {net_worth: {'2026-03': 100000}, rows: [{group: true, role: 'liabilities', amounts: {'2026-03': -50000}}]}};
+                    const k = ovKpi(D), div = document.createElement('div'); div.innerHTML = k.html;
+                    return [k.when, ...[...div.querySelectorAll('.ov-kpi-t')].map(x => [x.querySelector('.l').textContent, x.querySelector('.v').textContent, x.querySelector('.s').textContent])]; }""", ["private", 3])
+                self.assertTrue(kpi[0].endswith(" · 3 Monate"))
+                self.assertEqual([r[1] for r in kpi[1:]], ["65 %", "1.100 €", "5,5 Monate", "23 %", "50.000 €", "67 %"])
+                self.assertEqual([r[2] for r in kpi[1:3]], ["2.000 € je Monat", "davon Zinsen 100 €"]); self.assertEqual(kpi[3][2], "6.000 € Bankguthaben")
+                self.assertTrue(kpi[4][2].startswith("Ziel ")); self.assertEqual((kpi[5][2], kpi[6][2]), ("", ""))
+                one = pg.evaluate("""() => { const D = {months: ['2026-03', '2026-04'], actual_until: '2026-04', area: {kind: 'company'}, cashflow: {sums: {'2026-03': {income: 0, expenses: -500, operating: -500, Zinsen: 0, bank: -200}}, sections: []},
+                      balance: {net_worth: {}, rows: []}}; const k = ovKpi(D), div = document.createElement('div'); div.innerHTML = k.html;
+                    return [k.when, ...[...div.querySelectorAll('.ov-kpi-t')].map(x => x.querySelector('.l').textContent + '=' + x.querySelector('.v').textContent)]; }""")
+                self.assertTrue(one[0].endswith(" · 1 Monat"))
+                self.assertEqual(one[1:5], ["Überschussquote=–", "Ausgaben je Monat=500 €", "Reserve=0,0 Monate", "Überschuss=-500 €"]); self.assertEqual(one[6], "Eigenkapitalquote=unbekannt")
+                pg.click(".ov-kpi-t[data-ovgo='ekq']"); pg.wait_for_selector("tr.ekq"); self.assertEqual(pg.evaluate("location.hash"), "#balance")
+                pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-kpi")
+                pg.click(".ov-kpi-t >> nth=0"); pg.wait_for_selector("table.cf-tbl"); self.assertEqual(pg.evaluate("location.hash"), "#cashflow")
+                pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-grid")
+                self.assertRegex(pg.inner_text(".ov-card[data-ov='comp'] .ov-head"), r"Vermögen \w+ \d\d"); self.assertNotIn("Bilanzsumme", pg.inner_text(".ov-card[data-ov='comp'] .ov-head"))
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_uebersicht.png"), full_page=True)
                 # Datenstand unten links (zweistufig), keine Infozeile mehr in der Übersicht, Synchronisieren
                 sm = pg.query_selector("#status-mini").inner_text()
@@ -2990,8 +3028,11 @@ class BrowserTest(unittest.TestCase):
                 pg.wait_for_timeout(800)          # the page settled (a scroll of the page closes the menu)
                 pg.click("#bch .bch-head", button="right"); pg.wait_for_selector("#ctx button")
                 pg.dispatch_event("#ctx button", "click"); self.assertTrue(pg.evaluate("PRINT.printed")); self.assertIsNone(pg.query_selector("#ctx"))
+                pg.evaluate("document.documentElement.dataset.theme = 'dark'")
                 pg.evaluate("window.dispatchEvent(new Event('beforeprint'))"); self.assertIn("Kontor", pg.inner_text("#print-head"))
-                pg.evaluate("window.dispatchEvent(new Event('afterprint'))")
+                self.assertEqual(pg.evaluate("document.documentElement.dataset.theme"), "light")                   # printed: always light
+                pg.evaluate("window.dispatchEvent(new Event('afterprint'))"); self.assertEqual(pg.evaluate("document.documentElement.dataset.theme"), "dark")
+                pg.evaluate("delete document.documentElement.dataset.theme")
                 self.assertFalse(pg.evaluate("!!document.querySelector('.print-off, .print-path, #print-head') || document.body.classList.contains('print-one')"))
                 # every tab of "Konten & Regeln" and "Einstellungen" draws (the old pages live there now)
                 for h in ("#accounts/areas", "#accounts/history", "#accounts/positions", "#accounts/rules", "#accounts/tax", "#settings/moneymoney", "#settings/access", "#settings/receipts", "#settings/updates", "#settings/backup", "#setup"):
@@ -3102,6 +3143,11 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("[monthEnd('2028-02'), monthEnd('2026-02'), monthEnd('2026-12')]"), ["2028-02-29", "2026-02-28", "2026-12-31"])
                 pg.click("#cf-ebene button[data-e='3']"); pg.wait_for_selector("tr.det")                 # details: everything open
                 self.assertGreater(len(pg.query_selector_all(F_ + " tr.det")), 2)
+                # a row opened or closed: the page does not move, not even a little (no fade-in when the same page is drawn again)
+                for _ in range(2):
+                    y0 = pg.evaluate("(() => { const r = document.querySelector('#main table.cf-tbl:not(.cf-names) tr[data-tog=\"s:expenses\"]'); window.scrollBy(0, r.getBoundingClientRect().top - 300); return r.getBoundingClientRect().top; })()")
+                    pg.click(N_ + " tr[data-tog='s:expenses'] td >> nth=0"); pg.wait_for_timeout(400)
+                    self.assertAlmostEqual(pg.evaluate("document.querySelector('#main table.cf-tbl:not(.cf-names) tr[data-tog=\"s:expenses\"]').getBoundingClientRect().top"), y0, delta=0.6)
                 # a figure shows the bookings behind it -- also a section's (all its rows), in the side panel; only the name opens or closes it
                 exp = pg.evaluate("""(() => { const td = [...document.querySelectorAll('#main table.cf-tbl:not(.cf-names) tr.sec[data-tog="s:investing"] td.tx')].pop(), c = CF.tblCols[td.cellIndex - 1],
                     zs = CF.zs[+td.parentNode.dataset.zs].zs; td.scrollIntoView({block: 'center', inline: 'center'}); return zs.reduce((a, z) => a + c.months.reduce((b, m) => b + ((z.n || {})[m] || 0), 0), 0); })()""")
@@ -3638,6 +3684,22 @@ class BrowserTest(unittest.TestCase):
                     pg.select_option('.kp-table tr[data-p="%s"] .kp-pos' % par, opt[0]); pg.wait_for_timeout(100)
                     self.assertIn(opt[1], first(kid))
                     pg.select_option('.kp-table tr[data-p="%s"] .kp-pos' % par, ""); pg.wait_for_timeout(100); self.assertEqual(first(par), "Je Unterkategorie (automatisch)")
+                # what Kontor needs: present or missing, following a change in the table at once
+                pg.evaluate("document.querySelector('details.kb').open = true")
+                n0 = pg.inner_text("#kb-sum"); self.assertRegex(n0, r"^\d+ von \d+ vorhanden$")
+                pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', "living"); pg.wait_for_timeout(100)
+                self.assertNotEqual(pg.inner_text("#kb-sum"), n0); self.assertIn("fehlt", pg.inner_text(".kb-table"))
+                pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', ""); pg.wait_for_timeout(100); self.assertEqual(pg.inner_text("#kb-sum"), n0)
+                # a count opens its payments in the side panel
+                pg.click(".kp-table tr[data-p='Umbuchung'] a.kp-tx >> nth=0"); pg.wait_for_selector("#drawer.open tbody tr")
+                self.assertTrue(pg.inner_text("#drawer h2").startswith("Umbuchung")); pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
+                pg.click(".ka-table tr[data-key='broker'] a.ka-tx >> nth=0"); pg.wait_for_selector("#drawer.open tbody tr")
+                pg.evaluate("$('#drawer').insertAdjacentHTML('beforeend', '<textarea id=\"h-csv\" class=\"hidden\">1</textarea>'); window._cf = window.confirm; window.confirm = () => false")
+                pg.mouse.click(pg.evaluate("innerWidth") - 8, pg.evaluate("innerHeight") - 8); pg.wait_for_timeout(300)   # unsaved entries: asked first (here: kept)
+                self.assertTrue(pg.evaluate("$('#drawer').classList.contains('open')"))
+                pg.evaluate("$('#drawer #h-csv').remove(); window.confirm = window._cf")
+                pg.mouse.click(pg.evaluate("innerWidth") - 8, pg.evaluate("innerHeight") - 8); pg.wait_for_timeout(300)   # a click on the panel's background closes it
+                self.assertFalse(pg.evaluate("$('#drawer').classList.contains('open')"))
                 # the account per recipient: Kontor's choice named in the first entry; a choice of your own can be saved
                 sel = ".ka-table tr[data-key='broker'] select.ka-ziel"
                 self.assertIn("Depot", pg.inner_text(sel + " option >> nth=0")); self.assertTrue(pg.is_disabled("#kp-save"))
@@ -3675,7 +3737,7 @@ class BrowserTest(unittest.TestCase):
                 pg.hover("#lc-sel-title"); pg.wait_for_selector(".tip"); self.assertIn("Bankguthaben + Wertpapiere", pg.inner_text(".tip")); self.assertIn("+ Wertpapiere\n= Liquides Vermögen", pg.inner_text(".tip")); pg.mouse.move(5, 5)
                 # the names as one written sum, each word once
                 self.assertEqual(pg.evaluate("a => lcSumTip(a)", av).split("\n"), ["\u2007 Bankguthaben", "+ Wertpapiere", "= Liquides Vermögen", "+ Festanlagen", "= Geldanlagen", "+ Beteiligungen",
-                                 "= Geldvermögen", "+ Immobilien", "= Bruttovermögen (Bilanzsumme)", "+ Verbindlichkeiten", "= Nettovermögen", "",
+                                 "= Geldvermögen", "+ Immobilien", "= Bruttovermögen", "+ Verbindlichkeiten", "= Nettovermögen", "",
                                  "Gebundenes Verm. = Bruttoverm. − Liquides Verm."])
                 self.assertIn("+ Sachvermögen (Immobilien + Sachwerte)", pg.evaluate("a => lcSumTip(a)", av + ["tangibles"]))
                 # composition of one position by account (stacked), chips with the accounts: deselecting one keeps the position line
@@ -4083,6 +4145,14 @@ class BrowserTest(unittest.TestCase):
                 # Regeln speichern (unveraendert) -> Befunde ok
                 pg.evaluate("location.hash = '#accounts/rules'"); pg.wait_for_selector("#save-rules")
                 auto = pg.evaluate("S.CFG.dry_run === false"); self.assertEqual(pg.is_checked("#auto-book"), auto)      # the setting as a switch at the top
+                # what a rule would book: a click on "… offen" lists it in the side panel, with the way to the approval
+                if pg.query_selector("#loans .item"):
+                    pg.evaluate("""() => rulesPreviewShow(document.querySelector('#main'), {preview: [{kind: 'loans', i: 0, bookings: 2, items: [
+                        {date: '2026-03-31', account: 'X / Darlehen', amount: -100, purpose: 'Tilgung', older: false}, {date: '2026-04-30', account: 'X / Darlehen', amount: -100, purpose: 'Tilgung', older: true}]}]})""")
+                    pg.click(".pv-open"); pg.wait_for_selector("#drawer.open #pv-go")
+                    self.assertEqual(len(pg.query_selector_all("#drawer tbody tr")), 2); self.assertIn("2 Buchungen", pg.inner_text("#drawer .note"))
+                    pg.click("#pv-go"); pg.wait_for_selector(".mode-chip"); self.assertEqual(pg.evaluate("location.hash"), "#bookings")
+                    pg.evaluate("location.hash = '#accounts/rules'"); pg.wait_for_selector("#save-rules")
                 self.assertIn("Kontor bucht" if auto else "Freigabe", pg.inner_text(".set-row"))
                 pg.click("#nav a[href='#bookings']"); pg.wait_for_selector(".mode-chip"); self.assertIn("Vollautomatisch" if auto else "Mit Freigabe", pg.inner_text(".mode-chip"))
                 self.assertIsNone(pg.query_selector("#run-dry"))              # checked at every sync, no button of its own

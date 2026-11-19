@@ -698,6 +698,14 @@ def main_bereich(bereiche: List[dict]) -> Optional[dict]:
 # Konfiguration pruefen
 # ---------------------------------------------------------------------------
 
+def _acct_name(ledger, ref: str) -> str:
+    """An account's name for a message (the reference itself if it is gone)."""
+    try:
+        return ledger.resolve(ref).name
+    except KeyError:
+        return str(ref).split("|")[-1].strip()
+
+
 def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
     cat_names = {str(c.get("name") or "") for c in categories}
@@ -804,6 +812,28 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
     # account mirrors (a list of their own; any two accounts, at least one of them an offline account)
     with_stake = {a.uuid: b["name"] for g in config.get("companies") or [] if isinstance(g, dict) and g.get("participation")
                   for b in [by_id.get(str(g.get("area")))] if b for a in b["leaves"]}
+    # the same pair twice counts once (said so); an account Kontor cannot book into in two mirrors: each of its bookings would
+    # arrive twice, once in each mirror (one booked into is caught below: booked by two rules)
+    pairs_seen, twice, in_mirrors = set(), set(), {}
+    for m in [m for m in config.get("account_mirrors") or [] if isinstance(m, dict) and m.get("a") and m.get("b")]:
+        ends = frozenset(str(m.get(f) or "").split("|")[0].strip() for f in ("a", "b"))
+        if ends in pairs_seen and len(ends) == 2 and ends not in twice:          # said once per pair
+            twice.add(ends)
+            add("warning", tr("s_spiegel_doppelt") % (tr("s_regel_gegenkonto") % _acct_name(ledger, m["a"])))
+        pairs_seen.add(ends)
+    for i, m in enumerate(rules.mirrors(config)):          # only mirrors that book: the other side an offline account, no group, one currency
+        try:
+            a, q = ledger.resolve(m["a"]), ledger.resolve(m["b"])
+        except KeyError:
+            continue
+        if a.uuid == q.uuid or a.group or q.group or (a.currency or "EUR").upper() != (q.currency or "EUR").upper():
+            continue
+        for x, y in ((a, q), (q, a)):
+            if not ledger.writable(x.uuid, config) and ledger.writable(y.uuid, config):
+                in_mirrors.setdefault(x.uuid, (x, set()))[1].add(i)
+    for x, ix in in_mirrors.values():
+        if len(ix) > 1:
+            add("error", tr("s_spiegel_mehrfach") % (x.name, len(ix)))
     for i, m in enumerate(rules.mirrors(config)):
         label = tr("s_regel_gegenkonto") % str(i + 1)
         a = ref(label, m["a"], group_ok=False)

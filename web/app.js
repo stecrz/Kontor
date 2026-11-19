@@ -125,7 +125,7 @@ const H = {
   cf_ausgaben_kuchen: t('cf_ausgaben_kuchen_tip'), cf_heatmap: t('cf_heatmap_tip'),
   cf_unklar: t('cf_unklar_tip'), cf_wert: t('cf_wert_tip'), cf_fcf: t('cf_fcf_tip'), cf_bank: t('cf_bank_tip'), cf_umsch: t('cf_umschichtungen_tip'), cf_nv: t('cf_nv_tip'), cf_abgleich_bank: t('cf_abgleich_bank_tip'),
   cf_abgleich_nv: t('cf_abgleich_nv_tip'),
-  zielkonto: t('zielkonto_tip'), anl_empfaenger: t('anl_tip'), kb: t('kb_tip'), sicherung: t('sicherung_tip'),
+  zielkonto: t('zielkonto_tip'), anl_empfaenger: t('anl_tip'), sicherung: t('sicherung_tip'),
   voll_lesen: t('voll_lesen_tip'),
   sync_knoepfe: t('sync_knoepfe_tip'),
   kennung: t('interne_kennung_des_bereichs_wird'),
@@ -183,7 +183,7 @@ const H = {
 };
 const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   accounts_mapping: 'accounts', inactive: 'accounts', verlauf_kurz: 'history', history_source: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
-  zuordnen: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', kb: 'categories-tree', sicherung: 'backup',
+  zuordnen: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', sicherung: 'backup',
   cf_operativ: 'cash-flow', cf_invest: 'cash-flow', cf_finanz: 'cash-flow', cf_unklar: 'cash-flow', cf_wert: 'cash-flow',
   cf_bank: 'cash-flow', cf_umsch: 'cash-flow', cf_fcf: 'cash-flow', cf_nv: 'cash-flow', cf_abgleich_bank: 'cash-flow', cf_abgleich_nv: 'cash-flow', cf_bruecke: 'cash-flow-bridge', cf_verm_bruecke: 'cash-flow-wealth', cf_je_monat_t: 'cash-flow-months', cf_herkunft_verwendung: 'cash-flow-total',
   cf_ausgaben_kuchen: 'cash-flow-ring', cf_heatmap: 'cash-flow-heatmap',
@@ -354,7 +354,7 @@ const OFFLINE = {mode: false, as_of: null, idle: null};
 // ---------------------------------------------------------------- Drucken (⌘P, or a chart's own menu): the page as shown
 // A line on top names what is printed (page, area, period), Kontor's version, when it was printed and the state of the data from
 // MoneyMoney. Nothing is drawn anew for the paper: the page is scaled to the page width (a wide table prints what is in view).
-const PRINT = {on: false, off: null};
+const PRINT = {on: false, off: null, theme: null};
 const fmtStamp = ts => ts ? FD(ts) + (ts.length >= 16 ? ' ' + ts.slice(11, 16) : '') : '–';
 function printHead() {
   const st = S.STATUS || {}, m = st.moneymoney || {}, ttl = $('#page-title'), area = $('#bereich-seg:not(.hidden) button.on');
@@ -363,8 +363,23 @@ function printHead() {
   const now = new Date(), stamp = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0') + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
   return `<span>${what}</span><span>Kontor ${esc(PAGE_VERSION)} · ${esc(t('druck_am', fmtStamp(stamp)))} · ${esc(t('druck_mm_stand', fmtStamp(m.as_of)))}</span>`;
 }
+// colours a chart computed from the theme (account shades, the flow's bands): drawn again in the theme now (light on paper)
+function printRecolor() {
+  ACC_CACHE.clear();
+  try {
+    if (S.tab === 'balance') {
+      const D = B();
+      if (BCH.d) { BCH.d = bchData(D); bchDraw(); }
+      const pr = lcPosRole(D); if (pr && LC.pos && $('.lc[data-lc="pos"]')) { lcInit('pos', D, null, ROLE[pr][0], ROLE[pr][1], pr); lcDraw('pos'); }
+      $$('#main i.pos-dot[data-sh]').forEach(i => { const [c, n, j] = i.dataset.sh.split('|'); let sh = accShade(c, +n); if (j) sh = accShade(sh.color, +j); i.style.cssText = swatch(sh.color, sh.hatch); });
+    }
+    if (S.tab === 'cashflow') cfDrawFlow();
+  } catch (e) {}
+}
 window.addEventListener('beforeprint', () => {
   PRINT.on = true;
+  PRINT.theme = document.documentElement.dataset.theme; document.documentElement.dataset.theme = 'light';          // on paper: always light
+  if (PRINT.theme !== 'light') printRecolor();
   const main = $('#main'); if (!main) return;
   document.documentElement.style.setProperty('--print-zoom', String(Math.min(1, 1040 / Math.max(1, main.getBoundingClientRect().width))));
   let h = $('#print-head'); if (!h) { h = document.createElement('div'); h.id = 'print-head'; main.parentNode.insertBefore(h, main); }
@@ -372,6 +387,7 @@ window.addEventListener('beforeprint', () => {
 });
 window.addEventListener('afterprint', () => {
   PRINT.on = false; document.documentElement.style.removeProperty('--print-zoom');
+  const was = PRINT.theme; if (was) document.documentElement.dataset.theme = was; PRINT.theme = null; if (was && was !== 'light') printRecolor();
   const h = $('#print-head'); if (h) h.remove();
   (PRINT.off || []).forEach(x => x.classList.remove('print-off', 'print-path')); PRINT.off = null; document.body.classList.remove('print-one');
 });
@@ -795,7 +811,7 @@ function niceTicks(min, max, n, least = 0) {
 }
 
 // ---------------------------------------------------------------- Übersicht
-// The overview: the four most important charts on one screen, reduced to what they say at a glance -- no tables, no plan, no
+// The overview: the most important charts and key figures on one screen, reduced to what they say at a glance -- no tables, no plan, no
 // comparisons. A click on a chart opens its place in Bilanz or Cashflow. Above them only what is to do (if anything).
 async function vUebersicht() {
   const D = B();
@@ -817,12 +833,52 @@ async function vUebersicht() {
   const card = (id, title, go, foot = '') => `<div class="card link ov-card" data-ov="${id}" data-ovgo="${go}" role="link" tabindex="0" aria-label="${esc(title)}"><div class="ov-head"><b>${esc(title)}</b><span class="ov-fig" id="ov-fig-${id}"></span></div><div class="ov-plot" id="ov-${id}"></div>${foot}</div>`;
   const key = [['ein', t('einnahmen')], ['aus', t('ausgaben')], ['inv', t('cf_investitionen')], ['fin', t('cf_finanzierung')]].map(([c, l]) => `<span><i class="sw ${c === 'ein' ? 'in' : c === 'aus' ? 'out' : c}"></i>${esc(l)}</span>`).join('')
     + `<span><i class="sw net"></i>${esc(t('zahlungsfluss_gesamt_veraenderung_liqu'))}</span>`;
-  return `<div class="ov-grid${todo ? '' : ' no-todo'}">${card('nw', t('nettovermoegen'), 'nw')}${card('comp', t('vermoegensstruktur'), 'table')}${card('wealth', t('cf_verm_bruecke'), 'wealth')}${card('months', t('cf_je_monat_t'), 'months', `<div class="ov-key">${key}</div>`)}${todo}</div>`;
+  const kpi = ovKpi(D);
+  return `<div class="ov-grid${todo ? '' : ' no-todo'}">${card('nw', t('nettovermoegen'), 'nw')}${card('comp', t('vermoegensstruktur'), 'table')}${card('wealth', t('cf_verm_bruecke'), 'wealth')}${card('months', t('cf_je_monat_t'), 'months', `<div class="ov-key">${key}</div>`)}`
+    + (kpi ? `<div class="card link ov-card ov-kpi" data-ov="kpi" data-ovgo="cftable" role="link" tabindex="0" aria-label="${esc(t('ov_kennzahlen'))}"><div class="ov-head"><b>${esc(t('ov_kennzahlen'))}</b><span class="ov-fig"><span class="ov-s">${esc(kpi.when)}</span></span></div><div class="ov-kpi-g">${kpi.html}</div></div>` : '') + `${todo}</div>`;
+}
+// 5. Key figures: what decides how your wealth grows, each from the same closed months as the charts, a click leads to its place.
+// Private: saving rate, spending, reserve, financial independence, debts, equity ratio; a company: its surplus instead of the
+// independence. Nothing estimated: what is not known shows as unknown
+function ovKpi(D) {
+  const done = cfDone(D), last12 = done.slice(-12), k = done[done.length - 1], sums = D.cashflow.sums || {};
+  if (!k || !last12.length) return null;
+  const n = last12.length, sum = f => last12.reduce((a, m) => a + (sums[m] ? f(sums[m]) : 0), 0);
+  const [y, mo] = k.split('-').map(Number), k0 = `${y - 1}-${String(mo).padStart(2, '0')}`;
+  // interest paid is spending; interest you get (a loan you gave) is income -- the two apart, row by row and month by month
+  const zRows = (D.cashflow.sections || []).flatMap(sk => sk.rows || []).filter(z => z.kind === 'interest');
+  const zSum = sign => last12.reduce((a, m) => a + zRows.reduce((b, z) => { const v = (z.amounts || {})[m] || 0; return b + (sign * v > 0 ? v : 0); }, 0), 0);
+  const zPaid = -zSum(-1), zGot = zSum(1);
+  const inc = sum(s => s.income || 0) + zGot, zinsM = zPaid / n, spendM = (-sum(s => s.expenses || 0) + zPaid) / n;
+  const surplus = sum(s => s.operating || 0) - zPaid + zGot, bank = (sums[k] || {}).bank, nw = (D.balance.net_worth || {})[k];
+  const debtRows = D.balance.rows.filter(r => r.group && r.role === 'liabilities'), debtAt = m => debtRows.some(r => (r.amounts || {})[m] != null) ? -debtRows.reduce((a, r) => a + ((r.amounts || {})[m] || 0), 0) : null;
+  const debts = debtAt(k) || 0, debts0 = debtAt(k0);
+  const EQ = (D.balance.equity_ratio || {}).months || {}, ekq = m => EQ[m] ? EQ[m].quote : (D.balance.net_worth || {})[m] == null ? null : (x => x > 0.5 ? D.balance.net_worth[m] / x : null)(D.balance.net_worth[m] + (debtAt(m) || 0));
+  const company = (D.area || {}).kind === 'company', unk = t('unbekannt');
+  const pct = v => v == null || !isFinite(v) ? '–' : FN(v * 100, Math.abs(v) < 0.1 ? 1 : 0) + ' %';
+  const tile = (go, label, value, sub, tip, meter) => `<div class="ov-kpi-t" data-ovgo="${go}" title="${esc(tip)}"><span class="l">${esc(label)}</span><span class="v">${value}</span>`
+    + (meter != null ? `<span class="ov-kpi-m" aria-hidden="true"><i style="width:${Math.max(0, Math.min(100, meter * 100)).toFixed(1)}%"></i></span>` : '') + `<span class="s">${sub}</span></div>`;
+  const rate = inc > 0.5 ? surplus / inc : null;
+  const t1 = tile('cftable', t(company ? 'ov_k_marge' : 'ov_k_sparquote'), esc(pct(rate)), esc(company ? t('ov_k_von_einnahmen', Fs(inc, 0)) : t('ov_k_je_monat', F0(surplus / n))), t(company ? 'ov_k_marge_tip' : 'ov_k_sparquote_tip', n));
+  const t2 = tile('cftable', t('ov_k_ausgaben'), esc(F0(spendM)) + ' €', zinsM > 0.5 ? esc(t('ov_k_davon_zinsen', F0(zinsM))) : '', t('ov_k_ausgaben_tip', n));
+  const res = bank == null ? null : spendM > 0.5 ? bank / spendM : null;
+  const t3 = tile('table', t('ov_k_reserve'), esc(bank == null ? unk : res == null ? '–' : t('ov_k_monate', FN(Math.max(0, res), 1))), bank == null ? '' : esc(t('ov_k_bank', F0(bank))), t('ov_k_reserve_tip', ML(k)));
+  let t4;
+  if (company) t4 = tile('cftable', t('ov_k_ueberschuss'), `<span class="${surplus >= 0 ? '' : 'neg'}">${esc(F0(surplus))} €</span>`, esc(t('ov_k_je_monat', F0(surplus / n))), t('ov_k_ueberschuss_tip', n));
+  else { const r = +((D.figures || {}).fi_real_return_percent || 3), need = spendM > 0.5 ? spendM * 12 / (r / 100) : null, fi = need && nw != null ? nw / need : null;
+    t4 = tile('nw', t('ov_k_frei'), esc(fi == null ? '–' : pct(fi)), need ? esc(t('ov_k_ziel', Fs(need, 0))) : '', t('ov_k_frei_tip', FN(r, 1), FN(100 / r, 0)), fi == null ? null : fi); }
+  const dChg = debts0 == null ? '' : debts - debts0, chg = dChg === '' || Math.abs(dChg) < 0.5 ? '' : `<span class="${dChg < 0 ? 'pos' : 'neg'}">${dChg > 0 ? '+' : '−'}${esc(F0(Math.abs(dChg)))} €</span> ${esc(t('ov_k_ggue', ML(k0)))}`;
+  const t5 = tile('table', t('ov_k_schulden'), esc(F0(debts)) + ' €', chg, t('ov_k_schulden_tip'));
+  const q = ekq(k), q0 = ekq(k0);
+  const t6 = tile('ekq', t('ekq'), esc(q == null ? unk : pct(q)), q0 == null ? '' : esc(`${ML(k0)}: ${pct(q0)}`), t('ekq_tip'));
+  return {when: `${ML(k)} · ${tn('ov_k_monate_n', n)}`, html: t1 + t2 + t3 + t4 + t5 + t6};
 }
 // where a chart leads: the balance sheet's chart or table, the cash flow's months or net worth bridge (the last 12 months, as here)
-const OV_GO = {nw: ['#balance', '#bch'], table: ['#balance', '.wrap.bil-tbl'], months: ['#cashflow', '[data-cfid="months"]'], wealth: ['#cashflow', '[data-cfid="wealth"]']};
+const OV_GO = {nw: ['#balance', '#bch'], table: ['#balance', '.wrap.bil-tbl'], ekq: ['#balance', 'tr.ekq'], months: ['#cashflow', '[data-cfid="months"]'], wealth: ['#cashflow', '[data-cfid="wealth"]'],
+  cftable: ['#cashflow', 'table.cf-tbl:not(.cf-names)']};
 function ovGo(k) {
   const [hash, sel] = OV_GO[k] || ['#overview', null];
+  if (k === 'ekq') S.posOpen._kennzahlen = true;          // the equity ratio: under net worth, opened
   if (hash === '#cashflow') { S.cfZeit = '12m'; S.cfBrZoom = S.cfWbZoom = null; }
   S.ovGo = sel; go(hash);
 }
@@ -833,7 +889,7 @@ function ovArrive(main) {          // after the page is drawn: its chart in view
 }
 function bindOverview(main) {
   const grid = $('.ov-grid', main); if (!grid) return;
-  $$('.ov-card', main).forEach(c => { c.addEventListener('click', e => { if (!e.target.closest('a, button')) ovGo(c.dataset.ovgo); });
+  $$('.ov-card', main).forEach(c => { c.addEventListener('click', e => { if (!e.target.closest('a, button')) ovGo(e.target.closest('[data-ovgo]').dataset.ovgo); });          // a key figure: its own place
     c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ovGo(c.dataset.ovgo); } }); });
   ovDraw();
 }
@@ -853,7 +909,7 @@ const ovEmpty = txt => ({svg: `<div class="ov-empty muted small">${esc(txt)}</di
 const ovDelta = v => v == null ? '' : `<span class="ov-d ${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : ''}${F0(v)} €</span>`;
 // 1. Net worth: the last two years as a line over a quiet area; the figure now and its change over twelve months
 function ovNetWorth(D, W, H) {
-  const nw = D.balance.net_worth || {}, ms = (D.months || []).filter(k => nw[k] != null).slice(-25);
+  const nw = D.balance.net_worth || {}, ms = cfDone(D).filter(k => nw[k] != null).slice(-13);          // twelve closed months back from the last one
   if (ms.length < 2) return ovEmpty(t('noch_zu_wenig_monate'));
   const v = ms.map(k => nw[k]), last = v[v.length - 1], yago = ms.length > 12 ? v[v.length - 13] : null;
   const P = {l: 46, r: 8, t: 8, b: 20}, ticks = niceTicks(Math.min(...v), Math.max(...v), 3, 3), lo = Math.min(ticks[0], ...v), hi = Math.max(ticks[ticks.length - 1], ...v);
@@ -864,8 +920,11 @@ function ovNetWorth(D, W, H) {
   g += `<circle class="ov-dot" cx="${x(ms.length - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="4"/>`;
   for (const i of [0, Math.floor((ms.length - 1) / 2), ms.length - 1]) g += `<text class="cf-tick${i === ms.length - 1 ? ' end' : ''}" x="${x(i).toFixed(1)}" y="${H - 4}" text-anchor="${i === 0 ? 'start' : i === ms.length - 1 ? 'end' : 'middle'}">${esc(ML(ms[i]))}</text>`;
   return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${g}</svg>`,
-    fig: `<span class="ov-v">${F0(last)} €</span>${yago != null ? `<span class="ov-s">${t('ov_12_monate')} ${ovDelta(last - yago)}</span>` : ''}`};
+    fig: `<span class="ov-v">${F0(last)} €</span><span class="ov-s">${esc(ML(ms[ms.length - 1]))}${yago != null ? ` · ${t('ov_12_monate')} ${ovDelta(last - yago)}` : ''}</span>`};
 }
+// a change in percent, as short as it can be: one decimal under 100 %, whole numbers above, thousands abbreviated
+const ovPct = d => { if (d == null || !isFinite(d)) return ''; const a = Math.abs(d), s = d > 0.05 ? '+' : d < -0.05 ? '−' : '±';
+  return s + (a >= 999.5 ? (a / 1000).toLocaleString(LOCALE, {maximumFractionDigits: a >= 9950 ? 0 : 1}) + t('tsd_kurz') : a >= 99.95 ? Math.round(a).toLocaleString(LOCALE) : a.toLocaleString(LOCALE, {minimumFractionDigits: 1, maximumFractionDigits: 1})) + ' %'; };
 // 2. What the net worth consists of now, as a balance sheet: the assets as a treemap (each position by its size, with its share),
 // beside them in one column what pays for them -- equity and debts, on the same scale (so the equity ratio shows at a glance)
 function treemap(vals, x, y, w, h) {          // squarified: [{i, x, y, w, h}] for values sorted from the largest
@@ -884,33 +943,48 @@ function treemap(vals, x, y, w, h) {          // squarified: [{i, x, y, w, h}] f
   return out;
 }
 function ovComposition(D, W, H) {
-  const k = (D.months || [])[D.months.length - 1], pos = D.balance.rows.filter(r => r.group && ROLE[r.role] && r.role !== 'contingent' && r.role !== 'ignore');
-  const val = r => (r.amounts || {})[k] || 0, assets = pos.filter(r => r.role !== 'liabilities' && val(r) > 0.5).sort((a, b) => val(b) - val(a));
-  const debts = -pos.filter(r => val(r) < -0.5).reduce((a, r) => a + val(r), 0), sumA = assets.reduce((a, r) => a + val(r), 0), equity = sumA - debts;
+  const done = cfDone(D), k = done[done.length - 1] || (D.months || [])[D.months.length - 1];          // the last closed month
+  const k0 = (() => { const [y, m] = k.split('-').map(Number); return `${y - 1}-${String(m).padStart(2, '0')}`; })();          // a year before
+  const pos = D.balance.rows.filter(r => r.group && ROLE[r.role] && r.role !== 'contingent' && r.role !== 'ignore');
+  const val = (r, m = k) => (r.amounts || {})[m] || 0, assets = pos.filter(r => r.role !== 'liabilities' && val(r) > 0.5).sort((a, b) => val(b) - val(a));
+  const has0 = pos.some(r => (r.amounts || {})[k0] != null);
+  const debtsAt = m => -pos.filter(r => val(r, m) < -0.5).reduce((a, r) => a + val(r, m), 0), sumAt = m => pos.filter(r => r.role !== 'liabilities' && val(r, m) > 0.5).reduce((a, r) => a + val(r, m), 0);
+  const debts = debtsAt(k), sumA = sumAt(k), equity = sumA - debts;
   if (sumA < 0.5 && debts < 0.5) return ovEmpty(t('noch_keine_bestaende'));
-  const total = Math.max(sumA, debts), pct = v => FN(v / (total || 1) * 100, 0) + ' %';
+  const total = Math.max(sumA, debts);
+  const yoy = (now, then) => !has0 ? '' : Math.abs(then) < 0.5 ? (Math.abs(now) < 0.5 ? '' : t('cf_heat_neu')) : ovPct((now - then) / Math.abs(then) * 100);
   // a tile: a quiet tint of the position's colour with a solid edge, its name and figures inside where they fit (all in the hover)
-  const tile = (x, y, w, h, color, name, v, share) => {
+  // a tile: a quiet tint of the position's colour with a solid edge; its name, amount and change against a year before inside
+  // where they fit (all of it, with its share of the total, in the hover). good: a rise is good (assets) or bad (debts)
+  const tile = (x, y, w, h, color, name, v, chg, good = true) => {
     x += 1; y += 1; w -= 2; h -= 2; if (w < 1 || h < 1) return '';
     const room = n => Math.floor((w - 14) / n), cut = (txt, n) => txt.length > room(n) ? txt.slice(0, Math.max(1, room(n) - 1)) + '…' : txt;
-    let g = `<g><title>${esc(name)}: ${esc(F0(v))} € · ${share}</title><rect class="ov-tm" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="4" style="--c:${color}"/>`
+    const share = FN(Math.abs(v) / (total || 1) * 100, 0) + ' %', cls = !chg || chg.startsWith('±') || chg === t('cf_heat_neu') ? '' : (chg.startsWith('+') === good ? ' pos' : ' neg');
+    let g = `<g><title>${esc(name)}: ${esc(F0(v))} € · ${esc(t('ov_anteil', share))}${chg ? ' · ' + esc(t('ov_ggue', chg, ML(k0))) : ''}</title><rect class="ov-tm" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="4" style="--c:${color}"/>`
       + `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="3" height="${h.toFixed(1)}" rx="1.5" style="fill:${color}"/>`;
     if (w >= 46 && h >= 20) {
       g += `<text class="ov-tm-n" x="${(x + 9).toFixed(1)}" y="${(y + 15).toFixed(1)}">${esc(cut(name, 6.8))}</text>`;
-      if (h >= 36) g += `<text class="ov-tm-v" x="${(x + 9).toFixed(1)}" y="${(y + 30).toFixed(1)}">${esc(cut(share, 6.2))}</text>`;
-      if (h >= 52 && w >= 80) g += `<text class="ov-tm-v" x="${(x + 9).toFixed(1)}" y="${(y + 45).toFixed(1)}">${esc(cut(F0(v) + ' €', 6.2))}</text>`;
+      if (h >= 36) g += `<text class="ov-tm-v" x="${(x + 9).toFixed(1)}" y="${(y + 30).toFixed(1)}">${esc(cut(Fs(v, 0) + ' €', 6.2))}</text>`;
+      if (h >= 52 && chg) g += `<text class="ov-tm-v ov-tm-c${cls}" x="${(x + 9).toFixed(1)}" y="${(y + 45).toFixed(1)}">${esc(cut(chg, 6.2))}</text>`;
     }
     return g + '</g>';
   };
-  const pw = Math.round(Math.min(140, Math.max(104, W * 0.28))), tw = W - pw - 8, ha = H * sumA / (total || 1);
-  let g = treemap(assets.map(val), 0, H - ha, tw, ha).map(q => { const r = assets[q.i]; return tile(q.x, q.y, q.w, q.h, ROLE[r.role][1], r.name, val(r), pct(val(r))); }).join('');
-  // what pays for it: equity on top, debts below (negative equity: the debts are larger than the assets)
-  const x2 = tw + 8, he = equity > 0.5 ? H * equity / (total || 1) : 0, hd = H * debts / (total || 1);
-  if (he) g += tile(x2, H - he - hd, pw, he, 'var(--c-nw)', t('re_eigenkapital'), equity, pct(equity));
-  if (hd >= 0.5) g += tile(x2, H - hd, pw, hd, 'var(--c-verb)', t('ov_schulden'), -debts, pct(debts));
-  if (equity < -0.5 && H - ha >= 1) g += tile(0, 0, tw, H - ha, 'var(--c-neutral)', t('ov_fehlbetrag'), equity, pct(-equity));          // debts above the assets: the gap
+  // two halves of the same size, as the totals are the same: the assets at the left, what stands against them (net worth and
+  // each debt) at the right; debts above the assets: the gap among the assets. The figure: the assets (the left half) -- no
+  // balance sheet total: what is kept on no account (stock, payment terms, provisions) Kontor does not know
+  const cap = 16, half = (W - 10) / 2, x2 = half + 10, ph = H - cap;
+  const debtRows = D.balance.rows.filter(r => !r.group && r.role === 'liabilities' && val(r) < -0.5).sort((a, b) => val(a) - val(b));
+  const passiva = [...(equity > 0.5 ? [['var(--c-nw)', t('nettovermoegen'), equity, yoy(equity, sumAt(k0) - debtsAt(k0)), true]] : []),
+    ...debtRows.map(r => ['var(--c-verb)', r.name, -val(r), yoy(-val(r), -val(r, k0)), false])];
+  // a position below 0 that is no debt (an overdrawn account, a participation worth less than nothing): with its own name
+  for (const r of pos.filter(r => r.role !== 'liabilities' && val(r) < -0.5)) passiva.push(['var(--c-verb)', r.name, -val(r), yoy(-val(r), -val(r, k0)), false]);
+  const aktiva = assets.map(r => [ROLE[r.role][1], r.name, val(r), yoy(val(r), val(r, k0)), true]);
+  if (equity < -0.5) aktiva.push(['var(--c-neutral)', t('ov_fehlbetrag'), -equity, '', true]);
+  const side = (list, x0) => treemap(list.map(e => e[2]), x0, cap, half, ph).map(q => { const [c, n, v, chg, good] = list[q.i]; return tile(q.x, q.y, q.w, q.h, c, n, v, chg, good); }).join('');
+  let g = `<text class="ov-cap" x="2" y="11">${esc(t('ov_aktiva'))}</text><text class="ov-cap" x="${(x2 + 2).toFixed(1)}" y="11">${esc(t('ov_passiva'))}</text>`
+    + side(aktiva, 0) + side(passiva, x2);
   return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('vermoegensstruktur'))}">${g}</svg>`,
-    fig: `<span class="ov-v">${F0(total)} €</span><span class="ov-s">${esc(t('ov_bilanzsumme', ML(k)))}</span>`};
+    fig: `<span class="ov-v">${F0(sumA)} €</span><span class="ov-s" title="${esc(t('ov_brutto_tip'))}">${esc(t('ov_brutto_am', ML(k)))}${has0 ? ' · ' + esc(t('ov_vergleich', ML(k0))) : ''}</span>`};          // the period: that month, against a year before
 }
 // 3. The last twelve closed months: money in up, money out down (income, expenses, investing, financing), the change in cash as
 // a short stroke -- the upper part of the cash flow's monthly chart; a few far larger months are cut (marked) so the rest stays readable
@@ -966,7 +1040,7 @@ function ovWealth(D, W, H) {
   }
   const tot = list.filter(r => r.kind === 'tot'), chg = tot.length > 1 ? tot[tot.length - 1].v - tot[0].v : null;
   return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${g}</svg>`,
-    fig: `<span class="ov-s">${esc(ML(ms[0]))}–${esc(ML(ms[ms.length - 1]))}${chg != null ? ' ' + ovDelta(chg) : ''}</span>`};
+    fig: `<span class="ov-s">${esc(ML(ms[0]))} – ${esc(ML(ms[ms.length - 1]))}${chg != null ? ' · ' + ovDelta(chg) : ''}</span>`};
 }
 
 // ---------------------------------------------------------------- Einrichtung (modular)
@@ -1547,7 +1621,8 @@ function vBilanz() {
       continue;
     }
     if (!S.posOpen[r.role] || skip(r)) continue;
-    const sh = accShade((ROLE[r.role] || [0, 'var(--c-neutral)'])[1], accIdx(D, r)), dot = `<i class="pos-dot" style="${swatch(sh.color, sh.hatch)}"></i>`;      // shade as in the chart
+    const shKey = `${(ROLE[r.role] || [0, 'var(--c-neutral)'])[1]}|${accIdx(D, r)}`;          // (to colour it again in another theme: printing)
+    const sh = accShade((ROLE[r.role] || [0, 'var(--c-neutral)'])[1], accIdx(D, r)), dot = `<i class="pos-dot" data-sh="${esc(shKey)}" style="${swatch(sh.color, sh.hatch)}"></i>`;      // shade as in the chart
     if (r.transit) { h += row(r, 'ind1 transit clickable', `${dot}${esc(r.name)} ${hq('geld_unterwegs')}`); continue; }
     const wp = r.securities && r.securities.length ? r.securities : null, dOpen = wp && S.depOpen[r.id];
     // a portfolio: number of its securities, like the accounts of a position ("shown/all" when some are hidden)
@@ -1556,7 +1631,7 @@ function vBilanz() {
     h += row(r, 'clickable acct ind1', (wp ? `<span class="caret dep" data-dep="${esc(r.id)}" title="${t(dOpen ? 'wp_zuklappen' : 'wp_aufklappen')}">${dOpen ? '▾' : '▸'}</span>` : '') + dot + `<span class="nm">${esc(r.name)}</span>` + wcnt + tag(r));
     // securities of an expanded portfolio (shades of the account colour, as in the charts); long names shortened, full on hover
     if (dOpen) wp.forEach((w, j) => { if (!S.alleB && secHidden(w)) return; const ws = accShade(sh.color, j + 1);
-      h += `<tr class="wpr clickable ind2${w.rest ? ' muted' : ''}" data-wp="${esc(w.id)}"><td title="${esc(wpTip(w))}"><i class="pos-dot" style="${swatch(ws.color, ws.hatch)}"></i><span class="nm">${esc(w.name)}</span></td>${cells(C, c => lastOf(w.amounts, c.months))}</tr>`; });
+      h += `<tr class="wpr clickable ind2${w.rest ? ' muted' : ''}" data-wp="${esc(w.id)}"><td title="${esc(wpTip(w))}"><i class="pos-dot" data-sh="${esc(shKey + '|' + (j + 1))}" style="${swatch(ws.color, ws.hatch)}"></i><span class="nm">${esc(w.name)}</span></td>${cells(C, c => lastOf(w.amounts, c.months))}</tr>`; });
     if (pr && r.role === 'participations' && proj.contributions && r === D.balance.rows.filter(x => !x.group && x.role === 'participations').slice(-1)[0])
       h += row({id: 'contributions', name: t('einlagen_entnahmen_kumuliert_plan'), amounts: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'));
   }
@@ -2289,7 +2364,7 @@ function lcSumTip(avail) {
   // = Bruttovermögen / + Verbindlichkeiten / = Nettovermögen   (gross = financial + real assets, as usual)
   const G = lcGroups(avail, true), has = r => avail.includes(r), lines = [], sum = [], used = new Set();
   const nameOf = set => { const sig = avail.filter(r => set.includes(r)).join(), g = G.find(([, l]) => l.join() === sig); return g ? g[0] : null; };
-  const word = k => k === 'net_worth' ? t('nettovermoegen') : t(k) + (k === 'grp_brutto' ? ` (${t('grp_brutto_alias')})` : '');
+  const word = k => k === 'net_worth' ? t('nettovermoegen') : t(k);
   const add = (label, rs) => { lines.push((sum.length ? '+ ' : '\u2007 ') + label); sum.push(...rs); };
   const sach = has('real_estate') && has('tangibles') && nameOf(['real_estate', 'tangibles']) === 'grp_sach';
   for (const stage of [LC_LIQUID, ['term_investments'], ['participations', 'receivables'], ['real_estate', 'tangibles', 'other'], ['liabilities']]) {
@@ -3997,6 +4072,23 @@ function cfOpenTx(o, page = false) {
     $('#cftx-page', d).onclick = e => { e.preventDefault(); closeDrawer(); cfOpenTx(o, true); };
   }).catch(e => { if (DRW.key === key) toast(e.message); });
 }
+// the bookings of a filter in the side panel (positions, recipients): their number and sum, a link to „Umsätze & Belege“
+function txPanel(title, f) {
+  const d = $('#drawer'), q = umsQuery(f); q.set('limit', '500');
+  const key = 'tx|' + title + '|' + q.toString(); if (drawerAgain(key)) return;
+  const head = `<button class="close icon">✕</button><h2>${esc(title)}</h2>`;
+  d.innerHTML = head + `<div class="muted small">${t('wird_geladen')}</div>`; d.classList.add('open'); $('.close', d).onclick = closeDrawer;
+  api('/api/transactions?' + q.toString()).then(r => { if (DRW.key !== key) return;
+    d.innerHTML = head + `<div class="note">${tn('cf_tx_n', r.hits, F(r.sum))} · <a href="#" id="tx-page">${t('cf_tx_seite')}</a></div>`
+      + `<div class="wrap auto dr-wrap"><table class="plain small dr-tx"><colgroup><col class="c-d"><col><col class="c-a"></colgroup><tbody>`
+      + r.transactions.map(u => `<tr><td>${FD(u.date)}</td><td>${esc(u.name)}<div class="muted">${esc(u.purpose)}</div></td><td class="num">${F(u.amount)}</td></tr>`).join('') + `</tbody></table></div>`;
+    $('.close', d).onclick = closeDrawer;
+    $('#tx-page', d).onclick = e => { e.preventDefault(); closeDrawer(); Object.assign(S.uf, {entity: '', year: '', account: '', q: '', ohne_beleg: false, direction: '', uncategorized_flag: false,
+      kats: null, date_from: '', date_to: '', ids: null, cfRows: null}, f, {ext: true, title}); S.sel.clear(); go('#transactions'); };
+  }).catch(e => { if (DRW.key === key) toast(e.message); });
+}
+// the first day of the last twelve months, as the service counts them (on 29 February: from 1 March a year before)
+const yearAgo = () => { const n = new Date(), d = new Date(n.getFullYear() - 1, n.getMonth(), (n.getMonth() === 1 && n.getDate() === 29 ? 28 : n.getDate()) + 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 function bindCfCharts(main) {
   if (CF.ro) { CF.ro.disconnect(); CF.ro = null; }
   const wrap = $('.cf-charts', main); if (!wrap) return;
@@ -4545,6 +4637,7 @@ function umsQuery(f = S.uf) {
   if (f.direction) q.set('direction', f.direction === 'aus' ? 'out' : 'in');
   if (f.ohne_beleg) q.set('without_receipt', '1'); if (f.uncategorized_flag) q.set('uncategorized', '1');
   if (f.ids && f.ids.length) q.set('ids', f.ids.join(','));          // bookings by their ids
+  if (f.counted) q.set('counted', '1');          // as the categories' counts: booked, MoneyMoney's own category
   if (f.cfRows) { q.set('cf_rows', JSON.stringify(f.cfRows)); q.set('cf_area', f.cfArea || ''); q.set('cf_months', (f.cfMonths || []).join(',')); }      // behind a figure of the cash flow
   if (f.kats) q.set('categories', JSON.stringify(f.kats)); if (f.kats && f.mitOhne) q.set('with_uncategorized', '1'); if (f.date_from) q.set('from', f.date_from); if (f.date_to) q.set('to', f.date_to);      // opened from a chart
   return q;
@@ -4646,6 +4739,10 @@ function srcKey(el) {
   return {host: host.id, sel, n: all.indexOf(el)};
 }
 function srcFind(k) { if (!k) return null; const h = document.getElementById(k.host); return h ? h.querySelectorAll(k.sel)[Math.max(0, k.n)] || null : null; }
+// a click on the panel's empty background closes it (text, tables and controls stay as they are; the pointer stays an arrow)
+document.addEventListener('click', e => { const d = e.target && e.target.id === 'drawer' ? e.target : null; if (!d || !d.classList.contains('open')) return;
+  if (drawerDirty() && !confirm(t('ungespeicherte_aenderungen_verwerfen'))) return;          // unsaved entries: asked first, as beside it
+  closeDrawer(); });
 new MutationObserver(() => drawerReveal()).observe(document.getElementById('drawer') || document.body, {attributes: true, attributeFilter: ['class'], childList: true});
 function drawerAgain(key) {
   const c = DRW.closed; DRW.closed = null;
@@ -4790,14 +4887,27 @@ function companyCard(b, g) {
     + row(t('gegenpartei'), 'h_co_gp', `<input type="text" class="c-gp" value="${esc(g.counterparty || '')}" placeholder="${esc(b.name)}">`)
     + `</div>`;
 }
+// what a rule would book, behind its count: a click opens it in the side panel (with the way to approve it)
+const RPV = {list: []};
+const pvOpen = (p, n) => { RPV.list.push(p); return `<a href="#" class="pv-diff pv-open" data-pv="${RPV.list.length - 1}">${n === 1 ? t('buchung_offen_1') : t('buchungen_offen_n', n)}</a>`; };
+function pvDrawer(p, title, i = '') {
+  const d = $('#drawer'), items = p.items || [], n = Math.max(items.length, p.bookings || p.open || 0);          // the list ends after 300
+  if (drawerAgain('pv|' + i + '|' + title)) return;          // a second click on the same: closed, not opened again
+  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(title)}</h2><div class="note">${tn('pv_n_offen', n)} · <a href="#bookings" id="pv-go">${t('pv_zur_freigabe')}</a></div>`
+    + `<div class="wrap auto dr-wrap"><table class="plain small dr-tx"><colgroup><col class="c-d"><col><col class="c-a"></colgroup><tbody>`
+    + items.map(x => `<tr><td>${FD(x.date)}</td><td>${esc(x.account.split(' / ').pop())}<div class="muted">${esc(x.purpose)}${x.older ? ` <span class="tag">${t('aelter')}</span>` : ''}</div></td><td class="num">${F(x.amount)}</td></tr>`).join('')
+    + `</tbody></table></div>`;
+  d.classList.add('open'); $('.close', d).onclick = closeDrawer; $('#pv-go', d).onclick = () => closeDrawer();
+}
 // target, actual and difference of every rule, from /api/rules/preview (the configuration as edited, nothing is saved)
 function rulesPreviewShow(rp, r) {
   const eur = v => `${F(v)} €`;
+  RPV.list = [];
   $$('.pv, .r-pv', rp).forEach(x => { x.innerHTML = ''; });
   for (const p of r.preview || []) {
     if (p.kind === 'loans') {
       const it = $$('#loans .item', rp)[p.i], el = it && $('.r-pv', it);
-      if (el) el.innerHTML = p.bookings ? `<span class="pv-diff">${p.bookings === 1 ? t('buchung_offen_1') : t('buchungen_offen_n', p.bookings)}</span>` : `<span class="pv-ok">✓ ${t('aktuell')}</span>`;
+      if (el) el.innerHTML = p.bookings ? pvOpen(p, p.bookings) : `<span class="pv-ok">✓ ${t('aktuell')}</span>`;
       continue;
     }
     if (p.kind === 'mirror') {          // mirror: which way, how many mirrored, what is open (the i-th complete row, as saved)
@@ -4807,7 +4917,7 @@ function rulesPreviewShow(rp, r) {
       if (!el || !p.direction) continue;
       const nm = c => { const o = $(c, row).selectedOptions[0]; return o ? o.textContent.trim() : ''; };
       el.innerHTML = (p.direction === 'both' ? t('gk_beide') : t('gk_nur_in', esc(nm(p.direction === 'to_a' ? '.g-a' : '.g-b')))) + (p.mirrored ? ` · ${t('gk_gespiegelt_n', p.mirrored)}` : '') + ' · '
-        + (p.open ? `<span class="pv-diff">${p.open === 1 ? t('buchung_offen_1') : t('buchungen_offen_n', p.open)}</span>` : `<span class="pv-ok">✓ ${t('aktuell')}</span>`);
+        + (p.open ? pvOpen(p, p.open) : `<span class="pv-ok">✓ ${t('aktuell')}</span>`);
       continue;
     }
     const card = $$('.co-card', rp).find(c => c.dataset.b === String(p.area));
@@ -4818,7 +4928,7 @@ function rulesPreviewShow(rp, r) {
     const b = p.kind === 'participation' ? companyAreas().find(x => String(x.id) === String(p.area)) : null;
     let h = `${t('soll')} <b>${eur(p.soll)}</b>` + (b && b.share != null ? ` <span class="pv-calc">${t('co_formel', pctText(b.share), eur(p.source))}</span>` : '')
       + ` · ${t('ist')} ${eur(p.ist)}` + (ok ? ` · <span class="pv-ok">✓ ${t('aktuell')}</span>` : '');
-    if (p.open) h += ` · <span class="pv-diff">${p.open === 1 ? t('buchung_offen_1') : t('buchungen_offen_n', p.open)}</span>`;
+    if (p.open) h += ` · ${pvOpen(p, p.open)}`;
     if ((p.unknown || []).length) h += ` · <span class="pv-unk">${t('monate_unbekannt_0', p.unknown.join(', '))}</span>`;
     el.innerHTML = h;
   }
@@ -4981,7 +5091,7 @@ async function vPositionen() {
   // a property's categories have its own rows (rent, costs); only saving, financing or leaving out takes them elsewhere
   const objOpts = sel => `<option value=""></option>` + OBJ_OUT.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('');
   let h = `<div class="toolbar"><a class="small" href="#cashflow">${t('zum_cashflow')}</a><span class="sp"></span><button id="kp-save" disabled>${t('speichern')}</button></div>
-    ${kbCard(d)}<div class="wrap kp-wrap"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th class="kp-arrow"></th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')} ${hq('zielkonto')}</th></tr></thead><tbody>`;
+    ${kbCard()}<div class="wrap kp-wrap"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th class="kp-arrow"></th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')} ${hq('zielkonto')}</th></tr></thead><tbody>`;
   // categories Kontor does not know and you did not place, with payments between your areas: those count as contributions or
   // withdrawals, not under the "other" shown here -- named, so that a later choice changing the figures is no surprise
   const npath = x => String(x || '').split(/ › |\\| \/ /).map(p => p.trim()).filter(Boolean).join(' / '), UNS = {};
@@ -4989,35 +5099,54 @@ async function vPositionen() {
   d.categories.forEach((r, i) => {
     const parent = (d.categories[i + 1] || {}).depth > r.depth, own = r.own || '', uns = !own ? UNS[npath(r.path)] : null;
     h += `<tr data-p="${esc(r.path)}" data-v="${esc(r.proposal)}" data-v2="${esc((r.proposal_also || []).join(','))}" data-init="${esc(own)}" data-konto="${esc(r.account)}" data-own="${r.count ? 1 : 0}" data-firma="${r.company ? 1 : ''}"><td style="padding-left:${10 + 18 * r.depth}px">${parent ? `<b>${esc(r.name)}</b>` : esc(r.name)}${uns != null ? ` <span class="tag warn tipped kp-uns" tabindex="0" data-tip="${esc(t('kp_unsicher_tip', F0(Math.abs(uns))))}">${t('kp_unsicher')}</span>` : ''}</td>
-      <td class="num small kp-n">${r.count_all || ''}</td><td class="num small kp-n ${r.sum_12m < 0 ? 'neg' : ''}">${r.sum_12m ? F0(r.sum_12m) : ''}</td><td class="kp-arrow" aria-hidden="true">→</td>
+      <td class="num small kp-n">${r.count_all ? `<a href="#" class="kp-tx" data-tx="all">${r.count_all}</a>` : ''}</td><td class="num small kp-n ${r.sum_12m < 0 ? 'neg' : ''}">${r.sum_12m ? `<a href="#" class="kp-tx" data-tx="12m">${F0(r.sum_12m)}</a>` : ''}</td><td class="kp-arrow" aria-hidden="true">→</td>
       <td><select class="kp-pos"${r.property_name ? ` data-obj="${esc(r.property_name)}"` : ''}>${r.property_name ? objOpts(own) : opts(own, r.company)}</select></td>
-      <td><select class="kp-konto">${acctOptions(r.account, k => !k.group && (k.depot || k.role === 'term_investments' || k.role === 'cash')).replace(t('waehlen'), t('automatisch'))}</select></td></tr>`;
+      <td>${(() => { const at = autoTarget(r.path); return `<select class="kp-konto${at.miss && !r.account ? ' kp-miss' : ''}">${acctOptions(r.account, k => !k.group && (k.depot || k.role === 'term_investments' || k.role === 'cash' || k.role === 'participations' || k.role === 'real_estate')).replace(t('waehlen'), () => esc(at.text))}</select>`; })()}</td></tr>`;
   });
   return h + '</tbody></table></div>' + vAnlageEmpfaenger();
 }
-// a clean category tree in MoneyMoney: one category per purpose, with names Kontor recognises (✓: one of yours counts there
-// already); created in MoneyMoney -- Kontor does not create categories
-const KB_ROWS = [['kb_r_gehalt', ['work_income']], ['kb_r_kapital', ['capital_income']], ['kb_r_wohnen', ['housing']], ['kb_r_leben', ['living']],
-  ['kb_r_weitere', ['mobility', 'insurance', 'health', 'leisure', 'taxes'], 'kb_p_gleich'], ['kb_r_sparen', ['saving'], 'kb_p_sparen'],
-  ['kb_r_darlehen', ['repayment', 'loan_interest']], ['kb_r_immo', ['property'], 'kb_p_immo'], ['kb_r_immo_kauf', ['property_saving'], 'kb_p_immo_kauf'],
-  ['kb_r_umbuchung', ['transfer']]];
+// what Kontor needs from your categories in MoneyMoney: per need, whether one of yours counts there (and which), else what to
+// create -- updated as you change a position below; the why of each need in its tooltip
+const KB_NEEDS = [['work_income', ['work_income']], ['capital_income', ['capital_income']], ['housing', ['housing']], ['living', ['living']],
+  ['more', ['mobility', 'insurance', 'health', 'leisure', 'taxes']], ['saving', ['saving']], ['loans', ['repayment', 'loan_interest']],
+  ['property', ['property']], ['property_buy', ['property_saving']], ['transfer', ['transfer']]];
 let kbSeen = false;
-function kbCard(d) {
+function kbCard() {
   if (!kbSeen && setupOpen()) KEEP_OPEN.add('kp-kb');          // open while you set Kontor up (closed afterwards: as you left it)
   kbSeen = true;
-  const own = Object.fromEntries(d.categories.map(r => [r.path, r.own || ''])), used = new Set();
-  for (const r of d.categories) {
-    if (!r.count) continue;
-    const parts = r.path.split(' / '); let eff = r.own || '';
-    for (let i = parts.length - 1; i > 0 && !eff; i--) eff = own[parts.slice(0, i).join(' / ')] || '';
-    eff = eff || r.proposal;
-    if (r.property_name) used.add(eff === 'saving' ? 'property_saving' : ['repayment', 'loan_interest', 'ignore'].includes(eff) ? eff : 'property');
-    else used.add(eff);
-  }
-  const rows = KB_ROWS.map(([k, ps, pk]) => { const ok = ps.some(p => used.has(p));
-    return `<tr class="${ok ? 'kb-ok' : ''}"><td><span class="kb-mark" aria-label="${esc(t(ok ? 'kb_vorhanden' : 'kb_fehlt'))}">${ok ? '✓' : '○'}</span>${esc(t(k))}</td><td class="kp-arrow" aria-hidden="true">→</td><td>${esc(pk ? t(pk) : ps.map(p => posLabel(p)).join(', '))}</td></tr>`; }).join('');
-  return `<details class="card kb" data-keep="kp-kb"${keepOpen('kp-kb')}><summary>${t('kb_titel')} ${hq('kb')}</summary><div class="small muted kb-regel">${t('kb_regel')}</div>`
-    + `<table class="plain kb-table"><tbody>${rows}</tbody></table></details>`;
+  return `<details class="card kb" data-keep="kp-kb"${keepOpen('kp-kb')}><summary>${t('kb_titel')} <span class="kb-sum small muted" id="kb-sum"></span></summary><div id="kb-body"></div></details>`;
+}
+// eff: [{path, eff (its position now), obj (a property's)}] -- from the table as it stands
+function kbRefresh(eff) {
+  const body = $('#kb-body'); if (!body) return;
+  const at = new Map();
+  for (const r of eff) { const k = r.obj ? (r.eff === 'saving' ? 'property_saving' : ['repayment', 'loan_interest', 'ignore'].includes(r.eff) ? r.eff : 'property') : r.eff;
+    if (k) { if (!at.has(k)) at.set(k, []); at.get(k).push(r.path); } }
+  const props = ((S.CFG || {}).real_estate || []).length > 0 || eff.some(r => r.obj);
+  const needs = KB_NEEDS.filter(([k]) => props || !k.startsWith('property'));
+  let ok = 0;
+  const rows = needs.map(([k, ps]) => {
+    const mine = ps.flatMap(p => at.get(p) || []), have = mine.length > 0, miss = ps.filter(p => !(at.get(p) || []).length);
+    if (have) ok++;
+    const names = mine.slice(0, 2).map(CP).join(', ') + (mine.length > 2 ? ' ' + t('kb_und_n', mine.length - 2) : '');
+    const part = have && miss.length && ps.length > 1 ? ` · <span class="kb-miss">${esc(t('kb_fehlt_noch', miss.map(p => posLabel(p)).join(', ')))}</span>` : '';
+    const tip = t(`kb_${k}_tip`) + (have ? '' : ' ' + t('kb_anlegen', t(`kb_${k}_bsp`)));
+    return `<tr class="${have ? 'kb-ok' : ''}"><td><span class="kb-mark">${have ? '✓' : '○'}</span>${esc(t(`kb_${k}`))}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`
+      + `<td class="${have ? '' : 'muted'}">${have ? esc(names) + part : esc(t('kb_fehlt_bsp', t(`kb_${k}_bsp`)))}</td></tr>`;
+  }).join('');
+  body.innerHTML = `<table class="plain kb-table"><tbody>${rows}</tbody></table>`;
+  const sum = $('#kb-sum'); if (sum) sum.textContent = t('kb_n_von', ok, needs.length);
+}
+// the target account a saving category gets by itself (from the recipients in the cash flow): not needed (transfers to your
+// own accounts), found, or missing -- shown in its menu, so it is clear whether to choose
+function autoTarget(path) {
+  const lab = acctLabels(S.KONTEN || []), nm = u => lab.get(u) || (S.KONTEN.find(k => k.uuid === u) || {}).name || u;
+  const recs = Object.values((S.DATA || {}).areas || {}).flatMap(d => ((d.cashflow || {}).saving_recipients || [])
+    .filter(a => a.categories.some(c => c === path || c.startsWith(path + ' / '))));
+  if (!recs.length) return {text: t('ziel_nicht_noetig'), miss: false};
+  if (recs.some(a => !a.target && a.how !== 'external' && a.how !== 'mixed')) return {text: t('ziel_fehlt'), miss: true};
+  const ts = [...new Set(recs.map(a => a.target).filter(Boolean))];
+  return {text: ts.length === 1 ? t('automatisch_doppel', nm(ts[0])) : t('automatisch'), miss: false};
 }
 // Zielkonto je Empfänger: saving that arrives as a booking on none of your accounts (a depot kept by its balances, an account
 // outside MoneyMoney) -- per area the account per recipient; Kontor proposes one where it is clear, it counts once chosen
@@ -5026,7 +5155,8 @@ function vAnlageEmpfaenger() {
   if (!areas.length) return '';
   const cfg = ((S.CFG || {}).cashflow || {}).recipient_to_account || {}, lab = acctLabels(S.KONTEN || []);
   const nm = u => lab.get(u) || (S.KONTEN.find(k => k.uuid === u) || {}).name || u;
-  let h = `<h2 class="kp-h">${t('anl_titel')} ${hq('anl_empfaenger')}</h2>`;
+  const open = areas.reduce((n, [id, d]) => n + d.cashflow.saving_recipients.filter(a => a.how === '' && !(cfg[id] || {})[a.key]).length, 0);
+  let h = `<h2 class="kp-h">${t('anl_titel')} ${hq('anl_empfaenger')}${open ? ` <span class="pill warn">${esc(tn('anl_n_offen', open))}</span>` : ''}</h2>`;
   for (const [id, d] of areas) {
     const KF = d.cashflow, mine = cfg[id] || {};
     if (areas.length > 1) h += `<h3 class="kp-h3">${esc(BN(id))}</h3>`;
@@ -5034,13 +5164,13 @@ function vAnlageEmpfaenger() {
     for (const a of KF.saving_recipients) {
       const own = mine[a.key] || '', ownId = own === 'external' ? '' : own.split('|')[0].trim();
       const ziele = new Set([...(KF.saving_targets || []), ownId].filter(Boolean));
-      const auto = a.auto_how === 'mixed' ? t('anl_nach_kategorie') : a.auto_target ? nm(a.auto_target) : t('anl_ohne_ziel');
-      const opts = acctOptions(ownId, k => ziele.has(k.uuid)).replace(t('waehlen'), () => esc(t('automatisch_0', auto)))
+      const auto = a.auto_how === 'mixed' ? t('anl_nach_kategorie') : a.auto_target ? nm(a.auto_target) : null;
+      const opts = acctOptions(ownId, k => ziele.has(k.uuid)).replace(t('waehlen'), () => esc(auto ? t('automatisch_doppel', auto) : t('bitte_waehlen')))
         + `<option value="external" ${own === 'external' ? 'selected' : ''}>${t('anl_extern')}</option>`;
       const prop = a.proposal && !own ? ` <button class="small secondary ka-take" data-v="${esc(a.proposal)}">${esc(t('vorschlag_0', nm(a.proposal)))}</button>` : '';
       const stale = own && own !== 'external' && a.how !== 'recipient' && S.KONTEN.some(k => k.uuid === ownId);   // in another area now: Kontor's choice applies
       h += `<tr data-area="${esc(id)}" data-key="${esc(a.key)}" data-init="${esc(own)}" class="${a.how === '' || (own && own !== 'external' && a.how !== 'recipient') ? 'ka-open' : ''}"${stale ? ` title="${esc(t('anl_nicht_im_bereich'))}"` : ''}><td>${esc(a.name)}${a.iban ? `<div class="small muted">${esc(a.iban)}</div>` : ''}</td>
-        <td class="small kp-n">${a.categories.map(k => esc(CP(k))).join(', ')}</td><td class="num small kp-n">${a.count}</td><td class="num small kp-n ${a.sum < 0 ? 'neg' : ''}">${F0(a.sum)}</td>
+        <td class="small kp-n">${a.categories.map(k => esc(CP(k))).join(', ')}</td><td class="num small kp-n"><a href="#" class="ka-tx" data-ids="${(a.ids || []).join(',')}">${a.count}</a></td><td class="num small kp-n ${a.sum < 0 ? 'neg' : ''}"><a href="#" class="ka-tx" data-ids="${(a.ids || []).join(',')}">${F0(a.sum)}</a></td>
         <td class="kp-arrow" aria-hidden="true">→</td><td><select class="ka-ziel">${opts}</select>${prop}</td></tr>`;
     }
     h += '</tbody></table></div>';
@@ -5048,6 +5178,14 @@ function vAnlageEmpfaenger() {
   return h;
 }
 function bindPositionen(main) {
+  // the bookings behind a number: a category (all its bookings, or those of the last 12 months), a recipient's payments
+  $$('.kp-table', main).forEach(tb => tb.addEventListener('click', e => {          // (the tables are new with every drawing)
+    const a = e.target.closest('.kp-tx, .ka-tx'); if (!a) return; e.preventDefault();
+    const tr = a.closest('tr');
+    if (a.classList.contains('ka-tx')) { const ids = a.dataset.ids.split(',').filter(Boolean).map(Number); txPanel($('td', tr).firstChild.textContent.trim(), {ids}); return; }
+    // as counted there: booked, with MoneyMoney's category; the twelve months up to today
+    const p = tr.dataset.p, y = a.dataset.tx === '12m'; txPanel(CP(p), {kats: [p], counted: true, date_from: y ? yearAgo() : '', date_to: y ? isoToday() : ''});
+  }));
   const rows = $$('.kp-table tr[data-p]', main); if (!rows.length) return;
   const by = Object.fromEntries(rows.map(r => [r.dataset.p, r]));
   const own = r => ($('.kp-pos', r) || {}).value || '';
@@ -5071,7 +5209,9 @@ function bindPositionen(main) {
       sel.options[0].textContent = sel.dataset.obj && !a ? t('automatisch_0', t('immobilie_0', sel.dataset.obj)) : a ? t('automatisch_0', [posLabel(a, r.dataset.firma), ...also.map(k => posLabel(k))].join(' / ')) : t('automatisch_unter');
       r.classList.toggle('kp-own', !!own(r));
       const k = $('.kp-konto', r); k.classList.toggle('hidden', eff !== 'saving');      // counts for the categories below it too
+      r._eff = eff;
     });
+    kbRefresh(rows.filter(r => +r.dataset.own).map(r => ({path: r.dataset.p, eff: r._eff, obj: ($('.kp-pos', r) || {dataset: {}}).dataset.obj})));
     const dirty = rows.some(r => own(r) !== r.dataset.init || ($('.kp-konto', r) && acc($('.kp-konto', r).value) !== acc(r.dataset.konto))) || kaDirty().length > 0;
     save.disabled = !dirty; DIRTY.on = dirty;
   };
@@ -5670,7 +5810,7 @@ async function route() {
     if (ROUTE_SEQ !== myRoute) return;          // inzwischen woanders hin geklickt
     const keepX = sameTab ? $$('.wrap', main).map(scrollMark) : null;   // same page again: tables stay put
     main.style.paddingBottom = '';               // room left by routeKeeping
-    main.innerHTML = `<div class="fade">${h}</div>`;
+    main.innerHTML = sameTab ? `<div>${h}</div>` : `<div class="fade">${h}</div>`;          // the same page again (a row opened): in place, no fade-in (it moves it)
     SCROLL.key = key; SCROLL.keepX = keepX;
     window.scrollTo(0, sameTab ? y0 : (SCROLL.pos[key] || 0));      // eigener Reiter: bleibt; anderer Reiter: dessen letzte Position, sonst oben
     bind(main);
@@ -6082,6 +6222,12 @@ function bind(main) {
       changed();
     });
     rp.addEventListener('click', e => {
+      const po = e.target.closest('.pv-open');
+      if (po) { e.preventDefault(); e.stopPropagation(); const box = po.closest('.rule, .co-card, .gk-row');
+        // a mirror: its two accounts (all mirrors share one heading)
+        const gk = box && box.classList.contains('gk-row') ? [$('.g-a', box), $('.g-b', box)].map(x => x && x.selectedIndex >= 0 ? x.options[x.selectedIndex].textContent.trim() : '').filter(Boolean).join(' ↔ ') : '';
+        const title = gk ? t('co_gegenkonten') + ': ' + gk : box ? (($('.r-name', box) || $('h3', box) || {}).textContent || '') : t('nav_auto_buchungen');
+        pvDrawer(RPV.list[+po.dataset.pv] || {}, title, po.dataset.pv); return; }
       if (e.target.closest('.rule .del')) { setTimeout(changed); return; }
       if (e.target.closest('#add-mirror')) { $('#mirrors', rp).insertAdjacentHTML('beforeend', mirrorRow({})); $('#mirrors .gk-row:last-child .g-a', rp).focus(); changed(); return; }
       const del = e.target.closest('.gk-del'); if (del) { del.closest('.gk-row').remove(); changed(); return; }

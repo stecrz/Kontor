@@ -824,6 +824,9 @@ def plan_all(ledger: Ledger, config: dict, today: date, hold: Optional[set] = No
     hold = set(hold or ())
 
     def add(r: RuleResult) -> None:
+        for pv in r.preview:                          # what the rule would book (shown in the interface on a click), at most 300
+            pv.setdefault("items", [{"date": p.booking_date.isoformat(), "account": p.account_path, "amount": round(p.amount, 2),
+                                     "purpose": p.purpose, "older": bool(p.retro)} for p in r.proposals[:300]])
         total.proposals += r.proposals; total.info += r.info; total.preview += r.preview
         total.warnings += [w for w in r.warnings if w not in total.warnings]          # a waiting company: named once
     # order: loans first (they change the values of the companies), then mirrors and participations

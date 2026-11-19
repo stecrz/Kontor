@@ -1303,7 +1303,8 @@ EXPORT_FILE_KEYS = {"balance": "xf_balance", "cashflow": "xf_cashflow", "plannin
 
 
 def filter_transactions(app: "App", q: dict):
-    """The transactions page's filter (entity, year, account, search, direction, receipts, categories from a chart, ids):
+    """The transactions page's filter (entity, year, account, search, direction, receipts, categories from a chart, ids,
+    counted: only what the categories' counts count -- booked, MoneyMoney's own category):
     the matching transactions in their order, the receipt counts and all transactions -- for the list and its Excel export."""
     ums = app.umsatzliste()
     counts = Belege(app.store, app.config).counts()
@@ -1337,6 +1338,8 @@ def filter_transactions(app: "App", q: dict):
                        and not t.get("other_area"))          # between two of your areas: not an expense or income
             if not none_ok and (not k or not any(k == c or k.startswith(c + " / ") for c in want)):
                 continue
+        if q.get("counted") == "1" and (not t.get("booked_count") or t.get("source") != "moneymoney"):
+            continue                                   # as the categories' counts: booked, with MoneyMoney's own category
         if q.get("year") and not t["date"].startswith(q["year"]):
             continue
         if q.get("account") and t["account"] != q["account"]:

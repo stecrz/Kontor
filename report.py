@@ -1417,8 +1417,10 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             if sv is None:
                 sv = savings[key] = {"key": key, "name": (t.name or t.purpose or t.booking_text)[:80], "iban": (t.counter_iban or "").replace(" ", "").upper()[:34],
                                      "count": 0, "sum": 0.0, "date_from": t.booking_date.isoformat(), "date_to": t.booking_date.isoformat(),
-                                     "categories": [], "target": target, "how": how, "auto_target": auto[0], "auto_how": auto[1]}
+                                     "categories": [], "target": target, "how": how, "auto_target": auto[0], "auto_how": auto[1], "ids": []}
             sv["count"] += 1
+            if len(sv["ids"]) < 500:                   # the bookings behind it (a click shows them)
+                sv["ids"].append(t.id)
             sv["sum"] = round(sv["sum"] + t.amount, 2)
             sv["date_from"], sv["date_to"] = min(sv["date_from"], t.booking_date.isoformat()), max(sv["date_to"], t.booking_date.isoformat())
             if cat not in sv["categories"]:

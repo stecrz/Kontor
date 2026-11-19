@@ -1,5 +1,17 @@
 # Änderungen
 
+## 3.15.8 (2026-11-19 16:44)
+- Übersicht: neue Karte „Kennzahlen“ (Sparquote, Ausgaben je Monat, Reserve, finanzielle Freiheit, Schulden, Eigenkapitalquote); Monatlicher Cashflow nur noch ein Drittel breit.
+- Vermögensstruktur: Vermögen | Finanziert durch, je Kachel Betrag und Veränderung zum Vorjahr; Summe „Vermögen“ statt „Bilanzsumme“.
+- Nettovermögen: 12 abgeschlossene Monate; Vermögensbrücke ohne laufenden Monat.
+- Drucken immer hell.
+- Seitenfenster schmaler, schließt per Klick auf den Hintergrund (bei ungespeicherten Eingaben mit Rückfrage).
+- „… Buchungen offen“ unter Buchungsregeln anklickbar: Liste im Seitenfenster, Weg zur Freigabe.
+- Cashflow-Positionen: Anzahl und Summe anklickbar; „Was Kontor von deinen Kategorien braucht“ mit vorhanden/fehlt, passt sich sofort an.
+- Zielkonto: „nicht nötig“, „automatisch: …“ oder „fehlt – bitte wählen“; je Empfänger nur „Bitte wählen“ auszufüllen.
+- Kontenspiegel: Warnung bei doppelter Regel, Fehler wenn ein Bankkonto in mehreren Kontenspiegeln steht.
+- Cashflow-Tabelle: Auf- und Zuklappen ohne Sprung der Seite.
+
 ## 3.15.7 (2026-11-19 15:17)
 - Zahlungen zwischen Bereichen mit Gegenbuchung: Zeile „Bereich: Konto“, eingeordnet nach Art des Kontos (Beteiligung, gewährtes Darlehen, Schuld); Darlehen an dich getrennt nach Aufnahme und Tilgung.
 - Seitenfenster mit Umsätzen: Tabelle ohne seitliches Scrollen; angeklickte Zahl markiert; würde das Fenster sie verdecken, rückt die Seite zur Seite.

@@ -222,7 +222,9 @@ class CompanyTests(unittest.TestCase):
         self.assertEqual((res.proposals[0].kind, res.proposals[0].booking_date), ("value", today))
         self.assertAlmostEqual(res.proposals[0].amount, want - (-90000.0), 2)
         self.assertEqual(led.resolve("Beteiligung an Alpha GbR").balance, want)
-        self.assertEqual(res.preview, [{"kind": "participation", "area": "a", "target": F.uid("priv.bet.ga"), "ist": -90000.0, "retro_count": 0, "open": 1,
+        items = [dict(pv).pop("items", None) for pv in res.preview]                # what it would book, for the side panel
+        self.assertEqual([(x["date"], x["amount"]) for x in items[0]], [(today.isoformat(), round(want + 90000.0, 2))])
+        self.assertEqual([{k: v for k, v in pv.items() if k != "items"} for pv in res.preview], [{"kind": "participation", "area": "a", "target": F.uid("priv.bet.ga"), "ist": -90000.0, "retro_count": 0, "open": 1,
                                         "back_sum": 0.0, "unknown": [], "cycle": "daily", "soll": want, "source": float(ga_value), "diff": want + 90000.0,
                                         "begin": None}])
         self.assertEqual(plan_all(led, company_cfg(), today).proposals, [])        # again: nothing
@@ -987,6 +989,15 @@ class MirrorTests(unittest.TestCase):
         self.assertEqual(len(errors([{"a": A, "b": B, "from_date": "all"}, {"a": A, "b": C, "from_date": "all"}])), 1)  # booked by two rules
         self.assertEqual(len(errors([{"a": B, "b": A, "from_date": "all"}], companies=[{"area": "a", "participation": B}])), 1)
         self.assertTrue(warns([{"a": F.uid("priv.giro"), "b": F.uid("ga.kk"), "from_date": "all"}]))               # no offline account
+        self.assertTrue(any("doppelt" in w or "twice" in w for w in warns([{"a": A, "b": B, "from_date": "all"}, {"a": B, "b": A, "from_date": "all"}])))   # the same pair twice
+        G = F.uid("priv.giro")                                       # a bank account in two mirrors: each booking would come twice
+        two = errors([{"a": G, "b": B, "from_date": "all"}, {"a": G, "b": C, "from_date": "all"}])
+        self.assertEqual(len(two), 1); self.assertIn("2", two[0])
+        # no false alarm: a second mirror that books nothing (two bank accounts, a gone account), the same pair three times: one note
+        self.assertEqual(errors([{"a": G, "b": B, "from_date": "all"}, {"a": G, "b": F.uid("ga.kk"), "from_date": "all"}]), [])
+        gone = errors([{"a": G, "b": B, "from_date": "all"}, {"a": G, "b": "nope | Weg", "from_date": "all"}])
+        self.assertEqual(len(gone), 1); self.assertNotIn("Kontenspiegeln", gone[0])                          # only: the account is gone
+        self.assertEqual(len([w for w in warns([{"a": A, "b": B, "from_date": "all"}] * 3) if "doppelt" in w]), 1)
         # package
         cur = core.merged_config(dict(base, account_mirrors=[{"a": A, "b": B, "from_date": "all"}]))
         pkg = core.export_package(core.merged_config(base), "Test", ledger=led)

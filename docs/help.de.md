@@ -5,14 +5,15 @@ Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilan
 <a id="overview"></a>
 ## Übersicht
 
-Die vier wichtigsten Grafiken auf einen Blick – ohne Tabellen und ohne Planwerte, am Mac in drei Spalten auf einer Bildschirmseite:
+Die wichtigsten Grafiken und Kennzahlen auf einen Blick – ohne Tabellen und ohne Planwerte, aus den abgeschlossenen Monaten, am Mac in drei Spalten auf einer Bildschirmseite:
 
-- **Nettovermögen**: die letzten zwei Jahre, daneben der Stand und die Veränderung in zwölf Monaten.
-- **Vermögensstruktur**: die Bilanz des aktuellen Monats – links das Vermögen als Kacheln, jede Position so groß wie ihr Anteil an der Bilanzsumme; rechts in einer Spalte, was dafür steht: Eigenkapital und Schulden im selben Maßstab. Beim Darüberfahren der Betrag.
+- **Nettovermögen**: die letzten zwölf abgeschlossenen Monate, daneben der Stand und die Veränderung.
+- **Vermögensstruktur**: der letzte abgeschlossene Monat – links das Vermögen als Kacheln, rechts, was dafür steht: Nettovermögen und Schulden im selben Maßstab; je Kachel Betrag und Veränderung zum Vorjahr. Keine Bilanzsumme: bei einer Gesellschaft fehlt, was auf keinem Konto steht (Ware, offene Rechnungen, Rückstellungen).
 - **Monatlicher Cashflow**: die letzten zwölf abgeschlossenen Monate – Einnahmen und andere Zuflüsse nach oben, Ausgaben und Abflüsse nach unten; der gestrichelte Strich zeigt die Veränderung des Bankguthabens.
 - **Vermögensbrücke**: woher die Veränderung des Nettovermögens in diesen zwölf Monaten kam.
+- **Kennzahlen**: Sparquote, Ausgaben je Monat, Reserve, finanzielle Freiheit, Schulden und Eigenkapitalquote (bei einer Gesellschaft der Überschuss statt der finanziellen Freiheit); beim Darüberfahren, wie sie gerechnet sind, ein Klick führt an ihre Stelle.
 
-Ein Klick auf eine Grafik öffnet ihre Stelle in Bilanz oder Cashflow. Rechts unten steht unter **Offen**, was zu tun ist (z. B. Umsätze ohne Kategorie, Konten ohne bestätigte Zuordnung, ein verfügbares Update) – ein Klick auf einen Punkt öffnet die Seite, auf der er sich erledigen lässt. Ist nichts offen, fehlt der Kasten, und der Cashflow nimmt die ganze Breite.
+Ein Klick auf eine Grafik öffnet ihre Stelle in Bilanz oder Cashflow. Rechts unten steht unter **Offen**, was zu tun ist (z. B. Umsätze ohne Kategorie, Konten ohne bestätigte Zuordnung, ein verfügbares Update) – ein Klick auf einen Punkt öffnet die Seite, auf der er sich erledigen lässt. Ist nichts offen, fehlt der Kasten, und die Kennzahlen nehmen seinen Platz.
 
 **Hilfe auf jeder Seite**: Das **?** neben dem Seitentitel sagt in einem Satz, was die Seite tut; ein Klick darauf öffnet ihren Abschnitt in dieser Hilfe. Die **?** an Tabellen und Grafiken führen jeweils zu deren eigenem Absatz.
 
@@ -199,7 +200,7 @@ Unter der Tabelle:
 = Geldvermögen
 + Sachvermögen (Immobilien + Sachwerte)
 + Sonstiges
-= Bruttovermögen (Bilanzsumme)
+= Bruttovermögen
 + Verbindlichkeiten
 = Nettovermögen
 
