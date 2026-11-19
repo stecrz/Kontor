@@ -5,15 +5,15 @@ Kontor turns your data in [MoneyMoney](https://moneymoney.app) into a balance sh
 <a id="overview"></a>
 ## Overview
 
-The most important charts and key figures at a glance – no tables and no plan values, from the closed months, on the Mac in three columns on one screen:
+The most important charts at a glance – no tables and no plan values, from the closed months, on the Mac in three columns on one screen:
 
 - **Net worth**: the last twelve closed months, beside it the figure and the change.
-- **Asset structure**: the last closed month – on the left the assets as tiles, on the right what stands against them: net worth and debts on the same scale; in each tile its amount and the change against a year before. No balance sheet total: for a company what is on no account is missing (stock, open invoices, provisions).
+- **Asset structure**: the last closed month – on the left the assets as tiles, on the right what stands against them: net worth and debts on the same scale; in each tile its amount and the change against a year before (only where the balance a year before is known). No balance sheet total: for a company what is on no account is missing (stock, open invoices, provisions).
 - **Monthly cash flow**: the last twelve closed months – income and other inflows up, expenses and outflows down; the dashed stroke shows the change in cash.
 - **Net worth bridge**: where the change in net worth over these twelve months came from.
-- **Key figures**: saving rate, spending a month, reserve, financial independence, debts and equity ratio (for a company its surplus instead of financial independence); hover for how each is computed, a click leads to its place.
+- **Wealth building**: per building block – participations, property (net of its loans, where they are linked under Properties), cash & investments, other debts – its value and its change over twelve months, split into money in/out (contributions, purchases, saving, repayment) and change in value. Where no balance of an account is known at the start, it says “unknown”.
 
-A click on a chart opens its place in the balance sheet or the cash flow. At the bottom right, **Open** lists what there is to do (e.g. transactions without a category, accounts without a confirmed assignment, an available update) – a click on a point opens the page where it can be done. If nothing is open, the box is not there and the key figures take its place.
+A click on a chart opens its place in the balance sheet or the cash flow. At the bottom right, **Open** lists what there is to do (e.g. transactions without a category, accounts without a confirmed assignment, an available update) – a click on a point opens the page where it can be done. If nothing is open, the box is not there and wealth building takes its place.
 
 **Help on every page**: the **?** beside the page title says in one sentence what the page does; a click on it opens its section of this help. The **?** at tables and charts lead to their own paragraph.
 

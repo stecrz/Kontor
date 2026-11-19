@@ -833,45 +833,7 @@ async function vUebersicht() {
   const card = (id, title, go, foot = '') => `<div class="card link ov-card" data-ov="${id}" data-ovgo="${go}" role="link" tabindex="0" aria-label="${esc(title)}"><div class="ov-head"><b>${esc(title)}</b><span class="ov-fig" id="ov-fig-${id}"></span></div><div class="ov-plot" id="ov-${id}"></div>${foot}</div>`;
   const key = [['ein', t('einnahmen')], ['aus', t('ausgaben')], ['inv', t('cf_investitionen')], ['fin', t('cf_finanzierung')]].map(([c, l]) => `<span><i class="sw ${c === 'ein' ? 'in' : c === 'aus' ? 'out' : c}"></i>${esc(l)}</span>`).join('')
     + `<span><i class="sw net"></i>${esc(t('zahlungsfluss_gesamt_veraenderung_liqu'))}</span>`;
-  const kpi = ovKpi(D);
-  return `<div class="ov-grid${todo ? '' : ' no-todo'}"><div class="cf-tip hidden" id="cf-tip" role="tooltip"></div>${card('nw', t('nettovermoegen'), 'nw')}${card('comp', t('vermoegensstruktur'), 'table')}${card('wealth', t('cf_verm_bruecke'), 'wealth')}${card('months', t('cf_je_monat_t'), 'months', `<div class="ov-key">${key}</div>`)}`
-    + (kpi ? `<div class="card link ov-card ov-kpi" data-ov="kpi" data-ovgo="cftable" role="link" tabindex="0" aria-label="${esc(t('ov_kennzahlen'))}"><div class="ov-head"><b>${esc(t('ov_kennzahlen'))}</b><span class="ov-fig"><span class="ov-s">${esc(kpi.when)}</span></span></div><div class="ov-kpi-g">${kpi.html}</div></div>` : '') + `${todo}</div>`;
-}
-// 5. Key figures: what decides how your wealth grows, each from the same closed months as the charts, a click leads to its place.
-// Private: saving rate, spending, reserve, financial independence, debts, equity ratio; a company: its surplus instead of the
-// independence. Nothing estimated: what is not known shows as unknown
-function ovKpi(D) {
-  const done = cfDone(D), last12 = done.slice(-12), k = done[done.length - 1], sums = D.cashflow.sums || {};
-  if (!k || !last12.length) return null;
-  const n = last12.length, sum = f => last12.reduce((a, m) => a + (sums[m] ? f(sums[m]) : 0), 0);
-  const [y, mo] = k.split('-').map(Number), k0 = `${y - 1}-${String(mo).padStart(2, '0')}`;
-  // interest paid is spending; interest you get (a loan you gave) is income -- the two apart, row by row and month by month
-  const zRows = (D.cashflow.sections || []).flatMap(sk => sk.rows || []).filter(z => z.kind === 'interest');
-  const zSum = sign => last12.reduce((a, m) => a + zRows.reduce((b, z) => { const v = (z.amounts || {})[m] || 0; return b + (sign * v > 0 ? v : 0); }, 0), 0);
-  const zPaid = -zSum(-1), zGot = zSum(1);
-  const inc = sum(s => s.income || 0) + zGot, zinsM = zPaid / n, spendM = (-sum(s => s.expenses || 0) + zPaid) / n;
-  const surplus = sum(s => s.operating || 0) - zPaid + zGot, bank = (sums[k] || {}).bank, nw = (D.balance.net_worth || {})[k];
-  const debtRows = D.balance.rows.filter(r => r.group && r.role === 'liabilities'), debtAt = m => debtRows.some(r => (r.amounts || {})[m] != null) ? -debtRows.reduce((a, r) => a + ((r.amounts || {})[m] || 0), 0) : null;
-  const debts = debtAt(k) || 0, debts0 = debtAt(k0);
-  const EQ = (D.balance.equity_ratio || {}).months || {}, ekq = m => EQ[m] ? EQ[m].quote : (D.balance.net_worth || {})[m] == null ? null : (x => x > 0.5 ? D.balance.net_worth[m] / x : null)(D.balance.net_worth[m] + (debtAt(m) || 0));
-  const company = (D.area || {}).kind === 'company', unk = t('unbekannt');
-  const pct = v => v == null || !isFinite(v) ? '–' : FN(v * 100, Math.abs(v) < 0.1 ? 1 : 0) + ' %';
-  const tile = (go, label, value, sub, tip, meter) => `<div class="ov-kpi-t" data-ovgo="${go}" title="${esc(tip)}"><span class="l">${esc(label)}</span><span class="v">${value}</span>`
-    + (meter != null ? `<span class="ov-kpi-m" aria-hidden="true"><i style="width:${Math.max(0, Math.min(100, meter * 100)).toFixed(1)}%"></i></span>` : '') + `<span class="s">${sub}</span></div>`;
-  const rate = inc > 0.5 ? surplus / inc : null;
-  const t1 = tile('cftable', t(company ? 'ov_k_marge' : 'ov_k_sparquote'), esc(pct(rate)), esc(company ? t('ov_k_von_einnahmen', Fs(inc, 0)) : t('ov_k_je_monat', F0(surplus / n))), t(company ? 'ov_k_marge_tip' : 'ov_k_sparquote_tip', n));
-  const t2 = tile('cftable', t('ov_k_ausgaben'), esc(F0(spendM)) + ' €', zinsM > 0.5 ? esc(t('ov_k_davon_zinsen', F0(zinsM))) : '', t('ov_k_ausgaben_tip', n));
-  const res = bank == null ? null : spendM > 0.5 ? bank / spendM : null;
-  const t3 = tile('table', t('ov_k_reserve'), esc(bank == null ? unk : res == null ? '–' : t('ov_k_monate', FN(Math.max(0, res), 1))), bank == null ? '' : esc(t('ov_k_bank', F0(bank))), t('ov_k_reserve_tip', ML(k)));
-  let t4;
-  if (company) t4 = tile('cftable', t('ov_k_ueberschuss'), `<span class="${surplus >= 0 ? '' : 'neg'}">${esc(F0(surplus))} €</span>`, esc(t('ov_k_je_monat', F0(surplus / n))), t('ov_k_ueberschuss_tip', n));
-  else { const r = +((D.figures || {}).fi_real_return_percent || 3), need = spendM > 0.5 ? spendM * 12 / (r / 100) : null, fi = need && nw != null ? nw / need : null;
-    t4 = tile('nw', t('ov_k_frei'), esc(fi == null ? '–' : pct(fi)), need ? esc(t('ov_k_ziel', Fs(need, 0))) : '', t('ov_k_frei_tip', FN(r, 1), FN(100 / r, 0)), fi == null ? null : fi); }
-  const dChg = debts0 == null ? '' : debts - debts0, chg = dChg === '' || Math.abs(dChg) < 0.5 ? '' : `<span class="${dChg < 0 ? 'pos' : 'neg'}">${dChg > 0 ? '+' : '−'}${esc(F0(Math.abs(dChg)))} €</span> ${esc(t('ov_k_ggue', ML(k0)))}`;
-  const t5 = tile('table', t('ov_k_schulden'), esc(F0(debts)) + ' €', chg, t('ov_k_schulden_tip'));
-  const q = ekq(k), q0 = ekq(k0);
-  const t6 = tile('ekq', t('ekq'), esc(q == null ? unk : pct(q)), q0 == null ? '' : esc(`${ML(k0)}: ${pct(q0)}`), t('ekq_tip'));
-  return {when: `${ML(k)} · ${tn('ov_k_monate_n', n)}`, html: t1 + t2 + t3 + t4 + t5 + t6};
+  return `<div class="ov-grid${todo ? '' : ' no-todo'}"><div class="cf-tip hidden" id="cf-tip" role="tooltip"></div>${card('nw', t('nettovermoegen'), 'nw')}${card('comp', t('vermoegensstruktur'), 'table')}${card('wealth', t('cf_verm_bruecke'), 'wealth')}${card('months', t('cf_je_monat_t'), 'months', `<div class="ov-key">${key}</div>`)}${card('build', t('ov_aufbau'), 'table')}${todo}</div>`;
 }
 // where a chart leads: the balance sheet's chart or table, the cash flow's months or net worth bridge (the last 12 months, as here)
 const OV_GO = {nw: ['#balance', '#bch'], table: ['#balance', '.wrap.bil-tbl'], ekq: ['#balance', 'tr.ekq'], months: ['#cashflow', '[data-cfid="months"]'], wealth: ['#cashflow', '[data-cfid="wealth"]'],
@@ -908,9 +870,50 @@ function ovDraw() {
   const put = (id, fn) => { const el = $('#ov-' + id); if (!el) return; const f = $('#ov-fig-' + id); el.innerHTML = '';
     if (f) f.innerHTML = fn(D, 320, 200).fig || '';
     const r = el.getBoundingClientRect(), out = fn(D, Math.max(240, Math.floor(r.width)), Math.max(130, Math.floor(r.height))); el.innerHTML = out.svg; };
-  put('nw', ovNetWorth); put('comp', ovComposition); put('months', ovMonths); put('wealth', ovWealth);
+  put('nw', ovNetWorth); put('comp', ovComposition); put('months', ovMonths); put('wealth', ovWealth); put('build', ovBuild);
 }
 const ovEmpty = txt => ({svg: `<div class="ov-empty muted small">${esc(txt)}</div>`, fig: ''});
+// 5. Wealth building: per building block -- participations, property (net of its loans, where they are linked to it), cash and
+// investments, the other debts -- what it is worth and how it changed over the twelve months of the bridge: money that went in or
+// out (contributions, purchases, saving, repayment) and the change in value without any money moving. A block with a balance
+// only carried backwards (no known one at the start): its change unknown, not estimated
+function ovBuild(D) {
+  const ms = cfDone(D).slice(-13); if (ms.length < 2) return ovEmpty(t('noch_zu_wenig_monate'));
+  const b = ms[0], k = ms[ms.length - 1], span = ms.slice(1);
+  const accs = D.balance.rows.filter(r => !r.group && ROLE[r.role] && r.role !== 'contingent' && r.role !== 'ignore');
+  const at = (r, m) => (r.amounts || {})[m] || 0, known = r => !r.projected_before || b >= r.projected_before;
+  const linked = new Set(((S.CFG || {}).real_estate || []).flatMap(im => Object.values(im.loan_accounts || {}).filter(Boolean).map(x => String(x).split('|')[0].trim())));
+  const ofImmo = accs.some(r => r.role === 'liabilities' && linked.has(r.id)) && accs.some(r => r.role === 'real_estate');
+  const blockOf = r => r.role === 'participations' ? 'bet' : r.role === 'real_estate' || (ofImmo && r.role === 'liabilities' && linked.has(r.id)) ? 'immo' : r.role === 'liabilities' ? 'debt' : 'liq';
+  const wert = {};
+  for (const z of ((D.cashflow.sections || []).find(sk => sk.name === 'valuation') || {rows: []}).rows) if (z.account) wert[z.account] = (wert[z.account] || 0) + span.reduce((a, m) => a + ((z.amounts || {})[m] || 0), 0);
+  const B0 = {bet: [t('beteiligungen'), 'var(--c-bet)'], immo: [t(ofImmo ? 'ov_b_immo_netto' : 'immobilien'), 'var(--c-immo)'], liq: [t('ov_b_liq'), 'var(--c-liq)'],
+    debt: [t(ofImmo ? 'ov_b_debt_rest' : 'ov_k_schulden'), 'var(--c-verb)']};
+  const blocks = Object.keys(B0).map(id => { const rs = accs.filter(r => blockOf(r) === id), now = rs.reduce((a, r) => a + at(r, k), 0);
+    const chg = rs.reduce((a, r) => a + at(r, k) - at(r, b), 0), w = rs.reduce((a, r) => a + (wert[r.id] || 0), 0);
+    return {id, rs, now, chg, w, flow: chg - w, unk: rs.filter(r => !known(r) && (Math.abs(at(r, k)) >= 0.5 || Math.abs(at(r, b)) >= 0.5))}; })
+    .filter(x => x.rs.some(r => Math.abs(at(r, k)) >= 0.5 || Math.abs(at(r, b)) >= 0.5));
+  if (!blocks.length) return ovEmpty(t('noch_keine_bestaende'));
+  const scale = Math.max(1, ...blocks.filter(x => !x.unk.length).map(x => Math.abs(x.chg)));
+  const sg = v => (v > 0.5 ? '+' : v < -0.5 ? '' : '±') + F0(v) + ' €', per = `${ML(span[0])} – ${ML(k)}`;
+  const rows = blocks.map(x => {
+    const [name, color] = B0[x.id], unk = x.unk.length > 0, w = Math.min(50, Math.abs(x.chg) / scale * 50);
+    const sub = x.id === 'debt' ? (unk || Math.abs(x.chg) < 0.5 ? '' : t(x.chg > 0 ? 'ov_b_getilgt' : 'ov_b_neu', F0(Math.abs(x.chg))))
+      : unk ? '' : `${t('ov_b_fluss')} ${sg(x.flow)} · ${t('ov_b_wert')} ${sg(x.w)}`;
+    // the tooltip: each account now and its change, the two parts, what is not known
+    const lines = x.rs.filter(r => Math.abs(at(r, k)) >= 0.5 || Math.abs(at(r, b)) >= 0.5).sort((p, q) => Math.abs(at(q, k)) - Math.abs(at(p, k)));
+    const tip = cfTip(`<div class="cf-tip-h">${esc(name)} · ${esc(per)}</div>`
+      + lines.slice(0, 8).map(r => cfTipRow('none', r.name, F0(at(r, k)) + ' €', known(r) ? (Math.abs(at(r, k) - at(r, b)) >= 0.5 ? {cls: '', txt: esc(sg(at(r, k) - at(r, b)))} : null) : {cls: '', txt: esc(t('vor_0_unbekannt', ML(r.projected_before)))})).join('')
+      + (lines.length > 8 ? `<div class="cf-tip-note">${esc(t('cf_uebrige', lines.length - 8))}</div>` : '')
+      + (unk ? '' : `<div class="cf-tip-res">${x.id === 'debt' ? '' : cfTipRow('none', t('ov_b_fluss'), sg(x.flow)) + cfTipRow('none', t('ov_b_wert'), sg(x.w))}${cfTipTot(t('ov_b_veraenderung'), sg(x.chg))}</div>`)
+      + `<div class="cf-tip-note">${esc(unk ? t('ov_b_unbekannt_tip') : x.id === 'debt' ? t('ov_b_debt_tip') : t('ov_b_fluss_tip'))}</div>`);
+    return `<div class="ov-bs-r" data-cftip="${tip}"><span class="ov-bs-n"><i style="background:${color}"></i>${esc(name)}</span>`
+      + `<span class="ov-bs-d${unk ? ' muted' : Math.abs(x.chg) < 0.5 ? '' : x.chg > 0 ? ' pos' : ' neg'}">${esc(unk ? t('ov_b_unbekannt') : sg(x.chg))}</span>`
+      + `<span class="ov-bs-b">${unk ? '' : `<i class="${x.chg >= 0 ? 'pos' : 'neg'}" style="${x.chg >= 0 ? 'left:50%' : `left:${(50 - w).toFixed(1)}%`};width:${w.toFixed(1)}%"></i>`}</span>`
+      + `<span class="ov-bs-s">${esc(F0(x.now))} €${sub ? ' · ' + esc(sub) : ''}</span></div>`;
+  }).join('');
+  return {svg: `<div class="ov-bs">${rows}</div>`, fig: `<span class="ov-s">${esc(per)}</span>`};
+}
 const ovDelta = v => v == null ? '' : `<span class="ov-d ${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : ''}${F0(v)} €</span>`;
 // 1. Net worth: the last two years as a line over a quiet area; the figure now and its change over twelve months
 function ovNetWorth(D, W, H) {
@@ -964,15 +967,20 @@ function ovComposition(D, W, H) {
   const debts = debtsAt(k), sumA = sumAt(k), equity = sumA - debts;
   if (sumA < 0.5 && debts < 0.5) return ovEmpty(t('noch_keine_bestaende'));
   const total = Math.max(sumA, debts);
-  const yoy = (now, then) => !has0 ? '' : Math.abs(then) < 0.5 ? (Math.abs(now) < 0.5 ? '' : t('cf_heat_neu')) : ovPct((now - then) / Math.abs(then) * 100);
+  const yoy = (now, then) => !has0 || then == null || Math.abs(then) < 0.5 ? '' : ovPct((now - then) / Math.abs(then) * 100);          // nothing to compare (new, unknown): nothing
+  // a year before only where it is known: an account whose first known balance is later carries that value backwards -- no
+  // change can be read from it (unknown, not 0 %)
+  const accsOf = r => r.group ? D.balance.rows.filter(x => !x.group && x.role === r.role) : [r];
+  const known0 = r => accsOf(r).every(a => !a.projected_before || k0 >= a.projected_before);
+  const then = (r, sign = 1) => known0(r) ? sign * val(r, k0) : null;
   // a tile: a quiet tint of the position's colour with a solid edge, its name and figures inside where they fit (all in the hover)
   // a tile: a quiet tint of the position's colour with a solid edge; its name, amount and change against a year before inside
   // where they fit (all of it, with its share of the total, in the hover). good: a rise is good (assets) or bad (debts)
   const tile = (x, y, w, h, color, name, v, chg, good = true, v0 = null) => {
     x += 1; y += 1; w -= 2; h -= 2; if (w < 1 || h < 1) return '';
     const room = n => Math.floor((w - 14) / n), cut = (txt, n) => txt.length > room(n) ? txt.slice(0, Math.max(1, room(n) - 1)) + '…' : txt;
-    const share = FN(Math.abs(v) / (total || 1) * 100, 0) + ' %', cls = !chg || chg.startsWith('±') || chg === t('cf_heat_neu') ? '' : (chg.startsWith('+') === good ? ' pos' : ' neg');
-    const tip = cfTip(`<div class="cf-tip-h">${esc(name)}</div>` + cfTipRow('none', ML(k), F0(v) + ' €') + (v0 != null && has0 ? cfTipRow('none', ML(k0), F0(v0) + ' €', chg ? {cls: cls.trim(), txt: esc(chg)} : null) : '')
+    const share = FN(Math.abs(v) / (total || 1) * 100, 0) + ' %', cls = !chg || chg.startsWith('±') ? '' : (chg.startsWith('+') === good ? ' pos' : ' neg');
+    const tip = cfTip(`<div class="cf-tip-h">${esc(name)}</div>` + cfTipRow('none', ML(k), F0(v) + ' €') + (has0 && name !== t('ov_fehlbetrag') ? cfTipRow('none', ML(k0), v0 == null ? esc(t('unbekannt')) : F0(v0) + ' €', chg ? {cls: cls.trim(), txt: esc(chg)} : null) : '')
       + `<div class="cf-tip-note">${esc(t('ov_anteil', share))}</div>`);
     let g = `<g class="ov-tile" data-cftip="${tip}"><rect class="ov-tm" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="4" style="--c:${color}"/>`
       + `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="3" height="${h.toFixed(1)}" rx="1.5" style="fill:${color}"/>`;
@@ -988,12 +996,12 @@ function ovComposition(D, W, H) {
   // balance sheet total: what is kept on no account (stock, payment terms, provisions) Kontor does not know
   const cap = 16, half = (W - 10) / 2, x2 = half + 10, ph = H - cap;
   const debtRows = D.balance.rows.filter(r => !r.group && r.role === 'liabilities' && val(r) < -0.5).sort((a, b) => val(a) - val(b));
-  const eq0 = sumAt(k0) - debtsAt(k0);          // each entry: colour, name, amount, change, a rise is good, a year before
+  const eq0 = pos.every(known0) ? sumAt(k0) - debtsAt(k0) : null;          // each entry: colour, name, amount, change, a rise is good, a year before
   const passiva = [...(equity > 0.5 ? [['var(--c-nw)', t('nettovermoegen'), equity, yoy(equity, eq0), true, eq0]] : []),
-    ...debtRows.map(r => ['var(--c-verb)', r.name, -val(r), yoy(-val(r), -val(r, k0)), false, -val(r, k0)])];
+    ...debtRows.map(r => ['var(--c-verb)', r.name, -val(r), yoy(-val(r), then(r, -1)), false, then(r, -1)])];
   // a position below 0 that is no debt (an overdrawn account, a participation worth less than nothing): with its own name
-  for (const r of pos.filter(r => r.role !== 'liabilities' && val(r) < -0.5)) passiva.push(['var(--c-verb)', r.name, -val(r), yoy(-val(r), -val(r, k0)), false, -val(r, k0)]);
-  const aktiva = assets.map(r => [ROLE[r.role][1], r.name, val(r), yoy(val(r), val(r, k0)), true, val(r, k0)]);
+  for (const r of pos.filter(r => r.role !== 'liabilities' && val(r) < -0.5)) passiva.push(['var(--c-verb)', r.name, -val(r), yoy(-val(r), then(r, -1)), false, then(r, -1)]);
+  const aktiva = assets.map(r => [ROLE[r.role][1], r.name, val(r), yoy(val(r), then(r)), true, then(r)]);
   if (equity < -0.5) aktiva.push(['var(--c-neutral)', t('ov_fehlbetrag'), -equity, '', true, null]);
   const side = (list, x0) => treemap(list.map(e => e[2]), x0, cap, half, ph).map(q => { const [c, n, v, chg, good, v0] = list[q.i]; return tile(q.x, q.y, q.w, q.h, c, n, v, chg, good, v0); }).join('');
   let g = `<text class="ov-cap" x="2" y="11">${esc(t('ov_aktiva'))}</text><text class="ov-cap" x="${(x2 + 2).toFixed(1)}" y="11">${esc(t('ov_passiva'))}</text>`

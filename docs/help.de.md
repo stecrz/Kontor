@@ -5,15 +5,15 @@ Kontor macht aus deinen Daten in [MoneyMoney](https://moneymoney.app) eine Bilan
 <a id="overview"></a>
 ## Übersicht
 
-Die wichtigsten Grafiken und Kennzahlen auf einen Blick – ohne Tabellen und ohne Planwerte, aus den abgeschlossenen Monaten, am Mac in drei Spalten auf einer Bildschirmseite:
+Die wichtigsten Grafiken auf einen Blick – ohne Tabellen und ohne Planwerte, aus den abgeschlossenen Monaten, am Mac in drei Spalten auf einer Bildschirmseite:
 
 - **Nettovermögen**: die letzten zwölf abgeschlossenen Monate, daneben der Stand und die Veränderung.
-- **Vermögensstruktur**: der letzte abgeschlossene Monat – links das Vermögen als Kacheln, rechts, was dafür steht: Nettovermögen und Schulden im selben Maßstab; je Kachel Betrag und Veränderung zum Vorjahr. Keine Bilanzsumme: bei einer Gesellschaft fehlt, was auf keinem Konto steht (Ware, offene Rechnungen, Rückstellungen).
+- **Vermögensstruktur**: der letzte abgeschlossene Monat – links das Vermögen als Kacheln, rechts, was dafür steht: Nettovermögen und Schulden im selben Maßstab; je Kachel Betrag und Veränderung zum Vorjahr (nur wo der Stand vor einem Jahr bekannt ist). Keine Bilanzsumme: bei einer Gesellschaft fehlt, was auf keinem Konto steht (Ware, offene Rechnungen, Rückstellungen).
 - **Monatlicher Cashflow**: die letzten zwölf abgeschlossenen Monate – Einnahmen und andere Zuflüsse nach oben, Ausgaben und Abflüsse nach unten; der gestrichelte Strich zeigt die Veränderung des Bankguthabens.
 - **Vermögensbrücke**: woher die Veränderung des Nettovermögens in diesen zwölf Monaten kam.
-- **Kennzahlen**: Sparquote, Ausgaben je Monat, Reserve, finanzielle Freiheit, Schulden und Eigenkapitalquote (bei einer Gesellschaft der Überschuss statt der finanziellen Freiheit); beim Darüberfahren, wie sie gerechnet sind, ein Klick führt an ihre Stelle.
+- **Vermögensaufbau**: je Baustein – Beteiligungen, Immobilien (nach ihren Darlehen, wenn sie unter Immobilien verknüpft sind), Liquidität & Anlagen, übrige Schulden – der Wert und die Veränderung in zwölf Monaten, aufgeteilt in Geldfluss (Einlagen, Käufe, Sparen, Tilgung) und Wertänderung. Ist für ein Konto zu Beginn kein Stand bekannt, steht „unbekannt“.
 
-Ein Klick auf eine Grafik öffnet ihre Stelle in Bilanz oder Cashflow. Rechts unten steht unter **Offen**, was zu tun ist (z. B. Umsätze ohne Kategorie, Konten ohne bestätigte Zuordnung, ein verfügbares Update) – ein Klick auf einen Punkt öffnet die Seite, auf der er sich erledigen lässt. Ist nichts offen, fehlt der Kasten, und die Kennzahlen nehmen seinen Platz.
+Ein Klick auf eine Grafik öffnet ihre Stelle in Bilanz oder Cashflow. Rechts unten steht unter **Offen**, was zu tun ist (z. B. Umsätze ohne Kategorie, Konten ohne bestätigte Zuordnung, ein verfügbares Update) – ein Klick auf einen Punkt öffnet die Seite, auf der er sich erledigen lässt. Ist nichts offen, fehlt der Kasten, und der Vermögensaufbau nimmt seinen Platz.
 
 **Hilfe auf jeder Seite**: Das **?** neben dem Seitentitel sagt in einem Satz, was die Seite tut; ein Klick darauf öffnet ihren Abschnitt in dieser Hilfe. Die **?** an Tabellen und Grafiken führen jeweils zu deren eigenem Absatz.
 

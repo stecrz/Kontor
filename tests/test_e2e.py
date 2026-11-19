@@ -2985,32 +2985,32 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-card[data-ov='wealth'] svg")
                 pg.click(".ov-card[data-ov='wealth']"); pg.wait_for_selector("[data-cfid='wealth'] svg")
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-grid")
-                # key figures: six, each from the closed months; the monthly cash flow takes a third; a figure leads to its own place
-                self.assertEqual(len(pg.query_selector_all(".ov-kpi .ov-kpi-t")), 6); self.assertIn("Sparquote", pg.inner_text(".ov-kpi"))
+                # wealth building: per block its worth and its change (money in/out, value); the monthly cash flow takes a third
+                self.assertTrue(pg.query_selector_all("#ov-build .ov-bs-r")); self.assertIn("Beteiligungen", pg.inner_text("#ov-build"))
                 w = pg.evaluate("[document.querySelector('.ov-card[data-ov=\"months\"]').offsetWidth, document.querySelector('.ov-grid').offsetWidth]")
                 self.assertLess(w[0], w[1] * 0.36)
-                self.assertTrue(pg.evaluate("[...document.querySelectorAll('.ov-kpi-t')].every(t => t.title)"))           # each says how it is computed
-                # the figures computed: three closed months, interest paid (spending) and got (income) apart, no equity ratio of the
-                # balance sheet (net worth over net worth and debts), nothing a year before; one month: singular; a company: its surplus
-                kpi = pg.evaluate("""(kind, n) => { const ms = ['2026-01', '2026-02', '2026-03'].slice(-n), sums = {};
-                    ms.forEach(m => { sums[m] = {income: 3000, expenses: -1000, operating: 2000, Zinsen: 0, bank: 6000}; });
-                    const D = {months: [...ms, '2026-04'], actual_until: '2026-04', area: {kind}, figures: {fi_real_return_percent: 3},
-                      cashflow: {sums, sections: [{name: 'financing', rows: [{kind: 'interest', amounts: Object.fromEntries(ms.map(m => [m, -100]))}, {kind: 'interest', amounts: {'2026-03': 300}}]}]},
-                      balance: {net_worth: {'2026-03': 100000}, rows: [{group: true, role: 'liabilities', amounts: {'2026-03': -50000}}]}};
-                    const k = ovKpi(D), div = document.createElement('div'); div.innerHTML = k.html;
-                    return [k.when, ...[...div.querySelectorAll('.ov-kpi-t')].map(x => [x.querySelector('.l').textContent, x.querySelector('.v').textContent, x.querySelector('.s').textContent])]; }""", ["private", 3])
-                self.assertTrue(kpi[0].endswith(" · 3 Monate"))
-                self.assertEqual([r[1] for r in kpi[1:]], ["65 %", "1.100 €", "5,5 Monate", "23 %", "50.000 €", "67 %"])
-                self.assertEqual([r[2] for r in kpi[1:3]], ["2.000 € je Monat", "davon Zinsen 100 €"]); self.assertEqual(kpi[3][2], "6.000 € Bankguthaben")
-                self.assertTrue(kpi[4][2].startswith("Ziel ")); self.assertEqual((kpi[5][2], kpi[6][2]), ("", ""))
-                one = pg.evaluate("""() => { const D = {months: ['2026-03', '2026-04'], actual_until: '2026-04', area: {kind: 'company'}, cashflow: {sums: {'2026-03': {income: 0, expenses: -500, operating: -500, Zinsen: 0, bank: -200}}, sections: []},
-                      balance: {net_worth: {}, rows: []}}; const k = ovKpi(D), div = document.createElement('div'); div.innerHTML = k.html;
-                    return [k.when, ...[...div.querySelectorAll('.ov-kpi-t')].map(x => x.querySelector('.l').textContent + '=' + x.querySelector('.v').textContent)]; }""")
-                self.assertTrue(one[0].endswith(" · 1 Monat"))
-                self.assertEqual(one[1:5], ["Überschussquote=–", "Ausgaben je Monat=500 €", "Reserve=0,0 Monate", "Überschuss=-500 €"]); self.assertEqual(one[6], "Eigenkapitalquote=unbekannt")
-                pg.click(".ov-kpi-t[data-ovgo='ekq']"); pg.wait_for_selector("tr.ekq"); self.assertEqual(pg.evaluate("location.hash"), "#balance")
-                pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-kpi")
-                pg.click(".ov-kpi-t >> nth=0"); pg.wait_for_selector("table.cf-tbl"); self.assertEqual(pg.evaluate("location.hash"), "#cashflow")
+                # computed: a participation (money in and value apart), property net of its linked loan (repaid), cash with an
+                # account whose balance is only carried backwards (unknown, not estimated), the other debts (newly borrowed)
+                got = pg.evaluate("""() => { const ms = []; for (let i = 0; i < 13; i++) { const d = new Date(2025, 9 + i, 1); ms.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')); }
+                    const b = ms[0], k = ms[12], acc = (id, name, role, v0, v1, pb) => ({id, name, role, group: false, projected_before: pb || null, amounts: {[b]: v0, [k]: v1}});
+                    const D = {months: [...ms, '2026-11'], actual_until: '2026-11', area: {kind: 'private'},
+                      cashflow: {sums: {}, sections: [{name: 'valuation', rows: [{account: 'P', amounts: {'2026-03': 3000}}]}]},
+                      balance: {net_worth: {}, rows: [acc('C', 'Giro', 'cash', 1000, 3000), acc('X', 'Depot', 'securities', 85000, 90000, '2026-06'), acc('P', 'Anteil', 'participations', 10000, 15000),
+                        acc('I', 'Haus', 'real_estate', 400000, 400000), acc('L', 'Hausdarlehen', 'liabilities', -300000, -292800), acc('O', 'Kredit', 'liabilities', -5000, -6000)]}};
+                    const keep = S.CFG.real_estate; S.CFG.real_estate = [{loan_accounts: {a: 'L | Hausdarlehen'}}];
+                    try { CF.tips = []; const o = ovBuild(D), div = document.createElement('div'); div.innerHTML = o.svg;
+                      return [...div.querySelectorAll('.ov-bs-r')].map(r => [r.querySelector('.ov-bs-n').textContent, r.querySelector('.ov-bs-d').textContent, r.querySelector('.ov-bs-s').textContent]); }
+                    finally { S.CFG.real_estate = keep; } }""")
+                self.assertEqual([g[0] for g in got], ["Beteiligungen", "Immobilien nach Darlehen", "Liquidität & Anlagen", "Übrige Schulden"])
+                self.assertEqual(got[0][1:], ["+5.000 €", "15.000 € · Geldfluss +2.000 € · Wert +3.000 €"])
+                self.assertEqual(got[1][1], "+7.200 €"); self.assertTrue(got[1][2].startswith("107.200 €"))
+                self.assertEqual(got[2][1], "unbekannt"); self.assertEqual(got[2][2], "93.000 €")
+                self.assertEqual(got[3][1:], ["-1.000 €", "-6.000 € · neu aufgenommen 1.000 €"])
+                # the asset structure: a year before only where it is known; new or unknown: nothing, unchanged: ±0 %
+                pg.hover("#ov-comp .ov-tile >> nth=1"); pg.wait_for_timeout(100)
+                tiles = pg.evaluate("[...document.querySelectorAll('#ov-comp .ov-tile')].map(g => [...g.querySelectorAll('text')].map(x => x.textContent).join(' '))")
+                self.assertFalse([x for x in tiles if "neu" in x])
+                pg.click("#ov-build .ov-bs-r >> nth=0"); pg.wait_for_selector(".wrap.bil-tbl"); self.assertEqual(pg.evaluate("location.hash"), "#balance")
                 pg.click("#nav a[href='#overview']"); pg.wait_for_selector(".ov-grid")
                 self.assertRegex(pg.inner_text(".ov-card[data-ov='comp'] .ov-head"), r"Vermögen \w+ \d\d")
                 # hovering a chart: the figures under the pointer (a month, a tile, a step of the bridge, a month of the net worth)
