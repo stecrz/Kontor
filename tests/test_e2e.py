@@ -3461,7 +3461,12 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(pg.query_selector("#cf-heat .cf-heat-sep + .cf-heat-n.tot")); self.assertEqual(pg.inner_text("#cf-heat .cf-heat-n.tot"), "Ausgaben gesamt")
                 for sel, pre in (("#cf-heat .cf-heat-n.tot", "Ausgaben gesamt · "), ("#cf-heat .cf-heat-n.tot ~ .cf-heat-c[data-hr] >> nth=-1", "Ausgaben gesamt · "), ("#cf-heat .cf-heat-n.open >> nth=0", "")):
                     pg.click(sel); pg.wait_for_selector("#drawer.open #cftx-page"); self.assertTrue(pg.inner_text("#drawer h2").startswith(pre))
-                    self.assertTrue(pg.query_selector_all("#drawer tbody tr")); pg.keyboard.press("Escape"); pg.wait_for_timeout(100)
+                    self.assertTrue(pg.query_selector_all("#drawer tbody tr"))
+                    self.assertLessEqual(*pg.evaluate("(() => { const w = document.querySelector('#drawer .dr-wrap'); return [w.scrollWidth, w.clientWidth]; })()"))   # no sideways scrolling
+                    vis = pg.evaluate("(() => { const s = document.querySelector('.dr-src'); if (!s) return true; const r = s.getBoundingClientRect(); return r.right <= innerWidth - document.querySelector('#drawer').offsetWidth + 2; })()")
+                    pg.wait_for_timeout(400); self.assertTrue(vis or pg.evaluate("document.body.classList.contains('dock')"))      # what you clicked: not under the panel
+                    pg.keyboard.press("Escape"); pg.wait_for_timeout(100)
+                pg.wait_for_function("!document.body.classList.contains('dock')"); pg.wait_for_timeout(600)      # the page takes its width back (charts drawn anew)
                 # a few huge cells (20.000 and 100.000 among values up to 2.000): they get the darkest tones and a mark, the others keep their range
                 hk = pg.evaluate("""(() => { const D = JSON.parse(JSON.stringify(B())), id = S.area, keep = S.DATA.areas[id], ms = D.months.filter(m => m < D.actual_until).slice(-12);
                     const sek = D.cashflow.sections.find(s => s.name === 'expenses');

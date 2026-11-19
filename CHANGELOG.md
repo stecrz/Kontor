@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.15.7 (2026-11-19 15:17)
+- Zahlungen zwischen Bereichen mit Gegenbuchung: Zeile „Bereich: Konto“, eingeordnet nach Art des Kontos (Beteiligung, gewährtes Darlehen, Schuld); Darlehen an dich getrennt nach Aufnahme und Tilgung.
+- Seitenfenster mit Umsätzen: Tabelle ohne seitliches Scrollen; angeklickte Zahl markiert; würde das Fenster sie verdecken, rückt die Seite zur Seite.
+- Neue Szenario-Tests: Einlagen, Unternehmenskauf mit Verkäuferdarlehen, Bank- und Privatdarlehen, Darlehen zwischen Gesellschaften, Auslagen, fällige Rechnungen, Ausschüttung – je Tag, Monats- und Jahreswechsel, zufällig gemischt.
+
 ## 3.15.6 (2026-11-19 14:17)
 - Einlagen mit Gegenbuchung im Kapitalkonto auch über das Monatsende verbunden (als „Geld unterwegs“).
 - Geld unterwegs im laufenden Monat nicht mehr doppelt, wenn eine Buchung nach heute datiert ist.

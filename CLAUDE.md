@@ -32,7 +32,7 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 - Großer Versionssprung (zweite Stelle, z. B. 3.11.5 → 3.12.0; auf Wunsch des Nutzers oder nach Rückfrage): vorher eine
   Gesamtprüfung mit voller Kraft – die letzten Änderungen final abnehmen, alle Referenzen aktuell, fehlerfrei. Gefundenes direkt
   verbessern, dann in perfekter Form veröffentlichen:
-  - Alle Tests, dazu viele Zufallsläufe (`KONTOR_FUZZ_SEEDS=1000`), zusätzlich eigene Testdaten mit Sonderfällen und
+  - Alle Tests, dazu viele Zufallsläufe (`KONTOR_FUZZ_SEEDS=1000`, auch für `test_scenarios`), zusätzlich eigene Testdaten mit Sonderfällen und
     Fehlerfällen; alte Funktionen gezielt nachprüfen, ob ein Update sie beschädigt hat.
   - Jede Seite in hell/dunkel, Mac/iPhone ansehen (`ui-check`); alle Verlinkungen und Sprünge, alle Hilfe-Icons und Tooltips
     gegen den heutigen Stand; Texte de/en vollständig und einheitlich.
@@ -90,4 +90,4 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 | `realestate.py`, `tax.py`, `receipts.py` | Immobilienkalkulation, Steuer, Belege |
 | `storage.py`, `auth.py`, `updates.py`, `tls_cert.py` | verschlüsselte Ablage, Anmeldung/Touch ID, Updates, Zertifikat |
 | `web/app.js`, `web/i18n.js` | Oberfläche (eine Datei, Seiten über `#…`), Texte |
-| `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_categories`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_fuzz`, `test_privacy` |
+| `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_scenarios` (Lebensfälle über Bereiche: Einlagen, Kauf, Darlehen, Auslagen; Monats-/Jahreswechsel, gemischt), `test_categories`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_fuzz`, `test_privacy` |

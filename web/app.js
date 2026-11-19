@@ -3990,7 +3990,7 @@ function cfOpenTx(o, page = false) {
     // a category's figure: its sum (all matches); bookings behind other rows can differ from the figure (a transfer, interest on a loan account): their number only
     d.innerHTML = head + `
       <div class="note">${o.kats ? tn('cf_tx_n', r.hits, F(r.sum)) : tn('cf_tx_anzahl', r.hits)}${f.est ? ' · ' + t('uf_ohne_geschaetzte') : ''} · <a href="#" id="cftx-page">${t('cf_tx_seite')}</a></div>
-      <div class="wrap auto"><table class="plain small"><tbody>`
+      <div class="wrap auto dr-wrap"><table class="plain small dr-tx"><colgroup><col class="c-d"><col><col class="c-a"></colgroup><tbody>`
       + r.transactions.map(u => `<tr><td>${FD(u.date)}</td><td>${esc(u.name)}<div class="muted">${esc(u.purpose)}</div></td><td class="num">${F(u.amount)}</td></tr>`).join('')
       + `</tbody></table></div>`;
     $('.close', d).onclick = closeDrawer;
@@ -4615,7 +4615,38 @@ async function openDrawer(txId) {
 }
 function closeDrawer() { $('#drawer').classList.remove('open'); S.drawerTx = null; DRW.key = null; }
 // which drawer is open; a click on the row that opened it closes it (the click outside closes it first -- it must not reopen)
-const DRW = {key: null, closed: null};
+const DRW = {key: null, closed: null, src: null, shown: null, key2: null};
+// the figure behind the side panel stays in view: it is marked while the panel is open, and where the panel would cover it
+// (a wide window), the page makes room beside the panel -- like an inspector on the Mac -- and brings it into view
+document.addEventListener('click', e => {
+  if (!e.target.closest || e.target.closest('#drawer')) return;
+  DRW.src = e.target.closest('#main') ? (e.target.closest('td, th, .cf-hit, [data-cftip], .cf-br-row, .item, tr') || e.target) : null;
+}, true);
+function drawerReveal() {
+  const d = $('#drawer'), open = d && d.classList.contains('open');
+  if (!open) { document.body.classList.remove('dock'); $$('.dr-src').forEach(x => x.classList.remove('dr-src')); DRW.shown = null; return; }
+  const src = DRW.src && document.contains(DRW.src) ? DRW.src : null;
+  if (!src || src === DRW.shown) return;
+  DRW.shown = src; DRW.key2 = srcKey(src);
+  const mark = el => { $$('.dr-src').forEach(x => x.classList.remove('dr-src')); if (el && !(el instanceof SVGElement)) el.classList.add('dr-src'); };
+  mark(src);
+  if (window.innerWidth < 1000) return;                 // narrow: the panel covers the page anyway (closing shows it again)
+  const r = src.getBoundingClientRect();
+  if (r.right <= window.innerWidth - d.offsetWidth - 8 && !document.body.classList.contains('dock')) return;
+  document.body.classList.add('dock');
+  // a chart is drawn anew for the narrower page: the same figure, found again by its marks
+  setTimeout(() => { const el = document.contains(src) ? src : srcFind(DRW.key2); if (!el || !$('#drawer').classList.contains('open')) return;
+    DRW.shown = el; mark(el); el.scrollIntoView({block: 'nearest', inline: 'nearest', behavior: 'smooth'}); }, 320);
+}
+// a figure by what marks it (the nearest element with an id, its tag and data marks) -- to find it again after a redraw
+function srcKey(el) {
+  const host = el.closest('[id]'), data = Object.entries(el.dataset || {}).filter(([k]) => k !== 'cftip').map(([k, v]) => `[data-${k.replace(/[A-Z]/g, c => '-' + c.toLowerCase())}="${CSS.escape(v)}"]`).join('');
+  if (!host || !data) return null;
+  const sel = el.tagName.toLowerCase() + data, all = [...host.querySelectorAll(sel)];
+  return {host: host.id, sel, n: all.indexOf(el)};
+}
+function srcFind(k) { if (!k) return null; const h = document.getElementById(k.host); return h ? h.querySelectorAll(k.sel)[Math.max(0, k.n)] || null : null; }
+new MutationObserver(() => drawerReveal()).observe(document.getElementById('drawer') || document.body, {attributes: true, attributeFilter: ['class'], childList: true});
 function drawerAgain(key) {
   const c = DRW.closed; DRW.closed = null;
   if (c && c.key === key && Date.now() - c.t < 800) return true;

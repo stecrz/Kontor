@@ -164,7 +164,7 @@ class CashflowCases(Reconciles):
             z = p["Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR"]
             self.assertEqual((z["amounts"]["2026-02"], z["amounts"]["2026-04"], z["nw"], z["lbl"], z["account"]),
                              (-10000.0, 2500.0, False, ["cf_einlage_auf", "Muster GbR", "Beteiligung an Muster GbR"], "stake"), cat)
-            k = g["Einlagen/Entnahmen Gesellschafter / Kapitalkonto"]
+            k = g["Einlage/Entnahme Privat / Kapitalkonto"]
             self.assertEqual((k["amounts"]["2026-02"], k["amounts"]["2026-04"], k["nw"]), (10000.0, -2500.0, False), cat)
             self.assertNotIn("Beteiligung an Muster GbR", p); self.assertNotIn("Kapitalkonto", g)         # no change in value
         # over a month end (paid on the 30th, booked or arrived on the 1st): the same, with the money in transit at the month end
@@ -174,7 +174,7 @@ class CashflowCases(Reconciles):
             data = build(txs)
             self.assertAddsUp(data, allow=("ue_unterwegs",))
             g = data["Muster GbR"]
-            k = rows(g)["Einlagen/Entnahmen Gesellschafter / Kapitalkonto"]
+            k = rows(g)["Einlage/Entnahme Privat / Kapitalkonto"]
             self.assertEqual((k["amounts"]["2026-01"], k["amounts"]["2026-02"], k["nw"]), (0.0, amt, False), amt)
             self.assertNotIn("Kapitalkonto", rows(g))                                     # no change in value
             tr_row = next(r for r in g["balance"]["rows"] if r["id"] == "transit")
@@ -207,13 +207,13 @@ class CashflowCases(Reconciles):
                           (72, "kk", d0 + timedelta(days=gap), 3000.0, {"iban": "DE11"}), (73, "kap", d0, -3000.0, {"purpose": "gespiegelt"})]
             data = build(txs)
             self.assertAddsUp(data)
-            self.assertEqual("Einlagen/Entnahmen Gesellschafter / Kapitalkonto" in rows(data["Muster GbR"]), linked, gap)
+            self.assertEqual("Einlage/Entnahme Privat / Kapitalkonto" in rows(data["Muster GbR"]), linked, gap)
         # the same amount every week, each booked on its day: all linked
         weekly = [x for i, d in enumerate((date(2026, 3, 2), date(2026, 3, 9), date(2026, 3, 16), date(2026, 3, 23))) for x in four(80 + 4 * i, d, 500.0, "Umbuchung")]
         data = build(base + weekly)
         self.assertAddsUp(data)
         self.assertEqual(rows(data["Privat"])["Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR"]["amounts"]["2026-03"], -2000.0)
-        self.assertEqual(rows(data["Muster GbR"])["Einlagen/Entnahmen Gesellschafter / Kapitalkonto"]["amounts"]["2026-03"], 2000.0)
+        self.assertEqual(rows(data["Muster GbR"])["Einlage/Entnahme Privat / Kapitalkonto"]["amounts"]["2026-03"], 2000.0)
         self.assertNotIn("Beteiligung an Muster GbR", rows(data["Privat"]))
         # rent of the same amount to the company (paid for something) claims nothing
         data = build(base + four(2, date(2026, 2, 10), 1000.0, "Umbuchung") + [(60, "giro", date(2026, 2, 8), -1000.0, {"iban": "DE21", "cat": "Wohnen\\Miete"}),
@@ -237,7 +237,7 @@ class CashflowCases(Reconciles):
         # planning: a contribution planned on such a row moves the account, no change in value is made up
         ds = build(base + four(2, date(2026, 2, 10), 10000.0, "Umbuchung"))
         for name, row, sec in (("Privat", "Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR", "investing"),
-                               ("Muster GbR", "Einlagen/Entnahmen Gesellschafter / Kapitalkonto", "financing")):
+                               ("Muster GbR", "Einlage/Entnahme Privat / Kapitalkonto", "financing")):
             d = ds[name]
             report.apply_plan(d, {"rows": {sec + "/" + row: {"method": "none", "amounts": {"2026-08": -5000.0 if sec == "investing" else 5000.0}}}}, core.merged_config({}))
             self.assertAlmostEqual(d["cashflow"]["sums"]["2026-08"]["valuation"], 0.0, 2, name)

@@ -1213,6 +1213,23 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             pairs.append((out_.booking_date, in_.booking_date, -out_.amount, out_.account_uuid, in_.account_uuid, out_.id, in_.id))
         return o
 
+    def counter_row(t: Tx, mk: str, other: str, cb: Tx) -> None:
+        """A payment between two of your areas that went into (came out of) an account of this one, by that account's kind: a
+        participation or a loan granted under investing, a liability under financing (a company: from its partners, yours: a
+        loan taken up or repaid). Named \"<other area>: <account>\"; its counter-booking is behind the figure too."""
+        ca = ledger.accounts[cb.account_uuid]
+        r_c = roles.get(ca.uuid, "other")
+        row, kind = "Einlage/Entnahme %s / %s" % (other, ca.name), "external"
+        if r_c in ("participations", "receivables"):
+            sec, grp = "investing", _grp(INVEST_GROUPS, r_c)
+        elif company:
+            sec, grp = "financing", _grp(FIN_GROUPS, "partners")
+        else:                                            # a loan of yours: taken up and repaid apart (never a negative loan taken up)
+            sec, grp = "financing", _grp(FIN_GROUPS, "drawdown" if t.amount > 0 else "repayment")
+            row, kind = row + (" / Aufnahme" if t.amount > 0 else " / Tilgung"), ("drawdown" if t.amount > 0 else "repayment")
+        R.add(sec, row=row, mk=mk, amount=t.amount, account=ca.uuid, kind=kind, nw=False, lbl=("cf_einlage_auf", other, ca.name), **grp)
+        R.ids[(sec, row)][mk].append(cb.id)
+
     def own_row(t: Tx, acc: Account, role: str, mk: str) -> None:
         """A booking of an account that is no bank account (loan, receivable, asset): interest or a change of its value."""
         nonlocal unclear
@@ -1305,10 +1322,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             st = stakes.get(g)
             cb = counter_booking(t, mk)                # booked against an account by you: that, else the participation
             if cb:
-                ca = ledger.accounts[cb.account_uuid]
-                R.add("investing", row="Einlage/Entnahme %s / %s" % (g, ca.name), mk=mk, amount=t.amount, account=ca.uuid, kind="external",
-                      nw=False, lbl=("cf_einlage_auf", g, ca.name), **_grp(INVEST_GROUPS, "participations"))
-                R.ids[("investing", "Einlage/Entnahme %s / %s" % (g, ca.name))][mk].append(cb.id)        # its counter-booking too (a click)
+                counter_row(t, mk, g, cb)
             elif st:
                 stake_in[st][mk] += -t.amount
                 R.add("investing", row="Einlage/Entnahme " + g, mk=mk, amount=t.amount, account=st, kind="external", nw=False,
@@ -1319,18 +1333,11 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             continue
         if p is not None and not same and pa is not None:             # another area of yours
             cb = counter_booking(t, mk)
-            ca = ledger.accounts[cb.account_uuid] if cb else None
-            if company and ca:
-                R.add("financing", row="Einlagen/Entnahmen Gesellschafter / " + ca.name, mk=mk, amount=t.amount, account=ca.uuid, kind="external",
-                      nw=False, lbl=("cf_einlagen_gesellschafter_auf", ca.name), **_grp(FIN_GROUPS, "partners"))
-                R.ids[("financing", "Einlagen/Entnahmen Gesellschafter / " + ca.name)][mk].append(cb.id)
+            if cb:
+                counter_row(t, mk, pa, cb)
             elif company:
                 R.add("financing", row="Einlagen/Entnahmen Gesellschafter", mk=mk, amount=t.amount, kind="external", nw=True,
                       lbl=("cf_einlagen_gesellschafter",), **_grp(FIN_GROUPS, "partners"))
-            elif ca:
-                R.add("investing", row="Einlage/Entnahme %s / %s" % (pa, ca.name), mk=mk, amount=t.amount, account=ca.uuid, kind="external",
-                      nw=False, lbl=("cf_einlage_auf", pa, ca.name), **_grp(INVEST_GROUPS, "areas"))
-                R.ids[("investing", "Einlage/Entnahme %s / %s" % (pa, ca.name))][mk].append(cb.id)
             else:
                 R.add("investing", row="Einlage/Entnahme " + pa, mk=mk, amount=t.amount, kind="external", nw=True,
                       lbl=("cf_name", pa), **_grp(INVEST_GROUPS, "areas"))
@@ -2107,7 +2114,7 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
     fin = sec_by_name["financing"]
     loan_groups: Dict[str, Dict[str, dict]] = defaultdict(dict)
     for z in fin["rows"]:
-        if z.get("account"):
+        if z.get("account") and (z.get("lbl") or [""])[0] != "cf_einlage_auf":    # a loan paid between your areas: planned with its account below
             loan_groups[z["account"]][z["kind"]] = z
     loan_state: Dict[str, dict] = {}
     for uuid, parts in loan_groups.items():
@@ -2154,7 +2161,7 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
         for mk in ist:
             if mk.endswith("-12"):
                 year_base[r["id"]][int(mk[:4]) + 1] = r["amounts"][mk] or 0.0
-    counter_rows = [z for sek in sektionen for z in sek["rows"] if (z.get("lbl") or [""])[0] in ("cf_einlage_auf", "cf_einlagen_gesellschafter_auf")]
+    counter_rows = [z for sek in sektionen for z in sek["rows"] if (z.get("lbl") or [""])[0] == "cf_einlage_auf"]
     inv_rows = [z for sek in sektionen if sek["name"] == "investing" for z in sek["rows"] if z not in counter_rows]
     growth_of: Dict[str, Tuple[float, Optional[float]]] = {}
     fremd_link: Dict[str, Tuple[str, float]] = {}

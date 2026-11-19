@@ -53,6 +53,7 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
 ## Laufend
 - Sicherheit vor allem: nichts in MoneyMoney kaputt machen, keine Daten nach außen.
 - Jede Rechenlogik mit Abstimmungstests (Summen müssen aufgehen) und, wo Zustände sich ändern, mit Zufallsläufen.
+- Neue Lebensfälle (Einlage, Kauf, Darlehen, Auslage …) als Szenario in `tests/test_scenarios.py` ergänzen – je Tag, Monats- und Jahreswechsel.
 - Oberfläche nach Apples Human Interface Guidelines, hell und dunkel, Mac und iPhone.
 
 ## Beim nächsten großen Versionssprung (Hilfe, README, Bilder)
