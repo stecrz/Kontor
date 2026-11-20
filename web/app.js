@@ -2406,7 +2406,7 @@ function bindBilanzChart(main) {
     bchLinkPan($('#bch-svg', main));
   } else $$('.wrap thead th[data-key]', main).forEach(th => { th.classList.add('jump'); th.addEventListener('click', () => bchFocus(th.dataset.key)); });
   if (BCH.ro) BCH.ro.disconnect();
-  let last = 0; BCH.ro = new ResizeObserver(() => { if (PRINT.on) return; const w = $('#bch-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; bchDraw(); } });
+  let last = 0; BCH.ro = new ResizeObserver(onResizeFrame(() => { if (PRINT.on) return; const w = $('#bch-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; bchDraw(); } }));
   BCH.ro.observe($('#bch-plot', main));
 }
 
@@ -2908,7 +2908,7 @@ function bindBilanzLines(main) {
   }));
   draw();
   if (LC.ro) LC.ro.disconnect();
-  let last = 0; LC.ro = new ResizeObserver(() => { if (PRINT.on) return; const w = $('.lc-plot', grid); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; ['nw', 'sel', 'pos', 'bil'].forEach(id => { if (has(id) && LC[id]) lcDraw(id); }); } });
+  let last = 0; LC.ro = new ResizeObserver(onResizeFrame(() => { if (PRINT.on) return; const w = $('.lc-plot', grid); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; ['nw', 'sel', 'pos', 'bil'].forEach(id => { if (has(id) && LC[id]) lcDraw(id); }); } }));
   LC.ro.observe(grid);
 }
 
@@ -3426,6 +3426,9 @@ function pageHandover() {
 }
 window.addEventListener('scroll', pageKeep, {passive: true}); $('main').addEventListener('scroll', pageKeep, {passive: true});
 matchMedia('(min-width:1280px)').addEventListener('change', pageHandover);
+// what a ResizeObserver does, in the next frame and once per frame: a chart redrawn inside the observer changes sizes again in the
+// same frame, and the browser reports a loop (e.g. while the assistant's panel slides in beside the page)
+const onResizeFrame = fn => { let raf = 0; return () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; fn(); }); }; };
 function scrollParentY(el) {
   for (let p = el.parentElement; p; p = p.parentElement) { const o = getComputedStyle(p).overflowY; if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) return p; }
   return document.scrollingElement;
@@ -4338,7 +4341,7 @@ function bindCfCharts(main) {
     if (e.key === 'Escape' && CF.pieSel) { e.preventDefault(); CF.pieSel = null; hide(); cfDrawPie(); }
     else if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('[data-pie]')) { e.preventDefault(); pin(e.target.closest('[data-pie]')); } });
   let last = wrap.clientWidth;
-  CF.ro = new ResizeObserver(() => { if (PRINT.on) return; const w = $('.cf-charts'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; draw(); } });
+  CF.ro = new ResizeObserver(onResizeFrame(() => { if (PRINT.on) return; const w = $('.cf-charts'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; draw(); } }));
   CF.ro.observe(wrap);
 }
 

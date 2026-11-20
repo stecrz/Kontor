@@ -27,7 +27,10 @@ description: Jede Änderung an Kontor abschließen – prüfen (auch mit Python 
       Abschnitt oben in `CHANGELOG.md`, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` mit `TZ=Europe/Berlin date +"%Y-%m-%d %H:%M"`.
       Deutsch, aus Sicht des Nutzers (was er merkt), keine Technik. Kompakt: je Änderung ein Punkt mit wenigen Stichworten in
       einer Zeile, auf einen Blick lesbar – keine Erklärungen, keine Begründungen.
-   3. **Ein Commit:** eigene Zwischencommits zusammenfassen (`git reset --soft origin/main`), dann
+   3. **Ein Commit:** erst prüfen, dass der frisch geholte `main` in der eigenen Arbeit steckt:
+      `git fetch -q origin main && git merge-base --is-ancestor origin/main HEAD` – schlägt das fehl, ist `main` inzwischen
+      weiter: zurück zu 1 (das Zusammenfassen auf einen neueren `main` würde dessen Änderungen stillschweigend rückgängig
+      machen). Dann eigene Zwischencommits zusammenfassen (`git reset --soft origin/main`), dann
       `git commit -qam "X.Y.Z: <was sich ändert>" -m "<Modell>: <Link dieser Sitzung>"`, etwa
       `-m "Claude Opus 5.5: https://claude.ai/code/session_…"` (englisch, kurz; keine E-Mail, kein `Co-Authored-By`, keine Tags).
    4. **Push:** `git push -q origin HEAD:main`. Abgelehnt – ein anderer Chat war schneller: `VERSION` und `CHANGELOG.md` nie

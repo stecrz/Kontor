@@ -1,7 +1,14 @@
 # Änderungen
 
+## 3.16.10 (2026-11-20 19:04)
+- Behoben: Korrektur aus 3.16.8 (Grafiken beim Aufklappen des Assistenten in Safari) war mit 3.16.9 verloren gegangen – wieder drin.
+- Entwicklung: Schutz beim Veröffentlichen, damit kein Chat die Änderungen eines anderen überschreibt.
+
 ## 3.16.9 (2026-11-20 18:53)
 - KI-Assistent: Lade-Kreisel dreht beim Nachdenken durchgehend (blieb scheinbar stehen).
+
+## 3.16.8 (2026-11-20 18:52)
+- Behoben: Fehlermeldung der Safari-Engine beim Aufklappen des Assistenten (Grafiken zeichnen sich im nächsten Bild neu).
 
 ## 3.16.7 (2026-11-20 18:42)
 - KI-Assistent: Diktat erscheint schon beim Sprechen im Textfeld.

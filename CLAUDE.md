@@ -40,7 +40,8 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 Bis zu drei Chats arbeiten gleichzeitig am Repo, meist an Verschiedenem, jeder in seinem eigenen Klon; keiner sieht die anderen.
 - Lokal beliebig committen; auf GitHub kommt nur Fertiges, als ein Commit je Version – ohne Zweige, direkt auf `main`.
 - Direkt vor dem Versions-Commit holen und die eigene Arbeit daraufsetzen (`git pull --rebase origin main`); die Nummer immer
-  aus dem frisch geholten `main`. Konflikte: beide Seiten lesen und so zusammenführen, dass beide Änderungen erhalten bleiben;
+  aus dem frisch geholten `main`; zusammengefasst wird nur, wenn dieser `main` in der eigenen Arbeit steckt (sonst gingen fremde
+  Änderungen verloren). Konflikte: beide Seiten lesen und so zusammenführen, dass beide Änderungen erhalten bleiben;
   Fremdes nie verwerfen. Lässt sich ein Konflikt nicht eindeutig auflösen (Unvereinbares, eine Entscheidung steht an): den
   Nutzer fragen, mit Empfehlung. Nach jedem Rebase die Tests erneut – auch ohne Konflikt, denn Logikfehler meldet Git nicht.
 - War ein anderer Chat schneller (Push abgelehnt): `VERSION` und `CHANGELOG.md` nie zusammenführen, sondern den eigenen Commit
