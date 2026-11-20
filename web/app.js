@@ -11,7 +11,6 @@ function t(k, ...a) {
   const e = I18N[k], s = e ? (LANG === 'en' && e[1] != null ? e[1] : e[0]) : k;
   return a.length ? s.replace(/\{(\d+)\}/g, (m, i) => String(a[+i])) : s;
 }
-const tx = t;                 // wo ein lokales t den Namen verdeckt
 function setLang(l, pending) {
   // Sprache wechseln: merken und Oberflaeche neu laden (alle Texte, Formate und Monatsnamen einheitlich)
   l = langOk(l);
@@ -19,7 +18,7 @@ function setLang(l, pending) {
   if (l !== LANG) location.reload();
 }
 // pages not fully tested yet: usable, but marked "Alpha" in the menu and next to the page title
-const ALPHA_TABS = new Set(['planning', 'properties', 'tax', 'transactions']);
+const ALPHA_TABS = new Set(['planning', 'properties', 'tax', 'transactions', 'assistant']);
 const alphaTag = (cls = 'alpha-tag') => `<em class="${cls}" title="${t('alpha_tip')}">${t('alpha')}</em>`;
 // appearance, per device: dark (the default), light, or like the system
 const themeGet = () => { try { return ['light', 'auto'].includes(localStorage.getItem('kontor.theme')) ? localStorage.getItem('kontor.theme') : 'dark'; } catch (e) { return 'dark'; } };
@@ -62,6 +61,25 @@ const DEC = (fmt.formatToParts(1.5).find(p => p.type === 'decimal') || {value: '
 // a figure in a table: its cents small beside the euros -- there when you look for them, otherwise out of the way
 const FC = v => { const s = F(v), i = s.lastIndexOf(DEC); return i < 0 ? s : `${s.slice(0, i)}<small class="ct">${s.slice(i)}</small>`; };
 const parseF = s => String(s).split(GRP).join('').replace(DEC, '.');        // a figure as shown, back to a number's text
+// what you typed, as a number -- in the notation of the language (1.234,56 or 1,234.56). null: nothing typed; NaN: no number.
+// The sign that groups thousands is one only before exactly three digits; where it cannot be that ("12.5" in German) it can
+// only be the decimal sign. Nothing is read two ways.
+const numIn = s => {
+  s = String(s == null ? '' : s).replace(/[\s\u00a0\u202f€]/g, ''); if (!s) return null;
+  const neg = s[0] === '-'; s = s.replace(/^[+-]/, '');
+  const g = GRP.trim() || (DEC === ',' ? '.' : ',');
+  let [int, frac, ...more] = s.split(DEC);
+  if (more.length || !/^\d*$/.test(frac || '')) return NaN;
+  const parts = int.split(g);
+  if (parts.length > 1) {
+    if (/^[1-9]\d{0,2}$/.test(parts[0]) && parts.slice(1).every(x => /^\d{3}$/.test(x))) int = parts.join('');
+    else if (parts.length === 2 && frac == null && /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])) [int, frac] = parts;
+    else return NaN;
+  }
+  if (!/^\d*$/.test(int) || (!int && !frac)) return NaN;
+  const v = Number((int || '0') + (frac ? '.' + frac : ''));
+  return isFinite(v) ? (neg ? -v : v) : NaN;
+};
 // amounts on axes: short where space is tight (T / M, English k / M), long on wide charts (Tsd. / Mio.);
 // ref = largest tick of the axis, so that all ticks share one unit (5T, 10T, 15T instead of 5.000, 10T, 15T)
 const Fk = (v, long, ref = v) => {
@@ -102,13 +120,11 @@ const H = {
   history_source: t('umsaetze_saldo_am_monatsende_heutiger'),
   zuordnen: t('hier_landen_alle_umsaetze_die'),
   regeln_mm: t('regeln_mm_tip'),
-  accounts_mapping: t('bereich_position_und_verlauf_werden'),
   verlauf_import: t('datei_mit_monats_oder_tagesstaenden'),
   inactive: t('gilt_fuer_konten_mit_anzeige'),
-  dry_run: t('im_testmodus_schlaegt_kontor_die'),
   mmhist: t('sicherheit_die_datei_bleibt_verschlues'),
   depotverlauf: t('moneymoney_stellt_ueber_seine_schnitts'),
-  fetch: t('stand_je_konto_in_dem'), ab_art: t('wird_von_moneymoney_bei_bank'),
+  ab_art: t('wird_von_moneymoney_bei_bank'),
   touchid: t('eingeschaltet_die_anmeldung_am_mac'),
   bilanz_tabelle: t('klick_auf_eine_position_klappt'),
   abgleich: t('datenstand_in_zwei_stufen_banken'),
@@ -128,8 +144,6 @@ const H = {
   zielkonto: t('zielkonto_tip'), anl_empfaenger: t('anl_tip'), sicherung: t('sicherung_tip'),
   voll_lesen: t('voll_lesen_tip'),
   sync_knoepfe: t('sync_knoepfe_tip'),
-  kennung: t('interne_kennung_des_bereichs_wird'),
-  intervall: t('der_dienst_liest_alle_n'),
   kz_eingetragen: t('kz_eingetragen_tip'),
   belege_ordner: t('belege_werden_als_normale_dateien'),
   belege_sub: t('platzhalter_jahr_monat_entitaet_bereic'),
@@ -138,6 +152,8 @@ const H = {
   bind: t('auf_diesem_mac_ist_die'),
   tls: t('optional_zertifikat_schluessel_pem_fue'),
   updates: t('einzige_netzverbindung_von_kontor_einm'),
+  assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_denken: t('h_ki_denken'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
+  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'),
   darlehen_iban: t('die_rate_wird_am_gegenkonto'),
   darlehen_konto: t('das_manuell_gefuehrte_darlehenskonto_i'),
   darlehen_quelle: t('das_konto_von_dem_die'),
@@ -147,7 +163,7 @@ const H = {
   regel_darlehen_h: t('regel_darlehen_h'), regel_gesellschaften_h: t('regel_gesellschaften_h'),
   h_l_name: t('h_l_name'), h_l_aktiv: t('h_l_aktiv'), h_l_art: t('h_l_art'), h_l_text: t('h_l_text'), h_l_excl: t('h_l_excl'), h_l_zinstag: t('h_l_zinstag'),
   h_l_ab: t('h_l_ab'), h_l_gp: t('h_l_gp'), h_l_kt: t('h_l_kt'), h_l_kz: t('h_l_kz'),
-  h_co_anteil: t('h_co_anteil'), h_co_bet: t('h_co_bet'), h_co_gk: t('h_co_gk'), h_co_rueck: t('h_co_rueck'), h_gk_rueck: t('h_gk_rueck'), h_co_schwelle: t('h_co_schwelle'), h_co_gp: t('h_co_gp'),
+  h_co_anteil: t('h_co_anteil'), h_co_bet: t('h_co_bet'), h_co_gk: t('h_co_gk'), h_co_rueck: t('h_co_rueck'), h_co_takt: t('h_co_takt'), h_gk_rueck: t('h_gk_rueck'), h_co_schwelle: t('h_co_schwelle'), h_co_gp: t('h_co_gp'),
   method: t('12_6_monate_durchschnitt_der'),
   inflation: t('ausgaben_steigen_standardmaessig_mit_d'),
   steig_ein: t('jaehrliche_steigerung_der_einnahmen_z'),
@@ -182,29 +198,29 @@ const H = {
   geld_unterwegs: t('geld_unterwegs_tip'),
 };
 const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
-  accounts_mapping: 'accounts', inactive: 'accounts', verlauf_kurz: 'history', history_source: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
+  inactive: 'accounts', verlauf_kurz: 'history', history_source: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
   zuordnen: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', sicherung: 'backup',
   cf_operativ: 'cash-flow', cf_invest: 'cash-flow', cf_finanz: 'cash-flow', cf_unklar: 'cash-flow', cf_wert: 'cash-flow',
   cf_bank: 'cash-flow', cf_umsch: 'cash-flow', cf_fcf: 'cash-flow', cf_nv: 'cash-flow', cf_abgleich_bank: 'cash-flow', cf_abgleich_nv: 'cash-flow', cf_bruecke: 'cash-flow-bridge', cf_verm_bruecke: 'cash-flow-wealth', cf_je_monat_t: 'cash-flow-months', cf_herkunft_verwendung: 'cash-flow-total',
   cf_ausgaben_kuchen: 'cash-flow-ring', cf_heatmap: 'cash-flow-heatmap',
-  abgleich: 'sync', ab_art: 'sync', voll_lesen: 'sync', sync_knoepfe: 'sync', months_back: 'sync', fetch: 'sync', intervall: 'sync',
-  bch: 'balance-sheet-chart', bilanz_tabelle: 'balance-sheet-table', geld_unterwegs: 'balance-sheet-table', dry_run: 'rules', regel_darlehen_h: 'rules-loans', regel_gesellschaften_h: 'rules-companies',
+  abgleich: 'sync', ab_art: 'sync', voll_lesen: 'sync', sync_knoepfe: 'sync', months_back: 'sync',
+  bch: 'balance-sheet-chart', bilanz_tabelle: 'balance-sheet-table', geld_unterwegs: 'balance-sheet-table', regel_darlehen_h: 'rules-loans', regel_gesellschaften_h: 'rules-companies',
   darlehen_iban: 'rules-loans', darlehen_konto: 'rules-loans', darlehen_quelle: 'rules-loans', zinsmodell: 'rules-loans', rate_list: 'rules-loans', base_override: 'rules-loans',
   h_l_name: 'rules-loans', h_l_aktiv: 'rules-loans', h_l_art: 'rules-loans', h_l_text: 'rules-loans', h_l_excl: 'rules-loans', h_l_zinstag: 'rules-loans', h_l_ab: 'rules-loans',
   h_l_gp: 'rules-loans', h_l_kt: 'rules-loans', h_l_kz: 'rules-loans', h_co_anteil: 'areas', h_co_bet: 'rules-companies', h_co_gk: 'rules-mirrors', h_gk_rueck: 'rules-mirrors',
-  h_co_rueck: 'rules-back', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
+  h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
   transactions: 'receipts', categories: 'categories', 'categories/rules': 'categories-rules', 'categories/written': 'categories-write-back', bookings: 'auto-bookings',
   setup: 'setup', accounts: 'accounts', 'accounts/areas': 'areas', 'accounts/history': 'balances', 'accounts/positions': 'categories-positions', 'accounts/rules': 'rules',
   'accounts/tax': 'tax', settings: '', 'settings/moneymoney': 'sync', 'settings/access': 'iphone', 'settings/receipts': 'receipts', 'settings/updates': 'updates',
-  'settings/backup': 'backup', log: 'log'};
+  'settings/backup': 'backup', 'settings/assistant': 'assistant-setup', assistant: 'assistant', log: 'log'};
 // pages with tabs: the title stays, so the line names the tab it is about ("Belege: …")
-const SUB_LABEL = {settings: {'': 'allgemein', moneymoney: 'einst_mm', access: 'zugang', receipts: 'belege', updates: 'updates', backup: 'sichern_zuruecksetzen'},
+const SUB_LABEL = {settings: {'': 'allgemein', moneymoney: 'einst_mm', access: 'zugang', receipts: 'belege', assistant: 'ki_assistent', updates: 'updates', backup: 'sichern_zuruecksetzen'},
   accounts: {'': 'mod_accounts', areas: 'mod_areas', history: 'kontostaende_tab', positions: 'cashflow_positionen', rules: 'nav_auto_regeln', tax: 'steuer'},
   categories: {'': 'kz_tab_offen', rules: 'regeln_fuer_moneymoney', written: 'kz_tab_eingetragen'}};
 const pageHq = (tab, sub) => { const k = (tab + '/' + sub) in PAGE_HELP ? tab + '/' + sub : tab, id = PAGE_HELP[k]; if (id == null) return '';
@@ -267,9 +283,9 @@ document.addEventListener('click', e => {
   window.addEventListener('scroll', hide, true); window.addEventListener('resize', hide);
 })();
 
-const S = { tab: 'overview', mode: 'months', plan: true, real: false, all: false, collapsed: {}, open: {}, csrf: null, area: null, cfEbene: 0, planEbene: 2, cfTog: {'s:operating': true},          /* at the start: main lines, income and expenses open (a level clicked: exactly that level) */ cfZeit: '12m', cfVon: null, cfBis: null, cfPieArt: 'aus',
+const S = { tab: 'overview', mode: 'months', plan: true, real: false, all: false, collapsed: {}, csrf: null, area: null, cfEbene: 0, planEbene: 2, cfTog: {'s:operating': true},          /* at the start: main lines, income and expenses open (a level clicked: exactly that level) */ cfZeit: '12m', cfVon: null, cfBis: null, cfPieArt: 'aus',
             DATA: null, CFG: null, KONTEN: [], KATS: [], STATUS: null, steuerJahr: null, steuerEnt: null, proposal: false,
-            uf: {entity: '', year: '', account: '', q: '', ohne_beleg: false, uncategorized_flag: false, direction: '', kats: null, date_from: '', date_to: '', title: '', est: false, mitOhne: false, katsLabel: '', rChart: false, ids: null, cfRows: null}, sel: new Set(), drawerTx: null };
+            uf: {entity: '', year: '', account: '', q: '', ohne_beleg: false, uncategorized_flag: false, direction: '', kats: null, date_from: '', date_to: '', title: '', est: false, mitOhne: false, katsLabel: '', rChart: false, ids: null, cfRows: null}, sel: new Set() };
 
 function choose(msg, opts) {
   // Rückfrage mit mehreren Antworten (statt confirm): opts = [[wert, text, klasse], ...]; Abbrechen, Escape oder daneben -> null
@@ -337,7 +353,7 @@ async function api(path, body, method, netMode, renewed) {
     const at = r.headers.get('X-Kontor-Cached-At'); if (at) OFFLINE.as_of = at;
     if (IS_LOCAL) throw new Error(t('err_dienst_antwortet_nicht'));
   } else if (OFFLINE.mode && opts.method === 'GET' && r.ok && path !== '/api/session') { OFFLINE.mode = false; OFFLINE.as_of = null; offlineBanner(); }
-  if (r.status === 401 && path !== '/api/session') { S.csrf = null; if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.as_of = null; checkSession(); } else showLogin(); const e = new Error('nicht angemeldet'); e.status = 401; throw e; }
+  if (r.status === 401 && path !== '/api/session') { S.csrf = null; if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.as_of = null; checkSession(); } else showLogin(); const e = new Error(t('nicht_angemeldet')); e.status = 401; throw e; }
   if (r.status === 403 && data.csrf === 'invalid' && !renewed) {
     // signed in again meanwhile (e.g. in another window): the token of this page is old -- take the current one, try once more
     try { const s = await fetch('/api/session', {credentials: 'same-origin'}).then(x => x.json()); if (s.signed_in && s.csrf) { S.csrf = s.csrf; return await api(path, body, method, netMode, true); } } catch (e) {}
@@ -545,6 +561,7 @@ async function checkSession() {
   if (SESSION.signed_in) { S.csrf = SESSION.csrf; await enterApp(); } else showLogin();
 }
 function showLogin() {
+  asMicStop(false);          // a recording does not run on behind the lock
   $('#shell').classList.add('hidden'); $('#login').classList.remove('hidden'); $('#drawer').classList.remove('open');
   const setup = SESSION && SESSION.setup_needed && !OFFLINE.mode;
   $('#login-text').textContent = OFFLINE.mode ? t('der_mac_ist_nicht_erreichbar')
@@ -627,6 +644,7 @@ document.addEventListener('keydown', e => {
   if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || !S.csrf || !$('#login').classList.contains('hidden')) return;
   const k = (e.key || '').toLowerCase();
   if (k === 'l') { e.preventDefault(); lockNow(); }
+  if (k === 'k' && asOn() && S.tab !== 'assistant') { e.preventDefault(); asShow(!AS.open); }
   if (k === 's') { const b = $('#main [data-cmd-s]'); if (b) { e.preventDefault(); if (!b.disabled) b.click(); } }
 });
 
@@ -636,6 +654,7 @@ async function enterApp() {
   if (!OFFLINE.mode && checkVersion((S.STATUS || {}).version)) return;        // signed in again after an update: the new files first
   await syncLang();
   route();
+  if (!OFFLINE.mode) asLoad().then(() => { try { if (localStorage.getItem('kontor.assist') === '1' && asOn()) { AS.open = true; asLayout(); } } catch (e) {} if (S.tab === 'assistant' || S.tab === 'setup') route(); });
   if (!OFFLINE.mode) api('/api/offline/verifier').catch(() => {});       // für die Offline-Ansicht zwischenspeichern
   offlineBanner();
 }
@@ -668,7 +687,7 @@ function fmtZeit(ts) {
   const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const now = new Date(), tag = ts.slice(0, 10), zeit = ts.slice(11, 16), sep = LANG === 'en' ? '/' : '.';
   if (tag === iso(now)) return t('zeit_heute', zeit);
-  if (tag === iso(new Date(now.getTime() - 864e5))) return t('zeit_gestern', zeit);
+  if (tag === iso(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))) return t('zeit_gestern', zeit);
   const y = ts.slice(0, 4) === String(now.getFullYear()) ? '' : ts.slice(2, 4);
   return ts.slice(8, 10) + sep + ts.slice(5, 7) + (LANG === 'en' ? (y ? sep + y : '') : '.' + y) + ' ' + zeit;
 }
@@ -758,7 +777,7 @@ function bereichSeg() {
   const seg = $('#bereich-seg'); if (!S.DATA) { seg.classList.add('hidden'); return; }
   const keys = Object.keys(S.DATA.areas || {});
   seg.classList.toggle('hidden', keys.length < 2 || !['overview', 'balance', 'cashflow', 'planning'].includes(S.tab));
-  seg.innerHTML = keys.map(k => `<button data-b="${k}" class="${k === S.area ? 'on' : ''}">${esc(BN(k))}</button>`).join('');
+  seg.innerHTML = keys.map(k => `<button data-b="${esc(k)}" class="${k === S.area ? 'on' : ''}">${esc(BN(k))}</button>`).join('');
   $$('button', seg).forEach(b => b.addEventListener('click', () => { S.area = b.dataset.b; S.collapsed = {}; bereichSeg(); route(); }));
   const on = $('button.on', seg); if (on && seg.scrollWidth > seg.clientWidth) seg.scrollLeft = on.offsetLeft - (seg.clientWidth - on.offsetWidth) / 2;   // many areas: the bar scrolls sideways
 }
@@ -819,8 +838,8 @@ async function vUebersicht() {
   if (!D) return S.setup || !S.DATA ? `<div class="card"><div class="v s">${t('willkommen_bei_kontor')}</div><div class="d">${t('die_einrichtung_fuehrt_dich_durch')}</div><div class="actions"><a href="#setup"><button>${t('einrichtung_oeffnen')}</button></a></div></div>` : noData;
   const m = D.months, cur = m[m.length - 1], yr = cur.slice(0, 4);
   // what is to do: a line of pills (the sidebar shows the same as marks)
-  const [ok, ob] = await Promise.all([api(`/api/transactions?year=${yr}&uncategorized=1&limit=1&entity=${S.area}`).catch(() => ({})),
-    api(`/api/transactions?year=${yr}&without_receipt=1&direction=out&limit=1&entity=${S.area}`).catch(() => ({}))]);
+  const [ok, ob] = await Promise.all([api(`/api/transactions?year=${yr}&uncategorized=1&limit=1&entity=${encodeURIComponent(S.area)}`).catch(() => ({})),
+    api(`/api/transactions?year=${yr}&without_receipt=1&direction=out&limit=1&entity=${encodeURIComponent(S.area)}`).catch(() => ({}))]);
   const lastRun = S.STATUS.last_run, items = [];
   if (lastRun && lastRun.dry_run && lastRun.proposals && lastRun.proposals.length) items.push(['warn', lastRun.proposals.length + t('buchungsvorschlaege_warten_testmodus'), '#bookings']);
   if (ok.hits) items.push(['warn', ok.hits + t('umsaetze') + yr + t('ohne_kategorie_zuordnen'), '#categories']);
@@ -1090,6 +1109,7 @@ const MODULES = [
   {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.tax || {}).rental_category, href: '#accounts/tax', optional: true},
   {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.receipts || {}).folder, href: '#settings/receipts', optional: true},
   {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => ((S.CFG.ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
+  {id: 'assistant', t: t('ki_assistent'), d: t('mod_assistant_d'), done: () => asOn() && !!(AS.st || {}).ready, href: '#settings/assistant', optional: true},
   {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.categories || {}).total || {}).without), href: '#categories', optional: true},
   {id: 'operation', t: t('mod_operation'), d: t('testmodus_automatischer_abgleich_mitte'), done: () => true, href: '#settings/moneymoney'},
 ];
@@ -1317,10 +1337,9 @@ function collectBereiche() {
 async function vKontenEditor() {
   const leaves = S.KONTEN.filter(k => !k.group);
   let ab = {}; try { ab = Object.fromEntries(((await api('/api/sync')).accounts || []).map(k => [k.uuid, k])); } catch (e) {}     // online or offline, as recognised
-  const cfg = S.CFG, rollen = cfg.balance.roles || {}, verlauf = cfg.balance.history_source || {}, ill = new Set((cfg.balance.illiquid_accounts || []).map(r => r.split('|')[0].trim())), hide = new Set((cfg.balance.hidden_accounts || []).map(r => r.split('|')[0].trim())), show = new Set((cfg.balance.always_show || []).map(r => r.split('|')[0].trim()));
+  const cfg = S.CFG, rollen = cfg.balance.roles || {}, verlauf = cfg.balance.history_source || {}, hide = new Set((cfg.balance.hidden_accounts || []).map(r => r.split('|')[0].trim())), show = new Set((cfg.balance.always_show || []).map(r => r.split('|')[0].trim()));
   const roleOf = u => { const k = Object.keys(rollen).find(x => x.split('|')[0].trim() === u); return k ? rollen[k] : ''; };
   const verOf = u => { const k = Object.keys(verlauf).find(x => x.split('|')[0].trim() === u); return k ? verlauf[k] : ''; };
-  const bereichOf = u => { const k = S.KONTEN.find(x => x.uuid === u); if (k && k.area) return k.area; for (const b of (S.CFG.areas || [])) if ((b.accounts || []).some(r => { const id = r.split('|')[0].trim(); const g = S.KONTEN.find(x => x.uuid === id); return id === u || (g && g.group && leaves.find(l => l.uuid === u && l.path.startsWith(g.path + ' / '))); })) return b.name; return ''; };
   const bereiche = (S.CFG.areas || []).length ? S.CFG.areas.map(b => [b.id, b.name]) : Object.entries((S.DATA && S.DATA.area_names) || {});
   const neu = leaves.filter(k => !k.confirmed);
   let h = `<div class="note">${t('konten_note', more('accounts'))}</div>
@@ -1433,7 +1452,8 @@ async function openHistDrawer(uuid, vorschau) {
     $(`#h-grid input[data-mk="${mk}"]`, d).focus();
   };
   $('#h-save', d).onclick = async () => {
-    const werte = {}; if (HD.r.source === 'balances') $$('#h-grid input', d).forEach(i => { if (!i.classList.contains('auto') || i.value.trim()) werte[i.dataset.mk] = i.value.trim() === '' ? null : i.value.trim(); });
+    const werte = {}; let bad = null; if (HD.r.source === 'balances') $$('#h-grid input', d).forEach(i => { if (!i.classList.contains('auto') || i.value.trim()) { const v = numIn(i.value); if (Number.isNaN(v)) bad = bad || i; werte[i.dataset.mk] = v; } });
+    if (bad) { bad.focus(); bad.select(); toast(t('zahl_unlesbar', bad.value.trim()), 6000); return; }          // nothing is saved while one value is no number
     const body = {account: uuid, amounts: werte}; if (HD.r.source !== HD.r.source_saved) body.source = HD.r.source;
     try {
       const res = await api('/api/history', body); renderHist(res.history); toast(t('gespeichert'));
@@ -1616,7 +1636,6 @@ function vBilanz() {
   const proj = pr ? Object.fromEntries(pr.rows.map(r => [r.id, r.amounts])) : {};
   const W = new Map(), werte = r => { if (!W.has(r.id)) W.set(r.id, proj[r.id] ? Object.assign({}, r.amounts, proj[r.id]) : r.amounts); return W.get(r.id); };
   const nw = pr ? Object.assign({}, D.balance.net_worth, pr.net_worth) : D.balance.net_worth;
-  const nInactive = (D.accounts_inactive || []).length;
   const pos = D.balance.rows.filter(r => r.group);
   S.posOpen = S.posOpen || {};
   const allOpen = pos.length && pos.every(r => S.posOpen[r.role]);
@@ -2981,7 +3000,6 @@ const SEC_LABEL = {operating: t('cf_operativ'), income: t('einnahmen'), expenses
 const SEC_HELP = {operating: 'cf_operativ', investing: 'cf_invest', financing: 'cf_finanz', valuation: 'cf_wert', unclear: 'cf_unklar'};
 const SEC_ABBR = {operating: 'CFO', investing: 'CFI', financing: 'CFF'};     // the official short names (cash flow from operations, investing, financing)
 const SEC_KEY = {operating: 'op', investing: 'inv', financing: 'fin', income: 'ein', expenses: 'aus', valuation: 'value'};          // the colour of the activity in the charts
-const CF_ACT = [['operating', 'op'], ['investing', 'inv'], ['financing', 'fin']];
 const METH = {rolling12: t('12_monate'), rolling6: t('6_monate'), prev_year: t('vorjahresmonat'), fix: t('fester_betrag_monat'), yearly_amount: t('meth_jahresbetrag'), budget: t('meth_budget'), none: t('keine')};
 // How far the table is opened: 0 overview (activities with income, expenses and the kinds of investing and financing: one
 // page), 1 positions (and the accounts and loans), 2 everything (MoneyMoney's categories). A row you open or close yourself
@@ -3185,7 +3203,7 @@ function vPlanExtras(D) {
   h += `<h2>${t('wertentwicklung_je_konto_0', hq('rendite'))}</h2><div class="note">${t('jaehrliche_wertaenderung_in_prozent_ba', hq('wert_bereich'))}</div><div class="wrap auto"><table class="plain"><thead><tr><th>${t('konto_2')}</th><th>${t('position')}</th><th>% p.a.</th><th>${t('basis_optional')}</th><th>${t('kopplung_an_bereich')}</th><th>${t('anteil')}</th><th></th></tr></thead><tbody>`;
   for (const r of leafs) {
     const w = (P.appreciation || {})[r.name] || {};
-    h += `<tr data-acct="${esc(r.name)}"><td>${esc(r.path)}${r.inactive ? `<span class="tag">${t('ausgeblendet')}</span>` : ''}</td><td class="small">${(ROLE[r.role] || [r.role])[0]}</td><td class="num"><input type="number" step="0.1" class="wp" value="${w.percent_pa ?? ''}" style="width:80px"></td><td class="num"><input type="number" step="1" class="wb" value="${w.base ?? ''}" style="width:130px"></td><td><select class="wbr"><option value="">–</option>${others.map(([k, n]) => `<option value="${k}" ${w.area === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td><td class="num"><input type="number" step="0.01" min="0" max="1" class="wa" value="${w.share ?? ''}" placeholder="1" style="width:70px"></td><td><button class="small save-wert">✓</button></td></tr>`;
+    h += `<tr data-acct="${esc(r.name)}"><td>${esc(r.path)}${r.inactive ? `<span class="tag">${t('ausgeblendet')}</span>` : ''}</td><td class="small">${(ROLE[r.role] || [r.role])[0]}</td><td class="num"><input type="number" step="0.1" class="wp" value="${w.percent_pa ?? ''}" style="width:80px"></td><td class="num"><input type="number" step="1" class="wb" value="${w.base ?? ''}" style="width:130px"></td><td><select class="wbr"><option value="">–</option>${others.map(([k, n]) => `<option value="${esc(k)}" ${w.area === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td><td class="num"><input type="number" step="0.01" min="0" max="1" class="wa" value="${w.share ?? ''}" placeholder="1" style="width:70px"></td><td><button class="small save-wert">✓</button></td></tr>`;
   }
   h += '</tbody></table></div>';
   // Ereignisse
@@ -4447,11 +4465,11 @@ function vSteuer() {
   if (!S.steuerEnt || !ents.some(e => e.uuid === S.steuerEnt)) S.steuerEnt = (ents.find(e => e.uuid === S.area) || ents[0]).uuid;
   const ent = ents.find(e => e.uuid === S.steuerEnt) || ents[0];
   let h = `<div class="toolbar"><label>${t('jahr_2')} <select id="st-jahr">${years.map(y => `<option ${String(y) === S.steuerJahr ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
-    <label>${t('entitaet')} <select id="st-ent">${ents.map(e => `<option value="${e.uuid}" ${e.uuid === ent.uuid ? 'selected' : ''}>${esc(e.name)} (${e.kind === 'private' ? t('privat') : e.kind === 'company' ? t('gesellschaft') : esc(String(e.kind || '').toUpperCase().replace('GBR', 'GbR'))}${e.share ? t('anteil_2') + FN(e.share * 100, 0) + ' %' : ''})</option>`).join('')}</select></label>
+    <label>${t('entitaet')} <select id="st-ent">${ents.map(e => `<option value="${esc(e.uuid)}" ${e.uuid === ent.uuid ? 'selected' : ''}>${esc(e.name)} (${e.kind === 'private' ? t('privat') : e.kind === 'company' ? t('gesellschaft') : esc(String(e.kind || '').toUpperCase().replace('GBR', 'GbR'))}${e.share ? t('anteil_2') + FN(e.share * 100, 0) + ' %' : ''})</option>`).join('')}</select></label>
     <span class="sp"></span><button id="st-belege" class="secondary small">${t('belege_0_exportieren', esc(S.steuerJahr))}</button>${xlsxBtn('tax')}</div>`;
   const J = ent.years[S.steuerJahr]; if (!J) return h + `<div class="note">${t('keine_daten_fuer_dieses_jahr')}</div>`;
   const objs = Object.keys(J.properties_list);
-  h += `<div class="cards"><div class="card"><div class="l">${t('einnahmen_kategorisiert')}</div><div class="v">${F0(J.sum_income)} €</div></div><div class="card"><div class="l">${t('ausgaben_kategorisiert')}</div><div class="v">${F0(J.sum_expenses)} €</div></div><div class="card"><div class="l">${t('schuldzinsen')}</div><div class="v">${F0(Object.values(J.debt_interest).reduce((a, b) => a + b, 0))} €</div></div><div class="card"><div class="l">${t('ohne_kategorie')}</div><div class="v">${J.uncategorized_flag.count ? '<span class="pill warn">' + J.uncategorized_flag.count + ` ${t('buchungen')}</span>` : `<span class="pill ok">${t('keine')}</span>`}</div><div class="d">${F(J.uncategorized_flag.amount)} € – <a href="#transactions?uncategorized=1&year=${S.steuerJahr}&entity=${ent.uuid}">${t('kategorisieren')}</a></div></div></div>`;
+  h += `<div class="cards"><div class="card"><div class="l">${t('einnahmen_kategorisiert')}</div><div class="v">${F0(J.sum_income)} €</div></div><div class="card"><div class="l">${t('ausgaben_kategorisiert')}</div><div class="v">${F0(J.sum_expenses)} €</div></div><div class="card"><div class="l">${t('schuldzinsen')}</div><div class="v">${F0(Object.values(J.debt_interest).reduce((a, b) => a + b, 0))} €</div></div><div class="card"><div class="l">${t('ohne_kategorie')}</div><div class="v">${J.uncategorized_flag.count ? '<span class="pill warn">' + J.uncategorized_flag.count + ` ${t('buchungen')}</span>` : `<span class="pill ok">${t('keine')}</span>`}</div><div class="d">${F(J.uncategorized_flag.amount)} € – <a href="#transactions?uncategorized=1&year=${S.steuerJahr}&entity=${encodeURIComponent(ent.uuid)}">${t('kategorisieren')}</a></div></div></div>`;
   if (objs.length) {
     h += `<h2>${t('vermietung_je_objekt')} <span class="x">${t('kategorien_0_objekt_art', esc(T.rental_category))}</span></h2><div class="wrap auto"><table class="plain"><thead><tr><th>${t('position')}</th>${objs.map(o => `<th class="num">${esc(o)}</th>`).join('')}</tr></thead><tbody>`;
     const arten = [...new Set(objs.flatMap(o => Object.keys(J.properties_list[o].kinds)))];
@@ -4501,7 +4519,7 @@ function vImmobilie(id) {
   let h = `<div class="toolbar"><a href="#properties" class="small">${t('alle_objekte')}</a><h2 style="margin:0">${esc(im.name)}</h2><span class="sp"></span>${xlsxBtn('property', `data-immo="${esc(im.id)}" data-kalk="${esc(IM.kalk || '')}"`)}<button id="im-del" class="danger small">${t('objekt_loeschen')}</button></div>
   <div class="card" style="margin-bottom:12px"><div class="immo-form">
     <label>${t('name')}</label><input type="text" id="im-name" value="${esc(im.name)}">
-    <label>${t('bereich_0', hq('area'))}</label><select id="im-bereich">${Object.entries((S.DATA && S.DATA.area_names) || {}).map(([bid, n]) => `<option value="${bid}" ${im.area === bid ? 'selected' : ''}>${esc(n)}</option>`).join('') || (S.CFG.areas || []).map(b => `<option value="${esc(b.id)}" ${im.area === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
+    <label>${t('bereich_0', hq('area'))}</label><select id="im-bereich">${Object.entries((S.DATA && S.DATA.area_names) || {}).map(([bid, n]) => `<option value="${esc(bid)}" ${im.area === bid ? 'selected' : ''}>${esc(n)}</option>`).join('') || (S.CFG.areas || []).map(b => `<option value="${esc(b.id)}" ${im.area === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
     <label>${t('vermietungskategorie_0', hq('immo_kategorie'))}</label><input type="text" id="im-kat" list="im-kats" value="${esc(im.category || '')}" placeholder="${t('vermietung_objekt')}"><datalist id="im-kats">${kats.map(c => `<option value="${esc(c.raw)}">`).join('')}</datalist>
     <label>${t('objektkonto_wert_0', hq('immo_objektkonto'))}</label><select id="im-konto">${acctOptions(im.property_account, x => !x.group)}</select>
     <label>${t('in_planung_uebernehmen_0', hq('immo_planung'))}</label><label class="switch"><input type="checkbox" id="im-plan" ${im.in_planning ? 'checked' : ''}><i></i>${im.in_planning ? t('aktiv') : t('aus')}</label>
@@ -4602,7 +4620,7 @@ function immoChart(J) {
 function vImmoJahre(d) {
   const J = d.years || []; if (!J.length) return `<div class="note">${t('keine_kalkulation_vorhanden_oder_beric')}</div>`;
   const names = d.loan_names || [];
-  let h = `<div class="toolbar"><span class="muted small">${t('aktive_kalkulation_0_alle_jahre', esc(d.name || ''))}</span><span class="sp"></span>${xlsxBtn('property', `data-immo="${esc(d.id)}"`)}</div><div class="wrap"><table><thead><tr><th>${t('jahr_2')}</th>${[t('miete'), t('umlage'), t('kosten'), t('ruecklage'), t('zinsen'), t('tilgung'), t('sondertilgung'), 'AfA', t('ergebnis'), t('steuer'), t('ergebnis_n_st'), t('ausschuettung'), t('cashflow_2'), t('cashflow_kum'), t('vermoegensaufbau'), 'EK-Rendite', t('restschuld'), t('objektwert'), t('ek_im_objekt'), 'DSCR', 'NKM/Monat'].map(x => `<th>${x}</th>`).join('')}${names.map(n => `<th>${t('0_zins', esc(n))}</th><th>${t('0_tilgung', esc(n))}</th><th>${t('0_saldo', esc(n))}</th>`).join('')}</tr></thead><tbody>`;
+  let h = `<div class="toolbar"><span class="muted small">${t('aktive_kalkulation_0_alle_jahre', esc(d.name || ''))}</span><span class="sp"></span>${xlsxBtn('property', `data-immo="${esc(d.id)}"`)}</div><div class="wrap"><table><thead><tr><th>${t('jahr_2')}</th>${[t('miete'), t('umlage'), t('kosten'), t('ruecklage'), t('zinsen'), t('tilgung'), t('sondertilgung'), 'AfA', t('ergebnis'), t('steuer'), t('ergebnis_n_st'), t('ausschuettung'), t('cashflow_2'), t('cashflow_kum'), t('vermoegensaufbau'), t('ek_rendite_2'), t('restschuld'), t('objektwert'), t('ek_im_objekt'), 'DSCR', t('re_nkm_monat')].map(x => `<th>${x}</th>`).join('')}${names.map(n => `<th>${t('0_zins', esc(n))}</th><th>${t('0_tilgung', esc(n))}</th><th>${t('0_saldo', esc(n))}</th>`).join('')}</tr></thead><tbody>`;
   const c = v => `<td class="${v == null ? 'zero' : v < 0 ? 'neg' : 'pos'}">${v == null ? '–' : F(v)}</td>`;
   for (const j of J) h += `<tr><td>${j.year}${j.months < 12 ? ' (' + j.months + ' ' + t('mon_2') : ''}</td>${[j.rent, j.recoverable_costs, j.costs, j.reserve, j.interest, j.repayment, j.special_repayment, j.depreciation, j.result, j.tax, j.result_after_tax, j.distribution, j.cashflow, j.cashflow_cumulative, j.wealth_build].map(c).join('')}<td>${j.return_on_equity == null ? '–' : FN(j.return_on_equity * 100) + ' %'}</td>${[j.remaining_debt, j.value, j.equity_property].map(c).join('')}<td>${FN(j.dscr)}</td>${c(j.net_rent_monthly)}${names.map(n => c(j.loans[n].interest) + c(j.loans[n].repayment) + c(j.loans[n].balance_amount)).join('')}</tr>`;
   h += '</tbody></table></div>';
@@ -4647,7 +4665,11 @@ function bindImmo(main) {
   // Eingaben binden
   $$('[data-p]', main).forEach(inp => inp.addEventListener('input', () => {
     let v = inp.value;
-    if (inp.dataset.kind === 'st') { v = v.split(';').map(x => x.trim()).filter(Boolean).map(x => { const [d, b] = x.split(':'); return {date: (d || '').trim(), amount: parseFloat((b || '0').replace(',', '.')) || 0}; }); }
+    if (inp.dataset.kind === 'st') {          // "2027-06: 50.000; ...": an amount that is no number marks the field (and counts as nothing)
+      let bad = false;
+      v = v.split(';').map(x => x.trim()).filter(Boolean).map(x => { const [d, b] = x.split(':'), n = numIn(b); if (Number.isNaN(n)) bad = true; return {date: (d || '').trim(), amount: n || 0}; });
+      inp.classList.toggle('invalid', bad);
+    }
     else if (inp.type === 'number') v = v === '' ? null : parseFloat(v.replace(',', '.'));
     else if (v === 'true') v = true; else if (v === 'false') v = false;
     setp(IM.edit, inp.dataset.p, v);
@@ -4694,7 +4716,7 @@ async function vUmsaetze() {
   const f = S.uf, st = S.STATUS, konten = S.DATA.accounts.filter(k => !k.group && (!f.entity || k.path.startsWith(BN(f.entity))));
   // all filters always in view: what (area, year, account, search), which (direction, receipt, category state, dates), categories
   let h = `<div class="uf-filters"><div class="toolbar">
-    <select id="uf-ent"><option value="">${t('alle_bereiche')}</option>${Object.keys(S.DATA.areas).map(k => `<option value="${k}" ${f.entity === k ? 'selected' : ''}>${esc(BN(k))}</option>`).join('')}</select>
+    <select id="uf-ent"><option value="">${t('alle_bereiche')}</option>${Object.keys(S.DATA.areas).map(k => `<option value="${esc(k)}" ${f.entity === k ? 'selected' : ''}>${esc(BN(k))}</option>`).join('')}</select>
     <select id="uf-jahr"><option value="">${t('alle_jahre')}</option>${UMS.years.map(y => `<option ${f.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
     <select id="uf-konto"><option value="">${t('alle_konten')}</option>${konten.map(k => `<option value="${k.uuid}" ${f.account === k.uuid ? 'selected' : ''}>${esc(k.name)}</option>`).join('')}</select>
     <input type="search" id="uf-q" placeholder="${t('suche_name_zweck_kategorie_betrag')}" value="${esc(f.q)}" style="min-width:220px">
@@ -4723,7 +4745,6 @@ async function vUmsaetze() {
 }
 async function openDrawer(txId) {
   const u = UMS.transactions.find(x => x.id === txId); if (!u) return;
-  S.drawerTx = txId;
   const bl = await api('/api/receipts?files=1');
   const mine = bl.entry_list.filter(e => e.tx_id === txId), free = bl.files.filter(d => !d.linked);
   const st = S.STATUS;
@@ -4751,7 +4772,7 @@ async function openDrawer(txId) {
   $$('.bl-show', d).forEach(b => b.onclick = async e => { const id = e.target.closest('.beleg').dataset.id, ent = mine.find(x => x.id === id); try { await api('/api/receipts/open', {path: ent.path}); } catch (er) { toast(er.message, 4000); } });
   const cb = $('#dr-cat-btn', d); if (cb) cb.onclick = async () => { const kat = $('#dr-kat', d).value.trim(); if (!kat) return toast(t('kategorie_fehlt')); try { const r = await assignCats([txId], kat); toast(assignMsg(r), 5000); await loadAll(); await refreshUms(txId); } catch (e) { toast(e.message, 5000); } };
 }
-function closeDrawer() { $('#drawer').classList.remove('open'); S.drawerTx = null; DRW.key = null; }
+function closeDrawer() { $('#drawer').classList.remove('open'); DRW.key = null; }
 // which drawer is open; a click on the row that opened it closes it (the click outside closes it first -- it must not reopen)
 const DRW = {key: null, closed: null, src: null, shown: null, key2: null};
 // The side panel stands beside the page, like an inspector on the Mac: the page makes room for it whenever it is open (a window too
@@ -4837,7 +4858,7 @@ function acctOptions(selected, filter) {
     `<option value="${k.uuid} | ${esc(k.name)}" ${k.uuid === sel ? 'selected' : ''}>${' '.repeat(k.depth * 3)}${esc(lab.get(k.uuid))}${k.group ? t('gruppe_suffix') : (k.manual ? t('manuell_2') : '')}</option>`).join('')
     + (sel && !S.KONTEN.some(k => k.uuid === sel) ? `<option value="${esc(selected)}" selected>${t('0_nicht_gefunden', esc(selected))}</option>` : '');
 }
-const onlyManual = k => !k.group && k.manual, onlyGroups = k => k.group, onlyLeaves = k => !k.group;
+const onlyManual = k => !k.group && k.manual, onlyLeaves = k => !k.group;
 function vRegeln() {
   // Buchungsregeln: one switch (book automatically); loans as collapsible rows; one card per company (area of the kind
   // "Gesellschaft") with its participation and counter accounts; target, actual and difference live; one save bar for all
@@ -4907,7 +4928,7 @@ function mirrorRow(m) {
 // "Buchen ab": from a day (new: today) or everything since the company exists
 const isoToday = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
 function backField(v, allKey = 'rueck_alles') {
-  v = String(v || ''); const day = /^\d{4}-\d{2}(-\d{2})?$/.test(v) ? (v.length === 7 ? v + '-01' : v) : isoToday();
+  v = String(v || ''); const day = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : isoToday();
   const all = v === 'all';
   return `<div class="row tight"><select class="c-rmode"><option value="date" ${all ? '' : 'selected'}>${t('rueck_datum')}</option><option value="all" ${all ? 'selected' : ''}>${t(allKey)}</option></select>`
     + `<input type="date" class="c-ab${all ? ' hidden' : ''}" value="${esc(day)}" max="${isoToday()}"></div>`;
@@ -5014,13 +5035,15 @@ function catOptions(selected) {
   const leaves = S.KATS.filter(k => !k.group);
   return `<option value="">${t('keine_2')}</option>` + leaves.map(k => `<option value="${esc(k.name)}" ${k.name === selected ? 'selected' : ''}>${esc(CP(k.path))}</option>`).join('') + (selected && !leaves.some(k => k.name === selected) ? `<option value="${esc(selected)}" selected>${t('0_nicht_in_moneymoney', esc(selected))}</option>` : '');
 }
-function collectRules() {
+function collectRules(strict) {
+  // strict (saving): an amount that is no number stops it with a message -- it is not saved as 0
   const cfg = JSON.parse(JSON.stringify(S.CFG));
   const lst = s => s.split(';').map(x => x.trim()).filter(Boolean);
+  const amount = x => { const n = numIn(x); if (n == null || Number.isNaN(n)) { if (strict) throw new Error(t('zahl_unlesbar', String(x == null ? '' : x).trim())); return 0; } return n; };
   cfg.loans = $$('#loans .item').map(it => {
     const v = s => $(s, it).value.trim();
     const satz = lst(v('.f-satz')).map(x => { const [ab, p] = x.split(':'); return {from_date: ab.trim(), percent: parseFloat((p || '0').replace(',', '.'))}; });
-    const basis = {}; lst(v('.f-basis')).forEach(x => { const [k, val] = x.split('='); basis[k.trim()] = parseFloat((val || '0').replace(',', '.')); });
+    const basis = {}; lst(v('.f-basis')).forEach(x => { const [k, val] = x.split('='); basis[k.trim()] = amount(val); });
     const modell = v('.f-modell');
     const l = { name: v('.f-name'), active: $('.f-aktiv', it).checked, loan_account: v('.f-konto'), source_accounts: v('.f-quelle') ? [v('.f-quelle')] : [],
       detection: { counter_iban: v('.f-iban').replace(/\s/g, '').toUpperCase(), text_contains: lst(v('.f-text')), exclude_text: lst(v('.f-excl')) },
@@ -5125,7 +5148,7 @@ const POS_SEC = {income: 'einnahmen', expenses: 'ausgaben', investing: 'sek_inve
 const posLabel = (k, firma) => t(firma && k === 'housing' ? 'pos_housing_g' : `pos_${k}`);   // one name: a company's where the category is a company's
 const OBJ_OUT = ['saving', 'repayment', 'loan_interest', 'ignore'];            // pos_<key>: every position has its text (tests: Positions)
 async function vPositionen() {
-  const d = KZ.pos = await api('/api/categories/positions');
+  const d = await api('/api/categories/positions');
   if (!d.categories.length) return `<div class="card"><div class="d">${esc(d.hint || t('noch_keine_kategorien_geladen_abgleich'))}</div></div>`;
   const secs = []; for (const [k, sec] of d.positions) { if (k === 'ignore') continue; let g = secs.find(x => x[0] === sec); if (!g) secs.push(g = [sec, []]); g[1].push(k); }
   const opts = (sel, firma) => `<option value=""></option>` + secs.map(([sec, ks]) => `<optgroup label="${esc(t(POS_SEC[sec] || sec))}">${ks.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k, firma))}</option>`).join('')}</optgroup>`).join('')
@@ -5279,7 +5302,7 @@ function bindPositionen(main) {
 }
 
 // ---------------------------------------------------------------- Zuordnen: Kategorien kommen aus MoneyMoney, Kontor trägt dort ein
-const KZ = {year: '', area: '', min: '', expanded: {}, aus: {}, pos: null, open: null, rules: null, written: null, w: null, wsel: new Set()};
+const KZ = {year: '', area: '', min: '', expanded: {}, aus: {}, open: null, rules: null, written: null, w: null, wsel: new Set()};
 async function assignCats(ids, kat, extra = {}) {
   // Kontor trägt die Kategorie in MoneyMoney ein (vorher geprüft), in Teilen zu höchstens 2000 Umsätzen. Steht dort schon eine
   // andere (nicht von Kontor gesetzte): nachfragen, ob sie ersetzt werden soll – sonst bleibt sie (MoneyMoney ist maßgeblich).
@@ -5432,7 +5455,7 @@ async function vEinstellungen() {
   // How Kontor runs (nothing here changes a figure): Allgemein · MoneyMoney & Abgleich · Zugang · Belege · Updates · Sichern.
   // What sets your figures (areas, accounts, positions, rules, tax) is under "Konten & Regeln".
   const tabs = subTabs('settings', Object.entries(SUB_LABEL.settings).map(([k, l]) => [k, t(l)]));
-  const v = {moneymoney: vEinstellungenMM, access: vEinstellungenZugang, receipts: vEinstellungenBelege, updates: () => vUpdates(vEinstellungenUpdates()), backup: vSicherung}[S.sub] || vEinstellungenAllgemein;
+  const v = {moneymoney: vEinstellungenMM, access: vEinstellungenZugang, receipts: vEinstellungenBelege, assistant: vEinstellungenAssistent, updates: () => vUpdates(vEinstellungenUpdates()), backup: vSicherung}[S.sub] || vEinstellungenAllgemein;
   return tabs + await v();
 }
 const saveBar = () => `<div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
@@ -5474,7 +5497,7 @@ function vEinstellungenBelege() {
   return `<div class="form">
     <label>${t('belegordner_0', hq('belege_ordner'))}</label><div><input type="text" id="e-bl-ordner" value="${esc(bl.folder || '~/Documents/Kontor-Belege')}" style="width:100%"><div class="small muted">${bl.folder_confirmed ? t('wird_beim_ersten_beleg_angelegt') : t('noch_nicht_angelegt_beim_ersten')}</div></div>
     <label>${t('unterordner_muster_0', hq('belege_sub'))}</label><input type="text" id="e-bl-sub" value="${esc(bl.subfolder || '{year}')}" placeholder="${t('jahr_jahr_entitaet_entitaet_jahr')}">
-    <label>${t('verweis_in_moneymoney_0', hq('belege_kommentar'))}</label><label class="chk"><input type="checkbox" id="e-bl-comment" ${bl.write_comment ? 'checked' : ''}> ${t('dateipfad_als_kommentar_an_den')}</label>
+    <label>${t('verweis_in_moneymoney_0', hq('belege_kommentar'))}</label><label class="chk"><input type="checkbox" id="e-bl-comment" ${bl.write_comment ? 'checked' : ''} ${(S.STATUS || {}).local ? '' : `disabled title="${esc(t('nur_am_mac'))}"`}> ${t('dateipfad_als_kommentar_an_den')}</label>
     <div class="full note">${t('belege_werden_als_normale_dateien_2')}</div>
   </div>${saveBar()}`;
 }
@@ -5521,8 +5544,8 @@ async function vEinstellungenZugang() {
   const ts = (r && r.tailscale) || {}, lokal = r ? r.local : S.STATUS.local;
   const ok = b => `<span class="dot ${b ? 'ok' : 'warn'}"></span>`;
   let h = `<h2>${t('am_mac')}</h2><div class="form">
-    <label>${t('automatische_sperre')}</label><label class="chk">${t('nach_2')} <input type="number" id="e-sperre" min="1" value="${o.lock_minutes ?? 15}" style="width:70px"> ${t('minuten_ohne_aktivitaet')}</label>
-    <label>Touch ID ${hq('touchid')}</label><label class="chk"><input type="checkbox" id="e-touchid" ${o.touchid !== false ? 'checked' : ''} ${S.STATUS.touchid ? '' : 'disabled'}> ${t('am_mac_mit_touch_id', S.STATUS.touchid ? '' : t('an_diesem_geraet_nicht_verfuegbar'))}</label>
+    <label>${t('automatische_sperre')}</label><label class="chk">${t('nach_2')} <input type="number" id="e-sperre" min="1" value="${o.lock_minutes ?? 15}" style="width:70px" ${lokal ? '' : `disabled title="${esc(t('nur_am_mac'))}"`}> ${t('minuten_ohne_aktivitaet')}</label>
+    <label>Touch ID ${hq('touchid')}</label><label class="chk"><input type="checkbox" id="e-touchid" ${o.touchid !== false ? 'checked' : ''} ${S.STATUS.touchid && lokal ? '' : 'disabled'}> ${t('am_mac_mit_touch_id', S.STATUS.touchid ? '' : t('an_diesem_geraet_nicht_verfuegbar'))}</label>
   </div>
   <details class="adv"><summary>${t('erweitert_adresse_port')}</summary><div class="form">
     <label>${t('adresse_0', hq('bind'))}</label><input type="text" id="e-bind" value="${esc(o.bind || '127.0.0.1')}" placeholder="${t('127_0_0_1_oder')}">
@@ -5590,8 +5613,8 @@ function bindZugang(main) {
   const acc = $('#fz-acl-check', main); if (acc) acc.addEventListener('click', aclCheck);
   const ac = $('#fz-acl-copy', main); if (ac) ac.addEventListener('click', async () => { const txt = $('#fz-acl', main).textContent; try { await navigator.clipboard.writeText(txt); toast(t('regel_kopiert'), 4000); } catch (e) { prompt(t('regel_kopieren'), txt); } });
   const cp = $('#fz-copy', main); if (cp) cp.addEventListener('click', async () => { try { await navigator.clipboard.writeText(cp.dataset.url); toast(t('link_kopiert_iphone'), 5000); } catch (e) { prompt(t('link'), cp.dataset.url); } });
-  const md = $('#fz-modus', main); if (md) md.addEventListener('change', () => act('einstellungen', {remote_read_only: md.value === 'read'}));
-  const of = $('#fz-offline', main); if (of) of.addEventListener('change', () => act('einstellungen', {offline_copy: of.checked}));
+  const md = $('#fz-modus', main); if (md) md.addEventListener('change', () => act('settings', {remote_read_only: md.value === 'read'}));
+  const of = $('#fz-offline', main); if (of) of.addEventListener('change', () => act('settings', {offline_copy: of.checked}));
 }
 function vEinstellungenUpdates() {
   const up = S.CFG.updates || {};
@@ -5641,7 +5664,7 @@ function vSicherung() {
   return `<h2>${t('sicherung_h')} ${hq('sicherung')}</h2><div class="note">${t('sicherung_text')}</div>
   ${S.STATUS.local ? `<div class="row tight"><input type="password" id="bk-pw" placeholder="${t('passwort_fuer_die_sicherung')}" autocomplete="new-password" style="width:230px"><input type="password" id="bk-pw2" placeholder="${t('ph_passwort_wiederholen')}" autocomplete="new-password" style="width:230px"><button id="bk-save" class="secondary">${t('sicherung_verschluesselt_herunterladen')}</button></div><div class="small muted">${t('sicherung_passwort_hinweis')}</div>` : `<div class="small muted">${t('nur_am_mac')}</div>`}
   <h2>${t('einstellungspaket')} ${hq('package')}</h2><div class="note">${t('paket_text', `<code>${t('name_kontor_json')}</code>`)}</div>
-  <div class="row tight"><label class="chk">${t('name')} <input type="text" id="pk-name" value="Kontor-Einstellungen"></label><button id="pk-export" class="secondary">${t('paket_herunterladen')}</button></div>
+  <div class="row tight"><label class="chk">${t('name')} <input type="text" id="pk-name" value="${esc(t('paket_name'))}"></label><button id="pk-export" class="secondary">${t('paket_herunterladen')}</button></div>
   <div class="small muted">${t('aktuell_0_darlehen_1_beteiligungen', (C.loans || []).length, (C.companies || []).length, Object.keys((C.cashflow || {}).positions || {}).length)}</div>
   <h2>${t('datei_laden')}</h2><div class="drop" id="pk-drop">${t('sicherung_hierher_ziehen')}<br><button id="pk-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button></div><div id="pk-preview"></div>
   ${vEinstellungenDaten()}
@@ -5809,8 +5832,7 @@ function bindHilfe(main) {
 }
 
 // ---------------------------------------------------------------- Steuerung
-const TITLES = {overview: t('uebersicht'), balance: t('bilanz'), cashflow: t('kapitalfluss'), planning: t('planung'), bookings: t('nav_auto_buchungen'), tax: t('steuer'), properties: t('immobilien'), transactions: t('umsaetze_belege'), setup: t('einrichtung'), accounts: t('konten_regeln'), categories: t('nav_zuordnen'), settings: t('einstellungen'), log: t('protokoll'), help: t('hilfe')};
-const SUBTITLES = {};
+const TITLES = {overview: t('uebersicht'), balance: t('bilanz'), cashflow: t('kapitalfluss'), planning: t('planung'), bookings: t('nav_auto_buchungen'), tax: t('steuer'), properties: t('immobilien'), transactions: t('umsaetze_belege'), setup: t('einrichtung'), accounts: t('konten_regeln'), categories: t('nav_zuordnen'), settings: t('einstellungen'), log: t('protokoll'), help: t('hilfe'), assistant: t('ki_assistent')};
 async function route() {
   if (DIRTY.on && location.hash !== DIRTY.hash) {
     if (!confirm(t('ungespeicherte_aenderungen_verwerfen'))) { history.replaceState(null, '', DIRTY.hash || '#overview'); return; }
@@ -5825,12 +5847,14 @@ async function route() {
   if (qs && S.tab === 'transactions') { const p = new URLSearchParams(qs); S.uf.uncategorized_flag = p.get('uncategorized') === '1'; S.uf.ohne_beleg = p.get('no_receipt') === '1'; if (p.get('year')) S.uf.year = p.get('year'); if (p.get('entity')) S.uf.entity = p.get('entity'); history.replaceState(null, '', '#transactions'); }
   $$('#nav a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + (S.tab === 'log' ? 'settings' : S.tab)));          // the log: reached from the settings (and the help)
   { const ns = $('#nav-setup'); if (ns) ns.classList.toggle('hidden', !setupOpen() && S.tab !== 'setup'); }
-  $('#page-title').textContent = SUBTITLES[S.tab + '/' + S.sub] || (S.tab === 'properties' && S.sub ? t('immobilie') : TITLES[S.tab]);
+  $('#page-title').textContent = (S.tab === 'properties' && S.sub ? t('immobilie') : TITLES[S.tab]);
   if (ALPHA_TABS.has(S.tab)) $('#page-title').insertAdjacentHTML('beforeend', alphaTag('alpha-tag big'));
   $('#page-title').insertAdjacentHTML('beforeend', pageHq(S.tab, S.sub));       // what this page is (a click: its help section)
   $('#bereich-seg').classList.toggle('hidden', !(S.DATA && Object.keys(S.DATA.areas || {}).length > 1 && ['overview', 'balance', 'cashflow', 'planning'].includes(S.tab)));
   $('.side').classList.remove('open');
   if (S.tab !== 'transactions') closeDrawer();
+  if (S.tab !== 'assistant') AS.prev = location.hash || '#overview';
+  asLayout();
   const main = $('#main');
   const myRoute = ++ROUTE_SEQ;
   const slow = setTimeout(() => { if (ROUTE_SEQ === myRoute) main.innerHTML = `<div class="loading"><span class="spin"></span>${t('0_wird_geladen', esc(TITLES[S.tab] || ''))}<div class="note">${t('der_dienst_antwortet_noch_nicht')}</div></div>`; }, 400);
@@ -5850,6 +5874,7 @@ async function route() {
     else if (S.tab === 'settings') h = await vEinstellungen();
     else if (S.tab === 'log') h = await vProtokoll();
     else if (S.tab === 'help') h = await vHilfe();
+    else if (S.tab === 'assistant') h = vAssistent();
     clearTimeout(slow);
     if (ROUTE_SEQ !== myRoute) return;          // inzwischen woanders hin geklickt
     const keepX = sameTab ? $$('.wrap', main).map(scrollMark) : null;   // same page again: tables stay put
@@ -5867,8 +5892,9 @@ async function route() {
     if (S.tab === 'categories') { bindZuordnen(main); bindRegelVorschlaege(main); bindEingetragen(main); }
     if (S.tab === 'accounts' && S.sub === 'positions') bindPositionen(main);
     if (S.tab === 'settings' && S.sub === 'access') bindZugang(main);
+    if (S.tab === 'settings' && S.sub === 'assistant') bindAssistent(main);
     if (S.tab === 'help') bindHilfe(main);
-  } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== 'nicht angemeldet') main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" onclick="route()">${t('erneut_versuchen')}</button></div>`; }
+  } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== t('nicht_angemeldet')) main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" id="route-retry">${t('erneut_versuchen')}</button></div>`; const rb = $('#route-retry', main); if (rb) rb.addEventListener('click', () => route()); }
 }
 let ROUTE_SEQ = 0;
 const softRoute = () => DIRTY.on ? statusMini() : route();      // redraw unless something on the page is not saved yet
@@ -6116,10 +6142,15 @@ function bind(main) {
   $$('.reset-row', main).forEach(b => b.addEventListener('click', async e => { await plan({row: e.target.dataset.key, clear_all_overrides: true}); }));
   $$('td.plan.editable', main).forEach(td => td.addEventListener('dblclick', () => {
     if ($('input', td)) return;
-    const key = td.closest('tr').dataset.key, m = td.dataset.month, old = parseF([...td.childNodes].filter(n => n.nodeName !== 'DIV').map(n => n.textContent).join(''));
+    const key = td.closest('tr').dataset.key, m = td.dataset.month, old = [...td.childNodes].filter(n => n.nodeName !== 'DIV').map(n => n.textContent).join('').split(GRP).join('').trim();
     td.innerHTML = `<input type="text" value="${esc(old === '–' ? '' : old)}" style="width:90px;text-align:right;padding:1px 4px" title="${t('leer_vorschlag_verwenden')}">`;
     const inp = $('input', td); inp.focus(); inp.select();
-    let done = false; const fin = async save => { if (done) return; done = true; if (save) await plan({row: key, month: m, value: inp.value}); else route(); };
+    let done = false; const fin = async save => {
+      if (done) return;
+      const v = save ? numIn(inp.value) : null;
+      if (save && Number.isNaN(v)) { toast(t('zahl_unlesbar', inp.value.trim()), 6000); inp.focus(); inp.select(); return; }          // stays open: not saved, not thrown away
+      done = true; if (save) await plan({row: key, month: m, value: v == null ? '' : v}); else route();
+    };
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') fin(true); if (e.key === 'Escape') fin(false); }); inp.addEventListener('blur', () => fin(true));
   }));
   const ps = $('#p_save', main); if (ps) ps.addEventListener('click', () => plan({parameter: {horizon_months: +$('#p_horizont').value, default_method: $('#p_methode').value, inflation_percent_pa: +$('#p_infl').value, income_increase_percent_pa: +$('#p_se').value, expense_increase_percent_pa: $('#p_sa').value === '' ? '' : +$('#p_sa').value, return_percent_pa: +$('#p_rendite').value}}));
@@ -6293,7 +6324,8 @@ function bind(main) {
       const twice = r => !!$('.g-a', r).value && !!$('.g-b', r).value && live.findIndex(x => pairOf(x) === pairOf(r)) < live.indexOf(r);
       const bad = live.filter(r => !$('.g-a', r).value || !$('.g-b', r).value || same(r) || twice(r));
       if (bad.length) { bad.forEach(r => r.classList.add('invalid')); bad[0].scrollIntoView({block: 'center', behavior: 'smooth'}); toast(t(bad.every(same) ? 'gk_gleiches_konto' : bad.every(twice) ? 'gk_doppelt' : 'gk_unvollstaendig'), 5000); return; }
-      if (await saveConfig(collectRules(), $('#findings', rp))) {
+      let rules; try { rules = collectRules(true); } catch (e) { toast(e.message, 6000); return; }
+      if (await saveConfig(rules, $('#findings', rp))) {
         saved = rulesJson(); sr.disabled = true; st.textContent = t('regeln_gespeichert'); preview();
         rulesFollowUp(preview);
       }
@@ -6346,11 +6378,11 @@ function bind(main) {
     const pw = $('#rs-pw').value, withPw = $('#rs-pw-reset').checked;
     if (!pw) return showFindings($('#rs-report'), [], t('passwort_eingeben'), 'error');
     if (!confirm(t('wirklich_alle_kontor_daten_auf') + (withPw ? t('und_das_passwort_zuruecksetzen') : '') + t('belegdateien_und_protokoll_bleiben_vor'))) return;
-    try { const r = await api('/api/reset', {password: pw, with_password: withPw}); toast(t('zurueckgesetzt_neustart_der_oberflaech'), 4000); waitAndReload(false); }
+    try { await api('/api/reset', {password: pw, with_password: withPw}); toast(t('zurueckgesetzt_neustart_der_oberflaech'), 4000); waitAndReload(false); }
     catch (e) { showFindings($('#rs-report'), [], e.message, 'error'); } });
 
   // Pakete
-  const pe = $('#pk-export', main); if (pe) pe.addEventListener('click', () => download(`/api/package/export?name=${encodeURIComponent($('#pk-name').value || 'Kontor-Einstellungen')}`));
+  const pe = $('#pk-export', main); if (pe) pe.addEventListener('click', () => download(`/api/package/export?name=${encodeURIComponent($('#pk-name').value || t('paket_name'))}`));
   const pp = $('#pk-pick', main); if (pp) pp.addEventListener('click', () => { const inp = $('#file-input'); inp.value = ''; inp.setAttribute('accept', '.json'); inp.removeAttribute('capture'); inp.onchange = () => { if (inp.files[0]) readPkgFile(inp.files[0]); }; inp.click(); });
   const pd = $('#pk-drop', main); if (pd) { pd.addEventListener('dragover', e => { e.preventDefault(); pd.classList.add('over'); }); pd.addEventListener('dragleave', () => pd.classList.remove('over')); pd.addEventListener('drop', e => { e.preventDefault(); pd.classList.remove('over'); if (e.dataTransfer.files[0]) readPkgFile(e.dataTransfer.files[0]); }); if (PKG) pkgPreview(); }
 
@@ -6428,6 +6460,490 @@ async function startRun(dry, freigabe, anchor) {
   setTimeout(poll, 600);
 }
 
+// ---------------------------------------------------------------- Assistent
+// A language model on this Mac (assistant.py) beside every page: its panel stands at the right like the side panel and the page
+// makes room for it (a narrow window: it lies over the page); "#assistant" shows the same conversation as a page. What it may
+// do is set under Einstellungen -> Assistent, at the Mac only; an entry it proposes is made only by a click on its card.
+const AS = {st: null, open: false, msgs: [], conv: '', job: null, n: 0, busy: false, prev: '#overview', setT: null, effort: ''};
+const AS_HIDDEN = ['settings', 'log', 'setup', 'assistant'];          // pages the assistant never reads
+const asEffort = () => AS.effort || (((AS.st || {}).settings || {}).effort) || 'balanced';          // chosen in the panel for this conversation, else the setting
+const asOn = () => !!(AS.st && AS.st.settings && AS.st.settings.enabled && !OFFLINE.mode);
+const asN = v => Math.round(v).toLocaleString(LOCALE);
+const asRAM = b => (b / 2 ** 30).toLocaleString(LOCALE, {maximumFractionDigits: b >= 10 * 2 ** 30 ? 0 : 1}) + ' GB';          // memory as the Mac names it (64 GB)
+const asGB = b => b < 5e7 ? Math.round(b / 1e6).toLocaleString(LOCALE) + ' MB' : (b / 1e9).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e10 ? 0 : 1}) + ' GB';
+async function asLoad() { try { AS.st = await api('/api/assistant/status'); } catch (e) { AS.st = null; } asChrome(); return AS.st; }
+function asChrome() {
+  // the button in the title bar and the menu entry: there while the assistant is switched on
+  const on = asOn(), b = $('#assist-btn');
+  b.classList.toggle('hidden', !on); $('#nav-assist').classList.toggle('hidden', !on); b.title = t('ki_tip');
+  if (!on && AS.open) AS.open = false;
+  asLayout();
+}
+function asLayout() {
+  const page = S.tab === 'assistant' && asOn(), open = (AS.open && asOn()) || page, as = $('#assist');
+  document.body.classList.toggle('as-open', open && !page); document.body.classList.toggle('as-page', page);
+  as.classList.toggle('open', open); $('#assist-btn').classList.toggle('on', open && !page); $('#assist-btn').classList.toggle('hidden', !asOn() || page);
+  if (page) { const m = $('main').getBoundingClientRect(), top = $('#main').getBoundingClientRect().top + window.scrollY; as.style.left = m.left + 'px'; as.style.top = Math.max(0, top) + 'px'; }
+  else { as.style.left = as.style.top = ''; }
+  if (open) { if (!$('#as-body')) asDraw(); else asHead(); }
+  else asMicStop(false);          // the question field is gone (another page, switched off): a recording ends with it, unsent
+}
+function asShow(open) {
+  if (!open) asMicStop(false);
+  AS.open = !!open && asOn();
+  try { localStorage.setItem('kontor.assist', AS.open ? '1' : ''); } catch (e) {}
+  asLayout();
+  if (AS.open) { asLoad(); const ta = $('#as-in'); if (ta && matchMedia('(hover: hover)').matches) ta.focus(); }
+}
+// what the model answers, as text with a little Markdown (bold, lists, small tables, code) -- built from escaped text only
+function asMd(src) {
+  const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:!?]|$)/g, '$1<i>$2</i>');
+  const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+  const lines = String(src || '').replace(/\r/g, '').split('\n'); let h = '', i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (/^\s*```/.test(l)) { const buf = []; i++; while (i < lines.length && !/^\s*```/.test(lines[i])) buf.push(lines[i++]); i++;
+      h += `<div class="as-code"><button type="button" class="ghost small as-copy">${t('ki_kopieren')}</button><pre>${esc(buf.join('\n'))}</pre></div>`; continue; }
+    if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < lines.length && lines[i + 1].includes('-') && /^[\s:|-]+$/.test(lines[i + 1])) {
+      const head = cells(l), rows = []; i += 2;
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(cells(lines[i++]));
+      const num = c => /\d/.test(c) && /^[+\-−–]?\s?[€$£]?\s?[\d.,\s]+\s?(€|%|EUR|T€|k)?$/.test(c);          // a figure, with or without its currency
+      const numCol = head.map((_, k) => rows.length > 0 && rows.every(r => !r[k] || num(r[k])) && rows.some(r => r[k]));          // a column of figures: its heading at the right too
+      h += `<div class="as-tw"><table><thead><tr>${head.map((c, k) => `<th${numCol[k] ? ' class="num"' : ''}>${inline(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td${num(c) ? ' class="num"' : ''}>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      continue;
+    }
+    const li = /^\s*([-*•]|\d+[.)])\s+(.*)$/.exec(l);
+    if (li) { const ord = /\d/.test(li[1]), items = [];
+      while (i < lines.length) { const m = /^\s*([-*•]|\d+[.)])\s+(.*)$/.exec(lines[i]); if (!m) break; items.push(m[2]); i++; }
+      h += `<${ord ? 'ol' : 'ul'}>${items.map(x => `<li>${inline(x)}</li>`).join('')}</${ord ? 'ol' : 'ul'}>`; continue; }
+    if (/^#{1,4}\s+/.test(l)) { h += `<p><b>${inline(l.replace(/^#{1,4}\s+/, ''))}</b></p>`; i++; continue; }
+    if (!l.trim()) { i++; continue; }
+    const par = [];
+    while (i < lines.length && lines[i].trim() && !/^\s*(```|#{1,4}\s|([-*•]|\d+[.)])\s)/.test(lines[i]) && !(/^\s*\|.*\|\s*$/.test(lines[i]) && par.length)) par.push(lines[i++]);
+    if (!par.length) par.push(lines[i++]);
+    h += `<p>${par.map(inline).join('<br>')}</p>`;
+  }
+  return h;
+}
+function asEntry(p) {
+  // an entry the assistant proposes: what, where, old and new -- entered only by the click here, and taken back here
+  const kind = {balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params')}[p.kind] || '';
+  const lab = s => /^\d{4}-\d{2}$/.test(s) ? MLL(s) : s, n = v => p.kind === 'params' ? (+v).toLocaleString(LOCALE, {maximumFractionDigits: 2}) : fmt.format(v);          // assumptions: plain numbers (2,5), not amounts
+  const rows = (p.rows || []).map(r => `<tr><td>${esc(lab(r.label))}</td><td class="num muted">${r.old != null ? n(r.old) : r.shown != null ? n(r.shown) : '–'}</td><td class="num"><b>${r.new == null ? t('ki_e_leer') : n(r.new)}</b></td></tr>`).join('');
+  const ev = p.event ? `<div class="muted small">${t(`ki_e_kind_${p.event.kind}`)} · ${t(`ki_e_rec_${p.event.recurrence}`)}${p.event.until ? ' ' + t('ki_e_bis', MLL(p.event.until)) : ''}</div>` : '';
+  const foot = p.state === 'ask' ? `<div class="as-e-btn"><button class="small as-yes" data-id="${esc(p.id)}">${t('ki_e_eintragen')}</button><button class="small secondary as-no" data-id="${esc(p.id)}">${t('ki_e_ablehnen')}</button></div>`
+    : p.state === 'done' ? `<div class="as-e-st ok">${ICON.check}<span>${t('ki_e_done')}</span><button class="ghost small as-undo" data-id="${esc(p.id)}">${t('ki_e_zurueck')}</button></div>`
+    : `<div class="as-e-st">${p.state === 'failed' ? esc(t('ki_e_failed', p.text || '')) : t(p.state === 'undone' ? 'ki_e_undone' : 'ki_e_declined')}</div>`;
+  return `<div class="as-entry ${esc(p.state)}"><div class="as-e-k">${kind}</div><div class="as-e-h">${esc(p.title || '')}</div>${p.sub ? `<div class="muted small">${esc(p.sub)}</div>` : ''}${ev}
+    <table class="as-e-t"><thead><tr><th>${t(p.kind === 'params' ? 'ki_e_annahme' : 'ki_e_monat')}</th><th class="num">${t('ki_e_bisher')}</th><th class="num">${t('ki_e_neu_wert')}</th></tr></thead><tbody>${rows}</tbody></table>${foot}</div>`;
+}
+const asText = m => (m.parts || []).filter(p => p.k === 'text').map(p => p.text).join('\n\n').trim();
+function asMsg(m, i) {
+  if (m.role === 'user') return `<div class="as-msg me"><div class="as-b">${esc(m.text)}</div></div>`;          // as typed or pasted (lines and spaces kept: tables, code)
+  let h = '';
+  (m.parts || []).forEach((p, j) => {
+    if (p.k === 'text') h += `<div class="as-t">${asMd(p.text)}</div>`;
+    else if (p.k === 'tool') h += `<div class="as-tool ${esc(p.kind || '')}">${esc(p.label || '')}</div>`;
+    else if (p.k === 'think') h += `<details class="as-think" data-m="${i}" data-p="${j}"${p.open ? ' open' : ''}><summary>${t('ki_gedanken')}</summary><div>${esc(p.text).replace(/\n/g, '<br>')}</div></details>`;
+    else if (p.k === 'entry') h += asEntry(p);
+    else if (p.k === 'err') h += `<div class="banner err small">${esc(p.text)}</div>`;
+  });
+  if (m.state === 'run' && !(m.parts || []).some(p => p.k === 'entry' && p.state === 'ask')) h += `<div class="as-run"><span class="spin"></span>${t(m.status === 'loading' ? 'ki_laedt_modell' : 'ki_denkt')}</div>`;          // an entry waiting for the click: nothing is being thought
+  else if (m.state === 'stopped') h += `<div class="as-meta">${t('ki_gestoppt')}</div>`;
+  else if (m.meta && m.meta.seconds != null) h += `<div class="as-meta">${m.meta.cut ? t('ki_abgeschnitten') + ' · ' : ''}${t('ki_dauer', asN(m.meta.seconds))}${m.meta.tps ? ' · ' + t('ki_tempo', asN(m.meta.tps)) : ''}</div>`;
+  return `<div class="as-msg">${h}</div>`;
+}
+function asHead() {
+  const hd = $('#as-head'); if (!hd) return;
+  const page = S.tab === 'assistant', sv = (AS.st || {}).server || {}, st = sv.state || 'stopped';
+  hd.innerHTML = `<b>${t('ki_assistent')}</b>${alphaTag()}<span class="as-st ${esc(st)}" title="${esc(t(`ki_z_${st}`))}"></span>
+    <span class="as-hb"><select id="as-eff" title="${esc(t('ki_denken'))}" aria-label="${esc(t('ki_denken'))}">${['fast', 'balanced', 'thorough'].map(k => `<option value="${k}" ${asEffort() === k ? 'selected' : ''}>${t(`ki_denken_${k}`)}</option>`).join('')}</select>
+    <button class="icon as-new" title="${esc(t('ki_neu'))}" aria-label="${esc(t('ki_neu'))}">${ICON.reset}</button>
+    <button class="icon as-big" title="${esc(t(page ? 'ki_neben_seite' : 'ki_gross'))}" aria-label="${esc(t(page ? 'ki_neben_seite' : 'ki_gross'))}">${ICON.expand}</button>
+    ${page ? '' : `<button class="icon as-close" title="${esc(t('ki_schliessen'))}" aria-label="${esc(t('ki_schliessen'))}">✕</button>`}</span>`;
+}
+function asDraw() {
+  $('#assist').innerHTML = `<div class="as-head" id="as-head"></div><div class="as-body" id="as-body"></div>
+    <form class="as-form" id="as-form"><textarea id="as-in" rows="1" maxlength="${(AS.st || {}).question_limit || 9000}" placeholder="${esc(t('ki_frage_ph'))}" aria-label="${esc(t('ki_frage_ph'))}"></textarea>
+    ${(AS.st || {}).dictation ? `<button type="button" id="as-mic" class="as-mic secondary"></button>` : ''}<button type="submit" id="as-go" class="as-go"></button></form>`;
+  asHead(); asMsgs(true); asMicDraw();
+  const ta = $('#as-in'), mic = $('#as-mic'); if (mic) mic.addEventListener('click', asMic);
+  ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(160, ta.scrollHeight) + 'px'; });
+  ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#as-form').requestSubmit(); } else if (e.key === 'Escape' && AS.busy) { e.stopPropagation(); asStop(); } });
+  $('#as-form').addEventListener('submit', e => { e.preventDefault(); if (AS.busy) { asStop(); return; } const v = ta.value; ta.value = ''; ta.style.height = 'auto'; asSend(v); });
+  // a text file dropped onto the panel (a table, a script, notes): its text goes into the question, read in the browser -- it is sent
+  // with the question to the model on this Mac like anything typed, and stored nowhere
+  const box = $('#assist');
+  if (!box._drop) {
+    box._drop = true;
+    box.addEventListener('dragover', e => { if ([...(e.dataTransfer || {}).types || []].includes('Files')) { e.preventDefault(); box.classList.add('drop'); } });
+    box.addEventListener('dragleave', e => { if (!box.contains(e.relatedTarget)) box.classList.remove('drop'); });
+    box.addEventListener('drop', e => { box.classList.remove('drop'); if (!e.dataTransfer || !e.dataTransfer.files.length) return; e.preventDefault(); asFiles([...e.dataTransfer.files]); });
+  }
+}
+// Dictating: the microphone is recorded in the browser (16 kHz, mono) and written down by the speech model on this Mac -- the
+// recording goes to Kontor and nowhere else, and nothing of it is kept. A click starts, a click ends; Escape throws it away.
+const REC = {on: false, busy: false, starting: false, ctx: null, stream: null, node: null, chunks: [], n: 0, t0: 0, timer: null};
+const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.6" y="1.4" width="4.8" height="8.2" rx="2.4" fill="currentColor"/><path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+function asMicDraw() {
+  const b = $('#as-mic'); if (!b) return;
+  const sec = REC.on ? Math.floor((Date.now() - REC.t0) / 1000) : 0;
+  b.classList.toggle('rec', REC.on); b.classList.toggle('busy', REC.busy); b.disabled = REC.busy;
+  b.innerHTML = REC.busy ? '<span class="spin"></span>' : REC.on ? `<span class="as-rec-t">${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}</span>` : MIC_SVG;
+  b.title = t(REC.busy ? 'ki_diktat_schreibt' : REC.on ? 'ki_diktat_stopp' : 'ki_diktieren'); b.setAttribute('aria-label', b.title);
+}
+async function asMic() {
+  if (REC.busy || REC.starting) return;          // (a second click while the browser still asks for the microphone would open it twice)
+  if (REC.on) { asMicStop(true); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast(t('ki_mikro_fehlt'), 6000); return; }
+  REC.starting = true;
+  let stream = null;
+  try { stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}}); }
+  catch (e) { REC.starting = false; toast(t('ki_mikro_verweigert'), 7000); return; }
+  try {
+    if (!asMicMay()) throw new Error('closed');          // locked or closed while the browser asked: nothing is recorded
+    REC.stream = stream; REC.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = REC.ctx.createMediaStreamSource(REC.stream);
+    REC.node = REC.ctx.createScriptProcessor(4096, 1, 1); REC.chunks = []; REC.n = 0;
+    REC.node.onaudioprocess = e => { if (!REC.on) return; const d = e.inputBuffer.getChannelData(0); REC.chunks.push(new Float32Array(d)); REC.n += d.length; if (REC.n / REC.ctx.sampleRate > 170) asMicStop(true); };          // just under three minutes: sent
+    src.connect(REC.node); REC.node.connect(REC.ctx.destination);          // (it only runs while connected; it puts out silence)
+    REC.on = true; REC.t0 = Date.now(); asMicDraw(); REC.timer = setInterval(asMicDraw, 500);
+  } catch (e) {          // whatever fails after the microphone was opened: it is let go again
+    stream.getTracks().forEach(x => x.stop()); try { if (REC.ctx) REC.ctx.close(); } catch (e2) {}
+    REC.on = false; REC.stream = REC.ctx = REC.node = null; asMicDraw();
+  }
+  REC.starting = false;
+}
+// recording only while the question field is on screen: signed in, and the panel open or the assistant's own page shown
+const asMicMay = () => !!$('#as-in') && !$('#login:not(.hidden)') && (AS.open || S.tab === 'assistant');
+function asWav(chunks, n, rate) {
+  // the recording as a WAV file: mono, 16 bit, 16 kHz (each output sample the mean of the input samples it covers)
+  const all = new Float32Array(n); let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
+  const step = rate / 16000, len = Math.floor(n / step), buf = new ArrayBuffer(44 + len * 2), v = new DataView(buf);
+  const str = (at, s) => { for (let i = 0; i < s.length; i++) v.setUint8(at + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + len * 2, true); str(8, 'WAVE'); str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, len * 2, true);
+  for (let i = 0; i < len; i++) {
+    const a = Math.floor(i * step), b = Math.max(a + 1, Math.floor((i + 1) * step)); let sum = 0; for (let j = a; j < b && j < n; j++) sum += all[j];
+    v.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, Math.round(sum / (b - a) * 32767))), true);
+  }
+  return new Uint8Array(buf);
+}
+async function asMicStop(send) {
+  if (!REC.on) return;
+  clearInterval(REC.timer); REC.on = false;
+  const rate = REC.ctx.sampleRate, chunks = REC.chunks, n = REC.n; REC.chunks = []; REC.n = 0;
+  try { REC.node.disconnect(); REC.stream.getTracks().forEach(x => x.stop()); REC.ctx.close(); } catch (e) {}
+  if (!send || n < rate * 0.4) { asMicDraw(); return; }          // thrown away, or too short to hold a word
+  REC.busy = true; asMicDraw();
+  try {
+    const wav = asWav(chunks, n, rate); let bin = '';
+    for (let i = 0; i < wav.length; i += 0x8000) bin += String.fromCharCode.apply(null, wav.subarray(i, i + 0x8000));
+    const r = await api('/api/assistant/transcribe', {audio: btoa(bin)}), ta = $('#as-in'), text = (r.text || '').trim();
+    if (!text) toast(t('ki_diktat_nichts'), 4000);
+    else if (ta) {          // where the cursor is, with a space between it and what stands there
+      const a = ta.selectionStart == null ? ta.value.length : ta.selectionStart, b = ta.selectionEnd == null ? a : ta.selectionEnd, before = ta.value.slice(0, a), after = ta.value.slice(b);
+      const ins = (before && !/\s$/.test(before) ? ' ' : '') + text + (after && !/^\s/.test(after) ? ' ' : '');
+      ta.value = (before + ins + after).slice(0, +ta.maxLength > 0 ? +ta.maxLength : undefined); ta.selectionStart = ta.selectionEnd = Math.min(ta.value.length, (before + ins).length);
+      ta.dispatchEvent(new Event('input')); ta.focus();
+    }
+  } catch (e) { toast(e.message, 7000); }
+  REC.busy = false; asMicDraw();
+}
+async function asFiles(files) {
+  const ta = $('#as-in'); if (!ta) return;
+  const room = (AS.st || {}).question_limit || 9000;
+  for (const f of files.slice(0, 5)) {
+    let text = '';
+    try { text = f.size <= 4e6 ? await f.text() : ''; } catch (e) {}
+    if (!text || /[\u0000-\u0008\u000e-\u001f]/.test(text.slice(0, 4000))) { toast(t('ki_datei_kein_text', f.name), 5000); continue; }          // too large, or not text (a PDF, a picture, a spreadsheet file)
+    const block = f.name + ':\n```\n' + text.replace(/\r\n?/g, '\n').trimEnd() + '\n```\n';
+    if (ta.value.length + block.length > room) { toast(t('ki_datei_zu_lang', f.name), 5000); continue; }
+    ta.value += (ta.value && !ta.value.endsWith('\n') ? '\n' : '') + block;
+  }
+  ta.dispatchEvent(new Event('input')); ta.focus();
+}
+function asMsgs(bottom) {
+  const b = $('#as-body'); if (!b) return;
+  const near = bottom || b.scrollHeight - b.scrollTop - b.clientHeight < 80, a = AS.st || {};
+  if (!AS.msgs.length) {
+    b.innerHTML = !a.ready ? `<div class="as-empty"><div class="muted">${t('ki_einrichten')}</div>${a.local ? `<a class="more" href="#settings/assistant">${t('ki_zu_einstellungen')}</a>` : `<div class="muted small">${t('ki_nur_am_mac')}</div>`}</div>`
+      : `<div class="as-empty">${[1, 2, 3].filter(i => i < 3 || (((a.settings || {}).rights || {}).page && !AS_HIDDEN.includes(S.tab))).map(i => `<button class="as-sug" type="button">${t(`ki_bsp_${i}`)}</button>`).join('')}</div>`;
+  } else b.innerHTML = AS.msgs.map(asMsg).join('');
+  if (near) b.scrollTop = b.scrollHeight;
+  const go = $('#as-go'); if (go) { go.classList.toggle('stop', AS.busy); go.title = t(AS.busy ? 'ki_stopp' : 'ki_senden'); go.setAttribute('aria-label', go.title); go.textContent = AS.busy ? '■' : '↑'; }
+}
+const asDrawn = () => SCROLL.key === S.tab + '/' + S.sub && !$('#main .loading');          // the page the address names is the one drawn (not still the one before)
+function asPage() {
+  // the page on screen for the assistant: its text only with the right to read the page, never settings, log or setup
+  const r = (((AS.st || {}).settings || {}).rights) || {};
+  let text = '';
+  if (r.page && !AS_HIDDEN.includes(S.tab) && asDrawn()) {
+    text = ($('#main').innerText || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').slice(0, 9000);
+    const d = $('#drawer'); if (d.classList.contains('open')) text += '\n\n[' + t('ki_seitenfenster') + ']\n' + (d.innerText || '').slice(0, 2500);
+  }
+  const ti = $('#page-title').firstChild;
+  return {route: location.hash || '#overview', title: (ti && ti.textContent) || '', area: S.area || '', text};
+}
+async function asSend(text) {
+  text = (text || '').trim(); if (!text || AS.busy) return;
+  const hist = AS.msgs.map(x => ({role: x.role, text: x.role === 'user' ? x.text : asText(x)})).filter(x => x.text).slice(-12);
+  const m = {role: 'assistant', parts: [], state: 'run', status: ''};
+  AS.msgs.push({role: 'user', text}, m); AS.busy = true; asMsgs(true);
+  try {
+    const r = await api('/api/assistant/ask', {question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort()});
+    AS.job = r.job; AS.conv = r.conversation; AS.n = 0; asPoll(m, r.job);
+  } catch (e) { m.parts.push({k: 'err', text: e.message}); m.state = 'error'; AS.busy = false; asMsgs(); }
+}
+async function asPoll(m, job) {
+  let fails = 0, gone = false;
+  while (AS.job === job) {
+    let r;
+    try { r = await api(`/api/assistant/poll?job=${job}&after=${AS.n}`); fails = 0; }
+    catch (e) { if (e.status === 401 || e.status === 403 || ++fails > 6) { m.parts.push({k: 'err', text: e.message}); m.state = 'error'; break; } await new Promise(x => setTimeout(x, 1000)); continue; }
+    for (const ev of r.events || []) { AS.n = Math.max(AS.n, ev.n || 0); asEvent(m, ev); }
+    if ((r.events || []).length) asMsgs();
+    if (r.gone) { gone = true; break; }
+    if (r.done) break;
+  }
+  if (m.state === 'run') m.state = gone ? 'stopped' : 'done';
+  if (AS.job === job) { AS.job = null; AS.busy = false; }
+  asMsgs(); asLoad();
+}
+function asEvent(m, ev) {
+  const last = m.parts[m.parts.length - 1];
+  if (ev.type === 'status') m.status = ev.state;
+  else if (ev.type === 'delta') { if (last && last.k === 'text') last.text += ev.text; else if ((ev.text || '').trim()) m.parts.push({k: 'text', text: ev.text}); }
+  else if (ev.type === 'think') { if (last && last.k === 'think') last.text += ev.text; else m.parts.push({k: 'think', text: ev.text || ''}); }
+  else if (ev.type === 'tool') m.parts.push({k: 'tool', label: ev.label, kind: ev.kind});
+  else if (ev.type === 'ui') asUi(ev);
+  else if (ev.type === 'entry') m.parts.push(Object.assign({}, ev, {k: 'entry'}));
+  else if (ev.type === 'entry_state') { const p = m.parts.find(x => x.k === 'entry' && x.id === ev.id); if (p) { p.state = ev.state; p.text = ev.text || ''; } if (ev.state === 'done') asChanged(); }
+  else if (ev.type === 'reset') { while (m.parts.length && m.parts[m.parts.length - 1].k === 'text') m.parts.pop(); }          // what was shown was a tool call written as text, not an answer
+  else if (ev.type === 'done') { m.state = 'done'; m.meta = ev; }
+  else if (ev.type === 'stopped') m.state = 'stopped';
+  else if (ev.type === 'error') { m.state = 'error'; m.parts.push({k: 'err', text: ev.text || ''}); }
+}
+// a value was entered (or taken back): the figures on the page follow
+function asChanged() { setTimeout(async () => { try { await loadAll(); softRoute(); pollStatus().catch(() => {}); } catch (e) {} }, 300); }
+// The assistant marks something on the page -- a row of a table, one figure (row and column), a card, a control -- found by the
+// text the page shows. Marked for a few seconds and scrolled into view; nothing is clicked or changed.
+const asNorm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+function asLabel(el) { const c = el.cloneNode(true); c.querySelectorAll('.hq, .cnt, .cf-abbr, .tag, .pill, .caret, .disc, svg, small, select, input, textarea').forEach(x => x.remove()); return asNorm(c.textContent); }
+function asFind(text, column) {
+  const want = asNorm(text), main = $('#main'); if (!want || !main) return null;
+  const sc = s => !s ? 0 : s === want ? 3 : s.startsWith(want) ? 2 : s.includes(want) && want.length > 2 ? 1 : 0;
+  const seen = el => el.getClientRects().length > 0;
+  let best = null;
+  const offer = (score, rank, o) => { if (score && (!best || score * 10 + rank > best.v)) best = Object.assign({v: score * 10 + rank}, o); };
+  for (const tbl of $$('table', main)) {            // rows: the names may stand in a table of their own beside the figures (cash flow, planning)
+    const twin = tbl.classList.contains('cf-names') ? $('table.cf-tbl:not(.cf-names)', tbl.closest('.cf-pair') || main) : null;
+    for (const tr of tbl.rows) {
+      if (!seen(tr) || tr.parentElement.tagName === 'THEAD' || !tr.cells.length || tr.cells[0].tagName === 'TH' && tr.rowIndex === 0) continue;
+      const cell = [...tr.cells].find(c => asLabel(c)); if (!cell || cell.cellIndex > 1) continue;
+      offer(sc(asLabel(cell)), 3, {what: 'row', label: asLabel(cell), row: tr, vals: twin ? twin.rows[tr.rowIndex] : tr, head: (twin || tbl).rows[0], name: cell});
+    }
+  }
+  for (const h of $$('.card b, .card .l, .card .t, .ov-head b, h2, h3, legend, .module .t', main)) {          // cards and sections by their title
+    if (seen(h)) offer(sc(asLabel(h)), 2, {what: 'card', label: asLabel(h), el: h.closest('.card, .module, fieldset') || h});
+  }
+  for (const el of [...$$('button, a, label, summary, .seg button', main), ...$$('#nav a, #sync-btn, #lock-btn, #assist-btn')]) {       // controls and menu entries
+    if (seen(el)) offer(Math.max(sc(asLabel(el)), sc(asNorm(el.getAttribute('aria-label'))), sc(asNorm(el.title))), 1, {what: 'control', label: asLabel(el) || asNorm(el.title), el});
+  }
+  if (!best) return null;
+  const exact = best.v >= 30;
+  if (best.what !== 'row') return {what: best.what, label: best.label, els: [best.el], column: '', exact};
+  let cell = null, col = '';
+  if (column && best.head) {          // one figure: the column by its heading (a month as the tables write it, a year)
+    const c = String(column).trim(), cand = [asNorm(c)].concat(/^\d{4}-\d{2}$/.test(c) ? [asNorm(ML(c)), asNorm(MLL(c))] : []);
+    const hit = [...best.head.cells].find(h => cand.includes(asLabel(h))) || [...best.head.cells].find(h => cand.some(x => asLabel(h).split(' ').includes(x)));
+    if (hit && best.vals && best.vals.cells[hit.cellIndex]) { cell = best.vals.cells[hit.cellIndex]; col = hit.textContent.replace(/\s+/g, ' ').trim(); }
+  }
+  return {what: cell ? 'figure' : 'row', label: best.label, els: cell ? [cell, best.name] : [...new Set([best.row, best.vals].filter(Boolean))], column: col, scroll: cell || best.row, exact};
+}
+async function asMark(mark) {
+  let hit = asFind(mark.text, mark.column);
+  const want = asNorm(mark.text), D = B(), isRow = hit && (hit.what === 'row' || hit.what === 'figure');
+  // a row of that very name the tables have but do not show (inside a closed group): it is what is meant, before a card or button of the same name
+  const hidden = !isRow && D && (S.tab === 'balance' ? D.balance.rows.some(r => !r.group && asNorm(r.name) === want)
+    : (S.tab === 'cashflow' || S.tab === 'planning') && D.cashflow.sections.some(x => x.rows.some(z => [z.row, z.row.split(' / ').pop()].concat((z.details || []).map(d => (d.category || '').split(' / ').pop())).some(n => asNorm(n) === want))));
+  const vague = !hit || hidden || !hit.exact && !isRow;          // nothing, or only something that sounds alike
+  if (vague && (S.tab === 'cashflow' || S.tab === 'planning') && cfLevel() < 3) {          // the table opened all the way, then looked for again
+    S[S.tab === 'planning' ? 'planEbene' : 'cfEbene'] = 3; S.cfTog = {}; await route(); hit = asFind(mark.text, mark.column);
+  } else if (vague && S.tab === 'balance' && B() && B().balance.rows.some(r => r.group && !(S.posOpen || {})[r.role])) {          // an account: the positions opened
+    S.posOpen = S.posOpen || {}; B().balance.rows.forEach(r => { if (r.group) S.posOpen[r.role] = true; }); await route(); hit = asFind(mark.text, mark.column);
+  }
+  $$('.as-mark').forEach(x => x.classList.remove('as-mark'));
+  clearTimeout(AS.markT);
+  if (!hit) return {found: false};
+  hit.els.forEach(el => el.classList.add('as-mark'));
+  (hit.scroll || hit.els[0]).scrollIntoView({block: 'center', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+  AS.markT = setTimeout(() => $$('.as-mark').forEach(x => x.classList.remove('as-mark')), 12000);
+  return {found: true, what: hit.what, label: hit.label, column: hit.column};
+}
+async function asUi(ev) {
+  // the assistant opens a page, shows transactions or marks something -- then it is told how the page looks now (and what it found)
+  const job = AS.job;
+  let result = null;
+  const drawn = async () => { let last = -1, same = 0;          // until the page asked for has been drawn (a slow connection: up to ten seconds; else it is told without the page's text)
+    for (let i = 0; i < 70 && same < 2; i++) { await new Promise(x => setTimeout(x, 140)); const n = $('#main').innerHTML.length; same = n === last && asDrawn() ? same + 1 : 0; last = n; } };
+  try {
+    if (S.tab === 'assistant') { AS.open = true; try { localStorage.setItem('kontor.assist', '1'); } catch (e) {} }
+    if (ev.action === 'open' && /^#[\w/-]+$/.test(ev.route || '')) {
+      if (ev.area && S.DATA && (S.DATA.areas || {})[ev.area]) { S.area = ev.area; S.collapsed = {}; bereichSeg(); }
+      if (ev.view === 'months' || ev.view === 'years') S.mode = ev.view;
+      if (ev.plan === true || ev.plan === false) S.plan = ev.plan;
+      if (/^\d{4}$/.test(ev.year || '')) {             // the year asked for: the tax page's year, the period of the cash flow's charts
+        if (ev.route === '#tax') { S.steuerJahr = ev.year; if (ev.area) S.steuerEnt = ev.area; }
+        if (ev.route === '#cashflow') { S.cfZeit = ev.year; S.cfBrZoom = S.cfWbZoom = null; }
+      }
+      if ([0, 1, 2, 3].includes(ev.detail) && (ev.route === '#cashflow' || ev.route === '#planning')) { S[ev.route === '#planning' ? 'planEbene' : 'cfEbene'] = ev.detail; S.cfTog = {}; }
+      if (location.hash === ev.route) await route(); else go(ev.route);
+      if (ev.mark) { await drawn(); result = await asMark(ev.mark); }
+    } else if (ev.action === 'mark' && ev.mark) {
+      result = await asMark(ev.mark);
+    } else if (ev.action === 'transactions') {
+      const f = ev.filter || {};
+      const kats = Array.isArray(f.categories) && f.categories.length ? f.categories.filter(c => typeof c === 'string').slice(0, 40) : null;
+      Object.assign(S.uf, {entity: f.entity || '', year: f.year || '', account: f.account || '', q: f.q || '', ohne_beleg: !!f.without_receipt, uncategorized_flag: !!f.uncategorized, direction: {out: 'aus', in: 'ein'}[f.direction] || '',
+        kats, date_from: f.from || '', date_to: f.to || '', title: '', est: false, ext: false, mitOhne: false, katsLabel: kats ? String(f.label || '') : '', rChart: false, ids: null, cfRows: null});
+      S.sel.clear();
+      if (S.tab === 'transactions') await route(); else go('#transactions');
+    }
+    if (!result) await drawn();
+  } catch (e) {}
+  api('/api/assistant/page', {job, id: ev.id, page: asPage(), result}).catch(() => {});
+}
+function asStop() { api('/api/assistant/stop', {}).catch(() => {}); }
+async function asNew() { if (AS.busy) asStop(); AS.job = null; AS.busy = false; AS.msgs = []; AS.conv = ''; asMsgs(true); try { await api('/api/assistant/reset', {}); } catch (e) {} }
+$('#assist-btn').addEventListener('click', () => { if (S.tab !== 'assistant') asShow(!AS.open); });
+$('#assist').addEventListener('click', async e => {
+  const b = e.target.closest('button, a'); if (!b) return;
+  if (b.classList.contains('as-close')) asShow(false);
+  else if (b.classList.contains('as-new')) asNew();
+  else if (b.classList.contains('as-big')) { if (S.tab === 'assistant') { AS.open = true; try { localStorage.setItem('kontor.assist', '1'); } catch (x) {} go(AS.prev || '#overview'); } else go('#assistant'); }
+  else if (b.classList.contains('as-sug')) asSend(b.textContent);
+  else if (b.classList.contains('as-copy')) { try { await navigator.clipboard.writeText(b.parentNode.querySelector('pre').textContent); b.textContent = t('ki_kopiert'); setTimeout(() => { b.textContent = t('ki_kopieren'); }, 1500); } catch (x) {} }
+  else if (b.classList.contains('as-yes') || b.classList.contains('as-no')) {
+    b.parentNode.querySelectorAll('button').forEach(x => { x.disabled = true; });
+    try { await api('/api/assistant/confirm', {job: AS.job, id: b.dataset.id, ok: b.classList.contains('as-yes')}); }
+    catch (x) { toast(x.message, 5000); const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === b.dataset.id); if (p && !AS.job) p.state = 'declined'; asMsgs(); }
+  } else if (b.classList.contains('as-undo')) {
+    b.disabled = true;
+    try { await api('/api/assistant/undo', {id: b.dataset.id}); const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === b.dataset.id); if (p) p.state = 'undone'; asMsgs(); asChanged(); }
+    catch (x) { toast(x.message, 6000); b.disabled = false; }
+  }
+});
+$('#assist').addEventListener('change', e => { if (e.target.id === 'as-eff') AS.effort = e.target.value; });
+$('#assist').addEventListener('toggle', e => { const d = e.target; if (!d.classList || !d.classList.contains('as-think')) return; const p = ((AS.msgs[+d.dataset.m] || {}).parts || [])[+d.dataset.p]; if (p) p.open = d.open; }, true);
+window.addEventListener('resize', () => { if (S.tab === 'assistant') asLayout(); });
+function vAssistent() {
+  // the conversation as a page: the panel itself fills the page (one conversation, wherever it is shown)
+  return asOn() ? '<div class="as-space"></div>'
+    : `<div class="note">${t('ki_einrichten')} ${(AS.st || {}).local === false ? t('ki_nur_am_mac') : `<a href="#settings/assistant">${t('ki_zu_einstellungen')}</a>`}</div>`;
+}
+// Einstellungen -> Assistent (only at the Mac): load and update llama.cpp and models, choose, start, stop, what it may do
+async function vEinstellungenAssistent() {
+  const a = await asLoad() || {}, st = a.settings || {}, r = st.rights || {};
+  if (!a.local) return `<div class="note">${t('ki_nur_am_mac')}</div>`;
+  const rt = a.runtime || {}, sv = a.server || {}, pf = a.platform || {}, load = a.load && a.load.state === 'running' ? a.load : null, models = a.models || [];
+  const busy = load ? 'disabled' : '';
+  const prog = k => load && load.kind === k ? `<div class="prog-wrap" id="as-prog"><div class="prog"><i style="width:${load.total ? Math.round(100 * load.done / load.total) : 0}%"></i></div><span class="prog-l">${esc(asLoadText(load))}</span><button class="secondary small" id="as-cancel">${t('ki_abbrechen')}</button></div>` : '';
+  const err = a.load && a.load.state === 'error' ? `<div class="banner err small">${esc(a.load.text || '')}</div>` : '';
+  const fitTag = m => m.fit === 'big' ? `<span class="tag warn" title="${esc(t('ki_zu_gross_tip'))}">${t('ki_zu_gross')}</span>` : m.fit === 'tight' ? `<span class="tag warn" title="${esc(t('ki_knapp_tip'))}">${t('ki_knapp')}</span>` : '';
+  const mrow = m => `<div class="as-item${m.id === st.model ? ' on' : ''}${m.fit === 'big' && !m.installed ? ' dim' : ''}"><label class="chk"><input type="radio" name="as-model" value="${esc(m.id)}" ${m.id === st.model ? 'checked' : ''} ${m.installed ? '' : 'disabled'}>
+      <span><b>${esc(m.name)}</b>${m.note ? ` <span class="muted">${t(`ki_note_${m.note}`)}</span>` : ''}${m.id === a.recommended ? ` <span class="pill info">${t('ki_empfohlen')}</span>` : ''}${fitTag(m)}<br><span class="muted small">${esc(m.installed && !m.custom ? m.file : m.repo + (m.file ? ' · ' + m.file : ''))} · ${m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb)}${m.ram ? ' · ' + t('ki_ab_ram', m.ram) : ''}</span></span></label>
+    <span class="as-act">${m.newer ? `<span class="pill info">${t('ki_neuere_datei')}</span>` : m.installed ? `<span class="pill ok">${t('ki_geladen')}</span>` : ''}
+      ${!m.installed || m.newer ? `<button class="small${m.installed || m.id !== a.recommended ? ' secondary' : ''} as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="${m.fit || ''}" ${busy}>${t(m.installed ? 'ki_aktualisieren' : 'ki_laden')}</button>` : ''}
+      ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`;
+  const state = sv.state || 'stopped', opt = (v, l, cur) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`;
+  const use = sv.rss ? t('ki_verbrauch', asRAM(sv.rss), asN(sv.cpu || 0)) + (sv.tps ? ' · ' + t('ki_tempo', asN(sv.tps)) : '') : '';
+  return `<div class="row tight">${swCtl('as-enabled', st.enabled, t('ki_verwenden'))}${hq('assistent')}</div>
+  <h2>${t('ki_programm')}<span class="x">llama.cpp</span></h2>
+  <div class="as-list"><div class="as-item"><span><b>llama.cpp</b><br><span class="muted small">${rt.installed ? esc(rt.tag || rt.version || '') + (rt.date ? ' · ' + esc(FDT(rt.date)) : '') : t('ki_nicht_installiert')}</span></span>
+    <span class="as-act">${rt.newer ? `<span class="pill info">${t('ki_neuer', esc(rt.latest))}</span>` : ''}
+      ${!rt.installed || rt.newer ? `<button class="small" id="as-rt-install" ${busy}>${t(rt.installed ? 'ki_aktualisieren' : 'ki_installieren')}</button>` : ''}
+      ${rt.installed ? `<button class="small secondary" id="as-rt-remove" ${busy}>${t('ki_entfernen')}</button>` : ''}</span></div></div>
+  ${prog('runtime')}${load && load.kind === 'runtime' ? '' : (a.load && a.load.kind === 'runtime' ? err : '')}
+  <h2>${t('ki_modelle')}</h2>
+  <div class="as-list">${models.map(mrow).join('')}
+    <div class="as-item"><span class="as-own"><b>${t('ki_eigenes_modell')}</b>${hq('ki_eigenes')}<input type="text" id="as-repo" placeholder="unsloth/Qwen3.6-35B-A3B-GGUF" autocomplete="off" spellcheck="false"></span>
+      <span class="as-act"><button class="small secondary" id="as-files">${t('ki_dateien_zeigen')}</button></span></div><div id="as-filelist"></div></div>
+  ${prog('model')}${a.load && a.load.kind === 'model' ? err : ''}
+  <h2>${t('ki_diktat')}${hq('ki_diktat')}</h2>
+  <div class="as-list">${(a.speech || []).map(m => `<div class="as-item"><span><b>${esc(m.name)}</b> <span class="muted">${t(`ki_note_${m.note}`)}</span><br><span class="muted small">${esc(m.installed ? m.file : m.repo)} · ${m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb)}</span></span>
+    <span class="as-act">${m.newer ? `<span class="pill info">${t('ki_neuere_datei')}</span>` : m.installed ? `<span class="pill ok">${t('ki_geladen')}</span>` : ''}
+      ${!m.installed || m.newer ? `<button class="small secondary as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="" ${busy}>${t(m.installed ? 'ki_aktualisieren' : 'ki_laden')}</button>` : ''}
+      ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`).join('')}</div>
+  <div class="row tight"><button class="secondary small" id="as-check" ${busy}>${t('ki_nach_neuem_suchen')}</button><span class="muted small">${a.checked ? t('ki_gesucht', esc(FDT(a.checked))) + ' · ' : ''}${t('ki_platz', asGB(a.disk_free || 0), asRAM(pf.ram || 0))}</span></div>
+  ${a.check_error ? `<div class="banner err small">${esc(a.check_error)}</div>` : ''}
+  <h2>${t('ki_betrieb')}</h2>
+  <div class="form">
+    <label>${t('ki_zustand')}</label><div class="row tight as-run-row"><span class="pill ${state === 'ready' ? 'ok' : state === 'error' ? 'err' : state === 'starting' ? 'info' : 'neutral'}" id="as-state">${t(`ki_z_${state}`)}</span>
+      ${state === 'ready' ? `<span class="tag${sv.sealed === 'strict' ? '' : ' warn'}" title="${esc(t(sv.sealed === 'strict' ? 'ki_abgeschirmt_tip' : sv.sealed ? 'ki_abgeschirmt_einfach_tip' : 'ki_nicht_abgeschirmt_tip'))}">${t(sv.sealed === 'strict' ? 'ki_abgeschirmt' : sv.sealed ? 'ki_abgeschirmt_einfach' : 'ki_nicht_abgeschirmt')}</span>` : ''}<span class="muted small" id="as-use">${esc(use)}</span>
+      ${state === 'ready' || state === 'starting' ? `<button class="small secondary" id="as-stop">${t('ki_stoppen')}</button>` : `<button class="small secondary" id="as-start" ${st.enabled && a.ready ? '' : 'disabled'}>${t('ki_starten')}</button>`}</div>
+    ${state === 'error' && sv.error ? `<div class="full banner err small">${esc(sv.error)}</div>` : ''}
+    <label>${t('ki_denken')}${hq('ki_denken')}</label><label class="chk"><select id="as-effort">${['fast', 'balanced', 'thorough'].map(k => opt(k, t(`ki_denken_${k}`), st.effort)).join('')}</select></label>
+    <label>${t('ki_kontext')}${hq('ki_kontext')}</label><label class="chk"><select id="as-context">${[16384, 32768, 65536].map(k => opt(k, t('ki_kontext_n', k / 1024), st.context)).join('')}</select></label>
+    <label>${t('ki_leerlauf')}${hq('ki_leerlauf')}</label><label class="chk"><select id="as-idle">${[5, 10, 30, 60, 0].map(k => opt(k, k ? t('ki_leerlauf_n', k) : t('ki_leerlauf_nie'), st.idle_minutes)).join('')}</select></label>
+    ${pf.can_seal ? `<label>${t('ki_abschirmung')}${hq('ki_abschirmung')}</label><label class="chk"><select id="as-sandbox">${['strict', 'basic', 'off'].map(k => opt(k, t(`ki_sb_${k}`), st.sandbox)).join('')}</select></label>` : ''}
+  </div>
+  <h2>${t('ki_rechte')}</h2>
+  <div class="as-rights">${['figures', 'transactions', 'help', 'page', 'navigate', 'enter_values', 'remote'].map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${r[k] ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}${k === 'enter_values' ? hq('ki_eintragen') : ''}</span></label>`).join('')}</div>
+  <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>`;
+}
+const asLoadText = l => l.total ? t('ki_laedt', l.label || '', asGB(l.done), asGB(l.total)) : t('ki_laedt_start', l.label || '');
+function bindAssistent(main) {
+  const post = async (path, body, quiet) => { try { const r = await api(path, body || {}); if (r && r.settings) AS.st = r; asChrome(); if (!quiet) await route(); return r; } catch (e) { toast(e.message, 7000); await route(); return null; } };
+  const set = body => post('/api/assistant/settings', body);
+  const on = (sel, ev, fn) => $$(sel, main).forEach(el => el.addEventListener(ev, e => fn(el, e)));
+  on('#as-enabled', 'change', el => set({enabled: el.checked}));
+  on('input[name="as-model"]', 'change', el => set({model: el.value}));
+  on('#as-effort', 'change', el => set({effort: el.value}));
+  on('#as-context', 'change', el => set({context: +el.value}));
+  on('#as-idle', 'change', el => set({idle_minutes: +el.value}));
+  on('#as-sandbox', 'change', el => { const cur = AS.st.settings.sandbox;          // weaker rules: only after a question
+    if (['strict', 'basic', 'off'].indexOf(el.value) > ['strict', 'basic', 'off'].indexOf(cur) && !confirm(t(`ki_sb_${el.value}_frage`))) { el.value = cur; return; } set({sandbox: el.value}); });
+  on('.as-right', 'change', el => set({rights: {[el.dataset.r]: el.checked}}));
+  on('#as-rt-install', 'click', () => post('/api/assistant/runtime/install'));
+  on('#as-rt-remove', 'click', () => { if (confirm(t('ki_programm_entfernen_frage'))) post('/api/assistant/runtime/remove'); });
+  on('#as-check', 'click', async el => { el.classList.add('busy'); el.disabled = true; await post('/api/assistant/check'); });
+  on('.as-dl', 'click', el => { if (el.dataset.fit !== 'big' || confirm(t('ki_zu_gross_frage', el.dataset.name, asRAM((AS.st.platform || {}).ram || 0)))) post('/api/assistant/model/download', {id: el.dataset.id}); });
+  on('.as-del', 'click', el => { if (confirm(t('ki_loeschen_frage', el.dataset.name))) post('/api/assistant/model/delete', {id: el.dataset.id}); });
+  on('#as-cancel', 'click', () => post('/api/assistant/model/cancel'));
+  on('#as-start', 'click', () => post('/api/assistant/server', {action: 'start'}));
+  on('#as-stop', 'click', () => post('/api/assistant/server', {action: 'stop'}));
+  const files = async () => {
+    const repo = ($('#as-repo', main).value || '').trim().replace(/^https?:\/\/huggingface\.co\//, '').replace(/\/+$/, ''), box = $('#as-filelist', main); if (!repo) return;
+    box.innerHTML = `<div class="as-item muted small"><span><span class="spin"></span>${t('wird_geladen')}</span></div>`;
+    try {
+      const r = await api('/api/assistant/model/files', {repo});
+      box.innerHTML = (r.files || []).length ? r.files.map(f => `<div class="as-item sub"><span>${esc(f.file)}<br><span class="muted small">${asGB(f.size)}</span></span><span class="as-act"><button class="small secondary as-dlf" data-file="${esc(f.file)}">${t('ki_laden')}</button></span></div>`).join('')
+        : `<div class="as-item muted small"><span>${t('ki_keine_dateien')}</span></div>`;
+      $$('.as-dlf', box).forEach(b => b.addEventListener('click', () => post('/api/assistant/model/download', {repo, file: b.dataset.file})));
+    } catch (e) { box.innerHTML = `<div class="banner err small">${esc(e.message)}</div>`; }
+  };
+  on('#as-files', 'click', files); on('#as-repo', 'keydown', (el, e) => { if (e.key === 'Enter') { e.preventDefault(); files(); } });
+  // while something is loading or the model starts: the progress in place, the page anew when it is over
+  clearTimeout(AS.setT);
+  const a = AS.st || {}, moving = () => { const s = AS.st || {}; return (s.load && s.load.state === 'running') || (s.server || {}).state === 'starting'; };
+  const tick = async () => {
+    if (S.tab !== 'settings' || S.sub !== 'assistant') return;
+    const was = moving(), kind = (AS.st.load || {}).kind, mid = (AS.st.load || {}).id;
+    try { AS.st = await api('/api/assistant/status'); } catch (e) { AS.setT = setTimeout(tick, 2000); return; }
+    const l = AS.st.load, p = $('#as-prog', main);
+    if (was && !moving()) {
+      if (kind === 'model' && l && l.state === 'done' && !AS.st.settings.model) { await set({model: mid}); return; }      // the first model: chosen
+      asChrome(); await route(); return;
+    }
+    if (l && l.state === 'running' && p) { $('.prog i', p).style.width = (l.total ? Math.round(100 * l.done / l.total) : 0) + '%'; $('.prog-l', p).textContent = asLoadText(l); }
+    const sv = AS.st.server || {}, u = $('#as-use', main);
+    if (u && sv.rss) u.textContent = t('ki_verbrauch', asRAM(sv.rss), asN(sv.cpu || 0)) + (sv.tps ? ' · ' + t('ki_tempo', asN(sv.tps)) : '');
+    AS.setT = setTimeout(tick, moving() ? 1000 : 5000);
+  };
+  AS.setT = setTimeout(tick, (a.load && a.load.state === 'running') || (a.server || {}).state === 'starting' ? 1000 : 5000);
+}
+
 window.addEventListener('hashchange', route);
 document.addEventListener('click', e => { const b = e.target.closest('#modus-seg button'); if (b) { S.mode = b.dataset.m; route(); } });
 document.addEventListener('click', e => {
@@ -6443,6 +6959,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => { const id = e.target.id; if (id === 'planan') { S.plan = e.target.checked; route(); } else if (id === 'realan') { S.real = e.target.checked; route(); } else if (id === 'alle-zeilen') { if (S.tab === 'balance') S.alleB = e.target.checked; else S.all = e.target.checked; route(); } });
 $('#menu-btn').addEventListener('click', () => $('.side').classList.toggle('open'));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && REC.on) { e.stopPropagation(); asMicStop(false); } }, true);          // a recording first: thrown away
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 // Klick neben das Seitenfenster schliesst es (bei ungespeicherten Eingaben erst nach Rueckfrage)
 document.addEventListener('pointerdown', e => {
@@ -6451,9 +6968,6 @@ document.addEventListener('pointerdown', e => {
   const key = DRW.key; closeDrawer(); DRW.closed = key ? {key, t: Date.now()} : null;
 });
 try { const s = JSON.parse(localStorage.getItem('kontor.ui') || '{}'); Object.assign(S, {plan: s.plan !== false, real: !!s.real, area: s.area || null}); } catch (e) {}
-// only this browser's own settings stay (keys of other versions go)
-try { const own = new Set(['kontor.lang', 'kontor.lang.pending', 'kontor.theme', 'kontor.ui', 'kontor.reload', 'kontor.testRemote', VIEW_KEY, CF_ORDER_KEY]);
-  Object.keys(localStorage).filter(k => k.startsWith('kontor.') && !own.has(k)).forEach(k => localStorage.removeItem(k)); } catch (e) {}
 viewApply(viewLoad());
 let SNAP_T = null;
 window.addEventListener('resize', () => { clearTimeout(SNAP_T); SNAP_T = setTimeout(() => { if (!PRINT.on && ['balance', 'cashflow', 'planning'].includes(S.tab)) $$('#main .wrap.snap').forEach(w => { const l = w.scrollLeft; snapTable(w); w.scrollLeft = snapLeft(w, l); }); }, 150); });

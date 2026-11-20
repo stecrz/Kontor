@@ -2,7 +2,19 @@
 
 # Kontor
 
-Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https://moneymoney-app.com) (macOS) – für dich privat und für jede Gesellschaft getrennt. Ein kleiner Dienst, der dauerhaft auf dem Mac läuft, mit einer Web-Oberfläche unter `http://127.0.0.1:8765/`. Nur Bordmittel (Python 3, `openssl`, `security`, `osascript`), keine Fremdbibliotheken, keine Zugangsdaten außerhalb von MoneyMoney, keine Netzverbindung außer der abschaltbaren Update-Prüfung bei GitHub (und, nur auf Klick, dem Nachschlagen von Wertpapiernamen per ISIN). Kontor enthält keine Annahmen über deine Konten: Alles wird in der Oberfläche eingerichtet.
+Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https://moneymoney-app.com) (macOS) – für dich privat und für jede Gesellschaft getrennt. Ein kleiner Dienst, der dauerhaft auf dem Mac läuft, mit einer Web-Oberfläche unter `http://127.0.0.1:8765/`. Nur Bordmittel (Python 3, `openssl`, `security`, `osascript`), keine Fremdbibliotheken, keine Zugangsdaten außerhalb von MoneyMoney, keine Netzverbindung außer der abschaltbaren Update-Prüfung bei GitHub (und, nur auf Klick, dem Nachschlagen von Wertpapiernamen per ISIN und dem Laden des optionalen Assistenten). Kontor enthält keine Annahmen über deine Konten: Alles wird in der Oberfläche eingerichtet.
+
+## Installation
+
+Auf einem Mac mit MoneyMoney diese Zeile im Terminal ausführen (Programme → Dienstprogramme → Terminal):
+
+```
+bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/install.sh)
+```
+
+Sie lädt Kontor, richtet es als Dienst im Hintergrund ein und öffnet die Oberfläche im Browser – dort ein Passwort festlegen, dann führt die [Einrichtung](docs/help.de.md#setup) durch alles Weitere. Eigener Installationsordner, Aktualisieren und Entfernen: [Hilfe](docs/help.de.md#install).
+
+## Was Kontor zeigt
 
 ![Bilanz](docs/img/de/balance_sheet.png)
 
@@ -19,9 +31,14 @@ Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https:
 - Liquiditäts- und Vermögensbrücke, Monatlicher Cashflow (zoombar), Gesamtcashflow als Sankey (Mittelherkunft und -verwendung), Vorjahresvergleich und Ausgaben je Monat – für einen frei wählbaren Zeitraum, auch in den Plan hinein.
 - Umbuchungen zwischen eigenen Konten werden gepaart (Gegen-IBAN, Kategorie, Betrag), Umsätze ohne Kategorie sichtbar geschätzt – ohne etwas in MoneyMoney einzutragen.
 
-**Übersicht** – die vier wichtigsten Grafiken auf einer Bildschirmseite: Nettovermögen, Vermögensstruktur, monatlicher Cashflow und Vermögensbrücke; ein Klick führt an ihre Stelle in Bilanz oder Cashflow.
+**Übersicht** – die wichtigsten Grafiken auf einer Bildschirmseite: Nettovermögen, Vermögensstruktur, monatlicher Cashflow, Vermögensbrücke und Vermögensaufbau; ein Klick führt an ihre Stelle in Bilanz oder Cashflow.
 
-**Stand:** Übersicht, Bilanz, Cashflow, Kategorisieren, Auto-Buchungen, Synchronisierung und Einrichtung sind geprüft. Planung, Immobilien, Steuer sowie Umsätze & Belege sind nutzbar, aber noch als „Alpha“ markiert – Zahlen dort bitte gegenprüfen.
+**Assistent** (optional) – ein Sprachmodell, das nur auf deinem Mac läuft ([llama.cpp](https://github.com/ggml-org/llama.cpp) mit einem Modell deiner Wahl, in Kontor geladen und aktualisiert): Fragen in normaler Sprache zu deinen Zahlen und zur Bedienung, als Fenster neben jeder Seite – getippt oder diktiert. Er öffnet die passende Ansicht, hebt hervor, wovon er spricht, und schlägt Einträge vor, die erst dein Klick einträgt.
+
+- Nichts verlässt den Mac: Das Modell läuft ohne Netz in der Abschirmung von macOS; ins Netz geht Kontor dafür nur auf Klick, um Programm und Modell zu laden.
+- Es liest, was Kontor zeigt, öffnet Seiten und schlägt Einträge vor – eingetragen wird erst nach deinem Klick, und jedes Recht ist einzeln schaltbar. Einstellungen, Regeln und MoneyMoney fasst es nie an.
+
+**Stand:** Übersicht, Bilanz, Cashflow, Kategorisieren, Auto-Buchungen, Synchronisierung und Einrichtung sind geprüft. Planung, Immobilien, Steuer, Umsätze & Belege und der Assistent sind nutzbar, aber noch als „Alpha“ markiert – Zahlen dort bitte gegenprüfen.
 
 **Anleitung: [Hilfe](docs/help.de.md)** · English: [help](docs/help.en.md) – dieselbe Hilfe steht in Kontor unter „Hilfe“ (durchsuchbar). Dort steht alles Weitere: was MoneyMoney und was Kontor macht, die Einrichtung, jede Seite, [Sicherheit](docs/help.de.md#security), Kommandozeile und Datenordner, Hilfe bei Fehlern. Alle Bilder zeigen frei erfundene Daten.
 
@@ -30,28 +47,12 @@ Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https:
 | ![Übersicht](docs/img/de/overview.png)<br>[Übersicht](docs/help.de.md#overview) | ![Cashflow](docs/img/de/cash_flow.png)<br>[Cashflow](docs/help.de.md#cash-flow) |
 | ![Planung](docs/img/de/planning.png)<br>[Planung](docs/help.de.md#planning) | ![Immobilien](docs/img/de/property.png)<br>[Immobilien](docs/help.de.md#properties) |
 | ![Kategorisieren](docs/img/de/assign_categories.png)<br>[Kategorisieren](docs/help.de.md#categories) | ![Einrichtung](docs/img/de/setup.png)<br>[Einrichtung](docs/help.de.md#setup) |
+| ![Assistent](docs/img/de/assistant.png)<br>[Assistent](docs/help.de.md#assistant) | ![Assistent einrichten](docs/img/de/assistant_settings.png)<br>[Assistent einrichten](docs/help.de.md#assistant-setup) |
 | ![Zugriff vom iPhone](docs/img/de/access.png)<br>[Zugriff vom iPhone](docs/help.de.md#iphone) | <img src="docs/img/de/iphone.png" alt="Kontor auf dem iPhone" width="220"><br>[Auf dem iPhone](docs/help.de.md#iphone) |
-
-## Installation
-
-Voraussetzungen: macOS, MoneyMoney, Kommandozeilen-Werkzeuge von Apple (`xcode-select --install`, liefert `python3` und `swiftc`).
-
-1. Eine Zeile im Terminal (Programme → Dienstprogramme → Terminal) – lädt Kontor in den Programmordner `~/Kontor`, richtet den Hintergrunddienst ein und öffnet die Oberfläche:
-   ```
-   bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/install.sh)
-   ```
-   **Anderer Ordner:** den Pfad mit `KONTOR_HOME` davorsetzen, etwa für den aktuellen Ordner:
-   ```
-   KONTOR_HOME="$PWD/Kontor" bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/install.sh)
-   ```
-   Auch später verschiebbar: Ordner verschieben, darin `bash install.sh` ausführen. Einstellungen und Daten liegen unabhängig davon in `~/Library/Application Support/Kontor`. Aktualisieren: in Kontor unter Einstellungen → Updates (oder dieselbe Zeile wie oben, mit demselben `KONTOR_HOME`).
-2. Im Browser unter `http://127.0.0.1:8765/` ein Passwort festlegen, dann führt die [Einrichtung](docs/help.de.md#setup) Schritt für Schritt durch alles.
-
-**Entfernen**: in Kontor unter Einstellungen → Sichern & Zurücksetzen → Deinstallieren, oder Doppelklick auf `Uninstall.command` im Programmordner. Dienst, Einstellungen, Daten, Protokoll und Datenschlüssel werden gelöscht; Belege und MoneyMoney bleiben. Mehr: [Updates](docs/help.de.md#updates) und [Für Fortgeschrittene](docs/help.de.md#advanced).
 
 ## Entwicklung
 
-- Tests: `python3 -m pytest -q tests` – Regeln und Zinsmodelle, Verschlüsselung, Lauf gegen ein simuliertes MoneyMoney, HTTP-API, Immobilienkalkulation gegen eine handgerechnete Tabellenkalkulation (auf den Cent) und die Oberfläche im Browser (Playwright). Testdaten sind frei erfunden.
+- Tests: `python3 -m pytest -q tests` – Regeln und Zinsmodelle, Verschlüsselung, Lauf gegen ein simuliertes MoneyMoney, HTTP-API, Immobilienkalkulation gegen eine handgerechnete Tabellenkalkulation (auf den Cent), der Assistent mit einem Platzhalter statt llama.cpp (ohne Netz, ohne Modell) und die Oberfläche im Browser (Playwright). Testdaten sind frei erfunden.
 - Bilder für Hilfe und README: `python3 tests/screenshots.py [Ordner|-] [de|en]` (aus denselben erfundenen Daten).
 - Seiten ansehen (hell/dunkel, Mac/iPhone): `python3 tests/preview.py <Ordner> ['#route' …]`.
 - Regeln für Änderungen (Version, Sprache, Sicherheit): [CLAUDE.md](CLAUDE.md). Fahrplan: [ROADMAP.md](ROADMAP.md). Änderungen: [CHANGELOG.md](CHANGELOG.md).

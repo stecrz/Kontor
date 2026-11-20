@@ -48,6 +48,7 @@
       <a href="#transactions"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 1h7l3 3v11H3zM9 2v3h3zM5 8h6v1H5zM5 11h6v1H5z"/></svg><span data-i18n="umsaetze_belege">Umsätze &amp; Belege</span></a>
       <a href="#categories"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z"/></svg><span data-i18n="nav_zuordnen">Kategorisieren</span></a>
       <a href="#bookings"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 1-7 7h2a5 5 0 1 0 5-5V1zM1 1l4 4H1z"/></svg><span data-i18n="nav_auto_buchungen">Auto-Buchungen</span></a>
+      <a href="#assistant" id="nav-assist" class="hidden"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M7 1.5l1.3 3.6a2 2 0 0 0 1.2 1.2L13.1 7.6 9.5 8.9a2 2 0 0 0-1.2 1.2L7 13.7 5.7 10.1a2 2 0 0 0-1.2-1.2L.9 7.6l3.6-1.3a2 2 0 0 0 1.2-1.2zM12.8 10.6l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z"/></svg><span data-i18n="ki_assistent">Assistent</span></a>
       <div class="navsep" data-i18n="nav_verwaltung">Verwaltung</div>
       <a href="#setup" id="nav-setup"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h12v2H2zm0 4h8v2H2zm0 4h5v2H2zm9-1l2 2 3-4"/></svg><span data-i18n="einrichtung">Einrichtung</span></a>
       <a href="#accounts"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M1 3h9v2H1zm0 4h6v2H1zm0 4h9v2H1zM12 2l3 2-3 2zm0 8l3 2-3 2zM10.5 6.2h1.6v3.6h-1.6z"/></svg><span data-i18n="konten_regeln">Konten &amp; Regeln</span></a>
@@ -64,10 +65,12 @@
       <button id="menu-btn" class="icon" aria-label="Menü" data-i18n-aria="aria_menu">☰</button>
       <h1 id="page-title">Übersicht</h1>
       <div id="bereich-seg" class="seg hidden"></div>
+      <button id="assist-btn" class="icon hidden" aria-label="Assistent" data-i18n-aria="ki_assistent"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M7 1.5l1.3 3.6a2 2 0 0 0 1.2 1.2L13.1 7.6 9.5 8.9a2 2 0 0 0-1.2 1.2L7 13.7 5.7 10.1a2 2 0 0 0-1.2-1.2L.9 7.6l3.6-1.3a2 2 0 0 0 1.2-1.2zM12.8 10.6l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z"/></svg></button>
     </header>
     <div id="banner" class="banner hidden"></div>
     <section id="main"></section>
   </main>
+  <aside id="assist" class="assist" aria-label="Assistent" data-i18n-aria="ki_assistent"></aside>
 </div>
 <div id="drawer" class="drawer"></div>
 <div id="toast" class="toast hidden"></div>

@@ -3,7 +3,7 @@
 #
 #   bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/install.sh)
 #
-# Laedt Kontor nach ~/Kontor (git; ohne git als ZIP), richtet den Hintergrunddienst ein (startet beim Anmelden),
+# Laedt Kontor nach ~/Applications/Kontor (der Programme-Ordner des Benutzers; git, ohne git als ZIP), richtet den Hintergrunddienst ein (startet beim Anmelden),
 # uebersetzt den Touch-ID-Helfer und oeffnet die Oberflaeche. Jederzeit wiederholbar; Einstellungen und Daten bleiben.
 # Im Programmordner aufgerufen (bash install.sh) wird nichts geladen, nur eingerichtet.
 # Variablen: KONTOR_HOME (Zielordner), KONTOR_REPO (Standard stecrz/Kontor), KONTOR_REF (Zweig, Standard main).
@@ -21,24 +21,17 @@ if [ -n "$SELF" ] && [ -f "$SELF/kontor.py" ] && [ -f "$SELF/service.py" ]; then
   DIR="$SELF"                                   # im Programmordner aufgerufen
 else
   REPO="${KONTOR_REPO:-stecrz/Kontor}"
-  DIR="${KONTOR_HOME:-$HOME/Kontor}"
+  DIR="${KONTOR_HOME:-$HOME/Applications/Kontor}"
+  mkdir -p "$(dirname "$DIR")"
   REF="${KONTOR_REF:-main}"
   if [ -d "$DIR/.git" ]; then
     echo "Aktualisiere $DIR ..."
     git -C "$DIR" fetch --quiet origin
     git -C "$DIR" checkout --quiet "$REF" 2>/dev/null || true
     git -C "$DIR" reset --hard --quiet "origin/$REF"
-  elif command -v git >/dev/null 2>&1; then
+  else
     echo "Lade $REPO nach $DIR ..."
     git clone --quiet --depth 1 --branch "$REF" "https://github.com/$REPO.git" "$DIR"
-  else
-    echo "Lade $REPO als ZIP nach $DIR ..."
-    TMP="$(mktemp -d)"
-    curl -fsSL "https://github.com/$REPO/archive/refs/heads/$REF.zip" -o "$TMP/kontor.zip"
-    ditto -x -k "$TMP/kontor.zip" "$TMP/x"
-    mkdir -p "$DIR"
-    ditto "$(find "$TMP/x" -maxdepth 1 -mindepth 1 -type d | head -1)" "$DIR"
-    rm -rf "$TMP"
   fi
 fi
 cd "$DIR"

@@ -67,6 +67,13 @@ def _safe(s: str, n: int = 40) -> str:
     return s[:n] or "Beleg"
 
 
+def _plain(v) -> str:
+    """A text for a cell of the CSV list: one that a spreadsheet would read as a formula (a name from the bank or a note
+    starting with = + - @) gets an apostrophe in front, so it stays text."""
+    v = "" if v is None else str(v)
+    return "'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r", "\n") else v
+
+
 class Belege:
     def __init__(self, store: Store, config: dict):
         self.store = store
@@ -102,9 +109,6 @@ class Belege:
 
     def entries(self) -> List[dict]:
         return self.index.setdefault("entry_list", [])
-
-    def for_tx(self, tx_id: int) -> List[dict]:
-        return [e for e in self.entries() if e.get("tx_id") == tx_id]
 
     def counts(self) -> Dict[int, int]:
         out: Dict[int, int] = {}
@@ -292,8 +296,8 @@ class Belege:
                 if full:
                     z.write(full, ("external/" + os.path.basename(full)) if e.get("external") else e["path"])
                 w.writerow([e.get("date"), ("%.2f" % e["amount"]).replace(".", ",") if isinstance(e.get("amount"), (int, float)) else "",
-                            e.get("name"), names.get(e.get("account") or "", e.get("account") or ""), names.get(e.get("entity") or "", ""),
-                            e["path"], e.get("note", ""), e.get("tx_id") or ""])
+                            _plain(e.get("name")), _plain(names.get(e.get("account") or "", e.get("account") or "")),
+                            _plain(names.get(e.get("entity") or "", "")), _plain(e["path"]), _plain(e.get("note", "")), e.get("tx_id") or ""])
             z.writestr("Belege.csv", "﻿" + buf.getvalue())
         os.chmod(target, 0o600)
         return target

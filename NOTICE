@@ -8,3 +8,8 @@ Licensed under the Apache License, Version 2.0 (see LICENSE).
 Kontor is an independent project and is not affiliated with or endorsed by
 the maker of MoneyMoney. MoneyMoney and other product names mentioned belong
 to their respective owners.
+
+The optional assistant downloads llama.cpp (MIT licence,
+https://github.com/ggml-org/llama.cpp) and language model files from Hugging
+Face at the user's request. They are not part of Kontor and come under their
+own licences.

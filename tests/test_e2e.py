@@ -94,7 +94,7 @@ class MockBridge:
             if a["uuid"] == account_ref:
                 a["balance"][0][0] = round(a["balance"][0][0] + amount, 2)
 
-    def set_transaction(self, tx_id, category=None, comment=None, checkmark=None):
+    def set_transaction(self, tx_id, category=None, comment=None):
         self.written.append(("set", tx_id, category, comment))
         if self.dry_run:
             return
@@ -244,7 +244,7 @@ class CoreTests(unittest.TestCase):
         """What you leave out of an approval is planned as not booked (the next value adjustment takes up the difference),
         booked is exactly what you saw; a value adjustment deleted or changed in MoneyMoney is corrected on its day."""
         cfg = core.merged_config(self.store.load("config.json")); cfg["dry_run"] = True
-        cfg["companies"][0].update(retroactive_from="2026-03", cycle="monthly")
+        cfg["companies"][0].update(retroactive_from="2026-03-01", cycle="monthly")
         props = core.run_once(self.store, cfg, TODAY, dry=True, force=True, bridge_factory=MockBridge)["proposals"]
         tilg = [p for p in props if p["kind"] == "repayment"]
         st = self.store.load("state.json")
@@ -516,6 +516,19 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(unresolved, [], unresolved)
         self.assertEqual(new_cfg["loans"][0]["loan_account"].split(" | ")[0], F.uid("ga.vd"))
         self.assertEqual(len(new_cfg["companies"]), 2)
+        # what Kontor may write into MoneyMoney without asking does not travel: not out, and not in (a package from elsewhere)
+        self.assertNotIn("dry_run", pkg["config"]); self.assertNotIn("write_comment", pkg["config"].get("receipts") or {})
+        loud = copy.deepcopy(pkg); loud["config"].update(dry_run=False, receipts={"write_comment": True, "subfolder": "{year}"})
+        for mode in ("merge", "replace"):
+            got, _, _ = core.import_package(core.merged_config({"dry_run": True}), loud, led, mode)
+            self.assertEqual((got["dry_run"], got["receipts"]["write_comment"]), (True, False), mode)
+            # ... and what you set here stays, also when a package replaces everything else
+            got, _, _ = core.import_package(core.merged_config({"dry_run": False, "receipts": {"write_comment": True, "folder": "~/Belege", "folder_confirmed": True}}), pkg, led, mode)
+            self.assertEqual((got["dry_run"], got["receipts"]["write_comment"], got["receipts"]["folder"], got["receipts"]["folder_confirmed"]), (False, True, "~/Belege", True), mode)
+        # a number that is none in a file written by hand: the default, so the service starts
+        self.assertEqual([core.merged_config({"ui": {"lock_minutes": v, "port": p}})["ui"][k] for v, p, k in
+                          (("", 8765, "lock_minutes"), (True, 8765, "lock_minutes"), (0, 8765, "lock_minutes"), (20, 8765, "lock_minutes"), (15, "x", "port"), (15, 80, "port"), (15, 9000, "port"))],
+                         [15, 15, 15, 20, 8765, 8765, 9000])
         pkg2 = copy.deepcopy(pkg); pkg2["config"]["loans"][0]["loan_account"] = "Darlehen Fremd"
         _, unresolved, _ = core.import_package(core.merged_config({}), pkg2, led, "merge")
         self.assertEqual(len(unresolved), 1); self.assertEqual(unresolved[0]["label"], "Darlehen Fremd")
@@ -599,7 +612,6 @@ class CoreTests(unittest.TestCase):
                         data = b"// neu\n" + data
                     z.writestr("stecrz-Kontor-abc123/" + rel, data)
             z.writestr("stecrz-Kontor-abc123/neu.txt", b"x")
-        os.makedirs(os.path.join(prog, ".old")); open(os.path.join(prog, ".old", "VERSION"), "w").write("1.0.0")      # a backup of before
         open(os.path.join(prog, "weg.py"), "w").write("x"); open(os.path.join(prog, "eigen.txt"), "w").write("x")
         open(os.path.join(prog, ".files"), "w").write("weg.py\nVERSION\n../draussen.txt\n")      # the version before brought weg.py
         open(os.path.join(self.dir, "draussen.txt"), "w").write("x")
@@ -614,7 +626,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(open(os.path.join(prog, "VERSION")).read().strip(), "9.9.9")
         self.assertTrue(open(os.path.join(prog, "web", "app.js")).read().startswith("// neu"))
         self.assertTrue(os.path.exists(os.path.join(prog, "neu.txt")))
-        self.assertFalse(os.path.exists(os.path.join(prog, ".old")))                         # no backup (an old one: gone)
+        self.assertFalse(os.path.exists(os.path.join(prog, ".old")))                         # no copy of the version before is kept
         self.assertFalse(os.path.exists(os.path.join(prog, "weg.py")))                        # no longer part of Kontor: removed
         self.assertTrue(os.path.exists(os.path.join(prog, "eigen.txt")))                      # never brought by an update: stays
         self.assertTrue(os.path.exists(os.path.join(self.dir, "draussen.txt")))               # outside the program folder: never
@@ -1347,7 +1359,19 @@ class AppTests(_AppBase):
             self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 403)
             cfg["receipts"] = dict(self.app.config.get("receipts") or {}, subfolder="../../{year}")
             self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 403)
-            self.assertEqual(self.call("/api/file/status?path=" + self.dir)[0], 403)
+            # who gets in and how, and whether Kontor writes into comments in MoneyMoney, stay as set at the Mac -- whatever a
+            # page elsewhere sends (also one loaded before the Mac changed them: it is not refused for it, the rest is saved)
+            want = {k: self.app.config["ui"].get(k) for k in ("lock_minutes", "touchid", "offline_copy", "remote_read_only")}
+            for change in ({"ui": {"lock_minutes": 100000}}, {"ui": {"touchid": False}}, {"ui": {"offline_copy": True}}, {"ui": {"remote_read_only": True}},
+                           {"receipts": {"write_comment": True}}):
+                cfg = copy.deepcopy(self.app.config)
+                for k, v in change.items():
+                    cfg[k] = dict(cfg.get(k) or {}, **v)
+                cfg.setdefault("schedule", {})["interval_minutes"] = 45
+                self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 200, change)
+                self.assertEqual({k: self.app.config["ui"].get(k) for k in want}, want, change)
+                self.assertFalse(self.app.config["receipts"].get("write_comment"), change)
+                self.assertEqual(self.app.config["schedule"]["interval_minutes"], 45)
             runs = []; orig_run = self.app.do_run
             self.app.do_run = lambda dry, force, **kw: runs.append(dry)
             try:
@@ -1814,8 +1838,38 @@ class AppTests(_AppBase):
             self.assertEqual(self.call("/api/login", {"password": "falsch"})[0], 401)
         self.assertEqual(self.call("/api/login", {"password": "neues-passwort-123"})[0], 429)
         self.app.sessions.clear_fails("127.0.0.1")
+        # many wrong ones at once: checked one after the other -- five, then the address waits
+        codes = []
+        ts = [threading.Thread(target=lambda: codes.append(self.call("/api/login", {"password": "falsch"})[0])) for _ in range(14)]
+        [t.start() for t in ts]; [t.join() for t in ts]
+        self.assertEqual((codes.count(401), codes.count(429)), (5, 9), codes)
+        self.app.sessions.clear_fails("127.0.0.1")
+        # nothing is read from someone not signed in (a large body, a length that is none); the ways in take a password, not megabytes
+        self.assertEqual(self.call("/api/receipts/upload", {"content": "x" * 300000})[0], 401)
+        import http.client
+        for path, length, want in (("/api/login", "-1", 400), ("/api/login", str(3 * 1024 * 1024), 400), ("/api/receipts/upload", "-1", 401)):
+            c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+            c.putrequest("POST", path); c.putheader("Content-Type", "application/json"); c.putheader("Content-Length", length); c.endheaders()
+            self.assertEqual(c.getresponse().status, want, (path, length)); c.close()
         code, r = self.call("/api/login", {"password": "neues-passwort-123"})
         self.assertEqual(code, 200)
+        self.csrf = r["csrf"]
+        # the password asked again behind a session counts the same way
+        for _ in range(5):
+            self.assertEqual(self.call("/api/password", {"old": "falsch", "new": "noch-ein-passwort-1"})[0], 401)
+        self.assertEqual(self.call("/api/password", {"old": "neues-passwort-123", "new": "noch-ein-passwort-1"})[0], 429)
+        self.assertEqual(self.call("/api/reset", {"password": "neues-passwort-123"})[0], 429)
+        self.app.sessions.clear_fails("127.0.0.1")
+        # the report worker survives an error nobody expected: said in the report, the next one is built
+        orig_now, boom = self.app._rebuild_now, []
+        self.app._rebuild_now = lambda: boom.append(1) or (_ for _ in ()).throw(OSError(28, "No space left on device"))
+        try:
+            ok, err = self.app.rebuild_report(wait=True, grund="test")
+        finally:
+            self.app._rebuild_now = orig_now
+        self.assertEqual((ok, boom), (False, [1])); self.assertIn("No space", err)
+        self.assertFalse(self.app.rebuild_running)
+        self.assertEqual(self.app.rebuild_report(wait=True, grund="test"), (True, None))
         self.assertEqual(self.call("/api/touchid", {})[0], 403)
         with self.opener.open("http://127.0.0.1:%d/" % self.port) as r:
             self.assertIn("Kontor", r.read().decode()); self.assertIn("default-src 'self'", r.headers["Content-Security-Policy"])
@@ -2241,7 +2295,15 @@ class FeatureTests(_AppBase):
         # Verlauf: Monatsstaende setzen, Import, Quelle umstellen
         code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
         self.assertEqual(h["source"], "balances"); self.assertEqual(h["recorded"]["2026-11"], 85000.0)
-        code, r = self.call("/api/history", {"account": F.uid("priv.depot"), "amounts": {"2026-10": "84.000,00", "2026-09": 80000, "2025-12": 60000}})
+        # the page sends numbers (it reads what you type in your language); a text with group signs is refused, not read one way
+        # or the other -- and then nothing of that request is saved
+        for text in ("84.000,00", "250,000.00", "1.234.567", "viel", True):
+            code, r = self.call("/api/history", {"account": F.uid("priv.depot"), "amounts": {"2026-09": 1.0, "2026-10": text}})
+            self.assertEqual(code, 400, text)
+        self.assertEqual(self.call("/api/history?account=" + F.uid("priv.depot"))[1]["manual"], {})
+        import service
+        self.assertEqual([service.number_in(x) for x in (".5", "-.25", "1e3", "12,5", "7.", 3, 2.5)], [0.5, -0.25, 1000.0, 12.5, 7.0, 3.0, 2.5])      # what a number field hands over
+        code, r = self.call("/api/history", {"account": F.uid("priv.depot"), "amounts": {"2026-10": 84000.0, "2026-09": "80000", "2025-12": 60000}})
         self.assertEqual(code, 200); self.assertTrue(r["report"])
         code, ds = self.call("/api/dataset"); b = ds["areas"][P]
         depot = [r for r in b["balance"]["rows"] if r["id"] == F.uid("priv.depot")][0]
@@ -2422,10 +2484,6 @@ class FeatureTests(_AppBase):
         code, r = self.call("/api/properties", {"action": "doc_add", "id": iid, "title": "Kaufvertrag", "kind": "Vertrag", "path": doc})
         self.assertEqual(code, 200); self.assertEqual(r["property"]["documents"][0]["path"], doc)
         self.assertEqual(self.call("/api/properties", {"action": "doc_add", "id": iid, "path": doc + ".lacking"})[0], 400)
-        code, r = self.call("/api/file/status?path=" + urllib.parse.quote(doc))
-        self.assertEqual(r["status"], "ok"); self.assertEqual(r["size_bytes"], 16)
-        code, r = self.call("/api/file/status?path=" + urllib.parse.quote(doc + ".nein"))
-        self.assertEqual(r["status"], "lacking")
         did = self.call("/api/config")[1]["real_estate"][0]["documents"][0]["id"]
         code, r = self.call("/api/properties", {"action": "doc_remove", "id": iid, "document_id": did})
         self.assertEqual(r["property"]["documents"], []); self.assertTrue(os.path.isfile(doc))
@@ -3434,7 +3492,6 @@ class BrowserTest(unittest.TestCase):
                 for w in ends: self.assertIn(w, ticks)                                                     # the first and the last month always labelled
                 for c in ("ein", "aus", "inv", "fin", "bank", "umsch", "value"):          # below: as the table -- change in cash, moves between accounts, change in value
                     self.assertTrue(pg.query_selector("#cf-months .cf-col." + c), c)
-                self.assertIsNone(pg.query_selector("#cf-months .cf-prev-o"))         # no year before in it (too little gain, confusing)
                 nets = pg.evaluate("[...document.querySelectorAll('#cf-months line.cf-net')].length"); self.assertGreater(nets, 0); self.assertLessEqual(nets, 24)      # the result of each month as a short line (both panels)
                 self.assertFalse(pg.evaluate("[...document.querySelectorAll('#main svg *')].some(e => [...e.attributes].some(a => a.value.includes('NaN')))"))      # every part drawn (no unknown value)
                 self.assertTrue(pg.query_selector("#cf-months rect.cf-col.umsch, #cf-months rect.cf-col.value"))      # reallocation and changes in value below
@@ -3525,7 +3582,6 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(grp[0]); self.assertIn("Klein B", grp[1]); self.assertEqual(grp[2], 0)          # the others add up
                 # 4. expenses by position as a ring: their sum in the middle
                 self.assertEqual(num(pg.text_content("#cf-pie .cf-pie-v")), -want["aus"])
-                self.assertIsNone(pg.query_selector(".cf-list.ex"))                          # the bars by position went (the ring covers them)
                 # further charts to choose from: rolling twelve months, savings rate, expenses by month, cash runway, the year so far
                 self.assertTrue(pg.query_selector("#cf-heat .cf-heat-c"))
                 for gone in ("#cf-rate", "#cf-reach", "#cf-roll", "#cf-yoy"):                   # removed as not useful (rolling: in the months chart)

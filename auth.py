@@ -74,7 +74,7 @@ def verify_password(password: str, rec: Dict[str, str]) -> bool:
 
 def password_ok(password: str) -> Optional[str]:
     if len(password) < 10:
-        return "Mindestens 10 Zeichen."
+        return tr("s_passwort_mindestens")
     return None
 
 
@@ -85,6 +85,7 @@ class Sessions:
         self._s: Dict[str, dict] = {}
         self._lock = threading.Lock()
         self._fails: Dict[str, list] = {}
+        self._check = threading.Lock()
 
     # Sitzungen
     def create(self, remote: str, via: str) -> dict:
@@ -111,10 +112,6 @@ class Sessions:
             if touch:
                 s["last"] = now
             return s
-
-    def drop(self, token: Optional[str]) -> None:
-        with self._lock:
-            self._s.pop(token or "", None)
 
     def drop_all(self) -> None:
         with self._lock:
@@ -151,6 +148,20 @@ class Sessions:
             if len(fails) >= 5:
                 return int(300 - (now - fails[0])) + 1
             return 0
+
+    def check_password(self, remote: str, password: str, rec: Optional[dict]) -> Optional[bool]:
+        """Kontor's password, checked for this address: one check at a time and every wrong one counted -- after five within
+        five minutes the address waits, also when the attempts come all at once and also behind a session. None: it has to
+        wait (nothing was checked)."""
+        with self._check:
+            if self.locked(remote):
+                return None
+            if rec and verify_password(password, rec):
+                self.clear_fails(remote)
+                return True
+            self.fail(remote)
+        time.sleep(0.5)
+        return False
 
     def fail(self, remote: str) -> None:
         with self._lock:

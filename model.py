@@ -9,6 +9,7 @@ import dataclasses
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -57,7 +58,6 @@ class Account:
     parent: Optional[str] = None
     children: List[str] = field(default_factory=list)
     path: str = ""
-    extra_currencies: Dict[str, float] = field(default_factory=dict)
 
     @property
     def offline(self) -> bool:
@@ -84,9 +84,7 @@ class Tx:
     booking_text: str = ""
     category: str = ""
     category_path: str = ""
-    category_uuid: str = ""
     counter_iban: str = ""
-    counter_bank: str = ""
     booked: bool = True
     checkmark: bool = False
     comment: str = ""
@@ -101,20 +99,12 @@ class Tx:
 # Konvertierung aus dem MoneyMoney-Export
 # ---------------------------------------------------------------------------
 
-def _balance_eur(raw: Any) -> Tuple[float, Dict[str, float]]:
-    """MoneyMoney liefert balance als Liste von [Betrag, Waehrung]-Paaren."""
-    main, others = 0.0, {}
+def _balance(raw: Any) -> float:
+    """MoneyMoney gives a balance as a list of [amount, currency] pairs: the first one is the account's own."""
     if isinstance(raw, list):
-        for i, pair in enumerate(raw):
-            if isinstance(pair, (list, tuple)) and len(pair) >= 2:
-                amt, cur = float(pair[0]), str(pair[1])
-                if i == 0:
-                    main = amt
-                else:
-                    others[cur] = amt
-    elif isinstance(raw, (int, float)):
-        main = float(raw)
-    return main, others
+        pair = raw[0] if raw else None
+        return float(pair[0]) if isinstance(pair, (list, tuple)) and len(pair) >= 2 else 0.0
+    return float(raw) if isinstance(raw, (int, float)) else 0.0
 
 
 def accounts_from_export(raw: List[Dict[str, Any]]) -> Dict[str, Account]:
@@ -125,7 +115,7 @@ def accounts_from_export(raw: List[Dict[str, Any]]) -> Dict[str, Account]:
         uuid = str(r.get("uuid") or "")
         if not uuid:
             continue
-        bal, others = _balance_eur(r.get("balance"))
+        bal = _balance(r.get("balance"))
         acc = Account(
             uuid=uuid,
             name=str(r.get("name") or ""),
@@ -140,7 +130,6 @@ def accounts_from_export(raw: List[Dict[str, Any]]) -> Dict[str, Account]:
             owner=(str(r.get("owner")) if r.get("owner") else None),
             portfolio=bool(r.get("portfolio", False)),
             refresh=local_datetime(r.get("refreshTimestamp")),
-            extra_currencies=others,
         )
         if acc.iban is None and acc.account_number and re.match(r"^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$", acc.account_number):
             acc.iban = acc.account_number
@@ -190,9 +179,7 @@ def tx_from_export(raw: List[Dict[str, Any]]) -> List[Tx]:
             booking_text=str(r.get("bookingText") or ""),
             category=str(r.get("category") or ""),
             category_path=str(r.get("categoryPath") or r.get("category") or ""),
-            category_uuid=str(r.get("categoryUuid") or ""),
             counter_iban=str(r.get("accountNumber") or "").replace(" ", "").upper(),
-            counter_bank=str(r.get("bankCode") or ""),
             booked=bool(r.get("booked", True)),
             checkmark=bool(r.get("checkmark", False)),
             comment=str(r.get("comment") or ""),
@@ -244,7 +231,7 @@ class Ledger:
 
     # -- Auflösung von Kontoreferenzen -----------------------------------
 
-    def resolve(self, ref: str, groups_ok: bool = True) -> Account:
+    def resolve(self, ref: str) -> Account:
         """Kontoreferenz aufloesen. Empfohlen: "UUID | Name" -- die UUID ist massgeblich
         (ueberlebt Umbenennen und Verschieben), der Name dient als Lesehilfe und Rueckfall.
         Auch moeglich: UUID allein, vollstaendiger Pfad 'A / B / C', Pfad-Suffix, eindeutiger Name."""
@@ -321,12 +308,6 @@ class Ledger:
             p = self.accounts[p].parent
         return out
 
-    def group_balance(self, uuid: str) -> float:
-        acc = self.accounts[uuid]
-        if not acc.group:
-            return acc.balance
-        return round(sum(a.balance for a in self.descendants(uuid)), 2)
-
     # -- Umsaetze und Salden ---------------------------------------------
 
     def transactions(self, uuid: str, booked_only: bool = True) -> List[Tx]:
@@ -402,10 +383,13 @@ class Ledger:
         return "online", ("s_grund_bank" if (a.bank_code or "").strip() else "s_grund_dienst")
 
     def kontor_marked(self) -> set:
-        """Accounts holding a booking of Kontor (its mark) that is in MoneyMoney -- one pass, kept for this ledger."""
+        """Accounts holding a booking of Kontor (its mark) that is in MoneyMoney -- one pass, kept for this ledger. Only a booking
+        as Kontor makes them counts: a name, a purpose, nothing a bank adds (no account of the other side, no booking text). The
+        purpose of a payment is written by whoever sends it -- a mark in it must never make a bank account one Kontor books into."""
         m = getattr(self, "_marked", None)
         if m is None:
-            m = self._marked = {t.account_uuid for t in self.txs if t.id > 0 and has_mark(t.purpose)}
+            m = self._marked = {t.account_uuid for t in self.txs
+                                if t.id > 0 and not (t.counter_iban or t.booking_text) and has_mark(t.purpose)}
         return m
 
     def writable(self, uuid: str, config: Optional[dict] = None) -> bool:
@@ -499,6 +483,12 @@ def months_between(start: date, end: date) -> List[Tuple[int, int]]:
         out.append((y, m))
         y, m = add_months(date(y, m, 1), 1)
     return out
+
+
+def cents(x: float) -> float:
+    """An amount rounded to the cent, half a cent away from zero (as in commerce). round() alone goes by the binary form of the
+    number and to the even cent: 0.625 becomes 0.62."""
+    return float(Decimal(repr(float(x))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def fmt_eur(x: float) -> str:

@@ -2,7 +2,8 @@
 
 Usage: python3 tests/preview.py OUT_DIR ['#route' ...] [--lang de|en] [--nur hell|dunkel] [--nur mac|iphone] [--js CODE]
 --js: JavaScript run on each page before the picture (e.g. whole tables: "document.querySelectorAll('.wrap').forEach(w => w.style.maxHeight = 'none')").
-Without routes: all main pages. Booked as on a first sync with everything new (nothing older waits).
+Without routes: all main pages. Booked as on a first sync with everything new (nothing older waits). The assistant is
+switched on with the tests' stand-in for llama.cpp (no model, nothing downloaded).
 All names, accounts and amounts come from tests/fixtures.py and are made up."""
 import argparse
 import os
@@ -14,13 +15,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..")); sys.path.insert(0, HERE)
 
 import test_e2e as T          # noqa: E402
+import test_assistant as TA   # noqa: E402
 from storage import Store, load_or_create_master_key   # noqa: E402
 from service import App, make_handler                  # noqa: E402
 from http.server import ThreadingHTTPServer            # noqa: E402
 from playwright.sync_api import sync_playwright        # noqa: E402
 
 PAGES = ["#overview", "#balance", "#cashflow", "#planning", "#properties", "#tax", "#transactions", "#bookings", "#categories",
-         "#setup", "#accounts", "#accounts/positions", "#accounts/rules", "#settings", "#settings/moneymoney", "#settings/updates", "#log", "#help"]
+         "#setup", "#accounts", "#accounts/positions", "#accounts/rules", "#settings", "#settings/moneymoney", "#settings/assistant", "#settings/updates", "#assistant",
+         "#log", "#help"]
 SIZES = {"mac": dict(viewport={"width": 1360, "height": 820}), "iphone": dict(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)}
 
 
@@ -41,6 +44,8 @@ def main() -> None:
     store.save("config.json", cfg); store.save("state.json", dict(T.ALL_NEW))
     T.reset_mock(); T.patch_today()
     app = App(store, d, bridge_factory=T.MockBridge); app.do_run(False, True)
+    TA.install(app, speech=True)
+    TA.L.physical_ram = lambda: 32 * 2 ** 30          # the model list as on a MacBook with 32 GB
     srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = "http://127.0.0.1:%d/" % srv.server_address[1]
@@ -66,11 +71,12 @@ def main() -> None:
                         if a.js:
                             pg.evaluate("() => { %s }" % a.js); pg.wait_for_timeout(300)
                         name = "%s_%s_%s.png" % (route.strip("#").replace("/", "-") or "start", size, theme)
-                        pg.screenshot(path=os.path.join(a.out, name), full_page=True)
+                        pg.screenshot(path=os.path.join(a.out, name), full_page=not route.startswith("#help"))      # the help is too long for one image: its section in view
                         print(os.path.join(a.out, name))
                     ctx.close()
             b.close()
     finally:
+        app.assistant_stop()
         srv.shutdown()
 
 

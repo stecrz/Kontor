@@ -1,5 +1,20 @@
 # Änderungen
 
+## 3.16.0 (2026-11-20 07:32)
+- Neu: Assistent (Alpha) – Sprachmodell nur auf diesem Mac, ohne Netz; als Fenster neben jeder Seite (✦ oder ⌘K) und als Menüpunkt.
+- Assistent: Fragen in normaler Sprache, auch mit eingefügten Zahlen, Tabellen, Code oder abgelegten Textdateien; antwortet in Kontors Sprache; jederzeit stoppbar.
+- Assistent liest: Übersicht, Bilanz, Cashflow, Vergleiche, Planung, Steuer, Immobilien, Kategorien, Auto-Buchungen, Offenes, Wertpapiere, Umsätze mit Belegen, Hilfe.
+- Assistent zeigt: öffnet die passende Ansicht, filtert Umsätze, hebt Zeilen und Felder hervor.
+- Assistent trägt ein: Kontostände, Planwerte, Annahmen, Ereignisse – nur nach Klick auf die Karte, mit „Zurücknehmen“.
+- Diktieren: Mikrofon im Fragefeld, eigenes Sprachmodell auf dem Mac, ohne Internet.
+- Einstellungen → Assistent: llama.cpp und Modelle laden, aktualisieren, wechseln, löschen; Empfehlung passend zum Arbeitsspeicher; Rechte einzeln; Denkaufwand, Kontext, Leerlauf, Abschirmung.
+- Zahlen eingeben: Monatsstände und Planwerte in der Schreibweise der Sprache (1.234,56 bzw. 1,234.56); behoben: falsche Werte bei Tausenderzeichen.
+- Buchungsregeln: Konto in anderer Währung → Wert der Beteiligung „unbekannt“ statt 1:1 in Euro; Zinsen kaufmännisch gerundet.
+- Sicherheit: Verwendungszweck einer fremden Zahlung macht kein Bankkonto buchbar; Fehlversuche beim Passwort zählen überall; Zugang und „Verweis in MoneyMoney“ nur am Mac einstellbar; Pakete ohne Buchungsschalter.
+- Behoben: Zugang – „nur ansehen“ und „Offline-Kopie“ ließen sich nicht umschalten; „Erneut versuchen“ nach einem Ladefehler ohne Wirkung.
+- Installation: Standardordner `~/Applications/Kontor`; README kürzer, Einzelheiten in der Hilfe.
+- Aufgeräumt: Altlasten und ungenutzter Code entfernt; Hilfe und Bilder auf dem Stand von heute.
+
 ## 3.15.23 (2026-11-20 05:30)
 - Entwicklung: Rundgang misst erst nach dem Einblenden der Seite (vorher falsche Kontrast-Meldungen auf langsamen Rechnern).
 

@@ -217,19 +217,16 @@ class Bridge:
             raise MoneyMoneyError(tr("s_buchung_konnte_nicht_angelegt_werden") % e)
         self.written.append({"method": "addTransaction", "args": dict(args)})
 
-    def set_transaction(self, tx_id: int, category: Optional[str] = None,
-                        comment: Optional[str] = None, checkmark: Optional[bool] = None) -> None:
+    def set_transaction(self, tx_id: int, category: Optional[str] = None, comment: Optional[str] = None) -> None:
         args: Dict[str, Any] = {"id": int(tx_id)}
         if category is not None:
             args["categoryTo"] = category
         if comment is not None:
             args["commentTo"] = comment
-        if checkmark is not None:
-            args["checkmarkTo"] = "on" if checkmark else "off"
         if len(args) == 1:
             return
         if self.dry_run:
-            log.info("DRY RUN setTransaction %s", json.dumps(args, ensure_ascii=False))
+            log.info("DRY RUN setTransaction (%s)", ", ".join(sorted(args)))      # no category or comment in the log
             self.written.append({"method": "setTransaction", "args": args})
             return
         self._call("setTransaction", args)
@@ -248,10 +245,3 @@ class Bridge:
         self.set_transaction(tx_id, comment=(cur + "\n" if cur.strip() else "") + text)
         return True
 
-
-def restrict_permissions(path: str) -> None:
-    """Dateien/Ordner nur fuer den eigenen Benutzer lesbar (0600/0700)."""
-    try:
-        os.chmod(path, 0o700 if os.path.isdir(path) else 0o600)
-    except OSError:
-        pass

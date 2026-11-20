@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from model import MARK, TAG_RE, Ledger, Tx, canon_tag, fmt_eur, has_mark, marks_in, month_end, months_between, norm_cat
+from model import MARK, TAG_RE, Ledger, Tx, canon_tag, cents, fmt_eur, has_mark, marks_in, month_end, months_between, norm_cat
 from i18n import tr
 
 
@@ -45,11 +45,6 @@ class Proposal:
     @property
     def key(self) -> str:
         return bkey(self.account_uuid, self.tag)
-
-    def describe(self) -> str:
-        return "%s  %s  %s  %s  %s  [%s]" % (
-            self.rule, self.booking_date.isoformat(), self.account_path,
-            fmt_eur(self.amount).rjust(16), self.purpose, self.category or "-")
 
 
 @dataclass
@@ -361,7 +356,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
                 res.warnings.append(tr("s_s_keine_jahresanfangsbasis_kein_zinssa") % (rule, y, y))
                 year_cache[y] = (0.0, 0.0, 0.0)
             else:
-                year_cache[y] = (base, rate, round(base * rate / 100.0, 2))
+                year_cache[y] = (base, rate, cents(base * rate / 100.0))
                 res.info.append(tr("s_zinsbasis_info") %
                                 (rule, y, fmt_eur(base), ("%.3f" % rate).rstrip("0").rstrip(".").replace(".", ","),
                                  fmt_eur(year_cache[y][2])))
@@ -407,14 +402,14 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             base, rate, yearly = year_basis(y)
             if yearly <= 0:
                 continue
-            per = round(yearly / 12.0, 2)
-            interest = round(yearly - 11 * per, 2) if m == 12 else per
+            per = cents(yearly / 12.0)
+            interest = cents(yearly - 11 * per) if m == 12 else per
         else:
             rate = _rate_at(rates, date(y, m, 1))
             base = abs(ledger.balance_at(loan.uuid, date(y, m, 1) - timedelta(days=1)))
             if rate is None or base <= 0:
                 continue
-            interest = round(base * rate / 1200.0, 2)
+            interest = cents(base * rate / 1200.0)
         if interest <= 0:
             continue
         purpose = _fill(texts["interest_text"], month="%02d/%04d" % (m, y),
@@ -434,15 +429,13 @@ VALUE_OFF = {"contingent", "ignore"}      # not part of a company's value: conti
 
 
 def parse_start(s):
-    """"Buchen ab" of a company: a day ('2025-03-14'), "alles" (since the company exists), older '2025-03' (first of the
-    month); anything else (empty: set up before 3.13.1) -> None."""
+    """"Buchen ab" of a company or mirror: a day ('2025-03-14') or "all" (since it exists); anything else (empty: none set) -> None."""
     s = str(s or "").strip()
     if s == "all":
         return "all"
     try:
-        parts = [int(x) for x in s.split("-")]
-        d = date(parts[0], parts[1], parts[2] if len(parts) > 2 else 1)
-    except (ValueError, IndexError):
+        d = date.fromisoformat(s)
+    except ValueError:
         return None
     return d if 1990 <= d.year <= 2100 else None
 
@@ -462,10 +455,14 @@ class ValueSeries:
                 src[ledger.resolve(ref).uuid] = v
             except KeyError:
                 pass
-        self.factor, self.unknown, self.parts, self.now = factor, [], [], 0.0
+        self.factor, self.unknown, self.foreign, self.parts, self.now = factor, [], [], [], 0.0
         days: set = set()
         for a in accs:
             txs = sorted(ledger.transactions(a.uuid), key=lambda t: t.booking_date)
+            if (a.currency or "EUR").upper() != "EUR":          # kept in another currency: Kontor does not convert (no rates, no
+                if abs(a.balance) >= 0.005 or txs:              # estimate) -- the value is unknown, also the one of today
+                    self.foreign.append(a.name)
+                continue
             self.now += a.balance
             if src.get(a.uuid) == "balances" or (a.portfolio and src.get(a.uuid) != "transactions"):
                 if abs(a.balance) >= 0.005 or txs:
@@ -486,10 +483,12 @@ class ValueSeries:
     def at(self, day: Optional[date]) -> Tuple[float, float, List[str]]:
         """(factor x value, value, unknown accounts) at the end of `day`; None: now."""
         if day is None:
+            if self.foreign:
+                return 0.0, 0.0, self.foreign
             v = round(self.now, 2)
             return round(self.factor * v, 2), v, []
-        if self.unknown:
-            return 0.0, 0.0, self.unknown
+        if self.unknown or self.foreign:
+            return 0.0, 0.0, self.unknown + self.foreign
         total = 0.0
         for dates, sums, opening, born in self.parts:
             i = bisect_right(dates, day)
@@ -498,12 +497,6 @@ class ValueSeries:
             total += opening + (sums[i - 1] if i else 0.0)
         v = round(total, 2)
         return round(self.factor * v, 2), v, []
-
-
-def past_balances(ledger: Ledger, accs, day: date, config: Optional[dict] = None) -> Tuple[float, List[str]]:
-    """Sum of the balances of `accs` at the end of a past `day` (see ValueSeries)."""
-    _, v, unknown = ValueSeries(ledger, accs, config).at(day)
-    return v, unknown
 
 
 def _keep_value(ledger: Ledger, res: RuleResult, rule: str, target, series: ValueSeries, cfg: dict, today: date, payee: str,
@@ -527,10 +520,14 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, target, series: Valu
     txs = sorted(ledger.transactions(target.uuid), key=lambda t: (t.booking_date, t.id))
     opening = target.balance - sum(t.amount for t in txs)
     used = {m for t in txs for m in marks_in(t.purpose)}
-    want_now, src_now, _ = series.at(None)
+    want_now, src_now, unknown_now = series.at(None)
     preview.update(target=target.uuid, ist=round(target.balance, 2), soll=want_now, source=src_now, diff=round(want_now - target.balance, 2),
                    retro_count=0, back_sum=0.0, open=0, unknown=[], cycle="monthly" if monthly else "daily",
                    begin=start.isoformat() if isinstance(start, date) else None)
+    if unknown_now:          # an account in another currency: no value is known, on no day -- nothing is booked, and it says why
+        preview.update(soll=None, source=None, diff=None)
+        res.warnings.append(tr("s_wert_fremdwaehrung") % (rule, ", ".join(unknown_now[:3])))
+        return
     unknown_months: List[str] = []
     i, cum, posted = 0, 0.0, 0.0
     for d in days:

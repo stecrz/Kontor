@@ -149,7 +149,6 @@ def apply_to_ledger(ledger: Ledger, idx: Dict[str, Dict[str, Any]], written: Lis
         else:
             t.category_path = raw
             t.category = raw.split("\\")[-1]
-        t.category_uuid = idx[w["new"]]["uuid"]
 
 
 def forget(state: dict, ids) -> None:

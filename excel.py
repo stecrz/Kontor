@@ -13,6 +13,7 @@ from typing import Any, List, Optional, Sequence
 from xml.sax.saxutils import escape
 
 _INVALID_SHEET = re.compile(r"[\[\]\*\?/\\:]")
+_CONTROL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f]")          # characters XML does not allow: a file with one of them would not open
 
 
 def _col(n: int) -> str:
@@ -77,12 +78,14 @@ class Sheet:
                 continue
             if isinstance(v, bool):
                 v = "ja" if v else "nein"
+            if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+                continue                                    # not a number: the cell stays empty
             if isinstance(v, (int, float)):
                 style = 3 if bold else 1
                 cells.append('<c r="%s" s="%d"><v>%s</v></c>' % (ref, style, repr(float(v)) if isinstance(v, float) else v))
             else:
                 style = 2 if bold else 0
-                cells.append('<c r="%s" s="%d" t="inlineStr"><is><t xml:space="preserve">%s</t></is></c>' % (ref, style, escape(str(v))))
+                cells.append('<c r="%s" s="%d" t="inlineStr"><is><t xml:space="preserve">%s</t></is></c>' % (ref, style, escape(_CONTROL.sub("", str(v)))))
         return '<row r="%d"%s>%s</row>' % (idx, attrs, "".join(cells))
 
 

@@ -537,6 +537,25 @@ class ReceiptLinks(unittest.TestCase):
         self.assertIsNone(self.bl.servable(self.bl.entries()[0]))
         self.assertIn("2026/Fremd.pdf", self.bl.check())                    # shown as missing, as it is not handed out
 
+    def test_the_list_holds_no_formulas(self):
+        """The list in the export (CSV) is opened in a spreadsheet: a name from the bank or a note that starts like a formula
+        stays text."""
+        import zipfile
+        e = self.bl.link_existing(None, "2026/Rechnung.pdf")
+        e.update(name='=HYPERLINK("http://x.invalid";"Rechnung")', note="@SUM(1+1)", amount=-12.5, date="2026-03-01")
+        with zipfile.ZipFile(self.bl.export_zip(None, None, {})) as z:
+            rows = z.read("Belege.csv").decode("utf-8").splitlines()
+        self.assertEqual(len(rows), 2)
+        self.assertIn(";\"'=HYPERLINK(", rows[1]); self.assertIn(";'@SUM(1+1);", rows[1]); self.assertIn(";-12,50;", rows[1])      # amounts stay numbers
+        import excel, io
+        wb = excel.workbook([excel.Sheet("Blatt", ["Text", "Zahl"], [["Miete\x0bMärz\x00", float("nan")], ["=1+1", float("inf")], ["ok", 1.5]])])
+        with zipfile.ZipFile(io.BytesIO(wb)) as z:
+            sheet = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        from xml.dom import minidom
+        minidom.parseString(sheet)                                          # opens: no character XML forbids
+        self.assertIn("MieteMärz", sheet); self.assertNotIn("nan", sheet.lower()); self.assertNotIn("inf<", sheet.lower()); self.assertIn("<v>1.5</v>", sheet)
+        self.assertIn(">=1+1<", sheet); self.assertNotIn("<f>", sheet)      # a text, not a formula
+
     def test_delete_never_reaches_outside(self):
         other = os.path.join(self.base, "Andere", "Sub"); os.makedirs(other)
         with open(os.path.join(self.base, "Andere", "Rechnung.pdf"), "wb") as f:

@@ -1,7 +1,6 @@
 """Updates aus GitHub: pruefen, laden, Programmdateien ersetzen, Dienst neu starten.
 
-Einzige Netzverbindung von Kontor -- nur zu github.com und nur auf Wunsch
-(Einstellungen: taeglich pruefen und/oder "Jetzt pruefen"). Installiert wird
+Nur zu GitHub und nur auf Wunsch (Einstellungen: taeglich pruefen und/oder "Jetzt pruefen"). Installiert wird
 nie automatisch, sondern nach Klick. Der Datenordner wird nicht angefasst.
 Integritaet: HTTPS zu GitHub, feste Host-Liste, das Archiv muss kontor.py und
 VERSION enthalten. Die Programmdateien werden direkt ersetzt, ohne Sicherung: VERSION
@@ -57,7 +56,7 @@ def _get(url: str, accept: str = "application/vnd.github+json") -> bytes:
     log.debug("GET %s (Accept: %s)", url, accept)
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
         final = r.geturl()
-        if urlparse(final).netloc not in ALLOWED_HOSTS:
+        if urlparse(final).netloc not in ALLOWED_HOSTS or not final.startswith("https://"):
             raise ValueError(tr("s_umleitung_auf_fremden_host_s") % final)
         data = r.read()
         log.debug("GET %s -> %s, %d bytes%s", url, r.status, len(data), (" via " + final) if final != url else "")
@@ -273,9 +272,9 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
         return {"ok": False, "text": tr("s_update_abgebrochen") % str(e)[:200]}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    for d in (".old",) + (() if os.path.isdir(os.path.join(HERE, ".git")) else (".github", ".claude")):
+    for d in () if os.path.isdir(os.path.join(HERE, ".git")) else (".github", ".claude"):
         if os.path.isdir(os.path.join(HERE, d)) and not os.path.islink(os.path.join(HERE, d)):
-            shutil.rmtree(os.path.join(HERE, d), ignore_errors=True)          # the backup of earlier versions; folders earlier updates copied
+            shutil.rmtree(os.path.join(HERE, d), ignore_errors=True)          # folders of the repository that are not part of the program
     changed = len(installed)
     log.info("Update to %s applied (%d files, %d removed)", new_version, changed, removed)
     # Touch-ID-Helfer bei Bedarf neu uebersetzen (ohne Fehler zu werfen)

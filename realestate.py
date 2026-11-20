@@ -273,7 +273,7 @@ class _Loan:
             return self.anschluss_zins
         return self.rate
 
-    def step(self, ym: Tuple[int, int], months_in_year_so_far: int) -> Tuple[float, float, float]:
+    def step(self, ym: Tuple[int, int]) -> Tuple[float, float, float]:
         """Ein Monat: (Zins, Tilgung, Sondertilgung) als positive Betraege. Saldo wird fortgeschrieben."""
         if ym < self.beginn:
             return 0.0, 0.0, 0.0
@@ -388,7 +388,6 @@ def berechne(obj: dict, heute: Optional[date] = None) -> dict:
     wert = kp
     while ym[0] <= end_year:
         y, m = ym
-        months_in_year = m - (start[1] if y == start[0] else 1) + 1
         miete = nkm_year[y] * (1 - leer)
         nk_u = umlage
         kosten = -_f(ko.get("non_recoverable_pa")) * kosten_faktor[y] / 12.0
@@ -397,7 +396,7 @@ def berechne(obj: dict, heute: Optional[date] = None) -> dict:
         row = {"month": _mk(y, m), "rent": miete, "recoverable_costs": nk_u, "costs": kosten, "reserve": ruecklage, "depreciation": afa,
                "interest": 0.0, "interest_deductible": 0.0, "repayment": 0.0, "special_repayment": 0.0, "loans": {}}
         for l in loans:
-            z, t, s = l.step(ym, months_in_year)
+            z, t, s = l.step(ym)
             row["loans"][l.name] = {"interest": -z, "repayment": -t, "special_repayment": -s, "balance_amount": -l.saldo}
             row["interest"] += -z
             if l.abziehbar:

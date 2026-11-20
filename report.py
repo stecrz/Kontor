@@ -82,13 +82,11 @@ _NAME_HINTS_RE = [(re.compile(rx, re.I), role) for rx, role in NAME_HINTS]
 STRONG_TYPES = {"portfolio": "securities", "depot": "securities", "girokonto": "cash", "kreditkarte": "cash", "bargeld": "cash", "cash": "cash",
                 "darlehenskonto": "+/-", "loan": "+/-", "bauspar": "term_investments"}
 WEAK_TYPES = {"tagesgeld": "cash", "sparkonto": "cash", "festgeld": "term_investments"}
-TYPE_ROLES = {**WEAK_TYPES, **STRONG_TYPES, "portfolio": "securities"}
 NO_NEGATIVE_TYPES = ("sparkonto", "tagesgeld", "festgeld", "bauspar")
 TX_MARK = MARK + "tx-"              # a loan repayment mirrored from a payment: the mark names the payment
 COST_WORDS = ["zins", "interest", "gebühr", "gebuehr", "entgelt", "provision", "bereitstellung", "#kontor-zins", "#mm-zins"]
 SECTIONS = ["income", "expenses", "investing", "financing", "valuation", "unclear"]
 CASH_SECTIONS = ["income", "expenses", "investing", "financing", "unclear"]
-PLAN_METHODS = ("rolling12", "rolling6", "prev_year", "fix", "yearly_amount", "budget", "none")
 
 
 # ---------------------------------------------------------------------------

@@ -52,6 +52,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "fetch": {"online": [], "offline": []},      # eigene Festlegung: Konto wird von MoneyMoney abgerufen / nicht (sonst erkannt)
     "not_book": [],      # bookings of the rules you chose not to book: {"key": account|mark, "datum", "betrag", "konto", "art", "text", "regel", "seit"}
     "updates": {"repo": "stecrz/Kontor", "check_mode": "daily"},   # pruefen: taeglich | woechentlich | aus
+    "assistant": {},     # the assistant (assistant.py: its switch, model, rights): changed only under Einstellungen -> Assistent, at the Mac
     "ui": {"lock_minutes": 15, "touchid": True, "port": 8765, "bind": "127.0.0.1", "tls_cert": "", "tls_key": ""},
 }
 
@@ -87,6 +88,12 @@ def _shape(cfg: dict) -> dict:
             cfg.pop(k)
         elif k in cfg and isinstance(v, list) and k != "assign_without":       # lists of entries (zuordnen_ohne: of area ids, below)
             cfg[k] = dicts(cfg[k])
+    ui = cfg.get("ui")
+    if isinstance(ui, dict):                    # a number that is none (or out of range): the default applies -- the service must start
+        for f, lo, hi in (("lock_minutes", 1, 100000), ("port", 1024, 65535)):
+            v = ui.get(f)
+            if f in ui and not (isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi):
+                ui.pop(f)
     kf = cfg.get("cashflow")
     if isinstance(kf, dict) and "recipient_to_account" in kf:
         e = kf["recipient_to_account"]
@@ -1331,7 +1338,7 @@ def save_positions(config: dict, body: dict, ledger: Optional[Ledger]) -> dict:
         acc.pop(p, None)
         if v:
             if ledger is not None:
-                ledger.resolve(str(v), groups_ok=False)          # KeyError: unknown account
+                ledger.resolve(str(v))          # KeyError: unknown account
             acc[p] = str(v)
     kf["positions"], kf["category_to_account"] = pos, acc
     # the account saving goes into, per area and recipient: {area: {recipient: account | "extern" | "" (Kontor's)}}
@@ -1349,7 +1356,7 @@ def save_positions(config: dict, body: dict, ledger: Optional[Ledger]) -> dict:
             mine.pop(k, None)
             if v:
                 if v != "external" and ledger is not None:
-                    ledger.resolve(v, groups_ok=False)           # KeyError: unknown account
+                    ledger.resolve(v)           # KeyError: unknown account
                 mine[k] = v
     kf["recipient_to_account"] = {a: m for a, m in emp.items() if m}
     return cfg
@@ -1867,6 +1874,10 @@ def export_package(config: dict, name: str = "Kontor-Einstellungen", strip_uuids
     cfg.pop("ui", None)
     cfg.pop("updates", None)
     cfg.pop("not_book", None)                 # decisions about bookings in your MoneyMoney: they stay here
+    cfg.pop("assistant", None)                # so do the assistant's rights
+    cfg.pop("dry_run", None)                  # and what Kontor may write into your MoneyMoney without asking: set here, by you
+    (cfg.get("receipts") or {}).pop("write_comment", None)
+    (cfg.get("receipts") or {}).pop("folder_confirmed", None)
     (cfg.get("cashflow") or {}).pop("recipient_to_account", None)       # so do your recipients (their IBANs)
     (cfg.get("receipts") or {}).pop("folder", None)
     ids = {str(b.get("id")) for b in cfg.get("areas") or [] if isinstance(b, dict)}
@@ -1911,8 +1922,11 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
         raise ValueError(tr("s_keine_einstellungsdatei"))
     check_file_version(pkg)
     inc = copy.deepcopy(pkg["config"])
-    for k in ("ui", "updates", "not_book"):
+    for k in ("ui", "updates", "not_book", "assistant", "dry_run"):
         inc.pop(k, None)
+    if isinstance(inc.get("receipts"), dict):      # where your receipts lie and whether Kontor writes into MoneyMoney's comments: yours
+        for k in ("folder", "folder_confirmed", "write_comment"):
+            inc["receipts"].pop(k, None)
     if isinstance(inc.get("cashflow"), dict):
         inc["cashflow"].pop("recipient_to_account", None)
     mapping = mapping or {}
@@ -1939,9 +1953,12 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
     base = copy.deepcopy(merged_config(current))
     if mode == "replace":
         keep = copy.deepcopy((base.get("cashflow") or {}).get("recipient_to_account") or {})
+        mine = {k: copy.deepcopy(v) for k, v in (base.get("receipts") or {}).items() if k in ("folder", "folder_confirmed", "write_comment")}
         for k, v in inc.items():
             base[k] = v
-            report.append("%s ersetzt" % k)
+            report.append(tr("s_paket_ersetzt") % k)
+        if isinstance(base.get("receipts"), dict):               # nor where your receipts lie, nor whether Kontor writes into
+            base["receipts"].update(mine)                        # MoneyMoney's comments: these stay as you set them
         if keep and isinstance(base.get("cashflow"), dict):      # a package never carries your recipients: they stay
             base["cashflow"]["recipient_to_account"] = keep
     else:
@@ -1990,7 +2007,7 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
                 report.append(tr("s_s_ergaenzt") % k)
             else:
                 base[k] = v
-                report.append("%s gesetzt" % k)
+                report.append(tr("s_paket_gesetzt") % k)
     return merged_config(base), unresolved, report
 
 

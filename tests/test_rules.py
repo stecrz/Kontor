@@ -65,11 +65,9 @@ class TreeTests(unittest.TestCase):
         self.assertFalse(ext.offline)
         self.assertTrue(led.resolve("Verkäuferdarlehen").offline)
 
-    def test_group_balance_and_balance_at(self):
+    def test_balance_at(self):
         txs = F.ga_transactions(date(2026, 11, 4))
         led = make_ledger({"ga.kk": 40000.0}, txs)
-        pb = led.resolve("Alpha GbR")
-        self.assertAlmostEqual(led.group_balance(pb.uuid), 40000 + 1500000 - 1200000 - 240000, 2)
         # KK-Saldo am 31.12.2025 = heute - alle Buchungen 2026 (11 x -6000)
         self.assertAlmostEqual(led.balance_at(F.uid("ga.kk"), date(2025, 12, 31)), 40000 + 11 * 6000, 2)
         # Datumskonvertierung: lokale Mitternacht -> Datum bleibt der 1.
@@ -211,6 +209,23 @@ def company_cfg(**over):
     return cfg
 
 
+class RoundingTests(unittest.TestCase):
+    def test_half_a_cent_goes_up(self):
+        """Amounts are rounded as in commerce: half a cent away from zero -- not to the even cent, not by the binary form."""
+        from model import cents
+        self.assertEqual([cents(x) for x in (0.625, 0.615, 1.005, 2.675, 625.025, -0.625, 0.0, 12.344999, 49001.225)],
+                         [0.63, 0.62, 1.01, 2.68, 625.03, -0.63, 0.0, 12.34, 49001.23])
+        self.assertEqual(round(0.625, 2), 0.62)                      # what round() alone would do
+        # interest of a month on 150.00 at 5 %: 0.625 -> 0.63
+        today = date(2026, 11, 4)
+        led = make_ledger({"ga.vd": -150.0}, [])
+        cfg = company_cfg(companies=[], loans=[loan_cfg(from_date="2026-10-01", interest={
+            "model": "remaining_debt_monthly", "rate_list": [{"from_date": "2025-11-20", "percent": 5.0}], "booking_day": "ultimo"})])
+        res = plan_all(led, cfg, today)
+        zins = [p for p in res.proposals if p.kind == "interest"]
+        self.assertEqual([abs(p.amount) for p in zins], [0.63], [(p.kind, p.amount) for p in res.proposals])
+
+
 class CompanyTests(unittest.TestCase):
     def test_participation_value(self):
         today = date(2026, 11, 4)
@@ -228,6 +243,17 @@ class CompanyTests(unittest.TestCase):
                                         "back_sum": 0.0, "unknown": [], "cycle": "daily", "soll": want, "source": float(ga_value), "diff": want + 90000.0,
                                         "begin": None}])
         self.assertEqual(plan_all(led, company_cfg(), today).proposals, [])        # again: nothing
+        # an account of the company in another currency: Kontor does not convert, so the value is unknown -- nothing is booked
+        # (not its amount taken as euros), and it says why; out of the value (your choice), the rest is booked as before
+        raw = F.accounts_raw({})
+        usd = next(a for a in raw if a["uuid"] == F.uid("ga.kk")); usd["currency"] = "USD"; usd["balance"] = [[40000.0, "USD"]]
+        fx = Ledger(accounts_from_export(raw), tx_from_export([]))
+        res = plan_all(fx, company_cfg(), today)
+        self.assertEqual(res.proposals, [])
+        self.assertTrue(any("anderen Währung" in i and "Stadtbank Kontokorrent" in i for i in res.warnings), res.warnings)
+        self.assertEqual([(pv["soll"], pv["source"], pv["diff"], pv["open"]) for pv in res.preview], [(None, None, None, 0)])
+        res = plan_all(fx, company_cfg(balance={"roles": {F.uid("ga.kk"): "ignore"}}), today)
+        self.assertEqual([round(p.amount, 2) for p in res.proposals], [round(0.4 * (ga_value - 40000) + 90000.0, 2)])
         # the share comes only from the area; without it nothing is booked
         cfg = company_cfg(); cfg["areas"][1].pop("share")
         res = plan_all(make_ledger({}, []), cfg, today)
@@ -265,7 +291,7 @@ class CompanyTests(unittest.TestCase):
         today = date(2026, 11, 4)
         led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         cfg = company_cfg(loans=[loan_cfg()])
-        cfg["companies"][0].update(retroactive_from="2026-03", cycle="monthly")
+        cfg["companies"][0].update(retroactive_from="2026-03-01", cycle="monthly")
         res = plan_all(led, cfg, today, seen=Seen(Seen.top_id(led), today))
         wert = [p for p in res.proposals if p.kind == "value"]
         days = [p.booking_date for p in wert]
@@ -291,7 +317,7 @@ class CompanyTests(unittest.TestCase):
         today = date(2026, 11, 4)
         led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         cfg = company_cfg(loans=[loan_cfg()])
-        cfg["companies"][0]["retroactive_from"] = "2026-03"
+        cfg["companies"][0]["retroactive_from"] = "2026-03-01"
         res = plan_all(led, cfg, today, seen=Seen(Seen.top_id(led), today))
         wert = [p for p in res.proposals if p.kind == "value"]
         target = led.resolve("Beteiligung an Alpha GbR")
@@ -353,7 +379,7 @@ class CompanyTests(unittest.TestCase):
         cfg = company_cfg(areas=[{"id": "a", "name": "Alpha GbR", "kind": "company", "share": 0.5,
                                      "accounts": [F.uid("ga") + " | Alpha GbR", F.uid("priv.depot") + " | Depot"]},
                                     {"id": "p", "name": "Privat", "kind": "private", "main_area": True, "accounts": [F.uid("priv.bet") + " | Beteiligungen"]}])
-        cfg["companies"][0].update(retroactive_from="2026-09", cycle="monthly")
+        cfg["companies"][0].update(retroactive_from="2026-09-01", cycle="monthly")
         res = plan_all(led, cfg, today)
         self.assertEqual([p.booking_date for p in res.proposals], [])
         self.assertEqual(res.preview[0]["unknown"], ["09/2026", "10/2026"])
@@ -854,7 +880,7 @@ class ChainTests(unittest.TestCase):
     def plan(self, led=None, **kw):
         led = led or self.base.fork()
         cfg = company_cfg(loans=[loan_cfg()])
-        cfg["companies"][0].update(retroactive_from="2026-03", cycle="monthly")
+        cfg["companies"][0].update(retroactive_from="2026-03-01", cycle="monthly")
         return led, cfg, plan_all(led, cfg, self.today, **kw)
 
     def test_left_out_or_changed_moves_only_the_next(self):
@@ -1169,7 +1195,7 @@ class WritePathTests(unittest.TestCase):
         def add_transaction(self, *a, **k):
             self.calls.append(("add",) + a)
 
-        def set_transaction(self, tx_id, category=None, comment=None, checkmark=None):
+        def set_transaction(self, tx_id, category=None, comment=None):
             self.calls.append(("set", tx_id, category, comment))
 
         def export_transactions(self, from_date, to_date=None, account=None):
@@ -1279,6 +1305,31 @@ class MarkTests(unittest.TestCase):
         z = next(p for p in res.proposals if p.kind == "interest")
         again = plan_all(make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today)), dict(cfg, not_book=[{"key": z.account_uuid + "|" + z.tag.replace("#kontor-", "#mm-")}]), today)
         self.assertNotIn(z.tag, [p.tag for p in again.proposals])
+
+
+    def test_a_mark_someone_sent_makes_no_account_bookable(self):
+        """The purpose of a payment is written by its sender. A mark of Kontor in it must not make a bank account one that Kontor
+        books into: only a booking as Kontor makes them counts (nothing a bank adds -- no account of the other side, no
+        booking text)."""
+        today = date(2026, 11, 4)
+        giro = F.uid("priv.giro")
+        plain = make_ledger({}, [])
+        self.assertEqual(plain.fetch_kind(giro)[0], "online"); self.assertFalse(plain.writable(giro))
+        for sent in (F.tx("priv.giro", date(2026, 10, 1), 0.01, "Fremder", "Rechnung 4711 #mm-ref-2026", counter_iban="DE02300209000106531065"),
+                     F.tx("priv.giro", date(2026, 10, 1), 0.01, "Fremder", "#kontor-zins-2026-09", booking_text="Gutschrift"),
+                     F.tx("priv.giro", date(2026, 10, 1), 0.01, "Fremder", "#kontor-wert-20261001-1", counter_iban="DE02300209000106531065", booking_text="Überweisung")):
+            led = make_ledger({}, [sent])
+            self.assertEqual(led.fetch_kind(giro), ("online", "s_grund_bank"), sent["purpose"])
+            self.assertFalse(led.writable(giro))
+            self.assertEqual(led.kontor_marked(), set())
+        # a booking of Kontor's own (a name and a purpose, nothing else) still shows an account kept by hand
+        own = make_ledger({}, [F.tx("priv.giro", date(2026, 10, 1), 12.0, "Alpha GbR", "Zinsen 09/2026 · #kontor-zins-2026-09")])
+        self.assertEqual(own.fetch_kind(giro)[0], "offline"); self.assertEqual(own.kontor_marked(), {giro})
+        # and a bank account with such a payment gets no booking from a rule that names it
+        cfg = company_cfg(companies=[], account_mirrors=[{"a": giro + " | Giro", "b": F.uid("priv.bet.gb") + " | B", "from_date": "all"}])
+        sent = F.tx("priv.giro", date(2026, 10, 1), 0.01, "Fremder", "Rechnung #mm-ref-2026", counter_iban="DE02300209000106531065")
+        res = plan_all(make_ledger({}, [sent, F.tx("priv.bet.gb", date(2026, 10, 2), 500.0, "Beta GbR", "Einlage")]), cfg, today)
+        self.assertNotIn(giro, [p.account_uuid for p in res.proposals])
 
 
 class ReferenceTests(unittest.TestCase):
