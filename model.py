@@ -192,29 +192,20 @@ def tx_from_export(raw: List[Dict[str, Any]]) -> List[Tx]:
 # Kontenbaum
 # ---------------------------------------------------------------------------
 
-# Kontor's mark in the purpose of its bookings: "#kontor-<kind>-<...>" -- so everyone sees who made the booking. Until 3.12 it
-# was "#mm-..."; those bookings stay as they are in MoneyMoney and are recognised as the same mark (canon_tag).
+# Kontor's mark in the purpose of its bookings: "#kontor-<kind>-<...>" -- so everyone sees who made the booking.
 MARK = "#kontor-"
-TAG_RE = re.compile(r"#(?:kontor|mm)-[a-z]+-[A-Za-z0-9\-]+")
-
-
-def canon_tag(tag) -> str:
-    """A mark in its current form ("#mm-zins-2026-01" and "#kontor-zins-2026-01" are the same mark)."""
-    tag = str(tag or "")
-    return MARK + tag[4:] if tag.startswith("#mm-") else tag
+TAG_RE = re.compile(r"#kontor-[a-z]+-[A-Za-z0-9\-]+")
 
 
 def marks_in(text) -> List[str]:
-    """Kontor's marks in a text, in their current form."""
+    """Kontor's marks in a text."""
     text = text or ""
-    if "#kontor-" not in text and "#mm-" not in text:
-        return []
-    return [canon_tag(m) for m in TAG_RE.findall(text)]
+    return TAG_RE.findall(text) if MARK in text else []
 
 
 def has_mark(text) -> bool:
     text = text or ""
-    return ("#kontor-" in text or "#mm-" in text) and bool(TAG_RE.search(text))
+    return MARK in text and bool(TAG_RE.search(text))
 
 
 class Ledger:

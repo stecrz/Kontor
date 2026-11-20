@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.1 (2026-11-20 11:49)
+- Alte Buchungsmarken „#mm-…“ (vor 3.12) und „#kontor-spiegel-…“ zählen nicht mehr als Kontors Buchungen, sondern als deine eigenen.
+
 ## 3.16.0 (2026-11-20 07:32)
 - Neu: Assistent (Alpha) – Sprachmodell nur auf diesem Mac, ohne Netz; als Fenster neben jeder Seite (✦ oder ⌘K) und als Menüpunkt.
 - Assistent: Fragen in normaler Sprache, auch mit eingefügten Zahlen, Tabellen, Code oder abgelegten Textdateien; antwortet in Kontors Sprache; jederzeit stoppbar.

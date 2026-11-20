@@ -1,7 +1,7 @@
 """Booking rules: loans (repayment and interest), and per company the value of your participation and account mirrors.
 
 Stateless: every run derives everything from MoneyMoney and the settings. What is booked already is recognised by the mark in
-its purpose (#kontor-tx-<id>, #kontor-zins-YYYY-MM, #kontor-wert-..., #kontor-gk-<id>; "#mm-..." until 3.12) or by an equal
+its purpose (#kontor-tx-<id>, #kontor-zins-YYYY-MM, #kontor-wert-..., #kontor-gk-<id>) or by an equal
 booking you made yourself. Kontor keeps no list of its own bookings, so nothing can get out of step with MoneyMoney: a booking
 deleted there is simply missing again, one changed there (with its mark) counts as it is now. Kept are only your decisions
 "Don't book" (settings: not_book) and up to where Kontor had looked when it last booked on its own (Seen).
@@ -16,13 +16,13 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from model import MARK, TAG_RE, Ledger, Tx, canon_tag, cents, fmt_eur, has_mark, marks_in, month_end, months_between, norm_cat
+from model import MARK, TAG_RE, Ledger, Tx, cents, fmt_eur, has_mark, marks_in, month_end, months_between, norm_cat
 from i18n import tr
 
 
 def bkey(account_uuid: str, tag: str) -> str:
     """A booking of Kontor: account and mark (the same mark, e.g. interest of a month, exists once per account)."""
-    return "%s|%s" % (account_uuid, canon_tag(tag))
+    return "%s|%s" % (account_uuid, tag)
 
 
 @dataclass
@@ -89,14 +89,14 @@ class Seen:
         return {"id": self.max_id, "tag": self.day.isoformat() if self.day else None}
 
 
-VALUE_TAGS = (MARK + "wert-", MARK + "spiegel-")          # "spiegel": balance adjustments of counter accounts until 3.12.33
+VALUE_TAGS = (MARK + "wert-",)
 MIRROR_TAG = MARK + "gk-"
 EDIT_AMOUNT = ("repayment", "interest")       # kinds whose amount and date you may change before approving (the others follow MoneyMoney)
 
 
 def is_value_tag(tag) -> bool:
     """A value adjustment (participation): always the difference to the balance, never a fixed amount."""
-    return canon_tag(tag).startswith(VALUE_TAGS)
+    return str(tag or "").startswith(VALUE_TAGS)
 
 
 def present_marks(ledger: Ledger) -> set:
@@ -589,7 +589,7 @@ def _target_ok(ledger: Ledger, config: Optional[dict], res: RuleResult, rule: st
 
 
 def _mirror_of(t: Tx) -> Optional[int]:
-    m = re.search(r"#(?:kontor|mm)-gk-(\d+)", (t.purpose or "") + " " + (t.comment or ""))
+    m = re.search(r"#kontor-gk-(\d+)", (t.purpose or "") + " " + (t.comment or ""))
     return int(m.group(1)) if m else None
 
 

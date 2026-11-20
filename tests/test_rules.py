@@ -406,7 +406,7 @@ class CompanyTests(unittest.TestCase):
         self.assertFalse(led_with({vd: blz}).writable(vd))
         self.assertTrue(led_with({vd: {"bankCode": "70150000"}}).writable(vd))          # never fetched
         self.assertTrue(led_with({vd: blz}).writable(vd, {"fetch": {"offline": [vd + " | Verkäuferdarlehen"]}}))      # your choice
-        self.assertTrue(led_with({vd: blz}, [F.tx("ga.vd", date(2026, 9, 30), -10.0, "x", "Zinsen 09/2026 · #mm-zins-2026-09")]).writable(vd))
+        self.assertTrue(led_with({vd: blz}, [F.tx("ga.vd", date(2026, 9, 30), -10.0, "x", "Zinsen 09/2026 · #kontor-zins-2026-09")]).writable(vd))
         led2 = led_with({vd: blz}); led2.post(vd, date(2026, 11, 4), 1.0, "x", "#kontor-wert-20261104-1")
         self.assertFalse(led2.writable(vd))                                  # a booking planned in this run does not count
         self.assertFalse(led.writable(bet, {"fetch": {"online": [bet + " | Beteiligung an Alpha GbR"]}}))
@@ -766,9 +766,9 @@ class SecurityHardeningTests(unittest.TestCase):
 class KontorBookingsTests(unittest.TestCase):
     def test_list_of_created_bookings(self):
         import service
-        txs = [F.tx("ga.vd", date(2026, 10, 31), -3000.0, "Zinsen", "Zinsen Oktober #mm-zins-2026-10"),
-               F.tx("priv.bet.ga", date(2026, 11, 2), 1500.0, "Wertanpassung", "Anteil 40 % #mm-wert-20261102-1"),
-               F.tx("priv.giro", date(2026, 10, 3), -900.0, "Bank", "Rate", comment="→ Darlehen gespiegelt (#mm-tx-7)")]
+        txs = [F.tx("ga.vd", date(2026, 10, 31), -3000.0, "Zinsen", "Zinsen Oktober #kontor-zins-2026-10"),
+               F.tx("priv.bet.ga", date(2026, 11, 2), 1500.0, "Wertanpassung", "Anteil 40 % #kontor-wert-20261102-1"),
+               F.tx("priv.giro", date(2026, 10, 3), -900.0, "Bank", "Rate", comment="→ Darlehen gespiegelt (#kontor-tx-7)")]
         led = Ledger(accounts_from_export(F.accounts_raw({})), tx_from_export(txs))
         out = service.kontor_bookings(led)
         self.assertEqual([(x["kind"], x["mark"]) for x in out], [("value", "#kontor-wert-20261102-1"), ("interest", "#kontor-zins-2026-10")])   # newest first; a comment alone is no booking
@@ -1232,7 +1232,7 @@ class WritePathTests(unittest.TestCase):
         from rules import Proposal
         from mm_bridge import MoneyMoneyError
         tag = "#kontor-wert-20261104-1"
-        there = F.tx("priv.bet.gb", date(2026, 11, 1), 5.0, "x", "da · #mm-wert-20261101-1")
+        there = F.tx("priv.bet.gb", date(2026, 11, 1), 5.0, "x", "da · #kontor-wert-20261101-1")
         led = make_ledger({}, [there])
         off, bank = led.accounts[F.uid("priv.bet.ga")], led.accounts[F.uid("priv.giro")]
         ok = Proposal("r", "value", off.uuid, off.path, date(2026, 11, 4), 12.5, "p", "Text · " + tag, "", tag)
@@ -1250,7 +1250,7 @@ class WritePathTests(unittest.TestCase):
                 core.apply_proposals(br, led, [bad], [])
             self.assertEqual(br.calls, [])
         # its mark is in the account already, or no amount: nothing is written (never twice)
-        twice = Proposal("r", "value", F.uid("priv.bet.gb"), "x", date(2026, 11, 1), 5.0, "p", "da · #kontor-wert-20261101-1", "", "#kontor-wert-20261101-1")       # there with its older "#mm-" mark
+        twice = Proposal("r", "value", F.uid("priv.bet.gb"), "x", date(2026, 11, 1), 5.0, "p", "da · #kontor-wert-20261101-1", "", "#kontor-wert-20261101-1")       # there already
         zero = Proposal("r", "value", off.uuid, off.path, date(2026, 11, 4), 0.0, "p", "x · " + tag, "", tag)
         br = self.Rec(); made = []
         core.apply_proposals(br, led, [twice, zero, ok, ok], made)
@@ -1275,37 +1275,47 @@ class WritePathTests(unittest.TestCase):
 
 
 class MarkTests(unittest.TestCase):
-    """Kontor's mark reads "#kontor-..." (so MoneyMoney shows who made a booking); bookings made until 3.12 carry "#mm-..." and
-    are the same marks: nothing is booked twice, Kontor's lists keep working."""
+    """Kontor's mark reads "#kontor-<kind>-..." (so MoneyMoney shows who made a booking). Nothing else is one -- also not the
+    "#mm-..." of versions before 3.12: such a booking is one of your own, like any other."""
 
-    def test_old_marks_are_the_same_marks(self):
-        from model import canon_tag, marks_in, has_mark
-        self.assertEqual(canon_tag("#mm-zins-2026-01"), "#kontor-zins-2026-01"); self.assertEqual(canon_tag("#kontor-gk-12"), "#kontor-gk-12")
-        self.assertEqual(marks_in("Zinsen · #mm-zins-2026-01 und #kontor-wert-20260101-2"), ["#kontor-zins-2026-01", "#kontor-wert-20260101-2"])
-        self.assertTrue(has_mark("x #mm-tx-5")); self.assertFalse(has_mark("#mmm kein Zeichen"))
+    def test_only_kontors_mark_is_one(self):
+        from model import marks_in, has_mark
+        import rules
+        self.assertEqual(marks_in("Zinsen · #kontor-zins-2026-01 und #kontor-wert-20260101-2"), ["#kontor-zins-2026-01", "#kontor-wert-20260101-2"])
+        self.assertEqual(marks_in("Zinsen · #mm-zins-2026-01"), []); self.assertEqual(marks_in(None), [])
+        self.assertTrue(has_mark("x #kontor-tx-5")); self.assertFalse(has_mark("x #mm-tx-5")); self.assertFalse(has_mark("#kontor kein Zeichen"))
+        self.assertTrue(rules.is_value_tag("#kontor-wert-20260101-1"))
+        self.assertFalse(rules.is_value_tag("#kontor-spiegel-20260101-1")); self.assertFalse(rules.is_value_tag("#mm-wert-20260101-1"))
+        self.assertEqual(rules.bkey("a", "#kontor-zins-2026-01"), "a|#kontor-zins-2026-01")
         today = date(2026, 11, 4)
-        # everything booked by an older version (old marks): nothing is proposed again
+        # everything Kontor booked: nothing is proposed again
         led = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today))
         cfg = company_cfg(loans=[loan_cfg()])
         res = plan_all(led, cfg, today)
         self.assertTrue(res.proposals); self.assertTrue(all(p.tag.startswith("#kontor-") and p.tag in p.purpose for p in res.proposals))
-        old = led.without_planned(keep=[p.key for p in res.proposals])
-        for t in old.txs:
+        booked = led.without_planned(keep=[p.key for p in res.proposals])
+        self.assertEqual(plan_all(booked.fork(), cfg, today).proposals, [])
+        # the same bookings under another mark are not Kontor's but yours, like any you made by hand -- and as such they still
+        # count where they stand as Kontor made them: interest by its text and month, a repayment or a mirrored booking by an
+        # equal one, the value by the balance (one you changed since, or moved, is no longer found by its mark)
+        other = led.without_planned(keep=[p.key for p in res.proposals])
+        for t in other.txs:
             t.purpose = t.purpose.replace("#kontor-", "#mm-")
-        self.assertEqual(plan_all(old.fork(), cfg, today).proposals, [])
-        # a mirrored booking with the old mark: recognised, not mirrored again and not mirrored back
+        self.assertEqual(other.kontor_marked(), set())
+        again = plan_all(other.fork(), cfg, today)
+        self.assertEqual(again.proposals, []); self.assertEqual(again.warnings, [])
+        self.assertTrue(any("Zinsen selbst gebucht" in i for i in again.info), again.info)
         o = F.tx("gb.kap.a", date(2026, 9, 1), -5000.0, "Ich", "Einlage")
         m = F.tx("priv.bet.gb", date(2026, 9, 1), 5000.0, "Beta GbR", "Einlage · #mm-gk-%d" % o["id"])
         mc = company_cfg(companies=[], account_mirrors=[{"a": F.uid("priv.bet.gb") + " | B", "b": F.uid("gb.kap.a") + " | K", "from_date": "all"}])
         r = plan_all(make_ledger({}, [o, m]), mc, today)
-        self.assertEqual(r.proposals, []); self.assertEqual(r.warnings, []); self.assertEqual(r.preview[0]["mirrored"], 1)
-        # a decision not to book from before (key with "#mm-"): still the same booking
-        import rules
-        self.assertEqual(rules.bkey("a", "#mm-zins-2026-01"), rules.bkey("a", "#kontor-zins-2026-01"))
+        self.assertEqual(r.proposals, []); self.assertEqual(r.warnings, [])
+        import service
+        self.assertEqual(service.kontor_bookings(other), [])                                # not in the list of Kontor's bookings either
+        # a decision not to book: by account and mark
         z = next(p for p in res.proposals if p.kind == "interest")
-        again = plan_all(make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today)), dict(cfg, not_book=[{"key": z.account_uuid + "|" + z.tag.replace("#kontor-", "#mm-")}]), today)
-        self.assertNotIn(z.tag, [p.tag for p in again.proposals])
-
+        left = plan_all(make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today)), dict(cfg, not_book=[{"key": z.account_uuid + "|" + z.tag}]), today)
+        self.assertNotIn(z.tag, [p.tag for p in left.proposals])
 
     def test_a_mark_someone_sent_makes_no_account_bookable(self):
         """The purpose of a payment is written by its sender. A mark of Kontor in it must not make a bank account one that Kontor
@@ -1315,7 +1325,7 @@ class MarkTests(unittest.TestCase):
         giro = F.uid("priv.giro")
         plain = make_ledger({}, [])
         self.assertEqual(plain.fetch_kind(giro)[0], "online"); self.assertFalse(plain.writable(giro))
-        for sent in (F.tx("priv.giro", date(2026, 10, 1), 0.01, "Fremder", "Rechnung 4711 #mm-ref-2026", counter_iban="DE02300209000106531065"),
+        for sent in (F.tx("priv.giro", date(2026, 10, 1), 0.01, "Fremder", "Rechnung 4711 #kontor-ref-2026", counter_iban="DE02300209000106531065"),
                      F.tx("priv.giro", date(2026, 10, 1), 0.01, "Fremder", "#kontor-zins-2026-09", booking_text="Gutschrift"),
                      F.tx("priv.giro", date(2026, 10, 1), 0.01, "Fremder", "#kontor-wert-20261001-1", counter_iban="DE02300209000106531065", booking_text="Überweisung")):
             led = make_ledger({}, [sent])
@@ -1327,7 +1337,7 @@ class MarkTests(unittest.TestCase):
         self.assertEqual(own.fetch_kind(giro)[0], "offline"); self.assertEqual(own.kontor_marked(), {giro})
         # and a bank account with such a payment gets no booking from a rule that names it
         cfg = company_cfg(companies=[], account_mirrors=[{"a": giro + " | Giro", "b": F.uid("priv.bet.gb") + " | B", "from_date": "all"}])
-        sent = F.tx("priv.giro", date(2026, 10, 1), 0.01, "Fremder", "Rechnung #mm-ref-2026", counter_iban="DE02300209000106531065")
+        sent = F.tx("priv.giro", date(2026, 10, 1), 0.01, "Fremder", "Rechnung #kontor-ref-2026", counter_iban="DE02300209000106531065")
         res = plan_all(make_ledger({}, [sent, F.tx("priv.bet.gb", date(2026, 10, 2), 500.0, "Beta GbR", "Einlage")]), cfg, today)
         self.assertNotIn(giro, [p.account_uuid for p in res.proposals])
 

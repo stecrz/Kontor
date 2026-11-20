@@ -84,7 +84,7 @@ STRONG_TYPES = {"portfolio": "securities", "depot": "securities", "girokonto": "
 WEAK_TYPES = {"tagesgeld": "cash", "sparkonto": "cash", "festgeld": "term_investments"}
 NO_NEGATIVE_TYPES = ("sparkonto", "tagesgeld", "festgeld", "bauspar")
 TX_MARK = MARK + "tx-"              # a loan repayment mirrored from a payment: the mark names the payment
-COST_WORDS = ["zins", "interest", "gebühr", "gebuehr", "entgelt", "provision", "bereitstellung", "#kontor-zins", "#mm-zins"]
+COST_WORDS = ["zins", "interest", "gebühr", "gebuehr", "entgelt", "provision", "bereitstellung", "#kontor-zins"]
 SECTIONS = ["income", "expenses", "investing", "financing", "valuation", "unclear"]
 CASH_SECTIONS = ["income", "expenses", "investing", "financing", "unclear"]
 
@@ -585,7 +585,7 @@ def company_accounts(ledger: Ledger, config: dict) -> Dict[str, str]:
     return {a.uuid: b["name"] for g, b in company_areas(ledger, config) for a in b["leaves"]}
 
 
-VALUE_MARKS = (MARK + "wert-", MARK + "spiegel-")     # value adjustments of Kontor (participation): never a transfer
+VALUE_MARKS = (MARK + "wert-",)     # value adjustments of Kontor (participation): never a transfer
 ASSET_LIKE = ASSET_ROLES | {"other"}               # positions that change only by bookings, valuations and transfers
 # Investing and financing by kind, as in a cash flow statement (group, its text key, place): the accounts and loans are the
 # rows within. The row names (keys of your planning) stay as they were.

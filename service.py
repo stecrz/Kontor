@@ -99,7 +99,7 @@ def approval(raw) -> Tuple[Optional[Dict[str, dict]], Optional[str]]:
                 c["shown"] = round(float(ch["shown"]), 2)
         except (TypeError, ValueError):
             return None, tr("s_aenderung_ungueltig")
-        out[rules_bkey(acc, tag)] = c         # the mark in its current form (older lists carry "#mm-...")
+        out[rules_bkey(acc, tag)] = c
     return out, None
 
 
@@ -116,7 +116,7 @@ def kontor_bookings(ledger) -> List[dict]:
     out: List[dict] = []
     if ledger is None:
         return out
-    kinds = {"tx": "repayment", "zins": "interest", "wert": "value", "spiegel": "value", "gk": "mirror"}
+    kinds = {"tx": "repayment", "zins": "interest", "wert": "value", "gk": "mirror"}
     for t in ledger.txs:                                 # the ledger holds no planned bookings (Ledger.without_planned)
         ms = marks_in(t.purpose)
         if not ms or getattr(t, "planned", False):

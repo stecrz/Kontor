@@ -131,7 +131,7 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
                 is_transfer = (t.counter_iban and t.counter_iban in own_ibans) or \
                               (bool(t.category_path) and transfer_cat(t.category_path)) or \
                               any(tag.startswith(MARK + "tx-") for tag in marks_in(t.purpose + " " + t.comment)) or \
-                              any(tag.startswith((MARK + "wert-", MARK + "spiegel-", MARK + "gk-")) for tag in marks_in(t.purpose))
+                              any(tag.startswith((MARK + "wert-", MARK + "gk-")) for tag in marks_in(t.purpose))
                 if acc.portfolio:
                     continue
                 if role in ("liabilities", "receivables"):

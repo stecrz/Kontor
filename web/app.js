@@ -4420,7 +4420,7 @@ function vBuchungen(runs) {
       // a new list: what carries a note (a possible counterpart entered by hand) starts not chosen -- you tick it yourself
       if (BOOK.time !== l.time) { const noted = (l.proposals || []).filter(v => v.note && v.key).map(v => v.key);
         Object.assign(BOOK, {time: l.time, edits: {}, off: new Set(noted), calc: null, extra: {}, editing: new Set(), needCalc: noted.length > 0}); }
-      const plain = txt => String(txt || '').replace(/\s*·?\s*#(?:kontor|mm)-[a-z]+-[A-Za-z0-9-]+/g, '').trim();
+      const plain = txt => String(txt || '').replace(/\s*·?\s*#kontor-[a-z]+-[A-Za-z0-9-]+/g, '').trim();
       h += `<div class="wrap auto"><table class="plain bk-table"><thead><tr>${pick ? `<th class="c"><input type="checkbox" id="bk-all" ${BOOK.off.size || bkRows(l).some(r => r.gone) ? '' : 'checked'} aria-label="${esc(t('alle'))}"></th>` : ''}<th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>`
         + bkRows(l).map(({v, k, off, e, gone, b, neu, adjusted}) => {
           const d = e.date ?? v.date, z = e.purpose ?? plain(v.text), changed = Object.keys(e).length > 0, loan = v.kind === 'repayment' || v.kind === 'interest';
@@ -6184,7 +6184,7 @@ function bind(main) {
       const now = (bkRows(l).find(x => x.k === key) || {}).b ?? v.amount;          // the amount without your change
       if (e.target.classList.contains('bk-d')) { if (e.target.value && e.target.value !== v.date) ch.date = e.target.value; else delete ch.date; }
       if (e.target.classList.contains('bk-b')) { const n = parseFloat(e.target.value); if (!isNaN(n) && Math.abs(n) >= 0.01 && (ch.amount != null || Math.abs(n - now) >= 0.005)) ch.amount = Math.round(n * 100) / 100; else delete ch.amount; }
-      if (e.target.classList.contains('bk-z')) { const z = String(v.text || '').replace(/\s*·?\s*#(?:kontor|mm)-[a-z]+-[A-Za-z0-9-]+/g, '').trim(); if (e.target.value.trim() !== z) ch.purpose = e.target.value.trim(); else delete ch.purpose; }
+      if (e.target.classList.contains('bk-z')) { const z = String(v.text || '').replace(/\s*·?\s*#kontor-[a-z]+-[A-Za-z0-9-]+/g, '').trim(); if (e.target.value.trim() !== z) ch.purpose = e.target.value.trim(); else delete ch.purpose; }
       if (!Object.keys(ch).length) delete BOOK.edits[key];
       if (e.target.classList.contains('bk-b') || e.target.classList.contains('bk-d')) bkRecalc();
     });
