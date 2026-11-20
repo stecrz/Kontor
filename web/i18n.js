@@ -2417,5 +2417,14 @@ const I18N = {
 "s_paket_gesetzt":["%s gesetzt", "%s set"],
 "s_zahl_unlesbar":["Keine Zahl: %s", "Not a number: %s"],
 "zahl_unlesbar":["Keine Zahl: {0}", "Not a number: {0}"],
-"paket_name":["Kontor-Einstellungen", "Kontor settings"]
+"paket_name":["Kontor-Einstellungen", "Kontor settings"],
+"mod_webapp":["Als App im Dock", "As an app in the Dock"],
+"mod_webapp_d":["Kontor in einem eigenen Fenster öffnen, mit Symbol im Dock.", "Open Kontor in a window of its own, with an icon in the Dock."],
+"als_app":["Als App", "As an app"],
+"als_app_laeuft":["Läuft als App", "Running as an app"],
+"als_app_installieren":["Als App installieren", "Install as an app"],
+"als_app_safari":["In Safari: Ablage → Zum Dock hinzufügen", "In Safari: File → Add to Dock"],
+"als_app_iphone":["In Safari: Teilen → Zum Home-Bildschirm", "In Safari: Share → Add to Home Screen"],
+"als_app_anderer":["In Safari öffnen, dann Ablage → Zum Dock hinzufügen", "Open in Safari, then File → Add to Dock"],
+"h_als_app":["Kontor in einem eigenen Fenster mit eigenem Symbol im Dock – ohne Tabs und Adressleiste, auch über Spotlight und Launchpad zu öffnen. Safari legt die App im Ordner „Programme“ deines Benutzerordners ab (ab macOS 14). Am iPhone: Symbol auf dem Home-Bildschirm.", "Kontor in a window of its own with its own icon in the Dock – without tabs and address bar, also opened through Spotlight and Launchpad. Safari puts the app in the Applications folder of your home folder (macOS 14 or later). On the iPhone: an icon on the Home Screen."]
 };

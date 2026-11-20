@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.2 (2026-11-20 15:04)
+- Einrichtung: neuer Schritt „Als App im Dock“; Einstellungen → Allgemein zeigt den Weg (Safari: Ablage → Zum Dock hinzufügen, iPhone: Zum Home-Bildschirm).
+- Chrome/Edge: Knopf „Als App installieren“; als App geöffnet gilt der Schritt als erledigt.
+- Installation: Hinweis auf die App im Dock.
+
 ## 3.16.1 (2026-11-20 11:49)
 - Alte Buchungsmarken „#mm-…“ (vor 3.12) und „#kontor-spiegel-…“ zählen nicht mehr als Kontors Buchungen, sondern als deine eigenen.
 

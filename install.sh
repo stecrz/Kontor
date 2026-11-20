@@ -53,6 +53,7 @@ cat <<TXT
 
 Fertig. Kontor laeuft dauerhaft unter http://127.0.0.1:8765/
 Dort zuerst ein Passwort festlegen, dann fuehrt die Einrichtung Schritt fuer Schritt weiter.
+Als eigene App im Dock: in Safari Ablage -> Zum Dock hinzufuegen.
 Fragt macOS, ob Kontor MoneyMoney steuern darf: bitte erlauben.
 Entfernen: Doppelklick auf Uninstall.command im Programmordner (oder in Kontor unter Einstellungen -> Sicherung).
 TXT

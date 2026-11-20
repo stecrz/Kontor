@@ -4492,6 +4492,79 @@ class BrowserTest(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+class WebAppTest(unittest.TestCase):
+    """Kontor as an app of its own: the setup and Einstellungen -> Allgemein show the way (Safari makes the app itself, no page
+    can), a button where the browser offers it (Chrome, Edge); opened as an app at the Mac, the step counts as done."""
+
+    def test_web_app(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        d = tempfile.mkdtemp(prefix="kontor-app-")
+        key, src = load_or_create_master_key(d)
+        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        app.do_run(False, True)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        standalone = """(() => { const mm = window.matchMedia.bind(window);
+            window.matchMedia = q => /display-mode:\\s*standalone/.test(q) ? {matches: true, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}} : mm(q); })();"""
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                pg = b.new_page(viewport={"width": 1440, "height": 900})
+                errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto("http://127.0.0.1:%d/" % port)
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                wait_shell(pg)
+                # in the browser: the step is open, the way is shown (here not Safari: "open in Safari, then ...")
+                pg.evaluate("location.hash = '#setup'"); pg.wait_for_selector(".setup-list")
+                row = pg.query_selector(".srow:has(a[href='#settings'])")
+                self.assertIn("Als App im Dock", row.inner_text()); self.assertNotIn("done", row.get_attribute("class"))
+                row.query_selector("button").click(); pg.wait_for_selector("#webapp-row")
+                if not pg.evaluate("!!INSTALL_PROMPT"):
+                    self.assertEqual(pg.inner_text("#webapp-row"), "In Safari öffnen, dann Ablage → Zum Dock hinzufügen")
+                self.assertTrue(pg.evaluate("!!document.querySelector('#webapp-row').closest('.form').querySelector('.hq[data-tip*=\"Dock\"]')"))
+                self.assertFalse(store.load("config.json").get("ui", {}).get("webapp"))
+                # where the browser offers it (Chrome, Edge): a button, and the step is remembered once installed
+                pg.evaluate("""(() => { const e = new Event('beforeinstallprompt', {cancelable: true});
+                    e.prompt = () => { window.__asked = (window.__asked || 0) + 1; return Promise.resolve(); };
+                    e.userChoice = Promise.resolve({outcome: 'accepted'}); window.dispatchEvent(e); })()""")
+                pg.wait_for_selector("#webapp-install")
+                pg.click("#webapp-install")
+                for _ in range(50):
+                    if (store.load("config.json").get("ui") or {}).get("webapp"):
+                        break
+                    time.sleep(0.1)
+                self.assertEqual(pg.evaluate("window.__asked"), 1)
+                self.assertTrue(store.load("config.json")["ui"]["webapp"])
+                self.assertIn("eingerichtet", pg.inner_text("#webapp-row")); self.assertIsNone(pg.query_selector("#webapp-install"))
+                pg.evaluate("location.hash = '#setup'"); pg.wait_for_selector(".setup-list")
+                self.assertIn("done", pg.query_selector(".srow:has(a[href='#settings'])").get_attribute("class"))
+                # opened as an app: it says so, and that alone marks the step (here after forgetting it)
+                cfg = store.load("config.json"); cfg["ui"]["webapp"] = False; app.save_config(cfg)
+                pg2 = b.new_page(viewport={"width": 1440, "height": 900}); pg2.add_init_script(standalone)
+                pg2.on("pageerror", lambda e: errors.append(str(e)))
+                pg2.goto("http://127.0.0.1:%d/#settings" % port)
+                if pg2.query_selector("#login:not(.hidden)"):
+                    pg2.fill("#login-pw", "sehr-geheimes-passwort"); pg2.click("#login-btn")
+                wait_shell(pg2); pg2.wait_for_selector("#webapp-row")
+                self.assertTrue(pg2.evaluate("APP_MODE")); self.assertEqual(pg2.inner_text("#webapp-row"), "Läuft als App")
+                for _ in range(50):
+                    if (store.load("config.json").get("ui") or {}).get("webapp"):
+                        break
+                    time.sleep(0.1)
+                self.assertTrue(store.load("config.json")["ui"]["webapp"])
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            app.stop.set()
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class SafariTablesTest(unittest.TestCase):
     """WebKit (Safari's engine, where installed -- GitHub Actions): the cash flow's pinned names and its figures meet row by
     row, on every row, also with everything open and scrolled sideways; the balance sheet's year view has no year marks."""

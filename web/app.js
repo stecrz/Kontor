@@ -108,6 +108,7 @@ const ROLE = {cash: [t('pos_bankguthaben'), 'var(--c-liq)'], securities: [t('pos
 const ROLE_OPTS = [['cash', t('pos_bankguthaben')], ['securities', t('pos_wertpapiere')], ['term_investments', t('pos_gebundene_anlagen')], ['real_estate', t('immobilien')], ['participations', t('beteiligungen')], ['tangibles', t('sachwerte')], ['receivables', t('pos_forderungen')], ['other', t('sonstiges')], ['liabilities', t('pos_verbindlichkeiten')], ['contingent', t('avale_buergschaften_nicht_im_nettoverm')], ['ignore', t('nicht_bilanzieren')]];
 // Hilfetexte (Tooltips). Schluessel werden mit hq('schluessel') eingeblendet.
 const H = {
+  als_app: t('h_als_app'),
   area: t('ein_bereich_ist_eine_menge'),
   main_area: t('es_gibt_genau_einen_hauptbereich'),
   share: t('dein_anteil_an_dieser_gesellschaft'),
@@ -242,6 +243,13 @@ const ICON = {
 // replaces the one before in the history, so a two-finger swipe has nothing to go back to. In a browser tab each page stays
 // an entry (back works as usual).
 const APP_MODE = (() => { try { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { return false; } })();
+// Kontor as an app of its own: Safari makes it itself ("Add to Dock" on the Mac, "Add to Home Screen" on the iPhone) -- no page
+// can do that for it, so the way is shown; Chrome and Edge offer it to the page (beforeinstallprompt), then a button does it
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_SAFARI = /safari/i.test(navigator.userAgent) && !/chrome|chromium|crios|fxios|edg|opr|android/i.test(navigator.userAgent);
+let INSTALL_PROMPT = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); INSTALL_PROMPT = e; webappDraw(); });
+window.addEventListener('appinstalled', () => { INSTALL_PROMPT = null; webappSeen(); webappDraw(); });
 const go = h => { if (APP_MODE) location.replace(h); else location.hash = h; };
 document.addEventListener('click', e => {
   if (!APP_MODE || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -656,6 +664,7 @@ async function enterApp() {
   route();
   if (!OFFLINE.mode) asLoad().then(() => { try { if (localStorage.getItem('kontor.assist') === '1' && asOn()) { AS.open = true; asLayout(); } } catch (e) {} if (S.tab === 'assistant' || S.tab === 'setup') route(); });
   if (!OFFLINE.mode) api('/api/offline/verifier').catch(() => {});       // für die Offline-Ansicht zwischenspeichern
+  if (APP_MODE) webappSeen();
   offlineBanner();
 }
 async function loadAll() {
@@ -1108,6 +1117,7 @@ const MODULES = [
   {id: 'planning', t: t('mod_planning'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planning', optional: true},
   {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.tax || {}).rental_category, href: '#accounts/tax', optional: true},
   {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.receipts || {}).folder, href: '#settings/receipts', optional: true},
+  {id: 'webapp', t: t('mod_webapp'), d: t('mod_webapp_d'), done: () => APP_MODE || !!(S.CFG.ui || {}).webapp, href: '#settings', optional: true},
   {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => ((S.CFG.ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
   {id: 'assistant', t: t('ki_assistent'), d: t('mod_assistant_d'), done: () => asOn() && !!(AS.st || {}).ready, href: '#settings/assistant', optional: true},
   {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.categories || {}).total || {}).without), href: '#categories', optional: true},
@@ -5463,8 +5473,29 @@ function vEinstellungenAllgemein() {
   return `<div class="note">${t('einstellungen_vs_einrichtung', '<a href="#accounts">' + t('konten_regeln') + '</a>')}</div><div class="form">
     <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang">${langOpts()}</select> <span class="small muted">${t('sprache_hinweis')}</span></label>
     <label>${t('design_label')}</label><label class="chk"><select id="e-theme">${[['dark', t('design_dunkel')], ['light', t('design_hell')], ['auto', t('design_system')]].map(([k, l]) => `<option value="${k}" ${themeGet() === k ? 'selected' : ''}>${l}</option>`).join('')}</select> <span class="small muted">${t('design_hinweis')}</span></label>
+    <label>${t('als_app')}${hq('als_app')}</label><div class="chk" id="webapp-row">${webappRow()}</div>
   </div>`;          // both take effect at once (no save button)
 }
+// Kontor as an app: running as one, a button (Chrome, Edge), or the way in Safari -- on the Mac and on the iPhone
+function webappRow() {
+  if (APP_MODE) return `<span class="pill ok">${t('als_app_laeuft')}</span>`;
+  if (INSTALL_PROMPT) return `<button id="webapp-install" class="small">${t('als_app_installieren')}</button>`;
+  const how = t(IS_IOS ? 'als_app_iphone' : IS_SAFARI ? 'als_app_safari' : 'als_app_anderer');
+  return (S.CFG && (S.CFG.ui || {}).webapp && !IS_IOS) ? `<span class="pill ok">${t('eingerichtet')}</span> <span class="small muted">${how}</span>` : `<span>${how}</span>`;
+}
+function webappDraw() { const el = $('#webapp-row'); if (el && S.CFG) el.innerHTML = webappRow(); }
+// opened as an app at the Mac (or installed from here): remembered, so the setup counts the step also in the browser
+async function webappSeen() {
+  if (OFFLINE.mode || !S.CFG || !(S.STATUS || {}).local || (S.CFG.ui || {}).webapp) return;
+  const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.ui = Object.assign({}, cfg.ui, {webapp: true});
+  try { const r = await api('/api/config', {config: cfg, anyway: true}, 'PUT'); S.CFG = r.config; } catch (e) {}
+}
+document.addEventListener('click', async e => {
+  if (!e.target.closest('#webapp-install') || !INSTALL_PROMPT) return;
+  const p = INSTALL_PROMPT; INSTALL_PROMPT = null;
+  try { await p.prompt(); const c = await p.userChoice; if (c && c.outcome === 'accepted') await webappSeen(); } catch (x) {}
+  webappDraw();
+});
 // Konten & Regeln: everything that sets your figures -- which accounts there are and where they belong (accounts, areas,
 // balances) and by which rules Kontor counts and books (cash flow positions, booking rules, tax). The accounts open first.
 async function vKontenRegeln() {

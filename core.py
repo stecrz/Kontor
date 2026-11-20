@@ -53,7 +53,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "not_book": [],      # bookings of the rules you chose not to book: {"key": account|mark, "datum", "betrag", "konto", "art", "text", "regel", "seit"}
     "updates": {"repo": "stecrz/Kontor", "check_mode": "daily"},   # pruefen: taeglich | woechentlich | aus
     "assistant": {},     # the assistant (assistant.py: its switch, model, rights): changed only under Einstellungen -> Assistent, at the Mac
-    "ui": {"lock_minutes": 15, "touchid": True, "port": 8765, "bind": "127.0.0.1", "tls_cert": "", "tls_key": ""},
+    "ui": {"lock_minutes": 15, "touchid": True, "port": 8765, "bind": "127.0.0.1", "tls_cert": "", "tls_key": "", "webapp": False},
 }
 
 # Felder mit Kontoreferenzen in Listen (fuer Pakete und Pruefung)
