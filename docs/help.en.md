@@ -33,7 +33,7 @@ A click on a chart opens its place in the balance sheet or the cash flow. At the
 
 Kontor never changes bookings, the category tree or rules in MoneyMoney and never initiates transfers.
 
-**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Planning, Properties, Tax, Transactions & receipts and the assistant) are usable but not fully tested yet – please double-check the figures there. So is the equity ratio in the balance sheet. Tested are Balance sheet, Cash flow, Categories, Auto bookings, Booking rules, Sync, Setup, Settings, Updates, Log and Help.
+**Alpha**: pages shown faded and marked “Alpha” in the menu (currently Planning, Properties, Tax as well as Transactions & receipts) are usable but not fully tested yet – please double-check the figures there. So is the equity ratio in the balance sheet. Tested are Balance sheet, Cash flow, Categories, Auto bookings, Booking rules, Sync, Setup, Settings, Updates, Log and Help.
 
 <a id="setup"></a>
 ## Setup
@@ -440,7 +440,7 @@ There is a “Book from” for every participation and every account mirror: fro
 <a id="assistant"></a>
 ## Assistant
 
-A language model that runs on your Mac only: you write in plain language – about your figures, about how to use Kontor or about anything else, also with pasted numbers, tables, texts or code – and it answers like a chat assistant. What it says about your finances it reads from Kontor. None of it leaves the Mac: the model has no network access, there is no service on the internet behind it and no account. The assistant is still “Alpha”: a language model can be wrong even when it reads the figures from Kontor itself – please double-check what matters on the page it leads you to.
+A language model that runs on your Mac only: you write in plain language – about your figures, about how to use Kontor or about anything else, also with pasted numbers, tables, texts or code – and it answers like a chat assistant. What it says about your finances it reads from Kontor. None of it leaves the Mac: the model has no network access, there is no service on the internet behind it and no account. A language model can be wrong even when it reads the figures from Kontor itself – please double-check what matters on the page it leads you to.
 
 ![Assistant](img/en/assistant.png)
 
@@ -456,11 +456,11 @@ A language model that runs on your Mac only: you write in plain language – abo
 <a id="assistant-setup"></a>
 ### Setting it up
 
-Settings → Assistant, at the Mac only:
+Settings → AI assistant, at the Mac only:
 
 1. **Program** – “Install” downloads llama.cpp from GitHub: the widely used free program that runs language models on your own machine, in the ready-made build for your Mac.
 2. **Models** – Kontor marks the model that fits your Mac's memory (“recommended for this Mac”): with 16 GB a small one (file about 6 GB), with 24 GB a mid-sized one (8 GB), from 32 GB a large one (18 GB), from 48 GB the strongest (22 GB). Larger models get it right more often, above all with questions over several steps; smaller ones start faster and leave more memory free. “tight” means: runs, but needs most of the memory; “too big”: runs very slowly or does not start. “Download” fetches the file from Hugging Face (the progress is shown below, an interrupted download continues there with the next click). Under **Another model** you download any other file in GGUF format: enter “owner/name”, “Show files”, choose. The first model downloaded is the one in use; the dot in front switches. Every model has its own licence (on its page at Hugging Face).
-3. Switch on **Use the assistant** – from then on there is the ✦ and the menu entry.
+3. Switch on **Use the AI assistant** – from then on there is the ✦ and the menu entry.
 4. **Dictating** (if you like) – a small model of its own for speech recognition only, also from Hugging Face: the more accurate one (file about 3 GB) or a smaller one (1 GB). It starts with the first recording beside the model that answers, and ends by itself after a few minutes without dictation.
 
 ![Setting up the assistant](img/en/assistant_settings.png)

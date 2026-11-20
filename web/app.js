@@ -18,7 +18,7 @@ function setLang(l, pending) {
   if (l !== LANG) location.reload();
 }
 // pages not fully tested yet: usable, but marked "Alpha" in the menu and next to the page title
-const ALPHA_TABS = new Set(['planning', 'properties', 'tax', 'transactions', 'assistant']);
+const ALPHA_TABS = new Set(['planning', 'properties', 'tax', 'transactions']);
 const alphaTag = (cls = 'alpha-tag') => `<em class="${cls}" title="${t('alpha_tip')}">${t('alpha')}</em>`;
 // appearance, per device: dark (the default), light, or like the system
 const themeGet = () => { try { return ['light', 'auto'].includes(localStorage.getItem('kontor.theme')) ? localStorage.getItem('kontor.theme') : 'dark'; } catch (e) { return 'dark'; } };
@@ -221,7 +221,7 @@ const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'ca
   'accounts/tax': 'tax', settings: '', 'settings/moneymoney': 'sync', 'settings/access': 'iphone', 'settings/receipts': 'receipts', 'settings/updates': 'updates',
   'settings/backup': 'backup', 'settings/assistant': 'assistant-setup', assistant: 'assistant', log: 'log'};
 // pages with tabs: the title stays, so the line names the tab it is about ("Belege: …")
-const SUB_LABEL = {settings: {'': 'allgemein', moneymoney: 'einst_mm', access: 'zugang', receipts: 'belege', assistant: 'ki_assistent', updates: 'updates', backup: 'sichern_zuruecksetzen'},
+const SUB_LABEL = {settings: {'': 'allgemein', moneymoney: 'einst_mm', access: 'zugang', receipts: 'belege', assistant: 'ki_assistent_lang', updates: 'updates', backup: 'sichern_zuruecksetzen'},
   accounts: {'': 'mod_accounts', areas: 'mod_areas', history: 'kontostaende_tab', positions: 'cashflow_positionen', rules: 'nav_auto_regeln', tax: 'steuer'},
   categories: {'': 'kz_tab_offen', rules: 'regeln_fuer_moneymoney', written: 'kz_tab_eingetragen'}};
 const pageHq = (tab, sub) => { const k = (tab + '/' + sub) in PAGE_HELP ? tab + '/' + sub : tab, id = PAGE_HELP[k]; if (id == null) return '';
@@ -661,6 +661,10 @@ async function enterApp() {
   await loadAll();
   if (!OFFLINE.mode && checkVersion((S.STATUS || {}).version)) return;        // signed in again after an update: the new files first
   await syncLang();
+  // straight into the setup, at its first open step: on the very first start (nothing set up yet) and the first time Kontor
+  // opens as an app at the Mac (created in step 1 -- the setup goes on here)
+  if (!location.hash && !OFFLINE.mode && setupOpen() && (S.setup || !S.DATA || (APP_MODE && (S.STATUS || {}).local && !(S.CFG.ui || {}).webapp)))
+    history.replaceState(null, '', '#setup');
   route();
   if (!OFFLINE.mode) asLoad().then(() => { try { if (localStorage.getItem('kontor.assist') === '1' && asOn()) { AS.open = true; asLayout(); } } catch (e) {} if (S.tab === 'assistant' || S.tab === 'setup') route(); });
   if (!OFFLINE.mode) api('/api/offline/verifier').catch(() => {});       // für die Offline-Ansicht zwischenspeichern
@@ -764,6 +768,7 @@ async function pollStatus(all) {
   // all (after "Sync"): the open page is drawn again whatever it is, not only the pages with figures
   S.STATUS = await api('/api/status'); statusMini();
   if (checkVersion(S.STATUS.version)) return;
+  if (S.CFG && S.STATUS.webapp && !(S.CFG.ui || {}).webapp) { S.CFG.ui = Object.assign({}, S.CFG.ui, {webapp: true}); webappDraw(); }
   if (S.STATUS.restart_pending) { clearTimeout(BER.timer); BER.timer = setTimeout(() => pollStatus().catch(() => waitAndReload(true)), 3000); return; }
   const b = S.STATUS.report || {};
   clearTimeout(BER.timer);
@@ -1107,6 +1112,7 @@ function ovWealth(D, W, H) {
 
 // ---------------------------------------------------------------- Einrichtung (modular)
 const MODULES = [
+  {id: 'webapp', t: t('mod_webapp'), d: t('mod_webapp_d'), done: () => APP_MODE || !!(S.CFG.ui || {}).webapp, href: '#settings', optional: true},
   {id: 'connect', t: t('mod_connect'), d: t('moneymoney_laeuft_und_ist_entsperrt'), done: () => S.KONTEN.length > 0, href: '#settings/moneymoney'},
   {id: 'areas', t: t('mod_areas'), d: t('welche_konten_gehoeren_zusammen_privat'), done: () => (S.CFG.areas || []).length > 0 || !!S.DATA, href: '#accounts/areas'},
   {id: 'accounts', t: t('mod_accounts'), d: t('jedes_konto_bestaetigen_bereich_und'), done: () => !!S.DATA && !((S.DATA.accounts_new || []).length), href: '#accounts'},
@@ -1117,9 +1123,8 @@ const MODULES = [
   {id: 'planning', t: t('mod_planning'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planning', optional: true},
   {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.tax || {}).rental_category, href: '#accounts/tax', optional: true},
   {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.receipts || {}).folder, href: '#settings/receipts', optional: true},
-  {id: 'webapp', t: t('mod_webapp'), d: t('mod_webapp_d'), done: () => APP_MODE || !!(S.CFG.ui || {}).webapp, href: '#settings', optional: true},
   {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => ((S.CFG.ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
-  {id: 'assistant', t: t('ki_assistent'), d: t('mod_assistant_d'), done: () => asOn() && !!(AS.st || {}).ready, href: '#settings/assistant', optional: true},
+  {id: 'assistant', t: t('ki_assistent_lang'), d: t('mod_assistant_d'), done: () => asOn() && !!(AS.st || {}).ready, href: '#settings/assistant', optional: true},
   {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.categories || {}).total || {}).without), href: '#categories', optional: true},
   {id: 'operation', t: t('mod_operation'), d: t('testmodus_automatischer_abgleich_mitte'), done: () => true, href: '#settings/moneymoney'},
 ];
@@ -1131,7 +1136,7 @@ function vEinrichtung(sub) {
   let h = `<div class="lang-pick"><label for="w-lang" class="small muted">${t('sprache_label')}</label><select id="w-lang">${langOpts()}</select></div>${S.KONTEN.length ? '' : `<div class="note">${t('noch_keine_konten_aus_moneymoney')}</div>`}<div class="setup-list">`;
   MODULES.forEach((m, i) => {
     const ok = m.done();
-    h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? t('eingerichtet') : (m.optional ? t('optional') : t('offen'))}</span></div><div class="d">${esc(m.d)}</div></div><div class="a"><a href="${m.href}"><button class="small ${ok ? 'secondary' : ''}">${ok ? t('anpassen') : t('einrichten')}</button></a></div></div>`;
+    h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? t('eingerichtet') : (m.optional ? t('optional') : t('offen'))}</span></div><div class="d">${m.id === 'webapp' ? webappStep(ok) : esc(m.d)}</div></div><div class="a">${m.id === 'webapp' ? (INSTALL_PROMPT && !ok ? `<button id="webapp-install" class="small">${t('als_app_installieren')}</button>` : '') : `<a href="${m.href}"><button class="small ${ok ? 'secondary' : ''}">${ok ? t('anpassen') : t('einrichten')}</button></a>`}</div></div>`;
   });
   h += '</div>';
   const miss = setupMissing(), close = setupOpen()
@@ -5483,7 +5488,14 @@ function webappRow() {
   const how = t(IS_IOS ? 'als_app_iphone' : IS_SAFARI ? 'als_app_safari' : 'als_app_anderer');
   return (S.CFG && (S.CFG.ui || {}).webapp && !IS_IOS) ? `<span class="pill ok">${t('eingerichtet')}</span> <span class="small muted">${how}</span>` : `<span>${how}</span>`;
 }
-function webappDraw() { const el = $('#webapp-row'); if (el && S.CFG) el.innerHTML = webappRow(); }
+// step 1 of the setup: what to do here and now -- create the app, open it, go on there
+function webappStep(ok) {
+  if (APP_MODE) return esc(t('mod_webapp_d'));
+  if (IS_IOS) return esc(t('webapp_schritt_iphone'));
+  if (ok) return esc(t('webapp_schritt_fertig'));
+  return esc(t(INSTALL_PROMPT ? 'webapp_schritt_chrome' : IS_SAFARI ? 'webapp_schritt_safari' : 'webapp_schritt_anderer'));
+}
+function webappDraw() { const el = $('#webapp-row'); if (el && S.CFG) el.innerHTML = webappRow(); if (S.tab === 'setup' && S.CFG && !DIRTY.on) route(); }
 // opened as an app at the Mac (or installed from here): remembered, so the setup counts the step also in the browser
 async function webappSeen() {
   if (OFFLINE.mode || !S.CFG || !(S.STATUS || {}).local || (S.CFG.ui || {}).webapp) return;
@@ -6587,7 +6599,7 @@ function asMsg(m, i) {
 function asHead() {
   const hd = $('#as-head'); if (!hd) return;
   const page = S.tab === 'assistant', sv = (AS.st || {}).server || {}, st = sv.state || 'stopped';
-  hd.innerHTML = `<b>${t('ki_assistent')}</b>${alphaTag()}<span class="as-st ${esc(st)}" title="${esc(t(`ki_z_${st}`))}"></span>
+  hd.innerHTML = `<b>${t('ki_assistent')}</b><span class="as-st ${esc(st)}" title="${esc(t(`ki_z_${st}`))}"></span>
     <span class="as-hb"><select id="as-eff" title="${esc(t('ki_denken'))}" aria-label="${esc(t('ki_denken'))}">${['fast', 'balanced', 'thorough'].map(k => `<option value="${k}" ${asEffort() === k ? 'selected' : ''}>${t(`ki_denken_${k}`)}</option>`).join('')}</select>
     <button class="icon as-new" title="${esc(t('ki_neu'))}" aria-label="${esc(t('ki_neu'))}">${ICON.reset}</button>
     <button class="icon as-big" title="${esc(t(page ? 'ki_neben_seite' : 'ki_gross'))}" aria-label="${esc(t(page ? 'ki_neben_seite' : 'ki_gross'))}">${ICON.expand}</button>

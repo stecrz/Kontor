@@ -50,7 +50,9 @@ log = logging.getLogger("kontor.assistant")
 
 GITHUB, HF = "github", "hf"
 RUNTIME_REPO = "ggml-org/llama.cpp"
-RELEASE_URL = "https://api.github.com/repos/%s/releases/latest" % RUNTIME_REPO
+# the newest releases, not ".../releases/latest": llama.cpp publishes its builds as pre-releases, and "latest" is only the newest
+# full release -- one without any build (v0.7.0, only "nightly-tag.txt")
+RELEASES_URL = "https://api.github.com/repos/%s/releases?per_page=10" % RUNTIME_REPO
 REPO_RE = re.compile(r"[A-Za-z0-9][\w.\-]{0,95}/[A-Za-z0-9][\w.\-]{0,95}")
 FILE_RE = re.compile(r"[A-Za-z0-9][\w.\-]{0,180}\.gguf")
 SHA_RE = re.compile(r"[0-9a-f]{64}")
@@ -165,6 +167,11 @@ def asset_tag() -> str:
     """Which build of llama.cpp fits this machine (the name its release files carry)."""
     arm = platform.machine().lower() in ("arm64", "aarch64")
     if sys.platform == "darwin":
+        if not arm:                       # a Python running translated (Rosetta) on Apple silicon still gets the build for the chip
+            try:
+                arm = subprocess.run(["/usr/sbin/sysctl", "-n", "hw.optional.arm64"], capture_output=True, text=True, timeout=5).stdout.strip() == "1"
+            except (OSError, subprocess.SubprocessError):
+                pass
         return "macos-arm64" if arm else "macos-x64"
     return "ubuntu-arm64" if arm else "ubuntu-x64"
 
@@ -358,11 +365,17 @@ class LocalAI:
 
     # -- looking for newer versions and loading (network, on your click only) ----------------------------------------------
     def latest_runtime(self) -> dict:
-        rel, _ = _json_get(RELEASE_URL, GITHUB)
-        a = pick_asset(rel if isinstance(rel, dict) else {})
-        if not a or not host_allowed(a["url"], GITHUB):
-            raise ValueError(tr("s_ki_kein_build") % asset_tag())
-        return dict(a, tag=str(rel.get("tag_name") or "")[:40])
+        """The newest published release (pre-releases included, drafts not) with a build for this machine."""
+        rels, _ = _json_get(RELEASES_URL, GITHUB)
+        for rel in rels if isinstance(rels, list) else []:
+            if not isinstance(rel, dict) or rel.get("draft"):
+                continue
+            a = pick_asset(rel)
+            if a:                             # the newest build it is -- one from another address is refused, not swapped for an older one
+                if not host_allowed(a["url"], GITHUB):
+                    break
+                return dict(a, tag=str(rel.get("tag_name") or "")[:40])
+        raise ValueError(tr("s_ki_kein_build") % asset_tag())
 
     def repo_files(self, repo: str, projectors: bool = False) -> List[dict]:
         """The model files (GGUF, one file each) of a repository at Hugging Face: [{"file", "size", "sha256"}].

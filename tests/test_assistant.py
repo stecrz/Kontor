@@ -98,6 +98,10 @@ class Net:
         self.release = {"tag_name": TAG, "assets": [{"name": "llama-%s-bin-win-cpu-x64.zip" % TAG, "browser_download_url": "https://github.com/x", "size": 1},
                                                     {"name": name, "browser_download_url": self.asset_url, "size": len(arch), "digest": "sha256:" + hashlib.sha256(arch).hexdigest()}]}
         self.files[self.asset_url] = arch
+        self.release.update(prerelease=True, draft=False)
+        self.draft = {"tag_name": "b9999", "draft": True, "prerelease": True, "assets": [dict(self.release["assets"][1], name="llama-b9999-bin-%s.tar.gz" % L.asset_tag())]}
+        self.no_builds = {"tag_name": "v0.7.0", "draft": False, "prerelease": False, "assets": [{"name": "nightly-tag.txt", "browser_download_url": "https://github.com/x/nightly-tag.txt", "size": 6}]}
+        self.older = {"tag_name": "b4000", "draft": False, "prerelease": True, "assets": [dict(self.release["assets"][1], name="llama-b4000-bin-%s.tar.gz" % L.asset_tag())]}
         self.model = b"GGUF" + bytes(range(256)) * 40
         self.tree = [{"type": "file", "path": "README.md", "size": 10},
                      {"type": "file", "path": "mmproj-F16.gguf", "size": 5, "lfs": {"oid": "0" * 64, "size": 5}},
@@ -120,8 +124,8 @@ class Net:
             raise ValueError("address not allowed: " + url)
         self.calls.append((url, dict(headers or {})))
         base = url.split("?")[0]
-        if base == L.RELEASE_URL:
-            return Resp(json.dumps(self.release).encode())
+        if url == L.RELEASES_URL:          # newest first: a draft, the newest build (a pre-release), a full release without builds, an older build
+            return Resp(json.dumps([self.draft, self.release, self.no_builds, self.older]).encode())
         if base.startswith("https://huggingface.co/api/models/") and base.endswith("/tree/main"):
             repo = base[len("https://huggingface.co/api/models/"):-len("/tree/main")]
             if repo not in self.trees:
@@ -288,7 +292,8 @@ class Runtime(_Open):
         base = os.path.dirname(rt["path"])
         self.assertEqual(os.readlink(os.path.join(base, "libllama.dylib")), "libllama.0.dylib")
         self.assertEqual(sorted(os.listdir(os.path.join(self.dir, "assistant", "runtime"))), [TAG])     # the archive is gone
-        self.assertEqual([u for u, _ in self.net.calls], [L.RELEASE_URL, self.net.asset_url])
+        self.assertEqual([u for u, _ in self.net.calls], [L.RELEASES_URL, self.net.asset_url])
+        self.assertEqual(self.ai.runtime()["tag"], TAG)                    # the newest build -- not the draft, not the release without builds
         # looking for something newer: nothing; then a newer release
         self.assertFalse(self.ai.check()["runtime"]["newer"])
         self.net.release = dict(self.net.release, tag_name="b4712")
@@ -325,13 +330,13 @@ class Runtime(_Open):
             j = wait_job(self.ai)
             self.assertEqual(j["state"], "error", digest)
             self.assertEqual(self.ai.runtime(), {})
-            self.assertEqual([u for u, _ in self.net.calls], [L.RELEASE_URL])       # not even fetched
+            self.assertEqual([u for u, _ in self.net.calls], [L.RELEASES_URL])       # not even fetched
 
     def test_download_from_elsewhere_is_refused(self):
         self.net.release["assets"][1]["browser_download_url"] = "https://example.org/llama.tar.gz"
         self.ai.install_runtime()
         self.assertEqual(wait_job(self.ai)["state"], "error")
-        self.assertEqual([u for u, _ in self.net.calls], [L.RELEASE_URL])
+        self.assertEqual([u for u, _ in self.net.calls], [L.RELEASES_URL])
 
     def test_archive_that_reaches_outside(self):
         out = os.path.join(self.dir, "outside")
@@ -389,7 +394,14 @@ class Runtime(_Open):
         self.assertTrue(os.path.exists(old))
 
     def test_no_build_for_this_machine(self):
+        # the newest release without a build for this machine (its build failed, say): the newest one that has it
         self.net.release["assets"] = self.net.release["assets"][:1]
+        self.net.files[self.net.older["assets"][0]["browser_download_url"]] = self.net.files[self.net.asset_url]
+        self.ai.install_runtime()
+        self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
+        self.assertEqual(self.ai.runtime()["tag"], "b4000")
+        # none at all: said, with the name of this machine's build
+        self.net.older["assets"] = []
         self.ai.install_runtime()
         j = wait_job(self.ai)
         self.assertEqual(j["state"], "error")
@@ -1949,7 +1961,8 @@ class Browser(unittest.TestCase):
                 # the settings: switched on there, with the right to enter values
                 pg.click("#main a[href='#settings/assistant']"); pg.wait_for_selector("#as-enabled", state="attached")
                 txt = pg.inner_text("#main")
-                for needle in ("llama.cpp", TAG, "Qwen3.6 35B-A3B", "Qwen3.8 27B", "Gemma 4 26B-A4B", "Denkaufwand", "Was der Assistent darf", "Nie: Einstellungen"):
+                self.assertIn("KI-Assistent", pg.inner_text("#main .tabs")); self.assertIsNone(pg.query_selector("#nav a[href='#assistant'] .alpha-tag"))
+                for needle in ("llama.cpp", TAG, "Qwen3.6 35B-A3B", "Qwen3.8 27B", "Gemma 4 26B-A4B", "Denkaufwand", "Was der KI-Assistent darf", "Nie: Einstellungen"):
                     self.assertIn(needle, txt)
                 self.assertFalse(pg.evaluate("document.querySelector('.as-right[data-r=enter_values]').checked || document.querySelector('.as-right[data-r=remote]').checked"))
                 pg.click("label:has(#as-enabled)"); until(pg, "asOn() && !document.querySelector('#assist-btn').classList.contains('hidden')")

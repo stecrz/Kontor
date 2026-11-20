@@ -1293,6 +1293,7 @@ class App:
         bcfg = self.config.get("receipts") or {}
         return {
             "version": version(),
+            "webapp": bool((self.config.get("ui") or {}).get("webapp")),          # Kontor opened as an app at the Mac (the setup's step 1)
             "service": {"started": self.started.strftime("%Y-%m-%d %H:%M"), "running": self.running, "step": self.run_step,
                        "automatic": (self.config.get("schedule") or {}).get("automatic", True),
                        "interval_minutes": (self.config.get("schedule") or {}).get("interval_minutes", 30)},

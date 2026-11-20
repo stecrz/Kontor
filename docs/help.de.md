@@ -33,7 +33,7 @@ Ein Klick auf eine Grafik öffnet ihre Stelle in Bilanz oder Cashflow. Rechts un
 
 Kontor ändert in MoneyMoney nie Buchungen, den Kategorienbaum oder Regeln und löst keine Überweisungen aus.
 
-**Alpha**: Seiten, die im Menü blass und mit „Alpha“ markiert sind (derzeit Planung, Immobilien, Steuer, Umsätze & Belege und der Assistent), sind nutzbar, aber noch nicht vollständig geprüft – Zahlen dort bitte gegenprüfen. Ebenso die Eigenkapitalquote in der Bilanz. Geprüft sind Bilanz, Cashflow, Kategorien, Auto-Buchungen, Buchungsregeln, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll und Hilfe.
+**Alpha**: Seiten, die im Menü blass und mit „Alpha“ markiert sind (derzeit Planung, Immobilien, Steuer sowie Umsätze & Belege), sind nutzbar, aber noch nicht vollständig geprüft – Zahlen dort bitte gegenprüfen. Ebenso die Eigenkapitalquote in der Bilanz. Geprüft sind Bilanz, Cashflow, Kategorien, Auto-Buchungen, Buchungsregeln, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll und Hilfe.
 
 <a id="setup"></a>
 ## Einrichtung
@@ -440,7 +440,7 @@ Ein Kontenspiegel verbindet zwei beliebige Konten, die dasselbe von zwei Seiten 
 <a id="assistant"></a>
 ## Assistent
 
-Ein Sprachmodell, das nur auf deinem Mac läuft: Du schreibst in normaler Sprache – zu deinen Zahlen, zur Bedienung oder zu allem anderen, auch mit hineinkopierten Zahlen, Tabellen, Texten oder Code – und es antwortet wie ein Chat-Assistent. Was es über deine Finanzen sagt, liest es aus Kontor. Nichts davon verlässt den Mac: Das Modell hat keinen Netzzugang, es steht kein Dienst im Internet dahinter und kein Konto. Der Assistent ist noch „Alpha“: Ein Sprachmodell kann sich irren, auch wenn es die Zahlen selbst aus Kontor liest – Wichtiges bitte an der Seite gegenprüfen, zu der er dich führt.
+Ein Sprachmodell, das nur auf deinem Mac läuft: Du schreibst in normaler Sprache – zu deinen Zahlen, zur Bedienung oder zu allem anderen, auch mit hineinkopierten Zahlen, Tabellen, Texten oder Code – und es antwortet wie ein Chat-Assistent. Was es über deine Finanzen sagt, liest es aus Kontor. Nichts davon verlässt den Mac: Das Modell hat keinen Netzzugang, es steht kein Dienst im Internet dahinter und kein Konto. Ein Sprachmodell kann sich irren, auch wenn es die Zahlen selbst aus Kontor liest – Wichtiges bitte an der Seite gegenprüfen, zu der er dich führt.
 
 ![Assistent](img/de/assistant.png)
 
@@ -456,11 +456,11 @@ Ein Sprachmodell, das nur auf deinem Mac läuft: Du schreibst in normaler Sprach
 <a id="assistant-setup"></a>
 ### Einrichten
 
-Einstellungen → Assistent, nur am Mac:
+Einstellungen → KI-Assistent, nur am Mac:
 
 1. **Programm** – „Installieren“ lädt llama.cpp von GitHub: das verbreitete freie Programm, das Sprachmodelle auf dem eigenen Rechner ausführt, in der fertigen Fassung für deinen Mac.
 2. **Modelle** – Kontor kennzeichnet das Modell, das zum Arbeitsspeicher deines Macs passt („empfohlen für diesen Mac“): mit 16 GB ein kleines (Datei etwa 6 GB), mit 24 GB ein mittelgroßes (8 GB), ab 32 GB ein großes (18 GB), ab 48 GB das stärkste (22 GB). Größere Modelle treffen häufiger das Richtige, vor allem bei Fragen über mehrere Schritte; kleinere starten schneller und lassen mehr Arbeitsspeicher frei. „knapp“ heißt: läuft, braucht aber den größten Teil des Arbeitsspeichers; „zu groß“: läuft sehr langsam oder startet nicht. „Laden“ holt die Datei von Hugging Face (der Fortschritt steht darunter, ein abgebrochener Download macht beim nächsten Klick dort weiter). Unter **Anderes Modell** lädst du jede andere Datei im Format GGUF: „Anbieter/Name“ eingeben, „Dateien zeigen“, wählen. Das erste geladene Modell ist gewählt; mit dem Punkt davor wechselst du. Jedes Modell hat seine eigene Lizenz (auf seiner Seite bei Hugging Face).
-3. **Assistent verwenden** einschalten – ab dann gibt es das ✦ und den Menüpunkt.
+3. **KI-Assistent verwenden** einschalten – ab dann gibt es das ✦ und den Menüpunkt.
 4. **Diktieren** (wenn du magst) – ein eigenes, kleines Modell nur für Spracherkennung, ebenfalls von Hugging Face: das genauere (Datei etwa 3 GB) oder ein kleineres (1 GB). Es startet mit der ersten Aufnahme neben dem Modell, das antwortet, und endet nach einigen Minuten ohne Diktat von selbst.
 
 ![Assistent einrichten](img/de/assistant_settings.png)

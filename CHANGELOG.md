@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.3 (2026-11-20 15:42)
+- Behoben: KI-Assistent – llama.cpp ließ sich nicht installieren („keine fertige Version für macos-arm64“); Kontor nimmt jetzt den neuesten Build.
+- Einrichtung: „Als App im Dock“ ist Schritt 1, mit Anleitung direkt im Schritt; Kontor erkennt die App und macht dort mit der Einrichtung weiter.
+- Erster Start: direkt in die Einrichtung.
+- „KI-Assistent“ heißt er jetzt in Einrichtung und Einstellungen; ohne „Alpha“.
+
 ## 3.16.2 (2026-11-20 15:04)
 - Einrichtung: neuer Schritt „Als App im Dock“; Einstellungen → Allgemein zeigt den Weg (Safari: Ablage → Zum Dock hinzufügen, iPhone: Zum Home-Bildschirm).
 - Chrome/Edge: Knopf „Als App installieren“; als App geöffnet gilt der Schritt als erledigt.

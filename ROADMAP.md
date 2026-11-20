@@ -34,7 +34,7 @@ Fertig, wenn
 ## 4. Assistent (Sprachmodell nur auf diesem Mac)
 Ziel: Fragen zu den eigenen Zahlen und Hilfe bei der Bedienung – ohne dass etwas den Mac verlässt.
 
-Stand (Alpha, seit 3.16.0): llama.cpp und Modelle unter Einstellungen → Assistent laden, aktualisieren, wählen, starten, stoppen –
+Stand (seit 3.16.0, ohne „Alpha“ seit 3.16.3): llama.cpp und Modelle unter Einstellungen → KI-Assistent laden, aktualisieren, wählen, starten, stoppen –
 Kontor schlägt das Modell passend zum Arbeitsspeicher vor; Seitenfenster auf jeder Seite und als eigene Seite; liest alle Zahlen
 (Übersicht, Bilanz, Cashflow, Vergleiche, Planung, Steuer, Immobilien, Kategorien, Auto-Buchungen, Offenes), Umsätze mit Belegen,
 Hilfe und die offene Seite; öffnet Ansichten und hebt Zeilen hervor; trägt Kontostände, Planwerte, Annahmen und Ereignisse nur
@@ -44,8 +44,7 @@ nach Klick ein (zurücknehmbar); Diktieren mit eigenem Sprachmodell; Rechte einz
 Fertig, wenn
 - am Mac mit echten Modellen geprüft: Abschirmung (kein Netz, kein Zugriff auf Kontors Daten), Start, Antworten, Stoppen, Diktieren;
 - BWA/SuSa und Lohnabrechnungen eigene Werkzeuge haben, sobald Kontor sie kennt;
-- Kategorien zuordnen als Vorschlag mit Klick möglich ist, wie unter Kategorisieren;
-- ohne „Alpha“.
+- Kategorien zuordnen als Vorschlag mit Klick möglich ist, wie unter Kategorisieren.
 
 ## ~~Übersicht~~ (erledigt in 3.15.0)
 Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt an ihre Stelle; am iPhone untereinander; ohne „Alpha“.
