@@ -430,9 +430,9 @@ function ctxMenu(x, y, items) {
   const m = document.createElement('div'); m.id = 'ctx'; m.className = 'ctx'; m.setAttribute('role', 'menu');
   m.innerHTML = items.map(([l], i) => `<button role="menuitem" data-i="${i}">${esc(l)}</button>`).join(''); document.body.appendChild(m);
   const r = m.getBoundingClientRect(); m.style.left = Math.min(x, innerWidth - r.width - 8) + 'px'; m.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
-  const close = () => { m.remove(); document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', esc_, true); window.removeEventListener('scroll', close); };
+  const close = () => { m.remove(); document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', esc_, true); window.removeEventListener('scroll', close); $('main').removeEventListener('scroll', close); };
   const away = e => { if (!m.contains(e.target)) close(); }, esc_ = e => { if (e.key === 'Escape') close(); };
-  document.addEventListener('pointerdown', away, true); document.addEventListener('keydown', esc_, true); window.addEventListener('scroll', close);          // the page scrolled (not a table inside it)
+  document.addEventListener('pointerdown', away, true); document.addEventListener('keydown', esc_, true); window.addEventListener('scroll', close); $('main').addEventListener('scroll', close);          // the page scrolled (not a table inside it)
   m.addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (!b) return; close(); items[+b.dataset.i][1](); });
   $('button', m).focus();
 }
@@ -883,7 +883,7 @@ function ovGo(k) {
 function ovArrive(main) {          // after the page is drawn: its chart in view
   const sel = S.ovGo; S.ovGo = null; if (!sel) return;
   const el = $(sel, main); if (!el) return;
-  setTimeout(() => { window.scrollTo(0, Math.max(0, el.getBoundingClientRect().top + window.scrollY - 12)); el.classList.add('ov-hit'); setTimeout(() => el.classList.remove('ov-hit'), 1600); }, 60);
+  setTimeout(() => { pageTo(el.getBoundingClientRect().top - pageTop() + pageY() - 12); el.classList.add('ov-hit'); setTimeout(() => el.classList.remove('ov-hit'), 1600); }, 60);
 }
 function bindOverview(main) {
   const grid = $('.ov-grid', main); if (!grid) return;
@@ -900,7 +900,7 @@ function ovDraw() {
   // one screen in three columns: the grid takes the height left below it, not more than a calm size (a narrower window: the
   // cards of their own height, in two columns or stacked)
   const wide = window.innerWidth > 1100;
-  grid.style.height = wide ? Math.min(660, Math.max(460, window.innerHeight - grid.getBoundingClientRect().top - window.scrollY - 24)) + 'px' : '';
+  grid.style.height = wide ? Math.min(660, Math.max(460, window.innerHeight - grid.getBoundingClientRect().top - pageY() - 24)) + 'px' : '';
   // the figure first (it can take a second line on a narrow screen), then the chart in the room left; the hover texts anew
   CF.tips = []; const tipBox = $('#cf-tip'); if (tipBox) tipBox.classList.add('hidden');
   const put = (id, fn) => { const el = $('#ov-' + id); if (!el) return; const f = $('#ov-fig-' + id); el.innerHTML = '';
@@ -3404,6 +3404,25 @@ function balFlash(main, tries = 0) {
   // then as a click on the cell: once the table stands still, the charts line up with the month (the bank: its area lights up too)
   scrollSettled(w, () => { if (!c.isConnected) return; bchFocus(th.dataset.key, kind === 'nw'); if (kind !== 'nw') bchFlash(tr, c); });
 }
+// the page scrolls in the window -- or, with the assistant's panel docked beside it, in itself (its scroll bar at its own edge)
+const pageDocked = () => document.body.classList.contains('as-open') && matchMedia('(min-width:1280px)').matches;
+const pageScroller = () => pageDocked() ? $('main') : document.scrollingElement;
+const pageY = () => pageScroller().scrollTop;
+const pageTo = y => { pageScroller().scrollTop = Math.max(0, y); };
+const pageBy = d => { pageScroller().scrollTop += d; };
+const pageTop = () => { const sc = pageScroller(); return sc === document.scrollingElement ? 0 : sc.getBoundingClientRect().top; };
+// the panel docks or goes (or the window crosses the width where it docks): the page stays where it was, now scrolled the other
+// way. The position is kept while it scrolls -- once the other one scrolls, the first has lost it (its height is gone)
+let PAGE_DOCKED = false, PAGE_Y = 0;
+const pageKeep = () => { if (pageDocked() === PAGE_DOCKED) PAGE_Y = pageY(); };
+function pageHandover() {
+  const now = pageDocked(); if (now === PAGE_DOCKED) return;
+  const m = $('main'), doc = document.scrollingElement;
+  if (now) { doc.scrollTop = 0; m.scrollTop = PAGE_Y; } else doc.scrollTop = PAGE_Y;
+  PAGE_DOCKED = now;
+}
+window.addEventListener('scroll', pageKeep, {passive: true}); $('main').addEventListener('scroll', pageKeep, {passive: true});
+matchMedia('(min-width:1280px)').addEventListener('change', pageHandover);
 function scrollParentY(el) {
   for (let p = el.parentElement; p; p = p.parentElement) { const o = getComputedStyle(p).overflowY; if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) return p; }
   return document.scrollingElement;
@@ -4364,9 +4383,9 @@ async function routeKeeping(sel) {
   const fade = $('.fade', main); if (fade) fade.classList.remove('fade');          // in place: no fade-in (it moves the page)
   const now = sel && $(sel, main);
   if (!now || top == null) return;
-  window.scrollBy(0, now.getBoundingClientRect().top - top);
+  pageBy(now.getBoundingClientRect().top - top);
   const miss = now.getBoundingClientRect().top - top;          // the page ends below: room there, so it stays in place
-  if (miss > 1) { main.style.paddingBottom = Math.ceil(miss) + 'px'; window.scrollBy(0, miss); }
+  if (miss > 1) { main.style.paddingBottom = Math.ceil(miss) + 'px'; pageBy(miss); }
 }
 // "Book again" with approval: the list waiting planned again (only the accounts of the rules read), one after the other
 const NB = {busy: false, again: false};
@@ -5884,7 +5903,7 @@ async function route() {
     DIRTY.on = false;
   }
   const raw = (location.hash || '#overview').slice(1), [path, qs] = raw.split('?'), [tab, sub] = path.split('/');
-  const y0 = window.scrollY;
+  const y0 = pageY();
   if (SCROLL.key) SCROLL.pos[SCROLL.key] = y0;                 // Position des bisherigen Reiters merken
   S.tab = TITLES[tab] ? tab : 'overview'; S.sub = sub || '';
   const key = S.tab + '/' + S.sub, sameTab = key === SCROLL.key;
@@ -5926,7 +5945,7 @@ async function route() {
     main.style.paddingBottom = '';               // room left by routeKeeping
     main.innerHTML = sameTab ? `<div>${h}</div>` : `<div class="fade">${h}</div>`;          // the same page again (a row opened): in place, no fade-in (it moves it)
     SCROLL.key = key; SCROLL.keepX = keepX;
-    window.scrollTo(0, sameTab ? y0 : (SCROLL.pos[key] || 0));      // eigener Reiter: bleibt; anderer Reiter: dessen letzte Position, sonst oben
+    pageTo(sameTab ? y0 : (SCROLL.pos[key] || 0));      // eigener Reiter: bleibt; anderer Reiter: dessen letzte Position, sonst oben
     bind(main);
     guardDirty(main);
     vbPoll(); mmhPoll();
@@ -6525,11 +6544,13 @@ function asChrome() {
   asLayout();
 }
 function asLayout() {
+  pageKeep();                     // where the page stands, before the panel docks or goes
   const page = S.tab === 'assistant' && asOn(), open = (AS.open && asOn()) || page, as = $('#assist');
   document.body.classList.toggle('as-open', open && !page); document.body.classList.toggle('as-page', page);
   as.classList.toggle('open', open); $('#assist-btn').classList.toggle('on', open && !page); $('#assist-btn').classList.toggle('hidden', !asOn() || page);
-  if (page) { const m = $('main').getBoundingClientRect(), top = $('#main').getBoundingClientRect().top + window.scrollY; as.style.left = m.left + 'px'; as.style.top = Math.max(0, top) + 'px'; }
+  if (page) { const m = $('main').getBoundingClientRect(), top = $('#main').getBoundingClientRect().top + pageY(); as.style.left = m.left + 'px'; as.style.top = Math.max(0, top) + 'px'; }
   else { as.style.left = as.style.top = ''; }
+  pageHandover();
   if (open) { if (!$('#as-body')) asDraw(); else asHead(); }
   else asMicStop(false);          // the question field is gone (another page, switched off): a recording ends with it, unsent
 }

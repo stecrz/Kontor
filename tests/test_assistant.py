@@ -1949,6 +1949,53 @@ class Http(_Assist):
 class Browser(unittest.TestCase):
     """The panel beside the page, the settings, an entry confirmed by a click -- in a real browser (Playwright, if there)."""
 
+    def test_page_beside_the_panel_in_safari(self):
+        """In the Safari engine too: with the panel docked, the page scrolls on its own (its scroll bar at its own edge), the top
+        bar stays, the place is kept -- and back in the window once the panel goes."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        from http.server import ThreadingHTTPServer
+        from storage import Store, load_or_create_master_key
+        d = tempfile.mkdtemp(prefix="kontor-asdock-")
+        store = Store(d, *load_or_create_master_key(d)); store.save("config.json", T.config_for_test(os.path.join(d, "Belege")))
+        T.reset_mock(); T.patch_today()
+        app = MA.App(store, d, bridge_factory=T.MockBridge); app.do_run(False, True); app.rebuild_report(wait=True)
+        orig = L._open
+        install(app)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), MA.make_handler(app)); threading.Thread(target=srv.serve_forever, daemon=True).start()
+        url = "http://127.0.0.1:%d/" % srv.server_address[1]
+        try:
+            with sync_playwright() as p:
+                try:
+                    b = p.webkit.launch()
+                except Exception:
+                    self.skipTest("WebKit nicht installiert")
+                pg = b.new_page(viewport={"width": 1440, "height": 900})
+                errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto(url); pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                pg.wait_for_selector("#shell:not(.hidden)"); pg.goto(url + "#cashflow"); pg.wait_for_selector("#main .cf-tbl"); pg.wait_for_timeout(600)
+                pg.evaluate("document.scrollingElement.scrollTop = 600"); pg.wait_for_timeout(200)
+                y0 = pg.evaluate("document.scrollingElement.scrollTop"); self.assertGreater(y0, 300)
+                pg.evaluate("asShow(true)"); pg.wait_for_timeout(600)
+                doc, main, over, h, vh = pg.evaluate("[document.scrollingElement.scrollTop, document.querySelector('main').scrollTop, getComputedStyle(document.querySelector('main')).overflowY, document.querySelector('main').clientHeight, innerHeight]")
+                self.assertEqual((doc, over, h), (0, "auto", vh)); self.assertLessEqual(abs(main - y0), 150, (main, y0))
+                pg.mouse.move(500, 500); pg.mouse.wheel(0, 400); pg.wait_for_timeout(500)
+                doc, main2, top = pg.evaluate("[document.scrollingElement.scrollTop, document.querySelector('main').scrollTop, document.querySelector('.topbar').getBoundingClientRect().top]")
+                self.assertEqual((doc, top), (0, 0)); self.assertGreater(main2, main)
+                pg.evaluate("asShow(false)"); pg.wait_for_timeout(600)
+                doc, main3 = pg.evaluate("[document.scrollingElement.scrollTop, document.querySelector('main').scrollTop]")
+                self.assertEqual(main3, 0); self.assertGreater(doc, 300)
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            L._open = orig
+            app.assistant_stop(); srv.shutdown(); srv.server_close()
+            with app.rebuild_cv:
+                app.rebuild_cv.wait_for(lambda: not app.rebuild_running and not app.rebuild_pending, timeout=30)
+            shutil.rmtree(d, ignore_errors=True)
+
     def test_panel(self):
         try:
             from playwright.sync_api import sync_playwright
@@ -2018,7 +2065,27 @@ class Browser(unittest.TestCase):
                 # the panel beside the page: the page makes room, its charts stay in view
                 pg.evaluate("location.hash = '#cashflow'"); pg.wait_for_selector("#main .cf-tbl")
                 w0 = pg.evaluate("document.querySelector('#main').getBoundingClientRect().width")
+                pg.evaluate("document.scrollingElement.scrollTop = 600"); pg.wait_for_timeout(100)
+                y0 = pg.evaluate("document.scrollingElement.scrollTop"); self.assertGreater(y0, 300)
                 pg.click("#assist-btn"); pg.wait_for_selector("#assist.open #as-in"); pg.wait_for_timeout(400)
+                # ... and scrolls on its own, its scroll bar at its own right edge (left of the panel), where it was before
+                sc = pg.evaluate("""(() => { const m = document.querySelector('main'), r = m.getBoundingClientRect();
+                    return {doc: document.scrollingElement.scrollTop, main: m.scrollTop, over: getComputedStyle(m).overflowY, scrolls: m.scrollHeight > m.clientHeight,
+                            right: Math.round(r.right), panel: Math.round(document.querySelector('#assist').getBoundingClientRect().left), h: Math.round(r.height), vh: innerHeight}; })()""")
+                self.assertEqual((sc["doc"], sc["over"], sc["scrolls"]), (0, "auto", True), sc)
+                self.assertLessEqual(abs(sc["main"] - y0), 150, sc)                           # about where it was (the narrower page reflows)
+                self.assertLessEqual(sc["right"], sc["panel"]); self.assertEqual(sc["h"], sc["vh"])
+                pg.mouse.move(500, 500); pg.mouse.wheel(0, 400); pg.wait_for_timeout(300)
+                self.assertGreater(pg.evaluate("document.querySelector('main').scrollTop"), y0); self.assertEqual(pg.evaluate("document.scrollingElement.scrollTop"), 0)
+                self.assertTrue(pg.evaluate("getComputedStyle(document.querySelector('.topbar')).position === 'sticky' && document.querySelector('.topbar').getBoundingClientRect().top === 0"))
+                y1 = pg.evaluate("document.querySelector('main').scrollTop")
+                pg.click("#assist-btn"); until(pg, "!document.body.classList.contains('as-open')"); pg.wait_for_timeout(300)
+                top, most = pg.evaluate("[document.scrollingElement.scrollTop, document.scrollingElement.scrollHeight - innerHeight]")
+                self.assertTrue(y1 - 150 <= top <= most, (top, y1, most))                     # closed: the window scrolls again, about where it was (the wider page reflows)
+                pg.evaluate("document.scrollingElement.scrollTop = 500"); pg.wait_for_timeout(100); y1 = pg.evaluate("document.scrollingElement.scrollTop")
+                pg.click("#assist-btn"); pg.wait_for_selector("#assist.open #as-in"); pg.wait_for_timeout(400)
+                self.assertEqual(pg.evaluate("document.scrollingElement.scrollTop"), 0); self.assertLessEqual(abs(pg.evaluate("document.querySelector('main').scrollTop") - y1), 150)
+                pg.evaluate("document.querySelector('main').scrollTop = 0")
                 # dictating: a click records, a click ends it -- the text stands in the question field (not sent by itself); Escape throws a recording away
                 # what you type as a number: read in the notation of the language, never two ways
                 self.assertEqual(pg.evaluate("[numIn('250.000'), numIn('1.234,56'), numIn('0.500'), numIn('12.5'), numIn('-3.000,5'), numIn(''), String(numIn('1.2.3')), String(numIn('1,2,3'))]"),

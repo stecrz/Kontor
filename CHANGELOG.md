@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.5 (2026-11-20 18:16)
+- Assistent neben der Seite: die Seite scrollt für sich, Scrollleiste an ihrem rechten Rand statt hinter dem Assistenten; Position bleibt beim Öffnen und Schließen.
+
 ## 3.16.4 (2026-11-20 17:25)
 - KI-Assistent: Download zeigt Geschwindigkeit und Restzeit.
 - Unten links: „KI-Modell lädt · 42 %“ mit Ladesymbol, auf jeder Seite; Klick führt hin, Meldung wenn fertig.
