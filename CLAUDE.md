@@ -19,29 +19,31 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 
 ## Jede Änderung abschließen (Skill `release`)
 1. Tests grün.
-2. Alle Änderungen (Code, Tests, Texte, Fahrplan) committen und auf `main` pushen – **ohne** `VERSION` und `CHANGELOG.md`.
-   GitHub Actions abwarten; schlägt der Lauf fehl, beheben und erneut pushen, bis er grün ist.
-3. Erst dann, als letzter Commit: `VERSION` dritte Stelle +1 (3.9.6 → 3.9.7) – auch bei mehreren Verbesserungen auf einmal –
-   und `CHANGELOG.md`. Die Update-Prüfung liest `VERSION` auf `main`: Die neue Version darf erst erscheinen, wenn alles
-   andere schon auf GitHub ist. Zweite Stelle nur bei erheblichen Änderungen und nur nach Rückfrage. Erste Stelle nie.
+2. **Ein Commit je Version:** Code, Tests, Texte, Fahrplan, `VERSION` (dritte Stelle +1, auch bei mehreren Verbesserungen auf
+   einmal) und `CHANGELOG.md` zusammen. Nachricht kurz, englisch: `X.Y.Z: <was sich ändert>`, darunter nur eine Zeile mit
+   Modell und Link zur eigenen Sitzung (`Claude Opus 5.5: https://claude.ai/code/session_…`, beides aus den Hinweisen der
+   Sitzung) – keine E-Mail, kein `Co-Authored-By`, keine Tags. Zweite Stelle nur bei erheblichen Änderungen und nur nach Rückfrage. Erste Stelle nie.
+3. **Erst geprüft, dann auf `main`:** vor dem Push alle Tests lokal – mit aktuellem Python (samt Browser) und mit Python 3.9
+   (Apples Version auf dem Mac) –, dann der eine Commit direkt auf `main`. Ein Push kommt ganz oder gar nicht an: eine Version
+   erscheint nie halb. GitHub Actions danach für genau diesen Commit abwarten; rot: sofort als nächste Version beheben und dem
+   Nutzer in einem Satz Bescheid geben.
 4. `CHANGELOG.md`: neuer Abschnitt oben, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` (Ortszeit des Nutzers, Europe/Berlin), auf Deutsch, kompakt: je Änderung ein kurzer Punkt (Stichworte, eine Zeile), auf einen Blick lesbar – keine Erklärungen.
-5. Commit und Push auf `main` selbst erledigen, ohne nachzufragen. Keine Tags, kein Sitzungslink in der Commit-Nachricht.
+5. Commit und Push selbst erledigen, ohne nachzufragen. Nach dem Push auf `main` nichts nachschieben – eine Korrektur ist eine
+   neue Version. Nur Regeln, Tests oder CI geändert: mit der nächsten Version mitnehmen; muss es sofort für die anderen Chats
+   gelten, eine eigene Version (Changelog: „Entwicklung: …“).
 6. Den Mac aktualisiert der Nutzer selbst – kein Zugriff darauf, im Abschluss nicht erwähnen.
 
 ## Parallele Chats
-Bis zu drei Chats arbeiten gleichzeitig am Repo, jeder in seinem eigenen Klon; keiner sieht die anderen. Daher:
-- Nur Fertiges pushen, nie Zwischenstände – die anderen bauen sofort darauf auf.
-- Vor jedem Push den neuesten Stand holen und die eigenen Commits darauf setzen (`git pull --rebase origin main`). Ein
-  abgelehnter Push heißt: ein anderer Chat war schneller – genauso verfahren, nie Force-Push.
-- Konflikte: beide Seiten lesen und so zusammenführen, dass beide Änderungen erhalten bleiben; Fremdes nie verwerfen. Lässt
-  sich ein Konflikt nicht eindeutig auflösen (beide Seiten wollen Unvereinbares, eine Entscheidung steht an): den Nutzer
-  fragen, mit Empfehlung. Nach jedem Rebase die Tests erneut – auch ohne Konflikt, denn Logikfehler meldet Git nicht.
-- Releases nacheinander: Liegt auf `main` nach der letzten Änderung an `VERSION` ein fremder `Prepare`-Commit, ist ein anderer
-  Chat mitten im Release. Dann nichts pushen, alle 2–3 Minuten neu holen, bis dessen Version oben ist; danach rebasen, testen,
-  pushen. So enthält jede Version genau die Änderungen eines Chats und nichts ungeprüft Fremdes. Dauert das über 30 Minuten,
-  dem Nutzer in einem Satz Bescheid geben.
-- Versionsnummer immer aus dem frisch geholten `main`, nie aus dem Stand beim Start des Chats. `VERSION` und `CHANGELOG.md`
-  nie zusammenführen: bei Konflikt den eigenen Versions-Commit verwerfen und auf dem neuen Stand neu erstellen.
+Bis zu drei Chats arbeiten gleichzeitig am Repo, meist an Verschiedenem, jeder in seinem eigenen Klon; keiner sieht die anderen.
+- Lokal beliebig committen; auf GitHub kommt nur Fertiges, als ein Commit je Version – ohne Zweige, direkt auf `main`.
+- Direkt vor dem Versions-Commit holen und die eigene Arbeit daraufsetzen (`git pull --rebase origin main`); die Nummer immer
+  aus dem frisch geholten `main`. Konflikte: beide Seiten lesen und so zusammenführen, dass beide Änderungen erhalten bleiben;
+  Fremdes nie verwerfen. Lässt sich ein Konflikt nicht eindeutig auflösen (Unvereinbares, eine Entscheidung steht an): den
+  Nutzer fragen, mit Empfehlung. Nach jedem Rebase die Tests erneut – auch ohne Konflikt, denn Logikfehler meldet Git nicht.
+- War ein anderer Chat schneller (Push abgelehnt): `VERSION` und `CHANGELOG.md` nie zusammenführen, sondern den eigenen Commit
+  ohne sie neu aufsetzen, daraufsetzen, testen und mit der nächsten Nummer veröffentlichen. Jede Version bleibt ein Commit;
+  die Nummer im letzten Commit auf `main` ist immer die aktuelle.
+- Nie Force-Push, `main` nie löschen.
 
 ## Kleine und große Versionen
 - Kleine Versionen (dritte Stelle): zügig vorankommen – Funktionen, Verbesserungen, neue Features im Code; die üblichen Prüfungen.

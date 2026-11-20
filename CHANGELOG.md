@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.15.16 (2026-11-20 03:22)
+- Entwicklung: ein Commit je Version, beginnt mit der Versionsnummer, mit Claude-Version und Link zum Chat.
+
 ## 3.15.15 (2026-11-20 02:53)
 - Installation: lädt nur noch den aktuellen Stand (5 statt 240 MB), deutlich schneller.
 - Installation: blockiert macOS den Hintergrunddienst, öffnet sie die passende Systemeinstellung und wartet, bis er läuft.

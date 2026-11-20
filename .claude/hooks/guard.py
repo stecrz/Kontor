@@ -15,8 +15,10 @@ RULES = [
      "MoneyMoneys eigene Daten liest Kontor nur über den Upload in der Oberfläche – nie direkt."),
     (True, False, r"(?i)create\s*(bank|batch)\s*transfer|create\s*(batch\s*)?direct\s*debit",
      "Überweisungen und Lastschriften sind gesperrt."),
-    (False, False, r"git\s+push\b[^\n;&|]*(\s--force\b|\s-f\b|\s--force-with-lease\b|\s--delete\b|\s\+?:main\b|\s\+\S*main\b)",
-     "Kein Force-Push und kein Löschen von main."),
+    (False, False, r"git\s+push\b[^\n;&|]*(\s--force\b|\s-f\b|\s--force-with-lease\b|\s\+\S)",
+     "Kein Force-Push."),
+    (False, False, r"git\s+push\b[^\n;&|]*((\s--delete|\s-d)\b[^\n;&|]*\bmain\b|\s:(refs/heads/)?main\b)",
+     "main nie löschen."),
 ]
 
 
