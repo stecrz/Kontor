@@ -2432,5 +2432,10 @@ const I18N = {
 "webapp_schritt_anderer":["Diese Seite in Safari öffnen, dann Ablage → Zum Dock hinzufügen – und Kontor im Dock öffnen und dort weitermachen.", "Open this page in Safari, then File → Add to Dock – and open Kontor from the Dock and go on there."],
 "webapp_schritt_iphone":["In Safari: Teilen → Zum Home-Bildschirm – dann Kontor vom Home-Bildschirm öffnen.", "In Safari: Share → Add to Home Screen – then open Kontor from the Home Screen."],
 "webapp_schritt_fertig":["Eingerichtet – öffne Kontor im Dock und mach dort weiter; dieses Fenster kannst du schließen.", "Done – open Kontor from the Dock and go on there; you can close this window."],
-"ki_assistent_lang":["KI-Assistent", "AI assistant"]
+"ki_assistent_lang":["KI-Assistent", "AI assistant"],
+"ki_dl_rest_min":["noch etwa {0} Min.", "about {0} min left"],
+"ki_dl_rest_s":["noch etwa {0} s", "about {0} s left"],
+"ki_sm_modell":["KI-Modell lädt", "AI model downloading"],
+"ki_sm_programm":["llama.cpp lädt", "llama.cpp downloading"],
+"ki_dl_fertig":["{0} ist geladen.", "{0} is downloaded."]
 };

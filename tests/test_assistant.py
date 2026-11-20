@@ -496,6 +496,40 @@ class Models(_Open):
             self.assertEqual(self.ai.models(), {})
             self.assertEqual([u for u, _ in self.net.calls if "resolve" in u], [])
 
+    def test_speed(self):
+        """While a file arrives: how fast (bytes per second, over the last seconds) -- falling when nothing comes, none once over."""
+        gate = threading.Event()
+        self.net.slow = gate
+        orig = L.time.time
+        clock = [orig()]
+        L.time.time = lambda: clock[0]
+        try:
+            self.ai.download_model("qwen3.6-35b-a3b")
+            for _ in range(200):
+                if (self.ai.job or {}).get("samples"):
+                    break
+                time.sleep(0.01)
+            v = self.ai.job_view()
+            self.assertEqual((v["state"], v["rate"]), ("running", 0))                 # nothing yet: no speed
+            for _ in range(8):                                                       # 64 bytes per step, a step per second
+                done = self.ai.job["done"]
+                clock[0] += 1.0
+                gate.set(); gate.clear()
+                for _ in range(200):
+                    if self.ai.job["done"] > done:
+                        break
+                    time.sleep(0.005)
+            v = self.ai.job_view()
+            self.assertTrue(40 <= v["rate"] <= 90, v)                                 # about 64 bytes a second
+            clock[0] += 20.0                                                         # then nothing for 20 seconds: falling
+            self.assertLess(self.ai.job_view()["rate"], v["rate"] / 2)
+        finally:
+            L.time.time = orig
+            self.net.slow = None
+            gate.set()
+        self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
+        self.assertEqual(self.ai.job_view()["rate"], 0)
+
     def test_cancel_and_one_at_a_time(self):
         self.net.slow = threading.Event()
         self.ai.download_model("qwen3.6-35b-a3b")
@@ -1962,6 +1996,16 @@ class Browser(unittest.TestCase):
                 pg.click("#main a[href='#settings/assistant']"); pg.wait_for_selector("#as-enabled", state="attached")
                 txt = pg.inner_text("#main")
                 self.assertIn("KI-Assistent", pg.inner_text("#main .tabs")); self.assertIsNone(pg.query_selector("#nav a[href='#assistant'] .alpha-tag"))
+                # while something loads: a line at the bottom left (also on other pages) -- how far, the speed and the time left on hover
+                pg.evaluate("AS.st = Object.assign({}, AS.st, {load: {kind: 'model', id: 'x', label: 'Qwen3.6 35B-A3B', done: 5e9, total: 2e10, state: 'running', text: '', rate: 35e6}}); statusMini()")
+                self.assertEqual(pg.inner_text("#sm-ai").strip(), "KI-Modell lädt · 25 %")
+                tip = pg.get_attribute("#sm-ai", "title")
+                self.assertEqual(tip, "Qwen3.6 35B-A3B wird geladen: 5 GB von 20 GB · 35 MB/s · noch etwa 7 Min.")
+                self.assertEqual(pg.get_attribute("#sm-ai", "href"), "#settings/assistant")
+                pg.evaluate("AS.st = Object.assign({}, AS.st, {load: Object.assign({}, AS.st.load, {kind: 'runtime', label: 'llama.cpp', done: 1e6, total: 2e7, rate: 8e5})}); statusMini()")
+                self.assertEqual(pg.inner_text("#sm-ai").strip(), "llama.cpp lädt · 5 %"); self.assertIn("800 KB/s · noch etwa 24 s", pg.get_attribute("#sm-ai", "title"))
+                pg.evaluate("AS.st = Object.assign({}, AS.st, {load: Object.assign({}, AS.st.load, {state: 'done'})}); statusMini()")
+                self.assertIsNone(pg.query_selector("#sm-ai"))
                 for needle in ("llama.cpp", TAG, "Qwen3.6 35B-A3B", "Qwen3.8 27B", "Gemma 4 26B-A4B", "Denkaufwand", "Was der KI-Assistent darf", "Nie: Einstellungen"):
                     self.assertIn(needle, txt)
                 self.assertFalse(pg.evaluate("document.querySelector('.as-right[data-r=enter_values]').checked || document.querySelector('.as-right[data-r=remote]').checked"))

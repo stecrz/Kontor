@@ -445,7 +445,13 @@ class LocalAI:
 
     def job_view(self) -> Optional[dict]:
         j = self.job
-        return {k: j[k] for k in ("kind", "id", "label", "done", "total", "state", "text")} | {"seconds": round(time.time() - j["started"], 1)} if j else None
+        if not j:
+            return None
+        rate, smp = 0, tuple(j.get("samples") or ())
+        if j["state"] == "running" and len(smp) >= 2:
+            span = max(time.time(), smp[-1][0]) - smp[0][0]        # up to now: when nothing arrives, the rate falls
+            rate = int((smp[-1][1] - smp[0][1]) / span) if span >= 1 else 0
+        return dict({k: j[k] for k in ("kind", "id", "label", "done", "total", "state", "text")}, seconds=round(time.time() - j["started"], 1), rate=max(0, rate))
 
     def cancel_job(self) -> None:
         if self.job:
@@ -483,6 +489,7 @@ class LocalAI:
                 if have and getattr(r, "status", 200) != 206:   # the server starts over: so do we
                     have, h = 0, hashlib.sha256()
                     job["done"] = 0
+                job["samples"] = [(time.time(), job["done"])]     # the speed: from what arrives over the network from here on
                 with open(part, "ab" if have else "wb") as out:
                     while True:
                         if job["cancel"].is_set():
@@ -493,6 +500,10 @@ class LocalAI:
                         out.write(chunk)
                         h.update(chunk)
                         job["done"] += len(chunk)
+                        now, smp = time.time(), job["samples"]
+                        if now - smp[-1][0] >= 0.5:               # a point every half second, the last six seconds
+                            smp.append((now, job["done"]))
+                            del smp[:-13]
         got = h.hexdigest()
         size = os.path.getsize(part)
         if (total and size != total) or got != sha256:

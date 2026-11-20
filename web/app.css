@@ -96,6 +96,7 @@ button.secondary.busy::after { border-color:var(--faint); border-top-color:var(-
 #status-mini .sm-row span { white-space:nowrap; }
 #status-mini .sm-link { display:block; color:inherit; text-decoration:none; border-radius:6px; margin:0 -4px; padding:1px 4px; }
 #status-mini .sm-link:hover { background:rgba(127,127,127,.12); }
+#status-mini .sm-link.sm-busy { display:flex; }          /* a download going on: spinner and text side by side, a link to it */
 #status-mini .sm-badge { display:inline-block; margin-left:4px; padding:0 5px; border-radius:8px; background:var(--warn-bg); color:var(--warn-fg); font-weight:600; font-size:10.5px; line-height:15px; }
 .side-btns { display:flex; gap:6px; } .side-btns button { flex:1; padding-left:6px; padding-right:6px; }
 main { flex:1; min-width:0; padding:0 24px calc(20px + env(safe-area-inset-bottom)); }      /* little room below the last card (no bar there) */

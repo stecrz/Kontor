@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.4 (2026-11-20 17:25)
+- KI-Assistent: Download zeigt Geschwindigkeit und Restzeit.
+- Unten links: „KI-Modell lädt · 42 %“ mit Ladesymbol, auf jeder Seite; Klick führt hin, Meldung wenn fertig.
+- llama.cpp: auf Apple-Chips immer die passende Version, auch wenn Python übersetzt läuft.
+
 ## 3.16.3 (2026-11-20 15:42)
 - Behoben: KI-Assistent – llama.cpp ließ sich nicht installieren („keine fertige Version für macos-arm64“); Kontor nimmt jetzt den neuesten Build.
 - Einrichtung: „Als App im Dock“ ist Schritt 1, mit Anleitung direkt im Schritt; Kontor erkennt die App und macht dort mit der Einrichtung weiter.

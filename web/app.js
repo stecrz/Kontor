@@ -738,6 +738,8 @@ function statusMini() {
       + zeile(t('banken_mm'), (ba ? esc(fmtZeit(ba.newest)) : '–') + warn, '')
       + zeile(t('mm_kontor'), m.as_of ? esc(fmtZeit(m.as_of)) : '–', '') + '</a>';
   } else h += `<div>${t('noch_keine_daten_aus_moneymoney')}</div>`;
+  const al = asLoading();
+  if (al) h += `<a href="#settings/assistant" class="sm-link sm-busy" id="sm-ai" title="${esc(asLoadText(al))}"><span class="spin xs"></span>${esc(asLoadShort(al))}</a>`;
   if (st.restart_pending) h += `<div class="sm-busy"><span class="spin xs"></span>${t('version')} ` + esc(st.restart_pending) + ` ${t('wird_geladen')}</div>`;
   else if ((st.service || {}).running) h += `<div class="sm-busy"><span class="spin xs"></span>${runStep(st)}</div>`;
   else if (b.running) h += `<div class="sm-busy"><span class="spin xs"></span>${t('wird_neu_berechnet')}</div>`;
@@ -6514,7 +6516,7 @@ const asOn = () => !!(AS.st && AS.st.settings && AS.st.settings.enabled && !OFFL
 const asN = v => Math.round(v).toLocaleString(LOCALE);
 const asRAM = b => (b / 2 ** 30).toLocaleString(LOCALE, {maximumFractionDigits: b >= 10 * 2 ** 30 ? 0 : 1}) + ' GB';          // memory as the Mac names it (64 GB)
 const asGB = b => b < 5e7 ? Math.round(b / 1e6).toLocaleString(LOCALE) + ' MB' : (b / 1e9).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e10 ? 0 : 1}) + ' GB';
-async function asLoad() { try { AS.st = await api('/api/assistant/status'); } catch (e) { AS.st = null; } asChrome(); return AS.st; }
+async function asLoad() { try { AS.st = await api('/api/assistant/status'); } catch (e) { AS.st = null; } asChrome(); statusMini(); asWatch(); return AS.st; }
 function asChrome() {
   // the button in the title bar and the menu entry: there while the assistant is switched on
   const on = asOn(), b = $('#assist-btn');
@@ -6935,7 +6937,32 @@ async function vEinstellungenAssistent() {
   <div class="as-rights">${['figures', 'transactions', 'help', 'page', 'navigate', 'enter_values', 'remote'].map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${r[k] ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}${k === 'enter_values' ? hq('ki_eintragen') : ''}</span></label>`).join('')}</div>
   <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>`;
 }
-const asLoadText = l => l.total ? t('ki_laedt', l.label || '', asGB(l.done), asGB(l.total)) : t('ki_laedt_start', l.label || '');
+const asRate = b => b >= 1e6 ? (b / 1e6).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e7 ? 0 : 1}) + ' MB/s' : Math.max(1, Math.round(b / 1e3)).toLocaleString(LOCALE) + ' KB/s';
+const asLeft = l => { const s = (l.total - l.done) / l.rate; return s >= 90 ? t('ki_dl_rest_min', asN(s / 60)) : t('ki_dl_rest_s', asN(Math.max(1, s))); };
+const asLoadText = l => (l.total ? t('ki_laedt', l.label || '', asGB(l.done), asGB(l.total)) : t('ki_laedt_start', l.label || ''))
+  + (l.rate > 0 ? ' · ' + asRate(l.rate) + (l.total > l.done ? ' · ' + asLeft(l) : '') : '');
+// a download of the assistant (its program or a model) goes on while you work elsewhere in Kontor: a line at the bottom left
+// (spinner, what, how far; the details on hover, a click leads to it), watched every second and a half until it is over
+const asLoading = () => { const l = (AS.st || {}).load; return l && l.state === 'running' ? l : null; };
+const asLoadShort = l => t(l.kind === 'runtime' ? 'ki_sm_programm' : 'ki_sm_modell') + (l.total ? ' · ' + Math.floor(100 * l.done / l.total) + ' %' : '');
+let AS_WATCH = null;
+function asWatch() {
+  if (AS_WATCH || !asLoading()) return;
+  const tick = async () => {
+    const was = asLoading();
+    try { AS.st = await api('/api/assistant/status'); } catch (e) { /* the next try */ }
+    statusMini();
+    const l = (AS.st || {}).load;
+    if (asLoading()) { AS_WATCH = setTimeout(tick, 1500); return; }
+    AS_WATCH = null;
+    if (was && l && !(S.tab === 'settings' && S.sub === 'assistant')) {          // over while you were elsewhere: said once (the page there shows it)
+      if (l.state === 'done') toast(t('ki_dl_fertig', l.label || ''), 5000);
+      else if (l.state === 'error') toast(l.text || t('fehler_3'), 8000);
+      asChrome();
+    }
+  };
+  AS_WATCH = setTimeout(tick, 1500);
+}
 function bindAssistent(main) {
   const post = async (path, body, quiet) => { try { const r = await api(path, body || {}); if (r && r.settings) AS.st = r; asChrome(); if (!quiet) await route(); return r; } catch (e) { toast(e.message, 7000); await route(); return null; } };
   const set = body => post('/api/assistant/settings', body);
@@ -6974,6 +7001,7 @@ function bindAssistent(main) {
     if (S.tab !== 'settings' || S.sub !== 'assistant') return;
     const was = moving(), kind = (AS.st.load || {}).kind, mid = (AS.st.load || {}).id;
     try { AS.st = await api('/api/assistant/status'); } catch (e) { AS.setT = setTimeout(tick, 2000); return; }
+    statusMini(); asWatch();
     const l = AS.st.load, p = $('#as-prog', main);
     if (was && !moving()) {
       if (kind === 'model' && l && l.state === 'done' && !AS.st.settings.model) { await set({model: mid}); return; }      // the first model: chosen
