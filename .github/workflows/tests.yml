@@ -22,7 +22,7 @@ jobs:
           - python: "3.9"           # the Python of Apple's command line tools on the Mac (its Playwright needs an older image)
             os: ubuntu-24.04
           - python: "3.13"
-            os: ubuntu-latest
+            os: ubuntu-24.04          # not ubuntu-latest: on 26.04 the browser libraries come from a crawling mirror (17+ min)
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6        # any Python version on any runner (3.9 is gone from setup-python's newest images)
@@ -35,11 +35,14 @@ jobs:
       - name: Tools
         timeout-minutes: 30                 # usually 1-4 min, up to ~11 with retries; a stuck mirror must not hang the run
         run: |
-          # the runners' package mirror fails now and then or hangs: each attempt has its own limit, then try again
-          for i in 1 2 3 4; do sudo timeout 300 apt-get update -q && sudo timeout 300 apt-get install -y -q sqlcipher && break; sleep 30; done
+          # the runners' package mirror fails or crawls now and then: a retry waits for the package lock instead of failing;
+          # nothing is cut off from outside (apt-get would keep running and hold the lock) -- apt's own network limits and the
+          # step's limit are enough
+          echo 'DPkg::Lock::Timeout "900";' | sudo tee /etc/apt/apt.conf.d/90lock-timeout
+          for i in 1 2 3 4; do sudo apt-get update -q && sudo apt-get install -y -q sqlcipher && break; sleep 30; done
           uv pip install -q pytest playwright pillow cryptography
           # WebKit (Safari's engine) on the newer runner: the tables' alignment as on the Mac
-          for i in 1 2 3 4; do timeout 480 python -m playwright install --with-deps chromium ${{ matrix.python == '3.13' && 'webkit' || '' }} && break; sleep 30; done
+          for i in 1 2 3 4; do python -m playwright install --with-deps chromium ${{ matrix.python == '3.13' && 'webkit' || '' }} && break; sleep 30; done
       - name: Interface
         run: node --check web/app.js && node --check web/i18n.js && node --check web/sw.js
       - name: Tests

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.15.18 (2026-11-20 03:46)
+- Entwicklung: Prüfung bei GitHub wieder schnell und ohne Hänger (feste Systemversion, Paketsperre abwarten).
+
 ## 3.15.17 (2026-11-20 03:31)
 - Entwicklung: Zeitgrenzen gegen hängende Prüfungen bei GitHub.
 
