@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.15.23 (2026-11-20 05:30)
+- Entwicklung: Rundgang misst erst nach dem Einblenden der Seite (vorher falsche Kontrast-Meldungen auf langsamen Rechnern).
+
 ## 3.15.22 (2026-11-20 05:18)
 - Entwicklung: Rundgang liest gemischte Farben richtig (keine falschen Kontrast-Meldungen in der Safari-Engine).
 

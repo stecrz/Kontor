@@ -102,7 +102,12 @@ def settle(pg, timeout=20):
         if time.time() > end:
             raise AssertionError("page not drawn: %s" % pg.url)
         pg.wait_for_timeout(100)
-    pg.wait_for_timeout(250)          # charts and folded parts finish drawing
+    # the fade-in and other short animations finished (lasting ones like a spinner do not count): measured mid-fade, all
+    # text looks pale -- slower machines need longer than a fixed pause
+    end = time.time() + 5
+    while time.time() < end and pg.evaluate("document.getAnimations().some(a => a.playState === 'running' && isFinite(a.effect.getComputedTiming().endTime))"):
+        pg.wait_for_timeout(50)
+    pg.wait_for_timeout(100)
 
 
 class CheckerTest(unittest.TestCase):
