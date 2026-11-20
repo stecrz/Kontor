@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.8 (2026-11-20 18:52)
+- Behoben: Fehlermeldung der Safari-Engine beim Aufklappen des Assistenten (Grafiken zeichnen sich im nächsten Bild neu).
+
 ## 3.16.7 (2026-11-20 18:42)
 - KI-Assistent: Diktat erscheint schon beim Sprechen im Textfeld.
 - KI-Assistent: Scrollbalken im Textfeld nur, wenn es etwas zu scrollen gibt.
