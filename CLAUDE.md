@@ -28,6 +28,21 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
 5. Commit und Push auf `main` selbst erledigen, ohne nachzufragen. Keine Tags, kein Sitzungslink in der Commit-Nachricht.
 6. Den Mac aktualisiert der Nutzer selbst – kein Zugriff darauf, im Abschluss nicht erwähnen.
 
+## Parallele Chats
+Bis zu drei Chats arbeiten gleichzeitig am Repo, jeder in seinem eigenen Klon; keiner sieht die anderen. Daher:
+- Nur Fertiges pushen, nie Zwischenstände – die anderen bauen sofort darauf auf.
+- Vor jedem Push den neuesten Stand holen und die eigenen Commits darauf setzen (`git pull --rebase origin main`). Ein
+  abgelehnter Push heißt: ein anderer Chat war schneller – genauso verfahren, nie Force-Push.
+- Konflikte: beide Seiten lesen und so zusammenführen, dass beide Änderungen erhalten bleiben; Fremdes nie verwerfen. Lässt
+  sich ein Konflikt nicht eindeutig auflösen (beide Seiten wollen Unvereinbares, eine Entscheidung steht an): den Nutzer
+  fragen, mit Empfehlung. Nach jedem Rebase die Tests erneut – auch ohne Konflikt, denn Logikfehler meldet Git nicht.
+- Releases nacheinander: Liegt auf `main` nach der letzten Änderung an `VERSION` ein fremder `Prepare`-Commit, ist ein anderer
+  Chat mitten im Release. Dann nichts pushen, alle 2–3 Minuten neu holen, bis dessen Version oben ist; danach rebasen, testen,
+  pushen. So enthält jede Version genau die Änderungen eines Chats und nichts ungeprüft Fremdes. Dauert das über 30 Minuten,
+  dem Nutzer in einem Satz Bescheid geben.
+- Versionsnummer immer aus dem frisch geholten `main`, nie aus dem Stand beim Start des Chats. `VERSION` und `CHANGELOG.md`
+  nie zusammenführen: bei Konflikt den eigenen Versions-Commit verwerfen und auf dem neuen Stand neu erstellen.
+
 ## Kleine und große Versionen
 - Kleine Versionen (dritte Stelle): zügig vorankommen – Funktionen, Verbesserungen, neue Features im Code; die üblichen Prüfungen.
   **Keine** Hilfe-Bilder, **keine** Überarbeitung von README und Hilfe (`docs/`) – das gibt es nur beim großen Versionssprung
