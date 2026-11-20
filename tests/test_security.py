@@ -437,6 +437,44 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(self.K.cmd_uninstall(argparse.Namespace(yes=True, program=False)), 1)
         self.assertTrue(os.path.exists(st.path("config.json"))); self.assertTrue(os.path.exists(os.path.join(self.dir, "master.key")))
 
+    def test_install_waits_until_the_service_may_run(self):
+        """macOS refuses the service (Login Items: background switched off): install says so, opens that page in System
+        Settings, loads again until it is allowed and the service answers; without a terminal it gives up after half a minute."""
+        import contextlib
+        import io
+        clock, calls, state = [0.0], [], {"allowed_after": 3, "loads": 0}
+
+        def run(cmd, **kw):
+            calls.append(cmd[:2])
+            if cmd[:2] == ["launchctl", "load"]:
+                state["loads"] += 1
+            loaded = state["loads"] >= state["allowed_after"]
+            return subprocess.CompletedProcess(cmd, 0 if (cmd[1] != "print" or loaded) else 113, "", "")
+        with mock.patch.object(self.K.subprocess, "run", side_effect=run), \
+                mock.patch.object(self.K.time, "sleep", side_effect=lambda s: clock.__setitem__(0, clock[0] + s)), \
+                mock.patch.object(self.K.time, "time", side_effect=lambda: clock[0]), \
+                mock.patch.object(self.K, "service_answers", side_effect=lambda port: state["loads"] >= state["allowed_after"]), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.K.load_service()
+            self.assertTrue(self.K.wait_for_service(8765, interactive=True))
+        self.assertIn(["open", "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"], calls)
+        self.assertEqual(calls.count(["open", "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"]), 1)
+        self.assertIn(self.K.tr("s_hintergrund_erlauben"), out.getvalue()); self.assertIn(self.K.tr("s_dienst_laeuft"), out.getvalue())
+        # allowed from the start: no hint, nothing opened
+        calls.clear(); state.update(allowed_after=0, loads=0)
+        with mock.patch.object(self.K.subprocess, "run", side_effect=run), \
+                mock.patch.object(self.K, "service_answers", return_value=True), contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertTrue(self.K.wait_for_service(8765, interactive=False))
+        self.assertEqual(out.getvalue(), ""); self.assertNotIn("open", [c[0] for c in calls])
+        # never allowed, no terminal: gives up
+        clock[0] = 0.0; state.update(allowed_after=10 ** 9, loads=0)
+        with mock.patch.object(self.K.subprocess, "run", side_effect=run), \
+                mock.patch.object(self.K.time, "sleep", side_effect=lambda s: clock.__setitem__(0, clock[0] + s)), \
+                mock.patch.object(self.K.time, "time", side_effect=lambda: clock[0]), \
+                mock.patch.object(self.K, "service_answers", return_value=False), contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(self.K.wait_for_service(8765, interactive=False))
+            self.assertLessEqual(clock[0], 40)
+
 
 class _Store:
     def __init__(self, d):

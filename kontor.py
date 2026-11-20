@@ -23,6 +23,7 @@ import logging
 import logging.handlers
 import os
 import plistlib
+import socket
 import subprocess
 import sys
 import time
@@ -146,10 +147,13 @@ def cmd_start(args) -> int:
     return 0
 
 
+def ui_port(cfg: dict) -> int:
+    return int((cfg.get("ui") or {}).get("port") or 8765)
+
+
 def ui_url(cfg: dict) -> str:
-    port = int((cfg.get("ui") or {}).get("port") or 8765)
     scheme = "https" if (cfg.get("ui") or {}).get("tls_cert") else "http"
-    return "%s://127.0.0.1:%d/" % (scheme, port)
+    return "%s://127.0.0.1:%d/" % (scheme, ui_port(cfg))
 
 
 def cmd_oeffnen(args) -> int:
@@ -228,14 +232,69 @@ def cmd_install(args) -> int:
     os.makedirs(os.path.dirname(launchd_path()), exist_ok=True)
     with open(launchd_path(), "wb") as f:
         plistlib.dump(plist, f)
+    port = ui_port(cfg)
     subprocess.run(["launchctl", "unload", launchd_path()], capture_output=True)
-    r = subprocess.run(["launchctl", "load", launchd_path()], capture_output=True, text=True)
+    for _ in range(50):                     # the old service lets go of the port first, else it would count as started
+        if not service_answers(port):
+            break
+        time.sleep(0.1)
+    load_service()
     print(tr("s_dienst_eingerichtet_startet_beim_anmel") % launchd_path())
-    if r.returncode != 0:
-        print("launchctl: " + (r.stderr or r.stdout))
+    if not wait_for_service(port, sys.stdin.isatty()):
+        return 1
     print(tr("s_oberflaeche_s_python3_kontor_py") % ui_url(cfg))
     print(tr("s_beim_ersten_lauf_fragt_macos"))
     return 0
+
+
+def service_answers(port: int) -> bool:
+    """The service listens on 127.0.0.1 (always there, always http)."""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def service_loaded() -> bool:
+    return subprocess.run(["launchctl", "print", "gui/%d/%s" % (os.getuid(), LAUNCHD_LABEL)], capture_output=True).returncode == 0
+
+
+def load_service() -> None:
+    """-w: also lifts a 'launchctl disable'. Switched off under Login Items ('Allow in the Background'), macOS refuses the load
+    (error 5) -- wait_for_service says so."""
+    r = subprocess.run(["launchctl", "load", "-w", launchd_path()], capture_output=True, text=True)
+    if r.returncode != 0 or r.stderr.strip():
+        log.debug("launchctl load: %s", (r.stderr or r.stdout).strip())
+
+
+def wait_for_service(port: int, interactive: bool) -> bool:
+    """Until the service answers. Not loaded: macOS keeps it from running in the background -- open that page in System
+    Settings and load again until it is allowed. Loaded but silent: still starting (or a dialog of macOS waits), the log helps.
+    In the terminal it waits until then (ctrl-C cancels), otherwise for half a minute."""
+    hint_bg = hint_log = False
+    start = time.time()
+    try:
+        while True:
+            if service_answers(port):
+                if hint_bg or hint_log:
+                    print(tr("s_dienst_laeuft"))
+                return True
+            if not service_loaded():
+                if not hint_bg:
+                    hint_bg = True
+                    print(tr("s_hintergrund_erlauben"))
+                    subprocess.run(["open", "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"], capture_output=True)
+                load_service()
+            elif not hint_log and time.time() - start > 15:
+                hint_log = True
+                print(tr("s_dienst_antwortet_noch_nicht") % os.path.join(DATA_DIR, "service.err.log"))
+            if not interactive and time.time() - start > 30:
+                return False
+            time.sleep(2 if hint_bg else 0.5)
+    except KeyboardInterrupt:
+        print()
+        return False
 
 
 def cmd_uninstall(args) -> int:

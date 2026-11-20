@@ -30,7 +30,7 @@ else
     git -C "$DIR" reset --hard --quiet "origin/$REF"
   elif command -v git >/dev/null 2>&1; then
     echo "Lade $REPO nach $DIR ..."
-    git clone --quiet --branch "$REF" "https://github.com/$REPO.git" "$DIR"
+    git clone --quiet --depth 1 --branch "$REF" "https://github.com/$REPO.git" "$DIR"
   else
     echo "Lade $REPO als ZIP nach $DIR ..."
     TMP="$(mktemp -d)"
@@ -55,7 +55,6 @@ if ! pgrep -x MoneyMoney >/dev/null 2>&1; then
 fi
 echo "Kontor $(cat VERSION) in $DIR (Python $("$PY" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))'))"
 "$PY" kontor.py install
-sleep 2
 "$PY" kontor.py open || true
 cat <<TXT
 
