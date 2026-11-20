@@ -11,3 +11,5 @@ Claude outputs/
 Hinweise-*.md
 mm-history-schema.txt
 mm-historie-aufbau.txt
+node_modules/
+.coverage

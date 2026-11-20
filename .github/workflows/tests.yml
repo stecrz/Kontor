@@ -13,15 +13,18 @@ permissions:
 
 jobs:
   test:
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 70
     strategy:
       fail-fast: false
       matrix:
         include:
-          - python: "3.9"           # the Python of Apple's command line tools on the Mac (its Playwright needs an older image)
+          - name: "Python 3.9 (wie auf dem Mac) · Chrome"
+            python: "3.9"           # the Python of Apple's command line tools on the Mac (its Playwright needs an older image)
             os: ubuntu-24.04
-          - python: "3.13"
+          - name: "Python 3.13 · Chrome + Safari-Engine · Code-Checks"
+            python: "3.13"
             os: ubuntu-24.04          # not ubuntu-latest: on 26.04 the browser libraries come from a crawling mirror (17+ min)
     steps:
       - uses: actions/checkout@v7
@@ -62,9 +65,57 @@ jobs:
           echo "Packages kept: $(ls ~/apt-cache/*.deb 2>/dev/null | wc -l), $(du -sh ~/apt-cache | cut -f1)"
       - name: Interface
         run: node --check web/app.js && node --check web/i18n.js && node --check web/sw.js
+      - name: Code checks
+        if: matrix.python == '3.13'           # once is enough: unused and undefined names in Python and in the interface
+        run: |
+          uv pip install -q pyflakes
+          python -m pyflakes *.py tests/*.py .claude/hooks/*.py
+          npm install -s --no-save --no-package-lock eslint@9 globals
+          npx --no-install eslint -c .github/eslint.config.mjs web
       - name: Tests
         timeout-minutes: 30                 # today 4 min, nightly 7 min: room for many more tests
         env:
           KONTOR_FUZZ_SEEDS: ${{ github.event_name == 'schedule' && '1000' || '40' }}
           TZ: Europe/Berlin
         run: python -m pytest -q tests
+
+  # Kontor runs only on the Mac: what only a Mac can check -- Apple's own Python, the Swift helpers (Touch ID, balances from
+  # MoneyMoney's database), the bridge to MoneyMoney, installing the background service. MoneyMoney itself is not there.
+  mac:
+    name: "macOS · Apples Python · Swift · MoneyMoney-Brücke · Installation"
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      PATH: /usr/bin:/bin:/usr/sbin:/sbin           # Apple's python3, swiftc, git -- not Homebrew's
+    steps:
+      - uses: actions/checkout@v7
+      - name: Apple's Python
+        run: |
+          python3 --version
+          python3 -m compileall -q -x '(^|/)(node_modules|\.git)/' .
+          python3 -c "import kontor, service, core, rules, model, report, categorize, mm_categories, mm_bridge, mm_history, realestate, tax, receipts, storage, auth, updates, tls_cert, security_names, history_import, excel, i18n"
+      - name: Swift helpers
+        run: |
+          swiftc -O -o "$RUNNER_TEMP/touchid" touchid.swift
+          swiftc -O -o "$RUNNER_TEMP/mm_history" mm_history.swift
+      - name: MoneyMoney bridge
+        run: |
+          osacompile -l JavaScript -o "$RUNNER_TEMP/mm_bridge.scpt" mm_bridge.jxa
+          # transfers and direct debits stay blocked, before MoneyMoney is even asked
+          for m in createBankTransfer createDirectDebit; do
+            if out=$(osascript -l JavaScript mm_bridge.jxa "{\"method\":\"$m\",\"args\":null}" 2>&1); then echo "$m let through"; exit 1; fi
+            echo "$out" | grep -q "nicht erlaubt" || { echo "unexpected: $out"; exit 1; }
+          done
+      - name: Install and service
+        continue-on-error: true                     # new: watched for a few runs before it counts
+        run: |
+          # a keychain of its own for the data key (the runner's own one may ask); removed with the machine
+          security create-keychain -p ci "$RUNNER_TEMP/ci.keychain-db"
+          security set-keychain-settings "$RUNNER_TEMP/ci.keychain-db"
+          security unlock-keychain -p ci "$RUNNER_TEMP/ci.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/ci.keychain-db"
+          security default-keychain -d user -s "$RUNNER_TEMP/ci.keychain-db"
+          bash install.sh < /dev/null
+          curl -fsS -o /dev/null http://127.0.0.1:8765/ && echo "service answers"
+          python3 kontor.py uninstall --yes
+          ! curl -fsS -o /dev/null http://127.0.0.1:8765/ 2>/dev/null && echo "service gone"

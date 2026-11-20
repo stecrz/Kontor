@@ -4323,8 +4323,9 @@ const keepOpen = k => KEEP_OPEN.has(k) ? ' open' : '';
 document.addEventListener('toggle', e => { const d = e.target; if (d.matches && d.matches('details[data-keep]')) { if (d.open) KEEP_OPEN.add(d.dataset.keep); else KEEP_OPEN.delete(d.dataset.keep); } }, true);
 // draw the page again with `sel` where it was on the screen (rows added above it do not push it away)
 async function routeKeeping(sel) {
-  const el = sel && $(sel, main), top = el ? el.getBoundingClientRect().top : null;
+  const el = sel && $(sel, $('#main')), top = el ? el.getBoundingClientRect().top : null;
   await route();
+  const main = $('#main');
   const fade = $('.fade', main); if (fade) fade.classList.remove('fade');          // in place: no fade-in (it moves the page)
   const now = sel && $(sel, main);
   if (!now || top == null) return;
@@ -6417,7 +6418,7 @@ async function startRun(dry, freigabe, anchor) {
   const poll = async () => {
     try { S.STATUS = await api('/api/status'); } catch (e) { return setTimeout(poll, 1500); }
     statusMini();
-    const rl = $('#run-live', main);
+    const rl = $('#run-live', $('#main'));
     if (S.STATUS.service.running && tries++ < 300) { if (rl) { rl.disabled = true; $('span', rl).textContent = runStep(S.STATUS); } return setTimeout(poll, 1000); }
     const r = S.STATUS.last_result || {};
     toast(r.booked_count ? t('x_gebucht', r.booked_count) : ((r.warnings || [])[0] || r.text || t('abgleich_beendet')), 5000);

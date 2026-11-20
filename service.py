@@ -44,7 +44,7 @@ import categorize
 import updates
 from receipts import Belege, file_status, pattern_problem
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (REPORT_LOCK, RUN_LOCK, assign_skipped, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+from core import (REPORT_LOCK, assign_skipped, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
@@ -1393,7 +1393,6 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
         bil = b.get("balance", {})
         proj = {r["id"]: r.get("amounts") or {} for r in ((bil.get("projection") or {}).get("rows") or [])}
         allw = lambda r: dict(r.get("amounts") or {}, **proj.get(r.get("id"), {}))
-        cur = (b.get("months") or [""])[-1]
         inakt = int(((app.config.get("balance") or {}).get("inactive_months") or 12))
         recent = (b.get("months") or [])[-inakt:]
         empty = lambda w: all(_last(w, ms) is None or abs(_last(w, ms)) < 0.005 for _, ms, _p in cols)

@@ -10,11 +10,14 @@ Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, frag
   Änderung abschließen). Unabhängige Prüfung vor jedem Release mit Rechenlogik oder Schreibzugriff: Agent `reviewer`.
 - Leitplanken (`.claude/settings.json`): Sperren für Kontors Datenordner, MoneyMoneys Datenbank, Überweisungen und
   Force-Push; Erinnerung, wenn eine Änderung nicht abgeschlossen ist.
-- GitHub Actions testet jeden Push (Python 3.9 und neu) und nachts mit 1000 Zufallsläufen.
+- GitHub Actions testet jeden Push – Linux: Python 3.9 und neu, Chrome und Safari-Engine, Code-Checks; macOS: Apples Python,
+  Swift-Helfer, MoneyMoney-Brücke, Installation – und nachts mit 1000 Zufallsläufen.
 
 ## Prüfen
 - Tests: `python3 -m pytest -q tests` (~2½ min; Browser-Tests mit Playwright; `sqlcipher` nur für Testdatenbanken).
   Mehr Zufallsläufe: `KONTOR_FUZZ_SEEDS=400 python3 -m pytest -q tests/test_fuzz.py`.
+- Code-Checks: `python3 -m pyflakes *.py tests/*.py .claude/hooks/*.py` und `npx eslint -c .github/eslint.config.mjs web`
+  (einmal `npm install --no-save --no-package-lock eslint@9 globals`).
 - Oberfläche: `node --check web/app.js`; ansehen mit `python3 tests/preview.py <ordner> '#route'` (hell/dunkel, Mac/iPhone; `--js` z. B. für ganze Tabellen).
 
 ## Jede Änderung abschließen (Skill `release`)
@@ -110,4 +113,4 @@ Bis zu drei Chats arbeiten gleichzeitig am Repo, meist an Verschiedenem, jeder i
 | `realestate.py`, `tax.py`, `receipts.py` | Immobilienkalkulation, Steuer, Belege |
 | `storage.py`, `auth.py`, `updates.py`, `tls_cert.py` | verschlüsselte Ablage, Anmeldung/Touch ID, Updates, Zertifikat |
 | `web/app.js`, `web/i18n.js` | Oberfläche (eine Datei, Seiten über `#…`), Texte |
-| `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_scenarios` (Lebensfälle über Bereiche: Einlagen, Kauf, Darlehen, Auslagen; Monats-/Jahreswechsel, gemischt), `test_categories`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_fuzz`, `test_privacy` |
+| `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_scenarios` (Lebensfälle über Bereiche: Einlagen, Kauf, Darlehen, Auslagen; Monats-/Jahreswechsel, gemischt), `test_categories`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_tour` (Rundgang: jede Seite hell/dunkel, Mac/iPhone, de/en – Skriptfehler, Überlaufen, Textschlüssel, Kontrast), `test_fuzz`, `test_privacy` |

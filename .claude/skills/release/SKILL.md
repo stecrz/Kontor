@@ -7,7 +7,8 @@ description: Jede Änderung an Kontor abschließen – prüfen (auch mit Python 
 
 1. **Prüfen** (alles muss grün sein, nichts überspringen):
    - `node --check web/app.js && node --check web/i18n.js && node --check web/sw.js`
-   - `python3 -m pyflakes *.py` – keine neuen Warnungen
+   - `python3 -m pyflakes *.py tests/*.py .claude/hooks/*.py` und `npx eslint -c .github/eslint.config.mjs web` – keine Funde
+     (ESLint einmal je Sitzung: `npm install --no-save --no-package-lock eslint@9 globals`)
    - `python3 -m pytest -q tests` (~2½ min, im Hintergrund laufen lassen)
    - Rechenlogik oder Buchungsregeln geändert: zusätzlich `KONTOR_FUZZ_SEEDS=400 python3 -m pytest -q tests/test_fuzz.py`
    - Python 3.9 (Apples Version auf dem Mac): `TZ=Europe/Berlin ~/py39/bin/python -m pytest -q tests` (~1 min; Browser-Tests

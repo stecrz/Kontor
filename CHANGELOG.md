@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.15.21 (2026-11-20 05:07)
+- Entwicklung: Rundgang über alle Seiten (hell/dunkel, Mac/iPhone, de/en), Code-Checks, Prüfung auf dem Mac; verständliche Namen der Prüfungen.
+
 ## 3.15.20 (2026-11-20 04:28)
 - Entwicklung: Zwischenspeicher bleibt klein; GitHub-Bausteine aktuell.
 
