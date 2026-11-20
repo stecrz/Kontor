@@ -24,20 +24,20 @@ jobs:
           - python: "3.13"
             os: ubuntu-24.04          # not ubuntu-latest: on 26.04 the browser libraries come from a crawling mirror (17+ min)
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6        # any Python version on any runner (3.9 is gone from setup-python's newest images)
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3   # any Python version on any runner (3.9 is gone from setup-python's newest images); no v10 tag
         with:
           python-version: ${{ matrix.python }}
           activate-environment: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "lts/*"           # always the maintained version, only for node --check
       - name: Week
         id: week
         run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
       # the system packages for the browsers (up to ~150 MB) are most of the setup time and come from a mirror that crawls
       # now and then: keep the downloaded packages; a new week starts from last week's and adds only what changed
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/apt-cache
           key: apt-${{ matrix.os }}-py${{ matrix.python }}-${{ steps.week.outputs.week }}
@@ -49,13 +49,15 @@ jobs:
           # cut off from outside (apt-get would keep running and hold the lock) -- apt's own network limits and the step's
           # limit are enough; after four failed tries the step fails instead of going on without the tools
           mkdir -p ~/apt-cache/partial
-          printf 'Dir::Cache::Archives "%s/apt-cache/";\nAPT::Keep-Downloaded-Packages "true";\nDPkg::Lock::Timeout "900";\n' "$HOME" \
+          printf 'Dir::Cache::Archives "%s/apt-cache/";\nAPT::Keep-Downloaded-Packages "true";\nAPT::Sandbox::User "root";\nDPkg::Lock::Timeout "900";\n' "$HOME" \
             | sudo tee /etc/apt/apt.conf.d/90ci
           for i in 1 2 3 4; do sudo apt-get update -q && sudo apt-get install -y -q sqlcipher && break; [ $i = 4 ] && exit 1; sleep 30; done
           uv pip install -q pytest playwright pillow cryptography
           # WebKit (Safari's engine) on the newer runner: the tables' alignment as on the Mac
           for i in 1 2 3 4; do python -m playwright install --with-deps chromium ${{ matrix.python == '3.13' && 'webkit' || '' }} && break; [ $i = 4 ] && exit 1; sleep 30; done
-          # readable for the cache upload at the end of the job (apt leaves root-only files behind)
+          # only versions the server still offers (else the cache grows by every replaced version, week after week); readable for
+          # the cache upload at the end of the job (apt leaves root-only files behind)
+          sudo apt-get autoclean -q
           sudo rm -f ~/apt-cache/lock; sudo find ~/apt-cache/partial -mindepth 1 -delete; sudo chown -R "$(id -u):$(id -g)" ~/apt-cache
           echo "Packages kept: $(ls ~/apt-cache/*.deb 2>/dev/null | wc -l), $(du -sh ~/apt-cache | cut -f1)"
       - name: Interface
