@@ -1238,6 +1238,9 @@ class App:
         if program:
             (done if _remove_tree(prog, keep) else left).append(prog)
         # the data folder: only Kontor's own files (whatever else lies there stays), then the folder when it is empty
+        a = getattr(self, "_assistant", None)
+        if a is not None:                             # the conversation being answered: not saved again once the folder is gone
+            a.delete_chats(everything=True)
         self.assistant_stop()
         foreign, failed = _remove_own_files(data, keep)
         (left if failed else done).append(data)
@@ -2090,6 +2093,13 @@ def make_handler(app: App):
                 if not self._assistant_ok(s):
                     return self._json(200, {"settings": {"enabled": False}, "local": False, "remote_off": True})
                 return self._json(200, app.assistant.status(self._is_local(s)))
+            if path in ("/api/assistant/chats", "/api/assistant/chat"):        # saved conversations: where one may ask, one may read them again
+                if not self._assistant_ok(s):
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                if path == "/api/assistant/chats":
+                    return self._json(200, {"chats": app.assistant.chats(), "save": assistant_mod.settings(app.config)["save_chats"]})
+                got = app.assistant.chat(str(q.get("id") or ""))
+                return self._json(200, got) if got else self._json(404, {"error": tr("s_ki_verlauf_weg")})
             if path == "/api/assistant/poll":
                 if not self._assistant_ok(s):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
@@ -2290,7 +2300,7 @@ def make_handler(app: App):
             if self.headers.get("X-CSRF-Token") != s["csrf"]:
                 return self._json(403, {"error": tr("s_csrf_pruefung_fehlgeschlagen_seite_neu"), "csrf": "invalid"})
             if not self._is_local(s) and app.remote_readonly() and u.path != "/api/lock" and not (
-                    u.path in ASSISTANT_ASK and self._assistant_ok(s)):          # asking the assistant changes nothing
+                    u.path in ASSISTANT_ASK and self._assistant_ok(s)):          # asking changes none of the figures (the conversation is saved as at the Mac)
                 return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
             if u.path == "/api/history/mm-import":
                 return self._historie_einlesen(s)
@@ -2353,6 +2363,10 @@ def make_handler(app: App):
                         return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
                     a.confirm(str(body.get("job") or ""), str(body.get("id") or ""), ok)
                     return self._json(200, {"ok": True})
+            if path == "/api/assistant/chats/delete":            # one or all (from other devices: only where they may change things -- see do_POST)
+                if not (local or assistant_mod.settings(app.config)["rights"]["remote"]):
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                return self._json(200, {"deleted": a.delete_chats(str(body.get("id") or ""), body.get("all") is True)})
             if path == "/api/assistant/undo":
                 if not local and (app.remote_readonly() or not assistant_mod.settings(app.config)["rights"]["remote"]):
                     return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
@@ -2740,6 +2754,7 @@ def make_handler(app: App):
                     dateien.append("auth.json")
                 for name in dateien:
                     app.store.delete(name)
+                app.assistant.delete_chats(everything=True)          # the saved conversations go with the data
                 app.assistant.forget()                   # the assistant is switched off with its settings: model, conversation and entries to take back end
                 app.config = merged_config({})
                 app.ledger, app.ledger_time, app.categories_raw, app.last_result, app.last_run_at, app.umsaetze = None, None, [], None, None, None
@@ -3214,7 +3229,8 @@ def backup_decrypt(wrapper: dict, password: str) -> dict:
 # Kontor's own files in its data folder (the store, its log and service files, a key file, the certificate): only these go
 ASSISTANT_ASK = ("/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm", "/api/assistant/transcribe")
 
-_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*)\.json(?:\.enc)?(?:\.tmp|\.renew)?"
+_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*|assistant-chats"
+                          r"|assistant-chat-[0-9a-f]{8,32})\.json(?:\.enc)?(?:\.tmp|\.renew)?"
                           r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|master\.key|tls|assistant)(?=\s|$)")
 
 

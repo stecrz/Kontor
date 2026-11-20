@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.11 (2026-11-20 20:50)
+- KI-Assistent: Diagramme im Chat aus Kontors eigenen Zahlen (Verlauf, Cashflow, Aufteilung) – Werte beim Darüberfahren, Klick zeigt die Zahl in Bilanz oder Cashflow.
+- KI-Assistent: Verläufe – Unterhaltungen verschlüsselt gespeichert, wieder öffnen und fortsetzen, einzeln oder alle löschen; Einstellung „Verläufe speichern“ (Standard an), nicht in Sicherungen.
+- KI-Assistent: Symbol „Neue Unterhaltung“ als Stift.
+- Entwicklung: Installationsprüfung auf dem Mac zählt jetzt mit.
+
 ## 3.16.10 (2026-11-20 19:04)
 - Behoben: Korrektur aus 3.16.8 (Grafiken beim Aufklappen des Assistenten in Safari) war mit 3.16.9 verloren gegangen – wieder drin.
 - Entwicklung: Schutz beim Veröffentlichen, damit kein Chat die Änderungen eines anderen überschreibt.

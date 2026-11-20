@@ -154,7 +154,7 @@ const H = {
   tls: t('optional_zertifikat_schluessel_pem_fue'),
   updates: t('einzige_netzverbindung_von_kontor_einm'),
   assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_denken: t('h_ki_denken'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
-  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'),
+  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_speichern: t('h_ki_speichern'),
   darlehen_iban: t('die_rate_wird_am_gegenkonto'),
   darlehen_konto: t('das_manuell_gefuehrte_darlehenskonto_i'),
   darlehen_quelle: t('das_konto_von_dem_die'),
@@ -212,7 +212,7 @@ const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl:
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
@@ -238,7 +238,10 @@ const ICON = {
   pin: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 3h6l-1 7 4 4H6l4-4-1-7z"/></svg>',
   reset: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
   eye: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
-  eyeOff: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>'};
+  eyeOff: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>',
+  compose: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M17.5 3.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>',
+  history: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>'};
 // In the web app (Safari: "Add to Dock", iPhone: Home Screen) there is no back and forward -- the menu leads everywhere: a page
 // replaces the one before in the history, so a two-finger swipe has nothing to go back to. In a browser tab each page stays
 // an entry (back works as usual).
@@ -6534,7 +6537,7 @@ async function startRun(dry, freigabe, anchor) {
 // A language model on this Mac (assistant.py) beside every page: its panel stands at the right like the side panel and the page
 // makes room for it (a narrow window: it lies over the page); "#assistant" shows the same conversation as a page. What it may
 // do is set under Einstellungen -> Assistent, at the Mac only; an entry it proposes is made only by a click on its card.
-const AS = {st: null, open: false, msgs: [], conv: '', job: null, n: 0, busy: false, prev: '#overview', setT: null, effort: ''};
+const AS = {st: null, open: false, msgs: [], conv: '', job: null, n: 0, busy: false, prev: '#overview', setT: null, effort: '', list: false, chats: null, save: true, cw: 0, hover: null, sel: null, ptr: ''};
 const AS_HIDDEN = ['settings', 'log', 'setup', 'assistant'];          // pages the assistant never reads
 const asEffort = () => AS.effort || (((AS.st || {}).settings || {}).effort) || 'balanced';          // chosen in the panel for this conversation, else the setting
 const asOn = () => !!(AS.st && AS.st.settings && AS.st.settings.enabled && !OFFLINE.mode);
@@ -6604,10 +6607,175 @@ function asEntry(p) {
   const rows = (p.rows || []).map(r => `<tr><td>${esc(lab(r.label))}</td><td class="num muted">${r.old != null ? n(r.old) : r.shown != null ? n(r.shown) : '–'}</td><td class="num"><b>${r.new == null ? t('ki_e_leer') : n(r.new)}</b></td></tr>`).join('');
   const ev = p.event ? `<div class="muted small">${t(`ki_e_kind_${p.event.kind}`)} · ${t(`ki_e_rec_${p.event.recurrence}`)}${p.event.until ? ' ' + t('ki_e_bis', MLL(p.event.until)) : ''}</div>` : '';
   const foot = p.state === 'ask' ? `<div class="as-e-btn"><button class="small as-yes" data-id="${esc(p.id)}">${t('ki_e_eintragen')}</button><button class="small secondary as-no" data-id="${esc(p.id)}">${t('ki_e_ablehnen')}</button></div>`
-    : p.state === 'done' ? `<div class="as-e-st ok">${ICON.check}<span>${t('ki_e_done')}</span><button class="ghost small as-undo" data-id="${esc(p.id)}">${t('ki_e_zurueck')}</button></div>`
+    : p.state === 'done' ? `<div class="as-e-st ok">${ICON.check}<span>${t('ki_e_done')}</span>${p.fixed ? '' : `<button class="ghost small as-undo" data-id="${esc(p.id)}">${t('ki_e_zurueck')}</button>`}</div>`
     : `<div class="as-e-st">${p.state === 'failed' ? esc(t('ki_e_failed', p.text || '')) : t(p.state === 'undone' ? 'ki_e_undone' : 'ki_e_declined')}</div>`;
   return `<div class="as-entry ${esc(p.state)}"><div class="as-e-k">${kind}</div><div class="as-e-h">${esc(p.title || '')}</div>${p.sub ? `<div class="muted small">${esc(p.sub)}</div>` : ''}${ev}
     <table class="as-e-t"><thead><tr><th>${t(p.kind === 'params' ? 'ki_e_annahme' : 'ki_e_monat')}</th><th class="num">${t('ki_e_bisher')}</th><th class="num">${t('ki_e_neu_wert')}</th></tr></thead><tbody>${rows}</tbody></table>${foot}</div>`;
+}
+// A chart the assistant asked for: the figures are Kontor's own (the model chose only what to show), drawn here as the charts on
+// the pages are -- the values on hover, a click shows the figure on its page (on a touch screen: tap to see it, tap again to go)
+const AS_TONE = {net_worth: '--c-nw', assets: '--c-liq', liabilities: '--c-verb', income: '--c-ein', expenses: '--c-aus', surplus: '--c-ford', investing: '--c-anl',
+  financing: '--c-bet', interest: '--c-immo', value_changes: '--c-fest', unclear: '--c-neutral', bank_balance_change: '--c-liq', net_worth_change: '--c-nw'};
+const AS_PAL = ['--c-ford', '--c-anl', '--c-bet', '--c-immo', '--c-fest', '--c-verb', '--c-liq', '--c-nw'];
+function asChColors(c) {
+  // the colours of the pages where a series has one (a position, income, expenses ...), else the next one not in use
+  const used = new Set(), pick = want => { let v = want; if (!v || used.has(v)) v = 'var(' + (AS_PAL.find(p => !used.has('var(' + p + ')')) || AS_PAL[used.size % AS_PAL.length]) + ')'; used.add(v); return v; };
+  const of = (role, tone) => role && ROLE[role] ? ROLE[role][1] : AS_TONE[tone] ? 'var(' + AS_TONE[tone] + ')' : '';
+  if (c.kind === 'hbar') { const s = c.series[0] || {}; return (c.x || []).map((_, i) => of((s.roles || [])[i], '') || 'var(' + (AS_TONE[s.tone] || AS_PAL[0]) + ')'); }
+  return (c.series || []).map(s => pick(of(s.role, s.tone)));
+}
+const asChPage = c => t({'#balance': 'bilanz', '#cashflow': 'kapitalfluss'}[(c.link || {}).route] || 'uebersicht');
+function asChX(c, i, long) {
+  // a column's name: a month (Jan 26 / January 2026), a year -- with the months it holds where they are not all twelve
+  const k = String((c.x || [])[i] || '');
+  if (c.step === 'month') return long ? MLL(k) : ML(k);
+  if (c.step !== 'year' || !long) return k;
+  const sp = (c.spans || [])[i];
+  return sp && (sp[0].slice(5) !== '01' || sp[1].slice(5) !== '12') ? `${k} (${sp[0] === sp[1] ? MONATE[+sp[0].slice(5) - 1] : MONATE[+sp[0].slice(5) - 1] + ' – ' + MONATE[+sp[1].slice(5) - 1]})` : k;
+}
+function asChSub(c) {
+  const p = c.period || [], n = (c.x || []).length;
+  const per = c.kind === 'hbar' ? (p[0] === p[1] ? MLL(p[0] || '') : ML(p[0] || '') + ' – ' + ML(p[1] || '')) : n ? asChX(c, 0) + (n > 1 ? ' – ' + asChX(c, n - 1) : '') : '';
+  return [c.area, per, c.kind === 'hbar' ? '' : t(c.step === 'year' ? 'ki_ch_je_jahr' : 'ki_ch_je_monat'), c.as_of && c.as_of !== isoToday() ? t('ki_ch_stand', FD(c.as_of)) : ''].filter(Boolean).join(' · ');
+}
+function asChart(c, mi, pj) {
+  if (!Array.isArray(c.series) || !c.series.length || !Array.isArray(c.x) || !c.x.length) return '';
+  const col = asChColors(c), svg = c.kind === 'hbar' ? asChBars(c, AS.cw || 340, col) : asChPlot(c, AS.cw || 340, col);
+  const legend = c.kind !== 'hbar' && c.series.length > 1 ? `<div class="chart-legend">${c.series.map((s, k) => `<span><i style="background:${col[k]}"></i>${esc(s.name)}</span>`).join('')}</div>` : '';
+  return `<div class="as-chart" data-c="${mi}-${pj}"><div class="as-ch-h"><div class="as-ch-t"><b>${esc(c.title)}</b><span>${esc(asChSub(c))}</span></div>`
+    + `<button type="button" class="ghost small as-ch-open" title="${esc(t('ki_ch_oeffnen', asChPage(c)))}">${esc(asChPage(c))} ›</button></div>`
+    + `<div class="as-ch-plot">${svg}<div class="bch-tip as-ch-tip hidden" aria-live="polite"></div></div>${legend}</div>`;
+}
+function asChPlot(c, W, col) {
+  // months or years along, lines or bars; planned columns dashed (lines) or paler (bars), the running month dotted
+  const n = c.x.length, vals = c.series.flatMap(s => s.values || []).filter(v => v != null && isFinite(v)), f = v => v.toFixed(1), fl = c.flags || [];
+  let lo = vals.length ? Math.min(...vals) : 0, hi = vals.length ? Math.max(...vals) : 1;
+  if (c.kind === 'bar' || (lo > 0 && lo < hi * 0.35) || (hi < 0 && hi > lo * 0.35)) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }          // bars from zero; a line near it too
+  if (hi - lo < 1e-9) { const d = Math.max(1, Math.abs(hi) * 0.1); lo -= d; hi += d; }
+  const ticks = niceTicks(lo, hi, 4), st = ticks.length > 1 ? ticks[1] - ticks[0] : 0;
+  if (st && ticks[ticks.length - 1] < hi - (hi - lo) * 0.04) ticks.push(ticks[ticks.length - 1] + st);          // a line at both ends of the values (not for a sliver)
+  if (st && ticks[0] > lo + (hi - lo) * 0.04) ticks.unshift(ticks[0] - st);
+  lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks[ticks.length - 1]);
+  const ref = Math.max(...ticks.map(Math.abs)), labs = ticks.map(tk => Fk(tk, false, ref));
+  const P = {l: Math.ceil(Math.max(...labs.map(l => textW(l)))) + 10, r: 10, t: 10, b: 20}, H = Math.round(Math.min(260, Math.max(176, W * 0.4))), iw = W - P.l - P.r, band = iw / n;          // wider (as a page): a little taller
+  const x = c.kind === 'bar' ? i => P.l + band * (i + 0.5) : i => n > 1 ? P.l + i * iw / (n - 1) : P.l + iw / 2;
+  const y = v => P.t + (hi - v) * (H - P.t - P.b) / (hi - lo);
+  const G = {W, H, P, n, x, y, band, iw, gw: band * (c.series.length > 1 ? 0.8 : 0.62)};
+  c._g = G;
+  let g = '';
+  ticks.forEach((tk, k) => { g += `<line class="bch-grid${Math.abs(tk) < 1e-9 ? ' zero' : ''}" x1="${P.l}" x2="${W - P.r}" y1="${f(y(tk))}" y2="${f(y(tk))}"/><text class="bch-y" x="${P.l - 6}" y="${f(y(tk) + 4)}">${labs[k]}</text>`; });
+  // the names along: as many as fit (months on a round step: every month, quarter, half year, year)
+  const each = (iw / n) / (textW(c.step === 'month' ? 'Mär 26' : '2026') + 12), step = c.step === 'month' ? [1, 2, 3, 6, 12, 24, 60].find(k => k * each >= 1) || 60 : Math.max(1, Math.ceil(1 / each));
+  for (let i = 0; i < n; i++) {
+    const k = String(c.x[i]), mo = c.step === 'month' ? +k.slice(5) : 1, yr = +k.slice(0, 4);
+    const show = c.step === 'month' ? (step < 12 ? (mo - 1) % step === 0 : mo === 1 && yr % (step / 12) === 0) : (n - 1 - i) % step === 0;
+    if (c.step === 'month' && mo === 1 && i > 0) g += `<line class="bch-year" x1="${f(c.kind === 'bar' ? x(i) - band / 2 : x(i))}" x2="${f(c.kind === 'bar' ? x(i) - band / 2 : x(i))}" y1="${P.t}" y2="${H - P.b}"/>`;
+    if (!show) continue;
+    const lab = c.step === 'month' ? (step < 12 && mo !== 1 ? ML(k) : String(yr)) : k, w = textW(lab) / 2;
+    const anchor = x(i) + w > W - 1 ? 'end' : x(i) - w < P.l - 6 ? 'start' : '';          // at the edges: the name beside its point, not cut off
+    if (anchor === 'start' && x(i) - w < 0) continue;
+    g += `<text class="bch-x" x="${f(anchor === 'end' ? W - 1 : x(i))}" y="${H - 5}"${anchor ? ` style="text-anchor:${anchor}"` : ''}>${esc(lab)}</text>`;
+  }
+  const pf = fl.findIndex(v => v === 'plan' || v === 'mixed');
+  if (pf > 0) { const xp = c.kind === 'bar' ? x(pf) - band / 2 : x(pf - 1); g += `<line class="bch-today" x1="${f(xp)}" x2="${f(xp)}" y1="${P.t}" y2="${H - P.b}"/>`; }
+  if (c.kind === 'bar') {
+    const k = c.series.length, bw = G.gw / k;
+    c.series.forEach((s, j) => (s.values || []).forEach((v, i) => {
+      if (v == null) return;
+      const top = Math.min(y(v), y(0)), h = Math.max(1, Math.abs(y(v) - y(0)));
+      g += `<rect class="as-ch-bar${fl[i] === 'plan' || fl[i] === 'mixed' ? ' plan' : fl[i] === 'open' ? ' run' : ''}" x="${f(x(i) - G.gw / 2 + bw * j + (k > 1 ? 0.5 : 0))}" y="${f(top)}" width="${f(Math.max(1, bw - (k > 1 ? 1 : 0)))}" height="${f(h)}" rx="${bw > 6 ? 1.5 : 0}" fill="${col[j]}"/>`;
+    }));
+  } else {
+    c.series.forEach((s, j) => {
+      const seg = {'': '', run: '', plan: ''}, v = s.values || [];
+      for (let i = 1; i < n; i++) if (v[i] != null && v[i - 1] != null) {
+        const st = fl[i] === 'plan' || fl[i] === 'mixed' ? 'plan' : fl[i] === 'open' ? 'run' : '';
+        seg[st] += `M${f(x(i - 1))} ${f(y(v[i - 1]))}L${f(x(i))} ${f(y(v[i]))}`;
+      }
+      for (const st of ['', 'run', 'plan']) if (seg[st]) g += `<path class="as-ch-line${st ? ' ' + st : ''}" d="${seg[st]}" stroke="${col[j]}"/>`;
+      v.forEach((w, i) => { if (w != null && (v[i - 1] == null) && (v[i + 1] == null)) g += `<circle class="as-ch-pt" cx="${f(x(i))}" cy="${f(y(w))}" r="2.5" fill="${col[j]}"/>`; });          // a value on its own
+    });
+  }
+  g += `<g class="as-ch-hover"></g><rect class="as-ch-hit" x="${P.l}" y="0" width="${iw}" height="${H - P.b + 4}"/>`;
+  return `<svg class="as-ch-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(c.title)}">${g}</svg>`;
+}
+function asChBars(c, W, col) {
+  // what something is made of: one bar per part, the largest first, its amount beside it
+  const s = c.series[0], v = s.values || [], n = c.x.length, row = 24, H = n * row + 4, f = x => x.toFixed(1);
+  const amt = v.map(x => x == null ? '–' : F0(x) + ' €'), aw = Math.max(...amt.map(a => textW(a))) * 1.12 + 12;          // (figures of equal width: a little wider than measured)
+  const lw = Math.min(W * 0.42, Math.max(...c.x.map(l => textW(l, 12))) + 10), bx = lw, bmax = Math.max(20, W - lw - aw), top = Math.max(...v.map(x => Math.abs(x || 0)), 1e-9);
+  c._g = {W, H, row, lw, n};
+  let g = '';
+  const fit = (l, w) => { if (textW(l, 12) <= w) return l; let a = l; while (a.length > 2 && textW(a + '…', 12) > w) a = a.slice(0, -1); return a + '…'; };
+  c.x.forEach((l, i) => {
+    const yy = 2 + i * row, w = Math.max(1, Math.abs(v[i] || 0) / top * bmax);
+    g += `<text class="as-ch-lab" x="0" y="${f(yy + row / 2 + 4)}">${esc(fit(String(l), lw - 8))}</text>`
+      + `<rect class="as-ch-bar${c.open ? ' run' : ''}" x="${f(bx)}" y="${f(yy + 5)}" width="${f(w)}" height="${row - 10}" rx="2" fill="${col[i]}"/>`
+      + `<text class="as-ch-amt" x="${f(bx + w + 6)}" y="${f(yy + row / 2 + 4)}">${esc(amt[i])}</text>`;
+  });
+  g += `<g class="as-ch-hover"></g><rect class="as-ch-hit" x="0" y="0" width="${W}" height="${H}"/>`;
+  return `<svg class="as-ch-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(c.title)}">${g}</svg>`;
+}
+function asChFrom(el) {
+  const box = el.closest('.as-chart'); if (!box) return null;
+  const [mi, pj] = box.dataset.c.split('-').map(Number), c = ((AS.msgs[mi] || {}).parts || [])[pj];
+  return c && c.k === 'chart' ? {box, c, key: box.dataset.c} : null;
+}
+function asChAt(svg, e) {
+  // the column (and the series) under the pointer
+  const h = asChFrom(svg); if (!h || !h.c._g) return null;
+  const c = h.c, G = c._g, r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * G.W / r.width, py = (e.clientY - r.top) * G.H / r.height;
+  if (c.kind === 'hbar') { const i = Math.floor((py - 2) / G.row); return i >= 0 && i < G.n ? Object.assign(h, {i, s: 0}) : null; }
+  const i = Math.max(0, Math.min(G.n - 1, c.kind === 'bar' ? Math.floor((px - G.P.l) / G.band) : G.n > 1 ? Math.round((px - G.P.l) * (G.n - 1) / G.iw) : 0));
+  let s = 0;
+  if (c.kind === 'bar') s = Math.max(0, Math.min(c.series.length - 1, Math.floor((px - (G.x(i) - G.gw / 2)) / (G.gw / c.series.length))));
+  else { let best = Infinity; c.series.forEach((x, k) => { const v = (x.values || [])[i]; if (v != null && Math.abs(G.y(v) - py) < best) { best = Math.abs(G.y(v) - py); s = k; } }); }
+  return Object.assign(h, {i, s});
+}
+function asChTip(h, touch) {
+  const {box, c, i, s} = h, tip = $('.as-ch-tip', box), hv = $('.as-ch-hover', box), G = c._g, col = asChColors(c), f = v => v.toFixed(1);
+  if (!tip || !hv || !G) return;
+  const go = (c.link || {}).route ? `<div class="as-ch-go">${esc(t(touch ? 'ki_ch_tippen' : 'ki_ch_klick', asChPage(c)))}</div>` : '';
+  let left;
+  if (c.kind === 'hbar') {
+    const v = c.series[0].values[i], same = c.series[0].values.filter(x => x != null && (x < 0) === (v < 0)).reduce((a, x) => a + Math.abs(x), 0);
+    tip.innerHTML = `<div class="bch-tip-h">${esc(c.x[i])}</div><div class="on"><i style="background:${col[i]}"></i><span>${esc(c.series[0].name)}</span><b>${F0(v)} €</b></div>`
+      + (same ? `<div><i></i><span>${t('anteil')}</span><b>${(Math.abs(v) / same * 100).toLocaleString(LOCALE, {maximumFractionDigits: 1})} %</b></div>` : '') + go;
+    hv.innerHTML = `<rect class="bch-sel" x="0" y="${f(2 + i * G.row)}" width="${G.W}" height="${G.row}" rx="4"/>`;
+    tip.style.top = Math.min(G.H - 10, (i + 1) * G.row + 4) * box.querySelector('.as-ch-svg').getBoundingClientRect().height / G.H + 'px'; left = true;
+  } else {
+    const fl = (c.flags || [])[i], pill = fl === 'plan' ? t('plan') : fl === 'mixed' ? t('ist_plan') : fl === 'open' ? t(c.step === 'year' ? 'ki_ch_laufendes_jahr' : 'laufender_monat') : '';
+    tip.innerHTML = `<div class="bch-tip-h">${esc(asChX(c, i, true))}${pill ? ` <span class="pill neutral">${esc(pill)}</span>` : ''}</div>`
+      + c.series.map((x, k) => `<div class="${k === s && c.series.length > 1 ? 'on' : ''}"><i style="background:${col[k]}"></i><span>${esc(x.name)}</span><b>${(x.values || [])[i] == null ? '–' : F0(x.values[i]) + ' €'}</b></div>`).join('') + go;
+    const xi = G.x(i);
+    hv.innerHTML = c.kind === 'bar' ? `<rect class="bch-sel" x="${f(xi - G.band / 2)}" y="${G.P.t}" width="${f(G.band)}" height="${G.H - G.P.t - G.P.b}"/>`
+      : `<line class="bch-cross" x1="${f(xi)}" x2="${f(xi)}" y1="${G.P.t}" y2="${G.H - G.P.b}"/>` + c.series.map((x, k) => (x.values || [])[i] == null ? '' : `<circle class="as-ch-dot" cx="${f(xi)}" cy="${f(G.y(x.values[i]))}" r="${k === s ? 4 : 3}" stroke="${col[k]}"/>`).join('');
+    left = xi > G.W * 0.55; tip.style.top = '';
+  }
+  const svg = $('.as-ch-svg', box), sc = svg.getBoundingClientRect().width / G.W;
+  tip.classList.remove('hidden');
+  if (c.kind === 'hbar') { tip.style.left = Math.max(0, G.lw * sc - 8) + 'px'; tip.style.right = 'auto'; }
+  else if (left) { tip.style.right = (G.W - G.x(i) + 10) * sc + 'px'; tip.style.left = 'auto'; }
+  else { tip.style.left = (G.x(i) + 10) * sc + 'px'; tip.style.right = 'auto'; }
+}
+function asChHide(box) { const tip = box && $('.as-ch-tip', box), hv = box && $('.as-ch-hover', box); if (tip) tip.classList.add('hidden'); if (hv) hv.innerHTML = ''; }
+function asChKeep() {
+  // the panel was drawn anew (the answer goes on): what was under the pointer stays shown
+  const h = AS.sel || AS.hover; if (!h) return;
+  const box = $(`#as-body .as-chart[data-c="${h.key}"]`), x = box && asChFrom(box);
+  if (x && x.c._g && h.i < x.c._g.n) asChTip(Object.assign(x, {i: h.i, s: h.s}), !!AS.sel);
+}
+async function asChGo(c, i, s) {
+  // a figure of the chart on its page: the page, area and view it belongs to, the row and column marked (i < 0: the page only)
+  const L = c.link || {}; if (!/^#[\w/-]+$/.test(L.route || '')) return;
+  const ser = c.series[s] || {}, fl = (c.flags || [])[i], mark = i < 0 ? '' : c.kind === 'hbar' ? (ser.marks || [])[i] : ser.mark;
+  const col = i < 0 || c.kind === 'hbar' ? (c.kind === 'hbar' && c.period && c.period[0] === c.period[1] ? c.period[0] : '') : String(c.x[i]);
+  const ev = {action: 'open', route: L.route, area: L.area || '', view: c.step === 'year' ? 'years' : c.step === 'month' ? 'months' : '', detail: L.detail,
+    plan: fl === 'plan' || fl === 'mixed' ? true : undefined, mark: mark ? {text: mark, column: col} : null};
+  AS.hover = AS.sel = null;
+  if (matchMedia('(max-width: 900px)').matches && S.tab !== 'assistant') asShow(false);          // the panel covers the page there: it steps aside
+  else if (matchMedia('(max-width: 900px)').matches) { AS.open = false; try { localStorage.setItem('kontor.assist', ''); } catch (e) {} }
+  await asOpen(ev);
 }
 const asText = m => (m.parts || []).filter(p => p.k === 'text').map(p => p.text).join('\n\n').trim();
 function asMsg(m, i) {
@@ -6618,6 +6786,7 @@ function asMsg(m, i) {
     else if (p.k === 'tool') h += `<div class="as-tool ${esc(p.kind || '')}">${esc(p.label || '')}</div>`;
     else if (p.k === 'think') h += `<details class="as-think" data-m="${i}" data-p="${j}"${p.open ? ' open' : ''}><summary>${t('ki_gedanken')}</summary><div>${esc(p.text).replace(/\n/g, '<br>')}</div></details>`;
     else if (p.k === 'entry') h += asEntry(p);
+    else if (p.k === 'chart') h += asChart(p, i, j);
     else if (p.k === 'err') h += `<div class="banner err small">${esc(p.text)}</div>`;
   });
   if (m.state === 'run' && !(m.parts || []).some(p => p.k === 'entry' && p.state === 'ask')) h += `<div class="as-run"><span class="spin"></span>${t(m.status === 'loading' ? 'ki_laedt_modell' : 'ki_denkt')}</div>`;          // an entry waiting for the click: nothing is being thought
@@ -6630,7 +6799,8 @@ function asHead() {
   const page = S.tab === 'assistant', sv = (AS.st || {}).server || {}, st = sv.state || 'stopped';
   hd.innerHTML = `<b>${t('ki_assistent')}</b><span class="as-st ${esc(st)}" title="${esc(t(`ki_z_${st}`))}"></span>
     <span class="as-hb"><select id="as-eff" title="${esc(t('ki_denken'))}" aria-label="${esc(t('ki_denken'))}">${['fast', 'balanced', 'thorough'].map(k => `<option value="${k}" ${asEffort() === k ? 'selected' : ''}>${t(`ki_denken_${k}`)}</option>`).join('')}</select>
-    <button class="icon as-new" title="${esc(t('ki_neu'))}" aria-label="${esc(t('ki_neu'))}">${ICON.reset}</button>
+    <button class="icon as-hist-btn${AS.list ? ' on' : ''}" title="${esc(t('ki_verlaeufe'))}" aria-label="${esc(t('ki_verlaeufe'))}" aria-pressed="${AS.list}">${ICON.history}</button>
+    <button class="icon as-new" title="${esc(t('ki_neu'))}" aria-label="${esc(t('ki_neu'))}">${ICON.compose}</button>
     <button class="icon as-big" title="${esc(t(page ? 'ki_neben_seite' : 'ki_gross'))}" aria-label="${esc(t(page ? 'ki_neben_seite' : 'ki_gross'))}">${ICON.expand}</button>
     ${page ? '' : `<button class="icon as-close" title="${esc(t('ki_schliessen'))}" aria-label="${esc(t('ki_schliessen'))}">✕</button>`}</span>`;
 }
@@ -6639,6 +6809,11 @@ function asDraw() {
     <form class="as-form" id="as-form"><textarea id="as-in" rows="1" maxlength="${(AS.st || {}).question_limit || 9000}" placeholder="${esc(t('ki_frage_ph'))}" aria-label="${esc(t('ki_frage_ph'))}"></textarea>
     ${(AS.st || {}).dictation ? `<button type="button" id="as-mic" class="as-mic secondary"></button>` : ''}<button type="submit" id="as-go" class="as-go"></button></form>`;
   asHead(); asMsgs(true); asMicDraw();
+  const body = $('#as-body');
+  if (window.ResizeObserver) { let w = body.clientWidth;          // another width (the panel became a page, the window changed): the charts drawn to it
+    if (AS.ro) AS.ro.disconnect();
+    AS.ro = new ResizeObserver(onResizeFrame(() => { const nw = body.clientWidth; if (Math.abs(nw - w) < 24) return; w = nw; if (!AS.list && AS.msgs.some(m => (m.parts || []).some(p => p.k === 'chart'))) asMsgs(); }));
+    AS.ro.observe(body); }
   const ta = $('#as-in'), mic = $('#as-mic'); if (mic) mic.addEventListener('click', asMic);
   asFit(ta); ta.addEventListener('input', () => asFit(ta));
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#as-form').requestSubmit(); } else if (e.key === 'Escape' && AS.busy) { e.stopPropagation(); asStop(); } });
@@ -6775,13 +6950,16 @@ async function asFiles(files) {
 function asMsgs(bottom) {
   const b = $('#as-body'); if (!b) return;
   const near = bottom || b.scrollHeight - b.scrollTop - b.clientHeight < 80, a = AS.st || {};
+  AS.cw = Math.max(240, b.clientWidth - 32);          // charts drawn to the width there is (1 unit = 1 px: their text as on the pages)
+  if (AS.list) { b.innerHTML = asHistDraw(); if (bottom) b.scrollTop = 0; asGo(); return; }
   if (!AS.msgs.length) {
     b.innerHTML = !a.ready ? `<div class="as-empty"><div class="muted">${t('ki_einrichten')}</div>${a.local ? `<a class="more" href="#settings/assistant">${t('ki_zu_einstellungen')}</a>` : `<div class="muted small">${t('ki_nur_am_mac')}</div>`}</div>`
       : `<div class="as-empty">${[1, 2, 3].filter(i => i < 3 || (((a.settings || {}).rights || {}).page && !AS_HIDDEN.includes(S.tab))).map(i => `<button class="as-sug" type="button">${t(`ki_bsp_${i}`)}</button>`).join('')}</div>`;
-  } else { b.innerHTML = AS.msgs.map(asMsg).join(''); spinKeep(b); }
+  } else { b.innerHTML = AS.msgs.map(asMsg).join(''); spinKeep(b); asChKeep(); }
   if (near) b.scrollTop = b.scrollHeight;
-  const go = $('#as-go'); if (go) { go.classList.toggle('stop', AS.busy); go.title = t(AS.busy ? 'ki_stopp' : 'ki_senden'); go.setAttribute('aria-label', go.title); go.textContent = AS.busy ? '■' : '↑'; }
+  asGo();
 }
+function asGo() { const go = $('#as-go'); if (go) { go.classList.toggle('stop', AS.busy); go.title = t(AS.busy ? 'ki_stopp' : 'ki_senden'); go.setAttribute('aria-label', go.title); go.textContent = AS.busy ? '■' : '↑'; } }
 const asDrawn = () => SCROLL.key === S.tab + '/' + S.sub && !$('#main .loading');          // the page the address names is the one drawn (not still the one before)
 function asPage() {
   // the page on screen for the assistant: its text only with the right to read the page, never settings, log or setup
@@ -6796,6 +6974,7 @@ function asPage() {
 }
 async function asSend(text) {
   text = (text || '').trim(); if (!text || AS.busy) return;
+  if (AS.list) { AS.list = false; asHead(); }
   const hist = AS.msgs.map(x => ({role: x.role, text: x.role === 'user' ? x.text : asText(x)})).filter(x => x.text).slice(-12);
   const m = {role: 'assistant', parts: [], state: 'run', status: ''};
   AS.msgs.push({role: 'user', text}, m); AS.busy = true; asMsgs(true);
@@ -6827,6 +7006,7 @@ function asEvent(m, ev) {
   else if (ev.type === 'tool') m.parts.push({k: 'tool', label: ev.label, kind: ev.kind});
   else if (ev.type === 'ui') asUi(ev);
   else if (ev.type === 'entry') m.parts.push(Object.assign({}, ev, {k: 'entry'}));
+  else if (ev.type === 'chart') m.parts.push(Object.assign({}, ev, {k: 'chart'}));
   else if (ev.type === 'entry_state') { const p = m.parts.find(x => x.k === 'entry' && x.id === ev.id); if (p) { p.state = ev.state; p.text = ev.text || ''; } if (ev.state === 'done') asChanged(); }
   else if (ev.type === 'reset') { while (m.parts.length && m.parts[m.parts.length - 1].k === 'text') m.parts.pop(); }          // what was shown was a tool call written as text, not an answer
   else if (ev.type === 'done') { m.state = 'done'; m.meta = ev; }
@@ -6890,25 +7070,35 @@ async function asMark(mark) {
   AS.markT = setTimeout(() => $$('.as-mark').forEach(x => x.classList.remove('as-mark')), 12000);
   return {found: true, what: hit.what, label: hit.label, column: hit.column};
 }
+async function asDrawnWait() {          // until the page asked for has been drawn (a slow connection: up to ten seconds)
+  let last = -1, same = 0;
+  for (let i = 0; i < 70 && same < 2; i++) { await new Promise(x => setTimeout(x, 140)); const n = $('#main').innerHTML.length; same = n === last && asDrawn() ? same + 1 : 0; last = n; }
+}
+async function asOpen(ev) {
+  // a page opened as the assistant asked (or a click on its chart): its area, view, year and depth -- and what was named marked there
+  if (S.tab === 'assistant' && !matchMedia('(max-width: 900px)').matches) { AS.open = true; try { localStorage.setItem('kontor.assist', '1'); } catch (e) {} }
+  if (!/^#[\w/-]+$/.test(ev.route || '')) return null;
+  if (ev.area && S.DATA && (S.DATA.areas || {})[ev.area]) { S.area = ev.area; S.collapsed = {}; bereichSeg(); }
+  if (ev.view === 'months' || ev.view === 'years') S.mode = ev.view;
+  if (ev.plan === true || ev.plan === false) S.plan = ev.plan;
+  if (/^\d{4}$/.test(ev.year || '')) {             // the year asked for: the tax page's year, the period of the cash flow's charts
+    if (ev.route === '#tax') { S.steuerJahr = ev.year; if (ev.area) S.steuerEnt = ev.area; }
+    if (ev.route === '#cashflow') { S.cfZeit = ev.year; S.cfBrZoom = S.cfWbZoom = null; }
+  }
+  if ([0, 1, 2, 3].includes(ev.detail) && (ev.route === '#cashflow' || ev.route === '#planning')) { S[ev.route === '#planning' ? 'planEbene' : 'cfEbene'] = ev.detail; S.cfTog = {}; }
+  if (location.hash === ev.route) await route(); else go(ev.route);
+  if (!ev.mark) return null;
+  await asDrawnWait();
+  return asMark(ev.mark);
+}
 async function asUi(ev) {
   // the assistant opens a page, shows transactions or marks something -- then it is told how the page looks now (and what it found)
   const job = AS.job;
   let result = null;
-  const drawn = async () => { let last = -1, same = 0;          // until the page asked for has been drawn (a slow connection: up to ten seconds; else it is told without the page's text)
-    for (let i = 0; i < 70 && same < 2; i++) { await new Promise(x => setTimeout(x, 140)); const n = $('#main').innerHTML.length; same = n === last && asDrawn() ? same + 1 : 0; last = n; } };
   try {
     if (S.tab === 'assistant') { AS.open = true; try { localStorage.setItem('kontor.assist', '1'); } catch (e) {} }
-    if (ev.action === 'open' && /^#[\w/-]+$/.test(ev.route || '')) {
-      if (ev.area && S.DATA && (S.DATA.areas || {})[ev.area]) { S.area = ev.area; S.collapsed = {}; bereichSeg(); }
-      if (ev.view === 'months' || ev.view === 'years') S.mode = ev.view;
-      if (ev.plan === true || ev.plan === false) S.plan = ev.plan;
-      if (/^\d{4}$/.test(ev.year || '')) {             // the year asked for: the tax page's year, the period of the cash flow's charts
-        if (ev.route === '#tax') { S.steuerJahr = ev.year; if (ev.area) S.steuerEnt = ev.area; }
-        if (ev.route === '#cashflow') { S.cfZeit = ev.year; S.cfBrZoom = S.cfWbZoom = null; }
-      }
-      if ([0, 1, 2, 3].includes(ev.detail) && (ev.route === '#cashflow' || ev.route === '#planning')) { S[ev.route === '#planning' ? 'planEbene' : 'cfEbene'] = ev.detail; S.cfTog = {}; }
-      if (location.hash === ev.route) await route(); else go(ev.route);
-      if (ev.mark) { await drawn(); result = await asMark(ev.mark); }
+    if (ev.action === 'open') {
+      result = await asOpen(ev);
     } else if (ev.action === 'mark' && ev.mark) {
       result = await asMark(ev.mark);
     } else if (ev.action === 'transactions') {
@@ -6919,17 +7109,57 @@ async function asUi(ev) {
       S.sel.clear();
       if (S.tab === 'transactions') await route(); else go('#transactions');
     }
-    if (!result) await drawn();
+    if (!result) await asDrawnWait();
   } catch (e) {}
   api('/api/assistant/page', {job, id: ev.id, page: asPage(), result}).catch(() => {});
 }
 function asStop() { api('/api/assistant/stop', {}).catch(() => {}); }
-async function asNew() { if (AS.busy) asStop(); AS.job = null; AS.busy = false; AS.msgs = []; AS.conv = ''; asMsgs(true); try { await api('/api/assistant/reset', {}); } catch (e) {} }
+async function asNew() { if (AS.busy) asStop(); AS.job = null; AS.busy = false; AS.msgs = []; AS.conv = ''; AS.list = false; AS.hover = AS.sel = null; asHead(); asMsgs(true); try { await api('/api/assistant/reset', {}); } catch (e) {} }
+// Saved conversations (Verläufe): kept by Kontor, encrypted, while the setting is on -- opened again here, and they go on where they stood
+async function asHist(open) {
+  AS.list = !!open; AS.hover = AS.sel = null;
+  if (open) { AS.chats = null; asHead(); asMsgs(true);
+    try { const r = await api('/api/assistant/chats'); AS.chats = r.chats || []; AS.save = r.save !== false; } catch (e) { AS.chats = []; toast(e.message, 5000); } }
+  asHead(); asMsgs(true);
+}
+function asHistDraw() {
+  const L = AS.chats;
+  if (L == null) return `<div class="as-run"><span class="spin"></span>${t('wird_geladen')}</div>`;
+  const when = s => (s || '').slice(0, 10) === isoToday() ? s.slice(11, 16) : FD(s);
+  const item = c => `<div class="as-hi${c.id === AS.conv ? ' on' : ''}"><button type="button" class="as-hi-open" data-id="${esc(c.id)}"><span class="as-hi-t">${esc(c.title || '…')}</span>`
+    + `<span class="as-hi-m">${esc(when(c.updated))} · ${t(c.questions === 1 ? 'ki_verlauf_frage1' : 'ki_verlauf_fragen', c.questions)}</span></button>`
+    + `<button type="button" class="icon as-hi-del" data-id="${esc(c.id)}" title="${esc(t('ki_verlauf_loeschen'))}" aria-label="${esc(t('ki_verlauf_loeschen'))}">${ICON.trash}</button></div>`;
+  return `<div class="as-hist"><div class="as-hist-h"><b>${t('ki_verlaeufe')}</b>${L.length ? `<button type="button" class="ghost small as-hi-all">${t('ki_verlaeufe_alle_loeschen')}</button>` : ''}</div>`
+    + (AS.save ? '' : `<div class="muted small as-hist-off">${t('ki_verlaeufe_aus')}</div>`)
+    + (L.length ? L.map(item).join('') : `<div class="as-empty muted small">${t('ki_verlaeufe_leer')}</div>`) + `</div>`;
+}
+async function asOpenChat(id) {
+  try {
+    const r = await api('/api/assistant/chat?id=' + encodeURIComponent(id));
+    if (AS.busy) asStop();
+    Object.assign(AS, {job: null, busy: false, conv: r.id, list: false, hover: null, sel: null, msgs: (r.turns || []).map(m => m.role === 'user' ? {role: 'user', text: String(m.text || '')} : Object.assign({}, m, {parts: m.parts || []}))});
+    asHead(); asMsgs(true);
+  } catch (e) { toast(e.message, 5000); asHist(true); }
+}
+async function asDelChats(id) {
+  const all = !id, c = (AS.chats || []).find(x => x.id === id);
+  if (!confirm(all ? t('ki_verlaeufe_alle_frage') : t('ki_verlauf_frage', (c && c.title) || ''))) return;
+  try {
+    await api('/api/assistant/chats/delete', all ? {all: true} : {id});
+    if (AS.conv && (all ? (AS.chats || []).some(x => x.id === AS.conv) : id === AS.conv)) { if (AS.busy) asStop(); Object.assign(AS, {job: null, busy: false, msgs: [], conv: ''}); }
+  } catch (e) { toast(e.message, 6000); }
+  if (AS.list) asHist(true);
+}
 $('#assist-btn').addEventListener('click', () => { if (S.tab !== 'assistant') asShow(!AS.open); });
 $('#assist').addEventListener('click', async e => {
   const b = e.target.closest('button, a'); if (!b) return;
   if (b.classList.contains('as-close')) asShow(false);
   else if (b.classList.contains('as-new')) asNew();
+  else if (b.classList.contains('as-hist-btn')) asHist(!AS.list);
+  else if (b.classList.contains('as-hi-open')) asOpenChat(b.dataset.id);
+  else if (b.classList.contains('as-hi-del')) asDelChats(b.dataset.id);
+  else if (b.classList.contains('as-hi-all')) asDelChats('');
+  else if (b.classList.contains('as-ch-open')) { const h = asChFrom(b); if (h) asChGo(h.c, -1, 0); }
   else if (b.classList.contains('as-big')) { if (S.tab === 'assistant') { AS.open = true; try { localStorage.setItem('kontor.assist', '1'); } catch (x) {} go(AS.prev || '#overview'); } else go('#assistant'); }
   else if (b.classList.contains('as-sug')) asSend(b.textContent);
   else if (b.classList.contains('as-copy')) { try { await navigator.clipboard.writeText(b.parentNode.querySelector('pre').textContent); b.textContent = t('ki_kopiert'); setTimeout(() => { b.textContent = t('ki_kopieren'); }, 1500); } catch (x) {} }
@@ -6944,6 +7174,29 @@ $('#assist').addEventListener('click', async e => {
   }
 });
 $('#assist').addEventListener('change', e => { if (e.target.id === 'as-eff') AS.effort = e.target.value; });
+// the charts in the chat: values under the pointer, a click to the page (a touch: shown first, the second tap goes)
+$('#assist').addEventListener('pointerdown', e => {
+  AS.ptr = e.pointerType;
+  if (AS.sel && !(e.target.closest && e.target.closest('.as-ch-svg'))) { asChHide($(`#as-body .as-chart[data-c="${AS.sel.key}"]`)); AS.sel = null; }
+});
+$('#assist').addEventListener('pointermove', e => {
+  const svg = e.target.closest && e.target.closest('.as-ch-svg'); if (!svg || e.pointerType === 'touch') return;
+  const h = asChAt(svg, e);
+  if (!h) { AS.hover = null; if (!AS.sel) asChHide(svg.closest('.as-chart')); return; }
+  AS.sel = null; AS.hover = {key: h.key, i: h.i, s: h.s}; asChTip(h, false);
+});
+$('#assist').addEventListener('pointerout', e => {
+  const svg = e.target.closest && e.target.closest('.as-ch-svg'); if (!svg || (e.relatedTarget && svg.contains(e.relatedTarget)) || AS.sel) return;
+  AS.hover = null; asChHide(svg.closest('.as-chart'));
+});
+$('#assist').addEventListener('click', e => {
+  const svg = e.target.closest && e.target.closest('.as-ch-svg'); if (!svg) return;
+  const h = asChAt(svg, e); if (!h) return;
+  if (AS.ptr === 'touch' || !matchMedia('(hover: hover)').matches) {
+    const s = AS.sel; if (!s || s.key !== h.key || s.i !== h.i || s.s !== h.s) { AS.sel = {key: h.key, i: h.i, s: h.s}; asChTip(h, true); return; }
+  }
+  asChGo(h.c, h.i, h.s);
+});
 $('#assist').addEventListener('toggle', e => { const d = e.target; if (!d.classList || !d.classList.contains('as-think')) return; const p = ((AS.msgs[+d.dataset.m] || {}).parts || [])[+d.dataset.p]; if (p) p.open = d.open; }, true);
 window.addEventListener('resize', () => { if (S.tab === 'assistant') asLayout(); });
 function vAssistent() {
@@ -6995,6 +7248,8 @@ async function vEinstellungenAssistent() {
     <label>${t('ki_denken')}${hq('ki_denken')}</label><label class="chk"><select id="as-effort">${['fast', 'balanced', 'thorough'].map(k => opt(k, t(`ki_denken_${k}`), st.effort)).join('')}</select></label>
     <label>${t('ki_kontext')}${hq('ki_kontext')}</label><label class="chk"><select id="as-context">${[16384, 32768, 65536].map(k => opt(k, t('ki_kontext_n', k / 1024), st.context)).join('')}</select></label>
     <label>${t('ki_leerlauf')}${hq('ki_leerlauf')}</label><label class="chk"><select id="as-idle">${[5, 10, 30, 60, 0].map(k => opt(k, k ? t('ki_leerlauf_n', k) : t('ki_leerlauf_nie'), st.idle_minutes)).join('')}</select></label>
+    <label for="as-save">${t('ki_speichern')}${hq('ki_speichern')}</label><div class="row tight as-save-row"><label class="chk"><input type="checkbox" id="as-save" ${st.save_chats !== false ? 'checked' : ''} aria-label="${esc(t('ki_speichern'))}"></label>
+      <button class="small secondary" id="as-chats-del" ${a.chats ? '' : 'disabled'}>${t('ki_verlaeufe_alle_loeschen')}</button></div>
     ${pf.can_seal ? `<label>${t('ki_abschirmung')}${hq('ki_abschirmung')}</label><label class="chk"><select id="as-sandbox">${['strict', 'basic', 'off'].map(k => opt(k, t(`ki_sb_${k}`), st.sandbox)).join('')}</select></label>` : ''}
   </div>
   <h2>${t('ki_rechte')}</h2>
@@ -7036,6 +7291,8 @@ function bindAssistent(main) {
   on('#as-effort', 'change', el => set({effort: el.value}));
   on('#as-context', 'change', el => set({context: +el.value}));
   on('#as-idle', 'change', el => set({idle_minutes: +el.value}));
+  on('#as-save', 'change', el => set({save_chats: el.checked}));
+  on('#as-chats-del', 'click', async () => { try { AS.chats = (await api('/api/assistant/chats')).chats || []; } catch (e) { AS.chats = []; } await asDelChats(''); await asLoad(); route(); });
   on('#as-sandbox', 'change', el => { const cur = AS.st.settings.sandbox;          // weaker rules: only after a question
     if (['strict', 'basic', 'off'].indexOf(el.value) > ['strict', 'basic', 'off'].indexOf(cur) && !confirm(t(`ki_sb_${el.value}_frage`))) { el.value = cur; return; } set({sandbox: el.value}); });
   on('.as-right', 'change', el => set({rights: {[el.dataset.r]: el.checked}}));

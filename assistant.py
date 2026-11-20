@@ -4,7 +4,8 @@ with using it. Nothing leaves this Mac.
 What the model can do is the list of tools below and nothing else -- it has no tools of its own, no files, no network:
   read    figures (overview, balance sheet, cash flow, planning, securities), accounts and rules, transactions, the help,
           the page on screen -- each of these is a right you can switch off (Einstellungen -> Assistent);
-  show    open a page, show transactions -- in your browser;
+  show    open a page, show transactions -- in your browser; a chart in the chat (Kontor's own figures: the model only
+          chooses what, the page draws it);
   enter   month-end balances of an account, planning values, planning events -- every single entry only after your click
           on its card, and it can be taken back there.
 Never, and there is no tool for it: settings, access, updates, the assistant itself (its model, its rights), booking rules and
@@ -13,7 +14,9 @@ Auto-Buchungen, anything in MoneyMoney.
 Text the model reads (transaction texts, help, the page) may try to tell it what to do. That changes nothing about what it
 can do: read, show, and propose entries you see and confirm.
 
-The conversation lives in memory only (never saved, never in the log); the log names what was used, not what was said.
+The conversation lives in memory -- and, with the setting "save conversations" (on by default), encrypted in Kontor's data
+folder like its other data, so that it can be opened again (never in a backup, a package or the log; deleted one by one, all
+at once, or with a reset). The model has no tool for saved conversations. The log names what was used, not what was said.
 """
 from __future__ import annotations
 
@@ -27,7 +30,7 @@ import re
 import secrets
 import threading
 import time
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import i18n
@@ -41,7 +44,7 @@ FOLDER = "assistant"                               # in Kontor's data folder: ll
 EFFORTS = ("fast", "balanced", "thorough")
 CONTEXTS = (16384, 32768, 65536)                   # tokens the model keeps in view (the tools' descriptions alone take about 4,500)
 RIGHTS = ("figures", "transactions", "help", "page", "navigate", "enter_values", "remote")
-DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "effort": "balanced", "context": 16384, "idle_minutes": 10, "sandbox": "strict",
+DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "effort": "balanced", "context": 16384, "idle_minutes": 10, "sandbox": "strict", "save_chats": True,
                             "rights": {"figures": True, "transactions": True, "help": True, "page": True, "navigate": True,
                                        "enter_values": False, "remote": False}}
 PAGES = ("overview", "balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "categories", "accounts", "help")
@@ -56,6 +59,22 @@ CONFIRM_SECONDS = 900
 WATCH_SECONDS = 30
 SPEECH_IDLE_MINUTES = 5                            # the speech model ends when nothing was dictated for that long
 ORPHAN_SECONDS = 8                                 # the page asks for news every second while it listens
+CHATS_FILE = "assistant-chats.json"                # saved conversations (in the data folder, encrypted): their list ...
+CHAT_FILE = "assistant-chat-%s.json"               # ... and each one in a file of its own
+_CHAT_ID = re.compile(r"[0-9a-f]{8,32}")
+_CHAT_NAME = re.compile(r"assistant-chat-([0-9a-f]{8,32})\.json(?:\.enc)?")
+CHAT_TURNS = 200                                   # messages of one saved conversation at most (the oldest go first)
+CHAT_TEXT = 60000                                  # characters of one part of an answer in a saved conversation
+CHART_POINTS = 120                                 # columns of a chart at most (more months: by year)
+CHART_SERIES = 6
+CHART_BARS = 12                                    # bars of a breakdown (the rest together in one)
+# lines of the cash flow a chart can show: name for the model -> (key of the monthly sums, text key)
+CHART_FLOWS = {"income": ("income", "einnahmen"), "expenses": ("expenses", "ausgaben"), "surplus": ("operating", "cf_operativ"),
+               "investing": ("investing", "cf_investitionen"), "financing": ("financing", "cf_finanzierung"), "interest": ("Zinsen", "zinsen"),
+               "value_changes": ("valuation", "cf_wertaenderungen"), "unclear": ("unclear", "cf_unklar"),
+               "bank_balance_change": ("cash_change", "zahlungsfluss_gesamt_veraenderung_liqu"), "net_worth_change": ("net_worth_delta", "cf_veraenderung_nv")}
+# totals of the balance sheet a chart can show: name -> (key in the balance, text key)
+CHART_TOTALS = {"net_worth": ("net_worth", "nettovermoegen"), "assets": ("assets", "ov_aktiva"), "liabilities": ("liabilities_side", "pos_verbindlichkeiten")}
 
 
 def settings(config: dict) -> dict:
@@ -69,6 +88,7 @@ def settings(config: dict) -> dict:
     idle = raw.get("idle_minutes")
     out["idle_minutes"] = max(0, min(240, idle)) if isinstance(idle, int) and not isinstance(idle, bool) else DEFAULTS["idle_minutes"]
     out["sandbox"] = raw["sandbox"] if raw.get("sandbox") in SANDBOXES else DEFAULTS["sandbox"]
+    out["save_chats"] = raw["save_chats"] if isinstance(raw.get("save_chats"), bool) else DEFAULTS["save_chats"]
     rights = raw.get("rights") if isinstance(raw.get("rights"), dict) else {}
     for k in RIGHTS:
         if isinstance(rights.get(k), bool):
@@ -189,6 +209,8 @@ class Job:
         self.started = time.time()
         self.polled = time.time()                     # when the page last asked for news
         self.used: List[str] = []                     # tools used (for the log: names only)
+        self.chat = ""                                # the conversation it belongs to (an entry taken back later is marked there)
+        self.conv: Optional[dict] = None              # ... and the conversation itself (deleted meanwhile: not saved again)
 
     def emit(self, type_: str, **data) -> None:
         with self.cv:
@@ -226,7 +248,8 @@ class Assistant:
         self.speech_lock = threading.Lock()            # one recording at a time
         self.lock = threading.Lock()
         self.job: Optional[Job] = None
-        self.conv: Dict[str, Any] = {"id": "", "messages": []}     # the conversation with the model: memory only
+        self.conv: Dict[str, Any] = _new_conv()        # the conversation: with the model (messages) and as the page shows it (turns)
+        self.chat_lock = threading.RLock()            # the saved conversations: one change at a time
         self.undo: Dict[str, dict] = {}                # entries made, for "take back" (memory only)
         self.entry_lock = hooks.get("lock") or threading.RLock()      # an entry (or taking one back): checked and written in one go -- the lock the pages' own saves take
         self.page: dict = {}                           # the page on screen, as the browser last told it
@@ -299,15 +322,15 @@ class Assistant:
                "dictation": bool(ai["runtime"]["installed"] and any(m["installed"] for m in ai["speech"]))}
         if local:                                       # what is installed, sizes, downloads: only on the Mac
             out.update({k: ai[k] for k in ("platform", "runtime", "models", "speech", "recommended", "checked", "check_error", "disk_free")}, load=ai["job"],
-                       speech_state=self.speech.state if self.speech.proc is not None or self.speech.state == "error" else "stopped")
+                       speech_state=self.speech.state if self.speech.proc is not None or self.speech.state == "error" else "stopped", chats=len(self._chat_files()))
         return out
 
     def set(self, body: dict) -> dict:
         """Changes settings (only from the Mac, see service.py): any of enabled, model, effort, context, idle_minutes, sandbox,
-        rights{...}."""
+        save_chats, rights{...}."""
         cur = self.settings()
         new = json.loads(json.dumps(cur))
-        for k in ("enabled", "model", "effort", "context", "idle_minutes", "sandbox"):
+        for k in ("enabled", "model", "effort", "context", "idle_minutes", "sandbox", "save_chats"):
             if k in body:
                 new[k] = body[k]
         if isinstance(body.get("rights"), dict):
@@ -368,7 +391,7 @@ class Assistant:
     def forget(self) -> None:
         """Everything of the assistant that lives in memory ends (Kontor is reset): model, conversation, entries to take back."""
         self.stop_all()
-        self.conv, self.undo, self.page = {"id": "", "messages": []}, {}, {}
+        self.conv, self.undo, self.page = _new_conv(), {}, {}
 
     def stop(self) -> None:
         j = self.job
@@ -378,7 +401,125 @@ class Assistant:
 
     def reset(self) -> None:
         self.stop()
-        self.conv = {"id": "", "messages": []}
+        self.conv = _new_conv()
+
+    # -- saved conversations ------------------------------------------------------------------------------------------------
+    # Each in a file of its own in Kontor's data folder (encrypted like everything there), with a list of them beside: the
+    # questions and the answers as the page showed them (text, what was read, charts, entries). Not in backups or packages,
+    # never in the log; the model has no tool for them. Saved after every answer while the setting is on.
+    def _chat_files(self) -> Dict[str, str]:
+        """{id: file name} of the saved conversations there are."""
+        try:
+            names = os.listdir(self.app.store.data_dir)
+        except OSError:
+            return {}
+        return {m.group(1): CHAT_FILE % m.group(1) for m in (_CHAT_NAME.fullmatch(n) for n in names) if m}
+
+    def _chat_read(self, cid: str) -> Optional[dict]:
+        if not _CHAT_ID.fullmatch(cid or "") or cid not in self._chat_files():
+            return None
+        try:
+            rec = self.app.store.load(CHAT_FILE % cid)
+        except Exception as e:                           # a damaged file: as if it were not there (it stays until deleted)
+            log.warning("Assistant: saved conversation not readable (%s)", type(e).__name__)
+            return None
+        return rec if isinstance(rec, dict) and isinstance(rec.get("turns"), list) else None
+
+    @staticmethod
+    def _chat_meta(rec: dict) -> dict:
+        return {"title": str(rec.get("title") or "")[:120], "created": str(rec.get("created") or ""), "updated": str(rec.get("updated") or ""),
+                "questions": sum(1 for m in rec.get("turns") or [] if isinstance(m, dict) and m.get("role") == "user")}
+
+    def chats(self) -> List[dict]:
+        """The saved conversations, the latest first: [{id, title, created, updated, questions}] -- from their list, mended where
+        it and the files differ (a file without an entry, an entry without a file)."""
+        with self.chat_lock:
+            try:
+                idx = self.app.store.load(CHATS_FILE, {})
+            except Exception:
+                idx = {}
+            idx = idx if isinstance(idx, dict) else {}
+            files = self._chat_files()
+            if set(idx) != set(files):
+                for cid in [c for c in idx if c not in files]:
+                    idx.pop(cid)
+                for cid in [c for c in files if c not in idx]:
+                    rec = self._chat_read(cid)
+                    idx[cid] = self._chat_meta(rec) if rec else {"broken": True}
+                self.app.store.save(CHATS_FILE, idx)
+        out = [dict(v, id=k) for k, v in idx.items() if isinstance(v, dict) and not v.get("broken")]
+        return sorted(out, key=lambda c: (c.get("updated") or "", c["id"]), reverse=True)
+
+    def chat(self, cid: str) -> Optional[dict]:
+        """One saved conversation to show again; entries that can no longer be taken back (Kontor was restarted) say so."""
+        with self.chat_lock:
+            rec = self._chat_read(cid)
+        if rec is None:
+            return None
+        for m in rec["turns"]:
+            for p in (m.get("parts") or []) if isinstance(m, dict) else []:
+                if isinstance(p, dict) and p.get("k") == "entry" and p.get("state") == "done" and p.get("id") not in self.undo:
+                    p["fixed"] = True
+        return dict(self._chat_meta(rec), id=cid, turns=rec["turns"])
+
+    def _chat_add(self, conv: dict, question: str, job: Job) -> None:
+        """A question and its answer, as the page showed them, to the conversation -- and saved, while the setting is on."""
+        turns = conv.setdefault("turns", [])
+        turns += [{"role": "user", "text": question[:CHAT_TEXT]}, _shown(job.events)]
+        del turns[:max(0, len(turns) - CHAT_TURNS)]
+        if not conv.get("title"):
+            conv["title"] = _title(turns)
+        if not self.settings()["save_chats"] or not _CHAT_ID.fullmatch(conv.get("id") or ""):
+            return
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conv["created"] = conv.get("created") or now
+        rec = {"id": conv["id"], "title": conv["title"], "created": conv["created"], "updated": now, "turns": turns}
+        with self.chat_lock:
+            if conv.get("deleted"):                      # deleted while it was being answered: stays deleted
+                return
+            self.app.store.save(CHAT_FILE % conv["id"], rec)
+            self.app.store.update(CHATS_FILE, lambda idx: idx.__setitem__(conv["id"], self._chat_meta(rec)), {})
+        log.debug("Assistant: conversation saved (%d question(s))", self._chat_meta(rec)["questions"])
+
+    def _chat_entry(self, cid: str, aid: str, state: str) -> None:
+        """An entry taken back: so it shows in its conversation, now and when it is opened again."""
+        def mark(turns: list) -> bool:
+            for m in turns:
+                for p in (m.get("parts") or []) if isinstance(m, dict) else []:
+                    if isinstance(p, dict) and p.get("k") == "entry" and p.get("id") == aid:
+                        p["state"] = state
+                        return True
+            return False
+        if self.conv.get("id") == cid:
+            mark(self.conv.get("turns") or [])
+        with self.chat_lock:
+            rec = self._chat_read(cid)
+            if rec is not None and mark(rec["turns"]):
+                self.app.store.save(CHAT_FILE % cid, rec)
+
+    def delete_chats(self, cid: str = "", everything: bool = False) -> int:
+        """Deletes one saved conversation (or all). A conversation in memory that it names -- the one on screen, the one being
+        answered (also before its first answer was saved) -- is marked: it is never saved again; its answer stops."""
+        with self.chat_lock:
+            files = self._chat_files()
+            gone = sorted(files) if everything else [cid] if cid in files else []
+            for c in gone:
+                self.app.store.delete(CHAT_FILE % c)
+            if everything:
+                self.app.store.delete(CHATS_FILE)
+            elif gone:
+                self.app.store.update(CHATS_FILE, lambda idx: idx.pop(cid, None), {})
+            job = self.job
+            for conv in (self.conv, job.conv if job is not None else None):
+                if conv is not None and conv.get("id") and (everything or conv["id"] == cid):
+                    conv["deleted"] = True
+            if job is not None and job.conv is not None and job.conv.get("deleted") and not job.done:
+                self.stop()
+            if self.conv.get("deleted"):
+                self.conv = _new_conv()
+        if gone:
+            log.info("Assistant: %d saved conversation(s) deleted", len(gone))
+        return len(gone)
 
     # -- the tools ---------------------------------------------------------------------------------------------------------
     def tool_list(self, st: dict) -> List[dict]:
@@ -1098,6 +1239,209 @@ class Assistant:
         ok = self._ui(ctx["job"], {"action": "transactions", "filter": f}) is not None
         return {"shown": True, "note": "the list is on screen now" if ok else "sent to the page"}
 
+    # show: a chart in the chat -- the model chooses what (from a fixed menu), Kontor takes the figures from its own data and
+    # the page draws them with its own code: no number, no text and no code of the model ends up in the chart
+    def t_show_chart(self, a: dict, ctx: dict) -> Any:
+        ds = self._ds()
+        what = a.get("what")
+        if what not in ("balance", "cashflow", "cashflow_rows", "breakdown"):
+            raise ToolError("what: balance, cashflow, cashflow_rows or breakdown.")
+        key, b = self._area(ds, a.get("area"), ctx)
+        raw = a.get("items") if isinstance(a.get("items"), list) else str(a["items"]).split(",") if isinstance(a.get("items"), str) else []
+        items = list(dict.fromkeys(re.sub(r"\s+", " ", str(x)).strip()[:80] for x in raw if isinstance(x, (str, int, float)) and str(x).strip()))
+        if len(items) > CHART_SERIES:
+            raise ToolError("At most %d items in one chart." % CHART_SERIES)
+        c = self._chart_breakdown(b, a) if what == "breakdown" else self._chart_lines(b, what, items, a)
+        c.update({"area": (ds.get("area_names") or {}).get(key) or "", "as_of": date.today().isoformat()})
+        c["link"]["area"] = key
+        ctx["job"].emit("chart", id=secrets.token_hex(4), **c)
+        return self._chart_told(c)
+
+    @staticmethod
+    def _chart_pick(names: List[Tuple[str, Any]], want: str, what: str, prefer: Optional[Callable[[Any], bool]] = None) -> Any:
+        """One of [(name, thing)] by the name the model gave: the same name, else the only one that contains it (several of one
+        name: the one preferred, if exactly one is)."""
+        w = want.lower()
+        same = lambda x: tuple(id(e) if isinstance(e, dict) else e for e in x) if isinstance(x, tuple) else x       # one thing under two names
+        hits = list({same(x): x for n, x in names if n.lower() == w}.values()) or list({same(x): x for n, x in names if w in n.lower()}.values())
+        if len(hits) > 1 and prefer is not None and sum(1 for h in hits if prefer(h)) == 1:
+            hits = [h for h in hits if prefer(h)]
+        if len(hits) == 1:
+            return hits[0]
+        if not hits:
+            raise ToolError("No %s named %r. There are: %s" % (what, want, ", ".join(sorted({n for n, _ in names}))[:900]))
+        raise ToolError("Several %ss fit %r -- give the exact name: %s" % (what, want, ", ".join(sorted({n for n, x in names if w in n.lower()}))[:600]))
+
+    def _chart_lines(self, b: dict, what: str, items: List[str], a: dict) -> dict:
+        """Values over months or years: the balance sheet (month ends), the cash flow by its lines, or rows and categories of it."""
+        known, cur, pm = b["months"], b["actual_until"], b.get("plan_months") or []
+        frm, to = _month(a.get("from")), _month(a.get("to"))
+        plan = bool(pm) and (a.get("with_plan") is True or bool(to and to > known[-1]))
+        flow = what != "balance"
+        allm = known + (pm if plan else [])
+        if frm or to:
+            sel = [m for m in allm if (not frm or m >= frm) and (not to or m <= to)]
+        else:                                            # flows: the last twelve closed months (with the plan: and the running one); balances: two years
+            sel = ([m for m in known if m < cur][-12:] + ([cur] if plan and cur in known else []) if flow else known[-24:]) + (pm if plan else [])
+        if not sel:
+            raise ToolError("No months in that period: known %s to %s%s." % (known[0], known[-1], (", planned to %s (with_plan=true)" % pm[-1]) if pm else ""))
+        step = a.get("step") if a.get("step") in ("month", "year") else ("month" if len(sel) <= 36 else "year")
+        if step == "month" and len(sel) > CHART_POINTS:
+            step = "year"
+        cols = [(m, [m]) for m in sel] if step == "month" else [(y, [m for m in sel if m.startswith(y)]) for y in sorted({m[:4] for m in sel})]
+        bal, sums = b["balance"], b["cashflow"].get("sums") or {}
+        series: List[dict] = []
+        seen: set = set()                                # two names of the same thing: one series
+        def pick(names: List[Tuple[str, Any]], it: str, what_: str, prefer: Optional[Callable[[Any], bool]] = None) -> Any:
+            hit = self._chart_pick(names, it, what_, prefer)
+            key = tuple(id(e) if isinstance(e, dict) else e for e in hit) if isinstance(hit, tuple) else hit
+            if key in seen:
+                return None
+            seen.add(key)
+            return hit
+        if what == "balance":
+            proj = bal.get("projection") or {}
+            planned = {str(r.get("id")): r.get("amounts") or {} for r in proj.get("rows") or [] if isinstance(r, dict)}
+            rows = [r for r in bal.get("rows") or [] if not r.get("inactive")]
+            names = [(k, ("total", k)) for k in CHART_TOTALS] + [(k.replace("_", " "), ("total", k)) for k in CHART_TOTALS] \
+                + [(tr(v[1]), ("total", k)) for k, v in CHART_TOTALS.items()] + [(r["name"], ("row", r)) for r in rows] \
+                + [(r["path"], ("row", r)) for r in rows if r.get("path") and r["path"] != r["name"]]          # an account also by its path
+            for it in items or ["net_worth"]:
+                hit = pick(names, it, "row of the balance sheet", lambda h: h[0] == "total")      # the total and its position of one name: the total
+                if hit is None:
+                    continue
+                kind, x = hit
+                if kind == "total":
+                    act, pl = bal.get(CHART_TOTALS[x][0]) or {}, (proj.get("net_worth") or {}) if x == "net_worth" else {}
+                    s = {"name": tr(CHART_TOTALS[x][1]), "tone": x, "mark": tr(CHART_TOTALS[x][1])}
+                else:
+                    act, pl = x.get("amounts") or {}, planned.get(str(x.get("id"))) or {}           # a bank account has no plan of its own: unknown
+                    s = {"name": x["name"], "mark": x["name"], **({"role": x["role"]} if x.get("role") else {})}
+                val = lambda m, act=act, pl=pl: act.get(m) if m in known else pl.get(m)
+                s["values"] = [_num(val(ms[-1])) for _, ms in cols]          # a year: its last month in view
+                series.append(s)
+            title = series[0]["name"] if len(series) == 1 else " · ".join(x["name"] for x in series) if len(series) <= 3 else tr("bilanz")
+            link = {"route": "#balance"}
+        else:
+            if what == "cashflow":
+                names = [(k, k) for k in CHART_FLOWS] + [(tr(v[1]), k) for k, v in CHART_FLOWS.items()] + [(k.replace("_", " "), k) for k in CHART_FLOWS]
+                for it in items or ["income", "expenses", "surplus"]:
+                    k = pick(names, it, "line of the cash flow")
+                    if k is None:
+                        continue
+                    am = {m: (sums.get(m) or {}).get(CHART_FLOWS[k][0]) for m in sel}
+                    series.append({"name": tr(CHART_FLOWS[k][1]), "tone": k, "mark": tr(CHART_FLOWS[k][1]), "am": am})
+                title, link = tr("kapitalfluss"), {"route": "#cashflow", "detail": 0}
+            else:
+                if not items:
+                    raise ToolError("items: the names of rows or categories of the cash flow (as get_cashflow names them).")
+                names: List[Tuple[str, Any]] = []
+                for sek in b["cashflow"].get("sections") or []:
+                    for z in sek.get("rows") or []:
+                        names += [(_row_name(z), ("row", z)), (str(z.get("row") or ""), ("row", z))]
+                        for d in z.get("details") or []:
+                            cat = str(d.get("category") or "")
+                            if cat and cat != z.get("row"):
+                                names += [(cat, ("cat", d, z)), (cat.split(" / ")[-1], ("cat", d, z))]
+                deep = False
+                for it in items:
+                    hit = pick(names, it, "row or category of the cash flow")
+                    if hit is None:
+                        continue
+                    # a month Kontor knows without an amount: nothing was paid (0); a planned month: the row's plan (none: 0, as the
+                    # cash flow adds it up) -- a category has no plan of its own: unknown
+                    if hit[0] == "row":
+                        z = hit[1]
+                        act, pl = z.get("amounts") or {}, (z.get("plan") or {}).get("amounts") or {}
+                        nm, am = _row_name(z), {m: (act.get(m) or 0.0) if m in known else (pl.get(m) or 0.0) for m in sel}
+                    else:
+                        d = hit[1]
+                        act, nm, deep = d.get("amounts") or {}, str(d.get("category") or "").split(" / ")[-1], True
+                        am = {m: (act.get(m) or 0.0) if m in known else None for m in sel}
+                    series.append({"name": nm, "mark": nm, "am": am})
+                title = series[0]["name"] if len(series) == 1 else " · ".join(x["name"] for x in series) if len(series) <= 3 else tr("kapitalfluss")
+                link = {"route": "#cashflow", "detail": 3 if deep else 2}
+            for x in series:                             # a column's value: its months added up -- one of them unknown: the column is unknown
+                am = x.pop("am")
+                x["values"] = [None if any(am.get(m) is None for m in ms) else _num(sum(am[m] for m in ms)) for _, ms in cols]
+        flags = ["plan" if all(m not in known for m in ms) else "mixed" if any(m not in known for m in ms) else "open" if cur in ms else "" for _, ms in cols]
+        kind = a.get("type") if a.get("type") in ("line", "bar") else "bar" if flow else "line"
+        return {"kind": kind, "title": title, "step": step, "x": [c for c, _ in cols], "flags": flags,
+                **({"spans": [[ms[0], ms[-1]] for _, ms in cols]} if step == "year" else {}), "series": series, "link": link}
+
+    def _chart_breakdown(self, b: dict, a: dict) -> dict:
+        """What one period's income or expenses are made of (by rows or categories), or the assets at a month's end (by
+        positions or accounts) -- the largest first, as bars."""
+        section = a.get("section") if a.get("section") in ("expenses", "income", "assets") else "expenses"
+        by = a.get("by") if a.get("by") in ("rows", "categories", "accounts") else "rows"
+        known, cur = b["months"], b["actual_until"]
+        frm, to = _month(a.get("from")), _month(a.get("to"))
+        if section == "assets":
+            month = to or frm or cur
+            if month not in known:
+                raise ToolError("No balance sheet for %s: known %s to %s." % (month, known[0], known[-1]))
+            by = "accounts" if by == "accounts" else "rows"
+            rows = [r for r in b["balance"].get("rows") or [] if not r.get("inactive") and r.get("role") != "liabilities"          # (also below zero: they add up to the assets)
+                    and bool(r.get("group")) == (by == "rows") and abs((r.get("amounts") or {}).get(month) or 0) >= 0.005]
+            got = [(r["name"], (r.get("amounts") or {})[month], r.get("role")) for r in rows]
+            period, link, label = [month, month], {"route": "#balance"}, tr("ov_aktiva")
+            key = "ki_ch_nach_konten" if by == "accounts" else "ki_ch_nach_pos"
+        else:
+            sel = [m for m in known if (not frm or m >= frm) and (not to or m <= to)] if frm or to else [m for m in known if m < cur][-12:]
+            if not sel:
+                raise ToolError("No months in that period: known %s to %s." % (known[0], known[-1]))
+            sek = next((x for x in b["cashflow"].get("sections") or [] if x["name"] == section), {"rows": []})
+            sums: Dict[str, float] = {}
+            for z in sek.get("rows") or []:
+                if by == "categories":
+                    for d in z.get("details") or [{"category": _row_name(z), "amounts": z.get("amounts") or {}}]:
+                        n = str(d.get("category") or _row_name(z))
+                        sums[n] = sums.get(n, 0.0) + sum((d.get("amounts") or {}).get(m) or 0 for m in sel)
+                else:
+                    sums[_row_name(z)] = sums.get(_row_name(z), 0.0) + sum((z.get("amounts") or {}).get(m) or 0 for m in sel)
+            short = lambda n: n.split(" / ")[-1]
+            dup = {short(n) for n in sums if sum(1 for o in sums if short(o) == short(n)) > 1}
+            got = [(n if short(n) in dup else short(n), v, None) for n, v in sums.items() if abs(v) >= 0.005]
+            period, link, label = [sel[0], sel[-1]], {"route": "#cashflow", "detail": 3 if by == "categories" else 2}, tr("einnahmen" if section == "income" else "ausgaben")
+            key = "ki_ch_nach_kat" if by == "categories" else "ki_ch_nach_pos"
+        if not got:
+            raise ToolError("Nothing to show: no amounts in that period.")
+        got.sort(key=lambda x: -abs(x[1]))
+        if len(got) > CHART_BARS:                        # the rest together, so the bars still add up to the whole
+            rest = got[CHART_BARS - 1:]
+            got = got[:CHART_BARS - 1] + [(tr("ki_ch_uebrige", len(rest)), sum(v for _, v, _ in rest), "rest")]
+        s = {"name": label, "tone": section, "values": [_num(v) for _, v, _ in got], "marks": [n if r != "rest" else "" for n, _, r in got],
+             "roles": [r if r not in (None, "rest") else "" for _, _, r in got]}
+        return {"kind": "hbar", "title": tr(key, label), "step": "period", "x": [n for n, _, _ in got], "period": period,
+                "open": cur in (period if section == "assets" else sel), "series": [s], "link": link}
+
+    @staticmethod
+    def _chart_told(c: dict) -> dict:
+        """What the model learns of the chart it asked for: enough to talk about it, so it need not read the figures again."""
+        out: Dict[str, Any] = {"shown": True, "title": c["title"], "area": c["area"]}
+        if c["kind"] == "hbar":
+            out.update(period=c["period"], bars=[{"name": n, "amount": v} for n, v in zip(c["x"], c["series"][0]["values"])])
+        else:
+            n = len(c["x"])
+            out.update(columns=c["x"] if n <= 40 else [c["x"][0], "…", c["x"][-1]], by=c["step"])
+            ser = []
+            for x in c["series"]:
+                known = [(c["x"][i], v) for i, v in enumerate(x["values"]) if v is not None]
+                e: Dict[str, Any] = {"name": x["name"]}
+                if n <= 40:
+                    e["values"] = x["values"]
+                if known:
+                    e.update(first=list(known[0]), last=list(known[-1]), min=list(min(known, key=lambda p: p[1])), max=list(max(known, key=lambda p: p[1])))
+                ser.append(e)
+            out["series"] = ser
+            if "open" in c["flags"]:
+                out["unfinished"] = c["x"][c["flags"].index("open")]
+            if "plan" in c["flags"] or "mixed" in c["flags"]:
+                out["planned_from"] = c["x"][next(i for i, f in enumerate(c["flags"]) if f in ("plan", "mixed"))]
+        out["note"] = ("The user sees this chart in the chat now (exact values on hover; a click opens the page). Do not list its values again: say in a "
+                       "sentence or two what stands out, with figures from here. null = unknown (never estimate it); outflows and liabilities are negative.")
+        return out
+
     # enter: only after the user's click on the card
     def _confirm(self, job: Job, card: dict, apply: Callable[[], dict], undo: Callable[[], None]) -> dict:
         """Shows an entry as a card and waits for the user's click. Enter: apply() runs (and the card offers to take it back);
@@ -1127,7 +1471,7 @@ class Assistant:
         except ValueError as e:
             job.emit("entry_state", id=aid, state="failed", text=str(e)[:300])
             return {"entered": False, "error": str(e)[:300]}
-        self.undo[aid] = {"undo": undo, "kind": card.get("kind")}
+        self.undo[aid] = {"undo": undo, "kind": card.get("kind"), "chat": job.chat}
         while len(self.undo) > 40:
             self.undo.pop(next(iter(self.undo)))
         log.info("Assistant: %s entered after the user's confirmation (%d value(s))", card.get("kind"), len(card.get("rows") or []))
@@ -1143,6 +1487,10 @@ class Assistant:
         u["undo"]()
         self.undo.pop(aid, None)
         log.info("Assistant: %s taken back by the user", u.get("kind"))
+        try:
+            self._chat_entry(u.get("chat") or "", aid, "undone")
+        except Exception as e:  # pragma: no cover
+            log.warning("Assistant: saved conversation not updated (%s)", type(e).__name__)
 
     def t_enter_balances(self, a: dict, ctx: dict) -> Any:
         ds = self._ds()
@@ -1307,6 +1655,9 @@ class Assistant:
                          "and confirms or declines it there -- do not ask for confirmation in text. Only enter what the user asked for, with the numbers the user gave.")
         else:
             lines.append("- You cannot enter values (the user has not switched that on under %s)." % tr("einstellungen"))
+        if r["figures"]:
+            lines.append("- A chart helps where figures change over time or are compared: call show_chart (Kontor draws it in the chat from its own figures), then say "
+                         "in a sentence or two what it shows. Never draw a chart as text, table art or code.")
         if r["page"]:
             lines.append("- Each question starts with a line in [brackets] naming the page the user is looking at; get_current_page reads that page.")
         # once more in the language itself, at the end (what a model reads last, it follows best)
@@ -1345,12 +1696,18 @@ class Assistant:
         try:                                             # whatever fails from here: the question is over, the next one can be asked
             self.set_page(body.get("page"), st)
             cid = str(body.get("conversation") or "")
-            if not cid or cid != self.conv["id"]:           # a new conversation (or Kontor was restarted): what the page still shows
-                given = body.get("history") if isinstance(body.get("history"), list) else []
-                hist = [{"role": m.get("role"), "content": str(m.get("text") or "")[:6000]} for m in given[-12:]
-                        if isinstance(m, dict) and m.get("role") in ("user", "assistant") and m.get("text")]
-                self.conv = {"id": cid if re.fullmatch(r"[0-9a-f]{8,32}", cid) else secrets.token_hex(8), "messages": hist}
-            ctx = {"job": job, "area": str((body.get("page") or {}).get("area") or "") if isinstance(body.get("page"), dict) else ""}
+            if not cid or cid != self.conv["id"]:           # another conversation: a saved one goes on where it stood
+                saved = self._chat_read(cid) if _CHAT_ID.fullmatch(cid) else None
+                if saved is not None:
+                    self.conv = _new_conv(cid, _history(saved["turns"]), saved["turns"], title=saved.get("title"), created=saved.get("created"),
+                                          since=str(saved.get("updated") or "")[:10])
+                else:                                        # a new one (or one not saved, Kontor restarted): what the page still shows
+                    given = body.get("history") if isinstance(body.get("history"), list) else []
+                    hist = [{"role": m.get("role"), "content": str(m.get("text") or "")[:6000]} for m in given[-12:]
+                            if isinstance(m, dict) and m.get("role") in ("user", "assistant") and m.get("text")]
+                    self.conv = _new_conv(cid if _CHAT_ID.fullmatch(cid) else secrets.token_hex(8), hist)
+            job.chat, job.conv = self.conv["id"], self.conv
+            ctx = {"job": job, "conv": self.conv, "area": str((body.get("page") or {}).get("area") or "") if isinstance(body.get("page"), dict) else ""}
             threading.Thread(target=self._run, args=(job, q, st, ctx), name="kontor-ai-answer", daemon=True).start()
         except BaseException:
             job.finish()
@@ -1424,7 +1781,12 @@ class Assistant:
 
     def _run(self, job: Job, question: str, st: dict, ctx: dict) -> None:
         t0 = time.time()
-        turn: List[dict] = [{"role": "user", "content": self._where() + question}]
+        conv = ctx.get("conv") or self.conv                # this conversation (also when a new one is started meanwhile)
+        note = ""
+        if conv.get("since") and conv["since"] < date.today().isoformat():       # a saved conversation, opened again on a later day
+            note = "[Kontor: this conversation was saved on %s and goes on today -- figures in it are from then; read them anew before you use them.]\n" % conv["since"]
+        conv.pop("since", None)
+        turn: List[dict] = [{"role": "user", "content": note + self._where() + question}]
         tokens, steps = 0, 0
         try:
             if self.ai.state != "ready" or (self.ai.model, self.ai.ctx) != (st["model"], st["context"]):
@@ -1434,7 +1796,7 @@ class Assistant:
             job.emit("status", state="thinking")
             specs = self._specs(st)
             system = {"role": "system", "content": self._system(st, ctx)}
-            history = self._trim(list(self.conv["messages"]), st, room=len(question))
+            history = self._trim(list(conv["messages"]), st, room=len(question))
             retried = nudged = cut = False
             seen: Dict[Tuple[str, str], int] = {}
             while steps < MAX_STEPS:
@@ -1495,7 +1857,7 @@ class Assistant:
                 for tc in msg["tool_calls"]:
                     key = (tc["function"]["name"], tc["function"]["arguments"])
                     seen[key] = seen.get(key, 0) + 1
-                    if seen[key] > 1 and next((t["kind"] for t in TOOLS if t["name"] == key[0]), "") == "read":       # going round in circles: told, not read again
+                    if seen[key] > 1 and (next((t["kind"] for t in TOOLS if t["name"] == key[0]), "") == "read" or key[0] == "show_chart"):       # going round in circles: told, not done again
                         out = json.dumps({"note": "You already made this call in this answer and have its result above. Do not repeat it -- answer the user now."})
                     else:
                         out = self._use(job, tc["function"]["name"], tc["function"]["arguments"], ctx)
@@ -1515,9 +1877,13 @@ class Assistant:
         finally:
             for w in list(job.waiting.values()):
                 w["event"].set()
-            # the conversation goes on with what was said and read (memory only); an answer cut off stays out
+            # the conversation goes on with what was said and read; an answer cut off stays out (for the model; the page shows it)
             if len(turn) > 1 and turn[-1].get("role") == "assistant" and not turn[-1].get("tool_calls"):
-                self.conv["messages"] = self._trim(self.conv["messages"] + turn, st)
+                conv["messages"] = self._trim(conv["messages"] + turn, st)
+            try:
+                self._chat_add(conv, question, job)
+            except Exception as e:  # pragma: no cover - a full disk: the answer stands, only it is not saved
+                log.warning("Assistant: conversation not saved (%s)", type(e).__name__)
             log.info("Assistant: question answered in %.1f s (%d step(s), tools: %s)", time.time() - t0, steps, ", ".join(job.used) or "none")
             job.finish()
 
@@ -1552,6 +1918,71 @@ class Assistant:
         """What the page shows while a tool runs: its name in the user's language and what it is about (names the user gave)."""
         about = next((str(args[k])[:40] for k in ("account", "row", "text", "query", "page", "area") if isinstance(args.get(k), str) and args.get(k)), "")
         return tr("ki_tool_%s" % tool["name"]) + ((" · " + about) if about else "")
+
+
+def _new_conv(cid: str = "", messages: Optional[list] = None, turns: Optional[list] = None, **more) -> Dict[str, Any]:
+    """A conversation: its id, what the model is given of it (messages) and what the page showed (turns)."""
+    return dict({"id": cid, "messages": messages or [], "turns": turns or []}, **{k: v for k, v in more.items() if v})
+
+
+def _history(turns: list) -> List[dict]:
+    """What the model is given of a saved conversation: what was asked and answered, in words (what was read then is not
+    given again -- it may be out of date)."""
+    out = []
+    for m in turns[-24:]:
+        if not isinstance(m, dict):
+            continue
+        if m.get("role") == "user" and m.get("text"):
+            out.append({"role": "user", "content": str(m["text"])[:6000]})
+        elif m.get("role") == "assistant" and m.get("state") == "done":
+            text = "\n\n".join(str(p.get("text") or "") for p in m.get("parts") or [] if isinstance(p, dict) and p.get("k") == "text").strip()
+            if text and out and out[-1]["role"] == "user":
+                out.append({"role": "assistant", "content": text[:6000]})
+    while out and out[-1]["role"] == "user":            # a question without its answer (stopped): left out
+        out.pop()
+    return out
+
+
+def _title(turns: list) -> str:
+    """A saved conversation is named by its first question."""
+    q = next((str(m.get("text") or "") for m in turns if isinstance(m, dict) and m.get("role") == "user"), "")
+    q = re.sub(r"\s+", " ", q).strip()
+    return q if len(q) <= 80 else q[:79].rstrip() + "…"
+
+
+def _shown(events: List[dict]) -> dict:
+    """An answer as the page showed it, built from the events of its question -- the same steps as asEvent() in app.js."""
+    m: Dict[str, Any] = {"role": "assistant", "parts": [], "state": "done"}
+    parts: List[dict] = m["parts"]
+    for ev in events:
+        t, last = ev.get("type"), (parts[-1] if parts else None)
+        if t in ("delta", "think"):
+            k = "text" if t == "delta" else "think"
+            if last is not None and last["k"] == k:
+                last["text"] = (last["text"] + str(ev.get("text") or ""))[:CHAT_TEXT]
+            elif k == "think" or str(ev.get("text") or "").strip():
+                parts.append({"k": k, "text": str(ev.get("text") or "")[:CHAT_TEXT]})
+        elif t == "tool":
+            parts.append({"k": "tool", "label": str(ev.get("label") or "")[:200], "kind": ev.get("kind")})
+        elif t in ("entry", "chart"):
+            parts.append(dict({x: v for x, v in ev.items() if x not in ("type", "n", "sent")}, k=t))
+        elif t == "entry_state":
+            p = next((x for x in parts if x["k"] == "entry" and x.get("id") == ev.get("id")), None)
+            if p is not None:
+                p["state"], p["text"] = ev.get("state"), str(ev.get("text") or "")
+        elif t == "reset":
+            while parts and parts[-1]["k"] == "text":
+                parts.pop()
+        elif t == "done":
+            m["state"], m["meta"] = "done", {x: ev.get(x) for x in ("seconds", "tokens", "tps", "cut")}
+        elif t == "stopped":
+            m["state"] = "stopped"
+        elif t == "error":
+            m["state"] = "error"
+            parts.append({"k": "err", "text": str(ev.get("text") or "")[:600]})
+    if m["state"] == "done" and "meta" not in m and not any(p["k"] == "text" for p in parts):
+        m["state"] = "stopped"                           # ended without an answer (Kontor stopped it)
+    return m
 
 
 _CALL_TAG = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
@@ -1691,6 +2122,21 @@ TOOLS: List[dict] = [
           {"text": {"type": "string"}, "area": {"type": "string"}, "account": {"type": "string"}, "year": {"type": "string"}, "from": {"type": "string", "description": "YYYY-MM-DD"},
            "to": {"type": "string", "description": "YYYY-MM-DD"}, "direction": {"type": "string", "enum": ["in", "out"]}, "uncategorized": {"type": "boolean"},
            "category": {"type": "string", "description": "Category name or part of it"}, "receipt": {"type": "string", "enum": ["without"]}}),
+    _tool("show_chart", "figures", "show", "Draws a chart in the chat from Kontor's own figures -- for a development over time, a comparison or what something is "
+          "made of. You choose only what to show; Kontor takes the figures and draws them (never draw charts as text or code). "
+          "what: balance = month-end values (items: net_worth, assets, liabilities or names of positions/accounts; default net worth); "
+          "cashflow = the cash flow by its lines (items: income, expenses, surplus, investing, financing, interest, value_changes, bank_balance_change, "
+          "net_worth_change; default income, expenses, surplus); cashflow_rows = rows or categories of the cash flow (items: their names, required); "
+          "breakdown = what one period's expenses or income are made of, or the assets at a month's end, largest first (section, by).",
+          {"what": {"type": "string", "enum": ["balance", "cashflow", "cashflow_rows", "breakdown"]}, "area": _AREA,
+           "items": {"type": "array", "items": {"type": "string"}, "description": "What to show, at most 6 (see what)"},
+           "from": {"type": "string", "description": "YYYY-MM"}, "to": {"type": "string", "description": "YYYY-MM (breakdown of assets: that month's end)"},
+           "step": {"type": "string", "enum": ["month", "year"], "description": "Columns by month or by year (default: by month up to three years)"},
+           "type": {"type": "string", "enum": ["line", "bar"], "description": "Default: line for balance, bars for the cash flow"},
+           "with_plan": {"type": "boolean", "description": "Include planned (future) months"},
+           "section": {"type": "string", "enum": ["expenses", "income", "assets"], "description": "For breakdown (default expenses)"},
+           "by": {"type": "string", "enum": ["rows", "categories", "accounts"], "description": "For breakdown: rows (positions), categories (income/expenses), accounts (assets)"}},
+          ["what"]),
     _tool("enter_balances", "enter_values", "enter", "Enters month-end balances of one account by hand (for months Kontor does not know or shows wrongly). "
           "The user confirms the entry on a card. amount null removes an entered balance.", {"account": {"type": "string"}, "values": _VALUES}, ["account", "values"]),
     _tool("set_plan_values", "enter_values", "enter", "Sets planning values of one row for future months (amount null: Kontor's own value again). The user confirms on a card.",

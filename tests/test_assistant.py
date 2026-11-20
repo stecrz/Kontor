@@ -1242,7 +1242,7 @@ class Tools(_Assist):
         self.assertFalse([n for n in names if any(w in n for w in ("setting", "config", "rule_set", "install", "download", "model", "right", "password", "transfer"))])
         self.assertFalse([n for n in names if kind[n] != "read" and any(w in n for w in ("book", "categor", "rule", "sync", "account"))])       # bookings, categories, rules: read only
         self.assertEqual({n for n in names if kind[n] == "enter"}, {"enter_balances", "set_plan_values", "set_plan_parameters", "add_plan_event"})
-        self.assertEqual({n for n in names if kind[n] == "show"}, {"open_page", "highlight", "show_transactions"})
+        self.assertEqual({n for n in names if kind[n] == "show"}, {"open_page", "highlight", "show_transactions", "show_chart"})
         self.assertEqual({t["kind"] for t in A.TOOLS}, {"read", "show", "enter"})
         self.assertEqual({t["right"] for t in A.TOOLS if t["kind"] == "enter"}, {"enter_values"})
 
@@ -1427,10 +1427,15 @@ class Tools(_Assist):
         # too much for the model: once more without the earlier turns
         evs = self.ask("toolong jetzt", conversation=cid)
         self.assertEqual(evs[-1]["type"], "done"); self.assertEqual(text_of(evs), "Antwort: toolong jetzt")
-        # Kontor restarted (the conversation in memory is gone): it goes on with what the page still shows
-        self.a.conv = {"id": "", "messages": []}
+        # Kontor restarted (the conversation in memory is gone), not saved: it goes on with what the page still shows
+        self.a.delete_chats(cid)
+        self.a.conv = A._new_conv()
         self.ask("weiter", conversation=cid, history=[{"role": "user", "text": "erste Frage"}, {"role": "assistant", "text": "Antwort: erste Frage"}, {"role": "system", "text": "x"}])
         self.assertEqual([m["content"] for m in self.a.conv["messages"]], ["erste Frage", "Antwort: erste Frage", "weiter", "Antwort: weiter"])
+        # saved: it goes on with what was asked and answered (what was read then is not given again -- it may be out of date)
+        self.a.conv = A._new_conv()
+        self.ask("und dann", conversation=cid, history=[{"role": "user", "text": "anderes"}])
+        self.assertEqual([m["content"] for m in self.a.conv["messages"]], ["weiter", "Antwort: weiter", "und dann", "Antwort: und dann"])
         # where the user is: a line before the question (the system text stays the same, the model keeps what it has read)
         self.a.reset()
         sys1 = self.a._system(self.a.settings(), {})
@@ -1486,6 +1491,283 @@ class Tools(_Assist):
         self.assertIn("Assistant: question answered", log); self.assertIn("search_transactions", log)
         for secret in ("Zahnarzt", "4711,23", "Miete", "98765", "Antwort", self.a.ai.key):
             self.assertNotIn(secret, log)
+
+
+class Charts(_Assist):
+    """A chart in the chat: the model chooses what, the figures are Kontor's own -- exactly the ones of the pages."""
+
+    def chart(self, args, **kw):
+        evs = self.ask("call show_chart %s" % json.dumps(args), **kw)
+        self.assertEqual(evs[-1]["type"], "done", evs)
+        told = json.loads(next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool"))
+        charts = [e for e in evs if e["type"] == "chart"]
+        return (charts[0] if charts else None), told
+
+    def test_balance_over_time(self):
+        ds = self.app.dataset()
+        main = ds["areas"][ds["main_area"]]
+        c, told = self.chart({"what": "balance"})
+        self.assertEqual((c["kind"], c["step"], c["title"], c["area"]), ("line", "month", "Nettovermögen", "Privat"))
+        self.assertEqual(c["x"], main["months"][-24:])
+        self.assertEqual(c["series"][0]["values"], [round(main["balance"]["net_worth"][m], 2) for m in c["x"]])
+        self.assertEqual(c["flags"][-1], "open"); self.assertEqual(set(c["flags"][:-1]), {""})        # the running month: marked as such
+        self.assertEqual((c["link"]["route"], c["link"]["area"]), ("#balance", ds["main_area"]))
+        self.assertTrue(told["shown"]); self.assertEqual(told["series"][0]["last"], [c["x"][-1], c["series"][0]["values"][-1]])
+        self.assertEqual(told["unfinished"], c["x"][-1])
+        # a position and an account, by year, with the planning: planned years from the projection, bank accounts unknown there
+        acc = next(r for r in main["balance"]["rows"] if not r["group"] and r["role"] == "cash" and not r.get("inactive"))
+        grp = next(r for r in main["balance"]["rows"] if r["group"] and r["role"] == "cash")
+        c, told = self.chart({"what": "balance", "items": [grp["name"], acc["name"], "net worth"], "step": "year", "with_plan": True})
+        years = sorted({m[:4] for m in main["months"] + main["plan_months"]})
+        self.assertEqual(c["x"], years)
+        last = {y: max(m for m in main["months"] + main["plan_months"] if m.startswith(y)) for y in years}
+        proj = {r["id"]: r["amounts"] for r in main["balance"]["projection"]["rows"]}
+        val = lambda r, m: r["amounts"].get(m) if m in main["months"] else proj.get(r["id"], {}).get(m)
+        self.assertEqual(c["series"][0]["values"], [None if val(grp, last[y]) is None else round(val(grp, last[y]), 2) for y in years])
+        self.assertEqual(c["series"][1]["values"][-1], None)                  # never estimated
+        self.assertEqual(c["series"][2]["name"], "Nettovermögen")
+        self.assertIn("plan", c["flags"]); self.assertEqual(told["planned_from"], c["x"][c["flags"].index("mixed") if "mixed" in c["flags"] else c["flags"].index("plan")])
+        self.assertEqual(c["series"][0]["role"], "cash")
+        # what is not there: said, not drawn
+        c, _ = self.chart({"what": "balance", "items": ["Verbindlichkeiten", "net_worth", "Nettovermögen"]})        # the total, not "several fit"; one series per thing
+        self.assertEqual([x["name"] for x in c["series"]], ["Verbindlichkeiten", "Nettovermögen"])
+        self.assertEqual(c["series"][0]["values"], [round(main["balance"]["liabilities_side"][m], 2) for m in c["x"]])
+        self.assertIn("No row of the balance sheet named", self.chart({"what": "balance", "items": ["Gibt es nicht"]})[1]["error"])
+        self.assertIn("At most 6", self.chart({"what": "balance", "items": list("abcdefg")})[1]["error"])
+        self.assertIn("what:", self.chart({"what": "pie"})[1]["error"])
+        self.assertIn("No months", self.chart({"what": "balance", "from": "1990-01", "to": "1990-12"})[1]["error"])
+
+    def test_cashflow_and_rows(self):
+        ds = self.app.dataset()
+        main = ds["areas"][ds["main_area"]]
+        cur, sums = main["actual_until"], main["cashflow"]["sums"]
+        closed = [m for m in main["months"] if m < cur][-12:]
+        c, told = self.chart({"what": "cashflow"})
+        self.assertEqual((c["kind"], c["x"], [x["name"] for x in c["series"]]), ("bar", closed, ["Einnahmen", "Ausgaben", "Überschuss"]))
+        self.assertEqual(c["series"][2]["values"], [round(sums[m]["operating"], 2) for m in closed])
+        self.assertEqual(told["series"][1]["values"], c["series"][1]["values"])
+        # by year: the months of each year added up; the first and last year say which months they hold
+        c, _ = self.chart({"what": "cashflow", "items": ["Einnahmen", "bank balance change"], "from": main["months"][0], "to": closed[-1], "step": "year", "type": "line"})
+        self.assertEqual(c["kind"], "line")
+        y = c["x"][0]
+        self.assertEqual(c["series"][1]["values"][0], round(sum(sums[m]["cash_change"] for m in main["months"] if m.startswith(y) and m <= closed[-1]), 2))
+        self.assertEqual(c["spans"][0][0], main["months"][0])
+        # rows and categories of the cash flow, by the names the pages show
+        exp = next(x for x in main["cashflow"]["sections"] if x["name"] == "expenses")
+        row = max(exp["rows"], key=lambda z: abs(sum(z["amounts"].get(m) or 0 for m in closed)))
+        name = A._row_name(row)
+        c, _ = self.chart({"what": "cashflow_rows", "items": [name]})
+        self.assertEqual((c["title"], c["link"]["detail"]), (name, 2))
+        self.assertEqual(c["series"][0]["values"], [round(row["amounts"].get(m) or 0, 2) for m in closed])          # a month without an amount: 0
+        self.assertIn("items:", self.chart({"what": "cashflow_rows"})[1]["error"])
+        # with the plan: the running month too; a category has no plan of its own -- its planned months (and years with them) unknown
+        cur, pm = main["actual_until"], main["plan_months"]
+        c, _ = self.chart({"what": "cashflow", "items": ["income"], "with_plan": True, "step": "month"})
+        self.assertEqual(c["x"], closed + [cur] + pm); self.assertEqual(c["flags"][len(closed)], "open")
+        self.assertEqual(c["series"][0]["values"][len(closed)], round(sums[cur]["income"], 2))
+        cat = next((d, z) for z in exp["rows"] for d in z.get("details") or [] if d.get("category") and d["category"] != z["row"] and any(d["amounts"].get(m) for m in closed))
+        c, _ = self.chart({"what": "cashflow_rows", "items": [cat[0]["category"]], "with_plan": True, "step": "year", "from": closed[0]})
+        self.assertEqual(c["link"]["detail"], 3)
+        self.assertIsNone(c["series"][0]["values"][-1])                                  # a planned year: unknown, never 0
+        self.assertEqual(c["flags"][-1], "plan")
+        mixed = c["flags"].index("mixed") if "mixed" in c["flags"] else None
+        if mixed is not None:
+            self.assertIsNone(c["series"][0]["values"][mixed])
+
+    def test_breakdown(self):
+        ds = self.app.dataset()
+        main = ds["areas"][ds["main_area"]]
+        cur = main["actual_until"]
+        closed = [m for m in main["months"] if m < cur][-12:]
+        c, told = self.chart({"what": "breakdown"})
+        self.assertEqual((c["kind"], c["title"], c["period"], c["open"]), ("hbar", "Ausgaben nach Positionen", [closed[0], closed[-1]], False))
+        exp = next(x for x in main["cashflow"]["sections"] if x["name"] == "expenses")
+        total = round(sum(sum(z["amounts"].get(m) or 0 for m in closed) for z in exp["rows"]), 2)
+        self.assertAlmostEqual(sum(c["series"][0]["values"]), total, places=1)          # the bars add up to the expenses (the rest in one bar)
+        vals = c["series"][0]["values"]
+        self.assertEqual(vals[:-1] if len(vals) == A.CHART_BARS else vals, sorted(vals[:-1] if len(vals) == A.CHART_BARS else vals, key=lambda v: -abs(v)))
+        self.assertLessEqual(len(vals), A.CHART_BARS)
+        self.assertEqual(len(told["bars"]), len(vals))
+        c, _ = self.chart({"what": "breakdown", "section": "assets"})
+        rows = [r for r in main["balance"]["rows"] if r["group"] and r["role"] != "liabilities" and not r.get("inactive") and abs(r["amounts"].get(cur) or 0) >= 0.005]
+        self.assertEqual(sorted(c["x"]), sorted(r["name"] for r in rows))
+        self.assertEqual((c["title"], c["link"]["route"], c["open"]), ("Vermögen nach Positionen", "#balance", True))
+        self.assertEqual(round(sum(c["series"][0]["values"]), 2), round(main["balance"]["assets"][cur], 2))          # the bars add up to the assets
+        c, _ = self.chart({"what": "breakdown", "section": "income", "by": "categories", "from": closed[0], "to": closed[-1]})
+        self.assertEqual((c["title"], c["link"]["detail"]), ("Einnahmen nach Kategorien", 3))
+
+    def test_only_with_the_right_and_never_twice(self):
+        self.a.set({"rights": {"figures": False}})
+        evs = self.ask("call show_chart {\"what\": \"balance\"}!")
+        self.assertIn("no tool", text_of(evs)); self.assertFalse(any(e["type"] == "chart" for e in evs))
+        self.a.set({"rights": {"figures": True}})
+        with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record"), "w"):
+            pass
+        self.a.stop_all()
+        self.ask("Hallo")
+        with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "request.json")) as f:
+            req = json.load(f)
+        self.assertIn("show_chart", [t["function"]["name"] for t in req["tools"]])
+        self.assertIn("call show_chart", req["messages"][0]["content"])
+
+
+class Chats(_Assist):
+    """Saved conversations: encrypted in the data folder, opened again, deleted -- never in a backup or the log."""
+
+    def test_saved_opened_and_continued(self):
+        ds = self.app.dataset()
+        self.assertTrue(self.a.settings()["save_chats"])                         # on by default
+        r = self.a.ask({"question": "Hallo Kontor"}); events(self.a, r["job"])
+        cid = r["conversation"]
+        evs = self.ask("call show_chart {\"what\": \"balance\"}", conversation=cid)
+        self.assertEqual(evs[-1]["type"], "done")
+        lst = self.a.chats()
+        self.assertEqual([(c["id"], c["title"], c["questions"]) for c in lst], [(cid, "Hallo Kontor", 2)])
+        path = self.app.store.path(A.CHAT_FILE % cid)
+        self.assertTrue(path.endswith(".enc"))
+        with open(path, "rb") as f:
+            self.assertNotIn(b"Hallo", f.read())                                  # encrypted like the rest
+        got = self.a.chat(cid)
+        self.assertEqual([m["role"] for m in got["turns"]], ["user", "assistant", "user", "assistant"])
+        self.assertEqual(got["turns"][1]["parts"][0], {"k": "text", "text": "Antwort: Hallo Kontor"})
+        chart = next(p for p in got["turns"][3]["parts"] if p["k"] == "chart")
+        self.assertEqual(chart["series"][0]["values"][-1], round(ds["areas"][ds["main_area"]]["balance"]["net_worth"][chart["x"][-1]], 2))
+        self.assertEqual(got["turns"][3]["state"], "done"); self.assertIn("seconds", got["turns"][3]["meta"])
+        # Kontor restarted (the conversation in memory is gone): the saved one goes on where it stood, with what was said
+        self.a.conv = A._new_conv()
+        with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record"), "w"):
+            pass
+        self.a.stop_all()
+        self.ask("Weiter", conversation=cid)
+        with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "request.json")) as f:
+            req = json.load(f)
+        said = [(m["role"], m["content"]) for m in req["messages"][1:]]
+        self.assertEqual(said[0], ("user", "Hallo Kontor")); self.assertEqual(said[1], ("assistant", "Antwort: Hallo Kontor"))
+        self.assertTrue(said[-1][1].endswith("Weiter"))
+        self.assertNotIn("saved on", said[-1][1])                                # saved today: nothing is out of date
+        self.assertEqual(self.a.chats()[0]["questions"], 3)
+        # opened again on a later day: the model is told that its figures are from then
+        rec = self.app.store.load(A.CHAT_FILE % cid); rec["updated"] = "2020-01-02 10:00"; self.app.store.save(A.CHAT_FILE % cid, rec)
+        self.a.conv = A._new_conv()
+        self.ask("Und jetzt?", conversation=cid)
+        with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "request.json")) as f:
+            req = json.load(f)
+        self.assertIn("saved on 2020-01-02", req["messages"][-1]["content"])
+        self.ask("Noch etwas?", conversation=cid)
+        with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "request.json")) as f:
+            req = json.load(f)
+        self.assertNotIn("saved on", req["messages"][-1]["content"])           # said once
+
+    def test_setting_delete_reset_and_never_in_the_log_or_backup(self):
+        logs = []
+        h = logging.Handler(); h.emit = lambda rec: logs.append(rec.getMessage())
+        logging.getLogger("kontor").addHandler(h); logging.getLogger("kontor").setLevel(logging.DEBUG)
+        try:
+            r = self.a.ask({"question": "Geheime Frage Nummer eins"}); events(self.a, r["job"])
+            one = r["conversation"]
+            self.a.reset()
+            r = self.a.ask({"question": "Zweite Unterhaltung"}); events(self.a, r["job"])
+            two = r["conversation"]
+            self.assertEqual({c["id"] for c in self.a.chats()}, {one, two})
+            self.assertFalse([m for m in logs if "Geheime" in m or "Antwort:" in m or "Zweite" in m])       # nothing of what was said
+            # not in the backup
+            code, b = self.call("/api/backup", {"password": "sicher-genug-1"})
+            self.assertEqual(code, 200)
+            self.assertNotIn("Geheime", json.dumps(MA.backup_decrypt(b, "sicher-genug-1"), ensure_ascii=False))
+            # one deleted: gone from the list and the folder; the one on screen deleted: a new conversation starts
+            self.assertEqual(self.a.delete_chats(one), 1)
+            self.assertEqual([c["id"] for c in self.a.chats()], [two])
+            self.assertFalse(os.path.exists(self.app.store.path(A.CHAT_FILE % one)))
+            self.assertEqual(self.a.delete_chats("0123456789abcdef"), 0)
+            self.assertEqual(self.a.delete_chats(two), 1); self.assertEqual(self.a.conv["id"], "")
+            # switched off: new conversations are not saved; the setting only at the Mac, never through the configuration
+            self.a.set({"save_chats": False})
+            r = self.a.ask({"question": "Nicht speichern"}); events(self.a, r["job"])
+            self.assertEqual(self.a.chats(), [])
+            self.assertEqual(self.a.conv["turns"][0]["text"], "Nicht speichern")          # shown on the page as long as it is open
+            self.a.set({"save_chats": True})
+            r = self.a.ask({"question": "Wieder speichern"}); events(self.a, r["job"])
+            r2 = self.a.ask({"question": "Und noch eine", "conversation": r["conversation"]}); events(self.a, r2["job"])
+            self.assertEqual(r2["conversation"], r["conversation"])
+            self.a.reset()
+            r3 = self.a.ask({"question": "Dritte"}); events(self.a, r3["job"])
+            self.assertEqual(len(self.a.chats()), 2)
+            # a list that lost track (an entry without a file, a file without an entry): mended
+            self.app.store.save(A.CHATS_FILE, {"ffffffffffffffff": {"title": "weg"}})
+            self.assertEqual({c["id"] for c in self.a.chats()}, {r2["conversation"], r3["conversation"]})
+            self.assertEqual(self.a.delete_chats(everything=True), 2)
+            self.assertEqual(self.a.chats(), []); self.assertFalse(self.app.store.exists(A.CHATS_FILE))
+            # Kontor reset: saved conversations go with it
+            r = self.a.ask({"question": "Vor dem Zurücksetzen"}); events(self.a, r["job"])
+            self.assertEqual(len(self.a.chats()), 1)
+            code, _ = self.call("/api/reset", {"password": "sehr-geheimes-passwort"})
+            self.assertEqual(code, 200)
+            self.assertEqual(self.a.chats(), [])
+        finally:
+            logging.getLogger("kontor").removeHandler(h)
+
+    def test_deleted_while_it_is_answered(self):
+        """Deleted (one, all, Kontor reset) while its answer still runs -- also before its first answer was saved: never saved again."""
+        for how in ("one", "all", "new then one", "reset"):
+            r = self.a.ask({"question": "slow"})
+            events(self.a, r["job"], until="delta")
+            cid = r["conversation"]
+            if how == "one":
+                self.a.delete_chats(cid)
+            elif how == "all":
+                self.a.delete_chats(everything=True)
+            elif how == "new then one":
+                old = self.a.job
+                self.a.conv = A._new_conv()                                       # a new conversation on the page (the old answer still runs)
+                self.a.delete_chats(cid)
+                self.assertTrue(old.conv["deleted"])
+            else:
+                code, _ = self.call("/api/reset", {"password": "sehr-geheimes-passwort"})
+                self.assertEqual(code, 200)
+            evs = events(self.a, r["job"])
+            self.assertEqual(evs[-1]["type"], "stopped", how)
+            self.assertEqual(self.a.chats(), [], how)
+            self.assertFalse([n for n in os.listdir(self.dir) if n.startswith("assistant-chat")], how)
+            if how == "reset":
+                break
+
+    def test_damaged_file_and_entries_taken_back(self):
+        r = self.a.ask({"question": "Hallo"}); events(self.a, r["job"])
+        cid = r["conversation"]
+        with open(self.app.store.path(A.CHAT_FILE % "00000000aaaaaaaa"), "wb") as f:
+            f.write(b"kaputt")
+        self.assertEqual([c["id"] for c in self.a.chats()], [cid])               # not readable: left out (stays until deleted)
+        self.assertIsNone(self.a.chat("00000000aaaaaaaa")); self.assertIsNone(self.a.chat("../config"))
+        self.assertEqual(self.a.delete_chats(everything=True), 2)
+        # an entry made in a saved conversation: taken back, the saved one says so; after a restart it can no longer be taken back
+        turns = [{"role": "user", "text": "x"}, {"role": "assistant", "state": "done", "parts": [{"k": "entry", "id": "e1", "state": "done", "rows": []}, {"k": "entry", "id": "e2", "state": "done", "rows": []}]}]
+        conv = A._new_conv("abcdef0123456789", [], turns, title="x")
+        self.a.conv = conv
+        self.app.store.save(A.CHAT_FILE % conv["id"], {"id": conv["id"], "title": "x", "created": "2026-01-01 10:00", "updated": "2026-01-01 10:00", "turns": turns})
+        undone = []
+        self.a.undo["e1"] = {"undo": lambda: undone.append(1), "kind": "plan", "chat": conv["id"]}
+        self.a.take_back("e1")
+        self.assertEqual(undone, [1])
+        got = self.a.chat(conv["id"])
+        self.assertEqual([(p["id"], p["state"], p.get("fixed")) for p in got["turns"][1]["parts"]], [("e1", "undone", None), ("e2", "done", True)])
+        self.assertEqual(conv["turns"][1]["parts"][0]["state"], "undone")
+
+    def test_shown_like_the_page(self):
+        evs = [{"type": "status", "state": "thinking"}, {"type": "think", "text": "hm"}, {"type": "tool", "label": "Liest", "kind": "read"},
+               {"type": "delta", "text": "<tool_call>"}, {"type": "reset"}, {"type": "delta", "text": "Die "}, {"type": "delta", "text": "Antwort"},
+               {"type": "entry", "id": "a1", "state": "ask", "kind": "plan", "n": 7}, {"type": "entry_state", "id": "a1", "state": "declined"},
+               {"type": "ui", "id": "u", "action": "open"}, {"type": "done", "seconds": 1.5, "tokens": 9, "tps": 3, "cut": False}]
+        m = A._shown(evs)
+        self.assertEqual(m["parts"], [{"k": "think", "text": "hm"}, {"k": "tool", "label": "Liest", "kind": "read"}, {"k": "text", "text": "Die Antwort"},
+                                      {"k": "entry", "id": "a1", "state": "declined", "kind": "plan", "text": ""}])
+        self.assertEqual((m["state"], m["meta"]["seconds"]), ("done", 1.5))
+        self.assertEqual(A._shown([{"type": "delta", "text": "halb"}, {"type": "stopped"}])["state"], "stopped")
+        self.assertEqual(A._shown([{"type": "error", "text": "kaputt"}])["parts"], [{"k": "err", "text": "kaputt"}])
+        self.assertEqual(A._title([{"role": "user", "text": "  eine\n lange " + "x" * 100}])[:12], "eine lange x")
+        self.assertEqual(len(A._title([{"role": "user", "text": "y" * 200}])), 80)
+        self.assertEqual(A._history([{"role": "user", "text": "a"}, {"role": "assistant", "state": "done", "parts": [{"k": "text", "text": "b"}]},
+                                     {"role": "user", "text": "c"}, {"role": "assistant", "state": "stopped", "parts": [{"k": "text", "text": "halb"}]}]),
+                         [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}])
 
 
 class Entries(_Assist):
@@ -1774,6 +2056,39 @@ class Http(_Assist):
         self.assertEqual((s["enabled"], s["rights"]["enter_values"]), (True, False))
         self.assertIn("qwen3.6-35b-a3b", self.a.ai.models())
 
+    def test_saved_conversations_over_http(self):
+        code, r = self.call("/api/assistant/ask", {"question": "Hallo"})
+        events(self.a, r["job"])
+        cid = r["conversation"]
+        code, lst = self.call("/api/assistant/chats")
+        self.assertEqual((code, [c["id"] for c in lst["chats"]], lst["save"]), (200, [cid], True))
+        code, got = self.call("/api/assistant/chat?id=" + cid)
+        self.assertEqual((code, got["title"], got["turns"][0]), (200, "Hallo", {"role": "user", "text": "Hallo"}))
+        self.assertEqual(self.call("/api/assistant/chat?id=../../etc")[0], 404)
+        self.assertEqual(self.call("/api/assistant/settings", {"save_chats": False})[1]["settings"]["save_chats"], False)
+        # from another device: reading only with the right "remote", deleting only where that device may change things
+        self.remote()
+        try:
+            self.assertEqual(self.call("/api/assistant/chats")[0], 403)
+            self.assertEqual(self.call("/api/assistant/chat?id=" + cid)[0], 403)
+            self.assertEqual(self.call("/api/assistant/chats/delete", {"id": cid})[0], 403)
+            self.a.set({"rights": {"remote": True}})
+            self.assertEqual(self.call("/api/assistant/chats")[0], 200)
+            self.assertEqual(self.call("/api/assistant/chats/delete", {"id": cid})[0], 403)        # read only from there (the default)
+            self.assertEqual(self.call("/api/assistant/settings", {"save_chats": True})[0], 403)
+        finally:
+            self.remote(False)
+        self.assertFalse(self.a.settings()["save_chats"])
+        cfg = copy.deepcopy(self.app.config); cfg["ui"]["remote_read_only"] = False; self.app.save_config(cfg)
+        self.remote()
+        try:
+            self.assertEqual(self.call("/api/assistant/chats/delete", {"id": "0123456789abcdef"})[1], {"deleted": 0})      # a device that may change things: may delete
+        finally:
+            self.remote(False)
+        code, r = self.call("/api/assistant/chats/delete", {"all": True})
+        self.assertEqual((code, r["deleted"]), (200, 1))
+        self.assertEqual(self.call("/api/assistant/chat?id=" + cid)[0], 404)
+
     def test_from_the_iphone_with_the_right(self):
         self.a.set({"rights": {"remote": True, "enter_values": True}})
         self.remote()
@@ -1937,13 +2252,16 @@ class Http(_Assist):
     def test_uninstall_takes_the_folder_along(self):
         self.assertIsNotNone(MA._KONTOR_FILE.fullmatch("assistant"))
         self.assertIsNone(MA._KONTOR_FILE.fullmatch("assistant2"))
-        self.ask("Hallo")
+        self.assertIsNone(MA._KONTOR_FILE.fullmatch("assistant-chat-x.json.enc"))
+        self.ask("Hallo")                                                        # saved: its files go along too
+        self.assertTrue(any(n.startswith("assistant-chat-") for n in os.listdir(self.dir)))
         proc = self.a.ai.proc
         self.app.assistant_stop()
         self.assertIsNotNone(proc.poll())
         foreign, failed = MA._remove_own_files(self.dir, [])
-        self.assertNotIn("assistant", foreign + failed)
+        self.assertEqual([n for n in foreign + failed if n.startswith("assistant")], [])
         self.assertFalse(os.path.exists(os.path.join(self.dir, "assistant")))
+        self.assertFalse([n for n in os.listdir(self.dir) if n.startswith("assistant")] if os.path.isdir(self.dir) else [])
 
 
 class Browser(unittest.TestCase):
@@ -2293,6 +2611,141 @@ class Browser(unittest.TestCase):
                 app.rebuild_cv.wait_for(lambda: not app.rebuild_running and not app.rebuild_pending, timeout=60)
             shutil.rmtree(d, ignore_errors=True)
 
+
+    def test_charts_and_saved_conversations(self):
+        """A chart in the chat: its values under the pointer, a click shows the figure on its page; saved conversations opened
+        again (the chart with them), deleted -- in Chromium, on a Mac and an iPhone."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        from http.server import ThreadingHTTPServer
+        from storage import Store, load_or_create_master_key
+        d = tempfile.mkdtemp(prefix="kontor-aschart-")
+        store = Store(d, *load_or_create_master_key(d))
+        store.save("config.json", T.config_for_test(os.path.join(d, "Belege"))); store.save("state.json", dict(T.ALL_NEW))
+        T.reset_mock(); T.patch_today()
+        app = MA.App(store, d, bridge_factory=T.MockBridge)
+        app.do_run(False, True); app.rebuild_report(wait=True)
+        orig = L._open
+        install(app)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), MA.make_handler(app))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        url = "http://127.0.0.1:%d/" % srv.server_address[1]
+
+        def until(pg, js, seconds=15.0):
+            t0 = time.time()
+            while time.time() - t0 < seconds:
+                if pg.evaluate(js):
+                    return True
+                pg.wait_for_timeout(80)
+            self.fail("not reached: " + js)
+
+        def ask(pg, text):
+            pg.fill("#as-in", text); pg.keyboard.press("Enter")
+            until(pg, "AS.msgs.length > 0 && !AS.busy", 30)
+        ds = app.dataset()
+        main = ds["areas"][ds["main_area"]]
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                for phone in (False, True):
+                    pg = b.new_page(viewport={"width": 390, "height": 844} if phone else {"width": 1440, "height": 900}, has_touch=phone, is_mobile=phone)
+                    errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+                    pg.on("dialog", lambda dlg: dlg.accept())
+                    pg.goto(url)
+                    if not phone:
+                        pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                    else:
+                        pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                    T.wait_shell(pg); pg.goto(url + "#overview"); pg.wait_for_timeout(500)
+                    pg.evaluate("asShow(true)"); pg.wait_for_selector("#assist.open #as-in")
+                    ask(pg, 'call show_chart {"what": "balance"}')
+                    pg.wait_for_selector(".as-chart .as-ch-line")
+                    self.assertEqual(pg.inner_text(".as-ch-t b"), "Nettovermögen")
+                    self.assertIn("Privat", pg.inner_text(".as-ch-t span"))
+                    vw = pg.evaluate("document.querySelector('.as-ch-svg').viewBox.baseVal.width"); w = pg.evaluate("document.querySelector('.as-ch-svg').getBoundingClientRect().width")
+                    self.assertLess(abs(vw - w), 2)                                  # drawn to the width there is (its text as on the pages)
+                    pg.eval_on_selector(".as-ch-svg", "e => e.scrollIntoView({block: 'center'})"); pg.wait_for_timeout(150)          # the answer below it may have scrolled it away
+                    r = pg.evaluate("(() => { const r = document.querySelector('.as-ch-svg').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
+                    x, y = r[0] + r[2] - 14, r[1] + r[3] * 0.4                       # the last month (the running one)
+                    cur = main["actual_until"]
+                    want = "{:,.0f}".format(main["balance"]["net_worth"][cur]).replace(",", ".")
+                    if not phone:
+                        pg.mouse.move(x, y); pg.wait_for_selector(".as-ch-tip:not(.hidden)")
+                        tip = pg.inner_text(".as-ch-tip")
+                        self.assertIn(want + " €", tip); self.assertIn("laufender Monat", tip); self.assertIn("Klick: in „Bilanz“ zeigen", tip)
+                        pg.mouse.click(x, y)
+                    else:
+                        pg.touchscreen.tap(x, y); pg.wait_for_selector(".as-ch-tip:not(.hidden)")
+                        self.assertIn("Nochmal tippen", pg.inner_text(".as-ch-tip"))
+                        self.assertEqual(pg.evaluate("location.hash"), "#overview")     # the first tap only shows
+                        pg.touchscreen.tap(x, y)
+                    until(pg, "location.hash === '#balance' && !!document.querySelector('#main .as-mark')", 15)
+                    self.assertIn("Nettovermögen", pg.evaluate("[...document.querySelectorAll('#main .as-mark')].map(e => e.textContent).join(' ')"))
+                    if phone:                                                        # the panel covered the page: it stepped aside
+                        self.assertFalse(pg.evaluate("document.querySelector('#assist').classList.contains('open')"))
+                        pg.evaluate("asShow(true)"); pg.wait_for_selector("#assist.open #as-in")
+                    # bars of a breakdown: the parts, the largest first
+                    ask(pg, 'call show_chart {"what": "breakdown"}')
+                    until(pg, "document.querySelectorAll('.as-chart').length === 2")
+                    labels = pg.evaluate("[...document.querySelectorAll('.as-chart')[1].querySelectorAll('.as-ch-lab')].map(e => e.textContent)")
+                    self.assertTrue(labels and labels[0])
+                    # an answer that goes on redraws the panel: what is under the pointer stays shown
+                    if not phone:
+                        pg.evaluate("document.querySelectorAll('.as-ch-svg')[1].scrollIntoView({block: 'center'})"); pg.wait_for_timeout(150)
+                        box = pg.evaluate("(() => { const r = document.querySelectorAll('.as-ch-svg')[1].getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
+                        pg.mouse.move(box[0] + 60, box[1] + 12); pg.wait_for_selector(".as-chart:nth-of-type(1) .as-ch-tip:not(.hidden), .as-ch-tip:not(.hidden)")
+                        pg.evaluate("asMsgs()")
+                        self.assertTrue(pg.evaluate("!!document.querySelector('.as-ch-tip:not(.hidden)')"))
+                        self.assertIn(labels[0], pg.inner_text(".as-ch-tip:not(.hidden)"))
+                        # dark mode: the same chart, readable
+                        pg.evaluate("document.documentElement.dataset.theme = 'dark'")
+                    # saved: in the list, opened again with its charts (from a new conversation), deleted
+                    conv = pg.evaluate("AS.conv")
+                    if not phone:                                                    # a question with markup: text in the list, nothing of it runs
+                        pg.click(".as-new"); ask(pg, '<img src=x onerror="window.pwned=1"> Frage')
+                        pg.click(".as-hist-btn"); until(pg, "AS.list && AS.chats !== null")
+                        self.assertIn('<img src=x onerror="window.pwned=1"> Frage', pg.inner_text(".as-hist"))
+                        self.assertFalse(pg.evaluate("!!document.querySelector('.as-hist img') || !!window.pwned"))
+                        pg.hover(".as-hi.on"); pg.click(".as-hi.on .as-hi-del"); until(pg, "AS.list && AS.chats !== null && AS.chats.length === 1")
+                        pg.click(".as-hist-btn"); until(pg, "!AS.list")
+                    pg.click(".as-new"); until(pg, "AS.msgs.length === 0 && !AS.conv")
+                    pg.click(".as-hist-btn"); until(pg, "AS.list && AS.chats !== null")
+                    self.assertIn("call show_chart", pg.inner_text(".as-hist"))
+                    pg.click(".as-hi-open[data-id='%s']" % conv); until(pg, "!AS.list && AS.conv === '%s'" % conv)
+                    self.assertEqual(pg.evaluate("document.querySelectorAll('.as-chart').length"), 2)
+                    ask(pg, "Weiter so")
+                    self.assertEqual(app.assistant.chats()[0]["questions"], 3)
+                    pg.click(".as-hist-btn"); until(pg, "AS.list && AS.chats !== null")
+                    if phone:
+                        pg.click(".as-hi-del[data-id='%s']" % conv)
+                    else:
+                        pg.hover(".as-hi.on"); pg.click(".as-hi-del[data-id='%s']" % conv)
+                    until(pg, "AS.list && AS.chats !== null && !AS.chats.length && !AS.conv && !AS.msgs.length")
+                    self.assertIn("Noch keine gespeicherten Unterhaltungen", pg.inner_text(".as-hist"))
+                    self.assertEqual(app.assistant.chats(), [])
+                    pg.click(".as-hist-btn"); until(pg, "!AS.list")
+                    self.assertEqual(errors, [])
+                    pg.close()
+                # the setting under Einstellungen -> Assistent (at the Mac): off, and all of them deleted there
+                pg = b.new_page(viewport={"width": 1440, "height": 900}); pg.on("dialog", lambda dlg: dlg.accept())
+                pg.goto(url); pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); T.wait_shell(pg)
+                app.assistant.ask({"question": "Noch eine"}); events(app.assistant, app.assistant.job.id)
+                pg.goto(url + "#settings/assistant"); pg.wait_for_selector("#as-save")
+                self.assertTrue(pg.is_checked("#as-save")); self.assertFalse(pg.is_disabled("#as-chats-del"))
+                pg.click("#as-chats-del"); until(pg, "!!document.querySelector('#as-chats-del') && document.querySelector('#as-chats-del').disabled")
+                self.assertEqual(app.assistant.chats(), [])
+                pg.click("#as-save"); until(pg, "AS.st.settings.save_chats === false")
+                self.assertFalse(app.assistant.settings()["save_chats"])
+                b.close()
+        finally:
+            app.assistant_stop()
+            L._open = orig
+            srv.shutdown(); srv.server_close()
+            with app.rebuild_cv:
+                app.rebuild_cv.wait_for(lambda: not app.rebuild_running and not app.rebuild_pending, timeout=60)
+            shutil.rmtree(d, ignore_errors=True)
 
 if __name__ == "__main__":
     unittest.main()

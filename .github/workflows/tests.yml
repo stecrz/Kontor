@@ -107,7 +107,6 @@ jobs:
             echo "$out" | grep -q "nicht erlaubt" || { echo "unexpected: $out"; exit 1; }
           done
       - name: Install and service
-        continue-on-error: true                     # new: watched for a few runs before it counts
         run: |
           # a keychain of its own for the data key (the runner's own one may ask); removed with the machine
           security create-keychain -p ci "$RUNNER_TEMP/ci.keychain-db"

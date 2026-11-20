@@ -39,7 +39,8 @@ Kontor schlägt das Modell passend zum Arbeitsspeicher vor; Seitenfenster auf je
 (Übersicht, Bilanz, Cashflow, Vergleiche, Planung, Steuer, Immobilien, Kategorien, Auto-Buchungen, Offenes), Umsätze mit Belegen,
 Hilfe und die offene Seite; öffnet Ansichten und hebt Zeilen hervor; trägt Kontostände, Planwerte, Annahmen und Ereignisse nur
 nach Klick ein (zurücknehmbar); Diktieren mit eigenem Sprachmodell; Rechte einzeln schaltbar; Modelle ohne Netz, abgeschirmt
-(macOS-Sandbox); Hilfe-Abschnitt und Bilder.
+(macOS-Sandbox); Hilfe-Abschnitt und Bilder; Diagramme im Chat aus Kontors eigenen Zahlen (3.16.11, Klick zeigt die Zahl auf
+ihrer Seite); gespeicherte Unterhaltungen unter „Verläufe“ (3.16.11, verschlüsselt, nicht in Sicherungen, abschaltbar).
 
 Fertig, wenn
 - am Mac mit echten Modellen geprüft: Abschirmung (kein Netz, kein Zugriff auf Kontors Daten), Start, Antworten, Stoppen, Diktieren;
@@ -87,4 +88,5 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
 
 ## Beim nächsten großen Versionssprung (Hilfe, README, Bilder)
 - Hilfe: eigener Abschnitt „Assistent“ (einrichten, Rechte, was er nie darf, Abschirmung) mit Bildern; README (Netzverbindungen).
+- Hilfe Assistent: Diagramme im Chat und „Verläufe“ (gespeicherte Unterhaltungen, Einstellung „Verläufe speichern“) mit Bild (3.16.11).
 - Hilfe-Bilder und -Texte neu: Übersicht (drei Spalten, Kennzahlen), Kategorisieren, Cashflow-Positionen (Empfehlung), Buchungsregeln (Bereich + Konto) – 3.15.2 hat nur die Texte angepasst.
