@@ -2243,6 +2243,16 @@ class Browser(unittest.TestCase):
                 self.assertIn("Qwen3-ASR 1.7B", pg.inner_text("#main"))
                 pg.click(".as-del"); until(pg, "!AS.st.dictation")
                 self.assertEqual(app.assistant.ai.models(), {})
+                # the microphone follows the speech model in the panel as it stands: gone without it, there again once it is
+                # loaded -- without reloading the page, what is typed stays
+                pg.evaluate("asShow(true)"); pg.wait_for_selector("#assist.open #as-in")
+                self.assertIsNone(pg.query_selector("#as-mic"))
+                pg.fill("#as-in", "Angefangen")
+                pg.click(".as-dl[data-id='qwen3-asr-1.7b']"); until(pg, "AS.st.dictation && !!document.querySelector('#assist.open #as-mic svg')", 20)
+                self.assertEqual(pg.input_value("#as-in"), "Angefangen")
+                self.assertEqual(pg.evaluate("[...document.querySelector('#as-form').children].map(e => e.id)"), ["as-in", "as-mic", "as-go"])
+                pg.click(".as-del[data-id='qwen3-asr-1.7b']"); until(pg, "!AS.st.dictation && !document.querySelector('#as-mic')")
+                self.assertEqual(app.assistant.ai.models(), {})
                 # switched off again: the button goes, the panel closes
                 pg.click("label:has(#as-enabled)"); until(pg, "!asOn() && document.querySelector('#assist-btn').classList.contains('hidden') && !document.querySelector('#assist').classList.contains('open')")
                 self.assertEqual(errors, [])

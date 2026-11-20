@@ -6551,7 +6551,7 @@ function asLayout() {
   if (page) { const m = $('main').getBoundingClientRect(), top = $('#main').getBoundingClientRect().top + pageY(); as.style.left = m.left + 'px'; as.style.top = Math.max(0, top) + 'px'; }
   else { as.style.left = as.style.top = ''; }
   pageHandover();
-  if (open) { if (!$('#as-body')) asDraw(); else asHead(); }
+  if (open) { if (!$('#as-body')) asDraw(); else { asHead(); asMicSync(); } }
   else asMicStop(false);          // the question field is gone (another page, switched off): a recording ends with it, unsent
 }
 function asShow(open) {
@@ -6651,6 +6651,16 @@ function asDraw() {
 // recording goes to Kontor and nowhere else, and nothing of it is kept. A click starts, a click ends; Escape throws it away.
 const REC = {on: false, busy: false, starting: false, ctx: null, stream: null, node: null, chunks: [], n: 0, t0: 0, timer: null};
 const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.6" y="1.4" width="4.8" height="8.2" rx="2.4" fill="currentColor"/><path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+// the microphone button follows the speech model: there as soon as it is loaded, gone when it is deleted -- in the panel as it
+// stands (what is typed and the conversation stay), not only after reloading the page
+function asMicSync() {
+  const form = $('#as-form'); if (!form) return;
+  const want = !!(AS.st || {}).dictation, mic = $('#as-mic');
+  if (want && !mic) {
+    const b = document.createElement('button'); b.type = 'button'; b.id = 'as-mic'; b.className = 'as-mic secondary';
+    b.addEventListener('click', asMic); form.insertBefore(b, $('#as-go')); asMicDraw();
+  } else if (!want && mic) { asMicStop(false); mic.remove(); }
+}
 function asMicDraw() {
   const b = $('#as-mic'); if (!b) return;
   const sec = REC.on ? Math.floor((Date.now() - REC.t0) / 1000) : 0;

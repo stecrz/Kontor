@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.6 (2026-11-20 18:29)
+- KI-Assistent: Mikrofon erscheint gleich nach dem Laden des Sprachmodells (und verschwindet beim Löschen), ohne Neuladen.
+
 ## 3.16.5 (2026-11-20 18:16)
 - Assistent neben der Seite: die Seite scrollt für sich, Scrollleiste an ihrem rechten Rand statt hinter dem Assistenten; Position bleibt beim Öffnen und Schließen.
 
