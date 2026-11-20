@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.15.17 (2026-11-20 03:31)
+- Entwicklung: Zeitgrenzen gegen hängende Prüfungen bei GitHub.
+
 ## 3.15.16 (2026-11-20 03:22)
 - Entwicklung: ein Commit je Version, beginnt mit der Versionsnummer, mit Claude-Version und Link zum Chat.
 

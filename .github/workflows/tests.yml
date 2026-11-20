@@ -14,7 +14,7 @@ permissions:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 70
     strategy:
       fail-fast: false
       matrix:
@@ -33,15 +33,17 @@ jobs:
         with:
           node-version: "20"
       - name: Tools
+        timeout-minutes: 30                 # usually 1-4 min, up to ~11 with retries; a stuck mirror must not hang the run
         run: |
-          # the runners' package mirror fails now and then: try a few times before giving up
-          for i in 1 2 3 4; do sudo apt-get update -q && sudo apt-get install -y -q sqlcipher && break; sleep 30; done
+          # the runners' package mirror fails now and then or hangs: each attempt has its own limit, then try again
+          for i in 1 2 3 4; do sudo timeout 300 apt-get update -q && sudo timeout 300 apt-get install -y -q sqlcipher && break; sleep 30; done
           uv pip install -q pytest playwright pillow cryptography
           # WebKit (Safari's engine) on the newer runner: the tables' alignment as on the Mac
-          for i in 1 2 3 4; do python -m playwright install --with-deps chromium ${{ matrix.python == '3.13' && 'webkit' || '' }} && break; sleep 30; done
+          for i in 1 2 3 4; do timeout 480 python -m playwright install --with-deps chromium ${{ matrix.python == '3.13' && 'webkit' || '' }} && break; sleep 30; done
       - name: Interface
         run: node --check web/app.js && node --check web/i18n.js && node --check web/sw.js
       - name: Tests
+        timeout-minutes: 30                 # today 4 min, nightly 7 min: room for many more tests
         env:
           KONTOR_FUZZ_SEEDS: ${{ github.event_name == 'schedule' && '1000' || '40' }}
           TZ: Europe/Berlin
