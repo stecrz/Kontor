@@ -726,6 +726,9 @@ function runStep(st) {
   const s = ((st || {}).service || {}).step || {};
   return s.step === 'buchen' ? t('lauf_buchen', Math.min(s.n + 1, s.date_from), s.date_from) : s.step === 'rules' ? t('lauf_regeln') : t('lauf_lesen');
 }
+// a spinner drawn anew -- the chat or the status line redrawn many times a second -- turns on from where the one before stood,
+// instead of starting over: else it looks stuck while work goes on
+const spinKeep = root => { if (!root) return; const d = -(performance.now() % 800) + 'ms'; $$('.spin', root).forEach(s => { s.style.animationDelay = d; }); };
 function statusMini() {
   const st = S.STATUS; if (!st) return;
   const mm = mmState(st), m = st.moneymoney || {}, b = st.report || {}, l = st.last_run, ba = m.bank_fetch;
@@ -745,7 +748,7 @@ function statusMini() {
   else if (b.running) h += `<div class="sm-busy"><span class="spin xs"></span>${t('wird_neu_berechnet')}</div>`;
   if (m.gaps) h += `<div><a href="#settings/moneymoney">${t('depotstaende_pruefen')}</a></div>`;
   if (m.problem_text) h += `<div><a href="#settings/moneymoney" title="${esc(m.problem_text.text)}">${t('moneymoney_lief_kontor_konnte_nicht')}</a></div>`;
-  $('#status-mini').innerHTML = h;
+  $('#status-mini').innerHTML = h; spinKeep($('#status-mini'));
   const sb = $('#sync-btn');
   if (sb) {
     const busy = !!(st.service.running || SYNC.busy);
@@ -2403,7 +2406,7 @@ function bindBilanzChart(main) {
     bchLinkPan($('#bch-svg', main));
   } else $$('.wrap thead th[data-key]', main).forEach(th => { th.classList.add('jump'); th.addEventListener('click', () => bchFocus(th.dataset.key)); });
   if (BCH.ro) BCH.ro.disconnect();
-  let last = 0; BCH.ro = new ResizeObserver(onResizeFrame(() => { if (PRINT.on) return; const w = $('#bch-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; bchDraw(); } }));
+  let last = 0; BCH.ro = new ResizeObserver(() => { if (PRINT.on) return; const w = $('#bch-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; bchDraw(); } });
   BCH.ro.observe($('#bch-plot', main));
 }
 
@@ -2905,7 +2908,7 @@ function bindBilanzLines(main) {
   }));
   draw();
   if (LC.ro) LC.ro.disconnect();
-  let last = 0; LC.ro = new ResizeObserver(onResizeFrame(() => { if (PRINT.on) return; const w = $('.lc-plot', grid); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; ['nw', 'sel', 'pos', 'bil'].forEach(id => { if (has(id) && LC[id]) lcDraw(id); }); } }));
+  let last = 0; LC.ro = new ResizeObserver(() => { if (PRINT.on) return; const w = $('.lc-plot', grid); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; ['nw', 'sel', 'pos', 'bil'].forEach(id => { if (has(id) && LC[id]) lcDraw(id); }); } });
   LC.ro.observe(grid);
 }
 
@@ -3423,9 +3426,6 @@ function pageHandover() {
 }
 window.addEventListener('scroll', pageKeep, {passive: true}); $('main').addEventListener('scroll', pageKeep, {passive: true});
 matchMedia('(min-width:1280px)').addEventListener('change', pageHandover);
-// what a ResizeObserver does, in the next frame and once per frame: a chart redrawn inside the observer changes sizes again in the
-// same frame, and the browser reports a loop (e.g. while the assistant's panel slides in beside the page)
-const onResizeFrame = fn => { let raf = 0; return () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; fn(); }); }; };
 function scrollParentY(el) {
   for (let p = el.parentElement; p; p = p.parentElement) { const o = getComputedStyle(p).overflowY; if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) return p; }
   return document.scrollingElement;
@@ -4338,7 +4338,7 @@ function bindCfCharts(main) {
     if (e.key === 'Escape' && CF.pieSel) { e.preventDefault(); CF.pieSel = null; hide(); cfDrawPie(); }
     else if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('[data-pie]')) { e.preventDefault(); pin(e.target.closest('[data-pie]')); } });
   let last = wrap.clientWidth;
-  CF.ro = new ResizeObserver(onResizeFrame(() => { if (PRINT.on) return; const w = $('.cf-charts'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; draw(); } }));
+  CF.ro = new ResizeObserver(() => { if (PRINT.on) return; const w = $('.cf-charts'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; draw(); } });
   CF.ro.observe(wrap);
 }
 
@@ -6775,7 +6775,7 @@ function asMsgs(bottom) {
   if (!AS.msgs.length) {
     b.innerHTML = !a.ready ? `<div class="as-empty"><div class="muted">${t('ki_einrichten')}</div>${a.local ? `<a class="more" href="#settings/assistant">${t('ki_zu_einstellungen')}</a>` : `<div class="muted small">${t('ki_nur_am_mac')}</div>`}</div>`
       : `<div class="as-empty">${[1, 2, 3].filter(i => i < 3 || (((a.settings || {}).rights || {}).page && !AS_HIDDEN.includes(S.tab))).map(i => `<button class="as-sug" type="button">${t(`ki_bsp_${i}`)}</button>`).join('')}</div>`;
-  } else b.innerHTML = AS.msgs.map(asMsg).join('');
+  } else { b.innerHTML = AS.msgs.map(asMsg).join(''); spinKeep(b); }
   if (near) b.scrollTop = b.scrollHeight;
   const go = $('#as-go'); if (go) { go.classList.toggle('stop', AS.busy); go.title = t(AS.busy ? 'ki_stopp' : 'ki_senden'); go.setAttribute('aria-label', go.title); go.textContent = AS.busy ? '■' : '↑'; }
 }

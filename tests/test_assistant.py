@@ -2090,6 +2090,20 @@ class Browser(unittest.TestCase):
                 # what you type as a number: read in the notation of the language, never two ways
                 self.assertEqual(pg.evaluate("[numIn('250.000'), numIn('1.234,56'), numIn('0.500'), numIn('12.5'), numIn('-3.000,5'), numIn(''), String(numIn('1.2.3')), String(numIn('1,2,3'))]"),
                                  [250000, 1234.56, 0.5, 12.5, -3000.5, None, "NaN", "NaN"])
+                # the spinner while it thinks: drawn anew with every bit of text that arrives, it turns on from where it stood (it
+                # does not start over each time and look stuck)
+                phase = pg.evaluate("""(async () => {
+                    const keep = AS.msgs, out = [];
+                    AS.msgs = [{role: 'assistant', state: 'run', parts: []}];
+                    for (let i = 0; i < 3; i++) {
+                        while (performance.now() % 800 < 250 || performance.now() % 800 > 550) await new Promise(r => setTimeout(r, 5));
+                        asMsgs(); const want = (performance.now() % 800) / 800;
+                        out.push([document.querySelector('.as-run .spin').getAnimations()[0].effect.getComputedTiming().progress, want]);
+                        await new Promise(r => setTimeout(r, 330));
+                    }
+                    AS.msgs = keep; asMsgs(); return out; })()""")
+                for got, want in phase:
+                    self.assertLess(min(abs(got - want), 1 - abs(got - want)), 0.08, phase)
                 # the question field: as high as its text, a scroll bar only once there is more than fits
                 fit = "(() => { const t = document.querySelector('#as-in'); return [getComputedStyle(t).overflowY, t.scrollHeight <= t.clientHeight, Math.round(t.getBoundingClientRect().height)]; })()"
                 pg.fill("#as-in", ""); self.assertEqual(pg.evaluate(fit), ["hidden", True, 34])
