@@ -2090,18 +2090,32 @@ class Browser(unittest.TestCase):
                 # what you type as a number: read in the notation of the language, never two ways
                 self.assertEqual(pg.evaluate("[numIn('250.000'), numIn('1.234,56'), numIn('0.500'), numIn('12.5'), numIn('-3.000,5'), numIn(''), String(numIn('1.2.3')), String(numIn('1,2,3'))]"),
                                  [250000, 1234.56, 0.5, 12.5, -3000.5, None, "NaN", "NaN"])
+                # the question field: as high as its text, a scroll bar only once there is more than fits
+                fit = "(() => { const t = document.querySelector('#as-in'); return [getComputedStyle(t).overflowY, t.scrollHeight <= t.clientHeight, Math.round(t.getBoundingClientRect().height)]; })()"
+                pg.fill("#as-in", ""); self.assertEqual(pg.evaluate(fit), ["hidden", True, 34])
+                pg.fill("#as-in", "Zeile\n" * 3); ov, fits, h = pg.evaluate(fit); self.assertEqual((ov, fits), ("hidden", True)); self.assertTrue(34 < h < 160, h)
+                pg.fill("#as-in", "Zeile\n" * 20); ov, fits, h = pg.evaluate(fit); self.assertEqual((ov, fits, h), ("auto", False, 160))
                 pg.fill("#as-in", "Vorher")
                 pg.click("#as-mic"); until(pg, "REC.on && document.querySelector('#as-mic.rec .as-rec-t')")
-                pg.wait_for_timeout(900)
+                # ... while speaking, what was said so far stands in the field, which cannot be typed into meanwhile
+                until(pg, "REC.on && /^Vorher Diktat mit \\d+ Bytes\\.$/.test(document.querySelector('#as-in').value)", 15)
+                self.assertTrue(pg.evaluate("document.querySelector('#as-in').readOnly"))
                 pg.click("#as-mic"); until(pg, "!REC.on && !REC.busy && /Diktat mit \\d+ Bytes/.test(document.querySelector('#as-in').value)", 20)
                 said = pg.evaluate("document.querySelector('#as-in').value")
                 self.assertTrue(said.startswith("Vorher Diktat mit "), said)
+                self.assertEqual(said.count("Diktat mit"), 1, said)                          # the whole recording's text in place of what was shown
+                self.assertFalse(pg.evaluate("document.querySelector('#as-in').readOnly"))
                 self.assertGreater(int(said.split("mit ")[1].split(" ")[0]), 16000)           # more than half a second of 16 kHz, 16 bit
                 self.assertEqual(pg.evaluate("AS.msgs.length"), 0)
                 self.assertIsNotNone(app.assistant.speech.proc)
                 pg.click("#as-mic"); until(pg, "REC.on"); pg.wait_for_timeout(300)
                 pg.focus("#as-in"); pg.keyboard.press("Escape"); until(pg, "!REC.on && !REC.busy")
                 self.assertEqual(pg.evaluate("document.querySelector('#as-in').value"), said)
+                # ... also once text was shown while speaking: thrown away, the field as before
+                pg.click("#as-mic"); until(pg, "REC.on && document.querySelector('#as-in').value.split('Diktat mit').length === 3", 15)
+                pg.keyboard.press("Escape"); until(pg, "!REC.on && !REC.busy")
+                self.assertEqual(pg.evaluate("document.querySelector('#as-in').value"), said)
+                self.assertFalse(pg.evaluate("document.querySelector('#as-in').readOnly"))
                 self.assertFalse(pg.evaluate("REC.stream.getTracks().some(t => t.readyState === 'live')"))       # the microphone is let go
                 # every way out lets the microphone go: a double click opens it once, Escape works wherever the focus is
                 pg.evaluate("(() => { window.__mics = []; const g = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); "

@@ -6634,9 +6634,9 @@ function asDraw() {
     ${(AS.st || {}).dictation ? `<button type="button" id="as-mic" class="as-mic secondary"></button>` : ''}<button type="submit" id="as-go" class="as-go"></button></form>`;
   asHead(); asMsgs(true); asMicDraw();
   const ta = $('#as-in'), mic = $('#as-mic'); if (mic) mic.addEventListener('click', asMic);
-  ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(160, ta.scrollHeight) + 'px'; });
+  asFit(ta); ta.addEventListener('input', () => asFit(ta));
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#as-form').requestSubmit(); } else if (e.key === 'Escape' && AS.busy) { e.stopPropagation(); asStop(); } });
-  $('#as-form').addEventListener('submit', e => { e.preventDefault(); if (AS.busy) { asStop(); return; } const v = ta.value; ta.value = ''; ta.style.height = 'auto'; asSend(v); });
+  $('#as-form').addEventListener('submit', e => { e.preventDefault(); if (REC.on || REC.busy) return; if (AS.busy) { asStop(); return; } const v = ta.value; ta.value = ''; asFit(ta); asSend(v); });          // (dictating: first its text)
   // a text file dropped onto the panel (a table, a script, notes): its text goes into the question, read in the browser -- it is sent
   // with the question to the model on this Mac like anything typed, and stored nowhere
   const box = $('#assist');
@@ -6647,9 +6647,16 @@ function asDraw() {
     box.addEventListener('drop', e => { box.classList.remove('drop'); if (!e.dataTransfer || !e.dataTransfer.files.length) return; e.preventDefault(); asFiles([...e.dataTransfer.files]); });
   }
 }
+// the question field grows with its text up to 160 px -- a scroll bar only once there is more than fits
+function asFit(ta) {
+  ta.style.height = 'auto';
+  if (!ta.getClientRects().length) { ta.style.height = ''; return; }          // not on screen: nothing to measure
+  const h = ta.scrollHeight + ta.offsetHeight - ta.clientHeight;          // text and padding, and the border
+  ta.style.height = Math.min(160, h) + 'px'; ta.style.overflowY = h > 160 ? 'auto' : 'hidden';
+}
 // Dictating: the microphone is recorded in the browser (16 kHz, mono) and written down by the speech model on this Mac -- the
 // recording goes to Kontor and nowhere else, and nothing of it is kept. A click starts, a click ends; Escape throws it away.
-const REC = {on: false, busy: false, starting: false, ctx: null, stream: null, node: null, chunks: [], n: 0, t0: 0, timer: null};
+const REC = {on: false, busy: false, starting: false, ctx: null, stream: null, node: null, chunks: [], n: 0, t0: 0, timer: null, live: null};
 const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.6" y="1.4" width="4.8" height="8.2" rx="2.4" fill="currentColor"/><path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 // the microphone button follows the speech model: there as soon as it is loaded, gone when it is deleted -- in the panel as it
 // stands (what is typed and the conversation stay), not only after reloading the page
@@ -6683,12 +6690,37 @@ async function asMic() {
     REC.node = REC.ctx.createScriptProcessor(4096, 1, 1); REC.chunks = []; REC.n = 0;
     REC.node.onaudioprocess = e => { if (!REC.on) return; const d = e.inputBuffer.getChannelData(0); REC.chunks.push(new Float32Array(d)); REC.n += d.length; if (REC.n / REC.ctx.sampleRate > 170) asMicStop(true); };          // just under three minutes: sent
     src.connect(REC.node); REC.node.connect(REC.ctx.destination);          // (it only runs while connected; it puts out silence)
-    REC.on = true; REC.t0 = Date.now(); asMicDraw(); REC.timer = setInterval(asMicDraw, 500);
+    const ta = $('#as-in'), at = ta.selectionStart == null ? ta.value.length : ta.selectionStart, to = ta.selectionEnd == null ? at : ta.selectionEnd;
+    REC.live = {gen: (REC.live ? REC.live.gen : 0) + 1, busy: false, sent: 0, before: ta.value.slice(0, at), after: ta.value.slice(to)};
+    ta.readOnly = true;          // while it is spoken, the field shows what is said (typing would be written over)
+    REC.on = true; REC.t0 = Date.now(); asMicDraw(); REC.timer = setInterval(() => { asMicDraw(); asLive(); }, 500);
   } catch (e) {          // whatever fails after the microphone was opened: it is let go again
     stream.getTracks().forEach(x => x.stop()); try { if (REC.ctx) REC.ctx.close(); } catch (e2) {}
     REC.on = false; REC.stream = REC.ctx = REC.node = null; asMicDraw();
   }
   REC.starting = false;
+}
+// the dictated text where the cursor stood when recording began, with a space between it and what stands around it ('' puts
+// the field back as it was)
+function asDictPut(text) {
+  const ta = $('#as-in'), L = REC.live; if (!ta || !L) return;
+  const ins = text ? (L.before && !/\s$/.test(L.before) ? ' ' : '') + text + (L.after && !/^\s/.test(L.after) ? ' ' : '') : '';
+  ta.value = (L.before + ins + L.after).slice(0, +ta.maxLength > 0 ? +ta.maxLength : undefined);
+  ta.selectionStart = ta.selectionEnd = Math.min(ta.value.length, (L.before + ins).length);
+  ta.dispatchEvent(new Event('input'));
+}
+const asB64 = u8 => { let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(bin); };
+// while recording: what was said so far, written down every couple of seconds and shown in the field -- one at a time; the whole
+// recording has the last word when it ends
+function asLive() {
+  const L = REC.live; if (!REC.on || !L || L.busy || !REC.ctx) return;
+  const rate = REC.ctx.sampleRate, n = REC.n;
+  if (n < rate * 0.8 || n - L.sent < rate * 1.5) return;
+  L.busy = true; L.sent = n; const gen = L.gen;
+  api('/api/assistant/transcribe', {audio: asB64(asWav(REC.chunks.slice(), n, rate)), live: true})
+    .then(r => { if (REC.on && REC.live && REC.live.gen === gen) asDictPut((r.text || '').trim()); })
+    .catch(() => {})          // (the end says what went wrong)
+    .finally(() => { L.busy = false; });
 }
 // recording only while the question field is on screen: signed in, and the panel open or the assistant's own page shown
 const asMicMay = () => !!$('#as-in') && !$('#login:not(.hidden)') && (AS.open || S.tab === 'assistant');
@@ -6708,23 +6740,18 @@ function asWav(chunks, n, rate) {
 async function asMicStop(send) {
   if (!REC.on) return;
   clearInterval(REC.timer); REC.on = false;
+  if (REC.live) REC.live.gen++;          // a text still on its way from the speech model: no longer shown
   const rate = REC.ctx.sampleRate, chunks = REC.chunks, n = REC.n; REC.chunks = []; REC.n = 0;
   try { REC.node.disconnect(); REC.stream.getTracks().forEach(x => x.stop()); REC.ctx.close(); } catch (e) {}
-  if (!send || n < rate * 0.4) { asMicDraw(); return; }          // thrown away, or too short to hold a word
+  const free = () => { const ta = $('#as-in'); if (ta) ta.readOnly = false; };
+  if (!send || n < rate * 0.4) { asDictPut(''); free(); asMicDraw(); return; }          // thrown away, or too short to hold a word: the field as it was
   REC.busy = true; asMicDraw();
   try {
-    const wav = asWav(chunks, n, rate); let bin = '';
-    for (let i = 0; i < wav.length; i += 0x8000) bin += String.fromCharCode.apply(null, wav.subarray(i, i + 0x8000));
-    const r = await api('/api/assistant/transcribe', {audio: btoa(bin)}), ta = $('#as-in'), text = (r.text || '').trim();
-    if (!text) toast(t('ki_diktat_nichts'), 4000);
-    else if (ta) {          // where the cursor is, with a space between it and what stands there
-      const a = ta.selectionStart == null ? ta.value.length : ta.selectionStart, b = ta.selectionEnd == null ? a : ta.selectionEnd, before = ta.value.slice(0, a), after = ta.value.slice(b);
-      const ins = (before && !/\s$/.test(before) ? ' ' : '') + text + (after && !/^\s/.test(after) ? ' ' : '');
-      ta.value = (before + ins + after).slice(0, +ta.maxLength > 0 ? +ta.maxLength : undefined); ta.selectionStart = ta.selectionEnd = Math.min(ta.value.length, (before + ins).length);
-      ta.dispatchEvent(new Event('input')); ta.focus();
-    }
-  } catch (e) { toast(e.message, 7000); }
-  REC.busy = false; asMicDraw();
+    const r = await api('/api/assistant/transcribe', {audio: asB64(asWav(chunks, n, rate))}), text = (r.text || '').trim();
+    if (!text) { toast(t('ki_diktat_nichts'), 4000); asDictPut(''); }
+    else { asDictPut(text); const ta = $('#as-in'); if (ta) ta.focus(); }
+  } catch (e) { toast(e.message, 7000); }          // (what was shown while speaking stays)
+  free(); REC.busy = false; asMicDraw();
 }
 async function asFiles(files) {
   const ta = $('#as-in'); if (!ta) return;

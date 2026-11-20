@@ -336,9 +336,10 @@ class Assistant:
         have = self.ai.models()
         return next((i for i in SPEECH_IDS if i in have), "")
 
-    def transcribe(self, wav: Any) -> dict:
+    def transcribe(self, wav: Any, live: bool = False) -> dict:
         """What was said in a recording, as text for the question field. The recording goes to the speech model on this Mac
-        and nowhere else; neither it nor the text is stored or logged."""
+        and nowhere else; neither it nor the text is stored or logged. live: the recording so far, while still speaking (shown
+        in the field as it grows) -- not worth a line in the log each time."""
         st = self.settings()
         if not st["enabled"]:
             raise ValueError(tr("s_ki_aus"))
@@ -361,7 +362,7 @@ class Assistant:
                 raise ValueError(tr("s_ki_laeuft_nicht"))
         # some speech models write the language and a mark in front of the text
         text = re.sub(r"</?asr_text>", "", re.sub(r"^\s*language\s+[A-Za-z]+\s*(?=<asr_text>)", "", text)).strip()
-        log.info("Assistant: dictation written down (%d kB of audio, %.1f s)", len(wav) // 1000, time.time() - t0)
+        (log.debug if live else log.info)("Assistant: dictation written down%s (%d kB of audio, %.1f s)", " so far" if live else "", len(wav) // 1000, time.time() - t0)
         return {"text": text[:20000]}
 
     def forget(self) -> None:

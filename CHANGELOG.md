@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.7 (2026-11-20 18:42)
+- KI-Assistent: Diktat erscheint schon beim Sprechen im Textfeld.
+- KI-Assistent: Scrollbalken im Textfeld nur, wenn es etwas zu scrollen gibt.
+
 ## 3.16.6 (2026-11-20 18:29)
 - KI-Assistent: Mikrofon erscheint gleich nach dem Laden des Sprachmodells (und verschwindet beim Löschen), ohne Neuladen.
 

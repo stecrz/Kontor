@@ -2343,7 +2343,7 @@ def make_handler(app: App):
                         wav = base64.b64decode(str(body.get("audio") or ""), validate=True)
                     except (ValueError, binascii.Error):
                         raise ValueError(tr("s_ki_aufnahme_leer"))
-                    return self._json(200, a.transcribe(wav))
+                    return self._json(200, a.transcribe(wav, live=bool(body.get("live"))))          # live: while still speaking
                 if path == "/api/assistant/page":
                     a.page_answer(str(body.get("job") or ""), str(body.get("id") or ""), body.get("page"), body.get("result"))
                     return self._json(200, {"ok": True})
