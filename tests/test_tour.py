@@ -47,7 +47,9 @@ CHECKS = r"""(() => {
     if (/\bundefined\b|\bNaN\b|\[object Object\]|\bInfinity\b|\{\d\}|%s/.test(s)) out.junk.push(s.slice(0, 80));
   }
   // contrast of visible text against the backgrounds behind it (charts and pictures left out)
-  const rgba = c => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1]; };
+  // rgb()/rgba(), and color(srgb ...) as browsers give mixed colours (color-mix); any other colour space: unknown (null)
+  const rgba = c => { let m = c.match(/^rgba?\(([^)]+)\)/), f = 1; if (!m) { m = c.match(/^color\(srgb ([^)]+)\)/); f = 255; } if (!m) return null;
+    const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return [p[0] * f, p[1] * f, p[2] * f, p.length > 3 ? p[3] : 1]; };
   const over = (t, b) => [t[0] * t[3] + b[0] * (1 - t[3]), t[1] * t[3] + b[1] * (1 - t[3]), t[2] * t[3] + b[2] * (1 - t[3]), 1];
   const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
   const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
@@ -60,9 +62,10 @@ CHECKS = r"""(() => {
     const layers = []; let opacity = 1, unknown = false;
     for (let a = el; a; a = a.parentElement) {
       const cs = getComputedStyle(a); opacity *= Number(cs.opacity);
-      if (cs.backgroundImage !== 'none') { unknown = true; break; }
-      const bg = rgba(cs.backgroundColor); if (bg && bg[3] > 0) layers.push(bg);
-      if (bg && bg[3] >= 1) break;
+      const bg = rgba(cs.backgroundColor);
+      if (cs.backgroundImage !== 'none' || !bg) { unknown = true; break; }
+      if (bg[3] > 0) layers.push(bg);
+      if (bg[3] >= 1) break;
     }
     if (unknown || opacity < 0.15) continue;          // a picture behind it, or invisible on purpose (shown on hover)
     let bg = document.documentElement.dataset.theme === 'light' ? [255, 255, 255, 1] : [0, 0, 0, 1];
@@ -110,6 +113,9 @@ class CheckerTest(unittest.TestCase):
         page = """<html data-theme="dark"><body style="margin:0;background:#000;color:#fff">
           <div style="width:3000px">zu breit</div><p>neuer_schluessel</p><p>Summe: NaN €</p><p>Hallo {0}</p>
           <p style="color:#555">kaum lesbar</p><div style="opacity:0">unsichtbar_absichtlich</div>
+          <p style="background:color-mix(in srgb, #fff 90%, #000);color:color-mix(in srgb, #000 90%, #fff)">gemischt gut lesbar</p>
+          <p style="background:color-mix(in srgb, #fff 50%, #000);color:color-mix(in srgb, #fff 40%, #000)">gemischt kaum lesbar</p>
+          <p style="color:oklch(0.3 0.1 200)">anderer Farbraum: unbekannt</p>
           <div style="overflow-x:auto;width:100px"><div style="width:900px">darf scrollen</div></div><code>im_code_ok</code></body></html>"""
         with sync_playwright() as p:
             b = p.chromium.launch(); pg = b.new_page(viewport={"width": 800, "height": 600})
@@ -119,7 +125,7 @@ class CheckerTest(unittest.TestCase):
         self.assertIsNotNone(r["overflow"]); self.assertIn("div", r["overflow"]["elements"])
         self.assertEqual(r["keys"], ["neuer_schluessel"])          # not the hidden one, not the one in code
         self.assertEqual(r["junk"], ["Summe: NaN €", "Hallo {0}"])
-        self.assertEqual([c["text"] for c in r["contrast"]], ["kaum lesbar"])
+        self.assertEqual([c["text"] for c in r["contrast"]], ["kaum lesbar", "gemischt kaum lesbar"])
 
 
 class PageTourTest(unittest.TestCase):

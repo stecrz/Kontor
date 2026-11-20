@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.15.22 (2026-11-20 05:18)
+- Entwicklung: Rundgang liest gemischte Farben richtig (keine falschen Kontrast-Meldungen in der Safari-Engine).
+
 ## 3.15.21 (2026-11-20 05:07)
 - Entwicklung: Rundgang über alle Seiten (hell/dunkel, Mac/iPhone, de/en), Code-Checks, Prüfung auf dem Mac; verständliche Namen der Prüfungen.
 
