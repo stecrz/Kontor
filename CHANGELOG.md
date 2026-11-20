@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.15.15 (2026-11-20 02:53)
+- Installation: lädt nur noch den aktuellen Stand (5 statt 240 MB), deutlich schneller.
+- Installation: blockiert macOS den Hintergrunddienst, öffnet sie die passende Systemeinstellung und wartet, bis er läuft.
+
 ## 3.15.14 (2026-11-19 21:26)
 - Kontenspiegel: Gegenbuchungen von Hand gelten nur am selben Tag als Paar; mit Tagen Abstand „prüfen“ mit Gegenstück, anfangs abgewählt, nie automatisch.
 - Auto-Buchungen: Verwerfen einer Hälfte verwirft beide Seiten auf einmal.
