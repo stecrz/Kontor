@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.15.19 (2026-11-20 04:13)
+- Entwicklung: Prüfung bei GitHub behält die geladenen Systempakete (schneller, unabhängig vom langsamen Paketserver); scheitert die Einrichtung, bricht sie ab statt ohne Werkzeuge weiterzulaufen.
+
 ## 3.15.18 (2026-11-20 03:46)
 - Entwicklung: Prüfung bei GitHub wieder schnell und ohne Hänger (feste Systemversion, Paketsperre abwarten).
 
