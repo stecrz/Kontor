@@ -2508,6 +2508,7 @@ const I18N = {
 "ki_mikro_weg_ios":["Damit nicht jedes Mal gefragt wird: Einstellungen → Apps → Safari → Mikrofon → „Erlauben“.", "So that it does not ask every time: Settings → Apps → Safari → Microphone → “Allow”."],
 "ki_mikro_weg_browser":["Damit nicht bei jedem Start gefragt wird: im Browser beim Symbol links neben der Adresse das Mikrofon für Kontor erlauben.", "So that it does not ask at every start: allow the microphone for Kontor at the symbol left of the address in the browser."],
 "ki_anhang":["Datei einfügen – Beleg als PDF oder Bild, Text, Tabelle als CSV", "Add a file – receipt as PDF or picture, text, table as CSV"],
+"ki_diktat_startet":["Diktat startet …", "Starting dictation …"],
 "ki_diktat_schreibt":["Schreibt mit …", "Writing it down …"],
 "ki_diktat_nichts":["Nichts verstanden – bitte noch einmal.", "Nothing understood – please try again."],
 "ki_mikro_fehlt":["Das Mikrofon ist hier nicht erreichbar – Diktieren geht am Mac und über die https-Adresse.", "The microphone cannot be reached here – dictating works on the Mac and over the https address."],

@@ -16,7 +16,7 @@ Files beside it tell it more (Kontor starts it with an environment of its own, s
   record     -> it writes how it was started (arguments, names of environment variables) to started.json and the last
                 request to request.json
   refuse     -> the start fails
-  slowstart  -> /health says "loading" for a moment
+  slowstart  -> /health says "loading" for a moment (its text: for that many seconds)
   script.json -> prepared answers (for the help images): [{"q": part of the question, "steps": [{"call": tool, "args": {...}} |
                 {"think": text} | {"say": text}, ...]}] -- one step per round (a step after each tool result)
 """
@@ -69,7 +69,11 @@ def main():
     if not model or not os.path.exists(model):
         print("error: model not found", file=sys.stderr)
         return 1
-    ready_at = time.time() + (0.6 if os.path.exists(os.path.join(here, "slowstart")) else 0.0)
+    slow = 0.0
+    if os.path.exists(os.path.join(here, "slowstart")):
+        with open(os.path.join(here, "slowstart")) as f:
+            slow = float(f.read().strip() or 0.6)
+    ready_at = time.time() + slow
 
     class H(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"

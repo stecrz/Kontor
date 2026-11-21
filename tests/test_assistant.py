@@ -1427,6 +1427,9 @@ class Tools(_Assist):
         with self.assertRaises(ValueError) as cm:
             self.a.transcribe(wav)
         self.assertIn("Sprachmodell", str(cm.exception))
+        with self.assertRaises(ValueError) as cm:
+            self.a.listen()
+        self.assertIn("Sprachmodell", str(cm.exception))
         # the speech model arrives with its audio part; it is not the model that answers
         chat = self.a.settings()["model"]
         self.a.ai.download_model("qwen3-asr-1.7b")
@@ -1454,8 +1457,26 @@ class Tools(_Assist):
         self.a.set({"speech": ""})
         self.assertNotIn("speech", self.a.status(False))                              # (what is installed: only on the Mac) ...
         self.assertTrue(self.a.status(False)["dictation"])                            # ... but that dictating works, also on the iPhone
-        # dictating: its own process, with the audio part; the model that answers goes on beside it
+        # a dictation starts: the speech model ready when listen() returns (started now if needed; nothing recorded or sent)
         rt = os.path.dirname(self.a.ai.runtime()["path"])
+        with open(os.path.join(rt, "slowstart"), "w") as f:
+            f.write("0.8")
+        self.assertIsNone(self.a.speech.proc)
+        t0 = time.time()
+        self.assertEqual(self.a.listen(), {"ready": True})
+        self.assertGreater(time.time() - t0, 0.7)
+        self.assertEqual((self.a.speech.state, self.a.speech.model), ("ready", "qwen3-asr-1.7b"))
+        pid, t0 = self.a.speech.proc.pid, time.time()
+        self.assertEqual(self.a.listen(), {"ready": True}); self.assertEqual(self.a.speech.proc.pid, pid)          # running: at once, the same process
+        self.assertLess(time.time() - t0, 0.5)
+        os.remove(os.path.join(rt, "slowstart"))
+        self.a.speech.stop()
+        open(os.path.join(rt, "refuse"), "w").close()
+        with self.assertRaises(ValueError) as cm:                                     # one that cannot start: said now
+            self.a.listen()
+        self.assertIn("nicht starten", str(cm.exception))
+        os.remove(os.path.join(rt, "refuse"))
+        # dictating: its own process, with the audio part; the model that answers goes on beside it
         open(os.path.join(rt, "record"), "w").close()
         self.assertEqual(text_of(self.ask("Hallo")), "Antwort: Hallo")
         self.assertEqual(self.a.transcribe(wav), {"text": "Diktat mit %d Bytes." % len(wav)})          # the model's own marks taken off
@@ -1519,6 +1540,9 @@ class Tools(_Assist):
         self.a.set({"enabled": False})
         with self.assertRaises(ValueError):
             self.a.transcribe(wav)
+        with self.assertRaises(ValueError):
+            self.a.listen()
+        self.assertIsNone(self.a.speech.proc)
         self.a.set({"enabled": True})
         self.a.transcribe(wav); self.assertIsNotNone(self.a.speech.proc)
         self.a.ai.delete_model("qwen3-asr-1.7b")
@@ -3205,12 +3229,14 @@ class Http(_Assist):
             import base64
             wav = b"RIFF" + (36 + 16000).to_bytes(4, "little") + b"WAVEfmt " + bytes(20) + b"data" + (16000).to_bytes(4, "little") + bytes(16000)
             self.a.ai.download_model("qwen3-asr-1.7b"); self.assertEqual(wait_job(self.a.ai)["state"], "done")
+            self.assertEqual(self.call("/api/assistant/listen", {}), (200, {"ready": True}))
             code, r = self.call("/api/assistant/transcribe", {"audio": base64.b64encode(wav).decode()})
             self.assertEqual((code, r), (200, {"text": "Diktat mit %d Bytes." % len(wav)}))
             for bad in ({"audio": "kein base64 !!"}, {"audio": ""}, {}, {"audio": base64.b64encode(b"MP3" + bytes(4000)).decode()}):
                 self.assertEqual(self.call("/api/assistant/transcribe", bad)[0], 400, bad)
             self.a.set({"rights": {"remote": False}})
             self.assertEqual(self.call("/api/assistant/transcribe", {"audio": base64.b64encode(wav).decode()})[0], 403)
+            self.assertEqual(self.call("/api/assistant/listen", {})[0], 403)
         finally:
             self.remote(False)
         self.assertEqual(self.call("/api/assistant/transcribe", {"audio": base64.b64encode(wav).decode()})[0], 200)       # at the Mac: without that right
@@ -3687,13 +3713,50 @@ class Browser(unittest.TestCase):
                 live = "window.__mics.filter(s => s.getTracks().some(t => t.readyState === 'live')).length"
                 pg.dblclick("#as-mic"); pg.wait_for_timeout(700)
                 self.assertLessEqual(pg.evaluate("window.__mics.length"), 2)
-                self.assertEqual(pg.evaluate(live), 1 if pg.evaluate("REC.on") else 0)
+                self.assertEqual(pg.evaluate(live), 1 if pg.evaluate("REC.on || REC.starting") else 0)
                 pg.evaluate("asMicStop(false)"); until(pg, "!REC.on && !REC.starting"); self.assertEqual(pg.evaluate(live), 0)
                 pg.click("#as-mic"); until(pg, "REC.on")
                 self.assertEqual(pg.evaluate("document.activeElement.id"), "as-mic")        # the focus is on the button, not in the field
                 pg.keyboard.press("Escape"); until(pg, "!REC.on"); self.assertEqual(pg.evaluate(live), 0)
                 self.assertTrue(pg.evaluate("AS.open"))                                    # (Escape threw the recording away, the panel stays)
                 self.assertEqual(pg.evaluate("document.querySelector('#as-in').value"), said)
+                # a speech model that does not run yet: the click opens the microphone at once; the button turns -- not red, no time --
+                # until the model is ready, then red from 0:00; what is said meanwhile is written down too
+                rt = os.path.dirname(app.assistant.ai.runtime()["path"])
+                slow = os.path.join(rt, "slowstart")
+                with open(slow, "w") as f:
+                    f.write("2.5")
+                app.assistant.speech.stop(); pg.fill("#as-in", "")
+                pg.click("#as-mic"); until(pg, "REC.starting && REC.cap && REC.heard")
+                mic = "(() => { const b = document.querySelector('#as-mic'); return [REC.on, !!b.querySelector('.spin'), b.classList.contains('rec'), b.title, !document.querySelector('#as-x').classList.contains('hidden'), document.activeElement === b]; })()"
+                self.assertEqual(pg.evaluate(mic), [False, True, False, "Diktat startet …", True, True])
+                self.assertEqual(pg.get_attribute("#as-go", "title"), "Aufnahme beenden und senden")
+                pg.click("#as-mic"); pg.wait_for_timeout(600)                                 # a click meanwhile changes nothing
+                self.assertEqual(pg.evaluate(mic)[:3], [False, True, False])
+                until(pg, "REC.on && !!document.querySelector('#as-mic.rec .as-rec-t')", 20)
+                self.assertTrue(re.fullmatch(r"0:0[01]", pg.inner_text("#as-mic .as-rec-t")), pg.inner_text("#as-mic .as-rec-t"))
+                self.assertEqual(app.assistant.speech.state, "ready")
+                pg.click("#as-mic"); until(pg, "!REC.on && !REC.busy && /Diktat mit \\d+ Bytes/.test(document.querySelector('#as-in').value)", 20)
+                got = pg.evaluate("document.querySelector('#as-in').value")
+                self.assertGreater(int(re.fullmatch(r"Diktat mit (\d+) Bytes\.", got).group(1)), 32000 * 1.5, got)          # the seconds before red are in it
+                pg.fill("#as-in", said)
+                # ... thrown away while it starts (Escape, ✕): the microphone let go, the field as before -- and the start on its way
+                # does not turn it on later
+                app.assistant.speech.stop()
+                for how in ("Escape", "#as-x"):
+                    pg.click("#as-mic"); until(pg, "REC.starting && REC.cap")
+                    pg.keyboard.press("Escape") if how == "Escape" else pg.click(how)
+                    until(pg, "!REC.on && !REC.starting && !REC.busy")
+                    self.assertEqual(pg.evaluate(live), 0, how)
+                    self.assertEqual((pg.evaluate("document.querySelector('#as-in').value"), pg.evaluate("document.querySelector('#as-in').readOnly")), (said, False), how)
+                pg.wait_for_timeout(2800); self.assertFalse(pg.evaluate("REC.on || REC.starting")); self.assertEqual(pg.evaluate(live), 0)
+                os.remove(slow)
+                # a speech model that cannot start: said at once, nothing recorded, the microphone let go
+                app.assistant.speech.stop(); open(os.path.join(rt, "refuse"), "w").close()
+                pg.click("#as-mic"); until(pg, "!REC.on && !REC.starting", 20)
+                self.assertIn("ließ sich nicht starten", pg.inner_text("#toast"))
+                self.assertEqual((pg.evaluate(live), pg.evaluate("document.querySelector('#as-in').value")), (0, said))
+                os.remove(os.path.join(rt, "refuse"))
                 pg.fill("#as-in", "")
                 self.assertEqual(pg.evaluate("getComputedStyle(document.querySelector('main')).marginRight"), "380px")
                 self.assertEqual(round(w0 - pg.evaluate("document.querySelector('#main').getBoundingClientRect().width")), 380)

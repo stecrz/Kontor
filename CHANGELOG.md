@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.47 (2026-11-21 22:45)
+- Diktieren: Aufnahme ab dem Klick – sofort lossprechen, auch wenn das Sprachmodell noch lädt; nichts geht verloren
+- Diktieren: Knopf dreht, bis das Diktat läuft; erst dann rot, Zeit ab 0:00
+- Diktieren: Sprachmodell startet schon beim Klick; startet es nicht, kommt der Fehler sofort
+
 ## 3.16.46 (2026-11-21 22:36)
 - KI-Assistent: Belege (PDF, Bild) in den Chat ziehen – liest den Text auf diesem Mac, findet den passenden Umsatz, nennt Abweichungen
 - Ablegen im Belegordner nach deinem Klick, mit Umsatz verknüpft, zurücknehmbar; Datei nur im Arbeitsspeicher

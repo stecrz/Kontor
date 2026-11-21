@@ -422,16 +422,41 @@ class Assistant:
         have, chosen = self.ai.models(), self.settings()["speech"]
         return chosen if chosen in have else next((i for i in SPEECH_IDS if i in have), "")
 
-    def transcribe(self, wav: Any, live: bool = False) -> dict:
-        """What was said in a recording, as text for the question field. The recording goes to the speech model on this Mac
-        and nowhere else; neither it nor the text is stored or logged. live: the recording so far, while still speaking (shown
-        in the field as it grows) -- not worth a line in the log each time."""
+    def _speech_can(self) -> Tuple[dict, str]:
+        """The settings and the speech model to dictate with -- or why there is none."""
         st = self.settings()
         if not st["enabled"]:
             raise ValueError(tr("s_ki_aus"))
         mid = self.speech_model()
         if not mid or not self.ai.runtime():
             raise ValueError(tr("s_ki_sprachmodell_fehlt"))
+        return st, mid
+
+    def _speech_up(self, st: dict, mid: str) -> None:
+        """The speech model runs and is ready (started now if not); the caller holds speech_lock."""
+        try:
+            self.speech.ensure(mid, SPEECH_CONTEXT, st["sandbox"])
+            self._watch()
+        except ModelError as e:
+            raise ValueError(str(e))
+        except Cancelled:
+            raise ValueError(tr("s_ki_laeuft_nicht"))
+
+    def listen(self) -> dict:
+        """A dictation starts: the speech model runs and is ready when this returns -- started now if it does not run yet (a
+        few seconds), while the browser opens the microphone. The microphone turns red only then, so that what is said is
+        written down from its first word. Nothing is recorded or sent here; the model ends as usual when nothing was dictated
+        for a few minutes. A model that cannot start says so now, not after the user has spoken."""
+        st, mid = self._speech_can()
+        with self.speech_lock:
+            self._speech_up(st, mid)
+        return {"ready": True}
+
+    def transcribe(self, wav: Any, live: bool = False) -> dict:
+        """What was said in a recording, as text for the question field. The recording goes to the speech model on this Mac
+        and nowhere else; neither it nor the text is stored or logged. live: the recording so far, while still speaking (shown
+        in the field as it grows) -- not worth a line in the log each time."""
+        st, mid = self._speech_can()
         if not isinstance(wav, (bytes, bytearray)) or len(wav) < 2000 or wav[:4] != b"RIFF" or wav[8:12] != b"WAVE":
             raise ValueError(tr("s_ki_aufnahme_leer"))
         if len(wav) > MAX_AUDIO:
@@ -443,15 +468,12 @@ class Assistant:
             return {"text": "", "silent": True}
         texts = []
         with self.speech_lock:
+            self._speech_up(st, mid)
             try:
-                self.speech.ensure(mid, SPEECH_CONTEXT, st["sandbox"])
-                self._watch()
                 for part in parts:                       # a long dictation piece by piece (each cut in a pause)
                     texts.append(self.speech.transcribe(part, i18n.lang()))
             except ModelError as e:
                 raise ValueError(str(e))
-            except Cancelled:
-                raise ValueError(tr("s_ki_laeuft_nicht"))
         # some speech models write the language and a mark in front of the text
         clean = lambda x: re.sub(r"</?asr_text>", "", re.sub(r"^\s*language\s+[A-Za-z]+\s*(?=<asr_text>)", "", x)).strip()
         text = " ".join(c for c in (clean(x) for x in texts) if c)

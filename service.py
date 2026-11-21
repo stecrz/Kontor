@@ -2688,6 +2688,8 @@ def make_handler(app: App):
                 if path == "/api/assistant/reset":
                     a.reset()
                     return self._json(200, {"ok": True})
+                if path == "/api/assistant/listen":              # a dictation starts: the speech model ready (started now if needed)
+                    return self._json(200, a.listen())
                 if path == "/api/assistant/transcribe":           # a recording (WAV, base64) -> its text; nothing of it is kept
                     try:
                         wav = base64.b64decode(str(body.get("audio") or ""), validate=True)
@@ -3585,8 +3587,8 @@ def restored_config(current: dict, incoming: dict, data_dir: str = "") -> dict:
 
 
 # Kontor's own files in its data folder (the store, its log and service files, a key file, the certificate): only these go
-ASSISTANT_ASK = ("/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm", "/api/assistant/transcribe",
-                 "/api/assistant/attach")
+ASSISTANT_ASK = ("/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm", "/api/assistant/listen",
+                 "/api/assistant/transcribe", "/api/assistant/attach")
 
 _KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*|assistant-chats|assistant-changes"
                           r"|assistant-chat-[0-9a-f]{8,32})\.json(?:\.enc)?(?:\.tmp|\.renew)?"

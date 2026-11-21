@@ -6984,7 +6984,7 @@ function asDraw() {
   $('#as-file').addEventListener('change', e => { const f = [...(e.target.files || [])]; e.target.value = ''; if (f.length) asFiles(f); });
   asFit(ta); ta.addEventListener('input', () => asFit(ta));
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#as-form').requestSubmit(); } else if (e.key === 'Escape' && AS.busy) { e.stopPropagation(); asStop(); } });
-  $('#as-form').addEventListener('submit', e => { e.preventDefault(); if (REC.on) { asMicStop(true, true); return; } if (REC.busy) { REC.go = true; return; }          // dictating: ended, written down, then sent
+  $('#as-form').addEventListener('submit', e => { e.preventDefault(); if (REC.on || REC.starting) { asMicStop(true, true); return; } if (REC.busy) { REC.go = true; return; }          // dictating: ended, written down, then sent
     if (AS.busy) { asStop(); return; } const v = ta.value; ta.value = ''; asFit(ta); asSend(v); });
   // a text file dropped onto the panel (a table, a script, notes): its text goes into the question, read in the browser -- it is sent
   // with the question to the model on this Mac like anything typed, and stored nowhere
@@ -7020,8 +7020,12 @@ function asFit(ta) {
 // runs, the same button ends it and takes the text, ✕ (or Escape) throws it away. While speaking, the field shows what is said so
 // far (in pieces of about twenty seconds, each ended in a pause), in italics; at the end the whole recording is written down once
 // more, with all its words around each sentence -- that text is the one that stays.
-const REC = {on: false, busy: false, starting: false, asked: false, drop: false, go: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
+// The click starts at once: the microphone opens and is kept from then on, while the speech model loads beside it if it does not
+// run yet (a few seconds). The button turns red and its time starts only once dictating truly runs -- the model is ready and the
+// microphone sounds; until then it turns (what is said meanwhile is written down too).
+const REC = {on: false, busy: false, starting: false, cap: false, heard: false, gen: 0, asked: false, drop: false, go: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
 const REC_MAX = 600;          // seconds: then it ends by itself and the text is taken
+const REC_HEAR = 2500;        // ms the microphone's first sound is waited for at most (one that stays silent: red anyway)
 const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.6" y="1.4" width="4.8" height="8.2" rx="2.4" fill="currentColor"/><path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 const AS_PLUS = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 const AS_CROSS = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
@@ -7041,20 +7045,21 @@ function asMicDraw() {
   // while dictating: ✕ throws it away, the microphone (its time in it) ends it and takes the text, sending ends it and sends its
   // text; + goes, so the field keeps its width -- a button's content is drawn anew only when the state changes (a click on content
   // redrawn under the pointer would get lost)
-  const b = $('#as-mic'), mode = REC.busy ? 'busy' : REC.on ? 'rec' : '', dict = REC.on || REC.busy;
+  // (while it starts, the button keeps its focus: not disabled, a click then does nothing)
+  const b = $('#as-mic'), mode = REC.busy ? 'busy' : REC.starting ? 'start' : REC.on ? 'rec' : '', dict = REC.on || REC.busy || REC.starting;
   if (b) {
-    b.classList.toggle('rec', REC.on); b.classList.toggle('busy', REC.busy); b.disabled = REC.busy;
-    if (b.dataset.mode !== mode || !b.firstChild) { b.dataset.mode = mode; b.innerHTML = REC.busy ? '<span class="spin"></span>' : REC.on ? '<span class="as-rec-t"></span>' : MIC_SVG; }
+    b.classList.toggle('rec', REC.on); b.classList.toggle('busy', REC.busy); b.classList.toggle('start', REC.starting); b.disabled = REC.busy;
+    if (b.dataset.mode !== mode || !b.firstChild) { b.dataset.mode = mode; b.innerHTML = REC.busy || REC.starting ? '<span class="spin"></span>' : REC.on ? '<span class="as-rec-t"></span>' : MIC_SVG; }
     if (REC.on) { const sec = Math.floor((Date.now() - REC.t0) / 1000); $('.as-rec-t', b).textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); }
-    b.title = t(REC.busy ? 'ki_diktat_schreibt' : REC.on ? 'ki_diktat_stopp' : 'ki_diktieren'); b.setAttribute('aria-label', b.title);
+    b.title = t(REC.busy ? 'ki_diktat_schreibt' : REC.starting ? 'ki_diktat_startet' : REC.on ? 'ki_diktat_stopp' : 'ki_diktieren'); b.setAttribute('aria-label', b.title);
   }
   const f = $('#as-field'); if (f) f.classList.toggle('dict', dict);
   const x = $('#as-x'); if (x) x.classList.toggle('hidden', !dict);
   const go = $('#as-go'); if (go && !AS.busy) { go.title = t(dict ? 'ki_diktat_senden' : 'ki_senden'); go.setAttribute('aria-label', go.title); }
 }
-function asAdd() { if (!REC.on && !REC.busy) { const f = $('#as-file'); if (f) f.click(); } }          // a file into the question (text, CSV, code)
+function asAdd() { if (!REC.on && !REC.busy && !REC.starting) { const f = $('#as-file'); if (f) f.click(); } }          // a file into the question (text, CSV, code)
 function asCancel() {
-  if (REC.on) asMicStop(false);
+  if (REC.on || REC.starting) asMicStop(false);
   else if (REC.busy) { REC.drop = true; asDictPut(''); }          // the text still on its way: not taken
 }
 // The microphone may be used without asking each time only as the user sets it -- a page cannot give itself that right. Safari:
@@ -7090,31 +7095,47 @@ async function asMicPerm() {
   if (st && !st.onchange) st.onchange = () => asMicPerm();
 }
 async function asMic() {
-  if (REC.busy || REC.starting) return;          // (a second click while the browser still asks for the microphone would open it twice)
+  if (REC.busy || REC.starting) return;          // (a second click while it starts would open the microphone twice)
   if (REC.on) { asMicStop(true); return; }
+  const ta = $('#as-in'); if (!ta) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast(t('ki_mikro_fehlt'), 6000); return; }
-  REC.starting = true;
+  const gen = ++REC.gen, AC = window.AudioContext || window.webkitAudioContext;
+  let ctx = null;
+  try { ctx = new AC(); if (ctx.state === 'suspended') ctx.resume().catch(() => {}); } catch (e) { ctx = null; }          // still in the click: Safari starts sound only from one
+  const ready = api('/api/assistant/listen', {}).then(() => '', e => (e && e.message) || '?');          // the speech model, loaded beside the microphone
+  const at = ta.selectionStart == null ? ta.value.length : ta.selectionStart, to = ta.selectionEnd == null ? at : ta.selectionEnd;
+  REC.live = {gen: (REC.live ? REC.live.gen : 0) + 1, busy: false, sent: 0, seg: 0, done: [], cur: '', before: ta.value.slice(0, at), after: ta.value.slice(to)};
+  Object.assign(REC, {starting: true, asked: true, heard: false, pcm: [], m: 0});
+  ta.readOnly = true;          // from now on the field shows what is said (typing would be written over)
+  asDictPut(''); asMicDraw();
+  const drop = st => { st.getTracks().forEach(x => x.stop()); if (ctx) ctx.close().catch(() => {}); };
   let stream = null;
-  REC.asked = true;
   try { stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}}); }
-  catch (e) { REC.starting = false; toast(t('ki_mikro_verweigert'), 7000); return; }
+  catch (e) { if (ctx) ctx.close().catch(() => {}); if (gen === REC.gen) { asMicStop(false); toast(t('ki_mikro_verweigert'), 7000); } return; }
+  if (gen !== REC.gen) { drop(stream); return; }          // ended while the browser asked
+  if (!asMicMay()) { drop(stream); asMicStop(false); return; }          // locked or closed meanwhile: nothing is recorded
+  let t1 = 0;
   try {
-    if (!asMicMay()) throw new Error('closed');          // locked or closed while the browser asked: nothing is recorded
-    REC.stream = stream; REC.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = REC.ctx.createMediaStreamSource(REC.stream);
+    REC.stream = stream; REC.ctx = ctx || new AC();
+    if (REC.ctx.state === 'suspended') REC.ctx.resume().catch(() => {});
+    const src = REC.ctx.createMediaStreamSource(stream);
     REC.node = REC.ctx.createScriptProcessor(4096, 1, 1);
-    Object.assign(REC, {pcm: [], m: 0, rate: REC.ctx.sampleRate, sum: 0, cnt: 0, pos: 0, next: REC.ctx.sampleRate / 16000});
-    REC.node.onaudioprocess = e => { if (!REC.on) return; asPcm(e.inputBuffer.getChannelData(0)); if (REC.m / 16000 >= REC_MAX) asMicStop(true); };
+    Object.assign(REC, {rate: REC.ctx.sampleRate, sum: 0, cnt: 0, pos: 0, next: REC.ctx.sampleRate / 16000, cap: true});
+    REC.node.onaudioprocess = e => {
+      if (!REC.cap) return;
+      const d = e.inputBuffer.getChannelData(0);
+      if (!REC.heard && d.some(x => x !== 0)) REC.heard = true;          // a microphone just opened gives silence (zeros) at first
+      asPcm(d); if (REC.m / 16000 >= REC_MAX) asMicStop(true);
+    };
     src.connect(REC.node); REC.node.connect(REC.ctx.destination);          // (it only runs while connected; it puts out silence)
-    const ta = $('#as-in'), at = ta.selectionStart == null ? ta.value.length : ta.selectionStart, to = ta.selectionEnd == null ? at : ta.selectionEnd;
-    REC.live = {gen: (REC.live ? REC.live.gen : 0) + 1, busy: false, sent: 0, seg: 0, done: [], cur: '', before: ta.value.slice(0, at), after: ta.value.slice(to)};
-    ta.readOnly = true;          // while it is spoken, the field shows what is said (typing would be written over)
-    REC.on = true; REC.t0 = Date.now(); asDictPut(''); asMicDraw(); REC.timer = setInterval(() => { asMicDraw(); asLive(); }, 500);
-  } catch (e) {          // whatever fails after the microphone was opened: it is let go again
-    stream.getTracks().forEach(x => x.stop()); try { if (REC.ctx) REC.ctx.close(); } catch (e2) {}
-    REC.on = false; REC.stream = REC.ctx = REC.node = null; asMicDraw();
-  }
-  REC.starting = false;
+    t1 = Date.now();
+  } catch (e) { if (!REC.ctx) drop(stream); asMicStop(false); return; }          // whatever fails after the microphone was opened: it is let go again
+  // red only once it truly runs: the speech model ready, the microphone sounding
+  const err = await ready;
+  while (gen === REC.gen && !err && !REC.heard && Date.now() - t1 < REC_HEAR) await new Promise(r => setTimeout(r, 30));
+  if (gen !== REC.gen) return;          // ended meanwhile (✕, Escape, sent, the panel closed, locked)
+  if (err) { asMicStop(false); toast(err, 7000); return; }          // the model does not start: said now, not after speaking
+  REC.starting = false; REC.on = true; REC.t0 = Date.now(); asMicDraw(); REC.timer = setInterval(() => { asMicDraw(); asLive(); }, 500);
 }
 // the microphone's samples as 16 kHz, 16 bit, as they come (each output sample the mean of the input samples it covers) -- ten
 // minutes are 19 MB, not the 115 MB of the browser's own samples
@@ -7187,11 +7208,13 @@ function asLive() {
 // recording only while the question field is on screen: signed in, and the panel open or the assistant's own page shown
 const asMicMay = () => !!$('#as-in') && !$('#login:not(.hidden)') && (AS.open || S.tab === 'assistant');
 async function asMicStop(send, go) {
-  if (!REC.on) return;
-  clearInterval(REC.timer); REC.on = false;
+  if (!REC.on && !REC.starting) return;
+  REC.gen++;          // a start still on its way ends here
+  clearInterval(REC.timer); REC.on = REC.starting = REC.cap = false;
   if (REC.live) REC.live.gen++;          // a text still on its way from the speech model: no longer shown
   const n = REC.m;
-  try { REC.node.disconnect(); REC.stream.getTracks().forEach(x => x.stop()); REC.ctx.close(); } catch (e) {}
+  try { if (REC.node) REC.node.disconnect(); if (REC.stream) REC.stream.getTracks().forEach(x => x.stop()); if (REC.ctx) REC.ctx.close().catch(() => {}); } catch (e) {}
+  REC.ctx = REC.node = null;
   const pcm = send && n >= 16000 * 0.4 ? asPcmPart(0, n) : null; REC.pcm = []; REC.m = 0;
   const free = () => { const ta = $('#as-in'); if (ta) ta.readOnly = false; };
   if (!pcm) { asDictPut(''); free(); asMicDraw(); return; }          // thrown away, or too short to hold a word: the field as it was
@@ -7264,7 +7287,7 @@ function asMsgs(bottom) {
   if (near) b.scrollTop = b.scrollHeight;
   asGo();
 }
-function asGo() { const go = $('#as-go'); if (go) { go.classList.toggle('stop', AS.busy); go.title = t(AS.busy ? 'ki_stopp' : REC.on || REC.busy ? 'ki_diktat_senden' : 'ki_senden'); go.setAttribute('aria-label', go.title); go.textContent = AS.busy ? '■' : '↑'; } }
+function asGo() { const go = $('#as-go'); if (go) { go.classList.toggle('stop', AS.busy); go.title = t(AS.busy ? 'ki_stopp' : REC.on || REC.busy || REC.starting ? 'ki_diktat_senden' : 'ki_senden'); go.setAttribute('aria-label', go.title); go.textContent = AS.busy ? '■' : '↑'; } }
 const asDrawn = () => SCROLL.key === S.tab + '/' + S.sub && !$('#main .loading');          // the page the address names is the one drawn (not still the one before)
 function asPage() {
   // the page on screen for the assistant: its text only with the right to read the page, never settings, log or setup
@@ -7951,7 +7974,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => { const id = e.target.id; if (id === 'planan') { S.plan = e.target.checked; route(); } else if (id === 'realan') { S.real = e.target.checked; route(); } else if (id === 'alle-zeilen') { if (S.tab === 'balance') S.alleB = e.target.checked; else S.all = e.target.checked; route(); } });
 $('#menu-btn').addEventListener('click', () => $('.side').classList.toggle('open'));
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && REC.on) { e.stopPropagation(); asMicStop(false); } }, true);          // a recording first: thrown away
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && (REC.on || REC.starting)) { e.stopPropagation(); asMicStop(false); } }, true);          // a recording first: thrown away
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 // Klick neben das Seitenfenster schliesst es (bei ungespeicherten Eingaben erst nach Rueckfrage)
 document.addEventListener('pointerdown', e => {
