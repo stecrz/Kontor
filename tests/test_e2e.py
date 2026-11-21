@@ -2167,7 +2167,7 @@ class LoginTouchIdTest(unittest.TestCase):
             with sync_playwright() as p:
                 b = p.chromium.launch(); pg = b.new_page()
                 pg.goto("http://127.0.0.1:%d/" % port)
-                self.assertTrue(pg.is_visible("#setup-tid"))                     # Einrichtung fragt nach Touch ID
+                pg.wait_for_selector("#setup-tid:not(.hidden)")                  # Einrichtung fragt nach Touch ID (sobald die Sitzung da ist)
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort")
                 pg.click("#login-btn"); wait_shell(pg)
                 self.assertTrue(store.load("config.json")["ui"]["touchid"])

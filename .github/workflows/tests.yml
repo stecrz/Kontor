@@ -1,12 +1,9 @@
 name: Tests
 
+# every version, as it lands on main (no branches, no pull requests); the many random runs at night: nightly.yml
 on:
   push:
     branches: [main]
-  pull_request:
-  schedule:
-    - cron: "17 2 * * *"          # nightly: many more random runs
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,7 +13,6 @@ jobs:
   # changelog (a push that got past the lock in .claude/hooks/guard.py turns red at once)
   chain:
     name: Versionskette
-    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -60,8 +56,9 @@ jobs:
           python-version: ${{ matrix.python }}
           activate-environment: true
       - uses: actions/setup-node@v7
+        if: matrix.checks
         with:
-          node-version: "lts/*"           # always the maintained version, only for node --check
+          node-version: "lts/*"           # the maintained version, for ESLint
       - name: Week
         id: week
         run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
@@ -82,7 +79,7 @@ jobs:
           printf 'Dir::Cache::Archives "%s/apt-cache/";\nAPT::Keep-Downloaded-Packages "true";\nAPT::Sandbox::User "root";\nDPkg::Lock::Timeout "900";\n' "$HOME" \
             | sudo tee /etc/apt/apt.conf.d/90ci
           for i in 1 2 3 4; do sudo apt-get update -q && sudo apt-get install -y -q sqlcipher && break; [ $i = 4 ] && exit 1; sleep 30; done
-          uv pip install -q pytest playwright pillow cryptography
+          uv pip install -q pytest playwright cryptography      # cryptography: MoneyMoney's database in the tests (the Mac has its own)
           # WebKit (Safari's engine) on the newer runner: the tables' alignment as on the Mac
           for i in 1 2 3 4; do python -m playwright install --with-deps chromium ${{ matrix.python == '3.13' && 'webkit' || '' }} && break; [ $i = 4 ] && exit 1; sleep 30; done
           # only versions the server still offers (else the cache grows by every replaced version, week after week); readable for
@@ -90,10 +87,8 @@ jobs:
           sudo apt-get autoclean -q
           sudo rm -f ~/apt-cache/lock; sudo find ~/apt-cache/partial -mindepth 1 -delete; sudo chown -R "$(id -u):$(id -g)" ~/apt-cache
           echo "Packages kept: $(ls ~/apt-cache/*.deb 2>/dev/null | wc -l), $(du -sh ~/apt-cache | cut -f1)"
-      - name: Interface
-        run: node --check web/app.js && node --check web/i18n.js && node --check web/sw.js
       - name: Code checks
-        if: matrix.checks                     # once is enough: unused and undefined names in Python and in the interface
+        if: matrix.checks                     # once is enough: syntax, unused and undefined names in Python and in the interface
         run: |
           uv pip install -q pyflakes
           python -m pyflakes *.py tests/*.py .claude/hooks/*.py
@@ -102,7 +97,6 @@ jobs:
       - name: Tests
         timeout-minutes: 30                 # today 4 min per half: room for many more tests
         env:
-          KONTOR_FUZZ_SEEDS: ${{ github.event_name == 'schedule' && '1000' || '40' }}
           TZ: Europe/Berlin
         run: python -m pytest -q -rs ${{ matrix.tests }}       # -rs: what was skipped, and why, at the end
 
@@ -120,7 +114,7 @@ jobs:
         run: |
           python3 --version
           python3 -m compileall -q -x '(^|/)(node_modules|\.git)/' .
-          python3 -c "import kontor, service, core, rules, model, report, categorize, mm_categories, mm_bridge, mm_history, realestate, tax, receipts, storage, auth, updates, tls_cert, security_names, history_import, excel, i18n"
+          python3 -c "import glob, importlib; [importlib.import_module(f[:-3]) for f in sorted(glob.glob('*.py'))]"   # every module, new ones too
       - name: Swift helpers
         run: |
           swiftc -O -o "$RUNNER_TEMP/touchid" touchid.swift

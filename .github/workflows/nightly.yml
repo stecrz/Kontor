@@ -1,0 +1,28 @@
+name: Zufallsläufe
+
+# every night 1000 random cases (instead of 40 per push) on the newest main: the day's versions, checked in depth -- only the
+# random tests, on Apple's Python version; the rest of a version is checked by its push run (tests.yml)
+on:
+  schedule:
+    - cron: "17 2 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: "1000 Zufallsläufe · Python 3.9 (wie auf dem Mac)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.9"
+          activate-environment: true
+      - run: uv pip install -q pytest
+      - name: Tests
+        env:
+          KONTOR_FUZZ_SEEDS: "1000"
+          TZ: Europe/Berlin
+        run: python -m pytest -q tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py

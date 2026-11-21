@@ -25,9 +25,9 @@ Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhän
 - Leitplanken (`.claude/settings.json`): Sperren für Kontors Datenordner, MoneyMoneys Datenbank, Überweisungen und
   Force-Push; Sperren vor jedem Push (Versionskette, siehe Parallele Chats); Lagebild zu Beginn jeder Aufgabe (was die anderen
   Chats veröffentlicht haben); Erinnerung, wenn eine Änderung nicht abgeschlossen ist.
-- GitHub Actions testet jeden Push (rund 5 min) – Linux: Python 3.9 und neu, Chrome und Safari-Engine, Code-Checks, je
+- GitHub Actions testet jeden Push (rund 6 min) – Linux: Python 3.9 und neu, Chrome und Safari-Engine, Code-Checks, je
   Python in zwei Hälften nebeneinander (Seiten = `tests/test_e2e.py`; alles andere); macOS: Apples Python, Swift-Helfer,
-  MoneyMoney-Brücke, Installation – und nachts mit 1000 Zufallsläufen.
+  MoneyMoney-Brücke, Installation. Nachts zusätzlich 1000 Zufallsläufe auf dem neuesten `main` (`nightly.yml`).
 
 ## Prüfen
 - Tests: `python3 -m pytest -q tests` (~2½ min; Browser-Tests mit Playwright; `sqlcipher` nur für Testdatenbanken).

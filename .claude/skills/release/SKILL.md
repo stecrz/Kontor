@@ -15,7 +15,7 @@ description: Jede Änderung an Kontor abschließen – prüfen (auch mit Python 
    - Rechenlogik oder Buchungsregeln geändert: zusätzlich `KONTOR_FUZZ_SEEDS=400 python3 -m pytest -q tests/test_fuzz.py`
    - Python 3.9 (Apples Version auf dem Mac): `TZ=Europe/Berlin ~/py39/bin/python -m pytest -q tests` (~1 min; Browser-Tests
      laufen nur mit dem aktuellen Python). Fehlt `~/py39`, einmal einrichten: `uv python install 3.9 && uv venv -q -p 3.9 ~/py39 &&
-     VIRTUAL_ENV=~/py39 uv pip install -q pytest pillow cryptography` (ohne Playwright).
+     VIRTUAL_ENV=~/py39 uv pip install -q pytest cryptography` (ohne Playwright).
 2. **Oberfläche geändert:** Skill `ui-check`. Hilfe (`docs/help.*.md`), README und Hilfe-Bilder (`tests/screenshots.py`)
    **nur beim großen Versionssprung** (zweite Stelle) – bei kleinen Versionen nicht anfassen, auch keine Bilder neu erzeugen.
 3. **Unabhängig prüfen** (Rechenlogik, Schreibzugriffe auf MoneyMoney, Sicherheit): Agent `reviewer` auf die Änderung

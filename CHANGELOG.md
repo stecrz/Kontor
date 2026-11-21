@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.28 (2026-11-21 19:31)
+- Entwicklung: GitHub-Prüfung aufgeräumt – nur bei Push auf main, ungenutzte Auslöser und doppelte Prüfungen entfernt
+- Entwicklung: Nachtlauf nur noch 1000 Zufallsläufe (Python 3.9), statt alles erneut
+- Entwicklung: Mac-Prüfung lädt alle Module (auch Assistent)
+- Entwicklung: Touch-ID-Test wartet auf die Anmeldeseite (schlug zufällig fehl)
+
 ## 3.16.27 (2026-11-21 19:19)
 - Rechtsklick: Gruppe „KI-Assistent“ mit „Kurz erklären“ und „Im Chat fragen“ (ohne „…“)
 - „Kurz erklären“: sofort, höchstens zwei kurze Sätze, in einem kleinen Kasten am Mauszeiger – nicht im Chat; „Im Chat weiterfragen“
