@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.62 (2026-11-22 00:20)
+- Behoben: Kontenspiegel – gespiegelte Buchung verschoben, Original neu eingegeben: nicht mehr doppelt gespiegelt (bis 3 Tage, mit Hinweis)
+- Kontenspiegel: abgelehnte Buchungen und von Hand gebuchte Paare werden dabei nie mitgenommen
+
 ## 3.16.61 (2026-11-22 00:17)
 - Updates: jede neue Version wird vor dem Installieren gelesen – neue Netzzugriffe, Programmaufrufe, Helfer oder Umwege dorthin halten sie an
 - Updates: angehaltene Version mit „!“ im Menü, Funde unter Einstellungen → Updates, installiert erst nach deiner Freigabe; unauffällige wie bisher mit einem Klick

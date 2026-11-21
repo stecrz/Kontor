@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from model import Ledger, accounts_from_export, tx_from_export  # noqa: E402
-from rules import Seen, plan_loan, plan_all  # noqa: E402
+from rules import MIRROR_MOVED_DAYS, MIRROR_TAG, Seen, bkey, plan_loan, plan_all  # noqa: E402
 from rules import mirrors as rules_mirrors  # noqa: E402
 import fixtures as F  # noqa: E402
 
@@ -1175,6 +1175,29 @@ class MirrorTests(unittest.TestCase):
         again_o = dict(o, id=o["id"] + 50000)
         r = plan_all(make_ledger({}, [again_o, mirror]), self.cfg(), self.today)
         self.assertEqual(r.proposals, []); self.assertEqual(r.warnings, []); self.assertEqual(r.preview[0]["mirrored"], 1)
+        # ... also when you had moved the mirrored booking by a day before (found by the random runs, seed 763175317): it
+        # counts for the original of the same amount nearest to it (a note that the days differ) -- nothing mirrored twice;
+        # more than MIRROR_DAYS away it is another booking: mirrored, and the old one has no original
+        on = lambda t, days: dict(t, bookingDate=t["bookingDate"] + timedelta(days=days), valueDate=t["bookingDate"] + timedelta(days=days))
+        moved = on(mirror, -1)
+        r = plan_all(make_ledger({}, [again_o, moved]), self.cfg(), self.today)
+        self.assertEqual(r.proposals, []); self.assertEqual(r.preview[0]["mirrored"], 1); self.assertTrue(any("passt nicht mehr" in w for w in r.warnings))
+        # up to MIRROR_MOVED_DAYS: counts; one day more is another booking (a weekly payment): mirrored, the old one has no original
+        for days, counts in ((MIRROR_MOVED_DAYS, True), (MIRROR_MOVED_DAYS + 1, False), (7, False)):
+            r = plan_all(make_ledger({}, [on(again_o, days), mirror]), self.cfg(), self.today)
+            self.assertEqual((len(r.proposals), any("kein Original mehr" in w for w in r.warnings)), (0, False) if counts else (1, True), days)
+        # two of that amount near it: the nearer one; the other is mirrored
+        r = plan_all(make_ledger({}, [on(again_o, 1), dict(on(o, 3), id=o["id"] + 60000), mirror]), self.cfg(), self.today)
+        self.assertEqual([q.booking_date for q in r.proposals], [date(2026, 9, 4)])
+        # a booking whose mirror you turned down is never taken for it (it stays turned down, and no note invites mirroring it)
+        refused = dict(on(o, 1), id=o["id"] + 70000)
+        key = bkey(F.uid("priv.bet.gb"), MIRROR_TAG + str(refused["id"]))
+        r = plan_all(make_ledger({}, [refused, mirror]), dict(self.cfg(), not_book=[{"key": key}]), self.today, {key})
+        self.assertEqual(r.proposals, []); self.assertTrue(any("kein Original mehr" in w for w in r.warnings)); self.assertFalse(any("passt nicht mehr" in w for w in r.warnings))
+        # a pair booked by hand on both sides two days later keeps its original: the mirrored booking has none (as before)
+        u, v = dict(on(o, 2), id=o["id"] + 80000), F.tx("priv.bet.gb", date(2026, 9, 3), 5000.0, "Beta", "von Hand")
+        r = plan_all(make_ledger({}, [mirror, u, v]), self.cfg(), self.today)
+        self.assertEqual(r.proposals, []); self.assertEqual(r.preview[0]["paare"], 1); self.assertTrue(any("kein Original mehr" in w for w in r.warnings))
         # the original changed: a note to adjust it
         changed = plan_all(make_ledger({}, [dict(o, amount=-5500.0), mirror]), self.cfg(), self.today)
         self.assertEqual(changed.proposals, []); self.assertTrue(any("passt nicht mehr" in w for w in changed.warnings))
