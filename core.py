@@ -152,7 +152,12 @@ def _shape(cfg: dict) -> dict:
         cfg["assign_without"] = [str(x) for x in cfg["assign_without"] if isinstance(x, (str, int)) and not isinstance(x, bool)] if isinstance(cfg["assign_without"], list) else []
     if "account_mirrors" in cfg:
         cfg["account_mirrors"] = [dict({"a": text(m.get("a")), "b": text(m.get("b")), "from_date": text(m.get("from_date"))},
-                                     **{f: text(m[f]) for f in ("category",) if text(m.get(f))}) for m in dicts(cfg["account_mirrors"])]
+                                     **{f: text(m[f]) for f in ("category",) if text(m.get(f))}, **({"review": True} if m.get("review") is True else {}))
+                                  for m in dicts(cfg["account_mirrors"])]
+    for sec in ("loans", "companies"):                  # a rule from the assistant not confirmed yet (rules._review): only ever True
+        for r in cfg.get(sec) or []:
+            if r.get("review") is not True:
+                r.pop("review", None)
     bil = cfg.get("balance")
     if isinstance(bil, dict):
         for f in ("roles", "history_source", "accounts_mapping"):

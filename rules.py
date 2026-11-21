@@ -766,7 +766,8 @@ def mirrors(config: dict) -> List[dict]:
         if not a or not b or pair in seen_pairs:
             continue
         seen_pairs.add(pair)
-        out.append({"a": str(a), "b": str(b), "from_date": str(m.get("from_date") or ""), "category": str(m.get("category") or "")})
+        out.append(dict({"a": str(a), "b": str(b), "from_date": str(m.get("from_date") or ""), "category": str(m.get("category") or "")},
+                        **({"review": True} if m.get("review") else {})))
     return out
 
 
@@ -853,6 +854,14 @@ def plan_company(ledger: Ledger, cfg: dict, area: dict, today: date, roles: Opti
 # All rules of a configuration
 # ---------------------------------------------------------------------------
 
+def _review(r: RuleResult, cfg: dict) -> RuleResult:
+    """A rule the assistant made or changed, not yet confirmed by the user (review): each of its bookings waits for approval."""
+    if cfg.get("review"):
+        for p in r.proposals:
+            p.note = p.note or tr("s_regel_pruefen")
+    return r
+
+
 def plan_all(ledger: Ledger, config: dict, today: date, hold: Optional[set] = None, edits: Optional[Dict[str, dict]] = None,
              seen: Optional[Seen] = None, auto: bool = False) -> RuleResult:
     """All rules on the ledger (it receives the planned bookings). Not proposed: your "Don't book" (config nicht_buchen) and
@@ -872,7 +881,7 @@ def plan_all(ledger: Ledger, config: dict, today: date, hold: Optional[set] = No
     # order: loans first (they change the values of the companies), then mirrors and participations
     for i, cfg in enumerate(config.get("loans", []) or []):
         if cfg.get("active", True):
-            r = plan_loan(ledger, cfg, today, config, skip, edits, seen, hold, auto)
+            r = _review(plan_loan(ledger, cfg, today, config, skip, edits, seen, hold, auto), cfg)
             r.preview.append({"kind": "loans", "i": i, "bookings": len(r.proposals)})
             add(r)
     ms = mirrors(config)
@@ -884,7 +893,7 @@ def plan_all(ledger: Ledger, config: dict, today: date, hold: Optional[set] = No
         owner = {a.uuid: b["name"] for b in areas.values() for a in b["leaves"]}          # an account's area: the company or person
         companies = [c for c in config.get("companies") or [] if isinstance(c, dict)]
         for i, m in enumerate(ms):                    # mirrors first: what they bring into a company counts in its value
-            add(plan_account_mirror(ledger, m, i, today, config, skip | hold, edits, owner, seen, auto, areas))
+            add(_review(plan_account_mirror(ledger, m, i, today, config, skip | hold, edits, owner, seen, auto, areas), m))
         for cfg in companies:
             if not cfg.get("participation"):
                 continue
@@ -894,5 +903,5 @@ def plan_all(ledger: Ledger, config: dict, today: date, hold: Optional[set] = No
                 if w not in total.warnings:
                     total.warnings.append(w)
                 continue
-            add(plan_company(ledger, cfg, area, today, roles, config, skip | hold, edits, owner, seen, auto))
+            add(_review(plan_company(ledger, cfg, area, today, roles, config, skip | hold, edits, owner, seen, auto), cfg))
     return total

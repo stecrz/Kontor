@@ -1831,7 +1831,7 @@ class AppTests(_AppBase):
         # Konfiguration: Fehler wird abgewiesen, gueltige gespeichert, bind geprueft
         code, cfg = self.call("/api/config")
         bad = copy.deepcopy(cfg); bad["loans"][0]["loan_account"] = F.uid("priv.giro") + " | Hausbank Giro"
-        code, r = self.call("/api/config", {"config": bad}, method="PUT")
+        code, r = self.call("/api/config", {"config": bad, "rules_seen": [cfg.get(k) or [] for k in ("loans", "companies", "account_mirrors")]}, method="PUT")
         self.assertEqual(code, 409); self.assertTrue(any(f["severity"] == "error" for f in r["findings"]))
         good = copy.deepcopy(cfg); good["dry_run"] = True; good["ui"]["bind"] = "0.0.0.0"
         self.assertEqual(self.call("/api/config", {"config": good}, method="PUT")[0], 400)

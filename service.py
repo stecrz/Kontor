@@ -213,6 +213,125 @@ def approve_bookings(app: "App", shown: Dict[str, float]) -> dict:
     return {"booked": booked, "left": [k for k in shown if k not in booked], "error": why}
 
 
+RULE_SECTIONS = ("loans", "companies", "account_mirrors")
+def _plain_numbers(d: Any) -> Any:
+    """3.0 and 3 alike (what the page sends back as JSON has no "3.0")."""
+    if isinstance(d, float) and d.is_integer():
+        return int(d)
+    if isinstance(d, dict):
+        return {k: _plain_numbers(v) for k, v in d.items()}
+    if isinstance(d, list):
+        return [_plain_numbers(v) for v in d]
+    return d
+
+
+_canon = lambda d: json.dumps(_plain_numbers(d), sort_keys=True, ensure_ascii=False, default=str)
+
+
+RULES_LOCK = threading.Lock()        # a rule checked and saved (the assistant's card, the rules page) -- one at a time
+
+
+def _rules_now(cfg: dict) -> str:
+    """The booking rules as they stand (what the rules page was drawn from, compared when it saves)."""
+    return _canon([cfg.get(k) or [] for k in RULE_SECTIONS])
+
+
+def _rule_form(section: str, d: Any) -> str:
+    """A rule as it means the same whichever page wrote it: without empty fields, the review mark and what the rules page fills in
+    by itself (a company's threshold 0.01, a loan's counterparty = its name, active, a liability)."""
+    def bare(v: Any) -> Any:
+        if isinstance(v, dict):
+            v = {k: bare(x) for k, x in v.items() if k != "review"}
+            return {k: x for k, x in v.items() if x not in (None, "", [], {})}
+        if isinstance(v, list):
+            return [bare(x) for x in v]
+        return v
+    d = bare(_plain_numbers(copy.deepcopy(d))) if isinstance(d, dict) else d
+    if isinstance(d, dict):
+        if section == "companies" and d.get("threshold") == 0.01:
+            d.pop("threshold")
+        if section == "loans":
+            if (d.get("booking") or {}).get("counterparty") == d.get("name"):
+                d["booking"].pop("counterparty")
+                if not d["booking"]:
+                    d.pop("booking")
+            if d.get("active") is True:
+                d.pop("active")
+            if d.get("kind") == "liability":
+                d.pop("kind")
+    return _canon(d)
+
+
+def _with_rule(cfg: dict, section: str, old: Optional[dict], new: Optional[dict]) -> dict:
+    """The configuration with one rule changed (old -> new), added (old None) or removed (new None) -- old must be there as it was."""
+    if section not in RULE_SECTIONS:
+        raise ValueError(tr("s_ki_regel_inzwischen"))
+    cfg = copy.deepcopy(cfg)
+    lst = list(cfg.get(section) or [])
+    if old is not None:
+        at = next((i for i, x in enumerate(lst) if _rule_form(section, x) == _rule_form(section, old)), None)
+        if at is None:                                   # changed or removed meanwhile (on the page, by another card)
+            raise ValueError(tr("s_ki_regel_inzwischen"))
+        if new is None:
+            lst.pop(at)
+        else:
+            lst[at] = new
+    elif new is not None:
+        lst.append(new)
+    cfg[section] = lst
+    return cfg
+
+
+def rule_preview(app: "App", section: str, old: Optional[dict], new: dict) -> dict:
+    """A rule proposed by the assistant, checked before the card: errors in it (check_config) and what it would propose to book --
+    bookings that are new or of another amount than with the rules as they are, and those no longer proposed (nothing is saved
+    or written)."""
+    cfg = _with_rule(app.config, section, old, new)
+    merged = merged_config(dict(cfg, not_book=app.config.get("not_book") or []))
+    found = check_config(app.ledger, app.categories_raw, merged) if app.ledger is not None else []
+    errors = [f["text"] for f in found if f.get("severity") == "error"]
+    if errors or app.ledger is None:
+        return {"errors": errors, "bookings": 0, "dropped": 0}
+    st = app.store.load("state.json", {}) or {}
+
+    def plan(c: dict):
+        led = app.ledger.fork()
+        return plan_rules(led, c, date.today(), seen=Seen.from_state(st.get("seen"), led, date.today())).proposals
+    try:
+        before = {p.key: round(p.amount, 2) for p in plan(merged_config(dict(app.config, not_book=app.config.get("not_book") or [])))}
+        after = {p.key: round(p.amount, 2) for p in plan(merged)}
+    except Exception as e:                               # the rules met something unexpected: said, nothing proposed
+        log.warning("Rule preview failed (%s)", type(e).__name__)
+        return {"errors": [tr("s_regeln_fehler") % type(e).__name__], "bookings": 0, "dropped": 0}
+    return {"errors": [], "bookings": sum(1 for k, v in after.items() if before.get(k) != v), "dropped": sum(1 for k in before if k not in after)}
+
+
+def save_assistant_rule(app: "App", section: str, old: Optional[dict], new: dict) -> dict:
+    """The assistant's rule after your click: saved marked for review -- each booking from it waits for your approval until you
+    confirm the rule under Konten & Regeln. Only if the rule it changes is still as it was; never with errors."""
+    new = dict(new, review=True)
+    with RULES_LOCK:
+        cfg = _with_rule(app.config, section, old, new)
+        if app.ledger is not None:
+            errors = [f["text"] for f in check_config(app.ledger, app.categories_raw, merged_config(cfg)) if f.get("severity") == "error"]
+            if errors:
+                raise ValueError(errors[0])
+        before = [_canon(x) for x in app.config.get(section) or []]
+        app.save_config(cfg)
+        # as it is stored now (saving fills in fields): what taking it back compares with
+        saved = next((x for x in app.config.get(section) or [] if _canon(x) not in before), None) or new
+    app.request_rebuild("booking rule from the assistant")
+    log.info("Booking rule %s by the assistant after the user's click (%s)", "changed" if old is not None else "added", section)
+    return saved
+
+
+def undo_assistant_rule(app: "App", section: str, old: Optional[dict], saved: dict) -> None:
+    """The assistant's rule taken back: as before (or gone, when it was new) -- only while it is still as the card saved it."""
+    with RULES_LOCK:
+        app.save_config(_with_rule(app.config, section, saved, old))
+    app.request_rebuild("booking rule taken back")
+
+
 def hold_back_bookings(app: "App", keys: List[str]) -> int:
     """Bookings you do not want: never proposed again (settings: not_book) until "Propose again"; what still waits is planned again
     without them (from the last state read, nothing is written)."""
@@ -384,6 +503,9 @@ class App:
                     "category_paths": lambda: sorted(p for p, c in mm_categories.index(self.categories_raw).items()
                                                      if mm_categories.assignable(mm_categories.index(self.categories_raw), p) is None),
                     "approve_bookings": lambda shown: approve_bookings(self, shown),
+                    "rule_preview": lambda section, old, new: rule_preview(self, section, old, new),
+                    "save_rule": lambda section, old, new: save_assistant_rule(self, section, old, new),
+                    "undo_rule": lambda section, old, new: undo_assistant_rule(self, section, old, new),
                     "hold_bookings": lambda keys: hold_back_bookings(self, keys),
                     "restore_bookings": lambda keys: restore_bookings(self, keys),
                     "assign": lambda ids, path, local: assistant_assign_categories(self, ids, path, local),
@@ -2620,11 +2742,22 @@ def make_handler(app: App):
                     return self._json(400, {"error": tr("s_port_ungueltig")})
                 if new_port != int(old_ui.get("port") or 8765) and not port_free(new_port):
                     return self._json(409, {"error": tr("s_port_belegt", new_port)})
-                cfg = prune_account_settings(cfg, app.ledger)        # entries of accounts deleted in MoneyMoney go
-                findings = check_config(app.ledger, app.categories_raw, merged_config(cfg)) if app.ledger is not None else []
-                if any(f["severity"] == "error" for f in findings) and not body.get("anyway"):
-                    return self._json(409, {"error": tr("s_konfiguration_hat_fehler"), "findings": findings})
-                app.save_config(cfg)
+                with RULES_LOCK:
+                    if body.get("rules_seen") is None:
+                        # only the rules page changes rules, with the rules it was drawn from; any other page (settings, accounts,
+                        # setup -- perhaps loaded before the assistant's card changed a rule) leaves them as they are now
+                        for k in RULE_SECTIONS:
+                            if k in app.config:
+                                cfg[k] = copy.deepcopy(app.config[k])
+                            else:
+                                cfg.pop(k, None)
+                    elif _canon(body["rules_seen"]) != _rules_now(app.config):
+                        return self._json(409, {"error": tr("s_regeln_inzwischen_geaendert")})     # changed meanwhile (the assistant's card): drawn anew first
+                    cfg = prune_account_settings(cfg, app.ledger)        # entries of accounts deleted in MoneyMoney go
+                    findings = check_config(app.ledger, app.categories_raw, merged_config(cfg)) if app.ledger is not None else []
+                    if any(f["severity"] == "error" for f in findings) and not body.get("anyway"):
+                        return self._json(409, {"error": tr("s_konfiguration_hat_fehler"), "findings": findings})
+                    app.save_config(cfg)
                 log.info("Configuration saved (%d loans, %d companies with rules)",
                          len(app.config.get("loans") or []), len(app.config.get("companies") or []))
                 if net_changed:

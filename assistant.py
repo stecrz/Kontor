@@ -23,6 +23,7 @@ at once, or with a reset). The model has no tool for saved conversations. The lo
 from __future__ import annotations
 
 import array
+import copy
 import ast
 import hashlib
 import io
@@ -62,13 +63,13 @@ def auto_context(ram: int) -> int:
     return 65536 if gb >= 47 else 32768 if gb >= 23 else 16384
 
 
-RIGHTS = ("figures", "transactions", "help", "page", "navigate", "enter_values", "categorize", "book", "remote")
+RIGHTS = ("figures", "transactions", "help", "page", "navigate", "enter_values", "categorize", "book", "rules", "remote")
 READ_RIGHTS = ("figures", "transactions", "page")    # one switch in the settings: reading your data
 RIGHTS_VERSION = 2       # 3.16.28: changes on for everyone (each one only after your click), the help always readable
 DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "speech": "", "effort": "balanced", "context": auto_context(physical_ram()), "context_auto": True,
                             "idle_minutes": 30, "sandbox": "strict", "save_chats": True,
                             "rights": {"figures": True, "transactions": True, "help": True, "page": True, "navigate": True,
-                                       "enter_values": True, "categorize": True, "book": True, "remote": False}}       # changes: each one only with your click on the card
+                                       "enter_values": True, "categorize": True, "book": True, "rules": True, "remote": False}}       # changes: each one only with your click on the card
 PAGES = ("overview", "balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "categories", "accounts", "help")
 # its text is read only from these pages -- never settings, log, setup (nor its own conversation under "assistant")
 PLAN_LIMITS = {"horizon_months": (1, 240), "inflation_percent_pa": (-5, 20), "income_increase_percent_pa": (-20, 50), "expense_increase_percent_pa": (-20, 50),
@@ -1244,13 +1245,177 @@ class Assistant:
         return {"areas": [{"name": b.get("name"), "kind": b.get("kind"), "your_share": b.get("share"), "main": bool(b.get("main_area")) or None,
                            "account_groups": [name(x) for x in b.get("accounts") or []]} for b in cfg.get("areas") or []],
                 "loans": [{"name": d.get("name"), "loan_account": name(d.get("loan_account")), "paid_from": [name(x) for x in d.get("source_accounts") or []], "from": d.get("from_date"),
-                           "interest": {k: v for k, v in (d.get("interest") or {}).items() if k in ("model", "rate_list", "booking_day")}} for d in cfg.get("loans") or []],
-                "participations": [{"company_area": areas.get(str(c.get("area")), c.get("area")), "participation_account": name(c.get("participation")), "from": c.get("retroactive_from")}
+                           "interest": {k: v for k, v in (d.get("interest") or {}).items() if k in ("model", "rate_list", "booking_day")},
+                           **({"not_confirmed_by_the_user": True} if d.get("review") else {})} for d in cfg.get("loans") or []],
+                "participations": [dict({"company_area": areas.get(str(c.get("area")), c.get("area")), "participation_account": name(c.get("participation")),
+                                         "from": c.get("retroactive_from")}, **({"not_confirmed_by_the_user": True} if c.get("review") else {}))
                                    for c in cfg.get("companies") or []],
-                "account_mirrors": [{k: (name(v) if isinstance(v, str) else v) for k, v in m.items() if k in ("name", "account", "mirror", "source", "target", "from_date")}
+                "account_mirrors": [dict({"account_a": name(m.get("a")), "account_b": name(m.get("b")), "from": m.get("from_date")},
+                                         **({"category": m["category"]} if m.get("category") else {}), **({"not_confirmed_by_the_user": True} if m.get("review") else {}))
                                     for m in cfg.get("account_mirrors") or [] if isinstance(m, dict)],
                 "booking_mode": "dry run: Kontor books nothing" if cfg.get("dry_run") else "bookings need the user's approval under Auto-Buchungen",
-                "note": "rules are changed by the user under Konten & Regeln; you cannot change them"}
+                "note": "propose a new or changed rule with propose_rule (saved after the user's click; its bookings wait for approval until the user "
+                        "confirms the rule under %s)" % tr("konten_regeln") if _allowed(next(t for t in TOOLS if t["name"] == "propose_rule"), self.settings()["rights"])
+                        else "rules are changed by the user under Konten & Regeln; you cannot change them"}
+
+    def t_propose_rule(self, a: dict, ctx: dict) -> Any:
+        """A booking rule -- a loan, a participation or an account mirror -- added or changed: checked by Kontor (errors, what it
+        would book), saved after the user's click marked for review: each of its bookings waits for approval until the user confirms it."""
+        ds = self._ds()
+        kind, action = str(a.get("kind") or ""), str(a.get("action") or "")
+        if kind not in ("loan", "participation", "mirror") or action not in ("add", "change"):
+            raise ToolError("kind: loan, participation or mirror; action: add or change")
+        f = a.get("fields") if isinstance(a.get("fields"), dict) else {}
+        cfg = self.app.config
+        section = {"loan": "loans", "participation": "companies", "mirror": "account_mirrors"}[kind]
+        rules = [x for x in cfg.get(section) or [] if isinstance(x, dict)]
+        def ref(name: Any) -> str:
+            acc = self._account(ds, name)
+            return "%s | %s" % (acc["uuid"], acc["name"])
+        refname = lambda r: (str(r).split("|", 1)[1].strip() if "|" in str(r) else str(r)) if r else ""
+        def day(v: Any, what: str) -> str:
+            try:
+                return date.fromisoformat(str(v)).isoformat() if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(v)) else ""
+            except ValueError:
+                pass
+            raise ToolError("%s: a date that exists, as YYYY-MM-DD" % what)
+
+        def percent(v: Any) -> float:
+            try:
+                p = float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else float(str(v).strip().rstrip("%").strip().replace(",", "."))
+            except (TypeError, ValueError):
+                p = float("nan")
+            if not math.isfinite(p) or not -10 <= p <= 30:
+                raise ToolError("rates.percent: the yearly interest in percent (e.g. 3.5), from -10 to 30")
+            return p
+        leaf = lambda c: str(c).replace("\\", " / ").split(" / ")[-1].strip() if c else None
+        area_names = ds.get("area_names") or {}
+        # which rule it changes
+        old = None
+        if action == "change":
+            want = str(a.get("which") or "").strip().lower()
+            label = {"loans": lambda x: str(x.get("name") or refname(x.get("loan_account"))),
+                     "companies": lambda x: str(area_names.get(str(x.get("area")), x.get("area"))),
+                     "account_mirrors": lambda x: "%s <> %s" % (refname(x.get("a")), refname(x.get("b")))}[section]
+            hits = [x for x in rules if want and label(x).lower() == want] or [x for x in rules if want and want in label(x).lower()]
+            if len(hits) != 1:
+                raise ToolError("which: %s -- rules: %s" % ("no rule fits" if not hits else "several rules fit", "; ".join(label(x) for x in rules) or "none"))
+            old = hits[0]
+        new = copy.deepcopy(old) if old else {}
+        new.pop("review", None)
+
+        def yes(v: Any, what: str) -> bool:
+            if isinstance(v, bool):
+                return v
+            if str(v).strip().lower() in ("true", "yes", "ja", "1"):
+                return True
+            if str(v).strip().lower() in ("false", "no", "nein", "0"):
+                return False
+            raise ToolError("%s: true or false" % what)
+        try:
+            if kind == "loan":
+                if "name" in f:
+                    new["name"] = str(f["name"])[:80]
+                if "loan_account" in f:
+                    new["loan_account"] = ref(f["loan_account"])
+                if "paid_from" in f:
+                    new["source_accounts"] = [ref(f["paid_from"])]
+                det = dict(new.get("detection") or {})
+                if "counter_iban" in f:
+                    det["counter_iban"] = re.sub(r"\s", "", str(f["counter_iban"] or "")).upper()
+                if "text_contains" in f:
+                    det["text_contains"] = [str(x)[:60] for x in (f["text_contains"] if isinstance(f["text_contains"], list) else [f["text_contains"]]) if x]
+                new["detection"] = det
+                if "receivable" in f:
+                    new["kind"] = "forderung" if yes(f["receivable"], "receivable") else "liability"
+                if "from" in f:
+                    new["from_date"] = day(f["from"], "from")
+                if "interest_model" in f:
+                    if f["interest_model"] == "none":
+                        new.pop("interest", None)
+                    elif f["interest_model"] in ("yearly_base", "remaining_debt_monthly"):
+                        new["interest"] = dict(new.get("interest") or {"booking_day": "with_payment"}, model=f["interest_model"])
+                    else:
+                        raise ToolError("interest_model: yearly_base, remaining_debt_monthly or none")
+                if "rates" in f:              # added to the rates there are (a rate from the same day: replaced)
+                    given = {day(r.get("from"), "rates.from"): percent(r.get("percent")) for r in (f["rates"] if isinstance(f["rates"], list) else []) if isinstance(r, dict)}
+                    if not given:
+                        raise ToolError("rates: a list of {from, percent}")
+                    have = {str(r.get("from_date")): r for r in (new.get("interest") or {}).get("rate_list") or [] if isinstance(r, dict)}
+                    have.update({d: {"from_date": d, "percent": p} for d, p in given.items()})
+                    new["interest"] = dict(new.get("interest") or {"model": "yearly_base", "booking_day": "with_payment"}, rate_list=[have[d] for d in sorted(have)])
+                if "interest_booking" in f:
+                    if f["interest_booking"] not in ("with_payment", "ultimo"):
+                        raise ToolError("interest_booking: with_payment or ultimo")
+                    new.setdefault("interest", {"model": "yearly_base", "rate_list": []})["booking_day"] = f["interest_booking"]
+                bk = dict(new.get("booking") or {})
+                for k_in, k_out in (("counterparty", "counterparty"), ("category_repayment", "category_repayment"), ("category_interest", "category_interest")):
+                    if k_in in f:
+                        bk[k_out] = str(f[k_in])[:80] if k_in == "counterparty" else leaf(f[k_in])
+                new["booking"] = bk
+                if "active" in f:
+                    new["active"] = yes(f["active"], "active")
+                if not new.get("loan_account"):
+                    raise ToolError("a loan needs loan_account (the manual account in MoneyMoney that holds the loan)")
+            elif kind == "participation":
+                if action == "add":
+                    new["area"] = self._area(ds, f.get("company"), ctx)[0] if f.get("company") else (_ for _ in ()).throw(ToolError("company: the area of the company"))
+                    companies = [str(b.get("id")) for b in cfg.get("areas") or [] if isinstance(b, dict) and b.get("active") is not False and b.get("kind") == "company"]
+                    if str(new["area"]) not in companies:          # only where the rules page shows a company (and so where the user can confirm it)
+                        raise ToolError("company: one of the areas of the kind company -- %s" % (", ".join(str(area_names.get(c, c)) for c in companies) or "none"))
+                    if any(str(x.get("area")) == str(new["area"]) for x in rules):
+                        raise ToolError("that company has a rule already -- action change")
+                if "participation_account" in f:
+                    new["participation"] = ref(f["participation_account"])
+                if "from" in f:
+                    new["retroactive_from"] = "all" if f["from"] == "all" else day(f["from"], "from")
+                if "cycle" in f:
+                    if f["cycle"] not in ("daily", "monthly"):
+                        raise ToolError("cycle: daily or monthly")
+                    new["cycle"] = f["cycle"]
+                if "counterparty" in f:
+                    new["counterparty"] = str(f["counterparty"])[:80]
+                if not new.get("participation"):
+                    raise ToolError("a participation needs participation_account (the manual account that holds it)")
+            else:
+                if "account_a" in f:
+                    new["a"] = ref(f["account_a"])
+                if "account_b" in f:
+                    new["b"] = ref(f["account_b"])
+                if "from" in f:
+                    new["from_date"] = "all" if f["from"] == "all" else day(f["from"], "from")
+                if "category" in f:
+                    new["category"] = leaf(f["category"]) or ""
+                if not (new.get("a") and new.get("b")) or str(new["a"]).split("|")[0].strip() == str(new["b"]).split("|")[0].strip():
+                    raise ToolError("a mirror needs two different accounts: account_a and account_b")
+                if action == "add" and any({str(x.get("a")).split("|")[0].strip(), str(x.get("b")).split("|")[0].strip()} ==
+                                           {str(new["a"]).split("|")[0].strip(), str(new["b"]).split("|")[0].strip()} for x in rules):
+                    raise ToolError("these two accounts are mirrored already -- action change")
+        except (TypeError, ValueError) as e:
+            raise ToolError("fields not readable (%s) -- see the tool's description" % type(e).__name__)
+        if old is not None and json.dumps(old, sort_keys=True, default=str) == json.dumps(dict(new, **({"review": True} if old.get("review") else {})), sort_keys=True, default=str):
+            raise ToolError("nothing changed")
+        pv = self.hooks["rule_preview"](section, old, new)
+        if pv.get("errors"):
+            raise ToolError("Kontor would not save it: " + " | ".join(pv["errors"][:4]))
+        title = {"loans": lambda x: str(x.get("name") or refname(x.get("loan_account"))), "companies": lambda x: str(area_names.get(str(x.get("area")), "")),
+                 "account_mirrors": lambda x: "%s ⇄ %s" % (refname(x.get("a")), refname(x.get("b")))}[section](new)
+        card = {"kind": "rule", "rule_kind": kind, "title": title[:80], "sub": tr("ki_e_regel_neu" if old is None else "ki_e_regel_geaendert"),
+                "rows": _rule_rows(section, old, new, refname, area_names), "count": pv.get("bookings", 0), "dropped": pv.get("dropped", 0)}
+        job, did = ctx["job"], {}
+
+        def apply(section=section, old=old, new=new, did=did) -> dict:
+            did["saved"] = self.hooks["save_rule"](section, old, new)
+            return {"saved": True, "bookings_wait_for_approval": pv.get("bookings", 0)}
+
+        def undo(section=section, old=old, did=did) -> None:
+            self.hooks["undo_rule"](section, old, did.get("saved"))
+        ident = "|".join(sorted(str(new.get(k) or "").split("|")[0].strip() for k in ("a", "b"))) if section == "account_mirrors" else \
+            str(new.get("area")) if section == "companies" else title
+        out = self._propose(job, card, apply, undo, right="rules", also=("figures",), reason=a.get("reason"),
+                            targets={"rule %s %s" % (section, ident)} | ({"rule %s %s" % (section, json.dumps(old, sort_keys=True, default=str))} if old else set()))
+        return dict(out, would_propose_bookings=pv.get("bookings", 0), bookings_no_longer_proposed=pv.get("dropped", 0),
+                    note2="after the click the rule is saved; each of its bookings waits for the user's approval until they confirm the rule under %s" % tr("konten_regeln"))
 
     # read: transactions
     def t_search_transactions(self, a: dict, ctx: dict) -> Any:
@@ -1976,6 +2141,10 @@ class Assistant:
                          "Propose categories with assign_categories (several groups in one call are fine) -- only categories that exist in MoneyMoney, by their "
                          "exact path. Only where you are sure from the counterparty, the purpose or the user's words; otherwise ask. Kontor writes them into "
                          "MoneyMoney only after the user's click on the card, never over a category already set.")
+        if r.get("rules") and r["figures"]:
+            lines.append("- Booking rules (get_rules): propose a new or changed loan, participation or account mirror with propose_rule only when the user asks, "
+                         "with the data the user gave (contract, IBAN, rates, accounts by their names). Kontor checks it and shows what it would book; saved "
+                         "after the user's click, and each booking from it waits for approval until the user confirms the rule under %s." % tr("konten_regeln"))
         if can_book:
             lines.append("- Auto bookings waiting for approval (get_auto_bookings, each with an id): propose approving or holding back with decide_bookings only "
                          "what the user asked for, after checking them (amount, date, rule); approving books into MoneyMoney after the user's click, only at the Mac, "
@@ -2562,6 +2731,50 @@ def _group_name(z: dict) -> str:
     return name if name and name != _row_name(z) and name != z.get("row") else ""
 
 
+def _rule_rows(section: str, old: Optional[dict], new: dict, refname, area_names: dict) -> List[dict]:
+    """What a rule card shows: each setting that is new or changed, before and after, in words."""
+    def get(d: Optional[dict], path: str):
+        v: Any = d or {}
+        for k in path.split("."):
+            v = v.get(k) if isinstance(v, dict) else None
+        return v
+
+    def text(path: str, v: Any) -> str:
+        if v in (None, "", []):
+            return ""
+        if path in ("loan_account", "participation", "a", "b"):
+            return refname(v)
+        if path == "source_accounts":
+            return ", ".join(refname(x) for x in v)
+        if path == "area":
+            return str(area_names.get(str(v), v))
+        if path == "interest.rate_list":
+            return "; ".join("%s: %s %%" % (r.get("from_date"), str(r.get("percent")).replace(".", ",")) for r in v if isinstance(r, dict))
+        if isinstance(v, bool):
+            return tr("ja") if v else tr("nein")
+        if isinstance(v, list):
+            return "; ".join(str(x) for x in v)
+        return {"yearly_base": tr("jahresbasis_satz_stand_31_12"), "remaining_debt_monthly": tr("restschuld_monatlich_satz_12_stand"),
+                "with_payment": tr("am_tag_der_rate_sonst"), "ultimo": tr("ultimo"), "liability": tr("verbindlichkeit_ich_zahle"),
+                "forderung": tr("forderung_ich_erhalte"), "all": tr("ki_e_alles"), "daily": tr("taeglich"), "monthly": tr("monatlich")}.get(str(v), str(v))
+    fields = {"loans": [("name", "name"), ("loan_account", "l_darlehenskonto"), ("source_accounts", "l_zahlungen_von"), ("kind", "art"),
+                        ("detection.counter_iban", "l_gegen_iban"), ("detection.text_contains", "oder_text_enthaelt"), ("from_date", "l_ab"),
+                        ("interest.model", "l_zinsmodell"), ("interest.rate_list", "l_zinssaetze"), ("interest.booking_day", "zinsbuchung"),
+                        ("booking.counterparty", "gegenpartei"), ("booking.category_repayment", "kategorie_tilgung"),
+                        ("booking.category_interest", "kategorie_zinsen"), ("active", "l_aktiv")],
+              "companies": [("area", "bereich"), ("participation", "co_beteiligung"), ("retroactive_from", "co_rueck"), ("cycle", "co_takt"),
+                            ("counterparty", "gegenpartei")],
+              "account_mirrors": [("a", "ki_e_konto_1"), ("b", "ki_e_konto_2"), ("from_date", "co_rueck"), ("category", "kategorie")]}[section]
+    out = []
+    dflt = {"kind": "liability", "active": True}       # what a rule is without the field (as rules.py reads it)
+    for path, label in fields:
+        o = text(path, get(old, path) if get(old, path) is not None or old is None else dflt.get(path))
+        n = text(path, get(new, path) if get(new, path) is not None else dflt.get(path) if old is not None else None)
+        if n != o:
+            out.append({"label": tr(label), "old_text": o, "new_text": n})
+    return out[:16]
+
+
 def _booking_id(p: dict) -> str:
     """A short, stable id of a booking waiting for approval (its account and mark), for the model to name it."""
     return hashlib.sha1(str(p.get("key") or "").encode("utf-8")).hexdigest()[:8]
@@ -2700,6 +2913,13 @@ TOOLS: List[dict] = [
                                                                               "counterparty": {"type": "string", "description": "or the counterparty's name"},
                                                                               "category": {"type": "string"}}, "required": ["category"]}},
            "year": {"type": "string", "description": "as in get_uncategorized (left out: as last read there)"}, "area": _AREA}, ["groups"], also=("transactions",)),
+    _tool("propose_rule", "rules", "enter", "Proposes a new or changed booking rule (which: name, company or accounts as in get_rules). fields, only what "
+          "changes -- loan: name, loan_account, paid_from, counter_iban, text_contains, receivable, from, interest_model (yearly_base, "
+          "remaining_debt_monthly, none), rates [{from, percent}] (added; same from: replaced), interest_booking (with_payment, ultimo), counterparty, category_repayment, "
+          "category_interest, active; participation: company, participation_account, from, cycle (daily, monthly), counterparty; mirror: "
+          "account_a, account_b, from, category. Accounts by name, dates YYYY-MM-DD (from also: all).",
+          {"kind": {"type": "string", "enum": ["loan", "participation", "mirror"]}, "action": {"type": "string", "enum": ["add", "change"]},
+           "which": {"type": "string"}, "fields": {"type": "object"}}, ["kind", "action", "fields"], also=("figures",)),
     _tool("decide_bookings", "book", "enter", "Proposes approving or holding back auto bookings waiting for approval (ids from get_auto_bookings). The user "
           "approves on the card; approved ones are booked into MoneyMoney's offline accounts (only at the Mac, final), held back ones are not proposed again.",
           {"approve": {"type": "array", "items": {"type": "string"}, "description": "ids of waiting bookings to book"},

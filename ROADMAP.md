@@ -126,7 +126,7 @@ Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach
 - [x] 3.16.13 Sammelfreigabe: alle Änderungen einer Antwort auf einer Karte, ein Klick (einzeln abwählbar); Änderungsprotokoll; Änderungsrechte ab Werk an.
 - [x] 3.16.19 Kategorien zuordnen (Vorschlag je Gegenpartei, Klick, rückgängig wie unter Kategorisieren; vom iPhone erst am Mac).
 - [x] 3.16.33 Auto-Buchungen prüfen, freigeben, zurückhalten (Freigeben nur am Mac, die Karte sagt: in MoneyMoney nicht rückgängig; Zurückhalten zurücknehmbar).
-- [ ] Buchungsregeln (Darlehen, Beteiligungen, Kontenspiegel) anlegen und ändern; Buchungen daraus immer erst zur Freigabe.
+- [x] 3.16.45 Buchungsregeln (Darlehen, Beteiligungen, Kontenspiegel) anlegen und ändern; Buchungen daraus erst zur Freigabe, bis du die Regel unter Konten & Regeln bestätigst.
 - [x] 3.16.26 Offene Aufgaben beim Öffnen, jede mit „Erledigen“ (die Liste kommt von Kontor, auch ohne Modell; ohne passendes Recht „Öffnen“).
 - [ ] Belege: Datei in den Chat, Texterkennung von macOS (offline), passenden Umsatz vorschlagen, Abweichungen nennen, ablegen und verknüpfen.
 - [ ] Internet nur zum Lesen, in drei Stufen (siehe Entschieden): Kontor sucht (nicht das Modell), Freigabe je Zugriff mit Quelle,

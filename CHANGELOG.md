@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.45 (2026-11-21 22:19)
+- KI-Assistent: legt Buchungsregeln an und ändert sie (Darlehen, Beteiligungen, Kontenspiegel) – nach deinem Klick, zurücknehmbar
+- Regeln vom Assistenten: ihre Buchungen warten auf Freigabe, bis du die Regel unter Konten & Regeln bestätigst
+- Konten & Regeln: Speichern verweigert, wenn sich Regeln inzwischen geändert haben; andere Seiten lassen Regeln unverändert
+
 ## 3.16.44 (2026-11-21 22:17)
 - Updates: „Neu in …“ zeigt alle Änderungen seit der installierten Version, nicht nur die der neuesten (nach Bezug gruppiert, ohne Entwicklung)
 

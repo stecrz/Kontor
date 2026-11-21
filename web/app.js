@@ -5005,7 +5005,7 @@ document.addEventListener('change', e => {
 // an account mirror: any two accounts (your own, a company's, two companies'), booked from its own day on
 function mirrorRow(m) {
   const pick = k => !k.group;
-  return `<div class="gk-row" data-kat="${esc(m.category || '')}">${acctPick('g-a', m.a, pick, t('konto_waehlen'))}`
+  return `<div class="gk-row" data-kat="${esc(m.category || '')}"${m.review ? ' data-review="1"' : ''}>${reviewMark(m)}${acctPick('g-a', m.a, pick, t('konto_waehlen'))}`
     + `<span class="gk-arrow" title="${esc(t('gk_spiegel'))}" aria-label="${esc(t('gk_spiegel'))}">⇄</span>${acctPick('g-b', m.b, pick, t('konto_waehlen'))}`
     + `<button class="ico gk-del" title="${esc(t('entfernen'))}" aria-label="${esc(t('entfernen'))}">×</button>`
     + `<div class="gk-ab"><span class="small muted">${t('co_rueck')}${hq('h_gk_rueck')}</span>${backField(m.from_date, 'rueck_alles_spiegel')}</div><div class="pv small"></div></div>`;
@@ -5026,7 +5026,7 @@ function companyCard(b, g) {
   // all settings of a company in one card, nothing folded away; no account chosen in advance (choosing one starts the bookings)
   const has = b.share != null && b.share !== '', bid = String(b.id);
   const row = (label, help, field) => `<div class="co-row"><div class="co-l">${label}${hq(help)}</div><div class="co-f">${field}</div></div>`;
-  return `<div class="co-card" data-b="${esc(bid)}"><div class="co-head"><h3>${esc(b.name)}</h3>`
+  return `<div class="co-card" data-b="${esc(bid)}"${g.review ? ' data-review="1"' : ''}><div class="co-head"><h3>${esc(b.name)}</h3>${reviewMark(g)}`
     + (has ? `<a class="pill neutral" href="#accounts/areas">${t('anteil_0', pctText(b.share))}</a>` : `<a class="pill warn" href="#accounts/areas">${t('anteil_fehlt')}</a>`) + hq('h_co_anteil') + `</div>`
     + row(t('co_beteiligung'), 'h_co_bet', `${acctSel('c-bet', g.participation, betCandidate(bid), t('keine_2'))}<div class="pv small" data-pv="b"></div>`)
     + row(t('co_takt'), 'h_co_takt', `<select class="c-takt"><option value="daily" ${g.cycle !== 'monthly' ? 'selected' : ''}>${t('takt_taeglich')}</option><option value="monthly" ${g.cycle === 'monthly' ? 'selected' : ''}>${t('takt_monatlich')}</option></select><div class="small muted c-takt-tip">${taktTip(g.cycle)}</div>`)
@@ -5084,8 +5084,10 @@ function rulesPreviewShow(rp, r) {
 }
 // a rule as one collapsible row: name, what it books into, what is open, whether it is on; the details below
 const refName = ref => String(ref || '').split(' | ').slice(1).join(' | ') || '';
-function ruleShell(i, name, target, on, open, body) {
-  return `<details class="item rule" data-i="${i}"${open ? ' open' : ''}><summary><span class="r-name">${esc(name || t('ohne_namen'))}</span><span class="r-target small muted">${target ? '→ ' + esc(target) : ''}</span><span class="r-pv small"></span>${on ? '' : `<span class="pill neutral">${t('aus')}</span>`}</summary>`
+// a rule the assistant made or changed: marked until you confirm it (its bookings wait for approval until then)
+const reviewMark = r => r && r.review ? `<span class="pill warn rv-pill">${t('regel_ki_pruefen')}</span><button class="small secondary rv-ok" type="button" title="${esc(t('regel_bestaetigen_tip'))}">${t('regel_bestaetigen')}</button>` : '';
+function ruleShell(i, name, target, on, open, body, review) {
+  return `<details class="item rule" data-i="${i}"${review ? ' data-review="1"' : ''}${open ? ' open' : ''}><summary><span class="r-name">${esc(name || t('ohne_namen'))}</span><span class="r-target small muted">${target ? '→ ' + esc(target) : ''}</span><span class="r-pv small"></span>${on ? '' : `<span class="pill neutral">${t('aus')}</span>`}${reviewMark({review})}</summary>`
     + `<div class="rule-body">${body}<div class="rule-foot"><button class="ghost small del">${t('regel_entfernen')}</button></div></div></details>`;
 }
 function loanForm(l, i) {
@@ -5114,7 +5116,7 @@ function loanForm(l, i) {
     + f(t('gegenpartei'), 'h_l_gp', `<input type="text" class="f-gp" value="${esc(b.counterparty || '')}">`)
     + f(t('kategorie_tilgung'), 'h_l_kt', `<select class="f-kt">${catOptions(b.category_repayment)}</select>`)
     + f(t('kategorie_zinsen'), 'h_l_kz', `<select class="f-kz">${catOptions(b.category_interest)}</select>`, 'zo')
-    + `</div>`);
+    + `</div>`, !!l.review);
 }
 function catOptions(selected) {
   const leaves = S.KATS.filter(k => !k.group);
@@ -5135,12 +5137,14 @@ function collectRules(strict) {
       kind: v('.f-art'), from_date: v('.f-ab'),
       booking: { counterparty: v('.f-gp') || v('.f-name'), category_repayment: v('.f-kt') || null, category_interest: v('.f-kz') || null } };
     if (modell) l.interest = { model: modell, rate_list: satz, booking_day: v('.f-tag'), base_override: basis };
+    if (it.dataset.review) l.review = true;          // from the assistant, not confirmed yet
     return l;
   });
   cfg.companies = $$('#companies .co-card').map(c => ({ area: c.dataset.b, participation: $('.c-bet', c).value,
-    retroactive_from: backValue(c), cycle: $('.c-takt', c).value, threshold: parseFloat($('.c-sw', c).value) || 0.01, counterparty: $('.c-gp', c).value.trim() }))
+    retroactive_from: backValue(c), cycle: $('.c-takt', c).value, threshold: parseFloat($('.c-sw', c).value) || 0.01, counterparty: $('.c-gp', c).value.trim(),
+    ...(c.dataset.review ? {review: true} : {}) }))
     .filter(g => g.participation || g.counterparty);          // a counterparty alone: the name on mirrored bookings
-  cfg.account_mirrors = $$('#mirrors .gk-row').map(r => Object.assign({a: $('.g-a', r).value, b: $('.g-b', r).value, from_date: backValue(r)}, r.dataset.kat ? {category: r.dataset.kat} : {}))
+  cfg.account_mirrors = $$('#mirrors .gk-row').map(r => Object.assign({a: $('.g-a', r).value, b: $('.g-b', r).value, from_date: backValue(r)}, r.dataset.kat ? {category: r.dataset.kat} : {}, r.dataset.review ? {review: true} : {}))
     .filter(m => m.a && m.b);
   return cfg;
 }
@@ -5164,9 +5168,9 @@ async function restartTo(port, before) {
   }
   if (samePort) location.reload(); else location.href = target;
 }
-async function saveConfig(cfg, findingsEl, trotzdem) {
+async function saveConfig(cfg, findingsEl, trotzdem, extra) {
   try {
-    const r = await api('/api/config', {config: cfg, anyway: !!trotzdem}, 'PUT');
+    const r = await api('/api/config', Object.assign({config: cfg, anyway: !!trotzdem}, extra || {}), 'PUT');
     DIRTY.on = false;
     const probleme = (r.findings || []).filter(f => f.severity !== 'ok');      // erfolgreich gepruefte Verweise nicht einzeln auflisten
     S.CFG = r.config;
@@ -5176,7 +5180,7 @@ async function saveConfig(cfg, findingsEl, trotzdem) {
     S.STATUS = await api('/api/status'); statusMini();
     return true;
   } catch (e) {
-    if (e.data && e.data.findings) { showFindings(findingsEl, e.data.findings.filter(f => f.severity !== 'ok'), t('nicht_gespeichert_fehler_beheben_oder'), 'error'); findingsEl.insertAdjacentHTML('beforeend', `<div class="actions"><button id="save-anyway" class="danger small">${t('trotzdem_speichern')}</button></div>`); $('#save-anyway').addEventListener('click', () => saveConfig(cfg, findingsEl, true)); }
+    if (e.data && e.data.findings) { showFindings(findingsEl, e.data.findings.filter(f => f.severity !== 'ok'), t('nicht_gespeichert_fehler_beheben_oder'), 'error'); findingsEl.insertAdjacentHTML('beforeend', `<div class="actions"><button id="save-anyway" class="danger small">${t('trotzdem_speichern')}</button></div>`); $('#save-anyway').addEventListener('click', () => saveConfig(cfg, findingsEl, true, extra)); }
     else toast(t('fehler_3') + e.message, 5000);
     return false;
   }
@@ -6416,8 +6420,12 @@ function bind(main) {
     const sr = $('#save-rules', rp), st = $('#rules-state', rp);
     let pvTimer = null, pvSeq = 0;
     const preview = async () => { const n = ++pvSeq; try { const r = await api('/api/rules/preview', {config: collectRules()}); if (n === pvSeq) rulesPreviewShow(rp, r); } catch (e) { /* preview only */ } };
-    const rulesJson = () => { const c = collectRules(); return JSON.stringify([c.loans, c.companies, $$('#mirrors .gk-row', rp).map(r => [$('.g-a', r).value, $('.g-b', r).value, backValue(r)])]); };   // rows as they stand, also unfinished ones
+    const rulesJson = () => { const c = collectRules(); return JSON.stringify([c.loans, c.companies, $$('#mirrors .gk-row', rp).map(r => [$('.g-a', r).value, $('.g-b', r).value, backValue(r), !!r.dataset.review])]); };   // rows as they stand, also unfinished ones
     let saved = rulesJson();
+    // the rules this page was drawn from: sent with its save -- refused if the assistant's card changed one meanwhile (S.CFG is
+    // loaded anew in the background, the page with unsaved changes is not drawn anew: so taken now, renewed only by its own save)
+    const seenNow = () => JSON.parse(JSON.stringify([S.CFG.loans || [], S.CFG.companies || [], S.CFG.account_mirrors || []]));
+    let seen = seenNow();
     const changed = () => {
       const same = rulesJson() === saved;
       sr.disabled = same; DIRTY.on = !same; st.textContent = t(same ? 'regeln_gespeichert' : 'regeln_ungespeichert');
@@ -6427,6 +6435,13 @@ function bind(main) {
       $('#loans', rp).insertAdjacentHTML('beforeend', loanForm({name: t('neues_darlehen'), _new: true, from_date: new Date().toISOString().slice(0, 10), interest: {model: 'yearly_base', rate_list: [], booking_day: 'with_payment'}, booking: {category_repayment: 'Umbuchung'}}, $$('#loans .item', rp).length));
       bindDel(main); changed();
       const it = $('#loans', rp).lastElementChild; it.scrollIntoView({block: 'nearest', behavior: 'smooth'}); const n = $('.f-name', it); n.focus(); n.select();
+    });
+    rp.addEventListener('click', e => {          // a rule from the assistant confirmed: unmarked (saved with the page)
+      const ok = e.target.closest('.rv-ok'); if (!ok) return;
+      e.preventDefault(); e.stopPropagation();
+      const el = ok.closest('[data-review]'); if (!el) return;
+      delete el.dataset.review; el.querySelectorAll('.rv-pill, .rv-ok').forEach(x => { if (x.closest('[data-review], .rule, .co-card, .gk-row') === el) x.remove(); });
+      changed();
     });
     rp.addEventListener('input', e => {
       if (!e.target.closest('.rule, .co-card, #mirrors')) return;
@@ -6463,8 +6478,8 @@ function bind(main) {
       const bad = live.filter(r => !$('.g-a', r).value || !$('.g-b', r).value || same(r) || twice(r));
       if (bad.length) { bad.forEach(r => r.classList.add('invalid')); bad[0].scrollIntoView({block: 'center', behavior: 'smooth'}); toast(t(bad.every(same) ? 'gk_gleiches_konto' : bad.every(twice) ? 'gk_doppelt' : 'gk_unvollstaendig'), 5000); return; }
       let rules; try { rules = collectRules(true); } catch (e) { toast(e.message, 6000); return; }
-      if (await saveConfig(rules, $('#findings', rp))) {
-        saved = rulesJson(); sr.disabled = true; st.textContent = t('regeln_gespeichert'); preview();
+      if (await saveConfig(rules, $('#findings', rp), false, {rules_seen: seen})) {
+        seen = seenNow(); saved = rulesJson(); sr.disabled = true; st.textContent = t('regeln_gespeichert'); preview();
         rulesFollowUp(preview);
       }
     });
@@ -6696,6 +6711,11 @@ function asEntry(p, ask) {
   const st = p.state === 'queued' ? (ask ? '' : `<div class="as-e-st">${t('ki_e_wartet')}</div>`)
     : p.state === 'done' ? `<div class="as-e-st ok">${ICON.check}<span>${t('ki_e_done')}</span>${p.fixed ? '' : `<button class="ghost small as-undo" data-id="${esc(p.id)}">${t('ki_e_zurueck')}</button>`}</div>${p.text ? `<div class="as-e-why">${esc(p.text)}</div>` : ''}`
     : `<div class="as-e-st">${p.state === 'failed' ? esc(t('ki_e_failed', p.text || '')) : t(p.state === 'undone' ? 'ki_e_undone' : 'ki_e_declined')}</div>${p.state === 'undone' && p.text ? `<div class="as-e-why">${esc(p.text)}</div>` : ''}`;
+  if (p.kind === 'rule') {          // a booking rule: each setting before and after, and what it would book (each booking waiting for approval)
+    const trs = (p.rows || []).map(r => `<tr><td>${esc(r.label)}</td><td class="muted">${esc(r.old_text || '–')}</td><td><b>${esc(r.new_text || '–')}</b></td></tr>`).join('');
+    return asCard(p, ask, kind, `${why}<table class="as-e-t"><thead><tr><th></th><th>${t('ki_e_bisher')}</th><th>${t('ki_e_neu_wert')}</th></tr></thead><tbody>${trs}</tbody></table>
+      <div class="muted small">${[p.count ? tn('ki_e_rule_vorschau', p.count, p.count) : '', p.dropped ? tn('ki_e_rule_weg', p.dropped, p.dropped) : '', t('ki_e_rule_freigabe')].filter(Boolean).join(' · ')}</div>`, fin, st);
+  }
   if (p.kind === 'book' || p.kind === 'hold') {          // waiting auto bookings to book (final in MoneyMoney) or to hold back: how many, how much, the first of them
     const more = (p.count || 0) - (p.rows || []).length;
     const trs = (p.rows || []).map(r => `<tr><td class="nowrap">${esc(FD(r.label))}</td><td class="muted as-e-zw" title="${esc(r.text || '')}">${esc(r.text || '')}</td><td class="num">${r.new == null ? '' : fmt.format(r.new)}</td></tr>`).join('');
@@ -6711,7 +6731,7 @@ function asEntry(p, ask) {
   return asCard(p, ask, kind, `${ev}${why}
     <table class="as-e-t"><thead><tr><th>${t(p.kind === 'params' ? 'ki_e_annahme' : 'ki_e_monat')}</th><th class="num">${t('ki_e_bisher')}</th><th class="num">${t('ki_e_neu_wert')}</th></tr></thead><tbody>${rows}</tbody></table>`, fin, st);
 }
-const asKind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params'), category: t('ki_e_category'), book: t('ki_e_book'), hold: t('ki_e_hold')}[k] || '');
+const asKind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params'), category: t('ki_e_category'), book: t('ki_e_book'), hold: t('ki_e_hold'), rule: t('ki_e_rule')}[k] || '');
 function asCard(p, ask, kind, body, fin, st) {
   // the frame of a proposed change: the tick while the card of changes waits, its kind, title and where, what it changes, its state
   const tick = p.state === 'queued' && ask ? `<label class="as-e-pick" title="${esc(t('ki_e_auswahl_tip'))}"><input type="checkbox" class="as-pick" data-id="${esc(p.id)}" ${p.off ? '' : 'checked'}></label>` : '';
@@ -7790,7 +7810,7 @@ async function vEinstellungenAssistent() {
     ${pf.can_seal ? `<label>${t('ki_abschirmung')}${hq('ki_abschirmung')}</label><label class="chk"><select id="as-sandbox">${['strict', 'basic', 'off'].map(k => opt(k, t(`ki_sb_${k}`), st.sandbox)).join('')}</select></label>` : ''}
   </div>
   <h2>${t('ki_rechte')}</h2>
-  <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize', 'book']], ['ki_rg_zugang', ['remote']]].map(([g, ks]) =>
+  <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize', 'book', 'rules']], ['ki_rg_zugang', ['remote']]].map(([g, ks]) =>
     `<div class="as-rg"><div class="as-rg-h">${t(g)}${g === 'ki_rg_aendern' ? hq('ki_eintragen') : ''}</div>${ks.map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${(k === 'read' ? r.figures && r.transactions && r.page : r[k]) ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}</span></label>`).join('')}</div>`).join('')}</div>
   <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>
   <details class="as-log" id="as-log"><summary>${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details>`;

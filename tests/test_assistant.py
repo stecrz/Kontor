@@ -1264,7 +1264,7 @@ class Tools(_Assist):
 
     def test_rights(self):
         self.assertEqual(len(self.a.tool_list(self.a.settings())), len(A.TOOLS))         # changes are on from the start (each after the user's click)
-        self.a.set({"rights": {"enter_values": False, "categorize": False, "book": False}})
+        self.a.set({"rights": {"enter_values": False, "categorize": False, "book": False, "rules": False}})
         self.assertEqual(len(self.a.tool_list(self.a.settings())), len([t for t in A.TOOLS if t['kind'] != 'enter']))   # everything but changes
         self.assertNotIn("enter_balances", [t["name"] for t in self.a.tool_list(self.a.settings())])
         with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record"), "w"):
@@ -1292,11 +1292,11 @@ class Tools(_Assist):
         kind = {t["name"]: t["kind"] for t in A.TOOLS}
         self.assertFalse([n for n in names if any(w in n for w in ("setting", "config", "rule_set", "install", "download", "model", "right", "password", "transfer"))])
         self.assertEqual(sorted(n for n in names if kind[n] != "read" and any(w in n for w in ("book", "categor", "rule", "sync", "account"))),
-                         ["assign_categories", "decide_bookings"])       # rules: read only; categories for transactions without one, waiting bookings: proposed, after the click
-        self.assertEqual({n for n in names if kind[n] == "enter"}, {"enter_balances", "set_plan_values", "set_plan_parameters", "add_plan_event", "assign_categories", "decide_bookings"})
+                         ["assign_categories", "decide_bookings", "propose_rule"])       # categories for transactions without one, waiting bookings, rules: proposed, after the click
+        self.assertEqual({n for n in names if kind[n] == "enter"}, {"enter_balances", "set_plan_values", "set_plan_parameters", "add_plan_event", "assign_categories", "decide_bookings", "propose_rule"})
         self.assertEqual({n for n in names if kind[n] == "show"}, {"open_page", "highlight", "show_transactions", "show_chart"})
         self.assertEqual({t["kind"] for t in A.TOOLS}, {"read", "show", "enter"})
-        self.assertEqual({t["right"] for t in A.TOOLS if t["kind"] == "enter"}, {"enter_values", "categorize", "book"})
+        self.assertEqual({t["right"] for t in A.TOOLS if t["kind"] == "enter"}, {"enter_values", "categorize", "book", "rules"})
 
     def test_settings_grouped_and_saved_before(self):
         # reading is one switch in the settings: figures, transactions and the page together; the help always
@@ -2167,6 +2167,138 @@ class Bookings(_Assist):
         self.a.confirm(job, batch, True, None, True)
         self.assertEqual([e["state"] for e in events(self.a, job) if e["type"] == "entry_state"], ["declined"])
         self.assertEqual(self.app.config.get("not_book") or [], [])
+
+
+class Rules(_Assist):
+    """Booking rules through the assistant: checked by Kontor (errors, what it would book), saved only after the click marked for
+    review -- each of its bookings waits for approval until the user confirms the rule -- and taken back as it was."""
+
+    def propose(self, args):
+        r = self.a.ask({"question": "call propose_rule " + json.dumps(args, ensure_ascii=False)})
+        evs = events(self.a, r["job"], until="batch")
+        return r["job"], [e for e in evs if e["type"] == "entry"], next((e["id"] for e in evs if e["type"] == "batch"), None), evs
+
+    def test_change_a_loan_after_the_click_and_take_back(self):
+        old = copy.deepcopy(self.app.config["loans"][0])
+        self.assertIn("propose_rule", self.tool("get_rules")["note"])
+        job, cards, batch, evs = self.propose({"kind": "loan", "action": "change", "which": "verkäufer",
+                                               "fields": {"rates": [{"from": "2025-11-20", "percent": 3.5}]}, "reason": "laut Vertrag"})
+        c = cards[0]
+        self.assertEqual((c["kind"], c["title"], c["sub"]), ("rule", "Verkäuferdarlehen", "geänderte Regel"))
+        self.assertEqual([(r["label"], r["old_text"], r["new_text"]) for r in c["rows"]], [("Zinssätze", "2025-11-20: 3,0 %", "2025-11-20: 3,5 %")])
+        self.assertEqual(self.app.config["loans"][0], old)                           # proposed: nothing saved
+        self.a.confirm(job, batch, True, None, True)
+        self.assertEqual([e["state"] for e in events(self.a, job) if e["type"] == "entry_state"], ["done"])
+        new = self.app.config["loans"][0]
+        self.assertEqual((new["interest"]["rate_list"], new["review"]), ([{"from_date": "2025-11-20", "percent": 3.5}], True))
+        # its bookings wait for approval: Kontor marks them to be checked first (never booked on their own)
+        import rules as R
+        import core
+        res = R.plan_all(self.app.ledger.fork(), core.merged_config(self.app.config), T.TODAY)
+        mine = [p for p in res.proposals if p.rule.startswith("Darlehen")]
+        self.assertTrue(all(p.note == MA.tr("s_regel_pruefen") for p in mine))
+        # taken back: as it was
+        self.a.take_back(c["id"], True)
+        self.assertEqual(self.app.config["loans"][0], old)
+
+    def test_mirror_added_books_nothing_on_its_own_and_comes_back_out(self):
+        """A mirror from the assistant: kept marked when saved, its bookings never booked automatically (the mode books fully
+        automatically here), confirmed on the page only; taken back after adding: gone again."""
+        self.app.config["dry_run"] = False
+        job, cards, batch, evs = self.propose({"kind": "mirror", "action": "add", "fields": {"account_a": "Immobilie Lindenstraße", "account_b": "Broker Giro", "from": "2026-10-01"}})
+        self.assertEqual((cards[0]["title"], cards[0]["sub"]), ("Immobilie Lindenstraße ⇄ Broker Giro", "neue Regel"))
+        self.a.confirm(job, batch, True, None, True); events(self.a, job)
+        self.assertTrue(self.app.config["account_mirrors"][-1].get("review"))       # the mark survives saving
+        self.assertTrue(self.tool("get_rules")["account_mirrors"][-1]["not_confirmed_by_the_user"])
+        T.MockBridge.state["txs"].append(T.F.tx("priv.tr", T.TODAY, -777.0, "Händler", "Kauf"))
+        n0 = len(T.MockBridge.state["txs"])
+        self.app.do_run(None, True)                                                  # fully automatic
+        self.assertEqual(len(T.MockBridge.state["txs"]), n0)                         # nothing booked from it on its own
+        lr = self.app.status(True)["last_run"]
+        self.assertTrue(any(p_.get("note") == MA.tr("s_regel_pruefen") for p_ in lr.get("proposals") or []))
+        self.a.take_back(cards[0]["id"], True)                                       # stored with fields filled in: still taken back
+        self.assertFalse(any(m.get("b", "").endswith("Broker Giro") and m.get("a", "").endswith("Lindenstraße") for m in self.app.config.get("account_mirrors") or []))
+
+    def test_participation_names_yes_no_and_the_open_page(self):
+        cfg = copy.deepcopy(self.app.config)
+        cfg["loans"].append(dict(copy.deepcopy(cfg["loans"][0]), name="Verkäuferdarlehen 2", active=False))
+        self.app.save_config(cfg)
+        job, cards, batch, evs = self.propose({"kind": "loan", "action": "change", "which": "Verkäuferdarlehen", "fields": {"receivable": "false", "active": "nein"}})
+        self.assertEqual(cards[0]["title"], "Verkäuferdarlehen")                     # the exact name, not "several rules fit"
+        self.assertEqual([r["label"] for r in cards[0]["rows"]], ["Aktiv"])          # "false" is no, not yes: still a liability
+        self.a.confirm(job, batch, False, None, True); events(self.a, job)
+        self.assertIn("true or false", text_of(self.propose({"kind": "loan", "action": "change", "which": "Verkäuferdarlehen", "fields": {"active": "vielleicht"}})[3]))
+        job, cards, batch, evs = self.propose({"kind": "participation", "action": "change", "which": "Alpha", "fields": {"cycle": "monthly"}})
+        self.assertEqual([(r["label"], r["new_text"]) for r in cards[0]["rows"]], [("Buchungshäufigkeit", "monatlich")])
+        seen = [copy.deepcopy(self.app.config.get(k) or []) for k in ("loans", "companies", "account_mirrors")]
+        self.a.confirm(job, batch, True, None, True); events(self.a, job)
+        self.assertEqual(self.app.config["companies"][0]["cycle"], "monthly")
+        # the rules page still open with what it was drawn from: its save is refused, the assistant's rule stays
+        code, r = self.call("/api/config", {"config": dict(self.app.config, companies=seen[1]), "rules_seen": seen}, method="PUT")
+        self.assertEqual(code, 409, r); self.assertIn("inzwischen geändert", r["error"])
+        self.assertEqual(self.app.config["companies"][0]["cycle"], "monthly")
+        now = [self.app.config.get(k) or [] for k in ("loans", "companies", "account_mirrors")]
+        code, r = self.call("/api/config", {"config": self.app.config, "rules_seen": json.loads(json.dumps(now))}, method="PUT")
+        self.assertEqual(code, 200, r)                                               # drawn anew: saves (3.0 sent back as 3 counts the same)
+
+    def test_rates_added_dates_percent_companies_and_other_pages(self):
+        job, cards, batch, evs = self.propose({"kind": "loan", "action": "change", "which": "Verkäuferdarlehen", "fields": {"rates": [{"from": "2026-07-01", "percent": "4,25"}]}})
+        self.assertEqual([(r["old_text"], r["new_text"]) for r in cards[0]["rows"]], [("2025-11-20: 3,0 %", "2025-11-20: 3,0 %; 2026-07-01: 4,25 %")])     # added, the rate before kept
+        self.assertIn("dropped", cards[0])
+        self.a.confirm(job, batch, False, None, True); events(self.a, job)
+        for rate, why in (({"from": "2026-02-30", "percent": 9}, "a date that exists"), ({"from": "2026-03-01", "percent": "nan"}, "from -10 to 30"),
+                          ({"from": "2026-03-01", "percent": 350}, "from -10 to 30")):
+            self.assertIn(why, text_of(self.propose({"kind": "loan", "action": "change", "which": "Verkäuferdarlehen", "fields": {"rates": [rate]}})[3]), rate)
+        # a participation only for an area the rules page shows as a company
+        self.assertIn("kind company", text_of(self.propose({"kind": "participation", "action": "add", "fields": {"company": "Privat", "participation_account": "Depot"}})[3]))
+        # a page other than the rules page (settings, accounts -- perhaps loaded before the card): leaves the rules as they are now
+        job, cards, batch, evs = self.propose({"kind": "participation", "action": "change", "which": "Alpha", "fields": {"cycle": "monthly"}})
+        stale = copy.deepcopy(self.app.config)
+        self.a.confirm(job, batch, True, None, True); events(self.a, job)
+        stale.setdefault("schedule", {})["interval_minutes"] = 45
+        code, r = self.call("/api/config", {"config": stale}, method="PUT")
+        self.assertEqual(code, 200, r)
+        self.assertEqual((self.app.config["companies"][0]["cycle"], self.app.config["companies"][0]["review"], self.app.config["schedule"]["interval_minutes"]), ("monthly", True, 45))
+        # the rules page saved meanwhile (it writes the rule in its own form -- threshold, counterparty -- and confirms it): taken back still
+        page = copy.deepcopy(self.app.config)
+        page["companies"][0] = {k: v for k, v in dict(page["companies"][0], threshold=0.01, counterparty="").items() if k != "review"}
+        seen = json.loads(json.dumps([self.app.config.get(k) or [] for k in ("loans", "companies", "account_mirrors")]))
+        self.assertEqual(self.call("/api/config", {"config": page, "rules_seen": seen}, method="PUT")[0], 200)
+        self.a.take_back(cards[0]["id"], True)
+        self.assertNotEqual(self.app.config["companies"][0].get("cycle"), "monthly")
+
+    def test_preview_counts_new_changed_and_dropped_bookings(self):
+        from types import SimpleNamespace as NS
+        plans = {}
+        orig = MA.plan_rules
+        MA.plan_rules = lambda led, cfg, day, seen=None: NS(proposals=[NS(key=k, amount=v) for k, v in plans[cfg["loans"][0].get("name")].items()])
+        try:
+            old = self.app.config["loans"][0]
+            plans[old["name"]] = {"a": -10.0, "b": -20.0, "c": -5.0}
+            plans["Neu"] = {"a": -10.0, "b": -21.0, "d": -1.0}                    # b another amount, d new, c gone
+            pv = MA.rule_preview(self.app, "loans", old, dict(old, name="Neu"))
+            self.assertEqual((pv["errors"], pv["bookings"], pv["dropped"]), ([], 2, 1))
+        finally:
+            MA.plan_rules = orig
+
+    def test_changed_meanwhile_errors_and_rights(self):
+        job, cards, batch, evs = self.propose({"kind": "loan", "action": "change", "which": "verkäufer", "fields": {"counterparty": "Verkäuferin"}})
+        cfg = copy.deepcopy(self.app.config); cfg["loans"][0]["from_date"] = "2026-02-01"
+        self.app.save_config(cfg)                                                    # changed on the page meanwhile
+        self.a.confirm(job, batch, True, None, True)
+        st = next(e for e in events(self.a, job) if e["type"] == "entry_state")
+        self.assertEqual(st["state"], "failed"); self.assertIn("inzwischen geändert", st["text"])
+        self.assertEqual(self.app.config["loans"][0]["booking"]["counterparty"], "Verkäufer")
+        # refused before a card: no such rule, an account that does not exist, nothing changed, a company with a rule already
+        self.assertIn("no rule fits", text_of(self.propose({"kind": "loan", "action": "change", "which": "gibtsnicht", "fields": {"active": False}})[3]))
+        self.assertIn("No account named", text_of(self.propose({"kind": "loan", "action": "add", "fields": {"name": "X", "loan_account": "Gibtsnicht"}})[3]))
+        self.assertIn("nothing changed", text_of(self.propose({"kind": "loan", "action": "change", "which": "verkäufer", "fields": {"counterparty": "Verkäufer"}})[3]))
+        self.assertIn("rule already", text_of(self.propose({"kind": "participation", "action": "add", "fields": {"company": "Alpha GbR", "participation_account": "Beteiligung an Alpha GbR"}})[3]))
+        self.assertIn("two different accounts", text_of(self.propose({"kind": "mirror", "action": "add", "fields": {"account_a": "Depot", "account_b": "Depot"}})[3]))
+        # without the right: no tool, and the note says the user does it
+        self.a.set({"rights": {"rules": False}})
+        self.assertNotIn("propose_rule", [t["name"] for t in self.a.tool_list(self.a.settings())])
+        self.assertIn("you cannot change them", self.tool("get_rules")["note"])
 
 
 class Categories(_Assist):
@@ -3142,6 +3274,62 @@ class Browser(unittest.TestCase):
                 app.rebuild_cv.wait_for(lambda: not app.rebuild_running and not app.rebuild_pending, timeout=30)
             shutil.rmtree(d, ignore_errors=True)
 
+    def test_rules_page_open_while_the_assistant_changes_a_rule(self):
+        """The rules page with unsaved changes stays as drawn while the assistant's card saves a rule (the page's rules are loaded
+        anew in the background): its save is refused, the assistant's rule stays. Drawn anew: the rule marked, kept marked through
+        another save, confirmed with a click."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        from http.server import ThreadingHTTPServer
+        from storage import Store, load_or_create_master_key
+        d = tempfile.mkdtemp(prefix="kontor-asrule-")
+        store = Store(d, *load_or_create_master_key(d)); store.save("config.json", T.config_for_test(os.path.join(d, "Belege")))
+        T.reset_mock(); T.patch_today()
+        app = MA.App(store, d, bridge_factory=T.MockBridge); app.do_run(False, True); app.rebuild_report(wait=True)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), MA.make_handler(app)); threading.Thread(target=srv.serve_forever, daemon=True).start()
+        url = "http://127.0.0.1:%d/" % srv.server_address[1]
+        mirror = {"a": T.F.uid("priv.immo") + " | Immobilie Lindenstraße", "b": T.F.uid("priv.tr") + " | Broker Giro", "from_date": "all"}
+        mine = lambda: [m for m in app.config.get("account_mirrors") or [] if m["a"].startswith(T.F.uid("priv.immo"))]
+
+        def until(pg, js, seconds=15.0):
+            t0 = time.time()
+            while time.time() - t0 < seconds:
+                if pg.evaluate(js):
+                    return
+                pg.wait_for_timeout(80)
+            self.fail("not reached: " + js)
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch(); pg = b.new_page(viewport={"width": 1360, "height": 860})
+                errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto(url); pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                pg.wait_for_selector("#shell:not(.hidden)"); pg.evaluate("location.hash = '#accounts/rules'"); pg.wait_for_selector("#save-rules")
+                pg.evaluate("document.querySelector('#loans .item').open = true"); pg.fill("#loans .item .f-gp", "Verkäuferin")          # unsaved
+                MA.save_assistant_rule(app, "account_mirrors", None, mirror)                      # the assistant's card, clicked meanwhile
+                pg.evaluate("(async () => { S.CFG = await api('/api/config'); })()")              # loaded anew in the background
+                until(pg, "(S.CFG.account_mirrors || []).length > 0")
+                pg.click("#save-rules")
+                until(pg, "(document.querySelector('#toast') || {}).textContent?.includes('inzwischen geändert')")
+                self.assertEqual(len(mine()), 1); self.assertTrue(mine()[0]["review"])
+                self.assertEqual(app.config["loans"][0]["booking"]["counterparty"], "Verkäufer")
+                # drawn anew: marked; another change saved keeps the mark; "Bestätigen" takes it off
+                pg.evaluate("DIRTY.on = false; route()"); pg.wait_for_selector("#mirrors .gk-row[data-review] .rv-ok")
+                pg.evaluate("document.querySelector('#loans .item').open = true"); pg.fill("#loans .item .f-gp", "Verkäuferin"); pg.click("#save-rules")
+                until(pg, "document.querySelector('#save-rules').disabled")
+                self.assertEqual(app.config["loans"][0]["booking"]["counterparty"], "Verkäuferin"); self.assertTrue(mine()[0]["review"])
+                pg.click("#mirrors .gk-row .rv-ok"); self.assertFalse(pg.query_selector("#mirrors .gk-row[data-review]")); pg.click("#save-rules")
+                until(pg, "document.querySelector('#save-rules').disabled")
+                self.assertNotIn("review", mine()[0])
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            with app.rebuild_cv:
+                app.rebuild_cv.wait_for(lambda: not app.rebuild_running and not app.rebuild_pending, timeout=30)
+            shutil.rmtree(d, ignore_errors=True)
+
     def test_panel(self):
         try:
             from playwright.sync_api import sync_playwright
@@ -3210,7 +3398,7 @@ class Browser(unittest.TestCase):
                 until(pg, "AS.st.settings.rights.enter_values === true")
                 # the rights in groups -- read (one switch; the help always), show, change, from where
                 self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-rg-h')].map(e => e.firstChild.textContent)"), ["Lesen – die Hilfe immer", "Zeigen", "Ändern – jede Änderung erst nach deinem Klick", "Von wo"])
-                self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-right')].map(e => e.dataset.r)"), ["read", "navigate", "enter_values", "categorize", "book", "remote"])
+                self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-right')].map(e => e.dataset.r)"), ["read", "navigate", "enter_values", "categorize", "book", "rules", "remote"])
                 pg.uncheck(".as-right[data-r=read]"); until(pg, "!AS.st.settings.rights.figures && !AS.st.settings.rights.transactions && !AS.st.settings.rights.page && AS.st.settings.rights.help")
                 pg.wait_for_selector(".as-right[data-r=read]"); pg.check(".as-right[data-r=read]"); until(pg, "AS.st.settings.rights.figures && AS.st.settings.rights.transactions && AS.st.settings.rights.page")
                 # the context: automatic by the memory of this Mac, or chosen
