@@ -24,7 +24,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 import zipfile
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from i18n import tr
 
 log = logging.getLogger("kontor.update")
@@ -88,6 +88,37 @@ def changelog_section(text: str, version: str) -> Tuple[str, str]:
     return "\n".join(out).strip()[:4000], datum
 
 
+DEV_RE = re.compile(r"^\s*[-*]\s+(?:Entwicklung|Development)\s*:")      # rules, tests, CI -- nothing the user notices
+TOPIC_RE = re.compile(r"^\s*[-*]\s+([^:]{1,40}):\s")                         # "- KI-Assistent: ..." -> "KI-Assistent"
+
+
+def changelog_since(text: str, current: str, upto: str) -> Tuple[str, str, str]:
+    """Was ein Update von <current> auf <upto> bringt: die Punkte aller Abschnitte dazwischen in einer Liste
+    (neueste zuerst, gleicher Bezug vor dem Doppelpunkt beieinander, doppelte und Entwicklungs-Punkte weg).
+    Rueckgabe: (Neuerungen, Datum von <upto>, aelteste enthaltene Version)."""
+    cur, top = _vtuple(current), _vtuple(upto)
+    lines, datum, first, on = [], "", "", False
+    for line in text.splitlines():
+        m = HEADING_RE.match(line)
+        if m:
+            v = _vtuple(m.group(1))
+            on = cur < v <= top
+            if on:
+                first = m.group(1)
+                if v == top:
+                    datum = m.group(2) or ""
+            continue
+        if on and line.strip() and not line.startswith("# ") and not DEV_RE.match(line):
+            lines.append(line.rstrip())
+    groups: Dict[str, List[str]] = {}
+    for line in lines:
+        m = TOPIC_RE.match(line)
+        g = groups.setdefault(m.group(1).strip().lower() if m else "\0%d" % len(groups), [])
+        if line not in g:
+            g.append(line)
+    return "\n".join(x for g in groups.values() for x in g)[:8000], datum, first
+
+
 def changelog() -> str:
     """CHANGELOG.md der installierten Version (alle Versionen, fuer die Anzeige unter Updates)."""
     try:
@@ -110,7 +141,7 @@ def check(repo: str) -> Dict[str, object]:
     """Neueste Version auf GitHub: VERSION im Hauptzweig (eine kleine Datei, kein API-Limit); nur wenn das
     nicht geht, Release bzw. Tag. Tags sind damit keine Voraussetzung mehr fuer ein Update."""
     cur = current_version()
-    out: Dict[str, object] = {"current": cur, "available": None, "date": "", "newer": False, "notes": "", "source": "", "error": None}
+    out: Dict[str, object] = {"current": cur, "available": None, "date": "", "newer": False, "notes": "", "since": "", "source": "", "error": None}
     log.info("Update check: installed %s, repo %s", cur, repo)
     try:
         try:
@@ -120,7 +151,7 @@ def check(repo: str) -> Dict[str, object]:
             out.update({"available": v, "source": "main", "zip": archive_url(repo, "main", "heads")})
             try:
                 cl = _get("https://raw.githubusercontent.com/%s/main/CHANGELOG.md" % repo, "text/plain").decode("utf-8", "replace")
-                out["notes"], out["date"] = changelog_section(cl, v)
+                out["notes"], out["date"], out["since"] = changelog_since(cl, cur, v)
             except Exception as e:      # Neuerungen sind nur Beiwerk
                 log.debug("CHANGELOG not readable: %s", e)
         except urllib.error.HTTPError as e:

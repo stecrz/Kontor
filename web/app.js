@@ -5868,7 +5868,7 @@ async function vUpdates(form) {
     <div class="card"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.error ? '<span class="pill err">?</span>' : esc(info.available || '–') + (info.date ? `<span class="vdate">${t('vom_0', FDT(info.date))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.error ? esc(info.error) : (info.newer ? `<span class="pill ok">${t('neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + t('quelle_2') + esc(info.source || '')) : t('noch_nicht_geprueft')}${r.verified ? t('geprueft') + new Date(r.verified * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
     <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${info && info.newer && st.local ? '' : 'disabled'}>${t('update_installieren_und_dienst_neu')}</button>${((S.CFG.updates || {}).repo || 'stecrz/Kontor') !== 'stecrz/Kontor' ? ` <span class="tag warn">${t('update_fremde_quelle', esc((S.CFG.updates || {}).repo))}</span>` : ''}</div>
     ${form || ''}
-    ${info && info.notes && info.newer ? `<h2>${t('neu_in_0', esc(info.available))}</h2>${clHtml(info.notes)}` : ''}
+    ${info && info.notes && info.newer ? `<h2>${t('neu_in_0', esc(info.since && info.since !== info.available ? t('0_bis_1', info.since, info.available) : info.available))}</h2>${clHtml(info.notes)}` : ''}
     ${clSplit(r.changelog)}
     <div class="note">${t('updates_note', esc('https://github.com/' + ((S.CFG.updates || {}).repo || 'stecrz/Kontor')))}${more('updates')}</div>`;
   return h;

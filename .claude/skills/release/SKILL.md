@@ -29,7 +29,8 @@ description: Jede Änderung an Kontor abschließen – prüfen (auch mit Python 
       nach Rückfrage, vorher die Gesamtprüfung aus `CLAUDE.md` („Großer Versionssprung“). Erste nie. **Changelog:** neuer
       Abschnitt oben in `CHANGELOG.md`, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` mit `TZ=Europe/Berlin date +"%Y-%m-%d %H:%M"`.
       Deutsch, aus Sicht des Nutzers (was er merkt), keine Technik. Kompakt: je Änderung ein Punkt mit wenigen Stichworten in
-      einer Zeile, auf einen Blick lesbar – keine Erklärungen, keine Begründungen.
+      einer Zeile, auf einen Blick lesbar – keine Erklärungen, keine Begründungen. Vorn der Bezug mit Doppelpunkt
+      („KI-Assistent: …“; nur Regeln/Tests/CI: „Entwicklung: …“ – in der Update-Anzeige ausgeblendet).
    3. **Ein Commit:** erst prüfen, dass der frisch geholte `main` in der eigenen Arbeit steckt:
       `git fetch -q origin main && git merge-base --is-ancestor origin/main HEAD` – schlägt das fehl, ist `main` inzwischen
       weiter: zurück zu 1 (das Zusammenfassen auf einen neueren `main` würde dessen Änderungen stillschweigend rückgängig

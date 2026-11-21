@@ -53,7 +53,7 @@ Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhän
    (Apples Version auf dem Mac) –, dann der eine Commit direkt auf `main`. Ein Push kommt ganz oder gar nicht an: eine Version
    erscheint nie halb. GitHub Actions danach für genau diesen Commit abwarten; rot: sofort als nächste Version beheben und dem
    Nutzer in einem Satz Bescheid geben.
-4. `CHANGELOG.md`: neuer Abschnitt oben, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` (Ortszeit des Nutzers, Europe/Berlin), auf Deutsch, kompakt: je Änderung ein kurzer Punkt (Stichworte, eine Zeile), auf einen Blick lesbar – keine Erklärungen.
+4. `CHANGELOG.md`: neuer Abschnitt oben, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` (Ortszeit des Nutzers, Europe/Berlin), auf Deutsch, kompakt: je Änderung ein kurzer Punkt (Stichworte, eine Zeile), auf einen Blick lesbar – keine Erklärungen. Vorn der Bezug mit Doppelpunkt („KI-Assistent: …“, „Bilanz: …“; nur Regeln, Tests, CI: „Entwicklung: …“) – danach fasst die Update-Anzeige alles seit der installierten Version zusammen (Entwicklung ausgeblendet).
 5. Commit und Push selbst erledigen, ohne nachzufragen. Nach dem Push auf `main` nichts nachschieben – eine Korrektur ist eine
    neue Version. Nur Regeln, Tests oder CI geändert: mit der nächsten Version mitnehmen; muss es sofort für die anderen Chats
    gelten, eine eigene Version (Changelog: „Entwicklung: …“).

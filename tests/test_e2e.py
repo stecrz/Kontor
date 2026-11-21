@@ -574,7 +574,7 @@ class CoreTests(unittest.TestCase):
             if url.endswith("/main/VERSION"):
                 return b"9.9.9\n"
             if url.endswith("/main/CHANGELOG.md"):
-                return "# Änderungen\n\n## 9.9.9\n- Neu A\n- Neu B\n\n## 9.9.8\n- alt\n".encode()
+                return "# Änderungen\n\n## 9.9.9 (2026-01-02)\n- Neu A\n- Neu B\n\n## 9.9.8\n- Neu C\n\n## 1.0.0\n- installiert\n".encode()
             raise AssertionError(url)
         old = updates._get; updates._get = fake_get
         try:
@@ -583,7 +583,8 @@ class CoreTests(unittest.TestCase):
             updates._get = old
         self.assertEqual(info["available"], "9.9.9"); self.assertTrue(info["newer"]); self.assertEqual(info["source"], "main")
         self.assertEqual(info["zip"], "https://github.com/stecrz/Kontor/archive/refs/heads/main.zip")
-        self.assertEqual(info["notes"], "- Neu A\n- Neu B")
+        self.assertEqual(info["notes"], "- Neu A\n- Neu B\n- Neu C"); self.assertEqual(info["since"], "9.9.8")      # all since the installed one
+        self.assertEqual(info["date"], "2026-01-02")
 
         def fake_get2(url, accept="application/vnd.github+json"):
             if url.endswith("/main/VERSION"):

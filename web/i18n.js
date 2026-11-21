@@ -199,6 +199,7 @@ const I18N = {
 "xf_receipts":["Belege", "Receipts"],
 "xf_accounts":["Konten", "Accounts"],
 "neu_in_0":["Neu in {0}", "New in {0}"],
+"0_bis_1":["{0} bis {1}", "{0} to {1}"],
 "pos_bankguthaben":["Bankguthaben", "Cash"],
 "pos_wertpapiere":["Wertpapiere", "Securities"],
 "pos_forderungen":["Forderungen", "Receivables"],

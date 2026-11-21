@@ -507,6 +507,17 @@ class ChangelogTests(unittest.TestCase):
         self.assertEqual(updates.changelog_section("# X\n\n## 1.2.3 (2026-01-02)\n- a\n\n## 1.2.2\n- b\n", "1.2.3"), ("- a", "2026-01-02"))
         self.assertEqual(updates.changelog_section("## 1.2.2\n- b\n", "1.2.2"), ("- b", ""))
 
+    def test_seit_installierter_version(self):
+        """Update over several versions: every point since the installed one, one list, newest first, same topic together,
+        no duplicates, nothing for development only."""
+        import updates
+        cl = ("# X\n\n## 1.2.5 (2026-01-05 10:00)\n- KI-Assistent: c\n- Entwicklung: Tests\n\n## 1.2.4\n- Bilanz: b\n\n"
+              "## 1.2.3\n- KI-Assistent: a\n- Bilanz: b\n- frei\n\n## 1.2.2\n- installiert\n")
+        self.assertEqual(updates.changelog_since(cl, "1.2.2", "1.2.5"),
+                         ("- KI-Assistent: c\n- KI-Assistent: a\n- Bilanz: b\n- frei", "2026-01-05 10:00", "1.2.3"))
+        self.assertEqual(updates.changelog_since(cl, "1.2.4", "1.2.5"), ("- KI-Assistent: c", "2026-01-05 10:00", "1.2.5"))
+        self.assertEqual(updates.changelog_since(cl, "1.2.5", "1.2.5"), ("", "", ""))
+
     def test_aktuelle_version_hat_datum(self):
         import updates
         here = os.path.join(os.path.dirname(__file__), "..")

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.44 (2026-11-21 22:17)
+- Updates: „Neu in …“ zeigt alle Änderungen seit der installierten Version, nicht nur die der neuesten (nach Bezug gruppiert, ohne Entwicklung)
+
 ## 3.16.43 (2026-11-21 22:04)
 - KI-Assistent: beendet sich ab Werk erst nach 30 Minuten ohne Frage (vorher 10)
 
