@@ -425,9 +425,10 @@ function printOne(card) {
     if (el !== card) { el.classList.add('print-path'); marked.push(el); }
     for (const sib of el.parentElement.children) if (sib !== el) { sib.classList.add('print-off'); marked.push(sib); }
   }
+  const name = card.closest('#drawer') && $('#drawer > h2'); if (name) name.classList.remove('print-off');          // a chart of the side window: with its name
   PRINT.off = marked; document.body.classList.add('print-one'); window.print();
 }
-// a right click (or ctrl-click) on a chart: its own small menu -- "Grafik drucken" (with shift: the browser's menu)
+// a small menu of its own at the pointer (a right click, see below)
 function ctxMenu(x, y, items) {
   const old = $('#ctx'); if (old) old.remove();
   const m = document.createElement('div'); m.id = 'ctx'; m.className = 'ctx'; m.setAttribute('role', 'menu');
@@ -439,10 +440,16 @@ function ctxMenu(x, y, items) {
   m.addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (!b) return; close(); items[+b.dataset.i][1](); });
   $('button', m).focus();
 }
+// a right click (or ctrl-click) on the page: ask the assistant about what is under the pointer; on a chart also print it alone;
+// with a selected text also copy it -- with shift: the browser's own menu
 document.addEventListener('contextmenu', e => {
-  const card = e.target.closest && e.target.closest('#main #bch, #main .lc-card, #main .cf-card, #main .ov-card, #main .h-chart');
-  if (!card || e.shiftKey || e.target.closest('input, textarea, select, a')) return;
-  e.preventDefault(); ctxMenu(e.clientX, e.clientY, [[t('grafik_drucken'), () => printOne(card)]]);
+  if (e.defaultPrevented || e.shiftKey || !e.target.closest || e.target.closest('input, textarea, select, a, .ctx')) return;          // a long touch that opened a row: nothing more
+  const card = e.target.closest(REF_CHARTS), ref = refAt(e), sel = (getSelection() || '').toString().trim(), items = [];
+  if (ref) items.push([t('ki_fragen'), () => asAskAbout(ref)]);
+  if (card && !card.closest('#assist')) items.push([t('grafik_drucken'), () => printOne(card)]);
+  if (ref && sel) items.push([t('kopieren'), () => { navigator.clipboard.writeText(sel).catch(() => {}); }]);
+  if (!items.length) return;
+  e.preventDefault(); ctxMenu(e.clientX, e.clientY, items);
 });
 function offlineBanner() {
   if (OFFLINE.mode) { const b = $('#banner'); b.innerHTML = `${t('offline_ansicht_der_mac_ist', OFFLINE.as_of ? new Date(OFFLINE.as_of).toLocaleString(LOCALE, {dateStyle: 'short', timeStyle: 'short'}) : t('unbekannt'), hq('offline'))}`; b.className = 'banner info'; }
@@ -666,7 +673,7 @@ async function enterApp() {
   await syncLang();
   // straight into the setup, at its first open step: on the very first start (nothing set up yet) and the first time Kontor
   // opens as an app at the Mac (created in step 1 -- the setup goes on here)
-  if (!location.hash && !OFFLINE.mode && setupOpen() && (S.setup || !S.DATA || (APP_MODE && (S.STATUS || {}).local && !((S.CFG || {}).ui || {}).webapp)))
+  if (!location.hash && !OFFLINE.mode && setupOpen() && (S.setup || !S.DATA || (APP_MODE && (S.STATUS || {}).local && !(S.CFG.ui || {}).webapp)))
     history.replaceState(null, '', '#setup');
   route();
   if (!OFFLINE.mode) asLoad().then(() => { try { if (localStorage.getItem('kontor.assist') === '1' && asOn()) { AS.open = true; asLayout(); } } catch (e) {} if (S.tab === 'assistant' || S.tab === 'setup') route(); });
@@ -1120,7 +1127,7 @@ function ovWealth(D, W, H) {
 
 // ---------------------------------------------------------------- Einrichtung (modular)
 const MODULES = [
-  {id: 'webapp', t: t('mod_webapp'), d: t('mod_webapp_d'), done: () => APP_MODE || !!((S.CFG || {}).ui || {}).webapp, href: '#settings', optional: true},
+  {id: 'webapp', t: t('mod_webapp'), d: t('mod_webapp_d'), done: () => APP_MODE || !!(S.CFG.ui || {}).webapp, href: '#settings', optional: true},
   {id: 'connect', t: t('mod_connect'), d: t('moneymoney_laeuft_und_ist_entsperrt'), done: () => S.KONTEN.length > 0, href: '#settings/moneymoney'},
   {id: 'areas', t: t('mod_areas'), d: t('welche_konten_gehoeren_zusammen_privat'), done: () => (S.CFG.areas || []).length > 0 || !!S.DATA, href: '#accounts/areas'},
   {id: 'accounts', t: t('mod_accounts'), d: t('jedes_konto_bestaetigen_bereich_und'), done: () => !!S.DATA && !((S.DATA.accounts_new || []).length), href: '#accounts'},
@@ -1131,7 +1138,7 @@ const MODULES = [
   {id: 'planning', t: t('mod_planning'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planning', optional: true},
   {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.tax || {}).rental_category, href: '#accounts/tax', optional: true},
   {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.receipts || {}).folder, href: '#settings/receipts', optional: true},
-  {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => (((S.CFG || {}).ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
+  {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => ((S.CFG.ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
   {id: 'assistant', t: t('ki_assistent_lang'), d: t('mod_assistant_d'), done: () => asOn() && !!(AS.st || {}).ready, href: '#settings/assistant', optional: true},
   {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.categories || {}).total || {}).without), href: '#categories', optional: true},
   {id: 'operation', t: t('mod_operation'), d: t('testmodus_automatischer_abgleich_mitte'), done: () => true, href: '#settings/moneymoney'},
@@ -1139,7 +1146,7 @@ const MODULES = [
 // the setup stays in the menu (and guides from step to step) until you close it yourself: "Einrichtung abgeschlossen"
 const nextModule = id => MODULES[MODULES.findIndex(m => m.id === id) + 1];          // the next step of the setup
 const setupMissing = () => MODULES.some(m => !m.optional && !m.done());
-const setupOpen = () => !((S.CFG || {}).ui || {}).setup_done;          // (also before the settings have arrived, just after signing in)
+const setupOpen = () => !(S.CFG.ui || {}).setup_done;
 function vEinrichtung(sub) {
   let h = `<div class="lang-pick"><label for="w-lang" class="small muted">${t('sprache_label')}</label><select id="w-lang">${langOpts()}</select></div>${S.KONTEN.length ? '' : `<div class="note">${t('noch_keine_konten_aus_moneymoney')}</div>`}<div class="setup-list">`;
   MODULES.forEach((m, i) => {
@@ -4643,7 +4650,7 @@ function immoResultHtml(r) {
   let h = `<div class="card"><h3>${t('kennzahlen')}</h3><div class="kpis">${kp(t('gesamtinvestition'), F0(K.total_investment) + ' €')}${kp(t('eigenkapital_inkl_nk'), F0(K.equity_incl_costs) + ' €')}${kp(t('fremdkapital_ltv'), F0(K.loans) + ' € (' + pct(K.ltv) + ')')}${kp(t('kaufpreisfaktor'), FN(K.price_factor))}${kp(t('bruttomietrendite'), pct(K.gross_rental_yield))}${kp(t('nettomietrendite'), pct(K.net_rental_yield))}${kp(t('cashflow_jahr_1'), F0(K.cashflow_year1) + ' €')}${kp('Cash-on-Cash', pct(K.cash_on_cash))}${kp(t('dscr_jahr_1'), FN(K.dscr_year1))}${kp('AfA p.a.', F0(K.depreciation_year) + ' € (' + FN(K.depreciation_rate || 0) + t('auf') + F0(K.depreciation_base) + ')')}${kp(t('kapitaldienst_monat'), F0(K.debt_service_month) + ' €')}${kp(t('irr_bis') + (K.exit_year || '–'), pct(K.irr))}${K.price_sqm ? kp(t('preis_m2'), F0(K.price_sqm) + ' €') : ''}${K.rent_sqm ? kp(t('miete_m2'), F(K.rent_sqm) + ' €') : ''}</div>
     ${(r.hints || []).map(x => `<div class="banner" style="margin:4px 0">${esc(x)}</div>`).join('')}
     ${(K.rent_adjustments || []).length ? `<div class="small muted">${t('mietanpassungen')} ` + K.rent_adjustments.slice(0, 6).map(a => a.year + ': +' + FN(a.raise_percent) + ' % → ' + F0(a.net_rent_new) + ' €').join(' · ') + (K.rent_adjustments.length > 6 ? ' …' : '') + '</div>' : ''}
-    ${immoChart(J)}</div>
+    <div class="im-chart">${immoChart(J)}</div></div>
     <div class="card" style="margin-top:12px"><h3>${t('erste_jahre')}</h3><div class="wrap auto"><table class="plain"><thead><tr><th>${t('jahr_2')}</th><th class="num">${t('miete')}</th><th class="num">${t('kosten')}</th><th class="num">${t('zinsen')}</th><th class="num">${t('tilgung')}</th><th class="num">${t('afa')}</th><th class="num">${t('ergebnis')}</th><th class="num">${t('steuer')}</th><th class="num">${t('cashflow_2')}</th><th class="num">${t('vermoegensaufbau')}</th><th class="num">${t('ek_rendite_2')}</th><th class="num">${t('restschuld')}</th></tr></thead><tbody>`
     + J.slice(0, 12).map(j => `<tr><td>${j.year}${j.months < 12 ? ' <span class="muted small">(' + j.months + ` ${t('mon_2')}</span>` : ''}</td><td class="num">${F0(j.rent)}</td><td class="num">${F0(j.costs + j.reserve)}</td><td class="num">${F0(j.interest)}</td><td class="num">${F0(j.repayment + j.special_repayment)}</td><td class="num">${F0(j.depreciation)}</td><td class="num ${j.result < 0 ? 'neg' : 'pos'}">${F0(j.result)}</td><td class="num">${F0(j.tax)}</td><td class="num ${j.cashflow < 0 ? 'neg' : 'pos'}">${F0(j.cashflow)}</td><td class="num">${F0(j.wealth_build)}</td><td class="num">${j.return_on_equity == null ? '–' : FN(j.return_on_equity * 100, 1) + ' %'}</td><td class="num">${F0(j.remaining_debt)}</td></tr>`).join('') + '</tbody></table></div></div>';
   return h;
@@ -5608,7 +5615,7 @@ function vTsHarden(ts, r) {
 }
 async function vEinstellungenZugang() {
   // On the Mac (lock, Touch ID, address, password), below: access from the iPhone via Tailscale (state, setup, who/where/what, options, hardening)
-  const o = (S.CFG || {}).ui || {};
+  const o = S.CFG.ui || {};
   // the state of Tailscale can take a while (its app answers slowly): the page shows at once, that part follows when it is there
   const rc = S.remoteCache && Date.now() - S.remoteCache.t < 60000 ? S.remoteCache.r : null, r = rc;
   if (!rc && !S.remoteLoading) { S.remoteLoading = true;
@@ -6537,7 +6544,7 @@ async function startRun(dry, freigabe, anchor) {
 // A language model on this Mac (assistant.py) beside every page: its panel stands at the right like the side panel and the page
 // makes room for it (a narrow window: it lies over the page); "#assistant" shows the same conversation as a page. What it may
 // do is set under Einstellungen -> Assistent, at the Mac only; an entry it proposes is made only by a click on its card.
-const AS = {st: null, open: false, msgs: [], conv: '', job: null, n: 0, busy: false, prev: '#overview', setT: null, effort: '', list: false, chats: null, save: true, cw: 0, hover: null, sel: null, ptr: ''};
+const AS = {st: null, open: false, msgs: [], refs: [], conv: '', job: null, n: 0, busy: false, prev: '#overview', setT: null, effort: '', list: false, chats: null, save: true, cw: 0, hover: null, sel: null, ptr: ''};
 const AS_HIDDEN = ['settings', 'log', 'setup', 'assistant'];          // pages the assistant never reads
 const asEffort = () => AS.effort || (((AS.st || {}).settings || {}).effort) || 'balanced';          // chosen in the panel for this conversation, else the setting
 const asOn = () => !!(AS.st && AS.st.settings && AS.st.settings.enabled && !OFFLINE.mode);
@@ -6571,7 +6578,6 @@ function asShow(open) {
   if (AS.open) { asLoad(); const ta = $('#as-in'); if (ta && matchMedia('(hover: hover)').matches) ta.focus(); }
 }
 // what the model answers, as text with a little Markdown (bold, lists, small tables, code) -- built from escaped text only
-const LI = /^(\s*)([-*•+]|\d+[.)])\s+(.*)$/;
 function asMd(src) {
   const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:!?]|$)/g, '$1<i>$2</i>');
   const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
@@ -6585,31 +6591,13 @@ function asMd(src) {
       while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(cells(lines[i++]));
       const num = c => /\d/.test(c) && /^[+\-−–]?\s?[€$£]?\s?[\d.,\s]+\s?(€|%|EUR|T€|k)?$/.test(c);          // a figure, with or without its currency
       const numCol = head.map((_, k) => rows.length > 0 && rows.every(r => !r[k] || num(r[k])) && rows.some(r => r[k]));          // a column of figures: its heading at the right too
-      h += `<div class="as-tw"><div class="as-tw-in"><table><thead><tr>${head.map((c, k) => `<th${numCol[k] ? ' class="num"' : ''}>${inline(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td${num(c) ? ' class="num"' : ''}>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+      h += `<div class="as-tw"><table><thead><tr>${head.map((c, k) => `<th${numCol[k] ? ' class="num"' : ''}>${inline(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td${num(c) ? ' class="num"' : ''}>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
       continue;
     }
-    const li = LI.exec(l);
-    if (li) {          // a list: its items also with blank lines between them (numbered on from its first number), a text that goes on
-      // below an item (indented) and a list inside an item stay with it
-      const ord = /\d/.test(li[2]), base = li[1].length, items = [];
-      let loose = false;
-      while (i < lines.length) {
-        const m = LI.exec(lines[i]), ind = m ? m[1].length : 0;
-        if (m && ind <= base + 1 && /\d/.test(m[2]) === ord) { items.push({text: m[3], more: [], sub: []}); i++; continue; }
-        const cur = items[items.length - 1];
-        if (m && ind >= base + 2) { cur.sub.push({ord: /\d/.test(m[2]), text: m[3]}); i++; continue; }
-        if (lines[i].trim() && /^\s/.test(lines[i]) && lines[i].search(/\S/) >= base + 2) { cur.more.push(lines[i].trim()); i++; continue; }
-        if (!lines[i].trim()) {
-          let j = i; while (j < lines.length && !lines[j].trim()) j++;
-          const n = j < lines.length ? LI.exec(lines[j]) : null;
-          if (n && (n[1].length >= base + 2 || (n[1].length <= base + 1 && /\d/.test(n[2]) === ord)) || (j < lines.length && lines[j].search(/\S/) >= base + 2)) { i = j; loose = true; continue; }
-        }
-        break;
-      }
-      const start = ord ? parseInt(li[2], 10) : 1, sub = it => it.sub.length ? `<${it.sub[0].ord ? 'ol' : 'ul'}>${it.sub.map(x => `<li>${inline(x.text)}</li>`).join('')}</${it.sub[0].ord ? 'ol' : 'ul'}>` : '';
-      h += `<${ord ? 'ol' : 'ul'}${ord && start !== 1 ? ` start="${start}"` : ''}${loose ? ' class="loose"' : ''}>${items.map(it => `<li>${inline(it.text)}${it.more.map(x => '<br>' + inline(x)).join('')}${sub(it)}</li>`).join('')}</${ord ? 'ol' : 'ul'}>`;
-      continue;
-    }
+    const li = /^\s*([-*•]|\d+[.)])\s+(.*)$/.exec(l);
+    if (li) { const ord = /\d/.test(li[1]), items = [];
+      while (i < lines.length) { const m = /^\s*([-*•]|\d+[.)])\s+(.*)$/.exec(lines[i]); if (!m) break; items.push(m[2]); i++; }
+      h += `<${ord ? 'ol' : 'ul'}>${items.map(x => `<li>${inline(x)}</li>`).join('')}</${ord ? 'ol' : 'ul'}>`; continue; }
     if (/^#{1,4}\s+/.test(l)) { h += `<p><b>${inline(l.replace(/^#{1,4}\s+/, ''))}</b></p>`; i++; continue; }
     if (!l.trim()) { i++; continue; }
     const par = [];
@@ -6822,7 +6810,7 @@ async function asChGo(c, i, s) {
 }
 const asText = m => (m.parts || []).filter(p => p.k === 'text').map(p => p.text).join('\n\n').trim();
 function asMsg(m, i) {
-  if (m.role === 'user') return `<div class="as-msg me"><div class="as-b">${esc(m.text)}</div></div>`;          // as typed or pasted (lines and spaces kept: tables, code)
+  if (m.role === 'user') return `<div class="as-msg me">${(m.refs || []).length ? `<div class="as-refs">${m.refs.map((r, j) => asRefChip(r, `data-m="${i}" data-r="${j}"`, false)).join('')}</div>` : ''}<div class="as-b">${esc(m.text)}</div></div>`;          // as typed or pasted (lines and spaces kept: tables, code); what it refers to before it
   let h = '';
   (m.parts || []).forEach((p, j) => {
     if (p.k === 'text') h += `<div class="as-t">${asMd(p.text)}</div>`;
@@ -6850,12 +6838,12 @@ function asHead() {
 }
 function asDraw() {
   $('#assist').innerHTML = `<div class="as-head" id="as-head"></div><div class="as-body" id="as-body"></div>
-    <form class="as-form" id="as-form"><div class="as-field" id="as-field"><button type="button" id="as-add" class="as-add" title="${esc(t('ki_anhang'))}" aria-label="${esc(t('ki_anhang'))}">${AS_PLUS}</button>
+    <form class="as-form" id="as-form"><div class="as-refs hidden" id="as-refs"></div><div class="as-field" id="as-field"><button type="button" id="as-add" class="as-add" title="${esc(t('ki_anhang'))}" aria-label="${esc(t('ki_anhang'))}">${AS_PLUS}</button>
     <div class="as-ta"><textarea id="as-in" rows="1" maxlength="${(AS.st || {}).question_limit || 9000}" placeholder="${esc(t('ki_frage_ph'))}" aria-label="${esc(t('ki_frage_ph'))}"></textarea><div class="as-ghost" id="as-ghost" aria-hidden="true"></div></div>
     <div class="as-btns" id="as-btns"><button type="button" id="as-x" class="as-x secondary hidden" title="${esc(t('ki_diktat_verwerfen'))}" aria-label="${esc(t('ki_diktat_verwerfen'))}">${AS_CROSS}</button>
     ${(AS.st || {}).dictation ? `<button type="button" id="as-mic" class="as-mic secondary"></button>` : ''}<button type="submit" id="as-go" class="as-go"></button></div></div>
     <input type="file" id="as-file" multiple hidden accept="${AS_ACCEPT}"></form>`;
-  asHead(); asMsgs(true); asMicDraw();
+  asHead(); asMsgs(true); asMicDraw(); asRefsDraw();
   const body = $('#as-body');
   if (window.ResizeObserver) { let w = body.clientWidth;          // another width (the panel became a page, the window changed): the charts drawn to it
     if (AS.ro) AS.ro.disconnect();
@@ -7114,14 +7102,17 @@ function asPage() {
   const ti = $('#page-title').firstChild;
   return {route: location.hash || '#overview', title: (ti && ti.textContent) || '', area: S.area || '', text};
 }
+const asRefPre = refs => (refs || []).map(r => `[${r.label}]\n${r.text}\n`).join('');          // what a question referred to, for the conversation so far
 async function asSend(text) {
-  text = (text || '').trim(); if (!text || AS.busy) return;
+  const refs = (AS.refs || []).slice(0, REF_MAX);
+  text = (text || '').trim(); if (!text && refs.length) text = t('ki_ref_frage');
+  if (!text || AS.busy) return;
   if (AS.list) { AS.list = false; asHead(); }
-  const hist = AS.msgs.map(x => ({role: x.role, text: x.role === 'user' ? x.text : asText(x)})).filter(x => x.text).slice(-12);
+  const hist = AS.msgs.map(x => ({role: x.role, text: x.role === 'user' ? asRefPre(x.refs) + x.text : asText(x)})).filter(x => x.text).slice(-12);
   const m = {role: 'assistant', parts: [], state: 'run', status: ''};
-  AS.msgs.push({role: 'user', text}, m); AS.busy = true; asMsgs(true);
+  AS.msgs.push(Object.assign({role: 'user', text}, refs.length ? {refs} : {}), m); AS.busy = true; AS.refs = []; asRefsDraw(); asMsgs(true);
   try {
-    const r = await api('/api/assistant/ask', {question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort()});
+    const r = await api('/api/assistant/ask', {question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort(), refs});
     AS.job = r.job; AS.conv = r.conversation; AS.n = 0; asPoll(m, r.job);
   } catch (e) { m.parts.push({k: 'err', text: e.message}); m.state = 'error'; AS.busy = false; asMsgs(); }
 }
@@ -7258,6 +7249,144 @@ async function asUi(ev) {
   } catch (e) {}
   api('/api/assistant/page', {job, id: ev.id, page: asPage(), result}).catch(() => {});
 }
+// ---------------------------------------------------------------- Ask the assistant about something on the page (right click)
+// What is clicked becomes a reference: a figure (row and column), a row (its name), a column (its heading), a chart, a card or a
+// selected text. It stands small above the question and goes with it -- what it is, as the page shows it, like typed in by the
+// user. In the chat it stands before the question; a click on it opens that place again (page, area, view) and marks it.
+// Never on settings, log or setup; only while the assistant is switched on.
+const REF_MAX = 6;
+const REF_CHARTS = '#main #bch, #main .lc, #main .cf-card, #main .ov-card, #main .im-chart, #drawer .h-chart, #assist .as-chart';
+const refOne = s => String(s || '').replace(/\s+/g, ' ').trim();
+const refCut = (s, n) => s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s;
+const refTxt = (el, n) => (el ? el.innerText || el.textContent || '' : '').split('\n').map(refOne).filter(l => /[\p{L}\p{N}]/u.test(l)).join(' ').slice(0, n);          // a chart's or card's text on one line (labels and figures in turn)
+const refVal = el => refOne(el && (el.innerText || el.textContent));          // a figure in full (its cents too, drawn smaller)
+function refLabel(el) {          // a name as the page shows it -- the same parts left out as asLabel(), so the place is found again by it
+  if (!el) return '';
+  const c = el.cloneNode(true); c.querySelectorAll('.hq, .cnt, .cf-abbr, .tag, .pill, .caret, .disc, svg, small, select, input, textarea').forEach(x => x.remove());
+  return refOne(c.textContent);
+}
+function refChartTitle(box) {
+  let s = refLabel($('.lc-title, .bch-title, .bch-head > b, .ov-head b, .as-ch-t b, h3, h2', box));
+  const sl = !s && $('.lc-head select, .bch-head select', box); if (sl && sl.selectedOptions[0]) s = refOne(sl.selectedOptions[0].textContent);
+  return s;
+}
+function refTitle(el) {          // the card or section something stands in, by its title
+  const dr = el.closest('#drawer'); if (dr) return refLabel($(':scope > h2', dr));
+  const box = el.closest('.card, .co-card, .module, fieldset'); if (!box) return '';
+  return refChartTitle(box) || refLabel($(':scope legend, :scope .t', box));
+}
+function refGo(extra) {          // where it was: page, area, view -- as asOpen() opens it again
+  const g = {route: location.hash || '#overview', area: S.area || '', view: S.mode, plan: !!S.plan};
+  if (S.tab === 'cashflow' && /^\d{4}$/.test(S.cfZeit || '')) g.year = S.cfZeit;
+  if (S.tab === 'tax' && /^\d{4}$/.test(String(S.steuerJahr || ''))) g.year = String(S.steuerJahr);
+  if (S.tab === 'cashflow' || S.tab === 'planning') g.detail = cfLevel();
+  return Object.assign(g, extra);
+}
+function refHead(where) {          // the first lines of what the model reads: page, area, section
+  const ti = $('#page-title').firstChild, ab = $('#bereich-seg:not(.hidden) button.on');
+  return [`${t('ref_seite')}: ${refOne(ti && ti.textContent)}${ab ? ' · ' + t('ref_bereich') + ': ' + refOne(ab.textContent) : ''}`].concat(where ? [`${t('ref_abschnitt')}: ${where}`] : []);
+}
+function refMake(label, lines, where, go) {
+  const ti = $('#page-title').firstChild;
+  return {label: refCut(label, 64), page: refOne(ti && ti.textContent), text: refHead(where).concat(lines).join('\n').slice(0, 1500), go};
+}
+const refSeen = el => el && el.getClientRects().length > 0;
+const refOver = (a, b) => { const r = a.getBoundingClientRect(), s = b.getBoundingClientRect(), m = (r.left + r.right) / 2; return m >= s.left - 1 && m <= s.right + 1; };
+function refCell(cell) {
+  // a table: its names may stand in a table of their own beside the figures (cash flow, planning)
+  const tbl = cell.closest('table'), pair = tbl.closest('.cf-pair');
+  const names = pair ? $('table.cf-names', pair) || tbl : tbl, vals = pair ? $('table.cf-tbl:not(.cf-names)', pair) || tbl : tbl;
+  const head = vals.tHead && vals.tHead.rows.length ? vals.tHead.rows[vals.tHead.rows.length - 1] : vals.rows[0];
+  const tr = cell.parentElement, where = refTitle(tbl);
+  const headOf = c => head ? [...head.cells].find(h => refOver(c, h)) : null;
+  const nameOf = row => { const r = names.rows[row.rowIndex]; const c = r && [...r.cells].find(x => refLabel(x)); return c && c.cellIndex <= 1 ? c : null; };
+  if (tr === head || cell.closest('thead')) {          // a heading: the whole column
+    const col = refLabel(cell); if (!col) return null;
+    const lines = [...vals.tBodies].flatMap(b => [...b.rows]).filter(refSeen).slice(0, 40).map(r => {
+      const n = nameOf(r), v = [...r.cells].find(c => refOver(c, cell));
+      return n && v && v !== n ? `${refLabel(n)}: ${refVal(v)}` : '';
+    }).filter(Boolean);
+    return refMake(t('ki_ref_spalte', col), [`${t('ref_spalte')}: ${col}`, `${t('ref_werte')}:`].concat(lines), where, refGo({col}));
+  }
+  const name = nameOf(tr); if (!name) return null;
+  const row = refLabel(name), vrow = vals.rows[tr.rowIndex] || tr;
+  if (tbl === names && names !== vals || cell.cellIndex <= name.cellIndex) {          // the name: the whole row
+    const pairs = head ? [...head.cells].map(h => { const v = [...vrow.cells].find(c => refOver(c, h)); return v && v !== name && refLabel(h) ? `${refLabel(h)}: ${refVal(v)}` : ''; }).filter(Boolean).slice(0, 30) : [];
+    return refMake(t('ki_ref_zeile', row), [`${t('ref_zeile')}: ${row}`, `${t('ref_werte')}:`].concat(pairs), where, refGo({mark: {text: row, column: ''}}));
+  }
+  const h = headOf(cell), col = refLabel(h), val = refVal(cell);          // one figure: its row and column
+  return refMake(row + (col ? ' · ' + col : '') + (val ? ': ' + val : ''), [`${t('ref_zeile')}: ${row}`].concat(col ? [`${t('ref_spalte')}: ${col}`] : [], [`${t('ref_wert')}: ${val || '–'}`]),
+    where, refGo({mark: {text: row, column: col}}));
+}
+function refChat(box) {          // a chart in the chat: its figures, and the page it belongs to
+  const h = asChFrom(box), c = h && h.c; if (!c) return null;
+  const lines = [`${t('ref_grafik')}: ${c.title}`, asChSub(c)].concat((c.series || []).slice(0, 6).map(s => `${s.name || ''}: ` + (c.x || []).slice(-24).map((x, i, a) => {
+    const k = (c.x || []).length - a.length + i; return `${asChX(c, k)} ${(s.values || [])[k] == null ? '–' : FN((s.values || [])[k])}`; }).join('; ')));
+  const L = c.link || {}, go = /^#[\w/-]+$/.test(L.route || '') ? {route: L.route, area: L.area || '', view: c.step === 'year' ? 'years' : c.step === 'month' ? 'months' : '', detail: L.detail} : null;
+  return {label: refCut(t('ki_ref_grafik', c.title), 64), page: t('ki_assistent'), text: lines.filter(Boolean).join('\n').slice(0, 1500), go};
+}
+function refAt(e) {
+  if (!asOn()) return null;
+  const tg = e.target, chat = tg.closest('#assist .as-chart');
+  if (chat) return refChat(chat);
+  const main = $('#main'), dr = $('#drawer');
+  if (AS_HIDDEN.includes(S.tab) || !(main.contains(tg) || dr.classList.contains('open') && dr.contains(tg))) return null;
+  const sel = getSelection(), st = sel && !sel.isCollapsed ? sel.toString().trim() : '';
+  if (st && sel.rangeCount) {          // a selected text the click is on: that text (several cells, a column dragged over)
+    const r = sel.getRangeAt(0), on = [...r.getClientRects()].some(x => e.clientX >= x.left - 4 && e.clientX <= x.right + 4 && e.clientY >= x.top - 4 && e.clientY <= x.bottom + 4);
+    const box = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
+    if ((on || r.intersectsNode(tg)) && (main.contains(box) || dr.contains(box))) {
+      const where = refTitle(box);
+      return refMake(`„${refCut(refOne(st), 40)}“`, [`${t('ref_auswahl')}:`, st.slice(0, 1200)], where, refGo(where && !box.closest('#drawer') ? {mark: {text: where, column: ''}} : {}));
+    }
+  }
+  const cell = tg.closest('td, th');
+  if (cell && cell.closest('table')) { const r = refCell(cell); if (r) return r; }
+  const chart = tg.closest(REF_CHARTS);
+  if (chart) {
+    const ti = refChartTitle(chart) || refTitle(chart);
+    return refMake(t('ki_ref_grafik', ti || t('ref_grafik')), [`${t('ref_grafik')}: ${ti}`, refTxt(chart, 1200)], '', refGo(ti && !chart.closest('#drawer') ? {mark: {text: ti, column: ''}} : {}));
+  }
+  const box = tg.closest('.k, .kpi, li, .item, .ov-todo-i, .lc-val, .card, .co-card, #drawer');
+  if (!box) return null;
+  const where = refTitle(box), what = box.matches('.card, .co-card, #drawer') ? where : refLabel(box);
+  if (!what) return null;
+  return refMake(what, [refTxt(box, 1200)], where && where !== what ? where : '', refGo(where && !box.closest('#drawer') ? {mark: {text: where, column: ''}} : {}));
+}
+function asAskAbout(ref) {
+  AS.refs = (AS.refs || []).filter(r => r.label !== ref.label || r.page !== ref.page).concat([ref]).slice(-REF_MAX);
+  if (S.tab !== 'assistant' && !AS.open) asShow(true); else asLayout();
+  asRefsDraw(); const ta = $('#as-in'); if (ta) ta.focus();
+}
+const asRefChip = (r, attrs, x) => `<span class="as-ref"><button type="button" class="as-ref-go" ${attrs} title="${esc(r.go ? t('ki_ref_springen') + '\n\n' + r.text : r.text)}">`
+  + `${r.page ? `<span class="as-ref-pg">${esc(r.page)}</span>` : ''}<span class="as-ref-l">${esc(r.label)}</span></button>`
+  + (x ? `<button type="button" class="as-ref-x" ${attrs} title="${esc(t('ki_ref_weg'))}" aria-label="${esc(t('ki_ref_weg'))}">${AS_CROSS}</button>` : '') + '</span>';
+function asRefsDraw() {
+  const box = $('#as-refs'); if (!box) return;
+  const refs = AS.refs || []; box.innerHTML = refs.map((r, i) => asRefChip(r, `data-r="${i}"`, true)).join(''); box.classList.toggle('hidden', !refs.length);
+}
+function refMarkCol(col) {          // a column by its heading: the heading and its figures marked
+  const want = asNorm(col);
+  for (const tbl of $$('#main table')) {
+    const head = tbl.tHead && tbl.tHead.rows.length ? tbl.tHead.rows[tbl.tHead.rows.length - 1] : tbl.rows[0];
+    const h = head && [...head.cells].find(c => refSeen(c) && asNorm(refLabel(c)) === want); if (!h) continue;
+    $$('.as-mark').forEach(x => x.classList.remove('as-mark')); clearTimeout(AS.markT);
+    h.classList.add('as-mark'); [...tbl.tBodies].flatMap(b => [...b.rows]).forEach(r => { const c = [...r.cells].find(x => refOver(x, h)); if (c) c.classList.add('as-mark'); });
+    h.scrollIntoView({block: 'nearest', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+    AS.markT = setTimeout(() => $$('.as-mark').forEach(x => x.classList.remove('as-mark')), 12000);
+    return true;
+  }
+  return false;
+}
+async function asRefOpen(r) {
+  const g = r && r.go; if (!g || !/^#[\w/-]+$/.test(g.route || '')) return;
+  if (matchMedia('(max-width: 900px)').matches && S.tab !== 'assistant') asShow(false);          // the panel covers the page there: it steps aside
+  else if (matchMedia('(max-width: 900px)').matches) { AS.open = false; try { localStorage.setItem('kontor.assist', ''); } catch (e) {} }
+  const res = await asOpen(Object.assign({}, g, {mark: g.mark && g.mark.text ? g.mark : null}));
+  let found = !g.mark || !!(res && res.found);
+  if (g.col) { await asDrawnWait(); found = refMarkCol(g.col); }
+  if (!found) toast(t('ki_ref_nicht_gefunden'), 4000);
+}
 function asStop() { api('/api/assistant/stop', {}).catch(() => {}); }
 async function asNew() { if (AS.busy) asStop(); AS.job = null; AS.busy = false; AS.msgs = []; AS.conv = ''; AS.list = false; AS.hover = AS.sel = null; asHead(); asMsgs(true); try { await api('/api/assistant/reset', {}); } catch (e) {} }
 // Saved conversations (Verläufe): kept by Kontor, encrypted, while the setting is on -- opened again here, and they go on where they stood
@@ -7282,7 +7411,7 @@ async function asOpenChat(id) {
   try {
     const r = await api('/api/assistant/chat?id=' + encodeURIComponent(id));
     if (AS.busy) asStop();
-    Object.assign(AS, {job: null, busy: false, conv: r.id, list: false, hover: null, sel: null, msgs: (r.turns || []).map(m => m.role === 'user' ? {role: 'user', text: String(m.text || '')} : Object.assign({}, m, {parts: m.parts || []}))});
+    Object.assign(AS, {job: null, busy: false, conv: r.id, list: false, hover: null, sel: null, msgs: (r.turns || []).map(m => m.role === 'user' ? Object.assign({role: 'user', text: String(m.text || '')}, Array.isArray(m.refs) && m.refs.length ? {refs: m.refs} : {}) : Object.assign({}, m, {parts: m.parts || []}))});
     asHead(); asMsgs(true);
   } catch (e) { toast(e.message, 5000); asHist(true); }
 }
@@ -7298,7 +7427,9 @@ async function asDelChats(id) {
 $('#assist-btn').addEventListener('click', () => { if (S.tab !== 'assistant') asShow(!AS.open); });
 $('#assist').addEventListener('click', async e => {
   const b = e.target.closest('button, a'); if (!b) return;
-  if (b.classList.contains('as-close')) asShow(false);
+  if (b.classList.contains('as-ref-x')) { (AS.refs || []).splice(+b.dataset.r, 1); asRefsDraw(); const ta = $('#as-in'); if (ta) ta.focus(); }
+  else if (b.classList.contains('as-ref-go')) asRefOpen(b.dataset.m != null ? ((AS.msgs[+b.dataset.m] || {}).refs || [])[+b.dataset.r] : (AS.refs || [])[+b.dataset.r]);
+  else if (b.classList.contains('as-close')) asShow(false);
   else if (b.classList.contains('as-new')) asNew();
   else if (b.classList.contains('as-hist-btn')) asHist(!AS.list);
   else if (b.classList.contains('as-hi-open')) asOpenChat(b.dataset.id);

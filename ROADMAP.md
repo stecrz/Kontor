@@ -97,7 +97,8 @@ nach Klick ein (zurücknehmbar); Diktieren mit eigenem Sprachmodell; Rechte einz
 (macOS-Sandbox); Hilfe-Abschnitt und Bilder; Diagramme im Chat aus Kontors eigenen Zahlen (3.16.11, Klick zeigt die Zahl auf
 ihrer Seite); gespeicherte Unterhaltungen unter „Verläufe“ (3.16.11, verschlüsselt, nicht in Sicherungen, abschaltbar); Diktat
 bis zehn Minuten, live in Stücken und am Ende als Ganzes, nur mit Sprache (Stille und Rauschen erreichen das Modell nicht);
-Dateien über „+“ (3.16.12; Bilder und PDFs erst mit einem Modell, das Bilder sieht).
+Dateien über „+“ (3.16.12; Bilder und PDFs erst mit einem Modell, das Bilder sieht); Rechtsklick auf Zahl, Zeile, Spaltenkopf, Grafik oder markierten Text: „KI-Assistent fragen …“ – der Bezug steht
+knapp vor der Frage, ein Klick darauf öffnet die Stelle wieder (3.16.19).
 
 Fertig, wenn
 - **Gedächtnis:** merkt sich Fakten und Erklärungen aus den eigenen Worten des Nutzers („März teurer: Urlaub“) – nie aus
@@ -116,6 +117,7 @@ Fertig, wenn
   kein Eintrag ohne Klick;
 - am Mac mit echten Modellen geprüft: Abschirmung (kein Netz, kein Zugriff auf Kontors Daten), Start, Antworten, Stoppen, Diktieren;
 - ~~Kategorien zuordnen als Vorschlag mit Klick möglich ist, wie unter Kategorisieren~~ (3.16.19).
+- am iPhone ein Bezug ohne Rechtsklick geht (langes Drücken öffnet dort schon Zeilen);
 
 Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach Klick, je Schritt eine kleine Version):
 - [x] 3.16.13 Sammelfreigabe: alle Änderungen einer Antwort auf einer Karte, ein Klick (einzeln abwählbar); Änderungsprotokoll; Änderungsrechte ab Werk an.
@@ -209,6 +211,7 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
 - Oberfläche nach Apples Human Interface Guidelines, hell und dunkel, Mac und iPhone.
 
 ## Beim nächsten großen Versionssprung (Hilfe, README, Bilder)
+- Hilfe: Rechtsklick → „KI-Assistent fragen …“ (Bezug, Sprung zurück) und „Grafik drucken …“ bei allen Grafiken (3.16.19).
 - README und Hilfe: Ziel „dein digitaler CFO“ (siehe oben) als Einleitung; Netzverbindungen nach dem Stand dann.
 - Hilfe: eigener Abschnitt „Assistent“ (einrichten, Rechte, was er nie darf, Abschirmung) mit Bildern; README (Netzverbindungen).
 - Hilfe Assistent: Änderungen nur noch über die Sammelkarte am Ende einer Antwort (statt „Eintragen“ je Karte), Änderungsrechte ab Werk an (bisher „anfangs aus“), Protokoll der Änderungen unter Einstellungen → KI-Assistent.
