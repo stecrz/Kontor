@@ -128,7 +128,7 @@ Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach
 - [x] 3.16.33 Auto-Buchungen prüfen, freigeben, zurückhalten (Freigeben nur am Mac, die Karte sagt: in MoneyMoney nicht rückgängig; Zurückhalten zurücknehmbar).
 - [x] 3.16.45 Buchungsregeln (Darlehen, Beteiligungen, Kontenspiegel) anlegen und ändern; Buchungen daraus erst zur Freigabe, bis du die Regel unter Konten & Regeln bestätigst.
 - [x] 3.16.26 Offene Aufgaben beim Öffnen, jede mit „Erledigen“ (die Liste kommt von Kontor, auch ohne Modell; ohne passendes Recht „Öffnen“).
-- [ ] Belege: Datei in den Chat, Texterkennung von macOS (offline), passenden Umsatz vorschlagen, Abweichungen nennen, ablegen und verknüpfen.
+- [x] 3.16.46 Belege: Datei in den Chat, Texterkennung von macOS (offline), passenden Umsatz vorschlagen, Abweichungen nennen, ablegen und verknüpfen (Verweis in MoneyMoney nicht durch den Assistenten).
 - [ ] Internet nur zum Lesen, in drei Stufen (siehe Entschieden): Kontor sucht (nicht das Modell), Freigabe je Zugriff mit Quelle,
   Suchbegriffen und Adressen, Filter gegen eigene Daten, Seiten in einem abgeschotteten Prozess, danach keine Änderungen im selben Chat.
 

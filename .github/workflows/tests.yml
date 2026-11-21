@@ -127,6 +127,49 @@ jobs:
           plutil -lint Kontor.app/Contents/Info.plist Kontor.app/Contents/Resources/*.lproj/InfoPlist.strings
           test -s Kontor.app/Contents/Resources/AppIcon.icns
           python3 -c "import mac_app; assert mac_app.build() == 'ok' and mac_app.ready()"     # built once: not again (macOS would ask again)
+      - name: Receipt reader (text of a PDF and a picture, in its sandbox)
+        run: |
+          python3 - <<'EOF'
+          import tempfile
+          import receipt_text as R
+          # a made-up one-page receipt with a text layer, offsets counted for its table
+          body = b"BT /F1 18 Tf 20 100 Td (Gesamtbetrag 114,99 EUR) Tj ET"
+          objs = [b"<</Type/Catalog/Pages 2 0 R>>", b"<</Type/Pages/Kids[3 0 R]/Count 1>>",
+                  b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>",
+                  b"<</Length %d>>stream\n" % len(body) + body + b"\nendstream", b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>"]
+          pdf, offs = b"%PDF-1.4\n", []
+          for i, o in enumerate(objs, 1):
+              offs.append(len(pdf)); pdf += b"%d 0 obj" % i + o + b"\nendobj\n"
+          xref = len(pdf)
+          pdf += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1) + b"".join(b"%010d 00000 n \n" % x for x in offs)
+          pdf += b"trailer<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
+          out = R.text_of(pdf, tempfile.mkdtemp())
+          print(out)
+          assert out["how"] == "pdf" and "114,99" in out["text"], out
+          assert R.read_fields(out["text"])["total"] == 114.99
+          # the same receipt as a picture: Apple's text recognition, in the same sandbox
+          import os, subprocess
+          body2 = b"BT /F1 54 Tf 20 80 Td (Gesamtbetrag 114,99 EUR) Tj ET"
+          objs[2] = objs[2].replace(b"[0 0 300 200]", b"[0 0 900 200]"); objs[3] = b"<</Length %d>>stream\n" % len(body2) + body2 + b"\nendstream"
+          pdf2, offs = b"%PDF-1.4\n", []
+          for i, o in enumerate(objs, 1):
+              offs.append(len(pdf2)); pdf2 += b"%d 0 obj" % i + o + b"\nendobj\n"
+          xref = len(pdf2)
+          pdf2 += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1) + b"".join(b"%010d 00000 n \n" % x for x in offs)
+          pdf2 += b"trailer<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
+          d = tempfile.mkdtemp(); open(os.path.join(d, "r.pdf"), "wb").write(pdf2)
+          subprocess.run(["sips", "-s", "format", "png", os.path.join(d, "r.pdf"), "--out", os.path.join(d, "r.png")], check=True, capture_output=True)
+          out = R.text_of(open(os.path.join(d, "r.png"), "rb").read(), tempfile.mkdtemp())
+          print(out)
+          assert out["how"] == "ocr" and "114,99" in out["text"].replace(" ", ""), out
+          # its sandbox: writes into its own folder of the run, never into Kontor's temporary folders (kontor-...)
+          work, mine = tempfile.mkdtemp(prefix="rcpt-"), tempfile.mkdtemp(prefix="kontor-")
+          R.HELPER_BIN = "/usr/bin/touch"
+          prof = R._profile(os.path.expanduser("~"), tempfile.mkdtemp(), work)
+          assert subprocess.run(["/usr/bin/sandbox-exec", "-p", prof, "/usr/bin/touch", os.path.join(work, "ok")]).returncode == 0
+          assert subprocess.run(["/usr/bin/sandbox-exec", "-p", prof, "/usr/bin/touch", os.path.join(mine, "no")]).returncode != 0
+          assert not os.path.exists(os.path.join(mine, "no"))
+          EOF
       - name: MoneyMoney bridge
         run: |
           osacompile -l JavaScript -o "$RUNNER_TEMP/mm_bridge.scpt" mm_bridge.jxa

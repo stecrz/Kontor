@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.46 (2026-11-21 22:36)
+- KI-Assistent: Belege (PDF, Bild) in den Chat ziehen – liest den Text auf diesem Mac, findet den passenden Umsatz, nennt Abweichungen
+- Ablegen im Belegordner nach deinem Klick, mit Umsatz verknüpft, zurücknehmbar; Datei nur im Arbeitsspeicher
+
 ## 3.16.45 (2026-11-21 22:19)
 - KI-Assistent: legt Buchungsregeln an und ändert sie (Darlehen, Beteiligungen, Kontenspiegel) – nach deinem Klick, zurücknehmbar
 - Regeln vom Assistenten: ihre Buchungen warten auf Freigabe, bis du die Regel unter Konten & Regeln bestätigst

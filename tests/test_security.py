@@ -647,8 +647,8 @@ class NothingGoesOut(unittest.TestCase):
     COMMANDS = {"security", "openssl", "swiftc", "codesign", "open", "launchctl", "/bin/launchctl", "/usr/sbin/sysctl", "ps", "pgrep", "tmutil",
                 "osascript", "/usr/bin/osascript", "xcode-select", "git", "/bin/sh",
                 "sips", "iconutil", "defaults", "tccutil"}          # Kontor's own Mac app: its icon, its address, gone on uninstall
-    # ... and by a path Kontor made up itself (its Touch ID helper, the password window, llama.cpp, Tailscale's own tool, lsof)
-    COMMANDS_BY_PATH = {"auth.py", "mm_history.py", "llm_local.py", "tls_cert.py"}
+    # ... and by a path Kontor made up itself (its Touch ID helper, the password window, llama.cpp, Tailscale's own tool, lsof, the receipt reader)
+    COMMANDS_BY_PATH = {"auth.py", "mm_history.py", "llm_local.py", "tls_cert.py", "receipt_text.py"}     # receipt_text: its text recognition, sealed
     # where links on the pages lead (opened by you, in a new window; the pages themselves only talk to Kontor)
     LINKS = {"github.com", "tailscale.com", "login.tailscale.com", "apps.apple.com", "www.w3.org"}
     HOST = re.compile(r"(?:https?|wss?|ftp)://([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")

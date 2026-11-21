@@ -6617,7 +6617,7 @@ async function startRun(dry, freigabe, anchor) {
 // A language model on this Mac (assistant.py) beside every page: its panel stands at the right like the side panel and the page
 // makes room for it (a narrow window: it lies over the page); "#assistant" shows the same conversation as a page. What it may
 // do is set under Einstellungen -> Assistent, at the Mac only; an entry it proposes is made only by a click on its card.
-const AS = {st: null, open: false, msgs: [], refs: [], conv: '', job: null, n: 0, busy: false, prev: '#overview', setT: null, effort: '', list: false, chats: null, save: true, cw: 0, hover: null, sel: null, ptr: ''};
+const AS = {st: null, open: false, msgs: [], refs: [], files: [], conv: '', job: null, n: 0, busy: false, prev: '#overview', setT: null, effort: '', list: false, chats: null, save: true, cw: 0, hover: null, sel: null, ptr: ''};
 const AS_HIDDEN = ['settings', 'log', 'setup', 'assistant'];          // pages the assistant never reads
 const asEffort = () => AS.effort || (((AS.st || {}).settings || {}).effort) || 'balanced';          // chosen in the panel for this conversation, else the setting
 const asOn = () => !!(AS.st && AS.st.settings && AS.st.settings.enabled && !OFFLINE.mode);
@@ -6722,6 +6722,12 @@ function asEntry(p, ask) {
     return asCard(p, ask, kind, `<div class="muted small">${tn('ki_e_buchungen', p.count || 0, p.count || 0)}${p.sum != null ? ' · ' + fmt.format(p.sum) : ''}</div>${why}
       <table class="as-e-t as-e-tc"><tbody>${trs}${more > 0 ? `<tr><td colspan="3" class="muted">${t('ki_e_weitere', more)}</td></tr>` : ''}</tbody></table>`, fin, st);
   }
+  if (p.kind === 'receipt') {          // a receipt given in the panel, to be filed: with which transaction, where (the folder under the title), what differs
+    const r = (p.rows || [])[0];
+    const tx = r ? `<table class="as-e-t as-e-tc"><tbody><tr><td class="nowrap">${esc(FD(r.label))}</td><td class="muted as-e-zw" title="${esc(r.text || '')}">${esc(r.text || '')}</td><td class="num">${r.new == null ? '' : fmt.format(r.new)}</td></tr></tbody></table>` : `<div class="muted small">${t('ki_e_ohne_umsatz')}</div>`;
+    const diffs = (p.diffs || []).map(d => `<div class="as-e-fin">${esc(d.what === 'amount' ? t('ki_e_abw_betrag', fmt.format(d.receipt), fmt.format(d.transaction)) : d.what === 'date' ? tn('ki_e_abw_tage', d.days, d.days) : t('ki_e_ungeprueft'))}</div>`).join('');
+    return asCard(p, ask, kind, `${why}${tx}${diffs}${p.note ? `<div class="as-e-why">${esc(p.note)}</div>` : ''}${p.create && p.state === 'queued' ? `<div class="as-e-why">${t('ki_e_ordner_neu')}</div>` : ''}`, fin, st);
+  }
   if (p.kind === 'category') {          // a category for transactions without one: which, how many, the first of them
     const more = (p.count || 0) - (p.rows || []).length;
     const trs = (p.rows || []).map(r => `<tr><td class="nowrap">${esc(FD(r.label))}</td><td class="muted as-e-zw" title="${esc(r.text || '')}">${esc(r.text || '')}</td><td class="num">${r.new == null ? '' : fmt.format(r.new)}</td></tr>`).join('');
@@ -6731,7 +6737,7 @@ function asEntry(p, ask) {
   return asCard(p, ask, kind, `${ev}${why}
     <table class="as-e-t"><thead><tr><th>${t(p.kind === 'params' ? 'ki_e_annahme' : 'ki_e_monat')}</th><th class="num">${t('ki_e_bisher')}</th><th class="num">${t('ki_e_neu_wert')}</th></tr></thead><tbody>${rows}</tbody></table>`, fin, st);
 }
-const asKind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params'), category: t('ki_e_category'), book: t('ki_e_book'), hold: t('ki_e_hold'), rule: t('ki_e_rule')}[k] || '');
+const asKind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params'), category: t('ki_e_category'), book: t('ki_e_book'), hold: t('ki_e_hold'), rule: t('ki_e_rule'), receipt: t('ki_e_receipt')}[k] || '');
 function asCard(p, ask, kind, body, fin, st) {
   // the frame of a proposed change: the tick while the card of changes waits, its kind, title and where, what it changes, its state
   const tick = p.state === 'queued' && ask ? `<label class="as-e-pick" title="${esc(t('ki_e_auswahl_tip'))}"><input type="checkbox" class="as-pick" data-id="${esc(p.id)}" ${p.off ? '' : 'checked'}></label>` : '';
@@ -6913,7 +6919,7 @@ async function asChGo(c, i, s) {
 }
 const asText = m => (m.parts || []).filter(p => p.k === 'text').map(p => p.text).join('\n\n').trim();
 function asMsg(m, i) {
-  if (m.role === 'user') return `<div class="as-msg me">${(m.refs || []).length ? `<div class="as-refs">${m.refs.map((r, j) => asRefChip(r, `data-m="${i}" data-r="${j}"`, false)).join('')}</div>` : ''}<div class="as-b">${esc(m.text)}</div></div>`;          // as typed or pasted (lines and spaces kept: tables, code); what it refers to before it
+  if (m.role === 'user') return `<div class="as-msg me">${(m.refs || []).length || (m.files || []).length ? `<div class="as-refs">${(m.refs || []).map((r, j) => asRefChip(r, `data-m="${i}" data-r="${j}"`, false)).join('')}${(m.files || []).map(f => asFileChip(String(f.name || ''))).join('')}</div>` : ''}<div class="as-b">${esc(m.text)}</div></div>`;          // as typed or pasted (lines and spaces kept: tables, code); what it refers to before it
   let h = '';
   const parts = m.parts || [];
   parts.forEach((p, j) => {
@@ -7019,7 +7025,8 @@ const REC_MAX = 600;          // seconds: then it ends by itself and the text is
 const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.6" y="1.4" width="4.8" height="8.2" rx="2.4" fill="currentColor"/><path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 const AS_PLUS = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 const AS_CROSS = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
-const AS_ACCEPT = '.txt,.csv,.tsv,.md,.json,.xml,.html,.htm,.yaml,.yml,.log,.ini,.sql,.py,.js,.ts,.sh,.swift,text/*';
+const AS_ACCEPT = '.txt,.csv,.tsv,.md,.json,.xml,.html,.htm,.yaml,.yml,.log,.ini,.sql,.py,.js,.ts,.sh,.swift,text/*,.pdf,.png,.jpg,.jpeg,.heic,.gif,image/*';
+const AS_RECEIPT = /\.(pdf|png|jpe?g|heic|gif)$/i, AS_FILES_MAX = 6, AS_FILE_BYTES = 20 * 1024 * 1024;          // receipts for the assistant (assistant.RECEIPT_TYPES, ATTACH_BYTES)
 // the microphone button follows the speech model: there as soon as it is loaded, gone when it is deleted -- in the panel as it
 // stands (what is typed and the conversation stay), not only after reloading the page
 function asMicSync() {
@@ -7203,8 +7210,17 @@ async function asMicStop(send, go) {
 }
 async function asFiles(files) {
   const ta = $('#as-in'); if (!ta) return;
-  const room = (AS.st || {}).question_limit || 9000;
-  for (const f of files.slice(0, 5)) {
+  const room = (AS.st || {}).question_limit || 9000, r = ((AS.st || {}).settings || {}).rights || {};
+  let given = false;
+  for (const f of files.slice(0, AS_FILES_MAX)) {
+    // a receipt (PDF, picture): goes to Kontor with the question, read there by macOS's text recognition and filed with the click on its card
+    if (AS_RECEIPT.test(f.name || '') || ['application/pdf', 'image/png', 'image/jpeg', 'image/heic', 'image/gif'].includes(f.type || '')) {
+      if (!r.receipts || !r.transactions) toast(t(r.receipts ? 'ki_beleg_recht_lesen' : 'ki_beleg_recht'), 5000);
+      else if (f.size > AS_FILE_BYTES) toast(t('ki_beleg_zu_gross', f.name, AS_FILE_BYTES / 1048576), 5000);
+      else if ((AS.files || []).length >= AS_FILES_MAX) toast(t('ki_beleg_max', AS_FILES_MAX), 5000);
+      else { (AS.files = AS.files || []).push(f); given = true; }
+      continue;
+    }
     let text = '';
     try { text = f.size <= 4e6 ? await f.text() : ''; } catch (e) {}
     if (!text || /[\u0000-\u0008\u000e-\u001f]/.test(text.slice(0, 4000))) { toast(t('ki_datei_kein_text', f.name), 5000); continue; }          // too large, or not text (a PDF, a picture, a spreadsheet file)
@@ -7212,8 +7228,12 @@ async function asFiles(files) {
     if (ta.value.length + block.length > room) { toast(t('ki_datei_zu_lang', f.name), 5000); continue; }
     ta.value += (ta.value && !ta.value.endsWith('\n') ? '\n' : '') + block;
   }
+  if (given) asRefsDraw();
   ta.dispatchEvent(new Event('input')); ta.focus();
 }
+const asFileB64 = f => new Promise((ok, no) => { const rd = new FileReader(); rd.onload = () => ok(String(rd.result).split(',')[1] || ''); rd.onerror = () => no(rd.error); rd.readAsDataURL(f); });
+const asFileChip = (name, i) => `<span class="as-ref as-file"><span class="as-ref-go" title="${esc(name)}"><span class="as-ref-pg">${esc(((name.match(/\.(\w+)$/) || [])[1] || '').toUpperCase())}</span><span class="as-ref-l">${esc(name)}</span></span>`
+  + (i != null ? `<button type="button" class="as-ref-x" data-f="${i}" title="${esc(t('ki_beleg_weg'))}" aria-label="${esc(t('ki_beleg_weg'))}">${AS_CROSS}</button>` : '') + '</span>';
 // What is open (the same list as on the overview), on an empty conversation: what the assistant can do about it starts with one click as a
 // question (its changes still wait for the click on their card), the rest opens its page. Loaded in the background, drawn when there.
 const AS_ACT = {categorize: ['categorize', 'transactions'], bookings: ['figures'], receipts: ['transactions'], unexplained: ['figures']};
@@ -7260,15 +7280,18 @@ function asPage() {
 const asRefPre = refs => (refs || []).map(r => `[${r.label}]\n${r.text}\n`).join('');          // what a question referred to, for the conversation so far
 const refSend = r => ({label: r.label, page: r.page, text: r.text, go: r.go || null});          // what goes to Kontor (not what is for the clipboard)
 async function asSend(text) {
-  const refs = (AS.refs || []).slice(0, REF_MAX).map(refSend);
-  text = (text || '').trim(); if (!text && refs.length) text = t('ki_ref_frage');
+  const refs = (AS.refs || []).slice(0, REF_MAX).map(refSend), files = (AS.files || []).slice(0, AS_FILES_MAX);
+  text = (text || '').trim(); if (!text && files.length) text = tn('ki_beleg_frage', files.length); if (!text && refs.length) text = t('ki_ref_frage');
   if (!text || AS.busy) return;
   if (AS.list) { AS.list = false; asHead(); }
   const hist = AS.msgs.map(x => ({role: x.role, text: x.role === 'user' ? asRefPre(x.refs) + x.text : asText(x)})).filter(x => x.text).slice(-12);
   const m = {role: 'assistant', parts: [], state: 'run', status: ''};
-  AS.msgs.push(Object.assign({role: 'user', text}, refs.length ? {refs} : {}), m); AS.busy = true; AS.refs = []; asRefsDraw(); asMsgs(true);
+  AS.msgs.push(Object.assign({role: 'user', text}, refs.length ? {refs} : {}, files.length ? {files: files.map(f => ({name: f.name}))} : {}), m);
+  AS.busy = true; AS.refs = []; AS.files = []; asRefsDraw(); asMsgs(true);
   try {
-    const r = await api('/api/assistant/ask', {question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort(), refs});
+    const ids = [];          // the receipts first, each on its own (in memory at Kontor until the question that names them)
+    for (const f of files) ids.push((await api('/api/assistant/attach', {name: f.name, content: await asFileB64(f)})).id);
+    const r = await api('/api/assistant/ask', Object.assign({question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort(), refs}, ids.length ? {files: ids} : {}));
     AS.job = r.job; AS.conv = r.conversation; AS.n = 0; asPoll(m, r.job);
   } catch (e) { m.parts.push({k: 'err', text: e.message}); m.state = 'error'; AS.busy = false; asMsgs(); }
 }
@@ -7634,7 +7657,8 @@ const asRefChip = (r, attrs, x) => `<span class="as-ref"><button type="button" c
   + (x ? `<button type="button" class="as-ref-x" ${attrs} title="${esc(t('ki_ref_weg'))}" aria-label="${esc(t('ki_ref_weg'))}">${AS_CROSS}</button>` : '') + '</span>';
 function asRefsDraw() {
   const box = $('#as-refs'); if (!box) return;
-  const refs = AS.refs || []; box.innerHTML = refs.map((r, i) => asRefChip(r, `data-r="${i}"`, true)).join(''); box.classList.toggle('hidden', !refs.length);
+  const refs = AS.refs || [], files = AS.files || [];
+  box.innerHTML = refs.map((r, i) => asRefChip(r, `data-r="${i}"`, true)).join('') + files.map((f, i) => asFileChip(f.name, i)).join(''); box.classList.toggle('hidden', !refs.length && !files.length);
 }
 function refMarkCol(col) {          // a column by its heading: the heading and its figures marked
   const want = asNorm(col);
@@ -7699,7 +7723,7 @@ async function asDelChats(id) {
 $('#assist-btn').addEventListener('click', () => { if (S.tab !== 'assistant') asShow(!AS.open); });
 $('#assist').addEventListener('click', async e => {
   const b = e.target.closest('button, a'); if (!b) return;
-  if (b.classList.contains('as-ref-x')) { (AS.refs || []).splice(+b.dataset.r, 1); asRefsDraw(); const ta = $('#as-in'); if (ta) ta.focus(); }
+  if (b.classList.contains('as-ref-x')) { if (b.dataset.f != null) (AS.files || []).splice(+b.dataset.f, 1); else (AS.refs || []).splice(+b.dataset.r, 1); asRefsDraw(); const ta = $('#as-in'); if (ta) ta.focus(); }
   else if (b.classList.contains('as-ref-go')) asRefOpen(b.dataset.m != null ? ((AS.msgs[+b.dataset.m] || {}).refs || [])[+b.dataset.r] : (AS.refs || [])[+b.dataset.r]);
   else if (b.classList.contains('as-close')) asShow(false);
   else if (b.classList.contains('as-new')) asNew();
@@ -7810,7 +7834,7 @@ async function vEinstellungenAssistent() {
     ${pf.can_seal ? `<label>${t('ki_abschirmung')}${hq('ki_abschirmung')}</label><label class="chk"><select id="as-sandbox">${['strict', 'basic', 'off'].map(k => opt(k, t(`ki_sb_${k}`), st.sandbox)).join('')}</select></label>` : ''}
   </div>
   <h2>${t('ki_rechte')}</h2>
-  <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize', 'book', 'rules']], ['ki_rg_zugang', ['remote']]].map(([g, ks]) =>
+  <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize', 'book', 'rules', 'receipts']], ['ki_rg_zugang', ['remote']]].map(([g, ks]) =>
     `<div class="as-rg"><div class="as-rg-h">${t(g)}${g === 'ki_rg_aendern' ? hq('ki_eintragen') : ''}</div>${ks.map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${(k === 'read' ? r.figures && r.transactions && r.page : r[k]) ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}</span></label>`).join('')}</div>`).join('')}</div>
   <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>
   <details class="as-log" id="as-log"><summary>${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details>`;

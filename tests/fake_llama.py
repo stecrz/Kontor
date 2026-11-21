@@ -21,6 +21,7 @@ Files beside it tell it more (Kontor starts it with an environment of its own, s
                 {"think": text} | {"say": text}, ...]}] -- one step per round (a step after each tool result)
 """
 import json
+import re
 import os
 import sys
 import time
@@ -126,6 +127,8 @@ def main():
             q = str((users[-1] if users else {}).get("content") or "")
             if q.startswith(("[Page: ", "[Seite: ")) and "]\n" in q:           # Kontor's line before the question: where the user is
                 q = q.split("]\n", 1)[1]
+            if q.startswith("[Kontor: the user gave ") and "]\n" in q:         # ... and the receipts given with it
+                q = q.split("]\n", 1)[1]
             script = None
             if os.path.exists(os.path.join(here, "script.json")):
                 with open(os.path.join(here, "script.json"), encoding="utf-8") as f:
@@ -139,7 +142,7 @@ def main():
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
             delta = lambda d, fin=None: {"choices": [{"index": 0, "delta": d, "finish_reason": fin}], "object": "chat.completion.chunk"}
-            asked = [str(m.get("content") or "").split("]\n", 1)[-1] for m in users]
+            asked = [re.sub(r"^\[Kontor: the user gave [^\n]*\]\n", "", str(m.get("content") or "").split("]\n", 1)[-1]) for m in users]
             first = next((x for x in reversed(asked) if not x.startswith("[Kontor:")), "")      # the question itself (not Kontor's reminder to answer)
             fin_reason = "stop"
             try:

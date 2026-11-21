@@ -48,6 +48,7 @@ import categorize
 import updates
 import assistant as assistant_mod
 from receipts import Belege, file_status, pattern_problem
+import receipt_text
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
 from core import (REPORT_LOCK, assign_skipped, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
@@ -64,7 +65,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(HERE, "web")
 MAX_BODY = 2 * 1024 * 1024
 MAX_UPLOAD = 90 * 1024 * 1024      # Base64 eines 60-MB-Belegs
-MAX_SPEECH = 28 * 1024 * 1024      # a dictated recording (base64 of at most 20 MB of WAV: ten minutes)
+MAX_SPEECH = 28 * 1024 * 1024      # a dictated recording (base64 of at most 20 MB of WAV: ten minutes), a receipt given to the assistant (20 MB)
 PLAN_PARAMS = ("horizon_months", "default_method", "inflation_percent_pa", "income_increase_percent_pa",
                "expense_increase_percent_pa", "return_percent_pa", "fi_real_return_percent")
 
@@ -183,6 +184,60 @@ def unassign_categories(app: "App", ids: List[int], pfad: str, local: bool) -> d
         app.rebuild_report(wait=False, grund="assignment taken back")
     return {"undone": list(res["undone_ids"]), "dropped": waits, "open": res["open"],
             "kept": 0 if res["open"] else len(ids) - len(waits) - res["undone"]}
+
+
+def receipt_tx(app: "App", tid: Any, ums: Optional[dict] = None) -> Optional[dict]:
+    """The transaction a receipt is filed to (with its area's name for the subfolder) -- None: filed without one."""
+    if tid in (None, ""):
+        return None
+    ums = ums if ums is not None else {t["id"]: t for t in app.umsatzliste()}
+    t = ums.get(int(tid))
+    if t is None:
+        raise ValueError(tr("s_umsatz_s_nicht_gefunden_liste") % tid)
+    ds = app.store.load_shared("dataset.json", {}) or {}
+    names = {k["uuid"]: k["name"] for k in ds.get("accounts", [])}
+    names.update(ds.get("area_names") or {})
+    return dict(t, entity_name=names.get(t["entity"], ""))
+
+
+def receipt_matches(app: "App", fields: dict, amount: Optional[float], day: Optional[str], name: str) -> List[dict]:
+    """The transactions a receipt the assistant was given may belong to (receipt_text.candidates) -- with the other side's IBAN
+    from the ledger (it is not in the list the pages get)."""
+    ibans = {t.id: t.counter_iban for t in app.ledger.txs if t.counter_iban} if app.ledger is not None else {}
+    rows = [dict(t, counter_iban=ibans.get(t["id"], "")) for t in app.umsatzliste() if not t.get("transfer")]
+    return receipt_text.candidates(fields, rows, amount, day, name)
+
+
+def receipt_place(app: "App", tid: Optional[int]) -> dict:
+    """Where a receipt would be filed (for the card): the transaction, the folder shown with ~, whether it is there yet."""
+    tx = receipt_tx(app, tid)
+    bl = Belege(app.store, app.config)
+    full = os.path.join(bl.folder, bl.subfolder(tx))
+    home = os.path.expanduser("~")
+    return {"tx": tx, "folder": "~" + full[len(home):] if full.startswith(home + os.sep) else full, "exists": os.path.isdir(bl.folder)}
+
+
+def assistant_file_receipt(app: "App", data: bytes, name: str, tid: Optional[int], note: str) -> dict:
+    """A receipt the user gave the assistant, filed after his click on its card: as an upload under Transactions & receipts
+    (the receipts folder -- created with that click when missing --, linked to the transaction). The reference in MoneyMoney
+    ("Reference in MoneyMoney") is not written: the assistant changes nothing in MoneyMoney but categories."""
+    try:
+        e = Belege(app.store, app.config).add_bytes(receipt_tx(app, tid), name, data, note)
+    except OSError as ex:                                # the folder cannot be made or written: its reason on the card
+        raise ValueError(str(ex))
+    log.info("Receipt stored after the user's click on the assistant's card (%d KB)", len(data) // 1024)
+    return dict(e)
+
+
+def assistant_unfile_receipt(app: "App", did: dict) -> None:
+    """Takes a receipt filed by the assistant back: its entry and its file -- unless it was changed since (linked to another
+    transaction, another note, moved) or is gone."""
+    bl = Belege(app.store, app.config)
+    e = next((x for x in bl.entries() if x.get("id") == did.get("id")), None)
+    if e is None or any(e.get(k) != did.get(k) for k in ("tx_id", "note", "path", "name", "date", "amount")):
+        raise ValueError(tr("s_ki_inzwischen_geaendert"))
+    bl.remove(e["id"], delete_file=True)
+    log.info("Receipt filed by the assistant taken back")
 
 
 def approve_bookings(app: "App", shown: Dict[str, float]) -> dict:
@@ -497,6 +552,11 @@ class App:
                     "transactions": lambda q: filter_transactions(self, q)[0],
                     "status": lambda: self.status(True),
                     "receipt_counts": lambda: Belege(self.store, self.config).counts(),
+                    "receipt_text": lambda data: receipt_text.text_of(data, self.store.data_dir),
+                    "receipt_matches": lambda fields, amount, day, name: receipt_matches(self, fields, amount, day, name),
+                    "receipt_place": lambda tid: receipt_place(self, tid),
+                    "file_receipt": lambda data, name, tid, note: assistant_file_receipt(self, data, name, tid, note),
+                    "unfile_receipt": lambda did: assistant_unfile_receipt(self, did),
                     "categories": lambda: positions_overview(self.ledger, self.config, self.categories_raw, date.today()) if self.ledger is not None else {},
                     "uncategorized": lambda year, area: open_category_items(self, year, area) if self.ledger is not None else {},
                     "category_problem": lambda path: mm_categories.assignable(mm_categories.index(self.categories_raw), path),
@@ -2520,7 +2580,7 @@ def make_handler(app: App):
                 return self._json(401, {"error": tr("s_nicht_angemeldet")})
             try:
                 body = {} if u.path == "/api/history/mm-import" else self._body(
-                    65536 if before else MAX_UPLOAD if u.path == "/api/receipts/upload" else MAX_SPEECH if u.path == "/api/assistant/transcribe" else MAX_BODY)
+                    65536 if before else MAX_UPLOAD if u.path == "/api/receipts/upload" else MAX_SPEECH if u.path in ("/api/assistant/transcribe", "/api/assistant/attach") else MAX_BODY)
             except (ValueError, json.JSONDecodeError) as e:
                 return self._json(400, {"error": tr("s_ungueltige_anfrage_s") % e})
             remote = self._remote()
@@ -2634,6 +2694,12 @@ def make_handler(app: App):
                     except (ValueError, binascii.Error):
                         raise ValueError(tr("s_ki_aufnahme_leer"))
                     return self._json(200, a.transcribe(wav, live=bool(body.get("live"))))          # live: while still speaking
+                if path == "/api/assistant/attach":               # a receipt for the next question: in memory only (assistant.attach)
+                    try:
+                        data = base64.b64decode(str(body.get("content") or ""), validate=True)
+                    except (ValueError, binascii.Error):
+                        raise ValueError(tr("s_dateiinhalt_unlesbar"))
+                    return self._json(200, a.attach(body.get("name"), data))
                 if path == "/api/assistant/page":
                     a.page_answer(str(body.get("job") or ""), str(body.get("id") or ""), body.get("page"), body.get("result"))
                     return self._json(200, {"ok": True})
@@ -3127,13 +3193,7 @@ def make_handler(app: App):
             names.update(ds.get("area_names") or {})
 
             def tx_of(body):
-                tid = body.get("tx_id")
-                if tid in (None, ""):
-                    return None
-                t = ums.get(int(tid))
-                if t is None:
-                    raise ValueError(tr("s_umsatz_s_nicht_gefunden_liste") % tid)
-                return dict(t, entity_name=names.get(t["entity"], ""))
+                return receipt_tx(app, body.get("tx_id"), ums)
 
             if path == "/api/receipts/upload":
                 try:
@@ -3525,7 +3585,8 @@ def restored_config(current: dict, incoming: dict, data_dir: str = "") -> dict:
 
 
 # Kontor's own files in its data folder (the store, its log and service files, a key file, the certificate): only these go
-ASSISTANT_ASK = ("/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm", "/api/assistant/transcribe")
+ASSISTANT_ASK = ("/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm", "/api/assistant/transcribe",
+                 "/api/assistant/attach")
 
 _KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*|assistant-chats|assistant-changes"
                           r"|assistant-chat-[0-9a-f]{8,32})\.json(?:\.enc)?(?:\.tmp|\.renew)?"
