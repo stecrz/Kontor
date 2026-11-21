@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.48 (2026-11-21 22:46)
+- KI-Assistent: Internetsuche nur zum Lesen in drei Stufen – Wikipedia, Gesetze, GLEIF, EZB, Bundesbank, Eurostat / tagesschau, GDELT / Tavily mit eigenem kostenlosen Schlüssel
+- Jeder Abruf erst nach deinem Klick; Filter gegen eigene Daten; abgeschirmter Abruf; danach keine Änderungen in derselben Unterhaltung
+- Recht „Internet“ ab Werk aus (Einstellungen → KI-Assistent)
+
 ## 3.16.47 (2026-11-21 22:45)
 - Diktieren: Aufnahme ab dem Klick – sofort lossprechen, auch wenn das Sprachmodell noch lädt; nichts geht verloren
 - Diktieren: Knopf dreht, bis das Diktat läuft; erst dann rot, Zeit ab 0:00

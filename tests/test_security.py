@@ -634,6 +634,7 @@ class NothingGoesOut(unittest.TestCase):
         "updates.py": {"urllib.request"},                              # update check and download: GitHub, on your click or as set
         "llm_local.py": {"urllib.request", "http.client", "socket"},   # llama.cpp and model files (downloads on your click); the model on 127.0.0.1
         "security_names.py": {"urllib.request"},                       # names of securities at OpenFIGI: on your click, ISINs only
+        "web_reader.py": {"urllib.request", "http.client", "socket", "ssl"},          # the assistant's internet search: one fetch you approved, in a process of its own
     }
     NETWORK_MODULES = {"socket", "ssl", "http.client", "http.server", "urllib.request", "socketserver", "ftplib", "smtplib", "poplib", "imaplib",
                        "telnetlib", "nntplib", "xmlrpc", "asyncio", "selectors", "webbrowser", "requests", "httpx", "aiohttp", "urllib3", "websocket",
@@ -641,14 +642,18 @@ class NothingGoesOut(unittest.TestCase):
     # hosts written in the program: the ones it connects to, by part ...
     HOSTS = {"updates.py": {"api.github.com", "github.com", "raw.githubusercontent.com"},
              "llm_local.py": {"api.github.com", "huggingface.co"},
-             "security_names.py": {"api.openfigi.com"}}
+             "security_names.py": {"api.openfigi.com"},
+             # the internet search's sources (each fetch after your click; the reader checks the host again) -- and, named only:
+             # the program's page (in its User-Agent), the ECB's and GLEIF's pages that results link to
+             "web_search.py": {"www.wikidata.org", "www.gesetze-im-internet.de", "api.gleif.org", "data-api.ecb.europa.eu", "api.statistiken.bundesbank.de",
+                               "ec.europa.eu", "www.tagesschau.de", "api.gdeltproject.org", "api.tavily.com", "github.com", "data.ecb.europa.eu", "search.gleif.org"}}
     NAMES_ONLY = {"schemas.openxmlformats.org", "www.apple.com"}      # ... and names of file formats (never opened)
     # other programs started by their name (all of macOS or Apple's tools, git for an update of a clone)
     COMMANDS = {"security", "openssl", "swiftc", "codesign", "open", "launchctl", "/bin/launchctl", "/usr/sbin/sysctl", "ps", "pgrep", "tmutil",
                 "osascript", "/usr/bin/osascript", "xcode-select", "git", "/bin/sh",
                 "sips", "iconutil", "defaults", "tccutil"}          # Kontor's own Mac app: its icon, its address, gone on uninstall
-    # ... and by a path Kontor made up itself (its Touch ID helper, the password window, llama.cpp, Tailscale's own tool, lsof, the receipt reader)
-    COMMANDS_BY_PATH = {"auth.py", "mm_history.py", "llm_local.py", "tls_cert.py", "receipt_text.py"}     # receipt_text: its text recognition, sealed
+    # ... and by a path Kontor made up itself (its Touch ID helper, the password window, llama.cpp, Tailscale's own tool, lsof, the receipt reader, the web reader)
+    COMMANDS_BY_PATH = {"auth.py", "mm_history.py", "llm_local.py", "tls_cert.py", "receipt_text.py", "web_search.py"}     # receipt_text: its text recognition, sealed; web_search: python3 -I web_reader.py (in the sandbox)
     # where links on the pages lead (opened by you, in a new window; the pages themselves only talk to Kontor)
     LINKS = {"github.com", "tailscale.com", "login.tailscale.com", "apps.apple.com", "www.w3.org"}
     HOST = re.compile(r"(?:https?|wss?|ftp)://([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
@@ -690,6 +695,11 @@ class NothingGoesOut(unittest.TestCase):
         import updates
         self.assertEqual(set(updates.ALLOWED_HOSTS), {"api.github.com", "codeload.github.com", "github.com", "raw.githubusercontent.com", "objects.githubusercontent.com"})
         self.assertEqual(security_names.HOST, "api.openfigi.com")
+        import web_search                                                # the internet search: these hosts and no others (a result of tier 2 or 3: only its own)
+        self.assertEqual({s: set(v["hosts"]) for s, v in web_search.SOURCES.items()},
+                         {"wikipedia": {"de.wikipedia.org", "en.wikipedia.org"}, "wikidata": {"www.wikidata.org"}, "laws": {"www.gesetze-im-internet.de"},
+                          "gleif": {"api.gleif.org"}, "ecb": {"data-api.ecb.europa.eu"}, "bundesbank": {"api.statistiken.bundesbank.de"}, "eurostat": {"ec.europa.eu"},
+                          "tagesschau": {"www.tagesschau.de"}, "gdelt": {"api.gdeltproject.org"}, "tavily": {"api.tavily.com"}})
         for url, kind, ok in (("https://github.com/x", "github", True), ("https://release-assets.githubusercontent.com/x", "github", True),
                               ("https://huggingface.co/x", "hf", True), ("https://cdn-lfs.hf.co/x", "hf", True),
                               ("https://example.com/x", "github", False), ("https://example.com/x", "hf", False), ("http://github.com/x", "github", False),

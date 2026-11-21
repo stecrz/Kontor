@@ -168,7 +168,7 @@ const H = {
   tls: t('optional_zertifikat_schluessel_pem_fue'),
   updates: t('einzige_netzverbindung_von_kontor_einm'),
   assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_denken: t('h_ki_denken'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
-  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_speichern: t('h_ki_speichern'),
+  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'),
   ki_programm: t('h_ki_programm'), ki_modelle: t('h_ki_modelle'), ki_ablage: t('h_ki_ablage'),
   darlehen_iban: t('die_rate_wird_am_gegenkonto'),
   darlehen_konto: t('das_manuell_gefuehrte_darlehenskonto_i'),
@@ -227,7 +227,7 @@ const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl:
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-rights', ki_tavily: 'assistant-rights'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
@@ -6652,8 +6652,20 @@ function asShow(open) {
 }
 // what the model answers, as text with a little Markdown (bold, lists, small tables, code) -- built from escaped text only
 const LI = /^(\s*)([-*•+]|\d+[.)])\s+(.*)$/;
-function asMd(src) {
-  const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:!?]|$)/g, '$1<i>$2</i>');
+// the addresses Kontor fetched from the internet in this conversation: only these become links in an answer (an address the
+// model makes up -- perhaps told to by a web page, perhaps carrying your figures -- stays plain text)
+const asLinks = () => new Set(AS.msgs.flatMap(m => (m.parts || []).filter(p => p.k === 'web' && p.state === 'done').flatMap(p => p.links || [])));
+const asUnesc = s => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+function asMd(src, links) {
+  const ok = links instanceof Set ? links : new Set();
+  const link = s => s.replace(/\[([^\]]{1,200})\]\((https:\/\/[^\s)]{1,500})\)|(https:\/\/[^\s<>()]{1,500}[^\s<>().,;:!?])/g, (m, txt, u1, u2) => {
+    const u = u1 || u2;
+    if (!ok.has(asUnesc(u))) return txt ? `${txt} (${u})` : m;
+    let host = ''; try { host = new URL(asUnesc(u)).hostname; } catch (e) { return txt ? `${txt} (${u})` : m; }
+    // the host always beside the model's words (they alone could pretend to be something else) -- also where there is no tooltip
+    return `<a href="${u}" target="_blank" rel="noopener noreferrer" title="${u}">${txt || u}</a>${txt ? `<span class="as-lh"> (${esc(host)})</span>` : ''}`;
+  });
+  const inline = s => link(esc(s)).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:!?]|$)/g, '$1<i>$2</i>');
   const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
   const lines = String(src || '').replace(/\r/g, '').split('\n'); let h = '', i = 0;
   while (i < lines.length) {
@@ -6737,7 +6749,7 @@ function asEntry(p, ask) {
   return asCard(p, ask, kind, `${ev}${why}
     <table class="as-e-t"><thead><tr><th>${t(p.kind === 'params' ? 'ki_e_annahme' : 'ki_e_monat')}</th><th class="num">${t('ki_e_bisher')}</th><th class="num">${t('ki_e_neu_wert')}</th></tr></thead><tbody>${rows}</tbody></table>`, fin, st);
 }
-const asKind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params'), category: t('ki_e_category'), book: t('ki_e_book'), hold: t('ki_e_hold'), rule: t('ki_e_rule'), receipt: t('ki_e_receipt')}[k] || '');
+const asKind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params'), category: t('ki_e_category'), book: t('ki_e_book'), hold: t('ki_e_hold'), rule: t('ki_e_rule'), receipt: t('ki_e_receipt'), web: t('ki_a_web')}[k] || '');
 function asCard(p, ask, kind, body, fin, st) {
   // the frame of a proposed change: the tick while the card of changes waits, its kind, title and where, what it changes, its state
   const tick = p.state === 'queued' && ask ? `<label class="as-e-pick" title="${esc(t('ki_e_auswahl_tip'))}"><input type="checkbox" class="as-pick" data-id="${esc(p.id)}" ${p.off ? '' : 'checked'}></label>` : '';
@@ -6751,6 +6763,15 @@ function asBatch(p, m) {
   if (p.state === 'declined') return `<div class="as-batch done"><span class="muted small">${t('ki_b_nichts_geaendert')}</span></div>`;
   const bits = [p.done ? tn('ki_b_done', p.done, p.done) : '', p.left ? tn('ki_b_left', p.left, p.left) : '', p.failed ? tn('ki_b_failed', p.failed, p.failed) : ''].filter(Boolean);
   return `<div class="as-batch done"><span class="muted small">${esc(bits.join(' · '))}</span></div>`;
+}
+function asWebCard(p) {
+  // a lookup on the internet the assistant asks for: source, words or address, why -- fetched by Kontor only with "Fetch"
+  const ask = p.state === 'ask', adr = (p.addresses || []).filter(a => a !== p.query);
+  const st = ask ? `<div class="as-e-btn"><button class="small as-w-yes" data-id="${esc(p.id)}">${t('ki_w_ja')}</button><button class="small secondary as-w-no" data-id="${esc(p.id)}">${t('ki_w_nein')}</button></div>`
+    : p.state === 'done' ? `<div class="as-e-st ok">${ICON.check}<span>${p.what === 'read' ? t('ki_w_done_read') : tn('ki_w_done_n', p.count || 0, p.count || 0)}</span></div>`
+    : `<div class="as-e-st">${esc(p.state === 'failed' ? t('ki_w_fehler', p.text || '') : t(p.state === 'expired' ? 'ki_w_expired' : 'ki_w_declined'))}</div>`;
+  return `<div class="as-entry as-web ${esc(p.state || '')}${ask ? ' ask' : ''}"><div class="as-e-k" title="${esc(t('ki_w_tip'))}">${t(p.what === 'read' ? 'ki_w_lesen' : 'ki_w_kind')} · ${esc(p.label || '')} · ${t('ki_w_stufe', p.tier || 1)}</div>
+    <div class="as-e-h">${esc(p.query || '')}</div>${p.reason ? `<div class="as-e-why">${esc(p.reason)}</div>` : ''}${adr.length ? `<div class="as-w-adr">${adr.map(a => `<div>${esc(a)}</div>`).join('')}</div>` : ''}${st}</div>`;
 }
 // A chart the assistant asked for: the figures are Kontor's own (the model chose only what to show), drawn here as the charts on
 // the pages are -- the values on hover, a click shows the figure on its page (on a touch screen: tap to see it, tap again to go)
@@ -6919,11 +6940,12 @@ async function asChGo(c, i, s) {
 }
 const asText = m => (m.parts || []).filter(p => p.k === 'text').map(p => p.text).join('\n\n').trim();
 function asMsg(m, i) {
+  const links = m.role === 'user' ? null : asLinks();
   if (m.role === 'user') return `<div class="as-msg me">${(m.refs || []).length || (m.files || []).length ? `<div class="as-refs">${(m.refs || []).map((r, j) => asRefChip(r, `data-m="${i}" data-r="${j}"`, false)).join('')}${(m.files || []).map(f => asFileChip(String(f.name || ''))).join('')}</div>` : ''}<div class="as-b">${esc(m.text)}</div></div>`;          // as typed or pasted (lines and spaces kept: tables, code); what it refers to before it
   let h = '';
   const parts = m.parts || [];
   parts.forEach((p, j) => {
-    if (p.k === 'text') h += `<div class="as-t">${asMd(p.text)}</div>`;
+    if (p.k === 'text') h += `<div class="as-t">${asMd(p.text, links)}</div>`;
     else if (p.k === 'think' || p.k === 'tool') {          // thoughts and the steps between them: one entry (the first of a run draws it)
       if (j && (parts[j - 1].k === 'think' || parts[j - 1].k === 'tool')) return;
       let e = j; while (e < parts.length && (parts[e].k === 'think' || parts[e].k === 'tool')) e++;
@@ -6931,10 +6953,12 @@ function asMsg(m, i) {
     }
     else if (p.k === 'entry') h += asEntry(p, (m.parts || []).some(x => x.k === 'batch' && x.state === 'ask' && (x.ids || []).includes(p.id)));
     else if (p.k === 'batch') h += asBatch(p, m);
+    else if (p.k === 'web') h += asWebCard(p);
+    else if (p.k === 'note') h += `<div class="banner info small">${esc(t(p.key || ''))}</div>`;
     else if (p.k === 'chart') h += asChart(p, i, j);
     else if (p.k === 'err') h += `<div class="banner err small">${esc(p.text)}</div>`;
   });
-  if (m.state === 'run' && !(m.parts || []).some(p => p.k === 'batch' && p.state === 'ask')) h += `<div class="as-run"><span class="spin"></span>${t(m.status === 'loading' ? 'ki_laedt_modell' : 'ki_denkt')}</div>`;          // the card of changes waiting for the click: nothing is being thought
+  if (m.state === 'run' && !(m.parts || []).some(p => (p.k === 'batch' || p.k === 'web') && p.state === 'ask')) h += `<div class="as-run"><span class="spin"></span>${t(m.status === 'loading' ? 'ki_laedt_modell' : 'ki_denkt')}</div>`;          // the card of changes waiting for the click: nothing is being thought
   else if (m.state === 'stopped') h += `<div class="as-meta">${t('ki_gestoppt')}</div>`;
   else if (m.meta && m.meta.seconds != null) {
     const mm = m.meta, bits = [mm.cut ? t('ki_abgeschnitten') : '', mm.thought != null ? tn('ki_nachgedacht', mm.thought, asN(mm.thought)) : '',
@@ -7312,9 +7336,10 @@ async function asSend(text) {
   AS.msgs.push(Object.assign({role: 'user', text}, refs.length ? {refs} : {}, files.length ? {files: files.map(f => ({name: f.name}))} : {}), m);
   AS.busy = true; AS.refs = []; AS.files = []; asRefsDraw(); asMsgs(true);
   try {
+    const web = AS.msgs.some(x => (x.parts || []).some(p => p.k === 'web' && p.state === 'done'));          // web text in it: no changes (Kontor knows it; told again after a restart)
     const ids = [];          // the receipts first, each on its own (in memory at Kontor until the question that names them)
     for (const f of files) ids.push((await api('/api/assistant/attach', {name: f.name, content: await asFileB64(f)})).id);
-    const r = await api('/api/assistant/ask', Object.assign({question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort(), refs}, ids.length ? {files: ids} : {}));
+    const r = await api('/api/assistant/ask', Object.assign({question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort(), refs, web}, ids.length ? {files: ids} : {}));
     AS.job = r.job; AS.conv = r.conversation; AS.n = 0; asPoll(m, r.job);
   } catch (e) { m.parts.push({k: 'err', text: e.message}); m.state = 'error'; AS.busy = false; asMsgs(); }
 }
@@ -7344,12 +7369,15 @@ function asEvent(m, ev) {
   else if (ev.type === 'chart') m.parts.push(Object.assign({}, ev, {k: 'chart'}));
   else if (ev.type === 'entry_state') { const p = m.parts.find(x => x.k === 'entry' && x.id === ev.id); if (p) { p.state = ev.state; p.text = ev.text || ''; if (ev.fixed) p.fixed = true; } if (ev.state === 'done') asChanged(); }
   else if (ev.type === 'batch') m.parts.push({k: 'batch', id: ev.id, state: 'ask', ids: ev.ids || []});
+  else if (ev.type === 'web') m.parts.push(Object.assign({}, ev, {k: 'web'}));
+  else if (ev.type === 'web_state') { const p = m.parts.find(x => x.k === 'web' && x.id === ev.id); if (p) Object.assign(p, {state: ev.state, count: ev.count, text: ev.text || '', links: ev.links || []}); }
+  else if (ev.type === 'notice') m.parts.push({k: 'note', key: ev.key});
   else if (ev.type === 'batch_state') { const p = m.parts.find(x => x.k === 'batch' && x.id === ev.id); if (p) Object.assign(p, {state: ev.state, done: ev.done, failed: ev.failed, left: ev.left}); }
   else if (ev.type === 'reset') { while (m.parts.length && m.parts[m.parts.length - 1].k === 'text') m.parts.pop(); }          // what was shown was a tool call written as text, not an answer
   else if (ev.type === 'done') { m.state = 'done'; m.meta = ev; }
   else if (ev.type === 'stopped') m.state = 'stopped';
   else if (ev.type === 'error') { m.state = 'error'; m.parts.push({k: 'err', text: ev.text || ''}); }
-  if (ev.type === 'stopped' || ev.type === 'error') m.parts.forEach(p => { if (p.k === 'entry' && p.state === 'queued') p.state = 'declined'; });          // never decided: nothing was made
+  if (ev.type === 'stopped' || ev.type === 'error') m.parts.forEach(p => { if ((p.k === 'entry' && p.state === 'queued') || (p.k === 'web' && p.state === 'ask')) p.state = 'declined'; });          // never decided: nothing was made or fetched
 }
 // a value was entered (or taken back): the figures on the page follow
 function asChanged() { setTimeout(async () => { try { await loadAll(); softRoute(); pollStatus().catch(() => {}); } catch (e) {} }, 300); }
@@ -7765,6 +7793,10 @@ $('#assist').addEventListener('click', async e => {
     const ids = card ? card[0].parts.filter(y => y.k === 'entry' && (card[1].ids || []).includes(y.id) && !y.off).map(y => y.id) : [];
     try { await api('/api/assistant/confirm', {job: AS.job, id: b.dataset.id, ok: b.classList.contains('as-b-yes'), ids}); }
     catch (x) { toast(x.message, 5000); if (card && !AS.job) { card[1].state = 'declined'; card[0].parts.forEach(y => { if (y.k === 'entry' && y.state === 'queued') y.state = 'declined'; }); } asMsgs(); }
+  } else if (b.classList.contains('as-w-yes') || b.classList.contains('as-w-no')) {
+    b.parentNode.querySelectorAll('button').forEach(x => { x.disabled = true; });
+    try { await api('/api/assistant/confirm', {job: AS.job, id: b.dataset.id, ok: b.classList.contains('as-w-yes')}); }
+    catch (x) { toast(x.message, 5000); const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'web' && y.id === b.dataset.id); if (p && !AS.job) p.state = 'declined'; asMsgs(); }
   } else if (b.classList.contains('as-undo')) {
     b.disabled = true;
     try { const r = await api('/api/assistant/undo', {id: b.dataset.id}); const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === b.dataset.id); if (p) { p.state = 'undone'; p.text = r.note || ''; } asMsgs(); asChanged(); }
@@ -7857,8 +7889,11 @@ async function vEinstellungenAssistent() {
     ${pf.can_seal ? `<label>${t('ki_abschirmung')}${hq('ki_abschirmung')}</label><label class="chk"><select id="as-sandbox">${['strict', 'basic', 'off'].map(k => opt(k, t(`ki_sb_${k}`), st.sandbox)).join('')}</select></label>` : ''}
   </div>
   <h2>${t('ki_rechte')}</h2>
-  <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize', 'book', 'rules', 'receipts']], ['ki_rg_zugang', ['remote']]].map(([g, ks]) =>
-    `<div class="as-rg"><div class="as-rg-h">${t(g)}${g === 'ki_rg_aendern' ? hq('ki_eintragen') : ''}</div>${ks.map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${(k === 'read' ? r.figures && r.transactions && r.page : r[k]) ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}</span></label>`).join('')}</div>`).join('')}</div>
+  <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize', 'book', 'rules', 'receipts']], ['ki_rg_internet', ['internet']], ['ki_rg_zugang', ['remote']]].map(([g, ks]) =>
+    `<div class="as-rg"><div class="as-rg-h">${t(g)}${g === 'ki_rg_aendern' ? hq('ki_eintragen') : g === 'ki_rg_internet' ? hq('ki_internet') : ''}</div>${ks.map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${(k === 'read' ? r.figures && r.transactions && r.page : r[k]) ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}</span></label>`).join('')}</div>`).join('')}</div>
+  ${r.internet ? `<div class="form as-web-key"><label for="as-tavily">${t('ki_tavily')}${hq('ki_tavily')}</label><div class="row tight">${(a.web || {}).tavily
+    ? `<span class="muted small">${t('ki_tavily_da', a.web.tavily_used || 0, a.web.tavily_limit || 950, a.web.tavily_days || 31)}</span><button class="small secondary" id="as-tavily-del">${t('ki_entfernen')}</button>`
+    : `<input type="password" id="as-tavily" placeholder="tvly-…" autocomplete="off" spellcheck="false"><button class="small secondary" id="as-tavily-save">${t('ki_tavily_sichern')}</button>`}</div></div>` : ''}
   <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>
   <details class="as-log" id="as-log"><summary>${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details>`;
 }
@@ -7870,8 +7905,8 @@ async function asChangesLoad() {
   const list = r.changes || [];
   el.classList.toggle('muted', !list.length);
   el.innerHTML = !list.length ? t('ki_aenderungen_keine') : `<div class="as-tw"><table><thead><tr><th>${t('ki_a_zeit')}</th><th>${t('ki_a_was')}</th><th>${t('ki_a_grund')}</th><th>${t('ki_a_stand')}</th></tr></thead><tbody>${list.map(c => `<tr>
-    <td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(kind(c.kind))}</b> · ${esc(c.title || '')}${c.category ? ' → ' + esc(c.category.replace(/ \/ /g, ' › ')) : ''}${c.sub ? `<div class="muted small">${esc(c.sub)}</div>` : ''}${c.count ? `<div class="muted small">${tn(c.kind === 'book' || c.kind === 'hold' ? 'ki_e_buchungen' : 'ki_a_umsaetze', c.count, c.count)}${c.sum != null ? ' · ' + fmt.format(c.sum) : ''}</div>` : ''}</td><td>${esc(c.reason || '–')}</td>
-    <td class="nowrap">${t(c.state === 'undone' ? 'ki_e_undone' : 'ki_e_done')}${c.final ? ' · ' + t('ki_a_endgueltig') : ''}${[c.note, c.state === 'undone' ? c.undo_note : ''].filter(Boolean).map(x => `<div class="muted small">${esc(x)}</div>`).join('')}</td></tr>`).join('')}</tbody></table></div>`;
+    <td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(kind(c.kind))}</b> · ${esc(c.title || '')}${c.category ? ' → ' + esc(c.category.replace(/ \/ /g, ' › ')) : ''}${c.sub ? `<div class="muted small">${esc(c.sub)}</div>` : ''}${c.count && c.kind !== 'web' ? `<div class="muted small">${tn(c.kind === 'book' || c.kind === 'hold' ? 'ki_e_buchungen' : 'ki_a_umsaetze', c.count, c.count)}${c.sum != null ? ' · ' + fmt.format(c.sum) : ''}</div>` : ''}</td><td>${esc(c.reason || '–')}</td>
+    <td class="nowrap">${c.kind === 'web' ? (c.state === 'failed' ? t('ki_a_fehlgeschlagen') : c.what === 'read' ? t('ki_a_abgerufen') : tn('ki_w_done_n', c.count || 0, c.count || 0)) : t(c.state === 'undone' ? 'ki_e_undone' : 'ki_e_done')}${c.final ? ' · ' + t('ki_a_endgueltig') : ''}${[c.note, c.state === 'undone' ? c.undo_note : ''].filter(Boolean).map(x => `<div class="muted small">${esc(x)}</div>`).join('')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 const asRate = b => b >= 1e6 ? (b / 1e6).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e7 ? 0 : 1}) + ' MB/s' : Math.max(1, Math.round(b / 1e3)).toLocaleString(LOCALE) + ' KB/s';
 const asLeft = l => { const s = (l.total - l.done) / l.rate; return s >= 90 ? t('ki_dl_rest_min', asN(s / 60)) : t('ki_dl_rest_s', asN(Math.max(1, s))); };
@@ -7915,6 +7950,9 @@ function bindAssistent(main) {
     if (['strict', 'basic', 'off'].indexOf(el.value) > ['strict', 'basic', 'off'].indexOf(cur) && !confirm(t(`ki_sb_${el.value}_frage`))) { el.value = cur; return; } set({sandbox: el.value}); });
   on('.as-right', 'change', el => set({rights: {[el.dataset.r]: el.checked}}));
   on('#as-log', 'toggle', el => { if (el.open) asChangesLoad(); });
+  const key = () => { const el = $('#as-tavily', main), v = el ? el.value.trim() : ''; if (v) post('/api/assistant/web', {tavily_key: v}); };
+  on('#as-tavily-save', 'click', key); on('#as-tavily', 'keydown', (el, e) => { if (e.key === 'Enter') { e.preventDefault(); key(); } });
+  on('#as-tavily-del', 'click', () => { if (confirm(t('ki_tavily_frage'))) post('/api/assistant/web', {tavily_key: ''}); });
   on('#as-rt-install', 'click', () => post('/api/assistant/runtime/install'));
   on('#as-rt-remove', 'click', () => { if (confirm(t('ki_programm_entfernen_frage'))) post('/api/assistant/runtime/remove'); });
   on('#as-check', 'click', async el => { el.classList.add('busy'); el.disabled = true; await post('/api/assistant/check'); });

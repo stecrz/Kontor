@@ -570,6 +570,7 @@ class App:
                     "restore_bookings": lambda keys: restore_bookings(self, keys),
                     "assign": lambda ids, path, local: assistant_assign_categories(self, ids, path, local),
                     "unassign": lambda ids, path, local: unassign_categories(self, ids, path, local),
+                    "own_data": lambda: (self.ledger, self.config, self.dataset(), self.umsatzliste(), self.categories_raw),        # what never goes out in an internet search
                     "bookings": lambda: {"made": kontor_bookings(self.ledger)[:500], "held_back": len(self.config.get("not_book") or []),
                                          "runs": list(reversed((self.store.load("state.json", {}) or {}).get("history_source", [])))[:6]}})
             return self._assistant
@@ -2707,7 +2708,8 @@ def make_handler(app: App):
                     return self._json(200, {"ok": True})
                 if path == "/api/assistant/confirm":
                     ok = body.get("ok") is True
-                    if ok and not local and app.remote_readonly():       # entering values from another device: only when it may change things
+                    kind = a.waiting_kind(str(body.get("job") or ""), str(body.get("id") or ""))
+                    if ok and not local and app.remote_readonly() and kind != "web":       # entering values from another device: only when it may change things
                         return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
                     a.confirm(str(body.get("job") or ""), str(body.get("id") or ""), ok, body.get("ids"), local)
                     return self._json(200, {"ok": True})
@@ -2741,6 +2743,8 @@ def make_handler(app: App):
                 a.ai.delete_model(mid)
                 if assistant_mod.settings(app.config)["model"] == mid:
                     a.set({"model": ""})
+            elif path == "/api/assistant/web":                  # your Tavily key (tier 3 of the internet search): saved or removed, never shown
+                a.set_web(body)
             elif path == "/api/assistant/server":
                 if body.get("action") == "start":
                     a.start_model()
@@ -3091,6 +3095,7 @@ def make_handler(app: App):
                     app.store.delete(name)
                 app.assistant.delete_chats(everything=True)          # the saved conversations go with the data
                 app.store.delete(assistant_mod.CHANGES_FILE)         # ... and the log of what the assistant changed
+                app.store.delete(assistant_mod.web_search.WEB_FILE)  # ... and your Tavily key
                 app.assistant.forget()                   # the assistant is switched off with its settings: model, conversation and entries to take back end
                 app.config = merged_config({})
                 app.ledger, app.ledger_time, app.categories_raw, app.last_result, app.last_run_at, app.umsaetze = None, None, [], None, None, None
@@ -3590,7 +3595,7 @@ def restored_config(current: dict, incoming: dict, data_dir: str = "") -> dict:
 ASSISTANT_ASK = ("/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm", "/api/assistant/listen",
                  "/api/assistant/transcribe", "/api/assistant/attach")
 
-_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*|assistant-chats|assistant-changes"
+_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*|assistant-chats|assistant-changes|assistant-web"
                           r"|assistant-chat-[0-9a-f]{8,32})\.json(?:\.enc)?(?:\.tmp|\.renew)?"
                           r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|master\.key|tls|assistant)(?=\s|$)")
 

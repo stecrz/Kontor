@@ -62,7 +62,8 @@ anhängen – nie löschen.
   kostenlosem Tavily-Schlüssel des Nutzers (Kontor stoppt vor dem Freikontingent), ohne Schlüssel keine Stufe 3. Kein Abgreifen
   von Suchmaschinen ohne Schnittstelle (DuckDuckGo verbietet es). Jeder Zugriff erst nach Freigabe mit Quelle, Suchbegriffen und
   Adresse; Kontor sucht (nicht das Modell), nur an diese festen Adressen, nie mit eigenen Daten; Seiten liest ein abgeschotteter
-  Prozess, danach keine Änderungen im selben Chat.
+  Prozess, danach keine Änderungen im selben Chat. (teilweise umgesetzt in 3.16.48: Wikipedia/Wikidata, Gesetze im Internet,
+  GLEIF, EZB, Bundesbank, Eurostat, tagesschau, GDELT, Tavily; fehlen noch Rechtsinformationsportal, BMF/BFH, Destatis, OECD, Portal-Feeds)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
@@ -129,8 +130,10 @@ Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach
 - [x] 3.16.45 Buchungsregeln (Darlehen, Beteiligungen, Kontenspiegel) anlegen und ändern; Buchungen daraus erst zur Freigabe, bis du die Regel unter Konten & Regeln bestätigst.
 - [x] 3.16.26 Offene Aufgaben beim Öffnen, jede mit „Erledigen“ (die Liste kommt von Kontor, auch ohne Modell; ohne passendes Recht „Öffnen“).
 - [x] 3.16.46 Belege: Datei in den Chat, Texterkennung von macOS (offline), passenden Umsatz vorschlagen, Abweichungen nennen, ablegen und verknüpfen (Verweis in MoneyMoney nicht durch den Assistenten).
-- [ ] Internet nur zum Lesen, in drei Stufen (siehe Entschieden): Kontor sucht (nicht das Modell), Freigabe je Zugriff mit Quelle,
+- [x] 3.16.48 Internet nur zum Lesen, in drei Stufen (siehe Entschieden): Kontor sucht (nicht das Modell), Freigabe je Zugriff mit Quelle,
   Suchbegriffen und Adressen, Filter gegen eigene Daten, Seiten in einem abgeschotteten Prozess, danach keine Änderungen im selben Chat.
+  Offen: Rechtsinformationsportal des Bundes, BMF/BFH, Destatis, OECD, Feeds der Portale (Schnittstellen erst prüfen); am Mac mit echtem
+  Netz prüfen (Abschirmung des Abrufs, Antworten der Quellen).
 
 ## 3. GbR-Entlastung: Immobilien, Steuer, Umsatzsteuer
 Ziel: Eine vermögensverwaltende GbR lässt sich mit Kontor führen – Objekte, Steuer, Voranmeldung, Nebenkosten, Ausschüttungen –

@@ -116,6 +116,10 @@ jobs:
           python3 --version
           python3 -m compileall -q -x '(^|/)(node_modules|\.git)/' .
           python3 -c "import glob, importlib; [importlib.import_module(f[:-3]) for f in sorted(glob.glob('*.py'))]"   # every module, new ones too
+      - name: Internet reader in the sandbox
+        run: |
+          # the assistant's reader process starts inside its sandbox profile and refuses a host it was not given (no network used)
+          python3 -c "import tempfile, web_search as W; r = W.Reader(tempfile.mkdtemp(), lambda: 'strict'); assert r.command()[0] == W.SANDBOX; out = r({'url': 'https://example.org/x', 'hosts': ['de.wikipedia.org'], 'as': 'json', 'timeout': 5}); print(out); assert out == {'ok': False, 'error': 'host'}, out"
       - name: Swift helpers
         run: |
           swiftc -O -o "$RUNNER_TEMP/touchid" touchid.swift
