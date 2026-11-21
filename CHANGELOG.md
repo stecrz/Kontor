@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.16.58 (2026-11-22 00:02)
+- Behoben: zwei gleich hohe Zahlungen kurz hintereinander – Gegenbuchungen nicht mehr vertauscht, keine falsche „Wertänderung“ oder „unklar“
+- Behoben: Handbuchung auf einem Konto eines anderen Bereichs (z. B. „Darlehen von Partnerin“) geht nicht mehr an eine fremde Zahlung gleichen Betrags
+- Behoben: gleichartige Zahlungen oder Buchungen am selben Tag werden zugeordnet statt offen gelassen
+- Zuordnung: von zwei Zahlungen nimmt die nähere die Gegenbuchung; zwei „Umbuchungen“ passen eher zueinander als zu einer Handbuchung
+- Entwicklung: Zufallswelten (1–3 Privatpersonen, bis 4 Firmen, Beteiligungen, Darlehen, PayPal, Miete) – jede Nacht ~3 h neue Fälle
+- Entwicklung: feste Liste von Sonderfällen an jeder Art Tag zwischen jeder Art Bereich, bei jedem Testlauf
+
 ## 3.16.57 (2026-11-21 23:56)
 - Diktieren: neue Einstellung „Sprachmodell starten“ – sofort (mit dem KI-Modell und beim Öffnen des Assistenten) oder erst beim Diktieren; Standard nach Arbeitsspeicher
 - Diktieren: Mikrofon ohne Telefonie-Filter (Echo, Rauschen) – kein Warten mehr auf das erste Geräusch, andere Töne werden nicht leiser

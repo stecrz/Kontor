@@ -181,18 +181,23 @@ class CashflowCases(Reconciles):
             tr_row = next(r for r in g["balance"]["rows"] if r["id"] == "transit")
             self.assertEqual((tr_row["amounts"]["2026-01"], tr_row["amounts"]["2026-02"]), (amt, 0.0), amt)
             self.assertEqual(round(g["balance"]["net_worth"]["2026-01"] - g["balance"]["net_worth"]["2025-12"] if "2025-12" in g["balance"]["net_worth"] else 0.0, 2), 0.0)
-        # without the counter-booking near it, or two of that amount on the same day: as before (leaves the net worth, its own
-        # change in value) -- of two at different distances the nearer one counts
+        # without the counter-booking near it: as before (leaves the net worth, its own change in value) -- of two at different
+        # distances the nearer one counts; two alike on the same day (same account and amount): it goes into one of them, which
+        # one makes no difference (3.16.58; before, neither took it)
         txs = base + four(2, date(2026, 2, 10), 10000.0, "Umbuchung")
         later = [x if x[0] != 3 else (3, "stake", date(2026, 3, 2), 10000.0, x[4]) for x in txs]
         twice = txs + [(9, "stake", date(2026, 2, 10), 10000.0, {"purpose": "Einlage"}), (8, "stake", date(2026, 2, 25), -10000.0, {})]
         nearer = txs + [(9, "stake", date(2026, 2, 12), 10000.0, {"purpose": "Einlage"}), (8, "stake", date(2026, 2, 25), -10000.0, {})]
         self.assertFalse(rows(build(nearer)["Privat"])["Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR"]["nw"])
-        for case in (later, twice):
-            data = build(case)
-            self.assertAddsUp(data)
-            p = rows(data["Privat"])
-            self.assertTrue(p["Einlage/Entnahme Muster GbR"]["nw"]); self.assertIn("Beteiligung an Muster GbR", p)
+        data = build(later)
+        self.assertAddsUp(data)
+        p = rows(data["Privat"])
+        self.assertTrue(p["Einlage/Entnahme Muster GbR"]["nw"]); self.assertIn("Beteiligung an Muster GbR", p)
+        data = build(twice)
+        self.assertAddsUp(data)
+        p = rows(data["Privat"])
+        self.assertEqual(p["Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR"]["amounts"]["2026-02"], -10000.0)
+        self.assertNotIn("Einlage/Entnahme Muster GbR", p)
         # two payments of that amount (to the children, to the company) and one booking: the one tied to it by name takes it
         data = build(base + four(2, date(2026, 2, 10), 1000.0, "Umbuchung") + [(30, "giro", date(2026, 2, 9), -1000.0, {"iban": "DE31"}),
                                                                                   (31, "kind", date(2026, 2, 9), 1000.0, {"iban": "DE11"})])
@@ -405,6 +410,115 @@ class CashflowCases(Reconciles):
         # in from one counterparty, out to another: no booking back -- both stay unclear
         d = build(base + [(2, "giro", date(2026, 6, 1), 500.0, {"cat": "Umbuchung", "iban": "DE90"}), (3, "giro", date(2026, 6, 20), -500.0, {"cat": "Umbuchung", "iban": "DE91"})])
         self.assertAddsUp(d); self.assertEqual(unclear(d), {"2026-06": [2, 3]})
+
+    def test_two_equal_payments_each_find_their_booking(self):
+        # two repayments of the same amount to a friend, three days apart, each booked by hand on the loan a day or two later:
+        # both pair -- the second payment (equally close to both bookings) does not take the first one's only counterpart
+        # (found by new random cases, seeds 377654401 and 357881360: one payment stayed "without category", and a transfer to the
+        # children's area claimed the booking left over)
+        base = [(1, "giro", date(2026, 6, 2), -12.5, {"name": "Freund"}), (2, "kredit", date(2026, 6, 4), 12.5, {"name": "Freund"}),
+                (3, "giro", date(2026, 6, 5), -12.5, {"name": "Freund"}), (4, "kredit", date(2026, 6, 6), 12.5, {"name": "Freund"})]
+        for extra in ([], [(5, "giro", date(2026, 6, 6), -12.5, {"iban": "DE31", "cat": "Umbuchung"}),
+                           (6, "kind", date(2026, 6, 9), 12.5, {"iban": "DE11", "cat": "Umbuchung"})]):
+            d = build(base + extra); p = rows(d["Privat"])
+            self.assertAddsUp(d, allow=("ue_unterwegs",))
+            self.assertAlmostEqual(p["Privatkredit / Tilgung"]["amounts"]["2026-06"], -25.0, 2, extra)
+            self.assertNotIn("Ohne Kategorie", p, extra)
+            if extra:          # the children's area: what one pays, the other receives -- the transfer between the two bank accounts
+                self.assertEqual(p["Einlage/Entnahme Kinder"]["amounts"]["2026-06"], -12.5)
+                self.assertNotIn("Einlage/Entnahme Kinder / Privatkredit / Tilgung", p)
+                self.assertEqual(rows(d["Kinder"])["Einlage/Entnahme Privat"]["amounts"]["2026-06"], 12.5)
+        # the same with two loans: paid on the 18th and the 21st, each booked two days later -- not the second payment with the
+        # booking of the 20th (one day apart, but before it was paid) and the other two alone
+        d = build([(1, "giro", date(2026, 5, 18), -250.0, {"name": "Freund"}), (2, "kredit", date(2026, 5, 20), 250.0, {"name": "Freund"}),
+                   (3, "giro", date(2026, 5, 21), -250.0, {"name": "Freund"}), (4, "ford", date(2026, 5, 23), 250.0, {"name": "Freund"})])
+        p = rows(d["Privat"]); self.assertAddsUp(d); self.assertNotIn("Ohne Kategorie", p)
+        self.assertEqual((p["Privatkredit / Tilgung"]["amounts"]["2026-05"], p["Darlehen an Freund / Rückzahlung"]["amounts"]["2026-05"]), (-250.0, -250.0))
+
+    def test_best_pairs_are_worth_most(self):
+        # the choice among possible pairs, against trying every choice: each pair worth PAIR_WORTH days less its gap
+        # in all -- on random groups of bookings (money out and in
+        # of one amount, a few days apart, on two accounts or booked back on one, numbered at random, several groups at once)
+        from itertools import combinations
+        from model import Tx
+        rnd = random.Random(7)
+        for _ in range(600):
+            ids = rnd.sample(range(1, 400), 12)
+            mk_tx = lambda acc, amt: Tx(id=ids.pop(), account_uuid=acc, booking_date=date(2026, 6, 1) + timedelta(rnd.randrange(14)), value_date=None,
+                                       amount=amt, currency="EUR")
+            txs = [mk_tx("a", -5.0) for _ in range(rnd.randint(1, 4))] + [mk_tx(rnd.choice("abb"), 5.0) for _ in range(rnd.randint(1, 4))] \
+                + [mk_tx("c", -7.0), mk_tx("d", 7.0)][:rnd.choice([0, 2])]
+            cands = []
+            for t in txs:
+                for o in txs:
+                    gap = abs((o.booking_date - t.booking_date).days)
+                    if t.amount < 0 and o.amount == -t.amount and gap <= (13 if o.account_uuid == t.account_uuid else 3):
+                        cands.append((gap, min(t.id, o.id), max(t.id, o.id), t, o))
+                        cands.append((gap, min(t.id, o.id), max(t.id, o.id), o, t))          # found from both sides, as in pair_transfers
+            got = report.best_pairs(cands)
+            used = [i for p in got for i in (p[0].id, p[1].id)]
+            self.assertEqual(len(used), len(set(used)))                                        # each booking at most once
+            self.assertTrue(all(p[0].amount == -p[1].amount for p in got))
+            edges = {(c[1], c[2]): c[0] - report.PAIR_WORTH for c in cands}
+            best = 0
+            for n in range(1, 6):
+                for pick in combinations(edges, n):
+                    if len({i for e in pick for i in e}) == 2 * n:
+                        best = min(best, sum(edges[e] for e in pick))
+            self.assertEqual(sum(edges[(min(p[0].id, p[1].id), max(p[0].id, p[1].id))] for p in got), best)
+        # as before, the closest first: a group of more than PAIR_EXACT bookings, and one with a booking of 0.00
+        chain = [Tx(id=i, account_uuid="a" if i % 2 else "b", booking_date=date(2026, 1, 1) + timedelta(i), value_date=None, amount=-5.0 if i % 2 else 5.0,
+                    currency="EUR") for i in range(1, report.PAIR_EXACT + 3)]
+        cands = [(1, t.id, t.id + 1, t, chain[t.id]) for t in chain[:-1]]
+        self.assertEqual([(a.id, b.id) for a, b in report.best_pairs(cands)], [(i, i + 1) for i in range(1, report.PAIR_EXACT + 2, 2)])
+        z = [Tx(id=i, account_uuid="ab"[i % 2], booking_date=date(2026, 1, d), value_date=None, amount=0.0, currency="EUR") for i, d in ((1, 1), (2, 2), (3, 5), (4, 6))]
+        cands = [(1, 1, 2, z[0], z[1]), (3, 2, 3, z[1], z[2]), (1, 3, 4, z[2], z[3])]
+        self.assertEqual([(a.id, b.id) for a, b in report.best_pairs(cands)], [(1, 2), (3, 4)])
+
+    def test_a_pair_on_one_day_is_not_split_up(self):
+        # out on the 27th and the 3rd, in on the 3rd and the 9th: the two of the 3rd are a pair; the other two stay unclear --
+        # not two pairs six days apart each, which would put money in transit at the end of April that went elsewhere
+        unclear = lambda data: {mk: sorted(v) for mk, v in data["Privat"]["cashflow"]["cf_ids"].get("unclear\u001fUmbuchung ohne erkannten Partner", {}).items()}
+        base = [(1, "giro", date(2026, 4, 1), 3000.0, {"cat": "Gehalt"})]
+        for days in ((date(2026, 4, 27), date(2026, 5, 3), date(2026, 5, 3), date(2026, 5, 9)), (date(2026, 5, 4), date(2026, 5, 10), date(2026, 5, 10), date(2026, 5, 16))):
+            d = build(base + [(2, "giro", days[0], -1000.0, {"cat": "Umbuchung"}), (3, "giro", days[1], -1000.0, {"cat": "Umbuchung"}),
+                              (4, "tg", days[2], 1000.0, {"cat": "Umbuchung"}), (5, "tg", days[3], 1000.0, {"cat": "Umbuchung"})])
+            self.assertEqual(unclear(d), {"2026-04": [2], "2026-05": [5]} if days[0].month == 4 else {"2026-05": [2, 5]}, days)
+            self.assertFalse(any(r["id"] == "transit" and any(r["amounts"].values()) for r in d["Privat"]["balance"]["rows"]), days)
+
+    def test_booked_back_on_one_account_only_among_what_is_left(self):
+        # a booking back on one account never wins over a pair between two accounts: a top-up to the savings account and back
+        # three weeks later, each arriving three days later -- two pairs, 50 in transit at the end of January (not two unclear)
+        U = {"cat": "Umbuchung"}
+        d = build([(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}), (2, "giro", date(2026, 1, 30), -50.0, dict(U)), (3, "tg", date(2026, 2, 2), 50.0, dict(U)),
+                   (4, "tg", date(2026, 2, 20), -50.0, dict(U)), (5, "giro", date(2026, 2, 23), 50.0, dict(U))])
+        self.assertAddsUp(d, allow=("ue_unterwegs",)); self.assertNotIn("Umbuchung ohne erkannten Partner", {k for k, z in rows(d["Privat"]).items() if any(z["amounts"].values())})
+        self.assertEqual(next(r for r in d["Privat"]["balance"]["rows"] if r["id"] == "transit")["amounts"]["2026-01"], 50.0)
+        # a repayment booked by hand the next day stays a repayment; money in two weeks later stays unclear (not "booked back")
+        d = build([(1, "giro", date(2026, 3, 2), 3000.0, {"cat": "Gehalt"}), (2, "giro", date(2026, 3, 3), -500.0, dict(U)),
+                   (3, "kredit", date(2026, 3, 4), 500.0, {"name": "Freund"}), (4, "giro", date(2026, 3, 17), 500.0, dict(U))])
+        p = rows(d["Privat"])
+        self.assertEqual(p["Privatkredit / Tilgung"]["amounts"]["2026-03"], -500.0); self.assertNotIn("Privatkredit", p)
+        self.assertEqual(d["Privat"]["cashflow"]["cf_ids"]["unclear\u001fUmbuchung ohne erkannten Partner"], {"2026-03": [4]})
+
+    def test_found_by_the_third_review(self):
+        U = {"cat": "Umbuchung"}
+        base = [(1, "giro", date(2026, 1, 5), 30000.0, {"cat": "Gehalt"})]
+        # the booking in the account tied to the company beats one a day nearer in an account that is not (within PAIR_DAYS)
+        d = build(base + [(2, "giro", date(2026, 2, 10), -10000.0, {"iban": "DE21"}), (3, "stake", date(2026, 2, 12), 10000.0, {"purpose": "Einlage"}),
+                          (4, "ford", date(2026, 2, 11), 10000.0, {"name": "Freund"}), (5, "kk", date(2026, 2, 10), 10000.0, {"iban": "DE11"})])
+        p = rows(d["Privat"])
+        self.assertEqual(p["Einlage/Entnahme Muster GbR / Beteiligung an Muster GbR"]["amounts"]["2026-02"], -10000.0)
+        self.assertFalse(any(v for v in p.get("Beteiligung an Muster GbR", {"amounts": {}})["amounts"].values()))
+        # booked back the next day on one account: still no match for a pair between two accounts (no "transfer" bonus there)
+        d = build([(1, "giro", date(2026, 3, 2), 3000.0, {"cat": "Gehalt"}), (2, "giro", date(2026, 3, 3), -500.0, dict(U)),
+                   (3, "kredit", date(2026, 3, 4), 500.0, {"name": "Freund"}), (4, "giro", date(2026, 3, 4), 500.0, dict(U))])
+        p = rows(d["Privat"]); self.assertEqual(p["Privatkredit / Tilgung"]["amounts"]["2026-03"], -500.0); self.assertNotIn("Privatkredit", p)
+        # a booking kept for the payment to the company is no rival's other side itself: the savings transfer of the same day
+        # (both "transfer") pairs with it, nothing unclear
+        d = build(base + [(2, "tg", date(2026, 2, 10), -10000.0, dict(U)), (3, "stake", date(2026, 2, 10), 10000.0, dict(U, purpose="Einlage")),
+                          (4, "giro", date(2026, 2, 13), -10000.0, {"iban": "DE21"}), (5, "kk", date(2026, 2, 13), 10000.0, {"iban": "DE11"})])
+        self.assertAddsUp(d); self.assertNotIn("unclear\u001fUmbuchung ohne erkannten Partner", d["Privat"]["cashflow"]["cf_ids"])
 
     def test_transfer_to_a_card_moved_to_another_bank(self):
         # the debit names the old card's IBAN, the payment arrives on the new card: paired all the same (same IBAN on both, or

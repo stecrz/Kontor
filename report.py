@@ -637,14 +637,113 @@ def company_stakes(ledger: Ledger, config: dict) -> Dict[str, str]:
     return out
 
 
+PAIR_EXACT = 60                                         # bookings in one group of possible pairs up to which the best choice is searched
+PAIR_WORTH = PAIR_DAYS_CAT + 1                          # what a pair is worth, in days: two pairs only beat one if they lie this much
+                                                        # closer together in all
+PAIR_BOTH = 2                                           # ... days more when both bookings say "transfer" (on two accounts)
+
+
+def best_pairs(cands: list) -> List[Tuple[Tx, Tx]]:
+    """Which of the possible pairs (gap in days, smaller id, larger id, booking, booking[, both with a transfer category]) to
+    take: each pair is worth PAIR_WORTH days less its gap (PAIR_BOTH days more when both bookings on two accounts say
+    "transfer": two such are more likely each other's other side than one of them and a booking by hand), and the choice worth
+    most in all wins (of two worth the same, the one with more pairs) --
+    not simply the closest first: two payments of one amount a few days apart and two bookings against them each find their
+    own, rather than the second payment taking the first one's only counterpart and leaving two alone; but a pair on one day is
+    not split up for two pairs days apart (that would invent money in transit for what went elsewhere). Per group of bookings
+    that could pair with each other; a pair always joins money out and money in. A group larger than PAIR_EXACT, or one with a
+    booking of 0.00, the closest first, as before."""
+    cents = lambda x: int(round(x * 100))
+    edge: Dict[Tuple[int, int], tuple] = {}
+    for c in cands:
+        if (c[1], c[2]) not in edge or c[0] < edge[(c[1], c[2])][0]:
+            edge[(c[1], c[2])] = c
+    tx: Dict[int, Tx] = {}
+    up: Dict[int, int] = {}                      # groups: each booking to the first of its group (union-find)
+
+    def top(n: int) -> int:
+        while up[n] != n:
+            up[n] = up[up[n]]
+            n = up[n]
+        return n
+    for (a, b), c in edge.items():
+        tx[a], tx[b] = (c[3], c[4]) if c[3].id == a else (c[4], c[3])
+        up.setdefault(a, a); up.setdefault(b, b)
+        ra, rb = top(a), top(b)
+        if ra != rb:
+            up[max(ra, rb)] = min(ra, rb)
+    groups: Dict[int, List[tuple]] = defaultdict(list)
+    for k, c in edge.items():
+        groups[top(k[0])].append(c)
+    out: List[Tuple[Tx, Tx]] = []
+    for g in sorted(groups):
+        es = sorted(groups[g], key=lambda c: c[:3])
+        members = {i for c in es for i in (c[1], c[2])}
+        if len(members) > PAIR_EXACT or any(cents(tx[n].amount) == 0 for n in members):
+            taken: Set[int] = set()
+            for c in es:
+                if c[1] not in taken and c[2] not in taken:
+                    taken.update((c[1], c[2])); out.append((c[3], c[4]))
+            continue
+        out.extend(_best_worth(es, tx))
+    return out
+
+
+def _best_worth(es: list, tx: Dict[int, Tx]) -> List[Tuple[Tx, Tx]]:
+    """The pairs worth most in all (each joins a booking of money out and one of money in): one pair more at a time along the
+    path that adds the most worth -- from an unpaired "out" to an unpaired "in", possibly moving pairs already made to another
+    partner on the way -- as long as it adds any (successive shortest paths on cost = gap - worth; ties by the bookings' ids,
+    so always the same)."""
+    cost: Dict[Tuple[int, int], int] = {}
+    for c in es:
+        g, r = (c[1], c[2]) if tx[c[1]].amount < 0 else (c[2], c[1])
+        # in half days, each pair half a day more: of two choices worth the same, the one with more pairs (fewer left unclear)
+        cost[(g, r)] = 2 * (c[0] - PAIR_WORTH - (PAIR_BOTH if len(c) > 5 and c[5] and tx[g].account_uuid != tx[r].account_uuid else 0)) - 1
+    give = sorted({g for g, _ in cost})
+    ins = sorted({r for _, r in cost})
+    take: Dict[int, List[Tuple[int, int]]] = {g: sorted((d, r) for (gg, r), d in cost.items() if gg == g) for g in give}
+    with_: Dict[int, int] = {}                   # money in -> the money out it is paired with
+    done: Set[int] = set()                       # money out that is paired
+    far = 1 << 30
+    while True:
+        dist: Dict[Tuple[str, int], int] = {("g", g): 0 for g in give if g not in done}
+        prev: Dict[Tuple[str, int], Optional[Tuple[str, int]]] = {k: None for k in dist}
+        for _ in range(len(give) + len(ins) + 1):
+            changed = False
+            for g in give:                       # a new pair: + its cost
+                kg = ("g", g)
+                if kg in dist:
+                    for d, r in take[g]:
+                        if with_.get(r) != g and dist[kg] + d < dist.get(("r", r), far):
+                            dist[("r", r)], prev[("r", r)], changed = dist[kg] + d, kg, True
+            for r, g in sorted(with_.items()):   # an old pair undone: - its cost
+                kr = ("r", r)
+                if kr in dist and dist[kr] - cost[(g, r)] < dist.get(("g", g), far):
+                    dist[("g", g)], prev[("g", g)], changed = dist[kr] - cost[(g, r)], kr, True
+            if not changed:
+                break
+        ends = sorted((dist[("r", r)], r) for r in ins if r not in with_ and ("r", r) in dist)
+        if not ends or ends[0][0] >= 0:          # nothing left that adds worth
+            return [(tx[g], tx[r]) for r, g in sorted(with_.items())]
+        k: Optional[Tuple[str, int]] = ("r", ends[0][1])
+        while k is not None:                     # along the path: each "in" now with the "out" before it
+            p = prev[k]
+            if p is None:
+                break
+            with_[k[1]] = p[1]
+            done.add(p[1])
+            k = prev[p]
+
+
 def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[str, str], is_transfer: Callable[[str], bool],
-                   cost_words: List[str], kf: dict, pairable: Callable[[Tx], bool] = lambda t: True):
+                   cost_words: List[str], kf: dict, pairable: Callable[[Tx], bool] = lambda t: True, keep: Set[int] = frozenset()):
     """Transfers within an area, booking by booking: the counterpart of a transfer is the booking on the other side.
     Found by Kontor's mark (#kontor-tx-<payment>: the repayment of a loan names the payment), by the counter IBAN (a booking of
     that account with the same amount, opposite sign, at most 5 days apart) or -- for a transfer category or an offline account
     -- by amount alone (at most 3 days; a week when both have a transfer category). Two transfers on one account that undo each
     other within a month are each other's counterpart (together nothing). Returns (mate: booking -> counterpart in the area, partner: booking -> account on the
-    other side, also outside the area or without a counterpart, category: booking -> marked as transfer by its category)."""
+    other side, also outside the area or without a counterpart, category: booking -> marked as transfer by its category).
+    keep: bookings of offline accounts left for a payment into another area (not paired by amount here)."""
     own_ibans = ledger.own_ibans()
     same_iban: Dict[str, List[str]] = defaultdict(list)          # an IBAN on several of your accounts (a card moved to a new bank)
     for a in ledger.accounts.values():
@@ -736,8 +835,8 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
     if kf.get("transfer_pairing", True):
         manual_ok = kf.get("pairing_manual_accounts", True)
         loose = lambda t: t.id not in mate and t.id not in partner          # the other side is not known yet
-        open_tx = [t for t in txs if by_cat[t.id] and loose(t)]
-        offline = [t for t in txs if manual_ok and loose(t) and roles.get(t.account_uuid) != "cash"
+        open_tx = [t for t in txs if by_cat[t.id] and loose(t) and t.id not in keep]
+        offline = [t for t in txs if manual_ok and loose(t) and t.id not in keep and roles.get(t.account_uuid) != "cash"
                    and (roles.get(t.account_uuid) in ("liabilities", "receivables") or roles.get(t.account_uuid) in ASSET_LIKE)
                    and ledger.accounts[t.account_uuid].offline and not _is_cost(t, cost_words) and not _value_adjustment(t)]
         liquid = [t for t in txs if roles.get(t.account_uuid) == "cash" and loose(t) and (by_cat[t.id] or pairable(t))]
@@ -749,9 +848,9 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
         for name, lst in (("open", open_tx), ("offline", offline), ("liquid", liquid)):
             for o in lst:
                 kinds[o.id].add(name)
-        # every possible pair, the closest first (a booking never takes the counterpart of a closer one): by amount on two
-        # accounts -- within a week when both carry a transfer category (PayPal books on the day, the bank days later), else 3 days --
-        # and two transfers on one account that undo each other within the month (a top-up booked back: together nothing)
+        # every possible pair (best_pairs chooses among them): by amount on two accounts -- within a week when both carry a
+        # transfer category (PayPal books on the day, the bank days later), else 3 days -- and two transfers on one account that
+        # undo each other within the month (a top-up booked back: together nothing)
         cands = []
         for t in {o.id: o for o in open_tx + offline + liquid}.values():
             k = kinds[t.id]
@@ -770,14 +869,20 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
                     else:
                         ok = gap <= (PAIR_DAYS_CAT if both else PAIR_DAYS)
                     if ok:
-                        cands.append((gap, min(t.id, o.id), max(t.id, o.id), t, o))
-        for _gap, _a, _b, t, o in sorted(cands, key=lambda c: c[:3]):
+                        cands.append((gap, min(t.id, o.id), max(t.id, o.id), t, o, both))
+        for t, o in best_pairs(cands):
             if t.id in mate or o.id in mate:
                 continue
             if o.account_uuid == t.account_uuid:
                 mate[t.id], mate[o.id] = o, t                    # no partner account: nothing moved anywhere
             else:
                 join(t, o)
+        # booked back on one account days later (a top-up undone within the month): only among what is left, the closest first
+        # -- never instead of a pair between two accounts
+        for c in sorted((c for c in cands if c[3].account_uuid == c[4].account_uuid), key=lambda c: c[:3]):
+            t, o = c[3], c[4]
+            if t.id not in mate and o.id not in mate:
+                mate[t.id], mate[o.id] = o, t
     for i, p in held.items():
         if i not in mate:
             partner[i] = p
@@ -1098,7 +1203,84 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         """A bank booking that may be the other side of a booking in an offline account: no category, or one for saving or a
         repayment -- never income or an expense."""
         return not t.category_path or place(norm_cat(t.category_path))[0] in ("saving", "repayment")
-    mate, partner, by_cat = pair_transfers(ledger, in_root, flows, roles, is_transfer, cost_words, kf, pairable)
+    def between_position(t: Tx) -> Tuple[str, Optional[str], bool]:
+        """A payment between two of your areas: (its category, the position it counts in, chosen by you)."""
+        c0 = norm_cat(t.category_path)
+        if not c0:
+            return c0, guess_position(t, company, by_name=False), False
+        g0, yours = position_of(c0, config, totals)
+        return c0, (g0 if yours else recognised_position(c0, totals.get(c0, 0.0) > 0)), yours
+
+    def paid_for(g0: Optional[str]) -> bool:
+        return g0 in POS and (POS[g0][0] in ("income", "expenses") or g0 == "loan_interest")      # interest paid is a cost as well
+
+    def paid_for_something(t: Tx) -> bool:
+        """A payment to another area that pays for something (a salary, rent): no contribution, it claims no booking."""
+        return not (t.category_path and is_transfer(t.category_path)) and paid_for(between_position(t)[1])
+
+    mirror_areas: Dict[str, Set[str]] = defaultdict(set)
+    for m in config.get("account_mirrors") or []:
+        try:
+            ma, mb = ledger.resolve(str(m.get("a") or "")).uuid, ledger.resolve(str(m.get("b") or "")).uuid
+        except (KeyError, AttributeError):
+            continue
+        if mb in areas:
+            mirror_areas[ma].add(areas[mb])
+        if ma in areas:
+            mirror_areas[mb].add(areas[ma])
+    stake_company = {u: g for g, u in stakes.items()}
+
+    def tied(o: Tx, name: str) -> bool:
+        oa, n = ledger.accounts[o.account_uuid], name.casefold()
+        return name in mirror_areas.get(oa.uuid, ()) or stake_company.get(oa.uuid) == name \
+            or any(n in (x or "").casefold() for x in (oa.name, o.name, o.purpose))
+
+    def claimable(o: Tx) -> bool:
+        """A booking by you in a manual account (capital account, stake, loan) that a payment into another area may claim below."""
+        oa = ledger.accounts[o.account_uuid]
+        return roles.get(oa.uuid, "other") in ("participations", "receivables", "liabilities") and oa.offline and oa.uuid not in depots \
+            and not _value_adjustment(o) and not foreign_currency(oa) and not _is_cost(o, cost_words)
+    def tied_word(o: Tx, name: str) -> bool:
+        """As tied, but the area's name only as a whole word ("Privat", not "Privatdarlehen Meier")."""
+        oa = ledger.accounts[o.account_uuid]
+        word = re.compile(r"(?<!\w)" + re.escape(name.casefold()) + r"(?!\w)")
+        return name in mirror_areas.get(oa.uuid, ()) or stake_company.get(oa.uuid) == name \
+            or any(word.search((x or "").casefold()) for x in (oa.name, o.name, o.purpose))
+    # kept for that: a booking in an account tied to another area (its name as a word, a mirror into it, its participation) with
+    # a payment to (from) that area of the opposite amount close by, at least as close as any payment it could pair with by
+    # amount alone -- not taken for that other payment first (a loan to your partner booked on "Darlehen an Partnerin" next to
+    # a friend's repayment of the same amount). Not for a payment that pays for something (it claims no booking below)
+    own_ibans_ = ledger.own_ibans()
+    to_area: Dict[int, List[Tuple[Tx, str]]] = defaultdict(list)      # amount in cents -> payments to another area and its name
+    by_amount: Dict[int, List[Tx]] = defaultdict(list)                # amount in cents -> payments it could pair with by amount
+    for t in in_root:
+        if roles.get(t.account_uuid) != "cash":
+            continue
+        p_t = own_ibans_.get(t.counter_iban) if t.counter_iban else None
+        name = (beteiligungs_gruppen.get(p_t) or areas.get(p_t)) if p_t else None
+        if name and name != self_name and not foreign_currency(ledger.accounts[p_t]) and not paid_for_something(t):
+            to_area[int(round(t.amount * 100))].append((t, name))
+        elif p_t is None:
+            by_amount[int(round(t.amount * 100))].append(t)
+    # (not a rival that says "transfer" and has another such booking of the opposite amount close by -- other than the booking
+    # in question: that is its other side)
+    says = lambda t: bool(t.category_path) and is_transfer(t.category_path)
+    marked_tr: Dict[int, List[Tx]] = defaultdict(list)
+    for t in in_root:
+        if says(t):
+            marked_tr[int(round(t.amount * 100))].append(t)
+    kept: Set[int] = set()
+    for o in in_root:
+        k = -int(round(o.amount * 100))
+        if not claimable(o) or k not in to_area:
+            continue
+        gap = lambda t: abs((t.booking_date - o.booking_date).days)
+        rival = lambda t: not (says(t) and any(u.id != o.id and u.account_uuid != t.account_uuid and abs((u.booking_date - t.booking_date).days) <= PAIR_DAYS_CAT
+                                               for u in marked_tr.get(-k, ())))
+        area_gap = min((gap(t) for t, name in to_area[k] if tied_word(o, name)), default=None)
+        if area_gap is not None and area_gap <= COUNTER_DAYS and area_gap <= min((gap(t) for t in by_amount.get(k, ()) if rival(t)), default=area_gap):
+            kept.add(o.id)
+    mate, partner, by_cat = pair_transfers(ledger, in_root, flows, roles, is_transfer, cost_words, kf, pairable, keep=kept)
     # An account that starts within these months with a balance of its own (its opening balance in MoneyMoney: before its first
     # booking the balance sheet has none): a transfer where a bank account of the area shows the opposite amount that month
     # and nothing else explains that booking (a balance moved over from an old card, say), else a row of its own among the
@@ -1140,38 +1322,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     cents_ = lambda x: int(round(x * 100))
     pool: Dict[int, List[Tx]] = defaultdict(list)
     for o in in_root:
-        oa = ledger.accounts[o.account_uuid]
-        if roles.get(oa.uuid, "other") not in ("participations", "receivables", "liabilities") or not oa.offline or oa.uuid in depots \
-                or mate.get(o.id) is not None or _value_adjustment(o) or foreign_currency(oa) or _is_cost(o, cost_words):
-            continue
-        pool[cents_(o.amount)].append(o)
-    mirror_areas: Dict[str, Set[str]] = defaultdict(set)
-    for m in config.get("account_mirrors") or []:
-        try:
-            ma, mb = ledger.resolve(str(m.get("a") or "")).uuid, ledger.resolve(str(m.get("b") or "")).uuid
-        except (KeyError, AttributeError):
-            continue
-        if mb in areas:
-            mirror_areas[ma].add(areas[mb])
-        if ma in areas:
-            mirror_areas[mb].add(areas[ma])
-    stake_company = {u: g for g, u in stakes.items()}
-
-    def tied(o: Tx, name: str) -> bool:
-        oa, n = ledger.accounts[o.account_uuid], name.casefold()
-        return name in mirror_areas.get(oa.uuid, ()) or stake_company.get(oa.uuid) == name \
-            or any(n in (x or "").casefold() for x in (oa.name, o.name, o.purpose))
-    def between_position(t: Tx) -> Tuple[str, Optional[str], bool]:
-        """A payment between two of your areas: (its category, the position it counts in, chosen by you)."""
-        c0 = norm_cat(t.category_path)
-        if not c0:
-            return c0, guess_position(t, company, by_name=False), False
-        g0, yours = position_of(c0, config, totals)
-        return c0, (g0 if yours else recognised_position(c0, totals.get(c0, 0.0) > 0)), yours
-
-    def paid_for(g0: Optional[str]) -> bool:
-        return g0 in POS and (POS[g0][0] in ("income", "expenses") or g0 == "loan_interest")      # interest paid is a cost as well
-
+        if claimable(o) and mate.get(o.id) is None:
+            pool[cents_(o.amount)].append(o)
     claims_by: List[Tuple[Tx, List[Tx], List[Tx]]] = []
     for t in in_root:
         p_t = partner.get(t.id)
@@ -1179,26 +1331,45 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             continue
         name = beteiligungs_gruppen.get(p_t) or areas.get(p_t)
         if not name or name == self_name or (p_t in ledger.accounts and foreign_currency(ledger.accounts[p_t])) \
-                or (not by_cat[t.id] and paid_for(between_position(t)[1])):
+                or paid_for_something(t):
             continue                                     # paid for something, or into another currency: no contribution
         c = [o for o in pool.get(-cents_(t.amount), []) if abs((o.booking_date - t.booking_date).days) <= COUNTER_DAYS]
         if c:
             claims_by.append((t, [o for o in c if tied(o, name)], c))
-    # in steps by distance (the same day, PAIR_DAYS, COUNTER_DAYS), each with the tied accounts first: what is clear in an
-    # earlier step is out of the later ones (a contribution every week stays linked; a mirrored booking that came days
-    # later is found all the same)
+    # in steps by distance (the same day, up to PAIR_DAYS, up to COUNTER_DAYS), each with the tied accounts first, and within a
+    # step day by day: what is clear in an earlier step is out of the later ones -- of two payments the nearer one takes the
+    # booking, but a tied account a day further beats one that is not (a contribution every week stays linked; a mirrored
+    # booking that came days later is found all the same)
     reserved: Dict[int, Tx] = {}
     tied_ids = {o.id for _, lk, _ in claims_by for o in lk}
-    for limit in (0, PAIR_DAYS, COUNTER_DAYS):
-        for phase in (1, 2):
-            used = {o.id for o in reserved.values()}
-            lists = [(t, [o for o in (lk if phase == 1 else [x for x in c if x.id not in tied_ids])
-                          if o.id not in used and abs((o.booking_date - t.booking_date).days) <= limit])
-                     for t, lk, c in claims_by if t.id not in reserved]
-            n_claims = Counter(o.id for _, c in lists for o in c)
-            for t, c in lists:
-                if len(c) == 1 and n_claims[c[0].id] == 1:
-                    reserved[t.id] = c[0]
+    windows = ((0,), range(1, PAIR_DAYS + 1), range(PAIR_DAYS + 1, COUNTER_DAYS + 1))
+    for phase, limit in ((p_, l_) for w_ in windows for p_ in (1, 2) for l_ in w_):
+        used = {o.id for o in reserved.values()}
+        lists = [(t, [o for o in (lk if phase == 1 else [x for x in c if x.id not in tied_ids])
+                      if o.id not in used and abs((o.booking_date - t.booking_date).days) <= limit])
+                 for t, lk, c in claims_by if t.id not in reserved]
+        n_claims = Counter(o.id for _, c in lists for o in c)
+        for t, c in lists:
+            if len(c) == 1 and n_claims[c[0].id] == 1:
+                reserved[t.id] = c[0]
+        # several payments claim the same bookings and nobody else does: if the payments are alike (same account, amount,
+        # day and other side -- two transfers of one amount on one day) and at least as many as the bookings, or the bookings
+        # are alike (same account, amount and day) and at least as many as the payments, which went into which makes no
+        # difference -- each takes one, in order
+        alike: Dict[frozenset, List[Tuple[Tx, List[Tx]]]] = defaultdict(list)
+        for t, c in lists:
+            if c and t.id not in reserved:
+                alike[frozenset(o.id for o in c)].append((t, c))
+        for ids, members in alike.items():
+            if len(members) + len(ids) < 3 or any(n_claims[i] != len(members) for i in ids):
+                continue
+            same_t = len({(t.account_uuid, cents_(t.amount), t.booking_date, partner.get(t.id)) for t, _ in members}) == 1
+            same_o = len({(o.account_uuid, cents_(o.amount), o.booking_date) for o in members[0][1]}) == 1
+            if not ((same_t and len(ids) <= len(members)) or (same_o and len(members) <= len(ids))):
+                continue
+            books = sorted({o.id: o for o in members[0][1]}.values(), key=lambda o: (o.booking_date, o.id))
+            for (t, _), o in zip(sorted(members, key=lambda m: m[0].id), books):
+                reserved[t.id] = o
 
     def counter_booking(t: Tx, mk: str) -> Optional[Tx]:
         o = reserved.get(t.id)

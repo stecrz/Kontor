@@ -17,7 +17,7 @@ from typing import Dict, Iterator, List
 U: Dict[str, str] = {}
 
 # random cases a night found (KONTOR_FUZZ_RANDOM) -- once fixed, their number goes here, so every run checks them from then on
-FOUND: List[int] = []
+FOUND: List[int] = [377654401, 357881360]     # 3.16.58: two payments of one amount, one took the other's only counterpart
 
 
 def fuzz_seeds(name: str = "") -> Iterator[int]:
