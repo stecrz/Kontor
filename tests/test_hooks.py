@@ -1,6 +1,8 @@
-"""The briefing every chat gets about the other chats' work (.claude/hooks/briefing.py) and the push check it turns on
-(.githooks/pre-push), on throwaway repositories: it lists what is new on main, fast-forwards only a clone with nothing of
-its own, names overlapping files, stays silent while nothing changed -- and a version squashed onto a stale main is refused."""
+"""The briefing every chat gets about the other chats' work (.claude/hooks/briefing.py) and the push checks
+(.githooks/pre-push, which the briefing turns on, and the guard before every push, .claude/hooks/guard.py), on throwaway
+repositories: it lists what is new on main, fast-forwards only a clone with nothing of its own, names overlapping files,
+stays silent while nothing changed -- and a version squashed onto a stale main is refused."""
+import json
 import os
 import shutil
 import subprocess
@@ -134,6 +136,101 @@ class Briefing(unittest.TestCase):
         r = subprocess.run([sys.executable, os.path.join(d, ".claude", "hooks", "briefing.py"), "hook"], cwd=d,
                            env=dict(ENV, GIT_CEILING_DIRECTORIES=self.dir), input="", capture_output=True, text=True, timeout=60)
         self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
+
+
+GUARD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".claude", "hooks", "guard.py")
+
+
+@unittest.skipUnless(shutil.which("git"), "git fehlt")
+class PushGuard(unittest.TestCase):
+    """The lock before every push (.claude/hooks/guard.py): only the newest main plus one proper version per commit gets to
+    GitHub -- never an old state put on top with reset --soft (how 66ad67f overwrote two versions), never off the newest main,
+    never without raising VERSION; and the same check for a push on GitHub (chain)."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="kontor-guard-")
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.git(self.dir, "init", "-q", "--bare", "origin.git")
+        self.git(os.path.join(self.dir, "origin.git"), "symbolic-ref", "HEAD", "refs/heads/main")
+        self.a, self.b = self.clone("a"), self.clone("b")
+        self.version(self.b, "1.0.0", {"app.js": "one\n"}); self.git(self.b, "push", "-q", "origin", "HEAD:main")
+        self.git(self.a, "pull", "-q", "origin", "main")
+
+    def git(self, cwd, *args):
+        r = subprocess.run(["git"] + list(args), cwd=cwd, env=ENV, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout.strip()
+
+    def clone(self, name):
+        d = os.path.join(self.dir, name)
+        self.git(self.dir, "clone", "-q", "origin.git", name)
+        self.git(d, "checkout", "-q", "-B", "main")
+        return d
+
+    def version(self, d, v, files, keep=True):
+        """One version: its files, VERSION and a changelog section on top (keep: the sections before it stay)."""
+        old = open(os.path.join(d, "CHANGELOG.md")).read().split("\n", 2)[2] if keep and os.path.exists(os.path.join(d, "CHANGELOG.md")) else ""
+        for name, text in dict(files, VERSION=v + "\n", **{"CHANGELOG.md": "# Änderungen\n\n## %s (2026-01-01 10:00)\n- %s\n\n%s" % (v, v, old)}).items():
+            with open(os.path.join(d, name), "w") as f:
+                f.write(text)
+        self.git(d, "add", "-A")
+        self.git(d, "commit", "-q", "-m", "%s: change" % v)
+
+    def guard(self, d, command="git push origin HEAD:main"):
+        r = subprocess.run([sys.executable, GUARD], cwd=d, env=ENV, capture_output=True, text=True, timeout=60,
+                           input=json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": d}))
+        return r.returncode, r.stderr
+
+    def test_proper_version_may_go(self):
+        self.version(self.a, "1.0.1", {"app.js": "two\n"})
+        self.assertEqual(self.guard(self.a), (0, ""))
+        self.assertEqual(self.guard(self.dir, "cd %s && git push origin HEAD:main" % self.a), (0, ""))   # pushed from elsewhere: that repository
+        self.assertEqual(self.guard(self.a, 'grep -n "git push" CLAUDE.md')[0], 0)  # the words in a text are no push
+
+    def test_old_state_put_on_top_with_reset_soft_is_locked(self):
+        self.version(self.a, "1.0.1", {"tax.py": "mine\n"})                     # own work on the old main
+        self.version(self.b, "1.0.1", {"app.js": "two\n"}); self.git(self.b, "push", "-q", "origin", "HEAD:main")
+        self.version(self.b, "1.0.2", {"app.js": "three\n"}); self.git(self.b, "push", "-q", "origin", "HEAD:main")
+        self.git(self.a, "fetch", "-q", "origin")
+        self.git(self.a, "reset", "-q", "--soft", "origin/main")                  # the mistake: main moved under an old tree
+        self.git(self.a, "commit", "-q", "-m", "1.0.1: mine")
+        code, err = self.guard(self.a)
+        self.assertEqual(code, 2)
+        self.assertIn("nicht höher als 1.0.2", err); self.assertIn("fehlen Abschnitte, die davor da waren: 1.0.2", err)
+
+    def test_not_on_the_newest_main_is_locked(self):
+        self.version(self.a, "1.0.1", {"tax.py": "mine\n"})
+        self.version(self.b, "1.0.1", {"app.js": "two\n"}); self.git(self.b, "push", "-q", "origin", "HEAD:main")
+        code, err = self.guard(self.a)                                             # fetches main itself
+        self.assertEqual(code, 2); self.assertIn("git pull --rebase origin main", err)
+
+    def test_version_not_raised_is_locked(self):
+        self.version(self.a, "1.0.0", {"app.js": "two\n"})
+        code, err = self.guard(self.a)
+        self.assertEqual(code, 2); self.assertIn("nicht höher als 1.0.0", err)
+        self.git(self.a, "reset", "-q", "--hard", "origin/main")
+        self.version(self.a, "1.0.10", {"app.js": "two\n"})                     # numbers, not text: 1.0.10 > 1.0.9 > 1.0.0
+        self.assertEqual(self.guard(self.a)[0], 0)
+        with open(os.path.join(self.a, "VERSION"), "w") as f:
+            f.write("1.0.11\n")
+        self.git(self.a, "commit", "-q", "-am", "1.0.11: no changelog")            # its section missing on top
+        code, err = self.guard(self.a)
+        self.assertEqual(code, 2); self.assertIn("passt nicht zu VERSION 1.0.11", err)
+
+    def test_chain_on_github(self):
+        def chain(before, after):
+            r = subprocess.run([sys.executable, GUARD, "chain", before, after], cwd=self.b, env=ENV, capture_output=True, text=True, timeout=60)
+            return r.returncode, r.stdout + r.stderr
+        good0 = self.git(self.b, "rev-parse", "HEAD")
+        self.version(self.b, "1.0.1", {"app.js": "two\n"}); self.version(self.b, "1.0.2", {"app.js": "three\n"})
+        good = self.git(self.b, "rev-parse", "HEAD")
+        self.assertEqual(chain(good0, good)[0], 0)
+        self.assertEqual(chain("0" * 40, good)[0], 0)                              # a new branch: its last commit
+        self.version(self.b, "1.0.1", {"app.js": "four\n"}, keep=False)          # an old state on top
+        code, out = chain(good, self.git(self.b, "rev-parse", "HEAD"))
+        self.assertEqual(code, 2); self.assertIn("nicht höher als 1.0.2", out); self.assertIn("fehlen Abschnitte", out)
+        code, out = chain(good, good0)                                             # main overwritten
+        self.assertEqual(code, 2); self.assertIn("Force-Push", out)
 
 
 if __name__ == "__main__":

@@ -23,8 +23,8 @@ Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhän
 - Mehrere Aufgaben in einer Nachricht: selbst in unabhängige Teile schneiden und parallel mit Unteragenten erledigen (jeder in
   eigener Arbeitskopie); was dieselbe Stelle trifft, nacheinander. Je Teil eine eigene kleine Version, sobald er fertig ist.
 - Leitplanken (`.claude/settings.json`): Sperren für Kontors Datenordner, MoneyMoneys Datenbank, Überweisungen und
-  Force-Push; Lagebild zu Beginn jeder Aufgabe (was die anderen Chats veröffentlicht haben); Erinnerung, wenn eine Änderung
-  nicht abgeschlossen ist.
+  Force-Push; Sperren vor jedem Push (Versionskette, siehe Parallele Chats); Lagebild zu Beginn jeder Aufgabe (was die anderen
+  Chats veröffentlicht haben); Erinnerung, wenn eine Änderung nicht abgeschlossen ist.
 - GitHub Actions testet jeden Push (rund 5 min) – Linux: Python 3.9 und neu, Chrome und Safari-Engine, Code-Checks, je
   Python in zwei Hälften nebeneinander (Seiten = `tests/test_e2e.py`; alles andere); macOS: Apples Python, Swift-Helfer,
   MoneyMoney-Brücke, Installation – und nachts mit 1000 Zufallsläufen.
@@ -69,9 +69,14 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
   sofort, als nächste Version. Alle anderen reparieren es nicht (sonst doppelt und gegeneinander), arbeiten weiter und
   veröffentlichen normal: ihr Lauf erbt dieselben Fehler, nur neue eigene zählen. Steht der fremde Fehler der eigenen Arbeit
   länger als 30 Minuten im Weg: selbst beheben, im Changelog nennen.
-- **Push-Sperre** (`.githooks/pre-push`, schaltet das Lagebild ein): ein Push nach `main`, dessen `VERSION` nicht über der
-  auf `main` liegt oder dem Changelog-Zeilen von `main` fehlen, wird abgelehnt – er stand auf einem veralteten Stand und hätte
-  fremde Versionen gelöscht (so geschehen in 3.16.9 und 3.16.21). Dann: holen, daraufsetzen, neu nummerieren.
+- **Sperren vor jedem Push nach `main`** – zwei Ebenen, dieselbe Regel: der git-Hook `.githooks/pre-push` (schaltet das
+  Lagebild ein; gegen den Stand auf GitHub: `VERSION` höher, keine Changelog-Zeile von `main` verloren) und
+  `.claude/hooks/guard.py` vor jedem `git push` (holt `main` selbst: neuester `main` in der eigenen Arbeit, jeder Commit hebt
+  `VERSION` als Zahl, behält alle `## X.Y.Z`-Abschnitte und trägt oben seine eigene Version). GitHub prüft die Kette für jeden
+  Push (Job „Versionskette“). Abgelehnt: nicht umgehen (`KONTOR_PUSH_OK=1` nur für eine bewusste Ausnahme, etwa einen
+  Tippfehler in einem alten Eintrag), sondern holen, daraufsetzen, neu nummerieren. Anlass: 3.16.9 und 66ad67f (3.16.21) –
+  `git reset --soft origin/main` auf altem Stand setzte einen alten Baum auf den neuen `main` und löschte fremde Versionen.
+  Deshalb `git merge-base --is-ancestor origin/main HEAD` direkt vor dem Versions-Commit, nach dem letzten `git fetch`.
 - Lokal beliebig committen; auf GitHub kommt nur Fertiges, als ein Commit je Version – ohne Zweige, direkt auf `main`.
 - Direkt vor dem Versions-Commit holen und die eigene Arbeit daraufsetzen (`git pull --rebase origin main`); die Nummer immer
   aus dem frisch geholten `main`; zusammengefasst wird nur, wenn dieser `main` in der eigenen Arbeit steckt (sonst gingen fremde

@@ -33,10 +33,16 @@ description: Jede Änderung an Kontor abschließen – prüfen (auch mit Python 
    3. **Ein Commit:** erst prüfen, dass der frisch geholte `main` in der eigenen Arbeit steckt:
       `git fetch -q origin main && git merge-base --is-ancestor origin/main HEAD` – schlägt das fehl, ist `main` inzwischen
       weiter: zurück zu 1 (das Zusammenfassen auf einen neueren `main` würde dessen Änderungen stillschweigend rückgängig
-      machen). Dann eigene Zwischencommits zusammenfassen (`git reset --soft origin/main`), dann
+      machen; so entstand 66ad67f: `git reset --soft origin/main` auf altem Stand überschrieb zwei fremde Versionen). Diese
+      Prüfung direkt vor dem Versions-Commit, nach dem letzten `git fetch`. Dann eigene Zwischencommits zusammenfassen
+      (`git reset --soft origin/main`), dann
       `git commit -qam "X.Y.Z: <was sich ändert>" -m "<Modell>: <Link dieser Sitzung>"`, etwa
       `-m "Claude Opus 5.5: https://claude.ai/code/session_…"` (englisch, kurz; keine E-Mail, kein `Co-Authored-By`, keine Tags).
-   4. **Push:** `git push -q origin HEAD:main`. Abgelehnt – ein anderer Chat war schneller: `VERSION` und `CHANGELOG.md` nie
+   4. **Push:** `git push -q origin HEAD:main`. Davor prüfen die Sperren von selbst (`.claude/hooks/guard.py`, dazu der git-Hook `.githooks/pre-push`): neuester `main`
+      in der eigenen Arbeit, jeder Commit darüber hebt `VERSION` (als Zahl), behält alle `## X.Y.Z`-Abschnitte des Changelogs
+      und trägt die eigene Version oben. Gesperrt: nicht umgehen – meist ist `main` weiter (zurück zu 1) oder ein Zwischencommit
+      noch nicht zusammengefasst (3). GitHub prüft dasselbe (Job „Versionskette“).
+      Abgelehnt – ein anderer Chat war schneller: `VERSION` und `CHANGELOG.md` nie
       zusammenführen, sondern den eigenen Commit ohne sie neu aufsetzen – Changelog-Punkte vorher merken, dann
       `git reset -q --soft HEAD~1 && git checkout HEAD -- VERSION CHANGELOG.md && git commit -qm wip` – und zurück zu 1
       (die nächste Nummer ergibt sich dort von selbst).

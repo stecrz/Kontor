@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.25 (2026-11-21 18:33)
+- Entwicklung: GitHub prüft bei jedem Push die Versionskette – jeder Commit hebt VERSION, kein Changelog-Abschnitt geht verloren, oben die eigene Version
+- Entwicklung: zweite Sperre vor jedem Push direkt in Claude – holt main selbst, prüft jeden Commit einzeln
+
 ## 3.16.24 (2026-11-21 18:12)
 - Entwicklung: Push-Sperre – eine Version auf veraltetem Stand kann fremde Versionen nicht mehr löschen
 

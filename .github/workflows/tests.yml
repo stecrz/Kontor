@@ -12,6 +12,20 @@ permissions:
   contents: read
 
 jobs:
+  # first and fast: the commits of a push are one version after another -- none lowers VERSION or drops a version of the
+  # changelog (a push that got past the lock in .claude/hooks/guard.py turns red at once)
+  chain:
+    name: Versionskette
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0                  # the whole history: the commits before the push are compared too
+      - name: Versions one after another
+        run: python3 .claude/hooks/guard.py chain "${{ github.event.before }}" "${{ github.sha }}"
+
   test:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}

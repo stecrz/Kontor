@@ -1,8 +1,14 @@
 """Guard rails for Claude working on Kontor (PreToolUse hook): on the user's Mac never touch Kontor's data folder or
-MoneyMoney's own data, never use MoneyMoney's transfer commands; nowhere force-push or delete main. Exit code 2 blocks
-the call and tells Claude why; anything else lets the normal flow go on. A guard rail, not a sandbox."""
+MoneyMoney's own data, never use MoneyMoney's transfer commands; nowhere force-push or delete main; and before every push the
+version chain (push_check): what goes to main sits on the newest main and is one version after another -- each commit raises
+VERSION, keeps every version section of the changelog and heads it with its own version. Exit code 2 blocks the call and
+tells Claude why; anything else lets the normal flow go on. A guard rail, not a sandbox.
+
+By hand / on GitHub: python3 .claude/hooks/guard.py chain <before> <after> -- the same version chain for the commits pushed."""
 import json
+import os
 import re
+import subprocess
 import sys
 
 ALLOWED = "KONTOR_DATEN_ERLAUBT"        # only after the user explicitly allowed it in this session
@@ -22,7 +28,111 @@ RULES = [
 ]
 
 
+PUSH = r"(?:^|[;&|(]\s*|\n\s*)git\s+(?:-C\s+(?:\"[^\"]+\"|'[^']+'|\S+)\s+)?push\b"      # a push command itself (not the words in a text)
+HOME_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))     # the folder above .claude
+
+
+def _git(repo: str, *args: str, timeout: float = 20):
+    return subprocess.run(["git", "-C", repo] + list(args), capture_output=True, text=True, timeout=timeout)
+
+
+def _version(text: str):
+    """VERSION as numbers (3.16.9 < 3.16.10), None when it is not one."""
+    m = re.fullmatch(r"\s*(\d+)\.(\d+)\.(\d+)\s*", text or "")
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def _sections(changelog: str):
+    """The version headings of CHANGELOG.md ("## X.Y.Z (date)"), top first."""
+    return re.findall(r"(?m)^## (\d+\.\d+\.\d+)\b", changelog or "")
+
+
+def chain_problems(repo: str, before: str, after: str):
+    """What is wrong with the commits before..after as versions on main: each raises VERSION over its predecessor (as numbers),
+    keeps every "## X.Y.Z" section of its predecessor's changelog and heads it with its own version. Empty: all right."""
+    out = []
+    revs = _git(repo, "rev-list", "--reverse", "%s..%s" % (before, after) if before else after).stdout.split()
+    show = lambda c, f: _git(repo, "show", "%s:%s" % (c, f)).stdout if c else ""
+    for c in revs:
+        parent = _git(repo, "rev-parse", "--verify", "-q", c + "^").stdout.strip()
+        name = "%s (%s)" % (c[:7], _git(repo, "log", "-1", "--format=%s", c).stdout.strip()[:60])
+        v, pv = _version(show(c, "VERSION")), _version(show(parent, "VERSION"))
+        cl, pcl = show(c, "CHANGELOG.md"), show(parent, "CHANGELOG.md")
+        if v is None:
+            out.append("%s: VERSION ist keine Versionsnummer." % name)
+            continue
+        if pv is not None and v <= pv:
+            out.append("%s: VERSION %s ist nicht höher als %s davor (eine Version je Commit, Nummer aus dem neuesten main + 1)." % (
+                name, ".".join(map(str, v)), ".".join(map(str, pv))))
+        gone = [x for x in _sections(pcl) if x not in _sections(cl)]
+        if gone:
+            out.append("%s: im CHANGELOG fehlen Abschnitte, die davor da waren: %s (fremde Versionen überschrieben?)." % (name, ", ".join(gone[:6])))
+        top = (_sections(cl) or [None])[0]
+        if top != ".".join(map(str, v)):
+            out.append("%s: oberste CHANGELOG-Überschrift %s passt nicht zu VERSION %s." % (name, top, ".".join(map(str, v))))
+    return out
+
+
+def _push_repo(command: str, cwd: str) -> str:
+    """The repository a push command works in: `git -C <dir>` or a leading `cd <dir>`, else where the command runs."""
+    m = re.search(r"\bgit\s+-C\s+(\"[^\"]+\"|'[^']+'|\S+)\s+push\b", command) or re.search(r"(?:^|[;&|]\s*)cd\s+(\"[^\"]+\"|'[^']+'|[^\s;&|]+)", command)
+    d = m.group(1).strip("\"'") if m else (cwd or HOME_REPO)
+    d = os.path.expanduser(d)
+    return d if os.path.isabs(d) else os.path.join(cwd or HOME_REPO, d)
+
+
+def _pushed_ref(command: str) -> str:
+    """What the push sends to main: SRC of `SRC:main`, a bare `main`, else HEAD."""
+    m = re.search(PUSH + r"([^\n;&|]*)", command)
+    words = (m.group(1) if m else "").split()
+    for w in words:
+        if w.endswith(":main") or w.endswith(":refs/heads/main"):
+            return w.split(":")[0] or "HEAD"
+    return "main" if "main" in words else "HEAD"
+
+
+def push_check(command: str, cwd: str) -> str:
+    """Before a push to Kontor's main: the newest main fetched (at most 5 s; else the last one fetched) and in the work pushed;
+    every commit on top of it one proper version. Returns why not, or "" (also for other repositories)."""
+    repo = _push_repo(command, cwd)
+    top = _git(repo, "rev-parse", "--show-toplevel").stdout.strip()
+    if not top or not (os.path.isfile(os.path.join(top, "VERSION")) and os.path.isfile(os.path.join(top, "CHANGELOG.md"))):
+        return ""                                       # not Kontor
+    try:
+        _git(top, "fetch", "-q", "origin", "main", timeout=5)
+    except subprocess.TimeoutExpired:
+        pass                                            # checked against the main fetched last
+    if not _git(top, "rev-parse", "--verify", "-q", "origin/main").stdout.strip():
+        return ""
+    ref = _pushed_ref(command)
+    if _git(top, "merge-base", "--is-ancestor", "origin/main", ref).returncode != 0:
+        return ("Der neueste main steckt nicht in deiner Arbeit: erst `git pull --rebase origin main` (Konflikte: beide Seiten "
+                "erhalten), Tests erneut, Nummer aus dem neuen main + 1 – nie `reset --soft` auf einen fremden Stand.")
+    problems = chain_problems(top, "origin/main", ref)
+    if problems:
+        return ("Versionskette stimmt nicht – so würden fremde Versionen überschrieben (wie 66ad67f):\n- " + "\n- ".join(problems)
+                + "\nEigene Arbeit ohne VERSION und CHANGELOG.md neu auf den frisch geholten main setzen, dann als nächste Nummer.")
+    return ""
+
+
 def main() -> int:
+    if sys.argv[1:2] == ["chain"]:                     # GitHub: the commits of a push (before..after)
+        before, after = (sys.argv[2:4] + ["", ""])[:2]
+        if not after:
+            print("usage: guard.py chain <before> <after>", file=sys.stderr)
+            return 2
+        repo = os.getcwd()
+        if not before or set(before) == {"0"} or _git(repo, "cat-file", "-e", before + "^{commit}").returncode != 0:
+            before = _git(repo, "rev-parse", "--verify", "-q", after + "^").stdout.strip()     # a new branch: its last commit
+        elif _git(repo, "merge-base", "--is-ancestor", before, after).returncode != 0:
+            print("Gesperrt: %s ist nicht im neuen Stand – main wurde überschrieben (Force-Push)." % before[:7], file=sys.stderr)
+            return 2
+        problems = chain_problems(repo, before, after)
+        for p in problems:
+            print("Versionskette: " + p, file=sys.stderr)
+        if not problems:
+            print("Versionskette in Ordnung: %s..%s" % (before[:7], after[:7]))
+        return 2 if problems else 0
     try:
         data = json.load(sys.stdin)
     except Exception:
@@ -35,6 +145,15 @@ def main() -> int:
             continue
         if re.search(pattern, text) and not (can_allow and ALLOWED in text):
             print("Gesperrt: " + reason, file=sys.stderr)
+            return 2
+    command = str((data.get("tool_input") or {}).get("command") or "")
+    if tool == "Bash" and re.search(PUSH, command) and "KONTOR_PUSH_OK=1" not in command:      # a deliberate exception (like .githooks/pre-push)
+        try:
+            why = push_check(command, str(data.get("cwd") or ""))
+        except Exception as e:                          # the check itself broke: said, not silently let through
+            why = "Prüfung vor dem Push fehlgeschlagen (%s) – von Hand: python3 .claude/hooks/guard.py chain origin/main HEAD" % type(e).__name__
+        if why:
+            print("Gesperrt: " + why, file=sys.stderr)
             return 2
     return 0
 
