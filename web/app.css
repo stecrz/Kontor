@@ -732,11 +732,11 @@ tr.pos { cursor:pointer; }
 ol.steps { margin:8px 0 6px; padding-left:22px; max-width:820px; } ol.steps li { margin:7px 0; line-height:1.5; } ol.steps .dot { margin-right:4px; }
 details.adv { margin:14px 0 4px; } details.adv summary { cursor:pointer; color:var(--muted); font-size:13px; margin-bottom:8px; }
 /* Hilfe: Inhalt links (am Mac), Text mit Bildern, Suche */
-.help-top { display:flex; gap:12px; align-items:center; margin-bottom:14px; } .help-top input { width:min(420px, 100%); }
+.help-top { display:flex; gap:12px; align-items:center; margin-bottom:14px; padding:6px 0 8px; position:sticky; top:var(--topbar-h, 56px); z-index:4; background:var(--bg); } .help-top input { width:min(420px, 100%); }          /* the search stays in view while reading (below the title bar) */
 .help-layout { display:grid; grid-template-columns:220px minmax(0, 1fr); gap:28px; align-items:start; }
-.help-toc { position:sticky; top:72px; max-height:calc(100vh - 90px); overflow:auto; display:flex; flex-direction:column; gap:2px; font-size:13px; }
+.help-toc { position:sticky; top:calc(var(--topbar-h, 56px) + 62px); max-height:calc(100vh - var(--topbar-h, 56px) - 80px); overflow:auto; display:flex; flex-direction:column; gap:2px; font-size:13px; }
 .help-toc a { padding:5px 9px; border-radius:7px; color:var(--fg); text-decoration:none; } .help-toc a:hover { background:var(--group); }
-.help { max-width:880px; line-height:1.6; } .help h3 { margin:30px 0 8px; scroll-margin-top:78px; } .help h4 { margin:20px 0 6px; scroll-margin-top:78px; }
+.help { max-width:880px; line-height:1.6; } .help h3 { margin:30px 0 8px; scroll-margin-top:calc(var(--topbar-h, 56px) + 66px); } .help h4 { margin:20px 0 6px; scroll-margin-top:calc(var(--topbar-h, 56px) + 66px); }
 .help figure { margin:12px 0 18px; } .help figure img { display:block; max-width:100%; height:auto; border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); }
 .help ul, .help ol { padding-left:22px; } .help li { margin:4px 0; } .help table { margin:8px 0 14px; }
 .help mark.hm { background:#ffe58a; color:#1d1d1f; border-radius:2px; }
@@ -1018,3 +1018,10 @@ details.conn-fold > summary::before { content:"▸"; color:var(--muted); font-si
 details.conn-fold[open] > summary { margin-bottom:10px; }
 input.invalid { border-color:var(--neg) !important; }
 .bk-note { color:var(--warn-fg); }          /* a proposal to look at before booking (a possible counterpart by hand) */
+
+/* find on the page (Kontor's Mac app, ⌘F): a small bar at the right, just below the title bar; every hit marked, the current one stronger */
+.find { position:fixed; top:calc(var(--topbar-h, 56px) + 6px); right:16px; z-index:70; display:flex; align-items:center; gap:6px; padding:6px 8px; background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:0 8px 28px rgba(0,0,0,.28); }
+.find input { width:220px; } .find.none input { box-shadow:0 0 0 2px var(--neg, #ff453a); }
+.find #find-n { min-width:64px; text-align:right; font-variant-numeric:tabular-nums; }
+::highlight(kontor-find) { background-color:rgba(255, 204, 0, .38); }
+::highlight(kontor-find-now) { background-color:#ffcc00; color:#000; }

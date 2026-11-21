@@ -196,10 +196,11 @@ jobs:
           bash install.sh < /dev/null
           curl -fsS -o /dev/null http://127.0.0.1:8765/ && echo "service answers"
           # the app shows Kontor, as an app: the page sees the app (and the app's name in the browser's name), the app has the
-          # words of its menu and the theme from the page, the page's printing and Dock badge go to the app; no title bar of its
+          # words of its menu, its commands with their keys (Find works through the menu) and the theme from the page, the page's
+          # printing and Dock badge go to the app; no title bar of its
           # own (clicks in the strip at the top reach the page -- else the app would keep its title bar)
           out=$(Kontor.app/Contents/MacOS/Kontor --check http://127.0.0.1:8765/) && echo "$out"
-          echo "$out" | python3 -c "import json, sys; d = json.load(sys.stdin); assert d['title'] == 'Kontor' and d['bridge'] and d['shell'] and d['app'] and d['agent'] and d['print'] and d['badge'] and d['dark'], d; assert d['capture'] in ('stream', 'NotFoundError') if d['mic'] == 'granted' else d['capture'] == 'NotAllowedError', d; assert d['menu'] == ['Kontor', 'Ablage', 'Bearbeiten', 'Darstellung', 'Fenster', 'Hilfe'], d; assert d['chrome']['full'] and d['chrome']['band'] > 0, d"
+          echo "$out" | python3 -c "import json, sys; d = json.load(sys.stdin); assert d['title'] == 'Kontor' and d['bridge'] and d['shell'] and d['app'] and d['agent'] and d['print'] and d['badge'] and d['dark'], d; assert d['capture'] in ('stream', 'NotFoundError') if d['mic'] == 'granted' else d['capture'] == 'NotAllowedError', d; assert d['menu'] == ['Kontor', 'Ablage', 'Bearbeiten', 'Darstellung', 'Fenster', 'Hilfe'], d; assert d['chrome']['full'] and d['chrome']['band'] > 0, d; assert ['Mit MoneyMoney abgleichen', 'r'] in d['commands'] and ['Suchen …', 'f'] in d['commands'] and ['Rückwärts suchen', '⇧g'] in d['commands'], d; assert d['reload'] == '⇧r' and d['findBar'], d"
           ! Kontor.app/Contents/MacOS/Kontor --check http://127.0.0.1:8766/ && echo "another address refused"
           python3 kontor.py uninstall --yes
           ! curl -fsS -o /dev/null http://127.0.0.1:8765/ 2>/dev/null && echo "service gone"

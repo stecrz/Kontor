@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.16.64 (2026-11-22 00:41)
+- ⌘F sucht: in der Hilfe und bei Umsätzen im eigenen Suchfeld, sonst in der Mac-App eine Suchleiste (Treffer markiert und gezählt, ⌘G/⇧⌘G, ↩, esc)
+- Suchfeld der Hilfe bleibt beim Scrollen sichtbar
+- Mac-App-Menü mit Kontors Kürzeln: ⌘R abgleichen, ⌘S sichern, ⌘L sperren, ⌘K Assistent, ⌘1–9 Seiten; Neu laden jetzt ⇧⌘R
+- Kürzel in den Tooltips – nur, wo sie wirken (im Browser kein ⌘R/⌘1–9)
+- ⌘S speichert auch die Einstellungen (MoneyMoney, Belege)
+
 ## 3.16.63 (2026-11-22 00:32)
 - Mac-App: Seiten mit denselben Abständen wie im Browser – nur die Fensterknöpfe oben in der Seitenleiste
 

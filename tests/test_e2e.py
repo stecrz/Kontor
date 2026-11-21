@@ -4822,7 +4822,7 @@ class MacAppBrowserTest(unittest.TestCase):
                 labels = pg3.evaluate("(window.__shell.find(m => m.labels) || {}).labels")
                 self.assertEqual(set(labels), {"about", "settings", "hide", "hideOthers", "showAll", "quit", "file", "close", "print", "edit", "undo", "redo",
                                                "cut", "copy", "paste", "selectAll", "view", "reload", "actualSize", "zoomIn", "zoomOut", "fullScreen",
-                                               "window", "minimize", "zoom", "help", "kontorHelp", "ok", "cancel"})
+                                               "window", "minimize", "zoom", "help", "kontorHelp", "ok", "cancel", "find"})
                 self.assertTrue(all(v and not v.startswith("mac_") for v in labels.values()), labels)
                 self.assertEqual((labels["quit"], labels["cancel"]), ("Kontor beenden", "Abbrechen"))
                 self.assertEqual(pg3.evaluate("window.__shell.filter(m => m.theme).map(m => m.theme)"), ["dark"])
@@ -4859,6 +4859,102 @@ class MacAppBrowserTest(unittest.TestCase):
                 self.assertEqual(pg3.evaluate("document.documentElement.dataset.theme"), "light")
                 pg3.evaluate("window.dispatchEvent(new Event('afterprint')); window.dispatchEvent(new Event('afterprint'))")
                 self.assertEqual(pg3.evaluate("[document.documentElement.dataset.theme, PRINT.on]"), ["dark", False])
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            app.stop.set()
+            shutil.rmtree(d, ignore_errors=True)
+
+
+class KeysFindBrowserTest(unittest.TestCase):
+    """Keys: ⌘F goes to the page's own search (help, transactions); the help's search stays in view while reading. In the Mac app
+    its menu gets the commands with their keys (no key handled twice), ⌘F there opens a find bar where the page has no search of
+    its own -- hits counted and marked, ↩ goes on, esc closes; the keys show in the tooltips only where they work."""
+
+    def test_keys_and_find(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        d = tempfile.mkdtemp(prefix="kontor-keys-")
+        key, src = load_or_create_master_key(d)
+        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        app.do_run(False, True)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        shell = """window.__shell = []; window.webkit = {messageHandlers: {kontor: {postMessage: m => { window.__shell.push(m); return Promise.resolve(true); }}}};"""
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                errors = []
+                pg = b.new_page(viewport={"width": 1440, "height": 900}); pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto("http://127.0.0.1:%d/" % port)
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                wait_shell(pg)
+                # in a browser: ⌘F to the help's search, which stays below the title bar while reading
+                pg.evaluate("location.hash = '#help'"); pg.wait_for_selector("#help-q")
+                pg.click("#help-body"); pg.keyboard.press("Meta+f")
+                self.assertEqual(pg.evaluate("document.activeElement.id"), "help-q")
+                pg.evaluate("document.scrollingElement.scrollTop = 4000"); until(pg, "document.scrollingElement.scrollTop > 2000")
+                top, bar = pg.evaluate("[document.querySelector('#help-q').getBoundingClientRect().top, document.querySelector('.topbar').getBoundingClientRect().bottom]")
+                self.assertTrue(bar - 1 <= top < bar + 30, (top, bar))
+                self.assertIn("(⌘F)", pg.get_attribute("#help-q", "title"))
+                # transactions: its search; a page without one: the browser's find (nothing of Kontor's)
+                pg.evaluate("location.hash = '#transactions'"); pg.wait_for_selector("#uf-q")
+                pg.click("h1"); pg.keyboard.press("Meta+f")
+                self.assertEqual(pg.evaluate("document.activeElement.id"), "uf-q")
+                pg.evaluate("location.hash = '#overview'"); until(pg, "S.tab === 'overview' && !document.querySelector('#uf-q')")
+                self.assertFalse(pg.evaluate("kontorCmd('find') && !!document.querySelector('#find')"))
+                # tooltips: the browser keeps ⌘R and ⌘1-9 -- not shown; ⌘S on a save button is
+                self.assertNotIn("⌘", pg.get_attribute("#sync-btn", "title") + pg.get_attribute("#lock-btn", "title")); self.assertFalse(pg.get_attribute("#nav a[href='#overview']", "title"))
+                pg.evaluate("location.hash = '#settings/moneymoney'"); pg.wait_for_selector("#main [data-cmd-s]")
+                self.assertTrue(pg.evaluate("[...document.querySelectorAll('#main [data-cmd-s]')].every(b => b.title.endsWith('(⌘S)'))"))
+                # in the Mac app: its menu gets the commands; the page itself leaves the keys to it
+                pg3 = b.new_page(viewport={"width": 1440, "height": 900}); pg3.add_init_script(shell); pg3.on("pageerror", lambda e: errors.append(str(e)))
+                pg3.goto("http://127.0.0.1:%d/" % port)
+                until(pg3, "window.__shell.some(m => m.commands)")
+                first = pg3.evaluate("window.__shell.filter(m => m.commands).pop().commands")
+                self.assertEqual({c["id"]: (c["key"], c["shift"], c["on"]) for c in first if c["id"] in ("sync", "find", "findPrev", "lock")},
+                                 {"sync": ("r", False, False), "find": ("f", False, True), "findPrev": ("g", True, False), "lock": ("l", False, False)})
+                pg3.fill("#login-pw", "sehr-geheimes-passwort"); pg3.click("#login-btn"); wait_shell(pg3)
+                until(pg3, "window.__shell.filter(m => m.commands).pop().commands.some(c => c.id === 'page9')")
+                cm = {c["id"]: c for c in pg3.evaluate("window.__shell.filter(m => m.commands).pop().commands")}
+                self.assertEqual((cm["page1"]["title"], cm["page1"]["key"], cm["page3"]["title"]), ("Übersicht", "1", "Cashflow"))
+                self.assertTrue(cm["sync"]["on"] and cm["lock"]["on"]); self.assertEqual(cm["sync"]["title"], "Mit MoneyMoney abgleichen")
+                self.assertTrue(all(c["title"] and not c["title"].startswith(("mac_", "find_")) for c in cm.values()))
+                self.assertIn("(⌘R)", pg3.get_attribute("#sync-btn", "title")); self.assertEqual(pg3.get_attribute("#nav a[href='#cashflow']", "title"), "Cashflow (⌘3)")
+                key3 = pg3.evaluate("""(() => { const h = location.hash, e = new KeyboardEvent('keydown', {key: '3', metaKey: true, bubbles: true, cancelable: true});
+                    document.dispatchEvent(e); return [e.defaultPrevented, location.hash === h]; })()""")
+                self.assertEqual(key3, [False, True])                                              # the key is the menu's, not the page's
+                pg3.evaluate("kontorCmd('page3')"); until(pg3, "location.hash === '#cashflow'")
+                # Find: the bar, every hit counted, on with ↩ and the menu, closed with esc (the marks with it)
+                pg3.evaluate("kontorCmd('page1')"); until(pg3, "S.tab === 'overview' && !!document.querySelector('#main .card')")
+                word = pg3.evaluate("(document.querySelector('#nav a[href=\"#cashflow\"] span') || {}).textContent")
+                pg3.evaluate("kontorCmd('find')"); pg3.wait_for_selector("#find #find-q")
+                self.assertEqual(pg3.evaluate("document.activeElement.id"), "find-q")
+                pg3.fill("#find-q", word); until(pg3, "FIND.hits.length > 0")
+                n = pg3.evaluate("FIND.hits.length")
+                self.assertEqual(pg3.inner_text("#find-n"), "1 von %d" % n)
+                if n > 1:
+                    pg3.press("#find-q", "Enter"); until(pg3, "FIND.i === 1")
+                    pg3.evaluate("kontorCmd('findPrev')"); until(pg3, "FIND.i === 0")
+                self.assertTrue(pg3.evaluate("!window.Highlight || (CSS.highlights.has('kontor-find') && CSS.highlights.has('kontor-find-now'))"))
+                self.assertTrue(pg3.evaluate("window.__shell.filter(m => m.commands).pop().commands.find(c => c.id === 'findNext').on"))
+                pg3.fill("#find-q", "zzzz-nirgends"); until(pg3, "document.querySelector('#find').classList.contains('none')")
+                self.assertEqual(pg3.inner_text("#find-n"), "Nicht gefunden")
+                pg3.press("#find-q", "Escape"); until(pg3, "!document.querySelector('#find')")
+                self.assertTrue(pg3.evaluate("!window.Highlight || !CSS.highlights.has('kontor-find')"))
+                # on the help page Find is the help's own search, also in the app
+                pg3.evaluate("kontorCmd('find')"); pg3.wait_for_selector("#find"); pg3.press("#find-q", "Escape")
+                pg3.evaluate("location.replace('#help')"); pg3.wait_for_selector("#help-q")
+                pg3.evaluate("kontorCmd('find')")
+                self.assertEqual(pg3.evaluate("[document.activeElement.id, !!document.querySelector('#find')]"), ["help-q", False])
+                # locked: what needs Kontor open goes off in the menu
+                pg3.click("#lock-btn"); pg3.wait_for_selector("#login:not(.hidden)")
+                until(pg3, "(window.__shell.filter(m => m.commands).pop().commands.find(c => c.id === 'sync') || {}).on === false")
                 self.assertEqual(errors, [])
                 b.close()
         finally:

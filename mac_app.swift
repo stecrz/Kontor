@@ -55,11 +55,13 @@ final class Web: WKWebView {
     }
 }
 
-final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandlerWithReply {
+final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandlerWithReply {
     private var window: NSWindow!
     private var web: Web!
     private var home = kontorAddress()
     private var labels: [String: String] = (prefs.dictionary(forKey: "labels") as? [String: String]) ?? [:]
+    private var commands: [[String: Any]] = ((prefs.array(forKey: "commands") as? [[String: Any]]) ?? []).compactMap { Shell.parseCommand($0) }
+    private var enabled = Set<String>()
     private var popups: [NSWindow] = []
     private var watches: [NSKeyValueObservation] = []
     private var printed: (() -> Void)?
@@ -259,8 +261,16 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             d["dark"] = self?.window.appearance?.name == NSAppearance.Name.darkAqua
             d["mic"] = Shell.micState()
             if let s = self { d["chrome"] = ["full": s.web.band > 0, "band": Double(s.web.band)] as [String: Any] }
-            let out = (try? JSONSerialization.data(withJSONObject: d, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-            Shell.report(out, ok: true)
+            let items = (NSApp.mainMenu?.items ?? []).flatMap { $0.submenu?.items ?? [] }.flatMap { $0.submenu?.items ?? [$0] }
+            let mine = items.filter { $0.action == #selector(Shell.command(_:)) }
+            d["commands"] = mine.map { [$0.title, ($0.keyEquivalentModifierMask.contains(.shift) ? "⇧" : "") + $0.keyEquivalent] }
+            d["reload"] = items.first { $0.action == #selector(Shell.reload(_:)) }.map { ($0.keyEquivalentModifierMask.contains(.shift) ? "⇧" : "") + $0.keyEquivalent } ?? ""
+            if let find = mine.first(where: { $0.representedObject as? String == "find" }) { self?.command(find) }
+            webView.evaluateJavaScript("!!document.getElementById('find')") { r, _ in      // (after the command: scripts run in turn)
+                d["findBar"] = r as? Bool ?? false
+                let out = (try? JSONSerialization.data(withJSONObject: d, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+                Shell.report(out, ok: true)
+            }
         }
     }
 
@@ -391,6 +401,15 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             prefs.set(l, forKey: "labels")
             buildMenu()
         }
+        if let list = body["commands"] as? [[String: Any]] {       // the page's commands: menu entries with their keys
+            let clean = list.compactMap { Shell.parseCommand($0) }
+            enabled = Set(clean.filter { $0["on"] as? Bool == true }.compactMap { $0["id"] as? String })
+            if Shell.shape(clean) != Shell.shape(commands) {
+                commands = clean
+                prefs.set(clean, forKey: "commands")
+                buildMenu()
+            }
+        }
         if let t = body["theme"] as? String {             // "auto": like macOS (the page learns the system's mode from this window)
             let look = t == "light" ? NSAppearance(named: .aqua) : t == "dark" ? NSAppearance(named: .darkAqua) : nil
             window.appearance = look
@@ -418,6 +437,18 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             return
         }
         replyHandler(true, nil)
+    }
+
+    // a command as the page describes it -- only what a menu entry needs, checked: a short name, one key, a known menu
+    static func parseCommand(_ c: [String: Any]) -> [String: Any]? {
+        guard let id = c["id"] as? String, id.range(of: "^[A-Za-z0-9_]{1,32}$", options: .regularExpression) != nil,
+              let menu = c["menu"] as? String, ["file", "find", "view"].contains(menu),
+              let key = c["key"] as? String, key.count == 1, let title = c["title"] as? String, !title.isEmpty, title.count <= 80 else { return nil }
+        return ["id": id, "menu": menu, "key": key.lowercased(), "title": title, "shift": c["shift"] as? Bool == true, "on": c["on"] as? Bool == true]
+    }
+
+    static func shape(_ list: [[String: Any]]) -> String {
+        return list.map { c in ["id", "menu", "key", "title"].map { c[$0] as? String ?? "" }.joined(separator: "|") + (c["shift"] as? Bool == true ? "|s" : "") }.joined(separator: "\n")
     }
 
     static func micState() -> String {
@@ -467,18 +498,36 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             return m
         }
         let line = { NSMenuItem.separator() }
+        func commandItems(_ menuID: String) -> [NSMenuItem] {
+            return commands.filter { $0["menu"] as? String == menuID }.map { c in
+                let i = NSMenuItem(title: c["title"] as? String ?? "", action: #selector(command(_:)), keyEquivalent: c["key"] as? String ?? "")
+                i.keyEquivalentModifierMask = c["shift"] as? Bool == true ? [.command, .shift] : .command
+                i.target = self
+                i.representedObject = c["id"] as? String
+                return i
+            }
+        }
+        let fileCmds = commandItems("file"), viewCmds = commandItems("view"), findCmds = commandItems("find")
+        var findItem: [NSMenuItem] = []
+        if !findCmds.isEmpty {
+            let f = NSMenu(title: label("find") ?? "")
+            findCmds.forEach { f.addItem($0) }
+            let i = NSMenuItem(title: f.title, action: nil, keyEquivalent: "")
+            i.submenu = f
+            findItem = [line(), i]
+        }
         _ = menu("app", [item("about", #selector(about(_:)), mine: true), line(),
                          item("settings", #selector(openSettings(_:)), ",", mine: true), line(),
                          item("hide", #selector(NSApplication.hide(_:)), "h"),
                          item("hideOthers", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
                          item("showAll", #selector(NSApplication.unhideAllApplications(_:))), line(),
                          item("quit", #selector(NSApplication.terminate(_:)), "q")])
-        _ = menu("file", [item("close", #selector(NSWindow.performClose(_:)), "w"), line(),
+        _ = menu("file", fileCmds + (fileCmds.isEmpty ? [] : [line()]) + [item("close", #selector(NSWindow.performClose(_:)), "w"), line(),
                           item("print", #selector(printMenu(_:)), "p", mine: true)])
         _ = menu("edit", [item("undo", Selector(("undo:")), "z"), item("redo", Selector(("redo:")), "z", [.command, .shift]), line(),
                           item("cut", #selector(NSText.cut(_:)), "x"), item("copy", #selector(NSText.copy(_:)), "c"),
-                          item("paste", #selector(NSText.paste(_:)), "v"), item("selectAll", #selector(NSText.selectAll(_:)), "a")])
-        _ = menu("view", [item("reload", #selector(reload(_:)), "r", mine: true), line(),
+                          item("paste", #selector(NSText.paste(_:)), "v"), item("selectAll", #selector(NSText.selectAll(_:)), "a")] + findItem)
+        _ = menu("view", viewCmds + (viewCmds.isEmpty ? [] : [line()]) + [item("reload", #selector(reload(_:)), "r", [.command, .shift], mine: true), line(),
                           item("actualSize", #selector(zoomReset(_:)), "0", mine: true),
                           item("zoomIn", #selector(zoomIn(_:)), "+", mine: true),
                           item("zoomOut", #selector(zoomOut(_:)), "-", mine: true), line(),
@@ -488,6 +537,18 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         NSApp.mainMenu = bar
         NSApp.windowsMenu = win
         NSApp.helpMenu = help
+    }
+
+    // a command of the page (its menu entry): the page does it, as with its key in a browser
+    @objc func command(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String, id.range(of: "^[A-Za-z0-9_]{1,32}$", options: .regularExpression) != nil else { return }
+        if !window.isVisible { showWindow() }
+        web.evaluateJavaScript("typeof kontorCmd === 'function' && kontorCmd('\(id)')", completionHandler: nil)
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(command(_:)) { return enabled.contains(menuItem.representedObject as? String ?? "") }
+        return true
     }
 
     @objc func about(_ sender: Any?) {

@@ -28,7 +28,7 @@ const SHELL_MENU = {about: 'mac_m_ueber', settings: 'mac_m_einstellungen', hide:
   quit: 'mac_m_beenden', file: 'mac_m_ablage', close: 'mac_m_schliessen', print: 'mac_m_drucken', edit: 'bearbeiten', undo: 'mac_m_widerrufen',
   redo: 'mac_m_wiederholen', cut: 'mac_m_ausschneiden', copy: 'kopieren', paste: 'mac_m_einsetzen', selectAll: 'mac_m_alles', view: 'mac_m_darstellung',
   reload: 'mac_m_neu_laden', actualSize: 'mac_m_original', zoomIn: 'mac_m_groesser', zoomOut: 'mac_m_kleiner', fullScreen: 'mac_m_vollbild', window: 'mac_m_fenster',
-  minimize: 'mac_m_dock', zoom: 'mac_m_zoomen', help: 'hilfe', kontorHelp: 'mac_m_kontor_hilfe', ok: 'mac_ok', cancel: 'abbrechen'};
+  minimize: 'mac_m_dock', zoom: 'mac_m_zoomen', help: 'hilfe', kontorHelp: 'mac_m_kontor_hilfe', ok: 'mac_ok', cancel: 'abbrechen', find: 'mac_m_suchen_menu'};
 shellPost({labels: Object.fromEntries(Object.entries(SHELL_MENU).map(([k, v]) => [k, t(v)]))});
 // its window has no title bar of its own: the page as in the browser, the window buttons above Kontor's name, and the strip
 // where the title bar was moves the window -- the app says how high it is and where the buttons are (tb, tl, ly; this page's
@@ -636,6 +636,8 @@ async function checkSession() {
 function showLogin() {
   asMicStop(false);          // a recording does not run on behind the lock
   $('#shell').classList.add('hidden'); $('#login').classList.remove('hidden'); $('#drawer').classList.remove('open');
+  if (FIND.open) findBar(false);
+  keysShow();                // locked: the keys (and the Mac app's menu entries) that need Kontor open are off
   const setup = SESSION && SESSION.setup_needed && !OFFLINE.mode;
   $('#login-text').textContent = OFFLINE.mode ? t('der_mac_ist_nicht_erreichbar')
     : setup ? t('erster_start_passwort_festlegen_mindes')
@@ -711,15 +713,146 @@ $('#sync-btn').addEventListener('click', () => syncNow(false, true));
 $('.side .brand').addEventListener('click', e => { go(e.target.closest('#ver') ? '#settings/updates' : '#overview'); });
 async function lockNow() { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; OFFKEY = null; TID.skipNext = true; await checkSession(); }
 $('#lock-btn').addEventListener('click', lockNow);
-$('#lock-btn').title = t('sperren_tip');
-// ⌘L locks (in the web app in the Dock and wherever the browser leaves the key to the page)
+// ---------------------------------------------------------------- Tastaturkürzel
+// One list for the keys. The page answers them -- in Kontor's Mac app its menu does instead (it gets the list, words and keys,
+// from here and calls kontorCmd), so no key counts twice. A browser keeps some keys for itself (⌘R reloads, ⌘1–9 tabs, ⌘L the
+// address, ⌘G its find): those work only in an app ("app": the Mac app or Safari's web app, "shell": the Mac app), and only
+// where a key works is it shown (in the tooltip and in the menu).
+function cmds() {
+  const inside = !!S.csrf && $('#login').classList.contains('hidden'), save = $('#main [data-cmd-s]');
+  const nav = $$('#nav a[href^="#"]').filter(a => !a.classList.contains('hidden') && !a.closest('.hidden') && a.id !== 'nav-assist').slice(0, 9);
+  return [
+    {id: 'sync', menu: 'file', key: 'r', where: 'app', t: t('mac_m_sync'), on: inside && !OFFLINE.mode && !SYNC.busy, run: () => syncNow(false, true)},
+    {id: 'save', menu: 'file', key: 's', where: 'all', t: t('mac_m_sichern'), on: !!save && !save.disabled, run: () => { const b = $('#main [data-cmd-s]'); if (b && !b.disabled) b.click(); }},
+    {id: 'lock', menu: 'file', key: 'l', where: 'all', shown: 'app', t: t('btn_sperren'), on: inside, run: lockNow},          // (a browser mostly keeps ⌘L: not shown there)
+    {id: 'find', menu: 'find', key: 'f', where: 'all', t: t('mac_m_suchen'), on: true, run: findOpen},
+    {id: 'findNext', menu: 'find', key: 'g', where: 'shell', t: t('find_weiter'), on: FIND.open && FIND.hits.length > 0, run: () => findStep(1)},
+    {id: 'findPrev', menu: 'find', key: 'g', shift: true, where: 'shell', t: t('find_zurueck'), on: FIND.open && FIND.hits.length > 0, run: () => findStep(-1)},
+    {id: 'assistant', menu: 'view', key: 'k', where: 'all', t: t('ki_assistent'), on: inside && asOn() && S.tab !== 'assistant', run: () => asShow(!AS.open)},
+    ...nav.map((a, i) => ({id: 'page' + (i + 1), menu: 'view', key: String(i + 1), where: 'app', t: (a.querySelector('span') || a).textContent.trim(),
+      href: a.getAttribute('href'), on: inside, run: () => go(a.getAttribute('href'))}))];
+}
+const keyLive = c => c.where === 'all' || (c.where === 'app' && APP_MODE) || SHELL;
+const keyShown = c => keyLive(c) && (c.shown !== 'app' || APP_MODE);
+const keyText = c => (c.shift ? '⇧' : '') + '⌘' + c.key.toUpperCase();
+function keyHint(id) { const c = cmds().find(x => x.id === id); return c && keyShown(c) ? ` (${keyText(c)})` : ''; }
+function kontorCmd(id) { const c = cmds().find(x => x.id === id); if (c && c.on) c.run(); return !!(c && c.on); }          // the Mac app's menu
 document.addEventListener('keydown', e => {
-  if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || !S.csrf || !$('#login').classList.contains('hidden')) return;
-  const k = (e.key || '').toLowerCase();
-  if (k === 'l') { e.preventDefault(); lockNow(); }
-  if (k === 'k' && asOn() && S.tab !== 'assistant') { e.preventDefault(); asShow(!AS.open); }
-  if (k === 's') { const b = $('#main [data-cmd-s]'); if (b) { e.preventDefault(); if (!b.disabled) b.click(); } }
+  if (!e.metaKey || e.altKey || e.ctrlKey || SHELL) return;          // the Mac app: its menu answers
+  const k = (e.key || '').toLowerCase(), c = cmds().find(x => x.key === k && !!x.shift === e.shiftKey);
+  if (!c || !keyLive(c)) return;
+  if (c.id === 'find') { if (findOpen()) e.preventDefault(); return; }          // the page's own search -- else the browser's find
+  if (c.id === 'save' && $('#main [data-cmd-s]')) e.preventDefault();          // (not the browser's "save page", also while nothing changed)
+  if (c.on) { e.preventDefault(); c.run(); }
 });
+// the title bar's height (taller in a narrow window): what sticks right below it (the help's search) sits there
+try { const tb = $('.topbar'); if (tb) new ResizeObserver(() => document.documentElement.style.setProperty('--topbar-h', tb.offsetHeight + 'px')).observe(tb); } catch (e) {}
+// to the Mac app: its menu entries (sent again only when they change; on/off too); the keys in the tooltips
+let SHELL_CMDS = '';
+function keysShow() {
+  const list = cmds();
+  if (SHELL) {
+    const menu = list.map(c => ({id: c.id, menu: c.menu, key: c.key, shift: !!c.shift, title: c.t, on: !!c.on})), sig = JSON.stringify(menu);
+    if (sig !== SHELL_CMDS) { SHELL_CMDS = sig; shellPost({commands: menu}); }
+  }
+  const hint = id => { const c = list.find(x => x.id === id); return c && keyShown(c) ? ` (${keyText(c)})` : ''; };
+  const tip = (el, base, id) => { if (el) el.title = base + hint(id); };
+  tip($('#lock-btn'), t('sperren_tip'), 'lock');
+  tip($('#assist-btn'), t('ki_tip'), 'assistant');
+  $$('#nav a[href^="#"]').forEach(a => { const c = list.find(x => x.href === a.getAttribute('href')); a.title = c && keyShown(c) ? `${c.t} (${keyText(c)})` : ''; });
+  $$('#main [data-cmd-s]').forEach(b => { if (b.dataset.tip == null) b.dataset.tip = b.title || b.textContent.trim(); b.title = b.dataset.tip + hint('save'); });
+  $$('[data-find]').forEach(f => { f.title = f.placeholder + hint('find'); });
+}
+
+// Find on the page (⌘F): the page's own search where it has one (the help, transactions: marked data-find) -- else, in the
+// Mac app (it has no find of its own), a find bar: every hit marked, the current one stronger, ⌘G / ⇧⌘G or ↩ / ⇧↩ go on.
+// Marks without touching the page (CSS highlights); what the page draws anew is searched again, the place kept.
+const FIND = {open: false, q: '', hits: [], i: -1, tm: 0, mt: 0, mo: null};
+function findOpen() {
+  const own = $$('[data-find]').find(el => el.getClientRects().length && !el.disabled);
+  if (own) { own.focus(); own.select(); return true; }
+  if (!SHELL) return false;
+  findBar(true);
+  return true;
+}
+function findBar(open) {
+  let bar = $('#find');
+  if (!open) {
+    if (bar) bar.remove();
+    if (FIND.mo) FIND.mo.disconnect();
+    Object.assign(FIND, {open: false, hits: [], i: -1, mo: null});
+    try { CSS.highlights.delete('kontor-find'); CSS.highlights.delete('kontor-find-now'); } catch (e) {}
+    keysShow();
+    return;
+  }
+  if (!bar) {
+    bar = document.createElement('div'); bar.id = 'find'; bar.className = 'find'; bar.setAttribute('role', 'search');
+    bar.innerHTML = `<input type="search" id="find-q" placeholder="${t('find_ph')}" aria-label="${t('find_ph')}" autocomplete="off" spellcheck="false">
+      <span id="find-n" class="small muted" aria-live="polite"></span>
+      <button class="ico" id="find-prev" title="${t('find_zurueck')} (⇧⌘G)" aria-label="${t('find_zurueck')}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <button class="ico" id="find-next" title="${t('find_weiter')} (⌘G)" aria-label="${t('find_weiter')}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+      <button class="small secondary" id="find-done">${t('find_fertig')}</button>`;
+    document.body.appendChild(bar);
+    const q = $('#find-q', bar);
+    q.value = FIND.q;
+    q.addEventListener('input', () => { FIND.q = q.value; clearTimeout(FIND.tm); clearTimeout(FIND.mt); FIND.tm = setTimeout(() => findRun(FIND.q), 120); });
+    q.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); findStep(e.shiftKey ? -1 : 1); }
+      if (e.key === 'Escape') { e.preventDefault(); findBar(false); }
+    });
+    $('#find-prev', bar).addEventListener('click', () => findStep(-1));
+    $('#find-next', bar).addEventListener('click', () => findStep(1));
+    $('#find-done', bar).addEventListener('click', () => findBar(false));
+    FIND.mo = new MutationObserver(() => { clearTimeout(FIND.mt); FIND.mt = setTimeout(() => findRun(FIND.q, true), 250); });          // (its own timer: typing is never undone)
+    FIND.mo.observe($('#main') || document.body, {childList: true, subtree: true, characterData: true});
+  }
+  FIND.open = true;
+  const m = $('main'); if (m) bar.style.right = Math.max(16, innerWidth - m.getBoundingClientRect().right + 16) + 'px';          // over the page, not the assistant beside it
+  const q = $('#find-q', bar); q.focus(); q.select();
+  if (q.value.trim()) findRun(q.value);
+}
+function findRun(q, keep) {
+  const was = FIND.i;
+  FIND.q = q; FIND.hits = []; FIND.i = -1;
+  const needle = q.trim().toLowerCase(), bar = $('#find');
+  if (needle) {
+    const skip = /^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA|OPTION|SELECT)$/;
+    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {acceptNode: n => {
+      const p = n.parentElement;
+      if (!p || skip.test(p.tagName) || (bar && bar.contains(p)) || !n.data.trim() || !p.getClientRects().length) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }});
+    for (let n = walk.nextNode(); n && FIND.hits.length < 2000; n = walk.nextNode()) {
+      const hay = n.data.toLowerCase();
+      if (hay.length !== n.data.length) continue;          // (a letter whose small form is longer: no exact place)
+      for (let k = hay.indexOf(needle); k >= 0 && FIND.hits.length < 2000; k = hay.indexOf(needle, k + needle.length)) {
+        const r = document.createRange(); r.setStart(n, k); r.setEnd(n, k + needle.length); FIND.hits.push(r);
+      }
+    }
+  }
+  if (keep && FIND.hits.length) { FIND.i = Math.min(Math.max(was, 0), FIND.hits.length - 1); findPaint(); }
+  else if (FIND.hits.length) findStep(1);
+  else findPaint();
+  keysShow();
+}
+function findPaint() {
+  const n = $('#find-n');
+  if (n) n.textContent = !FIND.q.trim() ? '' : FIND.hits.length ? t('find_n', FIND.i + 1, FIND.hits.length) : t('find_keine');
+  const bar = $('#find'); if (bar) bar.classList.toggle('none', !!FIND.q.trim() && !FIND.hits.length);
+  try {
+    if (!window.Highlight || !CSS.highlights) return;
+    CSS.highlights.set('kontor-find', new Highlight(...FIND.hits));
+    if (FIND.hits[FIND.i]) CSS.highlights.set('kontor-find-now', new Highlight(FIND.hits[FIND.i])); else CSS.highlights.delete('kontor-find-now');
+  } catch (e) {}
+}
+function findStep(d) {
+  if (!FIND.open || !FIND.hits.length) return;
+  const n = FIND.hits.length;
+  FIND.i = FIND.i < 0 ? (d > 0 ? 0 : n - 1) : (FIND.i + d + n) % n;
+  findPaint();
+  const el = FIND.hits[FIND.i].startContainer.parentElement;
+  if (el) el.scrollIntoView({block: 'center', inline: 'nearest'});
+}
 
 async function enterApp() {
   $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
@@ -820,8 +953,9 @@ function statusMini() {
   if (sb) {
     const busy = !!(st.service.running || SYNC.busy);
     sb.classList.toggle('busy', busy); sb.disabled = busy || OFFLINE.mode;
-    sb.title = OFFLINE.mode ? t('offline_ansicht_der_mac_ist_2') : t('jetzt_aus_moneymoney_lesen_regeln');
+    sb.title = OFFLINE.mode ? t('offline_ansicht_der_mac_ist_2') : t('jetzt_aus_moneymoney_lesen_regeln') + keyHint('sync');
   }
+  keysShow();
   // something to do: bookings waiting for approval (count) or a failed run (!), an update (dot) -- in the sidebar and on the app icon
   const waiting = l && l.dry_run && !l.error ? (l.proposals || []).length : 0, notes = l && !l.error && !waiting ? (l.warnings || []).length : 0;
   navBadge('#bookings', l && l.error ? '!' : waiting ? (waiting > 99 ? '99+' : String(waiting)) : notes ? '•' : '', l && l.error ? t('letzter_abgleich_mit_fehler') : waiting ? t('0_buchungsvorschlaege', waiting) : tn('n_hinweise_auto', notes));
@@ -4837,7 +4971,7 @@ async function vUmsaetze() {
     <select id="uf-ent"><option value="">${t('alle_bereiche')}</option>${Object.keys(S.DATA.areas).map(k => `<option value="${esc(k)}" ${f.entity === k ? 'selected' : ''}>${esc(BN(k))}</option>`).join('')}</select>
     <select id="uf-jahr"><option value="">${t('alle_jahre')}</option>${UMS.years.map(y => `<option ${f.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
     <select id="uf-konto"><option value="">${t('alle_konten')}</option>${konten.map(k => `<option value="${k.uuid}" ${f.account === k.uuid ? 'selected' : ''}>${esc(k.name)}</option>`).join('')}</select>
-    <input type="search" id="uf-q" placeholder="${t('suche_name_zweck_kategorie_betrag')}" value="${esc(f.q)}" style="min-width:220px">
+    <input type="search" id="uf-q" data-find placeholder="${t('suche_name_zweck_kategorie_betrag')}" value="${esc(f.q)}" style="min-width:220px">
   </div><div class="toolbar">
     <div class="seg"><button data-r="" class="${!f.direction ? 'on' : ''}">${t('alle_2')}</button><button data-r="aus" class="${f.direction === 'aus' ? 'on' : ''}">${t('ausgaben')}</button><button data-r="ein" class="${f.direction === 'ein' ? 'on' : ''}">${t('einnahmen')}</button></div>
     <label class="switch"><input type="checkbox" id="uf-ob" ${f.ohne_beleg ? 'checked' : ''}><i></i>${t('ohne_beleg_2')}</label>
@@ -4996,7 +5130,7 @@ function vRegeln() {
     + `<p class="sec-sub">${t('spiegel_sub')}</p><div id="mirrors">${(C.account_mirrors || []).map(mirrorRow).join('')}</div><div class="empty small muted">${t('leer_spiegel')}</div></section>`;
   h += `<div id="rules-warn" class="findings"></div><div id="findings" class="findings"></div>`
     + `<div class="savebar"><span class="small muted"><span id="rules-state">${t('regeln_gespeichert')}</span>${more('rules')}</span><span class="sp"></span>`
-    + `<button id="save-rules" data-cmd-s title="⌘S" disabled>${t('speichern_und_pruefen')}</button></div></div>`;
+    + `<button id="save-rules" data-cmd-s disabled>${t('speichern_und_pruefen')}</button></div></div>`;
   return h;
 }
 // the companies: areas of the kind "Gesellschaft" (as set up; without own areas the top groups of MoneyMoney), in their order
@@ -5581,7 +5715,7 @@ async function vEinstellungen() {
   const v = {moneymoney: vEinstellungenMM, access: vEinstellungenZugang, receipts: vEinstellungenBelege, assistant: vEinstellungenAssistent, updates: () => vUpdates(vEinstellungenUpdates()), backup: vSicherung}[S.sub] || vEinstellungenAllgemein;
   return tabs + await v();
 }
-const saveBar = () => `<div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
+const saveBar = () => `<div class="actions"><button id="save-settings" data-cmd-s>${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
 function vEinstellungenAllgemein() {
   return `<div class="note">${t('einstellungen_vs_einrichtung', '<a href="#accounts">' + t('konten_regeln') + '</a>')}</div><div class="form">
     <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang">${langOpts()}</select> <span class="small muted">${t('sprache_hinweis')}</span></label>
@@ -5983,7 +6117,7 @@ function mdHtml(md) {
 async function vHilfe() {
   if (HELP.md === null || HELP.lang !== LANG) { try { const r = await api('/api/help?lang=' + LANG); HELP.md = r.text || ''; HELP.images = r.images || {}; HELP.lang = LANG; } catch (e) { return `<div class="card">${esc(e.message)}</div>`; } }
   const toc = [...HELP.md.matchAll(/<a id="([\w-]+)"><\/a>\n##\s+(.*)/g)].map(m => [m[1], m[2]]);
-  return `<div class="help-top"><input type="search" id="help-q" placeholder="${t('hilfe_durchsuchen')}" value="${esc(HELP.q)}"><span class="small muted" id="help-n"></span></div>
+  return `<div class="help-top"><input type="search" id="help-q" data-find placeholder="${t('hilfe_durchsuchen')}" value="${esc(HELP.q)}"><span class="small muted" id="help-n"></span></div>
     <div class="help-layout"><nav class="help-toc">${toc.map(([id, title]) => `<a href="#help/${id}" data-a="${id}">${mdInline(title)}</a>`).join('')}<a href="#log" class="help-toc-x">${t('protokoll')}</a></nav>
     <div class="help" id="help-body">${mdHtml(HELP.md)}</div></div>`;
 }
@@ -6073,6 +6207,7 @@ async function route() {
     if (S.tab === 'settings' && S.sub === 'access') bindZugang(main);
     if (S.tab === 'settings' && S.sub === 'assistant') bindAssistent(main);
     if (S.tab === 'help') bindHilfe(main);
+    keysShow();
     // the same page again: what was drawn just now (the charts) changed heights above -- a browser that keeps what is in view
     // in place (scroll anchoring) moves the page along with it; it stays where it was
     if (sameTab && pageY() !== y0) pageTo(y0);
@@ -6682,7 +6817,7 @@ async function asLoad() { try { AS.st = await api('/api/assistant/status'); } ca
 function asChrome() {
   // the button in the title bar and the menu entry: there while the assistant is switched on
   const on = asOn(), b = $('#assist-btn');
-  b.classList.toggle('hidden', !on); $('#nav-assist').classList.toggle('hidden', !on); b.title = t('ki_tip');
+  b.classList.toggle('hidden', !on); $('#nav-assist').classList.toggle('hidden', !on); b.title = t('ki_tip') + keyHint('assistant');
   if (!on && AS.open) AS.open = false;
   asLayout();
 }
