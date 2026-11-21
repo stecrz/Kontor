@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.66 (2026-11-22 00:59)
+- KI-Assistent: Excel-Tabellen (.xlsx) im Chat lesbar – als Raster mit Zelladressen, Summen rechnet Kontor exakt
+- KI-Assistent: Datei ohne Text wird für sich bewertet statt „Lege diesen Beleg ab“; nichts vorgeschlagen
+- KI-Assistent: Dateiauswahl zeigt nur lesbare Formate, Tooltip nennt sie; Belege lesen braucht nur das Leserecht
+- KI-Assistent: Verlauf zeigt Fragen nur mit Datei wieder an
+
 ## 3.16.65 (2026-11-22 00:52)
 - Diktieren: Mikrofon wieder mit Echo-, Rausch- und Pegelfilter (behebt verschluckte Anfänge und fehlende Sätze seit 3.16.57)
 - Diktieren: Knopf wird rot, sobald der Ton ankommt – kein Warten mehr auf das erste Geräusch

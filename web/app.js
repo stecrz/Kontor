@@ -7138,7 +7138,7 @@ async function asChGo(c, i, s) {
 const asText = m => (m.parts || []).filter(p => p.k === 'text').map(p => p.text).join('\n\n').trim();
 function asMsg(m, i) {
   const links = m.role === 'user' ? null : asLinks();
-  if (m.role === 'user') return `<div class="as-msg me">${(m.refs || []).length || (m.files || []).length ? `<div class="as-refs">${(m.refs || []).map((r, j) => asRefChip(r, `data-m="${i}" data-r="${j}"`, false)).join('')}${(m.files || []).map(f => asFileChip(String(f.name || ''))).join('')}</div>` : ''}<div class="as-b">${esc(m.text)}</div></div>`;          // as typed or pasted (lines and spaces kept: tables, code); what it refers to before it
+  if (m.role === 'user') return `<div class="as-msg me">${(m.refs || []).length || (m.files || []).length ? `<div class="as-refs">${(m.refs || []).map((r, j) => asRefChip(r, `data-m="${i}" data-r="${j}"`, false)).join('')}${(m.files || []).map(f => asFileChip(String(f.name || ''))).join('')}</div>` : ''}${m.text ? `<div class="as-b">${esc(m.text)}</div>` : ''}</div>`;          // as typed or pasted (lines and spaces kept: tables, code); what it refers to before it
   let h = '';
   const parts = m.parts || [];
   parts.forEach((p, j) => {
@@ -7256,8 +7256,8 @@ const REC_AUDIO = {channelCount: 1, echoCancellation: true, noiseSuppression: tr
 const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.6" y="1.4" width="4.8" height="8.2" rx="2.4" fill="currentColor"/><path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 const AS_PLUS = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 const AS_CROSS = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
-const AS_ACCEPT = '.txt,.csv,.tsv,.md,.json,.xml,.html,.htm,.yaml,.yml,.log,.ini,.sql,.py,.js,.ts,.sh,.swift,text/*,.pdf,.png,.jpg,.jpeg,.heic,.gif,image/*';
-const AS_RECEIPT = /\.(pdf|png|jpe?g|heic|gif)$/i, AS_FILES_MAX = 6, AS_FILE_BYTES = 20 * 1024 * 1024;          // receipts for the assistant (assistant.RECEIPT_TYPES, ATTACH_BYTES)
+const AS_ACCEPT = '.txt,.csv,.tsv,.md,.json,.xml,.html,.htm,.yaml,.yml,.toml,.log,.ini,.cfg,.conf,.sql,.py,.js,.ts,.sh,.swift,.pdf,.png,.jpg,.jpeg,.heic,.gif,.xlsx,.xlsm';          // only what can be read: the rest greyed out in the picker
+const AS_RECEIPT = /\.(pdf|png|jpe?g|heic|gif)$/i, AS_TABLE = /\.(xlsx|xlsm)$/i, AS_FILES_MAX = 6, AS_FILE_BYTES = 20 * 1024 * 1024;          // receipts for the assistant (assistant.RECEIPT_TYPES, ATTACH_BYTES)
 // the microphone button follows the speech model: there as soon as it is loaded, gone when it is deleted -- in the panel as it
 // stands (what is typed and the conversation stay), not only after reloading the page
 function asMicSync() {
@@ -7467,9 +7467,16 @@ async function asFiles(files) {
   const room = (AS.st || {}).question_limit || 9000, r = ((AS.st || {}).settings || {}).rights || {};
   let given = false;
   for (const f of files.slice(0, AS_FILES_MAX)) {
+    // an Excel table: goes to Kontor with the question, read there into a grid with Excel's addresses (nothing filed, no right needed)
+    if (AS_TABLE.test(f.name || '')) {
+      if (f.size > AS_FILE_BYTES) toast(t('ki_beleg_zu_gross', f.name, AS_FILE_BYTES / 1048576), 5000);
+      else if ((AS.files || []).length >= AS_FILES_MAX) toast(t('ki_beleg_max', AS_FILES_MAX), 5000);
+      else { (AS.files = AS.files || []).push(f); given = true; }
+      continue;
+    }
     // a receipt (PDF, picture): goes to Kontor with the question, read there by macOS's text recognition and filed with the click on its card
     if (AS_RECEIPT.test(f.name || '') || ['application/pdf', 'image/png', 'image/jpeg', 'image/heic', 'image/gif'].includes(f.type || '')) {
-      if (!r.receipts || !r.transactions) toast(t(r.receipts ? 'ki_beleg_recht_lesen' : 'ki_beleg_recht'), 5000);
+      if (!r.transactions) toast(t('ki_beleg_recht_lesen'), 5000);          // reading it needs the right to read; filing it (on a card) its own right
       else if (f.size > AS_FILE_BYTES) toast(t('ki_beleg_zu_gross', f.name, AS_FILE_BYTES / 1048576), 5000);
       else if ((AS.files || []).length >= AS_FILES_MAX) toast(t('ki_beleg_max', AS_FILES_MAX), 5000);
       else { (AS.files = AS.files || []).push(f); given = true; }
@@ -7535,10 +7542,10 @@ const asRefPre = refs => (refs || []).map(r => `[${r.label}]\n${r.text}\n`).join
 const refSend = r => ({label: r.label, page: r.page, text: r.text, go: r.go || null});          // what goes to Kontor (not what is for the clipboard)
 async function asSend(text) {
   const refs = (AS.refs || []).slice(0, REF_MAX).map(refSend), files = (AS.files || []).slice(0, AS_FILES_MAX);
-  text = (text || '').trim(); if (!text && files.length) text = tn('ki_beleg_frage', files.length); if (!text && refs.length) text = t('ki_ref_frage');
-  if (!text || AS.busy) return;
+  text = (text || '').trim(); if (!text && !files.length && refs.length) text = t('ki_ref_frage');          // a file alone: no question, it is looked at for itself
+  if ((!text && !files.length) || AS.busy) return;
   if (AS.list) { AS.list = false; asHead(); }
-  const hist = AS.msgs.map(x => ({role: x.role, text: x.role === 'user' ? asRefPre(x.refs) + x.text : asText(x)})).filter(x => x.text).slice(-12);
+  const hist = AS.msgs.map(x => ({role: x.role, text: x.role === 'user' ? asRefPre(x.refs) + (x.files || []).map(f => `[${f.name}]\n`).join('') + x.text : asText(x)})).filter(x => x.text).slice(-12);
   const m = {role: 'assistant', parts: [], state: 'run', status: ''};
   AS.msgs.push(Object.assign({role: 'user', text}, refs.length ? {refs} : {}, files.length ? {files: files.map(f => ({name: f.name}))} : {}), m);
   AS.busy = true; AS.refs = []; AS.files = []; asRefsDraw(); asMsgs(true);
@@ -7966,7 +7973,7 @@ async function asOpenChat(id) {
   try {
     const r = await api('/api/assistant/chat?id=' + encodeURIComponent(id));
     if (AS.busy) asStop();
-    Object.assign(AS, {job: null, busy: false, conv: r.id, list: false, hover: null, sel: null, msgs: (r.turns || []).map(m => m.role === 'user' ? Object.assign({role: 'user', text: String(m.text || '')}, Array.isArray(m.refs) && m.refs.length ? {refs: m.refs} : {}) : Object.assign({}, m, {parts: m.parts || []}))});
+    Object.assign(AS, {job: null, busy: false, conv: r.id, list: false, hover: null, sel: null, msgs: (r.turns || []).map(m => m.role === 'user' ? Object.assign({role: 'user', text: String(m.text || '')}, Array.isArray(m.refs) && m.refs.length ? {refs: m.refs} : {}, Array.isArray(m.files) && m.files.length ? {files: m.files} : {}) : Object.assign({}, m, {parts: m.parts || []}))});          // a question with files: their names (a file alone has no text)
     asHead(); asMsgs(true);
   } catch (e) { toast(e.message, 5000); asHist(true); }
 }

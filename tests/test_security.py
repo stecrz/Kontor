@@ -665,7 +665,7 @@ class NothingGoesOut(unittest.TestCase):
              # the program's page (in its User-Agent), the ECB's and GLEIF's pages that results link to
              "web_search.py": {"www.wikidata.org", "www.gesetze-im-internet.de", "api.gleif.org", "data-api.ecb.europa.eu", "api.statistiken.bundesbank.de",
                                "ec.europa.eu", "www.tagesschau.de", "api.gdeltproject.org", "api.tavily.com", "github.com", "data.ecb.europa.eu", "search.gleif.org"}}
-    NAMES_ONLY = {"schemas.openxmlformats.org", "www.apple.com"}      # ... and names of file formats (never opened)
+    NAMES_ONLY = {"schemas.openxmlformats.org", "purl.oclc.org", "www.apple.com"}      # ... and names of file formats (never opened)
     # other programs started by their name (all of macOS or Apple's tools, git for an update of a clone)
     COMMANDS = {"security", "openssl", "swiftc", "codesign", "open", "launchctl", "/bin/launchctl", "/usr/sbin/sysctl", "ps", "pgrep", "tmutil",
                 "osascript", "/usr/bin/osascript", "xcode-select", "git", "/bin/sh",
