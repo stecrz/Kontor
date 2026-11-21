@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.16.12 (2026-11-21 15:09)
+- KI-Assistent: Diktat bis zehn Minuten (vorher knapp drei); live in Stücken, am Ende einmal als Ganzes für ein sauberes Transkript.
+- KI-Assistent: Stille und Rauschen erreichen das Sprachmodell nicht mehr (keine erfundenen Sätze); Pausen am Rand abgeschnitten.
+- KI-Assistent: Diktat kursiv und blasser, solange es läuft; Mikrofon übernimmt, ✕ verwirft (statt Senden).
+- KI-Assistent: „+“ im Fragefeld für Dateien (Text, CSV, Code); bei mehreren Zeilen Text über die ganze Breite, Knöpfe darunter.
+- Behoben: Aufnahme ließ sich manchmal erst mit dem zweiten Klick beenden.
+
 ## 3.16.11 (2026-11-20 20:50)
 - KI-Assistent: Diagramme im Chat aus Kontors eigenen Zahlen (Verlauf, Cashflow, Aufteilung) – Werte beim Darüberfahren, Klick zeigt die Zahl in Bilanz oder Cashflow.
 - KI-Assistent: Verläufe – Unterhaltungen verschlüsselt gespeichert, wieder öffnen und fortsetzen, einzeln oder alle löschen; Einstellung „Verläufe speichern“ (Standard an), nicht in Sicherungen.

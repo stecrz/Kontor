@@ -83,7 +83,7 @@ SPEECH: List[Dict[str, Any]] = [
 ]
 SPEECH_IDS = tuple(c["id"] for c in SPEECH)
 SPEECH_CONTEXT = 8192    # a few minutes of speech and their text
-MAX_AUDIO = 6 * 1024 * 1024          # bytes of one recording (WAV, 16 kHz, mono: about three minutes)
+MAX_AUDIO = 20 * 1024 * 1024         # bytes of one recording (WAV, 16 kHz, mono: ten minutes and a little more)
 HEADROOM_GB = 2          # beside the file: the conversation in memory and the program itself
 
 

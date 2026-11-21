@@ -186,6 +186,23 @@ def events(a, job_id, seconds=30.0, until=None):
     raise AssertionError("no end: %s" % [e["type"] for e in out])
 
 
+def pcm(parts, rate=16000):
+    """A recording as the page sends it (mono, 16 bit): [(kind, seconds, loudness)] -- "quiet" (a little noise), "voice" (a
+    tone that rises and falls like a voice), "hum" (a steady tone)."""
+    import array as _array, math as _math, random as _random, wave as _wave
+    rnd, a = _random.Random(7), _array.array("h")
+    for kind, sec, amp in parts:
+        for i in range(int(sec * rate)):
+            v = rnd.gauss(0, amp) if kind == "quiet" else amp * _math.sin(2 * _math.pi * 220 * i / rate) * ((0.6 + 0.4 * _math.sin(2 * _math.pi * 3 * i / rate)) if kind == "voice" else 1)
+            a.append(int(max(-32768, min(32767, v))))
+    if sys.byteorder == "big":
+        a.byteswap()
+    buf = io.BytesIO()
+    with _wave.open(buf, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate); w.writeframes(a.tobytes())
+    return buf.getvalue()
+
+
 def text_of(evs):
     return "".join(e["text"] for e in evs if e["type"] == "delta")
 
@@ -1349,6 +1366,26 @@ class Tools(_Assist):
         self.assertTrue(started["key_in_env"]); self.assertNotIn(self.a.speech.key, " ".join(started["argv"]))
         with open(os.path.join(rt, "audio.json")) as f:
             self.assertEqual(json.load(f), {"bytes": len(wav), "language": "de", "fields": ["file", "language", "response_format", "temperature"]})
+        # nothing said (silence, a little noise, a steady hum, a click): no text -- the model does not even hear it (it would invent
+        # sentences); something said: only that part, from shortly before to shortly after
+        os.remove(os.path.join(rt, "audio.json"))
+        for parts in ([("quiet", 3, 0)], [("quiet", 3, 40)], [("quiet", 3, 600)], [("hum", 3, 300)], [("quiet", 1, 40), ("voice", 0.06, 20000), ("quiet", 1, 40)]):
+            self.assertEqual(self.a.transcribe(pcm(parts)), {"text": "", "silent": True}, parts)
+            self.assertEqual(self.a.transcribe(pcm(parts), live=True)["text"], "")
+        self.assertFalse(os.path.exists(os.path.join(rt, "audio.json")))
+        for parts in ([("quiet", 1.5, 40), ("voice", 1, 6000), ("quiet", 2, 40)], [("quiet", 1, 300), ("voice", 1, 2500), ("quiet", 1, 300)]):
+            rec = pcm(parts)
+            got = self.a.transcribe(rec)["text"]
+            n = int(re.search(r"(\d+)", got).group(1))
+            self.assertTrue(16000 * 2 * 1.2 < n < 16000 * 2 * 1.9, (n, parts))         # the second of voice, a little before and after
+        self.assertEqual(self.a.transcribe(pcm([("voice", 2, 5000)]))["text"], "Diktat mit %d Bytes." % len(pcm([("voice", 2, 5000)])))      # all voice: all of it
+        # a long dictation: piece by piece, each piece at most 45 s and cut in a pause, the texts one after the other
+        for parts in ([("quiet", 0.5, 40)] + [("voice", 6, 5000), ("quiet", 0.6, 40)] * 15, [("quiet", 0.5, 40), ("voice", 100, 5000)]):
+            got = self.a.transcribe(pcm(parts))["text"]
+            sizes = [int(x) for x in re.findall(r"Diktat mit (\d+) Bytes\.", got)]
+            self.assertTrue(3 <= len(sizes) <= 4 and got.count("Diktat") == len(sizes), got)
+            self.assertTrue(all(x <= 44 + 32000 * A.SPEECH_PART + 32000 for x in sizes), sizes)
+            self.assertGreater(sum(sizes), 32000 * 95)                                   # nothing of what was said left out
         self.assertTrue(self.a.ai.proc.poll() is None and self.a.speech.proc.poll() is None and self.a.ai.proc.pid != self.a.speech.proc.pid)
         self.assertNotEqual((self.a.ai.port, self.a.ai.key), (self.a.speech.port, self.a.speech.key))
         self.assertEqual(text_of(self.ask("noch da?")), "Antwort: noch da?")
@@ -2424,14 +2461,21 @@ class Browser(unittest.TestCase):
                     self.assertLess(min(abs(got - want), 1 - abs(got - want)), 0.08, phase)
                 # the question field: as high as its text, a scroll bar only once there is more than fits
                 fit = "(() => { const t = document.querySelector('#as-in'); return [getComputedStyle(t).overflowY, t.scrollHeight <= t.clientHeight, Math.round(t.getBoundingClientRect().height)]; })()"
-                pg.fill("#as-in", ""); self.assertEqual(pg.evaluate(fit), ["hidden", True, 34])
-                pg.fill("#as-in", "Zeile\n" * 3); ov, fits, h = pg.evaluate(fit); self.assertEqual((ov, fits), ("hidden", True)); self.assertTrue(34 < h < 160, h)
+                pg.fill("#as-in", ""); self.assertEqual(pg.evaluate(fit), ["hidden", True, 30])
+                tall = "document.querySelector('#as-field').classList.contains('tall')"
+                self.assertFalse(pg.evaluate(tall))
+                pg.fill("#as-in", "Zeile\n" * 3); ov, fits, h = pg.evaluate(fit); self.assertEqual((ov, fits), ("hidden", True)); self.assertTrue(30 < h < 160, h)
+                self.assertTrue(pg.evaluate(tall))                                           # several lines: the text across the field, the buttons below it
+                self.assertGreater(pg.evaluate("document.querySelector('#as-mic').getBoundingClientRect().top"), pg.evaluate("document.querySelector('#as-in').getBoundingClientRect().bottom") - 1)
+                pg.fill("#as-in", "kurz"); self.assertFalse(pg.evaluate(tall)); self.assertEqual(pg.evaluate(fit)[2], 30)          # short again: one row
                 pg.fill("#as-in", "Zeile\n" * 20); ov, fits, h = pg.evaluate(fit); self.assertEqual((ov, fits, h), ("auto", False, 160))
                 pg.fill("#as-in", "Vorher")
                 pg.click("#as-mic"); until(pg, "REC.on && document.querySelector('#as-mic.rec .as-rec-t')")
-                # ... while speaking, what was said so far stands in the field, which cannot be typed into meanwhile
+                # ... while speaking, what was said so far stands in the field (in italics, paler), which cannot be typed into meanwhile
                 until(pg, "REC.on && /^Vorher Diktat mit \\d+ Bytes\\.$/.test(document.querySelector('#as-in').value)", 15)
                 self.assertTrue(pg.evaluate("document.querySelector('#as-in').readOnly"))
+                self.assertEqual(pg.evaluate("document.querySelector('#as-ghost .as-live').textContent.trim().slice(0, 10)"), "Diktat mit")
+                self.assertEqual(pg.evaluate("[getComputedStyle(document.querySelector('.as-live')).fontStyle, getComputedStyle(document.querySelector('#as-in')).color]"), ["italic", "rgba(0, 0, 0, 0)"])
                 pg.click("#as-mic"); until(pg, "!REC.on && !REC.busy && /Diktat mit \\d+ Bytes/.test(document.querySelector('#as-in').value)", 20)
                 said = pg.evaluate("document.querySelector('#as-in').value")
                 self.assertTrue(said.startswith("Vorher Diktat mit "), said)
@@ -2449,6 +2493,49 @@ class Browser(unittest.TestCase):
                 self.assertEqual(pg.evaluate("document.querySelector('#as-in').value"), said)
                 self.assertFalse(pg.evaluate("document.querySelector('#as-in').readOnly"))
                 self.assertFalse(pg.evaluate("REC.stream.getTracks().some(t => t.readyState === 'live')"))       # the microphone is let go
+                # ✕ left of the field throws it away too; meanwhile nothing can be sent -- that button goes, so the field keeps its width
+                fw = pg.evaluate("document.querySelector('#as-in').getBoundingClientRect().width")
+                pg.click("#as-mic"); until(pg, "REC.on")
+                vis = "[...document.querySelectorAll('#as-field button')].filter(b => b.getClientRects().length).map(b => b.id)"
+                self.assertEqual(pg.evaluate(vis), ["as-mic", "as-x"])                        # dictating: take it (the microphone) or throw it away (✕); + and sending go
+                self.assertGreaterEqual(pg.evaluate("document.querySelector('#as-in').getBoundingClientRect().width"), fw - 4)
+                pg.click("#as-x"); until(pg, "!REC.on && !REC.busy")
+                self.assertEqual(pg.evaluate("document.querySelector('#as-in').value"), said)
+                self.assertEqual(pg.evaluate(vis), ["as-add", "as-mic", "as-go"])
+                # one click on the running time ends it -- also when the time goes on while the button is held
+                pg.click("#as-mic"); until(pg, "REC.on && !!document.querySelector('.as-rec-t').textContent")
+                mx, my = pg.eval_on_selector("#as-mic", "e => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }")
+                pg.mouse.move(mx, my); pg.mouse.down(); pg.wait_for_timeout(1100); pg.mouse.up()
+                until(pg, "!REC.on"); until(pg, "!REC.busy", 20)
+                pg.fill("#as-in", said)
+                # + puts a file into the question (what the assistant can read: text, CSV, code)
+                with pg.expect_file_chooser() as fc:
+                    pg.click("#as-add")
+                fc.value.set_files(files=[{"name": "werte.csv", "mimeType": "text/csv", "buffer": "Monat;Betrag\nJan;12\n".encode()}])
+                until(pg, "document.querySelector('#as-in').value.includes('werte.csv:\\n```\\nMonat;Betrag')")
+                pg.fill("#as-in", said)
+                # the recording kept as 16 kHz, 16 bit while it comes in (ten minutes: 19 MB) -- from 48 kHz and from 44.1 kHz
+                self.assertEqual(pg.evaluate("""(() => { const out = [];
+                    for (const rate of [48000, 44100]) { Object.assign(REC, {pcm: [], m: 0, rate, sum: 0, cnt: 0, pos: 0, next: rate / 16000});
+                      const d = new Float32Array(rate / 10).fill(0.5); asPcm(d); asPcm(d); out.push(REC.m, REC.pcm[0][0], REC.pcm[1][REC.pcm[1].length - 1]); }
+                    REC.pcm = []; REC.m = 0; return out; })()""")[1:3], [16384, 16384])
+                self.assertEqual([abs(x - 3200) <= 1 for x in pg.evaluate("""(() => { const out = [];
+                    for (const rate of [48000, 44100]) { Object.assign(REC, {pcm: [], m: 0, rate, sum: 0, cnt: 0, pos: 0, next: rate / 16000});
+                      const d = new Float32Array(rate / 10).fill(0.5); asPcm(d); asPcm(d); out.push(REC.m); }
+                    REC.pcm = []; REC.m = 0; return out; })()""")], [True, True])        # (a sample on the edge of a piece comes with the next one)
+                # live, a long dictation goes in pieces: past twenty seconds a piece ends in the quietest moment (here the pause at 20 s)
+                # and its text stays; each request holds only the piece
+                done, seg, text = pg.evaluate("""(async () => {
+                    const k = 16000, mk = (sec, amp) => { const a = new Int16Array(sec * k); for (let i = 0; i < a.length; i++) a[i] = Math.round(amp * Math.sin(i / 8) * (0.6 + 0.4 * Math.sin(i / 2600))); return a; };
+                    Object.assign(REC, {pcm: [mk(20, 6000), mk(1, 0), mk(9, 6000)], m: 30 * k, on: true, ctx: {}});
+                    REC.live = {gen: 99, busy: false, sent: 0, seg: 0, done: [], cur: '', before: '', after: ''};
+                    asLive(); while (REC.live.busy) await new Promise(r => setTimeout(r, 50));
+                    const res = [REC.live.done.length, REC.live.seg, document.querySelector('#as-in').value];
+                    Object.assign(REC, {on: false, ctx: null, pcm: [], m: 0}); REC.live.gen++; return res; })()""")
+                self.assertEqual(done, 1); self.assertTrue(20 * 16000 <= seg <= 21 * 16000, seg)
+                self.assertTrue(re.fullmatch(r"Diktat mit \d+ Bytes\.", text), text)
+                self.assertLess(int(re.search(r"\d+", text).group()), 32000 * 21.5)           # only the first piece was sent
+                pg.fill("#as-in", said)
                 # every way out lets the microphone go: a double click opens it once, Escape works wherever the focus is
                 pg.evaluate("(() => { window.__mics = []; const g = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); "
                             "navigator.mediaDevices.getUserMedia = async c => { const s = await g(c); window.__mics.push(s); return s; }; })()")
@@ -2596,7 +2683,7 @@ class Browser(unittest.TestCase):
                 pg.fill("#as-in", "Angefangen")
                 pg.click(".as-dl[data-id='qwen3-asr-1.7b']"); until(pg, "AS.st.dictation && !!document.querySelector('#assist.open #as-mic svg')", 20)
                 self.assertEqual(pg.input_value("#as-in"), "Angefangen")
-                self.assertEqual(pg.evaluate("[...document.querySelector('#as-form').children].map(e => e.id)"), ["as-in", "as-mic", "as-go"])
+                self.assertEqual(pg.evaluate("[...document.querySelectorAll('#as-form button, #as-form textarea, #as-form input')].map(e => e.id)"), ["as-add", "as-in", "as-mic", "as-go", "as-x", "as-file"])
                 pg.click(".as-del[data-id='qwen3-asr-1.7b']"); until(pg, "!AS.st.dictation && !document.querySelector('#as-mic')")
                 self.assertEqual(app.assistant.ai.models(), {})
                 # switched off again: the button goes, the panel closes

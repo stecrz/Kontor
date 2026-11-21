@@ -508,10 +508,29 @@ body.as-page .as-head { border-bottom:0; padding:0 10px 4px 16px; } body.as-page
 .as-hist-h .as-hi-all { color:var(--neg); } .as-hist-off { padding:0 10px 8px; } .as-hist .as-empty { padding:4px 10px; }
 .as-hb .as-hist-btn.on { color:var(--accent-fg); background:var(--accent-soft); }
 .as-save-row { margin:0; }
-.as-form { display:flex; align-items:flex-end; gap:8px; padding:10px 12px calc(12px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); flex:none; } body.as-page .as-form { border-top:0; }
-.as-form textarea { flex:1; min-height:0; height:34px; max-height:160px; overflow-y:hidden; resize:none; font:inherit; font-size:13.5px; line-height:1.4; padding:6.5px 11px; border-radius:17px; }
-.as-go { flex:none; width:34px; height:34px; padding:0; border-radius:50%; font-size:16px; line-height:1; } .as-go.stop { font-size:11px; }
-.as-mic { flex:none; min-width:34px; height:34px; padding:0 9px; border-radius:17px; display:inline-flex; align-items:center; justify-content:center; line-height:1; }
+.as-form { display:flex; align-items:flex-end; gap:6px; padding:10px 12px calc(12px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); flex:none; } body.as-page .as-form { border-top:0; }
+/* the question: a rounded field with + (a file) at its left and the buttons at its right; more than one line: the text across the
+   whole field, + and the buttons in a row below it; while dictating, a layer over the text shows what is spoken in italics */
+.as-field { flex:1; min-width:0; display:flex; align-items:flex-end; gap:2px; padding:3px; border:1px solid var(--line-2); border-radius:19px; background:var(--head); }
+.as-field:focus-within { outline:3px solid var(--accent-soft); border-color:var(--accent); }
+.as-field.tall { flex-wrap:wrap; } .as-field.tall .as-ta { order:-1; flex:1 0 100%; } .as-field.tall .as-btns { margin-left:auto; }
+.as-ta { position:relative; flex:1; min-width:0; display:flex; }
+.as-form textarea, .as-ghost { font:inherit; font-size:13.5px; line-height:1.4; padding:5.5px 6px 5.5px 3px; }
+.as-form textarea { flex:1; min-width:0; min-height:0; height:30px; max-height:160px; overflow-y:hidden; resize:none; border:0; border-radius:16px; background:transparent; }
+.as-form textarea:focus { outline:none; }
+.as-ghost { display:none; position:absolute; inset:0; overflow:hidden; pointer-events:none; white-space:pre-wrap; overflow-wrap:break-word; color:var(--fg); }
+.as-field.tall textarea, .as-field.tall .as-ghost, .as-field.dict textarea, .as-field.dict .as-ghost { padding-left:9px; }
+.as-field.dict textarea { color:transparent; caret-color:transparent; } .as-field.dict .as-ghost { display:block; }
+.as-field.dict textarea, .as-field.dict .as-ghost { scrollbar-gutter:stable; } .as-field.dict .as-add { display:none; }
+.as-live { color:var(--muted); font-style:italic; }
+.as-btns { flex:none; display:flex; align-items:flex-end; gap:4px; }
+.as-x { flex:none; width:30px; height:30px; padding:0; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; } .as-x.hidden { display:none; }
+.as-go { flex:none; width:30px; height:30px; padding:0; border-radius:50%; font-size:15px; line-height:1; } .as-go.stop { font-size:11px; }
+.as-mic { flex:none; min-width:30px; height:30px; padding:0 8px; border-radius:15px; display:inline-flex; align-items:center; justify-content:center; line-height:1; }
+.as-mic > *, .as-add > *, .as-go > *, .as-x > * { pointer-events:none; }          /* the click lands on the button, whatever is drawn in it */
+.as-add { flex:none; width:30px; height:30px; padding:0; border:0; border-radius:15px; background:none; color:var(--muted); display:inline-flex; align-items:center; justify-content:center; }
+.as-add:hover { color:var(--fg); background:none; filter:none; }
+.as-go.hidden { display:none; }
 .as-mic.rec { background:var(--neg); border-color:var(--neg); color:#fff; animation:asrec 1.4s ease-in-out infinite; } .as-mic .as-rec-t { font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
 .as-mic.busy { opacity:1; } .as-mic .spin { margin:0; } @keyframes asrec { 50% { box-shadow:0 0 0 5px color-mix(in srgb, var(--neg) 28%, transparent); } } @media (prefers-reduced-motion: reduce) { .as-mic.rec { animation:none; } }
 .as-list { border:1px solid var(--line); border-radius:var(--radius); background:var(--head); max-width:820px; box-shadow:var(--shadow); } .as-list + .row, .as-list + .prog-wrap { margin-top:12px; }
@@ -524,7 +543,7 @@ td.as-mark, th.as-mark { outline:0; border-radius:0; animation:none; background-
 .assist.drop { outline:2px dashed var(--accent, #0a84ff); outline-offset:-6px; } .as-item.sub { padding-left:38px; } .as-item.dim b { color:var(--muted); font-weight:500; } .as-item .chk .pill { margin-left:6px; font-size:11px; padding:1px 8px; } .as-item .chk { display:flex; align-items:flex-start; gap:10px; min-width:0; } .as-item .chk input { margin-top:3px; } .as-item span { min-width:0; overflow-wrap:anywhere; }
 .as-act { display:flex; align-items:center; gap:8px; flex:none; } .as-own { display:flex; align-items:center; gap:8px; flex:1; flex-wrap:wrap; } .as-own input { flex:1; min-width:200px; max-width:340px; }
 .as-rights { display:flex; flex-direction:column; gap:7px; font-size:13px; } .as-rights .chk { display:flex; align-items:flex-start; gap:8px; } .as-rights .chk input { margin-top:3px; } .as-run-row { margin:0; }
-@media (max-width: 900px) { #assist-btn { margin-left:auto; } .assist { width:100vw; right:-100vw; } .as-form textarea, .as-form { font-size:16px; } .as-item { flex-wrap:wrap; } }
+@media (max-width: 900px) { #assist-btn { margin-left:auto; } .assist { width:100vw; right:-100vw; } .as-form textarea, .as-form .as-ghost, .as-form { font-size:16px; } .as-item { flex-wrap:wrap; } }
 
 /* Hilfe-Tooltips */
 .hq { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; flex:none; border-radius:50%; background:var(--group); color:var(--muted); font-size:11px; font-weight:700; margin-left:5px; cursor:help; position:relative; vertical-align:middle; border:1px solid var(--line); user-select:none; }

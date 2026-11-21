@@ -20,7 +20,9 @@ at once, or with a reset). The model has no tool for saved conversations. The lo
 """
 from __future__ import annotations
 
+import array
 import ast
+import io
 import json
 import logging
 import math
@@ -28,8 +30,10 @@ import operator
 import os
 import re
 import secrets
+import sys
 import threading
 import time
+import wave
 from datetime import date, datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -374,19 +378,27 @@ class Assistant:
         if len(wav) > MAX_AUDIO:
             raise ValueError(tr("s_ki_aufnahme_zu_lang"))
         t0 = time.time()
+        parts = _speech(bytes(wav))
+        if not parts:                                    # nothing but silence or a steady noise: a speech model would invent sentences
+            log.debug("Assistant: dictation without speech (%d kB of audio)", len(wav) // 1000)
+            return {"text": "", "silent": True}
+        texts = []
         with self.speech_lock:
             try:
                 self.speech.ensure(mid, SPEECH_CONTEXT, st["sandbox"])
                 self._watch()
-                text = self.speech.transcribe(bytes(wav), i18n.lang())
+                for part in parts:                       # a long dictation piece by piece (each cut in a pause)
+                    texts.append(self.speech.transcribe(part, i18n.lang()))
             except ModelError as e:
                 raise ValueError(str(e))
             except Cancelled:
                 raise ValueError(tr("s_ki_laeuft_nicht"))
         # some speech models write the language and a mark in front of the text
-        text = re.sub(r"</?asr_text>", "", re.sub(r"^\s*language\s+[A-Za-z]+\s*(?=<asr_text>)", "", text)).strip()
-        (log.debug if live else log.info)("Assistant: dictation written down%s (%d kB of audio, %.1f s)", " so far" if live else "", len(wav) // 1000, time.time() - t0)
-        return {"text": text[:20000]}
+        clean = lambda x: re.sub(r"</?asr_text>", "", re.sub(r"^\s*language\s+[A-Za-z]+\s*(?=<asr_text>)", "", x)).strip()
+        text = " ".join(c for c in (clean(x) for x in texts) if c)
+        (log.debug if live else log.info)("Assistant: dictation written down%s (%d kB of audio, %d part(s), %.1f s)", " so far" if live else "", len(wav) // 1000,
+                                          len(parts), time.time() - t0)
+        return {"text": text[:60000]}
 
     def forget(self) -> None:
         """Everything of the assistant that lives in memory ends (Kontor is reset): model, conversation, entries to take back."""
@@ -1918,6 +1930,89 @@ class Assistant:
         """What the page shows while a tool runs: its name in the user's language and what it is about (names the user gave)."""
         about = next((str(args[k])[:40] for k in ("account", "row", "text", "query", "page", "area") if isinstance(args.get(k), str) and args.get(k)), "")
         return tr("ki_tool_%s" % tool["name"]) + ((" · " + about) if about else "")
+
+
+SPEECH_PART = 45.0                                 # seconds of one piece the speech model writes down at a time (a long dictation: several)
+
+
+def _speech(wav: bytes, longest: float = SPEECH_PART) -> List[bytes]:
+    """The parts of a recording in which something is heard, each from shortly before its first sound to shortly after its
+    last -- none when there is nothing (silence, a steady hum: a speech model then invents sentences of its own). A long
+    recording is cut into pieces of at most `longest` seconds, each in a pause (the longest quiet stretch between 2/3 of
+    that and all of it; without a pause at the quietest moment), so that no sentence is cut and each piece is written
+    down with all of its own words around it. Sound: 30 ms pieces clearly louder than the quiet of this recording (10 dB
+    above its quietest tenth, at least -50 dBFS; -26 dBFS is always loud enough), in runs of at least 90 ms (a click is no
+    word), together at least a quarter of a second. A recording that is not 16-bit PCM goes on as it is (the model decides)."""
+    try:
+        with wave.open(io.BytesIO(wav)) as w:
+            ch, width, rate = w.getnchannels(), w.getsampwidth(), w.getframerate()
+            raw = w.readframes(w.getnframes())
+    except (wave.Error, EOFError, ValueError):
+        return [wav]
+    if width != 2 or ch < 1 or not 8000 <= rate <= 96000:
+        return [wav]
+    a = array.array("h")
+    a.frombytes(raw[:len(raw) - len(raw) % 2])
+    if sys.byteorder == "big":
+        a.byteswap()
+    if ch > 1:
+        a = a[::ch]                                      # the first channel
+    flen, step = int(rate * 0.03), max(1, rate // 8000)  # (the loudness from every n-th sample: enough for a voice, and quick)
+    db = []
+    for i in range(0, len(a) - flen + 1, flen):
+        seg = a[i:i + flen:step]
+        db.append(10 * math.log10(sum(map(operator.mul, seg, seg)) / len(seg) / 32768.0 ** 2 + 1e-12))
+    if not db:
+        return []
+    quiet = sorted(db)[len(db) // 10]
+    loud = [d > min(max(quiet + 10, -50.0), -26.0) for d in db] + [False]
+    keep, run = [False] * len(db), 0
+    for i, v in enumerate(loud):
+        if v:
+            run += 1
+            continue
+        if run >= 3:
+            keep[i - run:i] = [True] * run
+        run = 0
+    if sum(keep) < 8:
+        return []
+    most = max(10, int(longest / 0.03))
+    first, last = keep.index(True), len(keep) - 1 - keep[::-1].index(True)
+    cuts, cur, end = [], max(0, first - 8), min(len(db), last + 12)
+    while end - cur > most:                              # a long dictation: cut in the longest pause near the end of each piece
+        lo, hi = cur + most * 2 // 3, cur + most
+        best, bl, i = None, 0, lo
+        while i < hi:
+            if keep[i]:
+                i += 1
+                continue
+            j = i
+            while j < hi and not keep[j]:
+                j += 1
+            if j - i > bl:
+                best, bl = (i + j) // 2, j - i
+            i = j
+        cut = best if best is not None else min(range(lo, hi), key=lambda k: db[k])
+        cuts.append((cur, cut))
+        cur = cut
+    cuts.append((cur, end))
+    out = []
+    for f0, f1 in cuts:
+        k = [i for i in range(f0, f1) if keep[i]]
+        if len(k) < 8:                                   # a piece with nothing said in it
+            continue
+        hi = len(a) if k[-1] + 12 >= len(db) else (k[-1] + 12) * flen        # a quarter of a second before, a third after (at the end: all)
+        part = a[max(f0, k[0] - 8) * flen:min(hi, len(a) if f1 >= len(db) else f1 * flen)]
+        if sys.byteorder == "big":
+            part.byteswap()
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(rate)
+            w.writeframes(part.tobytes())
+        out.append(buf.getvalue())
+    return out
 
 
 def _new_conv(cid: str = "", messages: Optional[list] = None, turns: Optional[list] = None, **more) -> Dict[str, Any]:

@@ -63,7 +63,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(HERE, "web")
 MAX_BODY = 2 * 1024 * 1024
 MAX_UPLOAD = 90 * 1024 * 1024      # Base64 eines 60-MB-Belegs
-MAX_SPEECH = 9 * 1024 * 1024       # a dictated recording (base64 of at most 6 MB of WAV)
+MAX_SPEECH = 28 * 1024 * 1024      # a dictated recording (base64 of at most 20 MB of WAV: ten minutes)
 PLAN_PARAMS = ("horizon_months", "default_method", "inflation_percent_pa", "income_increase_percent_pa",
                "expense_increase_percent_pa", "return_percent_pa", "fi_real_return_percent")
 
