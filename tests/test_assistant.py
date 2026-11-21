@@ -3278,6 +3278,12 @@ class Browser(unittest.TestCase):
                 until(pg, "!!document.querySelector('#as-mic-perm.as-item')")
                 perm = pg.inner_text("#as-mic-perm")
                 self.assertTrue(perm.startswith("Mikrofon") and ("Dauerhaft erlaubt" in perm or "Erlauben" in perm or "erlauben" in perm), perm)
+                # the web app in the Dock asks again after a start and a pause, whatever is set: it never says "for good" there
+                note = pg.evaluate("['granted', 'prompt', 'denied'].map(s => asMicNote(s, 'app', false))")
+                self.assertNotIn("Dauerhaft", note[0]["text"]); self.assertIn("Dock-App fragt", note[0]["text"]); self.assertIn("Safari", note[0]["text"])
+                self.assertTrue(note[1]["ask"]); self.assertEqual(note[2]["pill"], "warn")
+                self.assertIn("Dauerhaft", pg.evaluate("asMicNote('granted', 'safari', false).text"))
+                self.assertNotIn("Dauerhaft", pg.evaluate("asMicNote('granted', 'safari', true).text"))
                 pg.click(".as-del"); until(pg, "!AS.st.dictation")
                 self.assertEqual(app.assistant.ai.models(), {})
                 # the microphone follows the speech model in the panel as it stands: gone without it, there again once it is

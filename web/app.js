@@ -6966,20 +6966,26 @@ function asCancel() {
   if (REC.on) asMicStop(false);
   else if (REC.busy) { REC.drop = true; asDictPut(''); }          // the text still on its way: not taken
 }
-// The microphone may be used without asking each time only as the user sets it -- a page cannot give itself that right (Safari:
-// per website, the web app in the Dock: in its own settings). Under Einstellungen -> KI-Assistent, with the speech model: whether
-// it is allowed for good, else where to allow it, and a button that asks once (so that Kontor appears in Safari's list).
+// The microphone may be used without asking each time only as the user sets it -- a page cannot give itself that right. Safari:
+// "Allow" per website lasts. The web app in the Dock: macOS keeps only the app's own permission; the page's grant lives while
+// the app runs and ends 10 minutes after the last recording (WebKit), so it asks again -- nothing there makes that last.
+// Under Einstellungen -> KI-Assistent, with the speech model: what holds, where to allow it, a button that asks once.
+function asMicNote(state, where, asked) {
+  const how = {ios: t('ki_mikro_weg_ios'), app: t('ki_mikro_weg_app'), safari: t('ki_mikro_weg_safari', location.hostname), browser: t('ki_mikro_weg_browser')}[where];
+  if (state === 'denied') return {pill: 'warn', label: t('ki_mikro_gesperrt'), text: how};
+  if (state === 'granted' && where === 'app') return {pill: 'ok', label: t('ki_mikro_erlaubt'), text: t('ki_mikro_app_fragt', location.hostname)};
+  if (state === 'granted' && !asked) return {pill: 'ok', label: t('ki_mikro_erlaubt'), text: t('ki_mikro_dauerhaft')};    // before anything asked on this page: for good
+  return {ask: state !== 'granted', text: (state === 'granted' ? t('ki_mikro_sitzung') + ' ' : '') + how};
+}
 async function asMicPerm() {
   const box = $('#as-mic-perm'); if (!box) return;
   let st = null;
   try { st = await navigator.permissions.query({name: 'microphone'}); } catch (e) {}
-  const state = st ? st.state : '', ua = navigator.userAgent, safari = /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|Firefox/.test(ua);
-  const how = IS_IOS ? t('ki_mikro_weg_ios') : APP_MODE ? t('ki_mikro_weg_app') : safari ? t('ki_mikro_weg_safari', location.hostname) : t('ki_mikro_weg_browser');
-  const good = state === 'granted' && !REC.asked;          // allowed before anything asked on this page: for good
+  const ua = navigator.userAgent, safari = /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|Firefox/.test(ua);
+  const n = asMicNote(st ? st.state : '', IS_IOS ? 'ios' : APP_MODE ? 'app' : safari ? 'safari' : 'browser', REC.asked);
   box.className = 'as-item';
-  box.innerHTML = `<span><b>${t('ki_mikrofon')}</b><br><span class="muted small">${good ? t('ki_mikro_dauerhaft') : esc((state === 'granted' ? t('ki_mikro_sitzung') + ' ' : '') + how)}</span></span>
-    <span class="as-act">${good ? `<span class="pill ok">${t('ki_mikro_erlaubt')}</span>` : state === 'denied' ? `<span class="pill warn">${t('ki_mikro_gesperrt')}</span>`
-      : state === 'granted' ? '' : `<button class="small secondary" id="as-mic-ask">${t('ki_mikro_freigeben')}</button>`}</span>`;
+  box.innerHTML = `<span><b>${t('ki_mikrofon')}</b><br><span class="muted small">${esc(n.text)}</span></span>
+    <span class="as-act">${n.pill ? `<span class="pill ${n.pill}">${n.label}</span>` : n.ask ? `<button class="small secondary" id="as-mic-ask">${t('ki_mikro_freigeben')}</button>` : ''}</span>`;
   const b = $('#as-mic-ask', box);
   if (b) b.addEventListener('click', async () => { REC.asked = true; try { const m = await navigator.mediaDevices.getUserMedia({audio: true}); m.getTracks().forEach(x => x.stop()); } catch (e) {} asMicPerm(); });
   if (st && !st.onchange) st.onchange = () => asMicPerm();

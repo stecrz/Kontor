@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.31 (2026-11-21 20:12)
+- Einstellungen → KI-Assistent, Mikrofon: in der Dock-App kein falsches „Dauerhaft erlaubt“ mehr – sagt, wann sie wieder fragt, und wie es in Safari ohne Nachfrage geht
+
 ## 3.16.30 (2026-11-21 20:03)
 - Behoben: KI-Modell fertig geladen – Einstellungen zeigen es sofort, ohne Neuladen
 - KI-Assistent: „Dateien zeigen“ erst nach Eingabe eines Repositorys aktiv, mit Hinweis
