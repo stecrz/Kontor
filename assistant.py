@@ -44,16 +44,29 @@ import i18n
 from i18n import tr
 from decimal import ROUND_HALF_UP, Decimal
 from model import norm_cat
-from llm_local import CATALOG, SANDBOXES, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO
+from llm_local import CATALOG, SANDBOXES, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, physical_ram
 
 log = logging.getLogger("kontor.assistant")
 
 FOLDER = "assistant"                               # in Kontor's data folder: llama.cpp and the model files
 EFFORTS = ("fast", "balanced", "thorough")
 THINK_BUDGET = 2000            # "balanced": at most this many tokens of thinking per answer (all steps together), then it answers
-CONTEXTS = (16384, 32768, 65536)                   # tokens the model keeps in view (the tools' descriptions alone take about 4,500)
+CONTEXTS = (16384, 32768, 65536, 131072)           # tokens the model keeps in view (the tools' descriptions alone take about 4,500)
+
+
+def auto_context(ram: int) -> int:
+    """The context when the user has not chosen one: as much as runs steadily beside the model on this Mac -- more context
+    means more figures and transactions read per question and a longer conversation in view, at little memory (the models
+    offered keep most of it compact)."""
+    gb = ram / 2 ** 30 if ram else 0
+    return 65536 if gb >= 47 else 32768 if gb >= 23 else 16384
+
+
 RIGHTS = ("figures", "transactions", "help", "page", "navigate", "enter_values", "categorize", "remote")
-DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "effort": "balanced", "context": 16384, "idle_minutes": 10, "sandbox": "strict", "save_chats": True,
+READ_RIGHTS = ("figures", "transactions", "page")    # one switch in the settings: reading your data
+RIGHTS_VERSION = 2       # 3.16.28: changes on for everyone (each one only after your click), the help always readable
+DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "speech": "", "effort": "balanced", "context": auto_context(physical_ram()), "context_auto": True,
+                            "idle_minutes": 10, "sandbox": "strict", "save_chats": True,
                             "rights": {"figures": True, "transactions": True, "help": True, "page": True, "navigate": True,
                                        "enter_values": True, "categorize": True, "remote": False}}       # changes: each one only with your click on the card
 PAGES = ("overview", "balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "categories", "accounts", "help")
@@ -97,7 +110,9 @@ def settings(config: dict) -> dict:
     out = json.loads(json.dumps(DEFAULTS))
     out["enabled"] = raw.get("enabled") is True
     out["model"] = raw["model"][:200] if isinstance(raw.get("model"), str) else ""
+    out["speech"] = raw["speech"] if raw.get("speech") in SPEECH_IDS else ""          # "": the most accurate one on this Mac
     out["effort"] = raw["effort"] if raw.get("effort") in EFFORTS else DEFAULTS["effort"]
+    out["context_auto"] = raw.get("context") not in CONTEXTS                           # not chosen: by the memory of this Mac
     out["context"] = raw["context"] if raw.get("context") in CONTEXTS else DEFAULTS["context"]
     idle = raw.get("idle_minutes")
     out["idle_minutes"] = max(0, min(240, idle)) if isinstance(idle, int) and not isinstance(idle, bool) else DEFAULTS["idle_minutes"]
@@ -107,6 +122,17 @@ def settings(config: dict) -> dict:
     for k in RIGHTS:
         if isinstance(rights.get(k), bool):
             out["rights"][k] = rights[k]
+    out["rights"]["help"] = True                         # Kontor's own help: nothing of yours, always readable
+    if raw.get("rights_version") != RIGHTS_VERSION:      # saved before: changes on (each one waits for your click anyway)
+        out["rights"].update(enter_values=True, categorize=True)
+    return out
+
+
+def stored(st: dict) -> dict:
+    """The settings as they go into the configuration: a context not chosen stays "automatic"."""
+    out = {k: v for k, v in st.items() if k != "context_auto"}
+    out["context"] = 0 if st.get("context_auto") else st["context"]
+    out["rights_version"] = RIGHTS_VERSION
     return out
 
 
@@ -283,7 +309,7 @@ class Assistant:
             return
         if not st["model"] or st["model"] not in self.ai.models():
             cfg = json.loads(json.dumps(self.app.config))
-            cfg["assistant"] = dict(st, model=model_id)
+            cfg["assistant"] = stored(dict(st, model=model_id))
             self.app.save_config(cfg)
 
     # -- settings and state ------------------------------------------------------------------------------------------------
@@ -340,29 +366,37 @@ class Assistant:
                "dictation": bool(ai["runtime"]["installed"] and any(m["installed"] for m in ai["speech"]))}
         if local:                                       # what is installed, sizes, downloads: only on the Mac
             out.update({k: ai[k] for k in ("platform", "runtime", "models", "speech", "recommended", "checked", "check_error", "disk_free")}, load=ai["job"],
-                       speech_state=self.speech.state if self.speech.proc is not None or self.speech.state == "error" else "stopped", chats=len(self._chat_files()))
+                       speech_state=self.speech.state if self.speech.proc is not None or self.speech.state == "error" else "stopped", chats=len(self._chat_files()),
+                       speech_in_use=self.speech_model(), context_auto_value=DEFAULTS["context"])
         return out
 
     def set(self, body: dict) -> dict:
-        """Changes settings (only from the Mac, see service.py): any of enabled, model, effort, context, idle_minutes, sandbox,
-        save_chats, rights{...}."""
+        """Changes settings (only from the Mac, see service.py): any of enabled, model, speech, effort, context (0: automatic),
+        idle_minutes, sandbox, save_chats, rights{...} ("read": figures, transactions and the page together)."""
         cur = self.settings()
-        new = json.loads(json.dumps(cur))
-        for k in ("enabled", "model", "effort", "context", "idle_minutes", "sandbox", "save_chats"):
+        new = stored(cur)
+        for k in ("enabled", "model", "speech", "effort", "context", "idle_minutes", "sandbox", "save_chats"):
             if k in body:
                 new[k] = body[k]
         if isinstance(body.get("rights"), dict):
-            new["rights"].update({k: v for k, v in body["rights"].items() if k in RIGHTS and isinstance(v, bool)})
+            r = dict(body["rights"])
+            if isinstance(r.get("read"), bool):
+                r.update({k: r["read"] for k in READ_RIGHTS})
+            new["rights"].update({k: v for k, v in r.items() if k in RIGHTS and isinstance(v, bool)})
         new = settings({"assistant": new})
         if new["model"] and (new["model"] not in self.ai.models() or new["model"] in SPEECH_IDS):
             raise ValueError(tr("s_ki_modell_fehlt"))
+        if new["speech"] and new["speech"] not in self.ai.models():
+            raise ValueError(tr("s_ki_modell_fehlt"))
         cfg = json.loads(json.dumps(self.app.config))
-        cfg["assistant"] = new
+        cfg["assistant"] = stored(new)
         self.app.save_config(cfg)
         changed = sorted(k for k in new if new[k] != cur[k])
         log.info("Assistant: settings changed (%s)", ", ".join(changed) or "nothing")
         if not new["enabled"] or any(k in changed for k in ("model", "context", "sandbox")):
             self.stop_all()                              # runs anew with the next question
+        elif "speech" in changed:
+            self.speech.stop()                           # the other speech model with the next dictation
         return self.settings()
 
     def stop_all(self) -> None:
@@ -373,9 +407,9 @@ class Assistant:
 
     # -- dictating ---------------------------------------------------------------------------------------------------------
     def speech_model(self) -> str:
-        """The speech model in use: the first of the list that is on this Mac ("" if none)."""
-        have = self.ai.models()
-        return next((i for i in SPEECH_IDS if i in have), "")
+        """The speech model in use: the one chosen, else the most accurate one on this Mac ("" if none)."""
+        have, chosen = self.ai.models(), self.settings()["speech"]
+        return chosen if chosen in have else next((i for i in SPEECH_IDS if i in have), "")
 
     def transcribe(self, wav: Any, live: bool = False) -> dict:
         """What was said in a recording, as text for the question field. The recording goes to the speech model on this Mac
@@ -1055,7 +1089,7 @@ class Assistant:
                 k["bookings"] += 1
                 k["sum"] = round(k["sum"] + float(m.get("amount") or 0), 2)
             lists = {"waiting_for_approval": len(waiting), "booked_by_kind": kinds,
-                     "single_bookings": "not readable: the user has not allowed you to read transactions (%s)" % tr("ki_r_transactions")}
+                     "single_bookings": "not readable: the user has not allowed you to read transactions (%s)" % tr("ki_r_read")}
         return {**lists, "booked_in_total": len(made), "held_back_by_the_user": got.get("held_back", 0),
                 "last_syncs": [{"at": r.get("time"), "trial_run": bool(r.get("dry_run")), "booked": r.get("written"), "proposed": r.get("proposals"), "error": r.get("error") or None}
                                for r in got.get("runs") or []],
@@ -2547,7 +2581,7 @@ TOOLS: List[dict] = [
           {"text": {"type": "string"}, "area": {"type": "string"}, "account": {"type": "string"}, "year": {"type": "string"}, "from": {"type": "string", "description": "YYYY-MM-DD"},
            "to": {"type": "string", "description": "YYYY-MM-DD"}, "direction": {"type": "string", "enum": ["in", "out"]}, "uncategorized": {"type": "boolean"},
            "category": {"type": "string", "description": "Category name or part of it"}, "receipt": {"type": "string", "enum": ["without"]}}),
-    _tool("show_chart", "figures", "show", "Draws a chart in the chat from Kontor's own figures -- for a development over time, a comparison or what something is "
+    _tool("show_chart", "navigate", "show", "Draws a chart in the chat from Kontor's own figures -- for a development over time, a comparison or what something is "
           "made of. You choose only what to show; Kontor takes the figures and draws them (never draw charts as text or code). "
           "what: balance = month-end values (items: net_worth, assets, liabilities or names of positions/accounts; default net worth); "
           "cashflow = the cash flow by its lines (items: income, expenses, surplus, investing, financing, interest, value_changes, bank_balance_change, "
@@ -2561,7 +2595,7 @@ TOOLS: List[dict] = [
            "with_plan": {"type": "boolean", "description": "Include planned (future) months"},
            "section": {"type": "string", "enum": ["expenses", "income", "assets"], "description": "For breakdown (default expenses)"},
            "by": {"type": "string", "enum": ["rows", "categories", "accounts"], "description": "For breakdown: rows (positions), categories (income/expenses), accounts (assets)"}},
-          ["what"]),
+          ["what"], also=("figures",)),
     _tool("assign_categories", "categorize", "enter", "Proposes categories for bank transactions without one: per group of get_uncategorized one existing "
           "MoneyMoney category (exact path, e.g. 'Haushalt / Lebensmittel'). The user approves on the card; then Kontor writes them into MoneyMoney.",
           {"groups": {"type": "array", "items": {"type": "object", "properties": {"group": {"type": "string", "description": "group id from get_uncategorized"},

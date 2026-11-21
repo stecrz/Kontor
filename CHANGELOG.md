@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.16.30 (2026-11-21 20:03)
+- Behoben: KI-Modell fertig geladen – Einstellungen zeigen es sofort, ohne Neuladen
+- KI-Assistent: „Dateien zeigen“ erst nach Eingabe eines Repositorys aktiv, mit Hinweis
+- Diktieren: Spracherkennungsmodell wählbar, wenn mehrere geladen sind (sonst das genaueste)
+- KI-Assistent: Kontext „Automatisch“ nach Arbeitsspeicher (ab 48 GB 64 Tsd., ab 24 GB 32 Tsd. Token), zur Wahl bis 128 Tsd.
+- KI-Assistent: Rechte in Gruppen – Lesen (ein Schalter, Hilfe immer), Zeigen, Ändern, Von wo
+- KI-Assistent: Ändern (Werte eintragen, Kategorien) an – jede Änderung erst nach deinem Klick
+
 ## 3.16.29 (2026-11-21 19:46)
 - Sicherheit: „Sicherung wiederherstellen“ übernimmt Update-Quelle, unerlaubte Adressen und fremde Zertifikate nicht mehr aus der Datei
 - Sicherheit: eine Sicherung schaltet „Buchen ohne Rückfrage“ und „Verweis in MoneyMoney“ nur aus, nie ein

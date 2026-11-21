@@ -567,7 +567,7 @@ td.as-mark, th.as-mark { outline:0; border-radius:0; animation:none; background-
 @keyframes asmark { 50% { outline-offset:6px; } } @media (prefers-reduced-motion: reduce) { .as-mark { animation:none; } }
 .assist.drop { outline:2px dashed var(--accent, #0a84ff); outline-offset:-6px; } .as-item.sub { padding-left:38px; } .as-item.dim b { color:var(--muted); font-weight:500; } .as-item .chk .pill { margin-left:6px; font-size:11px; padding:1px 8px; } .as-item .chk { display:flex; align-items:flex-start; gap:10px; min-width:0; } .as-item .chk input { margin-top:3px; } .as-item span { min-width:0; overflow-wrap:anywhere; }
 .as-act { display:flex; align-items:center; gap:8px; flex:none; } .as-own { display:flex; align-items:center; gap:8px; flex:1; flex-wrap:wrap; } .as-own input { flex:1; min-width:200px; max-width:340px; }
-.as-rights { display:flex; flex-direction:column; gap:7px; font-size:13px; } .as-rights .chk { display:flex; align-items:flex-start; gap:8px; } .as-rights .chk input { margin-top:3px; } .as-run-row { margin:0; }
+.as-rights { display:flex; flex-direction:column; gap:14px; font-size:13px; } .as-rg { display:flex; flex-direction:column; gap:6px; } .as-rg-h { font-weight:600; color:var(--muted); font-size:12px; } .as-rights .chk { display:flex; align-items:flex-start; gap:8px; } .as-rights .chk input { margin-top:3px; } .as-run-row { margin:0; }
 @media (max-width: 900px) { #assist-btn { margin-left:auto; } .assist { width:100vw; right:-100vw; } .as-form textarea, .as-form .as-ghost, .as-form { font-size:16px; } .as-item { flex-wrap:wrap; } }
 
 /* Hilfe-Tooltips */

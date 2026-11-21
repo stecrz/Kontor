@@ -7640,10 +7640,11 @@ async function vEinstellungenAssistent() {
   <h2>${t('ki_modelle')}</h2>
   <div class="as-list">${models.map(mrow).join('')}
     <div class="as-item"><span class="as-own"><b>${t('ki_eigenes_modell')}</b>${hq('ki_eigenes')}<input type="text" id="as-repo" placeholder="unsloth/Qwen3.6-35B-A3B-GGUF" autocomplete="off" spellcheck="false"></span>
-      <span class="as-act"><button class="small secondary" id="as-files">${t('ki_dateien_zeigen')}</button></span></div><div id="as-filelist"></div></div>
+      <span class="as-act"><button class="small secondary" id="as-files" title="${esc(t('ki_dateien_zeigen_tip'))}" disabled>${t('ki_dateien_zeigen')}</button></span></div><div id="as-filelist"></div></div>
   ${prog('model')}${a.load && a.load.kind === 'model' ? err : ''}
   <h2>${t('ki_diktat')}${hq('ki_diktat')}</h2>
-  <div class="as-list">${(a.speech || []).map(m => `<div class="as-item"><span><b>${esc(m.name)}</b> <span class="muted">${t(`ki_note_${m.note}`)}</span><br><span class="muted small">${esc(m.installed ? m.file : m.repo)} · ${m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb)}</span></span>
+  <div class="as-list">${(a.speech || []).map(m => `<div class="as-item${m.id === a.speech_in_use ? ' on' : ''}"><label class="chk"><input type="radio" name="as-speech" value="${esc(m.id)}" ${m.id === a.speech_in_use ? 'checked' : ''} ${m.installed ? '' : 'disabled'}>
+      <span><b>${esc(m.name)}</b> <span class="muted">${t(`ki_note_${m.note}`)}</span><br><span class="muted small">${esc(m.installed ? m.file : m.repo)} · ${m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb)}</span></span></label>
     <span class="as-act">${m.newer ? `<span class="pill info">${t('ki_neuere_datei')}</span>` : m.installed ? `<span class="pill ok">${t('ki_geladen')}</span>` : ''}
       ${!m.installed || m.newer ? `<button class="small secondary as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="" ${busy}>${t(m.installed ? 'ki_aktualisieren' : 'ki_laden')}</button>` : ''}
       ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`).join('')}
@@ -7657,14 +7658,15 @@ async function vEinstellungenAssistent() {
       ${state === 'ready' || state === 'starting' ? `<button class="small secondary" id="as-stop">${t('ki_stoppen')}</button>` : `<button class="small secondary" id="as-start" ${st.enabled && a.ready ? '' : 'disabled'}>${t('ki_starten')}</button>`}</div>
     ${state === 'error' && sv.error ? `<div class="full banner err small">${esc(sv.error)}</div>` : ''}
     <label>${t('ki_denken')}${hq('ki_denken')}</label><label class="chk"><select id="as-effort">${['fast', 'balanced', 'thorough'].map(k => opt(k, asEffortLabel(k, sv.tps), st.effort)).join('')}</select></label>
-    <label>${t('ki_kontext')}${hq('ki_kontext')}</label><label class="chk"><select id="as-context">${[16384, 32768, 65536].map(k => opt(k, t('ki_kontext_n', k / 1024), st.context)).join('')}</select></label>
+    <label>${t('ki_kontext')}${hq('ki_kontext')}</label><label class="chk"><select id="as-context">${opt(0, t('ki_kontext_auto', a.context_auto_value / 1024), st.context_auto ? 0 : st.context)}${[16384, 32768, 65536, 131072].map(k => opt(k, t('ki_kontext_n', k / 1024), st.context_auto ? 0 : st.context)).join('')}</select></label>
     <label>${t('ki_leerlauf')}${hq('ki_leerlauf')}</label><label class="chk"><select id="as-idle">${[5, 10, 30, 60, 0].map(k => opt(k, k ? t('ki_leerlauf_n', k) : t('ki_leerlauf_nie'), st.idle_minutes)).join('')}</select></label>
     <label for="as-save">${t('ki_speichern')}${hq('ki_speichern')}</label><div class="row tight as-save-row"><label class="chk"><input type="checkbox" id="as-save" ${st.save_chats !== false ? 'checked' : ''} aria-label="${esc(t('ki_speichern'))}"></label>
       <button class="small secondary" id="as-chats-del" ${a.chats ? '' : 'disabled'}>${t('ki_verlaeufe_alle_loeschen')}</button></div>
     ${pf.can_seal ? `<label>${t('ki_abschirmung')}${hq('ki_abschirmung')}</label><label class="chk"><select id="as-sandbox">${['strict', 'basic', 'off'].map(k => opt(k, t(`ki_sb_${k}`), st.sandbox)).join('')}</select></label>` : ''}
   </div>
   <h2>${t('ki_rechte')}</h2>
-  <div class="as-rights">${['figures', 'transactions', 'help', 'page', 'navigate', 'enter_values', 'categorize', 'remote'].map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${r[k] ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}${k === 'enter_values' || k === 'categorize' ? hq('ki_eintragen') : ''}</span></label>`).join('')}</div>
+  <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize']], ['ki_rg_zugang', ['remote']]].map(([g, ks]) =>
+    `<div class="as-rg"><div class="as-rg-h">${t(g)}${g === 'ki_rg_aendern' ? hq('ki_eintragen') : ''}</div>${ks.map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${(k === 'read' ? r.figures && r.transactions && r.page : r[k]) ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}</span></label>`).join('')}</div>`).join('')}</div>
   <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>
   <details class="as-log" id="as-log"><summary>${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details>`;
 }
@@ -7711,6 +7713,7 @@ function bindAssistent(main) {
   const on = (sel, ev, fn) => $$(sel, main).forEach(el => el.addEventListener(ev, e => fn(el, e)));
   on('#as-enabled', 'change', el => set({enabled: el.checked}));
   on('input[name="as-model"]', 'change', el => set({model: el.value}));
+  on('input[name="as-speech"]', 'change', el => set({speech: el.value}));
   on('#as-effort', 'change', el => set({effort: el.value}));
   on('#as-context', 'change', el => set({context: +el.value}));
   on('#as-idle', 'change', el => set({idle_minutes: +el.value}));
@@ -7740,18 +7743,20 @@ function bindAssistent(main) {
   };
   asMicPerm();
   on('#as-files', 'click', files); on('#as-repo', 'keydown', (el, e) => { if (e.key === 'Enter') { e.preventDefault(); files(); } });
+  on('#as-repo', 'input', el => { $('#as-files', main).disabled = !el.value.trim(); });
   // while something is loading or the model starts: the progress in place, the page anew when it is over
   clearTimeout(AS.setT);
   const a = AS.st || {}, moving = () => { const s = AS.st || {}; return (s.load && s.load.state === 'running') || (s.server || {}).state === 'starting'; };
+  // what the page shows counts, not the last status: the watcher at the bottom left may have fetched the end already
+  let shown = moving();
   const tick = async () => {
     if (S.tab !== 'settings' || S.sub !== 'assistant') return;
-    const was = moving(), kind = (AS.st.load || {}).kind, mid = (AS.st.load || {}).id;
     try { AS.st = await api('/api/assistant/status'); } catch (e) { AS.setT = setTimeout(tick, 2000); return; }
     statusMini(); asWatch();
     const l = AS.st.load, p = $('#as-prog', main);
+    const was = shown; shown = moving();
     if (was && !moving()) {
-      if (kind === 'model' && l && l.state === 'done' && !AS.st.settings.model) { await set({model: mid}); return; }      // the first model: chosen
-      asChrome(); await route(); return;
+      asChrome(); await route(); return;              // the first model is chosen by the service itself
     }
     if (l && l.state === 'running' && p) { $('.prog i', p).style.width = (l.total ? Math.round(100 * l.done / l.total) : 0) + '%'; $('.prog-l', p).textContent = asLoadText(l); }
     const sv = AS.st.server || {}, u = $('#as-use', main);
