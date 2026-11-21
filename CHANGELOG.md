@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.19 (2026-11-21 17:20)
+- KI-Assistent: schlägt Kategorien für Umsätze ohne Kategorie vor (je Gegenpartei, nur bestehende Kategorien) – eingetragen erst nach deinem Klick, wie unter Kategorisieren
+- KI-Assistent: nie über eine inzwischen gesetzte Kategorie; Zurücknehmen nur, was die Karte eingetragen hat (in MoneyMoney nur am Mac)
+- KI-Assistent: Karte und Änderungsprotokoll nennen Teil-Ergebnisse (wartet auf den Mac, übersprungen, inzwischen geändert) und die Anzahl
+- Entwicklung: Internetsuche entschieden – kostenlos, offizielle Quellen in drei Stufen
+
 ## 3.16.18 (2026-11-21 17:11)
 - Entwicklung: Ziel und Entscheidungen im Fahrplan per Test gegen Verlust gesichert; Entschiedenes wird nie gelöscht
 

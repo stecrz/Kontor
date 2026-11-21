@@ -111,6 +111,79 @@ def open_category_items(app: "App", year: Optional[int], area: Optional[str], mi
     return categorize.open_items(kat, app.ledger, bereich_of, year, area, minimum, limit, bank_accounts(account_roles(app.ledger, app.config)), assign_skipped(app.config, areas))
 
 
+def assign_categories(app: "App", ids: List[int], pfad: str, modus: str = "auto", local: bool = True, confirmed: Optional[dict] = None,
+                      wait: bool = False, grund: str = "assignment") -> dict:
+    """Your assignment of a category to transactions (from Kategorisieren or the assistant's card): into MoneyMoney (only categories
+    that exist there) -- at the Mac right away, from elsewhere at the next sync at the Mac; until then it waits in Kontor and counts."""
+    if not ids:
+        raise ValueError(tr("s_keine_umsaetze_angegeben"))
+    if len(ids) > 2000:                                  # the page sends larger selections in parts
+        raise ValueError(tr("s_hoechstens_2000"))
+    if pfad:
+        why = mm_categories.assignable(mm_categories.index(app.categories_raw), pfad)
+        if why:
+            raise ValueError(tr({"lacking": "s_kategorie_in_mm_anlegen", "folder": "s_kategorie_ist_ordner"}.get(why, "s_kategorie_standard"), pfad))
+    with categorize.LOCK:
+        kat = categorize.load(app.store)
+        n = categorize.set_waiting(kat, ids, pfad, only_empty=modus == "empty")
+        mm = app.write_categories(kat, ids, pfad, modus, local, confirmed)
+        if mm["written"] and app.ledger is not None:
+            categorize.learn(kat, app.ledger)           # suggestions for the rest at once
+        categorize.save(app.store, kat)
+    ok, err = app.rebuild_report(wait=wait, grund=grund) if app.ledger is not None else (False, None)
+    log.info("%d transaction(s) assigned (%d written to MoneyMoney, %d later)", n, mm["written"], mm["later"])
+    return {"ok": True, "count": n, "mm": mm, "report": ok, "text": err}
+
+
+def assistant_assign_categories(app: "App", ids: List[int], pfad: str, local: bool) -> dict:
+    """The assistant's card, after your click: the category for those of `ids` that are still open at that moment -- no category in
+    MoneyMoney and no assignment of yours waiting in Kontor; MoneyMoney read fresh before each write, written only where it shows no
+    category at all (modus "empty"). A category set meanwhile -- by you, on the page, from the iPhone, in MoneyMoney, also by Kontor
+    earlier -- is never changed. Returns how many were written, wait for the Mac, were left as they are -- and which (`done`: the
+    only ones the card takes back)."""
+    pfad = categorize.norm_cat(pfad)
+    with categorize.LOCK:                                # held throughout (re-entrant): nothing can be assigned between the check and the write
+        kat = categorize.load(app.store)
+        by_id = {t.id: t for t in app.ledger.txs} if app.ledger is not None else {}
+        still = [i for i in ids if i in by_id and not categorize.mm_of(by_id[i]) and str(i) not in kat["assignment"]]
+        if not still:
+            return {"written": 0, "later": 0, "skipped": len(ids), "done": []}
+        res = assign_categories(app, still, pfad, "empty", local, grund="assistant")
+    mm = res["mm"]
+    done = list(mm.get("written_ids") or []) + list(mm.get("later_ids") or [])
+    return {"written": mm["written"], "later": mm["later"], "skipped": len(ids) - len(done), "done": done}
+
+
+def unassign_categories(app: "App", ids: List[int], pfad: str, local: bool) -> dict:
+    """The assistant's card taken back (`ids`: only what it wrote or set waiting and has not taken back yet): only what is still the
+    card's category. What was written into MoneyMoney gets the category from before -- only at the Mac, only where MoneyMoney still
+    shows it, and first: if MoneyMoney does not get to all of them (`open`), the waiting ones stay as well, to be taken back later.
+    Then the card's waiting ones are dropped in Kontor. Returns which were taken back (`undone`, `dropped`), how many MoneyMoney did
+    not get to (`open`) and how many were changed since and stay (`kept`). Nothing to take back at all: ValueError."""
+    pfad = categorize.norm_cat(pfad)
+    with categorize.LOCK:
+        kat = categorize.load(app.store)
+        own = (app.store.load_shared("state.json", {}) or {}).get(mm_categories.LOG_KEY) or {}
+        mine_waiting = lambda z: categorize.waiting(z) and z.get("e") and categorize.norm_cat(z.get("k") or "") == pfad
+        waits = [i for i in ids if mine_waiting(kat["assignment"].get(str(i)))]
+        mine = [i for i in ids if i not in waits and categorize.norm_cat((own.get(str(i)) or {}).get("new") or "") == pfad]
+        if mine and not local:                           # before anything changes: in MoneyMoney only at the Mac
+            raise ValueError(tr("s_nur_von_diesem_mac_aus"))
+        res = app.undo_categories(mine) if mine else {"undone": 0, "undone_ids": [], "open": 0}
+        if res["open"]:
+            waits = []                                   # MoneyMoney did not get to all: the card stays, for the rest later
+        for i in waits:
+            kat["assignment"].pop(str(i), None)
+        if waits:
+            categorize.save(app.store, kat)
+    if not (waits or res["undone"] or res["open"]):
+        raise ValueError(tr("s_ki_inzwischen_geaendert"))
+    if waits or res["undone"]:
+        app.rebuild_report(wait=False, grund="assignment taken back")
+    return {"undone": list(res["undone_ids"]), "dropped": waits, "open": res["open"],
+            "kept": 0 if res["open"] else len(ids) - len(waits) - res["undone"]}
+
+
 def kontor_bookings(ledger) -> List[dict]:
     """The bookings Kontor has made in MoneyMoney: those carrying its mark (#kontor-...) in the purpose. Newest first."""
     out: List[dict] = []
@@ -242,6 +315,11 @@ class App:
                     "receipt_counts": lambda: Belege(self.store, self.config).counts(),
                     "categories": lambda: positions_overview(self.ledger, self.config, self.categories_raw, date.today()) if self.ledger is not None else {},
                     "uncategorized": lambda year, area: open_category_items(self, year, area) if self.ledger is not None else {},
+                    "category_problem": lambda path: mm_categories.assignable(mm_categories.index(self.categories_raw), path),
+                    "category_paths": lambda: sorted(p for p, c in mm_categories.index(self.categories_raw).items()
+                                                     if mm_categories.assignable(mm_categories.index(self.categories_raw), p) is None),
+                    "assign": lambda ids, path, local: assistant_assign_categories(self, ids, path, local),
+                    "unassign": lambda ids, path, local: unassign_categories(self, ids, path, local),
                     "bookings": lambda: {"made": kontor_bookings(self.ledger)[:500], "held_back": len(self.config.get("not_book") or []),
                                          "runs": list(reversed((self.store.load("state.json", {}) or {}).get("history_source", [])))[:6]}})
             return self._assistant
@@ -970,11 +1048,13 @@ class App:
         has none or the one Kontor wrote; another one is reported back, fremd), "ueberschreiben" (also another one you just
         confirmed -- confirmed: transaction -> the category the question showed; it must still be that one). From elsewhere
         than the Mac, or with MoneyMoney not reachable, the assignment waits and is written at the next sync -- only where
-        MoneyMoney has no category (changing one goes only at the Mac: nur_am_mac)."""
+        MoneyMoney has no category (changing one goes only at the Mac: nur_am_mac). "empty": only where MoneyMoney, read fresh, shows
+        no category at all (the assistant's card). written_ids / later_ids: which ones were written / wait."""
         path = categorize.norm_cat(path)
         led = self.ledger
         by_id = {t.id: t for t in led.txs if t.id > 0} if led is not None else {}
-        out: Dict[str, Any] = {"written": 0, "waiting": 0, "foreign": [], "error": 0, "later": 0, "mac_only": 0, "unreachable": 0}
+        out: Dict[str, Any] = {"written": 0, "waiting": 0, "foreign": [], "error": 0, "later": 0, "mac_only": 0, "unreachable": 0,
+                               "written_ids": [], "later_ids": []}
 
         def later(rest: List[int], reachable_later: bool) -> None:
             for i in rest:                                   # waits (p) -- only what has no category in MoneyMoney
@@ -983,6 +1063,7 @@ class App:
                     out["mac_only" if reachable_later else "unreachable"] += 1
                 else:
                     out["later"] += 1
+                    out["later_ids"].append(i)
         if not path or not ids:
             return out
         if not self.mm_write_allowed(local) or led is None:
@@ -994,7 +1075,7 @@ class App:
         own = (self.store.load_shared("state.json", {}) or {}).get(mm_categories.LOG_KEY) or {}
         idx = mm_categories.index(self.categories_raw)
         try:
-            res = mm_categories.write(self.bridge_factory(False), led, items, idx, own)
+            res = mm_categories.write(self.bridge_factory(False), led, items, idx, own, only_empty=modus == "empty")
         except MoneyMoneyError as e:
             log.info("Categories wait for MoneyMoney: %s", e)
             later(ids, False)
@@ -1013,7 +1094,7 @@ class App:
         if res.get("abort"):
             log.info("Categories: MoneyMoney stopped after %d, the rest waits", len(written))
             later(res["open"], False)
-        out.update(written=len(written), waiting=len(res["waiting"]), foreign=res["foreign"], error=len(res["error"]))
+        out.update(written=len(written), waiting=len(res["waiting"]), foreign=res["foreign"], error=len(res["error"]), written_ids=[w["id"] for w in written])
         return out
 
     def categories_written(self) -> dict:
@@ -1036,7 +1117,7 @@ class App:
         """Take back what Kontor entered (under categorize.LOCK): each transaction gets the category it had before (none: MoneyMoney's
         default category) -- read fresh just before, and only where MoneyMoney still shows Kontor's category (anything else is
         reported, nothing changed there). Done ones leave the log."""
-        out: Dict[str, Any] = {"undone": 0, "changed": 0, "error": 0}
+        out: Dict[str, Any] = {"undone": 0, "changed": 0, "error": 0, "open": 0, "undone_ids": []}
         led = self.ledger
         if led is None:
             raise ValueError(tr("s_noch_kein_lauf_moneymoney_lesen"))
@@ -1067,10 +1148,12 @@ class App:
                 self.store.update("state.json", lambda cur: mm_categories.forget(cur, gone), {})
                 self._save_ledger_cache(led, force=True)
             out["undone"] = len(done) + len(res["equal"])
+            out["undone_ids"] = [w["id"] for w in done] + list(res["equal"])
             if res["equal"]:
                 self.store.update("state.json", lambda cur: mm_categories.forget(cur, {str(i) for i in res["equal"]}), {})
             out["changed"] = len(res["foreign"])
             out["error"] += len(res["error"]) + len(res["waiting"]) + len(res.get("open") or [])
+            out["open"] = len(res.get("open") or [])             # not tried: MoneyMoney not reachable or stopped
             if res.get("abort"):
                 log.info("Taking back categories: MoneyMoney stopped after %d", len(done))
         log.info("Categories taken back in MoneyMoney: %d (changed there meanwhile: %d, not possible: %d)", out["undone"], out["changed"], out["error"])
@@ -1105,7 +1188,7 @@ class App:
     def _flush_pending(self) -> int:
         kat = categorize.load(self.store)
         by_id = {t.id: t for t in self.ledger.txs if t.id > 0}
-        pend: Dict[str, List[int]] = {}
+        pend: Dict[Tuple[str, bool], List[int]] = {}
         for tid, z in list(kat["assignment"].items()):
             if not categorize.waiting(z):
                 continue
@@ -1113,10 +1196,10 @@ class App:
             if t is None or categorize.mm_of(t):
                 kat["assignment"].pop(tid, None)          # gone, or categorized in MoneyMoney meanwhile
                 continue
-            pend.setdefault(z["k"], []).append(int(tid))
+            pend.setdefault((z["k"], bool(z.get("e"))), []).append(int(tid))
         n = 0
-        for path, ids in pend.items():
-            res = self.write_categories(kat, ids, path, "auto", True)
+        for (path, only_empty), ids in pend.items():          # the assistant's card ("e"): only where MoneyMoney shows none
+            res = self.write_categories(kat, ids, path, "empty" if only_empty else "auto", True)
             n += res["written"]
             if res["later"]:
                 break                                    # MoneyMoney not reachable: next time
@@ -2365,7 +2448,7 @@ def make_handler(app: App):
                     ok = body.get("ok") is True
                     if ok and not local and app.remote_readonly():       # entering values from another device: only when it may change things
                         return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
-                    a.confirm(str(body.get("job") or ""), str(body.get("id") or ""), ok, body.get("ids"))
+                    a.confirm(str(body.get("job") or ""), str(body.get("id") or ""), ok, body.get("ids"), local)
                     return self._json(200, {"ok": True})
             if path == "/api/assistant/chats/delete":            # one or all (from other devices: only where they may change things -- see do_POST)
                 if not (local or assistant_mod.settings(app.config)["rights"]["remote"]):
@@ -2374,8 +2457,7 @@ def make_handler(app: App):
             if path == "/api/assistant/undo":
                 if not local and (app.remote_readonly() or not assistant_mod.settings(app.config)["rights"]["remote"]):
                     return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
-                a.take_back(str(body.get("id") or ""))
-                return self._json(200, {"ok": True})
+                return self._json(200, {"ok": True, "note": a.take_back(str(body.get("id") or ""), local)})
             if not local:
                 return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
             if path == "/api/assistant/settings":
@@ -2998,27 +3080,9 @@ def make_handler(app: App):
                 # your assignment goes into MoneyMoney (only categories that exist there); at the Mac right away, from
                 # elsewhere at the next sync at the Mac -- until then it waits in Kontor and counts already
                 ids = [int(x) for x in (body.get("ids") or [])]
-                pfad = categorize.norm_cat(str(body.get("category") or ""))
-                if not ids:
-                    raise ValueError(tr("s_keine_umsaetze_angegeben"))
-                if len(ids) > 2000:                        # the page sends larger selections in parts
-                    raise ValueError(tr("s_hoechstens_2000"))
-                if pfad:
-                    why = mm_categories.assignable(mm_categories.index(app.categories_raw), pfad)
-                    if why:
-                        raise ValueError(tr({"lacking": "s_kategorie_in_mm_anlegen", "folder": "s_kategorie_ist_ordner"}.get(why, "s_kategorie_standard"), pfad))
-                modus = "overwrite" if body.get("mode") == "overwrite" else "auto"
-                confirmed = body.get("confirmed") if isinstance(body.get("confirmed"), dict) else None
-                with categorize.LOCK:
-                    kat = categorize.load(app.store)
-                    n = categorize.set_waiting(kat, ids, pfad)
-                    mm = app.write_categories(kat, ids, pfad, modus, local, confirmed)
-                    if mm["written"] and app.ledger is not None:
-                        categorize.learn(kat, app.ledger)           # suggestions for the rest at once
-                    categorize.save(app.store, kat)
-                ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="assignment") if app.ledger is not None else (False, None)
-                log.info("%d transaction(s) assigned (%d written to MoneyMoney, %d later)", n, mm["written"], mm["later"])
-                return self._json(200, {"ok": True, "count": n, "mm": mm, "report": ok, "text": err})
+                return self._json(200, assign_categories(app, ids, categorize.norm_cat(str(body.get("category") or "")),
+                                                         "overwrite" if body.get("mode") == "overwrite" else "auto", local,
+                                                         body.get("confirmed") if isinstance(body.get("confirmed"), dict) else None, bool(body.get("wait"))))
             if path == "/api/categories/proposals":
                 # a rule proposal you took over into MoneyMoney (or do not want): not shown again
                 key = str(body.get("done_items") or "")

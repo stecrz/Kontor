@@ -18,6 +18,7 @@ import sys
 import tarfile
 import tempfile
 import threading
+from datetime import date
 import time
 import unittest
 import urllib.error
@@ -27,6 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
 
 import assistant as A          # noqa: E402
+import categorize               # noqa: E402
 import llm_local as L          # noqa: E402
 import service as MA           # noqa: E402
 import test_e2e as T           # noqa: E402
@@ -1145,7 +1147,7 @@ class Tools(_Assist):
         self.assertEqual((un["without_category"], [(g["counterparty"], g["transactions"], g["sum"]) for g in un["by_counterparty"]]),
                          (want["open"], [(g["name"], g["count"], round(g["sum"], 2)) for g in want["groups"]]))
         self.assertEqual(len(un["by_counterparty"][0]["examples"]), 2)
-        self.assertIn("you cannot assign", un["note"])
+        self.assertIn("assign_categories", un["note"]); self.assertIn("group", un["by_counterparty"][0])
         # what Kontor booked in MoneyMoney's offline accounts (newest first), nothing waiting; filtered by a word
         ab = self.tool("get_auto_bookings")
         made = MA.kontor_bookings(self.app.ledger)
@@ -1232,8 +1234,8 @@ class Tools(_Assist):
 
     def test_rights(self):
         self.assertEqual(len(self.a.tool_list(self.a.settings())), len(A.TOOLS))         # changes are on from the start (each after the user's click)
-        self.a.set({"rights": {"enter_values": False}})
-        self.assertEqual(len(self.a.tool_list(self.a.settings())), len([t for t in A.TOOLS if t['kind'] != 'enter']))   # everything but entering values
+        self.a.set({"rights": {"enter_values": False, "categorize": False}})
+        self.assertEqual(len(self.a.tool_list(self.a.settings())), len([t for t in A.TOOLS if t['kind'] != 'enter']))   # everything but changes
         self.assertNotIn("enter_balances", [t["name"] for t in self.a.tool_list(self.a.settings())])
         with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record"), "w"):
             pass
@@ -1259,11 +1261,12 @@ class Tools(_Assist):
         self.assertEqual(names, {t["name"] for t in A.TOOLS})
         kind = {t["name"]: t["kind"] for t in A.TOOLS}
         self.assertFalse([n for n in names if any(w in n for w in ("setting", "config", "rule_set", "install", "download", "model", "right", "password", "transfer"))])
-        self.assertFalse([n for n in names if kind[n] != "read" and any(w in n for w in ("book", "categor", "rule", "sync", "account"))])       # bookings, categories, rules: read only
-        self.assertEqual({n for n in names if kind[n] == "enter"}, {"enter_balances", "set_plan_values", "set_plan_parameters", "add_plan_event"})
+        self.assertEqual([n for n in names if kind[n] != "read" and any(w in n for w in ("book", "categor", "rule", "sync", "account"))],
+                         ["assign_categories"])       # bookings, rules: read only; categories: proposed for transactions without one, after the click
+        self.assertEqual({n for n in names if kind[n] == "enter"}, {"enter_balances", "set_plan_values", "set_plan_parameters", "add_plan_event", "assign_categories"})
         self.assertEqual({n for n in names if kind[n] == "show"}, {"open_page", "highlight", "show_transactions", "show_chart"})
         self.assertEqual({t["kind"] for t in A.TOOLS}, {"read", "show", "enter"})
-        self.assertEqual({t["right"] for t in A.TOOLS if t["kind"] == "enter"}, {"enter_values"})
+        self.assertEqual({t["right"] for t in A.TOOLS if t["kind"] == "enter"}, {"enter_values", "categorize"})
 
     def test_settings_are_checked(self):
         s = A.settings({"assistant": {"enabled": "yes", "model": 7, "effort": "max", "context": 123, "idle_minutes": -5, "sandbox": 0, "rights": {"enter_values": "true", "x": True, "figures": False}}})
@@ -1812,6 +1815,311 @@ class Chats(_Assist):
         self.assertEqual(A._history([{"role": "user", "text": "a"}, {"role": "assistant", "state": "done", "parts": [{"k": "text", "text": "b"}]},
                                      {"role": "user", "text": "c"}, {"role": "assistant", "state": "stopped", "parts": [{"k": "text", "text": "halb"}]}]),
                          [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}])
+
+
+class Categories(_Assist):
+    """Categories through the assistant: proposed per group of transactions without one, written into MoneyMoney only after
+    the click on the card (as an assignment under Kategorisieren), never over a category already set, taken back like there."""
+
+    def setUp(self):
+        super().setUp()
+        F = T.F
+        T.MockBridge.state["txs"] += [F.tx("priv.giro", date(2026, 10, 20), -80.0, "Bauhaus", "Werkzeug"),
+                                      F.tx("priv.giro", date(2026, 10, 27), -35.0, "Bauhaus", "Schrauben")]
+        T.MockBridge.extra_cats = [("Haushalt", 0, True, {}), ("Werkzeug", 1, False, {}), ("Garten", 1, False, {})]
+        self.app.do_run(True, False, full=True)
+        self.app.rebuild_report(wait=True)
+        self.ids = sorted(t.id for t in self.app.ledger.txs if t.name == "Bauhaus")
+
+    def sets(self):
+        return [w for b in T.MockBridge.instances for w in b.written if w[0] == "set" and w[2] is not None]
+
+    def group(self):
+        got = self.tool("get_uncategorized")
+        self.assertIn("assign_categories", got["note"]); self.assertIn("Haushalt / Werkzeug", got["category_names"])
+        return next(g for g in got["by_counterparty"] if g["counterparty"] == "Bauhaus")
+
+    def test_assign_after_the_click_and_take_back(self):
+        g = self.group()
+        self.assertEqual((g["transactions"], len(g["group"])), (2, 8))
+        n0 = len(self.sets())
+        r = self.a.ask({"question": 'call assign_categories {"groups": [{"group": "%s", "category": "Haushalt › Werkzeug"}], "reason": "Baumarkt"}' % g["group"]})
+        evs = events(self.a, r["job"], until="batch")
+        card, batch = next(e for e in evs if e["type"] == "entry"), next(e for e in evs if e["type"] == "batch")
+        self.assertEqual((card["kind"], card["title"], card["category"], card["count"], card["sum"], card["reason"]), ("category", "Bauhaus", "Haushalt / Werkzeug", 2, -115.0, "Baumarkt"))
+        self.assertEqual([r_["label"] for r_ in card["rows"]], ["2026-10-27", "2026-10-20"])
+        time.sleep(0.3)
+        self.assertEqual(len(self.sets()), n0)                                       # proposed: nothing written
+        self.a.confirm(r["job"], batch["id"], True, None, True)
+        evs = events(self.a, r["job"])
+        self.assertEqual([e["state"] for e in evs if e["type"] == "entry_state"], ["done"])
+        self.assertEqual(sorted(w[1] for w in self.sets()[n0:]), self.ids); self.assertTrue(all(w[2] == T.F.uid("cat:Werkzeug") for w in self.sets()[n0:]))
+        self.assertEqual({categorize.mm_of(t) for t in self.app.ledger.txs if t.id in self.ids}, {"Haushalt / Werkzeug"})
+        self.assertEqual([(c["kind"], c["title"], c["category"]) for c in self.a.changes()], [("category", "Bauhaus", "Haushalt / Werkzeug")])
+        # taken back: MoneyMoney's default category again (there was none before) -- only at the Mac
+        with self.assertRaises(ValueError):
+            self.a.take_back(card["id"], False)
+        n1 = len(self.sets())
+        self.a.take_back(card["id"], True)
+        self.assertEqual({w[2] for w in self.sets()[n1:]}, {T.F.uid("cat:Unkategorisiert")})
+        self.assertEqual({categorize.mm_of(t) for t in self.app.ledger.txs if t.id in self.ids}, {""})
+        self.assertEqual(self.a.changes()[0]["state"], "undone")
+
+    def test_from_elsewhere_waits_for_the_mac(self):
+        g = self.group()
+        n0 = len(self.sets())
+        r = self.a.ask({"question": 'call assign_categories {"groups": [{"counterparty": "bauhaus", "category": "Haushalt / Garten"}]}'})
+        batch = next(e for e in events(self.a, r["job"], until="batch") if e["type"] == "batch")
+        self.a.confirm(r["job"], batch["id"], True, None, False)                     # the click from the iPhone: remembered, written at the Mac
+        evs = events(self.a, r["job"])
+        self.assertEqual([e["state"] for e in evs if e["type"] == "entry_state"], ["done"])
+        self.assertEqual(len(self.sets()), n0)
+        self.assertEqual({categorize.load(self.store)["assignment"].get(str(i)) is not None for i in self.ids}, {True})
+        card = next(e for e in evs if e["type"] == "entry_state")
+        self.a.take_back(card["id"], False)                                          # waiting only: dropped in Kontor, from anywhere
+        self.assertFalse(categorize.load(self.store)["assignment"])
+        self.assertEqual(g["counterparty"], "Bauhaus")
+
+    def propose_garten(self):
+        g = self.group()
+        r = self.a.ask({"question": 'call assign_categories {"groups": [{"group": "%s", "category": "Haushalt / Garten"}]}' % g["group"]})
+        evs = events(self.a, r["job"], until="batch")
+        return r["job"], next(e for e in evs if e["type"] == "entry"), next(e["id"] for e in evs if e["type"] == "batch")
+
+    def mm(self):
+        return {categorize.mm_of(t) for t in self.app.ledger.txs if t.id in self.ids}
+
+    def test_never_over_what_was_set_meanwhile(self):
+        """Between the proposal and the click the user assigns on the page (at the Mac, or from the iPhone: waiting) -- the card
+        changes none of it; taking a card back never undoes what the user set later."""
+        job, card, batch = self.propose_garten()
+        self.assertEqual(self.call("/api/categories/assign", {"ids": self.ids, "category": "Haushalt / Werkzeug", "wait": True})[0], 200)
+        self.a.confirm(job, batch, True, None, True)
+        evs = events(self.a, job)
+        self.assertEqual([(e["state"], "inzwischen eine Kategorie" in e.get("text", "")) for e in evs if e["type"] == "entry_state"], [("failed", True)])
+        self.assertEqual(self.mm(), {"Haushalt / Werkzeug"})
+        # an assignment of the user waiting in Kontor (from the iPhone): the card leaves it alone
+        self.call("/api/categories/undo", {"ids": self.ids, "wait": True})
+        orig = self.app.mm_write_allowed
+        job, card, batch = self.propose_garten()
+        self.app.mm_write_allowed = lambda local: False
+        try:
+            self.call("/api/categories/assign", {"ids": self.ids, "category": "Haushalt / Werkzeug", "wait": True})
+        finally:
+            self.app.mm_write_allowed = orig
+        self.a.confirm(job, batch, True, None, True)
+        self.assertEqual([e["state"] for e in events(self.a, job) if e["type"] == "entry_state"], ["failed"])
+        self.assertEqual({(categorize.load(self.store)["assignment"].get(str(i)) or {}).get("k") for i in self.ids}, {"Haushalt / Werkzeug"})
+
+    def test_take_back_keeps_later_choices(self):
+        job, card, batch = self.propose_garten()
+        self.a.confirm(job, batch, True, None, True); events(self.a, job)
+        self.assertEqual(self.mm(), {"Haushalt / Garten"})
+        self.call("/api/categories/assign", {"ids": self.ids, "category": "Haushalt / Werkzeug", "wait": True})     # the user changes it on the page
+        with self.assertRaises(ValueError):
+            self.a.take_back(card["id"], True)                                       # nothing of the card's is left: nothing undone
+        self.assertEqual(self.mm(), {"Haushalt / Werkzeug"})
+        # from the iPhone: the card's assignment waits; the user changes it there; taking the card back leaves the user's
+        self.call("/api/categories/undo", {"ids": self.ids, "wait": True})
+        job, card, batch = self.propose_garten()
+        self.a.confirm(job, batch, True, None, False); events(self.a, job)
+        orig = self.app.mm_write_allowed
+        self.app.mm_write_allowed = lambda local: False
+        try:
+            self.call("/api/categories/assign", {"ids": self.ids[:1], "category": "Haushalt / Werkzeug", "wait": True})
+        finally:
+            self.app.mm_write_allowed = orig
+        self.a.take_back(card["id"], False)                                          # the other one still waits with the card's: dropped
+        asg = categorize.load(self.store)["assignment"]
+        self.assertEqual(((asg.get(str(self.ids[0])) or {}).get("k"), asg.get(str(self.ids[1]))), ("Haushalt / Werkzeug", None))
+
+    def test_partly_and_waiting_said_on_the_card(self):
+        job, card, batch = self.propose_garten()
+        raw = next(t for t in T.MockBridge.state["txs"] if t["id"] == self.ids[0])  # one gets a category in MoneyMoney meanwhile
+        raw["categoryPath"] = raw["category"] = "Haushalt\\Werkzeug"
+        self.app.do_run(True, False, full=True)
+        self.a.confirm(job, batch, True, None, True)
+        st = next(e for e in events(self.a, job) if e["type"] == "entry_state")
+        self.assertEqual(st["state"], "done"); self.assertIn("1 Umsatz hat inzwischen eine Kategorie und bleibt", st["text"])
+        self.assertEqual({categorize.mm_of(t) for t in self.app.ledger.txs if t.id == self.ids[1]}, {"Haushalt / Garten"})
+        self.assertEqual({categorize.mm_of(t) for t in self.app.ledger.txs if t.id == self.ids[0]}, {"Haushalt / Werkzeug"})
+        self.assertIn("1 Umsatz hat inzwischen", self.a.changes()[0]["note"])
+        self.assertEqual((self.a.changes()[0]["count"], self.a.changes()[0]["sum"]), (1, -35.0))                 # what was done, not proposed
+        # from the iPhone: done in Kontor, waits for the Mac -- the card says so
+        job, card, batch = self.propose_other()
+        self.a.confirm(job, batch, True, None, False)
+        st = next(e for e in events(self.a, job) if e["type"] == "entry_state")
+        self.assertEqual(st["state"], "done"); self.assertIn("1 Umsatz wartet auf den nächsten Abgleich am Mac", st["text"])
+
+    def test_take_back_only_what_the_card_did(self):
+        """The same category set by the user meanwhile (page at the Mac, iPhone): the card skips it at the click -- and taking the
+        card back leaves it as the user set it."""
+        job, card, batch = self.propose_garten()
+        self.call("/api/categories/assign", {"ids": self.ids[:1], "category": "Haushalt / Garten", "wait": True})       # the same, by hand
+        self.a.confirm(job, batch, True, None, True); events(self.a, job)
+        self.assertEqual(self.mm(), {"Haushalt / Garten"})
+        note = self.a.take_back(card["id"], True)
+        self.assertEqual({categorize.mm_of(t) for t in self.app.ledger.txs if t.id == self.ids[0]}, {"Haushalt / Garten"})   # the user's stays
+        self.assertEqual({categorize.mm_of(t) for t in self.app.ledger.txs if t.id == self.ids[1]}, {""})
+        self.assertEqual(note, "")
+        # from the iPhone: the user's own waiting assignment of the same category is not dropped with the card's
+        self.call("/api/categories/undo", {"ids": self.ids[:1], "wait": True})
+        orig = self.app.mm_write_allowed
+        self.app.mm_write_allowed = lambda local: False
+        try:
+            job, card, batch = self.propose_garten()
+            self.call("/api/categories/assign", {"ids": self.ids[:1], "category": "Haushalt / Garten", "wait": True})
+            self.a.confirm(job, batch, True, None, False); events(self.a, job)
+            self.a.take_back(card["id"], False)
+        finally:
+            self.app.mm_write_allowed = orig
+        asg = categorize.load(self.store)["assignment"]
+        self.assertEqual(((asg.get(str(self.ids[0])) or {}).get("k"), asg.get(str(self.ids[1]))), ("Haushalt / Garten", None))
+
+    def test_take_back_while_moneymoney_is_away(self):
+        """MoneyMoney not reachable when taking back: nothing changes, the card can be taken back later; what was changed since is said."""
+        job, card, batch = self.propose_garten()
+        self.a.confirm(job, batch, True, None, True); events(self.a, job)
+        orig = T.MockBridge.export_transactions
+        T.MockBridge.export_transactions = lambda self_, *a, **k: (_ for _ in ()).throw(MA.MoneyMoneyError("locked"))
+        try:
+            with self.assertRaises(ValueError) as cm:
+                self.a.take_back(card["id"], True)
+        finally:
+            T.MockBridge.export_transactions = orig
+        self.assertIn("nicht erreichbar", str(cm.exception))
+        self.assertEqual(self.mm(), {"Haushalt / Garten"}); self.assertEqual(self.a.changes()[0]["state"], "done")
+        # later, one of them changed by the user in MoneyMoney meanwhile: the other is taken back, the card says so
+        raw = next(t for t in T.MockBridge.state["txs"] if t["id"] == self.ids[0])
+        raw["categoryPath"] = raw["category"] = "Haushalt\\Werkzeug"
+        self.app.do_run(True, False, full=True)
+        note = self.a.take_back(card["id"], True)
+        self.assertEqual(note, "1 Umsatz wurde inzwischen geändert und bleibt, wie er ist")
+        self.assertEqual({categorize.mm_of(t) for t in self.app.ledger.txs if t.id == self.ids[1]}, {""})
+        self.assertEqual((self.a.changes()[0]["state"], self.a.changes()[0]["undo_note"]), ("undone", note))
+
+    def test_never_over_kontors_own_earlier_category(self):
+        """Kontor once wrote a category; the user removes it and sets it again by hand before Kontor reads anew: the card leaves it."""
+        self.call("/api/categories/assign", {"ids": self.ids[:1], "category": "Haushalt / Werkzeug", "wait": True})
+        raw = next(t for t in T.MockBridge.state["txs"] if t["id"] == self.ids[0])
+        raw["categoryPath"] = raw["category"] = "Unkategorisiert"                   # removed in MoneyMoney (its default category)
+        self.app.do_run(True, False, full=True)                                      # Kontor reads it without a category
+        job, card, batch = self.propose_garten()
+        raw["categoryPath"] = raw["category"] = "Haushalt\\Werkzeug"               # set by hand again, not read yet
+        n0 = len(self.sets())
+        self.a.confirm(job, batch, True, None, True); events(self.a, job)
+        self.assertEqual([w[1] for w in self.sets()[n0:]], [self.ids[1]])           # only the other one written
+        self.assertEqual({categorize.mm_of(t) for t in self.app.ledger.txs if t.id == self.ids[1]}, {"Haushalt / Garten"})
+
+    def entry_part(self, aid):
+        return next(x for m in self.a.conv["turns"] for x in (m.get("parts") or []) if x.get("k") == "entry" and x.get("id") == aid)
+
+    def test_take_back_again_after_moneymoney_stopped(self):
+        job, card, batch = self.propose_garten()
+        self.a.confirm(job, batch, True, None, True); events(self.a, job)
+        orig, calls = T.MockBridge.set_transaction, []
+
+        def once(self_, tx_id, category=None, comment=None):
+            calls.append(tx_id)
+            if len(calls) > 1:
+                raise MA.MoneyMoneyError("stopped")
+            return orig(self_, tx_id, category, comment)
+        T.MockBridge.set_transaction = once
+        try:
+            with self.assertRaises(ValueError) as cm:
+                self.a.take_back(card["id"], True)
+        finally:
+            T.MockBridge.set_transaction = orig
+        self.assertIn("1 zurückgenommen, 1 noch nicht", str(cm.exception))
+        self.assertEqual(sorted(categorize.mm_of(t) for t in self.app.ledger.txs if t.id in self.ids), ["", "Haushalt / Garten"])
+        self.assertEqual(self.a.take_back(card["id"], True), "")                    # the rest; nothing was changed by the user
+        self.assertEqual(self.mm(), {""}); self.assertEqual(self.a.changes()[0]["state"], "undone")
+
+    def test_waiting_card_never_over_a_category_set_meanwhile(self):
+        """From the iPhone the card's assignment waits; meanwhile the user sets a category in MoneyMoney (one Kontor had entered
+        earlier): the sync at the Mac leaves it -- and the saved conversation shows the take back as it is."""
+        self.call("/api/categories/assign", {"ids": self.ids[:1], "category": "Haushalt / Werkzeug", "wait": True})
+        raw = next(t for t in T.MockBridge.state["txs"] if t["id"] == self.ids[0])
+        raw["categoryPath"] = raw["category"] = "Unkategorisiert"
+        self.app.do_run(True, False, full=True)
+        job, card, batch = self.propose_garten()
+        self.a.confirm(job, batch, True, None, False); events(self.a, job)            # from the iPhone: waits
+        self.assertIn("2 Umsätze warten", self.entry_part(card["id"])["text"])
+        raw["categoryPath"] = raw["category"] = "Haushalt\\Werkzeug"               # set again by hand, not read yet
+        n0 = len(self.sets())
+        self.app.flush_pending_categories()
+        self.assertEqual([w[1] for w in self.sets()[n0:]], [self.ids[1]])           # only the other one
+        self.assertEqual(raw["categoryPath"], "Haushalt\\Werkzeug")
+        self.a.take_back(card["id"], True)
+        self.assertEqual(self.entry_part(card["id"])["state"], "undone")
+        self.assertNotIn("warten", self.entry_part(card["id"])["text"])
+
+    def test_two_groups_on_one_card(self):
+        T.MockBridge.state["txs"].append(T.F.tx("priv.giro", date(2026, 10, 29), -12.0, "Obi", "Erde"))
+        self.app.do_run(True, False, full=True)
+        got = self.tool("get_uncategorized")["by_counterparty"]
+        gb, go = (next(x["group"] for x in got if x["counterparty"] == n) for n in ("Bauhaus", "Obi"))
+        r = self.a.ask({"question": 'call assign_categories {"groups": [{"group": "%s", "category": "Haushalt / Werkzeug"}, {"group": "%s", "category": "Haushalt / Garten"}]}' % (gb, go)})
+        evs = events(self.a, r["job"], until="batch")
+        cards = [e for e in evs if e["type"] == "entry"]
+        self.a.confirm(r["job"], next(e["id"] for e in evs if e["type"] == "batch"), True, None, True); events(self.a, r["job"])
+        obi = next(t.id for t in self.app.ledger.txs if t.name == "Obi")
+        self.a.take_back(next(c["id"] for c in cards if c["title"] == "Obi"), True)
+        self.assertEqual(({categorize.mm_of(t) for t in self.app.ledger.txs if t.id == obi}, self.mm()), ({""}, {"Haushalt / Werkzeug"}))
+
+    def propose_other(self):
+        T.MockBridge.state["txs"].append(T.F.tx("priv.giro", date(2026, 10, 29), -12.0, "Obi", "Erde"))
+        self.app.do_run(True, False, full=True)
+        g = next(x for x in self.tool("get_uncategorized")["by_counterparty"] if x["counterparty"] == "Obi")
+        r = self.a.ask({"question": 'call assign_categories {"groups": [{"group": "%s", "category": "Haushalt / Garten"}]}' % g["group"]})
+        evs = events(self.a, r["job"], until="batch")
+        return r["job"], next(e for e in evs if e["type"] == "entry"), next(e["id"] for e in evs if e["type"] == "batch")
+
+    def test_same_scope_limits_and_rights(self):
+        # what the model read (a year) is what the card covers
+        T.MockBridge.state["txs"].append(T.F.tx("priv.giro", date(2025, 5, 3), -60.0, "Bauhaus", "Leiter"))
+        self.app.do_run(True, False, full=True)
+        g = next(x for x in self.tool("get_uncategorized", {"year": "2026"})["by_counterparty"] if x["counterparty"] == "Bauhaus")
+        r = self.a.ask({"question": 'call get_uncategorized {"year": "2026"}'}); events(self.a, r["job"])     # read in this conversation
+        for q, n in (('call assign_categories {"groups": [{"group": "%s", "category": "Haushalt / Garten"}]}', 2),       # as read there
+                     ('call assign_categories {"groups": [{"group": "%s", "category": "Haushalt / Garten"}], "year": "2025"}', 1)):   # or as given
+            r = self.a.ask({"question": q % g["group"], "conversation": r["conversation"]})
+            evs = events(self.a, r["job"], until="batch")
+            self.assertEqual((next(e for e in evs if e["type"] == "entry")["count"], g["transactions"]), (n, 2))
+            self.a.confirm(r["job"], next(e["id"] for e in evs if e["type"] == "batch"), False); events(self.a, r["job"])
+        # more than 2000 in one group: refused (assigned on the page)
+        real = self.a.hooks["uncategorized"]
+        self.a.hooks["uncategorized"] = lambda year, area: {"groups": [{"key": "x", "name": "Riesig", "ids": list(range(1, 2002)), "sum": -1.0, "transactions": []}]}
+        try:
+            evs = self.ask('call assign_categories {"groups": [{"counterparty": "Riesig", "category": "Haushalt / Garten"}]}')
+        finally:
+            self.a.hooks["uncategorized"] = real
+        self.assertIn("more than 2000", text_of(evs)); self.assertFalse(any(e["type"] == "entry" for e in evs))
+        # without the right to read transactions: no tool to assign them either
+        self.a.set({"rights": {"transactions": False}})
+        self.assertNotIn("assign_categories", [t["name"] for t in self.a.tool_list(self.a.settings())])
+        self.assertIn("kein Werkzeug", text_of(self.ask('call assign_categories {"groups": [{"counterparty": "Bauhaus", "category": "Haushalt / Garten"}]}')))
+
+    def test_refused_before_any_card(self):
+        g = self.group()
+        for args, why in (({"groups": [{"group": g["group"], "category": "Haushalt / Gibtsnicht"}]}, "is not in MoneyMoney"),
+                          ({"groups": [{"group": g["group"], "category": "Haushalt"}]}, "is a folder"),
+                          ({"groups": [{"group": "00000000", "category": "Haushalt / Garten"}]}, "no open group"),
+                          ({"groups": [{"group": g["group"], "category": "Werkzeug"}]}, "did you mean: Haushalt / Werkzeug"),
+                          ({"groups": []}, "groups is empty")):
+            evs = self.ask("call assign_categories %s" % json.dumps(args))
+            self.assertFalse(any(e["type"] == "entry" for e in evs), args)
+            self.assertIn(why, text_of(evs), args)
+        # the same transactions twice in one answer: once
+        r = self.a.ask({"question": 'call assign_categories {"groups": [{"group": "%s", "category": "Haushalt / Garten"}, {"group": "%s", "category": "Haushalt / Werkzeug"}]}' % (g["group"], g["group"])})
+        evs = events(self.a, r["job"], until="batch")
+        self.assertEqual(len([e for e in evs if e["type"] == "entry"]), 1); self.assertIn("already proposed another change", text_of(evs))
+        self.a.confirm(r["job"], next(e["id"] for e in evs if e["type"] == "batch"), False); events(self.a, r["job"])
+        # without the right: no tool, no word of it
+        self.a.set({"rights": {"categorize": False}})
+        self.assertNotIn("assign_categories", [t["name"] for t in self.a.tool_list(self.a.settings())])
+        got = self.tool("get_uncategorized")
+        self.assertIn("you cannot assign them", got["note"]); self.assertNotIn("category_names", got)
 
 
 class Entries(_Assist):

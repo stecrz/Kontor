@@ -55,6 +55,14 @@ anhängen – nie löschen.
   Verbindung nur zu Googles Adressen für BigQuery und Anmeldung, nur feste Abfragen aus Kontors Code (kein freies SQL), nichts
   nach außen außer der Abfrage. Abschaltbar; bei Google jederzeit widerrufbar. Ausnahme von „keine Zugangsdaten speichern“.
 - **Name:** Untertitel „Dein digitaler CFO“; in der Oberfläche heißt er weiter „KI-Assistent“.
+- **Internetsuche (nur lesen):** kostenlos, ohne Kreditkarte, nur über offizielle Schnittstellen, in drei Stufen – der Assistent
+  nimmt die erste, die passt: (1) Wissen, Recht, Zahlen ohne Konto: Wikipedia/Wikidata, Gesetze im Internet, Rechtsinformationsportal
+  des Bundes, BMF/BFH, GLEIF, Destatis, Bundesbank, EZB, Eurostat, OECD; (2) Nachrichten und Branche ohne Konto: tagesschau-Suche,
+  GDELT, Feeds der Portale – nur frei Zugängliches, nie an Bezahlschranken vorbei; (3) allgemeine Websuche nur mit eigenem
+  kostenlosem Tavily-Schlüssel des Nutzers (Kontor stoppt vor dem Freikontingent), ohne Schlüssel keine Stufe 3. Kein Abgreifen
+  von Suchmaschinen ohne Schnittstelle (DuckDuckGo verbietet es). Jeder Zugriff erst nach Freigabe mit Quelle, Suchbegriffen und
+  Adresse; Kontor sucht (nicht das Modell), nur an diese festen Adressen, nie mit eigenen Daten; Seiten liest ein abgeschotteter
+  Prozess, danach keine Änderungen im selben Chat.
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
@@ -107,17 +115,17 @@ Fertig, wenn
 - **eingeschleuste Befehle wirkungslos:** Tests mit präparierten Buchungstexten, Dateien, Belegen – nichts gemerkt, keine Regel,
   kein Eintrag ohne Klick;
 - am Mac mit echten Modellen geprüft: Abschirmung (kein Netz, kein Zugriff auf Kontors Daten), Start, Antworten, Stoppen, Diktieren;
-- Kategorien zuordnen als Vorschlag mit Klick möglich ist, wie unter Kategorisieren.
+- ~~Kategorien zuordnen als Vorschlag mit Klick möglich ist, wie unter Kategorisieren~~ (3.16.19).
 
 Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach Klick, je Schritt eine kleine Version):
 - [x] 3.16.13 Sammelfreigabe: alle Änderungen einer Antwort auf einer Karte, ein Klick (einzeln abwählbar); Änderungsprotokoll; Änderungsrechte ab Werk an.
-- [ ] Kategorien zuordnen (Vorschlag, Klick, rückgängig wie unter Kategorisieren).
+- [x] 3.16.19 Kategorien zuordnen (Vorschlag je Gegenpartei, Klick, rückgängig wie unter Kategorisieren; vom iPhone erst am Mac).
 - [ ] Auto-Buchungen prüfen, freigeben, verwerfen (die Karte sagt: in MoneyMoney nicht rückgängig).
 - [ ] Buchungsregeln (Darlehen, Beteiligungen, Kontenspiegel) anlegen und ändern; Buchungen daraus immer erst zur Freigabe.
 - [ ] Offene Aufgaben beim Öffnen, jede mit „Erledigen“ (die Liste kommt von Kontor, auch ohne Modell).
 - [ ] Belege: Datei in den Chat, Texterkennung von macOS (offline), passenden Umsatz vorschlagen, Abweichungen nennen, ablegen und verknüpfen.
-- [ ] Internet nur zum Lesen: Kontor sucht (nicht das Modell), Freigabe je Zugriff mit Suchbegriffen und Adressen, Filter gegen eigene Daten,
-  danach keine Änderungen im selben Chat.
+- [ ] Internet nur zum Lesen, in drei Stufen (siehe Entschieden): Kontor sucht (nicht das Modell), Freigabe je Zugriff mit Quelle,
+  Suchbegriffen und Adressen, Filter gegen eigene Daten, Seiten in einem abgeschotteten Prozess, danach keine Änderungen im selben Chat.
 
 ## 3. GbR-Entlastung: Immobilien, Steuer, Umsatzsteuer
 Ziel: Eine vermögensverwaltende GbR lässt sich mit Kontor führen – Objekte, Steuer, Voranmeldung, Nebenkosten, Ausschüttungen –

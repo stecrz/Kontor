@@ -69,13 +69,14 @@ def _mm_cat(raw: Dict[str, Any]) -> str:
 
 
 def write(bridge, ledger: Ledger, items: List[Dict[str, Any]], idx: Dict[str, Dict[str, Any]],
-          own: Dict[str, Dict[str, Any]], allow_default: bool = False, only_own: bool = False) -> Dict[str, Any]:
+          own: Dict[str, Dict[str, Any]], allow_default: bool = False, only_own: bool = False, only_empty: bool = False) -> Dict[str, Any]:
     """items: [{id, neu, alt (was in MoneyMoney zu sehen war, normiert), ueberschreiben}].
     Liefert {geschrieben: [{id, alt, neu}], wartet: [id] (Kategorie fehlt in MoneyMoney), fremd: [{id, mm}] (fremde
     Kategorie, nicht bestaetigt), gleich: [id], fehler: [{id, grund}], offen: [id] (nicht versucht: MoneyMoney brach ab,
     abbruch: der Grund)} -- was bis zum Abbruch geschrieben ist, steht in geschrieben. allow_default: MoneyMoney's default category
     may be set (taking back an entry where there was none before). only_own: written only where MoneyMoney shows exactly the
-    category Kontor entered last (taking back) -- anything else, none included, counts as foreign."""
+    category Kontor entered last (taking back) -- anything else, none included, counts as foreign. only_empty: written only where
+    MoneyMoney shows no category at all (the assistant's card) -- any other, Kontor's own included, counts as foreign."""
     res: Dict[str, Any] = {"written": [], "waiting": [], "foreign": [], "equal": [], "error": [], "open": []}
     by_id = {t.id: t for t in ledger.txs if t.id > 0}
     todo: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
@@ -116,7 +117,7 @@ def write(bridge, ledger: Ledger, items: List[Dict[str, Any]], idx: Dict[str, Di
             if cur == neu:
                 res["equal"].append(t.id); continue
             mine = norm_cat((own.get(str(t.id)) or {}).get("new") or "")
-            if (only_own and cur != mine) or (cur and cur != mine and not (it.get("overwrite") and cur == norm_cat(it.get("old") or ""))):
+            if (only_own and cur != mine) or (only_empty and cur) or (cur and cur != mine and not (it.get("overwrite") and cur == norm_cat(it.get("old") or ""))):
                 res["foreign"].append({"id": t.id, "mm": cur}); continue
             try:
                 bridge.set_transaction(t.id, category=idx[neu]["uuid"] or idx[neu]["path"])

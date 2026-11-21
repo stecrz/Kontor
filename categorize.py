@@ -108,13 +108,14 @@ def apply_to_ledger(d: dict, ledger: Ledger) -> Dict[str, int]:
     return dict(counts)
 
 
-def set_waiting(d: dict, tx_ids: Iterable[int], path: str) -> int:
-    """Your assignment, to be written into MoneyMoney ('' takes back what still waits)."""
+def set_waiting(d: dict, tx_ids: Iterable[int], path: str, only_empty: bool = False) -> int:
+    """Your assignment, to be written into MoneyMoney ('' takes back what still waits). only_empty ("e"): from the assistant's
+    card -- written, also later, only where MoneyMoney shows no category at all."""
     path = norm_cat(path)
     n = 0
     for tid in tx_ids:
         if path:
-            d["assignment"][str(tid)] = {"k": path, "q": "manual", "p": 1}
+            d["assignment"][str(tid)] = dict({"k": path, "q": "manual", "p": 1}, **({"e": 1} if only_empty else {}))
         else:
             d["assignment"].pop(str(tid), None)
         n += 1

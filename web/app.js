@@ -6603,18 +6603,29 @@ function asMd(src) {
 function asEntry(p, ask) {
   // a change the assistant proposes: what, where, old and new -- carried out only with the click on the card of all changes of the
   // answer (ask: that card waits now; each change can be left out by its tick), and taken back here
-  const kind = {balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params')}[p.kind] || '';
+  const kind = asKind(p.kind);
   const lab = s => /^\d{4}-\d{2}$/.test(s) ? MLL(s) : s, n = v => p.kind === 'params' ? (+v).toLocaleString(LOCALE, {maximumFractionDigits: 2}) : fmt.format(v);          // assumptions: plain numbers (2,5), not amounts
   const rows = (p.rows || []).map(r => `<tr><td>${esc(lab(r.label))}</td><td class="num muted">${r.old != null ? n(r.old) : r.shown != null ? n(r.shown) : '–'}</td><td class="num"><b>${r.new == null ? t('ki_e_leer') : n(r.new)}</b></td></tr>`).join('');
   const ev = p.event ? `<div class="muted small">${t(`ki_e_kind_${p.event.kind}`)} · ${t(`ki_e_rec_${p.event.recurrence}`)}${p.event.until ? ' ' + t('ki_e_bis', MLL(p.event.until)) : ''}</div>` : '';
   const why = p.reason ? `<div class="as-e-why">${esc(p.reason)}</div>` : '';
   const fin = p.final && p.state === 'queued' ? `<div class="as-e-fin">${t('ki_e_endgueltig')}</div>` : '';
   const st = p.state === 'queued' ? (ask ? '' : `<div class="as-e-st">${t('ki_e_wartet')}</div>`)
-    : p.state === 'done' ? `<div class="as-e-st ok">${ICON.check}<span>${t('ki_e_done')}</span>${p.fixed ? '' : `<button class="ghost small as-undo" data-id="${esc(p.id)}">${t('ki_e_zurueck')}</button>`}</div>`
-    : `<div class="as-e-st">${p.state === 'failed' ? esc(t('ki_e_failed', p.text || '')) : t(p.state === 'undone' ? 'ki_e_undone' : 'ki_e_declined')}</div>`;
+    : p.state === 'done' ? `<div class="as-e-st ok">${ICON.check}<span>${t('ki_e_done')}</span>${p.fixed ? '' : `<button class="ghost small as-undo" data-id="${esc(p.id)}">${t('ki_e_zurueck')}</button>`}</div>${p.text ? `<div class="as-e-why">${esc(p.text)}</div>` : ''}`
+    : `<div class="as-e-st">${p.state === 'failed' ? esc(t('ki_e_failed', p.text || '')) : t(p.state === 'undone' ? 'ki_e_undone' : 'ki_e_declined')}</div>${p.state === 'undone' && p.text ? `<div class="as-e-why">${esc(p.text)}</div>` : ''}`;
+  if (p.kind === 'category') {          // a category for transactions without one: which, how many, the first of them
+    const more = (p.count || 0) - (p.rows || []).length;
+    const trs = (p.rows || []).map(r => `<tr><td class="nowrap">${esc(FD(r.label))}</td><td class="muted as-e-zw" title="${esc(r.text || '')}">${esc(r.text || '')}</td><td class="num">${r.new == null ? '' : fmt.format(r.new)}</td></tr>`).join('');
+    return asCard(p, ask, kind, `<div class="as-e-cat">→ <b>${esc(String(p.category || '').replace(/ \/ /g, ' › '))}</b></div><div class="muted small">${tn('ki_e_umsaetze', p.count || 0, p.count || 0)}${p.sum != null ? ' · ' + fmt.format(p.sum) : ''}</div>${why}
+      <table class="as-e-t as-e-tc"><tbody>${trs}${more > 0 ? `<tr><td colspan="3" class="muted">${t('ki_e_weitere', more)}</td></tr>` : ''}</tbody></table>`, fin, st);
+  }
+  return asCard(p, ask, kind, `${ev}${why}
+    <table class="as-e-t"><thead><tr><th>${t(p.kind === 'params' ? 'ki_e_annahme' : 'ki_e_monat')}</th><th class="num">${t('ki_e_bisher')}</th><th class="num">${t('ki_e_neu_wert')}</th></tr></thead><tbody>${rows}</tbody></table>`, fin, st);
+}
+const asKind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params'), category: t('ki_e_category')}[k] || '');
+function asCard(p, ask, kind, body, fin, st) {
+  // the frame of a proposed change: the tick while the card of changes waits, its kind, title and where, what it changes, its state
   const tick = p.state === 'queued' && ask ? `<label class="as-e-pick" title="${esc(t('ki_e_auswahl_tip'))}"><input type="checkbox" class="as-pick" data-id="${esc(p.id)}" ${p.off ? '' : 'checked'}></label>` : '';
-  return `<div class="as-entry ${esc(p.state)}${p.state === 'queued' && ask ? ' ask' : ''}${p.off ? ' off' : ''}">${tick}<div class="as-e-k">${kind}</div><div class="as-e-h">${esc(p.title || '')}</div>${p.sub ? `<div class="muted small">${esc(p.sub)}</div>` : ''}${ev}${why}
-    <table class="as-e-t"><thead><tr><th>${t(p.kind === 'params' ? 'ki_e_annahme' : 'ki_e_monat')}</th><th class="num">${t('ki_e_bisher')}</th><th class="num">${t('ki_e_neu_wert')}</th></tr></thead><tbody>${rows}</tbody></table>${fin}${st}</div>`;
+  return `<div class="as-entry ${esc(p.state)}${p.state === 'queued' && ask ? ' ask' : ''}${p.off ? ' off' : ''}">${tick}<div class="as-e-k">${kind}</div><div class="as-e-h">${esc(p.title || '')}</div>${p.sub ? `<div class="muted small">${esc(p.sub)}</div>` : ''}${body}${fin}${st}</div>`;
 }
 function asBatch(p, m) {
   // the card of all changes of an answer: one click carries out the ticked ones (or none); afterwards what came of them
@@ -7286,7 +7297,7 @@ $('#assist').addEventListener('click', async e => {
     catch (x) { toast(x.message, 5000); if (card && !AS.job) { card[1].state = 'declined'; card[0].parts.forEach(y => { if (y.k === 'entry' && y.state === 'queued') y.state = 'declined'; }); } asMsgs(); }
   } else if (b.classList.contains('as-undo')) {
     b.disabled = true;
-    try { await api('/api/assistant/undo', {id: b.dataset.id}); const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === b.dataset.id); if (p) p.state = 'undone'; asMsgs(); asChanged(); }
+    try { const r = await api('/api/assistant/undo', {id: b.dataset.id}); const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === b.dataset.id); if (p) { p.state = 'undone'; p.text = r.note || ''; } asMsgs(); asChanged(); }
     catch (x) { toast(x.message, 6000); b.disabled = false; }
   }
 });
@@ -7374,7 +7385,7 @@ async function vEinstellungenAssistent() {
     ${pf.can_seal ? `<label>${t('ki_abschirmung')}${hq('ki_abschirmung')}</label><label class="chk"><select id="as-sandbox">${['strict', 'basic', 'off'].map(k => opt(k, t(`ki_sb_${k}`), st.sandbox)).join('')}</select></label>` : ''}
   </div>
   <h2>${t('ki_rechte')}</h2>
-  <div class="as-rights">${['figures', 'transactions', 'help', 'page', 'navigate', 'enter_values', 'remote'].map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${r[k] ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}${k === 'enter_values' ? hq('ki_eintragen') : ''}</span></label>`).join('')}</div>
+  <div class="as-rights">${['figures', 'transactions', 'help', 'page', 'navigate', 'enter_values', 'categorize', 'remote'].map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${r[k] ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}${k === 'enter_values' || k === 'categorize' ? hq('ki_eintragen') : ''}</span></label>`).join('')}</div>
   <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>
   <details class="as-log" id="as-log"><summary>${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details>`;
 }
@@ -7382,12 +7393,12 @@ async function asChangesLoad() {
   // the log of changes: what the assistant changed after the user's click, the latest first
   const el = $('#as-log-list'); if (!el) return;
   let r; try { r = await api('/api/assistant/changes'); } catch (x) { el.textContent = x.message; return; }
-  const kind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params')}[k] || k || '');
+  const kind = k => asKind(k) || k || '';
   const list = r.changes || [];
   el.classList.toggle('muted', !list.length);
   el.innerHTML = !list.length ? t('ki_aenderungen_keine') : `<div class="as-tw"><table><thead><tr><th>${t('ki_a_zeit')}</th><th>${t('ki_a_was')}</th><th>${t('ki_a_grund')}</th><th>${t('ki_a_stand')}</th></tr></thead><tbody>${list.map(c => `<tr>
-    <td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(kind(c.kind))}</b> · ${esc(c.title || '')}${c.sub ? `<div class="muted small">${esc(c.sub)}</div>` : ''}</td><td>${esc(c.reason || '–')}</td>
-    <td class="nowrap">${t(c.state === 'undone' ? 'ki_e_undone' : 'ki_e_done')}${c.final ? ' · ' + t('ki_a_endgueltig') : ''}</td></tr>`).join('')}</tbody></table></div>`;
+    <td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(kind(c.kind))}</b> · ${esc(c.title || '')}${c.category ? ' → ' + esc(c.category.replace(/ \/ /g, ' › ')) : ''}${c.sub ? `<div class="muted small">${esc(c.sub)}</div>` : ''}${c.count ? `<div class="muted small">${tn('ki_e_umsaetze', c.count, c.count)}${c.sum != null ? ' · ' + fmt.format(c.sum) : ''}</div>` : ''}</td><td>${esc(c.reason || '–')}</td>
+    <td class="nowrap">${t(c.state === 'undone' ? 'ki_e_undone' : 'ki_e_done')}${c.final ? ' · ' + t('ki_a_endgueltig') : ''}${[c.note, c.state === 'undone' ? c.undo_note : ''].filter(Boolean).map(x => `<div class="muted small">${esc(x)}</div>`).join('')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 const asRate = b => b >= 1e6 ? (b / 1e6).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e7 ? 0 : 1}) + ' MB/s' : Math.max(1, Math.round(b / 1e3)).toLocaleString(LOCALE) + ' KB/s';
 const asLeft = l => { const s = (l.total - l.done) / l.rate; return s >= 90 ? t('ki_dl_rest_min', asN(s / 60)) : t('ki_dl_rest_s', asN(Math.max(1, s))); };
