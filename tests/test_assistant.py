@@ -1336,6 +1336,7 @@ class Tools(_Assist):
         self.assertEqual(A.settings({}), A.DEFAULTS)
         self.assertFalse(A.DEFAULTS["enabled"]); self.assertTrue(A.DEFAULTS["rights"]["enter_values"]); self.assertFalse(A.DEFAULTS["rights"]["remote"])
         self.assertEqual(A.DEFAULTS["sandbox"], "strict")
+        self.assertEqual(A.DEFAULTS["idle_minutes"], 30)                               # the model stays a while: the next question needs no new start
         with self.assertRaises(ValueError):
             self.a.set({"model": "not-downloaded"})
         self.a.set({"effort": "fast"}); self.assertEqual(self.a._effort(self.a.settings()), {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}})

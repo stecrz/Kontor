@@ -66,7 +66,7 @@ RIGHTS = ("figures", "transactions", "help", "page", "navigate", "enter_values",
 READ_RIGHTS = ("figures", "transactions", "page")    # one switch in the settings: reading your data
 RIGHTS_VERSION = 2       # 3.16.28: changes on for everyone (each one only after your click), the help always readable
 DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "speech": "", "effort": "balanced", "context": auto_context(physical_ram()), "context_auto": True,
-                            "idle_minutes": 10, "sandbox": "strict", "save_chats": True,
+                            "idle_minutes": 30, "sandbox": "strict", "save_chats": True,
                             "rights": {"figures": True, "transactions": True, "help": True, "page": True, "navigate": True,
                                        "enter_values": True, "categorize": True, "book": True, "remote": False}}       # changes: each one only with your click on the card
 PAGES = ("overview", "balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "categories", "accounts", "help")

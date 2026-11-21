@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.43 (2026-11-21 22:04)
+- KI-Assistent: beendet sich ab Werk erst nach 30 Minuten ohne Frage (vorher 10)
+
 ## 3.16.42 (2026-11-21 22:03)
 - Eigene Mac-App „Kontor“ statt Safaris Dock-App: macOS fragt nur einmal nach dem Mikrofon, danach nie wieder
 - Mac-App: Menüleiste (⌘, Einstellungen, ⌘P Drucken, Zoom), Downloads in „Downloads“, Abzeichen im Dock, Darstellung wie in Kontor
