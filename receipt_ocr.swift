@@ -44,6 +44,18 @@ func render(_ page: PDFPage) -> CGImage? {
     return ctx.makeImage()
 }
 
+func flatten(_ image: CGImage) -> CGImage {
+    // a picture with transparent parts (a PNG, a page saved as a picture): on white, as on paper -- text recognition sees
+    // transparent pixels as black, and black text on them would be gone
+    let w = image.width, h = image.height
+    guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                              bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return image }
+    ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+    ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+    ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+    return ctx.makeImage() ?? image
+}
+
 let data = FileHandle.standardInput.readDataToEndOfFile()
 var parts: [String] = []
 var how = "none"
@@ -67,7 +79,7 @@ if data.starts(with: [0x25, 0x50, 0x44, 0x46]) {           // "%PDF"
     let opts: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
                                  kCGImageSourceThumbnailMaxPixelSize: 6000, kCGImageSourceShouldCacheImmediately: false]
     guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary) else { fail("picture not readable") }
-    parts.append(recognize(image))
+    parts.append(recognize(flatten(image)))
     how = "ocr"
 }
 let text = String(parts.joined(separator: "\n\n").prefix(maxChars))

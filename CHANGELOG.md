@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.49 (2026-11-21 22:52)
+- Belege im Assistenten: Bilder mit transparentem Hintergrund werden vor der Texterkennung auf Weiß gelegt (behebt leeren Text)
+
 ## 3.16.48 (2026-11-21 22:46)
 - KI-Assistent: Internetsuche nur zum Lesen in drei Stufen – Wikipedia, Gesetze, GLEIF, EZB, Bundesbank, Eurostat / tagesschau, GDELT / Tavily mit eigenem kostenlosen Schlüssel
 - Jeder Abruf erst nach deinem Klick; Filter gegen eigene Daten; abgeschirmter Abruf; danach keine Änderungen in derselben Unterhaltung

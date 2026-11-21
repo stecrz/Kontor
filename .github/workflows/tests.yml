@@ -163,8 +163,11 @@ jobs:
           pdf2 += b"trailer<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
           d = tempfile.mkdtemp(); open(os.path.join(d, "r.pdf"), "wb").write(pdf2)
           subprocess.run(["sips", "-s", "format", "png", os.path.join(d, "r.pdf"), "--out", os.path.join(d, "r.png")], check=True, capture_output=True)
-          out = R.text_of(open(os.path.join(d, "r.png"), "rb").read(), tempfile.mkdtemp())
+          png = open(os.path.join(d, "r.png"), "rb").read()
+          out = R.text_of(png, tempfile.mkdtemp())
           print(out)
+          if "114,99" not in out["text"].replace(" ", ""):      # what the helper reads outside the sandbox: says whether the sandbox is the cause
+              print("without sandbox:", subprocess.run([R._helper()], input=png, capture_output=True).stdout[:300])
           assert out["how"] == "ocr" and "114,99" in out["text"].replace(" ", ""), out
           # its sandbox: writes into its own folder of the run, never into Kontor's temporary folders (kontor-...)
           work, mine = tempfile.mkdtemp(prefix="rcpt-"), tempfile.mkdtemp(prefix="kontor-")
