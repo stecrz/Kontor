@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.52 (2026-11-21 23:21)
+- KI-Assistent: Stil geschärft – Finanzwahrheit unverblümt, Finanzen/BWL/Rechnungswesen zuerst, mentale Modelle (Psychologie, Spieltheorie, Evolution, Physik) nur wo sie etwas klären, logisch hergeleitet
+
 ## 3.16.51 (2026-11-21 23:15)
 - KI-Assistent: gespeicherte Verläufe im eigenen Ordner „chats“ im Datenordner; vorhandene ziehen beim Start um
 - Einstellungen: Anzahl und Größe der Verläufe, „Ältere als ein Jahr löschen“, Hinweis bei sehr vielen

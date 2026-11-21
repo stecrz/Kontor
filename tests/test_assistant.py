@@ -938,9 +938,10 @@ class Tools(_Assist):
         for needle in ("Always answer in German", "1.234,56 €", "Nettovermögen", "Überschuss", "Kategorisieren"):
             self.assertIn(needle, sys_de)
         self.assertTrue(sys_de.endswith("Denke und antworte immer auf Deutsch – auch deine Gedanken liest der Nutzer mit. Du-Form: kurz, direkt, inhaltsdicht, "
-                                        "ohne Floskeln; widersprich, wenn etwas falsch ist."))
+                                        "logisch hergeleitet, ohne Floskeln; widersprich, wenn etwas falsch ist."))
         self.assertIn("Think in that language too, from the first word of your thoughts", sys_de)        # its thoughts too: the user reads them
-        for needle in ("as short as possible, dense, factual", "say so directly and why", "explain a technical term", "well-founded answer matters more"):
+        for needle in ("as short as possible, dense, factual", "say so directly and why", "Explain a technical term", "well-founded answer matters more",
+                       "unvarnished financial truth", "business economics and accounting first", "Munger or Naval Ravikant"):
             self.assertIn(needle, sys_de)                                            # the style: short, blunt, well thought
         import i18n as I
         I.set_lang("en")
