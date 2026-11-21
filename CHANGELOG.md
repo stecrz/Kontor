@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.63 (2026-11-22 00:32)
+- Mac-App: Seiten mit denselben Abständen wie im Browser – nur die Fensterknöpfe oben in der Seitenleiste
+
 ## 3.16.62 (2026-11-22 00:20)
 - Behoben: Kontenspiegel – gespiegelte Buchung verschoben, Original neu eingegeben: nicht mehr doppelt gespiegelt (bis 3 Tage, mit Hinweis)
 - Kontenspiegel: abgelehnte Buchungen und von Hand gebuchte Paare werden dabei nie mitgenommen

@@ -4830,15 +4830,15 @@ class MacAppBrowserTest(unittest.TestCase):
                 self.assertTrue(pg3.evaluate("SHELL && APP_MODE"))
                 pg3.evaluate("location.replace('#settings')"); pg3.wait_for_selector("#webapp-row .pill")
                 self.assertEqual(pg3.inner_text("#webapp-row"), "Läuft als App")
-                # no title bar of its own: the window buttons above Kontor's name, the page title level with them; the app learns
+                # no title bar of its own: the window buttons above Kontor's name, the page otherwise as in the browser; the app learns
                 # where the page has something to click in the strip that moves the window (the help sign beside the title)
                 self.assertFalse(pg.evaluate("document.body.classList.contains('mac-chrome')"))
                 until(pg3, "document.body.classList.contains('mac-chrome')")
-                got = pg3.evaluate("""() => { const r = s => document.querySelector(s).getBoundingClientRect(), h = r('.topbar h1'), q = r('.topbar .page-hq');
-                    return {brand: r('.side .brand').top, title: (h.top + h.bottom) / 2, hq: [q.left, q.top, q.width, q.height].map(Math.round),
-                            drag: (window.__shell.filter(m => m.drag).pop() || {}).drag}; }""")
-                self.assertGreaterEqual(got["brand"], 28); self.assertLess(abs(got["title"] - 14), 3)
-                self.assertIn(got["hq"], got["drag"])
+                top = "document.querySelector('.topbar h1').getBoundingClientRect().top"
+                self.assertEqual(pg3.evaluate(top), pg.evaluate(top))
+                self.assertGreaterEqual(pg3.evaluate("document.querySelector('.side .brand').getBoundingClientRect().top"), 28)
+                until(pg3, """(() => { const q = document.querySelector('.topbar .page-hq').getBoundingClientRect(), d = (window.__shell.filter(m => m.drag).pop() || {}).drag || [];
+                    return d.some(h => JSON.stringify(h) === JSON.stringify([q.left, q.top, q.width, q.height].map(Math.round))); })()""")
                 pg3.evaluate("window.dispatchEvent(new CustomEvent('kontorchrome', {detail: {tb: 0, tl: 0, ly: 0}}))")          # full screen: as in the browser
                 self.assertFalse(pg3.evaluate("document.body.classList.contains('mac-chrome')"))
                 until(pg3, "JSON.stringify((window.__shell.filter(m => m.drag).pop() || {}).drag) === '[]'")

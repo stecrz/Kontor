@@ -30,7 +30,7 @@ const SHELL_MENU = {about: 'mac_m_ueber', settings: 'mac_m_einstellungen', hide:
   reload: 'mac_m_neu_laden', actualSize: 'mac_m_original', zoomIn: 'mac_m_groesser', zoomOut: 'mac_m_kleiner', fullScreen: 'mac_m_vollbild', window: 'mac_m_fenster',
   minimize: 'mac_m_dock', zoom: 'mac_m_zoomen', help: 'hilfe', kontorHelp: 'mac_m_kontor_hilfe', ok: 'mac_ok', cancel: 'abbrechen'};
 shellPost({labels: Object.fromEntries(Object.entries(SHELL_MENU).map(([k, v]) => [k, t(v)]))});
-// its window has no title bar of its own: the window buttons sit in the sidebar, the page title beside them, and the strip
+// its window has no title bar of its own: the page as in the browser, the window buttons above Kontor's name, and the strip
 // where the title bar was moves the window -- the app says how high it is and where the buttons are (tb, tl, ly; this page's
 // px, 0 in full screen), the page tells it where it has something to click in that strip (those spots stay clicks)
 const CHROME = {tb: 0, tl: 0, ly: 0, sent: ''};
