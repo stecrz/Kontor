@@ -1231,6 +1231,8 @@ class Tools(_Assist):
         self.assertEqual(self.a._where(), "")                                        # without the right: not even which page
 
     def test_rights(self):
+        self.assertEqual(len(self.a.tool_list(self.a.settings())), len(A.TOOLS))         # changes are on from the start (each after the user's click)
+        self.a.set({"rights": {"enter_values": False}})
         self.assertEqual(len(self.a.tool_list(self.a.settings())), len([t for t in A.TOOLS if t['kind'] != 'enter']))   # everything but entering values
         self.assertNotIn("enter_balances", [t["name"] for t in self.a.tool_list(self.a.settings())])
         with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record"), "w"):
@@ -1267,7 +1269,7 @@ class Tools(_Assist):
         s = A.settings({"assistant": {"enabled": "yes", "model": 7, "effort": "max", "context": 123, "idle_minutes": -5, "sandbox": 0, "rights": {"enter_values": "true", "x": True, "figures": False}}})
         self.assertEqual(s, dict(A.DEFAULTS, idle_minutes=0, rights=dict(A.DEFAULTS["rights"], figures=False)))
         self.assertEqual(A.settings({}), A.DEFAULTS)
-        self.assertFalse(A.DEFAULTS["enabled"]); self.assertFalse(A.DEFAULTS["rights"]["enter_values"]); self.assertFalse(A.DEFAULTS["rights"]["remote"])
+        self.assertFalse(A.DEFAULTS["enabled"]); self.assertTrue(A.DEFAULTS["rights"]["enter_values"]); self.assertFalse(A.DEFAULTS["rights"]["remote"])
         self.assertEqual(A.DEFAULTS["sandbox"], "strict")
         with self.assertRaises(ValueError):
             self.a.set({"model": "not-downloaded"})
@@ -1519,8 +1521,8 @@ class Tools(_Assist):
             self.ask("Geheime Frage nach dem Zahnarzt 4711,23")
             self.tool("search_transactions", {"text": "Miete"})
             r = self.a.ask({"question": 'call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 98765.43}]}'})
-            ev = events(self.a, r["job"], until="entry")
-            self.a.confirm(r["job"], next(e["id"] for e in ev if e["type"] == "entry"), True)
+            ev = events(self.a, r["job"], until="batch")
+            self.a.confirm(r["job"], next(e["id"] for e in ev if e["type"] == "batch"), True)
             events(self.a, r["job"])
         finally:
             root.removeHandler(h); root.setLevel(old)
@@ -1792,11 +1794,16 @@ class Chats(_Assist):
     def test_shown_like_the_page(self):
         evs = [{"type": "status", "state": "thinking"}, {"type": "think", "text": "hm"}, {"type": "tool", "label": "Liest", "kind": "read"},
                {"type": "delta", "text": "<tool_call>"}, {"type": "reset"}, {"type": "delta", "text": "Die "}, {"type": "delta", "text": "Antwort"},
-               {"type": "entry", "id": "a1", "state": "ask", "kind": "plan", "n": 7}, {"type": "entry_state", "id": "a1", "state": "declined"},
+               {"type": "entry", "id": "a1", "state": "queued", "kind": "plan", "n": 7}, {"type": "batch", "id": "b1", "ids": ["a1"]},
+               {"type": "entry_state", "id": "a1", "state": "declined"}, {"type": "batch_state", "id": "b1", "state": "declined", "done": 0, "failed": 0, "left": 1},
                {"type": "ui", "id": "u", "action": "open"}, {"type": "done", "seconds": 1.5, "tokens": 9, "tps": 3, "cut": False}]
         m = A._shown(evs)
         self.assertEqual(m["parts"], [{"k": "think", "text": "hm"}, {"k": "tool", "label": "Liest", "kind": "read"}, {"k": "text", "text": "Die Antwort"},
-                                      {"k": "entry", "id": "a1", "state": "declined", "kind": "plan", "text": ""}])
+                                      {"k": "entry", "id": "a1", "state": "declined", "kind": "plan", "text": ""},
+                                      {"k": "batch", "id": "b1", "state": "declined", "ids": ["a1"], "done": 0, "failed": 0, "left": 1}])
+        # never decided (Kontor stopped while the card waited): nothing was made
+        m2 = A._shown([{"type": "delta", "text": "x"}, {"type": "entry", "id": "a2", "state": "queued", "kind": "plan"}, {"type": "batch", "id": "b2", "ids": ["a2"]}])
+        self.assertEqual([(p["k"], p["state"]) for p in m2["parts"] if p["k"] != "text"], [("entry", "declined"), ("batch", "declined")])
         self.assertEqual((m["state"], m["meta"]["seconds"]), ("done", 1.5))
         self.assertEqual(A._shown([{"type": "delta", "text": "halb"}, {"type": "stopped"}])["state"], "stopped")
         self.assertEqual(A._shown([{"type": "error", "text": "kaputt"}])["parts"], [{"k": "err", "text": "kaputt"}])
@@ -1817,22 +1824,23 @@ class Entries(_Assist):
         return (self.store.load_shared("state.json", {}) or {}).get("history", {}).get(self.depot["uuid"], {})
 
     def propose(self, q):
+        """A change proposed: (job, its card -- with the id of the card of all changes of that answer as "batch")."""
         r = self.a.ask({"question": q})
-        ev = events(self.a, r["job"], until="entry")
-        return r["job"], next(e for e in ev if e["type"] == "entry")
+        ev = events(self.a, r["job"], until="batch")
+        return r["job"], dict(next(e for e in ev if e["type"] == "entry"), batch=next(e["id"] for e in ev if e["type"] == "batch"))
 
     def test_balances_only_after_the_click(self):
         before = self.hist()
         job, card = self.propose('call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 70000}, {"month": "2025-04", "amount": "71.500,50"}]}')
-        self.assertEqual((card["kind"], card["title"], card["state"]), ("balances", "Depot", "ask"))
+        self.assertEqual((card["kind"], card["title"], card["state"]), ("balances", "Depot", "queued"))
         self.assertEqual([(r["label"], r["new"]) for r in card["rows"]], [("2025-03", 70000.0), ("2025-04", 71500.5)])
         time.sleep(0.3)
         self.assertEqual(self.hist(), before)                                        # proposed: nothing entered
         self.assertTrue(self.app.assistant.job and not self.app.assistant.job.done)   # it waits
-        self.a.confirm(job, card["id"], True)
+        self.a.confirm(job, card["batch"], True)
         evs = events(self.a, job)
         self.assertEqual([e["state"] for e in evs if e["type"] == "entry_state"], ["done"])
-        self.assertIn('"entered":true', text_of(evs).replace(" ", ""))
+        self.assertIn('"proposed":true', text_of(evs).replace(" ", ""))
         self.assertEqual(self.hist(), dict(before, **{"2025-03": 70000.0, "2025-04": 71500.5}))
         self.app.rebuild_report(wait=True)
         h = MA.account_history(self.app, self.depot["uuid"])
@@ -1850,10 +1858,10 @@ class Entries(_Assist):
     def test_taking_back_never_overwrites_what_came_after(self):
         by_hand = lambda v: MA.account_history_set(self.app, {"account": self.depot["uuid"], "amounts": {"2025-03": v}})
         # two entries for the same month: taken back in their order only, each restoring exactly what was there before it
-        job, c1 = self.enter("2025-03", 100); self.a.confirm(job, c1["id"], True); events(self.a, job)
+        job, c1 = self.enter("2025-03", 100); self.a.confirm(job, c1["batch"], True); events(self.a, job)
         job, c2 = self.enter("2025-03", 200)
         self.assertEqual(c2["rows"][0]["old"], 100.0)
-        self.a.confirm(job, c2["id"], True); events(self.a, job)
+        self.a.confirm(job, c2["batch"], True); events(self.a, job)
         self.assertEqual(self.hist(), {"2025-03": 200.0})
         with self.assertRaises(ValueError):
             self.a.take_back(c1["id"])                                                # the later entry stands on it: not overwritten
@@ -1861,7 +1869,7 @@ class Entries(_Assist):
         self.a.take_back(c2["id"]); self.assertEqual(self.hist(), {"2025-03": 100.0})
         self.a.take_back(c1["id"]); self.assertEqual(self.hist(), {})                 # still possible after the refusal
         # corrected by hand after the entry: taking back leaves the hand value alone
-        job, c3 = self.enter("2025-03", 300); self.a.confirm(job, c3["id"], True); events(self.a, job)
+        job, c3 = self.enter("2025-03", 300); self.a.confirm(job, c3["batch"], True); events(self.a, job)
         by_hand(555.55)
         with self.assertRaises(ValueError):
             self.a.take_back(c3["id"])
@@ -1870,7 +1878,7 @@ class Entries(_Assist):
         job, c4 = self.enter("2025-03", 400)
         self.assertEqual(c4["rows"][0]["old"], 555.55)
         by_hand(777)
-        self.a.confirm(job, c4["id"], True)
+        self.a.confirm(job, c4["batch"], True)
         evs = events(self.a, job)
         self.assertEqual([(e["state"], bool(e.get("text"))) for e in evs if e["type"] == "entry_state"], [("failed", True)])
         self.assertEqual(self.hist(), {"2025-03": 777.0})
@@ -1880,14 +1888,14 @@ class Entries(_Assist):
         ds = self.app.dataset(); aid = ds["main_area"]; m = ds["areas"][aid]["plan_months"][0]
         rows = lambda: (self.app.plan_all()["areas"].get(aid) or {}).get("rows") or {}
         job, p1 = self.propose('call set_plan_values {"row": "Wohnen", "values": [{"month": "%s", "amount": -1600}]}' % m)
-        self.a.confirm(job, p1["id"], True); events(self.a, job)
+        self.a.confirm(job, p1["batch"], True); events(self.a, job)
         MA.plan_update(self.app, {"area": aid, "row": "expenses/Wohnen", "month": m, "value": -1700})
         with self.assertRaises(ValueError):
             self.a.take_back(p1["id"])
         self.assertEqual(rows(), {"expenses/Wohnen": {"amounts": {m: -1700.0}}})
         job, p2 = self.propose('call set_plan_values {"row": "Wohnen", "values": [{"month": "%s", "amount": -1800}]}' % m)
         MA.plan_update(self.app, {"area": aid, "row": "expenses/Wohnen", "month": m, "value": -1750})
-        self.a.confirm(job, p2["id"], True)
+        self.a.confirm(job, p2["batch"], True)
         self.assertEqual([e["state"] for e in events(self.a, job) if e["type"] == "entry_state"], ["failed"])
         self.assertEqual(rows(), {"expenses/Wohnen": {"amounts": {m: -1750.0}}})
         # several months of one entry: saved together (all or none)
@@ -1897,7 +1905,7 @@ class Entries(_Assist):
         self.a.hooks["plan_update"] = lambda body: (saves.append(body), real(body))[1]
         try:
             job, p3 = self.propose('call set_plan_values {"row": "expenses/Wohnen", "values": [{"month": "%s", "amount": -1}, {"month": "%s", "amount": -2}, {"month": "%s", "amount": null}]}' % (m, m2, m3))
-            self.a.confirm(job, p3["id"], True); events(self.a, job)
+            self.a.confirm(job, p3["batch"], True); events(self.a, job)
             self.assertEqual(len(saves), 1)
             self.assertEqual(rows(), {"expenses/Wohnen": {"amounts": {m: -1.0, m2: -2.0}}})
             self.a.take_back(p3["id"])
@@ -1909,14 +1917,14 @@ class Entries(_Assist):
         self.assertEqual((c6["kind"], c6["title"]), ("params", "Planung"))
         self.assertEqual([(x["label"], x["old"], x["shown"], x["new"]) for x in c6["rows"]], [("Horizont (Monate)", None, 24.0, 36), ("Inflation (% p.a.)", None, 2.0, 3.5)])
         self.assertNotIn("inflation_percent_pa", self.app.plan_all()["areas"].get(aid) or {})
-        self.a.confirm(job, c6["id"], True); events(self.a, job)
+        self.a.confirm(job, c6["batch"], True); events(self.a, job)
         self.assertEqual({k: self.app.plan_all()["areas"][aid][k] for k in ("inflation_percent_pa", "horizon_months")}, {"inflation_percent_pa": 3.5, "horizon_months": 36})
         self.assertEqual(len(self.app.dataset()["areas"][aid]["plan_months"]), 37)
         self.a.take_back(c6["id"])
         self.assertNotIn("inflation_percent_pa", self.app.plan_all()["areas"].get(aid) or {})
         self.assertEqual(len(self.app.dataset()["areas"][aid]["plan_months"]), 25)
         job, c7 = self.propose('call set_plan_parameters {"return_percent_pa": "4,5"}')
-        self.a.confirm(job, c7["id"], True); events(self.a, job)
+        self.a.confirm(job, c7["batch"], True); events(self.a, job)
         MA.plan_update(self.app, {"area": aid, "parameter": {"return_percent_pa": 6}})             # changed on the planning page since
         with self.assertRaises(ValueError):
             self.a.take_back(c7["id"])
@@ -1929,7 +1937,7 @@ class Entries(_Assist):
         # an event changed on the planning page after it was entered: taking back leaves it alone
         pm = ds["areas"][aid]["plan_months"]
         job, e1 = self.propose('call add_plan_event {"text": "Auto", "month": "%s", "amount": 5000, "kind": "expense"}' % pm[2])
-        self.a.confirm(job, e1["id"], True); events(self.a, job)
+        self.a.confirm(job, e1["batch"], True); events(self.a, job)
         ev = dict(self.app.plan_all()["areas"][aid]["events"][0])
         MA.plan_update(self.app, {"area": aid, "event": dict(ev, amount=8000, text="Auto (neu verhandelt)")})
         with self.assertRaises(ValueError):
@@ -1940,7 +1948,7 @@ class Entries(_Assist):
             self.a.take_back(e1["id"])                                                # gone already: nothing to do, said so
         # ... also when only its accounts were set there ("from" / "to")
         job, e2 = self.propose('call add_plan_event {"text": "Urlaub", "month": "%s", "amount": 900, "kind": "expense"}' % pm[2])
-        self.a.confirm(job, e2["id"], True); events(self.a, job)
+        self.a.confirm(job, e2["batch"], True); events(self.a, job)
         ev2 = dict(self.app.plan_all()["areas"][aid]["events"][0])
         self.assertEqual((ev2["date_from"], ev2["after"]), (None, None))
         MA.plan_update(self.app, {"area": aid, "event": dict(ev2, after="Tagesgeld")})
@@ -1953,20 +1961,130 @@ class Entries(_Assist):
         self.assertFalse(any(e["type"] == "entry" for e in evs)); self.assertIn("income | expense", text_of(evs))
         # a balance entered by hand with more than cents comes back exactly as it was
         MA.account_history_set(self.app, {"account": self.depot["uuid"], "amounts": {"2025-06": 1234.567}})
-        job, c5 = self.enter("2025-06", 100); self.a.confirm(job, c5["id"], True); events(self.a, job)
+        job, c5 = self.enter("2025-06", 100); self.a.confirm(job, c5["batch"], True); events(self.a, job)
         self.a.take_back(c5["id"])
         self.assertEqual(self.hist()["2025-06"], 1234.567)
+
+    def test_several_changes_one_card(self):
+        """Several changes in one answer: one card; the click carries out the ticked ones only; the log names them with their reason."""
+        before = self.hist()
+        r = self.a.ask({"question": 'call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 11}], "reason": "Auszug vom März"}\n'
+                                    'call enter_balances {"account": "Depot", "values": [{"month": "2025-04", "amount": 22}]}'})
+        evs = events(self.a, r["job"], until="batch")
+        cards, batch = [e for e in evs if e["type"] == "entry"], next(e for e in evs if e["type"] == "batch")
+        self.assertEqual(([c["state"] for c in cards], batch["ids"]), (["queued", "queued"], [c["id"] for c in cards]))
+        self.assertEqual((cards[0].get("reason"), cards[1].get("reason")), ("Auszug vom März", None))
+        self.assertEqual(self.hist(), before)                                        # nothing before the click
+        with self.assertRaises(ValueError):
+            self.a.confirm(r["job"], cards[0]["id"], True)                           # a change alone has no click of its own
+        self.a.confirm(r["job"], batch["id"], True, [cards[0]["id"], "fremd"])        # only the first ticked (an id not on the card: ignored)
+        evs = events(self.a, r["job"])
+        self.assertEqual([(e["id"], e["state"]) for e in evs if e["type"] == "entry_state"], [(cards[0]["id"], "done"), (cards[1]["id"], "declined")])
+        self.assertEqual([(e["state"], e["done"], e["left"]) for e in evs if e["type"] == "batch_state"], [("done", 1, 1)])
+        self.assertEqual(self.hist(), dict(before, **{"2025-03": 11.0}))
+        self.assertEqual([(c["id"], c["reason"]) for c in self.a.changes()], [(cards[0]["id"], "Auszug vom März")])
+        # the model learns what came of it with the next question; the saved conversation shows it
+        self.assertIn("carried out: balances: Depot", self.a.conv["messages"][-1]["content"]); self.assertIn("not approved: balances: Depot", self.a.conv["messages"][-1]["content"])
+        hist = A._history(self.a.conv["turns"])
+        self.assertIn("(carried out)", hist[-1]["content"]); self.assertIn("(not carried out)", hist[-1]["content"])
+        # ticked none: nothing at all
+        r = self.a.ask({"question": 'call enter_balances {"account": "Depot", "values": [{"month": "2025-05", "amount": 33}]}'})
+        batch = next(e for e in events(self.a, r["job"], until="batch") if e["type"] == "batch")
+        self.a.confirm(r["job"], batch["id"], True, [])
+        self.assertEqual([e["state"] for e in events(self.a, r["job"]) if e["type"] == "batch_state"], ["declined"])
+        self.assertNotIn("2025-05", self.hist())
+        self.a.take_back(cards[0]["id"])
+        self.assertEqual(self.hist(), before)
+
+    def test_card_robust(self):
+        """The card of changes holds up: the same change twice is on it once; the same value twice is refused; a failure of one
+        does not stop the others; a model error or a stop before the card leaves nothing waiting; it expires; it has a limit."""
+        before = self.hist()
+        # the same event again and again (a small model in a loop): once on the card, made once
+        aid = self.app.dataset()["main_area"]
+        r = self.a.ask({"question": 'loop add_plan_event {"text": "Auto", "month": "%s", "amount": 500, "kind": "expense"}' % self.app.dataset()["areas"][aid]["plan_months"][0]})
+        evs = events(self.a, r["job"], until="batch")
+        self.assertEqual(len([e for e in evs if e["type"] == "entry"]), 1)
+        self.a.confirm(r["job"], next(e["id"] for e in evs if e["type"] == "batch"), True); events(self.a, r["job"])
+        self.assertEqual(len([e for e in self.app.plan_all()["areas"][aid]["events"] if e["text"] == "Auto"]), 1)
+        # the same month twice in one answer: the second refused before any card
+        r = self.a.ask({"question": 'call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 1}]}\n'
+                                    'call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 2}]}'})
+        evs = events(self.a, r["job"], until="batch")
+        self.assertEqual(len([e for e in evs if e["type"] == "entry"]), 1)
+        self.assertIn("already proposed another change of the same value", text_of(evs))
+        self.a.confirm(r["job"], next(e["id"] for e in evs if e["type"] == "batch"), False); events(self.a, r["job"])
+        # one change fails with something unexpected (a full disk): the other is made, every change gets its state
+        real = self.a.hooks["history_set"]
+        def flaky(body):
+            if "2025-03" in body["amounts"]:
+                raise OSError("disk full")
+            return real(body)
+        self.a.hooks["history_set"] = flaky
+        try:
+            r = self.a.ask({"question": 'call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 3}]}\n'
+                                        'call enter_balances {"account": "Depot", "values": [{"month": "2025-04", "amount": 4}]}'})
+            evs = events(self.a, r["job"], until="batch")
+            self.a.confirm(r["job"], next(e["id"] for e in evs if e["type"] == "batch"), True)
+            evs = events(self.a, r["job"])
+        finally:
+            self.a.hooks["history_set"] = real
+        self.assertEqual([e["state"] for e in evs if e["type"] == "entry_state"], ["failed", "done"])
+        self.assertEqual([(e["done"], e["failed"]) for e in evs if e["type"] == "batch_state"], [(1, 1)])
+        self.assertEqual(evs[-1]["type"], "done"); self.assertEqual(self.hist(), dict(before, **{"2025-04": 4.0}))
+        self.assertIn("failed: balances: Depot (OSError)", self.a.conv["messages"][-1]["content"])
+        # the model fails after proposing (before the card): nothing waits, nothing made
+        real_chat, n = self.a.ai.chat, []
+        def chat(body, cancel):
+            n.append(1)
+            if len(n) > 1:
+                raise A.ModelError("kaputt")
+            return real_chat(body, cancel)
+        self.a.ai.chat = chat
+        try:
+            evs = self.ask('call enter_balances {"account": "Depot", "values": [{"month": "2025-05", "amount": 5}]}')
+        finally:
+            self.a.ai.chat = real_chat
+        self.assertEqual([e["type"] for e in evs if e["type"] in ("entry", "entry_state", "batch", "error")], ["entry", "error", "entry_state"])
+        self.assertEqual([e["state"] for e in evs if e["type"] == "entry_state"], ["declined"])
+        self.assertNotIn("2025-05", self.hist())
+        # nobody clicks: the card expires, nothing made
+        old = A.CONFIRM_SECONDS
+        A.CONFIRM_SECONDS = 0.5
+        try:
+            evs = self.ask('call enter_balances {"account": "Depot", "values": [{"month": "2025-06", "amount": 6}]}')
+        finally:
+            A.CONFIRM_SECONDS = old
+        self.assertEqual([e["state"] for e in evs if e["type"] in ("entry_state", "batch_state")], ["declined", "declined"])
+        self.assertNotIn("2025-06", self.hist())
+        # at most so many changes in one answer
+        old = A.MAX_PROPOSALS
+        A.MAX_PROPOSALS = 1
+        try:
+            r = self.a.ask({"question": 'call enter_balances {"account": "Depot", "values": [{"month": "2025-07", "amount": 7}]}\n'
+                                        'call enter_balances {"account": "Depot", "values": [{"month": "2025-08", "amount": 8}]}'})
+            evs = events(self.a, r["job"], until="batch")
+        finally:
+            A.MAX_PROPOSALS = old
+        self.assertEqual(len([e for e in evs if e["type"] == "entry"]), 1); self.assertIn("At most 1 changes", text_of(evs))
+        self.a.confirm(r["job"], next(e["id"] for e in evs if e["type"] == "batch"), False); events(self.a, r["job"])
+        # a damaged log of changes is started anew (changes are logged again)
+        self.app.store.save(A.CHANGES_FILE, {"kaputt": True})
+        r = self.a.ask({"question": 'call enter_balances {"account": "Depot", "values": [{"month": "2025-09", "amount": 9}]}'})
+        evs = events(self.a, r["job"], until="batch")
+        self.a.confirm(r["job"], next(e["id"] for e in evs if e["type"] == "batch"), True); events(self.a, r["job"])
+        self.assertEqual([c["rows"][0]["label"] for c in self.a.changes()], ["2025-09"])
 
     def test_declined_stopped_expired(self):
         before = self.hist()
         job, card = self.propose('call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 1}]}')
-        self.a.confirm(job, card["id"], False)
+        self.a.confirm(job, card["batch"], False)
         evs = events(self.a, job)
         self.assertEqual([e["state"] for e in evs if e["type"] == "entry_state"], ["declined"])
-        self.assertIn("did not confirm", text_of(evs))
+        self.assertEqual([e["state"] for e in evs if e["type"] == "batch_state"], ["declined"])
         self.assertEqual(self.hist(), before)
         with self.assertRaises(ValueError):
-            self.a.confirm(job, card["id"], True)                                    # a click that comes late enters nothing
+            self.a.confirm(job, card["batch"], True)                                    # a click that comes late enters nothing
         self.assertEqual(self.hist(), before)
         # stopped while it waits
         job, card = self.propose('call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 2}]}')
@@ -1975,12 +2093,12 @@ class Entries(_Assist):
         self.assertEqual(evs[-1]["type"], "stopped")
         self.assertEqual([e["state"] for e in evs if e["type"] == "entry_state"], ["declined"])
         with self.assertRaises(ValueError):
-            self.a.confirm(job, card["id"], True)
+            self.a.confirm(job, card["batch"], True)
         # the right switched off while the card waits
         job, card = self.propose('call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 3}]}')
         cfg = copy.deepcopy(self.app.config); cfg["assistant"]["rights"]["enter_values"] = False
         self.app.save_config(cfg)
-        self.a.confirm(job, card["id"], True)
+        self.a.confirm(job, card["batch"], True)
         evs = events(self.a, job)
         self.assertEqual([e["state"] for e in evs if e["type"] == "entry_state"], ["declined"])
         self.assertEqual(self.hist(), before)
@@ -2011,7 +2129,7 @@ class Entries(_Assist):
         self.assertEqual((card["kind"], card["title"]), ("plan", "Wohnen"))
         self.assertEqual(card["rows"][0]["shown"], round(next(z for s in ds["areas"][aid]["cashflow"]["sections"] for z in s["rows"] if z["row"] == "Wohnen")["plan"]["amounts"][pm[0]], 2))
         self.assertEqual(self.app.plan_all()["areas"], {})
-        self.a.confirm(job, card["id"], True)
+        self.a.confirm(job, card["batch"], True)
         events(self.a, job)
         self.assertEqual(self.app.plan_all()["areas"][aid]["rows"], {"expenses/Wohnen": {"amounts": {pm[0]: -1600.0, pm[1]: -1650.0}}})
         row = next(z for s in self.app.dataset()["areas"][aid]["cashflow"]["sections"] for z in s["rows"] if z["row"] == "Wohnen")
@@ -2022,7 +2140,7 @@ class Entries(_Assist):
         MA.plan_update(self.app, {"area": aid, "row": "expenses/Wohnen", "month": pm[0], "value": "-1234.567"})
         job, card = self.propose('call set_plan_values {"row": "Wohnen", "values": [{"month": "%s", "amount": -2000}]}' % pm[0])
         self.assertEqual(card["rows"][0]["old"], -1234.57)
-        self.a.confirm(job, card["id"], True); events(self.a, job)
+        self.a.confirm(job, card["batch"], True); events(self.a, job)
         self.assertEqual(self.app.plan_all()["areas"][aid]["rows"]["expenses/Wohnen"]["amounts"], {pm[0]: -2000.0})
         self.a.take_back(card["id"])
         self.assertEqual(self.app.plan_all()["areas"][aid]["rows"]["expenses/Wohnen"]["amounts"], {pm[0]: -1234.567})
@@ -2031,7 +2149,7 @@ class Entries(_Assist):
         # an event
         job, card = self.propose('call add_plan_event {"text": "Neues Auto", "month": "%s", "amount": 30000, "kind": "expense"}' % pm[3])
         self.assertEqual((card["kind"], card["title"], card["rows"][0]["new"]), ("event", "Neues Auto", -30000.0))
-        self.a.confirm(job, card["id"], True)
+        self.a.confirm(job, card["batch"], True)
         events(self.a, job)
         ev = self.app.plan_all()["areas"][aid]["events"]
         self.assertEqual([(e["text"], e["month"], e["amount"], e["kind"], e["recurrence"]) for e in ev], [("Neues Auto", pm[3], 30000.0, "expense", "once")])
@@ -2090,7 +2208,7 @@ class Http(_Assist):
         finally:
             self.remote(False)
         s = self.a.settings()
-        self.assertEqual((s["enabled"], s["rights"]["enter_values"]), (True, False))
+        self.assertEqual((s["enabled"], s["rights"]["enter_values"]), (True, True))
         self.assertIn("qwen3.6-35b-a3b", self.a.ai.models())
 
     def test_saved_conversations_over_http(self):
@@ -2146,7 +2264,7 @@ class Http(_Assist):
             self.assertEqual(self.call("/api/assistant/settings", {"rights": {"figures": False}})[0], 403)
             # entering values from there: only when the device may change things
             code, r = self.call("/api/assistant/ask", {"question": 'call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 5}]}'})
-            card = next(e for e in events(self.a, r["job"], until="entry") if e["type"] == "entry")
+            card = next(e for e in events(self.a, r["job"], until="batch") if e["type"] == "batch")
             self.assertEqual(self.call("/api/assistant/confirm", {"job": r["job"], "id": card["id"], "ok": True})[0], 403)
             self.assertEqual(self.call("/api/assistant/confirm", {"job": r["job"], "id": card["id"], "ok": False})[0], 200)
             events(self.a, r["job"])
@@ -2191,16 +2309,21 @@ class Http(_Assist):
         code, r = self.call("/api/assistant/ask", {"question": 'call enter_balances {"account": "Depot", "values": [{"month": "2025-05", "amount": 81000}]}',
                                                    "page": {"route": "#balance", "title": "Bilanz", "area": "", "text": "x"}})
         self.assertEqual(code, 200)
-        card = next(e for e in events(self.a, r["job"], until="entry") if e["type"] == "entry")
+        evs = events(self.a, r["job"], until="batch")
+        card, batch = next(e for e in evs if e["type"] == "entry"), next(e for e in evs if e["type"] == "batch")
         code, st = self.call("/api/assistant/status")
         self.assertTrue(st["busy"]); self.assertEqual(st["job"], r["job"])
         self.assertEqual(self.call("/api/assistant/ask", {"question": "x"})[0], 400)
-        self.assertEqual(self.call("/api/assistant/confirm", {"job": r["job"], "id": card["id"], "ok": True})[0], 200)
+        self.assertEqual(self.call("/api/assistant/changes")[1], {"changes": []})          # nothing changed before the click
+        self.assertEqual(self.call("/api/assistant/confirm", {"job": r["job"], "id": batch["id"], "ok": True, "ids": [card["id"]]})[0], 200)
         evs = events(self.a, r["job"])
         self.assertEqual(evs[-1]["type"], "done")
         depot = next(k for k in self.app.dataset()["accounts"] if k["name"] == "Depot")["uuid"]
         self.assertEqual(self.store.load_shared("state.json", {})["history"][depot], {"2025-05": 81000.0})
+        ch = self.call("/api/assistant/changes")[1]["changes"]                        # in the log of changes: what, when, rows
+        self.assertEqual([(c["id"], c["kind"], c["title"], c["state"], c["rows"][0]["new"]) for c in ch], [(card["id"], "balances", "Depot", "done", 81000.0)])
         self.assertEqual(self.call("/api/assistant/undo", {"id": card["id"]})[0], 200)
+        self.assertEqual(self.call("/api/assistant/changes")[1]["changes"][0]["state"], "undone")
         self.assertEqual((self.store.load_shared("state.json", {}) or {}).get("history", {}), {})
         self.assertEqual(self.call("/api/assistant/undo", {"id": card["id"]})[0], 400)
         # the page does what the assistant asks and tells how it looks then
@@ -2275,8 +2398,9 @@ class Http(_Assist):
         self.call("/api/assistant/settings", {"rights": {"enter_values": True}})
         self.ask("Hallo vor dem Zurücksetzen")
         code, r = self.call("/api/assistant/ask", {"question": 'call enter_balances {"account": "Depot", "values": [{"month": "2025-05", "amount": 5}]}'})
-        card = next(e for e in events(self.a, r["job"], until="entry") if e["type"] == "entry")
+        card = next(e for e in events(self.a, r["job"], until="batch") if e["type"] == "batch")
         self.call("/api/assistant/confirm", {"job": r["job"], "id": card["id"], "ok": True}); events(self.a, r["job"])
+        self.assertTrue(self.a.changes())
         proc = self.a.ai.proc
         self.assertTrue(self.a.conv["messages"] and self.a.undo and proc.poll() is None)
         code, r = self.call("/api/reset", {"password": "sehr-geheimes-passwort"})
@@ -2284,10 +2408,12 @@ class Http(_Assist):
         self.assertIsNotNone(proc.poll())                                             # the model ends
         self.assertEqual((self.a.conv["messages"], self.a.undo, self.a.page), ([], {}, {}))
         self.assertFalse(self.a.settings()["enabled"])                                # off again, as at the beginning
+        self.assertEqual(self.a.changes(), [])                                        # the log of changes goes with the data
         self.assertTrue(os.path.exists(self.a.ai.model_path("unsloth/Qwen3.6-35B-A3B-GGUF", QWEN)))     # what was downloaded stays (public files)
 
     def test_uninstall_takes_the_folder_along(self):
         self.assertIsNotNone(MA._KONTOR_FILE.fullmatch("assistant"))
+        self.assertIsNotNone(MA._KONTOR_FILE.fullmatch("assistant-changes.json.enc"))
         self.assertIsNone(MA._KONTOR_FILE.fullmatch("assistant2"))
         self.assertIsNone(MA._KONTOR_FILE.fullmatch("assistant-chat-x.json.enc"))
         self.ask("Hallo")                                                        # saved: its files go along too
@@ -2410,10 +2536,14 @@ class Browser(unittest.TestCase):
                 self.assertIsNone(pg.query_selector("#sm-ai"))
                 for needle in ("llama.cpp", TAG, "Qwen3.6 35B-A3B", "Qwen3.8 27B", "Gemma 4 26B-A4B", "Denkaufwand", "Was der KI-Assistent darf", "Nie: Einstellungen"):
                     self.assertIn(needle, txt)
-                self.assertFalse(pg.evaluate("document.querySelector('.as-right[data-r=enter_values]').checked || document.querySelector('.as-right[data-r=remote]').checked"))
+                self.assertTrue(pg.evaluate("document.querySelector('.as-right[data-r=enter_values]').checked && !document.querySelector('.as-right[data-r=remote]').checked"))
+                self.assertIn("Protokoll der Änderungen", txt)
                 pg.click("label:has(#as-enabled)"); until(pg, "asOn() && !document.querySelector('#assist-btn').classList.contains('hidden')")
+                pg.wait_for_selector(".as-right[data-r=enter_values]"); pg.uncheck(".as-right[data-r=enter_values]")
+                until(pg, "AS.st.settings.rights.enter_values === false")
                 pg.wait_for_selector(".as-right[data-r=enter_values]"); pg.check(".as-right[data-r=enter_values]")
                 until(pg, "AS.st.settings.rights.enter_values === true")
+                pg.click("#as-log summary"); until(pg, "/noch nichts geändert/.test(document.querySelector('#as-log-list').innerText)")
                 self.assertTrue(app.assistant.settings()["rights"]["enter_values"])
                 pg.select_option("#as-effort", "thorough"); until(pg, "AS.st.settings.effort === 'thorough'")
                 self.assertEqual(app.assistant.settings()["effort"], "thorough")
@@ -2627,16 +2757,17 @@ class Browser(unittest.TestCase):
                 depot = next(k for k in app.dataset()["accounts"] if k["name"] == "Depot")["uuid"]
                 ask(pg, 'call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 70000}]}')
                 card = pg.inner_text(".as-entry.ask")
-                for needle in ("Depot", "März 2025", "70.000,00", "Eintragen", "Nicht eintragen"):
+                for needle in ("Depot", "März 2025", "70.000,00"):
                     self.assertIn(needle, card)
+                self.assertIn("Ausführen", pg.inner_text(".as-batch")); self.assertIn("Nichts ändern", pg.inner_text(".as-batch"))
                 self.assertEqual((store.load_shared("state.json", {}) or {}).get("history", {}), {})
-                pg.click(".as-yes"); pg.wait_for_selector(".as-entry.done .as-undo")
+                pg.click(".as-b-yes"); pg.wait_for_selector(".as-entry.done .as-undo")
                 self.assertEqual(store.load_shared("state.json", {})["history"][depot], {"2025-03": 70000.0})
                 until(pg, "!AS.busy")
                 pg.click(".as-undo"); pg.wait_for_selector(".as-entry.undone")
                 self.assertEqual((store.load_shared("state.json", {}) or {}).get("history", {}), {})
                 ask(pg, 'call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 1}]}')
-                pg.click(".as-no"); pg.wait_for_selector(".as-entry.declined"); until(pg, "!AS.busy")
+                pg.click(".as-b-no"); pg.wait_for_selector(".as-entry.declined"); until(pg, "!AS.busy")
                 self.assertEqual((store.load_shared("state.json", {}) or {}).get("history", {}), {})
                 # stop: at once
                 pg.fill("#as-in", "slow"); pg.keyboard.press("Enter")

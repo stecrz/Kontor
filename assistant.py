@@ -6,8 +6,9 @@ What the model can do is the list of tools below and nothing else -- it has no t
           the page on screen -- each of these is a right you can switch off (Einstellungen -> Assistent);
   show    open a page, show transactions -- in your browser; a chart in the chat (Kontor's own figures: the model only
           chooses what, the page draws it);
-  enter   month-end balances of an account, planning values, planning events -- every single entry only after your click
-          on its card, and it can be taken back there.
+  enter   month-end balances of an account, planning values, planning events -- proposed during an answer, shown together on
+          one card at its end, carried out only with your click there (each can be left out), and taken back there; every
+          change carried out goes into a log of changes (encrypted in Kontor's data folder, Einstellungen -> Assistent).
 Never, and there is no tool for it: settings, access, updates, the assistant itself (its model, its rights), booking rules and
 Auto-Buchungen, anything in MoneyMoney.
 
@@ -50,7 +51,7 @@ CONTEXTS = (16384, 32768, 65536)                   # tokens the model keeps in v
 RIGHTS = ("figures", "transactions", "help", "page", "navigate", "enter_values", "remote")
 DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "effort": "balanced", "context": 16384, "idle_minutes": 10, "sandbox": "strict", "save_chats": True,
                             "rights": {"figures": True, "transactions": True, "help": True, "page": True, "navigate": True,
-                                       "enter_values": False, "remote": False}}
+                                       "enter_values": True, "remote": False}}       # changes: each one only with your click on the card
 PAGES = ("overview", "balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "categories", "accounts", "help")
 # its text is read only from these pages -- never settings, log, setup (nor its own conversation under "assistant")
 PLAN_LIMITS = {"horizon_months": (1, 240), "inflation_percent_pa": (-5, 20), "income_increase_percent_pa": (-20, 50), "expense_increase_percent_pa": (-20, 50),
@@ -60,6 +61,9 @@ MAX_RESULT = 7000                                  # characters of one tool resu
 MAX_QUESTION = 40000                               # characters; less with a small context (question_limit)
 MAX_PAGE = 9000
 CONFIRM_SECONDS = 900
+MAX_PROPOSALS = 60                                 # changes proposed in one answer at most (all on one card)
+CHANGES_FILE = "assistant-changes.json"            # the log of changes the assistant carried out (in the data folder, encrypted)
+CHANGES_MAX = 500                                  # entries in it at most (the oldest go first)
 WATCH_SECONDS = 30
 SPEECH_IDLE_MINUTES = 5                            # the speech model ends when nothing was dictated for that long
 ORPHAN_SECONDS = 8                                 # the page asks for news every second while it listens
@@ -209,7 +213,10 @@ class Job:
         self.cv = threading.Condition()
         self.cancel = threading.Event()
         self.done = False
-        self.waiting: Dict[str, dict] = {}            # entries (and page actions) waiting for an answer from the page
+        self.waiting: Dict[str, dict] = {}            # the card of changes (and page actions) waiting for an answer from the page
+        self.batch: List[dict] = []                   # changes proposed in this answer: shown on one card at its end
+        self.decided = False                          # ... and whether the user's click on that card was handled
+        self.stopped_at_card = False                  # ... or the answer was stopped while that card waited (nothing made)
         self.started = time.time()
         self.polled = time.time()                     # when the page last asked for news
         self.used: List[str] = []                     # tools used (for the log: names only)
@@ -1454,41 +1461,119 @@ class Assistant:
                        "sentence or two what stands out, with figures from here. null = unknown (never estimate it); outflows and liabilities are negative.")
         return out
 
-    # enter: only after the user's click on the card
-    def _confirm(self, job: Job, card: dict, apply: Callable[[], dict], undo: Callable[[], None]) -> dict:
-        """Shows an entry as a card and waits for the user's click. Enter: apply() runs (and the card offers to take it back);
-        anything else: nothing is entered."""
+    # enter: proposed during the answer, carried out only after the user's click on the card at its end
+    def _propose(self, job: Job, card: dict, apply: Callable[[], dict], undo: Optional[Callable[[], None]], right: str = "enter_values",
+                 reason: Any = "", targets: Optional[set] = None) -> dict:
+        """A change the model proposes: shown at once (waiting), carried out only when the user approves the card of all changes
+        of this answer at its end. apply() makes it (ValueError: not made, the card says why); undo takes it back -- None: it
+        cannot be taken back (the card says so before the click). targets: what it changes (e.g. one month of one account) --
+        a second change of the same thing in the same answer is refused (the second would find the value changed by the first)."""
+        same = json.dumps(card, sort_keys=True, default=str)
+        if any(p["same"] == same for p in job.batch):     # proposed again (a small model repeats itself): once on the card
+            return {"proposed": True, "note": "You already proposed exactly this change in this answer -- it is on the card once. Do not propose it again."}
+        hit = sorted({str(t) for t in (targets or set()) for p in job.batch if t in p["targets"]})
+        if hit:
+            raise ToolError("You already proposed another change of the same value in this answer (%s). Propose each value once." % ", ".join(hit[:5]))
+        if len(job.batch) >= MAX_PROPOSALS:
+            raise ToolError("At most %d changes in one answer. Propose the rest in the next answer." % MAX_PROPOSALS)
         aid = secrets.token_hex(6)
-        w = {"event": threading.Event(), "kind": "entry", "ok": None}
-        job.waiting[aid] = w
-        job.emit("entry", id=aid, state="ask", **card)
+        why = re.sub(r"\s+", " ", str(reason or "")).strip()[:160]
+        card = dict(card, reason=why) if why else dict(card)
+        if undo is None:
+            card["final"] = True
+        job.batch.append({"id": aid, "card": card, "apply": apply, "undo": undo, "right": right, "same": same, "targets": set(targets or ())})
+        job.emit("entry", id=aid, state="queued", **card)
+        return {"proposed": True, "note": "Proposed, not made yet. At the end of your answer the user sees all changes proposed in it on one card and approves "
+                                          "them together (or some of them) -- do not ask for confirmation in words, do not repeat the details; say briefly what you "
+                                          "propose and why. You learn in the next question what was carried out."}
+
+    def _decide(self, job: Job) -> str:
+        """The card of this answer's changes: waits for the user's click, carries out what was approved (in the order proposed)
+        and tells the page how each went. Returns a note for the model: what was carried out, what not."""
+        bid = secrets.token_hex(6)
+        w = {"event": threading.Event(), "kind": "batch", "ok": None, "ids": []}
+        job.waiting[bid] = w
+        job.emit("batch", id=bid, state="ask", ids=[p["id"] for p in job.batch])
         t0 = time.time()
-        while not w["event"].is_set():
-            if job.cancel.is_set():
-                job.waiting.pop(aid, None)
-                job.emit("entry_state", id=aid, state="declined")
-                raise Cancelled()
-            if time.time() - t0 > CONFIRM_SECONDS:
-                break
+        while not w["event"].is_set() and not job.cancel.is_set() and time.time() - t0 <= CONFIRM_SECONDS:
             w["event"].wait(0.2)
-        job.waiting.pop(aid, None)
-        if w.get("ok") is not True:
-            job.emit("entry_state", id=aid, state="declined")
-            return {"entered": False, "note": "the user did not confirm this entry; nothing was changed. Do not try again unless asked."}
-        if not self.settings()["rights"]["enter_values"]:            # switched off in the meantime
-            job.emit("entry_state", id=aid, state="declined")
-            return {"entered": False, "note": "entering values is switched off"}
+        job.waiting.pop(bid, None)
+        stopped = job.cancel.is_set()                     # stopped while the card waited: nothing is made
+        chosen = set(w["ids"]) if w.get("ok") is True and not stopped else set()
+        job.decided = True
+        rights = self.settings()["rights"]
+        done, failed, left = [], [], []
+        for p in job.batch:
+            what = "%s: %s" % (p["card"].get("kind"), p["card"].get("title") or "")
+            if p["id"] not in chosen or not rights.get(p["right"]):          # not approved (or the right switched off meanwhile)
+                job.emit("entry_state", id=p["id"], state="declined")
+                left.append(what)
+                continue
+            try:
+                res = p["apply"]()
+            except ValueError as e:
+                job.emit("entry_state", id=p["id"], state="failed", text=str(e)[:300])
+                failed.append("%s (%s)" % (what, str(e)[:120]))
+                continue
+            except Exception as e:                       # a full disk, a file that cannot be written: this one not made, the rest goes on
+                log.warning("Assistant: change failed (%s)", type(e).__name__)
+                job.emit("entry_state", id=p["id"], state="failed", text=tr("s_interner_fehler_s") % type(e).__name__)
+                failed.append("%s (%s)" % (what, type(e).__name__))
+                continue
+            if p["undo"] is not None:
+                self.undo[p["id"]] = {"undo": p["undo"], "kind": p["card"].get("kind"), "chat": job.chat}
+                while len(self.undo) > 200:
+                    self.undo.pop(next(iter(self.undo)))
+            self._log_change(p, job.chat)
+            done.append(what + (" -> %s" % json.dumps(res, ensure_ascii=False)[:160] if res else ""))
+            job.emit("entry_state", id=p["id"], state="done", fixed=p["undo"] is None)
+        log.info("Assistant: %d change(s) carried out after the user's click, %d not approved, %d failed", len(done), len(left), len(failed))
+        job.emit("batch_state", id=bid, state="done" if chosen else "declined", done=len(done), failed=len(failed), left=len(left))
+        job.stopped_at_card = stopped
+        return "[Kontor, not the user: of the changes you proposed, carried out: %s; not approved: %s; failed: %s.]" % (
+            "; ".join(done) or "none", "; ".join(left) or "none", "; ".join(failed) or "none")
+
+    # -- the log of changes ----------------------------------------------------------------------------------------------------
+    def _log_change(self, p: dict, chat: str) -> None:
+        """A change carried out, for the log: what, when, why -- its rows as the card showed them."""
+        c = p["card"]
+        rec = {"id": p["id"], "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kind": c.get("kind"), "title": str(c.get("title") or "")[:160],
+               "sub": str(c.get("sub") or "")[:160], "reason": c.get("reason") or "", "final": bool(c.get("final")), "state": "done", "chat": chat,
+               "rows": [{k: r.get(k) for k in ("label", "old", "shown", "new", "text") if k in r} for r in (c.get("rows") or [])[:40] if isinstance(r, dict)]}
+
+        def add(lst: list) -> None:
+            if not isinstance(lst, list):
+                raise TypeError("not a list")
+            lst.append(rec)
+            del lst[:max(0, len(lst) - CHANGES_MAX)]
+        with self.chat_lock:
+            try:
+                self.app.store.update(CHANGES_FILE, add, [])
+            except Exception as e:                       # damaged (not readable, not a list): started anew, so that changes are logged again
+                log.warning("Assistant: log of changes not readable (%s), started anew", type(e).__name__)
+                try:
+                    self.app.store.save(CHANGES_FILE, [rec])
+                except Exception as e2:  # pragma: no cover - a full disk: the change stands, only its log entry is missing
+                    log.warning("Assistant: change not logged (%s)", type(e2).__name__)
+
+    def _change_state(self, aid: str, state: str) -> None:
+        def mark(lst: list) -> None:
+            for r in lst:
+                if isinstance(r, dict) and r.get("id") == aid:
+                    r["state"] = state
         try:
-            res = apply()
-        except ValueError as e:
-            job.emit("entry_state", id=aid, state="failed", text=str(e)[:300])
-            return {"entered": False, "error": str(e)[:300]}
-        self.undo[aid] = {"undo": undo, "kind": card.get("kind"), "chat": job.chat}
-        while len(self.undo) > 40:
-            self.undo.pop(next(iter(self.undo)))
-        log.info("Assistant: %s entered after the user's confirmation (%d value(s))", card.get("kind"), len(card.get("rows") or []))
-        job.emit("entry_state", id=aid, state="done")
-        return dict({"entered": True, "note": "entered; Kontor recalculates its figures now"}, **(res or {}))
+            with self.chat_lock:
+                self.app.store.update(CHANGES_FILE, mark, [])
+        except Exception as e:  # pragma: no cover
+            log.warning("Assistant: log of changes not updated (%s)", type(e).__name__)
+
+    def changes(self) -> List[dict]:
+        """The changes the assistant carried out, the latest first (taken back: state "undone")."""
+        try:
+            lst = self.app.store.load(CHANGES_FILE, [])
+        except Exception:
+            lst = []
+        return [r for r in reversed(lst) if isinstance(r, dict)] if isinstance(lst, list) else []
 
     def take_back(self, aid: str) -> None:
         """Takes an entry back: the state before it -- only while its values are still the ones it entered (what was
@@ -1498,6 +1583,7 @@ class Assistant:
             raise ValueError(tr("s_ki_nicht_mehr_ruecknehmbar"))
         u["undo"]()
         self.undo.pop(aid, None)
+        self._change_state(aid, "undone")
         log.info("Assistant: %s taken back by the user", u.get("kind"))
         try:
             self._chat_entry(u.get("chat") or "", aid, "undone")
@@ -1540,7 +1626,7 @@ class Assistant:
                 self.hooks["history_set"]({"account": uuid, "amounts": old})
         card = {"kind": "balances", "title": acc["name"], "sub": acc["path"],
                 "rows": [{"label": m, "old": _num(manual.get(m)) if m in manual else None, "shown": _num(shown.get(m)), "new": new[m]} for m in sorted(new)]}
-        return self._confirm(ctx["job"], card, apply, undo)
+        return self._propose(ctx["job"], card, apply, undo, reason=a.get("reason"), targets={"%s %s" % (acc["name"], m) for m in new})
 
     def _plan_row(self, b: dict, name: Any) -> Tuple[str, dict]:
         want = str(name or "").strip().lower()
@@ -1581,7 +1667,8 @@ class Assistant:
 
         card = {"kind": "plan", "title": _row_name(z), "sub": "%s · %s" % ((ds.get("area_names") or {}).get(key, ""), tr("planung")),
                 "rows": [{"label": m, "old": old[m], "shown": _num((p.get("amounts") or {}).get(m)), "new": new[m]} for m in sorted(new)]}
-        return self._confirm(ctx["job"], card, lambda: (write(new, old), {"row": rkey})[1], lambda: write(before, new))
+        return self._propose(ctx["job"], card, lambda: (write(new, old), {"row": rkey})[1], lambda: write(before, new), reason=a.get("reason"),
+                             targets={"%s/%s %s" % (key, rkey, m) for m in new})
 
     def t_set_plan_parameters(self, a: dict, ctx: dict) -> Any:
         ds = self._ds()
@@ -1606,7 +1693,8 @@ class Assistant:
                 self.hooks["plan_update"]({"area": key, "parameter": {k: ("" if v is None else v) for k, v in vals.items()}})
         card = {"kind": "params", "title": tr("planung"), "sub": (ds.get("area_names") or {}).get(key, ""),
                 "rows": [{"label": tr("ki_p_%s" % k), "old": _num(before.get(k)), "shown": _num(shown.get(k)), "new": new[k]} for k in new]}
-        return self._confirm(ctx["job"], card, lambda: (write(new, before), {"parameters": sorted(new)})[1], lambda: write(before, new))
+        return self._propose(ctx["job"], card, lambda: (write(new, before), {"parameters": sorted(new)})[1], lambda: write(before, new), reason=a.get("reason"),
+                             targets={"%s %s" % (key, k) for k in new})
 
     def t_add_plan_event(self, a: dict, ctx: dict) -> Any:
         ds = self._ds()
@@ -1630,7 +1718,7 @@ class Assistant:
                 if there is None or any(there.get(f) != ev.get(f) for f in fields):      # changed on the planning page since (or gone): left alone
                     raise ValueError(tr("s_ki_inzwischen_geaendert"))
                 self.hooks["plan_update"]({"area": key, "event": {"id": eid, "delete": True}})
-        return self._confirm(ctx["job"], card, lambda: (self.hooks["plan_update"]({"area": key, "event": ev}), {"event": text})[1], undo)
+        return self._propose(ctx["job"], card, lambda: (self.hooks["plan_update"]({"area": key, "event": ev}), {"event": text})[1], undo, reason=a.get("reason"))
 
     # -- a question ----------------------------------------------------------------------------------------------------------
     def _system(self, st: dict, ctx: dict) -> str:
@@ -1663,8 +1751,10 @@ class Assistant:
             "- You cannot change settings, rules, access, updates, yourself, or anything in MoneyMoney. If asked: say so and name the page where the user does it.",
         ]
         if r["enter_values"]:
-            lines.append("- Entering values (enter_balances, set_plan_values, set_plan_parameters, add_plan_event): call the tool directly with all values of one account or row. The user sees the entry as a card "
-                         "and confirms or declines it there -- do not ask for confirmation in text. Only enter what the user asked for, with the numbers the user gave.")
+            lines.append("- Changes (enter_balances, set_plan_values, set_plan_parameters, add_plan_event): call the tool directly with all values of one account or row, "
+                         "with a short reason; several changes in one answer are fine. Nothing is changed while you answer: at its end the user sees all your proposed "
+                         "changes on one card and approves them with one click (or leaves some out) -- do not ask for confirmation in text. Only propose what the user "
+                         "asked for or agreed to, with the numbers the user gave or your tools returned.")
         else:
             lines.append("- You cannot enter values (the user has not switched that on under %s)." % tr("einstellungen"))
         if r["figures"]:
@@ -1746,12 +1836,15 @@ class Assistant:
             w["result"] = {k: (v if isinstance(v, bool) else str(v)[:120]) for k, v in result.items() if k in ("found", "what", "label", "column")} if isinstance(result, dict) else {}
             w["event"].set()
 
-    def confirm(self, job_id: str, aid: str, ok: bool) -> None:
+    def confirm(self, job_id: str, aid: str, ok: bool, ids: Any = None) -> None:
+        """The user's click on the card of changes: ok with the changes chosen on it (ids; left out: all), or none."""
         j = self.job
         w = j.waiting.get(aid) if j is not None and j.id == job_id else None
-        if not w or w["kind"] != "entry":
+        if not w or w["kind"] != "batch":
             raise ValueError(tr("s_ki_eintrag_abgelaufen"))
-        w["ok"] = ok is True
+        mine = [p["id"] for p in j.batch]
+        w["ids"] = mine if ids is None else [i for i in mine if i in {str(x) for x in ids if isinstance(x, str)}] if isinstance(ids, list) else []
+        w["ok"] = ok is True and bool(w["ids"])
         w["event"].set()
 
     def poll(self, job_id: str, after: int) -> dict:
@@ -1876,7 +1969,14 @@ class Assistant:
                     turn.append({"role": "tool", "tool_call_id": tc["id"], "content": out})
                 job.emit("status", state="thinking")
             if not (turn[-1].get("role") == "assistant" and str(turn[-1].get("content") or "").strip()):
-                raise ModelError(tr("s_ki_keine_antwort"))    # read and read, or silent twice: said, instead of an empty answer
+                if not job.batch:
+                    raise ModelError(tr("s_ki_keine_antwort"))    # read and read, or silent twice: said, instead of an empty answer
+                if turn[-1].get("role") != "assistant" or turn[-1].get("tool_calls"):
+                    turn.append({"role": "assistant", "content": ""})   # changes proposed without a word: the card speaks for them
+            if job.batch:
+                turn[-1]["content"] = (str(turn[-1].get("content") or "") + "\n\n" + self._decide(job)).strip()     # the model learns what came of it
+                if job.stopped_at_card:
+                    raise Cancelled()
             job.emit("done", seconds=round(time.time() - t0, 1), tokens=tokens, tps=self.ai.tps, cut=cut)
         except Cancelled:
             job.emit("stopped")
@@ -1889,6 +1989,9 @@ class Assistant:
         finally:
             for w in list(job.waiting.values()):
                 w["event"].set()
+            if job.batch and not job.decided:                # stopped or failed before the card: nothing was made, the page says so
+                for p in job.batch:
+                    job.emit("entry_state", id=p["id"], state="declined")
             # the conversation goes on with what was said and read; an answer cut off stays out (for the model; the page shows it)
             if len(turn) > 1 and turn[-1].get("role") == "assistant" and not turn[-1].get("tool_calls"):
                 conv["messages"] = self._trim(conv["messages"] + turn, st)
@@ -2031,6 +2134,11 @@ def _history(turns: list) -> List[dict]:
             out.append({"role": "user", "content": str(m["text"])[:6000]})
         elif m.get("role") == "assistant" and m.get("state") == "done":
             text = "\n\n".join(str(p.get("text") or "") for p in m.get("parts") or [] if isinstance(p, dict) and p.get("k") == "text").strip()
+            made = [p for p in m.get("parts") or [] if isinstance(p, dict) and p.get("k") == "entry"]
+            if made:
+                text = (text + "\n\n[Kontor, not the user: changes proposed in this answer -- %s.]" % "; ".join(
+                    "%s: %s (%s)" % (p.get("kind"), p.get("title") or "", {"done": "carried out", "undone": "carried out, then taken back"}.get(p.get("state"), "not carried out"))
+                    for p in made[:20])).strip()
             if text and out and out[-1]["role"] == "user":
                 out.append({"role": "assistant", "content": text[:6000]})
     while out and out[-1]["role"] == "user":            # a question without its answer (stopped): left out
@@ -2065,6 +2173,14 @@ def _shown(events: List[dict]) -> dict:
             p = next((x for x in parts if x["k"] == "entry" and x.get("id") == ev.get("id")), None)
             if p is not None:
                 p["state"], p["text"] = ev.get("state"), str(ev.get("text") or "")
+                if ev.get("fixed"):
+                    p["fixed"] = True
+        elif t == "batch":
+            parts.append({"k": "batch", "id": ev.get("id"), "state": "ask", "ids": list(ev.get("ids") or [])})
+        elif t == "batch_state":
+            p = next((x for x in parts if x["k"] == "batch" and x.get("id") == ev.get("id")), None)
+            if p is not None:
+                p.update({k: ev.get(k) for k in ("state", "done", "failed", "left")})
         elif t == "reset":
             while parts and parts[-1]["k"] == "text":
                 parts.pop()
@@ -2075,7 +2191,12 @@ def _shown(events: List[dict]) -> dict:
         elif t == "error":
             m["state"] = "error"
             parts.append({"k": "err", "text": str(ev.get("text") or "")[:600]})
-    if m["state"] == "done" and "meta" not in m and not any(p["k"] == "text" for p in parts):
+    for p in parts:                                      # changes never decided (stopped, Kontor restarted): nothing was made
+        if p["k"] == "entry" and p.get("state") in ("queued", "ask"):
+            p["state"] = "declined"
+        elif p["k"] == "batch" and p.get("state") == "ask":
+            p["state"] = "declined"
+    if m["state"] == "done" and "meta" not in m and not any(p["k"] in ("text", "entry") for p in parts):
         m["state"] = "stopped"                           # ended without an answer (Kontor stopped it)
     return m
 
@@ -2142,7 +2263,10 @@ _VALUES = {"type": "array", "items": {"type": "object", "properties": {"month": 
 
 
 def _tool(name: str, right: str, kind: str, text: str, props: Optional[dict] = None, required: Optional[List[str]] = None) -> dict:
-    return {"name": name, "right": right, "kind": kind, "text": text, "params": {"type": "object", "properties": props or {}, "required": required or []}}
+    props = dict(props or {})
+    if kind == "enter":                                  # every change says why (on the card and in the log of changes)
+        props["reason"] = {"type": "string", "description": "Why, in a few words (shown to the user with the change and kept in the log)"}
+    return {"name": name, "right": right, "kind": kind, "text": text, "params": {"type": "object", "properties": props, "required": required or []}}
 
 
 TOOLS: List[dict] = [

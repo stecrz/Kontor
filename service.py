@@ -2100,6 +2100,10 @@ def make_handler(app: App):
                     return self._json(200, {"chats": app.assistant.chats(), "save": assistant_mod.settings(app.config)["save_chats"]})
                 got = app.assistant.chat(str(q.get("id") or ""))
                 return self._json(200, got) if got else self._json(404, {"error": tr("s_ki_verlauf_weg")})
+            if path == "/api/assistant/changes":                  # the log of what the assistant changed (after the user's click)
+                if not self._assistant_ok(s):
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                return self._json(200, {"changes": app.assistant.changes()})
             if path == "/api/assistant/poll":
                 if not self._assistant_ok(s):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
@@ -2361,7 +2365,7 @@ def make_handler(app: App):
                     ok = body.get("ok") is True
                     if ok and not local and app.remote_readonly():       # entering values from another device: only when it may change things
                         return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
-                    a.confirm(str(body.get("job") or ""), str(body.get("id") or ""), ok)
+                    a.confirm(str(body.get("job") or ""), str(body.get("id") or ""), ok, body.get("ids"))
                     return self._json(200, {"ok": True})
             if path == "/api/assistant/chats/delete":            # one or all (from other devices: only where they may change things -- see do_POST)
                 if not (local or assistant_mod.settings(app.config)["rights"]["remote"]):
@@ -2755,6 +2759,7 @@ def make_handler(app: App):
                 for name in dateien:
                     app.store.delete(name)
                 app.assistant.delete_chats(everything=True)          # the saved conversations go with the data
+                app.store.delete(assistant_mod.CHANGES_FILE)         # ... and the log of what the assistant changed
                 app.assistant.forget()                   # the assistant is switched off with its settings: model, conversation and entries to take back end
                 app.config = merged_config({})
                 app.ledger, app.ledger_time, app.categories_raw, app.last_result, app.last_run_at, app.umsaetze = None, None, [], None, None, None
@@ -3229,7 +3234,7 @@ def backup_decrypt(wrapper: dict, password: str) -> dict:
 # Kontor's own files in its data folder (the store, its log and service files, a key file, the certificate): only these go
 ASSISTANT_ASK = ("/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm", "/api/assistant/transcribe")
 
-_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*|assistant-chats"
+_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*|assistant-chats|assistant-changes"
                           r"|assistant-chat-[0-9a-f]{8,32})\.json(?:\.enc)?(?:\.tmp|\.renew)?"
                           r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|master\.key|tls|assistant)(?=\s|$)")
 

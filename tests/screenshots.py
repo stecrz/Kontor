@@ -147,7 +147,7 @@ def main():
             pg.evaluate("AS.msgs.forEach(m => { if (m.meta) m.meta.seconds = 7; }); asMsgs(); asLoad().then(asHead)"); pg.wait_for_timeout(600)
             pg.mouse.move(700, 4)
             save(pg, "assistant")
-            pg.click(".as-no"); pg.wait_for_timeout(500); pg.click(".as-close"); pg.wait_for_timeout(500)
+            pg.click(".as-b-no"); pg.wait_for_timeout(500); pg.click(".as-close"); pg.wait_for_timeout(500)
             pg.goto(U + "#settings/assistant"); pg.wait_for_selector("#as-enabled", state="attached"); pg.wait_for_timeout(900)
             pg.evaluate("document.querySelectorAll('#banner').forEach(b => { b.className = 'hidden'; b.innerHTML = ''; })")
             save(pg, "assistant_settings")

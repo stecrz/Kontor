@@ -49,6 +49,16 @@ Fertig, wenn
 - BWA/SuSa und Lohnabrechnungen eigene Werkzeuge haben, sobald Kontor sie kennt;
 - Kategorien zuordnen als Vorschlag mit Klick möglich ist, wie unter Kategorisieren.
 
+Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach Klick, je Schritt eine kleine Version):
+- [x] 3.16.13 Sammelfreigabe: alle Änderungen einer Antwort auf einer Karte, ein Klick (einzeln abwählbar); Änderungsprotokoll; Änderungsrechte ab Werk an.
+- [ ] Kategorien zuordnen (Vorschlag, Klick, rückgängig wie unter Kategorisieren).
+- [ ] Auto-Buchungen prüfen, freigeben, verwerfen (die Karte sagt: in MoneyMoney nicht rückgängig).
+- [ ] Buchungsregeln (Darlehen, Beteiligungen, Kontenspiegel) anlegen und ändern; Buchungen daraus immer erst zur Freigabe.
+- [ ] Offene Aufgaben beim Öffnen, jede mit „Erledigen“ (die Liste kommt von Kontor, auch ohne Modell).
+- [ ] Belege: Datei in den Chat, Texterkennung von macOS (offline), passenden Umsatz vorschlagen, Abweichungen nennen, ablegen und verknüpfen.
+- [ ] Internet nur zum Lesen: Kontor sucht (nicht das Modell), Freigabe je Zugriff mit Suchbegriffen und Adressen, Filter gegen eigene Daten,
+  danach keine Änderungen im selben Chat.
+
 ## ~~Übersicht~~ (erledigt in 3.15.0)
 Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt an ihre Stelle; am iPhone untereinander; ohne „Alpha“.
 
@@ -90,5 +100,6 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
 
 ## Beim nächsten großen Versionssprung (Hilfe, README, Bilder)
 - Hilfe: eigener Abschnitt „Assistent“ (einrichten, Rechte, was er nie darf, Abschirmung) mit Bildern; README (Netzverbindungen).
+- Hilfe Assistent: Änderungen nur noch über die Sammelkarte am Ende einer Antwort (statt „Eintragen“ je Karte), Änderungsrechte ab Werk an (bisher „anfangs aus“), Protokoll der Änderungen unter Einstellungen → KI-Assistent.
 - Hilfe Assistent: Diagramme im Chat und „Verläufe“ (gespeicherte Unterhaltungen, Einstellung „Verläufe speichern“) mit Bild (3.16.11).
 - Hilfe-Bilder und -Texte neu: Übersicht (drei Spalten, Kennzahlen), Kategorisieren, Cashflow-Positionen (Empfehlung), Buchungsregeln (Bereich + Konto) – 3.15.2 hat nur die Texte angepasst.

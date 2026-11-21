@@ -6600,17 +6600,30 @@ function asMd(src) {
   }
   return h;
 }
-function asEntry(p) {
-  // an entry the assistant proposes: what, where, old and new -- entered only by the click here, and taken back here
+function asEntry(p, ask) {
+  // a change the assistant proposes: what, where, old and new -- carried out only with the click on the card of all changes of the
+  // answer (ask: that card waits now; each change can be left out by its tick), and taken back here
   const kind = {balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params')}[p.kind] || '';
   const lab = s => /^\d{4}-\d{2}$/.test(s) ? MLL(s) : s, n = v => p.kind === 'params' ? (+v).toLocaleString(LOCALE, {maximumFractionDigits: 2}) : fmt.format(v);          // assumptions: plain numbers (2,5), not amounts
   const rows = (p.rows || []).map(r => `<tr><td>${esc(lab(r.label))}</td><td class="num muted">${r.old != null ? n(r.old) : r.shown != null ? n(r.shown) : '–'}</td><td class="num"><b>${r.new == null ? t('ki_e_leer') : n(r.new)}</b></td></tr>`).join('');
   const ev = p.event ? `<div class="muted small">${t(`ki_e_kind_${p.event.kind}`)} · ${t(`ki_e_rec_${p.event.recurrence}`)}${p.event.until ? ' ' + t('ki_e_bis', MLL(p.event.until)) : ''}</div>` : '';
-  const foot = p.state === 'ask' ? `<div class="as-e-btn"><button class="small as-yes" data-id="${esc(p.id)}">${t('ki_e_eintragen')}</button><button class="small secondary as-no" data-id="${esc(p.id)}">${t('ki_e_ablehnen')}</button></div>`
+  const why = p.reason ? `<div class="as-e-why">${esc(p.reason)}</div>` : '';
+  const fin = p.final && p.state === 'queued' ? `<div class="as-e-fin">${t('ki_e_endgueltig')}</div>` : '';
+  const st = p.state === 'queued' ? (ask ? '' : `<div class="as-e-st">${t('ki_e_wartet')}</div>`)
     : p.state === 'done' ? `<div class="as-e-st ok">${ICON.check}<span>${t('ki_e_done')}</span>${p.fixed ? '' : `<button class="ghost small as-undo" data-id="${esc(p.id)}">${t('ki_e_zurueck')}</button>`}</div>`
     : `<div class="as-e-st">${p.state === 'failed' ? esc(t('ki_e_failed', p.text || '')) : t(p.state === 'undone' ? 'ki_e_undone' : 'ki_e_declined')}</div>`;
-  return `<div class="as-entry ${esc(p.state)}"><div class="as-e-k">${kind}</div><div class="as-e-h">${esc(p.title || '')}</div>${p.sub ? `<div class="muted small">${esc(p.sub)}</div>` : ''}${ev}
-    <table class="as-e-t"><thead><tr><th>${t(p.kind === 'params' ? 'ki_e_annahme' : 'ki_e_monat')}</th><th class="num">${t('ki_e_bisher')}</th><th class="num">${t('ki_e_neu_wert')}</th></tr></thead><tbody>${rows}</tbody></table>${foot}</div>`;
+  const tick = p.state === 'queued' && ask ? `<label class="as-e-pick" title="${esc(t('ki_e_auswahl_tip'))}"><input type="checkbox" class="as-pick" data-id="${esc(p.id)}" ${p.off ? '' : 'checked'}></label>` : '';
+  return `<div class="as-entry ${esc(p.state)}${p.state === 'queued' && ask ? ' ask' : ''}${p.off ? ' off' : ''}">${tick}<div class="as-e-k">${kind}</div><div class="as-e-h">${esc(p.title || '')}</div>${p.sub ? `<div class="muted small">${esc(p.sub)}</div>` : ''}${ev}${why}
+    <table class="as-e-t"><thead><tr><th>${t(p.kind === 'params' ? 'ki_e_annahme' : 'ki_e_monat')}</th><th class="num">${t('ki_e_bisher')}</th><th class="num">${t('ki_e_neu_wert')}</th></tr></thead><tbody>${rows}</tbody></table>${fin}${st}</div>`;
+}
+function asBatch(p, m) {
+  // the card of all changes of an answer: one click carries out the ticked ones (or none); afterwards what came of them
+  const mine = (m.parts || []).filter(x => x.k === 'entry' && (p.ids || []).includes(x.id)), on = mine.filter(x => !x.off).length;
+  if (p.state === 'ask') return `<div class="as-batch"><span class="muted small">${tn('ki_b_frage', mine.length, mine.length)}</span>
+    <div class="as-e-btn"><button class="small as-b-yes" data-id="${esc(p.id)}" ${on ? '' : 'disabled'}>${on === mine.length ? tn('ki_b_alle', on, on) : tn('ki_b_ausgewaehlte', on, on)}</button><button class="small secondary as-b-no" data-id="${esc(p.id)}">${t('ki_b_nichts')}</button></div></div>`;
+  if (p.state === 'declined') return `<div class="as-batch done"><span class="muted small">${t('ki_b_nichts_geaendert')}</span></div>`;
+  const bits = [p.done ? tn('ki_b_done', p.done, p.done) : '', p.left ? tn('ki_b_left', p.left, p.left) : '', p.failed ? tn('ki_b_failed', p.failed, p.failed) : ''].filter(Boolean);
+  return `<div class="as-batch done"><span class="muted small">${esc(bits.join(' · '))}</span></div>`;
 }
 // A chart the assistant asked for: the figures are Kontor's own (the model chose only what to show), drawn here as the charts on
 // the pages are -- the values on hover, a click shows the figure on its page (on a touch screen: tap to see it, tap again to go)
@@ -6785,11 +6798,12 @@ function asMsg(m, i) {
     if (p.k === 'text') h += `<div class="as-t">${asMd(p.text)}</div>`;
     else if (p.k === 'tool') h += `<div class="as-tool ${esc(p.kind || '')}">${esc(p.label || '')}</div>`;
     else if (p.k === 'think') h += `<details class="as-think" data-m="${i}" data-p="${j}"${p.open ? ' open' : ''}><summary>${t('ki_gedanken')}</summary><div>${esc(p.text).replace(/\n/g, '<br>')}</div></details>`;
-    else if (p.k === 'entry') h += asEntry(p);
+    else if (p.k === 'entry') h += asEntry(p, (m.parts || []).some(x => x.k === 'batch' && x.state === 'ask' && (x.ids || []).includes(p.id)));
+    else if (p.k === 'batch') h += asBatch(p, m);
     else if (p.k === 'chart') h += asChart(p, i, j);
     else if (p.k === 'err') h += `<div class="banner err small">${esc(p.text)}</div>`;
   });
-  if (m.state === 'run' && !(m.parts || []).some(p => p.k === 'entry' && p.state === 'ask')) h += `<div class="as-run"><span class="spin"></span>${t(m.status === 'loading' ? 'ki_laedt_modell' : 'ki_denkt')}</div>`;          // an entry waiting for the click: nothing is being thought
+  if (m.state === 'run' && !(m.parts || []).some(p => p.k === 'batch' && p.state === 'ask')) h += `<div class="as-run"><span class="spin"></span>${t(m.status === 'loading' ? 'ki_laedt_modell' : 'ki_denkt')}</div>`;          // the card of changes waiting for the click: nothing is being thought
   else if (m.state === 'stopped') h += `<div class="as-meta">${t('ki_gestoppt')}</div>`;
   else if (m.meta && m.meta.seconds != null) h += `<div class="as-meta">${m.meta.cut ? t('ki_abgeschnitten') + ' · ' : ''}${t('ki_dauer', asN(m.meta.seconds))}${m.meta.tps ? ' · ' + t('ki_tempo', asN(m.meta.tps)) : ''}</div>`;
   return `<div class="as-msg">${h}</div>`;
@@ -7081,11 +7095,14 @@ function asEvent(m, ev) {
   else if (ev.type === 'ui') asUi(ev);
   else if (ev.type === 'entry') m.parts.push(Object.assign({}, ev, {k: 'entry'}));
   else if (ev.type === 'chart') m.parts.push(Object.assign({}, ev, {k: 'chart'}));
-  else if (ev.type === 'entry_state') { const p = m.parts.find(x => x.k === 'entry' && x.id === ev.id); if (p) { p.state = ev.state; p.text = ev.text || ''; } if (ev.state === 'done') asChanged(); }
+  else if (ev.type === 'entry_state') { const p = m.parts.find(x => x.k === 'entry' && x.id === ev.id); if (p) { p.state = ev.state; p.text = ev.text || ''; if (ev.fixed) p.fixed = true; } if (ev.state === 'done') asChanged(); }
+  else if (ev.type === 'batch') m.parts.push({k: 'batch', id: ev.id, state: 'ask', ids: ev.ids || []});
+  else if (ev.type === 'batch_state') { const p = m.parts.find(x => x.k === 'batch' && x.id === ev.id); if (p) Object.assign(p, {state: ev.state, done: ev.done, failed: ev.failed, left: ev.left}); }
   else if (ev.type === 'reset') { while (m.parts.length && m.parts[m.parts.length - 1].k === 'text') m.parts.pop(); }          // what was shown was a tool call written as text, not an answer
   else if (ev.type === 'done') { m.state = 'done'; m.meta = ev; }
   else if (ev.type === 'stopped') m.state = 'stopped';
   else if (ev.type === 'error') { m.state = 'error'; m.parts.push({k: 'err', text: ev.text || ''}); }
+  if (ev.type === 'stopped' || ev.type === 'error') m.parts.forEach(p => { if (p.k === 'entry' && p.state === 'queued') p.state = 'declined'; });          // never decided: nothing was made
 }
 // a value was entered (or taken back): the figures on the page follow
 function asChanged() { setTimeout(async () => { try { await loadAll(); softRoute(); pollStatus().catch(() => {}); } catch (e) {} }, 300); }
@@ -7237,17 +7254,22 @@ $('#assist').addEventListener('click', async e => {
   else if (b.classList.contains('as-big')) { if (S.tab === 'assistant') { AS.open = true; try { localStorage.setItem('kontor.assist', '1'); } catch (x) {} go(AS.prev || '#overview'); } else go('#assistant'); }
   else if (b.classList.contains('as-sug')) asSend(b.textContent);
   else if (b.classList.contains('as-copy')) { try { await navigator.clipboard.writeText(b.parentNode.querySelector('pre').textContent); b.textContent = t('ki_kopiert'); setTimeout(() => { b.textContent = t('ki_kopieren'); }, 1500); } catch (x) {} }
-  else if (b.classList.contains('as-yes') || b.classList.contains('as-no')) {
+  else if (b.classList.contains('as-b-yes') || b.classList.contains('as-b-no')) {
     b.parentNode.querySelectorAll('button').forEach(x => { x.disabled = true; });
-    try { await api('/api/assistant/confirm', {job: AS.job, id: b.dataset.id, ok: b.classList.contains('as-yes')}); }
-    catch (x) { toast(x.message, 5000); const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === b.dataset.id); if (p && !AS.job) p.state = 'declined'; asMsgs(); }
+    const card = AS.msgs.flatMap(m => (m.parts || []).filter(y => y.k === 'batch' && y.id === b.dataset.id).map(y => [m, y]))[0];
+    const ids = card ? card[0].parts.filter(y => y.k === 'entry' && (card[1].ids || []).includes(y.id) && !y.off).map(y => y.id) : [];
+    try { await api('/api/assistant/confirm', {job: AS.job, id: b.dataset.id, ok: b.classList.contains('as-b-yes'), ids}); }
+    catch (x) { toast(x.message, 5000); if (card && !AS.job) { card[1].state = 'declined'; card[0].parts.forEach(y => { if (y.k === 'entry' && y.state === 'queued') y.state = 'declined'; }); } asMsgs(); }
   } else if (b.classList.contains('as-undo')) {
     b.disabled = true;
     try { await api('/api/assistant/undo', {id: b.dataset.id}); const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === b.dataset.id); if (p) p.state = 'undone'; asMsgs(); asChanged(); }
     catch (x) { toast(x.message, 6000); b.disabled = false; }
   }
 });
-$('#assist').addEventListener('change', e => { if (e.target.id === 'as-eff') AS.effort = e.target.value; });
+$('#assist').addEventListener('change', e => {
+  if (e.target.id === 'as-eff') AS.effort = e.target.value;
+  else if (e.target.classList.contains('as-pick')) { const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === e.target.dataset.id); if (p) { p.off = !e.target.checked; asMsgs(); } }          // left out: not carried out
+});
 // the charts in the chat: values under the pointer, a click to the page (a touch: shown first, the second tap goes)
 $('#assist').addEventListener('pointerdown', e => {
   AS.ptr = e.pointerType;
@@ -7328,7 +7350,19 @@ async function vEinstellungenAssistent() {
   </div>
   <h2>${t('ki_rechte')}</h2>
   <div class="as-rights">${['figures', 'transactions', 'help', 'page', 'navigate', 'enter_values', 'remote'].map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${r[k] ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}${k === 'enter_values' ? hq('ki_eintragen') : ''}</span></label>`).join('')}</div>
-  <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>`;
+  <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>
+  <details class="as-log" id="as-log"><summary>${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details>`;
+}
+async function asChangesLoad() {
+  // the log of changes: what the assistant changed after the user's click, the latest first
+  const el = $('#as-log-list'); if (!el) return;
+  let r; try { r = await api('/api/assistant/changes'); } catch (x) { el.textContent = x.message; return; }
+  const kind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params')}[k] || k || '');
+  const list = r.changes || [];
+  el.classList.toggle('muted', !list.length);
+  el.innerHTML = !list.length ? t('ki_aenderungen_keine') : `<div class="as-tw"><table><thead><tr><th>${t('ki_a_zeit')}</th><th>${t('ki_a_was')}</th><th>${t('ki_a_grund')}</th><th>${t('ki_a_stand')}</th></tr></thead><tbody>${list.map(c => `<tr>
+    <td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(kind(c.kind))}</b> · ${esc(c.title || '')}${c.sub ? `<div class="muted small">${esc(c.sub)}</div>` : ''}</td><td>${esc(c.reason || '–')}</td>
+    <td class="nowrap">${t(c.state === 'undone' ? 'ki_e_undone' : 'ki_e_done')}${c.final ? ' · ' + t('ki_a_endgueltig') : ''}</td></tr>`).join('')}</tbody></table></div>`;
 }
 const asRate = b => b >= 1e6 ? (b / 1e6).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e7 ? 0 : 1}) + ' MB/s' : Math.max(1, Math.round(b / 1e3)).toLocaleString(LOCALE) + ' KB/s';
 const asLeft = l => { const s = (l.total - l.done) / l.rate; return s >= 90 ? t('ki_dl_rest_min', asN(s / 60)) : t('ki_dl_rest_s', asN(Math.max(1, s))); };
@@ -7370,6 +7404,7 @@ function bindAssistent(main) {
   on('#as-sandbox', 'change', el => { const cur = AS.st.settings.sandbox;          // weaker rules: only after a question
     if (['strict', 'basic', 'off'].indexOf(el.value) > ['strict', 'basic', 'off'].indexOf(cur) && !confirm(t(`ki_sb_${el.value}_frage`))) { el.value = cur; return; } set({sandbox: el.value}); });
   on('.as-right', 'change', el => set({rights: {[el.dataset.r]: el.checked}}));
+  on('#as-log', 'toggle', el => { if (el.open) asChangesLoad(); });
   on('#as-rt-install', 'click', () => post('/api/assistant/runtime/install'));
   on('#as-rt-remove', 'click', () => { if (confirm(t('ki_programm_entfernen_frage'))) post('/api/assistant/runtime/remove'); });
   on('#as-check', 'click', async el => { el.classList.add('busy'); el.disabled = true; await post('/api/assistant/check'); });

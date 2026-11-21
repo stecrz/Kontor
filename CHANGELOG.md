@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.13 (2026-11-21 15:51)
+- KI-Assistent: alle Änderungen einer Antwort auf einer Karte am Ende, ein Klick führt die angehakten aus.
+- KI-Assistent: Begründung je Änderung; Protokoll der Änderungen unter Einstellungen → KI-Assistent.
+- KI-Assistent: Werte eintragen ab Werk an (jede Änderung erst nach deinem Klick).
+
 ## 3.16.12 (2026-11-21 15:09)
 - KI-Assistent: Diktat bis zehn Minuten (vorher knapp drei); live in Stücken, am Ende einmal als Ganzes für ein sauberes Transkript.
 - KI-Assistent: Stille und Rauschen erreichen das Sprachmodell nicht mehr (keine erfundenen Sätze); Pausen am Rand abgeschnitten.
