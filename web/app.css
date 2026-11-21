@@ -101,7 +101,9 @@ button.secondary.busy::after { border-color:var(--faint); border-top-color:var(-
 .side-btns { display:flex; gap:6px; } .side-btns button { flex:1; padding-left:6px; padding-right:6px; }
 main { flex:1; min-width:0; padding:0 24px calc(20px + env(safe-area-inset-bottom)); }      /* little room below the last card (no bar there) */
 #main > :last-child { margin-bottom:0; }
-.topbar { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr); align-items:center; gap:12px; padding:14px 0 10px; position:sticky; top:0; background:var(--bg); z-index:5; }
+/* title | areas | assistant: the areas centred where there is room; else they move towards the free side, then their names get
+   shorter ("…") -- the title keeps its full width (it is short on the pages with areas) */
+.topbar { display:grid; grid-template-columns:minmax(max-content, 1fr) minmax(0, max-content) minmax(max-content, 1fr); align-items:center; gap:12px; padding:14px 0 10px; position:sticky; top:0; background:var(--bg); z-index:5; }
 .topbar h1 { grid-column:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .topbar #bereich-seg { grid-column:2; justify-self:center; }
 .topbar h1 { font-size:22px; margin:0; font-weight:700; letter-spacing:-.02em; }
 .topbar h1 .page-hq { margin-left:9px; top:-2px; }          /* centred on the title's letters, a little apart */
@@ -624,6 +626,7 @@ textarea { width:100%; min-height:90px; font-family:ui-monospace, Menlo, monospa
 #bereich-seg, .tabs { max-width:100%; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
 #bereich-seg::-webkit-scrollbar, .tabs::-webkit-scrollbar { display:none; }
 #bereich-seg button, .tabs button { flex-shrink:0; white-space:nowrap; }
+#bereich-seg { min-width:0; } #bereich-seg button { flex-shrink:1; min-width:2.8em; overflow:hidden; text-overflow:ellipsis; } #bereich-seg button.on { flex-shrink:0; }      /* too little room: the other names shorter (the chosen one stays whole) -- only then the bar scrolls */
 .tabs button.on { background:var(--head); color:var(--fg); box-shadow:0 1px 3px rgba(0,0,0,.12); font-weight:600; }
 @media (max-width: 1100px) { .immo-grid { grid-template-columns:1fr; } }
 @media (max-width: 600px) { .immo-form, .loan-box .immo-form { grid-template-columns:1fr; } }

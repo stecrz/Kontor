@@ -2627,11 +2627,21 @@ class Browser(unittest.TestCase):
                 fw = pg.evaluate("document.querySelector('#as-in').getBoundingClientRect().width")
                 pg.click("#as-mic"); until(pg, "REC.on")
                 vis = "[...document.querySelectorAll('#as-field button')].filter(b => b.getClientRects().length).map(b => b.id)"
-                self.assertEqual(pg.evaluate(vis), ["as-mic", "as-x"])                        # dictating: take it (the microphone) or throw it away (✕); + and sending go
+                self.assertEqual(pg.evaluate(vis), ["as-x", "as-mic", "as-go"])               # dictating: throw it away (✕), take it (the microphone), send it; + goes
                 self.assertGreaterEqual(pg.evaluate("document.querySelector('#as-in').getBoundingClientRect().width"), fw - 4)
                 pg.click("#as-x"); until(pg, "!REC.on && !REC.busy")
                 self.assertEqual(pg.evaluate("document.querySelector('#as-in').value"), said)
                 self.assertEqual(pg.evaluate(vis), ["as-add", "as-mic", "as-go"])
+                # "send" while dictating: ended, written down, and sent at once
+                pg.fill("#as-in", "")
+                pg.click("#as-mic"); until(pg, "REC.on"); pg.wait_for_timeout(1500)
+                self.assertEqual(pg.get_attribute("#as-go", "title"), "Aufnahme beenden und senden")
+                pg.click("#as-go")
+                until(pg, "!REC.on && !REC.busy && AS.msgs.length > 0 && /^Diktat mit \\d+ Bytes\\.$/.test(AS.msgs[0].text)", 20)
+                until(pg, "!AS.busy", 20)
+                self.assertEqual(pg.input_value("#as-in"), "")
+                pg.click(".as-new"); until(pg, "AS.msgs.length === 0")
+                pg.fill("#as-in", said)
                 # one click on the running time ends it -- also when the time goes on while the button is held
                 pg.click("#as-mic"); until(pg, "REC.on && !!document.querySelector('.as-rec-t').textContent")
                 mx, my = pg.eval_on_selector("#as-mic", "e => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }")
@@ -2814,7 +2824,7 @@ class Browser(unittest.TestCase):
                 pg.fill("#as-in", "Angefangen")
                 pg.click(".as-dl[data-id='qwen3-asr-1.7b']"); until(pg, "AS.st.dictation && !!document.querySelector('#assist.open #as-mic svg')", 20)
                 self.assertEqual(pg.input_value("#as-in"), "Angefangen")
-                self.assertEqual(pg.evaluate("[...document.querySelectorAll('#as-form button, #as-form textarea, #as-form input')].map(e => e.id)"), ["as-add", "as-in", "as-mic", "as-go", "as-x", "as-file"])
+                self.assertEqual(pg.evaluate("[...document.querySelectorAll('#as-form button, #as-form textarea, #as-form input')].map(e => e.id)"), ["as-add", "as-in", "as-x", "as-mic", "as-go", "as-file"])
                 pg.click(".as-del[data-id='qwen3-asr-1.7b']"); until(pg, "!AS.st.dictation && !document.querySelector('#as-mic')")
                 self.assertEqual(app.assistant.ai.models(), {})
                 # switched off again: the button goes, the panel closes

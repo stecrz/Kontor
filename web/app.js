@@ -799,7 +799,7 @@ function bereichSeg() {
   const seg = $('#bereich-seg'); if (!S.DATA) { seg.classList.add('hidden'); return; }
   const keys = Object.keys(S.DATA.areas || {});
   seg.classList.toggle('hidden', keys.length < 2 || !['overview', 'balance', 'cashflow', 'planning'].includes(S.tab));
-  seg.innerHTML = keys.map(k => `<button data-b="${esc(k)}" class="${k === S.area ? 'on' : ''}">${esc(BN(k))}</button>`).join('');
+  seg.innerHTML = keys.map(k => `<button data-b="${esc(k)}" class="${k === S.area ? 'on' : ''}" title="${esc(BN(k))}">${esc(BN(k))}</button>`).join('');          // (shortened for lack of room: the whole name on hover)
   $$('button', seg).forEach(b => b.addEventListener('click', () => { S.area = b.dataset.b; S.collapsed = {}; bereichSeg(); route(); }));
   const on = $('button.on', seg); if (on && seg.scrollWidth > seg.clientWidth) seg.scrollLeft = on.offsetLeft - (seg.clientWidth - on.offsetWidth) / 2;   // many areas: the bar scrolls sideways
 }
@@ -6822,8 +6822,8 @@ function asDraw() {
   $('#assist').innerHTML = `<div class="as-head" id="as-head"></div><div class="as-body" id="as-body"></div>
     <form class="as-form" id="as-form"><div class="as-field" id="as-field"><button type="button" id="as-add" class="as-add" title="${esc(t('ki_anhang'))}" aria-label="${esc(t('ki_anhang'))}">${AS_PLUS}</button>
     <div class="as-ta"><textarea id="as-in" rows="1" maxlength="${(AS.st || {}).question_limit || 9000}" placeholder="${esc(t('ki_frage_ph'))}" aria-label="${esc(t('ki_frage_ph'))}"></textarea><div class="as-ghost" id="as-ghost" aria-hidden="true"></div></div>
-    <div class="as-btns" id="as-btns">${(AS.st || {}).dictation ? `<button type="button" id="as-mic" class="as-mic secondary"></button>` : ''}<button type="submit" id="as-go" class="as-go"></button>
-    <button type="button" id="as-x" class="as-x secondary hidden" title="${esc(t('ki_diktat_verwerfen'))}" aria-label="${esc(t('ki_diktat_verwerfen'))}">${AS_CROSS}</button></div></div>
+    <div class="as-btns" id="as-btns"><button type="button" id="as-x" class="as-x secondary hidden" title="${esc(t('ki_diktat_verwerfen'))}" aria-label="${esc(t('ki_diktat_verwerfen'))}">${AS_CROSS}</button>
+    ${(AS.st || {}).dictation ? `<button type="button" id="as-mic" class="as-mic secondary"></button>` : ''}<button type="submit" id="as-go" class="as-go"></button></div></div>
     <input type="file" id="as-file" multiple hidden accept="${AS_ACCEPT}"></form>`;
   asHead(); asMsgs(true); asMicDraw();
   const body = $('#as-body');
@@ -6837,7 +6837,8 @@ function asDraw() {
   $('#as-file').addEventListener('change', e => { const f = [...(e.target.files || [])]; e.target.value = ''; if (f.length) asFiles(f); });
   asFit(ta); ta.addEventListener('input', () => asFit(ta));
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#as-form').requestSubmit(); } else if (e.key === 'Escape' && AS.busy) { e.stopPropagation(); asStop(); } });
-  $('#as-form').addEventListener('submit', e => { e.preventDefault(); if (REC.on || REC.busy) return; if (AS.busy) { asStop(); return; } const v = ta.value; ta.value = ''; asFit(ta); asSend(v); });          // (dictating: first its text)
+  $('#as-form').addEventListener('submit', e => { e.preventDefault(); if (REC.on) { asMicStop(true, true); return; } if (REC.busy) { REC.go = true; return; }          // dictating: ended, written down, then sent
+    if (AS.busy) { asStop(); return; } const v = ta.value; ta.value = ''; asFit(ta); asSend(v); });
   // a text file dropped onto the panel (a table, a script, notes): its text goes into the question, read in the browser -- it is sent
   // with the question to the model on this Mac like anything typed, and stored nowhere
   const box = $('#assist');
@@ -6872,7 +6873,7 @@ function asFit(ta) {
 // runs, the same button ends it and takes the text, ✕ (or Escape) throws it away. While speaking, the field shows what is said so
 // far (in pieces of about twenty seconds, each ended in a pause), in italics; at the end the whole recording is written down once
 // more, with all its words around each sentence -- that text is the one that stays.
-const REC = {on: false, busy: false, starting: false, drop: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
+const REC = {on: false, busy: false, starting: false, drop: false, go: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
 const REC_MAX = 600;          // seconds: then it ends by itself and the text is taken
 const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.6" y="1.4" width="4.8" height="8.2" rx="2.4" fill="currentColor"/><path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 const AS_PLUS = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
@@ -6889,9 +6890,9 @@ function asMicSync() {
   } else if (!want && mic) { asMicStop(false); mic.remove(); }
 }
 function asMicDraw() {
-  // while dictating: the microphone (its time in it) ends it and takes the text, ✕ in place of sending throws it away, + goes --
-  // the field keeps its width; a button's content is drawn anew only when the state changes (a click on content redrawn under
-  // the pointer would get lost)
+  // while dictating: ✕ throws it away, the microphone (its time in it) ends it and takes the text, sending ends it and sends its
+  // text; + goes, so the field keeps its width -- a button's content is drawn anew only when the state changes (a click on content
+  // redrawn under the pointer would get lost)
   const b = $('#as-mic'), mode = REC.busy ? 'busy' : REC.on ? 'rec' : '', dict = REC.on || REC.busy;
   if (b) {
     b.classList.toggle('rec', REC.on); b.classList.toggle('busy', REC.busy); b.disabled = REC.busy;
@@ -6900,7 +6901,8 @@ function asMicDraw() {
     b.title = t(REC.busy ? 'ki_diktat_schreibt' : REC.on ? 'ki_diktat_stopp' : 'ki_diktieren'); b.setAttribute('aria-label', b.title);
   }
   const f = $('#as-field'); if (f) f.classList.toggle('dict', dict);
-  const go = $('#as-go'), x = $('#as-x'); if (go) go.classList.toggle('hidden', dict); if (x) x.classList.toggle('hidden', !dict);
+  const x = $('#as-x'); if (x) x.classList.toggle('hidden', !dict);
+  const go = $('#as-go'); if (go && !AS.busy) { go.title = t(dict ? 'ki_diktat_senden' : 'ki_senden'); go.setAttribute('aria-label', go.title); }
 }
 function asAdd() { if (!REC.on && !REC.busy) { const f = $('#as-file'); if (f) f.click(); } }          // a file into the question (text, CSV, code)
 function asCancel() {
@@ -7003,7 +7005,7 @@ function asLive() {
 }
 // recording only while the question field is on screen: signed in, and the panel open or the assistant's own page shown
 const asMicMay = () => !!$('#as-in') && !$('#login:not(.hidden)') && (AS.open || S.tab === 'assistant');
-async function asMicStop(send) {
+async function asMicStop(send, go) {
   if (!REC.on) return;
   clearInterval(REC.timer); REC.on = false;
   if (REC.live) REC.live.gen++;          // a text still on its way from the speech model: no longer shown
@@ -7012,15 +7014,18 @@ async function asMicStop(send) {
   const pcm = send && n >= 16000 * 0.4 ? asPcmPart(0, n) : null; REC.pcm = []; REC.m = 0;
   const free = () => { const ta = $('#as-in'); if (ta) ta.readOnly = false; };
   if (!pcm) { asDictPut(''); free(); asMicDraw(); return; }          // thrown away, or too short to hold a word: the field as it was
-  REC.busy = true; REC.drop = false; asMicDraw();
+  REC.busy = true; REC.drop = false; REC.go = !!go; asMicDraw();
+  let send_ = false;
   try {
     const r = await api('/api/assistant/transcribe', {audio: asB64(asWav(pcm))}), text = (r.text || '').trim();          // all of it once more: the text that stays
     REC.busy = false;
     if (REC.drop) asDictPut('');          // thrown away meanwhile (✕)
     else if (!text) { toast(t('ki_diktat_nichts'), 4000); asDictPut(''); }
-    else { asDictPut(text); const ta = $('#as-in'); if (ta) ta.focus(); }
+    else { asDictPut(text); send_ = REC.go; const ta = $('#as-in'); if (ta && !send_) ta.focus(); }
   } catch (e) { if (!REC.drop) toast(e.message, 7000); }          // (what was shown while speaking stays)
-  free(); REC.busy = false; REC.drop = false; asMicDraw();
+  free(); REC.busy = false; REC.drop = false; REC.go = false; asMicDraw();
+  const ta = $('#as-in');
+  if (send_ && ta && !AS.busy) { const v = ta.value; ta.value = ''; asFit(ta); asSend(v); }          // ended with "send": the question goes as it stands now
 }
 async function asFiles(files) {
   const ta = $('#as-in'); if (!ta) return;
@@ -7047,7 +7052,7 @@ function asMsgs(bottom) {
   if (near) b.scrollTop = b.scrollHeight;
   asGo();
 }
-function asGo() { const go = $('#as-go'); if (go) { go.classList.toggle('stop', AS.busy); go.title = t(AS.busy ? 'ki_stopp' : 'ki_senden'); go.setAttribute('aria-label', go.title); go.textContent = AS.busy ? '■' : '↑'; } }
+function asGo() { const go = $('#as-go'); if (go) { go.classList.toggle('stop', AS.busy); go.title = t(AS.busy ? 'ki_stopp' : REC.on || REC.busy ? 'ki_diktat_senden' : 'ki_senden'); go.setAttribute('aria-label', go.title); go.textContent = AS.busy ? '■' : '↑'; } }
 const asDrawn = () => SCROLL.key === S.tab + '/' + S.sub && !$('#main .loading');          // the page the address names is the one drawn (not still the one before)
 function asPage() {
   // the page on screen for the assistant: its text only with the right to read the page, never settings, log or setup

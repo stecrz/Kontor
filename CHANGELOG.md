@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.14 (2026-11-21 16:12)
+- Kopfzeile: Seitentitel wird nicht mehr abgeschnitten; Bereiche rücken bei wenig Platz zur freien Seite und kürzen dann die übrigen Namen („…“), der gewählte bleibt ganz; voller Name beim Darüberfahren.
+- KI-Assistent: Senden auch während des Diktats – beendet es, schreibt es und schickt die Frage ab.
+
 ## 3.16.13 (2026-11-21 15:51)
 - KI-Assistent: alle Änderungen einer Antwort auf einer Karte am Ende, ein Klick führt die angehakten aus.
 - KI-Assistent: Begründung je Änderung; Protokoll der Änderungen unter Einstellungen → KI-Assistent.

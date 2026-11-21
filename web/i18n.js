@@ -2409,6 +2409,7 @@ const I18N = {
 "ki_diktieren":["Diktieren", "Dictate"],
 "ki_diktat_stopp":["Aufnahme beenden und Text übernehmen", "End the recording and take the text"],
 "ki_diktat_verwerfen":["Aufnahme verwerfen (Esc)", "Discard the recording (Esc)"],
+"ki_diktat_senden":["Aufnahme beenden und senden", "End the recording and send"],
 "ki_anhang":["Datei einfügen – Text, Tabelle als CSV, Code", "Add a file – text, table as CSV, code"],
 "ki_diktat_schreibt":["Schreibt mit …", "Writing it down …"],
 "ki_diktat_nichts":["Nichts verstanden – bitte noch einmal.", "Nothing understood – please try again."],

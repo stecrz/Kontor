@@ -213,6 +213,43 @@ class PageTourTest(unittest.TestCase):
             warnings.warn("%s: %d Texte unter dem Kontrast nach Apples Richtlinien:\n  %s" % (engine, len(low), "\n  ".join(low)))
         self.assertEqual(problems, [], "\n".join(problems))
 
+    def test_top_bar_makes_room(self):
+        """Long names of areas and the assistant's panel beside the page: the title stays whole; the areas move towards the free
+        side, then the other names get shorter -- the chosen one stays whole; with room they stand in the middle."""
+        names = ["Max Mustermann", "Nordlicht Vermögensverwaltung eGbR", "Südhang Verwaltung eGbR", "Beispiel Biomarkt GmbH"]
+        measure = """(() => { const h = document.querySelector('#page-title'), s = document.querySelector('#bereich-seg'), a = document.querySelector('#assist-btn');
+          const tb = document.querySelector('.topbar').getBoundingClientRect(), sr = s.getBoundingClientRect(), on = s.querySelector('button.on');
+          return {title_cut: h.scrollWidth > h.clientWidth + 1, on_cut: on.scrollWidth > on.clientWidth + 1, cut: [...s.querySelectorAll('button')].filter(x => x.scrollWidth > x.clientWidth + 1).length,
+                  left: sr.left - tb.left, right: tb.right - sr.right, over: a.getClientRects().length ? sr.right > a.getBoundingClientRect().left : false,
+                  inside: sr.left >= h.getBoundingClientRect().right - 1}; })()"""
+        with _playwright()() as p:
+            b = p.chromium.launch()
+            try:
+                for device in ("mac", "iphone"):
+                    ctx = b.new_context(**dict(DEVICES[device], viewport={"width": 1440, "height": 900}) if device == "mac" else DEVICES[device])
+                    pg = ctx.new_page()
+                    pg.goto(self.base); pg.fill("#login-pw", PASSWORD)
+                    if pg.is_visible("#login-pw2"):
+                        pg.fill("#login-pw2", PASSWORD)
+                    pg.click("#login-btn"); pg.wait_for_selector("#shell:not(.hidden)", timeout=30000)
+                    pg.evaluate("location.hash = '#overview'"); settle(pg)
+                    pg.evaluate("""names => { const ks = Object.keys(S.DATA.area_names); ks.forEach((k, i) => { S.DATA.area_names[k] = names[i]; });
+                      S.DATA.area_names.extra = names[3]; S.DATA.areas.extra = S.DATA.areas[ks[0]]; bereichSeg(); }""", names)
+                    r = pg.evaluate(measure)
+                    self.assertFalse(r["title_cut"] or r["on_cut"], (device, r))
+                    if device == "mac":
+                        self.assertEqual((r["cut"], round(r["left"] - r["right"]) in range(-2, 3)), (0, True), r)          # room: whole, in the middle
+                        pg.evaluate("AS.st = {settings: {enabled: true, rights: {}}, local: true}; AS.open = true; asChrome()"); pg.wait_for_timeout(500)          # (the panel open beside the page)
+                        r = pg.evaluate(measure)
+                        self.assertFalse(r["title_cut"] or r["on_cut"] or r["over"], r)
+                        self.assertTrue(r["cut"] > 0 and r["inside"] and r["left"] > r["right"], r)          # moved to the free side, the others shorter
+                        pg.click("#bereich-seg button:nth-child(2)"); settle(pg)
+                        self.assertFalse(pg.evaluate(measure)["on_cut"])                      # the chosen one: whole
+                        self.assertEqual(pg.get_attribute("#bereich-seg button:nth-child(3)", "title"), names[2])         # the whole name on hover
+                    ctx.close()
+            finally:
+                b.close()
+
     def test_tour_chromium(self):
         with _playwright()() as p:
             b = p.chromium.launch()
