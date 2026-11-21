@@ -2646,7 +2646,7 @@ const I18N = {
 "ki_verlauf_frage1":["1 Frage", "1 question"],
 "ki_speichern":["Verläufe speichern", "Save conversations"],
 "s_ki_verlauf_weg":["Diese Unterhaltung gibt es nicht mehr.", "This conversation no longer exists."],
-"h_ki_speichern":["Unterhaltungen bleiben verschlüsselt in Kontors Datenordner, damit du sie unter „Verläufe“ im Assistenten wieder öffnen und fortsetzen kannst – nicht in Sicherungen, nicht im Protokoll. Zurücksetzen und Deinstallieren löschen sie mit.", "Conversations stay encrypted in Kontor's data folder, so you can open and continue them under “History” in the assistant – not in backups, not in the log. Resetting and uninstalling delete them too."],
+"h_ki_speichern":["Unterhaltungen bleiben verschlüsselt in Kontors Datenordner (Ordner „chats“), damit du sie unter „Verläufe“ im Assistenten wieder öffnen und fortsetzen kannst – nicht in Sicherungen, nicht im Protokoll. Zurücksetzen und Deinstallieren löschen sie mit.", "Conversations stay encrypted in Kontor's data folder (folder “chats”), so you can open and continue them under “History” in the assistant – not in backups, not in the log. Resetting and uninstalling delete them too."],
 "untertitel":["Dein digitaler CFO", "Your digital CFO"],
 "ki_ref_zeile":["{0} (Zeile)", "{0} (row)"],
 "ki_ref_spalte":["Spalte {0}", "Column {0}"],
@@ -2676,5 +2676,10 @@ const I18N = {
 "wert_kopieren":["Wert kopieren", "Copy value"],
 "zeile_kopieren":["Zeile kopieren", "Copy row"],
 "spalte_kopieren":["Spalte kopieren", "Copy column"],
-"ki_schritte":["{0} Schritt|{0} Schritte", "{0} step|{0} steps"]
+"ki_schritte":["{0} Schritt|{0} Schritte", "{0} step|{0} steps"],
+"ki_verlaeufe_n":["{1} Verlauf · {2}|{1} Verläufe · {2}", "{1} conversation · {2}|{1} conversations · {2}"],
+"ki_verlaeufe_alt_loeschen":["Ältere als ein Jahr löschen ({0})", "Delete those older than a year ({0})"],
+"ki_verlaeufe_alt_frage":["{1} Verlauf, der seit über einem Jahr nicht fortgesetzt wurde, löschen? Das lässt sich nicht rückgängig machen.|{1} Verläufe, die seit über einem Jahr nicht fortgesetzt wurden, löschen? Das lässt sich nicht rückgängig machen.", "Delete {1} conversation not continued for over a year? This cannot be undone.|Delete {1} conversations not continued for over a year? This cannot be undone."],
+"ki_verlaeufe_viele":["Viele gespeicherte Verläufe – ältere zu löschen hält die Liste kurz und den Datenordner klein.", "Many saved conversations – deleting old ones keeps the list short and the data folder small."],
+"ki_verlaeufe_mehr":["Ältere anzeigen ({0})", "Show older ({0})"]
 };

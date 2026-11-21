@@ -22,6 +22,7 @@ import threading
 from datetime import date, timedelta
 import time
 import unittest
+import unittest.mock
 import urllib.error
 import zipfile
 
@@ -1962,9 +1963,62 @@ class Chats(_Assist):
             evs = events(self.a, r["job"])
             self.assertEqual(evs[-1]["type"], "stopped", how)
             self.assertEqual(self.a.chats(), [], how)
-            self.assertFalse([n for n in os.listdir(self.dir) if n.startswith("assistant-chat")], how)
+            chats_dir = os.path.join(self.dir, A.CHAT_DIR)
+            self.assertFalse([n for n in os.listdir(chats_dir) if n.startswith("assistant-chat")] if os.path.isdir(chats_dir) else [], how)
             if how == "reset":
                 break
+
+    def test_in_their_own_folder_moved_counted_and_old_ones_deleted(self):
+        """Saved conversations lie in a folder of their own; those of earlier versions (beside all other files) move there at the
+        start, as they are; the settings learn how many and how large, and those not continued for a year can go."""
+        r = self.a.ask({"question": "Neu"}); events(self.a, r["job"])
+        new = r["conversation"]
+        self.assertTrue(self.app.store.path(A.CHAT_FILE % new).startswith(os.path.join(self.dir, A.CHAT_DIR) + os.sep))
+        self.assertFalse([n for n in os.listdir(self.dir) if n.startswith("assistant-chat")])
+        # as an earlier version left them: beside everything else, with their list
+        old = "aaaaaaaa11111111"
+        rec = {"id": old, "title": "Alt", "created": "2024-01-01 10:00:00", "updated": "2024-01-02 10:00:00", "turns": [{"role": "user", "text": "Alt"}]}
+        self.app.store.save("assistant-chat-%s.json" % old, rec)
+        idx = self.app.store.load(A.CHATS_FILE, {}); self.app.store.save("assistant-chats.json", dict(idx, **{old: self.a._chat_meta(rec)}))
+        os.remove(self.app.store.path(A.CHATS_FILE))
+        self.app.store.save(A.CHAT_FILE % new, self.app.store.load(A.CHAT_FILE % new))          # the new one stays where it is
+        a2 = A.Assistant(self.app, self.a.hooks)                                   # Kontor starts again
+        self.assertFalse([n for n in os.listdir(self.dir) if n.startswith("assistant-chat")])          # the data folder tidy
+        self.assertEqual({c["id"] for c in a2.chats()}, {old, new})
+        self.assertEqual(a2.chat(old)["turns"][0]["text"], "Alt")                  # the same key opens it
+        st = a2.chat_stats()
+        self.assertEqual((st["chats"], st["chats_old"], st["chats_many"]), (2, 1, False)); self.assertGreater(st["chats_bytes"], 0)
+        self.assertEqual(self.a.status(True)["chats_old"], 1); self.assertNotIn("chats_bytes", self.a.status(False))
+        # a file in both places (a move cut short): the one in the folder counts, the other stays -- nothing is overwritten
+        self.app.store.save("assistant-chat-%s.json" % new, {"id": new, "title": "doppelt", "turns": []})
+        a2._chats_move()
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "assistant-chat-%s.json.enc" % new)))
+        self.assertNotEqual(a2.chat(new)["title"], "doppelt")
+        os.remove(os.path.join(self.dir, "assistant-chat-%s.json.enc" % new))
+        # not continued for a year: deleted on request (from the settings); the recent one stays
+        code, out = self.call("/api/assistant/chats/delete", {"older_days": 365})
+        self.assertEqual((code, out["deleted"]), (200, 1))
+        self.assertEqual([c["id"] for c in self.a.chats()], [new])
+        code, out = self.call("/api/assistant/chats/delete", {"older_days": 5})          # out of bounds: nothing as "older"
+        self.assertEqual(out["deleted"], 0); self.assertEqual(len(self.a.chats()), 1)
+        # many: the settings suggest deleting old ones
+        with unittest.mock.patch.object(A, "CHATS_MANY", 1):
+            self.assertTrue(self.a.chat_stats()["chats_many"])
+        # an old one being continued right now is not "old": it stays while its answer runs
+        self.app.store.save(A.CHAT_FILE % old, rec)
+        self.a.chats()
+        r = self.a.ask({"question": "slow", "conversation": old})
+        t0 = time.time()
+        while not any(e["type"] == "delta" for e in self.a.poll(r["job"], 0)["events"]) and time.time() - t0 < 20:
+            time.sleep(0.05)
+        self.assertEqual(self.a.delete_chats(older_days=365), 0)
+        self.a.stop(); events(self.a, r["job"])
+        self.assertIn(old, {c["id"] for c in self.a.chats()})
+        # "delete all" (and resetting) also removes what an earlier version left at the old place and was not moved
+        self.app.store.save("assistant-chat-%s.json" % old, rec)
+        self.assertEqual(self.a.delete_chats(everything=True), 2)
+        self.assertFalse([n for n in os.listdir(self.dir) if n.startswith("assistant-chat")])
+        self.assertFalse(os.listdir(os.path.join(self.dir, A.CHAT_DIR)))
 
     def test_damaged_file_and_entries_taken_back(self):
         r = self.a.ask({"question": "Hallo"}); events(self.a, r["job"])
@@ -3378,14 +3432,15 @@ class Http(_Assist):
         self.assertIsNotNone(MA._KONTOR_FILE.fullmatch("assistant-changes.json.enc"))
         self.assertIsNone(MA._KONTOR_FILE.fullmatch("assistant2"))
         self.assertIsNone(MA._KONTOR_FILE.fullmatch("assistant-chat-x.json.enc"))
-        self.ask("Hallo")                                                        # saved: its files go along too
-        self.assertTrue(any(n.startswith("assistant-chat-") for n in os.listdir(self.dir)))
+        self.assertIsNotNone(MA._KONTOR_FILE.fullmatch("chats"))
+        self.ask("Hallo")                                                        # saved: its files go along too (in their folder)
+        self.assertTrue(any(n.startswith("assistant-chat-") for n in os.listdir(os.path.join(self.dir, A.CHAT_DIR))))
         proc = self.a.ai.proc
         self.app.assistant_stop()
         self.assertIsNotNone(proc.poll())
         foreign, failed = MA._remove_own_files(self.dir, [])
-        self.assertEqual([n for n in foreign + failed if n.startswith("assistant")], [])
-        self.assertFalse(os.path.exists(os.path.join(self.dir, "assistant")))
+        self.assertEqual([n for n in foreign + failed if n.startswith("assistant") or n == "chats"], [])
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "assistant"))); self.assertFalse(os.path.exists(os.path.join(self.dir, A.CHAT_DIR)))
         self.assertFalse([n for n in os.listdir(self.dir) if n.startswith("assistant")] if os.path.isdir(self.dir) else [])
 
 

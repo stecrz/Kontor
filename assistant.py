@@ -42,7 +42,7 @@ import threading
 import time
 import unicodedata
 import wave
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import i18n
@@ -100,8 +100,10 @@ CHANGES_MAX = 500                                  # entries in it at most (the 
 WATCH_SECONDS = 30
 SPEECH_IDLE_MINUTES = 5                            # the speech model ends when nothing was dictated for that long
 ORPHAN_SECONDS = 8                                 # the page asks for news every second while it listens
-CHATS_FILE = "assistant-chats.json"                # saved conversations (in the data folder, encrypted): their list ...
-CHAT_FILE = "assistant-chat-%s.json"               # ... and each one in a file of its own
+CHAT_DIR = "chats"                                 # saved conversations: in a folder of Kontor's data folder (encrypted) ...
+CHATS_FILE = CHAT_DIR + "/assistant-chats.json"    # ... their list ...
+CHAT_FILE = CHAT_DIR + "/assistant-chat-%s.json"   # ... and each one in a file of its own
+CHATS_MANY, CHATS_BIG, CHATS_OLD_DAYS = 1000, 500 * 2 ** 20, 365          # that many (or that large): the settings suggest deleting old ones
 _CHAT_ID = re.compile(r"[0-9a-f]{8,32}")
 _CHAT_NAME = re.compile(r"assistant-chat-([0-9a-f]{8,32})\.json(?:\.enc)?")
 CHAT_TURNS = 200                                   # messages of one saved conversation at most (the oldest go first)
@@ -319,6 +321,7 @@ class Assistant:
         self.web_fetch: Callable[[dict], dict] = web_search.Reader(app.data_dir, lambda: self.settings()["sandbox"])      # the reader process (tests: a stand-in)
         self.ai.on_loaded = self._loaded
         self.ai.on_change = lambda mid: self.speech.stop() if not mid or self.speech.model == mid else None      # its files go: dictating ends first
+        self._chats_move()                             # saved conversations of earlier versions: into their folder
 
     def _loaded(self, model_id: str) -> None:
         """A model file has arrived: the first one is the one in use (a choice there is stays)."""
@@ -385,7 +388,7 @@ class Assistant:
         if local:                                       # what is installed, sizes, downloads: only on the Mac
             out.update({k: ai[k] for k in ("platform", "runtime", "models", "speech", "recommended", "checked", "check_error", "disk_free")}, load=ai["job"],
                        web=web_search.tavily_status(self.app.store),
-                       speech_state=self.speech.state if self.speech.proc is not None or self.speech.state == "error" else "stopped", chats=len(self._chat_files()),
+                       speech_state=self.speech.state if self.speech.proc is not None or self.speech.state == "error" else "stopped", **self.chat_stats(),
                        speech_in_use=self.speech_model(), context_auto_value=DEFAULTS["context"],
                        folder=self.ai.base, folder_exists=os.path.isdir(self.ai.base))          # llama.cpp and every model (also for dictating)
         return out
@@ -580,10 +583,54 @@ class Assistant:
     def _chat_files(self) -> Dict[str, str]:
         """{id: file name} of the saved conversations there are."""
         try:
-            names = os.listdir(self.app.store.data_dir)
+            names = os.listdir(os.path.join(self.app.store.data_dir, CHAT_DIR))
         except OSError:
             return {}
         return {m.group(1): CHAT_FILE % m.group(1) for m in (_CHAT_NAME.fullmatch(n) for n in names) if m}
+
+    def _chats_move(self) -> None:
+        """Saved conversations of earlier versions (beside all other files of the data folder) into their folder -- moved as
+        they are (the same key opens them), each only where its place is free: nothing is overwritten or lost."""
+        data = self.app.store.data_dir
+        try:
+            old = [n for n in os.listdir(data) if _CHAT_NAME.fullmatch(n) or n in ("assistant-chats.json", "assistant-chats.json.enc")]
+        except OSError:
+            return
+        if not old:
+            return
+        moved = 0
+        try:
+            os.makedirs(os.path.join(data, CHAT_DIR), mode=0o700, exist_ok=True)
+        except OSError as e:
+            log.warning("Assistant: no folder for saved conversations (%s)", e)
+            return
+        for n in old:                                    # each on its own: one that fails does not hold up the others
+            dest = os.path.join(data, CHAT_DIR, n)
+            if os.path.exists(dest):
+                log.warning("Assistant: saved conversation %s is in both places -- the one in the folder counts, the other stays until all are deleted", n[:40])
+                continue
+            try:
+                os.replace(os.path.join(data, n), dest)
+                moved += 1
+            except OSError as e:
+                log.warning("Assistant: saved conversation not moved into its folder (%s)", e)
+        if moved:
+            log.info("Assistant: %d file(s) of saved conversations moved into their folder", moved)
+
+    def chat_stats(self) -> dict:
+        """How many saved conversations, how large together, how many not continued for a year -- and whether that is much."""
+        n, size = 0, 0
+        try:
+            with os.scandir(os.path.join(self.app.store.data_dir, CHAT_DIR)) as it:
+                for e in it:
+                    if _CHAT_NAME.fullmatch(e.name):
+                        n += 1
+                        size += e.stat().st_size
+        except OSError:
+            pass
+        cut = (datetime.now() - timedelta(days=CHATS_OLD_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+        old = sum(1 for c in self.chats() if (c.get("updated") or "") < cut) if n else 0
+        return {"chats": n, "chats_bytes": size, "chats_old": old, "chats_many": n >= CHATS_MANY or size >= CHATS_BIG}
 
     def _chat_read(self, cid: str) -> Optional[dict]:
         if not _CHAT_ID.fullmatch(cid or "") or cid not in self._chat_files():
@@ -669,21 +716,33 @@ class Assistant:
             if rec is not None and mark(rec["turns"]):
                 self.app.store.save(CHAT_FILE % cid, rec)
 
-    def delete_chats(self, cid: str = "", everything: bool = False) -> int:
-        """Deletes one saved conversation (or all). A conversation in memory that it names -- the one on screen, the one being
-        answered (also before its first answer was saved) -- is marked: it is never saved again; its answer stops."""
+    def delete_chats(self, cid: str = "", everything: bool = False, older_days: int = 0) -> int:
+        """Deletes one saved conversation, all, or those not continued for older_days. A conversation in memory that it names --
+        the one on screen, the one being answered (also before its first answer was saved) -- is marked: it is never saved
+        again; its answer stops."""
         with self.chat_lock:
+            old = set()
+            if older_days and not everything:            # not continued for that long -- never one being answered right now
+                cut = (datetime.now() - timedelta(days=older_days)).strftime("%Y-%m-%d %H:%M:%S")
+                busy = {self.job.conv.get("id")} if self.job is not None and not self.job.done and self.job.conv is not None else set()
+                old = {c["id"] for c in self.chats() if (c.get("updated") or "") < cut and c["id"] not in busy}
             files = self._chat_files()
-            gone = sorted(files) if everything else [cid] if cid in files else []
+            gone = sorted(files) if everything else sorted(c for c in old if c in files) if older_days else [cid] if cid in files else []
             for c in gone:
                 self.app.store.delete(CHAT_FILE % c)
             if everything:
                 self.app.store.delete(CHATS_FILE)
+                try:                                     # what an earlier version left beside everything else (not moved): gone too
+                    for n in os.listdir(self.app.store.data_dir):
+                        if _CHAT_NAME.fullmatch(n) or n in ("assistant-chats.json", "assistant-chats.json.enc"):
+                            os.remove(os.path.join(self.app.store.data_dir, n))
+                except OSError as e:
+                    log.warning("Assistant: an old file of saved conversations not removed (%s)", e)
             elif gone:
-                self.app.store.update(CHATS_FILE, lambda idx: idx.pop(cid, None), {})
+                self.app.store.update(CHATS_FILE, lambda idx: [idx.pop(c, None) for c in gone], {})
             job = self.job
             for conv in (self.conv, job.conv if job is not None else None):
-                if conv is not None and conv.get("id") and (everything or conv["id"] == cid):
+                if conv is not None and conv.get("id") and (everything or conv["id"] in gone or conv["id"] == cid and not older_days):
                     conv["deleted"] = True
             if job is not None and job.conv is not None and job.conv.get("deleted") and not job.done:
                 self.stop()

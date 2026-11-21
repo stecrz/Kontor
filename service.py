@@ -56,7 +56,7 @@ from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
 from model import marks_in
 from rules import Seen, TAG_RE, bkey as rules_bkey, plan_all as plan_rules
-from storage import Store
+from storage import Store, _names as storage_names
 from excel import Sheet, workbook
 from i18n import tr
 
@@ -1580,7 +1580,7 @@ class App:
         foreign, failed = _remove_own_files(data, keep)
         (left if failed else done).append(data)
         key = False
-        if not any(n.endswith((".enc", ".enc.tmp")) for n in (os.listdir(data) if os.path.isdir(data) else [])):
+        if not any(n.endswith((".enc", ".enc.tmp")) for n in (storage_names(data) if os.path.isdir(data) else [])):     # also in its folders (chats)
             key = self.uninstall_key()
         log.warning("Uninstalled: %d removed, %d left, key %s", len(done), len(left), "removed" if key else "kept")
         return {"ok": True, "removed": done, "kept": left, "key_removed": key, "foreign": foreign,
@@ -2716,7 +2716,9 @@ def make_handler(app: App):
             if path == "/api/assistant/chats/delete":            # one or all (from other devices: only where they may change things -- see do_POST)
                 if not (local or assistant_mod.settings(app.config)["rights"]["remote"]):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
-                return self._json(200, {"deleted": a.delete_chats(str(body.get("id") or ""), body.get("all") is True)})
+                days = body.get("older_days")
+                days = days if isinstance(days, int) and not isinstance(days, bool) and 30 <= days <= 3650 else 0
+                return self._json(200, {"deleted": a.delete_chats(str(body.get("id") or ""), body.get("all") is True, older_days=days)})
             if path == "/api/assistant/undo":
                 if not local and (app.remote_readonly() or not assistant_mod.settings(app.config)["rights"]["remote"]):
                     return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
@@ -3597,7 +3599,7 @@ ASSISTANT_ASK = ("/api/assistant/ask", "/api/assistant/stop", "/api/assistant/re
 
 _KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*|assistant-chats|assistant-changes|assistant-web"
                           r"|assistant-chat-[0-9a-f]{8,32})\.json(?:\.enc)?(?:\.tmp|\.renew)?"
-                          r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|master\.key|tls|assistant)(?=\s|$)")
+                          r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|master\.key|tls|assistant|chats)(?=\s|$)")
 
 
 def _remove_own_files(data: str, keep: List[str]) -> Tuple[List[str], List[str]]:
@@ -3608,7 +3610,7 @@ def _remove_own_files(data: str, keep: List[str]) -> Tuple[List[str], List[str]]
     # a key in a file goes last, and only when no encrypted file is left (a key is never deleted while data it opens remain)
     for name in sorted(os.listdir(data), key=lambda n: (n == "master.key", n)):
         full = os.path.join(data, name)
-        if name == "master.key" and any(n.endswith((".enc", ".enc.tmp", ".enc.renew")) for n in os.listdir(data)):
+        if name == "master.key" and any(n.endswith((".enc", ".enc.tmp", ".enc.renew")) for n in storage_names(data)):
             failed.append(name); continue
         if any(_canon(full) == k or k.startswith(_canon(full).rstrip(os.sep) + os.sep) for k in keep):
             kept = True; continue

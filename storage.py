@@ -67,11 +67,24 @@ def _kc_write(account: str, key: bytes) -> bool:
     return rc == 0 and _kc_read(account)[1] == key
 
 
+ENC_DIRS = ("chats",)                              # folders in the data folder whose files belong to the store (saved conversations)
+
+
+def _names(data_dir: str) -> list:
+    """The files of the data folder and of its store folders, as names relative to it ("chats/x.json.enc")."""
+    out = []
+    for sub in ("",) + ENC_DIRS:
+        try:
+            out += [os.path.join(sub, n) if sub else n for n in os.listdir(os.path.join(data_dir, sub))
+                    if not sub or os.path.isfile(os.path.join(data_dir, sub, n))]
+        except OSError:
+            continue
+    return out
+
+
 def _enc_files(data_dir: str) -> list:
-    try:
-        return sorted(n for n in os.listdir(data_dir) if n.endswith(".enc"))
-    except OSError:
-        return []
+    """Every encrypted file of the store -- also in its folders: a new key re-encrypts them all, none is left behind."""
+    return sorted(n for n in _names(data_dir) if n.endswith(".enc"))
 
 
 def _finish_renewal(data_dir: str) -> Optional[bytes]:
@@ -80,7 +93,7 @@ def _finish_renewal(data_dir: str) -> Optional[bytes]:
     Returns the key that opens the data, or None when there is nothing to finish. Never deletes a key that opens a file."""
     rc, new = _kc_read(KEYCHAIN_NEXT)
     if rc == 44 or rc == 127:                          # no unfinished renewal
-        for n in os.listdir(data_dir) if os.path.isdir(data_dir) else []:
+        for n in _names(data_dir) if os.path.isdir(data_dir) else []:
             if n.endswith(".enc.renew"):                 # written with a key that was never kept: worthless
                 _remove(os.path.join(data_dir, n))
         return None
@@ -101,7 +114,7 @@ def _finish_renewal(data_dir: str) -> Optional[bytes]:
             raise StoreError(tr("s_schluessel_passt_nicht"))
         plain = decrypt(old, raw)                        # neither key opens it: stops here, both entries stay
         _write_atomic(p, encrypt(new, plain))
-    for n in os.listdir(data_dir):
+    for n in _names(data_dir):
         if n.endswith(".enc.renew"):
             _remove(os.path.join(data_dir, n))
     if not _kc_write(KEYCHAIN_ACCOUNT, new):         # the data open with it: start, and move it into the main entry next time
@@ -426,6 +439,8 @@ class Store:
     def write_bytes(self, name: str, data: bytes) -> None:
         p = self.path(name)
         tmp = p + ".tmp"
+        if os.path.dirname(name):                        # a file in one of the store's folders (ENC_DIRS): the folder first, only for the user
+            os.makedirs(os.path.dirname(p), mode=0o700, exist_ok=True)
         with self._key_lock:
             payload = encrypt(self.master, data) if self.encrypted else data
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

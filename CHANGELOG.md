@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.51 (2026-11-21 23:15)
+- KI-Assistent: gespeicherte Verläufe im eigenen Ordner „chats“ im Datenordner; vorhandene ziehen beim Start um
+- Einstellungen: Anzahl und Größe der Verläufe, „Ältere als ein Jahr löschen“, Hinweis bei sehr vielen
+- Verlaufsliste lädt in Stücken zu 100 („Ältere anzeigen“)
+- Sicherheit: neuer Datenschlüssel erfasst auch den Ordner „chats“; Deinstallieren entfernt ihn
+
 ## 3.16.50 (2026-11-21 23:05)
 - KI-Assistent: beim Nachdenken nur noch „Denkt nach …“ (aufklappbar, mit laufendem Schritt) – fertig wird daraus „Gedanken“
 

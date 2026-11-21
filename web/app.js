@@ -7742,7 +7742,7 @@ async function asNew() { if (AS.busy) asStop(); AS.job = null; AS.busy = false; 
 // Saved conversations (Verläufe): kept by Kontor, encrypted, while the setting is on -- opened again here, and they go on where they stood
 async function asHist(open) {
   AS.list = !!open; AS.hover = AS.sel = null;
-  if (open) { AS.chats = null; asHead(); asMsgs(true);
+  if (open) { AS.chats = null; AS.histN = 100; asHead(); asMsgs(true);
     try { const r = await api('/api/assistant/chats'); AS.chats = r.chats || []; AS.save = r.save !== false; } catch (e) { AS.chats = []; toast(e.message, 5000); } }
   asHead(); asMsgs(true);
 }
@@ -7755,7 +7755,8 @@ function asHistDraw() {
     + `<button type="button" class="icon as-hi-del" data-id="${esc(c.id)}" title="${esc(t('ki_verlauf_loeschen'))}" aria-label="${esc(t('ki_verlauf_loeschen'))}">${ICON.trash}</button></div>`;
   return `<div class="as-hist"><div class="as-hist-h"><b>${t('ki_verlaeufe')}</b>${L.length ? `<button type="button" class="ghost small as-hi-all">${t('ki_verlaeufe_alle_loeschen')}</button>` : ''}</div>`
     + (AS.save ? '' : `<div class="muted small as-hist-off">${t('ki_verlaeufe_aus')}</div>`)
-    + (L.length ? L.map(item).join('') : `<div class="as-empty muted small">${t('ki_verlaeufe_leer')}</div>`) + `</div>`;
+    + (L.length ? L.slice(0, AS.histN || 100).map(item).join('') : `<div class="as-empty muted small">${t('ki_verlaeufe_leer')}</div>`)
+    + (L.length > (AS.histN || 100) ? `<button type="button" class="ghost small as-hi-more">${esc(t('ki_verlaeufe_mehr', asN(L.length - (AS.histN || 100))))}</button>` : '') + `</div>`;
 }
 async function asOpenChat(id) {
   try {
@@ -7785,6 +7786,7 @@ $('#assist').addEventListener('click', async e => {
   else if (b.classList.contains('as-hi-open')) asOpenChat(b.dataset.id);
   else if (b.classList.contains('as-hi-del')) asDelChats(b.dataset.id);
   else if (b.classList.contains('as-hi-all')) asDelChats('');
+  else if (b.classList.contains('as-hi-more')) { AS.histN = (AS.histN || 100) + 100; asMsgs(); }
   else if (b.classList.contains('as-ch-open')) { const h = asChFrom(b); if (h) asChGo(h.c, -1, 0); }
   else if (b.classList.contains('as-big')) { if (S.tab === 'assistant') { AS.open = true; try { localStorage.setItem('kontor.assist', '1'); } catch (x) {} go(AS.prev || '#overview'); } else go('#assistant'); }
   else if (b.classList.contains('as-sug')) asSend(b.textContent);
@@ -7888,6 +7890,8 @@ async function vEinstellungenAssistent() {
     <label>${t('ki_kontext')}${hq('ki_kontext')}</label><label class="chk"><select id="as-context">${opt(0, t('ki_kontext_auto', a.context_auto_value / 1024), st.context_auto ? 0 : st.context)}${[16384, 32768, 65536, 131072].map(k => opt(k, t('ki_kontext_n', k / 1024), st.context_auto ? 0 : st.context)).join('')}</select></label>
     <label>${t('ki_leerlauf')}${hq('ki_leerlauf')}</label><label class="chk"><select id="as-idle">${[5, 10, 30, 60, 0].map(k => opt(k, k ? t('ki_leerlauf_n', k) : t('ki_leerlauf_nie'), st.idle_minutes)).join('')}</select></label>
     <label for="as-save">${t('ki_speichern')}${hq('ki_speichern')}</label><div class="row tight as-save-row"><label class="chk"><input type="checkbox" id="as-save" ${st.save_chats !== false ? 'checked' : ''} aria-label="${esc(t('ki_speichern'))}"></label>
+      ${a.chats ? `<span class="small ${a.chats_many ? 'as-chats-many' : 'muted'}" id="as-chats-n"${a.chats_many ? ` title="${esc(t('ki_verlaeufe_viele'))}"` : ''}>${esc(tn('ki_verlaeufe_n', a.chats, asN(a.chats), (b => b < 1e6 ? Math.max(1, Math.round(b / 1e3)).toLocaleString(LOCALE) + ' KB' : asGB(b))(a.chats_bytes || 0)))}</span>` : ''}
+      ${a.chats_old ? `<button class="small secondary" id="as-chats-old">${esc(t('ki_verlaeufe_alt_loeschen', asN(a.chats_old)))}</button>` : ''}
       <button class="small secondary" id="as-chats-del" ${a.chats ? '' : 'disabled'}>${t('ki_verlaeufe_alle_loeschen')}</button></div>
     ${pf.can_seal ? `<label>${t('ki_abschirmung')}${hq('ki_abschirmung')}</label><label class="chk"><select id="as-sandbox">${['strict', 'basic', 'off'].map(k => opt(k, t(`ki_sb_${k}`), st.sandbox)).join('')}</select></label>` : ''}
   </div>
@@ -7948,6 +7952,16 @@ function bindAssistent(main) {
   on('#as-context', 'change', el => set({context: +el.value}));
   on('#as-idle', 'change', el => set({idle_minutes: +el.value}));
   on('#as-save', 'change', el => set({save_chats: el.checked}));
+  on('#as-chats-old', 'click', async () => {          // not continued for a year: gone, after a question
+    if (!confirm(tn('ki_verlaeufe_alt_frage', a.chats_old, asN(a.chats_old)))) return;
+    try {
+      await api('/api/assistant/chats/delete', {older_days: 365});
+      const left = new Set(((await api('/api/assistant/chats')).chats || []).map(c => c.id));          // the one on screen deleted: the panel starts anew
+      if (AS.conv && !left.has(AS.conv) && !AS.busy) Object.assign(AS, {job: null, msgs: [], conv: ''});
+      AS.chats = null; if (AS.list) asHist(true); else if ($('#as-body')) asMsgs(true);
+    } catch (e) { toast(e.message, 5000); }
+    await asLoad(); route();
+  });
   on('#as-chats-del', 'click', async () => { try { AS.chats = (await api('/api/assistant/chats')).chats || []; } catch (e) { AS.chats = []; } await asDelChats(''); await asLoad(); route(); });
   on('#as-sandbox', 'change', el => { const cur = AS.st.settings.sandbox;          // weaker rules: only after a question
     if (['strict', 'basic', 'off'].indexOf(el.value) > ['strict', 'basic', 'off'].indexOf(cur) && !confirm(t(`ki_sb_${el.value}_frage`))) { el.value = cur; return; } set({sandbox: el.value}); });

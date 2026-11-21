@@ -3,6 +3,7 @@ does not answer in time, links in the receipts folder that point elsewhere -- an
 open a connection, to which hosts, which other programs they start)."""
 import ast
 import glob
+import json
 import os
 import re
 import shutil
@@ -212,6 +213,17 @@ class KeyRenewal(unittest.TestCase):
         self.assertEqual(storage.Store(self.dir, *storage.load_or_create_master_key(self.dir)).load("config.json"), {"a": 1})
         self.assertFalse([n for n in os.listdir(self.dir) if n.endswith((".renew", ".tmp", ".next"))])
 
+    def test_renew_includes_the_chats_folder(self):
+        # saved conversations lie in a folder of their own: a new key reaches them too, nothing stays with the old one
+        self.store.save("chats/assistant-chat-aaaaaaaa.json", {"turns": [1]})
+        self.assertTrue(os.path.isfile(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc")))
+        self.assertEqual(oct(os.stat(os.path.join(self.dir, "chats")).st_mode & 0o777), "0o700")
+        self.assertEqual(self.store.renew_key(), 4)
+        new = bytes.fromhex(self.kc.entries["kontor"])
+        with open(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc"), "rb") as f:
+            self.assertEqual(json.loads(storage.decrypt(new, f.read())), {"turns": [1]})
+        self.assertFalse([n for n in os.listdir(os.path.join(self.dir, "chats")) if n.endswith((".renew", ".tmp"))])
+
     def test_keychain_refuses_the_new_key_nothing_changes(self):
         self.kc.fail_write.add("kontor-next")
         before = {n: open(os.path.join(self.dir, n), "rb").read() for n in self.files()}
@@ -237,9 +249,15 @@ class KeyRenewal(unittest.TestCase):
         with open(p, "wb") as f:
             f.write(storage.encrypt(new, b'{"a": 1}'))                 # this one replaced already, the others not yet
         open(os.path.join(self.dir, "state.json.enc.renew"), "wb").close()
+        os.makedirs(os.path.join(self.dir, "chats"))                      # a saved conversation in its folder, still with the old key
+        with open(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc"), "wb") as f:
+            f.write(storage.encrypt(self.old, b'{"turns": []}'))
+        open(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc.renew"), "wb").close()
         self.assertEqual(storage._finish_renewal(self.dir), new)
         self.assertEqual(self.kc.entries, {"kontor": new.hex()}); self.assertTrue(self.opens_all(new))
-        self.assertFalse([n for n in os.listdir(self.dir) if n.endswith(".renew")])
+        with open(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc"), "rb") as f:
+            self.assertEqual(storage.decrypt(new, f.read()), b'{"turns": []}')
+        self.assertFalse([n for n in os.listdir(self.dir) + os.listdir(os.path.join(self.dir, "chats")) if n.endswith(".renew")])
         self.assertIsNone(storage._finish_renewal(self.dir))           # nothing more to do
 
     def test_interrupted_neither_key_opens_a_file(self):
