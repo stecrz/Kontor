@@ -666,7 +666,7 @@ async function enterApp() {
   await syncLang();
   // straight into the setup, at its first open step: on the very first start (nothing set up yet) and the first time Kontor
   // opens as an app at the Mac (created in step 1 -- the setup goes on here)
-  if (!location.hash && !OFFLINE.mode && setupOpen() && (S.setup || !S.DATA || (APP_MODE && (S.STATUS || {}).local && !(S.CFG.ui || {}).webapp)))
+  if (!location.hash && !OFFLINE.mode && setupOpen() && (S.setup || !S.DATA || (APP_MODE && (S.STATUS || {}).local && !((S.CFG || {}).ui || {}).webapp)))
     history.replaceState(null, '', '#setup');
   route();
   if (!OFFLINE.mode) asLoad().then(() => { try { if (localStorage.getItem('kontor.assist') === '1' && asOn()) { AS.open = true; asLayout(); } } catch (e) {} if (S.tab === 'assistant' || S.tab === 'setup') route(); });
@@ -1120,7 +1120,7 @@ function ovWealth(D, W, H) {
 
 // ---------------------------------------------------------------- Einrichtung (modular)
 const MODULES = [
-  {id: 'webapp', t: t('mod_webapp'), d: t('mod_webapp_d'), done: () => APP_MODE || !!(S.CFG.ui || {}).webapp, href: '#settings', optional: true},
+  {id: 'webapp', t: t('mod_webapp'), d: t('mod_webapp_d'), done: () => APP_MODE || !!((S.CFG || {}).ui || {}).webapp, href: '#settings', optional: true},
   {id: 'connect', t: t('mod_connect'), d: t('moneymoney_laeuft_und_ist_entsperrt'), done: () => S.KONTEN.length > 0, href: '#settings/moneymoney'},
   {id: 'areas', t: t('mod_areas'), d: t('welche_konten_gehoeren_zusammen_privat'), done: () => (S.CFG.areas || []).length > 0 || !!S.DATA, href: '#accounts/areas'},
   {id: 'accounts', t: t('mod_accounts'), d: t('jedes_konto_bestaetigen_bereich_und'), done: () => !!S.DATA && !((S.DATA.accounts_new || []).length), href: '#accounts'},
@@ -1131,7 +1131,7 @@ const MODULES = [
   {id: 'planning', t: t('mod_planning'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planning', optional: true},
   {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.tax || {}).rental_category, href: '#accounts/tax', optional: true},
   {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.receipts || {}).folder, href: '#settings/receipts', optional: true},
-  {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => ((S.CFG.ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
+  {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => (((S.CFG || {}).ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
   {id: 'assistant', t: t('ki_assistent_lang'), d: t('mod_assistant_d'), done: () => asOn() && !!(AS.st || {}).ready, href: '#settings/assistant', optional: true},
   {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.categories || {}).total || {}).without), href: '#categories', optional: true},
   {id: 'operation', t: t('mod_operation'), d: t('testmodus_automatischer_abgleich_mitte'), done: () => true, href: '#settings/moneymoney'},
@@ -1139,7 +1139,7 @@ const MODULES = [
 // the setup stays in the menu (and guides from step to step) until you close it yourself: "Einrichtung abgeschlossen"
 const nextModule = id => MODULES[MODULES.findIndex(m => m.id === id) + 1];          // the next step of the setup
 const setupMissing = () => MODULES.some(m => !m.optional && !m.done());
-const setupOpen = () => !(S.CFG.ui || {}).setup_done;
+const setupOpen = () => !((S.CFG || {}).ui || {}).setup_done;          // (also before the settings have arrived, just after signing in)
 function vEinrichtung(sub) {
   let h = `<div class="lang-pick"><label for="w-lang" class="small muted">${t('sprache_label')}</label><select id="w-lang">${langOpts()}</select></div>${S.KONTEN.length ? '' : `<div class="note">${t('noch_keine_konten_aus_moneymoney')}</div>`}<div class="setup-list">`;
   MODULES.forEach((m, i) => {
@@ -5608,7 +5608,7 @@ function vTsHarden(ts, r) {
 }
 async function vEinstellungenZugang() {
   // On the Mac (lock, Touch ID, address, password), below: access from the iPhone via Tailscale (state, setup, who/where/what, options, hardening)
-  const o = S.CFG.ui || {};
+  const o = (S.CFG || {}).ui || {};
   // the state of Tailscale can take a while (its app answers slowly): the page shows at once, that part follows when it is there
   const rc = S.remoteCache && Date.now() - S.remoteCache.t < 60000 ? S.remoteCache.r : null, r = rc;
   if (!rc && !S.remoteLoading) { S.remoteLoading = true;
@@ -6571,6 +6571,7 @@ function asShow(open) {
   if (AS.open) { asLoad(); const ta = $('#as-in'); if (ta && matchMedia('(hover: hover)').matches) ta.focus(); }
 }
 // what the model answers, as text with a little Markdown (bold, lists, small tables, code) -- built from escaped text only
+const LI = /^(\s*)([-*•+]|\d+[.)])\s+(.*)$/;
 function asMd(src) {
   const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:!?]|$)/g, '$1<i>$2</i>');
   const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
@@ -6584,13 +6585,31 @@ function asMd(src) {
       while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(cells(lines[i++]));
       const num = c => /\d/.test(c) && /^[+\-−–]?\s?[€$£]?\s?[\d.,\s]+\s?(€|%|EUR|T€|k)?$/.test(c);          // a figure, with or without its currency
       const numCol = head.map((_, k) => rows.length > 0 && rows.every(r => !r[k] || num(r[k])) && rows.some(r => r[k]));          // a column of figures: its heading at the right too
-      h += `<div class="as-tw"><table><thead><tr>${head.map((c, k) => `<th${numCol[k] ? ' class="num"' : ''}>${inline(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td${num(c) ? ' class="num"' : ''}>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      h += `<div class="as-tw"><div class="as-tw-in"><table><thead><tr>${head.map((c, k) => `<th${numCol[k] ? ' class="num"' : ''}>${inline(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td${num(c) ? ' class="num"' : ''}>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
       continue;
     }
-    const li = /^\s*([-*•]|\d+[.)])\s+(.*)$/.exec(l);
-    if (li) { const ord = /\d/.test(li[1]), items = [];
-      while (i < lines.length) { const m = /^\s*([-*•]|\d+[.)])\s+(.*)$/.exec(lines[i]); if (!m) break; items.push(m[2]); i++; }
-      h += `<${ord ? 'ol' : 'ul'}>${items.map(x => `<li>${inline(x)}</li>`).join('')}</${ord ? 'ol' : 'ul'}>`; continue; }
+    const li = LI.exec(l);
+    if (li) {          // a list: its items also with blank lines between them (numbered on from its first number), a text that goes on
+      // below an item (indented) and a list inside an item stay with it
+      const ord = /\d/.test(li[2]), base = li[1].length, items = [];
+      let loose = false;
+      while (i < lines.length) {
+        const m = LI.exec(lines[i]), ind = m ? m[1].length : 0;
+        if (m && ind <= base + 1 && /\d/.test(m[2]) === ord) { items.push({text: m[3], more: [], sub: []}); i++; continue; }
+        const cur = items[items.length - 1];
+        if (m && ind >= base + 2) { cur.sub.push({ord: /\d/.test(m[2]), text: m[3]}); i++; continue; }
+        if (lines[i].trim() && /^\s/.test(lines[i]) && lines[i].search(/\S/) >= base + 2) { cur.more.push(lines[i].trim()); i++; continue; }
+        if (!lines[i].trim()) {
+          let j = i; while (j < lines.length && !lines[j].trim()) j++;
+          const n = j < lines.length ? LI.exec(lines[j]) : null;
+          if (n && (n[1].length >= base + 2 || (n[1].length <= base + 1 && /\d/.test(n[2]) === ord)) || (j < lines.length && lines[j].search(/\S/) >= base + 2)) { i = j; loose = true; continue; }
+        }
+        break;
+      }
+      const start = ord ? parseInt(li[2], 10) : 1, sub = it => it.sub.length ? `<${it.sub[0].ord ? 'ol' : 'ul'}>${it.sub.map(x => `<li>${inline(x.text)}</li>`).join('')}</${it.sub[0].ord ? 'ol' : 'ul'}>` : '';
+      h += `<${ord ? 'ol' : 'ul'}${ord && start !== 1 ? ` start="${start}"` : ''}${loose ? ' class="loose"' : ''}>${items.map(it => `<li>${inline(it.text)}${it.more.map(x => '<br>' + inline(x)).join('')}${sub(it)}</li>`).join('')}</${ord ? 'ol' : 'ul'}>`;
+      continue;
+    }
     if (/^#{1,4}\s+/.test(l)) { h += `<p><b>${inline(l.replace(/^#{1,4}\s+/, ''))}</b></p>`; i++; continue; }
     if (!l.trim()) { i++; continue; }
     const par = [];

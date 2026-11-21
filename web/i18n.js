@@ -2429,7 +2429,7 @@ const I18N = {
 "ki_mikro_freigeben":["Jetzt freigeben", "Allow now"],
 "ki_mikro_dauerhaft":["Dauerhaft erlaubt – Diktieren fragt nicht mehr nach.", "Allowed for good – dictating no longer asks."],
 "ki_mikro_sitzung":["Bis zum nächsten Start erlaubt.", "Allowed until the next start."],
-"ki_mikro_weg_app":["Damit nicht bei jedem Start gefragt wird: „Kontor“ in der Menüleiste → Einstellungen … → Datenschutz → Mikrofon auf „Erlauben“.", "So that it does not ask at every start: “Kontor” in the menu bar → Settings … → Privacy → set the microphone to “Allow”."],
+"ki_mikro_weg_app":["Damit nicht bei jedem Start gefragt wird: Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon → „Kontor“ einschalten (dort erst, nachdem Kontor einmal gefragt hat).", "So that it does not ask at every start: System Settings → Privacy & Security → Microphone → turn on “Kontor” (listed there once Kontor has asked)."],
 "ki_mikro_weg_safari":["Damit nicht bei jedem Start gefragt wird: Safari → Einstellungen … → Websites → Mikrofon → bei „{0}“ „Erlauben“ wählen.", "So that it does not ask at every start: Safari → Settings … → Websites → Microphone → choose “Allow” for “{0}”."],
 "ki_mikro_weg_ios":["Damit nicht jedes Mal gefragt wird: Einstellungen → Apps → Safari → Mikrofon → „Erlauben“.", "So that it does not ask every time: Settings → Apps → Safari → Microphone → “Allow”."],
 "ki_mikro_weg_browser":["Damit nicht bei jedem Start gefragt wird: im Browser beim Symbol links neben der Adresse das Mikrofon für Kontor erlauben.", "So that it does not ask at every start: allow the microphone for Kontor at the symbol left of the address in the browser."],

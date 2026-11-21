@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.21 (2026-11-21 17:43)
+- KI-Assistent: nummerierte Listen zählen weiter, auch mit Leerzeilen; Text unter einem Punkt bleibt bei ihm; Liste in der Liste.
+- KI-Assistent: breite Tabelle scrollt in ihrem Rahmen, ohne die Zeile darunter zu überdecken.
+- KI-Assistent: Weg zur dauerhaften Mikrofon-Freigabe der App im Dock korrigiert (Systemeinstellungen → Datenschutz & Sicherheit).
+- Behoben: seltene Fehlermeldung direkt nach der Anmeldung (Einstellungen noch nicht geladen).
+
 ## 3.16.20 (2026-11-21 17:33)
 - Entwicklung: Lagebild für parallele Chats – zu Beginn jeder Aufgabe, was die anderen veröffentlicht haben, Überschneidungen, Tests auf GitHub
 - Entwicklung: Rot auf GitHub behebt nur der Chat, der es verursacht hat (keine doppelten Korrekturen)
