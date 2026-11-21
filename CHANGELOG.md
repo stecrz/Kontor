@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.57 (2026-11-21 23:56)
+- Diktieren: neue Einstellung „Sprachmodell starten“ – sofort (mit dem KI-Modell und beim Öffnen des Assistenten) oder erst beim Diktieren; Standard nach Arbeitsspeicher
+- Diktieren: Mikrofon ohne Telefonie-Filter (Echo, Rauschen) – kein Warten mehr auf das erste Geräusch, andere Töne werden nicht leiser
+- Diktieren: Startzeiten im Protokoll (Mikrofon, Sprachmodell, erstes Geräusch)
+
 ## 3.16.56 (2026-11-21 23:50)
 - Entwicklung: Gedächtnis des KI-Assistenten im Fahrplan festgelegt (Entschieden)
 

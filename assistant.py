@@ -51,7 +51,7 @@ from i18n import tr
 import receipt_text
 from decimal import ROUND_HALF_UP, Decimal
 from model import norm_cat
-from llm_local import CATALOG, SANDBOXES, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, physical_ram
+from llm_local import CATALOG, SANDBOXES, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
 
 log = logging.getLogger("kontor.assistant")
 
@@ -73,7 +73,8 @@ def auto_context(ram: int) -> int:
 RIGHTS = ("figures", "transactions", "help", "page", "navigate", "enter_values", "categorize", "book", "rules", "receipts", "internet", "remote")
 READ_RIGHTS = ("figures", "transactions", "page")    # one switch in the settings: reading your data
 RIGHTS_VERSION = 2       # 3.16.28: changes on for everyone (each one only after your click), the help always readable
-DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "speech": "", "effort": "balanced", "context": auto_context(physical_ram()), "context_auto": True,
+SPEECH_STARTS = ("early", "click")                 # the speech model starts at once (with the model, when the assistant opens) or with the click on the microphone
+DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "speech": "", "speech_start": "", "effort": "balanced", "context": auto_context(physical_ram()), "context_auto": True,
                             "idle_minutes": 30, "sandbox": "strict", "save_chats": True,
                             "rights": {"figures": True, "transactions": True, "help": True, "page": True, "navigate": True,
                                        "enter_values": True, "categorize": True, "book": True, "rules": True, "receipts": True, "internet": False, "remote": False}}       # changes: each one only with your click on the card
@@ -128,6 +129,7 @@ def settings(config: dict) -> dict:
     out["enabled"] = raw.get("enabled") is True
     out["model"] = raw["model"][:200] if isinstance(raw.get("model"), str) else ""
     out["speech"] = raw["speech"] if raw.get("speech") in SPEECH_IDS else ""          # "": the most accurate one on this Mac
+    out["speech_start"] = raw["speech_start"] if raw.get("speech_start") in SPEECH_STARTS else ""          # "": by the memory of this Mac
     out["effort"] = raw["effort"] if raw.get("effort") in EFFORTS else DEFAULTS["effort"]
     out["context_auto"] = raw.get("context") not in CONTEXTS                           # not chosen: by the memory of this Mac
     out["context"] = raw["context"] if raw.get("context") in CONTEXTS else DEFAULTS["context"]
@@ -349,13 +351,23 @@ class Assistant:
             try:
                 while self.ai.proc is not None or self.speech.proc is not None:
                     time.sleep(WATCH_SECONDS)
-                    self.ai.idle_check(self.settings()["idle_minutes"])
-                    self.speech.idle_check(SPEECH_IDLE_MINUTES)
+                    self._idle_tick()
             except Exception:  # pragma: no cover
                 log.exception("Assistant: idle check")
             finally:
                 self._watching = False
         threading.Thread(target=loop, name="kontor-ai-idle", daemon=True).start()
+
+    def _idle_tick(self) -> None:
+        """One look of the watch: the model that answers ends after the minutes set without a question; the speech model
+        with it when it is ready at once (from its last question or dictation), else after minutes without a dictation."""
+        idle = self.settings()["idle_minutes"]
+        self.ai.idle_check(idle)
+        if self.speech_early():
+            self.speech.last_used = max(self.speech.last_used, self.ai.last_used)
+            self.speech.idle_check(idle)
+        else:
+            self.speech.idle_check(SPEECH_IDLE_MINUTES)
 
     def start_model(self) -> None:
         """Starts the chosen model now (else it starts with the first question); the page shows how far it is."""
@@ -371,6 +383,7 @@ class Assistant:
             try:
                 self.ai.ensure(st["model"], st["context"], st["sandbox"])
                 self._watch()
+                self.speech_warm()
             except ModelError as e:
                 if self.ai.proc is None and self.ai.state != "error":
                     self.ai.state, self.ai.error = "error", str(e)[:300]
@@ -385,12 +398,12 @@ class Assistant:
         ready = bool(ai["runtime"]["installed"] and any(m["id"] == st["model"] and m["installed"] for m in ai["models"]))
         out = {"settings": st, "ready": ready, "local": local, "busy": bool(self.job and not self.job.done), "question_limit": question_limit(st["context"]),
                "job": self.job.id if self.job and not self.job.done else "", "server": ai["server"], "tools": self.tool_list(st),
-               "dictation": bool(ai["runtime"]["installed"] and any(m["installed"] for m in ai["speech"]))}
+               "dictation": bool(ai["runtime"]["installed"] and any(m["installed"] for m in ai["speech"])), "speech_early": self.speech_early()}
         if local:                                       # what is installed, sizes, downloads: only on the Mac
             out.update({k: ai[k] for k in ("platform", "runtime", "models", "speech", "recommended", "checked", "check_error", "disk_free")}, load=ai["job"],
                        web=web_search.tavily_status(self.app.store),
                        speech_state=self.speech.state if self.speech.proc is not None or self.speech.state == "error" else "stopped", **self.chat_stats(),
-                       speech_in_use=self.speech_model(), context_auto_value=DEFAULTS["context"],
+                       speech_in_use=self.speech_model(), speech_early_auto=self._speech_fits(), context_auto_value=DEFAULTS["context"],
                        folder=self.ai.base, folder_exists=os.path.isdir(self.ai.base))          # llama.cpp and every model (also for dictating)
         return out
 
@@ -399,7 +412,7 @@ class Assistant:
         idle_minutes, sandbox, save_chats, rights{...} ("read": figures, transactions and the page together)."""
         cur = self.settings()
         new = stored(cur)
-        for k in ("enabled", "model", "speech", "effort", "context", "idle_minutes", "sandbox", "save_chats"):
+        for k in ("enabled", "model", "speech", "speech_start", "effort", "context", "idle_minutes", "sandbox", "save_chats"):
             if k in body:
                 new[k] = body[k]
         if isinstance(body.get("rights"), dict):
@@ -421,6 +434,8 @@ class Assistant:
             self.stop_all()                              # runs anew with the next question
         elif "speech" in changed:
             self.speech.stop()                           # the other speech model with the next dictation
+        if "speech_start" in changed:
+            self.speech_warm()                           # ready at once from now on: started now
         return self.settings()
 
     def set_web(self, body: dict) -> dict:
@@ -465,20 +480,49 @@ class Assistant:
         except Cancelled:
             raise ValueError(tr("s_ki_laeuft_nicht"))
 
-    def listen(self) -> dict:
+    def _speech_fits(self) -> bool:
+        """Whether the speech model and the model that answers run well together beside everything else on this Mac (both
+        files together as one model: see llm_local.fit) -- then the speech model is ready at once unless the user chose."""
+        have = self.ai.models()
+        size = lambda mid: int((have.get(mid) or {}).get("size") or 0) + int(((have.get(mid) or {}).get("mmproj") or {}).get("size") or 0)
+        return fit((size(self.settings()["model"]) + size(self.speech_model())) / 2 ** 30, None, physical_ram()) == "good"
+
+    def speech_early(self) -> bool:
+        """The speech model is ready at once -- started with the model that answers and when the assistant opens, ended with
+        it -- rather than with the click on the microphone (then a few seconds; ended after minutes without a dictation)."""
+        choice = self.settings()["speech_start"]
+        return choice == "early" if choice else self._speech_fits()
+
+    def speech_warm(self) -> None:
+        """Ready at once: the speech model starts now, in the background (nothing when it runs, is not wanted or is missing)."""
+        if not self.speech_model() or not self.speech_early() or (self.speech.proc is not None and self.speech.state == "ready"):
+            return
+
+        def run() -> None:
+            try:
+                self.listen(warm=True)
+            except ValueError:
+                pass                                     # (the click on the microphone says why)
+        threading.Thread(target=run, name="kontor-speech-warm", daemon=True).start()
+
+    def listen(self, warm: bool = False) -> dict:
         """A dictation starts: the speech model runs and is ready when this returns -- started now if it does not run yet (a
         few seconds), while the browser opens the microphone. The microphone turns red only then, so that what is said is
-        written down from its first word. Nothing is recorded or sent here; the model ends as usual when nothing was dictated
-        for a few minutes. A model that cannot start says so now, not after the user has spoken."""
+        written down from its first word. Nothing is recorded or sent here. A model that cannot start says so now, not after
+        the user has spoken. warm: the assistant was opened -- started only when it is to be ready at once."""
         st, mid = self._speech_can()
+        if warm and not self.speech_early():
+            return {"ready": False}
         with self.speech_lock:
             self._speech_up(st, mid)
         return {"ready": True}
 
-    def transcribe(self, wav: Any, live: bool = False) -> dict:
+    def transcribe(self, wav: Any, live: bool = False, start: Any = None) -> dict:
         """What was said in a recording, as text for the question field. The recording goes to the speech model on this Mac
         and nowhere else; neither it nor the text is stored or logged. live: the recording so far, while still speaking (shown
-        in the field as it grows) -- not worth a line in the log each time."""
+        in the field as it grows) -- not worth a line in the log each time. start: how long the start took, in ms, as the
+        page measured it -- [until the microphone was open, until the speech model was ready, until the first sound, until
+        the button turned red]; only into the log line (where a slow start comes from)."""
         st, mid = self._speech_can()
         if not isinstance(wav, (bytes, bytearray)) or len(wav) < 2000 or wav[:4] != b"RIFF" or wav[8:12] != b"WAVE":
             raise ValueError(tr("s_ki_aufnahme_leer"))
@@ -500,8 +544,11 @@ class Assistant:
         # some speech models write the language and a mark in front of the text
         clean = lambda x: re.sub(r"</?asr_text>", "", re.sub(r"^\s*language\s+[A-Za-z]+\s*(?=<asr_text>)", "", x)).strip()
         text = " ".join(c for c in (clean(x) for x in texts) if c)
-        (log.debug if live else log.info)("Assistant: dictation written down%s (%d kB of audio, %d part(s), %.1f s)", " so far" if live else "", len(wav) // 1000,
-                                          len(parts), time.time() - t0)
+        took = ""
+        if isinstance(start, list) and len(start) == 4 and all(isinstance(x, (int, float)) and not isinstance(x, bool) and 0 <= x < 6e5 for x in start):
+            took = "; started after %.1f s (microphone %.1f s, speech model %.1f s, first sound %.1f s)" % (start[3] / 1000, start[0] / 1000, start[1] / 1000, start[2] / 1000)
+        (log.debug if live else log.info)("Assistant: dictation written down%s (%d kB of audio, %d part(s), %.1f s%s)", " so far" if live else "", len(wav) // 1000,
+                                          len(parts), time.time() - t0, took)
         return {"text": text[:60000]}
 
     def forget(self) -> None:
@@ -2732,6 +2779,7 @@ class Assistant:
                 job.emit("status", state="loading")
             self.ai.ensure(st["model"], st["context"], st["sandbox"], job.cancel)
             self._watch()
+            self.speech_warm()
             job.emit("status", state="thinking")
             waits = {t["name"] for t in TOOLS if t["kind"] in WAITS}      # a quick explanation has no card to click: nothing that waits for one
             specs = [x for x in self._specs(st) if not quick or (x["function"]["name"] != "show_chart" and x["function"]["name"] not in waits)]

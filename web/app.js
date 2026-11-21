@@ -168,7 +168,7 @@ const H = {
   tls: t('optional_zertifikat_schluessel_pem_fue'),
   updates: t('einzige_netzverbindung_von_kontor_einm'),
   assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_denken: t('h_ki_denken'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
-  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'),
+  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_sp_start: t('h_ki_sp_start'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'),
   ki_programm: t('h_ki_programm'), ki_modelle: t('h_ki_modelle'), ki_ablage: t('h_ki_ablage'),
   darlehen_iban: t('die_rate_wird_am_gegenkonto'),
   darlehen_konto: t('das_manuell_gefuehrte_darlehenskonto_i'),
@@ -227,7 +227,7 @@ const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl:
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-rights', ki_tavily: 'assistant-rights'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_sp_start: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-rights', ki_tavily: 'assistant-rights'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
@@ -6626,7 +6626,7 @@ const asOn = () => !!(AS.st && AS.st.settings && AS.st.settings.enabled && !OFFL
 const asN = v => Math.round(v).toLocaleString(LOCALE);
 const asRAM = b => (b / 2 ** 30).toLocaleString(LOCALE, {maximumFractionDigits: b >= 10 * 2 ** 30 ? 0 : 1}) + ' GB';          // memory as the Mac names it (64 GB)
 const asGB = b => b < 5e7 ? Math.round(b / 1e6).toLocaleString(LOCALE) + ' MB' : (b / 1e9).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e10 ? 0 : 1}) + ' GB';
-async function asLoad() { try { AS.st = await api('/api/assistant/status'); } catch (e) { AS.st = null; } asChrome(); statusMini(); asWatch(); return AS.st; }
+async function asLoad() { try { AS.st = await api('/api/assistant/status'); } catch (e) { AS.st = null; } asChrome(); statusMini(); asWatch(); if (AS.open || S.tab === 'assistant') asWarm(); return AS.st; }
 function asChrome() {
   // the button in the title bar and the menu entry: there while the assistant is switched on
   const on = asOn(), b = $('#assist-btn');
@@ -6642,8 +6642,16 @@ function asLayout() {
   if (page) { const m = $('main').getBoundingClientRect(), top = $('#main').getBoundingClientRect().top + pageY(); as.style.left = m.left + 'px'; as.style.top = Math.max(0, top) + 'px'; }
   else { as.style.left = as.style.top = ''; }
   pageHandover();
-  if (open) { if (!$('#as-body')) asDraw(); else { asHead(); asMicSync(); } }
+  if (open) { if (!$('#as-body')) asDraw(); else { asHead(); asMicSync(); } asWarm(); }
   else asMicStop(false);          // the question field is gone (another page, switched off): a recording ends with it, unsent
+}
+// the speech model ready at once (Einstellungen -> KI-Assistent -> Diktieren): started as soon as the question field is on screen,
+// so that a dictation starts without waiting -- asked again at most every minute (it then stays as long as the model that answers)
+let AS_WARM = 0;
+function asWarm() {
+  const a = AS.st || {};
+  if (!a.dictation || !a.speech_early || !(a.settings || {}).enabled || !asOn() || Date.now() - AS_WARM < 60000) return;
+  AS_WARM = Date.now(); api('/api/assistant/listen', {warm: true}).catch(() => {});
 }
 function asShow(open) {
   if (!open) asMicStop(false);
@@ -7054,7 +7062,10 @@ function asFit(ta) {
 // microphone sounds; until then it turns (what is said meanwhile is written down too).
 const REC = {on: false, busy: false, starting: false, cap: false, heard: false, gen: 0, asked: false, drop: false, go: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
 const REC_MAX = 600;          // seconds: then it ends by itself and the text is taken
-const REC_HEAR = 2500;        // ms the microphone's first sound is waited for at most (one that stays silent: red anyway)
+const REC_HEAR = 1200;        // ms the microphone's first sound is waited for at most (one that stays silent: red anyway)
+// the microphone as it is -- without the filters for calls (echo, noise, Apple's voice processing): they start more slowly, turn
+// other sound down while they run and can give pure silence where a speech model hears best what is really there
+const REC_AUDIO = {channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: true};
 const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.6" y="1.4" width="4.8" height="8.2" rx="2.4" fill="currentColor"/><path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 const AS_PLUS = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 const AS_CROSS = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
@@ -7131,15 +7142,16 @@ async function asMic() {
   const gen = ++REC.gen, AC = window.AudioContext || window.webkitAudioContext;
   let ctx = null;
   try { ctx = new AC(); if (ctx.state === 'suspended') ctx.resume().catch(() => {}); } catch (e) { ctx = null; }          // still in the click: Safari starts sound only from one
-  const ready = api('/api/assistant/listen', {}).then(() => '', e => (e && e.message) || '?');          // the speech model, loaded beside the microphone
+  const c0 = Date.now(), took = [0, 0, 0, 0];          // how long the start took (into Kontor's log with the text: where a slow start comes from)
+  const ready = api('/api/assistant/listen', {}).then(() => { took[1] = Date.now() - c0; return ''; }, e => (e && e.message) || '?');          // the speech model, loaded beside the microphone
   const at = ta.selectionStart == null ? ta.value.length : ta.selectionStart, to = ta.selectionEnd == null ? at : ta.selectionEnd;
   REC.live = {gen: (REC.live ? REC.live.gen : 0) + 1, busy: false, sent: 0, seg: 0, done: [], cur: '', before: ta.value.slice(0, at), after: ta.value.slice(to)};
-  Object.assign(REC, {starting: true, asked: true, heard: false, pcm: [], m: 0});
+  Object.assign(REC, {starting: true, asked: true, heard: false, heardAt: 0, took: null, pcm: [], m: 0});
   ta.readOnly = true;          // from now on the field shows what is said (typing would be written over)
   asDictPut(''); asMicDraw();
   const drop = st => { st.getTracks().forEach(x => x.stop()); if (ctx) ctx.close().catch(() => {}); };
   let stream = null;
-  try { stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}}); }
+  try { stream = await navigator.mediaDevices.getUserMedia({audio: REC_AUDIO}); }
   catch (e) { if (ctx) ctx.close().catch(() => {}); if (gen === REC.gen) { asMicStop(false); toast(t('ki_mikro_verweigert'), 7000); } return; }
   if (gen !== REC.gen) { drop(stream); return; }          // ended while the browser asked
   if (!asMicMay()) { drop(stream); asMicStop(false); return; }          // locked or closed meanwhile: nothing is recorded
@@ -7153,11 +7165,11 @@ async function asMic() {
     REC.node.onaudioprocess = e => {
       if (!REC.cap) return;
       const d = e.inputBuffer.getChannelData(0);
-      if (!REC.heard && d.some(x => x !== 0)) REC.heard = true;          // a microphone just opened gives silence (zeros) at first
+      if (!REC.heard && d.some(x => x !== 0)) { REC.heard = true; REC.heardAt = Date.now(); }          // a microphone just opened gives silence (zeros) at first
       asPcm(d); if (REC.m / 16000 >= REC_MAX) asMicStop(true);
     };
     src.connect(REC.node); REC.node.connect(REC.ctx.destination);          // (it only runs while connected; it puts out silence)
-    t1 = Date.now();
+    t1 = Date.now(); took[0] = t1 - c0;
   } catch (e) { if (!REC.ctx) drop(stream); asMicStop(false); return; }          // whatever fails after the microphone was opened: it is let go again
   // red only once it truly runs: the speech model ready, the microphone sounding
   const err = await ready;
@@ -7165,6 +7177,7 @@ async function asMic() {
   if (gen !== REC.gen) return;          // ended meanwhile (✕, Escape, sent, the panel closed, locked)
   if (err) { asMicStop(false); toast(err, 7000); return; }          // the model does not start: said now, not after speaking
   REC.starting = false; REC.on = true; REC.t0 = Date.now(); asMicDraw(); REC.timer = setInterval(() => { asMicDraw(); asLive(); }, 500);
+  took[2] = REC.heard ? REC.heardAt - t1 : REC.t0 - t1; took[3] = REC.t0 - c0; REC.took = took;
 }
 // the microphone's samples as 16 kHz, 16 bit, as they come (each output sample the mean of the input samples it covers) -- ten
 // minutes are 19 MB, not the 115 MB of the browser's own samples
@@ -7250,7 +7263,7 @@ async function asMicStop(send, go) {
   REC.busy = true; REC.drop = false; REC.go = !!go; asMicDraw();
   let send_ = false;
   try {
-    const r = await api('/api/assistant/transcribe', {audio: asB64(asWav(pcm))}), text = (r.text || '').trim();          // all of it once more: the text that stays
+    const r = await api('/api/assistant/transcribe', Object.assign({audio: asB64(asWav(pcm))}, REC.took ? {start: REC.took} : {})), text = (r.text || '').trim();          // all of it once more: the text that stays
     REC.busy = false;
     if (REC.drop) asDictPut('');          // thrown away meanwhile (✕)
     else if (!text) { toast(t('ki_diktat_nichts'), 4000); asDictPut(''); }
@@ -7882,7 +7895,8 @@ async function vEinstellungenAssistent() {
     <span class="as-act">${m.newer ? `<span class="pill info">${t('ki_neuere_datei')}</span>` : m.installed ? `<span class="pill ok">${t('ki_geladen')}</span>` : ''}
       ${!m.installed || m.newer ? `<button class="small secondary as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="" ${busy}>${t(m.installed ? 'ki_aktualisieren' : 'ki_laden')}</button>` : ''}
       ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`).join('')}
-    ${a.dictation ? '<div id="as-mic-perm"></div>' : ''}</div>
+    ${a.dictation ? `<div class="as-item"><span><b>${t('ki_sp_start')}</b>${hq('ki_sp_start')}</span><span class="as-act"><select id="as-speech-start" aria-label="${esc(t('ki_sp_start'))}">${opt('', t(a.speech_early_auto ? 'ki_sp_auto_early' : 'ki_sp_auto_click'), st.speech_start || '')}${opt('early', t('ki_sp_early'), st.speech_start || '')}${opt('click', t('ki_sp_click'), st.speech_start || '')}</select></span></div>
+    <div id="as-mic-perm"></div>` : ''}</div>
   <div class="row tight"><button class="secondary small" id="as-check" ${busy}>${t('ki_nach_neuem_suchen')}</button><span class="muted small">${a.checked ? t('ki_gesucht', esc(FDT(a.checked))) + ' · ' : ''}${t('ki_platz', asGB(a.disk_free || 0), asRAM(pf.ram || 0))}</span></div>
   ${a.check_error ? `<div class="banner err small">${esc(a.check_error)}</div>` : ''}
   ${a.folder ? `<div class="row tight as-folder"><span class="muted small">${t('ki_ablage')}${hq('ki_ablage')} <span class="mono">${esc(a.folder)}</span></span><button class="small secondary" id="as-reveal" ${a.folder_exists ? '' : 'disabled'}>${t('im_finder_zeigen')}</button></div>` : ''}
@@ -7951,6 +7965,7 @@ function bindAssistent(main) {
   on('#as-enabled', 'change', el => set({enabled: el.checked}));
   on('input[name="as-model"]', 'change', el => set({model: el.value}));
   on('input[name="as-speech"]', 'change', el => set({speech: el.value}));
+  on('#as-speech-start', 'change', el => set({speech_start: el.value}));
   on('#as-effort', 'change', el => set({effort: el.value}));
   on('#as-context', 'change', el => set({context: +el.value}));
   on('#as-idle', 'change', el => set({idle_minutes: +el.value}));

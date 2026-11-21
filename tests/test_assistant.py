@@ -23,6 +23,7 @@ from datetime import date, timedelta
 import time
 import unittest
 import unittest.mock
+from unittest import mock
 import urllib.error
 import zipfile
 
@@ -1485,6 +1486,32 @@ class Tools(_Assist):
             self.a.listen()
         self.assertIn("nicht starten", str(cm.exception))
         os.remove(os.path.join(rt, "refuse"))
+        # the speech model ready at once, or only with the click: not chosen, by the memory of this Mac (both models together fit
+        # well beside everything else, as llm_local.fit counts it)
+        self.assertEqual(self.a.settings()["speech_start"], "")
+        wait_ready = lambda: next((True for _ in range(100) if self.a.speech.state == "ready" or time.sleep(0.1)), False)
+        with mock.patch.object(A, "physical_ram", return_value=256 * 2 ** 30):
+            self.assertEqual((self.a.speech_early(), self.a.status(True)["speech_early_auto"], self.a.status(False)["speech_early"]), (True, True, True))
+        with mock.patch.object(A, "physical_ram", return_value=2 ** 30):
+            self.assertEqual((self.a.speech_early(), self.a.status(True)["speech_early_auto"], self.a.status(False)["speech_early"]), (False, False, False))
+            self.assertEqual(self.a.listen(warm=True), {"ready": False}); self.assertIsNone(self.a.speech.proc)      # the assistant opened: nothing started
+            self.a.set({"speech_start": "early"})                                     # chosen: at once -- started right away, in the background
+            self.assertTrue(wait_ready()); self.assertTrue(self.a.speech_early())
+            self.assertEqual(self.a.listen(warm=True), {"ready": True})
+            # at once: it ends with the model that answers (the minutes set, from its last question or dictation)
+            self.a.speech.last_used, self.a.ai.last_used = time.time() - 3600, time.time()
+            self.a._idle_tick(); self.assertIsNotNone(self.a.speech.proc)
+            self.a.speech.last_used = time.time() - 6 * 60; self.a.ai.last_used = 0
+            self.a._idle_tick(); self.assertIsNotNone(self.a.speech.proc)                       # (30 minutes, not 5)
+            self.a.speech.last_used = time.time() - 31 * 60
+            self.a._idle_tick(); self.assertIsNone(self.a.speech.proc)
+            # ... and starts with it: a question starts the speech model after the model that answers
+            self.assertEqual(text_of(self.ask("Hallo")), "Antwort: Hallo"); self.assertTrue(wait_ready())
+            # only with the click: after 5 minutes without a dictation it ends
+            self.a.set({"speech_start": "click"}); self.assertFalse(self.a.speech_early())
+            self.a.speech.last_used = time.time() - 6 * 60; self.a.ai.last_used = time.time()
+            self.a._idle_tick(); self.assertIsNone(self.a.speech.proc)
+            self.a.set({"speech_start": "egal"}); self.assertEqual(self.a.settings()["speech_start"], "")
         # dictating: its own process, with the audio part; the model that answers goes on beside it
         open(os.path.join(rt, "record"), "w").close()
         self.assertEqual(text_of(self.ask("Hallo")), "Antwort: Hallo")
@@ -1496,6 +1523,13 @@ class Tools(_Assist):
         self.assertTrue(started["key_in_env"]); self.assertNotIn(self.a.speech.key, " ".join(started["argv"]))
         with open(os.path.join(rt, "audio.json")) as f:
             self.assertEqual(json.load(f), {"bytes": len(wav), "language": "de", "fields": ["file", "language", "response_format", "temperature"]})
+        # how long the start took, as the page measured it: only into the log line with the text (where a slow start comes from)
+        with self.assertLogs("kontor.assistant", "INFO") as cm:
+            self.a.transcribe(wav, start=[180, 40, 1200, 1400])
+            for bad in ([1, 2, 3], "1,2,3,4", [1, 2, 3, -4], [1, 2, 3, 9e9], [True, 1, 1, 1], None):
+                self.a.transcribe(wav, start=bad)
+        self.assertIn("started after 1.4 s (microphone 0.2 s, speech model 0.0 s, first sound 1.2 s)", cm.output[0])
+        self.assertEqual(sum("started after" in x for x in cm.output), 1, cm.output)
         # nothing said (silence, a little noise, a steady hum, a click): no text -- the model does not even hear it (it would invent
         # sentences); something said: only that part, from shortly before to shortly after
         os.remove(os.path.join(rt, "audio.json"))
@@ -3588,7 +3622,10 @@ class Browser(unittest.TestCase):
             until(pg, "AS.msgs.length > 0 && (!AS.busy || !!document.querySelector('.as-entry.ask'))", 30)
         try:
             with sync_playwright() as p:
-                b = p.chromium.launch(args=["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"])          # a microphone that hums, allowed without asking
+                voice = os.path.join(d, "voice.wav")          # a microphone that hears something like a voice (over and over), allowed without asking
+                with open(voice, "wb") as f:
+                    f.write(pcm([("quiet", 0.3, 40), ("voice", 2.4, 5000), ("quiet", 0.3, 40)], rate=48000))
+                b = p.chromium.launch(args=["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--use-file-for-fake-audio-capture=" + voice])
                 pg = b.new_page(viewport={"width": 1440, "height": 900})
                 errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
                 pg.on("dialog", lambda dlg: dlg.accept())
@@ -3636,6 +3673,9 @@ class Browser(unittest.TestCase):
                 self.assertTrue(pg.evaluate("document.querySelector('#as-context').value === '0' && /^Automatisch \\(\\d+ Tsd\\. Token\\)$/.test(document.querySelector('#as-context option:checked').textContent)"))
                 pg.select_option("#as-context", "65536"); until(pg, "AS.st.settings.context === 65536 && !AS.st.settings.context_auto")
                 pg.wait_for_selector("#as-context"); pg.select_option("#as-context", "0"); until(pg, "AS.st.settings.context_auto")
+                # dictation: the speech model at once or only with the click -- not chosen, by the memory of this Mac
+                self.assertEqual(pg.evaluate("[...document.querySelectorAll('#as-speech-start option')].map(o => o.textContent)"), ["Automatisch (sofort)", "Sofort", "Erst beim Diktieren"])
+                pg.select_option("#as-speech-start", "click"); until(pg, "AS.st.settings.speech_start === 'click' && !AS.st.speech_early")
                 pg.click("#as-log summary"); until(pg, "/noch nichts geändert/.test(document.querySelector('#as-log-list').innerText)")
                 self.assertTrue(app.assistant.settings()["rights"]["enter_values"])
                 pg.select_option("#as-effort", "thorough"); until(pg, "AS.st.settings.effort === 'thorough'")
@@ -3824,6 +3864,21 @@ class Browser(unittest.TestCase):
                 self.assertIn("ließ sich nicht starten", pg.inner_text("#toast"))
                 self.assertEqual((pg.evaluate(live), pg.evaluate("document.querySelector('#as-in').value")), (0, said))
                 os.remove(os.path.join(rt, "refuse"))
+                # ready at once: the speech model starts when the question field comes on screen -- a click then turns red without
+                # waiting for it; how long the start took goes into the log with the text
+                ready = lambda: next((True for _ in range(150) if app.assistant.speech.state == "ready" or time.sleep(0.1)), False)
+                app.assistant.set({"speech_start": "early"}); self.assertTrue(ready())                 # chosen: started right away
+                app.assistant.speech.stop()
+                pg.evaluate("asShow(false)"); until(pg, "!AS.open")
+                pg.evaluate("AS_WARM = 0; asShow(true)"); until(pg, "AS.open && AS.st.speech_early")
+                self.assertTrue(ready())
+                pg.click("#as-mic"); until(pg, "REC.on && REC.m > 16000")
+                self.assertLess(pg.evaluate("REC.took[1]"), 1500)
+                with self.assertLogs("kontor.assistant", "INFO") as cm:
+                    pg.click("#as-mic"); until(pg, "!REC.on && !REC.busy", 20)
+                self.assertTrue(any("started after" in x for x in cm.output), cm.output)
+                app.assistant.set({"speech_start": "click"})
+                pg.fill("#as-in", said)
                 pg.fill("#as-in", "")
                 self.assertEqual(pg.evaluate("getComputedStyle(document.querySelector('main')).marginRight"), "380px")
                 self.assertEqual(round(w0 - pg.evaluate("document.querySelector('#main').getBoundingClientRect().width")), 380)

@@ -2689,14 +2689,14 @@ def make_handler(app: App):
                 if path == "/api/assistant/reset":
                     a.reset()
                     return self._json(200, {"ok": True})
-                if path == "/api/assistant/listen":              # a dictation starts: the speech model ready (started now if needed)
-                    return self._json(200, a.listen())
+                if path == "/api/assistant/listen":              # a dictation starts (or the assistant opens: warm): the speech model ready
+                    return self._json(200, a.listen(warm=body.get("warm") is True))
                 if path == "/api/assistant/transcribe":           # a recording (WAV, base64) -> its text; nothing of it is kept
                     try:
                         wav = base64.b64decode(str(body.get("audio") or ""), validate=True)
                     except (ValueError, binascii.Error):
                         raise ValueError(tr("s_ki_aufnahme_leer"))
-                    return self._json(200, a.transcribe(wav, live=bool(body.get("live"))))          # live: while still speaking
+                    return self._json(200, a.transcribe(wav, live=bool(body.get("live")), start=body.get("start")))          # live: while still speaking
                 if path == "/api/assistant/attach":               # a receipt for the next question: in memory only (assistant.attach)
                     try:
                         data = base64.b64decode(str(body.get("content") or ""), validate=True)
