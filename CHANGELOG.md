@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.15 (2026-11-21 16:16)
+- Entwicklung: Ziel geschärft („dein digitaler CFO“) – Leitlinien, Entscheidungen, Offenes in Fahrplan und Regeln
+- Entwicklung: Fahrplan neu geordnet – Daten erst nach Anmeldung, KI-Assistent, GbR-Entlastung, Gesellschaften, Planung
+- Anmeldung: Untertitel „Dein digitaler CFO“
+
 ## 3.16.14 (2026-11-21 16:12)
 - Kopfzeile: Seitentitel wird nicht mehr abgeschnitten; Bereiche rücken bei wenig Platz zur freien Seite und kürzen dann die übrigen Namen („…“), der gewählte bleibt ganz; voller Name beim Darüberfahren.
 - KI-Assistent: Senden auch während des Diktats – beendet es, schreibt es und schickt die Frage ab.

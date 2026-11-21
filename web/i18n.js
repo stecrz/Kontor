@@ -2481,5 +2481,6 @@ const I18N = {
 "ki_verlauf_frage1":["1 Frage", "1 question"],
 "ki_speichern":["Verläufe speichern", "Save conversations"],
 "s_ki_verlauf_weg":["Diese Unterhaltung gibt es nicht mehr.", "This conversation no longer exists."],
-"h_ki_speichern":["Unterhaltungen bleiben verschlüsselt in Kontors Datenordner, damit du sie unter „Verläufe“ im Assistenten wieder öffnen und fortsetzen kannst – nicht in Sicherungen, nicht im Protokoll. Zurücksetzen und Deinstallieren löschen sie mit.", "Conversations stay encrypted in Kontor's data folder, so you can open and continue them under “History” in the assistant – not in backups, not in the log. Resetting and uninstalling delete them too."]
+"h_ki_speichern":["Unterhaltungen bleiben verschlüsselt in Kontors Datenordner, damit du sie unter „Verläufe“ im Assistenten wieder öffnen und fortsetzen kannst – nicht in Sicherungen, nicht im Protokoll. Zurücksetzen und Deinstallieren löschen sie mit.", "Conversations stay encrypted in Kontor's data folder, so you can open and continue them under “History” in the assistant – not in backups, not in the log. Resetting and uninstalling delete them too."],
+"untertitel":["Dein digitaler CFO", "Your digital CFO"]
 };

@@ -4,6 +4,16 @@ Kontor ist ein lokaler Dienst (Python ≥ 3.9, nur Standardbibliothek) mit Web-O
 MoneyMoney (macOS) arbeitet. Er läuft als launchd-Dienst beim Nutzer und startet sich selbst neu, sobald sich `VERSION` ändert.
 Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, fragen nur bei echten Produktentscheidungen.
 
+## Ziel
+Kontor wird der digitale Finanzchef (CFO) des Nutzers: Überblick über sein Privatvermögen und die Gesellschaften dahinter
+(Beteiligungen, Immobilien, Darlehen – von der GbR bis zur GmbH mit etwa 100 Mio. € Umsatz), Firmenwerte, die anteilig ins
+Privatvermögen fließen, die Gesellschaften selbst führen (Steuer, Umsatzsteuer, Nebenkosten, Ausschüttungen; Zahlen aus DATEV
+über das Data-Warehouse) – und im Kern ein lernender KI-Assistent, der sich erinnert, von selbst auf Wichtiges hinweist und
+Routine abnimmt. Kein Haushaltsbuch. Rangfolge: Sicherheit, Privatsphäre, Kontrolle, Nachvollziehbarkeit, dann Komfort – alles
+lokal, nichts nach außen; die KI schlägt nur vor, ausgeführt wird erst nach dem Klick des Nutzers (einzeln oder als einmal
+bestätigte Regel). Ausführlich mit Leitlinien, Entscheidungen, Reihenfolge und Offenem: oben in `ROADMAP.md`. Vom Nutzer
+entschiedene Änderungen an den Regeln unten stehen dort unter „Entschieden“; sie gelten, sobald umgesetzt, und kommen dann hierher.
+
 ## Arbeitsweise
 - Was als Nächstes kommt und wann es fertig ist: `ROADMAP.md`. Erledigtes dort abhaken, Neues dort eintragen.
 - Skills (`.claude/skills/`): `feature` (Punkt aus dem Fahrplan umsetzen), `ui-check` (Oberfläche ansehen), `release` (jede

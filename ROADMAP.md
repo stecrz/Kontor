@@ -6,33 +6,79 @@ veröffentlicht ist (Skill `release`). Geprüfte Seiten verlieren die Markierung
 Geprüft: Bilanz, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll, Hilfe, Auto-Buchungen, Buchungsregeln (3.13),
 Kategorien und Cashflow (3.13.4: jeder Monat stimmt mit der Bilanz überein, Abweichungen mit Grund; 3.13.6: feste Positionen für alle Bereiche, ohne Kategorie geschätzt); 3.13.10: Kontenspiegel als eigene Regel zwischen beliebigen Konten; 3.13.11: Cashflow in drei Stufen mit Diagrammen, Cashflow-Positionen unter Verwaltung; 3.13.13: Kapitalflussrechnung mit Brücke); Übersicht (3.15.0: vier Grafiken aus Bilanz und Cashflow, ohne eigene Rechnung; 3.15.1: offene Punkte darunter); Kategorisieren (3.15.1: ohne Schalter, Eingetragenes rückgängig machbar; 3.15.2: umbenannt, anfangs nur private Bereiche); Drucken (3.15.1); Übersicht in drei Spalten mit Bilanz-Kacheln (3.15.2).
 
-## 1. Immobilien und Steuer
-Ziel: Kalkulation, Ist-Zahlen und Steuer je Objekt und Gesellschaft stimmen und passen zusammen.
+## Ziel: dein digitaler CFO
+Kontor ist eine Finanzplattform für eine Person, deren Vermögen zu großen Teilen aus Beteiligungen besteht: ein Überblick über
+das Privatvermögen und die Gesellschaften dahinter – und ein KI-Assistent, der wie ein loyaler, kompetenter Finanzchef (CFO)
+mitarbeitet. Alles lokal auf dem Mac. Zuerst für den Nutzer selbst.
+
+- **Kein Haushaltsbuch.** Schwerpunkt Beteiligungen, Immobilien und Darlehen – privat, in kleinen Gesellschaften (z. B. GbR mit
+  mehreren Immobilien) und in großen (GmbH bis etwa 100 Mio. € Umsatz, auch mit eigenen Beteiligungen).
+- **Von der Gesellschaft ins Privatvermögen.** Je Gesellschaft Bilanz und Cashflow, daraus ein Firmenwert nach wählbarem
+  Verfahren – heute der Stand des Bereichs (Buchungsregel Beteiligung), künftig z. B. EBITDA × Vielfaches nach Bereinigungen per
+  Regel (Geschäftsführergehalt, Sonderkosten). Der Anteil fließt automatisch ins Privatvermögen, auch über mehrere Stufen.
+- **Gesellschaften auch führen, nicht nur ansehen.** GbR: Objekte mit Kalkulation, AfA, Steuer, Umsatzsteuer-Voranmeldung,
+  Nebenkostenabrechnung und Ausschüttungen an die Gesellschafter für ihre Steuer (steuerlicher Gewinn trotz Tilgung ohne
+  Geldzufluss). GmbH: Zahlen aus der Buchhaltung (DATEV über das Data-Warehouse, BWA, SuSa, Wertenachweise), denn Bankdaten
+  allein kennen weder Zahlungsziele noch Verbindlichkeiten oder Ware. Kontor ersetzt die Buchhaltung nicht, es liest sie.
+- **Der KI-Assistent ist der Kern.** Ein lernender Mitarbeiter: kennt alle Zahlen, merkt sich, was der Nutzer ihm sagt (ohne
+  feste Grenze), erklärt die Lage jederzeit, findet Muster, Auffälligkeiten, Risiken und Aufgaben und meldet sie von selbst,
+  vergleicht (Benchmarking) und nimmt Routinearbeit ab – über Regeln, die der Nutzer einmal bestätigt.
+- **Grundlage MoneyMoney** (Bankdaten, Kategorien); auf lange Sicht auch ohne MoneyMoney nutzbar – dann ist es eine Quelle unter mehreren.
+
+## Leitlinien (in dieser Rangfolge)
+1. **Sicherheit.** Niemand außer dem Nutzer kommt an Kontor oder seine Daten, niemand kann über Kontor etwas verändern. Der echte
+   Kontozugriff bleibt bei MoneyMoney: nie Überweisungen (auch keine vorausgefüllten), in MoneyMoney nur der enge, geprüfte
+   Schreibrahmen aus `CLAUDE.md`. Eingeschleuste Befehle (in Buchungstexten, Dateien, Belegen, Antworten des Modells) lösen
+   nichts aus – deshalb führt die KI nie selbst aus, sie schlägt vor.
+2. **Privatsphäre.** Alle Daten bleiben auf dem Mac, verschlüsselt, lesbar erst nach Anmeldung bei Kontor. Standard: offline.
+   Verbindungen nur, wo der Nutzer sie zugelassen hat (fest eingestellt oder je Zugriff freigegeben), nie mit seinen Daten nach außen.
+3. **Kontrolle.** Alles sichtbar, abschaltbar, rückgängig zu machen; der Assistent jederzeit zu stoppen.
+4. **Nachvollziehbarkeit.** Jede Aktion (Einträge, ausgeführte Regeln, Gemerktes, Abrufe) steht mit Zeit und Auslöser im
+   Protokoll – Inhalte der Unterhaltungen nie.
+5. **Richtig statt geschätzt.** Jede Zahl mit Herkunft (Ist, Plan, Annahme; Quelle und Stand); Unbekanntes heißt „unbekannt“;
+   Summen gehen auf den Cent auf.
+
+## Entschieden (Nutzer, 2026-11-21)
+Gilt, sobald beim jeweiligen Punkt umgesetzt; dann in `CLAUDE.md` (Sicherheit) übernehmen.
+- **Reihenfolge:** Sicherheit vorab, dann KI, dann GbR-Entlastung, dann Gesellschaften (Bewertung, Data-Warehouse), dann Planung.
+- **Automatik:** Die KI schlägt Regeln vor (z. B. „Umsätze von X immer Kategorie Y“); nach einmaligem Klick führt Kontor sie
+  selbst aus – sichtbar, protokolliert, abschaltbar, jedes Ergebnis rückgängig zu machen. Die KI selbst ändert nie etwas.
+  Ersetzt „Kontor ordnet nie selbst zu“ durch: nur über so bestätigte Regeln.
+- **Daten erst nach Anmeldung:** Kontors Daten sind ohne Anmeldung (Passwort oder Touch ID) unlesbar, auch für jemanden am
+  entsperrten Mac; der Schlüssel liegt danach nur im Arbeitsspeicher, bis der Dienst endet. Nach Neustart oder Update einmal
+  anmelden, danach läuft alles im Hintergrund weiter, auch bei gesperrtem Kontor. (Heute liegt der Schlüssel im Schlüsselbund und
+  ist dort für jedes Programm des Nutzers ohne Rückfrage lesbar.)
+- **Data-Warehouse (BigQuery):** eigener Zugang nur zum Lesen (Dienstkonto mit Leserecht auf die nötigen Daten und Recht zum
+  Abfragen), einmal am Mac eingerichtet; Kontor speichert ihn selbst verschlüsselt, an die Anmeldung gebunden (nicht frei lesbar im
+  Schlüsselbund), nur im Arbeitsspeicher entschlüsselt; nie im Protokoll, in Sicherungen, Paketen oder für die KI erreichbar.
+  Verbindung nur zu Googles Adressen für BigQuery und Anmeldung, nur feste Abfragen aus Kontors Code (kein freies SQL), nichts
+  nach außen außer der Abfrage. Abschaltbar; bei Google jederzeit widerrufbar. Ausnahme von „keine Zugangsdaten speichern“.
+- **Name:** Untertitel „Dein digitaler CFO“; in der Oberfläche heißt er weiter „KI-Assistent“.
+
+## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
+- Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
+  PIN bei jedem Senden, nie gespeichert; neue Verbindung) – oder Kontor rechnet nur und der Nutzer überträgt die Werte.
+- Unabhängig von MoneyMoney: woher dann die Bankdaten kommen.
+- Zukunft: eine gemeinsame KI für Nutzer und Geschäftspartner (später Mitarbeiter) auf einem eigenen Rechner mit starker
+  Grafikkarte, Zugang je Konto über einen sicheren Kanal, gemeinsames Gedächtnis; widerspricht heute „alles auf diesem Mac“ –
+  erst nach ausdrücklicher Entscheidung. Ebenso ein Gedächtnis über Finanzen hinaus („zweites Gehirn“).
+
+## 1. Daten erst nach Anmeldung (Sicherheit)
+Ziel: Wer den entsperrten Mac hat, aber nicht bei Kontor angemeldet ist, kommt an keine Kontor-Daten.
 
 Fertig, wenn
-- Soll (Kalkulation) und Ist (MoneyMoney) je Jahr nebeneinander stehen: Miete, Kosten, Zinsen, Restschuld;
-- die Steuer-Jahresauswertung je Entität (privat, je GbR, GmbH) aus Kategorien, AfA und Zinsen entsteht und sich gegen den Cashflow abstimmt;
-- AfA aus der Kalkulation kommt und von Hand überschrieben werden kann;
-- Tests rechnen auf den Cent gegen eine handgerechnete Tabelle; Hilfe und Bilder aktuell; ohne „Alpha“.
+- der Hauptschlüssel nur mit der Anmeldung freikommt (aus dem Passwort abgeleitet bzw. per Touch ID) und nur im Arbeitsspeicher
+  des Dienstes liegt; nichts davon frei lesbar im Schlüsselbund oder auf der Festplatte;
+- nach Neustart oder Update nur die Anmeldung erscheint (am Mac und vom iPhone); Zeitplan und Auto-Buchungen warten sichtbar
+  bis dahin und laufen danach weiter, auch gesperrt;
+- die Umstellung ohne Datenverlust geht: der alte Schlüssel verschwindet erst, wenn feststeht, dass der neue alle Daten öffnet;
+  Passwort ändern oder vergessen (Touch ID bzw. Mac-Passwort), Touch ID an/aus, Sicherung, Zurücksetzen und Deinstallieren
+  funktionieren;
+- Tests: ohne Anmeldung liest nichts im Dienst die Daten; Abbruch mitten in der Umstellung; Agent `reviewer`.
 
-## 2. Planung
-Ziel: Eine glaubwürdige Vorschau auf Vermögen und Liquidität.
-
-Fertig, wenn
-- die Planung aus den Ist-Zahlen fortschreibt (je Cashflow-Position, Budgets aus MoneyMoney), Darlehen und Immobilien einbezieht und Ereignisse kennt;
-- jede Zahl ihre Herkunft zeigt (Ist, Plan, Annahme); nichts wird geschätzt, ohne es so zu kennzeichnen;
-- Tests prüfen Fortschreibung, Zinseszins und Grenzen; Hilfe und Bilder aktuell; ohne „Alpha“.
-
-## 3. BWA und Summen- und Saldenliste (Gesellschaften)
-Ziel: Die Bilanz einer Gesellschaft stimmt mit der des Steuerberaters überein.
-
-Fertig, wenn
-- BWA und SuSa (DATEV-Export, CSV/PDF) je Gesellschaft geladen werden können, nur lokal und verschlüsselt;
-- Posten, die auf keinem Konto stehen (Ware, Forderungen/Zahlungsziele, Rückstellungen, Gewinnvortrag), daraus in Bilanz und Übersicht erscheinen, gekennzeichnet mit Stand und Quelle;
-- Bruttovermögen dann als Bilanzsumme abgestimmt; Tests mit erfundenen Exporten.
-
-## 4. Assistent (Sprachmodell nur auf diesem Mac)
-Ziel: Fragen zu den eigenen Zahlen und Hilfe bei der Bedienung – ohne dass etwas den Mac verlässt.
+## 2. KI-Assistent: digitaler CFO
+Ziel: Ein lernender, verlässlicher Mitarbeiter, der die Finanzen kennt, sich erinnert, von selbst auf Wichtiges hinweist und
+Routine abnimmt – ohne je selbst etwas zu ändern.
 
 Stand (seit 3.16.0, ohne „Alpha“ seit 3.16.3): llama.cpp und Modelle unter Einstellungen → KI-Assistent laden, aktualisieren, wählen, starten, stoppen –
 Kontor schlägt das Modell passend zum Arbeitsspeicher vor; Seitenfenster auf jeder Seite und als eigene Seite; liest alle Zahlen
@@ -45,8 +91,21 @@ bis zehn Minuten, live in Stücken und am Ende als Ganzes, nur mit Sprache (Stil
 Dateien über „+“ (3.16.12; Bilder und PDFs erst mit einem Modell, das Bilder sieht).
 
 Fertig, wenn
+- **Gedächtnis:** merkt sich Fakten und Erklärungen aus den eigenen Worten des Nutzers („März teurer: Urlaub“) – nie aus
+  Buchungstexten, Dateien, Belegen oder Werkzeug-Ergebnissen; jedes Gemerkte erscheint sofort mit „Rückgängig“; Liste unter
+  Einstellungen → KI-Assistent zum Ansehen, Ändern, Löschen; verschlüsselt, nie in Paketen oder im Protokoll; ohne feste Grenze:
+  das Modell holt sich per Suche, was zur Frage passt (Gemerktes und gespeicherte Verläufe);
+- **Hinweise von selbst:** nach jedem Abgleich prüft Kontor (fester Code) auf Auffälliges – gestiegene Ausgaben, ungewöhnliche
+  Umsätze, Fristen (Voranmeldung, Zinsbindung), Liquidität, offene Kategorien, Sicherheitslage (Zugang, Freigaben, Updates) –
+  und zeigt es unter Offenes; der Assistent erklärt und ordnet ein, Gemerktes zählt (bekannter Grund, kein Alarm);
+- **Regeln statt Einzelklicks** (siehe Entschieden): Vorschläge aus wiederkehrenden Mustern; Liste der Regeln mit Herkunft,
+  Ausführungen, Abschalten; jedes Ergebnis rückgängig zu machen;
+- **Protokoll:** jede Aktion – Vorschlag angenommen, Regel ausgeführt, Gemerktes, Eintrag, Rücknahme – mit Zeit und Auslöser;
+- **Vergleiche:** Zeiträume, Bereiche, Objekte, Gesellschaften; Vergleichszahlen von außen als Datei oder über die freigegebene
+  Internetsuche (unten);
+- **eingeschleuste Befehle wirkungslos:** Tests mit präparierten Buchungstexten, Dateien, Belegen – nichts gemerkt, keine Regel,
+  kein Eintrag ohne Klick;
 - am Mac mit echten Modellen geprüft: Abschirmung (kein Netz, kein Zugriff auf Kontors Daten), Start, Antworten, Stoppen, Diktieren;
-- BWA/SuSa und Lohnabrechnungen eigene Werkzeuge haben, sobald Kontor sie kennt;
 - Kategorien zuordnen als Vorschlag mit Klick möglich ist, wie unter Kategorisieren.
 
 Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach Klick, je Schritt eine kleine Version):
@@ -58,6 +117,48 @@ Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach
 - [ ] Belege: Datei in den Chat, Texterkennung von macOS (offline), passenden Umsatz vorschlagen, Abweichungen nennen, ablegen und verknüpfen.
 - [ ] Internet nur zum Lesen: Kontor sucht (nicht das Modell), Freigabe je Zugriff mit Suchbegriffen und Adressen, Filter gegen eigene Daten,
   danach keine Änderungen im selben Chat.
+
+## 3. GbR-Entlastung: Immobilien, Steuer, Umsatzsteuer
+Ziel: Eine vermögensverwaltende GbR lässt sich mit Kontor führen – Objekte, Steuer, Voranmeldung, Nebenkosten, Ausschüttungen –
+und Kalkulation, Ist-Zahlen und Steuer passen zusammen.
+
+Fertig, wenn
+- Objekte je GbR verknüpft sind und Soll (Kalkulation) und Ist (MoneyMoney) je Jahr nebeneinander stehen: Miete, Kosten, Zinsen, Restschuld;
+- die Steuer-Jahresauswertung je Entität (privat, je GbR, GmbH) aus Kategorien, AfA und Zinsen entsteht und sich gegen den Cashflow abstimmt;
+- AfA aus der Kalkulation kommt und von Hand überschrieben werden kann;
+- die Umsatzsteuer-Voranmeldung je Monat oder Quartal aus den Kategorien entsteht (Umsätze nach Steuersatz, steuerfrei, Vorsteuer)
+  – Werte je Kennzahl zum Übertragen in ELSTER, Frist als Hinweis; direktes Senden: siehe Offen;
+- die Nebenkostenabrechnung je Objekt und Mieter entsteht: umlagefähige Kosten nach Schlüssel (Fläche, Einheiten, Verbrauch),
+  Vorauszahlungen, Nachzahlung oder Guthaben, als Dokument;
+- Ausschüttungen vorgeschlagen werden: je Gesellschafter Anteil am steuerlichen Ergebnis und Steuer darauf (Satz je Gesellschafter
+  eingestellt, als Annahme gekennzeichnet) gegen die verfügbare Liquidität nach Tilgung; Buchung per Regel, die Überweisung macht
+  der Nutzer selbst;
+- Tests rechnen auf den Cent gegen handgerechnete Tabellen; ohne „Alpha“.
+
+## 4. Gesellschaften: Bewertung und Buchhaltungsdaten
+Ziel: Jede Gesellschaft mit sauberer Bilanz, Kennzahlen und einem nachvollziehbaren Firmenwert, der anteilig ins Privatvermögen
+fließt; die Bilanz stimmt mit der des Steuerberaters überein.
+
+Fertig, wenn
+- das Bewertungsverfahren je Beteiligung wählbar ist: Stand des Bereichs (heute), Substanzwert (Vermögen minus Schulden, etwa für
+  Immobilien-GbR), EBITDA × Vielfaches; Bereinigungen per Regel (Geschäftsführergehalt, Sonderkosten, Einmaliges) ergeben das
+  bereinigte EBITDA, Nettofinanzschulden werden abgezogen; jeder Wert mit Herleitung und Stand; über mehrere Stufen;
+- BWA, SuSa und Wertenachweise je Gesellschaft als Datei geladen werden können (CSV, Excel, PDF), lokal und verschlüsselt gespeichert;
+- das Data-Warehouse (BigQuery) angebunden ist wie unter Entschieden: Konten, Salden, Buchungen; Abruf nach Zeitplan;
+- Posten, die auf keinem Bankkonto stehen (Ware, Forderungen und Zahlungsziele, Verbindlichkeiten, Rückstellungen,
+  Gewinnvortrag), in Bilanz und Übersicht erscheinen, gekennzeichnet mit Stand und Quelle; Bilanzsumme abgestimmt;
+- Kennzahlen je Gesellschaft (Umsatz, Rohertrag, EBITDA, Liquidität, Working Capital, Verschuldung) auch bei Hunderttausenden
+  Buchungen schnell da sind;
+- der Assistent eigene Werkzeuge für BWA/SuSa, Lohnabrechnungen, Bewertung und Kennzahlen hat;
+- Tests mit erfundenen Exporten; ohne „Alpha“.
+
+## 5. Planung
+Ziel: Eine glaubwürdige Vorschau auf Vermögen und Liquidität.
+
+Fertig, wenn
+- die Planung aus den Ist-Zahlen fortschreibt (je Cashflow-Position, Budgets aus MoneyMoney), Darlehen und Immobilien einbezieht und Ereignisse kennt;
+- jede Zahl ihre Herkunft zeigt (Ist, Plan, Annahme); nichts wird geschätzt, ohne es so zu kennzeichnen;
+- Tests prüfen Fortschreibung, Zinseszins und Grenzen; Hilfe und Bilder aktuell; ohne „Alpha“.
 
 ## ~~Übersicht~~ (erledigt in 3.15.0)
 Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt an ihre Stelle; am iPhone untereinander; ohne „Alpha“.
@@ -99,6 +200,7 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
 - Oberfläche nach Apples Human Interface Guidelines, hell und dunkel, Mac und iPhone.
 
 ## Beim nächsten großen Versionssprung (Hilfe, README, Bilder)
+- README und Hilfe: Ziel „dein digitaler CFO“ (siehe oben) als Einleitung; Netzverbindungen nach dem Stand dann.
 - Hilfe: eigener Abschnitt „Assistent“ (einrichten, Rechte, was er nie darf, Abschirmung) mit Bildern; README (Netzverbindungen).
 - Hilfe Assistent: Änderungen nur noch über die Sammelkarte am Ende einer Antwort (statt „Eintragen“ je Karte), Änderungsrechte ab Werk an (bisher „anfangs aus“), Protokoll der Änderungen unter Einstellungen → KI-Assistent.
 - Hilfe Assistent: Diagramme im Chat und „Verläufe“ (gespeicherte Unterhaltungen, Einstellung „Verläufe speichern“) mit Bild (3.16.11).
