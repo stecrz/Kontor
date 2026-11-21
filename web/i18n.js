@@ -2521,7 +2521,6 @@ const I18N = {
 "s_ki_verlauf_weg":["Diese Unterhaltung gibt es nicht mehr.", "This conversation no longer exists."],
 "h_ki_speichern":["Unterhaltungen bleiben verschlüsselt in Kontors Datenordner, damit du sie unter „Verläufe“ im Assistenten wieder öffnen und fortsetzen kannst – nicht in Sicherungen, nicht im Protokoll. Zurücksetzen und Deinstallieren löschen sie mit.", "Conversations stay encrypted in Kontor's data folder, so you can open and continue them under “History” in the assistant – not in backups, not in the log. Resetting and uninstalling delete them too."],
 "untertitel":["Dein digitaler CFO", "Your digital CFO"],
-"ki_fragen":["KI-Assistent fragen …", "Ask the AI assistant …"],
 "ki_ref_zeile":["{0} (Zeile)", "{0} (row)"],
 "ki_ref_spalte":["Spalte {0}", "Column {0}"],
 "ki_ref_grafik":["Grafik: {0}", "Chart: {0}"],
@@ -2537,5 +2536,17 @@ const I18N = {
 "ref_wert":["Wert", "Value"],
 "ref_werte":["Werte", "Values"],
 "ref_grafik":["Grafik", "Chart"],
-"ref_auswahl":["Ausgewählter Text", "Selected text"]
+"ref_auswahl":["Ausgewählter Text", "Selected text"],
+"ki_kurz":["Kurz erklären", "Explain briefly"],
+"ki_im_chat":["Im Chat fragen", "Ask in the chat"],
+"ki_im_chat_weiter":["Im Chat weiterfragen", "Continue in the chat"],
+"ki_kurz_frage":["Erkläre in ein, zwei Sätzen, was das ist und was auffällt.", "Explain in a sentence or two what this is and what stands out."],
+"ki_kurz_erklaert":["Kurz erklärt", "Briefly explained"],
+"ref_pfad":["Pfad", "Path"],
+"ref_ganze_zeile":["Ganze Zeile", "Whole row"],
+"ref_punkt":["Stelle in der Grafik", "Point in the chart"],
+"ref_inhalt":["Inhalt", "Content"],
+"wert_kopieren":["Wert kopieren", "Copy value"],
+"zeile_kopieren":["Zeile kopieren", "Copy row"],
+"spalte_kopieren":["Spalte kopieren", "Copy column"]
 };

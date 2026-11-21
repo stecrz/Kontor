@@ -1758,6 +1758,35 @@ class Chats(_Assist):
         with open(os.path.join(os.path.dirname(rec), "request.json")) as f:
             self.assertNotIn("[Reference", json.load(f)["messages"][-1]["content"])
 
+    def test_quick_explanation(self):
+        """"Explain briefly" (right click): answered at once without thinking, read-only (no changes, no page opened, no chart),
+        short, and in no conversation -- the one on screen stays as it is, nothing is saved."""
+        rec = os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record")
+        with open(rec, "w"):
+            pass
+        r = self.a.ask({"question": "Hallo"}); events(self.a, r["job"])
+        cid, turns, chats = r["conversation"], len(self.a.conv["turns"]), len(self.a.chats())
+        ref = {"label": "Miete · Mär 26: 1.250", "page": "Cashflow", "text": "Zeile: Miete", "go": {"route": "#cashflow"}}
+        q = self.a.ask({"question": "Erkläre kurz, was das ist.", "quick": True, "refs": [ref], "conversation": cid})
+        self.assertEqual(q["conversation"], "")
+        evs = events(self.a, q["job"])
+        self.assertEqual(evs[-1]["type"], "done")
+        with open(os.path.join(os.path.dirname(rec), "request.json")) as f:
+            req = json.load(f)
+        said = req["messages"][-1]["content"]
+        self.assertTrue(said.startswith("[Kontor: a quick explanation in a small box beside the page -- at most two short sentences (about 40 words)"), said[:120])
+        self.assertIn("1. Miete · Mär 26: 1.250", said)
+        self.assertEqual([m["role"] for m in req["messages"]], ["system", "user"])          # nothing of the conversation on screen
+        names = {t["function"]["name"] for t in req.get("tools") or []}
+        self.assertTrue(names)
+        self.assertFalse(names & {"show_chart", "open_page", "mark_on_page", "show_transactions", "enter_balances", "set_plan_values", "assign_categories"}, names)
+        self.assertLessEqual(req["max_tokens"], A.QUICK_TOKENS)
+        self.assertEqual(req.get("reasoning_effort"), "none")                       # without thinking ("fast")
+        self.assertEqual((self.a.conv["id"], len(self.a.conv["turns"]), len(self.a.chats())), (cid, turns, chats))
+        # the conversation goes on as before
+        self.ask("Weiter", conversation=cid)
+        self.assertEqual(len(self.a.chat(cid)["turns"]), turns + 2)
+
     def test_setting_delete_reset_and_never_in_the_log_or_backup(self):
         logs = []
         h = logging.Handler(); h.emit = lambda rec: logs.append(rec.getMessage())
@@ -3247,7 +3276,7 @@ class Browser(unittest.TestCase):
 
         def menu(pg, sel, pos=None):
             pg.click(sel, button="right", position=pos) if pos else pg.click(sel, button="right")
-            pg.wait_for_selector("#ctx")
+            pg.wait_for_selector("#ctx button")
             return [x.strip() for x in pg.eval_on_selector_all("#ctx button", "bs => bs.map(b => b.textContent)")]
         try:
             with sync_playwright() as p:
@@ -3255,23 +3284,32 @@ class Browser(unittest.TestCase):
                 pg = b.new_page(viewport={"width": 1440, "height": 900})
                 errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
                 pg.goto(url); pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
-                T.wait_shell(pg); pg.goto(url + "#cashflow"); pg.wait_for_selector("#main .cf-pair table.cf-names"); pg.wait_for_timeout(500)
-                pg.evaluate("asLoad()"); until(pg, "asOn()")
-                # a figure: its row and column (the names stand in a table of their own beside the figures)
-                row, col, val = pg.evaluate("""(() => { const n = document.querySelector('#main .cf-pair table.cf-names'), v = document.querySelector('#main .cf-pair table.cf-tbl:not(.cf-names)');
-                    const tr = [...n.tBodies[0].rows].find(r => r.getClientRects().length && refLabel(r.cells[0]) && refLabel(v.rows[r.rowIndex].cells[1] || r));
+                T.wait_shell(pg); pg.goto(url + "#cashflow"); pg.wait_for_selector("#main .cf-pair table.cf-names")
+                pg.evaluate("asLoad()"); until(pg, "asOn()"); pg.evaluate("asDrawnWait()")
+                pg.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=url.rstrip("/"))
+                ki = ["Kurz erklären", "Im Chat fragen"]
+                # a figure: its row and column (the names stand in a table of their own beside the figures), the rows above it
+                row, col, val, path = pg.evaluate("""(() => { const n = document.querySelector('#main .cf-pair table.cf-names'), v = document.querySelector('#main .cf-pair table.cf-tbl:not(.cf-names)');
+                    const tr = [...n.tBodies[0].rows].find(r => r.getClientRects().length && +r.dataset.depth > 0 && refLabel(r.cells[0]) && refVal(v.rows[r.rowIndex].cells[1]));
                     const c = v.rows[tr.rowIndex].cells[1]; c.id = 'ref-cell'; const h = v.tHead.rows[v.tHead.rows.length - 1]; const hc = [...h.cells].find(x => refOver(c, x)); hc.id = 'ref-head';
-                    return [refLabel(tr.cells[0]), refLabel(hc), refVal(c)]; })()""")
-                self.assertTrue(row and col, (row, col, val))
-                self.assertEqual(menu(pg, "#ref-cell"), ["KI-Assistent fragen …"])
-                pg.click("#ctx button:has-text('KI-Assistent fragen')")
+                    return [refLabel(tr.cells[0]), refLabel(hc), refVal(c), refPath(tr, n)]; })()""")
+                self.assertTrue(row and col and val and path, (row, col, val, path))
+                self.assertEqual(menu(pg, "#ref-cell"), ki + ["Wert kopieren"])
+                self.assertEqual(pg.inner_text("#ctx .ctx-h"), "KI-Assistent")
+                pg.click("#ctx button:has-text('Wert kopieren')")
+                self.assertEqual(pg.evaluate("navigator.clipboard.readText()"), val.replace("\u2212", "-"))
+                menu(pg, "#ref-cell"); pg.click("#ctx button:has-text('Im Chat fragen')")
                 pg.wait_for_selector("#assist.open #as-refs .as-ref")
-                self.assertEqual(pg.inner_text("#as-refs .as-ref-l"), "%s · %s: %s" % (row, col, val) if val else "%s · %s" % (row, col))
+                self.assertEqual(pg.inner_text("#as-refs .as-ref-l"), "%s · %s: %s" % (row, col, val))
                 self.assertEqual(pg.inner_text("#as-refs .as-ref-pg"), "Cashflow")
+                self.assertIn("Pfad: %s › %s" % (" › ".join(path), row), pg.evaluate("AS.refs[0].text"))
                 self.assertEqual(pg.evaluate("document.activeElement.id"), "as-in")
-                # a heading: the whole column -- then taken off again with its ✕
+                # a heading: the whole column (copied as a table) -- then taken off again with its ✕
                 pg.evaluate("document.querySelector('#ref-head').scrollIntoView({block: 'center'})")
-                menu(pg, "#ref-head"); pg.click("#ctx button:has-text('KI-Assistent fragen')")
+                self.assertEqual(menu(pg, "#ref-head"), ki + ["Spalte kopieren"])
+                pg.click("#ctx button:has-text('Spalte kopieren')")
+                self.assertTrue(pg.evaluate("navigator.clipboard.readText()").startswith("\t" + col + "\n"))
+                menu(pg, "#ref-head"); pg.click("#ctx button:has-text('Im Chat fragen')")
                 until(pg, "document.querySelectorAll('#as-refs .as-ref').length === 2")
                 self.assertEqual(pg.inner_text("#as-refs .as-ref:nth-child(2) .as-ref-l"), "Spalte " + col)
                 self.assertIn("Werte:", pg.evaluate("AS.refs[1].text"))
@@ -3285,45 +3323,68 @@ class Browser(unittest.TestCase):
                 ans = pg.evaluate("asText(AS.msgs[1])")
                 self.assertTrue(ans.startswith("Antwort: [Reference -- what the user selected"), ans[:200])
                 self.assertIn("Zeile: " + row, ans); self.assertIn("Spalte: " + col, ans)
+                self.assertNotIn("copy", pg.evaluate("Object.keys(AS.msgs[0].refs[0])"))          # what is for the clipboard stays here
                 turn = app.assistant.conv["turns"][0]
                 self.assertEqual((turn["refs"][0]["go"]["route"], turn["refs"][0]["go"]["mark"]), ("#cashflow", {"text": row, "column": col}))
-                # later, on another page: a click on it opens the cash flow again and marks the figure
+                # explained briefly: at once, in a small box at the pointer -- not in the chat; "continue in the chat" takes it there
+                cid = app.assistant.conv["id"]
+                menu(pg, "#ref-cell"); pg.click("#ctx button:has-text('Kurz erklären')")
+                pg.wait_for_selector(".as-pop .as-pop-b .as-t"); until(pg, "!QK.job", 30)
+                quick = pg.inner_text(".as-pop .as-pop-b")
+                self.assertTrue(quick.startswith("Antwort: [Kontor: a quick explanation in a small box"), quick[:200])
+                self.assertIn("Zeile: " + row, quick); self.assertIn("Erkläre in ein, zwei Sätzen", quick)
+                self.assertEqual(pg.evaluate("AS.msgs.length"), 2); self.assertEqual(app.assistant.conv["id"], cid)
+                self.assertEqual(len(app.assistant.conv["turns"]), 2)
+                pg.click(".as-pop .as-pop-chat"); until(pg, "!document.querySelector('.as-pop') && AS.refs.length === 1")
+                self.assertIn("Kurz erklärt: Antwort:", pg.evaluate("AS.refs[0].text"))
+                menu(pg, "#ref-cell"); pg.click("#ctx button:has-text('Kurz erklären')"); pg.wait_for_selector(".as-pop")
+                pg.keyboard.press("Escape"); until(pg, "!document.querySelector('.as-pop') && !QK.job")          # Escape closes it (and ends the answer)
+                pg.evaluate("AS.refs = []; asRefsDraw()"); until(pg, "!AS.busy")
+                # later, on another page: a click on the reference opens the cash flow again and marks the figure
                 pg.goto(url + "#overview"); pg.wait_for_selector("#main .ov-card"); pg.wait_for_selector("#assist.open .as-msg.me .as-ref-go")
                 pg.click(".as-msg.me .as-ref-go")
                 until(pg, "location.hash === '#cashflow' && !!document.querySelector('#main td.as-mark')")
                 self.assertEqual(pg.evaluate("refVal(document.querySelector('#main table.cf-tbl:not(.cf-names) td.as-mark'))"), val)
-                # a selected text: that text
-                pg.goto(url + "#overview"); pg.wait_for_selector("#main .ov-card .ov-head b"); pg.wait_for_timeout(300)
+                # a selected text: that text (and copy)
+                pg.goto(url + "#overview"); pg.wait_for_selector("#main .ov-card .ov-head b"); pg.evaluate("asDrawnWait()")
                 pg.evaluate("""(() => { const b = document.querySelector('#main .ov-card .ov-head b'); b.id = 'ref-sel'; const r = document.createRange(); r.selectNodeContents(b);
                     getSelection().removeAllRanges(); getSelection().addRange(r); })()""")
                 title = pg.inner_text("#ref-sel").strip()
-                self.assertEqual(menu(pg, "#ref-sel"), ["KI-Assistent fragen …", "Grafik drucken …", "Kopieren"])
-                pg.click("#ctx button:has-text('KI-Assistent fragen')")
+                self.assertEqual(menu(pg, "#ref-sel"), ki + ["Kopieren", "Grafik drucken …"])
+                pg.click("#ctx button:has-text('Im Chat fragen')")
                 until(pg, "AS.refs.length === 1")
                 self.assertEqual(pg.inner_text("#as-refs .as-ref-l"), "„%s“" % title)
                 self.assertEqual(pg.evaluate("AS.refs[0].go.mark.text"), title)
                 pg.evaluate("getSelection().removeAllRanges(); AS.refs = []; asRefsDraw()")
-                # a chart: ask or print it alone
-                self.assertEqual(menu(pg, "#main .ov-card .ov-plot"), ["KI-Assistent fragen …", "Grafik drucken …"])
-                pg.click("#ctx button:has-text('KI-Assistent fragen')")
+                # a chart: the point under the pointer (what its hover box shows) and the chart; or print it alone
+                self.assertEqual(menu(pg, "#main .ov-card .ov-plot"), ki + ["Grafik drucken …"])
+                pg.click("#ctx button:has-text('Im Chat fragen')")
                 until(pg, "AS.refs.length === 1")
-                self.assertEqual(pg.inner_text("#as-refs .as-ref-l"), "Grafik: " + title)
-                # every chart has the menu -- also the small ones of the balance sheet and the real estate's
-                pg.goto(url + "#balance"); pg.wait_for_selector("#main .lc .lc-plot, #main .lc svg"); pg.wait_for_timeout(400)
+                self.assertTrue(pg.inner_text("#as-refs .as-ref-l").startswith("Grafik: " + title), pg.inner_text("#as-refs .as-ref-l"))
+                pg.evaluate("AS.refs = []; asRefsDraw()")
+                # every chart has the menu -- also the small ones of the balance sheet; the big one names the month under the pointer
+                pg.goto(url + "#balance"); pg.wait_for_selector("#main .lc[data-lc='nw'] svg"); pg.evaluate("asDrawnWait()")
                 self.assertIn("Grafik drucken …", menu(pg, "#main .lc[data-lc='nw'] svg"))
                 pg.keyboard.press("Escape")
-                pg.evaluate("openHistDrawer(S.KONTEN[0].uuid)"); pg.wait_for_selector("#drawer.open .h-chart svg"); pg.wait_for_timeout(300)
-                self.assertEqual(menu(pg, "#drawer .h-chart svg"), ["KI-Assistent fragen …", "Grafik drucken …"])          # the side window's chart too
-                pg.click("#ctx button:has-text('KI-Assistent fragen')"); until(pg, "AS.refs.length === 2")
+                box = pg.eval_on_selector("#bch svg", "s => { const r = s.getBoundingClientRect(); return [r.left + r.width * 0.6, r.top + r.height * 0.5]; }")
+                pg.mouse.move(box[0], box[1]); until(pg, "!document.querySelector('#bch-tip').classList.contains('hidden')")
+                month = pg.inner_text("#bch-tip .bch-tip-h").strip()
+                pg.mouse.click(box[0], box[1], button="right"); pg.wait_for_selector("#ctx button"); pg.click("#ctx button:has-text('Im Chat fragen')")
+                until(pg, "AS.refs.length === 1")
+                self.assertIn(" · " + month, pg.evaluate("AS.refs[0].label")); self.assertIn("Stelle in der Grafik: " + month, pg.evaluate("AS.refs[0].text"))
+                pg.evaluate("openHistDrawer(S.KONTEN[0].uuid)"); pg.wait_for_selector("#drawer.open .h-chart svg")
+                self.assertEqual(menu(pg, "#drawer .h-chart svg"), ki + ["Grafik drucken …"])          # the side window's chart too
+                pg.click("#ctx button:has-text('Im Chat fragen')"); until(pg, "AS.refs.length === 2")
                 self.assertEqual(pg.evaluate("[AS.refs[1].go.route, AS.refs[1].go.mark]"), ["#balance", None])          # its page (the side window is not opened again)
                 pg.evaluate("closeDrawer()")
                 # settings: never (the assistant does not read that page) -- the browser's own menu
                 pg.goto(url + "#settings"); pg.wait_for_selector("#main .tabs"); pg.click("#main h2, #main .tabs", button="right")
-                pg.wait_for_timeout(200); self.assertIsNone(pg.query_selector("#ctx"))
-                # switched off: a chart can still be printed, nothing to ask
-                pg.goto(url + "#overview"); pg.wait_for_selector("#main .ov-card .ov-plot"); pg.wait_for_timeout(300)
+                self.assertIsNone(pg.query_selector("#ctx"))          # the menu would be there at once
+                # switched off: a figure can still be copied and a chart printed, nothing to ask
+                pg.goto(url + "#overview"); pg.wait_for_selector("#main .ov-card .ov-plot"); pg.evaluate("asDrawnWait()")
                 pg.evaluate("AS.st.settings.enabled = false")
                 self.assertEqual(menu(pg, "#main .ov-card .ov-plot"), ["Grafik drucken …"])
+                self.assertIsNone(pg.query_selector("#ctx .ctx-h"))
                 pg.keyboard.press("Escape")
                 self.assertEqual(errors, [])
                 b.close()

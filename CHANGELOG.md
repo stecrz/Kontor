@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.16.27 (2026-11-21 19:19)
+- Rechtsklick: Gruppe „KI-Assistent“ mit „Kurz erklären“ und „Im Chat fragen“ (ohne „…“)
+- „Kurz erklären“: sofort, höchstens zwei kurze Sätze, in einem kleinen Kasten am Mauszeiger – nicht im Chat; „Im Chat weiterfragen“
+- Bezug genauer: Stelle in der Grafik unter dem Mauszeiger, Pfad der Zeile, ganze Zeile bei schmalen Tabellen (etwa Umsätze)
+- Rechtsklick: Wert, Zeile oder Spalte kopieren (als Tabelle für Excel/Numbers), auch ohne KI-Assistent
+- „Grafik drucken …“ auch für Grafiken im Chat
+- Behoben: Sprung zurück zu einer Cashflow-Zeile öffnet die Tabelle tief genug
+
 ## 3.16.26 (2026-11-21 18:40)
 - KI-Assistent: leeres Gespräch zeigt, was offen ist (wie in der Übersicht) – „Erledigen“ stellt dem Assistenten die passende Frage, sonst „Öffnen“
 

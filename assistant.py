@@ -61,6 +61,7 @@ PAGES = ("overview", "balance", "cashflow", "planning", "properties", "tax", "tr
 PLAN_LIMITS = {"horizon_months": (1, 240), "inflation_percent_pa": (-5, 20), "income_increase_percent_pa": (-20, 50), "expense_increase_percent_pa": (-20, 50),
                "return_percent_pa": (-20, 30)}     # the planning's assumptions the assistant may propose, and their bounds
 MAX_STEPS = 10                                     # tool rounds per question
+QUICK_STEPS, QUICK_TOKENS = 2, 120                 # a quick explanation (right click): one lookup at most, an answer of two short sentences
 MAX_RESULT = 7000                                  # characters of one tool result
 MAX_QUESTION = 40000                               # characters; less with a small context (question_limit)
 MAX_PAGE = 9000
@@ -1891,6 +1892,9 @@ class Assistant:
             raise ValueError(tr("s_ki_aus"))
         if body.get("effort") in EFFORTS:               # for this question only (chosen in the panel); the setting stays
             st["effort"] = body["effort"]
+        quick = body.get("quick") is True                # a quick explanation (right click): at once, read-only, not in a conversation
+        if quick:
+            st = dict(st, effort="fast", rights=dict(st["rights"], enter_values=False, categorize=False, navigate=False))
         q = str(body.get("question") or "").strip()
         if not q:
             raise ValueError(tr("s_ki_frage_fehlt"))
@@ -1908,6 +1912,12 @@ class Assistant:
         try:                                             # whatever fails from here: the question is over, the next one can be asked
             self.set_page(body.get("page"), st)
             cid = str(body.get("conversation") or "")
+            if quick:                                        # its own, thrown away after: the conversation on screen stays as it is
+                conv = _new_conv()
+                job.chat, job.conv = "", conv
+                threading.Thread(target=self._run, args=(job, q, st, {"job": job, "conv": conv, "area": str((body.get("page") or {}).get("area") or "") if isinstance(body.get("page"), dict) else "",
+                                                                     "refs": _refs(body.get("refs")), "quick": True}), name="kontor-ai-answer", daemon=True).start()
+                return {"job": job.id, "conversation": ""}
             if not cid or cid != self.conv["id"]:           # another conversation: a saved one goes on where it stood
                 saved = self._chat_read(cid) if _CHAT_ID.fullmatch(cid) else None
                 if saved is not None:
@@ -2007,6 +2017,10 @@ class Assistant:
         if conv.get("since") and conv["since"] < date.today().isoformat():       # a saved conversation, opened again on a later day
             note = "[Kontor: this conversation was saved on %s and goes on today -- figures in it are from then; read them anew before you use them.]\n" % conv["since"]
         conv.pop("since", None)
+        quick = bool(ctx.get("quick"))
+        if quick:
+            note += "[Kontor: a quick explanation in a small box beside the page -- at most two short sentences (about 40 words), plain text, no list, no table, no chart. What is in the reference is enough; look something up only if it must be.]\n"
+        steps_max = QUICK_STEPS if quick else MAX_STEPS
         turn: List[dict] = [{"role": "user", "content": note + self._where() + _ref_text(ctx.get("refs")) + question}]
         tokens, steps = 0, 0
         try:
@@ -2015,13 +2029,13 @@ class Assistant:
             self.ai.ensure(st["model"], st["context"], st["sandbox"], job.cancel)
             self._watch()
             job.emit("status", state="thinking")
-            specs = self._specs(st)
+            specs = [x for x in self._specs(st) if not quick or x["function"]["name"] != "show_chart"]
             system = {"role": "system", "content": self._system(st, ctx)}
             history = self._trim(list(conv["messages"]), st, room=len(question))
             retried = nudged = cut = limit = False
             thought = reads = 0                              # tokens of thinking in this answer; reads of the user's data
             seen: Dict[Tuple[str, str], int] = {}
-            while steps < MAX_STEPS:
+            while steps < steps_max:
                 steps += 1
                 self._fit(turn, st)
                 msgs = [system] + history + turn
@@ -2030,7 +2044,9 @@ class Assistant:
                 body = dict({"messages": msgs, "stream": True, "stream_options": {"include_usage": True}, "temperature": 0.5, "top_p": 0.9, "top_k": 40,
                              "max_tokens": max(st["context"] // 4, min(st["context"] // 2, room)),     # thinking and answer together
                              "cache_prompt": True}, **effort)
-                if specs and steps < MAX_STEPS:
+                if quick:
+                    body["max_tokens"] = min(body["max_tokens"], QUICK_TOKENS)
+                if specs and steps < steps_max:
                     body["tools"] = specs
                 text, calls, cut = "", {}, False
                 think_n, think_told = 0, None                    # this step's thinking: pieces counted / as llama.cpp reports it

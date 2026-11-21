@@ -429,10 +429,10 @@ function printOne(card) {
   PRINT.off = marked; document.body.classList.add('print-one'); window.print();
 }
 // a small menu of its own at the pointer (a right click, see below)
-function ctxMenu(x, y, items) {
+function ctxMenu(x, y, items) {          // items: [label, action], '-' (a line between groups) or {head} (a group's name)
   const old = $('#ctx'); if (old) old.remove();
   const m = document.createElement('div'); m.id = 'ctx'; m.className = 'ctx'; m.setAttribute('role', 'menu');
-  m.innerHTML = items.map(([l], i) => `<button role="menuitem" data-i="${i}">${esc(l)}</button>`).join(''); document.body.appendChild(m);
+  m.innerHTML = items.map((it, i) => it === '-' ? '<hr>' : it.head ? `<div class="ctx-h" role="presentation">${esc(it.head)}</div>` : `<button role="menuitem" data-i="${i}">${esc(it[0])}</button>`).join(''); document.body.appendChild(m);
   const r = m.getBoundingClientRect(); m.style.left = Math.min(x, innerWidth - r.width - 8) + 'px'; m.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
   const close = () => { m.remove(); document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', esc_, true); window.removeEventListener('scroll', close); $('main').removeEventListener('scroll', close); };
   const away = e => { if (!m.contains(e.target)) close(); }, esc_ = e => { if (e.key === 'Escape') close(); };
@@ -440,17 +440,24 @@ function ctxMenu(x, y, items) {
   m.addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (!b) return; close(); items[+b.dataset.i][1](); });
   $('button', m).focus();
 }
-// a right click (or ctrl-click) on the page: ask the assistant about what is under the pointer; on a chart also print it alone;
-// with a selected text also copy it -- with shift: the browser's own menu
+// a right click (or ctrl-click) on the page: the assistant explains what is under the pointer at once, or it goes into the chat
+// for a question; copy it (a figure, a row, a column, a selected text); print a chart alone -- with shift: the browser's own menu
 document.addEventListener('contextmenu', e => {
-  if (e.defaultPrevented || e.shiftKey || !e.target.closest || e.target.closest('input, textarea, select, a, .ctx')) return;          // a long touch that opened a row: nothing more
-  const card = e.target.closest(REF_CHARTS), ref = refAt(e), sel = (getSelection() || '').toString().trim(), items = [];
-  if (ref) items.push([t('ki_fragen'), () => asAskAbout(ref)]);
-  if (card && !card.closest('#assist')) items.push([t('grafik_drucken'), () => printOne(card)]);
-  if (ref && sel) items.push([t('kopieren'), () => { navigator.clipboard.writeText(sel).catch(() => {}); }]);
+  if (e.defaultPrevented || e.shiftKey || !e.target.closest || e.target.closest('input, textarea, select, a, .ctx, .as-pop')) return;          // a long touch that opened a row: nothing more
+  const card = e.target.closest(REF_CHARTS), ref = refAt(e), items = [];
+  if (ref && asOn()) items.push({head: t('ki_assistent_lang')}, [t('ki_kurz'), () => asQuick(ref, e.clientX, e.clientY)], [t('ki_im_chat'), () => asAskAbout(ref)]);
+  const more = [];
+  if (ref && ref.copy) more.push([t(ref.copyKey || 'kopieren'), () => copyText(ref.copy)]);
+  if (card) more.push([t('grafik_drucken'), () => printOne(card)]);
+  if (more.length) items.push(...(items.length ? ['-'] : []), ...more);
   if (!items.length) return;
   e.preventDefault(); ctxMenu(e.clientX, e.clientY, items);
 });
+async function copyText(s) {          // to the clipboard -- the old way where the browser has no clipboard for scripts
+  try { await navigator.clipboard.writeText(s); return; } catch (e) {}
+  const ta = document.createElement('textarea'); ta.value = s; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch (e) {} ta.remove();
+}
 function offlineBanner() {
   if (OFFLINE.mode) { const b = $('#banner'); b.innerHTML = `${t('offline_ansicht_der_mac_ist', OFFLINE.as_of ? new Date(OFFLINE.as_of).toLocaleString(LOCALE, {dateStyle: 'short', timeStyle: 'short'}) : t('unbekannt'), hq('offline'))}`; b.className = 'banner info'; }
   else if (S.DATA) banner('');
@@ -6879,7 +6886,7 @@ function asDraw() {
   const body = $('#as-body');
   if (window.ResizeObserver) { let w = body.clientWidth;          // another width (the panel became a page, the window changed): the charts drawn to it
     if (AS.ro) AS.ro.disconnect();
-    AS.ro = new ResizeObserver(onResizeFrame(() => { const nw = body.clientWidth; if (Math.abs(nw - w) < 24) return; w = nw; if (!AS.list && AS.msgs.some(m => (m.parts || []).some(p => p.k === 'chart'))) asMsgs(); }));
+    AS.ro = new ResizeObserver(onResizeFrame(() => { const nw = body.clientWidth; if (Math.abs(nw - w) < 24 || PRINT.on || document.body.classList.contains('print-one')) return;          /* printing a chart alone: drawn as it is */ w = nw; if (!AS.list && AS.msgs.some(m => (m.parts || []).some(p => p.k === 'chart'))) asMsgs(); }));
     AS.ro.observe(body); }
   const ta = $('#as-in'), mic = $('#as-mic'); if (mic) mic.addEventListener('click', asMic);
   $('#as-add').addEventListener('click', asAdd); $('#as-x').addEventListener('click', asCancel);
@@ -7153,8 +7160,9 @@ function asPage() {
   return {route: location.hash || '#overview', title: (ti && ti.textContent) || '', area: S.area || '', text};
 }
 const asRefPre = refs => (refs || []).map(r => `[${r.label}]\n${r.text}\n`).join('');          // what a question referred to, for the conversation so far
+const refSend = r => ({label: r.label, page: r.page, text: r.text, go: r.go || null});          // what goes to Kontor (not what is for the clipboard)
 async function asSend(text) {
-  const refs = (AS.refs || []).slice(0, REF_MAX);
+  const refs = (AS.refs || []).slice(0, REF_MAX).map(refSend);
   text = (text || '').trim(); if (!text && refs.length) text = t('ki_ref_frage');
   if (!text || AS.busy) return;
   if (AS.list) { AS.list = false; asHead(); }
@@ -7342,6 +7350,17 @@ function refMake(label, lines, where, go) {
 }
 const refSeen = el => el && el.getClientRects().length > 0;
 const refOver = (a, b) => { const r = a.getBoundingClientRect(), s = b.getBoundingClientRect(), m = (r.left + r.right) / 2; return m >= s.left - 1 && m <= s.right + 1; };
+const refNum = s => s.replace(/−/g, '-');          // a figure for the clipboard: a minus Excel and Numbers read
+function refPath(tr, names) {          // a row's place: the rows above it it belongs to (cash flow by depth, balance sheet by group)
+  const rows = [...names.rows], i = rows.indexOf(tr), out = [];
+  if (tr.dataset.depth != null) {
+    let d = +tr.dataset.depth;
+    for (let j = i - 1; j >= 0 && d > 0; j--) { const r = rows[j]; if (r.dataset.depth != null && +r.dataset.depth < d) { d = +r.dataset.depth; const c = [...r.cells].find(x => refLabel(x)); if (c) out.unshift(refLabel(c)); } }
+  } else if (!tr.classList.contains('group')) {
+    const g = rows.slice(0, i).reverse().find(r => r.classList.contains('group')); const c = g && [...g.cells].find(x => refLabel(x)); if (c) out.push(refLabel(c));
+  }
+  return out;
+}
 function refCell(cell) {
   // a table: its names may stand in a table of their own beside the figures (cash flow, planning)
   const tbl = cell.closest('table'), pair = tbl.closest('.cf-pair');
@@ -7350,33 +7369,40 @@ function refCell(cell) {
   const tr = cell.parentElement, where = refTitle(tbl);
   const headOf = c => head ? [...head.cells].find(h => refOver(c, h)) : null;
   const nameOf = row => { const r = names.rows[row.rowIndex]; const c = r && [...r.cells].find(x => refLabel(x)); return c && c.cellIndex <= 1 ? c : null; };
+  const pairsOf = (vrow, name) => head ? [...head.cells].map(h => { const v = [...vrow.cells].find(c => refOver(c, h)); return v && v !== name && refLabel(h) ? [refLabel(h), refVal(v)] : null; }).filter(Boolean) : [];
   if (tr === head || cell.closest('thead')) {          // a heading: the whole column
     const col = refLabel(cell); if (!col) return null;
-    const lines = [...vals.tBodies].flatMap(b => [...b.rows]).filter(refSeen).slice(0, 40).map(r => {
-      const n = nameOf(r), v = [...r.cells].find(c => refOver(c, cell));
-      return n && v && v !== n ? `${refLabel(n)}: ${refVal(v)}` : '';
-    }).filter(Boolean);
-    return refMake(t('ki_ref_spalte', col), [`${t('ref_spalte')}: ${col}`, `${t('ref_werte')}:`].concat(lines), where, refGo({col}));
+    const rows = [...vals.tBodies].flatMap(b => [...b.rows]).filter(refSeen).map(r => { const n = nameOf(r), v = [...r.cells].find(c => refOver(c, cell)); return n && v && v !== n ? [refLabel(n), refVal(v)] : null; }).filter(Boolean);
+    return Object.assign(refMake(t('ki_ref_spalte', col), [`${t('ref_spalte')}: ${col}`, `${t('ref_werte')}:`].concat(rows.slice(0, 40).map(([n, v]) => `${n}: ${v}`)), where, refGo({col})),
+      {copy: [['', col]].concat(rows).map(([n, v]) => n + '\t' + refNum(v)).join('\n'), copyKey: 'spalte_kopieren'});
   }
   const name = nameOf(tr); if (!name) return null;
-  const row = refLabel(name), vrow = vals.rows[tr.rowIndex] || tr;
+  const row = refLabel(name), vrow = vals.rows[tr.rowIndex] || tr, path = refPath(names.rows[tr.rowIndex] || tr, names), pairs = pairsOf(vrow, name);
+  const pathLine = path.length ? [`${t('ref_pfad')}: ${path.concat([row]).join(' › ')}`] : [];
+  const ntr = names.rows[tr.rowIndex] || tr, depth = ntr.dataset.depth != null && (S.tab === 'cashflow' || S.tab === 'planning') ? {detail: Math.min(3, Math.max(cfLevel(), +ntr.dataset.depth))} : {};          // opened again deep enough to show the row
   if (tbl === names && names !== vals || cell.cellIndex <= name.cellIndex) {          // the name: the whole row
-    const pairs = head ? [...head.cells].map(h => { const v = [...vrow.cells].find(c => refOver(c, h)); return v && v !== name && refLabel(h) ? `${refLabel(h)}: ${refVal(v)}` : ''; }).filter(Boolean).slice(0, 30) : [];
-    return refMake(t('ki_ref_zeile', row), [`${t('ref_zeile')}: ${row}`, `${t('ref_werte')}:`].concat(pairs), where, refGo({mark: {text: row, column: ''}}));
+    return Object.assign(refMake(t('ki_ref_zeile', row), [`${t('ref_zeile')}: ${row}`].concat(pathLine, [`${t('ref_werte')}:`], pairs.slice(0, 30).map(([h, v]) => `${h}: ${v}`)), where, refGo(Object.assign({mark: {text: row, column: ''}}, depth))),
+      {copy: ['\t' + pairs.map(p => p[0]).join('\t'), row + '\t' + pairs.map(p => refNum(p[1])).join('\t')].join('\n'), copyKey: 'zeile_kopieren'});
   }
-  const h = headOf(cell), col = refLabel(h), val = refVal(cell);          // one figure: its row and column
-  return refMake(row + (col ? ' · ' + col : '') + (val ? ': ' + val : ''), [`${t('ref_zeile')}: ${row}`].concat(col ? [`${t('ref_spalte')}: ${col}`] : [], [`${t('ref_wert')}: ${val || '–'}`]),
-    where, refGo({mark: {text: row, column: col}}));
+  const h = headOf(cell), col = refLabel(h), val = refVal(cell);          // one figure: its row and column (a narrow table: the whole row too, as a transaction)
+  return Object.assign(refMake(row + (col ? ' · ' + col : '') + (val ? ': ' + val : ''), [`${t('ref_zeile')}: ${row}`].concat(pathLine, col ? [`${t('ref_spalte')}: ${col}`] : [], [`${t('ref_wert')}: ${val || '–'}`],
+    pairs.length && pairs.length <= 10 ? [`${t('ref_ganze_zeile')}: ` + pairs.map(([hh, v]) => `${hh}: ${v}`).join(' · ')] : []), where, refGo(Object.assign({mark: {text: row, column: col}}, depth))),
+    val ? {copy: refNum(val), copyKey: 'wert_kopieren'} : {});
 }
 function refChat(box) {          // a chart in the chat: its figures, and the page it belongs to
   const h = asChFrom(box), c = h && h.c; if (!c) return null;
   const lines = [`${t('ref_grafik')}: ${c.title}`, asChSub(c)].concat((c.series || []).slice(0, 6).map(s => `${s.name || ''}: ` + (c.x || []).slice(-24).map((x, i, a) => {
     const k = (c.x || []).length - a.length + i; return `${asChX(c, k)} ${(s.values || [])[k] == null ? '–' : FN((s.values || [])[k])}`; }).join('; ')));
   const L = c.link || {}, go = /^#[\w/-]+$/.test(L.route || '') ? {route: L.route, area: L.area || '', view: c.step === 'year' ? 'years' : c.step === 'month' ? 'months' : '', detail: L.detail} : null;
-  return {label: refCut(t('ki_ref_grafik', c.title), 64), page: t('ki_assistent'), text: lines.filter(Boolean).join('\n').slice(0, 1500), go};
+  const pt = refPoint(box); if (pt) lines.splice(2, 0, `${t('ref_punkt')}: ${pt.text}`);
+  return {label: refCut(t('ki_ref_grafik', c.title) + (pt ? ' · ' + pt.head : ''), 64), page: t('ki_assistent'), text: lines.filter(Boolean).join('\n').slice(0, 1500), go};
 }
-function refAt(e) {
-  if (!asOn()) return null;
+function refPoint(chart) {          // the point of a chart under the pointer: what its hover box shows (a month, a bar, a slice)
+  const tip = [...$$('.bch-tip, .as-ch-tip', chart), $('#cf-tip')].find(x => x && !x.classList.contains('hidden') && refSeen(x) && refOne(x.textContent));
+  if (!tip) return null;
+  return {head: refLabel($('.bch-tip-h, .cf-tip-h, b', tip)) || refCut(refOne(tip.textContent), 30), text: refTxt(tip, 600)};
+}
+function refAt(e) {          // what the right click is on, as a reference (also without the assistant: for copying)
   const tg = e.target, chat = tg.closest('#assist .as-chart');
   if (chat) return refChat(chat);
   const main = $('#main'), dr = $('#drawer');
@@ -7387,15 +7413,16 @@ function refAt(e) {
     const box = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
     if ((on || r.intersectsNode(tg)) && (main.contains(box) || dr.contains(box))) {
       const where = refTitle(box);
-      return refMake(`„${refCut(refOne(st), 40)}“`, [`${t('ref_auswahl')}:`, st.slice(0, 1200)], where, refGo(where && !box.closest('#drawer') ? {mark: {text: where, column: ''}} : {}));
+      return Object.assign(refMake(`„${refCut(refOne(st), 40)}“`, [`${t('ref_auswahl')}:`, st.slice(0, 1200)], where, refGo(where && !box.closest('#drawer') ? {mark: {text: where, column: ''}} : {})), {copy: st});
     }
   }
   const cell = tg.closest('td, th');
   if (cell && cell.closest('table')) { const r = refCell(cell); if (r) return r; }
   const chart = tg.closest(REF_CHARTS);
-  if (chart) {
-    const ti = refChartTitle(chart) || refTitle(chart);
-    return refMake(t('ki_ref_grafik', ti || t('ref_grafik')), [`${t('ref_grafik')}: ${ti}`, refTxt(chart, 1200)], '', refGo(ti && !chart.closest('#drawer') ? {mark: {text: ti, column: ''}} : {}));
+  if (chart) {          // a chart: the point under the pointer first (what its hover box shows), then what the chart shows
+    const ti = refChartTitle(chart) || refTitle(chart), pt = refPoint(chart);
+    return refMake(t('ki_ref_grafik', ti || t('ref_grafik')) + (pt ? ' · ' + pt.head : ''), [`${t('ref_grafik')}: ${ti}`].concat(pt ? [`${t('ref_punkt')}: ${pt.text}`] : [], [`${t('ref_inhalt')}: ${refTxt(chart, 1000)}`]),
+      '', refGo(ti && !chart.closest('#drawer') ? {mark: {text: ti, column: ''}} : {}));
   }
   const box = tg.closest('.k, .kpi, li, .item, .ov-todo-i, .lc-val, .card, .co-card, #drawer');
   if (!box) return null;
@@ -7407,6 +7434,57 @@ function asAskAbout(ref) {
   AS.refs = (AS.refs || []).filter(r => r.label !== ref.label || r.page !== ref.page).concat([ref]).slice(-REF_MAX);
   if (S.tab !== 'assistant' && !AS.open) asShow(true); else asLayout();
   asRefsDraw(); const ta = $('#as-in'); if (ta) ta.focus();
+}
+// A quick explanation: asked at once (without thinking, read-only, not in the chat), answered in a small box at the pointer --
+// "in the chat" takes it there (the reference with what was explained) for a question of one's own.
+const QK = {job: null, box: null};
+function asQuickClose() {
+  if (QK.job) { const j = QK.job; QK.job = null; if (j !== 'asking') api('/api/assistant/stop', {}).catch(() => {}); }
+  if (QK.box) { QK.box.remove(); QK.box = null; }
+  document.removeEventListener('pointerdown', asQuickAway, true); document.removeEventListener('keydown', asQuickKey, true);
+}
+const asQuickAway = e => { if (QK.box && !QK.box.contains(e.target)) asQuickClose(); };
+const asQuickKey = e => { if (e.key === 'Escape') asQuickClose(); };
+async function asQuick(ref, x, y) {
+  asQuickClose();
+  const box = QK.box = document.createElement('div'); box.className = 'as-pop'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', t('ki_kurz'));
+  box.innerHTML = `<div class="as-pop-h"><span class="as-ref"><span class="as-ref-go"><span class="as-ref-pg">${esc(ref.page)}</span><span class="as-ref-l">${esc(ref.label)}</span></span></span><button type="button" class="icon as-pop-x" title="${esc(t('ki_schliessen'))}" aria-label="${esc(t('ki_schliessen'))}">${AS_CROSS}</button></div>`
+    + `<div class="as-pop-b" aria-live="polite"><div class="as-run"><span class="spin"></span>${esc(t('ki_denkt'))}</div></div>`
+    + `<div class="as-pop-f"><button type="button" class="ghost small as-pop-chat">${esc(t('ki_im_chat_weiter'))}</button></div>`;
+  document.body.appendChild(box);
+  const place = () => { const r = box.getBoundingClientRect(); box.style.left = Math.max(8, Math.min(x, innerWidth - r.width - 8)) + 'px'; box.style.top = Math.max(8, Math.min(y + 4, innerHeight - r.height - 8)) + 'px'; };
+  place();
+  document.addEventListener('pointerdown', asQuickAway, true); document.addEventListener('keydown', asQuickKey, true);
+  let text = '';
+  const body = () => $('.as-pop-b', box), show = (h) => { if (QK.box === box) { body().innerHTML = h; place(); } };
+  $('.as-pop-x', box).addEventListener('click', asQuickClose);
+  $('.as-pop-chat', box).addEventListener('click', () => {
+    const said = text.trim(); asQuickClose();
+    asAskAbout(said ? Object.assign({}, ref, {text: (ref.text + '\n' + t('ki_kurz_erklaert') + ': ' + said).slice(0, 1500)}) : ref);
+  });
+  try {
+    QK.job = 'asking';
+    const r = await api('/api/assistant/ask', {question: t('ki_kurz_frage'), quick: true, page: asPage(), refs: [refSend(ref)]});
+    if (QK.box !== box) { api('/api/assistant/stop', {}).catch(() => {}); return; }          // closed meanwhile: not answered for nobody
+    QK.job = r.job;
+    let n = 0, cut = false;
+    while (QK.job === r.job) {
+      const p = await api(`/api/assistant/poll?job=${r.job}&after=${n}`);
+      for (const ev of p.events || []) {
+        n = Math.max(n, ev.n || 0);
+        if (ev.type === 'delta') text += ev.text || '';
+        else if (ev.type === 'reset') text = '';
+        else if (ev.type === 'status' && ev.state === 'loading' && !text) show(`<div class="as-run"><span class="spin"></span>${esc(t('ki_laedt_modell'))}</div>`);
+        else if (ev.type === 'error') throw new Error(ev.text || '');
+        else if (ev.type === 'done') cut = !!ev.cut;
+      }
+      if (cut && text.trim() && !/[.!?…]\s*$/.test(text)) text = text.trimEnd() + ' …';          // the short limit reached in the middle of a sentence
+      if (text.trim()) show(`<div class="as-t">${asMd(text)}</div>`);
+      if (p.done || p.gone) break;
+    }
+    if (QK.box === box && !text.trim()) show(`<div class="muted small">${esc(t('ki_gestoppt'))}</div>`);
+  } catch (e) { show(`<div class="banner err small">${esc(e.message)}</div>`); }
+  if (QK.box === box) QK.job = null;
 }
 const asRefChip = (r, attrs, x) => `<span class="as-ref"><button type="button" class="as-ref-go" ${attrs} title="${esc(r.go ? t('ki_ref_springen') + '\n\n' + r.text : r.text)}">`
   + `${r.page ? `<span class="as-ref-pg">${esc(r.page)}</span>` : ''}<span class="as-ref-l">${esc(r.label)}</span></button>`

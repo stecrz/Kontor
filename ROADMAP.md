@@ -98,7 +98,8 @@ nach Klick ein (zurücknehmbar); Diktieren mit eigenem Sprachmodell; Rechte einz
 ihrer Seite); gespeicherte Unterhaltungen unter „Verläufe“ (3.16.11, verschlüsselt, nicht in Sicherungen, abschaltbar); Diktat
 bis zehn Minuten, live in Stücken und am Ende als Ganzes, nur mit Sprache (Stille und Rauschen erreichen das Modell nicht);
 Dateien über „+“ (3.16.12; Bilder und PDFs erst mit einem Modell, das Bilder sieht); Rechtsklick auf Zahl, Zeile, Spaltenkopf, Grafik oder markierten Text: „KI-Assistent fragen …“ – der Bezug steht
-knapp vor der Frage, ein Klick darauf öffnet die Stelle wieder (3.16.19); Stil ab Werk kurz, direkt, inhaltsdicht (3.16.23); Denkaufwand mit klarer Bedeutung (Schnell: ohne Nachdenken,
+knapp vor der Frage, ein Klick darauf öffnet die Stelle wieder (3.16.23); im selben Menü „Kurz erklären“ (sofort, in einem kleinen
+Kasten am Mauszeiger, nicht im Chat), Wert/Zeile/Spalte kopieren, im Bezug die Stelle in der Grafik und der Pfad der Zeile (3.16.26); Stil ab Werk kurz, direkt, inhaltsdicht (3.16.23); Denkaufwand mit klarer Bedeutung (Schnell: ohne Nachdenken,
 Ausgewogen: bis 2.000 Token je Antwort, Gründlich: ohne Grenze) und unter jeder Antwort „nachgedacht · Abfragen · Token/s“ (3.16.23).
 
 Fertig, wenn
@@ -212,7 +213,7 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
 - Oberfläche nach Apples Human Interface Guidelines, hell und dunkel, Mac und iPhone.
 
 ## Beim nächsten großen Versionssprung (Hilfe, README, Bilder)
-- Hilfe: Rechtsklick → „KI-Assistent fragen …“ (Bezug, Sprung zurück) und „Grafik drucken …“ bei allen Grafiken (3.16.19).
+- Hilfe: Rechtsklick → KI-Assistent „Kurz erklären“ / „Im Chat fragen“ (Bezug, Sprung zurück), Kopieren, „Grafik drucken …“ bei allen Grafiken (3.16.23, 3.16.27).
 - README und Hilfe: Ziel „dein digitaler CFO“ (siehe oben) als Einleitung; Netzverbindungen nach dem Stand dann.
 - Hilfe: eigener Abschnitt „Assistent“ (einrichten, Rechte, was er nie darf, Abschirmung) mit Bildern; README (Netzverbindungen).
 - Hilfe Assistent: Änderungen nur noch über die Sammelkarte am Ende einer Antwort (statt „Eintragen“ je Karte), Änderungsrechte ab Werk an (bisher „anfangs aus“), Protokoll der Änderungen unter Einstellungen → KI-Assistent.
