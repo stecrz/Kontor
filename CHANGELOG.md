@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.65 (2026-11-22 00:52)
+- Diktieren: Mikrofon wieder mit Echo-, Rausch- und Pegelfilter (behebt verschluckte Anfänge und fehlende Sätze seit 3.16.57)
+- Diktieren: Knopf wird rot, sobald der Ton ankommt – kein Warten mehr auf das erste Geräusch
+- Diktieren: leise Anfänge bleiben drin (0,8 s vor dem ersten Laut statt 0,25 s), auch leise Sprache zählt
+
 ## 3.16.64 (2026-11-22 00:41)
 - ⌘F sucht: in der Hilfe und bei Umsätzen im eigenen Suchfeld, sonst in der Mac-App eine Suchleiste (Treffer markiert und gezählt, ⌘G/⇧⌘G, ↩, esc)
 - Suchfeld der Hilfe bleibt beim Scrollen sichtbar

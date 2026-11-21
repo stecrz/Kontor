@@ -1541,7 +1541,11 @@ class Tools(_Assist):
             rec = pcm(parts)
             got = self.a.transcribe(rec)["text"]
             n = int(re.search(r"(\d+)", got).group(1))
-            self.assertTrue(16000 * 2 * 1.2 < n < 16000 * 2 * 1.9, (n, parts))         # the second of voice, a little before and after
+            self.assertTrue(16000 * 2 * 2.1 < n < 16000 * 2 * 2.7, (n, parts))         # the second of voice, 0.8 s before and 0.6 s after
+        # a soft first word (below what counts as sound) stays in -- and soft speech in pure silence (the filters of a quiet room) counts
+        n = int(re.search(r"(\d+)", self.a.transcribe(pcm([("quiet", 1, 40), ("voice", 0.4, 150), ("voice", 1, 6000), ("quiet", 1, 40)]))["text"]).group(1))
+        self.assertGreater(n, 16000 * 2 * 1.9)
+        self.assertNotEqual(self.a.transcribe(pcm([("quiet", 1, 0), ("voice", 1, 150), ("quiet", 1, 0)]))["text"], "")
         self.assertEqual(self.a.transcribe(pcm([("voice", 2, 5000)]))["text"], "Diktat mit %d Bytes." % len(pcm([("voice", 2, 5000)])))      # all voice: all of it
         # a long dictation: piece by piece, each piece at most 45 s and cut in a pause, the texts one after the other
         for parts in ([("quiet", 0.5, 40)] + [("voice", 6, 5000), ("quiet", 0.6, 40)] * 15, [("quiet", 0.5, 40), ("voice", 100, 5000)]):
@@ -3834,7 +3838,7 @@ class Browser(unittest.TestCase):
                 with open(slow, "w") as f:
                     f.write("2.5")
                 app.assistant.speech.stop(); pg.fill("#as-in", "")
-                pg.click("#as-mic"); until(pg, "REC.starting && REC.cap && REC.heard")
+                pg.click("#as-mic"); until(pg, "REC.starting && REC.cap && REC.flow")
                 mic = "(() => { const b = document.querySelector('#as-mic'); return [REC.on, !!b.querySelector('.spin'), b.classList.contains('rec'), b.title, !document.querySelector('#as-x').classList.contains('hidden'), document.activeElement === b]; })()"
                 self.assertEqual(pg.evaluate(mic), [False, True, False, "Diktat startet …", True, True])
                 self.assertEqual(pg.get_attribute("#as-go", "title"), "Aufnahme beenden und senden")
@@ -3877,6 +3881,14 @@ class Browser(unittest.TestCase):
                 with self.assertLogs("kontor.assistant", "INFO") as cm:
                     pg.click("#as-mic"); until(pg, "!REC.on && !REC.busy", 20)
                 self.assertTrue(any("started after" in x for x in cm.output), cm.output)
+                # a quiet room behind the filters for speech gives pure silence: red as soon as the sound arrives, without waiting for
+                # something to be heard
+                pg.evaluate("""(() => { window.__gum = navigator.mediaDevices.getUserMedia;
+                    navigator.mediaDevices.getUserMedia = async () => new AudioContext().createMediaStreamDestination().stream; })()""")
+                pg.click("#as-mic"); until(pg, "REC.on")
+                self.assertEqual(pg.evaluate("[REC.flow, REC.heard, REC.t0 - REC.t1 < REC_FLOW * 0.8]"), [True, False, True])
+                pg.keyboard.press("Escape"); until(pg, "!REC.on && !REC.starting")
+                pg.evaluate("(() => { navigator.mediaDevices.getUserMedia = window.__gum; })()")
                 app.assistant.set({"speech_start": "click"})
                 pg.fill("#as-in", said)
                 pg.fill("#as-in", "")

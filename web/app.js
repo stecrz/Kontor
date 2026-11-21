@@ -7246,13 +7246,13 @@ function asFit(ta) {
 // more, with all its words around each sentence -- that text is the one that stays.
 // The click starts at once: the microphone opens and is kept from then on, while the speech model loads beside it if it does not
 // run yet (a few seconds). The button turns red and its time starts only once dictating truly runs -- the model is ready and the
-// microphone sounds; until then it turns (what is said meanwhile is written down too).
-const REC = {on: false, busy: false, starting: false, cap: false, heard: false, gen: 0, asked: false, drop: false, go: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
+// microphone's sound arrives; until then it turns (what is said meanwhile is written down too).
+const REC = {on: false, busy: false, starting: false, cap: false, flow: false, heard: false, gen: 0, asked: false, drop: false, go: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
 const REC_MAX = 600;          // seconds: then it ends by itself and the text is taken
-const REC_HEAR = 1200;        // ms the microphone's first sound is waited for at most (one that stays silent: red anyway)
-// the microphone as it is -- without the filters for calls (echo, noise, Apple's voice processing): they start more slowly, turn
-// other sound down while they run and can give pure silence where a speech model hears best what is really there
-const REC_AUDIO = {channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: true};
+const REC_FLOW = 1000;        // ms the microphone's sound is waited for at most (a page whose sound never starts: red anyway)
+// the microphone with the filters for speech (echo, noise, level) -- they keep out what plays on the Mac and the hum around it; in a
+// quiet room they give pure silence, so red does not wait for something to be heard (only for the sound to arrive at all)
+const REC_AUDIO = {channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true};
 const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.6" y="1.4" width="4.8" height="8.2" rx="2.4" fill="currentColor"/><path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 const AS_PLUS = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 const AS_CROSS = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
@@ -7333,7 +7333,7 @@ async function asMic() {
   const ready = api('/api/assistant/listen', {}).then(() => { took[1] = Date.now() - c0; return ''; }, e => (e && e.message) || '?');          // the speech model, loaded beside the microphone
   const at = ta.selectionStart == null ? ta.value.length : ta.selectionStart, to = ta.selectionEnd == null ? at : ta.selectionEnd;
   REC.live = {gen: (REC.live ? REC.live.gen : 0) + 1, busy: false, sent: 0, seg: 0, done: [], cur: '', before: ta.value.slice(0, at), after: ta.value.slice(to)};
-  Object.assign(REC, {starting: true, asked: true, heard: false, heardAt: 0, took: null, pcm: [], m: 0});
+  Object.assign(REC, {starting: true, asked: true, flow: false, heard: false, heardAt: 0, t1: 0, took: null, pcm: [], m: 0});
   ta.readOnly = true;          // from now on the field shows what is said (typing would be written over)
   asDictPut(''); asMicDraw();
   const drop = st => { st.getTracks().forEach(x => x.stop()); if (ctx) ctx.close().catch(() => {}); };
@@ -7352,19 +7352,20 @@ async function asMic() {
     REC.node.onaudioprocess = e => {
       if (!REC.cap) return;
       const d = e.inputBuffer.getChannelData(0);
-      if (!REC.heard && d.some(x => x !== 0)) { REC.heard = true; REC.heardAt = Date.now(); }          // a microphone just opened gives silence (zeros) at first
+      REC.flow = true;
+      if (!REC.heard && d.some(x => x !== 0)) { REC.heard = true; REC.heardAt = Date.now(); }          // the first sound (only for the log)
       asPcm(d); if (REC.m / 16000 >= REC_MAX) asMicStop(true);
     };
     src.connect(REC.node); REC.node.connect(REC.ctx.destination);          // (it only runs while connected; it puts out silence)
-    t1 = Date.now(); took[0] = t1 - c0;
+    t1 = REC.t1 = Date.now(); took[0] = t1 - c0;
   } catch (e) { if (!REC.ctx) drop(stream); asMicStop(false); return; }          // whatever fails after the microphone was opened: it is let go again
-  // red only once it truly runs: the speech model ready, the microphone sounding
+  // red only once it truly runs: the speech model ready, the microphone's sound arriving
   const err = await ready;
-  while (gen === REC.gen && !err && !REC.heard && Date.now() - t1 < REC_HEAR) await new Promise(r => setTimeout(r, 30));
+  while (gen === REC.gen && !err && !REC.flow && Date.now() - t1 < REC_FLOW) await new Promise(r => setTimeout(r, 20));
   if (gen !== REC.gen) return;          // ended meanwhile (✕, Escape, sent, the panel closed, locked)
   if (err) { asMicStop(false); toast(err, 7000); return; }          // the model does not start: said now, not after speaking
   REC.starting = false; REC.on = true; REC.t0 = Date.now(); asMicDraw(); REC.timer = setInterval(() => { asMicDraw(); asLive(); }, 500);
-  took[2] = REC.heard ? REC.heardAt - t1 : REC.t0 - t1; took[3] = REC.t0 - c0; REC.took = took;
+  took[3] = REC.t0 - c0; REC.took = took;          // (took[2], the first sound: when the recording ends)
 }
 // the microphone's samples as 16 kHz, 16 bit, as they come (each output sample the mean of the input samples it covers) -- ten
 // minutes are 19 MB, not the 115 MB of the browser's own samples
@@ -7450,6 +7451,7 @@ async function asMicStop(send, go) {
   REC.busy = true; REC.drop = false; REC.go = !!go; asMicDraw();
   let send_ = false;
   try {
+    if (REC.took) REC.took[2] = (REC.heard ? REC.heardAt : Date.now()) - REC.t1;          // the first sound after the microphone opened (none: until the end)
     const r = await api('/api/assistant/transcribe', Object.assign({audio: asB64(asWav(pcm))}, REC.took ? {start: REC.took} : {})), text = (r.text || '').trim();          // all of it once more: the text that stays
     REC.busy = false;
     if (REC.drop) asDictPut('');          // thrown away meanwhile (✕)

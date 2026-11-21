@@ -2938,15 +2938,17 @@ class Assistant:
 
 
 SPEECH_PART = 45.0                                 # seconds of one piece the speech model writes down at a time (a long dictation: several)
+SPEECH_BEFORE, SPEECH_AFTER = 27, 20               # 30 ms pieces kept before the first sound and after the last (0.8 s, 0.6 s)
 
 
 def _speech(wav: bytes, longest: float = SPEECH_PART) -> List[bytes]:
-    """The parts of a recording in which something is heard, each from shortly before its first sound to shortly after its
-    last -- none when there is nothing (silence, a steady hum: a speech model then invents sentences of its own). A long
+    """The parts of a recording in which something is heard, each from well before its first sound to well after its last
+    (0.8 s and 0.6 s: a soft first word -- "f", "s", "h", a quiet "also" -- is never cut off; quiet around words does the
+    model no harm) -- none when there is nothing (silence, a steady hum: a speech model then invents sentences of its own). A long
     recording is cut into pieces of at most `longest` seconds, each in a pause (the longest quiet stretch between 2/3 of
     that and all of it; without a pause at the quietest moment), so that no sentence is cut and each piece is written
     down with all of its own words around it. Sound: 30 ms pieces clearly louder than the quiet of this recording (10 dB
-    above its quietest tenth, at least -50 dBFS; -26 dBFS is always loud enough), in runs of at least 90 ms (a click is no
+    above its quietest tenth, at least -55 dBFS; -26 dBFS is always loud enough), in runs of at least 90 ms (a click is no
     word), together at least a quarter of a second. A recording that is not 16-bit PCM goes on as it is (the model decides)."""
     try:
         with wave.open(io.BytesIO(wav)) as w:
@@ -2970,7 +2972,7 @@ def _speech(wav: bytes, longest: float = SPEECH_PART) -> List[bytes]:
     if not db:
         return []
     quiet = sorted(db)[len(db) // 10]
-    loud = [d > min(max(quiet + 10, -50.0), -26.0) for d in db] + [False]
+    loud = [d > min(max(quiet + 10, -55.0), -26.0) for d in db] + [False]
     keep, run = [False] * len(db), 0
     for i, v in enumerate(loud):
         if v:
@@ -2983,7 +2985,7 @@ def _speech(wav: bytes, longest: float = SPEECH_PART) -> List[bytes]:
         return []
     most = max(10, int(longest / 0.03))
     first, last = keep.index(True), len(keep) - 1 - keep[::-1].index(True)
-    cuts, cur, end = [], max(0, first - 8), min(len(db), last + 12)
+    cuts, cur, end = [], max(0, first - SPEECH_BEFORE), min(len(db), last + SPEECH_AFTER)
     while end - cur > most:                              # a long dictation: cut in the longest pause near the end of each piece
         lo, hi = cur + most * 2 // 3, cur + most
         best, bl, i = None, 0, lo
@@ -3006,8 +3008,8 @@ def _speech(wav: bytes, longest: float = SPEECH_PART) -> List[bytes]:
         k = [i for i in range(f0, f1) if keep[i]]
         if len(k) < 8:                                   # a piece with nothing said in it
             continue
-        hi = len(a) if k[-1] + 12 >= len(db) else (k[-1] + 12) * flen        # a quarter of a second before, a third after (at the end: all)
-        part = a[max(f0, k[0] - 8) * flen:min(hi, len(a) if f1 >= len(db) else f1 * flen)]
+        hi = len(a) if k[-1] + SPEECH_AFTER >= len(db) else (k[-1] + SPEECH_AFTER) * flen        # (at the end: all of it)
+        part = a[max(f0, k[0] - SPEECH_BEFORE) * flen:min(hi, len(a) if f1 >= len(db) else f1 * flen)]
         if sys.byteorder == "big":
             part.byteswap()
         buf = io.BytesIO()
