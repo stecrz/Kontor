@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.41 (2026-11-21 21:56)
+- Entwicklung: Nachtlauf auf 6 Rechnern nebeneinander, je ~3 h neue Zufallsfälle; Anzahl in der Zusammenfassung des Laufs
+
 ## 3.16.40 (2026-11-21 21:48)
 - Behoben: 3.16.32 wiederhergestellt (Ablage der KI-Modelle, Hilfe-Symbole, Texte zu Zurücksetzen und Deinstallieren) – von 3.16.35 versehentlich zurückgesetzt
 - Entwicklung: Push-Sperre erkennt auch einen älteren Code-Stand bei richtiger Versionskette (Zeilen der neuesten Versionen verloren)

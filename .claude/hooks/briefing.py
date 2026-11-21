@@ -59,7 +59,7 @@ def own_files():
     return files - OWN
 
 
-NIGHT_TESTS = "tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py"      # what nightly.yml runs (1000 fixed + 1000 new cases)
+NIGHT_TESTS = "tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py"      # what nightly.yml runs (fixed + new cases)
 
 
 def tests_on_github():

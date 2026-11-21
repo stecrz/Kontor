@@ -1,20 +1,33 @@
 name: Zufallsläufe
 
-# every night on the newest main: the 1000 fixed random cases (instead of 40 per push) and 1000 new ones, drawn anew each night
-# (a failure names its case: KONTOR_FUZZ_SEED=<number> runs it again) -- only the random tests, on Apple's Python version; the
-# rest of a version is checked by its push run (tests.yml). About 10 minutes; red: the next chat fixes it (CLAUDE.md)
+# every night on the newest main, as many random cases as fit: each job first the fixed cases (the first job of a test the
+# 1000 fixed ones, instead of 40 per push) and those found before (tests/fixtures.py, FOUND), then new ones drawn anew each
+# night until its time is up (KONTOR_FUZZ_MINUTES; the run's summary shows how many). The booking rules are slowest per case:
+# several machines side by side. A failure names its case: KONTOR_FUZZ_SEED=<number> runs it again. Only the random tests, on
+# Apple's Python version (its pytest keeps nothing of a passed case); the rest of a version is checked by its push run
+# (tests.yml). About 3 hours, well under the user's limit of 5; red: the next chat fixes it (CLAUDE.md, "Nachtlauf rot").
 on:
   schedule:
-    - cron: "17 2 * * *"
+    - cron: "17 1 * * *"
 
 permissions:
   contents: read
 
 jobs:
   fuzz:
-    name: "1000 feste + 1000 neue Zufallsfälle · Python 3.9 (wie auf dem Mac)"
+    name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 240              # the cases stop after KONTOR_FUZZ_MINUTES (plus the fixed ones); this only catches a hang
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: "Buchungsregeln 1 · feste + neue Fälle", tests: tests/test_fuzz.py, fixed: "1000"}
+          - {name: "Buchungsregeln 2 · neue Fälle", tests: tests/test_fuzz.py, fixed: "0"}
+          - {name: "Buchungsregeln 3 · neue Fälle", tests: tests/test_fuzz.py, fixed: "0"}
+          - {name: "Buchungsregeln 4 · neue Fälle", tests: tests/test_fuzz.py, fixed: "0"}
+          - {name: "Cashflow · feste + neue Fälle", tests: tests/test_cashflow.py, fixed: "1000"}
+          - {name: "Szenarien · feste + neue Fälle", tests: tests/test_scenarios.py, fixed: "1000"}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
@@ -24,7 +37,9 @@ jobs:
       - run: uv pip install -q pytest
       - name: Tests
         env:
-          KONTOR_FUZZ_SEEDS: "1000"
-          KONTOR_FUZZ_RANDOM: "1000"
+          KONTOR_FUZZ_SEEDS: ${{ matrix.fixed }}
+          KONTOR_FUZZ_MINUTES: "170"
           TZ: Europe/Berlin
-        run: python -m pytest -q tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py
+        run: |
+          echo "### ${{ matrix.name }}" >> "$GITHUB_STEP_SUMMARY"
+          python -m pytest -q ${{ matrix.tests }}

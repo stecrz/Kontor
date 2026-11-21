@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import os
 import random
+import time
 import uuid as _uuid
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
-from typing import Dict, List
+from typing import Dict, Iterator, List
 
 U: Dict[str, str] = {}
 
@@ -19,16 +20,31 @@ U: Dict[str, str] = {}
 FOUND: List[int] = []
 
 
-def fuzz_seeds() -> List[int]:
-    """The cases of a random test: the fixed ones 0 .. KONTOR_FUZZ_SEEDS-1 (default 40; nightly.yml: 1000), those found before
-    (FOUND), and KONTOR_FUZZ_RANDOM new ones (nightly.yml: 1000), drawn anew every run from 1,000,000 on. A failure names its
-    case ("seed …"); KONTOR_FUZZ_SEED=<number>[,<number>…] runs just those again."""
-    only = os.environ.get("KONTOR_FUZZ_SEED")
+def fuzz_seeds(name: str = "") -> Iterator[int]:
+    """The cases of a random test, one after the other: the fixed ones 0 .. KONTOR_FUZZ_SEEDS-1 (default 40; nightly.yml: 1000
+    in its first job), those found before (FOUND), then new ones drawn anew every run from 1,000,000 on -- KONTOR_FUZZ_RANDOM of
+    them, and more until KONTOR_FUZZ_MINUTES have passed since the test began (nightly.yml: as many as fit). A failure names
+    its case ("seed …"); KONTOR_FUZZ_SEED=<number>[,<number>…] runs just those again. On GitHub the numbers go into the run's
+    summary. (Many cases: with Python 3.9's pytest, which keeps nothing of a passed case.)"""
+    env = os.environ.get
+    only = env("KONTOR_FUZZ_SEED")
     if only:
-        return [int(x) for x in only.replace(",", " ").split()]
-    new = random.SystemRandom()
-    return (list(range(int(os.environ.get("KONTOR_FUZZ_SEEDS") or 40))) + FOUND
-            + [new.randrange(10 ** 6, 10 ** 9) for _ in range(int(os.environ.get("KONTOR_FUZZ_RANDOM") or 0))])
+        yield from (int(x) for x in only.replace(",", " ").split())
+        return
+    fixed, new, n = int(env("KONTOR_FUZZ_SEEDS") or 40), random.SystemRandom(), int(env("KONTOR_FUZZ_RANDOM") or 0)
+    until = time.monotonic() + 60 * float(env("KONTOR_FUZZ_MINUTES") or 0)
+    done = 0
+    try:
+        for seed in list(range(fixed)) + FOUND:
+            yield seed
+        while done < n or time.monotonic() < until:
+            yield new.randrange(10 ** 6, 10 ** 9)
+            done += 1
+    finally:
+        summary = env("GITHUB_STEP_SUMMARY")
+        if summary and name:
+            with open(summary, "a", encoding="utf-8") as f:
+                f.write("- %s: %d feste, %d gefundene, %d neue Fälle\n" % (name, fixed, len(FOUND), done))
 
 
 @contextmanager

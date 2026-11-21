@@ -16,6 +16,7 @@ import random
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from collections import Counter
 from datetime import date, timedelta
@@ -198,7 +199,7 @@ class FuzzTests(unittest.TestCase):
         return steps
 
     def test_random_runs(self):
-        for seed in F.fuzz_seeds():          # more: KONTOR_FUZZ_SEEDS / KONTOR_FUZZ_RANDOM (nightly.yml), one again: KONTOR_FUZZ_SEED
+        for seed in F.fuzz_seeds("Buchungsregeln"):          # more: KONTOR_FUZZ_SEEDS / _RANDOM / _MINUTES (nightly.yml), one again: KONTOR_FUZZ_SEED
             reset_mock(); MockBridge.instances = []
             for name in ("state.json",):
                 self.store.save(name, {})
@@ -209,18 +210,28 @@ class FuzzTests(unittest.TestCase):
 class Seeds(unittest.TestCase):
     """Which cases a random test runs: the fixed ones, those found before, and new ones drawn anew every run; one again by its number."""
 
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="kontor-seeds-"); self.addCleanup(shutil.rmtree, self.dir, True)
+
     def test_fixed_found_and_new(self):
         from unittest import mock
         env = {k: v for k, v in os.environ.items() if not k.startswith("KONTOR_FUZZ")}
         with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(F, "FOUND", [1234567]):
-            self.assertEqual(F.fuzz_seeds(), list(range(40)) + [1234567])                      # a push: the 40 fixed ones and the found
+            self.assertEqual(list(F.fuzz_seeds()), list(range(40)) + [1234567])                # a push: the 40 fixed ones and the found
             os.environ.update(KONTOR_FUZZ_SEEDS="5", KONTOR_FUZZ_RANDOM="300")
-            a, b = F.fuzz_seeds(), F.fuzz_seeds()
+            a, b = list(F.fuzz_seeds()), list(F.fuzz_seeds())
             self.assertEqual(a[:6], [0, 1, 2, 3, 4, 1234567]); self.assertEqual(len(a), 306)
             self.assertTrue(all(10 ** 6 <= x < 10 ** 9 for x in a[6:]))                          # never one of the fixed ones
             self.assertNotEqual(a[6:], b[6:])                                                   # new every run
+            # as many as fit into the time: drawn until it is over, then the numbers into GitHub's summary of the run
+            os.environ.update(KONTOR_FUZZ_SEEDS="0", KONTOR_FUZZ_RANDOM="0", KONTOR_FUZZ_MINUTES="0.002",
+                              GITHUB_STEP_SUMMARY=os.path.join(self.dir, "summary.md"))
+            t0 = time.monotonic(); n = sum(1 for _ in F.fuzz_seeds("Probe"))
+            self.assertGreater(n, 1); self.assertGreaterEqual(time.monotonic() - t0, 0.11)
+            with open(os.environ["GITHUB_STEP_SUMMARY"], encoding="utf-8") as f:
+                self.assertEqual(f.read(), "- Probe: 0 feste, 1 gefundene, %d neue Fälle\n" % (n - 1))
             os.environ["KONTOR_FUZZ_SEED"] = "5551234, 7"
-            self.assertEqual(F.fuzz_seeds(), [5551234, 7])                                      # just these again
+            self.assertEqual(list(F.fuzz_seeds()), [5551234, 7])                                # just these again
         # a failure names its case, also where pytest does not show the subtest (Python 3.9)
         for err in (AssertionError("1 != 2"), KeyError("x")):
             with self.assertRaisesRegex(AssertionError, "^seed 5551234: "):

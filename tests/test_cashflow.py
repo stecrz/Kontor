@@ -1154,7 +1154,7 @@ class CashflowFuzz(Reconciles):
     def test_random_months_add_up(self):
         cfg = {"companies": [{"area": "Muster GbR", "participation": "Beteiligung an Muster GbR"}],
                "cashflow": {"positions": {"Privatentnahme": "ignore"}}}
-        for seed in F.fuzz_seeds():
+        for seed in F.fuzz_seeds("Cashflow"):
             with self.subTest(seed=seed), F.case(seed):
                 txs = self.world(random.Random(seed))
                 data = build(txs, cfg)

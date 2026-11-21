@@ -457,7 +457,7 @@ class MixedAtRandom(Checks):
     def test_many_scenarios_at_once(self):
         """Several scenarios in one ledger, on random days with random amounts (the same amount may come twice): every month
         still adds up, and every area's net worth moves by the sum of what happened."""
-        for seed in F.fuzz_seeds():
+        for seed in F.fuzz_seeds("Szenarien gemischt"):
             rnd = random.Random(seed)
             picks = [rnd.choice(SCENARIOS) for _ in range(rnd.randint(3, 8))]
             scs, first = [], None
