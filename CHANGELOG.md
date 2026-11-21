@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.35 (2026-11-21 20:56)
+- KI-Assistent: Gedanken und Schritte („Liest die Bilanz“ …) als ein Eintrag; zeigt beim Antworten den laufenden Schritt
+- Rechtsklick auf eine Zahl in Grafik oder Karte: Bezug mit Zeile und Wert (etwa „Überschuss: +48.660“) samt Details
+- Klick auf den Bezug markiert genau diese Zahl bzw. Zeile (mit ihrem Hinweis), nicht nur die Karte
+- Punkt in einer Grafik heißt im Bezug nach Grafik und Stelle (etwa „Nettovermögen · Oktober 2026“)
+
 ## 3.16.34 (2026-11-21 20:44)
 - Bilanz-Tabelle: Klick auf einen Wert klappt die Zeile zusätzlich auf bzw. zu (Position, Depot, Kennzahlen) – Markierung in der Grafik wie bisher
 - Doppelklick/Halten auf einen Wert entfällt dafür

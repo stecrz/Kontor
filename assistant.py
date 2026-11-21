@@ -367,8 +367,7 @@ class Assistant:
         if local:                                       # what is installed, sizes, downloads: only on the Mac
             out.update({k: ai[k] for k in ("platform", "runtime", "models", "speech", "recommended", "checked", "check_error", "disk_free")}, load=ai["job"],
                        speech_state=self.speech.state if self.speech.proc is not None or self.speech.state == "error" else "stopped", chats=len(self._chat_files()),
-                       speech_in_use=self.speech_model(), context_auto_value=DEFAULTS["context"],
-                       folder=self.ai.base, folder_exists=os.path.isdir(self.ai.base))          # llama.cpp and every model (also for dictating)
+                       speech_in_use=self.speech_model(), context_auto_value=DEFAULTS["context"])
         return out
 
     def set(self, body: dict) -> dict:
@@ -2412,6 +2411,9 @@ def _refs(value: Any) -> List[dict]:
                 g["mark"] = {"text": mark["text"][:120], "column": str(mark.get("column") or "")[:40]}
             if isinstance(go.get("col"), str) and go["col"].strip():
                 g["col"] = go["col"][:40]
+            fig = go.get("fig")                          # a figure in a chart or card: its row's name and its value
+            if isinstance(fig, dict) and any(isinstance(fig.get(k), str) and fig[k].strip() for k in ("tip", "value")):
+                g["fig"] = {k: re.sub(r"\s+", " ", str(fig.get(k) or "")).strip()[:n] for k, n in (("tip", 80), ("label", 80), ("value", 40))}
             go = g
         if not label:
             continue

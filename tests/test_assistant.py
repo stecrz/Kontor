@@ -1802,6 +1802,9 @@ class Chats(_Assist):
         self.assertEqual(len(A._refs([{"label": str(i), "text": "z" * 1500} for i in range(10)])), A.REF_MAX)
         self.assertEqual(sum(len(x["text"]) for x in A._refs([{"label": str(i), "text": "z" * 1500} for i in range(6)])), A.REF_TOTAL)
         self.assertEqual(A._refs([{"label": "Chart", "text": "t"}]), [{"label": "Chart", "page": "", "text": "t"}])          # a chart in the chat: no place
+        fig = A._refs([{"label": "x", "text": "t", "go": {"route": "#overview", "fig": {"tip": "Überschuss", "label": "Überschuss", "value": "+48.660", "evil": "y"}}},
+                       {"label": "y", "text": "t", "go": {"route": "#overview", "fig": {"label": "nur Name"}}}, {"label": "z", "text": "t", "go": {"route": "#overview", "fig": "nonsense"}}])
+        self.assertEqual([r["go"].get("fig") for r in fig], [{"tip": "Überschuss", "label": "Überschuss", "value": "+48.660"}, None, None])
         self.assertEqual(A._ref_text([]), "")
         self.ask("Ohne Bezug")
         with open(os.path.join(os.path.dirname(rec), "request.json")) as f:
@@ -3041,10 +3044,6 @@ class Http(_Assist):
         self.assertFalse(self.a.settings()["enabled"])                                # off again, as at the beginning
         self.assertEqual(self.a.changes(), [])                                        # the log of changes goes with the data
         self.assertTrue(os.path.exists(self.a.ai.model_path("unsloth/Qwen3.6-35B-A3B-GGUF", QWEN)))     # what was downloaded stays (public files)
-        st = self.a.status(True)                                                      # where it lies: shown at the Mac, in the data folder
-        self.assertEqual((st["folder"], st["folder_exists"]), (os.path.join(self.dir, "assistant"), True))
-        self.assertTrue(self.a.ai.model_path("unsloth/Qwen3.6-35B-A3B-GGUF", QWEN).startswith(st["folder"] + os.sep))
-        self.assertNotIn("folder", self.a.status(False))                              # not to another device
 
     def test_uninstall_takes_the_folder_along(self):
         self.assertIsNotNone(MA._KONTOR_FILE.fullmatch("assistant"))
@@ -3460,9 +3459,6 @@ class Browser(unittest.TestCase):
                 pg.click("#as-stop"); pg.wait_for_selector("#as-start")
                 self.assertIsNone(app.assistant.ai.proc)
                 self.assertTrue(pg.is_disabled("#as-files"))                                 # without a repository: nothing to show
-                # where llama.cpp and the models lie, with help icons beside Programm, Modelle and the place
-                self.assertIn(app.assistant.ai.base, pg.inner_text(".as-folder")); self.assertFalse(pg.is_disabled("#as-reveal"))
-                self.assertEqual(pg.evaluate("['ki_programm', 'ki_modelle', 'ki_ablage'].map(k => [...document.querySelectorAll('#main .hq')].some(e => e.dataset.tip === H[k]))"), [True, True, True])
                 pg.fill("#as-repo", "unsloth/Qwen3.6-35B-A3B-GGUF"); pg.click("#as-files"); pg.wait_for_selector(".as-dlf")
                 self.assertEqual(len(pg.query_selector_all(".as-dlf")), 2)
                 pg.click(".as-del"); until(pg, "!AS.st.ready && AS.st.settings.model === ''")
@@ -3622,11 +3618,36 @@ class Browser(unittest.TestCase):
                 self.assertEqual(pg.inner_text("#as-refs .as-ref-l"), "„%s“" % title)
                 self.assertEqual(pg.evaluate("AS.refs[0].go.mark.text"), title)
                 pg.evaluate("getSelection().removeAllRanges(); AS.refs = []; asRefsDraw()")
+                # a figure in a drawn chart (a row of the wealth bridge): its row's name and value -- found again, the row itself marked
+                lab, num = pg.evaluate("""(() => { const card = document.querySelector('#main .ov-card[data-ov="wealth"]'), hit = [...card.querySelectorAll('rect.cf-hit')][1]; hit.id = 'ref-hit';
+                    const b = hit.getBoundingClientRect(), v = [...card.querySelectorAll('text')].find(x => { const q = x.getBoundingClientRect(), m = (q.top + q.bottom) / 2; return m >= b.top && m <= b.bottom && refIsNum(refOne(x.textContent)); });
+                    return [refTip(hit).head, refOne(v.textContent)]; })()""")
+                self.assertTrue(lab and num, (lab, num))
+                self.assertEqual(menu(pg, "#ref-hit"), ki + ["Wert kopieren", "Grafik drucken …"])
+                pg.click("#ctx button:has-text('Im Chat fragen')"); until(pg, "AS.refs.length === 1")
+                self.assertEqual(pg.inner_text("#as-refs .as-ref-l"), "%s: %s" % (lab, num))
+                self.assertIn("Wert: " + num, pg.evaluate("AS.refs[0].text")); self.assertIn("Abschnitt: Vermögensbrücke", pg.evaluate("AS.refs[0].text"))
+                self.assertEqual(pg.evaluate("AS.refs[0].go.fig"), {"tip": lab, "label": lab, "value": num})
+                pg.goto(url + "#cashflow"); pg.wait_for_selector("#main .cf-pair table.cf-names"); pg.evaluate("asDrawnWait()")
+                pg.click("#as-refs .as-ref-go")
+                until(pg, "location.hash === '#overview' && !!document.querySelector('#main rect.cf-hit.as-mark-svg')")
+                self.assertEqual(pg.evaluate("refTip(document.querySelector('#main rect.cf-hit.as-mark-svg')).head"), lab)
+                self.assertIsNone(pg.query_selector("#main .ov-card.as-mark"))          # the figure, not its card
+                # a key figure in a card's head: named by its card, and marked itself when opened again
+                pg.evaluate("AS.refs = []; asRefsDraw()")
+                kpi = pg.inner_text("#main #ov-fig-nw .ov-v").strip()
+                menu(pg, "#main #ov-fig-nw .ov-v"); pg.click("#ctx button:has-text('Im Chat fragen')"); until(pg, "AS.refs.length === 1")
+                self.assertEqual(pg.inner_text("#as-refs .as-ref-l"), "Nettovermögen: " + kpi)
+                pg.goto(url + "#balance"); pg.wait_for_selector("#main .bil-tbl"); pg.evaluate("asDrawnWait()")
+                pg.click("#as-refs .as-ref-go"); until(pg, "location.hash === '#overview' && !!document.querySelector('#main #ov-fig-nw .ov-v.as-mark')")
+                pg.evaluate("AS.refs = []; asRefsDraw()")
+                pg.goto(url + "#overview"); pg.wait_for_selector("#main .ov-card .ov-plot"); pg.evaluate("asDrawnWait()")
                 # a chart: the point under the pointer (what its hover box shows) and the chart; or print it alone
                 self.assertEqual(menu(pg, "#main .ov-card .ov-plot"), ki + ["Grafik drucken …"])
                 pg.click("#ctx button:has-text('Im Chat fragen')")
                 until(pg, "AS.refs.length === 1")
-                self.assertTrue(pg.inner_text("#as-refs .as-ref-l").startswith("Grafik: " + title), pg.inner_text("#as-refs .as-ref-l"))
+                self.assertTrue(pg.inner_text("#as-refs .as-ref-l").startswith(title + " · "), pg.inner_text("#as-refs .as-ref-l"))          # the month under the pointer
+                self.assertIn("Stelle in der Grafik: ", pg.evaluate("AS.refs[0].text"))
                 pg.evaluate("AS.refs = []; asRefsDraw()")
                 # every chart has the menu -- also the small ones of the balance sheet; the big one names the month under the pointer
                 pg.goto(url + "#balance"); pg.wait_for_selector("#main .lc[data-lc='nw'] svg"); pg.evaluate("asDrawnWait()")
@@ -3646,6 +3667,17 @@ class Browser(unittest.TestCase):
                 # settings: never (the assistant does not read that page) -- the browser's own menu
                 pg.goto(url + "#settings"); pg.wait_for_selector("#main .tabs"); pg.click("#main h2, #main .tabs", button="right")
                 self.assertIsNone(pg.query_selector("#ctx"))          # the menu would be there at once
+                # thoughts and the steps between them: one entry -- while it is the newest, it names the step under way; steps alone: one line
+                pg.evaluate("""AS.msgs = [{role: 'user', text: 'x'}, {role: 'assistant', state: 'done', parts: [{k: 'think', text: 'a'}, {k: 'tool', label: 'Liest die Bilanz', kind: 'read'},
+                    {k: 'think', text: 'b'}, {k: 'tool', label: 'Liest diese Seite', kind: 'read'}, {k: 'think', text: 'c'}, {k: 'text', text: 'Fertig.'}]}]; asMsgs(true)""")
+                self.assertEqual(pg.evaluate("[document.querySelectorAll('#as-body .as-think').length, document.querySelectorAll('#as-body .as-msg > .as-tool').length]"), [1, 0])
+                self.assertEqual(pg.inner_text("#as-body .as-think summary").strip(), "Gedanken · 2 Schritte")
+                self.assertEqual(pg.evaluate("document.querySelectorAll('#as-body .as-think .as-tool').length"), 2)
+                pg.evaluate("AS.msgs[1].state = 'run'; AS.msgs[1].parts.splice(4); asMsgs(true)")
+                self.assertEqual(pg.inner_text("#as-body .as-think summary").strip(), "Gedanken · Liest diese Seite")
+                pg.evaluate("AS.msgs[1] = {role: 'assistant', state: 'done', parts: [{k: 'tool', label: 'Liest die Bilanz'}, {k: 'tool', label: 'Liest diese Seite'}, {k: 'text', text: 'Fertig.'}]}; asMsgs(true)")
+                self.assertEqual(pg.evaluate("[...document.querySelectorAll('#as-body .as-msg > .as-tool')].map(x => x.textContent)"), ["Liest die Bilanz · Liest diese Seite"])
+                pg.evaluate("AS.msgs = []; asMsgs(true)")
                 # switched off: a figure can still be copied and a chart printed, nothing to ask
                 pg.goto(url + "#overview"); pg.wait_for_selector("#main .ov-card .ov-plot"); pg.evaluate("asDrawnWait()")
                 pg.evaluate("AS.st.settings.enabled = false")

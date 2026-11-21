@@ -155,7 +155,6 @@ const H = {
   updates: t('einzige_netzverbindung_von_kontor_einm'),
   assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_denken: t('h_ki_denken'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
   ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_speichern: t('h_ki_speichern'),
-  ki_programm: t('h_ki_programm'), ki_modelle: t('h_ki_modelle'), ki_ablage: t('h_ki_ablage'),
   darlehen_iban: t('die_rate_wird_am_gegenkonto'),
   darlehen_konto: t('das_manuell_gefuehrte_darlehenskonto_i'),
   darlehen_quelle: t('das_konto_von_dem_die'),
@@ -213,7 +212,7 @@ const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl:
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
@@ -6865,10 +6864,14 @@ const asText = m => (m.parts || []).filter(p => p.k === 'text').map(p => p.text)
 function asMsg(m, i) {
   if (m.role === 'user') return `<div class="as-msg me">${(m.refs || []).length ? `<div class="as-refs">${m.refs.map((r, j) => asRefChip(r, `data-m="${i}" data-r="${j}"`, false)).join('')}</div>` : ''}<div class="as-b">${esc(m.text)}</div></div>`;          // as typed or pasted (lines and spaces kept: tables, code); what it refers to before it
   let h = '';
-  (m.parts || []).forEach((p, j) => {
+  const parts = m.parts || [];
+  parts.forEach((p, j) => {
     if (p.k === 'text') h += `<div class="as-t">${asMd(p.text)}</div>`;
-    else if (p.k === 'tool') h += `<div class="as-tool ${esc(p.kind || '')}">${esc(p.label || '')}</div>`;
-    else if (p.k === 'think') h += `<details class="as-think" data-m="${i}" data-p="${j}"${p.open ? ' open' : ''}><summary>${t('ki_gedanken')}</summary><div>${esc(p.text).replace(/\n/g, '<br>')}</div></details>`;
+    else if (p.k === 'think' || p.k === 'tool') {          // thoughts and the steps between them: one entry (the first of a run draws it)
+      if (j && (parts[j - 1].k === 'think' || parts[j - 1].k === 'tool')) return;
+      let e = j; while (e < parts.length && (parts[e].k === 'think' || parts[e].k === 'tool')) e++;
+      h += asSteps(parts.slice(j, e), i, j, m.state === 'run' && e === parts.length);
+    }
     else if (p.k === 'entry') h += asEntry(p, (m.parts || []).some(x => x.k === 'batch' && x.state === 'ask' && (x.ids || []).includes(p.id)));
     else if (p.k === 'batch') h += asBatch(p, m);
     else if (p.k === 'chart') h += asChart(p, i, j);
@@ -6882,6 +6885,16 @@ function asMsg(m, i) {
     h += `<div class="as-meta" title="${esc(t('ki_meta_tip'))}">${bits.map(esc).join(' · ')}</div>`;
   }
   return `<div class="as-msg">${h}</div>`;
+}
+// Thoughts and the steps between them (what was read, opened, proposed) as one entry: folded, its line names how many steps there
+// were -- and while it is the newest thing of an answer, the step under way. Steps without thoughts: one line.
+function asSteps(run, i, j, now) {
+  const tools = run.filter(p => p.k === 'tool'), last = run[run.length - 1];
+  const step = p => `<div class="as-tool ${esc(p.kind || '')}">${esc(p.label || '')}</div>`;
+  if (!run.some(p => p.k === 'think')) return `<div class="as-tool ${esc((tools[tools.length - 1] || {}).kind || '')}">${tools.map(p => esc(p.label || '')).join(' · ')}</div>`;
+  const sub = now && last.k === 'tool' ? esc(last.label || '') : tools.length ? esc(tn('ki_schritte', tools.length, tools.length)) : '';
+  return `<details class="as-think" data-m="${i}" data-p="${j}"${run[0].open ? ' open' : ''}><summary>${t('ki_gedanken')}${sub ? `<span class="as-think-s"> · ${sub}</span>` : ''}</summary>`
+    + `<div>${run.map(p => p.k === 'tool' ? step(p) : `<p>${esc(p.text).replace(/\n/g, '<br>')}</p>`).join('')}</div></details>`;
 }
 // what a thinking effort means, with the time it takes on this Mac (from its measured speed): only the limited one has a time
 const asEffortLabel = (k, tps) => `${t(`ki_denken_${k}`)} – ${t(`ki_denken_${k}_d`)}` + (k === 'balanced' && tps ? ` (${t('ki_etwa_s', asN(2000 / tps))})` : '');
@@ -7428,6 +7441,49 @@ function refPoint(chart) {          // the point of a chart under the pointer: w
   if (!tip) return null;
   return {head: refLabel($('.bch-tip-h, .cf-tip-h, b', tip)) || refCut(refOne(tip.textContent), 30), text: refTxt(tip, 600)};
 }
+// A figure in a chart or card (not in a table): its row -- named by that row's hover box, or by the text beside it -- and its value;
+// found again by the same name (or value) and marked itself, not only its card.
+const refIsNum = s => !!s && s.length <= 24 && /\d/.test(s) && !/\p{L}{3,}/u.test(s);          // +48.660 · 62.533 € · ±0,0 % · 420T €
+function refTip(el) {          // what the hover box of a row of a chart says: its name (first line) and its figures
+  const h = el && el.dataset.cftip != null ? CF.tips[+el.dataset.cftip] : null; if (!h) return null;
+  const d = document.createElement('div'); d.innerHTML = h;
+  return {head: refLabel($('.cf-tip-h', d)), text: refTxt(d, 600)};
+}
+const refLeaves = box => [...box.querySelectorAll('*')].filter(el => el.children.length === 0 || [...el.children].every(c => /^(i|small|tspan)$/i.test(c.tagName)));
+function refFig(tg, card) {
+  const hit = tg.closest('[data-cftip]'), tip = hit && card.contains(hit) ? refTip(hit) : null;
+  let val = [tg, tg.parentElement].find(el => el && el !== card && card.contains(el) && refIsNum(refOne(el.textContent))) || null;
+  const svg = hit && hit.closest('svg');
+  if (!val && hit && svg) {          // a row of a drawn chart (its hit area over the texts): the figure in the same band
+    const r = hit.getBoundingClientRect();
+    val = [...svg.querySelectorAll('text')].find(x => { const b = x.getBoundingClientRect(), my = (b.top + b.bottom) / 2, mx = (b.left + b.right) / 2;
+      return my >= r.top && my <= r.bottom && mx >= r.left && mx <= r.right && refIsNum(refOne(x.textContent)); }) || null;          // inside its area (not an axis)
+  }
+  if (!tip && !val) return null;
+  const value = val ? refOne(val.textContent) : '', title = refChartTitle(card) || refTitle(card);
+  let label = tip && tip.head;
+  if (!label && val) {          // the text beside it: in its row, else (a figure in a card's head) the card's name
+    const row = val.closest('[data-cftip]') || (val.closest('.ov-head, .lc-head, .bch-head, .lc-row2') ? null : val.parentElement);
+    label = (row && row !== card && refLeaves(row).map(x => refLabel(x)).find(x => x && !refIsNum(x))) || title;
+  }
+  return Object.assign(refMake(label && value ? `${label}: ${value}` : title && label && label !== title ? `${title} · ${label}` : label || value, [`${t('ref_zeile')}: ${label || '–'}`].concat(value ? [`${t('ref_wert')}: ${value}`] : [], tip ? [`${t('ref_punkt')}: ${tip.text}`] : []),
+    title, refGo({mark: title && !card.closest('#drawer') ? {text: title, column: ''} : null, fig: {tip: tip ? tip.head : '', label: label || '', value}})), value ? {copy: refNum(value), copyKey: 'wert_kopieren'} : {});
+}
+function refMarkFig(fig) {          // the figure itself, in its marked card (or anywhere on the page): marked, with its hover box
+  const card = $('#main .as-mark') && $('#main .as-mark').matches('.card, .module, fieldset') ? $('#main .as-mark') : $('#main');
+  let el = fig.tip ? [...card.querySelectorAll('[data-cftip]')].find(x => refSeen(x) && asNorm((refTip(x) || {}).head) === asNorm(fig.tip)) : null;
+  if (!el && fig.value) {
+    const all = refLeaves(card).filter(x => refSeen(x) && refOne(x.textContent) === fig.value);
+    el = all.find(x => !fig.label || asNorm(((x.closest('[data-cftip]') || x.parentElement || x).textContent)).includes(asNorm(fig.label))) || all[0] || null;
+  }
+  if (!el) return false;
+  $$('.as-mark, .as-mark-svg').forEach(x => x.classList.remove('as-mark', 'as-mark-svg')); clearTimeout(AS.markT);
+  el.classList.add(el instanceof SVGElement ? 'as-mark-svg' : 'as-mark');
+  el.scrollIntoView({block: 'center', inline: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+  if (el.dataset.cftip != null) setTimeout(() => cfShowTip(el), 400);
+  AS.markT = setTimeout(() => $$('.as-mark, .as-mark-svg').forEach(x => x.classList.remove('as-mark', 'as-mark-svg')), 12000);
+  return true;
+}
 function refAt(e) {          // what the right click is on, as a reference (also without the assistant: for copying)
   const tg = e.target, chat = tg.closest('#assist .as-chart');
   if (chat) return refChat(chat);
@@ -7445,13 +7501,15 @@ function refAt(e) {          // what the right click is on, as a reference (also
   const cell = tg.closest('td, th');
   if (cell && cell.closest('table')) { const r = refCell(cell); if (r) return r; }
   const chart = tg.closest(REF_CHARTS);
-  if (chart) {          // a chart: the point under the pointer first (what its hover box shows), then what the chart shows
+  if (chart) {          // a chart: the figure or row under the pointer; else the point (what its hover box shows) and what the chart shows
+    const f = !chart.closest('#assist') && refFig(tg, chart); if (f) return f;
     const ti = refChartTitle(chart) || refTitle(chart), pt = refPoint(chart);
     return refMake(t('ki_ref_grafik', ti || t('ref_grafik')) + (pt ? ' · ' + pt.head : ''), [`${t('ref_grafik')}: ${ti}`].concat(pt ? [`${t('ref_punkt')}: ${pt.text}`] : [], [`${t('ref_inhalt')}: ${refTxt(chart, 1000)}`]),
       '', refGo(ti && !chart.closest('#drawer') ? {mark: {text: ti, column: ''}} : {}));
   }
   const box = tg.closest('.k, .kpi, li, .item, .ov-todo-i, .lc-val, .card, .co-card, #drawer');
   if (!box) return null;
+  const inCard = tg.closest('.card, .co-card, #drawer'), f = inCard && refFig(tg, inCard); if (f) return f;          // a figure in a card
   const where = refTitle(box), what = box.matches('.card, .co-card, #drawer') ? where : refLabel(box);
   if (!what) return null;
   return refMake(what, [refTxt(box, 1200)], where && where !== what ? where : '', refGo(where && !box.closest('#drawer') ? {mark: {text: where, column: ''}} : {}));
@@ -7536,9 +7594,10 @@ async function asRefOpen(r) {
   const g = r && r.go; if (!g || !/^#[\w/-]+$/.test(g.route || '')) return;
   if (matchMedia('(max-width: 900px)').matches && S.tab !== 'assistant') asShow(false);          // the panel covers the page there: it steps aside
   else if (matchMedia('(max-width: 900px)').matches) { AS.open = false; try { localStorage.setItem('kontor.assist', ''); } catch (e) {} }
-  const res = await asOpen(Object.assign({}, g, {mark: g.mark && g.mark.text ? g.mark : null}));
+  const res = await asOpen(Object.assign({}, g, {mark: g.mark && g.mark.text ? g.mark : null, fig: undefined}));
   let found = !g.mark || !!(res && res.found);
   if (g.col) { await asDrawnWait(); found = refMarkCol(g.col); }
+  if (g.fig && (g.fig.tip || g.fig.value)) { await asDrawnWait(); found = refMarkFig(g.fig) || found; }
   if (!found) toast(t('ki_ref_nicht_gefunden'), 4000);
 }
 function asStop() { api('/api/assistant/stop', {}).catch(() => {}); }
@@ -7657,13 +7716,13 @@ async function vEinstellungenAssistent() {
   const state = sv.state || 'stopped', opt = (v, l, cur) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`;
   const use = sv.rss ? t('ki_verbrauch', asRAM(sv.rss), asN(sv.cpu || 0)) + (sv.tps ? ' · ' + t('ki_tempo', asN(sv.tps)) : '') : '';
   return `<div class="row tight">${swCtl('as-enabled', st.enabled, t('ki_verwenden'))}${hq('assistent')}</div>
-  <h2>${t('ki_programm')}${hq('ki_programm')}<span class="x">llama.cpp</span></h2>
+  <h2>${t('ki_programm')}<span class="x">llama.cpp</span></h2>
   <div class="as-list"><div class="as-item"><span><b>llama.cpp</b><br><span class="muted small">${rt.installed ? esc(rt.tag || rt.version || '') + (rt.date ? ' · ' + esc(FDT(rt.date)) : '') : t('ki_nicht_installiert')}</span></span>
     <span class="as-act">${rt.newer ? `<span class="pill info">${t('ki_neuer', esc(rt.latest))}</span>` : ''}
       ${!rt.installed || rt.newer ? `<button class="small" id="as-rt-install" ${busy}>${t(rt.installed ? 'ki_aktualisieren' : 'ki_installieren')}</button>` : ''}
       ${rt.installed ? `<button class="small secondary" id="as-rt-remove" ${busy}>${t('ki_entfernen')}</button>` : ''}</span></div></div>
   ${prog('runtime')}${load && load.kind === 'runtime' ? '' : (a.load && a.load.kind === 'runtime' ? err : '')}
-  <h2>${t('ki_modelle')}${hq('ki_modelle')}</h2>
+  <h2>${t('ki_modelle')}</h2>
   <div class="as-list">${models.map(mrow).join('')}
     <div class="as-item"><span class="as-own"><b>${t('ki_eigenes_modell')}</b>${hq('ki_eigenes')}<input type="text" id="as-repo" placeholder="unsloth/Qwen3.6-35B-A3B-GGUF" autocomplete="off" spellcheck="false"></span>
       <span class="as-act"><button class="small secondary" id="as-files" title="${esc(t('ki_dateien_zeigen_tip'))}" disabled>${t('ki_dateien_zeigen')}</button></span></div><div id="as-filelist"></div></div>
@@ -7677,7 +7736,6 @@ async function vEinstellungenAssistent() {
     ${a.dictation ? '<div id="as-mic-perm"></div>' : ''}</div>
   <div class="row tight"><button class="secondary small" id="as-check" ${busy}>${t('ki_nach_neuem_suchen')}</button><span class="muted small">${a.checked ? t('ki_gesucht', esc(FDT(a.checked))) + ' · ' : ''}${t('ki_platz', asGB(a.disk_free || 0), asRAM(pf.ram || 0))}</span></div>
   ${a.check_error ? `<div class="banner err small">${esc(a.check_error)}</div>` : ''}
-  ${a.folder ? `<div class="row tight as-folder"><span class="muted small">${t('ki_ablage')}${hq('ki_ablage')} <span class="mono">${esc(a.folder)}</span></span><button class="small secondary" id="as-reveal" ${a.folder_exists ? '' : 'disabled'}>${t('im_finder_zeigen')}</button></div>` : ''}
   <h2>${t('ki_betrieb')}</h2>
   <div class="form">
     <label>${t('ki_zustand')}</label><div class="row tight as-run-row"><span class="pill ${state === 'ready' ? 'ok' : state === 'error' ? 'err' : state === 'starting' ? 'info' : 'neutral'}" id="as-state">${t(`ki_z_${state}`)}</span>
@@ -7756,7 +7814,6 @@ function bindAssistent(main) {
   on('.as-dl', 'click', el => { if (el.dataset.fit !== 'big' || confirm(t('ki_zu_gross_frage', el.dataset.name, asRAM((AS.st.platform || {}).ram || 0)))) post('/api/assistant/model/download', {id: el.dataset.id}); });
   on('.as-del', 'click', el => { if (confirm(t('ki_loeschen_frage', el.dataset.name))) post('/api/assistant/model/delete', {id: el.dataset.id}); });
   on('#as-cancel', 'click', () => post('/api/assistant/model/cancel'));
-  on('#as-reveal', 'click', async () => { try { await api('/api/file/reveal', {path: AS.st.folder}); } catch (e) { toast(e.message, 5000); } });
   on('#as-start', 'click', () => post('/api/assistant/server', {action: 'start'}));
   on('#as-stop', 'click', () => post('/api/assistant/server', {action: 'stop'}));
   const files = async () => {
