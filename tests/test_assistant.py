@@ -1367,6 +1367,24 @@ class Tools(_Assist):
         with self.assertRaises(ValueError):
             self.a.start_model()
 
+    def test_earlier_results_leave_the_conversation(self):
+        """What tools returned for an earlier question leaves the conversation (long results only); the latest question keeps its
+        results for a follow-up, questions and answers stay -- a long conversation keeps more questions in view."""
+        self.ask("call get_overview {}")
+        tools = lambda: [m["content"] for m in self.a.conv["messages"] if m["role"] == "tool"]
+        self.assertEqual(len(tools()), 1); self.assertIn("net_worth", tools()[0])               # the latest question: in full
+        self.ask("call calculate {\"expression\": \"2 + 2\"}", conversation=self.a.conv["id"])
+        self.assertEqual(tools()[0], A.EARLIER_RESULT)                                 # the earlier one: left out, to be read again
+        self.assertIn('"result":4', tools()[1])                                      # short results stay anyway
+        self.assertEqual([m["role"] for m in self.a.conv["messages"]], ["user", "assistant", "tool", "assistant", "user", "assistant", "tool", "assistant"])
+        self.assertEqual(self.a.conv["messages"][0]["content"].split("]\n")[-1], "call get_overview {}")       # questions and answers stay
+        open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record"), "w").close()
+        self.a.stop_all()
+        self.ask("und jetzt?", conversation=self.a.conv["id"])                        # the model is told where to read it again
+        with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "request.json")) as f:
+            sent = json.load(f)["messages"]
+        self.assertIn("call the tool again", next(m["content"] for m in sent if m["role"] == "tool"))
+
     def test_models_that_do_not_behave(self):
         """Silent, going round in circles, writing its calls as text, cut off: the question still gets a clear end."""
         evs = self.ask("silent")                                                      # says nothing: asked once more, then it answers

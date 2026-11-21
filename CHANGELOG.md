@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.38 (2026-11-21 21:26)
+- KI-Assistent: lange Unterhaltungen behalten mehr Fragen im Blick – Nachgelesenes früherer Fragen fällt weg (wird bei Bedarf neu gelesen)
+
 ## 3.16.37 (2026-11-21 21:10)
 - Entwicklung: Nachtlauf (1000 Zufallsläufe) im Lagebild der Chats; rot behebt ihn der nächste Chat
 

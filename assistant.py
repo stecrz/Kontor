@@ -76,6 +76,8 @@ PLAN_LIMITS = {"horizon_months": (1, 240), "inflation_percent_pa": (-5, 20), "in
 MAX_STEPS = 10                                     # tool rounds per question
 QUICK_STEPS, QUICK_TOKENS = 2, 120                 # a quick explanation (right click): one lookup at most, an answer of two short sentences
 MAX_RESULT = 7000                                  # characters of one tool result
+KEEP_RESULT = 400                                  # characters of a result of an earlier question kept in the conversation (longer: left out)
+EARLIER_RESULT = '{"note":"read for an earlier question and left out to save room -- call the tool again if you need it now"}'
 MAX_QUESTION = 40000                               # characters; less with a small context (question_limit)
 MAX_PAGE = 9000
 REF_MAX, REF_TEXT, REF_TOTAL = 6, 1500, 6000         # references sent with a question (what the user right-clicked): how many, how long
@@ -2256,7 +2258,7 @@ class Assistant:
                     job.emit("entry_state", id=p["id"], state="declined")
             # the conversation goes on with what was said and read; an answer cut off stays out (for the model; the page shows it)
             if len(turn) > 1 and turn[-1].get("role") == "assistant" and not turn[-1].get("tool_calls"):
-                conv["messages"] = self._trim(conv["messages"] + turn, st)
+                conv["messages"] = self._trim(_earlier(conv["messages"]) + turn, st)
             try:
                 self._chat_add(conv, question, job, ctx.get("refs"))
             except Exception as e:  # pragma: no cover - a full disk: the answer stands, only it is not saved
@@ -2589,6 +2591,14 @@ def _tool(name: str, right: str, kind: str, text: str, props: Optional[dict] = N
     if kind == "enter":                                  # every change says why (on the card and in the log of changes)
         props["reason"] = {"type": "string", "description": "Why, in a few words (shown to the user with the change and kept in the log)"}
     return {"name": name, "right": right, "also": tuple(also), "kind": kind, "text": text, "params": {"type": "object", "properties": props, "required": required or []}}
+
+
+def _earlier(messages: List[dict]) -> List[dict]:
+    """The conversation before the question just answered, lighter: what tools returned for earlier questions goes (long
+    results only; the model reads them again when it needs them), questions, answers and which tools were used stay. A long
+    conversation so keeps far more questions in view, and less is read with each new one; the latest question keeps its
+    results for a follow-up ("and the year before?")."""
+    return [dict(m, content=EARLIER_RESULT) if m.get("role") == "tool" and len(str(m.get("content") or "")) > KEEP_RESULT else m for m in messages]
 
 
 def _allowed(t: dict, rights: dict) -> bool:
