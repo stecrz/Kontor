@@ -78,7 +78,8 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
 - **Sperren vor jedem Push nach `main`** – zwei Ebenen, dieselbe Regel: der git-Hook `.githooks/pre-push` (schaltet das
   Lagebild ein; gegen den Stand auf GitHub: `VERSION` höher, keine Changelog-Zeile von `main` verloren) und
   `.claude/hooks/guard.py` vor jedem `git push` (holt `main` selbst: neuester `main` in der eigenen Arbeit, jeder Commit hebt
-  `VERSION` als Zahl, behält alle `## X.Y.Z`-Abschnitte und trägt oben seine eigene Version). GitHub prüft die Kette für jeden
+  `VERSION` als Zahl, behält alle `## X.Y.Z`-Abschnitte und trägt oben seine eigene Version; keine Zeile, die eine der neuesten
+  Versionen auf `main` gebracht hat, geht verloren – so fiel 3.16.35 auf, das bei richtiger Kette den Code von 3.16.32 zurücksetzte). GitHub prüft die Kette für jeden
   Push (Job „Versionskette“). Abgelehnt: nicht umgehen (`KONTOR_PUSH_OK=1` nur für eine bewusste Ausnahme, etwa einen
   Tippfehler in einem alten Eintrag), sondern holen, daraufsetzen, neu nummerieren. Anlass: 3.16.9 und 66ad67f (3.16.21) –
   `git reset --soft origin/main` auf altem Stand setzte einen alten Baum auf den neuen `main` und löschte fremde Versionen.

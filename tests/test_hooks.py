@@ -254,6 +254,22 @@ class PushGuard(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("nicht höher als 1.0.2", err); self.assertIn("fehlen Abschnitte, die davor da waren: 1.0.2", err)
 
+    def test_older_tree_with_a_proper_chain_is_locked(self):
+        # how 3.16.35 lost the code of 3.16.32: VERSION and CHANGELOG right, but the other files from before that version
+        self.version(self.a, "1.0.1", {"tax.py": "mine and long enough\n"})
+        self.version(self.b, "1.0.1", {"app.js": "one\nadded by the other chat\n"}); self.git(self.b, "push", "-q", "origin", "HEAD:main")
+        self.git(self.a, "fetch", "-q", "origin")
+        self.git(self.a, "reset", "-q", "--soft", "origin/main")                  # an older tree under the new main
+        self.git(self.a, "checkout", "origin/main", "--", "VERSION", "CHANGELOG.md")  # its chain taken over: looks right
+        self.version(self.a, "1.0.2", {"tax.py": "mine and long enough\n"})
+        code, err = self.guard(self.a)
+        self.assertEqual(code, 2); self.assertIn("app.js: added by the other chat", err)
+        self.assertEqual(self.guard(self.a, "KONTOR_PUSH_OK=1 git push origin HEAD:main")[0], 0)   # a deliberate exception
+        # built on main as it is (the other chat's line kept, own lines changed): may go
+        self.git(self.a, "reset", "-q", "--hard", "origin/main")
+        self.version(self.a, "1.0.2", {"tax.py": "mine and long enough\n", "app.js": "one\nadded by the other chat\nmine too, long\n"})
+        self.assertEqual(self.guard(self.a), (0, ""))
+
     def test_not_on_the_newest_main_is_locked(self):
         self.version(self.a, "1.0.1", {"tax.py": "mine\n"})
         self.version(self.b, "1.0.1", {"app.js": "two\n"}); self.git(self.b, "push", "-q", "origin", "HEAD:main")

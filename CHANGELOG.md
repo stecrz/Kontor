@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.40 (2026-11-21 21:48)
+- Behoben: 3.16.32 wiederhergestellt (Ablage der KI-Modelle, Hilfe-Symbole, Texte zu Zurücksetzen und Deinstallieren) – von 3.16.35 versehentlich zurückgesetzt
+- Entwicklung: Push-Sperre erkennt auch einen älteren Code-Stand bei richtiger Versionskette (Zeilen der neuesten Versionen verloren)
+- Entwicklung: Test des KI-Fensters wartet auf das Zurücksetzen
+
 ## 3.16.39 (2026-11-21 21:35)
 - Entwicklung: Nachtlauf mit 1000 festen und 1000 jede Nacht neuen Zufallsfällen (~10 min)
 - Entwicklung: gefundene Fälle einzeln wiederholbar und danach bei jedem Lauf geprüft

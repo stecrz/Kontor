@@ -73,6 +73,29 @@ def chain_problems(repo: str, before: str, after: str):
     return out
 
 
+def lost_lines(repo: str, base: str, ref: str, recent: int = 8):
+    """Lines the newest versions on main added (code, tests, texts -- not VERSION or CHANGELOG.md) that main still has and the work
+    pushed no longer has: an older tree set on top of main loses them while VERSION and CHANGELOG look right (3.16.35 lost the
+    code of 3.16.32 that way). [(commit, file, line)]."""
+    out, have, ours = [], {}, {}
+    show = lambda c, f: set(_git(repo, "show", "%s:%s" % (c, f)).stdout.split("\n"))
+    for c in _git(repo, "rev-list", "-n", str(recent), base).stdout.split():
+        if not _git(repo, "rev-parse", "--verify", "-q", c + "^").stdout.strip():
+            continue                                    # the first commit: nothing before it
+        cur = None
+        for line in _git(repo, "diff", "-U0", c + "^", c, "--", ".", ":(exclude)VERSION", ":(exclude)CHANGELOG.md").stdout.split("\n"):
+            if line.startswith("+++ "):
+                cur = line[6:] if line.startswith("+++ b/") else None
+                continue
+            if not cur or not line.startswith("+") or len(line.strip()) < 8:
+                continue
+            if cur not in have:
+                have[cur], ours[cur] = show(base, cur), show(ref, cur)
+            if line[1:] in have[cur] and line[1:] not in ours[cur]:
+                out.append((c[:7], cur, line[1:].strip()))
+    return out
+
+
 def _push_repo(command: str, cwd: str) -> str:
     """The repository a push command works in: `git -C <dir>` or a leading `cd <dir>`, else where the command runs."""
     m = re.search(r"\bgit\s+-C\s+(\"[^\"]+\"|'[^']+'|\S+)\s+push\b", command) or re.search(r"(?:^|[;&|]\s*)cd\s+(\"[^\"]+\"|'[^']+'|[^\s;&|]+)", command)
@@ -109,6 +132,13 @@ def push_check(command: str, cwd: str) -> str:
         return ("Der neueste main steckt nicht in deiner Arbeit: erst `git pull --rebase origin main` (Konflikte: beide Seiten "
                 "erhalten), Tests erneut, Nummer aus dem neuen main + 1 – nie `reset --soft` auf einen fremden Stand.")
     problems = chain_problems(top, "origin/main", ref)
+    lost = lost_lines(top, "origin/main", ref) if not problems else []
+    if lost:
+        return ("Dein Stand löscht Zeilen, die die neuesten Versionen auf main gebracht haben – er beruht auf einem älteren Baum "
+                "(wie 3.16.35):\n- " + "\n- ".join("%s %s: %s" % (c, f, l[:90]) for c, f, l in lost[:8])
+                + ("\n- … und %d weitere" % (len(lost) - 8) if len(lost) > 8 else "")
+                + "\nEigene Änderungen auf den frisch geholten main setzen (`git pull --rebase origin main`), nie `reset --soft` auf einen "
+                "fremden Stand. Nur wenn du genau diese Zeilen bewusst geändert hast: KONTOR_PUSH_OK=1.")
     if problems:
         return ("Versionskette stimmt nicht – so würden fremde Versionen überschrieben (wie 66ad67f):\n- " + "\n- ".join(problems)
                 + "\nEigene Arbeit ohne VERSION und CHANGELOG.md neu auf den frisch geholten main setzen, dann als nächste Nummer.")
