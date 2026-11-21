@@ -19,8 +19,9 @@ Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhän
 ## Arbeitsweise
 - Was als Nächstes kommt und wann es fertig ist: `ROADMAP.md`. Erledigtes dort abhaken, Neues dort eintragen.
 - Skills (`.claude/skills/`): `feature` (Punkt aus dem Fahrplan umsetzen), `ui-check` (Oberfläche ansehen), `release` (jede
-  Änderung abschließen), `teamlead` (viele Aufgaben auf mehrere Chats verteilen). Unabhängige Prüfung vor jedem Release mit
-  Rechenlogik oder Schreibzugriff: Agent `reviewer`.
+  Änderung abschließen). Unabhängige Prüfung vor jedem Release mit Rechenlogik oder Schreibzugriff: Agent `reviewer`.
+- Mehrere Aufgaben in einer Nachricht: selbst in unabhängige Teile schneiden und parallel mit Unteragenten erledigen (jeder in
+  eigener Arbeitskopie); was dieselbe Stelle trifft, nacheinander. Je Teil eine eigene kleine Version, sobald er fertig ist.
 - Leitplanken (`.claude/settings.json`): Sperren für Kontors Datenordner, MoneyMoneys Datenbank, Überweisungen und
   Force-Push; Lagebild zu Beginn jeder Aufgabe (was die anderen Chats veröffentlicht haben); Erinnerung, wenn eine Änderung
   nicht abgeschlossen ist.

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.22 (2026-11-21 17:48)
+- Entwicklung: Skill „Teamleiter“ wieder entfernt – mehrere Aufgaben in einer Nachricht teilt jeder Chat selbst auf (Unteragenten)
+
 ## 3.16.21 (2026-11-21 17:43)
 - KI-Assistent: nummerierte Listen zählen weiter, auch mit Leerzeilen; Text unter einem Punkt bleibt bei ihm; Liste in der Liste.
 - KI-Assistent: breite Tabelle scrollt in ihrem Rahmen, ohne die Zeile darunter zu überdecken.
