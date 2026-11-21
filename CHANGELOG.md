@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.50 (2026-11-21 23:05)
+- KI-Assistent: beim Nachdenken nur noch „Denkt nach …“ (aufklappbar, mit laufendem Schritt) – fertig wird daraus „Gedanken“
+
 ## 3.16.49 (2026-11-21 22:52)
 - Belege im Assistenten: Bilder mit transparentem Hintergrund werden vor der Texterkennung auf Weiß gelegt (behebt leeren Text)
 

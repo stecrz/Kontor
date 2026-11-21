@@ -6958,7 +6958,9 @@ function asMsg(m, i) {
     else if (p.k === 'chart') h += asChart(p, i, j);
     else if (p.k === 'err') h += `<div class="banner err small">${esc(p.text)}</div>`;
   });
-  if (m.state === 'run' && !(m.parts || []).some(p => (p.k === 'batch' || p.k === 'web') && p.state === 'ask')) h += `<div class="as-run"><span class="spin"></span>${t(m.status === 'loading' ? 'ki_laedt_modell' : 'ki_denkt')}</div>`;          // the card of changes waiting for the click: nothing is being thought
+  // while it runs: the thoughts' own line says "Thinking …" (and opens), the answer's text shows itself growing -- no second line then
+  const end = parts[parts.length - 1], busy = end && (end.k === 'text' || ((end.k === 'think' || end.k === 'tool') && (() => { let b = parts.length; while (b && (parts[b - 1].k === 'think' || parts[b - 1].k === 'tool')) b--; return parts.slice(b).some(p => p.k === 'think'); })()));
+  if (m.state === 'run' && !(m.parts || []).some(p => (p.k === 'batch' || p.k === 'web') && p.state === 'ask') && (m.status === 'loading' || !busy)) h += `<div class="as-run"><span class="spin"></span>${t(m.status === 'loading' ? 'ki_laedt_modell' : 'ki_denkt')}</div>`;          // the card of changes waiting for the click: nothing is being thought
   else if (m.state === 'stopped') h += `<div class="as-meta">${t('ki_gestoppt')}</div>`;
   else if (m.meta && m.meta.seconds != null) {
     const mm = m.meta, bits = [mm.cut ? t('ki_abgeschnitten') : '', mm.thought != null ? tn('ki_nachgedacht', mm.thought, asN(mm.thought)) : '',
@@ -6968,13 +6970,14 @@ function asMsg(m, i) {
   return `<div class="as-msg">${h}</div>`;
 }
 // Thoughts and the steps between them (what was read, opened, proposed) as one entry: folded, its line names how many steps there
-// were -- and while it is the newest thing of an answer, the step under way. Steps without thoughts: one line.
+// were -- and while it is the newest thing of an answer, "Thinking …" with the step under way (becomes "Thoughts" once done).
+// Steps without thoughts: one line.
 function asSteps(run, i, j, now) {
   const tools = run.filter(p => p.k === 'tool'), last = run[run.length - 1];
   const step = p => `<div class="as-tool ${esc(p.kind || '')}">${esc(p.label || '')}</div>`;
   if (!run.some(p => p.k === 'think')) return `<div class="as-tool ${esc((tools[tools.length - 1] || {}).kind || '')}">${tools.map(p => esc(p.label || '')).join(' · ')}</div>`;
   const sub = now && last.k === 'tool' ? esc(last.label || '') : tools.length ? esc(tn('ki_schritte', tools.length, tools.length)) : '';
-  return `<details class="as-think" data-m="${i}" data-p="${j}"${run[0].open ? ' open' : ''}><summary>${t('ki_gedanken')}${sub ? `<span class="as-think-s"> · ${sub}</span>` : ''}</summary>`
+  return `<details class="as-think${now ? ' now' : ''}" data-m="${i}" data-p="${j}"${run[0].open ? ' open' : ''}><summary>${now ? `<span class="spin"></span>${t('ki_denkt')}` : t('ki_gedanken')}${sub ? `<span class="as-think-s"> · ${sub}</span>` : ''}</summary>`
     + `<div>${run.map(p => p.k === 'tool' ? step(p) : `<p>${esc(p.text).replace(/\n/g, '<br>')}</p>`).join('')}</div></details>`;
 }
 // what a thinking effort means, with the time it takes on this Mac (from its measured speed): only the limited one has a time

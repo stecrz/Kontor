@@ -4104,8 +4104,15 @@ class Browser(unittest.TestCase):
                 self.assertEqual(pg.evaluate("[document.querySelectorAll('#as-body .as-think').length, document.querySelectorAll('#as-body .as-msg > .as-tool').length]"), [1, 0])
                 self.assertEqual(pg.inner_text("#as-body .as-think summary").strip(), "Gedanken · 2 Schritte")
                 self.assertEqual(pg.evaluate("document.querySelectorAll('#as-body .as-think .as-tool').length"), 2)
+                # while it thinks: its line says "Denkt nach …" (unfolds like the thoughts) and no second "Denkt nach …" below; done: "Gedanken"
                 pg.evaluate("AS.msgs[1].state = 'run'; AS.msgs[1].parts.splice(4); asMsgs(true)")
-                self.assertEqual(pg.inner_text("#as-body .as-think summary").strip(), "Gedanken · Liest diese Seite")
+                self.assertEqual(pg.inner_text("#as-body .as-think summary").strip(), "Denkt nach … · Liest diese Seite")
+                self.assertEqual(pg.evaluate("[document.querySelectorAll('#as-body .as-think summary .spin').length, document.querySelectorAll('#as-body .as-msg > .as-run').length]"), [1, 0])
+                pg.evaluate("AS.msgs[1].parts.push({k: 'text', text: 'Fer'}); asMsgs(true)")          # the answer is being written: thoughts done
+                self.assertEqual(pg.inner_text("#as-body .as-think summary").strip(), "Gedanken · 2 Schritte")
+                self.assertEqual(pg.evaluate("document.querySelectorAll('#as-body .as-run').length"), 0)
+                pg.evaluate("AS.msgs[1].parts = [{k: 'tool', label: 'Liest die Bilanz'}]; asMsgs(true)")          # steps without thoughts: the line below says it
+                self.assertEqual(pg.evaluate("[document.querySelectorAll('#as-body .as-think').length, document.querySelectorAll('#as-body .as-msg > .as-run').length]"), [0, 1])
                 pg.evaluate("AS.msgs[1] = {role: 'assistant', state: 'done', parts: [{k: 'tool', label: 'Liest die Bilanz'}, {k: 'tool', label: 'Liest diese Seite'}, {k: 'text', text: 'Fertig.'}]}; asMsgs(true)")
                 self.assertEqual(pg.evaluate("[...document.querySelectorAll('#as-body .as-msg > .as-tool')].map(x => x.textContent)"), ["Liest die Bilanz · Liest diese Seite"])
                 pg.evaluate("AS.msgs = []; asMsgs(true)")
