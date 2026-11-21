@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.37 (2026-11-21 21:10)
+- Entwicklung: Nachtlauf (1000 Zufallsläufe) im Lagebild der Chats; rot behebt ihn der nächste Chat
+
 ## 3.16.36 (2026-11-21 21:02)
 - KI-Assistent: denkt in der Sprache von Kontor (Gedanken auf Deutsch statt Englisch)
 

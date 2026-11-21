@@ -59,26 +59,44 @@ def own_files():
     return files - OWN
 
 
+NIGHT_TESTS = "tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py"      # what nightly.yml runs, with 1000 cases
+
+
 def tests_on_github():
-    """One line on the tests of the newest versions on main, and a key that changes when they turn red or green again."""
+    """One line on the tests of the newest versions on main and of the last night's run, and a key that changes when they turn
+    red or green again."""
     url = git("remote", "get-url", "origin")[1]
     m = re.search(r"([\w.-]+)/([\w.-]+?)(?:\.git)?/?$", url)
     if not m or "://" not in url and "@" not in url:     # a folder as origin (tests): nothing to ask GitHub
         return "", ""
-    code, out = run(["gh", "api", "repos/%s/%s/actions/runs?branch=main&event=push&per_page=8" % m.groups()], 8)
-    if code != 0:
+
+    def runs(path):
+        code, out = run(["gh", "api", "repos/%s/%s/actions/%s" % (m.group(1), m.group(2), path)], 8)
+        if code != 0:
+            return None
+        try:
+            return json.loads(out).get("workflow_runs") or []
+        except (ValueError, AttributeError):
+            return None
+    push = runs("runs?branch=main&event=push&per_page=8")
+    if push is None:
         return "", ""
-    try:
-        runs = json.loads(out).get("workflow_runs") or []
-    except ValueError:
-        return "", ""
-    if not runs:
-        return "", ""
+    night = runs("workflows/nightly.yml/runs?branch=main&per_page=5") or []
+    since = lambda iso: git("log", "--since=" + iso, "--format=%s%x1f%b%x1e", "origin/main")[1] if iso else ""
+    who = lambda sha: chat(git("log", "-1", "--format=%b", sha)[1])
+    return ci_summary(push, night, since, who)
+
+
+def ci_summary(push, night, since, who):
+    """The line and its key from GitHub's runs: push = the runs of the newest versions on main (newest first), night = those of
+    nightly.yml (newest first); since(iso) = subjects and bodies of the commits on main since then, who(sha) = the chat of a
+    commit. The night's run belongs to no version: red, the next chat that sees it fixes it ("fix nightly" in its commit subject
+    marks the fix, so the others leave it)."""
     name = lambda r: str(r.get("display_title") or "").split(":")[0][:20] or str(r.get("head_sha"))[:7]
-    done = [r for r in runs if r.get("status") == "completed" and r.get("conclusion") in ("success", "failure")]
-    parts, key = [], "ok"
-    if runs[0].get("status") != "completed":
-        parts.append("läuft für %s" % name(runs[0]))
+    done = [r for r in push if r.get("status") == "completed" and r.get("conclusion") in ("success", "failure")]
+    parts, keys = [], []
+    if push and push[0].get("status") != "completed":
+        parts.append("läuft für %s" % name(push[0]))
     if done and done[0]["conclusion"] == "success":
         parts.append("%s grün" % name(done[0]))
     elif done:
@@ -87,12 +105,33 @@ def tests_on_github():
             if r["conclusion"] != "failure":
                 break
             first = r
-        who = chat(git("log", "-1", "--format=%b", str(first.get("head_sha")))[1])
-        key = "red " + str(first.get("head_sha"))[:7]
+        w = who(str(first.get("head_sha")))
+        keys.append("red " + str(first.get("head_sha"))[:7])
         parts.append("ROT seit %s%s – das behebt der Chat, der diese Version veröffentlicht hat; ist es nicht deine: nicht "
                      "reparieren, weiterarbeiten (dein eigener Lauf erbt dieselben Fehler, bis die Korrektur da ist)"
-                     % (name(first), " (%s)" % who if who else ""))
-    return "Tests auf GitHub: " + "; ".join(parts), key
+                     % (name(first), " (%s)" % w if w else ""))
+    nd = [r for r in night if r.get("status") == "completed" and r.get("conclusion") not in (None, "skipped", "neutral")]
+    if nd:
+        r = nd[0]
+        ver = str((r.get("head_commit") or {}).get("message") or "").split(":")[0][:20] or str(r.get("head_sha"))[:7]
+        if r["conclusion"] == "success":
+            parts.append("Nachtlauf (1000 Zufallsläufe) für %s grün" % ver)
+        else:
+            fix = [c.split("\x1f") for c in since(str(r.get("created_at") or "")).split("\x1e") if "fix nightly" in c.split("\x1f")[0].lower()]
+            if fix:
+                keys.append("night-fixed %s" % r.get("id"))
+                parts.append("Nachtlauf für %s rot, behoben in %s%s – die nächste Nacht prüft es" % (ver, fix[-1][0].strip().split(":")[0],
+                             " (%s)" % chat(fix[-1][1]) if len(fix[-1]) > 1 and chat(fix[-1][1]) else ""))
+            else:
+                keys.append("night-red %s" % r.get("id"))
+                parts.append("Nachtlauf (1000 Zufallsläufe) für %s ROT%s – gehört zu keiner Version: behebe es jetzt als eigene "
+                             "Version, Commit-Nachricht mit „fix nightly“ (`X.Y.Z: fix nightly: …`), damit die anderen Chats es "
+                             "liegen lassen. Fehler: `gh run view %s --log-failed | tail -80`; nachprüfen: "
+                             "`KONTOR_FUZZ_SEEDS=1000 TZ=Europe/Berlin python3 -m pytest -q %s` (auch mit Python 3.9)"
+                             % (ver, "" if r["conclusion"] == "failure" else " (%s)" % r["conclusion"], r.get("id"), NIGHT_TESTS))
+    if not parts:
+        return "", ""
+    return "Tests auf GitHub: " + "; ".join(parts), " ".join(keys) or "ok"
 
 
 def main() -> int:

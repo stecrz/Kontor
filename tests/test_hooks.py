@@ -138,6 +138,62 @@ class Briefing(unittest.TestCase):
         self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
 
 
+class TestsOnGitHub(unittest.TestCase):
+    """The line on GitHub's tests (made-up runs): a red version names the chat that broke it; the night's run (1000 random
+    cases, belongs to no version) red -> the next chat fixes it, and once a "fix nightly" version is on main the others leave it."""
+
+    def setUp(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("briefing", HOOK)
+        self.B = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.B)
+
+    def run_(self, sha, title, ok=True, status="completed"):
+        return {"head_sha": sha, "display_title": title, "status": status, "conclusion": ("success" if ok else "failure") if status == "completed" else None}
+
+    def night(self, n, ok, version="3.1.2", conclusion=None):
+        return {"id": n, "head_sha": "c%05d" % n, "status": "completed", "conclusion": conclusion or ("success" if ok else "failure"),
+                "created_at": "2026-11-22T02:17:00Z", "display_title": "Zufallsläufe", "head_commit": {"message": version + ": something\n\nClaude X: y"}}
+
+    def summary(self, push, night, log=""):
+        self.since = []
+        def since(iso):
+            self.since.append(iso); return log
+        return self.B.ci_summary(push, night, since, lambda sha: "Chat …ABCD")
+
+    def test_versions_and_night(self):
+        push = [self.run_("bbb", "3.1.3: b", status="in_progress"), self.run_("aaa", "3.1.2: a")]
+        line, key = self.summary(push, [])
+        self.assertEqual((line, key), ("Tests auf GitHub: läuft für 3.1.3; 3.1.2 grün", "ok"))
+        line, key = self.summary(push, [self.night(7, True)])
+        self.assertIn("Nachtlauf (1000 Zufallsläufe) für 3.1.2 grün", line); self.assertEqual(key, "ok")
+        # a red version: its chat fixes it
+        line, key = self.summary([self.run_("ccc", "3.1.4: c", ok=False), self.run_("bbb", "3.1.3: b", ok=False), self.run_("aaa", "3.1.2: a")], [])
+        self.assertIn("ROT seit 3.1.3 (Chat …ABCD)", line); self.assertEqual(key, "red bbb")
+
+    def test_red_night_is_fixed_by_the_next_chat_once(self):
+        push = [self.run_("aaa", "3.1.2: a")]
+        line, key = self.summary(push, [self.night(8, False), self.night(7, True)])
+        self.assertIn("Nachtlauf (1000 Zufallsläufe) für 3.1.2 ROT", line); self.assertIn("fix nightly", line)
+        self.assertIn("gh run view 8 --log-failed", line); self.assertIn("KONTOR_FUZZ_SEEDS=1000", line)
+        self.assertEqual(key, "night-red 8"); self.assertEqual(self.since, ["2026-11-22T02:17:00Z"])       # only what came after the run
+        # versions since then that are no fix: still red
+        line, key = self.summary(push, [self.night(8, False)], "3.1.3: nightly mentioned in passing\x1fClaude X: session_01Q\x1e3.1.4: other\x1f\x1e")
+        self.assertEqual(key, "night-red 8")
+        # a fix on main: the others leave it -- the key changes, so every chat hears it once
+        line, key = self.summary(push, [self.night(8, False)], "3.1.5: other\x1f\x1e3.1.4: fix nightly: rounding at the turn of the year\x1fClaude X: https://claude.ai/code/session_01Qwxyz\n\x1e")
+        self.assertIn("Nachtlauf für 3.1.2 rot, behoben in 3.1.4 (Chat …wxyz)", line); self.assertNotIn("ROT", line); self.assertEqual(key, "night-fixed 8")
+        # the next night green again
+        line, key = self.summary(push, [self.night(9, True, "3.1.5"), self.night(8, False)])
+        self.assertIn("für 3.1.5 grün", line); self.assertEqual(key, "ok")
+        # timed out or cancelled counts as red too (named); still running or skipped: the last finished one counts
+        line, key = self.summary(push, [self.night(10, False, conclusion="timed_out")]); self.assertIn("ROT (timed_out)", line)
+        running = dict(self.night(11, True), status="in_progress", conclusion=None)
+        self.assertEqual(self.summary(push, [running, self.night(10, False)])[1], "night-red 10")
+
+    def test_nothing_known_says_nothing(self):
+        self.assertEqual(self.summary([], []), ("", ""))
+
+
 GUARD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".claude", "hooks", "guard.py")
 
 
