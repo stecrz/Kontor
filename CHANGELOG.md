@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.29 (2026-11-21 19:46)
+- Sicherheit: „Sicherung wiederherstellen“ übernimmt Update-Quelle, unerlaubte Adressen und fremde Zertifikate nicht mehr aus der Datei
+- Sicherheit: eine Sicherung schaltet „Buchen ohne Rückfrage“ und „Verweis in MoneyMoney“ nur aus, nie ein
+- Entwicklung: Test listet jeden Weg nach außen – Netz-Zugriffe, Hosts, gestartete Programme; Neues fällt sofort auf
+
 ## 3.16.28 (2026-11-21 19:31)
 - Entwicklung: GitHub-Prüfung aufgeräumt – nur bei Push auf main, ungenutzte Auslöser und doppelte Prüfungen entfernt
 - Entwicklung: Nachtlauf nur noch 1000 Zufallsläufe (Python 3.9), statt alles erneut

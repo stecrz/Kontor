@@ -2809,7 +2809,7 @@ def make_handler(app: App):
                     raise ValueError(tr("s_keine_kontor_sicherung"))
                 check_file_version(sich)
                 teile = []
-                app.save_config(dict(sich["config"], assistant=copy.deepcopy(app.config.get("assistant") or {})))     # the assistant's rights: as they are here
+                app.save_config(restored_config(app.config, sich["config"], app.data_dir))
                 teile.append(tr("s_teil_einstellungen"))
                 if isinstance(sich.get("plan"), dict):
                     app.store.save("plan.json", sich["plan"]); teile.append(tr("s_teil_planung"))
@@ -3293,6 +3293,47 @@ def backup_decrypt(wrapper: dict, password: str) -> dict:
         return json.loads(decrypt(key, blob).decode("utf-8"))
     except (KeyError, ValueError, StoreError, binascii.Error):
         raise ValueError(tr("s_sicherung_passwort_falsch"))
+
+
+def restored_config(current: dict, incoming: dict, data_dir: str = "") -> dict:
+    """The settings of a backup as they are taken over. A backup is a file -- it may be old, changed or not Kontor's own (one
+    without a password is read too, and a password proves nothing: anyone can encrypt a file). What decides whose code runs
+    on this Mac, where Kontor listens, which address it shows for the iPhone and whether it writes into MoneyMoney without
+    asking never comes from the file alone:
+    - where updates come from stays as set here (as with a settings package: an update is installed with one click);
+    - an address Kontor may not listen on and a sub-folder pattern that leads out of the receipts folder are not taken over;
+    - a certificate only if it is one of Kontor's own (both files exist in the data folder's tls) -- its name is the address
+      shown for the iPhone; otherwise the one set here stays;
+    - booking without asking and the reference written into MoneyMoney's comments can be switched off by a backup, never on
+      (on: as set here -- you switch them on yourself);
+    - the assistant's rights stay as they are here."""
+    cfg = dict(copy.deepcopy(incoming), assistant=copy.deepcopy(current.get("assistant") or {}))
+    upd = dict(cfg["updates"]) if isinstance(cfg.get("updates"), dict) else {}
+    upd["repo"] = (current.get("updates") or {}).get("repo") or "stecrz/Kontor"
+    cfg["updates"] = upd
+    old_ui = current.get("ui") if isinstance(current.get("ui"), dict) else {}
+    if isinstance(cfg.get("ui"), dict):
+        ui = cfg["ui"]
+        bind = ui.get("bind")
+        if bind and not (isinstance(bind, str) and bind_allowed(bind.strip())):
+            ui["bind"] = old_ui.get("bind") or "127.0.0.1"
+        tls = os.path.realpath(os.path.join(data_dir, "tls")) if data_dir else ""
+        own = lambda p: bool(tls) and isinstance(p, str) and os.path.realpath(p).startswith(tls + os.sep) and os.path.isfile(p)
+        if (ui.get("tls_cert") or ui.get("tls_key")) and not (own(ui.get("tls_cert")) and own(ui.get("tls_key"))):
+            for k in ("tls_cert", "tls_key"):
+                ui.pop(k, None)
+                if old_ui.get(k):
+                    ui[k] = old_ui[k]
+    old_r = current.get("receipts") if isinstance(current.get("receipts"), dict) else {}
+    if isinstance(cfg.get("receipts"), dict):
+        sub = cfg["receipts"].get("subfolder")
+        if sub and (not isinstance(sub, str) or pattern_problem(sub)):
+            cfg["receipts"]["subfolder"] = old_r.get("subfolder") or "{year}"
+        if cfg["receipts"].get("write_comment") and not old_r.get("write_comment"):
+            cfg["receipts"]["write_comment"] = False
+    if cfg.get("dry_run", True) is not True and current.get("dry_run", True):       # anything but a clear "ask first" (also a missing or odd value)
+        cfg["dry_run"] = True
+    return cfg
 
 
 # Kontor's own files in its data folder (the store, its log and service files, a key file, the certificate): only these go

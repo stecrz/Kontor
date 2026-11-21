@@ -1,6 +1,10 @@
 """Security regressions (all with made-up data, never the real keychain): the idle lock with the page open, a keychain that
-does not answer in time, and links in the receipts folder that point elsewhere."""
+does not answer in time, links in the receipts folder that point elsewhere -- and the ways out of the program (which parts can
+open a connection, to which hosts, which other programs they start)."""
+import ast
+import glob
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -611,6 +615,129 @@ class ReceiptLinks(unittest.TestCase):
         e = {"id": "alt-x%d" % len(bl.entries()), "tx_id": None, "date": "2026-03-01", "path": pfad, "name": "Alt"}
         bl.entries().append(e)
         return e
+
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class NothingGoesOut(unittest.TestCase):
+    """"Everything local, nothing goes out" (CLAUDE.md, Sicherheit) as a list a machine checks: which parts of the program can
+    open a connection at all, the hosts they name, the other programs they start, and what the pages may reach. A new way
+    out does not slip in with some other change -- it has to be named here, where it is seen. (A trip wire for what is
+    written in the open, not a proof: the allow-lists in updates.py, llm_local.py and security_names.py are what holds.)"""
+
+    # the program's parts that import something able to open or accept a connection -- and why
+    NETWORK = {
+        "service.py": {"http.server", "socket", "ssl"},                # the interface itself: 127.0.0.1 and the Tailscale address
+        "kontor.py": {"socket"},                                       # asks whether its own service answers on 127.0.0.1
+        "tls_cert.py": {"http.client", "ssl"},                         # Tailscale's interface on this Mac (127.0.0.1)
+        "updates.py": {"urllib.request"},                              # update check and download: GitHub, on your click or as set
+        "llm_local.py": {"urllib.request", "http.client", "socket"},   # llama.cpp and model files (downloads on your click); the model on 127.0.0.1
+        "security_names.py": {"urllib.request"},                       # names of securities at OpenFIGI: on your click, ISINs only
+    }
+    NETWORK_MODULES = {"socket", "ssl", "http.client", "http.server", "urllib.request", "socketserver", "ftplib", "smtplib", "poplib", "imaplib",
+                       "telnetlib", "nntplib", "xmlrpc", "asyncio", "selectors", "webbrowser", "requests", "httpx", "aiohttp", "urllib3", "websocket",
+                       "websockets", "paramiko", "pycurl"}
+    # hosts written in the program: the ones it connects to, by part ...
+    HOSTS = {"updates.py": {"api.github.com", "github.com", "raw.githubusercontent.com"},
+             "llm_local.py": {"api.github.com", "huggingface.co"},
+             "security_names.py": {"api.openfigi.com"}}
+    NAMES_ONLY = {"schemas.openxmlformats.org", "www.apple.com"}      # ... and names of file formats (never opened)
+    # other programs started by their name (all of macOS or Apple's tools, git for an update of a clone)
+    COMMANDS = {"security", "openssl", "swiftc", "codesign", "open", "launchctl", "/bin/launchctl", "/usr/sbin/sysctl", "ps", "pgrep", "tmutil",
+                "osascript", "/usr/bin/osascript", "xcode-select", "git", "/bin/sh"}
+    # ... and by a path Kontor made up itself (its Touch ID helper, the password window, llama.cpp, Tailscale's own tool, lsof)
+    COMMANDS_BY_PATH = {"auth.py", "mm_history.py", "llm_local.py", "tls_cert.py"}
+    # where links on the pages lead (opened by you, in a new window; the pages themselves only talk to Kontor)
+    LINKS = {"github.com", "tailscale.com", "login.tailscale.com", "apps.apple.com", "www.w3.org"}
+    HOST = re.compile(r"(?:https?|wss?|ftp)://([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.trees = {}
+        for path in sorted(glob.glob(os.path.join(ROOT, "*.py"))):
+            with open(path, encoding="utf-8") as f:
+                cls.trees[os.path.basename(path)] = ast.parse(f.read())
+
+    def test_only_these_parts_can_open_a_connection(self):
+        found = {}
+        for name, tree in self.trees.items():
+            mods = set()
+            for n in ast.walk(tree):
+                if isinstance(n, ast.Import):
+                    mods |= {a.name for a in n.names}
+                elif isinstance(n, ast.ImportFrom) and n.module:
+                    mods |= {n.module} | {"%s.%s" % (n.module, a.name) for a in n.names}
+            hit = {m for m in self.NETWORK_MODULES if any(x == m or x.startswith(m + ".") for x in mods)}
+            if hit:
+                found[name] = hit
+        self.assertEqual(found, self.NETWORK, "a part of the program that can open a connection changed -- name it in NothingGoesOut.NETWORK "
+                                              "(and what goes out in CLAUDE.md, Sicherheit)")
+
+    def test_only_these_hosts_are_written_in_the_program(self):
+        found = {}
+        for name, tree in self.trees.items():
+            hosts = {h.lower() for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str) for h in self.HOST.findall(n.value)}
+            hosts -= self.NAMES_ONLY | {"127.0.0.1"}
+            if hosts:
+                found[name] = hosts
+        self.assertEqual(found, self.HOSTS, "a host written in the program changed (a link in a text counts too) -- name it in NothingGoesOut.HOSTS "
+                                            "if Kontor connects to it, in NAMES_ONLY if it only names a file format")
+        # and the lists that hold at run time are these
+        import llm_local
+        import security_names
+        import updates
+        self.assertEqual(set(updates.ALLOWED_HOSTS), {"api.github.com", "codeload.github.com", "github.com", "raw.githubusercontent.com", "objects.githubusercontent.com"})
+        self.assertEqual(security_names.HOST, "api.openfigi.com")
+        for url, kind, ok in (("https://github.com/x", "github", True), ("https://release-assets.githubusercontent.com/x", "github", True),
+                              ("https://huggingface.co/x", "hf", True), ("https://cdn-lfs.hf.co/x", "hf", True),
+                              ("https://example.com/x", "github", False), ("https://example.com/x", "hf", False), ("http://github.com/x", "github", False),
+                              ("https://github.com.example.com/x", "github", False), ("https://huggingface.co.example.com/x", "hf", False),
+                              ("https://user:pw\x40github.com/x", "github", False), ("https://huggingface.co/x", "github", False)):
+            self.assertEqual(llm_local.host_allowed(url, kind), ok, url)
+
+    def test_only_these_programs_are_started(self):
+        names, by_path, odd = set(), set(), []
+        for name, tree in self.trees.items():
+            for n in ast.walk(tree):
+                if not isinstance(n, ast.Call):
+                    continue
+                fn = n.func
+                attr, base = (fn.attr, getattr(fn.value, "id", "")) if isinstance(fn, ast.Attribute) else (getattr(fn, "id", ""), "")
+                if base == "subprocess":
+                    if any(k.arg == "shell" for k in n.keywords):
+                        odd.append("%s:%d shell=" % (name, n.lineno))
+                    first = n.args[0] if n.args else None
+                    while isinstance(first, ast.BinOp):                  # ["security"] + args
+                        first = first.left
+                    if isinstance(first, ast.IfExp):                     # ["open", "-R", x] if ... else ["open", x]
+                        first = first.body
+                    if isinstance(first, ast.List) and first.elts and isinstance(first.elts[0], ast.Constant):
+                        names.add(first.elts[0].value)
+                    else:
+                        by_path.add(name)
+                elif (base == "os" and (attr in ("system", "popen") or attr.startswith(("spawn", "posix_spawn")))) or (not base and attr in ("eval", "exec", "__import__")) \
+                        or base == "importlib" or (base == "os" and attr.startswith("exec") and name != "service.py"):
+                    odd.append("%s:%d %s" % (name, n.lineno, attr))
+        self.assertEqual(odd, [])
+        self.assertEqual(names - self.COMMANDS, set(), "a program started by name that is not in NothingGoesOut.COMMANDS")
+        self.assertEqual(by_path, self.COMMANDS_BY_PATH, "a program started by a path: name the part in NothingGoesOut.COMMANDS_BY_PATH")
+
+    def test_the_pages_talk_to_kontor_only(self):
+        for path in sorted(glob.glob(os.path.join(ROOT, "web", "*"))):
+            if not path.endswith((".js", ".html", ".css", ".webmanifest", ".svg")):
+                continue
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            name = os.path.basename(path)
+            self.assertEqual({h.lower() for h in self.HOST.findall(text)} - self.LINKS, set(), name)
+            # requests go to Kontor's own address (a path), never to a full address; nothing else that could send
+            self.assertEqual(re.findall(r"""fetch\(\s*['"`](?!/(?!/))[^'"`]*""", text), [], name)
+            self.assertEqual(re.findall(r"XMLHttpRequest|sendBeacon|WebSocket|EventSource|importScripts|RTCPeerConnection|<script[^>]+src=[\"'](?!/(?!/))", text), [], name)
+        import service
+        with open(service.__file__, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("default-src 'self'", src); self.assertIn("connect-src 'self'", src); self.assertIn("form-action 'self'", src)
 
 
 if __name__ == "__main__":

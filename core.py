@@ -94,6 +94,12 @@ def _shape(cfg: dict) -> dict:
             v = ui.get(f)
             if f in ui and not (isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi):
                 ui.pop(f)
+    for sec, fields in (("ui", ("bind", "tls_cert", "tls_key")), ("receipts", ("folder", "subfolder")), ("updates", ("repo", "check_mode"))):
+        part = cfg.get(sec)                     # an address, a path or a name that is no text: the default applies
+        if isinstance(part, dict):
+            for f in fields:
+                if f in part and not isinstance(part[f], str):
+                    part.pop(f)
     kf = cfg.get("cashflow")
     if isinstance(kf, dict) and "recipient_to_account" in kf:
         e = kf["recipient_to_account"]

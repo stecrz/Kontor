@@ -2744,6 +2744,57 @@ class FeatureTests(_AppBase):
         self.assertEqual(code, 200); self.assertIn("Planung", r["parts"]); self.assertIn("Einstellungen", r["parts"])
         self.assertEqual(self.store.load("plan.json")["areas"][P]["rows"]["income/Arbeitseinkommen"]["method"], "fix")
         self.assertEqual(self.call("/api/backup/restore", {"backup": {"x": 1}})[0], 400)
+        # a backup is a file (one without a password is read too, and a password proves nothing): it never decides alone whose
+        # code runs here, where Kontor listens, which address it shows for the iPhone or whether it writes into MoneyMoney
+        # without asking. Everything else of it is taken over.
+        restore = lambda c: self.call("/api/backup/restore", {"backup": {"kontor_backup": 1, "config": c}})[0]
+        self.assertTrue(self.app.config["dry_run"])                             # (after the reset; the backup above said: book without asking)
+        cfg = copy.deepcopy(inner["config"])
+        cfg["updates"] = {"repo": "someone/else", "check_mode": "weekly"}
+        cfg["ui"] = dict(cfg.get("ui") or {}, bind="0.0.0.0", lock_minutes=7, tls_cert="/x/kontor.elsewhere.example.crt", tls_key="/x/k.key")
+        cfg["receipts"] = dict(cfg.get("receipts") or {}, subfolder="../../{year}", write_comment=True)
+        cfg["dry_run"] = False
+        cfg["assistant"] = {"enabled": True, "rights": {"remote": True, "change": True}}
+        before = copy.deepcopy(self.app.config.get("assistant"))
+        self.assertEqual(restore(cfg), 200)
+        now = self.app.config
+        self.assertEqual(now["updates"]["repo"], "stecrz/Kontor"); self.assertEqual(now["updates"]["check_mode"], "weekly")
+        self.assertEqual(now["ui"].get("bind") or "127.0.0.1", "127.0.0.1"); self.assertEqual(now["ui"]["lock_minutes"], 7)
+        self.assertFalse(now["ui"].get("tls_cert")); self.assertFalse(now["ui"].get("tls_key"))
+        self.assertEqual(self.call("/api/remote")[1]["url"], None)
+        self.assertEqual(now["receipts"]["subfolder"], inner["config"]["receipts"]["subfolder"]); self.assertFalse(now["receipts"]["write_comment"])
+        self.assertTrue(now["dry_run"]); self.assertEqual(now.get("assistant"), before)
+        # what is allowed is taken over: an address of Tailscale, a pattern inside the folder, one of Kontor's own certificates
+        tls = os.path.join(self.dir, "tls"); os.makedirs(tls, exist_ok=True)
+        own = [os.path.join(tls, "mac.example.ts.net" + e) for e in (".crt", ".key")]
+        for f in own:
+            open(f, "w").close()
+        cfg["ui"].update(bind="100.101.102.103", tls_cert=own[0], tls_key=own[1]); cfg["receipts"]["subfolder"] = "{entity}/{year}"
+        self.assertEqual(restore(cfg), 200)
+        now = self.app.config
+        self.assertEqual(now["ui"]["bind"], "100.101.102.103"); self.assertEqual(now["receipts"]["subfolder"], "{entity}/{year}")
+        self.assertEqual([now["ui"]["tls_cert"], now["ui"]["tls_key"]], own)
+        cfg["ui"].update(tls_cert=os.path.join(tls, "..", "tls", "missing.example.crt"), tls_key=own[1])       # not there: the one set here stays
+        self.assertEqual(restore(cfg), 200); self.assertEqual([self.app.config["ui"]["tls_cert"], self.app.config["ui"]["tls_key"]], own)
+        # switched on at this Mac by you: a backup keeps it on or switches it off -- and a source for updates set here stays
+        on = copy.deepcopy(self.app.config); on["dry_run"] = False; on["receipts"]["write_comment"] = True; on["updates"]["repo"] = "mine/fork"
+        self.app.save_config(on)
+        self.assertEqual(restore(cfg), 200)
+        self.assertFalse(self.app.config["dry_run"]); self.assertTrue(self.app.config["receipts"]["write_comment"]); self.assertEqual(self.app.config["updates"]["repo"], "mine/fork")
+        off = copy.deepcopy(cfg); off["dry_run"] = True; off["receipts"]["write_comment"] = False
+        self.assertEqual(restore(off), 200)
+        self.assertTrue(self.app.config["dry_run"]); self.assertFalse(self.app.config["receipts"]["write_comment"])
+        for odd in (None, 0, "no", []):                                         # no clear "ask first": asking stays
+            self.assertEqual(restore(dict(cfg, dry_run=odd)), 200); self.assertTrue(self.app.config["dry_run"], odd)
+        # the wrong kind of value anywhere near: nothing of it is kept and every page still answers
+        for odd in ({"updates": "x", "ui": {"bind": 5, "tls_cert": 5, "tls_key": 5}, "receipts": {"subfolder": ["x"], "folder": 5}},
+                    {"updates": {"repo": ["a/b"], "check_mode": []}, "ui": None, "receipts": None}, {"updates": None, "ui": [["bind", "0.0.0.0"]], "receipts": 7}):
+            self.assertEqual(restore(dict(cfg, **odd)), 200, odd)
+            self.assertEqual(self.app.config["updates"]["repo"], "mine/fork"); self.assertIsInstance(self.app.config["updates"]["check_mode"], str)
+            self.assertIn(self.app.config["ui"].get("bind") or "127.0.0.1", ("127.0.0.1", "100.101.102.103"))
+            self.assertIsInstance(self.app.config["receipts"]["folder"], str)
+            for page in ("/api/status", "/api/remote", "/api/config", "/api/receipts"):
+                self.assertEqual(self.call(page)[0], 200, (page, odd))
 
     def test_uninstall_removes_kontor_keeps_receipts(self):
         """Uninstall: only at the Mac and with the password; removes the service file, Kontor's own files in the data folder (also
