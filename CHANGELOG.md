@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.18 (2026-11-21 17:11)
+- Entwicklung: Ziel und Entscheidungen im Fahrplan per Test gegen Verlust gesichert; Entschiedenes wird nie gelöscht
+
 ## 3.16.17 (2026-11-21 16:57)
 - KI-Assistent: Einstellungen zeigen beim Sprachmodell, ob das Mikrofon dauerhaft erlaubt ist – sonst der Weg dahin (App im Dock, Safari, iPhone) und „Jetzt freigeben“.
 

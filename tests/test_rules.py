@@ -516,6 +516,28 @@ class ChangelogTests(unittest.TestCase):
         self.assertTrue(notes); self.assertRegex(datum, r"^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$")
 
 
+class GoalTests(unittest.TestCase):
+    """The user's goal for Kontor (ROADMAP.md, CLAUDE.md) must survive parallel chats: a version that drops it fails here."""
+
+    def _read(self, name):
+        with open(os.path.join(os.path.dirname(__file__), "..", name), encoding="utf-8") as f:
+            return f.read()
+
+    def test_goal_stays_in_the_roadmap(self):
+        text = self._read("ROADMAP.md")
+        for heading in ("## Ziel: dein digitaler CFO", "## Leitlinien", "## Entschieden", "## Offen"):
+            self.assertIn("\n" + heading, text, heading)
+        for words in ("Kein Haushaltsbuch", "Von der Gesellschaft ins Privatvermögen", "Gesellschaften auch führen",
+                      "Der KI-Assistent ist der Kern", "**Sicherheit.**", "**Automatik:**", "**Daten erst nach Anmeldung:**",
+                      "**Data-Warehouse (BigQuery):**", "**Reihenfolge:**", "**Name:**", "ELSTER", "gemeinsame KI"):
+            self.assertIn(words, text, words)
+
+    def test_goal_stays_in_the_rules(self):
+        text = self._read("CLAUDE.md")
+        self.assertIn("\n## Ziel\n", text)
+        self.assertIn("digitale Finanzchef (CFO)", text)
+        self.assertIn("ROADMAP.md", text.split("\n## Ziel\n")[1].split("\n## ")[0])
+
 class PortfolioHistoryTests(unittest.TestCase):
     """Month-end values of a portfolio from MoneyMoney's portfolio_chart (made-up values)."""
 

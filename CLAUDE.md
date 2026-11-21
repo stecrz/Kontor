@@ -13,6 +13,8 @@ Routine abnimmt. Kein Haushaltsbuch. Rangfolge: Sicherheit, Privatsphäre, Kontr
 lokal, nichts nach außen; die KI schlägt nur vor, ausgeführt wird erst nach dem Klick des Nutzers (einzeln oder als einmal
 bestätigte Regel). Ausführlich mit Leitlinien, Entscheidungen, Reihenfolge und Offenem: oben in `ROADMAP.md`. Vom Nutzer
 entschiedene Änderungen an den Regeln unten stehen dort unter „Entschieden“; sie gelten, sobald umgesetzt, und kommen dann hierher.
+Ziel, Leitlinien, „Entschieden“ und „Offen“ ändert nur der Nutzer (oder ein Chat auf seinen Wunsch); bei Konflikten immer erhalten.
+Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhängen. `GoalTests` in `tests/test_rules.py` prüft, dass alles da ist.
 
 ## Arbeitsweise
 - Was als Nächstes kommt und wann es fertig ist: `ROADMAP.md`. Erledigtes dort abhaken, Neues dort eintragen.

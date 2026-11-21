@@ -39,7 +39,8 @@ mitarbeitet. Alles lokal auf dem Mac. Zuerst für den Nutzer selbst.
    Summen gehen auf den Cent auf.
 
 ## Entschieden (Nutzer, 2026-11-21)
-Gilt, sobald beim jeweiligen Punkt umgesetzt; dann in `CLAUDE.md` (Sicherheit) übernehmen.
+Gilt, sobald beim jeweiligen Punkt umgesetzt; dann in `CLAUDE.md` (Sicherheit) übernehmen und hier „(umgesetzt in X.Y.Z)“
+anhängen – nie löschen.
 - **Reihenfolge:** Sicherheit vorab, dann KI, dann GbR-Entlastung, dann Gesellschaften (Bewertung, Data-Warehouse), dann Planung.
 - **Automatik:** Die KI schlägt Regeln vor (z. B. „Umsätze von X immer Kategorie Y“); nach einmaligem Klick führt Kontor sie
   selbst aus – sichtbar, protokolliert, abschaltbar, jedes Ergebnis rückgängig zu machen. Die KI selbst ändert nie etwas.
