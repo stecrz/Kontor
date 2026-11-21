@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.34 (2026-11-21 20:44)
+- Bilanz-Tabelle: Klick auf einen Wert klappt die Zeile zusätzlich auf bzw. zu (Position, Depot, Kennzahlen) – Markierung in der Grafik wie bisher
+- Doppelklick/Halten auf einen Wert entfällt dafür
+- Auf-/Zuklappen: Seite bleibt stehen, auch wenn sich die Grafik darüber neu aufbaut
+
 ## 3.16.33 (2026-11-21 20:30)
 - KI-Assistent: schlägt wartende Auto-Buchungen zur Freigabe oder zum Zurückhalten vor – gebucht erst nach deinem Klick, nur am Mac, in MoneyMoney endgültig
 - KI-Assistent: was Kontor erst geprüft haben will, gibst du weiter selbst unter Auto-Buchungen frei; Paare werden zusammen zurückgehalten

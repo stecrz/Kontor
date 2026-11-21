@@ -4078,6 +4078,40 @@ class BrowserTest(unittest.TestCase):
                 pg.click("tr.acct td:nth-child(3)"); pg.wait_for_timeout(150)
                 self.assertFalse(pg.query_selector("#drawer.open")); self.assertTrue(pg.query_selector("#bch-svg.hl .bch-area.hl")); self.assertTrue(pg.query_selector("#bch-hover .bch-cross"))
                 pg.wait_for_timeout(1300); self.assertIsNone(pg.query_selector("#bch-svg.hl")); self.assertIsNone(pg.query_selector("#bch-hover .bch-cross"))
+                # a click on a value of a row that opens: marked in the chart as any value, and the row closes or opens as on its name --
+                # a position, a portfolio (its securities), the net worth (its key figures); the table stays where it is
+                cell = """sel => { const tr = document.querySelector(sel), w = tr.closest('.wrap'), fw = w.querySelector('thead th').offsetWidth; tr.scrollIntoView({block: 'center'});
+                    const wr = w.getBoundingClientRect(), td = [...tr.children].slice(1).filter(c => { const r = c.getBoundingClientRect(); return r.left >= wr.left + fw && r.right <= wr.right; })[1];
+                    const r = td.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }"""
+                marked = lambda: (pg.wait_for_selector("#bch-hover .bch-cross", state="attached"), self.assertFalse(pg.query_selector("#drawer.open")))
+                calm = lambda: pg.wait_for_function("() => !document.querySelector('#bch-svg.hl') && !document.querySelector('#bch-hover .bch-cross')")
+                def by_value(sel, state, area=True):
+                    left, was = pg.evaluate("document.querySelector('#main .wrap.snap').scrollLeft"), bool(pg.evaluate(state))
+                    for want in (not was, was):                                   # there and back: as found
+                        xy = pg.evaluate(cell, sel); top = pg.evaluate("s => document.querySelector(s).getBoundingClientRect().top", sel)
+                        pg.mouse.click(*xy); pg.wait_for_function("w => !!(%s) === w" % state, arg=want); marked()
+                        if area:                                                  # (the net worth: no area; at the end of the page, which gets shorter)
+                            self.assertAlmostEqual(pg.evaluate("s => document.querySelector(s).getBoundingClientRect().top", sel), top, delta=1)      # the row stays under the pointer
+                            pg.wait_for_selector("#bch-svg.hl .bch-area.hl", state="attached")
+                        self.assertEqual(pg.evaluate("document.querySelector('#main .wrap.snap').scrollLeft"), left); calm()
+                pos = "tr.pos[data-pos='%s']" % role; n_rows = len(pg.query_selector_all("tr.acct"))
+                pg.mouse.click(*pg.evaluate(cell, pos)); pg.wait_for_function("r => !S.posOpen[r]", arg=role); marked()
+                self.assertLess(len(pg.query_selector_all("tr.acct")), n_rows); calm()                 # its accounts are gone
+                pg.mouse.click(*pg.evaluate(cell, pos)); pg.wait_for_function("r => !!S.posOpen[r]", arg=role); marked()
+                self.assertEqual(len(pg.query_selector_all("tr.acct")), n_rows); calm()
+                by_value(pos, "S.posOpen[%r]" % role)
+                seq = pg.evaluate("ROUTE_SEQ"); pg.mouse.dblclick(*pg.evaluate(cell, pos))              # twice: open and closed again, as on the name
+                pg.wait_for_function("n => ROUTE_SEQ >= n + 2", arg=seq); self.assertTrue(pg.evaluate("r => !!S.posOpen[r]", role)); self.assertEqual(pg.evaluate("getSelection().toString()"), ""); calm()
+                if not pg.query_selector("[data-dep]"):
+                    pg.click("tr.pos[data-pos='securities'] td:first-child")
+                pg.wait_for_selector("[data-dep]"); dep = pg.eval_on_selector("[data-dep]", "e => e.dataset.dep"); wp0 = bool(pg.query_selector("tr.wpr"))
+                by_value("tr.acct[data-id='%s']" % dep, "(S.depOpen || {})[%r]" % dep); self.assertEqual(bool(pg.query_selector("tr.wpr")), wp0)
+                pg.mouse.click(*pg.evaluate(cell, "tr.acct[data-id='%s']" % dep)); pg.wait_for_function("d => !!(S.depOpen || {})[d] === %s" % ("false" if wp0 else "true"), arg=dep)
+                self.assertEqual(bool(pg.query_selector("tr.wpr")), not wp0); calm()
+                pg.mouse.click(*pg.evaluate(cell, "tr.acct[data-id='%s']" % dep)); pg.wait_for_function("d => !!(S.depOpen || {})[d] === %s" % ("true" if wp0 else "false"), arg=dep); calm()
+                self.assertTrue(pg.query_selector(".bil-tbl tr.total.fold")); by_value(".bil-tbl tr.total.fold", "S.posOpen._kennzahlen", area=False)
+                self.assertFalse(pg.query_selector("#drawer.open")); pg.mouse.move(5, 5)
+                pg.evaluate("document.querySelector('#bch').scrollIntoView({block: 'center'})"); pg.wait_for_function("() => { const r = document.querySelector('#bch-hit').getBoundingClientRect(); return r.top > 0 && r.bottom < innerHeight; }")
                 # a second click on the name of the account whose history is open closes it
                 pg.click("tr.acct td:first-child"); pg.wait_for_selector("#drawer.open"); pg.wait_for_timeout(300)
                 pg.click("tr.acct td:first-child"); pg.wait_for_timeout(400); self.assertIsNone(pg.query_selector("#drawer.open"))

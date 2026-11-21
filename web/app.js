@@ -2431,7 +2431,9 @@ function bindBilanzChart(main) {
     bchLinkPan($('#bch-svg', main));
   } else $$('.wrap thead th[data-key]', main).forEach(th => { th.classList.add('jump'); th.addEventListener('click', () => bchFocus(th.dataset.key)); });
   if (BCH.ro) BCH.ro.disconnect();
-  let last = 0; BCH.ro = new ResizeObserver(onResizeFrame(() => { if (PRINT.on) return; const w = $('#bch-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; bchDraw(); } }));
+  // drawn at this width just now: only another width draws again (the observer reports once at the start -- a second drawing
+  // would wipe what a click on the table marks right after the page is drawn anew)
+  let last = $('#bch-plot', main).clientWidth; BCH.ro = new ResizeObserver(onResizeFrame(() => { if (PRINT.on) return; const w = $('#bch-plot'); if (w && Math.abs(w.clientWidth - last) > 2) { last = w.clientWidth; bchDraw(); } }));
   BCH.ro.observe($('#bch-plot', main));
 }
 
@@ -5989,6 +5991,9 @@ async function route() {
     if (S.tab === 'settings' && S.sub === 'access') bindZugang(main);
     if (S.tab === 'settings' && S.sub === 'assistant') bindAssistent(main);
     if (S.tab === 'help') bindHilfe(main);
+    // the same page again: what was drawn just now (the charts) changed heights above -- a browser that keeps what is in view
+    // in place (scroll anchoring) moves the page along with it; it stays where it was
+    if (sameTab && pageY() !== y0) pageTo(y0);
   } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== t('nicht_angemeldet')) main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" id="route-retry">${t('erneut_versuchen')}</button></div>`; const rb = $('#route-retry', main); if (rb) rb.addEventListener('click', () => route()); }
 }
 let ROUTE_SEQ = 0;
@@ -6079,15 +6084,21 @@ function rowByFigure(tbl, cell, toggle) {
 function bind(main) {
   $$('tr.group[data-id]', main).forEach(tr => tr.addEventListener('click', () => { S.collapsed[tr.dataset.id] = !S.collapsed[tr.dataset.id]; route(); }));
   // balance sheet: a click on the name opens the position (or the account's history), on a value it marks month and row in the chart
+  // -- and, in a row that opens (a position, a portfolio, the key figures under the net worth), opens or closes it as on its name
   const valueCell = (e, tr) => { const td = e.target.closest('td'); return td && td !== tr.firstElementChild && tr.closest('.bil-tbl') ? td : null; };
+  // the page is drawn anew: the chart is marked from the row (sel) and the column of the click there
+  const redrawnMark = (sel, td, mark) => { const i = td.cellIndex; Promise.resolve(route()).then(() => requestAnimationFrame(() => { const tr = $(sel, $('#main')), c = tr && tr.children[i]; if (c) mark(tr, c); })); };
+  const monthOf = td => { const th = td.closest('table').querySelector('thead tr').children[td.cellIndex]; return th ? th.dataset.key : null; };
   $$('.bil-tbl tr.ekq', main).forEach(tr => tr.addEventListener('click', e => {      // equity ratio: the calculation of the month (name: the current one)
     const td = e.target.closest('td'), ks = Object.keys(((B() || {}).balance || {}).equity_ratio?.months || {}), cur = (B() || {}).actual_until;
     const mk = td && td.dataset.m ? td.dataset.m : (ks.includes(cur) ? cur : ks[ks.length - 1]); if (mk && td && (td.dataset.m || td === tr.firstElementChild)) openEkqDrawer(mk); }));
   $$('.bil-tbl tr.total', main).forEach(tr => tr.addEventListener('click', e => {      // net worth: like the month heading, and its dot blinks
-    if (tr.classList.contains('fold') && e.target.closest('td') === tr.firstElementChild) { S.posOpen._kennzahlen = !S.posOpen._kennzahlen; route(); return; }      // its name: key figures open/close
-    const td = valueCell(e, tr), th = td && td.closest('table').querySelector('thead tr').children[td.cellIndex];
-    if (th && th.dataset.key) bchFocus(th.dataset.key, true); }));
-  $$('tr.pos[data-pos]', main).forEach(tr => tr.addEventListener('click', e => { const td = valueCell(e, tr); if (td) { bchFlash(tr, td); return; } S.posOpen[tr.dataset.pos] = !S.posOpen[tr.dataset.pos]; route(); }));
+    const fold = tr.classList.contains('fold'), td = valueCell(e, tr), focus = (r, c) => { const k = monthOf(c); if (k) bchFocus(k, true); };
+    if (fold && (td || e.target.closest('td') === tr.firstElementChild)) S.posOpen._kennzahlen = !S.posOpen._kennzahlen;      // key figures open/close
+    if (!td) { if (fold && e.target.closest('td') === tr.firstElementChild) route(); return; }
+    if (fold) redrawnMark('.bil-tbl tr.total.fold', td, focus); else focus(tr, td); }));
+  $$('tr.pos[data-pos]', main).forEach(tr => tr.addEventListener('click', e => { const td = valueCell(e, tr); S.posOpen[tr.dataset.pos] = !S.posOpen[tr.dataset.pos];
+    if (td) redrawnMark(`tr.pos[data-pos="${CSS.escape(tr.dataset.pos)}"]`, td, bchFlash); else route(); }));
   const pa = $('#pos-all', main); if (pa) pa.addEventListener('click', () => { const D = B(), pos = D.balance.rows.filter(r => r.group), open = !pos.every(r => S.posOpen[r.role]); pos.forEach(r => { S.posOpen[r.role] = open; }); route(); });
   $$('[data-dep]', main).forEach(el => el.addEventListener('click', e => { e.stopPropagation(); S.depOpen = S.depOpen || {}; S.depOpen[el.dataset.dep] = !S.depOpen[el.dataset.dep]; route(); }));
   // cash flow / planning: the names as one pinned piece (see freezeNames); a click on the triangle or the name opens and closes
@@ -6123,10 +6134,9 @@ function bind(main) {
   $$('.cf-tbl:not(.ptable):not(.cf-names)', main).forEach(tbl => rowByFigure(tbl,
     e => { const td = e.target.closest('td'); return td && td !== td.parentNode.firstElementChild && td.parentNode.matches('tr[data-tog]') ? td : null; },
     td => { closeDrawer(); const n = td.parentNode.firstElementChild; if (n) n.dispatchEvent(new MouseEvent('click', {bubbles: true})); }));
-  // the same in the balance sheet: a position, a portfolio's securities, the key figures under the net worth
-  $$('.bil-tbl table', main).forEach(tbl => rowByFigure(tbl,
-    e => { const td = e.target.closest('td'), tr = td && td.parentNode; return td && td !== tr.firstElementChild && (tr.matches('tr.pos[data-pos], tr.total.fold') || tr.querySelector('[data-dep]')) ? td : null; },
-    td => { const tr = td.parentNode, el = tr.querySelector('[data-dep]') || tr.firstElementChild; el.dispatchEvent(new MouseEvent('click', {bubbles: true})); }));
+  // the balance sheet opens a row by a single click on a figure (see above): no word selected by clicking twice
+  $$('.bil-tbl table', main).forEach(tbl => tbl.addEventListener('mousedown', e => { const td = e.target.closest('td'), tr = td && td.parentNode;
+    if (e.detail > 1 && td && td !== tr.firstElementChild && (tr.matches('tr.pos[data-pos], tr.total.fold') || tr.querySelector('[data-dep]'))) e.preventDefault(); }));
   // a click on a row's name opens or closes it (its figures show the bookings behind them; in planning they are edited)
   $$('.cf-tbl [data-tog]', main).forEach(el => el.addEventListener('click', e => {
     if (el.tagName === 'TR' && (e.target.closest('td') !== el.firstElementChild || e.target.closest('select, input, a, .edit, .hq, .tag, .to-bal, .tipped, button:not(.disc)'))) return;
@@ -6225,7 +6235,10 @@ function bind(main) {
   }));
 
   // Bilanz
-  $$('tr.acct[data-id]', main).forEach(tr => tr.addEventListener('click', e => { const td = valueCell(e, tr); if (td) bchFlash(tr, td); else openHistDrawer(tr.dataset.id); }));
+  $$('tr.acct[data-id]', main).forEach(tr => tr.addEventListener('click', e => { const td = valueCell(e, tr), dep = td && $('[data-dep]', tr);
+    if (!td) openHistDrawer(tr.dataset.id);
+    else if (dep) { S.depOpen = S.depOpen || {}; S.depOpen[dep.dataset.dep] = !S.depOpen[dep.dataset.dep]; redrawnMark(`tr.acct[data-id="${CSS.escape(tr.dataset.id)}"]`, td, bchFlash); }      // a portfolio: its securities open/close
+    else bchFlash(tr, td); }));
   $$('tr.wpr[data-wp]', main).forEach(tr => tr.addEventListener('click', e => { const td = valueCell(e, tr); if (td) bchFlash(tr, td); else openWpDrawer(tr.dataset.wp); }));
   $$('tr.transit', main).forEach(tr => tr.addEventListener('click', e => { const td = valueCell(e, tr);          // a month: what was under way at its end
     if (!td) { openTransitDrawer(); return; } bchFlash(tr, td);
