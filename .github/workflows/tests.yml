@@ -101,9 +101,10 @@ jobs:
         run: python -m pytest -q -rs ${{ matrix.tests }}       # -rs: what was skipped, and why, at the end
 
   # Kontor runs only on the Mac: what only a Mac can check -- Apple's own Python, the Swift helpers (Touch ID, balances from
-  # MoneyMoney's database), the bridge to MoneyMoney, installing the background service. MoneyMoney itself is not there.
+  # MoneyMoney's database), Kontor's own app, the bridge to MoneyMoney, installing the background service. MoneyMoney itself is
+  # not there.
   mac:
-    name: "macOS · Apples Python · Swift · MoneyMoney-Brücke · Installation"
+    name: "macOS · Apples Python · Swift · Mac-App · MoneyMoney-Brücke · Installation"
     runs-on: macos-15
     timeout-minutes: 20
     env:
@@ -119,6 +120,13 @@ jobs:
         run: |
           swiftc -O -o "$RUNNER_TEMP/touchid" touchid.swift
           swiftc -O -o "$RUNNER_TEMP/mm_history" mm_history.swift
+      - name: Kontor's own app
+        run: |
+          python3 -c "import mac_app, sys; r = mac_app.build(force=True); print(r); sys.exit(r != 'ok')"
+          codesign --verify --deep --strict Kontor.app
+          plutil -lint Kontor.app/Contents/Info.plist Kontor.app/Contents/Resources/*.lproj/InfoPlist.strings
+          test -s Kontor.app/Contents/Resources/AppIcon.icns
+          python3 -c "import mac_app; assert mac_app.build() == 'ok' and mac_app.ready()"     # built once: not again (macOS would ask again)
       - name: MoneyMoney bridge
         run: |
           osacompile -l JavaScript -o "$RUNNER_TEMP/mm_bridge.scpt" mm_bridge.jxa
@@ -137,5 +145,10 @@ jobs:
           security default-keychain -d user -s "$RUNNER_TEMP/ci.keychain-db"
           bash install.sh < /dev/null
           curl -fsS -o /dev/null http://127.0.0.1:8765/ && echo "service answers"
+          # the app shows Kontor, as an app: the page sees the app (and the app's name in the browser's name), the app has the
+          # words of its menu and the theme from the page, the page's printing and Dock badge go to the app
+          out=$(Kontor.app/Contents/MacOS/Kontor --check http://127.0.0.1:8765/) && echo "$out"
+          echo "$out" | python3 -c "import json, sys; d = json.load(sys.stdin); assert d['title'] == 'Kontor' and d['bridge'] and d['shell'] and d['app'] and d['agent'] and d['print'] and d['badge'] and d['dark'], d; assert d['capture'] in ('stream', 'NotFoundError') if d['mic'] == 'granted' else d['capture'] == 'NotAllowedError', d; assert d['menu'] == ['Kontor', 'Ablage', 'Bearbeiten', 'Darstellung', 'Fenster', 'Hilfe'], d"
+          ! Kontor.app/Contents/MacOS/Kontor --check http://127.0.0.1:8766/ && echo "another address refused"
           python3 kontor.py uninstall --yes
           ! curl -fsS -o /dev/null http://127.0.0.1:8765/ 2>/dev/null && echo "service gone"

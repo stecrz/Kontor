@@ -38,6 +38,7 @@ from urllib.parse import parse_qs, urlparse
 
 import auth
 import i18n
+import mac_app
 import mm_categories
 import mm_history
 import realestate
@@ -339,6 +340,8 @@ class App:
         self.mmh: dict = {"running": False, "step": None, "result": None}   # Kontostaende aus MoneyMoney einlesen
         if sys.platform == "darwin":          # Touch-ID-Helfer bei Bedarf (neu) uebersetzen
             threading.Thread(target=lambda: log.info("Touch ID helper: %s", auth.build_touchid()), name="kontor-touchid", daemon=True).start()
+            port = int((self.config.get("ui") or {}).get("port") or 8765)          # Kontor's own app: its address, built if needed
+            threading.Thread(target=lambda: log.info("Mac app: %s", mac_app.prepare(port)), name="kontor-mac-app", daemon=True).start()
         self.restart_allowed = False        # nur der echte Dienst (serve) startet sich bei neuem Code selbst neu
         self.remote_listening: Optional[Tuple[str, str]] = None     # (Schema, Adresse) des Zugangs fuer andere Geraete
         self.remote_error: Optional[str] = None
@@ -1390,6 +1393,7 @@ class App:
         if a is not None:                             # the conversation being answered: not saved again once the folder is gone
             a.delete_chats(everything=True)
         self.assistant_stop()
+        done += mac_app.remove_data()                 # Kontor's own app: its settings, website data and permissions (it quits after the answer)
         foreign, failed = _remove_own_files(data, keep)
         (left if failed else done).append(data)
         key = False
@@ -1429,6 +1433,7 @@ class App:
         try:
             time.sleep(1.5)
             if sys.platform == "darwin":
+                mac_app.remove_data(quit_first=True)         # the app (it may have asked for this) goes now, and what it wrote since
                 job = "gui/%d/%s" % (os.getuid(), updates.LABEL)
                 r = subprocess.run(["launchctl", "bootout", job], capture_output=True, timeout=20)
                 if r.returncode != 0:
@@ -1445,6 +1450,7 @@ class App:
         return {
             "version": version(),
             "webapp": bool((self.config.get("ui") or {}).get("webapp")),          # Kontor opened as an app at the Mac (the setup's step 1)
+            "mac_app": mac_app.state() if loopback and mac_app.supported() else None,       # Kontor's own app on this Mac
             "service": {"started": self.started.strftime("%Y-%m-%d %H:%M"), "running": self.running, "step": self.run_step,
                        "automatic": (self.config.get("schedule") or {}).get("automatic", True),
                        "interval_minutes": (self.config.get("schedule") or {}).get("interval_minutes", 30)},
@@ -2915,6 +2921,13 @@ def make_handler(app: App):
                 return self._json(200, {"ok": True, "files": n})
             if path == "/api/remote":
                 return self._remote_setup(body, local)
+            if path == "/api/mac-app/open":                 # Kontor's own app on this Mac: built if needed, then opened
+                if not local:
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                if mac_app.ready():
+                    return self._json(200, {"ok": mac_app.open_app(), "mac_app": mac_app.state()})
+                threading.Thread(target=lambda: mac_app.build() == "ok" and mac_app.open_app(), name="kontor-mac-app", daemon=True).start()
+                return self._json(200, {"ok": True, "mac_app": dict(mac_app.state(), building=True)})
             if path == "/api/timemachine-exclusion":
                 if not local:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})

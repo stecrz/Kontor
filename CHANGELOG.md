@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.16.42 (2026-11-21 22:03)
+- Eigene Mac-App „Kontor“ statt Safaris Dock-App: macOS fragt nur einmal nach dem Mikrofon, danach nie wieder
+- Mac-App: Menüleiste (⌘, Einstellungen, ⌘P Drucken, Zoom), Downloads in „Downloads“, Abzeichen im Dock, Darstellung wie in Kontor
+- Einstellungen → Allgemein → Als App und Einrichtung Schritt 1: „Mac-App öffnen“
+- Deinstallieren entfernt auch die Daten und Freigaben der Mac-App
+- Entwicklung: GitHub baut und prüft die Mac-App (Kontor laden, Mikrofon ohne Nachfrage)
+
 ## 3.16.41 (2026-11-21 21:56)
 - Entwicklung: Nachtlauf auf 6 Rechnern nebeneinander, je ~3 h neue Zufallsfälle; Anzahl in der Zusammenfassung des Laufs
 

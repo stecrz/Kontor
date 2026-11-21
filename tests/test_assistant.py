@@ -3506,7 +3506,7 @@ class Browser(unittest.TestCase):
                 self.assertTrue(perm.startswith("Mikrofon") and ("Dauerhaft erlaubt" in perm or "Erlauben" in perm or "erlauben" in perm), perm)
                 # the web app in the Dock asks again after a start and a pause, whatever is set: it never says "for good" there
                 note = pg.evaluate("['granted', 'prompt', 'denied'].map(s => asMicNote(s, 'app', false))")
-                self.assertNotIn("Dauerhaft", note[0]["text"]); self.assertIn("Dock-App fragt", note[0]["text"]); self.assertIn("Safari", note[0]["text"])
+                self.assertNotIn("Dauerhaft", note[0]["text"]); self.assertIn("Safari-App im Dock fragt", note[0]["text"]); self.assertIn("eigene Mac-App", note[0]["text"])
                 self.assertTrue(note[1]["ask"]); self.assertEqual(note[2]["pill"], "warn")
                 self.assertIn("Dauerhaft", pg.evaluate("asMicNote('granted', 'safari', false).text"))
                 self.assertNotIn("Dauerhaft", pg.evaluate("asMicNote('granted', 'safari', true).text"))

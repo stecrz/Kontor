@@ -17,6 +17,19 @@ function setLang(l, pending) {
   try { localStorage.setItem('kontor.lang', l); if (pending) localStorage.setItem('kontor.lang.pending', '1'); } catch (e) {}
   if (l !== LANG) location.reload();
 }
+// Kontor's own Mac app (mac_app.swift) around this page: it has no words of its own -- its menu's come from here (sent once
+// the texts are there, below) -- and its window follows the theme
+const SHELL = (() => { try { return !!window.webkit.messageHandlers.kontor; } catch (e) { return false; } })();
+function shellPost(m) {
+  if (!SHELL) return Promise.resolve(null);
+  try { return Promise.resolve(window.webkit.messageHandlers.kontor.postMessage(m)).catch(() => null); } catch (e) { return Promise.resolve(null); }
+}
+const SHELL_MENU = {about: 'mac_m_ueber', settings: 'mac_m_einstellungen', hide: 'mac_m_ausblenden', hideOthers: 'mac_m_andere', showAll: 'mac_m_alle',
+  quit: 'mac_m_beenden', file: 'mac_m_ablage', close: 'mac_m_schliessen', print: 'mac_m_drucken', edit: 'bearbeiten', undo: 'mac_m_widerrufen',
+  redo: 'mac_m_wiederholen', cut: 'mac_m_ausschneiden', copy: 'kopieren', paste: 'mac_m_einsetzen', selectAll: 'mac_m_alles', view: 'mac_m_darstellung',
+  reload: 'mac_m_neu_laden', actualSize: 'mac_m_original', zoomIn: 'mac_m_groesser', zoomOut: 'mac_m_kleiner', fullScreen: 'mac_m_vollbild', window: 'mac_m_fenster',
+  minimize: 'mac_m_dock', zoom: 'mac_m_zoomen', help: 'hilfe', kontorHelp: 'mac_m_kontor_hilfe', ok: 'mac_ok', cancel: 'abbrechen'};
+shellPost({labels: Object.fromEntries(Object.entries(SHELL_MENU).map(([k, v]) => [k, t(v)]))});
 // pages not fully tested yet: usable, but marked "Alpha" in the menu and next to the page title
 const ALPHA_TABS = new Set(['planning', 'properties', 'tax', 'transactions']);
 const alphaTag = (cls = 'alpha-tag') => `<em class="${cls}" title="${t('alpha_tip')}">${t('alpha')}</em>`;
@@ -27,6 +40,7 @@ function applyTheme(v) {
   const dark = v === 'light' ? false : v === 'auto' ? !!(sys && sys.matches) : true;
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = dark ? '#000000' : '#f5f5f7';
+  shellPost({theme: ['light', 'auto'].includes(v) ? v : 'dark'});          // the setting: "auto" lets the Mac app's window follow macOS
 }
 applyTheme(themeGet());
 try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeGet() === 'auto') { applyTheme('auto'); if (S.csrf) route(); } }); } catch (e) {}
@@ -246,7 +260,7 @@ const ICON = {
 // In the web app (Safari: "Add to Dock", iPhone: Home Screen) there is no back and forward -- the menu leads everywhere: a page
 // replaces the one before in the history, so a two-finger swipe has nothing to go back to. In a browser tab each page stays
 // an entry (back works as usual).
-const APP_MODE = (() => { try { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { return false; } })();
+const APP_MODE = SHELL || (() => { try { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { return false; } })();
 // Kontor as an app of its own: Safari makes it itself ("Add to Dock" on the Mac, "Add to Home Screen" on the iPhone) -- no page
 // can do that for it, so the way is shown; Chrome and Edge offer it to the page (beforeinstallprompt), then a button does it
 const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -405,6 +419,7 @@ function printRecolor() {
   } catch (e) {}
 }
 window.addEventListener('beforeprint', () => {
+  if (PRINT.on) return;          // once per print (the Mac app sends it too)
   PRINT.on = true;
   PRINT.theme = document.documentElement.dataset.theme; document.documentElement.dataset.theme = 'light';          // on paper: always light
   if (PRINT.theme !== 'light') printRecolor();
@@ -414,6 +429,7 @@ window.addEventListener('beforeprint', () => {
   h.innerHTML = printHead();
 });
 window.addEventListener('afterprint', () => {
+  if (!PRINT.on) return;
   PRINT.on = false; document.documentElement.style.removeProperty('--print-zoom');
   const was = PRINT.theme; if (was) document.documentElement.dataset.theme = was; PRINT.theme = null; if (was && was !== 'light') printRecolor();
   const h = $('#print-head'); if (h) h.remove();
@@ -1166,7 +1182,7 @@ function vEinrichtung(sub) {
   let h = `<div class="lang-pick"><label for="w-lang" class="small muted">${t('sprache_label')}</label><select id="w-lang">${langOpts()}</select></div>${S.KONTEN.length ? '' : `<div class="note">${t('noch_keine_konten_aus_moneymoney')}</div>`}<div class="setup-list">`;
   MODULES.forEach((m, i) => {
     const ok = m.done();
-    h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? t('eingerichtet') : (m.optional ? t('optional') : t('offen'))}</span></div><div class="d">${m.id === 'webapp' ? webappStep(ok) : esc(m.d)}</div></div><div class="a">${m.id === 'webapp' ? (INSTALL_PROMPT && !ok ? `<button id="webapp-install" class="small">${t('als_app_installieren')}</button>` : '') : `<a href="${m.href}"><button class="small ${ok ? 'secondary' : ''}">${ok ? t('anpassen') : t('einrichten')}</button></a>`}</div></div>`;
+    h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? t('eingerichtet') : (m.optional ? t('optional') : t('offen'))}</span></div><div class="d">${m.id === 'webapp' ? webappStep(ok) : esc(m.d)}</div></div><div class="a">${m.id === 'webapp' ? (!SHELL && macApp() && macApp().ready ? `<button id="mac-app-open" class="small">${t('mac_app_oeffnen')}</button>` : INSTALL_PROMPT && !ok ? `<button id="webapp-install" class="small">${t('als_app_installieren')}</button>` : '') : `<a href="${m.href}"><button class="small ${ok ? 'secondary' : ''}">${ok ? t('anpassen') : t('einrichten')}</button></a>`}</div></div>`;
   });
   h += '</div>';
   const miss = setupMissing(), close = setupOpen()
@@ -5535,8 +5551,14 @@ function vEinstellungenAllgemein() {
     <label>${t('als_app')}${hq('als_app')}</label><div class="chk" id="webapp-row">${webappRow()}</div>
   </div>`;          // both take effect at once (no save button)
 }
-// Kontor as an app: running as one, a button (Chrome, Edge), or the way in Safari -- on the Mac and on the iPhone
+// Kontor as an app: running as one; at the Mac Kontor's own app (built there, mac_app.py) -- else a button (Chrome, Edge) or
+// the way in Safari (the iPhone, or without the Mac app)
+const macApp = () => { const m = !IS_IOS && (S.STATUS || {}).local ? (S.STATUS || {}).mac_app : null; return m && (m.ready || m.building) ? m : null; };
 function webappRow() {
+  const m = macApp();
+  if (SHELL) return `<span class="pill ok">${t('als_app_laeuft')}</span>`;
+  if (m) return m.ready ? `<button id="mac-app-open" class="small">${t('mac_app_oeffnen')}</button>${APP_MODE ? ` <span class="small muted">${t('mac_app_statt_safari')}</span>` : ''}`
+    : `<span class="small muted">${t('mac_app_baut')}</span>`;
   if (APP_MODE) return `<span class="pill ok">${t('als_app_laeuft')}</span>`;
   if (INSTALL_PROMPT) return `<button id="webapp-install" class="small">${t('als_app_installieren')}</button>`;
   const how = t(IS_IOS ? 'als_app_iphone' : IS_SAFARI ? 'als_app_safari' : 'als_app_anderer');
@@ -5544,6 +5566,8 @@ function webappRow() {
 }
 // step 1 of the setup: what to do here and now -- create the app, open it, go on there
 function webappStep(ok) {
+  if (SHELL) return esc(t('mod_webapp_d'));
+  if (macApp()) return esc(t(macApp().ready ? 'webapp_schritt_mac' : 'mac_app_baut'));
   if (APP_MODE) return esc(t('mod_webapp_d'));
   if (IS_IOS) return esc(t('webapp_schritt_iphone'));
   if (ok) return esc(t('webapp_schritt_fertig'));
@@ -5556,6 +5580,12 @@ async function webappSeen() {
   const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.ui = Object.assign({}, cfg.ui, {webapp: true});
   try { const r = await api('/api/config', {config: cfg, anyway: true}, 'PUT'); S.CFG = r.config; } catch (e) {}
 }
+document.addEventListener('click', async e => {
+  const b = e.target.closest && e.target.closest('#mac-app-open'); if (!b) return;
+  b.disabled = true;
+  try { const r = await api('/api/mac-app/open', {}); if (S.STATUS && r.mac_app) S.STATUS.mac_app = r.mac_app; } catch (x) { toast(x.message, 6000); }
+  b.disabled = false; webappDraw();
+});
 document.addEventListener('click', async e => {
   if (!e.target.closest('#webapp-install') || !INSTALL_PROMPT) return;
   const p = INSTALL_PROMPT; INSTALL_PROMPT = null;
@@ -7001,27 +7031,35 @@ function asCancel() {
   else if (REC.busy) { REC.drop = true; asDictPut(''); }          // the text still on its way: not taken
 }
 // The microphone may be used without asking each time only as the user sets it -- a page cannot give itself that right. Safari:
-// "Allow" per website lasts. The web app in the Dock: macOS keeps only the app's own permission; the page's grant lives while
-// the app runs and ends 10 minutes after the last recording (WebKit), so it asks again -- nothing there makes that last.
+// "Allow" per website lasts. Safari's web app in the Dock: macOS keeps only the app's own permission; the page's grant lives
+// while the app runs and ends 10 minutes after the last recording (WebKit), so it asks again -- nothing there makes that last.
+// Kontor's own Mac app gives it to this page itself: macOS asks once, for the app.
 // Under Einstellungen -> KI-Assistent, with the speech model: what holds, where to allow it, a button that asks once.
 function asMicNote(state, where, asked) {
-  const how = {ios: t('ki_mikro_weg_ios'), app: t('ki_mikro_weg_app'), safari: t('ki_mikro_weg_safari', location.hostname), browser: t('ki_mikro_weg_browser')}[where];
+  const how = {ios: t('ki_mikro_weg_ios'), app: t('ki_mikro_weg_app'), shell: t('ki_mikro_weg_app'), safari: t('ki_mikro_weg_safari', location.hostname), browser: t('ki_mikro_weg_browser')}[where];
   if (state === 'denied') return {pill: 'warn', label: t('ki_mikro_gesperrt'), text: how};
-  if (state === 'granted' && where === 'app') return {pill: 'ok', label: t('ki_mikro_erlaubt'), text: t('ki_mikro_app_fragt', location.hostname)};
+  if (where === 'shell') return state === 'granted' ? {pill: 'ok', label: t('ki_mikro_erlaubt'), text: t('ki_mikro_dauerhaft')} : {ask: true, text: t('ki_mikro_app_einmal')};
+  if (state === 'granted' && where === 'app') return {pill: 'ok', label: t('ki_mikro_erlaubt'), text: t('ki_mikro_app_fragt')};
   if (state === 'granted' && !asked) return {pill: 'ok', label: t('ki_mikro_erlaubt'), text: t('ki_mikro_dauerhaft')};    // before anything asked on this page: for good
   return {ask: state !== 'granted', text: (state === 'granted' ? t('ki_mikro_sitzung') + ' ' : '') + how};
 }
 async function asMicPerm() {
   const box = $('#as-mic-perm'); if (!box) return;
-  let st = null;
-  try { st = await navigator.permissions.query({name: 'microphone'}); } catch (e) {}
+  let st = null, state = '';
+  if (SHELL) state = (await shellPost({mic: 'state'})) || '';          // the Mac app: macOS's permission for it
+  else { try { st = await navigator.permissions.query({name: 'microphone'}); } catch (e) {} state = st ? st.state : ''; }
   const ua = navigator.userAgent, safari = /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|Firefox/.test(ua);
-  const n = asMicNote(st ? st.state : '', IS_IOS ? 'ios' : APP_MODE ? 'app' : safari ? 'safari' : 'browser', REC.asked);
+  const n = asMicNote(state, SHELL ? 'shell' : IS_IOS ? 'ios' : APP_MODE ? 'app' : safari ? 'safari' : 'browser', REC.asked);
   box.className = 'as-item';
   box.innerHTML = `<span><b>${t('ki_mikrofon')}</b><br><span class="muted small">${esc(n.text)}</span></span>
     <span class="as-act">${n.pill ? `<span class="pill ${n.pill}">${n.label}</span>` : n.ask ? `<button class="small secondary" id="as-mic-ask">${t('ki_mikro_freigeben')}</button>` : ''}</span>`;
   const b = $('#as-mic-ask', box);
-  if (b) b.addEventListener('click', async () => { REC.asked = true; try { const m = await navigator.mediaDevices.getUserMedia({audio: true}); m.getTracks().forEach(x => x.stop()); } catch (e) {} asMicPerm(); });
+  if (b) b.addEventListener('click', async () => {
+    REC.asked = true;
+    if (SHELL) await shellPost({mic: 'ask'});
+    else { try { const m = await navigator.mediaDevices.getUserMedia({audio: true}); m.getTracks().forEach(x => x.stop()); } catch (e) {} }
+    asMicPerm();
+  });
   if (st && !st.onchange) st.onchange = () => asMicPerm();
 }
 async function asMic() {

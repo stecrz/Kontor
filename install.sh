@@ -4,7 +4,7 @@
 #   bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/install.sh)
 #
 # Laedt Kontor nach ~/Applications/Kontor (der Programme-Ordner des Benutzers; git, ohne git als ZIP), richtet den Hintergrunddienst ein (startet beim Anmelden),
-# uebersetzt den Touch-ID-Helfer und oeffnet die Oberflaeche. Jederzeit wiederholbar; Einstellungen und Daten bleiben.
+# uebersetzt den Touch-ID-Helfer, baut Kontors eigene App (Kontor.app) und oeffnet sie. Jederzeit wiederholbar; Einstellungen und Daten bleiben.
 # Im Programmordner aufgerufen (bash install.sh) wird nichts geladen, nur eingerichtet.
 # Variablen: KONTOR_HOME (Zielordner), KONTOR_REPO (Standard stecrz/Kontor), KONTOR_REF (Zweig, Standard main).
 set -euo pipefail
@@ -53,7 +53,7 @@ cat <<TXT
 
 Fertig. Kontor laeuft dauerhaft unter http://127.0.0.1:8765/
 Dort zuerst ein Passwort festlegen, dann fuehrt die Einrichtung Schritt fuer Schritt weiter.
-Als eigene App im Dock: in Safari Ablage -> Zum Dock hinzufuegen.
+Kontor als eigene App: Kontor.app im Programmordner (oeffnet sich jetzt) -- im Dock: rechte Maustaste, Optionen -> Im Dock behalten.
 Fragt macOS, ob Kontor MoneyMoney steuern darf: bitte erlauben.
 Entfernen: Doppelklick auf Uninstall.command im Programmordner (oder in Kontor unter Einstellungen -> Sicherung).
 TXT

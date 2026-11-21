@@ -36,6 +36,16 @@ from tax import build_tax  # noqa: E402
 TODAY = date(2026, 11, 4)
 
 
+def until(pg, js, seconds=15.0):
+    """Waits for a state of the page (never a fixed time; asked from here: the page's rules allow no evaluating of strings)."""
+    t0 = time.time()
+    while time.time() - t0 < seconds:
+        if pg.evaluate(js):
+            return
+        pg.wait_for_timeout(80)
+    raise AssertionError("not reached: " + js)
+
+
 def wait_shell(pg, timeout=30000):
     """Wait for the app after login; on timeout report what the login page shows (flaky timeouts under load)."""
     try:
@@ -4660,6 +4670,176 @@ class WebAppTest(unittest.TestCase):
                 pg3.goto("http://127.0.0.1:%d/" % port)
                 pg3.fill("#login-pw", "sehr-geheimes-passwort"); pg3.click("#login-btn"); wait_shell(pg3); pg3.wait_for_timeout(300)
                 self.assertNotEqual(pg3.evaluate("location.hash"), "#setup")
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            app.stop.set()
+            shutil.rmtree(d, ignore_errors=True)
+
+
+class MacAppTests(_AppBase):
+    """Kontor's own Mac app (mac_app.py, mac_app.swift): what goes into it stays the same from one Kontor version to the next
+    (a new build is a new app to macOS -- it would ask for the microphone again); the service opens it only for this Mac."""
+
+    def test_what_goes_into_the_app(self):
+        import mac_app
+        pl = mac_app.info_plist()
+        self.assertIn("<string>local.kontor.app</string>", pl); self.assertIn("NSMicrophoneUsageDescription", pl)
+        self.assertIn("nur zum Diktieren", pl); self.assertIn("NSDownloadsFolderUsageDescription", pl)
+        self.assertNotIn(updates.current_version(), pl)                            # no Kontor version: an update is no new app
+        self.assertIn('"NSMicrophoneUsageDescription" = "Kontor uses the microphone only', mac_app.strings("en"))
+        self.assertTrue(mac_app.strings("de").endswith(";\n"))
+        before = mac_app.inputs()
+        self.assertEqual(before, mac_app.inputs())
+        with mock.patch.object(mac_app, "SRC", os.path.join(self.dir, "other.swift")):
+            self.assertNotEqual(before, mac_app.inputs())                          # its code changed: built again
+        with mock.patch.object(mac_app, "supported", lambda: False):
+            self.assertEqual(mac_app.build(force=True), "nicht macOS"); self.assertFalse(mac_app.open_app())
+        self.assertEqual(mac_app.remove_data() if sys.platform != "darwin" else [], [])
+
+    def test_a_failed_build_leaves_the_app(self):
+        import mac_app
+        app = os.path.join(self.dir, "Kontor.app")
+        os.makedirs(os.path.join(app, "Contents", "MacOS")); open(os.path.join(app, "Contents", "MacOS", "Kontor"), "w").close()
+        failed = mock.Mock(returncode=1, stderr="error: nope", stdout="")
+        with mock.patch.dict(mac_app._state, {"building": False, "error": ""}), mock.patch.object(mac_app, "supported", lambda: True), mock.patch.object(mac_app, "HERE", self.dir), \
+                mock.patch.object(mac_app, "APP", app), mock.patch.object(mac_app, "STAMP", os.path.join(self.dir, ".stamp")), \
+                mock.patch.object(mac_app, "LOCKFILE", os.path.join(self.dir, ".lock")), mock.patch.object(mac_app, "_icon", lambda res, tmp: None), \
+                mock.patch.object(mac_app.subprocess, "run", lambda *a, **k: failed):
+            self.assertIn("nope", mac_app.build(force=True))
+            self.assertTrue(os.path.isfile(os.path.join(app, "Contents", "MacOS", "Kontor")))          # the old app stays as it was
+            self.assertFalse(mac_app.state()["building"]); self.assertIn("nope", mac_app.state()["error"])
+            self.assertEqual([n for n in os.listdir(self.dir) if n.startswith(".mac-app-")], [])     # nothing half-built left
+            with mock.patch.object(mac_app.tempfile, "mkdtemp", mock.Mock(side_effect=PermissionError("no room"))):
+                self.assertIn("no room", mac_app.build(force=True))                                 # an error early on: told, not thrown
+                self.assertFalse(mac_app.state()["building"])
+
+    def test_uninstall_removes_only_the_apps_own_places(self):
+        import mac_app
+        home = os.path.join(self.dir, "home"); other = os.path.join(self.dir, "other")
+        os.makedirs(os.path.join(home, "Library", "WebKit", "local.kontor.app", "WebsiteData")); os.makedirs(other)
+        os.makedirs(os.path.join(home, "Library", "Caches")); os.makedirs(os.path.join(home, "Library", "WebKit", "com.apple.Safari"))
+        os.symlink(other, os.path.join(home, "Library", "Caches", "local.kontor.app"))           # a link: removed as a link, its target stays
+        with mock.patch.dict(os.environ, {"HOME": home}), mock.patch.object(mac_app, "supported", lambda: True), \
+                mock.patch.object(mac_app.subprocess, "run", lambda *a, **k: mock.Mock(returncode=0, stdout="", stderr="")):
+            done = mac_app.remove_data()
+        self.assertEqual(sorted(os.path.relpath(p, home) for p in done), ["Library/Caches/local.kontor.app", "Library/WebKit/local.kontor.app"])
+        self.assertTrue(os.path.isdir(other)); self.assertTrue(os.path.isdir(os.path.join(home, "Library", "WebKit", "com.apple.Safari")))
+
+    def test_open_from_this_mac_only(self):
+        import mac_app
+        import service as MA
+        self.login()
+        opened, built = [], []
+        with mock.patch.object(mac_app, "supported", lambda: False):
+            self.assertIsNone(self.call("/api/status")[1].get("mac_app"))          # not a Mac: nothing about it
+        with mock.patch.object(mac_app, "supported", lambda: True), mock.patch.object(mac_app, "ready", lambda: True), \
+                mock.patch.object(mac_app, "open_app", lambda: opened.append(1) or True):
+            self.assertEqual(self.call("/api/status")[1]["mac_app"], {"ready": True, "building": False, "error": ""})
+            code, r = self.call("/api/mac-app/open", {})
+            self.assertEqual((code, r["ok"], opened), (200, True, [1]))
+            orig = MA.auth.is_loopback
+            MA.auth.is_loopback = lambda remote: False
+            cfg = copy.deepcopy(self.app.config); cfg.setdefault("ui", {})["remote_read_only"] = False; self.app.save_config(cfg)
+            try:                                                                    # from the iPhone (changes allowed there): no app opens on the Mac
+                code, r = self.call("/api/mac-app/open", {})
+                self.assertEqual((code, r["error"]), (403, "Nur von diesem Mac aus möglich."))
+                self.assertIsNone(self.call("/api/status")[1].get("mac_app"))
+            finally:
+                MA.auth.is_loopback = orig
+            self.assertEqual(opened, [1])
+        # not built yet: built first (in the background), then opened
+        with mock.patch.object(mac_app, "supported", lambda: True), mock.patch.object(mac_app, "ready", lambda: bool(built)), \
+                mock.patch.object(mac_app, "build", lambda force=False: built.append(1) or "ok"), mock.patch.object(mac_app, "open_app", lambda: opened.append(2) or True):
+            code, r = self.call("/api/mac-app/open", {})
+            self.assertEqual((code, r["mac_app"]["building"]), (200, True))
+            for _ in range(50):
+                if 2 in opened:
+                    break
+                time.sleep(0.05)
+            self.assertEqual((built, opened), ([1], [1, 2]))
+
+
+class MacAppBrowserTest(unittest.TestCase):
+    """The interface with Kontor's own Mac app: in the browser and in Safari's web app a button opens it; inside it Kontor
+    runs as an app, gives it the words of its menu and its theme, the microphone is macOS's once-only permission; printing
+    there sends its own before/after steps -- each counts once."""
+
+    def test_mac_app_in_the_interface(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        import mac_app
+        d = tempfile.mkdtemp(prefix="kontor-macapp-")
+        key, src = load_or_create_master_key(d)
+        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        app.do_run(False, True)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        opened = []
+        shell = """window.__shell = []; window.webkit = {messageHandlers: {kontor: {postMessage: m => {
+            window.__shell.push(m); return Promise.resolve(m.mic ? (window.__mic || 'prompt') : true); }}}};"""
+        standalone = """(() => { const mm = window.matchMedia.bind(window);
+            window.matchMedia = q => /display-mode:\\s*standalone/.test(q) ? {matches: true, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}} : mm(q); })();"""
+        try:
+            with mock.patch.object(mac_app, "supported", lambda: True), mock.patch.object(mac_app, "ready", lambda: True), \
+                    mock.patch.object(mac_app, "open_app", lambda: opened.append(1) or True), sync_playwright() as p:
+                b = p.chromium.launch()
+                errors = []
+                pg = b.new_page(viewport={"width": 1440, "height": 900}); pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto("http://127.0.0.1:%d/" % port)
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                wait_shell(pg)
+                # in the browser: the button, in the setup's step 1 and under Einstellungen -> Allgemein
+                pg.evaluate("location.hash = '#setup'"); pg.wait_for_selector(".srow #mac-app-open")
+                self.assertIn("Mac-App öffnen – im Dock mit rechter Maustaste", pg.query_selector(".srow").inner_text())
+                pg.evaluate("location.hash = '#settings'"); pg.wait_for_selector("#webapp-row #mac-app-open")
+                self.assertEqual(pg.inner_text("#webapp-row"), "Mac-App öffnen")
+                pg.click("#mac-app-open"); until(pg, "!document.querySelector('#mac-app-open').disabled")
+                self.assertEqual(opened, [1])
+                self.assertFalse(pg.evaluate("SHELL"))
+                # in Safari's web app: the button too, with why
+                pg2 = b.new_page(viewport={"width": 1440, "height": 900}); pg2.add_init_script(standalone); pg2.on("pageerror", lambda e: errors.append(str(e)))
+                pg2.goto("http://127.0.0.1:%d/#settings" % port)
+                pg2.fill("#login-pw", "sehr-geheimes-passwort"); pg2.click("#login-btn"); wait_shell(pg2)
+                pg2.evaluate("location.replace('#settings')"); pg2.wait_for_selector("#webapp-row #mac-app-open")
+                self.assertIn("statt der Safari-App im Dock", pg2.inner_text("#webapp-row"))
+                self.assertIn("Kontors eigene Mac-App", pg2.evaluate("asMicNote('granted', 'app', false).text"))
+                # inside the Mac app: an app; the words of its menu (none of its own) and the theme go to it
+                pg3 = b.new_page(viewport={"width": 1440, "height": 900}); pg3.add_init_script(shell); pg3.on("pageerror", lambda e: errors.append(str(e)))
+                pg3.goto("http://127.0.0.1:%d/" % port)
+                labels = pg3.evaluate("(window.__shell.find(m => m.labels) || {}).labels")
+                self.assertEqual(set(labels), {"about", "settings", "hide", "hideOthers", "showAll", "quit", "file", "close", "print", "edit", "undo", "redo",
+                                               "cut", "copy", "paste", "selectAll", "view", "reload", "actualSize", "zoomIn", "zoomOut", "fullScreen",
+                                               "window", "minimize", "zoom", "help", "kontorHelp", "ok", "cancel"})
+                self.assertTrue(all(v and not v.startswith("mac_") for v in labels.values()), labels)
+                self.assertEqual((labels["quit"], labels["cancel"]), ("Kontor beenden", "Abbrechen"))
+                self.assertEqual(pg3.evaluate("window.__shell.filter(m => m.theme).map(m => m.theme)"), ["dark"])
+                pg3.fill("#login-pw", "sehr-geheimes-passwort"); pg3.click("#login-btn"); wait_shell(pg3)
+                self.assertTrue(pg3.evaluate("SHELL && APP_MODE"))
+                pg3.evaluate("location.replace('#settings')"); pg3.wait_for_selector("#webapp-row .pill")
+                self.assertEqual(pg3.inner_text("#webapp-row"), "Läuft als App")
+                pg3.select_option("#e-theme", "light"); until(pg3, "window.__shell.some(m => m.theme === 'light')")
+                pg3.select_option("#e-theme", "auto"); until(pg3, "window.__shell.some(m => m.theme === 'auto')")          # like macOS: the window follows it
+                # the microphone there: macOS's permission for the app -- asked once, then for good
+                self.assertEqual(pg3.evaluate("asMicNote('prompt', 'shell', false)"), {"ask": True, "text": "macOS fragt einmal – danach nie wieder."})
+                self.assertIn("Dauerhaft erlaubt", pg3.evaluate("asMicNote('granted', 'shell', true).text"))
+                self.assertEqual(pg3.evaluate("asMicNote('denied', 'shell', false).pill"), "warn")
+                pg3.evaluate("""document.body.insertAdjacentHTML('beforeend', '<div id="as-mic-perm"></div>'); asMicPerm()""")
+                pg3.wait_for_selector("#as-mic-perm #as-mic-ask")
+                pg3.evaluate("window.__mic = 'granted'"); pg3.click("#as-mic-perm #as-mic-ask")
+                until(pg3, "document.querySelector('#as-mic-perm').innerText.includes('Dauerhaft erlaubt')")
+                self.assertEqual(pg3.evaluate("window.__shell.filter(m => m.mic).map(m => m.mic)")[-2:], ["ask", "state"])
+                # printing: the app's own before/after print around macOS's dialog -- with the browser's own as well, each once
+                pg3.evaluate("localStorage.setItem('kontor.theme', 'dark'); applyTheme('dark')")
+                pg3.evaluate("window.dispatchEvent(new Event('beforeprint')); window.dispatchEvent(new Event('beforeprint'))")
+                self.assertEqual(pg3.evaluate("document.documentElement.dataset.theme"), "light")
+                pg3.evaluate("window.dispatchEvent(new Event('afterprint')); window.dispatchEvent(new Event('afterprint'))")
+                self.assertEqual(pg3.evaluate("[document.documentElement.dataset.theme, PRINT.on]"), ["dark", False])
                 self.assertEqual(errors, [])
                 b.close()
         finally:

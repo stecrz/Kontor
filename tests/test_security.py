@@ -645,7 +645,8 @@ class NothingGoesOut(unittest.TestCase):
     NAMES_ONLY = {"schemas.openxmlformats.org", "www.apple.com"}      # ... and names of file formats (never opened)
     # other programs started by their name (all of macOS or Apple's tools, git for an update of a clone)
     COMMANDS = {"security", "openssl", "swiftc", "codesign", "open", "launchctl", "/bin/launchctl", "/usr/sbin/sysctl", "ps", "pgrep", "tmutil",
-                "osascript", "/usr/bin/osascript", "xcode-select", "git", "/bin/sh"}
+                "osascript", "/usr/bin/osascript", "xcode-select", "git", "/bin/sh",
+                "sips", "iconutil", "defaults", "tccutil"}          # Kontor's own Mac app: its icon, its address, gone on uninstall
     # ... and by a path Kontor made up itself (its Touch ID helper, the password window, llama.cpp, Tailscale's own tool, lsof)
     COMMANDS_BY_PATH = {"auth.py", "mm_history.py", "llm_local.py", "tls_cert.py"}
     # where links on the pages lead (opened by you, in a new window; the pages themselves only talk to Kontor)
@@ -722,6 +723,26 @@ class NothingGoesOut(unittest.TestCase):
         self.assertEqual(odd, [])
         self.assertEqual(names - self.COMMANDS, set(), "a program started by name that is not in NothingGoesOut.COMMANDS")
         self.assertEqual(by_path, self.COMMANDS_BY_PATH, "a program started by a path: name the part in NothingGoesOut.COMMANDS_BY_PATH")
+
+    def test_the_mac_app_shows_kontor_only(self):
+        """Kontor's own Mac app (mac_app.swift): Kontor's address on this Mac only, nothing it fetches itself, no other program;
+        the microphone only for Kontor's own page (its address, the main frame); every other address goes to the browser; the
+        page's messages count only from Kontor's own page."""
+        with open(os.path.join(ROOT, "mac_app.swift"), encoding="utf-8") as f:
+            src = f.read()
+        code = "\n".join(line for line in src.splitlines() if not line.lstrip().startswith("//"))
+        self.assertEqual({h.lower() for h in self.HOST.findall(code)}, {"127.0.0.1"})
+        self.assertEqual(re.findall(r"URLSession|NSURLConnection|CFNetwork|Process\(|NSTask|\bsystem\(|posix_spawn|isInspectable|developerExtras", code), [])
+        self.assertIn('u.scheme == "http", u.host == "127.0.0.1"', code)                               # its address: only ever this Mac
+        self.assertIn("guard URL(string: c) == home else", code)                                       # the test mode too: Kontor's address only
+        self.assertIn("frame.isMainFrame && isHome(origin) && isHome(webView.url) && type == .microphone ? .grant : .deny", code)
+        nav = code[code.index("decidePolicyForNavigationAction"):code.index("decidePolicyForNavigationResponse")]
+        self.assertIn("decisionHandler(.cancel)", nav); self.assertIn("openOutside(u)", nav)          # anything else: the browser, never in here
+        self.assertIn("decisionHandler(mine ? .download : .cancel)", nav)                              # downloads: Kontor's own only
+        pop = code[code.index("createWebViewWithConfiguration"):code.index("webViewDidClose")]
+        self.assertIn("guard isHome(u) else { openOutside(u); return nil }", pop)
+        msg = code[code.index("func userContentController"):]
+        self.assertIn("guard message.frameInfo.isMainFrame, isHome(message.frameInfo.securityOrigin)", msg)
 
     def test_the_pages_talk_to_kontor_only(self):
         for path in sorted(glob.glob(os.path.join(ROOT, "web", "*"))):

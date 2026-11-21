@@ -158,7 +158,13 @@ def ui_url(cfg: dict) -> str:
 
 def cmd_oeffnen(args) -> int:
     store = open_store()
-    subprocess.run(["open", ui_url(load_config(store))])
+    cfg = load_config(store)
+    import mac_app
+    if mac_app.ready():                         # Kontor's own app on this Mac, else the browser
+        mac_app.set_address(ui_port(cfg))
+        if mac_app.open_app():
+            return 0
+    subprocess.run(["open", ui_url(cfg)])
     return 0
 
 
@@ -219,6 +225,12 @@ def cmd_install(args) -> int:
     if not store.load("auth.json", None):
         print(tr("s_noch_kein_passwort_wird_beim"))
     print(tr("s_touchid_helfer") % build_touchid())
+    import mac_app
+    mac_app.set_address(ui_port(cfg))
+    try:                                        # Kontor's own app: a failed build stops nothing (the browser still works)
+        print(tr("s_mac_app") % mac_app.build())
+    except Exception as e:
+        print(tr("s_mac_app") % e)
     plist = {
         "Label": LAUNCHD_LABEL,
         "ProgramArguments": [sys.executable, os.path.join(HERE, "kontor.py"), "--quiet", "start"],
@@ -342,6 +354,9 @@ def cmd_uninstall(args) -> int:
         print(tr("deinstall_fremd", DATA_DIR, ", ".join(r["foreign"])))
     if r.get("kept"):
         print(tr("deinstall_geblieben", ", ".join(r["kept"])))
+    if sys.platform == "darwin":            # Kontor's own app: quits; what it wrote while this ran goes too
+        import mac_app
+        mac_app.remove_data(quit_first=True)
     if sys.platform == "darwin":            # macOS keeps the automation permissions (MoneyMoney, System Events); only tccutil removes them
         print(tr("s_freigaben_entfernen"))
     return 0
