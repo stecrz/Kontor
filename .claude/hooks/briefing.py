@@ -1,7 +1,7 @@
 """Briefing for the parallel chats (SessionStart and UserPromptSubmit hook; by hand: python3 .claude/hooks/briefing.py):
 what the other chats have published on main since this clone last looked -- versions, files touched, overlap with this
 clone's own work, and the state of the tests on GitHub. It only reads from GitHub; locally it fast-forwards a clone that
-has nothing of its own, and touches nothing else. As a hook it says nothing while nothing changed, and never blocks: any
+has nothing of its own and turns on the push check (.githooks/pre-push), and touches nothing else. As a hook it says nothing while nothing changed, and never blocks: any
 failure ends silently."""
 import json
 import os
@@ -104,6 +104,8 @@ def main() -> int:
             pass
     if git("rev-parse", "--git-dir")[0] != 0:
         return 0
+    if os.path.isfile(os.path.join(ROOT, ".githooks", "pre-push")) and git("config", "core.hooksPath")[1] != ".githooks":
+        git("config", "core.hooksPath", ".githooks")     # the push check against undoing other chats' versions
     shallow = git("rev-parse", "--is-shallow-repository")[1] == "true"
     fetched = git("fetch", "-q", *(["--depth=50"] if shallow else []), "origin", "main", timeout=20)[0] == 0
     code, remote = git("rev-parse", "origin/main")

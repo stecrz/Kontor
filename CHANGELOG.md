@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.24 (2026-11-21 18:12)
+- Entwicklung: Push-Sperre – eine Version auf veraltetem Stand kann fremde Versionen nicht mehr löschen
+
 ## 3.16.23 (2026-11-21 17:55)
 - KI-Assistent: antwortet ab Werk kurz, direkt und inhaltsdicht – widerspricht mit Begründung, ohne Floskeln, Fachwörter kurz erklärt
 - KI-Assistent: Denkaufwand mit klarer Bedeutung – Schnell: ohne Nachdenken, Ausgewogen: bis 2.000 Token je Antwort, Gründlich: ohne Grenze; in den Einstellungen mit geschätzter Zeit

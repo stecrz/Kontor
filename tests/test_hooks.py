@@ -1,6 +1,6 @@
-"""The briefing every chat gets about the other chats' work (.claude/hooks/briefing.py), on throwaway repositories:
-it lists what is new on main, fast-forwards only a clone with nothing of its own, names overlapping files, and stays
-silent while nothing changed."""
+"""The briefing every chat gets about the other chats' work (.claude/hooks/briefing.py) and the push check it turns on
+(.githooks/pre-push), on throwaway repositories: it lists what is new on main, fast-forwards only a clone with nothing of
+its own, names overlapping files, stays silent while nothing changed -- and a version squashed onto a stale main is refused."""
 import os
 import shutil
 import subprocess
@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".claude", "hooks", "briefing.py")
+PRE_PUSH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".githooks", "pre-push")
 ENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t", GIT_COMMITTER_NAME="t",
            GIT_COMMITTER_EMAIL="t", GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull)
 
@@ -35,18 +36,26 @@ class Briefing(unittest.TestCase):
         self.git(d, "checkout", "-q", "-B", "main")
         os.makedirs(os.path.join(d, ".claude", "hooks"))
         shutil.copy(HOOK, os.path.join(d, ".claude", "hooks", "briefing.py"))
+        os.makedirs(os.path.join(d, ".githooks"))
+        shutil.copy(PRE_PUSH, os.path.join(d, ".githooks", "pre-push"))
         with open(os.path.join(d, ".git", "info", "exclude"), "a") as f:
-            f.write(".claude/\n")
+            f.write(".claude/\n.githooks/\n")
         return d
 
-    def publish(self, d, version, subject, files):
-        for name, text in dict(files, VERSION=version + "\n", **{"CHANGELOG.md": version + "\n"}).items():
+    def publish(self, d, version, subject, files, push=True):
+        try:
+            with open(os.path.join(d, "CHANGELOG.md")) as f:
+                log = f.read()
+        except OSError:
+            log = ""
+        for name, text in dict(files, VERSION=version + "\n", **{"CHANGELOG.md": "%s %s\n%s" % (version, subject, log)}).items():
             os.makedirs(os.path.dirname(os.path.join(d, name)) or d, exist_ok=True)
             with open(os.path.join(d, name), "w") as f:
                 f.write(text)
         self.git(d, "add", "-A")
         self.git(d, "commit", "-q", "-m", "%s: %s" % (version, subject), "-m", "Claude Test: https://claude.ai/code/session_01ABCDwxyz")
-        self.git(d, "push", "-q", "origin", "HEAD:main")
+        if push:
+            return subprocess.run(["git", "push", "-q", "origin", "HEAD:main"], cwd=d, env=ENV, capture_output=True, text=True)
 
     def briefing(self, d, *args):
         r = subprocess.run([sys.executable, os.path.join(d, ".claude", "hooks", "briefing.py")] + list(args), cwd=d, env=ENV,
@@ -91,6 +100,33 @@ class Briefing(unittest.TestCase):
         self.assertIn("1.0.1: sharper charts", out); self.assertIn("1.0.2: more", out)
         self.assertIn("Überschneidung mit deiner Arbeit: web/app.js –", out)
         self.assertEqual(self.git(self.a, "log", "-1", "--format=%s"), "wip")
+
+    def test_push_from_a_stale_main_is_refused(self):
+        self.briefing(self.a, "hook")                                               # turns the push check on
+        self.assertEqual(self.git(self.a, "config", "core.hooksPath"), ".githooks")
+        self.assertEqual(self.publish(self.b, "1.0.1", "sharper charts", {"report.py": "x = 1\n"}).returncode, 0)
+        # a squashes its work onto the newer main without rebasing: b's version would be gone
+        self.publish(self.a, "1.0.1", "mine", {"tax.py": "mine\n"}, push=False)
+        self.git(self.a, "fetch", "-q", "origin", "main")
+        self.git(self.a, "reset", "-q", "--soft", "origin/main")
+        self.git(self.a, "commit", "-q", "-m", "1.0.2: mine")
+        r = subprocess.run(["git", "push", "-q", "origin", "HEAD:main"], cwd=self.a, env=ENV, capture_output=True, text=True)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("Push nach main abgelehnt", r.stderr)
+        self.assertIn("VERSION 1.0.1 ist nicht höher als 1.0.1", r.stderr)
+        self.assertIn("CHANGELOG.md verliert 1 Zeile(n) von main, etwa: 1.0.1 sharper charts", r.stderr)
+        self.assertEqual(self.git(self.b, "ls-remote", "origin", "main").split()[0], self.git(self.b, "rev-parse", "HEAD"))
+        # done the right way -- on top of main, the next number -- it goes through
+        self.git(self.a, "reset", "-q", "--hard", "origin/main")
+        r = self.publish(self.a, "1.0.2", "mine", {"tax.py": "mine\n"})
+        self.assertEqual((r.returncode, r.stderr), (0, ""))
+        # a deliberate exception still possible
+        with open(os.path.join(self.a, "CHANGELOG.md"), "w") as f:
+            f.write("1.0.3 typo fixed\n")
+        self.git(self.a, "commit", "-q", "-am", "1.0.3: typo")
+        self.assertNotEqual(subprocess.run(["git", "push", "-q", "origin", "HEAD:main"], cwd=self.a, env=ENV, capture_output=True).returncode, 0)
+        r = subprocess.run(["git", "push", "-q", "origin", "HEAD:main"], cwd=self.a, env=dict(ENV, KONTOR_PUSH_OK="1"), capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_never_fails_outside_a_repository(self):
         d = os.path.join(self.dir, "plain"); os.makedirs(os.path.join(d, ".claude", "hooks"))

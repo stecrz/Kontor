@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""Refuses a push to main that would undo another chat's version (git pre-push hook; the briefing turns it on in every
+clone with `git config core.hooksPath .githooks`). A version built on a stale main shows itself in two files every
+version touches: VERSION is not above the one on main, or CHANGELOG.md loses a line main has -- both happened when a chat
+squashed its work onto a newer main without rebasing (3.16.9, 3.16.21), and the other chats' changes were gone.
+Only main is checked; KONTOR_PUSH_OK=1 lets a deliberate exception through (e.g. a typo fixed in an old entry)."""
+import os
+import re
+import subprocess
+import sys
+
+ZERO = "0" * 40
+
+
+def git(*args):
+    r = subprocess.run(["git"] + list(args), capture_output=True, text=True)
+    return r.returncode, r.stdout
+
+
+def version(sha):
+    code, out = git("show", "%s:VERSION" % sha)
+    m = re.match(r"\s*v?(\d+(?:\.\d+)*)\s*$", out) if code == 0 else None
+    return tuple(int(x) for x in m.group(1).split(".")) if m else None
+
+
+def problems(local, remote):
+    if remote == ZERO or local == ZERO or git("cat-file", "-e", remote + "^{commit}")[0] != 0:
+        return []                       # a new branch, a deletion, or main not known here: nothing to compare
+    out, old, new = [], version(remote), version(local)
+    if old and new and new <= old:
+        out.append("VERSION %s ist nicht höher als %s auf main" % (".".join(map(str, new)), ".".join(map(str, old))))
+    code, diff = git("diff", "--unified=0", remote, local, "--", "CHANGELOG.md")
+    gone = [line[1:] for line in diff.splitlines() if line.startswith("-") and not line.startswith("---")]
+    if code == 0 and gone:
+        out.append("CHANGELOG.md verliert %d Zeile(n) von main, etwa: %s" % (len(gone), gone[0][:100]))
+    return out
+
+
+def main() -> int:
+    if os.environ.get("KONTOR_PUSH_OK") == "1":
+        return 0
+    found = []
+    for line in sys.stdin:
+        parts = line.split()
+        if len(parts) == 4 and parts[2] == "refs/heads/main":
+            found += problems(parts[1], parts[3])
+    if not found:
+        return 0
+    sys.stderr.write("Push nach main abgelehnt – dieser Stand würde fremde Versionen löschen:\n- " + "\n- ".join(found) +
+                     "\nDie Arbeit steht auf einem veralteten main. Skill release, Schritt 5.1: holen und daraufsetzen "
+                     "(`git pull --rebase origin main`), VERSION/CHANGELOG neu, testen, dann erneut pushen.\n")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

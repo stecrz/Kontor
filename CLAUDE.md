@@ -69,6 +69,9 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
   sofort, als nächste Version. Alle anderen reparieren es nicht (sonst doppelt und gegeneinander), arbeiten weiter und
   veröffentlichen normal: ihr Lauf erbt dieselben Fehler, nur neue eigene zählen. Steht der fremde Fehler der eigenen Arbeit
   länger als 30 Minuten im Weg: selbst beheben, im Changelog nennen.
+- **Push-Sperre** (`.githooks/pre-push`, schaltet das Lagebild ein): ein Push nach `main`, dessen `VERSION` nicht über der
+  auf `main` liegt oder dem Changelog-Zeilen von `main` fehlen, wird abgelehnt – er stand auf einem veralteten Stand und hätte
+  fremde Versionen gelöscht (so geschehen in 3.16.9 und 3.16.21). Dann: holen, daraufsetzen, neu nummerieren.
 - Lokal beliebig committen; auf GitHub kommt nur Fertiges, als ein Commit je Version – ohne Zweige, direkt auf `main`.
 - Direkt vor dem Versions-Commit holen und die eigene Arbeit daraufsetzen (`git pull --rebase origin main`); die Nummer immer
   aus dem frisch geholten `main`; zusammengefasst wird nur, wenn dieser `main` in der eigenen Arbeit steckt (sonst gingen fremde
@@ -148,4 +151,4 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
 | `assistant.py` / `llm_local.py` | Assistent: feste Werkzeuge, Rechte, Fragen und Einträge nach Klick / llama.cpp und Modelle laden, prüfen, abgeschirmt starten und stoppen |
 | `storage.py`, `auth.py`, `updates.py`, `tls_cert.py` | verschlüsselte Ablage, Anmeldung/Touch ID, Updates, Zertifikat |
 | `web/app.js`, `web/i18n.js` | Oberfläche (eine Datei, Seiten über `#…`), Texte |
-| `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_scenarios` (Lebensfälle über Bereiche: Einlagen, Kauf, Darlehen, Auslagen; Monats-/Jahreswechsel, gemischt), `test_categories`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_assistant` (mit `fake_llama.py` statt llama.cpp, Downloads ohne Netz), `test_tour` (Rundgang: jede Seite hell/dunkel, Mac/iPhone, de/en – Skriptfehler, Überlaufen, Textschlüssel, Kontrast), `test_fuzz`, `test_privacy`, `test_hooks` (Lagebild der parallelen Chats) |
+| `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_scenarios` (Lebensfälle über Bereiche: Einlagen, Kauf, Darlehen, Auslagen; Monats-/Jahreswechsel, gemischt), `test_categories`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_assistant` (mit `fake_llama.py` statt llama.cpp, Downloads ohne Netz), `test_tour` (Rundgang: jede Seite hell/dunkel, Mac/iPhone, de/en – Skriptfehler, Überlaufen, Textschlüssel, Kontrast), `test_fuzz`, `test_privacy`, `test_hooks` (Lagebild und Push-Sperre der parallelen Chats) |
