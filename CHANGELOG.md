@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.17 (2026-11-21 16:57)
+- KI-Assistent: Einstellungen zeigen beim Sprachmodell, ob das Mikrofon dauerhaft erlaubt ist – sonst der Weg dahin (App im Dock, Safari, iPhone) und „Jetzt freigeben“.
+
 ## 3.16.16 (2026-11-21 16:46)
 - Entwicklung: Test der Feldbreite beim Diktat unabhängig von der Schriftart (war auf GitHub rot).
 

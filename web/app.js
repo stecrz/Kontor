@@ -6873,7 +6873,7 @@ function asFit(ta) {
 // runs, the same button ends it and takes the text, ✕ (or Escape) throws it away. While speaking, the field shows what is said so
 // far (in pieces of about twenty seconds, each ended in a pause), in italics; at the end the whole recording is written down once
 // more, with all its words around each sentence -- that text is the one that stays.
-const REC = {on: false, busy: false, starting: false, drop: false, go: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
+const REC = {on: false, busy: false, starting: false, asked: false, drop: false, go: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
 const REC_MAX = 600;          // seconds: then it ends by itself and the text is taken
 const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.6" y="1.4" width="4.8" height="8.2" rx="2.4" fill="currentColor"/><path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 const AS_PLUS = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
@@ -6909,12 +6909,31 @@ function asCancel() {
   if (REC.on) asMicStop(false);
   else if (REC.busy) { REC.drop = true; asDictPut(''); }          // the text still on its way: not taken
 }
+// The microphone may be used without asking each time only as the user sets it -- a page cannot give itself that right (Safari:
+// per website, the web app in the Dock: in its own settings). Under Einstellungen -> KI-Assistent, with the speech model: whether
+// it is allowed for good, else where to allow it, and a button that asks once (so that Kontor appears in Safari's list).
+async function asMicPerm() {
+  const box = $('#as-mic-perm'); if (!box) return;
+  let st = null;
+  try { st = await navigator.permissions.query({name: 'microphone'}); } catch (e) {}
+  const state = st ? st.state : '', ua = navigator.userAgent, safari = /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|Firefox/.test(ua);
+  const how = IS_IOS ? t('ki_mikro_weg_ios') : APP_MODE ? t('ki_mikro_weg_app') : safari ? t('ki_mikro_weg_safari', location.hostname) : t('ki_mikro_weg_browser');
+  const good = state === 'granted' && !REC.asked;          // allowed before anything asked on this page: for good
+  box.className = 'as-item';
+  box.innerHTML = `<span><b>${t('ki_mikrofon')}</b><br><span class="muted small">${good ? t('ki_mikro_dauerhaft') : esc((state === 'granted' ? t('ki_mikro_sitzung') + ' ' : '') + how)}</span></span>
+    <span class="as-act">${good ? `<span class="pill ok">${t('ki_mikro_erlaubt')}</span>` : state === 'denied' ? `<span class="pill warn">${t('ki_mikro_gesperrt')}</span>`
+      : state === 'granted' ? '' : `<button class="small secondary" id="as-mic-ask">${t('ki_mikro_freigeben')}</button>`}</span>`;
+  const b = $('#as-mic-ask', box);
+  if (b) b.addEventListener('click', async () => { REC.asked = true; try { const m = await navigator.mediaDevices.getUserMedia({audio: true}); m.getTracks().forEach(x => x.stop()); } catch (e) {} asMicPerm(); });
+  if (st && !st.onchange) st.onchange = () => asMicPerm();
+}
 async function asMic() {
   if (REC.busy || REC.starting) return;          // (a second click while the browser still asks for the microphone would open it twice)
   if (REC.on) { asMicStop(true); return; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast(t('ki_mikro_fehlt'), 6000); return; }
   REC.starting = true;
   let stream = null;
+  REC.asked = true;
   try { stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}}); }
   catch (e) { REC.starting = false; toast(t('ki_mikro_verweigert'), 7000); return; }
   try {
@@ -7337,7 +7356,8 @@ async function vEinstellungenAssistent() {
   <div class="as-list">${(a.speech || []).map(m => `<div class="as-item"><span><b>${esc(m.name)}</b> <span class="muted">${t(`ki_note_${m.note}`)}</span><br><span class="muted small">${esc(m.installed ? m.file : m.repo)} · ${m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb)}</span></span>
     <span class="as-act">${m.newer ? `<span class="pill info">${t('ki_neuere_datei')}</span>` : m.installed ? `<span class="pill ok">${t('ki_geladen')}</span>` : ''}
       ${!m.installed || m.newer ? `<button class="small secondary as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="" ${busy}>${t(m.installed ? 'ki_aktualisieren' : 'ki_laden')}</button>` : ''}
-      ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`).join('')}</div>
+      ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`).join('')}
+    ${a.dictation ? '<div id="as-mic-perm"></div>' : ''}</div>
   <div class="row tight"><button class="secondary small" id="as-check" ${busy}>${t('ki_nach_neuem_suchen')}</button><span class="muted small">${a.checked ? t('ki_gesucht', esc(FDT(a.checked))) + ' · ' : ''}${t('ki_platz', asGB(a.disk_free || 0), asRAM(pf.ram || 0))}</span></div>
   ${a.check_error ? `<div class="banner err small">${esc(a.check_error)}</div>` : ''}
   <h2>${t('ki_betrieb')}</h2>
@@ -7428,6 +7448,7 @@ function bindAssistent(main) {
       $$('.as-dlf', box).forEach(b => b.addEventListener('click', () => post('/api/assistant/model/download', {repo, file: b.dataset.file})));
     } catch (e) { box.innerHTML = `<div class="banner err small">${esc(e.message)}</div>`; }
   };
+  asMicPerm();
   on('#as-files', 'click', files); on('#as-repo', 'keydown', (el, e) => { if (e.key === 'Enter') { e.preventDefault(); files(); } });
   // while something is loading or the model starts: the progress in place, the page anew when it is over
   clearTimeout(AS.setT);

@@ -2816,6 +2816,10 @@ class Browser(unittest.TestCase):
                 pg.click(".as-del"); until(pg, "!AS.st.ready && AS.st.settings.model === ''")
                 self.assertEqual(list(app.assistant.ai.models()), ["qwen3-asr-1.7b"])         # the model for dictating: listed in its own section, deleted there
                 self.assertIn("Qwen3-ASR 1.7B", pg.inner_text("#main"))
+                # with the speech model: whether the microphone is allowed for good -- else where to allow it (a page cannot itself)
+                until(pg, "!!document.querySelector('#as-mic-perm.as-item')")
+                perm = pg.inner_text("#as-mic-perm")
+                self.assertTrue(perm.startswith("Mikrofon") and ("Dauerhaft erlaubt" in perm or "Erlauben" in perm or "erlauben" in perm), perm)
                 pg.click(".as-del"); until(pg, "!AS.st.dictation")
                 self.assertEqual(app.assistant.ai.models(), {})
                 # the microphone follows the speech model in the panel as it stands: gone without it, there again once it is
