@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.61 (2026-11-22 00:17)
+- Updates: jede neue Version wird vor dem Installieren gelesen – neue Netzzugriffe, Programmaufrufe, Helfer oder Umwege dorthin halten sie an
+- Updates: angehaltene Version mit „!“ im Menü, Funde unter Einstellungen → Updates, installiert erst nach deiner Freigabe; unauffällige wie bisher mit einem Klick
+- Sicherheit: verknüpfte Dateien öffnen nur als Dokument (Seiten, Skripte und Programme zeigt der Finder); die Oberfläche lädt Dateien nur von Kontor selbst
+
 ## 3.16.60 (2026-11-22 00:12)
 - Mac-App: keine eigene Titelleiste mehr – Fensterknöpfe in der Seitenleiste, Seitentitel daneben, mehr Platz
 - Mac-App: Fenster über die Titelzeile verschieben, Doppelklick wie in macOS eingestellt

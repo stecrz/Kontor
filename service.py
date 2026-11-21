@@ -2992,9 +2992,13 @@ def make_handler(app: App):
             if path == "/api/update/install":
                 if not local:
                     return self._json(403, {"error": tr("s_updates_nur_von_diesem_mac")})
-                res = updates.install((app.config.get("updates") or {}).get("repo") or "stecrz/Kontor", restart=True)
+                # with findings in the new version's files it waits: installed only with your approval for exactly those files
+                res = updates.install((app.config.get("updates") or {}).get("repo") or "stecrz/Kontor", restart=True, approved=str(body.get("approved") or ""))
                 if res.get("ok"):
                     log.info("Update installed: %s", res.get("version"))
+                elif res.get("needs_approval"):                # shown under Updates (and marked in the menu) until you decide
+                    app.update_info = dict(app.update_info or {"current": version(), "newer": True, "error": None, "notes": "", "date": "", "source": "main"},
+                                           available=res.get("version"), newer=True, review=res.get("review"))
                 return self._json(200, res)
             if path == "/api/history":
                 return self._json(200, self._historie_set(body))
@@ -3139,12 +3143,8 @@ def make_handler(app: App):
             if path == "/api/timemachine-exclusion":
                 if not local:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
-                flag = "addexclusion" if body.get("exclude") else "removeexclusion"
-                try:
-                    r = subprocess.run(["tmutil", flag, app.data_dir], capture_output=True, text=True, timeout=30)
-                    return self._json(200, {"ok": r.returncode == 0, "text": (r.stdout + r.stderr).strip(), "status": timemachine_status(app.data_dir)})
-                except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-                    return self._json(200, {"ok": False, "text": str(e), "status": "unknown"})
+                ok, text = timemachine_set(bool(body.get("exclude")), app.data_dir)
+                return self._json(200, {"ok": ok, "text": text, "status": timemachine_status(app.data_dir)})
             return self._json(404, {"error": "unknown"})
 
         def _remote_setup(self, body: dict, local: bool):
@@ -3255,12 +3255,12 @@ def make_handler(app: App):
                         target = os.path.normpath(str(body["path"]))
                 if sys.platform != "darwin":
                     return self._json(400, {"error": tr("s_oeffnen_im_finder_nur_unter")})
-                subprocess.Popen(["open", "-R", target] if os.path.isfile(target) else ["open", target])
+                show_in_finder(target)
                 return self._json(200, {"ok": True})
             if path == "/api/receipts/export":
                 target = bl.export_zip(str(body.get("year") or "") or None, str(body.get("entity") or "") or None, names)
                 if local and sys.platform == "darwin":
-                    subprocess.Popen(["open", "-R", target])
+                    show_in_finder(target, select=True)
                 log.info("Receipt export created")
                 return self._json(200, {"ok": True, "file": target})
             return self._json(404, {"error": "unknown"})
@@ -3461,15 +3461,12 @@ def make_handler(app: App):
                 return self._json(400, {"error": tr("s_nur_macos")})
             if path == "/api/file/choose":
                 art = body.get("kind") or "file"
-                prompt = str(body.get("prompt") or tr("s_datei_waehlen")).replace('"', "")
-                script = ('POSIX path of (choose folder with prompt "%s")' if art == "folder" else 'POSIX path of (choose file with prompt "%s")') % prompt
-                try:
-                    r = subprocess.run(["osascript", "-e", 'tell application "System Events" to activate', "-e", script], capture_output=True, text=True, timeout=600)
-                except subprocess.TimeoutExpired:
+                chosen = choose_on_mac(art == "folder", str(body.get("prompt") or tr("s_datei_waehlen")))
+                if chosen is None:
                     return self._json(200, {"ok": False, "text": tr("s_zeitueberschreitung")})
-                if r.returncode != 0:
+                if not chosen:
                     return self._json(200, {"ok": False, "text": tr("s_abgebrochen")})
-                p = r.stdout.strip().rstrip("/") if art == "folder" else r.stdout.strip()
+                p = chosen.rstrip("/") if art == "folder" else chosen
                 return self._json(200, {"ok": True, "path": p, "name": os.path.basename(p), "status": file_status(p) if art != "folder" else "ok",
                                         "size_bytes": os.path.getsize(p) if os.path.isfile(p) else None})
             pfad = os.path.expanduser(str(body.get("path") or ""))
@@ -3479,12 +3476,12 @@ def make_handler(app: App):
                 st = file_status(pfad)
                 if st == "lacking":
                     return self._json(404, {"error": tr("s_datei_nicht_gefunden")})
-                subprocess.Popen(["open", pfad])
+                open_document(pfad)
                 return self._json(200, {"ok": True, "status": st})
             if path == "/api/file/reveal":
                 if not os.path.exists(pfad) and file_status(pfad) == "lacking":
                     return self._json(404, {"error": tr("s_datei_nicht_gefunden")})
-                subprocess.Popen(["open", "-R", pfad])
+                show_in_finder(pfad, select=True)
                 return self._json(200, {"ok": True})
             return self._json(404, {"error": "unknown"})
 
@@ -3654,6 +3651,49 @@ def _remove_tree(path: str, keep: List[str]) -> bool:
     except OSError:
         log.exception("Not removed: %s", os.path.basename(path))
         return False
+
+
+# Everything the pages can have this Mac do outside Kontor goes through the four small functions below -- each takes a path (or
+# a text for a window) and nothing else, and none can start a program, open a page or an address:
+DOCUMENTS = frozenset((".pdf", ".png", ".jpg", ".jpeg", ".heic", ".gif", ".tif", ".tiff", ".bmp", ".webp", ".txt", ".csv", ".rtf", ".md", ".xlsx", ".xls",
+                       ".docx", ".doc", ".pptx", ".ppt", ".numbers", ".pages", ".key", ".eml", ".msg", ".zip"))
+
+
+def show_in_finder(path: str, select: bool = False) -> None:
+    """Finder shows a folder's content; a file -- and anything that only looks like a folder (a program, a package) -- is
+    selected in its folder, never opened."""
+    path = os.path.abspath(path)
+    plain_folder = os.path.isdir(path) and not os.path.splitext(os.path.basename(path.rstrip(os.sep)))[1]
+    subprocess.Popen(["open", "-a", "Finder", path] if plain_folder and not select else ["open", "-R", path])
+
+
+def open_document(path: str) -> None:
+    """A document opens in its own app (types of documents only: a page, a link, a script or a program is shown in Finder)."""
+    path = os.path.abspath(path)
+    if os.path.isfile(path) and os.path.splitext(path)[1].lower() in DOCUMENTS:
+        subprocess.Popen(["open", path])
+    else:
+        show_in_finder(path, select=True)
+
+
+def choose_on_mac(folder: bool, prompt: str) -> Optional[str]:
+    """macOS' own window to choose a file or folder: its path, "" when closed without one, None when nobody answered."""
+    prompt = re.sub(r"[^\w .,:;!?()\-–äöüÄÖÜß]", "", prompt)[:120]                 # a plain line of text: nothing that could end or leave it
+    script = 'POSIX path of (choose %s with prompt "%s")' % ("folder" if folder else "file", prompt)
+    try:
+        r = subprocess.run(["osascript", "-e", 'tell application "System Events" to activate', "-e", script], capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        return None
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def timemachine_set(exclude: bool, path: str) -> Tuple[bool, str]:
+    """Leaves Kontor's data folder out of Time Machine backups, or takes it in again."""
+    try:
+        r = subprocess.run(["tmutil", "addexclusion" if exclude else "removeexclusion", path], capture_output=True, text=True, timeout=30)
+        return r.returncode == 0, (r.stdout + r.stderr).strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        return False, str(e)
 
 
 def timemachine_status(path: str) -> str:

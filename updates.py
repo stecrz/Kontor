@@ -3,7 +3,13 @@
 Nur zu GitHub und nur auf Wunsch (Einstellungen: taeglich pruefen und/oder "Jetzt pruefen"). Installiert wird
 nie automatisch, sondern nach Klick. Der Datenordner wird nicht angefasst.
 Integritaet: HTTPS zu GitHub, feste Host-Liste, das Archiv muss kontor.py und
-VERSION enthalten. Die Programmdateien werden direkt ersetzt, ohne Sicherung: VERSION
+VERSION enthalten.
+Before anything of a new version is installed (or run), the installed one reads its files and compares what they hold of
+the things that reach beyond the program -- network, other programs, loading code, addresses, helpers (update_guard.py).
+Nothing new or changed among them: installed as before. Otherwise the update waits, the settings name what was found, and
+it is installed only with an approval given for exactly these files (their digest). A folder that is a git clone is
+checked the same way: fetched, read, and only then moved forward to exactly the commit that was read.
+Die Programmdateien werden direkt ersetzt, ohne Sicherung: VERSION
 zuletzt -- bricht ein Update ab, bleibt die alte Nummer, der Dienst startet nicht neu
 (die alte Version laeuft im Speicher weiter) und das Update laesst sich wiederholen.
 Dateien, die die vorige Version gebracht hat und die neue nicht mehr enthaelt, werden
@@ -26,6 +32,7 @@ from urllib.parse import urlparse
 import zipfile
 from typing import Dict, List, Optional, Tuple
 from i18n import tr
+import update_guard
 
 log = logging.getLogger("kontor.update")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -137,7 +144,67 @@ def installed_date() -> str:
         return ""
 
 
-def check(repo: str) -> Dict[str, object]:
+def _archive(data: bytes) -> Tuple[Optional[zipfile.ZipFile], Optional[str]]:
+    """The archive and its folder that holds Kontor (the one with kontor.py and VERSION) -- (None, None) when it is none."""
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        return None, None
+    names = zf.namelist()
+    for r in sorted({n.split("/")[0] for n in names if "/" in n}):
+        if r + "/kontor.py" in names and r + "/VERSION" in names:
+            return zf, r
+    return zf, None
+
+
+MAX_FILE = 64 * 1024 * 1024         # bytes of one file of an update, unpacked (the largest today: a help picture of 1 MB)
+
+
+def _new_files(zf: zipfile.ZipFile, base: str) -> Dict[str, bytes]:
+    """What the archive would put into the program folder: {path in the folder: content} (as install copies it)."""
+    out: Dict[str, bytes] = {}
+    for info in zf.infolist():
+        if info.is_dir() or not info.filename.startswith(base + "/"):
+            continue
+        rel = os.path.normpath(info.filename[len(base) + 1:]).replace(os.sep, "/")
+        if rel.startswith(("/", "../")) or rel == ".." or not update_guard.installable(rel):
+            continue
+        if info.file_size > MAX_FILE:
+            raise ValueError("%s: %d MB" % (rel, info.file_size // 1048576))
+        out[rel] = zf.read(info)
+    return out
+
+
+def review(new: Dict[str, bytes]) -> Dict[str, object]:
+    """The new files against the installed ones: {"digest": of exactly these new files, "findings": what they hold that the
+    installed version does not hold the same way (update_guard.compare) -- empty: nothing to ask about}. If the check itself
+    fails, that is a finding: an update is never installed unread."""
+    old: Dict[str, bytes] = {}
+    for rel in new:
+        try:
+            with open(os.path.join(HERE, *rel.split("/")), "rb") as f:
+                old[rel] = f.read()
+        except OSError:
+            pass
+    try:
+        found = update_guard.compare(old, new)
+    except Exception as e:          # a file no reader of Python understands: shown, not passed over
+        log.warning("Update: check of the new files failed (%s)", type(e).__name__)
+        found = [{"kind": "unreadable", "file": "", "what": type(e).__name__, "new": True}]
+    return {"digest": update_guard.digest(new), "findings": found}
+
+
+def _approved(rev: Dict[str, object], approved: str) -> bool:
+    return not rev["findings"] or (bool(approved) and approved == rev["digest"])
+
+
+def _waits(rev: Dict[str, object], version: str) -> Dict[str, object]:
+    kinds = update_guard.summary(rev["findings"])            # type: ignore[arg-type]
+    log.warning("Update to %s waits for approval: %s", version, ", ".join("%d %s" % (n, k) for k, n in sorted(kinds.items())))
+    return {"ok": False, "needs_approval": True, "version": version, "review": rev, "text": tr("s_update_wartet")}
+
+
+def check(repo: str, look: bool = True) -> Dict[str, object]:
     """Neueste Version auf GitHub: VERSION im Hauptzweig (eine kleine Datei, kein API-Limit); nur wenn das
     nicht geht, Release bzw. Tag. Tags sind damit keine Voraussetzung mehr fuer ein Update."""
     cur = current_version()
@@ -174,6 +241,14 @@ def check(repo: str) -> Dict[str, object]:
         out["newer"] = _vtuple(str(out["available"])) > _vtuple(cur)
         if out["newer"]:
             log.info("Update check: %s available (%s), newer than installed", out["available"], out["source"])
+            if look and out.get("zip"):                        # read it now, so the settings can say whether it will wait for you
+                try:
+                    zf, base = _archive(_get(str(out["zip"]), "*/*"))
+                    if zf is not None and base is not None:
+                        out["review"] = review(_new_files(zf, base))
+                        log.info("Update check: %d finding(s) in the new version's files", len(out["review"]["findings"]))      # type: ignore[index]
+                except Exception as e:                         # not readable now: installing reads it again and decides
+                    log.info("Update check: new version not read yet (%s)", type(e).__name__)
         else:
             log.info("Update check: up to date (%s shows %s)", out["source"], out["available"])
     except urllib.error.HTTPError as e:
@@ -185,22 +260,94 @@ def check(repo: str) -> Dict[str, object]:
     return out
 
 
-def install_via_git(restart: bool = True) -> Optional[Dict[str, object]]:
-    """Programmordner ist ein Git-Klon: 'git pull --ff-only' statt Archiv (haelt das Repo konsistent). None, wenn nicht anwendbar."""
+def _git(*args: str, timeout: int = 120, binary: bool = False, data: Optional[bytes] = None):
+    # never a hook or a filter of the repository: what git runs here is git alone
+    return subprocess.run(["git", "-C", HERE, "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"] + list(args),
+                          capture_output=True, text=not binary, timeout=timeout, input=data)
+
+
+GIT_OWN = (".gitattributes", ".gitmodules")        # files that change what git itself does with the other files
+
+
+def _git_files(sha: str) -> Tuple[Dict[str, bytes], List[Dict[str, object]]]:
+    """The files of a commit as git holds them (no filters, no archive rules of the repository): ({path: content} of what
+    would reach the program folder as program, [findings for what is no plain file -- a link, another repository -- and for
+    files that tell git to treat others differently])."""
+    r = _git("ls-tree", "-r", "-z", "--full-tree", sha, binary=True)
+    if r.returncode != 0:
+        raise ValueError("git ls-tree")
+    want: List[Tuple[str, str]] = []
+    odd: List[Dict[str, object]] = []
+    for entry in r.stdout.split(b"\0"):
+        if not entry:
+            continue
+        meta, _, raw = entry.partition(b"\t")
+        mode, kind, oid = meta.decode("ascii").split()
+        rel = raw.decode("utf-8", "surrogateescape")
+        own = rel.rsplit("/", 1)[-1] in GIT_OWN
+        if not (own or update_guard.installable(rel)):
+            continue
+        if kind != "blob" or mode not in ("100644", "100755"):
+            odd.append({"kind": "file", "file": rel, "what": "link" if mode == "120000" else kind, "new": True})
+        want.append((rel, oid))
+    out = _git("cat-file", "--batch", binary=True, data=b"".join(o.encode("ascii") + b"\n" for _, o in want)).stdout
+    files: Dict[str, bytes] = {}
+    pos = 0
+    for rel, oid in want:
+        end = out.index(b"\n", pos)
+        head = out[pos:end].split()
+        if len(head) != 3 or head[0].decode("ascii") != oid:
+            raise ValueError("git cat-file")
+        size = int(head[2])
+        if size > MAX_FILE:
+            raise ValueError("%s: %d MB" % (rel, size // 1048576))
+        files[rel] = out[end + 1:end + 1 + size]
+        pos = end + 1 + size + 1
+    for rel in sorted(files):
+        if rel.rsplit("/", 1)[-1] in GIT_OWN:
+            data = files.pop(rel)
+            try:
+                with open(os.path.join(HERE, *rel.split("/")), "rb") as f:
+                    same = f.read() == data
+            except OSError:
+                same = False
+            if not same:
+                odd.append({"kind": "file", "file": rel, "what": rel, "new": not os.path.exists(os.path.join(HERE, *rel.split("/")))})
+    return files, odd
+
+
+def install_via_git(restart: bool = True, approved: str = "") -> Optional[Dict[str, object]]:
+    """Programmordner ist ein Git-Klon: holen, lesen, dann genau auf den gelesenen Stand vorruecken (statt Archiv; haelt das Repo
+    konsistent). None, wenn nicht anwendbar. Nothing of the new state is in the folder before it is read and approved."""
     if not os.path.isdir(os.path.join(HERE, ".git")) or not shutil.which("git"):
         return None
-    log.info("Update: program folder is a git clone, running git pull")
+    log.info("Update: program folder is a git clone, fetching")
     try:
-        r = subprocess.run(["git", "-C", HERE, "pull", "--ff-only"], capture_output=True, text=True, timeout=120)
-    except (OSError, subprocess.TimeoutExpired) as e:
-        log.error("Update: git pull failed: %s", e)
+        r = _git("fetch", "--quiet")
+        sha = _git("rev-parse", "--verify", "--quiet", "@{upstream}^{commit}").stdout.strip() if r.returncode == 0 else ""
+        if r.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40,64}", sha):
+            log.error("Update: git fetch failed: %s", (r.stderr or r.stdout).strip()[:300])
+            return {"ok": False, "text": tr("s_git_pull_fehlgeschlagen") % ((r.stderr or r.stdout).strip()[:300] or "upstream")}
+        new, odd = _git_files(sha)
+        if "kontor.py" not in new or "VERSION" not in new:
+            return {"ok": False, "text": tr("s_archiv_enthaelt_kein_kontor_kontor")}
+        rev = review(new)
+        rev["findings"] = odd + rev["findings"]              # type: ignore[operator]
+        if odd:
+            rev["digest"] = update_guard.digest(dict(new, **{".git:" + str(o["file"]): str(o["what"]).encode("utf-8") + sha.encode("ascii") for o in odd}))
+        version = new["VERSION"].decode("utf-8", "replace").strip()
+        if not _approved(rev, approved):
+            return _waits(rev, version)
+        r = _git("merge", "--ff-only", "--quiet", sha)
+    except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+        log.error("Update: git update failed: %s", e)
         return {"ok": False, "text": tr("s_git_pull_fehlgeschlagen") % e}
-    log.info("Update: git pull Status %d: %s", r.returncode, (r.stdout + r.stderr).strip()[:500])
+    log.info("Update: git merge --ff-only %s: status %d: %s", sha[:10], r.returncode, (r.stdout + r.stderr).strip()[:500])
     if r.returncode != 0:
         return {"ok": False, "text": tr("s_git_pull_fehlgeschlagen") % (r.stderr or r.stdout).strip()[:300]}
     restarted = schedule_restart() if (restart and sys.platform == "darwin") else False
     return {"ok": True, "version": current_version(), "files": 0, "restart": restarted,
-            "text": tr("s_repo_aktualisiert") % ((r.stdout.strip().splitlines() or ["ok"])[-1][:80], tr("s_dienst_startet_neu") if restarted else "")}
+            "text": tr("s_repo_aktualisiert") % (sha[:10], tr("s_dienst_startet_neu") if restarted else "")}
 
 
 def _manifest() -> set:
@@ -240,11 +387,13 @@ def _remove_gone(before: set, installed: set) -> int:
     return n
 
 
-def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> Dict[str, object]:
-    via_git = install_via_git(restart)
+def install(repo: str, zip_url: Optional[str] = None, restart: bool = True, approved: str = "") -> Dict[str, object]:
+    """approved: the digest of the files you have seen the findings of (from check or an earlier try) -- an update with
+    findings is installed only when it is exactly those files."""
+    via_git = install_via_git(restart, approved)
     if via_git is not None:
         return via_git
-    info = check(repo) if not zip_url else {"zip": zip_url, "available": "?"}
+    info = check(repo, look=False) if not zip_url else {"zip": zip_url, "available": "?"}
     url = zip_url or info.get("zip")
     if not url:
         return {"ok": False, "text": info.get("error") or tr("s_keine_version_gefunden")}
@@ -258,45 +407,46 @@ def install(repo: str, zip_url: Optional[str] = None, restart: bool = True) -> D
         log.error("Update: download failed: %s", e, exc_info=True)
         return {"ok": False, "text": tr("s_download_fehlgeschlagen") % (type(e).__name__, str(e)[:200])}
     log.info("Update: %d bytes downloaded", len(data))
-    try:
-        zf = zipfile.ZipFile(io.BytesIO(data))
-    except zipfile.BadZipFile:
+    zf, base = _archive(data)
+    if zf is None:
         log.error("Update: archive unreadable (not a ZIP, starts with %r)", data[:40])
         return {"ok": False, "text": tr("s_archiv_unlesbar")}
     names = zf.namelist()
-    roots = {n.split("/")[0] for n in names if "/" in n}
-    base = None
-    for r in roots:
-        if r + "/kontor.py" in names and r + "/VERSION" in names:
-            base = r
-            break
     if base is None:
-        log.error("Update: archive without kontor.py/VERSION; roots: %s", sorted(roots)[:5])
+        log.error("Update: archive without kontor.py/VERSION; roots: %s", sorted({n.split("/")[0] for n in names if "/" in n})[:5])
         return {"ok": False, "text": tr("s_archiv_enthaelt_kein_kontor_kontor")}
     new_version = zf.read(base + "/VERSION").decode("utf-8").strip()
     log.info("Update: archive contains version %s (%d files), program folder %s", new_version, len(names), HERE)
+    try:                                                       # read before anything of it is copied (or run)
+        new = _new_files(zf, base)
+        rev = review(new)
+    except (ValueError, OSError, zipfile.BadZipFile) as e:
+        log.error("Update: archive not readable for the check: %s", e)
+        return {"ok": False, "text": tr("s_archiv_unlesbar")}
+    if not _approved(rev, approved):
+        return _waits(rev, new_version)
     tmp = tempfile.mkdtemp(prefix="kontor-update-")
     before, installed = _manifest(), set()
     try:
-        zf.extractall(tmp)
-        src = os.path.join(tmp, base)
-        # VERSION last: an update stopped half-way keeps the old number -- offered again, the service not restarted on a mix
-        for root, dirs, files in os.walk(src):
-            dirs[:] = [d for d in dirs if d not in ("tests", "__pycache__") and not d.startswith(".")]
-            rel_root = os.path.relpath(root, src)
-            for fn in files:
-                rel = os.path.normpath(os.path.join(rel_root, fn))
-                if rel in KEEP or fn.startswith(".") or rel == "VERSION":
-                    continue
-                _put(os.path.join(root, fn), rel)
-                installed.add(rel.replace(os.sep, "/"))
+        # exactly the files that were read, nothing else of the archive. VERSION last: an update stopped half-way keeps the old
+        # number -- offered again, the service not restarted on a mix
+        part = os.path.join(tmp, "file")
+        for rel in sorted(new):
+            if rel in KEEP or rel == "VERSION":
+                continue
+            with open(part, "wb") as f:
+                f.write(new[rel])
+            _put(part, os.path.normpath(rel))
+            installed.add(rel)
         removed = _remove_gone(before, installed)
         try:
             with open(os.path.join(HERE, MANIFEST), "w", encoding="utf-8") as f:
                 f.write("\n".join(sorted(installed | {"VERSION"})) + "\n")
         except OSError as e:
             log.warning("Update: file list not written: %s", e)
-        _put(os.path.join(src, "VERSION"), "VERSION")
+        with open(part, "wb") as f:
+            f.write(new["VERSION"])
+        _put(part, "VERSION")
         installed.add("VERSION")
     except OSError as e:
         log.error("Update: stopped while copying: %s", e, exc_info=True)

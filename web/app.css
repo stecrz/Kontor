@@ -118,7 +118,7 @@ body.mac-chrome:not(.as-page) .as-head { padding-top:max(0px, calc(var(--ly) - 1
 
 #menu-btn { display:none; }
 .banner { padding:10px 14px; border-radius:10px; margin:0 0 12px; background:var(--warn-bg); color:var(--warn-fg); }
-.banner.err { background:var(--err-bg); color:var(--err-fg); } .banner.ok { background:var(--ok-bg); color:var(--ok-fg); } .banner.info { background:var(--accent-soft); color:var(--accent-fg); }
+.banner.err { background:var(--err-bg); color:var(--err-fg); } .banner.ok { background:var(--ok-bg); color:var(--ok-fg); } .banner.info { background:var(--accent-soft); color:var(--accent-fg); } .banner.warn { background:var(--warn-bg); color:var(--warn-fg); }
 .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:var(--fg); color:var(--bg); padding:10px 18px; border-radius:12px; z-index:50; box-shadow:0 8px 30px rgba(0,0,0,.3); font-size:13px; animation:up .18s ease-out; }
 @keyframes up { from { transform:translate(-50%, 8px); opacity:0; } to { transform:translate(-50%, 0); opacity:1; } }
 .fade { animation:fade .2s ease-out; } @keyframes fade { from { opacity:0; transform:translateY(3px);} to { opacity:1; transform:none; } }
@@ -711,6 +711,7 @@ tr.pos { cursor:pointer; }
 .h-chart { margin:6px 0 10px; } .h-svg { width:100%; height:auto; display:block; user-select:none; -webkit-user-select:none; touch-action:pan-y; } .h-head { display:flex; justify-content:flex-end; margin-bottom:4px; }
 .h-line { fill:none; stroke:var(--accent); stroke-width:1.8; } .h-area { fill:var(--accent); opacity:.12; }
 .card.link { cursor:pointer; transition:box-shadow .15s; } .card.link:hover { box-shadow:0 2px 12px rgba(0,0,0,.12); }
+.up-review { margin:14px 0; display:grid; gap:6px; } .up-find summary { cursor:pointer; } .up-lines { margin:4px 0 2px 16px; display:grid; gap:3px; font-size:12px; } .up-lines code { word-break:break-word; }
 .changelog { margin-top:18px; } .changelog summary { cursor:pointer; font-weight:600; font-size:14px; }
 .cl h3 { font-size:14px; margin:14px 0 4px; } .cl ul { margin:0; padding-left:18px; } .cl li { font-size:13px; line-height:1.45; margin:2px 0; color:var(--fg); }
 .prog-wrap { display:flex; align-items:center; gap:10px; margin-top:10px; } .prog-wrap.hidden { display:none; }

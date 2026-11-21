@@ -373,6 +373,8 @@ function saveJson(obj, name) {
 function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), ms); t._until = Date.now() + ms; }
 // a note that may wait: not over one still being read (e.g. the result of a sync when the report follows quickly)
 function toastQuiet(msg, ms) { const t = $('#toast'); if (!t._until || Date.now() > t._until) toast(msg, ms); }
+// what the installed version found in the files of an available update (empty: it installs as always, without a word)
+const upFinds = u => (u && u.newer && u.review && u.review.findings) || [];
 function banner(msg, kind = '') { const b = $('#banner'); if (!msg) { b.classList.add('hidden'); return; } b.textContent = msg; b.className = 'banner ' + kind; }
 
 // Am Mac selbst gibt es keine Offline-Ansicht: der Dienst ist erreichbar oder nicht (Tests können das Gerät als "entfernt" markieren)
@@ -416,7 +418,8 @@ async function api(path, body, method, netMode, renewed) {
   if (opts.method !== 'GET' && data && data.report === 'requested') afterRebuild(data);
   return data;
 }
-function download(url) { const a = document.createElement('a'); a.href = url; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }
+// a file from Kontor itself: only one of its own addresses (/api/...), never another place
+function download(url) { if (!/^\/(?!\/)/.test(String(url))) return; const a = document.createElement('a'); a.href = url; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }
 const xlsxBtn = (was, extra = '') => `<button class="xlsx small" data-xlsx="${was}" ${extra}>Excel</button>`;
 
 // ---------------------------------------------------------------- Offline (PWA am iPhone, Mac nicht erreichbar)
@@ -743,7 +746,7 @@ async function loadAll() {
   S.setup = data.setup;
   if (S.DATA) { const keys = Object.keys(S.DATA.areas || {}); if (!S.area || !keys.includes(S.area)) S.area = S.DATA.main_area || keys[0]; }
   if (OFFLINE.mode) offlineBanner();
-  else if (status.update && status.update.newer) banner('Kontor ' + status.update.available + t('ist_verfuegbar_unter_updates_installie'), 'info');
+  else if (status.update && status.update.newer) banner('Kontor ' + status.update.available + t(upFinds(status.update).length ? 'upd_banner' : 'ist_verfuegbar_unter_updates_installie'), upFinds(status.update).length ? 'warn' : 'info');
   else if (S.DATA && (S.DATA.accounts_new || []).length) { const b = $('#banner'); b.innerHTML = `${t('neue_oder_unbestaetigte_konten_0', esc(S.DATA.accounts_new.slice(0, 4).map(k => k.name).join(', ')), S.DATA.accounts_new.length > 4 ? ' …' : '')} <a href="#accounts">${t('bereich_und_position_bestaetigen')}</a>`; b.className = 'banner info'; }
   else if (S.DATA) banner('');
   statusMini(); bereichSeg();
@@ -822,7 +825,7 @@ function statusMini() {
   // something to do: bookings waiting for approval (count) or a failed run (!), an update (dot) -- in the sidebar and on the app icon
   const waiting = l && l.dry_run && !l.error ? (l.proposals || []).length : 0, notes = l && !l.error && !waiting ? (l.warnings || []).length : 0;
   navBadge('#bookings', l && l.error ? '!' : waiting ? (waiting > 99 ? '99+' : String(waiting)) : notes ? '•' : '', l && l.error ? t('letzter_abgleich_mit_fehler') : waiting ? t('0_buchungsvorschlaege', waiting) : tn('n_hinweise_auto', notes));
-  navBadge('#settings', st.update && st.update.newer ? '•' : '', st.update && st.update.newer ? t('update') + st.update.available + t('verfuegbar') : '');
+  navBadge('#settings', st.update && st.update.newer ? (upFinds(st.update).length ? '!' : '•') : '', st.update && st.update.newer ? (upFinds(st.update).length ? t('upd_braucht_freigabe', st.update.available) : t('update') + st.update.available + t('verfuegbar')) : '');
   const mb = $('#menu-btn'); if (mb) mb.classList.toggle('has-badge', !!(waiting || notes || (l && l.error) || (st.update && st.update.newer)));     // narrow window: the sidebar is closed
   try { if (navigator.setAppBadge) { if (waiting) navigator.setAppBadge(waiting); else navigator.clearAppBadge(); } } catch (e) { /* not supported */ }
   if (!st.storage.encrypted) banner(t('daten_liegen_unverschluesselt_verschlu'), 'err');
@@ -926,7 +929,7 @@ async function openItems(D) {
   if (ob.hits) items.push(['neutral', ob.hits + t('ausgaben_3') + yr + t('ohne_beleg'), '#transactions?no_receipt=1', 'receipts']);
   const ue = (D.cashflow.reconciliation || {})[cur]; if (ue && Math.abs(ue.unexplained) > 1) items.push(['warn', t('unerklaerte_vermoegensaenderung_im_lau') + F(ue.unexplained) + t('pruefzeile'), '#cashflow', 'unexplained']);
   for (const w of (D.warnings || []).slice(0, 3)) items.push(['warn', w, '#bookings', '']);
-  if (S.STATUS.update && S.STATUS.update.newer) items.push(['info', t('update') + S.STATUS.update.available + t('verfuegbar'), '#settings/updates', '']);
+  if (S.STATUS.update && S.STATUS.update.newer) items.push(upFinds(S.STATUS.update).length ? ['warn', t('upd_braucht_freigabe', S.STATUS.update.available), '#settings/updates', ''] : ['info', t('update') + S.STATUS.update.available + t('verfuegbar'), '#settings/updates', '']);
   return items;
 }
 
@@ -5189,14 +5192,15 @@ async function restartTo(port, before) {
   const samePort = String(port) === (location.port || (location.protocol === 'https:' ? '443' : '80'));
   const target = `${location.protocol}//${location.hostname}:${port}/${location.hash}`;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const leave = () => { if (new URL(target).hostname === location.hostname) location.href = target; };      // the same Mac, another port: nowhere else
   for (let i = 0; i < 60; i++) {
     await sleep(1000);
     let j = null;
     try { const r = await fetch('/api/session', {credentials: 'same-origin', cache: 'no-store', headers: {'X-Kontor-Net': 'direct'}}); j = r.ok ? await r.json() : {}; } catch (e) { j = null; }
     if (samePort && j && j.instance && j.instance !== before) { location.reload(); return; }
-    if (!samePort && (!j || (j.instance && j.instance !== before))) { await sleep(2500); location.href = target; return; }
+    if (!samePort && (!j || (j.instance && j.instance !== before))) { await sleep(2500); leave(); return; }
   }
-  if (samePort) location.reload(); else location.href = target;
+  if (samePort) location.reload(); else leave();
 }
 async function saveConfig(cfg, findingsEl, trotzdem, extra) {
   try {
@@ -5896,11 +5900,25 @@ function clSplit(cl) {
   if (!parts.length) return '';
   return `<h2>${t('neueste_aenderungen')}</h2>${clHtml(parts[0])}` + (parts.length > 1 ? `<details class="changelog"><summary>${t('fruehere_aenderungen')}</summary>${clHtml(parts.slice(1).join('\n'))}</details>` : '');
 }
+// An update whose files hold something the installed version cannot do: one line per kind of finding (what and where, the
+// lines of the program behind it), nothing for an update without findings.
+const UP_KINDS = {guard: 'upd_k_guard', rule: 'upd_k_rule', module: 'upd_k_module', call: 'upd_k_call', around: 'upd_k_around', detour: 'upd_k_detour', place: 'upd_k_place',
+  address: 'upd_k_address', page: 'upd_k_page', file: 'upd_k_file', unreadable: 'upd_k_unreadable'};
+function upReview(info) {
+  const f = upFinds(info); if (!f.length) return '';
+  const rows = Object.keys(UP_KINDS).map(k => [k, f.filter(x => x.kind === k)]).filter(([, xs]) => xs.length).map(([k, xs]) => {
+    const files = [...new Set(xs.map(x => x.file).filter(Boolean))];
+    return `<details class="up-find"><summary><b>${t(UP_KINDS[k])}</b> <span class="muted">${xs.length > 1 ? xs.length + ' × · ' : ''}${esc(files.slice(0, 3).join(', '))}${files.length > 3 ? ' …' : ''}</span></summary>
+      <div class="up-lines">${xs.slice(0, 40).map(x => `<div><span class="muted">${esc(x.file)}${x.new ? '' : ' · ' + t('upd_geaendert')}</span> <code>${esc(x.what)}</code></div>`).join('')}${xs.length > 40 ? `<div class="muted">+ ${xs.length - 40}</div>` : ''}</div></details>`;
+  }).join('');
+  return `<div class="note warn up-review" id="up-review"><b>${t('upd_titel', esc(info.available))}</b><div>${t('upd_text')}${more('updates')}</div>${rows}</div>`;
+}
 async function vUpdates(form) {
-  const r = await api('/api/update/status'), st = S.STATUS, info = r.info;
+  const r = await api('/api/update/status'), st = S.STATUS, info = r.info, finds = upFinds(info);
   let h = `<div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.date ? `<span class="vdate">${t('vom_0', FDT(r.date))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
-    <div class="card"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.error ? '<span class="pill err">?</span>' : esc(info.available || '–') + (info.date ? `<span class="vdate">${t('vom_0', FDT(info.date))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.error ? esc(info.error) : (info.newer ? `<span class="pill ok">${t('neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + t('quelle_2') + esc(info.source || '')) : t('noch_nicht_geprueft')}${r.verified ? t('geprueft') + new Date(r.verified * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
-    <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${info && info.newer && st.local ? '' : 'disabled'}>${t('update_installieren_und_dienst_neu')}</button>${((S.CFG.updates || {}).repo || 'stecrz/Kontor') !== 'stecrz/Kontor' ? ` <span class="tag warn">${t('update_fremde_quelle', esc((S.CFG.updates || {}).repo))}</span>` : ''}</div>
+    <div class="card"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.error ? '<span class="pill err">?</span>' : esc(info.available || '–') + (info.date ? `<span class="vdate">${t('vom_0', FDT(info.date))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.error ? esc(info.error) : (info.newer ? `<span class="pill ${finds.length ? 'warn' : 'ok'}">${t(finds.length ? 'upd_wartet' : 'neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + t('quelle_2') + esc(info.source || '') + (info.newer && info.review && !finds.length ? t('upd_geprueft_ok') : '')) : t('noch_nicht_geprueft')}${r.verified ? t('geprueft') + new Date(r.verified * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
+    <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${finds.length ? 'class="danger" ' : ''}${info && info.newer && st.local ? '' : 'disabled'}>${t(finds.length ? 'upd_freigeben' : 'update_installieren_und_dienst_neu')}</button>${((S.CFG.updates || {}).repo || 'stecrz/Kontor') !== 'stecrz/Kontor' ? ` <span class="tag warn">${t('update_fremde_quelle', esc((S.CFG.updates || {}).repo))}</span>` : ''}</div>
+    ${upReview(info)}
     ${form || ''}
     ${info && info.notes && info.newer ? `<h2>${t('neu_in_0', esc(info.since && info.since !== info.available ? t('0_bis_1', info.since, info.available) : info.available))}</h2>${clHtml(info.notes)}` : ''}
     ${clSplit(r.changelog)}
@@ -6571,9 +6589,15 @@ function bind(main) {
 
   // Updates
   const uc = $('#up-check', main); if (uc) uc.addEventListener('click', async () => { toast(t('pruefe')); await api('/api/update/check', {}); S.STATUS = await api('/api/status'); softRoute(); });
-  // the click is the decision: installed without a second question (the button rests meanwhile -- a double click installs once)
-  const ui = $('#up-install', main); if (ui) ui.addEventListener('click', async () => { if (ui.disabled) return; ui.disabled = true; toast(t('update_wird_installiert'), 30000);
-    try { const r = await api('/api/update/install', {}); toast(r.text, 8000); if (r.ok && r.restart) waitAndReload(true); else ui.disabled = false; } catch (e) { ui.disabled = false; toast(e.message, 8000); } });
+  // the click is the decision: installed without a second question (the button rests meanwhile -- a double click installs once).
+  // Only a version with findings is asked about -- and installed with your approval for exactly the files you were shown; if
+  // Kontor finds something (else) when it reads them again, the page shows that instead and nothing is installed.
+  const ui = $('#up-install', main); if (ui) ui.addEventListener('click', async () => { if (ui.disabled) return;
+    const rev = (S.STATUS.update || {}).review, finds = upFinds(S.STATUS.update);
+    if (finds.length && !confirm(t('upd_frage', S.STATUS.update.available))) return;
+    ui.disabled = true; toast(t('update_wird_installiert'), 30000);
+    try { const r = await api('/api/update/install', finds.length ? {approved: rev.digest} : {}); toast(r.text, 8000);
+      if (r.ok && r.restart) waitAndReload(true); else if (r.needs_approval) { S.STATUS = await api('/api/status'); statusMini(); softRoute(); } else ui.disabled = false; } catch (e) { ui.disabled = false; toast(e.message, 8000); } });
   const lr = $('#log-refresh', main); if (lr) lr.addEventListener('click', route);
   $$('#log-min button', main).forEach(bt => bt.addEventListener('click', () => { S.logMin = +bt.dataset.min; route(); }));
   const ls = $('#log-show', main); if (ls) ls.addEventListener('click', async () => { try { await api('/api/file/reveal', {path: ((S.STATUS.storage || {}).folder || '') + '/kontor.log'}); } catch (e) { toast(e.message, 5000); } });

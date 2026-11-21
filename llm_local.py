@@ -739,10 +739,14 @@ class LocalAI:
         threading.Thread(target=drain, name="kontor-ai-out", daemon=True).start()
         return proc
 
+    def _connect(self, timeout: int) -> http.client.HTTPConnection:
+        """To the model on this Mac -- the only address the model is ever talked to at."""
+        return http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
+
     def _healthy(self) -> Optional[bool]:
         """True: ready; False: still loading; None: not reachable."""
         try:
-            c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+            c = self._connect(3)
             c.request("GET", "/health")
             r = c.getresponse()
             r.read()
@@ -847,7 +851,7 @@ class LocalAI:
         key of the model Kontor started."""
         if self.state != "ready" or self.proc is None or self.proc.poll() is not None:
             raise ModelError(tr("s_ki_laeuft_nicht"))
-        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=900)
+        conn = self._connect(900)
         self._conn, self.busy, self.last_used = conn, True, time.time()
         try:
             conn.request("POST", "/v1/chat/completions", json.dumps(body).encode("utf-8"),
@@ -903,7 +907,7 @@ class LocalAI:
         body = (field("response_format", "json") + field("temperature", "0") + (field("language", language) if re.fullmatch(r"[a-z]{2}", language or "") else b"")
                 + ("--%s\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\n" % mark).encode("utf-8") + wav
                 + ("\r\n--%s--\r\n" % mark).encode("utf-8"))
-        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=300)
+        conn = self._connect(300)
         self.busy, self.last_used = True, time.time()
         try:
             conn.request("POST", "/v1/audio/transcriptions", body, {"Content-Type": "multipart/form-data; boundary=" + mark, "Authorization": "Bearer " + self.key})

@@ -540,7 +540,7 @@ class GoalTests(unittest.TestCase):
             self.assertIn("\n" + heading, text, heading)
         for words in ("Kein Haushaltsbuch", "Von der Gesellschaft ins Privatvermögen", "Gesellschaften auch führen",
                       "Der KI-Assistent ist der Kern", "**Sicherheit.**", "**Automatik:**", "**Daten erst nach Anmeldung:**",
-                      "**Data-Warehouse (BigQuery):**", "**Reihenfolge:**", "**Name:**", "ELSTER", "gemeinsame KI"):
+                      "**Data-Warehouse (BigQuery):**", "**Reihenfolge:**", "**Name:**", "**Update-Prüfung:**", "ELSTER", "gemeinsame KI"):
             self.assertIn(words, text, words)
 
     def test_goal_stays_in_the_rules(self):

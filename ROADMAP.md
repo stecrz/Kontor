@@ -75,6 +75,15 @@ anhängen – nie löschen.
   Liste unter Einstellungen → KI-Assistent: ansehen, ändern, anheften, löschen, alles vergessen. Verschlüsselt, nie im Protokoll
   oder in Paketen; in der Sicherung enthalten; Zurücksetzen und Deinstallieren löschen es. Jedes Merken, Ersetzen und Vergessen
   mit Zeit im Änderungsprotokoll.
+- **Update-Prüfung:** Bevor ein Update installiert wird, liest die installierte Version die neuen Dateien – ohne etwas davon
+  auszuführen – und vergleicht, was über das Programm hinausreicht: Netz, andere Programme, nachgeladener Code, Umwege dorthin,
+  Internet-Adressen, Orte, von denen aus der Mac Programme startet, Helfer und Skripte, die Abschirm-Regeln und die Prüfung selbst.
+  Nichts Neues darunter: Installation wie bisher mit einem Klick, ohne ein Wort. Sonst wartet das Update – „!“ im Menü bei
+  Einstellungen, die Funde unter Updates – und wird nur mit der Freigabe des Nutzers für genau diese Dateien installiert, am Mac.
+  Geprüft wird weiter automatisch (täglich), installiert nie von selbst – auch nicht llama.cpp und Modelle des Assistenten.
+  Grenze: Die Prüfung engt den Weg für eine untergeschobene Änderung ein, sie schließt ihn nicht (wer sie kennt, kann sie mit
+  Aufwand umgehen); der nächste Schritt wäre, den Dienst selbst in macOS' Sandbox ohne ausgehendes Netz laufen zu lassen.
+  (umgesetzt in 3.16.61)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
