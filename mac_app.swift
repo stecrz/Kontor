@@ -20,9 +20,44 @@ func kontorAddress() -> URL {
     return URL(string: "http://127.0.0.1:8765/")!
 }
 
+// The window has no title bar of its own: the page reaches up to the window's top edge, its title row beside the window
+// buttons. The strip where the title bar was moves the window, as a title bar does -- except where the page has something to
+// click in it (the page says where: holes, in its own px); a double click does what macOS is set to (zoom, minimize, nothing).
+final class Web: WKWebView {
+    var band: CGFloat = 0           // the strip's height (points); 0: none (full screen, or a window with its title bar)
+    var holes: [CGRect] = []
+
+    private func inBand(_ e: NSEvent) -> Bool {
+        guard band > 0, magnification == 1, let w = window, !w.styleMask.contains(.fullScreen) else { return false }
+        let p = convert(e.locationInWindow, from: nil)
+        let top = isFlipped ? p.y : bounds.height - p.y
+        guard top >= 0, top < band else { return false }
+        let q = CGPoint(x: p.x / pageZoom, y: top / pageZoom)
+        return !holes.contains { $0.insetBy(dx: -2, dy: -2).contains(q) }
+    }
+
+    override func acceptsFirstMouse(for e: NSEvent?) -> Bool {
+        if let e = e, inBand(e) { return true }         // moving a window in the background, as by its title bar
+        return super.acceptsFirstMouse(for: e)
+    }
+
+    override func mouseDown(with e: NSEvent) {
+        guard inBand(e), let w = window else { super.mouseDown(with: e); return }
+        if e.clickCount == 2 {
+            switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+            case "Minimize": w.performMiniaturize(nil)
+            case "None": break
+            default: w.performZoom(nil)
+            }
+            return
+        }
+        w.performDrag(with: e)
+    }
+}
+
 final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandlerWithReply {
     private var window: NSWindow!
-    private var web: WKWebView!
+    private var web: Web!
     private var home = kontorAddress()
     private var labels: [String: String] = (prefs.dictionary(forKey: "labels") as? [String: String]) ?? [:]
     private var popups: [NSWindow] = []
@@ -44,14 +79,14 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         conf.mediaTypesRequiringUserActionForPlayback = []
         conf.userContentController.addScriptMessageHandler(self, contentWorld: WKContentWorld.page, name: "kontor")
         conf.userContentController.addUserScript(WKUserScript(source: Shell.bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1320, height: 860), configuration: conf)
+        web = Web(frame: NSRect(x: 0, y: 0, width: 1320, height: 860), configuration: conf)
         web.navigationDelegate = self
         web.uiDelegate = self
         web.allowsMagnification = true
         web.allowsBackForwardNavigationGestures = false
         if let z = prefs.object(forKey: "zoom") as? Double { web.pageZoom = CGFloat(z) }
 
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1320, height: 860), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1320, height: 860), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         window.title = "Kontor"
         window.contentView = web
         window.minSize = NSSize(width: 380, height: 480)
@@ -60,6 +95,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         window.delegate = self
         if !window.setFrameUsingName("Kontor") { window.center() }
         window.setFrameAutosaveName("Kontor")
+        noTitleBar()
         watches.append(web.observe(\.title, options: [.new]) { [weak self] w, _ in
             if let t = w.title, !t.isEmpty { self?.window.title = t }
         })
@@ -74,6 +110,48 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         activate()
         web.load(URLRequest(url: home))
     }
+
+    // no title bar: the page to the window's top edge -- only if clicks there really reach the page (else its title row could not
+    // be used): then the window keeps its title bar
+    private func noTitleBar() {
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        if #available(macOS 11.0, *) { window.titlebarSeparatorStyle = .none }
+        web.band = window.frame.height - window.contentLayoutRect.height
+        if web.band > 0 && stripReachesPage() { return }
+        window.styleMask.remove(.fullSizeContentView)
+        window.titlebarAppearsTransparent = false
+        window.titleVisibility = .visible
+        web.band = 0
+    }
+
+    private func stripReachesPage() -> Bool {
+        guard let frame = window.contentView?.superview else { return false }
+        frame.layoutSubtreeIfNeeded()
+        let p = web.convert(NSPoint(x: web.bounds.midX, y: web.isFlipped ? web.band / 2 : web.bounds.height - web.band / 2), to: nil)
+        guard let v = frame.hitTest(frame.superview.map { $0.convert(p, from: nil) } ?? p) else { return false }
+        return v === web || v.isDescendant(of: web)
+    }
+
+    // for the page (its px): the strip's height, where the window buttons end and their middle -- nothing in full screen
+    private func chrome() -> [String: Double] {
+        guard web.band > 0, !window.styleMask.contains(.fullScreen) else { return ["tb": 0, "tl": 0, "ly": 0] }
+        let z = Double(web.pageZoom)
+        var tl = 0.0, ly = Double(web.band) / 2
+        if let b = window.standardWindowButton(.zoomButton), let sv = b.superview {
+            let r = sv.convert(b.frame, to: nil)
+            tl = Double(r.maxX); ly = Double(window.frame.height - r.midY)
+        }
+        return ["tb": Double(web.band) / z, "tl": tl / z, "ly": ly / z]
+    }
+
+    private func sendChrome() {
+        guard let d = try? JSONSerialization.data(withJSONObject: chrome()), let s = String(data: d, encoding: .utf8) else { return }
+        web.evaluateJavaScript("window.dispatchEvent(new CustomEvent('kontorchrome', {detail: \(s)}))", completionHandler: nil)
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) { if (notification.object as? NSWindow) === window { sendChrome() } }
+    func windowDidExitFullScreen(_ notification: Notification) { if (notification.object as? NSWindow) === window { sendChrome() } }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
@@ -156,6 +234,11 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         }
     }
 
+    @objc(webView:didCommitNavigation:)
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        if webView === web { web.holes = [] }
+    }
+
     @objc(webView:didFinishNavigation:)
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard check != nil, webView === web, isHome(webView.url) else { return }
@@ -175,6 +258,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             d["menu"] = NSApp.mainMenu?.items.map { $0.title } ?? []
             d["dark"] = self?.window.appearance?.name == NSAppearance.Name.darkAqua
             d["mic"] = Shell.micState()
+            if let s = self { d["chrome"] = ["full": s.web.band > 0, "band": Double(s.web.band)] as [String: Any] }
             let out = (try? JSONSerialization.data(withJSONObject: d, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
             Shell.report(out, ok: true)
         }
@@ -312,6 +396,12 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             window.appearance = look
             popups.forEach { $0.appearance = look }
         }
+        if body["chrome"] != nil {
+            replyHandler(message.webView === web ? chrome() : ["tb": 0, "tl": 0, "ly": 0], nil); return
+        }
+        if let h = body["drag"] as? [[Double]], message.webView === web {
+            web.holes = h.compactMap { $0.count == 4 ? CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) : nil }
+        }
         if let b = body["badge"] as? NSNumber {
             NSApp.dockTile.badgeLabel = b.intValue > 0 ? String(b.intValue) : nil
         }
@@ -425,6 +515,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     private func zoom(_ z: CGFloat) {
         web.pageZoom = min(3, max(0.5, z))
         prefs.set(Double(web.pageZoom), forKey: "zoom")
+        sendChrome()
     }
 
     @objc func zoomIn(_ sender: Any?) { zoom(web.pageZoom * 1.1) }

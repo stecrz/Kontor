@@ -4783,7 +4783,7 @@ class MacAppBrowserTest(unittest.TestCase):
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         opened = []
         shell = """window.__shell = []; window.webkit = {messageHandlers: {kontor: {postMessage: m => {
-            window.__shell.push(m); return Promise.resolve(m.mic ? (window.__mic || 'prompt') : true); }}}};"""
+            window.__shell.push(m); return Promise.resolve(m.mic ? (window.__mic || 'prompt') : m.chrome ? {tb: 28, tl: 76, ly: 14} : true); }}}};"""
         standalone = """(() => { const mm = window.matchMedia.bind(window);
             window.matchMedia = q => /display-mode:\\s*standalone/.test(q) ? {matches: true, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}} : mm(q); })();"""
         try:
@@ -4830,6 +4830,18 @@ class MacAppBrowserTest(unittest.TestCase):
                 self.assertTrue(pg3.evaluate("SHELL && APP_MODE"))
                 pg3.evaluate("location.replace('#settings')"); pg3.wait_for_selector("#webapp-row .pill")
                 self.assertEqual(pg3.inner_text("#webapp-row"), "Läuft als App")
+                # no title bar of its own: the window buttons above Kontor's name, the page title level with them; the app learns
+                # where the page has something to click in the strip that moves the window (the help sign beside the title)
+                self.assertFalse(pg.evaluate("document.body.classList.contains('mac-chrome')"))
+                until(pg3, "document.body.classList.contains('mac-chrome')")
+                got = pg3.evaluate("""() => { const r = s => document.querySelector(s).getBoundingClientRect(), h = r('.topbar h1'), q = r('.topbar .page-hq');
+                    return {brand: r('.side .brand').top, title: (h.top + h.bottom) / 2, hq: [q.left, q.top, q.width, q.height].map(Math.round),
+                            drag: (window.__shell.filter(m => m.drag).pop() || {}).drag}; }""")
+                self.assertGreaterEqual(got["brand"], 28); self.assertLess(abs(got["title"] - 14), 3)
+                self.assertIn(got["hq"], got["drag"])
+                pg3.evaluate("window.dispatchEvent(new CustomEvent('kontorchrome', {detail: {tb: 0, tl: 0, ly: 0}}))")          # full screen: as in the browser
+                self.assertFalse(pg3.evaluate("document.body.classList.contains('mac-chrome')"))
+                until(pg3, "JSON.stringify((window.__shell.filter(m => m.drag).pop() || {}).drag) === '[]'")
                 pg3.select_option("#e-theme", "light"); until(pg3, "window.__shell.some(m => m.theme === 'light')")
                 pg3.select_option("#e-theme", "auto"); until(pg3, "window.__shell.some(m => m.theme === 'auto')")          # like macOS: the window follows it
                 # the microphone there: macOS's permission for the app -- asked once, then for good

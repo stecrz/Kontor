@@ -114,7 +114,7 @@ knapp vor der Frage, ein Klick darauf öffnet die Stelle wieder (3.16.23); im se
 Kasten am Mauszeiger, nicht im Chat), Wert/Zeile/Spalte kopieren, im Bezug die Stelle in der Grafik und der Pfad der Zeile (3.16.27); Zahlen in Grafiken und Karten mit Zeile und Wert, beim Klick
 auf den Bezug genau diese Zahl markiert; Gedanken und Schritte einer Antwort als ein Eintrag (3.16.35); gespeicherte Verläufe im eigenen Ordner `chats`, Anzahl/Größe in den Einstellungen,
 ältere als ein Jahr löschbar, Hinweis bei sehr vielen (3.16.51); Stil ab Werk kurz, direkt, inhaltsdicht (3.16.23); Denkaufwand mit klarer Bedeutung (Schnell: ohne Nachdenken,
-Ausgewogen: bis 2.000 Token je Antwort, Gründlich: ohne Grenze) und unter jeder Antwort „nachgedacht · Abfragen · Token/s“ (3.16.23). Kontors eigene Mac-App statt Safaris Dock-App: macOS fragt nur einmal nach dem Mikrofon, danach nie wieder; Menüleiste, Downloads, Dock-Abzeichen (3.16.42).
+Ausgewogen: bis 2.000 Token je Antwort, Gründlich: ohne Grenze) und unter jeder Antwort „nachgedacht · Abfragen · Token/s“ (3.16.23). Kontors eigene Mac-App statt Safaris Dock-App: macOS fragt nur einmal nach dem Mikrofon, danach nie wieder; Menüleiste, Downloads, Dock-Abzeichen (3.16.42); ohne eigene Titelleiste: Fensterknöpfe in der Seitenleiste, Seitentitel daneben (3.16.60).
 
 Fertig, wenn
 - **Gedächtnis** wie unter Entschieden („März teurer: Urlaub“, „Ziel: mit 45 finanziell frei“): von selbst und auf „Merk dir“,

@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.60 (2026-11-22 00:12)
+- Mac-App: keine eigene Titelleiste mehr – Fensterknöpfe in der Seitenleiste, Seitentitel daneben, mehr Platz
+- Mac-App: Fenster über die Titelzeile verschieben, Doppelklick wie in macOS eingestellt
+
 ## 3.16.59 (2026-11-22 00:03)
 - Hilfe: Abschnitt „Internet (nur lesen)“ mit Stufen und Einrichtung des Tavily-Schlüssels; Tooltip mit den drei Schritten
 

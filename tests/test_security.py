@@ -771,6 +771,7 @@ class NothingGoesOut(unittest.TestCase):
         self.assertIn("guard isHome(u) else { openOutside(u); return nil }", pop)
         msg = code[code.index("func userContentController"):]
         self.assertIn("guard message.frameInfo.isMainFrame, isHome(message.frameInfo.securityOrigin)", msg)
+        self.assertIn('body["drag"] as? [[Double]], message.webView === web', msg)                       # the window's strip: Kontor's window only
 
     def test_the_pages_talk_to_kontor_only(self):
         for path in sorted(glob.glob(os.path.join(ROOT, "web", "*"))):

@@ -30,6 +30,34 @@ const SHELL_MENU = {about: 'mac_m_ueber', settings: 'mac_m_einstellungen', hide:
   reload: 'mac_m_neu_laden', actualSize: 'mac_m_original', zoomIn: 'mac_m_groesser', zoomOut: 'mac_m_kleiner', fullScreen: 'mac_m_vollbild', window: 'mac_m_fenster',
   minimize: 'mac_m_dock', zoom: 'mac_m_zoomen', help: 'hilfe', kontorHelp: 'mac_m_kontor_hilfe', ok: 'mac_ok', cancel: 'abbrechen'};
 shellPost({labels: Object.fromEntries(Object.entries(SHELL_MENU).map(([k, v]) => [k, t(v)]))});
+// its window has no title bar of its own: the window buttons sit in the sidebar, the page title beside them, and the strip
+// where the title bar was moves the window -- the app says how high it is and where the buttons are (tb, tl, ly; this page's
+// px, 0 in full screen), the page tells it where it has something to click in that strip (those spots stay clicks)
+const CHROME = {tb: 0, tl: 0, ly: 0, sent: ''};
+const CHROME_CLICK = 'button, a[href], input, select, textarea, label, summary, [role=button], [tabindex]:not([tabindex="-1"]), .seg, .hq';
+function chromeApply(c) {
+  if (!c || typeof c !== 'object') return;
+  for (const k of ['tb', 'tl', 'ly']) { CHROME[k] = Math.max(0, +c[k] || 0); document.documentElement.style.setProperty('--' + k, CHROME[k] + 'px'); }
+  document.body.classList.toggle('mac-chrome', CHROME.tb > 0);
+  chromeHoles();
+}
+function chromeHoles() {
+  const holes = [];
+  if (CHROME.tb > 0) for (const box of document.querySelectorAll('.topbar, #assist.open .as-head, #drawer.open, .ctx')) for (const el of box.querySelectorAll(CHROME_CLICK)) {
+    const r = el.getBoundingClientRect();
+    if (r.width && r.height && r.top < CHROME.tb && r.bottom > 0 && r.right > 0 && r.left < innerWidth) holes.push([r.left, r.top, r.width, r.height].map(v => Math.round(v)));
+  }
+  const s = JSON.stringify(holes);
+  if (s !== CHROME.sent) { CHROME.sent = s; shellPost({drag: holes}); }
+}
+if (SHELL) {
+  let frame = 0;
+  const later = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; chromeHoles(); }); };
+  new MutationObserver(later).observe(document.body, {subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'hidden', 'style']});
+  addEventListener('resize', later); addEventListener('transitionend', later);
+  addEventListener('kontorchrome', e => chromeApply(e.detail));
+  shellPost({chrome: 1}).then(chromeApply);
+}
 // pages not fully tested yet: usable, but marked "Alpha" in the menu and next to the page title
 const ALPHA_TABS = new Set(['planning', 'properties', 'tax', 'transactions']);
 const alphaTag = (cls = 'alpha-tag') => `<em class="${cls}" title="${t('alpha_tip')}">${t('alpha')}</em>`;

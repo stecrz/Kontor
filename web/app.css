@@ -107,6 +107,14 @@ main { flex:1; min-width:0; padding:0 24px calc(20px + env(safe-area-inset-botto
 .topbar h1 { grid-column:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .topbar #bereich-seg { grid-column:2; justify-self:center; }
 .topbar h1 { font-size:22px; margin:0; font-weight:700; letter-spacing:-.02em; }
 .topbar h1 .page-hq { margin-left:9px; top:-2px; }          /* centred on the title's letters, a little apart */
+/* Kontor's own Mac app: no title bar -- the window buttons in the sidebar above Kontor's name, the title row (32px high) level
+   with them; the assistant's head too. --tb/--tl/--ly from the app: the strip's height, where the buttons end, their middle */
+body.mac-chrome .side { padding-top:calc(var(--tb) + 8px); }
+body.mac-chrome .topbar { padding-top:max(0px, calc(var(--ly) - 16px)); }
+body.mac-chrome .topbar .seg { padding:1px; } body.mac-chrome .topbar .seg button { padding-top:2px; padding-bottom:2px; }      /* toolbar size: clear of the window's edge */
+body.mac-chrome #assist-btn { height:26px; } body.mac-chrome #menu-btn { padding-top:0; padding-bottom:0; }
+body.mac-chrome:not(.as-page) .as-head { padding-top:max(0px, calc(var(--ly) - 14px)); }
+@media (max-width: 900px) { body.mac-chrome #menu-btn { margin-left:calc(var(--tl) - 4px); } }      /* the narrow window: beside the buttons */
 
 #menu-btn { display:none; }
 .banner { padding:10px 14px; border-radius:10px; margin:0 0 12px; background:var(--warn-bg); color:var(--warn-fg); }
