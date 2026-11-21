@@ -1,5 +1,24 @@
 # Änderungen
 
+## 3.16.23 (2026-11-21 17:55)
+- KI-Assistent: antwortet ab Werk kurz, direkt und inhaltsdicht – widerspricht mit Begründung, ohne Floskeln, Fachwörter kurz erklärt
+- KI-Assistent: Denkaufwand mit klarer Bedeutung – Schnell: ohne Nachdenken, Ausgewogen: bis 2.000 Token je Antwort, Gründlich: ohne Grenze; in den Einstellungen mit geschätzter Zeit
+- KI-Assistent: unter jeder Antwort „Token nachgedacht · Abfragen · Token/s“, dazu „Denkgrenze erreicht“
+- KI-Assistent: Gründlich nicht mehr von der Antwortlänge gedeckelt; Denkgrenze auch mit älteren llama.cpp-Versionen
+- KI-Assistent: Änderungsprotokoll zeigt die Zahl der eingetragenen Umsätze richtig
+- Entwicklung: Rundgang in der Safari-Engine übersteht das Neuladen nach der Anmeldung (3.16.19 war auf GitHub rot)
+- KI-Assistent: Rechtsklick auf Zahl, Zeile, Spaltenkopf, Grafik oder Markierung → „KI-Assistent fragen …“, Bezug vor der Frage; „Grafik drucken …“ bei allen Grafiken (kam ohne Changelog-Eintrag)
+- Entwicklung: 3.16.21 und 3.16.22 wiederhergestellt – ein späterer Commit hatte sie überschrieben
+
+## 3.16.22 (2026-11-21 17:48)
+- Entwicklung: Skill „Teamleiter“ wieder entfernt – mehrere Aufgaben in einer Nachricht teilt jeder Chat selbst auf (Unteragenten)
+
+## 3.16.21 (2026-11-21 17:43)
+- KI-Assistent: nummerierte Listen zählen weiter, auch mit Leerzeilen; Text unter einem Punkt bleibt bei ihm; Liste in der Liste.
+- KI-Assistent: breite Tabelle scrollt in ihrem Rahmen, ohne die Zeile darunter zu überdecken.
+- KI-Assistent: Weg zur dauerhaften Mikrofon-Freigabe der App im Dock korrigiert (Systemeinstellungen → Datenschutz & Sicherheit).
+- Behoben: seltene Fehlermeldung direkt nach der Anmeldung (Einstellungen noch nicht geladen).
+
 ## 3.16.20 (2026-11-21 17:33)
 - Entwicklung: Lagebild für parallele Chats – zu Beginn jeder Aufgabe, was die anderen veröffentlicht haben, Überschneidungen, Tests auf GitHub
 - Entwicklung: Rot auf GitHub behebt nur der Chat, der es verursacht hat (keine doppelten Korrekturen)

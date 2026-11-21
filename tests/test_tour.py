@@ -90,8 +90,18 @@ def _playwright():
 
 
 def settle(pg, timeout=20):
-    """Until the page is drawn (no eval-based waiting: the page's security rules forbid it). A reload in between -- the
-    language switch -- just means asking again."""
+    """Until the page is drawn and its short animations are over. A reload in between -- after the login, the page follows the
+    language set in Kontor -- just means waiting again (the page asked about is gone, not broken)."""
+    for attempt in range(3):
+        try:
+            return _settle(pg, timeout)
+        except Exception as e:                       # playwright: "Execution context was destroyed" (the reload)
+            if "context was destroyed" not in str(e) or attempt == 2:
+                raise
+
+
+def _settle(pg, timeout):
+    """Until the page is drawn (no eval-based waiting: the page's security rules forbid it)."""
     end = time.time() + timeout
     while True:
         try:

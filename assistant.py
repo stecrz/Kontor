@@ -50,6 +50,7 @@ log = logging.getLogger("kontor.assistant")
 
 FOLDER = "assistant"                               # in Kontor's data folder: llama.cpp and the model files
 EFFORTS = ("fast", "balanced", "thorough")
+THINK_BUDGET = 2000            # "balanced": at most this many tokens of thinking per answer (all steps together), then it answers
 CONTEXTS = (16384, 32768, 65536)                   # tokens the model keeps in view (the tools' descriptions alone take about 4,500)
 RIGHTS = ("figures", "transactions", "help", "page", "navigate", "enter_values", "categorize", "remote")
 DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "effort": "balanced", "context": 16384, "idle_minutes": 10, "sandbox": "strict", "save_chats": True,
@@ -1830,9 +1831,14 @@ class Assistant:
             "Talk with the user as a capable general assistant would: in natural language, about anything. Whatever the user sends -- numbers, tables, texts, "
             "code -- work with it directly (explain, calculate, compare, write or fix code, draft a text), also when it has nothing to do with Kontor.",
             "Today is %s. Always answer in %s -- the language set in Kontor -- whatever language tool results, the page or pasted texts are in (another language only if the user "
-            "asks for it explicitly). Plain, no jargon, as short as the question allows: the answer first, then what explains it. Amounts as %s, dates as %s, months as %s. "
-            "Markdown: bold for the key figure, a small table to compare, code in fenced blocks." % (
+            "asks for it explicitly). Amounts as %s, dates as %s, months as %s. Markdown: bold for the key figure, a small table to compare, code in fenced blocks." % (
                 date.today().isoformat(), lang, "1.234,56 €" if de else "€1,234.56", "31.12.2026" if de else "31 Dec 2026", "März 2026" if de else "March 2026"),
+            "Style: as short as possible, dense, factual -- the user reads little. The answer first (the figure, the verdict), then only the reasons "
+            "that carry it; bullet points and sentence fragments are fine, density matters more than polished grammar. No greeting, no praise, no "
+            "filler, no expressions of empathy or enthusiasm, no closing offers. Blunt and objective: if the user is wrong, say so directly and why; "
+            "check claims against the tools instead of agreeing. Derive from fundamentals (mathematics, statistics, economics, accounting, law) "
+            "where it helps; explain a technical term in a few words when first used. A chart or a small table where it says it faster than "
+            "words. Think carefully before answering: a well-founded answer matters more than a fast one. Emojis only where they carry meaning.",
             "Areas: %s." % areas,
             "Rules:",
             "- Figures about the user's own money come from your tools only, never from memory and never estimated. What the tools do not give is unknown: say so. "
@@ -1866,7 +1872,8 @@ class Assistant:
         if r["page"]:
             lines.append("- Each question starts with a line in [brackets] naming the page the user is looking at; get_current_page reads that page.")
         # once more in the language itself, at the end (what a model reads last, it follows best)
-        lines.append("Antworte immer auf Deutsch, in klaren, kurzen Sätzen, und sprich den Nutzer mit „du“ an." if de else "Always answer in English, in clear, short sentences.")
+        lines.append("Antworte immer auf Deutsch, du-Form: kurz, direkt, inhaltsdicht, ohne Floskeln; widersprich, wenn etwas falsch ist." if de
+                     else "Always answer in English: short, direct, dense, no filler; disagree when something is wrong.")
         return "\n".join(lines)
 
     def _where(self) -> str:
@@ -1959,11 +1966,15 @@ class Assistant:
         ev, done = j.after(max(0, after), wait=1.0)
         return {"events": ev, "done": done and not j.events[max(0, after) + len(ev):]}
 
-    def _effort(self, st: dict) -> dict:
+    def _effort(self, st: dict, used: int = 0) -> dict:
+        """What the thinking effort means for llama.cpp: fast -- no thinking; balanced -- at most THINK_BUDGET tokens of thinking for
+        the whole answer (used: thought so far in this answer), then the model must answer; thorough -- no limit. Both names of the
+        limit are sent (llama.cpp builds before b9982 read only thinking_budget_tokens)."""
         if st["effort"] == "fast":
-            return {"reasoning_effort": "none"}
+            return {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}}
         if st["effort"] == "balanced":
-            return {"reasoning_budget_tokens": 1024}
+            left = max(0, THINK_BUDGET - used)
+            return {"reasoning_budget_tokens": left, "thinking_budget_tokens": left}
         return {}
 
     def _trim(self, messages: List[dict], st: dict, room: int = 0) -> List[dict]:
@@ -2007,26 +2018,37 @@ class Assistant:
             specs = self._specs(st)
             system = {"role": "system", "content": self._system(st, ctx)}
             history = self._trim(list(conv["messages"]), st, room=len(question))
-            retried = nudged = cut = False
+            retried = nudged = cut = limit = False
+            thought = reads = 0                              # tokens of thinking in this answer; reads of the user's data
             seen: Dict[Tuple[str, str], int] = {}
             while steps < MAX_STEPS:
                 steps += 1
                 self._fit(turn, st)
-                body = dict({"messages": [system] + history + turn, "stream": True, "temperature": 0.5, "top_p": 0.9, "top_k": 40, "max_tokens": st["context"] // 4,
-                             "cache_prompt": True}, **self._effort(st))
+                msgs = [system] + history + turn
+                room = st["context"] - len(json.dumps(msgs, ensure_ascii=False)) // 3 - len(json.dumps(specs, ensure_ascii=False)) // 3 - 256
+                effort = self._effort(st, thought)
+                body = dict({"messages": msgs, "stream": True, "stream_options": {"include_usage": True}, "temperature": 0.5, "top_p": 0.9, "top_k": 40,
+                             "max_tokens": max(st["context"] // 4, min(st["context"] // 2, room)),     # thinking and answer together
+                             "cache_prompt": True}, **effort)
                 if specs and steps < MAX_STEPS:
                     body["tools"] = specs
                 text, calls, cut = "", {}, False
+                think_n, think_told = 0, None                    # this step's thinking: pieces counted / as llama.cpp reports it
                 try:
                     for piece in self.ai.chat(body, job.cancel):
                         t = piece.get("timings")
                         if isinstance(t, dict):
                             tokens += int(t.get("predicted_n") or 0)
+                        u = piece.get("usage") if isinstance(piece.get("usage"), dict) else {}
+                        det = u.get("completion_tokens_details") if isinstance(u.get("completion_tokens_details"), dict) else {}
+                        if isinstance(det.get("reasoning_tokens"), int):
+                            think_told = det["reasoning_tokens"]
                         ch = (piece.get("choices") or [{}])[0] if isinstance(piece.get("choices"), list) and piece.get("choices") else {}
                         if ch.get("finish_reason") == "length":
                             cut = True                       # the answer ran into its limit
                         d = ch.get("delta") if isinstance(ch.get("delta"), dict) else {}
                         if isinstance(d.get("reasoning_content"), str) and d["reasoning_content"]:
+                            think_n += 1                             # llama.cpp streams one token per piece
                             job.emit("think", text=d["reasoning_content"])
                         if isinstance(d.get("content"), str) and d["content"]:
                             text += d["content"]
@@ -2041,9 +2063,14 @@ class Assistant:
                             c["args"] += f.get("arguments") or ""
                 except ModelError as e:
                     if not retried and history and re.search(r"context|too long|exceed", str(e), re.I):
+                        thought += think_told if think_told is not None else think_n
                         retried, history, steps = True, [], steps - 1            # too much for the context: once more without the earlier turns
                         continue
                     raise
+                step_thought = think_told if think_told is not None else think_n
+                thought += step_thought
+                if "thinking_budget_tokens" in effort and step_thought and step_thought >= effort["thinking_budget_tokens"] - 16:
+                    limit = True                                 # the limit of "balanced" cut its thinking short
                 if not calls and specs:                      # a model that writes its tool calls as text (its template is not known to llama.cpp)
                     written = _written_calls(text, {t["function"]["name"] for t in specs})
                     if written:
@@ -2071,6 +2098,7 @@ class Assistant:
                         out = json.dumps({"note": "You already made this call in this answer and have its result above. Do not repeat it -- answer the user now."})
                     else:
                         out = self._use(job, tc["function"]["name"], tc["function"]["arguments"], ctx)
+                        reads += next((t["kind"] for t in TOOLS if t["name"] == key[0]), "") == "read"
                     turn.append({"role": "tool", "tool_call_id": tc["id"], "content": out})
                 job.emit("status", state="thinking")
             if not (turn[-1].get("role") == "assistant" and str(turn[-1].get("content") or "").strip()):
@@ -2082,7 +2110,7 @@ class Assistant:
                 turn[-1]["content"] = (str(turn[-1].get("content") or "") + "\n\n" + self._decide(job)).strip()     # the model learns what came of it
                 if job.stopped_at_card:
                     raise Cancelled()
-            job.emit("done", seconds=round(time.time() - t0, 1), tokens=tokens, tps=self.ai.tps, cut=cut)
+            job.emit("done", seconds=round(time.time() - t0, 1), tokens=tokens, tps=self.ai.tps, cut=cut, thought=thought, reads=reads, limit=limit)
         except Cancelled:
             job.emit("stopped")
         except ModelError as e:
@@ -2337,7 +2365,7 @@ def _shown(events: List[dict]) -> dict:
             while parts and parts[-1]["k"] == "text":
                 parts.pop()
         elif t == "done":
-            m["state"], m["meta"] = "done", {x: ev.get(x) for x in ("seconds", "tokens", "tps", "cut")}
+            m["state"], m["meta"] = "done", {x: ev.get(x) for x in ("seconds", "tokens", "tps", "cut", "thought", "reads", "limit")}
         elif t == "stopped":
             m["state"] = "stopped"
         elif t == "error":

@@ -880,9 +880,24 @@ class Tools(_Assist):
         self.assertEqual(text_of(evs), "Antwort: Hallo Kontor")
         self.assertEqual(evs[-1]["tps"], 42.0)
         self.assertEqual([m["role"] for m in self.a.conv["messages"]], ["user", "assistant"])
+        self.assertEqual((evs[-1]["thought"], evs[-1]["reads"], evs[-1]["limit"]), (0, 0, False))
         evs = self.ask("think eins zwei drei")
         self.assertEqual("".join(e["text"] for e in evs if e["type"] == "think"), "eins zwei drei ")
         self.assertEqual(text_of(evs), "Fertig.")
+        self.assertEqual((evs[-1]["thought"], evs[-1]["limit"]), (3, False))          # how much it thought: one token per piece
+        self.assertEqual(self.a.conv["turns"][-1]["meta"]["thought"], 3)
+        # "balanced": the limit for the whole answer -- reached, the answer says so
+        orig = A.THINK_BUDGET
+        A.THINK_BUDGET = 20
+        try:
+            self.a.set({"effort": "balanced"})
+            evs = self.ask("think " + " ".join("w%d" % i for i in range(20)))
+            self.assertEqual((evs[-1]["thought"], evs[-1]["limit"]), (20, True))
+            self.assertEqual(self.a._effort(self.a.settings(), 15), {"reasoning_budget_tokens": 5, "thinking_budget_tokens": 5})
+            self.assertEqual(self.a._effort(self.a.settings(), 30), {"reasoning_budget_tokens": 0, "thinking_budget_tokens": 0})
+        finally:
+            A.THINK_BUDGET = orig
+        self.assertEqual(self.tool("get_overview") and self.a.job.events[-1]["reads"], 1)    # lookups of the user's data
         with self.assertRaises(ValueError):
             self.a.ask({"question": "   "})
         with self.assertRaises(ValueError):
@@ -915,7 +930,9 @@ class Tools(_Assist):
         sys_de = req["messages"][0]["content"]
         for needle in ("Always answer in German", "1.234,56 €", "Nettovermögen", "Überschuss", "Kategorisieren"):
             self.assertIn(needle, sys_de)
-        self.assertTrue(sys_de.endswith("Antworte immer auf Deutsch, in klaren, kurzen Sätzen, und sprich den Nutzer mit „du“ an."))
+        self.assertTrue(sys_de.endswith("Antworte immer auf Deutsch, du-Form: kurz, direkt, inhaltsdicht, ohne Floskeln; widersprich, wenn etwas falsch ist."))
+        for needle in ("as short as possible, dense, factual", "say so directly and why", "explain a technical term", "well-founded answer matters more"):
+            self.assertIn(needle, sys_de)                                            # the style: short, blunt, well thought
         import i18n as I
         I.set_lang("en")
         try:
@@ -1276,8 +1293,8 @@ class Tools(_Assist):
         self.assertEqual(A.DEFAULTS["sandbox"], "strict")
         with self.assertRaises(ValueError):
             self.a.set({"model": "not-downloaded"})
-        self.a.set({"effort": "fast"}); self.assertEqual(self.a._effort(self.a.settings()), {"reasoning_effort": "none"})
-        self.a.set({"effort": "balanced"}); self.assertEqual(self.a._effort(self.a.settings()), {"reasoning_budget_tokens": 1024})
+        self.a.set({"effort": "fast"}); self.assertEqual(self.a._effort(self.a.settings()), {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}})
+        self.a.set({"effort": "balanced"}); self.assertEqual(self.a._effort(self.a.settings()), {"reasoning_budget_tokens": 2000, "thinking_budget_tokens": 2000})
         self.a.set({"effort": "thorough"}); self.assertEqual(self.a._effort(self.a.settings()), {})
         # for one question, chosen in the panel: the request carries it, the setting stays
         with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record"), "w"):
@@ -1287,7 +1304,7 @@ class Tools(_Assist):
         with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "request.json")) as f:
             req = json.load(f)
         self.assertEqual(req.get("reasoning_effort"), "none"); self.assertNotIn("reasoning_budget_tokens", req)
-        self.assertEqual((req["stream"], req["max_tokens"], req["cache_prompt"]), (True, 4096, True))
+        self.assertEqual((req["stream"], req["max_tokens"], req["cache_prompt"], req["stream_options"]), (True, 8192, True, {"include_usage": True}))   # half the context: room for thinking
         self.ask("Hallo", effort="nonsense")
         with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "request.json")) as f:
             self.assertNotIn("reasoning_effort", json.load(f))
@@ -3048,7 +3065,7 @@ class Browser(unittest.TestCase):
                 self.assertIsNone(pg.query_selector("#as-body img")); self.assertFalse(pg.evaluate("!!window.pwned"))       # text stays text
                 self.assertEqual(pg.inner_text("#as-body .as-t b"), "fett")
                 self.assertEqual(pg.evaluate("asMd('| a | b |\\n|---|---|\\n| x<y | 1.234,00 € |\\n\\n- eins\\n- zwei\\n\\n`code` <script>alert(1)</script>')"),
-                                 '<div class="as-tw"><table><thead><tr><th>a</th><th class="num">b</th></tr></thead><tbody><tr><td>x&lt;y</td><td class="num">1.234,00 €</td></tr></tbody></table></div>'
+                                 '<div class="as-tw"><div class="as-tw-in"><table><thead><tr><th>a</th><th class="num">b</th></tr></thead><tbody><tr><td>x&lt;y</td><td class="num">1.234,00 €</td></tr></tbody></table></div></div>'
                                  '<ul><li>eins</li><li>zwei</li></ul><p><code>code</code> &lt;script&gt;alert(1)&lt;/script&gt;</p>')
                 # the page's text goes along only while the page drawn is the page the address names (not the one before, still on screen)
                 self.assertTrue(pg.evaluate("asDrawn() && asPage().text.length > 100"))
@@ -3361,6 +3378,11 @@ class Browser(unittest.TestCase):
                         pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn")
                     T.wait_shell(pg); pg.goto(url + "#overview"); pg.wait_for_timeout(500)
                     pg.evaluate("asShow(true)"); pg.wait_for_selector("#assist.open #as-in")
+                    if not phone:                                                    # the model's Markdown: numbered on across blank lines, text below an item stays with it
+                        md = pg.evaluate("""asMd('Punkte:\\n\\n1. eins\\n\\n1. zwei\\n   weiter\\n   - innen\\n\\n1. drei\\n\\nDann:\\n3. ab drei\\n4. vier\\n\\n- a\\n- b\\n\\nEnde\\n\\n| A | B |\\n|---|---|\\n| x | 1 |')""")
+                        self.assertEqual(md.count("<ol"), 2); self.assertIn('<ol class="loose"><li>eins</li><li>zwei<br>weiter<ul><li>innen</li></ul></li><li>drei</li></ol>', md)
+                        self.assertIn('<p>Dann:</p><ol start="3"><li>ab drei</li><li>vier</li></ol><ul><li>a</li><li>b</li></ul><p>Ende</p>', md)
+                        self.assertIn('<div class="as-tw"><div class="as-tw-in"><table>', md)
                     ask(pg, 'call show_chart {"what": "balance"}')
                     pg.wait_for_selector(".as-chart .as-ch-line")
                     self.assertEqual(pg.inner_text(".as-ch-t b"), "Nettovermögen")

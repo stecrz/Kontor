@@ -673,7 +673,7 @@ async function enterApp() {
   await syncLang();
   // straight into the setup, at its first open step: on the very first start (nothing set up yet) and the first time Kontor
   // opens as an app at the Mac (created in step 1 -- the setup goes on here)
-  if (!location.hash && !OFFLINE.mode && setupOpen() && (S.setup || !S.DATA || (APP_MODE && (S.STATUS || {}).local && !(S.CFG.ui || {}).webapp)))
+  if (!location.hash && !OFFLINE.mode && setupOpen() && (S.setup || !S.DATA || (APP_MODE && (S.STATUS || {}).local && !((S.CFG || {}).ui || {}).webapp)))
     history.replaceState(null, '', '#setup');
   route();
   if (!OFFLINE.mode) asLoad().then(() => { try { if (localStorage.getItem('kontor.assist') === '1' && asOn()) { AS.open = true; asLayout(); } } catch (e) {} if (S.tab === 'assistant' || S.tab === 'setup') route(); });
@@ -1127,7 +1127,7 @@ function ovWealth(D, W, H) {
 
 // ---------------------------------------------------------------- Einrichtung (modular)
 const MODULES = [
-  {id: 'webapp', t: t('mod_webapp'), d: t('mod_webapp_d'), done: () => APP_MODE || !!(S.CFG.ui || {}).webapp, href: '#settings', optional: true},
+  {id: 'webapp', t: t('mod_webapp'), d: t('mod_webapp_d'), done: () => APP_MODE || !!((S.CFG || {}).ui || {}).webapp, href: '#settings', optional: true},
   {id: 'connect', t: t('mod_connect'), d: t('moneymoney_laeuft_und_ist_entsperrt'), done: () => S.KONTEN.length > 0, href: '#settings/moneymoney'},
   {id: 'areas', t: t('mod_areas'), d: t('welche_konten_gehoeren_zusammen_privat'), done: () => (S.CFG.areas || []).length > 0 || !!S.DATA, href: '#accounts/areas'},
   {id: 'accounts', t: t('mod_accounts'), d: t('jedes_konto_bestaetigen_bereich_und'), done: () => !!S.DATA && !((S.DATA.accounts_new || []).length), href: '#accounts'},
@@ -1138,7 +1138,7 @@ const MODULES = [
   {id: 'planning', t: t('mod_planning'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planning', optional: true},
   {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.tax || {}).rental_category, href: '#accounts/tax', optional: true},
   {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.receipts || {}).folder, href: '#settings/receipts', optional: true},
-  {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => ((S.CFG.ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
+  {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => (((S.CFG || {}).ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
   {id: 'assistant', t: t('ki_assistent_lang'), d: t('mod_assistant_d'), done: () => asOn() && !!(AS.st || {}).ready, href: '#settings/assistant', optional: true},
   {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.categories || {}).total || {}).without), href: '#categories', optional: true},
   {id: 'operation', t: t('mod_operation'), d: t('testmodus_automatischer_abgleich_mitte'), done: () => true, href: '#settings/moneymoney'},
@@ -1146,7 +1146,7 @@ const MODULES = [
 // the setup stays in the menu (and guides from step to step) until you close it yourself: "Einrichtung abgeschlossen"
 const nextModule = id => MODULES[MODULES.findIndex(m => m.id === id) + 1];          // the next step of the setup
 const setupMissing = () => MODULES.some(m => !m.optional && !m.done());
-const setupOpen = () => !(S.CFG.ui || {}).setup_done;
+const setupOpen = () => !((S.CFG || {}).ui || {}).setup_done;          // (also before the settings have arrived, just after signing in)
 function vEinrichtung(sub) {
   let h = `<div class="lang-pick"><label for="w-lang" class="small muted">${t('sprache_label')}</label><select id="w-lang">${langOpts()}</select></div>${S.KONTEN.length ? '' : `<div class="note">${t('noch_keine_konten_aus_moneymoney')}</div>`}<div class="setup-list">`;
   MODULES.forEach((m, i) => {
@@ -5615,7 +5615,7 @@ function vTsHarden(ts, r) {
 }
 async function vEinstellungenZugang() {
   // On the Mac (lock, Touch ID, address, password), below: access from the iPhone via Tailscale (state, setup, who/where/what, options, hardening)
-  const o = S.CFG.ui || {};
+  const o = (S.CFG || {}).ui || {};
   // the state of Tailscale can take a while (its app answers slowly): the page shows at once, that part follows when it is there
   const rc = S.remoteCache && Date.now() - S.remoteCache.t < 60000 ? S.remoteCache.r : null, r = rc;
   if (!rc && !S.remoteLoading) { S.remoteLoading = true;
@@ -6578,6 +6578,7 @@ function asShow(open) {
   if (AS.open) { asLoad(); const ta = $('#as-in'); if (ta && matchMedia('(hover: hover)').matches) ta.focus(); }
 }
 // what the model answers, as text with a little Markdown (bold, lists, small tables, code) -- built from escaped text only
+const LI = /^(\s*)([-*•+]|\d+[.)])\s+(.*)$/;
 function asMd(src) {
   const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:!?]|$)/g, '$1<i>$2</i>');
   const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
@@ -6591,13 +6592,31 @@ function asMd(src) {
       while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(cells(lines[i++]));
       const num = c => /\d/.test(c) && /^[+\-−–]?\s?[€$£]?\s?[\d.,\s]+\s?(€|%|EUR|T€|k)?$/.test(c);          // a figure, with or without its currency
       const numCol = head.map((_, k) => rows.length > 0 && rows.every(r => !r[k] || num(r[k])) && rows.some(r => r[k]));          // a column of figures: its heading at the right too
-      h += `<div class="as-tw"><table><thead><tr>${head.map((c, k) => `<th${numCol[k] ? ' class="num"' : ''}>${inline(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td${num(c) ? ' class="num"' : ''}>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      h += `<div class="as-tw"><div class="as-tw-in"><table><thead><tr>${head.map((c, k) => `<th${numCol[k] ? ' class="num"' : ''}>${inline(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td${num(c) ? ' class="num"' : ''}>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
       continue;
     }
-    const li = /^\s*([-*•]|\d+[.)])\s+(.*)$/.exec(l);
-    if (li) { const ord = /\d/.test(li[1]), items = [];
-      while (i < lines.length) { const m = /^\s*([-*•]|\d+[.)])\s+(.*)$/.exec(lines[i]); if (!m) break; items.push(m[2]); i++; }
-      h += `<${ord ? 'ol' : 'ul'}>${items.map(x => `<li>${inline(x)}</li>`).join('')}</${ord ? 'ol' : 'ul'}>`; continue; }
+    const li = LI.exec(l);
+    if (li) {          // a list: its items also with blank lines between them (numbered on from its first number), a text that goes on
+      // below an item (indented) and a list inside an item stay with it
+      const ord = /\d/.test(li[2]), base = li[1].length, items = [];
+      let loose = false;
+      while (i < lines.length) {
+        const m = LI.exec(lines[i]), ind = m ? m[1].length : 0;
+        if (m && ind <= base + 1 && /\d/.test(m[2]) === ord) { items.push({text: m[3], more: [], sub: []}); i++; continue; }
+        const cur = items[items.length - 1];
+        if (m && ind >= base + 2) { cur.sub.push({ord: /\d/.test(m[2]), text: m[3]}); i++; continue; }
+        if (lines[i].trim() && /^\s/.test(lines[i]) && lines[i].search(/\S/) >= base + 2) { cur.more.push(lines[i].trim()); i++; continue; }
+        if (!lines[i].trim()) {
+          let j = i; while (j < lines.length && !lines[j].trim()) j++;
+          const n = j < lines.length ? LI.exec(lines[j]) : null;
+          if (n && (n[1].length >= base + 2 || (n[1].length <= base + 1 && /\d/.test(n[2]) === ord)) || (j < lines.length && lines[j].search(/\S/) >= base + 2)) { i = j; loose = true; continue; }
+        }
+        break;
+      }
+      const start = ord ? parseInt(li[2], 10) : 1, sub = it => it.sub.length ? `<${it.sub[0].ord ? 'ol' : 'ul'}>${it.sub.map(x => `<li>${inline(x.text)}</li>`).join('')}</${it.sub[0].ord ? 'ol' : 'ul'}>` : '';
+      h += `<${ord ? 'ol' : 'ul'}${ord && start !== 1 ? ` start="${start}"` : ''}${loose ? ' class="loose"' : ''}>${items.map(it => `<li>${inline(it.text)}${it.more.map(x => '<br>' + inline(x)).join('')}${sub(it)}</li>`).join('')}</${ord ? 'ol' : 'ul'}>`;
+      continue;
+    }
     if (/^#{1,4}\s+/.test(l)) { h += `<p><b>${inline(l.replace(/^#{1,4}\s+/, ''))}</b></p>`; i++; continue; }
     if (!l.trim()) { i++; continue; }
     const par = [];
@@ -6823,14 +6842,20 @@ function asMsg(m, i) {
   });
   if (m.state === 'run' && !(m.parts || []).some(p => p.k === 'batch' && p.state === 'ask')) h += `<div class="as-run"><span class="spin"></span>${t(m.status === 'loading' ? 'ki_laedt_modell' : 'ki_denkt')}</div>`;          // the card of changes waiting for the click: nothing is being thought
   else if (m.state === 'stopped') h += `<div class="as-meta">${t('ki_gestoppt')}</div>`;
-  else if (m.meta && m.meta.seconds != null) h += `<div class="as-meta">${m.meta.cut ? t('ki_abgeschnitten') + ' · ' : ''}${t('ki_dauer', asN(m.meta.seconds))}${m.meta.tps ? ' · ' + t('ki_tempo', asN(m.meta.tps)) : ''}</div>`;
+  else if (m.meta && m.meta.seconds != null) {
+    const mm = m.meta, bits = [mm.cut ? t('ki_abgeschnitten') : '', mm.thought != null ? tn('ki_nachgedacht', mm.thought, asN(mm.thought)) : '',
+      mm.reads != null ? tn('ki_abfragen', mm.reads, mm.reads) : '', mm.tps ? t('ki_tempo', asN(mm.tps)) : '', mm.limit ? t('ki_denkgrenze') : ''].filter(Boolean);
+    h += `<div class="as-meta" title="${esc(t('ki_meta_tip'))}">${bits.map(esc).join(' · ')}</div>`;
+  }
   return `<div class="as-msg">${h}</div>`;
 }
+// what a thinking effort means, with the time it takes on this Mac (from its measured speed): only the limited one has a time
+const asEffortLabel = (k, tps) => `${t(`ki_denken_${k}`)} – ${t(`ki_denken_${k}_d`)}` + (k === 'balanced' && tps ? ` (${t('ki_etwa_s', asN(2000 / tps))})` : '');
 function asHead() {
   const hd = $('#as-head'); if (!hd) return;
   const page = S.tab === 'assistant', sv = (AS.st || {}).server || {}, st = sv.state || 'stopped';
   hd.innerHTML = `<b>${t('ki_assistent')}</b><span class="as-st ${esc(st)}" title="${esc(t(`ki_z_${st}`))}"></span>
-    <span class="as-hb"><select id="as-eff" title="${esc(t('ki_denken'))}" aria-label="${esc(t('ki_denken'))}">${['fast', 'balanced', 'thorough'].map(k => `<option value="${k}" ${asEffort() === k ? 'selected' : ''}>${t(`ki_denken_${k}`)}</option>`).join('')}</select>
+    <span class="as-hb"><select id="as-eff" title="${esc(t('h_ki_denken'))}" aria-label="${esc(t('ki_denken'))}">${['fast', 'balanced', 'thorough'].map(k => `<option value="${k}" ${asEffort() === k ? 'selected' : ''}>${t(`ki_denken_${k}`)}</option>`).join('')}</select>
     <button class="icon as-hist-btn${AS.list ? ' on' : ''}" title="${esc(t('ki_verlaeufe'))}" aria-label="${esc(t('ki_verlaeufe'))}" aria-pressed="${AS.list}">${ICON.history}</button>
     <button class="icon as-new" title="${esc(t('ki_neu'))}" aria-label="${esc(t('ki_neu'))}">${ICON.compose}</button>
     <button class="icon as-big" title="${esc(t(page ? 'ki_neben_seite' : 'ki_gross'))}" aria-label="${esc(t(page ? 'ki_neben_seite' : 'ki_gross'))}">${ICON.expand}</button>
@@ -7527,7 +7552,7 @@ async function vEinstellungenAssistent() {
       ${state === 'ready' ? `<span class="tag${sv.sealed === 'strict' ? '' : ' warn'}" title="${esc(t(sv.sealed === 'strict' ? 'ki_abgeschirmt_tip' : sv.sealed ? 'ki_abgeschirmt_einfach_tip' : 'ki_nicht_abgeschirmt_tip'))}">${t(sv.sealed === 'strict' ? 'ki_abgeschirmt' : sv.sealed ? 'ki_abgeschirmt_einfach' : 'ki_nicht_abgeschirmt')}</span>` : ''}<span class="muted small" id="as-use">${esc(use)}</span>
       ${state === 'ready' || state === 'starting' ? `<button class="small secondary" id="as-stop">${t('ki_stoppen')}</button>` : `<button class="small secondary" id="as-start" ${st.enabled && a.ready ? '' : 'disabled'}>${t('ki_starten')}</button>`}</div>
     ${state === 'error' && sv.error ? `<div class="full banner err small">${esc(sv.error)}</div>` : ''}
-    <label>${t('ki_denken')}${hq('ki_denken')}</label><label class="chk"><select id="as-effort">${['fast', 'balanced', 'thorough'].map(k => opt(k, t(`ki_denken_${k}`), st.effort)).join('')}</select></label>
+    <label>${t('ki_denken')}${hq('ki_denken')}</label><label class="chk"><select id="as-effort">${['fast', 'balanced', 'thorough'].map(k => opt(k, asEffortLabel(k, sv.tps), st.effort)).join('')}</select></label>
     <label>${t('ki_kontext')}${hq('ki_kontext')}</label><label class="chk"><select id="as-context">${[16384, 32768, 65536].map(k => opt(k, t('ki_kontext_n', k / 1024), st.context)).join('')}</select></label>
     <label>${t('ki_leerlauf')}${hq('ki_leerlauf')}</label><label class="chk"><select id="as-idle">${[5, 10, 30, 60, 0].map(k => opt(k, k ? t('ki_leerlauf_n', k) : t('ki_leerlauf_nie'), st.idle_minutes)).join('')}</select></label>
     <label for="as-save">${t('ki_speichern')}${hq('ki_speichern')}</label><div class="row tight as-save-row"><label class="chk"><input type="checkbox" id="as-save" ${st.save_chats !== false ? 'checked' : ''} aria-label="${esc(t('ki_speichern'))}"></label>
@@ -7547,7 +7572,7 @@ async function asChangesLoad() {
   const list = r.changes || [];
   el.classList.toggle('muted', !list.length);
   el.innerHTML = !list.length ? t('ki_aenderungen_keine') : `<div class="as-tw"><table><thead><tr><th>${t('ki_a_zeit')}</th><th>${t('ki_a_was')}</th><th>${t('ki_a_grund')}</th><th>${t('ki_a_stand')}</th></tr></thead><tbody>${list.map(c => `<tr>
-    <td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(kind(c.kind))}</b> · ${esc(c.title || '')}${c.category ? ' → ' + esc(c.category.replace(/ \/ /g, ' › ')) : ''}${c.sub ? `<div class="muted small">${esc(c.sub)}</div>` : ''}${c.count ? `<div class="muted small">${tn('ki_e_umsaetze', c.count, c.count)}${c.sum != null ? ' · ' + fmt.format(c.sum) : ''}</div>` : ''}</td><td>${esc(c.reason || '–')}</td>
+    <td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(kind(c.kind))}</b> · ${esc(c.title || '')}${c.category ? ' → ' + esc(c.category.replace(/ \/ /g, ' › ')) : ''}${c.sub ? `<div class="muted small">${esc(c.sub)}</div>` : ''}${c.count ? `<div class="muted small">${tn('ki_a_umsaetze', c.count, c.count)}${c.sum != null ? ' · ' + fmt.format(c.sum) : ''}</div>` : ''}</td><td>${esc(c.reason || '–')}</td>
     <td class="nowrap">${t(c.state === 'undone' ? 'ki_e_undone' : 'ki_e_done')}${c.final ? ' · ' + t('ki_a_endgueltig') : ''}${[c.note, c.state === 'undone' ? c.undo_note : ''].filter(Boolean).map(x => `<div class="muted small">${esc(x)}</div>`).join('')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 const asRate = b => b >= 1e6 ? (b / 1e6).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e7 ? 0 : 1}) + ' MB/s' : Math.max(1, Math.round(b / 1e3)).toLocaleString(LOCALE) + ' KB/s';
