@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.16 (2026-11-21 16:46)
+- Entwicklung: Test der Feldbreite beim Diktat unabhängig von der Schriftart (war auf GitHub rot).
+
 ## 3.16.15 (2026-11-21 16:16)
 - Entwicklung: Ziel geschärft („dein digitaler CFO“) – Leitlinien, Entscheidungen, Offenes in Fahrplan und Regeln
 - Entwicklung: Fahrplan neu geordnet – Daten erst nach Anmeldung, KI-Assistent, GbR-Entlastung, Gesellschaften, Planung

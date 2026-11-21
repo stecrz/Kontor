@@ -2624,11 +2624,12 @@ class Browser(unittest.TestCase):
                 self.assertFalse(pg.evaluate("document.querySelector('#as-in').readOnly"))
                 self.assertFalse(pg.evaluate("REC.stream.getTracks().some(t => t.readyState === 'live')"))       # the microphone is let go
                 # ✕ left of the field throws it away too; meanwhile nothing can be sent -- that button goes, so the field keeps its width
-                fw = pg.evaluate("document.querySelector('#as-in').getBoundingClientRect().width")
+                fw, mw = pg.evaluate("['#as-in', '#as-mic'].map(q => document.querySelector(q).getBoundingClientRect().width)")
                 pg.click("#as-mic"); until(pg, "REC.on")
                 vis = "[...document.querySelectorAll('#as-field button')].filter(b => b.getClientRects().length).map(b => b.id)"
                 self.assertEqual(pg.evaluate(vis), ["as-x", "as-mic", "as-go"])               # dictating: throw it away (✕), take it (the microphone), send it; + goes
-                self.assertGreaterEqual(pg.evaluate("document.querySelector('#as-in').getBoundingClientRect().width"), fw - 4)
+                dw, tw = pg.evaluate("['#as-in', '#as-mic'].map(q => document.querySelector(q).getBoundingClientRect().width)")
+                self.assertGreaterEqual(dw, fw - (tw - mw) - 3)                             # no narrower than the running time in the microphone takes (the font's width)
                 pg.click("#as-x"); until(pg, "!REC.on && !REC.busy")
                 self.assertEqual(pg.evaluate("document.querySelector('#as-in').value"), said)
                 self.assertEqual(pg.evaluate(vis), ["as-add", "as-mic", "as-go"])
