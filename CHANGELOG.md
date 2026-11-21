@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.56 (2026-11-21 23:50)
+- Entwicklung: Gedächtnis des KI-Assistenten im Fahrplan festgelegt (Entschieden)
+
 ## 3.16.55 (2026-11-21 23:49)
 - Anmeldung: nach einem Update dreht sich „Kontor wird geladen …“ statt eines dunklen Fensters
 

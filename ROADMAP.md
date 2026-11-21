@@ -64,6 +64,17 @@ anhängen – nie löschen.
   Adresse; Kontor sucht (nicht das Modell), nur an diese festen Adressen, nie mit eigenen Daten; Seiten liest ein abgeschotteter
   Prozess, danach keine Änderungen im selben Chat. (teilweise umgesetzt in 3.16.48: Wikipedia/Wikidata, Gesetze im Internet,
   GLEIF, EZB, Bundesbank, Eurostat, tagesschau, GDELT, Tavily; fehlen noch Rechtsinformationsportal, BMF/BFH, Destatis, OECD, Portal-Feeds)
+- **Gedächtnis des KI-Assistenten:** Er merkt sich von selbst, was dauerhaft ist – über den Nutzer, seine Pläne, Entscheidungen,
+  Menschen, Vorlieben und wie er antworten soll –, auch über Finanzen hinaus („zweites Gehirn“, nur auf diesem Mac). „Merk dir …“
+  gilt immer, „Vergiss …“ löscht. Nur aus den eigenen Worten des Nutzers, nie aus Buchungstexten, Belegen, Dateien, Webseiten oder
+  Werkzeug-Ergebnissen. Gespeichert sofort; die Antwort zeigt „Gemerkt: …“ mit „Rückgängig“. Jede Notiz mit Datum und Herkunft
+  (Unterhaltung); widerspricht eine neue einer alten, ersetzt sie diese sichtbar („ersetzt: …“, rückgängig). Zwei Stufen, damit es
+  ohne Grenze wachsen kann und jede Anfrage gleich viel kostet: ein Steckbrief in jeder Anfrage (angeheftete, dann zuletzt gemerkte
+  und benutzte Notizen; höchstens etwa 1.500 Token, ändert sich selten – der Zwischenspeicher greift) und eine Suche für alles
+  andere (Notizen und gespeicherte Verläufe; nur das Passende kommt zur Frage). Beruht eine Antwort auf Gemerktem, sagt er es.
+  Liste unter Einstellungen → KI-Assistent: ansehen, ändern, anheften, löschen, alles vergessen. Verschlüsselt, nie im Protokoll
+  oder in Paketen; in der Sicherung enthalten; Zurücksetzen und Deinstallieren löschen es. Jedes Merken, Ersetzen und Vergessen
+  mit Zeit im Änderungsprotokoll.
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
@@ -71,7 +82,7 @@ anhängen – nie löschen.
 - Unabhängig von MoneyMoney: woher dann die Bankdaten kommen.
 - Zukunft: eine gemeinsame KI für Nutzer und Geschäftspartner (später Mitarbeiter) auf einem eigenen Rechner mit starker
   Grafikkarte, Zugang je Konto über einen sicheren Kanal, gemeinsames Gedächtnis; widerspricht heute „alles auf diesem Mac“ –
-  erst nach ausdrücklicher Entscheidung. Ebenso ein Gedächtnis über Finanzen hinaus („zweites Gehirn“).
+  erst nach ausdrücklicher Entscheidung. (Ein Gedächtnis über Finanzen hinaus, nur auf diesem Mac: entschieden, siehe Gedächtnis.)
 
 ## 1. Daten erst nach Anmeldung (Sicherheit)
 Ziel: Wer den entsperrten Mac hat, aber nicht bei Kontor angemeldet ist, kommt an keine Kontor-Daten.
@@ -106,10 +117,10 @@ auf den Bezug genau diese Zahl markiert; Gedanken und Schritte einer Antwort als
 Ausgewogen: bis 2.000 Token je Antwort, Gründlich: ohne Grenze) und unter jeder Antwort „nachgedacht · Abfragen · Token/s“ (3.16.23). Kontors eigene Mac-App statt Safaris Dock-App: macOS fragt nur einmal nach dem Mikrofon, danach nie wieder; Menüleiste, Downloads, Dock-Abzeichen (3.16.42).
 
 Fertig, wenn
-- **Gedächtnis:** merkt sich Fakten und Erklärungen aus den eigenen Worten des Nutzers („März teurer: Urlaub“) – nie aus
-  Buchungstexten, Dateien, Belegen oder Werkzeug-Ergebnissen; jedes Gemerkte erscheint sofort mit „Rückgängig“; Liste unter
-  Einstellungen → KI-Assistent zum Ansehen, Ändern, Löschen; verschlüsselt, nie in Paketen oder im Protokoll; ohne feste Grenze:
-  das Modell holt sich per Suche, was zur Frage passt (Gemerktes und gespeicherte Verläufe);
+- **Gedächtnis** wie unter Entschieden („März teurer: Urlaub“, „Ziel: mit 45 finanziell frei“): von selbst und auf „Merk dir“,
+  sofort mit „Rückgängig“, Steckbrief plus Suche, Liste in den Einstellungen, in der Sicherung; Tests: eingeschleuste Sätze in
+  Buchungstexten, Belegen, Dateien und Webseiten werden nie gemerkt; der Steckbrief bleibt unter seiner Grenze, auch bei
+  Tausenden Notizen; noch nicht begonnen (Stand 3.16.56) – wer anfängt, zuerst im Lagebild prüfen, ob ein anderer Chat schon daran ist;
 - **Hinweise von selbst:** nach jedem Abgleich prüft Kontor (fester Code) auf Auffälliges – gestiegene Ausgaben, ungewöhnliche
   Umsätze, Fristen (Voranmeldung, Zinsbindung), Liquidität, offene Kategorien, Sicherheitslage (Zugang, Freigaben, Updates) –
   und zeigt es unter Offenes; der Assistent erklärt und ordnet ein, Gemerktes zählt (bekannter Grund, kein Alarm);
