@@ -58,7 +58,8 @@ log = logging.getLogger("kontor.assistant")
 FOLDER = "assistant"                               # in Kontor's data folder: llama.cpp and the model files
 EFFORTS = ("fast", "balanced", "thorough")
 THINK_BUDGET = 2000            # "balanced": at most this many tokens of thinking per answer (all steps together), then it answers
-CONTEXTS = (16384, 32768, 65536, 131072)           # tokens the model keeps in view (the tools' descriptions alone take about 4,500)
+CONTEXTS = (16384, 32768, 65536, 131072)           # tokens the model keeps in view (the tools' descriptions take about 5,000 -- 4,000 in a small one)
+COMPACT_BELOW = 32768                              # a smaller context gets the tools without the hints on their parameters (_specs)
 
 
 def auto_context(ram: int) -> int:
@@ -761,7 +762,11 @@ class Assistant:
         return [{"name": t["name"], "kind": t["kind"], "right": t["right"]} for t in TOOLS if _allowed(t, st["rights"])]
 
     def _specs(self, st: dict) -> List[dict]:
-        out = [{"type": "function", "function": {"name": t["name"], "description": t["text"], "parameters": t["params"]}}
+        """The tools as the model is given them -- only those the rights allow. In a small context (16k, a Mac with little memory)
+        without the hints on their parameters (names, kinds and choices stay): about a fifth less, so that the question and the
+        conversation keep their room; from 32k on in full."""
+        small = st["context"] < COMPACT_BELOW
+        out = [{"type": "function", "function": {"name": t["name"], "description": t["text"], "parameters": _bare(t["params"]) if small else t["params"]}}
                for t in TOOLS if _allowed(t, st["rights"])]
         if st["rights"].get("internet") and not web_search.tavily_key(self.app.store):        # no key of yours: no tier 3
             for f in (x["function"] for x in out if x["function"]["name"] == "web_search"):
@@ -3250,6 +3255,15 @@ def _earlier(messages: List[dict]) -> List[dict]:
     conversation so keeps far more questions in view, and less is read with each new one; the latest question keeps its
     results for a follow-up ("and the year before?")."""
     return [dict(m, content=EARLIER_RESULT) if m.get("role") == "tool" and len(str(m.get("content") or "")) > KEEP_RESULT else m for m in messages]
+
+
+def _bare(params: Any) -> Any:
+    """A tool's parameters without their descriptions (for a small context)."""
+    if isinstance(params, dict):
+        return {k: _bare(v) for k, v in params.items() if k != "description"}
+    if isinstance(params, list):
+        return [_bare(v) for v in params]
+    return params
 
 
 def _allowed(t: dict, rights: dict) -> bool:

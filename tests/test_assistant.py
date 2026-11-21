@@ -1004,8 +1004,14 @@ class Tools(_Assist):
         self.assertEqual((A.question_limit(16384), A.question_limit(65536)), (19660, 40000))
         self.assertEqual(A.settings({"assistant": {"context": 8192}})["context"], 16384)      # too small for the tools' descriptions: not offered
         import math
-        specs = json.dumps(self.a._specs(dict(self.a.settings(), rights={k: True for k in A.RIGHTS})), ensure_ascii=False)
-        self.assertLess(math.ceil(len(specs) / 3.0) + 1200, min(A.CONTEXTS) // 2)             # tools and system text leave at least half of the smallest context
+        # tools and system text leave the question and the conversation their room: in the smallest context (compact tools) more
+        # than half, from 32k on (in full) more than two thirds
+        size = lambda ctx: math.ceil(len(json.dumps(self.a._specs(dict(self.a.settings(), context=ctx, rights={k: True for k in A.RIGHTS})), ensure_ascii=False)) / 3.0) + 1200
+        self.assertLess(size(min(A.CONTEXTS)), min(A.CONTEXTS) // 2)
+        self.assertLess(size(A.COMPACT_BELOW), A.COMPACT_BELOW // 3)
+        self.assertLess(size(min(A.CONTEXTS)), size(A.COMPACT_BELOW) * 0.85)                 # compact: without the parameters' hints
+        small = next(t for t in self.a._specs(dict(self.a.settings(), context=16384)) if t["function"]["name"] == "open_page")["function"]
+        self.assertNotIn("description", json.dumps(small["parameters"])); self.assertIn("enum", json.dumps(small["parameters"]))
         self.assertEqual(self.app.assistant.status(True)["question_limit"], 19660)
         long = "Zeile mit Zahlen 1 2 3\n" * 800
         self.assertGreater(len(long), 18000)
