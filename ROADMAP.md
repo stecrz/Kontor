@@ -124,7 +124,7 @@ Fertig, wenn
 Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach Klick, je Schritt eine kleine Version):
 - [x] 3.16.13 Sammelfreigabe: alle Änderungen einer Antwort auf einer Karte, ein Klick (einzeln abwählbar); Änderungsprotokoll; Änderungsrechte ab Werk an.
 - [x] 3.16.19 Kategorien zuordnen (Vorschlag je Gegenpartei, Klick, rückgängig wie unter Kategorisieren; vom iPhone erst am Mac).
-- [ ] Auto-Buchungen prüfen, freigeben, verwerfen (die Karte sagt: in MoneyMoney nicht rückgängig).
+- [x] 3.16.33 Auto-Buchungen prüfen, freigeben, zurückhalten (Freigeben nur am Mac, die Karte sagt: in MoneyMoney nicht rückgängig; Zurückhalten zurücknehmbar).
 - [ ] Buchungsregeln (Darlehen, Beteiligungen, Kontenspiegel) anlegen und ändern; Buchungen daraus immer erst zur Freigabe.
 - [x] 3.16.26 Offene Aufgaben beim Öffnen, jede mit „Erledigen“ (die Liste kommt von Kontor, auch ohne Modell; ohne passendes Recht „Öffnen“).
 - [ ] Belege: Datei in den Chat, Texterkennung von macOS (offline), passenden Umsatz vorschlagen, Abweichungen nennen, ablegen und verknüpfen.

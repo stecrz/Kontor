@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.33 (2026-11-21 20:30)
+- KI-Assistent: schlägt wartende Auto-Buchungen zur Freigabe oder zum Zurückhalten vor – gebucht erst nach deinem Klick, nur am Mac, in MoneyMoney endgültig
+- KI-Assistent: was Kontor erst geprüft haben will, gibst du weiter selbst unter Auto-Buchungen frei; Paare werden zusammen zurückgehalten
+- KI-Assistent: neues Recht „Auto-Buchungen“ (ab Werk an, jede Buchung erst nach dem Klick)
+
 ## 3.16.32 (2026-11-21 20:25)
 - KI-Assistent: Ablage von llama.cpp und allen Modellen (auch Diktieren) angezeigt, „Im Finder zeigen“
 - KI-Assistent: Hilfe-Symbole bei Programm, Modelle und Ablage

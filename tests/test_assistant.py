@@ -1256,7 +1256,7 @@ class Tools(_Assist):
 
     def test_rights(self):
         self.assertEqual(len(self.a.tool_list(self.a.settings())), len(A.TOOLS))         # changes are on from the start (each after the user's click)
-        self.a.set({"rights": {"enter_values": False, "categorize": False}})
+        self.a.set({"rights": {"enter_values": False, "categorize": False, "book": False}})
         self.assertEqual(len(self.a.tool_list(self.a.settings())), len([t for t in A.TOOLS if t['kind'] != 'enter']))   # everything but changes
         self.assertNotIn("enter_balances", [t["name"] for t in self.a.tool_list(self.a.settings())])
         with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record"), "w"):
@@ -1283,12 +1283,12 @@ class Tools(_Assist):
         self.assertEqual(names, {t["name"] for t in A.TOOLS})
         kind = {t["name"]: t["kind"] for t in A.TOOLS}
         self.assertFalse([n for n in names if any(w in n for w in ("setting", "config", "rule_set", "install", "download", "model", "right", "password", "transfer"))])
-        self.assertEqual([n for n in names if kind[n] != "read" and any(w in n for w in ("book", "categor", "rule", "sync", "account"))],
-                         ["assign_categories"])       # bookings, rules: read only; categories: proposed for transactions without one, after the click
-        self.assertEqual({n for n in names if kind[n] == "enter"}, {"enter_balances", "set_plan_values", "set_plan_parameters", "add_plan_event", "assign_categories"})
+        self.assertEqual(sorted(n for n in names if kind[n] != "read" and any(w in n for w in ("book", "categor", "rule", "sync", "account"))),
+                         ["assign_categories", "decide_bookings"])       # rules: read only; categories for transactions without one, waiting bookings: proposed, after the click
+        self.assertEqual({n for n in names if kind[n] == "enter"}, {"enter_balances", "set_plan_values", "set_plan_parameters", "add_plan_event", "assign_categories", "decide_bookings"})
         self.assertEqual({n for n in names if kind[n] == "show"}, {"open_page", "highlight", "show_transactions", "show_chart"})
         self.assertEqual({t["kind"] for t in A.TOOLS}, {"read", "show", "enter"})
-        self.assertEqual({t["right"] for t in A.TOOLS if t["kind"] == "enter"}, {"enter_values", "categorize"})
+        self.assertEqual({t["right"] for t in A.TOOLS if t["kind"] == "enter"}, {"enter_values", "categorize", "book"})
 
     def test_settings_grouped_and_saved_before(self):
         # reading is one switch in the settings: figures, transactions and the page together; the help always
@@ -1341,7 +1341,8 @@ class Tools(_Assist):
         with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "request.json")) as f:
             req = json.load(f)
         self.assertEqual(req.get("reasoning_effort"), "none"); self.assertNotIn("reasoning_budget_tokens", req)
-        self.assertEqual((req["stream"], req["max_tokens"], req["cache_prompt"], req["stream_options"]), (True, 8192, True, {"include_usage": True}))   # half the context: room for thinking
+        self.assertEqual((req["stream"], req["cache_prompt"], req["stream_options"]), (True, True, {"include_usage": True}))
+        self.assertTrue(4096 < req["max_tokens"] <= 8192, req["max_tokens"])         # up to half the context, as far as the question leaves room: thinking and answer
         self.ask("Hallo", effort="nonsense")
         with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "request.json")) as f:
             self.assertNotIn("reasoning_effort", json.load(f))
@@ -1950,6 +1951,192 @@ class Chats(_Assist):
         self.assertEqual(A._history([{"role": "user", "text": "a"}, {"role": "assistant", "state": "done", "parts": [{"k": "text", "text": "b"}]},
                                      {"role": "user", "text": "c"}, {"role": "assistant", "state": "stopped", "parts": [{"k": "text", "text": "halb"}]}]),
                          [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}])
+
+
+class Bookings(_Assist):
+    """Auto bookings waiting for approval, through the assistant: approved ones booked into MoneyMoney only after the click at the
+    Mac (final -- the card says so), held back ones never proposed again until taken back."""
+
+    def setUp(self):
+        T._AppBase.setUp(self)
+        self._open = L._open
+        self.login()
+        self.app.config["dry_run"] = True                                            # trial run: the rules' bookings wait for approval
+        self.app.do_run(True, True)
+        self.app.rebuild_report(wait=True)
+        self.net = install(self.app)
+        self.a = self.app.assistant
+
+    def waiting(self):
+        return self.tool("get_auto_bookings")["waiting_for_approval"]
+
+    def propose(self, args):
+        r = self.a.ask({"question": "call decide_bookings " + json.dumps(args)})
+        evs = events(self.a, r["job"], until="batch")
+        return r["job"], [e for e in evs if e["type"] == "entry"], next((e["id"] for e in evs if e["type"] == "batch"), None), evs
+
+    def test_approve_books_only_at_the_mac_and_is_final(self):
+        w = [x for x in self.waiting() if "check_first" not in x]
+        self.assertGreater(len(w), 3); self.assertTrue(all(len(x["id"]) == 8 for x in w))
+        self.assertIn("decide_bookings", self.tool("get_auto_bookings")["note"])
+        pick = w[:2]
+        n0 = len(T.MockBridge.state["txs"])
+        job, cards, batch, evs = self.propose({"approve": [x["id"] for x in pick], "reason": "geprüft"})
+        self.assertEqual([(c["kind"], c["count"], c["final"], c["sum"]) for c in cards], [("book", 2, True, round(sum(x["amount"] for x in pick), 2))])
+        self.assertEqual(len(T.MockBridge.state["txs"]), n0)                         # proposed: nothing booked
+        # from the iPhone: refused, nothing booked
+        self.a.confirm(job, batch, True, None, False)
+        st = next(e for e in events(self.a, job) if e["type"] == "entry_state")
+        self.assertEqual(st["state"], "failed"); self.assertIn("nur von diesem Mac", st["text"])
+        self.assertEqual(len(T.MockBridge.state["txs"]), n0)
+        # at the Mac: booked, fixed (no take back), logged
+        job, cards, batch, evs = self.propose({"approve": [x["id"] for x in pick]})
+        self.a.confirm(job, batch, True, None, True)
+        st = next(e for e in events(self.a, job) if e["type"] == "entry_state")
+        self.assertEqual((st["state"], st["fixed"]), ("done", True), st)
+        self.assertEqual(len(T.MockBridge.state["txs"]), n0 + 2)
+        left = {x["id"] for x in self.waiting()}
+        self.assertFalse({x["id"] for x in pick} & left)
+        self.assertEqual((self.a.changes()[0]["kind"], self.a.changes()[0]["count"], self.a.changes()[0]["final"]), ("book", 2, True))
+        with self.assertRaises(ValueError):
+            self.a.take_back(cards[0]["id"], True)
+        # an id no longer waiting: refused before any card
+        evs = self.propose({"approve": [pick[0]["id"]]})[3]
+        self.assertIn("not waiting", text_of(evs)); self.assertFalse(any(e["type"] == "entry" for e in evs))
+
+    def test_hold_back_and_take_back(self):
+        w = self.waiting()
+        job, cards, batch, evs = self.propose({"hold_back": [w[0]["id"]], "reason": "doppelt"})
+        self.assertEqual([(c["kind"], c["count"], c.get("final", False)) for c in cards], [("hold", 1, False)])
+        self.a.confirm(job, batch, True, None, True); events(self.a, job)
+        keys = [x["key"] for x in self.app.config.get("not_book") or []]
+        self.assertEqual(len(keys), 1); self.assertNotIn(w[0]["id"], {x["id"] for x in self.waiting()})
+        self.a.take_back(cards[0]["id"], True)
+        self.assertEqual(self.app.config.get("not_book") or [], [])
+        # the same booking approved and held back: refused; nothing to decide: refused
+        self.assertIn("cannot be approved and held back", text_of(self.propose({"approve": [w[1]["id"]], "hold_back": [w[1]["id"]]})[3]))
+        self.assertIn("are empty", text_of(self.propose({})[3]))
+
+    def test_moneymoney_stops_or_rules_fail(self):
+        """MoneyMoney stops after the first booking: that one is booked -- said on the card and logged; the rules fail: said so."""
+        w = [x for x in self.waiting() if "check_first" not in x]
+        job, cards, batch, evs = self.propose({"approve": [x["id"] for x in w[:3]]})
+        orig, made = T.MockBridge.add_transaction, []
+
+        def once(self_, *a, **k):
+            if made:
+                raise MA.MoneyMoneyError("locked")
+            made.append(1)
+            return orig(self_, *a, **k)
+        T.MockBridge.add_transaction = once
+        try:
+            self.a.confirm(job, batch, True, None, True)
+            st = next(e for e in events(self.a, job, seconds=60) if e["type"] == "entry_state")
+        finally:
+            T.MockBridge.add_transaction = orig
+        self.assertEqual(st["state"], "done", st); self.assertIn("2 Buchungen nicht gebucht · locked", st["text"])
+        self.assertEqual((self.a.changes()[0]["count"], self.a.changes()[0]["sum"]), (1, round(w[0]["amount"], 2)))
+        # the rules fail at the click: nothing booked, and the card says why
+        import core
+        self.app.do_run(True, True)                                                  # the next check lists what still waits
+        w = [x for x in self.waiting() if "check_first" not in x]
+        job, cards, batch, evs = self.propose({"approve": [w[0]["id"]]})
+        real = core.plan_all
+        core.plan_all = lambda *a_, **k_: (_ for _ in ()).throw(RuntimeError("unexpected"))
+        try:
+            with self.assertLogs(level="ERROR"):
+                self.a.confirm(job, batch, True, None, True)
+                st = next(e for e in events(self.a, job, seconds=60) if e["type"] == "entry_state")
+        finally:
+            core.plan_all = real
+        self.assertEqual(st["state"], "failed"); self.assertIn("nichts gebucht", st["text"])
+
+    def test_booked_meanwhile_on_the_page_is_not_this_click(self):
+        """Approved on the page between the proposal and the click: the click books nothing -- said so, nothing logged."""
+        w = [x for x in self.waiting() if "check_first" not in x]
+        job, cards, batch, evs = self.propose({"approve": [w[0]["id"]]})
+        lr = self.app.status(True)["last_run"]
+        key = next(p_["key"] for p_ in lr["proposals"] if A._booking_id(p_) == w[0]["id"])
+        self.app.do_run(False, True, approve={key: {}})                              # the user on the page
+        n = len(self.a.changes())
+        self.a.confirm(job, batch, True, None, True)
+        st = next(e for e in events(self.a, job, seconds=60) if e["type"] == "entry_state")
+        self.assertEqual(st["state"], "failed", st); self.assertEqual(len(self.a.changes()), n)
+
+    def test_error_after_writing_still_counts(self):
+        """An unexpected error after writing (the run's state not kept): MoneyMoney is read again -- what was booked is said and logged."""
+        w = [x for x in self.waiting() if "check_first" not in x]
+        job, cards, batch, evs = self.propose({"approve": [w[0]["id"]]})
+        real, hit = self.app.store.update, []
+        n0 = len(T.MockBridge.state["txs"])
+
+        def full(name, *a_, **k_):                   # the run's state after writing: once not saved (a full disk, say)
+            if name == "state.json" and not hit and len(T.MockBridge.state["txs"]) > n0:
+                hit.append(1)
+                raise OSError(28, "No space left on device")
+            return real(name, *a_, **k_)
+        self.app.store.update = full
+        try:
+            with self.assertLogs(level="ERROR"):
+                self.a.confirm(job, batch, True, None, True)
+                st = next(e for e in events(self.a, job, seconds=60) if e["type"] == "entry_state")
+        finally:
+            self.app.store.update = real
+        self.assertTrue(hit); self.assertEqual(st["state"], "done", st); self.assertEqual(self.a.changes()[0]["count"], 1)
+        # not even MoneyMoney read again: "not clear" -- never "not booked"
+        w = [x for x in self.waiting() if "check_first" not in x] or [None]
+        if w[0] is None:
+            self.app.do_run(True, True); w = [x for x in self.waiting() if "check_first" not in x]
+        job, cards, batch, evs = self.propose({"approve": [w[0]["id"]]})
+        orig = (self.app.do_run, self.app.refresh_ledger)
+        self.app.do_run = lambda *a_, **k_: {"status": "error", "text": "x"}
+        self.app.refresh_ledger = lambda: (None, "locked")
+        try:
+            self.a.confirm(job, batch, True, None, True)
+            st = next(e for e in events(self.a, job, seconds=60) if e["type"] == "entry_state")
+        finally:
+            self.app.do_run, self.app.refresh_ledger = orig
+        self.assertEqual(st["state"], "failed"); self.assertIn("unklar", st["text"])
+
+    def test_check_first_and_pairs(self):
+        """What Kontor wants checked first is never approved through the assistant; a pair made by hand is held back together."""
+        lr = self.app.status(True)["last_run"]
+        a, b = lr["proposals"][0], lr["proposals"][1]
+        a["note"], b["pair"], a["pair"] = "möglicherweise doppelt", a["key"], b["key"]      # as Kontor marks them
+        self.app.store.update("state.json", lambda cur: cur["last_run"].update(proposals=lr["proposals"]), {})
+        w = {x["id"]: x for x in self.waiting()}
+        ia, ib = A._booking_id(a), A._booking_id(b)
+        self.assertEqual((w[ia]["check_first"], w[ia]["pair_with"], w[ib]["pair_with"]), ("möglicherweise doppelt", ib, ia))
+        evs = self.propose({"approve": [ia]})[3]
+        self.assertIn("check these first", text_of(evs)); self.assertFalse(any(e["type"] == "entry" for e in evs))
+        self.assertIn("belong together", text_of(self.propose({"approve": [ib], "hold_back": [ia]})[3]))
+        job, cards, batch, evs = self.propose({"hold_back": [ia]})
+        self.assertEqual(cards[0]["count"], 2)                                       # both halves
+        self.a.confirm(job, batch, True, None, True); events(self.a, job)
+        self.assertEqual(sorted(x["key"] for x in self.app.config["not_book"]), sorted([a["key"], b["key"]]))
+
+    def test_changed_meanwhile_and_rights(self):
+        w = self.waiting()
+        job, cards, batch, evs = self.propose({"approve": [w[0]["id"]]})
+        real = self.a.hooks["approve_bookings"]
+        self.a.hooks["approve_bookings"] = lambda shown: {"booked": [], "left": list(shown), "error": MA.tr("s_betraege_geaendert")}
+        try:
+            self.a.confirm(job, batch, True, None, True)
+            st = next(e for e in events(self.a, job) if e["type"] == "entry_state")
+        finally:
+            self.a.hooks["approve_bookings"] = real
+        self.assertEqual(st["state"], "failed"); self.assertIn("etwas geändert", st["text"])
+        # without the right: no tool, and the note says the user does it
+        self.a.set({"rights": {"book": False}})
+        self.assertNotIn("decide_bookings", [t["name"] for t in self.a.tool_list(self.a.settings())])
+        self.assertIn("you cannot do that", self.tool("get_auto_bookings")["note"])
+        # switched off between the proposal and the click: not carried out
+        self.a.set({"rights": {"book": True}})
+        job, cards, batch, evs = self.propose({"hold_back": [w[0]["id"]]})
+        self.a.set({"rights": {"book": False}})
+        self.a.confirm(job, batch, True, None, True)
+        self.assertEqual([e["state"] for e in events(self.a, job) if e["type"] == "entry_state"], ["declined"])
+        self.assertEqual(self.app.config.get("not_book") or [], [])
 
 
 class Categories(_Assist):
@@ -2993,7 +3180,7 @@ class Browser(unittest.TestCase):
                 until(pg, "AS.st.settings.rights.enter_values === true")
                 # the rights in groups -- read (one switch; the help always), show, change, from where
                 self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-rg-h')].map(e => e.firstChild.textContent)"), ["Lesen – die Hilfe immer", "Zeigen", "Ändern – jede Änderung erst nach deinem Klick", "Von wo"])
-                self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-right')].map(e => e.dataset.r)"), ["read", "navigate", "enter_values", "categorize", "remote"])
+                self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-right')].map(e => e.dataset.r)"), ["read", "navigate", "enter_values", "categorize", "book", "remote"])
                 pg.uncheck(".as-right[data-r=read]"); until(pg, "!AS.st.settings.rights.figures && !AS.st.settings.rights.transactions && !AS.st.settings.rights.page && AS.st.settings.rights.help")
                 pg.wait_for_selector(".as-right[data-r=read]"); pg.check(".as-right[data-r=read]"); until(pg, "AS.st.settings.rights.figures && AS.st.settings.rights.transactions && AS.st.settings.rights.page")
                 # the context: automatic by the memory of this Mac, or chosen

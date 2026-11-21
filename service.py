@@ -184,6 +184,68 @@ def unassign_categories(app: "App", ids: List[int], pfad: str, local: bool) -> d
             "kept": 0 if res["open"] else len(ids) - len(waits) - res["undone"]}
 
 
+def approve_bookings(app: "App", shown: Dict[str, float]) -> dict:
+    """Waiting bookings approved (the assistant's card, after the click at the Mac): a live run that books only these, each only if
+    its amount is still the one shown (else nothing is booked). Returns which were booked and which still wait, or why not."""
+    if app.running:
+        return {"booked": [], "left": list(shown), "error": tr("s_ein_abgleich_laeuft_bereits")}
+    marks = lambda: {rules_bkey(b["account_id"], b["mark"]) for b in kontor_bookings(app.ledger)}
+    before = marks()                                     # in MoneyMoney already (e.g. approved on the page meanwhile): not this click's
+    res = app.do_run(False, True, approve={k: {"shown": round(float(v), 2)} for k, v in shown.items()})
+    if res.get("status") == "error" and app.ledger is not None:
+        try:                                             # something failed after writing (the run's state not kept): MoneyMoney read again
+            if app.refresh_ledger()[0] is None:
+                raise RuntimeError("not read")
+        except Exception as e:                           # not even that: whether it was booked is not known -- said so, never "not booked"
+            log.warning("Approval: MoneyMoney not read again after a failed run (%s)", type(e).__name__)
+            return {"booked": [], "left": list(shown), "error": tr("s_ki_buchung_unklar")}
+    # booked by this click: what carries its mark in MoneyMoney now and did not before -- whatever the run says (it may stop midway)
+    after = marks()
+    booked = [k for k in shown if k in after and k not in before]
+    warn = [w for w in res.get("warnings") or [] if w]
+    if len(booked) == len(shown):
+        why = None
+    elif tr("s_betraege_geaendert") in warn:            # an amount changed meanwhile: nothing booked
+        why = tr("s_betraege_geaendert")
+    else:                                                # MoneyMoney stopped, the rules failed, ...: said as the run says it
+        why = res.get("text") or res.get("error") or (warn[0] if warn else None) or tr("s_ki_nicht_gebucht")
+    return {"booked": booked, "left": [k for k in shown if k not in booked], "error": why}
+
+
+def hold_back_bookings(app: "App", keys: List[str]) -> int:
+    """Bookings you do not want: never proposed again (settings: not_book) until "Propose again"; what still waits is planned again
+    without them (from the last state read, nothing is written)."""
+    lr = (app.store.load("state.json", {}) or {}).get("last_run") or {}
+    cfg = copy.deepcopy(app.config)
+    cfg["not_book"] = [x for x in cfg.get("not_book") or [] if x.get("key") not in keys] + [
+        not_booked_entry(next((x for x in lr.get("proposals") or [] if x.get("key") == key), None) or {"account_name": "", "text": ""}, key) for key in keys]
+    app.save_config(cfg)
+
+    def upd(cur: dict) -> None:
+        lr = cur.get("last_run") or {}
+        if lr.get("proposals"):
+            lr["proposals"] = [x for x in lr["proposals"] if x.get("key") not in keys]
+            if lr.get("dry_run") and app.ledger is not None:
+                try:
+                    lr["proposals"] = plan_pending(app.ledger, app.config, cur, date.today())
+                except Exception as e:          # the list stays as it was; the next check plans it again
+                    log.warning("Approval list not recalculated: %s", e)
+            lr["dry_run"] = bool(lr["proposals"]) and lr.get("dry_run", False)
+    app.store.update("state.json", upd, {})
+    log.info("%d booking(s) set to not be booked", len(keys))
+    return len(keys)
+
+
+def restore_bookings(app: "App", keys: List[str]) -> int:
+    """"Propose again": off the list of bookings not to book -- the next check proposes them if they are still needed."""
+    cfg = copy.deepcopy(app.config)
+    before = len(cfg.get("not_book") or [])
+    cfg["not_book"] = [x for x in cfg.get("not_book") or [] if x.get("key") not in keys]
+    app.save_config(cfg)
+    log.info("%d booking(s) to be proposed again", before - len(cfg["not_book"]))
+    return before - len(cfg["not_book"])
+
+
 def kontor_bookings(ledger) -> List[dict]:
     """The bookings Kontor has made in MoneyMoney: those carrying its mark (#kontor-...) in the purpose. Newest first."""
     out: List[dict] = []
@@ -318,6 +380,9 @@ class App:
                     "category_problem": lambda path: mm_categories.assignable(mm_categories.index(self.categories_raw), path),
                     "category_paths": lambda: sorted(p for p, c in mm_categories.index(self.categories_raw).items()
                                                      if mm_categories.assignable(mm_categories.index(self.categories_raw), p) is None),
+                    "approve_bookings": lambda shown: approve_bookings(self, shown),
+                    "hold_bookings": lambda keys: hold_back_bookings(self, keys),
+                    "restore_bookings": lambda keys: restore_bookings(self, keys),
                     "assign": lambda ids, path, local: assistant_assign_categories(self, ids, path, local),
                     "unassign": lambda ids, path, local: unassign_categories(self, ids, path, local),
                     "bookings": lambda: {"made": kontor_bookings(self.ledger)[:500], "held_back": len(self.config.get("not_book") or []),
@@ -2622,26 +2687,7 @@ def make_handler(app: App):
                     keys.append(rules_bkey(acc, tag))
                 if not keys:
                     return self._json(400, {"error": tr("s_markierung_ungueltig")})
-                lr = (app.store.load("state.json", {}) or {}).get("last_run") or {}
-                cfg = copy.deepcopy(app.config)
-                cfg["not_book"] = [x for x in cfg.get("not_book") or [] if x.get("key") not in keys] + [
-                    not_booked_entry(next((x for x in lr.get("proposals") or [] if x.get("key") == key), None) or {"account_name": "", "text": ""}, key) for key in keys]
-                app.save_config(cfg)
-
-                def upd(cur: dict) -> None:
-                    # what still waits, planned again without it (the next value adjustment of that account takes up the
-                    # difference) -- from the last state read, nothing is written
-                    lr = cur.get("last_run") or {}
-                    if lr.get("proposals"):
-                        lr["proposals"] = [x for x in lr["proposals"] if x.get("key") not in keys]
-                        if lr.get("dry_run") and app.ledger is not None:
-                            try:
-                                lr["proposals"] = plan_pending(app.ledger, app.config, cur, date.today())
-                            except Exception as e:          # the list stays as it was; the next check plans it again
-                                log.warning("Approval list not recalculated: %s", e)
-                        lr["dry_run"] = bool(lr["proposals"]) and lr.get("dry_run", False)
-                app.store.update("state.json", upd, {})
-                log.info("Booking set to not be booked")
+                hold_back_bookings(app, keys)
                 return self._json(200, {"ok": True})
             if path == "/api/bookings/plan":
                 # the approval list for your selection: what you leave out (halten) or change (aenderungen) and everything
@@ -2669,11 +2715,7 @@ def make_handler(app: App):
                 acc, _, tag = key.partition("|")
                 if not re.fullmatch(r"[0-9A-Za-z-]{8,64}", acc) or not TAG_RE.fullmatch(tag):
                     return self._json(400, {"error": tr("s_markierung_ungueltig")})
-                key = rules_bkey(acc, tag)
-                cfg = copy.deepcopy(app.config)
-                cfg["not_book"] = [x for x in cfg.get("not_book") or [] if x.get("key") != key]
-                app.save_config(cfg)
-                log.info("Booking to be proposed again")
+                restore_bookings(app, [rules_bkey(acc, tag)])
                 return self._json(200, {"ok": True})
             if path == "/api/bookings/refresh":
                 # "Aktualisieren" under Auto bookings: only the accounts of the rules read again, the approval list planned again
