@@ -124,7 +124,7 @@ def main():
             last = msgs[-1] if msgs else {}
             users = [m for m in msgs if m.get("role") == "user"]
             q = str((users[-1] if users else {}).get("content") or "")
-            if q.startswith("[Page: ") and "]\n" in q:           # Kontor's line before the question: where the user is
+            if q.startswith(("[Page: ", "[Seite: ")) and "]\n" in q:           # Kontor's line before the question: where the user is
                 q = q.split("]\n", 1)[1]
             script = None
             if os.path.exists(os.path.join(here, "script.json")):

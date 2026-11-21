@@ -935,7 +935,9 @@ class Tools(_Assist):
         sys_de = req["messages"][0]["content"]
         for needle in ("Always answer in German", "1.234,56 €", "Nettovermögen", "Überschuss", "Kategorisieren"):
             self.assertIn(needle, sys_de)
-        self.assertTrue(sys_de.endswith("Antworte immer auf Deutsch, du-Form: kurz, direkt, inhaltsdicht, ohne Floskeln; widersprich, wenn etwas falsch ist."))
+        self.assertTrue(sys_de.endswith("Denke und antworte immer auf Deutsch – auch deine Gedanken liest der Nutzer mit. Du-Form: kurz, direkt, inhaltsdicht, "
+                                        "ohne Floskeln; widersprich, wenn etwas falsch ist."))
+        self.assertIn("Think in that language too, from the first word of your thoughts", sys_de)        # its thoughts too: the user reads them
         for needle in ("as short as possible, dense, factual", "say so directly and why", "explain a technical term", "well-founded answer matters more"):
             self.assertIn(needle, sys_de)                                            # the style: short, blunt, well thought
         import i18n as I
@@ -944,9 +946,15 @@ class Tools(_Assist):
             sys_en = self.a._system(self.a.settings(), {})
         finally:
             I.set_lang("de")
-        for needle in ("Always answer in English", "€1,234.56", "Net worth", "Surplus", "Categorise"):
+        for needle in ("Always answer in English", "€1,234.56", "Net worth", "Surplus", "Categorise", "Always think and answer in English"):
             self.assertIn(needle, sys_en)
         self.assertNotIn("Antworte", sys_en)
+        I.set_lang("en")
+        try:
+            self.a.page = {"route": "#balance", "title": "Balance sheet", "area_name": "Private"}
+            self.assertEqual(self.a._where(), "[Page: Balance sheet, Area: Private]\n")          # the line before a question: in English then
+        finally:
+            I.set_lang("de"); self.a.page = {}
         self.assertEqual(self.tool("calculate", {"expression": "(1250.50 + 980) * 12 / 100"}), {"result": 267.66, "rounded": 267.66})
         self.assertEqual(self.tool("calculate", {"expression": "100000 * 1.03 ^ 10"})["rounded"], 134391.64)
         self.assertEqual(self.tool("calculate", {"expression": "sum([0.1, 0.2, 0.3]) - round(10 / 3, 2)"})["result"], -2.73)
@@ -1248,7 +1256,7 @@ class Tools(_Assist):
         self.assertEqual(self.a.page["text"], "")                                    # not even kept
         self.assertEqual(self.a._where(), "")                                        # (a page the assistant is not told about)
         self.a.set_page(page)
-        self.assertEqual(self.a._where(), "[Page: Bilanz, area: Privat]\n")
+        self.assertEqual(self.a._where(), "[Seite: Bilanz, Bereich: Privat]\n")
         self.a.set({"rights": {"page": False}})
         self.a.set_page(page)
         self.assertEqual(self.a.page["text"], "")
@@ -1548,7 +1556,7 @@ class Tools(_Assist):
         self.a.reset()
         sys1 = self.a._system(self.a.settings(), {})
         self.ask("wo bin ich", page={"route": "#cashflow", "title": "Cashflow", "area": self.app.dataset()["main_area"], "text": "x"})
-        self.assertEqual(self.a.conv["messages"][0]["content"], "[Page: Cashflow, area: Privat]\nwo bin ich")
+        self.assertEqual(self.a.conv["messages"][0]["content"], "[Seite: Cashflow, Bereich: Privat]\nwo bin ich")
         self.assertEqual(self.a._system(self.a.settings(), {}), sys1)
         self.a.reset()
         self.assertEqual(self.a.conv["messages"], [])

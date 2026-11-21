@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.36 (2026-11-21 21:02)
+- KI-Assistent: denkt in der Sprache von Kontor (Gedanken auf Deutsch statt Englisch)
+
 ## 3.16.35 (2026-11-21 20:56)
 - KI-Assistent: Gedanken und Schritte („Liest die Bilanz“ …) als ein Eintrag; zeigt beim Antworten den laufenden Schritt
 - Rechtsklick auf eine Zahl in Grafik oder Karte: Bezug mit Zeile und Wert (etwa „Überschuss: +48.660“) samt Details

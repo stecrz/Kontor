@@ -1936,7 +1936,7 @@ class Assistant:
             "Talk with the user as a capable general assistant would: in natural language, about anything. Whatever the user sends -- numbers, tables, texts, "
             "code -- work with it directly (explain, calculate, compare, write or fix code, draft a text), also when it has nothing to do with Kontor.",
             "Today is %s. Always answer in %s -- the language set in Kontor -- whatever language tool results, the page or pasted texts are in (another language only if the user "
-            "asks for it explicitly). Amounts as %s, dates as %s, months as %s. Markdown: bold for the key figure, a small table to compare, code in fenced blocks." % (
+            "asks for it explicitly). Think in that language too, from the first word of your thoughts: the user reads them. Amounts as %s, dates as %s, months as %s. Markdown: bold for the key figure, a small table to compare, code in fenced blocks." % (
                 date.today().isoformat(), lang, "1.234,56 €" if de else "€1,234.56", "31.12.2026" if de else "31 Dec 2026", "März 2026" if de else "March 2026"),
             "Style: as short as possible, dense, factual -- the user reads little. The answer first (the figure, the verdict), then only the reasons "
             "that carry it; bullet points and sentence fragments are fine, density matters more than polished grammar. No greeting, no praise, no "
@@ -1984,8 +1984,9 @@ class Assistant:
         if r["page"]:
             lines.append("- Each question starts with a line in [brackets] naming the page the user is looking at; get_current_page reads that page.")
         # once more in the language itself, at the end (what a model reads last, it follows best)
-        lines.append("Antworte immer auf Deutsch, du-Form: kurz, direkt, inhaltsdicht, ohne Floskeln; widersprich, wenn etwas falsch ist." if de
-                     else "Always answer in English: short, direct, dense, no filler; disagree when something is wrong.")
+        lines.append("Denke und antworte immer auf Deutsch – auch deine Gedanken liest der Nutzer mit. Du-Form: kurz, direkt, inhaltsdicht, ohne Floskeln; "
+                     "widersprich, wenn etwas falsch ist." if de
+                     else "Always think and answer in English -- the user reads your thoughts too. Short, direct, dense, no filler; disagree when something is wrong.")
         return "\n".join(lines)
 
     def _where(self) -> str:
@@ -1995,7 +1996,8 @@ class Assistant:
         tab = _tab(p.get("route"))
         if not tab or not self.settings()["rights"]["page"]:
             return ""
-        return "[Page: %s%s]\n" % (str(p.get("title") or tab)[:60], (", area: %s" % p["area_name"]) if p.get("area_name") else "")
+        # in the language of Kontor: the first words of a question set the language of the model's thoughts
+        return "[%s: %s%s]\n" % (tr("ref_seite"), str(p.get("title") or tab)[:60], (", %s: %s" % (tr("ref_bereich"), p["area_name"])) if p.get("area_name") else "")
 
     def ask(self, body: dict) -> dict:
         st = self.settings()
