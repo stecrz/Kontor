@@ -859,6 +859,23 @@ function niceTicks(min, max, n, least = 0) {
   return out;
 }
 
+// What is open -- for the overview (a card beside the monthly chart) and the assistant (on an empty conversation, each with what it can do
+// about it): [kind, text, page, what the assistant may be asked to do (or '')]. Kontor's own figures; no model needed.
+async function openItems(D) {
+  const m = D.months, cur = m[m.length - 1], yr = cur.slice(0, 4);
+  const [ok, ob] = await Promise.all([api(`/api/transactions?year=${yr}&uncategorized=1&limit=1&entity=${encodeURIComponent(S.area)}`).catch(() => ({})),
+    api(`/api/transactions?year=${yr}&without_receipt=1&direction=out&limit=1&entity=${encodeURIComponent(S.area)}`).catch(() => ({}))]);
+  const lastRun = S.STATUS.last_run, items = [];
+  if (lastRun && lastRun.dry_run && lastRun.proposals && lastRun.proposals.length) items.push(['warn', lastRun.proposals.length + t('buchungsvorschlaege_warten_testmodus'), '#bookings', 'bookings']);
+  if (ok.hits) items.push(['warn', ok.hits + t('umsaetze') + yr + t('ohne_kategorie_zuordnen'), '#categories', 'categorize']);
+  if ((S.DATA.accounts_new || []).length) items.push(['warn', nKonten(S.DATA.accounts_new.length) + t('ohne_bestaetigte_zuordnung_bereich_pos'), '#accounts', '']);
+  if (ob.hits) items.push(['neutral', ob.hits + t('ausgaben_3') + yr + t('ohne_beleg'), '#transactions?no_receipt=1', 'receipts']);
+  const ue = (D.cashflow.reconciliation || {})[cur]; if (ue && Math.abs(ue.unexplained) > 1) items.push(['warn', t('unerklaerte_vermoegensaenderung_im_lau') + F(ue.unexplained) + t('pruefzeile'), '#cashflow', 'unexplained']);
+  for (const w of (D.warnings || []).slice(0, 3)) items.push(['warn', w, '#bookings', '']);
+  if (S.STATUS.update && S.STATUS.update.newer) items.push(['info', t('update') + S.STATUS.update.available + t('verfuegbar'), '#settings/updates', '']);
+  return items;
+}
+
 // ---------------------------------------------------------------- Übersicht
 // The overview: the most important charts and key figures on one screen, reduced to what they say at a glance -- no tables, no plan, no
 // comparisons. A click on a chart opens its place in Bilanz or Cashflow. Above them only what is to do (if anything).
@@ -866,17 +883,7 @@ async function vUebersicht() {
   const D = B();
   if (!D) return S.setup || !S.DATA ? `<div class="card"><div class="v s">${t('willkommen_bei_kontor')}</div><div class="d">${t('die_einrichtung_fuehrt_dich_durch')}</div><div class="actions"><a href="#setup"><button>${t('einrichtung_oeffnen')}</button></a></div></div>` : noData;
   const m = D.months, cur = m[m.length - 1], yr = cur.slice(0, 4);
-  // what is to do: a line of pills (the sidebar shows the same as marks)
-  const [ok, ob] = await Promise.all([api(`/api/transactions?year=${yr}&uncategorized=1&limit=1&entity=${encodeURIComponent(S.area)}`).catch(() => ({})),
-    api(`/api/transactions?year=${yr}&without_receipt=1&direction=out&limit=1&entity=${encodeURIComponent(S.area)}`).catch(() => ({}))]);
-  const lastRun = S.STATUS.last_run, items = [];
-  if (lastRun && lastRun.dry_run && lastRun.proposals && lastRun.proposals.length) items.push(['warn', lastRun.proposals.length + t('buchungsvorschlaege_warten_testmodus'), '#bookings']);
-  if (ok.hits) items.push(['warn', ok.hits + t('umsaetze') + yr + t('ohne_kategorie_zuordnen'), '#categories']);
-  if ((S.DATA.accounts_new || []).length) items.push(['warn', nKonten(S.DATA.accounts_new.length) + t('ohne_bestaetigte_zuordnung_bereich_pos'), '#accounts']);
-  if (ob.hits) items.push(['neutral', ob.hits + t('ausgaben_3') + yr + t('ohne_beleg'), '#transactions?no_receipt=1']);
-  const ue = (D.cashflow.reconciliation || {})[cur]; if (ue && Math.abs(ue.unexplained) > 1) items.push(['warn', t('unerklaerte_vermoegensaenderung_im_lau') + F(ue.unexplained) + t('pruefzeile'), '#cashflow']);
-  for (const w of (D.warnings || []).slice(0, 3)) items.push(['warn', w, '#bookings']);
-  if (S.STATUS.update && S.STATUS.update.newer) items.push(['info', t('update') + S.STATUS.update.available + t('verfuegbar'), '#settings/updates']);
+  const items = await openItems(D);
   // beside the monthly chart (lower right): what is open, each line leads where it is done -- the list scrolls if long
   const todo = items.length ? `<div class="card ov-todo" data-ov="todo"><div class="ov-head"><b>${t('ov_offen')}</b><span class="ov-fig"><span class="ov-s">${items.length}</span></span></div><div class="ov-todo-l">${items.map(([k, x, href]) => `<a href="${href}" class="ov-todo-i ${k}"><i class="ov-todo-d"></i><span>${esc(x)}</span><span class="ov-todo-c" aria-hidden="true">›</span></a>`).join('')}</div></div>` : '';
   const card = (id, title, go, foot = '') => `<div class="card link ov-card" data-ov="${id}" data-ovgo="${go}" role="link" tabindex="0" aria-label="${esc(title)}"><div class="ov-head"><b>${esc(title)}</b><span class="ov-fig" id="ov-fig-${id}"></span></div><div class="ov-plot" id="ov-${id}"></div>${foot}</div>`;
@@ -7102,14 +7109,32 @@ async function asFiles(files) {
   }
   ta.dispatchEvent(new Event('input')); ta.focus();
 }
+// What is open (the same list as on the overview), on an empty conversation: what the assistant can do about it starts with one click as a
+// question (its changes still wait for the click on their card), the rest opens its page. Loaded in the background, drawn when there.
+const AS_ACT = {categorize: ['categorize', 'transactions'], bookings: ['figures'], receipts: ['transactions'], unexplained: ['figures']};
+function asOpenDraw(a) {
+  const L = AS.open_items; if (!L || !L.length) return '';
+  const r = (a.settings || {}).rights || {}, can = act => a.ready && AS_ACT[act] && AS_ACT[act].every(k => r[k]);
+  return `<div class="as-todo"><div class="as-todo-h">${t('ov_offen')}</div>${L.map(([k, x, href, act], i) => `<div class="as-todo-i ${esc(k)}"><i class="ov-todo-d"></i><span>${esc(x)}</span>
+    ${can(act) ? `<button class="small secondary as-do" data-i="${i}" type="button">${t('ki_erledigen')}</button>` : `<a class="small as-todo-go" href="${esc(href)}">${t('ki_oeffnen')}</a>`}</div>`).join('')}</div>`;
+}
+async function asOpenLoad() {
+  const D = B(); if (!D || !S.STATUS || AS.open_busy) return;
+  AS.open_busy = true;
+  try { const L = await openItems(D), was = JSON.stringify(AS.open_items || null); AS.open_items = L; if (JSON.stringify(L) !== was && !AS.msgs.length && !AS.list) asMsgs(); }
+  catch (e) { /* the list stays as it was */ }
+  finally { AS.open_busy = false; }
+}
 function asMsgs(bottom) {
   const b = $('#as-body'); if (!b) return;
   const near = bottom || b.scrollHeight - b.scrollTop - b.clientHeight < 80, a = AS.st || {};
   AS.cw = Math.max(240, b.clientWidth - 32);          // charts drawn to the width there is (1 unit = 1 px: their text as on the pages)
   if (AS.list) { b.innerHTML = asHistDraw(); if (bottom) b.scrollTop = 0; asGo(); return; }
   if (!AS.msgs.length) {
-    b.innerHTML = !a.ready ? `<div class="as-empty"><div class="muted">${t('ki_einrichten')}</div>${a.local ? `<a class="more" href="#settings/assistant">${t('ki_zu_einstellungen')}</a>` : `<div class="muted small">${t('ki_nur_am_mac')}</div>`}</div>`
-      : `<div class="as-empty">${[1, 2, 3].filter(i => i < 3 || (((a.settings || {}).rights || {}).page && !AS_HIDDEN.includes(S.tab))).map(i => `<button class="as-sug" type="button">${t(`ki_bsp_${i}`)}</button>`).join('')}</div>`;
+    b.innerHTML = (!a.ready ? `<div class="as-empty"><div class="muted">${t('ki_einrichten')}</div>${a.local ? `<a class="more" href="#settings/assistant">${t('ki_zu_einstellungen')}</a>` : `<div class="muted small">${t('ki_nur_am_mac')}</div>`}</div>`
+      : `<div class="as-empty">${[1, 2, 3].filter(i => i < 3 || (((a.settings || {}).rights || {}).page && !AS_HIDDEN.includes(S.tab))).map(i => `<button class="as-sug" type="button">${t(`ki_bsp_${i}`)}</button>`).join('')}</div>`)
+      + asOpenDraw(a);
+    asOpenLoad();
   } else { b.innerHTML = AS.msgs.map(asMsg).join(''); spinKeep(b); asChKeep(); }
   if (near) b.scrollTop = b.scrollHeight;
   asGo();
@@ -7463,6 +7488,7 @@ $('#assist').addEventListener('click', async e => {
   else if (b.classList.contains('as-ch-open')) { const h = asChFrom(b); if (h) asChGo(h.c, -1, 0); }
   else if (b.classList.contains('as-big')) { if (S.tab === 'assistant') { AS.open = true; try { localStorage.setItem('kontor.assist', '1'); } catch (x) {} go(AS.prev || '#overview'); } else go('#assistant'); }
   else if (b.classList.contains('as-sug')) asSend(b.textContent);
+  else if (b.classList.contains('as-do')) { const it = (AS.open_items || [])[+b.dataset.i]; if (it) asSend(t(`ki_do_${it[3]}`)); }
   else if (b.classList.contains('as-copy')) { try { await navigator.clipboard.writeText(b.parentNode.querySelector('pre').textContent); b.textContent = t('ki_kopiert'); setTimeout(() => { b.textContent = t('ki_kopieren'); }, 1500); } catch (x) {} }
   else if (b.classList.contains('as-b-yes') || b.classList.contains('as-b-no')) {
     b.parentNode.querySelectorAll('button').forEach(x => { x.disabled = true; });

@@ -2919,6 +2919,10 @@ class Browser(unittest.TestCase):
                 pg.evaluate("document.scrollingElement.scrollTop = 600"); pg.wait_for_timeout(100)
                 y0 = pg.evaluate("document.scrollingElement.scrollTop"); self.assertGreater(y0, 300)
                 pg.click("#assist-btn"); pg.wait_for_selector("#assist.open #as-in"); pg.wait_for_timeout(400)
+                # an empty conversation shows what is open (the overview's list): what the assistant can do starts as a question, the rest opens its page
+                until(pg, "!!document.querySelector('.as-todo .as-do') && !!document.querySelector('.as-todo .as-todo-go')")
+                self.assertIn("offen", pg.inner_text(".as-todo").lower()); self.assertIn("ohne Beleg", pg.inner_text(".as-todo"))
+                self.assertTrue(pg.evaluate("AS.open_items.every(it => !it[3] || !!I18N['ki_do_' + it[3]])"))
                 # ... and scrolls on its own, its scroll bar at its own right edge (left of the panel), where it was before
                 sc = pg.evaluate("""(() => { const m = document.querySelector('main'), r = m.getBoundingClientRect();
                     return {doc: document.scrollingElement.scrollTop, main: m.scrollTop, over: getComputedStyle(m).overflowY, scrolls: m.scrollHeight > m.clientHeight,
