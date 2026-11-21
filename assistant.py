@@ -367,7 +367,8 @@ class Assistant:
         if local:                                       # what is installed, sizes, downloads: only on the Mac
             out.update({k: ai[k] for k in ("platform", "runtime", "models", "speech", "recommended", "checked", "check_error", "disk_free")}, load=ai["job"],
                        speech_state=self.speech.state if self.speech.proc is not None or self.speech.state == "error" else "stopped", chats=len(self._chat_files()),
-                       speech_in_use=self.speech_model(), context_auto_value=DEFAULTS["context"])
+                       speech_in_use=self.speech_model(), context_auto_value=DEFAULTS["context"],
+                       folder=self.ai.base, folder_exists=os.path.isdir(self.ai.base))          # llama.cpp and every model (also for dictating)
         return out
 
     def set(self, body: dict) -> dict:

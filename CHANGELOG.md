@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.32 (2026-11-21 20:25)
+- KI-Assistent: Ablage von llama.cpp und allen Modellen (auch Diktieren) angezeigt, „Im Finder zeigen“
+- KI-Assistent: Hilfe-Symbole bei Programm, Modelle und Ablage
+- Zurücksetzen und Deinstallieren sagen, was mit den KI-Modellen geschieht (bleiben bzw. werden gelöscht)
+
 ## 3.16.31 (2026-11-21 20:12)
 - Einstellungen → KI-Assistent, Mikrofon: in der Dock-App kein falsches „Dauerhaft erlaubt“ mehr – sagt, wann sie wieder fragt, und wie es in Safari ohne Nachfrage geht
 

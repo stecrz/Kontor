@@ -2854,6 +2854,10 @@ class Http(_Assist):
         self.assertFalse(self.a.settings()["enabled"])                                # off again, as at the beginning
         self.assertEqual(self.a.changes(), [])                                        # the log of changes goes with the data
         self.assertTrue(os.path.exists(self.a.ai.model_path("unsloth/Qwen3.6-35B-A3B-GGUF", QWEN)))     # what was downloaded stays (public files)
+        st = self.a.status(True)                                                      # where it lies: shown at the Mac, in the data folder
+        self.assertEqual((st["folder"], st["folder_exists"]), (os.path.join(self.dir, "assistant"), True))
+        self.assertTrue(self.a.ai.model_path("unsloth/Qwen3.6-35B-A3B-GGUF", QWEN).startswith(st["folder"] + os.sep))
+        self.assertNotIn("folder", self.a.status(False))                              # not to another device
 
     def test_uninstall_takes_the_folder_along(self):
         self.assertIsNotNone(MA._KONTOR_FILE.fullmatch("assistant"))
@@ -3269,6 +3273,9 @@ class Browser(unittest.TestCase):
                 pg.click("#as-stop"); pg.wait_for_selector("#as-start")
                 self.assertIsNone(app.assistant.ai.proc)
                 self.assertTrue(pg.is_disabled("#as-files"))                                 # without a repository: nothing to show
+                # where llama.cpp and the models lie, with help icons beside Programm, Modelle and the place
+                self.assertIn(app.assistant.ai.base, pg.inner_text(".as-folder")); self.assertFalse(pg.is_disabled("#as-reveal"))
+                self.assertEqual(pg.evaluate("['ki_programm', 'ki_modelle', 'ki_ablage'].map(k => [...document.querySelectorAll('#main .hq')].some(e => e.dataset.tip === H[k]))"), [True, True, True])
                 pg.fill("#as-repo", "unsloth/Qwen3.6-35B-A3B-GGUF"); pg.click("#as-files"); pg.wait_for_selector(".as-dlf")
                 self.assertEqual(len(pg.query_selector_all(".as-dlf")), 2)
                 pg.click(".as-del"); until(pg, "!AS.st.ready && AS.st.settings.model === ''")

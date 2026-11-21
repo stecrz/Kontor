@@ -155,6 +155,7 @@ const H = {
   updates: t('einzige_netzverbindung_von_kontor_einm'),
   assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_denken: t('h_ki_denken'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
   ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_speichern: t('h_ki_speichern'),
+  ki_programm: t('h_ki_programm'), ki_modelle: t('h_ki_modelle'), ki_ablage: t('h_ki_ablage'),
   darlehen_iban: t('die_rate_wird_am_gegenkonto'),
   darlehen_konto: t('das_manuell_gefuehrte_darlehenskonto_i'),
   darlehen_quelle: t('das_konto_von_dem_die'),
@@ -212,7 +213,7 @@ const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl:
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
@@ -7637,13 +7638,13 @@ async function vEinstellungenAssistent() {
   const state = sv.state || 'stopped', opt = (v, l, cur) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`;
   const use = sv.rss ? t('ki_verbrauch', asRAM(sv.rss), asN(sv.cpu || 0)) + (sv.tps ? ' · ' + t('ki_tempo', asN(sv.tps)) : '') : '';
   return `<div class="row tight">${swCtl('as-enabled', st.enabled, t('ki_verwenden'))}${hq('assistent')}</div>
-  <h2>${t('ki_programm')}<span class="x">llama.cpp</span></h2>
+  <h2>${t('ki_programm')}${hq('ki_programm')}<span class="x">llama.cpp</span></h2>
   <div class="as-list"><div class="as-item"><span><b>llama.cpp</b><br><span class="muted small">${rt.installed ? esc(rt.tag || rt.version || '') + (rt.date ? ' · ' + esc(FDT(rt.date)) : '') : t('ki_nicht_installiert')}</span></span>
     <span class="as-act">${rt.newer ? `<span class="pill info">${t('ki_neuer', esc(rt.latest))}</span>` : ''}
       ${!rt.installed || rt.newer ? `<button class="small" id="as-rt-install" ${busy}>${t(rt.installed ? 'ki_aktualisieren' : 'ki_installieren')}</button>` : ''}
       ${rt.installed ? `<button class="small secondary" id="as-rt-remove" ${busy}>${t('ki_entfernen')}</button>` : ''}</span></div></div>
   ${prog('runtime')}${load && load.kind === 'runtime' ? '' : (a.load && a.load.kind === 'runtime' ? err : '')}
-  <h2>${t('ki_modelle')}</h2>
+  <h2>${t('ki_modelle')}${hq('ki_modelle')}</h2>
   <div class="as-list">${models.map(mrow).join('')}
     <div class="as-item"><span class="as-own"><b>${t('ki_eigenes_modell')}</b>${hq('ki_eigenes')}<input type="text" id="as-repo" placeholder="unsloth/Qwen3.6-35B-A3B-GGUF" autocomplete="off" spellcheck="false"></span>
       <span class="as-act"><button class="small secondary" id="as-files" title="${esc(t('ki_dateien_zeigen_tip'))}" disabled>${t('ki_dateien_zeigen')}</button></span></div><div id="as-filelist"></div></div>
@@ -7657,6 +7658,7 @@ async function vEinstellungenAssistent() {
     ${a.dictation ? '<div id="as-mic-perm"></div>' : ''}</div>
   <div class="row tight"><button class="secondary small" id="as-check" ${busy}>${t('ki_nach_neuem_suchen')}</button><span class="muted small">${a.checked ? t('ki_gesucht', esc(FDT(a.checked))) + ' · ' : ''}${t('ki_platz', asGB(a.disk_free || 0), asRAM(pf.ram || 0))}</span></div>
   ${a.check_error ? `<div class="banner err small">${esc(a.check_error)}</div>` : ''}
+  ${a.folder ? `<div class="row tight as-folder"><span class="muted small">${t('ki_ablage')}${hq('ki_ablage')} <span class="mono">${esc(a.folder)}</span></span><button class="small secondary" id="as-reveal" ${a.folder_exists ? '' : 'disabled'}>${t('im_finder_zeigen')}</button></div>` : ''}
   <h2>${t('ki_betrieb')}</h2>
   <div class="form">
     <label>${t('ki_zustand')}</label><div class="row tight as-run-row"><span class="pill ${state === 'ready' ? 'ok' : state === 'error' ? 'err' : state === 'starting' ? 'info' : 'neutral'}" id="as-state">${t(`ki_z_${state}`)}</span>
@@ -7735,6 +7737,7 @@ function bindAssistent(main) {
   on('.as-dl', 'click', el => { if (el.dataset.fit !== 'big' || confirm(t('ki_zu_gross_frage', el.dataset.name, asRAM((AS.st.platform || {}).ram || 0)))) post('/api/assistant/model/download', {id: el.dataset.id}); });
   on('.as-del', 'click', el => { if (confirm(t('ki_loeschen_frage', el.dataset.name))) post('/api/assistant/model/delete', {id: el.dataset.id}); });
   on('#as-cancel', 'click', () => post('/api/assistant/model/cancel'));
+  on('#as-reveal', 'click', async () => { try { await api('/api/file/reveal', {path: AS.st.folder}); } catch (e) { toast(e.message, 5000); } });
   on('#as-start', 'click', () => post('/api/assistant/server', {action: 'start'}));
   on('#as-stop', 'click', () => post('/api/assistant/server', {action: 'stop'}));
   const files = async () => {
