@@ -4795,6 +4795,12 @@ class MacAppBrowserTest(unittest.TestCase):
                 pg.goto("http://127.0.0.1:%d/" % port)
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
                 wait_shell(pg)
+                # signed in with an empty page (after an update the service is still starting): something turns until the data is there
+                self.assertEqual(pg.evaluate("""async () => { const keep = loadAll; let go; loadAll = () => new Promise(r => { go = r; }).then(keep);
+                    document.querySelector('#main').innerHTML = ''; const done = enterApp(); await new Promise(r => setTimeout(r, 0));
+                    const shown = document.querySelector('#main .loading .spin') ? document.querySelector('#main .loading').innerText : '';
+                    go(); await done; loadAll = keep; return shown; }"""), "Kontor wird geladen …")
+                until(pg, "!document.querySelector('#main .loading') && document.querySelector('#main').childElementCount")
                 # in the browser: the button, in the setup's step 1 and under Einstellungen -> Allgemein
                 pg.evaluate("location.hash = '#setup'"); pg.wait_for_selector(".srow #mac-app-open")
                 self.assertIn("Mac-App öffnen – im Dock mit rechter Maustaste", pg.query_selector(".srow").inner_text())

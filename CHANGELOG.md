@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.55 (2026-11-21 23:49)
+- Anmeldung: nach einem Update dreht sich „Kontor wird geladen …“ statt eines dunklen Fensters
+
 ## 3.16.54 (2026-11-21 23:37)
 - Einstellungen → KI-Assistent: „Von wo“ vor „Internet“; Tavily-Schlüssel direkt unter dem Häkchen „Internet“
 

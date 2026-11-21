@@ -692,6 +692,8 @@ document.addEventListener('keydown', e => {
 
 async function enterApp() {
   $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
+  // nothing on the page yet (signed in after an update, the service still starting): something that turns, not a dark window
+  if (!$('#main').childElementCount) $('#main').innerHTML = `<div class="loading"><span class="spin"></span>${t('0_wird_geladen', 'Kontor')}</div>`;
   await loadAll();
   if (!OFFLINE.mode && checkVersion((S.STATUS || {}).version)) return;        // signed in again after an update: the new files first
   await syncLang();
