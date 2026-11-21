@@ -484,6 +484,24 @@ You switch each right separately, at the Mac only:
 
 Never, and there is no tool for it either: settings, booking rules, access, updates, approving auto bookings, entering categories, anything in MoneyMoney – and itself (model, rights, installation). If you ask for it, it names the page where you do it yourself.
 
+<a id="assistant-internet"></a>
+### Internet (read only)
+
+Off by default; switch it on under “What the AI assistant may do” → **Internet**. The assistant can then look things up – Kontor searches, not the model, and you approve each lookup first on a card (source, search words or address, reason).
+
+- **Tier 1, official sources and reference works:** Wikipedia, Wikidata, German federal laws (Gesetze im Internet), GLEIF (companies and group structure), ECB, Bundesbank, Eurostat.
+- **Tier 2, news:** tagesschau.de, GDELT – articles only where they are free to read.
+- **Tier 3, general web search:** Tavily, with your own free key.
+
+Kontor checks every search for your data first (names, accounts, IBANs, amounts) and refuses when in doubt; pages are fetched in a sealed-off process. Text from the internet is only material for the model – afterwards Kontor takes no changes in the same conversation (start a new one for them). Every lookup is in the log of changes and lookups.
+
+**Setting up the Tavily key** (once, free):
+1. Create an account at [app.tavily.com](https://app.tavily.com) (e-mail, Google or GitHub) – no credit card; add no payment method, then nothing can be charged.
+2. Copy the API key from the dashboard (it starts with `tvly-`).
+3. Paste it here under **Internet** into “Tavily key” and click **Save**.
+
+The key is stored encrypted in Kontor's data folder, never shown again and not in backups; “Remove” deletes it. 1,000 searches a month are free – Kontor stops after 950 in 31 days.
+
 <a id="assistant-safety"></a>
 ### How safe is this?
 

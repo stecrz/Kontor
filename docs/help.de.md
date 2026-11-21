@@ -484,6 +484,24 @@ Jedes Recht schaltest du einzeln, nur am Mac:
 
 Nie, und dafür gibt es auch kein Werkzeug: Einstellungen, Buchungsregeln, Zugang, Updates, Auto-Buchungen freigeben, Kategorien eintragen, irgendetwas in MoneyMoney – und sich selbst (Modell, Rechte, Installation). Bittest du darum, nennt er die Seite, auf der du es selbst tust.
 
+<a id="assistant-internet"></a>
+### Internet (nur lesen)
+
+Ab Werk aus; einschalten unter „Was der KI-Assistent darf“ → **Internet**. Dann kann der Assistent nachschlagen – Kontor sucht, nicht das Modell, und jeden Abruf gibst du vorher auf einer Karte frei (Quelle, Suchbegriffe oder Adresse, Grund).
+
+- **Stufe 1, amtlich und Nachschlagewerke:** Wikipedia, Wikidata, Gesetze im Internet, GLEIF (Firmen und Konzernstruktur), EZB, Bundesbank, Eurostat.
+- **Stufe 2, Nachrichten:** tagesschau.de, GDELT – Artikel nur, wenn sie frei lesbar sind.
+- **Stufe 3, allgemeine Websuche:** Tavily, mit deinem eigenen kostenlosen Schlüssel.
+
+Kontor prüft jede Suche vorher auf deine Daten (Namen, Konten, IBANs, Beträge) und lehnt im Zweifel ab; abgerufen wird in einem abgeschirmten Prozess. Text aus dem Internet ist für das Modell nur Material – danach nimmt Kontor in derselben Unterhaltung keine Änderungen mehr an (dafür eine neue Unterhaltung beginnen). Jeder Abruf steht im Protokoll der Änderungen und Abrufe.
+
+**Tavily-Schlüssel einrichten** (einmalig, kostenlos):
+1. Auf [app.tavily.com](https://app.tavily.com) ein Konto anlegen (E-Mail, Google oder GitHub) – ohne Kreditkarte; keine Zahlungsart hinterlegen, dann kann nichts berechnet werden.
+2. Im Dashboard den API-Schlüssel kopieren (beginnt mit `tvly-`).
+3. Hier unter **Internet** bei „Tavily-Schlüssel“ einfügen und **Sichern**.
+
+Der Schlüssel liegt verschlüsselt in Kontors Datenordner, wird nie wieder angezeigt und ist nicht in Sicherungen; „Entfernen“ löscht ihn. Frei sind 1.000 Suchen im Monat – Kontor stoppt nach 950 in 31 Tagen.
+
 <a id="assistant-safety"></a>
 ### Wie sicher ist das?
 

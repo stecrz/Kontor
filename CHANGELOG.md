@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.59 (2026-11-22 00:03)
+- Hilfe: Abschnitt „Internet (nur lesen)“ mit Stufen und Einrichtung des Tavily-Schlüssels; Tooltip mit den drei Schritten
+
 ## 3.16.58 (2026-11-22 00:02)
 - Behoben: zwei gleich hohe Zahlungen kurz hintereinander – Gegenbuchungen nicht mehr vertauscht, keine falsche „Wertänderung“ oder „unklar“
 - Behoben: Handbuchung auf einem Konto eines anderen Bereichs (z. B. „Darlehen von Partnerin“) geht nicht mehr an eine fremde Zahlung gleichen Betrags
