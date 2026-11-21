@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from model import Ledger, accounts_from_export, tx_from_export   # noqa: E402
 import core                                                         # noqa: E402
 import report                                                       # noqa: E402
+import fixtures as F                                                # noqa: E402
 
 TODAY = date(2026, 6, 20)
 
@@ -1151,11 +1152,10 @@ class CashflowFuzz(Reconciles):
         return txs
 
     def test_random_months_add_up(self):
-        seeds = int(os.environ.get("KONTOR_FUZZ_SEEDS") or 40)
         cfg = {"companies": [{"area": "Muster GbR", "participation": "Beteiligung an Muster GbR"}],
                "cashflow": {"positions": {"Privatentnahme": "ignore"}}}
-        for seed in range(seeds):
-            with self.subTest(seed=seed):
+        for seed in F.fuzz_seeds():
+            with self.subTest(seed=seed), F.case(seed):
                 txs = self.world(random.Random(seed))
                 data = build(txs, cfg)
                 self.assertAddsUp(data, allow=("ue_unterwegs", "ue_ignoriert"))

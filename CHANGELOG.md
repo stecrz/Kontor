@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.39 (2026-11-21 21:35)
+- Entwicklung: Nachtlauf mit 1000 festen und 1000 jede Nacht neuen Zufallsfällen (~10 min)
+- Entwicklung: gefundene Fälle einzeln wiederholbar und danach bei jedem Lauf geprüft
+
 ## 3.16.38 (2026-11-21 21:26)
 - KI-Assistent: lange Unterhaltungen behalten mehr Fragen im Blick – Nachgelesenes früherer Fragen fällt weg (wird bei Bedarf neu gelesen)
 

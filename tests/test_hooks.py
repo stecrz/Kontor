@@ -139,8 +139,8 @@ class Briefing(unittest.TestCase):
 
 
 class TestsOnGitHub(unittest.TestCase):
-    """The line on GitHub's tests (made-up runs): a red version names the chat that broke it; the night's run (1000 random
-    cases, belongs to no version) red -> the next chat fixes it, and once a "fix nightly" version is on main the others leave it."""
+    """The line on GitHub's tests (made-up runs): a red version names the chat that broke it; the night's run (random cases,
+    belongs to no version) red -> the next chat fixes it, and once a "fix nightly" version is on main the others leave it."""
 
     def setUp(self):
         import importlib.util
@@ -165,7 +165,7 @@ class TestsOnGitHub(unittest.TestCase):
         line, key = self.summary(push, [])
         self.assertEqual((line, key), ("Tests auf GitHub: läuft für 3.1.3; 3.1.2 grün", "ok"))
         line, key = self.summary(push, [self.night(7, True)])
-        self.assertIn("Nachtlauf (1000 Zufallsläufe) für 3.1.2 grün", line); self.assertEqual(key, "ok")
+        self.assertIn("Nachtlauf (Zufallsfälle) für 3.1.2 grün", line); self.assertEqual(key, "ok")
         # a red version: its chat fixes it
         line, key = self.summary([self.run_("ccc", "3.1.4: c", ok=False), self.run_("bbb", "3.1.3: b", ok=False), self.run_("aaa", "3.1.2: a")], [])
         self.assertIn("ROT seit 3.1.3 (Chat …ABCD)", line); self.assertEqual(key, "red bbb")
@@ -173,7 +173,7 @@ class TestsOnGitHub(unittest.TestCase):
     def test_red_night_is_fixed_by_the_next_chat_once(self):
         push = [self.run_("aaa", "3.1.2: a")]
         line, key = self.summary(push, [self.night(8, False), self.night(7, True)])
-        self.assertIn("Nachtlauf (1000 Zufallsläufe) für 3.1.2 ROT", line); self.assertIn("fix nightly", line)
+        self.assertIn("Nachtlauf (Zufallsfälle) für 3.1.2 ROT", line); self.assertIn("fix nightly", line); self.assertIn("KONTOR_FUZZ_SEED=", line)
         self.assertIn("gh run view 8 --log-failed", line); self.assertIn("KONTOR_FUZZ_SEEDS=1000", line)
         self.assertEqual(key, "night-red 8"); self.assertEqual(self.since, ["2026-11-22T02:17:00Z"])       # only what came after the run
         # versions since then that are no fix: still red

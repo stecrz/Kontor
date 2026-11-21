@@ -1,7 +1,8 @@
 name: Zufallsläufe
 
-# every night 1000 random cases (instead of 40 per push) on the newest main: the day's versions, checked in depth -- only the
-# random tests, on Apple's Python version; the rest of a version is checked by its push run (tests.yml)
+# every night on the newest main: the 1000 fixed random cases (instead of 40 per push) and 1000 new ones, drawn anew each night
+# (a failure names its case: KONTOR_FUZZ_SEED=<number> runs it again) -- only the random tests, on Apple's Python version; the
+# rest of a version is checked by its push run (tests.yml). About 10 minutes; red: the next chat fixes it (CLAUDE.md)
 on:
   schedule:
     - cron: "17 2 * * *"
@@ -11,9 +12,9 @@ permissions:
 
 jobs:
   fuzz:
-    name: "1000 Zufallsläufe · Python 3.9 (wie auf dem Mac)"
+    name: "1000 feste + 1000 neue Zufallsfälle · Python 3.9 (wie auf dem Mac)"
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
@@ -24,5 +25,6 @@ jobs:
       - name: Tests
         env:
           KONTOR_FUZZ_SEEDS: "1000"
+          KONTOR_FUZZ_RANDOM: "1000"
           TZ: Europe/Berlin
         run: python -m pytest -q tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py

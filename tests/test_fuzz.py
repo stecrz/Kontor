@@ -198,12 +198,37 @@ class FuzzTests(unittest.TestCase):
         return steps
 
     def test_random_runs(self):
-        for seed in range(int(os.environ.get("KONTOR_FUZZ_SEEDS") or 40)):          # more: KONTOR_FUZZ_SEEDS=1000 (nightly.yml)
+        for seed in F.fuzz_seeds():          # more: KONTOR_FUZZ_SEEDS / KONTOR_FUZZ_RANDOM (nightly.yml), one again: KONTOR_FUZZ_SEED
             reset_mock(); MockBridge.instances = []
             for name in ("state.json",):
                 self.store.save(name, {})
-            with self.subTest(seed=seed):
+            with self.subTest(seed=seed), F.case(seed):
                 self.scenario(seed)
+
+
+class Seeds(unittest.TestCase):
+    """Which cases a random test runs: the fixed ones, those found before, and new ones drawn anew every run; one again by its number."""
+
+    def test_fixed_found_and_new(self):
+        from unittest import mock
+        env = {k: v for k, v in os.environ.items() if not k.startswith("KONTOR_FUZZ")}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(F, "FOUND", [1234567]):
+            self.assertEqual(F.fuzz_seeds(), list(range(40)) + [1234567])                      # a push: the 40 fixed ones and the found
+            os.environ.update(KONTOR_FUZZ_SEEDS="5", KONTOR_FUZZ_RANDOM="300")
+            a, b = F.fuzz_seeds(), F.fuzz_seeds()
+            self.assertEqual(a[:6], [0, 1, 2, 3, 4, 1234567]); self.assertEqual(len(a), 306)
+            self.assertTrue(all(10 ** 6 <= x < 10 ** 9 for x in a[6:]))                          # never one of the fixed ones
+            self.assertNotEqual(a[6:], b[6:])                                                   # new every run
+            os.environ["KONTOR_FUZZ_SEED"] = "5551234, 7"
+            self.assertEqual(F.fuzz_seeds(), [5551234, 7])                                      # just these again
+        # a failure names its case, also where pytest does not show the subtest (Python 3.9)
+        for err in (AssertionError("1 != 2"), KeyError("x")):
+            with self.assertRaisesRegex(AssertionError, "^seed 5551234: "):
+                with F.case(5551234):
+                    raise err
+        with self.assertRaisesRegex(AssertionError, "^seed 7 step 3"):          # named already: unchanged
+            with F.case(7):
+                raise AssertionError("seed 7 step 3 (x)")
 
 
 if __name__ == "__main__":

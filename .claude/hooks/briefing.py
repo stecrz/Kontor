@@ -59,7 +59,7 @@ def own_files():
     return files - OWN
 
 
-NIGHT_TESTS = "tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py"      # what nightly.yml runs, with 1000 cases
+NIGHT_TESTS = "tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py"      # what nightly.yml runs (1000 fixed + 1000 new cases)
 
 
 def tests_on_github():
@@ -115,7 +115,7 @@ def ci_summary(push, night, since, who):
         r = nd[0]
         ver = str((r.get("head_commit") or {}).get("message") or "").split(":")[0][:20] or str(r.get("head_sha"))[:7]
         if r["conclusion"] == "success":
-            parts.append("Nachtlauf (1000 Zufallsläufe) für %s grün" % ver)
+            parts.append("Nachtlauf (Zufallsfälle) für %s grün" % ver)
         else:
             fix = [c.split("\x1f") for c in since(str(r.get("created_at") or "")).split("\x1e") if "fix nightly" in c.split("\x1f")[0].lower()]
             if fix:
@@ -124,9 +124,10 @@ def ci_summary(push, night, since, who):
                              " (%s)" % chat(fix[-1][1]) if len(fix[-1]) > 1 and chat(fix[-1][1]) else ""))
             else:
                 keys.append("night-red %s" % r.get("id"))
-                parts.append("Nachtlauf (1000 Zufallsläufe) für %s ROT%s – gehört zu keiner Version: behebe es jetzt als eigene "
+                parts.append("Nachtlauf (Zufallsfälle) für %s ROT%s – gehört zu keiner Version: behebe es jetzt als eigene "
                              "Version, Commit-Nachricht mit „fix nightly“ (`X.Y.Z: fix nightly: …`), damit die anderen Chats es "
-                             "liegen lassen. Fehler: `gh run view %s --log-failed | tail -80`; nachprüfen: "
+                             "liegen lassen. Fehler: `gh run view %s --log-failed | tail -80`; der Fall („seed …“) einzeln: "
+                             "`KONTOR_FUZZ_SEED=<Nummer>`, ein neuer (ab 1000000) danach in FOUND (tests/fixtures.py); nachprüfen: "
                              "`KONTOR_FUZZ_SEEDS=1000 TZ=Europe/Berlin python3 -m pytest -q %s` (auch mit Python 3.9)"
                              % (ver, "" if r["conclusion"] == "failure" else " (%s)" % r["conclusion"], r.get("id"), NIGHT_TESTS))
     if not parts:

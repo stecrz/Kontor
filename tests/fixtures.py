@@ -6,11 +6,40 @@ Verkaeuferdarlehen (manuell) und Kapitalkonten. Namen und Betraege sind frei erf
 """
 from __future__ import annotations
 
+import os
+import random
 import uuid as _uuid
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List
 
 U: Dict[str, str] = {}
+
+# random cases a night found (KONTOR_FUZZ_RANDOM) -- once fixed, their number goes here, so every run checks them from then on
+FOUND: List[int] = []
+
+
+def fuzz_seeds() -> List[int]:
+    """The cases of a random test: the fixed ones 0 .. KONTOR_FUZZ_SEEDS-1 (default 40; nightly.yml: 1000), those found before
+    (FOUND), and KONTOR_FUZZ_RANDOM new ones (nightly.yml: 1000), drawn anew every run from 1,000,000 on. A failure names its
+    case ("seed …"); KONTOR_FUZZ_SEED=<number>[,<number>…] runs just those again."""
+    only = os.environ.get("KONTOR_FUZZ_SEED")
+    if only:
+        return [int(x) for x in only.replace(",", " ").split()]
+    new = random.SystemRandom()
+    return (list(range(int(os.environ.get("KONTOR_FUZZ_SEEDS") or 40))) + FOUND
+            + [new.randrange(10 ** 6, 10 ** 9) for _ in range(int(os.environ.get("KONTOR_FUZZ_RANDOM") or 0))])
+
+
+@contextmanager
+def case(seed: int):
+    """A failure in a random case names it ("seed …") -- pytest on Python 3.9 (the night's run) does not show the subtest's seed."""
+    try:
+        yield
+    except Exception as e:
+        if "seed %d" % seed in str(e):
+            raise
+        raise AssertionError("seed %d: %s" % (seed, e if isinstance(e, AssertionError) else repr(e))) from e
 
 
 def uid(key: str) -> str:

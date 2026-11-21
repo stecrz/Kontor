@@ -27,11 +27,12 @@ Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhän
   Chats veröffentlicht haben); Erinnerung, wenn eine Änderung nicht abgeschlossen ist.
 - GitHub Actions testet jeden Push (rund 6 min) – Linux: Python 3.9 und neu, Chrome und Safari-Engine, Code-Checks, je
   Python in zwei Hälften nebeneinander (Seiten = `tests/test_e2e.py`; alles andere); macOS: Apples Python, Swift-Helfer,
-  MoneyMoney-Brücke, Installation. Nachts zusätzlich 1000 Zufallsläufe auf dem neuesten `main` (`nightly.yml`, rot: siehe Parallele Chats).
+  MoneyMoney-Brücke, Installation. Nachts auf dem neuesten `main` die 1000 festen und 1000 jede Nacht neue Zufallsfälle (`nightly.yml`, ~10 min; rot: siehe Parallele Chats).
 
 ## Prüfen
 - Tests: `python3 -m pytest -q tests` (~2½ min; Browser-Tests mit Playwright; `sqlcipher` nur für Testdatenbanken).
-  Mehr Zufallsläufe: `KONTOR_FUZZ_SEEDS=400 python3 -m pytest -q tests/test_fuzz.py`.
+  Mehr Zufallsläufe: `KONTOR_FUZZ_SEEDS=400 python3 -m pytest -q tests/test_fuzz.py` (feste Fälle 0–399), dazu neue:
+  `KONTOR_FUZZ_RANDOM=…`; einen Fall aus einer Fehlermeldung („seed …“) wiederholen: `KONTOR_FUZZ_SEED=<Nummer>`.
 - Code-Checks: `python3 -m pyflakes *.py tests/*.py .claude/hooks/*.py` und `npx eslint -c .github/eslint.config.mjs web`
   (einmal `npm install --no-save --no-package-lock eslint@9 globals`).
 - GitHub prüft, was es lokal nicht gibt – Safari-Engine (WebKit), andere Schriften, langsamere Rechner. `pytest -rs` nennt
@@ -69,10 +70,11 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
   sofort, als nächste Version. Alle anderen reparieren es nicht (sonst doppelt und gegeneinander), arbeiten weiter und
   veröffentlichen normal: ihr Lauf erbt dieselben Fehler, nur neue eigene zählen. Steht der fremde Fehler der eigenen Arbeit
   länger als 30 Minuten im Weg: selbst beheben, im Changelog nennen.
-- **Nachtlauf rot** (`nightly.yml`, 1000 Zufallsläufe; gehört zu keiner Version, das Lagebild meldet ihn): der nächste Chat,
+- **Nachtlauf rot** (`nightly.yml`, Zufallsfälle; gehört zu keiner Version, das Lagebild meldet ihn): der nächste Chat,
   der es sieht, behebt es sofort als eigene Version mit „fix nightly“ in der Commit-Nachricht (`X.Y.Z: fix nightly: …`) – daran
-  erkennen die anderen Chats, dass es erledigt ist, und lassen es liegen; vor dem Push mit `KONTOR_FUZZ_SEEDS=1000` nachprüfen
-  (beide Python-Versionen). Ein anderer Chat war schneller: die eigene Korrektur verwerfen, soweit sie dasselbe behebt.
+  erkennen die anderen Chats, dass es erledigt ist, und lassen es liegen. Ein neuer Fall (Nummer ab 1.000.000) kommt nach der
+  Korrektur in `FOUND` (`tests/fixtures.py`), damit jeder Lauf ihn prüft; vor dem Push mit `KONTOR_FUZZ_SEEDS=1000` und dem Fall
+  nachprüfen (beide Python-Versionen). Ein anderer Chat war schneller: die eigene Korrektur verwerfen, soweit sie dasselbe behebt.
 - **Sperren vor jedem Push nach `main`** – zwei Ebenen, dieselbe Regel: der git-Hook `.githooks/pre-push` (schaltet das
   Lagebild ein; gegen den Stand auf GitHub: `VERSION` höher, keine Changelog-Zeile von `main` verloren) und
   `.claude/hooks/guard.py` vor jedem `git push` (holt `main` selbst: neuester `main` in der eigenen Arbeit, jeder Commit hebt

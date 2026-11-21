@@ -14,9 +14,11 @@ import unittest
 from datetime import date, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.dirname(__file__))
 from model import Ledger, accounts_from_export, tx_from_export   # noqa: E402
 import core                                                         # noqa: E402
 import report                                                       # noqa: E402
+import fixtures as F                                                # noqa: E402
 
 TODAY = date(2026, 6, 20)
 AREAS = ("Privat", "Holding GmbH", "Muster GbR")
@@ -455,8 +457,7 @@ class MixedAtRandom(Checks):
     def test_many_scenarios_at_once(self):
         """Several scenarios in one ledger, on random days with random amounts (the same amount may come twice): every month
         still adds up, and every area's net worth moves by the sum of what happened."""
-        seeds = int(os.environ.get("KONTOR_FUZZ_SEEDS") or 40)
-        for seed in range(seeds):
+        for seed in F.fuzz_seeds():
             rnd = random.Random(seed)
             picks = [rnd.choice(SCENARIOS) for _ in range(rnd.randint(3, 8))]
             scs, first = [], None
@@ -465,7 +466,7 @@ class MixedAtRandom(Checks):
                 d = d.replace(day=rnd.choice([d.day, 28, 29, 30, 31])) if rnd.random() < 0.4 and d.month != 2 else d
                 scs.append(fn(d, rnd.choice([0, 0, 1, 2, 3, 5]), rnd.choice([1, 1, 1.5, 2, 3]), 100 + 20 * n))
                 first = min(first or d, d)
-            with self.subTest(seed=seed, scenarios=[f.__name__ for f in picks]):
+            with self.subTest(seed=seed, scenarios=[f.__name__ for f in picks]), F.case(seed):
                 data = run(START + [t for sc in scs for t in sc.txs], merge([sc.cfg for sc in scs]))
                 self.adds_up(data, "seed %d" % seed)
                 for area in AREAS:
