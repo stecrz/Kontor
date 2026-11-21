@@ -66,6 +66,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(HERE, "web")
 MAX_BODY = 2 * 1024 * 1024
 MAX_UPLOAD = 90 * 1024 * 1024      # Base64 eines 60-MB-Belegs
+MAX_RESTORE = 64 * 1024 * 1024     # a backup to restore (with everything the assistant was told to remember)
 MAX_SPEECH = 28 * 1024 * 1024      # a dictated recording (base64 of at most 20 MB of WAV: ten minutes), a receipt given to the assistant (20 MB)
 PLAN_PARAMS = ("horizon_months", "default_method", "inflation_percent_pa", "income_increase_percent_pa",
                "expense_increase_percent_pa", "return_percent_pa", "fi_real_return_percent")
@@ -2451,7 +2452,11 @@ def make_handler(app: App):
             if path == "/api/assistant/changes":                  # the log of what the assistant changed (after the user's click)
                 if not self._assistant_ok(s):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
-                return self._json(200, {"changes": app.assistant.changes()})
+                return self._json(200, {"changes": app.assistant.changes(self._is_local(s))})
+            if path == "/api/assistant/memory":                   # what the assistant was told to remember: the list, only at the Mac
+                if not self._is_local(s):
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                return self._json(200, app.assistant.memory_list(q))
             if path == "/api/assistant/poll":
                 if not self._assistant_ok(s):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
@@ -2592,7 +2597,8 @@ def make_handler(app: App):
                 return self._json(401, {"error": tr("s_nicht_angemeldet")})
             try:
                 body = {} if u.path == "/api/history/mm-import" else self._body(
-                    65536 if before else MAX_UPLOAD if u.path == "/api/receipts/upload" else MAX_SPEECH if u.path in ("/api/assistant/transcribe", "/api/assistant/attach") else MAX_BODY)
+                    65536 if before else MAX_UPLOAD if u.path == "/api/receipts/upload" else MAX_SPEECH if u.path in ("/api/assistant/transcribe", "/api/assistant/attach")
+                    else MAX_RESTORE if u.path == "/api/backup/restore" else MAX_BODY)
             except (ValueError, json.JSONDecodeError) as e:
                 return self._json(400, {"error": tr("s_ungueltige_anfrage_s") % e})
             remote = self._remote()
@@ -2736,6 +2742,8 @@ def make_handler(app: App):
                 return self._json(200, {"ok": True, "note": a.take_back(str(body.get("id") or ""), local)})
             if not local:
                 return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+            if path == "/api/assistant/memory":                  # notes added, changed, pinned, deleted -- by the user, in the settings
+                return self._json(200, a.memory_do(body))
             if path == "/api/assistant/settings":
                 a.set(body)
             elif path == "/api/assistant/check":
@@ -3067,7 +3075,8 @@ def make_handler(app: App):
                 sich = {"kontor_backup": 1, "version": version(), "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
                         "config": app.config, "plan": app.plan_all(), "categories": categorize.load(app.store),
                         "history": st.get("history") or {}, "snapshots": st.get("snapshots") or {},
-                        "receipts": app.store.load("receipts.json", {}) or {}, "mm_history_src": app.store.load(MM_HISTORY_FILE, {}) or {}}
+                        "receipts": app.store.load("receipts.json", {}) or {}, "mm_history_src": app.store.load(MM_HISTORY_FILE, {}) or {},
+                        "memory": app.assistant.memory.export()}             # what the assistant was told to remember (saved conversations stay out)
                 out = backup_encrypt(sich, str(body.get("password") or ""))
                 log.info("Encrypted backup of all settings created")
                 return self._json(200, out)
@@ -3099,6 +3108,11 @@ def make_handler(app: App):
                     app.store.save("receipts.json", sich["receipts"]); teile.append(tr("s_teil_belegindex"))
                 if isinstance(sich.get("mm_history_src"), dict) and sich["mm_history_src"]:
                     app.store.save(MM_HISTORY_FILE, sich["mm_history_src"]); teile.append(tr("s_teil_mm_verlauf"))
+                try:                                     # notes not there yet are added (marked as from a backup, told to the log of changes); nothing there is changed
+                    if app.assistant.memory.merge(sich.get("memory")):
+                        teile.append(tr("s_teil_gedaechtnis"))
+                except Exception as e:                   # a file that cannot be written: the rest of the backup is restored all the same
+                    log.warning("Backup: the assistant's memory not restored in full (%s)", type(e).__name__)
                 log.info("Backup restored: %s", ", ".join(teile))
                 ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="backup restored") if app.ledger is not None else (False, None)
                 return self._json(200, {"ok": True, "parts": teile, "report": ok, "config": app.config})
@@ -3114,6 +3128,7 @@ def make_handler(app: App):
                     app.store.delete(name)
                 app.assistant.delete_chats(everything=True)          # the saved conversations go with the data
                 app.store.delete(assistant_mod.CHANGES_FILE)         # ... and the log of what the assistant changed
+                app.assistant.memory.forget_all(quiet=True)          # ... and what it was told to remember
                 app.store.delete(assistant_mod.web_search.WEB_FILE)  # ... and your Tavily key
                 app.assistant.forget()                   # the assistant is switched off with its settings: model, conversation and entries to take back end
                 app.config = merged_config({})
@@ -3607,7 +3622,7 @@ def restored_config(current: dict, incoming: dict, data_dir: str = "") -> dict:
 ASSISTANT_ASK = ("/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm", "/api/assistant/listen",
                  "/api/assistant/transcribe", "/api/assistant/attach")
 
-_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*|assistant-chats|assistant-changes|assistant-web"
+_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*|assistant-chats|assistant-changes|assistant-web|memory-[a-z]+(?:-\d{4,6})?"
                           r"|assistant-chat-[0-9a-f]{8,32})\.json(?:\.enc)?(?:\.tmp|\.renew)?"
                           r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|master\.key|tls|assistant|chats)(?=\s|$)")
 

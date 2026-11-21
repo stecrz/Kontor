@@ -197,6 +197,7 @@ const H = {
   updates: t('einzige_netzverbindung_von_kontor_einm'),
   assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_denken: t('h_ki_denken'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
   ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_sp_start: t('h_ki_sp_start'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'),
+  ki_gedaechtnis: t('h_ki_gedaechtnis'),
   ki_programm: t('h_ki_programm'), ki_auto_suchen: t('h_ki_auto_suchen'), ki_modelle: t('h_ki_modelle'), ki_ablage: t('h_ki_ablage'),
   darlehen_iban: t('die_rate_wird_am_gegenkonto'),
   darlehen_konto: t('das_manuell_gefuehrte_darlehenskonto_i'),
@@ -8139,11 +8140,43 @@ async function vEinstellungenAssistent() {
       <button class="small secondary" id="as-chats-del" ${a.chats ? '' : 'disabled'}>${t('ki_verlaeufe_alle_loeschen')}</button></div>
     ${pf.can_seal ? `<label>${t('ki_abschirmung')}${hq('ki_abschirmung')}</label><label class="chk"><select id="as-sandbox">${['strict', 'basic', 'off'].map(k => opt(k, t(`ki_sb_${k}`), st.sandbox)).join('')}</select></label>` : ''}
   </div>
+  <h2>${t('ki_gedaechtnis')}${hq('ki_gedaechtnis')}</h2>
+  <div class="row tight">${swCtl('as-mem', st.memory !== false, t('ki_g_verwenden'))}<span class="muted small" id="as-mem-n"></span></div>
+  <div class="as-mem"><div class="as-mem-bar"><input type="text" id="as-mem-new" maxlength="600" placeholder="${esc(t('ki_g_neu'))}" aria-label="${esc(t('ki_g_merken'))}" autocomplete="off" value="${esc(AS.memNew || '')}"><button class="small" id="as-mem-add" ${AS.memNew ? '' : 'disabled'}>${t('ki_g_merken')}</button></div>
+    <div class="as-mem-bar"><input type="search" id="as-mem-q" placeholder="${esc(t('ki_g_suchen'))}" aria-label="${esc(t('ki_g_suchen'))}" value="${esc(AS.memQ || '')}"></div>
+    <div id="as-mem-warn"></div>
+    <div class="as-list" id="as-mem-list"><div class="as-item muted small"><span>${t('ki_laedt_kurz')}</span></div></div>
+    <div class="row tight"><button class="small secondary" id="as-mem-all" disabled>${t('ki_g_alles_vergessen')}</button></div></div>
   <h2>${t('ki_rechte')}</h2>
   <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize', 'book', 'rules', 'receipts']], ['ki_rg_zugang', ['remote']], ['ki_rg_internet', ['internet']]].map(([g, ks]) =>
     `<div class="as-rg"><div class="as-rg-h">${t(g)}${g === 'ki_rg_aendern' ? hq('ki_eintragen') : g === 'ki_rg_internet' ? hq('ki_internet') : ''}</div>${ks.map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${(k === 'read' ? r.figures && r.transactions && r.page : r[k]) ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}</span></label>${k === 'internet' ? webKey : ''}`).join('')}</div>`).join('')}</div>
   <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>
   <details class="as-log" id="as-log"><summary>${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details>`;
+}
+// Einstellungen -> KI-Assistent -> Gedächtnis: what it was told to remember -- look, add, change, pin, forget (only at the Mac)
+async function asMemLoad(body, more) {
+  // body: a change (add, edit, pin, delete, forget_all) -- the list comes back with it; more: the next piece of a long list, appended
+  if (!$('#as-mem-list')) return null;
+  const had = ((AS.mem || {}).items || []).length, q = AS.memQ || '', n = Math.min(200, Math.max(50, more ? 100 : had));
+  let r;
+  try { r = body ? await api('/api/assistant/memory', Object.assign({q, limit: n}, body)) : await api(`/api/assistant/memory?q=${encodeURIComponent(q)}&limit=${n}${more ? '&offset=' + had : ''}`); }
+  catch (e) { toast(e.message, 6000); return null; }
+  if (more && AS.mem && q === (AS.memQ || '')) r.items = AS.mem.items.concat(r.items.filter(x => !AS.mem.items.some(y => y.id === x.id)));
+  AS.mem = r; asMemDraw(); return r;
+}
+function asMemDraw() {
+  const r = AS.mem, box = $('#as-mem-list'); if (!r || !box) return;
+  const n = $('#as-mem-n'); if (n) n.textContent = r.notes ? tn('ki_g_n', r.notes, asN(r.notes)) + (r.pinned ? ' · ' + t('ki_g_angeheftet_n', asN(r.pinned)) : '') : '';
+  const all = $('#as-mem-all'); if (all) all.disabled = !r.notes;
+  const warn = $('#as-mem-warn'); if (warn) warn.innerHTML = (r.pinned_out ? `<div class="banner small">${esc(tn('ki_g_zu_viel', r.pinned_out, asN(r.pinned_out)))}</div>` : '') + (r.broken ? `<div class="banner err small">${esc(tn('ki_g_defekt', r.broken, asN(r.broken)))}</div>` : '');
+  const some = r.profile < r.notes;          // not everything goes with every question: the notes that do say so
+  const row = x => AS.memEdit === x.id
+    ? `<div class="as-item as-mem-it edit" data-id="${esc(x.id)}"><textarea class="as-mem-ta" maxlength="${r.text_max}" rows="${Math.min(6, Math.max(2, Math.ceil(x.text.length / 80)))}" aria-label="${esc(t('ki_g_aendern'))}">${esc(AS.memDraft != null ? AS.memDraft : x.text)}</textarea><span class="as-act"><button class="small as-mem-ok">${t('ki_g_sichern')}</button><button class="small secondary as-mem-no">${t('ki_abbrechen')}</button></span></div>`
+    : `<div class="as-item as-mem-it" data-id="${esc(x.id)}"><span class="as-mem-t">${esc(x.text)}<br><span class="muted small">${esc(FD(x.created))} · ${t(`ki_g_h_${x.how}`)}${some && x.profile ? ` · <span title="${esc(t('ki_g_steckbrief_tip'))}">${t('ki_g_steckbrief')}</span>` : ''}</span></span>
+      <span class="as-act"><button type="button" class="icon as-mem-pin${x.pinned ? ' on' : ''}" aria-pressed="${x.pinned ? 'true' : 'false'}" title="${esc(t(x.pinned ? 'ki_g_loesen' : 'ki_g_anheften'))}" aria-label="${esc(t(x.pinned ? 'ki_g_loesen' : 'ki_g_anheften'))}">${ICON.pin}</button><button type="button" class="icon as-mem-edit" title="${esc(t('ki_g_aendern'))}" aria-label="${esc(t('ki_g_aendern'))}">${ICON.pencil}</button><button type="button" class="icon as-mem-del" title="${esc(t('ki_g_vergessen'))}" aria-label="${esc(t('ki_g_vergessen'))}">${ICON.trash}</button></span></div>`;
+  box.innerHTML = r.items.length ? r.items.map(row).join('') + (r.total > r.items.length ? `<div class="as-item"><button type="button" class="ghost small" id="as-mem-more">${esc(t('ki_g_mehr', asN(r.total - r.items.length)))}</button></div>` : '')
+    : `<div class="as-item muted small"><span>${t(AS.memQ ? 'ki_g_kein_treffer' : 'ki_g_leer')}</span></div>`;
+  const ta = $('.as-mem-ta', box); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } else if (AS.memEdit) { AS.memEdit = ''; AS.memDraft = null; }      // (the note being changed is no longer in the list)
 }
 async function asChangesLoad() {
   // the log of changes: what the assistant changed after the user's click, the latest first
@@ -8151,8 +8184,9 @@ async function asChangesLoad() {
   let r; try { r = await api('/api/assistant/changes'); } catch (x) { el.textContent = x.message; return; }
   const kind = k => asKind(k) || k || '';
   const list = r.changes || [];
+  const mem = c => `<tr><td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(t(`ki_a_g_${c.what}`))}</b>${c.title ? ' · ' + esc(c.title) : ''}${(c.what === 'forget_all' || c.what === 'backup') && c.count ? ' · ' + esc(tn('ki_g_n', c.count, asN(c.count))) : ''}${(c.rows || []).map(x => `<div class="muted small">${esc(t('ki_a_g_vorher', x.text || ''))}</div>`).join('')}</td><td>${c.by ? t(`ki_a_g_by_${c.by}`) : '–'}</td><td class="nowrap">${t('ki_e_done')}</td></tr>`;
   el.classList.toggle('muted', !list.length);
-  el.innerHTML = !list.length ? t('ki_aenderungen_keine') : `<div class="as-tw"><table><thead><tr><th>${t('ki_a_zeit')}</th><th>${t('ki_a_was')}</th><th>${t('ki_a_grund')}</th><th>${t('ki_a_stand')}</th></tr></thead><tbody>${list.map(c => `<tr>
+  el.innerHTML = !list.length ? t('ki_aenderungen_keine') : `<div class="as-tw"><table><thead><tr><th>${t('ki_a_zeit')}</th><th>${t('ki_a_was')}</th><th>${t('ki_a_grund')}</th><th>${t('ki_a_stand')}</th></tr></thead><tbody>${list.map(c => c.kind === 'memory' ? mem(c) : `<tr>
     <td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(kind(c.kind))}</b> · ${esc(c.title || '')}${c.category ? ' → ' + esc(c.category.replace(/ \/ /g, ' › ')) : ''}${c.sub ? `<div class="muted small">${esc(c.sub)}</div>` : ''}${c.count && c.kind !== 'web' ? `<div class="muted small">${tn(c.kind === 'book' || c.kind === 'hold' ? 'ki_e_buchungen' : 'ki_a_umsaetze', c.count, c.count)}${c.sum != null ? ' · ' + fmt.format(c.sum) : ''}</div>` : ''}</td><td>${esc(c.reason || '–')}</td>
     <td class="nowrap">${c.kind === 'web' ? (c.state === 'failed' ? t('ki_a_fehlgeschlagen') : c.what === 'read' ? t('ki_a_abgerufen') : tn('ki_w_done_n', c.count || 0, c.count || 0)) : t(c.state === 'undone' ? 'ki_e_undone' : 'ki_e_done')}${c.final ? ' · ' + t('ki_a_endgueltig') : ''}${[c.note, c.state === 'undone' ? c.undo_note : ''].filter(Boolean).map(x => `<div class="muted small">${esc(x)}</div>`).join('')}</td></tr>`).join('')}</tbody></table></div>`;
 }
@@ -8194,6 +8228,33 @@ function bindAssistent(main) {
   on('#as-context', 'change', el => set({context: +el.value}));
   on('#as-idle', 'change', el => set({idle_minutes: +el.value}));
   on('#as-save', 'change', el => set({save_chats: el.checked}));
+  // the memory: its switch, a new note, the search, the list (drawn anew in place: the page keeps its position). What is being
+  // typed -- a new note, a change of one -- is kept in AS, so that drawing the list or the page anew does not lose it.
+  on('#as-mem', 'change', el => post('/api/assistant/settings', {memory: el.checked}, true));
+  const memEnd = () => { AS.memEdit = ''; AS.memDraft = null; };
+  const memSave = (it, x) => { const v = $('.as-mem-ta', it).value.trim(); if (v === x.text) { memEnd(); asMemDraw(); } else asMemLoad({action: 'edit', id: x.id, text: v}).then(r => { if (r) { memEnd(); asMemDraw(); } }); };
+  const memAdd = async () => { const el = $('#as-mem-new', main), v = el ? el.value.trim() : ''; if (!v) return; const r = await asMemLoad({action: 'add', text: v}); if (r) { AS.memNew = ''; const now = $('#as-mem-new'); if (now) now.value = ''; const btn = $('#as-mem-add'); if (btn) btn.disabled = true; if (r.known) toast(t('ki_g_bekannt'), 4000); } };
+  on('#as-mem-new', 'input', el => { AS.memNew = el.value; $('#as-mem-add', main).disabled = !el.value.trim(); });
+  on('#as-mem-new', 'keydown', (el, e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); memAdd(); } });
+  on('#as-mem-add', 'click', memAdd);
+  on('#as-mem-q', 'input', el => { clearTimeout(AS.memT); AS.memT = setTimeout(() => { AS.memQ = el.value.trim(); AS.mem = null; memEnd(); asMemLoad(); }, 200); });
+  on('#as-mem-all', 'click', () => { const n = (AS.mem || {}).notes || 0; if (n && confirm(tn('ki_g_alles_frage', n, asN(n)))) { memEnd(); asMemLoad({action: 'forget_all'}); } });
+  on('#as-mem-list', 'click', (box, e) => {
+    const b = e.target.closest('button'), it = b && b.closest('.as-mem-it'), id = it && it.dataset.id, x = id && ((AS.mem || {}).items || []).find(y => y.id === id);
+    if (b && b.id === 'as-mem-more') { asMemLoad(null, true); return; }
+    if (!x) return;
+    if (b.classList.contains('as-mem-pin')) asMemLoad({action: 'pin', id, pinned: !x.pinned});
+    else if (b.classList.contains('as-mem-edit')) { AS.memEdit = id; AS.memDraft = null; asMemDraw(); }
+    else if (b.classList.contains('as-mem-no')) { memEnd(); asMemDraw(); }
+    else if (b.classList.contains('as-mem-ok')) memSave(it, x);
+    else if (b.classList.contains('as-mem-del') && confirm(t('ki_g_frage', x.text))) { if (AS.memEdit === id) memEnd(); asMemLoad({action: 'delete', id}); }
+  });
+  on('#as-mem-list', 'input', (box, e) => { if (e.target.classList.contains('as-mem-ta')) AS.memDraft = e.target.value; });
+  on('#as-mem-list', 'keydown', (box, e) => { if (!e.target.classList.contains('as-mem-ta')) return;
+    const it = e.target.closest('.as-mem-it'), x = it && ((AS.mem || {}).items || []).find(y => y.id === it.dataset.id);
+    if (e.key === 'Escape') { memEnd(); asMemDraw(); } else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && x) { e.preventDefault(); memSave(it, x); } });
+  if (AS.mem) asMemDraw();          // (the page drawn anew: the list as it was, at once -- then fresh)
+  asMemLoad();
   on('#as-chats-old', 'click', async () => {          // not continued for a year: gone, after a question
     if (!confirm(tn('ki_verlaeufe_alt_frage', a.chats_old, asN(a.chats_old)))) return;
     try {

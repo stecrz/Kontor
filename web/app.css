@@ -547,6 +547,11 @@ body.as-page .as-head { border-bottom:0; padding:0 10px 4px 16px; } body.as-page
 .as-hist-h .as-hi-all { color:var(--neg); } .as-hist-off { padding:0 10px 8px; } .as-hist .as-empty { padding:4px 10px; }
 .as-hb .as-hist-btn.on { color:var(--accent-fg); background:var(--accent-soft); }
 .as-save-row { margin:0; }
+/* the assistant's memory in the settings: a new note, the search, the notes (text, date and origin; pin, edit, forget) */
+.as-mem { max-width:820px; margin-top:10px; } .as-mem-bar { display:flex; gap:8px; align-items:center; margin:0 0 8px; } .as-mem-bar input { flex:1; min-width:0; }
+.as-mem .as-list { max-width:none; } .as-mem-it { align-items:flex-start; } .as-mem-t { flex:1; min-width:0; overflow-wrap:anywhere; line-height:1.45; } .as-mem-ta { flex:1; min-width:0; min-height:0; resize:vertical; font:inherit; }
+.as-mem-it .icon { color:var(--muted); } .as-mem-it .icon:hover { color:var(--fg); } .as-mem-it .as-mem-del:hover { color:var(--neg); } .as-mem-it .as-mem-pin.on { color:var(--accent-fg); } .as-mem-pin.on svg { fill:currentColor; }
+@media (max-width: 900px) { .as-mem-bar input { font-size:16px; } .as-mem-it .as-act { margin-left:auto; } }
 .as-form { display:flex; align-items:flex-end; gap:6px; padding:10px 12px calc(12px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); flex:none; } body.as-page .as-form { border-top:0; }
 /* the question: a rounded field with + (a file) at its left and the buttons at its right; more than one line: the text across the
    whole field, + and the buttons in a row below it; while dictating, a layer over the text shows what is spoken in italics */

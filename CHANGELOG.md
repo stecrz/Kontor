@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.16.71 (2026-11-22 01:40)
+- KI-Assistent: Gedächtnis, Schritt 1 – Notizen unter Einstellungen → KI-Assistent: hinzufügen, suchen, ändern, anheften, vergessen, alles vergessen; Schalter
+- KI-Assistent: jede Frage bekommt angeheftete und neueste Notizen mit (höchstens 1.500 Token, egal wie viel gemerkt ist)
+- Gedächtnis: verschlüsselt, in der Sicherung (als „aus einer Sicherung“ gekennzeichnet zurück), nie im Protokoll; Zurücksetzen und Deinstallieren löschen es
+- Gedächtnis: nie Passwörter, PINs, TANs, Schlüssel, Kartennummern; erkannte Namen nie in der Internetsuche
+- Protokoll der Änderungen: Merken, Ändern, Vergessen mit Zeit und Auslöser – Vergessenes verschwindet auch dort
+- Sicherung wiederherstellen: bis 64 MB
+- Noch offen: Merken im Chat („Merk dir …“) und Suche
+
 ## 3.16.70 (2026-11-22 01:26)
 - KI-Assistent: sucht von selbst nach neueren Versionen (llama.cpp, Modell, Diktiermodell) – täglich, einstellbar unter Betrieb; geladen wird dabei nichts
 - KI-Assistent: Punkt im Menü bei Einstellungen, wenn es für Modell oder Diktiermodell in Gebrauch Neueres gibt (llama.cpp erst nach zwei Wochen)

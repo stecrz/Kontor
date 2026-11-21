@@ -586,6 +586,11 @@ class GoalTests(unittest.TestCase):
                       "**Data-Warehouse (BigQuery):**", "**Reihenfolge:**", "**Name:**", "**Update-Prüfung:**", "**Assistent aktuell halten:**", "ELSTER", "gemeinsame KI"):
             self.assertIn(words, text, words)
 
+    def test_the_memory_as_decided_stays_in_the_roadmap(self):
+        text = self._read("ROADMAP.md")
+        for words in ("**Gedächtnis des KI-Assistenten:**", "Nur aus den eigenen Worten des Nutzers", "zählt als seine eigenen Worte"):
+            self.assertIn(words, text, words)
+
     def test_goal_stays_in_the_rules(self):
         text = self._read("CLAUDE.md")
         self.assertIn("\n## Ziel\n", text)

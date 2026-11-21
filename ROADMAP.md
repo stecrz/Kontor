@@ -75,6 +75,11 @@ anhängen – nie löschen.
   Liste unter Einstellungen → KI-Assistent: ansehen, ändern, anheften, löschen, alles vergessen. Verschlüsselt, nie im Protokoll
   oder in Paketen; in der Sicherung enthalten; Zurücksetzen und Deinstallieren löschen es. Jedes Merken, Ersetzen und Vergessen
   mit Zeit im Änderungsprotokoll.
+  Ergänzt am 22.11.2026: Text, den der Nutzer in seine Nachricht einfügt, zählt als seine eigenen Worte (Notizen daraus tragen den
+  Hinweis „aus eingefügtem Text“); „Merk dir das“ zu einer Antwort gilt sofort. Die Suche findet von Anfang an auch nach Bedeutung
+  (ein kleines drittes Modell auf diesem Mac, abgeschirmt wie die anderen; ohne es nach Wörtern) – derselbe Baustein dient danach
+  auch der Hilfe- und der Umsatzsuche. (teilweise umgesetzt in 3.16.71: verschlüsselte Ablage, Liste in den Einstellungen,
+  Steckbrief in jeder Anfrage, Sicherung, Protokoll; fehlen noch Merken aus dem Chat und die Suche)
 - **Update-Prüfung:** Bevor ein Update installiert wird, liest die installierte Version die neuen Dateien – ohne etwas davon
   auszuführen – und vergleicht, was über das Programm hinausreicht: Netz, andere Programme, nachgeladener Code, Umwege dorthin,
   Internet-Adressen, Orte, von denen aus der Mac Programme startet, Helfer und Skripte, die Abschirm-Regeln und die Prüfung selbst.
@@ -136,7 +141,16 @@ Fertig, wenn
 - **Gedächtnis** wie unter Entschieden („März teurer: Urlaub“, „Ziel: mit 45 finanziell frei“): von selbst und auf „Merk dir“,
   sofort mit „Rückgängig“, Steckbrief plus Suche, Liste in den Einstellungen, in der Sicherung; Tests: eingeschleuste Sätze in
   Buchungstexten, Belegen, Dateien und Webseiten werden nie gemerkt; der Steckbrief bleibt unter seiner Grenze, auch bei
-  Tausenden Notizen; noch nicht begonnen (Stand 3.16.56) – wer anfängt, zuerst im Lagebild prüfen, ob ein anderer Chat schon daran ist;
+  Tausenden Notizen; in Arbeit bei einem Chat, in Schritten:
+  - [x] 3.16.71 Ablage (`memory-notes-*.json`, höchstens 1.000 Notizen je Datei), Liste unter Einstellungen → KI-Assistent (hinzufügen,
+    ändern, anheften, vergessen, alles vergessen, Schalter), Steckbrief in jeder Anfrage, Sicherung, Änderungsprotokoll (Vergessenes
+    verschwindet auch dort), nie Zugangsdaten, erkannte Namen aus Notizen nie in der Internetsuche (alle Namen erst, wenn das
+    Modell sie beim Merken benennt – nächster Schritt).
+  - [ ] Merken aus dem Chat: ein getrennter Durchlauf, der nur die Worte des Nutzers sieht; „Gemerkt: …“ mit „Rückgängig“,
+    „ersetzt: …“, „Vergiss …“; in einer Unterhaltung mit Internet-Text „Merk dir das“ zu einer Antwort erst nach Klick.
+  - [ ] Suche in Notizen nach Wörtern und Bedeutung; das Passende kommt von selbst zur Frage; er sagt, worauf eine Antwort beruht.
+  - [ ] Suche in gespeicherten Verläufen (aus Unterhaltungen mit Internet-Text nur die Fragen des Nutzers; Vergessenes taucht nicht wieder auf).
+  - [ ] Bedeutungssuche auch für Hilfe und Umsätze.
 - **Hinweise von selbst:** nach jedem Abgleich prüft Kontor (fester Code) auf Auffälliges – gestiegene Ausgaben, ungewöhnliche
   Umsätze, Fristen (Voranmeldung, Zinsbindung), Liquidität, offene Kategorien, Sicherheitslage (Zugang, Freigaben, Updates) –
   und zeigt es unter Offenes; der Assistent erklärt und ordnet ein, Gemerktes zählt (bekannter Grund, kein Alarm);
