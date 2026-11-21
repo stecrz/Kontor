@@ -1,0 +1,169 @@
+"""Briefing for the parallel chats (SessionStart and UserPromptSubmit hook; by hand: python3 .claude/hooks/briefing.py):
+what the other chats have published on main since this clone last looked -- versions, files touched, overlap with this
+clone's own work, and the state of the tests on GitHub. It only reads from GitHub; locally it fast-forwards a clone that
+has nothing of its own, and touches nothing else. As a hook it says nothing while nothing changed, and never blocks: any
+failure ends silently."""
+import json
+import os
+import re
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+OWN = {"VERSION", "CHANGELOG.md"}       # every version changes these: no sign of overlapping work
+SHOWN = 12                              # newest foreign versions listed
+
+
+def run(cmd, timeout=20):
+    try:
+        r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, r.stdout.rstrip()
+    except Exception:
+        return 1, ""
+
+
+def git(*args, timeout=20):
+    return run(["git"] + list(args), timeout)
+
+
+def chat(body):
+    """The last four characters of the session link in a commit message: enough to tell the chats apart."""
+    m = re.search(r"session_(\w+)", body or "")
+    return "Chat …" + m.group(1)[-4:] if m else ""
+
+
+def foreign_commits():
+    """What main has and this clone does not, oldest first: (short hash, subject, chat, files)."""
+    code, out = git("log", "--reverse", "--name-only", "--format=%x1e%h%x1f%s%x1f%b%x1f", "HEAD..origin/main")
+    if code != 0:
+        return []
+    res = []
+    for rec in out.split("\x1e"):
+        parts = rec.split("\x1f")
+        if len(parts) < 4:
+            continue
+        files = [f for f in parts[3].split("\n") if f.strip()]
+        res.append((parts[0].strip(), parts[1].strip()[:90], chat(parts[2]), files))
+    return res
+
+
+def own_files():
+    """Files this clone has changed against the point where it left main (committed or not), and new ones."""
+    files = set()
+    code, base = git("merge-base", "HEAD", "origin/main")
+    if code == 0 and base:
+        files.update(f for f in git("diff", "--name-only", base)[1].split("\n") if f)
+    for line in git("status", "--porcelain")[1].split("\n"):
+        if line[3:].strip():
+            files.add(line[3:].strip().split(" -> ")[-1])
+    return files - OWN
+
+
+def tests_on_github():
+    """One line on the tests of the newest versions on main, and a key that changes when they turn red or green again."""
+    url = git("remote", "get-url", "origin")[1]
+    m = re.search(r"([\w.-]+)/([\w.-]+?)(?:\.git)?/?$", url)
+    if not m or "://" not in url and "@" not in url:     # a folder as origin (tests): nothing to ask GitHub
+        return "", ""
+    code, out = run(["gh", "api", "repos/%s/%s/actions/runs?branch=main&event=push&per_page=8" % m.groups()], 8)
+    if code != 0:
+        return "", ""
+    try:
+        runs = json.loads(out).get("workflow_runs") or []
+    except ValueError:
+        return "", ""
+    if not runs:
+        return "", ""
+    name = lambda r: str(r.get("display_title") or "").split(":")[0][:20] or str(r.get("head_sha"))[:7]
+    done = [r for r in runs if r.get("status") == "completed" and r.get("conclusion") in ("success", "failure")]
+    parts, key = [], "ok"
+    if runs[0].get("status") != "completed":
+        parts.append("läuft für %s" % name(runs[0]))
+    if done and done[0]["conclusion"] == "success":
+        parts.append("%s grün" % name(done[0]))
+    elif done:
+        first = done[0]
+        for r in done:                  # the oldest red one of the streak: the version that broke it
+            if r["conclusion"] != "failure":
+                break
+            first = r
+        who = chat(git("log", "-1", "--format=%b", str(first.get("head_sha")))[1])
+        key = "red " + str(first.get("head_sha"))[:7]
+        parts.append("ROT seit %s%s – das behebt der Chat, der diese Version veröffentlicht hat; ist es nicht deine: nicht "
+                     "reparieren, weiterarbeiten (dein eigener Lauf erbt dieselben Fehler, bis die Korrektur da ist)"
+                     % (name(first), " (%s)" % who if who else ""))
+    return "Tests auf GitHub: " + "; ".join(parts), key
+
+
+def main() -> int:
+    hook = "hook" in sys.argv[1:]
+    if hook:
+        try:
+            sys.stdin.read()            # the hook's input is not needed
+        except Exception:
+            pass
+    if git("rev-parse", "--git-dir")[0] != 0:
+        return 0
+    shallow = git("rev-parse", "--is-shallow-repository")[1] == "true"
+    fetched = git("fetch", "-q", *(["--depth=50"] if shallow else []), "origin", "main", timeout=20)[0] == 0
+    code, remote = git("rev-parse", "origin/main")
+    if code != 0:
+        return 0
+    if not fetched and not hook:
+        print("GitHub nicht erreichbar – Stand vom letzten Holen.")
+    version = git("show", "origin/main:VERSION")[1] or "?"
+    mine = git("show", "HEAD:VERSION")[1] or "?"
+    ci, ci_key = tests_on_github()
+    state_file = os.path.join(ROOT, git("rev-parse", "--git-dir")[1], "kontor-briefing")
+    state = ("%s %s" % (remote, ci_key)).strip()
+    if hook:
+        try:
+            with open(state_file, encoding="utf-8") as f:
+                if f.read().strip() == state:
+                    return 0            # nothing new since the last briefing
+        except OSError:
+            pass
+    foreign = foreign_commits()
+    ahead = git("rev-list", "--count", "origin/main..HEAD")[1]
+    ahead = int(ahead) if ahead.isdigit() else 0
+    dirty = bool(git("status", "--porcelain")[1])
+    lines = ["Kontor-Lagebild: main steht bei %s." % version]
+    if foreign:
+        lines[0] += " Neu von anderen Chats (du: %s):" % mine
+        if len(foreign) > SHOWN:
+            lines.append("- … %d ältere" % (len(foreign) - SHOWN))
+        for h, subject, who, files in foreign[-SHOWN:]:
+            shown = [f for f in files if f not in OWN]
+            lines.append("- %s%s · %s" % (subject, " · " + who if who else "", ", ".join(shown[:8]) + (" …" if len(shown) > 8 else "")))
+        if not ahead and not dirty and git("symbolic-ref", "--short", "HEAD")[1] == "main" \
+                and git("merge", "-q", "--ff-only", "origin/main")[0] == 0:
+            lines.append("Dein Klon hatte nichts Eigenes und steht jetzt auf %s – vorher gelesene Dateien aus der Liste neu lesen." % version)
+        else:
+            touched = set(f for c in foreign for f in c[3])
+            both = sorted(own_files() & touched)
+            if both:
+                lines.append("Überschneidung mit deiner Arbeit: %s – die fremden Änderungen dort erst lesen "
+                             "(`git diff HEAD...origin/main -- <Datei>`)." % ", ".join(both[:10]))
+            lines.append("Jetzt daraufsetzen, bevor du weiterarbeitest (je früher, desto kleiner der Konflikt): eigene Änderungen "
+                         "lokal committen, dann `git pull --rebase origin main`; nach dem Rebase die betroffenen Tests.")
+    elif not hook:
+        lines[0] += " Dein Klon ist auf dem Stand%s." % (" (mit eigener Arbeit)" if ahead or dirty else "")
+    if ci:
+        lines.append(ci)
+    if hook and len(lines) == 1 and not ci:
+        pass                            # only the version, and it is the clone's own: not worth a line
+    else:
+        print("\n".join(lines))
+    try:
+        with open(state_file, "w", encoding="utf-8") as f:
+            f.write(state)
+    except OSError:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception:
+        sys.exit(0)

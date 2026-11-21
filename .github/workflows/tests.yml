@@ -19,13 +19,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # two halves per Python, each on a machine of its own (the tests are most of a run: one after the other 8 min, so 4):
+        # the pages' tests, and everything else -- a new test file lands in "everything else" by itself, nothing is left out
         include:
-          - name: "Python 3.9 (wie auf dem Mac) · Chrome"
+          - name: "Python 3.9 (wie auf dem Mac) · Chrome · Seiten"
             python: "3.9"           # the Python of Apple's command line tools on the Mac (its Playwright needs an older image)
             os: ubuntu-24.04
-          - name: "Python 3.13 · Chrome + Safari-Engine · Code-Checks"
+            tests: tests/test_e2e.py
+          - name: "Python 3.9 (wie auf dem Mac) · Chrome · Assistent, Rundgang, Regeln"
+            python: "3.9"
+            os: ubuntu-24.04
+            tests: tests --ignore=tests/test_e2e.py
+          - name: "Python 3.13 · Chrome + Safari-Engine · Seiten"
             python: "3.13"
             os: ubuntu-24.04          # not ubuntu-latest: on 26.04 the browser libraries come from a crawling mirror (17+ min)
+            tests: tests/test_e2e.py
+          - name: "Python 3.13 · Chrome + Safari-Engine · Assistent, Rundgang, Regeln · Code-Checks"
+            python: "3.13"
+            os: ubuntu-24.04
+            tests: tests --ignore=tests/test_e2e.py
+            checks: true
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3   # any Python version on any runner (3.9 is gone from setup-python's newest images); no v10 tag
@@ -66,18 +79,18 @@ jobs:
       - name: Interface
         run: node --check web/app.js && node --check web/i18n.js && node --check web/sw.js
       - name: Code checks
-        if: matrix.python == '3.13'           # once is enough: unused and undefined names in Python and in the interface
+        if: matrix.checks                     # once is enough: unused and undefined names in Python and in the interface
         run: |
           uv pip install -q pyflakes
           python -m pyflakes *.py tests/*.py .claude/hooks/*.py
           npm install -s --no-save --no-package-lock eslint@9 globals
           npx --no-install eslint -c .github/eslint.config.mjs web
       - name: Tests
-        timeout-minutes: 30                 # today 4 min, nightly 7 min: room for many more tests
+        timeout-minutes: 30                 # today 4 min per half: room for many more tests
         env:
           KONTOR_FUZZ_SEEDS: ${{ github.event_name == 'schedule' && '1000' || '40' }}
           TZ: Europe/Berlin
-        run: python -m pytest -q tests
+        run: python -m pytest -q -rs ${{ matrix.tests }}       # -rs: what was skipped, and why, at the end
 
   # Kontor runs only on the Mac: what only a Mac can check -- Apple's own Python, the Swift helpers (Touch ID, balances from
   # MoneyMoney's database), the bridge to MoneyMoney, installing the background service. MoneyMoney itself is not there.

@@ -19,17 +19,24 @@ Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhän
 ## Arbeitsweise
 - Was als Nächstes kommt und wann es fertig ist: `ROADMAP.md`. Erledigtes dort abhaken, Neues dort eintragen.
 - Skills (`.claude/skills/`): `feature` (Punkt aus dem Fahrplan umsetzen), `ui-check` (Oberfläche ansehen), `release` (jede
-  Änderung abschließen). Unabhängige Prüfung vor jedem Release mit Rechenlogik oder Schreibzugriff: Agent `reviewer`.
+  Änderung abschließen), `teamlead` (viele Aufgaben auf mehrere Chats verteilen). Unabhängige Prüfung vor jedem Release mit
+  Rechenlogik oder Schreibzugriff: Agent `reviewer`.
 - Leitplanken (`.claude/settings.json`): Sperren für Kontors Datenordner, MoneyMoneys Datenbank, Überweisungen und
-  Force-Push; Erinnerung, wenn eine Änderung nicht abgeschlossen ist.
-- GitHub Actions testet jeden Push – Linux: Python 3.9 und neu, Chrome und Safari-Engine, Code-Checks; macOS: Apples Python,
-  Swift-Helfer, MoneyMoney-Brücke, Installation – und nachts mit 1000 Zufallsläufen.
+  Force-Push; Lagebild zu Beginn jeder Aufgabe (was die anderen Chats veröffentlicht haben); Erinnerung, wenn eine Änderung
+  nicht abgeschlossen ist.
+- GitHub Actions testet jeden Push (rund 5 min) – Linux: Python 3.9 und neu, Chrome und Safari-Engine, Code-Checks, je
+  Python in zwei Hälften nebeneinander (Seiten = `tests/test_e2e.py`; alles andere); macOS: Apples Python, Swift-Helfer,
+  MoneyMoney-Brücke, Installation – und nachts mit 1000 Zufallsläufen.
 
 ## Prüfen
 - Tests: `python3 -m pytest -q tests` (~2½ min; Browser-Tests mit Playwright; `sqlcipher` nur für Testdatenbanken).
   Mehr Zufallsläufe: `KONTOR_FUZZ_SEEDS=400 python3 -m pytest -q tests/test_fuzz.py`.
 - Code-Checks: `python3 -m pyflakes *.py tests/*.py .claude/hooks/*.py` und `npx eslint -c .github/eslint.config.mjs web`
   (einmal `npm install --no-save --no-package-lock eslint@9 globals`).
+- GitHub prüft, was es lokal nicht gibt – Safari-Engine (WebKit), andere Schriften, langsamere Rechner. `pytest -rs` nennt
+  Übersprungenes: ein Test, der nur in WebKit läuft, ist lokal ungeprüft (einmal je Sitzung `python3 -m playwright install webkit`
+  versuchen; geht es nicht, dasselbe Verhalten auch in Chrome prüfen, wo es geht). Neue Browser-Tests warten auf einen Zustand
+  (`until(…)`, `wait_for_function`), nie eine feste Zeit, und vergleichen Maße miteinander, nie mit festen Pixeln oder Schriftbreiten.
 - Oberfläche: `node --check web/app.js`; ansehen mit `python3 tests/preview.py <ordner> '#route'` (hell/dunkel, Mac/iPhone; `--js` z. B. für ganze Tabellen).
 
 ## Jede Änderung abschließen (Skill `release`)
@@ -49,7 +56,18 @@ Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhän
 6. Den Mac aktualisiert der Nutzer selbst – kein Zugriff darauf, im Abschluss nicht erwähnen.
 
 ## Parallele Chats
-Bis zu drei Chats arbeiten gleichzeitig am Repo, meist an Verschiedenem, jeder in seinem eigenen Klon; keiner sieht die anderen.
+Mehrere Chats arbeiten gleichzeitig am Repo, meist an Verschiedenem, jeder in seinem eigenen Klon; abgestimmt wird nur über
+GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
+- **Lagebild** (`.claude/hooks/briefing.py`): kommt von selbst zu Beginn jeder Aufgabe, sobald es Neues gibt – was andere
+  Chats veröffentlicht haben, welche Dateien, Überschneidungen mit der eigenen Arbeit, Tests auf GitHub. Ein Klon ohne Eigenes
+  wird dabei vorgespult. Kam zu Beginn einer Aufgabe keines: von Hand `python3 .claude/hooks/briefing.py`.
+- **Früh und oft daraufsetzen** (`git pull --rebase origin main`): zu Beginn jeder Aufgabe und sobald das Lagebild Neues
+  meldet – nicht erst beim Veröffentlichen. Lieber mehrere kleine Versionen als eine große: Veröffentlichtes kommt keinem mehr
+  in die Quere. Dateien, die das Lagebild nennt, vor dem Ändern neu lesen.
+- **Rot auf GitHub** behebt der Chat, dessen Version den Lauf als erste rot gemacht hat (Sitzungslink in der Commit-Nachricht) –
+  sofort, als nächste Version. Alle anderen reparieren es nicht (sonst doppelt und gegeneinander), arbeiten weiter und
+  veröffentlichen normal: ihr Lauf erbt dieselben Fehler, nur neue eigene zählen. Steht der fremde Fehler der eigenen Arbeit
+  länger als 30 Minuten im Weg: selbst beheben, im Changelog nennen.
 - Lokal beliebig committen; auf GitHub kommt nur Fertiges, als ein Commit je Version – ohne Zweige, direkt auf `main`.
 - Direkt vor dem Versions-Commit holen und die eigene Arbeit daraufsetzen (`git pull --rebase origin main`); die Nummer immer
   aus dem frisch geholten `main`; zusammengefasst wird nur, wenn dieser `main` in der eigenen Arbeit steckt (sonst gingen fremde
@@ -129,4 +147,4 @@ Bis zu drei Chats arbeiten gleichzeitig am Repo, meist an Verschiedenem, jeder i
 | `assistant.py` / `llm_local.py` | Assistent: feste Werkzeuge, Rechte, Fragen und Einträge nach Klick / llama.cpp und Modelle laden, prüfen, abgeschirmt starten und stoppen |
 | `storage.py`, `auth.py`, `updates.py`, `tls_cert.py` | verschlüsselte Ablage, Anmeldung/Touch ID, Updates, Zertifikat |
 | `web/app.js`, `web/i18n.js` | Oberfläche (eine Datei, Seiten über `#…`), Texte |
-| `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_scenarios` (Lebensfälle über Bereiche: Einlagen, Kauf, Darlehen, Auslagen; Monats-/Jahreswechsel, gemischt), `test_categories`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_assistant` (mit `fake_llama.py` statt llama.cpp, Downloads ohne Netz), `test_tour` (Rundgang: jede Seite hell/dunkel, Mac/iPhone, de/en – Skriptfehler, Überlaufen, Textschlüssel, Kontrast), `test_fuzz`, `test_privacy` |
+| `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_scenarios` (Lebensfälle über Bereiche: Einlagen, Kauf, Darlehen, Auslagen; Monats-/Jahreswechsel, gemischt), `test_categories`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_assistant` (mit `fake_llama.py` statt llama.cpp, Downloads ohne Netz), `test_tour` (Rundgang: jede Seite hell/dunkel, Mac/iPhone, de/en – Skriptfehler, Überlaufen, Textschlüssel, Kontrast), `test_fuzz`, `test_privacy`, `test_hooks` (Lagebild der parallelen Chats) |

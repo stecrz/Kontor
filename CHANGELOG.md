@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.20 (2026-11-21 17:33)
+- Entwicklung: Lagebild für parallele Chats – zu Beginn jeder Aufgabe, was die anderen veröffentlicht haben, Überschneidungen, Tests auf GitHub
+- Entwicklung: Rot auf GitHub behebt nur der Chat, der es verursacht hat (keine doppelten Korrekturen)
+- Entwicklung: Tests auf GitHub in zwei Hälften nebeneinander – rund 5 statt 9 Minuten
+- Entwicklung: Skill „Teamleiter“ – viele Aufgaben auf mehrere Chats verteilen
+
 ## 3.16.19 (2026-11-21 17:20)
 - KI-Assistent: schlägt Kategorien für Umsätze ohne Kategorie vor (je Gegenpartei, nur bestehende Kategorien) – eingetragen erst nach deinem Klick, wie unter Kategorisieren
 - KI-Assistent: nie über eine inzwischen gesetzte Kategorie; Zurücknehmen nur, was die Karte eingetragen hat (in MoneyMoney nur am Mac)

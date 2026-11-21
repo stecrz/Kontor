@@ -12,6 +12,28 @@
         ]
       }
     ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for d in \"$CLAUDE_PROJECT_DIR\" \"$CLAUDE_PROJECT_DIR/kontor\"; do if [ -f \"$d/.claude/hooks/briefing.py\" ]; then exec python3 \"$d/.claude/hooks/briefing.py\" hook; fi; done; exit 0",
+            "timeout": 45
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for d in \"$CLAUDE_PROJECT_DIR\" \"$CLAUDE_PROJECT_DIR/kontor\"; do if [ -f \"$d/.claude/hooks/briefing.py\" ]; then exec python3 \"$d/.claude/hooks/briefing.py\" hook; fi; done; exit 0",
+            "timeout": 45
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
