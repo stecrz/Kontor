@@ -3624,8 +3624,12 @@ class Browser(unittest.TestCase):
                 pg.wait_for_selector(".as-right[data-r=enter_values]"); pg.check(".as-right[data-r=enter_values]")
                 until(pg, "AS.st.settings.rights.enter_values === true")
                 # the rights in groups -- read (one switch; the help always), show, change, from where
-                self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-rg-h')].map(e => e.firstChild.textContent)"), ["Lesen – die Hilfe immer", "Zeigen", "Ändern – jede Änderung erst nach deinem Klick", "Internet", "Von wo"])
-                self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-right')].map(e => e.dataset.r)"), ["read", "navigate", "enter_values", "categorize", "book", "rules", "receipts", "internet", "remote"])
+                self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-rg-h')].map(e => e.firstChild.textContent)"), ["Lesen – die Hilfe immer", "Zeigen", "Ändern – jede Änderung erst nach deinem Klick", "Von wo", "Internet"])
+                self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-right')].map(e => e.dataset.r)"), ["read", "navigate", "enter_values", "categorize", "book", "rules", "receipts", "remote", "internet"])
+                # the internet last; its key right under its checkbox (only while it is allowed)
+                pg.check(".as-right[data-r=internet]"); until(pg, "AS.st.settings.rights.internet === true && !!document.querySelector('#as-tavily')")
+                self.assertTrue(pg.evaluate("document.querySelector('.as-right[data-r=internet]').closest('label').nextElementSibling.classList.contains('as-web-key')"))
+                pg.uncheck(".as-right[data-r=internet]"); until(pg, "AS.st.settings.rights.internet === false && !document.querySelector('#as-tavily')")
                 pg.uncheck(".as-right[data-r=read]"); until(pg, "!AS.st.settings.rights.figures && !AS.st.settings.rights.transactions && !AS.st.settings.rights.page && AS.st.settings.rights.help")
                 pg.wait_for_selector(".as-right[data-r=read]"); pg.check(".as-right[data-r=read]"); until(pg, "AS.st.settings.rights.figures && AS.st.settings.rights.transactions && AS.st.settings.rights.page")
                 # the context: automatic by the memory of this Mac, or chosen

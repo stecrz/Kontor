@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.54 (2026-11-21 23:37)
+- Einstellungen → KI-Assistent: „Von wo“ vor „Internet“; Tavily-Schlüssel direkt unter dem Häkchen „Internet“
+
 ## 3.16.53 (2026-11-21 23:28)
 - KI-Assistent: bei kleinem Kontext (16k) Werkzeuge kompakt (ohne Parameter-Hinweise) – mehr Platz für Frage und Unterhaltung
 

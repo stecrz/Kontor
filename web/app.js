@@ -7858,6 +7858,10 @@ async function vEinstellungenAssistent() {
       ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`;
   const state = sv.state || 'stopped', opt = (v, l, cur) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`;
   const use = sv.rss ? t('ki_verbrauch', asRAM(sv.rss), asN(sv.cpu || 0)) + (sv.tps ? ' · ' + t('ki_tempo', asN(sv.tps)) : '') : '';
+  // the Tavily key: right under its checkbox, while the internet is allowed
+  const webKey = r.internet ? `<div class="form as-web-key"><label for="as-tavily">${t('ki_tavily')}${hq('ki_tavily')}</label><div class="row tight">${(a.web || {}).tavily
+    ? `<span class="muted small">${t('ki_tavily_da', a.web.tavily_used || 0, a.web.tavily_limit || 950, a.web.tavily_days || 31)}</span><button class="small secondary" id="as-tavily-del">${t('ki_entfernen')}</button>`
+    : `<input type="password" id="as-tavily" placeholder="tvly-…" autocomplete="off" spellcheck="false"><button class="small secondary" id="as-tavily-save">${t('ki_tavily_sichern')}</button>`}</div></div>` : '';
   return `<div class="row tight">${swCtl('as-enabled', st.enabled, t('ki_verwenden'))}${hq('assistent')}</div>
   <h2>${t('ki_programm')}${hq('ki_programm')}<span class="x">llama.cpp</span></h2>
   <div class="as-list"><div class="as-item"><span><b>llama.cpp</b><br><span class="muted small">${rt.installed ? esc(rt.tag || rt.version || '') + (rt.date ? ' · ' + esc(FDT(rt.date)) : '') : t('ki_nicht_installiert')}</span></span>
@@ -7896,11 +7900,8 @@ async function vEinstellungenAssistent() {
     ${pf.can_seal ? `<label>${t('ki_abschirmung')}${hq('ki_abschirmung')}</label><label class="chk"><select id="as-sandbox">${['strict', 'basic', 'off'].map(k => opt(k, t(`ki_sb_${k}`), st.sandbox)).join('')}</select></label>` : ''}
   </div>
   <h2>${t('ki_rechte')}</h2>
-  <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize', 'book', 'rules', 'receipts']], ['ki_rg_internet', ['internet']], ['ki_rg_zugang', ['remote']]].map(([g, ks]) =>
-    `<div class="as-rg"><div class="as-rg-h">${t(g)}${g === 'ki_rg_aendern' ? hq('ki_eintragen') : g === 'ki_rg_internet' ? hq('ki_internet') : ''}</div>${ks.map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${(k === 'read' ? r.figures && r.transactions && r.page : r[k]) ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}</span></label>`).join('')}</div>`).join('')}</div>
-  ${r.internet ? `<div class="form as-web-key"><label for="as-tavily">${t('ki_tavily')}${hq('ki_tavily')}</label><div class="row tight">${(a.web || {}).tavily
-    ? `<span class="muted small">${t('ki_tavily_da', a.web.tavily_used || 0, a.web.tavily_limit || 950, a.web.tavily_days || 31)}</span><button class="small secondary" id="as-tavily-del">${t('ki_entfernen')}</button>`
-    : `<input type="password" id="as-tavily" placeholder="tvly-…" autocomplete="off" spellcheck="false"><button class="small secondary" id="as-tavily-save">${t('ki_tavily_sichern')}</button>`}</div></div>` : ''}
+  <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize', 'book', 'rules', 'receipts']], ['ki_rg_zugang', ['remote']], ['ki_rg_internet', ['internet']]].map(([g, ks]) =>
+    `<div class="as-rg"><div class="as-rg-h">${t(g)}${g === 'ki_rg_aendern' ? hq('ki_eintragen') : g === 'ki_rg_internet' ? hq('ki_internet') : ''}</div>${ks.map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${(k === 'read' ? r.figures && r.transactions && r.page : r[k]) ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}</span></label>${k === 'internet' ? webKey : ''}`).join('')}</div>`).join('')}</div>
   <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>
   <details class="as-log" id="as-log"><summary>${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details>`;
 }
