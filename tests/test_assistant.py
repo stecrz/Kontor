@@ -4950,6 +4950,9 @@ class Browser(unittest.TestCase):
                     pg.click(".as-hi-open[data-id='%s']" % conv); until(pg, "!AS.list && AS.conv === '%s'" % conv)
                     self.assertEqual(pg.evaluate("document.querySelectorAll('.as-chart').length"), 2)
                     ask(pg, "Weiter so")
+                    t0 = time.time()                                                 # (saved after the answer is shown, not with it)
+                    while app.assistant.chats()[0]["questions"] != 3 and time.time() - t0 < 15:
+                        pg.wait_for_timeout(50)
                     self.assertEqual(app.assistant.chats()[0]["questions"], 3)
                     pg.click(".as-hist-btn"); until(pg, "AS.list && AS.chats !== null")
                     if phone:

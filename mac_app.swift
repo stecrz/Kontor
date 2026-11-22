@@ -99,7 +99,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         window.setFrameAutosaveName("Kontor")
         noTitleBar()
         watches.append(web.observe(\.title, options: [.new]) { [weak self] w, _ in
-            if let t = w.title, !t.isEmpty { self?.window.title = t; self?.placeButtons() }          // (a new title lays the bar out anew)
+            // (a new title lays the bar out anew -- at once or with the window's next layout: placed again after that too)
+            if let t = w.title, !t.isEmpty { self?.window.title = t; self?.placeButtons(); DispatchQueue.main.async { self?.placeButtons() } }
         })
         buildMenu()
 
@@ -143,7 +144,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
     private func placeButtons() {
         guard web.band > 0, !window.styleMask.contains(.fullScreen), let close = window.standardWindowButton(.closeButton),
               let mini = window.standardWindowButton(.miniaturizeButton), let zoom = window.standardWindowButton(.zoomButton),
-              let bar = close.superview?.superview else { return }
+              let row = close.superview, let bar = row.superview else { return }
         let h = (2 * Shell.rowMiddle * web.pageZoom).rounded()
         var f = bar.frame
         if f.height != h || f.minY != window.frame.height - h {
@@ -151,6 +152,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
             f.origin.y = window.frame.height - h
             bar.frame = f
         }
+        // the buttons' own row fills the bar: macOS now and then gives it back its usual height at the bar's top while the bar
+        // keeps ours -- the buttons, placed for the taller bar, then sat above the window's edge (GitHub's Mac: their middle at -2)
+        if row.frame != bar.bounds { row.frame = bar.bounds }
         for b in [close, mini, zoom] { b.setFrameOrigin(NSPoint(x: b.frame.minX, y: ((h - b.frame.height) / 2).rounded())) }
         web.band = (Shell.rowEnd * web.pageZoom).rounded()
     }
@@ -286,7 +290,10 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
             d["menu"] = NSApp.mainMenu?.items.map { $0.title } ?? []
             d["dark"] = self?.window.appearance?.name == NSAppearance.Name.darkAqua
             d["mic"] = Shell.micState()
-            if let s = self { d["chrome"] = ["full": s.web.band > 0, "band": Double(s.web.band), "middle": s.chrome()["ly"] ?? 0] as [String: Any] }
+            if let s = self {
+                s.placeButtons()            // (as after any change of the window: where the buttons are then is what is checked)
+                d["chrome"] = ["full": s.web.band > 0, "band": Double(s.web.band), "middle": s.chrome()["ly"] ?? 0] as [String: Any]
+            }
             let items = (NSApp.mainMenu?.items ?? []).flatMap { $0.submenu?.items ?? [] }.flatMap { $0.submenu?.items ?? [$0] }
             let mine = items.filter { $0.action == #selector(Shell.command(_:)) }
             d["commands"] = mine.map { [$0.title, ($0.keyEquivalentModifierMask.contains(.shift) ? "⇧" : "") + $0.keyEquivalent] }

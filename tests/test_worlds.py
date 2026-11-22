@@ -137,6 +137,16 @@ class World:
                 return x
         return self.odd()
 
+    def amount_alone(self, area, key, d, x):
+        """The amount -- unless another transfer of this kind in the area has it within two weeks: then one no other booking has.
+        Of two such transfers a few days apart, each arriving days later, the two bookings of one day pair and the other two
+        stay open, on purpose (test_cashflow: a pair on one day is not split up) -- found by a night's run, seed 224088165."""
+        days = self.between.setdefault((area + "|" + key, int(round(x * 100))), [])
+        if any(abs((d - e).days) <= 2 * report.PAIR_DAYS_CAT for e in days):
+            return self.odd()
+        days.append(d)
+        return x
+
     def odd(self):
         """An amount no other booking has: a value change must not look like the other side of a payment."""
         return round(self.rnd.uniform(100, 9000), 2) + 0.003 * 0          # (cents at random)
@@ -206,6 +216,7 @@ class World:
             self.add(a, "bank", d, -x if a in self.companies else x, cat=rnd.choice(EXPENSE) if a in self.companies else self.cat_in(a), counts=True)
         elif kind == 11 and a + "|paypal" in self.accounts:         # to PayPal and back: both sides "Umbuchung", no IBAN, a week apart at most
             s = rnd.choice([1, -1])
+            x = self.amount_alone(a, "paypal", d, x)
             self.add(a, "bank", d, -s * x, cat="Umbuchung", name="PayPal")
             self.add(a, "paypal", min(d + timedelta(rnd.choice([0, 1, 3, 5, 7])), TODAY), s * x, cat="Umbuchung", name="PayPal")
         elif kind == 12 and len(self.areas) > 1:                    # rent paid to another area: income there, an expense here

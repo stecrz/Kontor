@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.100 (2026-11-22 12:55)
+- Entwicklung: Nachtlauf behoben – Zufallswelten bauen keine zwei gleich hohen PayPal-Umbuchungen im Wochenabstand mehr (bleibt bewusst offen); der gefundene Fall läuft bei jedem Test mit
+- Entwicklung: Test der gespeicherten Verläufe wartet auf das Speichern (schlug unter Last zufällig fehl)
+- Mac-App: Fensterknöpfe bleiben auf Höhe des Seitentitels, auch wenn macOS die Titelzeile neu anordnet (Mac-Prüfung auf GitHub war deshalb zeitweise rot)
+
 ## 3.16.99 (2026-11-22 09:19)
 - KI-Assistent: findet in Hilfe und Umsätzen auch nach Bedeutung – Funde so gekennzeichnet
 - Gedächtnis: Namen in von Hand angelegten Notizen gehen nie in eine Internetsuche (vom Modell erkannt)
