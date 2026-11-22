@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.68 (2026-11-22 01:25)
+- Mac-App: Suche schließt mit erneutem ⌘F oder einem Klick daneben
+- Mac-App: geschlossene oder geleerte Suche ohne gelbe Markierungen
+
 ## 3.16.67 (2026-11-22 01:11)
 - Updates: Änderungen je Hauptversion (3.16, 3.15 …) – kurzer Überblick der großen Themen immer sichtbar, einzelne Versionen aufklappbar
 - Updates: die neuesten drei Hauptversionen offen, ältere zusammengefaltet; Entwicklungs-Punkte blasser

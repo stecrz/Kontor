@@ -4954,12 +4954,18 @@ class KeysFindBrowserTest(unittest.TestCase):
                 if n > 1:
                     pg3.press("#find-q", "Enter"); until(pg3, "FIND.i === 1")
                     pg3.evaluate("kontorCmd('findPrev')"); until(pg3, "FIND.i === 0")
-                self.assertTrue(pg3.evaluate("!window.Highlight || (CSS.highlights.has('kontor-find') && CSS.highlights.has('kontor-find-now'))"))
+                self.assertTrue(pg3.evaluate("!window.Highlight || (CSS.highlights.get('kontor-find').size === %d && CSS.highlights.get('kontor-find-now').size === 1)" % n))
                 self.assertTrue(pg3.evaluate("window.__shell.filter(m => m.commands).pop().commands.find(c => c.id === 'findNext').on"))
                 pg3.fill("#find-q", "zzzz-nirgends"); until(pg3, "document.querySelector('#find').classList.contains('none')")
                 self.assertEqual(pg3.inner_text("#find-n"), "Nicht gefunden")
+                pg3.fill("#find-q", ""); until(pg3, "!window.Highlight || CSS.highlights.get('kontor-find').size === 0")          # the text gone: the marks too
+                pg3.fill("#find-q", word); until(pg3, "FIND.hits.length > 0")
                 pg3.press("#find-q", "Escape"); until(pg3, "!document.querySelector('#find')")
-                self.assertTrue(pg3.evaluate("!window.Highlight || !CSS.highlights.has('kontor-find')"))
+                self.assertTrue(pg3.evaluate("!window.Highlight || [...CSS.highlights.values()].every(h => h.size === 0)"))          # closed: nothing marked
+                # ⌘F again closes it, so does a click anywhere else -- a click in the bar does not
+                pg3.evaluate("kontorCmd('find')"); pg3.wait_for_selector("#find"); pg3.evaluate("kontorCmd('find')"); until(pg3, "!document.querySelector('#find') && !FIND.open")
+                pg3.evaluate("kontorCmd('find')"); pg3.wait_for_selector("#find"); pg3.click("#find-n"); self.assertTrue(pg3.evaluate("FIND.open"))
+                pg3.click("#main"); until(pg3, "!document.querySelector('#find') && !FIND.open")
                 # on the help page Find is the help's own search, also in the app
                 pg3.evaluate("kontorCmd('find')"); pg3.wait_for_selector("#find"); pg3.press("#find-q", "Escape")
                 pg3.evaluate("location.replace('#help')"); pg3.wait_for_selector("#help-q")

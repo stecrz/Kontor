@@ -765,23 +765,26 @@ function keysShow() {
 }
 
 // Find on the page (⌘F): the page's own search where it has one (the help, transactions: marked data-find) -- else, in the
-// Mac app (it has no find of its own), a find bar: every hit marked, the current one stronger, ⌘G / ⇧⌘G or ↩ / ⇧↩ go on.
+// Mac app (it has no find of its own), a find bar: every hit marked, the current one stronger, ⌘G / ⇧⌘G or ↩ / ⇧↩ go on;
+// gone with esc, ⌘F again or a click anywhere else.
 // Marks without touching the page (CSS highlights); what the page draws anew is searched again, the place kept.
 const FIND = {open: false, q: '', hits: [], i: -1, tm: 0, mt: 0, mo: null};
 function findOpen() {
   const own = $$('[data-find]').find(el => el.getClientRects().length && !el.disabled);
   if (own) { own.focus(); own.select(); return true; }
   if (!SHELL) return false;
-  findBar(true);
+  findBar(!FIND.open);
   return true;
 }
+document.addEventListener('pointerdown', e => { const bar = $('#find'); if (FIND.open && bar && !bar.contains(e.target)) findBar(false); }, true);
 function findBar(open) {
   let bar = $('#find');
   if (!open) {
     if (bar) bar.remove();
     if (FIND.mo) FIND.mo.disconnect();
+    clearTimeout(FIND.tm); clearTimeout(FIND.mt);
     Object.assign(FIND, {open: false, hits: [], i: -1, mo: null});
-    try { CSS.highlights.delete('kontor-find'); CSS.highlights.delete('kontor-find-now'); } catch (e) {}
+    findMarks();
     keysShow();
     return;
   }
@@ -839,10 +842,18 @@ function findPaint() {
   const n = $('#find-n');
   if (n) n.textContent = !FIND.q.trim() ? '' : FIND.hits.length ? t('find_n', FIND.i + 1, FIND.hits.length) : t('find_keine');
   const bar = $('#find'); if (bar) bar.classList.toggle('none', !!FIND.q.trim() && !FIND.hits.length);
+  findMarks();
+}
+// the marks: the same two highlights, emptied and filled anew -- replaced or removed, WebKit kept painting the old ones
+function findMarks() {
   try {
     if (!window.Highlight || !CSS.highlights) return;
-    CSS.highlights.set('kontor-find', new Highlight(...FIND.hits));
-    if (FIND.hits[FIND.i]) CSS.highlights.set('kontor-find-now', new Highlight(FIND.hits[FIND.i])); else CSS.highlights.delete('kontor-find-now');
+    if (!FIND.hl) { FIND.hl = new Highlight(); FIND.hn = new Highlight(); }
+    CSS.highlights.set('kontor-find', FIND.hl); CSS.highlights.set('kontor-find-now', FIND.hn);
+    FIND.hl.clear(); FIND.hn.clear();
+    if (!FIND.open) return;
+    FIND.hits.forEach(r => FIND.hl.add(r));
+    if (FIND.hits[FIND.i]) FIND.hn.add(FIND.hits[FIND.i]);
   } catch (e) {}
 }
 function findStep(d) {
