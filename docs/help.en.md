@@ -492,7 +492,8 @@ The assistant remembers what you tell it and what lasts: goals, plans, decisions
 - **By itself and when told.** What sounds lasting, Kontor notes after the answer; “remember …” always counts. Under the answer you then see **Remembered: …** with **Take back**. If it contradicts an older note, **replaces: …** is shown with it.
 - **Forgetting.** “Forget …” deletes the note – it can be brought back while Kontor runs. After that it is gone from the log of changes too.
 - **Only from your words.** Notes come from what you type, dictate or paste (pasted text is marked) – never from transaction texts, receipts, files, pages or the internet. “Remember that” takes the answer before it; with text from the internet or a receipt in the conversation, Kontor asks first.
-- **What every question is given.** Pinned and latest notes, always the same amount at most – however much is remembered.
+- **What every question is given.** Pinned, latest and last used notes, plus those that fit the question – never more than the same amount, however much is remembered. Kontor finds them by their words, also in another form (“holidays” → holiday), as part of a word (“Urlaubskasse”, “Berater” → Steuerberater) and with a typo; the assistant looks up the rest itself when needed.
+- **What an answer rests on.** Under the answer you see **From your notes: …** – the notes it used.
 - **The list.** Settings → AI assistant → Memory: look, search, add by hand, change, pin, forget, forget everything; the switch is there too.
 - **Never:** passwords, PINs, TANs, keys, card numbers. Figures about your money still come from Kontor, not from the memory.
 

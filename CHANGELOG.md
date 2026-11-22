@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.16.93 (2026-11-22 05:38)
+- KI-Assistent: zur Frage passende Notizen kommen von selbst mit – auch in anderer Wortform, als Wortteil oder mit Tippfehler
+- KI-Assistent: unter der Antwort „Aus deinen Notizen: …“ – worauf sie beruht
+- KI-Assistent: sucht bei Bedarf selbst in deinen Notizen
+- Gedächtnis: zuletzt genutzte Notizen gehen mit jeder Frage mit; die Suche in der Liste findet auch Wortformen und Tippfehler
+- Gedächtnis: Vergessenes verschwindet sofort auch aus der laufenden Unterhaltung
+
 ## 3.16.92 (2026-11-22 04:57)
 - KI-Assistent: Internet je Chat einmal erlauben – danach vertrauenswürdige Quellen ohne Rückfrage, im Chat sichtbar
 - KI-Assistent: Seiten anderer Websites weiter immer einzeln freigeben

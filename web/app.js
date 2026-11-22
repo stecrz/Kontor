@@ -7263,6 +7263,7 @@ function asMsg(m, i) {
     else if (p.k === 'web') h += asWebCard(p, i, j);
     else if (p.k === 'note') h += `<div class="banner info small">${esc(t(p.key || ''))}</div>`;
     else if (p.k === 'memory') h += asMemPart(p);
+    else if (p.k === 'basis') h += asBasisPart(p);
     else if (p.k === 'chart') h += asChart(p, i, j);
     else if (p.k === 'err') h += `<div class="banner err small">${esc(p.text)}</div>`;
   });
@@ -7686,6 +7687,11 @@ function asMemPart(p) {
   if (p.state === 'undone' || p.state === 'declined' || !p.text) return `<div class="as-mem-p off"><span class="as-m-k">${t('ki_g_nicht_gemerkt')}</span></div>`;
   return `<div class="as-mem-p"><span class="as-m-k">${t(p.state === 'restored' ? 'ki_g_wieder' : 'ki_g_gemerkt')}</span><span class="as-m-t">${esc(p.text)}</span>${p.pasted ? `<span class="tag">${t('ki_g_eingefuegt')}</span>` : ''}${p.state === 'remembered' ? undo : ''}${old}</div>`;
 }
+function asBasisPart(p) {
+  // the notes the answer rests on (Kontor finds them in its words): one quiet line, the day of each in its tooltip
+  const ns = (p.notes || []).filter(n => n && n.text);
+  return ns.length ? `<div class="as-basis"><span class="as-m-k">${t('ki_g_beruht')}</span>${ns.map(n => `<span class="as-m-t" title="${esc(n.day ? FD(n.day) : '')}">${esc(n.text)}</span>`).join('<span class="as-m-sep">·</span>')}</div>` : '';
+}
 async function asPoll(m, job) {
   let fails = 0, gone = false, n = 0;
   const late = () => AS.job !== job && m.state !== 'run';          // the answer is there and the next question is asked: what Kontor still notes of this one arrives here
@@ -7719,6 +7725,7 @@ function asEvent(m, ev, job) {
   else if (ev.type === 'web_item') { const p = m.parts.find(x => x.k === 'web' && x.id === ev.id), it = p && (p.items || []).find(x => x.id === ev.item); if (it) Object.assign(it, {state: ev.state, count: ev.count, text: ev.text || '', links: ev.links || []}); }
   else if (ev.type === 'notice') m.parts.push({k: 'note', key: ev.key});
   else if (ev.type === 'memory') m.parts.push(Object.assign({}, ev, {k: 'memory'}));
+  else if (ev.type === 'basis') m.parts.push({k: 'basis', notes: ev.notes || []});
   else if (ev.type === 'batch_state') { const p = m.parts.find(x => x.k === 'batch' && x.id === ev.id); if (p) Object.assign(p, {state: ev.state, done: ev.done, failed: ev.failed, left: ev.left}); }
   else if (ev.type === 'reset') { while (m.parts.length && m.parts[m.parts.length - 1].k === 'text') m.parts.pop(); }          // what was shown was a tool call written as text, not an answer
   else if (ev.type === 'done') { m.state = 'done'; m.meta = ev; if (AS.job === job) AS.busy = false; }          // the answer is there: the next question may come (Kontor may still note what was said -- that shows under the answer)

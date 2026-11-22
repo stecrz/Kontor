@@ -492,7 +492,8 @@ Der Assistent merkt sich, was du ihm sagst und was länger gilt: Ziele, Pläne, 
 - **Von selbst und auf Zuruf.** Was dauerhaft klingt, notiert Kontor nach der Antwort; „Merk dir …“ gilt immer. Unter der Antwort steht dann **Gemerkt: …** mit **Zurücknehmen**. Widerspricht etwas einer älteren Notiz, steht **ersetzt: …** dabei.
 - **Vergessen.** „Vergiss …“ löscht die Notiz – zurückholbar, solange Kontor läuft. Danach steht sie auch im Protokoll der Änderungen nicht mehr.
 - **Nur aus deinen Worten.** Notizen entstehen aus dem, was du tippst, diktierst oder einfügst (Eingefügtes ist so gekennzeichnet) – nie aus Buchungstexten, Belegen, Dateien, Seiten oder dem Internet. „Merk dir das“ nimmt die Antwort davor; steht Text aus dem Internet oder von einem Beleg in der Unterhaltung, fragt Kontor erst.
-- **Was jede Frage mitbekommt.** Angeheftete und neueste Notizen, immer höchstens gleich viele – egal, wie viel gemerkt ist.
+- **Was jede Frage mitbekommt.** Angeheftete, neueste und zuletzt genutzte Notizen, dazu die zur Frage passenden – immer höchstens gleich viele, egal, wie viel gemerkt ist. Kontor findet sie nach Wörtern, auch in anderer Form („Urlaube“ → Urlaub), als Teil eines Worts („Urlaubskasse“, „Berater“ → Steuerberater) und mit Tippfehler; den Rest sucht der Assistent bei Bedarf selbst.
+- **Worauf eine Antwort beruht.** Unter der Antwort steht **Aus deinen Notizen: …** – die Notizen, die sie verwendet hat.
 - **Die Liste.** Einstellungen → KI-Assistent → Gedächtnis: ansehen, suchen, von Hand hinzufügen, ändern, anheften, vergessen, alles vergessen; dort auch der Schalter.
 - **Nie:** Passwörter, PINs, TANs, Schlüssel, Kartennummern. Zahlen über dein Geld kommen weiter aus Kontor, nicht aus dem Gedächtnis.
 

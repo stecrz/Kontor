@@ -567,8 +567,8 @@ body.as-page .as-head { border-bottom:0; padding:0 10px 4px 16px; } body.as-page
 .as-hb .as-hist-btn.on { color:var(--accent-fg); background:var(--accent-soft); }
 .as-save-row { margin:0; }
 /* a note kept from what was said, under the answer: one quiet line, with a way back */
-.as-mem-p { margin:8px 0 0; font-size:12.5px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere; } .as-mem-p .as-m-k { font-weight:600; margin-right:6px; } .as-mem-p .as-m-t { color:var(--fg); margin-right:6px; }
-.as-mem-p .tag { margin-right:6px; } .as-mem-p .as-m-b { display:inline-flex; gap:6px; vertical-align:middle; } .as-mem-p button.ghost { padding:0 4px; } .as-mem-p.off { opacity:.75; }
+.as-mem-p, .as-basis { margin:8px 0 0; font-size:12.5px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere; } :is(.as-mem-p, .as-basis) .as-m-k { font-weight:600; margin-right:6px; } :is(.as-mem-p, .as-basis) .as-m-t { color:var(--fg); margin-right:6px; }
+.as-basis .as-m-sep { margin-right:6px; } .as-mem-p .tag { margin-right:6px; } .as-mem-p .as-m-b { display:inline-flex; gap:6px; vertical-align:middle; } .as-mem-p button.ghost { padding:0 4px; } .as-mem-p.off { opacity:.75; }
 /* the assistant's memory in the settings: a new note, the search, the notes (text, date and origin; pin, edit, forget) */
 .as-mem { max-width:820px; margin-top:10px; } .as-mem-bar { display:flex; gap:8px; align-items:center; margin:0 0 8px; } .as-mem-bar input { flex:1; min-width:0; }
 .as-mem .as-list { max-width:none; } .as-mem-it { align-items:flex-start; } .as-mem-t { flex:1; min-width:0; overflow-wrap:anywhere; line-height:1.45; } .as-mem-ta { flex:1; min-width:0; min-height:0; resize:vertical; font:inherit; }

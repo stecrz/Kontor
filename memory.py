@@ -5,8 +5,11 @@ and how it should answer. A second brain on this Mac, kept beside the model (the
            backup). Encrypted in Kontor's data folder (memory-notes-0001.json, ...: at most SEGMENT notes per file, so that
            a change writes one small file however much is remembered, and a damaged file loses one file's notes, never
            all). In the backup; never in the log or a package; a reset and removing Kontor delete them.
-  profile  the few notes every question is given (pinned ones first, then the latest), within a fixed budget -- so that a
-           question costs the same however much is remembered. Everything else is found by searching.
+  profile  the few notes every question is given (pinned ones first, then the latest made or used), within a fixed budget --
+           so that a question costs the same however much is remembered. Everything else is found by searching.
+  search   by words, without a model (search, recall): word forms (Urlaube finds Urlaub, Häuser Haus), parts of compound
+           words (Urlaubskasse finds Urlaub, Berater Steuerberater), slips of a letter (Urlaup). What fits a question comes
+           with it (recall, within a fixed budget); the notes an answer rested on count as used (touch: memory-used.json).
 
 Only Kontor reads and writes here. The model has no way to this file: it runs in a sandbox that cannot read Kontor's data, and
 it has no tool that writes a note. What becomes a note is decided outside its answer (assistant.py).
@@ -22,11 +25,13 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import secrets
 import threading
 import unicodedata
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -41,6 +46,11 @@ SEGMENT = 1000                                     # notes in one file at most
 FORMAT = 1                                         # of a file of notes (and of the notes in a backup)
 TEXT_MAX = 600                                     # characters of one note
 PROFILE_TOKENS = 1500                              # the profile at most (less in a small context: profile_budget)
+RECALL_TOKENS = 500                                # notes that fit a question, given with it (less in a small context: recall_budget)
+USED_FILE = "memory-used.json"                     # when a note last helped an answer (beside the notes, encrypted): the profile prefers those
+SEARCH_TERMS = 300                                 # different words of a query looked at (a long pasted text: those at its beginning and end)
+WORD_MAX = 40                                      # letters of a word at most (longer: no word -- a code, a link -- and searching it would take long)
+PART, SLIP = 0.7, 0.6                              # how well a part of a compound word (at most), a slip of a letter matches (the same word: 1)
 HOWS = ("chat", "manual", "backup")                # where a note came from: said in a conversation, typed in the settings, restored
 KINDS = ("", "fact", "preference", "plan", "decision", "person", "reason", "style")       # what it is about ("": not told)
 # words that say nothing about what a text is about (folded as _fold does: ae, oe, ue, ss): left out when texts are compared
@@ -64,6 +74,127 @@ class NoteError(ValueError):
 def profile_budget(context: int) -> int:
     """Tokens the profile may take: PROFILE_TOKENS, in a small context about 4.5 % of it."""
     return max(300, min(PROFILE_TOKENS, int(context) // 22))
+
+
+def recall_budget(context: int) -> int:
+    """Tokens the notes that fit a question may take: RECALL_TOKENS, in a small context about 2.5 % of it."""
+    return max(150, min(RECALL_TOKENS, int(context) // 40))
+
+
+# -- finding notes by their words (no model: the standard library only) --------------------------------------------------------
+def stem(w: str) -> str:
+    """A folded word (as _fold gives it) without its ending, so that its forms meet: Urlaube, Urlauben, Urlaubs -> urlaub;
+    Häuser (haeuser) -> haus, Bänke -> bank (an umlaut counts as its vowel); payments -> payment, booked -> book. Never shorter
+    than four letters; a word with a digit stays as it is. A key to compare by, not a word to show."""
+    if any(c.isdigit() for c in w):
+        return w
+    w = w.replace("ae", "a").replace("oe", "o").replace("ue", "u")
+    while True:
+        if len(w) > 6 and w.endswith(("ern", "ing")):
+            w = w[:-3]
+        elif len(w) > 5 and w.endswith(("em", "er", "en", "es", "nd", "ed")):
+            w = w[:-2]
+        elif len(w) > 4 and w[-1] in "esn":
+            w = w[:-1]
+        else:
+            return w
+
+
+def terms(text: Any) -> List[str]:
+    """The words of a text that say what it is about, as search compares them: folded, without words like "und", "the"
+    (STOP), stemmed; numbers of two digits and more as they are; nothing longer than WORD_MAX."""
+    out = []
+    for w in _fold(text).split():
+        if len(w) > WORD_MAX:
+            continue
+        if any(c.isdigit() for c in w):
+            if len(w) >= 2:
+                out.append(w)
+        elif len(w) >= 3 and w not in STOP:
+            out.append(stem(w))
+    return out
+
+
+def _grams(t: str) -> Set[str]:
+    """The three-letter pieces of a word, with its beginning and end marked (^ur, rla, ub$)."""
+    p = "^" + t + "$"
+    return {p[i:i + 3] for i in range(len(p) - 2)}
+
+
+def _near(a: str, b: str, k: int) -> bool:
+    """Whether a turns into b with at most k letters changed, added, left out or swapped with their neighbour."""
+    if abs(len(a) - len(b)) > k:
+        return False
+    before: List[int] = []
+    prev = list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            v = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] != b[j - 1]))
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                v = min(v, before[j - 2] + 1)
+            cur[j] = v
+        if min(cur) > k:
+            return False
+        before, prev = prev, cur
+    return prev[-1] <= k
+
+
+class _Index:
+    """The words of the notes that count, for search: which notes hold a word, and the words by their pieces (to find parts
+    of compound words and slips of a letter without comparing every word). Built anew after a change (search needs it)."""
+
+    def __init__(self, notes: Iterable[dict]):
+        self.post: Dict[str, Set[str]] = {}
+        self.n = 0
+        for n in notes:
+            self.n += 1
+            for t in set(terms(n["text"])):
+                self.post.setdefault(t, set()).add(n["id"])
+        self.grams: Dict[str, Set[str]] = {}
+        for t in self.post:
+            if not any(c.isdigit() for c in t):
+                for g in _grams(t):
+                    self.grams.setdefault(g, set()).add(t)
+
+    def idf(self, t: str) -> float:
+        """How much a word says: the fewer notes hold it, the more."""
+        return math.log(1.0 + self.n / len(self.post[t]))
+
+    def telling(self, t: str) -> bool:
+        """A word not in most notes (with a few notes: any) -- one that can tell a note from the others."""
+        return len(self.post[t]) <= max(3, self.n * 0.3)
+
+    def like(self, q: str, inside: bool = True) -> Dict[str, float]:
+        """The words of the notes a word of a query finds, each with how well: 1 the same word (in any of its forms), PART a
+        part of a compound word or the compound of a part (less, the less of the longer word it is) (four letters and more at its beginning or end, five inside; the
+        rest three letters at least: teuer is no part of Steuer),
+        SLIP a slip of one letter (two in words of nine letters and more; words of five letters and more). inside: also the
+        words of the notes that are a part of q (Urlaubskasse finds Urlaub; not in the list's filter, which finds what is typed)."""
+        out: Dict[str, float] = {}
+        if q in self.post:
+            out[q] = 1.0
+        if any(c.isdigit() for c in q):                  # numbers: only as they are
+            return out
+        if len(q) >= 4:                                  # q in a longer word of the notes: every inner piece of q is in it
+            inner = [q[i:i + 3] for i in range(len(q) - 2)]
+            have = set.intersection(*(self.grams.get(g, set()) for g in inner))
+            for t in have:
+                if len(t) >= len(q) + 3 and (t.startswith(q) or t.endswith(q) or (len(q) >= 5 and q in t)):
+                    out[t] = max(out.get(t, 0.0), PART * (0.5 + 0.5 * len(q) / len(t)))
+        for i in range(len(q) if inside else 0):         # a word of the notes in q (Urlaubskasse: urlaub)
+            for j in range(i + 4, len(q) + 1):
+                part = q[i:j]
+                if len(q) >= len(part) + 3 and part in self.post and (i == 0 or j == len(q) or len(part) >= 5):
+                    out[part] = max(out.get(part, 0.0), PART * (0.5 + 0.5 * len(part) / len(q)))
+        if len(q) >= 5:
+            k = 1 if len(q) <= 8 else 2
+            shared = Counter(t for g in _grams(q) for t in self.grams.get(g, ()))
+            need = max(1, len(q) - 4 * k)                # one change touches at most four pieces
+            for t, c in shared.items():
+                if c >= need and t not in out and len(t) >= 5 and _near(q, t, k):
+                    out[t] = SLIP
+        return out
 
 
 def clean(text: Any) -> str:
@@ -195,6 +326,9 @@ class Memory:
         self._by_seg: Dict[int, List[str]] = {}            # number of a file -> the ids in it
         self._broken: Set[int] = set()                     # files that could not be read: never written again
         self._replaced: Dict[str, str] = {}                # id of a replaced note -> id of the note that replaced it
+        self._used: Dict[str, str] = {}                    # id -> when it last helped an answer (USED_FILE)
+        self._rev = 0                                      # counts every change of the notes (search builds its index anew)
+        self._ix: Optional[Tuple[int, _Index]] = None
         self.epoch = 0                                     # counts changes made outside a conversation (the profile is built anew)
 
     # -- files ---------------------------------------------------------------------------------------------------------------
@@ -238,7 +372,17 @@ class Memory:
                 if n is not None and n["id"] not in notes:
                     notes[n["id"]] = n
                     self._put(n["id"], seg)
+        try:                                             # when notes helped an answer: lost, it is only an order (never a reason to fail)
+            used = self.store.load(USED_FILE, {})
+        except StoreLocked:
+            raise
+        except Exception as e:
+            log.warning("Memory: the file of used notes is not readable (%s) -- written anew", type(e).__name__)
+            used = {}
+        used = used.get("used") if isinstance(used, dict) and isinstance(used.get("used"), dict) else {}
+        self._used = {k: _stamp(v, "") for k, v in used.items() if k in notes and _stamp(v, "")}
         self._notes = notes
+        self._rev += 1
         self._relink()
         return notes
 
@@ -257,6 +401,7 @@ class Memory:
         self._replaced = {old: n["id"] for n in notes.values() for old in n.get("replaces") or [] if old in notes}
 
     def _write(self, seg: int) -> None:
+        self._rev += 1                                   # (also when writing fails: the caller puts it back -- a change either way)
         notes = self._notes or {}
         mine = [notes[i] for i in self._by_seg.get(seg) or []]
         if not mine:
@@ -324,20 +469,127 @@ class Memory:
         with self.lock:
             notes = self._load()
             rows = [n for n in notes.values() if (replaced or n["id"] not in self._replaced)]
-            if words:
-                rows = [n for n in rows if all(w in _fold(n["text"]) for w in words)]
+            if words:                                    # as typed (a beginning: "Urla"), or a form, a part, a slip of it
+                found = [self._hits(w) for w in words]
+                rows = [n for n in rows if all(w in _fold(n["text"]) or n["id"] in h for w, h in zip(words, found))]
             pos = {nid: i for i, nid in enumerate(notes)}
             rows.sort(key=lambda n: (n["id"] not in self._replaced, bool(n.get("pinned")), n["changed"], pos[n["id"]]), reverse=True)
             offset, limit = max(0, int(offset)), max(1, min(200, int(limit)))
             return dict(self.stats(), total=len(rows), offset=offset, items=[self.view(n) for n in rows[offset:offset + limit]])
 
+    # -- search ----------------------------------------------------------------------------------------------------------------
+    def _index(self) -> _Index:
+        with self.lock:
+            self._load()
+            if self._ix is None or self._ix[0] != self._rev:
+                self._ix = (self._rev, _Index(n for n in self._notes.values() if n["id"] not in self._replaced))
+            return self._ix[1]
+
+    def _hits(self, word: str) -> Set[str]:
+        """The notes that count holding a folded word in one of its forms, as a part or with a slip (for the list's filter)."""
+        if len(word) < 3 or word in STOP:
+            return set()
+        ix = self._index()
+        return {nid for t in ix.like(stem(word), inside=False) for nid in ix.post[t]}
+
+    def search(self, query: Any, limit: int = 10, exclude: Iterable[str] = (), more: Any = "") -> List[dict]:
+        """The notes that count which fit a query best, each with its score: every word of the query (more: words that count
+        half -- the question before, for "and in May?") adds how well a note holds it (like) times how much the word says
+        (idf). Only notes holding at least one word that tells them apart (telling: a word in nearly every note finds
+        nothing alone), and only those not far behind the best (a quarter of its score). The best first; pinned and later
+        ones first among equals."""
+        with self.lock:
+            ix = self._index()
+            notes = self._notes or {}
+            some = lambda ts: ts if len(ts) <= SEARCH_TERMS else ts[:SEARCH_TERMS // 2] + ts[-(SEARCH_TERMS // 2):]
+            asked: Dict[str, float] = {t: 1.0 for t in some(list(dict.fromkeys(terms(query))))}
+            for t in some(list(dict.fromkeys(terms(more)))):
+                asked.setdefault(t, 0.5)
+            best: Dict[str, Dict[str, float]] = {}       # note -> query word -> how well
+            tells: Set[str] = set()
+            for q, weight in asked.items():
+                for t, how in ix.like(q).items():
+                    gain = weight * how * ix.idf(t)
+                    for nid in ix.post[t]:
+                        mine = best.setdefault(nid, {})
+                        if gain > mine.get(q, 0.0):
+                            mine[q] = gain
+                        if ix.telling(t):
+                            tells.add(nid)
+            skip = set(exclude)
+            scored = [(sum(v.values()), nid) for nid, v in best.items() if nid in tells and nid not in skip and nid in notes]
+            if not scored:
+                return []
+            top = max(s for s, _ in scored)
+            scored = [(s, nid) for s, nid in scored if s >= top * 0.25]
+            pos = {nid: i for i, nid in enumerate(notes)}
+            scored.sort(key=lambda x: (round(x[0], 6), bool(notes[x[1]].get("pinned")), notes[x[1]]["changed"], pos[x[1]]), reverse=True)
+            return [dict(notes[nid], score=round(s, 3)) for s, nid in scored[:max(1, int(limit))]]
+
+    def recall(self, query: Any, budget_tokens: int = RECALL_TOKENS, exclude: Iterable[str] = (), more: Any = "") -> List[dict]:
+        """The notes that fit a question, as many as fit into the budget (counted as the profile counts) -- the best first."""
+        room = max(0, int(budget_tokens)) * 3
+        out = []
+        for n in self.search(query, 40, exclude, more):
+            cost = len(n["text"]) + 16
+            if cost <= room:
+                out.append(n)
+                room -= cost
+            elif room < 60:
+                break
+        return out
+
+    def rested_on(self, notes: Iterable[dict], answer: Any) -> List[dict]:
+        """Of the notes an answer was given, those it rests on: it holds enough of their words (two and a third of them, a
+        note of one or two words: all) -- the same word in any form, or a part of a compound word. A sign, not a proof (the
+        model may say it in other words); what it finds is shown under the answer and counts as used."""
+        said = set(terms(answer))
+        if not said:
+            return []
+
+        def holds(t: str) -> bool:
+            if t in said:
+                return True
+            if any(c.isdigit() for c in t) or len(t) < 5:
+                return False
+            return any(len(a) >= 5 and (a.startswith(t) or t.startswith(a)) for a in said if not any(c.isdigit() for c in a))
+        out = []
+        for n in notes:
+            mine = set(terms(n.get("text")))
+            have = sum(1 for t in mine if holds(t))
+            if mine and ((have >= 2 and have * 3 >= len(mine)) or (len(mine) <= 2 and have == len(mine))):
+                out.append((have / len(mine), have, n))
+        out.sort(key=lambda x: x[:2], reverse=True)
+        return [n for _, _, n in out]
+
+    def touch(self, ids: Iterable[str]) -> None:
+        """These notes helped an answer just now: the profile takes them as if they were new (USED_FILE; one small file, the
+        notes themselves are not written). Not a change the profile of a running conversation follows (no epoch)."""
+        with self.lock:
+            notes = self._load()
+            now = _now()
+            fresh = [i for i in ids if i in notes]
+            if not fresh:
+                return
+            for i in fresh:
+                self._used[i] = now
+            self._used = {k: v for k, v in self._used.items() if k in notes}
+            try:
+                self.store.save(USED_FILE, {"v": FORMAT, "used": self._used})
+            except Exception as e:                       # only an order: the answer stands
+                log.warning("Memory: used notes not written (%s)", type(e).__name__)
+
     def profile(self, budget_tokens: int = PROFILE_TOKENS) -> List[dict]:
-        """The notes every question is given: pinned ones first (the latest first), then the latest others -- as many as fit
-        into the budget (a token counted as three characters, as everywhere in the assistant: rather too few than too many).
-        A note that does not fit any more is left out and the next shorter one tried, so that the room is used."""
+        """The notes every question is given: pinned ones first, then the others -- each the latest made, changed or used first
+        -- as many as fit into the budget (a token counted as three characters, as everywhere in the assistant: rather too
+        few than too many). A note that does not fit any more is left out and the next shorter one tried, so that the room
+        is used."""
         room = max(0, int(budget_tokens)) * 3
         out: List[dict] = []
         act = self.active()
+        with self.lock:                                  # the latest made, changed or used first (an answer rested on it: it matters)
+            used = lambda n: self._used.get(n["id"], "")
+            act.sort(key=lambda n: (max(n["changed"], used(n)), used(n) >= n["changed"]), reverse=True)        # (stable: made in the same second as before)
         for n in [n for n in act if n.get("pinned")] + [n for n in act if not n.get("pinned")]:
             cost = len(n["text"]) + 16                  # "- [2026-11-22] " and the line break
             if cost <= room:
@@ -457,6 +709,11 @@ class Memory:
                 self._seg[n["id"]] = seg
                 self._by_seg.setdefault(seg, []).insert(at, n["id"])
                 raise
+            if self._used.pop(n["id"], None) is not None:          # when it helped an answer goes too
+                try:
+                    self.store.save(USED_FILE, {"v": FORMAT, "used": self._used})
+                except Exception as e:
+                    log.warning("Memory: used notes not written (%s)", type(e).__name__)
             self._relink()
             self.epoch += 1
         if not quiet:
@@ -498,12 +755,13 @@ class Memory:
             except OSError:
                 names = []
             for name in names:
-                if _SEG_NAME.fullmatch(name) or re.fullmatch(r"memory-notes-\d{4,6}\.json(?:\.enc)?\.(?:tmp|renew)", name):
+                if _SEG_NAME.fullmatch(name) or re.fullmatch(r"memory-(?:notes-\d{4,6}|used)\.json(?:\.enc)?(?:\.tmp|\.renew)?", name):
                     try:
                         os.remove(os.path.join(folder, name))
                     except OSError as e:
                         log.warning("Memory: a file of notes not removed (%s)", e)
-            self._notes, self._seg, self._by_seg, self._broken, self._replaced = {}, {}, {}, set(), {}
+            self._notes, self._seg, self._by_seg, self._broken, self._replaced, self._used = {}, {}, {}, set(), {}, {}
+            self._rev += 1
             self.epoch += 1
         if not quiet:
             self._tell("forget_all", {}, count=count, by=by)

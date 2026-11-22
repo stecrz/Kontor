@@ -87,7 +87,8 @@ anhängen – nie löschen.
   Hinweis „aus eingefügtem Text“); „Merk dir das“ zu einer Antwort gilt sofort. Die Suche findet von Anfang an auch nach Bedeutung
   (ein kleines drittes Modell auf diesem Mac, abgeschirmt wie die anderen; ohne es nach Wörtern) – derselbe Baustein dient danach
   auch der Hilfe- und der Umsatzsuche. (teilweise umgesetzt in 3.16.71: verschlüsselte Ablage, Liste in den Einstellungen,
-  Steckbrief in jeder Anfrage, Sicherung, Protokoll; 3.16.81: Merken aus dem Chat; fehlt noch die Suche)
+  Steckbrief in jeder Anfrage, Sicherung, Protokoll; 3.16.81: Merken aus dem Chat; 3.16.93: Suche nach Wörtern; fehlt noch die
+  Suche nach Bedeutung und in Verläufen)
 - **Update-Prüfung:** Bevor ein Update installiert wird, liest die installierte Version die neuen Dateien – ohne etwas davon
   auszuführen – und vergleicht, was über das Programm hinausreicht: Netz, andere Programme, nachgeladener Code, Umwege dorthin,
   Internet-Adressen, Orte, von denen aus der Mac Programme startet, Helfer und Skripte, die Abschirm-Regeln und die Prüfung selbst.
@@ -173,6 +174,11 @@ Fertig, wenn
     Am Mac prüfen: was ein echtes Modell merkt (zu viel, zu wenig), und die Wartezeit bis zum ersten Wort der nächsten Frage
     mit Gedächtnis an und aus (der zweite Blick teilt sich den Zwischenspeicher des Modells mit der Unterhaltung).
   - [ ] Suche in Notizen nach Wörtern und Bedeutung; das Passende kommt von selbst zur Frage; er sagt, worauf eine Antwort beruht.
+    - [x] 3.16.93 nach Wörtern, ohne Modell: Wortformen, Teile zusammengesetzter Wörter, Tippfehler; das Passende kommt in die Nachricht
+      (nicht in den Systemtext, festes Budget, je Unterhaltung nicht doppelt), Lese-Werkzeug `recall`, „Aus deinen Notizen: …“ unter
+      der Antwort; benutzte Notizen zählen für den Steckbrief; der zweite Blick bekommt verwandte Notizen über dieselbe Suche.
+      Am Mac prüfen: ob ein echtes Modell die passenden Notizen nutzt und ob „Aus deinen Notizen“ die richtigen nennt.
+    - [ ] nach Bedeutung: kleines drittes Modell (Einbettungen), abgeschirmt wie das Diktiermodell; ohne es bleibt die Wortsuche.
   - [ ] Suche in gespeicherten Verläufen (aus Unterhaltungen mit Internet-Text nur die Fragen des Nutzers; Vergessenes taucht nicht wieder auf).
   - [ ] Bedeutungssuche auch für Hilfe und Umsätze.
 - **Hinweise von selbst:** nach jedem Abgleich prüft Kontor (fester Code) auf Auffälliges – gestiegene Ausgaben, ungewöhnliche

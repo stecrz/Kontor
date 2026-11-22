@@ -390,6 +390,117 @@ class OwnWords(_Mem):
         self.assertEqual(phrases, {"thomaszylinderhut", "ottiliewolkenstein", "ottilienebelhornfels", "adelheidsturmvogel"})
 
 
+class Search(_Mem):
+    """Notes found by their words, without a model: word forms, parts of compound words, slips of a letter -- and nothing
+    that only looks alike."""
+
+    NOTES = ("März war teurer wegen Urlaub in Italien", "Ziel: mit 45 finanziell frei", "Mein Steuerberater heißt Thomas Zylinderhut",
+             "Die Häuser in der Bergstraße gehören der GbR", "Antworte kurz und direkt", "Die Kaltmiete der Wohnung in Dachau steigt 2027",
+             "Steuern zahle ich quartalsweise")
+
+    def setUp(self):
+        super().setUp()
+        for t in self.NOTES:
+            self.m.add(t)
+
+    def found(self, q, **kw):
+        return [n["text"] for n in self.m.search(q, **kw)]
+
+    def test_forms_parts_and_slips(self):
+        urlaub, steuerberater, haeuser, miete = self.NOTES[0], self.NOTES[2], self.NOTES[3], self.NOTES[5]
+        for q, want in (("Urlaube", urlaub), ("Urlaubs", urlaub), ("Hauses", haeuser), ("Haus in der Bergstrasse", haeuser),          # forms (Häuser: Haus)
+                        ("Urlaubskasse", urlaub), ("Was sagt der Berater?", steuerberater), ("Wie hoch ist die Miete?", miete), ("Mieten", miete),      # parts
+                        ("Urlaup", urlaub), ("Steuerbearter", steuerberater), ("Zylinderhutt", steuerberater), ("Bergstrase", haeuser),             # slips
+                        ("finanzielle Freiheit, mein Ziel", self.NOTES[1]), ("2027", miete), ("45", self.NOTES[1])):
+            self.assertEqual(self.found(q)[:1], [want], q)
+        self.assertEqual(self.found("War das teurer?"), [urlaub])                 # "teuer" is no part of "Steuer"
+        for q in ("Hallo", "und der die das", "4", "Wie geht es dir?", "", "Ür", "Pferd"):
+            self.assertEqual(self.found(q), [], q)
+
+    def test_the_best_first_and_nothing_far_behind(self):
+        for i in range(12):
+            self.m.add("Kontor-Notiz %d über Wohnung %s" % (i, "abcdefghijkl"[i] * 3))
+        self.assertEqual(self.found("Wohnung"), [])                               # a word in most notes tells nothing alone
+        self.assertEqual(self.found("Wohnung Dachau")[:1], [self.NOTES[5]])       # with one that does: that note
+        got = self.m.search("Urlaub Italien Steuerberater")
+        self.assertEqual([n["text"] for n in got[:2]], [self.NOTES[0], self.NOTES[2]])         # two words before one
+        self.assertGreater(got[0]["score"], got[1]["score"])
+        self.assertEqual(self.found("Steuern Italien Urlaub Zylinderhut", limit=1), [self.NOTES[0]])
+
+    def test_only_notes_that_count(self):
+        old = self.m.active()[-1]
+        self.assertEqual(old["text"], self.NOTES[0])
+        new = self.m.add("Im März war der Urlaub in Spanien", replaces=[old["id"]])
+        self.assertEqual(self.found("Urlaub Italien"), [new["text"]])             # the replaced one is not found (the newer one is)
+        self.m.delete(new["id"])
+        self.assertEqual(self.found("Urlaub"), [self.NOTES[0]])                   # counts again
+        self.m.delete(old["id"])
+        self.assertEqual(self.found("Urlaub"), [])                                # forgotten: gone
+        self.assertEqual(self.found("Steuer", exclude=[n["id"] for n in self.m.active() if "Steuern" in n["text"]]), [self.NOTES[2]])
+
+    def test_the_list_in_the_settings_finds_forms_too(self):
+        for q, n in (("urla", 1), ("Urlaube", 1), ("Steuerbearter", 1), ("Steuer", 2), ("dachau miete", 1), ("Pferd", 0), ("gbr", 1)):
+            self.assertEqual(self.m.listing(q)["total"], n, q)
+
+    def test_within_the_budget(self):
+        for i in range(300):
+            self.m.add("%s Nummer %d: %s" % ("Segelboot" if i % 5 == 0 else "Notiz", i, "noch ein langer Satz dazu " * (i % 9)))
+        got = self.m.recall("Wo liegt das Segelboot?", 100)
+        self.assertTrue(got)
+        self.assertLessEqual(sum(len(n["text"]) + 16 for n in got), 300)
+        self.assertEqual(M.recall_budget(65536), 500); self.assertEqual(M.recall_budget(16384), 409); self.assertEqual(M.recall_budget(4096), 150)
+
+    def test_thousands_of_notes_in_a_moment(self):
+        notes = [{"id": "n%010x" % i, "text": "Notiz %d über %s und %s" % (i, "Wort%d" % (i % 997), "Begriff%d" % (i % 13))} for i in range(6000)]
+        self.m.merge({"v": 1, "notes": notes + [{"id": "nffffffffff", "text": "Der Oldtimer steht in der Garage in Kufstein"}]}, quiet=True)
+        t0 = time.time()
+        self.assertEqual(self.found("Wo steht mein Oldtimmer? Garage"), ["Der Oldtimer steht in der Garage in Kufstein"])
+        self.assertEqual(len(self.found("wort17 Notiz")), 7)                      # 6000 notes, built once ...
+        t1 = time.time()
+        for q in ("Begriff3 Wort5", "Kufsteiner Garagen", "Notizbuch", "Oldtimer"):
+            self.m.search(q)
+        self.assertLess(time.time() - t1, 1.5)                                     # ... then quick
+        self.assertLess(t1 - t0, 15)
+
+    def test_what_an_answer_rests_on(self):
+        notes = self.m.active()
+        by = {n["text"]: n for n in notes}
+        got = self.m.rested_on(notes, "Dein Urlaub in Italien hat den März teurer gemacht; die Kaltmiete in Dachau bleibt.")
+        self.assertEqual([n["text"] for n in got][:2], [self.NOTES[0], self.NOTES[5]])
+        self.assertEqual(self.m.rested_on(notes, "Hallo, wie kann ich helfen?"), [])
+        self.assertEqual(self.m.rested_on([by[self.NOTES[1]]], "Bis 45 fehlt dir noch einiges."), [])          # one word of four: not enough
+        self.assertEqual(self.m.rested_on([by[self.NOTES[1]]], "Mit 45 frei zu sein heißt: 2,1 Mio. Vermögen."), [by[self.NOTES[1]]])
+        self.assertEqual(self.m.rested_on([by[self.NOTES[4]]], "Kurz: nein."), [])
+
+    def test_used_notes_count_for_the_profile(self):
+        oldest = self.m.active()[-1]
+        self.assertNotEqual(self.m.profile(40)[0]["id"], oldest["id"])
+        self.m.touch([oldest["id"], "nffffffffff"])                               # (a note there is not: nothing)
+        self.assertEqual(self.m.profile(40)[0]["id"], oldest["id"])               # used just now: first among the others
+        self.assertIn("memory-used.json.enc", self.files())
+        with open(os.path.join(self.dir, "memory-used.json.enc"), "rb") as f:
+            self.assertNotIn(oldest["id"].encode(), f.read())                     # encrypted like the notes
+        self.assertEqual(self.again().profile(40)[0]["id"], oldest["id"])         # and still after a restart
+        pinned = self.m.active()[0]
+        self.m.pin(pinned["id"], True)
+        self.assertEqual([n["id"] for n in self.m.profile(1500)[:2]], [pinned["id"], oldest["id"]])        # pinned ones stay first
+        with open(os.path.join(self.dir, "memory-used.json.enc"), "wb") as f:
+            f.write(b"kaputt")
+        self.assertEqual(len(self.again().profile(1500)), len(self.NOTES))        # a damaged file: only the order is gone
+        self.m.touch([oldest["id"]])
+        self.m.delete(oldest["id"])
+        self.assertNotIn(oldest["id"], self.store.load(M.USED_FILE)["used"])      # forgotten: gone from the file too
+        self.m.forget_all()
+        self.assertEqual(self.files(), [])
+
+    def test_long_words_and_long_questions_stay_quick(self):
+        t0 = time.time()
+        self.assertEqual(self.found("x" * 39000 + " Urlaub"), [self.NOTES[0]])
+        self.assertEqual(self.found(" ".join("wort%d abc%d" % (i, i) for i in range(5000)) + " Zylinderhut"), [self.NOTES[2]])      # its end counts
+        self.assertEqual(self.found("ä" * 300 + "ö" * 300), [])
+        self.assertLess(time.time() - t0, 2)
+
+
 class _Assist(TA._Assist):
     def system(self, q="Hallo", **kw):
         """The system text the model is given with a question."""
@@ -840,6 +951,166 @@ class InTheChat(_Assist):
         self.assertEqual((part["state"], part["text"]), ("undone", ""))
 
 
+class Fitting(_Assist):
+    """What fits a question comes with it -- in the question, not in the system text, within its budget; the tool recall finds
+    the rest; under the answer the notes it rests on, which count as used."""
+    URLAUB = "März war teurer wegen Urlaub in Italien"
+
+    def setUp(self):
+        super().setUp()
+        self.target = self.a.memory.add(self.URLAUB, how="chat", chat="ab12cd34ef")
+        filler = [{"id": "n%010x" % i, "text": "Notiz %d zu Dingen ohne Bezug, %s" % (i, "ein ruhiger Satz " * 4), "source": {"how": "chat"}} for i in range(300)]
+        self.a.memory.merge({"v": 1, "notes": filler}, quiet=True)
+        self.a.memory.epoch += 1                                                   # (as after any change: the profile anew)
+        self.record()
+
+    def request(self):
+        with open(self.beside("request.json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_what_fits_comes_with_the_question(self):
+        evs = self.ask("Warum war der März so teuer? War es der Urlaub?")
+        req = self.request()
+        asked, system = req["messages"][-1]["content"], req["messages"][0]["content"]
+        self.assertNotIn(self.URLAUB, system)                                     # not in the profile (300 newer notes) ...
+        self.assertTrue(asked.startswith("Warum war der März so teuer? War es der Urlaub?\n" + A.RECALL_HEAD + "\n"), asked[:300])
+        self.assertIn("- [%s] %s\n]" % (time.strftime("%Y-%m-%d"), self.URLAUB), asked)          # ... but with the question, after it
+        self.assertNotIn("ruhiger Satz", asked)                                   # nothing that does not fit
+        self.assertIn("recall searches the others", system)
+        basis = [e for e in evs if e["type"] == "basis"]
+        self.assertEqual([[n["text"] for n in e["notes"]] for e in basis], [[self.URLAUB]])         # the answer rests on it: said under it
+        kinds = [e["type"] for e in evs]
+        self.assertLess(kinds.index("basis"), kinds.index("done"))
+        parts = self.a.chat(self.a.conv["id"])["turns"][1]["parts"]
+        self.assertEqual([p["notes"][0]["text"] for p in parts if p["k"] == "basis"], [self.URLAUB])
+        self.assertEqual(self.a.chat(self.a.conv["id"])["turns"][0]["text"], "Warum war der März so teuer? War es der Urlaub?")    # the conversation keeps the question only
+        self.assertEqual(self.looked()["said"], "Warum war der März so teuer? War es der Urlaub?")    # the look at what to remember never sees the notes
+        # used: in the profile of the next conversation
+        self.assertIn(self.URLAUB, self.system("Hallo neu", conversation=""))
+        self.assertEqual(self.a.memory.profile(M.profile_budget(self.a.settings()["context"]))[0]["id"], self.target["id"])
+
+    def test_given_once_in_a_conversation_and_not_without_memory(self):
+        self.ask("Wie teuer war der Urlaub?")
+        cid = self.a.conv["id"]
+        self.assertIn(self.URLAUB, self.request()["messages"][-1]["content"])
+        self.ask("Und der Urlaub davor?", conversation=cid)
+        msgs = self.request()["messages"]
+        self.assertNotIn(A.RECALL_HEAD, msgs[-1]["content"])                     # still in view from the question before: not again
+        self.assertEqual(sum(m["content"].count(self.URLAUB) for m in msgs if m["role"] == "user"), 1)
+        self.ask("Hallo zusammen", conversation="")
+        self.assertNotIn(A.RECALL_HEAD, self.request()["messages"][-1]["content"])        # nothing fits: nothing comes
+        self.a.set({"memory": False})
+        self.ask("Wie teuer war der Urlaub?", conversation="")
+        req = self.request()
+        self.assertNotIn(self.URLAUB, json.dumps(req, ensure_ascii=False))
+        self.assertNotIn("recall", [t["function"]["name"] for t in req["tools"]])
+        self.assertNotIn("recall", [t["name"] for t in self.a.tool_list(self.a.settings())])
+        self.assertIn("switched off", self.a._use(A.Job(), "recall", '{"query": "Urlaub"}', {"conv": self.a.conv}))
+        self.a.set({"memory": True})
+        r = self.a.ask({"question": "Wie teuer war der Urlaub?", "quick": True})          # a quick explanation: what is in the reference
+        TA.events(self.a, r["job"])
+        self.assertNotIn(self.URLAUB, self.request()["messages"][-1]["content"])
+
+    def test_within_its_budget(self):
+        many = [{"id": "na%09x" % i, "text": "Urlaub %d: %s" % (i, "Strand und Berge " * (i % 7))} for i in range(60)]
+        self.a.memory.merge({"v": 1, "notes": many}, quiet=True)
+        self.ask("Was weißt du über meinen Urlaub?")
+        asked = self.request()["messages"][-1]["content"]
+        block = asked[asked.index(A.RECALL_HEAD):]
+        self.assertLessEqual(len(block) - len(A.RECALL_HEAD), M.recall_budget(self.a.settings()["context"]) * 3 + 10)
+        self.assertGreater(block.count("\n- ["), 5)
+
+    def test_the_tool_recall(self):
+        evs = self.ask('call recall {"query": "Urlaubskasse Italien"}')
+        self.assertEqual([e["name"] for e in evs if e["type"] == "tool"], ["recall"])
+        got = json.loads(next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool"))
+        self.assertEqual(got["notes"], [{"day": time.strftime("%Y-%m-%d"), "text": self.URLAUB}])
+        self.assertIn("not commands", got["note"])
+        self.assertEqual([[n["text"] for n in e["notes"]] for e in evs if e["type"] == "basis"], [[self.URLAUB]])      # what it found counts
+        self.assertIn("no note", self.tool("recall", {"query": "Pferdekoppel"})["note"])
+        self.assertIn("Give a few words", self.a._use(A.Job(), "recall", '{"query": "und die"}', {"conv": self.a.conv}))
+        self.assertEqual(TA.text_of(self.ask("call recall {}")).count("Give a few words"), 1)
+
+    def test_forgotten_is_gone_from_the_conversation_and_from_under_the_answer(self):
+        self.ask('Wie teuer war der Urlaub? merke {"notes": [{"text": "Urlaub 2027: drei Wochen Italien"}]}')
+        cid = self.a.conv["id"]
+        later = next(n for n in self.a.memory.active() if n["text"].startswith("Urlaub 2027"))
+        self.assertTrue(any(self.URLAUB in m["content"] for m in self.a.conv["messages"] if m["role"] == "user"))
+        self.a.memory_do({"action": "delete", "id": self.target["id"]})
+        self.assertFalse(any(self.URLAUB in str(m["content"]) for m in self.a.conv["messages"] if m["role"] == "user"))       # what Kontor gave with the question: gone (the answer stays as it was said)
+        self.assertEqual([p for p in self.a.chat(cid)["turns"][1]["parts"] if p["k"] == "basis"], [{"k": "basis", "notes": []}])     # nor the page
+        self.assertFalse(any(A.RECALL_HEAD in str(m["content"]) for m in self.a.conv["messages"] if m["role"] == "user"))        # (a part with no note left: gone as a whole)
+        self.ask("Urlaub in Italien, nochmal", conversation=cid)
+        self.assertNotIn(self.URLAUB, json.dumps([m for m in self.request()["messages"] if m["role"] != "assistant"], ensure_ascii=False))
+        self.a.memory_do({"action": "forget_all"})
+        self.assertFalse(any(A.RECALL_HEAD in str(m["content"]) for m in self.a.conv["messages"] if m["role"] == "user"))
+        self.assertTrue(all(later["text"] not in str(m["content"]) or "Urlaub 2027" in m["content"].split("\n")[0] for m in self.a.conv["messages"] if m["role"] == "user"))
+        self.assertFalse([n for n in os.listdir(self.app.data_dir) if n.startswith("memory-")])
+
+    def test_forgotten_by_its_id_wherever_kontor_gave_it(self):
+        """What recall found, a note changed before it was forgotten, a note forgotten while an answer is written, and other
+        notes whose text holds the forgotten one's or a ";" -- by the note's id, never by a piece of text."""
+        self.ask('call recall {"query": "Urlaub Italien"}')
+        cid = self.a.conv["id"]
+        mine = lambda: json.dumps([m for m in self.a.conv["messages"] if m["role"] != "assistant"], ensure_ascii=False)
+        self.assertIn(self.URLAUB, mine())
+        self.a.memory_do({"action": "edit", "id": self.target["id"], "text": "Urlaub 2026 in Spanien"})       # changed after it was given ...
+        self.a.memory_do({"action": "delete", "id": self.target["id"]})
+        self.assertNotIn(self.URLAUB, mine()); self.assertNotIn("Spanien", mine())                             # ... the text as given goes
+        tool = next(m for m in self.a.conv["messages"] if m["role"] == "tool")
+        self.assertEqual(json.loads(tool["content"])["notes"], [])
+        # notes whose text holds another's, with ";" and "]": only the forgotten one goes, the others stay whole
+        self.ask('Hallo merke {"notes": [{"text": "Urlaub"}, {"text": "Urlaub in Rom"}, {"text": "Steuerberater Zylinderhut; Termin im Mai [bei ihm]"}]}', conversation=cid)
+        self.ask("Merk dir: Urlaub", conversation="")                             # (already noted: said so in the question, not given again with it)
+        short = next(n for n in self.a.memory.active() if n["text"] == "Urlaub")
+        asked = [m for m in self.a.conv["messages"] if m["role"] == "user"][-1]["content"]
+        self.assertIn("already noted: Urlaub]", asked); self.assertNotIn("- [%s] Urlaub\n" % time.strftime("%Y-%m-%d"), asked)
+        self.a.memory_do({"action": "delete", "id": short["id"]})
+        asked = [m for m in self.a.conv["messages"] if m["role"] == "user"][-1]["content"]
+        self.assertIn("already noted: (forgotten since)]", asked)
+        self.a.memory_do({"action": "forget_all"})
+        self.assertNotIn("Zylinderhut", mine())
+        # forgotten while an answer is written: its question and what it read leave it too
+        n = self.a.memory.add("Der Oldtimer steht in Kufstein", by="settings")
+        job = A.Job(); job.conv = self.a.conv
+        job.turn = [{"role": "user", "content": "Wo steht er?\n%s\n- [2026-11-22] Der Oldtimer steht in Kufstein\n]" % A.RECALL_HEAD}]
+        self.a._gave(self.a.conv, n["id"], n["text"])
+        with mock.patch.object(self.a, "job", job):
+            self.a.memory_do({"action": "delete", "id": n["id"]})
+        self.assertEqual(job.turn[0]["content"], "Wo steht er?")
+
+    def test_from_a_device_that_may_only_look_nothing_changes(self):
+        evs = self.ask("Wie teuer war der Urlaub in Italien?")
+        self.assertTrue([e for e in evs if e["type"] == "basis"])
+        self.a.memory.forget_all(quiet=True)
+        self.target = self.a.memory.add(self.URLAUB, by="settings")
+        self.a.memory.merge({"v": 1, "notes": [{"id": "n%010x" % i, "text": "Notiz %d ohne Bezug, %s" % (i, "ein ruhiger Satz " * 4)} for i in range(300)]}, quiet=True)
+        r = self.a.ask({"question": "Wie teuer war der Urlaub in Italien?", "conversation": ""}, may_note=False)
+        evs = TA.events(self.a, r["job"])
+        self.assertTrue([e for e in evs if e["type"] == "basis"])                 # shown ...
+        self.assertNotIn("memory-used.json.enc", os.listdir(self.app.data_dir))   # ... but not counted as used
+        self.assertNotEqual(self.a.memory.profile(200)[0]["id"], self.target["id"])
+
+    def test_saved_conversations_keep_no_note_texts_under_the_answers(self):
+        self.ask("Wie teuer war der Urlaub in Italien?")
+        with self.a.chat_lock:
+            raw = json.dumps(self.a._chat_read(self.a.conv["id"]), ensure_ascii=False)
+        basis = [p for t in json.loads(raw)["turns"] for p in t.get("parts") or [] if p.get("k") == "basis"]
+        self.assertEqual(basis, [{"k": "basis", "notes": [{"id": self.target["id"], "day": time.strftime("%Y-%m-%d")}]}])
+        self.assertEqual(self.a.chat(self.a.conv["id"])["turns"][1]["parts"][-1]["notes"][0]["text"], self.URLAUB)      # shown from the memory
+        self.a.memory_do({"action": "edit", "id": self.target["id"], "text": "Urlaub 2026 in Spanien"})
+        self.assertEqual([p for p in self.a.chat(self.a.conv["id"])["turns"][1]["parts"] if p["k"] == "basis"][0]["notes"][0]["text"], "Urlaub 2026 in Spanien")
+
+    def test_the_look_is_shown_the_notes_the_search_finds(self):
+        long = "Ich erzähle dir etwas länger, damit es viele Wörter sind: " + " ".join("wort%d" % i for i in range(400)) + " Und vergiss das mit dem Urlaup in Italien."
+        self.ask(long)
+        self.assertIn({"id": self.target["id"], "text": self.URLAUB}, self.looked()["known"])      # the end of a long message counts too
+        self.ask("Merk dir: der Urlaup in Italien war 2026 im März")             # (a slip: the search finds the note all the same)
+        self.assertIn({"id": self.target["id"], "text": self.URLAUB}, self.looked()["known"])
+        self.assertLessEqual(len(self.looked()["known"]), A.NOTICE_KNOWN)
+        self.assertNotIn("ruhiger Satz", json.dumps(self.looked(), ensure_ascii=False))
+
+
 class Log(_Assist):
     def test_remembered_changed_forgotten(self):
         self.a.memory_do({"action": "add", "text": "Hausbank: Sparkasse"})
@@ -1172,6 +1443,18 @@ class Browser(unittest.TestCase):
             pg.goto(url + "#settings/assistant")                                  # ... and the list in the settings knows where a note came from
             until(pg, "document.querySelectorAll('#as-mem-list .as-mem-it').length === 1")
             self.assertIn("in einer Unterhaltung gesagt", pg.text_content("#as-mem-list"))
+        self.page(steps)
+
+    def test_the_notes_an_answer_rests_on_under_it(self):
+        def steps(pg, app, url):
+            app.assistant.memory.add("Ziel: mit 45 finanziell frei", by="settings")
+            pg.goto(url + "#overview"); pg.wait_for_selector("#main")
+            pg.evaluate("asShow(true)"); pg.wait_for_selector("#as-in")
+            pg.fill("#as-in", "Wie weit bin ich vom Ziel, mit 45 finanziell frei zu sein?"); pg.press("#as-in", "Enter")
+            until(pg, "!!document.querySelector('#as-body .as-basis')")
+            self.assertEqual(pg.text_content("#as-body .as-basis"), "Aus deinen Notizen:Ziel: mit 45 finanziell frei")
+            self.assertEqual(pg.get_attribute("#as-body .as-basis .as-m-t", "title"), time.strftime("%d.%m.%Y"))
+            self.assertEqual(pg.evaluate("document.querySelectorAll('#as-body .as-mem-p').length"), 0)       # (not a note made: nothing to take back)
         self.page(steps)
 
     def test_a_long_list_comes_in_pieces_and_what_is_typed_stays(self):
