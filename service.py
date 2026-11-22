@@ -1823,7 +1823,7 @@ DEMO_POST = frozenset(("/api/lock", "/api/config", "/api/rules/preview", "/api/c
                        "/api/assistant/listen", "/api/assistant/transcribe", "/api/assistant/attach", "/api/assistant/chats/delete", "/api/assistant/undo",
                        "/api/assistant/memory/undo", "/api/assistant/memory/offer"))          # (notes of the demo's own memory, under its answers)
 # ... and what it never answers (named, so that a request is never in no list at all)
-DEMO_NEVER = frozenset(("/api/setup", "/api/login", "/api/touchid", "/api/demo", "/api/password", "/api/offline/verifier", "/api/log",
+DEMO_NEVER = frozenset(("/api/setup", "/api/login", "/api/touchid", "/api/password", "/api/offline/verifier", "/api/log",
                         "/api/remote", "/api/remote/acl", "/api/timemachine", "/api/timemachine-exclusion", "/api/diagnostics", "/api/update/status",
                         "/api/update/check", "/api/update/install", "/api/language", "/api/securities/lookup", "/api/history/mm-status",
                         "/api/history/mm-import", "/api/history/mm-reveal", "/api/file/choose", "/api/file/open", "/api/file/reveal",
@@ -1834,7 +1834,8 @@ DEMO_NEVER = frozenset(("/api/setup", "/api/login", "/api/touchid", "/api/demo",
                         "/api/assistant/web", "/api/assistant/server", "/api/assistant/update-all",
                         "/api/assistant/memory"))
 DEMO_FIXED = ("ui", "receipts", "updates", "assistant", "notifications")    # settings of the demo no page changes (how it looks and works)
-DEMO_SESSIONS = 20                     # at the same time at most (each start without a password is one)
+DEMO_SESSIONS = 20                     # at the same time at most
+DEMO_IDLE = 2 * 3600                   # seconds without any session (locked, closed): then it ends, its folder goes
 
 
 def demo_allowed(method: str, path: str, body: Optional[dict] = None) -> bool:
@@ -1847,11 +1848,13 @@ def demo_allowed(method: str, path: str, body: Optional[dict] = None) -> bool:
 
 
 class DemoApp(App):
-    """Kontor with made-up data (demo.py), to show it to someone: a world of its own in place of MoneyMoney, its own data folder
-    (temporary, encrypted with a key only in memory, removed at its end), its own sign-in and sessions. It never reads the real
-    data folder, the real settings (only how Kontor looks: language, lock, the assistant's model), sessions, conversations or
-    receipts; it answers only DEMO_GET / DEMO_POST. The assistant answers with the same model as the real Kontor (a model knows
-    nothing of anyone) but with a conversation, saved conversations and changes of its own -- and never from the internet."""
+    """Kontor with made-up data (demo.py), to show it: a world of its own in place of MoneyMoney (nothing is read from or written
+    to MoneyMoney), its own data folder (temporary, encrypted with a key only in memory, removed at its end) and sessions --
+    opened only with the real Kontor's sign-in. It never reads the real data folder, sessions, conversations, memory or receipts,
+    of the real settings only how Kontor looks and works (language, lock, the assistant); it answers only DEMO_GET / DEMO_POST.
+    The assistant answers with the same model as the real Kontor (a model knows nothing of anyone) and the same rights (the
+    internet too, with the real Kontor's Tavily key and count) -- with a conversation, saved conversations, memory and changes
+    of its own."""
     DEMO = True
 
     def __init__(self, real: "App", box: "DemoBox"):
@@ -1867,8 +1870,25 @@ class DemoApp(App):
             shutil.rmtree(d, ignore_errors=True)
             raise
         self.box = box
+        DEMO_LIVE.add(d)
         self._peer = lambda: real.assistant                     # the model it shares (nothing else of the real Kontor)
         self._real_open = lambda: real.store.is_open
+        self._real_config = lambda: real.config
+
+    def follow_real(self) -> None:
+        """The real Kontor's settings of the assistant, "from elsewhere only look" and the lock (changed there meanwhile): taken over
+        at each sign-in to the demo and every half minute."""
+        if not self._real_open():
+            return
+        rc = self._real_config()
+        ui = dict(self.config.get("ui") or {})
+        for k in ("remote_read_only", "lock_minutes"):
+            if k in (rc.get("ui") or {}):
+                ui[k] = rc["ui"][k]
+            else:
+                ui.pop(k, None)
+        self.config = dict(self.config, assistant=copy.deepcopy(rc.get("assistant") or {}), ui=ui)
+        self.sessions.set_idle(int(ui.get("lock_minutes", 15)))
 
     def assistant_peer(self) -> Optional["assistant_mod.Assistant"]:
         """The real Kontor's assistant: its model is the one the demo's assistant asks (assistant.Assistant) -- none while nobody
@@ -1932,14 +1952,16 @@ class DemoApp(App):
         while (self.running or self.rebuild_running or (a is not None and a.job is not None and not a.job.done)) and time.time() < until:
             time.sleep(0.05)
         shutil.rmtree(self.data_dir, ignore_errors=True)
+        DEMO_LIVE.discard(self.data_dir)
         t = threading.Timer(120, shutil.rmtree, (self.data_dir,), {"ignore_errors": True})      # what a request still on its way wrote after
         t.daemon = True
         t.start()
 
 
 class DemoBox:
-    """The demo of a Kontor: at most one at a time, started from the sign-in page (POST /api/demo), ended with "Beenden" -- or
-    once its last session has ended (locked after the minutes set): then its folder goes. Started again: a new world."""
+    """The demo of a Kontor: at most one at a time, opened from the sign-in page with the same sign-in (password or Touch ID,
+    "demo": true). Locked like the real Kontor, it stays and opens again as it was -- until DEMO_IDLE without any session, or
+    until the service ends: then its folder goes, and the next sign-in to the demo starts a new world."""
     REAP_SECONDS = 30
 
     def __init__(self, real: "App"):
@@ -1947,16 +1969,19 @@ class DemoBox:
         self.lock = threading.Lock()
         self.app: Optional["DemoApp"] = None
         self.handler = None                  # its request handler (make_handler), set with it
-        remove_stale_demos()                 # folders a service before this one left behind (with the first request after its start)
+        self.idle_since: Optional[float] = None       # since when it has no session (it ends after DEMO_IDLE)
+        # folders a service before this one left behind -- with the first request after its start: all of them (a running service
+        # has none of its own yet); else (tests, several Kontors in one process) only old ones of no demo alive here
+        remove_stale_demos(0 if real.restart_allowed else 600)
 
     def current(self) -> Tuple[Optional["DemoApp"], Any]:
         return self.app, self.handler
 
-    def open_session(self, remote: str, handler_for: Callable[["DemoApp"], Any]) -> dict:
-        """A session in the demo (started if there is none): the session. handler_for: make_handler."""
+    def open_session(self, remote: str, handler_for: Callable[["DemoApp"], Any], via: str = "password") -> dict:
+        """A session in the demo (started if there is none) -- only after a sign-in: the session. handler_for: make_handler."""
         with self.lock:
             if self.app is None:
-                remove_stale_demos()
+                remove_stale_demos(0 if self.real.restart_allowed else 600)
                 d = DemoApp(self.real, self)
                 try:
                     until = time.time() + 120                    # the world read, the rules booked (after a sync of the real Kontor that runs) ...
@@ -1971,13 +1996,23 @@ class DemoBox:
                 log.info("Demo started")
             elif self.app.sessions.active() >= DEMO_SESSIONS:
                 raise ValueError(tr("s_demo_zu_viele"))
-            return self.app.sessions.create(remote, "demo")
+            self.idle_since = None
+            self.app.follow_real()
+            return self.app.sessions.create(remote, via)
 
     def end(self, only: Optional["DemoApp"] = None, idle: bool = False) -> None:
+        """Ends the demo (idle: only once it has had no session for DEMO_IDLE)."""
         with self.lock:
             d = self.app
-            if d is None or (only is not None and d is not only) or (idle and d.sessions.active()):
+            if d is None or (only is not None and d is not only):
                 return
+            if idle:
+                if d.sessions.active():
+                    self.idle_since = None
+                    return
+                self.idle_since = self.idle_since or time.time()
+                if time.time() - self.idle_since < DEMO_IDLE:
+                    return
             self.app, self.handler = None, None
         d.dispose()
         log.info("Demo ended")
@@ -1985,17 +2020,24 @@ class DemoBox:
     def _reap(self, d: "DemoApp") -> None:
         while self.app is d:
             time.sleep(self.REAP_SECONDS)
+            if not self.real.store.is_open:                      # the real Kontor locked its data again (reset, a key that failed)
+                self.end(d)
+                return
+            d.follow_real()
             self.end(d, idle=True)
+
+
+DEMO_LIVE: set = set()                 # folders of the demos alive in this process (never removed as left behind)
 
 
 def remove_stale_demos(age: float = 600.0) -> int:
     """Folders of demos a stopped service left behind (encrypted with a key that went with it; receipts uploaded in it are not):
-    those not touched for age seconds -- a demo of another Kontor running beside (tests) is younger."""
+    those not touched for age seconds and of no demo alive in this process."""
     n = 0
     base = tempfile.gettempdir()
     for name in os.listdir(base):
         p = os.path.join(base, name)
-        if name.startswith(DEMO_PREFIX) and os.path.isdir(p) and not os.path.islink(p) and time.time() - os.path.getmtime(p) > age:
+        if name.startswith(DEMO_PREFIX) and p not in DEMO_LIVE and os.path.isdir(p) and not os.path.islink(p) and time.time() - os.path.getmtime(p) > age:
             shutil.rmtree(p, ignore_errors=True)
             n += 1
     return n
@@ -2601,6 +2643,22 @@ def make_handler(app: App):
                 raise ValueError(tr("s_json_erwartet"))
             return obj
 
+        def _signed_in(self, remote: str, via: str, body: dict) -> None:
+            """After a sign-in (password or Touch ID, checked as always): a session of the real Kontor -- or, asked for ("demo"),
+            one of its demo (DemoApp): the same sign-in, but made-up data in place of yours."""
+            if body.get("demo") is not True:
+                s = app.sessions.create(remote, via)
+                return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
+            try:
+                s = app.demo_box.open_session(remote, make_handler, via)
+            except ValueError as e:
+                return self._json(429, {"error": str(e)})
+            except Exception as e:
+                log.exception("Demo not started")
+                return self._json(500, {"error": tr("s_interner_fehler_s") % e})
+            log.info("Demo opened from %s", remote)
+            return self._json(200, {"ok": True, "csrf": s["csrf"], "demo": True}, self._set_cookie(s["token"]))
+
         def _refuse_unread(self, code: int, text: str) -> None:
             """An answer without reading the request (a small body is read, so that the answer arrives; a larger one ends the connection)."""
             try:
@@ -2968,7 +3026,7 @@ def make_handler(app: App):
             u = urlparse(self.path)
             if not u.path.startswith("/api/") or not self._origin_ok() or not self._host_ok():
                 return self._json(403, {"error": "rejected"})
-            before = u.path in ("/api/setup", "/api/login", "/api/touchid", "/api/demo")    # the ways in: a password, nothing large
+            before = u.path in ("/api/setup", "/api/login", "/api/touchid")           # the ways in: a password, nothing large
             if app.DEMO and not demo_allowed("POST", u.path):     # (the ways in too: the demo knows no password)
                 return self._refuse_unread(403, tr("s_demo_nicht_moeglich"))
             if not before and self._session() is None:          # not signed in: nothing is read (a small body only, so the answer arrives)
@@ -2989,20 +3047,6 @@ def make_handler(app: App):
             if app.DEMO and not demo_allowed("POST", u.path, body):
                 return self._json(403, {"error": tr("s_demo_nicht_moeglich")})
 
-            if u.path == "/api/demo":
-                # the demo (DemoApp): made-up data, nothing of yours -- no password, as it shows nothing that needs one; not over
-                # a session of yours in this browser (another window signed in meanwhile: that window's pages would turn into the demo)
-                if app.sessions.get(self._cookie(), touch=False) is not None:
-                    return self._json(409, {"error": tr("s_demo_angemeldet")})
-                try:
-                    s = app.demo_box.open_session(remote, make_handler)
-                except ValueError as e:
-                    return self._json(429, {"error": str(e)})
-                except Exception as e:
-                    log.exception("Demo not started")
-                    return self._json(500, {"error": tr("s_interner_fehler_s") % e})
-                log.info("Demo session from %s", remote)
-                return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
             if u.path == "/api/setup":
                 if app.password_set() or not self._loopback():
                     return self._json(403, {"error": tr("s_einrichtung_nur_einmal_und_nur")})
@@ -3023,6 +3067,8 @@ def make_handler(app: App):
                 s = app.sessions.create(remote, "password")
                 log.info("Password set, setup started")
                 return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
+            if body.get("demo") is True and u.path in ("/api/login", "/api/touchid") and app.sessions.get(self._cookie(), touch=False) is not None:
+                return self._json(409, {"error": tr("s_demo_angemeldet"), "signed_in": True})      # the demo not over a session of yours here (another window signed in meanwhile)
             if u.path == "/api/login":
                 wait = app.sessions.locked(remote)
                 if wait:
@@ -3044,9 +3090,8 @@ def make_handler(app: App):
                     if not rec.get("offline"):
                         app.store.save("auth.json", auth.with_offline(rec, str(body.get("password", ""))))
                         log.info("Offline verifier for the iPhone view created")
-                    s = app.sessions.create(remote, "password")
                     log.info("Login with password from %s", remote)
-                    return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
+                    return self._signed_in(remote, "password", body)
                 log.warning("Failed login from %s", remote)
                 return self._json(401, {"error": tr("s_passwort_falsch")})
             if u.path == "/api/touchid":
@@ -3065,9 +3110,8 @@ def make_handler(app: App):
                     log.exception("Sign-in with Touch ID")
                     return self._json(500, {"error": tr("s_interner_fehler_s") % e})
                 if ok:
-                    s = app.sessions.create(remote, "touchid")
                     log.info("Login with Touch ID")
-                    return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
+                    return self._signed_in(remote, "touchid", body)
                 return self._json(401, {"error": tr("s_touch_id_nicht_bestaetigt")})
 
             s = self._session()
@@ -3204,9 +3248,7 @@ def make_handler(app: App):
             if path.startswith("/api/assistant/"):
                 return self._assistant(path, body, local)
             if path == "/api/lock":
-                app.sessions.drop_all()
-                if app.DEMO:
-                    app.box.end(app)                    # "Beenden": the demo ends, its folder goes
+                app.sessions.drop_all()                 # (the demo: locked like the real one -- it stays, see DemoBox)
                 return self._json(200, {"ok": True}, self._set_cookie("", clear=True))
             if path == "/api/password":
                 if not body.get("old") and local and app.touchid_on() and auth.touchid_available():
@@ -3222,6 +3264,7 @@ def make_handler(app: App):
                 except StoreError as e:
                     return self._json(409, {"error": str(e)})
                 n = app.sessions.drop_others(s["token"])                # other devices have to sign in with the new password
+                app.demo_box.end()                                       # ... the demo too (it was opened with the old one)
                 new = app.sessions.rotate(s["token"])                    # and this one goes on under a new token
                 log.info("Password changed, %d other session(s) ended, this one renewed", n)
                 return self._json(200, {"ok": True}, self._set_cookie(new) if new else None)
@@ -3565,6 +3608,7 @@ def make_handler(app: App):
                 app.config = merged_config({})
                 app.ledger, app.ledger_time, app.categories_raw, app.last_result, app.last_run_at, app.umsaetze = None, None, [], None, None, None
                 app.sessions.drop_all()
+                app.demo_box.end()
                 access.write_start(app.data_dir, app.config)      # the access as after a fresh setup (only this Mac) from the next start
                 if body.get("with_password") and app.store.encrypted:
                     access.forget(app.store)             # the data key goes with the password (and every file it opened)
@@ -3579,6 +3623,7 @@ def make_handler(app: App):
                 if rep.get("error"):
                     return self._json(409, rep)
                 app.sessions.drop_all()
+                app.demo_box.end()                                       # its folder too (receipts uploaded in it are not encrypted)
                 threading.Thread(target=app.uninstall_finish, daemon=True).start()        # the answer first, then the service goes
                 return self._json(200, rep, self._set_cookie("", clear=True))
             if path == "/api/key/renew":

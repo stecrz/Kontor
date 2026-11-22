@@ -424,6 +424,7 @@ async function api(path, body, method, netMode, renewed) {
     history.replaceState(null, '', location.pathname); location.reload();          // the demo began or ended in another window: this page anew
     throw new Error(t('seite_wird_neu_geladen').trim());
   }
+  if (r.status === 401 && ['/api/login', '/api/touchid'].includes(path)) { const e = new Error(data.error || t('nicht_angemeldet')); e.status = 401; throw e; }      // a sign-in that failed: why (wrong password)
   if (r.status === 401 && path !== '/api/session') { S.csrf = null; if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.as_of = null; checkSession(); } else showLogin(); const e = new Error(t('nicht_angemeldet')); e.status = 401; throw e; }
   if (r.status === 403 && data.csrf === 'invalid' && !renewed) {
     // signed in again meanwhile (e.g. in another window): the token of this page is old -- take the current one, try once more
@@ -649,14 +650,19 @@ async function checkSession() {
   if (SESSION.signed_in) { S.csrf = SESSION.csrf; await enterApp(); } else showLogin();
 }
 function showLogin() {
-  if (DEMO_PAGE) { history.replaceState(null, '', location.pathname); location.reload(); return; }      // the demo ended (or locked): loaded anew, nothing of it stays
+  if (DEMO_PAGE) {          // the demo locked: loaded anew (nothing of it stays), the sign-in still set to the demo -- no Touch ID at once
+    try { sessionStorage.setItem('kontor.login', 'demo'); } catch (e) {}
+    history.replaceState(null, '', location.pathname); location.reload(); return;
+  }
   asMicStop(false);          // a recording does not run on behind the lock
   $('#shell').classList.add('hidden'); $('#login').classList.remove('hidden'); $('#drawer').classList.remove('open');
   if (FIND.open) findBar(false);
   keysShow();                // locked: the keys (and the Mac app's menu entries) that need Kontor open are off
   const setup = SESSION && SESSION.setup_needed && !OFFLINE.mode;
+  if (setup || OFFLINE.mode) LOGIN.demo = false;
   $('#login-text').textContent = OFFLINE.mode ? t('der_mac_ist_nicht_erreichbar')
     : setup ? t('erster_start_passwort_festlegen_mindes')
+    : LOGIN.demo ? t('demo_anmelden')
     : SESSION && SESSION.setup_local_only ? t('noch_kein_passwort_festgelegt_die')
     : SESSION && SESSION.switch ? t('anmeldung_umstellung') : SESSION && SESSION.waiting ? t('anmeldung_wartet') : '';
   $('#login-text').hidden = !$('#login-text').textContent;
@@ -665,17 +671,19 @@ function showLogin() {
   const tidMode = tid && !LOGIN.pw;
   $('#login-pw2').classList.toggle('hidden', !setup);
   $('#setup-tid').classList.toggle('hidden', !(setup && SESSION && SESSION.touchid_available));
-  $('#login-btn').textContent = setup ? t('passwort_festlegen') : t('anmelden');
+  $('#login-btn').textContent = setup ? t('passwort_festlegen') : LOGIN.demo ? t('demo_oeffnen') : t('anmelden');
   $('#tid-box').classList.toggle('hidden', !tidMode);
   $('#login-form').classList.toggle('hidden', !!tidMode);
   $('#tid-instead').classList.toggle('hidden', !(tid && LOGIN.pw));
   $('#login-err').textContent = SESSION && SESSION.locked_seconds ? (t('gesperrt_fuer') + SESSION.locked_seconds + t('s_nach_fehlversuchen')) : '';
   $('#demo-btn').classList.toggle('hidden', !!(setup || OFFLINE.mode || !SESSION || SESSION.setup_local_only));
+  $('#demo-btn').textContent = t(LOGIN.demo ? 'demo_zurueck' : 'demo_link');
   if (!tidMode) setTimeout(() => { if (!$('#login').contains(document.activeElement)) $('#login-pw').focus(); }, 50);   // never move the cursor out of a field being filled
   if (tidMode) tryTouchId(true);     // Touch ID at once, without a click -- only while Kontor is the active window (see tryTouchId)
 }
-const LOGIN = {pw: false};      // true = Nutzer hat "Stattdessen Passwort eingeben" gewählt
+const LOGIN = {pw: false, demo: false};      // pw: "Stattdessen Passwort eingeben" gewählt; demo: die Anmeldung öffnet die Demo
 const TID = {pending: false, lastTry: 0};
+try { if (sessionStorage.getItem('kontor.login') === 'demo') { LOGIN.demo = true; TID.skipNext = true; } sessionStorage.removeItem('kontor.login'); } catch (e) {}
 async function tryTouchId(auto) {
   if (TID.pending || LOGIN.pw || !(SESSION && SESSION.touchid && !SESSION.setup_needed)) return;
   if (auto && TID.skipNext) { TID.skipNext = false; return; }           // nach bewusstem Sperren nicht sofort wieder fragen
@@ -685,7 +693,7 @@ async function tryTouchId(auto) {
   if (auto && (document.hidden || !document.hasFocus())) return;
   TID.pending = true; TID.lastTry = Date.now();
   $('#login-err').textContent = t('touch_id_bitte_am_mac');
-  try { const r = await api('/api/touchid', {}); S.csrf = r.csrf; $('#login-err').textContent = ''; await enterApp(); }
+  try { const r = await api('/api/touchid', LOGIN.demo ? {demo: true} : {}); if (r.demo) return demoEnter(); S.csrf = r.csrf; $('#login-err').textContent = ''; await enterApp(); }
   catch (err) { $('#login-err').textContent = auto ? t('touch_id_nicht_bestaetigt_erneut') : err.message; }
   finally { TID.pending = false; }
 }
@@ -716,12 +724,14 @@ $('#login-form').addEventListener('submit', async e => {
     return;
   }
   try {
-    const r = await api(setup ? '/api/setup' : '/api/login', setup ? Object.assign({password: pw, language: LANG}, SESSION.touchid_available ? {touchid: $('#setup-tid-cb').checked} : {}) : {password: pw});
+    if (LOGIN.demo && !setup) $('#login-err').textContent = t('demo_startet');
+    const r = await api(setup ? '/api/setup' : '/api/login', setup ? Object.assign({password: pw, language: LANG}, SESSION.touchid_available ? {touchid: $('#setup-tid-cb').checked} : {}) : Object.assign({password: pw}, LOGIN.demo ? {demo: true} : {}));
+    if (r.demo) return demoEnter();
     LOGIN.pw = false;
     S.csrf = r.csrf; $('#login-pw').value = ''; $('#login-pw2').value = '';
     await offKeyEnsure(pw);
     await enterApp();
-  } catch (err) { $('#login-err').textContent = err.message; }
+  } catch (err) { if (err.status === 409 && LOGIN.demo && err.data && err.data.signed_in) location.reload(); else $('#login-err').textContent = err.message; }      // signed in meanwhile (another window): that window's Kontor
 });
 $('#touchid-btn').addEventListener('click', () => tryTouchId(false));
 $('#lang-sel').addEventListener('change', e => setLang(e.target.value, true));
@@ -730,21 +740,19 @@ $('#tid-instead').addEventListener('click', () => { LOGIN.pw = false; showLogin(
 $('#sync-btn').addEventListener('click', () => syncNow(false, true));
 $('.side .brand').addEventListener('click', e => { go(e.target.closest('#ver') && !demoOn() ? '#settings/updates' : '#overview'); });
 async function lockNow() { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; OFFKEY = null; TID.skipNext = true; await checkSession(); }
-// the demo: Kontor with made-up data, to show it to someone (nothing of yours in it; "Beenden" deletes everything done in it)
+// the demo: Kontor with made-up data, to show it -- opened with the same sign-in (the link below the card switches the sign-in to it)
 const demoOn = () => !!(SESSION && SESSION.demo);
 $('#demo-btn').title = t('demo_link_tip');
-$('#demo-btn').addEventListener('click', async () => {
-  const b = $('#demo-btn'); if (b.disabled) return;
-  b.disabled = true; $('#login-err').textContent = t('demo_startet');
-  // the page loads anew -- into the demo and out of it: nothing of one stays in the page's memory for the other
-  try { await api('/api/demo', {}); $('#login-pw').value = ''; history.replaceState(null, '', '#overview'); location.reload(); }
-  catch (err) { if (err.status === 409) location.reload(); else { $('#login-err').textContent = err.message; b.disabled = false; } }      // 409: signed in meanwhile (another window)
+$('#demo-btn').addEventListener('click', () => {
+  if (TID.pending) return;          // a Touch ID dialog is open for the sign-in as it was: switched only once it is answered
+  LOGIN.demo = !LOGIN.demo; $('#login-err').textContent = ''; showLogin();
 });
+// signed in to the demo: the page loads anew -- into the demo and out of it, nothing of one stays in the page's memory for the other
+function demoEnter() { $('#login-pw').value = ''; history.replaceState(null, '', '#overview'); location.reload(); }
 let DEMO_PAGE = false;          // this page shows the demo (set when it opens; it is never shown again without loading anew)
 function demoUi() {
-  const on = demoOn(), lb = $('#lock-btn');
+  const on = demoOn();
   $('#demo-badge').classList.toggle('hidden', !on);
-  lb.dataset.i18n = on ? 'demo_beenden' : 'btn_sperren'; lb.textContent = t(lb.dataset.i18n); lb.title = t(on ? 'demo_beenden_tip' : 'sperren_tip');
   const st = $('#nav a[href="#settings"]'); if (st) st.classList.toggle('hidden', on);
 }
 $('#lock-btn').addEventListener('click', lockNow);

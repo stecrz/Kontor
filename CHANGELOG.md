@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.16.96 (2026-11-22 06:21)
+- Demo: nur noch mit deiner Anmeldung (Passwort oder Touch ID) – „Demo“ unten auf der Anmeldeseite stellt sie um
+- Demo: eigene Umgebung – gesperrt bleibt sie und öffnet wieder wie zuvor; weg nach 2 Stunden ohne Anmeldung, mit neuem Passwort oder beim Neustart
+- Demo: Assistent mit deinen Rechten, auch Internet (mit deinem Tavily-Schlüssel, Abrufe auch in deinem Protokoll); eigenes Gedächtnis und eigene Verläufe
+- Demo: neue Beispieldaten – Privatperson über 4 Jahre, Muster UG über 2 Jahre, Parkweg GbR mit Immobilie
+- Anmeldung: falsches Passwort heißt jetzt „Passwort falsch“ statt „Nicht angemeldet“
+
 ## 3.16.95 (2026-11-22 05:49)
 - KI-Assistent, Internet: neue amtliche Quellen – Rechtsinformationsportal (auch BFH), Meldungen von BMF, Bundesbank und EZB, OECD, Weltbank, BIZ, Branchenzahlen (Bundesbank, Eurostat)
 - Tavily (Stufe 3) auch ohne Konto; eigener Schlüssel optional für mehr Abrufe

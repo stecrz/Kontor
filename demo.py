@@ -2,7 +2,8 @@
 
 Everything here is invented -- names, accounts, amounts. The IBANs are the public sample IBANs from banks' documentation
 (some with a changed last digit), as in the tests. The world is built anew for each demo, its dates counted back from today:
-two years of a private household with a flat and its loan, a portfolio, and two partnerships (GbR) with a property each.
+a private person over four years (a flat with its loan, a portfolio, a job until two years ago), the company founded then
+(Muster UG: an online trade, two years), and a partnership (Parkweg GbR) with a commercial property bought with a seller's loan.
 
 `World` holds the accounts and transactions; `World.bridge` stands in for the bridge to MoneyMoney (mm_bridge.Bridge): it
 answers the same calls from memory and takes what Kontor writes (bookings of the rules, categories) into the same memory.
@@ -25,17 +26,19 @@ CATEGORIES = [("Unkategorisiert", 0, False, {"default": True}), ("Umbuchung", 0,
               ("Wohnen", 0, True, {}), ("Hausgeld", 1, False, {}), ("Nebenkosten", 1, False, {}),
               ("Finanzierung", 0, True, {}), ("Zinsen", 1, False, {}),
               ("Lebenshaltung", 0, True, {}), ("Lebensmittel", 1, False, {"budget": {"amount": 650.0, "period": "monthly"}}),
-              ("Restaurant", 1, False, {}), ("Mobilität", 1, False, {}), ("Freizeit", 1, False, {}), ("Haushalt", 1, False, {}),
+              ("Restaurant", 1, False, {}), ("Mobilität", 1, False, {}), ("Freizeit", 1, False, {}), ("Haushalt", 1, False, {}), ("Reisen", 1, False, {}),
               ("Versicherungen", 0, True, {}), ("Haftpflicht", 1, False, {}), ("Krankenversicherung", 1, False, {}),
               ("Investments", 0, True, {}), ("ETF", 1, False, {}),
               ("Vermietung", 0, True, {}), ("Parkweg", 1, True, {}), ("Mieteinnahmen", 2, False, {}), ("Bewirtschaftung", 2, False, {}),
-              ("Bahnhofstraße", 1, True, {}), ("Mieteinnahmen", 2, False, {}), ("Bewirtschaftung", 2, False, {})]
+              ("Betrieb", 0, True, {}), ("Umsatzerlöse", 1, False, {}), ("Wareneinkauf", 1, False, {}), ("Büromiete", 1, False, {}),
+              ("Software", 1, False, {}), ("Steuerberatung", 1, False, {}), ("Geschäftsführergehalt", 1, False, {}),
+              ("Steuern", 0, True, {}), ("Umsatzsteuer", 1, False, {}), ("Lohnsteuer", 1, False, {}), ("Körperschaftsteuer", 1, False, {})]
 
 GIRO_IBAN, BROKER_IBAN, LOAN_IBAN = "DE02120300000000202051", "DE02100500000054540402", "DE02500105170137075030"
-ALPHA_IBAN, BETA_IBAN = "DE02701500000000594937", "DE02701500000000594938"
-BETA_LOAN1_IBAN, BETA_LOAN2_IBAN = "DE02500105170137075031", "DE02500105170137075032"
+UG_IBAN, UG_SAVINGS_IBAN, GBR_IBAN = "DE02701500000000594937", "DE02100100100006820101", "DE02701500000000594938"
 SELLER_IBAN = "DE02300209000106531065"
 ANNUITY_TEXT = "Annuität Kaufpreisdarlehen Objekt Parkweg 7"
+UG_NAME, GBR_NAME = "Muster UG", "Parkweg GbR"
 
 
 def uid(key: str) -> str:
@@ -61,8 +64,9 @@ class World:
         """default_category: the name of MoneyMoney's default category (as in the real one, so that it counts as none)."""
         self.today = today or date.today()
         self.default_category = default_category
-        self.start = _months_back(self.today, 24)               # two years of history
-        self.purchase = date(self.today.year - 2, 11, 20)      # Alpha GbR bought its property then (a loan of the seller) ...
+        self.start = _months_back(self.today, 48)               # four years of the private person ...
+        self.founded = _months_back(self.today, 24)             # ... two of the company, founded then (its first month: no salary yet)
+        self.purchase = date(self.today.year - 2, 11, 20)      # Parkweg GbR bought its property then (a loan of the seller) ...
         self.first_annuity = date(self.today.year - 1, 1, 1)  # ... paid off from January on (the interest of a year: on its first day's balance)
         self.lock = threading.Lock()
         self._next = 500000
@@ -85,22 +89,35 @@ class World:
             yield d
             d = _months_back(d, -1)
 
+    def _n(self, m: date, since: date) -> int:
+        """Months from since to m."""
+        return (m.year - since.year) * 12 + m.month - since.month
+
     def _build(self) -> None:
         t = self._tx
         for m in self._months(self.start):
             y, mo = m.year, m.month
-            day = lambda n: date(y, mo, n)
-            # the household: salary, the flat's loan, living, a savings plan into the portfolio
-            t("priv.giro", day(1), 7400.0 if mo != 11 else 7400.0 + 6800.0, "Nordwerk AG", "Gehalt" if mo != 11 else "Gehalt und Weihnachtsgeld", "Einnahmen\\Gehalt")
+            day = lambda n: date(y, mo, min(n, 28 if mo == 2 else 30))
+            ug = self._n(m, self.founded)                       # months since the company was founded (< 0: before)
+            # income: the job until the company was founded, then the managing director's salary from it (from its second month)
+            if ug < 0:
+                t("priv.giro", day(1), 7400.0 + (7000.0 if mo == 11 else 0.0), "Nordwerk AG", "Gehalt" if mo != 11 else "Gehalt und Weihnachtsgeld", "Einnahmen\\Gehalt")
+            elif ug >= 1:
+                pay = 4200.0 if ug < 13 else 5500.0
+                t("ug.kk", day(28), -pay, "Geschäftsführer", "Gehalt %02d/%d" % (mo, y), "Betrieb\\Geschäftsführergehalt")
+                t("priv.giro", day(28), pay, UG_NAME, "Gehalt %02d/%d" % (mo, y), "Einnahmen\\Gehalt")
+                t("ug.kk", day(10), -(1050.0 if ug < 13 else 1500.0), "Finanzamt", "Lohnsteuer", "Steuern\\Lohnsteuer")
+            # the flat and its loan, living, a savings plan into the portfolio (smaller since the company)
             t("priv.giro", day(1), -1500.0, "Stadtsparkasse", "Annuität Darlehen Lindenstraße", "Umbuchung", LOAN_IBAN)
             t("priv.darl", day(1), 1500.0, "Hausbank", "Annuität", "Umbuchung", GIRO_IBAN)
-            t("priv.darl", day(1), -880.0 + (m.year * 12 + mo - self.start.year * 12 - self.start.month) * 2.0, "Stadtsparkasse", "Zinsen", "Finanzierung\\Zinsen")
-            t("priv.giro", day(2), -1000.0, "Broker", "Übertrag Sparplan", "Umbuchung", BROKER_IBAN)
-            t("priv.tr", day(2), 1000.0, "Hausbank", "Übertrag Sparplan", "Umbuchung", GIRO_IBAN)
-            t("priv.tr", day(4), -1000.0, "Broker", "Sparplan Welt-ETF", "Investments\\ETF")
+            t("priv.darl", day(1), -935.0 + self._n(m, self.start) * 1.6, "Stadtsparkasse", "Zinsen", "Finanzierung\\Zinsen")
+            plan = 1000.0 if ug < 0 else 500.0
+            t("priv.giro", day(2), -plan, "Broker", "Übertrag Sparplan", "Umbuchung", BROKER_IBAN)
+            t("priv.tr", day(2), plan, "Hausbank", "Übertrag Sparplan", "Umbuchung", GIRO_IBAN)
+            t("priv.tr", day(4), -plan, "Broker", "Sparplan Welt-ETF", "Investments\\ETF")
             t("priv.giro", day(3), -410.0, "WEG Lindenstraße 12", "Hausgeld", "Wohnen\\Hausgeld")
             t("priv.giro", day(5), -96.0, "Versicherung Nord", "Privathaftpflicht und Hausrat", "Versicherungen\\Haftpflicht")
-            t("priv.giro", day(5), -612.0, "Krankenkasse", "Beitrag", "Versicherungen\\Krankenversicherung")
+            t("priv.giro", day(5), -612.0 if ug < 0 else -735.0, "Krankenkasse", "Beitrag", "Versicherungen\\Krankenversicherung")
             t("priv.giro", day(8), -168.0 - (mo % 3) * 22.0, "Stadtwerke", "Strom und Wärme", "Wohnen\\Nebenkosten")
             for n, amount in ((6, -142.30), (13, -167.85), (20, -121.40), (27, -188.10)):
                 t("priv.giro", day(n), amount - (mo % 4) * 3.5, "Biomarkt", "Einkauf", "Lebenshaltung\\Lebensmittel")
@@ -109,40 +126,54 @@ class World:
             t("priv.giro", day(22), -64.0 - (mo % 3) * 15.0, "Kino und Konzert", "Tickets", "Lebenshaltung\\Freizeit")
             t("priv.giro", day(15), -48.90 - (mo % 4) * 11.0, "Baumarkt", "Werkzeug", "")              # without a category: to assign
             if mo in (4, 8):
-                t("priv.giro", day(19), -1850.0, "Reisebüro", "Urlaub", "")
-            if mo == 6:                                                                                  # a yearly contribution into Alpha GbR
-                t("priv.giro", day(20), -10000.0, "Alpha GbR", "Einlage", "Umbuchung", ALPHA_IBAN)
-                t("ga.kk", day(20), 10000.0, "Gesellschafter A", "Einlage", "Umbuchung", GIRO_IBAN)
-            # Beta GbR: rent, upkeep, its two loans
-            t("gb.kk", day(3), 14200.0, "Mieter Bahnhofstraße", "Miete", "Vermietung\\Bahnhofstraße\\Mieteinnahmen")
-            t("gb.kk", day(9), -1350.0, "Hausverwaltung", "Bewirtschaftung", "Vermietung\\Bahnhofstraße\\Bewirtschaftung")
-            for key, iban, paid, interest in (("gb.d1", BETA_LOAN1_IBAN, 6400.0, 3300.0), ("gb.d2", BETA_LOAN2_IBAN, 5200.0, 4100.0)):
-                t("gb.kk", day(30 if mo != 2 else 28), -paid, "Bank", "Annuität", "Umbuchung", iban)
-                t(key, day(30 if mo != 2 else 28), paid, "Beta GbR", "Annuität", "Umbuchung", BETA_IBAN)
-                t(key, day(30 if mo != 2 else 28), -interest, "Bank", "Zinsen", "Finanzierung\\Zinsen")
-        # Alpha GbR: the property bought with a seller's loan; rent from the month after, the annuity (the rule books
+                t("priv.giro", day(19), -1850.0, "Reisebüro", "Urlaub", "" if self._n(m, self.start) > 30 else "Lebenshaltung\\Reisen")
+            if mo == 6 and m > self.purchase:                                                           # a yearly contribution into the GbR
+                t("priv.giro", day(20), -6000.0, GBR_NAME, "Einlage", "Umbuchung", GBR_IBAN)
+                t("gbr.kk", day(20), 6000.0, "Gesellschafter A", "Einlage", "Umbuchung", GIRO_IBAN)
+            # the company: founded with its share capital; an online trade that grows month by month
+            if ug == 0:
+                t("priv.giro", day(1), -5000.0, UG_NAME, "Stammeinlage", "Umbuchung", UG_IBAN)
+                t("ug.kk", day(1), 5000.0, "Gesellschafter", "Stammeinlage", "Umbuchung", GIRO_IBAN)
+            if ug >= 0:
+                sales = 9000.0 + 750.0 * ug + (600.0 if mo == 12 else -300.0 if mo in (1, 2) else 0.0)
+                for n, name, share in ((5, "Onlineshop Auszahlung", 0.55), (15, "Kunde Nord GmbH", 0.25), (24, "Kunde Süd KG", 0.20)):
+                    t("ug.kk", day(n), round(sales * share, 2), name, "Rechnung %02d/%d" % (mo, y), "Betrieb\\Umsatzerlöse")
+                t("ug.kk", day(8), -round(sales * 0.32, 2), "Großhandel Meyer", "Wareneinkauf", "Betrieb\\Wareneinkauf")
+                t("ug.kk", day(2), -950.0, "Bürogemeinschaft", "Miete Büro", "Betrieb\\Büromiete")
+                t("ug.kk", day(10), -180.0, "Softwareabos", "Shop und Buchhaltung", "Betrieb\\Software")
+                t("ug.kk", day(20), -320.0, "Kanzlei Steuer", "Buchhaltung", "Betrieb\\Steuerberatung")
+                if ug >= 1:
+                    t("ug.kk", day(10), -round((9000.0 + 750.0 * (ug - 1)) * 0.11, 2), "Finanzamt", "Umsatzsteuer-Vorauszahlung", "Steuern\\Umsatzsteuer")
+                if ug >= 3:                                                                            # a reserve for the taxes
+                    t("ug.kk", day(26), -1500.0, UG_NAME, "Steuerrücklage", "Umbuchung", UG_SAVINGS_IBAN)
+                    t("ug.tg", day(26), 1500.0, UG_NAME, "Steuerrücklage", "Umbuchung", UG_IBAN)
+                if ug >= 12 and mo in (3, 6, 9, 12):
+                    t("ug.kk", day(10), -1200.0, "Finanzamt", "Körperschaftsteuer-Vorauszahlung", "Steuern\\Körperschaftsteuer")
+                if mo == 12 and ug >= 3:
+                    t("ug.tg", day(30), 45.0 + ug * 2.0, "Bank", "Zinsen", "Finanzierung\\Zinsen")
+        # Parkweg GbR: the property bought with a seller's loan; rent from the month after, the annuity (the rule books
         # interest and repayment into the loan) from the year after
-        t("ga.immo", self.purchase, 1500000.0, "Verkäufer", "Kauf Parkweg 7")
-        t("ga.vd", self.purchase, -1250000.0, "Verkäufer", "Kaufpreisstundung")
-        t("ga.vd", _months_back(self.purchase, -1).replace(day=15), 50000.0, "Alpha GbR", "Anzahlung")
+        t("gbr.immo", self.purchase, 1500000.0, "Verkäufer", "Kauf Parkweg 7")
+        t("gbr.kk", self.purchase, -250000.0, "Verkäufer", "Kaufpreis Parkweg 7, Eigenanteil")
+        t("gbr.vd", self.purchase, -1250000.0, "Verkäufer", "Kaufpreisstundung")
+        t("gbr.vd", _months_back(self.purchase, -1).replace(day=15), 50000.0, GBR_NAME, "Sondertilgung")
+        t("gbr.kk", _months_back(self.purchase, -1).replace(day=15), -50000.0, "Verkäufer", "Sondertilgung Kaufpreisdarlehen", "Umbuchung")
         for m in self._months(_months_back(self.purchase, -1)):
-            t("ga.kk", date(m.year, m.month, 5), 9500.0, "Mieter Parkweg", "Miete", "Vermietung\\Parkweg\\Mieteinnahmen")
-            t("ga.kk", date(m.year, m.month, 6), -800.0, "Hausverwaltung", "Bewirtschaftung", "Vermietung\\Parkweg\\Bewirtschaftung")
+            t("gbr.kk", date(m.year, m.month, 5), 9500.0, "Mieter Parkweg", "Miete", "Vermietung\\Parkweg\\Mieteinnahmen")
+            t("gbr.kk", date(m.year, m.month, 6), -800.0, "Hausverwaltung", "Bewirtschaftung", "Vermietung\\Parkweg\\Bewirtschaftung")
         for m in self._months(self.first_annuity):
-            t("ga.kk", m, -6000.0, "Verkäufer", ANNUITY_TEXT, "Umbuchung", SELLER_IBAN)
-        # balances now: what was there two years ago and everything since
-        opening = {"priv.giro": 9000.0, "priv.tr": 2500.0, "priv.darl": -318000.0, "ga.kk": 25000.0, "gb.kk": 18000.0,
-                   "gb.d1": -1180000.0, "gb.d2": -1560000.0}
+            t("gbr.kk", m, -6000.0, "Verkäufer", ANNUITY_TEXT, "Umbuchung", SELLER_IBAN)
+        # balances now: what was there at the start and everything since
+        opening = {"priv.giro": 9000.0, "priv.tr": 0.0, "priv.darl": -340000.0, "ug.kk": 0.0, "ug.tg": 0.0, "gbr.kk": 310000.0,
+                   "gbr.immo": 0.0, "gbr.vd": 0.0}
         self.balances = dict(opening)
         key_of = {uid(k): k for k in self._keys()}
         for x in self.txs:
             key = key_of[x["accountUuid"]]
             if key in opening:
                 self.balances[key] = round(self.balances[key] + x["amount"], 2)
-        self.balances.update({"priv.depot": round(sum(p["quantity"] * p["marketPrice"] for p in self.PORTFOLIO), 2), "priv.immo": 465000.0, "priv.bet.ga": 0.0, "priv.bet.gb": 0.0,
-                              "ga.vd": 0.0, "ga.kap.a": -120000.0, "ga.kap.b": -120000.0, "gb.immo": 2900000.0, "gb.kap.a": -60000.0, "gb.kap.b": -60000.0})
-        for key in ("ga.vd", "ga.immo"):                       # what the purchase brought
-            self.balances[key] = round(sum(x["amount"] for x in self.txs if x["accountUuid"] == uid(key)), 2)
+        self.balances.update({"priv.depot": round(sum(p["quantity"] * p["marketPrice"] for p in self.PORTFOLIO), 2), "priv.immo": 465000.0,
+                              "priv.bet.ug": 0.0, "priv.bet.gbr": 0.0})
         self.accounts = self._accounts()
 
     def _keys(self) -> List[str]:
@@ -160,29 +191,21 @@ class World:
                 ("priv.depot", "Depot", 3, "Portfolio", False, None, "10050000", True),
                 ("priv.immo", "Wohnung Lindenstraße", 3, "Offline-Konto", False, None, "", False),
                 ("priv.bet", "Beteiligungen", 2, "Kontengruppe", True, None, "", False),
-                ("priv.bet.ga", "Beteiligung Alpha GbR", 3, "Offline-Konto", False, None, "", False),
-                ("priv.bet.gb", "Beteiligung Beta GbR", 3, "Offline-Konto", False, None, "", False),
+                ("priv.bet.ug", "Beteiligung " + UG_NAME, 3, "Offline-Konto", False, None, "", False),
+                ("priv.bet.gbr", "Beteiligung " + GBR_NAME, 3, "Offline-Konto", False, None, "", False),
                 ("priv.verb", "Verbindlichkeiten", 2, "Kontengruppe", True, None, "", False),
                 ("priv.darl", "Darlehen Lindenstraße", 3, "Darlehenskonto", False, LOAN_IBAN, "50010517", False),
-                ("ga", "Alpha GbR", 1, "Kontengruppe", True, None, "", False),
-                ("ga.liq", "Liquidität", 2, "Kontengruppe", True, None, "", False),
-                ("ga.kk", "Stadtbank Geschäftskonto", 3, "Girokonto", False, ALPHA_IBAN, "70150000", False),
-                ("ga.anl", "Anlagen", 2, "Kontengruppe", True, None, "", False),
-                ("ga.immo", "Immobilie Parkweg", 3, "Festgeldanlage", False, None, "", False),
-                ("ga.verb", "Verbindlichkeiten", 2, "Kontengruppe", True, None, "", False),
-                ("ga.vd", "Kaufpreisdarlehen", 3, "Darlehenskonto", False, None, "", False),
-                ("ga.kap.a", "Kapitalkonto A", 3, "Darlehenskonto", False, None, "", False),
-                ("ga.kap.b", "Kapitalkonto B", 3, "Darlehenskonto", False, None, "", False),
-                ("gb", "Beta GbR", 1, "Kontengruppe", True, None, "", False),
-                ("gb.liq", "Liquidität", 2, "Kontengruppe", True, None, "", False),
-                ("gb.kk", "Stadtbank Geschäftskonto", 3, "Girokonto", False, BETA_IBAN, "70150000", False),
-                ("gb.anl", "Anlagen", 2, "Kontengruppe", True, None, "", False),
-                ("gb.immo", "Immobilie Bahnhofstraße", 3, "Festgeldanlage", False, None, "", False),
-                ("gb.verb", "Verbindlichkeiten", 2, "Kontengruppe", True, None, "", False),
-                ("gb.d1", "Darlehen Bahnhofstraße I", 3, "Darlehenskonto", False, BETA_LOAN1_IBAN, "50010517", False),
-                ("gb.d2", "Darlehen Bahnhofstraße II", 3, "Darlehenskonto", False, BETA_LOAN2_IBAN, "50010517", False),
-                ("gb.kap.a", "Kapitalkonto A", 3, "Darlehenskonto", False, None, "", False),
-                ("gb.kap.b", "Kapitalkonto B", 3, "Darlehenskonto", False, None, "", False)]
+                ("ug", UG_NAME, 1, "Kontengruppe", True, None, "", False),
+                ("ug.liq", "Liquidität", 2, "Kontengruppe", True, None, "", False),
+                ("ug.kk", "Geschäftskonto", 3, "Girokonto", False, UG_IBAN, "70150000", False),
+                ("ug.tg", "Tagesgeld Steuerrücklage", 3, "Sparkonto", False, UG_SAVINGS_IBAN, "10010010", False),
+                ("gbr", GBR_NAME, 1, "Kontengruppe", True, None, "", False),
+                ("gbr.liq", "Liquidität", 2, "Kontengruppe", True, None, "", False),
+                ("gbr.kk", "Geschäftskonto", 3, "Girokonto", False, GBR_IBAN, "70150000", False),
+                ("gbr.anl", "Anlagen", 2, "Kontengruppe", True, None, "", False),
+                ("gbr.immo", "Immobilie Parkweg", 3, "Festgeldanlage", False, None, "", False),
+                ("gbr.verb", "Verbindlichkeiten", 2, "Kontengruppe", True, None, "", False),
+                ("gbr.vd", "Kaufpreisdarlehen", 3, "Darlehenskonto", False, None, "", False)]
 
     def _accounts(self) -> List[dict]:
         fetched = _stamp(self.today)
@@ -203,11 +226,13 @@ class World:
 
     def state(self) -> Dict:
         """Kontor's state at the demo's start: everything in the world new; the portfolio's month-end values entered by hand
-        (MoneyMoney does not export them) -- a savings plan of 1,000 a month and a market that mostly rose."""
-        now, months = self.balances["priv.depot"], {}
-        for k in range(1, 25):
+        (MoneyMoney does not export them) -- the savings plan as it was (1,000 a month, 500 since the company) and a market
+        that mostly rose."""
+        v, months = self.balances["priv.depot"], {}
+        for k in range(1, 49):
             m = _months_back(self.today, k)
-            months["%04d-%02d" % (m.year, m.month)] = round((now - 1000.0 * k) / 1.006 ** k + (1400.0 if k % 5 == 2 else -900.0 if k % 7 == 3 else 0.0), 2)
+            v = v / 1.006 - (500.0 if m >= self.founded else 1000.0)
+            months["%04d-%02d" % (m.year, m.month)] = round(v + (1400.0 if k % 5 == 2 else -900.0 if k % 7 == 3 else 0.0), 2)
         return {"seen": {"id": 0, "tag": "2000-01-01"}, "history": {uid("priv.depot"): months}}
 
     def _list(self) -> list:
@@ -305,24 +330,24 @@ def config(world: World, real: Dict, receipts_dir: str) -> Dict:
     u = lambda k, name: "%s | %s" % (uid(k), name)
     ui_real = (real or {}).get("ui") or {}
     purchase = world.purchase
-    area_of = {"priv": uid("priv"), "ga": uid("ga"), "gb": uid("gb")}
-    mapping = {u(k, name): {"area": area_of[k.split(".")[0]], "position": "", "confirmed": True} for k, name, _, _, group, *_ in World._layout() if not group}
+    names = {k: name for k, name, *_ in World._layout()}
+    mapping = {u(k, name): {"area": uid(k.split(".")[0]), "position": "", "confirmed": True} for k, name, _, _, group, *_ in World._layout() if not group}
     cfg = {
         "dry_run": False, "notifications": False,
         "schedule": {"interval_minutes": 30, "automatic": False},
         "areas": [{"id": uid("priv"), "name": "Privat", "kind": "private", "main_area": True, "accounts": [u("priv", "Privat")]},
-                  {"id": uid("ga"), "name": "Alpha GbR", "kind": "company", "share": 0.5, "accounts": [u("ga", "Alpha GbR")]},
-                  {"id": uid("gb"), "name": "Beta GbR", "kind": "company", "share": 0.4, "accounts": [u("gb", "Beta GbR")]}],
-        "loans": [{"name": "Kaufpreisdarlehen", "loan_account": u("ga.vd", "Kaufpreisdarlehen"), "source_accounts": [u("ga.kk", "Stadtbank Geschäftskonto")],
+                  {"id": uid("ug"), "name": UG_NAME, "kind": "company", "share": 1.0, "accounts": [u("ug", UG_NAME)]},
+                  {"id": uid("gbr"), "name": GBR_NAME, "kind": "company", "share": 0.5, "accounts": [u("gbr", GBR_NAME)]}],
+        "loans": [{"name": "Kaufpreisdarlehen", "loan_account": u("gbr.vd", names["gbr.vd"]), "source_accounts": [u("gbr.kk", names["gbr.kk"])],
                    "detection": {"counter_iban": SELLER_IBAN}, "from_date": world.first_annuity.isoformat(),
                    "interest": {"model": "yearly_base", "rate_list": [{"from_date": purchase.isoformat(), "percent": 3.0}], "booking_day": "with_payment"},
                    "booking": {"counterparty": "Verkäufer", "category_repayment": "Umbuchung", "category_interest": "Finanzierung\\Zinsen"}}],
-        "companies": [{"area": uid("ga"), "participation": u("priv.bet.ga", "Beteiligung Alpha GbR"), "retroactive_from": "all"},
-                      {"area": uid("gb"), "participation": u("priv.bet.gb", "Beteiligung Beta GbR"), "retroactive_from": "all"}],
-        "balance": {"months_back": 24, "illiquid_roles": ["participations"], "illiquid_accounts": [u("priv.darl", "Darlehen Lindenstraße")],
+        "companies": [{"area": uid("ug"), "participation": u("priv.bet.ug", names["priv.bet.ug"]), "retroactive_from": "all"},
+                      {"area": uid("gbr"), "participation": u("priv.bet.gbr", names["priv.bet.gbr"]), "retroactive_from": "all"}],
+        "balance": {"months_back": 48, "illiquid_roles": ["participations"], "illiquid_accounts": [u("priv.darl", names["priv.darl"])],
                     "accounts_mapping": mapping},
         "cashflow": {"category_to_account": {"Investments\\ETF": u("priv.depot", "Depot")}},
-        "real_estate": [{"id": "im1", "name": "Parkweg", "area": uid("ga"), "category": "Vermietung\\Parkweg", "property_account": u("ga.immo", "Immobilie Parkweg"),
+        "real_estate": [{"id": "im1", "name": "Parkweg", "area": uid("gbr"), "category": "Vermietung\\Parkweg", "property_account": u("gbr.immo", names["gbr.immo"]),
                          "loan_accounts": {}, "in_planning": False, "documents": [], "notes": "",
                          "calcs": [{"id": "k1", "name": "Basis", "created": world.purchase.isoformat() + " 10:00", "active": True, "inputs": {
                              "name": "Parkweg", "kind": "commercial", "purchase_price": 1500000, "transfer_date": world.purchase.isoformat(), "horizon_years": 20,

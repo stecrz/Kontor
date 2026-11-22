@@ -397,9 +397,9 @@ class Assistant:
     def __init__(self, app, hooks: Dict[str, Callable]):
         """hooks: what the tools use of the service -- history(uuid) / history_set(body) (month-end balances of an account),
         plan_update(body), transactions(query) -- the same functions the pages use. In the demo (service.DemoApp, its
-        assistant_peer: the real Kontor's assistant) the models are the real Kontor's, as set there (started when needed, ended
-        after the same idle time, never stopped or changed from here); conversation, saved conversations and changes are this
-        one's own, and the internet is never asked."""
+        assistant_peer: the real Kontor's assistant) the models and rights are the real Kontor's, as set there (started when
+        needed, ended after the same idle time, never stopped or changed from here; the internet with its Tavily key);
+        conversation, saved conversations, memory and changes are this one's own."""
         self.app = app
         self.hooks = hooks
         peer = app.assistant_peer() if callable(getattr(app, "assistant_peer", None)) else None
@@ -446,10 +446,16 @@ class Assistant:
 
     # -- settings and state ------------------------------------------------------------------------------------------------
     def settings(self) -> dict:
-        if self.peer is not None:                      # the demo: as set for the real Kontor (the same model), never the internet
-            st = self.peer.settings()
-            return dict(st, rights=dict(st["rights"], internet=False))
+        if self.peer is not None:                      # the demo: as set for the real Kontor (the same model and rights)
+            return self.peer.settings()
         return settings(self.app.config)
+
+    def _web_store(self):
+        """Where the Tavily key and its count are: the demo uses the real Kontor's (its rights are the real ones; the key is
+        never shown, logged or readable for the model, there as here)."""
+        if self.peer is not None and self.peer.app.store.is_open:
+            return self.peer.app.store
+        return self.app.store
 
     def _watch(self) -> None:
         """While a model runs: now and then, is it still needed? (idle for the minutes set: ended, its memory is free again)"""
@@ -3095,8 +3101,8 @@ class Assistant:
             log.info("Assistant: web access refused before asking (nothing of the user's data read yet)")
             raise ToolError("Refused by Kontor, nothing was sent: Kontor has not read the user's data yet (MoneyMoney not read), so it cannot check "
                             "search words against it. No internet search until then -- tell the user in one sentence.")
-        tav = web_search.tavily_status(self.app.store)                  # (with the user's key or without one: the limit that goes with it)
-        used, oecd = tav["tavily_used"], web_search.oecd_used(self.app.store)
+        tav = web_search.tavily_status(self._web_store())                  # (with the user's key or without one: the limit that goes with it)
+        used, oecd = tav["tavily_used"], web_search.oecd_used(self._web_store())
         plan: List[dict] = []                            # what goes out, in the order asked
         for w in wanted:
             p, told = w.get("p"), w["told"]
@@ -3212,17 +3218,17 @@ class Assistant:
             told["error"] = "Refused by Kontor, nothing was sent: %s." % why
             return -1
         if p["source"] == "tavily" and p["what"] == "search" and x.get("key"):
-            now = web_search.tavily_key(self.app.store)          # read again right before: a key removed meanwhile is not sent
+            now = web_search.tavily_key(self._web_store())          # read again right before: a key removed meanwhile is not sent
             if not now:
                 job.emit("web_item", id=wid, item=iid, state="failed", text=tr("ki_w_schluessel_weg"))
                 told["error"] = "The user removed the Tavily key meanwhile: not fetched."
                 return -1
             x["key"] = now
-        if p["source"] == "tavily" and p["what"] == "search" and not web_search.tavily_spend(self.app.store, bool(x.get("key"))):
+        if p["source"] == "tavily" and p["what"] == "search" and not web_search.tavily_spend(self._web_store(), bool(x.get("key"))):
             job.emit("web_item", id=wid, item=iid, state="failed", text=tr("ki_w_kontingent"))
             told["error"] = "Tier 3 is used up for now (Kontor stops before Tavily's limit). Use tier 1 or 2."
             return -1
-        if p["source"] == "oecd" and not web_search.oecd_spend(self.app.store):     # (checked again: another card may have used the hour)
+        if p["source"] == "oecd" and not web_search.oecd_spend(self._web_store()):     # (checked again: another card may have used the hour)
             job.emit("web_item", id=wid, item=iid, state="failed", text=tr("ki_w_oecd_grenze"))
             told["error"] = "The OECD allows 60 downloads an hour; Kontor stops at %d -- try later or another source." % web_search.OECD_PER_HOUR
             return -1
@@ -3281,7 +3287,7 @@ class Assistant:
             raise ToolError("searches: the lookups of your research, each {source, query} -- all of them in this one call.")
         if not str(a.get("reason") or "").strip():       # (the reason written into a lookup instead of beside them)
             a = dict(a, reason=next((x["reason"] for x in asked if isinstance(x.get("reason"), str)), ""))
-        key = web_search.tavily_key(self.app.store)
+        key = web_search.tavily_key(self._web_store())
         wanted: List[dict] = []
         for x in asked[:web_search.PLAN_MAX]:
             src = str(x.get("source") or "")
@@ -3337,6 +3343,13 @@ class Assistant:
                 self.app.store.update(CHANGES_FILE, add, [])
             except Exception as e:
                 log.warning("Assistant: lookup not logged (%s)", type(e).__name__)
+        if self.peer is not None and self._web_store() is not self.app.store:      # from the demo: in the real Kontor's log too (it went out from this Mac)
+            rec = dict(rec, sub="%s · %s" % (tr("demo_badge"), rec["sub"]), chat="", demo=True)
+            with self.peer.chat_lock:
+                try:
+                    self.peer.app.store.update(CHANGES_FILE, add, [])
+                except Exception as e:
+                    log.warning("Assistant: lookup of the demo not logged (%s)", type(e).__name__)
 
     # -- the log of changes ----------------------------------------------------------------------------------------------------
     def _log_change(self, p: dict, chat: str, note: str = "", extra: Optional[dict] = None) -> None:

@@ -597,7 +597,7 @@ In Terminal, the same line as for the [installation](#install) updates.
 <a id="demo"></a>
 ## Demo for showing
 
-At the very bottom of the sign-in page, **Demo** opens Kontor with made-up sample data – for showing it, without a password: two years of a made-up household with a flat, a portfolio and two partnerships. The demo is a Kontor of its own with its own folder and sign-in; it never sees your data, settings, receipts, saved conversations or the assistant's memory. Almost everything works – categorising, rules, receipts, also the assistant (your model, but without the internet); there are no settings and no setup in it. “End” (⌘L) or the lock after idle time deletes everything done in the demo; the next one starts afresh.
+At the very bottom of the sign-in page, **Demo** switches the sign-in to the demo – with your password or Touch ID as always. It is a Kontor of its own with made-up sample data: a private person over four years (a flat with a loan, a portfolio, employed until two years ago), the Muster UG founded then (two years, with a managing director's salary) and the Parkweg GbR with a property. It never sees your accounts, figures, receipts, conversations or the assistant's memory, and it does not talk to MoneyMoney. It works with your settings: language, lock, the assistant with your model and your rights (the internet too). Almost everything works – categorising, rules, receipts, questions to the assistant, which remembers what you tell it here as well (for the demo only); there are no settings and no setup in it. Locked (⌘L or after idle time) the demo stays and opens again as it was; after two hours without a sign-in or when Kontor restarts it is gone, and the next one starts afresh.
 
 <a id="security"></a>
 ## Security

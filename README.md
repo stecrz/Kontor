@@ -38,7 +38,7 @@ Sie lädt Kontor, richtet es als Dienst im Hintergrund ein und öffnet die Oberf
 - Nichts verlässt den Mac: Das Modell läuft ohne Netz in der Abschirmung von macOS; ins Netz geht Kontor dafür nur, um nach neueren Versionen zu fragen (von selbst, einstellbar) und – auf Klick – Programm und Modell zu laden.
 - Es liest, was Kontor zeigt, öffnet Seiten und schlägt Einträge vor – eingetragen wird erst nach deinem Klick, und jedes Recht ist einzeln schaltbar. Einstellungen, Regeln und MoneyMoney fasst es nie an.
 
-**[Demo](docs/help.de.md#demo)** – zum Vorzeigen: unten auf der Anmeldeseite, mit erfundenen Beispieldaten statt deiner, „Beenden“ löscht alles.
+**[Demo](docs/help.de.md#demo)** – zum Vorzeigen: eine eigene Umgebung mit erfundenen Beispieldaten (Privatperson, UG, GbR) statt deiner, geöffnet mit deiner Anmeldung unten auf der Anmeldeseite.
 
 **Stand:** Übersicht, Bilanz, Cashflow, Kategorisieren, Auto-Buchungen, Synchronisierung und Einrichtung sind geprüft. Planung, Immobilien, Steuer sowie Umsätze & Belege sind nutzbar, aber noch als „Alpha“ markiert – Zahlen dort bitte gegenprüfen.
 

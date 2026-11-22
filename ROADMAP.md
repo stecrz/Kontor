@@ -300,7 +300,11 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
 - [x] 3.16.87 Demo-Modus zum Vorzeigen: klein und hellgrau unten auf der Anmeldeseite, ohne Passwort; erfundene Beispieldaten
   (`demo.py`, zwei Jahre bis heute), alles bedienbar außer Einstellungen und Einrichtung; eigener verschlüsselter Ordner,
   eigene Sitzung, eigener Assistent mit demselben Modell (ohne deine Verläufe, ohne Internet); „Beenden“ oder Sperre löscht alles.
-- Später: Assistent mit vorbereiteten Beispielfragen in der Demo; Demo-Daten mit einer GmbH (Firmenwert aus EBITDA), sobald es die gibt.
+- [x] 3.16.96 Demo als eigene Umgebung (Wunsch des Nutzers): nur mit deiner Anmeldung (Passwort oder Touch ID), gesperrt bleibt sie
+  und öffnet wieder wie zuvor (weg nach zwei Stunden ohne Anmeldung oder mit dem Ende des Dienstes); Assistent mit deinen Rechten,
+  auch Internet; Beispieldaten: Privatperson vier Jahre, Muster UG zwei Jahre (gegründet mit Stammeinlage, Geschäftsführergehalt),
+  Parkweg GbR mit Immobilie und Kaufpreisdarlehen.
+- Später: Assistent mit vorbereiteten Beispielfragen in der Demo; Firmenwert der UG aus EBITDA, sobald es die gibt.
 
 ## Laufend
 - Sicherheit vor allem: nichts in MoneyMoney kaputt machen, keine Daten nach außen.

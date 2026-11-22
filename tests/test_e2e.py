@@ -2272,25 +2272,43 @@ class SecurityHttpTests(_AppBase):
 
 
 class DemoTests(_AppBase):
-    """The demo (DemoApp): from the sign-in page, without a password; made-up data in a folder of its own; never the real
-    Kontor's data, sessions, conversations or files; only the requests it may answer; gone with "Beenden" or its last session."""
+    """The demo (DemoApp): opened with the real Kontor's sign-in (password or Touch ID); made-up data in a folder of its own;
+    never the real Kontor's data, sessions, conversations, memory or files; only the requests it may answer; locked like the
+    real one it stays, until it has had no session for DEMO_IDLE."""
+
+    PW = "sehr-geheimes-passwort"
 
     def _files(self, d):
         return {os.path.relpath(os.path.join(r, n), d): os.stat(os.path.join(r, n)).st_mtime_ns for r, _, ns in os.walk(d) for n in ns}
 
     def _demo(self):
-        code, r = self.call("/api/demo", {})
+        code, r = self.call("/api/login", {"password": self.PW, "demo": True})
         self.assertEqual(code, 200, r)
+        self.assertTrue(r["demo"])
         self.csrf = r["csrf"]
         return self.app.demo_box.app
+
+    def test_only_with_the_sign_in(self):
+        self.login(); self.call("/api/lock", {}); self.csrf = None
+        self.assertEqual(self.call("/api/login", {"demo": True})[0], 401)                      # no way in without the password
+        self.assertEqual(self.call("/api/login", {"password": "falsch-falsch", "demo": True})[0], 401)
+        self.assertIsNone(self.app.demo_box.app)
+        self.assertEqual(len(self.app.sessions._fails.get("127.0.0.1", [])), 2)                # counted like any failed sign-in
+        self.assertEqual(self.call("/api/demo", {})[0], 401)                                    # (no other way: not signed in)
+        d = self._demo()
+        self.assertTrue(self.call("/api/session")[1]["demo"])
+        self.assertFalse(self.app.sessions.active())                                           # no session of the real Kontor came from it
+        self.call("/api/lock", {}); self.csrf = None
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)                # the real Kontor: as always
+        self.assertEqual(self.call("/api/login", {"password": self.PW, "demo": True})[0], 409)  # the demo not over a session of yours here
+        self.app.demo_box.end(d)
 
     def test_made_up_world_never_the_real_one(self):
         self.login()
         self.run_and_wait()
         real_ids = {k["uuid"] for k in self.app.dataset()["accounts"]}
-        self.assertEqual(self.call("/api/demo", {})[0], 409)                    # not over a session of yours (another window)
         self.call("/api/lock", {}); self.csrf = None
-        before = self._files(self.dir)
+        before = {k: v for k, v in self._files(self.dir).items() if not k.startswith("key")}
         d = self._demo()
         code, s = self.call("/api/session")
         self.assertTrue(s["signed_in"] and s["demo"]); self.assertFalse(s["setup_needed"] or s["offline_copy"])
@@ -2298,16 +2316,20 @@ class DemoTests(_AppBase):
         ds = json.loads(body)
         self.assertEqual(head.get("X-Kontor-Demo"), "1")                         # the iPhone's offline copy keeps none of it
         self.assertTrue(ds["areas"] and not ds["accounts_new"])
+        self.assertEqual(sorted(ds["area_names"].values()), ["Muster UG", "Parkweg GbR", "Privat"])
         self.assertFalse({k["uuid"] for k in ds["accounts"]} & real_ids)
         ums = self.call("/api/transactions?limit=5000")[1]["transactions"]
         names = {t["name"] for t in ums}
         self.assertIn("Nordwerk AG", names); self.assertNotIn("Arbeitgeber", names)        # the demo's salary, not the test world's
         self.assertTrue(all(t["date"] <= TODAY.isoformat() for t in ums))
+        area_id = {v: k for k, v in ds["area_names"].items()}
+        months = lambda area: len({t["date"][:7] for t in ums if t.get("entity") == area_id[area]})
+        self.assertGreaterEqual(months("Privat"), 48); self.assertTrue(24 <= months("Muster UG") <= 25)      # four years private, two of the company
         st = self.call("/api/status")[1]
         self.assertTrue(st["demo"] and st["moneymoney"]["running"]); self.assertEqual((st["storage"]["folder"], st["receipts"]["folder"]), ("", ""))
         self.assertFalse(d.data_dir.startswith(self.dir)); self.assertTrue(d.store.encrypted)
-        # it works: a sync, a category, a property, a receipt -- all in its own folder
-        was = d.last_run_at
+        # it works: a sync, a category, a receipt -- all in its own folder and its own world, nothing in MoneyMoney
+        was, mm_writes = d.last_run_at, len(MockBridge.instances)
         self.assertEqual(self.call("/api/run", {"dry_run": False, "force": True})[0], 202)
         for _ in range(400):
             if not d.running and d.last_run_at != was:
@@ -2317,6 +2339,7 @@ class DemoTests(_AppBase):
         code, r = self.call("/api/categories/assign", {"ids": [tid], "category": "Lebenshaltung\\Haushalt"})
         self.assertEqual(code, 200, r)
         self.assertEqual(next(x for x in d.world.txs if x["id"] == tid)["categoryPath"], "Lebenshaltung\\Haushalt")
+        self.assertEqual(len(MockBridge.instances), mm_writes)                  # MoneyMoney not even asked
         code, r = self.call("/api/receipts/upload", {"content": base64.b64encode(b"%PDF-1.4 demo").decode(), "file_name": "Beleg.pdf", "tx_id": tid})
         self.assertEqual(code, 200, r)
         self.assertTrue(any(f.endswith(".pdf") for f in self._files(d.data_dir)))
@@ -2329,16 +2352,21 @@ class DemoTests(_AppBase):
         self.assertEqual(d.config["areas"][0]["name"], "Haushalt")
         self.assertTrue(d.config["receipts"]["folder"].startswith(d.data_dir)); self.assertNotIn("write_comment", d.config["receipts"])
         self.assertNotEqual(d.config["ui"].get("remote_read_only"), False)
-        self.assertEqual(self._files(self.dir), before)                         # the real folder: not a file written, nothing changed
+        self.assertEqual({k: v for k, v in self._files(self.dir).items() if not k.startswith("key")}, before)     # the real folder: nothing changed
         self.assertNotEqual(self.app.config["areas"][0]["name"], "Haushalt")
-        # "Beenden": gone, folder and all; the real Kontor's sign-in as before
-        folder = d.data_dir
+        # locked like the real one: it stays, and opens again as it was
         code, r = self.call("/api/lock", {})
         self.assertEqual(code, 200)
+        self.assertFalse(self.call("/api/session")[1]["signed_in"])
+        self.assertIs(self.app.demo_box.app, d); self.assertTrue(os.path.exists(d.data_dir))
+        self.assertIs(self._demo(), d)
+        self.assertEqual(self.call("/api/config")[1]["areas"][0]["name"], "Haushalt")
+        # ended: gone, folder and all; the real Kontor's sign-in as before
+        self.call("/api/lock", {}); self.csrf = None
+        folder = d.data_dir
+        self.app.demo_box.end()
         self.assertIsNone(self.app.demo_box.app); self.assertFalse(os.path.exists(folder))
-        code, s = self.call("/api/session")
-        self.assertFalse(s["signed_in"]); self.assertNotIn("demo", s)
-        code, r = self.call("/api/login", {"password": "sehr-geheimes-passwort"})
+        code, r = self.call("/api/login", {"password": self.PW})
         self.assertEqual(code, 200); self.csrf = r["csrf"]
         self.assertEqual({k["uuid"] for k in self.call("/api/dataset")[1]["accounts"]}, real_ids)
 
@@ -2346,27 +2374,27 @@ class DemoTests(_AppBase):
         self.login(); self.call("/api/lock", {}); self.csrf = None
         d = self._demo()
         for path in ("/api/log", "/api/offline/verifier", "/api/update/status", "/api/remote", "/api/diagnostics", "/api/timemachine",
-                     "/api/remote/acl", "/api/history/mm-status"):
+                     "/api/remote/acl", "/api/history/mm-status", "/api/assistant/memory"):
             self.assertEqual(self.call(path), (403, {"error": "In der Demo nicht verfügbar."}), path)
         for path in ("/api/password", "/api/uninstall", "/api/reset", "/api/backup", "/api/backup/restore", "/api/key/renew", "/api/setup",
-                     "/api/login", "/api/touchid", "/api/demo", "/api/update/install", "/api/remote", "/api/file/open", "/api/receipts/link",
+                     "/api/login", "/api/touchid", "/api/update/install", "/api/remote", "/api/file/open", "/api/receipts/link",
                      "/api/receipts/open", "/api/receipts/export", "/api/package/import", "/api/securities/lookup", "/api/language",
                      "/api/assistant/settings", "/api/assistant/model/download", "/api/assistant/web", "/api/assistant/server", "/api/mac-app/open"):
-            self.assertEqual(self.call(path, {"password": "sehr-geheimes-passwort", "new": "x" * 12})[0], 403, path)
+            self.assertEqual(self.call(path, {"password": self.PW, "new": "x" * 12})[0], 403, path)
         code, r = self.call("/api/properties", {"action": "doc_add", "id": "im1", "path": os.path.join(self.dir, "config.json.enc")})
         self.assertEqual(code, 403)                                              # no file of this Mac linked (nor asked whether it exists)
         self.assertEqual(self.call("/api/history/mm-import", {})[0], 403)
         for m in ("uninstall", "uninstall_key", "historie_einlesen", "securities_lookup"):        # and behind the lists: refused anyway
             with self.assertRaises(ValueError):
                 getattr(d, m)()
-        self.assertEqual(self.app.store.load("auth.json")["hash"], self.store.load("auth.json")["hash"])
-        self.assertFalse(self.app.sessions.active())                            # no session of the real Kontor came from it
+        self.assertFalse(self.app.sessions.active())
 
     def test_beside_the_real_kontor(self):
         """A sync of the real Kontor running: the demo waits for it (its rules booked all the same); MoneyMoney's default category
-        stays the real one's; at most 20 sessions."""
+        stays the real one's; sessions at most DEMO_SESSIONS."""
         import categorize
         import core as C
+        import service as MA
         self.login(); self.call("/api/lock", {}); self.csrf = None
         import mm_categories
         cats = [dict(c, default=c["name"] == "Umbuchung") for c in mm_categories.with_paths(MockBridge().export_categories())]     # a default category of another name
@@ -2375,54 +2403,111 @@ class DemoTests(_AppBase):
         C.RUN_LOCK.acquire()
         threading.Timer(1.0, C.RUN_LOCK.release).start()
         d = self._demo()
-        import service as MA
         self.assertTrue(MA.kontor_bookings(d.ledger))                           # the demo's rules booked once the real sync was done
         self.assertEqual(categorize.STANDARD, {"Umbuchung"})
         self.assertEqual(next(c["name"] for c in d.categories_raw if c.get("default")), "Umbuchung")
-        self.assertEqual(self.call("/api/demo", {})[0], 403)                     # from within the demo: not again
-        for _ in range(19):
+        with mock.patch.object(MA, "DEMO_SESSIONS", 3):
+            for _ in range(2):
+                self.jar.clear()
+                self._demo()                                                     # another browser: a session of its own in the same demo
+                self.assertIs(self.app.demo_box.app, d)
             self.jar.clear()
-            self.assertEqual(self.call("/api/demo", {}, csrf=False)[0], 200)    # another browser: a session of its own in the same demo
-            self.assertIs(self.app.demo_box.app, d)
-        self.jar.clear()
-        self.assertEqual(self.call("/api/demo", {})[0], 429)
+            self.assertEqual(self.call("/api/login", {"password": self.PW, "demo": True})[0], 429)
         self.app.demo_box.end()
         self.app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
 
-    def test_while_the_real_kontor_is_locked(self):
-        """After a restart nobody has signed in yet (the data key not in memory): the demo starts all the same -- from nothing of
-        the real Kontor's data; its assistant stays switched off (the real one's settings are data)."""
+    def test_sign_in_after_a_restart(self):
+        """After a restart nobody has signed in yet (the data key not in memory): the sign-in to the demo opens the real
+        Kontor's data key like any sign-in -- its settings, not its data, are what the demo takes (the assistant's)."""
         self.login(); self.call("/api/lock", {}); self.csrf = None
         from storage import Store
         real_store, self.app.store = self.app.store, Store.closed(self.dir)
         try:
             d = self._demo()
+            self.assertTrue(self.app.store.is_open)
             self.assertTrue(self.call("/api/dataset")[1]["areas"])
-            code, st = self.call("/api/assistant/status")
-            self.assertEqual(code, 200); self.assertFalse(st["settings"]["enabled"])
-            self.assertIsNone(d.assistant.peer)
+            self.assertIsNotNone(d.assistant.peer)
             self.call("/api/lock", {})
         finally:
+            self.app.demo_box.end()
             self.app.store = real_store
 
-    def test_ends_with_its_last_session_and_starts_anew(self):
+    def test_touch_id_and_ends_with_the_password(self):
+        """Touch ID opens the demo like the real Kontor; a new password or a reset ends it (it was opened with the old one)."""
+        import auth
+        self.login()
+        cfg = copy.deepcopy(self.app.config); cfg["ui"]["touchid"] = True; self.app.save_config(cfg)
+        self.call("/api/lock", {}); self.csrf = None
+        with mock.patch.object(auth, "touchid_available", return_value=True), mock.patch.object(auth, "touchid_verify", return_value=False):
+            self.assertEqual(self.call("/api/touchid", {"demo": True})[0], 401)
+            self.assertIsNone(self.app.demo_box.app)
+        with mock.patch.object(auth, "touchid_available", return_value=True), mock.patch.object(auth, "touchid_verify", return_value=True):
+            code, r = self.call("/api/touchid", {"demo": True})
+        self.assertEqual(code, 200, r); self.assertTrue(r["demo"])
+        demo_jar = list(self.jar)
+        self.assertTrue(self.call("/api/session")[1].get("demo"))
+        # another browser: the real Kontor, a new password -- the demo's sessions end with it
+        self.jar.clear(); self.csrf = None
+        code, r = self.call("/api/login", {"password": self.PW}); self.csrf = r["csrf"]
+        code, r = self.call("/api/password", {"old": self.PW, "new": "ein-neues-langes-passwort"})
+        self.assertEqual(code, 200, r)
+        self.assertIsNone(self.app.demo_box.app)
+        self.jar.clear()
+        for c in demo_jar:
+            self.jar.set_cookie(c)
+        self.assertFalse(self.call("/api/session")[1]["signed_in"])
+        # opened again with the new one; a reset ends it as well
+        self.jar.clear(); self.csrf = None
+        self.assertEqual(self.call("/api/login", {"password": "ein-neues-langes-passwort", "demo": True})[0], 200)
+        self.jar.clear(); self.csrf = None
+        code, r = self.call("/api/login", {"password": "ein-neues-langes-passwort"}); self.csrf = r["csrf"]
+        self.assertEqual(self.call("/api/reset", {"password": "ein-neues-langes-passwort"})[0], 200)
+        self.assertIsNone(self.app.demo_box.app)
+
+    def test_follows_the_real_settings(self):
+        """Rights of the assistant and "from elsewhere only look" as set in the real Kontor -- also changed while the demo lives;
+        a lookup on the internet from the demo goes into the real Kontor's log too (it left this Mac)."""
+        import service as MA
+        self.login()
+        cfg = copy.deepcopy(self.app.config); cfg["assistant"] = dict(cfg.get("assistant") or {}, rights={"remote": True, "internet": True})
+        self.app.config = MA.merged_config(cfg)
+        self.call("/api/lock", {}); self.csrf = None
+        d = self._demo()
+        self.assertTrue(MA.assistant_mod.settings(d.config)["rights"]["remote"])
+        cfg = copy.deepcopy(self.app.config); cfg["assistant"]["rights"]["remote"] = False; cfg["ui"]["remote_read_only"] = False
+        self.app.config = MA.merged_config(cfg)
+        d.follow_real()                                                          # (what the watch does every half minute)
+        self.assertFalse(MA.assistant_mod.settings(d.config)["rights"]["remote"]); self.assertFalse(d.remote_readonly())
+        self.assertTrue(d.assistant.settings()["rights"]["internet"])
+        d.assistant._log_web({"what": "search", "query": "Leitzins Eurozone", "source": "ecb", "tier": 1}, "erfundener Grund", "c1", "done")
+        real = [c for c in self.app.store.load(MA.assistant_mod.CHANGES_FILE, []) if c.get("kind") == "web"]
+        self.assertEqual([(c["title"], c["demo"], c["chat"]) for c in real], [("Leitzins Eurozone", True, "")])
+        self.assertTrue(real[0]["sub"].startswith("Demo"))
+        self.assertEqual([c["title"] for c in d.store.load(MA.assistant_mod.CHANGES_FILE, []) if c.get("kind") == "web"], ["Leitzins Eurozone"])
+        self.app.demo_box.end()
+
+    def test_ends_without_a_session_for_hours(self):
+        import service as MA
         self.login(); self.call("/api/lock", {}); self.csrf = None
         d = self._demo()
-        first = d.data_dir
+        first, box = d.data_dir, self.app.demo_box
         tok = next(c.value for c in self.jar if c.name == "kontor_session")
         d.sessions._s[tok]["last"] -= 3600                                       # locked after the minutes set
         self.assertEqual(self.call("/api/status")[0], 401)                       # the real Kontor answers: not signed in
-        self.app.demo_box.end(d, idle=True)                                      # (what the watch does every 30 s)
-        self.assertIsNone(self.app.demo_box.app); self.assertFalse(os.path.exists(first))
+        box.end(d, idle=True)                                                    # (what the watch does every 30 s) ...
+        self.assertIs(box.app, d)                                                # ... it stays a while
+        box.idle_since -= MA.DEMO_IDLE + 1
+        box.end(d, idle=True)
+        self.assertIsNone(box.app); self.assertFalse(os.path.exists(first))
         d2 = self._demo()
-        self.assertIsNot(d2, d); self.assertNotEqual(d2.data_dir, first)
-        self.app.demo_box.end(d2, idle=True)                                     # a session still valid: it stays
-        self.assertIs(self.app.demo_box.app, d2)
-        self.app.demo_box.end()
+        self.assertIsNot(d2, d); self.assertNotEqual(d2.data_dir, first)         # a new world
+        box.idle_since = time.time() - MA.DEMO_IDLE - 1
+        box.end(d2, idle=True)                                                   # a session still valid: it stays
+        self.assertIs(box.app, d2); self.assertIsNone(box.idle_since)
+        box.end()
         self.assertFalse(os.path.exists(d2.data_dir))
         old, fresh = tempfile.mkdtemp(prefix="kontor-demo-"), tempfile.mkdtemp(prefix="kontor-demo-")      # left behind by a stopped service ...
         os.utime(old, (time.time() - 3600, time.time() - 3600))
-        import service as MA
         self.assertGreaterEqual(MA.remove_stale_demos(), 1)                      # ... gone at the next start; one running beside stays
         self.assertFalse(os.path.exists(old)); self.assertTrue(os.path.exists(fresh))
         shutil.rmtree(fresh)
@@ -2437,7 +2522,9 @@ class DemoTests(_AppBase):
         self.login(); self.call("/api/lock", {}); self.csrf = None
         d = self._demo()
         code, st = self.call("/api/assistant/status")
-        self.assertEqual(code, 200); self.assertTrue(st["ready"]); self.assertNotIn("folder", st); self.assertFalse(st["settings"]["rights"]["internet"])
+        self.assertEqual(code, 200); self.assertTrue(st["ready"]); self.assertNotIn("folder", st); self.assertNotIn("web", st)
+        self.assertEqual(st["settings"]["rights"], real.settings()["rights"])    # its rights are the real ones -- the internet too ...
+        self.assertIs(d.assistant._web_store(), self.app.store)                  # ... with the real Kontor's Tavily key and count
         self.assertEqual(self.call("/api/assistant/chats")[1]["chats"], [])      # the real conversations: not there
         with open(os.path.join(os.path.dirname(real.ai.runtime()["path"]), "record"), "w"):
             pass
@@ -2459,6 +2546,7 @@ class DemoTests(_AppBase):
         self.assertEqual(sorted(c["title"] for c in self.call("/api/assistant/chats")[1]["chats"]), ["Hallo Demo", "Merk dir: Demo-Kuchen schmeckt"])      # its own conversations only
         self.assertEqual([c["title"] for c in real.chats()], ["Erfundene geheime Frage"])
         self.call("/api/lock", {})
+        self.app.demo_box.end()
         self.assertEqual(real.ai.state, "ready")                                # the demo's end leaves the model running
         r = real.ask({"question": "Und jetzt echt"}); TA.events(real, r["job"])
         with open(os.path.join(os.path.dirname(real.ai.runtime()["path"]), "request.json")) as f:
@@ -4802,8 +4890,9 @@ class BrowserTest(unittest.TestCase):
 
 
 class DemoBrowserTest(unittest.TestCase):
-    """The demo in the browser: a small grey link on the sign-in page; the page loads anew into the demo and out of it (nothing
-    of the real Kontor stays in its memory); no settings; "Beenden" ends it."""
+    """The demo in the browser: a small grey link on the sign-in page switches the sign-in to the demo (the same password); the
+    page loads anew into the demo and out of it (nothing of the real Kontor stays in its memory); no settings; locked like the
+    real one, it opens again as it was."""
 
     def test_demo(self):
         try:
@@ -4833,10 +4922,18 @@ class DemoBrowserTest(unittest.TestCase):
                     return [parseFloat(d.fontSize) < parseFloat(l.fontSize), +d.opacity < 1, a.top >= c.bottom, d.backgroundColor === 'rgba(0, 0, 0, 0)']; })()""")
                 self.assertEqual(small, [True, True, True, True])                   # small, grey, below the card, no button face
                 pg.evaluate("localStorage.setItem('kontor.lang', 'de')")
-                pg.click("#demo-btn"); wait_shell(pg); pg.wait_for_selector(".ov-grid")
+                pg.click("#demo-btn")                                               # the sign-in switches to the demo -- and back
+                self.assertEqual((pg.inner_text("#login-btn"), pg.inner_text("#demo-btn")), ("Demo öffnen", "Zurück"))
+                self.assertIn("Beispieldaten", pg.inner_text("#login-text"))
+                pg.click("#demo-btn"); self.assertEqual((pg.inner_text("#login-btn"), pg.inner_text("#demo-btn")), ("Anmelden", "Demo"))
+                pg.click("#demo-btn")
+                pg.fill("#login-pw", "falsches-passwort"); pg.click("#login-btn")
+                until(pg, "document.querySelector('#login-err').textContent.includes('falsch')")             # the password, as always
+                self.assertIsNone(app.demo_box.app)
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg); pg.wait_for_selector(".ov-grid")
                 until(pg, "demoOn() && DEMO_PAGE && !!S.KONTEN.length")
                 self.assertNotEqual(pg.evaluate("S.KONTEN.map(k => k.uuid).sort().join()"), real)
-                self.assertTrue(pg.is_visible("#demo-badge")); self.assertEqual(pg.inner_text("#lock-btn"), "Beenden")
+                self.assertTrue(pg.is_visible("#demo-badge")); self.assertEqual(pg.inner_text("#lock-btn"), "Sperren")
                 self.assertTrue(pg.is_hidden("#nav a[href='#settings']")); self.assertTrue(pg.is_hidden("#nav-setup"))
                 pg.goto(url + "#settings"); until(pg, "location.hash === '#overview' && S.tab === 'overview'")
                 for h in ("#balance", "#cashflow", "#transactions", "#categories", "#accounts", "#properties", "#help"):
@@ -4849,8 +4946,9 @@ class DemoBrowserTest(unittest.TestCase):
                 self.assertIsNone(lang)
                 self.assertEqual(pg.evaluate("[localStorage.getItem('kontor-demo-probe'), localStorage.getItem('kontor.lang')]"), [None, "de"])      # nothing of the demo kept on the device
                 self.assertNotIn(pg.evaluate("JSON.parse(localStorage.getItem('kontor.ui') || '{}').area || null"), demo_areas)      # the page remembers nothing of the demo
-                self.assertIsNone(app.demo_box.app)
+                self.assertIsNotNone(app.demo_box.app)                                  # locked, not gone
                 self.assertEqual(pg.evaluate("document.querySelector('#main').childElementCount"), 0)    # loaded anew: nothing of the demo behind the sign-in
+                self.assertEqual(pg.inner_text("#login-btn"), "Anmelden")                                # the sign-in to the real Kontor again
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg)
                 until(pg, "!!S.KONTEN.length")
                 self.assertEqual(pg.evaluate("S.KONTEN.map(k => k.uuid).sort().join()"), real)
@@ -4869,8 +4967,10 @@ class DemoBrowserTest(unittest.TestCase):
                 pg.wait_for_function("caches.open('kontor-data-enc').then(c => c.keys()).then(k => k.some(r => r.url.endsWith('/api/dataset')))", timeout=15000)
                 copy_js = "caches.open('kontor-data-enc').then(c => c.match(location.origin + '/api/dataset')).then(r => r.arrayBuffer()).then(b => new TextDecoder('latin1').decode(b))"
                 before = pg.evaluate(copy_js)
-                pg.click("#lock-btn"); pg.wait_for_selector("#demo-btn", state="visible"); pg.click("#demo-btn"); wait_shell(pg); pg.wait_for_selector(".ov-grid")
+                pg.click("#lock-btn"); pg.wait_for_selector("#demo-btn", state="visible"); pg.click("#demo-btn")
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg); pg.wait_for_selector(".ov-grid")
                 until(pg, "DEMO_PAGE && !!S.DATA")
+                self.assertEqual(pg.evaluate("Object.keys(S.DATA.areas)"), demo_areas)                  # the same demo as before the lock
                 pg.goto(url + "#balance"); until(pg, "S.tab === 'balance' && !!document.querySelector('tr.pos')")
                 self.assertEqual(pg.evaluate(copy_js), before)
                 self.assertTrue(pg.evaluate("navigator.serviceWorker.getRegistrations().then(r => r.length > 0)"))
