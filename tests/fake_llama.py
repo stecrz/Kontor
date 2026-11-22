@@ -12,9 +12,19 @@ model. What it answers is told by the question itself:
   cut                    -> an answer that runs into its limit (finish_reason "length")
   anything else          -> "Antwort: <question>"
 
+The look at what to remember (a request that asks for JSON by a schema: Kontor's second, separate request after a question)
+is answered from what that request holds -- nothing else reaches it:
+  merke {json}           -> anywhere in what it was given (what the user said, earlier messages, the answer, known notes):
+                            answers with that JSON ({"notes": [...], "forget": [...]}) -- so a test sees what reaches it
+  Merk dir: <text>       -> in what the user said: a note with that text
+  Vergiss: <text>        -> in what the user said: forgets the known notes that hold that text
+  otherwise              -> nothing to note
+(files beside it: notice-says -> answers with that file's text, whatever it is; notice-slow -> takes five seconds;
+notice-fails -> the server answers with an error)
+
 Files beside it tell it more (Kontor starts it with an environment of its own, so nothing else reaches it):
   record     -> it writes how it was started (arguments, names of environment variables) to started.json and the last
-                request to request.json
+                request to request.json (the last look at what to remember: to notice.json)
   refuse     -> the start fails
   slowstart  -> /health says "loading" for a moment (its text: for that many seconds)
   script.json -> prepared answers (for the help images): [{"q": part of the question, "steps": [{"call": tool, "args": {...}} |
@@ -122,10 +132,36 @@ def main():
             body = json.loads(raw or b"{}")
             if self.path != "/v1/chat/completions":
                 return self._json(404, {"error": {"message": "not found"}})
-            if os.path.exists(os.path.join(here, "record")):
+            msgs = body.get("messages") or []
+            noticed = None
+            if isinstance((body.get("response_format") or {}).get("schema"), dict):       # the look at what to remember: answered from what it holds
+                if os.path.exists(os.path.join(here, "record")):
+                    with open(os.path.join(here, "notice.json"), "w") as f:
+                        json.dump(body, f)
+                if os.path.exists(os.path.join(here, "notice-fails")):
+                    return self._json(500, {"error": {"message": "broken on purpose"}})
+                given = json.loads(str((msgs[-1] if msgs else {}).get("content") or "{}"))
+                texts = [str(given.get("said") or "")] + [str(x) for x in given.get("earlier") or []] + [str(given.get("answer") or "")] + [str(k.get("text") or "") for k in given.get("known") or []]
+                noticed = {"notes": [], "forget": []}
+                order = next((re.search(r"merke (\{.*\})", x, re.S) for x in texts if re.search(r"merke (\{.*\})", x, re.S)), None)
+                said = str(given.get("said") or "")
+                if os.path.exists(os.path.join(here, "notice-says")):           # a test puts the words into its mouth (also what is no JSON)
+                    with open(os.path.join(here, "notice-says"), encoding="utf-8") as f:
+                        noticed = f.read()
+                elif order:
+                    noticed = json.loads(order.group(1))
+                else:
+                    m = re.search(r"(?im)^\s*merk(?:e)? dir(?: bitte)?[:,]?\s*(?:dass\s+)?(.+)$", said)
+                    if m and m.group(1).strip().lower() not in ("das", "das bitte", "dies"):
+                        noticed["notes"].append({"text": m.group(1).strip()})
+                    elif m and given.get("answer"):
+                        noticed["notes"].append({"text": str(given["answer"])[:200]})
+                    f = re.search(r"(?im)^\s*vergiss[:,]?\s*(?:dass\s+)?(.+)$", said)
+                    if f:
+                        noticed["forget"] = [k["id"] for k in given.get("known") or [] if f.group(1).strip().lower() in str(k.get("text") or "").lower()]
+            elif os.path.exists(os.path.join(here, "record")):
                 with open(os.path.join(here, "request.json"), "w") as f:
                     json.dump(body, f)
-            msgs = body.get("messages") or []
             last = msgs[-1] if msgs else {}
             users = [m for m in msgs if m.get("role") == "user"]
             q = str((users[-1] if users else {}).get("content") or "")
@@ -152,7 +188,15 @@ def main():
             try:
                 self._send(delta({"role": "assistant", "content": None}))
                 names = {t["function"]["name"] for t in body.get("tools") or []}
-                if first.startswith("mute") or q.startswith("silent"):
+                if noticed is not None:
+                    if os.path.exists(os.path.join(here, "notice-slow")):
+                        for _ in range(100):
+                            self._send(delta({"content": " "}))
+                            time.sleep(0.05)
+                    text = noticed if isinstance(noticed, str) else json.dumps(noticed, ensure_ascii=False)
+                    for i in range(0, len(text), 30):
+                        self._send(delta({"content": text[i:i + 30]}))
+                elif first.startswith("mute") or q.startswith("silent"):
                     pass
                 elif first.startswith("loop "):
                     name, _, args = first[5:].partition(" ")

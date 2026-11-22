@@ -42,6 +42,15 @@ TEXT_MAX = 600                                     # characters of one note
 PROFILE_TOKENS = 1500                              # the profile at most (less in a small context: profile_budget)
 HOWS = ("chat", "manual", "backup")                # where a note came from: said in a conversation, typed in the settings, restored
 KINDS = ("", "fact", "preference", "plan", "decision", "person", "reason", "style")       # what it is about ("": not told)
+# words that say nothing about what a text is about (folded as _fold does: ae, oe, ue, ss): left out when texts are compared
+STOP = frozenset("""aber alle allem allen aller alles also andere anderen auch auf aus bei beim bin bis bist bitte dann das dass dein deine deinem deinen deiner dem den
+denn der des dich die dies diese diesem diesen dieser dieses dir doch dort durch eben ein eine einem einen einer eines einmal etwas euch fuer ganz gar gegen geht
+gibt habe haben hast hat hatte hier ich ihm ihn ihr ihre ihrem ihren immer ins ist jetzt kann kein keine keinem keinen koennen mal man mehr mein meine meinem
+meinen meiner mich mir mit muss nach nicht nichts noch nun nur oder ohne schon sehr sein seine seinem seinen seiner seit sich sie sind soll sollen sollte ueber
+und uns unser unsere unter viel vom von vor wann war waren warum was weil welche welchem welchen welcher wenn wer werde werden wie wieder will wir wird wirst wo
+wollen worden wuerde wurde zu zum zur zwar about after again all also and any are because been before being but can could did does doing for from had has have
+her here him his how into its just more most not now off once only other our out over own she should some such than that the their them then there these they
+this those through too under until very was were what when where which while who why will with would you your""".split())
 _SEG_NAME = re.compile(r"memory-notes-(\d{4,6})\.json(?:\.enc)?")
 _NOTE_ID = re.compile(r"n[0-9a-f]{10}")
 _MORE_INVISIBLE = re.compile("[\u180b-\u180d\u2800\U000e0100-\U000e01ef]")      # further characters nobody sees (variation selectors, a blank braille cell)
@@ -354,7 +363,7 @@ class Memory:
         with self.lock:
             notes = self._load()
             rep = [r for r in dict.fromkeys(replaces) if r in notes and r not in self._replaced]
-            same = next((n for n in notes.values() if n["id"] not in self._replaced and n["id"] not in rep and same_text(n["text"]) == same_text(t)), None)
+            same = next((n for n in notes.values() if n["id"] not in self._replaced and same_text(n["text"]) == same_text(t)), None)
             if same is not None:
                 return dict(same, known=True)
             now = _now()

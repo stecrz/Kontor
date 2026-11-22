@@ -2698,8 +2698,8 @@ def make_handler(app: App):
             if path in ASSISTANT_ASK:
                 if not (local or assistant_mod.settings(app.config)["rights"]["remote"]):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
-                if path == "/api/assistant/ask":
-                    return self._json(200, a.ask(body))
+                if path == "/api/assistant/ask":         # (from a device that may only look: answered, but nothing of it is noted or forgotten)
+                    return self._json(200, a.ask(body, may_note=local or not app.remote_readonly()))
                 if path == "/api/assistant/stop":
                     a.stop()
                     return self._json(200, {"ok": True})
@@ -2740,6 +2740,10 @@ def make_handler(app: App):
                 if not local and (app.remote_readonly() or not assistant_mod.settings(app.config)["rights"]["remote"]):
                     return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
                 return self._json(200, {"ok": True, "note": a.take_back(str(body.get("id") or ""), local)})
+            if path in ("/api/assistant/memory/undo", "/api/assistant/memory/offer"):      # a note under an answer: taken back or brought back / kept after the click
+                if not local and (app.remote_readonly() or not assistant_mod.settings(app.config)["rights"]["remote"]):
+                    return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
+                return self._json(200, a.memory_undo(body.get("id")) if path.endswith("/undo") else a.memory_offer(body.get("id"), body.get("ok") is True))
             if not local:
                 return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
             if path == "/api/assistant/memory":                  # notes added, changed, pinned, deleted -- by the user, in the settings

@@ -484,6 +484,20 @@ You switch each right separately, at the Mac only:
 
 Never, and there is no tool for it either: settings, booking rules, access, updates, approving auto bookings, entering categories, anything in MoneyMoney – and itself (model, rights, installation). If you ask for it, it names the page where you do it yourself.
 
+<a id="assistant-memory"></a>
+### Memory
+
+The assistant remembers what you tell it and what lasts: goals, plans, decisions and their reasons, people and companies, preferences – also how it should answer. The model itself does not change; the memory is an encrypted store in Kontor's data folder.
+
+- **By itself and when told.** What sounds lasting, Kontor notes after the answer; “remember …” always counts. Under the answer you then see **Remembered: …** with **Take back**. If it contradicts an older note, **replaces: …** is shown with it.
+- **Forgetting.** “Forget …” deletes the note – it can be brought back while Kontor runs. After that it is gone from the log of changes too.
+- **Only from your words.** Notes come from what you type, dictate or paste (pasted text is marked) – never from transaction texts, receipts, files, pages or the internet. “Remember that” takes the answer before it; with text from the internet or a receipt in the conversation, Kontor asks first.
+- **What every question is given.** Pinned and latest notes, always the same amount at most – however much is remembered.
+- **The list.** Settings → AI assistant → Memory: look, search, add by hand, change, pin, forget, forget everything; the switch is there too.
+- **Never:** passwords, PINs, TANs, keys, card numbers. Figures about your money still come from Kontor, not from the memory.
+
+Part of the [backup](#backup) (what comes back from one is marked); a reset and removing Kontor delete it.
+
 <a id="assistant-internet"></a>
 ### Internet (read only)
 

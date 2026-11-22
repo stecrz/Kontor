@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.16.81 (2026-11-22 02:36)
+- KI-Assistent: Gedächtnis, Schritt 2 – merkt sich von selbst, was du ihm sagst und was dauerhaft ist; „Merk dir …“ gilt immer, „Vergiss …“ löscht
+- Unter der Antwort: „Gemerkt: …“ mit „Zurücknehmen“, bei Widerspruch „ersetzt: …“; Vergessenes lässt sich zurückholen, solange Kontor läuft
+- Nur aus deinen eigenen Worten (auch Eingefügtes, so gekennzeichnet) – nie aus Buchungstexten, Belegen, Dateien, Seiten oder dem Internet
+- „Merk dir das“ nimmt die Antwort davor; nach Internet- oder Belegtext in der Unterhaltung erst nach deinem Klick
+- Die nächste Frage geht sofort, auch während Kontor noch merkt; von einem Gerät, das nur ansehen darf, wird nichts gemerkt
+- Namen in Notizen aus dem Chat benennt das Modell – sie gehen nie in eine Internetsuche
+
 ## 3.16.80 (2026-11-22 02:18)
 - KI-Assistent: eine Einstellung für die automatische Suche nach neueren Versionen (llama.cpp, Modell, Diktiermodell) – täglich, wöchentlich, monatlich, nie; Standard monatlich
 - KI-Assistent: Punkt im Menü für llama.cpp und die Modelle in Gebrauch (keine Sonderregel für llama.cpp mehr); letzte Suche und Fund bleiben über Neustarts

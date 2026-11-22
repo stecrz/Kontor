@@ -83,7 +83,7 @@ anhängen – nie löschen.
   Hinweis „aus eingefügtem Text“); „Merk dir das“ zu einer Antwort gilt sofort. Die Suche findet von Anfang an auch nach Bedeutung
   (ein kleines drittes Modell auf diesem Mac, abgeschirmt wie die anderen; ohne es nach Wörtern) – derselbe Baustein dient danach
   auch der Hilfe- und der Umsatzsuche. (teilweise umgesetzt in 3.16.71: verschlüsselte Ablage, Liste in den Einstellungen,
-  Steckbrief in jeder Anfrage, Sicherung, Protokoll; fehlen noch Merken aus dem Chat und die Suche)
+  Steckbrief in jeder Anfrage, Sicherung, Protokoll; 3.16.81: Merken aus dem Chat; fehlt noch die Suche)
 - **Update-Prüfung:** Bevor ein Update installiert wird, liest die installierte Version die neuen Dateien – ohne etwas davon
   auszuführen – und vergleicht, was über das Programm hinausreicht: Netz, andere Programme, nachgeladener Code, Umwege dorthin,
   Internet-Adressen, Orte, von denen aus der Mac Programme startet, Helfer und Skripte, die Abschirm-Regeln und die Prüfung selbst.
@@ -156,8 +156,13 @@ Fertig, wenn
     ändern, anheften, vergessen, alles vergessen, Schalter), Steckbrief in jeder Anfrage, Sicherung, Änderungsprotokoll (Vergessenes
     verschwindet auch dort), nie Zugangsdaten, erkannte Namen aus Notizen nie in der Internetsuche (alle Namen erst, wenn das
     Modell sie beim Merken benennt – nächster Schritt).
-  - [ ] Merken aus dem Chat: ein getrennter Durchlauf, der nur die Worte des Nutzers sieht; „Gemerkt: …“ mit „Rückgängig“,
-    „ersetzt: …“, „Vergiss …“; in einer Unterhaltung mit Internet-Text „Merk dir das“ zu einer Antwort erst nach Klick.
+  - [x] 3.16.81 Merken aus dem Chat: ein zweiter, getrennter Blick des Modells, der nur die Worte des Nutzers bekommt (nie, was
+    Werkzeuge, Seiten, Bezüge, Belege, Dateien oder das Internet lieferten); seine Antwort wird geprüft (beruht auf dem Gesagten,
+    jede Zahl wurde gesagt, nie Zugangsdaten). „Gemerkt: …“ mit „Zurücknehmen“ unter der Antwort, „ersetzt: …“, „Vergiss …“ (nur
+    auf ausdrücklichen Wunsch, zurückholbar, solange Kontor läuft); „Merk dir das“ nimmt die Antwort davor – nach Internet- oder
+    Belegtext in der Unterhaltung erst nach Klick; von einem Gerät, das nur ansehen darf, wird nichts gemerkt.
+    Am Mac prüfen: was ein echtes Modell merkt (zu viel, zu wenig), und die Wartezeit bis zum ersten Wort der nächsten Frage
+    mit Gedächtnis an und aus (der zweite Blick teilt sich den Zwischenspeicher des Modells mit der Unterhaltung).
   - [ ] Suche in Notizen nach Wörtern und Bedeutung; das Passende kommt von selbst zur Frage; er sagt, worauf eine Antwort beruht.
   - [ ] Suche in gespeicherten Verläufen (aus Unterhaltungen mit Internet-Text nur die Fragen des Nutzers; Vergessenes taucht nicht wieder auf).
   - [ ] Bedeutungssuche auch für Hilfe und Umsätze.

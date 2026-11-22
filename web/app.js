@@ -304,6 +304,7 @@ document.addEventListener('click', e => {
   const a = e.target.closest && e.target.closest('a[href^="#"]'); if (!a || a.target) return;
   e.preventDefault(); if (a.getAttribute('href') !== location.hash) go(a.getAttribute('href'));
 });
+HELP_AT.ki_gedaechtnis = 'assistant-memory';
 const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k])}"${HELP_AT[k] ? ` data-help="${HELP_AT[k]}"` : ''}>?</span>` : '';
 document.addEventListener('click', e => {
   // with a mouse a click on "?" opens the matching help section; on touch devices the first tap shows the tip, the second opens the help
@@ -7219,6 +7220,7 @@ function asMsg(m, i) {
     else if (p.k === 'batch') h += asBatch(p, m);
     else if (p.k === 'web') h += asWebCard(p, i, j);
     else if (p.k === 'note') h += `<div class="banner info small">${esc(t(p.key || ''))}</div>`;
+    else if (p.k === 'memory') h += asMemPart(p);
     else if (p.k === 'chart') h += asChart(p, i, j);
     else if (p.k === 'err') h += `<div class="banner err small">${esc(p.text)}</div>`;
   });
@@ -7272,7 +7274,8 @@ function asDraw() {
   $('#as-add').addEventListener('click', asAdd); $('#as-x').addEventListener('click', asCancel);
   ta.addEventListener('scroll', () => { const g = $('#as-ghost'); if (g) g.scrollTop = ta.scrollTop; });
   $('#as-file').addEventListener('change', e => { const f = [...(e.target.files || [])]; e.target.value = ''; if (f.length) asFiles(f); });
-  asFit(ta); ta.addEventListener('input', () => asFit(ta));
+  asFit(ta); ta.addEventListener('input', () => { asFit(ta); if (!ta.value) AS.pasted = false; });
+  ta.addEventListener('paste', e => { const c = e.clipboardData; if (c && (c.getData('text') || '').trim().length >= 40) AS.pasted = true; });          // pasted text in the question: notes from it say so
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#as-form').requestSubmit(); } else if (e.key === 'Escape' && AS.busy) { e.stopPropagation(); asStop(); } });
   $('#as-form').addEventListener('submit', e => { e.preventDefault(); if (REC.on || REC.starting) { asMicStop(true, true); return; } if (REC.busy) { REC.go = true; return; }          // dictating: ended, written down, then sent
     if (AS.busy) { asStop(); return; } const v = ta.value; ta.value = ''; asFit(ta); asSend(v); });
@@ -7629,22 +7632,33 @@ async function asSend(text) {
   const hist = AS.msgs.map(x => ({role: x.role, text: x.role === 'user' ? asRefPre(x.refs) + (x.files || []).map(f => `[${f.name}]\n`).join('') + x.text : asText(x)})).filter(x => x.text).slice(-12);
   const m = {role: 'assistant', parts: [], state: 'run', status: ''};
   AS.msgs.push(Object.assign({role: 'user', text}, refs.length ? {refs} : {}, files.length ? {files: files.map(f => ({name: f.name}))} : {}), m);
+  AS.job = null;          // (an answer that is over while Kontor still notes what was said: its loop no longer speaks for the panel)
   AS.busy = true; AS.refs = []; AS.files = []; asRefsDraw(); asMsgs(true);
   try {
     const web = AS.msgs.some(x => (x.parts || []).some(p => p.k === 'web' && asWebFetched(p)));          // web text in it: no changes (Kontor knows it; told again after a restart)
     const ids = [];          // the receipts first, each on its own (in memory at Kontor until the question that names them)
     for (const f of files) ids.push((await api('/api/assistant/attach', {name: f.name, content: await asFileB64(f)})).id);
-    const r = await api('/api/assistant/ask', Object.assign({question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort(), refs, web}, ids.length ? {files: ids} : {}));
-    AS.job = r.job; AS.conv = r.conversation; AS.n = 0; asPoll(m, r.job);
+    const r = await api('/api/assistant/ask', Object.assign({question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort(), refs, web}, AS.pasted ? {pasted: true} : {}, ids.length ? {files: ids} : {})); AS.pasted = false;
+    AS.job = r.job; AS.conv = r.conversation; asPoll(m, r.job);
   } catch (e) { m.parts.push({k: 'err', text: e.message}); m.state = 'error'; AS.busy = false; asMsgs(); }
 }
+function asMemPart(p) {
+  // a note Kontor kept from what you said (or forgot, or offers to keep): one quiet line under the answer, with a way back
+  const old = (p.replaces || []).map(x => `<div class="as-m-old">${esc(t('ki_g_ersetzt', x))}</div>`).join('');
+  const undo = `<button type="button" class="ghost small as-m-undo" data-id="${esc(p.id)}">${t('ki_e_zurueck')}</button>`;
+  if (p.state === 'ask') return `<div class="as-mem-p ask"><span class="as-m-k">${t('ki_g_merken_frage')}</span><span class="as-m-t">${esc(p.text)}</span><span class="as-m-b"><button type="button" class="small as-m-yes" data-id="${esc(p.id)}">${t('ki_g_merken')}</button><button type="button" class="small secondary as-m-no" data-id="${esc(p.id)}">${t('ki_g_nicht_merken')}</button></span>${old}</div>`;
+  if (p.state === 'forgotten') return `<div class="as-mem-p"><span class="as-m-k">${t('ki_g_vergessen_p')}</span>${p.text ? `<span class="as-m-t">${esc(p.text)}</span>${undo}` : ''}</div>`;
+  if (p.state === 'undone' || p.state === 'declined' || !p.text) return `<div class="as-mem-p off"><span class="as-m-k">${t('ki_g_nicht_gemerkt')}</span></div>`;
+  return `<div class="as-mem-p"><span class="as-m-k">${t(p.state === 'restored' ? 'ki_g_wieder' : 'ki_g_gemerkt')}</span><span class="as-m-t">${esc(p.text)}</span>${p.pasted ? `<span class="tag">${t('ki_g_eingefuegt')}</span>` : ''}${p.state === 'remembered' ? undo : ''}${old}</div>`;
+}
 async function asPoll(m, job) {
-  let fails = 0, gone = false;
-  while (AS.job === job) {
+  let fails = 0, gone = false, n = 0;
+  const late = () => AS.job !== job && m.state !== 'run';          // the answer is there and the next question is asked: what Kontor still notes of this one arrives here
+  while (AS.job === job || late()) {
     let r;
-    try { r = await api(`/api/assistant/poll?job=${job}&after=${AS.n}`); fails = 0; }
+    try { r = await api(`/api/assistant/poll?job=${job}&after=${n}`); fails = 0; }
     catch (e) { if (e.status === 401 || e.status === 403 || ++fails > 6) { m.parts.push({k: 'err', text: e.message}); m.state = 'error'; break; } await new Promise(x => setTimeout(x, 1000)); continue; }
-    for (const ev of r.events || []) { AS.n = Math.max(AS.n, ev.n || 0); asEvent(m, ev); }
+    for (const ev of r.events || []) { n = Math.max(n, ev.n || 0); asEvent(m, ev, job); }
     if ((r.events || []).length) asMsgs();
     if (r.gone) { gone = true; break; }
     if (r.done) break;
@@ -7654,7 +7668,7 @@ async function asPoll(m, job) {
   if (AS.job === job) { AS.job = null; AS.busy = false; }
   asMsgs(); asLoad();
 }
-function asEvent(m, ev) {
+function asEvent(m, ev, job) {
   const last = m.parts[m.parts.length - 1];
   if (ev.type === 'status') m.status = ev.state;
   else if (ev.type === 'delta') { if (last && last.k === 'text') last.text += ev.text; else if ((ev.text || '').trim()) m.parts.push({k: 'text', text: ev.text}); }
@@ -7669,9 +7683,10 @@ function asEvent(m, ev) {
   else if (ev.type === 'web_state') { const p = m.parts.find(x => x.k === 'web' && x.id === ev.id); if (p) asWebState(p, ev); }
   else if (ev.type === 'web_item') { const p = m.parts.find(x => x.k === 'web' && x.id === ev.id), it = p && (p.items || []).find(x => x.id === ev.item); if (it) Object.assign(it, {state: ev.state, count: ev.count, text: ev.text || '', links: ev.links || []}); }
   else if (ev.type === 'notice') m.parts.push({k: 'note', key: ev.key});
+  else if (ev.type === 'memory') m.parts.push(Object.assign({}, ev, {k: 'memory'}));
   else if (ev.type === 'batch_state') { const p = m.parts.find(x => x.k === 'batch' && x.id === ev.id); if (p) Object.assign(p, {state: ev.state, done: ev.done, failed: ev.failed, left: ev.left}); }
   else if (ev.type === 'reset') { while (m.parts.length && m.parts[m.parts.length - 1].k === 'text') m.parts.pop(); }          // what was shown was a tool call written as text, not an answer
-  else if (ev.type === 'done') { m.state = 'done'; m.meta = ev; }
+  else if (ev.type === 'done') { m.state = 'done'; m.meta = ev; if (AS.job === job) AS.busy = false; }          // the answer is there: the next question may come (Kontor may still note what was said -- that shows under the answer)
   else if (ev.type === 'stopped') m.state = 'stopped';
   else if (ev.type === 'error') { m.state = 'error'; m.parts.push({k: 'err', text: ev.text || ''}); }
   if (ev.type === 'stopped' || ev.type === 'error') m.parts.forEach(p => { if (p.k === 'entry' && p.state === 'queued') p.state = 'declined'; else if (p.k === 'web' && (p.state === 'ask' || p.state === 'run')) asWebState(p, {state: p.state === 'ask' ? 'declined' : 'stopped'}); });          // never decided: nothing was made or fetched
@@ -8097,6 +8112,14 @@ $('#assist').addEventListener('click', async e => {
     const card = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'web' && y.id === b.dataset.id);
     try { await api('/api/assistant/confirm', {job: AS.job, id: b.dataset.id, ok: b.classList.contains('as-w-yes'), ids: card ? asWebItems(card).filter(it => !it.off).map(it => it.id) : undefined}); }
     catch (x) { toast(x.message, 5000); if (card && !AS.job) asWebState(card, {state: 'declined'}); asMsgs(); }
+  } else if (b.classList.contains('as-m-undo') || b.classList.contains('as-m-yes') || b.classList.contains('as-m-no')) {          // a note under an answer: taken back or brought back, kept or not
+    b.disabled = true;
+    const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'memory' && y.id === b.dataset.id);
+    try {
+      const r = b.classList.contains('as-m-undo') ? await api('/api/assistant/memory/undo', {id: b.dataset.id}) : await api('/api/assistant/memory/offer', {id: b.dataset.id, ok: b.classList.contains('as-m-yes')});
+      if (p) { p.state = r.state; if (r.id) p.id = r.id; if (r.state === 'undone' || r.state === 'declined') p.text = ''; }
+      asMsgs();
+    } catch (x) { toast(x.message, 6000); b.disabled = false; }
   } else if (b.classList.contains('as-undo')) {
     b.disabled = true;
     try { const r = await api('/api/assistant/undo', {id: b.dataset.id}); const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === b.dataset.id); if (p) { p.state = 'undone'; p.text = r.note || ''; } asMsgs(); asChanged(); }
