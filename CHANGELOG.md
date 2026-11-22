@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.73 (2026-11-22 01:55)
+- Mac-App: Fensterknöpfe auf Höhe des Seitentitels; schmales Fenster mit denselben Abständen wie das breite
+
 ## 3.16.72 (2026-11-22 01:40)
 - KI-Assistent: Denkaufwand nur noch oben im Assistenten wählbar, je Gerät gemerkt – nicht mehr in den Einstellungen
 

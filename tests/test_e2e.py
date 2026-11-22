@@ -4796,7 +4796,7 @@ class MacAppBrowserTest(unittest.TestCase):
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         opened = []
         shell = """window.__shell = []; window.webkit = {messageHandlers: {kontor: {postMessage: m => {
-            window.__shell.push(m); return Promise.resolve(m.mic ? (window.__mic || 'prompt') : m.chrome ? {tb: 28, tl: 76, ly: 14} : true); }}}};"""
+            window.__shell.push(m); return Promise.resolve(m.mic ? (window.__mic || 'prompt') : m.chrome ? {tb: 46, tl: 78, ly: 30, lb: 37} : true); }}}};"""
         standalone = """(() => { const mm = window.matchMedia.bind(window);
             window.matchMedia = q => /display-mode:\\s*standalone/.test(q) ? {matches: true, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}} : mm(q); })();"""
         try:
@@ -4843,16 +4843,23 @@ class MacAppBrowserTest(unittest.TestCase):
                 self.assertTrue(pg3.evaluate("SHELL && APP_MODE"))
                 pg3.evaluate("location.replace('#settings')"); pg3.wait_for_selector("#webapp-row .pill")
                 self.assertEqual(pg3.inner_text("#webapp-row"), "Läuft als App")
-                # no title bar of its own: the window buttons above Kontor's name, the page otherwise as in the browser; the app learns
-                # where the page has something to click in the strip that moves the window (the help sign beside the title)
+                # no title bar of its own: the page as in the browser, the window buttons level with the title row -- the app puts
+                # them 30px from the top (mac_app.swift: rowMiddle), the row's middle stays there, also in a narrow window -- above
+                # Kontor's name; the app learns where the page has something to click in the strip that moves the window
                 self.assertFalse(pg.evaluate("document.body.classList.contains('mac-chrome')"))
                 until(pg3, "document.body.classList.contains('mac-chrome')")
                 top = "document.querySelector('.topbar h1').getBoundingClientRect().top"
                 self.assertEqual(pg3.evaluate(top), pg.evaluate(top))
-                self.assertGreaterEqual(pg3.evaluate("document.querySelector('.side .brand').getBoundingClientRect().top"), 28)
+                self.assertGreaterEqual(pg3.evaluate("document.querySelector('.side .brand').getBoundingClientRect().top"), 37 + 12)
+                mid = "(r => (r.top + r.bottom) / 2)(document.querySelector('%s').getBoundingClientRect())"
+                self.assertLessEqual(abs(pg3.evaluate(mid % '.topbar h1') - 30), 2)
+                pg3.set_viewport_size({"width": 800, "height": 900}); until(pg3, "getComputedStyle(document.querySelector('#menu-btn')).display !== 'none'")
+                self.assertLessEqual(abs(pg3.evaluate(mid % '#menu-btn') - 30), 2); self.assertLessEqual(abs(pg3.evaluate(mid % '.topbar h1') - 30), 2)
+                self.assertGreaterEqual(pg3.evaluate("document.querySelector('#menu-btn').getBoundingClientRect().left"), 78)
+                pg3.set_viewport_size({"width": 1440, "height": 900})
                 until(pg3, """(() => { const q = document.querySelector('.topbar .page-hq').getBoundingClientRect(), d = (window.__shell.filter(m => m.drag).pop() || {}).drag || [];
                     return d.some(h => JSON.stringify(h) === JSON.stringify([q.left, q.top, q.width, q.height].map(Math.round))); })()""")
-                pg3.evaluate("window.dispatchEvent(new CustomEvent('kontorchrome', {detail: {tb: 0, tl: 0, ly: 0}}))")          # full screen: as in the browser
+                pg3.evaluate("window.dispatchEvent(new CustomEvent('kontorchrome', {detail: {tb: 0, tl: 0, ly: 0, lb: 0}}))")          # full screen: as in the browser
                 self.assertFalse(pg3.evaluate("document.body.classList.contains('mac-chrome')"))
                 until(pg3, "JSON.stringify((window.__shell.filter(m => m.drag).pop() || {}).drag) === '[]'")
                 pg3.select_option("#e-theme", "light"); until(pg3, "window.__shell.some(m => m.theme === 'light')")

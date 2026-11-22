@@ -30,20 +30,21 @@ const SHELL_MENU = {about: 'mac_m_ueber', settings: 'mac_m_einstellungen', hide:
   reload: 'mac_m_neu_laden', actualSize: 'mac_m_original', zoomIn: 'mac_m_groesser', zoomOut: 'mac_m_kleiner', fullScreen: 'mac_m_vollbild', window: 'mac_m_fenster',
   minimize: 'mac_m_dock', zoom: 'mac_m_zoomen', help: 'hilfe', kontorHelp: 'mac_m_kontor_hilfe', ok: 'mac_ok', cancel: 'abbrechen', find: 'mac_m_suchen_menu'};
 shellPost({labels: Object.fromEntries(Object.entries(SHELL_MENU).map(([k, v]) => [k, t(v)]))});
-// its window has no title bar of its own: the page as in the browser, the window buttons above Kontor's name, and the strip
-// where the title bar was moves the window -- the app says how high it is and where the buttons are (tb, tl, ly; this page's
-// px, 0 in full screen), the page tells it where it has something to click in that strip (those spots stay clicks)
-const CHROME = {tb: 0, tl: 0, ly: 0, sent: ''};
+// its window has no title bar of its own: the page as in the browser, the window buttons level with the title row (above
+// Kontor's name), and the strip at the top moves the window -- the app says how high it is and where the buttons are (tb, tl,
+// ly, lb: right end, middle, bottom; this page's px, 0 in full screen), the page tells it where it has something to click in
+// that strip (those spots stay clicks)
+const CHROME = {tb: 0, tl: 0, ly: 0, lb: 0, sent: ''};
 const CHROME_CLICK = 'button, a[href], input, select, textarea, label, summary, [role=button], [tabindex]:not([tabindex="-1"]), .seg, .hq';
 function chromeApply(c) {
   if (!c || typeof c !== 'object') return;
-  for (const k of ['tb', 'tl', 'ly']) { CHROME[k] = Math.max(0, +c[k] || 0); document.documentElement.style.setProperty('--' + k, CHROME[k] + 'px'); }
+  for (const k of ['tb', 'tl', 'ly', 'lb']) { CHROME[k] = Math.max(0, +c[k] || 0); document.documentElement.style.setProperty('--' + k, CHROME[k] + 'px'); }
   document.body.classList.toggle('mac-chrome', CHROME.tb > 0);
   chromeHoles();
 }
 function chromeHoles() {
   const holes = [];
-  if (CHROME.tb > 0) for (const box of document.querySelectorAll('.topbar, #assist.open .as-head, #drawer.open, .ctx')) for (const el of box.querySelectorAll(CHROME_CLICK)) {
+  if (CHROME.tb > 0) for (const box of document.querySelectorAll('.topbar, .side, #assist.open .as-head, #drawer.open, .ctx')) for (const el of box.querySelectorAll(CHROME_CLICK + ', .brand')) {
     const r = el.getBoundingClientRect();
     if (r.width && r.height && r.top < CHROME.tb && r.bottom > 0 && r.right > 0 && r.left < innerWidth) holes.push([r.left, r.top, r.width, r.height].map(v => Math.round(v)));
   }
