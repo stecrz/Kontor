@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.98 (2026-11-22 07:34)
+- KI-Assistent: sucht bei Bedarf auch in gespeicherten Verläufen – nach Wörtern und Bedeutung
+- Verläufe: eigenes verschlüsseltes Suchverzeichnis; aus Unterhaltungen mit Internet- oder Belegtext nur deine Fragen
+- Gedächtnis: Vergessenes taucht auch dort nicht wieder auf; gelöschte Verläufe verschwinden aus der Suche
+- Entwicklung: Test der Suche nach Bedeutung ohne Wettlauf mit dem Einbetten
+
 ## 3.16.97 (2026-11-22 07:05)
 - KI-Assistent: Suche nach Bedeutung – drittes, kleines Modell (Qwen3-Embedding 0,6B) unter Einstellungen → KI-Assistent
 - Gedächtnis: findet Notizen auch ohne gemeinsames Wort („Ferien“ zu „Urlaub“); ohne das Modell weiter nach Wörtern

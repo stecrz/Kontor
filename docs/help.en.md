@@ -495,6 +495,7 @@ The assistant remembers what you tell it and what lasts: goals, plans, decisions
 - **Only from your words.** Notes come from what you type, dictate or paste (pasted text is marked) – never from transaction texts, receipts, files, pages or the internet. “Remember that” takes the answer before it; with text from the internet or a receipt in the conversation, Kontor asks first.
 - **What every question is given.** Pinned, latest and last used notes, plus those that fit the question – never more than the same amount, however much is remembered. Kontor finds them by their words, also in another form (“holidays” → holiday), as part of a word (“Urlaubskasse”, “Berater” → Steuerberater) and with a typo – with the model for search by meaning even without a word in common (“vacation” → holiday); the assistant looks up the rest itself when needed.
 - **What an answer rests on.** Under the answer you see **From your notes: …** – the notes it used.
+- **Earlier conversations.** When needed the assistant also searches your saved [conversations](#assistant) – by words and meaning. From conversations with text from the internet or a receipt it finds only your questions; what you have it forget it no longer finds there; deleted conversations leave this search too.
 - **The list.** Settings → AI assistant → Memory: look, search, add by hand, change, pin, forget, forget everything; the switch is there too.
 - **Never:** passwords, PINs, TANs, keys, card numbers. Figures about your money still come from Kontor, not from the memory.
 

@@ -60,6 +60,9 @@ WORD_MAX = 40                                      # letters of a word at most (
 PART, SLIP = 0.7, 0.6                              # how well a part of a compound word (at most), a slip of a letter matches (the same word: 1)
 VEC_FILE = "memory-vectors-%04d.json"              # beside each file of notes: their embeddings (finding by meaning; encrypted, made anew when needed)
 SEM_FLOOR, SEM_MIN = 0.3, 0.5                      # likeness of a note's and a question's embeddings: below the floor it counts nothing; found by meaning alone from SEM_MIN
+TALKS_FILE = "memory-chats-%04d.json"              # what the saved conversations said, to search them (Talks; encrypted, a few conversations per file)
+TALKS_PER_FILE = 10
+TALK_Q, TALK_A = 800, 900                          # characters of a question, of an answer kept for searching
 HOWS = ("chat", "manual", "backup")                # where a note came from: said in a conversation, typed in the settings, restored
 KINDS = ("", "fact", "preference", "plan", "decision", "person", "reason", "style")       # what it is about ("": not told)
 # words that say nothing about what a text is about (folded as _fold does: ae, oe, ue, ss): left out when texts are compared
@@ -73,6 +76,8 @@ her here him his how into its just more most not now off once only other our out
 this those through too under until very was were what when where which while who why will with would you your""".split())
 _SEG_NAME = re.compile(r"memory-notes-(\d{4,6})\.json(?:\.enc)?")
 _VEC_NAME = re.compile(r"memory-vectors-(\d{4,6})\.json(?:\.enc)?")
+_TALK_NAME = re.compile(r"memory-chats-(\d{4,6})\.json(?:\.enc)?")
+_CID = re.compile(r"[0-9a-f]{8,32}")
 _NOTE_ID = re.compile(r"n[0-9a-f]{10}")
 _MORE_INVISIBLE = re.compile("[\u180b-\u180d\u2800\U000e0100-\U000e01ef]")      # further characters nobody sees (variation selectors, a blank braille cell)
 
@@ -150,6 +155,37 @@ def _near(a: str, b: str, k: int) -> bool:
     return prev[-1] <= k
 
 
+def _rank(ix: "_Index", query: Any, more: Any, skip: Set[str], valid: Any, like: Optional[Dict[str, float]]) -> List[Tuple[float, str]]:
+    """(score, id) of what fits a query (see Memory.search) -- only ids in valid, none in skip; like: how alike each is by
+    meaning (None: words alone)."""
+    some = lambda ts: ts if len(ts) <= SEARCH_TERMS else ts[:SEARCH_TERMS // 2] + ts[-(SEARCH_TERMS // 2):]
+    asked: Dict[str, float] = {t: 1.0 for t in some(list(dict.fromkeys(terms(query))))}
+    for t in some(list(dict.fromkeys(terms(more)))):
+        asked.setdefault(t, 0.5)
+    best: Dict[str, Dict[str, float]] = {}               # id -> query word -> how well
+    tells: Set[str] = set()
+    for q, weight in asked.items():
+        for t, how in ix.like(q).items():
+            gain = weight * how * ix.idf(t)
+            for nid in ix.post[t]:
+                mine = best.setdefault(nid, {})
+                if gain > mine.get(q, 0.0):
+                    mine[q] = gain
+                if ix.telling(t):
+                    tells.add(nid)
+    scored = [(sum(v.values()), nid) for nid, v in best.items() if nid in tells and nid not in skip and nid in valid]
+    if like is not None:                                 # by words and by meaning together
+        top_w = max((sc for sc, _ in scored), default=0.0) or 1.0
+        words = {nid: sc / top_w for sc, nid in scored}
+        sem = lambda nid: max(0.0, (like.get(nid, 0.0) - SEM_FLOOR) / (1 - SEM_FLOOR))
+        found = set(words) | {nid for nid, c in like.items() if c >= SEM_MIN and nid not in skip and nid in valid}
+        scored = [(words.get(nid, 0.0) + sem(nid), nid) for nid in found]
+    if not scored:
+        return []
+    top = max(sc for sc, _ in scored)
+    return [(sc, nid) for sc, nid in scored if sc >= top * 0.25]
+
+
 def pack(v: Iterable[float]) -> array:
     """An embedding as it is kept: a byte per number (-127 ... 127, scaled to its largest) -- a quarter of the room, and what
     comparing needs (only the direction counts)."""
@@ -176,7 +212,7 @@ class _Index:
         self.n = 0
         for n in notes:
             self.n += 1
-            for t in set(terms(n["text"])):
+            for t in n["terms"] if "terms" in n else set(terms(n["text"])):
                 self.post.setdefault(t, set()).add(n["id"])
         self.grams: Dict[str, Set[str]] = {}
         for t in self.post:
@@ -608,36 +644,11 @@ class Memory:
         SEM_MIN is found without a word in common, and likeness adds to the score of a note found by its words (both parts
         0 ... 1: words as a share of the best, likeness from SEM_FLOOR up)."""
         with self.lock:
-            ix = self._index()
-            notes = self._notes or {}
-            some = lambda ts: ts if len(ts) <= SEARCH_TERMS else ts[:SEARCH_TERMS // 2] + ts[-(SEARCH_TERMS // 2):]
-            asked: Dict[str, float] = {t: 1.0 for t in some(list(dict.fromkeys(terms(query))))}
-            for t in some(list(dict.fromkeys(terms(more)))):
-                asked.setdefault(t, 0.5)
-            best: Dict[str, Dict[str, float]] = {}       # note -> query word -> how well
-            tells: Set[str] = set()
-            for q, weight in asked.items():
-                for t, how in ix.like(q).items():
-                    gain = weight * how * ix.idf(t)
-                    for nid in ix.post[t]:
-                        mine = best.setdefault(nid, {})
-                        if gain > mine.get(q, 0.0):
-                            mine[q] = gain
-                        if ix.telling(t):
-                            tells.add(nid)
-            skip = set(exclude)
-            scored = [(sum(v.values()), nid) for nid, v in best.items() if nid in tells and nid not in skip and nid in notes]
-            if meaning is not None:                      # by words and by meaning together
-                like = self._likeness(meaning[0], meaning[1])
-                top_w = max((sc for sc, _ in scored), default=0.0) or 1.0
-                words = {nid: sc / top_w for sc, nid in scored}
-                sem = lambda nid: max(0.0, (like.get(nid, 0.0) - SEM_FLOOR) / (1 - SEM_FLOOR))
-                found = set(words) | {nid for nid, c in like.items() if c >= SEM_MIN and nid not in skip and nid in notes}
-                scored = [(words.get(nid, 0.0) + sem(nid), nid) for nid in found]
+            notes = self._notes if self._notes is not None else self._load()
+            like = self._likeness(meaning[0], meaning[1]) if meaning is not None else None
+            scored = _rank(self._index(), query, more, set(exclude), notes, like)
             if not scored:
                 return []
-            top = max(s for s, _ in scored)
-            scored = [(s, nid) for s, nid in scored if s >= top * 0.25]
             pos = {nid: i for i, nid in enumerate(notes)}
             scored.sort(key=lambda x: (round(x[0], 6), bool(notes[x[1]].get("pinned")), notes[x[1]]["changed"], pos[x[1]]), reverse=True)
             return [dict(notes[nid], score=round(s, 3)) for s, nid in scored[:max(1, int(limit))]]
@@ -1012,3 +1023,279 @@ class Memory:
                     take([tok], False)
                 i += 1
         return words, phrases
+
+
+class Talks:
+    """The search index of the saved conversations: for each, its questions and answers as the search needs them (cut, see
+    TALK_Q/TALK_A) -- from a conversation with text from the internet or a receipt (or a file given) in it only the user's
+    questions (what came from outside never comes back through the search). Encrypted in Kontor's data folder
+    (memory-chats-0001.json, ...: a few conversations per file, so that an answer writes one small file; a file that cannot
+    be read goes, its conversations are put in again). A conversation deleted leaves it; a turn a forgotten note was made
+    from, rested on or says again is hidden for good (by a key of its text, never the text itself), so that forgetting holds
+    when the conversation is put in again. With the model for finding by meaning, each turn's embedding is kept with it.
+    Never in the backup (as the conversations themselves); a reset deletes it with them."""
+
+    def __init__(self, store):
+        self.store = store
+        self.lock = threading.RLock()
+        self._docs: Optional[Dict[str, dict]] = None        # id of a conversation -> {"day", "items": [...], "hidden": [...]}
+        self._seg: Dict[str, int] = {}
+        self._rev = 0
+        self._ix: Optional[Tuple[int, _Index]] = None
+        self._terms: Dict[str, Tuple[str, Set[str]]] = {}    # cid#key -> (its text, its words): the index is built anew quickly
+        self._vecs: Dict[str, Tuple[str, array, float]] = {}  # cid#key -> (the embedding as kept, unpacked, its length)
+
+    # -- files ---------------------------------------------------------------------------------------------------------------
+    def _names(self) -> List[int]:
+        try:
+            names = os.listdir(self.store.data_dir)
+        except OSError:
+            return []
+        return sorted({int(m.group(1)) for m in map(_TALK_NAME.fullmatch, names) if m and m.group(0).endswith(".enc") == bool(self.store.encrypted)})
+
+    def _load(self) -> Dict[str, dict]:
+        if self._docs is not None:
+            return self._docs
+        if getattr(self.store, "is_open", True) is False:
+            raise StoreLocked("locked")
+        docs: Dict[str, dict] = {}
+        self._seg = {}
+        for seg in self._names():
+            try:
+                doc = self.store.load(TALKS_FILE % seg, {})
+                for cid, d in (doc.get("chats") or {}).items():
+                    if _CID.fullmatch(str(cid)) and isinstance(d, dict) and isinstance(d.get("items"), list) and cid not in docs:
+                        d = {"day": str(d.get("day") or "")[:10], "hidden": [str(k) for k in d.get("hidden") or [] if isinstance(k, str)][-1000:],
+                             "items": [it for it in d["items"] if isinstance(it, dict) and isinstance(it.get("k"), str) and isinstance(it.get("q"), str)]}
+                        docs[cid] = d
+                        self._seg[cid] = seg
+            except StoreLocked:
+                raise
+            except Exception as e:                       # made of the saved conversations: a file that cannot be read goes, they come in again
+                log.warning("Memory: a file of the search in conversations is not readable (%s) -- made anew", type(e).__name__)
+                try:
+                    self.store.delete(TALKS_FILE % seg)
+                except OSError:
+                    pass
+        self._docs = docs
+        self._rev += 1
+        return docs
+
+    def _write(self, seg: int) -> None:
+        self._rev += 1
+        mine = {cid: d for cid, d in (self._docs or {}).items() if self._seg.get(cid) == seg}
+        if not mine:
+            self.store.delete(TALKS_FILE % seg)
+        else:
+            self.store.save(TALKS_FILE % seg, {"v": FORMAT, "chats": mine})
+
+    def _writes(self, segs: Iterable[int]) -> None:
+        """Files written; one that fails: what is in memory is read anew from the files (so that it is what they say), and the
+        failure goes on to the caller."""
+        try:
+            for seg in sorted(set(segs)):
+                self._write(seg)
+        except Exception:
+            self._docs, self._ix = None, None
+            raise
+
+    def _place(self, cid: str) -> int:
+        if cid in self._seg:
+            return self._seg[cid]
+        count = Counter(self._seg.values())
+        seg = next((s for s in sorted(count) if count[s] < TALKS_PER_FILE), max(list(count) + self._names() + [0]) + 1)
+        self._seg[cid] = seg
+        return seg
+
+    # -- what goes in --------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def key(question: str, answer: str) -> str:
+        """A turn by its words (where it stands in its conversation changes when old turns go)."""
+        return hashlib.sha256((question + "\0" + answer[:200]).encode("utf-8")).hexdigest()[:12]
+
+    @staticmethod
+    def pairs(turns: Iterable[Any]) -> List[Tuple[str, str, List[str], bool]]:
+        """(question, answer, ids of the notes made from it, forgotten in it or that it rested on, whether a file was given
+        with it) of each turn of a saved conversation."""
+        out = []
+        last: Optional[dict] = None
+        for m in turns:
+            if not isinstance(m, dict):
+                continue
+            if m.get("role") == "user":
+                last = m
+            elif m.get("role") == "assistant" and last is not None:
+                parts = [p for p in m.get("parts") or [] if isinstance(p, dict)]
+                answer = "\n\n".join(str(p.get("text") or "") for p in parts if p.get("k") == "text").strip()
+                notes = [str(p.get("id") or "") for p in parts if p.get("k") == "memory"] + \
+                        [str(x.get("id") or "") for p in parts if p.get("k") == "basis" for x in p.get("notes") or [] if isinstance(x, dict)]
+                out.append((str(last.get("text") or ""), answer, [n for n in notes if _NOTE_ID.fullmatch(n)], bool(last.get("files"))))
+                last = None
+        return out
+
+    def put(self, cid: str, day: str, turns: Iterable[Any], foreign: bool, gone: Optional[Callable[[str], bool]] = None) -> None:
+        """A saved conversation as it is now (after each answer). foreign: text from the internet or a receipt came into it --
+        only the user's questions are kept (also of the turns before; a file given with a question counts the same, also in
+        conversations saved before Kontor said so). gone(id): whether a note is forgotten -- a turn a forgotten note was made
+        from, forgotten in or rested on is hidden for good. The same turn twice: once. An embedding is kept for a turn that
+        stays the same."""
+        if not _CID.fullmatch(cid or ""):
+            return
+        with self.lock:
+            docs = self._load()
+            old = docs.get(cid) or {}
+            hidden = list(old.get("hidden") or [])
+            had = {it["k"]: it for it in old.get("items") or []}
+            pairs = self.pairs(turns)
+            foreign = foreign or any(f for _, _, _, f in pairs)
+            items, seen = [], set()
+            for q, a, notes, _ in pairs:
+                k = self.key(q, a)
+                if gone is not None and any(gone(n) for n in notes) and k not in hidden:
+                    hidden.append(k)
+                if k in hidden or k in seen or not q.strip():
+                    continue
+                seen.add(k)
+                it = {"k": k, "q": clean(q)[:TALK_Q], "a": "" if foreign else clean(a)[:TALK_A]}
+                if notes:
+                    it["n"] = list(dict.fromkeys(notes))[:20]
+                prev = had.get(k)
+                if prev and prev.get("v") and prev.get("q") == it["q"] and prev.get("a") == it["a"]:
+                    it["v"], it["m"] = prev["v"], prev.get("m", "")
+                items.append(it)
+            docs[cid] = {"day": str(day or "")[:10], "items": items, "hidden": hidden[-1000:]}
+            self._writes([self._place(cid)])
+
+    def drop(self, cids: Iterable[str] = (), everything: bool = False) -> None:
+        """Conversations deleted: gone from the search (everything: every file of it, also one that cannot be read)."""
+        with self.lock:
+            if everything:
+                try:
+                    names = os.listdir(self.store.data_dir)
+                except OSError:
+                    names = []
+                for name in names:
+                    if re.fullmatch(r"memory-chats-\d{4,6}\.json(?:\.enc)?(?:\.tmp|\.renew)?", name):
+                        try:
+                            os.remove(os.path.join(self.store.data_dir, name))
+                        except OSError as e:
+                            log.warning("Memory: a file of the search in conversations not removed (%s)", e)
+                self._docs, self._seg, self._ix = None, {}, None
+                self._terms, self._vecs = {}, {}
+                self._rev += 1
+                return
+            docs = self._load()
+            segs = {self._seg.pop(c) for c in list(cids) if docs.pop(c, None) is not None and c in self._seg}
+            self._writes(segs)
+
+    def forget(self, note_ids: Iterable[str] = (), texts: Iterable[str] = (), every_note: bool = False) -> List[str]:
+        """Notes were forgotten (their ids and texts): hidden for good -- the turns they were made from, forgotten in or rested
+        on, and every turn that says one of them again (all of its words, three quarters of them in a note of more than two;
+        a note of one word only where it was made). every_note: every note was forgotten -- every turn a note was made from or
+        rested on. Returns the turns hidden (cid#key)."""
+        with self.lock:
+            docs = self._load()
+            ids = set(note_ids)
+            sets = [w for w in (set(terms(t)) for t in texts) if len(w) >= 2]
+            segs, gone = set(), []
+            for cid, d in docs.items():
+                keep = []
+                for it in d["items"]:
+                    made = bool(it.get("n")) and (every_note or bool(ids & set(it["n"])))
+                    words = self._words(cid, it)
+                    says = any(len(w & words) * 4 >= len(w) * 3 and (len(w) > 2 or w <= words) for w in sets)
+                    if made or says:
+                        d["hidden"] = (d["hidden"] + [it["k"]])[-1000:]
+                        gone.append(cid + "#" + it["k"])
+                    else:
+                        keep.append(it)
+                if len(keep) != len(d["items"]):
+                    d["items"] = keep
+                    segs.add(self._seg[cid])
+            self._writes(segs)
+            return gone
+
+    def known(self) -> Dict[str, str]:
+        """Conversations in the search: id -> the day of their last turn."""
+        with self.lock:
+            return {cid: d.get("day", "") for cid, d in self._load().items()}
+
+    # -- search --------------------------------------------------------------------------------------------------------------
+    def _words(self, cid: str, it: dict) -> Set[str]:
+        text = it["q"] + " " + it.get("a", "")
+        hit = self._terms.get(cid + "#" + it["k"])
+        if hit is None or hit[0] != text:
+            hit = (text, set(terms(text)))
+            self._terms[cid + "#" + it["k"]] = hit
+        return hit[1]
+
+    def _index(self) -> _Index:
+        with self.lock:
+            docs = self._load()
+            if self._ix is None or self._ix[0] != self._rev:
+                self._ix = (self._rev, _Index({"id": cid + "#" + it["k"], "terms": self._words(cid, it)} for cid, d in docs.items() for it in d["items"]))
+            return self._ix[1]
+
+    def _items(self) -> Dict[str, Tuple[str, dict, dict]]:
+        return {cid + "#" + it["k"]: (cid, d, it) for cid, d in (self._docs or {}).items() for it in d["items"]}
+
+    def _vector(self, i: str, it: dict) -> Optional[Tuple[array, float]]:
+        hit = self._vecs.get(i)
+        if hit is None or hit[0] != it.get("v"):
+            try:
+                a = array("b", base64.b64decode(it["v"]))
+            except (ValueError, TypeError, KeyError):
+                return None
+            hit = (it["v"], a, _norm(a))
+            self._vecs[i] = hit
+        return hit[1], hit[2]
+
+    def search(self, query: Any, limit: int = 4, exclude: Iterable[str] = (), meaning: Optional[Tuple[str, array]] = None) -> List[dict]:
+        """Turns of saved conversations that fit a query (ranked as Memory.search ranks notes), not of the conversations in
+        exclude: [{"id": cid#key, "chat", "day", "question", "answer", "score"}] -- the best first, the later among equals."""
+        with self.lock:
+            ix = self._index()
+            items = self._items()
+            out_of = set(exclude)
+            skip = {i for i, (cid, _, _) in items.items() if cid in out_of}
+            like = None
+            if meaning is not None:
+                q, qn, like = meaning[1], _norm(meaning[1]), {}
+                for i, (_, _, it) in items.items():
+                    if it.get("v") and it.get("m") == meaning[0] and i not in skip:
+                        v = self._vector(i, it)
+                        if v is not None and len(v[0]) == len(q):
+                            like[i] = sum(map(operator.mul, q, v[0])) / (qn * v[1])
+            scored = _rank(ix, query, "", skip, items, like)
+            scored.sort(key=lambda x: (round(x[0], 6), items[x[1]][1].get("day", "")), reverse=True)
+            return [{"id": i, "chat": items[i][0], "day": items[i][1].get("day", ""), "question": items[i][2]["q"],
+                     "answer": items[i][2].get("a", ""), "score": round(sc, 3)} for sc, i in scored[:max(1, int(limit))]]
+
+    # -- by meaning --------------------------------------------------------------------------------------------------------------
+    def vectors_missing(self, model: str, limit: int) -> List[Tuple[str, str]]:
+        """(cid#key, text) of turns without an embedding of this model -- the latest conversations first."""
+        with self.lock:
+            docs = self._load()
+            out = []
+            for cid, d in sorted(docs.items(), key=lambda x: x[1].get("day", ""), reverse=True):
+                for it in d["items"]:
+                    if not it.get("v") or it.get("m") != model:
+                        out.append((cid + "#" + it["k"], it["q"] + "\n" + it.get("a", "")))
+                        if len(out) >= limit:
+                            return out
+            return out
+
+    def set_vectors(self, model: str, got: Dict[str, Tuple[str, Iterable[float]]]) -> int:
+        """Embeddings made: cid#key -> (the text they were made of, the numbers); kept only for a turn still there as it was."""
+        with self.lock:
+            items = self._items()
+            segs, kept = set(), 0
+            for i, (text, vec) in got.items():
+                hit = items.get(i)
+                if hit is None or hit[2]["q"] + "\n" + hit[2].get("a", "") != text:
+                    continue
+                hit[2]["v"], hit[2]["m"] = base64.b64encode(pack(vec).tobytes()).decode("ascii"), model
+                segs.add(self._seg[hit[0]])
+                kept += 1
+            self._writes(segs)
+            return kept

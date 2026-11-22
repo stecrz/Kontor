@@ -92,7 +92,7 @@ anhängen – nie löschen.
   (ein kleines drittes Modell auf diesem Mac, abgeschirmt wie die anderen; ohne es nach Wörtern) – derselbe Baustein dient danach
   auch der Hilfe- und der Umsatzsuche. (teilweise umgesetzt in 3.16.71: verschlüsselte Ablage, Liste in den Einstellungen,
   Steckbrief in jeder Anfrage, Sicherung, Protokoll; 3.16.81: Merken aus dem Chat; 3.16.93: Suche nach Wörtern; 3.16.97:
-  nach Bedeutung; fehlt noch die Suche in Verläufen)
+  nach Bedeutung; 3.16.98: Suche in Verläufen)
 - **Update-Prüfung:** Bevor ein Update installiert wird, liest die installierte Version die neuen Dateien – ohne etwas davon
   auszuführen – und vergleicht, was über das Programm hinausreicht: Netz, andere Programme, nachgeladener Code, Umwege dorthin,
   Internet-Adressen, Orte, von denen aus der Mac Programme startet, Helfer und Skripte, die Abschirm-Regeln und die Prüfung selbst.
@@ -187,7 +187,10 @@ Fertig, wenn
       Hintergrund gemacht; Wörter und Bedeutung zusammen gewertet; ohne das Modell bleibt die Wortsuche.
       Am Mac prüfen: Start mit `--embedding` in der Sandbox, ob das Endzeichen `<|endoftext|>` als Zeichen ankommt, Schwellen der
       Ähnlichkeit (`memory.SEM_FLOOR`/`SEM_MIN`) mit echten Notizen, Dauer für Tausende Notizen.
-  - [ ] Suche in gespeicherten Verläufen (aus Unterhaltungen mit Internet-Text nur die Fragen des Nutzers; Vergessenes taucht nicht wieder auf).
+  - [x] Suche in gespeicherten Verläufen (aus Unterhaltungen mit Internet-Text nur die Fragen des Nutzers; Vergessenes taucht nicht wieder auf).
+    3.16.98: eigenes verschlüsseltes Suchverzeichnis (`memory-chats-*.json`), mit jeder Antwort nachgeführt, ältere Verläufe im
+    Hintergrund; über `recall` (Wörter und Bedeutung); auch Unterhaltungen mit Belegtext nur mit den Fragen; gelöschte Verläufe
+    und vergessene Notizen räumen mit auf.
   - [ ] Bedeutungssuche auch für Hilfe und Umsätze.
 - **Hinweise von selbst:** nach jedem Abgleich prüft Kontor (fester Code) auf Auffälliges – gestiegene Ausgaben, ungewöhnliche
   Umsätze, Fristen (Voranmeldung, Zinsbindung), Liquidität, offene Kategorien, Sicherheitslage (Zugang, Freigaben, Updates) –
