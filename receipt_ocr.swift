@@ -1,6 +1,10 @@
 // The text of a receipt for Kontor (receipt_text.py): the file comes on stdin -- a PDF or a picture -- and its text goes to stdout
 // as JSON {"text", "how"}. Recognized on this Mac only: the text layer of a PDF (PDFKit), otherwise Apple's text recognition
 // (Vision) on each page or the picture. No network, no files: it runs in the macOS sandbox Kontor gives it and ends.
+//
+// Started with the word "layout": every page with its words and where they stand, for tables (pdf_tables.py) -- JSON
+// {"pages": [{"n", "w", "h", "how", "items": [[x, y, width, height, text] ...]}], "count", "cut"}, all in tenths of a point,
+// y counted from the top of the page.
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -9,6 +13,9 @@ import Vision
 
 let maxPages = 10
 let maxChars = 20000
+let maxLayoutPages = 300          // "layout": pages read at most ...
+let maxRecognizedPages = 40       // ... of them scanned ones (text recognition takes its time)
+let maxItems = 250000             // ... and words in all
 
 func fail(_ why: String) -> Never {
     // the text recognition did not work (in the sandbox, say): said so -- Kontor reports it, it does not mean "no text"
@@ -56,7 +63,166 @@ func flatten(_ image: CGImage) -> CGImage {
     return ctx.makeImage() ?? image
 }
 
+func tenths(_ v: CGFloat) -> Int {
+    let x = (v * 10).rounded()
+    return x.isFinite ? Int(max(-1_000_000, min(1_000_000, x))) : 0
+}
+
+func shown(_ page: PDFPage) -> (CGFloat, CGFloat, CGAffineTransform) {
+    // the page as it is shown: its size (turned pages the other way round) and the way from its own space to that
+    let box = page.bounds(for: .cropBox)
+    let turned = (page.rotation / 90) % 2 != 0
+    return (turned ? box.height : box.width, turned ? box.width : box.height, page.transform(for: .cropBox))
+}
+
+func layerItems(_ page: PDFPage) -> [[Any]] {
+    // the words of the page's own text, each with its place: letters up to a blank or a jump (a new line, a new column)
+    guard let string = page.string else { return [] }
+    let text = string as NSString
+    let count = min(text.length, page.numberOfCharacters)
+    let (_, height, turn) = shown(page)
+    var out: [[Any]] = []
+    var start = -1
+    var rect = CGRect.null
+    var i = 0
+    while i <= count {
+        var ends = i == count
+        var bounds = CGRect.null
+        if !ends {
+            let c = text.character(at: i)
+            if c == 32 || c == 9 || c == 10 || c == 13 || c == 0xA0 || c == 0x2028 || c == 0x2029 || c == 0x3000 {
+                ends = true
+            } else {
+                let r = page.characterBounds(at: i).applying(turn)
+                if r.width > 0 && r.height > 0 && r.origin.x.isFinite && r.origin.y.isFinite {
+                    bounds = r
+                    if start >= 0 && !rect.isNull {
+                        let h = max(r.height, rect.height)
+                        if abs(r.midY - rect.midY) > h * 0.6 || r.minX - rect.maxX > h * 0.18 || r.maxX < rect.minX - h * 0.5 {
+                            ends = true                  // no blank, but apart from the word so far (a gap, another line): a word of its own
+                        }
+                    }
+                }
+            }
+        }
+        if ends {
+            if start >= 0 && !rect.isNull {
+                let word = text.substring(with: NSRange(location: start, length: i - start))
+                let item: [Any] = [tenths(rect.minX), tenths(height - rect.maxY), tenths(rect.width), tenths(rect.height), String(word.prefix(200))]
+                out.append(item)
+            }
+            start = -1
+            rect = CGRect.null
+        }
+        if !bounds.isNull {
+            if start < 0 { start = i }
+            rect = rect.isNull ? bounds : rect.union(bounds)
+        } else if !ends && start < 0 {
+            start = i                                    // a letter without a place of its own: part of the word that follows
+        }
+        i += 1
+    }
+    return out
+}
+
+func recognizedItems(_ image: CGImage, _ width: CGFloat, _ height: CGFloat) -> [[Any]] {
+    // the words Apple's text recognition finds, each with its place on the page (or the place of its line)
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.usesLanguageCorrection = true
+    request.recognitionLanguages = ["de-DE", "en-US"]
+    do {
+        try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+    } catch {
+        fail("vision: \(error.localizedDescription)")
+    }
+    var out: [[Any]] = []
+    for observation in request.results ?? [] {
+        guard let candidate = observation.topCandidates(1).first else { continue }
+        let s = candidate.string
+        let line = observation.boundingBox
+        let letters = CGFloat(max(1, s.count))
+        var i = s.startIndex
+        while i < s.endIndex {
+            if s[i] == " " {
+                i = s.index(after: i)
+                continue
+            }
+            var j = i
+            while j < s.endIndex && s[j] != " " { j = s.index(after: j) }
+            // the word's own place; where Vision does not give one: its share of the line, by its letters (never the whole line
+            // for every word -- words of two columns would lie on top of each other)
+            let first = CGFloat(s.distance(from: s.startIndex, to: i)), behind = CGFloat(s.distance(from: s.startIndex, to: j))
+            var box = CGRect(x: line.minX + line.width * first / letters, y: line.minY, width: line.width * (behind - first) / letters, height: line.height)
+            if let part = try? candidate.boundingBox(for: i..<j) { box = part.boundingBox }
+            let item: [Any] = [tenths(box.minX * width), tenths((1 - box.maxY) * height), tenths(box.width * width), tenths(box.height * height),
+                               String(s[i..<j].prefix(200))]
+            out.append(item)
+            i = j
+        }
+    }
+    return out
+}
+
+func layout(_ data: Data) -> [String: Any] {
+    var pages: [[String: Any]] = []
+    var count = 0
+    var cut = false
+    var items = 0
+    var recognized = 0
+    if data.starts(with: [0x25, 0x50, 0x44, 0x46]) {           // "%PDF"
+        guard let doc = PDFDocument(data: data) else { return ["pages": pages, "count": 0, "cut": false] }
+        count = doc.pageCount
+        cut = count > maxLayoutPages
+        for i in 0..<min(count, maxLayoutPages) {
+            guard let page = doc.page(at: i) else { continue }
+            var (width, height, _) = shown(page)
+            var how = "pdf"
+            var list = layerItems(page)
+            if list.count < 12 {
+                // hardly any text of its own: a scan (with a stamp or a file number as its only text), or a page that says
+                // little. Read from its picture too -- what finds clearly more words counts
+                let own = list.count
+                if own < 3 { how = "none" }
+                if recognized >= maxRecognizedPages {
+                    if own < 3 { cut = true }
+                } else if let image = render(page) {
+                    let box = page.bounds(for: .mediaBox)
+                    let seen = recognizedItems(image, box.width, box.height)
+                    recognized += 1
+                    if seen.count > own * 2 + 5 || (own < 3 && seen.count > 0) {
+                        list = seen
+                        width = box.width
+                        height = box.height
+                        how = "ocr"
+                    }
+                }
+            }
+            items += list.count
+            if items > maxItems {
+                cut = true
+                break
+            }
+            pages.append(["n": i + 1, "w": tenths(width), "h": tenths(height), "how": how, "items": list])
+        }
+    } else if let source = CGImageSourceCreateWithData(data as CFData, nil) {
+        let opts: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+                                     kCGImageSourceThumbnailMaxPixelSize: 6000, kCGImageSourceShouldCacheImmediately: false]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary) else { fail("picture not readable") }
+        let width = CGFloat(image.width), height = CGFloat(image.height)
+        count = 1
+        pages.append(["n": 1, "w": tenths(width), "h": tenths(height), "how": "ocr", "items": recognizedItems(flatten(image), width, height)])
+    }
+    return ["pages": pages, "count": count, "cut": cut]
+}
+
 let data = FileHandle.standardInput.readDataToEndOfFile()
+if CommandLine.arguments.dropFirst().contains("layout") {
+    if let json = try? JSONSerialization.data(withJSONObject: layout(data)) {
+        FileHandle.standardOutput.write(json)
+    }
+    exit(0)
+}
 var parts: [String] = []
 var how = "none"
 if data.starts(with: [0x25, 0x50, 0x44, 0x46]) {           // "%PDF"

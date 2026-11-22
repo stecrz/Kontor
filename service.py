@@ -677,6 +677,7 @@ class App:
                     "status": lambda: self.status(True),
                     "receipt_counts": lambda: Belege(self.store, self.config).counts(),
                     "receipt_text": lambda data: receipt_text.text_of(data, self.store.data_dir),
+                    "receipt_layout": lambda data: receipt_text.layout_of(data, self.store.data_dir),
                     "receipt_matches": lambda fields, amount, day, name: receipt_matches(self, fields, amount, day, name),
                     "receipt_place": lambda tid: receipt_place(self, tid),
                     "file_receipt": lambda data, name, tid, note: assistant_file_receipt(self, data, name, tid, note),

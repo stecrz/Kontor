@@ -197,6 +197,10 @@ jobs:
           assert subprocess.run(["/usr/bin/sandbox-exec", "-p", prof, "/usr/bin/touch", os.path.join(mine, "no")]).returncode != 0
           assert not os.path.exists(os.path.join(mine, "no"))
           EOF
+      - name: Tables in PDFs and pictures (the helper's words and places, in its sandbox)
+        run: |
+          # made-up statements over several pages: PDFKit's text and Apple's text recognition must give the same tables as the rules expect
+          python3 tests/test_pdf_tables.py -v OnMac
       - name: MoneyMoney bridge
         run: |
           osacompile -l JavaScript -o "$RUNNER_TEMP/mm_bridge.scpt" mm_bridge.jxa

@@ -6,7 +6,7 @@ Einstellungen → Updates zeigt den Überblick vor den einzelnen Versionen; die 
 
 ## 3.17
 - KI-Assistent schlägt vor: Kategorien, Buchungsregeln, Auto-Buchungen, Belege – ausgeführt erst nach deinem Klick, mit Protokoll
-- KI-Assistent: Diagramme im Chat, gespeicherte Verläufe, Belege und Excel-Tabellen im Chat, Internetsuche nur zum Lesen
+- KI-Assistent: Diagramme, Verläufe, Internetsuche nur zum Lesen; Belege, Excel und mehrseitige PDF-Tabellen (BWA, Summenlisten) im Chat
 - Diktieren bis zehn Minuten, live im Textfeld; Rechtsklick auf Zahl, Zeile oder Grafik: „Kurz erklären“, „Im Chat fragen“, kopieren
 - Eigene Mac-App „Kontor“: Menüleiste, Suche mit ⌘F, Downloads, Mikrofon ohne erneute Nachfrage
 - Updates: jede neue Version vor dem Installieren gelesen – neue Netzzugriffe oder Programmaufrufe warten auf deine Freigabe

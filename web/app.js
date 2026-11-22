@@ -7588,20 +7588,13 @@ async function asMicStop(send, go) {
 }
 async function asFiles(files) {
   const ta = $('#as-in'); if (!ta) return;
-  const room = (AS.st || {}).question_limit || 9000, r = ((AS.st || {}).settings || {}).rights || {};
+  const room = (AS.st || {}).question_limit || 9000;
   let given = false;
   for (const f of files.slice(0, AS_FILES_MAX)) {
-    // an Excel table: goes to Kontor with the question, read there into a grid with Excel's addresses (nothing filed, no right needed)
-    if (AS_TABLE.test(f.name || '')) {
+    // an Excel table, a PDF or a picture: goes to Kontor with the question and is read there (a table or the pages of a document as a
+    // grid; a receipt by macOS's text recognition, filed only with the click on its card) -- nothing is stored, no right needed to give it
+    if (AS_TABLE.test(f.name || '') || AS_RECEIPT.test(f.name || '') || ['application/pdf', 'image/png', 'image/jpeg', 'image/heic', 'image/gif'].includes(f.type || '')) {
       if (f.size > AS_FILE_BYTES) toast(t('ki_beleg_zu_gross', f.name, AS_FILE_BYTES / 1048576), 5000);
-      else if ((AS.files || []).length >= AS_FILES_MAX) toast(t('ki_beleg_max', AS_FILES_MAX), 5000);
-      else { (AS.files = AS.files || []).push(f); given = true; }
-      continue;
-    }
-    // a receipt (PDF, picture): goes to Kontor with the question, read there by macOS's text recognition and filed with the click on its card
-    if (AS_RECEIPT.test(f.name || '') || ['application/pdf', 'image/png', 'image/jpeg', 'image/heic', 'image/gif'].includes(f.type || '')) {
-      if (!r.transactions) toast(t('ki_beleg_recht_lesen'), 5000);          // reading it needs the right to read; filing it (on a card) its own right
-      else if (f.size > AS_FILE_BYTES) toast(t('ki_beleg_zu_gross', f.name, AS_FILE_BYTES / 1048576), 5000);
       else if ((AS.files || []).length >= AS_FILES_MAX) toast(t('ki_beleg_max', AS_FILES_MAX), 5000);
       else { (AS.files = AS.files || []).push(f); given = true; }
       continue;

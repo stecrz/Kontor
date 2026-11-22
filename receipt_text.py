@@ -31,6 +31,8 @@ SANDBOX = "/usr/bin/sandbox-exec"
 MAX_INPUT = 60 * 1024 * 1024             # as a receipt file (receipts.MAX_FILE)
 MAX_TEXT = 20000
 SECONDS = 90
+MAX_LAYOUT = 60 * 1024 * 1024            # the words of all pages with their places, as JSON
+LAYOUT_SECONDS = 300                     # many pages, scanned ones through text recognition
 
 
 class TextUnavailable(Exception):
@@ -87,27 +89,49 @@ def _helper() -> str:
     return HELPER_BIN
 
 
-def text_of(data: bytes, data_dir: str) -> Dict[str, str]:
-    """{"text", "how": "pdf" | "ocr" | "none"} of a receipt (PDF or picture) -- recognized on this Mac, always in the sandbox.
-    TextUnavailable when it cannot be done here."""
+def _ask(data: bytes, data_dir: str, layout: bool = False) -> Optional[bytes]:
+    """The helper's answer to one file (its text, or with layout its words and their places) -- always the same program, in
+    its sandbox, with nothing handed to it but the file and that one fixed word. None when it failed."""
     if not data or len(data) > MAX_INPUT:
         raise ValueError(tr("s_leere_datei") if not data else tr("s_datei_zu_gross_max_d") % (MAX_INPUT // (1024 * 1024)))
     exe = _helper()
     work = tempfile.mkdtemp(prefix="rcpt-")              # its own folder for this run (not kontor-...: those it may not write)
     try:
-        r = subprocess.run([SANDBOX, "-p", _profile(os.path.expanduser("~"), data_dir, work), exe], input=data, capture_output=True,
-                           timeout=SECONDS, cwd=work, env={"PATH": "/usr/bin:/bin", "TMPDIR": work})
+        r = subprocess.run([SANDBOX, "-p", _profile(os.path.expanduser("~"), data_dir, work), exe] + (["layout"] if layout else []),
+                           input=data, capture_output=True, timeout=LAYOUT_SECONDS if layout else SECONDS, cwd=work,
+                           env={"PATH": "/usr/bin:/bin", "TMPDIR": work})
     except subprocess.TimeoutExpired:
         raise TextUnavailable(tr("s_beleg_text_zeit"))
     finally:
         shutil.rmtree(work, ignore_errors=True)
+    return r.stdout if r.returncode == 0 else None
+
+
+def text_of(data: bytes, data_dir: str) -> Dict[str, str]:
+    """{"text", "how": "pdf" | "ocr" | "none"} of a receipt (PDF or picture) -- recognized on this Mac, always in the sandbox.
+    TextUnavailable when it cannot be done here."""
+    raw = _ask(data, data_dir)
     try:
-        out = json.loads(r.stdout[:4 * MAX_TEXT].decode("utf-8")) if r.returncode == 0 else None
+        out = json.loads(raw[:4 * MAX_TEXT].decode("utf-8")) if raw is not None else None
     except (ValueError, UnicodeDecodeError):
         out = None
     if not isinstance(out, dict) or not isinstance(out.get("text"), str) or out.get("how") not in ("pdf", "ocr", "none"):
         raise TextUnavailable(tr("s_beleg_text_fehler"))
     return {"text": out["text"][:MAX_TEXT], "how": out["how"]}
+
+
+def layout_of(data: bytes, data_dir: str) -> Dict[str, Any]:
+    """Every page of a document (PDF or picture) with its words and where they stand -- {"pages": [{"n", "w", "h", "how",
+    "items": [[x, y, width, height, text] in tenths of a point, y from the top]}], "count", "cut"} -- for its tables
+    (pdf_tables.book checks every value). Recognized on this Mac, in the same sandbox. TextUnavailable when it cannot be done."""
+    raw = _ask(data, data_dir, layout=True)
+    try:
+        out = json.loads(raw[:MAX_LAYOUT].decode("utf-8")) if raw is not None and len(raw) <= MAX_LAYOUT else None
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        out = None
+    if not isinstance(out, dict) or not isinstance(out.get("pages"), list):
+        raise TextUnavailable(tr("s_beleg_text_fehler"))
+    return out
 
 
 # -- what a receipt says ---------------------------------------------------------------------------------------------------------

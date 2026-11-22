@@ -573,6 +573,12 @@ def render(book: dict, sheet: Optional[str] = None, rng: str = "", formulas: boo
         more.append('columns %s-%s not shown: read them with range "%s"' % (col_name(cc1 + 1), col_name(c1), range_name(r0, cc1 + 1, r1, c1)))
     if more:
         out["more"] = "; ".join(more)
+    if sh.get("row_pages") and last is not None:         # a document's pages: which rows shown stand on which page
+        first = rows_with[0]
+        spans = [(max(a, first), min((sh["row_pages"][i + 1][0] if i + 1 < len(sh["row_pages"]) else sh["rows"]) - 1, last), pg)
+                 for i, (a, pg) in enumerate(sh["row_pages"])]
+        said = ["rows %d-%d: page %d" % (a + 1, b + 1, pg) for a, b, pg in spans if a <= b]
+        out["pages"] = "; ".join(said if len(said) <= 6 else said[:3] + ["..."] + said[-2:])
     merged = [m for m in sh["merged"] if _overlaps(m, r0, c0, r1, cc1)]
     if merged:
         out["merged_cells"] = merged[:30]                 # the value stands in the first cell of each
@@ -599,16 +605,26 @@ def sum_range(book: dict, sheet: Optional[str], rng: str) -> dict:
     sh = find_sheet(book, sheet or name)
     r0, c0, r1, c1 = box
     total, n, skipped = Decimal(0), 0, {}
+    marked: Dict[str, List[Any]] = {}
     for (r, c), (kind, text, _) in sh["cells"].items():
         if r0 <= r <= r1 and c0 <= c <= c1:
             if kind == "n":
                 total += Decimal(text)
                 n += 1
+            elif kind == "m":                            # a figure with its mark (1234.56 S): added up per mark, never mixed
+                v, _, mark = text.partition(" ")
+                m = marked.setdefault(mark, [Decimal(0), 0])
+                m[0] += Decimal(v)
+                m[1] += 1
             else:
                 k = {"t": "text", "d": "dates and times", "p": "percentages", "b": "true/false", "e": "errors", "": "formulas without value"}[kind]
                 skipped[k] = skipped.get(k, 0) + 1
     out: Dict[str, Any] = {"sheet": sh["name"], "range": range_name(r0, c0, min(r1, max(sh["rows"] - 1, r0)), min(c1, max(sh["cols"] - 1, c0))),
                            "sum": plain(total), "numbers_added": n}
+    if marked:
+        out["with_mark"] = {k: {"sum": plain(v[0]), "numbers_added": v[1]} for k, v in sorted(marked.items())}
+        if not n:                                        # nothing but marked figures: no sum across the marks (it would read as "0")
+            del out["sum"], out["numbers_added"]
     if skipped:
         out["left_out"] = skipped
     return out

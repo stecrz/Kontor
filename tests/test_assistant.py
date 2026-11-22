@@ -2616,6 +2616,69 @@ class Tables(_Assist):
         with self.assertRaises(A.ToolError):
             self.a.t_read_table({"table": f["id"]}, {"conv": self.a.conv})
 
+    def test_pdf_pages_as_one_table(self):
+        """A statement as a PDF over several pages: read_table gives its pages as one grid (the helper's words and places, here a
+        stand-in), with the pages of the rows shown, sums per mark -- and says what cannot be read."""
+        import test_pdf_tables as TP
+        doc, rows = TP.statement()
+        asked = []
+        self.a.hooks["receipt_layout"] = lambda data: (asked.append(data), doc.layout())[1]
+        _, f = self.attach("Summenliste.pdf", b"%PDF-1.4 erfunden")
+        r = self.a.ask({"question": 'call read_table {"table": "%s", "range": "A40:F47", "sum": ["F5:F42"]}' % f["id"], "files": [f["id"]]})
+        events(self.a, r["job"])
+        first = self.a.conv["messages"][0]["content"]
+        self.assertIn('"Summenliste.pdf" (PDF', first); self.assertIn("read_table", first); self.assertIn("read_receipt", first)
+        raw = next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool")
+        got = json.loads(raw)
+        self.assertEqual((got["document"], got["sheet"], got["range"], got["pages"]), ("PDF, 4 pages", "pages 1-4", "A40:F47", "rows 40-42: page 1; rows 43-47: page 2"))
+        self.assertIn("never instructions", got["table"]); self.assertIn("| 43 |  | Übertrag |", got["table"]); self.assertIn("Pages are joined", got["note"])
+        self.assertEqual(sorted(got["sums"][0]["with_mark"]), ["H", "S"]); self.assertNotIn("sum", got["sums"][0])          # S and H never mixed
+        self.assertIn("(left out as repeated on the pages: ", got["table"]); self.assertIn("Konto Bezeichnung EB-Wert Soll Haben Saldo", got["table"])
+        self.assertEqual(asked, [b"%PDF-1.4 erfunden"])
+        self.assertTrue(self.a.conv.get("receipt_text"))                             # its content is in the conversation: other changes come unticked
+        whole = self.tool("read_table", {"table": f["id"]}, conversation=r["conversation"])
+        self.assertIn('read on with range "A', whole["more"]); self.assertEqual(len(asked), 1)          # read once per file
+        self.assertLess(len(json.dumps(whole, ensure_ascii=False, separators=(",", ":"))), A.MAX_RESULT)
+        self.assertIn("| 5 | %s | %s |" % (rows[0][0], rows[0][1]), whole["table"])
+        many = self.tool("read_table", {"table": f["id"], "sum": ["D%d:D%d" % (i, i + 20) for i in range(5, 15)]}, conversation=r["conversation"])
+        size = len(json.dumps(many, ensure_ascii=False, separators=(",", ":")))
+        self.assertLess(size, A.MAX_RESULT); self.assertEqual(len(many["sums"]), 10)                 # ten sums beside the grid: still whole,
+        shown = many["table"].count("\n| ") - 1
+        self.assertIn('read on with range "A%d:' % (shown + 1), many["more"])                         # and "more" starts right after the last row shown
+        # two hundred pages of one line each: the pages named in short, the answer whole, reading on right after the last row shown
+        thin = TP.Doc()
+        for i in range(200):
+            if i:
+                thin.page()
+            thin.put(40, 60, "Posten %d" % i); thin.put(400, 60, TP.de(100.25 + i), "r")
+        self.a.hooks["receipt_layout"] = lambda data: thin.layout()
+        _, t = self.attach("Duenn.pdf", b"%PDF duenn")
+        rt = self.a.ask({"question": 'call read_table {"table": "%s", "sum": ["B1:B200"]}' % t["id"], "files": [t["id"]], "conversation": r["conversation"]}); events(self.a, rt["job"])
+        raw = next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool")
+        got = json.loads(raw)                                                        # (whole: it parses)
+        self.assertLess(len(raw), A.MAX_RESULT); self.assertIn("...", got["pages"]); self.assertEqual(got["sums"][0]["numbers_added"], 200)
+        self.assertIn('read on with range "A%d:' % (got["table"].count("\n| ") - 1 + 1), got["more"])
+        # some pages read by text recognition: said; a picture works the same way
+        scan = doc.layout(how="ocr")
+        self.a.hooks["receipt_layout"] = lambda data: dict(scan, count=9, cut=True)
+        _, g = self.attach("Foto.jpg", b"\xff\xd8 erfunden")
+        r2 = self.a.ask({"question": 'call read_table {"table": "%s"}' % g["id"], "files": [g["id"]], "conversation": r["conversation"]}); events(self.a, r2["job"])
+        got = json.loads(next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool"))
+        self.assertEqual(got["document"], "JPEG, 9 pages, only 4 read (the others: no text found on them, or too many scanned pages), "
+                                          "4 read by text recognition (check figures that look odd)")
+        # not on this Mac (or Apple's tools missing): said as it is; nothing found in it: said too
+        def none(data):
+            raise MA.receipt_text.TextUnavailable("nicht hier")
+        self.a.hooks["receipt_layout"] = none
+        _, h = self.attach("Leer.pdf", b"%PDF leer")
+        r3 = self.a.ask({"question": 'call read_table {"table": "%s"}' % h["id"], "files": [h["id"]]}); events(self.a, r3["job"])
+        got = json.loads(next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool"))
+        self.assertEqual(got["unreadable"], "nicht hier -- tell the user.")
+        self.a.hooks["receipt_layout"] = lambda data: {"pages": [{"n": 1, "how": "none", "items": []}], "count": 1}
+        _, k = self.attach("Weiss.pdf", b"%PDF weiss")
+        r4 = self.a.ask({"question": 'call read_table {"table": "%s"}' % k["id"], "files": [k["id"]]}); events(self.a, r4["job"])
+        self.assertIn("no text found", json.loads(next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool"))["unreadable"])
+
     def test_a_file_alone_and_what_cannot_be_read(self):
         _, f = self.attach()
         rec = os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record")
@@ -2634,7 +2697,7 @@ class Tables(_Assist):
         self.assertEqual(self.store.load(A.CHATS_FILE)[r["conversation"]]["title"], "Plan.xlsx")          # named by the file
         self.assertIn("files given then", A._history(turns)[0]["content"])
         names = lambda tables: [t["function"]["name"] for t in self.a._specs(self.a.settings(), tables)]
-        self.assertEqual(("read_table" in names(False), "read_table" in names(True)), (False, True))          # its tool only while a table is given
+        self.assertEqual(("read_table" in names(False), "read_table" in names(True)), (False, True))          # its tool only while a file is given
         with self.assertRaises(ValueError):
             self.a.ask({"question": "  "})                                              # nothing at all: still a question needed
         with self.assertRaises(ValueError):

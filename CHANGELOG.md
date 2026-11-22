@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.16.88 (2026-11-22 03:57)
+- KI-Assistent: liest Tabellen aus PDFs und Bildern (BWA, Summenlisten, Wertenachweise) – alle Seiten, zu einer Tabelle zusammengesetzt
+- KI-Assistent: Seitenköpfe, Seitenzahlen und wiederholte Tabellenköpfe fallen heraus; Summen rechnet Kontor
+- KI-Assistent: Zahlen wie geschrieben (Minus davor, dahinter oder abgesetzt; S/H; fremde Währung) – Unklares bleibt Text
+- KI-Assistent: gescannte Seiten über die Texterkennung des Macs, schiefe Scans gerade gerichtet
+- Hilfe: Dateien im Assistenten (PDF, Bild, Excel)
+
 ## 3.16.87 (2026-11-22 03:31)
 - Demo: Kontor zum Vorzeigen mit erfundenen Beispieldaten – klein und hellgrau unten auf der Anmeldeseite, ohne Passwort
 - Demo: eigener Ordner und eigene Anmeldung – nie deine Daten, Einstellungen, Belege, Verläufe oder das Gedächtnis des Assistenten
