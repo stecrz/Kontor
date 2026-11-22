@@ -5246,6 +5246,9 @@ class MacAppBrowserTest(unittest.TestCase):
                 pg3.set_viewport_size({"width": 1440, "height": 900})
                 until(pg3, """(() => { const q = document.querySelector('.topbar .page-hq').getBoundingClientRect(), d = (window.__shell.filter(m => m.drag).pop() || {}).drag || [];
                     return d.some(h => JSON.stringify(h) === JSON.stringify([q.left, q.top, q.width, q.height].map(Math.round))); })()""")
+                # the app still open from before the update (its buttons where macOS puts them, no bottom given): Kontor's name below them
+                pg3.evaluate("window.dispatchEvent(new CustomEvent('kontorchrome', {detail: {tb: 28, tl: 76, ly: 14}}))")
+                self.assertGreaterEqual(pg3.evaluate("document.querySelector('.side .brand').getBoundingClientRect().top"), 14 + 7 + 12)
                 pg3.evaluate("window.dispatchEvent(new CustomEvent('kontorchrome', {detail: {tb: 0, tl: 0, ly: 0, lb: 0}}))")          # full screen: as in the browser
                 self.assertFalse(pg3.evaluate("document.body.classList.contains('mac-chrome')"))
                 until(pg3, "JSON.stringify((window.__shell.filter(m => m.drag).pop() || {}).drag) === '[]'")

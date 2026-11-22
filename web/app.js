@@ -38,6 +38,8 @@ const CHROME = {tb: 0, tl: 0, ly: 0, lb: 0, sent: ''};
 const CHROME_CLICK = 'button, a[href], input, select, textarea, label, summary, [role=button], [tabindex]:not([tabindex="-1"]), .seg, .hq';
 function chromeApply(c) {
   if (!c || typeof c !== 'object') return;
+  // an app from before 3.16.73 (an update does not restart the open app) gives no bottom: its buttons are 14px high
+  c = Object.assign({}, c, c.lb == null ? {lb: +c.ly ? +c.ly + 7 : 0} : {});
   for (const k of ['tb', 'tl', 'ly', 'lb']) { CHROME[k] = Math.max(0, +c[k] || 0); document.documentElement.style.setProperty('--' + k, CHROME[k] + 'px'); }
   document.body.classList.toggle('mac-chrome', CHROME.tb > 0);
   chromeHoles();
