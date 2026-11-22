@@ -63,6 +63,8 @@ SEM_FLOOR, SEM_MIN = 0.3, 0.5                      # likeness of a note's and a 
 TALKS_FILE = "memory-chats-%04d.json"              # what the saved conversations said, to search them (Talks; encrypted, a few conversations per file)
 TALKS_PER_FILE = 10
 TALK_Q, TALK_A = 800, 900                          # characters of a question, of an answer kept for searching
+LIB_FILE = "memory-%s-%04d.json"                   # embeddings of other texts (Library: kind "help", "tx"), a few files each
+LIB_BUCKETS = 8
 HOWS = ("chat", "manual", "backup")                # where a note came from: said in a conversation, typed in the settings, restored
 KINDS = ("", "fact", "preference", "plan", "decision", "person", "reason", "style")       # what it is about ("": not told)
 # words that say nothing about what a text is about (folded as _fold does: ae, oe, ue, ss): left out when texts are compared
@@ -372,6 +374,8 @@ def _valid(n: Any) -> Optional[dict]:
     names = [clean(x)[:60] for x in n.get("names") or [] if isinstance(x, str) and clean(x)] if isinstance(n.get("names"), list) else []
     if names:
         out["names"] = names[:12]
+    if n.get("named") is True:                          # the model has named the names in it (with the note from a conversation, or later)
+        out["named"] = True
     return out
 
 
@@ -739,9 +743,10 @@ class Memory:
         return t
 
     def add(self, text: Any, how: str = "manual", chat: str = "", pinned: bool = False, kind: str = "", replaces: Iterable[str] = (),
-            pasted: bool = False, names: Iterable[str] = (), quiet: bool = False, by: str = "") -> dict:
+            pasted: bool = False, names: Optional[Iterable[str]] = None, quiet: bool = False, by: str = "") -> dict:
         """Remembers a note. replaces: notes it takes the place of (they stay, marked as replaced). The same text as a note
-        that counts: that one is returned (known), nothing is added. quiet: not told to the log; by: who asked for it
+        that counts: that one is returned (known), nothing is added. names: the names in it as the look that made it named
+        them (a list, empty too: named; None: not yet -- unnamed). quiet: not told to the log; by: who asked for it
         ("settings": the user in the settings, "chat": said in a conversation) -- for the log."""
         t = self.check(text)
         with self.lock:
@@ -752,7 +757,7 @@ class Memory:
                 return dict(same, known=True)
             now = _now()
             n = _valid({"id": "n" + secrets.token_hex(5), "text": t, "created": now, "changed": now, "pinned": bool(pinned), "kind": kind, "replaces": rep,
-                        "names": list(names), "source": {"how": how if how in HOWS else "manual", "chat": chat, "pasted": bool(pasted)}})
+                        "names": list(names or []), "named": names is not None, "source": {"how": how if how in HOWS else "manual", "chat": chat, "pasted": bool(pasted)}})
             assert n is not None
             while n["id"] in notes:  # pragma: no cover - 40 random bits
                 n["id"] = "n" + secrets.token_hex(5)
@@ -799,6 +804,7 @@ class Memory:
             if n["text"] != t:
                 n["text"], n["changed"] = t, _now()
                 n.pop("names", None)                     # the names in it: found anew
+                n.pop("named", None)
         n = self._change(nid, fn)
         if old != n["text"]:
             with self.lock:                              # its embedding was of the old text: made anew (never used again either way: made of another text)
@@ -971,6 +977,35 @@ class Memory:
         if failed is not None:
             raise failed
         return added
+
+    def unnamed(self, limit: int) -> List[dict]:
+        """Notes that count whose names nobody has named yet: typed in the settings or back from a backup (a note from a
+        conversation is named when it is made; changed in the settings, its names are gone) -- the latest first."""
+        with self.lock:                                  # (a note from a conversation with names, before 3.16.99: named then)
+            return [dict(n) for n in self.active() if not n.get("named") and (n["source"]["how"] != "chat" or not n.get("names"))][:max(0, int(limit))]
+
+    def set_names(self, got: Dict[str, Tuple[str, List[str]]]) -> int:
+        """Names the model named: id -> (the text it was shown, its names). Kept only for a note still there with that text,
+        and only names that stand in it (folded: Müller is Mueller) -- the model's answer is input like any other. The note
+        counts as named either way (asked once). Not a change the profile follows. Returns how many names were kept."""
+        with self.lock:
+            notes = self._load()
+            segs, kept = set(), 0
+            for nid, (text, names) in got.items():
+                n = notes.get(nid)
+                if n is None or n["text"] != text or nid not in self._seg:
+                    continue
+                inside = " %s " % _fold(n["text"])
+                ok = [clean(x)[:60] for x in names if isinstance(x, str) and clean(x) and _fold(x) and " %s " % _fold(x) in inside][:12]
+                n["names"] = list(dict.fromkeys((n.get("names") or []) + ok))[:12]
+                if not n["names"]:
+                    n.pop("names")
+                n["named"] = True
+                kept += len(ok)
+                segs.add(self._seg[nid])
+            for seg in segs:
+                self._write(seg)
+            return kept
 
     # -- nothing of it into an internet search -------------------------------------------------------------------------------
     def own_words(self, common: Set[str]) -> Tuple[Set[str], Set[str]]:
@@ -1299,3 +1334,119 @@ class Talks:
                 kept += 1
             self._writes(segs)
             return kept
+
+
+class Library:
+    """Embeddings of texts that are no notes -- the help, the texts of transactions -- each by a key of its text, in a few
+    files (memory-help-0001.json, ...; which one: by the key), encrypted like everything in the data folder. Made of what
+    Kontor has anyway, in the background (written in batches: flush), made anew with another model, pruned of what is gone;
+    a reset deletes them (gen: what was made before is never written after that)."""
+
+    def __init__(self, store, kind: str):
+        self.store, self.kind = store, kind
+        self.lock = threading.RLock()
+        self._vec: Optional[Dict[str, Tuple[str, array, float]]] = None      # key -> (model, embedding, its length)
+        self._dirty: Set[int] = set()
+        self.gen = 0
+
+    @staticmethod
+    def key(text: str) -> str:
+        return _text_key(text)
+
+    def _bucket(self, key: str) -> int:
+        return int(key[:4], 16) % LIB_BUCKETS + 1
+
+    def _load(self) -> Dict[str, Tuple[str, array, float]]:
+        if self._vec is not None:
+            return self._vec
+        if getattr(self.store, "is_open", True) is False:
+            raise StoreLocked("locked")
+        vec: Dict[str, Tuple[str, array, float]] = {}
+        for b in range(1, LIB_BUCKETS + 1):
+            try:
+                doc = self.store.load(LIB_FILE % (self.kind, b), {})
+                model = str(doc.get("model") or "")
+                for k, b64 in (doc.get("vecs") or {}).items():
+                    a = array("b", base64.b64decode(b64))
+                    if a:
+                        vec[str(k)] = (model, a, _norm(a))
+            except StoreLocked:
+                raise
+            except Exception as e:
+                log.warning("Memory: a file of embeddings (%s) is not readable (%s) -- made anew", self.kind, type(e).__name__)
+        self._vec = vec
+        return vec
+
+    def missing(self, model: str, texts: Dict[str, str]) -> List[str]:
+        """Of these texts (key -> text), the keys without an embedding of this model."""
+        with self.lock:
+            have = self._load()
+            return [k for k in texts if (have.get(k) or ("",))[0] != model]
+
+    def put(self, model: str, got: Dict[str, Iterable[float]], gen: Optional[int] = None, flush: bool = True) -> bool:
+        """Embeddings made (key -> numbers). gen: as when they were begun -- reset since: nothing is kept (False)."""
+        with self.lock:
+            if gen is not None and gen != self.gen:
+                return False
+            have = self._load()
+            for k, v in got.items():
+                a = pack(v)
+                have[k] = (model, a, _norm(a))
+                self._dirty.add(self._bucket(k))
+            for k in [k for k, v in have.items() if v[0] != model]:          # of another model: of no use any more
+                have.pop(k)
+                self._dirty.add(self._bucket(k))
+            if flush:
+                self.flush()
+            return True
+
+    def prune(self, alive: Set[str], gen: Optional[int] = None) -> None:
+        """What is no longer there (keys not in alive) goes."""
+        with self.lock:
+            if gen is not None and gen != self.gen:
+                return
+            have = self._load()
+            for k in [k for k in have if k not in alive]:
+                have.pop(k)
+                self._dirty.add(self._bucket(k))
+            self.flush()
+
+    def flush(self) -> None:
+        with self.lock:
+            if self._vec is None:
+                self._dirty.clear()
+                return
+            for b in sorted(self._dirty):
+                mine = {k: base64.b64encode(v[1].tobytes()).decode("ascii") for k, v in self._vec.items() if self._bucket(k) == b}
+                models = {v[0] for k, v in self._vec.items() if self._bucket(k) == b}
+                if mine:
+                    self.store.save(LIB_FILE % (self.kind, b), {"v": FORMAT, "model": next(iter(models)), "vecs": mine})
+                else:
+                    self.store.delete(LIB_FILE % (self.kind, b))
+            self._dirty.clear()
+
+    def likeness(self, model: str, q: array, keys: Iterable[str]) -> Dict[str, float]:
+        with self.lock:
+            have = self._load()
+            qn = _norm(q)
+            out = {}
+            for k in keys:
+                v = have.get(k)
+                if v is not None and v[0] == model and len(v[1]) == len(q):
+                    out[k] = sum(map(operator.mul, q, v[1])) / (qn * v[2])
+            return out
+
+    def drop_all(self) -> None:
+        with self.lock:
+            self.gen += 1
+            try:
+                names = os.listdir(self.store.data_dir)
+            except OSError:
+                names = []
+            for name in names:
+                if re.fullmatch(r"memory-%s-\d{4,6}\.json(?:\.enc)?(?:\.tmp|\.renew)?" % re.escape(self.kind), name):
+                    try:
+                        os.remove(os.path.join(self.store.data_dir, name))
+                    except OSError as e:
+                        log.warning("Memory: a file of embeddings not removed (%s)", e)
+            self._vec, self._dirty = None, set()

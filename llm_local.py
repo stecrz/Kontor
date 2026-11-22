@@ -88,7 +88,7 @@ SPEECH_IDS = tuple(c["id"] for c in SPEECH)
 # without a network, in the same sandbox. query: put before a question (the model is trained so); eos: after every text.
 EMBED: List[Dict[str, Any]] = [
     {"id": "qwen3-embedding-0.6b", "name": "Qwen3-Embedding 0.6B", "repo": "Qwen/Qwen3-Embedding-0.6B-GGUF", "pick": ["Q8_0", "F16"], "gb": 1, "note": "embed",
-     "query": "Instruct: Given a question, retrieve the notes that help to answer it\nQuery:", "eos": "<|endoftext|>"},
+     "query": "Instruct: %s\nQuery:", "task": "Given a question, retrieve the notes that help to answer it", "eos": "<|endoftext|>"},
 ]
 EMBED_IDS = tuple(c["id"] for c in EMBED)
 EMBED_CONTEXT = 2048     # tokens of one text at most (a note is far shorter)
@@ -950,14 +950,15 @@ class LocalAI:
             except OSError:
                 pass
 
-    def embed(self, texts: List[str], query: bool = False) -> List[List[float]]:
+    def embed(self, texts: List[str], query: bool = False, task: str = "") -> List[List[float]]:
         """Each text as its embedding, by the model for finding by meaning that runs -- llama.cpp's /v1/embeddings on 127.0.0.1
-        with this start's key; query: the texts are questions (said so to the model). Each cut to EMBED_DIMS numbers and to
-        length 1, so that comparing two is one sum of products."""
+        with this start's key; query: the texts are questions (said so to the model, with what is looked for: task, else the
+        model's own). Each cut to EMBED_DIMS numbers and to length 1, so that comparing two is one sum of products."""
         if self.state != "ready" or self.proc is None or self.proc.poll() is not None:
             raise ModelError(tr("s_ki_laeuft_nicht"))
         entry = next((c for c in EMBED if c["id"] == self.model), {})
-        given = [(entry.get("query", "") if query else "") + str(t)[:EMBED_TEXT] + entry.get("eos", "") for t in texts]
+        head = entry.get("query", "%s") % (task or entry.get("task", "")) if query and entry.get("query") else ""
+        given = [head + str(t)[:EMBED_TEXT] + entry.get("eos", "") for t in texts]
         conn = self._connect(300)
         self.busy, self.last_used = True, time.time()
         try:

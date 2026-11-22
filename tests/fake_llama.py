@@ -13,7 +13,8 @@ model. What it answers is told by the question itself:
   anything else          -> "Antwort: <question>"
 
 The look at what to remember (a request that asks for JSON by a schema: Kontor's second, separate request after a question)
-is answered from what that request holds -- nothing else reaches it:
+is answered from what that request holds -- nothing else reaches it (naming the names of notes: the capitalised words after the
+first of each, and a made-up "Erfunden" that is in none; record: to names.json):
   merke {json}           -> anywhere in what it was given (what the user said, earlier messages, the answer, known notes):
                             answers with that JSON ({"notes": [...], "forget": [...]}) -- so a test sees what reaches it
   Merk dir: <text>       -> in what the user said: a note with that text
@@ -177,17 +178,25 @@ def main():
             msgs = body.get("messages") or []
             noticed = None
             if isinstance((body.get("response_format") or {}).get("schema"), dict):       # the look at what to remember: answered from what it holds
-                if os.path.exists(os.path.join(here, "record")):
+                given = json.loads(str((msgs[-1] if msgs else {}).get("content") or "{}"))
+                if os.path.exists(os.path.join(here, "record")) and not isinstance(given.get("notes"), list):
                     with open(os.path.join(here, "notice.json"), "w") as f:
                         json.dump(body, f)
                 if os.path.exists(os.path.join(here, "notice-fails")):
                     return self._json(500, {"error": {"message": "broken on purpose"}})
-                given = json.loads(str((msgs[-1] if msgs else {}).get("content") or "{}"))
+                if isinstance(given.get("notes"), list):           # naming the names in notes typed in the settings: the capitalised words after the first
+                    if os.path.exists(os.path.join(here, "record")):
+                        with open(os.path.join(here, "names.json"), "w") as f:
+                            json.dump(body, f)
+                    named = {"notes": [{"id": n.get("id"), "names": re.findall(r"(?<=\s)[A-ZÄÖÜ][\wäöüß-]{3,}", str(n.get("text") or "")) + ["Erfunden"]} for n in given["notes"]]}
+                    given = {"said": "", "names": named}
                 texts = [str(given.get("said") or "")] + [str(x) for x in given.get("earlier") or []] + [str(given.get("answer") or "")] + [str(k.get("text") or "") for k in given.get("known") or []]
                 noticed = {"notes": [], "forget": []}
                 order = next((re.search(r"merke (\{.*\})", x, re.S) for x in texts if re.search(r"merke (\{.*\})", x, re.S)), None)
                 said = str(given.get("said") or "")
-                if os.path.exists(os.path.join(here, "notice-says")):           # a test puts the words into its mouth (also what is no JSON)
+                if given.get("names"):
+                    noticed = given["names"]
+                elif os.path.exists(os.path.join(here, "notice-says")):           # a test puts the words into its mouth (also what is no JSON)
                     with open(os.path.join(here, "notice-says"), encoding="utf-8") as f:
                         noticed = f.read()
                 elif order:
@@ -195,9 +204,9 @@ def main():
                 else:
                     m = re.search(r"(?im)^\s*merk(?:e)? dir(?: bitte)?[:,]?\s*(?:dass\s+)?(.+)$", said)
                     if m and m.group(1).strip().lower() not in ("das", "das bitte", "dies"):
-                        noticed["notes"].append({"text": m.group(1).strip()})
+                        noticed["notes"].append({"text": m.group(1).strip(), "names": []})
                     elif m and given.get("answer"):
-                        noticed["notes"].append({"text": str(given["answer"])[:200]})
+                        noticed["notes"].append({"text": str(given["answer"])[:200], "names": []})
                     f = re.search(r"(?im)^\s*vergiss[:,]?\s*(?:dass\s+)?(.+)$", said)
                     if f:
                         noticed["forget"] = [k["id"] for k in given.get("known") or [] if f.group(1).strip().lower() in str(k.get("text") or "").lower()]

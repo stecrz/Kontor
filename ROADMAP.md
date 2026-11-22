@@ -92,7 +92,7 @@ anhängen – nie löschen.
   (ein kleines drittes Modell auf diesem Mac, abgeschirmt wie die anderen; ohne es nach Wörtern) – derselbe Baustein dient danach
   auch der Hilfe- und der Umsatzsuche. (teilweise umgesetzt in 3.16.71: verschlüsselte Ablage, Liste in den Einstellungen,
   Steckbrief in jeder Anfrage, Sicherung, Protokoll; 3.16.81: Merken aus dem Chat; 3.16.93: Suche nach Wörtern; 3.16.97:
-  nach Bedeutung; 3.16.98: Suche in Verläufen)
+  nach Bedeutung; 3.16.98: Suche in Verläufen; 3.16.99: Hilfe und Umsätze im Assistenten – die Suchfelder der Seiten noch nach Wörtern)
 - **Update-Prüfung:** Bevor ein Update installiert wird, liest die installierte Version die neuen Dateien – ohne etwas davon
   auszuführen – und vergleicht, was über das Programm hinausreicht: Netz, andere Programme, nachgeladener Code, Umwege dorthin,
   Internet-Adressen, Orte, von denen aus der Mac Programme startet, Helfer und Skripte, die Abschirm-Regeln und die Prüfung selbst.
@@ -191,7 +191,10 @@ Fertig, wenn
     3.16.98: eigenes verschlüsseltes Suchverzeichnis (`memory-chats-*.json`), mit jeder Antwort nachgeführt, ältere Verläufe im
     Hintergrund; über `recall` (Wörter und Bedeutung); auch Unterhaltungen mit Belegtext nur mit den Fragen; gelöschte Verläufe
     und vergessene Notizen räumen mit auf.
-  - [ ] Bedeutungssuche auch für Hilfe und Umsätze.
+  - [x] Bedeutungssuche auch für Hilfe und Umsätze. 3.16.99: im Assistenten (`search_help`, `search_transactions` – Funde nach
+    Bedeutung gekennzeichnet), Einbettungen im Hintergrund; dazu benennt das Modell Namen in von Hand angelegten Notizen (Filter
+    der Internetsuche). Offen: die Suchfelder der Hilfe- und der Umsatzseite suchen weiter nach Wörtern (nach Wunsch mit demselben
+    Baustein). Am Mac prüfen: Schwelle für Umsätze (`memory.SEM_MIN`) mit echten Gegenparteien.
 - **Hinweise von selbst:** nach jedem Abgleich prüft Kontor (fester Code) auf Auffälliges – gestiegene Ausgaben, ungewöhnliche
   Umsätze, Fristen (Voranmeldung, Zinsbindung), Liquidität, offene Kategorien, Sicherheitslage (Zugang, Freigaben, Updates) –
   und zeigt es unter Offenes; der Assistent erklärt und ordnet ein, Gemerktes zählt (bekannter Grund, kein Alarm);

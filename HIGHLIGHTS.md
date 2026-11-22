@@ -10,7 +10,7 @@ Einstellungen → Updates zeigt den Überblick vor den einzelnen Versionen; die 
 - Diktieren bis zehn Minuten, live im Textfeld; Rechtsklick auf Zahl, Zeile oder Grafik: „Kurz erklären“, „Im Chat fragen“, kopieren
 - Eigene Mac-App „Kontor“: Menüleiste, Suche mit ⌘F, Downloads, Mikrofon ohne erneute Nachfrage
 - Updates: jede neue Version vor dem Installieren gelesen – neue Netzzugriffe oder Programmaufrufe warten auf deine Freigabe
-- KI-Assistent: Gedächtnis (Notizen, das Passende kommt zur Frage – nach Wörtern und Bedeutung, verschlüsselt); sucht selbst nach neueren Modellen
+- KI-Assistent: Gedächtnis – Passendes kommt zur Frage, nach Wörtern und Bedeutung, auch aus Verläufen, Hilfe, Umsätzen; sucht neuere Modelle
 
 ## 3.16
 - KI-Assistent (Alpha): Sprachmodell nur auf diesem Mac, ohne Netz – liest alle Auswertungen, zeigt Ansichten, trägt Werte nach deinem Klick ein

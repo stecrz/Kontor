@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.99 (2026-11-22 09:19)
+- KI-Assistent: findet in Hilfe und Umsätzen auch nach Bedeutung – Funde so gekennzeichnet
+- Gedächtnis: Namen in von Hand angelegten Notizen gehen nie in eine Internetsuche (vom Modell erkannt)
+- KI-Assistent: eine Frage direkt nach einer Antwort wird nicht mehr abgelehnt, während Kontor noch nachbereitet
+
 ## 3.16.98 (2026-11-22 07:34)
 - KI-Assistent: sucht bei Bedarf auch in gespeicherten Verläufen – nach Wörtern und Bedeutung
 - Verläufe: eigenes verschlüsseltes Suchverzeichnis; aus Unterhaltungen mit Internet- oder Belegtext nur deine Fragen
