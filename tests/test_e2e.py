@@ -3243,8 +3243,9 @@ class BrowserTest(unittest.TestCase):
                   const shown = s.filter(x => !x.closest('.cl-older'));
                   return {shown: shown.map(x => x.dataset.series), older: s.length - shown.length, first: shown[0].querySelector(':scope > .cl li').offsetHeight,
                           open: shown.some(x => x.querySelector('.cl-versions').open), folded: !document.querySelector('.cl-older').open}; })()""")
-                self.assertEqual(len(cl["shown"]), 3); self.assertEqual(cl["shown"][0], changelog.series_of(updates.current_version()))
+                self.assertEqual(len(cl["shown"]), 3); self.assertEqual(cl["shown"][0], changelog.release_of(updates.current_version()))
                 self.assertGreater(cl["first"], 0); self.assertFalse(cl["open"]); self.assertTrue(cl["folded"]); self.assertGreater(cl["older"], 0)
+                self.assertEqual(pg.evaluate("document.querySelector('.cl-series').classList.contains('wip')"), not updates.current_version().endswith(".0"))   # steps: in progress
                 pg.click(".cl-series .cl-versions > summary")
                 pg.wait_for_function("document.querySelector('.cl-series .cl-versions').open")
                 self.assertIn(updates.current_version(), pg.inner_text(".cl-series .cl-versions h4"))   # newest first

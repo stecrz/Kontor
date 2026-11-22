@@ -1,6 +1,8 @@
-"""What changed in Kontor, for the page Settings -> Updates: the versions of CHANGELOG.md grouped by major version (3.16,
-3.15 ...), each with its short overview from HIGHLIGHTS.md. Reads only these two files of the program folder -- kept apart from
-updates.py, the updater, which an update checks with special care."""
+"""What changed in Kontor, for the page Settings -> Updates: the versions of CHANGELOG.md grouped by major version, each
+with its short overview from HIGHLIGHTS.md. A major version X.Y.0 closes the steps before it: 3.17 holds 3.16.1 ... 3.17.0
+(the sub-versions are steps towards the next major version, which brings them after a final review); steps whose major
+version is not out yet are "in progress". Reads only these two files of the program folder -- kept apart from updates.py,
+the updater, which an update checks with special care."""
 from __future__ import annotations
 
 import os
@@ -22,10 +24,14 @@ SERIES_RE = re.compile(r"^##\s+v?(\d+\.\d+)\s*$")          # HIGHLIGHTS.md: "## 
 BULLET_RE = re.compile(r"^\s*[-*]\s+\S")
 
 
-def series_of(version: str) -> str:
-    """Hauptversion: 3.16.53 -> 3.16, 3.0 -> 3.0."""
-    nums = re.findall(r"\d+", version or "")
-    return ".".join((nums + ["0"])[:2]) if nums else ""
+def release_of(version: str) -> str:
+    """The major version a version belongs to: 3.16.0 -> 3.16 (it closes the steps before it), 3.16.53 -> 3.17 (a step
+    towards it), 3.0 -> 3.0."""
+    nums = [int(x) for x in re.findall(r"\d+", version or "")[:3]]
+    if not nums:
+        return ""
+    major, minor, step = (nums + [0, 0])[:3]
+    return "%d.%d" % (major, minor + 1 if step else minor)
 
 
 def highlights(text: str) -> Dict[str, List[str]]:
@@ -44,18 +50,19 @@ def highlights(text: str) -> Dict[str, List[str]]:
 
 
 def group_changelog(text: str, hl_text: str = "") -> List[Dict[str, object]]:
-    """Alle Versionen nach Hauptversion (neueste zuerst): Zeitraum (Datum der aeltesten bis neuesten Version), Anzahl,
-    der Ueberblick aus HIGHLIGHTS.md (fehlt er: die haeufigsten Bezuege als "topics", ohne Entwicklung) und die Abschnitte
-    der einzelnen Versionen als Markdown (wie in CHANGELOG.md)."""
+    """All versions by major version (newest first): first and last version, whether the major version itself is out
+    ("released"), period (date of the oldest to the newest version), count, the overview from HIGHLIGHTS.md (none: the
+    topics named most often, no development) and the sections of the single versions as Markdown (as in CHANGELOG.md)."""
     hl = highlights(hl_text)
     groups: Dict[str, Dict[str, object]] = {}
     for part in re.split(r"\n(?=##\s)", "\n" + (text or "")):
         m = HEADING_RE.match(part)
-        s = series_of(m.group(1)) if m else ""
+        s = release_of(m.group(1)) if m else ""
         if not s:
             continue
-        g = groups.setdefault(s, {"series": s, "parts": [], "dates": [], "topics": {}})
+        g = groups.setdefault(s, {"series": s, "parts": [], "versions": [], "dates": [], "topics": {}})
         g["parts"].append(part.strip())
+        g["versions"].append(m.group(1).lstrip("v"))
         if m.group(2):
             g["dates"].append((_vtuple(m.group(1)), m.group(2)))
         for line in part.splitlines()[1:]:
@@ -68,7 +75,9 @@ def group_changelog(text: str, hl_text: str = "") -> List[Dict[str, object]]:
         g = groups[s]
         dates = sorted(g["dates"])
         top = sorted(g["topics"].items(), key=lambda kv: -kv[1])[:5]            # stable: equal counts keep the newest first
-        out.append({"series": s, "count": len(g["parts"]), "from": dates[0][1] if dates else "", "to": dates[-1][1] if dates else "",
+        vs = sorted(g["versions"], key=_vtuple)
+        out.append({"series": s, "count": len(g["parts"]), "first": vs[0], "last": vs[-1], "released": _vtuple(vs[-1])[:2] == _vtuple(s)[:2],
+                    "from": dates[0][1] if dates else "", "to": dates[-1][1] if dates else "",
                     "highlights": hl.get(s, []), "topics": [] if hl.get(s) else [k for k, _ in top], "text": "\n\n".join(g["parts"])})
     return out
 

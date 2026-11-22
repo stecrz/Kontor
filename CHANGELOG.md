@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.77 (2026-11-22 02:05)
+- Updates: Hauptversion schließt die Schritte davor ab – 3.17 zeigt, was 3.16.1 bis 3.17.0 bringen; die kommende als „in Arbeit“
+- Updates: Versionsspanne je Hauptversion beim Aufklappen („Alle 24 Versionen (3.15.1 bis 3.16.0)“); Überblicke neu zugeordnet
+- Entwicklung: große Themen der Unterversionen 3.16.x unter „## 3.17“ in HIGHLIGHTS.md
+
 ## 3.16.76 (2026-11-22 02:01)
 - KI-Assistent: Internetrecherche fragt nur noch einmal – eine Karte mit allen Abrufen, jeder abwählbar, ein Klick gibt sie frei
 - KI-Assistent: höhere Stufe als Reserve „nur falls nötig“; bis zu 3 Treffer lesen mit derselben Freigabe, ohne zweite Karte

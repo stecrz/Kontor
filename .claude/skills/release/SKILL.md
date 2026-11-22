@@ -31,8 +31,8 @@ description: Jede Änderung an Kontor abschließen – prüfen (auch mit Python 
       Deutsch, aus Sicht des Nutzers (was er merkt), keine Technik. Kompakt: je Änderung ein Punkt mit wenigen Stichworten in
       einer Zeile, auf einen Blick lesbar – keine Erklärungen, keine Begründungen. Vorn der Bezug mit Doppelpunkt
       („KI-Assistent: …“; nur Regeln/Tests/CI: „Entwicklung: …“ – in der Update-Anzeige ausgeblendet).
-      **Großes neues Thema** (nicht bei kleinen Anpassungen): dazu `HIGHLIGHTS.md` – Überblick der laufenden Hauptversion,
-      höchstens sechs Punkte, je eine Zeile; Gleiches in einen Punkt.
+      **Großes neues Thema** (nicht bei kleinen Anpassungen): dazu `HIGHLIGHTS.md` – Überblick der kommenden Hauptversion
+      (3.16.x unter `## 3.17`), höchstens sechs Punkte, je eine Zeile; Gleiches in einen Punkt.
    3. **Ein Commit:** erst prüfen, dass der frisch geholte `main` in der eigenen Arbeit steckt:
       `git fetch -q origin main && git merge-base --is-ancestor origin/main HEAD` – schlägt das fehl, ist `main` inzwischen
       weiter: zurück zu 1 (das Zusammenfassen auf einen neueren `main` würde dessen Änderungen stillschweigend rückgängig

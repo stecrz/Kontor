@@ -6041,8 +6041,8 @@ function clHtml(md, hv = 'h3') {
   }
   return `<div class="cl">${h}${open ? '</ul>' : ''}</div>`;
 }
-// Changelog by major version (3.16, 3.15 …): its overview always in view, the single versions folded below it;
-// the newest few major versions shown, the older ones folded together
+// Changelog by major version: X.Y.0 closes the steps before it (3.17 = 3.16.1 … 3.17.0), steps whose major version is not
+// out yet are "in progress"; the overview always in view, the single versions folded below it; the newest few shown, older folded
 const CL_SHOWN = 3;
 function clRange(a, b) {
   a = (a || '').slice(0, 10); b = (b || '').slice(0, 10);
@@ -6052,8 +6052,9 @@ function clRange(a, b) {
 }
 function clSeries(g) {
   const sum = g.highlights.length ? clHtml(g.highlights.join('\n')) : g.topics.length ? `<p class="cl-topics">${esc(t('themen_0', g.topics.join(', ')))}</p>` : '';
-  return `<section class="cl-series" data-series="${esc(g.series)}"><h3>${esc(g.series)}<span class="vdate">${clRange(g.from, g.to)}</span></h3>${sum}
-    <details class="cl-versions"><summary>${tn('alle_0_versionen', g.count, g.count)}</summary>${clHtml(g.text, 'h4')}</details></section>`;
+  const span = g.first === g.last ? g.first : t('0_bis_1', g.first, g.last), when = [g.released ? '' : t('in_arbeit'), clRange(g.from, g.to)].filter(Boolean).join(' · ');
+  return `<section class="cl-series${g.released ? '' : ' wip'}" data-series="${esc(g.series)}"><h3>${esc(g.series)}<span class="vdate">${esc(when)}</span></h3>${sum}
+    <details class="cl-versions"><summary>${esc(tn('alle_0_versionen', g.count, span))}</summary>${clHtml(g.text, 'h4')}</details></section>`;
 }
 function clHistory(hist) {
   if (!hist || !hist.length) return '';

@@ -53,7 +53,7 @@ Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhän
    (Apples Version auf dem Mac) –, dann der eine Commit direkt auf `main`. Ein Push kommt ganz oder gar nicht an: eine Version
    erscheint nie halb. GitHub Actions danach für genau diesen Commit abwarten; rot: sofort als nächste Version beheben und dem
    Nutzer in einem Satz Bescheid geben.
-4. `CHANGELOG.md`: neuer Abschnitt oben, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` (Ortszeit des Nutzers, Europe/Berlin), auf Deutsch, kompakt: je Änderung ein kurzer Punkt (Stichworte, eine Zeile), auf einen Blick lesbar – keine Erklärungen. Vorn der Bezug mit Doppelpunkt („KI-Assistent: …“, „Bilanz: …“; nur Regeln, Tests, CI: „Entwicklung: …“) – danach fasst die Update-Anzeige alles seit der installierten Version zusammen (Entwicklung ausgeblendet). Bringt die Version ein großes neues Thema (eines für den Überblick der Hauptversion, keine kleine Anpassung): auch `HIGHLIGHTS.md` unter der laufenden Hauptversion ergänzen oder einen Punkt dort erweitern – höchstens sechs Punkte, je eine Zeile bis 150 Zeichen; diesen Überblick zeigt die Update-Anzeige je Hauptversion vor den einzelnen Versionen (`HighlightsTests`).
+4. `CHANGELOG.md`: neuer Abschnitt oben, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` (Ortszeit des Nutzers, Europe/Berlin), auf Deutsch, kompakt: je Änderung ein kurzer Punkt (Stichworte, eine Zeile), auf einen Blick lesbar – keine Erklärungen. Vorn der Bezug mit Doppelpunkt („KI-Assistent: …“, „Bilanz: …“; nur Regeln, Tests, CI: „Entwicklung: …“) – danach fasst die Update-Anzeige alles seit der installierten Version zusammen (Entwicklung ausgeblendet). Bringt die Version ein großes neues Thema (eines für den Überblick der Hauptversion, keine kleine Anpassung): auch `HIGHLIGHTS.md` unter der kommenden Hauptversion ergänzen oder einen Punkt dort erweitern (Unterversionen sind Schritte zur nächsten: 3.16.x unter `## 3.17`) – höchstens sechs Punkte, je eine Zeile bis 150 Zeichen; diesen Überblick zeigt die Update-Anzeige je Hauptversion vor den einzelnen Versionen (`HighlightsTests`).
 5. Commit und Push selbst erledigen, ohne nachzufragen. Nach dem Push auf `main` nichts nachschieben – eine Korrektur ist eine
    neue Version. Nur Regeln, Tests oder CI geändert: mit der nächsten Version mitnehmen; muss es sofort für die anderen Chats
    gelten, eine eigene Version (Changelog: „Entwicklung: …“).
@@ -109,7 +109,7 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
   - Jede Seite in hell/dunkel, Mac/iPhone ansehen (`ui-check`); alle Verlinkungen und Sprünge, alle Hilfe-Icons und Tooltips
     gegen den heutigen Stand; Texte de/en vollständig und einheitlich.
   - `README.md`, Hilfe (de/en, gleiche Anker) und Hilfe-Bilder (`tests/screenshots.py`) aktualisieren.
-  - `HIGHLIGHTS.md`: Überblick der abgeschlossenen Hauptversion final straffen; Abschnitt der neuen mit ihrem ersten großen Thema anlegen.
+  - `HIGHLIGHTS.md`: Überblick der neuen Hauptversion (was die Schritte seit der letzten gebracht haben) final straffen.
   - Einheitlichkeit: gleiche Dinge überall gleich gelöst (Bedienung, Farben, Begriffe, Cursor); Überflüssiges entfernen.
   - Sicherheit und Datenschutz erneut prüfen (Agent `reviewer` auf den ganzen Stand seit dem letzten großen Sprung).
   - Gefundenes beheben und sinnvoll optimieren; Änderungen mit Geschmacks- oder Produktfrage vor dem Push mit dem Nutzer klären.
