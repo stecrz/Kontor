@@ -29,6 +29,8 @@ jobs:
           - {name: "Cashflow · feste + neue Fälle", tests: tests/test_cashflow.py, fixed: "1000"}
           - {name: "Szenarien · feste + neue Fälle", tests: tests/test_scenarios.py, fixed: "1000"}
           - {name: "Welten (Privatpersonen, Firmen, Beteiligungen) · feste + neue Fälle", tests: tests/test_worlds.py, fixed: "1000"}
+          - {name: "Regelwelten (Beteiligung, Darlehen, Kontenspiegel) 1 · feste + neue Fälle", tests: tests/test_rule_worlds.py, fixed: "1000"}
+          - {name: "Regelwelten (Beteiligung, Darlehen, Kontenspiegel) 2 · neue Fälle", tests: tests/test_rule_worlds.py, fixed: "0"}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3

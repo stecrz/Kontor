@@ -53,6 +53,7 @@ class RuleResult:
     warnings: List[str] = field(default_factory=list)
     info: List[str] = field(default_factory=list)
     preview: List[dict] = field(default_factory=list)     # per rule: target, actual, what is open (interface)
+    waiting: List[str] = field(default_factory=list)     # keys left out with a booking you left out (a loan's interest after it)
 
 
 class Seen:
@@ -243,6 +244,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
     skip, hold = skip or set(), hold or set()
     seen = seen or Seen()
     waits: List[date] = []                               # days of this loan's bookings that wait for you
+    held: List[date] = []                                # ... of those you left out of this approval
     res = RuleResult()
     name = cfg.get("name") or cfg.get("loan_account")
     rule = "Darlehen %s" % name
@@ -305,6 +307,8 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             continue
         if _skipped(hold, loan.uuid, tag) or not seen.new_tx(t):
             waits.append(t.booking_date)
+            if _skipped(hold, loan.uuid, tag):
+                held.append(t.booking_date)
             if auto or _skipped(hold, loan.uuid, tag):
                 continue
         purpose = _fill(texts["repayment_text"], kind=payment_kind(t), date=t.booking_date.strftime("%d.%m.%Y"),
@@ -393,9 +397,18 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             continue
         if _skipped(skip, loan.uuid, tag):
             continue
+        # computed from the balance before it (the month before, or the year before): a booking before that which you left out
+        # of this approval holds it back too -- else it would be booked from a balance without it, and never adjusted later.
+        # Not with a base you set for the year (it does not come from the balance)
+        if not (modell == "yearly_base" and str(y) in overrides) and any(h < (date(y, 1, 1) if modell == "yearly_base" else date(y, m, 1)) for h in held):
+            held.append(bday)
+            res.waiting.append(bkey(loan.uuid, tag))
+            continue
         new = (seen.after(bday) or (buchungstag == "with_payment" and pay is not None and seen.new_tx(pay))) and not any(w <= bday for w in waits)
         if not new or _skipped(hold, loan.uuid, tag):
             waits.append(bday)
+            if _skipped(hold, loan.uuid, tag):
+                held.append(bday)
             if auto or _skipped(hold, loan.uuid, tag):
                 continue
         if modell == "yearly_base":
@@ -897,7 +910,7 @@ def plan_all(ledger: Ledger, config: dict, today: date, hold: Optional[set] = No
         for pv in r.preview:                          # what the rule would book (shown in the interface on a click), at most 300
             pv.setdefault("items", [{"date": p.booking_date.isoformat(), "account": p.account_path, "amount": round(p.amount, 2),
                                      "purpose": p.purpose, "older": bool(p.retro)} for p in r.proposals[:300]])
-        total.proposals += r.proposals; total.info += r.info; total.preview += r.preview
+        total.proposals += r.proposals; total.info += r.info; total.preview += r.preview; total.waiting += r.waiting
         total.warnings += [w for w in r.warnings if w not in total.warnings]          # a waiting company: named once
     # order: loans first (they change the values of the companies), then mirrors and participations
     for i, cfg in enumerate(config.get("loans", []) or []):

@@ -4591,14 +4591,14 @@ async function vSync() {
 // ---------------------------------------------------------------- Buchungen (Laeufe)
 // approval: your changes and the bookings left out, until the next check; calc = the list recalculated for them (a booking
 // left out or changed moves every later balance, so the next value adjustment of that account takes up the difference)
-const BOOK = {time: null, edits: {}, off: new Set(), runs: null, calc: null, extra: {}, editing: new Set(), seq: 0};
+const BOOK = {time: null, edits: {}, off: new Set(), runs: null, calc: null, waits: new Set(), extra: {}, editing: new Set(), seq: 0};
 // the rows shown: the waiting list, new ones from the recalculation, each with the amount it books now
 function bkRows(l) {
   const base = l.proposals || [], inBase = new Set(base.map(v => v.key)), calc = BOOK.calc ? new Map(BOOK.calc.map(r => [r.key, r])) : null;
   return base.concat(Object.values(BOOK.extra).filter(x => !inBase.has(x.key))).map(v => {
     const k = v.key || '', off = BOOK.off.has(k), e = BOOK.edits[k] || {}, cur = calc && !off ? calc.get(k) : null;
     const gone = !!(calc && k && !off && !cur), b = e.amount ?? (cur ? cur.amount : v.amount);
-    return {v, k, off, e, gone, b, new: !inBase.has(k), adjusted: !!(cur && e.amount == null && inBase.has(k) && Math.abs(cur.amount - v.amount) >= 0.005)};
+    return {v, k, off, e, gone, waits: gone && BOOK.waits.has(k), b, new: !inBase.has(k), adjusted: !!(cur && e.amount == null && inBase.has(k) && Math.abs(cur.amount - v.amount) >= 0.005)};
   });
 }
 // folded sections that stay open while the page is drawn again (e.g. "Not booked" while booking several again)
@@ -4657,7 +4657,7 @@ async function bkRecalc() {
     const r = await api('/api/bookings/plan', {hold: [...BOOK.off], changes: edits});
     if (my !== BOOK.seq) return;                    // a newer change is on its way
     const inBase = new Set((l.proposals || []).map(v => v.key));
-    BOOK.calc = r.proposals || null;
+    BOOK.calc = r.proposals || null; BOOK.waits = new Set(r.waiting || []);
     BOOK.extra = Object.fromEntries(Object.entries(BOOK.extra).filter(([k]) => BOOK.off.has(k)));
     (BOOK.calc || []).forEach(x => { if (!inBase.has(x.key)) BOOK.extra[x.key] = x; });
     route();
@@ -4688,11 +4688,11 @@ function vBuchungen(runs) {
         Object.assign(BOOK, {time: l.time, edits: {}, off: new Set(noted), calc: null, extra: {}, editing: new Set(), needCalc: noted.length > 0}); }
       const plain = txt => String(txt || '').replace(/\s*·?\s*#kontor-[a-z]+-[A-Za-z0-9-]+/g, '').trim();
       h += `<div class="wrap auto"><table class="plain bk-table"><thead><tr>${pick ? `<th class="c"><input type="checkbox" id="bk-all" ${BOOK.off.size || bkRows(l).some(r => r.gone) ? '' : 'checked'} aria-label="${esc(t('alle'))}"></th>` : ''}<th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>`
-        + bkRows(l).map(({v, k, off, e, gone, b, neu, adjusted}) => {
+        + bkRows(l).map(({v, k, off, e, gone, waits, b, new: neu, adjusted}) => {
           const d = e.date ?? v.date, z = e.purpose ?? plain(v.text), changed = Object.keys(e).length > 0, loan = v.kind === 'repayment' || v.kind === 'interest';
           const pills = (changed ? ` <span class="pill info">${t('geaendert')}</span>` : '') + (adjusted ? ` <span class="pill info" title="${esc(t('angepasst_tip'))}">${t('angepasst')}</span>` : '')
             + (neu ? ` <span class="pill info" title="${esc(t('neu_dazu_tip'))}">${t('neu_dazu')}</span>` : '')
-            + (!ask && v.retroactive ? ` <span class="pill neutral" title="${esc(t('aelter_tip'))}">${t('aelter')}</span>` : '') + (v.note ? ` <span class="pill warn">${t('bk_pruefen')}</span>` : '') + (gone ? ` <span class="pill neutral" title="${esc(t('entfaellt_tip'))}">${t('entfaellt')}</span>` : '');
+            + (!ask && v.retroactive ? ` <span class="pill neutral" title="${esc(t('aelter_tip'))}">${t('aelter')}</span>` : '') + (v.note ? ` <span class="pill warn">${t('bk_pruefen')}</span>` : '') + (gone ? ` <span class="pill neutral" title="${esc(t(waits ? 'bk_wartet_tip' : 'entfaellt_tip'))}">${t(waits ? 'bk_wartet' : 'entfaellt')}</span>` : '');
           return `<tr data-key="${esc(k)}" class="${off || gone ? 'off' : ''}${gone ? ' gone' : ''}${BOOK.editing.has(k) ? ' editing' : ''}">${pick ? `<td class="c">${k ? `<input type="checkbox" class="bk-on" title="${esc(t('bk_on_tip'))}" ${off || gone ? '' : 'checked'}${gone ? ' disabled' : ''}>` : ''}</td>` : ''}`
             + `<td style="white-space:nowrap"><span class="${loan ? 'v' : ''}">${FD(d)}</span>${loan ? `<input type="date" class="bk-d e" value="${esc(d)}">` : ''}</td><td>${acctCell(v.account_name || v.account, v.account_id)}</td><td>${esc(artL[v.kind] || v.kind)}</td>`
             + `<td class="num ${b < 0 ? 'neg' : 'pos'}"><span class="${loan ? 'v' : ''}">${F(b)}</span>${loan ? `<input type="number" step="0.01" class="bk-b e" value="${b}">` : ''}</td>`

@@ -967,12 +967,15 @@ def proposal_rows(ledger: Ledger, proposals: List[Proposal]) -> List[dict]:
 
 
 def plan_pending(ledger: Ledger, config: dict, state: dict, today: date, hold: Optional[set] = None,
-                 edits: Optional[Dict[str, dict]] = None) -> List[dict]:
+                 edits: Optional[Dict[str, dict]] = None, waiting: Optional[List[str]] = None) -> List[dict]:
     """The approval list with your selection: what you leave out or change, and everything planned after it, recalculated
-    (nothing is written)."""
+    (nothing is written). waiting receives the keys left out with what you left out (a loan's interest after it)."""
     lg = ledger.fork()
     seen = rules.Seen.from_state(state.get("seen"), lg, today)
-    return proposal_rows(lg, _plan_round(lg, config, today, seen, hold, edits).proposals)
+    res = _plan_round(lg, config, today, seen, hold, edits)
+    if waiting is not None:
+        waiting.extend(res.waiting)
+    return proposal_rows(lg, res.proposals)
 
 
 def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal], made: Optional[List[Proposal]] = None,

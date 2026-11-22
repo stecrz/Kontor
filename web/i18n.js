@@ -1857,6 +1857,8 @@ const I18N = {
 "neu_dazu_tip":["Kommt durch deine Auswahl dazu: die Differenz, die sonst offen bliebe.", "Added by your selection: the difference that would otherwise stay open."],
 "entfaellt":["entfällt", "not needed"],
 "entfaellt_tip":["Mit deiner Auswahl nicht mehr nötig – der Wert stimmt dann schon.", "Not needed with your selection – the value is already right then."],
+"bk_wartet":["wartet", "waits"],
+"bk_wartet_tip":["Wartet auf die abgewählte Buchung davor – die Zinsen kommen aus dem Saldo davor. Kommt mit ihr wieder.", "Waits for the booking before it that you left out – the interest comes from the balance before. Comes back with it."],
 "freigabe_aktualisieren_tip":["Liest nur die Konten neu, die die Buchungsregeln betreffen, und rechnet die Freigabe neu – schneller als „Sync“, bucht nichts.", "Reads only the accounts the booking rules concern and recalculates the approval list – quicker than “Sync”, books nothing."],
 "aktualisiert_0":["Aktualisiert – keine Buchung nötig.", "Refreshed – no booking needed."],
 "aktualisiert_1":["Aktualisiert – 1 Buchung wartet auf Freigabe.", "Refreshed – 1 booking waiting for approval."],

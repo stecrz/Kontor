@@ -1022,6 +1022,8 @@ class AppTests(_AppBase):
         code, r = self.call("/api/bookings/plan", {"hold": [k], "changes": {}})
         self.assertEqual(code, 200); rows = {p["key"]: p["amount"] for p in r["proposals"]}
         self.assertNotIn(k, rows); self.assertEqual(len(MockBridge.state["txs"]), n_txs)
+        # what waits for it is named (a loan's interest after it): exactly the interest gone from the list
+        self.assertEqual(sorted(r["waiting"]), sorted(p["key"] for p in props if p["kind"] == "interest" and p["key"] not in rows))
         moved = [x for x in props if x["key"] in rows and abs(rows[x["key"]] - x["amount"]) >= 0.005]
         self.assertEqual([x["kind"] for x in moved], ["value"])
         self.assertEqual(self.call("/api/bookings/plan", {"hold": ["rm -rf"]})[0], 400)
@@ -4430,12 +4432,20 @@ class BrowserTest(unittest.TestCase):
                 self.assertIsNone(pg.query_selector("#run-dry"))              # checked at every sync, no button of its own
                 # the approval list with your selection: left out, recalculated (adjusted), new, not needed any more
                 rows = pg.evaluate("""() => { const sv = {...BOOK}, A = 'a|#kontor-wert-20260131-1', B = 'a|#kontor-wert-20260228-1', C = 'a|#kontor-wert-20260331-1', D = 'a|#kontor-wert-20260430-1';
-                    Object.assign(BOOK, {off: new Set([A]), edits: {}, calc: [{key: B, amount: 150}, {key: C, amount: 5}], extra: {}});
+                    Object.assign(BOOK, {off: new Set([A]), edits: {}, calc: [{key: B, amount: 150}, {key: C, amount: 5}], waits: new Set(), extra: {}});
                     BOOK.extra[C] = {key: C, amount: 5};
                     const r = bkRows({proposals: [{key: A, amount: 50}, {key: B, amount: 100}, {key: D, amount: 7}]});
                     Object.assign(BOOK, sv); return r.map(x => [x.k.slice(-10), x.off, x.gone, x.b, x.adjusted, x.new]); }""")
                 self.assertEqual(rows, [["20260131-1", True, False, 50, False, False], ["20260228-1", False, False, 150, True, False],
                                         ["20260430-1", False, True, 7, False, False], ["20260331-1", False, False, 5, False, True]])
+                # ... as the table shows it: a loan's interest after a repayment you left out waits (it comes back with it), what
+                # the recalculation adds is new
+                pills = pg.evaluate("""() => { const sv = {...BOOK}, R = 'aaaaaaaa-1|#kontor-tx-1', Z = 'aaaaaaaa-1|#kontor-zins-2026-10', W = 'bbbbbbbb-2|#kontor-wert-1';
+                    const P = (k, kind) => ({key: k, kind, date: '2026-10-01', amount: 5, text: 't', account: 'X', account_name: 'X'});
+                    try { Object.assign(BOOK, {time: 'T-wait', off: new Set([R]), edits: {}, calc: [{key: W, amount: 5}], waits: new Set([Z]), extra: {[W]: P(W, 'value')}});
+                      const d = document.createElement('div'); d.innerHTML = vBuchungen({last_run: {time: 'T-wait', dry_run: true, proposals: [P(R, 'repayment'), P(Z, 'interest')]}, history_source: [], created_at: [], not_book: []});
+                      return [...d.querySelectorAll('tbody tr[data-key]')].map(r => [r.dataset.key, [...r.querySelectorAll('.pill')].map(p => p.textContent)]); } finally { Object.assign(BOOK, sv); } }""")
+                self.assertEqual(pills, [["aaaaaaaa-1|#kontor-tx-1", []], ["aaaaaaaa-1|#kontor-zins-2026-10", ["wartet"]], ["bbbbbbbb-2|#kontor-wert-1", ["neu"]]])
                 # a new list: what carries a note (a counterpart entered by hand?) starts not chosen -- ticked by you
                 ini = pg.evaluate("""() => { const sv = {...BOOK}; try { const h = vBuchungen({last_run: {time: 'T-note', dry_run: true, proposals: [
                       {key: 'aaaaaaaa-1|#kontor-gk-1', kind: 'mirror', date: '2026-10-01', amount: 5, text: 'x', note: 'Prüfen: …', pair: 'bbbbbbbb-2|#kontor-gk-2'},

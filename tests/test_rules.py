@@ -926,6 +926,33 @@ class StatelessLoanTests(unittest.TestCase):
         self.assertNotIn(t3.key, [p.key for p in res.proposals])
         self.assertEqual([p.booking_date for p in res.proposals if p.kind == "interest" and p.retro], [date(2026, m + 1, 1) - timedelta(days=1) for m in range(3, 11)])      # March to October
         self.assertFalse([p for p in res.proposals if p.kind == "interest" and p.booking_date < date(2026, 3, 1) and p.retro])
+        # interest from the debt at the end of the month before: left out with the repayment before it -- booked now it would
+        # count the debt without it, and booked interest is never adjusted (March's own interest comes from February's debt)
+        monthly = loan_cfg(interest={"model": "remaining_debt_monthly", "rate_list": [{"from_date": "2025-11-20", "percent": 3.0}], "booking_day": "ultimo"})
+        res = plan_loan(led.fork(), monthly, today, seen=Seen(0, date(2000, 1, 1)), hold={t3.key})
+        self.assertEqual([p.booking_date for p in res.proposals if p.kind == "interest"], [date(2026, m + 1, 1) - timedelta(days=1) for m in range(1, 4)])
+        self.assertTrue([p for p in res.proposals if p.kind == "repayment" and p.booking_date > date(2026, 3, 1)])   # the repayments after it stay
+        full = {p.booking_date: p.key for p in plan_loan(led.fork(), monthly, today).proposals if p.kind == "interest"}
+        self.assertEqual(sorted(res.waiting), sorted(k for d, k in full.items() if d > date(2026, 3, 31)))     # named: shown as waiting
+        # an interest left out itself: the ones after it wait for it (each is booked into the loan's account)
+        res = plan_loan(led.fork(), monthly, today, seen=Seen(0, date(2000, 1, 1)), hold={full[date(2026, 6, 30)]})
+        self.assertEqual([p.booking_date for p in res.proposals if p.kind == "interest"], [date(2026, m + 1, 1) - timedelta(days=1) for m in range(1, 6)])
+        # with the payment: March's interest on the day of March's payment comes from February's debt -- it stays
+        paid = dict(monthly, interest=dict(monthly["interest"], booking_day="with_payment"))
+        res = plan_loan(led.fork(), paid, today, seen=Seen(0, date(2000, 1, 1)), hold={t3.key})
+        self.assertEqual([p.booking_date for p in res.proposals if p.kind == "interest"], [date(2026, m, 1) for m in range(1, 4)])
+        # the year's base is the debt on 31 December: a repayment left out in the year before holds the whole year's interest
+        early = make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today, extra=[F.tx("ga.kk", date(2025, 12, 10), -6000.0, "Verkäufer", F.ANNUITY_TEXT, "", F.SELLER_IBAN)]))
+        res = plan_loan(early.fork(), loan_cfg(from_date="2025-12-01"), today)
+        self.assertEqual(len([p for p in res.proposals if p.kind == "interest"]), 10)                     # January to October
+        dec = next(p for p in res.proposals if p.kind == "repayment" and p.booking_date == date(2025, 12, 10))
+        res = plan_loan(early.fork(), loan_cfg(from_date="2025-12-01"), today, seen=Seen(0, date(2000, 1, 1)), hold={dec.key})
+        self.assertEqual([p for p in res.proposals if p.kind == "interest"], [])
+        # ... not with a base you set for the year (it does not come from the balance)
+        fixed = loan_cfg(from_date="2025-12-01", interest=dict(loan_cfg()["interest"], base_override={"2026": 1000000.0}))
+        res = plan_loan(early.fork(), fixed, today, seen=Seen(0, date(2000, 1, 1)), hold={dec.key})
+        self.assertEqual([p.amount for p in res.proposals if p.kind == "interest"], [-2500.0] * 10)
+        self.assertEqual(len([p for p in res.proposals if p.kind == "repayment"]), 11)                   # January to November
         # "Don't book" (settings): never proposed
         cfg = {"loans": [loan_cfg()], "not_book": [{"key": t3.key}]}
         self.assertNotIn(t3.key, [p.key for p in plan_all(make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(today)), cfg, today).proposals])

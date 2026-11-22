@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.79 (2026-11-22 02:10)
+- Auto-Buchungen: Zinsen nach einer abgewählten Tilgung warten mit, statt aus dem Saldo ohne sie gebucht zu werden – in der Freigabe „wartet“
+- Auto-Buchungen: Kennzeichen „neu“ für Buchungen, die die Neuberechnung dazunimmt, wieder sichtbar
+- Entwicklung: Zufallswelten für die Buchungsregeln (Beteiligung, Darlehen, Kontenspiegel), nachts auf zwei weiteren Rechnern
+
 ## 3.16.78 (2026-11-22 02:06)
 - Diktieren: Knopf wird erst rot, wenn das Mikrofon wirklich hört – nach einer Pause dreht er etwa 2 s (so lange braucht macOS), direkt nach einer Aufnahme sofort
 - Diktieren: kein verschluckter Anfang mehr bei der ersten Aufnahme

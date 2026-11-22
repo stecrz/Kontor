@@ -2938,7 +2938,9 @@ def make_handler(app: App):
                     return self._json(200, {"proposals": None})
                 st = app.store.load("state.json", {}) or {}
                 try:
-                    return self._json(200, {"proposals": plan_pending(app.ledger, app.config, st, date.today(), set(hold), edits)})
+                    waits: List[str] = []           # left out with what you left out: shown as waiting, not as not needed
+                    rows = plan_pending(app.ledger, app.config, st, date.today(), set(hold), edits, waits)
+                    return self._json(200, {"proposals": rows, "waiting": waits})
                 except Exception as e:          # the list stays as it was
                     log.warning("Approval list not recalculated (%s)", type(e).__name__)
                     return self._json(409, {"error": tr("s_regeln_fehler") % type(e).__name__})
