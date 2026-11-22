@@ -6015,24 +6015,37 @@ async function readPkgFile(file) {
 }
 
 // ---------------------------------------------------------------- Updates
-function clHtml(md) {
+function clHtml(md, hv = 'h3') {
   // CHANGELOG (Markdown-Ausschnitt): Versionen als Ueberschrift, Punkte als Liste, `Code`, **fett**
   const inl = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
   let h = '', open = false;
   for (const line of md.split('\n')) {
     const v = line.match(/^##\s+(\S+)(?:\s+\((\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\))?/), li = line.match(/^\s*[-*]\s+(.*)/);
-    if (v) { if (open) h += '</ul>'; open = false; h += `<h3>${esc(v[1])}${v[2] ? `<span class="vdate">${t('vom_0', FDT(v[2]))}</span>` : ''}</h3>`; }
-    else if (li) { if (!open) h += '<ul>'; open = true; h += `<li>${inl(li[1])}</li>`; }
+    if (v) { if (open) h += '</ul>'; open = false; h += `<${hv}>${esc(v[1])}${v[2] ? `<span class="vdate">${t('vom_0', FDT(v[2]))}</span>` : ''}</${hv}>`; }
+    else if (li) { if (!open) h += '<ul>'; open = true; h += `<li${/^(Entwicklung|Development)\s*:/.test(li[1]) ? ' class="dev"' : ''}>${inl(li[1])}</li>`; }     // rules, tests, CI: quieter
     else if (line.trim() && !line.startsWith('# ')) { if (open) h += '</ul>'; open = false; h += `<p>${inl(line)}</p>`; }
   }
   return `<div class="cl">${h}${open ? '</ul>' : ''}</div>`;
 }
-// Changelog: the newest version open at the top, older ones folded
-function clSplit(cl) {
-  if (!cl) return '';
-  const parts = cl.split(/\n(?=## )/).filter(p => p.startsWith('## '));
-  if (!parts.length) return '';
-  return `<h2>${t('neueste_aenderungen')}</h2>${clHtml(parts[0])}` + (parts.length > 1 ? `<details class="changelog"><summary>${t('fruehere_aenderungen')}</summary>${clHtml(parts.slice(1).join('\n'))}</details>` : '');
+// Changelog by major version (3.16, 3.15 …): its overview always in view, the single versions folded below it;
+// the newest few major versions shown, the older ones folded together
+const CL_SHOWN = 3;
+function clRange(a, b) {
+  a = (a || '').slice(0, 10); b = (b || '').slice(0, 10);
+  if (!a || !b || a === b) return FD(a || b);
+  const dm = d => LANG === 'en' ? d.slice(8, 10) + '/' + d.slice(5, 7) : d.slice(8, 10) + '.' + d.slice(5, 7) + '.';
+  return (a.slice(0, 4) === b.slice(0, 4) ? dm(a) : FD(a)) + ' – ' + FD(b);
+}
+function clSeries(g) {
+  const sum = g.highlights.length ? clHtml(g.highlights.join('\n')) : g.topics.length ? `<p class="cl-topics">${esc(t('themen_0', g.topics.join(', ')))}</p>` : '';
+  return `<section class="cl-series" data-series="${esc(g.series)}"><h3>${esc(g.series)}<span class="vdate">${clRange(g.from, g.to)}</span></h3>${sum}
+    <details class="cl-versions"><summary>${tn('alle_0_versionen', g.count, g.count)}</summary>${clHtml(g.text, 'h4')}</details></section>`;
+}
+function clHistory(hist) {
+  if (!hist || !hist.length) return '';
+  const old = hist.slice(CL_SHOWN);
+  return `<h2>${t('aenderungen_je_hauptversion')}</h2>${hist.slice(0, CL_SHOWN).map(clSeries).join('')}`
+    + (old.length ? `<details class="cl-older"><summary>${tn('aeltere_hauptversionen_0', old.length, old.length > 1 ? t('0_bis_1', old[0].series, old[old.length - 1].series) : old[0].series)}</summary>${old.map(clSeries).join('')}</details>` : '');
 }
 // An update whose files hold something the installed version cannot do: one line per kind of finding (what and where, the
 // lines of the program behind it), nothing for an update without findings.
@@ -6055,7 +6068,7 @@ async function vUpdates(form) {
     ${upReview(info)}
     ${form || ''}
     ${info && info.notes && info.newer ? `<h2>${t('neu_in_0', esc(info.since && info.since !== info.available ? t('0_bis_1', info.since, info.available) : info.available))}</h2>${clHtml(info.notes)}` : ''}
-    ${clSplit(r.changelog)}
+    ${clHistory(r.history)}
     <div class="note">${t('updates_note', esc('https://github.com/' + ((S.CFG.updates || {}).repo || 'stecrz/Kontor')))}${more('updates')}</div>`;
   return h;
 }

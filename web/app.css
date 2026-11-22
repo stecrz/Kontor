@@ -708,7 +708,13 @@ tr.pos { cursor:pointer; }
 .h-line { fill:none; stroke:var(--accent); stroke-width:1.8; } .h-area { fill:var(--accent); opacity:.12; }
 .card.link { cursor:pointer; transition:box-shadow .15s; } .card.link:hover { box-shadow:0 2px 12px rgba(0,0,0,.12); }
 .up-review { margin:14px 0; display:grid; gap:6px; } .up-find summary { cursor:pointer; } .up-lines { margin:4px 0 2px 16px; display:grid; gap:3px; font-size:12px; } .up-lines code { word-break:break-word; }
-.changelog { margin-top:18px; } .changelog summary { cursor:pointer; font-weight:600; font-size:14px; }
+.cl-series { margin:16px 0 0; } .cl-series > h3 { font-size:15px; margin:0 0 4px; }
+.cl-topics { font-size:13px; color:var(--muted); margin:2px 0; }
+.cl-versions { margin:6px 0 0; } .cl-versions > summary, .cl-older > summary { cursor:pointer; font-size:13px; font-weight:600; color:var(--muted); }
+.cl-versions > summary:hover, .cl-older > summary:hover { color:var(--fg); }
+.cl-versions > .cl { margin:2px 0 4px 5px; padding-left:13px; border-left:2px solid var(--line); }
+.cl h4 { font-size:13px; margin:12px 0 3px; } .cl li.dev { color:var(--muted); } .cl h4 .vdate { font-size:12px; }
+.cl-older { margin-top:20px; } .cl-older > summary { font-size:14px; }
 .cl h3 { font-size:14px; margin:14px 0 4px; } .cl ul { margin:0; padding-left:18px; } .cl li { font-size:13px; line-height:1.45; margin:2px 0; color:var(--fg); }
 .prog-wrap { display:flex; align-items:center; gap:10px; margin-top:10px; } .prog-wrap.hidden { display:none; }
 .prog { flex:0 0 240px; height:6px; background:var(--group); border-radius:3px; overflow:hidden; } .prog i { display:block; height:100%; width:0; background:var(--accent); transition:width .35s linear; }

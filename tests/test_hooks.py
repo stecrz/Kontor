@@ -270,6 +270,13 @@ class PushGuard(unittest.TestCase):
         self.version(self.a, "1.0.2", {"tax.py": "mine and long enough\n", "app.js": "one\nadded by the other chat\nmine too, long\n"})
         self.assertEqual(self.guard(self.a), (0, ""))
 
+    def test_overview_condensed_by_the_next_version_may_go(self):
+        # HIGHLIGHTS.md: a chat extends a point another chat's version just added -- rewritten on purpose, not an older tree
+        self.version(self.b, "1.0.1", {"HIGHLIGHTS.md": "## 1.0\n- KI-Assistent: Diktieren und Diagramme\n"}); self.git(self.b, "push", "-q", "origin", "HEAD:main")
+        self.git(self.a, "pull", "-q", "origin", "main")
+        self.version(self.a, "1.0.2", {"HIGHLIGHTS.md": "## 1.0\n- KI-Assistent: Diktieren, Diagramme, Internetsuche\n"})
+        self.assertEqual(self.guard(self.a), (0, ""))
+
     def test_not_on_the_newest_main_is_locked(self):
         self.version(self.a, "1.0.1", {"tax.py": "mine\n"})
         self.version(self.b, "1.0.1", {"app.js": "two\n"}); self.git(self.b, "push", "-q", "origin", "HEAD:main")

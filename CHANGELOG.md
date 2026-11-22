@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.67 (2026-11-22 01:11)
+- Updates: Änderungen je Hauptversion (3.16, 3.15 …) – kurzer Überblick der großen Themen immer sichtbar, einzelne Versionen aufklappbar
+- Updates: die neuesten drei Hauptversionen offen, ältere zusammengefaltet; Entwicklungs-Punkte blasser
+- Entwicklung: Überblick je Hauptversion in HIGHLIGHTS.md – ein großes neues Thema ergänzt ihn (Regel und Test)
+
 ## 3.16.66 (2026-11-22 00:59)
 - KI-Assistent: Excel-Tabellen (.xlsx) im Chat lesbar – als Raster mit Zelladressen, Summen rechnet Kontor exakt
 - KI-Assistent: Datei ohne Text wird für sich bewertet statt „Lege diesen Beleg ab“; nichts vorgeschlagen

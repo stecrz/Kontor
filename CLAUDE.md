@@ -53,7 +53,7 @@ Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhän
    (Apples Version auf dem Mac) –, dann der eine Commit direkt auf `main`. Ein Push kommt ganz oder gar nicht an: eine Version
    erscheint nie halb. GitHub Actions danach für genau diesen Commit abwarten; rot: sofort als nächste Version beheben und dem
    Nutzer in einem Satz Bescheid geben.
-4. `CHANGELOG.md`: neuer Abschnitt oben, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` (Ortszeit des Nutzers, Europe/Berlin), auf Deutsch, kompakt: je Änderung ein kurzer Punkt (Stichworte, eine Zeile), auf einen Blick lesbar – keine Erklärungen. Vorn der Bezug mit Doppelpunkt („KI-Assistent: …“, „Bilanz: …“; nur Regeln, Tests, CI: „Entwicklung: …“) – danach fasst die Update-Anzeige alles seit der installierten Version zusammen (Entwicklung ausgeblendet).
+4. `CHANGELOG.md`: neuer Abschnitt oben, Überschrift `## X.Y.Z (JJJJ-MM-TT HH:MM)` (Ortszeit des Nutzers, Europe/Berlin), auf Deutsch, kompakt: je Änderung ein kurzer Punkt (Stichworte, eine Zeile), auf einen Blick lesbar – keine Erklärungen. Vorn der Bezug mit Doppelpunkt („KI-Assistent: …“, „Bilanz: …“; nur Regeln, Tests, CI: „Entwicklung: …“) – danach fasst die Update-Anzeige alles seit der installierten Version zusammen (Entwicklung ausgeblendet). Bringt die Version ein großes neues Thema (eines für den Überblick der Hauptversion, keine kleine Anpassung): auch `HIGHLIGHTS.md` unter der laufenden Hauptversion ergänzen oder einen Punkt dort erweitern – höchstens sechs Punkte, je eine Zeile bis 150 Zeichen; diesen Überblick zeigt die Update-Anzeige je Hauptversion vor den einzelnen Versionen (`HighlightsTests`).
 5. Commit und Push selbst erledigen, ohne nachzufragen. Nach dem Push auf `main` nichts nachschieben – eine Korrektur ist eine
    neue Version. Nur Regeln, Tests oder CI geändert: mit der nächsten Version mitnehmen; muss es sofort für die anderen Chats
    gelten, eine eigene Version (Changelog: „Entwicklung: …“).
@@ -81,7 +81,7 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
   Lagebild ein; gegen den Stand auf GitHub: `VERSION` höher, keine Changelog-Zeile von `main` verloren) und
   `.claude/hooks/guard.py` vor jedem `git push` (holt `main` selbst: neuester `main` in der eigenen Arbeit, jeder Commit hebt
   `VERSION` als Zahl, behält alle `## X.Y.Z`-Abschnitte und trägt oben seine eigene Version; keine Zeile, die eine der neuesten
-  Versionen auf `main` gebracht hat, geht verloren – so fiel 3.16.35 auf, das bei richtiger Kette den Code von 3.16.32 zurücksetzte). GitHub prüft die Kette für jeden
+  Versionen auf `main` gebracht hat, geht verloren (außer in `HIGHLIGHTS.md`, das bewusst gestrafft wird – Fremdes dort beim Zusammenführen erhalten) – so fiel 3.16.35 auf, das bei richtiger Kette den Code von 3.16.32 zurücksetzte). GitHub prüft die Kette für jeden
   Push (Job „Versionskette“). Abgelehnt: nicht umgehen (`KONTOR_PUSH_OK=1` nur für eine bewusste Ausnahme, etwa einen
   Tippfehler in einem alten Eintrag), sondern holen, daraufsetzen, neu nummerieren. Anlass: 3.16.9 und 66ad67f (3.16.21) –
   `git reset --soft origin/main` auf altem Stand setzte einen alten Baum auf den neuen `main` und löschte fremde Versionen.
@@ -109,6 +109,7 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
   - Jede Seite in hell/dunkel, Mac/iPhone ansehen (`ui-check`); alle Verlinkungen und Sprünge, alle Hilfe-Icons und Tooltips
     gegen den heutigen Stand; Texte de/en vollständig und einheitlich.
   - `README.md`, Hilfe (de/en, gleiche Anker) und Hilfe-Bilder (`tests/screenshots.py`) aktualisieren.
+  - `HIGHLIGHTS.md`: Überblick der abgeschlossenen Hauptversion final straffen; Abschnitt der neuen mit ihrem ersten großen Thema anlegen.
   - Einheitlichkeit: gleiche Dinge überall gleich gelöst (Bedienung, Farben, Begriffe, Cursor); Überflüssiges entfernen.
   - Sicherheit und Datenschutz erneut prüfen (Agent `reviewer` auf den ganzen Stand seit dem letzten großen Sprung).
   - Gefundenes beheben und sinnvoll optimieren; Änderungen mit Geschmacks- oder Produktfrage vor dem Push mit dem Nutzer klären.
@@ -169,5 +170,6 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
 | `mac_app.py` + `.swift` | Kontors eigene Mac-App: Fenster mit WebKit um die Oberfläche, Menü, Downloads, Mikrofon nur für Kontors Seite; am Mac gebaut (nur bei geänderten Bauteilen) |
 | `web_search.py` / `web_reader.py` | Internetsuche des Assistenten: Quellen und Stufen, Filter gegen eigene Daten, Tavily-Schlüssel und Kontingent / ein Abruf im eigenen, abgeschirmten Prozess |
 | `storage.py`, `auth.py`, `updates.py` + `update_guard.py`, `tls_cert.py` | verschlüsselte Ablage, Anmeldung/Touch ID, Updates (mit der Prüfung der neuen Dateien vor dem Installieren), Zertifikat |
+| `changelog.py` | Änderungen je Hauptversion für Einstellungen → Updates (`CHANGELOG.md` + `HIGHLIGHTS.md`; getrennt vom Updater) |
 | `web/app.js`, `web/i18n.js` | Oberfläche (eine Datei, Seiten über `#…`), Texte |
 | `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_scenarios` (Lebensfälle über Bereiche: Einlagen, Kauf, Darlehen, Auslagen; Monats-/Jahreswechsel, gemischt), `test_worlds` (Zufallswelten: 1–3 Privatpersonen, bis 4 Firmen, Beteiligungen untereinander, Darlehen, PayPal, Miete, Überweisungen zwischen allen – alles geht auf, nichts bleibt unklar; dazu feste Sonderfälle an jeder Art Tag zwischen jeder Art Bereich), `test_categories`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_assistant` (mit `fake_llama.py` statt llama.cpp, Downloads ohne Netz), `test_tables` (Excel lesen: Werte wie in Excel, Ausschnitte, Summen; abgelehnt: alte/geschützte Dateien, Entitäten, Grenzen, Teile außerhalb), `test_web` (Internetsuche ohne Netz: Freigabe, Filter, Hosts, Grenzen, eingeschleuste Befehle), `test_tour` (Rundgang: jede Seite hell/dunkel, Mac/iPhone, de/en – Skriptfehler, Überlaufen, Textschlüssel, Kontrast), `test_fuzz`, `test_privacy`, `test_security` (Sperre, Datenschlüssel, Belegordner; `NothingGoesOut`: welche Teile ins Netz können, zu welchen Hosts, welche Programme sie starten – ein neuer Weg nach außen wird dort eingetragen), `test_update_guard` (Prüfung vor dem Update: untergeschobene Änderungen werden gefunden, gewöhnliche nicht; Warten und Freigabe, Archiv und Git-Klon), `test_hooks` (Lagebild und Push-Sperre der parallelen Chats) |

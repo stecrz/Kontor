@@ -74,16 +74,17 @@ def chain_problems(repo: str, before: str, after: str):
 
 
 def lost_lines(repo: str, base: str, ref: str, recent: int = 8):
-    """Lines the newest versions on main added (code, tests, texts -- not VERSION or CHANGELOG.md) that main still has and the work
-    pushed no longer has: an older tree set on top of main loses them while VERSION and CHANGELOG look right (3.16.35 lost the
-    code of 3.16.32 that way). [(commit, file, line)]."""
+    """Lines the newest versions on main added (code, tests, texts -- not VERSION or CHANGELOG.md, nor HIGHLIGHTS.md, whose lines
+    the next versions condense on purpose) that main still has and the work pushed no longer has: an older tree set on top of
+    main loses them while VERSION and CHANGELOG look right (3.16.35 lost the code of 3.16.32 that way). [(commit, file, line)]."""
     out, have, ours = [], {}, {}
     show = lambda c, f: set(_git(repo, "show", "%s:%s" % (c, f)).stdout.split("\n"))
     for c in _git(repo, "rev-list", "-n", str(recent), base).stdout.split():
         if not _git(repo, "rev-parse", "--verify", "-q", c + "^").stdout.strip():
             continue                                    # the first commit: nothing before it
         cur = None
-        for line in _git(repo, "diff", "-U0", c + "^", c, "--", ".", ":(exclude)VERSION", ":(exclude)CHANGELOG.md").stdout.split("\n"):
+        for line in _git(repo, "diff", "-U0", c + "^", c, "--", ".", ":(exclude)VERSION", ":(exclude)CHANGELOG.md",
+                         ":(exclude)HIGHLIGHTS.md").stdout.split("\n"):
             if line.startswith("+++ "):
                 cur = line[6:] if line.startswith("+++ b/") else None
                 continue

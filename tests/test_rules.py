@@ -526,6 +526,49 @@ class ChangelogTests(unittest.TestCase):
         notes, datum = updates.changelog_section(text, updates.current_version())
         self.assertTrue(notes); self.assertRegex(datum, r"^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$")
 
+    def test_je_hauptversion(self):
+        """Updates page: the versions grouped by major version (numbers, not text: 1.10 before 1.9), newest first; period from
+        the oldest to the newest version; the overview from HIGHLIGHTS.md, without one the topics most often named (no development)."""
+        import changelog
+        cl = ("# X\n\n## 1.10.1 (2026-02-03 09:00)\n- Bilanz: b\n- Entwicklung: Tests\n\n## 1.10.0 (2026-02-01 08:00)\n- KI-Assistent: a\n"
+              "- Bilanz: c\n\n## 1.9.2 (2026-01-20)\n- Belege: x\n\n## 1.9.0\n- Belege: y\n\n## 1.0\n- Anfang\n")
+        hl = "# Überblick\n\n## 1.9\n- Belege: neu\n### Mehr\n- Diktieren\n\n## 1.10\n"        # a sub-heading does not end it
+        g = changelog.group_changelog(cl, hl)
+        self.assertEqual([x["series"] for x in g], ["1.10", "1.9", "1.0"])
+        self.assertEqual([x["count"] for x in g], [2, 2, 1])
+        self.assertEqual((g[0]["from"], g[0]["to"]), ("2026-02-01 08:00", "2026-02-03 09:00"))
+        self.assertEqual((g[1]["from"], g[1]["to"]), ("2026-01-20", "2026-01-20"))          # a version without a date does not count
+        self.assertEqual((g[2]["from"], g[2]["to"]), ("", ""))
+        self.assertEqual(g[1]["highlights"], ["- Belege: neu", "- Diktieren"]); self.assertEqual(g[1]["topics"], [])
+        self.assertEqual(g[0]["highlights"], []); self.assertEqual(g[0]["topics"], ["Bilanz", "KI-Assistent"])  # none written: the topics
+        self.assertTrue(g[0]["text"].startswith("## 1.10.1 (2026-02-03 09:00)\n- Bilanz: b")); self.assertIn("## 1.10.0", g[0]["text"])
+        self.assertNotIn("## 1.9", g[0]["text"])
+        self.assertEqual(changelog.group_changelog("", hl), [])
+        self.assertEqual(changelog.series_of("3.16.53"), "3.16"); self.assertEqual(changelog.series_of("v3.0"), "3.0")
+
+
+class HighlightsTests(unittest.TestCase):
+    """HIGHLIGHTS.md: for every major version in CHANGELOG.md a short overview of its big topics (shown under Updates before
+    the single versions) -- the version that opens a new major version writes its heading and first point."""
+
+    def test_jede_hauptversion_hat_ihren_ueberblick(self):
+        import changelog
+        import updates
+        root = os.path.join(os.path.dirname(__file__), "..")
+        with open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8") as f:
+            cl = f.read()
+        with open(os.path.join(root, "HIGHLIGHTS.md"), encoding="utf-8") as f:
+            hl = changelog.highlights(f.read())
+        series = [g["series"] for g in changelog.group_changelog(cl)]
+        self.assertEqual(series[0], changelog.series_of(updates.current_version()))
+        self.assertFalse([s for s in series if not hl.get(s)], "HIGHLIGHTS.md: Hauptversion ohne Überblick (Abschnitt '## X.Y' mit Punkten)")
+        self.assertFalse([s for s in hl if s not in series], "HIGHLIGHTS.md: Hauptversion, die es im CHANGELOG nicht gibt")
+        for s, points in hl.items():
+            self.assertLessEqual(len(points), 6, "%s: höchstens sechs Punkte – nur die großen Themen" % s)
+            for p in points:
+                self.assertLessEqual(len(p), 150, "%s: ein Punkt, eine Zeile: %s" % (s, p))
+                self.assertNotRegex(p, r"^- (Entwicklung|Development)\s*:", s)
+
 
 class GoalTests(unittest.TestCase):
     """The user's goal for Kontor (ROADMAP.md, CLAUDE.md) must survive parallel chats: a version that drops it fails here."""

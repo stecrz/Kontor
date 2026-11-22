@@ -28,6 +28,7 @@ import mm_bridge  # noqa: E402
 import core  # noqa: E402
 import categorize  # noqa: E402
 import updates  # noqa: E402
+import changelog  # noqa: E402
 from service import App, make_handler  # noqa: E402
 from model import TAG_RE, Ledger, accounts_from_export, fmt_eur, tx_from_export  # noqa: E402
 from storage import Store, load_or_create_master_key  # noqa: E402
@@ -3235,6 +3236,18 @@ class BrowserTest(unittest.TestCase):
                     pg.evaluate("location.hash = '%s'" % h); pg.wait_for_timeout(400)
                     self.assertEqual(pg.evaluate("location.hash"), h); self.assertTrue(pg.query_selector("#main").inner_html().strip(), h)
                     self.assertIsNone(pg.query_selector("#main .banner.err"), h)
+                # Updates: changes by major version -- the newest three with their overview in view, single versions folded
+                # (a click shows them), the older major versions folded together
+                pg.evaluate("location.hash = '#settings/updates'"); pg.wait_for_selector("#main .cl-series .cl li")
+                cl = pg.evaluate("""(() => { const s = [...document.querySelectorAll('#main .cl-series')];
+                  const shown = s.filter(x => !x.closest('.cl-older'));
+                  return {shown: shown.map(x => x.dataset.series), older: s.length - shown.length, first: shown[0].querySelector(':scope > .cl li').offsetHeight,
+                          open: shown.some(x => x.querySelector('.cl-versions').open), folded: !document.querySelector('.cl-older').open}; })()""")
+                self.assertEqual(len(cl["shown"]), 3); self.assertEqual(cl["shown"][0], changelog.series_of(updates.current_version()))
+                self.assertGreater(cl["first"], 0); self.assertFalse(cl["open"]); self.assertTrue(cl["folded"]); self.assertGreater(cl["older"], 0)
+                pg.click(".cl-series .cl-versions > summary")
+                pg.wait_for_function("document.querySelector('.cl-series .cl-versions').open")
+                self.assertIn(updates.current_version(), pg.inner_text(".cl-series .cl-versions h4"))   # newest first
                 # requests the page makes on its own a minute after you last touched it say so (they keep no session open)
                 bg = []
                 pg.on("request", lambda r: bg.append(r.headers.get("x-kontor-background")) if r.url.endswith("/api/status") else None)

@@ -46,6 +46,7 @@ import security_names
 import history_import
 import categorize
 import updates
+import changelog
 import assistant as assistant_mod
 from receipts import Belege, file_status, pattern_problem
 import receipt_text
@@ -2471,7 +2472,7 @@ def make_handler(app: App):
                 return self._json(200, dict(getattr(app, "read_state", {"running": False}), now=time.time()))
             if path == "/api/update/status":
                 return self._json(200, {"info": app.update_info, "verified": app.update_checked, "version": version(), "date": updates.installed_date(),
-                                        "changelog": updates.changelog()})
+                                        "history": changelog.history()})
             if path == "/api/history":
                 return self._json(200, self._historie(q.get("account") or "", q.get("source") if q.get("source") in ("transactions", "balances") else None))
             if path == "/api/securities/lookup":
