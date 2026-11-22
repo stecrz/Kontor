@@ -52,7 +52,7 @@ import receipt_text
 import table_text
 from decimal import ROUND_HALF_UP, Decimal
 from model import norm_cat
-from llm_local import CATALOG, SANDBOXES, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
+from llm_local import CATALOG, SANDBOXES, SPEECH, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
 
 log = logging.getLogger("kontor.assistant")
 
@@ -76,9 +76,11 @@ READ_RIGHTS = ("figures", "transactions", "page")    # one switch in the setting
 RIGHTS_VERSION = 2       # 3.16.28: changes on for everyone (each one only after your click), the help always readable
 SPEECH_STARTS = ("early", "click")                 # the speech model starts at once (with the model, when the assistant opens) or with the click on the microphone
 DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "speech": "", "speech_start": "", "effort": "balanced", "context": auto_context(physical_ram()), "context_auto": True,
-                            "idle_minutes": 30, "sandbox": "strict", "save_chats": True,
+                            "idle_minutes": 30, "sandbox": "strict", "save_chats": True, "check_mode": "daily",
                             "rights": {"figures": True, "transactions": True, "help": True, "page": True, "navigate": True,
                                        "enter_values": True, "categorize": True, "book": True, "rules": True, "receipts": True, "internet": False, "remote": False}}       # changes: each one only with your click on the card
+CHECK_MODES = ("daily", "weekly", "aus")           # looking for newer versions of llama.cpp and the models by itself ("aus": only on your click)
+QUIET_DAYS = 14                                    # llama.cpp gets a new build almost daily: the menu marks it only once the installed one is this old
 PAGES = ("overview", "balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "categories", "accounts", "help")
 # its text is read only from these pages -- never settings, log, setup (nor its own conversation under "assistant")
 PLAN_LIMITS = {"horizon_months": (1, 240), "inflation_percent_pa": (-5, 20), "income_increase_percent_pa": (-20, 50), "expense_increase_percent_pa": (-20, 50),
@@ -141,6 +143,7 @@ def settings(config: dict) -> dict:
     out["idle_minutes"] = max(0, min(240, idle)) if isinstance(idle, int) and not isinstance(idle, bool) else DEFAULTS["idle_minutes"]
     out["sandbox"] = raw["sandbox"] if raw.get("sandbox") in SANDBOXES else DEFAULTS["sandbox"]
     out["save_chats"] = raw["save_chats"] if isinstance(raw.get("save_chats"), bool) else DEFAULTS["save_chats"]
+    out["check_mode"] = raw["check_mode"] if raw.get("check_mode") in CHECK_MODES else DEFAULTS["check_mode"]
     rights = raw.get("rights") if isinstance(raw.get("rights"), dict) else {}
     for k in RIGHTS:
         if isinstance(rights.get(k), bool):
@@ -313,6 +316,8 @@ class Assistant:
         self.hooks = hooks
         self.ai = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir)
         self.speech = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir, role="speech")       # the model that writes down what is dictated
+        self.queue: List[dict] = []                      # "update everything": what is still to come
+        self.looked: Optional[float] = None              # the last look for newer versions (by itself or on your click)
         self.speech_lock = threading.Lock()            # one recording at a time
         self.lock = threading.Lock()
         self.job: Optional[Job] = None
@@ -405,6 +410,7 @@ class Assistant:
                "dictation": bool(ai["runtime"]["installed"] and any(m["installed"] for m in ai["speech"])), "speech_early": self.speech_early()}
         if local:                                       # what is installed, sizes, downloads: only on the Mac
             out.update({k: ai[k] for k in ("platform", "runtime", "models", "speech", "recommended", "checked", "check_error", "disk_free")}, load=ai["job"],
+                       newer=self.newer(), updating=self.updating(),
                        web=web_search.tavily_status(self.app.store),
                        speech_state=self.speech.state if self.speech.proc is not None or self.speech.state == "error" else "stopped", **self.chat_stats(),
                        speech_in_use=self.speech_model(), speech_early_auto=self._speech_fits(), context_auto_value=DEFAULTS["context"],
@@ -416,7 +422,7 @@ class Assistant:
         idle_minutes, sandbox, save_chats, rights{...} ("read": figures, transactions and the page together)."""
         cur = self.settings()
         new = stored(cur)
-        for k in ("enabled", "model", "speech", "speech_start", "effort", "context", "idle_minutes", "sandbox", "save_chats"):
+        for k in ("enabled", "model", "speech", "speech_start", "effort", "context", "idle_minutes", "sandbox", "save_chats", "check_mode"):
             if k in body:
                 new[k] = body[k]
         if isinstance(body.get("rights"), dict):
@@ -451,6 +457,128 @@ class Assistant:
             except ValueError:
                 raise ValueError(tr("s_ki_w_schluessel_ungueltig"))
         return web_search.tavily_status(self.app.store)
+
+    # -- newer versions -----------------------------------------------------------------------------------------------------
+    def look_due(self, now: Optional[float] = None) -> bool:
+        """Is it time to look for newer versions by itself? Only while the assistant is in use (switched on, llama.cpp
+        installed), as often as set, and not while something is being loaded."""
+        st = self.settings()
+        every = {"daily": 86400, "weekly": 7 * 86400}.get(st["check_mode"])
+        if not every or not st["enabled"] or self.updating() or (self.ai.job or {}).get("state") == "running":
+            return False
+        if self.ai.news.get("retry"):
+            every = min(every, 7200)                    # nothing was reached (offline): again in two hours
+        return (self.looked is None or (now or time.time()) - self.looked > every) and bool(self.ai.runtime())
+
+    def look(self, auto: bool = False) -> dict:
+        """Asks for a newer llama.cpp and newer files of the loaded models (LocalAI.check: GitHub and Hugging Face; nothing is
+        loaded). What was loaded while it asked is not named newer; what could not be asked keeps the answer from before;
+        auto (Kontor looked by itself): a failure is not shown on the page -- a look that reached nothing is tried again sooner."""
+        ai = self.ai
+        state = lambda: (ai.runtime().get("tag") or "", {mid: m.get("sha256") for mid, m in ai.models().items()})
+        old, before = ai.news, state()
+        news = ai.check()
+        after = state()
+        if after[0] != before[0]:
+            news.pop("runtime", None)
+        for mid in list(news.get("models") or {}):
+            if after[1].get(mid) != before[1].get(mid):
+                news["models"].pop(mid)
+        if news.get("error"):
+            if not news.get("runtime") and not news.get("models"):
+                news["retry"] = True
+            if "runtime" not in news and old.get("runtime") and after[0] == before[0]:
+                news["runtime"] = old["runtime"]
+            for mid, m in (old.get("models") or {}).items():
+                if mid in after[1] and after[1][mid] == before[1].get(mid):
+                    news.setdefault("models", {}).setdefault(mid, m)
+            if auto:
+                news.pop("error")
+        self.looked = time.time()
+        return news
+
+    def load_model(self, model_id: str = "", repo: str = "", file: str = "") -> dict:
+        """As LocalAI.download_model; a model of your own that is on this Mac can be named by its id alone (its newer file)."""
+        if not repo and not file and all(c["id"] != model_id for c in CATALOG + SPEECH):
+            m = self.ai.models().get(model_id) or {}
+            repo, file = str(m.get("repo") or ""), str(m.get("file") or "")
+        return self.ai.download_model(model_id, repo, file)
+
+    def cancel_load(self) -> None:
+        """Ends what is being loaded -- and with it "update everything" (what is done stays)."""
+        self.queue = []
+        self.ai.cancel_job()
+
+    def newer(self) -> dict:
+        """What the last look found a newer version for: {"items": [{"kind": "runtime" | "model", "id", "name"}] (llama.cpp
+        first; all of it can be updated in one go), "marked": how many of them the menu marks -- the model and the speech model
+        in use, and llama.cpp once the installed build is QUIET_DAYS old (nothing while the assistant is switched off)}."""
+        news = self.ai.news
+        rt_new = bool((news.get("runtime") or {}).get("newer"))
+        mods = [mid for mid, m in (news.get("models") or {}).items() if (m or {}).get("newer")]
+        if not rt_new and not mods:
+            return {"items": [], "marked": 0}
+        st, rt, have = self.settings(), self.ai.runtime(), self.ai.models()
+        items, marked = [], 0
+        if rt and rt_new:
+            items.append({"kind": "runtime", "id": "", "name": "llama.cpp"})
+            try:
+                age = (datetime.now() - datetime.strptime(str(rt.get("installed") or "")[:10], "%Y-%m-%d")).days
+            except ValueError:
+                age = QUIET_DAYS
+            marked += age >= QUIET_DAYS
+        names = {c["id"]: c["name"] for c in CATALOG + SPEECH}
+        used = {st["model"], self.speech_model()}
+        for mid in mods:
+            if mid in have:
+                items.append({"kind": "model", "id": mid, "name": names.get(mid) or str(have[mid].get("name") or mid)})
+                marked += mid in used
+        return {"items": items, "marked": marked if st["enabled"] else 0}
+
+    def updating(self) -> int:
+        """How many steps of "update everything" are still to come (0: none running)."""
+        return len(self.queue)
+
+    def update_all(self) -> int:
+        """Everything a newer version was found for, one after the other -- llama.cpp first, then the models: each loaded and
+        checked exactly as by its own button. A step that fails or is cancelled ends it (what is done stays)."""
+        steps = self.newer()["items"]
+        if not steps:
+            raise ValueError(tr("s_ki_nichts_neues"))
+        with self.lock:
+            if self.queue or (self.ai.job or {}).get("state") == "running":
+                raise ValueError(tr("s_ki_laedt_schon"))
+            self.queue = list(steps)
+        sandbox = self.settings()["sandbox"]
+
+        def run() -> None:
+            try:
+                while True:
+                    with self.lock:
+                        step = self.queue[0] if self.queue else None
+                    if step is None:
+                        break
+                    if step["kind"] == "runtime":
+                        self.ai.install_runtime(sandbox)
+                    elif step["id"] in self.ai.models():        # deleted meanwhile: not loaded again
+                        self.load_model(step["id"])
+                    else:
+                        self.queue = self.queue[1:]
+                        continue
+                    job = self.ai.job
+                    if not self.queue:                          # cancelled just before this step began
+                        self.ai.cancel_job()
+                    while job is not None and job.get("state") == "running":
+                        time.sleep(0.2)
+                    if job is None or job.get("state") != "done" or not self.queue:
+                        break
+                    self.queue = self.queue[1:]
+            except Exception as e:
+                log.warning("Assistant: update of everything stopped (%s)", type(e).__name__)
+            finally:
+                self.queue = []
+        threading.Thread(target=run, name="kontor-ai-update", daemon=True).start()
+        return len(steps)
 
     def stop_all(self) -> None:
         """Ends the answer being written and the models (the one that answers, the one that takes dictation)."""

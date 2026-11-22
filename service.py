@@ -1208,6 +1208,15 @@ class App:
         restart_process(self)
         return True
 
+    def assistant_look(self) -> bool:
+        """Asks for a newer llama.cpp and newer files of the loaded models when it is time (Assistant.look_due) -- in a thread
+        of its own, as the look for Kontor's updates. Nothing is ever loaded by it."""
+        if mm_history.AKTIV.is_set() or not self.assistant.look_due():
+            return False
+        self.assistant.looked = time.time()
+        threading.Thread(target=lambda: self.assistant.look(auto=True), name="kontor-ai-look", daemon=True).start()
+        return True
+
     def scheduler(self) -> None:
         while not self.stop.is_set():
             try:
@@ -1246,6 +1255,7 @@ class App:
                     # eigener Thread: eine haengende Verbindung (offline) blockiert weder Zeitplaner noch Oberflaeche
                     threading.Thread(target=lambda: setattr(self, "update_info", updates.check(up.get("repo") or "stecrz/Kontor")),
                                      name="kontor-update", daemon=True).start()
+                self.assistant_look()
                 if self.tls_ctx is not None and (self.tls_checked is None or time.time() - self.tls_checked > 86400):
                     self.tls_checked = time.time()
                     import tls_cert
@@ -2729,7 +2739,9 @@ def make_handler(app: App):
             if path == "/api/assistant/settings":
                 a.set(body)
             elif path == "/api/assistant/check":
-                a.ai.check()
+                a.look()
+            elif path == "/api/assistant/update-all":           # everything a newer version was found for, one after the other
+                a.update_all()
             elif path == "/api/assistant/runtime/install":
                 a.ai.install_runtime(a.settings()["sandbox"])
             elif path == "/api/assistant/runtime/remove":
@@ -2738,9 +2750,9 @@ def make_handler(app: App):
             elif path == "/api/assistant/model/files":
                 return self._json(200, {"files": a.ai.repo_files(str(body.get("repo") or "").strip())})
             elif path == "/api/assistant/model/download":
-                a.ai.download_model(str(body.get("id") or ""), str(body.get("repo") or "").strip(), str(body.get("file") or "").strip())
+                a.load_model(str(body.get("id") or ""), str(body.get("repo") or "").strip(), str(body.get("file") or "").strip())
             elif path == "/api/assistant/model/cancel":
-                a.ai.cancel_job()
+                a.cancel_load()
             elif path == "/api/assistant/model/delete":
                 mid = str(body.get("id") or "")
                 a.ai.delete_model(mid)

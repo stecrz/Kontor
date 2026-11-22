@@ -84,6 +84,13 @@ anhängen – nie löschen.
   Grenze: Die Prüfung engt den Weg für eine untergeschobene Änderung ein, sie schließt ihn nicht (wer sie kennt, kann sie mit
   Aufwand umgehen); der nächste Schritt wäre, den Dienst selbst in macOS' Sandbox ohne ausgehendes Netz laufen zu lassen.
   (umgesetzt in 3.16.61)
+- **Assistent aktuell halten:** Kontor fragt von selbst – täglich, einstellbar unter KI-Assistent (täglich, wöchentlich, nie),
+  nur solange der Assistent eingeschaltet ist – GitHub nach einem neueren llama.cpp und Hugging Face nach neueren Dateien der
+  geladenen Modelle (auch des Diktiermodells); gesendet wird dabei nichts vom Nutzer, geladen nichts. Gibt es etwas für das Modell
+  oder das Diktiermodell in Gebrauch, zeigt das Menü bei Einstellungen einen Punkt; für llama.cpp erst, wenn die installierte
+  Version zwei Wochen alt ist (es erscheint fast täglich neu). „Alles aktualisieren“ lädt nach einem Klick alles Gefundene
+  nacheinander, jedes geprüft wie einzeln. Installiert wird nie von selbst.
+  (umgesetzt in 3.16.70)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

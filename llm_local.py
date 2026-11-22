@@ -296,7 +296,7 @@ class LocalAI:
         self.base, self.data_dir, self.program_dir, self.role = base_dir, data_dir, program_dir, role
         self.lock = threading.RLock()
         self.job: Optional[dict] = None                # a download in progress (or its end)
-        self.news: dict = {}                           # the last look for newer versions (on your click)
+        self.news: dict = {}                           # the last look for newer versions (by itself or on your click)
         self.proc: Optional[subprocess.Popen] = None
         self.port = 0
         self.key = ""
@@ -363,7 +363,7 @@ class LocalAI:
     def model_path(self, repo: str, file: str) -> str:
         return self._p("models", repo.replace("/", "--"), file)
 
-    # -- looking for newer versions and loading (network, on your click only) ----------------------------------------------
+    # -- looking for newer versions (by itself, as set) and loading (on your click only) ----------------------------------------------
     def latest_runtime(self) -> dict:
         """The newest published release (pre-releases included, drafts not) with a build for this machine."""
         rels, _ = _json_get(RELEASES_URL, GITHUB)

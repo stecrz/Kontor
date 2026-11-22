@@ -197,7 +197,7 @@ const H = {
   updates: t('einzige_netzverbindung_von_kontor_einm'),
   assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_denken: t('h_ki_denken'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
   ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_sp_start: t('h_ki_sp_start'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'),
-  ki_programm: t('h_ki_programm'), ki_modelle: t('h_ki_modelle'), ki_ablage: t('h_ki_ablage'),
+  ki_programm: t('h_ki_programm'), ki_auto_suchen: t('h_ki_auto_suchen'), ki_modelle: t('h_ki_modelle'), ki_ablage: t('h_ki_ablage'),
   darlehen_iban: t('die_rate_wird_am_gegenkonto'),
   darlehen_konto: t('das_manuell_gefuehrte_darlehenskonto_i'),
   darlehen_quelle: t('das_konto_von_dem_die'),
@@ -255,7 +255,7 @@ const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl:
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_sp_start: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_sp_start: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
@@ -970,8 +970,8 @@ function statusMini() {
   // something to do: bookings waiting for approval (count) or a failed run (!), an update (dot) -- in the sidebar and on the app icon
   const waiting = l && l.dry_run && !l.error ? (l.proposals || []).length : 0, notes = l && !l.error && !waiting ? (l.warnings || []).length : 0;
   navBadge('#bookings', l && l.error ? '!' : waiting ? (waiting > 99 ? '99+' : String(waiting)) : notes ? '•' : '', l && l.error ? t('letzter_abgleich_mit_fehler') : waiting ? t('0_buchungsvorschlaege', waiting) : tn('n_hinweise_auto', notes));
-  navBadge('#settings', st.update && st.update.newer ? (upFinds(st.update).length ? '!' : '•') : '', st.update && st.update.newer ? (upFinds(st.update).length ? t('upd_braucht_freigabe', st.update.available) : t('update') + st.update.available + t('verfuegbar')) : '');
-  const mb = $('#menu-btn'); if (mb) mb.classList.toggle('has-badge', !!(waiting || notes || (l && l.error) || (st.update && st.update.newer)));     // narrow window: the sidebar is closed
+  navBadge('#settings', st.update && st.update.newer ? (upFinds(st.update).length ? '!' : '•') : asNewer() ? '•' : '', st.update && st.update.newer ? (upFinds(st.update).length ? t('upd_braucht_freigabe', st.update.available) : t('update') + st.update.available + t('verfuegbar')) : asNewer() ? t('ki_neues_da') : '');
+  const mb = $('#menu-btn'); if (mb) mb.classList.toggle('has-badge', !!(waiting || notes || (l && l.error) || (st.update && st.update.newer) || asNewer()));     // narrow window: the sidebar is closed
   try { if (navigator.setAppBadge) { if (waiting) navigator.setAppBadge(waiting); else navigator.clearAppBadge(); } } catch (e) { /* not supported */ }
   if (!st.storage.encrypted) banner(t('daten_liegen_unverschluesselt_verschlu'), 'err');
   else if (st.storage.key_source === 'file') banner(t('datenschluessel_liegt_als_datei_schlue'));
@@ -1075,6 +1075,7 @@ async function openItems(D) {
   const ue = (D.cashflow.reconciliation || {})[cur]; if (ue && Math.abs(ue.unexplained) > 1) items.push(['warn', t('unerklaerte_vermoegensaenderung_im_lau') + F(ue.unexplained) + t('pruefzeile'), '#cashflow', 'unexplained']);
   for (const w of (D.warnings || []).slice(0, 3)) items.push(['warn', w, '#bookings', '']);
   if (S.STATUS.update && S.STATUS.update.newer) items.push(upFinds(S.STATUS.update).length ? ['warn', t('upd_braucht_freigabe', S.STATUS.update.available), '#settings/updates', ''] : ['info', t('update') + S.STATUS.update.available + t('verfuegbar'), '#settings/updates', '']);
+  if (asNewer()) items.push(['info', t('ki_neues_da'), '#settings/assistant', '']);
   return items;
 }
 
@@ -6834,6 +6835,8 @@ const AS = {st: null, open: false, msgs: [], refs: [], files: [], conv: '', job:
 const AS_HIDDEN = ['settings', 'log', 'setup', 'assistant'];          // pages the assistant never reads
 const asEffort = () => AS.effort || (((AS.st || {}).settings || {}).effort) || 'balanced';          // chosen in the panel for this conversation, else the setting
 const asOn = () => !!(AS.st && AS.st.settings && AS.st.settings.enabled && !OFFLINE.mode);
+// newer versions of llama.cpp or of the models in use, found by the look (only told at the Mac): what the menu marks at Settings
+function asNewer() { return asOn() ? ((AS.st.newer || {}).marked || 0) : 0; }
 const asN = v => Math.round(v).toLocaleString(LOCALE);
 const asRAM = b => (b / 2 ** 30).toLocaleString(LOCALE, {maximumFractionDigits: b >= 10 * 2 ** 30 ? 0 : 1}) + ' GB';          // memory as the Mac names it (64 GB)
 const asGB = b => b < 5e7 ? Math.round(b / 1e6).toLocaleString(LOCALE) + ' MB' : (b / 1e9).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e10 ? 0 : 1}) + ' GB';
@@ -8082,7 +8085,7 @@ async function vEinstellungenAssistent() {
   const a = await asLoad() || {}, st = a.settings || {}, r = st.rights || {};
   if (!a.local) return `<div class="note">${t('ki_nur_am_mac')}</div>`;
   const rt = a.runtime || {}, sv = a.server || {}, pf = a.platform || {}, load = a.load && a.load.state === 'running' ? a.load : null, models = a.models || [];
-  const busy = load ? 'disabled' : '';
+  const busy = load || a.updating ? 'disabled' : '';
   const prog = k => load && load.kind === k ? `<div class="prog-wrap" id="as-prog"><div class="prog"><i style="width:${load.total ? Math.round(100 * load.done / load.total) : 0}%"></i></div><span class="prog-l">${esc(asLoadText(load))}</span><button class="secondary small" id="as-cancel">${t('ki_abbrechen')}</button></div>` : '';
   const err = a.load && a.load.state === 'error' ? `<div class="banner err small">${esc(a.load.text || '')}</div>` : '';
   const fitTag = m => m.fit === 'big' ? `<span class="tag warn" title="${esc(t('ki_zu_gross_tip'))}">${t('ki_zu_gross')}</span>` : m.fit === 'tight' ? `<span class="tag warn" title="${esc(t('ki_knapp_tip'))}">${t('ki_knapp')}</span>` : '';
@@ -8117,7 +8120,7 @@ async function vEinstellungenAssistent() {
       ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`).join('')}
     ${a.dictation ? `<div class="as-item"><span><b>${t('ki_sp_start')}</b>${hq('ki_sp_start')}</span><span class="as-act"><select id="as-speech-start" aria-label="${esc(t('ki_sp_start'))}">${opt('', t(a.speech_early_auto ? 'ki_sp_auto_early' : 'ki_sp_auto_click'), st.speech_start || '')}${opt('early', t('ki_sp_early'), st.speech_start || '')}${opt('click', t('ki_sp_click'), st.speech_start || '')}</select></span></div>
     <div id="as-mic-perm"></div>` : ''}</div>
-  <div class="row tight"><button class="secondary small" id="as-check" ${busy}>${t('ki_nach_neuem_suchen')}</button><span class="muted small">${a.checked ? t('ki_gesucht', esc(FDT(a.checked))) + ' · ' : ''}${t('ki_platz', asGB(a.disk_free || 0), asRAM(pf.ram || 0))}</span></div>
+  <div class="row tight"><button class="secondary small" id="as-check" ${busy}>${t('ki_nach_neuem_suchen')}</button>${((a.newer || {}).items || []).length ? `<button class="small" id="as-update-all" ${busy}>${t('ki_alles_aktualisieren')}</button>` : ''}<span class="muted small">${a.checked ? t('ki_gesucht', esc(FDT(a.checked))) + ' · ' : ''}${t('ki_platz', asGB(a.disk_free || 0), asRAM(pf.ram || 0))}</span></div>
   ${a.check_error ? `<div class="banner err small">${esc(a.check_error)}</div>` : ''}
   ${a.folder ? `<div class="row tight as-folder"><span class="muted small">${t('ki_ablage')}${hq('ki_ablage')} <span class="mono">${esc(a.folder)}</span></span><button class="small secondary" id="as-reveal" ${a.folder_exists ? '' : 'disabled'}>${t('im_finder_zeigen')}</button></div>` : ''}
   <h2>${t('ki_betrieb')}</h2>
@@ -8129,6 +8132,7 @@ async function vEinstellungenAssistent() {
     <label>${t('ki_denken')}${hq('ki_denken')}</label><label class="chk"><select id="as-effort">${['fast', 'balanced', 'thorough'].map(k => opt(k, asEffortLabel(k, sv.tps), st.effort)).join('')}</select></label>
     <label>${t('ki_kontext')}${hq('ki_kontext')}</label><label class="chk"><select id="as-context">${opt(0, t('ki_kontext_auto', a.context_auto_value / 1024), st.context_auto ? 0 : st.context)}${[16384, 32768, 65536, 131072].map(k => opt(k, t('ki_kontext_n', k / 1024), st.context_auto ? 0 : st.context)).join('')}</select></label>
     <label>${t('ki_leerlauf')}${hq('ki_leerlauf')}</label><label class="chk"><select id="as-idle">${[5, 10, 30, 60, 0].map(k => opt(k, k ? t('ki_leerlauf_n', k) : t('ki_leerlauf_nie'), st.idle_minutes)).join('')}</select></label>
+    <label>${t('ki_auto_suchen')}${hq('ki_auto_suchen')}</label><label class="chk"><select id="as-check-mode">${[['daily', t('taeglich')], ['weekly', t('woechentlich')], ['aus', t('nie')]].map(([v, l]) => opt(v, l, st.check_mode)).join('')}</select></label>
     <label for="as-save">${t('ki_speichern')}${hq('ki_speichern')}</label><div class="row tight as-save-row"><label class="chk"><input type="checkbox" id="as-save" ${st.save_chats !== false ? 'checked' : ''} aria-label="${esc(t('ki_speichern'))}"></label>
       ${a.chats ? `<span class="small ${a.chats_many ? 'as-chats-many' : 'muted'}" id="as-chats-n"${a.chats_many ? ` title="${esc(t('ki_verlaeufe_viele'))}"` : ''}>${esc(tn('ki_verlaeufe_n', a.chats, asN(a.chats), (b => b < 1e6 ? Math.max(1, Math.round(b / 1e3)).toLocaleString(LOCALE) + ' KB' : asGB(b))(a.chats_bytes || 0)))}</span>` : ''}
       ${a.chats_old ? `<button class="small secondary" id="as-chats-old">${esc(t('ki_verlaeufe_alt_loeschen', asN(a.chats_old)))}</button>` : ''}
@@ -8158,7 +8162,7 @@ const asLoadText = l => (l.total ? t('ki_laedt', l.label || '', asGB(l.done), as
   + (l.rate > 0 ? ' · ' + asRate(l.rate) + (l.total > l.done ? ' · ' + asLeft(l) : '') : '');
 // a download of the assistant (its program or a model) goes on while you work elsewhere in Kontor: a line at the bottom left
 // (spinner, what, how far; the details on hover, a click leads to it), watched every second and a half until it is over
-const asLoading = () => { const l = (AS.st || {}).load; return l && l.state === 'running' ? l : null; };
+const asLoading = () => { const l = (AS.st || {}).load; return l && (l.state === 'running' || (AS.st || {}).updating) ? l : null; };
 const asLoadShort = l => t(l.kind === 'runtime' ? 'ki_sm_programm' : 'ki_sm_modell') + (l.total ? ' · ' + Math.floor(100 * l.done / l.total) + ' %' : '');
 let AS_WATCH = null;
 function asWatch() {
@@ -8211,6 +8215,8 @@ function bindAssistent(main) {
   on('#as-rt-install', 'click', () => post('/api/assistant/runtime/install'));
   on('#as-rt-remove', 'click', () => { if (confirm(t('ki_programm_entfernen_frage'))) post('/api/assistant/runtime/remove'); });
   on('#as-check', 'click', async el => { el.classList.add('busy'); el.disabled = true; await post('/api/assistant/check'); });
+  on('#as-update-all', 'click', el => { el.disabled = true; post('/api/assistant/update-all'); });
+  on('#as-check-mode', 'change', el => set({check_mode: el.value}));
   on('.as-dl', 'click', el => { if (el.dataset.fit !== 'big' || confirm(t('ki_zu_gross_frage', el.dataset.name, asRAM((AS.st.platform || {}).ram || 0)))) post('/api/assistant/model/download', {id: el.dataset.id}); });
   on('.as-del', 'click', el => { if (confirm(t('ki_loeschen_frage', el.dataset.name))) post('/api/assistant/model/delete', {id: el.dataset.id}); });
   on('#as-cancel', 'click', () => post('/api/assistant/model/cancel'));
@@ -8232,9 +8238,14 @@ function bindAssistent(main) {
   on('#as-repo', 'input', el => { $('#as-files', main).disabled = !el.value.trim(); });
   // while something is loading or the model starts: the progress in place, the page anew when it is over
   clearTimeout(AS.setT);
-  const a = AS.st || {}, moving = () => { const s = AS.st || {}; return (s.load && s.load.state === 'running') || (s.server || {}).state === 'starting'; };
+  const a = AS.st || {}, moving = () => { const s = AS.st || {}; return (s.load && s.load.state === 'running') || (s.server || {}).state === 'starting' || !!s.updating; };
   // what the page shows counts, not the last status: the watcher at the bottom left may have fetched the end already
   let shown = moving();
+  // what is being loaded as the page shows it ("update everything" goes from one to the next), and the look the page knows
+  const part = () => { const l = (AS.st || {}).load; return l && l.state === 'running' ? l.kind + ' ' + l.id : ''; };
+  const looked = a.checked || '', drawn = part();
+  // something typed or opened here that drawing the page anew would throw away
+  const inUse = () => [...main.querySelectorAll('input:not([type=checkbox]):not([type=radio])')].some(e => e.value) || !!(($('#as-filelist', main) || {}).childElementCount) || !!(document.activeElement && document.activeElement.closest('#main input, #main select'));
   const tick = async () => {
     if (S.tab !== 'settings' || S.sub !== 'assistant') return;
     try { AS.st = await api('/api/assistant/status'); } catch (e) { AS.setT = setTimeout(tick, 2000); return; }
@@ -8244,12 +8255,15 @@ function bindAssistent(main) {
     if (was && !moving()) {
       asChrome(); await route(); return;              // the first model is chosen by the service itself
     }
+    // Kontor has looked for newer versions meanwhile: what it found is shown (not while you are typing here)
+    if (moving() && part() !== drawn) { await route(); return; }          // the next part: its progress in its place
+    if ((AS.st.checked || '') !== looked && !moving() && !inUse()) { await route(); return; }
     if (l && l.state === 'running' && p) { $('.prog i', p).style.width = (l.total ? Math.round(100 * l.done / l.total) : 0) + '%'; $('.prog-l', p).textContent = asLoadText(l); }
     const sv = AS.st.server || {}, u = $('#as-use', main);
     if (u && sv.rss) u.textContent = t('ki_verbrauch', asRAM(sv.rss), asN(sv.cpu || 0)) + (sv.tps ? ' · ' + t('ki_tempo', asN(sv.tps)) : '');
     AS.setT = setTimeout(tick, moving() ? 1000 : 5000);
   };
-  AS.setT = setTimeout(tick, (a.load && a.load.state === 'running') || (a.server || {}).state === 'starting' ? 1000 : 5000);
+  AS.setT = setTimeout(tick, moving() ? 1000 : 5000);
 }
 
 window.addEventListener('hashchange', route);
@@ -8281,6 +8295,8 @@ let SNAP_T = null;
 window.addEventListener('resize', () => { clearTimeout(SNAP_T); SNAP_T = setTimeout(() => { if (!PRINT.on && ['balance', 'cashflow', 'planning'].includes(S.tab)) $$('#main .wrap.snap').forEach(w => { const l = w.scrollLeft; snapTable(w); w.scrollLeft = snapLeft(w, l); }); }, 150); });
 window.addEventListener('beforeunload', () => { try { localStorage.setItem('kontor.ui', JSON.stringify({plan: S.plan, real: S.real, area: S.area})); } catch (e) {} });
 setInterval(async () => { if (S.csrf && !document.hidden && !OFFLINE.mode) { try { await pollStatus(); } catch (e) {} } }, 30000);
+// a newer version of the assistant found meanwhile (the service looks once a day): marked without a reload -- only the status, asked on this Mac
+setInterval(async () => { if (S.csrf && !document.hidden && asOn() && AS.st.local && !asLoading() && !(S.tab === 'settings' && S.sub === 'assistant')) { try { const st = await api('/api/assistant/status'); if (asOn()) { AS.st = st; statusMini(); } } catch (e) { /* the next time */ } } }, 600000);
 // Zurück im Fenster (z. B. nach MoneyMoney): sofort nachsehen statt bis zu 30 s einen alten Stand zu zeigen
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.csrf && !OFFLINE.mode) pollStatus().catch(() => {}); });
 applyStatic();

@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.16.70 (2026-11-22 01:26)
+- KI-Assistent: sucht von selbst nach neueren Versionen (llama.cpp, Modell, Diktiermodell) – täglich, einstellbar unter Betrieb; geladen wird dabei nichts
+- KI-Assistent: Punkt im Menü bei Einstellungen, wenn es für Modell oder Diktiermodell in Gebrauch Neueres gibt (llama.cpp erst nach zwei Wochen)
+- KI-Assistent: „Alles aktualisieren“ lädt alles Gefundene nacheinander; Abbrechen beendet alles
+- KI-Assistent: eigene Modelle lassen sich aktualisieren
+- Updates: Hinweis bei „Automatisch prüfen“ stimmt wieder (auch die Suche des KI-Assistenten geht von selbst ins Netz)
+
 ## 3.16.69 (2026-11-22 01:25)
 - Schmales Fenster: Bereichsauswahl mittig
 - Mac-App, schmales Fenster: Menü und Seitentitel oben neben den Fensterknöpfen
