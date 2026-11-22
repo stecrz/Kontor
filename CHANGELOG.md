@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.78 (2026-11-22 02:06)
+- Diktieren: Knopf wird erst rot, wenn das Mikrofon wirklich hört – nach einer Pause dreht er etwa 2 s (so lange braucht macOS), direkt nach einer Aufnahme sofort
+- Diktieren: kein verschluckter Anfang mehr bei der ersten Aufnahme
+- Diktieren: Protokoll nennt zusätzlich den Anteil reiner Stille
+
 ## 3.16.77 (2026-11-22 02:05)
 - Updates: Hauptversion schließt die Schritte davor ab – 3.17 zeigt, was 3.16.1 bis 3.17.0 bringen; die kommende als „in Arbeit“
 - Updates: Versionsspanne je Hauptversion beim Aufklappen („Alle 24 Versionen (3.15.1 bis 3.16.0)“); Überblicke neu zugeordnet

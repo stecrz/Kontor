@@ -7312,13 +7312,27 @@ function asFit(ta) {
 // more, with all its words around each sentence -- that text is the one that stays.
 // The click starts at once: the microphone opens and is kept from then on, while the speech model loads beside it if it does not
 // run yet (a few seconds). The button turns red and its time starts only once dictating truly runs -- the model is ready and the
-// microphone's sound arrives; until then it turns (what is said meanwhile is written down too).
-const REC = {on: false, busy: false, starting: false, cap: false, flow: false, heard: false, gen: 0, asked: false, drop: false, go: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
+// microphone truly hears; until then it turns (what is said meanwhile is written down too).
+const REC = {on: false, busy: false, starting: false, cap: false, flow: false, heard: false, zeros: null, blocks: 0, zeroBlocks: 0, gen: 0, asked: false, drop: false, go: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
 const REC_MAX = 600;          // seconds: then it ends by itself and the text is taken
-const REC_FLOW = 1000;        // ms the microphone's sound is waited for at most (a page whose sound never starts: red anyway)
-// the microphone with the filters for speech (echo, noise, level) -- they keep out what plays on the Mac and the hum around it; in a
-// quiet room they give pure silence, so red does not wait for something to be heard (only for the sound to arrive at all)
+// the microphone with the filters for speech (echo, noise, level): they keep out what plays on the Mac and the hum around it
 const REC_AUDIO = {channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true};
+// A microphone opened after a pause hears nothing at first: macOS takes about two seconds to start it with its filters (measured
+// on a MacBook, in Kontor's Mac app: 1.9 s each time), and until then only silence (zeros) arrives -- within a few seconds after a
+// recording it is still running and hears at once (0.1 s). So red waits for the first sound (a room's hum is enough) and a moment
+// more, while the filters fade in. Where the filters turn a quiet room into pure silence, the first sound says nothing: there (and
+// before it is known) red comes after a fixed wait, by which the microphone runs.
+const REC_SETTLE = 150;       // ms from the first sound until red
+const REC_SOUND = 4000;       // ms the first sound is waited for at most where a quiet room is known to be heard
+const REC_QUIET = 2200;       // ... and where it is pure silence, or not known yet
+try { const z = localStorage.getItem('kontor.mic.zeros'); if (z === '0' || z === '1') REC.zeros = z === '1'; } catch (e) {}
+const asMicCap = () => REC.zeros === false ? REC_SOUND : REC_QUIET;
+// what a recording shows of this microphone: did pure silence arrive between the sounds (in a few of its pieces at least)?
+function asMicLearn() {
+  if (!REC.heard || REC.blocks < 24) return;          // (two seconds and more: enough to tell)
+  REC.zeros = REC.zeroBlocks >= Math.max(2, REC.blocks * 0.03);
+  try { localStorage.setItem('kontor.mic.zeros', REC.zeros ? '1' : '0'); } catch (e) {}
+}
 const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.6" y="1.4" width="4.8" height="8.2" rx="2.4" fill="currentColor"/><path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 const AS_PLUS = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 const AS_CROSS = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
@@ -7395,11 +7409,11 @@ async function asMic() {
   const gen = ++REC.gen, AC = window.AudioContext || window.webkitAudioContext;
   let ctx = null;
   try { ctx = new AC(); if (ctx.state === 'suspended') ctx.resume().catch(() => {}); } catch (e) { ctx = null; }          // still in the click: Safari starts sound only from one
-  const c0 = Date.now(), took = [0, 0, 0, 0];          // how long the start took (into Kontor's log with the text: where a slow start comes from)
+  const c0 = Date.now(), took = [0, 0, 0, 0, 0];          // how long the start took (into Kontor's log with the text: where a slow start comes from)
   const ready = api('/api/assistant/listen', {}).then(() => { took[1] = Date.now() - c0; return ''; }, e => (e && e.message) || '?');          // the speech model, loaded beside the microphone
   const at = ta.selectionStart == null ? ta.value.length : ta.selectionStart, to = ta.selectionEnd == null ? at : ta.selectionEnd;
   REC.live = {gen: (REC.live ? REC.live.gen : 0) + 1, busy: false, sent: 0, seg: 0, done: [], cur: '', before: ta.value.slice(0, at), after: ta.value.slice(to)};
-  Object.assign(REC, {starting: true, asked: true, flow: false, heard: false, heardAt: 0, t1: 0, took: null, pcm: [], m: 0});
+  Object.assign(REC, {starting: true, asked: true, flow: false, heard: false, heardAt: 0, blocks: 0, zeroBlocks: 0, t1: 0, took: null, pcm: [], m: 0});
   ta.readOnly = true;          // from now on the field shows what is said (typing would be written over)
   asDictPut(''); asMicDraw();
   const drop = st => { st.getTracks().forEach(x => x.stop()); if (ctx) ctx.close().catch(() => {}); };
@@ -7418,16 +7432,17 @@ async function asMic() {
     REC.node.onaudioprocess = e => {
       if (!REC.cap) return;
       const d = e.inputBuffer.getChannelData(0);
-      REC.flow = true;
-      if (!REC.heard && d.some(x => x !== 0)) { REC.heard = true; REC.heardAt = Date.now(); }          // the first sound (only for the log)
+      const some = d.some(x => x > 1e-6 || x < -1e-6); REC.flow = true;          // (anything at all, far below what an ear hears -- not rounding noise)
+      if (REC.heard) { REC.blocks++; if (!some) REC.zeroBlocks++; }          // (pure silence between sounds: see asMicLearn)
+      else if (some) { REC.heard = true; REC.heardAt = Date.now(); }          // the first sound: the microphone hears
       asPcm(d); if (REC.m / 16000 >= REC_MAX) asMicStop(true);
     };
     src.connect(REC.node); REC.node.connect(REC.ctx.destination);          // (it only runs while connected; it puts out silence)
     t1 = REC.t1 = Date.now(); took[0] = t1 - c0;
   } catch (e) { if (!REC.ctx) drop(stream); asMicStop(false); return; }          // whatever fails after the microphone was opened: it is let go again
-  // red only once it truly runs: the speech model ready, the microphone's sound arriving
-  const err = await ready;
-  while (gen === REC.gen && !err && !REC.flow && Date.now() - t1 < REC_FLOW) await new Promise(r => setTimeout(r, 20));
+  // red only once it truly runs: the speech model ready, the microphone hearing (its first sound and a moment more -- or the wait over)
+  const err = await ready, most = asMicCap();
+  while (gen === REC.gen && !err && !(REC.heard ? Date.now() - REC.heardAt >= REC_SETTLE : Date.now() - t1 >= most)) await new Promise(r => setTimeout(r, 20));
   if (gen !== REC.gen) return;          // ended meanwhile (✕, Escape, sent, the panel closed, locked)
   if (err) { asMicStop(false); toast(err, 7000); return; }          // the model does not start: said now, not after speaking
   REC.starting = false; REC.on = true; REC.t0 = Date.now(); asMicDraw(); REC.timer = setInterval(() => { asMicDraw(); asLive(); }, 500);
@@ -7510,14 +7525,14 @@ async function asMicStop(send, go) {
   if (REC.live) REC.live.gen++;          // a text still on its way from the speech model: no longer shown
   const n = REC.m;
   try { if (REC.node) REC.node.disconnect(); if (REC.stream) REC.stream.getTracks().forEach(x => x.stop()); if (REC.ctx) REC.ctx.close().catch(() => {}); } catch (e) {}
-  REC.ctx = REC.node = null;
+  REC.ctx = REC.node = null; asMicLearn();
   const pcm = send && n >= 16000 * 0.4 ? asPcmPart(0, n) : null; REC.pcm = []; REC.m = 0;
   const free = () => { const ta = $('#as-in'); if (ta) ta.readOnly = false; };
   if (!pcm) { asDictPut(''); free(); asMicDraw(); return; }          // thrown away, or too short to hold a word: the field as it was
   REC.busy = true; REC.drop = false; REC.go = !!go; asMicDraw();
   let send_ = false;
   try {
-    if (REC.took) REC.took[2] = (REC.heard ? REC.heardAt : Date.now()) - REC.t1;          // the first sound after the microphone opened (none: until the end)
+    if (REC.took) { REC.took[2] = (REC.heard ? REC.heardAt : Date.now()) - REC.t1; REC.took[4] = REC.blocks ? Math.round(100 * REC.zeroBlocks / REC.blocks) : 0; }          // the first sound after the microphone opened (none: until the end); pure silence in percent
     const r = await api('/api/assistant/transcribe', Object.assign({audio: asB64(asWav(pcm))}, REC.took ? {start: REC.took} : {})), text = (r.text || '').trim();          // all of it once more: the text that stays
     REC.busy = false;
     if (REC.drop) asDictPut('');          // thrown away meanwhile (✕)

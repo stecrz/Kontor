@@ -1525,10 +1525,10 @@ class Tools(_Assist):
             self.assertEqual(json.load(f), {"bytes": len(wav), "language": "de", "fields": ["file", "language", "response_format", "temperature"]})
         # how long the start took, as the page measured it: only into the log line with the text (where a slow start comes from)
         with self.assertLogs("kontor.assistant", "INFO") as cm:
-            self.a.transcribe(wav, start=[180, 40, 1200, 1400])
-            for bad in ([1, 2, 3], "1,2,3,4", [1, 2, 3, -4], [1, 2, 3, 9e9], [True, 1, 1, 1], None):
+            self.a.transcribe(wav, start=[180, 40, 1200, 1400, 37])
+            for bad in ([1, 2, 3, 4], "1,2,3,4,5", [1, 2, 3, -4, 5], [1, 2, 3, 9e9, 5], [True, 1, 1, 1, 1], None):
                 self.a.transcribe(wav, start=bad)
-        self.assertIn("started after 1.4 s (microphone 0.2 s, speech model 0.0 s, first sound 1.2 s)", cm.output[0])
+        self.assertIn("started after 1.4 s (microphone 0.2 s, speech model 0.0 s, first sound 1.2 s later, pure silence 37 %)", cm.output[0])
         self.assertEqual(sum("started after" in x for x in cm.output), 1, cm.output)
         # nothing said (silence, a little noise, a steady hum, a click): no text -- the model does not even hear it (it would invent
         # sentences); something said: only that part, from shortly before to shortly after
@@ -4179,14 +4179,30 @@ class Browser(unittest.TestCase):
                 with self.assertLogs("kontor.assistant", "INFO") as cm:
                     pg.click("#as-mic"); until(pg, "!REC.on && !REC.busy", 20)
                 self.assertTrue(any("started after" in x for x in cm.output), cm.output)
-                # a quiet room behind the filters for speech gives pure silence: red as soon as the sound arrives, without waiting for
-                # something to be heard
-                pg.evaluate("""(() => { window.__gum = navigator.mediaDevices.getUserMedia;
+                # red waits until the microphone truly hears: its first sound (after a pause macOS takes a moment to start it -- until
+                # then only zeros arrive) and a moment more
+                self.assertEqual(pg.evaluate("[REC.heard, REC.heardAt >= REC.t1, REC.t0 - REC.heardAt >= REC_SETTLE]"), [True, True, True])
+                # ... a microphone that gives pure silence (the filters in a quiet room, or one that is muted): red after a fixed wait,
+                # and still turning before
+                pg.evaluate("""(() => { window.__gum = navigator.mediaDevices.getUserMedia; REC.zeros = null;
                     navigator.mediaDevices.getUserMedia = async () => new AudioContext().createMediaStreamDestination().stream; })()""")
-                pg.click("#as-mic"); until(pg, "REC.on")
-                self.assertEqual(pg.evaluate("[REC.flow, REC.heard, REC.t0 - REC.t1 < REC_FLOW * 0.8]"), [True, False, True])
+                pg.click("#as-mic"); until(pg, "REC.starting && REC.flow")
+                self.assertEqual(pg.evaluate("[REC.on, REC.heard, !!document.querySelector('#as-mic .spin')]"), [False, False, True])
+                until(pg, "REC.on")
+                self.assertEqual(pg.evaluate("[REC.heard, REC.t0 - REC.t1 >= REC_QUIET]"), [False, True])
                 pg.keyboard.press("Escape"); until(pg, "!REC.on && !REC.starting")
                 pg.evaluate("(() => { navigator.mediaDevices.getUserMedia = window.__gum; })()")
+                # which wait it is, a recording tells: pure silence between its sounds (the short fixed wait) or a room that is always
+                # heard (then the first sound is waited for longer) -- kept for the next time
+                learn = "([b, z, h]) => { Object.assign(REC, {heard: h, blocks: b, zeroBlocks: z}); asMicLearn(); return [REC.zeros, asMicCap(), localStorage.getItem('kontor.mic.zeros')]; }"
+                pg.evaluate("(() => { REC.zeros = null; localStorage.removeItem('kontor.mic.zeros'); })()")
+                self.assertEqual(pg.evaluate("[asMicCap() === REC_QUIET, REC_SOUND > REC_QUIET]"), [True, True])
+                self.assertEqual(pg.evaluate(learn, [10, 5, True]), [None, 2200, None])           # too short to tell
+                self.assertEqual(pg.evaluate(learn, [100, 0, False]), [None, 2200, None])         # nothing heard at all
+                self.assertEqual(pg.evaluate(learn, [100, 0, True]), [False, 4000, "0"])
+                self.assertEqual(pg.evaluate(learn, [100, 1, True]), [False, 4000, "0"])          # (one piece: a gap, not the room)
+                self.assertEqual(pg.evaluate(learn, [100, 30, True]), [True, 2200, "1"])
+                pg.evaluate("(() => { REC.zeros = null; localStorage.removeItem('kontor.mic.zeros'); })()")
                 app.assistant.set({"speech_start": "click"})
                 pg.fill("#as-in", said)
                 pg.fill("#as-in", "")

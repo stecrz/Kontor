@@ -668,8 +668,9 @@ class Assistant:
         """What was said in a recording, as text for the question field. The recording goes to the speech model on this Mac
         and nowhere else; neither it nor the text is stored or logged. live: the recording so far, while still speaking (shown
         in the field as it grows) -- not worth a line in the log each time. start: how long the start took, in ms, as the
-        page measured it -- [until the microphone was open, until the speech model was ready, until the first sound, until
-        the button turned red]; only into the log line (where a slow start comes from)."""
+        page measured it -- [until the microphone was open, until the speech model was ready, from then until its first
+        sound, until the button turned red, and how much of the recording was pure silence, in percent]; only into the log
+        line (where a slow start comes from, and whether this microphone's filters turn a quiet room into pure silence)."""
         st, mid = self._speech_can()
         if not isinstance(wav, (bytes, bytearray)) or len(wav) < 2000 or wav[:4] != b"RIFF" or wav[8:12] != b"WAVE":
             raise ValueError(tr("s_ki_aufnahme_leer"))
@@ -692,8 +693,9 @@ class Assistant:
         clean = lambda x: re.sub(r"</?asr_text>", "", re.sub(r"^\s*language\s+[A-Za-z]+\s*(?=<asr_text>)", "", x)).strip()
         text = " ".join(c for c in (clean(x) for x in texts) if c)
         took = ""
-        if isinstance(start, list) and len(start) == 4 and all(isinstance(x, (int, float)) and not isinstance(x, bool) and 0 <= x < 6e5 for x in start):
-            took = "; started after %.1f s (microphone %.1f s, speech model %.1f s, first sound %.1f s)" % (start[3] / 1000, start[0] / 1000, start[1] / 1000, start[2] / 1000)
+        if isinstance(start, list) and len(start) == 5 and all(isinstance(x, (int, float)) and not isinstance(x, bool) and 0 <= x < 6e5 for x in start):
+            took = "; started after %.1f s (microphone %.1f s, speech model %.1f s, first sound %.1f s later, pure silence %d %%)" % (
+                start[3] / 1000, start[0] / 1000, start[1] / 1000, start[2] / 1000, min(100, start[4]))
         (log.debug if live else log.info)("Assistant: dictation written down%s (%d kB of audio, %d part(s), %.1f s%s)", " so far" if live else "", len(wav) // 1000,
                                           len(parts), time.time() - t0, took)
         return {"text": text[:60000]}
