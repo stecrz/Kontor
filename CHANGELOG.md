@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.85 (2026-11-22 03:12)
+- KI-Assistent: seltener Fehler bei „neuere Versionen“ behoben (ein Download endete währenddessen – der GitHub-Lauf von 3.16.81 war deshalb rot)
+- Gedächtnis: wartet nach einem Neustart auf die Anmeldung – liest vorher nichts und hält keine Datei für beschädigt
+
 ## 3.16.84 (2026-11-22 02:59)
 - Entwicklung: GitHub prüft am Mac, dass openssl das Geheimnis über die Pipe bekommt und die Touch-ID-Antwort aus Swift in Python aufgeht
 

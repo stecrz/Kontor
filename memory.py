@@ -31,6 +31,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from i18n import tr
+from storage import StoreLocked
 from web_search import GENERIC, LEGAL, _INVISIBLE, _fold
 
 log = logging.getLogger("kontor.memory")
@@ -215,6 +216,8 @@ class Memory:
     def _load(self) -> Dict[str, dict]:
         if self._notes is not None:
             return self._notes
+        if getattr(self.store, "is_open", True) is False:      # nobody signed in yet: nothing is read (and nothing taken for missing or damaged)
+            raise StoreLocked("locked")
         notes: Dict[str, dict] = {}
         self._seg, self._by_seg, self._broken = {}, {}, set()
         for seg in self._segments():
@@ -223,6 +226,8 @@ class Memory:
                 doc = json.loads(raw.decode("utf-8")) if raw is not None else {}
                 if not isinstance(doc, dict) or not isinstance(doc.get("notes"), list) or not isinstance(doc.get("v"), int) or doc["v"] > FORMAT:
                     raise ValueError("format")
+            except StoreLocked:                          # locked meanwhile: not "damaged" -- read again after the sign-in
+                raise
             except Exception as e:                       # damaged, or written by a newer Kontor: left as it is, its notes are missing
                 log.warning("Memory: a file of notes is not readable (%s) -- it stays untouched", type(e).__name__)
                 self._broken.add(seg)

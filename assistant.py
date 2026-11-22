@@ -620,18 +620,19 @@ class Assistant:
         speech model in use (nothing while the assistant is switched off)}."""
         news = self.ai.news
         rt_new = bool((news.get("runtime") or {}).get("newer"))
-        mods = [mid for mid, m in (news.get("models") or {}).items() if (m or {}).get("newer")]
+        found = dict(news.get("models") or {})           # as it is now: a download that ends meanwhile takes its entry away
+        mods = [mid for mid, m in found.items() if (m or {}).get("newer")]
         if not rt_new and not mods:
             return {"items": [], "marked": 0}
         st, rt, have = self.settings(), self.ai.runtime(), self.ai.models()
         items, marked = [], 0
-        if rt and rt_new and (news["runtime"].get("tag") or "") != rt.get("tag"):
+        if rt and rt_new and ((news.get("runtime") or {}).get("tag") or "") != rt.get("tag"):
             items.append({"kind": "runtime", "id": "", "name": "llama.cpp"})
             marked += 1
         names = {c["id"]: c["name"] for c in CATALOG + SPEECH}
         used = {st["model"], self.speech_model()}
         for mid in mods:
-            if mid in have and news["models"][mid].get("had", have[mid].get("sha256")) == have[mid].get("sha256"):
+            if mid in have and found[mid].get("had", have[mid].get("sha256")) == have[mid].get("sha256"):
                 items.append({"kind": "model", "id": mid, "name": names.get(mid) or str(have[mid].get("name") or mid)})
                 marked += mid in used
         return {"items": items, "marked": marked if st["enabled"] else 0}

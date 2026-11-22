@@ -209,6 +209,20 @@ class Notes(_Mem):
         self.m.add("Danach geht es weiter")
         self.assertEqual(self.files(), ["memory-notes-0001.json.enc"])
 
+    def test_nothing_is_read_before_the_sign_in(self):
+        """Kontor started, nobody signed in yet: the memory does not read -- and takes nothing for missing or damaged; after the
+        sign-in everything is there."""
+        self.m.add("Ziel: mit 45 finanziell frei")
+        key, source = self.store.master, self.store.key_source
+        locked = Store.closed(self.dir)
+        m2 = M.Memory(locked)
+        for use in (m2.active, m2.stats, lambda: m2.add("Kommt nicht an"), lambda: m2.profile(1500), m2.export):
+            with self.assertRaises(storage.StoreLocked):
+                use()
+        locked.unlock(key, source)
+        self.assertEqual([n["text"] for n in m2.active()], ["Ziel: mit 45 finanziell frei"])
+        self.assertEqual(m2.stats()["broken"], 0)
+
     def test_many_at_once(self):
         """Several threads add, change and forget at the same time: every note there at the end is whole, none is lost."""
         errors = []
