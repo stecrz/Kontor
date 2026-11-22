@@ -1139,6 +1139,20 @@ class StaleInterestTests(unittest.TestCase):
         self.assertFalse([f for f in core.check_config(led, [], {"loans": [monthly]}) if "Jahresbasis" in f["text"]])
         self.assertTrue(core.check_config(led, [], {"loans": [loan_cfg(interest="kaputt")]}))           # damaged settings: named, not crashed
 
+    def test_a_rate_without_a_readable_day_is_an_error(self):
+        """A day not read would count from 1900 -- the later rate booked from the start: an error, never saved quietly. One rate
+        alone needs no day."""
+        import core
+        led = make_ledger({"ga.vd": -1200000.0}, [])
+        err = lambda rates: [f["text"] for f in core.check_config(led, [], core.merged_config({"loans": [loan_cfg(interest=dict(loan_cfg()["interest"], rate_list=rates))]}))
+                             if f["severity"] == "error" and "Zinssatz" in f["text"]]
+        self.assertEqual(err([{"from_date": "", "percent": 3.0}]), [])
+        self.assertEqual(err([{"from_date": "2025-01-01", "percent": 3.0}, {"from_date": "2027-01-01", "percent": 5.0}]), [])
+        self.assertEqual(len(err([{"from_date": "01.01.2025", "percent": 3.0}, {"from_date": "01.01.2027", "percent": 5.0}])), 2)
+        self.assertEqual(len(err([{"from_date": "", "percent": 3.0}, {"from_date": "2027-01-01", "percent": 5.0}])), 1)
+        raw = [f for f in core.check_config(led, [], {"loans": [loan_cfg(interest=dict(loan_cfg()["interest"], rate_list=[{"from_date": "2026-02-31", "percent": 3.0}]))]}) if "Zinssatz" in f["text"]]
+        self.assertEqual(len(raw), 1)                                                   # (a day that does not exist, as sent)
+
 
 def _twice(led, tx):
     """The ledger with `tx` a second time (duplicated in MoneyMoney: the same text and mark, a new number)."""

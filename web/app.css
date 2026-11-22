@@ -90,6 +90,7 @@ button.secondary.busy::after { border-color:var(--faint); border-top-color:var(-
 .side-foot { margin-top:auto; flex-shrink:0; display:flex; flex-direction:column; gap:8px; padding-top:10px; border-top:1px solid var(--line); }
 #status-mini { font-size:11.5px; line-height:1.5; color:var(--muted); padding:0 4px; }
 #status-mini b { color:var(--fg); font-weight:600; }
+#status-mini .sm-ro { display:inline-flex; align-items:center; gap:4px; margin:2px 0 4px; padding:1px 8px; border-radius:999px; background:rgba(127,127,127,.18); color:var(--fg); font-size:12px; }
 #status-mini .sm-head { color:var(--fg); font-weight:600; margin-bottom:2px; display:flex; align-items:center; gap:0; }
 #status-mini .sm-row { display:flex; justify-content:space-between; gap:4px; }
 #status-mini .sm-row b { font-weight:500; white-space:nowrap; font-variant-numeric:tabular-nums; }

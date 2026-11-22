@@ -176,7 +176,7 @@ The balance sheet shows the assets of an area by position, month by month or yea
 - Click a **value** to make its area and month light up briefly in the main chart (the chart moves to the month if needed) – and also opens or closes the row of a position, a portfolio or the net worth. Clicking a month heading moves the chart so that the month sits exactly above the column; so does a click on a net worth value, and its dot in the chart blinks briefly. The single charts keep their length and end with that month – so they show the change up to it. The page itself stays put. Hovering over a name marks the same area in the chart.
 - The **eye** in the header cell (only when there are any, with a count) also shows empty accounts and securities and those hidden by activity – they are always counted. What counts as hidden is set under [Accounts & rules → Accounts](#accounts) (column “Display” and “By activity … months”, default 12); securities without a value in that period count as hidden too. “(9/12)” means 9 of 12 are shown.
 - **Portfolios**: past months from the balances read from MoneyMoney (otherwise from Kontor's monthly record), the current month from MoneyMoney; what the securities do not explain is shown as “Other”. Hovering over a security always shows MoneyMoney's name and the ISIN, and whether the name was looked up or changed. Rename accounts in MoneyMoney – Kontor takes the names from there.
-- Year columns show the balance at year end (the running year: today). The month view has no year columns – they would only repeat December; a thin line separates the years.
+- Year columns show the balance at year end (the running year: today, with “Plan” the planned December). The month view has no year columns – they would only repeat December; a thin line separates the years.
 - Drag the right edge of the first column to make it wider or narrower (double-click: default width); the width is part of the view.
 - **Equity ratio** (alpha; a click on “Net worth” opens the key figures below it): how much of your assets you own free of debt – equity ÷ (equity + debts). Looking through your companies: their debts count with your share (areas) if the participation is entered under Booking rules → Companies, otherwise the ratio would look too good, because the bank loans sit there. Debts are accounts with a negative balance; capital and shareholder accounts are equity, participations themselves never debts. How you book capital accounts changes nothing. Participations without this entry count with their value only; if accounts of a company are in no area, the ratio is unknown. A click shows the month's calculation step by step.
 - Below net worth, guarantees (not in net worth) are collected in one expandable row.
@@ -363,7 +363,7 @@ Planning continues the past: per row a method (Ø 12 or 6 months, same month las
 - **Events**: one-off or recurring moves, income and expenses – e.g. repaying a loan in one go from the portfolio.
 - **Real estate**: active calculations contribute rent, costs, interest, repayment, remaining debt and property value.
 - The plan always runs to December; “inflation-adjusted” shows plan values in today's purchasing power.
-- Below: projection of the balance sheet per position and account, and key figures (savings rate, liquidity reach, interest burden). The plan applies per area.
+- The projected balance sheet per position and account is in the plan columns under Balance sheet (with “Plan”) and in the Excel export. The plan applies per area.
 
 <a id="properties"></a>
 ## Real estate
@@ -402,7 +402,7 @@ Booking rules set what Kontor books automatically into your offline accounts in 
 
 ![Booking rules](img/en/rules.png)
 
-Each loan is one row (name → loan account, on the right what is open); a click opens the details. Each company has its own card. Next to every field a **?** briefly explains what it does (click: this section). Next to every rule you see the **target**, the **actual** balance and the **difference** Kontor would book – already while you edit. **“Save and check”** (⌘S) at the bottom applies to all changes on the page and checks them against MoneyMoney. If the rules changed meanwhile (by the assistant, say), Kontor saves nothing and asks you to reload the page. A rule the assistant added or changed carries the note “From the assistant – bookings only after approval”: its bookings wait for your approval – also when booking fully automatically – until you accept it with **Confirm** and save.
+Each loan is one row (name → loan account, on the right what is open); a click opens the details. Each company has its own card. Next to every field a **?** briefly explains what it does (click: this section). Next to every rule you see the **target** and the **actual** balance, and whether it is up to date or how many bookings are open – already while you edit. **“Save and check”** (⌘S) at the bottom applies to all changes on the page and checks them against MoneyMoney. If the rules changed meanwhile (by the assistant, say), Kontor saves nothing and asks you to reload the page. A rule the assistant added or changed carries the note “Not confirmed yet – bookings only after approval”: its bookings wait for your approval – also when booking fully automatically – until you accept it with **Confirm** and save.
 
 <a id="auto-bookings"></a>
 ### Auto bookings

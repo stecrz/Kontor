@@ -1,5 +1,27 @@
 # Änderungen
 
+## 3.17.1 (2026-11-22 21:43)
+- KI-Assistent: kennt jede Stelle jeder Seite – Rechtsklick und Fragen zur Seite wissen, ob eine Zahl Wert des Zeitraums, Anteil oder Veränderung ist
+- KI-Assistent: Rechtsklick benennt jeden Teil einer Beschriftung (Betrag, Veränderung), nennt Zeitraum, Plan- und laufende Spalten, Kennzeichen; Achsen und Knöpfe zählen nicht
+- KI-Assistent: Werkzeuge mit den Begriffen der Seiten (Vermögen, liquides Vermögen, Prozent nach Größe); Umsatzsuche ohne Kontors eigene Regelbuchungen
+- Cashflow: Depotänderung vor dem ersten bekannten Stand eigene Zeile „bis … unbekannt“
+- Einstellungen: Speichern behält, was ein anderes Fenster oder Gerät inzwischen geändert hat; beide an derselben Stelle: Hinweis zum Neuladen
+- Sperren (⌘L, Leerlauf): Eingetipptes bleibt nach der Anmeldung stehen
+- Einrichtung: Passwort bei Doppelklick nur einmal festgelegt; Steuer und Belege erst nach eigener Angabe erledigt
+- Auto-Buchungen: Auswahl und Änderungen bleiben beim nächsten Abgleich (neuer Hinweis: abgewählt); zurück zu „mit Freigabe“ nie durch Fehler blockiert
+- Zugang: Passwort ändern mit Wiederholung; von unterwegs „Nur ansehen“ in der Seitenleiste
+- Seitenfenster: Eingetipptes auch in grauen Feldern erkannt; Esc fragt vorher
+- Konten & Regeln: Kontenliste nach dem Abgleich neu; Bereiche zeigen, was unter Konten zugeordnet ist; Auswahl „wie unter Bereiche“
+- Konten & Regeln: Zinssätze nur mit lesbarem Datum; Kontostände-Import lehnt verrutschte Spalten ab
+- Sicherung: Einstellungen in falscher Form lehnen die Datei ab
+- Planung: Ø 12/6 Monate über die bekannten Monate; Darlehensplan zeigt und behält das Modell der Regel; Ereignis- und Immobilienzeilen ohne eigene Methode
+- Übersicht: Vermögensstruktur zählt Schulden je Konto (Darlehen im Plus beim Vermögen); Legende nennt „Unklar“
+- Immobilien: Soll/Ist mit Restschuld wie in der Kalkulation, grün = besser als geplant
+- Steuer: AfA-Feld nur mit eigenem Wert, berechneter grau – Speichern übernimmt ihn nicht mehr als eigenen
+- Umsätze: Umbuchungen ohne „ohne Kategorie“; Kategoriepfade lesbar; Filter einer Empfängerzeile ohne „Unklar“
+- Hilfe: Planung, Buchungsregeln und laufendes Jahr wie auf den Seiten; Tooltips Geld unterwegs und Heatmap berichtigt
+- Entwicklung: „Was wo gepflegt wird“ in CLAUDE.md; Beschreibung jeder Stelle in docs/ui, geprüft von test_ui_docs und dem Rundgang
+
 ## 3.17.0 (2026-11-22 18:05)
 - Gesamtprüfung aller Versionen seit 3.16.0: Funktionen, Texte, Hilfe, README und Fahrplan gegen den Code geprüft, Gefundenes behoben
 - Sicherheit: neu einzurichten – alte Schlüsselbund-Umstellung und Reste älterer Versionen entfernt; Sicherungen und Pakete erst ab 3.17.0

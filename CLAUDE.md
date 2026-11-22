@@ -97,6 +97,29 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
   die Nummer im letzten Commit auf `main` ist immer die aktuelle.
 - Nie Force-Push, `main` nie löschen.
 
+## Was wo gepflegt wird
+Jede Änderung pflegt mit, was sie betrifft – jede Sache steht an genau einer Stelle, die anderen verweisen darauf statt sie zu wiederholen:
+
+| Was | Wo | Für wen, wie | Wann |
+|---|---|---|---|
+| Texte der Oberfläche, Tooltips | `web/i18n.js` (`t()`/`tr()`; Tooltips `h_*` über `hq()`, Sprung in die Hilfe über `HELP_AT`) | Nutzer am Element: ein, zwei Sätze | mit jedem sichtbaren Text |
+| Was jede Stelle zeigt | `docs/ui/<seite>.md`, am Element `data-ex="<seite>.<stelle>"` | der Assistent (Kurzerklärung per Rechtsklick, Fragen zur Seite, `search_help`): je Karte, Grafik, Tabelle, Spalte, Zeilenart, Kennzahl, was die Zahl ist – Wert des Zeitraums, Anteil oder Veränderung (wogegen), Zeitraum, Einheit, Vorzeichen, wie gerechnet, wovon sie abhängt; keine Bedienung, keine Anleitung | jede neue oder geänderte Stelle, Zahl oder Berechnung |
+| Hilfe | `docs/help.de.md` + `docs/help.en.md` (gleiche Anker) | Nutzer: wie es geht, warum, was es bewirkt, Sicherheit | wenn sich Bedienung oder Verhalten ändert |
+| README | `README.md` | Überblick, nur große Themen | neues großes Thema |
+| Änderungen | `CHANGELOG.md`, `HIGHLIGHTS.md` (siehe Jede Änderung abschließen) | Nutzer in der Update-Anzeige | jede Version |
+| Fahrplan | `ROADMAP.md` | Nutzer und Chats: Erledigtes, Offenes | jede Version, die einen Punkt berührt |
+| Regeln, Sicherheit, Aufbau | `CLAUDE.md` | Chats | neue Teile, neue Wege nach außen, neue Regeln |
+| Hilfe-Bilder | `tests/screenshots.py` → `docs/img/` | Hilfe und README | nur beim großen Versionssprung |
+
+`docs/ui` (Englisch, nur für den Assistenten; Kontor als Ganzes in `kontor.md`, er steht im Systemtext): je Seite eine Datei, Überschrift
+`# <seite> — <Name>`, darunter je Stelle `## <seite>.<stelle> — <Name auf dem Bildschirm>` (Teile `###`, Schlüssel mit Punkten); der
+Schlüssel steht wörtlich als `data-ex="…"` am umgebenden Element (nie zusammengesetzt). Kurz und genau, je Stelle höchstens etwa
+300 Wörter: jede sichtbare Zahl einzeln („Betrag: Ausgaben der Position im gewählten Zeitraum; Prozent daneben: Veränderung
+gegenüber denselben Monaten ein Jahr davor“), Zeilen- und Spaltenarten einer Tabelle, was Farben und Schraffur bedeuten. Der
+Rechtsklick gibt dem Assistenten die Stelle und alle Stellen um sie herum (von der Seite abwärts). `tests/test_ui_docs.py` prüft
+Schlüssel und Dateien, `test_tour`, dass jede sichtbare Tabelle, Grafik und Karte einer Seite, die der Assistent lesen darf, in
+einer beschriebenen Stelle liegt.
+
 ## Kleine und große Versionen
 - Kleine Versionen (dritte Stelle): zügig vorankommen – Funktionen, Verbesserungen, neue Features im Code; die üblichen Prüfungen.
   Texte der Hilfe (`docs/help.de.md`, `docs/help.en.md`) und des README mit pflegen, wo die Änderung sie betrifft – kurz, nur die
@@ -199,4 +222,5 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
 | `storage.py`, `access.py`, `auth.py`, `updates.py` + `update_guard.py`, `tls_cert.py` | verschlüsselte Ablage, Datenschlüssel nur nach Anmeldung (Schlüsseldatei, Erneuern), Anmeldung/Touch ID, Updates (mit der Prüfung der neuen Dateien vor dem Installieren), Zertifikat |
 | `changelog.py` | Änderungen je Hauptversion für Einstellungen → Updates (`CHANGELOG.md` + `HIGHLIGHTS.md`; getrennt vom Updater) |
 | `web/app.js`, `web/i18n.js` | Oberfläche (eine Datei, Seiten über `#…`), Texte |
+| `docs/ui/*.md` | was jede Stelle der Seiten zeigt, für den Assistenten (Rechtsklick, `search_help`, `kontor.md` im Systemtext) |
 | `tests/` | `fixtures.py` (erfundene Daten), `test_rules`, `test_cashflow` (Abstimmung je Monat, Zufallsläufe), `test_scenarios` (Lebensfälle über Bereiche: Einlagen, Kauf, Darlehen, Auslagen; Monats-/Jahreswechsel, gemischt), `test_worlds` (Zufallswelten: 1–3 Privatpersonen, bis 4 Firmen, Beteiligungen untereinander, Darlehen, PayPal, Miete, Überweisungen zwischen allen – alles geht auf, nichts bleibt unklar; dazu feste Sonderfälle an jeder Art Tag zwischen jeder Art Bereich), `test_rule_worlds` (Zufallswelten für die Buchungsregeln: Beteiligung täglich/monatlich, Darlehen mit beiden Zinsmodellen, Zinswechsel, Buchungstag, Kontenspiegel – am Ende jeder Cent nachgerechnet, nichts zu viel; dazu Änderungen in MoneyMoney zwischen den Läufen), `test_categories`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser), `test_assistant` (mit `fake_llama.py` statt llama.cpp, Downloads ohne Netz), `test_tables` (Excel lesen: Werte wie in Excel, Ausschnitte, Summen; abgelehnt: alte/geschützte Dateien, Entitäten, Grenzen, Teile außerhalb), `test_pdf_tables` (Tabellen aus PDFs/Bildern: erfundene Auswertungen über mehrere Seiten, Spalten, Zahlen, Köpfe, schiefe Scans, jeder Fall stiller Falschzahlen aus der Prüfung; `OnMac` läuft im macOS-Job mit dem echten Helfer), `test_web` (Internetsuche ohne Netz: Freigabe, Filter, Hosts, Grenzen, eingeschleuste Befehle), `test_tour` (Rundgang: jede Seite hell/dunkel, Mac/iPhone, de/en – Skriptfehler, Überlaufen, Textschlüssel, Kontrast), `test_fuzz`, `test_privacy`, `test_security` (Sperre, Datenschlüssel, Belegordner; `NothingGoesOut`: welche Teile ins Netz können, zu welchen Hosts, welche Programme sie starten – ein neuer Weg nach außen wird dort eingetragen), `test_update_guard` (Prüfung vor dem Update: untergeschobene Änderungen werden gefunden, gewöhnliche nicht; Warten und Freigabe, Archiv und Git-Klon), `test_hooks` (Lagebild und Push-Sperre der parallelen Chats) |

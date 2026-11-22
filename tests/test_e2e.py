@@ -1089,6 +1089,29 @@ class AppTests(_AppBase):
         self.assertNotEqual(self.app.do_run(None, False)["status"], "unchanged")
         self.assertIsNot(self.app.ledger, led)
 
+    def test_two_windows_keep_each_others_settings(self):
+        """Two windows drawn from the same settings: the second save keeps what the first changed meanwhile (the receipts pattern,
+        a new area) and takes its own (the sync interval); both changing the same setting: refused, nothing saved -- unless both
+        made it the same."""
+        self.login()
+        drawn = copy.deepcopy(self.app.config)
+        first = copy.deepcopy(drawn); first.setdefault("receipts", {})["subfolder"] = "{year}-{month}"
+        first["areas"] = first["areas"] + [{"id": "neu", "name": "Neu", "accounts": []}]
+        self.assertEqual(self.call("/api/config", {"config": first, "anyway": True, "seen": drawn}, method="PUT")[0], 200)
+        second = copy.deepcopy(drawn); second.setdefault("schedule", {})["interval_minutes"] = 45
+        code, r = self.call("/api/config", {"config": second, "anyway": True, "seen": drawn}, method="PUT")
+        self.assertEqual(code, 200, r)
+        c = self.app.config
+        self.assertEqual((c["receipts"]["subfolder"], c["schedule"]["interval_minutes"]), ("{year}-{month}", 45))
+        self.assertIn("neu", [b["id"] for b in c["areas"]])
+        again = copy.deepcopy(drawn); again.setdefault("receipts", {})["subfolder"] = "{year}"
+        code, r = self.call("/api/config", {"config": again, "anyway": True, "seen": drawn}, method="PUT")
+        self.assertEqual(code, 409, r); self.assertTrue(r.get("stale"))
+        self.assertEqual(self.app.config["receipts"]["subfolder"], "{year}-{month}")
+        same = copy.deepcopy(drawn); same.setdefault("schedule", {})["interval_minutes"] = 45
+        self.assertEqual(self.call("/api/config", {"config": same, "anyway": True, "seen": drawn}, method="PUT")[0], 200)
+        self.assertIn("neu", [b["id"] for b in self.app.config["areas"]])
+
     def test_receipt_pattern_only_known_placeholders(self):
         """A sub-folder pattern with braces around anything but the placeholders is not saved (at the Mac too)."""
         self.login()
@@ -2206,6 +2229,43 @@ class BereichOrderTests(unittest.TestCase):
         self.assertTrue(out[0]["main_area"]); self.assertEqual([b["kind"] for b in out], ["private", "private", "company", "company"])
 
 
+class SetupOnceTests(_AppBase):
+    """The first password, clicked twice (or ↩ twice) on a store without a key yet: set once -- the first click signs in, the second
+    is told to wait (never "locked" or "the key does not fit"), and the password then opens Kontor."""
+
+    def setUp(self):
+        super().setUp()
+        import storage
+        self.srv.shutdown(); self.srv.server_close()
+        self.dir = tempfile.mkdtemp(prefix="kontor-new-")       # as on a new Mac: an empty folder, the store closed, no key file
+        self.store = storage.Store.closed(self.dir)
+        self.app = App(self.store, self.dir, bridge_factory=MockBridge)
+        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.app))
+        self.port = self.srv.server_address[1]
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+
+    def test_two_clicks_set_it_once(self):
+        import access
+        slow, orig = threading.Event(), access.complete
+
+        def complete(*a, **k):                                 # the first one takes a while (PBKDF2): the second click comes meanwhile
+            slow.set(); time.sleep(0.4)
+            return orig(*a, **k)
+        got = []
+        with mock.patch.object(access, "complete", complete):
+            th = threading.Thread(target=lambda: got.append(self.call("/api/setup", {"password": "sehr-geheimes-passwort"}, warten=False)))
+            th.start(); self.assertTrue(slow.wait(10), got)
+            second = self.call("/api/setup", {"password": "sehr-geheimes-passwort"}, warten=False)
+            th.join(20)
+        self.assertEqual(got[0][0], 200, got)
+        self.assertEqual(second[0], 409); self.assertIn("gerade festgelegt", second[1]["error"])
+        self.assertTrue(self.call("/api/session")[1]["signed_in"])
+        self.call("/api/lock", {}, csrf=False)
+        self.csrf = got[0][1]["csrf"]; self.call("/api/lock", {}); self.csrf = None
+        code, r = self.call("/api/login", {"password": "sehr-geheimes-passwort"})
+        self.assertEqual(code, 200, r)
+
+
 class SecurityHttpTests(_AppBase):
     """Over HTTP (made-up data): background requests keep no session open; a link in the receipts folder to a file elsewhere
     is not handed out."""
@@ -2814,6 +2874,14 @@ class FeatureTests(_AppBase):
         self.assertEqual(depot["amounts"]["2026-10"], 85000.0); self.assertEqual(depot["amounts"]["2024-11"], 85000.0)
         self.assertNotIn("geschaetzt_bis", depot); self.assertEqual(depot["projected_before"], "2026-11")
         self.assertTrue(any("fortgeschrieben" in w for w in b["warnings"]))
+        # in the cash flow: what the depot did up to that month is no change in value -- a row of its own, named so
+        wert = [z for z in [s for s in b["cashflow"]["sections"] if s["name"] == "valuation"][0]["rows"] if z.get("account") == F.uid("priv.depot")]
+        for z in wert:
+            months = [m for m, v in z["amounts"].items() if abs(v or 0) >= 0.005]
+            if (z.get("lbl") or [""])[0] == "cf_wert_unbekannt":
+                self.assertTrue(all(m <= "2026-11" for m in months), months)
+            else:
+                self.assertTrue(all(m > "2026-11" for m in months), months)
         # Verlauf: Monatsstaende setzen, Import, Quelle umstellen
         code, h = self.call("/api/history?account=" + F.uid("priv.depot"))
         self.assertEqual(h["source"], "balances"); self.assertEqual(h["recorded"]["2026-11"], 85000.0)
@@ -2966,7 +3034,7 @@ class FeatureTests(_AppBase):
         si = {x["year"]: x for x in im["target_actual"]}
         self.assertEqual(si[2026]["rent_target"], 108000.0); self.assertEqual(si[2026]["rent_actual"], 9500.0 * 11)
         self.assertEqual(si[2026]["costs_actual"], -800.0 * 11); self.assertEqual(si[2026]["remaining_debt_target"], 1164000.0)
-        self.assertIsNotNone(si[2026]["remaining_debt_actual"])
+        self.assertGreater(si[2026]["remaining_debt_actual"], 0)          # what is owed, above zero like the calculation's
         # Planung der GbR: Mietzeile folgt der Kalkulation, Darlehenssaldo folgt der Kalkulation, Ausschuettung als Entnahme
         gbr = ds["areas"][F.uid("ga")]; fm = gbr["plan_months"]
         ez = [z for z in [s for s in gbr["cashflow"]["sections"] if s["name"] == "income"][0]["rows"] if z.get("property_name") == "Parkweg"][0]
@@ -3195,6 +3263,12 @@ class FeatureTests(_AppBase):
         p = _parse_balance_csv("Datum\tKonto\tSaldo\n31.01.2026\tGiro\t-12,5\n")
         self.assertEqual(p["Giro"]["2026-01"], -12.5)
         self.assertEqual(_parse_balance_csv("nur text"), {})
+        for slipped in ("2025-01-31,1234.56\n2025-02-28,1,234.56\n", "2025-01-31,1,234.56\n2025-02-28,1234.56\n", "Datum,Saldo\n2025-01-31,1,234.56\n",
+                        "Konto,2025-01-31,2025-02-28\nGiro,1,234.56,2000\n"):
+            with self.assertRaises(ValueError, msg=slipped):      # a comma inside an amount, not in quotes: refused (not 234,56 €, the January row lost)
+                _parse_balance_csv(slipped)
+        p = _parse_balance_csv("Kontostand-Export Depot\nDatum,Saldo\n2025-01-31,1000.00\n2025-02-28,1100.00\n")     # a title above the table: read
+        self.assertEqual(p[""], {"2025-01": 1000.0, "2025-02": 1100.0})
 
     def test_icon_und_neustart_bei_neuem_code(self):
         import service
@@ -6450,6 +6524,57 @@ class BrowserWizardTest(unittest.TestCase):
                 b.close()
         finally:
             srv.shutdown(); srv.server_close(); shutil.rmtree(d, ignore_errors=True)
+
+
+class DrawerPlacesBrowserTest(unittest.TestCase):
+    """The history panel of an account (a click on its name in the balance sheet) lies in places Kontor describes for the
+    assistant (data-ex, docs/ui/drawer.md) -- its chart and tables like every table, chart and card of a page (test_tour,
+    PLACES) -- and a right click on its chart names them, the innermost first."""
+
+    def test_history_panel_is_described(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        import assistant
+        from test_tour import PLACES
+        known = sorted(assistant.screen_notes(os.path.join(os.path.dirname(__file__), "..", *assistant.SCREEN_DIR)))
+        d = tempfile.mkdtemp(prefix="kontor-drawer-")
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege"))); store.save("state.json", dict(ALL_NEW))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        app.do_run(False, True)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                errors = []
+                pg = b.new_page(viewport={"width": 1440, "height": 900}); pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto("http://127.0.0.1:%d/#balance" % port)
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                wait_shell(pg)
+                for pos, which in (("cash", "tr.acct[data-id]:not(:has([data-dep]))"), ("securities", "tr.acct[data-id]:has([data-dep])")):          # a bank account, then a portfolio
+                    pg.evaluate("() => closeDrawer()")
+                    pg.click("#main .bil-tbl tr.pos[data-pos='%s'] td:first-child" % pos); pg.wait_for_selector("#main .bil-tbl " + which)
+                    pg.click("#main .bil-tbl %s td:first-child .nm" % which)
+                    until(pg, "!!document.querySelector('#drawer.open #h-svg')")
+                    pg.evaluate("() => { const h = document.querySelector('#drawer details.holdings'); if (h) h.open = true; }")          # a portfolio's holdings: their table too
+                    seen = pg.evaluate("() => [...document.querySelectorAll('#drawer.open table, #drawer.open .h-chart')].filter(el => el.getClientRects().length).map(el => el.closest('[data-ex]').dataset.ex)")
+                    self.assertIn("drawer.chart", seen, which)
+                    self.assertEqual(pg.evaluate(PLACES, known), [], which)
+                    until(pg, "document.querySelector('#drawer').getBoundingClientRect().right <= innerWidth + 1")          # slid in
+                    ex = pg.evaluate("""() => { const hit = document.querySelector('#drawer #h-svg .bch-hit'), r = hit.getBoundingClientRect();
+                        const ref = refAt({target: hit, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2}); return ref && ref.ex; }""")
+                    self.assertEqual(ex[:2], ["drawer.chart", "drawer.hist"], which)
+                    self.assertTrue(all(k in known for k in ex), ex)
+                self.assertIn("drawer.hist.holdings", seen)
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            app.stop.set()
+            shutil.rmtree(d, ignore_errors=True)
 
 
 if __name__ == "__main__":

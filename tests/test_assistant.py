@@ -1158,7 +1158,7 @@ class Tools(_Assist):
             self.assertEqual(list(self.a.t_calculate({"expression": expr}, {})), ["result"], expr)
         self.assertEqual(self.a.t_calculate({"expression": "999999999999999 - 0.5"}, {})["rounded"], 999999999999998.5)
         self.assertIn("plain numbers", self.tool("search_transactions", {"min_amount": "1,000"})["error"])
-        self.assertEqual(self.tool("search_transactions", {"min_amount": "1.000,00", "with_transfers": True})["count"],
+        self.assertEqual(self.tool("search_transactions", {"min_amount": "1.000,00", "with_transfers": True, "with_rule_bookings": True})["count"],
                          sum(1 for t in self.app.umsatzliste() if abs(t["amount"]) >= 1000))
         # how much may be pasted follows the context; a long paste makes the earlier turns give way
         self.assertEqual((A.question_limit(16384), A.question_limit(65536)), (19660, 40000))
@@ -1266,7 +1266,11 @@ class Tools(_Assist):
         for e in r["changes"]:
             am = next(v for (sec, row), v in rows.items() if row.replace("Ohne Kategorie", "(ohne Kategorie)") == e["row"])
             self.assertEqual(e["before"], round(sum(am.get(m) or 0 for m in known[:4]) / 4, 2), e["row"])
-            self.assertEqual(e["percent"], round((e["now"] - e["before"]) / abs(e["before"]) * 100, 1) if abs(e["before"]) >= 1 else None)
+            # by size, as the pages show it: an expense grown from -1,000 to -1,140 is +14 (more spent), one gone (0) is -100
+            pct = ((abs(e["now"]) - abs(e["before"])) if e["now"] * e["before"] >= 0 else (e["now"] - e["before"])) / abs(e["before"]) * 100 if abs(e["before"]) >= 1 else None
+            self.assertEqual(e["percent"], round(pct, 1) if pct is not None else None)
+            if e["row"] and e["section"] == "Ausgaben" and pct is not None and abs(e["now"]) > abs(e["before"]):
+                self.assertGreater(e["percent"], 0)
         # ten months against the same ten a year before; the default: the last closed month against the average
         r = self.tool("get_changes", {"from": "2026-01", "to": "2026-10"})
         self.assertEqual(r["compared_with"], {"what": "the same months a year before", "months": ["2025-01", "2025-10"]})
@@ -1376,13 +1380,23 @@ class Tools(_Assist):
             self.assertEqual(next(x for x in self.tool("get_status")["open"] if "approval" in x["what"])["count"], len(lr["proposals"]))
 
     def test_transactions(self):
+        with self.app.rebuild_cv:                 # the bookings the run wrote are in the list once the report after it is built
+            self.app.rebuild_cv.wait_for(lambda: not self.app.rebuild_running and not self.app.rebuild_pending, timeout=60)
+        if not any(t.get("kontor") for t in self.app.umsatzliste()):
+            self.app.do_run(None, False); self.app.rebuild_report(wait=True)
         ums = self.app.umsatzliste()
-        own = [t for t in ums if not t.get("transfer")]
+        # Kontor's own rule bookings (values, interest, mirrors -- no money that moved) are left out unless asked for
+        ruled = [t for t in ums if t.get("kontor")]
+        self.assertTrue(ruled and all("#kontor-" in t["purpose"] for t in ruled))
+        own = [t for t in ums if not t.get("transfer") and not t.get("kontor")]
         r = self.tool("search_transactions", {})
         self.assertEqual((r["count"], r["sum"]), (len(own), round(sum(t["amount"] for t in own), 2)))
+        self.assertIn("with_rule_bookings", r["note"])
+        r2 = self.tool("search_transactions", {"with_rule_bookings": True})
+        self.assertEqual(r2["count"], len(own) + len([t for t in ruled if not t.get("transfer")])); self.assertNotIn("with_rule_bookings", r2.get("note", ""))
         self.assertEqual(len(r["transactions"]), 20); self.assertEqual(r["more"], len(own) - 20)
         self.assertEqual(r["transactions"][0]["date"], max(t["date"] for t in own))
-        miete = [t for t in ums if "miete" in (t["name"] + " " + t["purpose"] + " " + t["category"] + " " + t["account_name"] + " " + str(t["amount"])).lower()]
+        miete = [t for t in ums if not t.get("kontor") and "miete" in (t["name"] + " " + t["purpose"] + " " + t["category"] + " " + t["account_name"] + " " + str(t["amount"])).lower()]
         r = self.tool("search_transactions", {"text": "Miete", "group_by": "year"})
         self.assertEqual((r["count"], r["sum"]), (len(miete), round(sum(t["amount"] for t in miete), 2)))
         self.assertEqual(sum(g["count"] for g in r["groups"]), len(miete))
@@ -1407,7 +1421,7 @@ class Tools(_Assist):
         self.assertNotIn("months", self.tool("search_transactions", {"group_by": "month"})["groups"][0])
         # receipts as the transactions page filters them
         without = MA.filter_transactions(self.app, {"without_receipt": "1", "direction": "out", "from": "2026-01-01", "to": "2026-12-31"})[0]
-        r = self.tool("search_transactions", {"receipt": "without", "direction": "out", "from": "2026-01", "to": "2026-12", "with_transfers": True})
+        r = self.tool("search_transactions", {"receipt": "without", "direction": "out", "from": "2026-01", "to": "2026-12", "with_transfers": True, "with_rule_bookings": True})
         self.assertEqual(r["count"], len(without))
         self.assertEqual(self.tool("search_transactions", {"receipt": "with"})["count"], 0)
 
@@ -1498,6 +1512,37 @@ class Tools(_Assist):
         self.a.set({"context": 0})
         self.assertEqual((self.a.settings()["context"], self.a.settings()["context_auto"]), (A.DEFAULTS["context"], True))
         self.a.set({"idle_minutes": 30})
+
+    def test_a_right_click_brings_what_the_place_shows(self):
+        """The quick explanation (right click): the model is given what Kontor says the place shows (docs/ui) -- the place and the
+        places around it, from the page down -- after the reference, and Kontor as a whole in the system text."""
+        with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record"), "w"):
+            pass
+        self.a.stop_all()
+        notes = {"kontor": {"name": "Kontor", "text": "Kontor reads MoneyMoney (root of the description)."},
+                 "cashflow": {"name": "Cashflow", "text": "Where the money goes."},
+                 "cashflow.ring": {"name": "Vorjahresvergleich", "text": "Amount beside each slice: this period's expenses; the percentage: the change against the same months a year before."},
+                 "overview.networth": {"name": "Nettovermögen", "text": "not asked about"}}
+        with mock.patch.object(self.a, "_screen", lambda: notes):
+            evs = self.ask("Erkläre kurz.", quick=True, refs=[{"label": "Wohnen: 17.400 €", "text": "Zeile: Wohnen", "ex": ["cashflow.ring", "cashflow"]}])
+        self.assertEqual(evs[-1]["type"], "done")
+        with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "request.json")) as f:
+            msgs = json.load(f)["messages"]
+        self.assertIn("root of the description", msgs[0]["content"])
+        user = next(m["content"] for m in msgs if m["role"] == "user")
+        self.assertIn("Wohnen: 17.400", user)
+        self.assertLess(user.index("## Cashflow (cashflow)"), user.index("## Vorjahresvergleich (cashflow.ring)"))
+        self.assertIn("the change against the same months a year before", user)
+        self.assertNotIn("not asked about", user); self.assertNotIn("root of the description", user)
+        self.assertIn("exactly as Kontor's description of the place says", user)              # the quick note: by the description
+        # search_help finds a place's description too (no anchor: it is no section of the help); the page tool names its places
+        self.a._help, self.a._help_ix = {}, None
+        with mock.patch.object(self.a, "_screen", lambda: notes):
+            found = [x for x in self.tool("search_help", {"query": "Vorjahresvergleich Prozent"})["found"] if "place" in x]
+            self.assertEqual((found[0]["place"], found[0]["what_it_shows"]), ("Vorjahresvergleich", True)); self.assertNotIn("anchor", found[0])
+            page = self.tool("get_current_page", page={"route": "#cashflow", "title": "Cashflow", "text": "Seite"})
+            self.assertEqual((page["what_it_shows"], page["places"]), ("Where the money goes.", ["Vorjahresvergleich"]))
+        self.a._help, self.a._help_ix = {}, None
 
     def test_settings_are_checked(self):
         s = A.settings({"assistant": {"enabled": "yes", "model": 7, "effort": "max", "context": 123, "idle_minutes": -5, "sandbox": 0, "rights": {"enter_values": "true", "x": True, "figures": False}}})
@@ -4995,6 +5040,12 @@ class Browser(unittest.TestCase):
                 pg.evaluate("asLoad()"); until(pg, "asOn()"); pg.evaluate("asDrawnWait()")
                 pg.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=url.rstrip("/"))
                 ki = ["Kurz erklären", "Im Chat fragen"]
+                # the expenses' ring, a label outside it: the period's amount and its change against the year before -- each named, so the
+                # amount is not taken for a change; the places it stands in come along (what Kontor says they show)
+                r = pg.evaluate("""(() => { const el = [...document.querySelectorAll('[data-ex="cashflow.ring"] .cf-pie-m')].find(x => x.getClientRects().length);
+                    const b = el.getBoundingClientRect(); return refAt({target: el, clientX: b.left + 2, clientY: b.top + 2}); })()""")
+                self.assertRegex(r["text"], r"Wert: [\d.]+ \(Betrag\) \S+ % \(Veränderung\)")
+                self.assertIn("cashflow.ring", r["ex"]); self.assertEqual(r["ex"][-1], "cashflow")
                 # a figure: its row and column (the names stand in a table of their own beside the figures), the rows above it
                 row, col, val, path = pg.evaluate("""(() => { const n = document.querySelector('#main .cf-pair table.cf-names'), v = document.querySelector('#main .cf-pair table.cf-tbl:not(.cf-names)');
                     const tr = [...n.tBodies[0].rows].find(r => r.getClientRects().length && +r.dataset.depth > 0 && refLabel(r.cells[0]) && refVal(v.rows[r.rowIndex].cells[1]));

@@ -697,6 +697,16 @@ class BackupReadBack(unittest.TestCase):
             fn(arg)
         return str(e.exception)
 
+    def test_the_settings_in_their_form_or_none(self):
+        """A part of the settings that should be a list or a table and is not (areas: "kaputt"): the whole file is refused before
+        anything is written -- not taken with the areas emptied."""
+        class App:
+            config = {"areas": [{"id": "b1", "name": "Privat", "accounts": []}]}
+        for bad in ({"areas": "kaputt"}, {"loans": {}}, {"cashflow": []}, {"companies": 5}):          # (ui, receipts, updates: as this Mac has them)
+            with self.assertRaises(ValueError, msg=bad) as e:
+                self.MA.restore_backup(App(), {"config": bad})
+            self.assertIn("Einstellungen", str(e.exception)); self.assertIn("nichts wurde geändert", str(e.exception))
+
     def test_a_waiting_category_never_comes_back(self):
         got = self.MA.backup_parts({"categories": {"version": 3, "assignment": {"4711": {"k": "Wohnen / Miete", "q": "manual", "p": 1}},
                                                    "rules": [], "learned_at": None, "_idx": 5}})

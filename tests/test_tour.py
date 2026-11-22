@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from test_e2e import MockBridge, config_for_test, patch_today, reset_mock  # noqa: E402
 from service import App, make_handler  # noqa: E402
 from fixtures import new_store  # noqa: E402
+import assistant  # noqa: E402
 
 PASSWORD = "sehr-geheimes-passwort"
 # (device, appearance, language); English last: it switches the language of the service
@@ -25,6 +26,21 @@ DEVICES = {"mac": {"viewport": {"width": 1440, "height": 900}},
 # Apple's guidelines: at least 4.5:1 for text, 3:1 for large text. Still a report, not a failure: a few muted texts (zeros in
 # tables, the menu's section titles, small grey notes, green amounts in light mode) are below it -- the user decides first.
 CONTRAST_ENFORCED = False
+
+# every table, chart and card a right click can land on lies in a place Kontor describes for the assistant (data-ex, docs/ui) --
+# on the pages the assistant may read (never settings, log, setup or its own panel)
+PLACES = r"""(known => {
+  const vis = el => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none';
+  const desc = el => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '');
+  const out = [];
+  for (const el of document.querySelectorAll('#main table, #main .card, #main .co-card, #main .kpi, #main #bch, #main .lc, #main .cf-card, #main .ov-card, #main .im-chart, #drawer.open table, #drawer.open .h-chart')) {
+    if (!vis(el)) continue;
+    const host = el.closest('[data-ex]'), k = host ? host.dataset.ex : '';
+    if (!k || !k.includes('.') || !known.includes(k)) out.push(desc(el) + (k ? ' (' + k + ')' : ''));
+  }
+  return [...new Set(out)];
+})"""
+HIDDEN = ("settings", "log", "setup", "assistant")
 
 CHECKS = r"""(() => {
   const out = {overflow: null, keys: [], junk: [], contrast: []};
@@ -164,6 +180,7 @@ class PageTourTest(unittest.TestCase):
 
     def tour(self, browser, engine):
         problems, contrast, pages = [], {}, set()
+        known = sorted(assistant.screen_notes(os.path.join(os.path.dirname(__file__), "..", *assistant.SCREEN_DIR)))
         self.app.config.setdefault("ui", {})["language"] = "de"
         for device, theme, lang in VIEWS:
             if lang != "de":
@@ -198,6 +215,9 @@ class PageTourTest(unittest.TestCase):
                 tab = h[1:].split("/")[0]
                 todo += [s for s in pg.evaluate("tab => [...new Set([...document.querySelectorAll('#main a[href^=\"#' + tab + '/\"]')].map(a => a.getAttribute('href').split('?')[0]))]", tab) if s not in seen]
                 r = pg.evaluate(CHECKS)
+                if (device, theme, lang) == VIEWS[0] and tab not in HIDDEN:
+                    for miss in pg.evaluate(PLACES, known):
+                        problems.append("%s %s: nicht beschrieben (data-ex, docs/ui): %s" % (view, h, miss))
                 for e in errors:
                     problems.append("%s %s: %s" % (view, h, e))
                 if r["overflow"]:

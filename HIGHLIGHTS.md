@@ -4,6 +4,9 @@ Was eine Hauptversion gegenüber der vorigen bringt: die Unterversionen davor (3
 die nach der Gesamtprüfung erscheint. Nur die großen Themen, höchstens sechs Punkte – Einzelheiten in CHANGELOG.md.
 Einstellungen → Updates zeigt den Überblick vor den einzelnen Versionen; die kommende Hauptversion als „in Arbeit“.
 
+## 3.18
+- KI-Assistent kennt jede Stelle jeder Seite: der Rechtsklick sagt, was eine Zahl ist – Wert des Zeitraums, Anteil oder Veränderung
+
 ## 3.17
 - Sicherheit: Daten erst nach deiner Anmeldung lesbar (Passwort oder Touch ID); jedes Update vor dem Installieren gelesen und geprüft
 - KI-Assistent schlägt vor, du entscheidest: Kategorien, Buchungsregeln, Auto-Buchungen, Belege – ausgeführt nach deinem Klick, mit Protokoll

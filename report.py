@@ -1808,7 +1808,11 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                 delta = (h[mk] or 0.0) - (h[mkeys[i - 1]] or 0.0)
                 if acc.portfolio:
                     val = round(delta - inbound[acc.uuid].get(mk, 0.0), 2)
-                    if abs(val) >= 0.005:
+                    first = fortgeschrieben.get(acc.uuid)
+                    if abs(val) >= 0.005 and first and mk <= first:      # no balance known before: the first one carried back -- its own row
+                        R.add("valuation", acc.name, acc.name + " / unbekannt", mk, val, account=acc.uuid, kind="depot", nw=True,
+                              lbl=("cf_wert_unbekannt", acc.name, month_text(first)))
+                    elif abs(val) >= 0.005:
                         R.add("valuation", acc.name, acc.name, mk, val, account=acc.uuid, kind="depot", nw=True)
                 else:                                   # saving you sent there without a booking counts as paid in
                     val = round(delta - own.get(mk, 0.0) - ((getattr(R, "mapped_in", None) or {}).get(acc.uuid) or {}).get(mk, 0.0), 2)
@@ -2069,8 +2073,8 @@ def _plan_value(method: str, hist_vals: List[float], same_month_last_year: Optio
     if method == "prev_year":
         return float(same_month_last_year or 0.0)
     n = 6 if method == "rolling6" else 12
-    vals = hist_vals[-n:]
-    return round(sum(vals) / n, 2) if vals else 0.0
+    vals = hist_vals[-n:]                    # fewer closed months known (a new area): their average, not a twelfth of their sum
+    return round(sum(vals) / len(vals), 2) if vals else 0.0
 
 
 def _event_months(ev: dict, future: List[str]) -> List[str]:

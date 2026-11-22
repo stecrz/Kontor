@@ -722,6 +722,11 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) reva
 window.addEventListener('focus', revalidate);
 $('#login-form').addEventListener('submit', async e => {
   e.preventDefault();
+  if (LOGIN.busy) return;          // a second click (↩) while the first is on its way: nothing more
+  LOGIN.busy = true;
+  try { await loginSubmit(); } finally { LOGIN.busy = false; }
+});
+async function loginSubmit() {
   const pw = $('#login-pw').value, setup = SESSION && SESSION.setup_needed && !OFFLINE.mode;
   if (setup && pw !== $('#login-pw2').value) { $('#login-err').textContent = t('passwoerter_stimmen_nicht_ueberein'); return; }
   if (OFFLINE.mode) {
@@ -738,7 +743,7 @@ $('#login-form').addEventListener('submit', async e => {
     await offKeyEnsure(pw);
     await enterApp();
   } catch (err) { if (err.status === 409 && LOGIN.demo && err.data && err.data.signed_in) location.reload(); else $('#login-err').textContent = err.message; }      // signed in meanwhile (another window): that window's Kontor
-});
+}
 $('#touchid-btn').addEventListener('click', () => tryTouchId(false));
 $('#lang-sel').addEventListener('change', e => setLang(e.target.value, true));
 $('#pw-instead').addEventListener('click', () => { LOGIN.pw = true; showLogin(); });
@@ -932,7 +937,8 @@ async function enterApp() {
   if (demoOn() && DEMO_OFF.has((location.hash.slice(1).split(/[/?]/)[0]))) history.replaceState(null, '', '#overview');
   if (!location.hash && !OFFLINE.mode && !demoOn() && setupOpen() && (S.setup || !S.DATA || (APP_MODE && (S.STATUS || {}).local && !((S.CFG || {}).ui || {}).webapp)))
     history.replaceState(null, '', '#setup');
-  route();
+  // locked (⌘L, idle) with something typed in and not saved: signed in again, the page stays as you left it -- saved with its button
+  if (!(DIRTY.on && DIRTY.hash === location.hash && $('#main .actions'))) route();
   if (!OFFLINE.mode) asLoad().then(() => { try { if (LS.get('kontor.assist') === '1' && asOn()) { AS.open = true; asLayout(); } } catch (e) {} if (S.tab === 'assistant' || S.tab === 'setup') route(); });
   if (!OFFLINE.mode && !demoOn()) api('/api/offline/verifier').catch(() => {});       // für die Offline-Ansicht zwischenspeichern
   if (APP_MODE) webappSeen();
@@ -1001,6 +1007,7 @@ function statusMini() {
   const mm = mmState(st), m = st.moneymoney || {}, b = st.report || {}, l = st.last_run, ba = m.bank_fetch;
   const zeile = (k, v, title) => `<div class="sm-row"${title ? ' title="' + esc(title) + '"' : ''}><span>${k}</span><b>${v}</b></div>`;
   let h = `<div class="sm-head"><span class="dot ${mm.cls}"></span>${mm.text} ${hq('abgleich')}</div>`;
+  if (st.read_only) h += `<div class="sm-ro" title="${esc(t('s_von_unterwegs_nur_ansehen'))}">${ICON.eye}${t('nur_ansehen')}</div>`;          // from another device: what you change is not taken
   if (m.as_of || ba) {
     const n = ba ? ba.back_count : 0;
     const warn = n ? ` <span class="sm-badge" title="${esc(n + (n === 1 ? t('konto') : t('konten')) + t('laenger_nicht_abgerufen') + ba.back.slice(0, 5).map(k => k.name).join(', ') + (n > 5 ? ' …' : '') + t('details_unter_synchronisierung'))}">⚠ ${n}</span>` : '';
@@ -1043,7 +1050,7 @@ $('#banner').addEventListener('click', async e => {
 const BER = {as_of: '', timer: null};
 const SYNC = {busy: false};
 const MMH = {busy: false};
-const DATA_TABS = ['overview', 'balance', 'cashflow', 'planning', 'tax', 'properties', 'transactions', 'categories', 'accounts/positions', 'bookings'];
+const DATA_TABS = ['overview', 'balance', 'cashflow', 'planning', 'tax', 'properties', 'transactions', 'categories', 'accounts/', 'accounts/positions', 'bookings'];   // 'accounts/': the accounts list itself
 async function pollStatus(all) {
   // Status holen; läuft ein Abgleich oder Berichtsneubau, öfter nachsehen und nach Abschluss die Daten frisch laden
   // all (after "Sync"): the open page is drawn again whatever it is, not only the pages with figures
@@ -1059,7 +1066,7 @@ async function pollStatus(all) {
     if (b.error) { toast(t('auswertung_konnte_nicht_aktualisiert_w') + b.error, 6000); return; }
     await loadAll();
     const dr = $('#drawer');
-    if (dr.classList.contains('open') && HD.uuid && $('#hq-seg', dr)) { if (!HD.live && !$$('#h-grid input:not(.auto)', dr).some(i => i.value !== i.defaultValue)) { try { await openHistDrawer(HD.uuid); } catch (e) {} } }
+    if (dr.classList.contains('open') && HD.uuid && $('#hq-seg', dr)) { if (!HD.live && !drawerDirty()) { try { await openHistDrawer(HD.uuid); } catch (e) {} } }
     else if ((DATA_TABS.includes(S.tab) || DATA_TABS.includes(S.tab + '/' + S.sub) || all) && !dr.classList.contains('open') && !DIRTY.on) route();
     toastQuiet(t('auswertung_aktualisiert'));
   }
@@ -1152,11 +1159,15 @@ async function vUebersicht() {
   const m = D.months, cur = m[m.length - 1], yr = cur.slice(0, 4);
   const items = await openItems(D);
   // beside the monthly chart (lower right): what is open, each line leads where it is done -- the list scrolls if long
-  const todo = items.length ? `<div class="card ov-todo" data-ov="todo"><div class="ov-head"><b>${t('ov_offen')}</b><span class="ov-fig"><span class="ov-s">${items.length}</span></span></div><div class="ov-todo-l">${items.map(([k, x, href]) => `<a href="${href}" class="ov-todo-i ${k}"><i class="ov-todo-d"></i><span>${esc(x)}</span><span class="ov-todo-c" aria-hidden="true">›</span></a>`).join('')}</div></div>` : '';
-  const card = (id, title, go, foot = '') => `<div class="card link ov-card" data-ov="${id}" data-ovgo="${go}" role="link" tabindex="0" aria-label="${esc(title)}"><div class="ov-head"><b>${esc(title)}</b><span class="ov-fig" id="ov-fig-${id}"></span></div><div class="ov-plot" id="ov-${id}"></div>${foot}</div>`;
-  const key = [['ein', t('einnahmen')], ['aus', t('ausgaben')], ['inv', t('cf_investitionen')], ['fin', t('cf_finanzierung')]].map(([c, l]) => `<span><i class="sw ${c === 'ein' ? 'in' : c === 'aus' ? 'out' : c}"></i>${esc(l)}</span>`).join('')
+  const todo = items.length ? `<div class="card ov-todo" data-ov="todo" data-ex="overview.todo"><div class="ov-head"><b>${t('ov_offen')}</b><span class="ov-fig"><span class="ov-s">${items.length}</span></span></div><div class="ov-todo-l">${items.map(([k, x, href]) => `<a href="${href}" class="ov-todo-i ${k}"><i class="ov-todo-d"></i><span>${esc(x)}</span><span class="ov-todo-c" aria-hidden="true">›</span></a>`).join('')}</div></div>` : '';
+  // ex: where the card and its head figure stand in Kontor's description of the page (docs/ui/overview.md)
+  const card = (id, title, go, ex, foot = '') => `<div class="card link ov-card" data-ov="${id}" data-ovgo="${go}" ${ex[0]} role="link" tabindex="0" aria-label="${esc(title)}"><div class="ov-head"><b>${esc(title)}</b><span class="ov-fig" id="ov-fig-${id}" ${ex[1] || ''}></span></div><div class="ov-plot" id="ov-${id}"></div>${foot}</div>`;
+  const unk = cfDone(D).slice(-12).some(k => Math.abs(((D.cashflow.sums || {})[k] || {}).unclear || 0) >= 0.5);          // grey bars drawn: named too
+  const key = [['ein', t('einnahmen')], ['aus', t('ausgaben')], ['inv', t('cf_investitionen')], ['fin', t('cf_finanzierung')]].concat(unk ? [['unk', t('cf_unklar')]] : []).map(([c, l]) => `<span><i class="sw ${c === 'ein' ? 'in' : c === 'aus' ? 'out' : c}"></i>${esc(l)}</span>`).join('')
     + `<span><i class="sw net"></i>${esc(t('zahlungsfluss_gesamt_veraenderung_liqu'))}</span>`;
-  return `<div class="ov-grid${todo ? '' : ' no-todo'}"><div class="cf-tip hidden" id="cf-tip" role="tooltip"></div>${card('nw', t('nettovermoegen'), 'nw')}${card('comp', t('vermoegensstruktur'), 'table')}${card('wealth', t('cf_verm_bruecke'), 'wealth')}${card('months', t('cf_je_monat_t'), 'months', `<div class="ov-key">${key}</div>`)}${card('build', t('ov_aufbau'), 'table')}${todo}</div>`;
+  return `<div class="ov-grid${todo ? '' : ' no-todo'}"><div class="cf-tip hidden" id="cf-tip" role="tooltip"></div>${card('nw', t('nettovermoegen'), 'nw', ['data-ex="overview.nw"', 'data-ex="overview.nw.head"'])}`
+    + card('comp', t('vermoegensstruktur'), 'table', ['data-ex="overview.comp"', 'data-ex="overview.comp.head"']) + card('wealth', t('cf_verm_bruecke'), 'wealth', ['data-ex="overview.wealth"', 'data-ex="overview.wealth.head"'])
+    + card('months', t('cf_je_monat_t'), 'months', ['data-ex="overview.months"', 'data-ex="overview.months.head"'], `<div class="ov-key">${key}</div>`) + card('build', t('ov_aufbau'), 'table', ['data-ex="overview.build"']) + `${todo}</div>`;
 }
 // where a chart leads: the balance sheet's chart or table, the cash flow's months or net worth bridge (the last 12 months, as here)
 const OV_GO = {nw: ['#balance', '#bch'], table: ['#balance', '.wrap.bil-tbl'], ekq: ['#balance', 'tr.ekq'], months: ['#cashflow', '[data-cfid="months"]'], wealth: ['#cashflow', '[data-cfid="wealth"]'],
@@ -1219,6 +1230,7 @@ function ovBuild(D) {
   if (!blocks.length) return ovEmpty(t('noch_keine_bestaende'));
   const scale = Math.max(1, ...blocks.filter(x => !x.unk.length).map(x => Math.abs(x.chg)));
   const sg = v => (v > 0.5 ? '+' : v < -0.5 ? '' : '±') + F0(v) + ' €', per = `${ML(span[0])} – ${ML(k)}`;
+  const EXB = {bet: 'data-ex="overview.build.bet"', immo: 'data-ex="overview.build.immo"', liq: 'data-ex="overview.build.liq"', debt: 'data-ex="overview.build.debt"'};          // docs/ui/overview.md
   const rows = blocks.map(x => {
     const [name, color] = B0[x.id], unk = x.unk.length > 0, w = Math.min(50, Math.abs(x.chg) / scale * 50);
     const sub = x.id === 'debt' ? (unk || Math.abs(x.chg) < 0.5 ? '' : t(x.chg > 0 ? 'ov_b_getilgt' : 'ov_b_neu', F0(Math.abs(x.chg))))
@@ -1230,7 +1242,7 @@ function ovBuild(D) {
       + (lines.length > 8 ? `<div class="cf-tip-note">${esc(t('cf_uebrige', lines.length - 8))}</div>` : '')
       + (unk ? '' : `<div class="cf-tip-res">${x.id === 'debt' ? '' : cfTipRow('none', t('ov_b_fluss'), sg(x.flow)) + cfTipRow('none', t('ov_b_wert'), sg(x.w))}${cfTipTot(t('ov_b_veraenderung'), sg(x.chg))}</div>`)
       + `<div class="cf-tip-note">${esc(unk ? t('ov_b_unbekannt_tip') : x.id === 'debt' ? t('ov_b_debt_tip') : t('ov_b_fluss_tip'))}</div>`);
-    return `<div class="ov-bs-r" data-cftip="${tip}"><span class="ov-bs-n"><i style="background:${color}"></i>${esc(name)}</span>`
+    return `<div class="ov-bs-r" ${EXB[x.id]} data-cftip="${tip}"><span class="ov-bs-n"><i style="background:${color}"></i>${esc(name)}</span>`
       + `<span class="ov-bs-d${unk ? ' muted' : Math.abs(x.chg) < 0.5 ? '' : x.chg > 0 ? ' pos' : ' neg'}">${esc(unk ? t('ov_b_unbekannt') : sg(x.chg))}</span>`
       + `<span class="ov-bs-b">${unk ? '' : `<i class="${x.chg >= 0 ? 'pos' : 'neg'}" style="${x.chg >= 0 ? 'left:50%' : `left:${(50 - w).toFixed(1)}%`};width:${w.toFixed(1)}%"></i>`}</span>`
       + `<span class="ov-bs-s">${esc(F0(x.now))} €${sub ? ' · ' + esc(sub) : ''}</span></div>`;
@@ -1238,7 +1250,7 @@ function ovBuild(D) {
   return {svg: `<div class="ov-bs">${rows}</div>`, fig: `<span class="ov-s">${esc(per)}</span>`};
 }
 const ovDelta = v => v == null ? '' : `<span class="ov-d ${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : ''}${F0(v)} €</span>`;
-// 1. Net worth: the last two years as a line over a quiet area; the figure now and its change over twelve months
+// 1. Net worth: the last twelve closed months as a line over a quiet area; the figure now and its change over them
 function ovNetWorth(D, W, H) {
   const nw = D.balance.net_worth || {}, ms = cfDone(D).filter(k => nw[k] != null).slice(-13);          // twelve closed months back from the last one
   if (ms.length < 2) return ovEmpty(t('noch_zu_wenig_monate'));
@@ -1286,7 +1298,10 @@ function ovComposition(D, W, H) {
   const pos = D.balance.rows.filter(r => r.group && ROLE[r.role] && r.role !== 'contingent' && r.role !== 'ignore');
   const val = (r, m = k) => (r.amounts || {})[m] || 0, assets = pos.filter(r => r.role !== 'liabilities' && val(r) > 0.5).sort((a, b) => val(b) - val(a));
   const has0 = pos.some(r => (r.amounts || {})[k0] != null);
-  const debtsAt = m => -pos.filter(r => val(r, m) < -0.5).reduce((a, r) => a + val(r, m), 0), sumAt = m => pos.filter(r => r.role !== 'liabilities' && val(r, m) > 0.5).reduce((a, r) => a + val(r, m), 0);
+  // debts account by account (the tiles at the right): a loan account in credit (overpaid) is no debt -- it stands with the assets
+  const liab = D.balance.rows.filter(r => !r.group && r.role === 'liabilities'), sumOf = (rs, m) => rs.reduce((a, r) => a + val(r, m), 0);
+  const debtsAt = m => -sumOf(liab.filter(r => val(r, m) < -0.5), m) - sumOf(pos.filter(r => r.role !== 'liabilities' && val(r, m) < -0.5), m);
+  const sumAt = m => sumOf(pos.filter(r => r.role !== 'liabilities' && val(r, m) > 0.5), m) + sumOf(liab.filter(r => val(r, m) > 0.5), m);
   const debts = debtsAt(k), sumA = sumAt(k), equity = sumA - debts;
   if (sumA < 0.5 && debts < 0.5) return ovEmpty(t('noch_keine_bestaende'));
   const total = Math.max(sumA, debts);
@@ -1324,11 +1339,12 @@ function ovComposition(D, W, H) {
     ...debtRows.map(r => ['var(--c-verb)', r.name, -val(r), yoy(-val(r), then(r, -1)), false, then(r, -1)])];
   // a position below 0 that is no debt (an overdrawn account, a participation worth less than nothing): with its own name
   for (const r of pos.filter(r => r.role !== 'liabilities' && val(r) < -0.5)) passiva.push(['var(--c-verb)', r.name, -val(r), yoy(-val(r), then(r, -1)), false, then(r, -1)]);
-  const aktiva = assets.map(r => [ROLE[r.role][1], r.name, val(r), yoy(val(r), then(r)), true, then(r)]);
+  const aktiva = assets.map(r => [ROLE[r.role][1], r.name, val(r), yoy(val(r), then(r)), true, then(r)])
+    .concat(liab.filter(r => val(r) > 0.5).map(r => [ROLE.liabilities[1], r.name, val(r), yoy(val(r), then(r)), true, then(r)]));
   if (equity < -0.5) aktiva.push(['var(--c-neutral)', t('ov_fehlbetrag'), -equity, '', true, null]);
   const side = (list, x0) => treemap(list.map(e => e[2]), x0, cap, half, ph).map(q => { const [c, n, v, chg, good, v0] = list[q.i]; return tile(q.x, q.y, q.w, q.h, c, n, v, chg, good, v0); }).join('');
-  let g = `<text class="ov-cap" x="2" y="11">${esc(t('ov_aktiva'))}</text><text class="ov-cap" x="${(x2 + 2).toFixed(1)}" y="11">${esc(t('ov_passiva'))}</text>`
-    + side(aktiva, 0) + side(passiva, x2);
+  const g = `<g data-ex="overview.comp.assets"><text class="ov-cap" x="2" y="11">${esc(t('ov_aktiva'))}</text>${side(aktiva, 0)}</g>`
+    + `<g data-ex="overview.comp.funding"><text class="ov-cap" x="${(x2 + 2).toFixed(1)}" y="11">${esc(t('ov_passiva'))}</text>${side(passiva, x2)}</g>`;
   return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('vermoegensstruktur'))}">${g}</svg>`,
     fig: `<span class="ov-v">${F0(sumA)} €</span><span class="ov-s" title="${esc(t('ov_brutto_tip'))}">${esc(t('ov_brutto_am', ML(k)))}${has0 ? ' · ' + esc(t('ov_vergleich', ML(k0))) : ''}</span>`};          // the period: that month, against a year before
 }
@@ -1410,8 +1426,8 @@ const MODULES = [
   {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => Object.keys((S.CFG.cashflow || {}).positions || {}).length > 0, href: '#accounts/positions', optional: true},
   {id: 'properties', t: t('mod_properties'), d: t('kalkulationen_anlegen_mit_konten_und'), done: () => (S.CFG.real_estate || []).length > 0, href: '#properties', optional: true},
   {id: 'planning', t: t('mod_planning'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planning', optional: true},
-  {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => !!(S.CFG.tax || {}).rental_category, href: '#accounts/tax', optional: true},
-  {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.receipts || {}).folder, href: '#settings/receipts', optional: true},
+  {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => ['property_loans', 'depreciation', 'positions', 'entities'].some(k => Object.keys((S.CFG.tax || {})[k] || {}).length), href: '#accounts/tax', optional: true},
+  {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.receipts || {}).folder_confirmed, href: '#settings/receipts', optional: true},
   {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => (((S.CFG || {}).ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
   {id: 'assistant', t: t('ki_assistent_lang'), d: t('mod_assistant_d'), done: () => asOn() && !!(AS.st || {}).ready, href: '#settings/assistant', optional: true},
   {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.categories || {}).total || {}).without), href: '#categories', optional: true},
@@ -1422,7 +1438,7 @@ const nextModule = id => MODULES[MODULES.findIndex(m => m.id === id) + 1];      
 const setupMissing = () => MODULES.some(m => !m.optional && !m.done());
 const setupOpen = () => !((S.CFG || {}).ui || {}).setup_done;          // (also before the settings have arrived, just after signing in)
 function vEinrichtung(sub) {
-  let h = `<div class="lang-pick"><label for="w-lang" class="small muted">${t('sprache_label')}</label><select id="w-lang">${langOpts()}</select></div>${S.KONTEN.length ? '' : `<div class="note">${t('noch_keine_konten_aus_moneymoney')}</div>`}<div class="setup-list">`;
+  let h = `<div class="lang-pick" data-ex="setup.language"><label for="w-lang" class="small muted">${t('sprache_label')}</label><select id="w-lang">${langOpts()}</select></div>${S.KONTEN.length ? '' : `<div class="note">${t('noch_keine_konten_aus_moneymoney')}</div>`}<div class="setup-list" data-ex="setup.steps">`;
   MODULES.forEach((m, i) => {
     const ok = m.done();
     h += `<div class="srow ${ok ? 'done' : ''}"><div class="n">${ok ? '✓' : i + 1}</div><div class="b"><div class="t">${esc(m.t)}<span class="pill ${ok ? 'ok' : (m.optional ? 'neutral' : 'warn')}">${ok ? t('eingerichtet') : (m.optional ? t('optional') : t('offen'))}</span></div><div class="d">${m.id === 'webapp' ? webappStep(ok) : esc(m.d)}</div></div><div class="a">${m.id === 'webapp' ? (!SHELL && macApp() && macApp().ready ? `<button id="mac-app-open" class="small">${t('mac_app_oeffnen')}</button>` : INSTALL_PROMPT && !ok ? `<button id="webapp-install" class="small">${t('als_app_installieren')}</button>` : '') : `<a href="${m.href}"><button class="small ${ok ? 'secondary' : ''}">${ok ? t('anpassen') : t('einrichten')}</button></a>`}</div></div>`;
@@ -1431,8 +1447,8 @@ function vEinrichtung(sub) {
   const miss = setupMissing(), close = setupOpen()
     ? `<button id="setup-done" ${miss ? `disabled title="${esc(t('einrichtung_erst_noetige'))}"` : `title="${esc(t('einrichtung_abschliessen_tip'))}"`}>${t('einrichtung_abschliessen')}</button>`
     : `<button id="setup-again" class="secondary" title="${esc(t('einrichtung_wieder_tip'))}">${t('einrichtung_wieder')}</button>`;
-  h += `<div class="actions">${close}<button id="check-btn" class="secondary">${t('einrichtung_pruefen')}</button>${hq('einrichtung_knoepfe')}</div><div id="findings-e" class="findings"></div>`;
-  if (!S.DATA) h += `<div class="card"><h3>${t('erste_auswertung_erstellen')}</h3><div class="small muted">${t('liest_alle_umsaetze_aus_moneymoney')}</div><div class="actions"><button id="w-report" class="small">${t('auswertung_erstellen')}</button></div></div>`;
+  h += `<div data-ex="setup.finish"><div class="actions">${close}<button id="check-btn" class="secondary">${t('einrichtung_pruefen')}</button>${hq('einrichtung_knoepfe')}</div><div id="findings-e" class="findings"></div></div>`;
+  if (!S.DATA) h += `<div class="card" data-ex="setup.report"><h3>${t('erste_auswertung_erstellen')}</h3><div class="small muted">${t('liest_alle_umsaetze_aus_moneymoney')}</div><div class="actions"><button id="w-report" class="small">${t('auswertung_erstellen')}</button></div></div>`;
   return h;
 }
 function mmhStep1(st) {
@@ -1442,11 +1458,11 @@ function mmhStep1(st) {
 async function vMMHistorie() {
   let r = {}; try { r = await api('/api/sync'); } catch (e) {}
   const rest = depotSection(r) + histImportSection();
-  return setupNav('history') + `<h2>${t('verlauf_aus_mm_h')}</h2>` + (S.STATUS.local ? vMMImport() : `<div class="note">${t('nur_direkt_am_mac_moeglich')}</div>`) + rest;
+  return setupNav('history') + `<div data-ex="accounts.history"><div data-ex="accounts.history.moneymoney"><h2>${t('verlauf_aus_mm_h')}</h2>` + (S.STATUS.local ? vMMImport() : `<div class="note">${t('nur_direkt_am_mac_moeglich')}</div>`) + '</div>' + rest + '</div>';
 }
 function histImportSection() {
-  return `<h2>${t('saldenverlauf_importieren_0', hq('verlauf_import'))}</h2><div class="note">${t('fuer_depots_und_konten_ohne')}</div>
-    <div class="drop" id="hi-drop">${t('datei_hierher_ziehen')}<br><button id="hi-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button></div><div id="hi-preview"></div>`;
+  return `<div data-ex="accounts.history.import"><h2>${t('saldenverlauf_importieren_0', hq('verlauf_import'))}</h2><div class="note">${t('fuer_depots_und_konten_ohne')}</div>
+    <div class="drop" id="hi-drop">${t('datei_hierher_ziehen')}<br><button id="hi-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button></div><div id="hi-preview"></div></div>`;
 }
 function vMMImport() {
   const st = S.STATUS, last = (st.moneymoney || {}).history;
@@ -1457,7 +1473,7 @@ function vMMImport() {
     <div class="step ${(st.moneymoney || {}).running ? '' : 'done'}" id="mmh-s1">${mmhStep1(st)}</div>
     <div class="step"><div class="b"><b>${t('datei_im_finder_zeigen')}</b>${t('kontor_oeffnet_ein_finder_fenster')}<div class="actions"><button id="mmh-zeigen" class="small">${t('im_finder_zeigen')}</button></div><div class="small muted">${t('kein_fenster_in_moneymoney_hilfe')}</div></div></div>
     <div class="step ${last ? 'done' : ''}"><div class="b"><b>${t('hierher_ziehen_passwort_eingeben')}</b>${t('danach_erscheint_ein_fenster_von')}<div class="drop" id="mmh-drop">${t('moneymoney_sqlite_hierher_ziehen')}<br><button id="mmh-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button><input type="file" id="mmh-file" class="hidden"></div><div id="mmh-res" class="findings"></div></div></div>
-    <div class="step hidden" id="mmh-names"></div>
+    <div class="step hidden" id="mmh-names" data-ex="accounts.history.securities"></div>
     </div>`;
 }
 // Kontostände: what history Kontor knows per portfolio (MoneyMoney does not give it out) and months that may be missing
@@ -1466,7 +1482,7 @@ function depotSection(r) {
   let h = (r.gaps || []).length ? `<div class="banner">${t('moeglicherweise_fehlen_depotstaende_mo', r.gaps.map(l => `<b>${esc(l.name)}</b> ${l.months.map(ML).join(', ')}`).join('; '))} <button class="small secondary" id="gap-ok">${t('hinweis_ausblenden')}</button></div>` : '';
   if (dep.length) h += `<h2>${t('depots_wertverlauf_0', hq('depotverlauf'))}</h2><div class="note">${t('depot_verlauf_note', r.recorded_since ? ML(r.recorded_since) : t('heute'))}${more('balances')}</div>
     <div class="wrap auto"><table class="plain acct-table sync-table"><thead><tr><th>${t('depot')}</th><th>${t('bereich')}</th><th>${t('bekannt_ab')}</th><th></th></tr></thead><tbody>${dep.map(k => `<tr data-uuid="${k.uuid}"><td>${esc(k.name)}<div class="small muted">${esc(CP(k.path.split(' / ').slice(0, -1).join(' / ')))}</div></td><td class="small">${esc(k.area || '–')}</td><td>${k.first_balance ? ML(k.first_balance) : '–'}${k.from_moneymoney ? ` <span class="small muted">${t('aus_moneymoney')}</span>` : ''}${k.own ? ` <span class="small muted">${t('0_eingetragen', k.own)}</span>` : ''}</td><td class="c nowrap"><button class="small secondary dep-hist">${t('staende_eintragen')}</button></td></tr>`).join('')}</tbody></table></div>`;
-  return h;
+  return h ? `<div data-ex="accounts.history.depots">${h}</div>` : '';
 }
 const MMH_TXT = {received: t('gleich_erscheint_das_passwortfenster_v'), password: t('bitte_im_fenster_von_macos'), decrypt: t('wird_im_arbeitsspeicher_entschluesselt'), search: t('kontostaende_werden_gesucht_und_geprue')};
 async function mmhFollow() {
@@ -1565,7 +1581,7 @@ function vbPoll() {
 }
 function vVerbindung() {
   const st = S.STATUS;
-  return `<div class="steps">
+  return `<div class="steps" data-ex="settings.moneymoney.connection">
     <div class="step ${mmStepDone(st) ? 'done' : ''}" id="vb-mm">${mmStepInner(st)}</div>
     <div class="step ${S.KONTEN.length ? 'done' : ''}"><div class="b"><b>${t('zugriff_erlauben_und_konten_lesen', hq('berechtigung'))}</b>${t('macos_fragt_einmal_ob_python3')}<div class="actions"><button id="w-check" class="small">${t('verbindung_pruefen')}</button></div><div id="w-busy" class="prog-wrap hidden"><div class="prog"><i id="w-prog"></i></div><span class="prog-l" id="w-prog-l">${t('lese_konten_und_umsaetze_aus')}</span></div><div id="w-findings" class="findings"></div></div></div>
     </div>`;
@@ -1577,9 +1593,9 @@ function vBereicheEditor() {
   let list = (S.CFG.areas || []).length ? S.CFG.areas : roots.map(r => ({id: r.uuid, name: r.name, accounts: [r.uuid + ' | ' + r.name], main_area: false, kind: guessArt(r.name), share: null}));
   if (list.length && !list.some(b => b.main_area)) { const p = list.find(b => (b.kind || guessArt(b.name)) === 'private') || list[0]; p.main_area = true; }
   if (!(S.CFG.areas || []).length) list = list.map((b, i) => [b, i]).sort((x, y) => (!x[0].main_area - !y[0].main_area) || (((x[0].kind || guessArt(x[0].name)) !== 'private') - ((y[0].kind || guessArt(y[0].name)) !== 'private')) || x[1] - y[1]).map(x => x[0]);
-  let h = `<div class="note">${t('bereiche_note', more('areas'), S.KONTEN.length ? '' : `<b>${t('noch_keine_konten_geladen_zuerst')}</b>`)}</div><div class="list" id="bereiche">`;
+  let h = `<div data-ex="accounts.areas"><div class="note">${t('bereiche_note', more('areas'), S.KONTEN.length ? '' : `<b>${t('noch_keine_konten_geladen_zuerst')}</b>`)}</div><div class="list" id="bereiche">`;
   list.forEach((b, i) => { h += bereichForm(b, i); });
-  h += `</div><div class="actions"><button id="add-bereich" class="secondary">${t('bereich_hinzufuegen')}</button><button id="save-bereiche" class="${setupOpen() ? 'secondary' : ''}">${t('speichern')}</button>${setupOpen() ? `<button data-savenext="#accounts" data-save="areas">${t('speichern_und_weiter_konten')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button>` : ''}</div><div id="findings-b" class="findings"></div>`;
+  h += `</div><div class="actions"><button id="add-bereich" class="secondary">${t('bereich_hinzufuegen')}</button><button id="save-bereiche" class="${setupOpen() ? 'secondary' : ''}">${t('speichern')}</button>${setupOpen() ? `<button data-savenext="#accounts" data-save="areas">${t('speichern_und_weiter_konten')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button>` : ''}</div><div id="findings-b" class="findings"></div></div>`;
   return h;
 }
 function bereichForm(b, i) {
@@ -1587,13 +1603,16 @@ function bereichForm(b, i) {
   const art = b.kind || guessArt(b.name);
   const pct = b.share != null && b.share !== '' ? Math.round(parseFloat(b.share) * 10000) / 100 : '';
   // Konten unter einer gewaehlten Gruppe sind enthalten (angehakt, gesperrt)
+  // an account given an area under Konten is in exactly that area, whatever its group (as the service counts it): shown so, changed there
+  const ids = new Map((S.CFG.areas || []).map(x => [x.id, x.name])), mapped = {};
+  Object.entries((S.CFG.balance || {}).accounts_mapping || {}).forEach(([ref, z]) => { if (z && ids.has(z.area)) mapped[ref.split('|')[0].trim()] = z.area; });
   const rows = []; let within = null;
   for (const k of S.KONTEN) {
     if (within !== null && k.depth <= within) within = null;
-    const implied = within !== null;
-    const checked = sel.has(k.uuid) || implied;
+    const fixed = !k.group && b.id && mapped[k.uuid] ? mapped[k.uuid] : null, implied = within !== null || !!fixed;
+    const checked = fixed ? fixed === b.id : sel.has(k.uuid) || implied;
     if (k.group && sel.has(k.uuid) && within === null) within = k.depth;
-    rows.push(`<label class="chk small ${implied ? 'implied' : ''}" style="padding-left:${k.depth * 14}px"><input type="checkbox" class="b-k" data-ebene="${k.depth}" data-gruppe="${k.group ? 1 : 0}" value="${k.uuid} | ${esc(k.name)}" ${checked ? 'checked' : ''} ${implied ? 'disabled' : ''}> ${esc(k.name)}${k.group ? ` <span class="muted">${t('gruppe_mit_allen_konten_darunter')}</span>` : ''}</label>`);
+    rows.push(`<label class="chk small ${implied ? 'implied' : ''}" style="padding-left:${k.depth * 14}px"${fixed ? ` title="${esc(t('b_zugeordnet_unter_konten', ids.get(fixed)))}"` : ''}><input type="checkbox" class="b-k" data-ebene="${k.depth}" data-gruppe="${k.group ? 1 : 0}"${fixed ? ` data-fixed="1"${sel.has(k.uuid) ? ' data-listed="1"' : ''}` : ''} value="${k.uuid} | ${esc(k.name)}" ${checked ? 'checked' : ''} ${implied ? 'disabled' : ''}> ${esc(k.name)}${k.group ? ` <span class="muted">${t('gruppe_mit_allen_konten_darunter')}</span>` : ''}</label>`);
   }
   return `<div class="item" data-i="${i}"><div class="grow"><div class="form">
     <label>${t('name')}</label><input type="text" class="b-name" value="${esc(b.name || '')}">
@@ -1612,14 +1631,14 @@ function bindBereichKonten(main) {
     const all = $$('.b-k', box), idx = all.indexOf(cb), lvl = +cb.dataset.ebene;
     const below = []; for (let j = idx + 1; j < all.length && +all[j].dataset.ebene > lvl; j++) below.push(all[j]);
     if (cb.dataset.gruppe === '1') {
-      below.forEach(c => { c.checked = cb.checked; c.disabled = cb.checked; c.closest('label').classList.toggle('implied', cb.checked); });
+      below.filter(c => !c.dataset.fixed).forEach(c => { c.checked = cb.checked; c.disabled = cb.checked; c.closest('label').classList.toggle('implied', cb.checked); });
     } else if (!cb.checked) {
       // uebergeordnete, angehakte Gruppen aufloesen: die uebrigen Konten darunter bleiben einzeln gewaehlt
       let cur = lvl;
       for (let j = idx - 1; j >= 0; j--) {
         const g = all[j]; if (+g.dataset.ebene >= cur) continue;
         cur = +g.dataset.ebene;
-        if (g.dataset.gruppe === '1' && g.checked) { g.checked = false; for (let m = j + 1; m < all.length && +all[m].dataset.ebene > cur; m++) { all[m].disabled = false; all[m].closest('label').classList.remove('implied'); } }
+        if (g.dataset.gruppe === '1' && g.checked) { g.checked = false; for (let m = j + 1; m < all.length && +all[m].dataset.ebene > cur; m++) { if (all[m].dataset.fixed) continue; all[m].disabled = false; all[m].closest('label').classList.remove('implied'); } }
       }
       cb.checked = false;
     }
@@ -1634,7 +1653,8 @@ function collectBereiche() {
   cfg.areas = $$('#bereiche .item').map(it => ({ id: $('.b-id', it).value.trim() || ('b-' + Math.random().toString(36).slice(2, 10)), name: $('.b-name', it).value.trim(),
     kind: $('.b-art', it).value || guessArt($('.b-name', it).value), main_area: $('.b-haupt', it).checked,
     share: $('.b-art', it).value === 'private' || $('.b-anteil', it).value === '' ? null : Math.round(parseFloat($('.b-anteil', it).value) * 100) / 10000, active: true,
-    accounts: $$('.b-k:checked', it).filter(c => !c.disabled).map(c => c.value) }));
+    // an account given its area under Konten (locked here): in its area, and wherever it was listed before -- kept as it was
+    accounts: $$('.b-k', it).filter(c => c.dataset.fixed ? c.checked || c.dataset.listed : c.checked && !c.disabled).map(c => c.value) }));
   if (cfg.areas.length && !cfg.areas.some(b => b.main_area)) cfg.areas[0].main_area = true;
   return cfg;
 }
@@ -1646,10 +1666,10 @@ async function vKontenEditor() {
   const verOf = u => { const k = Object.keys(verlauf).find(x => x.split('|')[0].trim() === u); return k ? verlauf[k] : ''; };
   const bereiche = (S.CFG.areas || []).length ? S.CFG.areas.map(b => [b.id, b.name]) : Object.entries((S.DATA && S.DATA.area_names) || {});
   const neu = leaves.filter(k => !k.confirmed);
-  let h = `<div class="note">${t('konten_note', more('accounts'))}</div>
+  let h = `<div data-ex="accounts.accounts"><div class="note">${t('konten_note', more('accounts'))}</div>
   ${neu.length ? `<div class="banner info">${t('0_noch_nicht_bestaetigt_1', nKonten(neu.length), esc(neu.slice(0, 6).map(k => k.name).join(', ')), neu.length > 6 ? ' …' : '')}</div>` : ''}
   <div class="row tight"><label>${t('nach_aktivitaet_ausblenden_ohne_bestan')} <input type="number" id="k-inaktiv" min="0" value="${cfg.balance.inactive_months ?? 12}" style="width:70px"> ${t('monaten_0', hq('inactive'))}</label><label class="switch"><input type="checkbox" id="k-show-inactive" checked><i></i>${t('ausgeblendete_hier_zeigen')}</label></div>
-  <div class="wrap auto"><table class="plain acct-table"><thead><tr><th>${t('konto_2')}</th><th>${t('bereich_0', hq('area'))}</th><th>${t('position_0', hq('position_kurz'))}</th><th>${t('verlauf_0', hq('verlauf_kurz'))}</th><th>${t('art')}${hq('ab_art')}</th><th>${t('anzeige_0', hq('anzeige'))}</th><th class="num">${t('saldo')}</th></tr></thead><tbody>`;
+  <div class="wrap auto" data-ex="accounts.accounts.table"><table class="plain acct-table"><thead><tr><th>${t('konto_2')}</th><th>${t('bereich_0', hq('area'))}</th><th>${t('position_0', hq('position_kurz'))}</th><th>${t('verlauf_0', hq('verlauf_kurz'))}</th><th>${t('art')}${hq('ab_art')}</th><th>${t('anzeige_0', hq('anzeige'))}</th><th class="num">${t('saldo')}</th></tr></thead><tbody>`;
   // Reihenfolge: Bereiche wie unter „Bereiche“ angeordnet, darin die Konten wie in MoneyMoney; ohne Bereich zum Schluss
   const zuOf = k => ((cfg.balance.accounts_mapping || {})[k.uuid + ' | ' + k.name]) || Object.entries(cfg.balance.accounts_mapping || {}).find(([r]) => r.split('|')[0].trim() === k.uuid)?.[1] || {};
   const bIdx = Object.fromEntries(bereiche.map(([id], i) => [id, i]));
@@ -1662,15 +1682,15 @@ async function vKontenEditor() {
     const rolle = cur || k.role || 'other', quelle = ver || k.history_source || (k.depot ? 'balances' : 'transactions');
     // Vorschlag (was Kontor aus Name, Typ und Gruppe erkennt) steht in der Liste mit „(Vorschlag)“; gestrichelt = Vorschlag gewählt
     const sv = k.role_proposal || rolle, vv = k.depot ? 'balances' : 'transactions';
-    const dash = (cur, v) => cur === v ? ' vorschlag' : '';
-    h += `<tr data-uuid="${k.uuid}" data-ref="${k.uuid} | ${esc(k.name)}" data-auto="${auto ? 1 : 0}" data-grenze="${grenze}" class="${kontoHidden(vis, auto) ? 'inactive' : ''}${k.confirmed ? '' : ' neu'}"><td title="${esc(k.path)}">${esc(k.name)}${k.confirmed ? '' : `<span class="tag warn">${t('neu')}</span>`}<span class="tag k-vis">${t('ausgeblendet')}</span>${k.stale ? `<span class="tag warn" title="${t('saldo_0_aber_seit_1', F(k.balance_amount), esc(k.last_booking || k.updated || t('jeher')))}">${t('veraltet')}</span>` : ''}<div class="small muted">${esc(CP(k.path.split(' / ').slice(0, -1).join(' / ')))} · ${k.depot ? t('depot') : (k.manual || k.fetch === 'offline') ? t('manuell') : esc(k.type_name || t('bank'))}</div></td><td><select class="k-bereich"><option value="">${t('keiner')}</option>${bereiche.map(([id, n]) => `<option value="${esc(id)}" ${bsel === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td>
+    const dash = (cur, v) => cur === v ? ' proposal' : '';
+    h += `<tr data-uuid="${k.uuid}" data-ref="${k.uuid} | ${esc(k.name)}" data-auto="${auto ? 1 : 0}" data-grenze="${grenze}" class="${kontoHidden(vis, auto) ? 'inactive' : ''}${k.confirmed ? '' : ' neu'}"><td title="${esc(k.path)}">${esc(k.name)}${k.confirmed ? '' : `<span class="tag warn">${t('neu')}</span>`}<span class="tag k-vis">${t('ausgeblendet')}</span>${k.stale ? `<span class="tag warn" title="${t('saldo_0_aber_seit_1', F(k.balance_amount), esc(k.last_booking || k.updated || t('jeher')))}">${t('veraltet')}</span>` : ''}<div class="small muted">${esc(CP(k.path.split(' / ').slice(0, -1).join(' / ')))} · ${k.depot ? t('depot') : (k.manual || k.fetch === 'offline') ? t('manuell') : esc(k.type_name || t('bank'))}</div></td><td><select class="k-bereich"><option value="">${t('b_wie_bereiche')}</option>${bereiche.map(([id, n]) => `<option value="${esc(id)}" ${bsel === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td>
       <td><select class="k-rolle${dash(rolle, sv)}" data-vor="${sv}">${ROLE_OPTS.map(([v, l]) => `<option value="${v}" ${rolle === v ? 'selected' : ''}>${l}${v === sv ? ` (${t('vorschlag')})` : ''}</option>`).join('')}</select></td>
       <td class="nowrap"><select class="k-verlauf${dash(quelle, vv)}" data-vor="${vv}">${[['transactions', t('umsaetze_2')], ['balances', t('kontostaende')]].map(([v, l]) => `<option value="${v}" ${quelle === v ? 'selected' : ''}>${l}${v === vv ? ` (${t('vorschlag')})` : ''}</option>`).join('')}</select> <button class="ghost small k-hist" title="${t('monatsstaende_ansehen_und_bearbeiten')}">${t('verlauf')}</button></td>
       <td>${ab[k.uuid] ? `<select class="ab-sel" title="${esc((ab[k.uuid].reason || t('wird_von_moneymoney_bei_bank')) + (ab[k.uuid].kind === 'online' && ab[k.uuid].time ? ' · ' + t('letzter_abruf') + ' ' + fmtZeit(ab[k.uuid].time) : ''))}"><option value="online" ${ab[k.uuid].kind === 'online' ? 'selected' : ''}>${t('art_online')}</option><option value="offline" ${ab[k.uuid].kind === 'offline' ? 'selected' : ''}>${t('art_offline')}</option></select>` : '–'}</td>
       <td><select class="k-show" title="${auto ? t('kein_bestand_und_kein_umsatz') + (cfg.balance.inactive_months ?? 12) + t('monaten') : t('mit_bestand_oder_umsatz_in') + (cfg.balance.inactive_months ?? 12) + t('monaten')}"><option value="">${t('nach_aktivitaet')}</option><option value="show" ${vis === 'show' ? 'selected' : ''}>${t('immer_anzeigen')}</option><option value="hide" ${vis === 'hide' ? 'selected' : ''}>${t('ausblenden')}</option></select></td>
       <td class="num ${(k.balance_amount || 0) < 0 ? 'neg' : 'pos'}">${F(k.balance_amount)}</td></tr>`;
   }
-  h += `</tbody></table></div><div class="actions"><button id="save-konten" class="${setupOpen() ? 'secondary' : ''}">${t('speichern')}</button>${setupOpen() ? `<button data-savenext="#accounts/history" data-save="accounts">${t('speichern_und_weiter_kontostaende_aus')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button>` : ''}</div><div id="findings-k2" class="findings"></div>`;
+  h += `</tbody></table></div><div class="actions"><button id="save-konten" class="${setupOpen() ? 'secondary' : ''}">${t('speichern')}</button>${setupOpen() ? `<button data-savenext="#accounts/history" data-save="accounts">${t('speichern_und_weiter_kontostaende_aus')}</button><button class="secondary" data-next="#setup">${t('zurueck_zur_einrichtung')}</button>` : ''}</div><div id="findings-k2" class="findings"></div></div>`;
   return h;
 }
 let HI = null;   // {name, b64, vorschau}
@@ -1711,7 +1731,7 @@ function holdingsBox(uuid) {
   // Depot: Positionen aus MoneyMoney (Stand des letzten Lesens), aufklappbar oben im Verlaufsfenster
   const d = ((S.DATA && S.DATA.depots) || []).find(x => x.account === uuid); if (!d || !d.positions.length) return '';
   const gv = d.cost_basis ? d.sum - d.cost_basis : null;
-  return `<details class="holdings"><summary>${tn('0_positionen', d.positions.length)} · ${F0(d.sum)} €${gv != null ? ` · <span class="${gv >= 0 ? 'pos' : 'neg'}">${gv >= 0 ? '+' : ''}${F0(gv)} € (${FN((d.sum / d.cost_basis - 1) * 100, 1)} %)</span>` : ''}</summary>
+  return `<details class="holdings" data-ex="drawer.hist.holdings"><summary>${tn('0_positionen', d.positions.length)} · ${F0(d.sum)} €${gv != null ? ` · <span class="${gv >= 0 ? 'pos' : 'neg'}">${gv >= 0 ? '+' : ''}${F0(gv)} € (${FN((d.sum / d.cost_basis - 1) * 100, 1)} %)</span>` : ''}</summary>
     <div class="small muted" style="margin:4px 0">${t('bestaende_aus_moneymoney_stand_des')} ${xlsxBtn('holdings')}</div>
     <table class="plain small"><thead><tr><th>${t('position')}</th><th class="num">${t('menge')}</th><th class="num">${t('wert')}</th><th class="num">G/V</th></tr></thead><tbody>`
     + d.positions.map(p => `<tr><td title="${esc([p.isin, p.asset_class].filter(Boolean).join(' · '))}">${esc(p.name)}</td><td class="num">${p.quantity.toLocaleString(LOCALE, {maximumFractionDigits: 4})}</td><td class="num">${F(p.value)}</td><td class="num ${p.value - p.cost_basis >= 0 ? 'pos' : 'neg'}">${p.cost_basis ? F(p.value - p.cost_basis) : ''}</td></tr>`).join('')
@@ -1724,17 +1744,18 @@ async function openHistDrawer(uuid, vorschau) {
   const k = S.KONTEN.find(x => x.uuid === uuid) || {name: r.name || uuid};
   const d = $('#drawer');
   HD.uuid = uuid; HD.live = r.live;
-  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(k.name || r.name)}</h2>${holdingsBox(uuid)}
-    <div class="row tight"><span class="small muted">${t('verlauf_aus_0', hq('history_source'))}</span><div class="seg" id="hq-seg"><button class="hq-q" data-q="transactions">${t('umsaetzen')}</button><button class="hq-q" data-q="balances">${t('kontostaenden')}</button></div></div>
+  // (data-ex: what each part shows, in Kontor's description of the side panels -- docs/ui/drawer.md)
+  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(k.name || r.name)}</h2><div data-ex="drawer.hist">${holdingsBox(uuid)}
+    <div data-ex="drawer.hist.source"><div class="row tight"><span class="small muted">${t('verlauf_aus_0', hq('history_source'))}</span><div class="seg" id="hq-seg"><button class="hq-q" data-q="transactions">${t('umsaetzen')}</button><button class="hq-q" data-q="balances">${t('kontostaenden')}</button></div></div>
     <div class="small muted" id="hq-erkl" style="margin:4px 0 8px"></div>
-    <div id="hq-hinweis"></div><div id="hq-pending"></div>
-    <div class="h-chart" id="h-chart"></div>
-    <h3>${t('monatsstaende')}</h3>
+    <div id="hq-hinweis"></div><div id="hq-pending"></div></div>
+    <div class="h-chart" id="h-chart" data-ex="drawer.chart"></div>
+    <div data-ex="drawer.hist.months"><h3>${t('monatsstaende')}</h3>
     <div class="row tight" id="h-addrow"><input type="month" id="h-von" style="width:140px"><button id="h-add" class="small secondary">${t('monat_ergaenzen')}</button></div>
     <div class="hist-grid" id="h-grid"></div>
-    <div class="actions" id="h-actions"><button id="h-save" class="small">${t('speichern')}</button><button id="h-undo" class="small secondary hidden">${t('verwerfen')}</button><button id="h-clear" class="small secondary">${t('alle_eigenen_werte_loeschen')}</button></div>
+    <div class="actions" id="h-actions"><button id="h-save" class="small">${t('speichern')}</button><button id="h-undo" class="small secondary hidden">${t('verwerfen')}</button><button id="h-clear" class="small secondary">${t('alle_eigenen_werte_loeschen')}</button></div></div>
     <div id="h-importbox"><h3>${t('import_aus_saldenexport')}</h3><div class="small muted">${t('csv_mit_datum_saldo_ein')}</div>
-    <textarea id="h-csv" placeholder="${t('datum_saldo_31_12_2024')}"></textarea><div class="actions"><button id="h-import" class="small secondary">${t('vorschau')}</button><button id="h-import2" class="small hidden">${t('uebernehmen')}</button></div><div id="h-prev" class="findings"></div></div>`;
+    <textarea id="h-csv" placeholder="${t('datum_saldo_31_12_2024')}"></textarea><div class="actions"><button id="h-import" class="small secondary">${t('vorschau')}</button><button id="h-import2" class="small hidden">${t('uebernehmen')}</button></div><div id="h-prev" class="findings"></div></div></div>`;
   d.classList.add('open');
   renderHist(r);
   $('.close', d).onclick = closeDrawer;
@@ -1882,10 +1903,10 @@ function openWpDrawer(id) {
   for (const r of D.balance.rows) { const x = (r.securities || []).find(p => p.id === id); if (x) { acc = r; w = x; break; } }
   if (!w) return;
   const d = $('#drawer'), pts = D.months.filter(m => w.amounts[m] != null).map(m => [m, w.amounts[m]]);
-  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(w.name)}</h2><div class="small muted">${esc(acc.name)}${w.isin ? ' · ISIN ' + esc(w.isin) : ''}</div>
+  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(w.name)}</h2><div data-ex="drawer.security"><div class="small muted">${esc(acc.name)}${w.isin ? ' · ISIN ' + esc(w.isin) : ''}</div>
     ${w.rest ? '' : `<div class="small muted">${esc(w.orig ? t('wp_in_mm', w.orig) : t('wp_in_mm_ohne'))}${w.source === 'own_name' ? ' · ' + t('wp_eigener_name') : w.source === 'lookup' ? ' · ' + t('wp_nachgeschlagen') : ''}</div>`}
-    <div class="h-chart" id="h-chart">${histChart(pts)}</div>
-    <h3>${t('monatsstaende')}</h3><div class="hist-grid" id="h-grid">${pts.map(([mk, v]) => `<label>${ML(mk)}<input type="text" class="auto" value="${F(v)}" disabled></label>`).join('')}</div>`;
+    <div class="h-chart" id="h-chart" data-ex="drawer.chart">${histChart(pts)}</div>
+    <h3>${t('monatsstaende')}</h3><div class="hist-grid" id="h-grid">${pts.map(([mk, v]) => `<label>${ML(mk)}<input type="text" class="auto" value="${F(v)}" disabled></label>`).join('')}</div></div>`;
   d.classList.add('open');
   $('.close', d).onclick = closeDrawer;
   bindHistChart($('#h-chart', d), pts);
@@ -1905,11 +1926,11 @@ function openEkqDrawer(mk) {
   h += row(t('ekq_schulden'), e.debts, 'total') + row(t('ekq_vermoegen'), e.equity_value + e.debts)
     + `<tr class="total"><td>${t('ekq_quote')}</td><td class="num">${e.quote == null ? t('unbekannt') : pctQ(e.quote)}</td></tr>`;
   const ohne = EQ.without_lookthrough || [];
-  d.innerHTML = `<button class="close icon">✕</button><h2>${t('ekq')} ${alphaTag()}</h2><div class="muted">${MONATE_LANG[+mk.slice(5) - 1]} ${mk.slice(0, 4)}</div>
+  d.innerHTML = `<button class="close icon">✕</button><h2>${t('ekq')} ${alphaTag()}</h2><div data-ex="drawer.ekq"><div class="muted">${MONATE_LANG[+mk.slice(5) - 1]} ${mk.slice(0, 4)}</div>
     <div class="note">${t('ekq_note')}</div><div class="wrap auto"><table class="plain small ekq-tbl"><tbody>${h}</tbody></table></div>
     <div class="note">${t('ekq_regeln')}</div>`
     + (ohne.length ? `<div class="note warn">${t(ohne.length === 1 ? 'ekq_ohne_1' : 'ekq_ohne_n', ohne.map(esc).join(', '))}</div>` : '')
-    + (e.unknown.length ? `<div class="note warn">${t('ekq_unbekannt', e.unknown.map(esc).join(', '))}</div>` : '');
+    + (e.unknown.length ? `<div class="note warn">${t('ekq_unbekannt', e.unknown.map(esc).join(', '))}</div>` : '') + '</div>';
   d.classList.add('open');
   $('.close', d).onclick = closeDrawer;
 }
@@ -1921,15 +1942,17 @@ function openTransitDrawer(m) {
   const end = m ? monthEnd(m) : null, open = u => (u.out_date <= end) !== (u.in_date <= end);
   const list = (r.transfers || []).slice().reverse().filter(u => !m || open(u)), d = $('#drawer');
   const head = m ? `<div class="note"><b>${esc(t('transit_ende', MLL(m)))}</b> ${F((r.amounts || {})[m] || 0)} · <a href="#" id="tr-all">${t('alle_zeigen')}</a></div>` : '';
-  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(r.name)}</h2>${head}<div class="note">${t('geld_unterwegs_tip')}</div>
+  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(r.name)}</h2><div data-ex="drawer.transit">${head}<div class="note">${t('geld_unterwegs_tip')}</div>
     <div class="wrap auto"><table class="plain small"><thead><tr><th>${t('abgebucht')}</th><th>${t('gutgeschrieben')}</th><th class="num">${t('betrag')}</th></tr></thead><tbody>`
     + list.map(u => `<tr><td>${FD(u.out_date)}<div class="muted">${esc(u.from_account)}</div></td><td>${FD(u.in_date)}<div class="muted">${esc(u.to_account)}</div></td><td class="num">${F(u.amount)}</td></tr>`).join('')
-    + (list.length ? '' : `<tr><td colspan="3" class="muted">${t('transit_keine')}</td></tr>`) + `</tbody></table></div>`;
+    + (list.length ? '' : `<tr><td colspan="3" class="muted">${t('transit_keine')}</td></tr>`) + `</tbody></table></div></div>`;
   d.classList.add('open'); DRW.key = 'transit';
   $('.close', d).onclick = closeDrawer;
   const all = $('#tr-all', d); if (all) all.onclick = e => { e.preventDefault(); openTransitDrawer(); };
 }
-const drawerDirty = () => $$('#drawer #h-grid input:not(.auto)').some(i => i.value !== i.defaultValue) || !!($('#drawer #h-csv') && $('#drawer #h-csv').value.trim());
+// typed in and not saved: a month's balance (also one typed into a grey field, which is saved as your own) or a pasted list
+const histTyped = d => $$('#h-grid input:not([disabled])', d).some(i => i.value !== i.defaultValue);
+const drawerDirty = () => histTyped($('#drawer')) || !!($('#drawer #h-csv') && $('#drawer #h-csv').value.trim());
 
 // ---------------------------------------------------------------- Bilanz
 function vBilanz() {
@@ -1946,11 +1969,11 @@ function vBilanz() {
   S.depOpen = S.depOpen || {};                          // portfolios opened into their securities (each on its own)
   const ord = bilBlocks(), at = ord.indexOf('table');
   // top: the view (months/years) for chart and table; the table options sit in its header cell (no gap to the chart)
-  const top = `<div class="toolbar">${viewCtl()}${yearCtl()}<span class="sp"></span>${viewBtns()}${xlsxBtn('balance')}</div>`, chart = vBilanzChart(D);
+  const top = `<div class="toolbar" data-ex="balance.toolbar">${viewCtl()}${yearCtl()}<span class="sp"></span>${viewBtns()}${xlsxBtn('balance')}</div>`, chart = vBilanzChart(D);
   let h = '';                                           // the table (placed above, between or below the charts, see the end)
   const tag = r => (r.offline && !r.group ? `<span class="tag">${t('manuell')}</span>` : '') + (hidden(r) ? `<span class="tag">${t('ausgeblendet')}</span>` : '')
     + (r.projected_before ? `<span class="tag warn" title="${t('vor_0_ist_kein_stand', ML(r.projected_before))}">${t('vor_0_unbekannt', ML(r.projected_before))}</span>` : '');
-  const row = (r, cls0, label) => `<tr class="${cls0}" data-id="${r.id}"><td title="${esc(r.path || r.name)}">${label}</td>${C.map(c => { const v = lastOf(werte(r), c.months); return `<td class="${cls(v, c)}">${FC(v)}</td>`; }).join('')}</tr>`;
+  const row = (r, cls0, label, ex = '') => `<tr class="${cls0}" data-id="${r.id}" ${ex}><td title="${esc(r.path || r.name)}">${label}</td>${C.map(c => { const v = lastOf(werte(r), c.months); return `<td class="${cls(v, c)}">${FC(v)}</td>`; }).join('')}</tr>`;
   // hidden: what you hid yourself, and whatever is empty in every column shown -- an account idle today (auto-inactive) shows
   // where it still had a balance in the months on screen
   const autoIdle = new Set(D.accounts_inactive_auto || []), empty = r => C.every(c => { const v = lastOf(werte(r), c.months); return v == null || Math.abs(v) < 0.005; });
@@ -1966,7 +1989,7 @@ function vBilanz() {
   const first = `<div class="th-first"><button class="th-btn" id="pos-all" title="${allOpen ? t('nur_positionen') : t('konten_zeigen')}">${allOpen ? '▾' : '▸'}</button><span>${t('position_konto')}</span>${hq('bilanz_tabelle')}`
     + `<button class="th-mv" data-blk="table" data-mv="-1" title="${t('tbl_hoch')}"${at === 0 ? ' disabled' : ''}>↑</button><button class="th-mv" data-blk="table" data-mv="1" title="${t('tbl_runter')}"${at === 2 ? ' disabled' : ''}>↓</button><span class="sp"></span>`
     + (anyHidden ? `<label class="th-hid${S.alleB ? ' on' : ''}" title="${t('alle_zeilen_tip_n', nHid)}"><input type="checkbox" id="alle-zeilen" ${S.alleB ? 'checked' : ''}>${S.alleB ? ICON.eye : ICON.eyeOff}${nHid}</label>` : '') + `</div><span class="col-grip" title="${t('spalte_breite')}"></span>`;
-  h += `<div class="wrap bil-tbl"${S.bilW ? ` style="--bil-w:${S.bilW}px"` : ''}><table>` + thead(first, C) + '<tbody>';
+  h += `<div class="wrap bil-tbl" data-ex="balance.table"${S.bilW ? ` style="--bil-w:${S.bilW}px"` : ''}><table>` + thead(first, C) + '<tbody>';
   for (const r of D.balance.rows) {
     if (r.group) {
       const [label, color] = ROLE[r.role] || [r.name, 'var(--c-neutral)'], open = !!S.posOpen[r.role];
@@ -1974,31 +1997,31 @@ function vBilanz() {
       const accs = D.balance.rows.filter(x => !x.group && x.role === r.role), shown = accs.filter(x => !skip(x)).length;
       if (!S.alleB && accs.length && !shown && empty(r)) continue;          // nothing in it in the months shown: the position too
       const cnt = shown < accs.length ? `<span class="small muted cnt" title="${t('n_von_m_konten', shown, accs.length)}">(${shown}/${accs.length})</span>` : `<span class="small muted cnt">(${accs.length})</span>`;
-      h += row(r, 'group pos', `<span class="caret">${open ? '▾' : '▸'}</span><i class="pos-dot" style="background:${color}"></i>${label} ${cnt}`).replace('<tr ', `<tr data-pos="${r.role}" `).replace(` data-id="${r.id}"`, '');
+      h += row(r, 'group pos', `<span class="caret">${open ? '▾' : '▸'}</span><i class="pos-dot" style="background:${color}"></i>${label} ${cnt}`, 'data-ex="balance.table.pos"').replace('<tr ', `<tr data-pos="${r.role}" `).replace(` data-id="${r.id}"`, '');
       continue;
     }
     if (!S.posOpen[r.role] || skip(r)) continue;
     const shKey = `${(ROLE[r.role] || [0, 'var(--c-neutral)'])[1]}|${accIdx(D, r)}`;          // (to colour it again in another theme: printing)
     const sh = accShade((ROLE[r.role] || [0, 'var(--c-neutral)'])[1], accIdx(D, r)), dot = `<i class="pos-dot" data-sh="${esc(shKey)}" style="${swatch(sh.color, sh.hatch)}"></i>`;      // shade as in the chart
-    if (r.transit) { h += row(r, 'ind1 transit clickable', `${dot}${esc(r.name)} ${hq('geld_unterwegs')}`); continue; }
+    if (r.transit) { h += row(r, 'ind1 transit clickable', `${dot}${esc(r.name)} ${hq('geld_unterwegs')}`, 'data-ex="balance.table.transit"'); continue; }
     const wp = r.securities && r.securities.length ? r.securities : null, dOpen = wp && S.depOpen[r.id];
     // a portfolio: number of its securities, like the accounts of a position ("shown/all" when some are hidden)
     const wn = wp ? wp.filter(w => !w.rest).length : 0, wv = wp ? wp.filter(w => !w.rest && !(!S.alleB && secHidden(w))).length : 0;
     const wcnt = wp ? ` <span class="small muted cnt"${wv < wn ? ` title="${t('n_von_m_wp', wv, wn)}"` : ''}>(${wv < wn ? wv + '/' + wn : wn})</span>` : '';
-    h += row(r, 'clickable acct ind1', (wp ? `<span class="caret dep" data-dep="${esc(r.id)}" title="${t(dOpen ? 'wp_zuklappen' : 'wp_aufklappen')}">${dOpen ? '▾' : '▸'}</span>` : '') + dot + `<span class="nm">${esc(r.name)}</span>` + wcnt + tag(r));
+    h += row(r, 'clickable acct ind1', (wp ? `<span class="caret dep" data-dep="${esc(r.id)}" title="${t(dOpen ? 'wp_zuklappen' : 'wp_aufklappen')}">${dOpen ? '▾' : '▸'}</span>` : '') + dot + `<span class="nm">${esc(r.name)}</span>` + wcnt + tag(r), 'data-ex="balance.table.account"');
     // securities of an expanded portfolio (shades of the account colour, as in the charts); long names shortened, full on hover
     if (dOpen) wp.forEach((w, j) => { if (!S.alleB && secHidden(w)) return; const ws = accShade(sh.color, j + 1);
-      h += `<tr class="wpr clickable ind2${w.rest ? ' muted' : ''}" data-wp="${esc(w.id)}"><td title="${esc(wpTip(w))}"><i class="pos-dot" data-sh="${esc(shKey + '|' + (j + 1))}" style="${swatch(ws.color, ws.hatch)}"></i><span class="nm">${esc(w.name)}</span></td>${cells(C, c => lastOf(w.amounts, c.months))}</tr>`; });
+      h += `<tr class="wpr clickable ind2${w.rest ? ' muted' : ''}" data-wp="${esc(w.id)}" data-ex="balance.table.security"><td title="${esc(wpTip(w))}"><i class="pos-dot" data-sh="${esc(shKey + '|' + (j + 1))}" style="${swatch(ws.color, ws.hatch)}"></i><span class="nm">${esc(w.name)}</span></td>${cells(C, c => lastOf(w.amounts, c.months))}</tr>`; });
     if (pr && r.role === 'participations' && proj.contributions && r === D.balance.rows.filter(x => !x.group && x.role === 'participations').slice(-1)[0])
-      h += row({id: 'contributions', name: t('einlagen_entnahmen_kumuliert_plan'), amounts: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'));
+      h += row({id: 'contributions', name: t('einlagen_entnahmen_kumuliert_plan'), amounts: {}}, 'ind1 muted', t('einlagen_entnahmen_beteiligungen_kumul'), 'data-ex="balance.table.contributions"');
   }
   // key figures under net worth (equity ratio, alpha): folded by default, the name of net worth opens them like a position
   const EQ = D.balance.equity_ratio, kpi = !!(EQ && Object.keys(EQ.months || {}).length), kOpen = kpi && !!S.posOpen._kennzahlen;
-  h += `<tr class="total${kpi ? ' fold' : ''}"><td${kpi ? ` title="${t(kOpen ? 'kennzahlen_zu' : 'kennzahlen_auf')}"` : ''}>${kpi ? `<span class="caret">${kOpen ? '▾' : '▸'}</span>` : ''}<i class="nw-sw"></i>${t('nettovermoegen')}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
+  h += `<tr class="total${kpi ? ' fold' : ''}" data-ex="balance.table.nw"><td${kpi ? ` title="${t(kOpen ? 'kennzahlen_zu' : 'kennzahlen_auf')}"` : ''}>${kpi ? `<span class="caret">${kOpen ? '▾' : '▸'}</span>` : ''}<i class="nw-sw"></i>${t('nettovermoegen')}</td>${cells(C, c => lastOf(nw, c.months))}</tr>`;
   // equity ratio (alpha): looking through the companies; actual months only, a click shows the calculation
   if (kOpen) {
     const at = c => { if (c.plan) return null; for (let k = c.months.length - 1; k >= 0; k--) if (EQ.months[c.months[k]]) return c.months[k]; return null; };
-    h += `<tr class="ekq ind1"><td title="${esc(t('ekq_tip'))}">${t('ekq')} ${alphaTag()}</td>${C.map(c => { const mk = at(c), e = mk && EQ.months[mk];
+    h += `<tr class="ekq ind1" data-ex="balance.table.ekq"><td title="${esc(t('ekq_tip'))}">${t('ekq')} ${alphaTag()}</td>${C.map(c => { const mk = at(c), e = mk && EQ.months[mk];
       return `<td class="${cls(1, c).replace(' pos', '')}"${mk ? ` data-m="${mk}"` : ''}>${!e ? '' : e.quote == null ? `<span title="${esc(t('unbekannt'))}">?</span>` : pctQ(e.quote)}</td>`; }).join('')}</tr>`;
   }
   // outside net worth (guarantees, capital accounts as equity): one collapsible row per kind with its sum, accounts on click
@@ -2006,8 +2029,8 @@ function vBilanz() {
   for (const role of [...new Set(out.map(r => r.role))]) {
     const fx = role === 'foreign_currency', accs = out.filter(r => r.role === role), open = !!S.posOpen[role], [label, color] = fx ? [t('fremdwaehrung_nicht_umgerechnet'), 'var(--c-neutral)'] : ROLE[role] || [role, 'var(--c-neutral)'];
     const sum = c => { if (fx) return null; let v = null; for (const r of accs) { const x = lastOf(r.amounts, c.months); if (x != null) v = (v || 0) + x; } return v; };       // other currencies: no sum
-    h += `<tr class="group pos muted" data-pos="${role}"><td><span class="caret">${open ? '▾' : '▸'}</span><i class="pos-dot" style="background:${color}"></i>${esc(label)} <span class="small muted cnt">(${accs.length})</span> <span class="tag">${t('nicht_im_nw_kurz')}</span></td>${cells(C, sum)}</tr>`;
-    if (open) h += accs.map(r => `<tr class="muted ind1"><td title="${esc(r.path || r.name)}">${esc(r.name)}${fx ? ` <span class="tag">${esc(r.currency)}</span>` : ''}</td>${cells(C, c => lastOf(r.amounts, c.months))}</tr>`).join('');
+    h += `<tr class="group pos muted" data-pos="${role}" data-ex="balance.table.outside"><td><span class="caret">${open ? '▾' : '▸'}</span><i class="pos-dot" style="background:${color}"></i>${esc(label)} <span class="small muted cnt">(${accs.length})</span> <span class="tag">${t('nicht_im_nw_kurz')}</span></td>${cells(C, sum)}</tr>`;
+    if (open) h += accs.map(r => `<tr class="muted ind1" data-ex="balance.table.outside"><td title="${esc(r.path || r.name)}">${esc(r.name)}${fx ? ` <span class="tag">${esc(r.currency)}</span>` : ''}</td>${cells(C, c => lastOf(r.amounts, c.months))}</tr>`).join('');
   }
   h += '</tbody></table></div>';
   // the order of large chart, table and small charts (default in this order; table and large chart can be moved up and down)
@@ -2106,14 +2129,16 @@ function vBilanzChart(D) {
   if (i0 !== BCH.i0 || i1 !== BCH.i1) BCH.sh = 0;         // the shift of a clicked column only while the range stays
   BCH.i0 = BCH.f0 = i0; BCH.i1 = BCH.f1 = i1;
   const type = bigType(), {avail, sel} = lcSelection(D), pr = lcPosRole(D);
-  const title = type === 'nw' ? `<b class="bch-title">${t('nettovermoegen')}</b>`
-    : type === 'sel' ? (([tx, tip]) => `<b class="bch-title${tip ? ' tipped' : ''}" data-tip="${esc(tip)}" tabindex="0">${esc(tx)}</b>`)(lcSelTitle(sel, avail, true))
+  // what the chart shows, in Kontor's description of the page (docs/ui/balance.md): the balance sheet, or a small chart shown large
+  const tex = type === 'nw' ? 'data-ex="balance.nw"' : type === 'sel' ? 'data-ex="balance.sel"' : type === 'pos' ? 'data-ex="balance.pos"' : 'data-ex="balance.bil"';
+  const title = type === 'nw' ? `<b class="bch-title" ${tex}>${t('nettovermoegen')}</b>`
+    : type === 'sel' ? (([tx, tip]) => `<b class="bch-title${tip ? ' tipped' : ''}" ${tex} data-tip="${esc(tip)}" tabindex="0">${esc(tx)}</b>`)(lcSelTitle(sel, avail, true))
     : type === 'pos' ? `<select id="big-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === pr ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select>${pr && lcHasDepot(D, pr) ? `<button class="lc-mode${lcPosMode(D, pr) === 'depot' ? ' on' : ''}" id="big-pos-mode" title="${t('lc_depot_tip')}">${t('lc_depot')}</button>` : ''}`
     : '';
-  const below = type === 'sel' ? `<div class="lc-chips below" id="big-chips">${avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('')}</div>`
-    : type === 'pos' ? `<div class="lc-chips below" id="big-accs"></div>` : '';
-  return `<div class="card bch${bchLinked() ? ' linked' : ''}${type !== 'balance' ? ' big-' + type : ''}" id="bch"><div class="bch-head">${title}<span class="bch-range${type !== 'balance' ? ' sub' : ''}" id="bch-range"></span> ${hq('bch')}${((k) => `<button class="th-mv" data-blk="chart" data-mv="-1" title="${t('grafik_hoch')}"${k === 0 ? ' disabled' : ''}>↑</button><button class="th-mv" data-blk="chart" data-mv="1" title="${t('grafik_runter')}"${k === 2 ? ' disabled' : ''}>↓</button>`)(bilBlocks().indexOf('chart'))}<span class="sp"></span><button class="ghost small bch-link${bchLinked() ? ' on' : ''}" id="bch-link" title="${t('bch_link_tip')}" aria-pressed="${bchLinked()}">${t('bch_link')}</button>${type === 'balance' ? `<button class="lc-mode bch-plan-tg${S.bchPlan !== false ? ' on' : ''}" id="bch-plan" title="${t('bch_plan_tip')}">${t('plan')}</button>` : ''}<label class="bch-n" title="${t('bch_monate_tip')}"><input type="number" id="bch-n" min="1" max="${n - 1}" step="1">${t('bch_m')}</label><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>${type !== 'balance' ? '<div class="lc-row2 bch-row2"><span class="lc-val" id="bch-val"></span></div>' : ''}
-    <div class="bch-plot" id="bch-plot"><svg class="bch-svg" id="bch-svg"></svg><div class="bch-tip hidden" id="bch-tip"></div></div>${below}</div>`;
+  const below = type === 'sel' ? `<div class="lc-chips below" id="big-chips" ${tex}>${avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('')}</div>`
+    : type === 'pos' ? `<div class="lc-chips below" id="big-accs" ${tex}></div>` : '';
+  return `<div class="card bch${bchLinked() ? ' linked' : ''}${type !== 'balance' ? ' big-' + type : ''}" id="bch" data-ex="balance.chart"><div class="bch-head">${title}<span class="bch-range${type !== 'balance' ? ' sub' : ''}" id="bch-range"></span> ${hq('bch')}${((k) => `<button class="th-mv" data-blk="chart" data-mv="-1" title="${t('grafik_hoch')}"${k === 0 ? ' disabled' : ''}>↑</button><button class="th-mv" data-blk="chart" data-mv="1" title="${t('grafik_runter')}"${k === 2 ? ' disabled' : ''}>↓</button>`)(bilBlocks().indexOf('chart'))}<span class="sp"></span><button class="ghost small bch-link${bchLinked() ? ' on' : ''}" id="bch-link" title="${t('bch_link_tip')}" aria-pressed="${bchLinked()}">${t('bch_link')}</button>${type === 'balance' ? `<button class="lc-mode bch-plan-tg${S.bchPlan !== false ? ' on' : ''}" id="bch-plan" title="${t('bch_plan_tip')}">${t('plan')}</button>` : ''}<label class="bch-n" title="${t('bch_monate_tip')}"><input type="number" id="bch-n" min="1" max="${n - 1}" step="1">${t('bch_m')}</label><div class="seg small" id="bch-rb">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>${type !== 'balance' ? `<div class="lc-row2 bch-row2" ${tex}><span class="lc-val" id="bch-val" data-ex="balance.value"></span></div>` : ''}
+    <div class="bch-plot" id="bch-plot" ${tex}><svg class="bch-svg" id="bch-svg"></svg><div class="bch-tip hidden" id="bch-tip"></div></div>${below}</div>`;
 }
 function bchDraw() {
   const box = $('#bch-plot'), svg = $('#bch-svg'), d = BCH.d; if (!box || !svg || !d) return;
@@ -2921,7 +2946,7 @@ function viewSnap() {
   for (const [id, st] of Object.entries(LC)) if (st && st.d) v.lc[id] = st.btn ? {btn: st.btn} : {len: len(st.i0, st.i1)};
   return v;
 }
-const viewBtns = () => `<span class="view-btns"><button class="small secondary" id="view-save" title="${t('ansicht_standard_tip')}">${ICON.pin}<span class="lbl">${t('ansicht_standard')}</span></button>`
+const viewBtns = () => `<span class="view-btns" data-ex="balance.toolbar.view"><button class="small secondary" id="view-save" title="${t('ansicht_standard_tip')}">${ICON.pin}<span class="lbl">${t('ansicht_standard')}</span></button>`
   + `<button class="small secondary" id="view-reset" title="${t('ansicht_reset_tip')}">${ICON.reset}<span class="lbl">${t('ansicht_reset')}</span></button></span>`;
 // colour of the selection chart: the selected positions' colours mixed in equal parts (one position: its own colour)
 const lcMix = rollen => (rollen || []).map(r => ROLE[r] && ROLE[r][1]).filter(Boolean)
@@ -2938,16 +2963,16 @@ function vBilanzLines(D) {
   const {avail, sel} = lcSelection(D);
   const rb = bchRanges(false);          // small charts: range in the top right corner
   const typeOf = {nw: 'nw', sel: 'sel', pos: 'pos', bil: 'balance'};
-  const head = (id, title, extra, noVal) => `<div class="lc-head"><b class="lc-title">${title}</b><button class="lc-big" data-big="${typeOf[id]}" title="${t('lc_gross')}">${ICON.expand}</button><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>${noVal ? '' : `<div class="lc-row2">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span><span class="lc-span" id="lc-${id}-span" title="${t('lc_span_tip')}"></span></div>`}`;
+  const head = (id, title, extra, noVal) => `<div class="lc-head"><b class="lc-title">${title}</b><button class="lc-big" data-big="${typeOf[id]}" title="${t('lc_gross')}">${ICON.expand}</button><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>${noVal ? '' : `<div class="lc-row2" data-ex="balance.value">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span><span class="lc-span" id="lc-${id}-span" title="${t('lc_span_tip')}"></span></div>`}`;
   const plot = id => `<div class="bch-plot lc-plot" id="lc-${id}-plot"><svg class="bch-svg" id="lc-${id}-svg"></svg><div class="bch-tip hidden" id="lc-${id}-tip"></div></div>`;
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
   const card = {
-    nw: () => `<div class="card bch lc" data-lc="nw">${head('nw', t('nettovermoegen'))}${plot('nw')}<div class="lc-stats" id="lc-nw-stats"></div></div>`,
-    bil: () => `<div class="card bch lc" data-lc="bil">${head('bil', t('lc_bilanz'), '', true)}${plot('bil')}<div class="lc-legend" id="lc-bil-legend"></div></div>`,
-    sel: () => `<div class="card bch lc" data-lc="sel">${head('sel', (([tx, tip]) => `<span id="lc-sel-title" class="${tip ? 'tipped' : ''}" data-tip="${esc(tip)}" tabindex="0">${esc(tx)}</span>`)(lcSelTitle(sel, avail)))}${plot('sel')}<div class="lc-chips below" id="lc-chips">${chips}</div></div>`,
-    pos: () => `<div class="card bch lc" data-lc="pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select><button class="lc-mode hidden" id="lc-pos-mode" title="${t('lc_depot_tip')}">${t('lc_depot')}</button>`)}${plot('pos')}<div class="lc-chips below" id="lc-pos-accs"></div></div>`};
+    nw: () => `<div class="card bch lc" data-lc="nw" data-ex="balance.nw">${head('nw', t('nettovermoegen'))}${plot('nw')}<div class="lc-stats" id="lc-nw-stats" data-ex="balance.nw.stats"></div></div>`,
+    bil: () => `<div class="card bch lc" data-lc="bil" data-ex="balance.bil">${head('bil', t('lc_bilanz'), '', true)}${plot('bil')}<div class="lc-legend" id="lc-bil-legend"></div></div>`,
+    sel: () => `<div class="card bch lc" data-lc="sel" data-ex="balance.sel">${head('sel', (([tx, tip]) => `<span id="lc-sel-title" class="${tip ? 'tipped' : ''}" data-tip="${esc(tip)}" tabindex="0">${esc(tx)}</span>`)(lcSelTitle(sel, avail)))}${plot('sel')}<div class="lc-chips below" id="lc-chips">${chips}</div></div>`,
+    pos: () => `<div class="card bch lc" data-lc="pos" data-ex="balance.pos">${head('pos', `<select id="lc-pos-sel" class="lc-pos-sel" title="${t('lc_pos_tip')}">${avail.map(r => `<option value="${r}" ${r === lcPosRole(D) ? 'selected' : ''}>${esc(ROLE[r][0])}</option>`).join('')}</select><button class="lc-mode hidden" id="lc-pos-mode" title="${t('lc_depot_tip')}">${t('lc_depot')}</button>`)}${plot('pos')}<div class="lc-chips below" id="lc-pos-accs"></div></div>`};
   // the small ones in their order (enlarging one swaps it with the large one, so any order is possible)
-  return `<div class="cards lc-grid" id="lc-grid">${(S.lcOrder || VIEW_ORDER).slice(1).map(x => card[x === 'balance' ? 'bil' : x]()).join('')}</div>`;
+  return `<div class="cards lc-grid" id="lc-grid" data-ex="balance.lines">${(S.lcOrder || VIEW_ORDER).slice(1).map(x => card[x === 'balance' ? 'bil' : x]()).join('')}</div>`;
 }
 // growth in percent, short: 7,6 % · 13,7 % · 340 % · 2400 % (no thousands separator) · 12T % / 12k % (from 10 000 %);
 // from a start of (almost) zero, or from 100 000 % on, it says nothing: no figure
@@ -3345,7 +3370,7 @@ function vKapitalfluss(editable) {
   // hatched = plan, faded = the running month: plain to see (it lies ahead), so no legend for it; planning names what you overrode
   if (editable) h += `<div class="legend"><span class="o">${t('ueberschrieben')}</span><label class="chk"><input type="checkbox" id="vorschlag-an" ` + (S.proposal ? 'checked' : '') + `${t('vorschlagswerte_zeigen')}</label><em>${t('doppelklick_auf_eine_planzelle_eigener')}</em>` + (S.real ? `<em class="pill info">${t('planwerte_in_heutiger_kaufkraft')}</em>` : '') + '</div>';
   if (editable) {
-    h += `<div class="card" style="margin-bottom:12px"><h3>${t('parameter')}</h3><div class="row tight">
+    h += `<div class="card" data-ex="planning.params" style="margin-bottom:12px"><h3>${t('parameter')}</h3><div class="row tight">
       <label>${t('horizont')} <input id="p_horizont" type="number" min="1" max="240" value="${P.horizon_months ?? 24}" style="width:70px"> ${t('monate')}</label>
       <label>${t('standardmethode_0', hq('method'))} <select id="p_methode">${['rolling12', 'rolling6', 'prev_year', 'budget', 'none'].map(x => `<option value="${x}" ${P.default_method === x ? 'selected' : ''}>${METH[x]}</option>`).join('')}</select></label>
       <label>${t('inflation_0', hq('inflation'))} <input id="p_infl" type="number" step="0.1" value="${P.inflation_percent_pa ?? 2}" style="width:64px"> % p.a.</label>
@@ -3355,7 +3380,13 @@ function vKapitalfluss(editable) {
       <button id="p_save" class="small">${t('uebernehmen')}</button><button id="p_reset" class="small secondary" title="${t('alle_planeinstellungen_dieses_bereichs')}">${t('plan_zuruecksetzen')}</button></div>
       <div class="note" style="margin:6px 0 0">${t('ausgaben_steigen_standardmaessig_mit_d_2')}</div></div>`;
   }
-  h += '<div class="wrap"><table class="cf-tbl' + (editable ? ' ptable' : '') + '">' + thead(lvCtl, C) + '<tbody>';
+  h += (editable ? '<div class="wrap" data-ex="planning.table">' : '<div class="wrap" data-ex="cashflow.table">') + '<table class="cf-tbl' + (editable ? ' ptable' : '') + '">' + thead(lvCtl, C) + '<tbody>';
+  // what each kind of row is, for the assistant (docs/ui): the cash flow by its kinds of rows; planning by its rows with a method
+  const EXS = editable ? {} : {income: ' data-ex="cashflow.table.operating"', expenses: ' data-ex="cashflow.table.operating"', investing: ' data-ex="cashflow.table.investing"',
+    financing: ' data-ex="cashflow.table.financing"', valuation: ' data-ex="cashflow.table.valuation"', unclear: ' data-ex="cashflow.table.unclear"'};
+  const exOf = name => EXS[name] || '', EXROW = editable ? ' data-ex="planning.table.row"' : '', EXDET = editable ? '' : ' data-ex="cashflow.table.category"';
+  const EXT = k => editable ? '' : {op: ' data-ex="cashflow.table.operating"', fcf: ' data-ex="cashflow.table.fcf"', cash: ' data-ex="cashflow.table.cash"', check: ' data-ex="cashflow.table.check"',
+    moves: ' data-ex="cashflow.table.moves"', nw: ' data-ex="cashflow.table.networth"'}[k];
   const secTotal = name => C.map(c => c.months.reduce((a, m) => a + (sums[m]?.[name] ?? 0) * defl(m), 0));
   // movements with their sign (+ too), balances without; in planning the figures stay as you edit them
   const FV = v => (!editable && v > 0.005 ? '+' : '') + FC(v);
@@ -3378,7 +3409,7 @@ function vKapitalfluss(editable) {
     const sek = KF.sections.find(s => s.name === name);
     if (!sek || (!sek.rows.length && !S.all)) return '';
     const sid = 's:' + name, sOpen = cfOpen(sid, name === 'valuation' || name === 'unclear' ? d0 + 1 : d0);      // overview: their sum only
-    let o = `<tr class="${d0 ? 'sec2' : 'sec'}${ind(d0)}" data-tog="${esc(sid)}" data-depth="${d0}"${zsOf(sek.rows, SEC_LABEL[name] || name)}><td>${caret(sid, d0, sOpen)}${dot(SEC_KEY[name])}${named(SEC_LABEL[name] || esc(name), SEC_HELP[name], d0 ? '' : SEC_ABBR[name])}</td>${nums(secTotal(name), sek.rows)}</tr>`;
+    let o = `<tr class="${d0 ? 'sec2' : 'sec'}${ind(d0)}"${exOf(name)} data-tog="${esc(sid)}" data-depth="${d0}"${zsOf(sek.rows, SEC_LABEL[name] || name)}><td>${caret(sid, d0, sOpen)}${dot(SEC_KEY[name])}${named(SEC_LABEL[name] || esc(name), SEC_HELP[name], d0 ? '' : SEC_ABBR[name])}</td>${nums(secTotal(name), sek.rows)}</tr>`;
     if (!sOpen) return o;
     const groups = [];
     for (const z of sek.rows) { let g = groups.find(x => x.name === z.group); if (!g) groups.push(g = {name: z.group, label: gLabel(z), rows: []}); g.rows.push(z); }
@@ -3387,7 +3418,7 @@ function vKapitalfluss(editable) {
       const single = g.rows.length === 1 && g.rows[0].row === g.name;
       if (!S.all && gvals.every(v => Math.abs(v) < 0.005)) continue;
       const gd = d0 + 1, gid = 'g:' + name + '|' + g.name, gOpen = single || cfOpen(gid, gd);
-      if (!single) o += `<tr class="sub${ind(gd)}" data-tog="${esc(gid)}" data-depth="${gd}"${zsOf(g.rows, g.label)}><td>${caret(gid, gd, gOpen)}${esc(g.label)}</td>${nums(gvals, g.rows)}</tr>`;
+      if (!single) o += `<tr class="sub${ind(gd)}"${exOf(name)} data-tog="${esc(gid)}" data-depth="${gd}"${zsOf(g.rows, g.label)}><td>${caret(gid, gd, gOpen)}${esc(g.label)}</td>${nums(gvals, g.rows)}</tr>`;
       if (!gOpen) continue;
       for (const z of g.rows) {
         const vals = C.map(c => vOf(z, c));
@@ -3397,8 +3428,9 @@ function vKapitalfluss(editable) {
         let e = '';
         const p = z.plan || {}, ov = new Set(p.overwritten || []);
         if (editable) {
-          const isLoan = p.method === 'loans';
-          e = isLoan ? `<div class="edit"><span class="tag">${t('darlehensplan_zins_auf_restsaldo')}</span>${ov.size ? ` <button class="small secondary reset-row" data-key="${esc(key)}" title="${t('alle_ueberschreibungen_loeschen')}">↺</button>` : ''}</div>`
+          // rows the plan takes from elsewhere -- the loan plan, a planned event, a property calculation: no method of their own
+          const FIXED = {loans: 'darlehensplan_zins_auf_restsaldo', event: 'plan_aus_ereignis', property: 'plan_aus_kalkulation'}, isLoan = !!FIXED[p.method];
+          e = isLoan ? `<div class="edit"><span class="tag">${t(FIXED[p.method])}</span>${ov.size ? ` <button class="small secondary reset-row" data-key="${esc(key)}" title="${t('alle_ueberschreibungen_loeschen')}">↺</button>` : ''}</div>`
             : `<div class="edit" data-key="${esc(key)}">
               <select class="meth"><option value="">${t('standard')}</option>${Object.entries(METH).map(([mm, ml]) => `<option value="${mm}" ${p.method === mm && (D.plan.rows || {})[key]?.method ? 'selected' : ''}>${ml}</option>`).join('')}</select>
               <input class="amount" type="number" step="0.01" placeholder="${t('betrag')}" value="${p.amount ?? ''}" title="${t('betrag_fuer_fester_betrag_jahresbetrag')}">
@@ -3408,7 +3440,7 @@ function vKapitalfluss(editable) {
         const zu = editable || !z.lbl ? '' : z.lbl[0] === 'cf_ohne_kategorie' ? ` <a href="#categories" class="small">${t('zuordnen')}</a>`
           : z.lbl[0] === 'cf_anlage_ohne_ziel' ? ` <a href="#accounts/positions" class="small">${t('cf_ziel_festlegen')}</a>` : '';
         const det = (z.details || []).length, open = det && cfOpen(did, depth);
-        o += `<tr class="${ind(depth).trim()}${det ? ' has-det' : ''}" data-key="${esc(key)}"${zsOf([z], zLabel(z))}${det ? ` data-tog="${esc(did)}" data-depth="${depth}"` : ''}><td title="${esc(full)}">${det ? caret(did, depth, open) : NOCARET}${esc(label)}${zu}${editable && p.method && p.method !== 'loans' ? `<span class="tag">${METH[p.method] || p.method}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
+        o += `<tr class="${ind(depth).trim()}${det ? ' has-det' : ''}"${EXROW || exOf(name)} data-key="${esc(key)}"${zsOf([z], zLabel(z))}${det ? ` data-tog="${esc(did)}" data-depth="${depth}"` : ''}><td title="${esc(full)}">${det ? caret(did, depth, open) : NOCARET}${esc(label)}${zu}${editable && p.method && !['loans', 'event', 'property'].includes(p.method) ? `<span class="tag">${METH[p.method] || p.method}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
           + vals.map((v, i) => {
               const c = C[i], isOv = c.plan && c.months.some(mm => ov.has(mm));
               const sug = (S.proposal && c.plan) ? `<div class="small muted">${F(sOf(z, c))}</div>` : '';
@@ -3418,7 +3450,7 @@ function vKapitalfluss(editable) {
           const dv = C.map(c => c.plan || c.months.some(m => m > D.actual_until) ? null : sumOver(d.amounts, c.months));     // actual months only
           if (!S.all && dv.every(v => v == null || Math.abs(v) < 0.005)) continue;
           const nm = d.category ? esc(CP(d.category)) : `<span class="tipped" data-tip="${esc(t('cf_geschaetzt_tip'))}" tabindex="0">${t('cf_geschaetzt')}</span>${editable ? '' : ` <a href="#categories" class="small">${t('zuordnen')}</a>`}`;
-          o += `<tr class="det${ind(depth + 1)}"${d.category && !editable ? ` data-kat="${esc(d.category)}"` : ''}><td title="${esc(CP(d.category))}">${NOCARET}${nm}</td>${dv.map((v, i) => `<td class="${cls(v ?? null, C[i])}">${v == null ? '' : FV(v)}</td>`).join('')}</tr>`;
+          o += `<tr class="det${ind(depth + 1)}"${EXDET}${d.category && !editable ? ` data-kat="${esc(d.category)}"` : ''}><td title="${esc(CP(d.category))}">${NOCARET}${nm}</td>${dv.map((v, i) => `<td class="${cls(v ?? null, C[i])}">${v == null ? '' : FV(v)}</td>`).join('')}</tr>`;
         }
       }
     }
@@ -3428,7 +3460,7 @@ function vKapitalfluss(editable) {
   // ✓ only where every month of the column up to today was checked and adds up; a difference with a known cause is shown calmly
   // (its reason in the tooltip), one without a cause as a warning
   const ue = KF.reconciliation || {};
-  const check = (help, val, why) => `<tr class="check"><td>${named(t('cf_abgleich'), help)}</td>${C.map(c => {
+  const check = (help, val, why) => `<tr class="check"${EXT('check')}><td>${named(t('cf_abgleich'), help)}</td>${C.map(c => {
     const ms = c.plan ? [] : c.months.filter(m => m <= D.actual_until);
     if (!ms.length || ms.some(m => !ue[m])) return `<td class="${cls(null, c)}"></td>`;
     const v = ms.reduce((a, m) => a + ue[m][val], 0), off = ms.some(m => Math.abs(ue[m][val]) >= 0.005);
@@ -3439,13 +3471,13 @@ function vKapitalfluss(editable) {
   // bank balance at the start and the end of a column (end of the month before / of its last month); unknown stays unknown
   const allM = [...(D.months || []), ...(D.plan_months || [])];
   // inflation-adjusted the balances would not add up (each month has its own factor): only in today's money they are left out
-  const bal = (label, at) => editable && S.real ? '' : `<tr class="bal"><td title="${esc(t('cf_bal_tip', (D.balance.positions || {}).cash || ROLE.cash[0]))}">${label}</td>${C.map(c => {
+  const bal = (label, at) => editable && S.real ? '' : `<tr class="bal"${EXT('cash')}><td title="${esc(t('cf_bal_tip', (D.balance.positions || {}).cash || ROLE.cash[0]))}">${label}</td>${C.map(c => {
     const m = at(c), b = m ? sums[m]?.bank : undefined;
     if (b === undefined) return `<td class="${cls(null, c)}"></td>`;
     return b === null ? `<td class="${cls(null, c)} muted small">${t('unbekannt')}</td>` : `<td class="${cls(b * defl(m), c)} to-bal" data-bal="liq|${m}" title="${esc(t('cf_zur_bilanz_liq', ML(m)))}">${FC(b * defl(m))}</td>`; }).join('')}</tr>`;
   // operating: income and expenses within; then investing, financing and what could not be placed
   const opOpen = cfOpen('s:operating', 0), opZs = ['income', 'expenses'].flatMap(n => (KF.sections.find(x => x.name === n) || {rows: []}).rows);
-  h += `<tr class="sec" data-tog="s:operating" data-depth="0"${zsOf(opZs, SEC_LABEL.operating)}><td>${caret('s:operating', 0, opOpen)}${dot('op')}${named(SEC_LABEL.operating, SEC_HELP.operating, SEC_ABBR.operating)}</td>${nums(secTotal('operating'), opZs)}</tr>`;
+  h += `<tr class="sec"${EXT('op')} data-tog="s:operating" data-depth="0"${zsOf(opZs, SEC_LABEL.operating)}><td>${caret('s:operating', 0, opOpen)}${dot('op')}${named(SEC_LABEL.operating, SEC_HELP.operating, SEC_ABBR.operating)}</td>${nums(secTotal('operating'), opZs)}</tr>`;
   if (opOpen) h += section('income', 1) + section('expenses', 1);
   // the check with the balance sheet per column: ✓ beside the figure; a row of its own only where something differs
   const colState = (c, val) => { const ms = c.plan || c.mixed ? [] : c.months.filter(m => m <= D.actual_until);
@@ -3456,11 +3488,11 @@ function vKapitalfluss(editable) {
   // Free Cashflow (CFO + CFI): what is left after living and investing -- or what had to be financed (from the level "positions")
   const fcf = (() => { const o = secTotal('operating'), i2 = secTotal('investing'); return o.map((v, i) => v + i2[i]); })();
   const fcfZs = [...opZs, ...(KF.sections.find(x => x.name === 'investing') || {rows: []}).rows];
-  h += section('investing') + (cfLevel() >= 2 ? `<tr class="fcf"${zsOf(fcfZs, t('cf_fcf'))}><td>${NOCARET}${named(t('cf_fcf'), 'cf_fcf', 'FCF')}</td>${nums(fcf, fcfZs)}</tr>` : '') + section('financing') + section('unclear');
+  h += section('investing') + (cfLevel() >= 2 ? `<tr class="fcf"${EXT('fcf')}${zsOf(fcfZs, t('cf_fcf'))}><td>${NOCARET}${named(t('cf_fcf'), 'cf_fcf', 'FCF')}</td>${nums(fcf, fcfZs)}</tr>` : '') + section('financing') + section('unclear');
   // the change in cash -- the bank balance at the start and the end inside it (open from the level "positions")
   const bOpen = cfOpen('t:bank', 1);
   const cashZs = KF.sections.filter(x => x.name !== 'valuation').flatMap(x => x.rows);
-  h += `<tr class="total" data-tog="t:bank" data-depth="0"${zsOf(cashZs, t('zahlungsfluss_gesamt_veraenderung_liqu'))}><td>${caret('t:bank', 0, bOpen)}${named(t('zahlungsfluss_gesamt_veraenderung_liqu'), 'cf_bank')}</td>${checked(secTotal('cash_change'), 'diff_cash', cashZs)}</tr>`;
+  h += `<tr class="total"${EXT('cash')} data-tog="t:bank" data-depth="0"${zsOf(cashZs, t('zahlungsfluss_gesamt_veraenderung_liqu'))}><td>${caret('t:bank', 0, bOpen)}${named(t('zahlungsfluss_gesamt_veraenderung_liqu'), 'cf_bank')}</td>${checked(secTotal('cash_change'), 'diff_cash', cashZs)}</tr>`;
   // inside it: start + change + difference to the balance sheet = end (the difference before the end: it is added)
   if (bOpen) h += bal(t('bankguthaben_anfang'), c => allM[allM.indexOf(c.months[0]) - 1])
     + (anyOff('diff_cash') ? check('cf_abgleich_bank', 'diff_cash', 'reasons_cash') : '') + bal(t('bankguthaben_ende'), c => c.months[c.months.length - 1]);
@@ -3473,17 +3505,17 @@ function vKapitalfluss(editable) {
   if (mv2.length) {
     const uOpen = cfOpen('t:umsch', 2), uv = C.map((_, i) => mv2.reduce((a, m) => a + m.v[i], 0));
     const uZs = mv2.flatMap(m => m.zs);
-    h += `<tr class="sec umsch" data-tog="t:umsch" data-depth="0"${zsOf(uZs, t('cf_umschichtungen'))}><td>${caret('t:umsch', 0, uOpen)}${dot('umsch')}${named(t('cf_umschichtungen'), 'cf_umsch')}</td>${nums(uv, uZs)}</tr>`;
-    if (uOpen) for (const m of mv2) h += `<tr class="ind1"${zsOf(m.zs, m.l)}><td>${NOCARET}${esc(m.l)}</td>${nums(m.v, m.zs)}</tr>`;
+    h += `<tr class="sec umsch"${EXT('moves')} data-tog="t:umsch" data-depth="0"${zsOf(uZs, t('cf_umschichtungen'))}><td>${caret('t:umsch', 0, uOpen)}${dot('umsch')}${named(t('cf_umschichtungen'), 'cf_umsch')}</td>${nums(uv, uZs)}</tr>`;
+    if (uOpen) for (const m of mv2) h += `<tr class="ind1"${EXT('moves')}${zsOf(m.zs, m.l)}><td>${NOCARET}${esc(m.l)}</td>${nums(m.v, m.zs)}</tr>`;
   }
   // what changed without a payment, and net worth
   // the change in net worth -- like the change in cash: the net worth at the start and the end inside it, the check with the balance sheet too
   const nOpen = cfOpen('t:nv', 1), nwAt = m => (D.balance.net_worth || {})[m] ?? ((D.balance.projection || {}).net_worth || {})[m];
-  const nvbal = (label, at) => editable && S.real ? '' : `<tr class="bal"><td title="${esc(t('cf_nv_bal_tip'))}">${label}</td>${C.map(c => {
+  const nvbal = (label, at) => editable && S.real ? '' : `<tr class="bal"${EXT('nw')}><td title="${esc(t('cf_nv_bal_tip'))}">${label}</td>${C.map(c => {
     const m = at(c), b = m ? nwAt(m) : undefined; if (b == null) return `<td class="${cls(null, c)}"></td>`;
     return `<td class="${cls(b * defl(m), c)} to-bal" data-bal="nw|${m}" title="${esc(t('cf_zur_bilanz_nv', ML(m)))}">${FC(b * defl(m))}</td>`; }).join('')}</tr>`;
   const nvZs = KF.sections.flatMap(x => x.rows.filter(z => z.nw));
-  h += section('valuation') + `<tr class="total" data-tog="t:nv" data-depth="0"${zsOf(nvZs, t('cf_veraenderung_nv'))}><td>${caret('t:nv', 0, nOpen)}${named(t('cf_veraenderung_nv'), 'cf_nv')}</td>${checked(secTotal('net_worth_delta'), 'unexplained', nvZs)}</tr>`;
+  h += section('valuation') + `<tr class="total"${EXT('nw')} data-tog="t:nv" data-depth="0"${zsOf(nvZs, t('cf_veraenderung_nv'))}><td>${caret('t:nv', 0, nOpen)}${named(t('cf_veraenderung_nv'), 'cf_nv')}</td>${checked(secTotal('net_worth_delta'), 'unexplained', nvZs)}</tr>`;
   if (nOpen) h += nvbal(t('cf_nv_anfang_z'), c => allM[allM.indexOf(c.months[0]) - 1])
     + (anyOff('unexplained') ? check('cf_abgleich_nv', 'unexplained', 'reasons') : '') + nvbal(t('cf_nv_ende_z'), c => c.months[c.months.length - 1]);
   h = h.slice(0, h0) + h.slice(h0).split('<tr class="').join('<tr class="nwp ');          // from cash to net worth: a little lighter, the focus on the cash flow
@@ -3497,16 +3529,18 @@ function vPlanExtras(D) {
   const fin = (D.cashflow.sections.find(s => s.name === 'financing') || {rows: []}).rows;
   const accName = id => (D.balance.rows.find(r => r.id === id) || {}).name;
   const loanNames = [...new Set(fin.filter(z => z.account && (z.kind === 'repayment' || z.kind === 'interest')).map(z => accName(z.account)).filter(Boolean))];
-  let h = `<h2>${t('darlehensplan')}</h2><div class="note">${t('zins_auf_den_fortgeschriebenen_restsal')}</div><div class="wrap auto"><table class="plain"><thead><tr><th>${t('darlehen')}</th><th>${t('zins_p_a')}</th><th>${t('modell')}</th><th>${t('zahlung_je_monat_leer_durchschnitt')}</th><th></th></tr></thead><tbody>`;
+  let h = `<h2>${t('darlehensplan')}</h2><div class="note">${t('zins_auf_den_fortgeschriebenen_restsal')}</div><div class="wrap auto" data-ex="planning.loans"><table class="plain"><thead><tr><th>${t('darlehen')}</th><th>${t('zins_p_a')}</th><th>${t('modell')}</th><th>${t('zahlung_je_monat_leer_durchschnitt')}</th><th></th></tr></thead><tbody>`;
   for (const name of loanNames) {
     const d = (P.loans || {})[name] || {}; const cfgLoan = Object.values(loans).find(l => l.name === name);
-    h += `<tr data-loan="${esc(name)}"><td>${esc(name)}${cfgLoan ? `<span class="tag">${t('regel')} ` + esc(cfgLoan.model) + '</span>' : ''}</td><td class="num"><input type="number" step="0.01" class="lz" value="${d.interest_percent_pa ?? ''}" style="width:90px"></td><td><select class="lm"><option value="remaining_debt_monthly" ${d.model === 'remaining_debt_monthly' ? 'selected' : ''}>${t('restschuld_monatlich')}</option><option value="yearly_base" ${d.model === 'yearly_base' ? 'selected' : ''}>${t('jahresbasis_31_12')}</option></select></td><td class="num"><input type="number" step="0.01" class="lp" value="${d.payment ?? ''}" style="width:110px"></td><td><button class="small save-loan">✓</button></td></tr>`;
+    // the model as it is calculated: set here, else the booking rule's -- a click on ✓ (to change the payment) keeps it
+    const MODEL = {remaining_debt_monthly: t('restschuld_monatlich'), yearly_base: t('jahresbasis_31_12')}, md = d.model || (cfgLoan || {}).model || 'remaining_debt_monthly';
+    h += `<tr data-loan="${esc(name)}"><td>${esc(name)}${cfgLoan ? `<span class="tag">${t('regel')} ` + esc(MODEL[cfgLoan.model] || cfgLoan.model || '') + '</span>' : ''}</td><td class="num"><input type="number" step="0.01" class="lz" value="${d.interest_percent_pa ?? ''}" style="width:90px"></td><td><select class="lm">${Object.entries(MODEL).map(([k, l]) => `<option value="${k}" ${md === k ? 'selected' : ''}>${l}</option>`).join('')}</select></td><td class="num"><input type="number" step="0.01" class="lp" value="${d.payment ?? ''}" style="width:110px"></td><td><button class="small save-loan">✓</button></td></tr>`;
   }
   if (!loanNames.length) h += `<tr><td colspan="5" class="muted">${t('keine_darlehenszeilen_im_kapitalfluss')}</td></tr>`;
   h += '</tbody></table></div>';
   const leafs = D.balance.rows.filter(r => !r.group && r.role !== 'cash');
   const others = Object.entries((S.DATA && S.DATA.area_names) || {}).filter(([k]) => k !== S.area);
-  h += `<h2>${t('wertentwicklung_je_konto_0', hq('rendite'))}</h2><div class="note">${t('jaehrliche_wertaenderung_in_prozent_ba', hq('wert_bereich'))}</div><div class="wrap auto"><table class="plain"><thead><tr><th>${t('konto_2')}</th><th>${t('position')}</th><th>% p.a.</th><th>${t('basis_optional')}</th><th>${t('kopplung_an_bereich')}</th><th>${t('anteil')}</th><th></th></tr></thead><tbody>`;
+  h += `<h2>${t('wertentwicklung_je_konto_0', hq('rendite'))}</h2><div class="note">${t('jaehrliche_wertaenderung_in_prozent_ba', hq('wert_bereich'))}</div><div class="wrap auto" data-ex="planning.appreciation"><table class="plain"><thead><tr><th>${t('konto_2')}</th><th>${t('position')}</th><th>% p.a.</th><th>${t('basis_optional')}</th><th>${t('kopplung_an_bereich')}</th><th>${t('anteil')}</th><th></th></tr></thead><tbody>`;
   for (const r of leafs) {
     const w = (P.appreciation || {})[r.name] || {};
     h += `<tr data-acct="${esc(r.name)}"><td>${esc(r.path)}${r.inactive ? `<span class="tag">${t('ausgeblendet')}</span>` : ''}</td><td class="small">${(ROLE[r.role] || [r.role])[0]}</td><td class="num"><input type="number" step="0.1" class="wp" value="${w.percent_pa ?? ''}" style="width:80px"></td><td class="num"><input type="number" step="1" class="wb" value="${w.base ?? ''}" style="width:130px"></td><td><select class="wbr"><option value="">–</option>${others.map(([k, n]) => `<option value="${esc(k)}" ${w.area === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td><td class="num"><input type="number" step="0.01" min="0" max="1" class="wa" value="${w.share ?? ''}" placeholder="1" style="width:70px"></td><td><button class="small save-wert">✓</button></td></tr>`;
@@ -3528,7 +3562,7 @@ function vPlanExtras(D) {
     <div class="row tight"><label class="chk small">${t('von')} <select class="ev-von">${kOpt(e.date_from)}</select></label><span class="muted">→</span><label class="chk small">${t('nach')} <select class="ev-nach">${kOpt(e.after)}</select></label>
       <label class="chk small"><input type="checkbox" class="ev-aktiv" ${e.active !== false ? 'checked' : ''}> ${t('aktiv')}</label>
       <button class="small ev-save">${e.id ? t('speichern') : t('hinzufuegen')}</button>${e.id ? `<button class="small danger ev-del">${t('loeschen')}</button>` : ''}</div></div></div>`;
-  h += `<h2>${t('geplante_ereignisse_0', hq('event'))}</h2><div class="note">${t('umschichtung_betrag_geht_von_von')}</div><div class="list">`;
+  h += `<h2>${t('geplante_ereignisse_0', hq('event'))}</h2><div class="note">${t('umschichtung_betrag_geht_von_von')}</div><div class="list" data-ex="planning.events">`;
   for (const e of evs) h += evRow(e, false);
   h += evRow({}, true) + '</div>';
   return h;
@@ -3616,7 +3650,7 @@ function vCfCharts(D) {
   const [cur] = cfMonths(D, S.cfZeit);
   if (!cur.length) return '';
   const pick = cfPick(D), mb = (id, v, lab) => `<button class="cf-mbtn${cfIsOpen(D, v) ? ' open' : ''}" id="${id}" data-m="${v}" aria-haspopup="dialog" aria-label="${esc(lab + ': ' + MLL(v))}">${esc(ML(v))}</button>`;
-  let h = `<div class="cf-charts"><div class="toolbar cf-period"><span class="cf-range"><button class="cf-shift icon" data-shift="-1" title="${esc(t('cf_monat_zurueck'))}" aria-label="${esc(t('cf_monat_zurueck'))}" ${pick.indexOf(cur[0]) <= 0 ? 'disabled' : ''}>‹</button>`
+  let h = `<div class="cf-charts" data-ex="cashflow.charts"><div class="toolbar cf-period"><span class="cf-range"><button class="cf-shift icon" data-shift="-1" title="${esc(t('cf_monat_zurueck'))}" aria-label="${esc(t('cf_monat_zurueck'))}" ${pick.indexOf(cur[0]) <= 0 ? 'disabled' : ''}>‹</button>`
     + `<span class="cf-range-in" title="${esc(t('cf_zeitraum_tip'))}">${mb('cf-von', cur[0], t('cf_von'))}<span class="muted">–</span>${mb('cf-bis', cur[cur.length - 1], t('cf_bis'))}</span>`
     + `<button class="cf-shift icon" data-shift="1" title="${esc(t('cf_monat_vor'))}" aria-label="${esc(t('cf_monat_vor'))}" ${pick.indexOf(cur[cur.length - 1]) >= pick.length - 1 ? 'disabled' : ''}>›</button></span>`
     + `<div class="seg small" id="cf-zeit">${per.map(([k, l]) => `<button data-z="${k}" class="${S.cfZeit === k ? 'on' : ''}">${l}</button>`).join('')}</div>`
@@ -3628,16 +3662,16 @@ function vCfCharts(D) {
   // and uses); a narrow window stacks them
   const prev = cfMonths(D, S.cfZeit)[1];
   const su = cfSourcesUses(D, cur, prev);
-  const card = (id, cls, key, extra, plot, row2 = '') => `<div class="card bch cf-card ${cls}" data-cfid="${id}"><div class="lc-head"><b class="lc-title">${t(key)}${hq(key)}</b>${cfMv(id)}${extra || ''}</div>${row2}<div class="cf-plot" id="${plot}"></div></div>`;
+  const card = (id, cls, key, extra, plot, ex) => `<div class="card bch cf-card ${cls}" data-cfid="${id}" ${ex}><div class="lc-head"><b class="lc-title">${t(key)}${hq(key)}</b>${cfMv(id)}${extra || ''}</div><div class="cf-plot" id="${plot}"></div></div>`;
   // the charts in the order you chose (↑ ↓ at each, on hover): two half ones side by side; a half one without a half neighbour
   // takes the whole width
   const pie = cfPie(D, cur, prev), hasW = cfWealthTree(D, cur, prev).some(r => r.kind !== 'tot');
   CF.avail = ['bridge', 'months', ...(su ? ['flow'] : []), ...(hasW ? ['wealth'] : []), 'duo'];
   const parts = {
-    bridge: cls => card('bridge', cls, 'cf_bruecke', `<button id="cf-br-reset" class="small secondary hidden">${t('cf_br_ganz')}</button>`, 'cf-bridge'),
-    months: cls => card('months', cls, 'cf_je_monat_t', '', 'cf-months'),          // no legend: the colours are the table's, the tooltip names them
+    bridge: cls => card('bridge', cls, 'cf_bruecke', `<button id="cf-br-reset" class="small secondary hidden">${t('cf_br_ganz')}</button>`, 'cf-bridge', 'data-ex="cashflow.bridge"'),
+    months: cls => card('months', cls, 'cf_je_monat_t', '', 'cf-months', 'data-ex="cashflow.months"'),          // no legend: the colours are the table's, the tooltip names them
     flow: cls => su.replace('__CLS__', cls),
-    wealth: cls => card('wealth', cls, 'cf_verm_bruecke', `<button id="cf-wb-reset" class="small secondary hidden">${t('cf_br_ganz')}</button>`, 'cf-wbridge'),
+    wealth: cls => card('wealth', cls, 'cf_verm_bruecke', `<button id="cf-wb-reset" class="small secondary hidden">${t('cf_br_ganz')}</button>`, 'cf-wbridge', 'data-ex="cashflow.wealth"'),
     duo: () => `<div class="card bch cf-card cf-full cf-duo${pie ? '' : ' solo'}" data-cfid="duo">${pie}${cfHeatCard(!pie)}</div>`,
   };
   const order = cfOrder(), half = id => id !== 'duo';
@@ -4064,7 +4098,7 @@ function cfPie(D, months, prev) {
   const yrs = has ? Math.round(((+months[0].slice(0, 4) - +prev[0].slice(0, 4)) * 12 + (+months[0].slice(5) - +prev[0].slice(5))) / 12) : 0;
   const title = !has ? t(up ? 'cf_einnahmen_kuchen' : 'cf_ausgaben_kuchen') : yrs === 1 ? t(up ? 'cf_einnahmen_vorjahr' : 'cf_ausgaben_vorjahr') : t(up ? 'cf_einnahmen_vorjahre' : 'cf_ausgaben_vorjahre', yrs);
   CF.pie = items.length ? {items, all, before, up, title, neg, tc: cfChange(all, before, up), prev: has, span: span(months), spanPrev: has ? span(prev) : '', n: months.length} : null;
-  return `<div class="cf-duo-p" id="cf-pie-card"><div class="lc-head"><b class="lc-title">${title}${hq('cf_ausgaben_kuchen')}</b>${cfMv('duo')}${cfArtSeg()}</div>`
+  return `<div class="cf-duo-p" id="cf-pie-card" data-ex="cashflow.ring"><div class="lc-head"><b class="lc-title">${title}${hq('cf_ausgaben_kuchen')}</b>${cfMv('duo')}${cfArtSeg()}</div>`
     + (items.length ? `<div class="cf-plot" id="cf-pie"></div>` : `<div class="cf-empty muted small">${t('cf_keine_zahlungen')}</div>`) + `</div>`;
 }
 function cfDrawPie() {
@@ -4156,7 +4190,7 @@ function cfDrawPie() {
     g += `<g class="cf-pie-c" data-pie="${items.length === 1 ? 0 : -1}" tabindex="0" aria-label="${esc(items.length === 1 ? e.label : t('cf_pie_zurueck'))}">${items.length === 1 ? '' : `<title>${esc(t('cf_pie_zurueck'))}</title>`}<circle cx="${cx}" cy="${cy}" r="${(R0 - 2).toFixed(1)}"/>`
       + `<text class="cf-pie-cn" x="${cx}" y="${cy - 16}" text-anchor="middle">${esc(nm)}</text><text class="cf-pie-v" x="${cx}" y="${cy + 4}" text-anchor="middle">${esc(F0(e.v))} €</text>`
       + (ch ? `<text class="cf-pie-d ${ch.cls}" x="${cx}" y="${cy + 22}" text-anchor="middle">${esc(ch.txt)}</text>` : '') + `</g>`;
-    el.innerHTML = `<svg class="cf-svg pinned${up ? ' ein' : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(e.label)}">${g}</svg>`;
+    el.innerHTML = `<svg class="cf-svg pinned${up ? ' ein' : ''}" data-ex="cashflow.ring.pinned" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(e.label)}">${g}</svg>`;
     return;
   }
   const ctip = cfTip(`<div class="cf-tip-h">${esc(t(up ? 'einnahmen' : 'ausgaben'))}</div><div class="cf-tip-kv">${kv(P0.span, cfEur(all))}`
@@ -4178,7 +4212,7 @@ const cfArtSeg = () => { const up = S.cfPieArt === 'ein'; return `<div class="se
 // amounts or the change against the year before (the same month a year earlier): amounts at first, a switch at the top right
 const cfHeatChg = () => S.cfHeatMode === 'chg';
 const cfHeatSeg = () => `<div class="seg small" id="cf-heat-mode" role="group" aria-label="${esc(t('cf_heat_modus'))}">${[['abs', 'cf_heat_betraege', 'cf_heat_betraege_tip'], ['chg', 'cf_heat_vj', 'cf_heat_vj_tip']].map(([k, l, tip]) => `<button data-hmode="${k}" class="${(cfHeatChg() ? 'chg' : 'abs') === k ? 'on' : ''}" aria-pressed="${(cfHeatChg() ? 'chg' : 'abs') === k}" title="${esc(t(tip))}">${t(l)}</button>`).join('')}</div>`;
-const cfHeatCard = (own = false) => `<div class="cf-duo-h" id="cf-heat-card"><div class="lc-head"><b class="lc-title">${t(S.cfPieArt === 'ein' ? (cfHeatQ() ? 'cf_heatmap_ein_q' : 'cf_heatmap_ein') : (cfHeatQ() ? 'cf_heatmap_q' : 'cf_heatmap'))}${hq('cf_heatmap')}</b>${own ? cfMv('duo') + cfArtSeg() : ''}${cfHeatSeg()}</div><div id="cf-heat"></div></div>`;
+const cfHeatCard = (own = false) => `<div class="cf-duo-h" id="cf-heat-card" data-ex="cashflow.heatmap"><div class="lc-head"><b class="lc-title">${t(S.cfPieArt === 'ein' ? (cfHeatQ() ? 'cf_heatmap_ein_q' : 'cf_heatmap_ein') : (cfHeatQ() ? 'cf_heatmap_q' : 'cf_heatmap'))}${hq('cf_heatmap')}</b>${own ? cfMv('duo') + cfArtSeg() : ''}${cfHeatSeg()}</div><div id="cf-heat"></div></div>`;
 // a change in a small cell: whole percent, from 1000 % on in thousands ("+1,5T%", "+12T%") -- the percent sign always there
 const pctCell = d => { const a = Math.abs(d), s = d > 0 ? '+' : d < 0 ? '−' : '±';
   return s + (a >= 999.5 ? (a / 1000).toLocaleString(LOCALE, {maximumFractionDigits: a >= 9950 ? 0 : 1}) + t('tsd_kurz') : Math.round(a).toLocaleString(LOCALE)) + '%'; };
@@ -4232,12 +4266,13 @@ function cfDrawHeat() {
     return Math.abs(p) < 0.5 ? (Math.abs(v) < 0.5 ? '±0%' : '✦') : pctCell((v - p) / Math.abs(p) * 100); };          // new: its mark, as in the cells
   const every = Math.max(1, Math.ceil(ms.length * 34 / Math.max(1, el.clientWidth * 0.66)));          // names that fit
   const kv = (k, v) => `<span>${esc(k)}</span><b>${v}</b>`;
-  let h = `<div class="cf-heat${up ? ' ein' : ''}${chgMode ? ' chg' : ''}" style="--ch:${Math.round(Math.max(18, Math.min(32, 240 / rows.length)))}px;grid-template-columns:minmax(90px, 24%) repeat(${ms.length}, minmax(0, 1fr)) auto"><span></span>${ms.map((m, i) => { const on = (ms.length - 1 - i) % every === 0, first = ms.findIndex((x, j) => (ms.length - 1 - j) % every === 0) === i; return `<span class="cf-heat-m">${on ? esc(lab(m, (first || m.endsWith('-01')) && every * el.clientWidth * 0.66 / ms.length >= 46)) : ''}</span>`; }).join('')}<span class="cf-heat-m cf-heat-avg" title="${esc(t(chgMode ? 'cf_heat_vj_ges' : 'cf_schnitt_monat'))}">${chgMode ? '±' : 'Ø'}</span>`;
+  let h = `<div class="cf-heat${up ? ' ein' : ''}${chgMode ? ' chg' : ''}"${chgMode ? ' data-ex="cashflow.heatmap.change"' : ''} style="--ch:${Math.round(Math.max(18, Math.min(32, 240 / rows.length)))}px;grid-template-columns:minmax(90px, 24%) repeat(${ms.length}, minmax(0, 1fr)) auto"><span></span>${ms.map((m, i) => { const on = (ms.length - 1 - i) % every === 0, first = ms.findIndex((x, j) => (ms.length - 1 - j) % every === 0) === i; return `<span class="cf-heat-m">${on ? esc(lab(m, (first || m.endsWith('-01')) && every * el.clientWidth * 0.66 / ms.length >= 46)) : ''}</span>`; }).join('')}<span class="cf-heat-m cf-heat-avg" title="${esc(t(chgMode ? 'cf_heat_vj_ges' : 'cf_schnitt_monat'))}">${chgMode ? '±' : 'Ø'}</span>`;
   CF.heat.rows.forEach((r, ri) => {
     const open = r.none || r.paths.size, S2 = r.total ? scT : sc;
     if (r.total) h += `<span class="cf-heat-sep"></span>`;
+    const ex = r.total ? ' data-ex="cashflow.heatmap.total"' : '';          // the row of all positions together (docs/ui)
     // the name: the bookings of the whole period (as a cell does for its month)
-    h += `<span class="cf-heat-n${r.total ? ' tot' : ''}${open ? ' open' : ''}" title="${esc(r.label)}"${open ? ` data-hr="${ri}" data-hm="*" tabindex="0"` : ''}>${esc(r.label)}</span>` + ms.map(m => { const v = r.v[m], c = chgMode ? r.c[m] : null;
+    h += `<span class="cf-heat-n${r.total ? ' tot' : ''}${open ? ' open' : ''}"${ex} title="${esc(r.label)}"${open ? ` data-hr="${ri}" data-hm="*" tabindex="0"` : ''}>${esc(r.label)}</span>` + ms.map(m => { const v = r.v[m], c = chgMode ? r.c[m] : null;
       // new (nothing a year before): the strongest colour and a mark, no frame (no outlier)
       const k = chgMode ? (!c ? 0 : c.neu ? 1 : S2.k(Math.abs(c.d))) : S2.k(v), big = chgMode ? !!c && !c.neu && Math.abs(c.d) > S2.cap : v > S2.cap, neu = chgMode && !!c && !!c.neu;
       const good = k && c && c.d ? (c.d > 0) === up : null, mark = chgMode ? (!c ? '' : pctCell(c.d)) : Fs(v, 0);
@@ -4247,8 +4282,8 @@ function cfDrawHeat() {
       const before = p != null ? `<div><i></i><span>${esc(t('cf_vorjahr'))}</span><b class="cf-tip-pv">${cfEur(p)}<em class="${pch ? pch.cls : ''}">${pch ? pch.txt : '–'}</em></b></div>` : '';          // value and change side by side, at the right
       const parts = shown.length > 1 || (shown.length === 1 && shown[0][0] !== r.label) ? `<div class="cf-tip-kv cf-tip-parts">${shown.map(([n, x]) => kv(n, cfEur(x))).join('')}${rest.length ? kv(t('cf_uebrige', rest.length), cfEur(rest.reduce((a, [, x]) => a + x, 0))) : ''}</div>` : '';
       const tip = cfTip(`<div class="cf-tip-h">${esc(r.label)} <span class="muted">· ${esc(q ? lab(m) : ML(m))}</span></div>${cfTipRow(up ? 'sw in' : 'sw out', t(up ? 'einnahmen' : 'ausgaben'), cfEur(v))}${before}${parts}${q && cnt[m] < 3 ? `<div class="cf-tip-note">${esc(t('cf_teilquartal', cnt[m]))}</div>` : ''}${open && Math.abs(v) >= 0.5 ? `<div class="cf-tip-hint">${esc(t('cf_klick_umsaetze'))}</div>` : ''}`);
-      return `<span class="cf-heat-c${k ? '' : ' none'}${chgMode && !c ? ' na' : ''}${good === true ? ' good' : good === false ? ' bad' : ''}${q && cnt[m] < 3 ? ' part' : ''}${open && Math.abs(v) >= 0.5 ? ' open' : ''}${big ? ' big' : ''}${neu ? ' neu' : ''}${ahead.has(m) ? ' ahead' : ''}" style="${k ? `--k:${Math.round(k * 100)}%` : ''}" data-cftip="${tip}" tabindex="0"${open && Math.abs(v) >= 0.5 ? ` data-hr="${ri}" data-hm="${m}"` : ''}>${big ? `<b class="cf-heat-x" data-up="${!c || c.d > 0 ? 1 : 0}" data-lvl="${(x => x > 10 ? 3 : x > 3 ? 2 : 1)((chgMode ? Math.abs(c.d) : v) / S2.cap)}">${esc(mark)}</b>` : neu ? `<b class="cf-heat-x neu" aria-label="${esc(t('cf_heat_neu'))}">✦</b>` : ''}</span>`; }).join('')          // an outlier: its amount (its change) in the cell
-      + `<span class="cf-heat-v${r.total ? ' tot' : ''}">${esc(chgMode ? heatAll(r) : Fk(r.sum / all.length, false, r.total ? Math.abs(r.sum / all.length) : avgMax))}</span>`;
+      return `<span class="cf-heat-c${k ? '' : ' none'}${chgMode && !c ? ' na' : ''}${good === true ? ' good' : good === false ? ' bad' : ''}${q && cnt[m] < 3 ? ' part' : ''}${open && Math.abs(v) >= 0.5 ? ' open' : ''}${big ? ' big' : ''}${neu ? ' neu' : ''}${ahead.has(m) ? ' ahead' : ''}"${ex} style="${k ? `--k:${Math.round(k * 100)}%` : ''}" data-cftip="${tip}" tabindex="0"${open && Math.abs(v) >= 0.5 ? ` data-hr="${ri}" data-hm="${m}"` : ''}>${big ? `<b class="cf-heat-x" data-up="${!c || c.d > 0 ? 1 : 0}" data-lvl="${(x => x > 10 ? 3 : x > 3 ? 2 : 1)((chgMode ? Math.abs(c.d) : v) / S2.cap)}">${esc(mark)}</b>` : neu ? `<b class="cf-heat-x neu" aria-label="${esc(t('cf_heat_neu'))}">✦</b>` : ''}</span>`; }).join('')          // an outlier: its amount (its change) in the cell
+      + `<span class="cf-heat-v${r.total ? ' tot' : ''}"${ex}>${esc(chgMode ? heatAll(r) : Fk(r.sum / all.length, false, r.total ? Math.abs(r.sum / all.length) : avgMax))}</span>`;
   });
   el.innerHTML = h + '</div>';
   // too narrow for the amount (the change): a mark -- one, two or three by how far beyond the regular scale (3 and 10 times)
@@ -4270,7 +4305,7 @@ function cfSourcesUses(D, months, prev = []) {
     if (small.length < 2) return list;
     return list.filter(e => e.v >= total * 0.03).concat([{label: t('cf_uebrige_n', small.length), v: small.reduce((a, e) => a + e.v, 0), p: cfRestP(small, has), act: 'mix', kids: small, key: side + '|~'}]); };
   CF.flow = {src: group(src, 's'), use: group(use, 'u'), total, has, span: months.length > 1 ? ML(months[0]) + ' – ' + ML(months[months.length - 1]) : ML(months[0]), n: months.length};
-  return `<div class="card bch cf-card __CLS__" data-cfid="flow"><div class="lc-head"><b class="lc-title">${t('cf_herkunft_verwendung')}${hq('cf_herkunft_verwendung')}</b>${cfMv('flow')}</div>`
+  return `<div class="card bch cf-card __CLS__" data-cfid="flow" data-ex="cashflow.flow"><div class="lc-head"><b class="lc-title">${t('cf_herkunft_verwendung')}${hq('cf_herkunft_verwendung')}</b>${cfMv('flow')}</div>`
     + `<div class="cf-plot" id="cf-flow"></div></div>`;
 }
 function cfFlowItems(D, months) {
@@ -4409,7 +4444,7 @@ function cfDrawFlow() {
 // the tooltip with colour keys: beside the row or column it belongs to, also on keyboard focus (on the iPhone: a tap)
 function cfShowTip(el) {
   const box = $('#cf-tip'); if (!box || el.dataset.cftip == null) return;
-  box.innerHTML = CF.tips[+el.dataset.cftip] || ''; box.classList.remove('hidden');
+  box.innerHTML = CF.tips[+el.dataset.cftip] || ''; box.classList.remove('hidden'); CF.tipFor = el;
   const host = box.parentElement.getBoundingClientRect(), r = el.getBoundingClientRect(), bw = box.offsetWidth, bh = box.offsetHeight;
   let left = r.left - host.left + r.width / 2 - bw / 2; left = Math.max(0, Math.min(left, host.width - bw));
   let top = r.top - host.top - bh - 8; if (top < 0) top = r.bottom - host.top + 8;
@@ -4439,17 +4474,19 @@ function cfOpenTx(o, page = false) {
   const d = $('#drawer'), q = umsQuery(f); q.set('limit', '500');
   const key = 'cftx|' + (o.title || '') + '|' + q.toString();          // the same figure clicked again closes the panel
   if (drawerAgain(key)) return;
-  const head = `<button class="close icon">✕</button><h2>${esc(o.title || '')}</h2>${o.kopf || ''}`;
-  d.innerHTML = head + (o.cfRows && !o.cfRows.length ? '' : `<div class="muted small">${t('wird_geladen')}</div>`);
+  // what it shows (docs/ui/drawer.md): the check against the balance sheet with its reasons, or the bookings behind a figure
+  const head = `<button class="close icon">✕</button><h2>${esc(o.title || '')}</h2>`, ex = o.kopf ? 'data-ex="drawer.check"' : 'data-ex="drawer.tx"';
+  const body = inner => `<div ${ex}>${o.kopf || ''}${inner}</div>`;
+  d.innerHTML = head + body(o.cfRows && !o.cfRows.length ? '' : `<div class="muted small">${t('wird_geladen')}</div>`);
   d.classList.add('open'); $('.close', d).onclick = closeDrawer;
   if (o.cfRows && !o.cfRows.length) return;                 // nothing to fetch (a difference without single bookings behind it)
   api('/api/transactions?' + q.toString()).then(r => { if (DRW.key !== key) return;
     // a category's figure: its sum (all matches); bookings behind other rows can differ from the figure (a transfer, interest on a loan account): their number only
-    d.innerHTML = head + `
+    d.innerHTML = head + body(`
       <div class="note">${o.kats ? tn('cf_tx_n', r.hits, F(r.sum)) : tn('cf_tx_anzahl', r.hits)}${f.est ? ' · ' + t('uf_ohne_geschaetzte') : ''} · <a href="#" id="cftx-page">${t('cf_tx_seite')}</a></div>
       <div class="wrap auto dr-wrap"><table class="plain small dr-tx"><colgroup><col class="c-d"><col><col class="c-a"></colgroup><tbody>`
       + r.transactions.map(u => `<tr><td>${FD(u.date)}</td><td>${esc(u.name)}<div class="muted">${esc(u.purpose)}</div></td><td class="num">${F(u.amount)}</td></tr>`).join('')
-      + `</tbody></table></div>`;
+      + `</tbody></table></div>`);
     $('.close', d).onclick = closeDrawer;
     $('#cftx-page', d).onclick = e => { e.preventDefault(); closeDrawer(); cfOpenTx(o, true); };
   }).catch(e => { if (DRW.key === key) toast(e.message); });
@@ -4461,9 +4498,9 @@ function txPanel(title, f) {
   const head = `<button class="close icon">✕</button><h2>${esc(title)}</h2>`;
   d.innerHTML = head + `<div class="muted small">${t('wird_geladen')}</div>`; d.classList.add('open'); $('.close', d).onclick = closeDrawer;
   api('/api/transactions?' + q.toString()).then(r => { if (DRW.key !== key) return;
-    d.innerHTML = head + `<div class="note">${tn('cf_tx_n', r.hits, F(r.sum))} · <a href="#" id="tx-page">${t('cf_tx_seite')}</a></div>`
+    d.innerHTML = head + `<div data-ex="drawer.tx"><div class="note">${tn('cf_tx_n', r.hits, F(r.sum))} · <a href="#" id="tx-page">${t('cf_tx_seite')}</a></div>`
       + `<div class="wrap auto dr-wrap"><table class="plain small dr-tx"><colgroup><col class="c-d"><col><col class="c-a"></colgroup><tbody>`
-      + r.transactions.map(u => `<tr><td>${FD(u.date)}</td><td>${esc(u.name)}<div class="muted">${esc(u.purpose)}</div></td><td class="num">${F(u.amount)}</td></tr>`).join('') + `</tbody></table></div>`;
+      + r.transactions.map(u => `<tr><td>${FD(u.date)}</td><td>${esc(u.name)}<div class="muted">${esc(u.purpose)}</div></td><td class="num">${F(u.amount)}</td></tr>`).join('') + `</tbody></table></div></div>`;
     $('.close', d).onclick = closeDrawer;
     $('#tx-page', d).onclick = e => { e.preventDefault(); closeDrawer(); Object.assign(S.uf, {entity: '', year: '', account: '', q: '', ohne_beleg: false, direction: '', uncategorized_flag: false,
       kats: null, date_from: '', date_to: '', ids: null, cfRows: null}, f, {ext: true, title}); S.sel.clear(); go('#transactions'); };
@@ -4746,10 +4783,15 @@ function vBuchungen(runs) {
     if ((l.proposals || []).length) {
       const pick = pending && local, ed = pending;          // choose and change only while waiting; booking only at the Mac
       // a new list: what carries a note (a possible counterpart entered by hand) starts not chosen -- you tick it yourself
-      if (BOOK.time !== l.time) { const noted = (l.proposals || []).filter(v => v.note && v.key).map(v => v.key);
-        Object.assign(BOOK, {time: l.time, edits: {}, off: new Set(noted), calc: null, extra: {}, editing: new Set(), needCalc: noted.length > 0}); }
+      // a new check with bookings still listed (the next sync): what you held back or changed stays as you left it
+      // -- but one with a note it did not have before (now new, or another: "already booked by hand") starts not chosen again
+      if (BOOK.time !== l.time) { const keys = new Set((l.proposals || []).map(v => v.key).filter(Boolean)), was = BOOK.notes || {};
+        const notes = Object.fromEntries((l.proposals || []).filter(v => v.key).map(v => [v.key, v.note || '']));
+        const noted = Object.keys(notes).filter(k => notes[k] && notes[k] !== was[k]);
+        const off = new Set([...BOOK.off].filter(k => keys.has(k)).concat(noted)), edits = Object.fromEntries(Object.entries(BOOK.edits).filter(([k]) => keys.has(k)));
+        Object.assign(BOOK, {time: l.time, notes, edits, off, calc: null, extra: {}, editing: new Set(), needCalc: off.size > 0 || Object.keys(edits).length > 0}); }
       const plain = txt => String(txt || '').replace(/\s*·?\s*#kontor-[a-z]+-[A-Za-z0-9-]+/g, '').trim();
-      h += `<div class="wrap auto"><table class="plain bk-table"><thead><tr>${pick ? `<th class="c"><input type="checkbox" id="bk-all" ${BOOK.off.size || bkRows(l).some(r => r.gone) ? '' : 'checked'} aria-label="${esc(t('alle'))}"></th>` : ''}<th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>`
+      h += `<div class="wrap auto" data-ex="bookings.list"><table class="plain bk-table"><thead><tr>${pick ? `<th class="c"><input type="checkbox" id="bk-all" ${BOOK.off.size || bkRows(l).some(r => r.gone) ? '' : 'checked'} aria-label="${esc(t('alle'))}"></th>` : ''}<th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>`
         + bkRows(l).map(({v, k, off, e, gone, waits, b, new: neu, adjusted}) => {
           const d = e.date ?? v.date, z = e.purpose ?? plain(v.text), changed = Object.keys(e).length > 0, loan = v.kind === 'repayment' || v.kind === 'interest';
           const pills = (changed ? ` <span class="pill info">${t('geaendert')}</span>` : '') + (adjusted ? ` <span class="pill info" title="${esc(t('angepasst_tip'))}">${t('angepasst')}</span>` : '')
@@ -4758,28 +4800,28 @@ function vBuchungen(runs) {
           return `<tr data-key="${esc(k)}" class="${off || gone ? 'off' : ''}${gone ? ' gone' : ''}${BOOK.editing.has(k) ? ' editing' : ''}">${pick ? `<td class="c">${k ? `<input type="checkbox" class="bk-on" title="${esc(t('bk_on_tip'))}" ${off || gone ? '' : 'checked'}${gone ? ' disabled' : ''}>` : ''}</td>` : ''}`
             + `<td style="white-space:nowrap"><span class="${loan ? 'v' : ''}">${FD(d)}</span>${loan ? `<input type="date" class="bk-d e" value="${esc(d)}">` : ''}</td><td>${acctCell(v.account_name || v.account, v.account_id)}</td><td>${esc(artL[v.kind] || v.kind)}</td>`
             + `<td class="num ${b < 0 ? 'neg' : 'pos'}"><span class="${loan ? 'v' : ''}">${F(b)}</span>${loan ? `<input type="number" step="0.01" class="bk-b e" value="${b}">` : ''}</td>`
-            + `<td><span class="v">${esc(z)}</span><input type="text" class="bk-z e" value="${esc(z)}">${pills}<div class="small muted">${esc(v.rule || '')}${v.category ? ' · ' + esc(v.category) : ''}</div>${v.note ? `<div class="small bk-note">${esc(v.note)}</div>` : ''}</td>`
+            + `<td data-ex="bookings.list.text"><span class="v">${esc(z)}</span><input type="text" class="bk-z e" value="${esc(z)}">${pills}<div class="small muted">${esc(v.rule || '')}${v.category ? ' · ' + esc(v.category) : ''}</div>${v.note ? `<div class="small bk-note">${esc(v.note)}</div>` : ''}</td>`
             + (ed ? `<td class="nowrap">${k ? (local ? `<button class="icon bk-edit" title="${esc(t('bearbeiten'))}" aria-label="${esc(t('bearbeiten'))}">${ICON.pencil}</button>` : '') + `<button class="icon bk-rej" title="${esc(t('verwerfen'))}" aria-label="${esc(t('verwerfen'))}">✕</button>` : ''}</td>` : '') + `</tr>`;
         }).join('') + '</tbody></table></div>';
       if (l.dry_run && l.proposals.some(v => !v.key)) h += `<div class="note">${t('einmal_sync_fuer_auswahl')}</div>`;
-    } else h += `<div class="note">${t('keine_buchungen_noetig')}</div>`;
-    if (l.warnings && l.warnings.length) h += `<h3>${t('hinweise')}</h3>` + l.warnings.map(x => `<div class="banner">${esc(x)}</div>`).join('');
-    if (l.hints && l.hints.length) h += `<details class="calc" data-keep="bk-calc"${keepOpen('bk-calc')}><summary>${t('rechenwege')} (${l.hints.length})</summary>` + l.hints.map(x => `<div class="small muted">${esc(x)}</div>`).join('') + '</details>';
+    } else h += `<div class="note" data-ex="bookings.list">${t('keine_buchungen_noetig')}</div>`;
+    if (l.warnings && l.warnings.length) h += `<h3>${t('hinweise')}</h3><div data-ex="bookings.notes">` + l.warnings.map(x => `<div class="banner">${esc(x)}</div>`).join('') + '</div>';
+    if (l.hints && l.hints.length) h += `<details class="calc" data-keep="bk-calc" data-ex="bookings.calc"${keepOpen('bk-calc')}><summary>${t('rechenwege')} (${l.hints.length})</summary>` + l.hints.map(x => `<div class="small muted">${esc(x)}</div>`).join('') + '</details>';
   }
   // not booked: the proposals you chose not to book (kept in the settings) -- "Propose again" takes one off the list
   const rej = runs.not_book || [];
-  if (rej.length) h += `<details class="calc" id="nb-list" data-keep="bk-nb"${keepOpen('bk-nb')}><summary>${t('nicht_gebucht_titel')} (${rej.length})</summary><div class="wrap auto"><table class="plain"><tbody>`
+  if (rej.length) h += `<details class="calc" id="nb-list" data-keep="bk-nb" data-ex="bookings.rejected"${keepOpen('bk-nb')}><summary>${t('nicht_gebucht_titel')} (${rej.length})</summary><div class="wrap auto"><table class="plain"><tbody>`
     + rej.map(v => `<tr><td style="white-space:nowrap">${FD(v.date)}</td><td>${acctCell(v.account || '', String(v.key || '').split('|')[0])}</td><td>${esc(artL[v.kind] || v.kind || '')}</td><td class="num">${v.amount != null ? F(v.amount) : ''}</td>`
       + `<td class="small">${esc(v.text || '')}<div class="small muted">${esc(v.rule || '')}</div></td>`
       + `<td><button class="secondary small re-book" data-key="${esc(v.key)}" title="${esc(t('wieder_vorschlagen_tip'))}">${t('wieder_vorschlagen')}</button></td></tr>`).join('') + '</tbody></table></div></details>';
   // what Kontor made in MoneyMoney: the bookings carrying its mark
   const ang = runs.created_at || [];
   h += `<h2>${t('angelegt_titel')} <span class="x">${ang.length}</span></h2>`
-    + (ang.length ? `<div class="wrap auto" style="max-height:420px"><table class="plain"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th><th>${t('markierung')}</th></tr></thead><tbody>`
+    + (ang.length ? `<div class="wrap auto" style="max-height:420px" data-ex="bookings.created"><table class="plain"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th><th>${t('markierung')}</th></tr></thead><tbody>`
       + ang.slice(0, 300).map(v => `<tr><td style="white-space:nowrap">${FD(v.date)}</td><td>${acctCell(v.account, v.account_id)}</td><td>${esc(artL[v.kind] || v.kind)}</td><td class="num ${v.amount < 0 ? 'neg' : 'pos'}">${F(v.amount)}</td><td class="small">${esc(v.purpose || v.counterparty)}</td><td class="small muted" style="white-space:nowrap">${esc(v.mark)}</td></tr>`).join('')
-      + `</tbody></table></div>` : `<div class="muted small">${t('keine_angelegt')}</div>`);
+      + `</tbody></table></div>` : `<div class="muted small" data-ex="bookings.created">${t('keine_angelegt')}</div>`);
   // history: only the checks (when, how many proposed and booked, errors) -- the bookings themselves are listed above
-  h += `<details class="calc" data-keep="bk-hist"${keepOpen('bk-hist')}><summary>${t('verlauf_2')} (${(runs.history_source || []).length})</summary><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th></tr></thead><tbody>`
+  h += `<details class="calc" data-keep="bk-hist" data-ex="bookings.history"${keepOpen('bk-hist')}><summary>${t('verlauf_2')} (${(runs.history_source || []).length})</summary><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th></tr></thead><tbody>`
     + (runs.history_source || []).map(v => `<tr><td style="white-space:nowrap">${esc(fmtZeit(v.time))}</td><td class="num">${v.proposals ?? ''}</td><td class="num">${v.written}</td><td>${esc(v.error || '')}</td></tr>`).join('') + '</tbody></table></div></details>';
   return h;
 }
@@ -4793,25 +4835,25 @@ function vSteuer() {
   if (!S.steuerEnt || !ents.some(e => e.uuid === S.steuerEnt)) S.steuerEnt = (ents.find(e => e.uuid === S.area) || ents[0]).uuid;
   const ent = ents.find(e => e.uuid === S.steuerEnt) || ents[0];
   let h = `<div class="toolbar"><label>${t('jahr_2')} <select id="st-jahr">${years.map(y => `<option ${String(y) === S.steuerJahr ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
-    <label>${t('entitaet')} <select id="st-ent">${ents.map(e => `<option value="${esc(e.uuid)}" ${e.uuid === ent.uuid ? 'selected' : ''}>${esc(e.name)} (${e.kind === 'private' ? t('privat') : e.kind === 'company' ? t('gesellschaft') : esc(String(e.kind || '').toUpperCase().replace('GBR', 'GbR'))}${e.share ? t('anteil_2') + FN(e.share * 100, 0) + ' %' : ''})</option>`).join('')}</select></label>
+    <label>${t('entitaet')} <select id="st-ent">${ents.map(e => `<option value="${esc(e.uuid)}" ${e.uuid === ent.uuid ? 'selected' : ''}>${esc(e.name)} (${e.kind === 'private' ? t('privat') : e.kind === 'company' ? t('gesellschaft') : esc(({gbr: 'GbR', gmbh: 'GmbH'})[e.kind] || String(e.kind || ''))}${e.share ? t('anteil_2') + FN(e.share * 100, 0) + ' %' : ''})</option>`).join('')}</select></label>
     <span class="sp"></span><button id="st-belege" class="secondary small">${t('belege_0_exportieren', esc(S.steuerJahr))}</button>${xlsxBtn('tax')}</div>`;
   const J = ent.years[S.steuerJahr]; if (!J) return h + `<div class="note">${t('keine_daten_fuer_dieses_jahr')}</div>`;
   const objs = Object.keys(J.properties_list);
-  h += `<div class="cards"><div class="card"><div class="l">${t('einnahmen_kategorisiert')}</div><div class="v">${F0(J.sum_income)} €</div></div><div class="card"><div class="l">${t('ausgaben_kategorisiert')}</div><div class="v">${F0(J.sum_expenses)} €</div></div><div class="card"><div class="l">${t('schuldzinsen')}</div><div class="v">${F0(Object.values(J.debt_interest).reduce((a, b) => a + b, 0))} €</div></div><div class="card"><div class="l">${t('ohne_kategorie')}</div><div class="v">${J.uncategorized_flag.count ? '<span class="pill warn">' + J.uncategorized_flag.count + ` ${t('buchungen')}</span>` : `<span class="pill ok">${t('keine')}</span>`}</div><div class="d">${F(J.uncategorized_flag.amount)} € – <a href="#transactions?uncategorized=1&year=${S.steuerJahr}&entity=${encodeURIComponent(ent.uuid)}">${t('kategorisieren')}</a></div></div></div>`;
+  h += `<div class="cards" data-ex="tax.cards"><div class="card"><div class="l">${t('einnahmen_kategorisiert')}</div><div class="v">${F0(J.sum_income)} €</div></div><div class="card"><div class="l">${t('ausgaben_kategorisiert')}</div><div class="v">${F0(J.sum_expenses)} €</div></div><div class="card"><div class="l">${t('schuldzinsen')}</div><div class="v">${F0(Object.values(J.debt_interest).reduce((a, b) => a + b, 0))} €</div></div><div class="card"><div class="l">${t('ohne_kategorie')}</div><div class="v">${J.uncategorized_flag.count ? '<span class="pill warn">' + J.uncategorized_flag.count + ` ${t('buchungen')}</span>` : `<span class="pill ok">${t('keine')}</span>`}</div><div class="d">${F(J.uncategorized_flag.amount)} € – <a href="#transactions?uncategorized=1&year=${S.steuerJahr}&entity=${encodeURIComponent(ent.uuid)}">${t('kategorisieren')}</a></div></div></div>`;
   if (objs.length) {
-    h += `<h2>${t('vermietung_je_objekt')} <span class="x">${t('kategorien_0_objekt_art', esc(T.rental_category))}</span></h2><div class="wrap auto"><table class="plain"><thead><tr><th>${t('position')}</th>${objs.map(o => `<th class="num">${esc(o)}</th>`).join('')}</tr></thead><tbody>`;
+    h += `<h2>${t('vermietung_je_objekt')} <span class="x">${t('kategorien_0_objekt_art', esc(T.rental_category))}</span></h2><div class="wrap auto" data-ex="tax.rental"><table class="plain"><thead><tr><th>${t('position')}</th>${objs.map(o => `<th class="num">${esc(o)}</th>`).join('')}</tr></thead><tbody>`;
     const arten = [...new Set(objs.flatMap(o => Object.keys(J.properties_list[o].kinds)))];
     for (const a of arten) h += `<tr><td class="ind1">${esc(a)}</td>${objs.map(o => `<td class="num">${F(J.properties_list[o].kinds[a] ?? 0)}</td>`).join('')}</tr>`;
     h += `<tr class="total"><td>${t('einnahmen')}</td>${objs.map(o => `<td class="num pos">${F(J.properties_list[o].income_sum)}</td>`).join('')}</tr>`;
     h += `<tr class="total"><td>${t('werbungskosten_ohne_zinsen_afa')}</td>${objs.map(o => `<td class="num neg">${F(J.properties_list[o].deductible_costs)}</td>`).join('')}</tr>`;
     const loans = [...new Set(objs.flatMap(o => Object.keys(J.properties_list[o].debt_interest)))];
     for (const l of loans) h += `<tr><td class="ind1">${t('schuldzinsen_0', esc(l))}</td>${objs.map(o => `<td class="num">${F(J.properties_list[o].debt_interest[l] ?? 0)}</td>`).join('')}</tr>`;
-    h += `<tr><td class="ind1">${t('afa_manuell')}</td>${objs.map(o => `<td class="num"><input type="number" step="0.01" class="depreciation" data-obj="${esc(o)}" value="${J.properties_list[o].depreciation || ''}" style="width:110px"></td>`).join('')}</tr>`;
+    h += `<tr><td class="ind1">${t('afa_manuell')}</td>${objs.map(o => `<td class="num"><input type="number" step="0.01" class="depreciation" data-obj="${esc(o)}" value="${J.properties_list[o].depreciation_source === 'manual' ? J.properties_list[o].depreciation : ''}" placeholder="${J.properties_list[o].depreciation_source === 'calc' ? esc(F(J.properties_list[o].depreciation)) : ''}" style="width:110px"></td>`).join('')}</tr>`;
     h += `<tr class="total"><td>${t('ergebnis_ueberschuss_verlust')}</td>${objs.map(o => `<td class="num ${J.properties_list[o].result < 0 ? 'neg' : 'pos'}">${F(J.properties_list[o].result)}</td>`).join('')}</tr>`;
     if (ent.share) h += `<tr class="total"><td>${t('davon_anteil_0', (ent.share * 100).toFixed(0))}</td>${objs.map(o => `<td class="num">${F(J.properties_list[o].share_result)}</td>`).join('')}</tr>`;
     h += `</tbody></table></div><div class="actions"><button id="afa-save" class="small">${t('afa_speichern')}</button></div>`;
   } else h += `<div class="note">${t('keine_vermietungskategorien_fuer_diese', esc(T.rental_category))}</div>`;
-  h += `<h2>${ent.kind === 'private' ? t('steuerpositionen') : t('oberkategorien')}</h2><div class="wrap auto"><table class="plain"><thead><tr><th>${t('position')}</th><th>${t('kategorie')}</th><th class="num">${t('betrag')}</th><th class="num">${t('buchungen')}</th></tr></thead><tbody>`;
+  h += `<h2>${ent.kind === 'private' ? t('steuerpositionen') : t('oberkategorien')}</h2><div class="wrap auto" data-ex="tax.positions"><table class="plain"><thead><tr><th>${t('position')}</th><th>${t('kategorie')}</th><th class="num">${t('betrag')}</th><th class="num">${t('buchungen')}</th></tr></thead><tbody>`;
   for (const [pos, p] of Object.entries(J.positions)) {
     h += `<tr class="sub"><td colspan="2">${esc(pos)}</td><td class="num ${p.amount < 0 ? 'neg' : 'pos'}">${F(p.amount)}</td><td></td></tr>` + p.categories.map(k => `<tr><td></td><td>${esc(CP(k.path))}</td><td class="num">${F(k.amount)}</td><td class="num">${k.count}</td></tr>`).join('');
   }
@@ -4827,8 +4869,8 @@ function vImmobilien(id) {
   if (id) return vImmobilie(id);
   const list = S.CFG.real_estate || [];
   let h = `<div class="toolbar"><span class="muted small">${t('kalkulationen_je_objekt_mehrere_szenar')}</span><span class="sp"></span><button id="im-new" class="small">${t('neues_objekt')}</button></div>`;
-  if (!list.length) return h + `<div class="card"><div class="v s">${t('noch_keine_immobilie')}</div><div class="d">${t('lege_ein_objekt_an_und')}</div></div>`;
-  h += '<div class="cards k3">' + list.map(im => { const d = immoData(im.id) || {}; const K = d.figures || {}; const j1 = (d.years || []).find(j => j.months === 12) || (d.years || [])[0];
+  if (!list.length) return h + `<div class="card" data-ex="properties.list"><div class="v s">${t('noch_keine_immobilie')}</div><div class="d">${t('lege_ein_objekt_an_und')}</div></div>`;
+  h += '<div class="cards k3" data-ex="properties.list">' + list.map(im => { const d = immoData(im.id) || {}; const K = d.figures || {}; const j1 = (d.years || []).find(j => j.months === 12) || (d.years || [])[0];
     return `<div class="card clickable" data-im="${esc(im.id)}" style="cursor:pointer"><div class="l">${esc(BN(im.area) || im.area || '–')}${im.in_planning ? `<span class="tag">${t('in_planung')}</span>` : ''}</div><div class="v s">${esc(im.name)}</div>
       <div class="d">${K.purchase_price != null ? t('kaufpreis') + F0(K.purchase_price) + t('faktor') + FN(K.price_factor) + t('bruttorendite') + (K.gross_rental_yield != null ? FN(K.gross_rental_yield * 100) + ' %' : '–') : t('keine_kalkulation')}</div>
       <div class="d">${j1 ? t('cashflow') + j1.year + ': <b class="' + (j1.cashflow < 0 ? 'neg' : 'pos') + '">' + F0(j1.cashflow) + ` €</b> ${t('ek_rendite')} ` + (j1.return_on_equity != null ? FN(j1.return_on_equity * 100, 1) + ' %' : '–') + t('irr') + (K.irr != null ? FN(K.irr * 100, 1) + ' %' : '–') : ''}</div>
@@ -4845,7 +4887,7 @@ function vImmobilie(id) {
   const konten = S.KONTEN.filter(x => !x.group);
   const kats = S.KATS.filter(x => x.depth <= 1);
   let h = `<div class="toolbar"><a href="#properties" class="small">${t('alle_objekte')}</a><h2 style="margin:0">${esc(im.name)}</h2><span class="sp"></span>${xlsxBtn('property', `data-immo="${esc(im.id)}" data-kalk="${esc(IM.kalk || '')}"`)}<button id="im-del" class="danger small">${t('objekt_loeschen')}</button></div>
-  <div class="card" style="margin-bottom:12px"><div class="immo-form">
+  <div class="card" style="margin-bottom:12px" data-ex="properties.object"><div class="immo-form">
     <label>${t('name')}</label><input type="text" id="im-name" value="${esc(im.name)}">
     <label>${t('bereich_0', hq('area'))}</label><select id="im-bereich">${Object.entries((S.DATA && S.DATA.area_names) || {}).map(([bid, n]) => `<option value="${esc(bid)}" ${im.area === bid ? 'selected' : ''}>${esc(n)}</option>`).join('') || (S.CFG.areas || []).map(b => `<option value="${esc(b.id)}" ${im.area === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
     <label>${t('vermietungskategorie_0', hq('immo_kategorie'))}</label><input type="text" id="im-kat" list="im-kats" value="${esc(im.category || '')}" placeholder="${t('vermietung_objekt')}"><datalist id="im-kats">${kats.map(c => `<option value="${esc(c.raw)}">`).join('')}</datalist>
@@ -4862,14 +4904,14 @@ function vImmobilie(id) {
 }
 function vImmoKalk(im, k, konten) {
   const kalks = im.calcs || [];
-  let h = `<div class="row tight"><label>${t('szenario')} <select id="im-kalk">${kalks.map(x => `<option value="${esc(x.id)}" ${x.id === IM.kalk ? 'selected' : ''}>${esc(x.name)}${x.active ? ' (aktiv)' : ''}</option>`).join('')}${!kalks.length ? `<option value="">${t('keine_2')}</option>` : ''}</select></label>
+  let h = `<div class="row tight"><label>${t('szenario')} <select id="im-kalk">${kalks.map(x => `<option value="${esc(x.id)}" ${x.id === IM.kalk ? 'selected' : ''}>${esc(x.name)}${x.active ? ` (${t('aktiv')})` : ''}</option>`).join('')}${!kalks.length ? `<option value="">${t('keine_2')}</option>` : ''}</select></label>
     <button id="im-kalk-new" class="small secondary">${kalks.length ? t('als_neues_szenario_kopieren') : t('kalkulation_anlegen')}</button>${k && !k.active ? `<button id="im-kalk-aktiv" class="small secondary">${t('als_aktiv_setzen')}</button>` : ''}${k ? `<button id="im-kalk-del" class="small danger">${t('szenario_loeschen')}</button>` : ''}
     <span class="small muted">${t('das_aktive_szenario_gilt_fuer')}</span></div>`;
   if (!IM.edit) return h + `<div class="note">${t('noch_keine_kalkulation_kalkulation_anl')}</div>`;
   const e = IM.edit;
   const inp = (path, label, type = 'number', opts = {}) => { let v = get(e, path); if (type === 'month' && v) v = String(v).slice(0, 7); const attrs = Object.entries(opts).filter(([a]) => a !== 'hq').map(([a, b]) => `${a}="${b}"`).join(' '); return `<label>${label}${opts.hq ? hq(opts.hq) : ''}</label><input type="${type}" data-p="${path}" value="${v == null ? '' : esc(v)}" ${attrs}>`; };
   const sel = (path, label, options, hqk) => `<label>${label}${hqk ? hq(hqk) : ''}</label><select data-p="${path}">${options.map(([v, l]) => `<option value="${v}" ${String(get(e, path) ?? '') === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
-  h += `<div class="immo-grid"><div class="card"><h3>${t('eingaben')} <span class="muted" style="text-transform:none;letter-spacing:0">${t('szenario_0', esc(k ? k.name : t('neu')))}</span></h3><div class="immo-form">
+  h += `<div class="immo-grid" data-ex="properties.calc"><div class="card" data-ex="properties.calc.inputs"><h3>${t('eingaben')} <span class="muted" style="text-transform:none;letter-spacing:0">${t('szenario_0', esc(k ? k.name : t('neu')))}</span></h3><div class="immo-form">
     <h4>${t('objekt')}</h4>
     ${inp('name', t('bezeichnung'), 'text')}${sel('kind', t('art'), [['commercial', t('gewerbe')], ['housing', t('wohnen')]])}${inp('area_sqm', t('flaeche_m2'), 'number', {step: '0.1'})}${inp('units', t('einheiten'), 'number', {step: '1'})}
     ${inp('purchase_price', t('kaufpreis_2'), 'number', {step: '1000'})}${inp('transfer_date', t('uebergang_nutzen_lasten'), 'month', {hq: 'immo_uebergang'})}${inp('horizon_years', t('horizont_jahre'), 'number', {step: '1', min: '1', max: '60'})}
@@ -4923,11 +4965,11 @@ function immoResultHtml(r) {
   const K = r.figures, J = r.years;
   const pct = x => x == null ? '–' : FN(x * 100) + ' %';
   const kp = (l, v) => `<div class="k"><div class="l">${l}</div><div class="v">${v}</div></div>`;
-  let h = `<div class="card"><h3>${t('kennzahlen')}</h3><div class="kpis">${kp(t('gesamtinvestition'), F0(K.total_investment) + ' €')}${kp(t('eigenkapital_inkl_nk'), F0(K.equity_incl_costs) + ' €')}${kp(t('fremdkapital_ltv'), F0(K.loans) + ' € (' + pct(K.ltv) + ')')}${kp(t('kaufpreisfaktor'), FN(K.price_factor))}${kp(t('bruttomietrendite'), pct(K.gross_rental_yield))}${kp(t('nettomietrendite'), pct(K.net_rental_yield))}${kp(t('cashflow_jahr_1'), F0(K.cashflow_year1) + ' €')}${kp('Cash-on-Cash', pct(K.cash_on_cash))}${kp(t('dscr_jahr_1'), FN(K.dscr_year1))}${kp('AfA p.a.', F0(K.depreciation_year) + ' € (' + FN(K.depreciation_rate || 0) + t('auf') + F0(K.depreciation_base) + ')')}${kp(t('kapitaldienst_monat'), F0(K.debt_service_month) + ' €')}${kp(t('irr_bis') + (K.exit_year || '–'), pct(K.irr))}${K.price_sqm ? kp(t('preis_m2'), F0(K.price_sqm) + ' €') : ''}${K.rent_sqm ? kp(t('miete_m2'), F(K.rent_sqm) + ' €') : ''}</div>
+  let h = `<div class="card" data-ex="properties.calc.kpis"><h3>${t('kennzahlen')}</h3><div class="kpis">${kp(t('gesamtinvestition'), F0(K.total_investment) + ' €')}${kp(t('eigenkapital_inkl_nk'), F0(K.equity_incl_costs) + ' €')}${kp(t('fremdkapital_ltv'), F0(K.loans) + ' € (' + pct(K.ltv) + ')')}${kp(t('kaufpreisfaktor'), FN(K.price_factor))}${kp(t('bruttomietrendite'), pct(K.gross_rental_yield))}${kp(t('nettomietrendite'), pct(K.net_rental_yield))}${kp(t('cashflow_jahr_1'), F0(K.cashflow_year1) + ' €')}${kp('Cash-on-Cash', pct(K.cash_on_cash))}${kp(t('dscr_jahr_1'), FN(K.dscr_year1))}${kp('AfA p.a.', F0(K.depreciation_year) + ' € (' + FN(K.depreciation_rate || 0) + t('auf') + F0(K.depreciation_base) + ')')}${kp(t('kapitaldienst_monat'), F0(K.debt_service_month) + ' €')}${kp(t('irr_bis') + (K.exit_year || '–'), pct(K.irr))}${K.price_sqm ? kp(t('preis_m2'), F0(K.price_sqm) + ' €') : ''}${K.rent_sqm ? kp(t('miete_m2'), F(K.rent_sqm) + ' €') : ''}</div>
     ${(r.hints || []).map(x => `<div class="banner" style="margin:4px 0">${esc(x)}</div>`).join('')}
     ${(K.rent_adjustments || []).length ? `<div class="small muted">${t('mietanpassungen')} ` + K.rent_adjustments.slice(0, 6).map(a => a.year + ': +' + FN(a.raise_percent) + ' % → ' + F0(a.net_rent_new) + ' €').join(' · ') + (K.rent_adjustments.length > 6 ? ' …' : '') + '</div>' : ''}
-    <div class="im-chart">${immoChart(J)}</div></div>
-    <div class="card" style="margin-top:12px"><h3>${t('erste_jahre')}</h3><div class="wrap auto"><table class="plain"><thead><tr><th>${t('jahr_2')}</th><th class="num">${t('miete')}</th><th class="num">${t('kosten')}</th><th class="num">${t('zinsen')}</th><th class="num">${t('tilgung')}</th><th class="num">${t('afa')}</th><th class="num">${t('ergebnis')}</th><th class="num">${t('steuer')}</th><th class="num">${t('cashflow_2')}</th><th class="num">${t('vermoegensaufbau')}</th><th class="num">${t('ek_rendite_2')}</th><th class="num">${t('restschuld')}</th></tr></thead><tbody>`
+    <div class="im-chart" data-ex="properties.calc.chart">${immoChart(J)}</div></div>
+    <div class="card" style="margin-top:12px" data-ex="properties.calc.years"><h3>${t('erste_jahre')}</h3><div class="wrap auto"><table class="plain"><thead><tr><th>${t('jahr_2')}</th><th class="num">${t('miete')}</th><th class="num">${t('kosten')}</th><th class="num">${t('zinsen')}</th><th class="num">${t('tilgung')}</th><th class="num">${t('afa')}</th><th class="num">${t('ergebnis')}</th><th class="num">${t('steuer')}</th><th class="num">${t('cashflow_2')}</th><th class="num">${t('vermoegensaufbau')}</th><th class="num">${t('ek_rendite_2')}</th><th class="num">${t('restschuld')}</th></tr></thead><tbody>`
     + J.slice(0, 12).map(j => `<tr><td>${j.year}${j.months < 12 ? ' <span class="muted small">(' + j.months + ` ${t('mon_2')}</span>` : ''}</td><td class="num">${F0(j.rent)}</td><td class="num">${F0(j.costs + j.reserve)}</td><td class="num">${F0(j.interest)}</td><td class="num">${F0(j.repayment + j.special_repayment)}</td><td class="num">${F0(j.depreciation)}</td><td class="num ${j.result < 0 ? 'neg' : 'pos'}">${F0(j.result)}</td><td class="num">${F0(j.tax)}</td><td class="num ${j.cashflow < 0 ? 'neg' : 'pos'}">${F0(j.cashflow)}</td><td class="num">${F0(j.wealth_build)}</td><td class="num">${j.return_on_equity == null ? '–' : FN(j.return_on_equity * 100, 1) + ' %'}</td><td class="num">${F0(j.remaining_debt)}</td></tr>`).join('') + '</tbody></table></div></div>';
   return h;
 }
@@ -4948,7 +4990,7 @@ function immoChart(J) {
 function vImmoJahre(d) {
   const J = d.years || []; if (!J.length) return `<div class="note">${t('keine_kalkulation_vorhanden_oder_beric')}</div>`;
   const names = d.loan_names || [];
-  let h = `<div class="toolbar"><span class="muted small">${t('aktive_kalkulation_0_alle_jahre', esc(d.name || ''))}</span><span class="sp"></span>${xlsxBtn('property', `data-immo="${esc(d.id)}"`)}</div><div class="wrap"><table><thead><tr><th>${t('jahr_2')}</th>${[t('miete'), t('umlage'), t('kosten'), t('ruecklage'), t('zinsen'), t('tilgung'), t('sondertilgung'), 'AfA', t('ergebnis'), t('steuer'), t('ergebnis_n_st'), t('ausschuettung'), t('cashflow_2'), t('cashflow_kum'), t('vermoegensaufbau'), t('ek_rendite_2'), t('restschuld'), t('objektwert'), t('ek_im_objekt'), 'DSCR', t('re_nkm_monat')].map(x => `<th>${x}</th>`).join('')}${names.map(n => `<th>${t('0_zins', esc(n))}</th><th>${t('0_tilgung', esc(n))}</th><th>${t('0_saldo', esc(n))}</th>`).join('')}</tr></thead><tbody>`;
+  let h = `<div class="toolbar"><span class="muted small">${t('aktive_kalkulation_0_alle_jahre', esc(d.name || ''))}</span><span class="sp"></span>${xlsxBtn('property', `data-immo="${esc(d.id)}"`)}</div><div class="wrap" data-ex="properties.years"><table><thead><tr><th>${t('jahr_2')}</th>${[t('miete'), t('umlage'), t('kosten'), t('ruecklage'), t('zinsen'), t('tilgung'), t('sondertilgung'), 'AfA', t('ergebnis'), t('steuer'), t('ergebnis_n_st'), t('ausschuettung'), t('cashflow_2'), t('cashflow_kum'), t('vermoegensaufbau'), t('ek_rendite_2'), t('restschuld'), t('objektwert'), t('ek_im_objekt'), 'DSCR', t('re_nkm_monat')].map(x => `<th>${x}</th>`).join('')}${names.map(n => `<th>${t('0_zins', esc(n))}</th><th>${t('0_tilgung', esc(n))}</th><th>${t('0_saldo', esc(n))}</th>`).join('')}</tr></thead><tbody>`;
   const c = v => `<td class="${v == null ? 'zero' : v < 0 ? 'neg' : 'pos'}">${v == null ? '–' : F(v)}</td>`;
   for (const j of J) h += `<tr><td>${j.year}${j.months < 12 ? ' (' + j.months + ' ' + t('mon_2') : ''}</td>${[j.rent, j.recoverable_costs, j.costs, j.reserve, j.interest, j.repayment, j.special_repayment, j.depreciation, j.result, j.tax, j.result_after_tax, j.distribution, j.cashflow, j.cashflow_cumulative, j.wealth_build].map(c).join('')}<td>${j.return_on_equity == null ? '–' : FN(j.return_on_equity * 100) + ' %'}</td>${[j.remaining_debt, j.value, j.equity_property].map(c).join('')}<td>${FN(j.dscr)}</td>${c(j.net_rent_monthly)}${names.map(n => c(j.loans[n].interest) + c(j.loans[n].repayment) + c(j.loans[n].balance_amount)).join('')}</tr>`;
   h += '</tbody></table></div>';
@@ -4958,14 +5000,15 @@ function vImmoSollIst(d) {
   const rows = d.target_actual || [];
   if (!rows.length) return `<div class="note">${t('fuer_soll_ist_braucht_das')}</div>`;
   const c = (v, cls2 = '') => `<td class="num ${cls2}">${v == null ? '–' : F0(v)}</td>`;
-  const dv = (soll, ist) => ist == null || soll == null ? '<td></td>' : `<td class="num ${ist - soll >= 0 ? 'pos' : 'neg'}">${F0(ist - soll)}</td>`;
-  return `<div class="wrap auto"><table class="plain"><thead><tr><th>${t('jahr_2')}</th><th class="num">${t('miete_soll')}</th><th class="num">${t('miete_ist')}</th><th class="num">Δ</th><th class="num">${t('kosten_soll')}</th><th class="num">${t('kosten_ist')}</th><th class="num">Δ</th><th class="num">${t('zinsen_soll')}</th><th class="num">${t('zinsen_ist')}</th><th class="num">Δ</th><th class="num">${t('restschuld_soll')}</th><th class="num">${t('restschuld_ist')}</th><th class="num">Δ</th></tr></thead><tbody>`
-    + rows.map(r => `<tr><td>${r.year}</td>${c(r.rent_target)}${c(r.rent_actual)}${dv(r.rent_target, r.rent_actual)}${c(r.costs_target)}${c(r.costs_actual)}${dv(r.costs_target, r.costs_actual)}${c(r.interest_target)}${c(r.interest_actual)}${dv(r.interest_target, r.interest_actual)}${c(r.remaining_debt_target)}${c(r.remaining_debt_actual)}${dv(r.remaining_debt_target, r.remaining_debt_actual)}</tr>`).join('')
+  // Δ = actual − target; green where it is better than planned: more rent, less cost and interest (both below zero), less debt
+  const dv = (soll, ist, more = 1) => ist == null || soll == null ? '<td></td>' : `<td class="num ${Math.abs(ist - soll) < 0.5 ? '' : (ist - soll) * more > 0 ? 'pos' : 'neg'}">${F0(ist - soll)}</td>`;
+  return `<div class="wrap auto" data-ex="properties.target"><table class="plain"><thead><tr><th>${t('jahr_2')}</th><th class="num">${t('miete_soll')}</th><th class="num">${t('miete_ist')}</th><th class="num">Δ</th><th class="num">${t('kosten_soll')}</th><th class="num">${t('kosten_ist')}</th><th class="num">Δ</th><th class="num">${t('zinsen_soll')}</th><th class="num">${t('zinsen_ist')}</th><th class="num">Δ</th><th class="num">${t('restschuld_soll')}</th><th class="num">${t('restschuld_ist')}</th><th class="num">Δ</th></tr></thead><tbody>`
+    + rows.map(r => `<tr><td>${r.year}</td>${c(r.rent_target)}${c(r.rent_actual)}${dv(r.rent_target, r.rent_actual)}${c(r.costs_target)}${c(r.costs_actual)}${dv(r.costs_target, r.costs_actual)}${c(r.interest_target)}${c(r.interest_actual)}${dv(r.interest_target, r.interest_actual)}${c(r.remaining_debt_target)}${c(r.remaining_debt_actual)}${dv(r.remaining_debt_target, r.remaining_debt_actual, -1)}</tr>`).join('')
     + `</tbody></table></div><div class="note">${t('ist_kategorisierte_umsaetze_der_vermie')}</div>`;
 }
 function vImmoDokumente(im) {
   const docs = im.documents || [];
-  let h = `<div class="note">${H.documents}</div><div class="card">${docs.map(d => `<div class="doc" data-id="${esc(d.id)}"><div class="n"><b>${esc(d.title)}</b>${d.kind ? ' <span class="tag">' + esc(d.kind) + '</span>' : ''}<div class="p" title="${esc(d.path)}">${esc(d.path)}</div></div><span class="small muted">${esc(d.added || '')}</span>${S.STATUS.local ? `<button class="ghost small doc-open">${t('oeffnen')}</button><button class="ghost small doc-show">${t('finder')}</button>` : ''}<button class="ghost small doc-del">✕</button></div>`).join('') || `<div class="muted small">${t('noch_keine_dokumente_verknuepft')}</div>`}
+  let h = `<div class="note">${H.documents}</div><div class="card" data-ex="properties.documents">${docs.map(d => `<div class="doc" data-id="${esc(d.id)}"><div class="n"><b>${esc(d.title)}</b>${d.kind ? ' <span class="tag">' + esc(d.kind) + '</span>' : ''}<div class="p" title="${esc(d.path)}">${esc(d.path)}</div></div><span class="small muted">${esc(d.added || '')}</span>${S.STATUS.local ? `<button class="ghost small doc-open">${t('oeffnen')}</button><button class="ghost small doc-show">${t('finder')}</button>` : ''}<button class="ghost small doc-del">✕</button></div>`).join('') || `<div class="muted small">${t('noch_keine_dokumente_verknuepft')}</div>`}
     <div class="row tight" style="margin-top:10px"><input type="text" id="doc-titel" placeholder="${t('titel_z_b_kaufvertrag')}" style="width:200px"><input type="text" id="doc-art" placeholder="${t('art_vertrag_gutachten')}" style="width:160px"><input type="text" id="doc-pfad" placeholder="${t('pfad_auf_dem_mac')}" style="min-width:260px;flex:1">${S.STATUS.local ? `<button id="doc-pick" class="small secondary">${t('datei_waehlen_2')}</button>` : ''}<button id="doc-add" class="small">${t('verknuepfen')}</button></div></div>`;
   return h;
 }
@@ -5043,7 +5086,7 @@ async function vUmsaetze() {
   await loadUms();
   const f = S.uf, st = S.STATUS, konten = S.DATA.accounts.filter(k => !k.group && (!f.entity || k.path.startsWith(BN(f.entity))));
   // all filters always in view: what (area, year, account, search), which (direction, receipt, category state, dates), categories
-  let h = `<div class="uf-filters"><div class="toolbar">
+  let h = `<div class="uf-filters" data-ex="transactions.filters"><div class="toolbar">
     <select id="uf-ent"><option value="">${t('alle_bereiche')}</option>${Object.keys(S.DATA.areas).map(k => `<option value="${esc(k)}" ${f.entity === k ? 'selected' : ''}>${esc(BN(k))}</option>`).join('')}</select>
     <select id="uf-jahr"><option value="">${t('alle_jahre')}</option>${UMS.years.map(y => `<option ${f.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
     <select id="uf-konto"><option value="">${t('alle_konten')}</option>${konten.map(k => `<option value="${k.uuid}" ${f.account === k.uuid ? 'selected' : ''}>${esc(k.name)}</option>`).join('')}</select>
@@ -5054,20 +5097,20 @@ async function vUmsaetze() {
     <label class="switch"><input type="checkbox" id="uf-ok" ${f.uncategorized_flag ? 'checked' : ''}><i></i>${t('ohne_kategorie_2')}</label>
     <label class="small">${t('cf_von')} <input type="date" id="uf-von" value="${esc(f.date_from)}"></label><label class="small">${t('cf_bis')} <input type="date" id="uf-bis" value="${esc(f.date_to)}"></label>
   </div>
-  <div class="toolbar uf-ext">${f.ids || f.cfRows ? `<span class="chip">${esc(f.cfRows ? f.title || '' : t('uf_unklare', f.title || ''))}<button class="icon ghost" data-ids-x="1" aria-label="${esc(t('entfernen'))}">✕</button></span>` : ''}
+  <div class="toolbar uf-ext">${f.ids || f.cfRows ? `<span class="chip">${esc(f.title || '')}<button class="icon ghost" data-ids-x="1" aria-label="${esc(t('entfernen'))}">✕</button></span>` : ''}
     <span class="small muted">${t('kategorien')}</span>${f.katsLabel && f.kats ? `<span class="chip">${esc(t('uf_alle_kats', f.katsLabel, f.kats.length))}${f.mitOhne ? ` · ${esc(t('ohne_kategorie_2'))}` : ''}<button class="icon ghost" data-kat-all="1" aria-label="${esc(t('entfernen'))}">✕</button></span>`
       : (f.kats || []).map((k, i) => `<span class="chip">${esc(CP(k))}<button class="icon ghost" data-kat-x="${i}" aria-label="${esc(t('entfernen'))}">✕</button></span>`).join('')}
     <input type="text" id="uf-kat-add" list="uf-kats" placeholder="${t('uf_kategorie_hinzu')}" style="min-width:230px"><datalist id="uf-kats">${(S.KATS || []).filter(k => !k.default).map(k => `<option value="${esc(CP(k.path))}">`).join('')}</datalist>
     ${f.est ? `<span class="small muted">${t('uf_ohne_geschaetzte')}</span>` : ''}
     ${f.date_from || f.date_to || f.kats || f.ids || f.cfRows ? `<button id="uf-chip-x" class="ghost small">${t('uf_filter_aufheben')}</button>` : ''}
   </div></div>
-  <div class="toolbar"><span class="muted small ums-hits">${t('0_treffer_1_von_2', UMS.hits, UMS.hits > UMS.transactions.length ? ' (erste ' + UMS.transactions.length + t('angezeigt_filter_verfeinern') : '', UMS.total)}</span><span class="sp"></span>
+  <div class="toolbar"><span class="muted small ums-hits" data-ex="transactions.hits">${t('0_treffer_1_von_2', UMS.hits, UMS.hits > UMS.transactions.length ? ' (erste ' + UMS.transactions.length + t('angezeigt_filter_verfeinern') : '', UMS.total)}</span><span class="sp"></span>
     <button id="bl-folder" class="secondary small" ${st.local ? '' : t('disabled_title_nur_am_mac')}>${t('belegordner_oeffnen')}</button>
     <button id="bl-export" class="secondary small">${t('belege_exportieren_zip')}</button>
     ${xlsxBtn('transactions', `title="${esc(t('uf_excel_tip'))}"`)}</div>`;          // the transactions as filtered (all matches, not only those shown)
-  if (S.sel.size) h += `<div class="banner info" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${t('0_ausgewaehlt_1', S.sel.size, `<input type="text" id="bulk-cat" list="bulk-kats" placeholder="${t('kategorie')}" style="min-width:240px">${katList('bulk-kats')}<button id="bulk-cat-btn" class="small">${t('kategorie_zuweisen')}</button>`)}<button id="bulk-clear" class="small secondary">${t('auswahl_aufheben')}</button></div>`;
-  h += `<div class="wrap"><table class="plain" id="ums-table"><thead><tr><th style="width:28px"><input type="checkbox" id="sel-all"></th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('name')}</th><th>${t('verwendungszweck')}</th><th class="num">${t('betrag')}</th><th>${t('kategorie')}</th><th class="num">${t('belege')}</th></tr></thead><tbody>`
-    + UMS.transactions.map(u => `<tr class="clickable ${S.sel.has(u.id) ? 'sel' : ''}" data-id="${u.id}"><td><input type="checkbox" class="sel" ${S.sel.has(u.id) ? 'checked' : ''}></td><td class="small" style="white-space:nowrap">${FD(u.date)}</td><td class="small">${esc(u.account_name)}</td><td>${esc(u.name)}</td><td class="small muted" style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.purpose)}</td><td class="num ${u.amount < 0 ? 'neg' : 'pos'}">${F(u.amount)}</td><td class="small" title="${QUELLE_TIP[u.source] || ''}">${u.category ? esc(CP(u.category)) + (u.source === 'waiting' ? ' <span class="muted">⏳</span>' : '') : u.needs === false ? '<span class="muted">–</span>' : `<span class="pill warn">${t('ohne')}</span>`}</td><td class="num">${u.receipts ? `<span class="pill ok">${u.receipts}</span>` : `<button class="ghost small add-beleg" title="${t('beleg_hinzufuegen')}">＋</button>`}</td></tr>`).join('')
+  if (S.sel.size) h += `<div class="banner info" data-ex="transactions.table" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${t('0_ausgewaehlt_1', S.sel.size, `<input type="text" id="bulk-cat" list="bulk-kats" placeholder="${t('kategorie')}" style="min-width:240px">${katList('bulk-kats')}<button id="bulk-cat-btn" class="small">${t('kategorie_zuweisen')}</button>`)}<button id="bulk-clear" class="small secondary">${t('auswahl_aufheben')}</button></div>`;
+  h += `<div class="wrap" data-ex="transactions.table"><table class="plain" id="ums-table"><thead><tr><th style="width:28px"><input type="checkbox" id="sel-all"></th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('name')}</th><th>${t('verwendungszweck')}</th><th class="num">${t('betrag')}</th><th>${t('kategorie')}</th><th class="num">${t('belege')}</th></tr></thead><tbody>`
+    + UMS.transactions.map(u => `<tr class="clickable ${S.sel.has(u.id) ? 'sel' : ''}" data-id="${u.id}"><td><input type="checkbox" class="sel" ${S.sel.has(u.id) ? 'checked' : ''}></td><td class="small" style="white-space:nowrap">${FD(u.date)}</td><td class="small">${esc(u.account_name)}</td><td>${esc(u.name)}</td><td class="small muted" style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.purpose)}</td><td class="num ${u.amount < 0 ? 'neg' : 'pos'}">${F(u.amount)}</td><td class="small" title="${QUELLE_TIP[u.source] || ''}">${u.category ? esc(CP(u.category)) + (u.source === 'waiting' ? ' <span class="muted">⏳</span>' : '') : u.needs === false || u.transfer ? '<span class="muted">–</span>' : `<span class="pill warn">${t('ohne')}</span>`}</td><td class="num">${u.receipts ? `<span class="pill ok">${u.receipts}</span>` : `<button class="ghost small add-beleg" title="${t('beleg_hinzufuegen')}">＋</button>`}</td></tr>`).join('')
     + '</tbody></table></div>';
   return h;
 }
@@ -5077,14 +5120,14 @@ async function openDrawer(txId) {
   const mine = bl.entry_list.filter(e => e.tx_id === txId), free = bl.files.filter(d => !d.linked);
   const st = S.STATUS;
   const d = $('#drawer');
-  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(u.name)}</h2>
-    <div class="kv"><div>${t('datum')}</div><div>${FD(u.date)}</div><div>${t('betrag')}</div><div class="${u.amount < 0 ? 'neg' : 'pos'}" style="font-weight:600;color:var(--${u.amount < 0 ? 'neg' : 'pos'})">${F(u.amount)} €</div><div>${t('konto_2')}</div><div>${esc(u.account_name)} · ${esc(BN(u.entity))}</div><div>${t('zweck')}</div><div>${esc(u.purpose) || '–'}</div><div>${t('kategorie')}</div><div>${esc(u.category) || `<span class="pill warn">${t('ohne')}</span>`}${u.source ? ' <span class="small muted">· ' + (QUELLE_TIP[u.source] || '') + '</span>' : ''}</div><div>${t('status')}</div><div>${u.booked_count ? t('gebucht') : t('vorgemerkt')}${u.checkmark ? t('abgehakt') : ''}</div><div>${t('id')}</div><div class="mono small">${u.id}</div></div>
+  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(u.name)}</h2><div data-ex="transactions.detail">
+    <div class="kv"><div>${t('datum')}</div><div>${FD(u.date)}</div><div>${t('betrag')}</div><div class="${u.amount < 0 ? 'neg' : 'pos'}" style="font-weight:600;color:var(--${u.amount < 0 ? 'neg' : 'pos'})">${F(u.amount)} €</div><div>${t('konto_2')}</div><div>${esc(u.account_name)} · ${esc(BN(u.entity))}</div><div>${t('zweck')}</div><div>${esc(u.purpose) || '–'}</div><div>${t('kategorie')}</div><div>${u.category ? esc(CP(u.category)) : u.needs === false || u.transfer ? '–' : `<span class="pill warn">${t('ohne')}</span>`}${u.source ? ' <span class="small muted">· ' + (QUELLE_TIP[u.source] || '') + '</span>' : ''}</div><div>${t('status')}</div><div>${u.booked_count ? t('gebucht') : t('vorgemerkt')}${u.checkmark ? t('abgehakt') : ''}</div><div>${t('id')}</div><div class="mono small">${u.id}</div></div>
     ${u.needs !== false ? `<div class="row tight" style="margin-top:10px"><input type="text" id="dr-kat" list="dr-kats" value="${esc(CP(u.category))}" placeholder="${t('kategorie_aus_moneymoney')}" style="min-width:240px;flex:1">${katList('dr-kats')}<button id="dr-cat-btn" class="small">${t('in_moneymoney_eintragen')}</button></div>` : ''}
     <h3>${t('belege_n', mine.length)}</h3>
     ${mine.map(e => `<div class="beleg" data-id="${e.id}"><span class="n" title="${esc(e.path)}">${e.external ? `<span class="tag" title="${t('verknuepfung_zu_einer_datei_ausserhalb')}">${t('mac')}</span>` : ''}${esc(e.path.split('/').pop())}</span><span class="small muted">${e.external ? (e.status === 'icloud' ? `<span class="pill warn">${t('icloud_nicht_geladen')}</span>` : e.status === 'lacking' ? `<span class="pill err">${t('fehlt')}</span>` : '') : (e.size_bytes / 1024).toFixed(0) + ' KB'}</span><a href="/api/receipts/file?id=${e.id}" target="_blank" class="small">${t('ansehen')}</a>${st.local ? `<button class="ghost small bl-show" title="${t('im_finder_zeigen_2')}">${t('finder')}</button>` : ''}<button class="ghost small bl-note" title="${t('notiz')}">✎</button><button class="ghost small bl-del" title="${e.external ? t('verknuepfung_entfernen_datei_bleibt') : t('zuordnung_entfernen')}">✕</button></div>${e.note ? `<div class="small muted" style="padding:0 0 6px">${esc(e.note)}</div>` : ''}`).join('') || `<div class="muted small">${t('noch_kein_beleg')}</div>`}
     <div class="drop" id="dr-drop" style="margin-top:12px">${t('datei_hierher_ziehen')}<br><button id="dr-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button> <button id="dr-cam" class="small secondary" style="margin-top:8px">${t('foto_aufnehmen')}</button><div class="small muted" style="margin-top:6px">${t('pdf_bilder_e_mails_office')}</div></div>
     ${free.length ? `<h3>${t('vorhandene_datei_aus_dem_belegordner')}</h3><div class="row tight"><select id="dr-free" style="max-width:300px">${free.map(x => `<option value="${esc(x.path)}">${esc(x.path)}</option>`).join('')}</select><button id="dr-link" class="small secondary">${t('zuordnen')}</button></div>` : ''}
-    <h3>${t('datei_auf_dem_mac_verknuepfen', hq('documents'))}</h3><div class="row tight"><input type="text" id="dr-ext" placeholder="${t('pfad_z_b_library_mobile')}" style="flex:1;min-width:220px">${st.local ? `<button id="dr-ext-pick" class="small secondary">${t('datei_waehlen_2')}</button>` : ''}<button id="dr-ext-link" class="small secondary">${t('verknuepfen')}</button></div><div class="small muted">${t('die_datei_bleibt_wo_sie')}</div>`;
+    <h3>${t('datei_auf_dem_mac_verknuepfen', hq('documents'))}</h3><div class="row tight"><input type="text" id="dr-ext" placeholder="${t('pfad_z_b_library_mobile')}" style="flex:1;min-width:220px">${st.local ? `<button id="dr-ext-pick" class="small secondary">${t('datei_waehlen_2')}</button>` : ''}<button id="dr-ext-link" class="small secondary">${t('verknuepfen')}</button></div><div class="small muted">${t('die_datei_bleibt_wo_sie')}</div></div>`;
   d.classList.add('open');
   $('.close', d).onclick = closeDrawer;
   $('#dr-pick', d).onclick = () => pickFiles(txId, false);
@@ -5163,7 +5206,7 @@ async function uploadFiles(txId, files) {
     try {
       const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(f); });
       await belegeApi('/api/receipts/upload', {tx_id: txId, file_name: f.name, content: b64});
-      toast(f.name + ' abgelegt');
+      toast(t('datei_abgelegt', f.name));
     } catch (e) { toast(t('fehler_3') + e.message, 6000); }
   }
   await refreshUms(txId);
@@ -5192,17 +5235,17 @@ function vRegeln() {
   // "Gesellschaft") with its participation and counter accounts; target, actual and difference live; one save bar for all
   const C = S.CFG;
   const lr = (S.STATUS || {}).last_run, pend = lr && lr.dry_run ? (lr.proposals || []).length : 0, auto = C.dry_run === false, loc = !!(S.STATUS || {}).local;
-  let h = `<div class="rules-page"><p class="lead">${t('regeln_lead')} <a href="#bookings">${pend ? tn('0_buchungsvorschlaege', pend) : t('nav_auto_buchungen')} →</a></p>`
+  let h = `<div class="rules-page" data-ex="accounts.rules"><p class="lead">${t('regeln_lead')} <a href="#bookings">${pend ? tn('0_buchungsvorschlaege', pend) : t('nav_auto_buchungen')} →</a></p>`
     + (S.KONTEN.length ? '' : `<div class="note"><b>${t('noch_keine_konten_geladen_unter')}</b></div>`);
-  h += `<div class="group"><div class="set-row"><div class="grow"><b>${t('auto_buchen')}</b><div class="small muted">${t(auto ? 'auto_buchen_an' : 'auto_buchen_aus')}${loc ? '' : ' ' + t('nur_am_mac_klammer')}</div></div>`
+  h += `<div class="group" data-ex="accounts.rules.auto"><div class="set-row"><div class="grow"><b>${t('auto_buchen')}</b><div class="small muted">${t(auto ? 'auto_buchen_an' : 'auto_buchen_aus')}${loc ? '' : ' ' + t('nur_am_mac_klammer')}</div></div>`
     + `<label class="switch${loc ? '' : ' off'}"><input type="checkbox" id="auto-book" ${auto ? 'checked' : ''} ${loc ? '' : 'disabled'}><i></i></label></div></div>`;
-  h += `<section class="rule-sec"><div class="sec-head"><h2>${t('regel_darlehen_titel')}${hq('regel_darlehen_h')}</h2><span class="sp"></span><button id="add-loan" class="secondary small add-rule">${t('darlehen_hinzufuegen')}</button></div>`
+  h += `<section class="rule-sec" data-ex="accounts.rules.loans"><div class="sec-head"><h2>${t('regel_darlehen_titel')}${hq('regel_darlehen_h')}</h2><span class="sp"></span><button id="add-loan" class="secondary small add-rule">${t('darlehen_hinzufuegen')}</button></div>`
     + `<p class="sec-sub">${t('darlehen_sub')}</p><div class="list" id="loans">${(C.loans || []).map((l, i) => loanForm(l, i)).join('')}</div><div class="empty small muted">${t('leer_darlehen')}</div></section>`;
   const cos = companyAreas();
-  h += `<section class="rule-sec"><div class="sec-head"><h2>${t('regel_beteiligungen')}${hq('regel_gesellschaften_h')}</h2></div><p class="sec-sub">${t('gesellschaften_sub')}</p>`
+  h += `<section class="rule-sec" data-ex="accounts.rules.companies"><div class="sec-head"><h2>${t('regel_beteiligungen')}${hq('regel_gesellschaften_h')}</h2></div><p class="sec-sub">${t('gesellschaften_sub')}</p>`
     + `<div id="companies">${cos.map(b => companyCard(b, (C.companies || []).find(g => String(g.area) === String(b.id)) || {})).join('')}</div>`
     + (cos.length ? '' : `<div class="empty small muted">${t('leer_gesellschaften')} <a href="#accounts/areas">${t('mod_areas')} →</a></div>`) + `</section>`;
-  h += `<section class="rule-sec"><div class="sec-head"><h2>${t('co_gegenkonten')}${hq('h_co_gk')}</h2><span class="sp"></span><button id="add-mirror" class="secondary small add-rule">${t('gegenkonto_hinzufuegen')}</button></div>`
+  h += `<section class="rule-sec" data-ex="accounts.rules.mirrors"><div class="sec-head"><h2>${t('co_gegenkonten')}${hq('h_co_gk')}</h2><span class="sp"></span><button id="add-mirror" class="secondary small add-rule">${t('gegenkonto_hinzufuegen')}</button></div>`
     + `<p class="sec-sub">${t('spiegel_sub')}</p><div id="mirrors">${(C.account_mirrors || []).map(mirrorRow).join('')}</div><div class="empty small muted">${t('leer_spiegel')}</div></section>`;
   h += `<div id="rules-warn" class="findings"></div><div id="findings" class="findings"></div>`
     + `<div class="savebar"><span class="small muted"><span id="rules-state">${t('regeln_gespeichert')}</span>${more('rules')}</span><span class="sp"></span>`
@@ -5271,7 +5314,7 @@ function companyCard(b, g) {
   const row = (label, help, field) => `<div class="co-row"><div class="co-l">${label}${hq(help)}</div><div class="co-f">${field}</div></div>`;
   return `<div class="co-card" data-b="${esc(bid)}"${g.review ? ' data-review="1"' : ''}><div class="co-head"><h3>${esc(b.name)}</h3>${reviewMark(g)}`
     + (has ? `<a class="pill neutral" href="#accounts/areas">${t('anteil_0', pctText(b.share))}</a>` : `<a class="pill warn" href="#accounts/areas">${t('anteil_fehlt')}</a>`) + hq('h_co_anteil') + `</div>`
-    + row(t('co_beteiligung'), 'h_co_bet', `${acctSel('c-bet', g.participation, betCandidate(bid), t('keine_2'))}<div class="pv small" data-pv="b"></div>`)
+    + row(t('co_beteiligung'), 'h_co_bet', `${acctSel('c-bet', g.participation, betCandidate(bid), t('keine_2'))}<div class="pv small" data-pv="b" data-ex="accounts.rules.companies.preview"></div>`)
     + row(t('co_takt'), 'h_co_takt', `<select class="c-takt"><option value="daily" ${g.cycle !== 'monthly' ? 'selected' : ''}>${t('takt_taeglich')}</option><option value="monthly" ${g.cycle === 'monthly' ? 'selected' : ''}>${t('takt_monatlich')}</option></select><div class="small muted c-takt-tip">${taktTip(g.cycle)}</div>`)
     + row(t('co_rueck'), 'h_co_rueck', backField(g.retroactive_from))
     + row(t('co_schwelle'), 'h_co_schwelle', `<div class="row tight"><input type="number" step="0.01" min="0.01" class="c-sw" value="${g.threshold ?? 0.01}" style="width:110px"> €</div>`)
@@ -5284,10 +5327,10 @@ const pvOpen = (p, n) => { RPV.list.push(p); return `<a href="#" class="pv-diff 
 function pvDrawer(p, title, i = '') {
   const d = $('#drawer'), items = p.items || [], n = Math.max(items.length, p.bookings || p.open || 0);          // the list ends after 300
   if (drawerAgain('pv|' + i + '|' + title)) return;          // a second click on the same: closed, not opened again
-  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(title)}</h2><div class="note">${tn('pv_n_offen', n)} · <a href="#bookings" id="pv-go">${t('pv_zur_freigabe')}</a></div>`
+  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(title)}</h2><div data-ex="drawer.preview"><div class="note">${tn('pv_n_offen', n)} · <a href="#bookings" id="pv-go">${t('pv_zur_freigabe')}</a></div>`
     + `<div class="wrap auto dr-wrap"><table class="plain small dr-tx"><colgroup><col class="c-d"><col><col class="c-a"></colgroup><tbody>`
     + items.map(x => `<tr><td>${FD(x.date)}</td><td>${esc(x.account.split(' / ').pop())}<div class="muted">${esc(x.purpose)}${x.older ? ` <span class="tag">${t('aelter')}</span>` : ''}</div></td><td class="num">${F(x.amount)}</td></tr>`).join('')
-    + `</tbody></table></div>`;
+    + `</tbody></table></div></div>`;
   d.classList.add('open'); $('.close', d).onclick = closeDrawer; $('#pv-go', d).onclick = () => closeDrawer();
 }
 // target, actual and difference of every rule, from /api/rules/preview (the configuration as edited, nothing is saved)
@@ -5365,6 +5408,16 @@ function catOptions(selected) {
   const leaves = S.KATS.filter(k => !k.group);
   return `<option value="">${t('keine_2')}</option>` + leaves.map(k => `<option value="${esc(k.name)}" ${k.name === selected ? 'selected' : ''}>${esc(CP(k.path))}</option>`).join('') + (selected && !leaves.some(k => k.name === selected) ? `<option value="${esc(selected)}" selected>${t('0_nicht_in_moneymoney', esc(selected))}</option>` : '');
 }
+// one interest rate as typed: "2026-01-01: 3,3", "01.01.2026: 3,3" (also without the colon, with %) or a rate alone ("3,3": from
+// the start) -- anything else is not read (saving stops with a message instead of booking another rate)
+function rateIn(x) {
+  const m = String(x).trim().match(/^(?:(\d{4})-(\d{1,2})-(\d{1,2})|(\d{1,2})\.(\d{1,2})\.(\d{4}))?\s*[:=]?\s*(-?\d+(?:[.,]\d+)?)\s*%?$/);
+  if (!m) return {ok: false, text: String(x).trim()};
+  const [y, mo, d] = m[1] ? [m[1], m[2], m[3]] : m[6] ? [m[6], m[5], m[4]] : ['', '', ''];
+  const iso = y ? `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}` : '', dt = iso ? new Date(iso + 'T00:00:00Z') : null;
+  if (iso && (Number.isNaN(dt.getTime()) || dt.toISOString().slice(0, 10) !== iso)) return {ok: false, text: String(x).trim()};          // 31.02.2026: no day
+  return {ok: true, from_date: iso, percent: parseFloat(m[7].replace(',', '.'))};
+}
 function collectRules(strict) {
   // strict (saving): an amount that is no number stops it with a message -- it is not saved as 0
   const cfg = JSON.parse(JSON.stringify(S.CFG));
@@ -5372,7 +5425,7 @@ function collectRules(strict) {
   const amount = x => { const n = numIn(x); if (n == null || Number.isNaN(n)) { if (strict) throw new Error(t('zahl_unlesbar', String(x == null ? '' : x).trim())); return 0; } return n; };
   cfg.loans = $$('#loans .item').map(it => {
     const v = s => $(s, it).value.trim();
-    const satz = lst(v('.f-satz')).map(x => { const [ab, p] = x.split(':'); return {from_date: ab.trim(), percent: parseFloat((p || '0').replace(',', '.'))}; });
+    const satz = lst(v('.f-satz')).map(rateIn).filter(r => { if (!r.ok && strict) throw new Error(t('zinssatz_unlesbar', r.text)); return r.ok; }).map(r => ({from_date: r.from_date, percent: r.percent}));
     const basis = {}; lst(v('.f-basis')).forEach(x => { const [k, val] = x.split('='); basis[k.trim()] = amount(val); });
     const modell = v('.f-modell');
     const l = { name: v('.f-name'), active: $('.f-aktiv', it).checked, loan_account: v('.f-konto'), source_accounts: v('.f-quelle') ? [v('.f-quelle')] : [],
@@ -5414,8 +5467,8 @@ async function restartTo(port, before) {
 }
 async function saveConfig(cfg, findingsEl, trotzdem, extra) {
   try {
-    const r = await api('/api/config', Object.assign({config: cfg, anyway: !!trotzdem}, extra || {}), 'PUT');
-    DIRTY.on = false;
+    const r = await api('/api/config', Object.assign({config: cfg, anyway: !!trotzdem, seen: CFG_DRAWN}, extra || {}), 'PUT');
+    DIRTY.on = false; CFG_DRAWN = cfgCopy(r.config);
     const probleme = (r.findings || []).filter(f => f.severity !== 'ok');      // erfolgreich gepruefte Verweise nicht einzeln auflisten
     S.CFG = r.config;
     if (r.restart) { restartTo(r.port, r.instance); return true; }
@@ -5425,6 +5478,7 @@ async function saveConfig(cfg, findingsEl, trotzdem, extra) {
     return true;
   } catch (e) {
     if (e.data && e.data.findings) { showFindings(findingsEl, e.data.findings.filter(f => f.severity !== 'ok'), t('nicht_gespeichert_fehler_beheben_oder'), 'error'); findingsEl.insertAdjacentHTML('beforeend', `<div class="actions"><button id="save-anyway" class="danger small">${t('trotzdem_speichern')}</button></div>`); $('#save-anyway').addEventListener('click', () => saveConfig(cfg, findingsEl, true, extra)); }
+    else if (e.data && e.data.stale) { showFindings(findingsEl, [], e.message, 'error'); findingsEl.insertAdjacentHTML('beforeend', `<div class="actions"><button class="small secondary cfg-reload">${t('neu_laden')}</button></div>`); $('.cfg-reload', findingsEl).addEventListener('click', async () => { DIRTY.on = false; await loadAll(); route(); }); }
     else toast(t('fehler_3') + e.message, 5000);
     return false;
   }
@@ -5447,10 +5501,10 @@ async function vEingetragen() {
   const r = KZ.w = await api('/api/categories/written'); KZ.written = r.total;
   KZ.wsel = new Set([...(KZ.wsel || [])].filter(i => r.items.some(x => x.id === i && x.undo)));
   let h = `<div class="note">${t('kz_eingetragen_note', hq('kz_eingetragen'))}</div>`;
-  if (!r.items.length) return h + `<div class="card"><div class="v s">${t('kz_eingetragen_leer')}</div></div>`;
+  if (!r.items.length) return h + `<div class="card" data-ex="categories.written"><div class="v s">${t('kz_eingetragen_leer')}</div></div>`;
   const can = r.items.filter(x => x.undo).length, cat = p => p ? esc(CP(p)) : `<span class="muted">${t('ohne_kategorie_2')}</span>`;
   h += `<div class="toolbar"><span class="small muted">${tn('kz_eingetragen_n', r.total, r.total)}</span><span class="sp"></span><button id="kw-undo" class="secondary" disabled ${r.local ? '' : t('disabled_title_nur_am_mac')}>${t('kz_rueckgaengig')}</button></div>`;
-  h += `<div class="wrap auto kw-wrap"><table class="plain small kw-table"><thead><tr><th><input type="checkbox" id="kw-all" aria-label="${t('alle_2')}" ${can && r.local ? '' : 'disabled'}></th><th>${t('kz_eingetragen_am')}</th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('name')}</th><th class="num">${t('betrag')}</th><th>${t('kz_vorher')}</th><th>${t('kz_eingetragen_col')}</th><th></th></tr></thead><tbody>`
+  h += `<div class="wrap auto kw-wrap" data-ex="categories.written"><table class="plain small kw-table"><thead><tr><th><input type="checkbox" id="kw-all" aria-label="${t('alle_2')}" ${can && r.local ? '' : 'disabled'}></th><th>${t('kz_eingetragen_am')}</th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('name')}</th><th class="num">${t('betrag')}</th><th>${t('kz_vorher')}</th><th>${t('kz_eingetragen_col')}</th><th></th></tr></thead><tbody>`
     + r.items.map(x => `<tr class="${x.undo ? '' : 'off'}" data-id="${x.id}"><td><input type="checkbox" class="kw-sel" data-id="${x.id}" ${x.undo && r.local ? '' : 'disabled'} ${KZ.wsel.has(x.id) ? 'checked' : ''}></td>`
       + `<td style="white-space:nowrap">${esc(FDT(x.time || ''))}</td><td style="white-space:nowrap">${x.date ? FD(x.date) : '–'}</td><td>${esc(x.account || '–')}</td><td>${esc(x.name || '–')}</td>`
       + `<td class="num ${x.amount < 0 ? 'neg' : 'pos'}">${x.amount == null ? '–' : F(x.amount)}</td><td>${cat(x.old)}</td><td>${cat(x.new)}</td>`
@@ -5482,14 +5536,14 @@ const posLabel = (k, firma) => t(firma && k === 'housing' ? 'pos_housing_g' : `p
 const OBJ_OUT = ['saving', 'repayment', 'loan_interest', 'ignore'];            // pos_<key>: every position has its text (tests: Positions)
 async function vPositionen() {
   const d = await api('/api/categories/positions');
-  if (!d.categories.length) return `<div class="card"><div class="d">${esc(d.hint || t('noch_keine_kategorien_geladen_abgleich'))}</div></div>`;
+  if (!d.categories.length) return `<div class="card" data-ex="accounts.positions"><div class="d">${esc(d.hint || t('noch_keine_kategorien_geladen_abgleich'))}</div></div>`;
   const secs = []; for (const [k, sec] of d.positions) { if (k === 'ignore') continue; let g = secs.find(x => x[0] === sec); if (!g) secs.push(g = [sec, []]); g[1].push(k); }
   const opts = (sel, firma) => `<option value=""></option>` + secs.map(([sec, ks]) => `<optgroup label="${esc(t(POS_SEC[sec] || sec))}">${ks.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k, firma))}</option>`).join('')}</optgroup>`).join('')
     + `<optgroup label="${esc(t('sonstiges'))}">${['transfer', 'ignore'].map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('')}</optgroup>`;
   // a property's categories have its own rows (rent, costs); only saving, financing or leaving out takes them elsewhere
   const objOpts = sel => `<option value=""></option>` + OBJ_OUT.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('');
-  let h = `<div class="toolbar"><a class="small" href="#cashflow">${t('zum_cashflow')}</a><span class="sp"></span><button id="kp-save" disabled>${t('speichern')}</button></div>
-    ${kbCard()}<div class="wrap kp-wrap"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th class="kp-arrow"></th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')} ${hq('zielkonto')}</th></tr></thead><tbody>`;
+  let h = `<div data-ex="accounts.positions"><div class="toolbar"><a class="small" href="#cashflow">${t('zum_cashflow')}</a><span class="sp"></span><button id="kp-save" disabled>${t('speichern')}</button></div>
+    ${kbCard()}<div class="wrap kp-wrap" data-ex="accounts.positions.table"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th class="kp-arrow"></th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')} ${hq('zielkonto')}</th></tr></thead><tbody>`;
   // categories Kontor does not know and you did not place, with payments between your areas: those count as contributions or
   // withdrawals, not under the "other" shown here -- named, so that a later choice changing the figures is no surprise
   const npath = x => String(x || '').split(/ › |\\| \/ /).map(p => p.trim()).filter(Boolean).join(' / '), UNS = {};
@@ -5501,7 +5555,7 @@ async function vPositionen() {
       <td><select class="kp-pos"${r.property_name ? ` data-obj="${esc(r.property_name)}"` : ''}>${r.property_name ? objOpts(own) : opts(own, r.company)}</select></td>
       <td>${(() => { const at = autoTarget(r.path); return `<select class="kp-konto${at.miss && !r.account ? ' kp-miss' : ''}">${acctOptions(r.account, k => !k.group && (k.depot || k.role === 'term_investments' || k.role === 'cash' || k.role === 'participations' || k.role === 'real_estate')).replace(t('waehlen'), () => esc(at.text))}</select>`; })()}</td></tr>`;
   });
-  return h + '</tbody></table></div>' + vAnlageEmpfaenger();
+  return h + '</tbody></table></div>' + vAnlageEmpfaenger() + '</div>';
 }
 // what Kontor needs from your categories in MoneyMoney: per need, whether one of yours counts there (and which), else what to
 // create -- updated as you change a position below; the why of each need in its tooltip
@@ -5512,7 +5566,7 @@ let kbSeen = false;
 function kbCard() {
   if (!kbSeen && setupOpen()) KEEP_OPEN.add('kp-kb');          // open while you set Kontor up (closed afterwards: as you left it)
   kbSeen = true;
-  return `<details class="card kb" data-keep="kp-kb"${keepOpen('kp-kb')}><summary>${t('kb_titel')} <span class="kb-sum small muted" id="kb-sum"></span></summary><div id="kb-body"></div></details>`;
+  return `<details class="card kb" data-keep="kp-kb" data-ex="accounts.positions.needs"${keepOpen('kp-kb')}><summary>${t('kb_titel')} <span class="kb-sum small muted" id="kb-sum"></span></summary><div id="kb-body"></div></details>`;
 }
 // eff: [{path, eff (its position now), obj (a property's)}] -- from the table as it stands
 function kbRefresh(eff) {
@@ -5554,7 +5608,7 @@ function vAnlageEmpfaenger() {
   const cfg = ((S.CFG || {}).cashflow || {}).recipient_to_account || {}, lab = acctLabels(S.KONTEN || []);
   const nm = u => lab.get(u) || (S.KONTEN.find(k => k.uuid === u) || {}).name || u;
   const open = areas.reduce((n, [id, d]) => n + d.cashflow.saving_recipients.filter(a => a.how === '' && !(cfg[id] || {})[a.key]).length, 0);
-  let h = `<h2 class="kp-h">${t('anl_titel')} ${hq('anl_empfaenger')}${open ? ` <span class="pill warn">${esc(tn('anl_n_offen', open))}</span>` : ''}</h2>`;
+  let h = `<div data-ex="accounts.positions.recipients"><h2 class="kp-h">${t('anl_titel')} ${hq('anl_empfaenger')}${open ? ` <span class="pill warn">${esc(tn('anl_n_offen', open))}</span>` : ''}</h2>`;
   for (const [id, d] of areas) {
     const KF = d.cashflow, mine = cfg[id] || {};
     if (areas.length > 1) h += `<h3 class="kp-h3">${esc(BN(id))}</h3>`;
@@ -5573,7 +5627,7 @@ function vAnlageEmpfaenger() {
     }
     h += '</tbody></table></div>';
   }
-  return h;
+  return h + '</div>';
 }
 function bindPositionen(main) {
   // the bookings behind a number: a category (all its bookings, or those of the last 12 months), a recipient's payments
@@ -5694,17 +5748,17 @@ async function vZuordnen() {
     <span class="sp"></span>${can && mitVorschlag.length ? `<button id="kz-alle" class="secondary small">${t('alle_vorschlaege_n', mitVorschlag.length)}</button>` : ''}</div>
     <div class="note">${tn('n_ohne_kategorie_gruppen', off.open, hq('zuordnen'))}</div>` + katList('kz-kats');
   if (off.waiting) h += `<div class="banner info">${tn('n_warten_auf_mac', off.waiting, off.waiting)}</div>`;
-  if (!off.groups.length) return h + `<div class="card"><div class="v s">${t('nichts_offen_2')}</div><div class="d">${t('alle_umsaetze_haben_eine_kategorie')}</div></div>`;
-  h += '<div class="list">';
+  if (!off.groups.length) return h + `<div class="card" data-ex="categories.open"><div class="v s">${t('nichts_offen_2')}</div><div class="d">${t('alle_umsaetze_haben_eine_kategorie')}</div></div>`;
+  h += '<div class="list" data-ex="categories.open">';
   for (const g of off.groups) {
     const open = KZ.expanded[g.key], aus = KZ.aus[g.key] || new Set(), n = g.ids.filter(i => !aus.has(i)).length, mixed = !g.proposal && Object.keys(g.proposals).length > 0;
-    h += `<div class="item kz-group" data-key="${esc(g.key)}"><div class="grow">
+    h += `<div class="item kz-group" data-key="${esc(g.key)}" data-ex="categories.open.group"><div class="grow">
       <div class="row tight"><b style="min-width:220px">${esc(g.name)}</b><span class="small muted">${esc(g.accounts.join(', '))}${g.iban ? ' · ' + esc(g.iban) : ''}</span><span class="tag kz-count">${n < g.count ? n + ' / ' : ''}${g.count}×</span><span class="num ${g.sum < 0 ? 'neg' : 'pos'}" style="font-weight:600">${F(g.sum)} €</span><span class="small muted">${FD(g.date_from)}${g.date_from !== g.date_to ? ' – ' + FD(g.date_to) : ''}</span><button class="ghost small kz-toggle" aria-expanded="${open ? 'true' : 'false'}">${open ? t('umsaetze_zu') : t('umsaetze_auf')}</button></div>
 
       ${g.count === 1 && g.transactions[0] ? `<div class="small muted kz-one">${esc(g.transactions[0].purpose || '')}${g.transactions[0].kind ? ` <span class="tag">${esc(g.transactions[0].kind)}</span>` : ''}</div>` : ''}
       <div class="row tight"><input type="text" class="kz-kat" list="kz-kats" value="${esc(CP(g.proposal))}" placeholder="${t('kategorie_aus_moneymoney')}" style="min-width:300px" ${can ? '' : 'disabled'}>${g.proposal ? `<span class="tag tipped" tabindex="0" data-tip="${esc(t('vorschlag_tip'))}">${t('vorschlag_tag')}</span>` : Object.keys(g.proposals).length ? `<span class="tag tipped" tabindex="0" data-tip="${esc(t('vorschlaege_je_umsatz_tip'))}">${t('vorschlaege_je_umsatz')}</span>` : ''}
         <button class="small kz-save" ${can && n ? '' : 'disabled'}>${n < g.count ? tn('n_zuordnen', n, n) : t('zuordnen')}</button>${g.own_account && off.transfer ? `<button class="small secondary kz-umb" title="${esc(t('kz_umbuchung_tip'))}" ${can ? '' : 'disabled'}>${esc(off.transfer)}</button>` : ''}</div>
-      ${open ? `<div class="kz-tx-wrap"><table class="plain small kz-tx"><thead><tr><th><input type="checkbox" class="kz-all" ${aus.size ? '' : 'checked'} aria-label="${t('alle_2')}"></th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('zweck')}</th><th class="num">${t('betrag')}</th>${mixed ? `<th>${t('vorschlag_tag')}</th>` : ''}</tr></thead><tbody>${g.transactions.map(u => `<tr><td><input type="checkbox" class="kz-sel" data-id="${u.id}" ${aus.has(u.id) ? '' : 'checked'}></td><td style="white-space:nowrap">${FD(u.date)}</td><td style="white-space:nowrap">${esc(u.account)}</td><td class="kz-zweck">${u.name && u.name !== g.name ? `<b>${esc(u.name)}</b> ` : ''}${esc(u.purpose || '–')}${u.kind ? ` <span class="tag">${esc(u.kind)}</span>` : ''}</td><td class="num ${u.amount < 0 ? 'neg' : 'pos'}">${F(u.amount)}</td>${mixed ? `<td class="muted">${esc(CP(u.proposal) || '–')}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : ''}</div></div>`;
+      ${open ? `<div class="kz-tx-wrap" data-ex="categories.open.group.tx"><table class="plain small kz-tx"><thead><tr><th><input type="checkbox" class="kz-all" ${aus.size ? '' : 'checked'} aria-label="${t('alle_2')}"></th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('zweck')}</th><th class="num">${t('betrag')}</th>${mixed ? `<th>${t('vorschlag_tag')}</th>` : ''}</tr></thead><tbody>${g.transactions.map(u => `<tr><td><input type="checkbox" class="kz-sel" data-id="${u.id}" ${aus.has(u.id) ? '' : 'checked'}></td><td style="white-space:nowrap">${FD(u.date)}</td><td style="white-space:nowrap">${esc(u.account)}</td><td class="kz-zweck">${u.name && u.name !== g.name ? `<b>${esc(u.name)}</b> ` : ''}${esc(u.purpose || '–')}${u.kind ? ` <span class="tag">${esc(u.kind)}</span>` : ''}</td><td class="num ${u.amount < 0 ? 'neg' : 'pos'}">${F(u.amount)}</td>${mixed ? `<td class="muted">${esc(CP(u.proposal) || '–')}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : ''}</div></div>`;
   }
   return h + '</div>';
 }
@@ -5766,8 +5820,8 @@ async function vRegelVorschlaege() {
   const r = await api('/api/categories/proposals'), vs = r.proposals || [];
   KZ.rules = vs.length;
   let h = `<div class="note">${t('regeln_mm_note', hq('regeln_mm'))}</div>`;
-  if (!vs.length) return h + `<div class="card"><div class="v s">${t('keine_regelvorschlaege')}</div><div class="d">${t('keine_regelvorschlaege_d')}</div></div>`;
-  h += '<div class="list">' + vs.map(v => `<div class="item rv" data-key="${esc(v.key)}"><div class="grow">
+  if (!vs.length) return h + `<div class="card" data-ex="categories.rules"><div class="v s">${t('keine_regelvorschlaege')}</div><div class="d">${t('keine_regelvorschlaege_d')}</div></div>`;
+  h += '<div class="list" data-ex="categories.rules">' + vs.map(v => `<div class="item rv" data-key="${esc(v.key)}"><div class="grow">
     <div class="row tight"><b style="min-width:220px">${esc(CP(v.category))}</b><span class="small muted">${tn('aus_n_zuordnungen', v.yours, v.yours)} · ${tn('trifft_n', v.hits, v.hits)}${v.open ? ' · ' + tn('davon_n_offen', v.open, v.open) : ''}</span></div>
     <div class="row tight"><code class="rv-expr" tabindex="0">${esc(v.phrase)}</code><button class="small rv-copy">${t('kopieren')}</button><button class="small secondary rv-done" title="${t('regel_erledigt_tip')}">${t('erledigt')}</button></div></div></div>`).join('') + '</div>';
   return h;
@@ -5793,11 +5847,11 @@ async function vEinstellungen() {
 }
 const saveBar = () => `<div class="actions"><button id="save-settings" data-cmd-s>${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
 function vEinstellungenAllgemein() {
-  return `<div class="note">${t('einstellungen_vs_einrichtung', '<a href="#accounts">' + t('konten_regeln') + '</a>')}</div><div class="form">
+  return `<div data-ex="settings.general"><div class="note">${t('einstellungen_vs_einrichtung', '<a href="#accounts">' + t('konten_regeln') + '</a>')}</div><div class="form">
     <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang">${langOpts()}</select> <span class="small muted">${t('sprache_hinweis')}</span></label>
     <label>${t('design_label')}</label><label class="chk"><select id="e-theme">${[['dark', t('design_dunkel')], ['light', t('design_hell')], ['auto', t('design_system')]].map(([k, l]) => `<option value="${k}" ${themeGet() === k ? 'selected' : ''}>${l}</option>`).join('')}</select> <span class="small muted">${t('design_hinweis')}</span></label>
     <label>${t('als_app')}${hq('als_app')}</label><div class="chk" id="webapp-row">${webappRow()}</div>
-  </div>`;          // both take effect at once (no save button)
+  </div></div>`;          // both take effect at once (no save button)
 }
 // Kontor as an app: running as one; at the Mac Kontor's own app (built there, mac_app.py) -- else a button (Chrome, Edge) or
 // the way in Safari (the iPhone, or without the Mac app)
@@ -5825,8 +5879,8 @@ function webappDraw() { const el = $('#webapp-row'); if (el && S.CFG) el.innerHT
 // opened as an app at the Mac (or installed from here): remembered, so the setup counts the step also in the browser
 async function webappSeen() {
   if (OFFLINE.mode || !S.CFG || !(S.STATUS || {}).local || (S.CFG.ui || {}).webapp) return;
-  const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.ui = Object.assign({}, cfg.ui, {webapp: true});
-  try { const r = await api('/api/config', {config: cfg, anyway: true}, 'PUT'); S.CFG = r.config; } catch (e) {}
+  const seen = JSON.parse(JSON.stringify(S.CFG)), cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.ui = Object.assign({}, cfg.ui, {webapp: true});
+  try { const r = await api('/api/config', {config: cfg, anyway: true, seen}, 'PUT'); S.CFG = r.config; } catch (e) {}
 }
 document.addEventListener('click', async e => {
   const b = e.target.closest && e.target.closest('#mac-app-open'); if (!b) return;
@@ -5855,12 +5909,12 @@ async function vEinstellungenMM() {
     : `<h2>${t('verbindung')}</h2>${vVerbindung()}`;
   // while you set Kontor up: the connection first, open (it is this step), the way on right below it
   const setup = setupNav('connect'), first = setup ? `<h2>${t('verbindung')}</h2>${vVerbindung()}${setup.replace('class="setup-nav', 'class="setup-nav below')}` : ok ? '' : conn;
-  return first + `<h2>${t('synchronisierung')}</h2>${await vSync()}
-  <h2>${t('abgleich_h')}</h2><div class="form">
+  return `<div data-ex="settings.moneymoney">` + first + `<div data-ex="settings.moneymoney.sync"><h2>${t('synchronisierung')}</h2>${await vSync()}</div>
+  <div data-ex="settings.moneymoney.schedule"><h2>${t('abgleich_h')}</h2><div class="form">
     <label>${t('automatischer_abgleich_0', hq('abgleich'))}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatic !== false ? 'checked' : ''}> ${t('alle_2')} <input type="number" id="e-intervall" min="5" value="${z.interval_minutes ?? 30}" style="width:70px"> ${t('minuten_nur_wenn_moneymoney_laeuft')}</label>
     <label>${t('alles_neu_lesen_0', hq('voll_lesen'))}</label><label class="chk">${t('alle_2')} <input type="number" id="e-voll" min="1" value="${z.full_read_days ?? 30}" style="width:70px"> ${t('tage')}</label>
     <label>${t('umsaetze_lesen_0', hq('months_back'))}</label><label class="chk">${t('die_letzten')} <input type="number" id="e-monate" min="0" value="${b.months_back ?? 0}" style="width:70px"> ${t('monate_0_alle')}</label>
-  </div>${saveBar()}` + (ok && !setup ? conn : '');
+  </div>${saveBar()}</div>` + (ok && !setup ? conn : '') + '</div>';
 }
 // the setup's way on, as one slim line above a page it leads through (only while the setup is open)
 const setupNav = id => { const n = nextModule(id); return setupOpen() && n ? `<div class="setup-nav small"><span class="muted">${t('einrichtung_kurz')}</span><a href="#setup">‹ ${esc(t('zurueck_zur_einrichtung'))}</a><a href="${n.href}" class="next">${esc(t('weiter_zu', n.t))} ›</a></div>` : ''; };
@@ -5869,20 +5923,20 @@ const SUB_PLACEHOLDERS = ['year', 'month', 'entity', 'account'];
 const subPatternProblem = v => /[{}]/.test(String(v || '').replace(new RegExp(`\\{(${SUB_PLACEHOLDERS.join('|')})\\}`, 'g'), '')) ? t('muster_nur_platzhalter', SUB_PLACEHOLDERS.map(x => `{${x}}`).join(', ')) : '';
 function vEinstellungenBelege() {
   const bl = S.CFG.receipts || {};
-  return `<div class="form">
+  return `<div data-ex="settings.receipts"><div class="form">
     <label>${t('belegordner_0', hq('belege_ordner'))}</label><div><input type="text" id="e-bl-ordner" value="${esc(bl.folder || '~/Documents/Kontor-Belege')}" style="width:100%"><div class="small muted">${bl.folder_confirmed ? t('wird_beim_ersten_beleg_angelegt') : t('noch_nicht_angelegt_beim_ersten')}</div></div>
     <label>${t('unterordner_muster_0', hq('belege_sub'))}</label><input type="text" id="e-bl-sub" value="${esc(bl.subfolder || '{year}')}" placeholder="${t('jahr_jahr_entitaet_entitaet_jahr')}">
     <div class="full note">${t('belege_werden_als_normale_dateien_2')}</div>
-  </div>${saveBar()}`;
+  </div>${saveBar()}</div>`;
 }
 function vEinstellungenSteuer() {
   const st = S.CFG.tax || {}, loans = S.KONTEN.filter(k => !k.group && k.role === 'liabilities');
-  return `<div class="note">${t('steuer_einstellungen_note')}</div><div class="form">
+  return `<div data-ex="accounts.tax"><div class="note">${t('steuer_einstellungen_note')}</div><div class="form">
     <label>${t('vermietungs_oberkategorie')}</label><input type="text" id="e-verm" value="${esc(st.rental_category || 'Vermietung')}">
     <div class="full"><h3>${t('darlehen_objekt')}</h3>${loans.length ? `<table class="plain objloans"><thead><tr><th>${t('darlehenskonto')}</th><th>${t('objekt_wie_in_der_kategorie')}</th></tr></thead><tbody>${loans.map(l => `<tr><td>${esc(l.name)}<div class="small muted">${esc(CP(l.path.split(' / ').slice(0, -1).join(' / ')))}</div></td><td><input type="text" class="e-obj" data-ref="${l.uuid} | ${esc(l.name)}" value="${esc((st.property_loans || {})[l.uuid + ' | ' + l.name] || Object.entries(st.property_loans || {}).find(([k]) => k.startsWith(l.uuid))?.[1] || '')}" placeholder="${t('objektname_wie_in_der_kategorie')}"></td></tr>`).join('')}</tbody></table>` : `<span class="muted small">${t('keine_darlehenskonten_erkannt')}</span>`}</div>
     <label>${t('kategorie_steuerposition')}</label><div class="list" id="tax-positions">${Object.entries(st.positions || {}).filter(([k]) => !k.startsWith('_')).map(([k, v]) => posRow(k, v)).join('')}<button id="add-pos" class="secondary small" style="align-self:flex-start;width:auto">${t('zuordnung_hinzufuegen')}</button></div>
   </div>
-  <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
+  <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div></div>`;
 }
 // Why Tailscale is not usable yet, in words (state from "tailscale status")
 function tsReason(ts) {
@@ -5917,7 +5971,7 @@ async function vEinstellungenZugang() {
       .finally(() => { S.remoteLoading = false; if (S.tab === 'settings' && S.sub === 'access' && !DIRTY.on) route(); }); }
   const ts = (r && r.tailscale) || {}, lokal = r ? r.local : S.STATUS.local;
   const ok = b => `<span class="dot ${b ? 'ok' : 'warn'}"></span>`;
-  let h = `<h2>${t('am_mac')}</h2><div class="form">
+  let h = `<div data-ex="settings.access"><div data-ex="settings.access.mac"><h2>${t('am_mac')}</h2><div class="form">
     <label>${t('automatische_sperre')}</label><label class="chk">${t('nach_2')} <input type="number" id="e-sperre" min="1" value="${o.lock_minutes ?? 15}" style="width:70px" ${lokal ? '' : `disabled title="${esc(t('nur_am_mac'))}"`}> ${t('minuten_ohne_aktivitaet')}</label>
     <label>Touch ID ${hq('touchid')}</label><label class="chk"><input type="checkbox" id="e-touchid" ${o.touchid !== false ? 'checked' : ''} ${S.STATUS.touchid && lokal ? '' : 'disabled'}> ${t('am_mac_mit_touch_id', S.STATUS.touchid ? '' : t('an_diesem_geraet_nicht_verfuegbar'))}</label>
   </div>
@@ -5929,9 +5983,9 @@ async function vEinstellungenZugang() {
     <div class="full note">${t('adresse_port_neustart')}</div>
   </div></details>
   <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>
-  <h2>${t('passwort')}</h2><div class="form"><label>${t('altes_passwort')}</label><input type="password" id="pw-alt" autocomplete="current-password"${S.STATUS.touchid && S.STATUS.touchid_active && lokal ? ` placeholder="${esc(t('leer_touch_id'))}"` : ''}><label>${t('neues_passwort')}</label><input type="password" id="pw-neu" autocomplete="new-password"></div><div class="actions"><button id="pw-save" class="secondary">${t('passwort_aendern')}</button></div>`;
-  h += `<h2>${t('zugriff_vom_iphone')} ${hq('fern')}</h2>`;
-  if (!r && S.remoteLoading) return h + `<div class="note"><span class="spin"></span> ${t('wird_geladen')}</div>`;
+  <h2>${t('passwort')}</h2><div class="form pw-form"><label>${t('altes_passwort')}</label><input type="password" id="pw-alt" autocomplete="current-password"${S.STATUS.touchid && S.STATUS.touchid_active && lokal ? ` placeholder="${esc(t('leer_touch_id'))}"` : ''}><label>${t('neues_passwort')}</label><input type="password" id="pw-neu" autocomplete="new-password"><label>${t('ph_passwort_wiederholen')}</label><input type="password" id="pw-neu2" autocomplete="new-password"></div><div class="actions"><button id="pw-save" class="secondary">${t('passwort_aendern')}</button></div>`;
+  h += `</div><div data-ex="settings.access.iphone"><h2>${t('zugriff_vom_iphone')} ${hq('fern')}</h2>`;
+  if (!r && S.remoteLoading) return h + `<div class="note"><span class="spin"></span> ${t('wird_geladen')}</div></div></div>`;
   if (r && r.active) {
     h += `<div class="banner ${r.listening ? 'ok' : 'warn'}">${r.listening ? t('fern_an', `<b>${esc(r.url)}</b>`) : t('fern_an_wartet', esc(r.error || ''))}</div>
       <div class="row tight"><button class="secondary small" id="fz-copy" data-url="${esc(r.url)}">${t('link_kopieren')}</button>${lokal ? `<button class="danger small" id="fz-aus">${t('zugriff_ausschalten')}</button>` : ''}</div>
@@ -5956,7 +6010,7 @@ async function vEinstellungenZugang() {
   </div>`;
   if (!IS_LOCAL) h += `<div class="kv" style="margin-top:12px"><div>${t('auf_diesem_geraet')}</div><div id="sw-state">${navigator.serviceWorker && navigator.serviceWorker.controller ? t('aktiv_die_zuletzt_geladenen_daten') : (location.protocol === 'https:' || location.hostname === '127.0.0.1' ? t('wird_beim_naechsten_laden_aktiv') : t('nicht_moeglich_ueber_http_tailscale'))}</div></div>
     <div class="actions"><button id="sw-clear" class="secondary">${t('gespeicherte_daten_auf_diesem_geraet')}</button></div>`;      // on the Mac nothing to say: the offline view is only for the iPhone
-  return h;
+  return h + '</div></div>';
 }
 function bindZugang(main) {
   const msg = (txt, cls) => { const el = $('#fz-msg', main); if (el) showFindings(el, [], txt, cls); else toast(txt, 8000); };
@@ -6035,17 +6089,17 @@ let PKG = null, PKG_UNRES = null;
 function vSicherung() {
   // Sicherung (alles) · Einstellungspaket (zum Weitergeben) · Laden für beides über dieselbe Fläche · Zurücksetzen
   const C = S.CFG;
-  return `<h2>${t('sicherung_h')} ${hq('sicherung')}</h2><div class="note">${t('sicherung_text')}</div>
+  return `<div data-ex="settings.backup"><div data-ex="settings.backup.backup"><h2>${t('sicherung_h')} ${hq('sicherung')}</h2><div class="note">${t('sicherung_text')}</div>
   ${S.STATUS.local ? `<div class="row tight"><input type="password" id="bk-pw" placeholder="${t('passwort_fuer_die_sicherung')}" autocomplete="new-password" style="width:230px"><input type="password" id="bk-pw2" placeholder="${t('ph_passwort_wiederholen')}" autocomplete="new-password" style="width:230px"><button id="bk-save" class="secondary">${t('sicherung_verschluesselt_herunterladen')}</button></div><div class="small muted">${t('sicherung_passwort_hinweis')}</div>` : `<div class="small muted">${t('nur_am_mac')}</div>`}
-  <h2>${t('einstellungspaket')} ${hq('package')}</h2><div class="note">${t('paket_text', `<code>${t('name_kontor_json')}</code>`)}</div>
+  </div><div data-ex="settings.backup.package"><h2>${t('einstellungspaket')} ${hq('package')}</h2><div class="note">${t('paket_text', `<code>${t('name_kontor_json')}</code>`)}</div>
   <div class="row tight"><label class="chk">${t('name')} <input type="text" id="pk-name" value="${esc(t('paket_name'))}"></label><button id="pk-export" class="secondary">${t('paket_herunterladen')}</button></div>
   <div class="small muted">${t('aktuell_0_darlehen_1_beteiligungen', (C.loans || []).length, (C.companies || []).length, Object.keys((C.cashflow || {}).positions || {}).length)}</div>
-  <h2>${t('datei_laden')}</h2><div class="drop" id="pk-drop">${t('sicherung_hierher_ziehen')}<br><button id="pk-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button></div><div id="pk-preview"></div>
-  ${vEinstellungenDaten()}
-  <h2>${t('zuruecksetzen_h')}</h2><div class="note">${t('zuruecksetzen_text')}</div>
+  <h2>${t('datei_laden')}</h2><div class="drop" id="pk-drop">${t('sicherung_hierher_ziehen')}<br><button id="pk-pick" class="small" style="margin-top:8px">${t('datei_waehlen')}</button></div><div id="pk-preview"></div></div>
+  <div data-ex="settings.backup.data">${vEinstellungenDaten()}</div>
+  <div data-ex="settings.backup.reset"><h2>${t('zuruecksetzen_h')}</h2><div class="note">${t('zuruecksetzen_text')}</div>
   <div class="row tight"><input type="password" id="rs-pw" placeholder="${t('passwort_zur_bestaetigung')}" autocomplete="current-password" style="width:220px"><label class="chk"><input type="checkbox" id="rs-pw-reset"> ${t('passwort_ebenfalls_zuruecksetzen_einri')}</label><button id="rs-go" class="danger" ${S.STATUS.local ? '' : t('disabled_title_nur_am_mac')}>${t('programm_zuruecksetzen')}</button></div><div id="rs-report" class="findings"></div>
   <h2>${t('deinstallieren_h')}</h2><div class="note">${t('deinstallieren_text')}</div>
-  <div class="row tight"><input type="password" id="un-pw" placeholder="${t('passwort_zur_bestaetigung')}" autocomplete="current-password" style="width:220px"><label class="chk"><input type="checkbox" id="un-prog" checked> ${t('deinstall_programmordner')}</label><button id="un-go" class="danger" ${S.STATUS.local ? '' : t('disabled_title_nur_am_mac')}>${t('kontor_deinstallieren')}</button></div><div id="un-report" class="findings"></div>`;
+  <div class="row tight"><input type="password" id="un-pw" placeholder="${t('passwort_zur_bestaetigung')}" autocomplete="current-password" style="width:220px"><label class="chk"><input type="checkbox" id="un-prog" checked> ${t('deinstall_programmordner')}</label><button id="un-go" class="danger" ${S.STATUS.local ? '' : t('disabled_title_nur_am_mac')}>${t('kontor_deinstallieren')}</button></div><div id="un-report" class="findings"></div></div></div>`;
 }
 function pkgPreview() {
   const el = $('#pk-preview'); if (!PKG) { el.innerHTML = ''; return; }
@@ -6149,14 +6203,14 @@ async function upInstall(ui) { if (ui.disabled) return;
       if (r.ok && r.restart) waitAndReload(true); else if (r.needs_approval) { S.STATUS = await api('/api/status'); statusMini(); softRoute(); } else ui.disabled = false; } catch (e) { ui.disabled = false; toast(e.message, 8000); } }
 async function vUpdates(form) {
   const r = await api('/api/update/status'), st = S.STATUS, info = r.info, finds = upFinds(info);
-  let h = `<div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.date ? `<span class="vdate">${t('vom_0', FDT(r.date))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
+  let h = `<div data-ex="settings.updates"><div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.date ? `<span class="vdate">${t('vom_0', FDT(r.date))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
     <div class="card"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.error ? '<span class="pill err">?</span>' : esc(info.available || '–') + (info.date ? `<span class="vdate">${t('vom_0', FDT(info.date))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.error ? esc(info.error) : (info.newer ? `<span class="pill ${finds.length ? 'warn' : 'ok'}">${t(finds.length ? 'upd_wartet' : 'neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + (info.newer && info.review && !finds.length ? t('upd_geprueft_ok') : '')) : t('noch_nicht_geprueft')}${r.verified ? t('geprueft') + new Date(r.verified * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
     <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${finds.length ? 'class="danger" ' : ''}${info && info.newer && st.local ? '' : 'disabled'}>${t(finds.length ? 'upd_freigeben' : 'update_installieren_und_dienst_neu')}</button>${((S.CFG.updates || {}).repo || 'stecrz/Kontor') !== 'stecrz/Kontor' ? ` <span class="tag warn">${t('update_fremde_quelle', esc((S.CFG.updates || {}).repo))}</span>` : ''}</div>
     ${upReview(info)}
     ${form || ''}
-    ${info && info.notes && info.newer ? `<h2>${t('neu_in_0', esc(info.since && info.since !== info.available ? t('0_bis_1', info.since, info.available) : info.available))}</h2>${clHtml(info.notes)}` : ''}
-    ${clHistory(r.history)}
-    <div class="note">${t('updates_note', esc('https://github.com/' + ((S.CFG.updates || {}).repo || 'stecrz/Kontor')))}${more('updates')}</div>`;
+    <div data-ex="settings.updates.changes">${info && info.notes && info.newer ? `<h2>${t('neu_in_0', esc(info.since && info.since !== info.available ? t('0_bis_1', info.since, info.available) : info.available))}</h2>${clHtml(info.notes)}` : ''}
+    ${clHistory(r.history)}</div>
+    <div class="note">${t('updates_note', esc('https://github.com/' + ((S.CFG.updates || {}).repo || 'stecrz/Kontor')))}${more('updates')}</div></div>`;
   return h;
 }
 
@@ -6173,8 +6227,8 @@ async function vProtokoll() {
   const ordner = (S.STATUS && S.STATUS.storage && S.STATUS.storage.folder) || t('library_application_support_kontor');
   const min = S.logMin ?? 1, body = logLines(r.rows, min);
   const seg = `<div class="seg small" id="log-min" role="group">${[[0, 'log_alles'], [1, 'log_hinweise'], [2, 'log_probleme']].map(([k, l]) => `<button data-min="${k}" class="${min === k ? 'on' : ''}" aria-pressed="${min === k}">${t(l)}</button>`).join('')}</div>`;
-  return `<div class="toolbar">${seg}<button id="log-refresh" class="secondary small">${t('aktualisieren')}</button><button id="diag2" class="secondary small">${t('diagnosedatei_maskiert')}</button><button id="diag3" class="secondary small">${t('diagnosedatei_mit_kontonamen')}</button>${hq('diagnose')}${S.STATUS && S.STATUS.local ? `<button id="log-show" class="secondary small">${t('im_finder_zeigen')}</button>` : ''}</div>
-    <div class="note">${t('datei')} <code>${esc(ordner)}/kontor.log</code> ${t('klartext_rotiert_bei_5_mb')} <code>${t('dienst_err_log')}</code> ${t('fuer_abstuerze_des_dienstes_zur')} <code>${t('library_application_support_kontor')}</code>.</div><pre class="log">` + (body || `<span class="lg-info">${esc(t(min >= 2 ? 'log_nichts' : 'log_leer'))}</span>`) + '</pre>';
+  return `<div class="toolbar" data-ex="log.tools">${seg}<button id="log-refresh" class="secondary small">${t('aktualisieren')}</button><button id="diag2" class="secondary small">${t('diagnosedatei_maskiert')}</button><button id="diag3" class="secondary small">${t('diagnosedatei_mit_kontonamen')}</button>${hq('diagnose')}${S.STATUS && S.STATUS.local ? `<button id="log-show" class="secondary small">${t('im_finder_zeigen')}</button>` : ''}</div>
+    <div class="note" data-ex="log.file">${t('datei')} <code>${esc(ordner)}/kontor.log</code> ${t('klartext_rotiert_bei_5_mb')} <code>${t('dienst_err_log')}</code> ${t('fuer_abstuerze_des_dienstes_zur')} <code>${t('library_application_support_kontor')}</code>.</div><pre class="log" data-ex="log.lines">` + (body || `<span class="lg-info">${esc(t(min >= 2 ? 'log_nichts' : 'log_leer'))}</span>`) + '</pre>';
 }
 // Help: docs/help.de.md or docs/help.en.md (the same file as on GitHub), with contents, search and anchors (#help/<section>)
 const HELP = {md: null, lang: null, q: '', images: {}};
@@ -6201,7 +6255,7 @@ function mdHtml(md) {
     if (tr) {
       const cells = tr[1].split('|').map(c => c.trim());
       if (cells.every(c => /^-+$/.test(c))) continue;
-      if (!table) { flush(); table = `<div class="wrap auto"><table class="plain"><thead><tr>${cells.map(c => `<th>${mdInline(c)}</th>`).join('')}</tr></thead><tbody>`; continue; }
+      if (!table) { flush(); table = `<div class="wrap auto" data-ex="help.table"><table class="plain"><thead><tr>${cells.map(c => `<th>${mdInline(c)}</th>`).join('')}</tr></thead><tbody>`; continue; }
       table += `<tr>${cells.map(c => `<td>${mdInline(c)}</td>`).join('')}</tr>`; continue;
     }
     if (li) { const kind = li[1] ? 'ol' : 'ul'; if (para.length || table || (list && list !== kind)) flush(); if (!list) { list = kind; out.push(`<${kind}>`); }
@@ -6217,9 +6271,9 @@ function mdHtml(md) {
 async function vHilfe() {
   if (HELP.md === null || HELP.lang !== LANG) { try { const r = await api('/api/help?lang=' + LANG); HELP.md = r.text || ''; HELP.images = r.images || {}; HELP.lang = LANG; } catch (e) { return `<div class="card">${esc(e.message)}</div>`; } }
   const toc = [...HELP.md.matchAll(/<a id="([\w-]+)"><\/a>\n##\s+(.*)/g)].map(m => [m[1], m[2]]);
-  return `<div class="help-top"><input type="search" id="help-q" data-find placeholder="${t('hilfe_durchsuchen')}" value="${esc(HELP.q)}"><span class="small muted" id="help-n"></span></div>
-    <div class="help-layout"><nav class="help-toc">${toc.map(([id, title]) => `<a href="#help/${id}" data-a="${id}">${mdInline(title)}</a>`).join('')}<a href="#log" class="help-toc-x">${t('protokoll')}</a></nav>
-    <div class="help" id="help-body">${mdHtml(HELP.md)}</div></div>`;
+  return `<div class="help-top" data-ex="help.search"><input type="search" id="help-q" data-find placeholder="${t('hilfe_durchsuchen')}" value="${esc(HELP.q)}"><span class="small muted" id="help-n"></span></div>
+    <div class="help-layout"><nav class="help-toc" data-ex="help.toc">${toc.map(([id, title]) => `<a href="#help/${id}" data-a="${id}">${mdInline(title)}</a>`).join('')}<a href="#log" class="help-toc-x">${t('protokoll')}</a></nav>
+    <div class="help" id="help-body" data-ex="help.article">${mdHtml(HELP.md)}</div></div>`;
 }
 function bindHilfe(main) {
   const body = $('#help-body', main); if (!body) return;
@@ -6319,17 +6373,21 @@ const softRoute = () => DIRTY.on ? statusMini() : route();      // redraw unless
 const SCROLL = {key: '', pos: {}};
 // Ungespeicherte Aenderungen: Formulare auf Seiten mit Speichern-Knopf melden Aenderungen; Wegnavigieren fragt nach
 const DIRTY = {on: false, hash: location.hash};
+// the settings as the open page was drawn from them: sent along when it saves, so the service keeps what another window or device
+// changed meanwhile (and refuses only where both changed the same thing)
+const cfgCopy = c => c ? JSON.parse(JSON.stringify(c)) : null;
+let CFG_DRAWN = null;
 const GUARDED = ['accounts', 'accounts/areas', 'accounts/rules', 'accounts/tax', 'settings/moneymoney', 'settings/receipts', 'settings/access', 'settings/updates'];   // "Allgemein" saves at once
 const guarded = () => GUARDED.includes(S.tab + (S.sub ? '/' + S.sub : ''));
 (function dirtyListeners() {
   // einmal am Hauptbereich (bleibt bestehen); ob die Seite geschuetzt ist, wird beim Ereignis geprueft
   const main = $('#main');
-  const mark = e => { if (!guarded() || e.target.closest('#hi-preview, .toolbar, .rules-page, .sync-table, .ab-sel') || e.target.id === 'k-show-inactive') return; DIRTY.on = true; };
+  const mark = e => { if (!guarded() || e.target.closest('#hi-preview, .toolbar, .rules-page, .sync-table, .ab-sel, .pw-form') || e.target.id === 'k-show-inactive') return; DIRTY.on = true; };
   main.addEventListener('input', mark); main.addEventListener('change', mark);
   main.addEventListener('click', e => { if (guarded() && e.target.closest('.del, #add-bereich, .add-item, .b-mv')) DIRTY.on = true; });
 })();
 function guardDirty(main) {
-  DIRTY.on = false; DIRTY.hash = location.hash;
+  DIRTY.on = false; DIRTY.hash = location.hash; CFG_DRAWN = cfgCopy(S.CFG);
   $$('[data-next]', main).forEach(b => b.addEventListener('click', () => { go(b.dataset.next); }));     // Rueckfrage bei Ungespeichertem: route()
   $$('[data-savenext]', main).forEach(b => b.addEventListener('click', async () => {
     $$('.findings', main).forEach(f => { f.innerHTML = ''; });
@@ -6590,7 +6648,11 @@ function bind(main) {
   const autoSw = $('#auto-book', main); if (autoSw) autoSw.addEventListener('change', async () => {      // book automatically (on) or with approval (off)
     if (autoSw.checked && !confirm(t('modus_auto_frage'))) { autoSw.checked = false; return; }
     const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.dry_run = !autoSw.checked;
-    try { await api('/api/config', {config: cfg}, 'PUT'); S.CFG = await api('/api/config'); S.STATUS = await api('/api/status'); route(); } catch (e) { autoSw.checked = !autoSw.checked; toast(e.message, 5000); }
+    // back to "with approval": never held up by errors elsewhere in the settings; on: only without errors (they are named)
+    autoSw.disabled = true;          // one switch at a time: a second click waits for the first
+    try { await api('/api/config', {config: cfg, anyway: cfg.dry_run, seen: CFG_DRAWN}, 'PUT'); S.CFG = await api('/api/config'); S.STATUS = await api('/api/status'); route(); }
+    catch (e) { autoSw.checked = !autoSw.checked; toast([e.message].concat(((e.data || {}).findings || []).filter(f => f.severity === 'error').slice(0, 3).map(f => f.text)).join('\n'), 8000); }
+    finally { autoSw.disabled = false; }
   });
   const bt = $('.bk-table', main);
   if (bt) {
@@ -6665,7 +6727,7 @@ function bind(main) {
   const afa = $('#afa-save', main); if (afa) afa.addEventListener('click', async () => {
     const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.tax = cfg.tax || {}; cfg.tax.depreciation = cfg.tax.depreciation || {};
     $$('.depreciation', main).forEach(i => { const o = i.dataset.obj; cfg.tax.depreciation[o] = typeof cfg.tax.depreciation[o] === 'object' && cfg.tax.depreciation[o] ? cfg.tax.depreciation[o] : {}; if (i.value === '') delete cfg.tax.depreciation[o][S.steuerJahr]; else cfg.tax.depreciation[o][S.steuerJahr] = parseFloat(i.value); });
-    await saveConfig(cfg, document.createElement('div')); toast(t('afa_gespeichert_wirkt_nach_dem'));
+    const fe = document.createElement('div'); if (await saveConfig(cfg, fe)) toast(t('afa_gespeichert_wirkt_nach_dem')); else if (fe.textContent.trim()) toast(fe.textContent.trim(), 8000);
   });
 
   // Umsaetze & Belege
@@ -6779,7 +6841,8 @@ function bind(main) {
     if (await saveConfig(cfg, $('#findings-e', main)) !== false) { if (done) go('#overview'); else route(); } }); }
   const cb = $('#check-btn', main); if (cb) cb.addEventListener('click', async () => { toast(t('pruefe')); const r = await api('/api/check', {}); if (!r.available) { showFindings($('#findings-e'), [], r.text, 'error'); return; } S.KONTEN = r.accounts; S.KATS = r.categories || S.KATS; showFindings($('#findings-e'), r.findings, t('geprueft_gegen_den_aktuellen_stand') + r.accounts.length + t('konten_klammer_zu'), 'ok'); });
   const ap = $('#add-pos', main); if (ap) ap.addEventListener('click', e => { e.target.insertAdjacentHTML('beforebegin', posRow('', '')); bindDel(main); });
-  const pw = $('#pw-save', main); if (pw) pw.addEventListener('click', async () => { try { const neu = $('#pw-neu').value; await api('/api/password', {old: $('#pw-alt').value, new: neu}); OFFKEY = null; await offKeyEnsure(neu); toast(t('passwort_geaendert')); $('#pw-alt').value = $('#pw-neu').value = ''; } catch (e) { toast(e.message, 4000); } });
+  const pw = $('#pw-save', main); if (pw) pw.addEventListener('click', async () => { try { const neu = $('#pw-neu').value; if (neu !== $('#pw-neu2').value) return toast(t('passwoerter_ungleich'), 4000);
+    await api('/api/password', {old: $('#pw-alt').value, new: neu}); OFFKEY = null; await offKeyEnsure(neu); toast(t('passwort_geaendert')); $('#pw-alt').value = $('#pw-neu').value = $('#pw-neu2').value = ''; } catch (e) { toast(e.message, 4000); } });
   const tms = $('#tm-state', main);
   if (tms) {
     // Time Machine: aktuellen Stand zeigen, ein Knopf schaltet um
@@ -7055,16 +7118,16 @@ const asKind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), event:
 function asCard(p, ask, kind, body, fin, st) {
   // the frame of a proposed change: the tick while the card of changes waits, its kind, title and where, what it changes, its state
   const tick = p.state === 'queued' && ask ? `<label class="as-e-pick" title="${esc(t('ki_e_auswahl_tip'))}"><input type="checkbox" class="as-pick" data-id="${esc(p.id)}" ${p.off ? '' : 'checked'}></label>` : '';
-  return `<div class="as-entry ${esc(p.state)}${p.state === 'queued' && ask ? ' ask' : ''}${p.off ? ' off' : ''}">${tick}<div class="as-e-k">${kind}</div><div class="as-e-h">${esc(p.title || '')}</div>${p.sub ? `<div class="muted small">${esc(p.sub)}</div>` : ''}${body}${fin}${st}</div>`;
+  return `<div class="as-entry ${esc(p.state)}${p.state === 'queued' && ask ? ' ask' : ''}${p.off ? ' off' : ''}" data-ex="assistant.change">${tick}<div class="as-e-k">${kind}</div><div class="as-e-h">${esc(p.title || '')}</div>${p.sub ? `<div class="muted small">${esc(p.sub)}</div>` : ''}${body}${fin}${st}</div>`;
 }
 function asBatch(p, m) {
   // the card of all changes of an answer: one click carries out the ticked ones (or none); afterwards what came of them
   const mine = (m.parts || []).filter(x => x.k === 'entry' && (p.ids || []).includes(x.id)), on = mine.filter(x => !x.off).length;
-  if (p.state === 'ask') return `<div class="as-batch"><span class="muted small">${tn('ki_b_frage', mine.length, mine.length)}</span>
+  if (p.state === 'ask') return `<div class="as-batch" data-ex="assistant.change"><span class="muted small">${tn('ki_b_frage', mine.length, mine.length)}</span>
     <div class="as-e-btn"><button class="small as-b-yes" data-id="${esc(p.id)}" ${on ? '' : 'disabled'}>${on === mine.length ? tn('ki_b_alle', on, on) : tn('ki_b_ausgewaehlte', on, on)}</button><button class="small secondary as-b-no" data-id="${esc(p.id)}">${t('ki_b_nichts')}</button></div></div>`;
-  if (p.state === 'declined') return `<div class="as-batch done"><span class="muted small">${t('ki_b_nichts_geaendert')}</span></div>`;
+  if (p.state === 'declined') return `<div class="as-batch done" data-ex="assistant.change"><span class="muted small">${t('ki_b_nichts_geaendert')}</span></div>`;
   const bits = [p.done ? tn('ki_b_done', p.done, p.done) : '', p.left ? tn('ki_b_left', p.left, p.left) : '', p.failed ? tn('ki_b_failed', p.failed, p.failed) : ''].filter(Boolean);
-  return `<div class="as-batch done"><span class="muted small">${esc(bits.join(' · '))}</span></div>`;
+  return `<div class="as-batch done" data-ex="assistant.change"><span class="muted small">${esc(bits.join(' · '))}</span></div>`;
 }
 // The requests on the card of a research: each {id, what: search | read, source, label, tier, query, addresses, sent, state}
 // (reads: a line of cards saved by 3.16.76-3.16.88, results read with the search's approval). A card saved before the lookups
@@ -7107,7 +7170,7 @@ function asWebCard(p, i, j) {
     : none ? `<div class="as-e-st">${t(p.state === 'expired' ? 'ki_w_expired' : 'ki_w_declined')}</div>` : '';
   const free = !!p.free, kind = (reqs.length && reqs.every(it => it.what === 'read') ? tn('ki_w_lesen', reqs.length) : t('ki_w_kind'))
     + (free ? ' · ' + t('ki_w_frei') : p.auto ? ' · ' + t('ki_w_auto') : '');          // (auto: read with the approval of a search, 3.16.76-3.16.88)
-  return `<div class="as-entry as-web ${esc(asWebFetched(p) && p.state !== 'run' ? 'done' : p.state || '')}${ask ? ' ask' : ''}${free ? ' free' : ''}"><div class="as-e-k" title="${esc(t(free ? 'ki_w_frei_tip' : 'ki_w_tip'))}">${kind}</div>
+  return `<div class="as-entry as-web ${esc(asWebFetched(p) && p.state !== 'run' ? 'done' : p.state || '')}${ask ? ' ask' : ''}${free ? ' free' : ''}" data-ex="assistant.web"><div class="as-e-k" title="${esc(t(free ? 'ki_w_frei_tip' : 'ki_w_tip'))}">${kind}</div>
     ${p.reason ? `<div class="as-e-why">${esc(p.reason)}</div>` : ''}<div class="as-w-list">${items.map(row).join('')}</div>${end}</div>`;
 }
 // A chart the assistant asked for: the figures are Kontor's own (the model chose only what to show), drawn here as the charts on
@@ -7140,7 +7203,7 @@ function asChart(c, mi, pj) {
   if (!Array.isArray(c.series) || !c.series.length || !Array.isArray(c.x) || !c.x.length) return '';
   const col = asChColors(c), svg = c.kind === 'hbar' ? asChBars(c, AS.cw || 340, col) : asChPlot(c, AS.cw || 340, col);
   const legend = c.kind !== 'hbar' && c.series.length > 1 ? `<div class="chart-legend">${c.series.map((s, k) => `<span><i style="background:${col[k]}"></i>${esc(s.name)}</span>`).join('')}</div>` : '';
-  return `<div class="as-chart" data-c="${mi}-${pj}"><div class="as-ch-h"><div class="as-ch-t"><b>${esc(c.title)}</b><span>${esc(asChSub(c))}</span></div>`
+  return `<div class="as-chart" data-ex="assistant.chart" data-c="${mi}-${pj}"><div class="as-ch-h"><div class="as-ch-t"><b>${esc(c.title)}</b><span>${esc(asChSub(c))}</span></div>`
     + `<button type="button" class="ghost small as-ch-open" title="${esc(t('ki_ch_oeffnen', asChPage(c)))}">${esc(asChPage(c))} ›</button></div>`
     + `<div class="as-ch-plot">${svg}<div class="bch-tip as-ch-tip hidden" aria-live="polite"></div></div>${legend}</div>`;
 }
@@ -7304,7 +7367,7 @@ function asMsg(m, i) {
   else if (m.meta && m.meta.seconds != null) {
     const mm = m.meta, bits = [mm.cut ? t('ki_abgeschnitten') : '', mm.thought != null ? tn('ki_nachgedacht', mm.thought, asN(mm.thought)) : '',
       mm.reads != null ? tn('ki_abfragen', mm.reads, mm.reads) : '', mm.tps ? t('ki_tempo', asN(mm.tps)) : '', mm.limit ? t('ki_denkgrenze') : ''].filter(Boolean);
-    h += `<div class="as-meta" title="${esc(t('ki_meta_tip'))}">${bits.map(esc).join(' · ')}</div>`;
+    h += `<div class="as-meta" data-ex="assistant.steps" title="${esc(t('ki_meta_tip'))}">${bits.map(esc).join(' · ')}</div>`;
   }
   return `<div class="as-msg">${h}</div>`;
 }
@@ -7314,9 +7377,9 @@ function asMsg(m, i) {
 function asSteps(run, i, j, now) {
   const tools = run.filter(p => p.k === 'tool'), last = run[run.length - 1];
   const step = p => `<div class="as-tool ${esc(p.kind || '')}">${esc(p.label || '')}</div>`;
-  if (!run.some(p => p.k === 'think')) return `<div class="as-tool ${esc((tools[tools.length - 1] || {}).kind || '')}">${tools.map(p => esc(p.label || '')).join(' · ')}</div>`;
+  if (!run.some(p => p.k === 'think')) return `<div class="as-tool ${esc((tools[tools.length - 1] || {}).kind || '')}" data-ex="assistant.steps">${tools.map(p => esc(p.label || '')).join(' · ')}</div>`;
   const sub = now && last.k === 'tool' ? esc(last.label || '') : tools.length ? esc(tn('ki_schritte', tools.length, tools.length)) : '';
-  return `<details class="as-think${now ? ' now' : ''}" data-m="${i}" data-p="${j}"${run[0].open ? ' open' : ''}><summary>${now ? `<span class="spin"></span>${t('ki_denkt')}` : t('ki_gedanken')}${sub ? `<span class="as-think-s"> · ${sub}</span>` : ''}</summary>`
+  return `<details class="as-think${now ? ' now' : ''}" data-ex="assistant.steps" data-m="${i}" data-p="${j}"${run[0].open ? ' open' : ''}><summary>${now ? `<span class="spin"></span>${t('ki_denkt')}` : t('ki_gedanken')}${sub ? `<span class="as-think-s"> · ${sub}</span>` : ''}</summary>`
     + `<div>${run.map(p => p.k === 'tool' ? step(p) : `<p>${esc(p.text).replace(/\n/g, '<br>')}</p>`).join('')}</div></details>`;
 }
 function asHead() {
@@ -7697,7 +7760,7 @@ function asPage() {
   return {route: location.hash || '#overview', title: (ti && ti.textContent) || '', area: S.area || '', text};
 }
 const asRefPre = refs => (refs || []).map(r => `[${r.label}]\n${r.text}\n`).join('');          // what a question referred to, for the conversation so far
-const refSend = r => ({label: r.label, page: r.page, text: r.text, go: r.go || null});          // what goes to Kontor (not what is for the clipboard)
+const refSend = r => ({label: r.label, page: r.page, text: r.text, go: r.go || null, ex: r.ex || []});          // what goes to Kontor (not what is for the clipboard)
 async function asSend(text) {
   const refs = (AS.refs || []).slice(0, REF_MAX).map(refSend), files = (AS.files || []).slice(0, AS_FILES_MAX);
   text = (text || '').trim(); if (!text && !files.length && refs.length) text = t('ki_ref_frage');          // a file alone: no question, it is looked at for itself
@@ -7721,15 +7784,15 @@ function asMemPart(p) {
   // a note Kontor kept from what you said (or forgot, or offers to keep): one quiet line under the answer, with a way back
   const old = (p.replaces || []).map(x => `<div class="as-m-old">${esc(t('ki_g_ersetzt', x))}</div>`).join('');
   const undo = `<button type="button" class="ghost small as-m-undo" data-id="${esc(p.id)}">${t('ki_e_zurueck')}</button>`;
-  if (p.state === 'ask') return `<div class="as-mem-p ask"><span class="as-m-k">${t('ki_g_merken_frage')}</span><span class="as-m-t">${esc(p.text)}</span><span class="as-m-b"><button type="button" class="small as-m-yes" data-id="${esc(p.id)}">${t('ki_g_merken')}</button><button type="button" class="small secondary as-m-no" data-id="${esc(p.id)}">${t('ki_g_nicht_merken')}</button></span>${old}</div>`;
-  if (p.state === 'forgotten') return `<div class="as-mem-p"><span class="as-m-k">${t('ki_g_vergessen_p')}</span>${p.text ? `<span class="as-m-t">${esc(p.text)}</span>${undo}` : ''}</div>`;
-  if (p.state === 'undone' || p.state === 'declined' || !p.text) return `<div class="as-mem-p off"><span class="as-m-k">${t('ki_g_nicht_gemerkt')}</span></div>`;
-  return `<div class="as-mem-p"><span class="as-m-k">${t(p.state === 'restored' ? 'ki_g_wieder' : 'ki_g_gemerkt')}</span><span class="as-m-t">${esc(p.text)}</span>${p.pasted ? `<span class="tag">${t('ki_g_eingefuegt')}</span>` : ''}${p.state === 'remembered' ? undo : ''}${old}</div>`;
+  if (p.state === 'ask') return `<div class="as-mem-p ask" data-ex="assistant.notes"><span class="as-m-k">${t('ki_g_merken_frage')}</span><span class="as-m-t">${esc(p.text)}</span><span class="as-m-b"><button type="button" class="small as-m-yes" data-id="${esc(p.id)}">${t('ki_g_merken')}</button><button type="button" class="small secondary as-m-no" data-id="${esc(p.id)}">${t('ki_g_nicht_merken')}</button></span>${old}</div>`;
+  if (p.state === 'forgotten') return `<div class="as-mem-p" data-ex="assistant.notes"><span class="as-m-k">${t('ki_g_vergessen_p')}</span>${p.text ? `<span class="as-m-t">${esc(p.text)}</span>${undo}` : ''}</div>`;
+  if (p.state === 'undone' || p.state === 'declined' || !p.text) return `<div class="as-mem-p off" data-ex="assistant.notes"><span class="as-m-k">${t('ki_g_nicht_gemerkt')}</span></div>`;
+  return `<div class="as-mem-p" data-ex="assistant.notes"><span class="as-m-k">${t(p.state === 'restored' ? 'ki_g_wieder' : 'ki_g_gemerkt')}</span><span class="as-m-t">${esc(p.text)}</span>${p.pasted ? `<span class="tag">${t('ki_g_eingefuegt')}</span>` : ''}${p.state === 'remembered' ? undo : ''}${old}</div>`;
 }
 function asBasisPart(p) {
   // the notes the answer rests on (Kontor finds them in its words): one quiet line, the day of each in its tooltip
   const ns = (p.notes || []).filter(n => n && n.text);
-  return ns.length ? `<div class="as-basis"><span class="as-m-k">${t('ki_g_beruht')}</span>${ns.map(n => `<span class="as-m-t" title="${esc(n.day ? FD(n.day) : '')}">${esc(n.text)}</span>`).join('<span class="as-m-sep">·</span>')}</div>` : '';
+  return ns.length ? `<div class="as-basis" data-ex="assistant.notes"><span class="as-m-k">${t('ki_g_beruht')}</span>${ns.map(n => `<span class="as-m-t" title="${esc(n.day ? FD(n.day) : '')}">${esc(n.text)}</span>`).join('<span class="as-m-sep">·</span>')}</div>` : '';
 }
 async function asPoll(m, job) {
   let fails = 0, gone = false, n = 0;
@@ -7882,21 +7945,32 @@ const REF_CHARTS = '#main #bch, #main .lc, #main .cf-card, #main .ov-card, #main
 const refOne = s => String(s || '').replace(/\s+/g, ' ').trim();
 const refCut = (s, n) => s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s;
 const refTxt = (el, n) => (el ? el.innerText || el.textContent || '' : '').split('\n').map(refOne).filter(l => /[\p{L}\p{N}]/u.test(l)).join(' ').slice(0, n);          // a chart's or card's text on one line (labels and figures in turn)
-const refVal = el => refOne(el && (el.innerText || el.textContent));          // a figure in full (its cents too, drawn smaller)
+// a figure in full (its cents too, drawn smaller); a field: what it holds or shows (the chosen entry, not every one of the list)
+const refVal = el => { const f = el && (el.matches('select, input, textarea') ? el : $('select, input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), textarea', el));
+  return refOne(f ? (f.tagName === 'SELECT' ? (f.selectedOptions[0] || {}).textContent : f.value || f.placeholder) : el && (el.innerText || el.textContent)); };
 function refLabel(el) {          // a name as the page shows it -- the same parts left out as asLabel(), so the place is found again by it
   if (!el) return '';
-  const c = el.cloneNode(true); c.querySelectorAll('.hq, .cnt, .cf-abbr, .tag, .pill, .caret, .disc, svg, small, select, input, textarea').forEach(x => x.remove());
-  return refOne(c.textContent);
+  if (el.tagName === 'DETAILS' && $(':scope > summary', el)) el = $(':scope > summary', el);          // folded: its title line, not all inside
+  // left out: help marks, counts, tags, the grey line below a name (path, kind), fields and the row's own buttons (✓ in the plan)
+  const c = el.cloneNode(true); c.querySelectorAll('.hq, .cnt, .cf-abbr, .tag, .pill, .caret, .disc, svg, small, .small, select, input, textarea, .lc-mode, .alpha-tag, .edit').forEach(x => x.remove());
+  return refOne(c.textContent).replace(/\s*›$/, '');
 }
 function refChartTitle(box) {
   let s = refLabel($('.lc-title, .bch-title, .bch-head > b, .ov-head b, .as-ch-t b, h3, h2', box));
   const sl = !s && $('.lc-head select, .bch-head select', box); if (sl && sl.selectedOptions[0]) s = refOne(sl.selectedOptions[0].textContent);
+  if (!s && box.id === 'bch') s = [t('bilanz'), refOne(($('#bch-range', box) || {}).textContent || '')].filter(Boolean).join(' · ');          // the balance sheet's own chart: named by its range
   return s;
+}
+function refHeading(el) {          // a table without a card of its own: the heading above it
+  for (let x = el; x && x.id !== 'main' && x.id !== 'drawer'; x = x.parentElement) {
+    for (let s = x.previousElementSibling; s; s = s.previousElementSibling) if (/^H[23]$/.test(s.tagName)) return refLabel(s);
+  }
+  return '';
 }
 function refTitle(el) {          // the card or section something stands in, by its title
   const dr = el.closest('#drawer'); if (dr) return refLabel($(':scope > h2', dr));
-  const box = el.closest('.card, .co-card, .module, fieldset'); if (!box) return '';
-  return refChartTitle(box) || refLabel($(':scope legend, :scope .t', box));
+  const box = el.closest('.card, .co-card, .module, fieldset'); if (!box) return refHeading(el);
+  return refChartTitle(box) || refLabel($(':scope legend, :scope .t, :scope > details > summary', box)) || refHeading(box);
 }
 function refGo(extra) {          // where it was: page, area, view -- as asOpen() opens it again
   const g = {route: location.hash || '#overview', area: S.area || '', view: S.mode, plan: !!S.plan};
@@ -7921,7 +7995,7 @@ function refPath(tr, names) {          // a row's place: the rows above it it be
   if (tr.dataset.depth != null) {
     let d = +tr.dataset.depth;
     for (let j = i - 1; j >= 0 && d > 0; j--) { const r = rows[j]; if (r.dataset.depth != null && +r.dataset.depth < d) { d = +r.dataset.depth; const c = [...r.cells].find(x => refLabel(x)); if (c) out.unshift(refLabel(c)); } }
-  } else if (!tr.classList.contains('group')) {
+  } else if (!tr.classList.contains('group') && !tr.classList.contains('total')) {          // (net worth: a total, in no position)
     const g = rows.slice(0, i).reverse().find(r => r.classList.contains('group')); const c = g && [...g.cells].find(x => refLabel(x)); if (c) out.push(refLabel(c));
   }
   return out;
@@ -7932,13 +8006,22 @@ function refCell(cell) {
   const names = pair ? $('table.cf-names', pair) || tbl : tbl, vals = pair ? $('table.cf-tbl:not(.cf-names)', pair) || tbl : tbl;
   const head = vals.tHead && vals.tHead.rows.length ? vals.tHead.rows[vals.tHead.rows.length - 1] : vals.rows[0];
   const tr = cell.parentElement, where = refTitle(tbl);
-  const headOf = c => head ? [...head.cells].find(h => refOver(c, h)) : null;
+  // a column's heading for a cell: by its place in the row where heading and rows have the same cells (a column scrolled under the
+  // fixed names stays its own), else by where it stands; controls and fillers are no column
+  const usable = h => h && refLabel(h) && !h.classList.contains('snap-pad') && !h.classList.contains('cf-ph') && !h.querySelector('button, select, input');
+  const headOf = c => { if (!head) return null; const h = head.cells.length === c.parentElement.cells.length ? head.cells[c.cellIndex] : [...head.cells].find(x => refOver(c, x)); return usable(h) ? h : null; };
+  const colName = (h, v) => { const k = (v || h).classList, tag = k.contains('plan') ? t('plan') : h.title === t('ist_plan') ? t('ist_plan') : k.contains('part') ? t('ref_laufend') : '';
+    return refLabel(h) + (tag ? ` (${tag})` : ''); };          // a plan value, a sum with plan in it, the running month: said
   const nameOf = row => { const r = names.rows[row.rowIndex]; const c = r && [...r.cells].find(x => refLabel(x)); return c && c.cellIndex <= 1 ? c : null; };
-  const pairsOf = (vrow, name) => head ? [...head.cells].map(h => { const v = [...vrow.cells].find(c => refOver(c, h)); return v && v !== name && refLabel(h) ? [refLabel(h), refVal(v)] : null; }).filter(Boolean) : [];
+  const pairsOf = (vrow, name) => head ? [...vrow.cells].map(v => { if (v === name || v.classList.contains('cf-ph') || v.classList.contains('snap-pad')) return null; const h = headOf(v); return h ? [colName(h, v), refVal(v), refLabel(h)] : null; }).filter(p => p && p[1]) : [];          // (the plain heading: for the clipboard)
+  const newest = (ps, n) => ps.length > n ? {ps: ps.slice(-n), cut: [t('ref_gekuerzt', n, ps.length)]} : {ps, cut: []};          // the latest columns (on the right), said when some are left out
+  const markOf = c => { const m = c && [...c.querySelectorAll('.tag, .pill')].filter(x => x.getClientRects().length).map(x => refOne(x.textContent)).filter(Boolean); return m && m.length ? [`${t('ref_kennzeichen')}: ${m.join(' · ')}`] : []; };
   if (tr === head || cell.closest('thead')) {          // a heading: the whole column
     const col = refLabel(cell); if (!col) return null;
-    const rows = [...vals.tBodies].flatMap(b => [...b.rows]).filter(refSeen).map(r => { const n = nameOf(r), v = [...r.cells].find(c => refOver(c, cell)); return n && v && v !== n ? [refLabel(n), refVal(v)] : null; }).filter(Boolean);
-    return Object.assign(refMake(t('ki_ref_spalte', col), [`${t('ref_spalte')}: ${col}`, `${t('ref_werte')}:`].concat(rows.slice(0, 40).map(([n, v]) => `${n}: ${v}`)), where, refGo({col})),
+    const at = head && head.cells.length ? cell.cellIndex : -1;
+    const rows = [...vals.tBodies].flatMap(b => [...b.rows]).filter(refSeen).map(r => { const n = nameOf(r), v = at >= 0 && r.cells.length === head.cells.length ? r.cells[at] : [...r.cells].find(c => refOver(c, cell)); return n && v && v !== n ? [refLabel(n), refVal(v)] : null; }).filter(Boolean);
+    const cn = usable(cell) ? colName(cell, null) : col;
+    return Object.assign(refMake(t('ki_ref_spalte', col), [`${t('ref_spalte')}: ${cn}`, `${t('ref_werte')}:`].concat(rows.slice(0, 40).map(([n, v]) => `${n}: ${v}`)), where, refGo({col})),
       {copy: [['', col]].concat(rows).map(([n, v]) => n + '\t' + refNum(v)).join('\n'), copyKey: 'spalte_kopieren'});
   }
   const name = nameOf(tr); if (!name) return null;
@@ -7946,12 +8029,13 @@ function refCell(cell) {
   const pathLine = path.length ? [`${t('ref_pfad')}: ${path.concat([row]).join(' › ')}`] : [];
   const ntr = names.rows[tr.rowIndex] || tr, depth = ntr.dataset.depth != null && (S.tab === 'cashflow' || S.tab === 'planning') ? {detail: Math.min(3, Math.max(cfLevel(), +ntr.dataset.depth))} : {};          // opened again deep enough to show the row
   if (tbl === names && names !== vals || cell.cellIndex <= name.cellIndex) {          // the name: the whole row
-    return Object.assign(refMake(t('ki_ref_zeile', row), [`${t('ref_zeile')}: ${row}`].concat(pathLine, [`${t('ref_werte')}:`], pairs.slice(0, 30).map(([h, v]) => `${h}: ${v}`)), where, refGo(Object.assign({mark: {text: row, column: ''}}, depth))),
-      {copy: ['\t' + pairs.map(p => p[0]).join('\t'), row + '\t' + pairs.map(p => refNum(p[1])).join('\t')].join('\n'), copyKey: 'zeile_kopieren'});
+    const nw = newest(pairs, 30);
+    return Object.assign(refMake(t('ki_ref_zeile', row), [`${t('ref_zeile')}: ${row}`].concat(pathLine, markOf(name), nw.cut, [`${t('ref_werte')}:`], nw.ps.map(([h, v]) => `${h}: ${v}`)), where, refGo(Object.assign({mark: {text: row, column: ''}}, depth))),
+      {copy: ['\t' + pairs.map(p => p[2]).join('\t'), row + '\t' + pairs.map(p => refNum(p[1])).join('\t')].join('\n'), copyKey: 'zeile_kopieren'});
   }
-  const h = headOf(cell), col = refLabel(h), val = refVal(cell);          // one figure: its row and column (a narrow table: the whole row too, as a transaction)
-  return Object.assign(refMake(row + (col ? ' · ' + col : '') + (val ? ': ' + val : ''), [`${t('ref_zeile')}: ${row}`].concat(pathLine, col ? [`${t('ref_spalte')}: ${col}`] : [], [`${t('ref_wert')}: ${val || '–'}`],
-    pairs.length && pairs.length <= 10 ? [`${t('ref_ganze_zeile')}: ` + pairs.map(([hh, v]) => `${hh}: ${v}`).join(' · ')] : []), where, refGo(Object.assign({mark: {text: row, column: col}}, depth))),
+  const h = headOf(cell), col = h ? colName(h, cell) : '', val = refVal(cell);          // one figure: its row and column (a narrow table: the whole row too, as a transaction)
+  return Object.assign(refMake(row + (col ? ' · ' + col : '') + (val ? ': ' + val : ''), [`${t('ref_zeile')}: ${row}`].concat(pathLine, markOf(name), col ? [`${t('ref_spalte')}: ${col}`] : [], [`${t('ref_wert')}: ${val || '–'}`],
+    pairs.length && pairs.length <= 10 ? [`${t('ref_ganze_zeile')}: ` + pairs.map(([hh, v]) => `${hh}: ${v}`).join(' · ')] : []), where, refGo(Object.assign({mark: {text: row, column: h ? refLabel(h) : ''}}, depth))),
     val ? {copy: refNum(val), copyKey: 'wert_kopieren'} : {});
 }
 function refChat(box) {          // a chart in the chat: its figures, and the page it belongs to
@@ -7960,10 +8044,11 @@ function refChat(box) {          // a chart in the chat: its figures, and the pa
     const k = (c.x || []).length - a.length + i; return `${asChX(c, k)} ${(s.values || [])[k] == null ? '–' : FN((s.values || [])[k])}`; }).join('; ')));
   const L = c.link || {}, go = /^#[\w/-]+$/.test(L.route || '') ? {route: L.route, area: L.area || '', view: c.step === 'year' ? 'years' : c.step === 'month' ? 'months' : '', detail: L.detail} : null;
   const pt = refPoint(box); if (pt) lines.splice(2, 0, `${t('ref_punkt')}: ${pt.text}`);
-  return {label: refCut(t('ki_ref_grafik', c.title) + (pt ? ' · ' + pt.head : ''), 64), page: t('ki_assistent'), text: lines.filter(Boolean).join('\n').slice(0, 1500), go};
+  return {label: refCut(t('ki_ref_grafik', c.title) + (pt ? ' · ' + pt.head : ''), 64), page: t('ki_assistent'), text: lines.filter(Boolean).join('\n').slice(0, 1500), go, ex: ['assistant.chart']};
 }
 function refPoint(chart) {          // the point of a chart under the pointer: what its hover box shows (a month, a bar, a slice)
-  const tip = [...$$('.bch-tip, .as-ch-tip', chart), $('#cf-tip')].find(x => x && !x.classList.contains('hidden') && refSeen(x) && refOne(x.textContent));
+  const own = CF.tipFor && chart.contains(CF.tipFor);          // the cash flow's hover box is one for the page: only when it shows something of this chart
+  const tip = [...$$('.bch-tip, .as-ch-tip', chart), own ? $('#cf-tip') : null].find(x => x && !x.classList.contains('hidden') && refSeen(x) && refOne(x.textContent));
   if (!tip) return null;
   return {head: refLabel($('.bch-tip-h, .cf-tip-h, b', tip)) || refCut(refOne(tip.textContent), 30), text: refTxt(tip, 600)};
 }
@@ -7973,26 +8058,63 @@ const refIsNum = s => !!s && s.length <= 24 && /\d/.test(s) && !/\p{L}{3,}/u.tes
 function refTip(el) {          // what the hover box of a row of a chart says: its name (first line) and its figures
   const h = el && el.dataset.cftip != null ? CF.tips[+el.dataset.cftip] : null; if (!h) return null;
   const d = document.createElement('div'); d.innerHTML = h;
-  return {head: refLabel($('.cf-tip-h', d)), text: refTxt(d, 600)};
+  return {head: refLabel($('.cf-tip-h', d)), text: refTipLines(d, []).join(' · ').slice(0, 600)};
+}
+// a hover box (not on the page, so without layout) as lines -- each name with its figure ("Betrag: 17.400 €"), a row's change in
+// brackets after it -- instead of its texts run together
+const refWords = el => refOne([...el.childNodes].map(n => n.textContent).join(' '));          // a figure and what stands beside it (1.450 € ±0 %), not run together
+function refTipLines(el, out) {
+  const inline = x => /^(SPAN|B|EM|I|SMALL)$/.test(x.tagName);
+  for (const c of el.children) {
+    const kids = [...c.children];
+    if (c.classList.contains('cf-tip-kv')) { for (let i = 0; i + 1 < kids.length; i += 2) out.push(`${refOne(kids[i].textContent)}: ${refWords(kids[i + 1])}`); continue; }
+    if (kids.length && !kids.every(inline)) { refTipLines(c, out); continue; }
+    const name = kids.find(x => x.tagName === 'SPAN'), val = kids.find(x => x.tagName === 'B'), more = kids.find(x => x.tagName === 'EM');
+    if (name && val) { out.push(`${refOne(name.textContent)}: ${refWords(val)}` + (more && refOne(more.textContent) ? ` (${refOne(more.textContent)})` : '')); continue; }
+    const s = refOne(c.textContent); if (s) out.push(s);
+  }
+  return out;
 }
 const refLeaves = box => [...box.querySelectorAll('*')].filter(el => el.children.length === 0 || [...el.children].every(c => /^(i|small|tspan)$/i.test(c.tagName)));
+// a label of an axis or a grid line: a scale, no figure of the chart
+const REF_AXIS = '[class*="tick"], [class*="axis"], [class*="grid-l"], .bch-y, .bch-x, .ov-cap';
+const refAxis = el => !!(el && el.matches && (el.matches(REF_AXIS) || (/^tspan$/i.test(el.tagName) && el.parentElement && el.parentElement.matches(REF_AXIS))));          // the label itself (not a box around the chart)
 function refFig(tg, card) {
-  const hit = tg.closest('[data-cftip]'), tip = hit && card.contains(hit) ? refTip(hit) : null;
-  let val = [tg, tg.parentElement].find(el => el && el !== card && card.contains(el) && refIsNum(refOne(el.textContent))) || null;
+  let hit = tg.closest('[data-cftip]'), tip = hit && card.contains(hit) ? refTip(hit) : null;
+  let val = [tg, tg.parentElement].find(el => el && el !== card && card.contains(el) && !refAxis(el) && !el.closest('button, .seg, select, label.chk') && refIsNum(refOne(el.textContent))) || null;          // a control (6 M, 1 J): no figure
+  if (!tip && val && val.classList.contains('cf-val-l')) {          // the label of a bar cut at the scale: its month is the hit area at the same place
+    const b = val.getBoundingClientRect(), mx = (b.left + b.right) / 2, svg = val.closest('svg');
+    hit = svg ? [...svg.querySelectorAll('[data-cftip]')].find(x => { const r = x.getBoundingClientRect(); return mx >= r.left && mx <= r.right; }) || null : null;
+    tip = hit ? refTip(hit) : null;
+  }
   const svg = hit && hit.closest('svg');
   if (!val && hit && svg) {          // a row of a drawn chart (its hit area over the texts): the figure in the same band
     const r = hit.getBoundingClientRect();
     val = [...svg.querySelectorAll('text')].find(x => { const b = x.getBoundingClientRect(), my = (b.top + b.bottom) / 2, mx = (b.left + b.right) / 2;
-      return my >= r.top && my <= r.bottom && mx >= r.left && mx <= r.right && refIsNum(refOne(x.textContent)); }) || null;          // inside its area (not an axis)
+      return my >= r.top && my <= r.bottom && mx >= r.left && mx <= r.right && !refAxis(x) && refIsNum(refOne(x.textContent)); }) || null;          // inside its area (not an axis)
   }
   if (!tip && !val) return null;
-  const value = val ? refOne(val.textContent) : '', title = refChartTitle(card) || refTitle(card);
+  const value = val ? refOne(val.textContent) : '', title = refChartTitle(card) || refTitle(card), more = [];
   let label = tip && tip.head;
+  if (val && val.classList.contains('cf-heat-v')) {          // the average (or the change) at the end of a row of the monthly strips: that row's, named by its column
+    let n = val.previousElementSibling; while (n && !n.classList.contains('cf-heat-n')) n = n.previousElementSibling;
+    const col = $('.cf-heat-avg', card); label = [n ? refLabel(n) : '', col ? col.title : ''].filter(Boolean).join(' · ');
+  }
+  if (val && val.classList.contains('cf-val-l')) more.push(t('ref_balken_gesamt'));          // the label of a bar cut at the scale
+  const head = $('.ov-head, .lc-head, .bch-head', card), hc = head && head.cloneNode(true);
+  if (hc) hc.querySelectorAll('button, .seg, select, label.chk, .hq').forEach(x => x.remove());          // its figures and period, not its controls
+  const headTxt = hc ? refCut(refOne(hc.textContent), 300) : '';
+  if (headTxt && headTxt !== title) more.push(`${t('ref_karte')}: ${headTxt}`);          // the card's own figures and period (62.533 € Okt 26 · 12 Monate +15.860 €)
   if (!label && val) {          // the text beside it: in its row, else (a figure in a card's head) the card's name
     const row = val.closest('[data-cftip]') || (val.closest('.ov-head, .lc-head, .bch-head, .lc-row2') ? null : val.parentElement);
     label = (row && row !== card && refLeaves(row).map(x => refLabel(x)).find(x => x && !refIsNum(x))) || title;
   }
-  return Object.assign(refMake(label && value ? `${label}: ${value}` : title && label && label !== title ? `${title} · ${label}` : label || value, [`${t('ref_zeile')}: ${label || '–'}`].concat(value ? [`${t('ref_wert')}: ${value}`] : [], tip ? [`${t('ref_punkt')}: ${tip.text}`] : []),
+  // which of the hover box's figures it is (Betrag, Anteil, Veränderung ...): named beside it, so a share or a change is not taken for an amount
+  // -- each part of a label on its own (17.400 ±0 %: the amount, then its change)
+  const bare = x => String(x || '').replace(/[€\s\u00a0]/g, ''), tipKv = tip ? tip.text.split(' · ').map(l => { const i = l.indexOf(': '); return i > 0 ? [l.slice(0, i), bare(l.slice(i + 2).split(' (')[0])] : null; }).filter(Boolean) : [];
+  const parts = val ? [...val.childNodes].map(c => refOne(c.textContent)).filter(Boolean) : [];
+  const named = (parts.length > 1 ? parts : [value]).map(v => { const k = tipKv.find(([, x]) => x === bare(v)); return k ? `${v} (${k[0]})` : v; }).join(' ');
+  return Object.assign(refMake(label && value ? `${label}: ${value}` : title && label && label !== title ? `${title} · ${label}` : label || value, [`${t('ref_zeile')}: ${label || '–'}`].concat(value ? [`${t('ref_wert')}: ${named}`] : [], tip ? [`${t('ref_punkt')}: ${tip.text}`] : [], more),
     title, refGo({mark: title && !card.closest('#drawer') ? {text: title, column: ''} : null, fig: {tip: tip ? tip.head : '', label: label || '', value}})), value ? {copy: refNum(value), copyKey: 'wert_kopieren'} : {});
 }
 function refMarkFig(fig) {          // the figure itself, in its marked card (or anywhere on the page): marked, with its hover box
@@ -8010,7 +8132,29 @@ function refMarkFig(fig) {          // the figure itself, in its marked card (or
   AS.markT = setTimeout(() => $$('.as-mark, .as-mark-svg').forEach(x => x.classList.remove('as-mark', 'as-mark-svg')), 12000);
   return true;
 }
+// which places a right click is in -- the keys of Kontor's description of its pages (docs/ui, data-ex): the innermost first, the page
+// last; the assistant is given what they show (what each figure there is)
+function refPlaces(el) {
+  const out = [];
+  for (let x = el; x && x !== document.body; x = x.parentElement) { const k = x.dataset && x.dataset.ex; if (k && !out.includes(k)) out.push(k); }
+  if (S.tab && !out.includes(S.tab)) out.push(S.tab);
+  return out.slice(0, 8);
+}
 function refAt(e) {          // what the right click is on, as a reference (also without the assistant: for copying)
+  const r = refFind(e);
+  if (!r) return r;
+  if (!r.ex) r.ex = refPlaces(e.target);
+  const per = refPeriod(e.target); if (per) r.text = (r.text + '\n' + per).slice(0, 1500);
+  return r;
+}
+// the period a chart below the cash flow table shows (chosen above them) and the months it is compared with -- not on the screen
+// beside each figure, so said with it
+function refPeriod(el) {
+  const D = S.tab === 'cashflow' && el.closest('#main .cf-card') ? B() : null; if (!D) return '';
+  const [cur, prev] = cfMonths(D, S.cfZeit); if (!cur || !cur.length) return '';
+  return `${t('ref_zeitraum')}: ${cfSpanLabel(cur)} (${spanText(cur.length)})` + (prev && prev.length ? ` · ${t('ref_vergleich')}: ${cfSpanLabel(prev)}` : '');
+}
+function refFind(e) {
   const tg = e.target, chat = tg.closest('#assist .as-chart');
   if (chat) return refChat(chat);
   const main = $('#main'), dr = $('#drawer');
@@ -8026,19 +8170,27 @@ function refAt(e) {          // what the right click is on, as a reference (also
   }
   const cell = tg.closest('td, th');
   if (cell && cell.closest('table')) { const r = refCell(cell); if (r) return r; }
-  const chart = tg.closest(REF_CHARTS);
+  const whole = tg.closest(REF_CHARTS), part = whole && tg.closest('.cf-duo-p, .cf-duo-h'), chart = part && whole.contains(part) ? part : whole;          // a card of two charts: the one clicked, by its own title
   if (chart) {          // a chart: the figure or row under the pointer; else the point (what its hover box shows) and what the chart shows
     const f = !chart.closest('#assist') && refFig(tg, chart); if (f) return f;
     const ti = refChartTitle(chart) || refTitle(chart), pt = refPoint(chart);
     return refMake(t('ki_ref_grafik', ti || t('ref_grafik')) + (pt ? ' · ' + pt.head : ''), [`${t('ref_grafik')}: ${ti}`].concat(pt ? [`${t('ref_punkt')}: ${pt.text}`] : [], [`${t('ref_inhalt')}: ${refTxt(chart, 1000)}`]),
       '', refGo(ti && !chart.closest('#drawer') ? {mark: {text: ti, column: ''}} : {}));
   }
+  const mf = tg.closest('#drawer #h-grid label'), mi = mf && $('input', mf);
+  if (mi) {          // one month's balance in an account's history: that month and its value -- typed in (your own) or Kontor's (grey)
+    const acct = refLabel($('#drawer > h2')), mon = refOne(mf.firstChild ? mf.firstChild.textContent : ''), v = mi.value.trim() || mi.placeholder || '';
+    const src = mi.value.trim() ? t('ref_eigener_stand') : v ? (mf.title || t('ref_von_kontor')) : t('unbekannt');
+    return refMake(`${acct} · ${mon}: ${v || t('unbekannt')}`, [`${t('ref_zeile')}: ${acct}`, `${t('ref_spalte')}: ${mon}`, `${t('ref_wert')}: ${v || t('unbekannt')} (${src})`], acct, refGo({}));
+  }
   const box = tg.closest('.k, .kpi, li, .item, .ov-todo-i, .lc-val, .card, .co-card, #drawer');
   if (!box) return null;
   const inCard = tg.closest('.card, .co-card, #drawer'), f = inCard && refFig(tg, inCard); if (f) return f;          // a figure in a card
   const where = refTitle(box), what = box.matches('.card, .co-card, #drawer') ? where : refLabel(box);
   if (!what) return null;
-  return refMake(what, [refTxt(box, 1200)], where && where !== what ? where : '', refGo(where && !box.closest('#drawer') ? {mark: {text: where, column: ''}} : {}));
+  const fields = [...box.querySelectorAll('#h-grid label')].map(l => { const i = $('input', l); if (!i) return ''; const v = i.value.trim() || i.placeholder || '';          // a month's balance: typed in, or what Kontor has (grey)
+    return v ? `${refOne(l.firstChild ? l.firstChild.textContent : '')}: ${v}${i.value.trim() ? '' : ' (' + t('ref_von_kontor') + ')'}` : ''; }).filter(Boolean);
+  return refMake(what, [refTxt(box, fields.length ? 400 : 1200)].concat(fields.length ? [`${t('ref_werte')}:`].concat(fields.slice(-36)) : []), where && where !== what ? where : '', refGo(where && !box.closest('#drawer') ? {mark: {text: where, column: ''}} : {}));
 }
 function asAskAbout(ref) {
   AS.refs = (AS.refs || []).filter(r => r.label !== ref.label || r.page !== ref.page).concat([ref]).slice(-REF_MAX);
@@ -8143,7 +8295,7 @@ function asHistDraw() {
   const item = c => `<div class="as-hi${c.id === AS.conv ? ' on' : ''}"><button type="button" class="as-hi-open" data-id="${esc(c.id)}"><span class="as-hi-t">${esc(c.title || '…')}</span>`
     + `<span class="as-hi-m">${esc(when(c.updated))} · ${t(c.questions === 1 ? 'ki_verlauf_frage1' : 'ki_verlauf_fragen', c.questions)}</span></button>`
     + `<button type="button" class="icon as-hi-del" data-id="${esc(c.id)}" title="${esc(t('ki_verlauf_loeschen'))}" aria-label="${esc(t('ki_verlauf_loeschen'))}">${ICON.trash}</button></div>`;
-  return `<div class="as-hist"><div class="as-hist-h"><b>${t('ki_verlaeufe')}</b>${L.length ? `<button type="button" class="ghost small as-hi-all">${t('ki_verlaeufe_alle_loeschen')}</button>` : ''}</div>`
+  return `<div class="as-hist" data-ex="assistant.history"><div class="as-hist-h"><b>${t('ki_verlaeufe')}</b>${L.length ? `<button type="button" class="ghost small as-hi-all">${t('ki_verlaeufe_alle_loeschen')}</button>` : ''}</div>`
     + (AS.save ? '' : `<div class="muted small as-hist-off">${t('ki_verlaeufe_aus')}</div>`)
     + (L.length ? L.slice(0, AS.histN || 100).map(item).join('') : `<div class="as-empty muted small">${t('ki_verlaeufe_leer')}</div>`)
     + (L.length > (AS.histN || 100) ? `<button type="button" class="ghost small as-hi-more">${esc(t('ki_verlaeufe_mehr', asN(L.length - (AS.histN || 100))))}</button>` : '') + `</div>`;
@@ -8251,7 +8403,7 @@ function vAssistent() {
 // Einstellungen -> Assistent (only at the Mac): load and update llama.cpp and models, choose, start, stop, what it may do
 async function vEinstellungenAssistent() {
   const a = await asLoad() || {}, st = a.settings || {}, r = st.rights || {};
-  if (!a.local) return `<div class="note">${t('ki_nur_am_mac')}</div>`;
+  if (!a.local) return `<div class="note" data-ex="settings.assistant">${t('ki_nur_am_mac')}</div>`;
   const rt = a.runtime || {}, sv = a.server || {}, pf = a.platform || {}, load = a.load && a.load.state === 'running' ? a.load : null, models = a.models || [];
   const busy = load || a.updating ? 'disabled' : '';
   const ears = new Set((a.speech || []).map(m => m.id)), finds = new Set((a.embed || []).map(m => m.id)), part = l => l ? (l.kind === 'model' && ears.has(l.id) ? 'speech' : l.kind === 'model' && finds.has(l.id) ? 'embed' : l.kind) : '';
@@ -8273,19 +8425,19 @@ async function vEinstellungenAssistent() {
       ? `<span class="muted small">${t('ki_tavily_frei', a.web.tavily_used || 0, a.web.tavily_limit || 200, a.web.tavily_days || 31)}</span>` : ''}`}</div>
     <span class="as-wk-l">${t('ki_vertraut')}${hq('ki_vertraut')}</span><div class="as-trust">${((a.web || {}).sources || []).map(x => `<label class="chk"><input type="checkbox" class="as-trust-src" value="${esc(x.id)}" ${(wt.sources || []).includes(x.id) ? 'checked' : ''}> <span>${esc(x.label)}</span></label>`).join('')}</div>
     <label for="as-websites">${t('ki_websites')}${hq('ki_websites')}</label><input type="text" id="as-websites" value="${esc((wt.hosts || []).join(', '))}" placeholder="${esc(t('ki_websites_ph'))}" autocomplete="off" spellcheck="false" autocapitalize="off" inputmode="url"></div>` : '';
-  return `<div class="row tight">${swCtl('as-enabled', st.enabled, t('ki_verwenden'))}${hq('assistent')}</div>
-  <h2>${t('ki_programm')}${hq('ki_programm')}<span class="x">llama.cpp</span></h2>
+  return `<div data-ex="settings.assistant"><div class="row tight">${swCtl('as-enabled', st.enabled, t('ki_verwenden'))}${hq('assistent')}</div>
+  <div data-ex="settings.assistant.program"><h2>${t('ki_programm')}${hq('ki_programm')}<span class="x">llama.cpp</span></h2>
   <div class="as-list"><div class="as-item"><span><b>llama.cpp</b><br><span class="muted small">${rt.installed ? esc(rt.tag || rt.version || '') + (rt.date ? ' · ' + esc(FDT(rt.date)) : '') : t('ki_nicht_installiert')}</span></span>
     <span class="as-act">${rt.newer ? `<span class="pill info">${t('ki_neuer', esc(rt.latest))}</span>` : ''}
       ${!rt.installed || rt.newer ? `<button class="small" id="as-rt-install" ${busy}>${t(rt.installed ? 'ki_aktualisieren' : 'ki_installieren')}</button>` : ''}
       ${rt.installed ? `<button class="small secondary" id="as-rt-remove" ${busy}>${t('ki_entfernen')}</button>` : ''}</span></div></div>
   ${prog('runtime')}${err('runtime')}
-  <h2>${t('ki_modelle')}${hq('ki_modelle')}</h2>
+  </div><div data-ex="settings.assistant.models"><h2>${t('ki_modelle')}${hq('ki_modelle')}</h2>
   <div class="as-list">${models.map(mrow).join('')}
     <div class="as-item"><span class="as-own"><b>${t('ki_eigenes_modell')}</b>${hq('ki_eigenes')}<input type="text" id="as-repo" placeholder="unsloth/Qwen3.6-35B-A3B-GGUF" autocomplete="off" spellcheck="false"></span>
       <span class="as-act"><button class="small secondary" id="as-files" title="${esc(t('ki_dateien_zeigen_tip'))}" disabled>${t('ki_dateien_zeigen')}</button></span></div><div id="as-filelist"></div></div>
   ${prog('model')}${err('model')}
-  <h2>${t('ki_diktat')}${hq('ki_diktat')}</h2>
+  </div><div data-ex="settings.assistant.dictation"><h2>${t('ki_diktat')}${hq('ki_diktat')}</h2>
   <div class="as-list">${(a.speech || []).map(m => `<div class="as-item${m.id === a.speech_in_use ? ' on' : ''}"><label class="chk"><input type="radio" name="as-speech" value="${esc(m.id)}" ${m.id === a.speech_in_use ? 'checked' : ''} ${m.installed ? '' : 'disabled'}>
       <span><b>${esc(m.name)}</b> <span class="muted">${t(`ki_note_${m.note}`)}</span><br><span class="muted small">${esc(m.installed ? m.file : m.repo)} · ${m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb)}</span></span></label>
     <span class="as-act">${m.newer ? `<span class="pill info">${t('ki_neuere_datei')}</span>` : m.installed ? `<span class="pill ok">${t('ki_geladen')}</span>` : ''}
@@ -8295,13 +8447,13 @@ async function vEinstellungenAssistent() {
     <div class="as-item"><span><b>${t('ki_mikrofilter')}</b>${hq('ki_mikrofilter')}</span><span class="as-act"><select id="as-speech-filter" aria-label="${esc(t('ki_mikrofilter'))}">${opt('1', t('ki_mikrofilter_an'), st.speech_filter === false ? '0' : '1')}${opt('0', t('ki_mikrofilter_aus'), st.speech_filter === false ? '0' : '1')}</select></span></div>
     <div id="as-mic-perm"></div>` : ''}</div>
   ${prog('speech')}${err('speech')}
-  <h2>${t('ki_bedeutung')}${hq('ki_bedeutung')}</h2>
+  </div><div data-ex="settings.assistant.meaning"><h2>${t('ki_bedeutung')}${hq('ki_bedeutung')}</h2>
   <div class="as-list">${(a.embed || []).map(m => `<div class="as-item${m.installed ? ' on' : ''}"><span><b>${esc(m.name)}</b> <span class="muted">${t(`ki_note_${m.note}`)}</span><br><span class="muted small">${esc(m.installed ? m.file : m.repo)} · ${m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb)}</span></span>
     <span class="as-act">${m.newer ? `<span class="pill info">${t('ki_neuere_datei')}</span>` : m.installed ? `<span class="pill ok">${t('ki_geladen')}</span>` : ''}
       ${!m.installed || m.newer ? `<button class="small secondary as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="" ${busy}>${t(m.installed ? 'ki_aktualisieren' : 'ki_laden')}</button>` : ''}
       ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`).join('')}</div>
   ${a.embed_state === 'error' && a.embed_error ? `<div class="banner err small">${esc(a.embed_error)}</div>` : ''}${prog('embed')}${err('embed')}
-  <h2>${t('ki_aktualisierung')}${hq('ki_auto_suchen')}</h2>
+  </div><div data-ex="settings.assistant.updates"><h2>${t('ki_aktualisierung')}${hq('ki_auto_suchen')}</h2>
   <div class="form">
     <label>${t('ki_auto_suchen')}</label><label class="chk"><select id="as-check-mode">${[['daily', t('taeglich')], ['weekly', t('woechentlich')], ['monthly', t('monatlich')], ['aus', t('nie')]].map(([v, l]) => opt(v, l, st.check_mode)).join('')}</select></label>
     <label>${t('ki_zuletzt_gesucht')}</label><div class="row tight"><span class="muted small">${a.checked ? esc(FDT(a.checked)) : t('ki_noch_nie')}</span><button class="secondary small" id="as-check" ${busy}>${t('ki_nach_neuem_suchen')}</button>${((a.newer || {}).items || []).length ? `<button class="small" id="as-update-all" ${busy}>${t('ki_alles_aktualisieren')}</button>` : ''}</div>
@@ -8309,7 +8461,7 @@ async function vEinstellungenAssistent() {
   </div>
   <h2>${t('ki_ablage')}${hq('ki_ablage')}</h2>
   <div class="row tight as-folder">${a.folder ? `<span class="mono small">${esc(a.folder)}</span><button class="small secondary" id="as-reveal" ${a.folder_exists ? '' : 'disabled'}>${t('im_finder_zeigen')}</button>` : ''}<span class="muted small">${t('ki_platz', asGB(a.disk_free || 0), asRAM(pf.ram || 0))}</span></div>
-  <h2>${t('ki_betrieb')}</h2>
+  </div><div data-ex="settings.assistant.operation"><h2>${t('ki_betrieb')}</h2>
   <div class="form">
     <label>${t('ki_zustand')}</label><div class="row tight as-run-row"><span class="pill ${state === 'ready' ? 'ok' : state === 'error' ? 'err' : state === 'starting' ? 'info' : 'neutral'}" id="as-state">${t(`ki_z_${state}`)}</span>
       ${state === 'ready' ? `<span class="tag${sv.sealed === 'strict' ? '' : ' warn'}" title="${esc(t(sv.sealed === 'strict' ? 'ki_abgeschirmt_tip' : sv.sealed ? 'ki_abgeschirmt_einfach_tip' : 'ki_nicht_abgeschirmt_tip'))}">${t(sv.sealed === 'strict' ? 'ki_abgeschirmt' : sv.sealed ? 'ki_abgeschirmt_einfach' : 'ki_nicht_abgeschirmt')}</span>` : ''}<span class="muted small" id="as-use">${esc(use)}</span>
@@ -8323,18 +8475,18 @@ async function vEinstellungenAssistent() {
       <button class="small secondary" id="as-chats-del" ${a.chats ? '' : 'disabled'}>${t('ki_verlaeufe_alle_loeschen')}</button></div>
     ${pf.can_seal ? `<label>${t('ki_abschirmung')}${hq('ki_abschirmung')}</label><label class="chk"><select id="as-sandbox">${['strict', 'basic', 'off'].map(k => opt(k, t(`ki_sb_${k}`), st.sandbox)).join('')}</select></label>` : ''}
   </div>
-  <h2>${t('ki_gedaechtnis')}${hq('ki_gedaechtnis')}</h2>
+  </div><div data-ex="settings.assistant.memory"><h2>${t('ki_gedaechtnis')}${hq('ki_gedaechtnis')}</h2>
   <div class="row tight">${swCtl('as-mem', st.memory !== false, t('ki_g_verwenden'))}<span class="muted small" id="as-mem-n"></span></div>
   <div class="as-mem"><div class="as-mem-bar"><input type="text" id="as-mem-new" maxlength="600" placeholder="${esc(t('ki_g_neu'))}" aria-label="${esc(t('ki_g_merken'))}" autocomplete="off" value="${esc(AS.memNew || '')}"><button class="small" id="as-mem-add" ${AS.memNew ? '' : 'disabled'}>${t('ki_g_merken')}</button></div>
     <div class="as-mem-bar"><input type="search" id="as-mem-q" placeholder="${esc(t('ki_g_suchen'))}" aria-label="${esc(t('ki_g_suchen'))}" value="${esc(AS.memQ || '')}"></div>
     <div id="as-mem-warn"></div>
     <div class="as-list" id="as-mem-list"><div class="as-item muted small"><span>${t('ki_laedt_kurz')}</span></div></div>
     <div class="row tight"><button class="small secondary" id="as-mem-all" disabled>${t('ki_g_alles_vergessen')}</button></div></div>
-  <h2>${t('ki_rechte')}</h2>
+  </div><div data-ex="settings.assistant.rights"><h2>${t('ki_rechte')}</h2>
   <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize', 'book', 'rules', 'receipts']], ['ki_rg_zugang', ['remote']], ['ki_rg_internet', ['internet']]].map(([g, ks]) =>
     `<div class="as-rg"><div class="as-rg-h">${t(g)}${g === 'ki_rg_aendern' ? hq('ki_eintragen') : g === 'ki_rg_internet' ? hq('ki_internet') : ''}</div>${ks.map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${(k === 'read' ? r.figures && r.transactions && r.page : r[k]) ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}</span></label>${k === 'internet' ? webKey : ''}`).join('')}</div>`).join('')}</div>
   <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>
-  <details class="as-log" id="as-log"><summary>${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details>`;
+  </div><details class="as-log" id="as-log" data-ex="settings.assistant.changes"><summary>${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details></div>`;
 }
 // Einstellungen -> KI-Assistent -> Gedächtnis: what it was told to remember -- look, add, change, pin, forget (only at the Mac)
 async function asMemLoad(body, more) {
@@ -8535,7 +8687,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => { const id = e.target.id; if (id === 'planan') { S.plan = e.target.checked; route(); } else if (id === 'realan') { S.real = e.target.checked; route(); } else if (id === 'alle-zeilen') { if (S.tab === 'balance') S.alleB = e.target.checked; else S.all = e.target.checked; route(); } });
 $('#menu-btn').addEventListener('click', () => $('.side').classList.toggle('open'));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && (REC.on || REC.starting)) { e.stopPropagation(); asMicStop(false); } }, true);          // a recording first: thrown away
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#drawer').classList.contains('open') && !(drawerDirty() && !confirm(t('ungespeicherte_aenderungen_verwerfen')))) closeDrawer(); });
 // Klick neben das Seitenfenster schliesst es (bei ungespeicherten Eingaben erst nach Rueckfrage)
 document.addEventListener('pointerdown', e => {
   const dr = $('#drawer'); if (!dr.classList.contains('open') || dr.contains(e.target) || e.target.closest('#toast, .dlg-back')) return;

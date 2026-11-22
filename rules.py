@@ -394,7 +394,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
         return res
     modell = zins.get("model", "yearly_base")
     if modell not in ("yearly_base", "remaining_debt_monthly"):
-        res.warnings.append("%s: unbekanntes Zinsmodell '%s'." % (rule, modell))
+        res.warnings.append(tr("s_zinsmodell_unbekannt") % (rule, modell))
         return res
     buchungstag = zins.get("booking_day", "ultimo")
     overrides = {str(k): float(v) for k, v in (zins.get("base_override") or {}).items()}

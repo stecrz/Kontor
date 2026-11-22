@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotPermitted, MoneyMoneyNotRunning
-from model import UUID_RE, Account, Ledger, Tx, accounts_from_export, add_months, fmt_eur, marks_in, month_key, tx_from_export, norm_cat
+from model import UUID_RE, Account, Ledger, Tx, accounts_from_export, add_months, fmt_eur, has_mark, marks_in, month_key, tx_from_export, norm_cat
 import mm_categories
 import realestate
 import categorize
@@ -778,6 +778,15 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         except ValueError:
             add("error", tr("s_darlehen_s_ab_datum_fehlt") % n)
         z = l.get("interest") if isinstance(l.get("interest"), dict) else {}
+        rates = [r for r in z.get("rate_list") or [] if isinstance(r, dict)]
+        for r in rates:                                         # a day not read would count from 1900: another rate booked from the start
+            d = str(r.get("from_date") or "")
+            try:
+                ok = (date.fromisoformat(d) and True) if d else len(rates) == 1
+            except ValueError:
+                ok = False
+            if not ok:
+                add("error", tr("s_darlehen_zinssatz_datum") % (n, ("%s: %s" % (d, r.get("percent"))).strip(": ")))
         if z.get("model", "yearly_base") == "yearly_base":     # one rate for the year: the one on 1 January
             days = sorted(str(r.get("from_date") or "") for r in z.get("rate_list") or [] if isinstance(r, dict))
             first = str(l.get("from_date") or "")[:4]
@@ -1078,6 +1087,8 @@ def compact_transactions(ledger: Ledger, bereiche: List[dict], store: Optional[S
                "date": t.booking_date.isoformat(), "amount": t.amount, "name": t.name[:80], "purpose": t.purpose[:140],
                "category": path, "source": q, "booked_count": t.booked, "checkmark": t.checkmark,
                "needs": categorize.needs_category(t, banks)}
+        if t.id > 0 and not (t.counter_iban or t.booking_text) and has_mark(t.purpose) and ledger.writable(t.account_uuid):
+            row["kontor"] = True                      # a booking of Kontor's rules: its mark, in an account Kontor books into (never a bank's payment)
         if t.id in skip:
             row["transfer"] = True                    # between your accounts: counts as a transfer, no category needed
         else:
@@ -1221,7 +1232,8 @@ def immo_soll_ist(ledger: Ledger, config: dict, im: dict, res: dict, roles: Dict
             rest += ledger.balance_at(u, date(y, 12, 31)) if y < today.year else ledger.accounts[u].balance
         out.append({"year": y, "rent_target": soll["rent"], "rent_actual": round(miete, 2), "costs_target": soll["costs"] + soll["reserve"],
                     "costs_actual": round(kosten, 2), "interest_target": soll["interest"], "interest_actual": round(zins, 2),
-                    "remaining_debt_target": soll["remaining_debt"], "remaining_debt_actual": round(rest, 2) if loans else None})
+                    # the debt as the calculation counts it: what is owed, above zero (the loan accounts stand below zero)
+                    "remaining_debt_target": soll["remaining_debt"], "remaining_debt_actual": round(-rest, 2) if loans else None})
     return out
 
 

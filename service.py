@@ -332,6 +332,31 @@ _canon = lambda d: json.dumps(_plain_numbers(d), sort_keys=True, ensure_ascii=Fa
 RULES_LOCK = threading.Lock()        # a rule checked and saved (the assistant's card, the rules page) -- one at a time
 
 
+class _Stale(Exception):
+    """The same setting changed on the page and meanwhile elsewhere (another window, another device, the assistant)."""
+
+
+_GONE = object()
+
+
+def _merge3(seen: Any, mine: Any, now: Any) -> Any:
+    """What a page saves, against what it was drawn from (seen) and what stands now: what the page left as it was takes what
+    stands now (another window's change stays); what only the page changed is taken; both changed the same thing -- dicts key by
+    key, anything else whole -- refused (_Stale), unless both made it the same. _GONE: not there."""
+    if mine == now or mine == seen:
+        return now
+    if now == seen:
+        return mine
+    if isinstance(seen, dict) and isinstance(mine, dict) and isinstance(now, dict):
+        out = {}
+        for k in list(now) + [k for k in mine if k not in now]:
+            v = _merge3(seen.get(k, _GONE), mine.get(k, _GONE), now.get(k, _GONE))
+            if v is not _GONE:
+                out[k] = v
+        return out
+    raise _Stale()
+
+
 def _rules_now(cfg: dict) -> str:
     """The booking rules as they stand (what the rules page was drawn from, compared when it saves)."""
     return _canon([cfg.get(k) or [] for k in RULE_SECTIONS])
@@ -521,6 +546,7 @@ def balance_lookup(ledger: Ledger) -> Callable[[str, date, bool], Optional[float
 DAMAGED_KEY = "set_aside"                     # in state.json: files that did not read at a sign-in and were set aside (App.unlock)
 TID_RE = re.compile(r"[0-9a-f]{32}")          # the id of the sign-in page's Touch ID request (random, made by the page)
 TID_LOCK = threading.Lock()
+SETUP_LOCK = threading.Lock()                        # the first password is set once: a second click meanwhile waits for nothing
 
 
 class App:
@@ -2924,6 +2950,7 @@ def make_handler(app: App):
             if path == "/api/status":
                 st = app.status(self._loopback(), frisch=q.get("fresh") == "1")
                 st["storage"]["damaged"] = app.set_aside()       # files that did not read at a sign-in and were set aside (App.unlock)
+                st["read_only"] = not self._loopback() and app.remote_readonly()      # from another device, only looking: nothing it sends is taken
                 return self._json(200, st)
             if path == "/api/dataset":
                 return self._json(200, app.dataset())
@@ -3193,15 +3220,21 @@ def make_handler(app: App):
                 return self._json(403, {"error": tr("s_demo_nicht_moeglich")})
 
             if u.path == "/api/setup":
-                if app.password_set() or not self._loopback():
-                    return self._json(403, {"error": tr("s_einrichtung_nur_einmal_und_nur")})
                 err = auth.password_ok(str(body.get("password", "")))
-                if err:
-                    return self._json(400, {"error": err})
+                if self._loopback() and not err and not SETUP_LOCK.acquire(blocking=False):
+                    return self._json(409, {"error": tr("s_einrichtung_laeuft")})        # a second click while the first sets it up: that one answers
                 try:
-                    app.first_password(str(body["password"]))
-                except StoreError as e:
-                    return self._json(409, {"error": str(e)})
+                    if app.password_set() or not self._loopback():
+                        return self._json(403, {"error": tr("s_einrichtung_nur_einmal_und_nur")})
+                    if err:
+                        return self._json(400, {"error": err})
+                    try:
+                        app.first_password(str(body["password"]))
+                    except StoreError as e:
+                        return self._json(409, {"error": str(e)})
+                finally:
+                    if self._loopback() and not err:
+                        SETUP_LOCK.release()
                 if isinstance(body.get("touchid"), bool) or body.get("language") in i18n.LANGS:
                     cfg = copy.deepcopy(app.config)
                     if isinstance(body.get("touchid"), bool):
@@ -3453,6 +3486,15 @@ def make_handler(app: App):
                 cfg = body.get("config")
                 if not isinstance(cfg, dict):
                     return self._json(400, {"error": tr("s_config_fehlt")})
+                seen = body.get("seen")
+                if isinstance(seen, dict):                       # what the page was drawn from: another window's change stays
+                    own = set(RULE_SECTIONS) | {"not_book", "assistant"}       # taken care of on their own (below)
+                    try:
+                        merged = _merge3({k: v for k, v in seen.items() if k not in own}, {k: v for k, v in cfg.items() if k not in own},
+                                         {k: v for k, v in app.config.items() if k not in own})
+                    except _Stale:
+                        return self._json(409, {"error": tr("s_einst_inzwischen_geaendert"), "stale": True})
+                    cfg = dict(merged, **{k: cfg[k] for k in own if k in cfg})
                 if app.DEMO:                              # nothing beyond the demo is taken or even tried (no port asked for, no address checked):
                     cfg = {k: v for k, v in cfg.items() if k not in DEMO_FIXED}         # port, address, certificate, access ... as they are
                     cfg.update({k: copy.deepcopy(app.config[k]) for k in DEMO_FIXED if k in app.config})
@@ -4446,6 +4488,13 @@ def restore_backup(app: "App", backup: dict, with_receipts: bool = True) -> List
     written, and a write that fails puts back what was there. Returns the names of the parts taken over. The memory follows
     (the caller: notes are only added, each checked by the memory)."""
     parts = backup_parts(backup)
+    import core as _core
+    for k, v in _core.DEFAULT_CONFIG.items():            # the settings' parts as lists or tables as they should be: one that is not refuses the file
+        if k in ("ui", "receipts", "updates"):           # (taken as this Mac has them, whatever the file holds: an odd one is dropped)
+            continue
+        got = backup["config"].get(k) if isinstance(backup.get("config"), dict) else None
+        if got is not None and isinstance(v, (list, dict)) and not isinstance(got, type(v)):
+            raise ValueError(tr("s_sicherung_teil_form") % ("%s (%s)" % (tr("s_teil_einstellungen"), k)))
     old_cfg = copy.deepcopy(app.config)
     cfg = restored_config(app.config, backup["config"])
     merged_config(cfg)                                   # (as it is saved below: whatever it cannot shape stops here)

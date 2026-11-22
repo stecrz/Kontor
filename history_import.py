@@ -11,6 +11,8 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from xml.etree import ElementTree as ET
 
+from i18n import tr
+
 MONTHS = {"jan": 1, "januar": 1, "january": 1, "feb": 2, "februar": 2, "february": 2, "mär": 3, "mrz": 3, "maerz": 3, "märz": 3, "mar": 3, "march": 3,
           "apr": 4, "april": 4, "mai": 5, "may": 5, "jun": 6, "juni": 6, "june": 6, "jul": 7, "juli": 7, "july": 7, "aug": 8, "august": 8,
           "sep": 9, "sept": 9, "september": 9, "okt": 10, "oct": 10, "oktober": 10, "october": 10, "nov": 11, "november": 11, "dez": 12, "dec": 12, "dezember": 12, "december": 12}
@@ -184,7 +186,22 @@ def read_csv_rows(text: str) -> List[List[Any]]:
     sample = text[:3000]
     counts = {d: sample.count(d) for d in (";", "\t", ",")}
     delim = max(counts, key=lambda d: counts[d]) if any(counts.values()) else ";"
-    return [r for r in csv.reader(io.StringIO(text), delimiter=delim) if any(str(c).strip() for c in r)]
+    rows = [r for r in csv.reader(io.StringIO(text), delimiter=delim) if any(str(c).strip() for c in r)]
+    if delim == "," and _slipped(rows):  # a comma inside an amount (1,234.56) not in quotes: the columns slip -- read nothing rather than wrong figures
+        raise ValueError(tr("s_csv_spalten_ungleich"))
+    return rows
+
+
+def _slipped(rows: List[List[Any]]) -> bool:
+    """A row of figures wider than the head of its table: a comma in an amount split it. The head is the line before the first row
+    that starts with a date (Datum,Saldo), else the first line with dates in it (Konto,2025-01-31,...); lines above it (a title) and
+    rows as wide as it or narrower do not count."""
+    starts = [i for i, r in enumerate(rows) if r and parse_date_cell(str(r[0]).strip()) is not None]
+    if starts:
+        head = len(rows[starts[0] - 1]) if starts[0] > 0 else min(len(rows[i]) for i in starts)      # no head: the narrowest row of figures
+        return any(len(rows[i]) > head for i in starts)
+    dated = next((i for i, r in enumerate(rows) if sum(1 for c in r if parse_date_cell(str(c).strip()) is not None) >= 2), None)
+    return dated is not None and any(len(r) > len(rows[dated]) for r in rows[dated + 1:])
 
 
 def _is_text(v: Any) -> bool:
@@ -306,7 +323,7 @@ def balances_from_file(filename: str, data: bytes) -> Tuple[Dict[str, Dict[str, 
                 continue
             if sum(len(v) for v in res.values()) > sum(len(v) for v in best.values()):
                 best, best_name = res, name
-        return best, (["Blatt '%s' verwendet." % best_name] if best_name else ["Keine Stichtage erkannt."])
+        return best, ([tr("s_blatt_verwendet") % best_name] if best_name else [tr("s_keine_stichtage")])
     for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
         try:
             text = data.decode(enc)

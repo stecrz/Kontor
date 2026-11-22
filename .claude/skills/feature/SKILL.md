@@ -13,7 +13,8 @@ Ziel ist ein fertiges, geprüftes Ergebnis, das der Nutzer nur noch ansieht.
 2. **Planen.** Aufgabenliste anlegen. Rückfragen nur bei Entscheidungen, die teuer umzukehren sind oder Geschmack betreffen
    (dann mit Empfehlung als erste Option); sonst die vernünftigste Annahme treffen und sie im Ergebnis in einem Satz nennen.
    Eine Änderung, die die zweite Stelle der Version rechtfertigt, vorher ankündigen.
-3. **Umsetzen.** Regeln aus `CLAUDE.md`: Sicherheit zuerst, Texte nur über `web/i18n.js` (de + en), nichts schätzen,
+3. **Umsetzen.** Regeln aus `CLAUDE.md`: Sicherheit zuerst, Texte nur über `web/i18n.js` (de + en), jede neue oder geänderte
+   Karte, Grafik, Tabelle oder Kennzahl mit `data-ex` und ihrer Beschreibung in `docs/ui` („Was wo gepflegt wird“), nichts schätzen,
    Apples Human Interface Guidelines, hell und dunkel, Mac und iPhone. Bestehendes vereinfachen, wo es Fehler vermeidet.
 4. **Testen.** Neue Fälle in `tests/` mit erfundenen Daten: Normalfall, Sonderfälle, Fehlerfälle. Rechenlogik mit
    Abstimmungen (Summen müssen aufgehen, auf den Cent); wo sich Zustände ändern, Zufallsläufe wie `tests/test_fuzz.py`.

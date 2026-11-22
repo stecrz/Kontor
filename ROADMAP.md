@@ -159,7 +159,7 @@ knapp vor der Frage, ein Klick darauf öffnet die Stelle wieder (3.16.23); im se
 Kasten am Mauszeiger, nicht im Chat), Wert/Zeile/Spalte kopieren, im Bezug die Stelle in der Grafik und der Pfad der Zeile (3.16.27); Zahlen in Grafiken und Karten mit Zeile und Wert, beim Klick
 auf den Bezug genau diese Zahl markiert; Gedanken und Schritte einer Antwort als ein Eintrag (3.16.35); gespeicherte Verläufe im eigenen Ordner `chats`, Anzahl/Größe in den Einstellungen,
 ältere als ein Jahr löschbar, Hinweis bei sehr vielen (3.16.51); Stil ab Werk kurz, direkt, inhaltsdicht (3.16.23); Denkaufwand mit klarer Bedeutung (Schnell: ohne Nachdenken,
-Ausgewogen: bis 2.000 Token je Antwort, Gründlich: ohne Grenze; nur oben im Assistenten, je Gerät gemerkt – 3.16.72) und unter jeder Antwort „nachgedacht · Abfragen · Token/s“ (3.16.23). Kontors eigene Mac-App statt Safaris Dock-App: macOS fragt nur einmal nach dem Mikrofon, danach nie wieder; Menüleiste, Downloads, Dock-Abzeichen (3.16.42); ohne eigene Titelleiste: Fensterknöpfe in der Seitenleiste, Seiten wie im Browser (3.16.60, 3.16.63); ⌘F sucht (Seitensuche oder Suchleiste in der App), Tastaturkürzel im Menü und in den Tooltips, die Suche der Hilfe bleibt sichtbar (3.16.64).
+Ausgewogen: bis 2.000 Token je Antwort, Gründlich: ohne Grenze; nur oben im Assistenten, je Gerät gemerkt – 3.16.72) und unter jeder Antwort „nachgedacht · Abfragen · Token/s“ (3.16.23). Kontors eigene Mac-App statt Safaris Dock-App: macOS fragt nur einmal nach dem Mikrofon, danach nie wieder; Menüleiste, Downloads, Dock-Abzeichen (3.16.42); ohne eigene Titelleiste: Fensterknöpfe in der Seitenleiste, Seiten wie im Browser (3.16.60, 3.16.63); ⌘F sucht (Seitensuche oder Suchleiste in der App), Tastaturkürzel im Menü und in den Tooltips, die Suche der Hilfe bleibt sichtbar (3.16.64). Beschreibung jeder Stelle jeder Seite für den Assistenten (`docs/ui`, `data-ex`, 3.17.1): Rechtsklick, Fragen zur Seite und `search_help` wissen, was jede Zahl ist – Wert des Zeitraums, Anteil oder Veränderung –, der Rechtsklick benennt jeden Teil einer Beschriftung nach der Hoverbox; Werkzeuge mit den Begriffen der Seiten.
 
 Fertig, wenn
 - **Gedächtnis** wie unter Entschieden („März teurer: Urlaub“, „Ziel: mit 45 finanziell frei“): von selbst und auf „Merk dir“,
@@ -339,3 +339,8 @@ Gedächtnis, Internet, Daten erst nach Anmeldung, Netzverbindungen), Hilfe-Bilde
   Stand und Anmeldedaten zugleich beschädigt, sperrt die Anmeldung („Schlüssel passt nicht“) – ein falscher Schlüssel sieht gleich aus.
 - Planung: Zinsen und Anteile in der Vorschau noch mit gerundeten Kommazahlen (gebucht wird exakt).
 - Suchfelder der Hilfe- und der Umsatzseite suchen nach Wörtern (nach Bedeutung nur im Assistenten).
+- Nach der Prüfung 3.17.1 offen: Depot mit Lücke zwischen zwei bekannten Ständen – die Änderung landet im Monat des nächsten Stands
+  (gekennzeichnet ist nur die Zeit vor dem ersten); Heatmap höchstens zehn Streifen ohne „Übrige“, Ring-Scheiben ohne Gegenposten
+  (Hilfe sagt es nicht); Kennzahlen der Planung (Sparquote, Reichweite, Zinslast) gerechnet, aber nirgends gezeigt – zeigen oder
+  streichen?; von unterwegs „nur ansehen“ gekennzeichnet, Felder aber nicht gesperrt (der Dienst lehnt ab); Jahrestabelle der
+  Immobilie färbt nur nach Vorzeichen.
