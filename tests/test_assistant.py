@@ -3950,8 +3950,9 @@ class Browser(unittest.TestCase):
                 self.assertEqual(pg.inner_text("#sm-ai").strip(), "llama.cpp lädt · 5 %"); self.assertIn("800 KB/s · noch etwa 24 s", pg.get_attribute("#sm-ai", "title"))
                 pg.evaluate("AS.st = Object.assign({}, AS.st, {load: Object.assign({}, AS.st.load, {state: 'done'})}); statusMini()")
                 self.assertIsNone(pg.query_selector("#sm-ai"))
-                for needle in ("llama.cpp", TAG, "Qwen3.6 35B-A3B", "Qwen3.8 27B", "Gemma 4 26B-A4B", "Denkaufwand", "Was der KI-Assistent darf", "Nie: Einstellungen"):
+                for needle in ("llama.cpp", TAG, "Qwen3.6 35B-A3B", "Qwen3.8 27B", "Gemma 4 26B-A4B", "Kontext", "Was der KI-Assistent darf", "Nie: Einstellungen"):
                     self.assertIn(needle, txt)
+                self.assertNotIn("Denkaufwand", txt)                                         # chosen at the top of the panel only
                 self.assertTrue(pg.evaluate("document.querySelector('.as-right[data-r=enter_values]').checked && !document.querySelector('.as-right[data-r=remote]').checked"))
                 self.assertIn("Protokoll der Änderungen", txt)
                 pg.click("label:has(#as-enabled)"); until(pg, "asOn() && !document.querySelector('#assist-btn').classList.contains('hidden')")
@@ -3977,14 +3978,16 @@ class Browser(unittest.TestCase):
                 pg.select_option("#as-speech-start", "click"); until(pg, "AS.st.settings.speech_start === 'click' && !AS.st.speech_early")
                 pg.click("#as-log summary"); until(pg, "/noch nichts geändert/.test(document.querySelector('#as-log-list').innerText)")
                 self.assertTrue(app.assistant.settings()["rights"]["enter_values"])
-                pg.select_option("#as-effort", "thorough"); until(pg, "AS.st.settings.effort === 'thorough'")
-                self.assertEqual(app.assistant.settings()["effort"], "thorough")
                 # the panel beside the page: the page makes room, its charts stay in view
                 pg.evaluate("location.hash = '#cashflow'"); pg.wait_for_selector("#main .cf-tbl")
                 w0 = pg.evaluate("document.querySelector('#main').getBoundingClientRect().width")
                 pg.evaluate("document.scrollingElement.scrollTop = 600"); pg.wait_for_timeout(100)
                 y0 = pg.evaluate("document.scrollingElement.scrollTop"); self.assertGreater(y0, 300)
                 pg.click("#assist-btn"); pg.wait_for_selector("#assist.open #as-in"); pg.wait_for_timeout(400)
+                # the thinking effort at the top of the panel: remembered on this device, also after reloading (AS.effort empty)
+                self.assertEqual(pg.input_value("#as-eff"), "balanced")
+                pg.select_option("#as-eff", "thorough")
+                self.assertEqual(pg.evaluate("[localStorage.getItem('kontor.effort'), (AS.effort = '', asEffort())]"), ["thorough", "thorough"])
                 # an empty conversation shows what is open (the overview's list): what the assistant can do starts as a question, the rest opens its page
                 until(pg, "!!document.querySelector('.as-todo .as-do') && !!document.querySelector('.as-todo .as-todo-go')")
                 self.assertIn("offen", pg.inner_text(".as-todo").lower()); self.assertIn("ohne Beleg", pg.inner_text(".as-todo"))

@@ -195,7 +195,7 @@ const H = {
   bind: t('auf_diesem_mac_ist_die'),
   tls: t('optional_zertifikat_schluessel_pem_fue'),
   updates: t('einzige_netzverbindung_von_kontor_einm'),
-  assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_denken: t('h_ki_denken'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
+  assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
   ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_sp_start: t('h_ki_sp_start'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'),
   ki_gedaechtnis: t('h_ki_gedaechtnis'),
   ki_programm: t('h_ki_programm'), ki_auto_suchen: t('h_ki_auto_suchen'), ki_modelle: t('h_ki_modelle'), ki_ablage: t('h_ki_ablage'),
@@ -256,7 +256,7 @@ const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl:
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_sp_start: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_denken: 'assistant-setup', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_sp_start: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
@@ -6834,7 +6834,13 @@ async function startRun(dry, freigabe, anchor) {
 // do is set under Einstellungen -> Assistent, at the Mac only; an entry it proposes is made only by a click on its card.
 const AS = {st: null, open: false, msgs: [], refs: [], files: [], conv: '', job: null, n: 0, busy: false, prev: '#overview', setT: null, effort: '', list: false, chats: null, save: true, cw: 0, hover: null, sel: null, ptr: ''};
 const AS_HIDDEN = ['settings', 'log', 'setup', 'assistant'];          // pages the assistant never reads
-const asEffort = () => AS.effort || (((AS.st || {}).settings || {}).effort) || 'balanced';          // chosen in the panel for this conversation, else the setting
+// the thinking effort: chosen only at the top of the panel and remembered on this device (like the theme); before the first choice
+// the former setting, else balanced
+const AS_EFFORTS = ['fast', 'balanced', 'thorough'];
+const asEffort = () => {
+  if (!AS.effort) { try { const e = localStorage.getItem('kontor.effort'); if (AS_EFFORTS.includes(e)) AS.effort = e; } catch (x) { /* kept in memory only */ } }
+  return AS.effort || (((AS.st || {}).settings || {}).effort) || 'balanced';
+};
 const asOn = () => !!(AS.st && AS.st.settings && AS.st.settings.enabled && !OFFLINE.mode);
 // newer versions of llama.cpp or of the models in use, found by the look (only told at the Mac): what the menu marks at Settings
 function asNewer() { return asOn() ? ((AS.st.newer || {}).marked || 0) : 0; }
@@ -7205,13 +7211,12 @@ function asSteps(run, i, j, now) {
   return `<details class="as-think${now ? ' now' : ''}" data-m="${i}" data-p="${j}"${run[0].open ? ' open' : ''}><summary>${now ? `<span class="spin"></span>${t('ki_denkt')}` : t('ki_gedanken')}${sub ? `<span class="as-think-s"> · ${sub}</span>` : ''}</summary>`
     + `<div>${run.map(p => p.k === 'tool' ? step(p) : `<p>${esc(p.text).replace(/\n/g, '<br>')}</p>`).join('')}</div></details>`;
 }
-// what a thinking effort means, with the time it takes on this Mac (from its measured speed): only the limited one has a time
-const asEffortLabel = (k, tps) => `${t(`ki_denken_${k}`)} – ${t(`ki_denken_${k}_d`)}` + (k === 'balanced' && tps ? ` (${t('ki_etwa_s', asN(2000 / tps))})` : '');
 function asHead() {
   const hd = $('#as-head'); if (!hd) return;
   const page = S.tab === 'assistant', sv = (AS.st || {}).server || {}, st = sv.state || 'stopped';
+  const effTip = t('h_ki_denken') + (sv.tps ? ' ' + t('ki_denken_zeit', asN(2000 / sv.tps)) : '');          // the limited one's time on this Mac (from its measured speed)
   hd.innerHTML = `<b>${t('ki_assistent')}</b><span class="as-st ${esc(st)}" title="${esc(t(`ki_z_${st}`))}"></span>
-    <span class="as-hb"><select id="as-eff" title="${esc(t('h_ki_denken'))}" aria-label="${esc(t('ki_denken'))}">${['fast', 'balanced', 'thorough'].map(k => `<option value="${k}" ${asEffort() === k ? 'selected' : ''}>${t(`ki_denken_${k}`)}</option>`).join('')}</select>
+    <span class="as-hb"><select id="as-eff" title="${esc(effTip)}" aria-label="${esc(t('ki_denken'))}">${AS_EFFORTS.map(k => `<option value="${k}" ${asEffort() === k ? 'selected' : ''}>${t(`ki_denken_${k}`)}</option>`).join('')}</select>
     <button class="icon as-hist-btn${AS.list ? ' on' : ''}" title="${esc(t('ki_verlaeufe'))}" aria-label="${esc(t('ki_verlaeufe'))}" aria-pressed="${AS.list}">${ICON.history}</button>
     <button class="icon as-new" title="${esc(t('ki_neu'))}" aria-label="${esc(t('ki_neu'))}">${ICON.compose}</button>
     <button class="icon as-big" title="${esc(t(page ? 'ki_neben_seite' : 'ki_gross'))}" aria-label="${esc(t(page ? 'ki_neben_seite' : 'ki_gross'))}">${ICON.expand}</button>
@@ -8048,7 +8053,7 @@ $('#assist').addEventListener('click', async e => {
   }
 });
 $('#assist').addEventListener('change', e => {
-  if (e.target.id === 'as-eff') AS.effort = e.target.value;
+  if (e.target.id === 'as-eff') { AS.effort = e.target.value; try { localStorage.setItem('kontor.effort', AS.effort); } catch (x) { /* kept in memory only */ } }
   else if (e.target.classList.contains('as-pick')) { const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === e.target.dataset.id); if (p) { p.off = !e.target.checked; asMsgs(); } }          // left out: not carried out
 });
 // the charts in the chat: values under the pointer, a click to the page (a touch: shown first, the second tap goes)
@@ -8130,7 +8135,6 @@ async function vEinstellungenAssistent() {
       ${state === 'ready' ? `<span class="tag${sv.sealed === 'strict' ? '' : ' warn'}" title="${esc(t(sv.sealed === 'strict' ? 'ki_abgeschirmt_tip' : sv.sealed ? 'ki_abgeschirmt_einfach_tip' : 'ki_nicht_abgeschirmt_tip'))}">${t(sv.sealed === 'strict' ? 'ki_abgeschirmt' : sv.sealed ? 'ki_abgeschirmt_einfach' : 'ki_nicht_abgeschirmt')}</span>` : ''}<span class="muted small" id="as-use">${esc(use)}</span>
       ${state === 'ready' || state === 'starting' ? `<button class="small secondary" id="as-stop">${t('ki_stoppen')}</button>` : `<button class="small secondary" id="as-start" ${st.enabled && a.ready ? '' : 'disabled'}>${t('ki_starten')}</button>`}</div>
     ${state === 'error' && sv.error ? `<div class="full banner err small">${esc(sv.error)}</div>` : ''}
-    <label>${t('ki_denken')}${hq('ki_denken')}</label><label class="chk"><select id="as-effort">${['fast', 'balanced', 'thorough'].map(k => opt(k, asEffortLabel(k, sv.tps), st.effort)).join('')}</select></label>
     <label>${t('ki_kontext')}${hq('ki_kontext')}</label><label class="chk"><select id="as-context">${opt(0, t('ki_kontext_auto', a.context_auto_value / 1024), st.context_auto ? 0 : st.context)}${[16384, 32768, 65536, 131072].map(k => opt(k, t('ki_kontext_n', k / 1024), st.context_auto ? 0 : st.context)).join('')}</select></label>
     <label>${t('ki_leerlauf')}${hq('ki_leerlauf')}</label><label class="chk"><select id="as-idle">${[5, 10, 30, 60, 0].map(k => opt(k, k ? t('ki_leerlauf_n', k) : t('ki_leerlauf_nie'), st.idle_minutes)).join('')}</select></label>
     <label>${t('ki_auto_suchen')}${hq('ki_auto_suchen')}</label><label class="chk"><select id="as-check-mode">${[['daily', t('taeglich')], ['weekly', t('woechentlich')], ['aus', t('nie')]].map(([v, l]) => opt(v, l, st.check_mode)).join('')}</select></label>
@@ -8224,7 +8228,6 @@ function bindAssistent(main) {
   on('input[name="as-model"]', 'change', el => set({model: el.value}));
   on('input[name="as-speech"]', 'change', el => set({speech: el.value}));
   on('#as-speech-start', 'change', el => set({speech_start: el.value}));
-  on('#as-effort', 'change', el => set({effort: el.value}));
   on('#as-context', 'change', el => set({context: +el.value}));
   on('#as-idle', 'change', el => set({idle_minutes: +el.value}));
   on('#as-save', 'change', el => set({save_chats: el.checked}));

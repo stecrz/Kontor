@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.72 (2026-11-22 01:40)
+- KI-Assistent: Denkaufwand nur noch oben im Assistenten wählbar, je Gerät gemerkt – nicht mehr in den Einstellungen
+
 ## 3.16.71 (2026-11-22 01:40)
 - KI-Assistent: Gedächtnis, Schritt 1 – Notizen unter Einstellungen → KI-Assistent: hinzufügen, suchen, ändern, anheften, vergessen, alles vergessen; Schalter
 - KI-Assistent: jede Frage bekommt angeheftete und neueste Notizen mit (höchstens 1.500 Token, egal wie viel gemerkt ist)
