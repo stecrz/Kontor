@@ -1656,7 +1656,6 @@ const I18N = {
 "datei_unlesbar":["Datei unlesbar: ", "File unreadable: "],
 "neuer_als_installiert":["neuer als installiert", "newer than installed"],
 "kontor_ist_aktuell":["Kontor ist aktuell", "Kontor is up to date"],
-"quelle_2":[" · Quelle: ", " · source: "],
 "noch_nicht_geprueft":["noch nicht geprüft", "not checked yet"],
 "geprueft":[" · geprüft ", " · checked "],
 "installiert":["Installiert", "Installed"],

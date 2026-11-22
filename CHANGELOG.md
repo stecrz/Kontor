@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.75 (2026-11-22 02:00)
+- Updates: Zusatz „Quelle: main“ entfällt
+
 ## 3.16.74 (2026-11-22 02:45)
 - Entwicklung: `Store.is_open` („Ablage offen?“) – ohne Schlüssel wirft jedes Lesen/Schreiben `StoreLocked`; wer die Ablage liest, prüft das vorher
 - Entwicklung: Schlüsseldatei-Bausteine (Datenschlüssel nur mit dem Passwort verpackt), noch ungenutzt
