@@ -124,6 +124,26 @@ jobs:
         run: |
           swiftc -O -o "$RUNNER_TEMP/touchid" touchid.swift
           swiftc -O -o "$RUNNER_TEMP/mm_history" mm_history.swift
+      - name: Data key (openssl over a pipe, Touch ID's answer wrapped in Swift, unwrapped in Python)
+        run: |
+          python3 - <<'EOF'
+          import base64, os, secrets, subprocess, storage, auth
+          k = os.urandom(32)
+          assert storage.decrypt(k, storage.encrypt(k, b"x")) == b"x"
+          assert storage._pass_mode() == "fd", storage._pass_mode()       # Apple's openssl reads the secret from a pipe
+          helper = os.path.join(os.environ["RUNNER_TEMP"], "touchid")
+          for _ in range(20):
+              kek, mine, nonce = os.urandom(32), secrets.token_bytes(32), secrets.token_hex(16)
+              pub = base64.b64encode(auth._x25519(mine, (9).to_bytes(32, "little"))).decode()
+              out = subprocess.run([helper, "--transport-check", kek.hex(), pub, nonce], capture_output=True, text=True, timeout=30).stdout.strip()
+              assert auth._unwrap_transport(mine, nonce, "ok %s %s" % (nonce, out)) == kek, out
+              bad = out[:-1] + ("0" if out[-1] != "0" else "1")
+              assert auth._unwrap_transport(mine, nonce, "ok %s %s" % (nonce, bad)) is None
+          r = subprocess.run([helper, "--create"], capture_output=True, text=True, timeout=30)    # a VM has no Secure Enclave: says so
+          print("create:", r.returncode, len(r.stdout))
+          assert r.returncode in (0, 2)
+          print("ok")
+          EOF
       - name: Kontor's own app
         run: |
           python3 -c "import mac_app, sys; r = mac_app.build(force=True); print(r); sys.exit(r != 'ok')"

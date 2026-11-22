@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.16.84 (2026-11-22 02:59)
+- Entwicklung: GitHub prüft am Mac, dass openssl das Geheimnis über die Pipe bekommt und die Touch-ID-Antwort aus Swift in Python aufgeht
+
 ## 3.16.83 (2026-11-22 02:44)
 - Sicherheit: Daten erst nach Anmeldung lesbar – Datenschlüssel nur mit Passwort oder Touch ID, danach nur im Arbeitsspeicher; nicht mehr im Schlüsselbund
 - Sicherheit: nach Neustart oder Update einmal anmelden (Mac und iPhone); Abgleich und Auto-Buchungen warten, danach laufen sie weiter, auch gesperrt

@@ -16,6 +16,8 @@
 //                                wrapped for this request (X25519 with Kontor's transport key, HKDF-SHA256 to a pad and an
 //                                HMAC key) -- the output goes through a file, what is in it is of no use to anyone else.
 //                                "gone <nonce>": this Mac's Secure Enclave cannot use the handle (made on another Mac).
+//   --transport-check <key> <transport public> <nonce>
+//                                for the tests: wraps a made-up key (hex) exactly as --unseal does -- no key of this Mac is used
 import AppKit
 import CryptoKit
 import LocalAuthentication
@@ -67,6 +69,11 @@ if args.count == 2 && args[1] == "--create" {
           let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, [.privateKeyUsage, .userPresence], nil),
           let key = try? SecureEnclave.P256.KeyAgreement.PrivateKey(accessControl: access) else { exit(2) }
     print(key.dataRepresentation.base64EncodedString() + " " + key.publicKey.x963Representation.base64EncodedString())
+    exit(0)
+}
+if args.count == 5 && args[1] == "--transport-check" {
+    guard let key = hexBytes(args[2]), let transport = Data(base64Encoded: args[3]), let line = wrapped(key, for: transport, nonce: args[4]) else { exit(2) }
+    print(line)
     exit(0)
 }
 if args.count == 4 && args[1] == "--seal" {
