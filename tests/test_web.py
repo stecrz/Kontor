@@ -3,8 +3,8 @@
 
 What must hold: off by default (no tools without the right); nothing fetched without the user's "yes" on the card (no, no
 answer, stopped: nothing) -- the lookups of a research stand together on one card, each can be left out, one click lets the
-ticked ones go, and only results of those searches are read without a second card (as many as the card said); never with the
-user's own data (names, IBANs, amounts) -- refused before any card; only the fixed
+ticked ones go and allows the conversation: from then on lookups on trusted sources and websites go without a card (shown in
+the chat), a page on any other website is asked for every time; never with the user's own data (names, IBANs, amounts) -- refused before any card; only the fixed
 hosts of a source, https, GET (Tavily: its POST), no cookies, size and time limits; web text is handed over as untrusted data,
 an instruction in it starts nothing, and changes are closed in that conversation afterwards; tier 3 only with a key, which is
 never shown, logged or put anywhere else; every fetch in the log of changes and lookups, without its content.
@@ -115,7 +115,8 @@ class _Web(TA._Assist):
         led = self.app.ledger
         name = next(t.name for t in led.txs if any(len(w) >= 5 and w not in W.GENERIC for w in W._fold(t.name).split()))
         iban = next((a.iban for a in led.accounts.values() if a.iban), None)
-        amount = next(t.amount for t in led.txs if abs(t.amount) >= 150 and round(abs(t.amount) * 100) % 100)
+        amount = next((t.amount for t in led.txs if abs(t.amount) >= 150 and round(abs(t.amount) * 100) % 100), None) or \
+            next(t.amount for t in led.txs if round(abs(t.amount) * 100) % 100)          # (the made-up data of some days has no larger one with cents)
         return name, iban, amount
 
 
@@ -149,6 +150,7 @@ class Flow(_Web):
             lg.removeHandler(h); lg.setLevel(level)
         it, = card["items"]
         self.assertEqual((it["source"], it["tier"], it["what"], it["query"], card["reason"]), ("wikipedia", 1, "search", "Abgeltungsteuer Freibetrag", "Fachwissen"))
+        self.assertTrue(card["chat"])                                   # the first time in a conversation: the click allows it
         self.assertTrue(it["addresses"][0].startswith("https://de.wikipedia.org/w/api.php?"))
         self.assertNotIn("sent", it)                                   # a GET: nothing goes out but the address
         self.assertEqual(len(self.fake.calls), 1)
@@ -307,26 +309,25 @@ class Flow(_Web):
             self.a.job.cancel.set()                                       # the user presses stop while the first request runs
             return ok({"data": rec})
         self.fake.answers[base] = first
-        r = self.a.ask({"question": 'call web_read {"url": "https://search.gleif.org/#/record/%s"}' % lei, "conversation": self.a.conv["id"]})
-        evs = self.until(r, "web")
         n, logged = len(self.fake.calls), len(self.a.changes())
-        card = self.yes(r["job"], evs)
-        self.assertEqual(card["items"][0]["addresses"], [base, base + "/direct-parent", base + "/ultimate-parent", base + "/direct-children?page%5Bsize%5D=20"])
+        r = self.a.ask({"question": 'call web_read {"url": "https://search.gleif.org/#/record/%s"}' % lei, "conversation": self.a.conv["id"]})
         evs = TA.events(self.a, r["job"])
+        card = next(e for e in evs if e["type"] == "web")
+        self.assertEqual((card["state"], card.get("free")), ("run", True))          # trusted, the conversation allows it: no card to click
+        self.assertEqual(card["items"][0]["addresses"], [base, base + "/direct-parent", base + "/ultimate-parent", base + "/direct-children?page%5Bsize%5D=20"])
         self.assertEqual(evs[-1]["type"], "stopped")
         self.assertEqual([c["url"] for c in self.fake.calls[n:]], [base])                # the parents and children were not asked for
         # the one request that was on its way did go out: said on the card, noted in the log of lookups
         self.assertEqual((self.cards(evs), [(e["state"], e.get("text")) for e in evs if e["type"] == "web_item" and e["state"] != "run"]),
-                         (["run", "stopped"], [("failed", A.tr("ki_w_f_stopp"))]))
+                         (["stopped"], [("failed", A.tr("ki_w_f_stopp"))]))          # (no card to click: no "run" after one)
         web = next(p for p in self.a.conv["turns"][-1]["parts"] if p["k"] == "web")          # as the page keeps it
         self.assertEqual((web["state"], [it["state"] for it in web["items"]]), ("done", ["failed"]))
         self.assertEqual([(c["what"], c["state"]) for c in self.a.changes()[:len(self.a.changes()) - logged]], [("read", "failed")])
         # read to its end: every address fetched is one the card named
         self.fake.answers[base] = ok({"data": rec})
-        r = self.a.ask({"question": 'call web_read {"url": "https://search.gleif.org/#/record/%s"}' % lei, "conversation": self.a.conv["id"]})
         n = len(self.fake.calls)
-        card = self.yes(r["job"], self.until(r, "web"))
-        TA.events(self.a, r["job"])
+        r = self.a.ask({"question": 'call web_read {"url": "https://search.gleif.org/#/record/%s"}' % lei, "conversation": self.a.conv["id"]})
+        card = next(e for e in TA.events(self.a, r["job"]) if e["type"] == "web")
         self.assertEqual([c["url"] for c in self.fake.calls[n:]], card["items"][0]["addresses"])
 
     def test_failures_said_on_the_card(self):
@@ -350,12 +351,10 @@ class Flow(_Web):
         self.fake.answers["https://de.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&redirects=1&prop=extracts"] = ok(
             {"query": {"pages": [{"title": "Abgeltungsteuer", "extract": "Langer Text. " * 600}]}})
         r = self.a.ask({"question": 'call web_read {"url": "https://de.wikipedia.org/wiki/Abgeltungsteuer"}', "conversation": self.a.conv["id"]})
-        evs = self.until(r, "web")
+        evs = TA.events(self.a, r["job"])
         card = next(e for e in evs if e["type"] == "web")
         self.assertEqual([(it["what"], it["query"]) for it in card["items"]], [("read", "https://de.wikipedia.org/wiki/Abgeltungsteuer")])
-        self.assertNotIn("auto", card)                                 # the search of an earlier answer approved no reading: asked
-        self.yes(r["job"], evs)
-        TA.events(self.a, r["job"])
+        self.assertEqual((card["state"], card.get("free")), ("run", True))          # Wikipedia, in a conversation that allows the internet
         res = self.told()["pages"][0]
         self.assertTrue(res["cut"])
         self.assertLessEqual(len(res["text"]), W.TEXT_MAX + 2)
@@ -444,35 +443,35 @@ class Bundle(_Web):
         raise AssertionError("no card: %s" % [e["type"] for e in out])
 
     def test_one_card_one_click_for_the_whole_research(self):
-        job, card, evs = self.search({"searches": THREE, "read": 2, "reason": "Recherche Steuern"})
+        job, card, evs = self.search({"searches": THREE, "reason": "Recherche Steuern"})
         self.assertEqual(len([e for e in evs if e["type"] == "web"]), 1)
         self.assertEqual([(it["what"], it.get("source"), it.get("tier")) for it in card["items"]],
-                         [("search", "wikipedia", 1), ("search", "tagesschau", 2), ("search", "gdelt", 2), ("reads", None, None)])
-        self.assertEqual((card["items"][-1]["count"], card["reason"], card["state"]), (2, "Recherche Steuern", "ask"))
-        self.assertEqual(len({it["id"] for it in card["items"]}), 4)
+                         [("search", "wikipedia", 1), ("search", "tagesschau", 2), ("search", "gdelt", 2)])
+        self.assertEqual((card["reason"], card["state"], card["chat"]), ("Recherche Steuern", "ask", True))
+        self.assertEqual(len({it["id"] for it in card["items"]}), 3)
         # fetched in the order asked -- exactly the addresses the card showed, nothing else
-        self.assertEqual([c["url"] for c in self.fake.calls], [it["addresses"][0] for it in card["items"][:3]])
+        self.assertEqual([c["url"] for c in self.fake.calls], [it["addresses"][0] for it in card["items"]])
         self.assertEqual((self.cards(evs), self.states(evs)), (["run", "done"], [("done", 2), ("done", 2), ("done", 1)]))
         self.assertEqual(next(e for e in evs if e["type"] == "web_state")["chosen"], [it["id"] for it in card["items"]])
         res = self.told()
         self.assertTrue(res["untrusted_web_text"].startswith("UNTRUSTED"))
         self.assertEqual([(x["source"], len(x["results"])) for x in res["searches"]], [("wikipedia", 2), ("tagesschau", 2), ("gdelt", 1)])
-        self.assertIn("already approved", res["note"])
         self.assertEqual(evs[-1]["type"], "done")
         # the log of changes and lookups: a line for each request, with the reason of the research
         self.assertEqual(sorted((c["title"], c["state"], c["count"], c["reason"]) for c in self.a.changes()),
                          sorted((q["query"], "fetched", n, "Recherche Steuern") for q, n in zip(THREE, (2, 2, 1))))
         # as the page keeps it (and a saved conversation shows it again)
         web = next(p for p in self.a._chat_read(self.a.conv["id"])["turns"][1]["parts"] if p["k"] == "web")
-        self.assertEqual((web["state"], [it.get("state") for it in web["items"]]), ("done", ["done", "done", "done", None]))
+        self.assertEqual((web["state"], [it.get("state") for it in web["items"]]), ("done", ["done", "done", "done"]))
+        self.assertTrue(self.a._chat_read(self.a.conv["id"])["web_ok"])          # allowed: saved with the conversation
 
     def test_several_calls_in_one_step_are_one_card(self):
         """A model that asks lookup by lookup in one step (several web_search calls side by side) still gets one card."""
-        lines = "\n".join("call web_search %s" % json.dumps(dict(q, **more)) for q, more in zip(THREE, ({"reason": "Recherche"}, {"read": 2}, {})))
+        lines = "\n".join("call web_search %s" % json.dumps(dict(q, **more)) for q, more in zip(THREE, ({"reason": "Recherche"}, {}, {})))
         r = self.a.ask({"question": lines})
         evs = self.upto(r["job"], 1)
         card = next(e for e in evs if e["type"] == "web")
-        self.assertEqual(([it.get("source") for it in card["items"]], card["items"][-1].get("count"), card["reason"]), (["wikipedia", "tagesschau", "gdelt", None], 2, "Recherche"))
+        self.assertEqual(([it.get("source") for it in card["items"]], card["reason"]), (["wikipedia", "tagesschau", "gdelt"], "Recherche"))
         self.yes(r["job"], evs)
         evs = TA.events(self.a, r["job"])
         self.assertEqual((len([e for e in evs if e["type"] == "web"]), len(self.fake.calls), self.states(evs)), (1, 3, [("done", 2), ("done", 2), ("done", 1)]))
@@ -485,21 +484,21 @@ class Bundle(_Web):
 
     def test_only_what_is_ticked(self):
         pick = lambda c: [c["items"][0]["id"], c["items"][2]["id"], "made-up"]
-        job, card, evs = self.search({"searches": THREE, "read": 2}, ids=pick)
+        job, card, evs = self.search({"searches": THREE}, ids=pick)
         self.assertEqual([c["url"] for c in self.fake.calls], [card["items"][0]["addresses"][0], card["items"][2]["addresses"][0]])
         self.assertEqual(self.states(evs), [("done", 2), ("done", 1)])
         res = self.told()
         self.assertEqual(res["searches"][1], {"source": "tagesschau", "query": "Haushalt Bundestag", "approved": False})
-        self.assertNotIn("already approved", res["note"])              # the line "read results" was not ticked
         web = next(p for p in self.a.conv["turns"][-1]["parts"] if p["k"] == "web")
-        self.assertEqual([it.get("state") for it in web["items"]], ["done", "declined", "done", "declined"])
+        self.assertEqual([it.get("state") for it in web["items"]], ["done", "declined", "done"])
         self.assertEqual(len(self.a.changes()), 2)
-        # nothing ticked, or only "read results" (nothing to fetch): nothing goes out
-        for pick in (lambda c: [], lambda c: [c["items"][-1]["id"]], lambda c: ["made-up"], lambda c: "all", lambda c: {"ids": 1}):
+        # nothing ticked: nothing goes out -- and the conversation is not allowed
+        for pick in (lambda c: [], lambda c: ["made-up"], lambda c: "all", lambda c: {"ids": 1}):
             n = len(self.fake.calls)
-            job, card, evs = self.search({"searches": THREE, "read": 2}, ids=pick)
+            job, card, evs = self.search({"searches": THREE}, ids=pick)
             self.assertEqual((self.cards(evs), self.states(evs), len(self.fake.calls)), (["declined"], [], n))
             self.assertIn("did not approve", TA.text_of(evs))
+            self.assertFalse(self.a.conv.get("web_ok"))
         r = self.a.ask({"question": "call web_search %s" % json.dumps({"searches": THREE})})          # a page that names no rows (an old one) saw none: nothing
         card = next(e for e in self.until(r, "web") if e["type"] == "web")
         self.a.confirm(r["job"], card["id"], True)
@@ -526,118 +525,174 @@ class Bundle(_Web):
         job, card, evs = self.search({"searches": plan}, ids=lambda c: [c["items"][0]["id"]])
         self.assertEqual(len(self.fake.calls) - n, 1)
 
-    def test_results_read_without_a_second_card(self):
-        one, two = "https://www.tagesschau.de/inland/haushalt-101.html", "https://www.tagesschau.de/wirtschaft/schaetzung-103.html"
-        read = lambda *urls: "\ncall web_read %s" % json.dumps({"urls": list(urls)})
-        job, card, evs = self.search({"searches": [{"source": "tagesschau", "query": "Haushalt Bundestag"}], "read": 1}, more=read(one))
-        webs = [e for e in evs if e["type"] == "web"]
-        self.assertEqual([(w["state"], w.get("auto")) for w in webs], [("ask", None), ("run", True)])
-        self.assertEqual([(it["what"], it["query"], it["addresses"]) for it in webs[1]["items"]], [("read", one, ["https://www.tagesschau.de/api2u/inland/haushalt-101.json"])])
-        self.assertEqual(self.states(evs), [("done", 2), ("done", 1)])
-        self.assertEqual(self.fake.calls[-1]["url"], "https://www.tagesschau.de/api2u/inland/haushalt-101.json")
-        page, = self.told()["pages"]
-        self.assertIn("Haushalt beschlossen", page["text"])
-        self.assertEqual(sorted(c["what"] for c in self.a.changes()), ["read", "search"])
-        # as many as the card said, of exactly these results: one more asks again ...
-        search = {"searches": [{"source": "tagesschau", "query": "Haushalt Bundestag"}], "read": 1}
-        self.script("Erst suchen", [{"call": "web_search", "args": search}, {"call": "web_read", "args": {"urls": [one]}}, {"call": "web_read", "args": {"urls": [two]}}, {"say": "Fertig."}])
-        self.a.reset()
-        n = len(self.fake.calls)
-        r = self.a.ask({"question": "Erst suchen, dann lesen"})
-        evs = self.upto(r["job"], 1)
-        self.yes(r["job"], evs)
-        evs = self.upto(r["job"], 3)
-        self.assertEqual([(e["state"], e.get("auto")) for e in evs if e["type"] == "web"], [("ask", None), ("run", True), ("ask", None)])
-        self.assertEqual(len(self.fake.calls) - n, 2)                  # the search and the one read approved with it
-        self.a.confirm(r["job"], [e for e in evs if e["type"] == "web"][-1]["id"], False)
-        evs = TA.events(self.a, r["job"])
-        self.assertEqual((len(self.fake.calls) - n, evs[-1]["type"]), (2, "done"))
-        # ... as do two at once when one was approved (several web_read calls of one step are one card)
-        for more in (read(one) + read(two), read(one, two)):
-            self.a.reset()
-            n = len(self.fake.calls)
-            r = self.a.ask({"question": "call web_search %s%s" % (json.dumps(search), more)})
-            evs = self.upto(r["job"], 1)
-            self.yes(r["job"], evs)
-            evs = self.upto(r["job"], 2)
-            last = [e for e in evs if e["type"] == "web"][-1]
-            self.assertEqual((last["state"], last.get("auto"), [it["query"] for it in last["items"]]), ("ask", None, [one, two]), more)
-            self.assertEqual(len(self.fake.calls) - n, 1)              # the search alone
-            self.a.confirm(r["job"], last["id"], False)
-            TA.events(self.a, r["job"])
-        # the line left out: asked; a result of another search (an earlier answer): asked; the next answer: asked
-        self.a.reset()
-        r = self.a.ask({"question": "call web_search %s%s" % (json.dumps({"searches": [{"source": "tagesschau", "query": "Haushalt Bundestag"}], "read": 1}), read(one))})
-        evs = self.upto(r["job"], 1)
-        card = next(e for e in evs if e["type"] == "web")
-        self.a.confirm(r["job"], card["id"], True, [card["items"][0]["id"]])
-        evs = self.upto(r["job"], 2)
-        self.assertEqual([e["state"] for e in evs if e["type"] == "web"], ["ask", "ask"])
-        self.a.confirm(r["job"], [e for e in evs if e["type"] == "web"][-1]["id"], False)
-        TA.events(self.a, r["job"])
+    def test_allowed_once_per_conversation(self):
+        """The first card's click allows the conversation: then trusted lookups go at once, shown in the chat, logged -- a page
+        on another website is asked for every time; a new conversation asks again, a saved one opened again keeps it."""
+        self.fake.answers["https://api.gdeltproject.org/"] = GD
+        job, card, evs = self.search({"searches": [THREE[0]]})
+        self.assertTrue(card["chat"] and self.a.conv["web_ok"])
         cid = self.a.conv["id"]
-        r = self.a.ask({"question": "call web_search %s%s" % (json.dumps({"searches": [{"source": "wikipedia", "query": "Abgeltungsteuer"}], "read": 2}), read(one)), "conversation": cid})
-        evs = self.upto(r["job"], 1)
-        self.yes(r["job"], evs)
-        evs = self.upto(r["job"], 2)
-        self.assertEqual([(e["state"], e.get("auto")) for e in evs if e["type"] == "web"], [("ask", None), ("ask", None)])          # found by the search of an earlier answer
-        self.a.confirm(r["job"], [e for e in evs if e["type"] == "web"][-1]["id"], False)
-        TA.events(self.a, r["job"])
-        r = self.a.ask({"question": "call web_read %s" % json.dumps({"urls": ["https://de.wikipedia.org/wiki/Abgeltungsteuer"]}), "conversation": cid})
-        evs = self.upto(r["job"], 1)
-        self.assertEqual([(e["state"], e.get("auto")) for e in evs if e["type"] == "web"], [("ask", None)])                       # approved for the answer before, not for this one
-        self.a.confirm(r["job"], next(e["id"] for e in evs if e["type"] == "web"), False)
-        TA.events(self.a, r["job"])
-
-    def test_reading_is_approved_card_by_card(self):
-        """Two cards in one answer, each with "read one result": two results of the first search are not covered by that."""
-        one, two = "https://www.tagesschau.de/inland/haushalt-101.html", "https://www.tagesschau.de/wirtschaft/schaetzung-103.html"
-        self.script("Zwei Karten", [{"call": "web_search", "args": {"searches": [{"source": "tagesschau", "query": "Haushalt Bundestag"}], "read": 1}},
-                                    {"call": "web_search", "args": {"searches": [{"source": "wikipedia", "query": "Abgeltungsteuer"}], "read": 1}},
-                                    {"call": "web_read", "args": {"urls": [one, two]}}, {"say": "Fertig."}])
-        r = self.a.ask({"question": "Zwei Karten, dann lesen"})
-        self.yes(r["job"], self.upto(r["job"], 1))
-        self.yes(r["job"], self.upto(r["job"], 2))
-        evs = self.upto(r["job"], 3)
-        last = [e for e in evs if e["type"] == "web"][-1]
-        self.assertEqual((last["state"], last.get("auto"), len(self.fake.calls)), ("ask", None, 2))
-        self.a.confirm(r["job"], last["id"], False)
-        TA.events(self.a, r["job"])
-        # one of each: covered, each by its own card
-        self.script("Zwei Karten", [{"call": "web_search", "args": {"searches": [{"source": "tagesschau", "query": "Haushalt Bundestag"}], "read": 1}},
-                                    {"call": "web_search", "args": {"searches": [{"source": "wikipedia", "query": "Abgeltungsteuer"}], "read": 1}},
-                                    {"call": "web_read", "args": {"urls": [one]}}, {"call": "web_read", "args": {"urls": ["https://de.wikipedia.org/wiki/Abgeltungsteuer"]}},
-                                    {"say": "Fertig."}])
-        self.fake.answers["https://de.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&redirects=1&prop=extracts"] = ok(
-            {"query": {"pages": [{"title": "Abgeltungsteuer", "extract": "Text."}]}})
-        self.a.reset()
-        r = self.a.ask({"question": "Zwei Karten, dann lesen"})
-        self.yes(r["job"], self.upto(r["job"], 1))
-        self.yes(r["job"], self.upto(r["job"], 2))
+        # the next research: no card -- an info in the chat, as it is fetched
+        n, logged = len(self.fake.calls), len(self.a.changes())
+        r = self.a.ask({"question": "call web_search %s" % json.dumps({"searches": THREE[1:], "reason": "Nachrichten"}), "conversation": cid})
         evs = TA.events(self.a, r["job"])
-        self.assertEqual([(e["state"], e.get("auto")) for e in evs if e["type"] == "web"], [("ask", None), ("ask", None), ("run", True), ("run", True)])
-        self.assertEqual(evs[-1]["type"], "done")
+        webs = [e for e in evs if e["type"] == "web"]
+        self.assertEqual([(w["state"], w.get("free"), w.get("chat")) for w in webs], [("run", True, None)])
+        self.assertEqual([it["source"] for it in webs[0]["items"]], ["tagesschau", "gdelt"])
+        self.assertEqual((self.cards(evs), self.states(evs), len(self.fake.calls) - n), (["done"], [("done", 2), ("done", 1)], 2))
+        self.assertEqual(sorted((c["title"], c["reason"]) for c in self.a.changes()[:len(self.a.changes()) - logged]),
+                         [("Haushalt Bundestag", "Nachrichten"), ("Konjunktur Deutschland", "Nachrichten")])          # logged as ever
+        self.assertTrue(self.told()["untrusted_web_text"].startswith("UNTRUSTED"))
+        # a trusted page (tagesschau): at once; a page GDELT found on some website: asked -- also in this conversation, and again
+        r = self.a.ask({"question": "call web_read %s" % json.dumps({"urls": ["https://www.tagesschau.de/inland/haushalt-101.html", "https://news.example.org/a"]}), "conversation": cid})
+        evs = self.upto(r["job"], 2)
+        webs = [e for e in evs if e["type"] == "web"]
+        self.assertEqual([(w["state"], w.get("free"), w.get("chat"), [it["query"] for it in w["items"]]) for w in webs],
+                         [("run", True, None, ["https://www.tagesschau.de/inland/haushalt-101.html"]), ("ask", None, None, ["https://news.example.org/a"])])
+        self.a.confirm(r["job"], webs[1]["id"], False)
+        evs = TA.events(self.a, r["job"])
+        self.assertEqual([x.get("approved") for x in self.told()["pages"]], [None, False])
+        self.assertNotIn("news.example.org", json.dumps(self.fake.calls))
+        # a new conversation: asked again
+        job, card, evs = self.search({"searches": [THREE[0]]}, answer=False)
+        self.assertTrue(card["chat"])
+        self.assertFalse(self.a.conv.get("web_ok"))                    # not allowed: the next one asks again
+        r = self.a.ask({"question": "call web_search %s" % json.dumps({"searches": [THREE[0]]}), "conversation": self.a.conv["id"]})
+        card = next(e for e in self.until(r, "web") if e["type"] == "web")
+        self.assertEqual((card["state"], card["chat"]), ("ask", True))
+        self.a.confirm(r["job"], card["id"], False)
+        TA.events(self.a, r["job"])
+        # the saved conversation opened again (after a restart): still allowed
+        self.a.reset()
+        r = self.a.ask({"question": "call web_search %s" % json.dumps({"searches": [THREE[0]]}), "conversation": cid})
+        card = next(e for e in TA.events(self.a, r["job"]) if e["type"] == "web")
+        self.assertEqual((card["state"], card.get("free")), ("run", True))
+        # ... not when it was not saved: asked again
+        self.a.set({"save_chats": False})
+        job, card, evs = self.search({"searches": [THREE[0]]})
+        cid = self.a.conv["id"]
+        self.a.reset()
+        r = self.a.ask({"question": "call web_search %s" % json.dumps({"searches": [THREE[0]]}), "conversation": cid,
+                        "history": [{"role": "user", "text": "x"}, {"role": "assistant", "text": "y"}], "web": True})
+        card = next(e for e in self.until(r, "web") if e["type"] == "web")
+        self.assertEqual((card["state"], card["chat"]), ("ask", True))
+        self.a.confirm(r["job"], card["id"], False)
+        TA.events(self.a, r["job"])
 
-    def test_nothing_found_nothing_to_read(self):
-        """The search fails (or finds nothing): the line "read results" is not approved after all -- the card says so, and a
-        read asks."""
-        self.fake.answers["https://www.tagesschau.de/api2u/search/"] = {"ok": False, "error": "timeout"}
-        job, card, evs = self.search({"searches": [{"source": "tagesschau", "query": "Haushalt Bundestag"}], "read": 2})
-        self.assertEqual(self.states(evs), [("failed", None), ("declined", None)])
-        web = next(p for p in self.a.conv["turns"][-1]["parts"] if p["k"] == "web")
-        self.assertEqual([it.get("state") for it in web["items"]], ["failed", "declined"])
-        self.assertNotIn("already approved", self.told()["note"])
+    def test_what_is_trusted_is_set_by_the_user(self):
+        self.fake.answers["https://api.gdeltproject.org/"] = GD
+        self.assertEqual(self.a.settings()["web_trusted"], {"sources": list(W.SOURCES), "hosts": []})          # from the factory: every source, no website
+        # a source left out: asked every time -- the others of the same research go at once, a reserve already covered is not asked
+        self.a.set({"web_trusted": {"sources": [x for x in W.SOURCES if x != "gdelt"]}})
+        job, card, evs = self.search({"searches": [THREE[0]]})
+        cid = self.a.conv["id"]
+        plan = {"searches": [THREE[0], THREE[2], dict(THREE[1], fallback=True)]}
+        r = self.a.ask({"question": "call web_search %s" % json.dumps(plan), "conversation": cid})
+        evs = self.upto(r["job"], 2)
+        webs = [e for e in evs if e["type"] == "web"]
+        self.assertEqual([(w["state"], w.get("free"), w.get("chat"), [it["source"] for it in w["items"]]) for w in webs],
+                         [("run", True, None, ["wikipedia"]), ("ask", None, None, ["gdelt"])])          # gdelt: asked, Wikipedia at once; the reserve behind gdelt waits
+        self.a.confirm(r["job"], webs[1]["id"], True, [webs[1]["items"][0]["id"]])
+        evs = TA.events(self.a, r["job"])
+        self.assertEqual((self.states(evs), len([e for e in evs if e["type"] == "web"])), ([("done", 2), ("done", 1)], 2))          # the reserve (tagesschau): not needed, no card
+        self.assertIn("not needed", self.told()["searches"][2]["skipped"])
+        # a reserve that would have to be asked for, already covered by what went at once: not even asked
+        evs = self.ask("call web_search %s" % json.dumps({"searches": [THREE[0], dict(THREE[2], fallback=True)]}), conversation=cid)
+        self.assertEqual([(e["state"], e.get("free")) for e in evs if e["type"] == "web"], [("run", True)])
+        self.assertIn("not needed", self.told()["searches"][1]["skipped"])
+        # a trusted reserve behind something asked: waits for the answer -- not fetched when the asked one finds something
+        self.a.set_web({"tavily_key": KEY})
+        plan = {"searches": [THREE[2], {"source": "tavily", "query": "Konjunktur aktuell", "fallback": True}]}
+        for answer, fetched in ((True, ["api.gdeltproject.org"]), (False, ["api.tavily.com"])):
+            W._LAST_GDELT[0] = 0.0
+            n, used = len(self.fake.calls), self.a.set_web({})["tavily_used"]
+            r = self.a.ask({"question": "call web_search %s" % json.dumps(plan), "conversation": cid})
+            evs = self.upto(r["job"], 1)
+            self.assertEqual(([e["state"] for e in evs if e["type"] == "web"], len(self.fake.calls) - n), (["ask"], 0))          # nothing before the answer
+            card = next(e for e in evs if e["type"] == "web")
+            self.a.confirm(r["job"], card["id"], answer, [it["id"] for it in card["items"]])
+            evs = TA.events(self.a, r["job"])
+            self.assertEqual([c["hosts"][0] for c in self.fake.calls[n:]], fetched, answer)
+            self.assertEqual(self.a.set_web({})["tavily_used"] - used, 0 if answer else 1)
+            if answer:
+                self.assertIn("not needed", self.told()["searches"][1]["skipped"])
+            else:                                                  # declined: nothing found -- the reserve (trusted) goes, shown in the chat
+                self.assertEqual([(e["state"], e.get("free")) for e in evs if e["type"] == "web"], [("ask", None), ("run", True)])
+        # every source left out: every lookup asked, never "allow the conversation"
+        self.a.set({"web_trusted": {"sources": []}})
+        job, card, evs = self.search({"searches": [THREE[0]]})
+        self.assertNotIn("chat", card)
+        self.assertFalse(self.a.conv.get("web_ok"))
+        # websites: their pages without asking (also www. and other parts of the site), others not
+        self.a.set({"web_trusted": {"sources": list(W.SOURCES), "hosts": "https://www.Example.org/news, \n bundesfinanzministerium.de"}})
+        self.assertEqual(self.a.settings()["web_trusted"]["hosts"], ["example.org", "bundesfinanzministerium.de"])
+        job, card, evs = self.search({"searches": [THREE[2]]})
+        cid = self.a.conv["id"]
+        r = self.a.ask({"question": "call web_read %s" % json.dumps({"urls": ["https://news.example.org/a"]}), "conversation": cid})
+        card = next(e for e in TA.events(self.a, r["job"]) if e["type"] == "web")
+        self.assertEqual((card["state"], card.get("free")), ("run", True))
+        self.assertEqual(self.fake.calls[-1]["hosts"], ["news.example.org"])
+        for host, mine in (("news.example.org", True), ("example.org", True), ("badexample.org", False), ("example.org.evil.net", False), ("", False)):
+            self.assertEqual(W.trusted_site(host, ["example.org"]), mine, host)
+        # what is no website: refused, nothing saved
+        for bad in ("com", "localhost", "192.168.1.1", "http://[::1]/", "a b.de", "user@example.org", "example.org:8080", "-x.de", "x" * 70 + ".de"):
+            with self.assertRaises(ValueError, msg=bad):
+                self.a.set({"web_trusted": {"hosts": "heise.de, " + bad}})
+        self.assertEqual(self.a.settings()["web_trusted"]["hosts"], ["example.org", "bundesfinanzministerium.de"])
+        with self.assertRaises(ValueError):
+            self.a.set({"web_trusted": {"hosts": ["site%d.de" % i for i in range(W.HOSTS_MAX + 1)]}})
+        self.assertEqual((W.site("Müller.DE"), W.site("www.bmf.de."), W.site("https://x.example.co.uk/a?b#c")), ("xn--mller-kva.de", "bmf.de", "x.example.co.uk"))
+        self.assertEqual((W.site("straße.de"), W.trusted_site("straße.de", ["xn--strae-oqa.de"]), W.trusted_site("strasse.de", ["xn--strae-oqa.de"])),
+                         ("xn--strae-oqa.de", True, False))          # ß stays ß (not "strasse": another site); a found host in letters matches its punycode
+        self.assertTrue(W.trusted_site("www.müller.de", [W.site("müller.de")]))
+        for shared in ("github.io", "blogspot.com", "co.uk", "com.au", "or.at", "https://www.github.io/x", "foo\u200b.de", "a\u00a0b.de"):
+            self.assertEqual(W.site(shared), "", shared)            # many sites under one name, or signs no host has
+        self.assertEqual((W.site("stecrz.github.io"), W.site("bbc.co.uk")), ("stecrz.github.io", "bbc.co.uk"))          # one site there: fine
+        self.a.set({"web_trusted": {"hosts": ""}})
+        self.assertEqual(self.a.settings()["web_trusted"]["hosts"], [])
+        # what the configuration holds otherwise: checked when read
+        self.assertEqual(A.settings({"assistant": {"web_trusted": {"sources": ["wikipedia", "nirgends", 7], "hosts": ["com", "heise.de", 5, "heise.de"]}}})["web_trusted"],
+                         {"sources": ["wikipedia"], "hosts": ["heise.de"]})
+        self.assertEqual(A.settings({"assistant": {"web_trusted": "alles"}})["web_trusted"], W.trusted_default())
+        # set only at the Mac
+        loop = MA.auth.is_loopback
+        MA.auth.is_loopback = lambda remote: False
+        try:
+            self.assertEqual(self.call("/api/assistant/settings", {"web_trusted": {"hosts": "evil.example"}})[0], 403)
+        finally:
+            MA.auth.is_loopback = loop
+        self.assertEqual(self.a.settings()["web_trusted"]["hosts"], [])
 
-    def test_reading_without_a_card_still_checked(self):
-        """A result approved to be read whose address carries the user's own data (a name in its path) is refused all the same."""
+    def test_trusted_lookups_still_checked(self):
+        """Without a card, the words are checked as ever: the user's own data never goes out, the quota holds; a page on one of
+        the user's websites whose address carries the user's own data is refused too."""
         name, iban, amount = self.own()
+        job, card, evs = self.search({"searches": [THREE[0]]})
+        cid, n = self.a.conv["id"], len(self.fake.calls)
+        evs = self.ask("call web_search %s" % json.dumps({"searches": [{"source": "wikipedia", "query": "Bonität %s" % name}]}), conversation=cid)
+        self.assertFalse(any(e["type"] == "web" for e in evs))
+        self.assertIn("Refused by Kontor, nothing was sent", TA.text_of(evs))
         word = next(w for w in W._fold(name).split() if len(w) >= 5 and w not in W.GENERIC)
         bad = "https://news.example.org/firmen/%s-insolvent" % word
         self.fake.answers["https://api.gdeltproject.org/"] = ok({"articles": [{"url": bad, "title": "Meldung", "domain": "news.example.org", "seendate": "20261120T100000Z"}]})
-        n = len(self.fake.calls)
-        job, card, evs = self.search({"searches": [{"source": "gdelt", "query": "Insolvenzen Deutschland"}], "read": 1}, more="\ncall web_read %s" % json.dumps({"urls": [bad]}))
-        self.assertEqual((len([e for e in evs if e["type"] == "web"]), len(self.fake.calls) - n), (1, 1))          # no second card, nothing fetched
+        self.a.set({"web_trusted": {"hosts": "example.org"}})
+        self.ask("call web_search %s" % json.dumps({"searches": [THREE[2]]}), conversation=cid)
+        evs = self.ask("call web_read %s" % json.dumps({"urls": [bad]}), conversation=cid)
+        self.assertFalse(any(e["type"] == "web" for e in evs))
         self.assertIn("Refused by Kontor, nothing was sent", self.told()["error"])
+        self.assertEqual(len(self.fake.calls), n + 1)                  # the search only
+        self.assertNotIn(word, json.dumps(self.fake.calls))
+        # Tavily, trusted: its quota all the same
+        self.a.set_web({"tavily_key": KEY})
+        orig = W.TAVILY_STOP
+        W.TAVILY_STOP = 1
+        try:
+            evs = self.ask("call web_search %s" % json.dumps({"searches": [{"source": "tavily", "query": "Gewerbemieten %d" % i} for i in range(1, 3)]}), conversation=cid)
+            card = next(e for e in evs if e["type"] == "web")
+            self.assertEqual((card.get("free"), len(card["items"])), (True, 1))
+            self.assertEqual(self.a.set_web({})["tavily_used"], 1)
+        finally:
+            W.TAVILY_STOP = orig
 
     def test_the_quota_holds_for_a_whole_card(self):
         self.a.set_web({"tavily_key": KEY})
@@ -723,9 +778,8 @@ class Bundle(_Web):
         self.fake.answers["https://de.wikipedia.org/w/api.php"] = long
         many = [{"source": "wikipedia", "query": "Thema %d" % i} for i in range(1, 4)] + [{"source": "wikipedia", "query": "Thema 1"}] + \
                [{"source": "wikipedia", "query": "Thema %d" % i} for i in range(4, 9)]
-        job, card, evs = self.search({"searches": many, "read": 9})
-        self.assertEqual([it.get("query") for it in card["items"]], ["Thema %d" % i for i in range(1, 6)] + [None])        # six taken, one of them twice: once
-        self.assertEqual((card["items"][-1]["what"], card["items"][-1]["count"]), ("reads", W.READS_MAX))
+        job, card, evs = self.search({"searches": many})
+        self.assertEqual([it.get("query") for it in card["items"]], ["Thema %d" % i for i in range(1, 6)])        # six taken, one of them twice: once
         self.assertEqual(len(self.fake.calls), 5)
         raw = [m["content"] for m in self.a.conv["messages"] if m["role"] == "tool"][-1]
         self.assertLessEqual(len(raw), A.WEB_RESULT)
@@ -738,15 +792,10 @@ class Bundle(_Web):
         A.Assistant._web_fit(parts, 5000)
         self.assertLessEqual(len(json.dumps(parts, ensure_ascii=False, separators=(",", ":"))), 5000)
         self.assertTrue(parts[0]["cut"] and parts[1]["cut"] and parts[0]["facts_by_property"] and parts[1]["text"])
-        # figures only (statistics): nothing to read afterwards -- no such line
-        self.fake.answers["https://data-api.ecb.europa.eu/"] = ok([["KEY", "TIME_PERIOD", "OBS_VALUE"], ["EXR.M.USD.EUR.SP00.A", "2026-10", "1.08"]])
-        job, card, evs = self.search({"searches": [{"source": "ecb", "query": "EXR/M.USD.EUR.SP00.A"}], "read": 2})
-        self.assertEqual([it["what"] for it in card["items"]], ["search"])
         # as a model may write it: the list as text, the number as text, the reason inside a lookup
-        job, card, evs = self.search({"searches": json.dumps([{"source": "wikipedia", "query": "Thema 1", "reason": "Darum", "fallback": "true"}]), "read": "2"})
-        self.assertEqual(([(it["what"], it.get("query"), it.get("fallback"), it.get("count")) for it in card["items"]], card["reason"]),
-                         ([("search", "Thema 1", True, None), ("reads", None, None, 2)], "Darum"))
-        self.assertEqual((A._count("12345"), A._count(True), A._count(-1), A._listed("[kaputt"), A._listed({"a": 1})), (0, 0, -1, [], []))
+        job, card, evs = self.search({"searches": json.dumps([{"source": "wikipedia", "query": "Thema 1", "reason": "Darum", "fallback": "true"}])})
+        self.assertEqual(([(it["what"], it.get("query"), it.get("fallback")) for it in card["items"]], card["reason"]), ([("search", "Thema 1", True)], "Darum"))
+        self.assertEqual((A._listed("[kaputt"), A._listed({"a": 1})), ([], []))
         # nothing asked for
         for args in ({"searches": []}, {"searches": [7, "x"]}, {"searches": "wikipedia"}, {}):
             evs = self.ask("call web_search %s" % json.dumps(args))
@@ -776,17 +825,29 @@ class Bundle(_Web):
         self.assertEqual((len(self.fake.calls), self.states(evs)), (1, [("done", 2), ("declined", None), ("declined", None)]))
         self.assertEqual([x.get("approved") for x in self.told()["searches"]], [None, False, False])
 
+    def test_right_switched_off_while_it_fetches_without_a_card(self):
+        job, card, evs = self.search({"searches": [THREE[0]]})
+        cid = self.a.conv["id"]
+
+        def first(req):
+            self.a.set({"rights": {"internet": False}})
+            return WIKI
+        self.fake.answers["https://de.wikipedia.org/w/api.php"] = first
+        n = len(self.fake.calls)
+        r = self.a.ask({"question": "call web_search %s" % json.dumps({"searches": THREE}), "conversation": cid})
+        evs = TA.events(self.a, r["job"])
+        self.assertEqual((len(self.fake.calls) - n, self.states(evs)), (1, [("done", 2), ("declined", None), ("declined", None)]))
+
     def test_several_pages_share_the_room(self):
         self.search({"searches": [{"source": "tagesschau", "query": "Haushalt Bundestag"}]})
         big = ok({"title": "Lang", "content": [{"type": "text", "value": "Satz mit Inhalt. " * 230} for _ in range(4)]})
         self.fake.answers.update({"https://www.tagesschau.de/api2u/inland/": big, "https://www.tagesschau.de/api2u/wirtschaft/": big})
         urls = ["https://www.tagesschau.de/inland/haushalt-101.html", "https://www.tagesschau.de/wirtschaft/schaetzung-103.html", "https://www.tagesschau.de/x"]
         r = self.a.ask({"question": "call web_read %s" % json.dumps({"urls": urls, "reason": "Details"}), "conversation": self.a.conv["id"]})
-        evs = self.upto(r["job"], 1)
+        evs = TA.events(self.a, r["job"])
         card = next(e for e in evs if e["type"] == "web")
         self.assertEqual([(it["what"], it["query"]) for it in card["items"]], [("read", urls[0]), ("read", urls[1])])          # the third was never a result
-        self.yes(r["job"], evs)
-        evs = TA.events(self.a, r["job"])
+        self.assertTrue(card["free"])
         raw = [m["content"] for m in self.a.conv["messages"] if m["role"] == "tool"][-1]
         self.assertLessEqual(len(raw), A.WEB_RESULT)
         pages = json.loads(raw)["pages"]
@@ -798,9 +859,10 @@ class Bundle(_Web):
 class Browser(unittest.TestCase):
     def test_card_in_the_chat(self):
         """The card of a research: every request in a row (words, source, tier) with a tick; its address and what is sent open on
-        demand, a long address scrolls inside its line; one click fetches the ticked ones and each row says what came of it;
-        results approved with it are read without a second card. The answer links only what was fetched -- an address the
-        model makes up stays text; changes closed afterwards, said in the chat. Chromium, Mac and iPhone."""
+        demand, a long address scrolls inside its line with the scroll bar below the text; one click fetches the ticked ones and
+        allows the conversation -- after that trusted lookups stand in the chat without buttons, a page on another website asks.
+        The answer links only what was fetched -- an address the model makes up stays text; changes closed afterwards, said in
+        the chat. The settings: trusted sources and websites. Chromium (with its scroll bars), Mac and iPhone."""
         try:
             from playwright.sync_api import sync_playwright
         except ImportError:
@@ -819,6 +881,7 @@ class Browser(unittest.TestCase):
         TA.install(app, rights={"internet": True})
         app.assistant.set_web({"tavily_key": KEY})
         fake = FakeWeb({"https://de.wikipedia.org/w/api.php": WIKI, "https://www.tagesschau.de/api2u/search/": TS, "https://api.tavily.com/search": TAV,
+                        "https://api.gdeltproject.org/": GD,
                         "https://de.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&redirects=1&prop=extracts": ok(
                             {"query": {"pages": [{"title": "Abgeltungsteuer", "extract": "Text."}]}})})
         app.assistant.web_fetch = fake
@@ -827,11 +890,17 @@ class Browser(unittest.TestCase):
         url = "http://127.0.0.1:%d/" % srv.server_address[1]
         plan = {"searches": [{"source": "wikipedia", "query": "Abgeltungsteuer"}, {"source": "tagesschau", "query": "Haushalt Bundestag"},
                              {"source": "tavily", "query": "Abgeltungsteuer aktuelle Rechtsprechung Bundesfinanzhof Kapitalerträge", "fallback": True}],
-                "read": 1, "reason": "Fachwissen"}
+                "reason": "Fachwissen"}
+        def n_msgs(pg, n):                                 # the answer over on the page -- and at Kontor (a busy machine: the next question would come too early)
+            pg.wait_for_function("n => !AS.busy && AS.msgs.length >= n", arg=n)
+            t0 = time.time()
+            while app.assistant.job is not None and not app.assistant.job.done and time.time() - t0 < 30:
+                time.sleep(0.05)
         try:
             with sync_playwright() as p:
-                b = p.chromium.launch()
+                b = p.chromium.launch(ignore_default_args=["--hide-scrollbars"])          # scroll bars as on a Mac set to show them
                 for phone in (False, True):
+                    W._LAST_GDELT[0] = 0.0
                     pg = b.new_page(viewport={"width": 390, "height": 844} if phone else {"width": 1440, "height": 900}, has_touch=phone, is_mobile=phone)
                     errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
                     pg.goto(url)
@@ -844,48 +913,53 @@ class Browser(unittest.TestCase):
                     pg.evaluate("asShow(true)"); pg.wait_for_selector("#assist.open #as-in")
                     pg.evaluate("asNew && asNew()")
                     n = len(fake.calls)
-                    pg.fill("#as-in", "call web_search %s\ncall web_read %s" % (json.dumps(plan), json.dumps({"urls": ["https://de.wikipedia.org/wiki/Abgeltungsteuer"]})))
-                    pg.click("#as-go")
+                    pg.fill("#as-in", "call web_search %s" % json.dumps(plan)); pg.click("#as-go")
                     pg.wait_for_selector(".as-web.ask .as-w-yes")
                     self.assertEqual(pg.locator(".as-web").count(), 1)                    # one card for the whole research
                     card = pg.inner_text(".as-web.ask").lower()                    # (the kind line in capitals)
                     for word in ("im internet nachschlagen", "fachwissen", "abgeltungsteuer", "wikipedia · stufe 1", "tagesschau.de · stufe 2",
-                                 "tavily · stufe 3 · nur falls nötig", "danach 1 treffer ganz lesen", "alle 3 abrufen", "nichts abrufen"):
+                                 "tavily · stufe 3 · nur falls nötig", "für diesen chat erlauben", "nicht erlauben"):
                         self.assertIn(word, card)
                     self.assertNotIn("https://", card)                             # addresses: on demand
                     self.assertFalse(pg.evaluate("!!document.querySelector('#assist .as-run')"))          # waiting for the click: nothing is being thought
-                    # a row opens: its address in one line that scrolls by itself (the card does not), and what is sent
+                    # a row opens: its address in one line that scrolls by itself (the card does not), the bar below the text; what is sent
                     rows = pg.locator(".as-web.ask .as-w-row")
-                    self.assertEqual((rows.count(), pg.locator(".as-web.ask .as-w-tick:checked").count()), (4, 4))
+                    self.assertEqual((rows.count(), pg.locator(".as-web.ask .as-w-tick:checked").count()), (3, 3))
                     rows.nth(0).locator("summary").click()
                     code = rows.nth(0).locator(".as-w-more code")
                     self.assertTrue(code.inner_text().startswith("https://de.wikipedia.org/w/api.php?action=query"))
                     self.assertTrue(code.evaluate("e => e.scrollWidth > e.clientWidth + 20 && getComputedStyle(e).overflowX === 'auto'"))
+                    bar = code.evaluate("e => ({bar: e.offsetHeight - e.clientHeight, over: e.scrollHeight - e.clientHeight, width: getComputedStyle(e).scrollbarWidth})")
+                    self.assertEqual((bar["over"], bar["width"]), (0, "auto"))       # the text in full above the bar (no thin standard bar: Chrome would ignore Kontor's)
+                    if not phone:
+                        self.assertGreater(bar["bar"], 0)                          # the bar takes its own room below the text
                     self.assertIn("Nur die Adresse", rows.nth(0).inner_text())
                     rows.nth(2).locator("summary").click()
                     sent = rows.nth(2).locator(".as-w-more code").nth(1).inner_text()
                     self.assertEqual(json.loads(sent)["query"], plan["searches"][2]["query"])
                     self.assertIn("und dein Tavily-Schlüssel", rows.nth(2).inner_text())
                     self.assertNotIn(KEY, pg.content())
-                    # a request left out: the button counts, the row steps back, what was opened stays open
+                    # a request left out: the row steps back, what was opened stays open; nothing ticked: nothing to allow
                     rows.nth(1).locator(".as-w-tick").click()
-                    self.assertEqual(pg.inner_text(".as-web.ask .as-w-yes"), "2 ausgewählte abrufen")
                     self.assertTrue(pg.evaluate("document.querySelectorAll('.as-web.ask .as-w-row')[1].classList.contains('off') && document.querySelectorAll('.as-web.ask .as-w-d[open]').length === 2"))
                     for i in (0, 2):
                         rows.nth(i).locator(".as-w-tick").click()
-                    self.assertTrue(pg.evaluate("document.querySelector('.as-web.ask .as-w-yes').disabled && document.querySelector('.as-web.ask .as-w-row.reads .as-w-tick').disabled"))      # nothing to fetch: nothing to read
+                    self.assertTrue(pg.evaluate("document.querySelector('.as-web.ask .as-w-yes').disabled"))
                     for i in (0, 2):
                         rows.nth(i).locator(".as-w-tick").click()
                     self.assertFalse(pg.evaluate("[...document.querySelectorAll('#assist .as-web')].some(e => e.scrollWidth > e.clientWidth + 1) || document.querySelector('#as-body').scrollWidth > document.querySelector('#as-body').clientWidth + 1"))
                     pg.click(".as-web.ask .as-w-yes")
-                    pg.wait_for_function("() => !AS.busy && AS.msgs.length >= 2")
-                    self.assertEqual(pg.locator(".as-web").count(), 2)
+                    n_msgs(pg, 2)
                     done = [x.strip().replace("\n", " ") for x in pg.locator(".as-web").nth(0).locator(".as-w-st").all_inner_texts()]
-                    self.assertEqual(done, ["2 Treffer", "Nicht abgerufen", "Nicht nötig", "Freigegeben"])
-                    self.assertEqual([c["hosts"][0] for c in fake.calls[n:]], ["de.wikipedia.org", "de.wikipedia.org"])       # the search ticked, and the one result read with its approval
-                    second = pg.inner_text(".as-web >> nth=1").lower()
-                    for word in ("seite lesen · mit der recherche freigegeben", "de.wikipedia.org/wiki/abgeltungsteuer", "abgerufen"):
-                        self.assertIn(word, second)
+                    self.assertEqual(done, ["2 Treffer", "Nicht abgerufen", "Nicht nötig"])
+                    self.assertEqual([c["hosts"][0] for c in fake.calls[n:]], ["de.wikipedia.org"])       # the search ticked; the reserve not needed
+                    # allowed for this chat: a trusted page at once -- shown, no buttons
+                    pg.fill("#as-in", 'call web_read {"urls": ["https://de.wikipedia.org/wiki/Abgeltungsteuer"]}'); pg.keyboard.press("Enter")
+                    n_msgs(pg, 4)
+                    free = pg.locator(".as-web").last
+                    self.assertIn("free", free.get_attribute("class"))
+                    self.assertIn("seite lesen · ohne rückfrage", free.inner_text().lower())
+                    self.assertIn("Abgerufen", free.inner_text())
                     self.assertFalse(pg.evaluate("!!document.querySelector('#assist .as-web .as-w-yes, #assist .as-web .as-w-tick')"))
                     links = pg.evaluate("asMd('[Quelle](https://de.wikipedia.org/wiki/Abgeltungsteuer) und [Falle](https://evil.example/?d=1)', asLinks())")
                     self.assertIn('<a href="https://de.wikipedia.org/wiki/Abgeltungsteuer" target="_blank" rel="noopener noreferrer"', links)      # a result of a fixed host
@@ -896,19 +970,22 @@ class Browser(unittest.TestCase):
                     a = pg.locator("#as-body a[href='https://de.wikipedia.org/wiki/Abgeltungsteuer']").last
                     self.assertEqual(a.inner_text(), "Sparkasse Login")
                     self.assertIn("Sparkasse Login (de.wikipedia.org)", pg.inner_text("#as-body"))     # the host beside the model's words, no tooltip needed
-                    pg.fill("#as-in", 'call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 1}]}'); pg.keyboard.press("Enter")
-                    pg.wait_for_function("() => !AS.busy && AS.msgs.length >= 4")
-                    self.assertIn("Text aus dem Internet", pg.inner_text("#as-body"))
-                    self.assertFalse(pg.evaluate("!!document.querySelector('#assist .as-entry:not(.as-web)')"))
-                    # one request alone, "Don't fetch": nothing fetched, said once on the card
-                    n = len(fake.calls)
-                    pg.fill("#as-in", 'call web_search {"source": "wikipedia", "query": "Kapitalertragsteuer"}'); pg.keyboard.press("Enter")
+                    # a page GDELT found on some website: asked, also in this chat -- "Don't fetch": nothing fetched
+                    pg.fill("#as-in", 'call web_search {"searches": [{"source": "gdelt", "query": "Konjunktur Deutschland"}]}\ncall web_read {"urls": ["https://news.example.org/a"]}')
+                    pg.keyboard.press("Enter")
                     pg.wait_for_selector(".as-web.ask .as-w-no")
                     self.assertEqual((pg.inner_text(".as-web.ask .as-w-yes"), pg.inner_text(".as-web.ask .as-w-no")), ("Abrufen", "Nicht abrufen"))
+                    self.assertIn("news.example.org/a", pg.inner_text(".as-web.ask"))
+                    self.assertEqual(pg.locator(".as-web.ask .as-w-tick").count(), 0)              # one request alone: the buttons say it all
+                    n = len(fake.calls)
                     pg.click(".as-web.ask .as-w-no")
-                    pg.wait_for_function("() => !AS.busy && AS.msgs.length >= 6")
+                    n_msgs(pg, 6)
                     self.assertEqual(len(fake.calls), n)
                     self.assertEqual(pg.locator(".as-web").last.inner_text().count("Nicht abgerufen"), 1)
+                    pg.fill("#as-in", 'call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 1}]}'); pg.keyboard.press("Enter")
+                    n_msgs(pg, 8)
+                    self.assertIn("Text aus dem Internet", pg.inner_text("#as-body"))
+                    self.assertFalse(pg.evaluate("!!document.querySelector('#assist .as-entry:not(.as-web)')"))
                     # a card saved before the lookups of an answer stood together (one request, no rows): shown as a card of one row
                     pg.evaluate("""AS.msgs.push({role: 'assistant', state: 'done', parts: [{k: 'web', id: 'alt', state: 'done', what: 'search', label: 'Wikipedia', tier: 1,
                         query: 'Solidaritätszuschlag', reason: 'Früher', addresses: ['https://de.wikipedia.org/w/api.php?alt=1'], count: 2, links: ['https://de.wikipedia.org/wiki/Alt']}]}); asMsgs()""")
@@ -916,8 +993,35 @@ class Browser(unittest.TestCase):
                     for word in ("Solidaritätszuschlag", "Wikipedia · Stufe 1", "2 Treffer", "Früher"):
                         self.assertIn(word, old)
                     self.assertTrue(pg.evaluate("asLinks().has('https://de.wikipedia.org/wiki/Alt')"))
+                    # cards of 3.16.76-3.16.88: a page read with the search's approval, and the line "read results" -- shown as they were
+                    pg.evaluate("""AS.msgs.push({role: 'assistant', state: 'done', parts: [
+                        {k: 'web', id: 'a1', state: 'done', items: [{id: 's', what: 'search', label: 'tagesschau.de', tier: 2, query: 'Haushalt', addresses: [], state: 'done', count: 2},
+                                                                   {id: 'r', what: 'reads', count: 1}]},
+                        {k: 'web', id: 'a2', state: 'done', auto: true, items: [{id: 'p', what: 'read', label: 'tagesschau.de', tier: 2, query: 'https://www.tagesschau.de/a.html', addresses: [], state: 'done'}]}]}); asMsgs()""")
+                    olds = pg.locator(".as-web").all_inner_texts()[-2:]
+                    self.assertIn("Danach 1 Treffer ganz lesen", olds[0])
+                    self.assertIn("seite lesen · mit der recherche freigegeben", olds[1].lower())
+                    self.assertNotIn("rückfrage", olds[1].lower())
                     over = pg.evaluate("[...document.querySelectorAll('#assist .as-web')].some(e => e.scrollWidth > e.clientWidth + 1)")
                     self.assertFalse(over)
+                    if not phone:
+                        # the settings: which sources and websites go without asking
+                        pg.evaluate("asShow(false)")
+                        pg.goto(url + "#settings/assistant"); pg.wait_for_selector(".as-trust-src")
+                        self.assertEqual(pg.locator(".as-trust-src").count(), len(W.SOURCES))
+                        self.assertEqual(pg.locator(".as-trust-src:checked").count(), len(W.SOURCES))
+                        pg.locator(".as-trust-src[value=gdelt]").uncheck()
+                        pg.wait_for_function("() => !AS.st.settings.web_trusted.sources.includes('gdelt')")
+                        pg.wait_for_selector(".as-trust-src[value=gdelt]:not(:checked)")
+                        pg.fill("#as-websites", "https://www.Example.org/news"); pg.press("#as-websites", "Enter")
+                        pg.wait_for_function("() => AS.st.settings.web_trusted.hosts.join() === 'example.org'")
+                        pg.wait_for_function("() => document.querySelector('#as-websites').value === 'example.org'")
+                        pg.evaluate("document.querySelector('#toast').textContent = ''")
+                        pg.fill("#as-websites", "example.org, com"); pg.press("#as-websites", "Enter")
+                        pg.wait_for_function("() => document.querySelector('#toast').textContent.includes('„com“ ist keine einzelne Website')")
+                        self.assertEqual(app.assistant.settings()["web_trusted"], {"sources": [x for x in W.SOURCES if x != "gdelt"], "hosts": ["example.org"]})
+                        self.assertFalse(pg.evaluate("document.querySelector('#main').scrollWidth > document.querySelector('#main').clientWidth + 1"))
+                        app.assistant.set({"web_trusted": W.trusted_default()})          # (the iPhone's turn: as from the factory)
                     self.assertEqual(errors, [])
                     pg.close()
                 b.close()

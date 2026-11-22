@@ -68,6 +68,10 @@ anhängen – nie löschen.
   zu welcher Stufe) und fragt dann einmal: eine Karte mit allen Abrufen, jeder abwählbar, ein Klick gibt sie frei – danach arbeitet
   er. Was gesendet wird, steht auf der Karte; lange Adressen und die Einzelheiten eines Abrufs klappen auf. Ersetzt oben „jeder
   Zugriff erst nach Freigabe“ durch: jeder Zugriff steht vor dem Klick auf der Karte. (umgesetzt in 3.16.76)
+- **Internetsuche – vertrauenswürdige Quellen ohne Rückfrage (Nutzer, 2026-11-22):** Je Chat einmal erlauben, danach sucht und
+  liest der Assistent bei vertrauenswürdigen Quellen ohne Freigabe – im Chat als Info; welche Quellen und Websites vertrauenswürdig
+  sind, stellt der Nutzer in den Einstellungen ein. Konkrete Websites außerhalb davon immer einzeln freigeben, auch im erlaubten
+  Chat. Ersetzt für vertrauenswürdige Quellen „jeder Zugriff steht vor dem Klick auf der Karte“. (umgesetzt in 3.16.92)
 - **Gedächtnis des KI-Assistenten:** Er merkt sich von selbst, was dauerhaft ist – über den Nutzer, seine Pläne, Entscheidungen,
   Menschen, Vorlieben und wie er antworten soll –, auch über Finanzen hinaus („zweites Gehirn“, nur auf diesem Mac). „Merk dir …“
   gilt immer, „Vergiss …“ löscht. Nur aus den eigenen Worten des Nutzers, nie aus Buchungstexten, Belegen, Dateien, Webseiten oder
@@ -198,6 +202,8 @@ Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach
   Suchbegriffen und Adressen, Filter gegen eigene Daten, Seiten in einem abgeschotteten Prozess, danach keine Änderungen im selben Chat.
   Offen: Rechtsinformationsportal des Bundes, BMF/BFH, Destatis, OECD, Feeds der Portale (Schnittstellen erst prüfen); am Mac mit echtem
   Netz prüfen (Abschirmung des Abrufs, Antworten der Quellen).
+- [x] 3.16.92 Internet: je Chat einmal erlauben, danach vertrauenswürdige Quellen und Websites ohne Rückfrage (einstellbar), andere
+  Websites immer einzeln; Treffer vorab freigeben entfällt.
 - [x] 3.16.76 Internet: erst die Recherche planen, dann eine Karte für alle Abrufe (jeder abwählbar, ein Klick), höhere Stufe als
   Reserve „nur falls nötig“, Treffer lesen mit derselben Freigabe; Adresse und Gesendetes je Abruf aufklappbar.
 

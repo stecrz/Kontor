@@ -49,7 +49,8 @@ TEXT_MAX = 5000                            # characters of one page's text for t
 SNIPPET = 360
 HITS = 6
 PLAN_MAX = 6                               # lookups asked for together (one card, one click)
-READS_MAX = 3                              # results read in full with one approval (asked with the searches, or together on a card)
+READS_MAX = 3                              # results read in full in one call
+HOSTS_MAX = 50                             # websites you trust (Einstellungen -> KI-Assistent): their pages are read without asking
 SHOWN_MAX = 2000                           # characters of an address (or of what is sent) the card shows whole: a longer request is not made
 _KEY_RE = re.compile(r"tvly-[A-Za-z0-9_\-]{10,120}")
 
@@ -123,6 +124,71 @@ def user_agent(url: str = "") -> str:
     if (urlparse(url).hostname or "").lower() in WIKIMEDIA:
         return "Kontor/%s (https://github.com/stecrz/Kontor) Python-urllib" % version_tag()
     return NEUTRAL_AGENT
+
+
+# -- what you trust: lookups there need no card once a conversation allows the internet -------------------------------------
+def trusted_default() -> dict:
+    """From the factory: every source (they are fixed interfaces, the words checked against your data before they go out);
+    no website of its own -- a page found by a search is asked for, unless its site is on your list."""
+    return {"sources": list(SOURCES), "hosts": []}
+
+
+# domains under which anyone can have a site of their own: never one website (a trust in them would cover strangers' pages)
+SHARED = {"github.io", "gitlab.io", "blogspot.com", "wordpress.com", "netlify.app", "vercel.app", "pages.dev", "herokuapp.com", "web.app",
+          "firebaseapp.com", "appspot.com", "azurewebsites.net", "cloudfront.net", "amazonaws.com", "substack.com", "tumblr.com", "wixsite.com",
+          "weebly.com", "jimdofree.com", "jimdosite.com", "webflow.io", "notion.site", "glitch.me", "framer.website", "medium.com"}
+_SECOND = {"co", "com", "org", "net", "gov", "ac", "edu", "or", "ne", "go", "gv", "nic", "ltd", "plc", "mil"}
+
+
+def _ace(host: str) -> str:
+    """A host as addresses carry it: a part with other letters than a-z as punycode (müller -> xn--mller-kva, straße ->
+    xn--strae-oqa -- not "strasse", which would be another site); "" if a part cannot be written so."""
+    out = []
+    for label in str(host or "").lower().rstrip(".").split("."):
+        if label.isascii():
+            out.append(label)
+            continue
+        try:
+            out.append("xn--" + unicodedata.normalize("NFC", label).encode("punycode").decode("ascii"))
+        except (UnicodeError, ValueError):
+            return ""
+    return ".".join(out)
+
+
+def site(text: Any) -> str:
+    """A website as you write it (a name, or a whole address with https, www. and a page) as Kontor keeps it: its host, lower case, without
+    "www." -- or "" if it is none (an address of numbers, a single word such as "com", signs no host has)."""
+    t = str(text or "").strip().lower()
+    t = re.sub(r"^[a-z][a-z0-9+.\-]*://", "", t).split("/", 1)[0].split("?", 1)[0].split("#", 1)[0].rstrip(".")
+    if "@" in t or ":" in t or not t or any(unicodedata.category(c)[0] in "CMZ" and c != " " for c in t) or " " in t:
+        return ""
+    t = _ace(t)
+    t = t[4:] if t.startswith("www.") else t
+    labels = t.split(".")
+    if len(t) > 253 or len(labels) < 2 or not all(re.fullmatch(r"[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?", x) for x in labels):
+        return ""
+    if not re.fullmatch(r"[a-z]{2,63}|xn--[a-z0-9\-]{1,59}", labels[-1]):
+        return ""
+    if t in SHARED or (len(labels) == 2 and labels[0] in _SECOND and len(labels[1]) == 2):        # (github.io, co.uk: many sites, not one)
+        return ""
+    return t
+
+
+def trusted_site(host: str, sites: List[str]) -> bool:
+    """Is this host one of your websites (or a part of one: www.handelsblatt.com belongs to handelsblatt.com, a host that only
+    ends with the same letters does not)?"""
+    h = _ace(host)
+    return bool(h) and any(h == x or h.endswith("." + x) for x in sites)
+
+
+def trusted(value: Any) -> dict:
+    """Your trusted sources and websites out of the settings, checked (anything else: left out)."""
+    if not isinstance(value, dict):
+        return trusted_default()
+    srcs = value.get("sources")
+    hosts = [site(x) for x in value.get("hosts") or [] if isinstance(x, str)] if isinstance(value.get("hosts"), list) else []
+    return {"sources": [x for x in SOURCES if x in srcs] if isinstance(srcs, list) else list(SOURCES),
+            "hosts": list(dict.fromkeys(x for x in hosts if x))[:HOSTS_MAX]}
 
 
 # -- your Tavily key and its quota ------------------------------------------------------------------------------------------

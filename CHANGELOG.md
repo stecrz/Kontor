@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.92 (2026-11-22 04:57)
+- KI-Assistent: Internet je Chat einmal erlauben – danach vertrauenswürdige Quellen ohne Rückfrage, im Chat sichtbar
+- KI-Assistent: Seiten anderer Websites weiter immer einzeln freigeben
+- Einstellungen: unter Internet wählbar, welche Quellen und Websites ohne Rückfrage gehen
+- KI-Assistent: Scrollleiste langer Adressen unter dem Text statt darüber
+
 ## 3.16.91 (2026-11-22 04:50)
 - Darlehen: Hinweis, wenn gebuchte Zinsen nicht mehr zu Restschuld oder Zinssatz passen – mit den richtigen Beträgen je Monat
 - Darlehen: neue Zinsen rechnen schon so, als wären die genannten angepasst; ab 1 € Abweichung, nicht nach Wartendem oder Doppeltem
