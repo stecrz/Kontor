@@ -130,6 +130,11 @@ class Net:
             {"type": "file", "path": "mmproj-Qwen3-ASR-0.6B-Q8_0.gguf", "size": len(self.ears), "lfs": lfs(self.ears)}]
         self.files["https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/main/Qwen3-ASR-0.6B-Q8_0.gguf"] = self.speech
         self.files["https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/main/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf"] = self.ears
+        # the model for finding by meaning: one file, two variants
+        self.finder = b"GGUF-embed" + bytes(range(150)) * 7
+        self.trees["Qwen/Qwen3-Embedding-0.6B-GGUF"] = [{"type": "file", "path": "Qwen3-Embedding-0.6B-f16.gguf", "size": 98, "lfs": {"oid": "5" * 64, "size": 98}},
+                                                       {"type": "file", "path": "Qwen3-Embedding-0.6B-Q8_0.gguf", "size": len(self.finder), "lfs": lfs(self.finder)}]
+        self.files["https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf"] = self.finder
 
     def open(self, url, kind, headers=None, timeout=30):
         if not L.host_allowed(url, kind):
@@ -167,9 +172,9 @@ def wait_job(ai, seconds=20.0):
     return ai.job_view()
 
 
-def install(app, net=None, enable=True, rights=None, speech=False):
+def install(app, net=None, enable=True, rights=None, speech=False, embed=False):
     """llama.cpp (the stand-in) and a model, through the same way as on the Mac -- downloads answered by Net.
-    speech: the model for dictating too."""
+    speech: the model for dictating too; embed: the model for finding by meaning too."""
     net = net or Net()
     L._open = net.open
     a = app.assistant
@@ -179,6 +184,9 @@ def install(app, net=None, enable=True, rights=None, speech=False):
     assert wait_job(a.ai)["state"] == "done", a.ai.job
     if speech:
         a.ai.download_model("qwen3-asr-1.7b")
+        assert wait_job(a.ai)["state"] == "done", a.ai.job
+    if embed:
+        a.ai.download_model("qwen3-embedding-0.6b")
         assert wait_job(a.ai)["state"] == "done", a.ai.job
     if enable:
         a.set({"enabled": True, **({"rights": rights} if rights else {})})

@@ -24,6 +24,7 @@ import hashlib
 import http.client
 import json
 import logging
+import math
 import os
 import platform
 import re
@@ -82,6 +83,17 @@ SPEECH: List[Dict[str, Any]] = [
     {"id": "qwen3-asr-0.6b", "name": "Qwen3-ASR 0.6B", "repo": "ggml-org/Qwen3-ASR-0.6B-GGUF", "pick": ["Q8_0", "Q6_K", "Q5_K_M", "Q4_K_M", "F16", "BF16"], "gb": 1, "note": "speech_small"},
 ]
 SPEECH_IDS = tuple(c["id"] for c in SPEECH)
+# For finding by meaning (the assistant's memory): a small model that turns a text into a row of numbers, its embedding -- texts
+# about the same lie close together, whatever their words. It writes no text; llama.cpp runs it as a third process, on this Mac,
+# without a network, in the same sandbox. query: put before a question (the model is trained so); eos: after every text.
+EMBED: List[Dict[str, Any]] = [
+    {"id": "qwen3-embedding-0.6b", "name": "Qwen3-Embedding 0.6B", "repo": "Qwen/Qwen3-Embedding-0.6B-GGUF", "pick": ["Q8_0", "F16"], "gb": 1, "note": "embed",
+     "query": "Instruct: Given a question, retrieve the notes that help to answer it\nQuery:", "eos": "<|endoftext|>"},
+]
+EMBED_IDS = tuple(c["id"] for c in EMBED)
+EMBED_CONTEXT = 2048     # tokens of one text at most (a note is far shorter)
+EMBED_TEXT = 4000        # characters of one text given to it (more: cut)
+EMBED_DIMS = 512         # numbers kept of each embedding: its first ones (Qwen3-Embedding is trained so that they carry most), half the room
 SPEECH_CONTEXT = 8192    # a few minutes of speech and their text
 MAX_AUDIO = 20 * 1024 * 1024         # bytes of one recording (WAV, 16 kHz, mono: ten minutes and a little more)
 HEADROOM_GB = 2          # beside the file: the conversation in memory and the program itself
@@ -301,6 +313,7 @@ class LocalAI:
         self.port = 0
         self.key = ""
         self.model = ""
+        self.file = ("", "")                           # the running model's file (path, SHA-256): a newer one starts it anew
         self.ctx = 0
         self.state = "stopped"                         # stopped | starting | ready | error
         self.error = ""
@@ -409,7 +422,7 @@ class LocalAI:
             news["runtime"] = {"tag": lr["tag"], "newer": lr["tag"] != (self.runtime().get("tag") or "")}
         except Exception as e:
             news["error"] = str(e)[:300]
-        cat = {c["id"]: c for c in CATALOG + SPEECH}
+        cat = {c["id"]: c for c in CATALOG + SPEECH + EMBED}
         for mid, m in self.models().items():
             try:
                 files = self.repo_files(m["repo"])
@@ -593,7 +606,7 @@ class LocalAI:
 
     def download_model(self, model_id: str = "", repo: str = "", file: str = "") -> dict:
         """A model from the list (model_id) or any model file of a repository at Hugging Face (repo, file)."""
-        entry = next((c for c in CATALOG + SPEECH if c["id"] == model_id), None)
+        entry = next((c for c in CATALOG + SPEECH + EMBED if c["id"] == model_id), None)
         if entry is None:
             if not REPO_RE.fullmatch(repo or "") or not FILE_RE.fullmatch(file or ""):
                 raise ValueError(tr("s_ki_repo_ungueltig"))
@@ -761,10 +774,11 @@ class LocalAI:
         sandbox = sandbox if sandbox in SANDBOXES else "strict"
         with self.lock:
             seal = "" if sandbox == "off" or (not self._can_seal() and sys.platform != "darwin") else sandbox     # (not a Mac: there is no sandbox-exec)
-            if self.proc is not None and self.proc.poll() is None and self.state == "ready" and (self.model, self.ctx, self.sealed) == (model_id, ctx, seal):
+            rt, m = self.runtime(), self.models().get(model_id)
+            if self.proc is not None and self.proc.poll() is None and self.state == "ready" and (self.model, self.ctx, self.sealed) == (model_id, ctx, seal) \
+                    and (not m or self.file == (m["path"], str(m.get("sha256") or ""))):
                 self.last_used = time.time()
                 return
-            rt, m = self.runtime(), self.models().get(model_id)
             if not rt:
                 raise ModelError(tr("s_ki_nicht_installiert"))
             if not m:
@@ -775,10 +789,17 @@ class LocalAI:
             self.stop()
             if seal and not self._can_seal():
                 raise ModelError(tr("s_ki_sandbox_fehlt"))
-            self.state, self.error, self.model, self.ctx = "starting", "", model_id, ctx
+            self.state, self.error, self.model, self.ctx, self.file = "starting", "", model_id, ctx, (m["path"], str(m.get("sha256") or ""))
             self.tail.clear()
+            extra = ["--mmproj", m["mmproj_path"]] if m.get("mmproj_path") else None
+            if self.role == "embed":                     # the model for finding by meaning: embeddings only, each text in one piece
+                flags = rt.get("flags") or []
+                if "--embedding" not in flags or "--pooling" not in flags:
+                    self.state, self.error = "error", tr("s_ki_einbettung_alt")
+                    raise ModelError(self.error)
+                extra = ["--embedding", "--pooling", "last"] + [x for f in ("--batch-size", "--ubatch-size") if f in flags for x in (f, str(ctx))]
             try:
-                self.proc = self._spawn(rt["path"], rt.get("flags") or [], m["path"], ctx, seal, ["--mmproj", m["mmproj_path"]] if m.get("mmproj_path") else None)
+                self.proc = self._spawn(rt["path"], rt.get("flags") or [], m["path"], ctx, seal, extra)
             except OSError as e:
                 self.state, self.error = "error", str(e)[:300]
                 raise ModelError(tr("s_ki_startet_nicht") % self.error)
@@ -929,6 +950,48 @@ class LocalAI:
             except OSError:
                 pass
 
+    def embed(self, texts: List[str], query: bool = False) -> List[List[float]]:
+        """Each text as its embedding, by the model for finding by meaning that runs -- llama.cpp's /v1/embeddings on 127.0.0.1
+        with this start's key; query: the texts are questions (said so to the model). Each cut to EMBED_DIMS numbers and to
+        length 1, so that comparing two is one sum of products."""
+        if self.state != "ready" or self.proc is None or self.proc.poll() is not None:
+            raise ModelError(tr("s_ki_laeuft_nicht"))
+        entry = next((c for c in EMBED if c["id"] == self.model), {})
+        given = [(entry.get("query", "") if query else "") + str(t)[:EMBED_TEXT] + entry.get("eos", "") for t in texts]
+        conn = self._connect(300)
+        self.busy, self.last_used = True, time.time()
+        try:
+            conn.request("POST", "/v1/embeddings", json.dumps({"input": given, "encoding_format": "float"}).encode("utf-8"),
+                         {"Content-Type": "application/json", "Authorization": "Bearer " + self.key})
+            resp = conn.getresponse()
+            raw = resp.read(64 * 1024 * 1024).decode("utf-8", "replace")
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                data = {}
+            if resp.status != 200 or not isinstance(data, dict) or not isinstance(data.get("data"), list):
+                raise ModelError(str(((data.get("error") or {}) if isinstance(data, dict) else {}).get("message") or raw)[:300])
+            rows = sorted((r for r in data["data"] if isinstance(r, dict) and isinstance(r.get("index"), int)), key=lambda r: r["index"])
+            out: List[List[float]] = []
+            for r in rows:
+                v = r.get("embedding")
+                if not isinstance(v, list) or len(v) < EMBED_DIMS or not all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in v[:EMBED_DIMS]):
+                    raise ModelError(tr("s_ki_antwortet_nicht") % "embedding")
+                v = [float(x) for x in v[:EMBED_DIMS]]
+                n = math.sqrt(sum(x * x for x in v)) or 1.0
+                out.append([x / n for x in v])
+            if len(out) != len(given):
+                raise ModelError(tr("s_ki_antwortet_nicht") % "embedding")
+            return out
+        except (OSError, http.client.HTTPException) as e:
+            raise ModelError(tr("s_ki_antwortet_nicht") % str(e)[:200])
+        finally:
+            self.busy, self.last_used = False, time.time()
+            try:
+                conn.close()
+            except OSError:
+                pass
+
     def idle_check(self, minutes: int) -> None:
         """Called now and then: a model nobody asked for a while is ended (its memory is free again)."""
         if self.proc is not None and not self.busy and self.state == "ready" and minutes > 0 and time.time() - self.last_used > minutes * 60:
@@ -959,8 +1022,11 @@ class LocalAI:
         speech = [{"id": c["id"], "name": c["name"], "repo": c["repo"], "note": c["note"], "gb": c["gb"], "installed": c["id"] in have,
                    "size": (have[c["id"]]["size"] + int((have[c["id"]].get("mmproj") or {}).get("size") or 0)) if c["id"] in have else 0,
                    "file": have[c["id"]]["file"] if c["id"] in have else "", "newer": bool(((news.get("models") or {}).get(c["id"]) or {}).get("newer"))} for c in SPEECH]
+        embed = [{"id": c["id"], "name": c["name"], "repo": c["repo"], "note": c["note"], "gb": c["gb"], "installed": c["id"] in have,
+                  "size": have[c["id"]]["size"] if c["id"] in have else 0, "file": have[c["id"]]["file"] if c["id"] in have else "",
+                  "newer": bool(((news.get("models") or {}).get(c["id"]) or {}).get("newer"))} for c in EMBED]
         for mid, m in have.items():
-            if mid in SPEECH_IDS:
+            if mid in SPEECH_IDS or mid in EMBED_IDS:
                 continue
             if not any(c["id"] == mid for c in CATALOG):
                 models.append({"id": mid, "name": m.get("name") or m["file"], "repo": m["repo"], "note": "", "gb": 0, "ram": 0, "fit": fit(m["size"] / 1e9, None, ram),
@@ -974,7 +1040,7 @@ class LocalAI:
         return {"platform": {"system": sys.platform, "build": asset_tag(), "ram": ram, "can_seal": self._can_seal()},
                 "runtime": {"installed": bool(rt), "tag": rt.get("tag", ""), "version": rt.get("version", ""), "date": rt.get("installed", ""),
                             "latest": (news.get("runtime") or {}).get("tag", ""), "newer": bool((news.get("runtime") or {}).get("newer"))},
-                "models": models, "speech": speech, "recommended": recommended(ram), "checked": news.get("at", ""), "check_error": news.get("error", ""),
+                "models": models, "speech": speech, "embed": embed, "recommended": recommended(ram), "checked": news.get("at", ""), "check_error": news.get("error", ""),
                 "server": dict({"state": self.state if running or self.state in ("error", "starting") else "stopped", "model": self.model if running else "",
                                 "since": int(time.time() - self.since) if running and self.since else 0, "sealed": self.sealed if running else "",
                                 "busy": self.busy, "error": self.error if self.state == "error" else "", "tps": self.tps, "context": self.ctx if running else 0},

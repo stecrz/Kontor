@@ -61,7 +61,7 @@ import receipt_text
 import table_text
 from decimal import ROUND_HALF_UP, Decimal
 from model import norm_cat
-from llm_local import CATALOG, SANDBOXES, SPEECH, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
+from llm_local import CATALOG, EMBED, EMBED_CONTEXT, EMBED_IDS, SANDBOXES, SPEECH, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
 
 log = logging.getLogger("kontor.assistant")
 
@@ -184,6 +184,7 @@ NOTICE_SYSTEM = "\n".join([
     "followed -- you only decide what is worth noting.",
     "Most messages need no note. Then: {\"notes\": [], \"forget\": []}"])
 SPEECH_IDLE_MINUTES = 5                            # the speech model ends when nothing was dictated for that long
+EMBED_RETRY = 600                                  # seconds: the model for finding by meaning failed to start -- not tried again before
 ORPHAN_SECONDS = 8                                 # the page asks for news every second while it listens
 CHAT_DIR = "chats"                                 # saved conversations: in a folder of Kontor's data folder (encrypted) ...
 CHATS_FILE = CHAT_DIR + "/assistant-chats.json"    # ... their list ...
@@ -405,14 +406,19 @@ class Assistant:
         peer = app.assistant_peer() if callable(getattr(app, "assistant_peer", None)) else None
         self.peer: Optional["Assistant"] = peer
         if peer is not None:
-            self.ai, self.speech = peer.ai, peer.speech
+            self.ai, self.speech, self.embedder = peer.ai, peer.speech, peer.embedder
         else:
             self.ai = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir)
             self.speech = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir, role="speech")       # the model that writes down what is dictated
+            self.embedder = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir, role="embed")      # the model for finding by meaning
         self.queue: List[dict] = []                      # "update everything": what is still to come
         self.looked: Optional[float] = None              # the last look for newer versions (by itself or on your click)
         self._recall()
         self.speech_lock = threading.Lock()            # one recording at a time
+        self.embed_lock = threading.Lock()             # one request to the model for finding by meaning at a time
+        self._indexing = False                         # embeddings of notes being made (in the background)
+        self._qvecs: Dict[Tuple[str, str], Any] = {}   # embeddings of the last questions (the look at what to remember asks again): memory only
+        self._embed_failed = 0.0                       # when the model for finding by meaning last failed to start
         self.lock = threading.Lock()
         self.job: Optional[Job] = None
         self.conv: Dict[str, Any] = _new_conv()        # the conversation: with the model (messages) and as the page shows it (turns)
@@ -431,12 +437,21 @@ class Assistant:
         self.web_fetch: Callable[[dict], dict] = web_search.Reader(app.data_dir, lambda: self.settings()["sandbox"])      # the reader process (tests: a stand-in)
         if peer is None:
             self.ai.on_loaded = self._loaded
-            self.ai.on_change = lambda mid: self.speech.stop() if not mid or self.speech.model == mid else None      # its files go: dictating ends first
+            self.ai.on_change = self._files_go
         self._chats_move()                             # saved conversations of earlier versions: into their folder
+
+    def _files_go(self, mid: str) -> None:
+        """Files are about to be replaced or removed (a model's, or llama.cpp's: ""): what runs on them ends first."""
+        for other in (self.speech, self.embedder):
+            if not mid or other.model == mid:
+                other.stop()
 
     def _loaded(self, model_id: str) -> None:
         """A model file has arrived: the first one is the one in use (a choice there is stays)."""
         st = self.settings()
+        if model_id in EMBED_IDS:                        # the model for finding by meaning: the notes get their embeddings now
+            self.index_notes()
+            return
         if model_id in SPEECH_IDS:                       # a model for dictating answers no questions
             return
         if not st["model"] or st["model"] not in self.ai.models():
@@ -466,7 +481,7 @@ class Assistant:
 
         def loop() -> None:
             try:
-                while self.ai.proc is not None or self.speech.proc is not None:
+                while self.ai.proc is not None or self.speech.proc is not None or self.embedder.proc is not None:
                     time.sleep(WATCH_SECONDS)
                     self._idle_tick()
             except Exception:  # pragma: no cover
@@ -480,6 +495,8 @@ class Assistant:
         with it when it is ready at once (from its last question or dictation), else after minutes without a dictation."""
         idle = self.settings()["idle_minutes"]
         self.ai.idle_check(idle)
+        if not self._indexing:                           # (while notes get their embeddings it is busy, not idle)
+            self.embedder.idle_check(idle)
         if self.speech_early():
             self.speech.last_used = max(self.speech.last_used, self.ai.last_used)
             self.speech.idle_check(idle)
@@ -517,11 +534,12 @@ class Assistant:
                "job": self.job.id if self.job and not self.job.done else "", "server": ai["server"], "tools": self.tool_list(st),
                "dictation": bool(ai["runtime"]["installed"] and any(m["installed"] for m in ai["speech"])), "speech_early": self.speech_early()}
         if local:                                       # what is installed, sizes, downloads: only on the Mac
-            out.update({k: ai[k] for k in ("platform", "runtime", "models", "speech", "recommended", "checked", "check_error", "disk_free")}, load=ai["job"],
+            out.update({k: ai[k] for k in ("platform", "runtime", "models", "speech", "embed", "recommended", "checked", "check_error", "disk_free")}, load=ai["job"],
                        newer=self.newer(), updating=self.updating(),
                        web=dict(web_search.tavily_status(self.app.store), sources=[{"id": k, "label": _web_label(k, None), "tier": v["tier"]} for k, v in web_search.SOURCES.items()]),
                        speech_state=self.speech.state if self.speech.proc is not None or self.speech.state == "error" else "stopped", **self.chat_stats(),
                        speech_in_use=self.speech_model(), speech_early_auto=self._speech_fits(), context_auto_value=DEFAULTS["context"],
+                       embed_state=self.embedder.state, embed_error=self.embedder.error if self.embedder.state == "error" else "",
                        folder=self.ai.base, folder_exists=os.path.isdir(self.ai.base))          # llama.cpp and every model (also for dictating)
         if self.peer is not None:                       # the demo: nothing about this Mac's folders or keys
             for k in ("folder", "folder_exists", "web"):
@@ -559,7 +577,7 @@ class Assistant:
                 r.update({k: r["read"] for k in READ_RIGHTS})
             new["rights"].update({k: v for k, v in r.items() if k in RIGHTS and isinstance(v, bool)})
         new = settings({"assistant": new})
-        if new["model"] and (new["model"] not in self.ai.models() or new["model"] in SPEECH_IDS):
+        if new["model"] and (new["model"] not in self.ai.models() or new["model"] in SPEECH_IDS or new["model"] in EMBED_IDS):
             raise ValueError(tr("s_ki_modell_fehlt"))
         if new["speech"] and new["speech"] not in self.ai.models():
             raise ValueError(tr("s_ki_modell_fehlt"))
@@ -651,7 +669,7 @@ class Assistant:
 
     def load_model(self, model_id: str = "", repo: str = "", file: str = "") -> dict:
         """As LocalAI.download_model; a model of your own that is on this Mac can be named by its id alone (its newer file)."""
-        if not repo and not file and all(c["id"] != model_id for c in CATALOG + SPEECH):
+        if not repo and not file and all(c["id"] != model_id for c in CATALOG + SPEECH + EMBED):
             m = self.ai.models().get(model_id) or {}
             repo, file = str(m.get("repo") or ""), str(m.get("file") or "")
         return self.ai.download_model(model_id, repo, file)
@@ -676,8 +694,8 @@ class Assistant:
         if rt and rt_new and ((news.get("runtime") or {}).get("tag") or "") != rt.get("tag"):
             items.append({"kind": "runtime", "id": "", "name": "llama.cpp"})
             marked += 1
-        names = {c["id"]: c["name"] for c in CATALOG + SPEECH}
-        used = {st["model"], self.speech_model()}
+        names = {c["id"]: c["name"] for c in CATALOG + SPEECH + EMBED}
+        used = {st["model"], self.speech_model(), self.embed_model()}
         for mid in mods:
             if mid in have and found[mid].get("had", have[mid].get("sha256")) == have[mid].get("sha256"):
                 items.append({"kind": "model", "id": mid, "name": names.get(mid) or str(have[mid].get("name") or mid)})
@@ -736,6 +754,98 @@ class Assistant:
         if self.peer is None:
             self.ai.stop()
             self.speech.stop()
+            self.embedder.stop()
+
+    # -- finding by meaning ------------------------------------------------------------------------------------------------
+    # A third, small model (llm_local.EMBED) turns texts into embeddings: the notes' are made in the background and kept beside
+    # them (memory.py), a question's when it is asked. It runs like the others -- on this Mac, sandboxed, without a network --
+    # and writes no text. Without it (not loaded, llama.cpp too old, the model failing) the search goes by words alone.
+    def embed_model(self) -> str:
+        """The model for finding by meaning on this Mac ("" if none)."""
+        have = self.ai.models()
+        return next((i for i in EMBED_IDS if i in have), "")
+
+    def _meaning_key(self) -> str:
+        """Which model (and which file of it) the embeddings come from -- another one: the notes' are made anew. "" if there is
+        none to use now (none loaded, no llama.cpp, the assistant or the memory off)."""
+        st, mid = self.settings(), self.embed_model()
+        if not mid or not st["enabled"] or not st["memory"] or not self.ai.runtime():
+            return ""
+        return "%s:%s" % (mid, str(self.ai.models()[mid].get("sha256") or "")[:12])
+
+    def _embed(self, texts: List[str], query: bool = False) -> List[List[float]]:
+        """Embeddings by the model for finding by meaning (started now if it does not run: a few seconds; no texts: only
+        started). It did not start a little while ago: not tried again for EMBED_RETRY seconds (the questions do not wait for
+        it each time; the settings say why)."""
+        st, mid = self.settings(), self.embed_model()
+        if self.embedder.state == "error" and time.time() - self._embed_failed < EMBED_RETRY:
+            raise ModelError(self.embedder.error or tr("s_ki_laeuft_nicht"))
+        with self.embed_lock:
+            try:
+                self.embedder.ensure(mid, EMBED_CONTEXT, st["sandbox"])
+            except ModelError:
+                self._embed_failed = time.time()
+                raise
+            self._watch()
+            return self.embedder.embed(texts, query) if texts else []
+
+    def _meaning_of(self, text: str) -> Optional[Tuple[str, Any]]:
+        """A question's embedding for the search (memory.search: meaning) -- None when there is nothing to compare with or the
+        model cannot be asked (then the words alone count)."""
+        key = self._meaning_key()
+        if not key or not text.strip():
+            return None
+        try:
+            if not self.memory.vector_stats(key)[0]:
+                return None
+            hit = self._qvecs.get((key, text))
+            if hit is None:
+                hit = memory_mod.pack(self._embed([text], query=True)[0])
+                self._qvecs[(key, text)] = hit
+                while len(self._qvecs) > 8:
+                    self._qvecs.pop(next(iter(self._qvecs)))
+            return key, hit
+        except (ModelError, Cancelled, OSError, ValueError) as e:
+            log.warning("Assistant: no search by meaning this time (%s)", type(e).__name__)
+            return None
+
+    def _meaning_warm(self) -> None:
+        """The model for finding by meaning starts now, in the background (while the other one loads)."""
+        if self.embedder.proc is not None and self.embedder.state == "ready":
+            return
+
+        def run() -> None:
+            try:
+                self._embed([])
+            except (ModelError, Cancelled, OSError, ValueError) as e:
+                log.warning("Assistant: the model for finding by meaning did not start (%s)", type(e).__name__)
+        threading.Thread(target=run, name="kontor-ai-embed-warm", daemon=True).start()
+
+    def index_notes(self) -> None:
+        """Notes without an embedding of the model in use get one -- in the background, a few at a time (the first time all of
+        them: for thousands a while). Never before the sign-in; ends when the model, the assistant or the memory is off."""
+        with self.lock:
+            if self._indexing or not self._meaning_key() or not getattr(self.app.store, "is_open", True):
+                return
+            self._indexing = True
+
+        def run() -> None:
+            made = 0
+            try:
+                while getattr(self.app.store, "is_open", True):
+                    key = self._meaning_key()
+                    todo = self.memory.vectors_missing(key, 16) if key else []
+                    if not todo:
+                        break
+                    vecs = self._embed([t for _, t in todo])
+                    made += self.memory.set_vectors(key, {nid: (t, v) for (nid, t), v in zip(todo, vecs)})
+            except Exception as e:                       # (tried again with the next question)
+                log.warning("Assistant: embeddings of notes not made (%s)", type(e).__name__)
+            finally:
+                self._indexing = False
+                if made:
+                    log.info("Assistant: %d note(s) made searchable by meaning", made)
+        threading.Thread(target=run, name="kontor-ai-index", daemon=True).start()
 
     # -- dictating ---------------------------------------------------------------------------------------------------------
     def speech_model(self) -> str:
@@ -846,6 +956,7 @@ class Assistant:
     def forget(self) -> None:
         """Everything of the assistant that lives in memory ends (Kontor is reset): model, conversation, entries to take back."""
         self.stop_all()
+        self._qvecs.clear()
         self.conv, self.undo, self.page = _new_conv(), {}, {}
         self.forgotten.clear()
         self.offered.clear()
@@ -1211,7 +1322,7 @@ class Assistant:
             seen = "\n".join(str(m.get("content") or "") for m in history if m.get("role") == "user")
             before = next((str(m.get("text") or "") for m in reversed(conv.get("turns") or []) if isinstance(m, dict) and m.get("role") == "user"), "")
             skip = set(conv.get("profile_ids") or []) | {str(e.get("id") or "") for e in job.events if e.get("type") == "memory"} | job.gave
-            notes = [n for n in self.memory.recall(question, memory_mod.recall_budget(st["context"]), skip, before)
+            notes = [n for n in self.memory.recall(question, memory_mod.recall_budget(st["context"]), skip, before, self._meaning_of(question))
                      if "] %s\n" % n["text"] not in seen]
         except Exception as e:                           # not readable right now: the question goes without
             log.warning("Assistant: notes for the question not found (%s)", type(e).__name__)
@@ -1313,6 +1424,12 @@ class Assistant:
             it["profile"] = it["id"] in ids
         out.update(on=bool(st["memory"]), profile=len(ids), pinned_out=sum(1 for n in self.memory.active() if n.get("pinned") and n["id"] not in ids),
                    text_max=memory_mod.TEXT_MAX)
+        key = self._meaning_key()
+        if key:                                          # how many notes can be found by meaning (the rest is being made, in the background)
+            done, total = self.memory.vector_stats(key)
+            out["meaning"] = {"done": done, "total": total}
+            if done < total:
+                self.index_notes()
         return out
 
     def memory_do(self, body: dict) -> dict:
@@ -1332,6 +1449,8 @@ class Assistant:
         else:
             raise ValueError("unbekannt")
         log.info("Assistant: memory changed in the settings (%s)", act)       # never what a note says
+        if act in ("add", "edit"):
+            self.index_notes()
         return dict(self.memory_list({"q": body.get("q"), "limit": body.get("limit"), "replaced": body.get("replaced")}), known=known)
 
     # -- remembering in a conversation -------------------------------------------------------------------------------------------
@@ -1343,7 +1462,7 @@ class Assistant:
         """Notes there are that may be about the same as these texts: those of this conversation first (the latest first), then
         what the search finds for them (memory.search: word forms, parts of compound words, slips of a letter)."""
         here = [n for n in self.memory.active() if chat and n["source"].get("chat") == chat][:NOTICE_KNOWN]
-        found = self.memory.search("\n".join(texts), NOTICE_KNOWN, exclude=[n["id"] for n in here])
+        found = self.memory.search("\n".join(texts), NOTICE_KNOWN, exclude=[n["id"] for n in here], meaning=self._meaning_of(texts[0] if texts else ""))
         return (here + [{k: v for k, v in n.items() if k != "score"} for n in found])[:NOTICE_KNOWN]
 
     @staticmethod
@@ -1451,6 +1570,8 @@ class Assistant:
             job.emit("memory", id=nid, state="forgotten", text=gone["text"])
             told.append("forgotten: one note")
         log.info("Assistant: looked at what was said (%d message(s)): %d noted, %d forgotten", len(texts), sum(1 for x in told if x.startswith("noted")), sum(1 for x in told if x.startswith("forgotten")))
+        if any(x.startswith("noted") for x in told):
+            self.index_notes()
         return told
 
     def _chat_memory(self, cid: str, mid: str, state: str, new_id: str = "", text: str = "") -> None:
@@ -1511,6 +1632,7 @@ class Assistant:
             return {"state": "declined", "id": oid}
         note = self.memory.add(o["text"], how="chat", chat=o["chat"], kind=o["kind"], replaces=o["replaces"], pasted=o["pasted"], names=o["names"], pinned=o["pinned"], by="chat")
         self.offered.pop(oid, None)
+        self.index_notes()
         if self.conv.get("id") == o["chat"]:             # what was offered there is that note now (forgetting it takes the text out again)
             for t in self.conv.setdefault("given", {}).pop(oid, []):
                 self._gave(self.conv, note["id"], t)
@@ -2621,7 +2743,7 @@ class Assistant:
             raise ToolError("Give a few words to look for.")
         given = ctx.setdefault("given", {})
         out, room = [], MAX_RESULT - 300
-        for n in self.memory.search(q, RECALL_FOUND):
+        for n in self.memory.search(q, RECALL_FOUND, meaning=self._meaning_of(q)):
             if len(n["text"]) + 40 > room:
                 break
             room -= len(n["text"]) + 40
@@ -3839,6 +3961,9 @@ class Assistant:
         try:
             if self.ai.state != "ready" or (self.ai.model, self.ai.ctx) != (st["model"], st["context"]):
                 job.emit("status", state="loading")
+            if st.get("memory") and not quick and self._meaning_key():
+                self.index_notes()                           # (the model for finding by meaning starts beside the other; notes without an embedding get one)
+                self._meaning_warm()
             self.ai.ensure(st["model"], st["context"], st["sandbox"], job.cancel)
             self._watch()
             self.speech_warm()

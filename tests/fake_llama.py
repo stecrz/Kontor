@@ -22,6 +22,12 @@ is answered from what that request holds -- nothing else reaches it:
 (files beside it: notice-says -> answers with that file's text, whatever it is; notice-slow -> takes five seconds;
 notice-fails -> the server answers with an error)
 
+Started with --embedding (the model for finding by meaning): /v1/embeddings only. Each text's embedding (1024 numbers) is made
+of its words -- a word counts by its first five letters, a few words count as the same (SAME: Ferien and Urlaub, Auto and
+Wagen ...) and three times as much; the instruction before a question and the end mark after every text are left out. So texts
+about the same thing are alike without a word in common, as with a real model. (embed-fails beside it: an error; record: the
+last request to embed.json)
+
 Files beside it tell it more (Kontor starts it with an environment of its own, so nothing else reaches it):
   record     -> it writes how it was started (arguments, names of environment variables) to started.json and the last
                 request to request.json (the last look at what to remember: to notice.json)
@@ -52,7 +58,33 @@ HELP = """----- common params -----
 --jinja, --no-jinja                     whether to use jinja template engine for chat
 --tools TOOL1,TOOL2,...                 experimental: built-in tools for AI agents
 -mm,   --mmproj FILE                    path to a multimodal projector file
+--embedding, --embeddings               restrict to only support embedding use case
+--pooling {none,mean,cls,last,rank}     pooling type for embeddings
+-b,    --batch-size N                   logical maximum batch size
+-ub,   --ubatch-size N                  physical maximum batch size
 """
+
+
+SAME = {"ferie": "urlaub", "urlau": "urlaub", "reise": "urlaub", "verre": "urlaub", "holid": "urlaub", "vacat": "urlaub",
+        "auto": "wagen", "wagen": "wagen", "fahrz": "wagen", "oldti": "wagen", "pkw": "wagen",
+        "rente": "ruhestand", "pensi": "ruhestand", "ruhes": "ruhestand", "aufho": "ruhestand"}
+
+
+def embedding(text):
+    import hashlib
+    import math
+    text = text.replace("<|endoftext|>", "")
+    if "\nQuery:" in text:
+        text = text.split("\nQuery:", 1)[1]
+    v = [0.0] * 1024
+    for w in re.findall(r"[a-zäöüß]+", text.lower()):
+        if len(w) < 3:
+            continue
+        key, weight = (SAME[w[:5]], 3.0) if w[:5] in SAME else (w[:5], 1.0)
+        h = hashlib.md5(key.encode()).digest()
+        v[int.from_bytes(h[:2], "big") % 512] += weight * (1 if h[2] & 1 else -1)
+    n = math.sqrt(sum(x * x for x in v)) or 1.0
+    return [x / n for x in v]
 
 
 def arg(name, default=None):
@@ -130,6 +162,16 @@ def main():
                         json.dump({"bytes": len(wav), "language": parts.get("language", b"").decode(), "fields": sorted(parts)}, f)
                 return self._json(200, {"text": "language German<asr_text>Diktat mit %d Bytes.</asr_text>" % len(wav)})
             body = json.loads(raw or b"{}")
+            if "--embedding" in sys.argv:                          # the model for finding by meaning: embeddings, nothing else
+                if self.path != "/v1/embeddings":
+                    return self._json(501, {"error": {"message": "This server does not support completions. Start it without --embedding"}})
+                if os.path.exists(os.path.join(here, "record")):
+                    with open(os.path.join(here, "embed.json"), "w") as f:
+                        json.dump({"body": body, "argv": sys.argv[1:]}, f)
+                if os.path.exists(os.path.join(here, "embed-fails")):
+                    return self._json(500, {"error": {"message": "broken on purpose"}})
+                texts = body.get("input") if isinstance(body.get("input"), list) else [body.get("input")]
+                return self._json(200, {"object": "list", "data": [{"object": "embedding", "index": i, "embedding": embedding(str(t))} for i, t in enumerate(texts)]})
             if self.path != "/v1/chat/completions":
                 return self._json(404, {"error": {"message": "not found"}})
             msgs = body.get("messages") or []

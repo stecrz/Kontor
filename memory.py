@@ -10,6 +10,9 @@ and how it should answer. A second brain on this Mac, kept beside the model (the
   search   by words, without a model (search, recall): word forms (Urlaube finds Urlaub, Häuser Haus), parts of compound
            words (Urlaubskasse finds Urlaub, Berater Steuerberater), slips of a letter (Urlaup). What fits a question comes
            with it (recall, within a fixed budget); the notes an answer rested on count as used (touch: memory-used.json).
+           And by meaning, when the small model for it is on this Mac (assistant.py): every note's embedding beside its file
+           (memory-vectors-0001.json, ...: encrypted like the notes, made anew when a note or the model changes, gone with
+           the note); then "Ferien" finds "Urlaub". Without that model the word search stays.
 
 Only Kontor reads and writes here. The model has no way to this file: it runs in a sandbox that cannot read Kontor's data, and
 it has no tool that writes a note. What becomes a note is decided outside its answer (assistant.py).
@@ -23,14 +26,18 @@ nothing that was there.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 import math
+import operator
 import os
 import re
 import secrets
 import threading
 import unicodedata
+from array import array
 from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
@@ -51,6 +58,8 @@ USED_FILE = "memory-used.json"                     # when a note last helped an 
 SEARCH_TERMS = 300                                 # different words of a query looked at (a long pasted text: those at its beginning and end)
 WORD_MAX = 40                                      # letters of a word at most (longer: no word -- a code, a link -- and searching it would take long)
 PART, SLIP = 0.7, 0.6                              # how well a part of a compound word (at most), a slip of a letter matches (the same word: 1)
+VEC_FILE = "memory-vectors-%04d.json"              # beside each file of notes: their embeddings (finding by meaning; encrypted, made anew when needed)
+SEM_FLOOR, SEM_MIN = 0.3, 0.5                      # likeness of a note's and a question's embeddings: below the floor it counts nothing; found by meaning alone from SEM_MIN
 HOWS = ("chat", "manual", "backup")                # where a note came from: said in a conversation, typed in the settings, restored
 KINDS = ("", "fact", "preference", "plan", "decision", "person", "reason", "style")       # what it is about ("": not told)
 # words that say nothing about what a text is about (folded as _fold does: ae, oe, ue, ss): left out when texts are compared
@@ -63,6 +72,7 @@ wollen worden wuerde wurde zu zum zur zwar about after again all also and any ar
 her here him his how into its just more most not now off once only other our out over own she should some such than that the their them then there these they
 this those through too under until very was were what when where which while who why will with would you your""".split())
 _SEG_NAME = re.compile(r"memory-notes-(\d{4,6})\.json(?:\.enc)?")
+_VEC_NAME = re.compile(r"memory-vectors-(\d{4,6})\.json(?:\.enc)?")
 _NOTE_ID = re.compile(r"n[0-9a-f]{10}")
 _MORE_INVISIBLE = re.compile("[\u180b-\u180d\u2800\U000e0100-\U000e01ef]")      # further characters nobody sees (variation selectors, a blank braille cell)
 
@@ -138,6 +148,23 @@ def _near(a: str, b: str, k: int) -> bool:
             return False
         before, prev = prev, cur
     return prev[-1] <= k
+
+
+def pack(v: Iterable[float]) -> array:
+    """An embedding as it is kept: a byte per number (-127 ... 127, scaled to its largest) -- a quarter of the room, and what
+    comparing needs (only the direction counts)."""
+    v = [float(x) for x in v]
+    top = max((abs(x) for x in v), default=0.0) or 1.0
+    return array("b", [max(-127, min(127, int(round(x / top * 127)))) for x in v])
+
+
+def _norm(a: array) -> float:
+    return math.sqrt(sum(x * x for x in a)) or 1.0
+
+
+def _text_key(text: str) -> str:
+    """Which text an embedding was made of (a note changed since: made anew)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 class _Index:
@@ -327,6 +354,7 @@ class Memory:
         self._broken: Set[int] = set()                     # files that could not be read: never written again
         self._replaced: Dict[str, str] = {}                # id of a replaced note -> id of the note that replaced it
         self._used: Dict[str, str] = {}                    # id -> when it last helped an answer (USED_FILE)
+        self._vec: Dict[str, Tuple[str, str, array, float]] = {}    # id -> (model, key of its text, embedding, its length): finding by meaning
         self._rev = 0                                      # counts every change of the notes (search builds its index anew)
         self._ix: Optional[Tuple[int, _Index]] = None
         self.epoch = 0                                     # counts changes made outside a conversation (the profile is built anew)
@@ -336,16 +364,33 @@ class Memory:
         return FILE % seg
 
     def _segments(self) -> List[int]:
+        return self._names(_SEG_NAME)
+
+    def _names(self, pattern: "re.Pattern[str]") -> List[int]:
         try:
             names = os.listdir(self.store.data_dir)
         except OSError:
             return []
         out = set()
         for name in names:
-            m = _SEG_NAME.fullmatch(name)
+            m = pattern.fullmatch(name)
             if m and name.endswith(".enc") == bool(self.store.encrypted):
                 out.add(int(m.group(1)))
         return sorted(out)
+
+    def _write_vectors(self, seg: int) -> None:
+        """The embeddings of the notes in one file of notes, beside it (none left: the file goes), each with its model. Only
+        what is made of the notes as they are: a forgotten note's embedding goes with it (it says something about its text)."""
+        mine = {nid: self._vec[nid] for nid in self._by_seg.get(seg) or [] if nid in self._vec}
+        if not mine:
+            self.store.delete(VEC_FILE % seg)
+            return
+        self.store.save(VEC_FILE % seg, {"v": FORMAT, "vecs": {nid: [v[1], base64.b64encode(v[2].tobytes()).decode("ascii"), v[0]] for nid, v in mine.items()}})
+
+    def _drop_vector(self, nid: str, seg: Optional[int]) -> None:
+        """A note changed: its embedding (of the old text) goes. Raises when its file cannot be written."""
+        if self._vec.pop(nid, None) is not None and seg is not None:
+            self._write_vectors(seg)
 
     def _load(self) -> Dict[str, dict]:
         if self._notes is not None:
@@ -381,6 +426,20 @@ class Memory:
             used = {}
         used = used.get("used") if isinstance(used, dict) and isinstance(used.get("used"), dict) else {}
         self._used = {k: _stamp(v, "") for k, v in used.items() if k in notes and _stamp(v, "")}
+        self._vec = {}
+        for name in self._names(_VEC_NAME):              # the embeddings: made of the notes, so a file that cannot be read is made anew
+            try:
+                doc = self.store.load(VEC_FILE % name, {})
+                for nid, entry in (doc.get("vecs") or {}).items():
+                    key, b64, model = (list(entry) + ["", "", ""])[:3] if isinstance(entry, list) else ("", "", "")
+                    if nid in notes and isinstance(key, str) and isinstance(b64, str) and isinstance(model, str) and key and b64:
+                        a = array("b", base64.b64decode(b64))
+                        if a:
+                            self._vec[nid] = (model, key, a, _norm(a))
+            except StoreLocked:
+                raise
+            except Exception as e:
+                log.warning("Memory: a file of embeddings is not readable (%s) -- made anew", type(e).__name__)
         self._notes = notes
         self._rev += 1
         self._relink()
@@ -492,12 +551,62 @@ class Memory:
         ix = self._index()
         return {nid for t in ix.like(stem(word), inside=False) for nid in ix.post[t]}
 
-    def search(self, query: Any, limit: int = 10, exclude: Iterable[str] = (), more: Any = "") -> List[dict]:
+    # -- by meaning --------------------------------------------------------------------------------------------------------------
+    def vectors_missing(self, model: str, limit: int) -> List[Tuple[str, str]]:
+        """(id, text) of notes that count without an embedding of this model made of their text -- the latest first."""
+        with self.lock:
+            out = []
+            for n in self.active():
+                v = self._vec.get(n["id"])
+                if v is None or v[0] != model or v[1] != _text_key(n["text"]):
+                    out.append((n["id"], n["text"]))
+                    if len(out) >= limit:
+                        break
+            return out
+
+    def set_vectors(self, model: str, got: Dict[str, Tuple[str, Iterable[float]]]) -> int:
+        """Embeddings made: id -> (the text it was made of, the numbers). Kept only for a note that is still there with that
+        very text (changed or forgotten meanwhile: thrown away), written file by file. Returns how many were kept."""
+        with self.lock:
+            notes = self._load()
+            segs: Set[int] = set()
+            for nid, (text, vec) in got.items():
+                n = notes.get(nid)
+                if n is None or n["text"] != text or nid not in self._seg:
+                    continue
+                a = pack(vec)
+                self._vec[nid] = (model, _text_key(text), a, _norm(a))
+                segs.add(self._seg[nid])
+            for seg in segs:
+                self._write_vectors(seg)
+            return sum(1 for nid in got if nid in self._vec and self._vec[nid][0] == model)
+
+    def vector_stats(self, model: str) -> Tuple[int, int]:
+        """(notes with an embedding of this model, notes that count)."""
+        with self.lock:
+            act = self.active()
+            return sum(1 for n in act if (self._vec.get(n["id"]) or ("",))[0] == model and self._vec[n["id"]][1] == _text_key(n["text"])), len(act)
+
+    def _likeness(self, model: str, q: array) -> Dict[str, float]:
+        """How alike each note that counts (with an embedding of this model, of its text as it is) is to a question's embedding:
+        -1 ... 1 (the cosine of the angle between them)."""
+        qn = _norm(q)
+        out = {}
+        for nid, n in (self._notes or {}).items():
+            v = self._vec.get(nid)
+            if v is None or v[0] != model or nid in self._replaced or len(v[2]) != len(q) or v[1] != _text_key(n["text"]):
+                continue
+            out[nid] = sum(map(operator.mul, q, v[2])) / (qn * v[3])
+        return out
+
+    def search(self, query: Any, limit: int = 10, exclude: Iterable[str] = (), more: Any = "", meaning: Optional[Tuple[str, array]] = None) -> List[dict]:
         """The notes that count which fit a query best, each with its score: every word of the query (more: words that count
         half -- the question before, for "and in May?") adds how well a note holds it (like) times how much the word says
         (idf). Only notes holding at least one word that tells them apart (telling: a word in nearly every note finds
         nothing alone), and only those not far behind the best (a quarter of its score). The best first; pinned and later
-        ones first among equals."""
+        ones first among equals. meaning: (model, the query's embedding packed) -- then also by meaning: a note as alike as
+        SEM_MIN is found without a word in common, and likeness adds to the score of a note found by its words (both parts
+        0 ... 1: words as a share of the best, likeness from SEM_FLOOR up)."""
         with self.lock:
             ix = self._index()
             notes = self._notes or {}
@@ -518,6 +627,13 @@ class Memory:
                             tells.add(nid)
             skip = set(exclude)
             scored = [(sum(v.values()), nid) for nid, v in best.items() if nid in tells and nid not in skip and nid in notes]
+            if meaning is not None:                      # by words and by meaning together
+                like = self._likeness(meaning[0], meaning[1])
+                top_w = max((sc for sc, _ in scored), default=0.0) or 1.0
+                words = {nid: sc / top_w for sc, nid in scored}
+                sem = lambda nid: max(0.0, (like.get(nid, 0.0) - SEM_FLOOR) / (1 - SEM_FLOOR))
+                found = set(words) | {nid for nid, c in like.items() if c >= SEM_MIN and nid not in skip and nid in notes}
+                scored = [(words.get(nid, 0.0) + sem(nid), nid) for nid in found]
             if not scored:
                 return []
             top = max(s for s, _ in scored)
@@ -526,11 +642,11 @@ class Memory:
             scored.sort(key=lambda x: (round(x[0], 6), bool(notes[x[1]].get("pinned")), notes[x[1]]["changed"], pos[x[1]]), reverse=True)
             return [dict(notes[nid], score=round(s, 3)) for s, nid in scored[:max(1, int(limit))]]
 
-    def recall(self, query: Any, budget_tokens: int = RECALL_TOKENS, exclude: Iterable[str] = (), more: Any = "") -> List[dict]:
+    def recall(self, query: Any, budget_tokens: int = RECALL_TOKENS, exclude: Iterable[str] = (), more: Any = "", meaning: Optional[Tuple[str, array]] = None) -> List[dict]:
         """The notes that fit a question, as many as fit into the budget (counted as the profile counts) -- the best first."""
         room = max(0, int(budget_tokens)) * 3
         out = []
-        for n in self.search(query, 40, exclude, more):
+        for n in self.search(query, 40, exclude, more, meaning):
             cost = len(n["text"]) + 16
             if cost <= room:
                 out.append(n)
@@ -674,6 +790,12 @@ class Memory:
                 n.pop("names", None)                     # the names in it: found anew
         n = self._change(nid, fn)
         if old != n["text"]:
+            with self.lock:                              # its embedding was of the old text: made anew (never used again either way: made of another text)
+                try:
+                    self._drop_vector(n["id"], self._seg.get(n["id"]))
+                except Exception as e:
+                    log.warning("Memory: a file of embeddings not written (%s)", type(e).__name__)
+        if old != n["text"]:
             self._tell("edit", n, old=[old], by=by)
         return n
 
@@ -694,6 +816,13 @@ class Memory:
             n = notes.get(str(nid))
             if n is None:
                 raise NoteError(tr("s_ki_g_weg"))
+            if n["id"] in self._vec:                     # its embedding first: a file that cannot be written leaves the note as it is
+                vec = self._vec.pop(n["id"])
+                try:
+                    self._write_vectors(self._seg[n["id"]])
+                except Exception:
+                    self._vec[n["id"]] = vec
+                    raise
             where = list(notes).index(n["id"])
             notes.pop(n["id"])
             seg = self._seg[n["id"]]
@@ -755,12 +884,12 @@ class Memory:
             except OSError:
                 names = []
             for name in names:
-                if _SEG_NAME.fullmatch(name) or re.fullmatch(r"memory-(?:notes-\d{4,6}|used)\.json(?:\.enc)?(?:\.tmp|\.renew)?", name):
+                if _SEG_NAME.fullmatch(name) or re.fullmatch(r"memory-(?:notes-\d{4,6}|vectors-\d{4,6}|used)\.json(?:\.enc)?(?:\.tmp|\.renew)?", name):
                     try:
                         os.remove(os.path.join(folder, name))
                     except OSError as e:
                         log.warning("Memory: a file of notes not removed (%s)", e)
-            self._notes, self._seg, self._by_seg, self._broken, self._replaced, self._used = {}, {}, {}, set(), {}, {}
+            self._notes, self._seg, self._by_seg, self._broken, self._replaced, self._used, self._vec = {}, {}, {}, set(), {}, {}, {}
             self._rev += 1
             self.epoch += 1
         if not quiet:

@@ -204,7 +204,7 @@ const H = {
   tls: t('optional_zertifikat_schluessel_pem_fue'),
   updates: t('einzige_netzverbindung_von_kontor_einm'),
   assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
-  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_sp_start: t('h_ki_sp_start'), ki_mikrofilter: t('h_ki_mikrofilter'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'), ki_vertraut: t('h_ki_vertraut'), ki_websites: t('h_ki_websites'),
+  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_bedeutung: t('h_ki_bedeutung'), ki_sp_start: t('h_ki_sp_start'), ki_mikrofilter: t('h_ki_mikrofilter'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'), ki_vertraut: t('h_ki_vertraut'), ki_websites: t('h_ki_websites'),
   ki_gedaechtnis: t('h_ki_gedaechtnis'),
   ki_programm: t('h_ki_programm'), ki_auto_suchen: t('h_ki_auto_suchen'), ki_modelle: t('h_ki_modelle'), ki_ablage: t('h_ki_ablage'),
   darlehen_iban: t('die_rate_wird_am_gegenkonto'),
@@ -264,7 +264,7 @@ const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl:
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_sp_start: 'assistant-dictation', ki_mikrofilter: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_bedeutung: 'assistant-memory', ki_sp_start: 'assistant-dictation', ki_mikrofilter: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
@@ -8230,7 +8230,7 @@ async function vEinstellungenAssistent() {
   if (!a.local) return `<div class="note">${t('ki_nur_am_mac')}</div>`;
   const rt = a.runtime || {}, sv = a.server || {}, pf = a.platform || {}, load = a.load && a.load.state === 'running' ? a.load : null, models = a.models || [];
   const busy = load || a.updating ? 'disabled' : '';
-  const ears = new Set((a.speech || []).map(m => m.id)), part = l => l ? (l.kind === 'model' && ears.has(l.id) ? 'speech' : l.kind) : '';
+  const ears = new Set((a.speech || []).map(m => m.id)), finds = new Set((a.embed || []).map(m => m.id)), part = l => l ? (l.kind === 'model' && ears.has(l.id) ? 'speech' : l.kind === 'model' && finds.has(l.id) ? 'embed' : l.kind) : '';
   const prog = k => part(load) === k ? `<div class="prog-wrap" id="as-prog"><div class="prog"><i style="width:${load.total ? Math.round(100 * load.done / load.total) : 0}%"></i></div><span class="prog-l">${esc(asLoadText(load))}</span><button class="secondary small" id="as-cancel">${t('ki_abbrechen')}</button></div>` : '';
   const err = k => !load && a.load && a.load.state === 'error' && part(a.load) === k ? `<div class="banner err small">${esc(a.load.text || '')}</div>` : '';
   const fitTag = m => m.fit === 'big' ? `<span class="tag warn" title="${esc(t('ki_zu_gross_tip'))}">${t('ki_zu_gross')}</span>` : m.fit === 'tight' ? `<span class="tag warn" title="${esc(t('ki_knapp_tip'))}">${t('ki_knapp')}</span>` : '';
@@ -8271,6 +8271,12 @@ async function vEinstellungenAssistent() {
     <div class="as-item"><span><b>${t('ki_mikrofilter')}</b>${hq('ki_mikrofilter')}</span><span class="as-act"><select id="as-speech-filter" aria-label="${esc(t('ki_mikrofilter'))}">${opt('1', t('ki_mikrofilter_an'), st.speech_filter === false ? '0' : '1')}${opt('0', t('ki_mikrofilter_aus'), st.speech_filter === false ? '0' : '1')}</select></span></div>
     <div id="as-mic-perm"></div>` : ''}</div>
   ${prog('speech')}${err('speech')}
+  <h2>${t('ki_bedeutung')}${hq('ki_bedeutung')}</h2>
+  <div class="as-list">${(a.embed || []).map(m => `<div class="as-item${m.installed ? ' on' : ''}"><span><b>${esc(m.name)}</b> <span class="muted">${t(`ki_note_${m.note}`)}</span><br><span class="muted small">${esc(m.installed ? m.file : m.repo)} · ${m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb)}</span></span>
+    <span class="as-act">${m.newer ? `<span class="pill info">${t('ki_neuere_datei')}</span>` : m.installed ? `<span class="pill ok">${t('ki_geladen')}</span>` : ''}
+      ${!m.installed || m.newer ? `<button class="small secondary as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="" ${busy}>${t(m.installed ? 'ki_aktualisieren' : 'ki_laden')}</button>` : ''}
+      ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`).join('')}</div>
+  ${a.embed_state === 'error' && a.embed_error ? `<div class="banner err small">${esc(a.embed_error)}</div>` : ''}${prog('embed')}${err('embed')}
   <h2>${t('ki_aktualisierung')}${hq('ki_auto_suchen')}</h2>
   <div class="form">
     <label>${t('ki_auto_suchen')}</label><label class="chk"><select id="as-check-mode">${[['daily', t('taeglich')], ['weekly', t('woechentlich')], ['monthly', t('monatlich')], ['aus', t('nie')]].map(([v, l]) => opt(v, l, st.check_mode)).join('')}</select></label>
@@ -8319,7 +8325,7 @@ async function asMemLoad(body, more) {
 }
 function asMemDraw() {
   const r = AS.mem, box = $('#as-mem-list'); if (!r || !box) return;
-  const n = $('#as-mem-n'); if (n) n.textContent = r.notes ? tn('ki_g_n', r.notes, asN(r.notes)) + (r.pinned ? ' · ' + t('ki_g_angeheftet_n', asN(r.pinned)) : '') : '';
+  const n = $('#as-mem-n'); if (n) n.textContent = r.notes ? tn('ki_g_n', r.notes, asN(r.notes)) + (r.pinned ? ' · ' + t('ki_g_angeheftet_n', asN(r.pinned)) : '') + (r.meaning && r.meaning.done < r.meaning.total ? ' · ' + t('ki_g_bedeutung_n', asN(r.meaning.done), asN(r.meaning.total)) : '') : '';
   const all = $('#as-mem-all'); if (all) all.disabled = !r.notes;
   const warn = $('#as-mem-warn'); if (warn) warn.innerHTML = (r.pinned_out ? `<div class="banner small">${esc(tn('ki_g_zu_viel', r.pinned_out, asN(r.pinned_out)))}</div>` : '') + (r.broken ? `<div class="banner err small">${esc(tn('ki_g_defekt', r.broken, asN(r.broken)))}</div>` : '');
   const some = r.profile < r.notes;          // not everything goes with every question: the notes that do say so

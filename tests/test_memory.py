@@ -1111,6 +1111,143 @@ class Fitting(_Assist):
         self.assertNotIn("ruhiger Satz", json.dumps(self.looked(), ensure_ascii=False))
 
 
+class Meaning(_Assist):
+    """Finding by meaning: a third, small model (the stand-in makes embeddings of words, a few of them counting as the same) --
+    the notes' embeddings kept encrypted beside them, made anew when needed, gone with the note; without the model: words."""
+    FERIEN = "Im Sommer fahren wir nach Kroatien in die Ferien"
+
+    def setUp(self):
+        super().setUp()
+        self.a.ai.download_model("qwen3-embedding-0.6b")
+        self.assertEqual(TA.wait_job(self.a.ai)["state"], "done")
+        self.note = self.a.memory.add(self.FERIEN, how="chat", chat="ab12cd34ef")
+        self.a.memory.merge({"v": 1, "notes": [{"id": "n%010x" % i, "text": "Notiz %d zu Dingen ohne Bezug, %s" % (i, "ein ruhiger Satz " * 4)} for i in range(300)]}, quiet=True)
+        self.record()
+
+    def indexed(self):
+        key = self.a._meaning_key()
+        self.assertTrue(key)
+        self.a.index_notes()
+        t0 = time.time()
+        while self.a.memory.vector_stats(key)[0] < self.a.memory.vector_stats(key)[1] or self.a._indexing:
+            self.assertLess(time.time() - t0, 30)
+            time.sleep(0.05)
+        return key
+
+    def asked(self):
+        with open(self.beside("request.json"), encoding="utf-8") as f:
+            return json.load(f)["messages"][-1]["content"]
+
+    def test_found_by_its_meaning(self):
+        self.ask("Wann ist mein Urlaub?")                                          # not yet made: by words (nothing in common)
+        self.indexed()
+        self.ask("Wann ist mein Urlaub geplant?", conversation="")
+        self.assertIn("] %s\n" % self.FERIEN, self.asked())                       # Ferien for Urlaub: by meaning
+        self.assertNotIn("ruhiger Satz", self.asked())
+        with open(self.beside("embed.json"), encoding="utf-8") as f:
+            seen = json.load(f)
+        self.assertIn("--embedding", seen["argv"]); self.assertEqual(seen["argv"][seen["argv"].index("--pooling") + 1], "last")
+        self.assertEqual(seen["body"]["input"], ["Instruct: Given a question, retrieve the notes that help to answer it\nQuery:Wann ist mein Urlaub geplant?<|endoftext|>"])
+        self.assertEqual(self.a.embedder.role, "embed")
+        self.assertEqual(self.tool("recall", {"query": "Reise"}, conversation="")["notes"][0]["text"], self.FERIEN)
+        self.assertEqual([x["text"] for x in self.a._known(["Vergiss das mit der Reise"])][:1], [self.FERIEN])        # the look at what to remember too
+        self.assertEqual(self.a.memory_list({})["meaning"], {"done": 301, "total": 301})
+        st = self.a.status(True)
+        self.assertEqual([(m["id"], m["installed"]) for m in st["embed"]], [("qwen3-embedding-0.6b", True)])
+        self.assertNotIn("qwen3-embedding-0.6b", [m["id"] for m in st["models"]])          # it answers no questions
+        self.assertNotEqual(self.a.settings()["model"], "qwen3-embedding-0.6b")
+
+    def test_kept_encrypted_beside_the_notes_made_anew_and_gone_with_them(self):
+        key = self.indexed()
+        mine = lambda: sorted(n for n in os.listdir(self.app.data_dir) if n.startswith("memory-"))
+        self.assertEqual(mine(), ["memory-notes-0001.json.enc", "memory-vectors-0001.json.enc"])
+        with open(os.path.join(self.app.data_dir, "memory-vectors-0001.json.enc"), "rb") as f:
+            self.assertNotIn(self.note["id"].encode(), f.read())
+        self.assertEqual(M.Memory(self.app.store).vector_stats(key), (301, 301))          # read again after a restart
+        self.a.memory_do({"action": "edit", "id": self.note["id"], "text": "Im Sommer fahren wir nach Kroatien in die Ferien, drei Wochen"})
+        self.indexed()                                                            # changed: made anew
+        self.assertEqual(self.a.memory.vector_stats(key), (301, 301))
+        self.a.memory_do({"action": "delete", "id": self.note["id"]})
+        self.assertNotIn(self.note["id"], self.a.memory._vec)                     # forgotten: its embedding too (it tells something about its text)
+        self.assertNotIn(self.note["id"], json.dumps(self.app.store.load("memory-vectors-0001.json")))
+        pid = self.a.embedder.proc.pid
+        models = self.a.ai._load("models.json")                                   # a newer file of the model: everything made anew, by the new file
+        models["models"]["qwen3-embedding-0.6b"]["sha256"] = "9" * 64
+        self.a.ai._save("models.json", models)
+        self.assertNotEqual(self.a._meaning_key(), key)
+        self.assertEqual(self.a.memory.vector_stats(self.a._meaning_key())[0], 0)
+        half = self.a.memory.vectors_missing(self.a._meaning_key(), 100)
+        self.a.memory.set_vectors(self.a._meaning_key(), {nid: (t, [1.0] + [0.0] * 511) for nid, t in half})
+        self.assertEqual(M.Memory(self.app.store).vector_stats(self.a._meaning_key())[0], 100)     # what was made anew stays over a restart (each with its model)
+        self.indexed()
+        self.assertNotEqual(self.a.embedder.proc.pid, pid)                        # started anew with the newer file
+        self.a.memory_do({"action": "forget_all"})
+        self.assertEqual(mine(), [])
+
+    def test_without_the_model_the_words_count(self):
+        self.indexed()
+        with open(self.beside("embed-fails"), "w"):
+            pass
+        self.a.embedder.stop(); self.a._qvecs.clear()
+        evs = self.ask("Wann ist mein Urlaub in Kroatien?", conversation="")
+        self.assertEqual(evs[-1]["type"], "done")                                 # the answer stands
+        self.assertIn("] %s\n" % self.FERIEN, self.asked())                       # found by its words
+        os.remove(self.beside("embed-fails"))
+        rt = self.a.ai._load("runtime.json")                                      # a llama.cpp that cannot make embeddings
+        rt["flags"] = [f for f in rt["flags"] if f not in ("--embedding", "--pooling")]
+        self.a.ai._save("runtime.json", rt)
+        self.a.embedder.stop(); self.a._qvecs.clear()
+        self.assertEqual(self.ask("Wann ist mein Urlaub geplant?", conversation="")[-1]["type"], "done")
+        self.assertNotIn(self.FERIEN, self.asked())
+        self.assertEqual((self.a.embedder.state, self.a.embedder.error), ("error", tr_key("s_ki_einbettung_alt")))
+        self.assertEqual(self.a.status(True)["embed_error"], tr_key("s_ki_einbettung_alt"))      # the settings say why
+        with mock.patch.object(self.a.embedder, "ensure", side_effect=AssertionError("tried again")):
+            self.assertEqual(self.ask("Und jetzt?", conversation="")[-1]["type"], "done")      # not tried again with every question
+        self.a.set({"memory": False})
+        self.assertEqual(self.a._meaning_key(), "")                               # the memory off: nothing of it
+
+    def test_a_file_that_cannot_be_written_keeps_the_note(self):
+        self.indexed()
+        with mock.patch.object(self.app.store, "save", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                self.a.memory.delete(self.note["id"])
+        self.assertIsNotNone(self.a.memory.get(self.note["id"]))                  # neither the note nor its embedding gone halfway
+        self.assertIn(self.note["id"], self.a.memory._vec)
+        self.a.memory.delete(self.note["id"])
+        self.assertNotIn(self.note["id"], json.dumps(self.app.store.load("memory-vectors-0001.json")))
+
+    def test_it_answers_no_questions_and_forgets_the_questions(self):
+        with self.assertRaises(ValueError):
+            self.a.set({"model": "qwen3-embedding-0.6b"})
+        self.indexed()
+        self.ask("Wann ist mein Urlaub geplant?", conversation="")
+        self.assertTrue(self.a._qvecs)
+        self.a.forget()
+        self.assertEqual(self.a._qvecs, {})
+
+    def test_nothing_before_the_sign_in(self):
+        self.indexed()                                                            # (what the download started: done)
+        self.a.memory.forget_all(quiet=True)
+        self.a.memory.add("Noch eine Notiz ohne Einbettung", by="settings")
+        with mock.patch.object(storage.Store, "is_open", new_callable=mock.PropertyMock, return_value=False):
+            self.a.index_notes()
+            self.assertFalse(self.a._indexing)
+        self.assertEqual(self.a.memory.vector_stats(self.a._meaning_key())[0], 0)
+
+    def test_deleting_the_model_ends_it(self):
+        self.indexed()
+        self.assertEqual(self.a.embedder.state, "ready")
+        self.a.ai.delete_model("qwen3-embedding-0.6b")
+        self.assertIsNone(self.a.embedder.proc)
+        self.assertEqual(self.a._meaning_key(), "")
+        self.assertEqual(self.ask("Wann ist mein Urlaub?", conversation="")[-1]["type"], "done")
+
+
+def tr_key(key):
+    import i18n
+    return i18n.tr(key)
+
+
 class Log(_Assist):
     def test_remembered_changed_forgotten(self):
         self.a.memory_do({"action": "add", "text": "Hausbank: Sparkasse"})

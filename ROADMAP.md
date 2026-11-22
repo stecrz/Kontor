@@ -91,8 +91,8 @@ anhängen – nie löschen.
   Hinweis „aus eingefügtem Text“); „Merk dir das“ zu einer Antwort gilt sofort. Die Suche findet von Anfang an auch nach Bedeutung
   (ein kleines drittes Modell auf diesem Mac, abgeschirmt wie die anderen; ohne es nach Wörtern) – derselbe Baustein dient danach
   auch der Hilfe- und der Umsatzsuche. (teilweise umgesetzt in 3.16.71: verschlüsselte Ablage, Liste in den Einstellungen,
-  Steckbrief in jeder Anfrage, Sicherung, Protokoll; 3.16.81: Merken aus dem Chat; 3.16.93: Suche nach Wörtern; fehlt noch die
-  Suche nach Bedeutung und in Verläufen)
+  Steckbrief in jeder Anfrage, Sicherung, Protokoll; 3.16.81: Merken aus dem Chat; 3.16.93: Suche nach Wörtern; 3.16.97:
+  nach Bedeutung; fehlt noch die Suche in Verläufen)
 - **Update-Prüfung:** Bevor ein Update installiert wird, liest die installierte Version die neuen Dateien – ohne etwas davon
   auszuführen – und vergleicht, was über das Programm hinausreicht: Netz, andere Programme, nachgeladener Code, Umwege dorthin,
   Internet-Adressen, Orte, von denen aus der Mac Programme startet, Helfer und Skripte, die Abschirm-Regeln und die Prüfung selbst.
@@ -177,12 +177,16 @@ Fertig, wenn
     Belegtext in der Unterhaltung erst nach Klick; von einem Gerät, das nur ansehen darf, wird nichts gemerkt.
     Am Mac prüfen: was ein echtes Modell merkt (zu viel, zu wenig), und die Wartezeit bis zum ersten Wort der nächsten Frage
     mit Gedächtnis an und aus (der zweite Blick teilt sich den Zwischenspeicher des Modells mit der Unterhaltung).
-  - [ ] Suche in Notizen nach Wörtern und Bedeutung; das Passende kommt von selbst zur Frage; er sagt, worauf eine Antwort beruht.
+  - [x] Suche in Notizen nach Wörtern und Bedeutung; das Passende kommt von selbst zur Frage; er sagt, worauf eine Antwort beruht.
     - [x] 3.16.93 nach Wörtern, ohne Modell: Wortformen, Teile zusammengesetzter Wörter, Tippfehler; das Passende kommt in die Nachricht
       (nicht in den Systemtext, festes Budget, je Unterhaltung nicht doppelt), Lese-Werkzeug `recall`, „Aus deinen Notizen: …“ unter
       der Antwort; benutzte Notizen zählen für den Steckbrief; der zweite Blick bekommt verwandte Notizen über dieselbe Suche.
       Am Mac prüfen: ob ein echtes Modell die passenden Notizen nutzt und ob „Aus deinen Notizen“ die richtigen nennt.
-    - [ ] nach Bedeutung: kleines drittes Modell (Einbettungen), abgeschirmt wie das Diktiermodell; ohne es bleibt die Wortsuche.
+    - [x] 3.16.97 nach Bedeutung: drittes Modell Qwen3-Embedding 0.6B (Apache 2.0, Q8_0 etwa 0,6 GB), abgeschirmt wie das Diktiermodell,
+      `--embedding --pooling last`; Einbettungen der Notizen (512 Zahlen, je eine Zahl ein Byte) verschlüsselt neben den Notizen, im
+      Hintergrund gemacht; Wörter und Bedeutung zusammen gewertet; ohne das Modell bleibt die Wortsuche.
+      Am Mac prüfen: Start mit `--embedding` in der Sandbox, ob das Endzeichen `<|endoftext|>` als Zeichen ankommt, Schwellen der
+      Ähnlichkeit (`memory.SEM_FLOOR`/`SEM_MIN`) mit echten Notizen, Dauer für Tausende Notizen.
   - [ ] Suche in gespeicherten Verläufen (aus Unterhaltungen mit Internet-Text nur die Fragen des Nutzers; Vergessenes taucht nicht wieder auf).
   - [ ] Bedeutungssuche auch für Hilfe und Umsätze.
 - **Hinweise von selbst:** nach jedem Abgleich prüft Kontor (fester Code) auf Auffälliges – gestiegene Ausgaben, ungewöhnliche

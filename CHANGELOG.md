@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.97 (2026-11-22 07:05)
+- KI-Assistent: Suche nach Bedeutung – drittes, kleines Modell (Qwen3-Embedding 0,6B) unter Einstellungen → KI-Assistent
+- Gedächtnis: findet Notizen auch ohne gemeinsames Wort („Ferien“ zu „Urlaub“); ohne das Modell weiter nach Wörtern
+- Gedächtnis: Vergleichswerte der Notizen verschlüsselt neben den Notizen, im Hintergrund gemacht, weg mit der Notiz
+- Updates: die Prüfung meldet eine geänderte Startzeile der Modelle – das dritte Modell startet nur für Vergleichswerte (--embedding)
+
 ## 3.16.96 (2026-11-22 06:21)
 - Demo: nur noch mit deiner Anmeldung (Passwort oder Touch ID) – „Demo“ unten auf der Anmeldeseite stellt sie um
 - Demo: eigene Umgebung – gesperrt bleibt sie und öffnet wieder wie zuvor; weg nach 2 Stunden ohne Anmeldung, mit neuem Passwort oder beim Neustart
