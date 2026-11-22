@@ -718,14 +718,15 @@ async function lockNow() { try { await api('/api/lock', {}); } catch (e) {} S.cs
 $('#lock-btn').addEventListener('click', lockNow);
 // ---------------------------------------------------------------- Tastaturkürzel
 // One list for the keys. The page answers them -- in Kontor's Mac app its menu does instead (it gets the list, words and keys,
-// from here and calls kontorCmd), so no key counts twice. A browser keeps some keys for itself (⌘R reloads, ⌘1–9 tabs, ⌘L the
-// address, ⌘G its find): those work only in an app ("app": the Mac app or Safari's web app, "shell": the Mac app), and only
-// where a key works is it shown (in the tooltip and in the menu).
+// from here and calls kontorCmd), so no key counts twice. A browser keeps some keys for itself (⇧⌘R Reader or a hard reload,
+// ⌘1–9 tabs, ⌘L the address, ⌘G its find): those work only in an app ("app": the Mac app or Safari's web app, "shell": the
+// Mac app), and only where a key works is it shown (in the tooltip and in the menu). ⌘R reloads the page everywhere, as in
+// any browser (in the Mac app its own menu entry: it also brings back an error page) -- syncing with MoneyMoney is ⇧⌘R.
 function cmds() {
   const inside = !!S.csrf && $('#login').classList.contains('hidden'), save = $('#main [data-cmd-s]');
   const nav = $$('#nav a[href^="#"]').filter(a => !a.classList.contains('hidden') && !a.closest('.hidden') && a.id !== 'nav-assist').slice(0, 9);
   return [
-    {id: 'sync', menu: 'file', key: 'r', where: 'app', t: t('mac_m_sync'), on: inside && !OFFLINE.mode && !SYNC.busy, run: () => syncNow(false, true)},
+    {id: 'sync', menu: 'file', key: 'r', shift: true, where: 'app', t: t('mac_m_sync'), on: inside && !OFFLINE.mode && !SYNC.busy, run: () => syncNow(false, true)},
     {id: 'save', menu: 'file', key: 's', where: 'all', t: t('mac_m_sichern'), on: !!save && !save.disabled, run: () => { const b = $('#main [data-cmd-s]'); if (b && !b.disabled) b.click(); }},
     {id: 'lock', menu: 'file', key: 'l', where: 'all', shown: 'app', t: t('btn_sperren'), on: inside, run: lockNow},          // (a browser mostly keeps ⌘L: not shown there)
     {id: 'find', menu: 'find', key: 'f', where: 'all', t: t('mac_m_suchen'), on: true, run: findOpen},

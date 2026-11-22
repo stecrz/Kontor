@@ -4939,24 +4939,38 @@ class KeysFindBrowserTest(unittest.TestCase):
                 self.assertEqual(pg.evaluate("document.activeElement.id"), "uf-q")
                 pg.evaluate("location.hash = '#overview'"); until(pg, "S.tab === 'overview' && !document.querySelector('#uf-q')")
                 self.assertFalse(pg.evaluate("kontorCmd('find') && !!document.querySelector('#find')"))
-                # tooltips: the browser keeps ⌘R and ⌘1-9 -- not shown; ⌘S on a save button is
+                # tooltips: the browser keeps ⇧⌘R and ⌘1-9 -- not shown; ⌘S on a save button is
                 self.assertNotIn("⌘", pg.get_attribute("#sync-btn", "title") + pg.get_attribute("#lock-btn", "title")); self.assertFalse(pg.get_attribute("#nav a[href='#overview']", "title"))
                 pg.evaluate("location.hash = '#settings/moneymoney'"); pg.wait_for_selector("#main [data-cmd-s]")
                 self.assertTrue(pg.evaluate("[...document.querySelectorAll('#main [data-cmd-s]')].every(b => b.title.endsWith('(⌘S)'))"))
+                # Safari's web app in the Dock: ⌘R stays the browser's (reload, as everywhere), ⇧⌘R syncs with MoneyMoney
+                standalone = """(() => { const mm = window.matchMedia.bind(window);
+                    window.matchMedia = q => /display-mode:\\s*standalone/.test(q) ? {matches: true, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}} : mm(q); })();"""
+                pg2 = b.new_page(viewport={"width": 1440, "height": 900}); pg2.add_init_script(standalone); pg2.on("pageerror", lambda e: errors.append(str(e)))
+                pg2.goto("http://127.0.0.1:%d/" % port)
+                pg2.fill("#login-pw", "sehr-geheimes-passwort"); pg2.click("#login-btn"); wait_shell(pg2)
+                until(pg2, "APP_MODE && !SHELL && !SYNC.busy")
+                self.assertIn("(⇧⌘R)", pg2.get_attribute("#sync-btn", "title"))
+                keys = pg2.evaluate("""(() => { let n = 0; const keep = syncNow; syncNow = () => { n++; };
+                    const press = shift => { const e = new KeyboardEvent('keydown', {key: shift ? 'R' : 'r', metaKey: true, shiftKey: shift, bubbles: true, cancelable: true});
+                        document.dispatchEvent(e); return [e.defaultPrevented, n]; };
+                    const r = [press(false), press(true)]; syncNow = keep; return r; })()""")
+                self.assertEqual(keys, [[False, 0], [True, 1]])
+                pg2.close()
                 # in the Mac app: its menu gets the commands; the page itself leaves the keys to it
                 pg3 = b.new_page(viewport={"width": 1440, "height": 900}); pg3.add_init_script(shell); pg3.on("pageerror", lambda e: errors.append(str(e)))
                 pg3.goto("http://127.0.0.1:%d/" % port)
                 until(pg3, "window.__shell.some(m => m.commands)")
                 first = pg3.evaluate("window.__shell.filter(m => m.commands).pop().commands")
                 self.assertEqual({c["id"]: (c["key"], c["shift"], c["on"]) for c in first if c["id"] in ("sync", "find", "findPrev", "lock")},
-                                 {"sync": ("r", False, False), "find": ("f", False, True), "findPrev": ("g", True, False), "lock": ("l", False, False)})
+                                 {"sync": ("r", True, False), "find": ("f", False, True), "findPrev": ("g", True, False), "lock": ("l", False, False)})
                 pg3.fill("#login-pw", "sehr-geheimes-passwort"); pg3.click("#login-btn"); wait_shell(pg3)
                 until(pg3, "window.__shell.filter(m => m.commands).pop().commands.some(c => c.id === 'page9')")
                 cm = {c["id"]: c for c in pg3.evaluate("window.__shell.filter(m => m.commands).pop().commands")}
                 self.assertEqual((cm["page1"]["title"], cm["page1"]["key"], cm["page3"]["title"]), ("Übersicht", "1", "Cashflow"))
                 self.assertTrue(cm["sync"]["on"] and cm["lock"]["on"]); self.assertEqual(cm["sync"]["title"], "Mit MoneyMoney abgleichen")
                 self.assertTrue(all(c["title"] and not c["title"].startswith(("mac_", "find_")) for c in cm.values()))
-                self.assertIn("(⌘R)", pg3.get_attribute("#sync-btn", "title")); self.assertEqual(pg3.get_attribute("#nav a[href='#cashflow']", "title"), "Cashflow (⌘3)")
+                self.assertIn("(⇧⌘R)", pg3.get_attribute("#sync-btn", "title")); self.assertEqual(pg3.get_attribute("#nav a[href='#cashflow']", "title"), "Cashflow (⌘3)")
                 key3 = pg3.evaluate("""(() => { const h = location.hash, e = new KeyboardEvent('keydown', {key: '3', metaKey: true, bubbles: true, cancelable: true});
                     document.dispatchEvent(e); return [e.defaultPrevented, location.hash === h]; })()""")
                 self.assertEqual(key3, [False, True])                                              # the key is the menu's, not the page's

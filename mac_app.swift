@@ -553,7 +553,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         _ = menu("edit", [item("undo", Selector(("undo:")), "z"), item("redo", Selector(("redo:")), "z", [.command, .shift]), line(),
                           item("cut", #selector(NSText.cut(_:)), "x"), item("copy", #selector(NSText.copy(_:)), "c"),
                           item("paste", #selector(NSText.paste(_:)), "v"), item("selectAll", #selector(NSText.selectAll(_:)), "a")] + findItem)
-        _ = menu("view", viewCmds + (viewCmds.isEmpty ? [] : [line()]) + [item("reload", #selector(reload(_:)), "r", [.command, .shift], mine: true), line(),
+        _ = menu("view", viewCmds + (viewCmds.isEmpty ? [] : [line()]) + [item("reload", #selector(reload(_:)), "r", mine: true), line(),
                           item("actualSize", #selector(zoomReset(_:)), "0", mine: true),
                           item("zoomIn", #selector(zoomIn(_:)), "+", mine: true),
                           item("zoomOut", #selector(zoomOut(_:)), "-", mine: true), line(),

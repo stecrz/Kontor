@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.82 (2026-11-22 02:37)
+- Tastenkürzel: ⌘R lädt die Seite neu – wie im Browser, auch in der Mac-App und Safaris Dock-App
+- Tastenkürzel: Mit MoneyMoney abgleichen jetzt ⇧⌘R
+
 ## 3.16.81 (2026-11-22 02:36)
 - KI-Assistent: Gedächtnis, Schritt 2 – merkt sich von selbst, was du ihm sagst und was dauerhaft ist; „Merk dir …“ gilt immer, „Vergiss …“ löscht
 - Unter der Antwort: „Gemerkt: …“ mit „Zurücknehmen“, bei Widerspruch „ersetzt: …“; Vergessenes lässt sich zurückholen, solange Kontor läuft
