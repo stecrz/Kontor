@@ -16,8 +16,9 @@ description: Jede Änderung an Kontor abschließen – prüfen (auch mit Python 
    - Python 3.9 (Apples Version auf dem Mac): `TZ=Europe/Berlin ~/py39/bin/python -m pytest -q tests` (~1 min; Browser-Tests
      laufen nur mit dem aktuellen Python). Fehlt `~/py39`, einmal einrichten: `uv python install 3.9 && uv venv -q -p 3.9 ~/py39 &&
      VIRTUAL_ENV=~/py39 uv pip install -q pytest cryptography` (ohne Playwright).
-2. **Oberfläche geändert:** Skill `ui-check`. Hilfe (`docs/help.*.md`), README und Hilfe-Bilder (`tests/screenshots.py`)
-   **nur beim großen Versionssprung** (zweite Stelle) – bei kleinen Versionen nicht anfassen, auch keine Bilder neu erzeugen.
+2. **Oberfläche geändert:** Skill `ui-check`. Texte der Hilfe (`docs/help.de.md` und `docs/help.en.md`, gleiche Anker) und des
+   README mit pflegen, wo die Änderung sie betrifft. Hilfe-Bilder (`tests/screenshots.py`) **nur beim großen Versionssprung**
+   (zweite Stelle) – bei kleinen Versionen keine Bilder neu erzeugen.
 3. **Unabhängig prüfen** (Rechenlogik, Schreibzugriffe auf MoneyMoney, Sicherheit): Agent `reviewer` auf die Änderung
    ansetzen, Befunde beheben oder begründet verwerfen.
 4. **Fahrplan:** in `ROADMAP.md` Erledigtes abhaken bzw. den Stand nachtragen.

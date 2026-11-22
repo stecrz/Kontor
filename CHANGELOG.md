@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.16.80 (2026-11-22 02:18)
+- KI-Assistent: eine Einstellung für die automatische Suche nach neueren Versionen (llama.cpp, Modell, Diktiermodell) – täglich, wöchentlich, monatlich, nie; Standard monatlich
+- KI-Assistent: Punkt im Menü für llama.cpp und die Modelle in Gebrauch (keine Sonderregel für llama.cpp mehr); letzte Suche und Fund bleiben über Neustarts
+- KI-Assistent: eigener Abschnitt „Aktualisierung“ (Automatisch suchen, Jetzt suchen, Alles aktualisieren) und „Ablage“
+- KI-Assistent: Fortschritt beim Laden steht beim richtigen Teil (Diktiermodell unter „Modell zum Diktieren“)
+- KI-Assistent: klarere Begriffe – „Programm“, „Modell für Antworten“, „Modell zum Diktieren“, „Diktiermodell“; Tooltips erklären den Unterschied
+- Hilfe: Suche nach neueren Versionen, Netzverbindungen von selbst, Prüfung vor dem Update
+- Entwicklung: Hilfe-Texte und README ab jetzt mit jeder Änderung; nur Hilfe-Bilder beim großen Versionssprung
+
 ## 3.16.79 (2026-11-22 02:10)
 - Auto-Buchungen: Zinsen nach einer abgewählten Tilgung warten mit, statt aus dem Saldo ohne sie gebucht zu werden – in der Freigabe „wartet“
 - Auto-Buchungen: Kennzeichen „neu“ für Buchungen, die die Neuberechnung dazunimmt, wieder sichtbar

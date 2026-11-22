@@ -35,7 +35,7 @@ Sie lädt Kontor, richtet es als Dienst im Hintergrund ein und öffnet die Oberf
 
 **Assistent** (optional) – ein Sprachmodell, das nur auf deinem Mac läuft ([llama.cpp](https://github.com/ggml-org/llama.cpp) mit einem Modell deiner Wahl, in Kontor geladen und aktualisiert): Fragen in normaler Sprache zu deinen Zahlen und zur Bedienung, als Fenster neben jeder Seite – getippt oder diktiert. Er öffnet die passende Ansicht, hebt hervor, wovon er spricht, und schlägt Einträge vor, die erst dein Klick einträgt.
 
-- Nichts verlässt den Mac: Das Modell läuft ohne Netz in der Abschirmung von macOS; ins Netz geht Kontor dafür nur auf Klick, um Programm und Modell zu laden.
+- Nichts verlässt den Mac: Das Modell läuft ohne Netz in der Abschirmung von macOS; ins Netz geht Kontor dafür nur, um nach neueren Versionen zu fragen (von selbst, einstellbar) und – auf Klick – Programm und Modell zu laden.
 - Es liest, was Kontor zeigt, öffnet Seiten und schlägt Einträge vor – eingetragen wird erst nach deinem Klick, und jedes Recht ist einzeln schaltbar. Einstellungen, Regeln und MoneyMoney fasst es nie an.
 
 **Stand:** Übersicht, Bilanz, Cashflow, Kategorisieren, Auto-Buchungen, Synchronisierung und Einrichtung sind geprüft. Planung, Immobilien, Steuer sowie Umsätze & Belege sind nutzbar, aber noch als „Alpha“ markiert – Zahlen dort bitte gegenprüfen.

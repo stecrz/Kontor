@@ -8149,8 +8149,9 @@ async function vEinstellungenAssistent() {
   if (!a.local) return `<div class="note">${t('ki_nur_am_mac')}</div>`;
   const rt = a.runtime || {}, sv = a.server || {}, pf = a.platform || {}, load = a.load && a.load.state === 'running' ? a.load : null, models = a.models || [];
   const busy = load || a.updating ? 'disabled' : '';
-  const prog = k => load && load.kind === k ? `<div class="prog-wrap" id="as-prog"><div class="prog"><i style="width:${load.total ? Math.round(100 * load.done / load.total) : 0}%"></i></div><span class="prog-l">${esc(asLoadText(load))}</span><button class="secondary small" id="as-cancel">${t('ki_abbrechen')}</button></div>` : '';
-  const err = a.load && a.load.state === 'error' ? `<div class="banner err small">${esc(a.load.text || '')}</div>` : '';
+  const ears = new Set((a.speech || []).map(m => m.id)), part = l => l ? (l.kind === 'model' && ears.has(l.id) ? 'speech' : l.kind) : '';
+  const prog = k => part(load) === k ? `<div class="prog-wrap" id="as-prog"><div class="prog"><i style="width:${load.total ? Math.round(100 * load.done / load.total) : 0}%"></i></div><span class="prog-l">${esc(asLoadText(load))}</span><button class="secondary small" id="as-cancel">${t('ki_abbrechen')}</button></div>` : '';
+  const err = k => !load && a.load && a.load.state === 'error' && part(a.load) === k ? `<div class="banner err small">${esc(a.load.text || '')}</div>` : '';
   const fitTag = m => m.fit === 'big' ? `<span class="tag warn" title="${esc(t('ki_zu_gross_tip'))}">${t('ki_zu_gross')}</span>` : m.fit === 'tight' ? `<span class="tag warn" title="${esc(t('ki_knapp_tip'))}">${t('ki_knapp')}</span>` : '';
   const mrow = m => `<div class="as-item${m.id === st.model ? ' on' : ''}${m.fit === 'big' && !m.installed ? ' dim' : ''}"><label class="chk"><input type="radio" name="as-model" value="${esc(m.id)}" ${m.id === st.model ? 'checked' : ''} ${m.installed ? '' : 'disabled'}>
       <span><b>${esc(m.name)}</b>${m.note ? ` <span class="muted">${t(`ki_note_${m.note}`)}</span>` : ''}${m.id === a.recommended ? ` <span class="pill info">${t('ki_empfohlen')}</span>` : ''}${fitTag(m)}<br><span class="muted small">${esc(m.installed && !m.custom ? m.file : m.repo + (m.file ? ' · ' + m.file : ''))} · ${m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb)}${m.ram ? ' · ' + t('ki_ab_ram', m.ram) : ''}</span></span></label>
@@ -8169,12 +8170,12 @@ async function vEinstellungenAssistent() {
     <span class="as-act">${rt.newer ? `<span class="pill info">${t('ki_neuer', esc(rt.latest))}</span>` : ''}
       ${!rt.installed || rt.newer ? `<button class="small" id="as-rt-install" ${busy}>${t(rt.installed ? 'ki_aktualisieren' : 'ki_installieren')}</button>` : ''}
       ${rt.installed ? `<button class="small secondary" id="as-rt-remove" ${busy}>${t('ki_entfernen')}</button>` : ''}</span></div></div>
-  ${prog('runtime')}${load && load.kind === 'runtime' ? '' : (a.load && a.load.kind === 'runtime' ? err : '')}
+  ${prog('runtime')}${err('runtime')}
   <h2>${t('ki_modelle')}${hq('ki_modelle')}</h2>
   <div class="as-list">${models.map(mrow).join('')}
     <div class="as-item"><span class="as-own"><b>${t('ki_eigenes_modell')}</b>${hq('ki_eigenes')}<input type="text" id="as-repo" placeholder="unsloth/Qwen3.6-35B-A3B-GGUF" autocomplete="off" spellcheck="false"></span>
       <span class="as-act"><button class="small secondary" id="as-files" title="${esc(t('ki_dateien_zeigen_tip'))}" disabled>${t('ki_dateien_zeigen')}</button></span></div><div id="as-filelist"></div></div>
-  ${prog('model')}${a.load && a.load.kind === 'model' ? err : ''}
+  ${prog('model')}${err('model')}
   <h2>${t('ki_diktat')}${hq('ki_diktat')}</h2>
   <div class="as-list">${(a.speech || []).map(m => `<div class="as-item${m.id === a.speech_in_use ? ' on' : ''}"><label class="chk"><input type="radio" name="as-speech" value="${esc(m.id)}" ${m.id === a.speech_in_use ? 'checked' : ''} ${m.installed ? '' : 'disabled'}>
       <span><b>${esc(m.name)}</b> <span class="muted">${t(`ki_note_${m.note}`)}</span><br><span class="muted small">${esc(m.installed ? m.file : m.repo)} · ${m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb)}</span></span></label>
@@ -8183,9 +8184,15 @@ async function vEinstellungenAssistent() {
       ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`).join('')}
     ${a.dictation ? `<div class="as-item"><span><b>${t('ki_sp_start')}</b>${hq('ki_sp_start')}</span><span class="as-act"><select id="as-speech-start" aria-label="${esc(t('ki_sp_start'))}">${opt('', t(a.speech_early_auto ? 'ki_sp_auto_early' : 'ki_sp_auto_click'), st.speech_start || '')}${opt('early', t('ki_sp_early'), st.speech_start || '')}${opt('click', t('ki_sp_click'), st.speech_start || '')}</select></span></div>
     <div id="as-mic-perm"></div>` : ''}</div>
-  <div class="row tight"><button class="secondary small" id="as-check" ${busy}>${t('ki_nach_neuem_suchen')}</button>${((a.newer || {}).items || []).length ? `<button class="small" id="as-update-all" ${busy}>${t('ki_alles_aktualisieren')}</button>` : ''}<span class="muted small">${a.checked ? t('ki_gesucht', esc(FDT(a.checked))) + ' · ' : ''}${t('ki_platz', asGB(a.disk_free || 0), asRAM(pf.ram || 0))}</span></div>
-  ${a.check_error ? `<div class="banner err small">${esc(a.check_error)}</div>` : ''}
-  ${a.folder ? `<div class="row tight as-folder"><span class="muted small">${t('ki_ablage')}${hq('ki_ablage')} <span class="mono">${esc(a.folder)}</span></span><button class="small secondary" id="as-reveal" ${a.folder_exists ? '' : 'disabled'}>${t('im_finder_zeigen')}</button></div>` : ''}
+  ${prog('speech')}${err('speech')}
+  <h2>${t('ki_aktualisierung')}${hq('ki_auto_suchen')}</h2>
+  <div class="form">
+    <label>${t('ki_auto_suchen')}</label><label class="chk"><select id="as-check-mode">${[['daily', t('taeglich')], ['weekly', t('woechentlich')], ['monthly', t('monatlich')], ['aus', t('nie')]].map(([v, l]) => opt(v, l, st.check_mode)).join('')}</select></label>
+    <label>${t('ki_zuletzt_gesucht')}</label><div class="row tight"><span class="muted small">${a.checked ? esc(FDT(a.checked)) : t('ki_noch_nie')}</span><button class="secondary small" id="as-check" ${busy}>${t('ki_nach_neuem_suchen')}</button>${((a.newer || {}).items || []).length ? `<button class="small" id="as-update-all" ${busy}>${t('ki_alles_aktualisieren')}</button>` : ''}</div>
+    ${a.check_error ? `<div class="full banner err small">${esc(a.check_error)}</div>` : ''}
+  </div>
+  <h2>${t('ki_ablage')}${hq('ki_ablage')}</h2>
+  <div class="row tight as-folder">${a.folder ? `<span class="mono small">${esc(a.folder)}</span><button class="small secondary" id="as-reveal" ${a.folder_exists ? '' : 'disabled'}>${t('im_finder_zeigen')}</button>` : ''}<span class="muted small">${t('ki_platz', asGB(a.disk_free || 0), asRAM(pf.ram || 0))}</span></div>
   <h2>${t('ki_betrieb')}</h2>
   <div class="form">
     <label>${t('ki_zustand')}</label><div class="row tight as-run-row"><span class="pill ${state === 'ready' ? 'ok' : state === 'error' ? 'err' : state === 'starting' ? 'info' : 'neutral'}" id="as-state">${t(`ki_z_${state}`)}</span>
@@ -8194,7 +8201,6 @@ async function vEinstellungenAssistent() {
     ${state === 'error' && sv.error ? `<div class="full banner err small">${esc(sv.error)}</div>` : ''}
     <label>${t('ki_kontext')}${hq('ki_kontext')}</label><label class="chk"><select id="as-context">${opt(0, t('ki_kontext_auto', a.context_auto_value / 1024), st.context_auto ? 0 : st.context)}${[16384, 32768, 65536, 131072].map(k => opt(k, t('ki_kontext_n', k / 1024), st.context_auto ? 0 : st.context)).join('')}</select></label>
     <label>${t('ki_leerlauf')}${hq('ki_leerlauf')}</label><label class="chk"><select id="as-idle">${[5, 10, 30, 60, 0].map(k => opt(k, k ? t('ki_leerlauf_n', k) : t('ki_leerlauf_nie'), st.idle_minutes)).join('')}</select></label>
-    <label>${t('ki_auto_suchen')}${hq('ki_auto_suchen')}</label><label class="chk"><select id="as-check-mode">${[['daily', t('taeglich')], ['weekly', t('woechentlich')], ['aus', t('nie')]].map(([v, l]) => opt(v, l, st.check_mode)).join('')}</select></label>
     <label for="as-save">${t('ki_speichern')}${hq('ki_speichern')}</label><div class="row tight as-save-row"><label class="chk"><input type="checkbox" id="as-save" ${st.save_chats !== false ? 'checked' : ''} aria-label="${esc(t('ki_speichern'))}"></label>
       ${a.chats ? `<span class="small ${a.chats_many ? 'as-chats-many' : 'muted'}" id="as-chats-n"${a.chats_many ? ` title="${esc(t('ki_verlaeufe_viele'))}"` : ''}>${esc(tn('ki_verlaeufe_n', a.chats, asN(a.chats), (b => b < 1e6 ? Math.max(1, Math.round(b / 1e3)).toLocaleString(LOCALE) + ' KB' : asGB(b))(a.chats_bytes || 0)))}</span>` : ''}
       ${a.chats_old ? `<button class="small secondary" id="as-chats-old">${esc(t('ki_verlaeufe_alt_loeschen', asN(a.chats_old)))}</button>` : ''}

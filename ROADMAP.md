@@ -100,6 +100,12 @@ anhängen – nie löschen.
   Version zwei Wochen alt ist (es erscheint fast täglich neu). „Alles aktualisieren“ lädt nach einem Klick alles Gefundene
   nacheinander, jedes geprüft wie einzeln. Installiert wird nie von selbst.
   (umgesetzt in 3.16.70)
+  Geändert (Nutzer, 2026-11-22): eine gemeinsame Einstellung für llama.cpp, Modell und Diktiermodell statt der Zwei-Wochen-Regel
+  für llama.cpp – täglich, wöchentlich, monatlich oder nie, ab Werk monatlich (llama.cpp erscheint fast täglich neu: so kommt der
+  Punkt etwa einmal im Monat); der Punkt gilt für llama.cpp und die Modelle in Gebrauch. Letzte Suche und Fund bleiben über
+  Neustarts erhalten. (umgesetzt in 3.16.80)
+- **Hilfe laufend:** Texte der Hilfe (de/en) und des README werden mit jeder Änderung gepflegt, die sie betrifft – auch in
+  kleinen Versionen. Nur die Hilfe-Bilder entstehen weiter erst beim großen Versionssprung. (umgesetzt in 3.16.80)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
@@ -266,7 +272,7 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
   und als Ereignis in den Zufallswelten (`tests/test_worlds.py`), damit sie nachts in allen Kombinationen laufen.
 - Oberfläche nach Apples Human Interface Guidelines, hell und dunkel, Mac und iPhone.
 
-## Beim nächsten großen Versionssprung (Hilfe, README, Bilder)
+## Beim nächsten großen Versionssprung (Bilder; ältere Lücken in Hilfe und README)
 - Hilfe: Rechtsklick → KI-Assistent „Kurz erklären“ / „Im Chat fragen“ (Bezug, Sprung zurück), Kopieren, „Grafik drucken …“ bei allen Grafiken (3.16.23, 3.16.27).
 - README und Hilfe: Ziel „dein digitaler CFO“ (siehe oben) als Einleitung; Netzverbindungen nach dem Stand dann.
 - Hilfe: eigener Abschnitt „Assistent“ (einrichten, Rechte, was er nie darf, Abschirmung) mit Bildern; README (Netzverbindungen).

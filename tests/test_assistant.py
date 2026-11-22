@@ -19,7 +19,7 @@ import sys
 import tarfile
 import tempfile
 import threading
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 import time
 import unittest
 import unittest.mock
@@ -1436,10 +1436,10 @@ class Tools(_Assist):
         self.assertEqual((st["dictation"], [m["installed"] for m in st["speech"]]), (False, [False, False]))
         with self.assertRaises(ValueError) as cm:
             self.a.transcribe(wav)
-        self.assertIn("Sprachmodell", str(cm.exception))
+        self.assertIn("Diktiermodell", str(cm.exception))
         with self.assertRaises(ValueError) as cm:
             self.a.listen()
-        self.assertIn("Sprachmodell", str(cm.exception))
+        self.assertIn("Diktiermodell", str(cm.exception))
         # the speech model arrives with its audio part; it is not the model that answers
         chat = self.a.settings()["model"]
         self.a.ai.download_model("qwen3-asr-1.7b")
@@ -3320,10 +3320,6 @@ class Newer(_Assist):
         self.net.files["https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/" + QWEN] = new
         return new
 
-    def installed_days_ago(self, days):
-        r = self.a.ai._load("runtime.json")
-        self.a.ai._save("runtime.json", dict(r, installed=(datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M")))
-
     def wait(self, done, seconds=20.0):
         t0 = time.time()
         while not done():
@@ -3336,14 +3332,16 @@ class Newer(_Assist):
 
     def test_when_it_looks(self):
         a, day = self.a, 86400
-        self.assertEqual(a.settings()["check_mode"], "daily")
+        self.assertEqual(a.settings()["check_mode"], "monthly")  # one setting for llama.cpp and the models; from the factory once a month
         self.assertTrue(a.look_due())
         a.looked = 1000.0
+        self.assertFalse(a.look_due(now=1000.0 + 29 * day)); self.assertTrue(a.look_due(now=1000.0 + 30 * day + 5))
+        a.set({"check_mode": "daily"})
         self.assertFalse(a.look_due(now=1000.0 + day - 5)); self.assertTrue(a.look_due(now=1000.0 + day + 5))
         a.set({"check_mode": "weekly"})
         self.assertFalse(a.look_due(now=1000.0 + 6 * day)); self.assertTrue(a.look_due(now=1000.0 + 7 * day + 5))
         a.set({"check_mode": "sometimes"})                       # not a choice: as from the factory
-        self.assertEqual(a.settings()["check_mode"], "daily")
+        self.assertEqual(a.settings()["check_mode"], "monthly")
         a.set({"check_mode": "aus"}); a.looked = None
         self.assertFalse(a.look_due())
         self.assertFalse(self.app.assistant_look())
@@ -3391,24 +3389,21 @@ class Newer(_Assist):
             self.assertNotIn("Cookie", h); self.assertNotIn("Authorization", h)
 
     def test_what_the_menu_marks(self):
-        # a newer llama.cpp the day after installing: on the page, not in the menu (a new build appears almost daily)
+        # a newer llama.cpp: marked (how often there is one to mark is set by how often Kontor looks -- no rule of its own)
         self.newer_runtime()
         self.a.looked = None; self.look()
-        self.assertEqual(self.a.newer(), {"items": [{"kind": "runtime", "id": "", "name": "llama.cpp"}], "marked": 0})
-        self.installed_days_ago(A.QUIET_DAYS - 1); self.assertEqual(self.a.newer()["marked"], 0)
-        self.installed_days_ago(A.QUIET_DAYS); self.assertEqual(self.a.newer()["marked"], 1)
-        # the model in use: marked at once; the assistant switched off: nothing is marked
-        self.installed_days_ago(0)
+        self.assertEqual(self.a.newer(), {"items": [{"kind": "runtime", "id": "", "name": "llama.cpp"}], "marked": 1})
+        # the model in use: marked too; the assistant switched off: nothing is marked
         self.newer_model()
         self.a.looked = None; self.look()
         n = self.a.newer()
-        self.assertEqual(([i["kind"] for i in n["items"]], n["items"][1]["id"], n["marked"]), (["runtime", "model"], "qwen3.6-35b-a3b", 1))
+        self.assertEqual(([i["kind"] for i in n["items"]], n["items"][1]["id"], n["marked"]), (["runtime", "model"], "qwen3.6-35b-a3b", 2))
         code, st = self.call("/api/assistant/status")
         self.assertEqual((st["newer"], st["updating"]), (n, 0))
         self.a.set({"enabled": False}); self.assertEqual(self.a.newer()["marked"], 0); self.a.set({"enabled": True})
         self.a.ai.news["models"]["qwen3.6-35b-a3b"]["newer"] = False
         self.a.ai.news["models"]["other"] = {"newer": True, "size": 1}           # not on this Mac at all: not named
-        self.assertEqual(self.a.newer(), {"items": [{"kind": "runtime", "id": "", "name": "llama.cpp"}], "marked": 0})
+        self.assertEqual(self.a.newer(), {"items": [{"kind": "runtime", "id": "", "name": "llama.cpp"}], "marked": 1})
         # two speech models on this Mac: a newer file of the one not in use can be updated and is not marked -- of the one in use it is
         for mid in ("qwen3-asr-1.7b", "qwen3-asr-0.6b"):
             self.a.ai.download_model(mid); self.assertEqual(wait_job(self.a.ai)["state"], "done", self.a.ai.job)
@@ -3418,14 +3413,42 @@ class Newer(_Assist):
         self.net.files["https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/main/Qwen3-ASR-0.6B-Q8_0.gguf"] = new
         self.a.looked = None; self.look()
         n = self.a.newer()
-        self.assertEqual(([i["id"] for i in n["items"]], n["marked"]), (["", "qwen3.6-35b-a3b", "qwen3-asr-0.6b"], 1))
+        self.assertEqual(([i["id"] for i in n["items"]], n["marked"]), (["", "qwen3.6-35b-a3b", "qwen3-asr-0.6b"], 2))
         self.a.set({"speech": "qwen3-asr-0.6b"})
-        self.assertEqual(self.a.newer()["marked"], 2)
+        self.assertEqual(self.a.newer()["marked"], 3)
         # what could not be asked this time keeps the answer from before (found yesterday, offline today)
         opened, L._open = L._open, lambda *a, **k: (_ for _ in ()).throw(OSError("offline"))
         self.a.looked = None; self.look()
         L._open = opened
-        self.assertEqual(self.a.newer(), dict(n, marked=2))
+        self.assertEqual(self.a.newer(), dict(n, marked=3))
+
+    def test_a_restart_neither_looks_again_nor_forgets(self):
+        """Kontor restarts with each of its updates: the last look and what it found are kept in the assistant's folder."""
+        self.newer_runtime(); self.newer_model()
+        self.a.looked = None; self.look()
+        found, when = self.a.newer(), self.a.looked
+        self.assertEqual((len(found["items"]), found["marked"]), (2, 2))
+
+        def restart():
+            self.a.ai.news, self.a.looked = {}, None
+            self.a._recall()                                     # as a new start does
+        restart()
+        self.assertEqual((self.a.newer(), self.a.looked), (found, when))
+        self.assertFalse(self.a.look_due()); self.assertFalse(self.app.assistant_look())
+        self.assertTrue(self.a.ai.status()["checked"])
+        # the model updated, then a restart: only llama.cpp is still newer
+        self.a.ai.download_model("qwen3.6-35b-a3b"); self.assertEqual(wait_job(self.a.ai)["state"], "done", self.a.ai.job)
+        restart()
+        self.assertEqual(self.a.newer(), {"items": [{"kind": "runtime", "id": "", "name": "llama.cpp"}], "marked": 1})
+        self.a.ai.install_runtime(); self.assertEqual(wait_job(self.a.ai)["state"], "done", self.a.ai.job)
+        restart()
+        self.assertEqual((self.a.newer(), self.a.looked), ({"items": [], "marked": 0}, when))
+        # a file that is not what Kontor wrote: as if never looked
+        for kept in ({"looked": time.time() + 9e6, "news": {}}, {"looked": "soon", "news": {}}, {"looked": True, "news": {}}, {"looked": when, "news": []},
+                     {"looked": when, "news": {"runtime": "x", "models": {"qwen3.6-35b-a3b": {"newer": "yes"}, "x": 1}}}):
+            self.a.ai._save(A.NEWS_FILE, kept); restart()
+            self.assertEqual(self.a.newer(), {"items": [], "marked": 0}, kept)
+            self.assertEqual(self.a.looked, when if kept["looked"] == when and isinstance(kept["news"], dict) else None, kept)
 
     def test_everything_in_one_go(self):
         self.assertEqual(self.call("/api/assistant/update-all", {})[0], 400)     # nothing newer
@@ -4608,7 +4631,7 @@ class Browser(unittest.TestCase):
         orig = L._open
         net = install(app)
         a = app.assistant
-        # found by the look: a newer build (the installed one is old enough to be marked) and a newer file of the model
+        # found by the look: a newer build and a newer file of the model
         arch = runtime_archive(); name = "llama-b4712-bin-%s.tar.gz" % L.asset_tag()
         rurl = "https://github.com/ggml-org/llama.cpp/releases/download/b4712/" + name
         net.files[rurl] = arch
@@ -4617,7 +4640,6 @@ class Browser(unittest.TestCase):
         new = net.model + b"v2"
         net.tree[3] = {"type": "file", "path": QWEN, "size": len(new), "lfs": {"oid": hashlib.sha256(new).hexdigest(), "size": len(new)}}
         net.files["https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/" + QWEN] = new
-        a.ai._save("runtime.json", dict(a.ai._load("runtime.json"), installed=(datetime.now() - timedelta(days=A.QUIET_DAYS + 1)).strftime("%Y-%m-%d %H:%M")))
         srv = ThreadingHTTPServer(("127.0.0.1", 0), MA.make_handler(app))
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         url = "http://127.0.0.1:%d/" % srv.server_address[1]
@@ -4641,7 +4663,7 @@ class Browser(unittest.TestCase):
                 T.wait_shell(pg); pg.goto(url + "#settings/assistant"); pg.wait_for_selector("#as-check")
                 self.assertFalse(pg.evaluate("!!%s" % badge))                       # nothing known yet
                 self.assertFalse(pg.evaluate("!!document.querySelector('#as-update-all')"))
-                self.assertEqual(pg.evaluate("document.querySelector('#as-check-mode').value"), "daily")
+                self.assertEqual(pg.evaluate("document.querySelector('#as-check-mode').value"), "monthly")
                 self.assertTrue(app.assistant_look())                               # the service's daily look
                 until(pg, "!!document.querySelector('#as-update-all')")             # the page there shows it by itself
                 self.assertEqual(pg.evaluate("%s.className" % badge), "nbadge")     # the plain dot
@@ -4656,6 +4678,24 @@ class Browser(unittest.TestCase):
                 with open(a.ai.models()["qwen3.6-35b-a3b"]["path"], "rb") as f:
                     self.assertEqual(f.read(), new)
                 self.assertEqual(a.settings()["check_mode"], "weekly")
+                # looking and updating have a section of their own (not below the models for dictating, as if meant for them only)
+                above = "(e => [...document.querySelectorAll('#main h2')].filter(h => h.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING).pop().textContent)(document.querySelector('%s'))"
+                self.assertIn("Aktualisierung", pg.evaluate(above % "#as-check")); self.assertIn("Aktualisierung", pg.evaluate(above % "#as-check-mode"))
+                self.assertIn("Ablage", pg.evaluate(above % "#as-reveal"))
+                # the progress stands where the part is: a model for dictating below those, a model that answers below these
+                newest = net.model + b"v3"                                         # a newer file of the model that answers, once more
+                net.tree[3] = {"type": "file", "path": QWEN, "size": len(newest), "lfs": {"oid": hashlib.sha256(newest).hexdigest(), "size": len(newest)}}
+                net.files["https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/" + QWEN] = newest
+                a.look()
+                for mid, title in (("qwen3-asr-0.6b", "Modell zum Diktieren"), ("qwen3.6-35b-a3b", "Modell für Antworten")):
+                    pg.evaluate("route()"); pg.wait_for_selector('.as-dl[data-id="%s"]:not([disabled])' % mid)
+                    net.slow = threading.Event()
+                    pg.click('.as-dl[data-id="%s"]' % mid)
+                    until(pg, "!!document.querySelector('#as-prog')")
+                    self.assertIn(title, pg.evaluate(above % "#as-prog"), mid)
+                    pg.click("#as-cancel"); net.slow.set()
+                    until(pg, "!document.querySelector('#as-prog') && !(AS.st.load && AS.st.load.state === 'running')")
+                    net.slow = None
                 self.assertEqual(errors, [])
                 b.close()
         finally:

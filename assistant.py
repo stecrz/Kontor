@@ -82,11 +82,13 @@ READ_RIGHTS = ("figures", "transactions", "page")    # one switch in the setting
 RIGHTS_VERSION = 2       # 3.16.28: changes on for everyone (each one only after your click), the help always readable
 SPEECH_STARTS = ("early", "click")                 # the speech model starts at once (with the model, when the assistant opens) or with the click on the microphone
 DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "speech": "", "speech_start": "", "effort": "balanced", "context": auto_context(physical_ram()), "context_auto": True,
-                            "idle_minutes": 30, "sandbox": "strict", "save_chats": True, "check_mode": "daily",
+                            "idle_minutes": 30, "sandbox": "strict", "save_chats": True, "check_mode": "monthly",
                             "rights": {"figures": True, "transactions": True, "help": True, "page": True, "navigate": True,
                                        "enter_values": True, "categorize": True, "book": True, "rules": True, "receipts": True, "internet": False, "remote": False}}       # changes: each one only with your click on the card
-CHECK_MODES = ("daily", "weekly", "aus")           # looking for newer versions of llama.cpp and the models by itself ("aus": only on your click)
-QUIET_DAYS = 14                                    # llama.cpp gets a new build almost daily: the menu marks it only once the installed one is this old
+# looking for newer versions of llama.cpp and the models by itself -- one setting for all of them ("aus": only on your click).
+# From the factory once a month: llama.cpp gets a new build almost daily, so there is something new at every look
+CHECK_MODES = {"daily": 86400, "weekly": 7 * 86400, "monthly": 30 * 86400, "aus": 0}
+NEWS_FILE = "news.json"                            # the last look and what it found, in the assistant's folder: a restart neither looks again nor forgets
 DEFAULTS["memory"] = True                          # what it was told to remember (memory.py): used with every question
 PAGES = ("overview", "balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "categories", "accounts", "help")
 # its text is read only from these pages -- never settings, log, setup (nor its own conversation under "assistant")
@@ -329,6 +331,7 @@ class Assistant:
         self.speech = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir, role="speech")       # the model that writes down what is dictated
         self.queue: List[dict] = []                      # "update everything": what is still to come
         self.looked: Optional[float] = None              # the last look for newer versions (by itself or on your click)
+        self._recall()
         self.speech_lock = threading.Lock()            # one recording at a time
         self.lock = threading.Lock()
         self.job: Optional[Job] = None
@@ -478,7 +481,7 @@ class Assistant:
         """Is it time to look for newer versions by itself? Only while the assistant is in use (switched on, llama.cpp
         installed), as often as set, and not while something is being loaded."""
         st = self.settings()
-        every = {"daily": 86400, "weekly": 7 * 86400}.get(st["check_mode"])
+        every = CHECK_MODES.get(st["check_mode"])
         if not every or not st["enabled"] or self.updating() or (self.ai.job or {}).get("state") == "running":
             return False
         if self.ai.news.get("retry"):
@@ -509,8 +512,32 @@ class Assistant:
                     news.setdefault("models", {}).setdefault(mid, m)
             if auto:
                 news.pop("error")
+        for mid, m in (news.get("models") or {}).items():       # the file the answer is about: another one here later, and it is not newer any more
+            m["had"] = after[1].get(mid) or ""
         self.looked = time.time()
+        try:
+            ai._save(NEWS_FILE, {"looked": self.looked, "news": news})
+        except OSError as e:
+            log.warning("Assistant: the look could not be kept (%s)", type(e).__name__)
         return news
+
+    def _recall(self) -> None:
+        """The last look as kept (see look): when it was, and what of its finds still holds for what is on this Mac now."""
+        kept = self.ai._load(NEWS_FILE)
+        when, news = kept.get("looked"), kept.get("news")
+        if not isinstance(when, (int, float)) or isinstance(when, bool) or when > time.time() + 60 or not isinstance(news, dict):
+            return
+        tag, have = self.ai.runtime().get("tag") or "", self.ai.models()
+        out: dict = {"at": str(news.get("at") or "")[:16], "models": {}}
+        rt = news.get("runtime")
+        if isinstance(rt, dict) and tag and isinstance(rt.get("tag"), str) and rt.get("newer") is True and rt["tag"] != tag:
+            out["runtime"] = {"tag": rt["tag"][:40], "newer": True}
+        for mid, m in (news.get("models") if isinstance(news.get("models"), dict) else {}).items():
+            if isinstance(m, dict) and m.get("newer") is True and mid in have and m.get("had") and m.get("had") == have[mid].get("sha256"):
+                out["models"][mid] = {"newer": True, "size": m.get("size") if isinstance(m.get("size"), int) else 0, "had": m["had"]}
+        if news.get("retry") is True:
+            out["retry"] = True
+        self.looked, self.ai.news = float(when), out
 
     def load_model(self, model_id: str = "", repo: str = "", file: str = "") -> dict:
         """As LocalAI.download_model; a model of your own that is on this Mac can be named by its id alone (its newer file)."""
@@ -526,8 +553,8 @@ class Assistant:
 
     def newer(self) -> dict:
         """What the last look found a newer version for: {"items": [{"kind": "runtime" | "model", "id", "name"}] (llama.cpp
-        first; all of it can be updated in one go), "marked": how many of them the menu marks -- the model and the speech model
-        in use, and llama.cpp once the installed build is QUIET_DAYS old (nothing while the assistant is switched off)}."""
+        first; all of it can be updated in one go), "marked": how many of them the menu marks -- llama.cpp, the model and the
+        speech model in use (nothing while the assistant is switched off)}."""
         news = self.ai.news
         rt_new = bool((news.get("runtime") or {}).get("newer"))
         mods = [mid for mid, m in (news.get("models") or {}).items() if (m or {}).get("newer")]
@@ -535,17 +562,13 @@ class Assistant:
             return {"items": [], "marked": 0}
         st, rt, have = self.settings(), self.ai.runtime(), self.ai.models()
         items, marked = [], 0
-        if rt and rt_new:
+        if rt and rt_new and (news["runtime"].get("tag") or "") != rt.get("tag"):
             items.append({"kind": "runtime", "id": "", "name": "llama.cpp"})
-            try:
-                age = (datetime.now() - datetime.strptime(str(rt.get("installed") or "")[:10], "%Y-%m-%d")).days
-            except ValueError:
-                age = QUIET_DAYS
-            marked += age >= QUIET_DAYS
+            marked += 1
         names = {c["id"]: c["name"] for c in CATALOG + SPEECH}
         used = {st["model"], self.speech_model()}
         for mid in mods:
-            if mid in have:
+            if mid in have and news["models"][mid].get("had", have[mid].get("sha256")) == have[mid].get("sha256"):
                 items.append({"kind": "model", "id": mid, "name": names.get(mid) or str(have[mid].get("name") or mid)})
                 marked += mid in used
         return {"items": items, "marked": marked if st["enabled"] else 0}
