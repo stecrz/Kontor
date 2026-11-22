@@ -149,11 +149,15 @@ def fetch(req: dict, open_=None) -> dict:
         if ip:
             pins[h] = ip
     check(host)
-    headers = {"User-Agent": str(req.get("user_agent") or "Kontor"), "Accept": str((req.get("headers") or {}).get("Accept") or "*/*"),
+    headers = {"User-Agent": str(req.get("user_agent") or "Mozilla/5.0 (compatible)"), "Accept": str((req.get("headers") or {}).get("Accept") or "*/*"),
                "Accept-Encoding": "identity"}
     for k, v in (req.get("headers") or {}).items():
         if str(k).lower() in ("accept", "authorization", "content-type", "accept-language") and isinstance(v, str) and "\n" not in v and "\r" not in v:
             headers[str(k)] = v
+        elif str(k).lower() == "x-tavily-access-mode" and v == "keyless" and host in POST_ONLY:      # Tavily without a key
+            headers["X-Tavily-Access-Mode"] = v
+    if any(k.lower() == "authorization" for k in headers):   # a key or no key -- never both
+        headers.pop("X-Tavily-Access-Mode", None)
     data = str(req.get("body") or "").encode("utf-8") if method == "POST" else None
     r = urllib.request.Request(url, data=data, headers=headers, method=method)
     t0 = time.time()
@@ -295,8 +299,9 @@ def html_text(page: str, focus=None, max_text: int = MAX_TEXT) -> dict:
 
 
 def xml_records(raw: bytes, max_items: int = 20000) -> list:
-    """The elements that hold only text in their children, each as {tag: text} -- with no document type, no entities of
-    its own (a file that declares them is refused: they can blow up to any size)."""
+    """The elements that hold text in their own children, each as {"@tag": its name, "@attribute": ..., child: text} (names
+    without their namespace; a child that comes twice: both texts, " | " between) -- with no document type, no entities of its
+    own (a file that declares them is refused: they can blow up to any size)."""
     out, stack = [], []
     p = expat.ParserCreate()
 
@@ -306,21 +311,21 @@ def xml_records(raw: bytes, max_items: int = 20000) -> list:
     p.EntityDeclHandler = forbid
     p.UnparsedEntityDeclHandler = forbid
     p.ExternalEntityRefHandler = forbid
+    local = lambda t: str(t).rsplit(":", 1)[-1]
 
     def start(tag, attrs):
-        stack.append({"tag": tag, "text": [], "kids": {}, "leaf": True, "deep": False})
+        stack.append({"tag": local(tag), "attrs": {"@" + local(k): str(v)[:300] for k, v in list(attrs.items())[:12]}, "text": [], "kids": {}, "leaf": True})
         if len(stack) > 1:
             stack[-2]["leaf"] = False
 
     def end(tag):
         e = stack.pop()
-        if stack:
-            if e["leaf"]:
-                stack[-1]["kids"][tag] = "".join(e["text"]).strip()[:2000]
-            else:
-                stack[-1]["deep"] = True                  # holds more than text: its parent is no record
-        if not e["leaf"] and not e["deep"] and e["kids"] and len(out) < max_items:
-            out.append(e["kids"])
+        if stack and e["leaf"]:
+            text, kids = "".join(e["text"]).strip()[:2000], stack[-1]["kids"]
+            if text:
+                kids[e["tag"]] = (kids[e["tag"]] + " | " + text)[:2000] if e["tag"] in kids else text
+        if not e["leaf"] and e["kids"] and len(out) < max_items:
+            out.append(dict({"@tag": e["tag"]}, **e["attrs"], **e["kids"]))
 
     def data(s):
         if stack:
@@ -347,7 +352,10 @@ def convert(res: dict, req: dict) -> dict:
     elif kind == "csv":
         text = decode(raw, res["charset"])
         head = text.split("\n", 1)[0]
-        rows = list(csv.reader(io.StringIO(text), delimiter=";" if head.count(";") > head.count(",") else ","))
+        try:
+            rows = list(csv.reader(io.StringIO(text), delimiter=";" if head.count(";") > head.count(",") else ","))
+        except csv.Error:                               # a field beyond the csv module's limit (128 KiB) and the like: not readable
+            raise Refused("parse")
         res["data"] = [[c[:300] for c in r[:60]] for r in rows[:5000]]
     elif kind == "html":
         if res["type"] not in ("text/html", "application/xhtml+xml", ""):

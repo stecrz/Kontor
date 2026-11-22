@@ -506,18 +506,20 @@ Ab Werk aus; einschalten unter „Was der KI-Assistent darf“ → **Internet**.
 
 **Ohne Rückfrage** (unter dem Häkchen Internet): welche Quellen als vertrauenswürdig gelten – ab Werk alle – und **Weitere Websites**, deren Seiten er ohne Rückfrage liest (z. B. `handelsblatt.com`; gilt auch für `www.` und andere Teile der Website).
 
-- **Stufe 1, amtlich und Nachschlagewerke:** Wikipedia, Wikidata, Gesetze im Internet, GLEIF (Firmen und Konzernstruktur), EZB, Bundesbank, Eurostat.
+- **Stufe 1, amtlich und Statistik:** Wikipedia, Wikidata, Gesetze im Internet, Rechtsinformationen des Bundes (Gesetze, Urteile auch des BFH), Meldungen von BMF, Bundesbank und EZB, GLEIF (Firmen und Konzernstruktur), EZB, Bundesbank, BIZ, Eurostat (auch Branchenzahlen), OECD, Weltbank – alle ohne Konto.
 - **Stufe 2, Nachrichten:** tagesschau.de, GDELT – Artikel nur, wenn sie frei lesbar sind.
-- **Stufe 3, allgemeine Websuche:** Tavily, mit deinem eigenen kostenlosen Schlüssel.
+- **Stufe 3, allgemeine Websuche:** Tavily – ohne Konto oder mit deinem eigenen kostenlosen Schlüssel.
 
-Kontor prüft jede Suche vorher auf deine Daten (Namen, Konten, IBANs, Beträge) und lehnt im Zweifel ab; abgerufen wird in einem abgeschirmten Prozess. Text aus dem Internet ist für das Modell nur Material – danach nimmt Kontor in derselben Unterhaltung keine Änderungen mehr an (dafür eine neue Unterhaltung beginnen). Jeder Abruf steht im Protokoll der Änderungen und Abrufe.
+Kontor prüft jede Suche vorher auf deine Daten (Namen, Konten, IBANs, Beträge) und lehnt im Zweifel ab; abgerufen wird in einem abgeschirmten Prozess, ohne Kennung von Kontor. Lehnt eine Quelle ab (etwa bei zu vielen Abrufen), steht das auf der Karte. Text aus dem Internet ist für das Modell nur Material – danach nimmt Kontor in derselben Unterhaltung keine Änderungen mehr an (dafür eine neue Unterhaltung beginnen). Jeder Abruf steht im Protokoll der Änderungen und Abrufe.
 
-**Tavily-Schlüssel einrichten** (einmalig, kostenlos):
+Ohne Schlüssel nutzt Kontor Tavilys Zugang ohne Konto – keinem Konto zugeordnet, von Tavily begrenzt; Kontor stoppt nach 200 Abrufen in 31 Tagen. Mehr Abrufe mit eigenem Schlüssel.
+
+**Tavily-Schlüssel einrichten** (optional, einmalig, kostenlos):
 1. Auf [app.tavily.com](https://app.tavily.com) ein Konto anlegen (E-Mail, Google oder GitHub) – ohne Kreditkarte; keine Zahlungsart hinterlegen, dann kann nichts berechnet werden.
 2. Im Dashboard den API-Schlüssel kopieren (beginnt mit `tvly-`).
 3. Hier unter **Internet** bei „Tavily-Schlüssel“ einfügen und **Sichern**.
 
-Der Schlüssel liegt verschlüsselt in Kontors Datenordner, wird nie wieder angezeigt und ist nicht in Sicherungen; „Entfernen“ löscht ihn. Frei sind 1.000 Suchen im Monat – Kontor stoppt nach 950 in 31 Tagen.
+Der Schlüssel liegt verschlüsselt in Kontors Datenordner, wird nie wieder angezeigt und ist nicht in Sicherungen; „Entfernen“ löscht ihn. Frei sind 1.000 Suchen im Monat – Kontor stoppt nach 950 in 31 Tagen. Ohne Schlüssel geht es ohne Konto weiter.
 
 <a id="assistant-safety"></a>
 ### Wie sicher ist das?

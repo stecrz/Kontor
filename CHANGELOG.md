@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.95 (2026-11-22 05:49)
+- KI-Assistent, Internet: neue amtliche Quellen – Rechtsinformationsportal (auch BFH), Meldungen von BMF, Bundesbank und EZB, OECD, Weltbank, BIZ, Branchenzahlen (Bundesbank, Eurostat)
+- Tavily (Stufe 3) auch ohne Konto; eigener Schlüssel optional für mehr Abrufe
+- Eine neutrale Kennung an alle Quellen; lehnt eine Quelle ab, steht es auf der Karte
+
 ## 3.16.94 (2026-11-22 05:42)
 - Diktieren: neue Einstellung „Mikrofonfilter“ – aus: das Mikrofon hört sofort nach dem Klick (statt nach etwa 2 s)
 - Diktieren: ohne Filter gleicht Kontor die Lautstärke selbst aus – leise Aufnahmen gelten nicht mehr als Stille

@@ -8237,7 +8237,8 @@ async function vEinstellungenAssistent() {
   const wt = st.web_trusted || {};
   const webKey = r.internet ? `<div class="form as-web-key"><label for="as-tavily">${t('ki_tavily')}${hq('ki_tavily')}</label><div class="row tight">${(a.web || {}).tavily
     ? `<span class="muted small">${t('ki_tavily_da', a.web.tavily_used || 0, a.web.tavily_limit || 950, a.web.tavily_days || 31)}</span><button class="small secondary" id="as-tavily-del">${t('ki_entfernen')}</button>`
-    : `<input type="password" id="as-tavily" placeholder="tvly-…" autocomplete="off" spellcheck="false"><button class="small secondary" id="as-tavily-save">${t('ki_tavily_sichern')}</button>`}</div>
+    : `<input type="password" id="as-tavily" placeholder="tvly-…" autocomplete="off" spellcheck="false"><button class="small secondary" id="as-tavily-save">${t('ki_tavily_sichern')}</button>${a.web
+      ? `<span class="muted small">${t('ki_tavily_frei', a.web.tavily_used || 0, a.web.tavily_limit || 200, a.web.tavily_days || 31)}</span>` : ''}`}</div>
     <span class="as-wk-l">${t('ki_vertraut')}${hq('ki_vertraut')}</span><div class="as-trust">${((a.web || {}).sources || []).map(x => `<label class="chk"><input type="checkbox" class="as-trust-src" value="${esc(x.id)}" ${(wt.sources || []).includes(x.id) ? 'checked' : ''}> <span>${esc(x.label)}</span></label>`).join('')}</div>
     <label for="as-websites">${t('ki_websites')}${hq('ki_websites')}</label><input type="text" id="as-websites" value="${esc((wt.hosts || []).join(', '))}" placeholder="${esc(t('ki_websites_ph'))}" autocomplete="off" spellcheck="false" autocapitalize="off" inputmode="url"></div>` : '';
   return `<div class="row tight">${swCtl('as-enabled', st.enabled, t('ki_verwenden'))}${hq('assistent')}</div>

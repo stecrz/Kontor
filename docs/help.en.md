@@ -506,18 +506,20 @@ Off by default; switch it on under “What the AI assistant may do” → **Inte
 
 **Without asking** (under the Internet checkbox): which sources count as trusted – all of them by default – and **More websites** whose pages it reads without asking (e.g. `handelsblatt.com`; also covers `www.` and other parts of the site).
 
-- **Tier 1, official sources and reference works:** Wikipedia, Wikidata, German federal laws (Gesetze im Internet), GLEIF (companies and group structure), ECB, Bundesbank, Eurostat.
+- **Tier 1, official sources and statistics:** Wikipedia, Wikidata, German federal laws (Gesetze im Internet), the federal legal information portal (laws, court rulings including the BFH), news of the BMF, Bundesbank and ECB, GLEIF (companies and group structure), ECB, Bundesbank, BIS, Eurostat (also figures by sector), OECD, World Bank – all without an account.
 - **Tier 2, news:** tagesschau.de, GDELT – articles only where they are free to read.
-- **Tier 3, general web search:** Tavily, with your own free key.
+- **Tier 3, general web search:** Tavily – without an account or with your own free key.
 
-Kontor checks every search for your data first (names, accounts, IBANs, amounts) and refuses when in doubt; pages are fetched in a sealed-off process. Text from the internet is only material for the model – afterwards Kontor takes no changes in the same conversation (start a new one for them). Every lookup is in the log of changes and lookups.
+Kontor checks every search for your data first (names, accounts, IBANs, amounts) and refuses when in doubt; pages are fetched in a sealed-off process, without naming Kontor. If a source refuses (say, after too many lookups), the card says so. Text from the internet is only material for the model – afterwards Kontor takes no changes in the same conversation (start a new one for them). Every lookup is in the log of changes and lookups.
 
-**Setting up the Tavily key** (once, free):
+Without a key Kontor uses Tavily's access without an account – tied to no account, limited by Tavily; Kontor stops after 200 lookups in 31 days. More lookups with your own key.
+
+**Setting up the Tavily key** (optional, once, free):
 1. Create an account at [app.tavily.com](https://app.tavily.com) (e-mail, Google or GitHub) – no credit card; add no payment method, then nothing can be charged.
 2. Copy the API key from the dashboard (it starts with `tvly-`).
 3. Paste it here under **Internet** into “Tavily key” and click **Save**.
 
-The key is stored encrypted in Kontor's data folder, never shown again and not in backups; “Remove” deletes it. 1,000 searches a month are free – Kontor stops after 950 in 31 days.
+The key is stored encrypted in Kontor's data folder, never shown again and not in backups; “Remove” deletes it. 1,000 searches a month are free – Kontor stops after 950 in 31 days. Without a key it goes on without an account.
 
 <a id="assistant-safety"></a>
 ### How safe is this?

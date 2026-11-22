@@ -62,8 +62,12 @@ anhängen – nie löschen.
   kostenlosem Tavily-Schlüssel des Nutzers (Kontor stoppt vor dem Freikontingent), ohne Schlüssel keine Stufe 3. Kein Abgreifen
   von Suchmaschinen ohne Schnittstelle (DuckDuckGo verbietet es). Jeder Zugriff erst nach Freigabe mit Quelle, Suchbegriffen und
   Adresse; Kontor sucht (nicht das Modell), nur an diese festen Adressen, nie mit eigenen Daten; Seiten liest ein abgeschotteter
-  Prozess, danach keine Änderungen im selben Chat. (teilweise umgesetzt in 3.16.48: Wikipedia/Wikidata, Gesetze im Internet,
-  GLEIF, EZB, Bundesbank, Eurostat, tagesschau, GDELT, Tavily; fehlen noch Rechtsinformationsportal, BMF/BFH, Destatis, OECD, Portal-Feeds)
+  Prozess, danach keine Änderungen im selben Chat. (geändert am 22.11.2026 auf Wunsch des Nutzers: Stufe 3 auch ohne Schlüssel über
+  Tavilys Zugang ohne Konto, eigener Schlüssel optional für mehr Abrufe; an alle Quellen, auch Wikimedia, nur eine neutrale Kennung –
+  Anonymität vor Wikimedias Kennungsregel; lehnt eine Quelle deshalb ab, sagt es die Karte) (umgesetzt in 3.16.48 und 3.16.95;
+  BFH über das Rechtsinformationsportal; Feeds von BMF, Bundesbank und EZB. Nicht drin: Destatis-GENESIS – nur mit Konto und Abfragen
+  per POST –, deutsche Zahlen über Eurostat und Bundesbank; IWF – neue Schnittstelle seit 2025, Zugang ohne Anmeldung unklar; Feeds von
+  Branchenportalen (Stufe 2) sowie von BFH, BaFin und Destatis – Adressen nicht prüfbar)
 - **Internetsuche – Freigabe gebündelt (Nutzer, 2026-11-22):** Der Assistent plant seine Recherche zuerst (was, welche Quellen, bis
   zu welcher Stufe) und fragt dann einmal: eine Karte mit allen Abrufen, jeder abwählbar, ein Klick gibt sie frei – danach arbeitet
   er. Was gesendet wird, steht auf der Karte; lange Adressen und die Einzelheiten eines Abrufs klappen auf. Ersetzt oben „jeder
@@ -206,12 +210,16 @@ Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach
 - [x] 3.16.88 PDFs und Bilder mit Tabellen im Chat: alle Seiten, Tabellen über Seitenumbrüche zusammengesetzt (Köpfe, Seitenzahlen weg), Spalten aus der Lage der Wörter, Zahlen wie geschrieben, Summen von Kontor. Offen: am Mac mit echten Auswertungen (BWA, SuSa, Wertenachweis) prüfen; CSV über denselben Weg.
 - [x] 3.16.48 Internet nur zum Lesen, in drei Stufen (siehe Entschieden): Kontor sucht (nicht das Modell), Freigabe je Zugriff mit Quelle,
   Suchbegriffen und Adressen, Filter gegen eigene Daten, Seiten in einem abgeschotteten Prozess, danach keine Änderungen im selben Chat.
-  Offen: Rechtsinformationsportal des Bundes, BMF/BFH, Destatis, OECD, Feeds der Portale (Schnittstellen erst prüfen); am Mac mit echtem
-  Netz prüfen (Abschirmung des Abrufs, Antworten der Quellen).
+  Am Mac mit echtem Netz prüfen (Abschirmung des Abrufs, Antworten der Quellen).
 - [x] 3.16.92 Internet: je Chat einmal erlauben, danach vertrauenswürdige Quellen und Websites ohne Rückfrage (einstellbar), andere
   Websites immer einzeln; Treffer vorab freigeben entfällt.
 - [x] 3.16.76 Internet: erst die Recherche planen, dann eine Karte für alle Abrufe (jeder abwählbar, ein Klick), höhere Stufe als
   Reserve „nur falls nötig“, Treffer lesen mit derselben Freigabe; Adresse und Gesendetes je Abruf aufklappbar.
+- [x] 3.16.95 Weitere amtliche Quellen (Stufe 1): Rechtsinformationsportal des Bundes (Gesetze, Urteile auch des BFH), Meldungen von BMF
+  (Steuern, Presse), Bundesbank und EZB, OECD, Weltbank, BIZ; Datengruppen der Bundesbank (z. B. Unternehmensabschlüsse), Branchenzahlen von
+  Eurostat (SBS); eine anonyme Kennung an alle Quellen, „Quelle lehnt ab“ auf der Karte. Stufe 3 auch ohne Schlüssel (Tavilys Zugang ohne
+  Konto, Kontor stoppt bei 200 Abrufen in 31 Tagen; mit eigenem Schlüssel bei 950; nie beides in einer Anfrage). Nicht drin: Destatis-GENESIS
+  (Konto, POST), IWF (neue Schnittstelle, Zugang unklar), Feeds von Branchenportalen, BFH und BaFin (Adressen nicht prüfbar). Am Mac einmal echt prüfen.
 
 ## 3. GbR-Entlastung: Immobilien, Steuer, Umsatzsteuer
 Ziel: Eine vermögensverwaltende GbR lässt sich mit Kontor führen – Objekte, Steuer, Voranmeldung, Nebenkosten, Ausschüttungen –
