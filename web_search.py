@@ -48,6 +48,9 @@ GRACE = 15.0                               # seconds the reader process gets bey
 TEXT_MAX = 5000                            # characters of one page's text for the model (a tool result is cut at 7,000)
 SNIPPET = 360
 HITS = 6
+PLAN_MAX = 6                               # lookups asked for together (one card, one click)
+READS_MAX = 3                              # results read in full with one approval (asked with the searches, or together on a card)
+SHOWN_MAX = 2000                           # characters of an address (or of what is sent) the card shows whole: a longer request is not made
 _KEY_RE = re.compile(r"tvly-[A-Za-z0-9_\-]{10,120}")
 
 # source -> tier, the hosts it may reach (and nothing else), what it is for the model
@@ -427,9 +430,11 @@ _QID = re.compile(r"Q[1-9]\d{0,10}")
 
 
 def _q(text: Any, longest: int = 160) -> str:
-    q = re.sub(r"\s+", " ", str(text or "")).strip()
+    q = unicodedata.normalize("NFC", re.sub(r"\s+", " ", str(text or "")).strip())
     if not q:
         raise WebError("query is empty: the search words (general words only, never the user's own data).")
+    if any(unicodedata.category(c)[0] in "CM" for c in q):     # signs nobody sees (zero width, writing direction, control, variation marks): the card could not show what goes out
+        raise WebError("query: plain words only -- no invisible, combining or control characters.")
     if len(q) > longest:
         raise WebError("query is too long (at most %d characters)." % longest)
     return q
@@ -504,8 +509,10 @@ def prepare(source: str, a: dict, have_key: bool, lang: str) -> dict:
         elif source == "gdelt":
             gq = q + (" sourcelang:german" if a.get("lang") == "de" else "")
             p["url"] = "https://api.gdeltproject.org/api/v2/doc/doc?query=%s&mode=ArtList&format=json&maxrecords=10&sort=HybridRel&timespan=3m" % quote(gq)
-        elif source == "tavily":
+        elif source == "tavily":                         # its POST: nothing but the question (the card shows this text; your key goes in the header)
             p["url"] = "https://api.tavily.com/search"
+            p["body"] = json.dumps({"query": q, "search_depth": "basic", "max_results": 5, "topic": "general", "include_answer": False,
+                                    "include_raw_content": False, "include_images": False}, ensure_ascii=False)
     p["addresses"] = [p["url"]]
     if source == "laws" and p.get("norm"):
         p["addresses"].append("https://www.gesetze-im-internet.de/…/%s.html" % p["norm"])
@@ -535,7 +542,7 @@ def prepare_read(url: str, hit: Optional[dict]) -> dict:
         if not _LEI.fullmatch(lei):
             raise WebError("not a GLEIF record")
         p["url"], p["check"], p["lei"] = "https://api.gleif.org/api/v1/lei-records/%s" % lei, lei, lei
-        p["addresses"] = [p["url"], p["url"] + "/direct-parent", p["url"] + "/ultimate-parent", p["url"] + "/direct-children"]
+        p["addresses"] = [p["url"], p["url"] + "/direct-parent", p["url"] + "/ultimate-parent", p["url"] + "/direct-children?page%5Bsize%5D=20"]
     elif src == "tagesschau":
         det = str(hit.get("details") or "")
         if not det.startswith("https://www.tagesschau.de/api2u/"):
@@ -710,9 +717,7 @@ def run(p: dict, fetch: Callable[[dict], dict], key: str = "") -> Tuple[dict, Li
         out["results"] = res
         out["note_source"] = "headlines only; web_read reads an article where it is free to read"
     elif src == "tavily":
-        body = json.dumps({"query": p["query"], "search_depth": "basic", "max_results": 5, "topic": "general", "include_answer": False,
-                           "include_raw_content": False, "include_images": False})
-        data = _got(fetch(_req(p, p["url"], "json", method="POST", body=body, headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})), dict)
+        data = _got(fetch(_req(p, p["url"], "json", method="POST", body=p["body"], headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})), dict)
         res = []
         for e in (data.get("results") or [])[:5]:
             if not isinstance(e, dict) or not str(e.get("url") or "").startswith("https://"):
@@ -817,12 +822,13 @@ def _jsonstat(d: dict) -> dict:
 
 def _read(p: dict, fetch: Callable[[dict], dict]) -> dict:
     src = p["source"]
+    most = max(500, min(TEXT_MAX, int(p.get("text_max") or TEXT_MAX)))      # characters of the page's text (several read together: less each)
     if src == "wikipedia":
         data = _got(fetch(_req(p, p["url"], "json")), dict)
         pg = next((x for x in ((data.get("query") or {}).get("pages") or []) if isinstance(x, dict) and not x.get("missing")), None)
         if pg is None:
             raise WebError("the article is not there")
-        text, cut = _cut(pg.get("extract") or "")
+        text, cut = _cut(pg.get("extract") or "", most)
         return {"title": _strip(pg.get("title"), 200), "url": p["query"], "text": text, **({"cut": True} if cut else {})}
     if src == "wikidata":
         data = _got(fetch(_req(p, p["url"], "json")), dict)
@@ -871,14 +877,14 @@ def _read(p: dict, fetch: Callable[[dict], dict]) -> dict:
         for c in data.get("content") or []:
             if isinstance(c, dict) and c.get("type") in ("text", "headline") and c.get("value"):
                 parts.append(_strip(c["value"], 4000))
-        text, cut = _cut("\n".join(parts))
+        text, cut = _cut("\n".join(parts), most)
         return {"title": _strip(data.get("title"), 200), "date": str(data.get("date") or "")[:16], "url": str(data.get("shareURL") or p["query"])[:300],
                 "text": text, **({"cut": True} if cut else {})}
     page = _got(fetch(_req(p, p["url"], "html", focus=["jnnorm"] if src == "laws" else None)), dict)
     if page.get("paywall"):
         return {"title": _strip(page.get("title"), 200), "url": p["query"], "text": None,
                 "note_read": "this page marks itself as not free to read (paywall): its text is not read -- use the headline only"}
-    text, cut = _cut(page.get("text") or "")
+    text, cut = _cut(page.get("text") or "", most)
     if len(text) < 200:
         return {"title": _strip(page.get("title"), 200), "url": p["query"], "text": text or None,
                 "note_read": "little or no text: the page may need a login, a consent click or a subscription -- not read further"}

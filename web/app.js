@@ -6886,7 +6886,7 @@ function asShow(open) {
 const LI = /^(\s*)([-*•+]|\d+[.)])\s+(.*)$/;
 // the addresses Kontor fetched from the internet in this conversation: only these become links in an answer (an address the
 // model makes up -- perhaps told to by a web page, perhaps carrying your figures -- stays plain text)
-const asLinks = () => new Set(AS.msgs.flatMap(m => (m.parts || []).filter(p => p.k === 'web' && p.state === 'done').flatMap(p => p.links || [])));
+const asLinks = () => new Set(AS.msgs.flatMap(m => (m.parts || []).filter(p => p.k === 'web').flatMap(p => asWebItems(p).filter(it => it.state === 'done').flatMap(it => it.links || []))));
 const asUnesc = s => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 function asMd(src, links) {
   const ok = links instanceof Set ? links : new Set();
@@ -6996,14 +6996,45 @@ function asBatch(p, m) {
   const bits = [p.done ? tn('ki_b_done', p.done, p.done) : '', p.left ? tn('ki_b_left', p.left, p.left) : '', p.failed ? tn('ki_b_failed', p.failed, p.failed) : ''].filter(Boolean);
   return `<div class="as-batch done"><span class="muted small">${esc(bits.join(' · '))}</span></div>`;
 }
-function asWebCard(p) {
-  // a lookup on the internet the assistant asks for: source, words or address, why -- fetched by Kontor only with "Fetch"
-  const ask = p.state === 'ask', adr = (p.addresses || []).filter(a => a !== p.query);
-  const st = ask ? `<div class="as-e-btn"><button class="small as-w-yes" data-id="${esc(p.id)}">${t('ki_w_ja')}</button><button class="small secondary as-w-no" data-id="${esc(p.id)}">${t('ki_w_nein')}</button></div>`
-    : p.state === 'done' ? `<div class="as-e-st ok">${ICON.check}<span>${p.what === 'read' ? t('ki_w_done_read') : tn('ki_w_done_n', p.count || 0, p.count || 0)}</span></div>`
-    : `<div class="as-e-st">${esc(p.state === 'failed' ? t('ki_w_fehler', p.text || '') : t(p.state === 'expired' ? 'ki_w_expired' : 'ki_w_declined'))}</div>`;
-  return `<div class="as-entry as-web ${esc(p.state || '')}${ask ? ' ask' : ''}"><div class="as-e-k" title="${esc(t('ki_w_tip'))}">${t(p.what === 'read' ? 'ki_w_lesen' : 'ki_w_kind')} · ${esc(p.label || '')} · ${t('ki_w_stufe', p.tier || 1)}</div>
-    <div class="as-e-h">${esc(p.query || '')}</div>${p.reason ? `<div class="as-e-why">${esc(p.reason)}</div>` : ''}${adr.length ? `<div class="as-w-adr">${adr.map(a => `<div>${esc(a)}</div>`).join('')}</div>` : ''}${st}</div>`;
+// The requests on the card of a research: each {id, what: search | read | reads (results to be read later), source, label, tier,
+// query, addresses, sent, state}. A card saved before the lookups of an answer were asked together named one request: shown as its only one.
+const asWebItems = p => Array.isArray(p.items) ? p.items : (p.items = [{id: p.id, what: p.what || 'search', label: p.label, tier: p.tier, query: p.query, addresses: p.addresses || [],
+  state: p.state === 'ask' ? undefined : p.state === 'expired' ? 'declined' : p.state, count: p.count, text: p.text, links: p.links, old: true}]);          // (old: what was sent is not known any more)
+const asWebFetched = p => asWebItems(p).some(it => it.state === 'done');
+function asWebState(p, ev) {
+  // the card after the click or at its end -- the same steps as _web_state() in assistant.py: what was not ticked, and what was
+  // not fetched by the time it ended, was not fetched
+  for (const it of p.items || []) {
+    if (ev.state === 'run' && Array.isArray(ev.chosen) && !ev.chosen.includes(it.id)) it.state = 'declined';
+    else if (['declined', 'expired', 'stopped', 'done'].includes(ev.state) && (!it.state || it.state === 'run') && (it.what !== 'reads' || ev.state !== 'done')) it.state = 'declined';
+  }
+  p.state = ev.state === 'stopped' ? 'done' : ev.state;
+}
+function asWebCard(p, i, j) {
+  // the lookups of a research, asked for together: each request with its words, source and tier -- its address and what is sent
+  // with it on demand (the row opens); Kontor fetches the ticked ones with one click, afterwards each row says what came of it
+  const items = asWebItems(p), ask = p.state === 'ask', none = p.state === 'declined' || p.state === 'expired', reqs = items.filter(it => it.what !== 'reads'), on = reqs.filter(it => !it.off).length;
+  const state = it => it.state === 'done' ? `<span class="as-w-st ok">${ICON.check}${it.what === 'read' ? t('ki_w_done_read') : tn('ki_w_treffer', it.count || 0, it.count || 0)}</span>`
+    : it.state === 'run' ? `<span class="as-w-st"><span class="spin xs"></span></span>`
+    : it.state === 'failed' ? `<span class="as-w-st">${esc(t('ki_w_fehler', it.text || ''))}</span>`
+    : it.state === 'unneeded' ? `<span class="as-w-st">${t('ki_w_unneeded')}</span>`
+    : it.state === 'declined' ? `<span class="as-w-st">${t('ki_w_declined')}</span>` : '';
+  const tick = it => ask && items.length > 1 ? `<label class="as-w-pick" title="${esc(t('ki_w_auswahl_tip'))}"><input type="checkbox" class="as-w-tick" data-id="${esc(p.id)}" data-item="${esc(it.id)}" aria-label="${esc(it.what === 'reads' ? tn('ki_w_reads', it.count || 0, it.count || 0) : it.query || '')}" ${it.off || (it.what === 'reads' && !on) ? '' : 'checked'} ${it.what === 'reads' && !on ? 'disabled' : ''}></label>` : '';          // (one request alone: the buttons say it all)
+  const row = it => {
+    const off = it.off || (it.what === 'reads' && ask && !on);
+    if (it.what === 'reads') return `<div class="as-w-row reads ${esc(it.state || '')}${off ? ' off' : ''}">${tick(it)}<div class="as-w-plain"><span class="as-w-q">${tn('ki_w_reads', it.count || 0, it.count || 0)}</span>${ask || none ? '' : `<span class="as-w-st${it.state ? '' : ' ok'}">${it.state ? t('ki_w_reads_nein') : ICON.check + t('ki_w_reads_ja')}</span>`}</div></div>`;
+    const adr = it.addresses || [], what = it.what === 'read' ? String(it.query || '').replace(/^https:\/\//, '') : it.query || '';
+    const meta = [it.label || '', t('ki_w_stufe', it.tier || 1), it.fallback ? t('ki_w_falls') : ''].filter(Boolean).join(' · ');
+    return `<div class="as-w-row ${esc(it.state || '')}${off ? ' off' : ''}">${tick(it)}<details class="as-w-d" data-m="${i}" data-p="${j}" data-i="${esc(it.id || '')}"${it.open ? ' open' : ''}>
+      <summary><span class="as-w-q${it.what === 'read' ? ' one' : ''}">${esc(what)}</span><span class="as-w-sub"><span class="as-w-src">${esc(meta)}</span>${ask || none ? '' : state(it)}</span></summary>
+      <dl class="as-w-more"><dt>${tn('ki_w_adresse', adr.length)}</dt><dd>${adr.map(u => `<code>${esc(u)}</code>`).join('')}</dd>
+      ${it.old ? '' : `<dt>${t('ki_w_gesendet')}</dt><dd>${it.sent ? `<code>${esc(it.sent)}</code><span class="muted">${it.key ? t('ki_w_schluessel') : ''}</span>` : `<span class="muted">${tn('ki_w_nur_adresse', adr.length)}</span>`}</dd>`}</dl></details></div>`;
+  };
+  const end = ask ? `<div class="as-e-btn"><button class="small as-w-yes" data-id="${esc(p.id)}" ${on ? '' : 'disabled'}>${on === reqs.length ? tn('ki_w_alle', on, on) : tn('ki_w_auswahl', on, on)}</button><button class="small secondary as-w-no" data-id="${esc(p.id)}">${t(reqs.length > 1 ? 'ki_w_nichts' : 'ki_w_nein')}</button></div>`
+    : none ? `<div class="as-e-st">${t(p.state === 'expired' ? 'ki_w_expired' : 'ki_w_declined')}</div>` : '';
+  const kind = (reqs.length && reqs.every(it => it.what === 'read') ? tn('ki_w_lesen', reqs.length) : t('ki_w_kind')) + (p.auto ? ' · ' + t('ki_w_auto') : '');
+  return `<div class="as-entry as-web ${esc(asWebFetched(p) && p.state !== 'run' ? 'done' : p.state || '')}${ask ? ' ask' : ''}"><div class="as-e-k" title="${esc(t('ki_w_tip'))}">${kind}</div>
+    ${p.reason ? `<div class="as-e-why">${esc(p.reason)}</div>` : ''}<div class="as-w-list">${items.map(row).join('')}</div>${end}</div>`;
 }
 // A chart the assistant asked for: the figures are Kontor's own (the model chose only what to show), drawn here as the charts on
 // the pages are -- the values on hover, a click shows the figure on its page (on a touch screen: tap to see it, tap again to go)
@@ -7185,7 +7216,7 @@ function asMsg(m, i) {
     }
     else if (p.k === 'entry') h += asEntry(p, (m.parts || []).some(x => x.k === 'batch' && x.state === 'ask' && (x.ids || []).includes(p.id)));
     else if (p.k === 'batch') h += asBatch(p, m);
-    else if (p.k === 'web') h += asWebCard(p);
+    else if (p.k === 'web') h += asWebCard(p, i, j);
     else if (p.k === 'note') h += `<div class="banner info small">${esc(t(p.key || ''))}</div>`;
     else if (p.k === 'chart') h += asChart(p, i, j);
     else if (p.k === 'err') h += `<div class="banner err small">${esc(p.text)}</div>`;
@@ -7584,7 +7615,7 @@ async function asSend(text) {
   AS.msgs.push(Object.assign({role: 'user', text}, refs.length ? {refs} : {}, files.length ? {files: files.map(f => ({name: f.name}))} : {}), m);
   AS.busy = true; AS.refs = []; AS.files = []; asRefsDraw(); asMsgs(true);
   try {
-    const web = AS.msgs.some(x => (x.parts || []).some(p => p.k === 'web' && p.state === 'done'));          // web text in it: no changes (Kontor knows it; told again after a restart)
+    const web = AS.msgs.some(x => (x.parts || []).some(p => p.k === 'web' && asWebFetched(p)));          // web text in it: no changes (Kontor knows it; told again after a restart)
     const ids = [];          // the receipts first, each on its own (in memory at Kontor until the question that names them)
     for (const f of files) ids.push((await api('/api/assistant/attach', {name: f.name, content: await asFileB64(f)})).id);
     const r = await api('/api/assistant/ask', Object.assign({question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort(), refs, web}, ids.length ? {files: ids} : {}));
@@ -7602,6 +7633,7 @@ async function asPoll(m, job) {
     if (r.gone) { gone = true; break; }
     if (r.done) break;
   }
+  (m.parts || []).forEach(p => { if (p.k === 'web' && (p.state === 'ask' || p.state === 'run')) asWebState(p, {state: p.state === 'ask' ? 'declined' : 'stopped'}); });          // the answer is gone (Kontor restarted, no connection): nothing more is fetched
   if (m.state === 'run') m.state = gone ? 'stopped' : 'done';
   if (AS.job === job) { AS.job = null; AS.busy = false; }
   asMsgs(); asLoad();
@@ -7617,15 +7649,16 @@ function asEvent(m, ev) {
   else if (ev.type === 'chart') m.parts.push(Object.assign({}, ev, {k: 'chart'}));
   else if (ev.type === 'entry_state') { const p = m.parts.find(x => x.k === 'entry' && x.id === ev.id); if (p) { p.state = ev.state; p.text = ev.text || ''; if (ev.fixed) p.fixed = true; } if (ev.state === 'done') asChanged(); }
   else if (ev.type === 'batch') m.parts.push({k: 'batch', id: ev.id, state: 'ask', ids: ev.ids || []});
-  else if (ev.type === 'web') m.parts.push(Object.assign({}, ev, {k: 'web'}));
-  else if (ev.type === 'web_state') { const p = m.parts.find(x => x.k === 'web' && x.id === ev.id); if (p) Object.assign(p, {state: ev.state, count: ev.count, text: ev.text || '', links: ev.links || []}); }
+  else if (ev.type === 'web') m.parts.push(Object.assign({}, ev, {k: 'web', items: (ev.items || []).map(it => Object.assign({}, it))}));
+  else if (ev.type === 'web_state') { const p = m.parts.find(x => x.k === 'web' && x.id === ev.id); if (p) asWebState(p, ev); }
+  else if (ev.type === 'web_item') { const p = m.parts.find(x => x.k === 'web' && x.id === ev.id), it = p && (p.items || []).find(x => x.id === ev.item); if (it) Object.assign(it, {state: ev.state, count: ev.count, text: ev.text || '', links: ev.links || []}); }
   else if (ev.type === 'notice') m.parts.push({k: 'note', key: ev.key});
   else if (ev.type === 'batch_state') { const p = m.parts.find(x => x.k === 'batch' && x.id === ev.id); if (p) Object.assign(p, {state: ev.state, done: ev.done, failed: ev.failed, left: ev.left}); }
   else if (ev.type === 'reset') { while (m.parts.length && m.parts[m.parts.length - 1].k === 'text') m.parts.pop(); }          // what was shown was a tool call written as text, not an answer
   else if (ev.type === 'done') { m.state = 'done'; m.meta = ev; }
   else if (ev.type === 'stopped') m.state = 'stopped';
   else if (ev.type === 'error') { m.state = 'error'; m.parts.push({k: 'err', text: ev.text || ''}); }
-  if (ev.type === 'stopped' || ev.type === 'error') m.parts.forEach(p => { if ((p.k === 'entry' && p.state === 'queued') || (p.k === 'web' && p.state === 'ask')) p.state = 'declined'; });          // never decided: nothing was made or fetched
+  if (ev.type === 'stopped' || ev.type === 'error') m.parts.forEach(p => { if (p.k === 'entry' && p.state === 'queued') p.state = 'declined'; else if (p.k === 'web' && (p.state === 'ask' || p.state === 'run')) asWebState(p, {state: p.state === 'ask' ? 'declined' : 'stopped'}); });          // never decided: nothing was made or fetched
 }
 // a value was entered (or taken back): the figures on the page follow
 function asChanged() { setTimeout(async () => { try { await loadAll(); softRoute(); pollStatus().catch(() => {}); } catch (e) {} }, 300); }
@@ -8045,8 +8078,9 @@ $('#assist').addEventListener('click', async e => {
     catch (x) { toast(x.message, 5000); if (card && !AS.job) { card[1].state = 'declined'; card[0].parts.forEach(y => { if (y.k === 'entry' && y.state === 'queued') y.state = 'declined'; }); } asMsgs(); }
   } else if (b.classList.contains('as-w-yes') || b.classList.contains('as-w-no')) {
     b.parentNode.querySelectorAll('button').forEach(x => { x.disabled = true; });
-    try { await api('/api/assistant/confirm', {job: AS.job, id: b.dataset.id, ok: b.classList.contains('as-w-yes')}); }
-    catch (x) { toast(x.message, 5000); const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'web' && y.id === b.dataset.id); if (p && !AS.job) p.state = 'declined'; asMsgs(); }
+    const card = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'web' && y.id === b.dataset.id);
+    try { await api('/api/assistant/confirm', {job: AS.job, id: b.dataset.id, ok: b.classList.contains('as-w-yes'), ids: card ? asWebItems(card).filter(it => !it.off).map(it => it.id) : undefined}); }
+    catch (x) { toast(x.message, 5000); if (card && !AS.job) asWebState(card, {state: 'declined'}); asMsgs(); }
   } else if (b.classList.contains('as-undo')) {
     b.disabled = true;
     try { const r = await api('/api/assistant/undo', {id: b.dataset.id}); const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === b.dataset.id); if (p) { p.state = 'undone'; p.text = r.note || ''; } asMsgs(); asChanged(); }
@@ -8055,6 +8089,7 @@ $('#assist').addEventListener('click', async e => {
 });
 $('#assist').addEventListener('change', e => {
   if (e.target.id === 'as-eff') { AS.effort = e.target.value; try { localStorage.setItem('kontor.effort', AS.effort); } catch (x) { /* kept in memory only */ } }
+  else if (e.target.classList.contains('as-w-tick')) { const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'web' && y.id === e.target.dataset.id), it = p && asWebItems(p).find(y => y.id === e.target.dataset.item); if (it) { it.off = !e.target.checked; asMsgs(); } }          // left out: not fetched
   else if (e.target.classList.contains('as-pick')) { const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === e.target.dataset.id); if (p) { p.off = !e.target.checked; asMsgs(); } }          // left out: not carried out
 });
 // the charts in the chat: values under the pointer, a click to the page (a touch: shown first, the second tap goes)
@@ -8080,7 +8115,12 @@ $('#assist').addEventListener('click', e => {
   }
   asChGo(h.c, h.i, h.s);
 });
-$('#assist').addEventListener('toggle', e => { const d = e.target; if (!d.classList || !d.classList.contains('as-think')) return; const p = ((AS.msgs[+d.dataset.m] || {}).parts || [])[+d.dataset.p]; if (p) p.open = d.open; }, true);
+$('#assist').addEventListener('toggle', e => {
+  const d = e.target; if (!d.classList) return;
+  const p = ((AS.msgs[+d.dataset.m] || {}).parts || [])[+d.dataset.p]; if (!p) return;
+  if (d.classList.contains('as-think')) p.open = d.open;
+  else if (d.classList.contains('as-w-d')) { const it = asWebItems(p).find(x => String(x.id || '') === d.dataset.i); if (it) it.open = d.open; }          // a request's address and what is sent: stays open while the answer goes on
+}, true);
 window.addEventListener('resize', () => { if (S.tab === 'assistant') asLayout(); });
 function vAssistent() {
   // the conversation as a page: the panel itself fills the page (one conversation, wherever it is shown)

@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.76 (2026-11-22 02:01)
+- KI-Assistent: Internetrecherche fragt nur noch einmal – eine Karte mit allen Abrufen, jeder abwählbar, ein Klick gibt sie frei
+- KI-Assistent: höhere Stufe als Reserve „nur falls nötig“; bis zu 3 Treffer lesen mit derselben Freigabe, ohne zweite Karte
+- KI-Assistent: je Abruf aufklappbar Adresse und Gesendetes; lange Adressen scrollen in ihrer Zeile
+- KI-Assistent: Suchwörter mit unsichtbaren Zeichen abgelehnt; gestoppte Abrufe stehen im Protokoll
+
 ## 3.16.75 (2026-11-22 02:00)
 - Updates: Zusatz „Quelle: main“ entfällt
 
